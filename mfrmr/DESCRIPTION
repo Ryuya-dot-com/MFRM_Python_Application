@@ -1,0 +1,35 @@
+Package: mfrmr
+Type: Package
+Title: Flexible Many-Facet Rasch Model Estimation Without FACETS
+Version: 0.1.0
+Authors@R:
+    person(given = "Ryuya", family = "Komuro", role = c("aut", "cre"), email = "ryuya.komuro.c4@tohoku.ac.jp")
+Author: Ryuya Komuro [aut, cre]
+Maintainer: Ryuya Komuro <ryuya.komuro.c4@tohoku.ac.jp>
+Description: Flexible many-facet Rasch model (MFRM) estimation and diagnostics
+    using a native R implementation. Supports arbitrary facet counts, RSM/PCM,
+    MML/JML estimation, FACETS-style bias iteration, fixed-width report output,
+    APA text generation, and visual warning summaries.
+License: MIT + file LICENSE
+Encoding: UTF-8
+Roxygen: list(markdown = TRUE)
+RoxygenNote: 7.3.3
+Depends:
+    R (>= 4.1)
+Imports:
+    dplyr,
+    tidyr,
+    tibble,
+    purrr,
+    stringr,
+    gt,
+    plotly,
+    psych,
+    rlang,
+    stats,
+    utils
+Suggests:
+    testthat (>= 3.0.0),
+    knitr
+VignetteBuilder: knitr
+Config/testthat/edition: 3

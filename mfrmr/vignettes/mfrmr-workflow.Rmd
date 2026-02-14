@@ -1,0 +1,60 @@
+%\VignetteIndexEntry{mfrmr Workflow}
+%\VignetteEngine{knitr::knitr}
+%\VignetteEncoding{UTF-8}
+
+# mfrmr Workflow
+
+This vignette outlines a reproducible workflow for:
+
+- loading packaged simulation data
+- fitting an MFRM with flexible facets
+- running diagnostics and residual PCA
+- generating APA and visual summary outputs
+
+## Load Data
+
+```{r}
+library(mfrmr)
+
+list_mfrmr_data()
+
+data("ej2021_study1", package = "mfrmr")
+head(ej2021_study1)
+
+study1_alt <- load_mfrmr_data("study1")
+identical(names(ej2021_study1), names(study1_alt))
+```
+
+## Fit and Diagnose
+
+```{r, eval=FALSE}
+fit <- fit_mfrm(
+  data = ej2021_study1,
+  person = "Person",
+  facets = c("Rater", "Criterion"),
+  score = "Score",
+  method = "MML",
+  model = "RSM"
+)
+
+diag <- diagnose_mfrm(
+  fit,
+  residual_pca = "both",
+  pca_max_factors = 6
+)
+```
+
+## Residual PCA and Reporting
+
+```{r, eval=FALSE}
+pca <- analyze_residual_pca(diag, mode = "both")
+plot_residual_pca(pca, mode = "overall", plot_type = "scree")
+
+bias <- estimate_bias(fit, diag, facet_a = "Rater", facet_b = "Criterion")
+fixed <- build_fixed_reports(bias)
+apa <- build_apa_outputs(fit, diag, bias_results = bias)
+
+mfrm_threshold_profiles()
+vis <- build_visual_summaries(fit, diag, threshold_profile = "standard")
+vis$warning_map$figure10
+```

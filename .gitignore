@@ -1,0 +1,6 @@
+# macOS
+.DS_Store
+
+# R check/build artifacts
+*.Rcheck/
+*_*.tar.gz

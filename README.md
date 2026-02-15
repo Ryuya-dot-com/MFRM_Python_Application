@@ -12,6 +12,7 @@ A Streamlit application for estimating **Many-Facet Rasch Models (MFRM)** withou
 - Models and Estimation
 - Core Equations (Quick Reference)
 - Constraints & Anchoring
+- Anchor Guide & Templates
 - Reporting Options
 - Diagnostics (Quick Guide)
 - Tabs and Outputs
@@ -177,6 +178,13 @@ Rater,R1,GroupA,0.0
 Rater,R2,GroupA,0.0
 Rater,R3,GroupB,0.2
 ```
+
+## Anchor Guide & Templates
+- User guide: `anchor_templates_and_guideline/anchor_user_guidelines.md`
+- Anchor example: `anchor_templates_and_guideline/anchor_table_example.csv`
+- Group anchor example: `anchor_templates_and_guideline/group_anchor_table_example.csv`
+- Anchor blank template: `anchor_templates_and_guideline/anchor_table_blank.csv`
+- Group anchor blank template: `anchor_templates_and_guideline/group_anchor_table_blank.csv`
 
 ## Reporting Options
 - **Total scores reported**: include extreme elements (Totalscore=Yes)

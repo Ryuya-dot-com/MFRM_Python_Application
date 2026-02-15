@@ -1,0 +1,10 @@
+Facet,Level,Group,GroupValue
+Rater,R1,Core,0
+Rater,R2,Core,0
+Rater,R3,Core,0
+Rater,R4,New,0.2
+Rater,R5,New,0.2
+Task,T1,PromptA,0
+Task,T2,PromptA,0
+Task,T3,PromptB,-0.15
+Task,T4,PromptB,-0.15

@@ -1,0 +1,72 @@
+template:
+  bootstrap: 5
+
+url: https://ryuya-dot-com.github.io/mfrmr/
+
+title: mfrmr
+
+authors:
+  footer:
+    roles: [cre]
+
+home:
+  title: mfrmr
+  description: Flexible many-facet Rasch model estimation without FACETS
+
+reference:
+  - title: Estimation
+    contents:
+      - fit_mfrm
+      - analyze_residual_pca
+      - mfrm_threshold_profiles
+      - diagnose_mfrm
+      - estimate_bias
+  - title: FACETS-Style Reports
+    contents:
+      - specifications_report
+      - data_quality_report
+      - estimation_iteration_report
+      - subset_connectivity_report
+      - facet_statistics_report
+      - measurable_summary_table
+      - rating_scale_table
+      - unexpected_response_table
+      - unexpected_after_bias_table
+      - fair_average_table
+      - displacement_table
+      - interrater_agreement_table
+      - facets_chisq_table
+      - bias_count_table
+      - bias_interaction_report
+      - category_structure_report
+      - category_curves_report
+      - facets_output_file_bundle
+      - facets_parity_report
+  - title: Integrated Outputs
+    contents:
+      - build_fixed_reports
+      - build_apa_outputs
+      - build_visual_summaries
+      - apa_table
+      - summary.mfrm_fit
+      - summary.mfrm_diagnostics
+      - summary.mfrm_bias
+  - title: Plotting
+    contents:
+      - plot.mfrm_fit
+      - plot.mfrm_bundle
+      - plot_bias_interaction
+      - plot_qc_dashboard
+      - plot_unexpected
+      - plot_fair_average
+      - plot_displacement
+      - plot_interrater_agreement
+      - plot_facets_chisq
+      - plot_residual_pca
+  - title: Data and Anchors
+    contents:
+      - describe_mfrm_data
+      - audit_mfrm_anchors
+      - make_anchor_table
+      - list_mfrmr_data
+      - load_mfrmr_data

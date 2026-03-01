@@ -7,8 +7,9 @@
 estimate_bias(
   fit,
   diagnostics,
-  facet_a,
-  facet_b,
+  facet_a = NULL,
+  facet_b = NULL,
+  interaction_facets = NULL,
   max_abs = 10,
   omit_extreme = TRUE,
   max_iter = 4,
@@ -24,6 +25,10 @@ estimate_bias(
 
 \item{facet_b}{Second facet name.}
 
+\item{interaction_facets}{Character vector of two or more facets to model as
+one interaction effect. When supplied, this takes precedence over
+\code{facet_a}/\code{facet_b}.}
+
 \item{max_abs}{Bound for absolute bias size.}
 
 \item{omit_extreme}{Omit extreme-only elements.}
@@ -33,30 +38,75 @@ estimate_bias(
 \item{tol}{Convergence tolerance.}
 }
 \value{
-A named list with:
+An object of class \code{mfrm_bias} with:
 \itemize{
 \item \code{table}: interaction rows with effect size, SE, t, p, fit columns
 \item \code{summary}: compact summary statistics
 \item \code{chi_sq}: fixed-effect chi-square style summary
-\item \code{facet_a}, \code{facet_b}: analyzed facet names
-\item \code{iterations}: iteration history/metadata
+\item \code{facet_a}, \code{facet_b}: first two analyzed facet names (legacy compatibility)
+\item \code{interaction_facets}, \code{interaction_order}, \code{interaction_mode}: full
+interaction metadata
+\item \code{iteration}: iteration history/metadata
 }
 }
 \description{
 Estimate FACETS-style bias/interaction terms iteratively
 }
 \details{
-The function estimates interaction contrasts for \verb{facet_a x facet_b}
-with iterative recalibration in a FACETS-like style.
+The function estimates interaction contrasts with iterative recalibration in
+a FACETS-like style.
+\itemize{
+\item For two-way mode, use \code{facet_a} and \code{facet_b} (or \code{interaction_facets}
+with length 2).
+\item For higher-order mode, provide \code{interaction_facets} with length >= 3.
+}
 
 Typical usage:
 \enumerate{
 \item fit model via \code{\link[=fit_mfrm]{fit_mfrm()}}
 \item compute diagnostics via \code{\link[=diagnose_mfrm]{diagnose_mfrm()}}
-\item call \code{estimate_bias()} for one facet pair
+\item call \code{estimate_bias()} for one 2-way or higher-order interaction
 \item format output with \code{\link[=build_fixed_reports]{build_fixed_reports()}}
 }
 }
+\section{Interpreting output}{
+
+Use \code{summary} for global magnitude, then inspect \code{table} for cell-level
+interaction effects.
+
+Prioritize rows with:
+\itemize{
+\item larger \verb{|Bias Size|}
+\item larger \verb{|t|}
+\item smaller \code{Prob.}
+}
+
+\code{iteration} helps verify whether iterative recalibration stabilized.
+}
+
+\section{Typical workflow}{
+
+\enumerate{
+\item Fit and diagnose model.
+\item Run \code{estimate_bias(...)} for target interaction facets.
+\item Review \code{summary(bias)} and \code{bias$table}.
+\item Visualize/report via \code{\link[=plot_bias_interaction]{plot_bias_interaction()}} and \code{\link[=build_fixed_reports]{build_fixed_reports()}}.
+}
+}
+
+\section{Interpreting key output columns}{
+
+In \code{bias$table}, the most-used columns are:
+\itemize{
+\item \verb{Bias Size}: estimated interaction effect (logit scale)
+\item \code{t} and \code{Prob.}: significance-style screening metrics
+\item \verb{Obs-Exp Average}: direction and practical size of observed-vs-expected gap
+}
+
+\code{bias$iteration} records recalibration trajectory and can be checked to assess
+whether additional iterations may be needed.
+}
+
 \examples{
 toy <- expand.grid(
   Person = paste0("P", 1:4),
@@ -72,7 +122,9 @@ toy$Score <- (
 fit <- fit_mfrm(toy, "Person", c("Rater", "Criterion"), "Score", method = "JML", maxit = 25)
 diag <- diagnose_mfrm(fit, residual_pca = "none")
 bias <- estimate_bias(fit, diag, facet_a = "Rater", facet_b = "Criterion", max_iter = 2)
-names(bias)
+summary(bias)
+p_bias <- plot_bias_interaction(bias, draw = FALSE)
+class(p_bias)
 }
 \seealso{
 \code{\link[=build_fixed_reports]{build_fixed_reports()}}, \code{\link[=build_apa_outputs]{build_apa_outputs()}}

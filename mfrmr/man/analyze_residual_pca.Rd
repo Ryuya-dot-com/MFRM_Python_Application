@@ -12,7 +12,7 @@ analyze_residual_pca(
 )
 }
 \arguments{
-\item{diagnostics}{Output from \code{\link[=diagnose_mfrm]{diagnose_mfrm()}}.}
+\item{diagnostics}{Output from \code{\link[=diagnose_mfrm]{diagnose_mfrm()}} or \code{\link[=fit_mfrm]{fit_mfrm()}}.}
 
 \item{mode}{\code{"overall"}, \code{"facet"}, or \code{"both"}.}
 
@@ -40,7 +40,8 @@ FACETS-style residual diagnostics can be inspected in two ways:
 }
 \details{
 The function works on standardized residual structures derived from
-\code{\link[=diagnose_mfrm]{diagnose_mfrm()}}.
+\code{\link[=diagnose_mfrm]{diagnose_mfrm()}}. When a fitted object from \code{\link[=fit_mfrm]{fit_mfrm()}} is supplied,
+diagnostics are computed internally.
 
 Output tables use:
 \itemize{
@@ -52,7 +53,39 @@ Output tables use:
 
 For \code{mode = "facet"} or \code{"both"}, \code{by_facet_table} additionally includes
 a \code{Facet} column.
+
+\code{summary(pca)} is supported through \code{summary()}.
+\code{plot(pca)} is dispatched through \code{plot()} for class
+\code{mfrm_residual_pca}. Available types include \code{"overall_scree"},
+\code{"facet_scree"}, \code{"overall_loadings"}, and \code{"facet_loadings"}.
 }
+\section{Interpreting output}{
+
+Use \code{overall_table} first:
+\itemize{
+\item high PC1 eigenvalue and high \code{Proportion} suggest stronger residual
+structure beyond the main Rasch dimension.
+}
+
+Then inspect \code{by_facet_table}:
+\itemize{
+\item helps localize which facet contributes most to residual structure.
+}
+
+Finally, inspect loadings via \code{\link[=plot_residual_pca]{plot_residual_pca()}} to identify which
+variables/elements drive each component.
+}
+
+\section{Typical workflow}{
+
+\enumerate{
+\item Fit model and run \code{\link[=diagnose_mfrm]{diagnose_mfrm()}} with \code{residual_pca = "none"} or \code{"both"}.
+\item Call \code{analyze_residual_pca(..., mode = "both")}.
+\item Review \code{summary(pca)}, then plot scree/loadings.
+\item Cross-check with fit/misfit diagnostics before conclusions.
+}
+}
+
 \examples{
 toy <- expand.grid(
   Person = paste0("P", 1:4),
@@ -68,6 +101,11 @@ toy$Score <- (
 fit <- fit_mfrm(toy, "Person", c("Rater", "Criterion"), "Score", method = "JML", maxit = 25)
 diag <- diagnose_mfrm(fit, residual_pca = "both")
 pca <- analyze_residual_pca(diag, mode = "both")
+pca2 <- analyze_residual_pca(fit, mode = "both")
+summary(pca)
+p <- plot_residual_pca(pca, mode = "overall", plot_type = "scree", draw = FALSE)
+class(p)
+head(p$data)
 head(pca$overall_table)
 }
 \seealso{

@@ -19,11 +19,146 @@ Recommended workflow:
 \item Build narrative/report outputs with \code{\link[=build_apa_outputs]{build_apa_outputs()}} and \code{\link[=build_visual_summaries]{build_visual_summaries()}}
 }
 
+Function families:
+\itemize{
+\item Model fitting: \code{\link[=fit_mfrm]{fit_mfrm()}}, \code{\link[=summary.mfrm_fit]{summary.mfrm_fit()}}, \code{\link[=plot.mfrm_fit]{plot.mfrm_fit()}}
+\item FACETS-style workflow wrapper: \code{\link[=run_mfrm_facets]{run_mfrm_facets()}}, \code{\link[=mfrmRFacets]{mfrmRFacets()}}
+\item Diagnostics: \code{\link[=diagnose_mfrm]{diagnose_mfrm()}}, \code{summary(diag)},
+\code{\link[=analyze_residual_pca]{analyze_residual_pca()}}, \code{\link[=plot_residual_pca]{plot_residual_pca()}}
+\item Bias and interaction: \code{\link[=estimate_bias]{estimate_bias()}}, \code{summary(bias)},
+\code{\link[=bias_interaction_report]{bias_interaction_report()}}, \code{\link[=plot_bias_interaction]{plot_bias_interaction()}}
+\item Reporting: \code{\link[=build_apa_outputs]{build_apa_outputs()}}, \code{\link[=build_visual_summaries]{build_visual_summaries()}}, \code{\link[=apa_table]{apa_table()}}
+\item Data and anchors: \code{\link[=describe_mfrm_data]{describe_mfrm_data()}}, \code{\link[=audit_mfrm_anchors]{audit_mfrm_anchors()}},
+\code{\link[=make_anchor_table]{make_anchor_table()}}, \code{\link[=load_mfrmr_data]{load_mfrmr_data()}}
+}
+
 Data interface:
 \itemize{
 \item Input analysis data is long format (one row per observed rating).
 \item Packaged simulation data is available via \code{\link[=load_mfrmr_data]{load_mfrmr_data()}} or \code{data()}.
 }
+}
+\section{Interpreting output}{
+
+Core object classes are:
+\itemize{
+\item \code{mfrm_fit}: fitted model parameters and metadata.
+\item \code{mfrm_diagnostics}: fit/reliability/flag diagnostics.
+\item \code{mfrm_bias}: interaction bias estimates.
+\item \code{mfrm_bundle} families: FACETS-style summary/report tables.
+}
+}
+
+\section{Typical workflow}{
+
+\enumerate{
+\item Prepare long-format data.
+\item Fit with \code{\link[=fit_mfrm]{fit_mfrm()}}.
+\item Diagnose with \code{\link[=diagnose_mfrm]{diagnose_mfrm()}}.
+\item Report with \code{\link[=build_apa_outputs]{build_apa_outputs()}} and \code{\link[=build_visual_summaries]{build_visual_summaries()}}.
+}
+}
+
+\section{Statistical background}{
+
+Key statistics reported throughout the package:
+
+\strong{Infit (Information-Weighted Mean Square)}
+
+Weighted average of squared standardized residuals, where weights are the
+model-based variance of each observation.
+\code{Infit = sum(Z^2 * Var_i * w_i) / sum(Var_i * w_i)}.
+Expected value is 1.0 under model fit.  Values below 0.5 suggest overfit
+(Mead-style responses); values above 1.5 suggest underfit (noise or
+misfit).  Infit is most sensitive to unexpected patterns among on-target
+observations (Wright & Masters, 1982).
+
+\strong{Outfit (Unweighted Mean Square)}
+
+Simple average of squared standardized residuals.
+\code{Outfit = sum(Z^2 * w_i) / sum(w_i)}.
+Same expected value and flagging thresholds as Infit, but more sensitive
+to extreme off-target outliers (e.g., a high-ability person scoring the
+lowest category).
+
+\strong{ZSTD (Standardized Fit Statistic)}
+
+Wilson-Hilferty cube-root transformation that converts the mean-square
+chi-square ratio to an approximate standard normal deviate:
+\code{ZSTD = (MnSq^(1/3) - (1 - 2/(9*df))) / sqrt(2/(9*df))}.
+Values near 0 indicate expected fit; \verb{|ZSTD| > 2} flags potential misfit.
+ZSTD is reported alongside every Infit and Outfit value.
+
+\strong{PTMEA (Point-Measure Correlation)}
+
+Pearson correlation between observed scores and estimated person measures
+within each facet level.  Positive values indicate that scoring aligns
+with the latent trait dimension; negative values suggest reversed
+orientation or scoring errors.
+
+\strong{Separation}
+
+Ratio of the adjusted standard deviation of element measures to their
+root-mean-square standard error:
+\code{Separation = SD(measures) / RMSE(SE)}.
+Higher values indicate the facet discriminates more statistically distinct
+levels along the measured variable.
+
+\strong{Reliability}
+
+\code{Reliability = Separation^2 / (1 + Separation^2)}.
+Analogous to Cronbach's alpha or KR-20 for the reproducibility of element
+ordering.  Values above 0.8 are generally considered adequate for
+distinguishing among elements (Linacre, 2025).
+
+\strong{Strata}
+
+Number of statistically distinguishable groups of elements:
+\code{Strata = (4 * Separation + 1) / 3}.
+Three or more strata are recommended (Wright & Masters, 1982).
+}
+
+\section{Model selection}{
+
+\strong{RSM vs PCM}
+
+The Rating Scale Model (RSM; Andrich, 1978) assumes all levels of the
+step facet share identical threshold parameters.  The Partial Credit
+Model (PCM; Masters, 1982) allows each level of the \code{step_facet} to have
+its own set of thresholds.  Use RSM when the rating rubric is identical
+across all items/criteria; use PCM when different items have different
+numbers or types of response categories, or when there is reason to
+believe category boundaries vary by item.
+
+\strong{MML vs JML}
+
+Marginal Maximum Likelihood (MML) integrates over the person ability
+distribution using Gauss-Hermite quadrature and does not directly estimate
+person parameters; person estimates are computed post-hoc via Expected A
+Posteriori (EAP).  Joint Maximum Likelihood (JML/JMLE) estimates all
+person and facet parameters simultaneously as fixed effects.
+
+MML is generally preferred for smaller samples because it avoids the
+incidental-parameter problem of JML.  JML is faster and does not assume
+a normal person distribution, which may be an advantage when the
+population shape is strongly non-normal.
+
+See \code{\link[=fit_mfrm]{fit_mfrm()}} for usage.
+}
+
+\examples{
+mfrm_threshold_profiles()
+list_mfrmr_data()
+
+}
+\seealso{
+Useful links:
+\itemize{
+  \item \url{https://github.com/Ryuya-dot-com/mfrmr}
+  \item \url{https://ryuya-dot-com.github.io/mfrmr/}
+  \item Report bugs at \url{https://github.com/Ryuya-dot-com/mfrmr/issues}
+}
+
 }
 \author{
 \strong{Maintainer}: Ryuya Komuro \email{ryuya.komuro.c4@tohoku.ac.jp}

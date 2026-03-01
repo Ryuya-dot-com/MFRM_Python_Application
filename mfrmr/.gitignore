@@ -1,0 +1,9 @@
+# macOS
+.DS_Store
+
+# R build/check artifacts
+*.Rcheck/
+*_*.tar.gz
+
+# testthat local plotting artifact
+tests/testthat/Rplots.pdf

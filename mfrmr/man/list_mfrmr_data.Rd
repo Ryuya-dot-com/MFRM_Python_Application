@@ -12,8 +12,35 @@ Character vector of dataset keys accepted by \code{\link[=load_mfrmr_data]{load_
 \description{
 List packaged simulation datasets
 }
+\details{
+Use this helper when you want to select packaged data programmatically
+(e.g., inside scripts, loops, or shiny/streamlit wrappers).
+
+Typical pattern:
+\enumerate{
+\item call \code{list_mfrmr_data()} to see available keys.
+\item pass one key to \code{\link[=load_mfrmr_data]{load_mfrmr_data()}}.
+}
+}
+\section{Interpreting output}{
+
+Returned values are canonical dataset keys accepted by \code{\link[=load_mfrmr_data]{load_mfrmr_data()}}.
+}
+
+\section{Typical workflow}{
+
+\enumerate{
+\item Capture keys in a script (\code{keys <- list_mfrmr_data()}).
+\item Select one key by index or name.
+\item Load data via \code{\link[=load_mfrmr_data]{load_mfrmr_data()}} and continue analysis.
+}
+}
+
 \examples{
-list_mfrmr_data()
+keys <- list_mfrmr_data()
+keys
+d <- load_mfrmr_data(keys[1])
+head(d)
 }
 \seealso{
 \code{\link[=load_mfrmr_data]{load_mfrmr_data()}}, \link{ej2021_data}

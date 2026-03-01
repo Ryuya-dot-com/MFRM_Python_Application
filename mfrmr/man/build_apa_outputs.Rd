@@ -24,11 +24,11 @@ build_apa_outputs(
 \item{whexact}{Use exact ZSTD transformation.}
 }
 \value{
-A named list with:
+An object of class \code{mfrm_apa_outputs} with:
 \itemize{
 \item \code{report_text}: APA-style Method/Results prose
-\item \code{table_figure_notes}: consolidated notes for tables/figures
-\item \code{table_figure_captions}: caption-ready labels
+\item \code{table_figure_notes}: consolidated notes for tables/visuals
+\item \code{table_figure_captions}: caption-ready labels without figure numbering
 }
 }
 \description{
@@ -41,11 +41,52 @@ Frequently used fields include:
 \item \code{assessment}, \code{setting}, \code{scale_desc}
 \item \code{rater_training}, \code{raters_per_response}
 \item \code{rater_facet} (used for targeted reliability note text)
+\item \code{line_width} (optional text wrapping width for \code{report_text}; default = 92)
 }
 
 Output text includes residual PCA interpretation if PCA diagnostics are
 available in \code{diagnostics}.
+
+By default, \code{report_text} includes:
+\itemize{
+\item model/data design summary (N, facet counts, scale range)
+\item optimization/convergence metrics (\code{Converged}, \code{Iterations}, \code{LogLik}, \code{AIC}, \code{BIC})
+\item anchor/constraint summary (\code{noncenter_facet}, anchored levels, group anchors, dummy facets)
+\item category/threshold diagnostics (including disordered-step details when present)
+\item overall fit, misfit count, and top misfit levels
+\item facet reliability/separation, residual PCA summary, and bias-screen counts
 }
+}
+\section{Interpreting output}{
+
+\itemize{
+\item \code{report_text}: manuscript-ready narrative core.
+\item \code{table_figure_notes}: reusable note blocks for table/figure appendices.
+\item \code{table_figure_captions}: caption candidates aligned to generated outputs.
+}
+}
+
+\section{Typical workflow}{
+
+\enumerate{
+\item Build diagnostics (and optional bias results).
+\item Run \code{build_apa_outputs(...)}.
+\item Check \code{summary(apa)} for completeness.
+\item Insert \code{apa$report_text} and note/caption fields into manuscript drafts.
+}
+}
+
+\section{Context template}{
+
+A minimal \code{context} list can include fields such as:
+\itemize{
+\item \code{assessment}: name of the assessment task
+\item \code{setting}: administration context
+\item \code{scale_desc}: short description of the score scale
+\item \code{rater_facet}: rater facet label used in narrative reliability text
+}
+}
+
 \examples{
 toy <- expand.grid(
   Person = paste0("P", 1:4),
@@ -60,8 +101,21 @@ toy$Score <- (
 ) \%\% 3
 fit <- fit_mfrm(toy, "Person", c("Rater", "Criterion"), "Score", method = "JML", maxit = 25)
 diag <- diagnose_mfrm(fit, residual_pca = "both")
-apa <- build_apa_outputs(fit, diag)
+apa <- build_apa_outputs(
+  fit,
+  diag,
+  context = list(
+    assessment = "Toy writing task",
+    setting = "Demonstration dataset",
+    scale_desc = "0-2 rating scale",
+    rater_facet = "Rater"
+  )
+)
 names(apa)
+class(apa)
+s_apa <- summary(apa)
+s_apa$overview
+cat(apa$report_text)
 }
 \seealso{
 \code{\link[=build_visual_summaries]{build_visual_summaries()}}, \code{\link[=estimate_bias]{estimate_bias()}}

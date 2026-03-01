@@ -2,11 +2,16 @@
 # Source: ../../app.R
 # NOTE: This file intentionally keeps function names aligned with the app implementation.
 # ---- math helpers ----
+
+# Numerically stable log-sum-exp: log(sum(exp(x))).
+# Subtracts max(x) before exponentiation to avoid overflow/underflow.
+#   logsumexp(x) = max(x) + log(sum(exp(x - max(x))))
 logsumexp <- function(x) {
   m <- max(x)
   m + log(sum(exp(x - m)))
 }
 
+# Weighted mean that silently drops non-finite values and zero weights.
 weighted_mean <- function(x, w) {
   ok <- is.finite(x) & is.finite(w) & w > 0
   if (!any(ok)) return(NA_real_)
@@ -27,7 +32,8 @@ get_weights <- function(df) {
 # Returns nodes and weights for phi(x) dx
 #   integral f(x) phi(x) dx \approx sum w_i f(x_i)
 gauss_hermite_normal <- function(n) {
-  if (n < 1) stop("n must be >= 1")
+  if (n < 1) stop("Gauss-Hermite quadrature requires n >= 1 quadrature points. ",
+                   "Check the 'quad_points' argument.", call. = FALSE)
   if (n == 1) {
     return(list(nodes = 0, weights = 1))
   }
@@ -184,7 +190,9 @@ build_param_sizes <- function(config) {
     sizes$steps <- n_steps
   } else {
     if (is.null(config$step_facet) || !config$step_facet %in% config$facet_names) {
-      stop("PCM requires a valid step facet.")
+      stop("PCM model requires 'step_facet' to name one of the facet columns: ",
+           paste(config$facet_names, collapse = ", "), ". ",
+           "Supply step_facet = '<name>'.", call. = FALSE)
     }
     sizes$steps <- length(config$facet_levels[[config$step_facet]]) * n_steps
   }
@@ -245,19 +253,29 @@ prepare_mfrm_data <- function(data, person_col, facet_cols, score_col,
     required <- c(required, weight_col)
   }
   if (length(unique(required)) != length(required)) {
-    stop("Person/score/facet columns must be distinct (no duplicates).")
+    dup_names <- required[duplicated(required)]
+    stop("The 'person', 'score', and 'facets' arguments must name distinct columns, ",
+         "but duplicates were found: ", paste(dup_names, collapse = ", "), ". ",
+         "Remove or rename the duplicated references.", call. = FALSE)
   }
-  if (!all(required %in% names(data))) {
-    stop("Some selected columns are not in the data.")
+  missing_cols <- setdiff(required, names(data))
+  if (length(missing_cols) > 0) {
+    stop("Column(s) not found in data: ", paste(missing_cols, collapse = ", "), ". ",
+         "Available columns: ", paste(names(data), collapse = ", "), ". ",
+         "Check spelling of person/facets/score arguments.", call. = FALSE)
   }
   if (any(duplicated(names(data)))) {
-    dupes <- names(data)[duplicated(names(data))]
+    dupes <- unique(names(data)[duplicated(names(data))])
     if (any(required %in% dupes)) {
-      stop("Selected columns include duplicate names in the data. Please rename columns to be unique.")
+      stop("Selected columns include duplicate names in the data: ",
+           paste(intersect(required, dupes), collapse = ", "), ". ",
+           "Rename columns so each name is unique.", call. = FALSE)
     }
   }
   if (length(facet_cols) == 0) {
-    stop("Select at least one facet column.")
+    stop("No facet columns were specified. ",
+         "Supply at least one column name via 'facets' ",
+         "(e.g., facets = c('Rater', 'Task')).", call. = FALSE)
   }
 
   cols <- c(person_col, facet_cols, score_col)
@@ -290,8 +308,20 @@ prepare_mfrm_data <- function(data, person_col, facet_cols, score_col,
     tidyr::drop_na() |>
     filter(Weight > 0)
 
+  if (nrow(df) == 0) {
+    stop("No valid observations remain after removing missing values and ",
+         "zero-weight rows. Check that person, facet, score, and weight columns ",
+         "contain valid (non-NA, non-empty) data.", call. = FALSE)
+  }
+
   df <- df |>
     mutate(Score = as.integer(Score))
+
+  if (length(unique(df$Score)) < 2) {
+    stop("Only one score category found in the data (Score = ",
+         unique(df$Score), "). ",
+         "MFRM requires at least two distinct response categories.", call. = FALSE)
+  }
 
   if (is.null(rating_min)) rating_min <- min(df$Score, na.rm = TRUE)
   if (is.null(rating_max)) rating_max <- max(df$Score, na.rm = TRUE)
@@ -325,7 +355,13 @@ prepare_mfrm_data <- function(data, person_col, facet_cols, score_col,
     rating_max = rating_max,
     facet_names = facet_names,
     levels = c(list(Person = levels(df$Person)), facet_levels),
-    weight_col = if (!is.null(weight_col)) weight_col else NULL
+    weight_col = if (!is.null(weight_col)) weight_col else NULL,
+    source_columns = list(
+      person = person_col,
+      facets = facet_cols,
+      score = score_col,
+      weight = if (!is.null(weight_col)) weight_col else NULL
+    )
   )
 }
 
@@ -410,76 +446,6 @@ guess_col <- function(cols, patterns, fallback = 1) {
   cols[min(fallback, length(cols))]
 }
 
-plotly_style_axes <- function(p,
-                              margin = list(t = 60, r = 40, b = 60, l = 60),
-                              base_size = 11) {
-  p |>
-    plotly::layout(
-      font = list(size = base_size),
-      margin = margin,
-      xaxis = list(automargin = TRUE, title = list(standoff = 10)),
-      yaxis = list(automargin = TRUE, title = list(standoff = 10))
-    )
-}
-
-plotly_compact_legend <- function(p, legend_y = -0.25, bottom_margin = 90, base_size = 11) {
-  p <- plotly_style_axes(
-    p,
-    margin = list(t = 50, r = 40, b = bottom_margin, l = 60),
-    base_size = base_size
-  )
-  plotly::layout(
-    p,
-    legend = list(
-      orientation = "h",
-      x = 0.5,
-      xanchor = "center",
-      y = legend_y,
-      yanchor = "top"
-    )
-  )
-}
-
-plotly_legend_top <- function(p, top_margin = 90, legend_y = 1.12, base_size = 11) {
-  p <- plotly_style_axes(
-    p,
-    margin = list(t = top_margin, r = 40, b = 70, l = 60),
-    base_size = base_size
-  )
-  plotly::layout(
-    p,
-    legend = list(
-      orientation = "h",
-      x = 0.5,
-      xanchor = "center",
-      y = legend_y,
-      yanchor = "bottom"
-    )
-  )
-}
-
-plotly_legend_right <- function(p, right_margin = 140, base_size = 11) {
-  p <- plotly_style_axes(
-    p,
-    margin = list(t = 60, r = right_margin, b = 70, l = 60),
-    base_size = base_size
-  )
-  plotly::layout(
-    p,
-    legend = list(
-      orientation = "v",
-      x = 1.02,
-      xanchor = "left",
-      y = 1,
-      yanchor = "top"
-    )
-  )
-}
-
-plotly_basic <- function(p, base_size = 11) {
-  plotly_style_axes(p, base_size = base_size)
-}
-
 truncate_label <- function(x, width = 28) {
   stringr::str_trunc(as.character(x), width = width)
 }
@@ -489,6 +455,11 @@ facet_report_id <- function(facet) {
 }
 
 # ---- likelihoods ----
+# RSM log-likelihood: sum_i w_i log P(X_i = k_i | eta_i).
+# Under the Rating Scale Model (Andrich, 1978):
+#   P(X = k | eta) = exp(k*eta - tau_k) / sum_j exp(j*eta - tau_j)
+# where tau_k = cumulative step parameters and eta = theta - sum(facets).
+# Computation uses log-domain subtraction with logsumexp for stability.
 loglik_rsm <- function(eta, score_k, step_cum, weight = NULL) {
   n <- length(eta)
   if (n == 0) return(0)
@@ -506,6 +477,10 @@ loglik_rsm <- function(eta, score_k, step_cum, weight = NULL) {
   }
 }
 
+# PCM log-likelihood: same structure as RSM but with criterion-specific steps.
+# Under the Partial Credit Model (Masters, 1982):
+#   P(X = k | eta, criterion c) = exp(k*eta - tau_{c,k}) / sum_j exp(j*eta - tau_{c,j})
+# step_cum_mat has one row per criterion level, columns = cumulative thresholds.
 loglik_pcm <- function(eta, score_k, step_cum_mat, criterion_idx, weight = NULL) {
   n <- length(eta)
   if (n == 0) return(0)
@@ -531,6 +506,9 @@ loglik_pcm <- function(eta, score_k, step_cum_mat, criterion_idx, weight = NULL)
   total
 }
 
+# Category response probabilities under RSM.
+# Returns an n x K matrix where K = number of categories.
+# Each row sums to 1; probabilities are computed in log-domain for stability.
 category_prob_rsm <- function(eta, step_cum) {
   n <- length(eta)
   if (n == 0) return(matrix(0, nrow = 0, ncol = length(step_cum)))
@@ -542,6 +520,8 @@ category_prob_rsm <- function(eta, step_cum) {
   exp(log_num - matrix(log_denom, nrow = n, ncol = k_cat))
 }
 
+# Category response probabilities under PCM (criterion-specific thresholds).
+# Returns an n x K matrix; each row sums to 1.
 category_prob_pcm <- function(eta, step_cum_mat, criterion_idx) {
   n <- length(eta)
   if (n == 0) return(matrix(0, nrow = 0, ncol = ncol(step_cum_mat)))
@@ -561,6 +541,12 @@ category_prob_pcm <- function(eta, step_cum_mat, criterion_idx) {
   probs
 }
 
+# Convert mean-square fit statistic to a standardized z-score (ZSTD).
+# Default uses the Wilson-Hilferty (1931) cube-root approximation:
+#   ZSTD = (MnSq^(1/3) - (1 - 2/(9*df))) / sqrt(2/(9*df))
+# When whexact = TRUE, uses the simpler linear approximation:
+#   ZSTD = (MnSq - 1) * sqrt(df / 2)
+# Values near 0 indicate expected fit; |ZSTD| > 2 flags potential misfit.
 zstd_from_mnsq <- function(mnsq, df, whexact = FALSE) {
   mnsq <- as.numeric(mnsq)
   df <- as.numeric(df)
@@ -611,6 +597,9 @@ compute_eta <- function(idx, params, config, theta_override = NULL) {
   eta + compute_base_eta(idx, params, config)
 }
 
+# Joint Maximum Likelihood Estimation (JMLE) negative log-likelihood.
+# Estimates person abilities and facet parameters simultaneously.
+# Returns -LL for minimization by optim().
 mfrm_loglik_jmle <- function(par, idx, config, sizes) {
   params <- expand_params(par, sizes, config)
   eta <- compute_eta(idx, params, config)
@@ -625,6 +614,11 @@ mfrm_loglik_jmle <- function(par, idx, config, sizes) {
   -ll
 }
 
+# Marginal Maximum Likelihood (MML) negative log-likelihood.
+# Integrates over the person ability distribution using Gauss-Hermite quadrature:
+#   L = prod_p integral P(X_p | theta, facets) phi(theta) d(theta)
+#     ~ prod_p sum_q w_q P(X_p | theta_q, facets)
+# Person parameters are not estimated directly; instead, EAP post-hoc.
 mfrm_loglik_mml <- function(par, idx, config, sizes, quad) {
   params <- expand_params(par, sizes, config)
   n <- length(idx$score_k)
@@ -662,6 +656,10 @@ mfrm_loglik_mml <- function(par, idx, config, sizes, quad) {
   -sum(ll_person)
 }
 
+# Expected A Posteriori (EAP) person ability estimates under MML.
+# For each person p:
+#   theta_EAP = sum_q theta_q * w_q * L(X_p|theta_q) / sum_q w_q * L(X_p|theta_q)
+#   SD_EAP   = sqrt(E[theta^2] - (E[theta])^2)  (posterior standard deviation)
 compute_person_eap <- function(idx, config, params, quad) {
   n <- length(idx$score_k)
   if (n == 0) {
@@ -717,31 +715,16 @@ prepare_constraint_specs <- function(prep,
                                      dummy_facets = character(0)) {
   facet_names <- prep$facet_names
   all_facets <- c("Person", facet_names)
+  anchor_audit <- audit_anchor_tables(
+    prep = prep,
+    anchor_df = anchor_df,
+    group_anchor_df = group_anchor_df,
+    noncenter_facet = noncenter_facet,
+    dummy_facets = dummy_facets
+  )
 
-  anchor_df <- if (!is.null(anchor_df) && nrow(anchor_df) > 0) {
-    anchor_df |>
-      mutate(
-        Facet = trimws(as.character(Facet)),
-        Level = trimws(as.character(Level)),
-        Anchor = as.numeric(Anchor)
-      ) |>
-      filter(Facet %in% all_facets, !is.na(Level))
-  } else {
-    tibble()
-  }
-
-  group_anchor_df <- if (!is.null(group_anchor_df) && nrow(group_anchor_df) > 0) {
-    group_anchor_df |>
-      mutate(
-        Facet = trimws(as.character(Facet)),
-        Level = trimws(as.character(Level)),
-        Group = trimws(as.character(Group)),
-        GroupValue = as.numeric(GroupValue)
-      ) |>
-      filter(Facet %in% all_facets, !is.na(Level), !is.na(Group))
-  } else {
-    tibble()
-  }
+  anchor_df <- anchor_audit$anchors
+  group_anchor_df <- anchor_audit$group_anchors
 
   anchor_map <- setNames(vector("list", length(all_facets)), all_facets)
   group_map <- setNames(vector("list", length(all_facets)), all_facets)
@@ -752,7 +735,7 @@ prepare_constraint_specs <- function(prep,
     if (!is.null(levels)) {
       if (facet %in% dummy_facets) {
         anchor_map[[facet]] <- setNames(rep(0, length(levels)), levels)
-        group_map[[facet]] <- NULL
+        group_map[facet] <- list(NULL)
         group_values[[facet]] <- numeric(0)
         next
       }
@@ -822,7 +805,8 @@ prepare_constraint_specs <- function(prep,
   list(
     theta_spec = theta_spec,
     facet_specs = facet_specs,
-    anchor_summary = anchor_summary
+    anchor_summary = anchor_summary,
+    anchor_audit = anchor_audit
   )
 }
 
@@ -853,13 +837,15 @@ read_flexible_table <- function(text_value, file_input) {
 }
 
 normalize_anchor_df <- function(df) {
-  if (is.null(df) || nrow(df) == 0) return(tibble())
+  if (is.null(df) || nrow(df) == 0) {
+    return(tibble(Facet = character(0), Level = character(0), Anchor = numeric(0)))
+  }
   nm <- tolower(names(df))
   facet_col <- which(nm %in% c("facet", "facets"))
   level_col <- which(nm %in% c("level", "element", "label"))
   anchor_col <- which(nm %in% c("anchor", "value", "measure"))
   if (length(facet_col) == 0 || length(level_col) == 0 || length(anchor_col) == 0) {
-    return(tibble())
+    return(tibble(Facet = character(0), Level = character(0), Anchor = numeric(0)))
   }
   tibble(
     Facet = as.character(df[[facet_col[1]]]),
@@ -870,14 +856,16 @@ normalize_anchor_df <- function(df) {
 }
 
 normalize_group_anchor_df <- function(df) {
-  if (is.null(df) || nrow(df) == 0) return(tibble())
+  if (is.null(df) || nrow(df) == 0) {
+    return(tibble(Facet = character(0), Level = character(0), Group = character(0), GroupValue = numeric(0)))
+  }
   nm <- tolower(names(df))
   facet_col <- which(nm %in% c("facet", "facets"))
   level_col <- which(nm %in% c("level", "element", "label"))
   group_col <- which(nm %in% c("group", "subset"))
   value_col <- which(nm %in% c("groupvalue", "value", "anchor"))
   if (length(facet_col) == 0 || length(level_col) == 0 || length(group_col) == 0 || length(value_col) == 0) {
-    return(tibble())
+    return(tibble(Facet = character(0), Level = character(0), Group = character(0), GroupValue = numeric(0)))
   }
   tibble(
     Facet = as.character(df[[facet_col[1]]]),
@@ -888,11 +876,393 @@ normalize_group_anchor_df <- function(df) {
     filter(!is.na(Facet), !is.na(Level), !is.na(Group))
 }
 
+collect_anchor_levels <- function(prep) {
+  facets <- c("Person", prep$facet_names)
+  rows <- lapply(facets, function(facet) {
+    lv <- prep$levels[[facet]]
+    if (is.null(lv) || length(lv) == 0) return(tibble())
+    tibble(
+      Facet = as.character(facet),
+      Level = as.character(lv)
+    )
+  })
+  bind_rows(rows)
+}
+
+safe_join_key <- function(facet, level) {
+  paste0(as.character(facet), "\r", as.character(level))
+}
+
+build_anchor_issue_counts <- function(issue_tables) {
+  issue_names <- names(issue_tables)
+  tibble(
+    Issue = issue_names,
+    N = vapply(issue_tables, nrow, integer(1))
+  )
+}
+
+build_anchor_recommendations <- function(facet_summary,
+                                         issue_counts,
+                                         design_checks = NULL,
+                                         min_common_anchors = 5L,
+                                         min_obs_per_element = 30,
+                                         min_obs_per_category = 10,
+                                         noncenter_facet = "Person",
+                                         dummy_facets = character(0)) {
+  rec <- character(0)
+
+  if (!is.null(issue_counts) && nrow(issue_counts) > 0) {
+    n_overlap <- issue_counts$N[issue_counts$Issue == "overlap_anchor_group"]
+    n_missing <- issue_counts$N[issue_counts$Issue == "missing_group_values"]
+    n_dup_anchor <- issue_counts$N[issue_counts$Issue == "duplicate_anchors"]
+    n_dup_group <- issue_counts$N[issue_counts$Issue == "duplicate_group_assignments"]
+    n_group_conf <- issue_counts$N[issue_counts$Issue == "group_value_conflicts"]
+
+    if (length(n_overlap) > 0 && n_overlap > 0) {
+      rec <- c(rec, "Levels listed in both anchor and group-anchor tables are directly anchored (fixed anchors take precedence).")
+    }
+    if (length(n_missing) > 0 && n_missing > 0) {
+      rec <- c(rec, "Some group anchors had missing GroupValue; default 0 was applied (FACETS-style group centering).")
+    }
+    if (length(n_dup_anchor) > 0 && n_dup_anchor > 0) {
+      rec <- c(rec, "Duplicate anchors were detected; the last row per Facet-Level was retained.")
+    }
+    if (length(n_dup_group) > 0 && n_dup_group > 0) {
+      rec <- c(rec, "A Facet-Level appeared in multiple groups; the last row per Facet-Level was retained.")
+    }
+    if (length(n_group_conf) > 0 && n_group_conf > 0) {
+      rec <- c(rec, "Conflicting GroupValue settings were detected within the same Facet-Group; the most recent finite value was retained.")
+    }
+  }
+
+  if (!is.null(facet_summary) && nrow(facet_summary) > 0) {
+    link_tbl <- facet_summary |>
+      filter(Facet != "Person", AnchoredLevels > 0, AnchoredLevels < min_common_anchors)
+    if (nrow(link_tbl) > 0) {
+      rec <- c(
+        rec,
+        paste0(
+          "FACETS linking guideline: consider >= ", min_common_anchors,
+          " common anchor levels per linking facet. Low-anchor facets: ",
+          paste(link_tbl$Facet, collapse = ", "), "."
+        )
+      )
+    }
+
+    fixed_tbl <- facet_summary |>
+      filter(FreeLevels <= 0, !Facet %in% dummy_facets)
+    if (nrow(fixed_tbl) > 0) {
+      rec <- c(
+        rec,
+        paste0(
+          "Some facets are fully constrained (no free levels): ",
+          paste(fixed_tbl$Facet, collapse = ", "),
+          ". Verify this is intentional."
+        )
+      )
+    }
+  }
+
+  if (!is.null(design_checks) && is.list(design_checks)) {
+    if (!is.null(design_checks$low_observation_levels) && nrow(design_checks$low_observation_levels) > 0) {
+      low_facets <- unique(design_checks$low_observation_levels$Facet)
+      rec <- c(
+        rec,
+        paste0(
+          "Linacre guideline: about ", fmt_count(min_obs_per_element),
+          " observations per element are desirable. Low-observation facets: ",
+          paste(low_facets, collapse = ", "), "."
+        )
+      )
+    }
+    if (!is.null(design_checks$low_categories) && nrow(design_checks$low_categories) > 0) {
+      cats <- paste(design_checks$low_categories$Category, collapse = ", ")
+      rec <- c(
+        rec,
+        paste0(
+          "Linacre guideline: about ", fmt_count(min_obs_per_category),
+          " observations per rating category are desirable. Low categories: ", cats, "."
+        )
+      )
+    }
+  }
+
+  rec <- c(
+    rec,
+    "For linked analyses, keep Umean/Uscale from the source calibration so reporting origin and scaling stay consistent.",
+    paste0("Current noncenter facet is '", noncenter_facet, "'. Other facets are centered unless constrained by anchors/group anchors.")
+  )
+
+  unique(rec)
+}
+
+audit_anchor_tables <- function(prep,
+                                anchor_df = NULL,
+                                group_anchor_df = NULL,
+                                min_common_anchors = 5L,
+                                min_obs_per_element = 30,
+                                min_obs_per_category = 10,
+                                noncenter_facet = "Person",
+                                dummy_facets = character(0)) {
+  all_facets <- c("Person", prep$facet_names)
+  level_df <- collect_anchor_levels(prep)
+  valid_keys <- safe_join_key(level_df$Facet, level_df$Level)
+
+  anchor_in <- normalize_anchor_df(anchor_df) |>
+    mutate(
+      .Row = row_number(),
+      Facet = trimws(as.character(Facet)),
+      Level = trimws(as.character(Level)),
+      .Key = safe_join_key(Facet, Level),
+      .ValidFacet = Facet %in% all_facets,
+      .ValidLevel = .Key %in% valid_keys,
+      .ValidValue = is.finite(Anchor)
+    )
+
+  group_in <- normalize_group_anchor_df(group_anchor_df) |>
+    mutate(
+      .Row = row_number(),
+      Facet = trimws(as.character(Facet)),
+      Level = trimws(as.character(Level)),
+      Group = trimws(as.character(Group)),
+      .Key = safe_join_key(Facet, Level),
+      .ValidFacet = Facet %in% all_facets,
+      .ValidLevel = .Key %in% valid_keys,
+      .ValidGroup = nzchar(Group),
+      .FiniteGroupValue = is.finite(GroupValue)
+    )
+
+  issues <- list(
+    unknown_anchor_facets = anchor_in |>
+      filter(!.ValidFacet) |>
+      select(Facet, Level, Anchor),
+    unknown_anchor_levels = anchor_in |>
+      filter(.ValidFacet, !.ValidLevel) |>
+      select(Facet, Level, Anchor),
+    invalid_anchor_values = anchor_in |>
+      filter(.ValidFacet, .ValidLevel, !.ValidValue) |>
+      select(Facet, Level, Anchor),
+    duplicate_anchors = anchor_in |>
+      filter(.ValidFacet, .ValidLevel, .ValidValue) |>
+      group_by(Facet, Level) |>
+      summarize(
+        Rows = n(),
+        DistinctValues = n_distinct(Anchor),
+        Values = paste(unique(round(Anchor, 6)), collapse = ", "),
+        .groups = "drop"
+      ) |>
+      filter(Rows > 1 | DistinctValues > 1),
+    unknown_group_facets = group_in |>
+      filter(!.ValidFacet) |>
+      select(Facet, Level, Group, GroupValue),
+    unknown_group_levels = group_in |>
+      filter(.ValidFacet, !.ValidLevel) |>
+      select(Facet, Level, Group, GroupValue),
+    invalid_group_labels = group_in |>
+      filter(.ValidFacet, .ValidLevel, !.ValidGroup) |>
+      select(Facet, Level, Group, GroupValue),
+    duplicate_group_assignments = group_in |>
+      filter(.ValidFacet, .ValidLevel, .ValidGroup) |>
+      group_by(Facet, Level) |>
+      summarize(
+        Rows = n(),
+        DistinctGroups = n_distinct(Group),
+        Groups = paste(unique(Group), collapse = ", "),
+        .groups = "drop"
+      ) |>
+      filter(Rows > 1 | DistinctGroups > 1)
+  )
+
+  anchors_clean <- anchor_in |>
+    filter(.ValidFacet, .ValidLevel, .ValidValue) |>
+    arrange(.Row) |>
+    group_by(Facet, Level) |>
+    slice_tail(n = 1) |>
+    ungroup() |>
+    select(Facet, Level, Anchor)
+
+  groups_clean <- group_in |>
+    filter(.ValidFacet, .ValidLevel, .ValidGroup) |>
+    arrange(.Row) |>
+    group_by(Facet, Level) |>
+    slice_tail(n = 1) |>
+    ungroup() |>
+    select(Facet, Level, Group, GroupValue, .FiniteGroupValue)
+
+  group_value_tbl <- groups_clean |>
+    arrange(Facet, Group) |>
+    group_by(Facet, Group) |>
+    summarize(
+      .NFinite = sum(.FiniteGroupValue, na.rm = TRUE),
+      ChosenGroupValue = if (any(.FiniteGroupValue)) dplyr::last(GroupValue[.FiniteGroupValue]) else 0,
+      DistinctFiniteValues = n_distinct(GroupValue[.FiniteGroupValue]),
+      FiniteValues = paste(unique(round(GroupValue[.FiniteGroupValue], 6)), collapse = ", "),
+      .groups = "drop"
+    )
+
+  issues$missing_group_values <- group_value_tbl |>
+    filter(.NFinite == 0) |>
+    select(Facet, Group)
+
+  issues$group_value_conflicts <- group_value_tbl |>
+    filter(DistinctFiniteValues > 1) |>
+    select(Facet, Group, DistinctFiniteValues, FiniteValues)
+
+  groups_clean <- groups_clean |>
+    select(Facet, Level, Group) |>
+    left_join(group_value_tbl |> select(Facet, Group, ChosenGroupValue), by = c("Facet", "Group")) |>
+    rename(GroupValue = ChosenGroupValue) |>
+    mutate(GroupValue = ifelse(is.finite(GroupValue), GroupValue, 0))
+
+  overlap_tbl <- inner_join(
+    anchors_clean |> select(Facet, Level),
+    groups_clean |> select(Facet, Level),
+    by = c("Facet", "Level")
+  )
+  issues$overlap_anchor_group <- overlap_tbl
+
+  constrained_counts <- bind_rows(
+    anchors_clean |> select(Facet, Level),
+    groups_clean |> select(Facet, Level)
+  ) |>
+    distinct(Facet, Level) |>
+    group_by(Facet) |>
+    summarize(ConstrainedLevels = n_distinct(Level), .groups = "drop")
+
+  facet_counts <- level_df |>
+    group_by(Facet) |>
+    summarize(Levels = n_distinct(Level), .groups = "drop")
+
+  anchor_counts <- anchors_clean |>
+    group_by(Facet) |>
+    summarize(AnchoredLevels = n_distinct(Level), .groups = "drop")
+
+  group_counts <- groups_clean |>
+    group_by(Facet) |>
+    summarize(GroupedLevels = n_distinct(Level), GroupCount = n_distinct(Group), .groups = "drop")
+
+  overlap_counts <- overlap_tbl |>
+    group_by(Facet) |>
+    summarize(OverlapLevels = n_distinct(Level), .groups = "drop")
+
+  facet_summary <- facet_counts |>
+    left_join(anchor_counts, by = "Facet") |>
+    left_join(group_counts, by = "Facet") |>
+    left_join(constrained_counts, by = "Facet") |>
+    left_join(overlap_counts, by = "Facet") |>
+    mutate(
+      AnchoredLevels = tidyr::replace_na(AnchoredLevels, 0L),
+      GroupedLevels = tidyr::replace_na(GroupedLevels, 0L),
+      GroupCount = tidyr::replace_na(GroupCount, 0L),
+      ConstrainedLevels = tidyr::replace_na(ConstrainedLevels, 0L),
+      OverlapLevels = tidyr::replace_na(OverlapLevels, 0L),
+      FreeLevels = pmax(Levels - ConstrainedLevels, 0L),
+      Noncenter = Facet == noncenter_facet,
+      DummyFacet = Facet %in% dummy_facets
+    ) |>
+    arrange(match(Facet, all_facets))
+
+  design_df <- prep$data |>
+    mutate(
+      Person = as.character(Person),
+      Score = as.numeric(Score),
+      Weight = as.numeric(Weight),
+      Weight = ifelse(is.finite(Weight) & Weight > 0, Weight, 0)
+    )
+
+  level_obs <- bind_rows(lapply(all_facets, function(facet) {
+    if (!facet %in% names(design_df)) return(tibble())
+    design_df |>
+      mutate(Level = as.character(.data[[facet]])) |>
+      group_by(Facet = facet, Level) |>
+      summarize(
+        RawN = n(),
+        WeightedN = sum(Weight, na.rm = TRUE),
+        .groups = "drop"
+      )
+  }))
+
+  level_obs_summary <- if (nrow(level_obs) == 0) {
+    tibble()
+  } else {
+    level_obs |>
+      group_by(Facet) |>
+      summarize(
+        Levels = n(),
+        MinObsPerLevel = min(WeightedN, na.rm = TRUE),
+        MedianObsPerLevel = stats::median(WeightedN, na.rm = TRUE),
+        RecommendedMinObs = as.numeric(min_obs_per_element),
+        PassMinObs = all(WeightedN >= min_obs_per_element),
+        .groups = "drop"
+      )
+  }
+
+  low_observation_levels <- if (nrow(level_obs) == 0) {
+    tibble()
+  } else {
+    level_obs |>
+      filter(WeightedN < min_obs_per_element) |>
+      arrange(Facet, WeightedN, Level)
+  }
+
+  category_counts <- design_df |>
+    group_by(Category = Score) |>
+    summarize(
+      RawN = n(),
+      WeightedN = sum(Weight, na.rm = TRUE),
+      RecommendedMinObs = as.numeric(min_obs_per_category),
+      PassMinObs = WeightedN >= min_obs_per_category,
+      .groups = "drop"
+    ) |>
+    arrange(Category)
+
+  low_categories <- category_counts |>
+    filter(!PassMinObs)
+
+  design_checks <- list(
+    level_observation_summary = level_obs_summary,
+    low_observation_levels = low_observation_levels,
+    category_counts = category_counts,
+    low_categories = low_categories
+  )
+
+  issue_counts <- build_anchor_issue_counts(issues)
+  rec <- build_anchor_recommendations(
+    facet_summary = facet_summary,
+    issue_counts = issue_counts,
+    design_checks = design_checks,
+    min_common_anchors = min_common_anchors,
+    min_obs_per_element = min_obs_per_element,
+    min_obs_per_category = min_obs_per_category,
+    noncenter_facet = noncenter_facet,
+    dummy_facets = dummy_facets
+  )
+
+  thresholds <- list(
+    min_common_anchors = as.integer(min_common_anchors),
+    min_obs_per_element = as.numeric(min_obs_per_element),
+    min_obs_per_category = as.numeric(min_obs_per_category)
+  )
+
+  list(
+    anchors = anchors_clean,
+    group_anchors = groups_clean,
+    facet_summary = facet_summary,
+    design_checks = design_checks,
+    thresholds = thresholds,
+    issues = issues,
+    issue_counts = issue_counts,
+    recommendations = rec
+  )
+}
+
 resolve_pcm_step_facet <- function(model, step_facet, facet_names) {
   if (model != "PCM") return(NULL)
   resolved <- if (is.null(step_facet)) facet_names[1] else step_facet
   if (!resolved %in% facet_names) {
-    stop("Selected step facet is not in the facet list.")
+    stop("step_facet = '", resolved, "' is not among the declared facets: ",
+         paste(facet_names, collapse = ", "), ". ",
+         "Supply a valid facet name.", call. = FALSE)
   }
   resolved
 }
@@ -952,6 +1322,8 @@ build_estimation_config <- function(prep,
   config$noncenter_facet <- noncenter_facet
   config$dummy_facets <- dummy_facets
   config$anchor_summary <- constraint_specs$anchor_summary
+  config$anchor_audit <- constraint_specs$anchor_audit
+  config$source_columns <- prep$source_columns
 
   list(
     config = config,
@@ -988,29 +1360,37 @@ run_mfrm_optimization <- function(start,
                                   maxit,
                                   reltol) {
   control <- list(maxit = maxit, reltol = reltol)
-  if (method == "JMLE") {
-    return(optim(
-      start,
-      fn = mfrm_loglik_jmle,
-      idx = idx,
-      config = config,
-      sizes = sizes,
-      method = "BFGS",
-      control = control
-    ))
+  run_optim <- function(fn, extra_args = list()) {
+    tryCatch(
+      do.call(optim, c(list(par = start, fn = fn, method = "BFGS",
+                             control = control), extra_args)),
+      error = function(e) {
+        stop("Model optimization failed: ", conditionMessage(e), ". ",
+             "Possible causes: (1) insufficient data for the number of parameters, ",
+             "(2) extreme score distributions, (3) near-constant responses. ",
+             "Try reducing facets, increasing maxit, or checking data quality.",
+             call. = FALSE)
+      }
+    )
   }
 
-  quad <- gauss_hermite_normal(quad_points)
-  optim(
-    start,
-    fn = mfrm_loglik_mml,
-    idx = idx,
-    config = config,
-    sizes = sizes,
-    quad = quad,
-    method = "BFGS",
-    control = control
-  )
+  if (method == "JMLE") {
+    opt <- run_optim(mfrm_loglik_jmle,
+                     list(idx = idx, config = config, sizes = sizes))
+  } else {
+    quad <- gauss_hermite_normal(quad_points)
+    opt <- run_optim(mfrm_loglik_mml,
+                     list(idx = idx, config = config, sizes = sizes, quad = quad))
+  }
+
+  if (opt$convergence != 0) {
+    warning("Optimizer did not fully converge (code = ", opt$convergence, "). ",
+            "Consider increasing maxit (current: ", maxit, ") ",
+            "or relaxing reltol (current: ", reltol, ").",
+            call. = FALSE)
+  }
+
+  opt
 }
 
 build_person_table <- function(method, idx, config, params, prep, quad_points) {
@@ -1129,6 +1509,11 @@ mfrm_estimate <- function(data, person_col, facet_cols, score_col,
     group_anchor_df = group_anchor_df
   )
   config <- cfg$config
+  config$estimation_control <- list(
+    maxit = as.integer(maxit),
+    reltol = as.numeric(reltol),
+    quad_points = as.integer(quad_points)
+  )
   sizes <- cfg$sizes
   start <- build_initial_param_vector(config, sizes)
 
@@ -1239,6 +1624,338 @@ compute_obs_table <- function(res) {
     )
 }
 
+extract_bias_facet_spec <- function(bias_results, data_cols = NULL) {
+  if (is.null(bias_results) || is.null(bias_results$table) || nrow(bias_results$table) == 0) {
+    return(NULL)
+  }
+  tbl <- as.data.frame(bias_results$table, stringsAsFactors = FALSE)
+
+  facets <- character(0)
+  if (!is.null(bias_results$interaction_facets)) {
+    facets <- c(facets, as.character(bias_results$interaction_facets))
+  }
+  if (!is.null(bias_results$facet_a) && length(bias_results$facet_a) > 0) {
+    facets <- c(facets, as.character(bias_results$facet_a[1]))
+  }
+  if (!is.null(bias_results$facet_b) && length(bias_results$facet_b) > 0) {
+    facets <- c(facets, as.character(bias_results$facet_b[1]))
+  }
+  facets <- facets[!is.na(facets) & nzchar(facets)]
+  facets <- unique(facets)
+
+  level_cols <- grep("^Facet[0-9]+_Level$", names(tbl), value = TRUE)
+  if (length(level_cols) > 0) {
+    ord <- suppressWarnings(as.integer(sub("^Facet([0-9]+)_Level$", "\\1", level_cols)))
+    ok <- is.finite(ord)
+    level_cols <- level_cols[ok]
+    ord <- ord[ok]
+    if (length(level_cols) == 0) return(NULL)
+    o <- order(ord)
+    ord <- ord[o]
+    level_cols <- level_cols[o]
+
+    facet_name_cols <- paste0("Facet", ord)
+    if (all(facet_name_cols %in% names(tbl)) && nrow(tbl) > 0) {
+      facets_from_tbl <- vapply(facet_name_cols, function(col) as.character(tbl[[col]][1]), character(1))
+      if (all(!is.na(facets_from_tbl) & nzchar(facets_from_tbl))) {
+        facets <- facets_from_tbl
+      }
+    }
+    if (length(facets) < length(level_cols)) {
+      return(NULL)
+    }
+    facets <- facets[seq_along(level_cols)]
+    index_cols <- paste0("Facet", ord, "_Index")
+    measure_cols <- paste0("Facet", ord, "_Measure")
+    se_cols <- paste0("Facet", ord, "_SE")
+  } else if (all(c("FacetA_Level", "FacetB_Level") %in% names(tbl))) {
+    if (length(facets) < 2 && all(c("FacetA", "FacetB") %in% names(tbl)) && nrow(tbl) > 0) {
+      facets <- c(as.character(tbl$FacetA[1]), as.character(tbl$FacetB[1]))
+    }
+    facets <- facets[!is.na(facets) & nzchar(facets)]
+    facets <- unique(facets)
+    if (length(facets) < 2) return(NULL)
+    facets <- facets[1:2]
+    level_cols <- c("FacetA_Level", "FacetB_Level")
+    index_cols <- c("FacetA_Index", "FacetB_Index")
+    measure_cols <- c("FacetA_Measure", "FacetB_Measure")
+    se_cols <- c("FacetA_SE", "FacetB_SE")
+  } else {
+    return(NULL)
+  }
+
+  if (!is.null(data_cols) && !all(facets %in% data_cols)) {
+    return(NULL)
+  }
+
+  list(
+    facets = facets,
+    level_cols = level_cols,
+    index_cols = index_cols,
+    measure_cols = measure_cols,
+    se_cols = se_cols,
+    interaction_order = length(facets),
+    interaction_mode = ifelse(length(facets) > 2, "higher_order", "pairwise")
+  )
+}
+
+compute_bias_adjustment_vector <- function(res, bias_results = NULL) {
+  n <- nrow(res$prep$data)
+  if (n == 0) return(numeric(0))
+  adj <- rep(0, n)
+
+  if (is.null(bias_results) || is.null(bias_results$table) || nrow(bias_results$table) == 0) {
+    return(adj)
+  }
+
+  data <- res$prep$data
+  spec <- extract_bias_facet_spec(bias_results, data_cols = names(data))
+  if (is.null(spec) || length(spec$facets) < 2) {
+    return(adj)
+  }
+
+  tbl <- as.data.frame(bias_results$table, stringsAsFactors = FALSE)
+  req_cols <- c(spec$level_cols, "Bias Size")
+  if (!all(req_cols %in% names(tbl))) {
+    return(adj)
+  }
+
+  level_cols <- spec$level_cols
+  tbl <- tbl |>
+    mutate(
+      across(all_of(level_cols), as.character),
+      `Bias Size` = suppressWarnings(as.numeric(.data$`Bias Size`))
+    ) |>
+    filter(is.finite(.data$`Bias Size`))
+  if (nrow(tbl) == 0) return(adj)
+
+  # Duplicate rows can appear after manual edits; average as a safe default.
+  lookup <- tbl |>
+    group_by(across(all_of(level_cols))) |>
+    summarize(Bias = mean(.data$`Bias Size`, na.rm = TRUE), .groups = "drop")
+  lookup_key_parts <- lapply(level_cols, function(col) as.character(lookup[[col]]))
+  lookup$Key <- do.call(paste, c(lookup_key_parts, sep = "||"))
+
+  data_key_parts <- lapply(spec$facets, function(f) as.character(data[[f]]))
+  names(data_key_parts) <- spec$facets
+  keys <- do.call(paste, c(data_key_parts, sep = "||"))
+
+  idx_hit <- match(keys, lookup$Key)
+  hit <- !is.na(idx_hit)
+  if (any(hit)) {
+    adj[hit] <- lookup$Bias[idx_hit[hit]]
+  }
+  adj
+}
+
+compute_prob_matrix_with_bias <- function(res, bias_results = NULL) {
+  prep <- res$prep
+  config <- res$config
+  idx <- build_indices(prep, step_facet = config$step_facet)
+  sizes <- build_param_sizes(config)
+  params <- expand_params(res$opt$par, sizes, config)
+  theta_hat <- if (config$method == "JMLE") params$theta else res$facets$person$Estimate
+  eta <- compute_eta(idx, params, config, theta_override = theta_hat)
+  bias_adj <- compute_bias_adjustment_vector(res, bias_results = bias_results)
+  if (length(bias_adj) == length(eta)) {
+    eta <- eta + bias_adj
+  }
+
+  if (config$model == "RSM") {
+    step_cum <- c(0, cumsum(params$steps))
+    category_prob_rsm(eta, step_cum)
+  } else {
+    step_cum_mat <- t(apply(params$steps_mat, 1, function(x) c(0, cumsum(x))))
+    category_prob_pcm(eta, step_cum_mat, idx$step_idx)
+  }
+}
+
+compute_obs_table_with_bias <- function(res, bias_results = NULL) {
+  prep <- res$prep
+  config <- res$config
+  idx <- build_indices(prep, step_facet = config$step_facet)
+  sizes <- build_param_sizes(config)
+  params <- expand_params(res$opt$par, sizes, config)
+  theta_hat <- if (config$method == "JMLE") {
+    params$theta
+  } else {
+    res$facets$person$Estimate
+  }
+  person_levels <- prep$levels$Person
+  person_measure <- if (config$method == "JMLE") {
+    params$theta
+  } else {
+    res$facets$person$Estimate[match(person_levels, res$facets$person$Person)]
+  }
+  person_measure_by_row <- person_measure[idx$person]
+  eta <- compute_eta(idx, params, config, theta_override = theta_hat)
+  bias_adj <- compute_bias_adjustment_vector(res, bias_results = bias_results)
+  if (length(bias_adj) == length(eta)) {
+    eta <- eta + bias_adj
+  } else {
+    bias_adj <- rep(0, length(eta))
+  }
+
+  if (config$model == "RSM") {
+    step_cum <- c(0, cumsum(params$steps))
+    probs <- category_prob_rsm(eta, step_cum)
+  } else {
+    step_cum_mat <- t(apply(params$steps_mat, 1, function(x) c(0, cumsum(x))))
+    probs <- category_prob_pcm(eta, step_cum_mat, idx$step_idx)
+  }
+
+  k_vals <- 0:(ncol(probs) - 1)
+  expected_k <- as.vector(probs %*% k_vals)
+  var_k <- as.vector(probs %*% (k_vals^2)) - expected_k^2
+  var_k <- ifelse(var_k <= 1e-10, NA_real_, var_k)
+  resid_k <- idx$score_k - expected_k
+  std_sq <- resid_k^2 / var_k
+
+  prep$data |>
+    mutate(
+      PersonMeasure = person_measure_by_row,
+      Observed = prep$rating_min + idx$score_k,
+      Expected = prep$rating_min + expected_k,
+      Var = var_k,
+      Residual = Observed - Expected,
+      StdResidual = Residual / sqrt(Var),
+      StdSq = std_sq,
+      BiasAdjustment = bias_adj
+    )
+}
+
+calc_unexpected_response_table <- function(obs_df,
+                                           probs,
+                                           facet_names,
+                                           rating_min,
+                                           abs_z_min = 2,
+                                           prob_max = 0.30,
+                                           top_n = 100,
+                                           rule = c("either", "both")) {
+  rule <- match.arg(tolower(rule), c("either", "both"))
+  if (is.null(obs_df) || nrow(obs_df) == 0 || is.null(probs) || nrow(probs) != nrow(obs_df)) {
+    return(tibble())
+  }
+  if (!"score_k" %in% names(obs_df) || !"StdResidual" %in% names(obs_df)) {
+    return(tibble())
+  }
+
+  score_k <- suppressWarnings(as.integer(obs_df$score_k))
+  n_cat <- ncol(probs)
+  valid <- is.finite(score_k) & score_k >= 0 & score_k < n_cat
+  obs_prob <- rep(NA_real_, nrow(obs_df))
+  row_idx <- which(valid)
+  if (length(row_idx) > 0) {
+    obs_prob[row_idx] <- probs[cbind(row_idx, score_k[row_idx] + 1L)]
+  }
+
+  max_idx <- max.col(probs, ties.method = "first")
+  most_likely_k <- max_idx - 1L
+  most_likely <- rating_min + most_likely_k
+  most_likely_prob <- probs[cbind(seq_len(nrow(probs)), max_idx)]
+
+  abs_std <- abs(obs_df$StdResidual)
+  surprise <- -log10(pmax(obs_prob, .Machine$double.xmin))
+  cat_gap <- abs(obs_df$Observed - most_likely)
+  low_prob <- is.finite(obs_prob) & obs_prob <= prob_max
+  high_resid <- is.finite(abs_std) & abs_std >= abs_z_min
+  flagged <- if (rule == "both") {
+    low_prob & high_resid
+  } else {
+    low_prob | high_resid
+  }
+  if (!any(flagged, na.rm = TRUE)) return(tibble())
+
+  out <- obs_df |>
+    mutate(
+      Row = dplyr::row_number(),
+      ObsProb = obs_prob,
+      MostLikely = most_likely,
+      MostLikelyProb = most_likely_prob,
+      Surprise = surprise,
+      AbsStdResidual = abs_std,
+      CategoryGap = cat_gap,
+      FlagLowProbability = low_prob,
+      FlagLargeResidual = high_resid,
+      Unexpected = flagged,
+      Direction = dplyr::case_when(
+        .data$Residual > 0 ~ "Higher than expected",
+        .data$Residual < 0 ~ "Lower than expected",
+        TRUE ~ "As expected"
+      ),
+      Severity = .data$AbsStdResidual + .data$Surprise + 0.5 * .data$CategoryGap
+    ) |>
+    filter(.data$Unexpected)
+
+  id_cols <- c("Person", facet_names)
+  if ("Weight" %in% names(obs_df)) id_cols <- c(id_cols, "Weight")
+  id_cols <- unique(id_cols)
+  keep_cols <- c(
+    "Row",
+    id_cols,
+    "Score",
+    "Observed",
+    "Expected",
+    "Residual",
+    "StdResidual",
+    "ObsProb",
+    "MostLikely",
+    "MostLikelyProb",
+    "CategoryGap",
+    "Surprise",
+    "Direction",
+    "FlagLowProbability",
+    "FlagLargeResidual",
+    "Severity"
+  )
+  keep_cols <- keep_cols[keep_cols %in% names(out)]
+
+  top_n <- max(1L, as.integer(top_n))
+  out |>
+    arrange(desc(.data$Severity), desc(abs(.data$StdResidual)), .data$ObsProb) |>
+    select(dplyr::all_of(keep_cols)) |>
+    slice_head(n = top_n)
+}
+
+summarize_unexpected_response_table <- function(unexpected_tbl,
+                                                total_observations,
+                                                abs_z_min = 2,
+                                                prob_max = 0.30,
+                                                rule = "either") {
+  if (is.null(unexpected_tbl) || nrow(unexpected_tbl) == 0) {
+    return(tibble(
+      TotalObservations = total_observations,
+      UnexpectedN = 0L,
+      UnexpectedPercent = 0,
+      LowProbabilityN = 0L,
+      LargeResidualN = 0L,
+      Rule = rule,
+      AbsZThreshold = abs_z_min,
+      ProbThreshold = prob_max
+    ))
+  }
+  low_n <- if ("FlagLowProbability" %in% names(unexpected_tbl)) {
+    sum(unexpected_tbl$FlagLowProbability, na.rm = TRUE)
+  } else {
+    NA_integer_
+  }
+  resid_n <- if ("FlagLargeResidual" %in% names(unexpected_tbl)) {
+    sum(unexpected_tbl$FlagLargeResidual, na.rm = TRUE)
+  } else {
+    NA_integer_
+  }
+  tibble(
+    TotalObservations = total_observations,
+    UnexpectedN = nrow(unexpected_tbl),
+    UnexpectedPercent = ifelse(total_observations > 0, 100 * nrow(unexpected_tbl) / total_observations, NA_real_),
+    LowProbabilityN = low_n,
+    LargeResidualN = resid_n,
+    Rule = rule,
+    AbsZThreshold = abs_z_min,
+    ProbThreshold = prob_max
+  )
+}
+
 compute_prob_matrix <- function(res) {
   prep <- res$prep
   config <- res$config
@@ -1259,6 +1976,148 @@ compute_prob_matrix <- function(res) {
     probs <- category_prob_pcm(eta, step_cum_mat, idx$step_idx)
   }
   probs
+}
+
+calc_displacement_table <- function(obs_df,
+                                    res,
+                                    measures = NULL,
+                                    abs_displacement_warn = 0.5,
+                                    abs_t_warn = 2) {
+  if (is.null(obs_df) || nrow(obs_df) == 0 || is.null(res$config)) {
+    return(tibble())
+  }
+
+  facet_cols <- c("Person", res$config$facet_names)
+  obs_df <- obs_df |>
+    mutate(.Weight = get_weights(obs_df))
+
+  displacement <- purrr::map_dfr(facet_cols, function(facet) {
+    obs_df |>
+      group_by(.data[[facet]]) |>
+      summarize(
+        WeightedN = sum(.data$.Weight, na.rm = TRUE),
+        ResidualSum = sum(.data$Residual * .data$.Weight, na.rm = TRUE),
+        Information = sum(.data$Var * .data$.Weight, na.rm = TRUE),
+        .groups = "drop"
+      ) |>
+      mutate(
+        Facet = facet,
+        Level = as.character(.data[[facet]])
+      ) |>
+      select(
+        "Facet",
+        "Level",
+        "WeightedN",
+        "ResidualSum",
+        "Information"
+      )
+  })
+
+  if (nrow(displacement) == 0) return(tibble())
+
+  displacement <- displacement |>
+    mutate(
+      Displacement = ifelse(.data$Information > 0, .data$ResidualSum / .data$Information, NA_real_),
+      DisplacementSE = ifelse(.data$Information > 0, 1 / sqrt(.data$Information), NA_real_),
+      DisplacementT = ifelse(
+        is.finite(.data$DisplacementSE) & .data$DisplacementSE > 0,
+        .data$Displacement / .data$DisplacementSE,
+        NA_real_
+      )
+    )
+
+  if (!is.null(measures) && nrow(measures) > 0) {
+    displacement <- displacement |>
+      left_join(
+        measures |>
+          select("Facet", "Level", "Estimate", "SE", "N"),
+        by = c("Facet", "Level")
+      )
+  } else {
+    displacement <- displacement |>
+      mutate(Estimate = NA_real_, SE = NA_real_, N = .data$WeightedN)
+  }
+
+  anchor_tbl <- extract_anchor_tables(res$config)$anchors
+  if (is.null(anchor_tbl) || nrow(anchor_tbl) == 0) {
+    anchor_tbl <- tibble(Facet = character(0), Level = character(0), AnchorValue = numeric(0))
+  } else {
+    anchor_tbl <- anchor_tbl |>
+      transmute(
+        Facet = as.character(.data$Facet),
+        Level = as.character(.data$Level),
+        AnchorValue = as.numeric(.data$Anchor)
+      )
+  }
+
+  status_tbl <- purrr::map_dfr(unique(displacement$Facet), function(facet) {
+    lv <- displacement |>
+      filter(.data$Facet == facet) |>
+      pull(.data$Level)
+    tibble(
+      Facet = facet,
+      Level = lv,
+      AnchorStatus = facet_anchor_status(facet, lv, res$config)
+    )
+  })
+
+  displacement |>
+    left_join(anchor_tbl, by = c("Facet", "Level")) |>
+    left_join(status_tbl, by = c("Facet", "Level")) |>
+    mutate(
+      AnchorType = case_when(
+        .data$AnchorStatus == "A" ~ "Anchor",
+        .data$AnchorStatus == "G" ~ "Group",
+        TRUE ~ "Free"
+      ),
+      ReleasedEstimate = ifelse(
+        is.finite(.data$Estimate) & is.finite(.data$Displacement),
+        .data$Estimate + .data$Displacement,
+        NA_real_
+      ),
+      AnchorGap = ifelse(
+        is.finite(.data$AnchorValue) & is.finite(.data$ReleasedEstimate),
+        .data$ReleasedEstimate - .data$AnchorValue,
+        NA_real_
+      ),
+      FlagDisplacement = is.finite(.data$Displacement) & abs(.data$Displacement) >= abs_displacement_warn,
+      FlagT = is.finite(.data$DisplacementT) & abs(.data$DisplacementT) >= abs_t_warn,
+      Flag = .data$FlagDisplacement | .data$FlagT
+    ) |>
+    arrange(desc(abs(.data$Displacement)), desc(abs(.data$DisplacementT)))
+}
+
+summarize_displacement_table <- function(displacement_tbl,
+                                         abs_displacement_warn = 0.5,
+                                         abs_t_warn = 2) {
+  if (is.null(displacement_tbl) || nrow(displacement_tbl) == 0) {
+    return(tibble(
+      Levels = 0L,
+      AnchoredLevels = 0L,
+      FlaggedLevels = 0L,
+      FlaggedAnchoredLevels = 0L,
+      MaxAbsDisplacement = NA_real_,
+      MaxAbsDisplacementT = NA_real_,
+      AbsDisplacementThreshold = abs_displacement_warn,
+      AbsTThreshold = abs_t_warn
+    ))
+  }
+  is_anchored <- displacement_tbl$AnchorType %in% c("Anchor", "Group")
+  flagged <- if ("Flag" %in% names(displacement_tbl)) {
+    displacement_tbl$Flag
+  } else {
+    rep(FALSE, nrow(displacement_tbl))
+  }
+  tibble(
+    Levels = nrow(displacement_tbl),
+    AnchoredLevels = sum(is_anchored, na.rm = TRUE),
+    FlaggedLevels = sum(flagged, na.rm = TRUE),
+    FlaggedAnchoredLevels = sum(flagged & is_anchored, na.rm = TRUE),
+    MaxAbsDisplacement = max(abs(displacement_tbl$Displacement), na.rm = TRUE),
+    MaxAbsDisplacementT = max(abs(displacement_tbl$DisplacementT), na.rm = TRUE),
+    AbsDisplacementThreshold = abs_displacement_warn,
+    AbsTThreshold = abs_t_warn
+  )
 }
 
 compute_scorefile <- function(res) {
@@ -1300,6 +2159,12 @@ compute_residual_file <- function(res) {
     select(all_of(base_cols))
 }
 
+# Overall model fit: weighted infit and outfit mean-square statistics.
+# Infit (information-weighted): sum(StdSq * Var * w) / sum(Var * w)
+#   Sensitive to unexpected responses near the person's ability level.
+# Outfit (unweighted): sum(StdSq * w) / sum(w)
+#   Sensitive to outlying unexpected responses far from the ability level.
+# Both transformed to ZSTD via Wilson-Hilferty for significance testing.
 calc_overall_fit <- function(obs_df, whexact = FALSE) {
   w <- get_weights(obs_df)
   infit <- sum(obs_df$StdSq * obs_df$Var * w, na.rm = TRUE) / sum(obs_df$Var * w, na.rm = TRUE)
@@ -1487,6 +2352,23 @@ weighted_mean_safe <- function(x, w) {
   weighted_mean(x, w)
 }
 
+infer_default_rater_facet <- function(facet_names) {
+  facet_names <- as.character(facet_names)
+  if (length(facet_names) == 0) return(NULL)
+
+  lowered <- tolower(facet_names)
+  patterns <- c("rater", "judge", "grader", "reader", "scorer", "assessor", "evaluator")
+  hits <- vapply(
+    lowered,
+    function(x) any(vapply(patterns, function(p) grepl(p, x, fixed = TRUE), logical(1))),
+    logical(1)
+  )
+  if (any(hits)) {
+    return(facet_names[which(hits)[1]])
+  }
+  facet_names[1]
+}
+
 calc_interrater_agreement <- function(obs_df, facet_cols, rater_facet, res = NULL) {
   if (is.null(obs_df) || nrow(obs_df) == 0) {
     return(list(summary = tibble(), pairs = tibble()))
@@ -1502,8 +2384,8 @@ calc_interrater_agreement <- function(obs_df, facet_cols, rater_facet, res = NUL
   df <- obs_df |>
     mutate(across(all_of(context_cols), as.character)) |>
     tidyr::unite(".context", all_of(context_cols), sep = "|", remove = FALSE) |>
-    select(.context, !!rlang::sym(rater_facet), Observed, any_of("Weight")) |>
-    mutate(.Weight = get_weights(.))
+    select(.context, !!rlang::sym(rater_facet), Observed, any_of("Weight"))
+  df$.Weight <- get_weights(df)
 
   df <- df |>
     group_by(.context, !!rlang::sym(rater_facet)) |>
@@ -1541,8 +2423,7 @@ calc_interrater_agreement <- function(obs_df, facet_cols, rater_facet, res = NUL
         tidyr::unite(".context", all_of(context_cols), sep = "|", remove = FALSE) |>
         select(.context, !!rlang::sym(rater_facet), any_of("Weight"))
       prob_df[prob_cols] <- probs
-      prob_df <- prob_df |>
-        mutate(.Weight = get_weights(.))
+      prob_df$.Weight <- get_weights(prob_df)
 
       prob_avg <- prob_df |>
         group_by(.context, !!rlang::sym(rater_facet)) |>
@@ -1981,43 +2862,114 @@ calc_facets_report_tbls <- function(res,
 
 format_facets_report_gt <- function(tbl, facet, decimals = 2, totalscore = TRUE) {
   if (is.null(tbl) || nrow(tbl) == 0) {
-    return(gt(tibble(Message = "No facet report available.")))
+    return(data.frame(Message = "No facet report available.", stringsAsFactors = FALSE))
   }
-  gt(tbl) |>
-    cols_label(
-      TotalScore = if (isTRUE(totalscore)) "Total Score" else "Obsvd Score",
-      TotalCount = if (isTRUE(totalscore)) "Total Count" else "Obsvd Count",
-      WeightdScore = "Weightd Score",
-      WeightdCount = "Weightd Count",
-      ObservedAverage = "Obsvd Average",
-      FairM = "Fair(M) Average",
-      FairZ = "Fair(Z) Average",
-      Measure = "Measure",
-      ModelSE = "Model S.E.",
-      RealSE = "Real S.E.",
-      InfitMnSq = "Infit MnSq",
-      InfitZStd = "Infit ZStd",
-      OutfitMnSq = "Outfit MnSq",
-      OutfitZStd = "Outfit ZStd",
-      PtMeaCorr = "PtMea Corr",
-      Anchor = "Anch",
-      Status = "Status",
-      Level = "Element"
-    ) |>
-    cols_move_to_end(columns = Level) |>
-    fmt_number(
-      columns = c(TotalScore, TotalCount, WeightdScore, WeightdCount),
-      decimals = 0
-    ) |>
-    fmt_number(
-      columns = c(ObservedAverage, FairM, FairZ, Measure, ModelSE, RealSE,
-                  InfitMnSq, InfitZStd, OutfitMnSq, OutfitZStd, PtMeaCorr),
-      decimals = decimals
-    ) |>
-    tab_style(
-      style = list(cell_fill(color = "#fff3cd")),
-      locations = cells_body(rows = Status %in% c("Minimum", "Maximum", "One datum"))
+  out <- as.data.frame(tbl, stringsAsFactors = FALSE)
+  label_map <- c(
+    TotalScore = if (isTRUE(totalscore)) "Total Score" else "Obsvd Score",
+    TotalCount = if (isTRUE(totalscore)) "Total Count" else "Obsvd Count",
+    WeightdScore = "Weightd Score",
+    WeightdCount = "Weightd Count",
+    ObservedAverage = "Obsvd Average",
+    FairM = "Fair(M) Average",
+    FairZ = "Fair(Z) Average",
+    Measure = "Measure",
+    ModelSE = "Model S.E.",
+    RealSE = "Real S.E.",
+    InfitMnSq = "Infit MnSq",
+    InfitZStd = "Infit ZStd",
+    OutfitMnSq = "Outfit MnSq",
+    OutfitZStd = "Outfit ZStd",
+    PtMeaCorr = "PtMea Corr",
+    Anchor = "Anch",
+    Status = "Status",
+    Level = "Element"
+  )
+  keep <- intersect(names(out), names(label_map))
+  names(out)[match(keep, names(out))] <- unname(label_map[keep])
+  if ("Element" %in% names(out)) {
+    out <- out[, c(setdiff(names(out), "Element"), "Element"), drop = FALSE]
+  }
+
+  count_cols <- intersect(c("Total Score", "Total Count", "Weightd Score", "Weightd Count"), names(out))
+  for (col in count_cols) out[[col]] <- round(as.numeric(out[[col]]), digits = 0)
+  value_cols <- intersect(
+    c("Obsvd Average", "Fair(M) Average", "Fair(Z) Average", "Measure", "Model S.E.", "Real S.E.",
+      "Infit MnSq", "Infit ZStd", "Outfit MnSq", "Outfit ZStd", "PtMea Corr"),
+    names(out)
+  )
+  for (col in value_cols) out[[col]] <- round(as.numeric(out[[col]]), digits = decimals)
+
+  attr(out, "facet") <- facet
+  attr(out, "totalscore") <- isTRUE(totalscore)
+  out
+}
+
+calc_fair_average_bundle <- function(res,
+                                     diagnostics,
+                                     facets = NULL,
+                                     totalscore = TRUE,
+                                     umean = 0,
+                                     uscale = 1,
+                                     udecimals = 2,
+                                     omit_unobserved = FALSE,
+                                     xtreme = 0) {
+  raw_tbls <- calc_facets_report_tbls(
+    res = res,
+    diagnostics = diagnostics,
+    totalscore = totalscore,
+    umean = umean,
+    uscale = uscale,
+    udecimals = udecimals,
+    omit_unobserved = omit_unobserved,
+    xtreme = xtreme
+  )
+  if (is.null(raw_tbls) || length(raw_tbls) == 0) {
+    return(list(raw_by_facet = list(), by_facet = list(), stacked = tibble()))
+  }
+
+  keep_names <- names(raw_tbls)
+  if (!is.null(facets)) {
+    keep_names <- intersect(keep_names, as.character(facets))
+  }
+  if (length(keep_names) == 0) {
+    return(list(raw_by_facet = list(), by_facet = list(), stacked = tibble()))
+  }
+  raw_tbls <- raw_tbls[keep_names]
+
+  by_facet <- lapply(names(raw_tbls), function(facet) {
+    tbl <- raw_tbls[[facet]]
+    if (is.null(tbl) || nrow(tbl) == 0) {
+      return(data.frame())
+    }
+    format_facets_report_gt(
+      tbl = tbl,
+      facet = facet,
+      decimals = udecimals,
+      totalscore = totalscore
     )
+  })
+  names(by_facet) <- names(raw_tbls)
+  by_facet <- by_facet[vapply(by_facet, nrow, integer(1)) > 0]
+
+  stacked <- if (length(by_facet) == 0) {
+    tibble()
+  } else {
+    dplyr::bind_rows(
+      lapply(names(by_facet), function(facet) {
+        df <- by_facet[[facet]]
+        df$Facet <- facet
+        df
+      })
+    ) |>
+      select("Facet", everything())
+  }
+
+  list(
+    raw_by_facet = raw_tbls,
+    by_facet = by_facet,
+    stacked = stacked
+  )
 }
 
 calc_expected_category_counts <- function(res) {
@@ -2285,8 +3237,9 @@ get_extreme_levels <- function(obs_df, facet_names, rating_min, rating_max) {
 
 estimate_bias_interaction <- function(res,
                                       diagnostics,
-                                      facet_a,
-                                      facet_b,
+                                      facet_a = NULL,
+                                      facet_b = NULL,
+                                      interaction_facets = NULL,
                                       max_abs = 10,
                                       omit_extreme = TRUE,
                                       max_iter = 4,
@@ -2294,10 +3247,20 @@ estimate_bias_interaction <- function(res,
   if (is.null(res) || is.null(diagnostics)) return(list())
   obs_df <- diagnostics$obs
   if (is.null(obs_df) || nrow(obs_df) == 0) return(list())
-  if (facet_a == facet_b) return(list())
 
   facet_names <- c("Person", res$config$facet_names)
-  if (!facet_a %in% facet_names || !facet_b %in% facet_names) return(list())
+  selected_facets <- if (!is.null(interaction_facets)) {
+    as.character(interaction_facets)
+  } else if (!is.null(facet_a) && !is.null(facet_b)) {
+    c(as.character(facet_a[1]), as.character(facet_b[1]))
+  } else {
+    character(0)
+  }
+  selected_facets <- selected_facets[!is.na(selected_facets) & nzchar(selected_facets)]
+  selected_facets <- unique(selected_facets)
+  if (length(selected_facets) < 2) return(list())
+  if (!all(selected_facets %in% facet_names)) return(list())
+  if (!all(selected_facets %in% names(obs_df))) return(list())
 
   prep <- res$prep
   config <- res$config
@@ -2321,7 +3284,7 @@ estimate_bias_interaction <- function(res,
   if (omit_extreme) {
     extreme_levels <- get_extreme_levels(
       obs_df,
-      c(facet_a, facet_b),
+      selected_facets,
       prep$rating_min,
       prep$rating_max
     )
@@ -2349,21 +3312,26 @@ estimate_bias_interaction <- function(res,
   })
   names(level_map) <- facet_names
 
-  group_keys <- interaction(obs_df[[facet_a]], obs_df[[facet_b]], drop = TRUE, sep = "||")
+  interaction_parts <- lapply(selected_facets, function(f) as.character(obs_df[[f]]))
+  names(interaction_parts) <- selected_facets
+  group_keys <- do.call(interaction, c(interaction_parts, list(drop = TRUE, sep = "||", lex.order = TRUE)))
   group_indices <- split(seq_len(nrow(obs_df)), group_keys)
+
   groups <- list()
   for (key in names(group_indices)) {
-    lvl_vals <- strsplit(key, "\\|\\|")[[1]]
-    lvl_a <- as.character(lvl_vals[1])
-    lvl_b <- as.character(lvl_vals[2])
+    lvl_vals <- strsplit(as.character(key), "\\|\\|")[[1]]
+    if (length(lvl_vals) < length(selected_facets)) next
+    lvl_vals <- as.character(lvl_vals[seq_along(selected_facets)])
+    names(lvl_vals) <- selected_facets
     if (isTRUE(omit_extreme)) {
-      if (lvl_a %in% extreme_levels[[facet_a]] || lvl_b %in% extreme_levels[[facet_b]]) {
-        next
-      }
+      is_extreme <- vapply(selected_facets, function(f) {
+        lvl_vals[[f]] %in% (extreme_levels[[f]] %||% character(0))
+      }, logical(1))
+      if (any(is_extreme)) next
     }
     idx_rows <- group_indices[[key]]
     if (length(idx_rows) == 0) next
-    groups[[key]] <- list(level_a = lvl_a, level_b = lvl_b, idx = idx_rows)
+    groups[[as.character(key)]] <- list(levels = lvl_vals, idx = idx_rows)
   }
   if (length(groups) == 0) return(list())
 
@@ -2386,9 +3354,9 @@ estimate_bias_interaction <- function(res,
   iteration_metrics <- function(bias_map) {
     max_resid <- 0
     max_resid_pct <- NA_real_
-    for (g in groups) {
+    for (key in names(groups)) {
+      g <- groups[[key]]
       idx_rows <- g$idx
-      key <- paste(g$level_a, g$level_b, sep = "||")
       bias <- bias_map[[key]]
       eta_sub <- eta_base[idx_rows] + ifelse(is.finite(bias), bias, 0)
       score_k_sub <- score_k[idx_rows]
@@ -2422,10 +3390,7 @@ estimate_bias_interaction <- function(res,
     )
   }
 
-  bias_map <- list()
-  for (key in names(groups)) {
-    bias_map[[key]] <- 0
-  }
+  bias_map <- stats::setNames(as.list(rep(0, length(groups))), names(groups))
 
   iter_rows <- list()
   for (it in seq_len(max_iter)) {
@@ -2460,13 +3425,16 @@ estimate_bias_interaction <- function(res,
     if (max_change_abs < tol) break
   }
 
+  interaction_label <- paste(selected_facets, collapse = " x ")
+  interaction_order <- length(selected_facets)
+  interaction_mode <- ifelse(interaction_order > 2, "higher_order", "pairwise")
+
   rows <- list()
   seq_id <- 1
   for (key in names(groups)) {
     g <- groups[[key]]
-    lvl_a <- g$level_a
-    lvl_b <- g$level_b
     idx_rows <- g$idx
+    levels <- g$levels
     bias_hat <- bias_map[[key]]
     eta_sub <- eta_base[idx_rows]
     score_k_sub <- score_k[idx_rows]
@@ -2506,14 +3474,7 @@ estimate_bias_interaction <- function(res,
     t_val <- ifelse(is.finite(bias_hat) && is.finite(se) && se > 0, bias_hat / se, NA_real_)
     p_val <- ifelse(is.finite(t_val) && df_t > 0, 2 * stats::pt(-abs(t_val), df = df_t), NA_real_)
 
-    idx_a <- match(lvl_a, level_map[[facet_a]])
-    idx_b <- match(lvl_b, level_map[[facet_b]])
-    meas_a <- meas_map[[paste(facet_a, lvl_a, sep = "||")]]
-    meas_b <- meas_map[[paste(facet_b, lvl_b, sep = "||")]]
-    se_a <- se_map[[paste(facet_a, lvl_a, sep = "||")]]
-    se_b <- se_map[[paste(facet_b, lvl_b, sep = "||")]]
-
-    rows[[seq_id]] <- tibble(
+    row <- list(
       Sq = seq_id,
       `Observd Score` = obs_score,
       `Expctd Score` = exp_score,
@@ -2527,17 +3488,38 @@ estimate_bias_interaction <- function(res,
       Infit = infit,
       Outfit = outfit,
       ObsN = n_obs,
-      FacetA = facet_a,
-      FacetA_Level = lvl_a,
-      FacetA_Index = ifelse(is.na(idx_a), NA_real_, idx_a),
-      FacetA_Measure = meas_a,
-      FacetA_SE = se_a,
-      FacetB = facet_b,
-      FacetB_Level = lvl_b,
-      FacetB_Index = ifelse(is.na(idx_b), NA_real_, idx_b),
-      FacetB_Measure = meas_b,
-      FacetB_SE = se_b
+      InteractionFacets = interaction_label,
+      InteractionOrder = interaction_order,
+      InteractionMode = interaction_mode
     )
+
+    for (j in seq_along(selected_facets)) {
+      facet_j <- selected_facets[j]
+      level_j <- as.character(levels[[facet_j]])
+      index_j <- match(level_j, level_map[[facet_j]])
+      row[[paste0("Facet", j)]] <- facet_j
+      row[[paste0("Facet", j, "_Level")]] <- level_j
+      row[[paste0("Facet", j, "_Index")]] <- ifelse(is.na(index_j), NA_real_, index_j)
+      row[[paste0("Facet", j, "_Measure")]] <- meas_map[[paste(facet_j, level_j, sep = "||")]]
+      row[[paste0("Facet", j, "_SE")]] <- se_map[[paste(facet_j, level_j, sep = "||")]]
+    }
+
+    # Backward compatibility for existing 2-way workflows and helper APIs.
+    if (interaction_order >= 2) {
+      row$FacetA <- row$Facet1
+      row$FacetA_Level <- row$Facet1_Level
+      row$FacetA_Index <- row$Facet1_Index
+      row$FacetA_Measure <- row$Facet1_Measure
+      row$FacetA_SE <- row$Facet1_SE
+
+      row$FacetB <- row$Facet2
+      row$FacetB_Level <- row$Facet2_Level
+      row$FacetB_Index <- row$Facet2_Index
+      row$FacetB_Measure <- row$Facet2_Measure
+      row$FacetB_SE <- row$Facet2_SE
+    }
+
+    rows[[seq_id]] <- tibble::as_tibble(row)
     seq_id <- seq_id + 1
   }
 
@@ -2559,7 +3541,13 @@ estimate_bias_interaction <- function(res,
     sd_pop_row,
     sd_sample_row
   ) |>
-    mutate(Statistic = c(paste0("Mean (Count: ", nrow(bias_tbl), ")"), "S.D. (Population)", "S.D. (Sample)"), .before = 1)
+    mutate(
+      Statistic = c(paste0("Mean (Count: ", nrow(bias_tbl), ")"), "S.D. (Population)", "S.D. (Sample)"),
+      InteractionFacets = interaction_label,
+      InteractionOrder = interaction_order,
+      InteractionMode = interaction_mode,
+      .before = 1
+    )
 
   se_bias <- bias_tbl$`S.E.`
   bias_vals <- bias_tbl$`Bias Size`
@@ -2575,12 +3563,18 @@ estimate_bias_interaction <- function(res,
   chi_tbl <- tibble(
     FixedChiSq = fixed_chi,
     FixedDF = fixed_df,
-    FixedProb = fixed_prob
+    FixedProb = fixed_prob,
+    InteractionFacets = interaction_label,
+    InteractionOrder = interaction_order,
+    InteractionMode = interaction_mode
   )
 
   list(
-    facet_a = facet_a,
-    facet_b = facet_b,
+    facet_a = selected_facets[1],
+    facet_b = selected_facets[2],
+    interaction_facets = selected_facets,
+    interaction_order = interaction_order,
+    interaction_mode = interaction_mode,
     table = bias_tbl,
     summary = summary_tbl,
     chi_sq = chi_tbl,
@@ -2590,6 +3584,10 @@ estimate_bias_interaction <- function(res,
 
 calc_bias_pairwise <- function(bias_tbl, target_facet, context_facet) {
   if (is.null(bias_tbl) || nrow(bias_tbl) == 0) return(tibble())
+  if ("InteractionOrder" %in% names(bias_tbl)) {
+    ord <- suppressWarnings(as.numeric(bias_tbl$InteractionOrder[1]))
+    if (is.finite(ord) && ord != 2) return(tibble())
+  }
 
   use_a <- bias_tbl$FacetA[1] == target_facet
   use_b <- bias_tbl$FacetB[1] == target_facet
@@ -2699,6 +3697,10 @@ extract_anchor_tables <- function(config) {
   list(anchors = anchor_tbl, groups = group_tbl)
 }
 
+# Facet-level separation, reliability, and strata (Wright & Masters, 1982).
+# Separation G = SD(estimates) / RMSE(standard errors)
+# Reliability R = G^2 / (1 + G^2)  -- analogous to Cronbach's alpha
+# Strata H = (4*G + 1) / 3  -- number of statistically distinct levels
 calc_reliability <- function(measure_df) {
   measure_df |>
     group_by(Facet) |>
@@ -2930,6 +3932,61 @@ mfrm_diagnostics <- function(res,
   }
 
   reliability_tbl <- calc_reliability(measures)
+  facets_chisq_tbl <- calc_facets_chisq(measures)
+  default_rater_facet <- infer_default_rater_facet(res$config$facet_names)
+  interrater_tbl <- calc_interrater_agreement(
+    obs_df = obs_df,
+    facet_cols = facet_cols,
+    rater_facet = default_rater_facet,
+    res = res
+  )
+
+  unexpected_abs_z_min <- 2
+  unexpected_prob_max <- 0.30
+  unexpected_rule <- "either"
+  unexpected_tbl <- calc_unexpected_response_table(
+    obs_df = obs_df,
+    probs = compute_prob_matrix(res),
+    facet_names = res$config$facet_names,
+    rating_min = res$prep$rating_min,
+    abs_z_min = unexpected_abs_z_min,
+    prob_max = unexpected_prob_max,
+    top_n = 100,
+    rule = unexpected_rule
+  )
+  unexpected_summary <- summarize_unexpected_response_table(
+    unexpected_tbl = unexpected_tbl,
+    total_observations = nrow(obs_df),
+    abs_z_min = unexpected_abs_z_min,
+    prob_max = unexpected_prob_max,
+    rule = unexpected_rule
+  )
+
+  fair_average <- calc_fair_average_bundle(
+    res = res,
+    diagnostics = list(obs = obs_df, measures = measures),
+    totalscore = TRUE,
+    umean = 0,
+    uscale = 1,
+    udecimals = 2,
+    omit_unobserved = FALSE,
+    xtreme = 0
+  )
+
+  displacement_abs_warn <- 0.5
+  displacement_abs_t_warn <- 2
+  displacement_tbl <- calc_displacement_table(
+    obs_df = obs_df,
+    res = res,
+    measures = measures,
+    abs_displacement_warn = displacement_abs_warn,
+    abs_t_warn = displacement_abs_t_warn
+  )
+  displacement_summary <- summarize_displacement_table(
+    displacement_tbl = displacement_tbl,
+    abs_displacement_warn = displacement_abs_warn,
+    abs_t_warn = displacement_abs_t_warn
+  )
 
   pca_overall <- NULL
   pca_by_facet <- NULL
@@ -2955,8 +4012,28 @@ mfrm_diagnostics <- function(res,
     measures = measures,
     fit = fit_tbl,
     reliability = reliability_tbl,
+    facets_chisq = facets_chisq_tbl,
     bias = bias_tbl,
     interactions = interaction_tbl,
+    interrater = interrater_tbl,
+    unexpected = list(
+      table = unexpected_tbl,
+      summary = unexpected_summary,
+      thresholds = list(
+        abs_z_min = unexpected_abs_z_min,
+        prob_max = unexpected_prob_max,
+        rule = unexpected_rule
+      )
+    ),
+    fair_average = fair_average,
+    displacement = list(
+      table = displacement_tbl,
+      summary = displacement_summary,
+      thresholds = list(
+        abs_displacement_warn = displacement_abs_warn,
+        abs_t_warn = displacement_abs_t_warn
+      )
+    ),
     subsets = subset_tbls,
     residual_pca_mode = residual_pca,
     residual_pca_overall = pca_overall,

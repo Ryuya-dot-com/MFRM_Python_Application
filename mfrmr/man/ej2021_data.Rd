@@ -46,3 +46,47 @@ Naming convention:
 
 Use \code{\link[=load_mfrmr_data]{load_mfrmr_data()}} for programmatic selection by key.
 }
+\section{Data dimensions}{
+
+\tabular{lrrrr}{
+\strong{Dataset} \tab \strong{Rows} \tab \strong{Persons} \tab \strong{Raters} \tab \strong{Criteria} \cr
+study1 \tab 2160 \tab 60 \tab 6 \tab 6 \cr
+study2 \tab 2160 \tab 60 \tab 6 \tab 6 \cr
+combined \tab 4320 \tab 120 \tab 6 \tab 6 \cr
+study1_itercal \tab 2160 \tab 60 \tab 6 \tab 6 \cr
+study2_itercal \tab 2160 \tab 60 \tab 6 \tab 6 \cr
+combined_itercal \tab 4320 \tab 120 \tab 6 \tab 6
+}
+Score range: 1--5 (five-category rating scale).
+}
+
+\section{Simulation design}{
+
+Person ability is drawn from N(0, 1).  Rater severity effects span
+approximately -0.5 to +0.5 logits.  Criterion difficulty effects span
+approximately -0.3 to +0.3 logits.  Scores are generated from the
+resulting linear predictor plus Gaussian noise, then discretized into
+five categories.  The \verb{_itercal} variants use a second iteration of
+calibrated rater severity parameters.
+}
+
+\section{Interpreting output}{
+
+Each dataset is already in long format and can be passed directly to
+\code{\link[=fit_mfrm]{fit_mfrm()}} after confirming column-role mapping.
+}
+
+\section{Typical workflow}{
+
+\enumerate{
+\item Inspect available datasets with \code{\link[=list_mfrmr_data]{list_mfrmr_data()}}.
+\item Load one dataset using \code{\link[=load_mfrmr_data]{load_mfrmr_data()}}.
+\item Fit and diagnose with \code{\link[=fit_mfrm]{fit_mfrm()}} and \code{\link[=diagnose_mfrm]{diagnose_mfrm()}}.
+}
+}
+
+\examples{
+data("ej2021_study1", package = "mfrmr")
+head(ej2021_study1)
+table(ej2021_study1$Study)
+}

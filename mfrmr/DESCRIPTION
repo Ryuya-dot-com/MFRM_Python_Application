@@ -10,6 +10,9 @@ Description: Flexible many-facet Rasch model (MFRM) estimation and diagnostics
     using a native R implementation. Supports arbitrary facet counts, RSM/PCM,
     MML/JML estimation, FACETS-style bias iteration, fixed-width report output,
     APA text generation, and visual warning summaries.
+URL: https://github.com/Ryuya-dot-com/mfrmr,
+    https://ryuya-dot-com.github.io/mfrmr/
+BugReports: https://github.com/Ryuya-dot-com/mfrmr/issues
 License: MIT + file LICENSE
 Encoding: UTF-8
 Roxygen: list(markdown = TRUE)
@@ -22,14 +25,14 @@ Imports:
     tibble,
     purrr,
     stringr,
-    gt,
-    plotly,
     psych,
+    lifecycle,
     rlang,
     stats,
     utils
 Suggests:
     testthat (>= 3.0.0),
+    covr,
     knitr
 VignetteBuilder: knitr
 Config/testthat/edition: 3

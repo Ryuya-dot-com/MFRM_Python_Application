@@ -10,11 +10,12 @@ plot_residual_pca(
   facet = NULL,
   plot_type = c("scree", "loadings"),
   component = 1L,
-  top_n = 20L
+  top_n = 20L,
+  draw = TRUE
 )
 }
 \arguments{
-\item{x}{Output from \code{\link[=analyze_residual_pca]{analyze_residual_pca()}} or \code{\link[=diagnose_mfrm]{diagnose_mfrm()}}.}
+\item{x}{Output from \code{\link[=analyze_residual_pca]{analyze_residual_pca()}}, \code{\link[=diagnose_mfrm]{diagnose_mfrm()}}, or \code{\link[=fit_mfrm]{fit_mfrm()}}.}
 
 \item{mode}{\code{"overall"} or \code{"facet"}.}
 
@@ -25,9 +26,18 @@ plot_residual_pca(
 \item{component}{Component index for loadings plot.}
 
 \item{top_n}{Maximum number of variables shown in loadings plot.}
+
+\item{draw}{If \code{TRUE}, draws the plot using base graphics.}
 }
 \value{
-A \code{plotly} htmlwidget object.
+A named list of plotting data (class \code{mfrm_plot_data}) with:
+\itemize{
+\item \code{plot}: \code{"scree"} or \code{"loadings"}
+\item \code{mode}: \code{"overall"} or \code{"facet"}
+\item \code{facet}: facet name (or \code{NULL})
+\item \code{title}: plot title text
+\item \code{data}: underlying table used for plotting
+}
 }
 \description{
 Visualize residual PCA results
@@ -36,7 +46,8 @@ Visualize residual PCA results
 \code{x} can be either:
 \itemize{
 \item output of \code{\link[=analyze_residual_pca]{analyze_residual_pca()}}, or
-\item a diagnostics object from \code{\link[=diagnose_mfrm]{diagnose_mfrm()}} (PCA is computed internally).
+\item a diagnostics object from \code{\link[=diagnose_mfrm]{diagnose_mfrm()}} (PCA is computed internally), or
+\item a fitted object from \code{\link[=fit_mfrm]{fit_mfrm()}} (diagnostics and PCA are computed internally).
 }
 
 Plot types:
@@ -47,6 +58,28 @@ Plot types:
 
 For \code{mode = "facet"} and \code{facet = NULL}, the first available facet is used.
 }
+\section{Interpreting output}{
+
+\itemize{
+\item \code{plot_type = "scree"}: look for dominant early components
+(eigenvalue notably above 1 as a practical warning sign).
+\item \code{plot_type = "loadings"}: identifies variables/elements driving each
+component; inspect both sign and absolute magnitude.
+}
+
+Facet mode (\code{mode = "facet"}) helps localize residual structure to a
+specific facet after global PCA review.
+}
+
+\section{Typical workflow}{
+
+\enumerate{
+\item Run \code{\link[=diagnose_mfrm]{diagnose_mfrm()}} with \code{residual_pca = "overall"} or \code{"both"}.
+\item Build PCA object via \code{\link[=analyze_residual_pca]{analyze_residual_pca()}} (or pass diagnostics directly).
+\item Use scree plot first, then loadings plot for targeted interpretation.
+}
+}
+
 \examples{
 toy <- expand.grid(
   Person = paste0("P", 1:4),
@@ -62,8 +95,12 @@ toy$Score <- (
 fit <- fit_mfrm(toy, "Person", c("Rater", "Criterion"), "Score", method = "JML", maxit = 25)
 diag <- diagnose_mfrm(fit, residual_pca = "both")
 pca <- analyze_residual_pca(diag, mode = "both")
-plt <- plot_residual_pca(pca, mode = "overall", plot_type = "scree")
-class(plt)
+plt <- plot_residual_pca(pca, mode = "overall", plot_type = "scree", draw = FALSE)
+head(plt$data)
+plt_load <- plot_residual_pca(
+  pca, mode = "overall", plot_type = "loadings", component = 1, draw = FALSE
+)
+head(plt_load$data)
 }
 \seealso{
 \code{\link[=analyze_residual_pca]{analyze_residual_pca()}}, \code{\link[=diagnose_mfrm]{diagnose_mfrm()}}

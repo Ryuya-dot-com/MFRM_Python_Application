@@ -27,14 +27,19 @@ diagnose_mfrm(
 \item{pca_max_factors}{Maximum number of PCA factors to retain per matrix.}
 }
 \value{
-A named list (diagnostics object) including:
+An object of class \code{mfrm_diagnostics} including:
 \itemize{
 \item \code{obs}: observed/expected/residual-level table
 \item \code{measures}: facet/person fit table (\code{Infit}, \code{Outfit}, \code{ZSTD}, \code{PTMEA})
 \item \code{overall_fit}: overall fit summary
 \item \code{fit}: element-level fit diagnostics
 \item \code{reliability}: separation/reliability by facet
+\item \code{facets_chisq}: FACETS-style fixed/random facet chi-square summary
 \item \code{interactions}: top interaction diagnostics
+\item \code{interrater}: inter-rater agreement bundle (\code{summary}, \code{pairs})
+\item \code{unexpected}: FACETS Table 4-style unexpected-response bundle
+\item \code{fair_average}: FACETS Table 12-style fair-average bundle
+\item \code{displacement}: displacement diagnostics bundle
 \item \code{residual_pca_overall}: optional overall PCA object
 \item \code{residual_pca_by_facet}: optional facet PCA objects
 }
@@ -60,6 +65,36 @@ Residual PCA behavior:
 \item \code{"both"}: compute both sets
 }
 }
+\section{Reading key components}{
+
+Practical interpretation often starts with:
+\itemize{
+\item \code{overall_fit}: global infit/outfit and degrees of freedom.
+\item \code{reliability}: separation/reliability by facet (not a single pooled value).
+\item \code{fit}: element-level misfit scan (\code{Infit}, \code{Outfit}, \code{ZSTD}).
+\item \code{unexpected}, \code{fair_average}, \code{displacement}: targeted QC bundles.
+}
+}
+
+\section{Interpreting output}{
+
+Start with \code{overall_fit} and \code{reliability}, then move to element-level
+diagnostics (\code{fit}) and targeted bundles (\code{unexpected}, \code{fair_average},
+\code{displacement}, \code{interrater}, \code{facets_chisq}).
+
+Consistent signals across multiple components are typically more robust than
+a single isolated warning.
+}
+
+\section{Typical workflow}{
+
+\enumerate{
+\item Run \code{diagnose_mfrm(fit, residual_pca = "none")} for baseline diagnostics.
+\item Inspect \code{summary(diag)} and targeted tables/plots.
+\item If needed, rerun with residual PCA (\code{"overall"} or \code{"both"}).
+}
+}
+
 \examples{
 toy <- expand.grid(
   Person = paste0("P", 1:4),
@@ -74,7 +109,15 @@ toy$Score <- (
 ) \%\% 3
 fit <- fit_mfrm(toy, "Person", c("Rater", "Criterion"), "Score", method = "JML", maxit = 25)
 diag <- diagnose_mfrm(fit, residual_pca = "none")
-names(diag)
+s_diag <- summary(diag)
+s_diag$overview[, c("Observations", "Facets", "Categories")]
+p_qc <- plot_qc_dashboard(fit, diagnostics = diag, draw = FALSE)
+class(p_qc)
+
+# Optional: include residual PCA in the diagnostic bundle
+diag_pca <- diagnose_mfrm(fit, residual_pca = "overall")
+pca <- analyze_residual_pca(diag_pca, mode = "overall")
+head(pca$overall_table)
 }
 \seealso{
 \code{\link[=fit_mfrm]{fit_mfrm()}}, \code{\link[=analyze_residual_pca]{analyze_residual_pca()}}, \code{\link[=build_visual_summaries]{build_visual_summaries()}}

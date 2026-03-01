@@ -1,0 +1,28 @@
+table_id,function_name,object_id,component,required_columns
+T1,specifications_report,t1,header,Engine|Model|Method
+T1,specifications_report,t1,facet_labels,Facet|Elements
+T2,data_quality_report,t2,summary,TotalLinesInData|MissingScoreRows|ValidResponsesUsedForEstimation
+T2,data_quality_report,t2,row_audit,Status|N
+T3,estimation_iteration_report,t3,table,Method|Iteration|MaxLogitChangeElements|Objective
+T4,unexpected_response_table,t4,table,Person|Score|Observed|Expected|StdResidual|ObsProb|FlagLowProbability|Severity
+T4,unexpected_response_table,t4,summary,UnexpectedN|UnexpectedPercent|AbsZThreshold|ProbThreshold
+T5,measurable_summary_table,t5,summary,Observations|Persons|Facets|Categories
+T5,measurable_summary_table,t5,facet_coverage,Facet|Levels|MeanSE|MeanInfit|MeanOutfit
+T6,subset_connectivity_report,t6,summary,Subset|Observations|ObservationPercent
+T6.2,facet_statistics_report,t62,table,Metric|Facet|Levels|Mean|SD|Ruler
+T7,facets_chisq_table,t7chisq,table,Facet|Levels|FixedChiSq|RandomChiSq|FixedFlag|RandomFlag
+T7,interrater_agreement_table,t7agree,pairs,Rater1|Rater2|N|Exact|ExpectedExact|Adjacent|Corr|Flag
+T8.1,rating_scale_table,t81,category_table,Category|Count|Infit|Outfit|InfitZSTD|OutfitZSTD
+T8.1,rating_scale_table,t81,threshold_table,Step|Estimate|GapFromPrev
+T8,category_structure_report,t8bar,category_table,Category|Count|ExpectedCount|DiffCount|LowCount
+T8,category_curves_report,t8curves,graphfile,Scale|CurveGroup|Measure|Expected|ExpCat|Prob:*
+GRAPH/SCORE,facets_output_file_bundle,out,graphfile,Scale|CurveGroup|Measure|Expected|Prob:*
+GRAPH/SCORE,facets_output_file_bundle,out,scorefile,Person|Observed|Expected|Residual|StdResidual|ObsProb
+T9,build_fixed_reports,t14,pairwise_table,Target|Context1|Context2|Contrast|SE|t|Prob.
+T10,unexpected_after_bias_table,t10,summary,UnexpectedN|BaselineUnexpectedN|AfterBiasUnexpectedN|ReducedBy
+T10,unexpected_after_bias_table,t10,table,Person|Score|Observed|Expected|StdResidual|ObsProb|BiasAdjustment
+T11,bias_count_table,t11,table,Sq|Observd Count|Obs-Exp Average|Model S.E.|LowCountFlag
+T11,bias_count_table,t11,summary,InteractionFacets|Cells|TotalCount|LowCountCells|LowCountPercent
+T12,fair_average_table,t12,stacked,Facet|Obsvd Average|Fair(M) Average|Fair(Z) Average|Measure|Infit MnSq|Outfit MnSq
+T13,bias_interaction_report,t13,ranked_table,InteractionFacets|ObsExpAverage|BiasSize|SE|t|Prob|ObservedCount|Flag
+T13,bias_interaction_report,t13,facet_profile,Facet|Level|Cells|MeanAbsBias|MeanAbsT|FlagRate

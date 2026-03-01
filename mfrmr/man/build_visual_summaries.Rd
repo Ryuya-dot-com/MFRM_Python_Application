@@ -10,7 +10,8 @@ build_visual_summaries(
   threshold_profile = "standard",
   thresholds = NULL,
   summary_options = NULL,
-  whexact = FALSE
+  whexact = FALSE,
+  branch = c("original", "facets")
 )
 }
 \arguments{
@@ -25,19 +26,26 @@ build_visual_summaries(
 \item{summary_options}{Summary options for \code{build_visual_summary_map()}.}
 
 \item{whexact}{Use exact ZSTD transformation.}
+
+\item{branch}{Output branch:
+\code{"facets"} adds FACETS crosswalk metadata for manual-aligned reporting;
+\code{"original"} keeps package-native summary output.}
 }
 \value{
-A named list with:
+An object of class \code{mfrm_visual_summaries} with:
 \itemize{
-\item \code{warning_map}: figure-level warning text vectors
-\item \code{summary_map}: figure-level descriptive text vectors
+\item \code{warning_map}: visual-level warning text vectors
+\item \code{summary_map}: visual-level descriptive text vectors
+\item \code{warning_counts}, \code{summary_counts}: message counts by visual key
+\item \code{crosswalk}: FACETS-reference mapping for main visual keys
+\item \code{branch}, \code{style}, \code{threshold_profile}: branch metadata
 }
 }
 \description{
 Build warning and narrative summaries for visual outputs
 }
 \details{
-This function returns figure-indexed text maps (\code{figure1} ... \code{figure11})
+This function returns visual-keyed text maps
 to support dashboard/report rendering without hard-coding narrative strings
 in UI code.
 
@@ -51,10 +59,29 @@ in UI code.
 \code{summary_options} supports:
 \itemize{
 \item \code{detail}: \code{"standard"} or \code{"detailed"}
-\item \code{max_facet_ranges}: max facet-range snippets shown in figure summaries
+\item \code{max_facet_ranges}: max facet-range snippets shown in visual summaries
 \item \code{top_misfit_n}: number of top misfit entries included
 }
 }
+\section{Interpreting output}{
+
+\itemize{
+\item \code{warning_map}: rule-triggered warning text by visual key.
+\item \code{summary_map}: descriptive narrative text by visual key.
+\item \code{warning_counts} / \code{summary_counts}: message-count tables for QA checks.
+}
+}
+
+\section{Typical workflow}{
+
+\enumerate{
+\item inspect defaults with \code{\link[=mfrm_threshold_profiles]{mfrm_threshold_profiles()}}
+\item choose \code{threshold_profile} (\code{strict} / \code{standard} / \code{lenient})
+\item optionally override selected fields via \code{thresholds}
+\item pass result maps to report/dashboard rendering logic
+}
+}
+
 \examples{
 toy <- expand.grid(
   Person = paste0("P", 1:4),
@@ -70,7 +97,28 @@ toy$Score <- (
 fit <- fit_mfrm(toy, "Person", c("Rater", "Criterion"), "Score", method = "JML", maxit = 25)
 diag <- diagnose_mfrm(fit, residual_pca = "both")
 vis <- build_visual_summaries(fit, diag, threshold_profile = "strict")
-names(vis$warning_map)
+vis2 <- build_visual_summaries(
+  fit,
+  diag,
+  threshold_profile = "standard",
+  thresholds = c(misfit_ratio_warn = 0.20, pca_first_eigen_warn = 2.0),
+  summary_options = list(detail = "detailed", top_misfit_n = 5)
+)
+vis_facets <- build_visual_summaries(fit, diag, branch = "facets")
+vis_facets$branch
+summary(vis)
+p <- plot(vis, type = "comparison", draw = FALSE)
+p2 <- plot(vis, type = "warning_counts", draw = FALSE)
+if (interactive()) {
+  plot(
+    vis,
+    type = "comparison",
+    draw = TRUE,
+    main = "Warning vs Summary Counts (Customized)",
+    palette = c(warning = "#cb181d", summary = "#3182bd"),
+    label_angle = 45
+  )
+}
 }
 \seealso{
 \code{\link[=mfrm_threshold_profiles]{mfrm_threshold_profiles()}}, \code{\link[=build_apa_outputs]{build_apa_outputs()}}

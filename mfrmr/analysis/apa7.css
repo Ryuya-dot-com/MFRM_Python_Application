@@ -1,0 +1,73 @@
+/* APA 7 style (HTML) */
+:root {
+  --apa-font: "Times New Roman", serif;
+  --apa-font-size: 12pt;
+  --apa-line-height: 2;
+}
+
+body {
+  font-family: var(--apa-font);
+  font-size: var(--apa-font-size);
+  line-height: var(--apa-line-height);
+  color: #000;
+  margin: 1in;
+}
+
+h1, h2, h3, h4, h5, h6 {
+  font-family: var(--apa-font);
+  font-weight: 700;
+}
+
+h1 { font-size: 16pt; text-align: center; }
+h2 { font-size: 14pt; }
+h3 { font-size: 13pt; }
+
+p { text-align: left; }
+
+/* GT tables: APA-like minimal rules */
+.gt_table {
+  font-family: var(--apa-font) !important;
+  font-size: var(--apa-font-size) !important;
+  border-collapse: collapse !important;
+  border-top: 2px solid #000 !important;
+  border-bottom: 2px solid #000 !important;
+}
+
+.gt_heading {
+  text-align: left !important;
+}
+
+.gt_title {
+  font-weight: 700 !important;
+}
+
+.gt_subtitle {
+  font-style: italic !important;
+}
+
+.gt_col_headings {
+  border-bottom: 1px solid #000 !important;
+}
+
+.gt_table td, .gt_table th {
+  border-left: none !important;
+  border-right: none !important;
+  padding: 4px 6px !important;
+}
+
+/* Remove inner horizontal lines */
+.gt_table .gt_group_heading,
+.gt_table .gt_row {
+  border-bottom: none !important;
+}
+
+/* Table notes */
+.gt_footnotes {
+  font-size: 11pt !important;
+}
+
+/* Keep nested TOC levels visible even in viewers where Quarto JS isn't active. */
+#TOC ul.collapse {
+  display: block !important;
+  height: auto !important;
+}

@@ -1,2 +1,14 @@
 ^data-raw$
 ^\.DS_Store$
+^\.{2}Rcheck$
+^mfrmr\.Rcheck$
+^mfrmr_[0-9.]+\.tar\.gz$
+^\.github$
+^\.gitignore$
+^_pkgdown\.yml$
+^CITATION\.cff$
+^CODE_OF_CONDUCT\.md$
+^CONTRIBUTING\.md$
+^SECURITY\.md$
+^cran-comments\.md$
+^analysis$

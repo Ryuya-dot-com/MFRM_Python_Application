@@ -7,8 +7,8 @@
 mfrm_threshold_profiles()
 }
 \value{
-A named list with \code{profiles} (\code{strict}, \code{standard}, \code{lenient})
-and \code{pca_reference_bands}.
+An object of class \code{mfrm_threshold_profiles} with
+\code{profiles} (\code{strict}, \code{standard}, \code{lenient}) and \code{pca_reference_bands}.
 }
 \description{
 List literature-based warning threshold profiles
@@ -22,8 +22,30 @@ Use this function to inspect available profile presets before calling
 \code{pca_reference_bands} contains literature-oriented descriptive bands used in
 summary text.
 }
+\section{Interpreting output}{
+
+\itemize{
+\item \code{profiles}: numeric threshold presets (\code{strict}, \code{standard}, \code{lenient}).
+\item \code{pca_reference_bands}: narrative reference bands for PCA interpretation.
+}
+}
+
+\section{Typical workflow}{
+
+\enumerate{
+\item Review presets with \code{mfrm_threshold_profiles()}.
+\item Pick a default profile for project policy.
+\item Override only selected fields in \code{\link[=build_visual_summaries]{build_visual_summaries()}} when needed.
+}
+}
+
 \examples{
-mfrm_threshold_profiles()
+profiles <- mfrm_threshold_profiles()
+names(profiles)
+names(profiles$profiles)
+class(profiles)
+s_profiles <- summary(profiles)
+s_profiles$overview
 }
 \seealso{
 \code{\link[=build_visual_summaries]{build_visual_summaries()}}

@@ -25,6 +25,62 @@ study1_alt <- load_mfrmr_data("study1")
 identical(names(ej2021_study1), names(study1_alt))
 ```
 
+## Minimal Runnable Example
+
+```{r}
+toy <- expand.grid(
+  Person = paste0("P", 1:4),
+  Rater = paste0("R", 1:2),
+  Criterion = c("Content", "Organization", "Language"),
+  stringsAsFactors = FALSE
+)
+toy$Score <- (
+  as.integer(factor(toy$Person)) +
+  2 * as.integer(factor(toy$Rater)) +
+  as.integer(factor(toy$Criterion))
+) %% 3
+
+fit_toy <- fit_mfrm(
+  data = toy,
+  person = "Person",
+  facets = c("Rater", "Criterion"),
+  score = "Score",
+  method = "JML",
+  model = "RSM",
+  maxit = 15
+)
+diag_toy <- diagnose_mfrm(fit_toy, residual_pca = "none")
+
+summary(fit_toy)$overview
+summary(diag_toy)$overview
+names(plot(fit_toy, draw = FALSE))
+```
+
+## Runnable Diagnostics and Reporting
+
+```{r}
+t4_toy <- unexpected_response_table(
+  fit_toy,
+  diagnostics = diag_toy,
+  abs_z_min = 1.5,
+  prob_max = 0.4,
+  top_n = 10
+)
+t12_toy <- fair_average_table(fit_toy, diagnostics = diag_toy)
+t13_toy <- bias_interaction_report(
+  estimate_bias(fit_toy, diag_toy, facet_a = "Rater", facet_b = "Criterion", max_iter = 2),
+  top_n = 10
+)
+
+class(summary(t4_toy))
+class(summary(t12_toy))
+class(summary(t13_toy))
+
+names(plot(t4_toy, draw = FALSE))
+names(plot(t12_toy, draw = FALSE))
+names(plot(t13_toy, draw = FALSE))
+```
+
 ## Fit and Diagnose
 
 ```{r, eval=FALSE}
@@ -56,5 +112,25 @@ apa <- build_apa_outputs(fit, diag, bias_results = bias)
 
 mfrm_threshold_profiles()
 vis <- build_visual_summaries(fit, diag, threshold_profile = "standard")
-vis$warning_map$figure10
+vis$warning_map$residual_pca_overall
+```
+
+## Human-Readable Reporting API
+
+```{r, eval=FALSE}
+spec <- specifications_report(fit, title = "Study run")
+data_qc <- data_quality_report(
+  fit,
+  data = ej2021_study1,
+  person = "Person",
+  facets = c("Rater", "Criterion"),
+  score = "Score"
+)
+iter <- estimation_iteration_report(fit, max_iter = 8)
+subset <- subset_connectivity_report(fit, diagnostics = diag)
+facet_stats <- facet_statistics_report(fit, diagnostics = diag)
+cat_structure <- category_structure_report(fit, diagnostics = diag)
+cat_curves <- category_curves_report(fit, theta_points = 101)
+bias_rep <- bias_interaction_report(bias, top_n = 20)
+plot_bias_interaction(bias_rep, plot = "scatter")
 ```

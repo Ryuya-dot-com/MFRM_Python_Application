@@ -1,0 +1,75 @@
+"Object","Function","Class","SummaryCustomS3","SummaryOK","SummaryResultClass","SummaryMessage","PlotCustomS3","PlotAttempted","PlotOK","PlotResultClass","PlotMessage"
+"pca","analyze_residual_pca","mfrm_residual_pca|mfrm_bundle|list","mfrm_bundle",TRUE,"summary.mfrm_bundle","","mfrm_bundle",TRUE,FALSE,"","Error in plot.mfrm_bundle(obj, draw = FALSE) : 
+  No default plot method for class `mfrm_residual_pca`.
+Use a dedicated plot helper (for example, `plot_unexpected()`, `plot_fair_average()`, or `plot_bias_interaction()`).
+"
+"apa_tbl","apa_table","apa_table_apa|apa_table|list","apa_table",TRUE,"summary.apa_table","","apa_table",TRUE,TRUE,"mfrm_plot_data|list",""
+"apa_tbl_facets","apa_table","apa_table_facets|apa_table|list","apa_table",TRUE,"summary.apa_table","","apa_table",TRUE,TRUE,"mfrm_plot_data|list",""
+"audit","audit_mfrm_anchors","mfrm_anchor_audit|list","",TRUE,"summaryDefault|table","","",FALSE,FALSE,"","no custom plot S3 method"
+"bias_count_facets","bias_count_table","mfrm_bias_count_facets|mfrm_bias_count|mfrm_bundle|list","mfrm_bundle",TRUE,"summary.mfrm_bundle","","mfrm_bundle",TRUE,TRUE,"mfrm_plot_data|list",""
+"bias_count_original","bias_count_table","mfrm_bias_count_original|mfrm_bias_count|mfrm_bundle|list","mfrm_bundle",TRUE,"summary.mfrm_bundle","","mfrm_bundle",TRUE,TRUE,"mfrm_plot_data|list",""
+"bias_interaction","bias_interaction_report","mfrm_bias_interaction|mfrm_bundle|list","mfrm_bundle",TRUE,"summary.mfrm_bundle","","mfrm_bundle",TRUE,TRUE,"mfrm_plot_data|list",""
+"apa_outputs","build_apa_outputs","list","",TRUE,"summaryDefault|table","","",FALSE,FALSE,"","no custom plot S3 method"
+"fixed_facets","build_fixed_reports","mfrm_fixed_reports_facets|mfrm_fixed_reports|mfrm_bundle|list","mfrm_bundle",TRUE,"summary.mfrm_bundle","","mfrm_bundle",TRUE,TRUE,"mfrm_plot_data|list",""
+"fixed_original","build_fixed_reports","mfrm_fixed_reports_original|mfrm_fixed_reports|mfrm_bundle|list","mfrm_bundle",TRUE,"summary.mfrm_bundle","","mfrm_bundle",TRUE,TRUE,"mfrm_plot_data|list",""
+"visual_facets","build_visual_summaries","mfrm_visual_summaries_facets|mfrm_visual_summaries|mfrm_bundle|list","mfrm_bundle",TRUE,"summary.mfrm_bundle","","mfrm_bundle",TRUE,TRUE,"mfrm_plot_data|list",""
+"visual_original","build_visual_summaries","mfrm_visual_summaries_original|mfrm_visual_summaries|mfrm_bundle|list","mfrm_bundle",TRUE,"summary.mfrm_bundle","","mfrm_bundle",TRUE,TRUE,"mfrm_plot_data|list",""
+"cat_curves","category_curves_report","mfrm_category_curves|mfrm_bundle|list","mfrm_bundle",TRUE,"summary.mfrm_bundle","","mfrm_bundle",TRUE,TRUE,"mfrm_plot_data|list",""
+"cat_struct","category_structure_report","mfrm_category_structure|mfrm_bundle|list","mfrm_bundle",TRUE,"summary.mfrm_bundle","","mfrm_bundle",TRUE,TRUE,"mfrm_plot_data|list",""
+"data_quality","data_quality_report","mfrm_data_quality|mfrm_bundle|list","mfrm_bundle",TRUE,"summary.mfrm_bundle","","mfrm_bundle",TRUE,FALSE,"","Error in plot.mfrm_bundle(obj, draw = FALSE) : 
+  No default plot method for class `mfrm_data_quality`.
+Use a dedicated plot helper (for example, `plot_unexpected()`, `plot_fair_average()`, or `plot_bias_interaction()`).
+"
+"describe","describe_mfrm_data","mfrm_data_description|list","",TRUE,"summaryDefault|table","","",FALSE,FALSE,"","no custom plot S3 method"
+"diag","diagnose_mfrm","mfrm_diagnostics|list","mfrm_diagnostics",TRUE,"summary.mfrm_diagnostics","","",FALSE,FALSE,"","no custom plot S3 method"
+"displacement","displacement_table","mfrm_displacement|mfrm_bundle|list","mfrm_bundle",TRUE,"summary.mfrm_bundle","","mfrm_bundle",TRUE,TRUE,"mfrm_plot_data|list",""
+"bias_higher","estimate_bias","mfrm_bias|list","mfrm_bias",TRUE,"summary.mfrm_bias","","",FALSE,FALSE,"","no custom plot S3 method"
+"bias_pair","estimate_bias","mfrm_bias|list","mfrm_bias",TRUE,"summary.mfrm_bias","","",FALSE,FALSE,"","no custom plot S3 method"
+"iter","estimation_iteration_report","mfrm_iteration_report|mfrm_bundle|list","mfrm_bundle",TRUE,"summary.mfrm_bundle","","mfrm_bundle",TRUE,FALSE,"","Error in plot.mfrm_bundle(obj, draw = FALSE) : 
+  No default plot method for class `mfrm_iteration_report`.
+Use a dedicated plot helper (for example, `plot_unexpected()`, `plot_fair_average()`, or `plot_bias_interaction()`).
+"
+"facet_stats","facet_statistics_report","mfrm_facet_statistics|mfrm_bundle|list","mfrm_bundle",TRUE,"summary.mfrm_bundle","","mfrm_bundle",TRUE,FALSE,"","Error in plot.mfrm_bundle(obj, draw = FALSE) : 
+  No default plot method for class `mfrm_facet_statistics`.
+Use a dedicated plot helper (for example, `plot_unexpected()`, `plot_fair_average()`, or `plot_bias_interaction()`).
+"
+"chi","facets_chisq_table","mfrm_facets_chisq|mfrm_bundle|list","mfrm_bundle",TRUE,"summary.mfrm_bundle","","mfrm_bundle",TRUE,TRUE,"mfrm_plot_data|list",""
+"output_bundle","facets_output_file_bundle","mfrm_output_bundle|mfrm_bundle|list","mfrm_bundle",TRUE,"summary.mfrm_bundle","","mfrm_bundle",TRUE,FALSE,"","Error in plot.mfrm_bundle(obj, draw = FALSE) : 
+  No default plot method for class `mfrm_output_bundle`.
+Use a dedicated plot helper (for example, `plot_unexpected()`, `plot_fair_average()`, or `plot_bias_interaction()`).
+"
+"fair","fair_average_table","mfrm_fair_average|mfrm_bundle|list","mfrm_bundle",TRUE,"summary.mfrm_bundle","","mfrm_bundle",TRUE,TRUE,"mfrm_plot_data|list",""
+"fit","fit_mfrm","mfrm_fit|list","mfrm_fit",TRUE,"summary.mfrm_fit","","mfrm_fit",TRUE,TRUE,"mfrm_plot_bundle|list",""
+"ir","interrater_agreement_table","mfrm_interrater|mfrm_bundle|list","mfrm_bundle",TRUE,"summary.mfrm_bundle","","mfrm_bundle",TRUE,TRUE,"mfrm_plot_data|list",""
+"list_data","list_mfrmr_data","character","",TRUE,"summaryDefault|table","","",FALSE,FALSE,"","no custom plot S3 method"
+"load_data","load_mfrmr_data","data.frame","data.frame",TRUE,"table","","data.frame",TRUE,FALSE,"","Error in pairs.default(data.matrix(x), ...) : 
+  only one column in the argument to 'pairs'
+"
+"anchor_table","make_anchor_table","tbl_df|tbl|data.frame","data.frame",TRUE,"table","","data.frame",TRUE,TRUE,"NULL",""
+"meas","measurable_summary_table","mfrm_measurable|mfrm_bundle|list","mfrm_bundle",TRUE,"summary.mfrm_bundle","","mfrm_bundle",TRUE,FALSE,"","Error in plot.mfrm_bundle(obj, draw = FALSE) : 
+  No default plot method for class `mfrm_measurable`.
+Use a dedicated plot helper (for example, `plot_unexpected()`, `plot_fair_average()`, or `plot_bias_interaction()`).
+"
+"profiles","mfrm_threshold_profiles","list","",TRUE,"summaryDefault|table","","",FALSE,FALSE,"","no custom plot S3 method"
+"plot_bias_interaction_obj","plot_bias_interaction","mfrm_plot_data|list","",TRUE,"summaryDefault|table","","",FALSE,FALSE,"","no custom plot S3 method"
+"plot_displacement_obj","plot_displacement","mfrm_plot_data|list","",TRUE,"summaryDefault|table","","",FALSE,FALSE,"","no custom plot S3 method"
+"plot_facets_chisq_obj","plot_facets_chisq","mfrm_plot_data|list","",TRUE,"summaryDefault|table","","",FALSE,FALSE,"","no custom plot S3 method"
+"plot_fair_obj","plot_fair_average","mfrm_plot_data|list","",TRUE,"summaryDefault|table","","",FALSE,FALSE,"","no custom plot S3 method"
+"plot_interrater_obj","plot_interrater_agreement","mfrm_plot_data|list","",TRUE,"summaryDefault|table","","",FALSE,FALSE,"","no custom plot S3 method"
+"plot_qc_obj","plot_qc_dashboard","mfrm_plot_data|list","",TRUE,"summaryDefault|table","","",FALSE,FALSE,"","no custom plot S3 method"
+"plot_residual_pca_obj","plot_residual_pca","mfrm_plot_data|list","",TRUE,"summaryDefault|table","","",FALSE,FALSE,"","no custom plot S3 method"
+"plot_unexpected_obj","plot_unexpected","mfrm_plot_data|list","",TRUE,"summaryDefault|table","","",FALSE,FALSE,"","no custom plot S3 method"
+"rscale","rating_scale_table","mfrm_rating_scale|mfrm_bundle|list","mfrm_bundle",TRUE,"summary.mfrm_bundle","","mfrm_bundle",TRUE,TRUE,"mfrm_plot_data|list",""
+"spec","specifications_report","mfrm_specifications|mfrm_bundle|list","mfrm_bundle",TRUE,"summary.mfrm_bundle","","mfrm_bundle",TRUE,FALSE,"","Error in plot.mfrm_bundle(obj, draw = FALSE) : 
+  No default plot method for class `mfrm_specifications`.
+Use a dedicated plot helper (for example, `plot_unexpected()`, `plot_fair_average()`, or `plot_bias_interaction()`).
+"
+"subset","subset_connectivity_report","mfrm_subset_connectivity|mfrm_bundle|list","mfrm_bundle",TRUE,"summary.mfrm_bundle","","mfrm_bundle",TRUE,FALSE,"","Error in plot.mfrm_bundle(obj, draw = FALSE) : 
+  No default plot method for class `mfrm_subset_connectivity`.
+Use a dedicated plot helper (for example, `plot_unexpected()`, `plot_fair_average()`, or `plot_bias_interaction()`).
+"
+"unexpected_after_bias","unexpected_after_bias_table","mfrm_unexpected_after_bias|mfrm_bundle|list","mfrm_bundle",TRUE,"summary.mfrm_bundle","","mfrm_bundle",TRUE,FALSE,"","Error in plot.mfrm_bundle(obj, draw = FALSE) : 
+  No default plot method for class `mfrm_unexpected_after_bias`.
+Use a dedicated plot helper (for example, `plot_unexpected()`, `plot_fair_average()`, or `plot_bias_interaction()`).
+"
+"unexpected","unexpected_response_table","mfrm_unexpected|mfrm_bundle|list","mfrm_bundle",TRUE,"summary.mfrm_bundle","","mfrm_bundle",TRUE,TRUE,"mfrm_plot_data|list",""

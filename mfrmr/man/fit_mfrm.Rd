@@ -21,6 +21,10 @@ fit_mfrm(
   noncenter_facet = "Person",
   dummy_facets = NULL,
   positive_facets = NULL,
+  anchor_policy = c("warn", "error", "silent"),
+  min_common_anchors = 5L,
+  min_obs_per_element = 30,
+  min_obs_per_category = 10,
   quad_points = 15,
   maxit = 400,
   reltol = 1e-06
@@ -59,6 +63,18 @@ fit_mfrm(
 
 \item{positive_facets}{Facets with positive orientation.}
 
+\item{anchor_policy}{How to handle anchor-audit issues: \code{"warn"} (default),
+\code{"error"}, or \code{"silent"}.}
+
+\item{min_common_anchors}{Minimum anchored levels per linking facet used in
+anchor-audit recommendations.}
+
+\item{min_obs_per_element}{Minimum weighted observations per facet level used
+in anchor-audit recommendations.}
+
+\item{min_obs_per_category}{Minimum weighted observations per score category
+used in anchor-audit recommendations.}
+
 \item{quad_points}{Quadrature points for MML.}
 
 \item{maxit}{Maximum optimizer iterations.}
@@ -73,6 +89,7 @@ An object of class \code{mfrm_fit} (named list) with:
 \item \code{facets$others}: facet-level estimates for each facet
 \item \code{steps}: estimated threshold/step parameters
 \item \code{config}: resolved model configuration used for estimation
+(includes \code{config$anchor_audit})
 \item \code{prep}: preprocessed data/level metadata
 \item \code{opt}: raw optimizer result from \code{\link[stats:optim]{stats::optim()}}
 }
@@ -83,6 +100,19 @@ This is the package entry point. It wraps \code{mfrm_estimate()} and defaults to
 }
 \details{
 Data must be in \strong{long format} (one row per observed rating event).
+}
+\section{Input requirements}{
+
+Minimum required columns are:
+\itemize{
+\item person identifier (\code{person})
+\item one or more facet identifiers (\code{facets})
+\item observed score (\code{score})
+}
+
+Scores are treated as ordered categories.
+If your observed categories do not start at 0, set \code{rating_min}/\code{rating_max}
+explicitly to avoid unintended recoding assumptions.
 
 Supported model/estimation combinations:
 \itemize{
@@ -98,6 +128,15 @@ Both are normalized internally, so column names can be flexible
 (\code{facet}, \code{level}, \code{anchor}, \code{group}, \code{groupvalue}, etc.).
 }
 
+Anchor audit behavior:
+\itemize{
+\item \code{fit_mfrm()} runs an internal anchor audit.
+\item invalid rows are removed before estimation.
+\item duplicate rows keep the last occurrence for each key.
+\item \code{anchor_policy} controls whether detected issues are warned, treated as
+errors, or kept silent.
+}
+
 Facet sign orientation:
 \itemize{
 \item facets listed in \code{positive_facets} are treated as \code{+1}
@@ -105,6 +144,26 @@ Facet sign orientation:
 This affects interpretation of reported facet measures.
 }
 }
+
+\section{Interpreting output}{
+
+A typical first-pass read is:
+\enumerate{
+\item \code{fit$summary} for convergence and global fit indicators.
+\item \code{summary(fit)} for human-readable overviews.
+\item \code{diagnose_mfrm(fit)} for element-level fit, separation, and warning tables.
+}
+}
+
+\section{Typical workflow}{
+
+\enumerate{
+\item Fit the model with \code{fit_mfrm(...)}.
+\item Validate convergence and scale structure with \code{summary(fit)}.
+\item Run \code{\link[=diagnose_mfrm]{diagnose_mfrm()}} and proceed to reporting with \code{\link[=build_apa_outputs]{build_apa_outputs()}}.
+}
+}
+
 \examples{
 toy <- expand.grid(
   Person = paste0("P", 1:4),
@@ -128,6 +187,22 @@ fit <- fit_mfrm(
   maxit = 25
 )
 fit$summary
+s_fit <- summary(fit)
+s_fit$overview[, c("Model", "Method", "Converged")]
+p_fit <- plot(fit, draw = FALSE)
+class(p_fit)
+
+# MML is the default:
+fit_mml <- fit_mfrm(
+  data = toy,
+  person = "Person",
+  facets = c("Rater", "Criterion"),
+  score = "Score",
+  model = "RSM",
+  quad_points = 7,
+  maxit = 25
+)
+summary(fit_mml)
 }
 \seealso{
 \code{\link[=diagnose_mfrm]{diagnose_mfrm()}}, \code{\link[=estimate_bias]{estimate_bias()}}, \code{\link[=build_apa_outputs]{build_apa_outputs()}}

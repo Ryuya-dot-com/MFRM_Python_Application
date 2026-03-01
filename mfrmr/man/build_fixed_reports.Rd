@@ -4,12 +4,20 @@
 \alias{build_fixed_reports}
 \title{Build FACETS-style fixed-width text reports}
 \usage{
-build_fixed_reports(bias_results, target_facet = NULL)
+build_fixed_reports(
+  bias_results,
+  target_facet = NULL,
+  branch = c("facets", "original")
+)
 }
 \arguments{
 \item{bias_results}{Output from \code{\link[=estimate_bias]{estimate_bias()}}.}
 
 \item{target_facet}{Optional target facet for pairwise contrast table.}
+
+\item{branch}{Output branch:
+\code{"facets"} keeps FACETS-like fixed-width text;
+\code{"original"} returns compact sectioned fixed-width text for internal reporting.}
 }
 \value{
 A named list with:
@@ -26,9 +34,30 @@ Build FACETS-style fixed-width text reports
 This function generates plain-text, fixed-width output intended to be read in
 console/log environments or exported into text reports.
 
-The pairwise section compares levels inside \code{target_facet} across contexts
-defined by the opposite facet.
+The pairwise section (Table 14 style) is only generated for 2-way bias runs.
+For higher-order interactions (\code{interaction_facets} length >= 3), the function
+returns the bias table text and a note explaining why pairwise contrasts were
+skipped.
 }
+\section{Interpreting output}{
+
+\itemize{
+\item \code{bias_fixed}: fixed-width table of interaction effects.
+\item \code{pairwise_fixed}: pairwise contrast text (2-way only).
+\item \code{pairwise_table}: machine-readable contrast table.
+\item \code{interaction_label}: facets used for the bias run.
+}
+}
+
+\section{Typical workflow}{
+
+\enumerate{
+\item Run \code{\link[=estimate_bias]{estimate_bias()}}.
+\item Build text bundle with \code{build_fixed_reports(...)}.
+\item Use \code{summary()}/\code{plot()} for quick checks, then export text blocks.
+}
+}
+
 \examples{
 toy <- expand.grid(
   Person = paste0("P", 1:4),
@@ -45,7 +74,20 @@ fit <- fit_mfrm(toy, "Person", c("Rater", "Criterion"), "Score", method = "JML",
 diag <- diagnose_mfrm(fit, residual_pca = "none")
 bias <- estimate_bias(fit, diag, facet_a = "Rater", facet_b = "Criterion", max_iter = 2)
 fixed <- build_fixed_reports(bias)
-names(fixed)
+fixed_original <- build_fixed_reports(bias, branch = "original")
+summary(fixed)
+p <- plot(fixed, draw = FALSE)
+p2 <- plot(fixed, type = "pvalue", draw = FALSE)
+if (interactive()) {
+  plot(
+    fixed,
+    type = "contrast",
+    draw = TRUE,
+    main = "Pairwise Contrasts (Customized)",
+    palette = c(pos = "#1b9e77", neg = "#d95f02"),
+    label_angle = 45
+  )
+}
 }
 \seealso{
 \code{\link[=estimate_bias]{estimate_bias()}}, \code{\link[=build_apa_outputs]{build_apa_outputs()}}

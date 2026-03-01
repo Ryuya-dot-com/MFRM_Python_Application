@@ -25,9 +25,33 @@ by string key instead of calling \code{data()} manually.
 Returned columns are always:
 \code{Study}, \code{Person}, \code{Rater}, \code{Criterion}, \code{Score}.
 }
+\section{Interpreting output}{
+
+The return value is a plain long-format \code{data.frame}, ready for direct use
+in \code{\link[=fit_mfrm]{fit_mfrm()}} without additional reshaping.
+}
+
+\section{Typical workflow}{
+
+\enumerate{
+\item list valid names with \code{\link[=list_mfrmr_data]{list_mfrmr_data()}}.
+\item load one dataset key with \code{load_mfrmr_data(name)}.
+\item fit a model with \code{\link[=fit_mfrm]{fit_mfrm()}} and inspect with \code{summary()} / \code{plot()}.
+}
+}
+
 \examples{
 d <- load_mfrmr_data("study1")
 head(d)
+fit <- fit_mfrm(
+  data = d,
+  person = "Person",
+  facets = c("Rater", "Criterion"),
+  score = "Score",
+  method = "JML",
+  maxit = 25
+)
+summary(fit)
 }
 \seealso{
 \code{\link[=list_mfrmr_data]{list_mfrmr_data()}}, \link{ej2021_data}

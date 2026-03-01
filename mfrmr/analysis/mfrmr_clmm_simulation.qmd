@@ -1,0 +1,1130 @@
+---
+title: "MFRM Simulation: mfrmr vs ordinal::clmm"
+format:
+  html:
+    toc: true
+    number-sections: true
+execute:
+  echo: true
+  warning: false
+  message: false
+params:
+  run_simulation: false
+  n_reps: 100
+  seed: 20260214
+  output_dir: "analysis/output/mfrmr_clmm"
+  max_conditions: null
+  models: ["RSM", "PCM"]
+  nAGQ: 1
+  n_cat: 5
+  threshold_values: [-2.0, -0.67, 0.67, 2.0]
+  threshold_jitter_sd: 0.0
+  person_distribution: "normal"
+  person_mean: 0.0
+  person_variance: 1.0
+  rater_mean: 0.0
+  rater_variance: 0.2
+  rater_effect_size: 1.0
+  task_mean: 0.0
+  task_variance: 0.2
+  task_effect_size: 1.0
+  criteria_mean: 0.0
+  criteria_variance: 0.2
+  criteria_effect_size: 1.0
+---
+
+## Purpose
+
+This Quarto document builds a simulation framework to compare:
+
+- `mfrmr` with `JMLE`
+- `mfrmr` with `MML`
+- `ordinal::clmm` with all facets as random effects (`all_random`)
+- `ordinal::clmm` with automatic fallback to fixed effects when facet levels are too small (`adaptive`)
+- `ordinal::clmm` with all non-person facets as fixed effects (`all_fixed_facets`)
+
+The design follows your requested facet levels:
+
+- `Participant`: 10, 20, 30, 40, 50, 60
+- `Rater`: 2, 3, 4
+- `Task`: 2, 3, 4
+- `Criteria`: 2, 3, 4
+- Data-generating models: `RSM` first, then `PCM`
+- Replications per condition: 100
+
+Primary comparison focuses on fit-oriented metrics.
+
+## Setup
+
+This section corresponds to the computational environment statement in APA 7th (software and package dependencies).
+
+```{r}
+required_pkgs <- c(
+  "mfrmr", "ordinal", "dplyr", "tidyr", "purrr", "tibble", "ggplot2", "stringr"
+)
+
+missing_pkgs <- required_pkgs[!vapply(required_pkgs, requireNamespace, logical(1), quietly = TRUE)]
+if (length(missing_pkgs) > 0) {
+  stop("Install required packages first: ", paste(missing_pkgs, collapse = ", "))
+}
+
+library(mfrmr)
+library(ordinal)
+library(dplyr)
+library(tidyr)
+library(purrr)
+library(tibble)
+library(ggplot2)
+library(stringr)
+```
+
+## Simulation Design
+
+The following chunk defines the fully crossed design conditions and simulation hyperparameters. In APA 7th style, these values can be reported as the planned design factors and analysis settings.
+
+```{r}
+participant_levels <- c(10, 20, 30, 40, 50, 60)
+rater_levels <- c(2, 3, 4)
+task_levels <- c(2, 3, 4)
+criteria_levels <- c(2, 3, 4)
+
+build_design_grid <- function(models = c("RSM", "PCM")) {
+  tidyr::expand_grid(
+    data_model = models,
+    n_person = participant_levels,
+    n_rater = rater_levels,
+    n_task = task_levels,
+    n_criteria = criteria_levels
+  ) |>
+    mutate(condition_id = row_number())
+}
+
+design_grid <- build_design_grid(params$models)
+if (!is.null(params$max_conditions)) {
+  design_grid <- design_grid |> slice_head(n = as.integer(params$max_conditions))
+}
+
+n_conditions <- nrow(design_grid)
+cat("Conditions:", n_conditions, "\n")
+cat("Replications per condition:", params$n_reps, "\n")
+cat("Total datasets:", n_conditions * params$n_reps, "\n")
+
+sim_settings <- list(
+  n_cat = as.integer(params$n_cat),
+  thresholds = as.numeric(params$threshold_values),
+  threshold_jitter_sd = as.numeric(params$threshold_jitter_sd),
+  person_distribution = tolower(as.character(params$person_distribution)),
+  person_mean = as.numeric(params$person_mean),
+  person_variance = as.numeric(params$person_variance),
+  rater_mean = as.numeric(params$rater_mean),
+  rater_variance = as.numeric(params$rater_variance),
+  rater_effect_size = as.numeric(params$rater_effect_size),
+  task_mean = as.numeric(params$task_mean),
+  task_variance = as.numeric(params$task_variance),
+  task_effect_size = as.numeric(params$task_effect_size),
+  criteria_mean = as.numeric(params$criteria_mean),
+  criteria_variance = as.numeric(params$criteria_variance),
+  criteria_effect_size = as.numeric(params$criteria_effect_size)
+)
+
+if (!sim_settings$person_distribution %in% c("normal", "uniform")) {
+  stop("`person_distribution` must be either 'normal' or 'uniform'.")
+}
+if (sim_settings$n_cat < 2L) {
+  stop("`n_cat` must be >= 2.")
+}
+if (length(sim_settings$thresholds) != (sim_settings$n_cat - 1L)) {
+  stop("`threshold_values` length must equal n_cat - 1.")
+}
+if (any(!is.finite(sim_settings$thresholds))) {
+  stop("`threshold_values` must be finite numeric values.")
+}
+if (any(c(
+  sim_settings$person_variance,
+  sim_settings$rater_variance,
+  sim_settings$task_variance,
+  sim_settings$criteria_variance
+) <= 0)) {
+  stop("All variance parameters must be > 0.")
+}
+if (any(c(
+  sim_settings$rater_effect_size,
+  sim_settings$task_effect_size,
+  sim_settings$criteria_effect_size
+) <= 0)) {
+  stop("All effect_size parameters must be > 0.")
+}
+
+sim_settings
+```
+
+### APA 7th Method Summary (Auto Text)
+
+```{r}
+model_labels <- paste(params$models, collapse = " and ")
+cat(
+  paste0(
+    "Method (simulation design). A fully crossed simulation was conducted across ",
+    nrow(design_grid), " conditions (",
+    "Participants: ", paste(participant_levels, collapse = ", "), "; ",
+    "Raters: ", paste(rater_levels, collapse = ", "), "; ",
+    "Tasks: ", paste(task_levels, collapse = ", "), "; ",
+    "Criteria: ", paste(criteria_levels, collapse = ", "),
+    "), with ", params$n_reps, " replications per condition. ",
+    "Data-generating models included ", model_labels, ". ",
+    "The rating scale used ", sim_settings$n_cat, " categories with thresholds ",
+    paste(sprintf("%.2f", sim_settings$thresholds), collapse = ", "),
+    ". Person parameters were generated from a ", sim_settings$person_distribution,
+    " distribution (M = ", sprintf("%.2f", sim_settings$person_mean),
+    ", Var = ", sprintf("%.2f", sim_settings$person_variance),
+    "), and facet effects were generated with means/variances specified in the simulation settings."
+  )
+)
+```
+
+## Core Helpers
+
+These helper functions support robust estimation, formatting, and error handling; they are not inferential results.
+
+```{r}
+center_zero <- function(x) {
+  x - mean(x)
+}
+
+softmax_matrix <- function(log_num) {
+  row_max <- apply(log_num, 1, max)
+  exp_shift <- exp(log_num - row_max)
+  exp_shift / rowSums(exp_shift)
+}
+
+safe_mean <- function(x) {
+  if (length(x) == 0 || all(is.na(x))) return(NA_real_)
+  mean(x, na.rm = TRUE)
+}
+
+safe_quantile <- function(x, prob = 0.1) {
+  x <- x[is.finite(x)]
+  if (length(x) == 0) return(NA_real_)
+  as.numeric(stats::quantile(x, probs = prob, names = FALSE))
+}
+
+apa_num <- function(x, digits = 2) {
+  ifelse(is.finite(x), formatC(x, digits = digits, format = "f"), "NA")
+}
+
+capture_fit <- function(expr) {
+  warnings <- character(0)
+  start <- proc.time()[["elapsed"]]
+  result <- tryCatch(
+    withCallingHandlers(
+      expr,
+      warning = function(w) {
+        warnings <<- c(warnings, conditionMessage(w))
+        invokeRestart("muffleWarning")
+      }
+    ),
+    error = function(e) e
+  )
+  elapsed <- proc.time()[["elapsed"]] - start
+  list(result = result, warnings = unique(warnings), elapsed_sec = elapsed)
+}
+```
+
+## Data Generator (RSM/PCM)
+
+```{r}
+prob_matrix_rsm <- function(eta, step_vec) {
+  # step_vec has length n_cat - 1; step_cum length n_cat
+  step_cum <- c(0, cumsum(step_vec))
+  k_vals <- seq_along(step_cum) - 1L
+  log_num <- outer(eta, k_vals) - matrix(step_cum, nrow = length(eta), ncol = length(step_cum), byrow = TRUE)
+  softmax_matrix(log_num)
+}
+
+prob_matrix_pcm <- function(eta, criteria_idx, step_mat) {
+  # step_mat has n_criteria rows and (n_cat - 1) cols
+  n <- length(eta)
+  n_cat <- ncol(step_mat) + 1L
+  probs <- matrix(NA_real_, nrow = n, ncol = n_cat)
+
+  for (c_idx in seq_len(nrow(step_mat))) {
+    rows <- which(criteria_idx == c_idx)
+    if (length(rows) == 0) next
+    probs[rows, ] <- prob_matrix_rsm(eta[rows], step_mat[c_idx, ])
+  }
+  probs
+}
+
+draw_latent <- function(n, distribution = "normal", mean = 0, variance = 1, effect_size = 1) {
+  distribution <- tolower(as.character(distribution[1]))
+  mean <- as.numeric(mean[1])
+  variance <- as.numeric(variance[1])
+  effect_size <- as.numeric(effect_size[1])
+
+  if (!is.finite(variance) || variance <= 0) {
+    stop("`variance` must be > 0.")
+  }
+  if (!is.finite(effect_size) || effect_size <= 0) {
+    stop("`effect_size` must be > 0.")
+  }
+
+  if (distribution == "uniform") {
+    half_range <- sqrt(3 * variance)
+    raw <- stats::runif(n, min = mean - half_range, max = mean + half_range)
+  } else if (distribution == "normal") {
+    raw <- stats::rnorm(n, mean = mean, sd = sqrt(variance))
+  } else {
+    stop("Unsupported distribution: ", distribution)
+  }
+
+  mean + effect_size * (raw - mean)
+}
+
+resolve_thresholds <- function(n_cat, threshold_values = NULL) {
+  n_steps <- as.integer(n_cat) - 1L
+  if (n_steps < 1L) stop("`n_cat` must be >= 2.")
+
+  if (is.null(threshold_values) || length(threshold_values) == 0) {
+    threshold_values <- seq(-2, 2, length.out = n_steps)
+  }
+  threshold_values <- as.numeric(threshold_values)
+  if (length(threshold_values) != n_steps) {
+    stop("`threshold_values` length must equal n_cat - 1.")
+  }
+  if (any(!is.finite(threshold_values))) {
+    stop("`threshold_values` must contain finite numeric values.")
+  }
+  sort(threshold_values)
+}
+
+simulate_mfrm_data <- function(n_person,
+                               n_rater,
+                               n_task,
+                               n_criteria,
+                               data_model = c("RSM", "PCM"),
+                               n_cat = 5,
+                               threshold_values = NULL,
+                               threshold_jitter_sd = 0.0,
+                               person_distribution = "normal",
+                               person_mean = 0.0,
+                               person_variance = 1.0,
+                               rater_mean = 0.0,
+                               rater_variance = 0.2,
+                               rater_effect_size = 1.0,
+                               task_mean = 0.0,
+                               task_variance = 0.2,
+                               task_effect_size = 1.0,
+                               criteria_mean = 0.0,
+                               criteria_variance = 0.2,
+                               criteria_effect_size = 1.0,
+                               seed = NULL) {
+  data_model <- match.arg(data_model)
+  if (!is.null(seed)) set.seed(seed)
+
+  persons <- sprintf("P%03d", seq_len(n_person))
+  raters <- sprintf("R%02d", seq_len(n_rater))
+  tasks <- sprintf("T%02d", seq_len(n_task))
+  criteria <- sprintf("C%02d", seq_len(n_criteria))
+
+  theta <- draw_latent(
+    n = n_person,
+    distribution = person_distribution,
+    mean = person_mean,
+    variance = person_variance,
+    effect_size = 1.0
+  )
+  rater_eff <- draw_latent(
+    n = n_rater,
+    distribution = "normal",
+    mean = rater_mean,
+    variance = rater_variance,
+    effect_size = rater_effect_size
+  )
+  task_eff <- draw_latent(
+    n = n_task,
+    distribution = "normal",
+    mean = task_mean,
+    variance = task_variance,
+    effect_size = task_effect_size
+  )
+  criteria_eff <- draw_latent(
+    n = n_criteria,
+    distribution = "normal",
+    mean = criteria_mean,
+    variance = criteria_variance,
+    effect_size = criteria_effect_size
+  )
+
+  if (n_cat < 2) stop("n_cat must be >= 2")
+  n_steps <- n_cat - 1L
+  base_steps <- resolve_thresholds(n_cat = n_cat, threshold_values = threshold_values)
+  threshold_jitter_sd <- as.numeric(threshold_jitter_sd[1])
+  if (!is.finite(threshold_jitter_sd) || threshold_jitter_sd < 0) {
+    stop("`threshold_jitter_sd` must be >= 0.")
+  }
+
+  if (data_model == "RSM") {
+    step_vec <- sort(base_steps + stats::rnorm(n_steps, 0, threshold_jitter_sd))
+    step_mat <- matrix(step_vec, nrow = 1)
+  } else {
+    step_mat <- matrix(NA_real_, nrow = n_criteria, ncol = n_steps)
+    for (j in seq_len(n_criteria)) {
+      step_mat[j, ] <- sort(base_steps + stats::rnorm(n_steps, 0, threshold_jitter_sd))
+    }
+  }
+
+  dat <- tidyr::crossing(
+    Person = persons,
+    Rater = raters,
+    Task = tasks,
+    Criteria = criteria
+  )
+
+  p_idx <- match(dat$Person, persons)
+  r_idx <- match(dat$Rater, raters)
+  t_idx <- match(dat$Task, tasks)
+  c_idx <- match(dat$Criteria, criteria)
+
+  eta <- theta[p_idx] - rater_eff[r_idx] - task_eff[t_idx] - criteria_eff[c_idx]
+
+  probs <- if (data_model == "RSM") {
+    prob_matrix_rsm(eta, step_mat[1, ])
+  } else {
+    prob_matrix_pcm(eta, criteria_idx = c_idx, step_mat = step_mat)
+  }
+
+  # Draw ordinal category using vectorized inverse CDF sampling.
+  u <- stats::runif(nrow(probs))
+  cum_probs <- t(apply(probs, 1, cumsum))
+  score_k <- rowSums(cum_probs < u)
+
+  obs_prob <- probs[cbind(seq_len(nrow(probs)), score_k + 1L)]
+  expected_k <- as.vector(probs %*% (0:(ncol(probs) - 1L)))
+
+  dat <- dat |>
+    mutate(
+      Score = as.integer(score_k),
+      ObsProbTrue = as.numeric(obs_prob),
+      ExpectedTrue = as.numeric(expected_k)
+    )
+
+  truth <- bind_rows(
+    tibble(Facet = "Person", Level = persons, True = as.numeric(theta)),
+    tibble(Facet = "Rater", Level = raters, True = as.numeric(rater_eff)),
+    tibble(Facet = "Task", Level = tasks, True = as.numeric(task_eff)),
+    tibble(Facet = "Criteria", Level = criteria, True = as.numeric(criteria_eff))
+  ) |>
+    group_by(Facet) |>
+    mutate(True = True - mean(True, na.rm = TRUE)) |>
+    ungroup()
+
+  list(
+    data = dat,
+    truth = truth,
+    step_truth = step_mat,
+    metadata = list(
+      data_model = data_model,
+      n_person = n_person,
+      n_rater = n_rater,
+      n_task = n_task,
+      n_criteria = n_criteria,
+      n_cat = n_cat,
+      threshold_values = base_steps,
+      threshold_jitter_sd = threshold_jitter_sd,
+      person_distribution = person_distribution,
+      person_mean = person_mean,
+      person_variance = person_variance,
+      rater_mean = rater_mean,
+      rater_variance = rater_variance,
+      rater_effect_size = rater_effect_size,
+      task_mean = task_mean,
+      task_variance = task_variance,
+      task_effect_size = task_effect_size,
+      criteria_mean = criteria_mean,
+      criteria_variance = criteria_variance,
+      criteria_effect_size = criteria_effect_size
+    )
+  )
+}
+```
+
+## Metric Extractors
+
+```{r}
+metric_names <- c(
+  "logLik", "AIC", "BIC", "mean_obs_prob", "p10_obs_prob", "neg_log_loss",
+  "brier", "exact_acc", "adjacent_acc", "rmse_expected"
+)
+
+recovery_names <- c(
+  "cor_person", "cor_rater", "cor_task", "cor_criteria",
+  "rmse_person", "rmse_rater", "rmse_task", "rmse_criteria"
+)
+
+empty_metric_list <- function() {
+  stats::setNames(as.list(rep(NA_real_, length(metric_names))), metric_names)
+}
+
+empty_recovery_list <- function() {
+  stats::setNames(as.list(rep(NA_real_, length(recovery_names))), recovery_names)
+}
+
+normalize_effects <- function(tbl, value_col = "Estimate") {
+  if (is.null(tbl) || nrow(tbl) == 0) {
+    return(tibble(Facet = character(0), Level = character(0), Estimate = numeric(0)))
+  }
+  tbl |>
+    transmute(Facet = as.character(.data$Facet), Level = as.character(.data$Level), Estimate = as.numeric(.data[[value_col]])) |>
+    group_by(Facet) |>
+    mutate(Estimate = Estimate - mean(Estimate, na.rm = TRUE)) |>
+    ungroup()
+}
+
+compute_recovery <- function(est_effects, truth_effects) {
+  out <- empty_recovery_list()
+  if (nrow(est_effects) == 0 || nrow(truth_effects) == 0) return(out)
+
+  joined <- truth_effects |>
+    rename(True = .data$Estimate) |>
+    inner_join(est_effects, by = c("Facet", "Level"))
+
+  map_facet <- c(Person = "person", Rater = "rater", Task = "task", Criteria = "criteria")
+
+  for (f in names(map_facet)) {
+    sub <- joined |> filter(.data$Facet == f)
+    suffix <- map_facet[[f]]
+
+    if (nrow(sub) >= 2) {
+      true_sd <- stats::sd(sub$True, na.rm = TRUE)
+      est_sd <- stats::sd(sub$Estimate, na.rm = TRUE)
+
+      out[[paste0("cor_", suffix)]] <- if (is.finite(true_sd) && is.finite(est_sd) && true_sd > 0 && est_sd > 0) {
+        stats::cor(sub$True, sub$Estimate)
+      } else {
+        NA_real_
+      }
+
+      out[[paste0("rmse_", suffix)]] <- sqrt(mean((sub$True - sub$Estimate)^2, na.rm = TRUE))
+    }
+  }
+
+  out
+}
+
+extract_mfrmr_effects <- function(fit) {
+  person_tbl <- fit$facets$person |>
+    transmute(Facet = "Person", Level = as.character(.data$Person), Estimate = as.numeric(.data$Estimate))
+
+  other_tbl <- fit$facets$others |>
+    transmute(Facet = as.character(.data$Facet), Level = as.character(.data$Level), Estimate = as.numeric(.data$Estimate))
+
+  normalize_effects(bind_rows(person_tbl, other_tbl), value_col = "Estimate")
+}
+
+extract_mfrmr_metrics <- function(fit) {
+  out <- empty_metric_list()
+
+  out$logLik <- suppressWarnings(as.numeric(fit$summary$LogLik[1]))
+  out$AIC <- suppressWarnings(as.numeric(fit$summary$AIC[1]))
+  out$BIC <- suppressWarnings(as.numeric(fit$summary$BIC[1]))
+
+  probs <- tryCatch(mfrmr:::compute_prob_matrix(fit), error = function(e) NULL)
+  if (is.null(probs) || nrow(probs) == 0) return(out)
+
+  score_k <- as.integer(fit$prep$data$score_k)
+  obs <- as.numeric(fit$prep$data$Score)
+  n <- length(score_k)
+  if (n == 0) return(out)
+
+  obs_prob <- probs[cbind(seq_len(n), score_k + 1L)]
+  eps <- 1e-12
+
+  out$mean_obs_prob <- safe_mean(obs_prob)
+  out$p10_obs_prob <- safe_quantile(obs_prob, prob = 0.10)
+  out$neg_log_loss <- -safe_mean(log(pmax(obs_prob, eps)))
+
+  y_mat <- matrix(0, nrow = n, ncol = ncol(probs))
+  y_mat[cbind(seq_len(n), score_k + 1L)] <- 1
+
+  out$brier <- safe_mean(rowSums((y_mat - probs)^2))
+
+  pred_k <- max.col(probs, ties.method = "first") - 1L
+  out$exact_acc <- safe_mean(as.numeric(pred_k == score_k))
+  out$adjacent_acc <- safe_mean(as.numeric(abs(pred_k - score_k) <= 1L))
+
+  score_values <- seq.int(fit$prep$rating_min, fit$prep$rating_max)
+  expected_score <- as.vector(probs %*% score_values)
+  out$rmse_expected <- sqrt(safe_mean((obs - expected_score)^2))
+
+  out
+}
+
+extract_clmm_metrics <- function(fit) {
+  out <- empty_metric_list()
+
+  out$logLik <- suppressWarnings(as.numeric(logLik(fit)))
+  out$AIC <- suppressWarnings(as.numeric(AIC(fit)))
+  out$BIC <- suppressWarnings(as.numeric(BIC(fit)))
+
+  obs_prob <- suppressWarnings(as.numeric(fit$fitted.values))
+  if (length(obs_prob) == 0) return(out)
+
+  eps <- 1e-12
+  out$mean_obs_prob <- safe_mean(obs_prob)
+  out$p10_obs_prob <- safe_quantile(obs_prob, prob = 0.10)
+  out$neg_log_loss <- -safe_mean(log(pmax(obs_prob, eps)))
+
+  # clmm does not provide full category probabilities by default, so these remain NA.
+  out
+}
+
+extract_clmm_random_effects <- function(fit, data) {
+  if (is.null(fit$ranef) || length(fit$ranef) == 0 || is.null(fit$ST) || length(fit$ST) == 0) {
+    return(tibble(Facet = character(0), Level = character(0), Estimate = numeric(0)))
+  }
+
+  grp_names <- names(fit$ST)
+  nlev <- as.integer(fit$dims$nlev.re)
+  ranef_vec <- as.numeric(fit$ranef)
+
+  if (length(grp_names) == 0 || length(nlev) == 0 || sum(nlev) > length(ranef_vec)) {
+    return(tibble(Facet = character(0), Level = character(0), Estimate = numeric(0)))
+  }
+
+  pos <- 1L
+  parts <- vector("list", length(grp_names))
+
+  for (i in seq_along(grp_names)) {
+    g <- grp_names[[i]]
+    k <- nlev[[i]]
+    vals <- ranef_vec[pos:(pos + k - 1L)]
+    pos <- pos + k
+
+    lv <- levels(data[[g]])
+    if (length(lv) < k) lv <- as.character(seq_len(k))
+
+    parts[[i]] <- tibble(
+      Facet = as.character(g),
+      Level = as.character(lv[seq_len(k)]),
+      Estimate = as.numeric(vals)
+    )
+  }
+
+  bind_rows(parts)
+}
+
+extract_clmm_fixed_effects <- function(fit, data, fixed_facets) {
+  if (length(fixed_facets) == 0 || is.null(fit$beta) || length(fit$beta) == 0) {
+    return(tibble(Facet = character(0), Level = character(0), Estimate = numeric(0)))
+  }
+
+  beta <- as.numeric(fit$beta)
+  names(beta) <- names(fit$beta)
+
+  parts <- list()
+  for (facet in fixed_facets) {
+    lv <- levels(data[[facet]])
+    k <- length(lv)
+    if (k <= 1) next
+
+    idx <- grep(paste0("^", facet), names(beta))
+    if (length(idx) == 0) next
+
+    b <- beta[idx]
+    b_names <- names(b)
+    b_num <- suppressWarnings(as.integer(sub(paste0("^", facet), "", b_names)))
+    if (all(!is.na(b_num))) {
+      b <- b[order(b_num)]
+    }
+
+    if (length(b) < (k - 1L)) {
+      b <- c(b, rep(0, (k - 1L) - length(b)))
+    } else if (length(b) > (k - 1L)) {
+      b <- b[seq_len(k - 1L)]
+    }
+
+    eff <- c(as.numeric(b), -sum(as.numeric(b)))
+
+    parts[[facet]] <- tibble(
+      Facet = facet,
+      Level = lv,
+      Estimate = as.numeric(eff)
+    )
+  }
+
+  if (length(parts) == 0) {
+    return(tibble(Facet = character(0), Level = character(0), Estimate = numeric(0)))
+  }
+  bind_rows(parts)
+}
+```
+
+## Model Fitters
+
+```{r}
+build_clmm_spec <- function(data, strategy = c("all_random", "adaptive", "all_fixed_facets")) {
+  strategy <- match.arg(strategy)
+  facet_terms <- c("Rater", "Task", "Criteria")
+
+  nlev <- vapply(data[facet_terms], nlevels, integer(1))
+
+  if (strategy == "all_random") {
+    fixed_facets <- character(0)
+    random_facets <- facet_terms
+  } else if (strategy == "adaptive") {
+    random_facets <- facet_terms[nlev > 2]
+    fixed_facets <- setdiff(facet_terms, random_facets)
+  } else {
+    fixed_facets <- facet_terms
+    random_facets <- character(0)
+  }
+
+  random_terms <- if (length(random_facets) == 0) {
+    character(0)
+  } else {
+    paste0("(1|", random_facets, ")")
+  }
+
+  rhs_terms <- c(
+    "1",
+    fixed_facets,
+    "(1|Person)",
+    random_terms
+  )
+
+  rhs_terms <- rhs_terms[nzchar(rhs_terms)]
+  formula_txt <- paste("ScoreOrd ~", paste(rhs_terms, collapse = " + "))
+
+  structure_label <- paste0(
+    "fixed=",
+    if (length(fixed_facets) == 0) "none" else paste(fixed_facets, collapse = "+"),
+    "; random=Person",
+    if (length(random_facets) == 0) "" else paste0("+", paste(random_facets, collapse = "+"))
+  )
+
+  list(
+    formula = stats::as.formula(formula_txt),
+    fixed_facets = fixed_facets,
+    random_facets = random_facets,
+    structure_label = structure_label
+  )
+}
+
+run_mfrmr_fit <- function(data, truth_tbl, data_model, method, quad_points = 15, maxit = 300, reltol = 1e-6) {
+  cap <- capture_fit(
+    mfrmr::fit_mfrm(
+      data = data,
+      person = "Person",
+      facets = c("Rater", "Task", "Criteria"),
+      score = "Score",
+      model = data_model,
+      method = method,
+      step_facet = if (data_model == "PCM") "Criteria" else NULL,
+      quad_points = quad_points,
+      maxit = maxit,
+      reltol = reltol
+    )
+  )
+
+  out <- list(
+    estimator = paste0("mfrmr_", method),
+    converged = FALSE,
+    elapsed_sec = cap$elapsed_sec,
+    warning_count = length(cap$warnings),
+    warning_text = if (length(cap$warnings) == 0) NA_character_ else paste(cap$warnings, collapse = " | "),
+    error_text = NA_character_,
+    structure_label = "native_mfrm",
+    metrics = empty_metric_list(),
+    recovery = empty_recovery_list()
+  )
+
+  if (inherits(cap$result, "error")) {
+    out$error_text <- conditionMessage(cap$result)
+    return(out)
+  }
+
+  fit <- cap$result
+  out$converged <- isTRUE(as.logical(fit$summary$Converged[1])) && isTRUE(fit$opt$convergence == 0)
+  out$metrics <- extract_mfrmr_metrics(fit)
+
+  est_effects <- extract_mfrmr_effects(fit)
+  truth_effects <- normalize_effects(truth_tbl |> rename(Estimate = True), value_col = "Estimate")
+  out$recovery <- compute_recovery(est_effects, truth_effects)
+
+  out
+}
+
+run_clmm_fit <- function(data, truth_tbl, strategy = c("all_random", "adaptive", "all_fixed_facets"), nAGQ = 1, maxIter = 50) {
+  strategy <- match.arg(strategy)
+
+  df <- data |>
+    mutate(
+      Person = factor(.data$Person),
+      Rater = factor(.data$Rater),
+      Task = factor(.data$Task),
+      Criteria = factor(.data$Criteria),
+      ScoreOrd = ordered(.data$Score, levels = sort(unique(.data$Score)))
+    )
+
+  spec <- build_clmm_spec(df, strategy = strategy)
+
+  for (f in spec$fixed_facets) {
+    contrasts(df[[f]]) <- stats::contr.sum(nlevels(df[[f]]))
+  }
+
+  cap <- capture_fit(
+    ordinal::clmm(
+      formula = spec$formula,
+      data = df,
+      nAGQ = as.integer(nAGQ),
+      Hess = FALSE,
+      control = ordinal::clmm.control(maxIter = maxIter, gradTol = 1e-4)
+    )
+  )
+
+  out <- list(
+    estimator = paste0("clmm_", strategy),
+    converged = FALSE,
+    elapsed_sec = cap$elapsed_sec,
+    warning_count = length(cap$warnings),
+    warning_text = if (length(cap$warnings) == 0) NA_character_ else paste(cap$warnings, collapse = " | "),
+    error_text = NA_character_,
+    structure_label = spec$structure_label,
+    metrics = empty_metric_list(),
+    recovery = empty_recovery_list()
+  )
+
+  if (inherits(cap$result, "error")) {
+    out$error_text <- conditionMessage(cap$result)
+    return(out)
+  }
+
+  fit <- cap$result
+  out$converged <- !is.null(fit$optRes$convergence) && isTRUE(fit$optRes$convergence == 0)
+  out$metrics <- extract_clmm_metrics(fit)
+
+  random_eff <- extract_clmm_random_effects(fit, df)
+  fixed_eff <- extract_clmm_fixed_effects(fit, df, fixed_facets = spec$fixed_facets)
+  est_effects <- normalize_effects(bind_rows(random_eff, fixed_eff), value_col = "Estimate")
+
+  truth_effects <- normalize_effects(truth_tbl |> rename(Estimate = True), value_col = "Estimate")
+  out$recovery <- compute_recovery(est_effects, truth_effects)
+
+  out
+}
+```
+
+## Simulation Runner
+
+```{r}
+collect_result_row <- function(condition_row, rep_id, fit_out) {
+  tibble(
+    condition_id = as.integer(condition_row$condition_id),
+    replicate = as.integer(rep_id),
+    data_model = as.character(condition_row$data_model),
+    n_person = as.integer(condition_row$n_person),
+    n_rater = as.integer(condition_row$n_rater),
+    n_task = as.integer(condition_row$n_task),
+    n_criteria = as.integer(condition_row$n_criteria),
+    estimator = as.character(fit_out$estimator),
+    converged = isTRUE(fit_out$converged),
+    elapsed_sec = as.numeric(fit_out$elapsed_sec),
+    warning_count = as.integer(fit_out$warning_count),
+    warning_text = as.character(fit_out$warning_text),
+    error_text = as.character(fit_out$error_text),
+    model_structure = as.character(fit_out$structure_label),
+    !!!fit_out$metrics,
+    !!!fit_out$recovery
+  )
+}
+
+run_one_replicate <- function(condition_row, rep_id, seed_base = 20260214, nAGQ = 1, sim_settings = NULL) {
+  if (is.null(sim_settings)) {
+    stop("`sim_settings` must be provided.")
+  }
+  sim_seed <- as.integer(seed_base + condition_row$condition_id * 100000L + rep_id)
+
+  sim <- simulate_mfrm_data(
+    n_person = condition_row$n_person,
+    n_rater = condition_row$n_rater,
+    n_task = condition_row$n_task,
+    n_criteria = condition_row$n_criteria,
+    data_model = condition_row$data_model,
+    n_cat = sim_settings$n_cat,
+    threshold_values = sim_settings$thresholds,
+    threshold_jitter_sd = sim_settings$threshold_jitter_sd,
+    person_distribution = sim_settings$person_distribution,
+    person_mean = sim_settings$person_mean,
+    person_variance = sim_settings$person_variance,
+    rater_mean = sim_settings$rater_mean,
+    rater_variance = sim_settings$rater_variance,
+    rater_effect_size = sim_settings$rater_effect_size,
+    task_mean = sim_settings$task_mean,
+    task_variance = sim_settings$task_variance,
+    task_effect_size = sim_settings$task_effect_size,
+    criteria_mean = sim_settings$criteria_mean,
+    criteria_variance = sim_settings$criteria_variance,
+    criteria_effect_size = sim_settings$criteria_effect_size,
+    seed = sim_seed
+  )
+
+  dat <- sim$data
+  truth_tbl <- sim$truth
+
+  fits <- list(
+    run_mfrmr_fit(dat, truth_tbl, data_model = condition_row$data_model, method = "JMLE", maxit = 300),
+    run_mfrmr_fit(dat, truth_tbl, data_model = condition_row$data_model, method = "MML", maxit = 300),
+    run_clmm_fit(dat, truth_tbl, strategy = "all_random", nAGQ = nAGQ, maxIter = 50),
+    run_clmm_fit(dat, truth_tbl, strategy = "adaptive", nAGQ = nAGQ, maxIter = 50),
+    run_clmm_fit(dat, truth_tbl, strategy = "all_fixed_facets", nAGQ = nAGQ, maxIter = 50)
+  )
+
+  bind_rows(lapply(fits, function(x) collect_result_row(condition_row, rep_id, x)))
+}
+
+run_simulation_grid <- function(design_grid, n_reps = 100, seed_base = 20260214, nAGQ = 1, sim_settings = NULL, show_progress = TRUE) {
+  if (is.null(sim_settings)) {
+    stop("`sim_settings` must be provided.")
+  }
+  total <- nrow(design_grid) * n_reps
+  idx <- 0L
+  out <- vector("list", length = total)
+
+  pb <- if (isTRUE(show_progress)) utils::txtProgressBar(min = 0, max = total, style = 3) else NULL
+
+  k <- 1L
+  for (i in seq_len(nrow(design_grid))) {
+    cond <- design_grid[i, ]
+    for (r in seq_len(n_reps)) {
+      out[[k]] <- run_one_replicate(
+        condition_row = cond,
+        rep_id = r,
+        seed_base = seed_base,
+        nAGQ = nAGQ,
+        sim_settings = sim_settings
+      )
+
+      idx <- idx + 1L
+      if (!is.null(pb)) utils::setTxtProgressBar(pb, idx)
+      k <- k + 1L
+    }
+  }
+
+  if (!is.null(pb)) close(pb)
+  bind_rows(out)
+}
+
+summarize_results <- function(raw_tbl) {
+  if (is.null(raw_tbl) || nrow(raw_tbl) == 0) return(tibble())
+
+  raw_tbl |>
+    group_by(data_model, n_person, n_rater, n_task, n_criteria, estimator) |>
+    summarize(
+      runs = n(),
+      converged_runs = sum(converged, na.rm = TRUE),
+      convergence_rate = safe_mean(as.numeric(converged)),
+      mean_elapsed_sec = safe_mean(elapsed_sec),
+      mean_logLik = safe_mean(logLik),
+      mean_AIC = safe_mean(AIC),
+      mean_BIC = safe_mean(BIC),
+      mean_neg_log_loss = safe_mean(neg_log_loss),
+      mean_obs_prob = safe_mean(mean_obs_prob),
+      mean_p10_obs_prob = safe_mean(p10_obs_prob),
+      mean_brier = safe_mean(brier),
+      mean_exact_acc = safe_mean(exact_acc),
+      mean_adjacent_acc = safe_mean(adjacent_acc),
+      mean_cor_person = safe_mean(cor_person),
+      mean_cor_rater = safe_mean(cor_rater),
+      mean_cor_task = safe_mean(cor_task),
+      mean_cor_criteria = safe_mean(cor_criteria),
+      mean_rmse_person = safe_mean(rmse_person),
+      mean_rmse_rater = safe_mean(rmse_rater),
+      mean_rmse_task = safe_mean(rmse_task),
+      mean_rmse_criteria = safe_mean(rmse_criteria),
+      .groups = "drop"
+    )
+}
+```
+
+## Run (Optional)
+
+This section executes the planned simulation and writes machine-readable outputs (`raw`, `summary`, `failures`) that can be cited in the Results and Supplementary Materials sections.
+
+```{r}
+simulation_raw <- tibble()
+simulation_summary <- tibble()
+
+if (isTRUE(params$run_simulation)) {
+  output_dir <- params$output_dir
+  dir.create(output_dir, recursive = TRUE, showWarnings = FALSE)
+
+  simulation_raw <- run_simulation_grid(
+    design_grid = design_grid,
+    n_reps = as.integer(params$n_reps),
+    seed_base = as.integer(params$seed),
+    nAGQ = as.integer(params$nAGQ),
+    sim_settings = sim_settings,
+    show_progress = TRUE
+  )
+
+  simulation_summary <- summarize_results(simulation_raw)
+
+  utils::write.csv(simulation_raw, file.path(output_dir, "simulation_raw.csv"), row.names = FALSE)
+  utils::write.csv(simulation_summary, file.path(output_dir, "simulation_summary.csv"), row.names = FALSE)
+
+  failures <- simulation_raw |>
+    filter(!converged | !is.na(error_text))
+  utils::write.csv(failures, file.path(output_dir, "simulation_failures.csv"), row.names = FALSE)
+
+  cat("Saved:\n")
+  cat("-", file.path(output_dir, "simulation_raw.csv"), "\n")
+  cat("-", file.path(output_dir, "simulation_summary.csv"), "\n")
+  cat("-", file.path(output_dir, "simulation_failures.csv"), "\n")
+} else {
+  cat("Simulation is skipped (params$run_simulation = FALSE).\n")
+  cat("Set run_simulation: true to execute full runs.\n")
+}
+```
+
+## Quick Sanity Check (One Condition)
+
+Before full execution, this check confirms that all estimators run on a single condition and return core fit indices.
+
+```{r}
+# Lightweight check so the code path can be validated without full execution.
+one_condition <- tibble(
+  condition_id = 1L,
+  data_model = "RSM",
+  n_person = 20L,
+  n_rater = 2L,
+  n_task = 2L,
+  n_criteria = 2L
+)
+
+sanity <- run_one_replicate(
+  one_condition,
+  rep_id = 1,
+  seed_base = params$seed,
+  nAGQ = params$nAGQ,
+  sim_settings = sim_settings
+)
+
+sanity |>
+  select(estimator, converged, model_structure, logLik, AIC, BIC, mean_obs_prob, neg_log_loss, error_text)
+```
+
+## If Full Simulation Was Run: Summary Tables and Plots
+
+```{r}
+overall_summary_tbl <- tibble()
+
+if (nrow(simulation_summary) > 0) {
+  overall_summary_tbl <- simulation_summary |>
+    group_by(data_model, estimator) |>
+    summarize(
+      mean_convergence = safe_mean(convergence_rate),
+      sd_convergence = stats::sd(convergence_rate, na.rm = TRUE),
+      mean_AIC = safe_mean(mean_AIC),
+      sd_AIC = stats::sd(mean_AIC, na.rm = TRUE),
+      mean_BIC = safe_mean(mean_BIC),
+      sd_BIC = stats::sd(mean_BIC, na.rm = TRUE),
+      mean_neg_log_loss = safe_mean(mean_neg_log_loss),
+      sd_neg_log_loss = stats::sd(mean_neg_log_loss, na.rm = TRUE),
+      .groups = "drop"
+    )
+
+  overall_summary_tbl |>
+    arrange(data_model, desc(mean_convergence), mean_neg_log_loss)
+}
+```
+
+### APA 7th Results Summary (Auto Text)
+
+```{r}
+if (nrow(overall_summary_tbl) > 0) {
+  by_model <- split(overall_summary_tbl, overall_summary_tbl$data_model)
+  for (model_name in names(by_model)) {
+    sub <- by_model[[model_name]]
+    sub <- sub[order(sub$mean_neg_log_loss, sub$mean_AIC), , drop = FALSE]
+    best <- sub[1, , drop = FALSE]
+
+    cat(
+      paste0(
+        "Results (", model_name, "). Across estimators, convergence rates and fit indices varied by model specification. ",
+        "The lowest average negative log loss was observed for ", best$estimator,
+        " (M = ", apa_num(best$mean_neg_log_loss), ", SD = ", apa_num(best$sd_neg_log_loss),
+        "). Its average convergence rate was ",
+        apa_num(best$mean_convergence * 100, digits = 1), "% (SD = ",
+        apa_num(best$sd_convergence * 100, digits = 1), "). ",
+        "For this estimator, AIC and BIC were ",
+        apa_num(best$mean_AIC), " and ", apa_num(best$mean_BIC), ", respectively."
+      ),
+      "\n\n"
+    )
+  }
+} else {
+  cat("Results text will be generated automatically after `run_simulation = true`.")
+}
+```
+
+The next figures provide visual checks of (a) convergence behavior across rater levels and (b) comparative fit based on negative log loss.
+
+```{r}
+if (nrow(simulation_summary) > 0) {
+  p_conv <- simulation_summary |>
+    group_by(data_model, estimator, n_rater) |>
+    summarize(convergence_rate = safe_mean(convergence_rate), .groups = "drop") |>
+    ggplot(aes(x = factor(n_rater), y = convergence_rate, color = estimator, group = estimator)) +
+    geom_line(linewidth = 0.8) +
+    geom_point(size = 1.8) +
+    facet_wrap(~ data_model) +
+    scale_y_continuous(limits = c(0, 1)) +
+    labs(
+      title = "Convergence Rate by Number of Raters",
+      x = "Number of raters",
+      y = "Convergence rate",
+      color = "Estimator"
+    ) +
+    theme_minimal(base_size = 11)
+
+  print(p_conv)
+}
+```
+
+```{r}
+if (nrow(simulation_summary) > 0) {
+  p_fit <- simulation_summary |>
+    group_by(data_model, estimator) |>
+    summarize(mean_neg_log_loss = safe_mean(mean_neg_log_loss), .groups = "drop") |>
+    ggplot(aes(x = reorder(estimator, mean_neg_log_loss), y = mean_neg_log_loss, fill = estimator)) +
+    geom_col(width = 0.7, show.legend = FALSE) +
+    coord_flip() +
+    facet_wrap(~ data_model, scales = "free_y") +
+    labs(
+      title = "Average Negative Log Loss (Lower Is Better)",
+      x = "Estimator",
+      y = "Mean negative log loss"
+    ) +
+    theme_minimal(base_size = 11)
+
+  print(p_fit)
+}
+```
+
+## Notes for Interpretation
+
+- `clmm_all_random` is intentionally strict: it demonstrates instability/failure when random-effect grouping factors have too few levels (including 2-level facets).
+- `clmm_adaptive` moves low-level facets to fixed effects with sum contrast, and keeps feasible facets random.
+- `clmm_all_fixed_facets` is a fully fixed-facet fallback for non-person facets.
+- `mfrmr_JMLE` and `mfrmr_MML` keep the native MFRM estimation workflow and are compared on the same simulated responses.
+
+## Suggested Full Run Command
+
+```bash
+quarto render analysis/mfrmr_clmm_simulation.qmd \
+  -P run_simulation:true \
+  -P n_reps:100 \
+  -P seed:20260214 \
+  -P output_dir:"analysis/output/mfrmr_clmm" \
+  -P nAGQ:1
+```

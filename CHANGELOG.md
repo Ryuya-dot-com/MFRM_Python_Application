@@ -2,6 +2,12 @@
 
 All notable changes to this standalone Streamlit distribution should be recorded here.
 
+## Unreleased
+
+### Added
+
+- Deployment guide for local and Streamlit Community Cloud use.
+
 ## 0.1.0-beta - 2026-04-12
 
 Initial public-beta repository setup.

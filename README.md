@@ -52,6 +52,8 @@ python -m pip install -r requirements-dev.txt
 streamlit run streamlit_app.py
 ```
 
+For deployment notes, including Streamlit Community Cloud settings and privacy gates for hosted use, see `DEPLOYMENT.md`.
+
 ## Verify
 
 ```bash
@@ -194,6 +196,7 @@ requirements.txt
 requirements-dev.txt
 LICENSE
 README.md
+DEPLOYMENT.md
 CHANGELOG.md
 CONTRIBUTING.md
 SECURITY.md

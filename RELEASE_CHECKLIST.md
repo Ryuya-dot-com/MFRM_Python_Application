@@ -16,6 +16,12 @@ Use this checklist before tagging or pushing a public beta release.
 - [ ] Confirm `.streamlit/secrets.toml` is not tracked.
 - [ ] Confirm the in-app and README privacy warnings are still visible.
 
+## Deployment
+
+- [ ] Review `DEPLOYMENT.md` before hosted deployment.
+- [ ] Confirm hosted demos use synthetic, built-in, or fully de-identified data.
+- [ ] Record the Streamlit Community Cloud Python version selected in Advanced settings.
+
 ## Statistical Validation
 
 - [ ] Run `make verify` or the equivalent commands below.

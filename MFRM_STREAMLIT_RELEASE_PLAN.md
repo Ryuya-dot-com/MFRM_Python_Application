@@ -12,6 +12,7 @@
 - Target directory: `/Users/ryuya/Library/CloudStorage/Dropbox/MFRM_Application/MFRM_App/MFRM_Streamlit`
 - Primary app entrypoint: `streamlit_app.py`
 - Documentation: `README.md`
+- Deployment guide: `DEPLOYMENT.md`
 - Dependency file: `requirements.txt`
 - Development dependency file: `requirements-dev.txt`
 - CI: `.github/workflows/python-streamlit.yml`
@@ -144,6 +145,7 @@
 - [x] Add `Makefile` shortcuts for local verification and cleanup.
 - [x] Add `RELEASE_CHECKLIST.md` for public beta release gates.
 - [x] Add `CHANGELOG.md`, `CONTRIBUTING.md`, and `SECURITY.md`.
+- [x] Add `DEPLOYMENT.md` for local and hosted deployment guidance.
 - [x] Add GitHub issue templates that warn against sharing confidential rating data.
 - [x] Add a GitHub remote after choosing the target repository URL.
 - [x] Choose and add a license before public distribution.

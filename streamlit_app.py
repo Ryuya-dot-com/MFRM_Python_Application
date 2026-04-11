@@ -10716,6 +10716,147 @@ def build_beginner_case_guidance(
     return out
 
 
+def build_submission_action_plan(
+    result: dict,
+    diagnostics: dict,
+    all_bias_results: dict | None = None,
+) -> pd.DataFrame:
+    """One-screen priority list for manuscript-ready reporting decisions."""
+    all_bias = all_bias_results or {}
+    gate = build_publication_gate_summary(result, diagnostics, all_bias)
+    beginner = build_beginner_case_guidance(result, diagnostics, all_bias)
+    guide = build_manuscript_claim_guide(result, diagnostics, all_bias)
+    readiness = build_final_report_readiness(result, diagnostics, all_bias)
+    rows: list[dict[str, object]] = []
+
+    def status_rank(status: str) -> int:
+        return {
+            "Not ready": 0,
+            "Do not claim": 0,
+            "Report with caveat": 1,
+            "Review": 1,
+            "Missing": 1,
+            "Boundary": 2,
+            "Ready": 3,
+        }.get(str(status), 2)
+
+    def before_copying(status: str) -> str:
+        status = str(status)
+        if status in {"Not ready", "Do not claim"}:
+            return "Resolve this before copying final APA-style conclusions."
+        if status in {"Report with caveat", "Review", "Missing"}:
+            return "Use caveat language and keep the claim narrower than the draft wording."
+        if status == "Boundary":
+            return "Do not expand this beyond the computed design and diagnostics."
+        return "Use as draft wording after study-specific editing."
+
+    def add_action(
+        rank: int,
+        source: str,
+        topic: str,
+        status: str,
+        evidence: str,
+        action: str,
+        where: str,
+        avoid: str = "",
+        safer: str = "",
+    ) -> None:
+        rows.append({
+            "_Rank": int(rank),
+            "Priority": 0,
+            "Source": str(source),
+            "Topic": str(topic),
+            "Status": str(status),
+            "Evidence": str(evidence),
+            "ImmediateAction": str(action),
+            "BeforeCopying": before_copying(status),
+            "AvoidWording": str(avoid),
+            "SaferWording": str(safer),
+            "WhereToInspect": str(where),
+        })
+
+    if isinstance(gate, pd.DataFrame) and not gate.empty:
+        for i, row in gate.iterrows():
+            status = str(row.get("GateStatus", "Review"))
+            area = str(row.get("GateArea", "Publication gate"))
+            if area == "Overall manuscript gate" or status != "Ready":
+                add_action(
+                    status_rank(status) * 1000 + i,
+                    "Publication gate",
+                    area,
+                    status,
+                    row.get("Evidence", ""),
+                    row.get("ManuscriptAction", "Review gate details before reporting."),
+                    "Report -> APA Report / publication_gate_summary.csv",
+                )
+
+    if isinstance(beginner, pd.DataFrame) and not beginner.empty:
+        for i, row in beginner.iterrows():
+            status = str(row.get("Status", "Review"))
+            if status != "Ready":
+                add_action(
+                    status_rank(status) * 1000 + 100 + int(row.get("Priority", i + 1)),
+                    "Beginner case guide",
+                    row.get("Case", "Case-specific guidance"),
+                    status,
+                    row.get("Evidence", ""),
+                    row.get("NextAction", "Review case-specific guidance."),
+                    row.get("WhereToInspect", "Report"),
+                    row.get("AvoidWording", ""),
+                    row.get("SaferWording", ""),
+                )
+
+    if isinstance(guide, pd.DataFrame) and not guide.empty:
+        for i, row in guide.iterrows():
+            status = str(row.get("ClaimStatus", "Review"))
+            if status != "Ready":
+                add_action(
+                    status_rank(status) * 1000 + 200 + i,
+                    "Manuscript claim guide",
+                    row.get("ManuscriptArea", "Manuscript claim"),
+                    status,
+                    row.get("EvidenceToReport", ""),
+                    row.get("NextAction", "Review claim guide before reporting."),
+                    "Report -> Manuscript Claim Guide / manuscript_claim_guide.csv",
+                    row.get("DoNotClaim", ""),
+                    row.get("SafeManuscriptWording", ""),
+                )
+
+    if isinstance(readiness, pd.DataFrame) and not readiness.empty:
+        for i, row in readiness.iterrows():
+            status = str(row.get("Status", "Review"))
+            required = str(row.get("Required", "No")) == "Yes"
+            if required and status != "Ready":
+                add_action(
+                    status_rank(status) * 1000 + 300 + i,
+                    "Final-report readiness",
+                    row.get("Check", "Readiness check"),
+                    status,
+                    row.get("Evidence", ""),
+                    row.get("ActionBeforeFinalReport", "Review readiness row before reporting."),
+                    "Report -> Reporting Checklist / final_report_readiness.csv",
+                )
+
+    if not rows:
+        add_action(
+            999,
+            "Submission action plan",
+            "No blocking or caveated reporting item",
+            "Ready",
+            "No required blocker, caveat, or boundary row was generated.",
+            "Proceed to study-specific editing and reviewer preflight checks.",
+            "Report -> Manuscript Template / Reporting Checklist",
+            "The generated report can be submitted without revision.",
+            "The generated report was adapted to the study design, rubric, and local reporting standards.",
+        )
+
+    out = pd.DataFrame(rows)
+    out = out.sort_values(["_Rank", "Source", "Topic"]).reset_index(drop=True)
+    out = out.drop_duplicates(subset=["Source", "Topic", "Status"], keep="first").reset_index(drop=True)
+    out["Priority"] = np.arange(1, len(out) + 1, dtype=int)
+    return out.drop(columns=["_Rank"])
+
+
 def generate_manuscript_reporting_template(
     result: dict,
     diagnostics: dict,
@@ -11108,6 +11249,32 @@ def _render_manuscript_claim_guide_section(
     diagnostics: dict,
     all_bias_results: dict | None = None,
 ) -> None:
+    st.subheader("Submission Action Plan")
+    st.caption(
+        "A prioritized first-read list for manuscript blockers, caveats, boundaries, "
+        "and wording repairs."
+    )
+    action_plan = build_submission_action_plan(result, diagnostics, all_bias_results)
+    if isinstance(action_plan, pd.DataFrame) and not action_plan.empty:
+        action_counts = action_plan["Status"].value_counts().to_dict() if "Status" in action_plan.columns else {}
+        action_cols = st.columns(4)
+        action_cols[0].metric("Not ready / Do not claim", int(action_counts.get("Not ready", 0)) + int(action_counts.get("Do not claim", 0)))
+        action_cols[1].metric("Caveat / Review", int(action_counts.get("Report with caveat", 0)) + int(action_counts.get("Review", 0)) + int(action_counts.get("Missing", 0)))
+        action_cols[2].metric("Boundary", int(action_counts.get("Boundary", 0)))
+        action_cols[3].metric("Ready", int(action_counts.get("Ready", 0)))
+        if int(action_counts.get("Not ready", 0)) or int(action_counts.get("Do not claim", 0)):
+            st.error("Resolve the highest-priority blocker rows before writing final conclusions.")
+        elif int(action_counts.get("Report with caveat", 0)) or int(action_counts.get("Review", 0)) or int(action_counts.get("Missing", 0)):
+            st.warning("Use caveat language for the rows marked Caveat, Review, or Missing.")
+        st.dataframe(action_plan, width="stretch", hide_index=True)
+        st.download_button(
+            "Download submission action plan (CSV)",
+            data=to_csv_bytes(action_plan),
+            file_name="mfrm_submission_action_plan.csv",
+            mime="text/csv",
+            key="dl_submission_action_plan_report_tab",
+        )
+
     st.subheader("Manuscript Claim Guide")
     st.caption(
         "A beginner-facing bridge from diagnostics to publishable claims. "
@@ -12026,6 +12193,7 @@ of a research paper that uses MFRM.
     measures = diagnostics.get("measures", pd.DataFrame())
     gate_summary = build_publication_gate_summary(result, diagnostics, all_bias_results)
     case_guidance = build_beginner_case_guidance(result, diagnostics, all_bias_results)
+    action_plan = build_submission_action_plan(result, diagnostics, all_bias_results)
     overall_gate = pd.Series(dtype=object)
     if isinstance(gate_summary, pd.DataFrame) and not gate_summary.empty:
         overall_hit = gate_summary.loc[
@@ -12047,6 +12215,14 @@ of a research paper that uses MFRM.
                 st.success(gate_text)
             with st.expander("View manuscript gate details", expanded=False):
                 st.dataframe(gate_summary, width="stretch", hide_index=True)
+    if isinstance(action_plan, pd.DataFrame) and not action_plan.empty:
+        top_actions = action_plan.head(8)
+        with st.expander("First actions before final reporting", expanded=True):
+            st.caption(
+                "Read these rows before copying APA-style text. They combine the gate, "
+                "claim guide, readiness checks, and wording repairs."
+            )
+            st.dataframe(top_actions, width="stretch", hide_index=True)
     if isinstance(case_guidance, pd.DataFrame) and not case_guidance.empty:
         wording_cols = ["Case", "Status", "AvoidWording", "SaferWording", "NextAction"]
         if set(wording_cols).issubset(case_guidance.columns):
@@ -17994,6 +18170,12 @@ def _render_downloads(
     except Exception:
         publication_gate_dl = pd.DataFrame()
     try:
+        action_plan_dl = build_submission_action_plan(result, diagnostics, all_bias_results)
+        if isinstance(action_plan_dl, pd.DataFrame) and not action_plan_dl.empty:
+            all_frames["submission_action_plan"] = action_plan_dl
+    except Exception:
+        action_plan_dl = pd.DataFrame()
+    try:
         beginner_case_dl = build_beginner_case_guidance(result, diagnostics, all_bias_results)
         if isinstance(beginner_case_dl, pd.DataFrame) and not beginner_case_dl.empty:
             all_frames["beginner_case_guidance"] = beginner_case_dl
@@ -19577,6 +19759,27 @@ def _self_test_report_readiness_and_method_appendix() -> None:
         and "Safer:" in template_with_cases,
         "manuscript template missing case-specific wording repairs",
     )
+    action_plan = build_submission_action_plan(res, diagnostics, all_bias_results={})
+    _self_test_assert(not action_plan.empty, "submission action plan is empty")
+    _self_test_assert(
+        {
+            "Priority",
+            "Source",
+            "Topic",
+            "Status",
+            "Evidence",
+            "ImmediateAction",
+            "BeforeCopying",
+            "AvoidWording",
+            "SaferWording",
+            "WhereToInspect",
+        }.issubset(action_plan.columns),
+        "submission action plan is missing required columns",
+    )
+    _self_test_assert(
+        "Overall manuscript gate" in action_plan["Topic"].astype(str).tolist(),
+        "submission action plan missing overall gate row",
+    )
     threshold_result = {
         "opt": type("Opt", (), {"success": True, "message": "ok"})(),
         "config": {},
@@ -19611,6 +19814,7 @@ def _self_test_report_readiness_and_method_appendix() -> None:
         "demo_manifest",
         "sample_data",
         "publication_gate_summary",
+        "submission_action_plan",
         "beginner_case_guidance",
         "final_report_readiness",
         "manuscript_claim_guide",
@@ -20719,7 +20923,7 @@ def build_demo_report_frames(
             "Method": result.get("config", {}).get("method"),
             "RuntimeBoundary": "standalone Python; no mfrmr/rpy2/Rscript/FACETS/TAM/sirt/mirt runtime call",
             "PrivacyNote": "The demo uses synthetic built-in data only.",
-            "ReadFirst": "Open publication_gate_summary, then beginner_case_guidance, then final_report_readiness, then manuscript_claim_guide, then manuscript_template.md, then visual_interpretation_checklist, then measures and category_probability_curves.",
+            "ReadFirst": "Open publication_gate_summary, then submission_action_plan, then beginner_case_guidance, then final_report_readiness, then manuscript_claim_guide, then manuscript_template.md, then visual_interpretation_checklist, then measures and category_probability_curves.",
         }
     ])
     frames["sample_data"] = data.copy()
@@ -20736,6 +20940,9 @@ def build_demo_report_frames(
     publication_gate = build_publication_gate_summary(result, diagnostics, all_bias_results or {})
     if isinstance(publication_gate, pd.DataFrame) and not publication_gate.empty:
         frames["publication_gate_summary"] = publication_gate
+    action_plan = build_submission_action_plan(result, diagnostics, all_bias_results or {})
+    if isinstance(action_plan, pd.DataFrame) and not action_plan.empty:
+        frames["submission_action_plan"] = action_plan
     beginner_cases = build_beginner_case_guidance(result, diagnostics, all_bias_results or {})
     if isinstance(beginner_cases, pd.DataFrame) and not beginner_cases.empty:
         frames["beginner_case_guidance"] = beginner_cases
@@ -20897,19 +21104,20 @@ It demonstrates the standalone Python workflow without calling `mfrmr`,
 
 1. `MFRM_Demo_Report.html`: browser-readable table report.
 2. `publication_gate_summary.csv`: whether APA-style conclusions are ready, caveated, or blocked.
-3. `beginner_case_guidance.csv`: case-specific cautions for common beginner interpretation traps.
-4. `final_report_readiness.csv`: what to resolve before final reporting.
-5. `manuscript_claim_guide.csv`: what is safe to claim in a manuscript.
-6. `manuscript_template.md`: Methods, Results, limitations, and reviewer preflight scaffold.
-7. `visual_interpretation_checklist.csv`: how to read each plot.
-8. `visual_method_evidence.csv`: methodological basis and readability rules for plots.
-9. `public_beta_limitations.csv`: what this beta release supports and does not claim.
-10. `mfrmr_015_migration_coverage.csv`: how the local mfrmr 0.1.5 feature surface maps to this Python app.
-11. `public_release_readiness.csv`: repository-level public release checklist.
-12. `category_probability_curves.csv`: long-form PCM curve data for the
+3. `submission_action_plan.csv`: prioritized blockers, caveats, boundaries, and wording repairs before manuscript use.
+4. `beginner_case_guidance.csv`: case-specific cautions for common beginner interpretation traps.
+5. `final_report_readiness.csv`: what to resolve before final reporting.
+6. `manuscript_claim_guide.csv`: what is safe to claim in a manuscript.
+7. `manuscript_template.md`: Methods, Results, limitations, and reviewer preflight scaffold.
+8. `visual_interpretation_checklist.csv`: how to read each plot.
+9. `visual_method_evidence.csv`: methodological basis and readability rules for plots.
+10. `public_beta_limitations.csv`: what this beta release supports and does not claim.
+11. `mfrmr_015_migration_coverage.csv`: how the local mfrmr 0.1.5 feature surface maps to this Python app.
+12. `public_release_readiness.csv`: repository-level public release checklist.
+13. `category_probability_curves.csv`: long-form PCM curve data for the
    averaged view and each Task level.
-13. `figures_html/`: interactive category probability and expected-score curves.
-14. `method_appendix.md`: reproducible method notes for this demo run.
+14. `figures_html/`: interactive category probability and expected-score curves.
+15. `method_appendix.md`: reproducible method notes for this demo run.
 
 ## Demo model
 
@@ -20925,7 +21133,7 @@ identifiers before upload or paste.
 """
     (out_dir / "README.md").write_text(readme, encoding="utf-8")
     print(f"Wrote demo report to: {out_dir}")
-    print("Key files: MFRM_Demo_Report.html, MFRM_Demo_Report.xlsx, publication_gate_summary.csv, beginner_case_guidance.csv, final_report_readiness.csv, manuscript_claim_guide.csv, manuscript_template.md, figures_html/")
+    print("Key files: MFRM_Demo_Report.html, MFRM_Demo_Report.xlsx, publication_gate_summary.csv, submission_action_plan.csv, beginner_case_guidance.csv, final_report_readiness.csv, manuscript_claim_guide.csv, manuscript_template.md, figures_html/")
     return 0
 
 

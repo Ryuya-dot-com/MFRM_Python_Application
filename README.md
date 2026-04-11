@@ -152,13 +152,14 @@ After fitting a model, inspect results in this order:
 8. Anchor / linking review: check connectedness and anchor stability before comparing runs or groups.
 9. Strict marginal diagnostics: use for final MML reports when feasible.
 10. Publication gate: check whether APA-style conclusions are ready, caveated, or blocked.
-11. Beginner case guidance: review common interpretation traps and safer wording repairs detected in the current run.
-12. Final-report readiness: use the generated checklist before writing conclusions.
-13. Manuscript claim guide: check what is safe to claim, what requires a caveat, and what should not be claimed yet.
-14. Manuscript template: adapt the generated Methods, Results, limitations, and reviewer preflight scaffold after resolving claim-guide cautions.
+11. Submission action plan: fix prioritized blockers, caveats, boundaries, and wording repairs before manuscript use.
+12. Beginner case guidance: review common interpretation traps and safer wording repairs detected in the current run.
+13. Final-report readiness: use the generated checklist before writing conclusions.
+14. Manuscript claim guide: check what is safe to claim, what requires a caveat, and what should not be claimed yet.
+15. Manuscript template: adapt the generated Methods, Results, limitations, and reviewer preflight scaffold after resolving claim-guide cautions.
 
-The final-report readiness checklist, publication gate, first-read guide,
-manuscript template, and generated report text use the same main thresholds:
+The final-report readiness checklist, publication gate, submission action plan,
+first-read guide, manuscript template, and generated report text use the same main thresholds:
 about 5% or fewer observation residuals with `|z| >= 2`, person reliability at
 least 0.80 when person separation is the goal, and residual PCA first eigenvalue
 below 2.0 for a clean screen.
@@ -169,8 +170,9 @@ whether they are continuous predictors or category labels that should be forced
 categorical.
 
 The app and demo export also include a manuscript claim guide, public-beta
-limitations, and release readiness tables. Use these to keep public claims
-aligned with what the standalone Python engine currently supports.
+limitations, and release readiness tables. The submission action plan combines
+these sources into a prioritized first-read table so public claims stay aligned
+with what the standalone Python engine currently supports.
 The same public-beta bundle includes `mfrmr_015_migration_coverage.csv`, which
 maps the local mfrmr 0.1.5 feature surface to Python support, boundaries, and
 next validation actions.
@@ -191,7 +193,8 @@ python streamlit_app.py --export-demo-report validation/generated/demo_report
 ```
 
 Open `validation/generated/demo_report/MFRM_Demo_Report.html` first, then read
-`publication_gate_summary.csv`, `beginner_case_guidance.csv`,
+`publication_gate_summary.csv`, `submission_action_plan.csv`,
+`beginner_case_guidance.csv`,
 `final_report_readiness.csv`,
 `manuscript_claim_guide.csv`,
 `manuscript_template.md`,

@@ -146,6 +146,24 @@ def test_manuscript_claim_guide_contract():
     assert cases["AvoidWording"].astype(str).str.len().gt(0).all()
     assert cases["SaferWording"].astype(str).str.len().gt(0).all()
 
+    action_plan = app.build_submission_action_plan(result, diagnostics, all_bias_results={})
+    assert not action_plan.empty
+    assert {
+        "Priority",
+        "Source",
+        "Topic",
+        "Status",
+        "Evidence",
+        "ImmediateAction",
+        "BeforeCopying",
+        "AvoidWording",
+        "SaferWording",
+        "WhereToInspect",
+    }.issubset(action_plan.columns)
+    assert action_plan["Priority"].tolist() == sorted(action_plan["Priority"].tolist())
+    assert "Overall manuscript gate" in action_plan["Topic"].astype(str).tolist()
+    assert "Do not claim" in action_plan["Status"].astype(str).tolist()
+
 
 def test_uploaded_file_fingerprint_uses_content_not_only_name_and_size():
     first = io.BytesIO(b"abc")

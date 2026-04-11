@@ -21,6 +21,7 @@ All notable changes to this standalone Streamlit distribution should be recorded
 - Publication gate summary that aligns APA Report conclusions with readiness checks and manuscript claim guardrails.
 - Case-specific beginner guidance for sparse categories, dimensionality, bias screens, MML marginal checks, rater reliability, and linking claims.
 - Result-specific avoid/safer wording repairs in APA Report guidance, manuscript templates, and beginner case-guide exports.
+- Submission action plan that combines publication gates, readiness checks, claim guardrails, and wording repairs into a prioritized first-read table.
 
 ### Changed
 
@@ -35,7 +36,7 @@ All notable changes to this standalone Streamlit distribution should be recorded
 
 ### Validation
 
-- `make verify` passed with 21 built-in self-tests, 9 pytest checks, release check, benchmark smoke, demo report export, and parity fixture export.
+- `make verify` passed with 21 built-in self-tests, 10 pytest checks, release check, benchmark smoke, demo report export, and parity fixture export.
 
 ## 0.1.1-beta - 2026-04-12
 

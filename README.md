@@ -183,7 +183,7 @@ MIT License. See `LICENSE`.
 
 ## Publication Note
 
-`origin` is set to `https://github.com/Ryuya-dot-com/MFRM_Python_Application.git`. That repository already has a `main` history, so publish this standalone app through a review branch or an intentionally planned repository replacement.
+`origin` is set to `https://github.com/Ryuya-dot-com/MFRM_Python_Application.git`. That repository already had a separate `main` history when this standalone Streamlit distribution was prepared. The intended publication path is an explicit replacement of `origin/main` with this standalone app history.
 
 ## Files
 

@@ -148,6 +148,7 @@
 - [x] Add a GitHub remote after choosing the target repository URL.
 - [x] Choose and add a license before public distribution.
 - [x] Confirm `origin/main` has an existing history; do not overwrite it without an explicit replacement decision.
+- [x] Explicit replacement of `origin/main` approved by the project owner.
 
 ## Immediate Next Step
 

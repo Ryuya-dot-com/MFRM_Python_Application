@@ -41,7 +41,8 @@ find . -type d -name __pycache__ -prune -exec rm -rf {} +
 
 - [x] Choose a license before public distribution.
 - [x] Add a remote with `git remote add origin <repo-url>`.
-- [ ] Because `origin/main` already has a separate history, choose a publication path: branch/PR, new repository, or explicit replacement.
-- [ ] For the branch/PR path, push with `git push -u origin main:mfrm-streamlit-beta`.
+- [x] Because `origin/main` already has a separate history, choose a publication path: branch/PR, new repository, or explicit replacement.
+- [x] Explicit replacement of `origin/main` approved by the project owner.
+- [ ] Push with `git push --force-with-lease origin main`.
 - [ ] Confirm GitHub Actions pass on Python 3.11 and 3.12.
 - [ ] Add a tag only after CI passes.

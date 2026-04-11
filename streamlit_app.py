@@ -5,6 +5,7 @@ import hashlib
 import importlib.metadata as importlib_metadata
 import importlib.util
 import json
+import logging
 import os
 import re
 import shutil
@@ -25,6 +26,20 @@ from scipy.optimize import minimize, root_scalar, minimize_scalar
 from scipy.special import logsumexp
 from scipy.stats import chi2, norm as _norm, t as t_dist
 import streamlit as st
+
+
+CLI_CHECK_FLAGS = {
+    "--doctor",
+    "--release-check",
+    "--self-test",
+    "--benchmark",
+    "--benchmark-quick",
+    "--export-demo-report",
+    "--export-parity-fixture",
+}
+if any(flag in sys.argv for flag in CLI_CHECK_FLAGS):
+    logging.getLogger("streamlit.runtime.caching.cache_data_api").setLevel(logging.ERROR)
+    logging.getLogger("streamlit.runtime.caching.cache_resource_api").setLevel(logging.ERROR)
 
 
 APP_VERSION = "0.1.2-beta-dev"
@@ -199,6 +214,129 @@ def visual_method_evidence_table() -> pd.DataFrame:
             "MethodBasis": "Observed-expected residual and marginal fit diagnostics.",
             "AppReadabilityRule": "Limit heatmaps to top residual rows and keep exact values in hover/table export.",
             "PrimaryReference": "TAM/mirt-style marginal and residual diagnostic practice",
+        },
+    ]
+    return pd.DataFrame(rows)
+
+
+def public_beta_limitations_table() -> pd.DataFrame:
+    """Public-beta boundaries that should remain visible before release."""
+    rows = [
+        {
+            "Area": "Runtime independence",
+            "PublicBetaStatus": "Ready",
+            "SupportedNow": "Standalone Python estimation and diagnostics without mfrmr, rpy2, Rscript, FACETS, TAM, sirt, or mirt at runtime.",
+            "Boundary": "External packages are methodological references and validation targets, not runtime engines.",
+            "UserAction": "Do not describe the app as calling or wrapping external MFRM packages.",
+        },
+        {
+            "Area": "Cross-package equivalence",
+            "PublicBetaStatus": "Documented limitation",
+            "SupportedNow": "Parity fixture, validation matrix, parameterization notes, and tolerance policy.",
+            "Boundary": "Exact numerical equality with FACETS, TAM, sirt, mirt, or mfrmr is not claimed by default.",
+            "UserAction": "Report external cross-checks only when the model, constraints, quadrature, and scoring conventions are aligned.",
+        },
+        {
+            "Area": "GPCM",
+            "PublicBetaStatus": "Documented limitation",
+            "SupportedNow": "Bounded GPCM with positive slopes and geometric mean slope fixed to 1.",
+            "Boundary": "Current path requires slope_facet == step_facet; broader full-GPCM slope structures are not enabled.",
+            "UserAction": "Report it as bounded GPCM and interpret slopes separately from Rasch severity/difficulty.",
+        },
+        {
+            "Area": "Latent regression",
+            "PublicBetaStatus": "Ready with review",
+            "SupportedNow": "MML population_formula main effects, fixed user-set population prior SD, covariate type preview, and EAP/PV outputs.",
+            "Boundary": "Population variance is fixed, not estimated; interactions and transformations are not enabled.",
+            "UserAction": "Inspect covariate type preview, especially integer-like codes that may need categorical coding.",
+        },
+        {
+            "Area": "Bias / local interaction",
+            "PublicBetaStatus": "Ready as screening",
+            "SupportedNow": "Selected-pair and all-pair bias tables, heatmaps, summaries, and exports.",
+            "Boundary": "Sparse cells and multiple testing make confirmatory claims risky without design and content evidence.",
+            "UserAction": "Treat flags as review prompts; apply multiplicity and substantive review before strong bias claims.",
+        },
+        {
+            "Area": "Strict marginal diagnostics",
+            "PublicBetaStatus": "Ready as diagnostic",
+            "SupportedNow": "Observed-expected marginal residual summaries and optional pairwise checks for MML.",
+            "Boundary": "Model-internal diagnostic, not a stand-alone external validity test.",
+            "UserAction": "Use for final MML reporting when feasible, and interpret together with fit, PCA, and category checks.",
+        },
+        {
+            "Area": "Hosted data privacy",
+            "PublicBetaStatus": "Requires user governance",
+            "SupportedNow": "Prominent privacy warning and local-run guidance.",
+            "Boundary": "Hosted deployments can process uploaded rating data on remote infrastructure.",
+            "UserAction": "Run locally for confidential data; remove direct identifiers and unnecessary columns.",
+        },
+        {
+            "Area": "Portable scripts",
+            "PublicBetaStatus": "Partial",
+            "SupportedNow": "Current-engine runner supports the app path; portable self-contained scripts support ordinary JMLE/R workflows.",
+            "Boundary": "Portable self-contained GPCM and latent-regression scripts are intentionally blocked with explicit stubs.",
+            "UserAction": "Use the app-engine runner for GPCM, MML engine variants, latent regression, PV, and strict marginal reproduction.",
+        },
+    ]
+    return pd.DataFrame(rows)
+
+
+def public_release_readiness_table() -> pd.DataFrame:
+    """Repository-level public beta readiness checks."""
+    root = Path(__file__).resolve().parent
+
+    def exists(rel_path: str) -> bool:
+        return (root / rel_path).exists()
+
+    rows = [
+        {
+            "Check": "License",
+            "Status": "Ready" if exists("LICENSE") else "Blocker",
+            "Evidence": "MIT LICENSE file present." if exists("LICENSE") else "LICENSE is missing.",
+            "Action": "No action needed." if exists("LICENSE") else "Add a project license before public release.",
+        },
+        {
+            "Check": "Runtime dependencies",
+            "Status": "Ready" if exists("requirements.txt") else "Blocker",
+            "Evidence": "requirements.txt is present." if exists("requirements.txt") else "requirements.txt is missing.",
+            "Action": "Run `python streamlit_app.py --doctor` after dependency changes.",
+        },
+        {
+            "Check": "Development verification",
+            "Status": "Ready" if exists("requirements-dev.txt") and exists("tests") else "Blocker",
+            "Evidence": "requirements-dev.txt and tests/ are present." if exists("requirements-dev.txt") and exists("tests") else "Development verification files are incomplete.",
+            "Action": "Run `make verify` before release.",
+        },
+        {
+            "Check": "GitHub Actions",
+            "Status": "Ready" if exists(".github/workflows/python-streamlit.yml") else "Blocker",
+            "Evidence": ".github/workflows/python-streamlit.yml is present." if exists(".github/workflows/python-streamlit.yml") else "CI workflow is missing.",
+            "Action": "Confirm the latest main-branch Actions run passes before tagging.",
+        },
+        {
+            "Check": "Data privacy disclosure",
+            "Status": "Ready" if exists("SECURITY.md") and exists("DEPLOYMENT.md") else "Review",
+            "Evidence": "SECURITY.md and DEPLOYMENT.md are present." if exists("SECURITY.md") and exists("DEPLOYMENT.md") else "Security/deployment docs need review.",
+            "Action": "Keep hosted-deployment privacy warnings visible in README and app.",
+        },
+        {
+            "Check": "Public beta limitations",
+            "Status": "Ready" if not public_beta_limitations_table().empty else "Blocker",
+            "Evidence": f"{len(public_beta_limitations_table())} limitation rows documented.",
+            "Action": "Do not publish claims that exceed these boundaries.",
+        },
+        {
+            "Check": "External validation stance",
+            "Status": "Documented",
+            "Evidence": "Cross-package validation plan and tolerance policy are available.",
+            "Action": "Treat TAM/sirt/mirt/FACETS/mfrmr equality as validation evidence only after explicit cross-checks.",
+        },
+        {
+            "Check": "Release checklist",
+            "Status": "Ready" if exists("RELEASE_CHECKLIST.md") else "Review",
+            "Evidence": "RELEASE_CHECKLIST.md is present." if exists("RELEASE_CHECKLIST.md") else "Release checklist is missing.",
+            "Action": "Use it before creating a tag or GitHub Release.",
         },
     ]
     return pd.DataFrame(rows)
@@ -7254,6 +7392,12 @@ def render_app_scope_badges(where: str = "main") -> None:
         st.sidebar.caption(text)
     else:
         st.caption(text)
+        with st.expander("Public beta boundaries", expanded=False):
+            st.caption(
+                "These boundaries are part of the app's public-beta claim. "
+                "They prevent over-claiming cross-package equivalence or confirmatory statistical evidence."
+            )
+            st.dataframe(public_beta_limitations_table(), width="stretch", hide_index=True)
 
 
 def render_data_privacy_notice(where: str = "main") -> None:
@@ -13129,6 +13273,7 @@ def show_help_section() -> None:
         "Reporting Guide",
         "Troubleshooting",
         "Model Capability",
+        "Public Beta",
     ])
 
     # ------------------------------------------------------------------
@@ -14443,6 +14588,42 @@ from `step_facet`, multidimensional slopes, or latent-regression GPCM are
 not yet enabled. For reproducibility, use the app-engine runner rather
 than the portable scripts for GPCM runs.
 """
+        )
+
+    # ------------------------------------------------------------------
+    # Tab 10: Public Beta
+    # ------------------------------------------------------------------
+    with help_tabs[9]:
+        st.markdown(
+            """
+### Public Beta Boundaries
+
+This app should be presented as a **public beta / research preview**. The table
+below states what the app currently supports and what should not be
+over-claimed. Use it when writing documentation, release notes, manuscripts, or
+teaching materials based on app output.
+"""
+        )
+        st.dataframe(public_beta_limitations_table(), width="stretch", hide_index=True)
+        st.download_button(
+            "Download public beta limitations (CSV)",
+            data=to_csv_bytes(public_beta_limitations_table()),
+            file_name="mfrm_public_beta_limitations.csv",
+            mime="text/csv",
+            key="dl_public_beta_limitations_help",
+        )
+        st.markdown("### Release Readiness")
+        st.caption(
+            "This is a repository-level checklist. It does not replace a successful CI run, "
+            "but it catches missing release files and over-claiming risks."
+        )
+        st.dataframe(public_release_readiness_table(), width="stretch", hide_index=True)
+        st.download_button(
+            "Download release readiness (CSV)",
+            data=to_csv_bytes(public_release_readiness_table()),
+            file_name="mfrm_public_release_readiness.csv",
+            mime="text/csv",
+            key="dl_public_release_readiness_help",
         )
 
 
@@ -16844,6 +17025,15 @@ def _render_downloads(
     visual_checklist_dl = visual_interpretation_checklist()
     if isinstance(visual_checklist_dl, pd.DataFrame) and not visual_checklist_dl.empty:
         all_frames["visual_interpretation_checklist"] = visual_checklist_dl
+    visual_evidence_dl = visual_method_evidence_table()
+    if isinstance(visual_evidence_dl, pd.DataFrame) and not visual_evidence_dl.empty:
+        all_frames["visual_method_evidence"] = visual_evidence_dl
+    public_beta_dl = public_beta_limitations_table()
+    if isinstance(public_beta_dl, pd.DataFrame) and not public_beta_dl.empty:
+        all_frames["public_beta_limitations"] = public_beta_dl
+    public_readiness_dl = public_release_readiness_table()
+    if isinstance(public_readiness_dl, pd.DataFrame) and not public_readiness_dl.empty:
+        all_frames["public_release_readiness"] = public_readiness_dl
     if not steps_dl.empty:
         all_frames["steps"] = steps_dl
     if not slopes_dl.empty:
@@ -18351,6 +18541,8 @@ def _self_test_report_readiness_and_method_appendix() -> None:
         "final_report_readiness",
         "visual_interpretation_checklist",
         "visual_method_evidence",
+        "public_beta_limitations",
+        "public_release_readiness",
         "category_probability_curves",
     ]:
         _self_test_assert(required in demo_frames, f"demo report frames missing {required}")
@@ -18805,6 +18997,33 @@ def _self_test_cross_package_validation_plan() -> None:
     _self_test_assert("Log-likelihood" in tol["EvidenceType"].tolist(), "tolerance policy missing log-likelihood rule")
 
 
+def _self_test_public_beta_release_contract() -> None:
+    limitations = public_beta_limitations_table()
+    _self_test_assert(not limitations.empty, "public beta limitations table is empty")
+    _self_test_assert(
+        {"Area", "PublicBetaStatus", "SupportedNow", "Boundary", "UserAction"}.issubset(limitations.columns),
+        "public beta limitations table missing required columns",
+    )
+    joined = " ".join(limitations["Area"].astype(str).tolist() + limitations["Boundary"].astype(str).tolist())
+    for expected in ["GPCM", "Latent regression", "Cross-package", "privacy"]:
+        _self_test_assert(expected in joined, f"public beta limitations missing {expected}")
+
+    readiness = public_release_readiness_table()
+    _self_test_assert(not readiness.empty, "public release readiness table is empty")
+    _self_test_assert(
+        {"Check", "Status", "Evidence", "Action"}.issubset(readiness.columns),
+        "public release readiness table missing required columns",
+    )
+    _self_test_assert(
+        "License" in readiness["Check"].astype(str).tolist(),
+        "public release readiness missing license check",
+    )
+    _self_test_assert(
+        not (readiness["Status"].astype(str) == "Blocker").any(),
+        "public release readiness has blocker rows",
+    )
+
+
 def export_reference_parity_fixture(output_dir: str) -> int:
     """Export deterministic Python outputs for external TAM/sirt/mirt checks."""
     out_dir = Path(output_dir).expanduser().resolve()
@@ -19187,6 +19406,8 @@ def build_demo_report_frames(
         frames["final_report_readiness"] = readiness
     frames["visual_interpretation_checklist"] = visual_interpretation_checklist()
     frames["visual_method_evidence"] = visual_method_evidence_table()
+    frames["public_beta_limitations"] = public_beta_limitations_table()
+    frames["public_release_readiness"] = public_release_readiness_table()
     person = result.get("facets", {}).get("person", pd.DataFrame())
     if isinstance(person, pd.DataFrame) and not person.empty:
         frames["person_measures"] = person
@@ -19327,10 +19548,12 @@ It demonstrates the standalone Python workflow without calling `mfrmr`,
 2. `final_report_readiness.csv`: what to resolve before final reporting.
 3. `visual_interpretation_checklist.csv`: how to read each plot.
 4. `visual_method_evidence.csv`: methodological basis and readability rules for plots.
-5. `category_probability_curves.csv`: long-form PCM curve data for the
+5. `public_beta_limitations.csv`: what this beta release supports and does not claim.
+6. `public_release_readiness.csv`: repository-level public release checklist.
+7. `category_probability_curves.csv`: long-form PCM curve data for the
    averaged view and each Task level.
-6. `figures_html/`: interactive category probability and expected-score curves.
-7. `method_appendix.md`: reproducible method notes for this demo run.
+8. `figures_html/`: interactive category probability and expected-score curves.
+9. `method_appendix.md`: reproducible method notes for this demo run.
 
 ## Demo model
 
@@ -19467,6 +19690,33 @@ def run_doctor(json_output: bool = False) -> int:
             print(f"[{row['Status'].upper():5}] {row['Check']:<{width}}  {row['Detail']}")
 
     return 1 if any(row["Status"] == "error" for row in rows) else 0
+
+
+def run_release_check(json_output: bool = False) -> int:
+    """Run static public-beta release readiness checks."""
+    readiness = public_release_readiness_table()
+    limitations = public_beta_limitations_table()
+    payload = {
+        "release_status": "public beta / research preview",
+        "app_version": APP_VERSION,
+        "release_label": APP_RELEASE_LABEL,
+        "readiness": readiness.to_dict(orient="records"),
+        "limitations": limitations.to_dict(orient="records"),
+    }
+    if json_output:
+        print(json.dumps(payload, indent=2, ensure_ascii=False))
+    else:
+        print(f"Release status: public beta / research preview ({APP_RELEASE_LABEL} {APP_VERSION})")
+        print("\nReadiness checks:")
+        width = max(len(str(v)) for v in readiness["Check"].tolist()) if not readiness.empty else 5
+        for _, row in readiness.iterrows():
+            print(f"[{str(row['Status']).upper():10}] {str(row['Check']):<{width}}  {row['Evidence']}")
+            print(f"{'':13} {row['Action']}")
+        print("\nPublic beta limitations:")
+        for _, row in limitations.iterrows():
+            print(f"- {row['Area']}: {row['PublicBetaStatus']} - {row['Boundary']}")
+    blocker_count = int((readiness["Status"].astype(str) == "Blocker").sum()) if "Status" in readiness.columns else 1
+    return 1 if blocker_count else 0
 
 
 def run_benchmarks(csv_path: str | None = None, quick: bool = False) -> int:
@@ -19683,6 +19933,7 @@ def run_self_tests() -> int:
         ("reproducibility fingerprints", _self_test_reproducibility_fingerprints),
         ("cached static assets and exports", _self_test_cached_static_assets_and_exports),
         ("cross-package validation plan", _self_test_cross_package_validation_plan),
+        ("public beta release contract", _self_test_public_beta_release_contract),
     ]
     failures = []
     for name, test_func in tests:
@@ -19726,6 +19977,8 @@ def main() -> None:
 if __name__ == "__main__":
     if "--doctor" in sys.argv:
         raise SystemExit(run_doctor(json_output="--json" in sys.argv))
+    if "--release-check" in sys.argv:
+        raise SystemExit(run_release_check(json_output="--json" in sys.argv))
     if "--self-test" in sys.argv:
         raise SystemExit(run_self_tests())
     if "--benchmark" in sys.argv or "--benchmark-quick" in sys.argv:

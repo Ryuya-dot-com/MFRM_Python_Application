@@ -72,6 +72,9 @@ jobs:
       - name: Run environment doctor
         run: python streamlit_app.py --doctor
 
+      - name: Run public release check
+        run: python streamlit_app.py --release-check
+
       - name: Run engine self-tests
         run: python streamlit_app.py --self-test
 

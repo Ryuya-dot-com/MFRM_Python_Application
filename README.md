@@ -59,6 +59,7 @@ For deployment notes, including Streamlit Community Cloud settings and privacy g
 ```bash
 python -m py_compile streamlit_app.py
 python streamlit_app.py --doctor
+python streamlit_app.py --release-check
 python streamlit_app.py --self-test
 python -m pytest tests
 python streamlit_app.py --benchmark-quick --benchmark-csv validation/generated/benchmark_smoke.csv
@@ -150,6 +151,10 @@ Integer-like columns such as `GradeCode = 1, 2, 3` are flagged so you can decide
 whether they are continuous predictors or category labels that should be forced
 categorical.
 
+The app and demo export also include public-beta limitations and release
+readiness tables. Use these to keep public claims aligned with what the
+standalone Python engine currently supports.
+
 The Visuals tab also includes a downloadable visual interpretation checklist.
 It maps each figure to the first signal to read, the review trigger, and the
 recommended next action for beginners.
@@ -167,7 +172,8 @@ python streamlit_app.py --export-demo-report validation/generated/demo_report
 
 Open `validation/generated/demo_report/MFRM_Demo_Report.html` first, then read
 `final_report_readiness.csv`, `visual_interpretation_checklist.csv`,
-`visual_method_evidence.csv`, and the interactive category curves in
+`visual_method_evidence.csv`, `public_beta_limitations.csv`,
+`public_release_readiness.csv`, and the interactive category curves in
 `figures_html/`.
 
 ## Statistical Caveats
@@ -214,6 +220,7 @@ It runs:
 - dependency installation
 - `python -m py_compile streamlit_app.py`
 - `python streamlit_app.py --doctor`
+- `python streamlit_app.py --release-check`
 - `python streamlit_app.py --self-test`
 - `python streamlit_app.py --benchmark-quick --benchmark-csv validation/generated/benchmark_smoke.csv`
 - Streamlit AppTest smoke check

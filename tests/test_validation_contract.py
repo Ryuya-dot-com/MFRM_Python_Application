@@ -94,3 +94,20 @@ def test_population_covariate_type_summary_flags_integer_codes():
     assert forced_grade_code["InferredType"] == "categorical"
     assert forced_grade_code["Override"] == "categorical"
     assert not bool(forced_grade_code["ReviewFlag"])
+
+
+def test_public_beta_release_contract_tables():
+    limitations = app.public_beta_limitations_table()
+    readiness = app.public_release_readiness_table()
+
+    assert not limitations.empty
+    assert {"Area", "PublicBetaStatus", "SupportedNow", "Boundary", "UserAction"}.issubset(limitations.columns)
+    joined = " ".join(limitations["Area"].astype(str).tolist() + limitations["Boundary"].astype(str).tolist())
+    assert "GPCM" in joined
+    assert "Cross-package" in joined
+    assert "privacy" in joined
+
+    assert not readiness.empty
+    assert {"Check", "Status", "Evidence", "Action"}.issubset(readiness.columns)
+    assert "License" in readiness["Check"].astype(str).tolist()
+    assert not (readiness["Status"].astype(str) == "Blocker").any()

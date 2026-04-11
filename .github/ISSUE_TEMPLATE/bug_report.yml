@@ -1,0 +1,49 @@
+name: Bug report
+description: Report a reproducible app or runtime problem.
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Do not include confidential rating data, real person IDs, rater IDs, institution names, subgroup labels, screenshots with private data, or exported files containing sensitive information.
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: What happened?
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to reproduce
+      description: Use sample or simulated data whenever possible.
+      placeholder: |
+        1. Run `streamlit run streamlit_app.py`
+        2. Select ...
+        3. Click ...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: doctor
+    attributes:
+      label: Doctor output
+      description: Paste the output of `python streamlit_app.py --doctor`.
+      render: text
+    validations:
+      required: false
+  - type: textarea
+    id: tests
+    attributes:
+      label: Verification attempted
+      description: Paste relevant output from `make verify`, `--self-test`, AppTest, or a smaller command.
+      render: text
+    validations:
+      required: false

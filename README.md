@@ -177,11 +177,15 @@ Makefile
 streamlit_app.py
 requirements.txt
 README.md
+CHANGELOG.md
+CONTRIBUTING.md
+SECURITY.md
 MFRM_STREAMLIT_RELEASE_PLAN.md
 RELEASE_CHECKLIST.md
 anchor_templates_and_guideline/
 .streamlit/config.toml
 .github/workflows/python-streamlit.yml
+.github/ISSUE_TEMPLATE/
 ```
 
 Generated files such as `__pycache__`, benchmark CSVs, local logs, and validation output directories are ignored.

@@ -139,6 +139,8 @@
 - [x] Add `.gitattributes` for consistent text/binary handling.
 - [x] Add `Makefile` shortcuts for local verification and cleanup.
 - [x] Add `RELEASE_CHECKLIST.md` for public beta release gates.
+- [x] Add `CHANGELOG.md`, `CONTRIBUTING.md`, and `SECURITY.md`.
+- [x] Add GitHub issue templates that warn against sharing confidential rating data.
 - [ ] Add a GitHub remote after choosing the target repository URL.
 - [ ] Choose and add a license before public distribution.
 
@@ -152,3 +154,4 @@ Completed setup path for this iteration:
 4. [x] Add statistical validation refinements.
 5. [x] Run compile, doctor, self-test, AppTest smoke, benchmark smoke, parity fixture export smoke, optional R scaffold smoke, fresh-venv install/self-test, and Streamlit health check.
 6. [x] Initialize local Git history and add repository hygiene files.
+7. [x] Add public-beta support documentation and issue templates.

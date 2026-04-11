@@ -1,0 +1,47 @@
+name: Statistical validation question
+description: Ask about MFRM behavior, external package comparison, or validation fixtures.
+title: "[Validation]: "
+labels: ["validation"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Do not include confidential rating data. External-package differences are expected unless the model, constraints, quadrature, prior/variance handling, scoring support, and parameterization map are aligned.
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - FACETS / JMLE comparison
+        - TAM / MML comparison
+        - sirt rater-facet comparison
+        - mirt / GPCM / EAP / plausible values
+        - Anchor / linking / equating
+        - Bias / local interaction
+        - Prediction / simulation / design evaluation
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: question
+    attributes:
+      label: Question
+      description: Describe the statistical behavior or comparison issue.
+    validations:
+      required: true
+  - type: textarea
+    id: reproducible
+    attributes:
+      label: Reproducible setup
+      description: Use sample data, simulated data, or the parity fixture. Do not paste private data.
+      render: text
+    validations:
+      required: false
+  - type: textarea
+    id: package_versions
+    attributes:
+      label: Package versions
+      description: Include `python streamlit_app.py --doctor` and any external R package versions if relevant.
+      render: text
+    validations:
+      required: false

@@ -302,7 +302,7 @@ def mfrmr_015_migration_coverage_table() -> pd.DataFrame:
         {
             "mfrmr015Area": "Reporting checklist and summary bundles",
             "PythonStatus": "Partial equivalent",
-            "PythonEvidence": "final_report_readiness, visual_interpretation_checklist, method appendix, demo report, and OSF-style table bundles.",
+            "PythonEvidence": "final_report_readiness, manuscript_claim_guide, visual_interpretation_checklist, method appendix, demo report, and OSF-style table bundles.",
             "Boundary": "Not a one-to-one port of every mfrmr APA/reporting helper.",
             "NextValidation": "Check that final report warnings, caveats, and beginner next actions are present in every exported report bundle.",
         },
@@ -10215,6 +10215,196 @@ def build_final_report_readiness(
     return readiness
 
 
+def build_manuscript_claim_guide(
+    result: dict,
+    diagnostics: dict,
+    all_bias_results: dict | None = None,
+) -> pd.DataFrame:
+    """Result-aware guardrails for beginner manuscript claims."""
+    config = result.get("config", {})
+    prep = result.get("prep", {})
+    opt = result.get("opt")
+    converged = bool(getattr(opt, "success", False))
+    model = str(config.get("model", "unknown"))
+    method = str(config.get("method", "unknown"))
+    facet_names = ", ".join(map(str, config.get("facet_names", []))) or "not recorded"
+    n_obs = prep.get("n_obs", "unknown")
+    n_person = prep.get("n_person", "unknown")
+    rating_min = prep.get("rating_min", "?")
+    rating_max = prep.get("rating_max", "?")
+    all_bias = all_bias_results or {}
+    readiness = build_final_report_readiness(result, diagnostics, all_bias)
+
+    def readiness_status(check: str, default: str = "Missing") -> str:
+        if not isinstance(readiness, pd.DataFrame) or readiness.empty or "Check" not in readiness.columns:
+            return default
+        hit = readiness.loc[readiness["Check"].astype(str) == check, "Status"]
+        return str(hit.iloc[0]) if not hit.empty else default
+
+    def readiness_evidence(check: str, default: str = "No result-specific evidence recorded.") -> str:
+        if not isinstance(readiness, pd.DataFrame) or readiness.empty or "Check" not in readiness.columns:
+            return default
+        hit = readiness.loc[readiness["Check"].astype(str) == check, "Evidence"]
+        return str(hit.iloc[0]) if not hit.empty else default
+
+    def claim_status(readiness_value: str, *, skipped_is_do_not_claim: bool = False) -> str:
+        if readiness_value == "Ready":
+            return "Ready"
+        if readiness_value in {"Review", "Missing"}:
+            return "Do not claim" if skipped_is_do_not_claim and readiness_value == "Missing" else "Report with caveat"
+        return "Report with caveat"
+
+    def combined_claim_status(*readiness_values: str) -> str:
+        if readiness_values and all(value == "Ready" for value in readiness_values):
+            return "Ready"
+        if any(value in {"Review", "Missing"} for value in readiness_values):
+            return "Report with caveat"
+        return "Report with caveat"
+
+    n_sig = 0
+    n_total = 0
+    for bundle in all_bias.values():
+        tbl = bundle.get("table") if isinstance(bundle, dict) else None
+        if isinstance(tbl, pd.DataFrame) and "t" in tbl.columns:
+            t_vals = pd.to_numeric(tbl["t"], errors="coerce").dropna()
+            n_total += len(t_vals)
+            n_sig += int((t_vals.abs() >= 2).sum())
+    if not all_bias:
+        bias_claim_status = "Do not claim"
+        bias_safe = "No bias/interaction screen was run for this result."
+        bias_action = "Run a selected pair or full publication bias screen before writing no-bias claims."
+    elif n_sig == 0:
+        bias_claim_status = "Ready"
+        bias_safe = "For the computed facet-pair screen, no local interactions reached |t| >= 2."
+        bias_action = "Report the facet pairs that were screened and keep the claim limited to those pairs."
+    else:
+        bias_claim_status = "Report with caveat"
+        bias_safe = f"{n_sig} of {n_total} screened local interactions reached |t| >= 2 and need substantive review."
+        bias_action = "Report flagged pairs as review evidence; consider sparse cells, multiplicity, and rubric content."
+
+    rows = [
+        {
+            "ManuscriptArea": "Model and software scope",
+            "ClaimStatus": "Ready",
+            "SafeManuscriptWording": (
+                f"A many-facet Rasch model was fitted with the standalone Python app "
+                f"using {model} and {method}; facets were {facet_names}."
+            ),
+            "EvidenceToReport": (
+                f"{n_obs} observations, {n_person} persons, score range {rating_min}-{rating_max}; "
+                f"app version {config.get('app_version', APP_VERSION)}."
+            ),
+            "DoNotClaim": "Do not describe the run as FACETS/TAM/sirt/mirt/mfrmr output or as exact cross-package parity.",
+            "NextAction": "Report the app version, model, estimation method, facets, and runtime boundary.",
+        },
+        {
+            "ManuscriptArea": "Convergence and final interpretability",
+            "ClaimStatus": "Ready" if converged else "Do not claim",
+            "SafeManuscriptWording": (
+                "The optimizer reported convergence, so substantive diagnostics can be read."
+                if converged else
+                "The optimizer did not report convergence; final parameter interpretation should be withheld."
+            ),
+            "EvidenceToReport": str(getattr(opt, "message", "not available")),
+            "DoNotClaim": "Do not interpret person ability, rater severity, or task difficulty as final if convergence failed.",
+            "NextAction": (
+                "Continue through category, fit, reliability, and dimensionality diagnostics."
+                if converged else
+                "Increase iterations, simplify the model, inspect sparse/extreme data, or adjust category structure."
+            ),
+        },
+        {
+            "ManuscriptArea": "Rating-scale functioning",
+            "ClaimStatus": claim_status(readiness_status("Category functioning")),
+            "SafeManuscriptWording": (
+                "Report category counts, average-measure ordering, and threshold ordering as rating-scale evidence."
+            ),
+            "EvidenceToReport": readiness_evidence("Category functioning"),
+            "DoNotClaim": "Do not state that all categories function distinctly if any category row is sparse or thresholds are disordered.",
+            "NextAction": "Use Categories/Steps and category probability curves before deciding whether to collapse categories.",
+        },
+        {
+            "ManuscriptArea": "Reliability and separation",
+            "ClaimStatus": claim_status(readiness_status("Reliability / separation")),
+            "SafeManuscriptWording": (
+                "Report person reliability/separation when person ordering is a study goal; interpret rater reliability differently from person reliability."
+            ),
+            "EvidenceToReport": readiness_evidence("Reliability / separation"),
+            "DoNotClaim": "Do not treat high rater reliability as automatically desirable; it can mean raters differ in severity.",
+            "NextAction": "Use the facet reliability table and design evaluation before making precision or design adequacy claims.",
+        },
+        {
+            "ManuscriptArea": "Fit and dimensionality",
+            "ClaimStatus": combined_claim_status(
+                readiness_status("Global residual fit"),
+                readiness_status("Dimensionality screen"),
+            ),
+            "SafeManuscriptWording": (
+                "Report residual fit together with residual PCA when discussing model-data fit and dimensionality."
+            ),
+            "EvidenceToReport": (
+                f"{readiness_evidence('Global residual fit')} "
+                f"{readiness_evidence('Dimensionality screen')}"
+            ).strip(),
+            "DoNotClaim": "Do not claim unidimensionality from fit statistics alone if residual PCA was skipped or flagged.",
+            "NextAction": "Open Fit Details and Dimensionality; discuss any review flags before final conclusions.",
+        },
+        {
+            "ManuscriptArea": "Wright map targeting and measure interpretation",
+            "ClaimStatus": claim_status(readiness_status("Wright Map targeting")),
+            "SafeManuscriptWording": (
+                "Report the Wright map as evidence of targeting and relative ordering on the current connected scale."
+            ),
+            "EvidenceToReport": readiness_evidence("Wright Map targeting"),
+            "DoNotClaim": "Do not generalize beyond the observed connected design or ignore ceiling/floor targeting problems.",
+            "NextAction": "Use the Wright Map tab to check overlap, gaps, and extreme clustering before interpreting rank order.",
+        },
+        {
+            "ManuscriptArea": "Bias / local interaction",
+            "ClaimStatus": bias_claim_status,
+            "SafeManuscriptWording": bias_safe,
+            "EvidenceToReport": f"{len(all_bias)} facet-pair bundle(s); {n_sig} of {n_total} screened local interactions have |t| >= 2.",
+            "DoNotClaim": "Do not claim that bias does not exist outside the facet pairs and cells that were actually screened.",
+            "NextAction": bias_action,
+        },
+        {
+            "ManuscriptArea": "Anchoring and linking",
+            "ClaimStatus": claim_status(readiness_status("Anchor / linking audit"), skipped_is_do_not_claim=False),
+            "SafeManuscriptWording": (
+                "For a single unanchored run, interpret measures within the current analysis; for linking, report anchor audit evidence."
+            ),
+            "EvidenceToReport": readiness_evidence("Anchor / linking audit"),
+            "DoNotClaim": "Do not compare administrations, cohorts, or forms on a common scale without anchor/linking evidence.",
+            "NextAction": "Use anchor audit, drift, and equating-chain outputs before making cross-run linking claims.",
+        },
+        {
+            "ManuscriptArea": "Prediction, plausible values, and simulation",
+            "ClaimStatus": "Report with caveat",
+            "SafeManuscriptWording": (
+                "Use prediction, plausible values, and simulation outputs as model-based sensitivity or design-support evidence."
+            ),
+            "EvidenceToReport": (
+                f"MML method: {config.get('method') == 'MML'}; plausible values requested: "
+                f"{bool(config.get('compute_plausible_values', False))}; "
+                f"draws: {int(config.get('n_plausible_values') or 0)}."
+            ),
+            "DoNotClaim": "Do not present model-based simulations as a prospective validation study or causal evidence.",
+            "NextAction": "State assumptions, seeds/replicates, and whether unknown persons were handled through the MML population distribution.",
+        },
+        {
+            "ManuscriptArea": "External package comparison",
+            "ClaimStatus": "Boundary",
+            "SafeManuscriptWording": (
+                "External TAM/sirt/mirt/mfrmr checks may be cited only as optional validation evidence when the exact artifact set is archived."
+            ),
+            "EvidenceToReport": "See validation/README.md and validation/R_CROSSCHECK_STATUS.md when external checks are used.",
+            "DoNotClaim": "Do not force or display R-vs-Python numerical equality claims unless the fixture, parameterization map, and tolerance report justify them.",
+            "NextAction": "Keep the main manuscript focused on the Python app outputs unless the study explicitly includes cross-package validation.",
+        },
+    ]
+    return pd.DataFrame(rows)
+
+
 def generate_method_appendix_text(
     result: dict,
     diagnostics: dict,
@@ -10392,6 +10582,38 @@ def _render_method_appendix_section(
     )
 
 
+def _render_manuscript_claim_guide_section(
+    result: dict,
+    diagnostics: dict,
+    all_bias_results: dict | None = None,
+) -> None:
+    st.subheader("Manuscript Claim Guide")
+    st.caption(
+        "A beginner-facing bridge from diagnostics to publishable claims. "
+        "Use this before copying APA text into a manuscript."
+    )
+    guide = build_manuscript_claim_guide(result, diagnostics, all_bias_results)
+    if guide.empty:
+        st.info("No manuscript claim guidance was generated.")
+        return
+    status_counts = guide["ClaimStatus"].value_counts().to_dict()
+    cols = st.columns(4)
+    cols[0].metric("Ready", int(status_counts.get("Ready", 0)))
+    cols[1].metric("Report with caveat", int(status_counts.get("Report with caveat", 0)))
+    cols[2].metric("Do not claim", int(status_counts.get("Do not claim", 0)))
+    cols[3].metric("Boundary", int(status_counts.get("Boundary", 0)))
+    if int(status_counts.get("Do not claim", 0)):
+        st.warning("Do not make rows marked 'Do not claim' until the listed action is complete.")
+    st.dataframe(guide, width="stretch", hide_index=True)
+    st.download_button(
+        "Download manuscript claim guide (CSV)",
+        data=to_csv_bytes(guide),
+        file_name="mfrm_manuscript_claim_guide.csv",
+        mime="text/csv",
+        key="dl_manuscript_claim_guide_report_tab",
+    )
+
+
 def show_report_section(
     result: dict, diagnostics: dict, *,
     bias_results: dict | None = None,
@@ -10406,7 +10628,7 @@ def show_report_section(
     )
 
     report_tabs = st.tabs([
-        "APA Report", "Readiness", "Tables", "Reporting Checklist",
+        "APA Report", "Readiness", "Claim Guide", "Tables", "Reporting Checklist",
         "Method Appendix", "Facet Equivalence", "Stan Code",
     ])
 
@@ -10420,24 +10642,28 @@ def show_report_section(
     with report_tabs[1]:
         _render_final_readiness_section(result, diagnostics, all_bias_results)
 
-    # ---- Sub-tab 2: Tables & Figures ----
+    # ---- Sub-tab 2: Manuscript claim guide ----
     with report_tabs[2]:
+        _render_manuscript_claim_guide_section(result, diagnostics, all_bias_results)
+
+    # ---- Sub-tab 3: Tables & Figures ----
+    with report_tabs[3]:
         _render_report_tables(result, diagnostics)
 
-    # ---- Sub-tab 3: Reporting Checklist ----
-    with report_tabs[3]:
+    # ---- Sub-tab 4: Reporting Checklist ----
+    with report_tabs[4]:
         _render_reporting_checklist(result, diagnostics, all_bias_results)
 
-    # ---- Sub-tab 4: Method Appendix ----
-    with report_tabs[4]:
+    # ---- Sub-tab 5: Method Appendix ----
+    with report_tabs[5]:
         _render_method_appendix_section(result, diagnostics, all_bias_results)
 
-    # ---- Sub-tab 5: Facet Equivalence ----
-    with report_tabs[5]:
+    # ---- Sub-tab 6: Facet Equivalence ----
+    with report_tabs[6]:
         _render_facet_equivalence(result, diagnostics)
 
-    # ---- Sub-tab 6: Stan Code ----
-    with report_tabs[6]:
+    # ---- Sub-tab 7: Stan Code ----
+    with report_tabs[7]:
         _render_stan_code(result)
 
 
@@ -17129,6 +17355,12 @@ def _render_downloads(
             all_frames["final_report_readiness"] = readiness_dl
     except Exception:
         readiness_dl = pd.DataFrame()
+    try:
+        claim_guide_dl = build_manuscript_claim_guide(result, diagnostics, all_bias_results)
+        if isinstance(claim_guide_dl, pd.DataFrame) and not claim_guide_dl.empty:
+            all_frames["manuscript_claim_guide"] = claim_guide_dl
+    except Exception:
+        claim_guide_dl = pd.DataFrame()
     visual_checklist_dl = visual_interpretation_checklist()
     if isinstance(visual_checklist_dl, pd.DataFrame) and not visual_checklist_dl.empty:
         all_frames["visual_interpretation_checklist"] = visual_checklist_dl
@@ -18620,6 +18852,23 @@ def _self_test_report_readiness_and_method_appendix() -> None:
         "readiness table is missing required columns",
     )
     _self_test_assert("Convergence" in readiness["Check"].tolist(), "readiness table missing convergence row")
+    claim_guide = build_manuscript_claim_guide(res, diagnostics, all_bias_results={})
+    _self_test_assert(not claim_guide.empty, "manuscript claim guide is empty")
+    _self_test_assert(
+        {
+            "ManuscriptArea",
+            "ClaimStatus",
+            "SafeManuscriptWording",
+            "EvidenceToReport",
+            "DoNotClaim",
+            "NextAction",
+        }.issubset(claim_guide.columns),
+        "manuscript claim guide is missing required columns",
+    )
+    _self_test_assert(
+        "External package comparison" in claim_guide["ManuscriptArea"].tolist(),
+        "manuscript claim guide missing external comparison boundary",
+    )
     threshold_result = {
         "opt": type("Opt", (), {"success": True, "message": "ok"})(),
         "config": {},
@@ -18649,6 +18898,7 @@ def _self_test_report_readiness_and_method_appendix() -> None:
         "demo_manifest",
         "sample_data",
         "final_report_readiness",
+        "manuscript_claim_guide",
         "visual_interpretation_checklist",
         "visual_method_evidence",
         "public_beta_limitations",
@@ -19749,7 +19999,7 @@ def build_demo_report_frames(
             "Method": result.get("config", {}).get("method"),
             "RuntimeBoundary": "standalone Python; no mfrmr/rpy2/Rscript/FACETS/TAM/sirt/mirt runtime call",
             "PrivacyNote": "The demo uses synthetic built-in data only.",
-            "ReadFirst": "Open final_report_readiness, then visual_interpretation_checklist, then measures and category_probability_curves.",
+            "ReadFirst": "Open final_report_readiness, then manuscript_claim_guide, then visual_interpretation_checklist, then measures and category_probability_curves.",
         }
     ])
     frames["sample_data"] = data.copy()
@@ -19766,6 +20016,9 @@ def build_demo_report_frames(
     readiness = build_final_report_readiness(result, diagnostics, all_bias_results or {})
     if isinstance(readiness, pd.DataFrame) and not readiness.empty:
         frames["final_report_readiness"] = readiness
+    claim_guide = build_manuscript_claim_guide(result, diagnostics, all_bias_results or {})
+    if isinstance(claim_guide, pd.DataFrame) and not claim_guide.empty:
+        frames["manuscript_claim_guide"] = claim_guide
     frames["visual_interpretation_checklist"] = visual_interpretation_checklist()
     frames["visual_method_evidence"] = visual_method_evidence_table()
     frames["public_beta_limitations"] = public_beta_limitations_table()
@@ -19909,15 +20162,16 @@ It demonstrates the standalone Python workflow without calling `mfrmr`,
 
 1. `MFRM_Demo_Report.html`: browser-readable table report.
 2. `final_report_readiness.csv`: what to resolve before final reporting.
-3. `visual_interpretation_checklist.csv`: how to read each plot.
-4. `visual_method_evidence.csv`: methodological basis and readability rules for plots.
-5. `public_beta_limitations.csv`: what this beta release supports and does not claim.
-6. `mfrmr_015_migration_coverage.csv`: how the local mfrmr 0.1.5 feature surface maps to this Python app.
-7. `public_release_readiness.csv`: repository-level public release checklist.
-8. `category_probability_curves.csv`: long-form PCM curve data for the
+3. `manuscript_claim_guide.csv`: what is safe to claim in a manuscript.
+4. `visual_interpretation_checklist.csv`: how to read each plot.
+5. `visual_method_evidence.csv`: methodological basis and readability rules for plots.
+6. `public_beta_limitations.csv`: what this beta release supports and does not claim.
+7. `mfrmr_015_migration_coverage.csv`: how the local mfrmr 0.1.5 feature surface maps to this Python app.
+8. `public_release_readiness.csv`: repository-level public release checklist.
+9. `category_probability_curves.csv`: long-form PCM curve data for the
    averaged view and each Task level.
-9. `figures_html/`: interactive category probability and expected-score curves.
-10. `method_appendix.md`: reproducible method notes for this demo run.
+10. `figures_html/`: interactive category probability and expected-score curves.
+11. `method_appendix.md`: reproducible method notes for this demo run.
 
 ## Demo model
 
@@ -19933,7 +20187,7 @@ identifiers before upload or paste.
 """
     (out_dir / "README.md").write_text(readme, encoding="utf-8")
     print(f"Wrote demo report to: {out_dir}")
-    print("Key files: MFRM_Demo_Report.html, MFRM_Demo_Report.xlsx, final_report_readiness.csv, figures_html/")
+    print("Key files: MFRM_Demo_Report.html, MFRM_Demo_Report.xlsx, final_report_readiness.csv, manuscript_claim_guide.csv, figures_html/")
     return 0
 
 

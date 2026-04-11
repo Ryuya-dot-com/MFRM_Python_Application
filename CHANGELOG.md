@@ -16,6 +16,7 @@ All notable changes to this standalone Streamlit distribution should be recorded
 - mfrmr 0.1.5 migration coverage table plus external validation artifact checklist, official-reference table, and reviewer template in the parity fixture.
 - README preview screenshot generated from the real Streamlit app using built-in synthetic sample data.
 - Archived local R cross-check smoke status for generated TAM, mirt, and sirt handoff fixtures.
+- Result-aware manuscript claim guide in the Report tab, table downloads, and demo report export.
 
 ### Changed
 

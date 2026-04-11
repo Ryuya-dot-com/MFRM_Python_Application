@@ -64,6 +64,55 @@ def test_final_readiness_uses_five_percent_residual_benchmark():
     assert review_status == "Review"
 
 
+def test_manuscript_claim_guide_contract():
+    class Opt:
+        success = True
+        message = "ok"
+
+    result = {
+        "opt": Opt(),
+        "config": {
+            "app_version": app.APP_VERSION,
+            "model": "RSM",
+            "method": "JMLE",
+            "facet_names": ["Rater", "Task"],
+            "anchor_audit": {"overall_status": "ok", "message": "No anchor issues."},
+        },
+        "prep": {"n_obs": 100, "n_person": 20, "rating_min": 1, "rating_max": 5},
+        "facets": {
+            "person": app.pd.DataFrame({"Estimate": [-0.5, 0.5]}),
+            "others": app.pd.DataFrame({"Estimate": [-0.2, 0.2]}),
+        },
+    }
+    diagnostics = {
+        "obs": app.pd.DataFrame({
+            "Observed": [1, 2, 3, 4, 5] * 20,
+            "StdResidual": [2.1] * 5 + [0.0] * 95,
+        }),
+        "reliability": app.pd.DataFrame({"Facet": ["Person"], "Reliability": [0.85]}),
+        "pca_enabled": False,
+    }
+
+    guide = app.build_manuscript_claim_guide(result, diagnostics, all_bias_results={})
+    assert not guide.empty
+    assert {
+        "ManuscriptArea",
+        "ClaimStatus",
+        "SafeManuscriptWording",
+        "EvidenceToReport",
+        "DoNotClaim",
+        "NextAction",
+    }.issubset(guide.columns)
+    assert "External package comparison" in guide["ManuscriptArea"].tolist()
+    boundary = guide.loc[guide["ManuscriptArea"] == "External package comparison"].iloc[0]
+    assert boundary["ClaimStatus"] == "Boundary"
+    assert "Do not force" in boundary["DoNotClaim"]
+    bias = guide.loc[guide["ManuscriptArea"] == "Bias / local interaction"].iloc[0]
+    assert bias["ClaimStatus"] == "Do not claim"
+    fit = guide.loc[guide["ManuscriptArea"] == "Fit and dimensionality"].iloc[0]
+    assert fit["ClaimStatus"] == "Report with caveat"
+
+
 def test_uploaded_file_fingerprint_uses_content_not_only_name_and_size():
     first = io.BytesIO(b"abc")
     second = io.BytesIO(b"abd")

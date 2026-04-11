@@ -30,6 +30,7 @@ Use this checklist before tagging or pushing a public beta release.
 - [ ] If external R checks are reported, archive the generated `r_crosscheck_status.csv` and note package versions.
 - [ ] Do not claim exact numerical parity unless the fixture, tolerances, and parameterization map are included.
 - [ ] Confirm the README preview image still matches the current public-beta UI after material layout changes.
+- [ ] Update `validation/R_CROSSCHECK_STATUS.md` after rerunning the optional R scaffold in a materially different R/package environment.
 
 ## Commands
 

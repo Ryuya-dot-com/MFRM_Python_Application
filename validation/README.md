@@ -123,3 +123,10 @@ When reporting a cross-package check, archive:
 - a short note explaining which differences are expected.
 
 Do not report exact cross-package parity unless those artifacts are included.
+
+## Latest Local Smoke Status
+
+See `R_CROSSCHECK_STATUS.md` for the latest archived local smoke run. That file
+records whether the generated fixture could be fitted by the installed TAM,
+mirt, and sirt packages, while keeping the same non-parity interpretation rule
+used throughout this validation directory.

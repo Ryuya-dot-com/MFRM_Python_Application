@@ -16,7 +16,7 @@ Before using results for high-stakes scoring, placement, certification, employme
 
 ## Preview
 
-![MFRM Streamlit sample-data result overview](output/playwright/app-data-overview.png)
+![MFRM Streamlit sample-data result overview](docs/images/app-data-overview.png)
 
 The screenshot uses the built-in synthetic sample data. It highlights the
 default guided sidebar, the visible data-privacy warning, the input preview,
@@ -221,6 +221,8 @@ to interactive HTML figures instead of blocking the analysis.
 - mfrmr: functional capability reference for the Python migration target.
 
 For the cross-package validation matrix and tolerance policy, see `validation/README.md`.
+For the latest archived local R smoke status, see
+`validation/R_CROSSCHECK_STATUS.md`.
 The parity fixture also includes official documentation touchpoints, an
 artifact checklist, an external validation report template, and the mfrmr 0.1.5
 migration coverage table so external checks can be archived without making
@@ -275,7 +277,7 @@ anchor_templates_and_guideline/
 .streamlit/config.toml
 .github/workflows/python-streamlit.yml
 .github/ISSUE_TEMPLATE/
-output/playwright/app-data-overview.png
+docs/images/app-data-overview.png
 ```
 
 Generated files such as `__pycache__`, benchmark CSVs, local logs, and validation output directories are ignored.

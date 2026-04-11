@@ -121,6 +121,7 @@ Implemented in the standalone Python engine:
 - simulation and design evaluation
 - final-report readiness checklist
 - visual interpretation checklist for beginner-friendly figure reading
+- latent-regression covariate type preview for numeric IDs/codes that may need categorical coding
 - downloadable tables, configuration, scripts, and method appendix
 - reproducibility/config fingerprints for analysis exports
 
@@ -143,6 +144,11 @@ The final-report readiness checklist, first-read guide, and generated report
 text use the same main thresholds: about 5% or fewer observation residuals
 with `|z| >= 2`, person reliability at least 0.80 when person separation is the
 goal, and residual PCA first eigenvalue below 2.0 for a clean screen.
+
+For MML latent regression, inspect the covariate type preview before fitting.
+Integer-like columns such as `GradeCode = 1, 2, 3` are flagged so you can decide
+whether they are continuous predictors or category labels that should be forced
+categorical.
 
 The Visuals tab also includes a downloadable visual interpretation checklist.
 It maps each figure to the first signal to read, the review trigger, and the

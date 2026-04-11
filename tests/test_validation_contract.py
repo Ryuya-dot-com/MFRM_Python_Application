@@ -60,3 +60,37 @@ def test_uploaded_file_fingerprint_uses_content_not_only_name_and_size():
     second.size = 3
 
     assert app.uploaded_file_fingerprint(first) != app.uploaded_file_fingerprint(second)
+
+
+def test_population_covariate_type_summary_flags_integer_codes():
+    person_data = app.pd.DataFrame({
+        "Person": ["P1", "P2", "P3", "P4"],
+        "GradeCode": [1, 2, 1, 2],
+        "SES": [0.1, -0.4, 0.6, 0.2],
+        "Group": ["A", "A", "B", "B"],
+    })
+    summary = app.summarize_population_covariate_types(
+        person_data,
+        "Person",
+        "~ GradeCode + SES + Group",
+        person_levels=["P1", "P2", "P3", "P4"],
+    )
+    grade_code = summary.loc[summary["Term"] == "GradeCode"].iloc[0]
+    ses = summary.loc[summary["Term"] == "SES"].iloc[0]
+
+    assert grade_code["InferredType"] == "numeric"
+    assert bool(grade_code["ReviewFlag"])
+    assert ses["InferredType"] == "numeric"
+    assert not bool(ses["ReviewFlag"])
+
+    forced = app.summarize_population_covariate_types(
+        person_data,
+        "Person",
+        "~ GradeCode + SES + Group",
+        categorical_terms=["GradeCode"],
+        person_levels=["P1", "P2", "P3", "P4"],
+    )
+    forced_grade_code = forced.loc[forced["Term"] == "GradeCode"].iloc[0]
+    assert forced_grade_code["InferredType"] == "categorical"
+    assert forced_grade_code["Override"] == "categorical"
+    assert not bool(forced_grade_code["ReviewFlag"])

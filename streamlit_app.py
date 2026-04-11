@@ -793,6 +793,183 @@ def parse_population_covariate_terms(raw_terms) -> list[str]:
     return out
 
 
+POPULATION_TYPE_SUMMARY_COLUMNS = [
+    "Term",
+    "InferredType",
+    "Override",
+    "N",
+    "UniqueValues",
+    "NumericConvertible",
+    "IntegerLike",
+    "ExampleValues",
+    "ReviewFlag",
+    "Recommendation",
+]
+
+
+def infer_population_covariate_type(
+    term: str,
+    series: pd.Series,
+    forced_categorical: bool = False,
+    forced_numeric: bool = False,
+) -> dict:
+    """Infer how a latent-regression covariate will be encoded and flag risky numeric codes."""
+    clean = pd.Series(series).dropna()
+    text_values = clean.astype(str)
+    numeric = pd.to_numeric(clean, errors="coerce")
+    n = int(len(clean))
+    unique_values = int(text_values.nunique(dropna=True)) if n else 0
+    numeric_convertible = bool(n > 0 and numeric.notna().all())
+    finite_numeric = numeric.dropna().to_numpy(dtype=float) if numeric_convertible else np.array([], dtype=float)
+    integer_like = bool(
+        finite_numeric.size > 0
+        and np.all(np.isfinite(finite_numeric))
+        and np.allclose(finite_numeric, np.round(finite_numeric), rtol=0.0, atol=1e-9)
+    )
+    if forced_numeric:
+        inferred_type = "numeric" if numeric_convertible else "numeric_invalid"
+        override = "numeric"
+    elif forced_categorical:
+        inferred_type = "categorical"
+        override = "categorical"
+    elif numeric_convertible:
+        inferred_type = "numeric"
+        override = "none"
+    else:
+        inferred_type = "categorical"
+        override = "none"
+
+    examples = text_values.drop_duplicates().head(8).tolist()
+    review_flag = False
+    recommendation = "No action needed."
+    if inferred_type == "numeric_invalid":
+        review_flag = True
+        recommendation = (
+            f"`{term}` was forced numeric but contains non-numeric values. "
+            "Clean the person_data column or remove it from the numeric override."
+        )
+    elif (
+        inferred_type == "numeric"
+        and override == "none"
+        and integer_like
+        and 2 <= unique_values <= 10
+    ):
+        review_flag = True
+        recommendation = (
+            f"`{term}` is being treated as numeric, but it has {unique_values} integer-like levels. "
+            "If these numbers are labels, IDs, grade groups, or ordered categories rather than a continuous scale, "
+            "add the term to Force categorical covariates."
+        )
+    elif inferred_type == "categorical" and unique_values > max(20, min(50, n // 2 if n else 20)):
+        review_flag = True
+        recommendation = (
+            f"`{term}` is categorical with {unique_values} levels. "
+            "High-cardinality dummy coding can be unstable; consider simplifying the grouping or using a numeric scale if appropriate."
+        )
+
+    return {
+        "Term": str(term),
+        "InferredType": inferred_type,
+        "Override": override,
+        "N": n,
+        "UniqueValues": unique_values,
+        "NumericConvertible": numeric_convertible,
+        "IntegerLike": integer_like,
+        "ExampleValues": ", ".join(examples),
+        "ReviewFlag": bool(review_flag),
+        "Recommendation": recommendation,
+    }
+
+
+def summarize_population_covariate_types(
+    person_data: pd.DataFrame | None,
+    person_id_col: str | None,
+    population_formula: str | None,
+    categorical_terms=None,
+    numeric_terms=None,
+    person_levels: list[str] | None = None,
+) -> pd.DataFrame:
+    """Preview latent-regression covariate coding decisions for the UI and exports."""
+    parsed = parse_population_formula(population_formula)
+    if not parsed.get("enabled") or not parsed.get("terms"):
+        return pd.DataFrame(columns=POPULATION_TYPE_SUMMARY_COLUMNS)
+    categorical_set = set(parse_population_covariate_terms(categorical_terms))
+    numeric_set = set(parse_population_covariate_terms(numeric_terms))
+    overlap = sorted(categorical_set & numeric_set)
+    if overlap:
+        raise ValueError(
+            "Population covariate terms cannot be forced to both categorical and numeric: "
+            + ", ".join(overlap)
+        )
+    unknown_type_terms = sorted((categorical_set | numeric_set) - set(parsed["terms"]))
+    if unknown_type_terms:
+        raise ValueError(
+            "Population covariate type override term(s) are not in population_formula: "
+            + ", ".join(unknown_type_terms)
+        )
+    if person_data is None or not isinstance(person_data, pd.DataFrame) or person_data.empty:
+        return pd.DataFrame(
+            [
+                {
+                    "Term": term,
+                    "InferredType": "unavailable",
+                    "Override": "none",
+                    "N": 0,
+                    "UniqueValues": 0,
+                    "NumericConvertible": False,
+                    "IntegerLike": False,
+                    "ExampleValues": "",
+                    "ReviewFlag": True,
+                    "Recommendation": "Upload or paste person_data to preview and fit this population_formula term.",
+                }
+                for term in parsed["terms"]
+            ],
+            columns=POPULATION_TYPE_SUMMARY_COLUMNS,
+        )
+    pdf = person_data.copy()
+    if person_id_col is None:
+        person_id_col = "Person" if "Person" in pdf.columns else pdf.columns[0]
+    if person_id_col not in pdf.columns:
+        raise ValueError(f"person_id_col '{person_id_col}' was not found in person_data.")
+    pdf = pdf.rename(columns={person_id_col: "Person"})
+    pdf["Person"] = pdf["Person"].astype(str)
+    if person_levels is not None:
+        joined = pd.DataFrame({"Person": [str(x) for x in person_levels]}).merge(pdf, on="Person", how="left")
+    else:
+        joined = pdf
+    rows = []
+    for term in parsed["terms"]:
+        if term not in joined.columns:
+            rows.append({
+                "Term": term,
+                "InferredType": "missing",
+                "Override": "numeric" if term in numeric_set else "categorical" if term in categorical_set else "none",
+                "N": 0,
+                "UniqueValues": 0,
+                "NumericConvertible": False,
+                "IntegerLike": False,
+                "ExampleValues": "",
+                "ReviewFlag": True,
+                "Recommendation": f"`{term}` is not present in person_data.",
+            })
+            continue
+        type_info = infer_population_covariate_type(
+            term,
+            joined[term],
+            forced_categorical=term in categorical_set,
+            forced_numeric=term in numeric_set,
+        )
+        if joined[term].isna().any():
+            missing_people = joined.loc[joined[term].isna(), "Person"].astype(str).head(8).tolist()
+            type_info["ReviewFlag"] = True
+            type_info["Recommendation"] = (
+                f"`{term}` has missing values for fitted person(s): {', '.join(missing_people)}. "
+                "Complete person_data before fitting."
+            )
+        rows.append(type_info)
+    return pd.DataFrame(rows, columns=POPULATION_TYPE_SUMMARY_COLUMNS)
+
+
 def build_population_model(
     prep,
     person_data=None,
@@ -828,6 +1005,7 @@ def build_population_model(
             "categorical_terms": [],
             "numeric_terms": [],
             "term_types": {},
+            "type_summary": pd.DataFrame(columns=POPULATION_TYPE_SUMMARY_COLUMNS),
             "warnings": [],
         }
     unknown_type_terms = sorted((categorical_set | numeric_set) - set(parsed["terms"]))
@@ -869,6 +1047,7 @@ def build_population_model(
     warnings: list[str] = []
     numeric_transforms: dict[str, dict[str, float | bool]] = {}
     term_types: dict[str, str] = {}
+    type_summary_rows: list[dict] = []
     if parsed["intercept"]:
         columns.append("Intercept")
         matrix_parts.append(np.ones((len(person_levels), 1), dtype=float))
@@ -886,7 +1065,16 @@ def build_population_model(
         numeric = pd.to_numeric(series, errors="coerce")
         forced_numeric = term in numeric_set
         forced_categorical = term in categorical_set
-        if forced_numeric or (not forced_categorical and numeric.notna().all()):
+        type_info = infer_population_covariate_type(
+            term,
+            series,
+            forced_categorical=forced_categorical,
+            forced_numeric=forced_numeric,
+        )
+        type_summary_rows.append(type_info)
+        if type_info.get("ReviewFlag"):
+            warnings.append(str(type_info.get("Recommendation", "")))
+        if forced_numeric or (not forced_categorical and type_info.get("InferredType") == "numeric"):
             if numeric.isna().any():
                 raise ValueError(
                     f"population covariate '{term}' was forced numeric but contains non-numeric value(s)."
@@ -925,6 +1113,7 @@ def build_population_model(
     X = np.column_stack(matrix_parts) if matrix_parts else np.zeros((len(person_levels), 0), dtype=float)
     if X.size and not np.all(np.isfinite(X)):
         raise ValueError("population model matrix contains non-finite values.")
+    type_summary = pd.DataFrame(type_summary_rows, columns=POPULATION_TYPE_SUMMARY_COLUMNS)
     return {
         "enabled": True,
         "formula": parsed["formula"],
@@ -939,6 +1128,7 @@ def build_population_model(
         "categorical_terms": sorted(categorical_set),
         "numeric_terms": sorted(numeric_set),
         "term_types": term_types,
+        "type_summary": type_summary,
         "warnings": warnings,
     }
 
@@ -3404,6 +3594,10 @@ def mfrm_estimate(
             "person_data": person_population_tbl,
             "numeric_transforms": population_transform_tbl,
             "term_types": dict(population_model.get("term_types", {})),
+            "type_summary": population_model.get(
+                "type_summary",
+                pd.DataFrame(columns=POPULATION_TYPE_SUMMARY_COLUMNS),
+            ),
             "categorical_terms": list(population_model.get("categorical_terms", [])),
             "numeric_terms": list(population_model.get("numeric_terms", [])),
             "warnings": list(population_model.get("warnings", [])),
@@ -6311,7 +6505,17 @@ def read_flexible_table(text_value, file_input, header=True):
     if file_input is not None:
         name = file_input.name.lower()
         sep = "\t" if name.endswith((".tsv", ".txt")) else ","
-        return pd.read_csv(file_input, sep=sep, header=0 if header else None, dtype=str)
+        try:
+            raw = file_input.getvalue()
+        except Exception:
+            raw = file_input.read()
+            try:
+                file_input.seek(0)
+            except Exception:
+                pass
+        if isinstance(raw, str):
+            return pd.read_csv(io.StringIO(raw), sep=sep, header=0 if header else None, dtype=str)
+        return pd.read_csv(io.BytesIO(bytes(raw)), sep=sep, header=0 if header else None, dtype=str)
     if text_value is None or not str(text_value).strip():
         return pd.DataFrame()
     text_value = str(text_value).strip()
@@ -8403,6 +8607,38 @@ def run_facets_mode(core: dict, data: pd.DataFrame) -> None:
                 "Every fitted person must appear once in person_data when covariates are used. "
                 "Categorical covariates are dummy-coded with the first level as reference."
             )
+            try:
+                parsed_preview = parse_population_formula(population_formula)
+                if parsed_preview.get("terms"):
+                    preview_person_data = read_flexible_table(population_text, population_file, header=True)
+                    if preview_person_data.empty:
+                        st.info("Upload or paste person_data to preview numeric vs categorical covariate coding before fitting.")
+                    else:
+                        preview_person_levels = (
+                            data[person_col].dropna().astype(str).drop_duplicates().tolist()
+                            if person_col in data.columns else None
+                        )
+                        type_preview = summarize_population_covariate_types(
+                            preview_person_data,
+                            population_person_id_col,
+                            population_formula,
+                            categorical_terms=population_categorical_terms,
+                            numeric_terms=population_numeric_terms,
+                            person_levels=preview_person_levels,
+                        )
+                        st.markdown("**Covariate type preview**")
+                        preview_cols = [
+                            "Term", "InferredType", "Override", "UniqueValues",
+                            "IntegerLike", "ReviewFlag", "ExampleValues",
+                        ]
+                        st.dataframe(type_preview[preview_cols], width="stretch", hide_index=True)
+                        flagged = type_preview[type_preview["ReviewFlag"] == True]
+                        for msg in flagged["Recommendation"].astype(str).head(3):
+                            st.warning(msg)
+                else:
+                    st.caption("Intercept-only population model; no person-level covariate coding needed.")
+            except Exception as preview_exc:
+                st.warning(f"Covariate type preview could not be generated: {preview_exc}")
     score_num_for_range = pd.to_numeric(data[score_col], errors="coerce") if score_col in data.columns else pd.Series(dtype=float)
     score_num_for_range = score_num_for_range.dropna()
     if not score_num_for_range.empty:
@@ -9340,6 +9576,14 @@ A single connected subset means all measures are on the same scale.
             if isinstance(pop_transforms, pd.DataFrame) and not pop_transforms.empty:
                 with st.expander("Numeric covariate scaling used for this run", expanded=False):
                     st.dataframe(pop_transforms, width="stretch")
+            pop_type_summary = population_bundle.get("type_summary", pd.DataFrame())
+            if isinstance(pop_type_summary, pd.DataFrame) and not pop_type_summary.empty:
+                with st.expander("Covariate type decisions used for this run", expanded=False):
+                    st.caption(
+                        "Review terms flagged here before interpreting latent-regression coefficients. "
+                        "Integer-like numeric codes may need `Force categorical covariates`."
+                    )
+                    st.dataframe(pop_type_summary, width="stretch", hide_index=True)
             for msg in population_bundle.get("warnings", []):
                 st.warning(msg)
         st.subheader("Facet measures")
@@ -9774,6 +10018,13 @@ def generate_method_appendix_text(
         ])
     pop = config.get("population_model", {})
     if isinstance(pop, dict) and pop.get("enabled"):
+        type_summary = pop.get("type_summary", pd.DataFrame())
+        if isinstance(type_summary, pd.DataFrame) and not type_summary.empty and "ReviewFlag" in type_summary.columns:
+            review_terms = type_summary.loc[
+                type_summary["ReviewFlag"].astype(bool), "Term"
+            ].astype(str).tolist()
+        else:
+            review_terms = []
         lines.extend([
             "",
             "## Latent Regression / Population Model",
@@ -9782,6 +10033,7 @@ def generate_method_appendix_text(
             "- MML quadrature is shifted by the fitted person-level population mean X beta.",
             f"- Numeric covariates standardized before fitting: {bool(pop.get('standardize_numeric', False))}.",
             f"- Covariate type overrides: categorical={pop.get('categorical_terms', [])}; numeric={pop.get('numeric_terms', [])}.",
+            f"- Covariate type review flags: {review_terms or 'none'}.",
             f"- Fixed population prior SD: {float(config.get('population_prior_sd') or 1.0):.3f}; the variance is not estimated.",
         ])
     if config.get("method") == "MML":
@@ -16607,6 +16859,7 @@ def _render_downloads(
         pop_coef = population_dl.get("coefficients", pd.DataFrame())
         pop_person = population_dl.get("person_data", pd.DataFrame())
         pop_transforms = population_dl.get("numeric_transforms", pd.DataFrame())
+        pop_type_summary = population_dl.get("type_summary", pd.DataFrame())
         pop_term_types = pd.DataFrame(
             [
                 {"Term": term, "Type": term_type}
@@ -16619,6 +16872,8 @@ def _render_downloads(
             all_frames["population_person_data"] = pop_person
         if isinstance(pop_transforms, pd.DataFrame) and not pop_transforms.empty:
             all_frames["population_numeric_transforms"] = pop_transforms
+        if isinstance(pop_type_summary, pd.DataFrame) and not pop_type_summary.empty:
+            all_frames["population_covariate_type_summary"] = pop_type_summary
         if not pop_term_types.empty:
             all_frames["population_term_types"] = pop_term_types
     if isinstance(scorefile, pd.DataFrame) and not scorefile.empty:
@@ -17866,6 +18121,24 @@ def _self_test_latent_regression_population_formula() -> None:
     _self_test_assert(
         res["config"]["population_model"].get("term_types", {}).get("GradeCode") == "categorical",
         "forced categorical population covariate was not recorded",
+    )
+    type_summary = population.get("type_summary", pd.DataFrame())
+    _self_test_assert(not type_summary.empty, "population covariate type summary is empty")
+    grade_row = type_summary.loc[type_summary["Term"].astype(str) == "Grade"]
+    grade_code_row = type_summary.loc[type_summary["Term"].astype(str) == "GradeCode"]
+    _self_test_assert(not grade_row.empty, "Grade covariate type summary is missing")
+    _self_test_assert(
+        bool(grade_row["ReviewFlag"].iloc[0]),
+        "integer-like numeric Grade covariate should be flagged for review",
+    )
+    _self_test_assert(not grade_code_row.empty, "GradeCode covariate type summary is missing")
+    _self_test_assert(
+        str(grade_code_row["InferredType"].iloc[0]) == "categorical",
+        "forced categorical GradeCode type summary is wrong",
+    )
+    _self_test_assert(
+        not bool(grade_code_row["ReviewFlag"].iloc[0]),
+        "forced categorical GradeCode should not be flagged as numeric-coded",
     )
     _self_test_assert(
         "GradeCode" not in set(transforms.get("Term", pd.Series(dtype=str)).astype(str).tolist()),

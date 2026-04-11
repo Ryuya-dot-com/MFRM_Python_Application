@@ -11,6 +11,7 @@ All notable changes to this standalone Streamlit distribution should be recorded
 - Category probability curve exports now use the same curve builder as the Visuals tab and include long-form data for all curve scopes.
 - Synthetic beginner-facing demo report export through `--export-demo-report`, including report tables, method appendix, and interactive category curves.
 - Visual method evidence table plus readability safeguards for dense Wright maps, yardsticks, marginal heatmaps, and bias heatmaps.
+- Latent-regression covariate type preview and export table for numeric, categorical, and integer-code review decisions.
 
 ### Changed
 
@@ -18,10 +19,11 @@ All notable changes to this standalone Streamlit distribution should be recorded
 - Plotly/Kaleido floors now target Kaleido 1.x PNG export behavior, with HTML figure fallback when Chrome/Chromium is unavailable.
 - Final-report readiness, first-read guidance, and report text now use the same residual, reliability, and PCA thresholds.
 - New/held-out prediction session-state invalidation now fingerprints uploaded file content, not only file name and size.
+- Uploaded CSV/TSV reads are now non-destructive, so sidebar previews do not consume the file stream before estimation.
 
 ### Validation
 
-- `make verify` passed with 20 built-in self-tests, 7 pytest checks, benchmark smoke, demo report export, and parity fixture export.
+- `make verify` passed with 20 built-in self-tests, 8 pytest checks, benchmark smoke, demo report export, and parity fixture export.
 
 ## 0.1.1-beta - 2026-04-12
 

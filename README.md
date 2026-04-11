@@ -186,6 +186,10 @@ It maps each figure to the first signal to read, the review trigger, and the
 recommended next action for beginners.
 It also includes a visual method evidence table that links each plot family to
 its Rasch/MFRM diagnostic role and explains the app's readability rules.
+Figure exports use a manuscript profile: white background, consistent font,
+compact margins, 300 DPI PNG when static export is available, and matching
+interactive HTML for inspection. The figure bundle includes `figure_manifest.csv`
+with the recommended manuscript use and reporting caution for each figure.
 For PCM and bounded GPCM, category probability curves can be read either as an
 averaged overview or for each selected step-facet level. The downloadable table
 bundle also includes long-form curve data for all available curve scopes.
@@ -204,7 +208,8 @@ Open `validation/generated/demo_report/MFRM_Demo_Report.html` first, then read
 `manuscript_template.md`,
 `visual_interpretation_checklist.csv`, `visual_method_evidence.csv`,
 `public_beta_limitations.csv`, `mfrmr_015_migration_coverage.csv`,
-`public_release_readiness.csv`, and the interactive category curves in
+`public_release_readiness.csv`, `figure_manifest.csv`,
+`MFRM_Demo_Publication_Figures.zip`, and the interactive diagnostic figures in
 `figures_html/`.
 
 ## Statistical Caveats

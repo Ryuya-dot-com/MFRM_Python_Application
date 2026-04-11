@@ -62,6 +62,11 @@ BUNDLED_ANCHOR_ASSETS = [
     "anchor_user_guidelines.md",
 ]
 _STATIC_PNG_BROWSER_AVAILABLE: bool | None = None
+PUBLICATION_FIGURE_DPI = 300
+PUBLICATION_FIGURE_WIDTH = 900
+PUBLICATION_FIGURE_MIN_HEIGHT = 420
+PUBLICATION_FIGURE_MAX_HEIGHT = 1400
+PUBLICATION_FIGURE_FONT = "Arial, Helvetica, sans-serif"
 
 
 def visual_interpretation_checklist() -> pd.DataFrame:
@@ -7748,7 +7753,7 @@ def _static_png_browser_available() -> bool:
 
 
 @st.cache_data(show_spinner=False, max_entries=8, ttl=1800)
-def cached_plotly_png_bytes(_fig, fig_key: str, dpi: int = 300) -> bytes | None:
+def cached_plotly_png_bytes(_fig, fig_key: str, dpi: int = PUBLICATION_FIGURE_DPI) -> bytes | None:
     """Cache Plotly PNG bytes by explicit figure fingerprint."""
     _ = fig_key
     scale = dpi / 72  # plotly default is 72 dpi
@@ -7758,7 +7763,75 @@ def cached_plotly_png_bytes(_fig, fig_key: str, dpi: int = 300) -> bytes | None:
         return None
 
 
-def fig_to_png_bytes(fig, dpi: int = 300) -> bytes | None:
+def _coerce_publication_figure_height(fig) -> int:
+    height = getattr(getattr(fig, "layout", None), "height", None)
+    try:
+        height_int = int(height) if height is not None else 540
+    except Exception:
+        height_int = 540
+    return max(PUBLICATION_FIGURE_MIN_HEIGHT, min(PUBLICATION_FIGURE_MAX_HEIGHT, height_int))
+
+
+def _prepare_publication_figure(fig, *, width: int = PUBLICATION_FIGURE_WIDTH):
+    """Return a copy with manuscript-oriented static export styling."""
+    if fig is None:
+        return None
+    out = go.Figure(fig)
+    height = _coerce_publication_figure_height(out)
+    existing_margin = getattr(out.layout, "margin", None)
+    margin = {
+        "l": max(int(getattr(existing_margin, "l", 0) or 0), 70),
+        "r": max(int(getattr(existing_margin, "r", 0) or 0), 35),
+        "t": max(int(getattr(existing_margin, "t", 0) or 0), 80),
+        "b": max(int(getattr(existing_margin, "b", 0) or 0), 65),
+    }
+    out.update_layout(
+        width=int(width),
+        height=int(height),
+        template="plotly_white",
+        paper_bgcolor="white",
+        plot_bgcolor="white",
+        font=dict(family=PUBLICATION_FIGURE_FONT, size=13, color="#222222"),
+        title=dict(font=dict(size=17), x=0.02, xanchor="left"),
+        legend=dict(
+            font=dict(size=11),
+            bgcolor="rgba(255,255,255,0.88)",
+            borderwidth=0,
+            orientation="v",
+        ),
+        margin=margin,
+    )
+    out.update_xaxes(
+        automargin=True,
+        showline=True,
+        linecolor="#444444",
+        linewidth=1,
+        ticks="outside",
+        tickfont=dict(size=11),
+        title_font=dict(size=13),
+        zeroline=False,
+    )
+    out.update_yaxes(
+        automargin=True,
+        showline=True,
+        linecolor="#444444",
+        linewidth=1,
+        ticks="outside",
+        tickfont=dict(size=11),
+        title_font=dict(size=13),
+        zeroline=False,
+    )
+    if out.layout.annotations:
+        out.update_annotations(font=dict(size=11, family=PUBLICATION_FIGURE_FONT, color="#222222"))
+    return out
+
+
+def fig_to_html_bytes(fig, *, publication: bool = True) -> bytes:
+    export_fig = _prepare_publication_figure(fig) if publication else fig
+    return export_fig.to_html(include_plotlyjs="cdn").encode("utf-8")
+
+
+def fig_to_png_bytes(fig, dpi: int = PUBLICATION_FIGURE_DPI, *, publication: bool = True) -> bytes | None:
     """Export a plotly figure to high-resolution PNG bytes.
 
     Returns None if kaleido is not available or fails (e.g., on Streamlit Cloud
@@ -7766,11 +7839,15 @@ def fig_to_png_bytes(fig, dpi: int = 300) -> bytes | None:
     """
     if not _static_png_browser_available():
         return None
+    export_fig = _prepare_publication_figure(fig) if publication else fig
     try:
-        fig_key = hashlib.sha256(fig.to_json().encode("utf-8")).hexdigest()[:32]
+        fig_key = hashlib.sha256(export_fig.to_json().encode("utf-8")).hexdigest()[:32]
     except Exception:
-        fig_key = stable_json_fingerprint({"id": id(fig), "dpi": dpi}, length=32)
-    return cached_plotly_png_bytes(fig, fig_key, dpi=dpi)
+        fig_key = stable_json_fingerprint(
+            {"id": id(fig), "dpi": dpi, "publication": publication},
+            length=32,
+        )
+    return cached_plotly_png_bytes(export_fig, fig_key, dpi=dpi)
 
 
 def _offer_fig_download(fig, key: str, label: str = "Download figure (PNG 300 DPI)") -> None:
@@ -7780,7 +7857,7 @@ def _offer_fig_download(fig, key: str, label: str = "Download figure (PNG 300 DP
     If kaleido is available, also offers a high-resolution PNG.
     """
     png_data = fig_to_png_bytes(fig)
-    html_data = fig.to_html(include_plotlyjs="cdn").encode("utf-8")
+    html_data = fig_to_html_bytes(fig)
 
     if png_data is not None:
         col_png, col_html = st.columns(2)
@@ -7859,6 +7936,18 @@ def cached_named_asset_zip(_assets: dict[str, bytes | str], assets_key: str, ext
         for name, value in _assets.items():
             raw = value.encode("utf-8") if isinstance(value, str) else bytes(value)
             zf.writestr(f"{name}.{extension}", raw)
+    return zip_buf.getvalue()
+
+
+@st.cache_data(show_spinner=False, max_entries=4, ttl=1800)
+def cached_mixed_asset_zip(_assets: dict[str, bytes | str], assets_key: str) -> bytes:
+    """Cache ZIP bytes for named assets that already include paths/extensions."""
+    _ = assets_key
+    zip_buf = io.BytesIO()
+    with zipfile.ZipFile(zip_buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        for name, value in _assets.items():
+            raw = value.encode("utf-8") if isinstance(value, str) else bytes(value)
+            zf.writestr(str(name), raw)
     return zip_buf.getvalue()
 
 
@@ -13774,6 +13863,197 @@ def _make_marginal_heatmap_figure(
     return fig
 
 
+def _make_wright_map_export_figure(
+    person_tbl: pd.DataFrame,
+    facet_tbl: pd.DataFrame,
+    step_tbl: pd.DataFrame | None = None,
+):
+    person_est = pd.to_numeric(
+        person_tbl.get("Estimate", pd.Series(dtype=float)), errors="coerce",
+    ).dropna() if isinstance(person_tbl, pd.DataFrame) else pd.Series(dtype=float)
+    if person_est.empty:
+        return None
+    facet_est = facet_tbl.copy() if isinstance(facet_tbl, pd.DataFrame) else pd.DataFrame()
+    if "Estimate" in facet_est.columns:
+        facet_est["Estimate"] = pd.to_numeric(facet_est["Estimate"], errors="coerce")
+        facet_est = facet_est.dropna(subset=["Estimate"])
+    facet_names = list(facet_est["Facet"].unique()) if "Facet" in facet_est.columns and not facet_est.empty else []
+    max_elements_per_facet = int(facet_est.groupby("Facet").size().max()) if facet_names else 0
+
+    fig = make_subplots(
+        rows=1,
+        cols=2,
+        column_widths=[0.32, 0.68],
+        shared_yaxes=True,
+        subplot_titles=["Persons", "Facet and threshold locations"],
+    )
+    fig.add_trace(
+        go.Histogram(
+            y=person_est.values,
+            nbinsy=30,
+            marker_color="#9e9e9e",
+            name="Persons",
+            showlegend=False,
+            hovertemplate="n=%{x}<br>Logit=%{y:.2f}<extra></extra>",
+        ),
+        row=1,
+        col=1,
+    )
+    fig.update_xaxes(autorange="reversed", title_text="Count", row=1, col=1)
+    colors = px.colors.qualitative.Set2
+    for i, fname in enumerate(facet_names):
+        fdata = facet_est[facet_est["Facet"] == fname]
+        full_labels = (
+            fdata["Level"].astype(str).to_numpy()
+            if "Level" in fdata.columns else np.array([str(idx) for idx in fdata.index])
+        )
+        fig.add_trace(
+            go.Scatter(
+                x=[fname] * len(fdata),
+                y=fdata["Estimate"].to_numpy(),
+                mode="markers",
+                marker=dict(size=8, color=colors[i % len(colors)], line=dict(width=0.4, color="#333333")),
+                name=str(fname),
+                customdata=np.column_stack([full_labels, np.repeat(fname, len(fdata))]),
+                hovertemplate="%{customdata[1]}: %{customdata[0]}<br>Logit=%{y:.2f}<extra></extra>",
+            ),
+            row=1,
+            col=2,
+        )
+    if isinstance(step_tbl, pd.DataFrame) and not step_tbl.empty:
+        step_vals = pd.to_numeric(step_tbl.get("Estimate", pd.Series(dtype=float)), errors="coerce").dropna()
+        for sv in step_vals:
+            fig.add_hline(y=float(sv), line_dash="dot", line_color="#777777", line_width=0.7, row=1, col=2)
+    fig.update_yaxes(title_text="Logit scale", row=1, col=1)
+    facet_tick_angle = -30 if len(facet_names) > 4 or max((len(str(v)) for v in facet_names), default=0) > 12 else 0
+    fig.update_xaxes(tickangle=facet_tick_angle, automargin=True, row=1, col=2)
+    fig.update_layout(
+        title="Wright map",
+        height=max(500, 22 * max_elements_per_facet + 210),
+        template="plotly_white",
+        hovermode="closest",
+        margin=_readable_plot_margins(x_labels=[str(v) for v in facet_names], base_left=95, base_bottom=95),
+    )
+    return fig
+
+
+def _make_fit_scatter_export_figure(measures: pd.DataFrame):
+    if not isinstance(measures, pd.DataFrame) or measures.empty or not {"Infit", "Outfit"}.issubset(measures.columns):
+        return None
+    pdf = measures.copy()
+    pdf["Infit"] = pd.to_numeric(pdf["Infit"], errors="coerce")
+    pdf["Outfit"] = pd.to_numeric(pdf["Outfit"], errors="coerce")
+    pdf = pdf.dropna(subset=["Infit", "Outfit"])
+    if pdf.empty:
+        return None
+    color_col = "Facet" if "Facet" in pdf.columns else None
+    hover_cols = [c for c in ["Facet", "Level", "Measure", "SE"] if c in pdf.columns]
+    fig = px.scatter(
+        pdf,
+        x="Infit",
+        y="Outfit",
+        color=color_col,
+        hover_data=hover_cols or None,
+        opacity=0.78,
+        color_discrete_sequence=px.colors.qualitative.Set2,
+    )
+    fig.add_hrect(y0=0.5, y1=1.5, fillcolor="green", opacity=0.06, line_width=0)
+    fig.add_vrect(x0=0.5, x1=1.5, fillcolor="green", opacity=0.06, line_width=0)
+    for v in [0.5, 1.5]:
+        fig.add_hline(y=v, line_dash="dash", line_color="#d95f02", line_width=0.8)
+        fig.add_vline(x=v, line_dash="dash", line_color="#d95f02", line_width=0.8)
+    fig.add_hline(y=1.0, line_dash="dot", line_color="#666666", line_width=0.6)
+    fig.add_vline(x=1.0, line_dash="dot", line_color="#666666", line_width=0.6)
+    fig.update_layout(
+        title="Fit scatter plot",
+        xaxis_title="Infit MnSq",
+        yaxis_title="Outfit MnSq",
+        height=520,
+        template="plotly_white",
+    )
+    return fig
+
+
+def _make_facet_distribution_export_figure(measures: pd.DataFrame):
+    if not isinstance(measures, pd.DataFrame) or measures.empty or not {"Facet", "Estimate"}.issubset(measures.columns):
+        return None
+    plot_df = measures.copy()
+    plot_df["Estimate"] = pd.to_numeric(plot_df["Estimate"], errors="coerce")
+    plot_df = plot_df.dropna(subset=["Estimate"])
+    if plot_df.empty:
+        return None
+    fig = px.box(
+        plot_df,
+        x="Facet",
+        y="Estimate",
+        color="Facet",
+        points="outliers",
+        color_discrete_sequence=px.colors.qualitative.Set2,
+    )
+    fig.update_layout(
+        title="Facet measure distribution",
+        xaxis_title="Facet",
+        yaxis_title="Measure (logits)",
+        showlegend=False,
+        height=500,
+        template="plotly_white",
+        margin=_readable_plot_margins(x_labels=plot_df["Facet"].astype(str).unique().tolist(), base_bottom=80),
+    )
+    return fig
+
+
+def _figure_use_note(name: str) -> str:
+    if name.startswith("category_probability_curve"):
+        return "Rating-scale category functioning; use with threshold and category-count tables."
+    if name.startswith("expected_score_curve"):
+        return "Model-expected score curve; use when explaining category transitions."
+    notes = {
+        "wright_map": "Targeting and common-logit-scale overlap; use when discussing ceiling/floor effects and facet locations.",
+        "fit_scatter": "Element fit screen; use with fit table, not as sole evidence for deletion.",
+        "facet_distribution": "Facet measure spread; use for severity/difficulty distribution summaries.",
+        "strict_marginal_summary": "Largest marginal residual deviations; use only for MML strict marginal diagnostics.",
+        "strict_marginal_heatmap": "Category-level marginal residual pattern; use as diagnostic evidence.",
+        "strict_marginal_pairwise_summary": "Largest pairwise marginal residual deviations; use as exploratory local-dependence evidence.",
+        "strict_marginal_pairwise_heatmap": "Pairwise category-level marginal residual pattern; use as diagnostic evidence.",
+    }
+    return notes.get(name, "Diagnostic figure; interpret together with the corresponding table and app guidance.")
+
+
+def _figure_export_manifest(figure_html: dict[str, str], figure_bytes: dict[str, bytes]) -> pd.DataFrame:
+    rows = []
+    all_names = sorted(set(figure_html) | set(figure_bytes))
+    for name in all_names:
+        formats = []
+        if name in figure_bytes:
+            formats.append("PNG")
+        if name in figure_html:
+            formats.append("HTML")
+        rows.append({
+            "FigureName": name,
+            "FormatsAvailable": ", ".join(formats),
+            "StaticProfile": f"{PUBLICATION_FIGURE_DPI} DPI PNG target; white background; manuscript font; compact margins",
+            "StaticWidthPx": PUBLICATION_FIGURE_WIDTH,
+            "ManuscriptUse": _figure_use_note(name),
+            "ReportingCaution": "Use as supporting diagnostic evidence; report model settings and relevant table values with the figure.",
+        })
+    return pd.DataFrame(rows)
+
+
+def _figure_bundle_assets(
+    figure_html: dict[str, str],
+    figure_bytes: dict[str, bytes],
+    manifest: pd.DataFrame,
+) -> dict[str, bytes | str]:
+    assets: dict[str, bytes | str] = {}
+    if isinstance(manifest, pd.DataFrame) and not manifest.empty:
+        assets["figure_manifest.csv"] = to_csv_bytes(manifest)
+    for name, png in figure_bytes.items():
+        assets[f"png/{name}.png"] = png
+    for name, html in figure_html.items():
+        assets[f"html/{name}.html"] = html
+    return assets
+
+
 def _add_figure_export(fig, name: str, figure_bytes: dict[str, bytes], figure_html: dict[str, str]) -> bool:
     if fig is None:
         return True
@@ -13783,7 +14063,7 @@ def _add_figure_export(fig, name: str, figure_bytes: dict[str, bytes], figure_ht
         ok = True
     else:
         ok = False
-    figure_html[name] = fig.to_html(include_plotlyjs="cdn")
+    figure_html[name] = fig_to_html_bytes(fig).decode("utf-8")
     return ok
 
 
@@ -18584,8 +18864,9 @@ def _render_downloads(
     # ================================================================
     with dl_tabs[1]:
         st.caption(
-            "Download key diagnostic plots. PNG (300 DPI) is attempted first; "
-            "if kaleido is not available, interactive HTML files are offered instead."
+            "Download key diagnostic plots using the app's manuscript export profile: "
+            "white background, consistent font, compact margins, 300 DPI PNG when static "
+            "export is available, and matching interactive HTML for review."
         )
         if not generate_figures:
             st.info(
@@ -18614,49 +18895,16 @@ def _render_downloads(
         step_tbl = figure_steps
         if not person_tbl.empty:
             try:
-                p_est = pd.to_numeric(person_tbl.get("Estimate", pd.Series(dtype=float)), errors="coerce").dropna()
-                f_est = pd.to_numeric(facet_tbl.get("Estimate", pd.Series(dtype=float)), errors="coerce").dropna() if not facet_tbl.empty else pd.Series(dtype=float)
-                if len(p_est) > 0:
-                    fig_wm = make_subplots(rows=1, cols=2, shared_yaxes=True,
-                                           subplot_titles=["Persons", "Facets"])
-                    fig_wm.add_trace(go.Histogram(y=p_est.values, marker_color="#3498db",
-                                                   showlegend=False), row=1, col=1)
-                    if len(f_est) > 0:
-                        fig_wm.add_trace(go.Scatter(
-                            x=np.zeros(len(f_est)), y=f_est.values, mode="markers",
-                            marker=dict(symbol="diamond", color="#e74c3c", size=8),
-                            showlegend=False,
-                        ), row=1, col=2)
-                    fig_wm.update_layout(title="Wright Map", height=450, template="plotly_white")
-                    _wb = fig_to_png_bytes(fig_wm)
-                    if _wb is not None:
-                        figure_bytes["wright_map"] = _wb
-                    else:
-                        _kaleido_ok = False
-                    figure_html["wright_map"] = fig_wm.to_html(include_plotlyjs="cdn")
+                fig_wm = _make_wright_map_export_figure(person_tbl, facet_tbl, step_tbl)
+                _kaleido_ok = _add_figure_export(fig_wm, "wright_map", figure_bytes, figure_html) and _kaleido_ok
             except Exception as e:
                 _fig_errors.append(f"Wright Map: {e}")
 
         # Fit Scatter
         if not figure_measures.empty and "Infit" in figure_measures.columns and "Outfit" in figure_measures.columns:
             try:
-                infit = pd.to_numeric(figure_measures["Infit"], errors="coerce")
-                outfit = pd.to_numeric(figure_measures["Outfit"], errors="coerce")
-                fig_fs = go.Figure()
-                fig_fs.add_trace(go.Scatter(x=infit, y=outfit, mode="markers",
-                                            marker=dict(size=6, opacity=0.6, color="#1b9e77"),
-                                            showlegend=False))
-                for v in [0.5, 1.5]:
-                    fig_fs.add_hline(y=v, line_dash="dash", line_color="orange", line_width=0.7)
-                    fig_fs.add_vline(x=v, line_dash="dash", line_color="orange", line_width=0.7)
-                fig_fs.update_layout(xaxis_title="Infit MnSq", yaxis_title="Outfit MnSq",
-                                     title="Fit Scatter Plot", height=450, template="plotly_white")
-                _fb = fig_to_png_bytes(fig_fs)
-                if _fb is not None:
-                    figure_bytes["fit_scatter"] = _fb
-                else:
-                    _kaleido_ok = False
-                figure_html["fit_scatter"] = fig_fs.to_html(include_plotlyjs="cdn")
+                fig_fs = _make_fit_scatter_export_figure(figure_measures)
+                _kaleido_ok = _add_figure_export(fig_fs, "fit_scatter", figure_bytes, figure_html) and _kaleido_ok
             except Exception as e:
                 _fig_errors.append(f"Fit Scatter: {e}")
 
@@ -18682,20 +18930,8 @@ def _render_downloads(
         # Facet Distribution (box)
         if not figure_measures.empty and "Facet" in figure_measures.columns:
             try:
-                pdf_dl = figure_measures.copy()
-                pdf_dl["Estimate"] = pd.to_numeric(pdf_dl["Estimate"], errors="coerce")
-                pdf_dl = pdf_dl.dropna(subset=["Estimate"])
-                if not pdf_dl.empty:
-                    fig_fd = px.box(pdf_dl, x="Facet", y="Estimate", color="Facet",
-                                    color_discrete_sequence=px.colors.qualitative.Set2)
-                    fig_fd.update_layout(yaxis_title="Measure (logits)", title="Facet Distribution",
-                                         showlegend=False, height=400, template="plotly_white")
-                    _db = fig_to_png_bytes(fig_fd)
-                    if _db is not None:
-                        figure_bytes["facet_distribution"] = _db
-                    else:
-                        _kaleido_ok = False
-                    figure_html["facet_distribution"] = fig_fd.to_html(include_plotlyjs="cdn")
+                fig_fd = _make_facet_distribution_export_figure(figure_measures)
+                _kaleido_ok = _add_figure_export(fig_fd, "facet_distribution", figure_bytes, figure_html) and _kaleido_ok
             except Exception as e:
                 _fig_errors.append(f"Facet Distribution: {e}")
 
@@ -18767,8 +19003,8 @@ def _render_downloads(
                 _fig_errors.append(f"Strict marginal diagnostics: {e}")
 
         if generate_figures:
-            n_available = len(figure_bytes) if figure_bytes else len(figure_html)
-            fmt_label = "PNG" if figure_bytes else "HTML"
+            n_available = len(set(figure_html) | set(figure_bytes))
+            fmt_label = "PNG + HTML" if figure_bytes else "HTML"
             st.markdown(f"**{n_available} figure(s)** available ({fmt_label} format).")
 
         if not _kaleido_ok and figure_html:
@@ -18783,52 +19019,55 @@ def _render_downloads(
                 for err in _fig_errors:
                     st.caption(err)
 
-        if figure_bytes:
-            # ZIP of all figures (PNG)
-            figure_bytes_key = bytes_mapping_fingerprint(figure_bytes)
+        figure_manifest = _figure_export_manifest(figure_html, figure_bytes)
+        if generate_figures and not figure_manifest.empty:
+            st.markdown("**Figure export manifest**")
+            _render_compact_dataframe(
+                figure_manifest,
+                ["FigureName", "FormatsAvailable", "ManuscriptUse"],
+                details_label="Show full figure export manifest",
+                hide_index=True,
+                wrap_text=True,
+            )
             st.download_button(
-                "Download ALL figures (ZIP, PNG)",
-                data=cached_named_asset_zip(figure_bytes, figure_bytes_key, "png"),
-                file_name="MFRM_Figures.zip",
+                "Download figure manifest (CSV)",
+                data=to_csv_bytes(figure_manifest),
+                file_name="figure_manifest.csv",
+                mime="text/csv",
+                key="dl_figure_manifest",
+            )
+
+        if figure_html or figure_bytes:
+            figure_assets = _figure_bundle_assets(figure_html, figure_bytes, figure_manifest)
+            figure_assets_key = bytes_mapping_fingerprint(figure_assets)
+            st.download_button(
+                "Download publication figure bundle (ZIP)",
+                data=cached_mixed_asset_zip(figure_assets, figure_assets_key),
+                file_name="MFRM_Publication_Figures.zip",
                 mime="application/zip",
                 key="dl_figs_zip",
             )
 
-            # Individual PNG downloads
-            with st.expander(f"Individual figure downloads ({len(figure_bytes)} files)"):
-                fig_cols = st.columns(min(3, len(figure_bytes)))
-                for idx, (name, png_data) in enumerate(figure_bytes.items()):
+            with st.expander(f"Individual figure downloads ({len(set(figure_html) | set(figure_bytes))} figure(s))"):
+                fig_cols = st.columns(3)
+                for idx, name in enumerate(sorted(set(figure_html) | set(figure_bytes))):
                     with fig_cols[idx % len(fig_cols)]:
-                        st.download_button(
-                            f"{name}.png",
-                            data=png_data,
-                            file_name=f"{name}.png",
-                            mime="image/png",
-                            key=f"dl_fig_dl_{name}",
-                        )
-        elif figure_html:
-            # Fallback: ZIP of HTML figures
-            figure_html_key = bytes_mapping_fingerprint(figure_html)
-            st.download_button(
-                "Download ALL figures (ZIP, HTML)",
-                data=cached_named_asset_zip(figure_html, figure_html_key, "html"),
-                file_name="MFRM_Figures_HTML.zip",
-                mime="application/zip",
-                key="dl_figs_zip",
-            )
-
-            # Individual HTML downloads
-            with st.expander(f"Individual figure downloads ({len(figure_html)} files)"):
-                fig_cols = st.columns(min(3, len(figure_html)))
-                for idx, (name, html_data) in enumerate(figure_html.items()):
-                    with fig_cols[idx % len(fig_cols)]:
-                        st.download_button(
-                            f"{name}.html",
-                            data=html_data.encode("utf-8"),
-                            file_name=f"{name}.html",
-                            mime="text/html",
-                            key=f"dl_fig_dl_{name}",
-                        )
+                        if name in figure_bytes:
+                            st.download_button(
+                                f"{name}.png",
+                                data=figure_bytes[name],
+                                file_name=f"{name}.png",
+                                mime="image/png",
+                                key=f"dl_fig_png_dl_{name}",
+                            )
+                        if name in figure_html:
+                            st.download_button(
+                                f"{name}.html",
+                                data=figure_html[name].encode("utf-8"),
+                                file_name=f"{name}.html",
+                                mime="text/html",
+                                key=f"dl_fig_html_dl_{name}",
+                            )
         elif generate_figures:
             st.info("No figures available. Run estimation first.")
 
@@ -20236,6 +20475,18 @@ def _self_test_cached_static_assets_and_exports() -> None:
     asset_key = bytes_mapping_fingerprint(asset_bundle)
     with zipfile.ZipFile(io.BytesIO(cached_named_asset_zip(asset_bundle, asset_key, "txt")), "r") as zf:
         _self_test_assert(set(zf.namelist()) == {"one.txt", "two.txt"}, "cached named asset ZIP contents changed")
+    mixed_bundle = {"manifest.csv": "name\nfigure\n", "html/figure.html": b"<html></html>"}
+    mixed_key = bytes_mapping_fingerprint(mixed_bundle)
+    with zipfile.ZipFile(io.BytesIO(cached_mixed_asset_zip(mixed_bundle, mixed_key)), "r") as zf:
+        _self_test_assert(set(zf.namelist()) == set(mixed_bundle), "cached mixed asset ZIP contents changed")
+    fig = go.Figure(go.Scatter(x=[0, 1], y=[0, 1], mode="lines", name="line"))
+    html = fig_to_html_bytes(fig)
+    _self_test_assert(b"plotly" in html.lower(), "publication figure HTML export missing Plotly payload")
+    manifest = _figure_export_manifest({"demo_figure": html.decode("utf-8")}, {"demo_figure": b"png"})
+    _self_test_assert(
+        {"FigureName", "FormatsAvailable", "ManuscriptUse"}.issubset(manifest.columns),
+        "figure export manifest contract changed",
+    )
 
 
 def cross_package_validation_plan() -> pd.DataFrame:
@@ -21229,6 +21480,30 @@ def export_demo_report(output_dir: str) -> int:
 
     figure_html: dict[str, str] = {}
     figure_png: dict[str, bytes] = {}
+    figure_measures = diagnostics.get("measures", pd.DataFrame())
+    facets_data = result.get("facets", {})
+    _add_figure_export(
+        _make_wright_map_export_figure(
+            facets_data.get("person", pd.DataFrame()),
+            facets_data.get("others", pd.DataFrame()),
+            result.get("steps", pd.DataFrame()),
+        ),
+        "wright_map",
+        figure_png,
+        figure_html,
+    )
+    _add_figure_export(
+        _make_fit_scatter_export_figure(figure_measures),
+        "fit_scatter",
+        figure_png,
+        figure_html,
+    )
+    _add_figure_export(
+        _make_facet_distribution_export_figure(figure_measures),
+        "facet_distribution",
+        figure_png,
+        figure_html,
+    )
     curve_options = category_probability_curve_options(result)
     for row in curve_options.itertuples(index=False):
         is_average = bool(getattr(row, "IsAverage"))
@@ -21237,15 +21512,26 @@ def export_demo_report(output_dir: str) -> int:
         fig_curve, fig_expected = _make_category_probability_curve_figures(curve)
         safe_label = re.sub(r"[^A-Za-z0-9]+", "_", str(getattr(row, "Label"))).strip("_")[:80] or "curve"
         if fig_curve is not None:
-            figure_html[f"category_probability_curve_{safe_label}"] = fig_curve.to_html(include_plotlyjs="cdn")
-            png = fig_to_png_bytes(fig_curve)
-            if png is not None:
-                figure_png[f"category_probability_curve_{safe_label}"] = png
+            _add_figure_export(
+                fig_curve,
+                f"category_probability_curve_{safe_label}",
+                figure_png,
+                figure_html,
+            )
         if fig_expected is not None:
-            figure_html[f"expected_score_curve_{safe_label}"] = fig_expected.to_html(include_plotlyjs="cdn")
-            png = fig_to_png_bytes(fig_expected)
-            if png is not None:
-                figure_png[f"expected_score_curve_{safe_label}"] = png
+            _add_figure_export(
+                fig_expected,
+                f"expected_score_curve_{safe_label}",
+                figure_png,
+                figure_html,
+            )
+    figure_manifest = _figure_export_manifest(figure_html, figure_png)
+    if not figure_manifest.empty:
+        figure_manifest.to_csv(out_dir / "figure_manifest.csv", index=False)
+        figure_assets = _figure_bundle_assets(figure_html, figure_png, figure_manifest)
+        (out_dir / "MFRM_Demo_Publication_Figures.zip").write_bytes(
+            cached_mixed_asset_zip(figure_assets, bytes_mapping_fingerprint(figure_assets))
+        )
     if figure_html:
         fig_dir = out_dir / "figures_html"
         fig_dir.mkdir(exist_ok=True)
@@ -21281,8 +21567,10 @@ It demonstrates the standalone Python workflow without calling `mfrmr`,
 12. `public_release_readiness.csv`: repository-level public release checklist.
 13. `category_probability_curves.csv`: long-form PCM curve data for the
    averaged view and each Task level.
-14. `figures_html/`: interactive category probability and expected-score curves.
-15. `method_appendix.md`: reproducible method notes for this demo run.
+14. `figure_manifest.csv`: manuscript-use notes and available formats for exported figures.
+15. `MFRM_Demo_Publication_Figures.zip`: publication-styled PNG/HTML figure bundle.
+16. `figures_html/`: interactive publication-styled diagnostic figures.
+17. `method_appendix.md`: reproducible method notes for this demo run.
 
 ## Demo model
 
@@ -21298,7 +21586,7 @@ identifiers before upload or paste.
 """
     (out_dir / "README.md").write_text(readme, encoding="utf-8")
     print(f"Wrote demo report to: {out_dir}")
-    print("Key files: MFRM_Demo_Report.html, MFRM_Demo_Report.xlsx, publication_gate_summary.csv, submission_action_plan.csv, beginner_case_guidance.csv, final_report_readiness.csv, manuscript_claim_guide.csv, manuscript_template.md, figures_html/")
+    print("Key files: MFRM_Demo_Report.html, MFRM_Demo_Report.xlsx, publication_gate_summary.csv, submission_action_plan.csv, beginner_case_guidance.csv, final_report_readiness.csv, manuscript_claim_guide.csv, manuscript_template.md, figure_manifest.csv, MFRM_Demo_Publication_Figures.zip, figures_html/")
     return 0
 
 

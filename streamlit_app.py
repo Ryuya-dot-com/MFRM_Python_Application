@@ -446,6 +446,43 @@ def dataframe_fingerprint(df: pd.DataFrame | None, length: int = 16) -> str | No
     return digest.hexdigest()[: int(length)]
 
 
+def uploaded_file_fingerprint(file_obj, length: int = 16) -> str | None:
+    """Fingerprint uploaded-file content for session-state staleness checks."""
+    if file_obj is None:
+        return None
+    raw = b""
+    try:
+        raw = file_obj.getvalue()
+    except Exception:
+        try:
+            pos = file_obj.tell()
+        except Exception:
+            pos = None
+        try:
+            raw = file_obj.read()
+        except Exception:
+            raw = b""
+        finally:
+            if pos is not None:
+                try:
+                    file_obj.seek(pos)
+                except Exception:
+                    pass
+    if raw is None:
+        raw = b""
+    if isinstance(raw, str):
+        raw = raw.encode("utf-8")
+    raw = bytes(raw)
+    return stable_json_fingerprint(
+        {
+            "name": getattr(file_obj, "name", None),
+            "size": getattr(file_obj, "size", len(raw)),
+            "sha256": hashlib.sha256(raw).hexdigest(),
+        },
+        length=length,
+    )
+
+
 def config_fingerprint(config: dict | None, length: int = 16) -> str:
     """Fingerprint analysis settings while excluding derived fingerprint fields."""
     if not isinstance(config, dict):
@@ -494,8 +531,11 @@ except Exception as exc:
 USE_EMBEDDED_ENGINE_ONLY = True
 
 FINAL_RESIDUAL_PCT_GE2_READY = 5.0
+FINAL_RESIDUAL_PCT_GE2_REVIEW = 10.0
 FINAL_PERSON_RELIABILITY_READY = 0.80
+FINAL_PERSON_RELIABILITY_REVIEW = 0.50
 FINAL_PCA_EIGENVALUE_READY = 2.0
+FINAL_PCA_EIGENVALUE_REVIEW = 3.0
 
 
 # ---------------------------------------------------------------------------
@@ -7340,11 +7380,13 @@ def _show_top_level_warnings(
         std_res = pd.to_numeric(obs_df["StdResidual"], errors="coerce").dropna()
         if len(std_res) > 0:
             pct_ge2 = float((std_res.abs() >= 2).mean() * 100)
-            if pct_ge2 > 10:
+            if pct_ge2 > FINAL_RESIDUAL_PCT_GE2_READY:
+                severity = "well above" if pct_ge2 > FINAL_RESIDUAL_PCT_GE2_REVIEW else "above"
                 alerts.append((
                     "warning",
-                    f"**{pct_ge2:.1f}%** of observations have |z| ≥ 2 (expected ~5%). "
-                    "Data may contain systematic misfit."
+                    f"**{pct_ge2:.1f}%** of observations have |z| >= 2 "
+                    f"({severity} the {FINAL_RESIDUAL_PCT_GE2_READY:.0f}% final-report readiness benchmark). "
+                    "Inspect Fit Details and Bias/Interaction before final reporting."
                 ))
 
     # 4. High missing rate
@@ -7455,7 +7497,11 @@ def _show_first_read_guide(
     if isinstance(obs_df, pd.DataFrame) and not obs_df.empty and "StdResidual" in obs_df.columns:
         z = pd.to_numeric(obs_df["StdResidual"], errors="coerce").dropna()
         pct_ge2 = float((z.abs() >= 2).mean() * 100) if len(z) else np.nan
-        status = "OK" if np.isfinite(pct_ge2) and pct_ge2 <= 10 else "Review"
+        status = (
+            "OK" if np.isfinite(pct_ge2) and pct_ge2 <= FINAL_RESIDUAL_PCT_GE2_READY
+            else "Review" if np.isfinite(pct_ge2) and pct_ge2 <= FINAL_RESIDUAL_PCT_GE2_REVIEW
+            else "Caution"
+        )
         rows.append({
             "Check": "2. Global residual fit",
             "Status": status,
@@ -7463,7 +7509,7 @@ def _show_first_read_guide(
             "Next action": (
                 "Move to element fit and bias checks."
                 if status == "OK" else
-                "Inspect Fit Details and Bias/Interaction before reporting."
+                "Inspect Fit Details and Bias/Interaction before reporting; final-report Ready requires about 5% or fewer."
             ),
         })
 
@@ -7472,7 +7518,11 @@ def _show_first_read_guide(
         rel_vals = pd.to_numeric(rel_df["Reliability"], errors="coerce").dropna()
         if len(rel_vals):
             min_rel = float(rel_vals.min())
-            status = "OK" if min_rel >= 0.80 else ("Review" if min_rel >= 0.50 else "Caution")
+            status = (
+                "OK" if min_rel >= FINAL_PERSON_RELIABILITY_READY
+                else "Review" if min_rel >= FINAL_PERSON_RELIABILITY_REVIEW
+                else "Caution"
+            )
             rows.append({
                 "Check": "3. Reliability / separation",
                 "Status": status,
@@ -7496,7 +7546,11 @@ def _show_first_read_guide(
     elif isinstance(pca, dict) and pca.get("eigenvalues") is not None:
         ev = np.asarray(pca.get("eigenvalues"), dtype=float)
         ev1 = float(ev[0]) if ev.size else np.nan
-        status = "OK" if np.isfinite(ev1) and ev1 < 2.0 else ("Review" if np.isfinite(ev1) and ev1 < 3.0 else "Caution")
+        status = (
+            "OK" if np.isfinite(ev1) and ev1 < FINAL_PCA_EIGENVALUE_READY
+            else "Review" if np.isfinite(ev1) and ev1 < FINAL_PCA_EIGENVALUE_REVIEW
+            else "Caution"
+        )
         rows.append({
             "Check": "4. Dimensionality",
             "Status": status,
@@ -7883,9 +7937,9 @@ def _show_pca_panel(
     # --- Interpretation badge ---
     if ev1 < 1.5:
         st.success(f"1st eigenvalue = {ev1:.2f} -- Good support for unidimensionality.")
-    elif ev1 < 2.0:
+    elif ev1 < FINAL_PCA_EIGENVALUE_READY:
         st.info(f"1st eigenvalue = {ev1:.2f} -- Acceptable; monitor for secondary dimension.")
-    elif ev1 < 3.0:
+    elif ev1 < FINAL_PCA_EIGENVALUE_REVIEW:
         st.warning(f"1st eigenvalue = {ev1:.2f} -- Possible secondary dimension. Inspect item content.")
     else:
         st.error(f"1st eigenvalue = {ev1:.2f} -- Strong evidence of multidimensionality.")
@@ -10139,11 +10193,9 @@ def show_prediction_simulation_section(result: dict, diagnostics: dict, core: di
             score_col_new,
             person_id_col_new,
             str(new_design_text or ""),
-            getattr(new_design_file, "name", None),
-            getattr(new_design_file, "size", None),
+            uploaded_file_fingerprint(new_design_file, length=32),
             str(supplemental_person_text or ""),
-            getattr(supplemental_person_file, "name", None),
-            getattr(supplemental_person_file, "size", None),
+            uploaded_file_fingerprint(supplemental_person_file, length=32),
         )
         if st.session_state.get(new_pred_meta_key) != new_pred_meta:
             st.session_state.pop(new_pred_state_key, None)
@@ -10530,14 +10582,16 @@ def _render_report_tables(result: dict, diagnostics: dict) -> None:
             ]
             st.markdown("**Global fit — observation-level residuals** (Eckes, 2005)")
             st.markdown("\n".join(fit_lines))
-            if pct_ge2 > 10:
+            if pct_ge2 > FINAL_RESIDUAL_PCT_GE2_REVIEW:
                 st.warning(
-                    f"|z| ≥ 2 is {pct_ge2:.1f}%, well above the ~5% benchmark. "
+                    f"|z| >= 2 is {pct_ge2:.1f}%, well above the "
+                    f"{FINAL_RESIDUAL_PCT_GE2_READY:.0f}% final-report benchmark. "
                     "Consider reviewing data for systematic misfit."
                 )
-            elif pct_ge2 > 7:
+            elif pct_ge2 > FINAL_RESIDUAL_PCT_GE2_READY:
                 st.info(
-                    f"|z| ≥ 2 is {pct_ge2:.1f}%, somewhat above the ~5% benchmark."
+                    f"|z| >= 2 is {pct_ge2:.1f}%, above the "
+                    f"{FINAL_RESIDUAL_PCT_GE2_READY:.0f}% final-report benchmark."
                 )
 
     st.subheader("Reliability & separation")
@@ -10745,7 +10799,13 @@ of a research paper that uses MFRM.
             n_total = len(std_res)
             pct_ge2 = float((abs_res >= 2).mean() * 100)
             pct_ge3 = float((abs_res >= 3).mean() * 100)
-            fit_label = "satisfactory" if pct_ge2 <= 7 else "marginally acceptable" if pct_ge2 <= 10 else "poor"
+            fit_label = (
+                "satisfactory"
+                if pct_ge2 <= FINAL_RESIDUAL_PCT_GE2_READY
+                else "marginally acceptable"
+                if pct_ge2 <= FINAL_RESIDUAL_PCT_GE2_REVIEW
+                else "poor"
+            )
             results_parts.append(
                 f"Global model fit was {fit_label}, with {pct_ge2:.1f}% of "
                 f"standardized residuals exceeding |2| (expected ≈ 5%; Eckes, 2005) "
@@ -10771,9 +10831,9 @@ of a research paper that uses MFRM.
             strata = (4 * sep_val + 1) / 3 if np.isfinite(sep_val) else np.nan
             if rel_val >= 0.90:
                 interp = "excellent differentiation"
-            elif rel_val >= 0.80:
+            elif rel_val >= FINAL_PERSON_RELIABILITY_READY:
                 interp = "good differentiation"
-            elif rel_val >= 0.50:
+            elif rel_val >= FINAL_PERSON_RELIABILITY_REVIEW:
                 interp = "moderate differentiation"
             else:
                 interp = "poor differentiation; differences mainly due to measurement error"
@@ -10920,19 +10980,22 @@ of a research paper that uses MFRM.
         std_res_interp = pd.to_numeric(obs_df_interp["StdResidual"], errors="coerce").dropna()
         if len(std_res_interp) > 0:
             pct2 = float((std_res_interp.abs() >= 2).mean() * 100)
-            if pct2 <= 7:
+            if pct2 <= FINAL_RESIDUAL_PCT_GE2_READY:
                 st.success(
-                    f"**Global fit: Good** — {pct2:.1f}% of residuals exceed |2| (expected ~5%). "
+                    f"**Global fit: Good** — {pct2:.1f}% of residuals exceed |2| "
+                    f"(final-report benchmark <= {FINAL_RESIDUAL_PCT_GE2_READY:.0f}%). "
                     "The model fits the data adequately."
                 )
-            elif pct2 <= 12:
+            elif pct2 <= FINAL_RESIDUAL_PCT_GE2_REVIEW:
                 st.warning(
-                    f"**Global fit: Marginal** — {pct2:.1f}% of residuals exceed |2| (expected ~5%). "
+                    f"**Global fit: Marginal** — {pct2:.1f}% of residuals exceed |2| "
+                    f"(final-report benchmark <= {FINAL_RESIDUAL_PCT_GE2_READY:.0f}%). "
                     "Consider checking for misfitting elements in the Fit Details tab."
                 )
             else:
                 st.error(
-                    f"**Global fit: Poor** — {pct2:.1f}% of residuals exceed |2| (expected ~5%). "
+                    f"**Global fit: Poor** — {pct2:.1f}% of residuals exceed |2| "
+                    f"(final-report benchmark <= {FINAL_RESIDUAL_PCT_GE2_READY:.0f}%). "
                     "The model does not fit well. Consider: (a) collapsing rating categories, "
                     "(b) removing misfitting elements, or (c) using PCM instead of RSM."
                 )
@@ -10949,13 +11012,13 @@ of a research paper that uses MFRM.
             # Different interpretation for persons vs. raters/other facets
             is_person = (facet.lower() == "person")
             if is_person:
-                if rel_val >= 0.80:
+                if rel_val >= FINAL_PERSON_RELIABILITY_READY:
                     st.success(
                         f"**{facet} reliability: {rel_val:.3f} (Good)** — "
                         f"The model reliably distinguishes {facet.lower()} ability levels "
                         f"(Separation *G* = {sep_val:.2f})."
                     )
-                elif rel_val >= 0.50:
+                elif rel_val >= FINAL_PERSON_RELIABILITY_REVIEW:
                     st.info(
                         f"**{facet} reliability: {rel_val:.3f} (Moderate)** — "
                         "Person differentiation is moderate. Consider increasing "
@@ -10969,7 +11032,7 @@ of a research paper that uses MFRM.
                     )
             else:
                 # For non-person facets, low reliability can be desirable (rater interchangeability)
-                if rel_val >= 0.80:
+                if rel_val >= FINAL_PERSON_RELIABILITY_READY:
                     st.info(
                         f"**{facet} reliability: {rel_val:.3f} (High differentiation)** — "
                         f"{facet} elements differ significantly in severity "
@@ -10977,7 +11040,7 @@ of a research paper that uses MFRM.
                         "If these are raters, this means raters are *not* interchangeable — "
                         "consider rater training or calibration."
                     )
-                elif rel_val >= 0.50:
+                elif rel_val >= FINAL_PERSON_RELIABILITY_REVIEW:
                     st.info(
                         f"**{facet} reliability: {rel_val:.3f} (Moderate)** — "
                         f"Some {facet.lower()} elements differ moderately. Review the "
@@ -11085,13 +11148,13 @@ of a research paper that uses MFRM.
     issues: list[str] = []
     if not obs_df_interp.empty and "StdResidual" in obs_df_interp.columns:
         sr = pd.to_numeric(obs_df_interp["StdResidual"], errors="coerce").dropna()
-        if len(sr) > 0 and float((sr.abs() >= 2).mean() * 100) > 12:
+        if len(sr) > 0 and float((sr.abs() >= 2).mean() * 100) > FINAL_RESIDUAL_PCT_GE2_REVIEW:
             issues.append("poor global fit")
     if not rel_df_interp.empty:
         for _, rr in rel_df_interp.iterrows():
             if rr.get("Facet", "").lower() == "person":
                 rv = float(rr.get("Reliability", rr.get("reliability", 0)))
-                if rv < 0.50:
+                if rv < FINAL_PERSON_RELIABILITY_REVIEW:
                     issues.append("low person reliability")
     if not measures.empty and "Infit" in measures.columns:
         inf = pd.to_numeric(measures["Infit"], errors="coerce").dropna()
@@ -17984,6 +18047,26 @@ def _self_test_report_readiness_and_method_appendix() -> None:
         "readiness table is missing required columns",
     )
     _self_test_assert("Convergence" in readiness["Check"].tolist(), "readiness table missing convergence row")
+    threshold_result = {
+        "opt": type("Opt", (), {"success": True, "message": "ok"})(),
+        "config": {},
+        "prep": {},
+        "facets": {"person": pd.DataFrame(), "others": pd.DataFrame()},
+    }
+    threshold_ready = build_final_report_readiness(
+        threshold_result,
+        {"obs": pd.DataFrame({"StdResidual": [2.1] * 5 + [0.0] * 95}), "pca_enabled": False},
+        all_bias_results={},
+    )
+    threshold_review = build_final_report_readiness(
+        threshold_result,
+        {"obs": pd.DataFrame({"StdResidual": [2.1] * 6 + [0.0] * 94}), "pca_enabled": False},
+        all_bias_results={},
+    )
+    ready_status = threshold_ready.loc[threshold_ready["Check"] == "Global residual fit", "Status"].iloc[0]
+    review_status = threshold_review.loc[threshold_review["Check"] == "Global residual fit", "Status"].iloc[0]
+    _self_test_assert(ready_status == "Ready", "5% residual benchmark should be report-ready")
+    _self_test_assert(review_status == "Review", "above 5% residual benchmark should require review")
     appendix = generate_method_appendix_text(res, diagnostics, all_bias_results={})
     _self_test_assert("standalone Python" in appendix, "method appendix does not state standalone Python scope")
     _self_test_assert("- Model: RSM." in appendix, "method appendix missing model line")
@@ -17994,6 +18077,7 @@ def _self_test_report_readiness_and_method_appendix() -> None:
         "sample_data",
         "final_report_readiness",
         "visual_interpretation_checklist",
+        "visual_method_evidence",
         "category_probability_curves",
     ]:
         _self_test_assert(required in demo_frames, f"demo report frames missing {required}")
@@ -18193,6 +18277,16 @@ def _self_test_reproducibility_fingerprints() -> None:
     _self_test_assert(
         config_fingerprint(config) == config_fingerprint({"model": "RSM", "method": "JMLE"}),
         "config fingerprint should ignore derived fingerprint fields",
+    )
+    first_file = io.BytesIO(b"abc")
+    second_file = io.BytesIO(b"abd")
+    first_file.name = "ratings.csv"
+    second_file.name = "ratings.csv"
+    first_file.size = 3
+    second_file.size = 3
+    _self_test_assert(
+        uploaded_file_fingerprint(first_file) != uploaded_file_fingerprint(second_file),
+        "uploaded file fingerprint should include content, not only name and size",
     )
 
 

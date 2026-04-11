@@ -16,10 +16,12 @@ All notable changes to this standalone Streamlit distribution should be recorded
 
 - App version label now marks post-0.1.1 development as `0.1.2-beta-dev`.
 - Plotly/Kaleido floors now target Kaleido 1.x PNG export behavior, with HTML figure fallback when Chrome/Chromium is unavailable.
+- Final-report readiness, first-read guidance, and report text now use the same residual, reliability, and PCA thresholds.
+- New/held-out prediction session-state invalidation now fingerprints uploaded file content, not only file name and size.
 
 ### Validation
 
-- `make verify` passed with 20 built-in self-tests, 5 pytest checks, benchmark smoke, demo report export, and parity fixture export.
+- `make verify` passed with 20 built-in self-tests, 7 pytest checks, benchmark smoke, demo report export, and parity fixture export.
 
 ## 0.1.1-beta - 2026-04-12
 

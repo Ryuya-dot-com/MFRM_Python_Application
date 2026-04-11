@@ -139,6 +139,11 @@ After fitting a model, inspect results in this order:
 9. Strict marginal diagnostics: use for final MML reports when feasible.
 10. Final-report readiness: use the generated checklist before writing conclusions.
 
+The final-report readiness checklist, first-read guide, and generated report
+text use the same main thresholds: about 5% or fewer observation residuals
+with `|z| >= 2`, person reliability at least 0.80 when person separation is the
+goal, and residual PCA first eigenvalue below 2.0 for a clean screen.
+
 The Visuals tab also includes a downloadable visual interpretation checklist.
 It maps each figure to the first signal to read, the review trigger, and the
 recommended next action for beginners.

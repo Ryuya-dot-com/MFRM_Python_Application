@@ -10503,6 +10503,199 @@ def build_publication_gate_summary(
     return pd.concat([overall, detail], ignore_index=True)
 
 
+def build_beginner_case_guidance(
+    result: dict,
+    diagnostics: dict,
+    all_bias_results: dict | None = None,
+) -> pd.DataFrame:
+    """Case-specific interpretation prompts for common beginner pitfalls."""
+    config = result.get("config", {})
+    prep = result.get("prep", {})
+    readiness = build_final_report_readiness(result, diagnostics, all_bias_results or {})
+    gate = build_publication_gate_summary(result, diagnostics, all_bias_results or {})
+    rows: list[dict[str, object]] = []
+
+    def readiness_row(check: str) -> pd.Series:
+        if isinstance(readiness, pd.DataFrame) and not readiness.empty and "Check" in readiness.columns:
+            hit = readiness.loc[readiness["Check"].astype(str) == check]
+            if not hit.empty:
+                return hit.iloc[0]
+        return pd.Series(dtype=object)
+
+    def add_case(
+        priority: int,
+        case: str,
+        status: str,
+        evidence: str,
+        interpretation: str,
+        guardrail: str,
+        action: str,
+        where: str,
+    ) -> None:
+        rows.append({
+            "Priority": int(priority),
+            "Case": str(case),
+            "Status": str(status),
+            "Evidence": str(evidence),
+            "BeginnerInterpretation": str(interpretation),
+            "ManuscriptGuardrail": str(guardrail),
+            "NextAction": str(action),
+            "WhereToInspect": str(where),
+        })
+
+    overall_gate = pd.Series(dtype=object)
+    if isinstance(gate, pd.DataFrame) and not gate.empty and "GateArea" in gate.columns:
+        hit = gate.loc[gate["GateArea"].astype(str) == "Overall manuscript gate"]
+        if not hit.empty:
+            overall_gate = hit.iloc[0]
+    if not overall_gate.empty:
+        gate_status = str(overall_gate.get("GateStatus", "Ready"))
+        add_case(
+            1,
+            "Overall manuscript gate",
+            gate_status,
+            str(overall_gate.get("Evidence", "")),
+            "This is the first stop before copying APA-style text into a paper.",
+            "Do not turn draft APA text into a final conclusion when the gate is caveated or blocked.",
+            str(overall_gate.get("ManuscriptAction", "Review gate details.")),
+            "Report -> APA Report / publication_gate_summary.csv",
+        )
+
+    unused_raw = prep.get("unused_score_categories", [])
+    if isinstance(unused_raw, (list, tuple, set, np.ndarray, pd.Series)):
+        unused_categories = list(unused_raw)
+    elif unused_raw is None or str(unused_raw) == "":
+        unused_categories = []
+    else:
+        unused_categories = [unused_raw]
+    cat_ready = readiness_row("Category functioning")
+    cat_status = str(cat_ready.get("Status", "Missing")) if not cat_ready.empty else "Missing"
+    cat_evidence = str(cat_ready.get("Evidence", "Category diagnostics unavailable.")) if not cat_ready.empty else "Category diagnostics unavailable."
+    if unused_categories or cat_status != "Ready":
+        score_range = f"{prep.get('rating_min', '?')} to {prep.get('rating_max', '?')}"
+        unused_label = ", ".join(map(str, unused_categories)) if unused_categories else "none"
+        add_case(
+            2,
+            "Sparse or unused rating categories",
+            "Report with caveat" if cat_status != "Ready" or unused_categories else "Ready",
+            f"score range {score_range}; unused categories: {unused_label}; {cat_evidence}",
+            "The app can retain zero-count categories, but unused or sparse categories are weak evidence for threshold interpretation.",
+            "Do not claim that every rating category functioned distinctly unless counts, average measures, and thresholds support it.",
+            "Inspect category counts and threshold order; collapse adjacent categories only with substantive rubric justification.",
+            "Categories/Steps; category_probability_curves.csv",
+        )
+
+    pca_ready = readiness_row("Dimensionality screen")
+    pca_status = str(pca_ready.get("Status", "Missing")) if not pca_ready.empty else "Missing"
+    if pca_status != "Ready":
+        add_case(
+            3,
+            "Dimensionality caveat",
+            "Report with caveat",
+            str(pca_ready.get("Evidence", "Residual PCA was skipped or unavailable.")),
+            "Residual structure may contain a secondary dimension, or PCA was not computed.",
+            "Do not claim unidimensionality from global residual fit alone.",
+            "Open Dimensionality and either report the PCA caveat or enable PCA for final reporting.",
+            "Dimensionality; publication_gate_summary.csv",
+        )
+
+    all_bias = all_bias_results or {}
+    n_sig = 0
+    n_total = 0
+    for bundle in all_bias.values():
+        tbl = bundle.get("table") if isinstance(bundle, dict) else None
+        if isinstance(tbl, pd.DataFrame) and "t" in tbl.columns:
+            t_vals = pd.to_numeric(tbl["t"], errors="coerce").dropna()
+            n_total += len(t_vals)
+            n_sig += int((t_vals.abs() >= 2).sum())
+    if not all_bias or n_sig:
+        add_case(
+            4,
+            "Bias/local interaction screen",
+            "Boundary" if not all_bias else "Report with caveat",
+            (
+                "No bias/interaction screen was computed."
+                if not all_bias else
+                f"{n_sig} of {n_total} screened local interactions have |t| >= 2."
+            ),
+            "Bias output is a screening prompt, not automatic proof of bias or proof of no bias.",
+            "Do not make no-bias claims outside the facet pairs and cells that were actually screened.",
+            "For final reporting, run the intended selected pair or full publication screen and review flagged cells substantively.",
+            "Bias/Interaction; manuscript_claim_guide.csv",
+        )
+
+    if str(config.get("method", "")).upper() == "MML":
+        marginal = diagnostics.get("marginal_fit", {})
+        available = isinstance(marginal, dict) and bool(marginal.get("available", False))
+        n_review = int(marginal.get("n_review", 0) or 0) if isinstance(marginal, dict) else 0
+        if (not available) or n_review:
+            add_case(
+                5,
+                "MML strict marginal diagnostics",
+                "Report with caveat" if available else "Boundary",
+                (
+                    f"{n_review} marginal row(s) flagged."
+                    if available else
+                    (marginal.get("reason", "Strict marginal diagnostics were skipped.") if isinstance(marginal, dict) else "Strict marginal diagnostics were skipped.")
+                ),
+                "MML posterior and marginal checks need their own diagnostic review for final manuscripts.",
+                "Do not describe an MML run as fully screened if strict marginal diagnostics were skipped or flagged.",
+                "Enable strict marginal diagnostics when feasible and include flagged marginal rows in the limitation language.",
+                "Fit Details / Downloads -> marginal_fit_summary.csv",
+            )
+
+    rel_df = diagnostics.get("reliability", pd.DataFrame())
+    if isinstance(rel_df, pd.DataFrame) and not rel_df.empty and {"Facet", "Reliability"}.issubset(rel_df.columns):
+        human_facet_mask = rel_df["Facet"].astype(str).str.lower().str.contains("rater|judge|evaluator|reader", regex=True)
+        human_rel = rel_df[human_facet_mask].copy()
+        if not human_rel.empty:
+            rel_vals = pd.to_numeric(human_rel["Reliability"], errors="coerce").dropna()
+            if len(rel_vals) and float(rel_vals.max()) >= FINAL_PERSON_RELIABILITY_READY:
+                add_case(
+                    6,
+                    "High human-rater facet reliability",
+                    "Report with caveat",
+                    f"highest human-rater facet reliability = {float(rel_vals.max()):.3f}",
+                    "High rater reliability usually means raters differ in severity; it is not automatically desirable agreement.",
+                    "Do not write that high rater reliability proves raters were interchangeable.",
+                    "Report rater severity spread and consider rater training/calibration if the study requires interchangeability.",
+                    "Report -> Tables; Wright Map; Measures",
+                )
+
+    anchor_ready = readiness_row("Anchor / linking audit")
+    anchor_status = str(anchor_ready.get("Status", "Missing")) if not anchor_ready.empty else "Missing"
+    if anchor_status != "Ready":
+        add_case(
+            7,
+            "Anchor/linking claims",
+            "Boundary",
+            str(anchor_ready.get("Evidence", "Anchor/linking audit was not ready.")),
+            "Single-run measures can be interpreted within the current connected design; cross-run claims require more evidence.",
+            "Do not compare cohorts, forms, administrations, or studies on a common scale without anchor/linking evidence.",
+            "Use anchor audit, drift, and equating-chain outputs before writing cross-run comparison claims.",
+            "Data -> Anchor/linking audit; Report -> Facet Equivalence",
+        )
+
+    if not rows:
+        add_case(
+            99,
+            "No common beginner pitfall flagged",
+            "Ready",
+            "No case-specific caution was generated.",
+            "The main automated checks did not identify common reporting traps.",
+            "Still edit all generated text for study design, rubric content, and local reporting standards.",
+            "Proceed through the Manuscript Template and Reporting Checklist before submission.",
+            "Report -> Manuscript Template / Reporting Checklist",
+        )
+
+    out = pd.DataFrame(rows)
+    status_order = {"Not ready": 0, "Report with caveat": 1, "Boundary": 2, "Ready": 3}
+    if "Status" in out.columns:
+        out["_sort"] = out["Status"].map(status_order).fillna(4)
+        out = out.sort_values(["Priority", "_sort", "Case"]).drop(columns=["_sort"]).reset_index(drop=True)
+    return out
+
+
 def generate_manuscript_reporting_template(
     result: dict,
     diagnostics: dict,
@@ -10900,6 +11093,27 @@ def _render_manuscript_claim_guide_section(
         mime="text/csv",
         key="dl_manuscript_claim_guide_report_tab",
     )
+    case_guide = build_beginner_case_guidance(result, diagnostics, all_bias_results)
+    if isinstance(case_guide, pd.DataFrame) and not case_guide.empty:
+        st.subheader("Case-Specific Beginner Guide")
+        st.caption(
+            "Common interpretation traps detected from this run. "
+            "Use this as a first-pass editing checklist for manuscript wording."
+        )
+        case_counts = case_guide["Status"].value_counts().to_dict() if "Status" in case_guide.columns else {}
+        case_cols = st.columns(4)
+        case_cols[0].metric("Not ready", int(case_counts.get("Not ready", 0)))
+        case_cols[1].metric("Caveat", int(case_counts.get("Report with caveat", 0)))
+        case_cols[2].metric("Boundary", int(case_counts.get("Boundary", 0)))
+        case_cols[3].metric("Ready", int(case_counts.get("Ready", 0)))
+        st.dataframe(case_guide, width="stretch", hide_index=True)
+        st.download_button(
+            "Download case-specific beginner guide (CSV)",
+            data=to_csv_bytes(case_guide),
+            file_name="mfrm_beginner_case_guidance.csv",
+            mime="text/csv",
+            key="dl_beginner_case_guidance_report_tab",
+        )
 
 
 def _render_manuscript_template_section(
@@ -17719,6 +17933,12 @@ def _render_downloads(
     except Exception:
         publication_gate_dl = pd.DataFrame()
     try:
+        beginner_case_dl = build_beginner_case_guidance(result, diagnostics, all_bias_results)
+        if isinstance(beginner_case_dl, pd.DataFrame) and not beginner_case_dl.empty:
+            all_frames["beginner_case_guidance"] = beginner_case_dl
+    except Exception:
+        beginner_case_dl = pd.DataFrame()
+    try:
         readiness_dl = build_final_report_readiness(result, diagnostics, all_bias_results)
         if isinstance(readiness_dl, pd.DataFrame) and not readiness_dl.empty:
             all_frames["final_report_readiness"] = readiness_dl
@@ -19272,6 +19492,21 @@ def _self_test_report_readiness_and_method_appendix() -> None:
         "Overall manuscript gate" in publication_gate["GateArea"].astype(str).tolist(),
         "publication gate summary missing overall row",
     )
+    beginner_cases = build_beginner_case_guidance(res, diagnostics, all_bias_results={})
+    _self_test_assert(not beginner_cases.empty, "beginner case guidance is empty")
+    _self_test_assert(
+        {
+            "Priority",
+            "Case",
+            "Status",
+            "Evidence",
+            "BeginnerInterpretation",
+            "ManuscriptGuardrail",
+            "NextAction",
+            "WhereToInspect",
+        }.issubset(beginner_cases.columns),
+        "beginner case guidance is missing required columns",
+    )
     threshold_result = {
         "opt": type("Opt", (), {"success": True, "message": "ok"})(),
         "config": {},
@@ -19306,6 +19541,7 @@ def _self_test_report_readiness_and_method_appendix() -> None:
         "demo_manifest",
         "sample_data",
         "publication_gate_summary",
+        "beginner_case_guidance",
         "final_report_readiness",
         "manuscript_claim_guide",
         "visual_interpretation_checklist",
@@ -20413,7 +20649,7 @@ def build_demo_report_frames(
             "Method": result.get("config", {}).get("method"),
             "RuntimeBoundary": "standalone Python; no mfrmr/rpy2/Rscript/FACETS/TAM/sirt/mirt runtime call",
             "PrivacyNote": "The demo uses synthetic built-in data only.",
-            "ReadFirst": "Open publication_gate_summary, then final_report_readiness, then manuscript_claim_guide, then manuscript_template.md, then visual_interpretation_checklist, then measures and category_probability_curves.",
+            "ReadFirst": "Open publication_gate_summary, then beginner_case_guidance, then final_report_readiness, then manuscript_claim_guide, then manuscript_template.md, then visual_interpretation_checklist, then measures and category_probability_curves.",
         }
     ])
     frames["sample_data"] = data.copy()
@@ -20430,6 +20666,9 @@ def build_demo_report_frames(
     publication_gate = build_publication_gate_summary(result, diagnostics, all_bias_results or {})
     if isinstance(publication_gate, pd.DataFrame) and not publication_gate.empty:
         frames["publication_gate_summary"] = publication_gate
+    beginner_cases = build_beginner_case_guidance(result, diagnostics, all_bias_results or {})
+    if isinstance(beginner_cases, pd.DataFrame) and not beginner_cases.empty:
+        frames["beginner_case_guidance"] = beginner_cases
     readiness = build_final_report_readiness(result, diagnostics, all_bias_results or {})
     if isinstance(readiness, pd.DataFrame) and not readiness.empty:
         frames["final_report_readiness"] = readiness
@@ -20588,18 +20827,19 @@ It demonstrates the standalone Python workflow without calling `mfrmr`,
 
 1. `MFRM_Demo_Report.html`: browser-readable table report.
 2. `publication_gate_summary.csv`: whether APA-style conclusions are ready, caveated, or blocked.
-3. `final_report_readiness.csv`: what to resolve before final reporting.
-4. `manuscript_claim_guide.csv`: what is safe to claim in a manuscript.
-5. `manuscript_template.md`: Methods, Results, limitations, and reviewer preflight scaffold.
-6. `visual_interpretation_checklist.csv`: how to read each plot.
-7. `visual_method_evidence.csv`: methodological basis and readability rules for plots.
-8. `public_beta_limitations.csv`: what this beta release supports and does not claim.
-9. `mfrmr_015_migration_coverage.csv`: how the local mfrmr 0.1.5 feature surface maps to this Python app.
-10. `public_release_readiness.csv`: repository-level public release checklist.
-11. `category_probability_curves.csv`: long-form PCM curve data for the
+3. `beginner_case_guidance.csv`: case-specific cautions for common beginner interpretation traps.
+4. `final_report_readiness.csv`: what to resolve before final reporting.
+5. `manuscript_claim_guide.csv`: what is safe to claim in a manuscript.
+6. `manuscript_template.md`: Methods, Results, limitations, and reviewer preflight scaffold.
+7. `visual_interpretation_checklist.csv`: how to read each plot.
+8. `visual_method_evidence.csv`: methodological basis and readability rules for plots.
+9. `public_beta_limitations.csv`: what this beta release supports and does not claim.
+10. `mfrmr_015_migration_coverage.csv`: how the local mfrmr 0.1.5 feature surface maps to this Python app.
+11. `public_release_readiness.csv`: repository-level public release checklist.
+12. `category_probability_curves.csv`: long-form PCM curve data for the
    averaged view and each Task level.
-12. `figures_html/`: interactive category probability and expected-score curves.
-13. `method_appendix.md`: reproducible method notes for this demo run.
+13. `figures_html/`: interactive category probability and expected-score curves.
+14. `method_appendix.md`: reproducible method notes for this demo run.
 
 ## Demo model
 
@@ -20615,7 +20855,7 @@ identifiers before upload or paste.
 """
     (out_dir / "README.md").write_text(readme, encoding="utf-8")
     print(f"Wrote demo report to: {out_dir}")
-    print("Key files: MFRM_Demo_Report.html, MFRM_Demo_Report.xlsx, publication_gate_summary.csv, final_report_readiness.csv, manuscript_claim_guide.csv, manuscript_template.md, figures_html/")
+    print("Key files: MFRM_Demo_Report.html, MFRM_Demo_Report.xlsx, publication_gate_summary.csv, beginner_case_guidance.csv, final_report_readiness.csv, manuscript_claim_guide.csv, manuscript_template.md, figures_html/")
     return 0
 
 

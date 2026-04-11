@@ -152,9 +152,10 @@ After fitting a model, inspect results in this order:
 8. Anchor / linking review: check connectedness and anchor stability before comparing runs or groups.
 9. Strict marginal diagnostics: use for final MML reports when feasible.
 10. Publication gate: check whether APA-style conclusions are ready, caveated, or blocked.
-11. Final-report readiness: use the generated checklist before writing conclusions.
-12. Manuscript claim guide: check what is safe to claim, what requires a caveat, and what should not be claimed yet.
-13. Manuscript template: adapt the generated Methods, Results, limitations, and reviewer preflight scaffold after resolving claim-guide cautions.
+11. Beginner case guidance: review common interpretation traps detected in the current run.
+12. Final-report readiness: use the generated checklist before writing conclusions.
+13. Manuscript claim guide: check what is safe to claim, what requires a caveat, and what should not be claimed yet.
+14. Manuscript template: adapt the generated Methods, Results, limitations, and reviewer preflight scaffold after resolving claim-guide cautions.
 
 The final-report readiness checklist, publication gate, first-read guide,
 manuscript template, and generated report text use the same main thresholds:
@@ -190,7 +191,8 @@ python streamlit_app.py --export-demo-report validation/generated/demo_report
 ```
 
 Open `validation/generated/demo_report/MFRM_Demo_Report.html` first, then read
-`publication_gate_summary.csv`, `final_report_readiness.csv`,
+`publication_gate_summary.csv`, `beginner_case_guidance.csv`,
+`final_report_readiness.csv`,
 `manuscript_claim_guide.csv`,
 `manuscript_template.md`,
 `visual_interpretation_checklist.csv`, `visual_method_evidence.csv`,

@@ -127,6 +127,21 @@ def test_manuscript_claim_guide_contract():
     assert "Fit and dimensionality" in gate["GateArea"].astype(str).tolist()
     assert "Bias / local interaction" in gate["GateArea"].astype(str).tolist()
 
+    cases = app.build_beginner_case_guidance(result, diagnostics, all_bias_results={})
+    assert not cases.empty
+    assert {
+        "Priority",
+        "Case",
+        "Status",
+        "Evidence",
+        "BeginnerInterpretation",
+        "ManuscriptGuardrail",
+        "NextAction",
+        "WhereToInspect",
+    }.issubset(cases.columns)
+    assert "Dimensionality caveat" in cases["Case"].astype(str).tolist()
+    assert "Bias/local interaction screen" in cases["Case"].astype(str).tolist()
+
 
 def test_uploaded_file_fingerprint_uses_content_not_only_name_and_size():
     first = io.BytesIO(b"abc")

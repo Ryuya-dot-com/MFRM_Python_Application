@@ -142,6 +142,8 @@ After fitting a model, inspect results in this order:
 The Visuals tab also includes a downloadable visual interpretation checklist.
 It maps each figure to the first signal to read, the review trigger, and the
 recommended next action for beginners.
+It also includes a visual method evidence table that links each plot family to
+its Rasch/MFRM diagnostic role and explains the app's readability rules.
 For PCM and bounded GPCM, category probability curves can be read either as an
 averaged overview or for each selected step-facet level. The downloadable table
 bundle also includes long-form curve data for all available curve scopes.
@@ -153,8 +155,9 @@ python streamlit_app.py --export-demo-report validation/generated/demo_report
 ```
 
 Open `validation/generated/demo_report/MFRM_Demo_Report.html` first, then read
-`final_report_readiness.csv`, `visual_interpretation_checklist.csv`, and the
-interactive category curves in `figures_html/`.
+`final_report_readiness.csv`, `visual_interpretation_checklist.csv`,
+`visual_method_evidence.csv`, and the interactive category curves in
+`figures_html/`.
 
 ## Statistical Caveats
 

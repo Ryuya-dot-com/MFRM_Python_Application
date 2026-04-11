@@ -29,6 +29,27 @@ def test_visual_interpretation_checklist_contract():
         assert expected in joined
 
 
+def test_visual_method_evidence_table_contract():
+    evidence = app.visual_method_evidence_table()
+    assert not evidence.empty
+    assert {
+        "Visualization",
+        "Purpose",
+        "MethodBasis",
+        "AppReadabilityRule",
+        "PrimaryReference",
+    }.issubset(evidence.columns)
+    joined = " ".join(evidence["Visualization"].astype(str))
+    for expected in [
+        "Wright map",
+        "Category probability",
+        "Bias heatmap",
+        "Strict marginal",
+    ]:
+        assert expected in joined
+    assert evidence["AppReadabilityRule"].str.contains("hover|compact|Limit", case=False, regex=True).any()
+
+
 def test_category_probability_curve_data_supports_gpcm_level_views():
     result = {
         "params": {

@@ -155,6 +155,104 @@ def visual_interpretation_checklist() -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
+def visual_method_evidence_table() -> pd.DataFrame:
+    """Document the methodological and readability basis for app visuals."""
+    rows = [
+        {
+            "Visualization": "Wright map / yardstick",
+            "Purpose": "Put person, facet, and threshold locations on a common logit ruler.",
+            "MethodBasis": "Rasch variable maps and FACETS-style measurement rulers.",
+            "AppReadabilityRule": "Use hover labels by default when a facet has many elements; direct labels are optional.",
+            "PrimaryReference": "Wright & Masters (1982); Linacre FACETS/Winsteps map tables",
+        },
+        {
+            "Visualization": "Category probability and expected-score curves",
+            "Purpose": "Check whether rating categories have ordered and interpretable operating regions.",
+            "MethodBasis": "Rating scale / partial-credit category response functions and thresholds.",
+            "AppReadabilityRule": "Show curves without endpoint text labels; use unified hover and optional level-specific PCM/GPCM scope.",
+            "PrimaryReference": "Andrich (1978); Wright & Masters (1982); Winsteps polytomy tables",
+        },
+        {
+            "Visualization": "Fit scatter and misfit ranking",
+            "Purpose": "Find elements with noisy, overpredictable, or distorting response patterns.",
+            "MethodBasis": "Infit/outfit mean-square and standardized fit diagnostics.",
+            "AppReadabilityRule": "Use reference bands and hover labels; rank only the highest |ZSTD| elements in bar charts.",
+            "PrimaryReference": "Wright & Linacre (1994); Linacre (2002)",
+        },
+        {
+            "Visualization": "Residual PCA scree and loadings",
+            "Purpose": "Screen for secondary residual structure after the Rasch dimension is extracted.",
+            "MethodBasis": "PCA of standardized residuals as a dimensionality diagnostic.",
+            "AppReadabilityRule": "Limit loadings to top contributors and treat the plot as a screen, not proof of dimensionality.",
+            "PrimaryReference": "Smith (2002); Linacre Winsteps PCA documentation",
+        },
+        {
+            "Visualization": "Bias heatmap",
+            "Purpose": "Screen local interaction or differential functioning across selected facet pairs.",
+            "MethodBasis": "FACETS-style bias/interaction tables and t-value screening.",
+            "AppReadabilityRule": "Automatically condense dense matrices to strongest rows/columns and put full details in hover/table export.",
+            "PrimaryReference": "Myford & Wolfe (2003, 2004); FACETS Table 7 convention",
+        },
+        {
+            "Visualization": "Strict marginal residual plots",
+            "Purpose": "Check whether MML predictions reproduce marginal score-category distributions.",
+            "MethodBasis": "Observed-expected residual and marginal fit diagnostics.",
+            "AppReadabilityRule": "Limit heatmaps to top residual rows and keep exact values in hover/table export.",
+            "PrimaryReference": "TAM/mirt-style marginal and residual diagnostic practice",
+        },
+    ]
+    return pd.DataFrame(rows)
+
+
+def _compact_label(value, max_chars: int = 34) -> str:
+    """Shorten dense axis labels while preserving full values for hover text."""
+    text = str(value)
+    if len(text) <= max_chars:
+        return text
+    if max_chars <= 4:
+        return text[:max_chars]
+    return text[: max_chars - 3] + "..."
+
+
+def _compact_label_list(values, max_chars: int = 34) -> list[str]:
+    return [_compact_label(value, max_chars=max_chars) for value in values]
+
+
+def _readable_plot_margins(
+    y_labels: list[str] | None = None,
+    x_labels: list[str] | None = None,
+    base_left: int = 90,
+    base_bottom: int = 70,
+) -> dict[str, int]:
+    """Dynamic margins for plots with categorical labels."""
+    y_len = max((len(str(v)) for v in (y_labels or [])), default=0)
+    x_len = max((len(str(v)) for v in (x_labels or [])), default=0)
+    return {
+        "l": int(min(260, max(base_left, 7 * min(y_len, 30) + 40))),
+        "r": 30,
+        "t": 80,
+        "b": int(min(180, max(base_bottom, 6 * min(x_len, 24) + 45))),
+    }
+
+
+def _select_heatmap_labels(pivot: pd.DataFrame, max_rows: int = 35, max_cols: int = 35) -> tuple[list, list, bool]:
+    """Select the strongest heatmap rows/columns when all labels would be unreadable."""
+    if not isinstance(pivot, pd.DataFrame) or pivot.empty:
+        return [], [], False
+    n_rows, n_cols = pivot.shape
+    needs_filter = n_rows > max_rows or n_cols > max_cols or n_rows * n_cols > max_rows * max_cols
+    if not needs_filter:
+        return list(pivot.index), list(pivot.columns), False
+    abs_vals = pivot.abs()
+    row_scores = abs_vals.max(axis=1).replace([np.inf, -np.inf], np.nan).fillna(-np.inf)
+    col_scores = abs_vals.max(axis=0).replace([np.inf, -np.inf], np.nan).fillna(-np.inf)
+    selected_rows = set(row_scores.sort_values(ascending=False).head(max_rows).index)
+    selected_cols = set(col_scores.sort_values(ascending=False).head(max_cols).index)
+    rows = [label for label in pivot.index if label in selected_rows]
+    cols = [label for label in pivot.columns if label in selected_cols]
+    return rows, cols, True
+
+
 def category_probability_curve_options(result: dict) -> pd.DataFrame:
     """Return available category-curve scopes for the fitted model."""
     config = result.get("config", {}) if isinstance(result, dict) else {}
@@ -7722,14 +7820,25 @@ def _show_pca_panel(
         loadings_plot = loadings.loc[top_loadings, "PC1"].sort_values()
 
         colors = ["#d95f02" if v > 0 else "#1b9e77" for v in loadings_plot.values]
+        loading_labels = [str(idx) for idx in loadings_plot.index]
         fig2 = go.Figure(go.Bar(
-            x=loadings_plot.values, y=[str(idx) for idx in loadings_plot.index],
+            x=loadings_plot.values,
+            y=loading_labels,
             orientation="h", marker_color=colors,
+            customdata=np.array(loading_labels, dtype=object),
+            hovertemplate="%{customdata}<br>PC1 loading=%{x:.3f}<extra></extra>",
         ))
         fig2.add_vline(x=0, line_color="gray", line_width=1)
         fig2.update_layout(xaxis_title="PC1 Loading", title="PC1 Loadings (top 20)",
                            height=max(300, len(loadings_plot) * 22), template="plotly_white",
-                           yaxis=dict(autorange="reversed"))
+                           yaxis=dict(autorange="reversed"),
+                           margin=_readable_plot_margins(y_labels=loading_labels, base_left=130))
+        fig2.update_yaxes(
+            tickmode="array",
+            tickvals=loading_labels,
+            ticktext=_compact_label_list(loading_labels, max_chars=42),
+            automargin=True,
+        )
         st.plotly_chart(fig2, width="stretch")
 
     # --- Unidimensionality assessment summary ---
@@ -7857,6 +7966,19 @@ histogram on the leftmost column. Each subsequent column represents one facet.
     if n_cols < 2:
         st.caption("Not enough facets to draw a yardstick.")
         return
+    max_elements_per_facet = int(facet_est.groupby("Facet").size().max()) if "Facet" in facet_est.columns and not facet_est.empty else 0
+    crowded = max_elements_per_facet > 12 or n_cols > 6
+    show_direct_labels = st.checkbox(
+        "Show yardstick labels directly on plot",
+        value=not crowded,
+        key="yardstick_show_direct_labels",
+        help=(
+            "Direct text labels are useful for small designs. For dense designs, leave this off "
+            "and use hover labels to avoid overlapping text."
+        ),
+    )
+    if crowded and not show_direct_labels:
+        st.caption("Dense yardstick: direct labels are hidden to prevent overlap. Hover points to read full labels.")
 
     y_all = list(person_est)
     if not facet_est.empty:
@@ -7884,18 +8006,27 @@ histogram on the leftmost column. Each subsequent column represents one facet.
         col_idx = i + 2
         sub = facet_est[facet_est["Facet"] == fname]
         if not sub.empty:
+            full_labels = [str(lbl) for lbl in sub.get("Level", sub.index)]
             fig.add_trace(go.Scatter(
                 x=[0.5] * len(sub), y=sub["Estimate"].tolist(),
-                mode="markers+text", marker=dict(size=8, color="#1b9e77", symbol="square"),
-                text=[str(lbl) for lbl in sub.get("Level", sub.index)],
+                mode="markers+text" if show_direct_labels else "markers",
+                marker=dict(size=8, color="#1b9e77", symbol="square"),
+                text=_compact_label_list(full_labels, max_chars=18) if show_direct_labels else None,
                 textposition="middle right", textfont=dict(size=9),
                 showlegend=False,
+                customdata=np.column_stack([full_labels, np.repeat(fname, len(sub))]),
+                hovertemplate="%{customdata[1]}: %{customdata[0]}<br>Logit=%{y:.2f}<extra></extra>",
             ), row=1, col=col_idx)
         fig.update_xaxes(range=[0, 1], showticklabels=False, row=1, col=col_idx)
         fig.update_yaxes(range=[y_lo, y_hi], showgrid=True, gridcolor="#ececec", row=1, col=col_idx)
 
-    fig.update_layout(title="Yardstick (FACETS-style)", height=550,
-                      template="plotly_white", showlegend=False)
+    fig.update_layout(
+        title="Yardstick (FACETS-style)",
+        height=max(550, 24 * max_elements_per_facet + 220 if show_direct_labels else 550),
+        template="plotly_white",
+        showlegend=False,
+        margin=dict(l=80, r=40, t=90, b=60),
+    )
     st.plotly_chart(fig, width="stretch")
 
 
@@ -11811,6 +11942,15 @@ def _make_marginal_summary_figure(summary: pd.DataFrame, title: str, top_n: int 
         height=max(340, 26 * len(plot_df) + 130),
         template="plotly_white",
         showlegend=False,
+        margin=_readable_plot_margins(y_labels=plot_df["_Label"].astype(str).tolist(), base_left=130),
+    )
+    labels_full = plot_df["_Label"].astype(str).tolist()
+    fig.update_yaxes(
+        tickmode="array",
+        tickvals=labels_full,
+        ticktext=_compact_label_list(labels_full, max_chars=42),
+        automargin=True,
+        tickfont=dict(size=9 if len(labels_full) > 20 else 10),
     )
     return fig
 
@@ -11854,13 +11994,16 @@ def _make_marginal_heatmap_figure(
     heat = heat.reindex([label for label in top_labels if label in heat.index])
     if heat.empty:
         return None
+    compacted = len(heat.index) < plot_df["_Label"].nunique()
     finite = np.asarray(heat.to_numpy(dtype=float))
     zlim = float(np.nanmax(np.abs(finite))) if np.isfinite(finite).any() else 3.0
     zlim = max(3.0, min(zlim, 8.0))
+    x_labels_full = [str(c) for c in heat.columns]
+    y_labels_full = [str(r) for r in heat.index]
     fig = go.Figure(data=go.Heatmap(
         z=heat.to_numpy(dtype=float),
-        x=list(heat.columns),
-        y=list(heat.index),
+        x=x_labels_full,
+        y=y_labels_full,
         zmid=0,
         zmin=-zlim,
         zmax=zlim,
@@ -11873,11 +12016,25 @@ def _make_marginal_heatmap_figure(
         hovertemplate="%{y}<br>Category=%{x}<br>Std residual=%{z:.2f}<extra></extra>",
     ))
     fig.update_layout(
-        title=title,
+        title=title + (" (top residual rows)" if compacted else ""),
         xaxis_title="Score category",
         yaxis_title="Marginal row",
         height=max(340, 26 * len(heat.index) + 130),
         template="plotly_white",
+        margin=_readable_plot_margins(y_labels=y_labels_full, x_labels=x_labels_full, base_left=130, base_bottom=70),
+    )
+    fig.update_xaxes(
+        tickmode="array",
+        tickvals=x_labels_full,
+        ticktext=_compact_label_list(x_labels_full, max_chars=20),
+        automargin=True,
+    )
+    fig.update_yaxes(
+        tickmode="array",
+        tickvals=y_labels_full,
+        ticktext=_compact_label_list(y_labels_full, max_chars=42),
+        automargin=True,
+        tickfont=dict(size=9 if len(y_labels_full) > 20 else 10),
     )
     return fig
 
@@ -12132,6 +12289,7 @@ def _draw_misfit_ranking(fit_df: pd.DataFrame) -> None:
         labels = [str(i) for i in range(len(top))]
     if "Facet" in top.columns:
         labels = [f"{top['Facet'].iloc[i]}: {labels[i]}" for i in range(len(top))]
+    labels_compact = [_compact_label(label, max_chars=44) for label in labels]
 
     colors = ["#d62728" if v >= 3 else "#ff7f0e" if v >= 2 else "#2ca02c"
               for v in top["MaxAbsZSTD"]]
@@ -12139,6 +12297,8 @@ def _draw_misfit_ranking(fit_df: pd.DataFrame) -> None:
     fig = go.Figure(go.Bar(
         x=top["MaxAbsZSTD"].values, y=labels, orientation="h",
         marker_color=colors,
+        customdata=np.array(labels, dtype=object),
+        hovertemplate="%{customdata}<br>Max |ZSTD|=%{x:.2f}<extra></extra>",
     ))
     fig.add_vline(x=2, line_dash="dash", line_color="red", line_width=0.7,
                   annotation_text="|ZSTD|=2")
@@ -12148,7 +12308,9 @@ def _draw_misfit_ranking(fit_df: pd.DataFrame) -> None:
         xaxis_title="Max |ZSTD|", title=f"Top {len(top)} Misfit Elements",
         yaxis=dict(autorange="reversed"), height=max(300, len(top) * 25),
         template="plotly_white",
+        margin=_readable_plot_margins(y_labels=labels, base_left=140),
     )
+    fig.update_yaxes(tickmode="array", tickvals=labels, ticktext=labels_compact, automargin=True)
     st.plotly_chart(fig, width="stretch")
 
     st.dataframe(top, width="stretch")
@@ -12181,6 +12343,20 @@ def show_visuals_section(result: dict, diagnostics: dict) -> None:
             file_name="mfrm_visual_interpretation_checklist.csv",
             mime="text/csv",
             key="dl_visual_interpretation_checklist",
+        )
+    with st.expander("Evidence basis and label strategy", expanded=False):
+        st.caption(
+            "The app follows common Rasch/MFRM diagnostic plots, but uses interactive "
+            "hover text and compact axes so dense reports remain readable."
+        )
+        evidence = visual_method_evidence_table()
+        st.dataframe(evidence, width="stretch", hide_index=True)
+        st.download_button(
+            "Download visual evidence basis (CSV)",
+            data=to_csv_bytes(evidence),
+            file_name="mfrm_visual_method_evidence.csv",
+            mime="text/csv",
+            key="dl_visual_method_evidence",
         )
     vtabs = st.tabs([
         "Category Probability Curves", "Pathway Map",
@@ -12489,6 +12665,19 @@ def _draw_wright_map_plotly(
         facet_est = facet_est.dropna(subset=["Estimate"])
 
     facet_names = list(facet_est["Facet"].unique()) if "Facet" in facet_est.columns else []
+    max_elements_per_facet = int(facet_est.groupby("Facet").size().max()) if "Facet" in facet_est.columns and not facet_est.empty else 0
+    crowded = max_elements_per_facet > 12 or len(facet_names) > 6
+    show_direct_labels = st.checkbox(
+        "Show Wright map point labels directly on plot",
+        value=not crowded,
+        key="wright_map_show_direct_labels",
+        help=(
+            "Turn this off for dense designs. Full element labels remain available in hover text, "
+            "which prevents overlapping plot labels."
+        ),
+    )
+    if crowded and not show_direct_labels:
+        st.caption("Dense Wright map: direct labels are hidden to prevent overlap. Hover points to read full labels.")
 
     fig = make_subplots(
         rows=1, cols=2, column_widths=[0.3, 0.7],
@@ -12507,18 +12696,18 @@ def _draw_wright_map_plotly(
     colors = px.colors.qualitative.Set2
     for i, fname in enumerate(facet_names):
         fdata = facet_est[facet_est["Facet"] == fname]
-        # Show text labels only when ≤15 elements to avoid overlap
-        show_text = len(fdata) <= 15 and "Level" in fdata.columns
+        full_labels = fdata["Level"].astype(str).values if "Level" in fdata.columns else np.array([str(idx) for idx in fdata.index])
+        show_text = show_direct_labels and len(fdata) <= 40
         fig.add_trace(go.Scatter(
             x=[fname] * len(fdata),
             y=fdata["Estimate"].values,
             mode="markers+text" if show_text else "markers",
             marker=dict(size=8, color=colors[i % len(colors)]),
-            text=fdata["Level"].astype(str).values if show_text else None,
+            text=_compact_label_list(full_labels, max_chars=18) if show_text else None,
             textposition="middle right", textfont=dict(size=9),
             name=fname,
-            hovertext=fdata["Level"].astype(str).values if "Level" in fdata.columns else None,
-            hoverinfo="text+y",
+            customdata=np.column_stack([full_labels, np.repeat(fname, len(fdata))]),
+            hovertemplate="%{customdata[1]}: %{customdata[0]}<br>Logit=%{y:.2f}<extra></extra>",
         ), row=1, col=2)
 
     # Step thresholds
@@ -12530,7 +12719,11 @@ def _draw_wright_map_plotly(
             fig.add_hline(y=float(sv), line_dash="dot", line_color="#d95f02", line_width=0.6, row=1, col=2)
 
     fig.update_yaxes(title_text="Logit scale", row=1, col=1)
-    fig.update_layout(height=550, hovermode="closest")
+    fig.update_layout(
+        height=max(550, 22 * max_elements_per_facet + 220 if show_direct_labels else 550),
+        hovermode="closest",
+        margin=dict(l=80, r=40, t=90, b=80),
+    )
     st.plotly_chart(fig, width="stretch")
 
 
@@ -13967,6 +14160,34 @@ def _draw_bias_heatmap(tbl: pd.DataFrame, facet_a: str, facet_b: str) -> None:
     if pivot.empty or not np.any(np.isfinite(pivot.values)):
         st.info("No finite bias values to display in heatmap.")
         return
+    safe_pair_key = re.sub(r"[^A-Za-z0-9]+", "_", f"{facet_a}_{facet_b}")
+    max_axis_default = min(35, max(10, max(pivot.shape)))
+    max_axis = st.slider(
+        "Maximum labels per heatmap axis",
+        min_value=8,
+        max_value=min(80, max(8, max(pivot.shape))),
+        value=max_axis_default,
+        step=1,
+        key=f"bias_heatmap_max_axis_{safe_pair_key}",
+        help=(
+            "Large bias matrices become unreadable when every label is drawn. "
+            "The compact view keeps the strongest rows and columns by absolute heatmap value."
+        ),
+    )
+    auto_rows, auto_cols, auto_filtered = _select_heatmap_labels(pivot, max_rows=max_axis, max_cols=max_axis)
+    show_all = st.checkbox(
+        "Show all heatmap rows/columns",
+        value=not auto_filtered,
+        key=f"bias_heatmap_show_all_{safe_pair_key}",
+        help="Turn on only for small matrices or when you need to inspect every cell visually. The table export always contains all rows.",
+    )
+    if not show_all and auto_filtered:
+        original_shape = pivot.shape
+        pivot = pivot.loc[auto_rows, auto_cols]
+        st.caption(
+            f"Compact heatmap view: showing {pivot.shape[0]} of {original_shape[0]} rows "
+            f"and {pivot.shape[1]} of {original_shape[1]} columns. Download the table for all cells."
+        )
     # Build custom hover text
     hover_pivot = tbl.pivot_table(
         index="FacetA_Level", columns="FacetB_Level",
@@ -13990,39 +14211,66 @@ def _draw_bias_heatmap(tbl: pd.DataFrame, facet_a: str, facet_b: str) -> None:
     t_pivot = tbl.pivot_table(
         index="FacetA_Level", columns="FacetB_Level", values="t", aggfunc="first",
     )
-    annotations = []
+    star_text = np.full(pivot.shape, "", dtype=object)
+    show_star_text = pivot.size <= 900
     for i, row_lbl in enumerate(pivot.index):
         for j, col_lbl in enumerate(pivot.columns):
             t_val = t_pivot.loc[row_lbl, col_lbl] if (row_lbl in t_pivot.index and col_lbl in t_pivot.columns) else np.nan
-            if pd.notna(t_val) and abs(t_val) >= 2:
-                annotations.append(
-                    dict(x=j, y=i, text="*", showarrow=False,
-                         font=dict(size=16, color="black"))
-                )
+            if show_star_text and pd.notna(t_val) and abs(t_val) >= 2:
+                star_text[i, j] = "*"
 
     zmax = float(np.nanmax(np.abs(pivot.values))) if np.any(np.isfinite(pivot.values)) else 1.0
+    x_labels_full = [str(c) for c in pivot.columns]
+    y_labels_full = [str(r) for r in pivot.index]
     fig = go.Figure(data=go.Heatmap(
         z=pivot.values,
-        x=[str(c) for c in pivot.columns],
-        y=[str(r) for r in pivot.index],
-        text=hover_text,
-        hoverinfo="text",
+        x=x_labels_full,
+        y=y_labels_full,
+        text=star_text if show_star_text else None,
+        customdata=hover_text,
+        hovertemplate="%{customdata}<extra></extra>",
         colorscale="RdBu_r",
         zmid=0,
         zmin=-zmax,
         zmax=zmax,
         colorbar=dict(title=val_col),
     ))
+    if show_star_text:
+        fig.update_traces(texttemplate="%{text}", textfont=dict(size=14, color="black"))
     fig.update_layout(
         xaxis_title=facet_b,
         yaxis_title=facet_a,
         title=f"{metric} — {facet_a} × {facet_b}",
         yaxis=dict(autorange="reversed"),
-        annotations=annotations,
-        height=max(300, 40 * len(pivot.index) + 100),
+        height=max(340, min(900, 28 * len(pivot.index) + 150)),
+        margin=_readable_plot_margins(
+            y_labels=y_labels_full,
+            x_labels=x_labels_full,
+            base_left=120,
+            base_bottom=100,
+        ),
+        template="plotly_white",
+    )
+    fig.update_xaxes(
+        tickmode="array",
+        tickvals=x_labels_full,
+        ticktext=_compact_label_list(x_labels_full, max_chars=24),
+        tickangle=-45 if len(pivot.columns) > 8 else 0,
+        automargin=True,
+        tickfont=dict(size=9 if len(pivot.columns) > 20 else 10),
+    )
+    fig.update_yaxes(
+        tickmode="array",
+        tickvals=y_labels_full,
+        ticktext=_compact_label_list(y_labels_full, max_chars=34),
+        automargin=True,
+        tickfont=dict(size=9 if len(pivot.index) > 25 else 10),
     )
     st.plotly_chart(fig, width="stretch")
-    st.caption("\\* indicates |t| ≥ 2 (statistically significant bias).")
+    if show_star_text:
+        st.caption("\\* indicates |t| >= 2 (statistically significant bias). Full values are in hover text and the downloadable table.")
+    else:
+        st.caption("Dense heatmap: significance markers are hidden to avoid clutter. Use hover text and the downloadable table.")
 
 
 def show_bias_section(
@@ -14527,9 +14775,15 @@ def show_facet_dashboard(
     sev_vals = rater_df["Estimate"].dropna().values
     colors_sev = ["#e74c3c" if f else "#3498db" for f in rater_df["Flag_Severity"]]
     labels_sev = [str(v) for v in rater_df[elem_col].values]
+    labels_sev_compact = _compact_label_list(labels_sev, max_chars=44)
 
     fig_sev = go.Figure(go.Bar(
-        x=sev_vals, y=labels_sev, orientation="h", marker_color=colors_sev,
+        x=sev_vals,
+        y=labels_sev,
+        orientation="h",
+        marker_color=colors_sev,
+        customdata=np.array(labels_sev, dtype=object),
+        hovertemplate="%{customdata}<br>Severity=%{x:.2f}<extra></extra>",
     ))
     fig_sev.add_vline(x=mean_sev, line_dash="dash", line_color="black", line_width=1,
                       annotation_text=f"Mean = {mean_sev:.2f}")
@@ -14541,7 +14795,9 @@ def show_facet_dashboard(
     fig_sev.update_layout(
         xaxis_title="Severity (logits)", height=max(280, len(rater_df) * 25),
         yaxis=dict(autorange="reversed"), template="plotly_white",
+        margin=_readable_plot_margins(y_labels=labels_sev, base_left=140),
     )
+    fig_sev.update_yaxes(tickmode="array", tickvals=labels_sev, ticktext=labels_sev_compact, automargin=True)
     st.plotly_chart(fig_sev, width="stretch")
     _offer_fig_download(fig_sev, "facet_severity", "Download Measure Distribution (PNG 300 DPI)")
 
@@ -17765,6 +18021,15 @@ def _self_test_visual_interpretation_checklist() -> None:
     joined = " ".join(checklist["Visualization"].astype(str))
     for expected in ["Wright map", "Category probability curves", "Residual PCA", "Bias heatmap"]:
         _self_test_assert(expected in joined, f"visual checklist missing {expected}")
+    evidence = visual_method_evidence_table()
+    _self_test_assert(not evidence.empty, "visual method evidence table is empty")
+    _self_test_assert(
+        {"Visualization", "MethodBasis", "AppReadabilityRule", "PrimaryReference"}.issubset(evidence.columns),
+        "visual method evidence table missing required columns",
+    )
+    evidence_joined = " ".join(evidence["Visualization"].astype(str))
+    for expected in ["Wright map", "Category probability", "Bias heatmap"]:
+        _self_test_assert(expected in evidence_joined, f"visual method evidence missing {expected}")
 
 
 def _self_test_category_probability_curve_data() -> None:
@@ -18554,6 +18819,7 @@ def build_demo_report_frames(
     if isinstance(readiness, pd.DataFrame) and not readiness.empty:
         frames["final_report_readiness"] = readiness
     frames["visual_interpretation_checklist"] = visual_interpretation_checklist()
+    frames["visual_method_evidence"] = visual_method_evidence_table()
     person = result.get("facets", {}).get("person", pd.DataFrame())
     if isinstance(person, pd.DataFrame) and not person.empty:
         frames["person_measures"] = person
@@ -18693,10 +18959,11 @@ It demonstrates the standalone Python workflow without calling `mfrmr`,
 1. `MFRM_Demo_Report.html`: browser-readable table report.
 2. `final_report_readiness.csv`: what to resolve before final reporting.
 3. `visual_interpretation_checklist.csv`: how to read each plot.
-4. `category_probability_curves.csv`: long-form PCM curve data for the
+4. `visual_method_evidence.csv`: methodological basis and readability rules for plots.
+5. `category_probability_curves.csv`: long-form PCM curve data for the
    averaged view and each Task level.
-5. `figures_html/`: interactive category probability and expected-score curves.
-6. `method_appendix.md`: reproducible method notes for this demo run.
+6. `figures_html/`: interactive category probability and expected-score curves.
+7. `method_appendix.md`: reproducible method notes for this demo run.
 
 ## Demo model
 

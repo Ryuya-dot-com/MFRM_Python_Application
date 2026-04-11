@@ -10,6 +10,7 @@ All notable changes to this standalone Streamlit distribution should be recorded
 - PCM/GPCM category probability curves can now be inspected by selected step-facet level, not only as averaged curves.
 - Category probability curve exports now use the same curve builder as the Visuals tab and include long-form data for all curve scopes.
 - Synthetic beginner-facing demo report export through `--export-demo-report`, including report tables, method appendix, and interactive category curves.
+- Visual method evidence table plus readability safeguards for dense Wright maps, yardsticks, marginal heatmaps, and bias heatmaps.
 
 ### Changed
 
@@ -18,7 +19,7 @@ All notable changes to this standalone Streamlit distribution should be recorded
 
 ### Validation
 
-- `make verify` passed with 20 built-in self-tests, 4 pytest checks, benchmark smoke, demo report export, and parity fixture export.
+- `make verify` passed with 20 built-in self-tests, 5 pytest checks, benchmark smoke, demo report export, and parity fixture export.
 
 ## 0.1.1-beta - 2026-04-12
 

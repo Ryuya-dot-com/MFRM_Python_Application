@@ -76,7 +76,7 @@ jobs:
         run: python streamlit_app.py --self-test
 
       - name: Run Streamlit AppTest smoke
-        run: python -m pytest tests/test_app_smoke.py
+        run: python -m pytest tests
 
       - name: Run benchmark smoke
         run: python streamlit_app.py --benchmark-quick --benchmark-csv validation/generated/benchmark_smoke.csv

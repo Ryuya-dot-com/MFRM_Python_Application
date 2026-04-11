@@ -36,7 +36,7 @@ python -m pip install -r requirements-dev.txt
 python -m py_compile streamlit_app.py
 python streamlit_app.py --doctor
 python streamlit_app.py --self-test
-python -m pytest tests/test_app_smoke.py
+python -m pytest tests
 python streamlit_app.py --benchmark-quick --benchmark-csv validation/generated/benchmark_smoke.csv
 python streamlit_app.py --export-parity-fixture validation/generated/parity_fixture
 rm -rf .pytest_cache validation/generated

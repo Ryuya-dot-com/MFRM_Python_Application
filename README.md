@@ -60,7 +60,7 @@ For deployment notes, including Streamlit Community Cloud settings and privacy g
 python -m py_compile streamlit_app.py
 python streamlit_app.py --doctor
 python streamlit_app.py --self-test
-python -m pytest tests/test_app_smoke.py
+python -m pytest tests
 python streamlit_app.py --benchmark-quick --benchmark-csv validation/generated/benchmark_smoke.csv
 python streamlit_app.py --export-parity-fixture validation/generated/parity_fixture
 ```
@@ -158,6 +158,8 @@ After fitting a model, inspect results in this order:
 - mirt: GPCM, EAP/factor scores, plausible values, and broader IRT diagnostics.
 - sirt: rater-facet and hierarchical rater model reference checks.
 - mfrmr: functional capability reference for the Python migration target.
+
+For the cross-package validation matrix and tolerance policy, see `validation/README.md`.
 
 ## Continuous Integration
 

@@ -7,6 +7,7 @@ All notable changes to this standalone Streamlit distribution should be recorded
 ### Added
 
 - Deployment guide for local and Streamlit Community Cloud use.
+- Cross-package validation contract for TAM, sirt, mirt, FACETS-like, and ConQuest-style comparisons.
 
 ## 0.1.0-beta - 2026-04-12
 

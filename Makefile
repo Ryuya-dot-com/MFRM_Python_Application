@@ -14,7 +14,7 @@ self-test:
 	$(PYTHON) streamlit_app.py --self-test
 
 apptest:
-	$(PYTEST) tests/test_app_smoke.py
+	$(PYTEST) tests
 
 benchmark:
 	$(PYTHON) streamlit_app.py --benchmark-quick --benchmark-csv validation/generated/benchmark_smoke.csv

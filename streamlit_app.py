@@ -17506,6 +17506,215 @@ def _self_test_cached_static_assets_and_exports() -> None:
         _self_test_assert(set(zf.namelist()) == {"one.txt", "two.txt"}, "cached named asset ZIP contents changed")
 
 
+def cross_package_validation_plan() -> pd.DataFrame:
+    """Planned external validation targets for the generated parity fixture."""
+    rows = [
+        {
+            "Area": "Data support and category handling",
+            "PythonScenario": "all fixture scenarios",
+            "ExternalReference": "All external packages",
+            "OfficialHook": "response data import and category support",
+            "ComparableEvidence": "row counts, category labels, missingness pattern, and score recode map",
+            "ReviewThreshold": "exact match expected",
+            "ExpectedNonEquivalence": "none after agreeing on category origin and missing-data coding",
+            "Action": "Stop and fix data preparation if counts or category support differ.",
+        },
+        {
+            "Area": "Fixed-effect RSM/PCM",
+            "PythonScenario": "jmle_rsm; jmle_pcm_task_steps",
+            "ExternalReference": "FACETS-like fixed-effect workflows; ConQuest-style calibration",
+            "OfficialHook": "fixed-effect or anchored Rasch-family estimation",
+            "ComparableEvidence": "centered person/facet ordering, sign convention, step ordering, fit outliers",
+            "ReviewThreshold": "review centered fixed-effect differences > 0.05 logits",
+            "ExpectedNonEquivalence": "optimizer, constraints, dropped constants, and extreme-score handling can differ",
+            "Action": "Document the identification constant before comparing estimates.",
+        },
+        {
+            "Area": "Faceted MML",
+            "PythonScenario": "mml_rsm_fixed_prior",
+            "ExternalReference": "TAM",
+            "OfficialHook": "tam.mml.mfr with formulaA facets and step effects",
+            "ComparableEvidence": "convergence, effect ordering, person EAP ordering, broad log-likelihood direction",
+            "ReviewThreshold": "review rank correlations < 0.95 or centered differences > 0.05 logits",
+            "ExpectedNonEquivalence": "Python fixes population_prior_sd while TAM may estimate or parameterize variance differently",
+            "Action": "Do not compare likelihoods unless quadrature, variance, constraints, and constants are aligned.",
+        },
+        {
+            "Area": "Latent regression",
+            "PythonScenario": "mml_rsm_latent_regression",
+            "ExternalReference": "TAM and mirt mixedmirt",
+            "OfficialHook": "TAM latent regression inputs; mirt lr.fixed/lr.random model concepts",
+            "ComparableEvidence": "covariate design matrix, coefficient sign, EAP shift by covariate group",
+            "ReviewThreshold": "review coefficient sign reversals or standardized differences > 0.10",
+            "ExpectedNonEquivalence": "population variance treatment, covariate standardization, and priors differ",
+            "Action": "Report the exact formula, standardization, and prior SD with every comparison.",
+        },
+        {
+            "Area": "GPCM slopes and item-level checks",
+            "PythonScenario": "mml_gpcm_task_steps; current JMLE/MML GPCM self-tests",
+            "ExternalReference": "mirt",
+            "OfficialHook": "mirt itemtype = 'gpcm' or related GPCM item parameterization",
+            "ComparableEvidence": "positive slopes, slope ordering, item-level EAP ordering, category trace plausibility",
+            "ReviewThreshold": "review slope ordering changes or EAP rank correlations < 0.90",
+            "ExpectedNonEquivalence": "Python uses bounded MFRM slope facet with geometric-mean slope identification",
+            "Action": "Treat mirt as item-level validation unless a full MFRM facet-to-item map is supplied.",
+        },
+        {
+            "Area": "Rater facet model",
+            "PythonScenario": "sirt_rater_facets_response.csv fixture",
+            "ExternalReference": "sirt",
+            "OfficialHook": "rm.facets with person-rater rows",
+            "ComparableEvidence": "rater severity ordering, item/task ordering, convergence and fit-log availability",
+            "ReviewThreshold": "review rank correlations < 0.95 or prominent rater-order reversals",
+            "ExpectedNonEquivalence": "sirt model constraints and optional item/rater slope settings differ from this app",
+            "Action": "Use this as a direct rater-facet smoke check, not an exact equality proof.",
+        },
+        {
+            "Area": "Posterior scores and plausible values",
+            "PythonScenario": "MML scenarios with plausible values",
+            "ExternalReference": "TAM, mirt, sirt",
+            "OfficialHook": "EAP/factor-score and plausible-value routines",
+            "ComparableEvidence": "posterior mean distribution, posterior SD scale, plausible-value distribution by covariate",
+            "ReviewThreshold": "review distribution mean shifts > 0.10 logits or variance ratios outside 0.80-1.25",
+            "ExpectedNonEquivalence": "individual plausible draws are random and package-specific",
+            "Action": "Compare distributions and downstream regression trends, not draw-by-draw equality.",
+        },
+        {
+            "Area": "Anchoring and linking",
+            "PythonScenario": "anchor audit and anchor drift workflows",
+            "ExternalReference": "FACETS/TAM/ConQuest-style anchoring workflows",
+            "OfficialHook": "fixed parameter or design-matrix anchoring controls",
+            "ComparableEvidence": "common-anchor counts, connectedness, hard-constraint drift, linked facet coverage",
+            "ReviewThreshold": "review any missing anchor, disconnected facet, or hard-anchor drift > optimization tolerance",
+            "ExpectedNonEquivalence": "linking constants and anchor constraints are software-specific",
+            "Action": "Separate anchor input validation from cross-run equating claims.",
+        },
+        {
+            "Area": "Strict marginal diagnostics",
+            "PythonScenario": "MML scenarios with marginal diagnostics",
+            "ExternalReference": "TAM/mirt residual and fit diagnostics",
+            "OfficialHook": "package-specific item residual, M2, or marginal fit summaries where applicable",
+            "ComparableEvidence": "directional overfit/misfit flags and sparse-cell warnings",
+            "ReviewThreshold": "review large flag disagreements after matching model and category support",
+            "ExpectedNonEquivalence": "diagnostic residual definitions and null distributions differ",
+            "Action": "Label these as diagnostic screens rather than proof of model truth.",
+        },
+    ]
+    return pd.DataFrame(rows)
+
+
+def cross_package_parameterization_notes() -> pd.DataFrame:
+    """Parameterization issues that must be resolved before numerical parity claims."""
+    return pd.DataFrame(
+        [
+            {
+                "Topic": "Score origin",
+                "PythonConvention": "Observed integer categories are mapped to an internal 0-based support.",
+                "ExternalConvention": "Some R functions expect 0-based categories, others accept observed labels.",
+                "ValidationAction": "Always compare score maps before fitting external packages.",
+            },
+            {
+                "Topic": "Location identification",
+                "PythonConvention": "Facet constraints are centered or anchored by explicit constraint specs.",
+                "ExternalConvention": "Packages can use different sum-to-zero, reference-cell, or design-matrix constraints.",
+                "ValidationAction": "Center comparable effects on a shared facet before difference checks.",
+            },
+            {
+                "Topic": "Latent variance",
+                "PythonConvention": "Current MML path uses a user-set population_prior_sd.",
+                "ExternalConvention": "TAM, mirt, and sirt can estimate or parameterize latent variance differently.",
+                "ValidationAction": "Treat likelihood and coefficient magnitudes as non-comparable until variance treatment is aligned.",
+            },
+            {
+                "Topic": "GPCM slope identification",
+                "PythonConvention": "Bounded GPCM slope parameters are facet-specific and geometrically centered.",
+                "ExternalConvention": "mirt GPCM slopes are item-parameterized under its own constraints.",
+                "ValidationAction": "Compare slope positivity and ordering, not raw slope equality, unless a mapping is supplied.",
+            },
+            {
+                "Topic": "Plausible values",
+                "PythonConvention": "Plausible values are posterior draws from the Python MML quadrature posterior.",
+                "ExternalConvention": "External packages may use different posterior approximations and draw mechanisms.",
+                "ValidationAction": "Compare distribution summaries and downstream regression trends, not individual draws.",
+            },
+            {
+                "Topic": "Fit diagnostics",
+                "PythonConvention": "Strict marginal diagnostics are internal MML diagnostic screens.",
+                "ExternalConvention": "R packages expose package-specific residual, item fit, or limited-information statistics.",
+                "ValidationAction": "Compare flag direction after matching model, support, and sparse-cell rules.",
+            },
+        ]
+    )
+
+
+def cross_package_tolerance_policy() -> pd.DataFrame:
+    """Default review thresholds for external validation artifacts."""
+    return pd.DataFrame(
+        [
+            {
+                "EvidenceType": "Data shape and category support",
+                "ExpectedAgreement": "exact",
+                "ReviewThreshold": "any mismatch",
+                "RequiredPreconditions": "same source CSV, same score map, same missing-data rule",
+                "Interpretation": "A mismatch indicates a data-preparation bug or incompatible package input.",
+            },
+            {
+                "EvidenceType": "Centered fixed-effect measures",
+                "ExpectedAgreement": "close after centering and sign alignment",
+                "ReviewThreshold": "absolute difference > 0.05 logits",
+                "RequiredPreconditions": "same model family, same category support, documented identification constant",
+                "Interpretation": "Use as a review trigger, not an automatic failure.",
+            },
+            {
+                "EvidenceType": "Rank ordering of comparable measures",
+                "ExpectedAgreement": "high directional agreement",
+                "ReviewThreshold": "rank correlation < 0.95 for Rasch-family effects; < 0.90 for GPCM item-level checks",
+                "RequiredPreconditions": "same estimated construct and matched rows",
+                "Interpretation": "Lower agreement suggests model or parameterization mismatch.",
+            },
+            {
+                "EvidenceType": "Log-likelihood",
+                "ExpectedAgreement": "not compared by default",
+                "ReviewThreshold": "compare only after constants, quadrature, priors, and constraints are aligned",
+                "RequiredPreconditions": "same response support, quadrature, latent variance, priors, and omitted constants",
+                "Interpretation": "Likelihood mismatch is expected when these conditions are not met.",
+            },
+            {
+                "EvidenceType": "Latent-regression coefficients",
+                "ExpectedAgreement": "directional sign and relative magnitude",
+                "ReviewThreshold": "sign reversal or standardized difference > 0.10",
+                "RequiredPreconditions": "same covariate coding, standardization, and population variance treatment",
+                "Interpretation": "Magnitude equality is not expected without variance alignment.",
+            },
+            {
+                "EvidenceType": "Plausible-value draws",
+                "ExpectedAgreement": "distribution-level agreement only",
+                "ReviewThreshold": "mean shift > 0.10 logits or variance ratio outside 0.80-1.25",
+                "RequiredPreconditions": "same fitted model family and comparable posterior scoring method",
+                "Interpretation": "Draw-by-draw equality is not meaningful.",
+            },
+            {
+                "EvidenceType": "Anchor constraints",
+                "ExpectedAgreement": "hard constraints should be respected",
+                "ReviewThreshold": "hard-anchor drift > optimizer tolerance or any missing anchor level",
+                "RequiredPreconditions": "same anchor table and matched facet-level labels",
+                "Interpretation": "Resolve before making linking claims.",
+            },
+        ]
+    )
+
+
+def _self_test_cross_package_validation_plan() -> None:
+    plan = cross_package_validation_plan()
+    _self_test_assert(not plan.empty, "cross-package validation plan is empty")
+    _self_test_assert({"TAM", "mirt", "sirt"}.issubset(set(plan["ExternalReference"].str.split().str[0])), "validation plan missing an external reference")
+    _self_test_assert("mml_rsm_latent_regression" in " ".join(plan["PythonScenario"].astype(str)), "validation plan missing latent-regression scenario")
+    notes = cross_package_parameterization_notes()
+    _self_test_assert("Latent variance" in notes["Topic"].tolist(), "parameterization notes missing latent variance")
+    tol = cross_package_tolerance_policy()
+    _self_test_assert("Log-likelihood" in tol["EvidenceType"].tolist(), "tolerance policy missing log-likelihood rule")
+
+
 def export_reference_parity_fixture(output_dir: str) -> int:
     """Export deterministic Python outputs for external TAM/sirt/mirt checks."""
     out_dir = Path(output_dir).expanduser().resolve()
@@ -17579,6 +17788,16 @@ def export_reference_parity_fixture(output_dir: str) -> int:
             "population_formula": "~ Grade + Group",
             "person_data": person_data,
         },
+        {
+            "name": "mml_gpcm_task_steps",
+            "method": "MML",
+            "model": "GPCM",
+            "mml_engine": "EM",
+            "step_facet": "Task",
+            "slope_facet": "Task",
+            "population_formula": None,
+            "person_data": None,
+        },
     ]
     manifest_rows = []
     for scenario in scenarios:
@@ -17590,6 +17809,7 @@ def export_reference_parity_fixture(output_dir: str) -> int:
             model=scenario["model"],
             method=scenario["method"],
             step_facet=scenario.get("step_facet"),
+            slope_facet=scenario.get("slope_facet"),
             mml_engine=scenario["mml_engine"],
             quad_points=7,
             population_prior_sd=1.0,
@@ -17631,6 +17851,7 @@ def export_reference_parity_fixture(output_dir: str) -> int:
             "Method": scenario["method"],
             "Model": scenario["model"],
             "StepFacet": scenario.get("step_facet"),
+            "SlopeFacet": scenario.get("slope_facet"),
             "MmlEngine": res.get("config", {}).get("mml_engine"),
             "PopulationFormula": scenario["population_formula"] or "",
             "LogLik": float(summary["LogLik"].iloc[0]) if isinstance(summary, pd.DataFrame) and not summary.empty else np.nan,
@@ -17638,6 +17859,9 @@ def export_reference_parity_fixture(output_dir: str) -> int:
             "Files": ";".join(written),
         })
     pd.DataFrame(manifest_rows).to_csv(out_dir / "python_parity_manifest.csv", index=False)
+    cross_package_validation_plan().to_csv(out_dir / "cross_package_validation_plan.csv", index=False)
+    cross_package_parameterization_notes().to_csv(out_dir / "cross_package_parameterization_notes.csv", index=False)
+    cross_package_tolerance_policy().to_csv(out_dir / "cross_package_tolerance_policy.csv", index=False)
 
     readme = """# MFRM Python Parity Fixture
 
@@ -17653,6 +17877,11 @@ Files:
   person-rater response matrix plus item metadata for a direct `sirt::rm.facets`
   rater-facet smoke check.
 - `python_parity_manifest.csv`: scenario index and Python log-likelihoods.
+- `cross_package_validation_plan.csv`: what to compare with TAM, sirt, mirt,
+  FACETS-like, and ConQuest-style reference workflows.
+- `cross_package_parameterization_notes.csv`: conventions to align before
+  numerical comparisons.
+- `cross_package_tolerance_policy.csv`: default review thresholds.
 - `*_summary.csv`, `*_person_measures.csv`, `*_facet_measures.csv`, `*_steps.csv`:
   Python reference outputs for each scenario.
 
@@ -17665,6 +17894,10 @@ Comparison rules:
 - mirt is useful for broad IRT checks such as GPCM, EAP/factor scores, and
   plausible values, but it does not natively decompose arbitrary MFRM facets in
   the same long-format layout.
+- Individual plausible-value draws are not expected to match; compare
+  distributions and downstream regression trends.
+- Strict marginal diagnostics and package residual diagnostics are screening
+  evidence, not proof of model truth.
 
 Suggested tolerance policy:
 - Exact row counts, category support, and missingness flags should match.
@@ -18158,6 +18391,7 @@ def run_self_tests() -> int:
         ("script support boundaries", _self_test_script_support_boundaries),
         ("reproducibility fingerprints", _self_test_reproducibility_fingerprints),
         ("cached static assets and exports", _self_test_cached_static_assets_and_exports),
+        ("cross-package validation plan", _self_test_cross_package_validation_plan),
     ]
     failures = []
     for name, test_func in tests:

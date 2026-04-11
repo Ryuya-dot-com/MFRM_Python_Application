@@ -18,12 +18,14 @@ All notable changes to this standalone Streamlit distribution should be recorded
 - Archived local R cross-check smoke status for generated TAM, mirt, and sirt handoff fixtures.
 - Result-aware manuscript claim guide in the Report tab, table downloads, and demo report export.
 - Result-aware Markdown manuscript template for Methods, Results, limitations, reviewer preflight checks, and OSF/demo report exports.
+- Publication gate summary that aligns APA Report conclusions with readiness checks and manuscript claim guardrails.
 
 ### Changed
 
 - App version label now marks post-0.1.1 development as `0.1.2-beta-dev`.
 - Plotly/Kaleido floors now target Kaleido 1.x PNG export behavior, with HTML figure fallback when Chrome/Chromium is unavailable.
 - Final-report readiness, first-read guidance, and report text now use the same residual, reliability, and PCA thresholds.
+- APA Report summary wording now respects claim-guide caveats and avoids broad no-bias claims outside computed screens.
 - New/held-out prediction session-state invalidation now fingerprints uploaded file content, not only file name and size.
 - Uploaded CSV/TSV reads are now non-destructive, so sidebar previews do not consume the file stream before estimation.
 - `make verify` now includes `python streamlit_app.py --release-check`.

@@ -119,6 +119,14 @@ def test_manuscript_claim_guide_contract():
     assert "Claims Requiring Caution" in template
     assert "Do not include an R-vs-Python comparison table" in template
 
+    gate = app.build_publication_gate_summary(result, diagnostics, all_bias_results={})
+    assert not gate.empty
+    assert {"GateArea", "GateStatus", "Evidence", "ManuscriptAction"}.issubset(gate.columns)
+    overall = gate.loc[gate["GateArea"] == "Overall manuscript gate"].iloc[0]
+    assert overall["GateStatus"] == "Report with caveat"
+    assert "Fit and dimensionality" in gate["GateArea"].astype(str).tolist()
+    assert "Bias / local interaction" in gate["GateArea"].astype(str).tolist()
+
 
 def test_uploaded_file_fingerprint_uses_content_not_only_name_and_size():
     first = io.BytesIO(b"abc")

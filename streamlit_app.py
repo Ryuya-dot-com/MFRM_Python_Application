@@ -10419,6 +10419,90 @@ def build_manuscript_claim_guide(
     return pd.DataFrame(rows)
 
 
+def build_publication_gate_summary(
+    result: dict,
+    diagnostics: dict,
+    all_bias_results: dict | None = None,
+) -> pd.DataFrame:
+    """Manuscript-level gate that keeps APA text aligned with diagnostics."""
+    readiness = build_final_report_readiness(result, diagnostics, all_bias_results or {})
+    guide = build_manuscript_claim_guide(result, diagnostics, all_bias_results or {})
+    rows: list[dict[str, str]] = []
+    blocking_areas = {"Convergence and final interpretability"}
+    optional_claim_areas = {"Prediction, plausible values, and simulation"}
+
+    def add_row(area: str, status: str, evidence: str, action: str) -> None:
+        rows.append({
+            "GateArea": str(area),
+            "GateStatus": str(status),
+            "Evidence": str(evidence),
+            "ManuscriptAction": str(action),
+        })
+
+    if isinstance(readiness, pd.DataFrame) and not readiness.empty:
+        for _, row in readiness.iterrows():
+            status = str(row.get("Status", ""))
+            required = str(row.get("Required", "No")) == "Yes"
+            check = str(row.get("Check", "Readiness check"))
+            evidence = str(row.get("Evidence", ""))
+            action = str(row.get("ActionBeforeFinalReport", "Review before reporting."))
+            if required and status == "Not ready":
+                add_row(check, "Not ready", evidence, action)
+            elif required and status in {"Review", "Missing"}:
+                add_row(check, "Report with caveat", evidence, action)
+            elif (not required) and status in {"Review", "Missing", "Not ready"}:
+                add_row(check, "Boundary", evidence, action)
+
+    if isinstance(guide, pd.DataFrame) and not guide.empty:
+        for _, row in guide.iterrows():
+            area = str(row.get("ManuscriptArea", "Manuscript area"))
+            status = str(row.get("ClaimStatus", ""))
+            evidence = str(row.get("EvidenceToReport", ""))
+            action = str(row.get("NextAction", "Review before reporting."))
+            do_not = str(row.get("DoNotClaim", ""))
+            if area in blocking_areas and status == "Do not claim":
+                add_row(area, "Not ready", evidence, action)
+            elif area in optional_claim_areas and status == "Report with caveat":
+                add_row(area, "Boundary", evidence, action)
+            elif status == "Report with caveat":
+                add_row(area, "Report with caveat", evidence, action)
+            elif status == "Do not claim":
+                add_row(area, "Boundary", do_not or evidence, action)
+            elif status == "Boundary":
+                add_row(area, "Boundary", do_not or evidence, action)
+
+    detail = pd.DataFrame(rows).drop_duplicates() if rows else pd.DataFrame(
+        columns=["GateArea", "GateStatus", "Evidence", "ManuscriptAction"]
+    )
+    n_blockers = int((detail["GateStatus"] == "Not ready").sum()) if not detail.empty else 0
+    n_caveats = int((detail["GateStatus"] == "Report with caveat").sum()) if not detail.empty else 0
+    n_boundaries = int((detail["GateStatus"] == "Boundary").sum()) if not detail.empty else 0
+    if n_blockers:
+        overall_status = "Not ready"
+        overall_action = "Do not copy final APA conclusions until blocker rows are resolved."
+    elif n_caveats:
+        overall_status = "Report with caveat"
+        overall_action = "Report results only with the listed caveats and avoid over-claiming."
+    else:
+        overall_status = "Ready"
+        overall_action = "APA text can be used as a draft after study-specific editing."
+    overall = pd.DataFrame([{
+        "GateArea": "Overall manuscript gate",
+        "GateStatus": overall_status,
+        "Evidence": (
+            f"{n_blockers} blocker(s), {n_caveats} caveat row(s), "
+            f"{n_boundaries} boundary row(s)."
+        ),
+        "ManuscriptAction": overall_action,
+    }])
+    if detail.empty:
+        return overall
+    status_order = {"Not ready": 0, "Report with caveat": 1, "Boundary": 2, "Ready": 3}
+    detail["_sort"] = detail["GateStatus"].map(status_order).fillna(3)
+    detail = detail.sort_values(["_sort", "GateArea"]).drop(columns=["_sort"]).reset_index(drop=True)
+    return pd.concat([overall, detail], ignore_index=True)
+
+
 def generate_manuscript_reporting_template(
     result: dict,
     diagnostics: dict,
@@ -11678,6 +11762,28 @@ of a research paper that uses MFRM.
     prep = result.get("prep", {})
     facet_names = config.get("facet_names", [])
     measures = diagnostics.get("measures", pd.DataFrame())
+    gate_summary = build_publication_gate_summary(result, diagnostics, all_bias_results)
+    overall_gate = pd.Series(dtype=object)
+    if isinstance(gate_summary, pd.DataFrame) and not gate_summary.empty:
+        overall_hit = gate_summary.loc[
+            gate_summary["GateArea"].astype(str) == "Overall manuscript gate"
+        ]
+        if not overall_hit.empty:
+            overall_gate = overall_hit.iloc[0]
+            gate_status = str(overall_gate.get("GateStatus", ""))
+            gate_text = (
+                f"**Manuscript gate: {gate_status}.** "
+                f"{overall_gate.get('Evidence', '')} "
+                f"{overall_gate.get('ManuscriptAction', '')}"
+            )
+            if gate_status == "Not ready":
+                st.error(gate_text)
+            elif gate_status == "Report with caveat":
+                st.warning(gate_text)
+            else:
+                st.success(gate_text)
+            with st.expander("View manuscript gate details", expanded=False):
+                st.dataframe(gate_summary, width="stretch", hide_index=True)
 
     method_parts: list[str] = []
     results_parts: list[str] = []
@@ -11910,9 +12016,10 @@ of a research paper that uses MFRM.
         fb = br.get("facet_b", pair_key.split(" x ")[-1])
         if n_pairs > 0:
             bonf_alpha = 0.05 / n_pairs
+            interaction_label = "interaction" if n_sig == 1 else "interactions"
             results_parts.append(
                 f"Bias analysis of the {fa} × {fb} interaction revealed "
-                f"{n_sig} significant interactions (|*t*| ≥ 2) "
+                f"{n_sig} flagged {interaction_label} (|*t*| ≥ 2) "
                 f"out of {n_pairs} combinations ({100*n_sig/n_pairs:.0f}%; "
                 f"Bonferroni-corrected α = {bonf_alpha:.3f})."
             )
@@ -12095,8 +12202,9 @@ of a research paper that uses MFRM.
             )
     if all_bias_interp and not any_bias:
         st.success(
-            "**Bias: No significant interactions** — All facet pairs behave as expected. "
-            "There are no systematic biases between elements."
+            "**Bias: No significant interactions in the computed screen** — "
+            "No screened pair reached |*t*| ≥ 2. Keep the claim limited to "
+            "the facet pairs and cells that were actually tested."
         )
 
     # --- Overall decision summary ---
@@ -12124,26 +12232,39 @@ of a research paper that uses MFRM.
         ).dropna()
         if len(sv2) >= 2 and not bool((sv2.diff().dropna() > 0).all()):
             issues.append("disordered rating scale thresholds")
-
-    if not issues:
-        st.success(
-            "**Overall: The model is performing well.** "
-            "No major issues detected. You can proceed with confidence to report these results. "
-            "Copy the APA text above and adapt it for your manuscript."
+    gate_status = str(overall_gate.get("GateStatus", "Ready")) if not overall_gate.empty else "Ready"
+    gate_evidence = str(overall_gate.get("Evidence", "")) if not overall_gate.empty else ""
+    gate_action = str(overall_gate.get("ManuscriptAction", "")) if not overall_gate.empty else ""
+    if gate_status == "Not ready":
+        st.error(
+            f"**Overall: Not ready for final APA conclusions.** {gate_evidence} "
+            f"{gate_action} Use the Claim Guide and Readiness tabs before copying text."
         )
-    elif len(issues) <= 2:
+    elif gate_status == "Report with caveat":
+        caveat_rows = gate_summary[
+            (gate_summary["GateStatus"].astype(str) == "Report with caveat")
+            & (gate_summary["GateArea"].astype(str) != "Overall manuscript gate")
+        ] if isinstance(gate_summary, pd.DataFrame) and not gate_summary.empty else pd.DataFrame()
+        caveat_labels = (
+            ", ".join(caveat_rows["GateArea"].astype(str).head(4).tolist())
+            if not caveat_rows.empty and "GateArea" in caveat_rows.columns else
+            ", ".join(issues)
+        )
+        st.warning(
+            f"**Overall: Report with caveat.** {gate_evidence} "
+            f"Primary caveat(s): {caveat_labels or 'see gate details'}. "
+            f"{gate_action} The APA text is a draft, not a final conclusion."
+        )
+    elif issues:
         st.warning(
             f"**Overall: Some issues to address — {', '.join(issues)}.** "
-            "The results are usable but should be interpreted with caution. "
-            "Consider the recommended actions above before finalizing your manuscript. "
-            "The Report → Reporting Checklist tab can help ensure completeness."
+            "The results may be usable, but check the detailed diagnostics before finalizing your manuscript."
         )
     else:
-        st.error(
-            f"**Overall: Multiple issues detected — {', '.join(issues)}.** "
-            "Significant revision of the model or data may be needed before results "
-            "can be reported. Consider simplifying the model, collapsing categories, "
-            "or removing problematic elements. See Help → Analysis Workflow for guidance."
+        st.success(
+            "**Overall: Ready for draft reporting.** "
+            "No required gate issue was detected. Copy the APA text only after adapting it "
+            "to the study context and checking the Manuscript Template."
         )
 
     st.markdown("---")
@@ -17592,6 +17713,12 @@ def _render_downloads(
     if not reliability_dl.empty:
         all_frames["reliability"] = reliability_dl
     try:
+        publication_gate_dl = build_publication_gate_summary(result, diagnostics, all_bias_results)
+        if isinstance(publication_gate_dl, pd.DataFrame) and not publication_gate_dl.empty:
+            all_frames["publication_gate_summary"] = publication_gate_dl
+    except Exception:
+        publication_gate_dl = pd.DataFrame()
+    try:
         readiness_dl = build_final_report_readiness(result, diagnostics, all_bias_results)
         if isinstance(readiness_dl, pd.DataFrame) and not readiness_dl.empty:
             all_frames["final_report_readiness"] = readiness_dl
@@ -19135,6 +19262,16 @@ def _self_test_report_readiness_and_method_appendix() -> None:
         "External package comparison" in claim_guide["ManuscriptArea"].tolist(),
         "manuscript claim guide missing external comparison boundary",
     )
+    publication_gate = build_publication_gate_summary(res, diagnostics, all_bias_results={})
+    _self_test_assert(not publication_gate.empty, "publication gate summary is empty")
+    _self_test_assert(
+        {"GateArea", "GateStatus", "Evidence", "ManuscriptAction"}.issubset(publication_gate.columns),
+        "publication gate summary is missing required columns",
+    )
+    _self_test_assert(
+        "Overall manuscript gate" in publication_gate["GateArea"].astype(str).tolist(),
+        "publication gate summary missing overall row",
+    )
     threshold_result = {
         "opt": type("Opt", (), {"success": True, "message": "ok"})(),
         "config": {},
@@ -19168,6 +19305,7 @@ def _self_test_report_readiness_and_method_appendix() -> None:
     for required in [
         "demo_manifest",
         "sample_data",
+        "publication_gate_summary",
         "final_report_readiness",
         "manuscript_claim_guide",
         "visual_interpretation_checklist",
@@ -20275,7 +20413,7 @@ def build_demo_report_frames(
             "Method": result.get("config", {}).get("method"),
             "RuntimeBoundary": "standalone Python; no mfrmr/rpy2/Rscript/FACETS/TAM/sirt/mirt runtime call",
             "PrivacyNote": "The demo uses synthetic built-in data only.",
-            "ReadFirst": "Open final_report_readiness, then manuscript_claim_guide, then manuscript_template.md, then visual_interpretation_checklist, then measures and category_probability_curves.",
+            "ReadFirst": "Open publication_gate_summary, then final_report_readiness, then manuscript_claim_guide, then manuscript_template.md, then visual_interpretation_checklist, then measures and category_probability_curves.",
         }
     ])
     frames["sample_data"] = data.copy()
@@ -20289,6 +20427,9 @@ def build_demo_report_frames(
     score_map = prep.get("score_map", pd.DataFrame())
     if isinstance(score_map, pd.DataFrame) and not score_map.empty:
         frames["score_map"] = score_map
+    publication_gate = build_publication_gate_summary(result, diagnostics, all_bias_results or {})
+    if isinstance(publication_gate, pd.DataFrame) and not publication_gate.empty:
+        frames["publication_gate_summary"] = publication_gate
     readiness = build_final_report_readiness(result, diagnostics, all_bias_results or {})
     if isinstance(readiness, pd.DataFrame) and not readiness.empty:
         frames["final_report_readiness"] = readiness
@@ -20446,18 +20587,19 @@ It demonstrates the standalone Python workflow without calling `mfrmr`,
 ## Files to open first
 
 1. `MFRM_Demo_Report.html`: browser-readable table report.
-2. `final_report_readiness.csv`: what to resolve before final reporting.
-3. `manuscript_claim_guide.csv`: what is safe to claim in a manuscript.
-4. `manuscript_template.md`: Methods, Results, limitations, and reviewer preflight scaffold.
-5. `visual_interpretation_checklist.csv`: how to read each plot.
-6. `visual_method_evidence.csv`: methodological basis and readability rules for plots.
-7. `public_beta_limitations.csv`: what this beta release supports and does not claim.
-8. `mfrmr_015_migration_coverage.csv`: how the local mfrmr 0.1.5 feature surface maps to this Python app.
-9. `public_release_readiness.csv`: repository-level public release checklist.
-10. `category_probability_curves.csv`: long-form PCM curve data for the
+2. `publication_gate_summary.csv`: whether APA-style conclusions are ready, caveated, or blocked.
+3. `final_report_readiness.csv`: what to resolve before final reporting.
+4. `manuscript_claim_guide.csv`: what is safe to claim in a manuscript.
+5. `manuscript_template.md`: Methods, Results, limitations, and reviewer preflight scaffold.
+6. `visual_interpretation_checklist.csv`: how to read each plot.
+7. `visual_method_evidence.csv`: methodological basis and readability rules for plots.
+8. `public_beta_limitations.csv`: what this beta release supports and does not claim.
+9. `mfrmr_015_migration_coverage.csv`: how the local mfrmr 0.1.5 feature surface maps to this Python app.
+10. `public_release_readiness.csv`: repository-level public release checklist.
+11. `category_probability_curves.csv`: long-form PCM curve data for the
    averaged view and each Task level.
-11. `figures_html/`: interactive category probability and expected-score curves.
-12. `method_appendix.md`: reproducible method notes for this demo run.
+12. `figures_html/`: interactive category probability and expected-score curves.
+13. `method_appendix.md`: reproducible method notes for this demo run.
 
 ## Demo model
 
@@ -20473,7 +20615,7 @@ identifiers before upload or paste.
 """
     (out_dir / "README.md").write_text(readme, encoding="utf-8")
     print(f"Wrote demo report to: {out_dir}")
-    print("Key files: MFRM_Demo_Report.html, MFRM_Demo_Report.xlsx, final_report_readiness.csv, manuscript_claim_guide.csv, manuscript_template.md, figures_html/")
+    print("Key files: MFRM_Demo_Report.html, MFRM_Demo_Report.xlsx, publication_gate_summary.csv, final_report_readiness.csv, manuscript_claim_guide.csv, manuscript_template.md, figures_html/")
     return 0
 
 

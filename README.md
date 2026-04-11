@@ -151,14 +151,16 @@ After fitting a model, inspect results in this order:
 7. PCA / dimensionality: check whether residual structure suggests a second dimension.
 8. Anchor / linking review: check connectedness and anchor stability before comparing runs or groups.
 9. Strict marginal diagnostics: use for final MML reports when feasible.
-10. Final-report readiness: use the generated checklist before writing conclusions.
-11. Manuscript claim guide: check what is safe to claim, what requires a caveat, and what should not be claimed yet.
-12. Manuscript template: adapt the generated Methods, Results, limitations, and reviewer preflight scaffold after resolving claim-guide cautions.
+10. Publication gate: check whether APA-style conclusions are ready, caveated, or blocked.
+11. Final-report readiness: use the generated checklist before writing conclusions.
+12. Manuscript claim guide: check what is safe to claim, what requires a caveat, and what should not be claimed yet.
+13. Manuscript template: adapt the generated Methods, Results, limitations, and reviewer preflight scaffold after resolving claim-guide cautions.
 
-The final-report readiness checklist, first-read guide, manuscript template,
-and generated report text use the same main thresholds: about 5% or fewer observation residuals
-with `|z| >= 2`, person reliability at least 0.80 when person separation is the
-goal, and residual PCA first eigenvalue below 2.0 for a clean screen.
+The final-report readiness checklist, publication gate, first-read guide,
+manuscript template, and generated report text use the same main thresholds:
+about 5% or fewer observation residuals with `|z| >= 2`, person reliability at
+least 0.80 when person separation is the goal, and residual PCA first eigenvalue
+below 2.0 for a clean screen.
 
 For MML latent regression, inspect the covariate type preview before fitting.
 Integer-like columns such as `GradeCode = 1, 2, 3` are flagged so you can decide
@@ -188,7 +190,8 @@ python streamlit_app.py --export-demo-report validation/generated/demo_report
 ```
 
 Open `validation/generated/demo_report/MFRM_Demo_Report.html` first, then read
-`final_report_readiness.csv`, `manuscript_claim_guide.csv`,
+`publication_gate_summary.csv`, `final_report_readiness.csv`,
+`manuscript_claim_guide.csv`,
 `manuscript_template.md`,
 `visual_interpretation_checklist.csv`, `visual_method_evidence.csv`,
 `public_beta_limitations.csv`, `mfrmr_015_migration_coverage.csv`,

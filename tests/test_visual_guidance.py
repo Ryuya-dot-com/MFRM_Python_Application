@@ -52,6 +52,14 @@ def test_category_probability_curve_data_supports_gpcm_level_views():
     assert level["available"]
     assert level["metadata"]["Level"] == "T2"
     assert level["metadata"]["Slope"] == 1.25
+    fig, fig_expected = app._make_category_probability_curve_figures(level)
+    assert fig is not None
+    assert fig_expected is not None
+
+    export = app.category_probability_curve_export_table(result)
+    assert not export.empty
+    assert {"CurveLabel", "Scope", "ExpectedScore", "Slope"}.issubset(export.columns)
+    assert set(export["CurveLabel"]) == {"Average across Task levels", "Task = T1", "Task = T2"}
     assert not app.np.allclose(
         average["probability_wide"].drop(columns=["Theta"]).to_numpy(),
         level["probability_wide"].drop(columns=["Theta"]).to_numpy(),

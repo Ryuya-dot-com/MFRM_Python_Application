@@ -8,6 +8,7 @@ All notable changes to this standalone Streamlit distribution should be recorded
 
 - Beginner-facing visual interpretation checklist in the app and downloadable report bundle.
 - PCM/GPCM category probability curves can now be inspected by selected step-facet level, not only as averaged curves.
+- Category probability curve exports now use the same curve builder as the Visuals tab and include long-form data for all curve scopes.
 
 ### Changed
 

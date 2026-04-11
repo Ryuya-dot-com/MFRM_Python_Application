@@ -142,7 +142,8 @@ The Visuals tab also includes a downloadable visual interpretation checklist.
 It maps each figure to the first signal to read, the review trigger, and the
 recommended next action for beginners.
 For PCM and bounded GPCM, category probability curves can be read either as an
-averaged overview or for each selected step-facet level.
+averaged overview or for each selected step-facet level. The downloadable table
+bundle also includes long-form curve data for all available curve scopes.
 
 ## Statistical Caveats
 

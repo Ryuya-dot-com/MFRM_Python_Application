@@ -12169,6 +12169,94 @@ def show_visuals_section(result: dict, diagnostics: dict) -> None:
 # Plotly variants for Visuals sub-tabs
 # ---------------------------------------------------------------------------
 
+def _category_curve_export_frame(curve: dict, label: str | None = None) -> pd.DataFrame:
+    if not isinstance(curve, dict) or not curve.get("available"):
+        return pd.DataFrame()
+    prob = curve.get("probability", pd.DataFrame())
+    expected = curve.get("expected", pd.DataFrame())
+    if not isinstance(prob, pd.DataFrame) or prob.empty:
+        return pd.DataFrame()
+    out = prob.merge(expected, on="Theta", how="left") if isinstance(expected, pd.DataFrame) else prob.copy()
+    meta = curve.get("metadata", {})
+    if isinstance(meta, dict):
+        for key, value in meta.items():
+            out[key] = value
+    if label is not None:
+        out["CurveLabel"] = str(label)
+    return out
+
+
+def category_probability_curve_export_table(result: dict) -> pd.DataFrame:
+    """Long-form category curve data for all available curve scopes."""
+    options = category_probability_curve_options(result)
+    frames = []
+    for row in options.itertuples(index=False):
+        try:
+            is_average = bool(getattr(row, "IsAverage"))
+            level_idx = None if is_average else int(getattr(row, "LevelIndex"))
+            curve = build_category_probability_curve_data(result, step_level_index=level_idx)
+            frame = _category_curve_export_frame(curve, label=getattr(row, "Label"))
+            if not frame.empty:
+                frames.append(frame)
+        except Exception:
+            continue
+    return pd.concat(frames, ignore_index=True) if frames else pd.DataFrame()
+
+
+def _make_category_probability_curve_figures(curve: dict) -> tuple[go.Figure | None, go.Figure | None]:
+    if not isinstance(curve, dict) or not curve.get("available"):
+        return None, None
+    prob_long = curve.get("probability", pd.DataFrame())
+    expected_df = curve.get("expected", pd.DataFrame())
+    thresholds = curve.get("thresholds", pd.DataFrame())
+    meta = curve.get("metadata", {})
+    if not isinstance(prob_long, pd.DataFrame) or prob_long.empty or not isinstance(meta, dict):
+        return None, None
+
+    rating_min = int(prob_long["CategoryValue"].min()) if "CategoryValue" in prob_long.columns else 0
+    rating_max = int(prob_long["CategoryValue"].max()) if "CategoryValue" in prob_long.columns else rating_min
+    theta_lo = float(meta.get("ThetaMin", -4.0))
+    theta_hi = float(meta.get("ThetaMax", 4.0))
+    model = str(meta.get("Model", "Model"))
+    scope = str(meta.get("Scope", "curve"))
+
+    colors = px.colors.qualitative.Set2
+    fig = go.Figure()
+    for idx, (category, group) in enumerate(prob_long.groupby("Category", sort=False)):
+        fig.add_trace(go.Scatter(
+            x=group["Theta"], y=group["Probability"], mode="lines",
+            name=str(category),
+            line=dict(color=colors[idx % len(colors)], width=2),
+        ))
+    for tau in pd.to_numeric(thresholds.get("Estimate", pd.Series(dtype=float)), errors="coerce").dropna():
+        fig.add_vline(x=float(tau), line_dash="dot", line_color="gray", line_width=0.6)
+    fig.update_layout(
+        xaxis_title="Person Measure - Item Measure (logits)",
+        yaxis_title="Probability",
+        title=f"Category Probability Curves ({model}: {scope})",
+        yaxis=dict(range=[0, 1]), xaxis=dict(range=[theta_lo, theta_hi]),
+        hovermode="x unified", height=450, template="plotly_white",
+    )
+
+    fig_expected = None
+    if isinstance(expected_df, pd.DataFrame) and not expected_df.empty:
+        fig_expected = go.Figure()
+        fig_expected.add_trace(go.Scatter(
+            x=expected_df["Theta"], y=expected_df["ExpectedScore"], mode="lines",
+            line=dict(color="#1b9e77", width=2), name="Expected Score",
+        ))
+        for tau in pd.to_numeric(thresholds.get("Estimate", pd.Series(dtype=float)), errors="coerce").dropna():
+            fig_expected.add_vline(x=float(tau), line_dash="dot", line_color="gray", line_width=0.6)
+        fig_expected.update_layout(
+            xaxis_title="Person Measure - Item Measure (logits)",
+            yaxis_title="Expected Score",
+            title=f"Expected Score (Model ICC: {scope})",
+            yaxis=dict(range=[rating_min, rating_max]),
+            hovermode="x unified", height=350, template="plotly_white",
+        )
+    return fig, fig_expected
+
+
 def _draw_category_probability_curves_plotly(result: dict) -> None:
     """Interactive Plotly category probability curves."""
     st.subheader("Category Probability Curves")
@@ -12201,14 +12289,7 @@ def _draw_category_probability_curves_plotly(result: dict) -> None:
         st.info(curve.get("reason", "Step parameters not available."))
         return
 
-    prob_long = curve["probability"]
-    expected_df = curve["expected"]
-    thresholds = curve["thresholds"]
     meta = curve["metadata"]
-    rating_min = int(prob_long["CategoryValue"].min()) if "CategoryValue" in prob_long.columns else 0
-    rating_max = int(prob_long["CategoryValue"].max()) if "CategoryValue" in prob_long.columns else rating_min
-    theta_lo = float(meta["ThetaMin"])
-    theta_hi = float(meta["ThetaMax"])
 
     if model in {"PCM", "GPCM"}:
         slope_note = f" Slope used for this curve: {float(meta['Slope']):.3f}." if model == "GPCM" else ""
@@ -12228,48 +12309,16 @@ def _draw_category_probability_curves_plotly(result: dict) -> None:
 """
         )
 
-    colors = px.colors.qualitative.Set2
-    fig = go.Figure()
-    for idx, (category, group) in enumerate(prob_long.groupby("Category", sort=False)):
-        fig.add_trace(go.Scatter(
-            x=group["Theta"], y=group["Probability"], mode="lines",
-            name=str(category),
-            line=dict(color=colors[idx % len(colors)], width=2),
-        ))
+    fig, fig_expected = _make_category_probability_curve_figures(curve)
+    scope_key = re.sub(r"[^A-Za-z0-9]+", "_", str(meta.get("Scope", "curve"))).strip("_")[:80] or "curve"
+    if fig is not None:
+        st.plotly_chart(fig, width="stretch")
+        _offer_fig_download(fig, f"category_probability_curve_{model}_{scope_key}", "Download displayed category curve (PNG 300 DPI)")
+    if fig_expected is not None:
+        st.plotly_chart(fig_expected, width="stretch")
+        _offer_fig_download(fig_expected, f"expected_score_curve_{model}_{scope_key}", "Download displayed expected score curve (PNG 300 DPI)")
 
-    # Threshold lines
-    for tau in pd.to_numeric(thresholds.get("Estimate", pd.Series(dtype=float)), errors="coerce").dropna():
-        fig.add_vline(x=float(tau), line_dash="dot", line_color="gray", line_width=0.6)
-
-    fig.update_layout(
-        xaxis_title="Person Measure − Item Measure (logits)",
-        yaxis_title="Probability",
-        title=f"Category Probability Curves ({model}: {meta['Scope']})",
-        yaxis=dict(range=[0, 1]), xaxis=dict(range=[theta_lo, theta_hi]),
-        hovermode="x unified", height=450,
-    )
-    st.plotly_chart(fig, width="stretch")
-
-    # Expected score curve
-    fig2 = go.Figure()
-    fig2.add_trace(go.Scatter(
-        x=expected_df["Theta"], y=expected_df["ExpectedScore"], mode="lines",
-        line=dict(color="#1b9e77", width=2), name="Expected Score",
-    ))
-    for tau in pd.to_numeric(thresholds.get("Estimate", pd.Series(dtype=float)), errors="coerce").dropna():
-        fig2.add_vline(x=float(tau), line_dash="dot", line_color="gray", line_width=0.6)
-    fig2.update_layout(
-        xaxis_title="Person Measure − Item Measure (logits)",
-        yaxis_title="Expected Score",
-        title=f"Expected Score (Model ICC: {meta['Scope']})",
-        yaxis=dict(range=[rating_min, rating_max]),
-        hovermode="x unified", height=350,
-    )
-    st.plotly_chart(fig2, width="stretch")
-
-    curve_export = prob_long.merge(expected_df, on="Theta", how="left")
-    for key, value in meta.items():
-        curve_export[key] = value
+    curve_export = _category_curve_export_frame(curve)
     st.download_button(
         "Download displayed category curve data (CSV)",
         data=to_csv_bytes(curve_export),
@@ -16181,6 +16230,12 @@ def _render_downloads(
         all_frames["steps"] = steps_dl
     if not slopes_dl.empty:
         all_frames["gpcm_slopes"] = slopes_dl
+    try:
+        category_curve_dl = category_probability_curve_export_table(result)
+        if isinstance(category_curve_dl, pd.DataFrame) and not category_curve_dl.empty:
+            all_frames["category_probability_curves"] = category_curve_dl
+    except Exception:
+        category_curve_dl = pd.DataFrame()
     population_dl = result.get("population", {})
     if isinstance(population_dl, dict):
         pop_coef = population_dl.get("coefficients", pd.DataFrame())
@@ -16456,35 +16511,23 @@ def _render_downloads(
                 _fig_errors.append(f"Fit Scatter: {e}")
 
         # Category Probability Curves
-        if isinstance(step_tbl, pd.DataFrame) and not step_tbl.empty:
-            try:
-                tau = pd.to_numeric(step_tbl["Estimate"], errors="coerce").dropna().values
-                n_cat_dl = len(tau) + 1
-                theta = np.linspace(-5, 5, 200)
-                probs_dl = np.zeros((len(theta), n_cat_dl))
-                for t_idx, th in enumerate(theta):
-                    log_num = np.zeros(n_cat_dl)
-                    for k in range(1, n_cat_dl):
-                        log_num[k] = log_num[k - 1] + th - tau[k - 1]
-                    log_denom = logsumexp(log_num)
-                    probs_dl[t_idx] = np.exp(log_num - log_denom)
-                colors_cpc = px.colors.qualitative.Set2
-                fig_cpc = go.Figure()
-                for k in range(n_cat_dl):
-                    fig_cpc.add_trace(go.Scatter(x=theta, y=probs_dl[:, k], mode="lines",
-                                                  name=f"Cat {k}",
-                                                  line=dict(color=colors_cpc[k % len(colors_cpc)], width=2)))
-                fig_cpc.update_layout(xaxis_title="Theta (logits)", yaxis_title="Probability",
-                                      title="Category Probability Curves", height=400,
-                                      template="plotly_white")
-                _cb = fig_to_png_bytes(fig_cpc)
-                if _cb is not None:
-                    figure_bytes["category_probability_curves"] = _cb
-                else:
-                    _kaleido_ok = False
-                figure_html["category_probability_curves"] = fig_cpc.to_html(include_plotlyjs="cdn")
-            except Exception as e:
-                _fig_errors.append(f"CPC: {e}")
+        try:
+            curve_dl = build_category_probability_curve_data(figure_result)
+            fig_cpc, fig_expected = _make_category_probability_curve_figures(curve_dl)
+            _kaleido_ok = _add_figure_export(
+                fig_cpc,
+                "category_probability_curves_average",
+                figure_bytes,
+                figure_html,
+            ) and _kaleido_ok
+            _kaleido_ok = _add_figure_export(
+                fig_expected,
+                "expected_score_curve_average",
+                figure_bytes,
+                figure_html,
+            ) and _kaleido_ok
+        except Exception as e:
+            _fig_errors.append(f"Category Probability Curves: {e}")
 
         # Facet Distribution (box)
         if not figure_measures.empty and "Facet" in figure_measures.columns:
@@ -17681,6 +17724,11 @@ def _self_test_category_probability_curve_data() -> None:
     _self_test_assert(avg.get("available") and lvl.get("available"), "GPCM curve data unavailable")
     _self_test_assert(lvl["metadata"]["Level"] == "T2", "level-specific curve metadata is wrong")
     _self_test_assert(abs(lvl["metadata"]["Slope"] - 1.25) < 1e-12, "level-specific GPCM slope is wrong")
+    fig, fig_expected = _make_category_probability_curve_figures(lvl)
+    _self_test_assert(fig is not None and fig_expected is not None, "GPCM curve figures were not created")
+    export_tbl = category_probability_curve_export_table(result)
+    _self_test_assert(not export_tbl.empty, "category curve export table is empty")
+    _self_test_assert({"CurveLabel", "Scope", "Slope", "ExpectedScore"}.issubset(export_tbl.columns), "category curve export table missing metadata")
     _self_test_assert(
         not np.allclose(
             avg["probability_wide"].drop(columns=["Theta"]).to_numpy(),

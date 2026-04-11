@@ -17,6 +17,7 @@
 - Optional Streamlit config: `.streamlit/config.toml`
 - Validation artifacts: `validation/`
 - Tests or smoke wrappers: `tests/`
+- Repository hygiene: `.gitattributes`, `Makefile`, `RELEASE_CHECKLIST.md`
 - Do not copy `__pycache__`, local benchmark outputs, virtual environments, or temporary parity outputs.
 
 ## Release Positioning
@@ -131,6 +132,16 @@
 - [x] Known limitations are explicit.
 - [x] Validation scaffold exists or is documented as optional.
 
+## Phase 8: Git Repository Setup
+
+- [x] Initialize this directory as an independent Git repository on branch `main`.
+- [x] Commit the standalone Streamlit app and support files.
+- [x] Add `.gitattributes` for consistent text/binary handling.
+- [x] Add `Makefile` shortcuts for local verification and cleanup.
+- [x] Add `RELEASE_CHECKLIST.md` for public beta release gates.
+- [ ] Add a GitHub remote after choosing the target repository URL.
+- [ ] Choose and add a license before public distribution.
+
 ## Immediate Next Step
 
 Completed setup path for this iteration:
@@ -140,3 +151,4 @@ Completed setup path for this iteration:
 3. [x] Apply privacy warning and safe caching changes.
 4. [x] Add statistical validation refinements.
 5. [x] Run compile, doctor, self-test, AppTest smoke, benchmark smoke, parity fixture export smoke, optional R scaffold smoke, fresh-venv install/self-test, and Streamlit health check.
+6. [x] Initialize local Git history and add repository hygiene files.

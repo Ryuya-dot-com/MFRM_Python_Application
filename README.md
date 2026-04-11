@@ -56,6 +56,14 @@ python streamlit_app.py --benchmark-quick --benchmark-csv validation/generated/b
 python streamlit_app.py --export-parity-fixture validation/generated/parity_fixture
 ```
 
+Optional Make shortcuts:
+
+```bash
+make verify
+make clean
+make run
+```
+
 ## Data Format
 
 Use long-format rating data:
@@ -165,10 +173,12 @@ If this directory is used as a standalone GitHub repository, the workflow will b
 ## Files
 
 ```text
+Makefile
 streamlit_app.py
 requirements.txt
 README.md
 MFRM_STREAMLIT_RELEASE_PLAN.md
+RELEASE_CHECKLIST.md
 anchor_templates_and_guideline/
 .streamlit/config.toml
 .github/workflows/python-streamlit.yml

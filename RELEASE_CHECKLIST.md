@@ -53,3 +53,4 @@ find . -type d -name __pycache__ -prune -exec rm -rf {} +
 - [x] Confirm GitHub Actions pass on Python 3.11 and 3.12.
 - [x] Add a tag only after CI passes.
 - [x] Create GitHub prerelease `v0.1.0-beta`.
+- [x] Prepare `v0.1.1-beta` notes after cross-package validation protocol changes.

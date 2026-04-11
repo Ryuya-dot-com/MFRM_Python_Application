@@ -153,6 +153,7 @@
 - [x] Explicit replacement of `origin/main` approved by the project owner.
 - [x] Replace `origin/main` with this standalone Streamlit app history.
 - [x] Create GitHub prerelease `v0.1.0-beta`.
+- [x] Add cross-package validation protocol for the next beta release.
 
 ## Immediate Next Step
 

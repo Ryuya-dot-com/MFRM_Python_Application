@@ -2,12 +2,17 @@
 
 All notable changes to this standalone Streamlit distribution should be recorded here.
 
-## Unreleased
+## 0.1.1-beta - 2026-04-12
 
 ### Added
 
 - Deployment guide for local and Streamlit Community Cloud use.
 - Cross-package validation contract for TAM, sirt, mirt, FACETS-like, and ConQuest-style comparisons.
+
+### Validation
+
+- `make verify` passed with 18 built-in self-tests, 2 pytest checks, benchmark smoke, and parity fixture export.
+- GitHub Actions passed on Python 3.11 and 3.12 for the validation-protocol commit.
 
 ## 0.1.0-beta - 2026-04-12
 

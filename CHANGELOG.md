@@ -2,7 +2,7 @@
 
 All notable changes to this standalone Streamlit distribution should be recorded here.
 
-## 0.1.0-beta - Unreleased
+## 0.1.0-beta - 2026-04-12
 
 Initial public-beta repository setup.
 

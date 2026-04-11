@@ -45,4 +45,4 @@ find . -type d -name __pycache__ -prune -exec rm -rf {} +
 - [x] Explicit replacement of `origin/main` approved by the project owner.
 - [x] Push with `git push --force-with-lease origin main`.
 - [x] Confirm GitHub Actions pass on Python 3.11 and 3.12.
-- [ ] Add a tag only after CI passes.
+- [x] Add a tag only after CI passes.

@@ -35,6 +35,7 @@ The generated folder includes:
 - `cross_package_parameterization_notes.csv`.
 - `cross_package_tolerance_policy.csv`.
 - `external_reference_documentation.csv`.
+- `external_simulation_reference_inventory.csv`.
 - `external_validation_artifact_checklist.csv`.
 - `external_validation_report_template.csv`.
 - `mfrmr_015_migration_coverage.csv`.
@@ -56,6 +57,7 @@ Generated files are intentionally ignored by Git under `validation/generated/`.
 | Plausible values | TAM, mirt, and sirt plausible-value or factor-score routines | distribution means, variances, covariate trends | draw-by-draw plausible-value equality |
 | Anchor/linking | FACETS/TAM/ConQuest-style anchor workflows | anchor count, connectedness, hard-constraint drift | linking claims without common-scale evidence |
 | Strict marginal diagnostics | TAM/mirt residual and fit diagnostics where applicable | directional flags and sparse-cell warnings | proof of model truth |
+| External Simulation repository sweep | local mfrmr/Python/Julia/FACETS artifacts | manifest status counts, full-reference summaries, runtime summaries, non-empty validation-input replicates | public runtime dependency on local Dropbox paths or exact parity without parameterization notes |
 | mfrmr 0.1.5 migration coverage | local mfrmr 0.1.5 source and package documentation | feature-level support, boundaries, next validation action | one-to-one helper parity or runtime wrapping |
 
 The exporter writes a machine-readable version of this plan to
@@ -99,6 +101,11 @@ used in public parity claims.
 - mirt: GPCM, EAP/factor-score, plausible-value, and broader IRT diagnostic reference checks.
 - sirt: rater-facet, hierarchical rater-model, and plausible-value reference checks.
 - mfrmr: functional capability reference for migration completeness.
+- Simulation directory: local numerical validation evidence, including
+  observed long-form data, repeated engine-refit manifests, runtime summaries,
+  full-reference backup outputs, diagnostic spot checks, and validation-input
+  replicates. Keep these artifacts out of the public repository unless they are
+  sanitized, de-identified, and size-reviewed.
 
 ## Official Documentation Touchpoints
 
@@ -130,3 +137,7 @@ See `R_CROSSCHECK_STATUS.md` for the latest archived local smoke run. That file
 records whether the generated fixture could be fitted by the installed TAM,
 mirt, and sirt packages, while keeping the same non-parity interpretation rule
 used throughout this validation directory.
+
+See `SIMULATION_REFERENCE_STATUS.md` for the local Simulation-directory
+inventory that should guide external-data numerical validation without bundling
+private or large datasets into this public app repository.

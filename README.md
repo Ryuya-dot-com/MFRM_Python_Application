@@ -244,10 +244,13 @@ to interactive HTML figures instead of blocking the analysis.
 For the cross-package validation matrix and tolerance policy, see `validation/README.md`.
 For the latest archived local R smoke status, see
 `validation/R_CROSSCHECK_STATUS.md`.
+For the local Simulation-directory numerical validation inventory, see
+`validation/SIMULATION_REFERENCE_STATUS.md`.
 The parity fixture also includes official documentation touchpoints, an
-artifact checklist, an external validation report template, and the mfrmr 0.1.5
-migration coverage table so external checks can be archived without making
-R packages a runtime dependency.
+artifact checklist, a local Simulation-reference inventory, an external
+validation report template, and the mfrmr 0.1.5 migration coverage table so
+external checks can be archived without making R packages or local Dropbox
+artifacts runtime dependencies.
 
 ## Continuous Integration
 

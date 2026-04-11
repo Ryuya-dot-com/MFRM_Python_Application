@@ -21,11 +21,17 @@ def test_cross_package_validation_plan_contract():
     docs = app.external_reference_documentation_table()
     assert {"TAM tam.mml.mfr", "mirt mirt", "sirt rm.facets", "mfrmr 0.1.5 local source"}.issubset(set(docs["Reference"]))
 
+    simulation_inventory = app.external_simulation_reference_inventory()
+    assert {"Main engine refit sweep", "Validation input replicates"}.issubset(set(simulation_inventory["ReferenceSet"]))
+    assert simulation_inventory["PublicHandling"].str.contains("Do not", case=False, na=False).any()
+
     artifacts = app.external_validation_artifact_checklist()
     assert "External package versions" in artifacts["Artifact"].tolist()
+    assert "Simulation reference inventory" in artifacts["Artifact"].tolist()
 
     template = app.external_validation_report_template()
     assert "mfrmr 0.1.5 migration" in template["ClaimArea"].tolist()
+    assert "External Simulation numerical validation" in template["ClaimArea"].tolist()
 
     coverage = app.mfrmr_015_migration_coverage_table()
     assert "Bounded GPCM" in coverage["mfrmr015Area"].tolist()

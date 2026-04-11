@@ -416,6 +416,12 @@ def public_release_readiness_table() -> pd.DataFrame:
             "Action": "Treat TAM/sirt/mirt/FACETS/mfrmr equality as validation evidence only after explicit cross-checks.",
         },
         {
+            "Check": "Simulation external validation inventory",
+            "Status": "Documented",
+            "Evidence": f"{len(external_simulation_reference_inventory())} local Simulation artifact rows are documented.",
+            "Action": "Use the inventory for numerical validation planning; do not bundle private or large Simulation data in the public app.",
+        },
+        {
             "Check": "mfrmr 0.1.5 migration coverage",
             "Status": "Ready" if not mfrmr_015_migration_coverage_table().empty else "Review",
             "Evidence": f"{len(mfrmr_015_migration_coverage_table())} migration-scope rows documented.",
@@ -16191,6 +16197,20 @@ teaching materials based on app output.
             mime="text/csv",
             key="dl_public_beta_limitations_help",
         )
+        st.markdown("### External Simulation Validation Inventory")
+        st.caption(
+            "This table records local Simulation-directory artifacts that can support "
+            "numerical validation. It intentionally avoids runtime dependencies on local "
+            "Dropbox paths and warns against bundling private or large data."
+        )
+        st.dataframe(external_simulation_reference_inventory(), width="stretch", hide_index=True)
+        st.download_button(
+            "Download Simulation validation inventory (CSV)",
+            data=to_csv_bytes(external_simulation_reference_inventory()),
+            file_name="mfrm_external_simulation_reference_inventory.csv",
+            mime="text/csv",
+            key="dl_external_simulation_reference_inventory_help",
+        )
         st.markdown("### mfrmr 0.1.5 Migration Coverage")
         st.caption(
             "This table maps the local mfrmr 0.1.5 feature surface to the current "
@@ -18647,6 +18667,9 @@ def _render_downloads(
     public_beta_dl = public_beta_limitations_table()
     if isinstance(public_beta_dl, pd.DataFrame) and not public_beta_dl.empty:
         all_frames["public_beta_limitations"] = public_beta_dl
+    simulation_inventory_dl = external_simulation_reference_inventory()
+    if isinstance(simulation_inventory_dl, pd.DataFrame) and not simulation_inventory_dl.empty:
+        all_frames["external_simulation_reference_inventory"] = simulation_inventory_dl
     mfrmr_coverage_dl = mfrmr_015_migration_coverage_table()
     if isinstance(mfrmr_coverage_dl, pd.DataFrame) and not mfrmr_coverage_dl.empty:
         all_frames["mfrmr_015_migration_coverage"] = mfrmr_coverage_dl
@@ -20225,6 +20248,7 @@ def _self_test_report_readiness_and_method_appendix() -> None:
         "visual_interpretation_checklist",
         "visual_method_evidence",
         "public_beta_limitations",
+        "external_simulation_reference_inventory",
         "mfrmr_015_migration_coverage",
         "public_release_readiness",
         "category_probability_curves",
@@ -20582,6 +20606,16 @@ def cross_package_validation_plan() -> pd.DataFrame:
             "ExpectedNonEquivalence": "diagnostic residual definitions and null distributions differ",
             "Action": "Label these as diagnostic screens rather than proof of model truth.",
         },
+        {
+            "Area": "External Simulation repository sweep",
+            "PythonScenario": "local Simulation validation inputs and engine refit manifests",
+            "ExternalReference": "mfrmr/Python/Julia/FACETS local Simulation artifacts",
+            "OfficialHook": "archived local numerical validation outputs, not runtime dependencies",
+            "ComparableEvidence": "manifest status counts, full-reference summaries, runtime summaries, and non-empty validation-input replicates",
+            "ReviewThreshold": "review any failed manifest row, missing summary output, zero-byte replicate selected for validation, or unarchived parameterization note",
+            "ExpectedNonEquivalence": "historical artifacts can contain OS-specific absolute paths and package-specific constants",
+            "Action": "Use the Simulation inventory as reviewer evidence only after archiving sanitized manifests and comparison summaries.",
+        },
     ]
     return pd.DataFrame(rows)
 
@@ -20736,6 +20770,74 @@ def external_reference_documentation_table() -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
+def external_simulation_reference_inventory() -> pd.DataFrame:
+    """Local Simulation repository artifacts available for numerical validation.
+
+    These rows intentionally store relative artifact names and review actions
+    rather than local absolute paths. The public app should not depend on the
+    Dropbox/Simulation directory at runtime.
+    """
+    rows = [
+        {
+            "ReferenceSet": "Observed long-form rating data",
+            "RelativeArtifacts": "data/writing_long.csv; data/speaking_long.csv",
+            "LocalEvidence": "writing_long.csv: 111,995 rows x 8 columns; speaking_long.csv: 111,993 rows x 8 columns.",
+            "NumericalUse": "End-to-end data import, score support, missingness, and category-distribution validation on realistic long-format data.",
+            "PublicHandling": "Do not bundle raw observed data in the public repository; archive only de-identified derived summaries when needed.",
+            "ValidationAction": "Check column mapping, category support, row counts, and privacy review before any manuscript-facing validation claim.",
+        },
+        {
+            "ReferenceSet": "Main engine refit sweep",
+            "RelativeArtifacts": "results/engine_refit_manifest.csv",
+            "LocalEvidence": "4,004 manifest rows; 1,001 rows each for mfrmr JMLE, mfrmr MML, Python JMLE, and Julia JMLE; all rows marked ok in the inspected local copy.",
+            "NumericalUse": "Large-scale regression evidence that repeated simulated validation datasets were refit across engines.",
+            "PublicHandling": "Use sanitized manifest counts and summary tables; do not publish local absolute paths embedded in historical manifests.",
+            "ValidationAction": "Before citing, regenerate or sanitize paths and pair each manifest row with parameterization/tolerance notes.",
+        },
+        {
+            "ReferenceSet": "Runtime benchmark sweep",
+            "RelativeArtifacts": "results/runtime_validation_summary.csv; results/runtime_validation_long.csv; results/runtime_fullref.csv",
+            "LocalEvidence": "runtime_validation_summary.csv: 4 rows x 7 columns; runtime_validation_long.csv: 4,000 rows x 7 columns; runtime_fullref.csv: 4 rows x 6 columns.",
+            "NumericalUse": "Performance and convergence smoke evidence for full-reference and repeated validation refits.",
+            "PublicHandling": "Report aggregate timings only when hardware, versions, and sample size are stated.",
+            "ValidationAction": "Use as performance evidence, not as statistical equivalence evidence.",
+        },
+        {
+            "ReferenceSet": "Full-reference backup outputs",
+            "RelativeArtifacts": "results_backup_20260407_pre_diag/*_full_ref/sim_summary_*.csv; sim_person_*.csv; sim_facets_*.csv",
+            "LocalEvidence": "Available full-reference summaries for R/mfrmr JMLE and MML, Python JMLE, Julia JMLE, and FACETS-style outputs.",
+            "NumericalUse": "Small, auditable cross-engine reference set for summary, person-measure, and facet-measure comparisons.",
+            "PublicHandling": "Archive summary/person/facet comparison tables with package versions; avoid claiming exact equality unless constraints and constants are aligned.",
+            "ValidationAction": "Use centered/rank comparisons and keep FACETS, mfrmr, Python, and Julia parameterization notes beside the results.",
+        },
+        {
+            "ReferenceSet": "Diagnostic spot-check manifests",
+            "RelativeArtifacts": "results_diagcheck_all/engine_refit_manifest.csv; results_julia_diag/engine_refit_manifest.csv; results_mmlcheck/engine_refit_manifest.csv; results_backup_20260407_pre_diag/engine_refit_manifest.csv",
+            "LocalEvidence": "Inspected local manifests include diagcheck_all: 3 ok rows; julia_diag: 1 ok row; mmlcheck: 2 ok rows; backup pre_diag: 16 ok rows.",
+            "NumericalUse": "Targeted regression checks for diagnostics, Julia output paths, and mfrmr MML/JMLE output availability.",
+            "PublicHandling": "Treat as local smoke evidence until regenerated in the public CI or archived with environment details.",
+            "ValidationAction": "Use to prioritize numerical tests when diagnostic or MML code paths change.",
+        },
+        {
+            "ReferenceSet": "Validation input replicates",
+            "RelativeArtifacts": "results/validation_inputs/rep_*_writing_long.csv",
+            "LocalEvidence": "Large replicate input CSVs are present; inspected examples include a non-empty rep_010 file with 83,996 lines and zero-line placeholders for rep_001 and rep_100.",
+            "NumericalUse": "Stress-test parsing, empty-file handling, category support, and batch validation robustness.",
+            "PublicHandling": "Do not copy the replicate data into the public repository without a privacy and size review.",
+            "ValidationAction": "Filter zero-byte or zero-line inputs before batch refits and record which replicates were actually analyzed.",
+        },
+        {
+            "ReferenceSet": "Quarto empirical-study artifacts",
+            "RelativeArtifacts": "icnale_empirical_study.qmd; icnale_observed_data_preprocessing.qmd; rendered HTML and figure outputs",
+            "LocalEvidence": "Local Quarto analysis sources and rendered reports are available in the Simulation directory.",
+            "NumericalUse": "Method narrative, preprocessing audit, and figure-level triangulation for reviewer documentation.",
+            "PublicHandling": "Use as local study documentation; avoid embedding private source paths or raw data excerpts in the app repository.",
+            "ValidationAction": "When publishing, cite only sanitized methods/results summaries that match the current Python app output.",
+        },
+    ]
+    return pd.DataFrame(rows)
+
+
 def external_validation_artifact_checklist() -> pd.DataFrame:
     """Artifacts required before making cross-package validation claims."""
     rows = [
@@ -20768,6 +20870,12 @@ def external_validation_artifact_checklist() -> pd.DataFrame:
             "RequiredForClaim": "Numerical parameter comparison",
             "ExpectedFileOrEvidence": "cross_package_tolerance_policy.csv",
             "ReviewQuestion": "Are review thresholds stated before reading the results?",
+        },
+        {
+            "Artifact": "Simulation reference inventory",
+            "RequiredForClaim": "Any claim based on the local Simulation directory",
+            "ExpectedFileOrEvidence": "external_simulation_reference_inventory.csv plus sanitized manifest/comparison summaries",
+            "ReviewQuestion": "Were private data, absolute paths, zero-byte replicates, and package-specific parameterizations handled before public reporting?",
         },
         {
             "Artifact": "R cross-check status",
@@ -20849,6 +20957,16 @@ def external_validation_report_template() -> pd.DataFrame:
             "ReviewerNotes": "",
         },
         {
+            "ClaimArea": "External Simulation numerical validation",
+            "PythonScenario": "local Simulation manifests and validation inputs",
+            "ExternalPackage": "mfrmr/Python/Julia/FACETS local artifacts",
+            "EvidenceFile": "external_simulation_reference_inventory.csv; sanitized engine_refit_manifest.csv; sanitized comparison summaries",
+            "ObservedResult": "",
+            "Status": "Not run",
+            "AcceptablePublicWording": "Local Simulation artifacts were used as archived numerical validation evidence under documented parameterization and privacy boundaries.",
+            "ReviewerNotes": "",
+        },
+        {
             "ClaimArea": "mfrmr 0.1.5 migration",
             "PythonScenario": "all relevant scenarios",
             "ExternalPackage": "mfrmr",
@@ -20875,6 +20993,15 @@ def _self_test_cross_package_validation_plan() -> None:
     _self_test_assert(
         {"TAM tam.mml.mfr", "mirt mirt", "sirt rm.facets", "mfrmr 0.1.5 local source"}.issubset(set(docs["Reference"])),
         "external reference documentation table missing required references",
+    )
+    sim_inventory = external_simulation_reference_inventory()
+    _self_test_assert(
+        {"Main engine refit sweep", "Validation input replicates"}.issubset(set(sim_inventory["ReferenceSet"])),
+        "Simulation reference inventory missing required local validation artifacts",
+    )
+    _self_test_assert(
+        sim_inventory["PublicHandling"].astype(str).str.contains("Do not", case=False, na=False).any(),
+        "Simulation reference inventory must document public-data handling boundaries",
     )
     checklist = external_validation_artifact_checklist()
     _self_test_assert("External package versions" in checklist["Artifact"].tolist(), "artifact checklist missing package versions")
@@ -21060,6 +21187,7 @@ def export_reference_parity_fixture(output_dir: str) -> int:
     cross_package_parameterization_notes().to_csv(out_dir / "cross_package_parameterization_notes.csv", index=False)
     cross_package_tolerance_policy().to_csv(out_dir / "cross_package_tolerance_policy.csv", index=False)
     external_reference_documentation_table().to_csv(out_dir / "external_reference_documentation.csv", index=False)
+    external_simulation_reference_inventory().to_csv(out_dir / "external_simulation_reference_inventory.csv", index=False)
     external_validation_artifact_checklist().to_csv(out_dir / "external_validation_artifact_checklist.csv", index=False)
     external_validation_report_template().to_csv(out_dir / "external_validation_report_template.csv", index=False)
     mfrmr_015_migration_coverage_table().to_csv(out_dir / "mfrmr_015_migration_coverage.csv", index=False)
@@ -21085,6 +21213,9 @@ Files:
 - `cross_package_tolerance_policy.csv`: default review thresholds.
 - `external_reference_documentation.csv`: official documentation touchpoints
   used to scope optional validation.
+- `external_simulation_reference_inventory.csv`: local Simulation-directory
+  artifacts that can support numerical validation without becoming runtime
+  dependencies or bundled private data.
 - `external_validation_artifact_checklist.csv`: artifacts to archive before
   making public comparison claims.
 - `external_validation_report_template.csv`: blank reviewer table for the
@@ -21371,6 +21502,7 @@ def build_demo_report_frames(
     frames["visual_interpretation_checklist"] = visual_interpretation_checklist()
     frames["visual_method_evidence"] = visual_method_evidence_table()
     frames["public_beta_limitations"] = public_beta_limitations_table()
+    frames["external_simulation_reference_inventory"] = external_simulation_reference_inventory()
     frames["mfrmr_015_migration_coverage"] = mfrmr_015_migration_coverage_table()
     frames["public_release_readiness"] = public_release_readiness_table()
     person = result.get("facets", {}).get("person", pd.DataFrame())
@@ -21563,14 +21695,16 @@ It demonstrates the standalone Python workflow without calling `mfrmr`,
 8. `visual_interpretation_checklist.csv`: how to read each plot.
 9. `visual_method_evidence.csv`: methodological basis and readability rules for plots.
 10. `public_beta_limitations.csv`: what this beta release supports and does not claim.
-11. `mfrmr_015_migration_coverage.csv`: how the local mfrmr 0.1.5 feature surface maps to this Python app.
-12. `public_release_readiness.csv`: repository-level public release checklist.
-13. `category_probability_curves.csv`: long-form PCM curve data for the
+11. `external_simulation_reference_inventory.csv`: local Simulation-directory
+   validation artifacts to consult without bundling private data.
+12. `mfrmr_015_migration_coverage.csv`: how the local mfrmr 0.1.5 feature surface maps to this Python app.
+13. `public_release_readiness.csv`: repository-level public release checklist.
+14. `category_probability_curves.csv`: long-form PCM curve data for the
    averaged view and each Task level.
-14. `figure_manifest.csv`: manuscript-use notes and available formats for exported figures.
-15. `MFRM_Demo_Publication_Figures.zip`: publication-styled PNG/HTML figure bundle.
-16. `figures_html/`: interactive publication-styled diagnostic figures.
-17. `method_appendix.md`: reproducible method notes for this demo run.
+15. `figure_manifest.csv`: manuscript-use notes and available formats for exported figures.
+16. `MFRM_Demo_Publication_Figures.zip`: publication-styled PNG/HTML figure bundle.
+17. `figures_html/`: interactive publication-styled diagnostic figures.
+18. `method_appendix.md`: reproducible method notes for this demo run.
 
 ## Demo model
 
@@ -21714,12 +21848,14 @@ def run_release_check(json_output: bool = False) -> int:
     readiness = public_release_readiness_table()
     limitations = public_beta_limitations_table()
     migration = mfrmr_015_migration_coverage_table()
+    simulation_inventory = external_simulation_reference_inventory()
     payload = {
         "release_status": "public beta / research preview",
         "app_version": APP_VERSION,
         "release_label": APP_RELEASE_LABEL,
         "readiness": readiness.to_dict(orient="records"),
         "limitations": limitations.to_dict(orient="records"),
+        "external_simulation_reference_inventory": simulation_inventory.to_dict(orient="records"),
         "mfrmr_015_migration_coverage": migration.to_dict(orient="records"),
     }
     if json_output:
@@ -21734,6 +21870,7 @@ def run_release_check(json_output: bool = False) -> int:
         print("\nPublic beta limitations:")
         for _, row in limitations.iterrows():
             print(f"- {row['Area']}: {row['PublicBetaStatus']} - {row['Boundary']}")
+        print(f"\nExternal Simulation reference inventory rows: {len(simulation_inventory)}")
         print(f"\nmfrmr 0.1.5 migration coverage rows: {len(migration)}")
     blocker_count = int((readiness["Status"].astype(str) == "Blocker").sum()) if "Status" in readiness.columns else 1
     return 1 if blocker_count else 0

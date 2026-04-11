@@ -17,6 +17,7 @@ Initial public-beta repository setup.
 - CI smoke workflow for Python 3.11 and 3.12.
 - Validation scaffold for optional TAM, mirt, and sirt external checks.
 - Anchor templates and a user guideline.
+- MIT license file.
 
 ### Validation
 
@@ -26,4 +27,4 @@ Initial public-beta repository setup.
 
 - Release status is public beta / research preview.
 - Exact numerical parity with FACETS, TAM, sirt, mirt, or `mfrmr` is not claimed.
-- A license has not yet been selected; choose one before public distribution.
+- Licensed under MIT.

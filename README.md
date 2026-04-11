@@ -177,6 +177,14 @@ It runs:
 
 If this directory is used as a standalone GitHub repository, the workflow will be discovered normally. If it remains a subdirectory inside a larger repository, copy or mirror the workflow into the repository root `.github/workflows/` directory.
 
+## License
+
+MIT License. See `LICENSE`.
+
+## Publication Note
+
+`origin` is set to `https://github.com/Ryuya-dot-com/MFRM_Python_Application.git`. That repository already has a `main` history, so publish this standalone app through a review branch or an intentionally planned repository replacement.
+
 ## Files
 
 ```text
@@ -184,6 +192,7 @@ Makefile
 streamlit_app.py
 requirements.txt
 requirements-dev.txt
+LICENSE
 README.md
 CHANGELOG.md
 CONTRIBUTING.md

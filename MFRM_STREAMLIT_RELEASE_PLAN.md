@@ -19,6 +19,7 @@
 - Validation artifacts: `validation/`
 - Tests or smoke wrappers: `tests/`
 - Repository hygiene: `.gitattributes`, `Makefile`, `RELEASE_CHECKLIST.md`
+- License: `LICENSE` (MIT)
 - Do not copy `__pycache__`, local benchmark outputs, virtual environments, or temporary parity outputs.
 
 ## Release Positioning
@@ -144,8 +145,9 @@
 - [x] Add `RELEASE_CHECKLIST.md` for public beta release gates.
 - [x] Add `CHANGELOG.md`, `CONTRIBUTING.md`, and `SECURITY.md`.
 - [x] Add GitHub issue templates that warn against sharing confidential rating data.
-- [ ] Add a GitHub remote after choosing the target repository URL.
-- [ ] Choose and add a license before public distribution.
+- [x] Add a GitHub remote after choosing the target repository URL.
+- [x] Choose and add a license before public distribution.
+- [x] Confirm `origin/main` has an existing history; do not overwrite it without an explicit replacement decision.
 
 ## Immediate Next Step
 

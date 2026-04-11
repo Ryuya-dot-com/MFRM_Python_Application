@@ -15,6 +15,7 @@ import zipfile
 from collections import OrderedDict
 from itertools import combinations
 from pathlib import Path
+from typing import Iterable
 
 import numpy as np
 import pandas as pd
@@ -7726,22 +7727,35 @@ def _offer_fig_download(fig, key: str, label: str = "Download figure (PNG 300 DP
         )
 
 
-def build_osf_zip(frames: dict[str, pd.DataFrame], title: str = "MFRM_Report") -> bytes:
-    """Create a ZIP archive with CSV + Excel + HTML for OSF upload."""
+def build_osf_zip(
+    frames: dict[str, pd.DataFrame],
+    title: str = "MFRM_Report",
+    text_assets: dict[str, str] | None = None,
+) -> bytes:
+    """Create a ZIP archive with CSV + Excel + HTML plus optional text assets."""
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
         for name, df in frames.items():
             zf.writestr(f"{name}.csv", df.to_csv(index=False))
         zf.writestr(f"{title}.xlsx", to_excel_bytes(frames))
         zf.writestr(f"{title}.html", to_html_report(frames, title))
+        for name, text in (text_assets or {}).items():
+            zf.writestr(str(name), str(text))
     return buf.getvalue()
 
 
 @st.cache_data(show_spinner=False, max_entries=4, ttl=1800)
-def cached_osf_zip(_frames: dict[str, pd.DataFrame], frames_key: str, title: str = "MFRM_Report") -> bytes:
+def cached_osf_zip(
+    _frames: dict[str, pd.DataFrame],
+    frames_key: str,
+    title: str = "MFRM_Report",
+    _text_assets: dict[str, str] | None = None,
+    text_assets_key: str = "",
+) -> bytes:
     """Cache OSF package bytes by explicit fingerprint."""
     _ = frames_key
-    return build_osf_zip(_frames, title=title)
+    _ = text_assets_key
+    return build_osf_zip(_frames, title=title, text_assets=_text_assets)
 
 
 def bytes_mapping_fingerprint(assets: dict[str, bytes | str], length: int = 16) -> str:
@@ -10405,6 +10419,196 @@ def build_manuscript_claim_guide(
     return pd.DataFrame(rows)
 
 
+def generate_manuscript_reporting_template(
+    result: dict,
+    diagnostics: dict,
+    all_bias_results: dict | None = None,
+) -> str:
+    """Result-aware manuscript skeleton for beginner reporting."""
+    config = result.get("config", {})
+    prep = result.get("prep", {})
+    opt = result.get("opt")
+    all_bias = all_bias_results or {}
+    guide = build_manuscript_claim_guide(result, diagnostics, all_bias)
+    readiness = build_final_report_readiness(result, diagnostics, all_bias)
+
+    def guide_value(area: str, column: str, default: str = "No result-specific guidance recorded.") -> str:
+        if not isinstance(guide, pd.DataFrame) or guide.empty:
+            return default
+        if "ManuscriptArea" not in guide.columns or column not in guide.columns:
+            return default
+        hit = guide.loc[guide["ManuscriptArea"].astype(str) == area, column]
+        return str(hit.iloc[0]) if not hit.empty else default
+
+    def readiness_value(check: str, column: str, default: str = "No result-specific evidence recorded.") -> str:
+        if not isinstance(readiness, pd.DataFrame) or readiness.empty:
+            return default
+        if "Check" not in readiness.columns or column not in readiness.columns:
+            return default
+        hit = readiness.loc[readiness["Check"].astype(str) == check, column]
+        return str(hit.iloc[0]) if not hit.empty else default
+
+    def status(area: str) -> str:
+        return guide_value(area, "ClaimStatus", "Missing")
+
+    def wording(area: str) -> str:
+        return guide_value(area, "SafeManuscriptWording")
+
+    def evidence(area: str) -> str:
+        return guide_value(area, "EvidenceToReport")
+
+    def action(area: str) -> str:
+        return guide_value(area, "NextAction")
+
+    def do_not(area: str) -> str:
+        return guide_value(area, "DoNotClaim")
+
+    def fmt_list(values: Iterable[object], default: str = "not recorded") -> str:
+        clean = [str(v) for v in values if str(v)]
+        return ", ".join(clean) if clean else default
+
+    facet_names = fmt_list(config.get("facet_names", []) or [], "not recorded")
+    model = str(config.get("model", "unknown"))
+    method = str(config.get("method", "unknown"))
+    rating_min = prep.get("rating_min", "?")
+    rating_max = prep.get("rating_max", "?")
+    n_obs = prep.get("n_obs", "unknown")
+    n_person = prep.get("n_person", "unknown")
+    n_cat = config.get("n_cat", "unknown")
+    try:
+        n_cat_int = int(n_cat)
+    except Exception:
+        n_cat_int = None
+    cat_label = "category" if n_cat_int == 1 else "categories"
+    raw_unused_categories = prep.get("unused_score_categories", [])
+    if isinstance(raw_unused_categories, (list, tuple, set, np.ndarray, pd.Series)):
+        unused_categories = list(raw_unused_categories)
+    elif raw_unused_categories is None or str(raw_unused_categories) == "":
+        unused_categories = []
+    else:
+        unused_categories = [raw_unused_categories]
+    unused_label = (
+        "none"
+        if not unused_categories else
+        ", ".join(map(str, unused_categories))
+    )
+    score_support = (
+        f"{rating_min} to {rating_max}; {n_cat} {cat_label}; "
+        f"unused categories retained: {unused_label}"
+    )
+    if bool(prep.get("score_range_explicit", False)):
+        score_support += "; explicit score range was supplied"
+
+    pca_status = readiness_value("Dimensionality screen", "Status", "Review")
+    bias_status = status("Bias / local interaction")
+    anchor_status = status("Anchoring and linking")
+    caution_rows = []
+    if isinstance(guide, pd.DataFrame) and not guide.empty:
+        for _, row in guide.iterrows():
+            row_status = str(row.get("ClaimStatus", ""))
+            if row_status in {"Report with caveat", "Do not claim", "Boundary"}:
+                caution_rows.append(
+                    f"- **{row.get('ManuscriptArea', 'Unknown area')}** ({row_status}): "
+                    f"{row.get('DoNotClaim', 'No boundary recorded')} "
+                    f"Next action: {row.get('NextAction', 'No action recorded')}"
+                )
+    if not caution_rows:
+        caution_rows.append("- No caution rows were generated by the claim guide. Still review all diagnostics before submission.")
+
+    suggested_results = [
+        "Rating-scale functioning",
+        "Reliability and separation",
+        "Fit and dimensionality",
+        "Wright map targeting and measure interpretation",
+        "Bias / local interaction",
+        "Anchoring and linking",
+        "Prediction, plausible values, and simulation",
+    ]
+    result_blocks: list[str] = []
+    for area in suggested_results:
+        result_blocks.extend([
+            f"### {area}",
+            "",
+            f"- Claim status: {status(area)}.",
+            f"- Evidence to report: {evidence(area)}",
+            f"- Draft wording: {wording(area)}",
+            f"- Guardrail: {do_not(area)}",
+            f"- Before submission: {action(area)}",
+            "",
+        ])
+
+    converged = bool(getattr(opt, "success", False))
+    lines = [
+        "# MFRM Manuscript Reporting Template",
+        "",
+        "Use this as a draft scaffold, not as final prose. Replace bracketed text with study-specific content, and resolve every `Do not claim` row before submission.",
+        "",
+        "## Study-Specific Placeholders",
+        "",
+        "- Construct or rubric: [write construct/rubric name].",
+        "- Research question: [write research question].",
+        "- Sample and setting: [write participants, raters, tasks, and context].",
+        "- Rating rubric: [write score categories and anchor descriptions].",
+        "- Missing-data rule: [write how missing or omitted ratings were handled].",
+        "",
+        "## Methods Draft",
+        "",
+        (
+            f"We analyzed [construct/rubric] ratings with a many-facet Rasch model in the standalone "
+            f"Python MFRM Streamlit app (version {config.get('app_version', APP_VERSION)}). "
+            f"The fitted model was {model} using {method}. The analysis included {n_obs} observations "
+            f"from {n_person} persons, facets ({facet_names}), and score support {score_support}."
+        ),
+        "",
+        (
+            "The app did not call `mfrmr`, `rpy2`, `Rscript`, FACETS, TAM, sirt, or mirt at runtime. "
+            "External package equality should not be reported unless a separate validation artifact is archived."
+        ),
+        "",
+        "Report estimation settings here: optimizer/engine, maximum iterations, convergence tolerance, quadrature points for MML, latent-regression formula if used, anchor policy if used, and whether optional PCA, strict marginal diagnostics, bias screening, plausible values, prediction, simulation, or design evaluation were enabled.",
+        "",
+        "## Results Draft",
+        "",
+        f"Convergence status: {'converged' if converged else 'not converged'}. Optimizer message: {getattr(opt, 'message', 'not available')}.",
+        "",
+        *result_blocks,
+        "## Tables And Figures To Include",
+        "",
+        "- Table 1: analysis design, facets, observations, score range, retained zero-count categories, and missing-data handling.",
+        "- Table 2: person and facet measures with standard errors and fit statistics.",
+        "- Table 3: category counts, average measures, and step/threshold ordering.",
+        "- Table 4: reliability/separation and final-report readiness or manuscript claim guide summary.",
+        "- Figure 1: Wright map for targeting and scale overlap.",
+        "- Figure 2: category probability and expected-score curves for PCM/GPCM rating-scale interpretation.",
+        "- Figure 3: residual, PCA, marginal, or bias plots only when the corresponding option was computed and labels remain readable.",
+        "- Do not include an R-vs-Python comparison table unless the paper is explicitly a validation study.",
+        "",
+        "## Limitations Draft",
+        "",
+        "- This report is based on a standalone Python implementation and should be cited as such.",
+        f"- Residual PCA status: {pca_status}. Do not claim unidimensionality if this remains Review or Missing.",
+        f"- Bias/local interaction status: {bias_status}. Limit no-bias statements to screened facet pairs and cells.",
+        f"- Anchor/linking status: {anchor_status}. Do not compare administrations, forms, cohorts, or studies on a common scale without anchor/linking evidence.",
+        "- Prediction, plausible-value, simulation, and design-evaluation outputs are model-based sensitivity or planning tools, not causal or prospective validation evidence.",
+        "- Fingerprints support reproducibility checks, but they are not encryption and are not a privacy guarantee.",
+        "",
+        "## Claims Requiring Caution",
+        "",
+        *caution_rows,
+        "",
+        "## Reviewer Preflight Checklist",
+        "",
+        "- The optimizer converged or non-convergence is explicitly handled.",
+        "- Sparse or zero-count categories are reported and category collapse decisions are justified.",
+        "- Reliability/separation claims match the facet being interpreted.",
+        "- Fit, dimensionality, and bias/local-interaction language matches the computed diagnostics.",
+        "- Figures use readable labels; dense labels are shortened or inspected via interactive hover/downloads.",
+        "- Cross-run linking claims are supported by anchor audit, drift, and chain evidence.",
+        "- The data privacy warning is followed before sharing any real dataset or report bundle.",
+    ]
+    return "\n".join(lines) + "\n"
+
+
 def generate_method_appendix_text(
     result: dict,
     diagnostics: dict,
@@ -10614,6 +10818,38 @@ def _render_manuscript_claim_guide_section(
     )
 
 
+def _render_manuscript_template_section(
+    result: dict,
+    diagnostics: dict,
+    all_bias_results: dict | None = None,
+) -> None:
+    st.subheader("Manuscript Template")
+    st.caption(
+        "A result-aware Markdown scaffold for Methods, Results, figures, limitations, "
+        "and reviewer preflight checks. Edit it for your study before submission."
+    )
+    template = generate_manuscript_reporting_template(result, diagnostics, all_bias_results)
+    guide = build_manuscript_claim_guide(result, diagnostics, all_bias_results)
+    caution_count = 0
+    if isinstance(guide, pd.DataFrame) and not guide.empty and "ClaimStatus" in guide.columns:
+        caution_count = int(guide["ClaimStatus"].astype(str).isin(["Do not claim", "Report with caveat"]).sum())
+    if caution_count:
+        st.warning(
+            "This template intentionally keeps caution rows visible. Resolve or justify them "
+            "before copying text into a final manuscript."
+        )
+    else:
+        st.success("No Do-not-claim or caveat rows were generated, but final wording still needs study-specific review.")
+    st.code(template, language="markdown")
+    st.download_button(
+        "Download manuscript template (Markdown)",
+        data=template.encode("utf-8"),
+        file_name="mfrm_manuscript_template.md",
+        mime="text/markdown",
+        key="dl_manuscript_template_report_tab",
+    )
+
+
 def show_report_section(
     result: dict, diagnostics: dict, *,
     bias_results: dict | None = None,
@@ -10623,13 +10859,15 @@ def show_report_section(
     st.subheader("Publication-Quality Report")
     st.caption(
         "Comprehensive reporting output for manuscripts. Includes auto-generated APA text, "
-        "summary tables, an auto-filled reporting checklist, facet equivalence analysis, "
-        "and Stan code for full Bayesian estimation."
+        "readiness checks, claim guardrails, a manuscript template, summary tables, "
+        "an auto-filled reporting checklist, facet equivalence analysis, and Stan code "
+        "for full Bayesian estimation."
     )
 
     report_tabs = st.tabs([
-        "APA Report", "Readiness", "Claim Guide", "Tables", "Reporting Checklist",
-        "Method Appendix", "Facet Equivalence", "Stan Code",
+        "APA Report", "Readiness", "Claim Guide", "Manuscript Template",
+        "Tables", "Reporting Checklist", "Method Appendix", "Facet Equivalence",
+        "Stan Code",
     ])
 
     # ---- Sub-tab 0: APA Report ----
@@ -10646,24 +10884,28 @@ def show_report_section(
     with report_tabs[2]:
         _render_manuscript_claim_guide_section(result, diagnostics, all_bias_results)
 
-    # ---- Sub-tab 3: Tables & Figures ----
+    # ---- Sub-tab 3: Manuscript Template ----
     with report_tabs[3]:
+        _render_manuscript_template_section(result, diagnostics, all_bias_results)
+
+    # ---- Sub-tab 4: Tables & Figures ----
+    with report_tabs[4]:
         _render_report_tables(result, diagnostics)
 
-    # ---- Sub-tab 4: Reporting Checklist ----
-    with report_tabs[4]:
+    # ---- Sub-tab 5: Reporting Checklist ----
+    with report_tabs[5]:
         _render_reporting_checklist(result, diagnostics, all_bias_results)
 
-    # ---- Sub-tab 5: Method Appendix ----
-    with report_tabs[5]:
+    # ---- Sub-tab 6: Method Appendix ----
+    with report_tabs[6]:
         _render_method_appendix_section(result, diagnostics, all_bias_results)
 
-    # ---- Sub-tab 6: Facet Equivalence ----
-    with report_tabs[6]:
+    # ---- Sub-tab 7: Facet Equivalence ----
+    with report_tabs[7]:
         _render_facet_equivalence(result, diagnostics)
 
-    # ---- Sub-tab 7: Stan Code ----
-    with report_tabs[7]:
+    # ---- Sub-tab 8: Stan Code ----
+    with report_tabs[8]:
         _render_stan_code(result)
 
 
@@ -18010,6 +18252,12 @@ def _render_downloads(
         )
 
         method_appendix = generate_method_appendix_text(result, diagnostics, all_bias_results)
+        manuscript_template = generate_manuscript_reporting_template(result, diagnostics, all_bias_results)
+        text_assets = {
+            "method_appendix.md": method_appendix,
+            "manuscript_template.md": manuscript_template,
+        }
+        text_assets_key = bytes_mapping_fingerprint(text_assets)
         st.subheader("Compact method appendix")
         with st.expander("View method appendix"):
             st.code(method_appendix, language="markdown")
@@ -18019,6 +18267,19 @@ def _render_downloads(
             file_name="mfrm_method_appendix.md",
             mime="text/markdown",
             key="dl_method_appendix_md",
+        )
+        st.subheader("Manuscript reporting template")
+        st.caption(
+            "Use this with the Claim Guide and Readiness table before drafting final Results and Limitations."
+        )
+        with st.expander("View manuscript template"):
+            st.code(manuscript_template, language="markdown")
+        st.download_button(
+            "Download manuscript template (Markdown)",
+            data=manuscript_template.encode("utf-8"),
+            file_name="mfrm_manuscript_template.md",
+            mime="text/markdown",
+            key="dl_manuscript_template_md",
         )
 
         # --- Anchor file ---
@@ -18138,7 +18399,12 @@ def _render_downloads(
         try:
             st.download_button(
                 "Download OSF package (.zip)",
-                data=cached_osf_zip(all_frames, all_frames_key),
+                data=cached_osf_zip(
+                    all_frames,
+                    all_frames_key,
+                    _text_assets=text_assets,
+                    text_assets_key=text_assets_key,
+                ),
                 file_name="MFRM_OSF_Package.zip",
                 mime="application/zip",
                 key="dl_osf_zip",
@@ -18893,6 +19159,11 @@ def _self_test_report_readiness_and_method_appendix() -> None:
     _self_test_assert("standalone Python" in appendix, "method appendix does not state standalone Python scope")
     _self_test_assert("- Model: RSM." in appendix, "method appendix missing model line")
     _self_test_assert("no `mfrmr`" in appendix, "method appendix does not document no-mfrmr boundary")
+    manuscript_template = generate_manuscript_reporting_template(res, diagnostics, all_bias_results={})
+    _self_test_assert("## Methods Draft" in manuscript_template, "manuscript template missing methods draft")
+    _self_test_assert("## Results Draft" in manuscript_template, "manuscript template missing results draft")
+    _self_test_assert("standalone Python" in manuscript_template, "manuscript template missing standalone Python scope")
+    _self_test_assert("Claims Requiring Caution" in manuscript_template, "manuscript template missing caution section")
     demo_frames = build_demo_report_frames(res, diagnostics, sample, all_bias_results={})
     for required in [
         "demo_manifest",
@@ -18978,13 +19249,18 @@ def _self_test_export_bundle_contents() -> None:
         "summary": pd.DataFrame({"Metric": ["LogLik"], "Value": [-12.34]}),
         "population_term_types": pd.DataFrame({"Term": ["GradeCode"], "Type": ["categorical"]}),
     }
-    zip_bytes = build_osf_zip(frames, title="MFRM_SelfTest")
+    zip_bytes = build_osf_zip(
+        frames,
+        title="MFRM_SelfTest",
+        text_assets={"manuscript_template.md": "# Template\n"},
+    )
     with zipfile.ZipFile(io.BytesIO(zip_bytes), "r") as zf:
         names = set(zf.namelist())
         _self_test_assert("summary.csv" in names, "OSF ZIP missing summary.csv")
         _self_test_assert("population_term_types.csv" in names, "OSF ZIP missing population term types")
         _self_test_assert("MFRM_SelfTest.xlsx" in names, "OSF ZIP missing Excel workbook")
         _self_test_assert("MFRM_SelfTest.html" in names, "OSF ZIP missing HTML report")
+        _self_test_assert("manuscript_template.md" in names, "OSF ZIP missing manuscript template text asset")
         summary_text = zf.read("summary.csv").decode("utf-8")
         _self_test_assert("LogLik" in summary_text and "-12.34" in summary_text, "OSF ZIP summary.csv content changed")
 
@@ -19999,7 +20275,7 @@ def build_demo_report_frames(
             "Method": result.get("config", {}).get("method"),
             "RuntimeBoundary": "standalone Python; no mfrmr/rpy2/Rscript/FACETS/TAM/sirt/mirt runtime call",
             "PrivacyNote": "The demo uses synthetic built-in data only.",
-            "ReadFirst": "Open final_report_readiness, then manuscript_claim_guide, then visual_interpretation_checklist, then measures and category_probability_curves.",
+            "ReadFirst": "Open final_report_readiness, then manuscript_claim_guide, then manuscript_template.md, then visual_interpretation_checklist, then measures and category_probability_curves.",
         }
     ])
     frames["sample_data"] = data.copy()
@@ -20112,13 +20388,22 @@ def export_demo_report(output_dir: str) -> int:
         all_bias_results = {}
 
     frames = build_demo_report_frames(result, diagnostics, data, all_bias_results=all_bias_results)
+    method_appendix = generate_method_appendix_text(result, diagnostics, all_bias_results=all_bias_results)
+    manuscript_template = generate_manuscript_reporting_template(result, diagnostics, all_bias_results=all_bias_results)
     for name, frame in frames.items():
         frame.to_csv(out_dir / f"{name}.csv", index=False)
     (out_dir / "MFRM_Demo_Report.xlsx").write_bytes(to_excel_bytes(frames))
     (out_dir / "MFRM_Demo_Report.html").write_bytes(to_html_report(frames, title="MFRM Demo Report"))
-    (out_dir / "MFRM_Demo_Report.zip").write_bytes(build_osf_zip(frames, title="MFRM_Demo_Report"))
-    method_appendix = generate_method_appendix_text(result, diagnostics, all_bias_results=all_bias_results)
+    (out_dir / "MFRM_Demo_Report.zip").write_bytes(build_osf_zip(
+        frames,
+        title="MFRM_Demo_Report",
+        text_assets={
+            "method_appendix.md": method_appendix,
+            "manuscript_template.md": manuscript_template,
+        },
+    ))
     (out_dir / "method_appendix.md").write_text(method_appendix, encoding="utf-8")
+    (out_dir / "manuscript_template.md").write_text(manuscript_template, encoding="utf-8")
 
     figure_html: dict[str, str] = {}
     figure_png: dict[str, bytes] = {}
@@ -20163,15 +20448,16 @@ It demonstrates the standalone Python workflow without calling `mfrmr`,
 1. `MFRM_Demo_Report.html`: browser-readable table report.
 2. `final_report_readiness.csv`: what to resolve before final reporting.
 3. `manuscript_claim_guide.csv`: what is safe to claim in a manuscript.
-4. `visual_interpretation_checklist.csv`: how to read each plot.
-5. `visual_method_evidence.csv`: methodological basis and readability rules for plots.
-6. `public_beta_limitations.csv`: what this beta release supports and does not claim.
-7. `mfrmr_015_migration_coverage.csv`: how the local mfrmr 0.1.5 feature surface maps to this Python app.
-8. `public_release_readiness.csv`: repository-level public release checklist.
-9. `category_probability_curves.csv`: long-form PCM curve data for the
+4. `manuscript_template.md`: Methods, Results, limitations, and reviewer preflight scaffold.
+5. `visual_interpretation_checklist.csv`: how to read each plot.
+6. `visual_method_evidence.csv`: methodological basis and readability rules for plots.
+7. `public_beta_limitations.csv`: what this beta release supports and does not claim.
+8. `mfrmr_015_migration_coverage.csv`: how the local mfrmr 0.1.5 feature surface maps to this Python app.
+9. `public_release_readiness.csv`: repository-level public release checklist.
+10. `category_probability_curves.csv`: long-form PCM curve data for the
    averaged view and each Task level.
-10. `figures_html/`: interactive category probability and expected-score curves.
-11. `method_appendix.md`: reproducible method notes for this demo run.
+11. `figures_html/`: interactive category probability and expected-score curves.
+12. `method_appendix.md`: reproducible method notes for this demo run.
 
 ## Demo model
 
@@ -20187,7 +20473,7 @@ identifiers before upload or paste.
 """
     (out_dir / "README.md").write_text(readme, encoding="utf-8")
     print(f"Wrote demo report to: {out_dir}")
-    print("Key files: MFRM_Demo_Report.html, MFRM_Demo_Report.xlsx, final_report_readiness.csv, manuscript_claim_guide.csv, figures_html/")
+    print("Key files: MFRM_Demo_Report.html, MFRM_Demo_Report.xlsx, final_report_readiness.csv, manuscript_claim_guide.csv, manuscript_template.md, figures_html/")
     return 0
 
 

@@ -112,6 +112,13 @@ def test_manuscript_claim_guide_contract():
     fit = guide.loc[guide["ManuscriptArea"] == "Fit and dimensionality"].iloc[0]
     assert fit["ClaimStatus"] == "Report with caveat"
 
+    template = app.generate_manuscript_reporting_template(result, diagnostics, all_bias_results={})
+    assert "## Methods Draft" in template
+    assert "## Results Draft" in template
+    assert "standalone Python" in template
+    assert "Claims Requiring Caution" in template
+    assert "Do not include an R-vs-Python comparison table" in template
+
 
 def test_uploaded_file_fingerprint_uses_content_not_only_name_and_size():
     first = io.BytesIO(b"abc")

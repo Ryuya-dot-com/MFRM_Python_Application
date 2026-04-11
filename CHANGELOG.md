@@ -17,6 +17,7 @@ All notable changes to this standalone Streamlit distribution should be recorded
 - README preview screenshot generated from the real Streamlit app using built-in synthetic sample data.
 - Archived local R cross-check smoke status for generated TAM, mirt, and sirt handoff fixtures.
 - Result-aware manuscript claim guide in the Report tab, table downloads, and demo report export.
+- Result-aware Markdown manuscript template for Methods, Results, limitations, reviewer preflight checks, and OSF/demo report exports.
 
 ### Changed
 

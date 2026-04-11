@@ -153,9 +153,10 @@ After fitting a model, inspect results in this order:
 9. Strict marginal diagnostics: use for final MML reports when feasible.
 10. Final-report readiness: use the generated checklist before writing conclusions.
 11. Manuscript claim guide: check what is safe to claim, what requires a caveat, and what should not be claimed yet.
+12. Manuscript template: adapt the generated Methods, Results, limitations, and reviewer preflight scaffold after resolving claim-guide cautions.
 
-The final-report readiness checklist, first-read guide, and generated report
-text use the same main thresholds: about 5% or fewer observation residuals
+The final-report readiness checklist, first-read guide, manuscript template,
+and generated report text use the same main thresholds: about 5% or fewer observation residuals
 with `|z| >= 2`, person reliability at least 0.80 when person separation is the
 goal, and residual PCA first eigenvalue below 2.0 for a clean screen.
 
@@ -188,6 +189,7 @@ python streamlit_app.py --export-demo-report validation/generated/demo_report
 
 Open `validation/generated/demo_report/MFRM_Demo_Report.html` first, then read
 `final_report_readiness.csv`, `manuscript_claim_guide.csv`,
+`manuscript_template.md`,
 `visual_interpretation_checklist.csv`, `visual_method_evidence.csv`,
 `public_beta_limitations.csv`, `mfrmr_015_migration_coverage.csv`,
 `public_release_readiness.csv`, and the interactive category curves in

@@ -4,6 +4,10 @@ All notable changes to this standalone Streamlit distribution should be recorded
 
 ## Unreleased
 
+No unreleased changes yet.
+
+## 0.1.2-beta - 2026-04-12
+
 ### Added
 
 - Beginner-facing visual interpretation checklist in the app and downloadable report bundle.
@@ -24,10 +28,12 @@ All notable changes to this standalone Streamlit distribution should be recorded
 - Submission action plan that combines publication gates, readiness checks, claim guardrails, and wording repairs into a prioritized first-read table.
 - Desktop readability refinements for result-tab wrapping, wrapped guide tables, and dense or tightly spaced Wright map / yardstick labels.
 - Publication-styled figure export bundle with 300 DPI PNG target, matching HTML figures, and a figure-use manifest.
+- Local Simulation-directory validation inventory for external numerical validation planning without bundling private data or local absolute paths.
+- Sanitized Python/R/Julia external Simulation validation templates, downloadable from the app, OSF/demo report exports, and parity fixture exports.
 
 ### Changed
 
-- App version label now marks post-0.1.1 development as `0.1.2-beta-dev`.
+- App version label now marks this public beta release as `0.1.2-beta`.
 - Plotly/Kaleido floors now target Kaleido 1.x PNG export behavior, with HTML figure fallback when Chrome/Chromium is unavailable.
 - Final-report readiness, first-read guidance, and report text now use the same residual, reliability, and PCA thresholds.
 - APA Report summary wording now respects claim-guide caveats and avoids broad no-bias claims outside computed screens.
@@ -39,6 +45,7 @@ All notable changes to this standalone Streamlit distribution should be recorded
 ### Validation
 
 - `make verify` passed with 21 built-in self-tests, 10 pytest checks, release check, benchmark smoke, demo report export, and parity fixture export.
+- GitHub Actions passed on Python 3.11 and 3.12 for the final pre-release template commit before version finalization.
 
 ## 0.1.1-beta - 2026-04-12
 

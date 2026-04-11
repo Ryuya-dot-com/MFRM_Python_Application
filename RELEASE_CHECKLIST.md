@@ -58,3 +58,4 @@ find . -type d -name __pycache__ -prune -exec rm -rf {} +
 - [x] Add a tag only after CI passes.
 - [x] Create GitHub prerelease `v0.1.0-beta`.
 - [x] Prepare `v0.1.1-beta` notes after cross-package validation protocol changes.
+- [x] Prepare `v0.1.2-beta` notes after publication figure export and Simulation validation-template changes.

@@ -2,7 +2,7 @@
 
 ## Supported Versions
 
-This repository is currently a public-beta research preview. Security and privacy fixes should target the `main` branch until versioned releases are established.
+This repository is currently a public-beta research preview. Security and privacy fixes should target the `main` branch first and be included in the next supported beta tag when applicable.
 
 ## Reporting
 

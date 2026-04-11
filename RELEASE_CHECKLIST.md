@@ -15,6 +15,7 @@ Use this checklist before tagging or pushing a public beta release.
 - [ ] Confirm generated outputs under `validation/generated/` are absent before committing.
 - [ ] Confirm `.streamlit/secrets.toml` is not tracked.
 - [ ] Confirm the in-app and README privacy warnings are still visible.
+- [ ] Confirm README screenshots use only built-in, synthetic, or fully de-identified data.
 
 ## Deployment
 
@@ -28,6 +29,7 @@ Use this checklist before tagging or pushing a public beta release.
 - [ ] Review `validation/README.md` before claiming cross-package parity.
 - [ ] If external R checks are reported, archive the generated `r_crosscheck_status.csv` and note package versions.
 - [ ] Do not claim exact numerical parity unless the fixture, tolerances, and parameterization map are included.
+- [ ] Confirm the README preview image still matches the current public-beta UI after material layout changes.
 
 ## Commands
 

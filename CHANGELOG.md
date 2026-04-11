@@ -14,6 +14,7 @@ All notable changes to this standalone Streamlit distribution should be recorded
 - Latent-regression covariate type preview and export table for numeric, categorical, and integer-code review decisions.
 - Public-beta limitation and release-readiness tables in the app, demo report export, and CLI release check.
 - mfrmr 0.1.5 migration coverage table plus external validation artifact checklist, official-reference table, and reviewer template in the parity fixture.
+- README preview screenshot generated from the real Streamlit app using built-in synthetic sample data.
 
 ### Changed
 

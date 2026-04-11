@@ -14,6 +14,14 @@ This app is designed to run without `mfrmr`, `rpy2`, `Rscript`, FACETS, TAM, sir
 
 Before using results for high-stakes scoring, placement, certification, employment, or institutional decisions, cross-check the analysis with an established workflow and document the model assumptions.
 
+## Preview
+
+![MFRM Streamlit sample-data result overview](output/playwright/app-data-overview.png)
+
+The screenshot uses the built-in synthetic sample data. It highlights the
+default guided sidebar, the visible data-privacy warning, the input preview,
+the post-estimation success status, and the beginner-oriented result tabs.
+
 ## Data Privacy
 
 Rating data can contain person IDs, rater IDs, school or institution identifiers, subgroup labels, and other sensitive information.
@@ -51,6 +59,10 @@ python -m pip install -r requirements-dev.txt
 ```bash
 streamlit run streamlit_app.py
 ```
+
+For a first local smoke check, keep **Sample data (built-in)** selected, leave
+the guided defaults unchanged, click **Run FACETS-mode estimation**, then open
+the **What should I look at first?**, **Data**, **Visuals**, and **Help** tabs.
 
 For deployment notes, including Streamlit Community Cloud settings and privacy gates for hosted use, see `DEPLOYMENT.md`.
 
@@ -263,6 +275,7 @@ anchor_templates_and_guideline/
 .streamlit/config.toml
 .github/workflows/python-streamlit.yml
 .github/ISSUE_TEMPLATE/
+output/playwright/app-data-overview.png
 ```
 
 Generated files such as `__pycache__`, benchmark CSVs, local logs, and validation output directories are ignored.

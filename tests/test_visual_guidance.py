@@ -27,3 +27,32 @@ def test_visual_interpretation_checklist_contract():
         "Strict marginal",
     ]:
         assert expected in joined
+
+
+def test_category_probability_curve_data_supports_gpcm_level_views():
+    result = {
+        "params": {
+            "steps_mat": app.np.array([[-1.2, 0.3], [-0.4, 1.1]], dtype=float),
+            "slopes": app.np.array([0.8, 1.25], dtype=float),
+        },
+        "config": {"model": "GPCM", "n_cat": 3, "step_facet": "Task", "slope_facet": "Task"},
+        "prep": {"rating_min": 1, "levels": {"Task": ["T1", "T2"]}},
+    }
+
+    options = app.category_probability_curve_options(result)
+    assert options["Label"].tolist() == [
+        "Average across Task levels",
+        "Task = T1",
+        "Task = T2",
+    ]
+
+    average = app.build_category_probability_curve_data(result)
+    level = app.build_category_probability_curve_data(result, step_level_index=1)
+    assert average["available"]
+    assert level["available"]
+    assert level["metadata"]["Level"] == "T2"
+    assert level["metadata"]["Slope"] == 1.25
+    assert not app.np.allclose(
+        average["probability_wide"].drop(columns=["Theta"]).to_numpy(),
+        level["probability_wide"].drop(columns=["Theta"]).to_numpy(),
+    )

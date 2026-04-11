@@ -7,6 +7,7 @@ All notable changes to this standalone Streamlit distribution should be recorded
 ### Added
 
 - Beginner-facing visual interpretation checklist in the app and downloadable report bundle.
+- PCM/GPCM category probability curves can now be inspected by selected step-facet level, not only as averaged curves.
 
 ### Changed
 
@@ -14,7 +15,7 @@ All notable changes to this standalone Streamlit distribution should be recorded
 
 ### Validation
 
-- `make verify` passed with 19 built-in self-tests, 3 pytest checks, benchmark smoke, and parity fixture export.
+- `make verify` passed with 20 built-in self-tests, 4 pytest checks, benchmark smoke, and parity fixture export.
 
 ## 0.1.1-beta - 2026-04-12
 

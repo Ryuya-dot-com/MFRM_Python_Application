@@ -76,7 +76,7 @@ def visual_interpretation_checklist() -> pd.DataFrame:
             "ReadFirst": "Peaks, crossings, expected score curve, and whether intermediate categories disappear.",
             "ReviewTrigger": "A category has no peak, curves are out of order, or expected score is nearly flat.",
             "BeginnerAction": "Open Categories/Steps and inspect sparse counts, average measures, and threshold order.",
-            "Caveat": "PCM/GPCM curves are averaged over the selected step facet unless a level-specific view is added later.",
+            "Caveat": "For PCM/GPCM, start with the averaged curve, then use the level selector to inspect each step-facet level.",
         },
         {
             "Priority": 4,
@@ -150,6 +150,167 @@ def visual_interpretation_checklist() -> pd.DataFrame:
         },
     ]
     return pd.DataFrame(rows)
+
+
+def category_probability_curve_options(result: dict) -> pd.DataFrame:
+    """Return available category-curve scopes for the fitted model."""
+    config = result.get("config", {}) if isinstance(result, dict) else {}
+    prep = result.get("prep", {}) if isinstance(result, dict) else {}
+    params = result.get("params", {}) if isinstance(result, dict) else {}
+    model = config.get("model", "RSM")
+    step_facet = config.get("step_facet")
+    average_label = (
+        "Shared rating-scale thresholds"
+        if model == "RSM" else
+        f"Average across {step_facet} levels" if step_facet else "Average across step-facet levels"
+    )
+    rows = [
+        {
+            "OptionIndex": 0,
+            "Label": average_label,
+            "IsAverage": True,
+            "StepFacet": step_facet,
+            "Level": "",
+            "LevelIndex": np.nan,
+            "Slope": _category_curve_mean_slope(params, model),
+        }
+    ]
+    if model not in {"PCM", "GPCM"}:
+        return pd.DataFrame(rows)
+
+    levels = list((prep.get("levels", {}) or {}).get(step_facet, []))
+    slopes = np.asarray(params.get("slopes", []), dtype=float)
+    for idx, level in enumerate(levels):
+        slope = 1.0
+        if model == "GPCM" and idx < len(slopes) and np.isfinite(slopes[idx]) and slopes[idx] > 0:
+            slope = float(slopes[idx])
+        rows.append(
+            {
+                "OptionIndex": idx + 1,
+                "Label": f"{step_facet} = {level}",
+                "IsAverage": False,
+                "StepFacet": step_facet,
+                "Level": str(level),
+                "LevelIndex": idx,
+                "Slope": slope,
+            }
+        )
+    return pd.DataFrame(rows)
+
+
+def _category_curve_mean_slope(params: dict, model: str) -> float:
+    if model != "GPCM":
+        return 1.0
+    slopes = np.asarray(params.get("slopes", []), dtype=float)
+    finite = slopes[np.isfinite(slopes) & (slopes > 0)]
+    return float(np.nanmean(finite)) if finite.size else 1.0
+
+
+def build_category_probability_curve_data(
+    result: dict,
+    step_level_index: int | None = None,
+    theta_grid: np.ndarray | None = None,
+    theta_points: int = 121,
+) -> dict:
+    """Build category probability and expected-score curves for UI/tests."""
+    params = result.get("params", {}) if isinstance(result, dict) else {}
+    config = result.get("config", {}) if isinstance(result, dict) else {}
+    prep = result.get("prep", {}) if isinstance(result, dict) else {}
+    model = config.get("model", "RSM")
+    rating_min = int(prep.get("rating_min", 0) or 0)
+    n_cat = config.get("n_cat")
+    step_facet = config.get("step_facet")
+    level_label = ""
+    level_index = np.nan
+    is_average = True
+    slope = 1.0
+
+    if model == "RSM":
+        steps = params.get("steps")
+        if steps is None or len(steps) == 0:
+            return {"available": False, "reason": "Step parameters not available."}
+        step_params = np.asarray(steps, dtype=float)
+        scope = "Shared RSM rating-scale thresholds"
+    elif model in {"PCM", "GPCM"}:
+        steps_mat = params.get("steps_mat")
+        if steps_mat is None or len(steps_mat) == 0:
+            return {"available": False, "reason": "Step-facet threshold parameters not available."}
+        steps_mat = np.asarray(steps_mat, dtype=float)
+        levels = list((prep.get("levels", {}) or {}).get(step_facet, []))
+        if step_level_index is None:
+            step_params = np.nanmean(steps_mat, axis=0)
+            scope = f"Average across {step_facet} levels" if step_facet else "Average across step-facet levels"
+            slope = _category_curve_mean_slope(params, model)
+        else:
+            idx = int(step_level_index)
+            if idx < 0 or idx >= steps_mat.shape[0]:
+                return {"available": False, "reason": f"Step-facet level index {idx} is out of range."}
+            step_params = steps_mat[idx]
+            level_label = str(levels[idx]) if idx < len(levels) else str(idx)
+            level_index = idx
+            is_average = False
+            scope = f"{step_facet} = {level_label}" if step_facet else f"Step-facet level {level_label}"
+            if model == "GPCM":
+                slopes = np.asarray(params.get("slopes", []), dtype=float)
+                if idx < len(slopes) and np.isfinite(slopes[idx]) and slopes[idx] > 0:
+                    slope = float(slopes[idx])
+        if model == "PCM":
+            slope = 1.0
+    else:
+        return {"available": False, "reason": f"Category curves are not available for model {model}."}
+
+    step_cum = np.concatenate([[0.0], np.cumsum(step_params)])
+    if n_cat is None or int(n_cat) != len(step_cum):
+        n_cat = len(step_cum)
+    else:
+        n_cat = int(n_cat)
+    if theta_grid is None:
+        theta_lo = min(-4.0, float(np.nanmin(step_cum)) - 3.0)
+        theta_hi = max(4.0, float(np.nanmax(step_cum)) + 3.0)
+        theta_grid = np.linspace(theta_lo, theta_hi, int(theta_points))
+    else:
+        theta_grid = np.asarray(theta_grid, dtype=float)
+        theta_lo = float(np.nanmin(theta_grid)) if theta_grid.size else -4.0
+        theta_hi = float(np.nanmax(theta_grid)) if theta_grid.size else 4.0
+
+    eta_mat = np.outer(theta_grid, np.arange(n_cat, dtype=float))
+    log_num = float(slope) * (eta_mat - step_cum)
+    log_denom = logsumexp(log_num, axis=1, keepdims=True)
+    probs = np.exp(log_num - log_denom)
+    category_values = np.arange(n_cat) + rating_min
+    prob_wide = pd.DataFrame(probs, columns=[f"Cat {int(v)}" for v in category_values])
+    prob_wide.insert(0, "Theta", theta_grid)
+    prob_long = prob_wide.melt(id_vars="Theta", var_name="Category", value_name="Probability")
+    category_map = {f"Cat {int(v)}": int(v) for v in category_values}
+    prob_long["CategoryValue"] = prob_long["Category"].map(category_map)
+    expected = pd.DataFrame({
+        "Theta": theta_grid,
+        "ExpectedScore": probs.dot(category_values.astype(float)),
+    })
+    thresholds = pd.DataFrame({
+        "Step": [f"Step_{idx + 1}" for idx in range(len(step_params))],
+        "Estimate": np.asarray(step_params, dtype=float),
+    })
+    metadata = {
+        "Model": model,
+        "Scope": scope,
+        "StepFacet": step_facet,
+        "Level": level_label,
+        "LevelIndex": level_index,
+        "IsAverage": is_average,
+        "Slope": float(slope),
+        "ThetaMin": theta_lo,
+        "ThetaMax": theta_hi,
+        "NCategories": n_cat,
+    }
+    return {
+        "available": True,
+        "probability": prob_long,
+        "probability_wide": prob_wide,
+        "expected": expected,
+        "thresholds": thresholds,
+        "metadata": metadata,
+    }
 
 
 def stable_json_fingerprint(payload: object, length: int = 16) -> str:
@@ -12013,90 +12174,109 @@ def _draw_category_probability_curves_plotly(result: dict) -> None:
     st.subheader("Category Probability Curves")
     st.caption(
         "These curves show the probability of responding in each category as a "
-        "function of the latent measure (theta). Hover to read exact P(k) at any theta."
+        "function of the latent measure (theta). Hover to read exact P(k) at any theta. "
+        "For PCM/GPCM, inspect both the averaged curve and each step-facet level."
     )
 
-    params = result.get("params", {})
     config = result.get("config", {})
-    prep = result.get("prep", {})
-    steps = params.get("steps")
-    steps_mat = params.get("steps_mat")
     model = config.get("model", "RSM")
-    rating_min = prep.get("rating_min", 0)
-    n_cat = config.get("n_cat")
-    curve_slope = 1.0
-
-    if model == "RSM" and steps is not None and len(steps) > 0:
-        step_cum = np.concatenate([[0.0], np.cumsum(steps)])
-        mean_steps = steps
-    elif model in {"PCM", "GPCM"} and steps_mat is not None and len(steps_mat) > 0:
-        mean_steps = np.mean(steps_mat, axis=0)
-        step_cum = np.concatenate([[0.0], np.cumsum(mean_steps)])
-        if model == "GPCM":
-            slopes = np.asarray(params.get("slopes", []), dtype=float)
-            finite_slopes = slopes[np.isfinite(slopes) & (slopes > 0)]
-            if finite_slopes.size:
-                curve_slope = float(np.nanmean(finite_slopes))
-    else:
-        st.info("Step parameters not available.")
+    options = category_probability_curve_options(result)
+    selected_level_index: int | None = None
+    if model in {"PCM", "GPCM"} and not options.empty and len(options) > 1:
+        selected_option = st.selectbox(
+            "Curve scope",
+            options["OptionIndex"].astype(int).tolist(),
+            format_func=lambda idx: str(options.loc[options["OptionIndex"] == idx, "Label"].iloc[0]),
+            key=f"category_curve_scope_{model}_{config.get('step_facet')}",
+            help=(
+                "Average gives a compact overview. Level-specific curves use the thresholds "
+                "and, for GPCM, the slope for the selected step-facet level."
+            ),
+        )
+        selected_row = options.loc[options["OptionIndex"] == selected_option].iloc[0]
+        if not bool(selected_row["IsAverage"]):
+            selected_level_index = int(selected_row["LevelIndex"])
+    curve = build_category_probability_curve_data(result, step_level_index=selected_level_index)
+    if not curve.get("available"):
+        st.info(curve.get("reason", "Step parameters not available."))
         return
 
-    if n_cat is None:
-        n_cat = len(step_cum)
+    prob_long = curve["probability"]
+    expected_df = curve["expected"]
+    thresholds = curve["thresholds"]
+    meta = curve["metadata"]
+    rating_min = int(prob_long["CategoryValue"].min()) if "CategoryValue" in prob_long.columns else 0
+    rating_max = int(prob_long["CategoryValue"].max()) if "CategoryValue" in prob_long.columns else rating_min
+    theta_lo = float(meta["ThetaMin"])
+    theta_hi = float(meta["ThetaMax"])
 
-    theta_lo = min(-4, float(step_cum.min()) - 3)
-    theta_hi = max(4, float(step_cum.max()) + 3)
-    theta_grid = np.linspace(theta_lo, theta_hi, 121)
-    eta_mat = np.outer(theta_grid, np.arange(n_cat))
-    log_num = curve_slope * (eta_mat - step_cum)
-    log_denom = logsumexp(log_num, axis=1, keepdims=True)
-    probs = np.exp(log_num - log_denom)
+    if model in {"PCM", "GPCM"}:
+        slope_note = f" Slope used for this curve: {float(meta['Slope']):.3f}." if model == "GPCM" else ""
+        st.info(
+            f"Curve scope: **{meta['Scope']}**.{slope_note} "
+            "Use level-specific curves when category functioning may differ across tasks, raters, or criteria."
+        )
+
+    with st.expander("How to read category curves", expanded=False):
+        st.markdown(
+            """
+- Each colored line is the model-predicted probability of a rating category.
+- A well-functioning category usually has a visible peak where it is more probable than neighboring categories.
+- If a category never becomes most probable, inspect sparse counts and threshold ordering before reporting the scale as fully ordered.
+- For PCM/GPCM, the averaged curve can hide level-specific disorder. Use the scope selector to inspect each step-facet level.
+- For GPCM, the slope changes steepness, not severity. Read slope differences separately from ordinary Rasch measures.
+"""
+        )
 
     colors = px.colors.qualitative.Set2
     fig = go.Figure()
-    for k in range(n_cat):
+    for idx, (category, group) in enumerate(prob_long.groupby("Category", sort=False)):
         fig.add_trace(go.Scatter(
-            x=theta_grid, y=probs[:, k], mode="lines",
-            name=f"Cat {rating_min + k}",
-            line=dict(color=colors[k % len(colors)], width=2),
+            x=group["Theta"], y=group["Probability"], mode="lines",
+            name=str(category),
+            line=dict(color=colors[idx % len(colors)], width=2),
         ))
 
     # Threshold lines
-    thresh = steps if (model == "RSM" and steps is not None) else mean_steps
-    for tau in (thresh if thresh is not None else []):
+    for tau in pd.to_numeric(thresholds.get("Estimate", pd.Series(dtype=float)), errors="coerce").dropna():
         fig.add_vline(x=float(tau), line_dash="dot", line_color="gray", line_width=0.6)
 
     fig.update_layout(
         xaxis_title="Person Measure − Item Measure (logits)",
         yaxis_title="Probability",
-        title=(
-            "Category Probability Curves (RSM)"
-            if model == "RSM"
-            else f"Category Probability Curves ({model}, averaged)"
-        ),
+        title=f"Category Probability Curves ({model}: {meta['Scope']})",
         yaxis=dict(range=[0, 1]), xaxis=dict(range=[theta_lo, theta_hi]),
         hovermode="x unified", height=450,
     )
     st.plotly_chart(fig, width="stretch")
 
     # Expected score curve
-    k_vals = np.arange(n_cat) + rating_min
-    expected = probs.dot(k_vals)
     fig2 = go.Figure()
     fig2.add_trace(go.Scatter(
-        x=theta_grid, y=expected, mode="lines",
+        x=expected_df["Theta"], y=expected_df["ExpectedScore"], mode="lines",
         line=dict(color="#1b9e77", width=2), name="Expected Score",
     ))
-    for tau in (thresh if thresh is not None else []):
+    for tau in pd.to_numeric(thresholds.get("Estimate", pd.Series(dtype=float)), errors="coerce").dropna():
         fig2.add_vline(x=float(tau), line_dash="dot", line_color="gray", line_width=0.6)
     fig2.update_layout(
         xaxis_title="Person Measure − Item Measure (logits)",
         yaxis_title="Expected Score",
-        title="Expected Score (Model ICC)",
-        yaxis=dict(range=[rating_min, rating_min + n_cat - 1]),
+        title=f"Expected Score (Model ICC: {meta['Scope']})",
+        yaxis=dict(range=[rating_min, rating_max]),
         hovermode="x unified", height=350,
     )
     st.plotly_chart(fig2, width="stretch")
+
+    curve_export = prob_long.merge(expected_df, on="Theta", how="left")
+    for key, value in meta.items():
+        curve_export[key] = value
+    st.download_button(
+        "Download displayed category curve data (CSV)",
+        data=to_csv_bytes(curve_export),
+        file_name="mfrm_category_probability_curve.csv",
+        mime="text/csv",
+        key=f"dl_category_probability_curve_{model}_{meta['Scope']}",
+    )
 
 
 def _draw_pathway_map_plotly(diagnostics: dict) -> None:
@@ -13630,7 +13810,7 @@ over-interpreted as identical Rasch evidence.
 | Strict marginal diagnostics | MML only | MML only | MML only |
 | Bias/interaction screening | Yes | Yes | Yes |
 | Residual PCA | Yes | Yes | Yes |
-| Category probability curves | Native | Averaged thresholds | Averaged thresholds and average slope |
+| Category probability curves | Native | Averaged and step-facet-level thresholds | Averaged and step-facet-level thresholds/slopes |
 | FACETS-style fair score table | Native approximation | Step-facet-aware approximation | Step/slope-aware approximation; interpret cautiously |
 | Current-engine Python runner | Yes | Yes | Yes |
 | Portable self-contained JMLE script | Yes | Yes | Not yet |
@@ -17484,6 +17664,32 @@ def _self_test_visual_interpretation_checklist() -> None:
         _self_test_assert(expected in joined, f"visual checklist missing {expected}")
 
 
+def _self_test_category_probability_curve_data() -> None:
+    result = {
+        "params": {
+            "steps_mat": np.array([[-1.2, 0.3], [-0.4, 1.1]], dtype=float),
+            "slopes": np.array([0.8, 1.25], dtype=float),
+        },
+        "config": {"model": "GPCM", "n_cat": 3, "step_facet": "Task", "slope_facet": "Task"},
+        "prep": {"rating_min": 1, "levels": {"Task": ["T1", "T2"]}},
+    }
+    options = category_probability_curve_options(result)
+    _self_test_assert(len(options) == 3, "GPCM curve options should include average plus two levels")
+    _self_test_assert("Task = T2" in options["Label"].tolist(), "GPCM curve options missing level label")
+    avg = build_category_probability_curve_data(result)
+    lvl = build_category_probability_curve_data(result, step_level_index=1)
+    _self_test_assert(avg.get("available") and lvl.get("available"), "GPCM curve data unavailable")
+    _self_test_assert(lvl["metadata"]["Level"] == "T2", "level-specific curve metadata is wrong")
+    _self_test_assert(abs(lvl["metadata"]["Slope"] - 1.25) < 1e-12, "level-specific GPCM slope is wrong")
+    _self_test_assert(
+        not np.allclose(
+            avg["probability_wide"].drop(columns=["Theta"]).to_numpy(),
+            lvl["probability_wide"].drop(columns=["Theta"]).to_numpy(),
+        ),
+        "average and level-specific curves should differ for this fixture",
+    )
+
+
 def _self_test_export_bundle_contents() -> None:
     frames = {
         "summary": pd.DataFrame({"Metric": ["LogLik"], "Value": [-12.34]}),
@@ -18531,6 +18737,7 @@ def run_self_tests() -> int:
         ("prediction simulation and design evaluation", _self_test_prediction_simulation_design),
         ("report readiness and method appendix", _self_test_report_readiness_and_method_appendix),
         ("visual interpretation checklist", _self_test_visual_interpretation_checklist),
+        ("category probability curve data", _self_test_category_probability_curve_data),
         ("export bundle contents", _self_test_export_bundle_contents),
         ("anchor audit", _self_test_anchor_audit),
         ("script support boundaries", _self_test_script_support_boundaries),

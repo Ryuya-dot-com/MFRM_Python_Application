@@ -141,6 +141,8 @@ After fitting a model, inspect results in this order:
 The Visuals tab also includes a downloadable visual interpretation checklist.
 It maps each figure to the first signal to read, the review trigger, and the
 recommended next action for beginners.
+For PCM and bounded GPCM, category probability curves can be read either as an
+averaged overview or for each selected step-facet level.
 
 ## Statistical Caveats
 

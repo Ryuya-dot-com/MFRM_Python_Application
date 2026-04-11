@@ -1,0 +1,17 @@
+__pycache__/
+*.py[cod]
+*$py.class
+.Python
+.venv/
+venv/
+env/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.DS_Store
+.streamlit/secrets.toml
+benchmark_*.csv
+*_benchmark.csv
+parity_fixture/
+validation/generated/
+*.log

@@ -1,0 +1,9 @@
+[browser]
+gatherUsageStats = false
+
+[client]
+showErrorDetails = "stacktrace"
+
+[server]
+enableXsrfProtection = true
+enableCORS = true

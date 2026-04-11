@@ -1,0 +1,18219 @@
+from __future__ import annotations
+
+import io
+import hashlib
+import importlib.metadata as importlib_metadata
+import importlib.util
+import json
+import re
+import sys
+import time
+import zipfile
+from collections import OrderedDict
+from itertools import combinations
+from pathlib import Path
+
+import numpy as np
+import pandas as pd
+import plotly.express as px
+import plotly.graph_objects as go
+from numpy.polynomial.hermite import hermgauss
+from plotly.subplots import make_subplots
+from scipy.optimize import minimize, root_scalar, minimize_scalar
+from scipy.special import logsumexp
+from scipy.stats import chi2, norm as _norm, t as t_dist
+import streamlit as st
+
+
+APP_VERSION = "0.1.0-beta"
+APP_RELEASE_LABEL = "standalone Python beta"
+RUNTIME_PACKAGE_FLOORS = OrderedDict([
+    ("numpy", "1.24"),
+    ("pandas", "2.0"),
+    ("scipy", "1.10"),
+    ("plotly", "5.15"),
+    ("kaleido", "0.2.1"),
+    ("streamlit", "1.54"),
+    ("openpyxl", "3.1"),
+])
+BUNDLED_ANCHOR_ASSETS = [
+    "anchor_table_blank.csv",
+    "anchor_table_example.csv",
+    "group_anchor_table_blank.csv",
+    "group_anchor_table_example.csv",
+    "anchor_user_guidelines.md",
+]
+
+
+def stable_json_fingerprint(payload: object, length: int = 16) -> str:
+    """Stable short SHA-256 digest for reproducibility metadata."""
+    text = json.dumps(
+        payload,
+        sort_keys=True,
+        ensure_ascii=False,
+        default=str,
+        separators=(",", ":"),
+    )
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()[: int(length)]
+
+
+def dataframe_fingerprint(df: pd.DataFrame | None, length: int = 16) -> str | None:
+    """Fingerprint DataFrame content without storing the DataFrame in Streamlit cache."""
+    if df is None:
+        return None
+    if not isinstance(df, pd.DataFrame):
+        return stable_json_fingerprint({"type": type(df).__name__, "repr": repr(df)}, length=length)
+
+    digest = hashlib.sha256()
+    digest.update(json.dumps([str(c) for c in df.columns], ensure_ascii=False).encode("utf-8"))
+    digest.update(json.dumps([str(t) for t in df.dtypes], ensure_ascii=False).encode("utf-8"))
+    digest.update(np.asarray(df.shape, dtype=np.int64).tobytes())
+    try:
+        normalized = df.astype("string").where(pd.notna(df), "<NA>")
+        row_hashes = pd.util.hash_pandas_object(normalized, index=True).to_numpy(dtype=np.uint64, copy=False)
+        digest.update(row_hashes.tobytes())
+    except Exception:
+        digest.update(df.to_csv(index=True).encode("utf-8"))
+    return digest.hexdigest()[: int(length)]
+
+
+def config_fingerprint(config: dict | None, length: int = 16) -> str:
+    """Fingerprint analysis settings while excluding derived fingerprint fields."""
+    if not isinstance(config, dict):
+        return stable_json_fingerprint({}, length=length)
+    excluded = {
+        "run_fingerprint",
+        "analysis_config_fingerprint",
+        "config_export_fingerprint",
+    }
+    payload = {str(k): v for k, v in config.items() if str(k) not in excluded}
+    return stable_json_fingerprint(payload, length=length)
+
+
+def _load_shared_simulation_engine():
+    """Load the improved Simulation Python engine when available.
+
+    The app keeps its embedded legacy engine as a fallback, but for the default
+    JMLE route we prefer the shared engine so the Streamlit app benefits from
+    the same analytical-gradient and optimizer improvements used in the
+    simulation study.
+    """
+    engine_path = (
+        Path(__file__).resolve().parents[2]
+        / "Simulation"
+        / "engines"
+        / "mfrm_python.py"
+    )
+    if not engine_path.exists():
+        return None
+    spec = importlib.util.spec_from_file_location("simulation_mfrm_python", engine_path)
+    if spec is None or spec.loader is None:
+        return None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+try:
+    SHARED_SIM_ENGINE = _load_shared_simulation_engine()
+    SHARED_SIM_ENGINE_LOAD_ERROR = None
+except Exception as exc:
+    SHARED_SIM_ENGINE = None
+    SHARED_SIM_ENGINE_LOAD_ERROR = str(exc)
+
+
+USE_EMBEDDED_ENGINE_ONLY = True
+
+FINAL_RESIDUAL_PCT_GE2_READY = 5.0
+FINAL_PERSON_RELIABILITY_READY = 0.80
+FINAL_PCA_EIGENVALUE_READY = 2.0
+
+
+# ---------------------------------------------------------------------------
+# Embedded MFRM core computation engine (self-contained)
+# ---------------------------------------------------------------------------
+
+# ---- math helpers ----
+def gauss_hermite_normal(n: int, sd: float = 1.0):
+    if n < 1:
+        raise ValueError("n must be >= 1")
+    sd = float(sd if sd is not None else 1.0)
+    if not np.isfinite(sd) or sd <= 0:
+        raise ValueError("sd must be a positive finite value")
+    nodes, weights = hermgauss(n)  # exp(-x^2) weights
+    nodes = np.sqrt(2.0) * nodes * sd
+    weights = weights / np.sqrt(np.pi)
+    return {"nodes": nodes, "weights": weights, "sd": sd}
+
+
+def get_population_prior_sd(config: dict | None) -> float:
+    if not isinstance(config, dict):
+        return 1.0
+    raw = config.get("population_prior_sd", 1.0)
+    sd = float(raw if raw is not None else 1.0)
+    if not np.isfinite(sd) or sd <= 0:
+        raise ValueError("population_prior_sd must be a positive finite value.")
+    return sd
+
+
+def make_mml_quadrature(config: dict, quad_points: int | None = None) -> dict:
+    points = int(quad_points or config.get("quad_points") or 15)
+    return gauss_hermite_normal(points, sd=get_population_prior_sd(config))
+
+
+def center_sum_zero(x: np.ndarray):
+    if x.size == 0:
+        return x
+    return x - np.mean(x)
+
+
+def build_facet_constraint(levels, anchors=None, groups=None, group_values=None, centered=True):
+    lvl = [str(x) for x in levels]
+    anchors_vec = np.full(len(lvl), np.nan, dtype=float)
+    if anchors:
+        for k, v in anchors.items():
+            if k in lvl and pd.notna(v):
+                anchors_vec[lvl.index(k)] = float(v)
+
+    groups_vec = [None] * len(lvl)
+    if groups:
+        for k, v in groups.items():
+            if k in lvl and pd.notna(v):
+                groups_vec[lvl.index(k)] = str(v)
+
+    group_values_map = {}
+    if group_values:
+        for k, v in group_values.items():
+            if pd.notna(k):
+                group_values_map[str(k)] = float(v)
+
+    spec = {
+        "levels": lvl,
+        "anchors": anchors_vec,
+        "groups": groups_vec,
+        "group_values": group_values_map,
+        "centered": bool(centered),
+    }
+    spec["n_params"] = count_facet_params(spec)
+    return spec
+
+
+def count_facet_params(spec):
+    anchors = spec["anchors"]
+    groups = spec["groups"]
+    free_idx = np.where(np.isnan(anchors))[0]
+    if free_idx.size == 0:
+        return 0
+
+    n_params = 0
+    group_ids = {
+        groups[i]
+        for i in free_idx
+        if groups[i] not in (None, "", np.nan)
+    }
+    for gid in group_ids:
+        group_levels = [i for i, g in enumerate(groups) if g == gid]
+        free_in_group = [i for i in group_levels if np.isnan(anchors[i])]
+        k = len(free_in_group)
+        if k > 1:
+            n_params += k - 1
+
+    ungrouped_idx = [
+        i for i in free_idx if groups[i] in (None, "", np.nan)
+    ]
+    m = len(ungrouped_idx)
+    if m == 0:
+        return n_params
+    if spec["centered"]:
+        n_params += max(m - 1, 0)
+    else:
+        n_params += m
+    return n_params
+
+
+def expand_facet_with_constraints(free, spec):
+    out = np.array(spec["anchors"], dtype=float, copy=True)
+    groups = spec["groups"]
+    group_values = spec["group_values"]
+    centered = bool(spec["centered"])
+    free_idx = np.where(np.isnan(out))[0]
+    if free_idx.size == 0:
+        return out
+
+    used = 0
+    group_ids = sorted({
+        groups[i]
+        for i in free_idx
+        if groups[i] not in (None, "", np.nan)
+    })
+    for gid in group_ids:
+        group_levels = [i for i, g in enumerate(groups) if g == gid]
+        free_in_group = [i for i in group_levels if np.isnan(out[i])]
+        if not free_in_group:
+            continue
+        group_value = group_values.get(gid, 0.0)
+        anchor_sum = np.nansum(out[group_levels])
+        target_sum = group_value * len(group_levels)
+        k = len(free_in_group)
+        if k == 1:
+            out[free_in_group[0]] = target_sum - anchor_sum
+        else:
+            seg = np.array(free[used : used + k - 1], dtype=float)
+            used += k - 1
+            last_val = target_sum - anchor_sum - np.sum(seg)
+            out[free_in_group] = np.concatenate([seg, [last_val]])
+
+    ungrouped_idx = [
+        i for i in free_idx if groups[i] in (None, "", np.nan)
+    ]
+    m = len(ungrouped_idx)
+    if m == 0:
+        return out
+    if centered:
+        if m == 1:
+            out[ungrouped_idx[0]] = 0.0
+        else:
+            seg = np.array(free[used : used + m - 1], dtype=float)
+            used += m - 1
+            out[ungrouped_idx] = np.concatenate([seg, [-np.sum(seg)]])
+    else:
+        seg = np.array(free[used : used + m], dtype=float)
+        used += m
+        out[ungrouped_idx] = seg
+    return out
+
+
+def collapse_facet_gradient(full_grad, spec):
+    """Map full level gradients back to the constrained free-parameter vector."""
+    full_grad = np.asarray(full_grad, dtype=float)
+    anchors = spec["anchors"]
+    groups = spec["groups"]
+    free_idx = np.where(np.isnan(anchors))[0]
+    if free_idx.size == 0:
+        return np.array([], dtype=float)
+
+    pieces = []
+    group_ids = sorted({
+        groups[i]
+        for i in free_idx
+        if groups[i] not in (None, "", np.nan)
+    })
+    grouped_free = set()
+    for gid in group_ids:
+        group_levels = [i for i, g in enumerate(groups) if g == gid]
+        free_in_group = [i for i in group_levels if np.isnan(anchors[i])]
+        grouped_free.update(free_in_group)
+        if len(free_in_group) > 1:
+            last = free_in_group[-1]
+            pieces.append(full_grad[free_in_group[:-1]] - full_grad[last])
+
+    ungrouped_idx = [
+        i for i in free_idx
+        if i not in grouped_free and groups[i] in (None, "", np.nan)
+    ]
+    m = len(ungrouped_idx)
+    if m > 0:
+        if spec["centered"]:
+            if m > 1:
+                last = ungrouped_idx[-1]
+                pieces.append(full_grad[ungrouped_idx[:-1]] - full_grad[last])
+        else:
+            pieces.append(full_grad[ungrouped_idx])
+
+    if not pieces:
+        return np.array([], dtype=float)
+    return np.concatenate([np.asarray(p, dtype=float) for p in pieces])
+
+
+def collapse_centered_gradient(full_grad):
+    full_grad = np.asarray(full_grad, dtype=float)
+    if full_grad.size == 0:
+        return full_grad
+    return full_grad - np.mean(full_grad)
+
+
+def parse_population_formula(population_formula: str | None) -> dict:
+    """Parse a small, explicit population formula for latent regression."""
+    text = str(population_formula or "").strip()
+    if not text:
+        return {"enabled": False, "intercept": True, "terms": [], "formula": ""}
+    rhs = text.split("~", 1)[1].strip() if "~" in text else text
+    if not rhs:
+        raise ValueError("population_formula must have a right-hand side, e.g. '~ grade + ses'.")
+    if any(op in rhs for op in ("*", ":", "^", "/", "(", ")")):
+        raise ValueError(
+            "population_formula currently supports main effects only, e.g. '~ grade + ses'. "
+            "Interactions and transformations are not yet enabled."
+        )
+    intercept = True
+    terms: list[str] = []
+    for raw in rhs.split("+"):
+        term = raw.strip()
+        if not term or term == "1":
+            continue
+        if term in {"0", "-1"}:
+            intercept = False
+            continue
+        if term.startswith("`") and term.endswith("`") and len(term) >= 2:
+            term = term[1:-1].strip()
+        if not term:
+            continue
+        terms.append(term)
+    if not intercept and not terms:
+        raise ValueError("population_formula cannot remove the intercept without adding any covariate terms.")
+    return {"enabled": True, "intercept": intercept, "terms": terms, "formula": text}
+
+
+def parse_population_covariate_terms(raw_terms) -> list[str]:
+    """Parse comma/newline-separated population covariate override terms."""
+    if raw_terms is None:
+        return []
+    if isinstance(raw_terms, (list, tuple, set)):
+        items = raw_terms
+    else:
+        items = re.split(r"[,;\n]+", str(raw_terms))
+    out: list[str] = []
+    seen: set[str] = set()
+    for item in items:
+        term = str(item).strip()
+        if term.startswith("`") and term.endswith("`") and len(term) >= 2:
+            term = term[1:-1].strip()
+        if term and term not in seen:
+            seen.add(term)
+            out.append(term)
+    return out
+
+
+def build_population_model(
+    prep,
+    person_data=None,
+    person_id_col=None,
+    population_formula=None,
+    standardize_numeric=False,
+    categorical_terms=None,
+    numeric_terms=None,
+) -> dict:
+    """Build the person-level latent regression design matrix for MML."""
+    parsed = parse_population_formula(population_formula)
+    standardize_numeric = bool(standardize_numeric)
+    categorical_set = set(parse_population_covariate_terms(categorical_terms))
+    numeric_set = set(parse_population_covariate_terms(numeric_terms))
+    overlap = sorted(categorical_set & numeric_set)
+    if overlap:
+        raise ValueError(
+            "Population covariate terms cannot be forced to both categorical and numeric: "
+            + ", ".join(overlap)
+        )
+    if not parsed["enabled"]:
+        return {
+            "enabled": False,
+            "formula": "",
+            "intercept": True,
+            "terms": [],
+            "columns": [],
+            "X": np.zeros((len(prep["levels"]["Person"]), 0), dtype=float),
+            "n_params": 0,
+            "person_data": pd.DataFrame({"Person": prep["levels"]["Person"]}),
+            "standardize_numeric": False,
+            "numeric_transforms": {},
+            "categorical_terms": [],
+            "numeric_terms": [],
+            "term_types": {},
+            "warnings": [],
+        }
+    unknown_type_terms = sorted((categorical_set | numeric_set) - set(parsed["terms"]))
+    if unknown_type_terms:
+        raise ValueError(
+            "Population covariate type override term(s) are not in population_formula: "
+            + ", ".join(unknown_type_terms)
+        )
+
+    person_levels = [str(x) for x in prep["levels"]["Person"]]
+    need_person_data = bool(parsed["terms"])
+    if person_data is None or not isinstance(person_data, pd.DataFrame) or person_data.empty:
+        if need_person_data:
+            raise ValueError("person_data is required when population_formula includes covariates.")
+        joined = pd.DataFrame({"Person": person_levels})
+    else:
+        pdf = person_data.copy()
+        if person_id_col is None:
+            person_id_col = "Person" if "Person" in pdf.columns else pdf.columns[0]
+        if person_id_col not in pdf.columns:
+            raise ValueError(f"person_id_col '{person_id_col}' was not found in person_data.")
+        pdf = pdf.rename(columns={person_id_col: "Person"})
+        pdf["Person"] = pdf["Person"].astype(str)
+        if pdf["Person"].duplicated().any():
+            examples = pdf.loc[pdf["Person"].duplicated(), "Person"].head(5).tolist()
+            raise ValueError("person_data contains duplicate person IDs: " + ", ".join(map(str, examples)))
+        joined = pd.DataFrame({"Person": person_levels}).merge(pdf, on="Person", how="left", indicator=True)
+        missing = joined.loc[joined["_merge"] != "both", "Person"].astype(str).head(10).tolist()
+        if missing and need_person_data:
+            raise ValueError(
+                "person_data is missing fitted persons required by population_formula: "
+                + ", ".join(missing)
+            )
+        if "_merge" in joined.columns:
+            joined = joined.drop(columns=["_merge"])
+
+    columns: list[str] = []
+    matrix_parts: list[np.ndarray] = []
+    warnings: list[str] = []
+    numeric_transforms: dict[str, dict[str, float | bool]] = {}
+    term_types: dict[str, str] = {}
+    if parsed["intercept"]:
+        columns.append("Intercept")
+        matrix_parts.append(np.ones((len(person_levels), 1), dtype=float))
+
+    for term in parsed["terms"]:
+        if term not in joined.columns:
+            raise ValueError(f"population_formula term '{term}' was not found in person_data.")
+        series = joined[term]
+        if series.isna().any():
+            missing_people = joined.loc[series.isna(), "Person"].astype(str).head(10).tolist()
+            raise ValueError(
+                f"population covariate '{term}' has missing values for fitted persons: "
+                + ", ".join(missing_people)
+            )
+        numeric = pd.to_numeric(series, errors="coerce")
+        forced_numeric = term in numeric_set
+        forced_categorical = term in categorical_set
+        if forced_numeric or (not forced_categorical and numeric.notna().all()):
+            if numeric.isna().any():
+                raise ValueError(
+                    f"population covariate '{term}' was forced numeric but contains non-numeric value(s)."
+                )
+            values = numeric.to_numpy(dtype=float)
+            center = 0.0
+            scale = 1.0
+            if standardize_numeric:
+                center = float(np.mean(values)) if values.size else 0.0
+                scale = float(np.std(values, ddof=0)) if values.size else 1.0
+                if not np.isfinite(scale) or scale <= 1e-12:
+                    warnings.append(
+                        f"population covariate '{term}' has near-zero SD; it was centered without rescaling."
+                    )
+                    scale = 1.0
+                values = (values - center) / scale
+            numeric_transforms[term] = {
+                "center": float(center),
+                "scale": float(scale),
+                "standardized": bool(standardize_numeric),
+            }
+            columns.append(term)
+            matrix_parts.append(values.reshape(-1, 1))
+            term_types[term] = "numeric"
+        else:
+            cat = pd.Categorical(series.astype(str), categories=sorted(series.astype(str).unique()))
+            dummies = pd.get_dummies(cat, prefix=term, drop_first=True, dtype=float)
+            if dummies.shape[1] == 0:
+                warnings.append(f"population covariate '{term}' has one level and was omitted.")
+                term_types[term] = "categorical_omitted_one_level"
+                continue
+            columns.extend(list(dummies.columns))
+            matrix_parts.append(dummies.to_numpy(dtype=float))
+            term_types[term] = "categorical"
+
+    X = np.column_stack(matrix_parts) if matrix_parts else np.zeros((len(person_levels), 0), dtype=float)
+    if X.size and not np.all(np.isfinite(X)):
+        raise ValueError("population model matrix contains non-finite values.")
+    return {
+        "enabled": True,
+        "formula": parsed["formula"],
+        "intercept": bool(parsed["intercept"]),
+        "terms": parsed["terms"],
+        "columns": columns,
+        "X": X,
+        "n_params": int(X.shape[1]),
+        "person_data": joined,
+        "standardize_numeric": bool(standardize_numeric),
+        "numeric_transforms": numeric_transforms,
+        "categorical_terms": sorted(categorical_set),
+        "numeric_terms": sorted(numeric_set),
+        "term_types": term_types,
+        "warnings": warnings,
+    }
+
+
+def compute_population_mu(params, config):
+    pop = config.get("population_model", {})
+    if not pop or not pop.get("enabled"):
+        return np.zeros(int(config.get("n_person", 0)), dtype=float)
+    X = np.asarray(pop.get("X", np.zeros((int(config.get("n_person", 0)), 0))), dtype=float)
+    beta = np.asarray(params.get("population", np.array([], dtype=float)), dtype=float)
+    if X.size == 0 or beta.size == 0:
+        return np.zeros(int(config.get("n_person", X.shape[0] if X.ndim == 2 else 0)), dtype=float)
+    return X @ beta
+
+
+def build_param_sizes(config):
+    n_steps = max(config["n_cat"] - 1, 0)
+    sizes = OrderedDict()
+    sizes["theta"] = config["theta_spec"]["n_params"] if config["method"] == "JMLE" else 0
+    pop = config.get("population_model", {})
+    sizes["population"] = int(pop.get("n_params", 0)) if config["method"] == "MML" and pop.get("enabled") else 0
+    for facet in config["facet_names"]:
+        sizes[facet] = config["facet_specs"][facet]["n_params"]
+    if config["model"] == "RSM":
+        sizes["steps"] = n_steps
+    elif config["model"] in {"PCM", "GPCM"}:
+        if not config.get("step_facet") or config["step_facet"] not in config["facet_names"]:
+            raise ValueError(f"{config['model']} requires a valid step facet.")
+        sizes["steps"] = len(config["facet_levels"][config["step_facet"]]) * n_steps
+        if config["model"] == "GPCM":
+            if not config.get("slope_facet") or config["slope_facet"] not in config["facet_names"]:
+                raise ValueError("GPCM requires a valid slope facet.")
+            if config["slope_facet"] != config["step_facet"]:
+                raise ValueError("This bounded GPCM implementation requires slope_facet == step_facet.")
+            sizes["log_slopes"] = len(config["facet_levels"][config["slope_facet"]])
+    else:
+        raise ValueError("Model must be one of: RSM, PCM, GPCM.")
+    return sizes
+
+
+def split_params(par, sizes):
+    out = {}
+    idx = 0
+    for name, k in sizes.items():
+        if k == 0:
+            out[name] = np.array([], dtype=float)
+        else:
+            out[name] = np.array(par[idx : idx + k], dtype=float)
+            idx += k
+    return out
+
+
+def expand_params(par, sizes, config):
+    parts = split_params(par, sizes)
+    theta = (
+        expand_facet_with_constraints(parts["theta"], config["theta_spec"])
+        if config["method"] == "JMLE"
+        else np.array([], dtype=float)
+    )
+
+    facets = {}
+    for facet in config["facet_names"]:
+        facets[facet] = expand_facet_with_constraints(parts[facet], config["facet_specs"][facet])
+
+    if config["model"] == "RSM":
+        steps = center_sum_zero(parts["steps"])
+        steps_mat = None
+    else:
+        n_levels = len(config["facet_levels"][config["step_facet"]])
+        n_steps = max(config["n_cat"] - 1, 0)
+        if n_levels == 0 or n_steps == 0:
+            steps_mat = np.zeros((n_levels, n_steps))
+        else:
+            steps_mat = np.array(parts["steps"], dtype=float).reshape((n_levels, n_steps))
+            steps_mat = np.vstack([center_sum_zero(row) for row in steps_mat])
+        steps = None
+
+    log_slopes = np.array([], dtype=float)
+    slopes = np.array([], dtype=float)
+    if config["model"] == "GPCM":
+        log_slopes = center_sum_zero(np.asarray(parts.get("log_slopes", []), dtype=float))
+        slopes = np.exp(log_slopes)
+
+    return {
+        "theta": theta,
+        "population": np.asarray(parts.get("population", []), dtype=float),
+        "facets": facets,
+        "steps": steps,
+        "steps_mat": steps_mat,
+        "log_slopes": log_slopes,
+        "slopes": slopes,
+    }
+
+
+def build_optimizer_bounds(sizes, config):
+    """Bounds used by slope-aware GPCM optimization."""
+    bounds = []
+    log_slope_bounds = tuple(config.get("gpcm_log_slope_bounds", (-3.0, 3.0)))
+    for name, k in sizes.items():
+        if name == "log_slopes" and config.get("model") == "GPCM":
+            bounds.extend([log_slope_bounds] * int(k))
+        else:
+            bounds.extend([(None, None)] * int(k))
+    return bounds if bounds else None
+
+
+# ---- data preparation ----
+def prepare_mfrm_data(
+    data,
+    person_col,
+    facet_cols,
+    score_col,
+    rating_min=None,
+    rating_max=None,
+    weight_col=None,
+    keep_original=False,
+):
+    required = [person_col, score_col] + list(facet_cols)
+    if weight_col:
+        required.append(weight_col)
+    if len(set(required)) != len(required):
+        raise ValueError("Person/score/facet columns must be distinct (no duplicates).")
+    if not all(col in data.columns for col in required):
+        raise ValueError("Some selected columns are not in the data.")
+    if data.columns.duplicated().any():
+        dupes = data.columns[data.columns.duplicated()].tolist()
+        if any(col in dupes for col in required):
+            raise ValueError("Selected columns include duplicate names in the data. Please rename columns to be unique.")
+    if len(facet_cols) == 0:
+        raise ValueError("Select at least one facet column.")
+
+    cols = [person_col] + list(facet_cols) + [score_col]
+    if weight_col:
+        cols.append(weight_col)
+    df = data[cols].copy()
+    rename_map = {person_col: "Person", score_col: "Score"}
+    if weight_col:
+        rename_map[weight_col] = "Weight"
+    df.rename(columns=rename_map, inplace=True)
+
+    score_num = pd.to_numeric(df["Score"], errors="coerce")
+    score_tol = np.sqrt(np.finfo(float).eps)
+    fractional_score = score_num.notna() & np.isfinite(score_num) & ((score_num - np.round(score_num)).abs() > score_tol)
+    if fractional_score.any():
+        examples = df.loc[fractional_score, "Score"].astype(str).drop_duplicates().head(5).tolist()
+        raise ValueError(
+            "Score must contain ordered integer category codes. "
+            f"Fractional value(s) were found: {', '.join(examples)}. "
+            "Recode the score column before fitting."
+        )
+    df["Score"] = score_num
+
+    if "Weight" in df.columns:
+        df["Weight"] = pd.to_numeric(df["Weight"], errors="coerce")
+    else:
+        df["Weight"] = 1.0
+
+    df = df.dropna()
+    df = df[df["Weight"] > 0]
+    if df.empty:
+        raise ValueError("No valid observations remain after removing missing values and non-positive weights.")
+
+    df["Person"] = df["Person"].astype(str)
+    for facet in facet_cols:
+        df[facet] = df[facet].astype(str)
+    df["Score"] = df["Score"].astype(int)
+    observed_score_values = np.sort(df["Score"].unique())
+    if len(observed_score_values) < 2:
+        raise ValueError("MFRM requires at least two distinct score categories.")
+
+    rating_min_supplied = rating_min is not None
+    rating_max_supplied = rating_max is not None
+    if rating_min is None:
+        rating_min = int(df["Score"].min())
+    else:
+        rating_min_num = float(rating_min)
+        if not np.isfinite(rating_min_num) or abs(rating_min_num - round(rating_min_num)) > score_tol:
+            raise ValueError("rating_min must be a single finite integer category value.")
+        rating_min = int(round(rating_min_num))
+    if rating_max is None:
+        rating_max = int(df["Score"].max())
+    else:
+        rating_max_num = float(rating_max)
+        if not np.isfinite(rating_max_num) or abs(rating_max_num - round(rating_max_num)) > score_tol:
+            raise ValueError("rating_max must be a single finite integer category value.")
+        rating_max = int(round(rating_max_num))
+    if rating_max <= rating_min:
+        raise ValueError("rating_max must be larger than rating_min.")
+
+    expected_vals = np.arange(rating_min, rating_max + 1)
+    out_of_range = observed_score_values[(observed_score_values < rating_min) | (observed_score_values > rating_max)]
+    if out_of_range.size:
+        raise ValueError(
+            "Observed score categories fall outside the supplied rating range: "
+            + ", ".join(map(str, out_of_range.tolist()))
+            + ". Adjust rating_min/rating_max or recode the score column."
+        )
+
+    score_messages = []
+    preserve_score_support = bool(keep_original)
+    if not keep_original:
+        score_vals = np.sort(df["Score"].unique())
+        observed_contiguous = np.array_equal(score_vals, np.arange(score_vals[0], score_vals[-1] + 1))
+        explicit_rating_range = rating_min_supplied or rating_max_supplied
+        boundary_only_gap = bool(explicit_rating_range and observed_contiguous and np.all(np.isin(score_vals, expected_vals)))
+        if not np.array_equal(score_vals, expected_vals) and not boundary_only_gap:
+            mapping = {val: rating_min + i for i, val in enumerate(score_vals)}
+            df["Score"] = df["Score"].map(mapping).astype(int)
+            recoded_vals = np.arange(rating_min, rating_min + len(score_vals))
+            score_messages.append(
+                "Observed score categories were non-consecutive "
+                f"({', '.join(map(str, score_vals.tolist()))}) and were recoded internally to "
+                f"{', '.join(map(str, recoded_vals.tolist()))}. "
+                "Use Keep original category values to retain zero-count intermediate categories."
+            )
+            rating_max = rating_min + len(score_vals) - 1
+            expected_vals = np.arange(rating_min, rating_max + 1)
+        elif boundary_only_gap:
+            preserve_score_support = True
+
+    df["score_k"] = df["Score"] - rating_min
+    unused_score_categories = sorted(set(range(rating_min, rating_max + 1)) - set(df["Score"].unique().tolist()))
+    if unused_score_categories:
+        score_messages.append(
+            "Zero-count score categories retained in the fitted support: "
+            + ", ".join(map(str, unused_score_categories))
+            + ". Adjacent thresholds should be treated as weakly identified."
+        )
+
+    if preserve_score_support:
+        score_map = pd.DataFrame({
+            "OriginalScore": np.arange(rating_min, rating_max + 1, dtype=int),
+            "InternalScore": np.arange(rating_min, rating_max + 1, dtype=int),
+        })
+    else:
+        observed_after = np.sort(df["Score"].unique())
+        score_map = pd.DataFrame({
+            "OriginalScore": observed_score_values,
+            "InternalScore": observed_after,
+        })
+
+    df["Person"] = pd.Categorical(df["Person"])
+    for facet in facet_cols:
+        df[facet] = pd.Categorical(df[facet])
+
+    facet_levels = {facet: list(df[facet].cat.categories) for facet in facet_cols}
+
+    n_obs = int(df["Weight"].sum()) if "Weight" in df.columns and df["Weight"].notna().any() else len(df)
+    n_person = df["Person"].nunique()
+
+    return {
+        "data": df,
+        "rating_min": rating_min,
+        "rating_max": rating_max,
+        "score_map": score_map,
+        "unused_score_categories": unused_score_categories,
+        "score_messages": score_messages,
+        "keep_original": bool(keep_original),
+        "score_range_explicit": bool(rating_min_supplied or rating_max_supplied),
+        "facet_names": list(facet_cols),
+        "levels": {"Person": list(df["Person"].cat.categories), **facet_levels},
+        "weight_col": "Weight",
+        "n_obs": n_obs,
+        "n_person": n_person,
+    }
+
+
+def build_indices(prep, step_facet=None, slope_facet=None):
+    df = prep["data"]
+    person_idx = df["Person"].cat.codes.to_numpy(dtype=int)
+    facets_idx = {facet: df[facet].cat.codes.to_numpy(dtype=int) for facet in prep["facet_names"]}
+    step_idx = df[step_facet].cat.codes.to_numpy(dtype=int) if step_facet else None
+    slope_idx = df[slope_facet].cat.codes.to_numpy(dtype=int) if slope_facet else None
+    rows_by_person = [np.where(person_idx == p)[0] for p in range(len(prep["levels"]["Person"]))]
+    return {
+        "person": person_idx,
+        "facets": facets_idx,
+        "step_idx": step_idx,
+        "slope_idx": slope_idx,
+        "score_k": df["score_k"].to_numpy(dtype=int),
+        "weight": df["Weight"].to_numpy(dtype=float) if "Weight" in df.columns else np.ones(len(df)),
+        "rows_by_person": rows_by_person,
+    }
+
+
+def sample_mfrm_data(seed=20240101):
+    """Generate a sample MFRM dataset modeled after performance assessment designs.
+
+    The data structure and parameter magnitudes are informed by published MFRM
+    studies in writing/speaking assessment:
+
+    - Linacre, J. M. (1994). *Many-Facet Rasch Measurement* (2nd ed.). MESA Press.
+    - Eckes, T. (2011). *Introduction to Many-Facet Rasch Measurement*. Peter Lang.
+    - McNamara, T. F. (1996). *Measuring Second Language Performance*. Longman.
+
+    Design: 30 examinees × 4 raters × 2 tasks × 4 criteria, 6-point scale (0–5).
+    Parameters based on typical ranges reported in the literature:
+      - Person ability SD ≈ 1.0 logits (Eckes, 2011, Ch. 5)
+      - Rater severity range ≈ 1.5 logits (Eckes, 2011, Table 5.1)
+      - Task difficulty difference ≈ 0.6 logits (McNamara, 1996)
+      - Criterion difficulty range ≈ 1.2 logits (Linacre, 1994)
+      - Step thresholds ordered, spanning ≈ −2 to +2 (typical for 6-point scales)
+    """
+    rng = np.random.default_rng(seed)
+
+    # Design
+    n_persons = 30
+    n_raters = 4
+    n_tasks = 2
+    n_criteria = 4
+    n_cat = 6  # 0–5 scale
+
+    persons = [f"E{idx:02d}" for idx in range(1, n_persons + 1)]
+    raters = [f"R{idx}" for idx in range(1, n_raters + 1)]
+    tasks = [f"Task{idx}" for idx in range(1, n_tasks + 1)]
+    criteria = ["Content", "Organization", "Language", "Mechanics"]
+
+    # True parameters (based on published MFRM parameter ranges)
+    theta = rng.normal(0.0, 1.0, n_persons)       # Person ability
+    rater_sev = np.array([-0.62, -0.15, 0.28, 0.49])  # Rater severity (range ≈ 1.1)
+    task_diff = np.array([-0.30, 0.30])            # Task difficulty (diff ≈ 0.6)
+    crit_diff = np.array([-0.55, -0.10, 0.20, 0.45])  # Criterion difficulty (range ≈ 1.0)
+    # Rasch-Andrich thresholds for 6-point scale (ordered, centered near 0)
+    tau = np.array([-2.10, -0.95, 0.05, 0.90, 2.10])
+
+    # Full crossing
+    rows = []
+    for pi, p in enumerate(persons):
+        for ri, r in enumerate(raters):
+            for ti, t in enumerate(tasks):
+                for ci, c in enumerate(criteria):
+                    eta = theta[pi] - rater_sev[ri] - task_diff[ti] - crit_diff[ci]
+                    # RSM category probabilities
+                    cum = np.zeros(n_cat)
+                    for k in range(1, n_cat):
+                        cum[k] = cum[k - 1] + tau[k - 1]
+                    log_num = np.arange(n_cat) * eta - cum
+                    log_num -= log_num.max()
+                    probs = np.exp(log_num)
+                    probs /= probs.sum()
+                    score = int(rng.choice(n_cat, p=probs))
+                    rows.append((p, r, t, c, score))
+
+    df = pd.DataFrame(rows, columns=["Person", "Rater", "Task", "Criterion", "Score"])
+    return df
+
+
+@st.cache_data(show_spinner=False, max_entries=8)
+def cached_sample_mfrm_data(seed: int = 20240101) -> pd.DataFrame:
+    """Cached built-in demo data only; user-uploaded data are intentionally not cached."""
+    return sample_mfrm_data(seed=int(seed)).copy()
+
+
+
+def guess_col(cols, patterns, fallback=0):
+    if not cols:
+        return None
+    lowered = [c.lower() for c in cols]
+    for pattern in patterns:
+        for idx, name in enumerate(lowered):
+            if pattern in name:
+                return cols[idx]
+    return cols[min(fallback, len(cols) - 1)]
+
+
+def truncate_label(value, width=28):
+    text = str(value)
+    if len(text) <= width:
+        return text
+    return text[: max(0, width - 1)] + "…"
+
+
+# ---- likelihoods ----
+def loglik_rsm(eta, score_k, step_cum, weight=None):
+    if eta.size == 0:
+        return 0.0
+    k_cat = len(step_cum)
+    eta_mat = np.outer(eta, np.arange(k_cat))
+    log_num = eta_mat - step_cum
+    log_denom = logsumexp(log_num, axis=1)
+    log_num_obs = log_num[np.arange(len(eta)), score_k]
+    diff = log_num_obs - log_denom
+    if weight is None:
+        return float(np.sum(diff))
+    return float(np.sum(diff * weight))
+
+
+def loglik_pcm(eta, score_k, step_cum_mat, criterion_idx, weight=None):
+    if eta.size == 0:
+        return 0.0
+    total = 0.0
+    k_cat = step_cum_mat.shape[1]
+    for c_idx in range(step_cum_mat.shape[0]):
+        rows = np.where(criterion_idx == c_idx)[0]
+        if rows.size == 0:
+            continue
+        eta_c = eta[rows]
+        step_cum = step_cum_mat[c_idx]
+        eta_mat = np.outer(eta_c, np.arange(k_cat))
+        log_num = eta_mat - step_cum
+        log_denom = logsumexp(log_num, axis=1)
+        log_num_obs = log_num[np.arange(len(rows)), score_k[rows]]
+        diff = log_num_obs - log_denom
+        if weight is None:
+            total += float(np.sum(diff))
+        else:
+            total += float(np.sum(diff * weight[rows]))
+    return total
+
+
+def loglik_gpcm(eta, score_k, step_cum_mat, step_idx, slopes, slope_idx, weight=None):
+    if eta.size == 0:
+        return 0.0
+    if slope_idx is None:
+        slope_idx = step_idx
+    total = 0.0
+    k_cat = step_cum_mat.shape[1]
+    k_vals = np.arange(k_cat, dtype=float)
+    slopes = np.asarray(slopes, dtype=float)
+    for c_idx in range(step_cum_mat.shape[0]):
+        rows = np.where(step_idx == c_idx)[0]
+        if rows.size == 0:
+            continue
+        linear = np.outer(eta[rows], k_vals) - step_cum_mat[c_idx]
+        slope_obs = slopes[slope_idx[rows]]
+        log_num = slope_obs[:, None] * linear
+        log_denom = logsumexp(log_num, axis=1)
+        diff = log_num[np.arange(len(rows)), score_k[rows]] - log_denom
+        if weight is None:
+            total += float(np.sum(diff))
+        else:
+            total += float(np.sum(diff * weight[rows]))
+    return total
+
+
+def category_prob_rsm(eta, step_cum):
+    if eta.size == 0:
+        return np.zeros((0, len(step_cum)))
+    k_cat = len(step_cum)
+    eta_mat = np.outer(eta, np.arange(k_cat))
+    log_num = eta_mat - step_cum
+    log_denom = logsumexp(log_num, axis=1)
+    return np.exp(log_num - log_denom[:, None])
+
+
+def category_prob_pcm(eta, step_cum_mat, criterion_idx):
+    if eta.size == 0:
+        return np.zeros((0, step_cum_mat.shape[1]))
+    k_cat = step_cum_mat.shape[1]
+    probs = np.zeros((len(eta), k_cat))
+    for c_idx in range(step_cum_mat.shape[0]):
+        rows = np.where(criterion_idx == c_idx)[0]
+        if rows.size == 0:
+            continue
+        step_cum = step_cum_mat[c_idx]
+        eta_c = eta[rows]
+        eta_mat = np.outer(eta_c, np.arange(k_cat))
+        log_num = eta_mat - step_cum
+        log_denom = logsumexp(log_num, axis=1)
+        probs[rows, :] = np.exp(log_num - log_denom[:, None])
+    return probs
+
+
+def category_prob_gpcm(eta, step_cum_mat, step_idx, slopes, slope_idx):
+    if eta.size == 0:
+        return np.zeros((0, step_cum_mat.shape[1]))
+    if slope_idx is None:
+        slope_idx = step_idx
+    k_cat = step_cum_mat.shape[1]
+    k_vals = np.arange(k_cat, dtype=float)
+    probs = np.zeros((len(eta), k_cat))
+    slopes = np.asarray(slopes, dtype=float)
+    for c_idx in range(step_cum_mat.shape[0]):
+        rows = np.where(step_idx == c_idx)[0]
+        if rows.size == 0:
+            continue
+        linear = np.outer(eta[rows], k_vals) - step_cum_mat[c_idx]
+        slope_obs = slopes[slope_idx[rows]]
+        log_num = slope_obs[:, None] * linear
+        log_denom = logsumexp(log_num, axis=1)
+        probs[rows, :] = np.exp(log_num - log_denom[:, None])
+    return probs
+
+
+def zstd_from_mnsq(mnsq, df, whexact=False):
+    if not np.isfinite(mnsq) or not np.isfinite(df) or df <= 0:
+        return np.nan
+    if whexact:
+        return (mnsq - 1) * np.sqrt(df / 2)
+    return (mnsq ** (1 / 3) - (1 - 2 / (9 * df))) / np.sqrt(2 / (9 * df))
+
+
+def compute_base_eta(idx, params, config):
+    eta = np.zeros_like(idx["score_k"], dtype=float)
+    facet_signs = config.get("facet_signs", {})
+    for facet in config["facet_names"]:
+        sign = facet_signs.get(facet, -1)
+        eta += sign * params["facets"][facet][idx["facets"][facet]]
+    return eta
+
+
+def compute_eta(idx, params, config, theta_override=None):
+    theta = theta_override if theta_override is not None else params["theta"]
+    eta = theta[idx["person"]] if theta.size else np.zeros_like(idx["score_k"], dtype=float)
+    return eta + compute_base_eta(idx, params, config)
+
+
+def mfrm_loglik_jmle(par, idx, config, sizes):
+    params = expand_params(par, sizes, config)
+    eta = compute_eta(idx, params, config)
+    if config["model"] == "RSM":
+        step_cum = np.concatenate([[0.0], np.cumsum(params["steps"])])
+        ll = loglik_rsm(eta, idx["score_k"], step_cum, weight=idx.get("weight"))
+    elif config["model"] == "PCM":
+        step_cum_mat = np.vstack([
+            np.concatenate([[0.0], np.cumsum(row)]) for row in params["steps_mat"]
+        ])
+        ll = loglik_pcm(eta, idx["score_k"], step_cum_mat, idx["step_idx"], weight=idx.get("weight"))
+    else:
+        step_cum_mat = np.vstack([
+            np.concatenate([[0.0], np.cumsum(row)]) for row in params["steps_mat"]
+        ])
+        ll = loglik_gpcm(
+            eta,
+            idx["score_k"],
+            step_cum_mat,
+            idx["step_idx"],
+            params["slopes"],
+            idx.get("slope_idx"),
+            weight=idx.get("weight"),
+        )
+    return -ll
+
+
+def mfrm_loglik_jmle_value_grad(par, idx, config, sizes):
+    params = expand_params(par, sizes, config)
+    eta = compute_eta(idx, params, config)
+    score_k = idx["score_k"]
+    weight = idx.get("weight")
+    if weight is None:
+        weight = np.ones_like(score_k, dtype=float)
+    else:
+        weight = np.asarray(weight, dtype=float)
+
+    k_cat = int(config["n_cat"])
+    k_vals = np.arange(k_cat, dtype=float)
+    slope_obs = np.ones(len(eta), dtype=float)
+    gpcm_linear = None
+
+    if config["model"] == "RSM":
+        step_cum = np.concatenate([[0.0], np.cumsum(params["steps"])])
+        log_num = np.outer(eta, k_vals) - step_cum
+        log_denom = logsumexp(log_num, axis=1)
+        ll_obs = log_num[np.arange(len(eta)), score_k] - log_denom
+        probs = np.exp(log_num - log_denom[:, None])
+    elif config["model"] == "PCM":
+        step_cum_mat = np.vstack([
+            np.concatenate([[0.0], np.cumsum(row)]) for row in params["steps_mat"]
+        ])
+        probs = np.zeros((len(eta), k_cat), dtype=float)
+        ll_obs = np.zeros(len(eta), dtype=float)
+        for c_idx in range(step_cum_mat.shape[0]):
+            rows = np.where(idx["step_idx"] == c_idx)[0]
+            if rows.size == 0:
+                continue
+            log_num = np.outer(eta[rows], k_vals) - step_cum_mat[c_idx]
+            log_denom = logsumexp(log_num, axis=1)
+            ll_obs[rows] = log_num[np.arange(len(rows)), score_k[rows]] - log_denom
+            probs[rows, :] = np.exp(log_num - log_denom[:, None])
+    else:
+        step_cum_mat = np.vstack([
+            np.concatenate([[0.0], np.cumsum(row)]) for row in params["steps_mat"]
+        ])
+        slope_idx = idx.get("slope_idx")
+        if slope_idx is None:
+            slope_idx = idx["step_idx"]
+        slope_obs = params["slopes"][slope_idx]
+        probs = np.zeros((len(eta), k_cat), dtype=float)
+        ll_obs = np.zeros(len(eta), dtype=float)
+        gpcm_linear = np.zeros((len(eta), k_cat), dtype=float)
+        for c_idx in range(step_cum_mat.shape[0]):
+            rows = np.where(idx["step_idx"] == c_idx)[0]
+            if rows.size == 0:
+                continue
+            linear = np.outer(eta[rows], k_vals) - step_cum_mat[c_idx]
+            log_num = slope_obs[rows, None] * linear
+            log_denom = logsumexp(log_num, axis=1)
+            ll_obs[rows] = log_num[np.arange(len(rows)), score_k[rows]] - log_denom
+            probs[rows, :] = np.exp(log_num - log_denom[:, None])
+            gpcm_linear[rows, :] = linear
+
+    nll = -float(np.sum(weight * ll_obs))
+    expected = probs @ k_vals
+    eta_grad = -weight * slope_obs * (score_k - expected)
+
+    grad_parts = []
+    if sizes.get("theta", 0) > 0:
+        theta_levels = len(config["theta_spec"]["levels"])
+        theta_full_grad = np.bincount(idx["person"], weights=eta_grad, minlength=theta_levels)
+        grad_parts.append(collapse_facet_gradient(theta_full_grad, config["theta_spec"]))
+
+    facet_signs = config.get("facet_signs", {})
+    for facet in config["facet_names"]:
+        if sizes.get(facet, 0) == 0:
+            continue
+        sign = facet_signs.get(facet, -1)
+        facet_levels = len(config["facet_specs"][facet]["levels"])
+        facet_full_grad = np.bincount(
+            idx["facets"][facet],
+            weights=eta_grad * sign,
+            minlength=facet_levels,
+        )
+        grad_parts.append(collapse_facet_gradient(facet_full_grad, config["facet_specs"][facet]))
+
+    n_steps = max(k_cat - 1, 0)
+    if n_steps > 0:
+        thresholds = np.arange(n_steps)
+        if config["model"] == "RSM":
+            observed_gt = score_k[:, None] > thresholds[None, :]
+            prob_gt = np.flip(np.cumsum(np.flip(probs[:, 1:], axis=1), axis=1), axis=1)
+            step_full_grad = np.sum(weight[:, None] * (observed_gt - prob_gt), axis=0)
+            grad_parts.append(collapse_centered_gradient(step_full_grad))
+        elif config["model"] == "PCM":
+            step_facet_n = len(config["facet_levels"][config["step_facet"]])
+            step_mat_grad = np.zeros((step_facet_n, n_steps), dtype=float)
+            for c_idx in range(step_facet_n):
+                rows = np.where(idx["step_idx"] == c_idx)[0]
+                if rows.size == 0:
+                    continue
+                observed_gt = score_k[rows, None] > thresholds[None, :]
+                prob_gt = np.flip(np.cumsum(np.flip(probs[rows, 1:], axis=1), axis=1), axis=1)
+                step_mat_grad[c_idx, :] = np.sum(weight[rows, None] * (observed_gt - prob_gt), axis=0)
+            grad_parts.append(np.vstack([collapse_centered_gradient(row) for row in step_mat_grad]).reshape(-1))
+        else:
+            step_facet_n = len(config["facet_levels"][config["step_facet"]])
+            step_mat_grad = np.zeros((step_facet_n, n_steps), dtype=float)
+            for c_idx in range(step_facet_n):
+                rows = np.where(idx["step_idx"] == c_idx)[0]
+                if rows.size == 0:
+                    continue
+                observed_gt = score_k[rows, None] > thresholds[None, :]
+                prob_gt = np.flip(np.cumsum(np.flip(probs[rows, 1:], axis=1), axis=1), axis=1)
+                step_mat_grad[c_idx, :] = np.sum(
+                    weight[rows, None] * slope_obs[rows, None] * (observed_gt - prob_gt),
+                    axis=0,
+                )
+            grad_parts.append(np.vstack([collapse_centered_gradient(row) for row in step_mat_grad]).reshape(-1))
+
+    if config["model"] == "GPCM" and sizes.get("log_slopes", 0) > 0:
+        slope_idx = idx.get("slope_idx")
+        if slope_idx is None:
+            slope_idx = idx["step_idx"]
+        obs_linear = gpcm_linear[np.arange(len(eta)), score_k]
+        expected_linear = np.sum(probs * gpcm_linear, axis=1)
+        slope_levels = len(config["facet_levels"][config["slope_facet"]])
+        slope_full_grad = np.bincount(
+            slope_idx,
+            weights=-weight * slope_obs * (obs_linear - expected_linear),
+            minlength=slope_levels,
+        )
+        grad_parts.append(collapse_centered_gradient(slope_full_grad))
+
+    grad = np.concatenate([g for g in grad_parts if g.size]) if grad_parts else np.array([], dtype=float)
+    if grad.size != len(par):
+        raise RuntimeError(f"Internal gradient size mismatch: expected {len(par)}, got {grad.size}.")
+    return nll, grad
+
+
+def mfrm_loglik_mml(par, idx, config, sizes, quad):
+    """Marginal log-likelihood (negative) for MML — used in M-step."""
+    params = expand_params(par, sizes, config)
+    n = len(idx["score_k"])
+    if n == 0:
+        return 0.0
+
+    base_eta = compute_base_eta(idx, params, config)
+    rows_by_person = idx.get("rows_by_person")
+    if rows_by_person is None:
+        rows_by_person = [np.where(idx["person"] == p)[0] for p in range(config["n_person"])]
+
+    log_w = np.log(quad["weights"])
+    pop_mu = compute_population_mu(params, config)
+
+    if config["model"] == "RSM":
+        step_cum = np.concatenate([[0.0], np.cumsum(params["steps"])])
+        ll_person = []
+        for j, rows in enumerate(rows_by_person):
+            if len(rows) == 0:
+                continue
+            base = base_eta[rows]
+            score_k = idx["score_k"][rows]
+            w = idx.get("weight")[rows] if idx.get("weight") is not None else None
+            mu_j = pop_mu[j] if j < len(pop_mu) else 0.0
+            ll_nodes = [loglik_rsm(mu_j + theta + base, score_k, step_cum, weight=w) for theta in quad["nodes"]]
+            ll_person.append(logsumexp(log_w + ll_nodes))
+    elif config["model"] == "PCM":
+        step_cum_mat = np.vstack([
+            np.concatenate([[0.0], np.cumsum(row)]) for row in params["steps_mat"]
+        ])
+        ll_person = []
+        for j, rows in enumerate(rows_by_person):
+            if len(rows) == 0:
+                continue
+            base = base_eta[rows]
+            score_k = idx["score_k"][rows]
+            crit = idx["step_idx"][rows]
+            w = idx.get("weight")[rows] if idx.get("weight") is not None else None
+            mu_j = pop_mu[j] if j < len(pop_mu) else 0.0
+            ll_nodes = [loglik_pcm(mu_j + theta + base, score_k, step_cum_mat, crit, weight=w) for theta in quad["nodes"]]
+            ll_person.append(logsumexp(log_w + ll_nodes))
+    else:
+        step_cum_mat = np.vstack([
+            np.concatenate([[0.0], np.cumsum(row)]) for row in params["steps_mat"]
+        ])
+        ll_person = []
+        for j, rows in enumerate(rows_by_person):
+            if len(rows) == 0:
+                continue
+            base = base_eta[rows]
+            score_k = idx["score_k"][rows]
+            step_idx = idx["step_idx"][rows]
+            slope_idx_full = idx.get("slope_idx")
+            slope_idx = slope_idx_full[rows] if slope_idx_full is not None else step_idx
+            w = idx.get("weight")[rows] if idx.get("weight") is not None else None
+            mu_j = pop_mu[j] if j < len(pop_mu) else 0.0
+            ll_nodes = [
+                loglik_gpcm(mu_j + theta + base, score_k, step_cum_mat, step_idx, params["slopes"], slope_idx, weight=w)
+                for theta in quad["nodes"]
+            ]
+            ll_person.append(logsumexp(log_w + ll_nodes))
+
+    return -float(np.sum(ll_person))
+
+
+def mfrm_loglik_mml_value_grad(par, idx, config, sizes, quad):
+    """Direct MML negative marginal log-likelihood with analytical gradient.
+
+    The gradient uses Fisher's identity: at the current parameter vector, the
+    gradient of the marginal log-likelihood equals the posterior expectation of
+    the complete-data score. This reuses the EM E-step posterior weights and the
+    analytical M-step gradient.
+    """
+    params = expand_params(par, sizes, config)
+    post_weights, marginal_ll = _e_step_posteriors(idx, config, params, quad)
+    _, grad = _m_step_expected_ll_value_grad(par, idx, config, sizes, quad, post_weights)
+    return -marginal_ll, grad
+
+
+def mfrm_direct_mml(start, idx, config, sizes, quad, maxit=400, reltol=1e-6):
+    """Direct analytical-gradient MML optimization."""
+    opt = minimize(
+        mfrm_loglik_mml_value_grad,
+        np.array(start, dtype=float, copy=True),
+        args=(idx, config, sizes, quad),
+        jac=True,
+        method="L-BFGS-B",
+        bounds=build_optimizer_bounds(sizes, config),
+        options={"maxiter": maxit, "gtol": reltol, "ftol": reltol},
+    )
+    opt.mml_engine = "direct"
+    opt.ll_trace = [-float(opt.fun)] if np.isfinite(opt.fun) else []
+    opt.gradient_norm = float(np.linalg.norm(opt.jac)) if getattr(opt, "jac", None) is not None else np.nan
+    return opt
+
+
+def mfrm_hybrid_mml(start, idx, config, sizes, quad, maxit=400, reltol=1e-6):
+    """Hybrid MML: short EM warm start followed by direct MML optimization."""
+    warm_maxit = max(2, min(10, int(maxit // 4))) if maxit >= 4 else max(1, int(maxit))
+    direct_maxit = max(1, int(maxit) - warm_maxit)
+    warm = mfrm_em_mml(start, idx, config, sizes, quad, maxit=warm_maxit, reltol=reltol)
+    opt = mfrm_direct_mml(warm.x, idx, config, sizes, quad, maxit=direct_maxit, reltol=reltol)
+    opt.mml_engine = "hybrid"
+    opt.em_warmup_iterations = int(getattr(warm, "nit", warm_maxit))
+    opt.direct_iterations = int(getattr(opt, "nit", 0))
+    opt.nit = opt.em_warmup_iterations + opt.direct_iterations
+    opt.nfev = int(getattr(warm, "nfev", 0)) + int(getattr(opt, "nfev", 0))
+    opt.ll_trace = list(getattr(warm, "ll_trace", [])) + list(getattr(opt, "ll_trace", []))
+    return opt
+
+
+def mfrm_auto_mml(start, idx, config, sizes, quad, maxit=400, reltol=1e-6):
+    """Auto MML: try hybrid first, then fall back to EM if needed."""
+    hybrid = mfrm_hybrid_mml(start, idx, config, sizes, quad, maxit=maxit, reltol=reltol)
+    hybrid.auto_attempted = ["hybrid"]
+    hybrid.auto_selected = "hybrid"
+    if bool(getattr(hybrid, "success", False)) and np.isfinite(getattr(hybrid, "fun", np.nan)):
+        return hybrid
+
+    fallback = mfrm_em_mml(start, idx, config, sizes, quad, maxit=maxit, reltol=reltol)
+    fallback.mml_engine = "em"
+    fallback.auto_attempted = ["hybrid", "em"]
+    fallback.auto_selected = "em"
+    fallback.auto_fallback_reason = str(getattr(hybrid, "message", "hybrid did not converge") or "hybrid did not converge")
+
+    if bool(getattr(fallback, "success", False)):
+        return fallback
+    if np.isfinite(getattr(fallback, "fun", np.nan)) and (
+        not np.isfinite(getattr(hybrid, "fun", np.nan)) or fallback.fun <= hybrid.fun
+    ):
+        return fallback
+
+    hybrid.auto_attempted = ["hybrid", "em"]
+    hybrid.auto_selected = "hybrid"
+    hybrid.auto_fallback_reason = "EM fallback did not improve convergence or likelihood."
+    return hybrid
+
+
+def build_convergence_summary(opt, config: dict, loglik: float, elapsed_seconds: float | None = None) -> pd.DataFrame:
+    """One-row optimizer convergence table for reporting and downloads."""
+    if opt is None:
+        return pd.DataFrame()
+    ll_trace = list(getattr(opt, "ll_trace", []) or [])
+    ll_start = float(ll_trace[0]) if ll_trace and np.isfinite(ll_trace[0]) else np.nan
+    ll_final = float(loglik) if np.isfinite(loglik) else np.nan
+    ll_change = ll_final - ll_start if np.isfinite(ll_final) and np.isfinite(ll_start) else np.nan
+    grad_norm = getattr(opt, "gradient_norm", np.nan)
+    if not np.isfinite(grad_norm) and getattr(opt, "jac", None) is not None:
+        try:
+            grad_norm = float(np.linalg.norm(opt.jac))
+        except Exception:
+            grad_norm = np.nan
+    rows = [{
+        "Method": config.get("method"),
+        "RequestedMmlEngine": config.get("mml_engine_requested"),
+        "ResolvedMmlEngine": config.get("mml_engine"),
+        "Optimizer": config.get("optimizer"),
+        "Converged": bool(getattr(opt, "success", False)),
+        "Message": str(getattr(opt, "message", "")),
+        "Iterations": int(getattr(opt, "nit", 0) or 0),
+        "FunctionEvals": int(getattr(opt, "nfev", 0) or 0),
+        "WarmupEMIterations": getattr(opt, "em_warmup_iterations", np.nan),
+        "DirectIterations": getattr(opt, "direct_iterations", np.nan),
+        "FinalLogLik": ll_final,
+        "LogLikStart": ll_start,
+        "LogLikChange": ll_change,
+        "GradientNorm": float(grad_norm) if np.isfinite(grad_norm) else np.nan,
+        "ElapsedSeconds": float(elapsed_seconds) if elapsed_seconds is not None and np.isfinite(elapsed_seconds) else np.nan,
+        "AutoAttempted": ", ".join(getattr(opt, "auto_attempted", []) or []),
+        "AutoSelected": getattr(opt, "auto_selected", ""),
+        "AutoFallbackReason": getattr(opt, "auto_fallback_reason", ""),
+    }]
+    return pd.DataFrame(rows)
+
+
+# ── EM algorithm for MML (Bock & Aitkin, 1981) ─────────────────────
+def _e_step_posteriors(idx, config, params, quad):
+    """E-step: compute posterior weights for each person × quadrature node.
+
+    Returns
+    -------
+    post_weights : ndarray, shape (n_persons, Q)
+        Posterior probabilities  P(θ_q | x_j, δ)  for person j at node q.
+    marginal_ll : float
+        Current marginal log-likelihood  Σ_j log Σ_q w_q L(x_j|θ_q,δ).
+
+    Reference: Bock, R. D. & Aitkin, M. (1981). Marginal maximum
+    likelihood estimation of item parameters: Application of an EM
+    algorithm.  Psychometrika, 46(4), 443–459.
+    """
+    base_eta = compute_base_eta(idx, params, config)
+    rows_by_person = idx.get("rows_by_person")
+    if rows_by_person is None:
+        rows_by_person = [np.where(idx["person"] == p)[0] for p in range(config["n_person"])]
+
+    n_persons = len(rows_by_person)
+    Q = len(quad["nodes"])
+    log_w = np.log(quad["weights"])                    # (Q,)
+    log_lik_mat = np.zeros((n_persons, Q))             # person × node
+    pop_mu = compute_population_mu(params, config)
+
+    if config["model"] == "RSM":
+        step_cum = np.concatenate([[0.0], np.cumsum(params["steps"])])
+        for j, rows in enumerate(rows_by_person):
+            if len(rows) == 0:
+                continue
+            base = base_eta[rows]
+            score_k = idx["score_k"][rows]
+            w = idx.get("weight")[rows] if idx.get("weight") is not None else None
+            mu_j = pop_mu[j] if j < len(pop_mu) else 0.0
+            for q, theta_q in enumerate(quad["nodes"]):
+                log_lik_mat[j, q] = loglik_rsm(mu_j + theta_q + base, score_k, step_cum, weight=w)
+    elif config["model"] == "PCM":
+        step_cum_mat = np.vstack([
+            np.concatenate([[0.0], np.cumsum(row)]) for row in params["steps_mat"]
+        ])
+        for j, rows in enumerate(rows_by_person):
+            if len(rows) == 0:
+                continue
+            base = base_eta[rows]
+            score_k = idx["score_k"][rows]
+            crit = idx["step_idx"][rows]
+            w = idx.get("weight")[rows] if idx.get("weight") is not None else None
+            mu_j = pop_mu[j] if j < len(pop_mu) else 0.0
+            for q, theta_q in enumerate(quad["nodes"]):
+                log_lik_mat[j, q] = loglik_pcm(mu_j + theta_q + base, score_k, step_cum_mat, crit, weight=w)
+    else:
+        step_cum_mat = np.vstack([
+            np.concatenate([[0.0], np.cumsum(row)]) for row in params["steps_mat"]
+        ])
+        for j, rows in enumerate(rows_by_person):
+            if len(rows) == 0:
+                continue
+            base = base_eta[rows]
+            score_k = idx["score_k"][rows]
+            step_idx = idx["step_idx"][rows]
+            slope_idx_full = idx.get("slope_idx")
+            slope_idx = slope_idx_full[rows] if slope_idx_full is not None else step_idx
+            w = idx.get("weight")[rows] if idx.get("weight") is not None else None
+            mu_j = pop_mu[j] if j < len(pop_mu) else 0.0
+            for q, theta_q in enumerate(quad["nodes"]):
+                log_lik_mat[j, q] = loglik_gpcm(
+                    mu_j + theta_q + base,
+                    score_k,
+                    step_cum_mat,
+                    step_idx,
+                    params["slopes"],
+                    slope_idx,
+                    weight=w,
+                )
+
+    # log posterior (unnormalized) = log w_q + log L(x_j | θ_q, δ)
+    log_joint = log_w[None, :] + log_lik_mat           # (n_persons, Q)
+    log_marginal = logsumexp(log_joint, axis=1)        # (n_persons,)
+    log_post = log_joint - log_marginal[:, None]       # normalise per person
+    post_weights = np.exp(log_post)                    # (n_persons, Q)
+
+    marginal_ll = float(np.sum(log_marginal))
+    return post_weights, marginal_ll
+
+
+def _m_step_expected_ll(par, idx, config, sizes, quad, post_weights):
+    """M-step objective: expected complete-data log-likelihood.
+
+    Q(δ|δ^(t)) = Σ_j Σ_q  r_jq  log L(x_j | θ_q, δ)
+
+    where r_jq = P(θ_q | x_j, δ^(t)) from the E-step.
+
+    This is the function minimised (negated) w.r.t. item/facet
+    parameters δ in the M-step.
+    """
+    params = expand_params(par, sizes, config)
+    base_eta = compute_base_eta(idx, params, config)
+
+    rows_by_person = {}
+    for i, p_idx in enumerate(idx["person"]):
+        rows_by_person.setdefault(p_idx, []).append(i)
+
+    Q = len(quad["nodes"])
+    total = 0.0
+    pop_mu = compute_population_mu(params, config)
+
+    if config["model"] == "RSM":
+        step_cum = np.concatenate([[0.0], np.cumsum(params["steps"])])
+        for j, rows in enumerate(rows_by_person.values()):
+            base = base_eta[rows]
+            score_k = idx["score_k"][rows]
+            w = idx.get("weight")[rows] if idx.get("weight") is not None else None
+            mu_j = pop_mu[j] if j < len(pop_mu) else 0.0
+            for q in range(Q):
+                r_jq = post_weights[j, q]
+                if r_jq < 1e-15:
+                    continue
+                ll = loglik_rsm(mu_j + quad["nodes"][q] + base, score_k, step_cum, weight=w)
+                total += r_jq * ll
+    elif config["model"] == "PCM":
+        step_cum_mat = np.vstack([
+            np.concatenate([[0.0], np.cumsum(row)]) for row in params["steps_mat"]
+        ])
+        for j, rows in enumerate(rows_by_person.values()):
+            base = base_eta[rows]
+            score_k = idx["score_k"][rows]
+            crit = idx["step_idx"][rows]
+            w = idx.get("weight")[rows] if idx.get("weight") is not None else None
+            mu_j = pop_mu[j] if j < len(pop_mu) else 0.0
+            for q in range(Q):
+                r_jq = post_weights[j, q]
+                if r_jq < 1e-15:
+                    continue
+                ll = loglik_pcm(mu_j + quad["nodes"][q] + base, score_k, step_cum_mat, crit, weight=w)
+                total += r_jq * ll
+    else:
+        step_cum_mat = np.vstack([
+            np.concatenate([[0.0], np.cumsum(row)]) for row in params["steps_mat"]
+        ])
+        for j, rows in enumerate(rows_by_person.values()):
+            base = base_eta[rows]
+            score_k = idx["score_k"][rows]
+            step_idx = idx["step_idx"][rows]
+            slope_idx_full = idx.get("slope_idx")
+            slope_idx = slope_idx_full[rows] if slope_idx_full is not None else step_idx
+            w = idx.get("weight")[rows] if idx.get("weight") is not None else None
+            mu_j = pop_mu[j] if j < len(pop_mu) else 0.0
+            for q in range(Q):
+                r_jq = post_weights[j, q]
+                if r_jq < 1e-15:
+                    continue
+                ll = loglik_gpcm(
+                    mu_j + quad["nodes"][q] + base,
+                    score_k,
+                    step_cum_mat,
+                    step_idx,
+                    params["slopes"],
+                    slope_idx,
+                    weight=w,
+                )
+                total += r_jq * ll
+
+    return -total
+
+
+def _m_step_expected_ll_value_grad(par, idx, config, sizes, quad, post_weights):
+    params = expand_params(par, sizes, config)
+    base_eta = compute_base_eta(idx, params, config)
+    score_k = idx["score_k"]
+    weight = idx.get("weight")
+    if weight is None:
+        weight = np.ones_like(score_k, dtype=float)
+    else:
+        weight = np.asarray(weight, dtype=float)
+
+    k_cat = int(config["n_cat"])
+    k_vals = np.arange(k_cat, dtype=float)
+    n_steps = max(k_cat - 1, 0)
+    thresholds = np.arange(n_steps)
+    facet_signs = config.get("facet_signs", {})
+
+    facet_full_grads = {
+        facet: np.zeros(len(config["facet_specs"][facet]["levels"]), dtype=float)
+        for facet in config["facet_names"]
+    }
+    pop = config.get("population_model", {})
+    pop_X = np.asarray(pop.get("X", np.zeros((int(config.get("n_person", 0)), 0))), dtype=float)
+    pop_mu = compute_population_mu(params, config)
+    pop_mu_by_obs = pop_mu[idx["person"]] if pop_mu.size else np.zeros(len(score_k), dtype=float)
+    pop_grad_full = np.zeros(pop_X.shape[1], dtype=float) if pop.get("enabled") and pop_X.ndim == 2 else np.array([], dtype=float)
+    if config["model"] == "RSM":
+        step_grad_full = np.zeros(n_steps, dtype=float)
+        step_cum = np.concatenate([[0.0], np.cumsum(params["steps"])])
+    else:
+        step_facet_n = len(config["facet_levels"][config["step_facet"]])
+        step_grad_full = np.zeros((step_facet_n, n_steps), dtype=float)
+        step_cum_mat = np.vstack([
+            np.concatenate([[0.0], np.cumsum(row)]) for row in params["steps_mat"]
+        ])
+    if config["model"] == "GPCM":
+        slope_idx = idx.get("slope_idx")
+        if slope_idx is None:
+            slope_idx = idx["step_idx"]
+        slope_obs = params["slopes"][slope_idx]
+        slope_levels = len(config["facet_levels"][config["slope_facet"]])
+        log_slope_grad_full = np.zeros(slope_levels, dtype=float)
+    else:
+        slope_idx = None
+        slope_obs = np.ones(len(score_k), dtype=float)
+        log_slope_grad_full = np.array([], dtype=float)
+
+    nll = 0.0
+    for q, theta_q in enumerate(quad["nodes"]):
+        post_obs = post_weights[idx["person"], q]
+        eff_weight = weight * post_obs
+        eta = theta_q + pop_mu_by_obs + base_eta
+
+        if config["model"] == "RSM":
+            log_num = np.outer(eta, k_vals) - step_cum
+            log_denom = logsumexp(log_num, axis=1)
+            ll_obs = log_num[np.arange(len(eta)), score_k] - log_denom
+            probs = np.exp(log_num - log_denom[:, None])
+            nll -= float(np.sum(eff_weight * ll_obs))
+            if n_steps > 0:
+                observed_gt = score_k[:, None] > thresholds[None, :]
+                prob_gt = np.flip(np.cumsum(np.flip(probs[:, 1:], axis=1), axis=1), axis=1)
+                step_grad_full += np.sum(eff_weight[:, None] * (observed_gt - prob_gt), axis=0)
+        elif config["model"] == "PCM":
+            probs = np.zeros((len(eta), k_cat), dtype=float)
+            ll_obs = np.zeros(len(eta), dtype=float)
+            for c_idx in range(step_cum_mat.shape[0]):
+                rows = np.where(idx["step_idx"] == c_idx)[0]
+                if rows.size == 0:
+                    continue
+                log_num = np.outer(eta[rows], k_vals) - step_cum_mat[c_idx]
+                log_denom = logsumexp(log_num, axis=1)
+                ll_obs[rows] = log_num[np.arange(len(rows)), score_k[rows]] - log_denom
+                probs[rows, :] = np.exp(log_num - log_denom[:, None])
+                if n_steps > 0:
+                    observed_gt = score_k[rows, None] > thresholds[None, :]
+                    prob_gt = np.flip(np.cumsum(np.flip(probs[rows, 1:], axis=1), axis=1), axis=1)
+                    step_grad_full[c_idx, :] += np.sum(eff_weight[rows, None] * (observed_gt - prob_gt), axis=0)
+            nll -= float(np.sum(eff_weight * ll_obs))
+        else:
+            probs = np.zeros((len(eta), k_cat), dtype=float)
+            ll_obs = np.zeros(len(eta), dtype=float)
+            linear_all = np.zeros((len(eta), k_cat), dtype=float)
+            for c_idx in range(step_cum_mat.shape[0]):
+                rows = np.where(idx["step_idx"] == c_idx)[0]
+                if rows.size == 0:
+                    continue
+                linear = np.outer(eta[rows], k_vals) - step_cum_mat[c_idx]
+                log_num = slope_obs[rows, None] * linear
+                log_denom = logsumexp(log_num, axis=1)
+                ll_obs[rows] = log_num[np.arange(len(rows)), score_k[rows]] - log_denom
+                probs[rows, :] = np.exp(log_num - log_denom[:, None])
+                linear_all[rows, :] = linear
+                if n_steps > 0:
+                    observed_gt = score_k[rows, None] > thresholds[None, :]
+                    prob_gt = np.flip(np.cumsum(np.flip(probs[rows, 1:], axis=1), axis=1), axis=1)
+                    step_grad_full[c_idx, :] += np.sum(
+                        eff_weight[rows, None] * slope_obs[rows, None] * (observed_gt - prob_gt),
+                        axis=0,
+                    )
+            obs_linear = linear_all[np.arange(len(eta)), score_k]
+            expected_linear = np.sum(probs * linear_all, axis=1)
+            log_slope_grad_full += np.bincount(
+                slope_idx,
+                weights=-eff_weight * slope_obs * (obs_linear - expected_linear),
+                minlength=slope_levels,
+            )
+            nll -= float(np.sum(eff_weight * ll_obs))
+
+        expected = probs @ k_vals
+        eta_grad = -eff_weight * slope_obs * (score_k - expected)
+        for facet in config["facet_names"]:
+            sign = facet_signs.get(facet, -1)
+            facet_full_grads[facet] += np.bincount(
+                idx["facets"][facet],
+                weights=eta_grad * sign,
+                minlength=len(config["facet_specs"][facet]["levels"]),
+            )
+        if pop_grad_full.size:
+            person_eta_grad = np.bincount(
+                idx["person"],
+                weights=eta_grad,
+                minlength=pop_X.shape[0],
+            )
+            pop_grad_full += pop_X.T @ person_eta_grad
+
+    grad_parts = []
+    if sizes.get("population", 0) > 0:
+        grad_parts.append(pop_grad_full)
+    for facet in config["facet_names"]:
+        if sizes.get(facet, 0) > 0:
+            grad_parts.append(collapse_facet_gradient(facet_full_grads[facet], config["facet_specs"][facet]))
+    if n_steps > 0:
+        if config["model"] == "RSM":
+            grad_parts.append(collapse_centered_gradient(step_grad_full))
+        else:
+            grad_parts.append(np.vstack([collapse_centered_gradient(row) for row in step_grad_full]).reshape(-1))
+    if config["model"] == "GPCM" and sizes.get("log_slopes", 0) > 0:
+        grad_parts.append(collapse_centered_gradient(log_slope_grad_full))
+
+    grad = np.concatenate([g for g in grad_parts if g.size]) if grad_parts else np.array([], dtype=float)
+    if grad.size != len(par):
+        raise RuntimeError(f"Internal MML gradient size mismatch: expected {len(par)}, got {grad.size}.")
+    return nll, grad
+
+
+def mfrm_em_mml(start, idx, config, sizes, quad, maxit=200, reltol=1e-6):
+    """EM algorithm for MML estimation of MFRM parameters.
+
+    Implements the Bock & Aitkin (1981) EM algorithm:
+      E-step — compute posterior  P(θ_q | x_j, δ^(t))  for each
+               person j at each quadrature node q.
+      M-step — maximise expected complete-data log-likelihood
+               Q(δ | δ^(t)) = Σ_j Σ_q r_jq log L(x_j | θ_q, δ)
+               w.r.t. item/facet parameters δ using analytical-gradient
+               L-BFGS-B.
+
+    Parameters
+    ----------
+    start : ndarray
+        Initial parameter vector (facet + step parameters only; no θ).
+    idx : dict
+        Observation indices from build_indices().
+    config : dict
+        Model configuration.
+    sizes : OrderedDict
+        Parameter block sizes.
+    quad : dict
+        Gauss-Hermite quadrature nodes and weights.
+    maxit : int
+        Maximum number of EM iterations.
+    reltol : float
+        Convergence criterion on relative change in marginal LL.
+
+    Returns
+    -------
+    result : dict with keys
+        'x'        — final parameter vector
+        'fun'      — final negative marginal log-likelihood
+        'success'  — whether convergence was achieved
+        'nit'      — number of EM iterations
+        'nfev'     — total function evaluations across all M-steps
+        'll_trace' — marginal LL at each iteration
+
+    References
+    ----------
+    Bock, R. D. & Aitkin, M. (1981). Marginal maximum likelihood
+        estimation of item parameters: Application of an EM algorithm.
+        Psychometrika, 46(4), 443–459.
+    Bock, R. D. & Mislevy, R. J. (1982). Adaptive EAP estimation of
+        ability in a microcomputer environment. Applied Psychological
+        Measurement, 6(4), 431–444.
+    """
+    par = np.array(start, dtype=float, copy=True)
+    params = expand_params(par, sizes, config)
+
+    prev_ll = -np.inf
+    converged = False
+    ll_trace = []
+    total_nfev = 0
+
+    for it in range(maxit):
+        # ── E-step ──────────────────────────────────────────────
+        post_weights, marginal_ll = _e_step_posteriors(idx, config, params, quad)
+        ll_trace.append(marginal_ll)
+
+        # ── Convergence check (relative change in marginal LL) ─
+        if it > 0:
+            rel_change = abs(marginal_ll - prev_ll) / (abs(prev_ll) + 1e-10)
+            if rel_change < reltol:
+                converged = True
+                break
+        prev_ll = marginal_ll
+
+        # ── M-step (analytical-gradient L-BFGS-B) ──────────────
+        opt = minimize(
+            _m_step_expected_ll_value_grad,
+            par,
+            args=(idx, config, sizes, quad, post_weights),
+            jac=True,
+            method="L-BFGS-B",
+            bounds=build_optimizer_bounds(sizes, config),
+            options={"maxiter": 50, "gtol": 1e-5, "ftol": 1e-7},
+        )
+        par = opt.x
+        total_nfev += opt.nfev
+        params = expand_params(par, sizes, config)
+
+    # Final E-step to get the converged marginal LL
+    _, final_ll = _e_step_posteriors(idx, config, params, quad)
+    ll_trace.append(final_ll)
+
+    class EMResult:
+        """Mimics scipy.optimize.OptimizeResult for compatibility."""
+        pass
+
+    result = EMResult()
+    result.x = par
+    result.fun = -final_ll          # negative LL (same sign convention)
+    result.success = converged
+    result.nit = len(ll_trace) - 1
+    result.nfev = total_nfev
+    result.ll_trace = ll_trace
+    result.message = "EM relative log-likelihood convergence reached." if converged else "EM reached max iterations before relative log-likelihood convergence."
+    return result
+
+
+def compute_person_eap(idx, config, params, quad):
+    n = len(idx["score_k"])
+    if n == 0:
+        return pd.DataFrame(columns=["Person", "Estimate", "SD"])
+
+    base_eta = compute_base_eta(idx, params, config)
+    rows_by_person = idx.get("rows_by_person")
+    if rows_by_person is None:
+        rows_by_person = [np.where(idx["person"] == p)[0] for p in range(config["n_person"])]
+
+    log_w = np.log(quad["weights"])
+    pop_mu = compute_population_mu(params, config)
+    estimates = []
+    if config["model"] == "RSM":
+        step_cum = np.concatenate([[0.0], np.cumsum(params["steps"])])
+        for j, rows in enumerate(rows_by_person):
+            base = base_eta[rows]
+            score_k = idx["score_k"][rows]
+            w = idx.get("weight")[rows] if idx.get("weight") is not None else None
+            mu_j = pop_mu[j] if j < len(pop_mu) else 0.0
+            theta_nodes = mu_j + quad["nodes"]
+            ll_nodes = np.array([loglik_rsm(theta + base, score_k, step_cum, weight=w) for theta in theta_nodes])
+            log_post = log_w + ll_nodes
+            log_post = log_post - logsumexp(log_post)
+            post_w = np.exp(log_post)
+            eap = float(np.sum(theta_nodes * post_w))
+            sd = float(np.sqrt(np.sum((theta_nodes - eap) ** 2 * post_w)))
+            estimates.append((eap, sd))
+    elif config["model"] == "PCM":
+        step_cum_mat = np.vstack([
+            np.concatenate([[0.0], np.cumsum(row)]) for row in params["steps_mat"]
+        ])
+        for j, rows in enumerate(rows_by_person):
+            base = base_eta[rows]
+            score_k = idx["score_k"][rows]
+            crit = idx["step_idx"][rows]
+            w = idx.get("weight")[rows] if idx.get("weight") is not None else None
+            mu_j = pop_mu[j] if j < len(pop_mu) else 0.0
+            theta_nodes = mu_j + quad["nodes"]
+            ll_nodes = np.array([loglik_pcm(theta + base, score_k, step_cum_mat, crit, weight=w) for theta in theta_nodes])
+            log_post = log_w + ll_nodes
+            log_post = log_post - logsumexp(log_post)
+            post_w = np.exp(log_post)
+            eap = float(np.sum(theta_nodes * post_w))
+            sd = float(np.sqrt(np.sum((theta_nodes - eap) ** 2 * post_w)))
+            estimates.append((eap, sd))
+    else:
+        step_cum_mat = np.vstack([
+            np.concatenate([[0.0], np.cumsum(row)]) for row in params["steps_mat"]
+        ])
+        for j, rows in enumerate(rows_by_person):
+            base = base_eta[rows]
+            score_k = idx["score_k"][rows]
+            step_idx = idx["step_idx"][rows]
+            slope_idx_full = idx.get("slope_idx")
+            slope_idx = slope_idx_full[rows] if slope_idx_full is not None else step_idx
+            w = idx.get("weight")[rows] if idx.get("weight") is not None else None
+            mu_j = pop_mu[j] if j < len(pop_mu) else 0.0
+            theta_nodes = mu_j + quad["nodes"]
+            ll_nodes = np.array([
+                loglik_gpcm(theta + base, score_k, step_cum_mat, step_idx, params["slopes"], slope_idx, weight=w)
+                for theta in theta_nodes
+            ])
+            log_post = log_w + ll_nodes
+            log_post = log_post - logsumexp(log_post)
+            post_w = np.exp(log_post)
+            eap = float(np.sum(theta_nodes * post_w))
+            sd = float(np.sqrt(np.sum((theta_nodes - eap) ** 2 * post_w)))
+            estimates.append((eap, sd))
+
+    est_mat = np.array(estimates)
+    return pd.DataFrame({"Estimate": est_mat[:, 0], "SD": est_mat[:, 1]})
+
+
+def _weighted_quantile_from_grid(nodes: np.ndarray, weights: np.ndarray, probs=(0.05, 0.5, 0.95)) -> list[float]:
+    order = np.argsort(nodes)
+    x = np.asarray(nodes, dtype=float)[order]
+    w = np.asarray(weights, dtype=float)[order]
+    total = float(np.sum(w))
+    if total <= 0 or not np.isfinite(total):
+        return [np.nan for _ in probs]
+    cdf = np.cumsum(w / total)
+    return [float(x[min(np.searchsorted(cdf, p, side="left"), len(x) - 1)]) for p in probs]
+
+
+def compute_person_posterior_outputs(
+    idx,
+    config,
+    params,
+    quad,
+    person_levels=None,
+    n_plausible_values=0,
+    seed=20260411,
+):
+    """MML person posterior summaries and optional plausible-value draws."""
+    if config.get("method") != "MML":
+        return {
+            "available": False,
+            "reason": "Posterior scoring and plausible values are defined for MML runs only.",
+            "scores": pd.DataFrame(),
+            "plausible_values": pd.DataFrame(),
+        }
+
+    n = len(idx["score_k"])
+    n_person = int(config.get("n_person", 0))
+    if n_person <= 0:
+        return {
+            "available": False,
+            "reason": "No persons available for posterior scoring.",
+            "scores": pd.DataFrame(),
+            "plausible_values": pd.DataFrame(),
+        }
+
+    if person_levels is None:
+        person_levels = [str(i) for i in range(n_person)]
+
+    base_eta = compute_base_eta(idx, params, config)
+    rows_by_person = idx.get("rows_by_person")
+    if rows_by_person is None:
+        rows_by_person = [np.where(idx["person"] == p)[0] for p in range(n_person)]
+
+    log_w = np.log(quad["weights"])
+    rng = np.random.default_rng(int(seed))
+    n_pv = max(0, int(n_plausible_values or 0))
+    score_rows: list[dict] = []
+    pv_rows: list[dict] = []
+    pop_mu = compute_population_mu(params, config)
+
+    if config["model"] == "RSM":
+        step_cum = np.concatenate([[0.0], np.cumsum(params["steps"])])
+    else:
+        step_cum_mat = np.vstack([
+            np.concatenate([[0.0], np.cumsum(row)]) for row in params["steps_mat"]
+        ])
+
+    for p_idx, rows in enumerate(rows_by_person):
+        base = base_eta[rows]
+        score_k = idx["score_k"][rows]
+        weight = idx.get("weight")[rows] if idx.get("weight") is not None else None
+        mu_j = pop_mu[p_idx] if p_idx < len(pop_mu) else 0.0
+        theta_nodes = mu_j + quad["nodes"]
+        if config["model"] == "RSM":
+            ll_nodes = np.array([loglik_rsm(theta + base, score_k, step_cum, weight=weight) for theta in theta_nodes])
+        elif config["model"] == "PCM":
+            crit = idx["step_idx"][rows]
+            ll_nodes = np.array([loglik_pcm(theta + base, score_k, step_cum_mat, crit, weight=weight) for theta in theta_nodes])
+        else:
+            step_idx = idx["step_idx"][rows]
+            slope_idx_full = idx.get("slope_idx")
+            slope_idx = slope_idx_full[rows] if slope_idx_full is not None else step_idx
+            ll_nodes = np.array([
+                loglik_gpcm(theta + base, score_k, step_cum_mat, step_idx, params["slopes"], slope_idx, weight=weight)
+                for theta in theta_nodes
+            ])
+        log_post = log_w + ll_nodes
+        log_post = log_post - logsumexp(log_post)
+        post_w = np.exp(log_post)
+        eap = float(np.sum(theta_nodes * post_w))
+        sd = float(np.sqrt(np.sum((theta_nodes - eap) ** 2 * post_w)))
+        q05, q50, q95 = _weighted_quantile_from_grid(theta_nodes, post_w, probs=(0.05, 0.5, 0.95))
+        map_theta = float(theta_nodes[int(np.argmax(post_w))])
+        person_id = person_levels[p_idx] if p_idx < len(person_levels) else str(p_idx)
+        row_weight = float(np.sum(weight)) if weight is not None else float(len(rows))
+        score_rows.append({
+            "Person": person_id,
+            "PosteriorMean": eap,
+            "PosteriorSD": sd,
+            "PosteriorMedian": q50,
+            "PosteriorQ05": q05,
+            "PosteriorQ95": q95,
+            "PosteriorMAPGrid": map_theta,
+            "PopulationMean": float(mu_j),
+            "ObservedRows": int(len(rows)),
+            "ObservedWeight": row_weight,
+        })
+        if n_pv > 0:
+            draws = rng.choice(np.asarray(theta_nodes, dtype=float), size=n_pv, replace=True, p=post_w / np.sum(post_w))
+            pv_rows.append({
+                "Person": person_id,
+                **{f"PV_{i + 1}": float(draws[i]) for i in range(n_pv)},
+            })
+
+    return {
+        "available": True,
+        "reason": "Posterior scores computed from the MML quadrature posterior.",
+        "scores": pd.DataFrame(score_rows),
+        "plausible_values": pd.DataFrame(pv_rows),
+        "n_plausible_values": n_pv,
+        "seed": int(seed),
+        "interpretation": (
+            "PosteriorMean is the EAP person score. Plausible values are random draws "
+            "from each person's posterior distribution and are intended for group-level "
+            "uncertainty propagation, not for ranking individual persons."
+        ),
+    }
+
+
+def normalize_anchor_df(df):
+    if df is None or df.empty:
+        return pd.DataFrame()
+    nm = [c.lower() for c in df.columns]
+    facet_col = next((i for i, c in enumerate(nm) if c in ("facet", "facets")), None)
+    level_col = next((i for i, c in enumerate(nm) if c in ("level", "element", "label")), None)
+    anchor_col = next((i for i, c in enumerate(nm) if c in ("anchor", "value", "measure")), None)
+    if facet_col is None or level_col is None or anchor_col is None:
+        return pd.DataFrame()
+    out = pd.DataFrame({
+        "Facet": df.iloc[:, facet_col].astype(str),
+        "Level": df.iloc[:, level_col].astype(str),
+        "Anchor": pd.to_numeric(df.iloc[:, anchor_col], errors="coerce"),
+    })
+    return out.dropna(subset=["Facet", "Level"])
+
+
+def normalize_group_anchor_df(df):
+    if df is None or df.empty:
+        return pd.DataFrame()
+    nm = [c.lower() for c in df.columns]
+    facet_col = next((i for i, c in enumerate(nm) if c in ("facet", "facets")), None)
+    level_col = next((i for i, c in enumerate(nm) if c in ("level", "element", "label")), None)
+    group_col = next((i for i, c in enumerate(nm) if c in ("group", "subset")), None)
+    value_col = next((i for i, c in enumerate(nm) if c in ("groupvalue", "value", "anchor")), None)
+    if facet_col is None or level_col is None or group_col is None or value_col is None:
+        return pd.DataFrame()
+    out = pd.DataFrame({
+        "Facet": df.iloc[:, facet_col].astype(str),
+        "Level": df.iloc[:, level_col].astype(str),
+        "Group": df.iloc[:, group_col].astype(str),
+        "GroupValue": pd.to_numeric(df.iloc[:, value_col], errors="coerce"),
+    })
+    return out.dropna(subset=["Facet", "Level", "Group"])
+
+
+def audit_mfrm_anchors(
+    prep,
+    anchor_df=None,
+    group_anchor_df=None,
+    dummy_facets=None,
+    min_common_anchors=2,
+    min_obs_per_element=2,
+    min_obs_per_category=1,
+):
+    """Audit anchor inputs before they are used for scale constraints."""
+    all_facets = ["Person"] + prep["facet_names"]
+    dummy_facets = set(dummy_facets or [])
+    levels_map = {facet: set(map(str, prep["levels"].get(facet, []))) for facet in all_facets}
+
+    data = prep.get("data", pd.DataFrame())
+    if not data.empty:
+        element_counts = {}
+        for facet in all_facets:
+            if facet in data.columns:
+                element_counts[facet] = data.groupby(facet, observed=False)["Score"].size().to_dict()
+            else:
+                element_counts[facet] = {}
+        cat_counts = data["Score"].value_counts().to_dict() if "Score" in data.columns else {}
+    else:
+        element_counts = {facet: {} for facet in all_facets}
+        cat_counts = {}
+
+    issues: list[dict] = []
+    anchor_norm = normalize_anchor_df(anchor_df) if anchor_df is not None else pd.DataFrame()
+    group_norm = normalize_group_anchor_df(group_anchor_df) if group_anchor_df is not None else pd.DataFrame()
+
+    if anchor_df is not None and not getattr(anchor_df, "empty", True) and anchor_norm.empty:
+        issues.append({
+            "Severity": "error",
+            "Type": "anchor_format",
+            "Facet": "",
+            "Level": "",
+            "Message": "Anchor table could not be parsed. Required columns: Facet, Level, Anchor.",
+            "Action": "Rename columns or paste a CSV with Facet,Level,Anchor.",
+        })
+    if group_anchor_df is not None and not getattr(group_anchor_df, "empty", True) and group_norm.empty:
+        issues.append({
+            "Severity": "error",
+            "Type": "group_anchor_format",
+            "Facet": "",
+            "Level": "",
+            "Message": "Group-anchor table could not be parsed. Required columns: Facet, Level, Group, GroupValue.",
+            "Action": "Rename columns or paste a CSV with Facet,Level,Group,GroupValue.",
+        })
+
+    valid_anchor_rows = []
+    if not anchor_norm.empty:
+        dup_mask = anchor_norm.duplicated(subset=["Facet", "Level"], keep="last")
+        for row in anchor_norm[dup_mask].itertuples(index=False):
+            issues.append({
+                "Severity": "warning",
+                "Type": "duplicate_anchor",
+                "Facet": row.Facet,
+                "Level": row.Level,
+                "Message": "Duplicate anchor row detected; the last value will be used.",
+                "Action": "Keep only one anchor value per Facet x Level for reproducibility.",
+            })
+        anchor_work = anchor_norm.drop_duplicates(subset=["Facet", "Level"], keep="last")
+        for row in anchor_work.itertuples(index=False):
+            facet = str(row.Facet)
+            level = str(row.Level)
+            if facet not in all_facets:
+                issues.append({
+                    "Severity": "warning",
+                    "Type": "unknown_facet",
+                    "Facet": facet,
+                    "Level": level,
+                    "Message": "Anchor references a facet that is not in the current model; it will be ignored.",
+                    "Action": "Check spelling or include that facet in the model.",
+                })
+                continue
+            if level not in levels_map[facet]:
+                issues.append({
+                    "Severity": "warning",
+                    "Type": "unknown_level",
+                    "Facet": facet,
+                    "Level": level,
+                    "Message": "Anchor references a level not observed in the current data; it will be ignored.",
+                    "Action": "Check spelling or use a dataset containing this level.",
+                })
+                continue
+            if not np.isfinite(row.Anchor):
+                issues.append({
+                    "Severity": "warning",
+                    "Type": "invalid_anchor_value",
+                    "Facet": facet,
+                    "Level": level,
+                    "Message": "Anchor value is missing or non-finite; it will be ignored.",
+                    "Action": "Provide a finite logit value.",
+                })
+                continue
+            n_level = int(element_counts.get(facet, {}).get(level, 0))
+            if n_level < int(min_obs_per_element):
+                issues.append({
+                    "Severity": "warning",
+                    "Type": "low_anchor_observations",
+                    "Facet": facet,
+                    "Level": level,
+                    "Message": f"Anchored level has only {n_level} observation(s).",
+                    "Action": "Treat this anchor cautiously or add more linked observations.",
+                })
+            valid_anchor_rows.append({"Facet": facet, "Level": level, "Anchor": float(row.Anchor)})
+
+    valid_group_rows = []
+    if not group_norm.empty:
+        dup_mask = group_norm.duplicated(subset=["Facet", "Level"], keep="last")
+        for row in group_norm[dup_mask].itertuples(index=False):
+            issues.append({
+                "Severity": "warning",
+                "Type": "duplicate_group_anchor",
+                "Facet": row.Facet,
+                "Level": row.Level,
+                "Message": "Duplicate group-anchor row detected; the last value will be used.",
+                "Action": "Keep only one group assignment per Facet x Level.",
+            })
+        group_work = group_norm.drop_duplicates(subset=["Facet", "Level"], keep="last")
+        for row in group_work.itertuples(index=False):
+            facet = str(row.Facet)
+            level = str(row.Level)
+            group = str(row.Group)
+            if facet not in all_facets:
+                issues.append({
+                    "Severity": "warning",
+                    "Type": "unknown_group_facet",
+                    "Facet": facet,
+                    "Level": level,
+                    "Message": "Group anchor references a facet that is not in the current model; it will be ignored.",
+                    "Action": "Check spelling or include that facet in the model.",
+                })
+                continue
+            if level not in levels_map[facet]:
+                issues.append({
+                    "Severity": "warning",
+                    "Type": "unknown_group_level",
+                    "Facet": facet,
+                    "Level": level,
+                    "Message": "Group anchor references a level not observed in the current data; it will be ignored.",
+                    "Action": "Check spelling or use a dataset containing this level.",
+                })
+                continue
+            valid_group_rows.append({
+                "Facet": facet,
+                "Level": level,
+                "Group": group,
+                "GroupValue": float(row.GroupValue) if np.isfinite(row.GroupValue) else 0.0,
+            })
+
+    valid_anchor_df = pd.DataFrame(valid_anchor_rows, columns=["Facet", "Level", "Anchor"])
+    valid_group_df = pd.DataFrame(valid_group_rows, columns=["Facet", "Level", "Group", "GroupValue"])
+
+    summary_rows = []
+    for facet in all_facets:
+        n_levels = len(levels_map[facet])
+        n_anch = int((valid_anchor_df["Facet"] == facet).sum()) if not valid_anchor_df.empty else 0
+        n_group_levels = int((valid_group_df["Facet"] == facet).sum()) if not valid_group_df.empty else 0
+        n_groups = int(valid_group_df.loc[valid_group_df["Facet"] == facet, "Group"].nunique()) if not valid_group_df.empty else 0
+        anchored_total = n_anch + n_group_levels + (n_levels if facet in dummy_facets else 0)
+        if facet in dummy_facets:
+            status = "Dummy"
+            action = "Facet fixed at 0 by dummy-facet setting."
+        elif anchored_total == 0:
+            status = "Unanchored"
+            action = "OK for a single-run analysis; add anchors only for linking across runs."
+        elif anchored_total < int(min_common_anchors):
+            status = "Weak link"
+            action = f"Use at least {min_common_anchors} common anchored levels when making linking claims."
+            issues.append({
+                "Severity": "warning",
+                "Type": "few_common_anchors",
+                "Facet": facet,
+                "Level": "",
+                "Message": f"Only {anchored_total} anchored/common level(s) available for this facet.",
+                "Action": action,
+            })
+        else:
+            status = "Linked"
+            action = "Anchor count is adequate for a first linking screen; still inspect content match and fit."
+        summary_rows.append({
+            "Facet": facet,
+            "Levels": n_levels,
+            "FixedAnchors": n_anch,
+            "GroupAnchoredLevels": n_group_levels,
+            "Groups": n_groups,
+            "DummyFacet": facet in dummy_facets,
+            "Status": status,
+            "Action": action,
+        })
+
+    for cat, cnt in sorted(cat_counts.items()):
+        if int(cnt) < int(min_obs_per_category):
+            issues.append({
+                "Severity": "warning",
+                "Type": "low_category_count",
+                "Facet": "Score",
+                "Level": str(cat),
+                "Message": f"Score category {cat} has only {int(cnt)} observation(s).",
+                "Action": "Threshold and anchor-based linking diagnostics may be unstable for sparse categories.",
+            })
+
+    issues_df = pd.DataFrame(issues, columns=["Severity", "Type", "Facet", "Level", "Message", "Action"])
+    summary_df = pd.DataFrame(summary_rows)
+    n_error = int((issues_df["Severity"] == "error").sum()) if not issues_df.empty else 0
+    n_warning = int((issues_df["Severity"] == "warning").sum()) if not issues_df.empty else 0
+    overall_status = "error" if n_error else ("warning" if n_warning else "ok")
+    linking_review = {
+        "overall_status": overall_status,
+        "message": (
+            "Anchor audit found error(s). Fix anchor inputs before estimating."
+            if n_error else
+            "Anchor audit found warning(s). Review before making linking claims."
+            if n_warning else
+            "Anchor audit found no obvious anchor-input issues."
+        ),
+        "summary": summary_df,
+        "issues": issues_df,
+        "valid_anchors": valid_anchor_df,
+        "valid_group_anchors": valid_group_df,
+        "settings": {
+            "min_common_anchors": int(min_common_anchors),
+            "min_obs_per_element": int(min_obs_per_element),
+            "min_obs_per_category": int(min_obs_per_category),
+        },
+    }
+    return linking_review
+
+
+def prepare_constraint_specs(prep, anchor_df=None, group_anchor_df=None, noncenter_facet="Person", dummy_facets=None):
+    facet_names = prep["facet_names"]
+    all_facets = ["Person"] + facet_names
+
+    anchor_df = normalize_anchor_df(anchor_df) if anchor_df is not None else pd.DataFrame()
+    anchor_df = anchor_df[anchor_df["Facet"].isin(all_facets)] if not anchor_df.empty else anchor_df
+
+    group_anchor_df = normalize_group_anchor_df(group_anchor_df) if group_anchor_df is not None else pd.DataFrame()
+    group_anchor_df = group_anchor_df[group_anchor_df["Facet"].isin(all_facets)] if not group_anchor_df.empty else group_anchor_df
+
+    dummy_facets = set(dummy_facets or [])
+
+    anchor_map = {facet: {} for facet in all_facets}
+    group_map = {facet: {} for facet in all_facets}
+    group_values = {facet: {} for facet in all_facets}
+
+    for facet in all_facets:
+        levels = prep["levels"].get(facet, [])
+        if facet in dummy_facets:
+            anchor_map[facet] = {level: 0.0 for level in levels}
+            group_map[facet] = {}
+            group_values[facet] = {}
+            continue
+        if not anchor_df.empty:
+            df = anchor_df[anchor_df["Facet"] == facet]
+            if not df.empty:
+                anchors = {row.Level: row.Anchor for row in df.itertuples() if row.Level in levels}
+                anchor_map[facet] = anchors
+        if not group_anchor_df.empty:
+            df = group_anchor_df[group_anchor_df["Facet"] == facet]
+            if not df.empty:
+                groups = {row.Level: row.Group for row in df.itertuples() if row.Level in levels}
+                group_map[facet] = groups
+                group_vals = (
+                    df[["Group", "GroupValue"]]
+                    .dropna(subset=["Group"])
+                    .drop_duplicates(subset=["Group"])
+                    .assign(GroupValue=lambda x: x["GroupValue"].fillna(0))
+                )
+                group_values[facet] = {row.Group: row.GroupValue for row in group_vals.itertuples()}
+
+    theta_spec = build_facet_constraint(
+        levels=prep["levels"]["Person"],
+        anchors=anchor_map["Person"],
+        groups=group_map["Person"],
+        group_values=group_values["Person"],
+        centered=noncenter_facet != "Person",
+    )
+
+    facet_specs = {}
+    for facet in facet_names:
+        facet_specs[facet] = build_facet_constraint(
+            levels=prep["levels"][facet],
+            anchors=anchor_map[facet],
+            groups=group_map[facet],
+            group_values=group_values[facet],
+            centered=noncenter_facet != facet,
+        )
+
+    anchor_summary = pd.DataFrame({
+        "Facet": all_facets,
+        "AnchoredLevels": [len(anchor_map[f]) for f in all_facets],
+        "GroupAnchors": [len(set(group_map[f].values())) if group_map[f] else 0 for f in all_facets],
+        "DummyFacet": [f in dummy_facets for f in all_facets],
+    })
+
+    return {
+        "theta_spec": theta_spec,
+        "facet_specs": facet_specs,
+        "anchor_summary": anchor_summary,
+    }
+
+
+def _combined_measure_table_for_linking(result: dict) -> pd.DataFrame:
+    facets = result.get("facets", {})
+    frames = []
+    person_tbl = facets.get("person", pd.DataFrame()) if isinstance(facets, dict) else pd.DataFrame()
+    if isinstance(person_tbl, pd.DataFrame) and {"Person", "Estimate"}.issubset(person_tbl.columns):
+        frames.append(pd.DataFrame({
+            "Facet": "Person",
+            "Level": person_tbl["Person"].astype(str),
+            "Estimate": pd.to_numeric(person_tbl["Estimate"], errors="coerce"),
+        }))
+    other_tbl = facets.get("others", pd.DataFrame()) if isinstance(facets, dict) else pd.DataFrame()
+    if isinstance(other_tbl, pd.DataFrame) and {"Facet", "Level", "Estimate"}.issubset(other_tbl.columns):
+        frames.append(pd.DataFrame({
+            "Facet": other_tbl["Facet"].astype(str),
+            "Level": other_tbl["Level"].astype(str),
+            "Estimate": pd.to_numeric(other_tbl["Estimate"], errors="coerce"),
+        }))
+    if not frames:
+        return pd.DataFrame(columns=["Facet", "Level", "Estimate"])
+    return pd.concat(frames, ignore_index=True)
+
+
+def build_anchor_drift_review(result: dict, tolerance: float | None = None, warning_abs: float = 0.05) -> dict:
+    """Post-fit anchor consistency screen.
+
+    Because this app uses anchor inputs as hard constraints, this is not an
+    empirical unconstrained drift estimate. It verifies that the fitted scale
+    respects the supplied baseline anchors and group-anchor target means.
+    """
+    config = result.get("config", {})
+    audit = config.get("anchor_audit", {})
+    if not isinstance(audit, dict):
+        return {
+            "available": False,
+            "reason": "No anchor audit is available.",
+            "summary": pd.DataFrame(),
+            "anchor_drift": pd.DataFrame(),
+            "group_drift": pd.DataFrame(),
+        }
+    valid_anchors = audit.get("valid_anchors", pd.DataFrame())
+    valid_groups = audit.get("valid_group_anchors", pd.DataFrame())
+    has_anchors = isinstance(valid_anchors, pd.DataFrame) and not valid_anchors.empty
+    has_groups = isinstance(valid_groups, pd.DataFrame) and not valid_groups.empty
+    if not has_anchors and not has_groups:
+        return {
+            "available": False,
+            "reason": "No fixed anchors or group anchors were supplied for this run.",
+            "summary": pd.DataFrame(),
+            "anchor_drift": pd.DataFrame(),
+            "group_drift": pd.DataFrame(),
+            "scope": "post_fit_constraint_check_only",
+        }
+
+    tol = float(tolerance) if tolerance is not None else max(1e-6, 10.0 * float(config.get("reltol") or 1e-6))
+    measures = _combined_measure_table_for_linking(result)
+    anchor_tbl = pd.DataFrame()
+    if has_anchors:
+        anchor_tbl = valid_anchors.copy()
+        anchor_tbl["Facet"] = anchor_tbl["Facet"].astype(str)
+        anchor_tbl["Level"] = anchor_tbl["Level"].astype(str)
+        anchor_tbl["Anchor"] = pd.to_numeric(anchor_tbl["Anchor"], errors="coerce")
+        anchor_tbl = anchor_tbl.merge(measures, on=["Facet", "Level"], how="left")
+        anchor_tbl["Drift"] = anchor_tbl["Estimate"] - anchor_tbl["Anchor"]
+        anchor_tbl["AbsDrift"] = anchor_tbl["Drift"].abs()
+        anchor_tbl["Tolerance"] = tol
+        anchor_tbl["Status"] = "Constraint ok"
+        anchor_tbl.loc[anchor_tbl["Estimate"].isna(), "Status"] = "Missing estimate"
+        anchor_tbl.loc[
+            anchor_tbl["Estimate"].notna() & (anchor_tbl["AbsDrift"] > tol) & (anchor_tbl["AbsDrift"] <= float(warning_abs)),
+            "Status",
+        ] = "Small numerical drift"
+        anchor_tbl.loc[
+            anchor_tbl["Estimate"].notna() & (anchor_tbl["AbsDrift"] > float(warning_abs)),
+            "Status",
+        ] = "Review"
+        anchor_tbl["Scope"] = "Constrained anchor consistency check"
+        anchor_tbl["Action"] = np.where(
+            anchor_tbl["Status"].eq("Constraint ok"),
+            "No action needed; this verifies the hard anchor constraint.",
+            "Check anchor spelling, duplicate inputs, and optimizer convergence before making linking claims.",
+        )
+
+    group_tbl = pd.DataFrame()
+    if has_groups:
+        group_rows = valid_groups.copy()
+        group_rows["Facet"] = group_rows["Facet"].astype(str)
+        group_rows["Level"] = group_rows["Level"].astype(str)
+        group_rows["Group"] = group_rows["Group"].astype(str)
+        group_rows["GroupValue"] = pd.to_numeric(group_rows["GroupValue"], errors="coerce").fillna(0.0)
+        group_rows = group_rows.merge(measures, on=["Facet", "Level"], how="left")
+        group_tbl = (
+            group_rows.groupby(["Facet", "Group"], dropna=False)
+            .agg(
+                GroupValue=("GroupValue", "first"),
+                Levels=("Level", "nunique"),
+                EstimatedMean=("Estimate", "mean"),
+                EstimatedSD=("Estimate", "std"),
+                MissingEstimates=("Estimate", lambda x: int(pd.to_numeric(x, errors="coerce").isna().sum())),
+            )
+            .reset_index()
+        )
+        group_tbl["MeanDrift"] = group_tbl["EstimatedMean"] - group_tbl["GroupValue"]
+        group_tbl["AbsMeanDrift"] = group_tbl["MeanDrift"].abs()
+        group_tbl["Tolerance"] = tol
+        group_tbl["Status"] = "Group target ok"
+        group_tbl.loc[group_tbl["MissingEstimates"] > 0, "Status"] = "Missing estimate"
+        group_tbl.loc[
+            group_tbl["EstimatedMean"].notna() & (group_tbl["AbsMeanDrift"] > tol) & (group_tbl["AbsMeanDrift"] <= float(warning_abs)),
+            "Status",
+        ] = "Small numerical drift"
+        group_tbl.loc[
+            group_tbl["EstimatedMean"].notna() & (group_tbl["AbsMeanDrift"] > float(warning_abs)),
+            "Status",
+        ] = "Review"
+        group_tbl["Scope"] = "Group-anchor mean consistency check"
+        group_tbl["Action"] = np.where(
+            group_tbl["Status"].eq("Group target ok"),
+            "No action needed; the group target mean is respected.",
+            "Check group-anchor values and convergence before making group-linking claims.",
+        )
+
+    max_anchor = float(pd.to_numeric(anchor_tbl.get("AbsDrift", pd.Series(dtype=float)), errors="coerce").max()) if not anchor_tbl.empty else np.nan
+    max_group = float(pd.to_numeric(group_tbl.get("AbsMeanDrift", pd.Series(dtype=float)), errors="coerce").max()) if not group_tbl.empty else np.nan
+    review_count = 0
+    if not anchor_tbl.empty:
+        review_count += int(anchor_tbl["Status"].isin(["Review", "Missing estimate"]).sum())
+    if not group_tbl.empty:
+        review_count += int(group_tbl["Status"].isin(["Review", "Missing estimate"]).sum())
+    summary = pd.DataFrame([{
+        "Available": True,
+        "ExplicitAnchors": int(len(valid_anchors)) if has_anchors else 0,
+        "GroupAnchorLevels": int(len(valid_groups)) if has_groups else 0,
+        "MaxAbsAnchorDrift": max_anchor,
+        "MaxAbsGroupMeanDrift": max_group,
+        "Tolerance": tol,
+        "ReviewCount": review_count,
+        "Status": "Ready" if review_count == 0 else "Review",
+        "Scope": "post_fit_constraint_check_only",
+        "Action": (
+            "Anchor constraints are internally consistent; this does not prove empirical invariance."
+            if review_count == 0 else
+            "Resolve anchor consistency warnings before using this run for linking."
+        ),
+    }])
+    return {
+        "available": True,
+        "reason": "Anchor drift review is a post-fit constraint consistency check for the supplied anchors.",
+        "summary": summary,
+        "anchor_drift": anchor_tbl,
+        "group_drift": group_tbl,
+        "scope": "post_fit_constraint_check_only",
+        "empirical_unconstrained_drift_available": False,
+    }
+
+
+def build_equating_chain_summary(result: dict) -> dict:
+    """Single-run linking-chain summary from anchor and group-anchor inputs."""
+    config = result.get("config", {})
+    audit = config.get("anchor_audit", {})
+    if not isinstance(audit, dict):
+        return {
+            "available": False,
+            "reason": "No anchor audit is available.",
+            "summary": pd.DataFrame(),
+            "edges": pd.DataFrame(),
+        }
+    audit_summary = audit.get("summary", pd.DataFrame())
+    if not isinstance(audit_summary, pd.DataFrame) or audit_summary.empty:
+        return {
+            "available": False,
+            "reason": "Anchor summary is unavailable.",
+            "summary": pd.DataFrame(),
+            "edges": pd.DataFrame(),
+        }
+    min_common = int(audit.get("settings", {}).get("min_common_anchors", 2))
+    rows = []
+    edges = []
+    for row in audit_summary.itertuples(index=False):
+        facet = str(getattr(row, "Facet", ""))
+        levels = int(getattr(row, "Levels", 0) or 0)
+        fixed = int(getattr(row, "FixedAnchors", 0) or 0)
+        group_levels = int(getattr(row, "GroupAnchoredLevels", 0) or 0)
+        groups = int(getattr(row, "Groups", 0) or 0)
+        dummy = bool(getattr(row, "DummyFacet", False))
+        common = fixed + group_levels + (levels if dummy else 0)
+        coverage = (common / levels) if levels > 0 else np.nan
+        if dummy:
+            link_type = "Dummy facet"
+        elif fixed and group_levels:
+            link_type = "Fixed + group anchors"
+        elif fixed:
+            link_type = "Fixed anchors"
+        elif group_levels:
+            link_type = "Group anchors"
+        else:
+            link_type = "None"
+        if dummy or common >= min_common:
+            strength = "Linked" if common > 0 else "Unanchored"
+        elif common > 0:
+            strength = "Weak link"
+        else:
+            strength = "Unanchored"
+        action = (
+            "Do not make cross-run linking claims from this facet alone; add common anchors or group anchors."
+            if strength == "Unanchored" else
+            f"Add at least {min_common - common} more common anchored level(s) before strong linking claims."
+            if strength == "Weak link" else
+            "Use with anchor drift and content-match review before reporting linked results."
+        )
+        rows.append({
+            "Facet": facet,
+            "Levels": levels,
+            "LinkType": link_type,
+            "CommonLinkedLevels": common,
+            "FixedAnchors": fixed,
+            "GroupAnchoredLevels": group_levels,
+            "Groups": groups,
+            "Coverage": coverage,
+            "MinimumCommonAnchors": min_common,
+            "Strength": strength,
+            "Action": action,
+        })
+        if common > 0:
+            edges.append({
+                "From": "Current run",
+                "To": f"Anchor baseline via {facet}",
+                "Facet": facet,
+                "LinkType": link_type,
+                "CommonLinkedLevels": common,
+                "Strength": strength,
+                "Action": action,
+            })
+
+    summary = pd.DataFrame(rows)
+    edges_df = pd.DataFrame(edges, columns=[
+        "From", "To", "Facet", "LinkType", "CommonLinkedLevels", "Strength", "Action",
+    ])
+    available = not edges_df.empty
+    return {
+        "available": available,
+        "reason": (
+            "Single-run anchor chain summary built from fixed anchors and group anchors."
+            if available else "No anchored/common levels were supplied for this run."
+        ),
+        "summary": summary,
+        "edges": edges_df,
+        "scope": "single_run_anchor_chain_summary",
+        "full_multi_run_chain_available": False,
+        "interpretation": (
+            "This summarizes how the current run is linked to supplied anchor baselines. "
+            "It is not a historical multi-run equating-chain reconstruction."
+        ),
+    }
+
+
+def mfrm_estimate(
+    data,
+    person_col,
+    facet_cols,
+    score_col,
+    rating_min=None,
+    rating_max=None,
+    weight_col=None,
+    keep_original=False,
+    model="RSM",
+    method="JMLE",
+    step_facet=None,
+    slope_facet=None,
+    person_data=None,
+    person_id_col=None,
+    population_formula=None,
+    population_standardize_numeric=False,
+    population_categorical_terms=None,
+    population_numeric_terms=None,
+    anchor_df=None,
+    group_anchor_df=None,
+    noncenter_facet="Person",
+    dummy_facets=None,
+    positive_facets=None,
+    quad_points=15,
+    population_prior_sd=1.0,
+    maxit=400,
+    reltol=1e-6,
+    mml_engine="EM",
+    anchor_policy="warn",
+    min_common_anchors=2,
+    min_obs_per_element=2,
+    min_obs_per_category=1,
+    compute_plausible_values=False,
+    n_plausible_values=5,
+    plausible_seed=20260411,
+):
+    if method == "JMLE" and SHARED_SIM_ENGINE is not None and not USE_EMBEDDED_ENGINE_ONLY:
+        return SHARED_SIM_ENGINE.mfrm_estimate(
+            data=data,
+            person_col=person_col,
+            facet_cols=facet_cols,
+            score_col=score_col,
+            rating_min=rating_min,
+            rating_max=rating_max,
+            weight_col=weight_col,
+            keep_original=keep_original,
+            model=model,
+            method=method,
+            step_facet=step_facet,
+            anchor_df=anchor_df,
+            group_anchor_df=group_anchor_df,
+            noncenter_facet=noncenter_facet,
+            dummy_facets=dummy_facets,
+            positive_facets=positive_facets,
+            quad_points=quad_points,
+            maxit=maxit,
+            reltol=reltol,
+            jmle_optimizer="AUTO",
+        )
+
+    prep = prepare_mfrm_data(
+        data,
+        person_col=person_col,
+        facet_cols=facet_cols,
+        score_col=score_col,
+        rating_min=rating_min,
+        rating_max=rating_max,
+        weight_col=weight_col,
+        keep_original=keep_original,
+    )
+
+    model = str(model or "RSM").upper()
+    if model not in {"RSM", "PCM", "GPCM"}:
+        raise ValueError("Model must be one of: RSM, PCM, GPCM.")
+    population_prior_sd = float(population_prior_sd if population_prior_sd is not None else 1.0)
+    if not np.isfinite(population_prior_sd) or population_prior_sd <= 0:
+        raise ValueError("population_prior_sd must be a positive finite value.")
+
+    if model in {"PCM", "GPCM"}:
+        if step_facet is None:
+            step_facet = prep["facet_names"][0]
+        if step_facet not in prep["facet_names"]:
+            raise ValueError("Selected step facet is not in the facet list.")
+        if model == "GPCM":
+            if slope_facet is None:
+                slope_facet = step_facet
+            if slope_facet not in prep["facet_names"]:
+                raise ValueError("Selected slope facet is not in the facet list.")
+            if slope_facet != step_facet:
+                raise ValueError("Bounded GPCM currently requires slope_facet == step_facet.")
+        else:
+            slope_facet = None
+    else:
+        step_facet = None
+        slope_facet = None
+
+    idx = build_indices(prep, step_facet=step_facet, slope_facet=slope_facet)
+
+    n_person = len(prep["levels"]["Person"])
+    facet_levels = {f: prep["levels"][f] for f in prep["facet_names"]}
+    n_cat = prep["rating_max"] - prep["rating_min"] + 1
+    if str(population_formula or "").strip() and method != "MML":
+        raise ValueError("population_formula / latent regression is currently available for MML only.")
+    population_model = (
+        build_population_model(
+            prep,
+            person_data=person_data,
+            person_id_col=person_id_col,
+            population_formula=population_formula,
+            standardize_numeric=population_standardize_numeric,
+            categorical_terms=population_categorical_terms,
+            numeric_terms=population_numeric_terms,
+        )
+        if method == "MML" else build_population_model(prep)
+    )
+
+    if noncenter_facet not in ["Person"] + prep["facet_names"]:
+        noncenter_facet = "Person"
+
+    dummy_facets = [f for f in (dummy_facets or []) if f in ["Person"] + prep["facet_names"]]
+
+    positive_facets = set(positive_facets or [])
+    facet_signs = {facet: (1 if facet in positive_facets else -1) for facet in prep["facet_names"]}
+    anchor_policy = str(anchor_policy or "warn").lower()
+    if anchor_policy not in {"warn", "error", "silent"}:
+        anchor_policy = "warn"
+    anchor_audit = audit_mfrm_anchors(
+        prep,
+        anchor_df=anchor_df,
+        group_anchor_df=group_anchor_df,
+        dummy_facets=dummy_facets,
+        min_common_anchors=min_common_anchors,
+        min_obs_per_element=min_obs_per_element,
+        min_obs_per_category=min_obs_per_category,
+    )
+    if anchor_policy == "error" and anchor_audit.get("overall_status") in {"error", "warning"}:
+        issues = anchor_audit.get("issues", pd.DataFrame())
+        msg = "Anchor audit failed under policy='error'."
+        if isinstance(issues, pd.DataFrame) and not issues.empty:
+            first = issues.iloc[0]
+            msg += f" First issue: {first.get('Message', '')} Action: {first.get('Action', '')}"
+        raise ValueError(msg)
+    anchor_df_for_fit = anchor_audit.get("valid_anchors", pd.DataFrame())
+    group_anchor_df_for_fit = anchor_audit.get("valid_group_anchors", pd.DataFrame())
+
+    config = {
+        "model": model,
+        "method": method,
+        "app_version": APP_VERSION,
+        "release_label": APP_RELEASE_LABEL,
+        "runtime_scope": "standalone Python; no external MFRM engine called",
+        "n_person": n_person,
+        "n_cat": n_cat,
+        "facet_names": prep["facet_names"],
+        "facet_levels": facet_levels,
+        "step_facet": step_facet,
+        "slope_facet": slope_facet,
+        "population_model": population_model,
+    }
+    config["weight_col"] = weight_col if weight_col else None
+    config["keep_original"] = bool(keep_original)
+    config["rating_min"] = prep["rating_min"]
+    config["rating_max"] = prep["rating_max"]
+    config["input_rating_min"] = rating_min
+    config["input_rating_max"] = rating_max
+    config["score_range_explicit"] = bool(prep.get("score_range_explicit", False))
+    config["positive_facets"] = list(positive_facets)
+    config["facet_signs"] = facet_signs
+    config["maxit"] = maxit
+    config["reltol"] = reltol
+    config["quad_points"] = quad_points if method == "MML" else None
+    config["population_prior_sd"] = float(population_prior_sd) if method == "MML" else None
+    config["population_formula"] = population_model.get("formula", "") if method == "MML" else ""
+    config["population_standardize_numeric"] = bool(population_model.get("standardize_numeric", False)) if method == "MML" else False
+    config["population_categorical_terms"] = population_model.get("categorical_terms", []) if method == "MML" else []
+    config["population_numeric_terms"] = population_model.get("numeric_terms", []) if method == "MML" else []
+    config["population_term_types"] = population_model.get("term_types", {}) if method == "MML" else {}
+    config["person_id_col"] = person_id_col if method == "MML" and population_model.get("enabled") else None
+    config["anchor_policy"] = anchor_policy
+    config["compute_plausible_values"] = bool(compute_plausible_values) if method == "MML" else False
+    config["n_plausible_values"] = int(n_plausible_values) if method == "MML" and compute_plausible_values else 0
+    config["plausible_seed"] = int(plausible_seed) if method == "MML" and compute_plausible_values else None
+    if model == "GPCM":
+        config["gpcm_spec"] = {
+            "scope": "bounded",
+            "step_facet": step_facet,
+            "slope_facet": slope_facet,
+            "slope_identification": "positive slopes; centered log slopes; geometric mean slope fixed to 1",
+            "log_slope_bounds": [-3.0, 3.0],
+        }
+        config["gpcm_log_slope_bounds"] = (-3.0, 3.0)
+    mml_engine_raw = str(mml_engine or "EM").strip().lower()
+    config["mml_engine_requested"] = str(mml_engine) if method == "MML" else None
+    if "auto" in mml_engine_raw:
+        mml_engine_resolved = "auto"
+    elif "hybrid" in mml_engine_raw:
+        mml_engine_resolved = "hybrid"
+    elif "direct" in mml_engine_raw:
+        mml_engine_resolved = "direct"
+    else:
+        mml_engine_resolved = "em"
+    config["mml_engine"] = mml_engine_resolved if method == "MML" else None
+    if method == "JMLE":
+        config["optimizer"] = "L-BFGS-B"
+    elif mml_engine_resolved == "direct":
+        config["optimizer"] = "Direct MML with analytical-gradient L-BFGS-B"
+    elif mml_engine_resolved == "hybrid":
+        config["optimizer"] = "Hybrid MML: EM warm start + analytical-gradient L-BFGS-B"
+    elif mml_engine_resolved == "auto":
+        config["optimizer"] = "Auto MML: hybrid first, EM fallback if needed"
+    else:
+        config["optimizer"] = "EM with analytical-gradient L-BFGS-B M-step"
+
+    constraint_specs = prepare_constraint_specs(
+        prep=prep,
+        anchor_df=anchor_df_for_fit,
+        group_anchor_df=group_anchor_df_for_fit,
+        noncenter_facet=noncenter_facet,
+        dummy_facets=dummy_facets,
+    )
+    config["theta_spec"] = constraint_specs["theta_spec"]
+    config["facet_specs"] = constraint_specs["facet_specs"]
+    config["noncenter_facet"] = noncenter_facet
+    config["dummy_facets"] = dummy_facets
+    config["anchor_summary"] = constraint_specs["anchor_summary"]
+    config["anchor_audit"] = anchor_audit
+
+    sizes = build_param_sizes(config)
+
+    step_init = np.linspace(-1, 1, max(n_cat - 1, 0)) if n_cat > 1 else np.array([], dtype=float)
+    facet_starts = np.concatenate([np.zeros(sizes[f]) for f in config["facet_names"]]) if config["facet_names"] else np.array([], dtype=float)
+    start = np.concatenate([
+        np.zeros(sizes["theta"]),
+        np.zeros(sizes.get("population", 0)),
+        facet_starts,
+        step_init if model == "RSM" else np.tile(step_init, len(facet_levels[step_facet])),
+        np.zeros(sizes.get("log_slopes", 0)),
+    ])
+
+    fit_start_time = time.perf_counter()
+    if method == "JMLE":
+        opt = minimize(
+            mfrm_loglik_jmle_value_grad,
+            start,
+            args=(idx, config, sizes),
+            jac=True,
+            method="L-BFGS-B",
+            bounds=build_optimizer_bounds(sizes, config),
+            options={"maxiter": maxit, "gtol": reltol, "ftol": reltol},
+        )
+    else:
+        quad = make_mml_quadrature(config, quad_points)
+        if mml_engine_resolved == "direct":
+            opt = mfrm_direct_mml(start, idx, config, sizes, quad,
+                                  maxit=maxit, reltol=reltol)
+        elif mml_engine_resolved == "hybrid":
+            opt = mfrm_hybrid_mml(start, idx, config, sizes, quad,
+                                  maxit=maxit, reltol=reltol)
+        elif mml_engine_resolved == "auto":
+            opt = mfrm_auto_mml(start, idx, config, sizes, quad,
+                                maxit=maxit, reltol=reltol)
+        else:
+            opt = mfrm_em_mml(start, idx, config, sizes, quad,
+                              maxit=maxit, reltol=reltol)
+            opt.mml_engine = "em"
+        config["mml_engine"] = getattr(opt, "mml_engine", mml_engine_resolved)
+        if mml_engine_resolved == "auto":
+            config["mml_engine_auto_selected"] = getattr(opt, "auto_selected", config["mml_engine"])
+            config["mml_engine_auto_attempted"] = getattr(opt, "auto_attempted", ["hybrid"])
+            config["mml_engine_auto_fallback_reason"] = getattr(opt, "auto_fallback_reason", "")
+            if config["mml_engine"] == "em":
+                config["optimizer"] = "Auto MML selected EM after hybrid fallback"
+            elif config["mml_engine"] == "hybrid":
+                config["optimizer"] = "Auto MML selected hybrid"
+    elapsed_seconds = time.perf_counter() - fit_start_time
+
+    params = expand_params(opt.x, sizes, config)
+
+    if method == "MML":
+        quad = make_mml_quadrature(config, quad_points)
+        person_tbl = compute_person_eap(idx, config, params, quad)
+        person_tbl.insert(0, "Person", prep["levels"]["Person"])
+        if population_model.get("enabled"):
+            person_tbl["PopulationMean"] = compute_population_mu(params, config)
+        posterior_outputs = compute_person_posterior_outputs(
+            idx,
+            config,
+            params,
+            quad,
+            person_levels=prep["levels"]["Person"],
+            n_plausible_values=(int(n_plausible_values) if compute_plausible_values else 0),
+            seed=int(plausible_seed),
+        )
+    else:
+        person_tbl = pd.DataFrame({
+            "Person": prep["levels"]["Person"],
+            "Estimate": params["theta"],
+        })
+        posterior_outputs = {
+            "available": False,
+            "reason": "Posterior scoring and plausible values are defined for MML runs only.",
+            "scores": pd.DataFrame(),
+            "plausible_values": pd.DataFrame(),
+        }
+
+    facet_tbls = []
+    for facet in config["facet_names"]:
+        facet_tbls.append(pd.DataFrame({
+            "Facet": facet,
+            "Level": prep["levels"][facet],
+            "Estimate": params["facets"][facet],
+        }))
+    facet_tbl = pd.concat(facet_tbls, ignore_index=True) if facet_tbls else pd.DataFrame(columns=["Facet", "Level", "Estimate"])
+
+    if model == "RSM":
+        step_tbl = pd.DataFrame({
+            "Step": [f"Step_{i+1}" for i in range(n_cat - 1)],
+            "Estimate": params["steps"],
+        })
+    else:
+        rows = []
+        for sf in prep["levels"][step_facet]:
+            for i in range(n_cat - 1):
+                rows.append((sf, f"Step_{i+1}", params["steps_mat"][prep["levels"][step_facet].index(sf), i]))
+        step_tbl = pd.DataFrame(rows, columns=["StepFacet", "Step", "Estimate"])
+
+    if model == "GPCM":
+        slope_tbl = pd.DataFrame({
+            "SlopeFacet": slope_facet,
+            "Level": prep["levels"][slope_facet],
+            "LogEstimate": params["log_slopes"],
+            "Estimate": params["slopes"],
+        })
+    else:
+        slope_tbl = pd.DataFrame(columns=["SlopeFacet", "Level", "LogEstimate", "Estimate"])
+
+    if method == "MML" and population_model.get("enabled") and sizes.get("population", 0) > 0:
+        population_tbl = pd.DataFrame({
+            "Term": population_model.get("columns", []),
+            "Estimate": params["population"],
+        })
+        person_population_tbl = population_model.get("person_data", pd.DataFrame()).copy()
+        pop_mu = compute_population_mu(params, config)
+        if isinstance(person_population_tbl, pd.DataFrame) and not person_population_tbl.empty:
+            person_population_tbl["PopulationMean"] = pop_mu
+    else:
+        population_tbl = pd.DataFrame(columns=["Term", "Estimate"])
+        person_population_tbl = pd.DataFrame()
+    transform_rows = []
+    if method == "MML" and population_model.get("enabled"):
+        for term, transform in population_model.get("numeric_transforms", {}).items():
+            if isinstance(transform, dict):
+                transform_rows.append({
+                    "Term": term,
+                    "Center": float(transform.get("center", 0.0)),
+                    "Scale": float(transform.get("scale", 1.0)),
+                    "Standardized": bool(transform.get("standardized", False)),
+                })
+    population_transform_tbl = pd.DataFrame(
+        transform_rows,
+        columns=["Term", "Center", "Scale", "Standardized"],
+    )
+
+    k_params = sum(sizes.values())
+    loglik = -opt.fun
+    if not np.isfinite(getattr(opt, "gradient_norm", np.nan)):
+        try:
+            if method == "MML":
+                final_quad = make_mml_quadrature(config, quad_points)
+                _, final_grad = mfrm_loglik_mml_value_grad(opt.x, idx, config, sizes, final_quad)
+            else:
+                _, final_grad = mfrm_loglik_jmle_value_grad(opt.x, idx, config, sizes)
+            opt.gradient_norm = float(np.linalg.norm(final_grad))
+        except Exception:
+            opt.gradient_norm = np.nan
+    opt.elapsed_seconds = float(elapsed_seconds)
+    convergence_tbl = build_convergence_summary(opt, config, loglik, elapsed_seconds)
+    if "Weight" in prep["data"].columns:
+        n_obs = float(prep["data"]["Weight"].sum())
+    else:
+        n_obs = len(prep["data"])
+    aic = 2 * k_params - 2 * loglik
+    bic = np.log(n_obs) * k_params - 2 * loglik if n_obs > 0 else np.nan
+
+    n_iter = getattr(opt, "nit", opt.nfev)
+    summary_tbl = pd.DataFrame({
+        "Model": [model],
+        "Method": [method],
+        "MML Engine": [config.get("mml_engine") if method == "MML" else None],
+        "PopulationPriorSD": [config.get("population_prior_sd") if method == "MML" else None],
+        "Optimizer": [config.get("optimizer")],
+        "N": [n_obs],
+        "Persons": [n_person],
+        "Facets": [len(config["facet_names"])],
+        "Categories": [n_cat],
+        "LogLik": [loglik],
+        "AIC": [aic],
+        "BIC": [bic],
+        "Converged": [bool(opt.success)],
+        "Iterations": [n_iter],
+        "GradientNorm": [getattr(opt, "gradient_norm", np.nan)],
+        "ElapsedSeconds": [elapsed_seconds],
+    })
+
+    result = {
+        "summary": summary_tbl,
+        "facets": {"person": person_tbl, "others": facet_tbl},
+        "steps": step_tbl,
+        "slopes": slope_tbl,
+        "population": {
+            "enabled": bool(population_model.get("enabled", False)),
+            "formula": population_model.get("formula", ""),
+            "coefficients": population_tbl,
+            "person_data": person_population_tbl,
+            "numeric_transforms": population_transform_tbl,
+            "term_types": dict(population_model.get("term_types", {})),
+            "categorical_terms": list(population_model.get("categorical_terms", [])),
+            "numeric_terms": list(population_model.get("numeric_terms", [])),
+            "warnings": list(population_model.get("warnings", [])),
+        },
+        "config": config,
+        "prep": prep,
+        "opt": opt,
+        "params": params,
+        "convergence": convergence_tbl,
+        "posterior": posterior_outputs,
+    }
+    result["anchor_drift"] = build_anchor_drift_review(result)
+    result["equating_chain"] = build_equating_chain_summary(result)
+    config["anchor_drift_scope"] = result["anchor_drift"].get("scope")
+    config["equating_chain_scope"] = result["equating_chain"].get("scope")
+    return result
+
+
+def compute_obs_table(res):
+    prep = res["prep"]
+    config = res["config"]
+    idx = build_indices(prep, step_facet=config["step_facet"], slope_facet=config.get("slope_facet"))
+    params = res["params"]
+    theta_hat = params["theta"] if config["method"] == "JMLE" else res["facets"]["person"]["Estimate"].to_numpy()
+
+    person_measure = theta_hat
+    person_measure_by_row = person_measure[idx["person"]] if person_measure.size else np.zeros_like(idx["score_k"], dtype=float)
+
+    eta = compute_eta(idx, params, config, theta_override=theta_hat if theta_hat.size else None)
+    if config["model"] == "RSM":
+        step_cum = np.concatenate([[0.0], np.cumsum(params["steps"])])
+        probs = category_prob_rsm(eta, step_cum)
+    elif config["model"] == "PCM":
+        step_cum_mat = np.vstack([
+            np.concatenate([[0.0], np.cumsum(row)]) for row in params["steps_mat"]
+        ])
+        probs = category_prob_pcm(eta, step_cum_mat, idx["step_idx"])
+    else:
+        step_cum_mat = np.vstack([
+            np.concatenate([[0.0], np.cumsum(row)]) for row in params["steps_mat"]
+        ])
+        probs = category_prob_gpcm(
+            eta,
+            step_cum_mat,
+            idx["step_idx"],
+            params["slopes"],
+            idx.get("slope_idx"),
+        )
+
+    k_vals = np.arange(probs.shape[1])
+    expected_k = probs.dot(k_vals)
+    var_k = probs.dot(k_vals ** 2) - expected_k ** 2
+    var_k = np.where(var_k <= 1e-10, np.nan, var_k)
+    resid_k = idx["score_k"] - expected_k
+    std_sq = resid_k ** 2 / var_k
+
+    df = prep["data"].copy()
+    df["PersonMeasure"] = person_measure_by_row
+    df["Observed"] = prep["rating_min"] + idx["score_k"]
+    df["Expected"] = prep["rating_min"] + expected_k
+    df["Var"] = var_k
+    df["Residual"] = df["Observed"] - df["Expected"]
+    df["StdResidual"] = df["Residual"] / np.sqrt(df["Var"])
+    df["StdSq"] = std_sq
+    return df
+
+
+def compute_prob_matrix(res):
+    prep = res["prep"]
+    config = res["config"]
+    idx = build_indices(prep, step_facet=config["step_facet"], slope_facet=config.get("slope_facet"))
+    params = res["params"]
+    theta_hat = params["theta"] if config["method"] == "JMLE" else res["facets"]["person"]["Estimate"].to_numpy()
+    eta = compute_eta(idx, params, config, theta_override=theta_hat if theta_hat.size else None)
+    if config["model"] == "RSM":
+        step_cum = np.concatenate([[0.0], np.cumsum(params["steps"])])
+        return category_prob_rsm(eta, step_cum)
+    step_cum_mat = np.vstack([
+        np.concatenate([[0.0], np.cumsum(row)]) for row in params["steps_mat"]
+    ])
+    if config["model"] == "PCM":
+        return category_prob_pcm(eta, step_cum_mat, idx["step_idx"])
+    return category_prob_gpcm(
+        eta,
+        step_cum_mat,
+        idx["step_idx"],
+        params["slopes"],
+        idx.get("slope_idx"),
+    )
+
+
+def compute_scorefile(res):
+    obs = compute_obs_table(res)
+    if obs.empty:
+        return pd.DataFrame()
+    probs = compute_prob_matrix(res)
+    if probs is None or probs.shape[0] != len(obs):
+        return obs
+    cat_vals = np.arange(res["prep"]["rating_min"], res["prep"]["rating_max"] + 1)
+    prob_df = pd.DataFrame(probs, columns=[f"P_{v}" for v in cat_vals])
+    max_idx = np.argmax(probs, axis=1)
+    max_prob = probs[np.arange(len(probs)), max_idx]
+    most_likely = cat_vals[max_idx]
+    base_cols = ["Person"] + res["config"]["facet_names"]
+    if "Weight" in obs.columns:
+        base_cols.append("Weight")
+    base_cols += ["Score", "Observed", "Expected", "Residual", "StdResidual", "Var", "PersonMeasure"]
+    out = pd.concat([
+        obs[base_cols],
+        prob_df,
+    ], axis=1)
+    out["MostLikely"] = most_likely
+    out["MaxProb"] = max_prob
+    return out
+
+
+def compute_fitted_prediction_table(res):
+    """Prediction table for the fitted design rows.
+
+    Predictions are conditional on the fitted person measure (JMLE theta or MML
+    EAP). They are intended for checking the fitted response pattern, not for
+    forecasting entirely new persons or unseen facet designs.
+    """
+    scorefile = compute_scorefile(res)
+    if scorefile.empty:
+        return pd.DataFrame()
+    probs = compute_prob_matrix(res)
+    if probs is None or probs.shape[0] != len(scorefile):
+        return scorefile
+
+    out = scorefile.copy()
+    probs = np.asarray(probs, dtype=float)
+    probs = np.where(np.isfinite(probs) & (probs >= 0), probs, 0.0)
+    row_sum = probs.sum(axis=1, keepdims=True)
+    probs = np.divide(probs, row_sum, out=np.full_like(probs, 1.0 / probs.shape[1]), where=row_sum > 0)
+
+    cat_vals = np.arange(res["prep"]["rating_min"], res["prep"]["rating_max"] + 1)
+    max_idx = np.argmax(probs, axis=1)
+    with np.errstate(divide="ignore", invalid="ignore"):
+        entropy = -np.sum(np.where(probs > 0, probs * np.log(probs), 0.0), axis=1)
+    max_entropy = float(np.log(probs.shape[1])) if probs.shape[1] > 1 else np.nan
+    uncertainty = entropy / max_entropy if np.isfinite(max_entropy) and max_entropy > 0 else np.zeros_like(entropy)
+
+    out["PredictedCategory"] = cat_vals[max_idx]
+    out["PredictionConfidence"] = probs[np.arange(len(probs)), max_idx]
+    out["PredictionEntropy"] = entropy
+    out["PredictionUncertainty"] = uncertainty
+    out["PredictionScope"] = "fitted_design_conditional_on_person_measure"
+
+    person_tbl = res.get("facets", {}).get("person", pd.DataFrame())
+    if (
+        isinstance(person_tbl, pd.DataFrame)
+        and "Person" in person_tbl.columns
+        and "PopulationMean" in person_tbl.columns
+        and "PopulationMean" not in out.columns
+    ):
+        pop_lookup = person_tbl[["Person", "PopulationMean"]].copy()
+        pop_lookup["Person"] = pop_lookup["Person"].astype(str)
+        out["Person"] = out["Person"].astype(str)
+        out = out.merge(pop_lookup, on="Person", how="left")
+
+    first_cols = ["Person"] + list(res.get("config", {}).get("facet_names", []))
+    tail_cols = [c for c in out.columns if c not in first_cols]
+    return out[first_cols + tail_cols]
+
+
+def _normalise_probability_rows(probs: np.ndarray) -> np.ndarray:
+    probs = np.asarray(probs, dtype=float)
+    if probs.ndim != 2 or probs.size == 0:
+        return probs
+    probs = np.where(np.isfinite(probs) & (probs >= 0), probs, 0.0)
+    row_sum = probs.sum(axis=1, keepdims=True)
+    return np.divide(
+        probs,
+        row_sum,
+        out=np.full_like(probs, 1.0 / probs.shape[1]),
+        where=row_sum > 0,
+    )
+
+
+def _category_probs_from_eta_for_prediction(config, params, eta, step_idx=None, slope_idx=None):
+    eta = np.asarray(eta, dtype=float)
+    if config["model"] == "RSM":
+        step_cum = np.concatenate([[0.0], np.cumsum(params["steps"])])
+        return category_prob_rsm(eta, step_cum)
+    step_cum_mat = np.vstack([
+        np.concatenate([[0.0], np.cumsum(row)]) for row in params["steps_mat"]
+    ])
+    if step_idx is None:
+        raise ValueError("step_idx is required for PCM/GPCM prediction.")
+    step_idx = np.asarray(step_idx, dtype=int)
+    if config["model"] == "PCM":
+        return category_prob_pcm(eta, step_cum_mat, step_idx)
+    return category_prob_gpcm(
+        eta,
+        step_cum_mat,
+        step_idx,
+        params["slopes"],
+        np.asarray(slope_idx, dtype=int) if slope_idx is not None else step_idx,
+    )
+
+
+def _population_mu_for_prediction_rows(
+    config,
+    params,
+    rows: pd.DataFrame,
+    person_col="Person",
+    person_data=None,
+    person_id_col=None,
+) -> np.ndarray:
+    pop = config.get("population_model", {})
+    if not pop or not pop.get("enabled"):
+        return np.zeros(len(rows), dtype=float)
+
+    beta = np.asarray(params.get("population", np.array([], dtype=float)), dtype=float)
+    columns = list(pop.get("columns", []))
+    if beta.size == 0 or not columns:
+        return np.zeros(len(rows), dtype=float)
+
+    source = rows.copy()
+    if person_col not in source.columns:
+        raise ValueError(f"Prediction data must contain person column '{person_col}'.")
+    source[person_col] = source[person_col].astype(str)
+    if person_col != "Person":
+        source = source.rename(columns={person_col: "Person"})
+
+    if isinstance(person_data, pd.DataFrame) and not person_data.empty:
+        pdf = person_data.copy()
+        if person_id_col is None:
+            person_id_col = "Person" if "Person" in pdf.columns else pdf.columns[0]
+        if person_id_col not in pdf.columns:
+            raise ValueError(f"person_id_col '{person_id_col}' was not found in prediction person_data.")
+        pdf = pdf.rename(columns={person_id_col: "Person"})
+        pdf["Person"] = pdf["Person"].astype(str)
+        if pdf["Person"].duplicated().any():
+            examples = pdf.loc[pdf["Person"].duplicated(), "Person"].head(5).tolist()
+            raise ValueError("prediction person_data contains duplicate person IDs: " + ", ".join(map(str, examples)))
+        missing_terms = [t for t in pop.get("terms", []) if t not in source.columns and t in pdf.columns]
+        if missing_terms:
+            source = source.merge(pdf[["Person", *missing_terms]], on="Person", how="left")
+
+    matrix_parts: list[np.ndarray] = []
+    built_columns: list[str] = []
+    if "Intercept" in columns:
+        matrix_parts.append(np.ones((len(source), 1), dtype=float))
+        built_columns.append("Intercept")
+
+    fitted_person_data = pop.get("person_data", pd.DataFrame())
+    for term in pop.get("terms", []):
+        if term not in source.columns:
+            raise ValueError(
+                f"Prediction data for unknown persons requires population covariate '{term}'. "
+                "Add it to the new design table or upload a matching person_data table."
+            )
+        series = source[term]
+        if series.isna().any():
+            missing_people = source.loc[series.isna(), "Person"].astype(str).head(10).tolist()
+            raise ValueError(
+                f"population covariate '{term}' is missing for prediction person(s): "
+                + ", ".join(missing_people)
+            )
+        numeric_col = term in columns
+        dummy_cols = [c for c in columns if c.startswith(f"{term}_")]
+        if numeric_col:
+            numeric = pd.to_numeric(series, errors="coerce")
+            if numeric.isna().any():
+                raise ValueError(f"population covariate '{term}' must be numeric for this fitted model.")
+            values = numeric.to_numpy(dtype=float)
+            transform = pop.get("numeric_transforms", {}).get(term, {})
+            if isinstance(transform, dict) and transform.get("standardized"):
+                center = float(transform.get("center", 0.0))
+                scale = float(transform.get("scale", 1.0))
+                if not np.isfinite(scale) or abs(scale) <= 1e-12:
+                    scale = 1.0
+                values = (values - center) / scale
+            matrix_parts.append(values.reshape(-1, 1))
+            built_columns.append(term)
+        elif dummy_cols:
+            fitted_levels = []
+            if isinstance(fitted_person_data, pd.DataFrame) and term in fitted_person_data.columns:
+                fitted_levels = sorted(fitted_person_data[term].dropna().astype(str).unique().tolist())
+            if not fitted_levels:
+                fitted_levels = ["__reference__", *[c[len(term) + 1:] for c in dummy_cols]]
+            incoming = series.astype(str)
+            unknown = sorted(set(incoming.unique().tolist()) - set(fitted_levels))
+            if unknown:
+                raise ValueError(
+                    f"population covariate '{term}' contains level(s) not seen in the fitted population data: "
+                    + ", ".join(unknown[:10])
+                )
+            mat = np.zeros((len(source), len(dummy_cols)), dtype=float)
+            for j, col in enumerate(dummy_cols):
+                level = col[len(term) + 1:]
+                mat[:, j] = (incoming == level).astype(float)
+            matrix_parts.append(mat)
+            built_columns.extend(dummy_cols)
+
+    X = np.column_stack(matrix_parts) if matrix_parts else np.zeros((len(source), 0), dtype=float)
+    if built_columns != columns:
+        missing = [c for c in columns if c not in built_columns]
+        if missing:
+            raise ValueError("Could not build prediction population columns: " + ", ".join(missing))
+    if X.size and not np.all(np.isfinite(X)):
+        raise ValueError("Prediction population model matrix contains non-finite values.")
+    return X @ beta
+
+
+def predict_mfrm_design(
+    res,
+    new_data: pd.DataFrame,
+    person_col="Person",
+    score_col=None,
+    person_data=None,
+    person_id_col=None,
+    use_fitted_person=True,
+):
+    """Predict category probabilities for new or held-out design rows.
+
+    Scope:
+    - Facet levels must already exist in the fitted model.
+    - Known persons can be predicted conditionally on their fitted estimate.
+    - Unknown persons require MML and are predicted marginally over the population
+      distribution; latent-regression covariates are used when supplied.
+    """
+    if new_data is None or not isinstance(new_data, pd.DataFrame) or new_data.empty:
+        return {
+            "available": False,
+            "reason": "No new design rows were supplied.",
+            "table": pd.DataFrame(),
+            "issues": pd.DataFrame(),
+        }
+
+    config = res.get("config", {})
+    prep = res.get("prep", {})
+    params = res.get("params", {})
+    facet_names = list(config.get("facet_names", []))
+    required = [person_col] + facet_names
+    missing_cols = [c for c in required if c not in new_data.columns]
+    if missing_cols:
+        raise ValueError("Prediction data is missing required column(s): " + ", ".join(missing_cols))
+
+    df = new_data.copy()
+    df[person_col] = df[person_col].astype(str)
+    if person_col != "Person":
+        df = df.rename(columns={person_col: "Person"})
+    person_col = "Person"
+    for facet in facet_names:
+        df[facet] = df[facet].astype(str)
+
+    n = len(df)
+    base_eta = np.zeros(n, dtype=float)
+    facet_signs = config.get("facet_signs", {})
+    index_info = {"facets": {}, "step_idx": None, "slope_idx": None}
+    issue_rows = []
+    for facet in facet_names:
+        levels = [str(x) for x in prep.get("levels", {}).get(facet, [])]
+        level_map = {level: i for i, level in enumerate(levels)}
+        unknown = sorted(set(df[facet].astype(str).tolist()) - set(level_map.keys()))
+        if unknown:
+            for value in unknown[:20]:
+                issue_rows.append({
+                    "Type": "unknown_facet_level",
+                    "Facet": facet,
+                    "Level": value,
+                    "Action": "Use only facet levels present in the fitted model, or refit the model including this level.",
+                })
+            raise ValueError(
+                f"Prediction data contains unknown {facet} level(s): "
+                + ", ".join(unknown[:10])
+            )
+        idx = df[facet].map(level_map).to_numpy(dtype=int)
+        index_info["facets"][facet] = idx
+        base_eta += facet_signs.get(facet, -1) * params["facets"][facet][idx]
+
+    if config.get("step_facet"):
+        index_info["step_idx"] = index_info["facets"][config["step_facet"]]
+    if config.get("slope_facet"):
+        index_info["slope_idx"] = index_info["facets"][config["slope_facet"]]
+
+    person_levels = [str(x) for x in prep.get("levels", {}).get("Person", [])]
+    person_map = {level: i for i, level in enumerate(person_levels)}
+    person_idx = df[person_col].map(person_map)
+    known_mask = person_idx.notna().to_numpy(dtype=bool)
+    conditional_mask = known_mask & bool(use_fitted_person)
+    marginal_mask = ~conditional_mask
+
+    if marginal_mask.any() and config.get("method") != "MML":
+        unknown_examples = df.loc[marginal_mask, person_col].astype(str).drop_duplicates().head(10).tolist()
+        raise ValueError(
+            "Prediction for unknown persons requires MML so the population distribution can be used. "
+            "Unknown person(s): " + ", ".join(unknown_examples)
+        )
+
+    cat_vals = np.arange(prep["rating_min"], prep["rating_max"] + 1)
+    probs = np.zeros((n, len(cat_vals)), dtype=float)
+    theta_used = np.full(n, np.nan, dtype=float)
+    population_mean = np.full(n, np.nan, dtype=float)
+    scope = np.array(["unknown"] * n, dtype=object)
+
+    if conditional_mask.any():
+        person_tbl = res.get("facets", {}).get("person", pd.DataFrame())
+        if isinstance(person_tbl, pd.DataFrame) and "Person" in person_tbl.columns and "Estimate" in person_tbl.columns:
+            theta_lookup = person_tbl.set_index(person_tbl["Person"].astype(str))["Estimate"].astype(float).to_dict()
+            theta_known = df.loc[conditional_mask, person_col].map(theta_lookup).to_numpy(dtype=float)
+        else:
+            theta_arr = np.asarray(params.get("theta", np.array([], dtype=float)), dtype=float)
+            theta_known = theta_arr[person_idx[conditional_mask].astype(int).to_numpy()] if theta_arr.size else np.zeros(int(conditional_mask.sum()))
+        theta_used[conditional_mask] = theta_known
+        eta_known = base_eta[conditional_mask] + theta_known
+        step_known = index_info["step_idx"][conditional_mask] if index_info["step_idx"] is not None else None
+        slope_known = index_info["slope_idx"][conditional_mask] if index_info["slope_idx"] is not None else None
+        probs[conditional_mask, :] = _category_probs_from_eta_for_prediction(
+            config, params, eta_known, step_idx=step_known, slope_idx=slope_known
+        )
+        scope[conditional_mask] = "known_person_conditional_on_fitted_measure"
+        pop_mu = compute_population_mu(params, config)
+        if pop_mu.size:
+            population_mean[conditional_mask] = pop_mu[person_idx[conditional_mask].astype(int).to_numpy()]
+
+    if marginal_mask.any():
+        quad = make_mml_quadrature(config, int(config.get("quad_points") or 15))
+        unknown_rows = df.loc[marginal_mask].copy()
+        mu_unknown = _population_mu_for_prediction_rows(
+            config,
+            params,
+            unknown_rows,
+            person_col=person_col,
+            person_data=person_data,
+            person_id_col=person_id_col,
+        )
+        population_mean[marginal_mask] = mu_unknown
+        prob_unknown = np.zeros((int(marginal_mask.sum()), len(cat_vals)), dtype=float)
+        step_unknown = index_info["step_idx"][marginal_mask] if index_info["step_idx"] is not None else None
+        slope_unknown = index_info["slope_idx"][marginal_mask] if index_info["slope_idx"] is not None else None
+        for theta_node, weight in zip(quad["nodes"], quad["weights"]):
+            eta_unknown = base_eta[marginal_mask] + mu_unknown + float(theta_node)
+            prob_unknown += float(weight) * _category_probs_from_eta_for_prediction(
+                config, params, eta_unknown, step_idx=step_unknown, slope_idx=slope_unknown
+            )
+        probs[marginal_mask, :] = prob_unknown
+        scope[marginal_mask] = np.where(
+            known_mask[marginal_mask],
+            "known_person_mml_population_marginal",
+            "unknown_person_mml_population_marginal",
+        )
+
+    probs = _normalise_probability_rows(probs)
+    expected = probs.dot(cat_vals)
+    max_idx = np.argmax(probs, axis=1)
+    with np.errstate(divide="ignore", invalid="ignore"):
+        entropy = -np.sum(np.where(probs > 0, probs * np.log(probs), 0.0), axis=1)
+    max_entropy = float(np.log(probs.shape[1])) if probs.shape[1] > 1 else np.nan
+    uncertainty = entropy / max_entropy if np.isfinite(max_entropy) and max_entropy > 0 else np.zeros_like(entropy)
+
+    prob_df = pd.DataFrame(probs, columns=[f"P_{v}" for v in cat_vals])
+    out = pd.concat([df.reset_index(drop=True), prob_df], axis=1)
+    out["Expected"] = expected
+    out["PredictedCategory"] = cat_vals[max_idx]
+    out["PredictionConfidence"] = probs[np.arange(n), max_idx]
+    out["PredictionEntropy"] = entropy
+    out["PredictionUncertainty"] = uncertainty
+    out["PersonStatus"] = np.where(known_mask, "Known", "Unknown")
+    out["PredictionScope"] = scope
+    out["ThetaUsed"] = theta_used
+    out["PopulationMean"] = population_mean
+
+    score_col_final = score_col if score_col and score_col in out.columns else ("Score" if "Score" in out.columns else None)
+    if score_col_final:
+        observed = pd.to_numeric(out[score_col_final], errors="coerce")
+        valid_obs = observed.notna()
+        if valid_obs.any():
+            fractional = valid_obs & ((observed - np.round(observed)).abs() > np.sqrt(np.finfo(float).eps))
+            if fractional.any():
+                raise ValueError("Observed score column for held-out prediction must contain integer category codes.")
+            out["Observed"] = observed
+            out["Residual"] = out["Observed"] - out["Expected"]
+            k_vals = cat_vals.astype(float)
+            var = probs.dot(k_vals ** 2) - expected ** 2
+            var = np.where(var <= 1e-10, np.nan, var)
+            out["Var"] = var
+            out["StdResidual"] = out["Residual"] / np.sqrt(out["Var"])
+
+    first_cols = [c for c in ["Person", *facet_names] if c in out.columns]
+    tail_cols = [c for c in out.columns if c not in first_cols]
+    return {
+        "available": True,
+        "reason": "Prediction computed for supplied design rows.",
+        "table": out[first_cols + tail_cols],
+        "issues": pd.DataFrame(issue_rows),
+        "interpretation": (
+            "Known persons are predicted conditionally on their fitted measure. "
+            "Unknown persons are supported only for MML and are predicted by integrating "
+            "over the fitted population distribution; this is a population-scenario forecast, "
+            "not a person-specific posterior score."
+        ),
+    }
+
+
+def simulate_from_fitted_model(
+    res,
+    n_replicates=100,
+    seed=20260411,
+    include_row_draws=False,
+    max_row_draw_rows=200000,
+):
+    """Simulate response data from the fitted row-level probability matrix."""
+    scorefile = compute_fitted_prediction_table(res)
+    if scorefile.empty:
+        return {
+            "available": False,
+            "reason": "No fitted rows are available for simulation.",
+            "summary": pd.DataFrame(),
+            "category_counts": pd.DataFrame(),
+            "row_draws": pd.DataFrame(),
+        }
+
+    probs = compute_prob_matrix(res)
+    if probs is None or probs.shape[0] != len(scorefile):
+        return {
+            "available": False,
+            "reason": "Prediction probabilities are unavailable for simulation.",
+            "summary": pd.DataFrame(),
+            "category_counts": pd.DataFrame(),
+            "row_draws": pd.DataFrame(),
+        }
+
+    probs = np.asarray(probs, dtype=float)
+    probs = np.where(np.isfinite(probs) & (probs >= 0), probs, 0.0)
+    row_sum = probs.sum(axis=1, keepdims=True)
+    probs = np.divide(probs, row_sum, out=np.full_like(probs, 1.0 / probs.shape[1]), where=row_sum > 0)
+    cdf = np.cumsum(probs, axis=1)
+    cdf[:, -1] = 1.0
+
+    n_rep = max(1, int(n_replicates or 1))
+    rng = np.random.default_rng(int(seed))
+    cat_vals = np.arange(res["prep"]["rating_min"], res["prep"]["rating_max"] + 1)
+    weights = (
+        pd.to_numeric(scorefile["Weight"], errors="coerce").to_numpy(dtype=float)
+        if "Weight" in scorefile.columns else np.ones(len(scorefile), dtype=float)
+    )
+    weights = np.where(np.isfinite(weights) & (weights > 0), weights, 0.0)
+    total_weight = float(np.sum(weights))
+    if total_weight <= 0:
+        weights = np.ones(len(scorefile), dtype=float)
+        total_weight = float(len(scorefile))
+
+    observed = pd.to_numeric(scorefile.get("Observed", pd.Series(dtype=float)), errors="coerce").to_numpy(dtype=float)
+    expected = probs.dot(cat_vals)
+    observed_mean = float(np.average(observed, weights=weights)) if np.all(np.isfinite(observed)) else np.nan
+    expected_mean = float(np.average(expected, weights=weights))
+
+    summary_rows = []
+    count_rows = []
+    row_draw_parts = []
+    store_row_draws = bool(include_row_draws) and (len(scorefile) * n_rep <= int(max_row_draw_rows))
+    id_cols = ["Person"] + list(res.get("config", {}).get("facet_names", []))
+    id_cols = [c for c in id_cols if c in scorefile.columns]
+
+    for rep in range(1, n_rep + 1):
+        u = rng.random(len(scorefile))
+        draw_idx = np.sum(u[:, None] > cdf, axis=1)
+        sim_scores = cat_vals[draw_idx]
+        sim_mean = float(np.average(sim_scores, weights=weights))
+        sim_var = float(np.average((sim_scores - sim_mean) ** 2, weights=weights))
+        summary_rows.append({
+            "Replicate": rep,
+            "Rows": int(len(sim_scores)),
+            "WeightedRows": total_weight,
+            "MeanScore": sim_mean,
+            "SDScore": float(np.sqrt(max(sim_var, 0.0))),
+            "MinScore": int(np.min(sim_scores)),
+            "MaxScore": int(np.max(sim_scores)),
+            "ExpectedMeanFromModel": expected_mean,
+            "ObservedMean": observed_mean,
+            "MeanMinusObserved": sim_mean - observed_mean if np.isfinite(observed_mean) else np.nan,
+        })
+        for cat in cat_vals:
+            mask = sim_scores == cat
+            weighted_count = float(np.sum(weights[mask]))
+            count_rows.append({
+                "Replicate": rep,
+                "Category": int(cat),
+                "Count": int(np.sum(mask)),
+                "Percent": float(np.mean(mask)),
+                "WeightedCount": weighted_count,
+                "WeightedPercent": weighted_count / total_weight if total_weight > 0 else np.nan,
+            })
+        if store_row_draws:
+            part = scorefile[id_cols].copy()
+            part["Replicate"] = rep
+            part["SimulatedScore"] = sim_scores
+            row_draw_parts.append(part)
+
+    return {
+        "available": True,
+        "reason": "Simulated from fitted row-level category probabilities.",
+        "summary": pd.DataFrame(summary_rows),
+        "category_counts": pd.DataFrame(count_rows),
+        "row_draws": pd.concat(row_draw_parts, ignore_index=True) if row_draw_parts else pd.DataFrame(),
+        "n_replicates": n_rep,
+        "seed": int(seed),
+        "interpretation": (
+            "These simulations hold the observed design and fitted parameters fixed. "
+            "They are useful design forecasts and model checks, but they do not prove "
+            "future performance and they do not include uncertainty from refitting the model."
+        ),
+    }
+
+
+def simulate_refit_design(
+    res,
+    n_replicates=3,
+    seed=20260411,
+    missing_rate=0.0,
+    refit_maxit=30,
+    refit_reltol=1e-3,
+    refit_method=None,
+    refit_mml_engine=None,
+    refit_quad_points=None,
+):
+    """Simulate response data, apply prospective missingness, and refit.
+
+    This is intentionally small-scope and capped by the UI. It estimates
+    operational risk (non-convergence, reliability loss) under the current
+    design, not parameter-recovery truth.
+    """
+    prep = res.get("prep", {})
+    config = res.get("config", {})
+    data = prep.get("data", pd.DataFrame())
+    if data.empty:
+        return {
+            "available": False,
+            "reason": "No fitted data are available for refit simulation.",
+            "summary": pd.DataFrame(),
+            "category_counts": pd.DataFrame(),
+        }
+
+    probs = compute_prob_matrix(res)
+    if probs is None or probs.shape[0] != len(data):
+        return {
+            "available": False,
+            "reason": "Fitted row probabilities are unavailable for refit simulation.",
+            "summary": pd.DataFrame(),
+            "category_counts": pd.DataFrame(),
+        }
+    probs = _normalise_probability_rows(probs)
+    cdf = np.cumsum(probs, axis=1)
+    cdf[:, -1] = 1.0
+    cat_vals = np.arange(prep["rating_min"], prep["rating_max"] + 1)
+    rng = np.random.default_rng(int(seed))
+
+    n_rep = max(1, int(n_replicates or 1))
+    miss_rate = min(max(float(missing_rate or 0.0), 0.0), 0.95)
+    facet_names = list(config.get("facet_names", []))
+    base_cols = ["Person", *facet_names, "Score"]
+    if "Weight" in data.columns:
+        base_cols.append("Weight")
+    base = data[base_cols].copy()
+    for col in ["Person", *facet_names]:
+        base[col] = base[col].astype(str)
+
+    method = str(refit_method or config.get("method", "JMLE")).upper()
+    if method not in {"JMLE", "MML"}:
+        method = str(config.get("method", "JMLE")).upper()
+    mml_engine = refit_mml_engine or config.get("mml_engine_requested") or config.get("mml_engine") or "EM"
+    quad_points = int(refit_quad_points or config.get("quad_points") or 5)
+    population_prior_sd = float(config.get("population_prior_sd") or 1.0) if method == "MML" else 1.0
+    if method != "MML":
+        mml_engine = "EM"
+
+    population = res.get("population", {})
+    person_data = population.get("person_data", pd.DataFrame()) if isinstance(population, dict) else pd.DataFrame()
+    if isinstance(person_data, pd.DataFrame) and "PopulationMean" in person_data.columns:
+        person_data = person_data.drop(columns=["PopulationMean"])
+    population_formula = config.get("population_formula", "") if method == "MML" else None
+    population_standardize_numeric = bool(config.get("population_standardize_numeric", False)) if method == "MML" else False
+    population_categorical_terms = config.get("population_categorical_terms", []) if method == "MML" else []
+    population_numeric_terms = config.get("population_numeric_terms", []) if method == "MML" else []
+
+    anchor_audit = config.get("anchor_audit", {})
+    anchor_df = anchor_audit.get("valid_anchors", pd.DataFrame()) if isinstance(anchor_audit, dict) else pd.DataFrame()
+    group_anchor_df = anchor_audit.get("valid_group_anchors", pd.DataFrame()) if isinstance(anchor_audit, dict) else pd.DataFrame()
+    anchor_settings = anchor_audit.get("settings", {}) if isinstance(anchor_audit, dict) else {}
+
+    summary_rows = []
+    count_rows = []
+    for rep in range(1, n_rep + 1):
+        u = rng.random(len(base))
+        draw_idx = np.sum(u[:, None] > cdf, axis=1)
+        sim_scores = cat_vals[draw_idx]
+        sim_df = base.copy()
+        sim_df["Score"] = sim_scores
+        if miss_rate > 0:
+            keep_mask = rng.random(len(sim_df)) >= miss_rate
+            if keep_mask.sum() < max(2, len(facet_names) + 2):
+                keep_mask[:] = True
+            sim_df = sim_df.loc[keep_mask].copy()
+
+        for cat in cat_vals:
+            count_rows.append({
+                "Replicate": rep,
+                "Category": int(cat),
+                "Count": int((sim_df["Score"] == cat).sum()),
+                "Percent": float((sim_df["Score"] == cat).mean()) if len(sim_df) else np.nan,
+            })
+
+        row = {
+            "Replicate": rep,
+            "MissingRateTarget": miss_rate,
+            "RowsBeforeMissing": int(len(base)),
+            "RowsAfterMissing": int(len(sim_df)),
+            "CategoriesObserved": int(sim_df["Score"].nunique()) if len(sim_df) else 0,
+            "Method": method,
+            "Model": config.get("model"),
+            "Converged": False,
+            "Iterations": np.nan,
+            "GradientNorm": np.nan,
+            "LogLik": np.nan,
+            "PersonReliability": np.nan,
+            "MinFacetReliability": np.nan,
+            "ElapsedSeconds": np.nan,
+            "Error": "",
+        }
+        try:
+            refit_res = mfrm_estimate(
+                sim_df,
+                person_col="Person",
+                facet_cols=facet_names,
+                score_col="Score",
+                rating_min=prep["rating_min"],
+                rating_max=prep["rating_max"],
+                weight_col="Weight" if "Weight" in sim_df.columns else None,
+                keep_original=True,
+                model=config.get("model", "RSM"),
+                method=method,
+                step_facet=config.get("step_facet"),
+                slope_facet=config.get("slope_facet"),
+                person_data=person_data if method == "MML" and isinstance(person_data, pd.DataFrame) and not person_data.empty else None,
+                person_id_col="Person" if method == "MML" and isinstance(person_data, pd.DataFrame) and not person_data.empty else None,
+                population_formula=population_formula,
+                population_standardize_numeric=population_standardize_numeric,
+                population_categorical_terms=population_categorical_terms,
+                population_numeric_terms=population_numeric_terms,
+                anchor_df=anchor_df,
+                group_anchor_df=group_anchor_df,
+                noncenter_facet=config.get("noncenter_facet", "Person"),
+                dummy_facets=config.get("dummy_facets", []),
+                positive_facets=config.get("positive_facets", []),
+                quad_points=quad_points,
+                population_prior_sd=population_prior_sd,
+                maxit=int(refit_maxit),
+                reltol=float(refit_reltol),
+                mml_engine=mml_engine,
+                anchor_policy="warn",
+                min_common_anchors=int(anchor_settings.get("min_common_anchors", 2)),
+                min_obs_per_element=int(anchor_settings.get("min_obs_per_element", 2)),
+                min_obs_per_category=int(anchor_settings.get("min_obs_per_category", 1)),
+                compute_plausible_values=False,
+            )
+            refit_diag = mfrm_diagnostics(refit_res, compute_pca=False, compute_marginal=False)
+            fit_summary = refit_res.get("summary", pd.DataFrame())
+            if isinstance(fit_summary, pd.DataFrame) and not fit_summary.empty:
+                s0 = fit_summary.iloc[0]
+                row["Converged"] = bool(s0.get("Converged", False))
+                row["Iterations"] = int(s0.get("Iterations", 0) or 0)
+                row["GradientNorm"] = float(s0.get("GradientNorm", np.nan))
+                row["LogLik"] = float(s0.get("LogLik", np.nan))
+                row["ElapsedSeconds"] = float(s0.get("ElapsedSeconds", np.nan))
+            rel = refit_diag.get("reliability", pd.DataFrame())
+            if isinstance(rel, pd.DataFrame) and not rel.empty and "Reliability" in rel.columns:
+                person_rel = rel.loc[rel["Facet"].astype(str) == "Person", "Reliability"]
+                if not person_rel.empty:
+                    row["PersonReliability"] = float(pd.to_numeric(person_rel, errors="coerce").iloc[0])
+                rel_vals = pd.to_numeric(rel["Reliability"], errors="coerce").dropna()
+                if len(rel_vals):
+                    row["MinFacetReliability"] = float(rel_vals.min())
+        except Exception as exc:
+            row["Error"] = str(exc)[:500]
+        summary_rows.append(row)
+
+    return {
+        "available": True,
+        "reason": "Simulated response data were optionally made missing and refit with the current standalone engine.",
+        "summary": pd.DataFrame(summary_rows),
+        "category_counts": pd.DataFrame(count_rows),
+        "n_replicates": n_rep,
+        "seed": int(seed),
+        "interpretation": (
+            "Refit simulation is a stress test of the current design and optimizer path. "
+            "Use it to screen convergence and reliability sensitivity to missingness; "
+            "do not treat a small number of replicates as a formal prospective power study."
+        ),
+    }
+
+
+def _spearman_brown_forecast(reliability, multiplier):
+    rel = float(reliability) if pd.notna(reliability) else np.nan
+    mult = float(multiplier)
+    if not np.isfinite(rel) or rel < 0 or not np.isfinite(mult) or mult <= 0:
+        return np.nan
+    rel = min(max(rel, 0.0), 0.999999)
+    return float((mult * rel) / (1.0 + (mult - 1.0) * rel))
+
+
+def _design_recommendation(facet, reliability, min_obs, cv_obs, high_bias=False):
+    name = str(facet)
+    lower = name.lower()
+    rel = float(reliability) if pd.notna(reliability) else np.nan
+    min_obs_val = float(min_obs) if pd.notna(min_obs) else np.nan
+    cv_val = float(cv_obs) if pd.notna(cv_obs) else np.nan
+
+    reasons = []
+    actions = []
+    if np.isfinite(rel) and rel < 0.70:
+        reasons.append("low reliability")
+        if lower == "person":
+            actions.append("add independent ratings per person and keep common raters/tasks across groups")
+        else:
+            actions.append(f"add observations per {name} level before interpreting fine-grained differences")
+    elif np.isfinite(rel) and rel >= 0.90 and lower != "person":
+        reasons.append("large systematic facet differences")
+        if any(token in lower for token in ["rater", "judge", "evaluator"]):
+            actions.append("review rater calibration and consider anchoring or reporting severity differences")
+        else:
+            actions.append(f"report {name} differences explicitly; they are not negligible design noise")
+
+    if np.isfinite(min_obs_val) and min_obs_val < 3:
+        reasons.append("very sparse element")
+        actions.append(f"collect at least 3 observations for the sparsest {name} level when feasible")
+    if np.isfinite(cv_val) and cv_val > 1.0:
+        reasons.append("unbalanced observations")
+        actions.append(f"rebalance the design so {name} levels have less uneven observation counts")
+    if bool(high_bias):
+        reasons.append("bias/interaction signal")
+        actions.append("inspect the Bias/Interaction tab before final reporting")
+
+    if not actions:
+        return "OK", "No immediate design change is suggested by this screen."
+    status = "Review" if ("low reliability" in reasons or "very sparse element" in reasons or high_bias) else "Caution"
+    return status, "; ".join(dict.fromkeys(actions))
+
+
+def evaluate_design_from_fitted(res, diagnostics=None, forecast_multipliers=(1.5, 2.0, 3.0)):
+    """Summarize design strength and simple reliability forecasts."""
+    diagnostics = diagnostics or {}
+    prep = res.get("prep", {})
+    data = prep.get("data", pd.DataFrame())
+    config = res.get("config", {})
+    facets = ["Person"] + list(config.get("facet_names", []))
+    facets = [f for f in facets if isinstance(data, pd.DataFrame) and f in data.columns]
+    if data.empty or not facets:
+        return {
+            "available": False,
+            "reason": "No fitted design data are available.",
+            "overview": pd.DataFrame(),
+            "facet_counts": pd.DataFrame(),
+            "summary": pd.DataFrame(),
+            "forecast": pd.DataFrame(),
+        }
+
+    rel_tbl = diagnostics.get("reliability", pd.DataFrame()) if isinstance(diagnostics, dict) else pd.DataFrame()
+    if not isinstance(rel_tbl, pd.DataFrame) or rel_tbl.empty:
+        measures = diagnostics.get("measures", pd.DataFrame()) if isinstance(diagnostics, dict) else pd.DataFrame()
+        rel_tbl = calc_reliability(measures) if isinstance(measures, pd.DataFrame) else pd.DataFrame()
+
+    count_rows = []
+    summary_rows = []
+    for facet in facets:
+        counts = data.groupby(facet, observed=False).size().astype(float)
+        levels = int(len(counts))
+        mean_obs = float(counts.mean()) if levels else np.nan
+        sd_obs = float(counts.std(ddof=1)) if levels > 1 else 0.0
+        cv_obs = float(sd_obs / mean_obs) if np.isfinite(mean_obs) and mean_obs > 0 else np.nan
+        for level, n_obs in counts.items():
+            count_rows.append({"Facet": facet, "Level": str(level), "ObservedRows": int(n_obs)})
+
+        rel_row = rel_tbl[rel_tbl["Facet"].astype(str) == str(facet)] if isinstance(rel_tbl, pd.DataFrame) and "Facet" in rel_tbl.columns else pd.DataFrame()
+        reliability = float(rel_row["Reliability"].iloc[0]) if not rel_row.empty and "Reliability" in rel_row else np.nan
+        separation = float(rel_row["Separation"].iloc[0]) if not rel_row.empty and "Separation" in rel_row else np.nan
+        rmse = float(rel_row["RMSE"].iloc[0]) if not rel_row.empty and "RMSE" in rel_row else np.nan
+        bias_tbl = diagnostics.get("bias", pd.DataFrame()) if isinstance(diagnostics, dict) else pd.DataFrame()
+        high_bias = False
+        if isinstance(bias_tbl, pd.DataFrame) and not bias_tbl.empty and "Facet" in bias_tbl.columns:
+            facet_bias = bias_tbl[bias_tbl["Facet"].astype(str) == str(facet)]
+            bias_col = "Bias Size" if "Bias Size" in facet_bias.columns else None
+            if bias_col:
+                vals = pd.to_numeric(facet_bias[bias_col], errors="coerce").abs().dropna()
+                high_bias = bool(len(vals) and float(vals.max()) >= 0.50)
+
+        status, action = _design_recommendation(
+            facet,
+            reliability,
+            float(counts.min()) if levels else np.nan,
+            cv_obs,
+            high_bias=high_bias,
+        )
+        summary_rows.append({
+            "Facet": facet,
+            "Levels": levels,
+            "ObservedRows": int(counts.sum()) if levels else 0,
+            "MeanRowsPerLevel": mean_obs,
+            "MinRowsPerLevel": float(counts.min()) if levels else np.nan,
+            "MaxRowsPerLevel": float(counts.max()) if levels else np.nan,
+            "CVRowsPerLevel": cv_obs,
+            "Reliability": reliability,
+            "Separation": separation,
+            "RMSE": rmse,
+            "Status": status,
+            "RecommendedAction": action,
+        })
+
+    n_possible = 1
+    for facet in facets:
+        n_possible *= max(int(data[facet].nunique(dropna=True)), 1)
+    observed_cells = int(data[facets].drop_duplicates().shape[0])
+    overview = pd.DataFrame([{
+        "ObservedRows": int(len(data)),
+        "DesignFacets": ", ".join(facets),
+        "ObservedUniqueDesignCells": observed_cells,
+        "FullyCrossedDesignCells": int(n_possible),
+        "ObservedCellDensity": observed_cells / n_possible if n_possible else np.nan,
+        "Interpretation": (
+            "Density is relative to a fully crossed design. Sparse density can be intentional, "
+            "but interpretation needs common links across persons and facet elements."
+        ),
+    }])
+
+    forecast_rows = []
+    for row in summary_rows:
+        for mult in forecast_multipliers:
+            forecast_rows.append({
+                "Facet": row["Facet"],
+                "Multiplier": float(mult),
+                "CurrentReliability": row["Reliability"],
+                "ForecastReliability": _spearman_brown_forecast(row["Reliability"], mult),
+                "Assumption": "Spearman-Brown style forecast; assumes added ratings behave like current ratings.",
+            })
+
+    return {
+        "available": True,
+        "reason": "Design evaluation from fitted reliability and observed design balance.",
+        "overview": overview,
+        "facet_counts": pd.DataFrame(count_rows),
+        "summary": pd.DataFrame(summary_rows),
+        "forecast": pd.DataFrame(forecast_rows),
+        "interpretation": (
+            "Treat this as a planning screen. It flags sparse or unbalanced facets and gives "
+            "rough reliability forecasts; it is not a replacement for a prospective simulation study."
+        ),
+    }
+
+
+def compute_residual_file(res):
+    obs = compute_obs_table(res)
+    if obs.empty:
+        return pd.DataFrame()
+    cols = ["Person", *res["config"]["facet_names"]]
+    if "Weight" in obs.columns:
+        cols.append("Weight")
+    cols += ["Score", "Observed", "Expected", "Residual", "StdResidual", "Var", "StdSq", "PersonMeasure"]
+    return obs[cols]
+
+
+def get_weights(df):
+    if "Weight" in df.columns:
+        w = df["Weight"].to_numpy(dtype=float)
+        w = np.where(np.isfinite(w) & (w > 0), w, 0.0)
+        return w
+    return np.ones(len(df), dtype=float)
+
+
+def calc_overall_fit(obs_df, whexact=False):
+    w = get_weights(obs_df)
+    infit = np.nansum(obs_df["StdSq"] * obs_df["Var"] * w) / np.nansum(obs_df["Var"] * w)
+    outfit = np.nansum(obs_df["StdSq"] * w) / np.nansum(w)
+    df_infit = np.nansum(obs_df["Var"] * w)
+    df_outfit = np.nansum(w)
+    return pd.DataFrame({
+        "Infit": [infit],
+        "Outfit": [outfit],
+        "InfitZSTD": [zstd_from_mnsq(infit, df_infit, whexact=whexact)],
+        "OutfitZSTD": [zstd_from_mnsq(outfit, df_outfit, whexact=whexact)],
+        "DF_Infit": [df_infit],
+        "DF_Outfit": [df_outfit],
+    })
+
+
+def calc_facet_fit(obs_df, facet_cols, whexact=False):
+    rows = []
+    for facet in facet_cols:
+        grp = obs_df.groupby(facet, observed=False)
+        for level, df in grp:
+            w = get_weights(df)
+            infit = np.nansum(df["StdSq"] * df["Var"] * w) / np.nansum(df["Var"] * w)
+            outfit = np.nansum(df["StdSq"] * w) / np.nansum(w)
+            df_infit = np.nansum(df["Var"] * w)
+            df_outfit = np.nansum(w)
+            rows.append({
+                "Facet": facet,
+                "Level": level,
+                "N": np.nansum(w),
+                "Infit": infit,
+                "Outfit": outfit,
+                "InfitZSTD": zstd_from_mnsq(infit, df_infit, whexact=whexact),
+                "OutfitZSTD": zstd_from_mnsq(outfit, df_outfit, whexact=whexact),
+                "DF_Infit": df_infit,
+                "DF_Outfit": df_outfit,
+            })
+    return pd.DataFrame(rows)
+
+
+def calc_facet_se(obs_df, facet_cols):
+    rows = []
+    for facet in facet_cols:
+        grp = obs_df.groupby(facet, observed=False)
+        for level, df in grp:
+            w = get_weights(df)
+            info = np.nansum(df["Var"] * w)
+            se = 1 / np.sqrt(info) if info > 0 else np.nan
+            rows.append({
+                "Facet": facet,
+                "Level": level,
+                "N": np.nansum(w),
+                "SE": se,
+            })
+    return pd.DataFrame(rows)
+
+
+def calc_bias_facet(obs_df, facet_cols):
+    rows = []
+    for facet in facet_cols:
+        grp = obs_df.groupby(facet, observed=False)
+        for level, df in grp:
+            w = get_weights(df)
+            n = np.nansum(w)
+            observed_avg = weighted_mean(df["Observed"].to_numpy(), w)
+            expected_avg = weighted_mean(df["Expected"].to_numpy(), w)
+            mean_resid = weighted_mean(df["Residual"].to_numpy(), w)
+            mean_std_resid = weighted_mean(df["StdResidual"].to_numpy(), w)
+            mean_abs_std = weighted_mean(np.abs(df["StdResidual"]).to_numpy(), w)
+            chi_sq = np.nansum((df["StdResidual"] ** 2) * w)
+            se_resid = np.sqrt(np.nansum(df["Var"] * w)) / n if n > 0 else np.nan
+            se_std = 1 / np.sqrt(n) if n > 0 else np.nan
+            df_chi = n - 1 if n > 1 else np.nan
+            t_resid = mean_resid / se_resid if np.isfinite(se_resid) and se_resid > 0 else np.nan
+            t_std = mean_std_resid / se_std if np.isfinite(se_std) and se_std > 0 else np.nan
+            p_resid = 2 * t_dist.cdf(-abs(t_resid), df=df_chi) if np.isfinite(df_chi) and np.isfinite(t_resid) else np.nan
+            p_std = 2 * t_dist.cdf(-abs(t_std), df=df_chi) if np.isfinite(df_chi) and np.isfinite(t_std) else np.nan
+            chi_p = 1 - chi2.cdf(chi_sq, df=df_chi) if np.isfinite(chi_sq) and np.isfinite(df_chi) and df_chi > 0 else np.nan
+
+            rows.append({
+                "Facet": facet,
+                "Level": level,
+                "N": n,
+                "ObservedAverage": observed_avg,
+                "ExpectedAverage": expected_avg,
+                "Bias": mean_resid,
+                "MeanResidual": mean_resid,
+                "MeanStdResidual": mean_std_resid,
+                "MeanAbsStdResidual": mean_abs_std,
+                "ChiSq": chi_sq,
+                "ChiDf": df_chi,
+                "ChiP": chi_p,
+                "SE_Residual": se_resid,
+                "t_Residual": t_resid,
+                "p_Residual": p_resid,
+                "SE_StdResidual": se_std,
+                "t_StdResidual": t_std,
+                "p_StdResidual": p_std,
+                "DF": df_chi,
+            })
+    return pd.DataFrame(rows)
+
+
+def calc_bias_interactions(obs_df, facet_cols, pairs=None, top_n=20):
+    if len(facet_cols) < 2:
+        return pd.DataFrame()
+    if pairs is None:
+        combos = []
+        for i in range(len(facet_cols)):
+            for j in range(i + 1, len(facet_cols)):
+                combos.append((facet_cols[i], facet_cols[j]))
+    elif len(pairs) == 0:
+        return pd.DataFrame()
+    else:
+        combos = pairs
+
+    rows = []
+    for pair1, pair2 in combos:
+        grp = obs_df.groupby([pair1, pair2], observed=False)
+        for (lvl1, lvl2), df in grp:
+            w = get_weights(df)
+            n = np.nansum(w)
+            observed_avg = weighted_mean(df["Observed"].to_numpy(), w)
+            expected_avg = weighted_mean(df["Expected"].to_numpy(), w)
+            mean_resid = weighted_mean(df["Residual"].to_numpy(), w)
+            mean_std_resid = weighted_mean(df["StdResidual"].to_numpy(), w)
+            mean_abs_std = weighted_mean(np.abs(df["StdResidual"]).to_numpy(), w)
+            chi_sq = np.nansum((df["StdResidual"] ** 2) * w)
+            se_resid = np.sqrt(np.nansum(df["Var"] * w)) / n if n > 0 else np.nan
+            se_std = 1 / np.sqrt(n) if n > 0 else np.nan
+            df_chi = n - 1 if n > 1 else np.nan
+            t_resid = mean_resid / se_resid if np.isfinite(se_resid) and se_resid > 0 else np.nan
+            t_std = mean_std_resid / se_std if np.isfinite(se_std) and se_std > 0 else np.nan
+            p_resid = 2 * t_dist.cdf(-abs(t_resid), df=df_chi) if np.isfinite(df_chi) and np.isfinite(t_resid) else np.nan
+            p_std = 2 * t_dist.cdf(-abs(t_std), df=df_chi) if np.isfinite(df_chi) and np.isfinite(t_std) else np.nan
+            chi_p = 1 - chi2.cdf(chi_sq, df=df_chi) if np.isfinite(chi_sq) and np.isfinite(df_chi) and df_chi > 0 else np.nan
+
+            rows.append({
+                "Pair": f"{pair1} x {pair2}",
+                "Level": f"{lvl1} | {lvl2}",
+                "N": n,
+                "ObservedAverage": observed_avg,
+                "ExpectedAverage": expected_avg,
+                "Bias": mean_resid,
+                "MeanResidual": mean_resid,
+                "MeanStdResidual": mean_std_resid,
+                "MeanAbsStdResidual": mean_abs_std,
+                "ChiSq": chi_sq,
+                "ChiDf": df_chi,
+                "ChiP": chi_p,
+                "SE_Residual": se_resid,
+                "t_Residual": t_resid,
+                "p_Residual": p_resid,
+                "SE_StdResidual": se_std,
+                "t_StdResidual": t_std,
+                "p_StdResidual": p_std,
+                "DF": df_chi,
+            })
+
+    out = pd.DataFrame(rows)
+    if out.empty:
+        return out
+    out["AbsStd"] = out["MeanStdResidual"].abs()
+    out = out.sort_values("AbsStd", ascending=False).drop(columns=["AbsStd"]).head(top_n)
+    return out
+
+
+def weighted_mean(x, w):
+    ok = np.isfinite(x) & np.isfinite(w) & (w > 0)
+    if not np.any(ok):
+        return np.nan
+    w_sum = np.sum(w[ok])
+    if w_sum <= 0:
+        return np.nan
+    return float(np.sum(x[ok] * w[ok]) / w_sum)
+
+
+
+def format_fixed_width_table(
+    df,
+    columns,
+    formats=None,
+    right_align=None,
+    max_col_width=16,
+    min_col_width=6,
+):
+    if df is None or df.empty:
+        return "No data"
+    formats = formats or {}
+    if right_align is None:
+        right_align = {
+            col for col in columns
+            if col in df.columns and pd.api.types.is_numeric_dtype(df[col])
+        }
+
+    def fmt_val(col, val):
+        if pd.isna(val):
+            return ""
+        fmt = formats.get(col)
+        if callable(fmt):
+            return fmt(val)
+        if isinstance(fmt, str):
+            try:
+                return fmt.format(val)
+            except Exception:
+                return str(val)
+        return str(val)
+
+    str_cols = {}
+    widths = {}
+    for col in columns:
+        if col not in df.columns:
+            str_cols[col] = [""] * len(df)
+            widths[col] = max(len(col), min_col_width)
+            continue
+        vals = [fmt_val(col, v) for v in df[col].tolist()]
+        str_cols[col] = vals
+        max_len = max([len(col)] + [len(v) for v in vals])
+        widths[col] = max(min_col_width, min(max_len, max_col_width))
+
+    def pad(col, text):
+        text = text[: widths[col]]
+        if col in right_align:
+            return text.rjust(widths[col])
+        return text.ljust(widths[col])
+
+    header = " ".join([pad(col, col) for col in columns])
+    lines = [header]
+    for i in range(len(df)):
+        row = " ".join([pad(col, str_cols[col][i]) for col in columns])
+        lines.append(row)
+    return "\n".join(lines)
+
+
+
+
+def get_extreme_levels(obs_df, facet_names, rating_min, rating_max):
+    extreme_levels = {}
+    for facet in facet_names:
+        if facet not in obs_df.columns:
+            extreme_levels[facet] = set()
+            continue
+        stat = (
+            obs_df.groupby(facet, observed=False)["Observed"]
+            .agg(MinScore="min", MaxScore="max")
+            .reset_index()
+        )
+        extreme = stat[
+            ((stat["MinScore"] == rating_min) & (stat["MaxScore"] == rating_min))
+            | ((stat["MinScore"] == rating_max) & (stat["MaxScore"] == rating_max))
+        ]
+        extreme_levels[facet] = set(extreme[facet].astype(str).tolist())
+    return extreme_levels
+
+
+def estimate_bias_interaction(
+    res,
+    diagnostics,
+    facet_a,
+    facet_b,
+    max_abs=10.0,
+    omit_extreme=True,
+    max_iter=4,
+    tol=1e-3,
+):
+    if res is None or diagnostics is None:
+        return {}
+    obs_df = diagnostics.get("obs")
+    if obs_df is None or obs_df.empty:
+        return {}
+    if facet_a == facet_b:
+        return {}
+
+    facet_names = ["Person"] + res["config"]["facet_names"]
+    if facet_a not in facet_names or facet_b not in facet_names:
+        return {}
+
+    prep = res["prep"]
+    config = res["config"]
+    params = res["params"]
+    idx = build_indices(prep, step_facet=config["step_facet"], slope_facet=config.get("slope_facet"))
+    theta_hat = params["theta"] if config["method"] == "JMLE" else res["facets"]["person"]["Estimate"].to_numpy()
+    eta_base = compute_eta(idx, params, config, theta_override=theta_hat if theta_hat.size else None)
+    score_k = idx["score_k"]
+    weight = idx.get("weight")
+    step_idx = idx.get("step_idx")
+    slope_idx = idx.get("slope_idx")
+
+    if config["model"] == "RSM":
+        step_cum = np.concatenate([[0.0], np.cumsum(params["steps"])])
+        step_cum_mat = None
+    else:
+        step_cum = None
+        step_cum_mat = np.vstack([
+            np.concatenate([[0.0], np.cumsum(row)]) for row in params["steps_mat"]
+        ])
+
+    if omit_extreme:
+        extreme_levels = get_extreme_levels(
+            obs_df,
+            [facet_a, facet_b],
+            prep["rating_min"],
+            prep["rating_max"],
+        )
+    else:
+        extreme_levels = {facet_a: set(), facet_b: set()}
+
+    measures = diagnostics.get("measures", pd.DataFrame())
+    meas_map = {}
+    se_map = {}
+    if not measures.empty:
+        for row in measures.itertuples():
+            meas_map[(row.Facet, str(row.Level))] = float(row.Estimate)
+            se_map[(row.Facet, str(row.Level))] = float(row.SE) if pd.notna(row.SE) else np.nan
+
+    level_map = {facet: list(map(str, prep["levels"][facet])) for facet in facet_names if facet in prep["levels"]}
+    group_indices = obs_df.groupby([facet_a, facet_b], observed=False).indices
+    groups = []
+    for (lvl_a, lvl_b), idx_rows in group_indices.items():
+        lvl_a_str = str(lvl_a)
+        lvl_b_str = str(lvl_b)
+        if omit_extreme:
+            if lvl_a_str in extreme_levels.get(facet_a, set()) or lvl_b_str in extreme_levels.get(facet_b, set()):
+                continue
+        idx_rows = np.asarray(idx_rows, dtype=int)
+        if idx_rows.size == 0:
+            continue
+        groups.append({
+            "key": (lvl_a_str, lvl_b_str),
+            "idx": idx_rows,
+        })
+
+    def estimate_bias_for_group(idx_rows):
+        eta_sub = eta_base[idx_rows]
+        score_k_sub = score_k[idx_rows]
+        weight_sub = weight[idx_rows] if weight is not None else None
+        step_idx_sub = step_idx[idx_rows] if step_idx is not None else None
+        slope_idx_sub = slope_idx[idx_rows] if slope_idx is not None else step_idx_sub
+
+        if config["model"] == "RSM":
+            def nll(b):
+                return -loglik_rsm(eta_sub + b, score_k_sub, step_cum, weight=weight_sub)
+        elif config["model"] == "PCM":
+            def nll(b):
+                return -loglik_pcm(eta_sub + b, score_k_sub, step_cum_mat, step_idx_sub, weight=weight_sub)
+        else:
+            def nll(b):
+                return -loglik_gpcm(
+                    eta_sub + b,
+                    score_k_sub,
+                    step_cum_mat,
+                    step_idx_sub,
+                    params["slopes"],
+                    slope_idx_sub,
+                    weight=weight_sub,
+                )
+
+        try:
+            opt = minimize_scalar(nll, bounds=(-max_abs, max_abs), method="bounded")
+            if opt.success:
+                return float(opt.x)
+        except Exception:
+            return np.nan
+        return np.nan
+
+    def iteration_metrics(bias_map):
+        max_resid = 0.0
+        max_resid_pct = np.nan
+        max_categories = np.nan
+        for g in groups:
+            idx_rows = g["idx"]
+            bias = bias_map.get(g["key"], 0.0)
+            eta_sub = eta_base[idx_rows] + (bias if np.isfinite(bias) else 0.0)
+            score_k_sub = score_k[idx_rows]
+            step_idx_sub = step_idx[idx_rows] if step_idx is not None else None
+            slope_idx_sub = slope_idx[idx_rows] if slope_idx is not None else step_idx_sub
+            if config["model"] == "RSM":
+                probs = category_prob_rsm(eta_sub, step_cum)
+            elif config["model"] == "PCM":
+                probs = category_prob_pcm(eta_sub, step_cum_mat, step_idx_sub)
+            else:
+                probs = category_prob_gpcm(
+                    eta_sub,
+                    step_cum_mat,
+                    step_idx_sub,
+                    params["slopes"],
+                    slope_idx_sub,
+                )
+            k_vals = np.arange(probs.shape[1])
+            expected_k = probs.dot(k_vals)
+            expected_score = prep["rating_min"] + expected_k
+            obs_score = obs_df.iloc[idx_rows]["Observed"].to_numpy(dtype=float)
+            if "Weight" in obs_df.columns:
+                w = obs_df.iloc[idx_rows]["Weight"].to_numpy(dtype=float)
+                obs_score = obs_score * w
+                expected_score = expected_score * w
+            resid = obs_score - expected_score
+            if resid.size:
+                obs_sum = float(np.nansum(obs_score))
+                exp_sum = float(np.nansum(expected_score))
+                resid_sum = obs_sum - exp_sum
+                if abs(resid_sum) >= abs(max_resid):
+                    max_resid = resid_sum
+                    max_resid_pct = (resid_sum / exp_sum * 100) if exp_sum != 0 else np.nan
+                    max_categories = np.nan
+
+        return {
+            "max_resid": max_resid,
+            "max_resid_pct": max_resid_pct,
+            "max_resid_categories": max_categories,
+        }
+
+    bias_map = {g["key"]: 0.0 for g in groups}
+    iter_rows = []
+    for it in range(1, max_iter + 1):
+        max_change_abs = 0.0
+        max_change_signed = 0.0
+        changes = []
+        for g in groups:
+            key = g["key"]
+            bias_hat = estimate_bias_for_group(g["idx"])
+            prev = bias_map.get(key, 0.0)
+            if np.isfinite(bias_hat) and np.isfinite(prev):
+                delta = bias_hat - prev
+                if abs(delta) >= max_change_abs:
+                    max_change_abs = abs(delta)
+                    max_change_signed = delta
+                changes.append(abs(delta))
+            else:
+                changes.append(np.nan)
+            bias_map[key] = bias_hat
+        resid_info = iteration_metrics(bias_map)
+        iter_rows.append({
+            "Iteration": it,
+            "MaxScoreResidual": resid_info["max_resid"],
+            "MaxScoreResidualPct": resid_info["max_resid_pct"],
+            "MaxScoreResidualCategories": resid_info["max_resid_categories"],
+            "MaxLogitChange": max_change_signed,
+            "BiasCells": int(np.sum(np.array(changes, dtype=float) > tol)),
+        })
+        if max_change_abs < tol:
+            break
+
+    rows = []
+    seq = 1
+    for g in groups:
+        lvl_a_str, lvl_b_str = g["key"]
+        idx_rows = g["idx"]
+        bias_hat = bias_map.get(g["key"], np.nan)
+        eta_sub = eta_base[idx_rows]
+        score_k_sub = score_k[idx_rows]
+        weight_sub = weight[idx_rows] if weight is not None else None
+        step_idx_sub = step_idx[idx_rows] if step_idx is not None else None
+        slope_idx_sub = slope_idx[idx_rows] if slope_idx is not None else step_idx_sub
+
+        if config["model"] == "RSM":
+            probs = category_prob_rsm(eta_sub + (bias_hat if np.isfinite(bias_hat) else 0.0), step_cum)
+        elif config["model"] == "PCM":
+            probs = category_prob_pcm(eta_sub + (bias_hat if np.isfinite(bias_hat) else 0.0), step_cum_mat, step_idx_sub)
+        else:
+            probs = category_prob_gpcm(
+                eta_sub + (bias_hat if np.isfinite(bias_hat) else 0.0),
+                step_cum_mat,
+                step_idx_sub,
+                params["slopes"],
+                slope_idx_sub,
+            )
+
+        k_vals = np.arange(probs.shape[1])
+        expected_k = probs.dot(k_vals)
+        var_k = probs.dot(k_vals ** 2) - expected_k ** 2
+        var_k = np.where(var_k <= 1e-10, np.nan, var_k)
+        resid_k = score_k_sub - expected_k
+        std_sq = resid_k ** 2 / var_k
+
+        w = weight_sub if weight_sub is not None else np.ones(len(idx_rows))
+        info = np.nansum(var_k * w)
+        se = 1 / np.sqrt(info) if np.isfinite(info) and info > 0 else np.nan
+        infit = np.nansum(std_sq * var_k * w) / np.nansum(var_k * w) if np.nansum(var_k * w) > 0 else np.nan
+        outfit = np.nansum(std_sq * w) / np.nansum(w) if np.nansum(w) > 0 else np.nan
+
+        obs_slice = obs_df.iloc[idx_rows]
+        w_obs = obs_slice["Weight"].to_numpy(dtype=float) if "Weight" in obs_slice.columns else np.ones(len(obs_slice))
+        obs_score = float(np.nansum(obs_slice["Observed"].to_numpy(dtype=float) * w_obs))
+        exp_score = float(np.nansum(obs_slice["Expected"].to_numpy(dtype=float) * w_obs))
+        obs_count = float(np.nansum(w_obs))
+        obs_exp_avg = (obs_score - exp_score) / obs_count if obs_count > 0 else np.nan
+
+        n_obs = int(len(obs_slice))
+        df_t = max(n_obs - 1, 0)
+        t_val = bias_hat / se if np.isfinite(bias_hat) and np.isfinite(se) and se > 0 else np.nan
+        p_val = 2 * t_dist.cdf(-abs(t_val), df=df_t) if np.isfinite(t_val) and df_t > 0 else np.nan
+
+        rows.append({
+            "Sq": seq,
+            "Observd Score": obs_score,
+            "Expctd Score": exp_score,
+            "Observd Count": obs_count,
+            "Obs-Exp Average": obs_exp_avg,
+            "Bias Size": bias_hat,
+            "S.E.": se,
+            "t": t_val,
+            "d.f.": df_t,
+            "Prob.": p_val,
+            "Infit": infit,
+            "Outfit": outfit,
+            "ObsN": n_obs,
+            "FacetA": facet_a,
+            "FacetA_Level": lvl_a_str,
+            "FacetA_Index": level_map.get(facet_a, []).index(lvl_a_str) + 1 if lvl_a_str in level_map.get(facet_a, []) else np.nan,
+            "FacetA_Measure": meas_map.get((facet_a, lvl_a_str), np.nan),
+            "FacetA_SE": se_map.get((facet_a, lvl_a_str), np.nan),
+            "FacetB": facet_b,
+            "FacetB_Level": lvl_b_str,
+            "FacetB_Index": level_map.get(facet_b, []).index(lvl_b_str) + 1 if lvl_b_str in level_map.get(facet_b, []) else np.nan,
+            "FacetB_Measure": meas_map.get((facet_b, lvl_b_str), np.nan),
+            "FacetB_SE": se_map.get((facet_b, lvl_b_str), np.nan),
+        })
+        seq += 1
+
+    bias_tbl = pd.DataFrame(rows)
+    if bias_tbl.empty:
+        return {}
+
+    numeric_cols = ["Observd Score", "Expctd Score", "Observd Count", "Obs-Exp Average", "Bias Size", "S.E."]
+    mean_row = bias_tbl[numeric_cols].mean(numeric_only=True)
+    sd_pop_row = bias_tbl[numeric_cols].std(ddof=0, numeric_only=True)
+    sd_sample_row = bias_tbl[numeric_cols].std(ddof=1, numeric_only=True)
+    summary_tbl = pd.DataFrame(
+        [mean_row, sd_pop_row, sd_sample_row],
+        index=["Mean (Count: {})".format(len(bias_tbl)), "S.D. (Population)", "S.D. (Sample)"],
+    ).reset_index().rename(columns={"index": "Statistic"})
+
+    se_bias = bias_tbl["S.E."].to_numpy()
+    bias_vals = bias_tbl["Bias Size"].to_numpy()
+    w_chi = np.where(np.isfinite(se_bias) & (se_bias > 0), 1 / (se_bias ** 2), np.nan)
+    ok = np.isfinite(w_chi) & np.isfinite(bias_vals)
+    fixed_chi = (
+        np.sum(w_chi[ok] * bias_vals[ok] ** 2) - (np.sum(w_chi[ok] * bias_vals[ok]) ** 2) / np.sum(w_chi[ok])
+        if np.sum(ok) >= 2
+        else np.nan
+    )
+    fixed_df = max(len(bias_tbl) - 1, 0)
+    fixed_prob = 1 - chi2.cdf(fixed_chi, df=fixed_df) if np.isfinite(fixed_chi) and fixed_df > 0 else np.nan
+    chi_tbl = pd.DataFrame({
+        "FixedChiSq": [fixed_chi],
+        "FixedDF": [fixed_df],
+        "FixedProb": [fixed_prob],
+    })
+
+    return {
+        "facet_a": facet_a,
+        "facet_b": facet_b,
+        "table": bias_tbl,
+        "summary": summary_tbl,
+        "chi_sq": chi_tbl,
+        "iteration": pd.DataFrame(iter_rows),
+    }
+
+
+def calc_bias_pairwise(bias_tbl, target_facet, context_facet):
+    if bias_tbl is None or bias_tbl.empty:
+        return pd.DataFrame()
+
+    use_a = bias_tbl["FacetA"].iloc[0] == target_facet
+    use_b = bias_tbl["FacetB"].iloc[0] == target_facet
+    if not (use_a or use_b):
+        return pd.DataFrame()
+
+    if use_a:
+        target_prefix = "FacetA"
+        context_prefix = "FacetB"
+    else:
+        target_prefix = "FacetB"
+        context_prefix = "FacetA"
+
+    sub = bias_tbl.copy()
+    sub = sub[sub[f"{context_prefix}"].isin([context_facet])]
+    if sub.empty:
+        sub = bias_tbl.copy()
+
+    rows = []
+    for tgt_level, group_df in sub.groupby(f"{target_prefix}_Level"):
+        contexts = group_df[f"{context_prefix}_Level"].unique().tolist()
+        if len(contexts) < 2:
+            continue
+        ctx_pairs = list(combinations(contexts, 2))
+        for c1, c2 in ctx_pairs:
+            r1 = group_df[group_df[f"{context_prefix}_Level"] == c1].iloc[0]
+            r2 = group_df[group_df[f"{context_prefix}_Level"] == c2].iloc[0]
+
+            tgt_measure = float(r1[f"{target_prefix}_Measure"]) if np.isfinite(r1[f"{target_prefix}_Measure"]) else np.nan
+            tgt_se = float(r1[f"{target_prefix}_SE"]) if np.isfinite(r1[f"{target_prefix}_SE"]) else np.nan
+            tgt_index = r1.get(f"{target_prefix}_Index", np.nan)
+
+            bias1 = float(r1["Bias Size"]) if np.isfinite(r1["Bias Size"]) else np.nan
+            bias2 = float(r2["Bias Size"]) if np.isfinite(r2["Bias Size"]) else np.nan
+            bias_se1 = float(r1["S.E."]) if np.isfinite(r1["S.E."]) else np.nan
+            bias_se2 = float(r2["S.E."]) if np.isfinite(r2["S.E."]) else np.nan
+
+            local1 = tgt_measure + bias1 if np.isfinite(tgt_measure) and np.isfinite(bias1) else np.nan
+            local2 = tgt_measure + bias2 if np.isfinite(tgt_measure) and np.isfinite(bias2) else np.nan
+            se1 = np.sqrt(tgt_se ** 2 + bias_se1 ** 2) if np.isfinite(tgt_se) and np.isfinite(bias_se1) else np.nan
+            se2 = np.sqrt(tgt_se ** 2 + bias_se2 ** 2) if np.isfinite(tgt_se) and np.isfinite(bias_se2) else np.nan
+
+            contrast = local1 - local2 if np.isfinite(local1) and np.isfinite(local2) else np.nan
+            se_contrast = np.sqrt(se1 ** 2 + se2 ** 2) if np.isfinite(se1) and np.isfinite(se2) else np.nan
+            t_val = contrast / se_contrast if np.isfinite(contrast) and np.isfinite(se_contrast) and se_contrast > 0 else np.nan
+
+            n1 = int(r1["ObsN"]) if np.isfinite(r1["ObsN"]) else 0
+            n2 = int(r2["ObsN"]) if np.isfinite(r2["ObsN"]) else 0
+            df_num = (se1 ** 2 + se2 ** 2) ** 2
+            df_den = 0.0
+            if n1 > 1 and np.isfinite(se1):
+                df_den += (se1 ** 4) / (n1 - 1)
+            if n2 > 1 and np.isfinite(se2):
+                df_den += (se2 ** 4) / (n2 - 1)
+            df_t_val = df_num / df_den if df_den > 0 else np.nan
+            p_val = 2 * t_dist.cdf(-abs(t_val), df=df_t_val) if np.isfinite(t_val) and np.isfinite(df_t_val) and df_t_val > 0 else np.nan
+
+            rows.append({
+                "Target": tgt_level,
+                "Target N": tgt_index,
+                "Target Measure": tgt_measure,
+                "Target S.E.": tgt_se,
+                "Context1": c1,
+                "Context1 N": r1.get(f"{context_prefix}_Index", np.nan),
+                "Local Measure1": local1,
+                "SE1": se1,
+                "Obs-Exp Avg1": float(r1["Obs-Exp Average"]),
+                "Count1": float(r1["Observd Count"]),
+                "Context2": c2,
+                "Context2 N": r2.get(f"{context_prefix}_Index", np.nan),
+                "Local Measure2": local2,
+                "SE2": se2,
+                "Obs-Exp Avg2": float(r2["Obs-Exp Average"]),
+                "Count2": float(r2["Observd Count"]),
+                "Contrast": contrast,
+                "SE": se_contrast,
+                "t": t_val,
+                "d.f.": df_t_val,
+                "Prob.": p_val,
+            })
+
+    return pd.DataFrame(rows)
+
+
+def safe_cor(x, y, w=None):
+    ok = np.isfinite(x) & np.isfinite(y)
+    if w is None:
+        if not np.any(ok):
+            return np.nan
+        x = x[ok]
+        y = y[ok]
+        if len(np.unique(x)) < 2 or len(np.unique(y)) < 2:
+            return np.nan
+        return float(np.corrcoef(x, y)[0, 1])
+
+    ok = ok & np.isfinite(w) & (w > 0)
+    if not np.any(ok):
+        return np.nan
+    x = x[ok]
+    y = y[ok]
+    w = w[ok]
+    w_sum = np.sum(w)
+    if w_sum <= 0:
+        return np.nan
+    mx = np.sum(w * x) / w_sum
+    my = np.sum(w * y) / w_sum
+    vx = np.sum(w * (x - mx) ** 2) / w_sum
+    vy = np.sum(w * (y - my) ** 2) / w_sum
+    if vx <= 0 or vy <= 0:
+        return np.nan
+    cov = np.sum(w * (x - mx) * (y - my)) / w_sum
+    return float(cov / np.sqrt(vx * vy))
+
+
+def weighted_mean_safe(x, w):
+    ok = np.isfinite(x) & np.isfinite(w)
+    if not np.any(ok):
+        return np.nan
+    return float(np.sum(x[ok] * w[ok]) / np.sum(w[ok]))
+
+
+def calc_interrater_agreement(obs_df, facet_cols, rater_facet, res=None):
+    if obs_df is None or obs_df.empty:
+        return {"summary": pd.DataFrame(), "pairs": pd.DataFrame()}
+    if rater_facet is None or rater_facet not in facet_cols:
+        return {"summary": pd.DataFrame(), "pairs": pd.DataFrame()}
+    context_cols = [c for c in facet_cols if c != rater_facet]
+    if len(context_cols) == 0:
+        return {"summary": pd.DataFrame(), "pairs": pd.DataFrame()}
+
+    df = obs_df.copy()
+    df["_context"] = df[context_cols].astype(str).agg("|".join, axis=1)
+    base_cols = ["_context", rater_facet, "Observed"]
+    if "Weight" in df.columns:
+        base_cols.append("Weight")
+    df = df[base_cols].copy()
+    if "Weight" in df.columns:
+        df_obs = (
+            df.groupby(["_context", rater_facet])
+            .apply(lambda g: weighted_mean(g["Observed"].to_numpy(), g["Weight"].to_numpy()))
+            .reset_index(name="Score")
+        )
+    else:
+        df_obs = df.groupby(["_context", rater_facet], as_index=False).agg(Score=("Observed", "mean"))
+    if df_obs.empty:
+        return {"summary": pd.DataFrame(), "pairs": pd.DataFrame()}
+
+    prob_map = {}
+    if res is not None:
+        probs = compute_prob_matrix(res)
+        if probs is not None and probs.shape[0] == len(obs_df):
+            prob_cols = [f"_p{i}" for i in range(probs.shape[1])]
+            df_probs = df[["_context", rater_facet]].copy()
+            for i, col in enumerate(prob_cols):
+                df_probs[col] = probs[:, i]
+            if "Weight" in df.columns:
+                df_probs["Weight"] = df["Weight"].to_numpy()
+            for (ctx, r), g in df_probs.groupby(["_context", rater_facet]):
+                if "Weight" in g.columns:
+                    w = g["Weight"].to_numpy(dtype=float)
+                    ok = np.isfinite(w) & (w > 0)
+                    if not np.any(ok):
+                        avg = np.full(len(prob_cols), np.nan)
+                    else:
+                        avg = np.average(g.loc[ok, prob_cols].to_numpy(), axis=0, weights=w[ok])
+                else:
+                    avg = np.nanmean(g[prob_cols].to_numpy(), axis=0)
+                prob_map[(ctx, r)] = avg
+
+    wide = df_obs.pivot(index="_context", columns=rater_facet, values="Score")
+    if wide is None or wide.empty:
+        return {"summary": pd.DataFrame(), "pairs": pd.DataFrame()}
+
+    rater_cols = [c for c in wide.columns if c != "_context"]
+    if len(rater_cols) < 2:
+        return {"summary": pd.DataFrame(), "pairs": pd.DataFrame()}
+
+    pairs = []
+    for i in range(len(rater_cols)):
+        for j in range(i + 1, len(rater_cols)):
+            pairs.append((rater_cols[i], rater_cols[j]))
+
+    pair_rows = []
+    total_pairs = 0
+    total_exact = 0
+    total_expected = 0.0
+    expected_available = False
+    for r1, r2 in pairs:
+        sub = wide[[r1, r2]].dropna()
+        n_ok = int(len(sub))
+        if n_ok == 0:
+            pair_rows.append({
+                "Element1": r1,
+                "Element2": r2,
+                "N": 0,
+                "Exact": np.nan,
+                "ExpectedExact": np.nan,
+                "Adjacent": np.nan,
+                "MeanDiff": np.nan,
+                "MAD": np.nan,
+                "Corr": np.nan,
+            })
+            continue
+
+        v1 = sub[r1].to_numpy()
+        v2 = sub[r2].to_numpy()
+        diff = v1 - v2
+        exact_count = int(np.sum(np.isclose(diff, 0)))
+
+        exp_vals = []
+        if prob_map:
+            for ctx in sub.index:
+                p1 = prob_map.get((ctx, r1))
+                p2 = prob_map.get((ctx, r2))
+                if p1 is None or p2 is None:
+                    continue
+                if np.any(np.isnan(p1)) or np.any(np.isnan(p2)):
+                    continue
+                exp_vals.append(float(np.sum(p1 * p2)))
+        exp_mean = float(np.mean(exp_vals)) if exp_vals else np.nan
+        exp_sum = float(np.sum(exp_vals)) if exp_vals else 0.0
+        if exp_vals:
+            expected_available = True
+
+        pair_rows.append({
+            "Element1": r1,
+            "Element2": r2,
+            "N": n_ok,
+            "Exact": float(exact_count / n_ok),
+            "ExpectedExact": exp_mean,
+            "Adjacent": float(np.mean(np.abs(diff) <= 1)),
+            "MeanDiff": float(np.mean(diff)),
+            "MAD": float(np.mean(np.abs(diff))),
+            "Corr": safe_cor(v1, v2),
+        })
+
+        total_pairs += n_ok
+        total_exact += exact_count
+        total_expected += exp_sum
+
+    pair_tbl = pd.DataFrame(pair_rows)
+    contexts_with_pairs = int(np.sum(np.sum(np.isfinite(wide.to_numpy()), axis=1) >= 2))
+
+    if not expected_available:
+        total_expected = np.nan
+    summary_tbl = pd.DataFrame({
+        "RaterFacet": [rater_facet],
+        "Elements": [len(rater_cols)],
+        "Pairs": [len(pair_tbl)],
+        "Contexts": [contexts_with_pairs],
+        "TotalPairs": [total_pairs],
+        "ExactAgreements": [total_exact],
+        "ExpectedAgreements": [total_expected if total_pairs > 0 else np.nan],
+        "ExactAgreement": [total_exact / total_pairs if total_pairs > 0 else np.nan],
+        "ExpectedExactAgreement": [total_expected / total_pairs if total_pairs > 0 else np.nan],
+        "AdjacentAgreement": [weighted_mean_safe(pair_tbl["Adjacent"].to_numpy(), pair_tbl["N"].to_numpy()) if not pair_tbl.empty else np.nan],
+        "MeanAbsDiff": [weighted_mean_safe(pair_tbl["MAD"].to_numpy(), pair_tbl["N"].to_numpy()) if not pair_tbl.empty else np.nan],
+        "MeanCorr": [weighted_mean_safe(pair_tbl["Corr"].to_numpy(), pair_tbl["N"].to_numpy()) if not pair_tbl.empty else np.nan],
+    })
+
+    return {"summary": summary_tbl, "pairs": pair_tbl}
+
+
+def calc_ptmea(obs_df, facet_cols):
+    facet_cols = [f for f in facet_cols if f != "Person"]
+    rows = []
+    for facet in facet_cols:
+        grp = obs_df.groupby(facet, observed=False)
+        for level, df in grp:
+            w = get_weights(df)
+            rows.append({
+                "Facet": facet,
+                "Level": level,
+                "PTMEA": safe_cor(df["Observed"].to_numpy(), df["PersonMeasure"].to_numpy(), w=w),
+                "N": np.nansum(w),
+            })
+    return pd.DataFrame(rows)
+
+
+def calc_subsets(obs_df, facet_cols):
+    if obs_df is None or obs_df.empty or not facet_cols:
+        return {"summary": pd.DataFrame(), "nodes": pd.DataFrame()}
+
+    df = obs_df[facet_cols].dropna()
+    if df.empty:
+        return {"summary": pd.DataFrame(), "nodes": pd.DataFrame()}
+
+    nodes = []
+    for facet in facet_cols:
+        nodes.extend([f"{facet}:{val}" for val in df[facet].astype(str).unique()])
+    nodes = list(dict.fromkeys(nodes))
+    if not nodes:
+        return {"summary": pd.DataFrame(), "nodes": pd.DataFrame()}
+
+    parent = {node: node for node in nodes}
+
+    def find_root(x):
+        px = parent.get(x)
+        if px is None:
+            return None
+        if px != x:
+            parent[x] = find_root(px)
+        return parent[x]
+
+    def union_nodes(a, b):
+        ra = find_root(a)
+        rb = find_root(b)
+        if ra is None or rb is None or ra == rb:
+            return
+        parent[rb] = ra
+
+    for _, row in df.iterrows():
+        row_nodes = [f"{facet}:{row[facet]}" for facet in facet_cols if pd.notna(row[facet])]
+        if len(row_nodes) < 2:
+            continue
+        base = row_nodes[0]
+        for node in row_nodes[1:]:
+            union_nodes(base, node)
+
+    comp_ids = {node: find_root(node) for node in nodes}
+    comp_levels = list(dict.fromkeys(comp_ids.values()))
+    comp_index = {comp: idx + 1 for idx, comp in enumerate(comp_levels)}
+
+    node_tbl = pd.DataFrame({
+        "Node": nodes,
+        "Component": [comp_ids[n] for n in nodes],
+        "Subset": [comp_index[comp_ids[n]] for n in nodes],
+        "Facet": [n.split(":", 1)[0] for n in nodes],
+        "Level": [n.split(":", 1)[1] for n in nodes],
+    })
+
+    facet_counts = (
+        node_tbl.groupby(["Subset", "Facet"])["Level"]
+        .nunique()
+        .reset_index()
+        .pivot(index="Subset", columns="Facet", values="Level")
+        .fillna(0)
+        .reset_index()
+    )
+
+    first_facet = facet_cols[0]
+    row_subset = df[first_facet].astype(str).apply(lambda v: comp_index[find_root(f"{first_facet}:{v}")])
+    obs_counts = row_subset.value_counts().rename_axis("Subset").reset_index(name="Observations")
+
+    summary_tbl = facet_counts.merge(obs_counts, on="Subset", how="left")
+    summary_tbl["Observations"] = summary_tbl["Observations"].fillna(0).astype(int)
+    summary_tbl = summary_tbl.sort_values("Observations", ascending=False)
+
+    return {"summary": summary_tbl, "nodes": node_tbl}
+
+
+def expected_score_from_eta(eta, step_cum, rating_min, slope=1.0):
+    if not np.isfinite(eta) or step_cum is None or len(step_cum) == 0:
+        return np.nan
+    step_cum = np.asarray(step_cum, dtype=float)
+    if step_cum.ndim != 1:
+        return np.nan
+    slope = float(slope) if np.isfinite(slope) and slope > 0 else 1.0
+    k_vals = np.arange(len(step_cum), dtype=float)
+    log_num = slope * (eta * k_vals - step_cum)
+    log_denom = logsumexp(log_num)
+    probs = np.exp(log_num - log_denom)
+    return float(rating_min + np.sum(probs * k_vals))
+
+
+def estimate_eta_from_target(target, step_cum, rating_min, rating_max, slope=1.0):
+    if not np.isfinite(target) or step_cum is None or len(step_cum) == 0:
+        return np.nan
+    if target <= rating_min:
+        return -np.inf
+    if target >= rating_max:
+        return np.inf
+
+    def f(eta):
+        return expected_score_from_eta(eta, step_cum, rating_min, slope=slope) - target
+
+    low, high = -10.0, 10.0
+    f_low = f(low)
+    f_high = f(high)
+    if not np.isfinite(f_low) or not np.isfinite(f_high) or f_low * f_high > 0:
+        low, high = -20.0, 20.0
+        f_low = f(low)
+        f_high = f(high)
+        if not np.isfinite(f_low) or not np.isfinite(f_high) or f_low * f_high > 0:
+            return np.nan
+
+    try:
+        root = root_scalar(f, bracket=(low, high), method="brentq")
+        return float(root.root) if root.converged else np.nan
+    except Exception:
+        return np.nan
+
+
+def facet_anchor_status(facet, levels, config, extreme_levels=None):
+    spec = config["theta_spec"] if facet == "Person" else config["facet_specs"].get(facet)
+    if spec is None:
+        return [""] * len(levels)
+    anchors = spec.get("anchors")
+    groups = spec.get("groups")
+    status = []
+    for lvl in levels:
+        idx = spec["levels"].index(str(lvl)) if str(lvl) in spec["levels"] else None
+        if idx is not None and anchors is not None and np.isfinite(anchors[idx]):
+            status.append("A")
+        elif idx is not None and groups is not None:
+            grp_val = groups[idx]
+            if grp_val not in (None, "", np.nan):
+                if extreme_levels is not None and str(lvl) in extreme_levels:
+                    status.append("X")
+                else:
+                    status.append("G")
+            else:
+                status.append("")
+        else:
+            status.append("")
+    return status
+
+
+def calc_facets_report_tbls(
+    res,
+    diagnostics,
+    totalscore=True,
+    umean=0,
+    uscale=1,
+    udecimals=2,
+    omit_unobserved=False,
+    xtreme=0,
+):
+    if res is None or diagnostics is None:
+        return {}
+    obs_df = diagnostics.get("obs")
+    measures = diagnostics.get("measures")
+    if obs_df is None or obs_df.empty or measures is None or measures.empty:
+        return {}
+
+    prep = res["prep"]
+    config = res["config"]
+    rating_min = prep["rating_min"]
+    rating_max = prep["rating_max"]
+    params = res["params"]
+
+    theta_hat = params["theta"] if config["method"] == "JMLE" else res["facets"]["person"]["Estimate"].to_numpy()
+    theta_mean = float(np.mean(theta_hat)) if len(theta_hat) > 0 else 0.0
+    facet_means = {f: float(np.nanmean(params["facets"][f])) for f in config["facet_names"]}
+    facet_signs = config.get("facet_signs", {f: -1 for f in config["facet_names"]})
+
+    if config["model"] == "RSM":
+        step_cum_common = np.concatenate([[0.0], np.cumsum(params["steps"])])
+        step_cum_mean = step_cum_common
+        slope_by_step_level = np.array([], dtype=float)
+        slope_mean = 1.0
+    else:
+        step_mat = params["steps_mat"]
+        if step_mat is None or len(step_mat) == 0:
+            step_cum_common = np.array([])
+            step_cum_mean = np.array([])
+        else:
+            step_mean = np.nanmean(step_mat, axis=0)
+            step_cum_common = np.vstack([
+                np.concatenate([[0.0], np.cumsum(row)]) for row in step_mat
+            ])
+            step_cum_mean = np.concatenate([[0.0], np.cumsum(step_mean)])
+        if config["model"] == "GPCM":
+            slope_by_step_level = np.asarray(params.get("slopes", []), dtype=float)
+            slope_ok = slope_by_step_level[np.isfinite(slope_by_step_level) & (slope_by_step_level > 0)]
+            slope_mean = float(np.nanmean(slope_ok)) if slope_ok.size else 1.0
+        else:
+            slope_by_step_level = np.array([], dtype=float)
+            slope_mean = 1.0
+
+    facet_names = ["Person"] + config["facet_names"]
+    facet_levels_all = {
+        facet: (prep["levels"]["Person"] if facet == "Person" else prep["levels"][facet])
+        for facet in facet_names
+    }
+
+    extreme_levels = {}
+    for facet in facet_names:
+        if facet not in obs_df.columns:
+            extreme_levels[facet] = []
+            continue
+        stat = (
+            obs_df.groupby(facet)["Observed"]
+            .agg(MinScore="min", MaxScore="max")
+            .reset_index()
+        )
+        extreme = stat[
+            ((stat["MinScore"] == rating_min) & (stat["MaxScore"] == rating_min))
+            | ((stat["MinScore"] == rating_max) & (stat["MaxScore"] == rating_max))
+        ]
+        extreme_levels[facet] = extreme[facet].astype(str).tolist()
+
+    extreme_flags = {}
+    for facet in facet_names:
+        if facet in obs_df.columns:
+            extreme_flags[facet] = obs_df[facet].astype(str).isin(extreme_levels[facet])
+    if extreme_flags:
+        extreme_flag_df = pd.DataFrame(extreme_flags)
+        extreme_count = extreme_flag_df.sum(axis=1)
+    else:
+        extreme_count = pd.Series(0, index=obs_df.index, dtype=int)
+
+    out = {}
+    for facet in facet_names:
+        if facet not in obs_df.columns:
+            continue
+        status_tbl = (
+            obs_df.groupby(facet)["Observed"]
+            .agg(MinScore="min", MaxScore="max", TotalCountAll="size")
+            .reset_index()
+        )
+        if totalscore:
+            score_source = obs_df
+        else:
+            flag = extreme_flags.get(facet)
+            if flag is None:
+                flag = pd.Series(False, index=obs_df.index)
+            active_mask = (extreme_count == 0) | ((extreme_count == 1) & flag)
+            score_source = obs_df.loc[active_mask]
+        score_rows = []
+        for level_val, df_lvl in score_source.groupby(facet):
+            total_score = float(df_lvl["Observed"].sum())
+            total_count = float(len(df_lvl))
+            if "Weight" in df_lvl.columns:
+                weightd_count = float(df_lvl["Weight"].sum())
+                weightd_score = float((df_lvl["Observed"] * df_lvl["Weight"]).sum())
+            else:
+                weightd_count = total_count
+                weightd_score = total_score
+            observed_avg = weightd_score / weightd_count if weightd_count > 0 else np.nan
+            score_rows.append({
+                facet: level_val,
+                "TotalScore": total_score,
+                "TotalCount": total_count,
+                "WeightdScore": weightd_score,
+                "WeightdCount": weightd_count,
+                "ObservedAverage": observed_avg,
+            })
+        score_tbl = pd.DataFrame(
+            score_rows,
+            columns=[facet, "TotalScore", "TotalCount", "WeightdScore", "WeightdCount", "ObservedAverage"],
+        )
+        level_tbl = pd.DataFrame({"Level": list(map(str, facet_levels_all[facet]))})
+
+        score_tbl[facet] = score_tbl[facet].astype(str)
+        status_tbl[facet] = status_tbl[facet].astype(str)
+
+        tbl = level_tbl.merge(score_tbl, left_on="Level", right_on=facet, how="left")
+        tbl = tbl.merge(status_tbl, left_on="Level", right_on=facet, how="left", suffixes=("", "_all"))
+        tbl = tbl.drop(columns=[c for c in [facet, f"{facet}_all"] if c in tbl.columns])
+
+        tbl["TotalScore"] = tbl["TotalScore"].fillna(0)
+        tbl["TotalCount"] = tbl["TotalCount"].fillna(0)
+        if "WeightdScore" in tbl.columns:
+            tbl["WeightdScore"] = tbl["WeightdScore"].fillna(0)
+        if "WeightdCount" in tbl.columns:
+            tbl["WeightdCount"] = tbl["WeightdCount"].fillna(0)
+        if "WeightdCount" in tbl.columns:
+            tbl["ObservedAverage"] = tbl.apply(
+                lambda r: np.nan if r["WeightdCount"] == 0 else r["ObservedAverage"], axis=1
+            )
+        else:
+            tbl["ObservedAverage"] = tbl.apply(
+                lambda r: np.nan if r["TotalCount"] == 0 else r["ObservedAverage"], axis=1
+            )
+
+        meas_tbl = measures[measures["Facet"] == facet].copy()
+        if not meas_tbl.empty:
+            meas_tbl["Level"] = meas_tbl["Level"].astype(str)
+            tbl = tbl.merge(
+                meas_tbl[
+                    ["Level", "Estimate", "SE", "Infit", "Outfit", "InfitZSTD", "OutfitZSTD", "PTMEA"]
+                ],
+                on="Level",
+                how="left",
+            )
+
+        tbl["Anchor"] = facet_anchor_status(
+            facet,
+            tbl["Level"].tolist(),
+            config,
+            extreme_levels=extreme_levels.get(facet),
+        )
+        tbl["Status"] = ""
+        tbl.loc[tbl["TotalCountAll"].fillna(0) == 0, "Status"] = "No data"
+        tbl.loc[
+            (tbl["Status"] == "")
+            & (tbl["MinScore"] == rating_min)
+            & (tbl["MaxScore"] == rating_min),
+            "Status",
+        ] = "Minimum"
+        tbl.loc[
+            (tbl["Status"] == "")
+            & (tbl["MinScore"] == rating_max)
+            & (tbl["MaxScore"] == rating_max),
+            "Status",
+        ] = "Maximum"
+        tbl.loc[(tbl["Status"] == "") & (tbl["TotalCountAll"] == 1), "Status"] = "One datum"
+
+        sign = facet_signs.get(facet, -1)
+        if facet == "Person":
+            other_sum = float(np.sum([facet_signs[k] * v for k, v in facet_means.items()]))
+            eta_m = tbl["Estimate"] + other_sum
+            eta_z = tbl["Estimate"]
+        else:
+            other_sum = float(np.sum([
+                facet_signs[k] * v for k, v in facet_means.items() if k != facet
+            ]))
+            eta_m = theta_mean + other_sum + sign * tbl["Estimate"]
+            eta_z = sign * tbl["Estimate"]
+
+        slope_list = [1.0 for _ in range(len(tbl))]
+        if config["model"] in {"PCM", "GPCM"} and config.get("step_facet"):
+            step_levels = prep["levels"][config["step_facet"]]
+            if facet == config["step_facet"] and len(step_levels) > 0 and len(step_cum_common) > 0:
+                step_cum_list = []
+                slope_list = []
+                for lvl in tbl["Level"].tolist():
+                    idx = step_levels.index(lvl) if lvl in step_levels else None
+                    if idx is not None and idx < len(step_cum_common):
+                        step_cum_list.append(step_cum_common[idx])
+                        slope_list.append(
+                            float(slope_by_step_level[idx])
+                            if config["model"] == "GPCM" and idx < len(slope_by_step_level) and np.isfinite(slope_by_step_level[idx])
+                            else 1.0
+                        )
+                    else:
+                        step_cum_list.append(step_cum_mean)
+                        slope_list.append(slope_mean if config["model"] == "GPCM" else 1.0)
+            else:
+                step_cum_list = [step_cum_mean for _ in range(len(tbl))]
+                slope_list = [slope_mean if config["model"] == "GPCM" else 1.0 for _ in range(len(tbl))]
+        else:
+            step_cum_list = [step_cum_common for _ in range(len(tbl))]
+
+        tbl["FairM"] = [
+            expected_score_from_eta(e, step, rating_min, slope=slope)
+            for e, step, slope in zip(eta_m, step_cum_list, slope_list)
+        ]
+        tbl["FairZ"] = [
+            expected_score_from_eta(e, step, rating_min, slope=slope)
+            for e, step, slope in zip(eta_z, step_cum_list, slope_list)
+        ]
+
+        xtreme_target = np.where(
+            tbl["Status"] == "Minimum",
+            rating_min + xtreme,
+            np.where(tbl["Status"] == "Maximum", rating_max - xtreme, np.nan),
+        )
+        xtreme_eta = [
+            estimate_eta_from_target(t, step, rating_min, rating_max, slope=slope) if xtreme > 0 else np.nan
+            for t, step, slope in zip(xtreme_target, step_cum_list, slope_list)
+        ]
+
+        measure_logit = tbl["Estimate"].copy()
+        xtreme_mask = np.isfinite(xtreme_eta)
+        if np.any(xtreme_mask):
+            if facet == "Person":
+                measure_logit = np.where(xtreme_mask, np.array(xtreme_eta) - other_sum, measure_logit)
+            else:
+                measure_logit = np.where(
+                    xtreme_mask,
+                    (np.array(xtreme_eta) - theta_mean - other_sum) / sign,
+                    measure_logit,
+                )
+
+        scale_factor = uscale if np.isfinite(uscale) else 1
+        scale_origin = umean if np.isfinite(umean) else 0
+
+        tbl["Measure"] = np.where(np.isfinite(measure_logit), measure_logit * scale_factor + scale_origin, np.nan)
+        tbl["ModelSE"] = np.where(np.isfinite(tbl["SE"]), np.abs(scale_factor) * tbl["SE"], np.nan)
+        tbl["RealSE"] = np.where(
+            np.isfinite(tbl["SE"]) & np.isfinite(tbl["Infit"]),
+            np.abs(scale_factor) * tbl["SE"] * np.sqrt(np.maximum(tbl["Infit"], 1)),
+            np.nan,
+        )
+
+        extreme_mask = tbl["Status"].isin(["Minimum", "Maximum"])
+        tbl.loc[extreme_mask, ["Infit", "Outfit", "InfitZSTD", "OutfitZSTD"]] = np.nan
+        if facet == "Person":
+            tbl["PTMEA"] = np.nan
+
+        tbl = tbl.rename(columns={
+            "Infit": "InfitMnSq",
+            "InfitZSTD": "InfitZStd",
+            "Outfit": "OutfitMnSq",
+            "OutfitZSTD": "OutfitZStd",
+            "PTMEA": "PtMeaCorr",
+        })
+
+        tbl = tbl[[
+            "TotalScore",
+            "TotalCount",
+            "WeightdScore",
+            "WeightdCount",
+            "ObservedAverage",
+            "FairM",
+            "FairZ",
+            "Measure",
+            "ModelSE",
+            "RealSE",
+            "InfitMnSq",
+            "InfitZStd",
+            "OutfitMnSq",
+            "OutfitZStd",
+            "PtMeaCorr",
+            "Anchor",
+            "Status",
+            "Level",
+            "TotalCountAll",
+        ]]
+
+        if omit_unobserved:
+            tbl = tbl[tbl["TotalCountAll"] > 0]
+
+        tbl = tbl.drop(columns=["TotalCountAll"]).sort_values(["Measure", "TotalCount"], ascending=[False, False])
+        out[facet] = tbl
+
+    return out
+
+
+def calc_reliability(measure_df):
+    rows = []
+    if measure_df.empty:
+        return pd.DataFrame()
+    for facet, df in measure_df.groupby("Facet"):
+        mv = np.nanvar(df["Estimate"], ddof=1)
+        ev = np.nanmean(df["SE"] ** 2)
+        rmse = np.sqrt(ev) if np.isfinite(ev) else np.nan
+        if np.isfinite(mv) and np.isfinite(ev) and mv > 0 and ev > 0:
+            tv = max(mv - ev, 0.0)
+            separation = np.sqrt(tv / ev) if tv > 0 else 0.0
+            reliability = tv / mv if mv > 0 else np.nan
+            strata = (4 * separation + 1) / 3
+        else:
+            separation = np.nan
+            reliability = np.nan
+            strata = np.nan
+        rows.append({
+            "Facet": facet,
+            "Levels": len(df),
+            "SD": np.sqrt(mv) if np.isfinite(mv) else np.nan,
+            "RMSE": rmse,
+            "Separation": separation,
+            "Strata": strata,
+            "Reliability": reliability,
+            "MeanInfit": np.nanmean(df["Infit"]),
+            "MeanOutfit": np.nanmean(df["Outfit"]),
+        })
+    return pd.DataFrame(rows)
+
+
+def compute_marginal_fit_diagnostics(
+    res,
+    include_pairwise=False,
+    max_pair_cells=400,
+    min_expected=1e-8,
+):
+    """MML-only marginal observed-vs-expected category diagnostics.
+
+    This integrates category probabilities over the population quadrature
+    distribution, conditional on the observed design rows. It is a marginal
+    distribution screen, not a posterior/person-residual diagnostic.
+    """
+    config = res.get("config", {})
+    if config.get("method") != "MML":
+        return {
+            "available": False,
+            "reason": "Strict marginal diagnostics are currently defined for MML runs only.",
+            "summary": pd.DataFrame(),
+            "counts": pd.DataFrame(),
+            "pairwise": {"available": False, "reason": "MML run required.", "summary": pd.DataFrame(), "counts": pd.DataFrame()},
+        }
+
+    prep = res.get("prep", {})
+    params = res.get("params", {})
+    if not prep or not params:
+        return {
+            "available": False,
+            "reason": "Fitted data or parameters are unavailable.",
+            "summary": pd.DataFrame(),
+            "counts": pd.DataFrame(),
+            "pairwise": {"available": False, "reason": "Fitted data or parameters are unavailable.", "summary": pd.DataFrame(), "counts": pd.DataFrame()},
+        }
+
+    idx = build_indices(prep, step_facet=config.get("step_facet"), slope_facet=config.get("slope_facet"))
+    n = len(idx["score_k"])
+    n_cat = int(config.get("n_cat", prep["rating_max"] - prep["rating_min"] + 1))
+    if n == 0 or n_cat < 2:
+        return {
+            "available": False,
+            "reason": "Not enough observations or score categories for marginal diagnostics.",
+            "summary": pd.DataFrame(),
+            "counts": pd.DataFrame(),
+            "pairwise": {"available": False, "reason": "Not enough data.", "summary": pd.DataFrame(), "counts": pd.DataFrame()},
+        }
+
+    quad_points = int(config.get("quad_points") or 15)
+    quad = make_mml_quadrature(config, quad_points)
+    base_eta = compute_base_eta(idx, params, config)
+    pop_mu = compute_population_mu(params, config)
+    pop_mu_by_obs = pop_mu[idx["person"]] if pop_mu.size else np.zeros(n, dtype=float)
+    k_vals = np.arange(n_cat)
+    marginal_probs = np.zeros((n, n_cat), dtype=float)
+
+    if config.get("model") == "RSM":
+        step_cum = np.concatenate([[0.0], np.cumsum(params["steps"])])
+        for theta_q, w_q in zip(quad["nodes"], quad["weights"]):
+            eta = theta_q + pop_mu_by_obs + base_eta
+            log_num = np.outer(eta, k_vals) - step_cum
+            log_denom = logsumexp(log_num, axis=1, keepdims=True)
+            marginal_probs += float(w_q) * np.exp(log_num - log_denom)
+    elif config.get("model") == "PCM":
+        step_cum_mat = np.vstack([
+            np.concatenate([[0.0], np.cumsum(row)]) for row in params["steps_mat"]
+        ])
+        step_idx = idx["step_idx"]
+        for theta_q, w_q in zip(quad["nodes"], quad["weights"]):
+            eta = theta_q + pop_mu_by_obs + base_eta
+            for c_idx in range(step_cum_mat.shape[0]):
+                rows = np.where(step_idx == c_idx)[0]
+                if rows.size == 0:
+                    continue
+                log_num = np.outer(eta[rows], k_vals) - step_cum_mat[c_idx]
+                log_denom = logsumexp(log_num, axis=1, keepdims=True)
+                marginal_probs[rows, :] += float(w_q) * np.exp(log_num - log_denom)
+    else:
+        step_cum_mat = np.vstack([
+            np.concatenate([[0.0], np.cumsum(row)]) for row in params["steps_mat"]
+        ])
+        for theta_q, w_q in zip(quad["nodes"], quad["weights"]):
+            eta = theta_q + pop_mu_by_obs + base_eta
+            marginal_probs += float(w_q) * category_prob_gpcm(
+                eta,
+                step_cum_mat,
+                idx["step_idx"],
+                params["slopes"],
+                idx.get("slope_idx"),
+            )
+
+    row_weight = idx.get("weight")
+    if row_weight is None:
+        row_weight = np.ones(n, dtype=float)
+    else:
+        row_weight = np.asarray(row_weight, dtype=float)
+
+    obs_k = np.asarray(idx["score_k"], dtype=int)
+    rating_min = int(prep["rating_min"])
+    facet_names = list(config.get("facet_names", []))
+    data = prep.get("data", pd.DataFrame())
+
+    def aggregate(assignments: pd.DataFrame, scope: str, label_cols: list[str]):
+        count_rows = []
+        summary_rows = []
+        if assignments.empty:
+            return pd.DataFrame(), pd.DataFrame()
+        grouped = assignments.groupby(label_cols, dropna=False, observed=False, sort=False) if label_cols else [((), assignments)]
+        for key, sub in grouped:
+            row_idx = sub["_row"].to_numpy(dtype=int)
+            if row_idx.size == 0:
+                continue
+            key_tuple = key if isinstance(key, tuple) else (key,)
+            label = {col: key_tuple[i] if i < len(key_tuple) else "" for i, col in enumerate(label_cols)}
+            chi_sq = 0.0
+            df_eff = 0
+            total_obs = 0.0
+            total_exp = 0.0
+            for k in range(n_cat):
+                obs = float(np.sum(row_weight[row_idx] * (obs_k[row_idx] == k)))
+                exp = float(np.sum(row_weight[row_idx] * marginal_probs[row_idx, k]))
+                resid = obs - exp
+                std = resid / np.sqrt(exp) if exp > min_expected else np.nan
+                contrib = (resid * resid / exp) if exp > min_expected else np.nan
+                if np.isfinite(contrib):
+                    chi_sq += contrib
+                    df_eff += 1
+                total_obs += obs
+                total_exp += exp
+                count_rows.append({
+                    "Scope": scope,
+                    **label,
+                    "Category": rating_min + k,
+                    "Observed": obs,
+                    "Expected": exp,
+                    "Residual": resid,
+                    "StdResidual": std,
+                    "ChiSquareContribution": contrib,
+                })
+            df = max(df_eff - 1, 0)
+            p_val = float(chi2.sf(chi_sq, df)) if df > 0 and np.isfinite(chi_sq) else np.nan
+            summary_rows.append({
+                "Scope": scope,
+                **label,
+                "Rows": int(row_idx.size),
+                "ObservedTotal": total_obs,
+                "ExpectedTotal": total_exp,
+                "ChiSquare": chi_sq,
+                "df": df,
+                "p": p_val,
+                "MaxAbsStdResidual": float(np.nanmax(np.abs([r["StdResidual"] for r in count_rows[-n_cat:]]))),
+                "Status": "Review" if (np.isfinite(p_val) and p_val < 0.01) or (np.nanmax(np.abs([r["StdResidual"] for r in count_rows[-n_cat:]])) >= 3) else "OK",
+            })
+        return pd.DataFrame(summary_rows), pd.DataFrame(count_rows)
+
+    row_base = pd.DataFrame({"_row": np.arange(n, dtype=int)})
+    overall_summary, overall_counts = aggregate(row_base, "Overall", [])
+
+    summary_parts = [overall_summary]
+    count_parts = [overall_counts]
+    for facet in facet_names:
+        assignments = pd.DataFrame({
+            "_row": np.arange(n, dtype=int),
+            "Facet": facet,
+            "Level": data[facet].astype(str).to_numpy() if facet in data.columns else idx["facets"][facet].astype(str),
+        })
+        s_tbl, c_tbl = aggregate(assignments, f"Facet:{facet}", ["Facet", "Level"])
+        summary_parts.append(s_tbl)
+        count_parts.append(c_tbl)
+
+    pair_summary = pd.DataFrame()
+    pair_counts = pd.DataFrame()
+    pair_reason = "Pairwise marginal diagnostics were not requested."
+    pair_available = False
+    if include_pairwise and len(facet_names) >= 2:
+        pair_summary_parts = []
+        pair_count_parts = []
+        n_cells = 0
+        for fa, fb in combinations(facet_names, 2):
+            if fa not in data.columns or fb not in data.columns:
+                continue
+            n_cells += int(data[[fa, fb]].drop_duplicates().shape[0]) * n_cat
+            if n_cells > int(max_pair_cells):
+                pair_reason = (
+                    f"Pairwise marginal diagnostics skipped after exceeding {max_pair_cells} expected cells. "
+                    "Increase the Custom limit only when you need a final, slower screening run."
+                )
+                break
+            assignments = pd.DataFrame({
+                "_row": np.arange(n, dtype=int),
+                "FacetA": fa,
+                "LevelA": data[fa].astype(str).to_numpy(),
+                "FacetB": fb,
+                "LevelB": data[fb].astype(str).to_numpy(),
+            })
+            s_tbl, c_tbl = aggregate(assignments, f"Pair:{fa} x {fb}", ["FacetA", "LevelA", "FacetB", "LevelB"])
+            pair_summary_parts.append(s_tbl)
+            pair_count_parts.append(c_tbl)
+        if pair_summary_parts:
+            pair_summary = pd.concat(pair_summary_parts, ignore_index=True)
+            pair_counts = pd.concat(pair_count_parts, ignore_index=True)
+            pair_available = True
+            pair_reason = "Pairwise marginal diagnostics computed."
+
+    summary = pd.concat([p for p in summary_parts if isinstance(p, pd.DataFrame) and not p.empty], ignore_index=True)
+    counts = pd.concat([p for p in count_parts if isinstance(p, pd.DataFrame) and not p.empty], ignore_index=True)
+    n_review = int((summary.get("Status", pd.Series(dtype=str)) == "Review").sum()) if not summary.empty else 0
+
+    return {
+        "available": True,
+        "reason": "Marginal diagnostics computed for an MML run.",
+        "summary": summary,
+        "counts": counts,
+        "n_review": n_review,
+        "quad_points": quad_points,
+        "interpretation": (
+            "Review rows with small p-values or |StdResidual| >= 3. "
+            "This is a marginal distribution screen; interpret together with residual fit, category functioning, and design review."
+        ),
+        "pairwise": {
+            "available": pair_available,
+            "reason": pair_reason,
+            "summary": pair_summary,
+            "counts": pair_counts,
+            "max_pair_cells": int(max_pair_cells),
+        },
+    }
+
+
+
+def ensure_positive_definite(mat, eps=1e-6):
+    mat = np.array(mat, dtype=float, copy=True)
+    mat = (mat + mat.T) / 2
+    eigvals = np.linalg.eigvalsh(mat)
+    min_eig = np.min(eigvals)
+    if min_eig < eps:
+        mat += np.eye(mat.shape[0]) * (eps - min_eig)
+    return mat
+
+
+def compute_pca_bundle(residual_matrix_wide):
+    if residual_matrix_wide is None:
+        return None
+    if residual_matrix_wide.shape[0] < 2 or residual_matrix_wide.shape[1] < 2:
+        return None
+
+    residual_matrix_clean = residual_matrix_wide.dropna(axis=1, how="all")
+    if residual_matrix_clean.shape[1] < 2:
+        return None
+
+    cor_df = residual_matrix_clean.corr(min_periods=2)
+    cor_df = cor_df.fillna(0)
+    np.fill_diagonal(cor_df.values, 1)
+
+    cor_pd = ensure_positive_definite(cor_df.values)
+    cor_pd_df = pd.DataFrame(cor_pd, index=cor_df.index, columns=cor_df.columns)
+
+    eigvals, eigvecs = np.linalg.eigh(cor_pd)
+    order = np.argsort(eigvals)[::-1]
+    eigvals = eigvals[order]
+    eigvecs = eigvecs[:, order]
+
+    total = np.sum(eigvals)
+    var_pct = (eigvals / total * 100) if total > 0 else np.zeros_like(eigvals)
+    loadings = eigvecs * np.sqrt(np.maximum(eigvals, 0))
+    loadings_df = pd.DataFrame(
+        loadings,
+        index=cor_pd_df.index,
+        columns=[f"PC{i+1}" for i in range(loadings.shape[1])],
+    )
+
+    return {
+        "eigenvalues": eigvals,
+        "variance_pct": var_pct,
+        "loadings": loadings_df,
+        "cor_matrix": cor_pd_df,
+        "residual_matrix": residual_matrix_wide,
+    }
+
+
+def compute_pca_overall(obs_df, facet_names):
+    if obs_df is None or obs_df.empty or not facet_names:
+        return None
+    df_aug = obs_df.copy()
+    df_aug["Person"] = df_aug["Person"].astype(str)
+    df_aug["item_combination"] = df_aug[facet_names].astype(str).agg("_".join, axis=1)
+    residual_matrix_prep = (
+        df_aug.groupby(["Person", "item_combination"])["StdResidual"]
+        .mean()
+        .reset_index()
+    )
+    residual_matrix_wide = residual_matrix_prep.pivot(
+        index="Person", columns="item_combination", values="StdResidual"
+    )
+    return compute_pca_bundle(residual_matrix_wide)
+
+
+def compute_pca_by_facet(obs_df, facet_names):
+    out = {}
+    if obs_df is None or obs_df.empty:
+        return out
+    for facet in facet_names:
+        df = obs_df.copy()
+        df["Person"] = df["Person"].astype(str)
+        df["Level"] = df[facet].astype(str)
+        residual_matrix_prep = (
+            df.groupby(["Person", "Level"])["StdResidual"]
+            .mean()
+            .reset_index()
+        )
+        residual_matrix_wide = residual_matrix_prep.pivot(
+            index="Person", columns="Level", values="StdResidual"
+        )
+        out[facet] = compute_pca_bundle(residual_matrix_wide)
+    return out
+
+
+def calc_expected_category_counts(res):
+    if res is None:
+        return pd.DataFrame()
+    prep = res["prep"]
+    config = res["config"]
+    idx = build_indices(prep, step_facet=config["step_facet"], slope_facet=config.get("slope_facet"))
+    params = res["params"]
+    theta_hat = params["theta"] if config["method"] == "JMLE" else res["facets"]["person"]["Estimate"].to_numpy()
+    eta = compute_eta(idx, params, config, theta_override=theta_hat if theta_hat.size else None)
+    if config["model"] == "RSM":
+        step_cum = np.concatenate([[0.0], np.cumsum(params["steps"])])
+        probs = category_prob_rsm(eta, step_cum)
+    elif config["model"] == "PCM":
+        step_cum_mat = np.vstack([
+            np.concatenate([[0.0], np.cumsum(row)]) for row in params["steps_mat"]
+        ])
+        probs = category_prob_pcm(eta, step_cum_mat, idx["step_idx"])
+    else:
+        step_cum_mat = np.vstack([
+            np.concatenate([[0.0], np.cumsum(row)]) for row in params["steps_mat"]
+        ])
+        probs = category_prob_gpcm(
+            eta,
+            step_cum_mat,
+            idx["step_idx"],
+            params["slopes"],
+            idx.get("slope_idx"),
+        )
+    if probs.size == 0:
+        return pd.DataFrame()
+    w = idx.get("weight")
+    if w is None:
+        exp_counts = np.nansum(probs, axis=0)
+    else:
+        exp_counts = np.nansum(probs * w[:, None], axis=0)
+    total_exp = np.nansum(exp_counts)
+    cat_vals = np.arange(prep["rating_min"], prep["rating_max"] + 1)
+    return pd.DataFrame({
+        "Category": cat_vals,
+        "ExpectedCount": exp_counts,
+        "ExpectedPercent": (100 * exp_counts / total_exp) if total_exp > 0 else np.nan,
+    })
+
+
+def calc_category_stats(obs_df, res=None, whexact=False):
+    if obs_df.empty:
+        return pd.DataFrame()
+    total_n = np.nansum(get_weights(obs_df))
+    rows = []
+    for category, df_cat in obs_df.groupby("Observed"):
+        w = get_weights(df_cat)
+        count = np.nansum(w)
+        var_w = np.nansum(df_cat["Var"] * w)
+        infit = np.nansum(df_cat["StdSq"] * df_cat["Var"] * w) / var_w if var_w > 0 else np.nan
+        outfit = np.nansum(df_cat["StdSq"] * w) / count if count > 0 else np.nan
+        rows.append({
+            "Category": category,
+            "Count": count,
+            "AvgPersonMeasure": weighted_mean(df_cat["PersonMeasure"].to_numpy(), w),
+            "ExpectedAverage": weighted_mean(df_cat["Expected"].to_numpy(), w),
+            "Infit": infit,
+            "Outfit": outfit,
+            "MeanResidual": weighted_mean(df_cat["Residual"].to_numpy(), w),
+            "DF_Infit": var_w,
+            "DF_Outfit": count,
+        })
+    summary = pd.DataFrame(rows)
+
+    all_categories = (
+        np.arange(res["prep"]["rating_min"], res["prep"]["rating_max"] + 1)
+        if res is not None
+        else np.sort(obs_df["Observed"].unique())
+    )
+    cat_tbl = pd.DataFrame({"Category": all_categories}).merge(summary, on="Category", how="left")
+    cat_tbl["Count"] = cat_tbl["Count"].fillna(0)
+    cat_tbl["Percent"] = np.where(total_n > 0, 100 * cat_tbl["Count"] / total_n, np.nan)
+    cat_tbl["InfitZSTD"] = [
+        zstd_from_mnsq(m, d, whexact=whexact) for m, d in zip(cat_tbl["Infit"], cat_tbl["DF_Infit"])
+    ]
+    cat_tbl["OutfitZSTD"] = [
+        zstd_from_mnsq(m, d, whexact=whexact) for m, d in zip(cat_tbl["Outfit"], cat_tbl["DF_Outfit"])
+    ]
+
+    exp_tbl = calc_expected_category_counts(res) if res is not None else pd.DataFrame()
+    if not exp_tbl.empty:
+        cat_tbl = cat_tbl.merge(exp_tbl, on="Category", how="left")
+        cat_tbl["DiffCount"] = cat_tbl["Count"] - cat_tbl["ExpectedCount"]
+        cat_tbl["DiffPercent"] = cat_tbl["Percent"] - cat_tbl["ExpectedPercent"]
+
+    cat_tbl["LowCount"] = cat_tbl["Count"] < 10
+    cat_tbl["InfitFlag"] = cat_tbl["Infit"].apply(
+        lambda v: np.nan if pd.isna(v) else (v < 0.5 or v > 1.5)
+    )
+    cat_tbl["OutfitFlag"] = cat_tbl["Outfit"].apply(
+        lambda v: np.nan if pd.isna(v) else (v < 0.5 or v > 1.5)
+    )
+    cat_tbl["ZSTDFlag"] = (
+        (cat_tbl["InfitZSTD"].abs() >= 2) | (cat_tbl["OutfitZSTD"].abs() >= 2)
+    )
+    return cat_tbl.sort_values("Category")
+
+
+def calc_step_order(step_tbl):
+    if step_tbl is None or step_tbl.empty:
+        return pd.DataFrame()
+    step_tbl = step_tbl.copy()
+    step_tbl["StepIndex"] = step_tbl["Step"].str.extract(r"(\d+)").astype(float)
+    if "StepFacet" not in step_tbl.columns:
+        step_tbl["StepFacet"] = "Common"
+    step_tbl = step_tbl.sort_values(["StepFacet", "StepIndex"])
+    step_tbl["Spacing"] = step_tbl.groupby("StepFacet")["Estimate"].diff()
+    step_tbl["Ordered"] = step_tbl["Spacing"].apply(lambda x: np.nan if pd.isna(x) else x > 0)
+    return step_tbl
+
+
+def category_warnings_text(cat_tbl, step_tbl=None):
+    if cat_tbl is None or cat_tbl.empty:
+        return "No category diagnostics available."
+    msgs = []
+    unused = cat_tbl[cat_tbl["Count"] == 0]
+    if not unused.empty:
+        msgs.append("Unused categories: " + ", ".join(map(str, unused["Category"].tolist())))
+    low_counts = cat_tbl[cat_tbl["Count"] < 10]
+    if not low_counts.empty:
+        msgs.append("Low category counts (<10): " + ", ".join(map(str, low_counts["Category"].tolist())))
+    if "DiffPercent" in cat_tbl.columns:
+        diff_bad = cat_tbl[cat_tbl["DiffPercent"].abs() >= 5]
+        if not diff_bad.empty:
+            msgs.append("Observed vs expected % differs by >= 5: " + ", ".join(map(str, diff_bad["Category"].tolist())))
+    if "InfitZSTD" in cat_tbl.columns and "OutfitZSTD" in cat_tbl.columns:
+        zstd_bad = cat_tbl[(cat_tbl["InfitZSTD"].abs() >= 2) | (cat_tbl["OutfitZSTD"].abs() >= 2)]
+        if not zstd_bad.empty:
+            msgs.append("Category |ZSTD| >= 2: " + ", ".join(map(str, zstd_bad["Category"].tolist())))
+    avg_tbl = cat_tbl.dropna(subset=["AvgPersonMeasure"]).sort_values("Category")
+    if len(avg_tbl) >= 3 and not avg_tbl["AvgPersonMeasure"].is_monotonic_increasing:
+        msgs.append("Category averages are not monotonic (Avg Measure by category).")
+    if step_tbl is not None and not step_tbl.empty:
+        disordered = step_tbl[step_tbl["Ordered"] == False]
+        if not disordered.empty:
+            labels = disordered.apply(lambda r: f"{r['StepFacet']}:{r['Step']}", axis=1).tolist()
+            msgs.append("Disordered thresholds detected: " + ", ".join(labels))
+    return "No major category warnings detected." if not msgs else "\n".join(msgs)
+
+
+def to_float(value):
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return np.nan
+
+
+def fmt_count(value):
+    val = to_float(value)
+    if not np.isfinite(val):
+        return "NA"
+    if abs(val - round(val)) < 1e-6:
+        return str(int(round(val)))
+    return f"{val:.0f}"
+
+
+def fmt_num(value, decimals=2):
+    val = to_float(value)
+    if not np.isfinite(val):
+        return "NA"
+    return f"{val:.{decimals}f}"
+
+
+def fmt_pvalue(value):
+    val = to_float(value)
+    if not np.isfinite(val):
+        return "NA"
+    if val < 0.001:
+        return "< .001"
+    return f"= {val:.3f}"
+
+
+def describe_series(series):
+    if series is None:
+        return None
+    arr = pd.to_numeric(series, errors="coerce").dropna().to_numpy(dtype=float)
+    if arr.size == 0:
+        return None
+    return {
+        "min": float(np.nanmin(arr)),
+        "max": float(np.nanmax(arr)),
+        "mean": float(np.nanmean(arr)),
+        "sd": float(np.nanstd(arr, ddof=1)) if arr.size > 1 else np.nan,
+    }
+
+
+
+
+
+
+
+
+
+
+
+
+
+def mfrm_diagnostics(
+    res,
+    interaction_pairs=None,
+    top_n_interactions=20,
+    whexact=False,
+    compute_pca=True,
+    compute_marginal=False,
+    marginal_pairwise=False,
+    marginal_max_pair_cells=400,
+):
+    obs_df = compute_obs_table(res)
+    facet_cols = ["Person"] + res["config"]["facet_names"]
+    overall_fit = calc_overall_fit(obs_df, whexact=whexact)
+    fit_tbl = calc_facet_fit(obs_df, facet_cols, whexact=whexact)
+    se_tbl = calc_facet_se(obs_df, facet_cols)
+    bias_tbl = calc_bias_facet(obs_df, facet_cols)
+    interaction_tbl = calc_bias_interactions(obs_df, facet_cols, pairs=interaction_pairs, top_n=top_n_interactions)
+    ptmea_tbl = calc_ptmea(obs_df, facet_cols)
+
+    person_tbl = res["facets"]["person"].copy()
+    person_tbl["Facet"] = "Person"
+    person_tbl["Level"] = person_tbl["Person"].astype(str)
+    person_tbl["SE"] = person_tbl["SD"] if "SD" in person_tbl.columns else np.nan
+
+    facet_tbl = res["facets"]["others"].copy()
+    facet_tbl["Level"] = facet_tbl["Level"].astype(str)
+    facet_tbl["SE"] = np.nan
+
+    measures = pd.concat([
+        person_tbl[["Facet", "Level", "Estimate", "SE"]],
+        facet_tbl[["Facet", "Level", "Estimate", "SE"]],
+    ], ignore_index=True)
+
+    measures = measures.merge(se_tbl, on=["Facet", "Level"], how="left", suffixes=("", "_calc"))
+    measures["SE"] = measures["SE"].fillna(measures["SE_calc"])
+    measures = measures.drop(columns=["SE_calc"])
+    if "N" in measures.columns:
+        measures = measures.rename(columns={"N": "N_SE"})
+    fit_tbl = fit_tbl.rename(columns={"N": "N_Fit"}) if "N" in fit_tbl.columns else fit_tbl
+    bias_tbl = bias_tbl.rename(columns={"N": "N_Bias"}) if "N" in bias_tbl.columns else bias_tbl
+    ptmea_tbl = ptmea_tbl.rename(columns={"N": "N_PTMEA"}) if "N" in ptmea_tbl.columns else ptmea_tbl
+    measures = measures.merge(fit_tbl, on=["Facet", "Level"], how="left")
+    measures = measures.merge(bias_tbl, on=["Facet", "Level"], how="left")
+    measures = measures.merge(ptmea_tbl, on=["Facet", "Level"], how="left")
+    measures["CI_Lower"] = measures["Estimate"] - 1.96 * measures["SE"]
+    measures["CI_Upper"] = measures["Estimate"] + 1.96 * measures["SE"]
+
+    reliability_tbl = calc_reliability(measures)
+
+    # PCA of standardised residuals
+    facet_names = res["config"]["facet_names"]
+    pca_overall = None
+    pca_by_facet = {}
+    if compute_pca:
+        try:
+            pca_overall = compute_pca_overall(obs_df, facet_names)
+        except Exception as _pca_err:  # noqa: F841 — logged below if needed
+            pca_overall = None
+        try:
+            pca_by_facet = compute_pca_by_facet(obs_df, facet_names)
+        except Exception:
+            pca_by_facet = {}
+
+    marginal_fit = {
+        "available": False,
+        "reason": "Strict marginal diagnostics were skipped for this run.",
+        "summary": pd.DataFrame(),
+        "counts": pd.DataFrame(),
+        "pairwise": {"available": False, "reason": "Strict marginal diagnostics were skipped.", "summary": pd.DataFrame(), "counts": pd.DataFrame()},
+    }
+    if compute_marginal:
+        try:
+            marginal_fit = compute_marginal_fit_diagnostics(
+                res,
+                include_pairwise=bool(marginal_pairwise),
+                max_pair_cells=int(marginal_max_pair_cells),
+            )
+        except Exception as marg_exc:
+            marginal_fit = {
+                "available": False,
+                "reason": f"Strict marginal diagnostics failed: {marg_exc}",
+                "summary": pd.DataFrame(),
+                "counts": pd.DataFrame(),
+                "pairwise": {"available": False, "reason": f"Strict marginal diagnostics failed: {marg_exc}", "summary": pd.DataFrame(), "counts": pd.DataFrame()},
+            }
+
+    return {
+        "obs": obs_df,
+        "overall_fit": overall_fit,
+        "measures": measures,
+        "fit": fit_tbl,
+        "reliability": reliability_tbl,
+        "bias": bias_tbl,
+        "interactions": interaction_tbl,
+        "pca": pca_overall,
+        "pca_by_facet": pca_by_facet,
+        "pca_enabled": bool(compute_pca),
+        "marginal_fit": marginal_fit,
+        "marginal_fit_enabled": bool(compute_marginal),
+    }
+
+
+def read_flexible_table(text_value, file_input, header=True):
+    if file_input is not None:
+        name = file_input.name.lower()
+        sep = "\t" if name.endswith((".tsv", ".txt")) else ","
+        return pd.read_csv(file_input, sep=sep, header=0 if header else None, dtype=str)
+    if text_value is None or not str(text_value).strip():
+        return pd.DataFrame()
+    text_value = str(text_value).strip()
+    if "\t" in text_value:
+        sep = "\t"
+    elif ";" in text_value:
+        sep = ";"
+    else:
+        sep = ","
+    return pd.read_csv(io.StringIO(text_value), sep=sep, header=0 if header else None, dtype=str)
+
+
+
+
+
+
+# ---------------------------------------------------------------------------
+# Core namespace wrapper (provides dict interface for backward compatibility)
+# ---------------------------------------------------------------------------
+
+@st.cache_resource(show_spinner=False)
+def load_core_namespace() -> dict:
+    """Return core computation functions as a dict.
+
+    All functions are defined at module level (embedded above), so this
+    simply collects them into the dict interface that the UI layer expects.
+    The returned object is treated as read-only and is safe to reuse across
+    Streamlit reruns.
+    """
+    g = globals()
+    ns: dict = {}
+    required = [
+        "sample_mfrm_data",
+        "read_flexible_table",
+        "guess_col",
+        "mfrm_estimate",
+        "mfrm_diagnostics",
+        "calc_facets_report_tbls",
+        "compute_scorefile",
+        "compute_residual_file",
+        "compute_fitted_prediction_table",
+        "predict_mfrm_design",
+        "simulate_from_fitted_model",
+        "simulate_refit_design",
+        "evaluate_design_from_fitted",
+    ]
+    for name in required:
+        if name not in g:
+            raise RuntimeError(f"Missing core function: {name}")
+        ns[name] = g[name]
+
+    optional = [
+        "compute_pca_overall",
+        "compute_pca_by_facet",
+        "calc_subsets",
+        "estimate_bias_interaction",
+        "calc_bias_pairwise",
+        "calc_category_stats",
+        "calc_step_order",
+        "category_warnings_text",
+        "calc_interrater_agreement",
+    ]
+    for name in optional:
+        ns[name] = g.get(name)
+    return ns
+
+
+# ---------------------------------------------------------------------------
+# Phase 1-1: Terminology tutorial
+# ---------------------------------------------------------------------------
+
+def show_tutorial() -> None:
+    """Collapsible tutorial section shown before analysis."""
+    with st.expander("Tutorial: Key concepts before you begin", expanded=False):
+        st.markdown(
+            """
+### Terminology glossary
+
+| This app uses | Also known as | Meaning |
+|---|---|---|
+| **Person** | Subject, Participant, Examinee, Student, Candidate | The individual being measured. In MFRM the *person* ability is the latent trait (theta) we estimate. |
+| **Rater** | Judge, Assessor, Scorer, Evaluator | A human who assigns ratings. Rater severity/leniency is modeled as a facet. |
+| **Task** | Item, Prompt, Topic | The stimulus or prompt that the person responds to. |
+| **Criterion** | Rubric dimension, Trait, Sub-scale | A scoring dimension within a rubric (e.g., Content, Organization, Language). |
+| **Facet** | — | Any systematic source of variability besides the person (rater, task, criterion, etc.). |
+
+### Raw score vs. Scale score
+
+- **Raw score** (observed rating): the actual value assigned by a rater (e.g., 1--5 on a rubric).
+  This is what appears in your *Score* column.
+- **Scale score** (theta, logit measure): the estimated latent measure on the logit scale,
+  produced by the Rasch/MFRM model. Scale scores are *interval-level* and comparable
+  across facets, whereas raw scores are *ordinal*.
+
+> In the output tables, **Estimate** always refers to the scale score (theta in logits),
+> while **Score** or **ObsScore** refers to the original raw score.
+
+### Weight column
+
+The optional **Weight** column lets you assign differential importance to observations.
+
+- A weight of **1.0** (the default when no weight column is specified) treats every
+  observation equally.
+- Weights **> 1** increase the influence of that observation; weights **< 1** decrease it.
+- Weights of **0** effectively exclude the observation from estimation.
+- Typical use cases: down-weighting practice items, adjusting for unequal sample designs,
+  or giving more emphasis to certain rater--task combinations.
+
+### About estimation method
+
+This app uses **JMLE** (Joint Maximum Likelihood Estimation) by default.
+
+- **JMLE** estimates person parameters and facet parameters simultaneously
+  using analytical-gradient quasi-Newton optimisation in the current
+  Python backend. It does not assume a prior distribution for persons.
+  This is the same broad fixed-effect estimation philosophy used by
+  FACETS (Linacre, 2024).
+- **MML** (Marginal Maximum Likelihood) uses the **EM algorithm**
+  (Bock & Aitkin, 1981) with Gauss-Hermite quadrature:
+  - **E-step**: Compute posterior P(θ_q | x_j, δ^(t)) for each person j
+    at each quadrature node q, using the current item/facet estimates.
+  - **M-step**: Maximise the expected complete-data log-likelihood
+    Q(δ | δ^(t)) = Σ_j Σ_q r_jq log L(x_j | θ_q, δ) w.r.t. δ.
+  - Iterate until the marginal log-likelihood converges (monotonic
+    non-decrease guaranteed by the EM property).
+  - Person abilities are computed post-hoc via **EAP** (Expected A
+    Posteriori; Bock & Mislevy, 1982).
+  - MML results are influenced by the *assumed prior* (normal with
+    configurable fixed SD). If the true distribution deviates from normality,
+    estimates may be biased. Always check whether the normality
+    assumption is reasonable for your sample.
+  - This is the same broad MML/EM family used by ConQuest and TAM, but this app
+    uses a user-configurable fixed prior SD rather than estimating the latent
+    population variance by default.
+
+---
+
+### Likelihood functions — mathematical detail
+
+#### 1. Linear predictor ($\\eta$)
+
+For observation $i$ involving person $n$, facet levels
+$l_1, l_2, \\ldots$:
+
+$$\\eta_i = \\theta_n + \\sum_f s_f \\cdot \\beta_{f,\\, l_f}$$
+
+- $\\theta_n$ = person ability (logits)
+- $\\beta_{f,l}$ = severity/difficulty of level $l$ in facet $f$
+- $s_f$ = +1 (positive facet) or −1 (negative/severity facet)
+
+#### 2. Category response function
+
+**RSM** (Rating Scale Model; Andrich, 1978):
+
+$$P(X = k \\mid \\eta) = \\frac{\\exp\\!\\left(k\\,\\eta - \\sum_{j=1}^{k} \\tau_j\\right)}{\\sum_{m=0}^{K-1} \\exp\\!\\left(m\\,\\eta - \\sum_{j=1}^{m} \\tau_j\\right)}$$
+
+where $\\tau_j$ are the **step (threshold) parameters** shared
+across all elements, and the cumulative threshold
+$\\sum_{j=1}^{0} \\tau_j = 0$.
+
+**PCM** (Partial Credit Model; Masters, 1982):
+
+$$P(X = k \\mid \\eta) = \\frac{\\exp\\!\\left(k\\,\\eta - \\sum_{j=1}^{k} \\tau_{c,j}\\right)}{\\sum_{m=0}^{K-1} \\exp\\!\\left(m\\,\\eta - \\sum_{j=1}^{m} \\tau_{c,j}\\right)}$$
+
+where $\\tau_{c,j}$ are step parameters **specific to step-facet
+level** $c$ (e.g., each criterion or task has its own thresholds).
+
+#### 3. Log-likelihood
+
+**Observation-level:**
+
+$$\\ell_i = \\log P(X_i = k_i \\mid \\eta_i) = k_i \\cdot \\eta_i - \\sum_{j=1}^{k_i} \\tau_j - \\log \\sum_{m=0}^{K-1} \\exp\\!\\left(m\\,\\eta_i - \\sum_{j=1}^{m} \\tau_j\\right)$$
+
+The log-sum-exp trick is used for numerical stability:
+$\\log \\sum \\exp(a_m) = \\max(\\mathbf{a}) + \\log \\sum \\exp(a_m - \\max(\\mathbf{a}))$.
+
+**Joint log-likelihood (JMLE):**
+
+$$\\ell_{\\text{JMLE}}(\\theta, \\beta, \\tau) = \\sum_i \\ell_i$$
+
+All person and facet parameters are estimated simultaneously
+by maximising $\\ell_{\\text{JMLE}}$ via analytical-gradient L-BFGS-B.
+
+**Marginal log-likelihood (MML):**
+
+Person parameters are integrated out over a prior $g(\\theta)$:
+
+$$\\ell_{\\text{MML}}(\\beta, \\tau) = \\sum_j \\log \\int L(\\mathbf{x}_j \\mid \\theta, \\beta, \\tau) \\cdot g(\\theta)\\, d\\theta$$
+
+where $L(\\mathbf{x}_j \\mid \\theta, \\beta, \\tau) = \\prod_i P(X_i = k_i \\mid \\eta_i)$ is the
+likelihood for person $j$'s response vector. In the no-covariate path,
+$g(\\theta) = \\mathcal{N}(0, \\sigma^2_{\\text{prior}})$; with latent regression,
+the prior mean shifts to $X_j\\beta$ while the prior SD remains the configured
+`population_prior_sd`.
+
+The integral is approximated by **Gauss-Hermite quadrature**:
+
+```
+∫ L(x_j | θ, β, τ) · g(θ) dθ  ≈  Σ_{q=1}^{Q} w_q · L(x_j | θ_q, β, τ)
+```
+
+where θ_q are Q quadrature nodes and w_q are the corresponding
+weights (default Q = 15).
+
+#### 4. EM algorithm (Bock & Aitkin, 1981)
+
+**E-step** — For each person $j$ and quadrature node $q$,
+compute the posterior weight:
+
+$$r_{jq} = \\frac{w_q \\cdot L(\\mathbf{x}_j \\mid \\theta_q,\\, \\delta^{(t)})}{\\sum_{q'} w_{q'} \\cdot L(\\mathbf{x}_j \\mid \\theta_{q'},\\, \\delta^{(t)})}$$
+
+**M-step** — Maximise the expected complete-data log-likelihood:
+
+$$Q(\\delta \\mid \\delta^{(t)}) = \\sum_j \\sum_q r_{jq} \\cdot \\log L(\\mathbf{x}_j \\mid \\theta_q,\\, \\delta)$$
+
+w.r.t. $\\delta = (\\beta, \\tau)$ using analytical-gradient L-BFGS-B. This separates the
+person parameters from the optimisation, reducing the
+dimensionality.
+
+**Convergence** — The marginal log-likelihood $\\ell_{\\text{MML}}$
+is guaranteed to be non-decreasing at each EM iteration:
+
+$$\\ell_{\\text{MML}}(\\delta^{(t+1)}) \\geq \\ell_{\\text{MML}}(\\delta^{(t)})$$
+
+Iteration stops when
+$|\\ell^{(t+1)} - \\ell^{(t)}| \\,/\\, |\\ell^{(t)}| < \\texttt{reltol}$.
+
+#### 5. EAP person estimation (Bock & Mislevy, 1982)
+
+After convergence, person abilities are estimated via the
+**Expected A Posteriori** method:
+
+$$\\hat{\\theta}_j = \\sum_q \\theta_q \\cdot r_{jq}$$
+
+$$\\text{SD}_j = \\sqrt{\\sum_q (\\theta_q - \\hat{\\theta}_j)^2 \\cdot r_{jq}}$$
+
+This provides both a point estimate and a posterior standard
+deviation for each person.
+
+#### 6. Identifiability constraints
+
+- **Sum-to-zero**: For each facet,
+  $\\sum_l \\beta_{f,l} = 0$ (one parameter is determined by the
+  rest).
+- **Step centering**: $\\sum_j \\tau_j = 0$ (RSM) or
+  $\\sum_j \\tau_{c,j} = 0$ per level (PCM).
+- **Anchoring**: Specific levels can be fixed to known values,
+  reducing the free parameter count.
+- **Grouping**: Subsets of levels can be constrained to a
+  target sum (e.g., linking across forms).
+
+#### 7. Information criteria
+
+$$\\text{AIC} = 2k - 2\\ell$$
+
+$$\\text{BIC} = k \\cdot \\log(N) - 2\\ell$$
+
+where $k$ = number of free parameters and $N$ = number of
+observations (or sum of weights).
+
+#### 8. Relationship to other software
+
+This app's estimation methods correspond to established
+psychometric software. The table below clarifies what each
+software does and how this app relates.
+
+| Feature | This app (JMLE) | This app (MML) | FACETS | ConQuest | TAM (R) | ordinal::clmm (R) |
+|---|---|---|---|---|---|---|
+| **Estimation** | JMLE | EM (Bock & Aitkin, 1981) | JMLE | EM (MML) | EM (MML) | Laplace / adaptive GHQ |
+| **Person params** | Fixed effects | Random (integrated out) | Fixed effects | Random | Random | Random |
+| **Optimizer** | Analytical-gradient L-BFGS-B | Analytical-gradient L-BFGS-B within M-step | Newton-Raphson | Newton-Raphson | Newton-Raphson | L-BFGS |
+| **Response model** | Adjacent-category (RSM/PCM) | Adjacent-category (RSM/PCM) | Adjacent-category (RSM/PCM) | Adjacent-category | Adjacent-category | **Cumulative** logit |
+| **Multi-facet** | ✔ arbitrary facets | ✔ arbitrary facets | ✔ arbitrary facets | ✔ (via design matrix) | ✔ (via design matrix) | ✔ (as fixed/random effects) |
+| **Sufficient statistics** | ✔ (implicit via full likelihood) | — | ✔ (directly exploited) | — | — | — |
+| **Prior for persons** | None | N(Xβ, fixed user-set σ²) | None | N(0, σ²) estimated | N(0, σ²) estimated | N(0, σ²) estimated |
+| **Person variance** | — | Fixed by `population_prior_sd` | — | Estimated | Estimated | Estimated |
+
+**GPCM note:** This app also includes a bounded GPCM path in which
+the selected step facet receives positive slope parameters and
+`slope_facet = step_facet`. This is intentionally narrower than a
+fully general IRT GPCM. Use it to screen whether category transitions
+vary in steepness across the selected facet; do not interpret the
+slope as a usual Rasch severity or difficulty parameter.
+
+**R package scope note:** TAM is the closest R comparison when the
+analysis is framed as MML with a design matrix and optional latent
+regression. sirt's `rm.facets` is closest for unidimensional rater
+facets with item/rater intercepts, optional slopes, and MML/EM.
+mirt is broader for general uni-/multidimensional IRT, GPCM item
+types, `mixedmirt` latent regression, factor scores, and plausible
+values; it is not a FACETS-layout clone. This app now follows the
+same boundary: it implements a one-dimensional MFRM workflow and
+explicitly labels bounded GPCM, fixed prior SD, and screening-style
+bias diagnostics where it is narrower than these packages.
+
+**Key differences to note:**
+
+**FACETS vs. this app (JMLE):**
+Both use JMLE with all parameters as fixed effects. FACETS
+uses PROX for initial values and directly exploits sufficient
+statistics (total scores) in Newton-Raphson updates. This app
+uses analytical-gradient L-BFGS-B on the full log-likelihood, which is mathematically
+equivalent but computationally different. Results should be
+very close; small differences arise from convergence criteria
+and numerical precision.
+
+**ConQuest / TAM vs. this app (MML):**
+All three use the EM algorithm with Gauss-Hermite quadrature.
+The key difference is that ConQuest and TAM **estimate the
+person variance σ²** as an additional parameter, while this
+app uses a user-configurable fixed prior SD. This means:
+- ConQuest/TAM adapt the prior to the data → more flexible
+- This app's prior SD is fixed for a run → simpler, but may be slightly
+  less efficient if the chosen SD differs from the true variance
+- Facet parameter estimates are generally robust to this
+  choice; person EAP estimates may differ slightly
+
+**ordinal::clmm vs. this app:**
+`clmm` uses a fundamentally different response model:
+- **Cumulative logit**: log P(Y ≤ k) / P(Y > k) = α_k − η
+- **Adjacent-category logit** (this app): log P(Y = k) / P(Y = k−1) = η − τ_k
+
+For **binary responses** (0/1), these are mathematically
+identical. For **polytomous responses** (3+ categories), they
+are different models that yield different parameter estimates
+and different interpretations. The adjacent-category model
+(used by FACETS, ConQuest, Winsteps, and this app) is the
+standard in Rasch measurement. The cumulative model is more
+common in generalised linear mixed modelling (GLMM). Do not
+directly compare parameter estimates between clmm and Rasch
+software without accounting for this difference.
+
+**When to use which method:**
+
+| Scenario | Recommended |
+|---|---|
+| Compare with FACETS results | JMLE |
+| Compare with ConQuest/TAM results | MML |
+| Short test (< 10 items) | MML (less biased) |
+| Large-scale assessment | MML (more efficient) |
+| Small sample, many facets | JMLE (no distributional assumption) |
+| Publication requiring specific software match | Match the method to the reference software |
+
+#### Key references
+
+- Andrich, D. (1978). A rating formulation for ordered response
+  categories. *Psychometrika, 43*(4), 561–573.
+- Masters, G. N. (1982). A Rasch model for partial credit
+  scoring. *Psychometrika, 47*(2), 149–174.
+- Bock, R. D. & Aitkin, M. (1981). Marginal maximum likelihood
+  estimation of item parameters: Application of an EM algorithm.
+  *Psychometrika, 46*(4), 443–459.
+- Bock, R. D. & Mislevy, R. J. (1982). Adaptive EAP estimation
+  of ability in a microcomputer environment. *Applied
+  Psychological Measurement, 6*(4), 431–444.
+- Christensen, R. H. B. (2019). *ordinal — Regression models
+  for ordinal data*. R package.
+- Linacre, J. M. (2024). *A User's Guide to FACETS*. Winsteps.com.
+- Wu, M. L., Adams, R. J., Wilson, M. R., & Haldane, S. A.
+  (2007). *ACER ConQuest Version 2.0*. ACER Press.
+- Robitzsch, A., Kiefer, T., & Wu, M. (2024). *TAM: Test
+  Analysis Modules*. R package.
+- Robitzsch, A. (2024). *sirt: Supplementary Item Response
+  Theory Models*. R package.
+- Chalmers, R. P. (2012). mirt: A multidimensional item
+  response theory package for the R environment. *Journal of
+  Statistical Software, 48*(6), 1–29.
+
+---
+
+#### 9. Using TAM, sirt, and mirt for cross-validation
+
+After exporting your data from this app (CSV download), you
+can replicate or cross-validate the analysis using established
+R packages. Below are working code examples for the two most
+common packages.
+
+##### TAM — Multi-Facet Rasch via design matrix
+
+TAM (Robitzsch et al., 2024) supports MFRM through a
+**design matrix approach** with `tam.mml()` or
+`tam.mml.mfr()`.
+
+```r
+# ── Install ──────────────────────────────────────────
+install.packages("TAM")
+library(TAM)
+
+# ── Load data exported from this app ─────────────────
+dat <- read.csv("mfrm_data.csv")
+
+# ── Method 1: tam.mml.mfr() — dedicated MFRM ───────
+# Prepare the response matrix (persons × items)
+# TAM expects a wide-format response matrix.
+# For MFRM, each rater×task combination is an "item".
+library(tidyr)
+resp_wide <- dat %>%
+  mutate(item_id = paste(Rater, Task, sep = "_")) %>%
+  pivot_wider(
+    id_cols = Person,
+    names_from = item_id,
+    values_from = Score
+  )
+resp_mat <- as.matrix(resp_wide[, -1])  # drop Person col
+rownames(resp_mat) <- resp_wide$Person
+
+# Build the facets data frame
+# Each row = one "item" (rater×task combination)
+facets_df <- dat %>%
+  distinct(Rater, Task) %>%
+  mutate(item_id = paste(Rater, Task, sep = "_"))
+
+# Run MFRM with RSM
+mod_rsm <- tam.mml.mfr(
+  resp      = resp_mat,
+  facets    = facets_df[, c("Rater", "Task")],
+  formulaA  = ~ item + Rater + Task + step,
+  pid       = resp_wide$Person
+)
+summary(mod_rsm)
+
+# Extract facet parameters
+mod_rsm$xsi.facets
+
+# Person abilities (EAP)
+tam.wle(mod_rsm)  # WLE estimates
+# or EAP:
+mod_rsm$person    # includes EAP and SD
+
+# ── Method 2: tam.mml() with custom design matrix ───
+# For more control, build the design matrix manually.
+# See ?tam.mml and the TAM vignette for details.
+
+# ── Fit statistics ───────────────────────────────────
+fit <- tam.fit(mod_rsm)
+# fit$itemfit  — infit/outfit per item
+# fit$personfit — person-level fit
+
+# ── Wright map ───────────────────────────────────────
+IRT.WrightMap(mod_rsm)
+```
+
+**TAM output comparison with this app:**
+
+| TAM output | This app equivalent |
+|---|---|
+| `xsi.facets` | Facet estimates table |
+| `person$EAP` | Person measures (MML mode) |
+| `tam.wle()` | Person measures (JMLE mode) |
+| `tam.fit()$itemfit` | Fit statistics (infit/outfit) |
+| `deviance` | −2 × LogLik |
+| `AIC` / `BIC` | Information criteria |
+
+**Important notes for TAM:**
+- TAM estimates person variance σ²; this app uses the configured fixed `population_prior_sd`
+- TAM uses a different parameterisation for steps: compare
+  `xsi` parameters carefully with this app's threshold output
+- For exact comparison, set `constraint = "items"` to match
+  the sum-to-zero constraint
+
+##### sirt — rater-facet MML reference
+
+sirt's `rm.facets()` estimates unidimensional rater-facet models
+with item/rater intercepts, optional item/rater slopes, rater-item
+interactions, EAP factor scores, likelihood/posterior output, and
+model-fit summaries. It is useful as a reference when the design is
+primarily person-by-rater/item and the research question centers on
+rater severity or rater/item slope differences.
+
+```r
+install.packages("sirt")
+library(sirt)
+
+dat <- read.csv("mfrm_data.csv")
+
+# Example skeleton: adapt item columns / Qmatrix to your exported design.
+mod_sirt <- rm.facets(
+  dat = dat,
+  pid = dat$Person,
+  rater = dat$Rater,
+  est.b.rater = TRUE,
+  est.a.rater = FALSE,
+  rater_item_int = FALSE
+)
+summary(mod_sirt)
+IRT.factor.scores(mod_sirt, type = "EAP")
+IRT.modelfit(mod_sirt)
+```
+
+**sirt comparison note:** `rm.facets()` is closer than mirt for
+rater-facet MML with optional slopes, but it is not a drop-in clone of
+this app's arbitrary-facet long-format workflow.
+
+##### mirt — IRT framework with mixed effects
+
+mirt (Chalmers, 2012) is a general IRT package. It does not
+natively support multi-facet models, but can approximate MFRM
+through creative item coding.
+
+```r
+# ── Install ──────────────────────────────────────────
+install.packages("mirt")
+library(mirt)
+
+# ── Approach: Treat each rater×task as a unique item ─
+library(tidyr)
+dat <- read.csv("mfrm_data.csv")
+
+resp_wide <- dat %>%
+  mutate(item_id = paste(Rater, Task, sep = "_")) %>%
+  pivot_wider(
+    id_cols = Person,
+    names_from = item_id,
+    values_from = Score
+  )
+resp_mat <- as.matrix(resp_wide[, -1])
+
+# ── Fit a unidimensional graded response model ──────
+# Note: GRM uses cumulative logits, NOT adjacent-category.
+# For Rasch-family (adjacent-category), use "gpcm" or "rsm".
+mod_rsm <- mirt(
+  data  = resp_mat,
+  model = 1,            # unidimensional
+  itemtype = "rsm",     # Rating Scale Model
+  verbose = TRUE
+)
+summary(mod_rsm)
+coef(mod_rsm, simplify = TRUE)
+
+# ── PCM (Partial Credit Model) ──────────────────────
+mod_pcm <- mirt(
+  data  = resp_mat,
+  model = 1,
+  itemtype = "gpcm",    # Generalised Partial Credit
+  verbose = TRUE
+)
+coef(mod_pcm, simplify = TRUE)
+
+# ── Person abilities ─────────────────────────────────
+theta_eap <- fscores(mod_rsm, method = "EAP")  # EAP
+theta_map <- fscores(mod_rsm, method = "MAP")  # MAP
+theta_ml  <- fscores(mod_rsm, method = "ML")   # MLE
+
+# ── Fit statistics ───────────────────────────────────
+itemfit(mod_rsm, fit_stats = "infit")  # infit MnSq
+itemfit(mod_rsm, fit_stats = "outfit") # outfit MnSq
+
+# ── Item characteristic curves ───────────────────────
+plot(mod_rsm, type = "trace")     # category curves
+plot(mod_rsm, type = "info")      # information curves
+plot(mod_rsm, type = "score")     # expected score
+
+# ── Model comparison ────────────────────────────────
+anova(mod_rsm, mod_pcm)  # LRT, AIC, BIC comparison
+```
+
+**mirt limitations for MFRM:**
+
+| Limitation | Explanation |
+|---|---|
+| No native multi-facet support | Each rater×task = separate "item"; facet effects not directly estimated |
+| Cannot decompose facet effects | You get item-level parameters, not rater or task severity separately |
+| Item explosion | With R raters × T tasks, you have R×T "items" — may be too many |
+| Discrimination parameter | mirt's GPCM estimates discrimination (α ≠ 1); constrain for Rasch |
+
+**When mirt IS useful:**
+- Cross-validating person ability estimates (EAP/MAP)
+- Model fit comparison (RSM vs PCM vs GRM)
+- Information function analysis
+- DIF (Differential Item Functioning) analysis
+
+##### eRm — Conditional MLE (CMLE)
+
+For users wanting CMLE (which avoids JMLE bias without
+distributional assumptions), the eRm package is an option:
+
+```r
+install.packages("eRm")
+library(eRm)
+
+# RSM with CMLE (persons conditioned out)
+mod <- RSM(resp_mat)
+summary(mod)
+
+# Person parameters via MLE after conditioning
+pp <- person.parameter(mod)
+summary(pp)
+
+# Item fit
+itemfit(pp)
+personfit(pp)
+```
+
+**Note:** eRm supports RSM and PCM but does **not** natively
+support multi-facet designs. Like mirt, you must code each
+rater×task combination as a separate item.
+
+##### Comparison summary
+
+| Package | Model | Estimation | Multi-facet | Adjacent-category |
+|---|---|---|---|---|
+| **TAM** | RSM, PCM, LLTM | MML (EM) | ✔ native (`tam.mml.mfr`) | ✔ |
+| **mirt** | RSM, PCM, GRM, 2PL+ | MML (EM) | △ (item coding) | ✔ (rsm/gpcm) |
+| **eRm** | RSM, PCM, LLTM | CMLE | △ (item coding) | ✔ |
+| **lme4** | GLMM | Laplace/AGQ | ✔ (as random effects) | ✗ (cumulative) |
+| **ordinal** | CLM/CLMM | Laplace/AGQ | ✔ (as random effects) | ✗ (cumulative) |
+| **This app** | RSM, PCM, bounded GPCM | JMLE or MML | ✔ native | ✔ |
+
+**Recommendation:** For cross-validation, use **TAM** as it
+most closely matches this app's model specification and
+supports MFRM natively. Use **mirt** for additional IRT
+analyses (information functions, DIF). Use **eRm** if CMLE
+is required.
+
+### Estimation time
+
+Estimation may take from a few seconds to several minutes depending on:
+
+- Number of persons, raters, tasks, and categories
+- Number of observations (rows in your data)
+- Convergence tolerance (`reltol`) and maximum iterations (`maxit`)
+
+A progress spinner will be shown during estimation. Please be patient and do not
+close the browser tab.
+
+### Missing values
+
+Responses coded as missing are excluded from estimation (treated as structurally
+absent, following FACETS conventions). Before running, use the **Missing value
+recoding** panel in the sidebar to convert placeholder codes (e.g., `99`, `999`,
+`N`, `NA`, `-1`, blank) into true missing values. See Linacre (2024) *A User's
+Guide to FACETS*, Section 3 for details on missing data handling.
+"""
+        )
+
+
+# ---------------------------------------------------------------------------
+# Phase 2-6: Missing value recoding
+# ---------------------------------------------------------------------------
+
+_COMMON_MISSING_CODES = ["99", "999", "-1", "N", "NA", "n/a", ".", ""]
+
+
+def missing_value_recoding(data: pd.DataFrame, score_col: str) -> pd.DataFrame:
+    """Sidebar UI for recoding missing values in the score column."""
+    with st.sidebar.expander("Missing value recoding"):
+        st.caption(
+            "Convert placeholder codes in the Score column to true missing values (NaN). "
+            "These observations will be excluded from estimation."
+        )
+        presets = st.multiselect(
+            "Common codes to treat as missing",
+            _COMMON_MISSING_CODES,
+            default=[],
+            key="missing_presets",
+            help="Select codes that represent missing data in your score column (e.g., 99, NA, -1).",
+        )
+        custom_raw = st.text_input(
+            "Additional custom codes (comma-separated)",
+            value="",
+            key="missing_custom",
+            placeholder="e.g., -9, X, n.a.",
+            help="Enter any other codes not in the preset list, separated by commas.",
+        )
+        custom_codes = [c.strip() for c in custom_raw.split(",") if c.strip()] if custom_raw.strip() else []
+        all_codes = list(dict.fromkeys(presets + custom_codes))
+
+        if all_codes:
+            data = data.copy()
+            score_series = data[score_col].astype(str).str.strip()
+            mask = score_series.isin(all_codes)
+            recoded = int(mask.sum())
+            data.loc[mask, score_col] = np.nan
+            data[score_col] = pd.to_numeric(data[score_col], errors="coerce")
+            total_missing = int(data[score_col].isna().sum())
+            if recoded > 0:
+                st.info(f"Recoded **{recoded}** observations to missing (total missing: {total_missing}).")
+                if total_missing == len(data):
+                    st.error("All scores are now missing. Check your missing codes.")
+            else:
+                st.caption("No additional values matched the specified codes.")
+    return data
+
+
+# ---------------------------------------------------------------------------
+# Data input
+# ---------------------------------------------------------------------------
+
+DATA_PRIVACY_NOTICE = (
+    "Data privacy: rating files can contain person IDs, rater IDs, subgroup labels, "
+    "and institutional information. For confidential data, run this app locally on a "
+    "controlled machine. If this app is hosted on Streamlit Community Cloud or another "
+    "remote service, confirm your data-handling obligations before pasting or uploading. "
+    "Remove direct identifiers and unnecessary columns whenever possible."
+)
+
+
+def _bundled_asset_path(relative_path: str) -> Path:
+    """Resolve a bundled static asset under the app directory."""
+    root = Path(__file__).resolve().parent / "anchor_templates_and_guideline"
+    path = (root / relative_path).resolve()
+    try:
+        path.relative_to(root.resolve())
+    except ValueError as exc:
+        raise ValueError(f"Asset path escapes the bundled asset directory: {relative_path}") from exc
+    return path
+
+
+def _bundled_asset_stamp(relative_path: str) -> tuple[str, int, int]:
+    path = _bundled_asset_path(relative_path)
+    stat = path.stat()
+    return relative_path, int(stat.st_size), int(stat.st_mtime_ns)
+
+
+@st.cache_data(show_spinner=False, max_entries=8)
+def cached_bundled_asset_bytes(relative_path: str, asset_stamp: tuple[str, int, int]) -> bytes:
+    """Cache static bundled template/guideline bytes; never used for uploaded data."""
+    _ = asset_stamp
+    return _bundled_asset_path(relative_path).read_bytes()
+
+
+def get_bundled_asset_bytes(relative_path: str) -> bytes:
+    return cached_bundled_asset_bytes(relative_path, _bundled_asset_stamp(relative_path))
+
+
+def get_bundled_asset_text(relative_path: str) -> str:
+    return get_bundled_asset_bytes(relative_path).decode("utf-8")
+
+
+def render_app_scope_badges(where: str = "main") -> None:
+    text = (
+        f"{APP_RELEASE_LABEL} {APP_VERSION} | standalone Python runtime | "
+        "no mfrmr/rpy2/Rscript/FACETS/TAM/sirt/mirt engine call"
+    )
+    if where == "sidebar":
+        st.sidebar.caption(text)
+    else:
+        st.caption(text)
+
+
+def render_data_privacy_notice(where: str = "main") -> None:
+    if where == "sidebar":
+        st.sidebar.warning(DATA_PRIVACY_NOTICE)
+    else:
+        st.warning(DATA_PRIVACY_NOTICE)
+
+
+def read_input_data(core: dict) -> pd.DataFrame:
+    source = st.sidebar.radio(
+        "Data source",
+        ["Sample data (built-in)", "Paste table", "Upload file"],
+        index=0,
+        help="Choose how to provide your data. 'Sample data' loads a built-in dataset for demonstration.",
+    )
+
+    if source == "Sample data (built-in)":
+        return cached_sample_mfrm_data(seed=20240101).copy()
+
+    if source == "Paste table":
+        render_data_privacy_notice(where="sidebar")
+        text_value = st.sidebar.text_area(
+            "Paste CSV/TSV text",
+            height=180,
+            placeholder="Person,Rater,Task,Criterion,Score\nP1,R1,T1,C1,3",
+            help="Paste data in CSV, TSV, or semicolon-delimited format. First row should be column headers.",
+        )
+        if not text_value.strip():
+            return pd.DataFrame()
+        return core["read_flexible_table"](text_value, None, header=True)
+
+    render_data_privacy_notice(where="sidebar")
+    upload = st.sidebar.file_uploader(
+        "Upload data file", type=["csv", "tsv", "txt"],
+        help="Upload a CSV, TSV, or TXT file. Data must be in long format (one row per observation).",
+    )
+    if upload is None:
+        return pd.DataFrame()
+    return core["read_flexible_table"]("", upload, header=True)
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+def pick_default_facets(columns: list[str]) -> list[str]:
+    preferred = []
+    keys = ("rater", "task", "criterion", "criteria")
+    for col in columns:
+        lower = col.lower()
+        if any(k in lower for k in keys):
+            preferred.append(col)
+    if preferred:
+        return preferred
+    return columns[: min(3, len(columns))]
+
+
+def to_csv_bytes(df: pd.DataFrame) -> bytes:
+    return df.to_csv(index=False).encode("utf-8")
+
+
+def to_excel_bytes(frames: dict[str, pd.DataFrame]) -> bytes:
+    """Write multiple DataFrames to an in-memory Excel workbook, one sheet per key."""
+    buf = io.BytesIO()
+    with pd.ExcelWriter(buf, engine="openpyxl") as writer:
+        for name, df in frames.items():
+            sheet = name[:31]  # Excel sheet name limit
+            df.to_excel(writer, sheet_name=sheet, index=False)
+    return buf.getvalue()
+
+
+def to_html_report(frames: dict[str, pd.DataFrame], title: str = "MFRM Report") -> bytes:
+    """Build a self-contained HTML report from multiple DataFrames."""
+    parts = [
+        "<!DOCTYPE html><html><head>",
+        f"<title>{title}</title>",
+        "<meta charset='utf-8'>",
+        "<style>",
+        "body{font-family:system-ui,sans-serif;margin:2em;color:#222}",
+        "h1{border-bottom:2px solid #333}",
+        "h2{margin-top:1.5em;color:#444}",
+        "table{border-collapse:collapse;margin:1em 0;width:100%}",
+        "th,td{border:1px solid #ccc;padding:4px 8px;text-align:left;font-size:0.85em}",
+        "th{background:#f5f5f5}",
+        "tr:nth-child(even){background:#fafafa}",
+        "</style></head><body>",
+        f"<h1>{title}</h1>",
+    ]
+    for name, df in frames.items():
+        parts.append(f"<h2>{name}</h2>")
+        parts.append(df.to_html(index=False, border=0, na_rep=""))
+    parts.append("</body></html>")
+    return "\n".join(parts).encode("utf-8")
+
+
+def frames_fingerprint(frames: dict[str, pd.DataFrame], length: int = 16) -> str:
+    """Fingerprint a named table bundle for export cache invalidation."""
+    payload = {}
+    for name, frame in sorted((frames or {}).items(), key=lambda item: str(item[0])):
+        if isinstance(frame, pd.DataFrame):
+            payload[str(name)] = {
+                "shape": list(frame.shape),
+                "columns": [str(c) for c in frame.columns],
+                "fingerprint": dataframe_fingerprint(frame, length=32),
+            }
+        else:
+            payload[str(name)] = {"type": type(frame).__name__, "repr": repr(frame)}
+    return stable_json_fingerprint(payload, length=length)
+
+
+@st.cache_data(show_spinner=False, max_entries=4, ttl=1800)
+def cached_tables_zip(_frames: dict[str, pd.DataFrame], frames_key: str) -> bytes:
+    """Cache table ZIP bytes by explicit fingerprint, not by DataFrame hash."""
+    _ = frames_key
+    zip_buf = io.BytesIO()
+    with zipfile.ZipFile(zip_buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        for name, df in _frames.items():
+            zf.writestr(f"{name}.csv", df.to_csv(index=False))
+    return zip_buf.getvalue()
+
+
+@st.cache_data(show_spinner=False, max_entries=4, ttl=1800)
+def cached_excel_bytes(_frames: dict[str, pd.DataFrame], frames_key: str) -> bytes:
+    """Cache Excel export bytes by explicit fingerprint."""
+    _ = frames_key
+    return to_excel_bytes(_frames)
+
+
+@st.cache_data(show_spinner=False, max_entries=4, ttl=1800)
+def cached_html_report(_frames: dict[str, pd.DataFrame], frames_key: str, title: str = "MFRM Report") -> bytes:
+    """Cache HTML report bytes by explicit fingerprint."""
+    _ = frames_key
+    return to_html_report(_frames, title=title)
+
+
+@st.cache_data(show_spinner=False, max_entries=8, ttl=1800)
+def cached_plotly_png_bytes(_fig, fig_key: str, dpi: int = 300) -> bytes | None:
+    """Cache Plotly PNG bytes by explicit figure fingerprint."""
+    _ = fig_key
+    scale = dpi / 72  # plotly default is 72 dpi
+    try:
+        return _fig.to_image(format="png", scale=scale, engine="kaleido")
+    except Exception:
+        return None
+
+
+def fig_to_png_bytes(fig, dpi: int = 300) -> bytes | None:
+    """Export a plotly figure to high-resolution PNG bytes.
+
+    Returns None if kaleido is not available or fails (e.g., on Streamlit Cloud
+    where the Chrome binary required by kaleido >= 1.0 is not present).
+    """
+    try:
+        fig_key = hashlib.sha256(fig.to_json().encode("utf-8")).hexdigest()[:32]
+    except Exception:
+        fig_key = stable_json_fingerprint({"id": id(fig), "dpi": dpi}, length=32)
+    return cached_plotly_png_bytes(fig, fig_key, dpi=dpi)
+
+
+def _offer_fig_download(fig, key: str, label: str = "Download figure (PNG 300 DPI)") -> None:
+    """Show download buttons for a plotly figure.
+
+    Always offers an interactive HTML download.
+    If kaleido is available, also offers a high-resolution PNG.
+    """
+    png_data = fig_to_png_bytes(fig)
+    html_data = fig.to_html(include_plotlyjs="cdn").encode("utf-8")
+
+    if png_data is not None:
+        col_png, col_html = st.columns(2)
+        with col_png:
+            st.download_button(
+                label, data=png_data, file_name=f"{key}.png",
+                mime="image/png", key=f"dl_fig_png_{key}",
+            )
+        with col_html:
+            st.download_button(
+                label.replace("PNG 300 DPI", "Interactive HTML"),
+                data=html_data, file_name=f"{key}.html",
+                mime="text/html", key=f"dl_fig_html_{key}",
+            )
+    else:
+        st.download_button(
+            label.replace("PNG 300 DPI", "Interactive HTML"),
+            data=html_data, file_name=f"{key}.html",
+            mime="text/html", key=f"dl_fig_{key}",
+        )
+        st.caption(
+            "PNG export is unavailable (kaleido not configured on this server). "
+            "The interactive HTML file can be opened in any browser and supports "
+            "hover, zoom, and pan."
+        )
+
+
+def build_osf_zip(frames: dict[str, pd.DataFrame], title: str = "MFRM_Report") -> bytes:
+    """Create a ZIP archive with CSV + Excel + HTML for OSF upload."""
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        for name, df in frames.items():
+            zf.writestr(f"{name}.csv", df.to_csv(index=False))
+        zf.writestr(f"{title}.xlsx", to_excel_bytes(frames))
+        zf.writestr(f"{title}.html", to_html_report(frames, title))
+    return buf.getvalue()
+
+
+@st.cache_data(show_spinner=False, max_entries=4, ttl=1800)
+def cached_osf_zip(_frames: dict[str, pd.DataFrame], frames_key: str, title: str = "MFRM_Report") -> bytes:
+    """Cache OSF package bytes by explicit fingerprint."""
+    _ = frames_key
+    return build_osf_zip(_frames, title=title)
+
+
+def bytes_mapping_fingerprint(assets: dict[str, bytes | str], length: int = 16) -> str:
+    """Fingerprint a named bytes/string asset bundle for ZIP export caching."""
+    digest = hashlib.sha256()
+    for name, value in sorted((assets or {}).items(), key=lambda item: str(item[0])):
+        raw = value.encode("utf-8") if isinstance(value, str) else bytes(value)
+        digest.update(str(name).encode("utf-8"))
+        digest.update(np.asarray([len(raw)], dtype=np.int64).tobytes())
+        digest.update(hashlib.sha256(raw).digest())
+    return digest.hexdigest()[: int(length)]
+
+
+@st.cache_data(show_spinner=False, max_entries=4, ttl=1800)
+def cached_named_asset_zip(_assets: dict[str, bytes | str], assets_key: str, extension: str) -> bytes:
+    """Cache ZIP bytes for generated figure bundles by explicit asset fingerprint."""
+    _ = assets_key
+    zip_buf = io.BytesIO()
+    with zipfile.ZipFile(zip_buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        for name, value in _assets.items():
+            raw = value.encode("utf-8") if isinstance(value, str) else bytes(value)
+            zf.writestr(f"{name}.{extension}", raw)
+    return zip_buf.getvalue()
+
+
+# ---------------------------------------------------------------------------
+# Phase 2-9: Top-level warnings (above tabs)
+# ---------------------------------------------------------------------------
+
+def _show_top_level_warnings(
+    result: dict,
+    diagnostics: dict,
+    data: pd.DataFrame,
+    person_col: str,
+    facet_cols: list[str],
+    score_col: str,
+    core: dict | None,
+) -> None:
+    """Show critical warnings above the tabs so they are always visible."""
+    alerts: list[tuple[str, str]] = []  # (level, message)
+
+    # 1. Convergence
+    opt = result.get("opt", None)
+    converged = getattr(opt, "success", None) if opt is not None else None
+    if converged is not None and not converged:
+        opt_msg = getattr(opt, "message", "unknown reason")
+        alerts.append((
+            "error",
+            f"**Estimation did not converge** ({opt_msg}). "
+            "Results may be unreliable. Consider increasing `maxit` or relaxing `reltol`."
+        ))
+
+    # 2. Disconnected subsets
+    calc_subsets_fn = core.get("calc_subsets") if core else None
+    if calc_subsets_fn and diagnostics.get("obs") is not None:
+        try:
+            config_facet_names = result.get("config", {}).get("facet_names", facet_cols)
+            subsets = calc_subsets_fn(diagnostics["obs"], ["Person"] + list(config_facet_names))
+            if subsets and not subsets.get("summary", pd.DataFrame()).empty:
+                n_sub = len(subsets["summary"])
+                if n_sub >= 2:
+                    alerts.append((
+                        "warning",
+                        f"**{n_sub} disconnected subsets** detected. "
+                        "Estimates across subsets are not on a common scale."
+                    ))
+        except Exception as conn_exc:
+            alerts.append(("warning", f"Connectivity analysis failed: {conn_exc}"))
+
+    # 3. Global fit — observation-level residuals
+    obs_df = diagnostics.get("obs", pd.DataFrame())
+    if not obs_df.empty and "StdResidual" in obs_df.columns:
+        std_res = pd.to_numeric(obs_df["StdResidual"], errors="coerce").dropna()
+        if len(std_res) > 0:
+            pct_ge2 = float((std_res.abs() >= 2).mean() * 100)
+            if pct_ge2 > 10:
+                alerts.append((
+                    "warning",
+                    f"**{pct_ge2:.1f}%** of observations have |z| ≥ 2 (expected ~5%). "
+                    "Data may contain systematic misfit."
+                ))
+
+    # 4. High missing rate
+    n_missing = data[score_col].isna().sum()
+    pct_missing = 100 * n_missing / len(data) if len(data) > 0 else 0
+    if pct_missing > 20:
+        alerts.append((
+            "warning",
+            f"**High missing rate**: {pct_missing:.1f}% of observations have missing scores."
+        ))
+
+    # 5. Anchor / linking audit
+    anchor_audit = result.get("config", {}).get("anchor_audit", {})
+    if isinstance(anchor_audit, dict) and anchor_audit.get("overall_status") in {"error", "warning"}:
+        issues = anchor_audit.get("issues", pd.DataFrame())
+        n_issues = len(issues) if isinstance(issues, pd.DataFrame) else 0
+        alerts.append((
+            "warning" if anchor_audit.get("overall_status") == "warning" else "error",
+            f"**Anchor audit**: {n_issues} issue(s) found. "
+            "Open the Data tab's Anchor/linking audit before making linking claims."
+        ))
+
+    # 6. Strict marginal diagnostics
+    marginal_fit = diagnostics.get("marginal_fit", {})
+    if isinstance(marginal_fit, dict) and marginal_fit.get("available"):
+        n_review = int(marginal_fit.get("n_review", 0) or 0)
+        if n_review > 0:
+            alerts.append((
+                "warning",
+                f"**Strict marginal diagnostics**: {n_review} row(s) flagged for review. "
+                "Open Fit Details > Strict marginal diagnostics before final reporting."
+            ))
+
+    # Display
+    if not alerts:
+        st.success("Estimation completed successfully.")
+    else:
+        has_error = any(level == "error" for level, _ in alerts)
+        if has_error:
+            st.error("Estimation completed with critical issues:")
+        else:
+            st.warning("Estimation completed with warnings:")
+        for level, msg in alerts:
+            if level == "error":
+                st.error(msg)
+            else:
+                st.warning(msg)
+
+
+def _show_first_read_guide(
+    result: dict,
+    diagnostics: dict,
+    all_bias_results: dict | None = None,
+) -> None:
+    """Beginner-facing first-read checklist for interpreting the result."""
+    rows: list[dict[str, str]] = []
+
+    opt = result.get("opt")
+    converged = bool(getattr(opt, "success", False))
+    opt_msg = str(getattr(opt, "message", "") or "")
+    rows.append({
+        "Check": "1. Convergence",
+        "Status": "OK" if converged else "Do not interpret yet",
+        "What it means": (
+            "Optimizer reached its stopping rule."
+            if converged else
+            f"Optimizer did not converge. {opt_msg[:120]}"
+        ),
+        "Next action": (
+            "Continue to reliability and fit."
+            if converged else
+            "Increase maxit, relax reltol slightly, simplify the model, or inspect sparse/extreme data."
+        ),
+    })
+
+    config = result.get("config", {})
+    if config.get("model") == "GPCM":
+        slope_tbl = result.get("slopes", pd.DataFrame())
+        slope_vals = (
+            pd.to_numeric(slope_tbl.get("Estimate", pd.Series(dtype=float)), errors="coerce").dropna()
+            if isinstance(slope_tbl, pd.DataFrame) else pd.Series(dtype=float)
+        )
+        if len(slope_vals):
+            ratio = float(slope_vals.max() / slope_vals.min()) if slope_vals.min() > 0 else np.nan
+            status = "OK" if np.isfinite(ratio) and ratio <= 3.0 else "Review"
+            rows.append({
+                "Check": "1b. GPCM slope spread",
+                "Status": status,
+                "What it means": (
+                    f"Slope range is {slope_vals.min():.2f} to {slope_vals.max():.2f}; "
+                    "geometric mean is fixed to 1."
+                ),
+                "Next action": (
+                    "Interpret slopes as exploratory discrimination differences, not ordinary Rasch severities."
+                    if status == "OK" else
+                    "Open Categories/Steps and confirm that sparse categories are not driving extreme slopes."
+                ),
+            })
+        else:
+            rows.append({
+                "Check": "1b. GPCM slope spread",
+                "Status": "Review",
+                "What it means": "GPCM was selected but slope estimates are unavailable.",
+                "Next action": "Re-run estimation or switch to PCM/RSM if slope parameters are not part of the analysis question.",
+            })
+
+    obs_df = diagnostics.get("obs", pd.DataFrame())
+    if isinstance(obs_df, pd.DataFrame) and not obs_df.empty and "StdResidual" in obs_df.columns:
+        z = pd.to_numeric(obs_df["StdResidual"], errors="coerce").dropna()
+        pct_ge2 = float((z.abs() >= 2).mean() * 100) if len(z) else np.nan
+        status = "OK" if np.isfinite(pct_ge2) and pct_ge2 <= 10 else "Review"
+        rows.append({
+            "Check": "2. Global residual fit",
+            "Status": status,
+            "What it means": f"{pct_ge2:.1f}% of observations have |z| >= 2." if np.isfinite(pct_ge2) else "Residual summary unavailable.",
+            "Next action": (
+                "Move to element fit and bias checks."
+                if status == "OK" else
+                "Inspect Fit Details and Bias/Interaction before reporting."
+            ),
+        })
+
+    rel_df = diagnostics.get("reliability", pd.DataFrame())
+    if isinstance(rel_df, pd.DataFrame) and not rel_df.empty and "Reliability" in rel_df.columns:
+        rel_vals = pd.to_numeric(rel_df["Reliability"], errors="coerce").dropna()
+        if len(rel_vals):
+            min_rel = float(rel_vals.min())
+            status = "OK" if min_rel >= 0.80 else ("Review" if min_rel >= 0.50 else "Caution")
+            rows.append({
+                "Check": "3. Reliability / separation",
+                "Status": status,
+                "What it means": f"Lowest facet reliability is {min_rel:.2f}.",
+                "Next action": (
+                    "Use facet tables for substantive interpretation."
+                    if status == "OK" else
+                    "Consider whether there are enough raters/tasks/criteria and enough score spread."
+                ),
+            })
+
+    pca_enabled = bool(diagnostics.get("pca_enabled", diagnostics.get("pca") is not None))
+    pca = diagnostics.get("pca")
+    if not pca_enabled:
+        rows.append({
+            "Check": "4. Dimensionality",
+            "Status": "Skipped",
+            "What it means": "Residual PCA was turned off for this run.",
+            "Next action": "Enable residual PCA for final reporting or if fit looks suspicious.",
+        })
+    elif isinstance(pca, dict) and pca.get("eigenvalues") is not None:
+        ev = np.asarray(pca.get("eigenvalues"), dtype=float)
+        ev1 = float(ev[0]) if ev.size else np.nan
+        status = "OK" if np.isfinite(ev1) and ev1 < 2.0 else ("Review" if np.isfinite(ev1) and ev1 < 3.0 else "Caution")
+        rows.append({
+            "Check": "4. Dimensionality",
+            "Status": status,
+            "What it means": f"First residual PCA eigenvalue is {ev1:.2f}.",
+            "Next action": (
+                "Unidimensionality looks acceptable."
+                if status == "OK" else
+                "Open the Dimensionality tab and inspect residual PCA content."
+            ),
+        })
+
+    all_bias = all_bias_results or {}
+    if not all_bias:
+        rows.append({
+            "Check": "5. Bias interactions",
+            "Status": "Skipped",
+            "What it means": "No bias/interaction table was computed for this run.",
+            "Next action": "Use Selected pair for a targeted check or Full publication for all-pair screening.",
+        })
+    else:
+        n_sig = 0
+        n_total = 0
+        for bundle in all_bias.values():
+            tbl = bundle.get("table") if isinstance(bundle, dict) else None
+            if isinstance(tbl, pd.DataFrame) and "t" in tbl.columns:
+                t_vals = pd.to_numeric(tbl["t"], errors="coerce").dropna()
+                n_total += len(t_vals)
+                n_sig += int((t_vals.abs() >= 2).sum())
+        status = "OK" if n_sig == 0 else ("Review" if n_sig <= max(1, 0.05 * max(n_total, 1)) else "Caution")
+        rows.append({
+            "Check": "5. Bias interactions",
+            "Status": status,
+            "What it means": f"{n_sig} of {n_total} tested local interactions have |t| >= 2.",
+            "Next action": (
+                "No immediate local-bias flag in the computed table."
+                if n_sig == 0 else
+                "Open Bias/Interaction and interpret flagged pairs substantively; avoid relying on p-values alone."
+            ),
+        })
+
+    anchor_audit = result.get("config", {}).get("anchor_audit", {})
+    if isinstance(anchor_audit, dict):
+        issues = anchor_audit.get("issues", pd.DataFrame())
+        n_issues = len(issues) if isinstance(issues, pd.DataFrame) else 0
+        overall = anchor_audit.get("overall_status", "ok")
+        rows.append({
+            "Check": "6. Anchor / linking audit",
+            "Status": "OK" if overall == "ok" else ("Caution" if overall == "error" else "Review"),
+            "What it means": (
+                "No obvious anchor-input issues were found."
+                if overall == "ok" else
+                f"{n_issues} anchor/linking issue(s) were found."
+            ),
+            "Next action": (
+                "Proceed if this is a single-run analysis; use anchors only when linking across runs."
+                if overall == "ok" else
+                "Open Data > Anchor/linking audit and fix or justify each issue before making linking claims."
+            ),
+        })
+
+    marginal_fit = diagnostics.get("marginal_fit", {})
+    if isinstance(marginal_fit, dict):
+        if marginal_fit.get("available"):
+            n_review = int(marginal_fit.get("n_review", 0) or 0)
+            rows.append({
+                "Check": "7. Strict marginal fit",
+                "Status": "OK" if n_review == 0 else "Review",
+                "What it means": f"{n_review} marginal distribution row(s) were flagged.",
+                "Next action": (
+                    "Use this as corroborating evidence with residual fit and category checks."
+                    if n_review == 0 else
+                    "Open Fit Details and inspect which facet/category marginal distributions differ from expectation."
+                ),
+            })
+        elif diagnostics.get("marginal_fit_enabled"):
+            rows.append({
+                "Check": "7. Strict marginal fit",
+                "Status": "Skipped",
+                "What it means": marginal_fit.get("reason", "Marginal diagnostics were unavailable."),
+                "Next action": "Use MML and enable strict marginal diagnostics for this screen.",
+            })
+
+    with st.expander("What should I look at first?", expanded=not converged):
+        st.caption(
+            "Read results in this order. Stop early if a row says 'Do not interpret yet' "
+            "or 'Caution' and resolve that issue before writing final conclusions."
+        )
+        st.dataframe(pd.DataFrame(rows), width="stretch", hide_index=True)
+
+
+def _show_data_tab_checks(data: pd.DataFrame, score_col: str) -> None:
+    """Show data-specific checks (score range, missing rate) in the Data tab."""
+    scores = pd.to_numeric(data[score_col], errors="coerce").dropna()
+    if len(scores) > 0:
+        n_cats = int(scores.nunique())
+        if n_cats < 2:
+            st.warning(
+                f"**Only {n_cats} distinct score value(s)** found. "
+                "At least 2 categories are required for estimation."
+            )
+    n_missing = data[score_col].isna().sum()
+    pct_missing = 100 * n_missing / len(data) if len(data) > 0 else 0
+    if pct_missing > 5:
+        st.info(
+            f"**Missing scores**: {n_missing:,} of {len(data):,} observations "
+            f"({pct_missing:.1f}%) have missing scores."
+        )
+    n_obs = len(data)
+    n_unique_scores = int(scores.nunique()) if len(scores) > 0 else 0
+    st.caption(
+        f"{n_obs:,} observations, {n_unique_scores} score categories "
+        f"({int(scores.min())}–{int(scores.max())})"
+        if len(scores) > 0 else f"{n_obs:,} observations"
+    )
+
+
+def _fit_summary_callout(measures_df: pd.DataFrame, facet_filter: str | None = None) -> None:
+    """Result-aware success/warning/error callout summarising fit."""
+    if measures_df.empty or "Infit" not in measures_df.columns:
+        return
+    if facet_filter is None or "Facet" not in measures_df.columns:
+        df = measures_df
+    else:
+        df = measures_df[measures_df["Facet"] == facet_filter]
+    infit = pd.to_numeric(df["Infit"], errors="coerce")
+    outfit = pd.to_numeric(df["Outfit"], errors="coerce") if "Outfit" in df.columns else pd.Series(dtype=float)
+    n_total = len(df)
+    if n_total == 0:
+        return
+    misfit_mask = (infit > 1.5) | (infit < 0.5)
+    if len(outfit) > 0:
+        misfit_mask = misfit_mask | (outfit > 2.0)
+    n_misfit = int(misfit_mask.sum())
+    pct = 100 * n_misfit / n_total
+    label = f" ({facet_filter})" if facet_filter else ""
+    if n_misfit == 0:
+        st.success(f"All {n_total} elements{label} show acceptable fit (Infit MnSq 0.5–1.5).")
+    elif pct <= 10:
+        st.info(f"{n_misfit} of {n_total} elements{label} show misfit — within typical range.")
+    elif pct <= 25:
+        st.warning(f"{n_misfit} of {n_total} elements{label} show misfit ({pct:.0f}%) — review flagged elements.")
+    else:
+        st.error(f"{n_misfit} of {n_total} elements{label} show misfit ({pct:.0f}%) — widespread misfit detected.")
+
+
+# ---------------------------------------------------------------------------
+# Phase 3-8: Dimensionality / PCA interpretation
+# ---------------------------------------------------------------------------
+
+def show_dimensionality_section(diagnostics: dict, facet_cols: list[str], core: dict | None = None) -> None:
+    """Render PCA / dimensionality analysis with scree plot and interpretation."""
+    pca = diagnostics.get("pca")
+    if pca is None:
+        st.info("PCA of residuals is not available for this estimation.")
+        return
+
+    st.markdown(
+        """
+**How to interpret the PCA of standardized residuals:**
+
+The PCA decomposes the *unexplained* variance (residuals) after the Rasch dimension
+is extracted. If the data are unidimensional, residuals should be random noise and
+no principal component should stand out.
+
+| Criterion | Guideline | Reference |
+|---|---|---|
+| 1st eigenvalue < 2.0 | Supports unidimensionality | Linacre (2024) |
+| 1st eigenvalue 2.0--3.0 | Minor secondary dimension possible; inspect content | Smith (2002) |
+| 1st eigenvalue > 3.0 | Strong evidence of a secondary dimension | Linacre (2024) |
+| Unexplained variance in 1st PC < 5% | Acceptable | Smith (2002) |
+| Unexplained variance in 1st PC 5--10% | Investigate | Linacre (2024) |
+| Eigenvalue ratio (PC1/PC2) >= 3 | Supports single dominant dimension | Reckase (1979) |
+
+Use the scree plot below: a clear "elbow" after the 1st component, with subsequent
+eigenvalues close to 1.0, supports unidimensionality.
+"""
+    )
+
+    # Determine default tab -- prefer first rater facet if available
+    rater_facets = [f for f in facet_cols if "rater" in f.lower() or "judge" in f.lower()]
+    tab_labels = ["Overall"] + facet_cols
+    default_idx = (tab_labels.index(rater_facets[0]) if rater_facets else 0)
+
+    # Build tab list, put default first by reordering
+    if default_idx > 0:
+        reordered = [tab_labels[default_idx]] + [t for i, t in enumerate(tab_labels) if i != default_idx]
+    else:
+        reordered = tab_labels
+    dim_tabs = st.tabs(reordered)
+
+    for i, tab_label in enumerate(reordered):
+        with dim_tabs[i]:
+            if tab_label == "Overall":
+                _show_pca_panel(pca, mode="overall", core=core, diagnostics=diagnostics, facet_cols=facet_cols)
+            else:
+                _show_pca_panel(pca, mode="facet", facet_name=tab_label, core=core, diagnostics=diagnostics, facet_cols=facet_cols)
+
+
+def _show_pca_panel(
+    pca: dict,
+    mode: str = "overall",
+    facet_name: str | None = None,
+    core: dict | None = None,
+    diagnostics: dict | None = None,
+    facet_cols: list[str] | None = None,
+) -> None:
+    """Render a single PCA panel (overall or per-facet) with scree plot and assessment."""
+
+
+    # --- Use cached PCA first, then fall back to direct computation ---
+    eigenvalues = None
+    var_pct = None
+    loadings = None
+
+    # Prefer pre-computed PCA from mfrm_diagnostics so Streamlit reruns do not
+    # recompute expensive decompositions just to redraw the page.
+    if mode == "overall" and isinstance(pca, dict):
+        eigenvalues = pca.get("eigenvalues")
+        var_pct = pca.get("variance_pct")
+        loadings = pca.get("loadings")
+    elif mode == "facet" and diagnostics and facet_name:
+        facet_pca = (diagnostics.get("pca_by_facet") or {}).get(facet_name)
+        if isinstance(facet_pca, dict):
+            eigenvalues = facet_pca.get("eigenvalues")
+            var_pct = facet_pca.get("variance_pct")
+            loadings = facet_pca.get("loadings")
+
+    if core and diagnostics:
+        obs = diagnostics.get("obs")
+        config_facet_names = facet_cols or []
+        if eigenvalues is None and mode == "overall" and core.get("compute_pca_overall") and obs is not None:
+            try:
+                pca_bundle = core["compute_pca_overall"](obs, config_facet_names)
+                if pca_bundle:
+                    eigenvalues = pca_bundle.get("eigenvalues")
+                    var_pct = pca_bundle.get("variance_pct")
+                    loadings = pca_bundle.get("loadings")
+            except Exception as pca_exc:
+                st.caption(f"PCA computation failed (using pre-computed): {pca_exc}")
+        elif eigenvalues is None and mode == "facet" and core.get("compute_pca_by_facet") and obs is not None and facet_name:
+            try:
+                pca_bundles = core["compute_pca_by_facet"](obs, [facet_name])
+                pca_bundle = pca_bundles.get(facet_name) if pca_bundles else None
+                if pca_bundle:
+                    eigenvalues = pca_bundle.get("eigenvalues")
+                    var_pct = pca_bundle.get("variance_pct")
+                    loadings = pca_bundle.get("loadings")
+            except Exception as pca_exc:
+                st.caption(f"PCA computation failed (using pre-computed): {pca_exc}")
+
+    # --- Fall back to pca dict from diagnostics ---
+    tbl = None
+    if mode == "overall":
+        label = "Overall standardized residuals"
+    else:
+        label = f"Residuals for facet: {facet_name}"
+
+    if tbl is None or (hasattr(tbl, "__len__") and len(tbl) == 0):
+        if eigenvalues is None:
+            st.caption(f"No PCA results available for {label}.")
+            return
+
+    st.markdown(f"**{label}**")
+    if tbl is not None and not (hasattr(tbl, "empty") and tbl.empty):
+        st.dataframe(tbl, width="stretch")
+
+    # --- Extract eigenvalues from table if not from core ---
+    if eigenvalues is None and tbl is not None:
+        eigen_col = None
+        for candidate in ("Eigenvalue", "eigenvalue", "EV"):
+            if candidate in tbl.columns:
+                eigen_col = candidate
+                break
+        if eigen_col is None:
+            return
+        eigenvalues = pd.to_numeric(tbl[eigen_col], errors="coerce").dropna().values
+        # Try variance column
+        for vc in ("Variance_Pct", "Variance%", "variance_pct", "Proportion"):
+            if vc in tbl.columns:
+                var_pct = pd.to_numeric(tbl[vc], errors="coerce").dropna().values
+                break
+
+    if eigenvalues is None or len(eigenvalues) < 2:
+        st.caption("Insufficient eigenvalues for dimensionality analysis (need at least 2 components).")
+        return
+
+    # --- Scree plot ---
+    max_components = min(20, len(eigenvalues))
+    components = list(range(1, max_components + 1))
+    ev_plot = eigenvalues[:max_components]
+
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(x=components, y=list(ev_plot), mode="lines+markers",
+                             marker=dict(size=7, color="#1b9e77"),
+                             line=dict(width=2, color="#1b9e77"), name="Eigenvalue"))
+    fig.add_hline(y=2.0, line_dash="dash", line_color="#d95f02", line_width=1,
+                  annotation_text="Caution (EV=2.0)", annotation_position="top right")
+    fig.add_hline(y=1.0, line_dash="dot", line_color="#999999", line_width=1,
+                  annotation_text="Expected (EV=1.0)", annotation_position="bottom right")
+    fig.update_layout(xaxis_title="Component", yaxis_title="Eigenvalue",
+                      title=f"Scree Plot — {label}", yaxis_rangemode="tozero",
+                      xaxis=dict(dtick=1), height=350, template="plotly_white")
+    st.plotly_chart(fig, width="stretch")
+
+    # --- Eigenvalue table ---
+    n_show = min(10, len(eigenvalues))
+    eigen_df_data: dict[str, list] = {
+        "Component": [f"PC{i}" for i in range(1, n_show + 1)],
+        "Eigenvalue": list(eigenvalues[:n_show]),
+    }
+    if var_pct is not None and len(var_pct) >= n_show:
+        eigen_df_data["Variance %"] = list(var_pct[:n_show])
+        eigen_df_data["Cumulative %"] = list(np.cumsum(var_pct[:n_show]))
+    eigen_df = pd.DataFrame(eigen_df_data)
+    st.subheader("Eigenvalues and variance explained")
+    st.dataframe(eigen_df.round(3), width="stretch")
+
+    # --- PC1 loadings bar chart ---
+    if loadings is not None and hasattr(loadings, "columns") and "PC1" in loadings.columns:
+        top_loadings = loadings["PC1"].abs().sort_values(ascending=False).head(20).index
+        loadings_plot = loadings.loc[top_loadings, "PC1"].sort_values()
+
+        colors = ["#d95f02" if v > 0 else "#1b9e77" for v in loadings_plot.values]
+        fig2 = go.Figure(go.Bar(
+            x=loadings_plot.values, y=[str(idx) for idx in loadings_plot.index],
+            orientation="h", marker_color=colors,
+        ))
+        fig2.add_vline(x=0, line_color="gray", line_width=1)
+        fig2.update_layout(xaxis_title="PC1 Loading", title="PC1 Loadings (top 20)",
+                           height=max(300, len(loadings_plot) * 22), template="plotly_white",
+                           yaxis=dict(autorange="reversed"))
+        st.plotly_chart(fig2, width="stretch")
+
+    # --- Unidimensionality assessment summary ---
+    ev1 = float(eigenvalues[0])
+    ev2 = float(eigenvalues[1]) if len(eigenvalues) > 1 else np.nan
+    eig_ratio = ev1 / ev2 if np.isfinite(ev2) and ev2 > 0 else np.nan
+    eig_above_1 = int(np.sum(eigenvalues > 1))
+    pc1_var = float(var_pct[0]) if var_pct is not None and len(var_pct) > 0 else np.nan
+
+    # Note: var_pct is % of residual variance.  In a typical Rasch analysis the
+    # model explains 50-70% of total variance, so 10% of residual ≈ 3-5% of total.
+    # The Smith (2002) criterion of <5% total roughly maps to ~10-15% of residual.
+    assessment = "Acceptable unidimensionality"
+    if ev1 >= 3.0:
+        assessment = "Potential multidimensionality (strong 1st eigenvalue)"
+    elif ev1 >= 2.0:
+        assessment = "Minor secondary dimension possible (1st eigenvalue 2.0–3.0; Smith, 2002)"
+    elif np.isfinite(pc1_var) and pc1_var > 15:
+        assessment = "Potential multidimensionality (high PC1 residual variance)"
+    elif np.isfinite(eig_ratio) and eig_ratio < 3:
+        assessment = "Potential multidimensionality (low eigenvalue ratio)"
+
+    assess_df = pd.DataFrame({
+        "Metric": [
+            "1st eigenvalue",
+            "PC1 variance",
+            "Eigenvalue ratio (PC1/PC2)",
+            "Eigenvalues > 1",
+            "Assessment",
+        ],
+        "Value": [
+            f"{ev1:.2f}",
+            f"{pc1_var:.1f}%" if np.isfinite(pc1_var) else "N/A",
+            f"{eig_ratio:.2f}" if np.isfinite(eig_ratio) else "N/A",
+            str(eig_above_1),
+            assessment,
+        ],
+    })
+    st.subheader("Unidimensionality assessment")
+    st.dataframe(assess_df, width="stretch")
+
+    # --- Interpretation badge ---
+    if ev1 < 1.5:
+        st.success(f"1st eigenvalue = {ev1:.2f} -- Good support for unidimensionality.")
+    elif ev1 < 2.0:
+        st.info(f"1st eigenvalue = {ev1:.2f} -- Acceptable; monitor for secondary dimension.")
+    elif ev1 < 3.0:
+        st.warning(f"1st eigenvalue = {ev1:.2f} -- Possible secondary dimension. Inspect item content.")
+    else:
+        st.error(f"1st eigenvalue = {ev1:.2f} -- Strong evidence of multidimensionality.")
+
+
+# ---------------------------------------------------------------------------
+# Phase 3-10: Wright Map + Yardstick
+# ---------------------------------------------------------------------------
+
+def show_wright_map_section(result: dict, diagnostics: dict) -> None:
+    """Render both the classic Wright Map and the FACETS-style yardstick."""
+    st.caption(
+        "The Wright Map (variable map) places all persons and facet elements on a single "
+        "logit scale. Persons on the left; facet elements and thresholds on the right. "
+        "Good measurement requires that person abilities overlap with item/facet difficulty "
+        "— large gaps indicate ceiling or floor effects."
+    )
+
+    facets = result.get("facets", {})
+    person_tbl = facets.get("person", pd.DataFrame())
+    facet_tbl = facets.get("others", pd.DataFrame())
+    step_tbl = result.get("steps", pd.DataFrame())
+
+    # Result-aware targeting check
+    _p_est = pd.to_numeric(person_tbl.get("Estimate", pd.Series(dtype=float)), errors="coerce").dropna()
+    _f_est = pd.to_numeric(facet_tbl.get("Estimate", pd.Series(dtype=float)), errors="coerce").dropna()
+    if len(_p_est) > 0 and len(_f_est) > 0:
+        overlap = min(float(_p_est.max()), float(_f_est.max())) - max(float(_p_est.min()), float(_f_est.min()))
+        if overlap > 0:
+            st.success(f"Person and facet distributions overlap by {overlap:.2f} logits — good targeting.")
+        else:
+            st.warning(
+                f"Person and facet distributions do not overlap (gap = {-overlap:.2f} logits) "
+                "— possible ceiling or floor effect."
+            )
+
+    wm_tabs = st.tabs(["Wright Map", "Yardstick (FACETS-style)"])
+
+    with wm_tabs[0]:
+        _draw_wright_map_plotly(person_tbl, facet_tbl, step_tbl)
+
+    with wm_tabs[1]:
+        _draw_yardstick(person_tbl, facet_tbl, step_tbl)
+
+
+
+
+
+
+def _draw_yardstick(
+    person_tbl: pd.DataFrame, facet_tbl: pd.DataFrame, step_tbl: pd.DataFrame
+) -> None:
+    """FACETS Table 6.0 style yardstick: vertical logit ruler with facet columns."""
+
+
+    st.markdown(
+        """
+**Yardstick (FACETS Table 6.0 style)**
+
+This vertical display places all facets on a common logit ruler so you can
+visually compare their relative locations. Persons are shown as a frequency
+histogram on the leftmost column. Each subsequent column represents one facet.
+"""
+    )
+
+    person_est = pd.to_numeric(person_tbl.get("Estimate", pd.Series(dtype=float)), errors="coerce").dropna()
+    if person_est.empty:
+        st.caption("No finite person estimates.")
+        return
+
+    facet_est = facet_tbl.copy() if facet_tbl is not None else pd.DataFrame()
+    if "Estimate" in facet_est.columns:
+        facet_est["Estimate"] = pd.to_numeric(facet_est["Estimate"], errors="coerce")
+        facet_est = facet_est.dropna(subset=["Estimate"])
+
+    facet_names = list(facet_est["Facet"].unique()) if "Facet" in facet_est.columns else []
+    n_cols = 1 + len(facet_names)  # person + each facet
+    if n_cols < 2:
+        st.caption("Not enough facets to draw a yardstick.")
+        return
+
+    y_all = list(person_est)
+    if not facet_est.empty:
+        y_all.extend(facet_est["Estimate"].tolist())
+    margin = 0.5
+    y_lo, y_hi = min(y_all) - margin, max(y_all) + margin
+
+    col_titles = ["Person"] + facet_names
+    fig = make_subplots(rows=1, cols=n_cols, shared_yaxes=True,
+                        subplot_titles=col_titles, horizontal_spacing=0.02)
+
+    # Column 1: Person histogram (horizontal)
+    bins_arr = np.linspace(y_lo, y_hi, max(15, int(len(person_est) ** 0.5)))
+    counts, bin_edges = np.histogram(person_est, bins=bins_arr)
+    bin_centers = 0.5 * (bin_edges[:-1] + bin_edges[1:])
+    fig.add_trace(go.Bar(y=bin_centers, x=counts, orientation="h",
+                         marker_color="#b0b0b0", showlegend=False,
+                         hovertemplate="n=%{customdata}<br>Logit=%{y:.2f}",
+                         customdata=counts), row=1, col=1)
+    fig.update_xaxes(title_text="n", autorange="reversed", row=1, col=1)
+    fig.update_yaxes(title_text="Logit scale", range=[y_lo, y_hi], row=1, col=1)
+
+    # Facet columns
+    for i, fname in enumerate(facet_names):
+        col_idx = i + 2
+        sub = facet_est[facet_est["Facet"] == fname]
+        if not sub.empty:
+            fig.add_trace(go.Scatter(
+                x=[0.5] * len(sub), y=sub["Estimate"].tolist(),
+                mode="markers+text", marker=dict(size=8, color="#1b9e77", symbol="square"),
+                text=[str(lbl) for lbl in sub.get("Level", sub.index)],
+                textposition="middle right", textfont=dict(size=9),
+                showlegend=False,
+            ), row=1, col=col_idx)
+        fig.update_xaxes(range=[0, 1], showticklabels=False, row=1, col=col_idx)
+        fig.update_yaxes(range=[y_lo, y_hi], showgrid=True, gridcolor="#ececec", row=1, col=col_idx)
+
+    fig.update_layout(title="Yardstick (FACETS-style)", height=550,
+                      template="plotly_white", showlegend=False)
+    st.plotly_chart(fig, width="stretch")
+
+
+# ---------------------------------------------------------------------------
+# Main FACETS-mode runner
+# ---------------------------------------------------------------------------
+
+def resolve_analysis_depth_settings(
+    analysis_depth: str,
+    est_method: str,
+    custom: dict | None = None,
+) -> dict:
+    """Resolve performance preset settings used by the sidebar and self-tests."""
+    is_mml = est_method == "MML"
+    if analysis_depth == "Fast preview":
+        settings = {
+            "compute_residual_pca": False,
+            "compute_strict_marginal": False,
+            "strict_marginal_pairwise": False,
+            "strict_marginal_max_pair_cells": 400,
+            "compute_plausible_values": False,
+            "n_plausible_values": 0,
+            "plausible_seed": 20260411,
+            "bias_mode": "Skip",
+            "render_interactive_plots": False,
+            "generate_figure_exports": False,
+        }
+    elif analysis_depth == "Full publication":
+        settings = {
+            "compute_residual_pca": True,
+            "compute_strict_marginal": is_mml,
+            "strict_marginal_pairwise": is_mml,
+            "strict_marginal_max_pair_cells": 800,
+            "compute_plausible_values": is_mml,
+            "n_plausible_values": 10 if is_mml else 0,
+            "plausible_seed": 20260411,
+            "bias_mode": "All facet pairs",
+            "render_interactive_plots": True,
+            "generate_figure_exports": True,
+        }
+    elif analysis_depth == "Custom":
+        settings = {
+            "compute_residual_pca": True,
+            "compute_strict_marginal": is_mml,
+            "strict_marginal_pairwise": False,
+            "strict_marginal_max_pair_cells": 400,
+            "compute_plausible_values": is_mml,
+            "n_plausible_values": 5 if is_mml else 0,
+            "plausible_seed": 20260411,
+            "bias_mode": "Selected pair",
+            "render_interactive_plots": True,
+            "generate_figure_exports": False,
+        }
+        if custom:
+            settings.update(custom)
+    else:
+        settings = {
+            "compute_residual_pca": True,
+            "compute_strict_marginal": False,
+            "strict_marginal_pairwise": False,
+            "strict_marginal_max_pair_cells": 400,
+            "compute_plausible_values": False,
+            "n_plausible_values": 0,
+            "plausible_seed": 20260411,
+            "bias_mode": "Selected pair",
+            "render_interactive_plots": True,
+            "generate_figure_exports": False,
+        }
+
+    settings["compute_residual_pca"] = bool(settings.get("compute_residual_pca", True))
+    settings["compute_strict_marginal"] = bool(settings.get("compute_strict_marginal", False))
+    settings["strict_marginal_pairwise"] = bool(settings.get("strict_marginal_pairwise", False))
+    settings["strict_marginal_max_pair_cells"] = int(settings.get("strict_marginal_max_pair_cells", 400))
+    settings["compute_plausible_values"] = bool(settings.get("compute_plausible_values", False))
+    settings["n_plausible_values"] = int(settings.get("n_plausible_values", 0) or 0)
+    settings["plausible_seed"] = int(settings.get("plausible_seed", 20260411) or 20260411)
+    settings["bias_mode"] = str(settings.get("bias_mode", "Selected pair"))
+    settings["render_interactive_plots"] = bool(settings.get("render_interactive_plots", True))
+    settings["generate_figure_exports"] = bool(settings.get("generate_figure_exports", False))
+
+    if not is_mml:
+        settings["compute_strict_marginal"] = False
+        settings["strict_marginal_pairwise"] = False
+        settings["compute_plausible_values"] = False
+        settings["n_plausible_values"] = 0
+    if not settings["compute_strict_marginal"]:
+        settings["strict_marginal_pairwise"] = False
+    if not settings["compute_plausible_values"]:
+        settings["n_plausible_values"] = 0
+    return settings
+
+
+def run_facets_mode(core: dict, data: pd.DataFrame) -> None:
+    cols = list(data.columns)
+    if len(cols) < 4:
+        st.warning("At least 4 columns are required (Person, Score, and 2+ facets).")
+        return
+
+    guess_col = core["guess_col"]
+    person_default = guess_col(cols, ["person", "participant", "student"], fallback=0)
+    score_default = guess_col(cols, ["score", "rating", "mark"], fallback=min(1, len(cols) - 1))
+    weight_default = next((c for c in cols if "weight" in c.lower()), None)
+
+    st.sidebar.subheader("Column mapping")
+    st.sidebar.caption(
+        "Map your columns to MFRM roles. *Person* = examinee/subject; "
+        "*Score* = raw observed rating; facets = sources of systematic variability."
+    )
+    person_col = st.sidebar.selectbox(
+        "Person column", cols, index=cols.index(person_default),
+        help="The column identifying examinees, participants, or subjects being measured.",
+    )
+    score_col = st.sidebar.selectbox(
+        "Score column", cols, index=cols.index(score_default),
+        help="The column containing the observed rating or score (integer values).",
+    )
+    weight_opts = ["(None)"] + cols
+    weight_idx = weight_opts.index(weight_default) if weight_default in weight_opts else 0
+    weight_col_raw = st.sidebar.selectbox(
+        "Weight column (optional)",
+        weight_opts,
+        index=weight_idx,
+        help="Assign differential importance to observations. Leave as (None) for equal weights.",
+    )
+    weight_col = None if weight_col_raw == "(None)" else weight_col_raw
+
+    blocked = {person_col, score_col}
+    if weight_col:
+        blocked.add(weight_col)
+    facet_candidates = [c for c in cols if c not in blocked]
+    default_facets = [c for c in pick_default_facets(facet_candidates) if c in facet_candidates]
+
+    facet_cols = st.sidebar.multiselect(
+        "Facet columns (2+)",
+        facet_candidates,
+        default=default_facets,
+        help=(
+            "Select 2 or more facets — sources of systematic variability in the ratings. "
+            "Common facets: Rater (judge), Task (item/prompt), Criterion (rubric dimension). "
+            "Person is handled separately and should NOT be selected here."
+        ),
+    )
+    workflow_mode = st.sidebar.radio(
+        "Workflow mode",
+        ["Guided defaults", "Advanced controls"],
+        index=0,
+        horizontal=True,
+        help=(
+            "Guided defaults keeps common RSM/PCM settings compact. "
+            "Advanced controls exposes optimizer, constraint, scaling, and script-level tuning."
+        ),
+    )
+    advanced_controls = workflow_mode == "Advanced controls"
+    if not advanced_controls:
+        st.sidebar.caption(
+            "Guided defaults are active. Open the collapsed advanced sections only when you need "
+            "custom score ranges, constraints, optimizer tuning, or publication-specific outputs."
+        )
+
+    # Phase 2-6: Missing value recoding
+    data = missing_value_recoding(data, score_col)
+
+    st.sidebar.subheader("FACETS-mode settings")
+    model_type = st.sidebar.radio(
+        "Model",
+        ["RSM", "PCM", "GPCM"],
+        index=0,
+        horizontal=True,
+        help=(
+            "**RSM** (Rating Scale Model): All elements share common step thresholds. "
+            "Appropriate when the rating scale functions identically across elements "
+            "(e.g., all items use the same rubric). "
+            "**PCM** (Partial Credit Model): Each element of the step facet has its own "
+            "thresholds. Use when categories have different meaning across elements. "
+            "**GPCM** (bounded Generalized PCM): Step-facet levels also get positive "
+            "discrimination/slope parameters. Use as an exploratory slope-aware model."
+        ),
+    )
+    step_facet = None
+    if model_type in {"PCM", "GPCM"}:
+        step_facet = st.sidebar.selectbox(
+            f"Step facet ({model_type})",
+            facet_cols if facet_cols else ["(select facets first)"],
+            index=0,
+            help="Facet whose levels get their own threshold parameters. For GPCM, the same facet also gets slope parameters.",
+        )
+        if model_type == "GPCM":
+            st.sidebar.caption(
+                "GPCM scope: bounded Python implementation with slope_facet = step_facet, "
+                "positive slopes, and geometric mean slope fixed to 1."
+            )
+    est_method = st.sidebar.radio(
+        "Estimation method",
+        ["JMLE", "MML"],
+        index=0,
+        horizontal=True,
+        help=(
+            "**JMLE** (Joint Maximum Likelihood): Estimates person abilities and "
+            "facet parameters simultaneously using the app's analytical-gradient "
+            "quasi-Newton backend. Fast but may be biased with short tests. "
+            "**MML** (Marginal Maximum Likelihood): EM algorithm (Bock & Aitkin, 1981) "
+            "with Gauss-Hermite quadrature. Integrates over person ability distribution; "
+            "person abilities computed post-hoc via EAP (Bock & Mislevy, 1982)."
+        ),
+    )
+    mml_engine = "EM"
+    quad_points = 15
+    population_prior_sd = 1.0
+    if est_method == "MML":
+        if advanced_controls:
+            mml_engine = st.sidebar.selectbox(
+                "MML engine",
+                ["Auto (recommended)", "Hybrid", "Direct", "EM"],
+                index=0,
+                help=(
+                    "Auto tries Hybrid first and falls back to EM if Hybrid does not converge. "
+                    "Hybrid starts with a few EM iterations and then switches to direct "
+                    "marginal-likelihood L-BFGS-B. Direct is often faster after good starts. "
+                    "EM is the conservative reference route."
+                ),
+            )
+            quad_points = int(st.sidebar.number_input(
+                "Quadrature points",
+                min_value=5,
+                max_value=41,
+                value=15,
+                step=2,
+                help=(
+                    "More points improve the approximation of the person ability distribution "
+                    "but increase runtime. Use 7-11 for quick checks and 15+ for final review."
+                ),
+            ))
+            population_prior_sd = float(st.sidebar.number_input(
+                "Population prior SD",
+                min_value=0.10,
+                max_value=10.0,
+                value=1.0,
+                step=0.10,
+                format="%.2f",
+                help=(
+                    "Fixed SD of the MML population distribution. Default 1.00 uses N(X beta, 1). "
+                    "Larger values assume more person heterogeneity; smaller values shrink EAP scores more strongly."
+                ),
+            ))
+        else:
+            mml_engine = "Auto (recommended)"
+            st.sidebar.caption(
+                "MML guided defaults: Auto engine, 15 quadrature points, population prior SD 1.00."
+            )
+    population_enabled = False
+    population_formula = ""
+    population_person_id_col = "Person"
+    population_standardize_numeric = False
+    population_categorical_terms = ""
+    population_numeric_terms = ""
+    population_file = None
+    population_text = ""
+    with st.sidebar.expander("Latent regression / population model (MML)", expanded=False):
+        population_enabled = st.checkbox(
+            "Enable population_formula",
+            value=False,
+            disabled=(est_method != "MML"),
+            help=(
+                "MML-only. Replaces the zero-mean person distribution with "
+                "theta_j ~ N(X_j beta, population_prior_sd^2). Current support is one-dimensional, user-set fixed variance, "
+                "and main effects such as '~ grade + ses'."
+            ),
+        )
+        if est_method != "MML":
+            st.caption("Switch Estimation method to MML to enable latent regression.")
+        if population_enabled:
+            population_formula = st.text_input(
+                "population_formula",
+                value="~ 1",
+                help=(
+                    "Use '~ 1' for an estimated population intercept, or '~ grade + ses' "
+                    "for person-level covariates. Interactions and transformations are not yet enabled."
+                ),
+            )
+            population_person_id_col = st.text_input(
+                "Person ID column in person_data",
+                value=person_col,
+                help="Column in the person-level table that matches the selected Person column.",
+            )
+            population_standardize_numeric = st.checkbox(
+                "Standardize numeric covariates",
+                value=False,
+                help=(
+                    "Centers and scales numeric population_formula covariates before MML fitting. "
+                    "The same saved mean/SD are applied to prediction rows for unknown persons."
+                ),
+            )
+            population_categorical_terms = st.text_input(
+                "Force categorical covariates (optional)",
+                value="",
+                help=(
+                    "Comma-separated population_formula terms to dummy-code as categorical even when they look numeric, "
+                    "for example 'grade_code, school_type'. This avoids treating numeric IDs as continuous predictors."
+                ),
+            )
+            population_numeric_terms = st.text_input(
+                "Force numeric covariates (optional)",
+                value="",
+                help=(
+                    "Comma-separated population_formula terms that must be numeric. The run stops if any listed term "
+                    "contains non-numeric values."
+                ),
+            )
+            population_file = st.file_uploader(
+                "person_data file",
+                type=["csv", "tsv", "txt"],
+                key="facets_mode_population_file",
+            )
+            population_text = st.text_area(
+                "Or paste person_data",
+                key="facets_mode_population_text",
+                placeholder=f"{person_col},grade,ses\nP1,1,0.2\nP2,2,-0.1",
+            )
+            st.caption(
+                "Every fitted person must appear once in person_data when covariates are used. "
+                "Categorical covariates are dummy-coded with the first level as reference."
+            )
+    score_num_for_range = pd.to_numeric(data[score_col], errors="coerce") if score_col in data.columns else pd.Series(dtype=float)
+    score_num_for_range = score_num_for_range.dropna()
+    if not score_num_for_range.empty:
+        detected_rating_min = int(np.floor(score_num_for_range.min()))
+        detected_rating_max = int(np.ceil(score_num_for_range.max()))
+        if detected_rating_max <= detected_rating_min:
+            detected_rating_max = detected_rating_min + 1
+    else:
+        detected_rating_min, detected_rating_max = 0, 1
+    rating_min = None
+    rating_max = None
+    with st.sidebar.expander("Score scale options", expanded=advanced_controls):
+        keep_original = st.checkbox(
+            "Keep original category values",
+            value=False,
+            help=(
+                "If checked, categories are used as-is (e.g., 1-5). "
+                "If unchecked, non-consecutive categories are recoded to a contiguous internal scale."
+            ),
+        )
+        explicit_rating_range = st.checkbox(
+            "Set intended rating scale range",
+            value=False,
+            help=(
+                "Use this when the intended scale includes boundary categories not observed "
+                "in the current data, e.g. a 1-5 scale with only 2-5 observed."
+            ),
+        )
+        st.caption(
+            f"Detected score range: {detected_rating_min} to {detected_rating_max}. "
+            "Set an intended range when a category is possible but absent in this file."
+        )
+        if explicit_rating_range:
+            c_min, c_max = st.columns(2)
+            with c_min:
+                rating_min = int(st.number_input(
+                    "Min category",
+                    value=detected_rating_min,
+                    step=1,
+                    help="Intended lowest score category.",
+                ))
+            with c_max:
+                rating_max = int(st.number_input(
+                    "Max category",
+                    value=detected_rating_max,
+                    step=1,
+                    help="Intended highest score category.",
+                ))
+            if rating_max <= rating_min:
+                st.error("Max category must be larger than min category.")
+    with st.sidebar.expander("Advanced identification and optimizer controls", expanded=advanced_controls):
+        noncenter_facet = st.selectbox(
+            "Non-centered facet",
+            ["Person"] + facet_cols,
+            index=0,
+            help=(
+                "The facet whose parameters are **not** sum-to-zero constrained. "
+                "Typically 'Person' — meaning person abilities float freely while "
+                "all other facet parameters are constrained to sum to zero. "
+                "Change this only if you want to free a different facet "
+                "(e.g., fix raters and let items float)."
+            ),
+        )
+        dummy_facets = st.multiselect(
+            "Dummy facets",
+            ["Person"] + facet_cols,
+            default=[],
+            help=(
+                "Facets listed here are **not centered** (no sum-to-zero constraint). "
+                "Use for facets that are nuisance variables — their parameters are estimated "
+                "but not interpreted substantively. Example: if 'Task' is a grouping variable "
+                "with unbalanced design, treating it as dummy prevents it from distorting "
+                "the logit scale."
+            ),
+        )
+        positive_facets = st.multiselect(
+            "Positive facets",
+            facet_cols,
+            default=[],
+            help=(
+                "By default, higher facet measures indicate **more severity** (harder/stricter). "
+                "List facets here if higher measures should indicate a **positive** contribution "
+                "(e.g., 'Ability' where higher = better). This reverses the sign convention "
+                "for the selected facets."
+            ),
+        )
+        maxit = int(st.number_input(
+            "maxit",
+            min_value=50,
+            max_value=10000,
+            value=400,
+            step=50,
+            help="Maximum number of optimizer iterations. Increase (e.g., 1000) if estimation does not converge.",
+        ))
+        reltol = float(st.number_input(
+            "reltol",
+            min_value=1e-10,
+            max_value=1.0,
+            value=1e-6,
+            format="%.1e",
+            help="Relative tolerance for convergence. Smaller = stricter. Default 1e-6 is sufficient for most analyses.",
+        ))
+
+    st.sidebar.subheader("Anchor constraints")
+    with st.sidebar.expander("Anchors (Facet,Level,Anchor)", expanded=False):
+        st.caption(
+            "Fix specific element measures to known values. Use when linking across "
+            "administrations or when some elements have established calibrations. "
+            "Format: CSV with columns **Facet, Level, Anchor** (logit value). "
+            "Anchored elements are held constant; all other elements are estimated relative to them."
+        )
+        anchor_file = st.file_uploader(
+            "Anchor table file",
+            type=["csv", "tsv", "txt"],
+            key="facets_mode_anchor_file",
+        )
+        anchor_text = st.text_area(
+            "Or paste anchor table",
+            key="facets_mode_anchor_text",
+            placeholder="Facet,Level,Anchor\nRater,R1,0.0\nRater,R2,-0.5",
+        )
+
+    with st.sidebar.expander("Group anchors (Facet,Level,Group,GroupValue)", expanded=False):
+        st.caption(
+            "Constrain groups of elements to share the same measure. "
+            "Use when elements belong to known groups that should be equivalent "
+            "(e.g., raters trained to the same standard). "
+            "Format: CSV with columns **Facet, Level, Group, GroupValue** (logit value)."
+        )
+        group_anchor_file = st.file_uploader(
+            "Group anchor file",
+            type=["csv", "tsv", "txt"],
+            key="facets_mode_group_anchor_file",
+        )
+        group_anchor_text = st.text_area(
+            "Or paste group anchor table",
+            key="facets_mode_group_anchor_text",
+            placeholder="Facet,Level,Group,GroupValue\nRater,R1,Expert,0.0\nRater,R2,Expert,0.0",
+        )
+    with st.sidebar.expander("Bundled anchor templates", expanded=False):
+        st.caption("Download blank/example files or read the short anchor guideline before using linking constraints.")
+        template_files = [
+            ("anchor_table_blank.csv", "Blank fixed-anchor CSV"),
+            ("anchor_table_example.csv", "Example fixed-anchor CSV"),
+            ("group_anchor_table_blank.csv", "Blank group-anchor CSV"),
+            ("group_anchor_table_example.csv", "Example group-anchor CSV"),
+        ]
+        for asset_name, label in template_files:
+            try:
+                st.download_button(
+                    label,
+                    data=get_bundled_asset_bytes(asset_name),
+                    file_name=asset_name,
+                    mime="text/csv",
+                    key=f"dl_static_{asset_name}",
+                )
+            except Exception as asset_exc:
+                st.caption(f"{asset_name} unavailable: {asset_exc}")
+        show_anchor_guideline = st.checkbox("Show anchor guideline preview", value=False, key="show_anchor_guideline_preview")
+        if show_anchor_guideline:
+            try:
+                st.markdown(get_bundled_asset_text("anchor_user_guidelines.md"))
+            except Exception as guide_exc:
+                st.caption(f"Anchor guideline unavailable: {guide_exc}")
+    with st.sidebar.expander("Anchor audit settings", expanded=False):
+        anchor_policy = st.radio(
+            "Anchor issue policy",
+            ["warn", "error", "silent"],
+            index=0,
+            horizontal=True,
+            help=(
+                "warn shows anchor/linking issues but still estimates with valid rows. "
+                "error stops estimation when any anchor audit issue is found. "
+                "silent records issues in downloads/config only."
+            ),
+        )
+        min_common_anchors = int(st.number_input(
+            "Minimum common anchors",
+            min_value=1,
+            max_value=50,
+            value=2,
+            step=1,
+            help="Minimum anchored/common levels per facet before making linking claims.",
+        ))
+        min_obs_per_element = int(st.number_input(
+            "Minimum observations per anchored level",
+            min_value=1,
+            max_value=100,
+            value=2,
+            step=1,
+            help="Anchored levels below this observation count are flagged as weak.",
+        ))
+        min_obs_per_category = int(st.number_input(
+            "Minimum observations per score category",
+            min_value=1,
+            max_value=100,
+            value=1,
+            step=1,
+            help="Score categories below this count are flagged for linking/category stability.",
+        ))
+
+    with st.sidebar.expander("Report scaling options", expanded=advanced_controls):
+        totalscore = st.checkbox(
+            "Include extreme elements in totalscore",
+            value=True,
+            help="Include elements with all-minimum or all-maximum scores in the total score calculation.",
+        )
+        omit_unobserved = st.checkbox(
+            "Omit unobserved elements",
+            value=False,
+            help="Exclude elements with zero observations from the report tables.",
+        )
+        xtreme = float(st.number_input(
+            "Xtreme correction",
+            value=0.0,
+            step=0.1,
+            help=(
+                "Correction applied to extreme scores (all-min or all-max). "
+                "0 = no correction (extreme elements receive infinite estimates). "
+                "0.3-0.5 = typical correction to obtain finite estimates."
+            ),
+        ))
+        umean = float(st.number_input(
+            "Umean",
+            value=0.0,
+            help="User-scaled mean for reported measures. Default 0.0 keeps the logit metric.",
+        ))
+        uscale = float(st.number_input(
+            "Uscale",
+            value=1.0,
+            help=(
+                "User-scaled SD multiplier. Default 1.0 keeps the logit metric. "
+                "Set to e.g. 100 with Umean=500 for T-score-like reporting."
+            ),
+        ))
+        udecimals = int(st.number_input(
+            "Udecimals",
+            min_value=0,
+            max_value=6,
+            value=2,
+            step=1,
+            help="Decimal places for user-scaled measures in report tables.",
+        ))
+
+    # Bias settings: use sensible defaults (adjustable in Bias/Interaction tab)
+    bias_max_abs = 10.0
+    bias_omit_extreme = True
+    st.sidebar.subheader("Performance options")
+    analysis_depth = st.sidebar.selectbox(
+        "Analysis depth",
+        ["Fast preview", "Standard (recommended)", "Full publication", "Custom"],
+        index=1,
+        help=(
+            "Controls expensive post-estimation diagnostics. Fast preview skips "
+            "PCA, bias scans, and plot rendering. Full publication computes the "
+            "heaviest outputs for final review."
+        ),
+    )
+    preset_settings = resolve_analysis_depth_settings(analysis_depth, est_method)
+    if analysis_depth == "Custom":
+        compute_residual_pca = st.sidebar.checkbox(
+            "Compute residual PCA",
+            value=bool(preset_settings["compute_residual_pca"]),
+            help=(
+                "PCA checks whether residuals still contain a secondary dimension. "
+                "Turn off for very large data or quick iteration."
+            ),
+        )
+        compute_strict_marginal = st.sidebar.checkbox(
+            "Compute strict marginal diagnostics",
+            value=bool(preset_settings["compute_strict_marginal"]),
+            disabled=(est_method != "MML"),
+            help=(
+                "MML-only screen comparing observed category counts to model-implied "
+                "marginal expected counts. Use for final reporting or suspicious fit."
+            ),
+        )
+        strict_marginal_pairwise = bool(preset_settings["strict_marginal_pairwise"])
+        strict_marginal_max_pair_cells = int(preset_settings["strict_marginal_max_pair_cells"])
+        if compute_strict_marginal:
+            strict_marginal_pairwise = st.sidebar.checkbox(
+                "Include pairwise marginal screen",
+                value=bool(preset_settings["strict_marginal_pairwise"]),
+                help=(
+                    "Adds pairwise facet-level marginal checks. This can be slow and "
+                    "is best reserved for final runs."
+                ),
+            )
+            if strict_marginal_pairwise:
+                strict_marginal_max_pair_cells = int(st.sidebar.number_input(
+                    "Max pairwise marginal cells",
+                    min_value=100,
+                    max_value=10000,
+                    value=int(preset_settings["strict_marginal_max_pair_cells"]),
+                    step=100,
+                    help="Safety limit for pairwise marginal expected cells.",
+                ))
+        compute_plausible_values = st.sidebar.checkbox(
+            "Export plausible values",
+            value=bool(preset_settings["compute_plausible_values"]),
+            disabled=(est_method != "MML"),
+            help=(
+                "MML-only. Draws person plausible values from the posterior quadrature "
+                "distribution for group-level uncertainty analyses. Do not use PVs to rank individuals."
+            ),
+        )
+        if compute_plausible_values:
+            n_plausible_values = int(st.sidebar.number_input(
+                "Number of plausible values",
+                min_value=1,
+                max_value=50,
+                value=int(max(1, preset_settings["n_plausible_values"])),
+                step=1,
+                help="Use 5-10 for common group summaries; more values increase download size.",
+            ))
+            plausible_seed = int(st.sidebar.number_input(
+                "Plausible value seed",
+                min_value=0,
+                max_value=2_147_483_647,
+                value=int(preset_settings["plausible_seed"]),
+                step=1,
+                help="Seed used to reproduce plausible value draws.",
+            ))
+        else:
+            n_plausible_values = 0
+            plausible_seed = 20260411
+        bias_mode = st.sidebar.radio(
+            "Bias/interaction estimation",
+            ["Skip", "Selected pair", "All facet pairs"],
+            index=["Skip", "Selected pair", "All facet pairs"].index(preset_settings["bias_mode"])
+            if preset_settings["bias_mode"] in {"Skip", "Selected pair", "All facet pairs"} else 1,
+            help=(
+                "Bias scans compare local observed-minus-expected behavior across "
+                "facet pairs. All-pair scans are useful for final reports but can be slow."
+            ),
+        )
+        render_interactive_plots = st.sidebar.checkbox(
+            "Render interactive plots in result tabs",
+            value=bool(preset_settings["render_interactive_plots"]),
+            help="Turn off to keep reruns fast after estimation; tables and downloads remain available.",
+        )
+        generate_figure_exports = st.sidebar.checkbox(
+            "Prepare figure export bundle",
+            value=bool(preset_settings["generate_figure_exports"]),
+            help="Generate downloadable PNG/HTML figure bundles in the Downloads tab.",
+        )
+        preset_settings = resolve_analysis_depth_settings(
+            analysis_depth,
+            est_method,
+            custom={
+                "compute_residual_pca": compute_residual_pca,
+                "compute_strict_marginal": compute_strict_marginal,
+                "strict_marginal_pairwise": strict_marginal_pairwise,
+                "strict_marginal_max_pair_cells": strict_marginal_max_pair_cells,
+                "compute_plausible_values": compute_plausible_values,
+                "n_plausible_values": n_plausible_values,
+                "plausible_seed": plausible_seed,
+                "bias_mode": bias_mode,
+                "render_interactive_plots": render_interactive_plots,
+                "generate_figure_exports": generate_figure_exports,
+            },
+        )
+    else:
+        preset_settings = resolve_analysis_depth_settings(analysis_depth, est_method)
+
+    compute_residual_pca = bool(preset_settings["compute_residual_pca"])
+    compute_strict_marginal = bool(preset_settings["compute_strict_marginal"])
+    strict_marginal_pairwise = bool(preset_settings["strict_marginal_pairwise"])
+    strict_marginal_max_pair_cells = int(preset_settings["strict_marginal_max_pair_cells"])
+    compute_plausible_values = bool(preset_settings["compute_plausible_values"])
+    n_plausible_values = int(preset_settings["n_plausible_values"])
+    plausible_seed = int(preset_settings["plausible_seed"])
+    bias_mode = preset_settings["bias_mode"]
+    render_interactive_plots = bool(preset_settings["render_interactive_plots"])
+    generate_figure_exports = bool(preset_settings["generate_figure_exports"])
+
+    bias_pairs_available = list(combinations(["Person"] + list(facet_cols), 2)) if len(facet_cols) >= 2 else []
+    selected_bias_pair = None
+    if bias_mode == "Selected pair" and bias_pairs_available:
+        bias_pair_labels = [f"{fa} x {fb}" for fa, fb in bias_pairs_available]
+        selected_bias_label = st.sidebar.selectbox(
+            "Bias pair",
+            bias_pair_labels,
+            index=0,
+            help=(
+                "Start with the pair most central to your research question, "
+                "for example Rater x Criterion or Rater x Task. Use Full publication "
+                "to scan all pairs."
+            ),
+        )
+        selected_bias_pair = bias_pairs_available[bias_pair_labels.index(selected_bias_label)]
+    elif bias_mode == "All facet pairs" and bias_pairs_available:
+        st.sidebar.caption(f"Bias scan will estimate {len(bias_pairs_available)} facet pair(s).")
+    elif bias_mode != "Skip":
+        st.sidebar.caption("Bias estimation needs at least two selected facet columns.")
+    st.sidebar.caption(
+        "For first runs, use Standard. For final reporting, rerun with Full publication "
+        "after the model and columns are settled."
+    )
+
+    # Phase 1-5: Estimation time warning
+    run_clicked = st.sidebar.button("Run FACETS-mode estimation", type="primary")
+    if run_clicked:
+        if len(facet_cols) < 2:
+            st.error("Select at least two facet columns.")
+            return
+        if rating_min is not None and rating_max is not None and rating_max <= rating_min:
+            st.error("Max category must be larger than min category.")
+            return
+
+        n_obs = len(data)
+        n_persons = data[person_col].nunique()
+        st.info(
+            f"Starting estimation with **{n_obs:,}** observations, "
+            f"**{n_persons:,}** persons, **{len(facet_cols)}** facets. "
+            "This may take a few seconds to several minutes depending on data size."
+        )
+
+        try:
+            anchor_df = core["read_flexible_table"](anchor_text, anchor_file, header=True)
+            group_anchor_df = core["read_flexible_table"](group_anchor_text, group_anchor_file, header=True)
+            person_data_df = (
+                core["read_flexible_table"](population_text, population_file, header=True)
+                if population_enabled else pd.DataFrame()
+            )
+
+            with st.spinner(f"Running {est_method} estimation... please wait."):
+                result = core["mfrm_estimate"](
+                    data=data,
+                    person_col=person_col,
+                    facet_cols=facet_cols,
+                    score_col=score_col,
+                    rating_min=rating_min,
+                    rating_max=rating_max,
+                    weight_col=weight_col,
+                    keep_original=keep_original,
+                    model=model_type,
+                    method=est_method,
+                    step_facet=step_facet,
+                    person_data=person_data_df,
+                    person_id_col=population_person_id_col if population_enabled else None,
+                    population_formula=population_formula if population_enabled else None,
+                    population_standardize_numeric=population_standardize_numeric if population_enabled else False,
+                    population_categorical_terms=population_categorical_terms if population_enabled else None,
+                    population_numeric_terms=population_numeric_terms if population_enabled else None,
+                    anchor_df=anchor_df,
+                    group_anchor_df=group_anchor_df,
+                    noncenter_facet=noncenter_facet,
+                    dummy_facets=dummy_facets,
+                    positive_facets=positive_facets,
+                    quad_points=quad_points,
+                    population_prior_sd=population_prior_sd,
+                    maxit=maxit,
+                    reltol=reltol,
+                    mml_engine=mml_engine,
+                    anchor_policy=anchor_policy,
+                    min_common_anchors=min_common_anchors,
+                    min_obs_per_element=min_obs_per_element,
+                    min_obs_per_category=min_obs_per_category,
+                    compute_plausible_values=bool(compute_plausible_values),
+                    n_plausible_values=int(n_plausible_values),
+                    plausible_seed=int(plausible_seed),
+                )
+                result.setdefault("config", {}).update({
+                    "workflow_mode": workflow_mode,
+                    "advanced_controls": bool(advanced_controls),
+                    "analysis_depth": analysis_depth,
+                    "compute_residual_pca": bool(compute_residual_pca),
+                    "bias_mode": bias_mode,
+                    "selected_bias_pair": list(selected_bias_pair) if selected_bias_pair is not None else None,
+                    "render_interactive_plots": bool(render_interactive_plots),
+                    "generate_figure_exports": bool(generate_figure_exports),
+                    "compute_strict_marginal": bool(compute_strict_marginal),
+                    "strict_marginal_pairwise": bool(strict_marginal_pairwise),
+                    "strict_marginal_max_pair_cells": int(strict_marginal_max_pair_cells),
+                    "compute_plausible_values": bool(compute_plausible_values),
+                    "n_plausible_values": int(n_plausible_values),
+                    "plausible_seed": int(plausible_seed) if compute_plausible_values else None,
+                    "ui_mml_engine": mml_engine if est_method == "MML" else None,
+                    "quad_points": quad_points if est_method == "MML" else None,
+                    "population_prior_sd": population_prior_sd if est_method == "MML" else None,
+                    "population_enabled": bool(population_enabled),
+                    "population_formula": population_formula if population_enabled else "",
+                    "population_person_id_col": population_person_id_col if population_enabled else None,
+                    "population_standardize_numeric": bool(population_standardize_numeric) if population_enabled else False,
+                    "population_categorical_terms": parse_population_covariate_terms(population_categorical_terms) if population_enabled else [],
+                    "population_numeric_terms": parse_population_covariate_terms(population_numeric_terms) if population_enabled else [],
+                    "anchor_policy": anchor_policy,
+                    "input_data_fingerprint": dataframe_fingerprint(data),
+                    "anchor_data_fingerprint": dataframe_fingerprint(anchor_df) if not anchor_df.empty else None,
+                    "group_anchor_data_fingerprint": dataframe_fingerprint(group_anchor_df) if not group_anchor_df.empty else None,
+                    "population_data_fingerprint": dataframe_fingerprint(person_data_df) if not person_data_df.empty else None,
+                })
+                result["config"]["analysis_config_fingerprint"] = config_fingerprint(result.get("config", {}))
+                result["config"]["run_fingerprint"] = result["config"]["analysis_config_fingerprint"]
+            with st.spinner("Computing diagnostics..."):
+                diagnostics = core["mfrm_diagnostics"](
+                    result,
+                    whexact=False,
+                    compute_pca=bool(compute_residual_pca),
+                    compute_marginal=bool(compute_strict_marginal),
+                    marginal_pairwise=bool(strict_marginal_pairwise),
+                    marginal_max_pair_cells=int(strict_marginal_max_pair_cells),
+                )
+            report_tables = core["calc_facets_report_tbls"](
+                result,
+                diagnostics,
+                totalscore=totalscore,
+                umean=umean,
+                uscale=uscale,
+                udecimals=udecimals,
+                omit_unobserved=omit_unobserved,
+                xtreme=xtreme,
+            )
+            scorefile = core["compute_scorefile"](result)
+            residuals = core["compute_residual_file"](result)
+
+            # Auto-compute bias/interaction for all facet pairs
+            all_bias_results: dict[str, dict] = {}
+            if core.get("estimate_bias_interaction") and len(facet_cols) >= 2 and bias_mode != "Skip":
+                if bias_mode == "All facet pairs":
+                    pairs = bias_pairs_available
+                elif bias_mode == "Selected pair" and selected_bias_pair is not None:
+                    pairs = [selected_bias_pair]
+                else:
+                    pairs = []
+                with st.spinner(f"Estimating bias/interaction for {len(pairs)} pair(s)..."):
+                    for fa, fb in pairs:
+                        try:
+                            br = core["estimate_bias_interaction"](
+                                result, diagnostics, fa, fb,
+                                max_abs=float(bias_max_abs),
+                                omit_extreme=bool(bias_omit_extreme),
+                            )
+                            if br and br.get("table") is not None and not br["table"].empty:
+                                all_bias_results[f"{fa} x {fb}"] = br
+                        except Exception as bias_err:
+                            st.caption(f"⚠ Bias estimation for {fa}×{fb} skipped: {bias_err}")
+            # Primary bias_results = first available pair for APA/download
+            bias_results = next(iter(all_bias_results.values()), None)
+
+            st.session_state["facets_mode_output"] = {
+                "result": result,
+                "diagnostics": diagnostics,
+                "report_tables": report_tables,
+                "scorefile": scorefile,
+                "residuals": residuals,
+                "facet_cols": facet_cols,
+                "person_col": person_col,
+                "score_col": score_col,
+                "bias_results": bias_results,
+                "all_bias_results": all_bias_results,
+                "model_type": model_type,
+                "_workflow_mode": workflow_mode,
+                "_advanced_controls": bool(advanced_controls),
+                "_est_method": est_method,
+                "_step_facet": step_facet,
+                # Settings snapshot for staleness detection
+                "_maxit": maxit,
+                "_reltol": reltol,
+                "_noncenter_facet": noncenter_facet,
+                "_dummy_facets": list(dummy_facets),
+                "_positive_facets": list(positive_facets),
+                "_keep_original": keep_original,
+                "_explicit_rating_range": explicit_rating_range,
+                "_rating_min": rating_min,
+                "_rating_max": rating_max,
+                "_mml_engine": mml_engine if est_method == "MML" else None,
+                "_quad_points": quad_points if est_method == "MML" else None,
+                "_population_prior_sd": population_prior_sd if est_method == "MML" else None,
+                "_population_enabled": bool(population_enabled),
+                "_population_formula": population_formula if population_enabled else "",
+                "_population_person_id_col": population_person_id_col if population_enabled else None,
+                "_population_standardize_numeric": bool(population_standardize_numeric) if population_enabled else False,
+                "_population_categorical_terms": parse_population_covariate_terms(population_categorical_terms) if population_enabled else [],
+                "_population_numeric_terms": parse_population_covariate_terms(population_numeric_terms) if population_enabled else [],
+                "_anchor_policy": anchor_policy,
+                "_min_common_anchors": min_common_anchors,
+                "_min_obs_per_element": min_obs_per_element,
+                "_min_obs_per_category": min_obs_per_category,
+                "_analysis_depth": analysis_depth,
+                "_compute_residual_pca": bool(compute_residual_pca),
+                "_compute_strict_marginal": bool(compute_strict_marginal),
+                "_strict_marginal_pairwise": bool(strict_marginal_pairwise),
+                "_strict_marginal_max_pair_cells": int(strict_marginal_max_pair_cells),
+                "_compute_plausible_values": bool(compute_plausible_values),
+                "_n_plausible_values": int(n_plausible_values),
+                "_plausible_seed": int(plausible_seed),
+                "_bias_mode": bias_mode,
+                "_selected_bias_pair": selected_bias_pair,
+                "_render_interactive_plots": bool(render_interactive_plots),
+                "_generate_figure_exports": bool(generate_figure_exports),
+            }
+        except Exception as exc:
+            st.error(
+                "**Estimation failed.** Common causes and remedies:\n\n"
+                "- **Too few observations**: Ensure each facet level has multiple observations.\n"
+                "- **Extreme scores**: Elements with all-minimum or all-maximum scores "
+                "can cause non-convergence. Enable *Omit extreme elements* or set "
+                "*Xtreme correction* > 0.\n"
+                "- **Non-convergence**: Try increasing `maxit` (e.g., 1000) "
+                "or relaxing `reltol` (e.g., 1e-5).\n"
+                "- **Data format**: Verify that score and facet columns contain the expected values."
+            )
+            with st.expander("Technical details"):
+                st.exception(exc)
+            return
+
+    out = st.session_state.get("facets_mode_output")
+    if not out:
+        st.info("Set columns and click 'Run FACETS-mode estimation'.")
+        return
+
+    # Invalidate stale results if settings changed
+    stale_reasons: list[str] = []
+    if out.get("person_col") != person_col:
+        stale_reasons.append("person column")
+    if out.get("score_col") != score_col:
+        stale_reasons.append("score column")
+    if set(out.get("facet_cols", [])) != set(facet_cols):
+        stale_reasons.append("facet columns")
+    if out.get("model_type") != model_type:
+        stale_reasons.append("model")
+    if out.get("_est_method") != est_method:
+        stale_reasons.append("estimation method")
+    if out.get("_step_facet") != step_facet:
+        stale_reasons.append("step facet")
+    if out.get("_maxit") is not None and out["_maxit"] != maxit:
+        stale_reasons.append("maxit")
+    if out.get("_reltol") is not None and out["_reltol"] != reltol:
+        stale_reasons.append("reltol")
+    if out.get("_noncenter_facet") is not None and out["_noncenter_facet"] != noncenter_facet:
+        stale_reasons.append("non-centered facet")
+    if out.get("_dummy_facets") is not None and out["_dummy_facets"] != list(dummy_facets):
+        stale_reasons.append("dummy facets")
+    if out.get("_positive_facets") is not None and out["_positive_facets"] != list(positive_facets):
+        stale_reasons.append("positive facets")
+    if out.get("_keep_original") is not None and out["_keep_original"] != keep_original:
+        stale_reasons.append("keep original categories")
+    if out.get("_explicit_rating_range") is not None and out["_explicit_rating_range"] != explicit_rating_range:
+        stale_reasons.append("rating scale range mode")
+    if out.get("_rating_min") != rating_min:
+        stale_reasons.append("minimum category")
+    if out.get("_rating_max") != rating_max:
+        stale_reasons.append("maximum category")
+    current_mml_engine = mml_engine if est_method == "MML" else None
+    current_quad_points = quad_points if est_method == "MML" else None
+    current_population_prior_sd = population_prior_sd if est_method == "MML" else None
+    if out.get("_mml_engine") != current_mml_engine:
+        stale_reasons.append("MML engine")
+    if out.get("_quad_points") != current_quad_points:
+        stale_reasons.append("quadrature points")
+    if out.get("_population_prior_sd") != current_population_prior_sd:
+        stale_reasons.append("population prior SD")
+    if out.get("_population_enabled") is not None and out["_population_enabled"] != bool(population_enabled):
+        stale_reasons.append("population model option")
+    current_population_formula = population_formula if population_enabled else ""
+    if out.get("_population_formula") is not None and out["_population_formula"] != current_population_formula:
+        stale_reasons.append("population_formula")
+    current_population_person_id_col = population_person_id_col if population_enabled else None
+    if out.get("_population_person_id_col") is not None and out["_population_person_id_col"] != current_population_person_id_col:
+        stale_reasons.append("population person ID column")
+    current_population_standardize_numeric = bool(population_standardize_numeric) if population_enabled else False
+    if (
+        out.get("_population_standardize_numeric") is not None
+        and out["_population_standardize_numeric"] != current_population_standardize_numeric
+    ):
+        stale_reasons.append("population numeric standardization option")
+    current_population_categorical_terms = parse_population_covariate_terms(population_categorical_terms) if population_enabled else []
+    if (
+        out.get("_population_categorical_terms") is not None
+        and out["_population_categorical_terms"] != current_population_categorical_terms
+    ):
+        stale_reasons.append("population categorical covariate override")
+    current_population_numeric_terms = parse_population_covariate_terms(population_numeric_terms) if population_enabled else []
+    if (
+        out.get("_population_numeric_terms") is not None
+        and out["_population_numeric_terms"] != current_population_numeric_terms
+    ):
+        stale_reasons.append("population numeric covariate override")
+    if out.get("_anchor_policy") is not None and out["_anchor_policy"] != anchor_policy:
+        stale_reasons.append("anchor issue policy")
+    if out.get("_min_common_anchors") is not None and out["_min_common_anchors"] != min_common_anchors:
+        stale_reasons.append("minimum common anchors")
+    if out.get("_min_obs_per_element") is not None and out["_min_obs_per_element"] != min_obs_per_element:
+        stale_reasons.append("minimum observations per anchored level")
+    if out.get("_min_obs_per_category") is not None and out["_min_obs_per_category"] != min_obs_per_category:
+        stale_reasons.append("minimum observations per score category")
+    if out.get("_analysis_depth") is not None and out["_analysis_depth"] != analysis_depth:
+        stale_reasons.append("analysis depth")
+    if out.get("_compute_residual_pca") is not None and out["_compute_residual_pca"] != bool(compute_residual_pca):
+        stale_reasons.append("residual PCA option")
+    if out.get("_compute_strict_marginal") is not None and out["_compute_strict_marginal"] != bool(compute_strict_marginal):
+        stale_reasons.append("strict marginal diagnostics option")
+    if out.get("_strict_marginal_pairwise") is not None and out["_strict_marginal_pairwise"] != bool(strict_marginal_pairwise):
+        stale_reasons.append("pairwise marginal diagnostics option")
+    if out.get("_strict_marginal_max_pair_cells") is not None and out["_strict_marginal_max_pair_cells"] != int(strict_marginal_max_pair_cells):
+        stale_reasons.append("pairwise marginal cell limit")
+    if out.get("_compute_plausible_values") is not None and out["_compute_plausible_values"] != bool(compute_plausible_values):
+        stale_reasons.append("plausible value export option")
+    if out.get("_n_plausible_values") is not None and out["_n_plausible_values"] != int(n_plausible_values):
+        stale_reasons.append("number of plausible values")
+    if out.get("_plausible_seed") is not None and out["_plausible_seed"] != int(plausible_seed):
+        stale_reasons.append("plausible value seed")
+    if out.get("_bias_mode") is not None and out["_bias_mode"] != bias_mode:
+        stale_reasons.append("bias estimation option")
+    if out.get("_selected_bias_pair") != selected_bias_pair:
+        stale_reasons.append("selected bias pair")
+    if stale_reasons:
+        st.warning(
+            f"Settings changed since the last run ({', '.join(stale_reasons)}). "
+            "Click **Run FACETS-mode estimation** to update results."
+        )
+        return
+
+    result = out["result"]
+    diagnostics = out["diagnostics"]
+    report_tables = out["report_tables"]
+    scorefile = out["scorefile"]
+    residuals = out["residuals"]
+    est_facet_cols = out.get("facet_cols", facet_cols)
+    bias_results = out.get("bias_results")
+    result_compute_pca = bool(out.get("_compute_residual_pca", diagnostics.get("pca_enabled", True)))
+    result_render_plots = bool(render_interactive_plots)
+    result_generate_figures = bool(generate_figure_exports)
+
+    # --- Critical warnings ABOVE tabs (always visible) ---
+    _show_top_level_warnings(result, diagnostics, data,
+                             out.get("person_col", person_col),
+                             est_facet_cols,
+                             out.get("score_col", score_col),
+                             core)
+    _show_first_read_guide(result, diagnostics, out.get("all_bias_results", {}))
+
+    tabs = st.tabs([
+        "Data", "Report", "Measures", "Fit Details",
+        "Dimensionality", "Wright Map", "Visuals",
+        "Bias/Interaction", "Categories/Steps",
+        "Agreement", "FACETS-style tables", "Facet Dashboard",
+        "Prediction/Simulation", "Downloads", "Help",
+    ])
+
+    # --- Data tab ---
+    with tabs[0]:
+        st.subheader("Data quality checks")
+        st.caption(
+            "Pre-estimation data screening: score category distribution, "
+            "missing data rates, and facet connectivity. "
+            "Review these checks before interpreting estimation results."
+        )
+        prep = result.get("prep", {})
+        score_messages = prep.get("score_messages", [])
+        score_map = prep.get("score_map", pd.DataFrame())
+        if score_messages or isinstance(score_map, pd.DataFrame):
+            st.subheader("Score category support")
+            for msg in score_messages:
+                st.warning(msg)
+            if isinstance(score_map, pd.DataFrame) and not score_map.empty:
+                with st.expander("Score map", expanded=bool(score_messages)):
+                    st.dataframe(score_map, width="stretch")
+
+        with st.expander("What to check", expanded=False):
+            st.markdown(
+                """
+**Score distribution:** All categories should have adequate counts (≥ 10 per category is ideal;
+Linacre, 2002). Very sparse categories may cause disordered thresholds.
+
+**Missing data:** < 5% is typical; 5–20% is manageable but consider whether missingness is random.
+> 20% may bias parameter estimates (Little & Rubin, 2002).
+
+**Connectivity:** All persons and facet elements should be connected in a single network.
+If multiple disconnected subsets exist, measures are not comparable across subsets.
+A single connected subset means all measures are on the same scale.
+"""
+            )
+
+        # Data-specific checks only (convergence/connectivity shown above tabs)
+        _show_data_tab_checks(data, out.get("score_col", score_col))
+
+        anchor_audit = result.get("config", {}).get("anchor_audit", {})
+        if isinstance(anchor_audit, dict):
+            st.subheader("Anchor/linking audit")
+            status = anchor_audit.get("overall_status", "ok")
+            message = anchor_audit.get("message", "No anchor audit message available.")
+            if status == "error":
+                st.error(message)
+            elif status == "warning":
+                st.warning(message)
+            else:
+                st.success(message)
+            st.caption(
+                "Use this audit when you anchor elements or compare/link results across administrations. "
+                "For a single unanchored run, 'Unanchored' is normal and does not by itself indicate a problem."
+            )
+            audit_summary = anchor_audit.get("summary", pd.DataFrame())
+            audit_issues = anchor_audit.get("issues", pd.DataFrame())
+            with st.expander("Anchor summary", expanded=status != "ok"):
+                if isinstance(audit_summary, pd.DataFrame) and not audit_summary.empty:
+                    st.dataframe(audit_summary, width="stretch")
+                else:
+                    st.info("No anchor summary available.")
+            if isinstance(audit_issues, pd.DataFrame) and not audit_issues.empty:
+                with st.expander("Anchor issues and recommended actions", expanded=True):
+                    st.dataframe(audit_issues, width="stretch")
+            else:
+                st.caption("No anchor-input issues detected.")
+            drift_review = result.get("anchor_drift", {})
+            if isinstance(drift_review, dict) and drift_review.get("available"):
+                drift_summary = drift_review.get("summary", pd.DataFrame())
+                anchor_drift_tbl = drift_review.get("anchor_drift", pd.DataFrame())
+                group_drift_tbl = drift_review.get("group_drift", pd.DataFrame())
+                with st.expander("Anchor drift / constraint consistency", expanded=False):
+                    st.caption(
+                        "This checks whether supplied anchors and group-anchor target means are respected after fitting. "
+                        "Because anchor inputs are used as hard constraints, this is not an unconstrained empirical drift estimate."
+                    )
+                    if isinstance(drift_summary, pd.DataFrame) and not drift_summary.empty:
+                        st.dataframe(drift_summary, width="stretch")
+                    if isinstance(anchor_drift_tbl, pd.DataFrame) and not anchor_drift_tbl.empty:
+                        st.markdown("**Fixed anchors**")
+                        st.dataframe(anchor_drift_tbl, width="stretch")
+                    if isinstance(group_drift_tbl, pd.DataFrame) and not group_drift_tbl.empty:
+                        st.markdown("**Group-anchor target means**")
+                        st.dataframe(group_drift_tbl, width="stretch")
+            chain_review = result.get("equating_chain", {})
+            if isinstance(chain_review, dict) and chain_review.get("available"):
+                chain_summary = chain_review.get("summary", pd.DataFrame())
+                chain_edges = chain_review.get("edges", pd.DataFrame())
+                with st.expander("Equating-chain summary", expanded=False):
+                    st.caption(chain_review.get(
+                        "interpretation",
+                        "This summarizes how the current run links to supplied anchor baselines.",
+                    ))
+                    if isinstance(chain_edges, pd.DataFrame) and not chain_edges.empty:
+                        st.markdown("**Chain edges**")
+                        st.dataframe(chain_edges, width="stretch")
+                    if isinstance(chain_summary, pd.DataFrame) and not chain_summary.empty:
+                        st.markdown("**Facet-level link summary**")
+                        st.dataframe(chain_summary, width="stretch")
+
+        # Connectivity subset details (expandable, if available)
+        calc_subsets_fn = core.get("calc_subsets") if core else None
+        if calc_subsets_fn and diagnostics.get("obs") is not None:
+            try:
+                config_facet_names = result.get("config", {}).get("facet_names", est_facet_cols)
+                subsets = calc_subsets_fn(diagnostics["obs"], ["Person"] + list(config_facet_names))
+                summary_df = subsets.get("summary", pd.DataFrame()) if subsets else pd.DataFrame()
+                if not summary_df.empty and len(summary_df) >= 2:
+                    st.warning(
+                        f"**{len(summary_df)} disconnected subsets detected.** "
+                        "Measures across subsets are not directly comparable. "
+                        "Consider adding linking elements or anchoring."
+                    )
+                    with st.expander("Subset details"):
+                        st.dataframe(summary_df, width="stretch")
+                        nodes_df = subsets.get("nodes", pd.DataFrame()) if subsets else pd.DataFrame()
+                        if not nodes_df.empty:
+                            st.dataframe(nodes_df, width="stretch")
+                elif not summary_df.empty:
+                    st.success("All elements are connected in a single subset — measures are on a common scale.")
+            except Exception as conn_exc:
+                st.info(
+                    f"Connectivity analysis could not be completed: {conn_exc}. "
+                    "This may happen with very small datasets. Estimation results are still usable "
+                    "but connectivity should be verified manually."
+                )
+
+        st.subheader("Input data preview")
+        st.dataframe(data.head(50), width="stretch")
+
+    # --- Report tab ---
+    with tabs[1]:
+        show_report_section(result, diagnostics, bias_results=bias_results,
+                            all_bias_results=out.get("all_bias_results", {}))
+
+    # --- Measures tab ---
+    with tabs[2]:
+        st.subheader("Person measures")
+        st.caption(
+            "Measures (logits) are estimated abilities (persons) and difficulties/severities "
+            "(facets) on a shared interval scale. Unlike raw scores, logit measures are linear "
+            "and directly comparable across facets. 0 = model origin (typically average difficulty); "
+            "positive = higher ability or greater severity."
+        )
+        person_df = result.get("facets", {}).get("person", pd.DataFrame())
+        if not person_df.empty and "Estimate" in person_df.columns:
+            _p_est = pd.to_numeric(person_df["Estimate"], errors="coerce").dropna()
+            _p_se = pd.to_numeric(person_df.get("SE", pd.Series(dtype=float)), errors="coerce").dropna()
+            if len(_p_est) > 0:
+                st.info(
+                    f"**{len(_p_est):,}** persons measured. "
+                    f"Range: {_p_est.min():.2f} to {_p_est.max():.2f} logits "
+                    f"(spread = {_p_est.max() - _p_est.min():.2f}). "
+                    + (f"Mean SE = {_p_se.mean():.3f}." if len(_p_se) > 0 else "")
+                )
+        if not person_df.empty:
+            n_persons_display = len(person_df)
+            # Search/filter for large tables
+            if n_persons_display > 100:
+                search_query = st.text_input(
+                    "Search persons",
+                    placeholder="Type person ID or name to filter...",
+                    key="person_search",
+                )
+                if search_query:
+                    mask = person_df.apply(
+                        lambda row: row.astype(str).str.contains(search_query, case=False, na=False).any(),
+                        axis=1,
+                    )
+                    filtered = person_df[mask]
+                    st.caption(f"{len(filtered):,} of {n_persons_display:,} persons match '{search_query}'")
+                    st.dataframe(filtered, width="stretch")
+                elif n_persons_display > 500:
+                    st.caption(f"Showing first 500 of {n_persons_display:,} persons. Use search or download full table from Downloads tab.")
+                    st.dataframe(person_df.head(500), width="stretch")
+                else:
+                    st.dataframe(person_df, width="stretch")
+            else:
+                st.dataframe(person_df, width="stretch")
+        else:
+            st.info("No person measures available.")
+        show_posterior_scoring_section(result)
+        population_bundle = result.get("population", {})
+        if isinstance(population_bundle, dict) and population_bundle.get("enabled"):
+            st.subheader("Latent regression / population coefficients")
+            st.caption(
+                "Population coefficients shift the MML prior mean for each person: "
+                f"theta_j ~ N(X_j beta, {float(result.get('config', {}).get('population_prior_sd') or 1.0):.2f}^2). "
+                "They are not person scores; use posterior means for person-level reporting."
+            )
+            pop_coef = population_bundle.get("coefficients", pd.DataFrame())
+            if isinstance(pop_coef, pd.DataFrame) and not pop_coef.empty:
+                st.dataframe(pop_coef, width="stretch")
+            pop_transforms = population_bundle.get("numeric_transforms", pd.DataFrame())
+            if isinstance(pop_transforms, pd.DataFrame) and not pop_transforms.empty:
+                with st.expander("Numeric covariate scaling used for this run", expanded=False):
+                    st.dataframe(pop_transforms, width="stretch")
+            for msg in population_bundle.get("warnings", []):
+                st.warning(msg)
+        st.subheader("Facet measures")
+        others_df = result.get("facets", {}).get("others", pd.DataFrame())
+        if not others_df.empty:
+            st.dataframe(others_df, width="stretch")
+        else:
+            st.info("No facet measures available.")
+        st.subheader("Step parameters")
+        steps_df = result.get("steps", pd.DataFrame())
+        if isinstance(steps_df, pd.DataFrame) and not steps_df.empty:
+            st.dataframe(steps_df, width="stretch")
+        else:
+            st.info("No step parameters available.")
+        slopes_df = result.get("slopes", pd.DataFrame())
+        if isinstance(slopes_df, pd.DataFrame) and not slopes_df.empty:
+            st.subheader("GPCM slope parameters")
+            st.caption(
+                "GPCM slopes are positive discrimination parameters for the step facet. "
+                "Values above 1 indicate steeper category transitions; values below 1 indicate flatter transitions."
+            )
+            st.dataframe(slopes_df, width="stretch")
+        st.subheader("Combined measures + fit")
+        measures_df = diagnostics.get("measures", pd.DataFrame())
+        if not measures_df.empty:
+            # Ensure 95% CI columns are visible (computed by core)
+            if "CI_Lower" not in measures_df.columns and "SE" in measures_df.columns:
+                se = pd.to_numeric(measures_df["SE"], errors="coerce")
+                est = pd.to_numeric(measures_df["Estimate"], errors="coerce")
+                measures_df = measures_df.copy()
+                measures_df.insert(
+                    measures_df.columns.get_loc("SE") + 1,
+                    "CI_Lower", (est - 1.96 * se).round(3),
+                )
+                measures_df.insert(
+                    measures_df.columns.get_loc("CI_Lower") + 1,
+                    "CI_Upper", (est + 1.96 * se).round(3),
+                )
+            st.dataframe(measures_df, width="stretch")
+            if "CI_Lower" in measures_df.columns:
+                st.caption("CI = 95% confidence interval (Estimate ± 1.96 × SE).")
+        else:
+            st.info("No combined measures available.")
+
+    # --- Fit Details tab ---
+    with tabs[3]:
+        show_fit_details_section(diagnostics)
+
+    # --- Dimensionality tab (Phase 3-8) ---
+    with tabs[4]:
+        st.subheader("Dimensionality assessment (PCA of residuals)")
+        if result_compute_pca:
+            show_dimensionality_section(diagnostics, est_facet_cols, core=core)
+        else:
+            st.info(
+                "Residual PCA was skipped for this run. Re-run with Analysis depth = "
+                "Standard, Full publication, or Custom > Compute residual PCA to enable it."
+            )
+
+    # --- Wright Map tab (Phase 3-10) ---
+    with tabs[5]:
+        st.subheader("Wright Map / Yardstick")
+        if result_render_plots:
+            show_wright_map_section(result, diagnostics)
+        else:
+            st.info(
+                "Interactive plot rendering was skipped for this run. Tables remain available; "
+                "re-run with plot rendering enabled to view the Wright Map and yardstick."
+            )
+
+    # --- Visuals tab ---
+    with tabs[6]:
+        if result_render_plots:
+            show_visuals_section(result, diagnostics)
+        else:
+            st.info(
+                "Interactive diagnostic plots were skipped for this run. Use this mode "
+                "for quick model checks, then enable plots for interpretation and reporting."
+            )
+
+    # --- Bias/Interaction tab ---
+    with tabs[7]:
+        all_bias = out.get("all_bias_results", {})
+        show_bias_section(bias_results, core, all_bias_results=all_bias)
+
+    # --- Categories/Steps tab ---
+    with tabs[8]:
+        show_categories_section(result, diagnostics, core)
+
+    # --- Agreement tab ---
+    with tabs[9]:
+        show_agreement_section(result, diagnostics, est_facet_cols, core)
+
+    # --- FACETS-style tables tab ---
+    with tabs[10]:
+        st.caption(
+            "Traditional FACETS measurement report format (Linacre, 2024). "
+            "Each table shows element measures, model SE, and fit statistics "
+            "in the layout familiar to FACETS software users."
+        )
+        if not report_tables:
+            st.info("No FACETS-style report tables were generated.")
+        else:
+            _n_facets = len(report_tables)
+            _n_elements = sum(len(t) for t in report_tables.values())
+            st.info(f"{_n_facets} facet table(s), {_n_elements} total elements.")
+            for facet, tbl in report_tables.items():
+                st.markdown(f"**{facet}**")
+                st.dataframe(tbl, width="stretch")
+            # Combined report download
+            combined_parts = []
+            for facet, df in report_tables.items():
+                tmp = df.copy()
+                tmp.insert(0, "Facet", facet)
+                combined_parts.append(tmp)
+            combined_report = pd.concat(combined_parts, ignore_index=True)
+            st.download_button(
+                "Download all FACETS-style tables (CSV)",
+                data=to_csv_bytes(combined_report),
+                file_name="mfrm_facets_report_all.csv",
+                mime="text/csv",
+            )
+
+    # --- Facet Dashboard tab ---
+    with tabs[11]:
+        show_facet_dashboard(result, diagnostics, est_facet_cols,
+                             all_bias_results=out.get("all_bias_results", {}))
+
+    # --- Prediction/Simulation tab ---
+    with tabs[12]:
+        show_prediction_simulation_section(result, diagnostics, core=core)
+
+    # --- Downloads tab ---
+    with tabs[13]:
+        _render_downloads(result, diagnostics, report_tables, scorefile, residuals, bias_results,
+                          all_bias_results=out.get("all_bias_results", {}),
+                          generate_figures=result_generate_figures)
+
+    # --- Help tab ---
+    with tabs[14]:
+        show_help_section()
+
+
+# ---------------------------------------------------------------------------
+# Report tab (publication-quality, merged from Summary + Help Reporting Guide)
+# ---------------------------------------------------------------------------
+
+def _status_from_bool(ok: bool, *, missing: bool = False) -> str:
+    if missing:
+        return "Missing"
+    return "Ready" if ok else "Review"
+
+
+def _readiness_row(check, status, evidence, action, required=True):
+    return {
+        "Check": check,
+        "Status": status,
+        "Evidence": evidence,
+        "ActionBeforeFinalReport": action,
+        "Required": "Yes" if required else "No",
+    }
+
+
+def build_final_report_readiness(
+    result: dict,
+    diagnostics: dict,
+    all_bias_results: dict | None = None,
+) -> pd.DataFrame:
+    """Final-report readiness table generated from current outputs."""
+    rows: list[dict[str, str]] = []
+    config = result.get("config", {})
+    prep = result.get("prep", {})
+
+    opt = result.get("opt")
+    converged = bool(getattr(opt, "success", False))
+    rows.append(_readiness_row(
+        "Convergence",
+        _status_from_bool(converged),
+        str(getattr(opt, "message", "not available")),
+        "Do not write final interpretations until the optimizer converges." if not converged else "No action needed.",
+    ))
+
+    obs_df = diagnostics.get("obs", pd.DataFrame())
+    if isinstance(obs_df, pd.DataFrame) and not obs_df.empty and "StdResidual" in obs_df.columns:
+        z = pd.to_numeric(obs_df["StdResidual"], errors="coerce").dropna()
+        pct_ge2 = float((z.abs() >= 2).mean() * 100) if len(z) else np.nan
+        fit_ok = np.isfinite(pct_ge2) and pct_ge2 <= FINAL_RESIDUAL_PCT_GE2_READY
+        rows.append(_readiness_row(
+            "Global residual fit",
+            _status_from_bool(fit_ok, missing=not np.isfinite(pct_ge2)),
+            f"{pct_ge2:.1f}% of observations have |z| >= 2." if np.isfinite(pct_ge2) else "Residual summary unavailable.",
+            "Inspect Fit Details and Bias/Interaction before reporting." if not fit_ok else "No action needed.",
+        ))
+    else:
+        rows.append(_readiness_row(
+            "Global residual fit",
+            "Missing",
+            "Observation-level residuals are unavailable.",
+            "Re-run diagnostics before final reporting.",
+        ))
+
+    try:
+        cat_tbl = calc_category_stats(obs_df, result) if isinstance(obs_df, pd.DataFrame) and not obs_df.empty else pd.DataFrame()
+    except Exception as exc:
+        cat_tbl = pd.DataFrame()
+        cat_error = str(exc)
+    else:
+        cat_error = ""
+    step_order = calc_step_order(result.get("steps", pd.DataFrame()))
+    if isinstance(cat_tbl, pd.DataFrame) and not cat_tbl.empty:
+        min_count = pd.to_numeric(cat_tbl.get("Count", pd.Series(dtype=float)), errors="coerce").min()
+        low_count = bool(np.isfinite(min_count) and min_count < 10)
+        avg_tbl = cat_tbl.dropna(subset=["AvgPersonMeasure"]).sort_values("Category") if "AvgPersonMeasure" in cat_tbl.columns else pd.DataFrame()
+        avg_bad = bool(len(avg_tbl) >= 3 and not avg_tbl["AvgPersonMeasure"].is_monotonic_increasing)
+        disorder = bool(isinstance(step_order, pd.DataFrame) and not step_order.empty and (step_order.get("Ordered", pd.Series(dtype=bool)) == False).any())
+        cat_ok = not (low_count or avg_bad or disorder)
+        cat_evidence = []
+        cat_evidence.append(f"minimum category count = {min_count:.0f}" if np.isfinite(min_count) else "category counts unavailable")
+        cat_evidence.append("average measures monotonic" if not avg_bad else "average measures not monotonic")
+        cat_evidence.append("thresholds ordered" if not disorder else "disordered thresholds present")
+        rows.append(_readiness_row(
+            "Category functioning",
+            _status_from_bool(cat_ok),
+            "; ".join(cat_evidence),
+            "Open Categories/Steps; consider collapsing sparse or non-distinct adjacent categories." if not cat_ok else "No action needed.",
+        ))
+    else:
+        rows.append(_readiness_row(
+            "Category functioning",
+            "Missing",
+            f"Category table unavailable. {cat_error}".strip(),
+            "Open Categories/Steps and confirm category diagnostics before final reporting.",
+        ))
+
+    rel_df = diagnostics.get("reliability", pd.DataFrame())
+    if isinstance(rel_df, pd.DataFrame) and not rel_df.empty and "Reliability" in rel_df.columns:
+        person_rel = rel_df[rel_df["Facet"].astype(str) == "Person"] if "Facet" in rel_df.columns else pd.DataFrame()
+        if not person_rel.empty:
+            rel_val = pd.to_numeric(person_rel["Reliability"], errors="coerce").iloc[0]
+            rel_ok = bool(np.isfinite(rel_val) and rel_val >= FINAL_PERSON_RELIABILITY_READY)
+            evidence = f"Person reliability = {rel_val:.3f}" if np.isfinite(rel_val) else "Person reliability unavailable."
+        else:
+            rel_vals = pd.to_numeric(rel_df["Reliability"], errors="coerce").dropna()
+            rel_ok = bool(len(rel_vals) and float(rel_vals.min()) >= FINAL_PERSON_RELIABILITY_READY)
+            evidence = f"lowest facet reliability = {rel_vals.min():.3f}" if len(rel_vals) else "Reliability values unavailable."
+        rows.append(_readiness_row(
+            "Reliability / separation",
+            _status_from_bool(rel_ok),
+            evidence,
+            "Use Design Evaluation to decide whether more ratings or linking observations are needed." if not rel_ok else "No action needed.",
+        ))
+    else:
+        rows.append(_readiness_row(
+            "Reliability / separation",
+            "Missing",
+            "Reliability table unavailable.",
+            "Re-run diagnostics before final reporting.",
+        ))
+
+    pca_enabled = bool(diagnostics.get("pca_enabled", False))
+    pca = diagnostics.get("pca")
+    if pca_enabled and isinstance(pca, dict) and pca.get("eigenvalues") is not None:
+        ev = np.asarray(pca.get("eigenvalues"), dtype=float)
+        ev1 = float(ev[0]) if ev.size else np.nan
+        pca_ok = bool(np.isfinite(ev1) and ev1 < FINAL_PCA_EIGENVALUE_READY)
+        rows.append(_readiness_row(
+            "Dimensionality screen",
+            _status_from_bool(pca_ok, missing=not np.isfinite(ev1)),
+            f"first residual PCA eigenvalue = {ev1:.2f}" if np.isfinite(ev1) else "PCA result unavailable.",
+            "Inspect Dimensionality tab and consider a multidimensional explanation." if not pca_ok else "No action needed.",
+        ))
+    else:
+        rows.append(_readiness_row(
+            "Dimensionality screen",
+            "Review",
+            "Residual PCA was skipped or unavailable.",
+            "Enable residual PCA for final reports unless the analysis is explicitly exploratory.",
+        ))
+
+    person_tbl = result.get("facets", {}).get("person", pd.DataFrame())
+    facet_tbl = result.get("facets", {}).get("others", pd.DataFrame())
+    p_est = pd.to_numeric(person_tbl.get("Estimate", pd.Series(dtype=float)), errors="coerce").dropna() if isinstance(person_tbl, pd.DataFrame) else pd.Series(dtype=float)
+    f_est = pd.to_numeric(facet_tbl.get("Estimate", pd.Series(dtype=float)), errors="coerce").dropna() if isinstance(facet_tbl, pd.DataFrame) else pd.Series(dtype=float)
+    if len(p_est) and len(f_est):
+        overlap = min(float(p_est.max()), float(f_est.max())) - max(float(p_est.min()), float(f_est.min()))
+        target_ok = bool(overlap > 0)
+        rows.append(_readiness_row(
+            "Wright Map targeting",
+            _status_from_bool(target_ok),
+            f"person/facet distribution overlap = {overlap:.2f} logits",
+            "Open Wright Map; check for ceiling/floor effects and weak targeting." if not target_ok else "No action needed.",
+        ))
+    else:
+        rows.append(_readiness_row(
+            "Wright Map targeting",
+            "Missing",
+            "Finite person/facet estimates unavailable.",
+            "Re-run estimation or inspect extreme data.",
+        ))
+
+    all_bias = all_bias_results or {}
+    if all_bias:
+        n_sig = 0
+        n_total = 0
+        for bundle in all_bias.values():
+            tbl = bundle.get("table") if isinstance(bundle, dict) else None
+            if isinstance(tbl, pd.DataFrame) and "t" in tbl.columns:
+                t_vals = pd.to_numeric(tbl["t"], errors="coerce").dropna()
+                n_total += len(t_vals)
+                n_sig += int((t_vals.abs() >= 2).sum())
+        bias_ok = n_sig == 0 or n_sig <= max(1, int(0.05 * max(n_total, 1)))
+        rows.append(_readiness_row(
+            "Bias / local interaction",
+            _status_from_bool(bias_ok),
+            f"{n_sig} of {n_total} tested interactions have |t| >= 2.",
+            "Substantively review flagged pairs; consider multiplicity and design balance." if n_sig else "No action needed.",
+            required=False,
+        ))
+    else:
+        rows.append(_readiness_row(
+            "Bias / local interaction",
+            "Review",
+            "No bias/interaction scan was computed.",
+            "Use Selected pair or Full publication before making no-bias claims.",
+            required=False,
+        ))
+
+    anchor_audit = config.get("anchor_audit", {})
+    if isinstance(anchor_audit, dict):
+        status = anchor_audit.get("overall_status", "ok")
+        issue_tbl = anchor_audit.get("issues", pd.DataFrame())
+        n_issues = len(issue_tbl) if isinstance(issue_tbl, pd.DataFrame) else 0
+        rows.append(_readiness_row(
+            "Anchor / linking audit",
+            "Ready" if status == "ok" else "Review",
+            anchor_audit.get("message", f"{n_issues} issue(s)."),
+            "Fix or explicitly justify anchor/linking issues before linking across runs." if status != "ok" else "No action needed for a single-run report.",
+            required=False,
+        ))
+    drift = result.get("anchor_drift", {})
+    if isinstance(drift, dict) and drift.get("available"):
+        drift_summary = drift.get("summary", pd.DataFrame())
+        if isinstance(drift_summary, pd.DataFrame) and not drift_summary.empty:
+            d0 = drift_summary.iloc[0]
+            status = "Ready" if str(d0.get("Status", "")) == "Ready" else "Review"
+            rows.append(_readiness_row(
+                "Anchor drift / constraint consistency",
+                status,
+                f"max fixed-anchor drift = {float(d0.get('MaxAbsAnchorDrift', np.nan)):.3g}; "
+                f"max group-mean drift = {float(d0.get('MaxAbsGroupMeanDrift', np.nan)):.3g}",
+                d0.get("Action", "Review anchor drift table before linking."),
+                required=False,
+            ))
+    chain = result.get("equating_chain", {})
+    if isinstance(chain, dict) and chain.get("available"):
+        edges = chain.get("edges", pd.DataFrame())
+        n_edges = len(edges) if isinstance(edges, pd.DataFrame) else 0
+        weak = int((edges["Strength"].astype(str) == "Weak link").sum()) if isinstance(edges, pd.DataFrame) and "Strength" in edges.columns else 0
+        rows.append(_readiness_row(
+            "Equating-chain summary",
+            "Ready" if weak == 0 else "Review",
+            f"{n_edges} anchor-chain edge(s); {weak} weak link(s).",
+            "Review weak links before cross-run linking claims." if weak else "Use with anchor drift and content-match review.",
+            required=False,
+        ))
+
+    marginal = diagnostics.get("marginal_fit", {})
+    if isinstance(marginal, dict) and marginal.get("available"):
+        n_review = int(marginal.get("n_review", 0) or 0)
+        rows.append(_readiness_row(
+            "Strict marginal diagnostics",
+            "Ready" if n_review == 0 else "Review",
+            f"{n_review} marginal row(s) flagged.",
+            "Inspect strict marginal summaries before final MML reporting." if n_review else "No action needed.",
+            required=config.get("method") == "MML",
+        ))
+    elif config.get("method") == "MML":
+        rows.append(_readiness_row(
+            "Strict marginal diagnostics",
+            "Review",
+            marginal.get("reason", "Strict marginal diagnostics were skipped."),
+            "Enable strict marginal diagnostics for final MML reports when feasible.",
+            required=False,
+        ))
+
+    readiness = pd.DataFrame(rows)
+    status_order = {"Not ready": 0, "Review": 1, "Missing": 2, "Ready": 3}
+    if "Status" in readiness.columns:
+        readiness["_sort"] = readiness["Status"].map(status_order).fillna(2)
+        readiness = readiness.sort_values(["_sort", "Check"]).drop(columns=["_sort"]).reset_index(drop=True)
+    return readiness
+
+
+def generate_method_appendix_text(
+    result: dict,
+    diagnostics: dict,
+    all_bias_results: dict | None = None,
+) -> str:
+    """Compact method appendix for reproducible reporting."""
+    config = result.get("config", {})
+    prep = result.get("prep", {})
+    opt = result.get("opt")
+    lines = [
+        "# MFRM Method Appendix",
+        "",
+        "## Analysis Scope",
+        "",
+        "- Software: standalone Python Streamlit app; no `mfrmr`, `rpy2`, `Rscript`, or external MFRM engine is called.",
+        f"- Release label: {config.get('release_label', APP_RELEASE_LABEL)}; app version: {config.get('app_version', APP_VERSION)}.",
+        "- Validation stance: functional parity target; exact numerical equality with FACETS/TAM/sirt/mirt/mfrmr is not claimed unless a specific external cross-check is reported.",
+        f"- Run fingerprint: {config.get('run_fingerprint', config.get('analysis_config_fingerprint', 'not recorded'))}.",
+        f"- Model: {config.get('model', 'unknown')}.",
+        f"- Estimation method: {config.get('method', 'unknown')}.",
+        f"- Optimizer / engine: {config.get('optimizer', config.get('mml_engine', 'unknown'))}.",
+        f"- Observations: {prep.get('n_obs', 'unknown')}; persons: {prep.get('n_person', 'unknown')}; categories: {config.get('n_cat', 'unknown')} ({prep.get('rating_min', '?')} to {prep.get('rating_max', '?')}).",
+        f"- Facets: {', '.join(map(str, config.get('facet_names', []))) or 'none recorded'}.",
+        "",
+        "## Score Support",
+        "",
+        f"- Keep original category values: {bool(prep.get('keep_original', False))}.",
+        f"- Explicit score range supplied: {bool(prep.get('score_range_explicit', False))}.",
+        f"- Retained zero-count categories: {prep.get('unused_score_categories', [])}.",
+    ]
+    if config.get("model") == "GPCM":
+        lines.extend([
+            "",
+            "## GPCM Scope",
+            "",
+            f"- Bounded GPCM path: `slope_facet = step_facet = {config.get('step_facet')}`.",
+            "- Slope parameters are positive and identified by fixing the geometric mean slope to 1.",
+            "- Slopes describe category-transition steepness and should not be interpreted as Rasch severity parameters.",
+        ])
+    pop = config.get("population_model", {})
+    if isinstance(pop, dict) and pop.get("enabled"):
+        lines.extend([
+            "",
+            "## Latent Regression / Population Model",
+            "",
+            f"- `population_formula`: `{config.get('population_formula', '')}`.",
+            "- MML quadrature is shifted by the fitted person-level population mean X beta.",
+            f"- Numeric covariates standardized before fitting: {bool(pop.get('standardize_numeric', False))}.",
+            f"- Covariate type overrides: categorical={pop.get('categorical_terms', [])}; numeric={pop.get('numeric_terms', [])}.",
+            f"- Fixed population prior SD: {float(config.get('population_prior_sd') or 1.0):.3f}; the variance is not estimated.",
+        ])
+    if config.get("method") == "MML":
+        lines.extend([
+            "",
+            "## MML Diagnostics",
+            "",
+            f"- Requested MML engine: {config.get('mml_engine_requested', config.get('ui_mml_engine', 'unknown'))}.",
+            f"- Resolved MML engine: {config.get('mml_engine', 'unknown')}.",
+            f"- Quadrature points: {config.get('quad_points', 'unknown')}.",
+            f"- Population prior SD: {config.get('population_prior_sd', 'unknown')}.",
+            f"- Posterior scoring available: {result.get('posterior', {}).get('available') if isinstance(result.get('posterior'), dict) else False}.",
+            f"- Plausible values requested: {bool(config.get('compute_plausible_values', False))}; draws: {int(config.get('n_plausible_values') or 0)}.",
+            f"- Strict marginal diagnostics enabled: {bool(diagnostics.get('marginal_fit_enabled', False))}.",
+        ])
+    script_support = build_script_support_status(result)
+    lines.extend([
+        "",
+        "## Reproducibility Scripts",
+        "",
+        "- Python app-engine runner: exact current app path.",
+        f"- Portable self-contained JMLE/R available for this run: {bool(script_support.get('portable_available', False))}.",
+    ])
+    if script_support.get("portable_blockers"):
+        lines.append(
+            "- Portable script blocker(s): "
+            + ", ".join(map(str, script_support.get("portable_blockers", [])))
+            + ". Use the app-engine runner instead."
+        )
+    anchor = config.get("anchor_audit", {})
+    if isinstance(anchor, dict):
+        lines.extend([
+            "",
+            "## Anchor / Linking Review",
+            "",
+            f"- Anchor audit status: {anchor.get('overall_status', 'unknown')}.",
+            f"- Anchor audit message: {anchor.get('message', 'not available')}",
+        ])
+        drift = result.get("anchor_drift", {})
+        if isinstance(drift, dict) and drift.get("available"):
+            lines.append("- Anchor drift scope: post-fit hard-constraint consistency check; empirical unconstrained drift is not estimated.")
+        chain = result.get("equating_chain", {})
+        if isinstance(chain, dict) and chain.get("available"):
+            edges = chain.get("edges", pd.DataFrame())
+            n_edges = len(edges) if isinstance(edges, pd.DataFrame) else 0
+            lines.append(f"- Equating-chain summary: {n_edges} current-run anchor-chain edge(s); full historical multi-run chain reconstruction is not included.")
+    all_bias = all_bias_results or {}
+    lines.extend([
+        "",
+        "## Optional Screens",
+        "",
+        f"- Residual PCA enabled: {bool(diagnostics.get('pca_enabled', False))}.",
+        f"- Bias/interaction pair outputs: {len(all_bias)}.",
+        "- Prediction scope: fitted design rows plus supplied new/held-out rows. For supplied rows, known persons use fitted measures; unknown persons require MML and are integrated over the fitted population distribution.",
+        "- Simulation scope: optional fixed-parameter row-probability simulation; not a full refit simulation.",
+        "- Refit simulation scope: optional small replicate stress test with random row-level missingness and model refitting; not a formal power study.",
+        "- Design evaluation scope: observed design balance and reliability forecast; not a prospective guarantee.",
+        "",
+        "## Convergence",
+        "",
+        f"- Converged: {bool(getattr(opt, 'success', False))}.",
+        f"- Message: {getattr(opt, 'message', 'not available')}.",
+        f"- Gradient norm: {getattr(opt, 'gradient_norm', 'not available')}.",
+    ])
+    return "\n".join(lines) + "\n"
+
+
+def _render_final_readiness_section(
+    result: dict,
+    diagnostics: dict,
+    all_bias_results: dict | None = None,
+) -> None:
+    st.subheader("Final Report Readiness")
+    st.caption(
+        "A compact gate check before writing final conclusions. "
+        "`Review` does not always mean the model is unusable, but it must be inspected or justified."
+    )
+    readiness = build_final_report_readiness(result, diagnostics, all_bias_results)
+    if readiness.empty:
+        st.info("No readiness checks were generated.")
+        return
+    status_counts = readiness["Status"].value_counts().to_dict()
+    cols = st.columns(3)
+    cols[0].metric("Ready", int(status_counts.get("Ready", 0)))
+    cols[1].metric("Review", int(status_counts.get("Review", 0)))
+    cols[2].metric("Missing", int(status_counts.get("Missing", 0)))
+    if int(status_counts.get("Review", 0)) or int(status_counts.get("Missing", 0)):
+        st.warning("Resolve or explicitly justify rows marked Review/Missing before final reporting.")
+    else:
+        st.success("No required readiness issues were detected.")
+    st.dataframe(readiness, width="stretch", hide_index=True)
+    st.download_button(
+        "Download readiness checklist (CSV)",
+        data=to_csv_bytes(readiness),
+        file_name="mfrm_final_report_readiness.csv",
+        mime="text/csv",
+        key="dl_final_readiness_report_tab",
+    )
+
+
+def _render_method_appendix_section(
+    result: dict,
+    diagnostics: dict,
+    all_bias_results: dict | None = None,
+) -> None:
+    st.subheader("Compact Method Appendix")
+    st.caption(
+        "A concise, reproducible methods note. Edit wording for your study design before submission."
+    )
+    appendix = generate_method_appendix_text(result, diagnostics, all_bias_results)
+    st.code(appendix, language="markdown")
+    st.download_button(
+        "Download method appendix (Markdown)",
+        data=appendix.encode("utf-8"),
+        file_name="mfrm_method_appendix.md",
+        mime="text/markdown",
+        key="dl_method_appendix_report_tab",
+    )
+
+
+def show_report_section(
+    result: dict, diagnostics: dict, *,
+    bias_results: dict | None = None,
+    all_bias_results: dict | None = None,
+) -> None:
+    """Publication-quality report with APA text, tables, checklist, equivalence, Stan."""
+    st.subheader("Publication-Quality Report")
+    st.caption(
+        "Comprehensive reporting output for manuscripts. Includes auto-generated APA text, "
+        "summary tables, an auto-filled reporting checklist, facet equivalence analysis, "
+        "and Stan code for full Bayesian estimation."
+    )
+
+    report_tabs = st.tabs([
+        "APA Report", "Readiness", "Tables", "Reporting Checklist",
+        "Method Appendix", "Facet Equivalence", "Stan Code",
+    ])
+
+    # ---- Sub-tab 0: APA Report ----
+    with report_tabs[0]:
+        _render_apa_report(result, diagnostics,
+                           bias_results=bias_results,
+                           all_bias_results=all_bias_results)
+
+    # ---- Sub-tab 1: Tables & Figures ----
+    with report_tabs[1]:
+        _render_final_readiness_section(result, diagnostics, all_bias_results)
+
+    # ---- Sub-tab 2: Tables & Figures ----
+    with report_tabs[2]:
+        _render_report_tables(result, diagnostics)
+
+    # ---- Sub-tab 3: Reporting Checklist ----
+    with report_tabs[3]:
+        _render_reporting_checklist(result, diagnostics, all_bias_results)
+
+    # ---- Sub-tab 4: Method Appendix ----
+    with report_tabs[4]:
+        _render_method_appendix_section(result, diagnostics, all_bias_results)
+
+    # ---- Sub-tab 5: Facet Equivalence ----
+    with report_tabs[5]:
+        _render_facet_equivalence(result, diagnostics)
+
+    # ---- Sub-tab 6: Stan Code ----
+    with report_tabs[6]:
+        _render_stan_code(result)
+
+
+def show_convergence_section(result: dict) -> None:
+    """Render optimizer convergence diagnostics with beginner-facing interpretation."""
+    convergence = result.get("convergence", pd.DataFrame())
+    if not isinstance(convergence, pd.DataFrame) or convergence.empty:
+        st.info("No optimizer convergence diagnostics available.")
+        return
+
+    st.subheader("Convergence diagnostics")
+    display = convergence.copy()
+    for col in ["FinalLogLik", "LogLikStart", "LogLikChange", "GradientNorm", "ElapsedSeconds"]:
+        if col in display.columns:
+            display[col] = pd.to_numeric(display[col], errors="coerce").round(6)
+    st.dataframe(display, width="stretch")
+
+    row = convergence.iloc[0]
+    converged = bool(row.get("Converged", False))
+    requested = str(row.get("RequestedMmlEngine", "") or "")
+    resolved = str(row.get("ResolvedMmlEngine", "") or "")
+    grad = pd.to_numeric(pd.Series([row.get("GradientNorm", np.nan)]), errors="coerce").iloc[0]
+    elapsed = pd.to_numeric(pd.Series([row.get("ElapsedSeconds", np.nan)]), errors="coerce").iloc[0]
+    if converged:
+        st.success(
+            "The optimizer reported convergence. Treat the remaining diagnostics "
+            "as checks of model fit and rating-scale behavior rather than as optimizer failures."
+        )
+    else:
+        st.error(
+            "The optimizer did not meet its convergence rule. Do not use estimates for final "
+            "interpretation until you inspect sparse/extreme data or increase `maxit`."
+        )
+    if requested.lower().startswith("auto"):
+        st.info(
+            f"Auto MML selected **{resolved or 'unknown'}**. "
+            "Auto tries hybrid first and falls back to EM only if the hybrid path does not converge."
+        )
+    if np.isfinite(grad):
+        if grad <= 1e-3:
+            st.caption(f"Final gradient norm = {grad:.2e}. Smaller values indicate a flatter optimum.")
+        else:
+            st.caption(
+                f"Final gradient norm = {grad:.2e}. Interpret together with convergence status; "
+                "large values can indicate remaining optimizer movement."
+            )
+    if np.isfinite(elapsed):
+        st.caption(f"Optimizer elapsed time: {elapsed:.2f} seconds.")
+
+
+def show_posterior_scoring_section(result: dict) -> None:
+    """Render MML posterior score and plausible-value outputs."""
+    st.subheader("Posterior scoring / plausible values")
+    posterior = result.get("posterior", {})
+    if not isinstance(posterior, dict) or not posterior.get("available"):
+        st.info(
+            posterior.get(
+                "reason",
+                "Posterior scoring and plausible values are available for MML runs only.",
+            )
+        )
+        return
+
+    st.caption(
+        "Posterior scores summarize each person's MML posterior distribution. "
+        "The posterior mean is the EAP score; posterior SD and 5%-95% quantiles show uncertainty. "
+        "Plausible values are random posterior draws for group-level uncertainty analyses, not individual ranking."
+    )
+    st.info(posterior.get("interpretation", "Use posterior scores together with fit and reliability checks."))
+
+    scores = posterior.get("scores", pd.DataFrame())
+    if isinstance(scores, pd.DataFrame) and not scores.empty:
+        sd = pd.to_numeric(scores.get("PosteriorSD", pd.Series(dtype=float)), errors="coerce").dropna()
+        q05 = pd.to_numeric(scores.get("PosteriorQ05", pd.Series(dtype=float)), errors="coerce")
+        q95 = pd.to_numeric(scores.get("PosteriorQ95", pd.Series(dtype=float)), errors="coerce")
+        width = (q95 - q05).dropna()
+        cols = st.columns(3)
+        cols[0].metric("Posterior-scored persons", f"{len(scores):,}")
+        cols[1].metric("Mean posterior SD", f"{sd.mean():.3f}" if len(sd) else "n/a")
+        cols[2].metric("Mean 90% interval width", f"{width.mean():.3f}" if len(width) else "n/a")
+        st.dataframe(scores, width="stretch")
+    else:
+        st.info("No posterior score table available.")
+
+    pv = posterior.get("plausible_values", pd.DataFrame())
+    if isinstance(pv, pd.DataFrame) and not pv.empty:
+        st.caption(
+            f"{posterior.get('n_plausible_values', pv.shape[1] - 1)} plausible value(s) per person "
+            f"generated with seed {posterior.get('seed', 'n/a')}."
+        )
+        with st.expander("Plausible values", expanded=False):
+            st.dataframe(pv, width="stretch")
+    else:
+        st.info(
+            "Plausible value export was not requested for this run. "
+            "Use Full publication or Custom > Export plausible values with MML to generate PV columns."
+        )
+
+
+def show_prediction_simulation_section(result: dict, diagnostics: dict, core: dict | None = None) -> None:
+    """Render fitted prediction, simulation, and design-evaluation outputs."""
+    st.subheader("Prediction / simulation / design evaluation")
+    st.caption(
+        "This section works from the standalone Python fitted model. Current scope: "
+        "predictions for fitted design rows, simulations that hold fitted parameters fixed, "
+        "and design-planning summaries from observed balance and reliability."
+    )
+
+    prediction_fn = (core or {}).get("compute_fitted_prediction_table") or compute_fitted_prediction_table
+    new_design_prediction_fn = (core or {}).get("predict_mfrm_design") or predict_mfrm_design
+    simulation_fn = (core or {}).get("simulate_from_fitted_model") or simulate_from_fitted_model
+    refit_simulation_fn = (core or {}).get("simulate_refit_design") or simulate_refit_design
+    design_fn = (core or {}).get("evaluate_design_from_fitted") or evaluate_design_from_fitted
+
+    st.markdown("**Fitted-row prediction**")
+    st.info(
+        "Use this table to see which category the fitted model expects for each observed row. "
+        "`PredictionConfidence` is the probability of the most likely category. "
+        "High confidence with large residuals is a stronger signal to inspect than low-confidence misses."
+    )
+    try:
+        pred_tbl = prediction_fn(result)
+    except Exception as exc:
+        st.warning(f"Prediction table could not be computed: {exc}")
+        pred_tbl = pd.DataFrame()
+
+    if isinstance(pred_tbl, pd.DataFrame) and not pred_tbl.empty:
+        pred_obs = pd.to_numeric(pred_tbl.get("Observed", pd.Series(dtype=float)), errors="coerce")
+        pred_cat = pd.to_numeric(pred_tbl.get("PredictedCategory", pred_tbl.get("MostLikely", pd.Series(dtype=float))), errors="coerce")
+        conf = pd.to_numeric(pred_tbl.get("PredictionConfidence", pred_tbl.get("MaxProb", pd.Series(dtype=float))), errors="coerce").dropna()
+        exact_mask = pred_obs.notna() & pred_cat.notna()
+        exact_rate = float((pred_obs[exact_mask] == pred_cat[exact_mask]).mean()) if exact_mask.any() else np.nan
+        cols = st.columns(3)
+        cols[0].metric("Predicted rows", f"{len(pred_tbl):,}")
+        cols[1].metric("Mean confidence", f"{conf.mean():.3f}" if len(conf) else "n/a")
+        cols[2].metric("Exact category match", f"{exact_rate * 100:.1f}%" if np.isfinite(exact_rate) else "n/a")
+        if len(pred_tbl) > 500:
+            st.caption(f"Showing first 500 of {len(pred_tbl):,} rows. Download the full prediction table below.")
+            st.dataframe(pred_tbl.head(500), width="stretch")
+        else:
+            st.dataframe(pred_tbl, width="stretch")
+        st.download_button(
+            "Download fitted predictions (CSV)",
+            data=to_csv_bytes(pred_tbl),
+            file_name="mfrm_fitted_predictions.csv",
+            mime="text/csv",
+            key="dl_fitted_predictions_tab",
+        )
+    else:
+        st.info("No prediction table is available for this run.")
+
+    st.markdown("**New or held-out design prediction**")
+    with st.expander("Predict supplied design rows", expanded=False):
+        facet_names = list(result.get("config", {}).get("facet_names", []))
+        template_cols = ["Person", *facet_names]
+        if result.get("config", {}).get("population_model", {}).get("enabled"):
+            template_cols.extend([
+                c for c in result.get("config", {}).get("population_model", {}).get("terms", [])
+                if c not in template_cols
+            ])
+        st.caption(
+            "Supply rows with `Person` plus the fitted facet columns: "
+            f"`{', '.join(template_cols)}`. Facet levels must already exist in the fitted model. "
+            "Known persons use their fitted measure. Unknown persons require MML; with latent regression, "
+            "include the population covariates so the population mean can be shifted."
+        )
+        template = pd.DataFrame([{col: "" for col in template_cols}])
+        st.download_button(
+            "Download new-design template (CSV)",
+            data=to_csv_bytes(template),
+            file_name="mfrm_new_design_template.csv",
+            mime="text/csv",
+            key="dl_new_design_template",
+        )
+        new_design_file = st.file_uploader(
+            "New/held-out design file (CSV/TSV)",
+            type=["csv", "tsv", "txt"],
+            key="new_design_prediction_file",
+            help="The file should include Person and all fitted facet columns. Score is optional for held-out residuals.",
+        )
+        new_design_text = st.text_area(
+            "Or paste new/held-out design rows",
+            value="",
+            height=120,
+            key="new_design_prediction_text",
+            placeholder="Person,Rater,Task,Criterion,Score\nNEW1,R1,Task1,Content,",
+        )
+        score_col_new = st.text_input(
+            "Observed score column for held-out residuals (optional)",
+            value="Score",
+            key="new_design_prediction_score_col",
+        )
+        supplemental_person_file = None
+        supplemental_person_text = ""
+        person_id_col_new = "Person"
+        pop_model = result.get("config", {}).get("population_model", {})
+        if isinstance(pop_model, dict) and pop_model.get("enabled") and pop_model.get("terms"):
+            with st.expander("Optional supplemental person_data for population covariates", expanded=False):
+                st.caption(
+                    "Use this only if the covariates are not in the new design table. "
+                    "It must contain one row per prediction person and the fitted population_formula terms."
+                )
+                person_id_col_new = st.text_input(
+                    "person_data ID column",
+                    value="Person",
+                    key="new_design_person_id_col",
+                )
+                supplemental_person_file = st.file_uploader(
+                    "Supplemental person_data (CSV/TSV)",
+                    type=["csv", "tsv", "txt"],
+                    key="new_design_person_data_file",
+                )
+                supplemental_person_text = st.text_area(
+                    "Or paste supplemental person_data",
+                    value="",
+                    height=100,
+                    key="new_design_person_data_text",
+                )
+
+        new_pred_state_key = "mfrm_new_design_prediction_bundle"
+        new_pred_meta_key = "mfrm_new_design_prediction_meta"
+        summary_df_for_new_pred = result.get("summary", pd.DataFrame())
+        loglik_for_new_pred = (
+            str(summary_df_for_new_pred["LogLik"].iloc[0])
+            if isinstance(summary_df_for_new_pred, pd.DataFrame)
+            and not summary_df_for_new_pred.empty
+            and "LogLik" in summary_df_for_new_pred.columns else "na"
+        )
+        new_pred_meta = (
+            result.get("config", {}).get("method"),
+            result.get("config", {}).get("model"),
+            tuple(result.get("config", {}).get("facet_names", [])),
+            result.get("config", {}).get("step_facet"),
+            result.get("config", {}).get("slope_facet"),
+            result.get("prep", {}).get("n_obs"),
+            result.get("prep", {}).get("n_person"),
+            result.get("prep", {}).get("rating_min"),
+            result.get("prep", {}).get("rating_max"),
+            loglik_for_new_pred,
+            result.get("config", {}).get("population_formula"),
+            tuple(result.get("config", {}).get("population_categorical_terms", [])),
+            tuple(result.get("config", {}).get("population_numeric_terms", [])),
+            score_col_new,
+            person_id_col_new,
+            str(new_design_text or ""),
+            getattr(new_design_file, "name", None),
+            getattr(new_design_file, "size", None),
+            str(supplemental_person_text or ""),
+            getattr(supplemental_person_file, "name", None),
+            getattr(supplemental_person_file, "size", None),
+        )
+        if st.session_state.get(new_pred_meta_key) != new_pred_meta:
+            st.session_state.pop(new_pred_state_key, None)
+        if st.button("Predict new/held-out rows", key="run_new_design_prediction"):
+            try:
+                new_design = (core or {}).get("read_flexible_table", read_flexible_table)(
+                    new_design_text,
+                    new_design_file,
+                    header=True,
+                )
+                if new_design.empty:
+                    raise ValueError("No new design rows were supplied.")
+                supplemental_person = pd.DataFrame()
+                if supplemental_person_file is not None or str(supplemental_person_text or "").strip():
+                    supplemental_person = (core or {}).get("read_flexible_table", read_flexible_table)(
+                        supplemental_person_text,
+                        supplemental_person_file,
+                        header=True,
+                    )
+                st.session_state[new_pred_state_key] = new_design_prediction_fn(
+                    result,
+                    new_design,
+                    person_col="Person",
+                    score_col=score_col_new if score_col_new in new_design.columns else None,
+                    person_data=supplemental_person,
+                    person_id_col=person_id_col_new,
+                )
+                st.session_state[new_pred_meta_key] = new_pred_meta
+            except Exception as exc:
+                st.session_state[new_pred_state_key] = {
+                    "available": False,
+                    "reason": str(exc),
+                    "table": pd.DataFrame(),
+                    "issues": pd.DataFrame(),
+                }
+                st.session_state[new_pred_meta_key] = new_pred_meta
+
+        new_pred_bundle = st.session_state.get(new_pred_state_key)
+        if isinstance(new_pred_bundle, dict):
+            if not new_pred_bundle.get("available"):
+                st.warning(new_pred_bundle.get("reason", "New design prediction is unavailable."))
+            else:
+                st.info(new_pred_bundle.get("interpretation", "Interpret as a scenario prediction."))
+                new_pred_tbl = new_pred_bundle.get("table", pd.DataFrame())
+                if isinstance(new_pred_tbl, pd.DataFrame) and not new_pred_tbl.empty:
+                    n_unknown = int((new_pred_tbl.get("PersonStatus", pd.Series(dtype=str)).astype(str) == "Unknown").sum())
+                    conf = pd.to_numeric(new_pred_tbl.get("PredictionConfidence", pd.Series(dtype=float)), errors="coerce").dropna()
+                    cols = st.columns(3)
+                    cols[0].metric("Predicted rows", f"{len(new_pred_tbl):,}")
+                    cols[1].metric("Unknown persons", f"{n_unknown:,}")
+                    cols[2].metric("Mean confidence", f"{conf.mean():.3f}" if len(conf) else "n/a")
+                    if len(new_pred_tbl) > 500:
+                        st.caption(f"Showing first 500 of {len(new_pred_tbl):,} rows.")
+                        st.dataframe(new_pred_tbl.head(500), width="stretch")
+                    else:
+                        st.dataframe(new_pred_tbl, width="stretch")
+                    st.download_button(
+                        "Download new/held-out predictions (CSV)",
+                        data=to_csv_bytes(new_pred_tbl),
+                        file_name="mfrm_new_design_predictions.csv",
+                        mime="text/csv",
+                        key="dl_new_design_predictions",
+                    )
+
+    st.markdown("**Simulation from fitted probabilities**")
+    st.caption(
+        "This keeps the current persons, raters, tasks, criteria, and fitted parameters fixed. "
+        "It is a fast planning check, not a future-outcome guarantee and not a full refit simulation."
+    )
+    sim_cols = st.columns([1, 1, 1])
+    with sim_cols[0]:
+        n_reps = int(st.number_input(
+            "Simulation replicates",
+            min_value=1,
+            max_value=2000,
+            value=100,
+            step=25,
+            key="prediction_sim_replicates",
+            help="More replicates make summary ranges smoother but take longer on large datasets.",
+        ))
+    with sim_cols[1]:
+        sim_seed = int(st.number_input(
+            "Simulation seed",
+            min_value=1,
+            max_value=2_147_483_647,
+            value=20260411,
+            step=1,
+            key="prediction_sim_seed",
+        ))
+    with sim_cols[2]:
+        include_rows = st.checkbox(
+            "Keep row-level draws",
+            value=False,
+            key="prediction_sim_row_draws",
+            help="Useful for small datasets. Large row-by-replicate outputs are skipped automatically.",
+        )
+
+    sim_state_key = "mfrm_prediction_simulation_bundle"
+    sim_meta_key = "mfrm_prediction_simulation_meta"
+    summary_df = result.get("summary", pd.DataFrame())
+    loglik_for_key = (
+        str(summary_df["LogLik"].iloc[0])
+        if isinstance(summary_df, pd.DataFrame) and not summary_df.empty and "LogLik" in summary_df.columns else "na"
+    )
+    sim_meta = (
+        result.get("config", {}).get("method"),
+        result.get("config", {}).get("model"),
+        result.get("prep", {}).get("n_obs"),
+        loglik_for_key,
+        n_reps,
+        sim_seed,
+        include_rows,
+    )
+    if st.session_state.get(sim_meta_key) != sim_meta:
+        st.session_state.pop(sim_state_key, None)
+    if st.button("Run fitted simulation", key="run_fitted_simulation"):
+        try:
+            st.session_state[sim_state_key] = simulation_fn(
+                result,
+                n_replicates=n_reps,
+                seed=sim_seed,
+                include_row_draws=include_rows,
+            )
+            st.session_state[sim_meta_key] = sim_meta
+        except Exception as exc:
+            st.session_state[sim_state_key] = {
+                "available": False,
+                "reason": f"Simulation failed: {exc}",
+                "summary": pd.DataFrame(),
+                "category_counts": pd.DataFrame(),
+                "row_draws": pd.DataFrame(),
+            }
+            st.session_state[sim_meta_key] = sim_meta
+
+    sim_bundle = st.session_state.get(sim_state_key)
+    if isinstance(sim_bundle, dict):
+        if not sim_bundle.get("available"):
+            st.warning(sim_bundle.get("reason", "Simulation is unavailable."))
+        else:
+            st.info(sim_bundle.get("interpretation", "Interpret simulation output as a planning forecast."))
+            sim_summary = sim_bundle.get("summary", pd.DataFrame())
+            sim_counts = sim_bundle.get("category_counts", pd.DataFrame())
+            sim_rows = sim_bundle.get("row_draws", pd.DataFrame())
+            if isinstance(sim_summary, pd.DataFrame) and not sim_summary.empty:
+                mean_scores = pd.to_numeric(sim_summary["MeanScore"], errors="coerce").dropna()
+                mean_minus_obs = pd.to_numeric(sim_summary["MeanMinusObserved"], errors="coerce").dropna()
+                cols = st.columns(3)
+                cols[0].metric("Replicates", f"{len(sim_summary):,}")
+                cols[1].metric("Mean simulated score", f"{mean_scores.mean():.3f}" if len(mean_scores) else "n/a")
+                cols[2].metric("Mean minus observed", f"{mean_minus_obs.mean():+.3f}" if len(mean_minus_obs) else "n/a")
+                st.dataframe(sim_summary, width="stretch")
+                st.download_button(
+                    "Download simulation summary (CSV)",
+                    data=to_csv_bytes(sim_summary),
+                    file_name="mfrm_simulation_summary.csv",
+                    mime="text/csv",
+                    key="dl_sim_summary_tab",
+                )
+            if isinstance(sim_counts, pd.DataFrame) and not sim_counts.empty:
+                with st.expander("Category counts by replicate", expanded=False):
+                    st.dataframe(sim_counts, width="stretch")
+                    st.download_button(
+                        "Download simulation category counts (CSV)",
+                        data=to_csv_bytes(sim_counts),
+                        file_name="mfrm_simulation_category_counts.csv",
+                        mime="text/csv",
+                        key="dl_sim_counts_tab",
+                    )
+            if isinstance(sim_rows, pd.DataFrame) and not sim_rows.empty:
+                with st.expander("Row-level simulation draws", expanded=False):
+                    st.dataframe(sim_rows, width="stretch")
+                    st.download_button(
+                        "Download row-level simulation draws (CSV)",
+                        data=to_csv_bytes(sim_rows),
+                        file_name="mfrm_simulation_row_draws.csv",
+                        mime="text/csv",
+                        key="dl_sim_rows_tab",
+                    )
+
+    st.markdown("**Prospective missingness + refit simulation**")
+    with st.expander("Run small refit stress test", expanded=False):
+        st.caption(
+            "This simulates new scores from the fitted probabilities, optionally removes rows, "
+            "then refits the same model. Keep replicates small; this is a stress test, not a formal power study."
+        )
+        refit_cols = st.columns([1, 1, 1, 1])
+        with refit_cols[0]:
+            refit_reps = int(st.number_input(
+                "Refit replicates",
+                min_value=1,
+                max_value=50,
+                value=3,
+                step=1,
+                key="refit_sim_replicates",
+            ))
+        with refit_cols[1]:
+            refit_missing = float(st.slider(
+                "Missing rows",
+                min_value=0.0,
+                max_value=0.80,
+                value=0.0,
+                step=0.05,
+                key="refit_sim_missing_rate",
+                help="Random row-level missingness applied before refitting.",
+            ))
+        with refit_cols[2]:
+            refit_maxit = int(st.number_input(
+                "Refit maxit",
+                min_value=5,
+                max_value=200,
+                value=30,
+                step=5,
+                key="refit_sim_maxit",
+            ))
+        with refit_cols[3]:
+            refit_seed = int(st.number_input(
+                "Refit seed",
+                min_value=1,
+                max_value=2_147_483_647,
+                value=20260411,
+                step=1,
+                key="refit_sim_seed",
+            ))
+        refit_method_options = list(dict.fromkeys([result.get("config", {}).get("method", "JMLE"), "JMLE", "MML"]))
+        refit_method = st.selectbox(
+            "Refit method",
+            options=refit_method_options,
+            index=0,
+            key="refit_sim_method",
+            help="Use the current method for closest reproducibility. MML refits can be slow.",
+        )
+        refit_state_key = "mfrm_refit_simulation_bundle"
+        refit_meta_key = "mfrm_refit_simulation_meta"
+        refit_meta = (
+            result.get("config", {}).get("method"),
+            result.get("config", {}).get("model"),
+            result.get("prep", {}).get("n_obs"),
+            loglik_for_key,
+            refit_reps,
+            refit_missing,
+            refit_maxit,
+            refit_seed,
+            refit_method,
+        )
+        if st.session_state.get(refit_meta_key) != refit_meta:
+            st.session_state.pop(refit_state_key, None)
+        if st.button("Run refit stress test", key="run_refit_simulation"):
+            try:
+                st.session_state[refit_state_key] = refit_simulation_fn(
+                    result,
+                    n_replicates=refit_reps,
+                    seed=refit_seed,
+                    missing_rate=refit_missing,
+                    refit_maxit=refit_maxit,
+                    refit_reltol=1e-3,
+                    refit_method=refit_method,
+                )
+                st.session_state[refit_meta_key] = refit_meta
+            except Exception as exc:
+                st.session_state[refit_state_key] = {
+                    "available": False,
+                    "reason": f"Refit simulation failed: {exc}",
+                    "summary": pd.DataFrame(),
+                    "category_counts": pd.DataFrame(),
+                }
+                st.session_state[refit_meta_key] = refit_meta
+        refit_bundle = st.session_state.get(refit_state_key)
+        if isinstance(refit_bundle, dict):
+            if not refit_bundle.get("available"):
+                st.warning(refit_bundle.get("reason", "Refit simulation is unavailable."))
+            else:
+                st.info(refit_bundle.get("interpretation", "Interpret as a small stress test."))
+                refit_summary = refit_bundle.get("summary", pd.DataFrame())
+                refit_counts = refit_bundle.get("category_counts", pd.DataFrame())
+                if isinstance(refit_summary, pd.DataFrame) and not refit_summary.empty:
+                    conv = refit_summary["Converged"].astype(bool) if "Converged" in refit_summary.columns else pd.Series(dtype=bool)
+                    rel = pd.to_numeric(refit_summary.get("PersonReliability", pd.Series(dtype=float)), errors="coerce").dropna()
+                    cols = st.columns(3)
+                    cols[0].metric("Refit replicates", f"{len(refit_summary):,}")
+                    cols[1].metric("Converged", f"{int(conv.sum())}/{len(conv)}" if len(conv) else "n/a")
+                    cols[2].metric("Mean person reliability", f"{rel.mean():.3f}" if len(rel) else "n/a")
+                    st.dataframe(refit_summary, width="stretch")
+                    st.download_button(
+                        "Download refit simulation summary (CSV)",
+                        data=to_csv_bytes(refit_summary),
+                        file_name="mfrm_refit_simulation_summary.csv",
+                        mime="text/csv",
+                        key="dl_refit_sim_summary",
+                    )
+                if isinstance(refit_counts, pd.DataFrame) and not refit_counts.empty:
+                    with st.expander("Refit simulation category counts", expanded=False):
+                        st.dataframe(refit_counts, width="stretch")
+                        st.download_button(
+                            "Download refit simulation category counts (CSV)",
+                            data=to_csv_bytes(refit_counts),
+                            file_name="mfrm_refit_simulation_category_counts.csv",
+                            mime="text/csv",
+                            key="dl_refit_sim_counts",
+                        )
+
+    st.markdown("**Design evaluation**")
+    forecast_multiplier = float(st.slider(
+        "Reliability forecast multiplier",
+        min_value=1.0,
+        max_value=4.0,
+        value=2.0,
+        step=0.5,
+        key="design_forecast_multiplier",
+        help="Example: 2.0 approximates doubling comparable observations under a Spearman-Brown style assumption.",
+    ))
+    try:
+        design_bundle = design_fn(result, diagnostics, forecast_multipliers=(forecast_multiplier,))
+    except Exception as exc:
+        st.warning(f"Design evaluation could not be computed: {exc}")
+        design_bundle = {"available": False, "reason": str(exc)}
+
+    if isinstance(design_bundle, dict) and design_bundle.get("available"):
+        st.info(design_bundle.get("interpretation", "Treat this as a planning screen."))
+        overview = design_bundle.get("overview", pd.DataFrame())
+        summary = design_bundle.get("summary", pd.DataFrame())
+        forecast = design_bundle.get("forecast", pd.DataFrame())
+        counts = design_bundle.get("facet_counts", pd.DataFrame())
+        if isinstance(overview, pd.DataFrame) and not overview.empty:
+            st.dataframe(overview, width="stretch")
+        if isinstance(summary, pd.DataFrame) and not summary.empty:
+            st.dataframe(summary, width="stretch")
+            st.download_button(
+                "Download design evaluation (CSV)",
+                data=to_csv_bytes(summary),
+                file_name="mfrm_design_evaluation.csv",
+                mime="text/csv",
+                key="dl_design_eval_tab",
+            )
+        if isinstance(forecast, pd.DataFrame) and not forecast.empty:
+            with st.expander("Reliability forecast details", expanded=True):
+                st.dataframe(forecast, width="stretch")
+                st.caption(
+                    "Forecasts assume added observations are exchangeable with current observations. "
+                    "Use them to prioritize design changes, not as a final sample-size guarantee."
+                )
+        if isinstance(counts, pd.DataFrame) and not counts.empty:
+            with st.expander("Observed rows by facet level", expanded=False):
+                st.dataframe(counts, width="stretch")
+    else:
+        st.info((design_bundle or {}).get("reason", "Design evaluation is unavailable for this run."))
+
+
+# ---------------------------------------------------------------------------
+# Report sub-tab: Tables & Figures
+# ---------------------------------------------------------------------------
+
+def _render_report_tables(result: dict, diagnostics: dict) -> None:
+    """Estimation summary tables for the Report tab."""
+    st.subheader("Estimation summary")
+    summary_df = result.get("summary", pd.DataFrame())
+    if isinstance(summary_df, pd.DataFrame) and not summary_df.empty:
+        st.dataframe(summary_df, width="stretch")
+    else:
+        st.info("No estimation summary available.")
+
+    show_convergence_section(result)
+
+    st.subheader("Overall fit")
+    overall_fit_df = diagnostics.get("overall_fit", pd.DataFrame())
+    if isinstance(overall_fit_df, pd.DataFrame) and not overall_fit_df.empty:
+        st.dataframe(overall_fit_df, width="stretch")
+    else:
+        st.info("No overall fit statistics available.")
+
+    # Observation-level standardized residual check (Eckes, 2005)
+    obs_df = diagnostics.get("obs", pd.DataFrame())
+    if not obs_df.empty and "StdResidual" in obs_df.columns:
+        std_res = pd.to_numeric(obs_df["StdResidual"], errors="coerce").dropna()
+        if len(std_res) > 0:
+            abs_res = std_res.abs()
+            pct_ge2 = float((abs_res >= 2).mean() * 100)
+            pct_ge3 = float((abs_res >= 3).mean() * 100)
+            n_total = len(std_res)
+            fit_lines = [
+                f"- Observations with |z| ≥ 2: **{(abs_res >= 2).sum()}** / "
+                f"{n_total} (**{pct_ge2:.1f}%**; expected ~5%)",
+                f"- Observations with |z| ≥ 3: **{(abs_res >= 3).sum()}** / "
+                f"{n_total} (**{pct_ge3:.1f}%**; expected ~1%)",
+            ]
+            st.markdown("**Global fit — observation-level residuals** (Eckes, 2005)")
+            st.markdown("\n".join(fit_lines))
+            if pct_ge2 > 10:
+                st.warning(
+                    f"|z| ≥ 2 is {pct_ge2:.1f}%, well above the ~5% benchmark. "
+                    "Consider reviewing data for systematic misfit."
+                )
+            elif pct_ge2 > 7:
+                st.info(
+                    f"|z| ≥ 2 is {pct_ge2:.1f}%, somewhat above the ~5% benchmark."
+                )
+
+    st.subheader("Reliability & separation")
+    rel_df = diagnostics.get("reliability", pd.DataFrame())
+    if isinstance(rel_df, pd.DataFrame) and not rel_df.empty:
+        st.dataframe(rel_df, width="stretch")
+    else:
+        st.info("No reliability statistics available.")
+
+    # Measurement report by facet
+    measures = diagnostics.get("measures", pd.DataFrame())
+    if not measures.empty and "Facet" in measures.columns:
+        st.subheader("Measurement report by facet")
+        report_rows = []
+        for facet_name, grp in measures.groupby("Facet"):
+            estimates = pd.to_numeric(grp.get("Estimate", pd.Series(dtype=float)), errors="coerce").dropna()
+            se_vals = pd.to_numeric(grp.get("SE", pd.Series(dtype=float)), errors="coerce").dropna()
+            if len(estimates) < 2:
+                continue
+            adj_sd = float(np.std(estimates, ddof=1))
+            rmse = float(np.sqrt(np.mean(se_vals ** 2))) if len(se_vals) > 0 else np.nan
+            true_sd = np.sqrt(max(adj_sd ** 2 - rmse ** 2, 0)) if np.isfinite(rmse) else np.nan
+            separation = true_sd / rmse if np.isfinite(rmse) and rmse > 0 else np.nan
+            reliability = separation ** 2 / (1 + separation ** 2) if np.isfinite(separation) else np.nan
+            strata = (4 * separation + 1) / 3 if np.isfinite(separation) else np.nan
+            infit = pd.to_numeric(grp.get("Infit", pd.Series(dtype=float)), errors="coerce").dropna()
+            outfit = pd.to_numeric(grp.get("Outfit", pd.Series(dtype=float)), errors="coerce").dropna()
+            n_misfit = 0
+            if len(infit) > 0:
+                n_misfit = int(((infit > 1.5) | (infit < 0.5)).sum())
+            if len(outfit) > 0:
+                n_misfit = max(n_misfit, int(((outfit > 1.5) | (outfit < 0.5)).sum()))
+            n_total = len(estimates)
+            report_rows.append({
+                "Facet": facet_name,
+                "N": n_total,
+                "Mean Measure": f"{float(estimates.mean()):.2f}",
+                "Obs. SD": f"{adj_sd:.2f}",
+                "RMSE": f"{rmse:.2f}" if np.isfinite(rmse) else "—",
+                "True SD": f"{true_sd:.2f}" if np.isfinite(true_sd) else "—",
+                "Separation (G)": f"{separation:.2f}" if np.isfinite(separation) else "—",
+                "Strata (H)": f"{strata:.1f}" if np.isfinite(strata) else "—",
+                "Reliability": f"{reliability:.3f}" if np.isfinite(reliability) else "—",
+                "Misfit": f"{n_misfit}/{n_total} ({100*n_misfit/n_total:.0f}%)" if n_total > 0 else "—",
+            })
+        if report_rows:
+            report_df = pd.DataFrame(report_rows)
+            st.dataframe(report_df, width="stretch")
+            st.caption(
+                "**Obs. SD** = observed SD of estimates; "
+                "**RMSE** = root mean square of SEs; "
+                "**True SD** = √(Obs.SD² − RMSE²); "
+                "**Separation (G)** = True SD / RMSE; "
+                "**Strata (H)** = (4G+1)/3; "
+                "**Reliability** = G²/(1+G²). "
+                "See Wright & Masters (1982), Linacre (2024)."
+            )
+
+    # Measures with 95% CI
+    if not measures.empty and "Estimate" in measures.columns and "SE" in measures.columns:
+        st.subheader("Element measures with 95% CI")
+        ci_df = measures.copy()
+        est = pd.to_numeric(ci_df["Estimate"], errors="coerce")
+        se = pd.to_numeric(ci_df["SE"], errors="coerce")
+        if "CI_Lower" not in ci_df.columns:
+            ci_df["CI_Lower"] = (est - 1.96 * se).round(3)
+            ci_df["CI_Upper"] = (est + 1.96 * se).round(3)
+        show_cols = [c for c in ["Facet", "Element", "Level", "Estimate", "SE",
+                                  "CI_Lower", "CI_Upper", "Infit", "Outfit"] if c in ci_df.columns]
+        st.dataframe(ci_df[show_cols], width="stretch")
+        st.caption("CI = 95% confidence interval (Estimate ± 1.96 × SE).")
+
+
+def _render_apa_report(
+    result: dict,
+    diagnostics: dict,
+    bias_results: dict | None = None,
+    all_bias_results: dict | None = None,
+) -> None:
+    """Generate publication-quality APA-style report text with interpretation guidance."""
+    st.subheader("APA-Style Report Text")
+    st.caption(
+        "Auto-generated from estimation output. Copy the text below into your "
+        "manuscript Method and Results sections. Review and adapt before submission."
+    )
+
+    # --- Beginner guide ---
+    with st.expander("How to read this report", expanded=False):
+        st.markdown(
+            """
+This tab generates draft text for the **Method** and **Results** sections
+of a research paper that uses MFRM.
+
+#### What each section covers
+
+| Section | Purpose | What to look for |
+|---------|---------|-----------------|
+| **Method** | Describes *what* you did | Model type, sample size, software — readers need this to evaluate your study |
+| **Global fit** | Does the model fit the data? | % of residuals > |2| should be near 5%. Much higher = poor fit |
+| **Reliability & Separation** | Can the model distinguish between elements? | Higher is better for persons; for raters, *low* reliability means raters agree (good!) |
+| **Misfit** | Are there problematic elements? | Infit 0.5–1.5 is acceptable. Outside = erratic (>1.5) or too predictable (<0.5) |
+| **Rating scale** | Is the rubric working? | Ordered thresholds = good. Disordered = categories are confusing raters |
+| **Bias** | Are there systematic interactions? | |t| ≥ 2 = a rater treats certain tasks/persons differently than expected |
+
+#### Key terms explained
+
+- **Separation (*G*)**: How many distinct levels the model can identify within a facet. *G* > 2.0 is good for persons; *G* < 1.0 for raters means they are similar (desirable).
+- **Reliability**: Proportion of observed variance that is "true" variance (not measurement error). Ranges from 0 to 1.
+- **Strata (*H*)**: Number of statistically distinct groups. *H* = (4*G* + 1) / 3. For persons, *H* ≥ 3 means at least 3 ability levels.
+- **Infit MnSq**: Mean-square fit statistic weighted by information. 1.0 = perfect fit. Values far from 1.0 indicate misfit.
+- **Outfit MnSq**: Unweighted mean-square — sensitive to outliers. A single unexpected response can inflate Outfit.
+- **Bias (*t*-value)**: Tests whether a specific element pairing (e.g., Rater R1 on Task T3) deviates from the model prediction. |*t*| ≥ 2 is significant at *p* < .05.
+- **Logit**: The unit of measurement in Rasch models. One logit difference ≈ the effect of one additional correct response.
+- **95% CI**: Confidence interval. If two elements' CIs do not overlap, they are significantly different at *p* < .05.
+
+#### How to use the generated text
+
+1. **Copy** the text from the "Copy-ready plain text" expander below.
+2. **Paste** into your manuscript's Method and Results sections.
+3. **Review and edit**: The text is a starting draft — adapt it to your specific study context, add your research questions, and connect findings to your hypotheses.
+4. **Add references**: The cited references are listed in the "References" expander below. Add them to your reference list.
+"""
+        )
+
+    config = result.get("config", {})
+    prep = result.get("prep", {})
+    facet_names = config.get("facet_names", [])
+    measures = diagnostics.get("measures", pd.DataFrame())
+
+    method_parts: list[str] = []
+    results_parts: list[str] = []
+    refs_used: set[str] = set()
+
+    # --- Method section ---
+    n_obs = prep.get("n_obs", "?")
+    n_person = prep.get("n_person", "?")
+    n_cat = config.get("n_cat", "?")
+    model = config.get("model", "RSM")
+    method = config.get("method", "JMLE")
+    rating_min = prep.get("rating_min", "?")
+    rating_max = prep.get("rating_max", "?")
+
+    if isinstance(n_obs, int) and isinstance(n_person, int):
+        method_parts.append(
+            f"A *Many-Facet Rasch Model* (MFRM; {model}; Linacre, 1989) was estimated "
+            f"using {method} with *N* = {n_obs:,} observations from {n_person:,} persons."
+        )
+    else:
+        method_parts.append(
+            f"A *Many-Facet Rasch Model* (MFRM; {model}; Linacre, 1989) was estimated "
+            f"using {method} with *N* = {n_obs} observations from {n_person} persons."
+        )
+    refs_used.add("Linacre, 1989")
+
+    # Facet counts
+    facet_desc_parts = []
+    for fn in facet_names:
+        if not measures.empty and "Facet" in measures.columns:
+            n_levels = len(measures[measures["Facet"] == fn])
+            facet_desc_parts.append(f"{n_levels} {fn.lower()}s")
+        else:
+            facet_desc_parts.append(fn)
+    if facet_desc_parts:
+        method_parts.append(f"Facets modeled: {', '.join(facet_desc_parts)}.")
+
+    if method == "JMLE":
+        optimizer_desc = (
+            "custom Python software with analytical-gradient quasi-Newton optimization"
+        )
+    else:
+        optimizer_desc = (
+            "custom Python software using an EM algorithm with quasi-Newton M-step updates"
+        )
+
+    method_parts.append(
+        f"The rating scale had {n_cat} categories ({rating_min}–{rating_max}). "
+        f"Estimation was performed using {optimizer_desc}. "
+        "95% confidence intervals were computed as Estimate ± 1.96 × SE for all parameters."
+    )
+    if model == "GPCM":
+        slope_tbl = result.get("slopes", pd.DataFrame())
+        if isinstance(slope_tbl, pd.DataFrame) and not slope_tbl.empty:
+            slopes = pd.to_numeric(slope_tbl.get("Estimate", pd.Series(dtype=float)), errors="coerce").dropna()
+            if len(slopes):
+                method_parts.append(
+                    "The GPCM specification used the bounded slope structure "
+                    f"`slope_facet = step_facet = {config.get('step_facet')}`. "
+                    "Slope parameters were constrained positive and identified by fixing "
+                    "the geometric mean slope to 1. "
+                    f"Estimated slopes ranged from {slopes.min():.2f} to {slopes.max():.2f}."
+                )
+            else:
+                method_parts.append(
+                    "The GPCM specification used the bounded slope structure "
+                    f"`slope_facet = step_facet = {config.get('step_facet')}`; slope estimates were not available for summarization."
+                )
+        refs_used.add("Masters, 1982")
+
+    # --- Global fit ---
+    obs_df = diagnostics.get("obs", pd.DataFrame())
+    if not obs_df.empty and "StdResidual" in obs_df.columns:
+        std_res = pd.to_numeric(obs_df["StdResidual"], errors="coerce").dropna()
+        if len(std_res) > 0:
+            abs_res = std_res.abs()
+            n_total = len(std_res)
+            pct_ge2 = float((abs_res >= 2).mean() * 100)
+            pct_ge3 = float((abs_res >= 3).mean() * 100)
+            fit_label = "satisfactory" if pct_ge2 <= 7 else "marginally acceptable" if pct_ge2 <= 10 else "poor"
+            results_parts.append(
+                f"Global model fit was {fit_label}, with {pct_ge2:.1f}% of "
+                f"standardized residuals exceeding |2| (expected ≈ 5%; Eckes, 2005) "
+                f"and {pct_ge3:.1f}% exceeding |3| (expected ≈ 1%)."
+            )
+            refs_used.add("Eckes, 2005")
+
+    # --- Reliability & separation with 95% CI ---
+    rel_df = diagnostics.get("reliability", pd.DataFrame())
+    if not rel_df.empty:
+        rel_sentences = []
+        for _, row in rel_df.iterrows():
+            facet = row.get("Facet", "")
+            rel_val = row.get("Reliability", row.get("reliability", np.nan))
+            sep_val = row.get("Separation", row.get("separation", np.nan))
+            try:
+                rel_val = float(rel_val)
+                sep_val = float(sep_val)
+            except (TypeError, ValueError):
+                continue
+            if not np.isfinite(rel_val):
+                continue
+            strata = (4 * sep_val + 1) / 3 if np.isfinite(sep_val) else np.nan
+            if rel_val >= 0.90:
+                interp = "excellent differentiation"
+            elif rel_val >= 0.80:
+                interp = "good differentiation"
+            elif rel_val >= 0.50:
+                interp = "moderate differentiation"
+            else:
+                interp = "poor differentiation; differences mainly due to measurement error"
+            strata_str = f", *H* = {strata:.1f}" if np.isfinite(strata) else ""
+            # Add measure range with 95% CI for this facet
+            ci_note = ""
+            if not measures.empty and "Facet" in measures.columns:
+                fmeas = measures[measures["Facet"] == facet]
+                est = pd.to_numeric(fmeas.get("Estimate", pd.Series(dtype=float)), errors="coerce").dropna()
+                se = pd.to_numeric(fmeas.get("SE", pd.Series(dtype=float)), errors="coerce").dropna()
+                if len(est) > 0 and len(se) > 0:
+                    ci_note = (
+                        f"; measures ranged from {est.min():.2f} to {est.max():.2f} logits, "
+                        f"mean SE = {se.mean():.3f}"
+                    )
+            rel_sentences.append(
+                f"{facet} separation *G* = {sep_val:.2f} "
+                f"(reliability = {rel_val:.3f}{strata_str}; {interp}{ci_note})"
+            )
+        if rel_sentences:
+            results_parts.append(
+                "; ".join(rel_sentences) + " (Wright & Masters, 1982)."
+            )
+            refs_used.update(["Wright & Masters, 1982", "Myford & Wolfe, 2003"])
+
+    # --- Misfit summary ---
+    if not measures.empty and "Infit" in measures.columns:
+        infit = pd.to_numeric(measures["Infit"], errors="coerce").dropna()
+        outfit = pd.to_numeric(measures.get("Outfit", pd.Series(dtype=float)), errors="coerce").dropna()
+        n_elements = len(infit)
+        n_infit_misfit = int(((infit > 1.5) | (infit < 0.5)).sum())
+        n_outfit_misfit = int((outfit > 2.0).sum()) if len(outfit) > 0 else 0
+        if n_elements > 0:
+            results_parts.append(
+                f"{n_infit_misfit} of {n_elements} elements ({100*n_infit_misfit/n_elements:.0f}%) "
+                f"showed Infit *MnSq* outside the 0.5–1.5 range (Wright & Linacre, 1994)"
+                + (f", and {n_outfit_misfit} showed Outfit *MnSq* > 2.0" if n_outfit_misfit > 0 else "")
+                + "."
+            )
+            refs_used.add("Wright & Linacre, 1994")
+
+    # --- Rating scale analysis (Linacre's 5 criteria) ---
+    steps_df = result.get("steps", pd.DataFrame())
+    if isinstance(steps_df, pd.DataFrame) and not steps_df.empty:
+        step_vals = pd.to_numeric(
+            steps_df.get("Estimate", pd.Series(dtype=float)), errors="coerce"
+        ).dropna()
+        if len(step_vals) >= 2:
+            diffs = step_vals.diff().dropna()
+            ordered = bool((diffs > 0).all())
+            sorted_diffs = step_vals.sort_values().diff().dropna()
+            min_gap = float(sorted_diffs.min()) if len(sorted_diffs) > 0 else 0
+            max_gap = float(sorted_diffs.max()) if len(sorted_diffs) > 0 else 0
+            linacre_met = 0
+            linacre_total = 0
+            linacre_details: list[str] = []
+            obs_df_cat = diagnostics.get("obs", pd.DataFrame())
+            if not obs_df_cat.empty and "Score" in obs_df_cat.columns:
+                cat_counts = obs_df_cat["Score"].value_counts()
+                min_count = int(cat_counts.min()) if len(cat_counts) > 0 else 0
+                linacre_total += 1
+                if min_count >= 10:
+                    linacre_met += 1
+                else:
+                    linacre_details.append(f"minimum category count = {min_count} (criterion: ≥ 10)")
+            if not obs_df_cat.empty and "Score" in obs_df_cat.columns:
+                cat_pcts = obs_df_cat["Score"].value_counts(normalize=True) * 100
+                min_pct = float(cat_pcts.min()) if len(cat_pcts) > 0 else 0
+                linacre_total += 1
+                if min_pct >= 1.0:
+                    linacre_met += 1
+                else:
+                    linacre_details.append(f"minimum category usage = {min_pct:.1f}% (criterion: ≥ 1%)")
+            linacre_total += 1
+            if len(sorted_diffs) > 0:
+                if bool((sorted_diffs.abs() >= 1.0).all() and (sorted_diffs.abs() <= 5.0).all()):
+                    linacre_met += 1
+                else:
+                    linacre_details.append(f"step advance range {min_gap:.2f}–{max_gap:.2f} logits (criterion: 1.0–5.0)")
+            linacre_total += 1
+            if ordered:
+                linacre_met += 1
+            else:
+                linacre_details.append("thresholds disordered")
+            if linacre_total > 0:
+                rating_text = (
+                    f"Rating scale analysis showed {linacre_met} of {linacre_total} "
+                    f"evaluated Linacre criteria met (Linacre, 2004). "
+                )
+                if ordered:
+                    rating_text += f"Thresholds were ordered with step advances of {min_gap:.2f}–{max_gap:.2f} logits"
+                else:
+                    rating_text += "Thresholds were disordered"
+                if linacre_details:
+                    rating_text += f"; issues: {'; '.join(linacre_details)}"
+                rating_text += "."
+                results_parts.append(rating_text)
+            refs_used.add("Linacre, 2004")
+
+    # --- Bias/Interaction — ALL pairs ---
+    all_bias = all_bias_results or {}
+    if not all_bias and bias_results:
+        pair_key = f"{bias_results.get('facet_a', 'A')} x {bias_results.get('facet_b', 'B')}"
+        all_bias = {pair_key: bias_results}
+    for pair_key, br in all_bias.items():
+        bias_tbl = br.get("table", pd.DataFrame())
+        if not isinstance(bias_tbl, pd.DataFrame) or bias_tbl.empty:
+            continue
+        t_col = next((c for c in ("t", "t_value", "T") if c in bias_tbl.columns), None)
+        if not t_col:
+            continue
+        t_vals = pd.to_numeric(bias_tbl[t_col], errors="coerce").dropna()
+        n_sig = int((t_vals.abs() >= 2).sum())
+        n_pairs = len(t_vals)
+        fa = br.get("facet_a", pair_key.split(" x ")[0])
+        fb = br.get("facet_b", pair_key.split(" x ")[-1])
+        if n_pairs > 0:
+            bonf_alpha = 0.05 / n_pairs
+            results_parts.append(
+                f"Bias analysis of the {fa} × {fb} interaction revealed "
+                f"{n_sig} significant interactions (|*t*| ≥ 2) "
+                f"out of {n_pairs} combinations ({100*n_sig/n_pairs:.0f}%; "
+                f"Bonferroni-corrected α = {bonf_alpha:.3f})."
+            )
+
+    # --- Build final text ---
+    method_text = "**Method.**  " + "  ".join(method_parts)
+    results_text = "**Results.**  " + "  ".join(results_parts) if results_parts else ""
+    full_text = method_text + "\n\n" + results_text
+
+    st.markdown(full_text)
+
+    # --- Inline interpretation guidance (below the APA text) ---
+    st.markdown("---")
+    st.markdown("#### Interpretation Guide")
+    st.caption(
+        "The callouts below summarize the key findings from the report above "
+        "and help you decide whether action is needed."
+    )
+
+    # Global fit interpretation
+    obs_df_interp = diagnostics.get("obs", pd.DataFrame())
+    if not obs_df_interp.empty and "StdResidual" in obs_df_interp.columns:
+        std_res_interp = pd.to_numeric(obs_df_interp["StdResidual"], errors="coerce").dropna()
+        if len(std_res_interp) > 0:
+            pct2 = float((std_res_interp.abs() >= 2).mean() * 100)
+            if pct2 <= 7:
+                st.success(
+                    f"**Global fit: Good** — {pct2:.1f}% of residuals exceed |2| (expected ~5%). "
+                    "The model fits the data adequately."
+                )
+            elif pct2 <= 12:
+                st.warning(
+                    f"**Global fit: Marginal** — {pct2:.1f}% of residuals exceed |2| (expected ~5%). "
+                    "Consider checking for misfitting elements in the Fit Details tab."
+                )
+            else:
+                st.error(
+                    f"**Global fit: Poor** — {pct2:.1f}% of residuals exceed |2| (expected ~5%). "
+                    "The model does not fit well. Consider: (a) collapsing rating categories, "
+                    "(b) removing misfitting elements, or (c) using PCM instead of RSM."
+                )
+
+    # Reliability interpretation per facet
+    rel_df_interp = diagnostics.get("reliability", pd.DataFrame())
+    if not rel_df_interp.empty:
+        for _, row in rel_df_interp.iterrows():
+            facet = row.get("Facet", "")
+            rel_val = float(row.get("Reliability", row.get("reliability", np.nan)))
+            sep_val = float(row.get("Separation", row.get("separation", np.nan)))
+            if not np.isfinite(rel_val):
+                continue
+            # Different interpretation for persons vs. raters/other facets
+            is_person = (facet.lower() == "person")
+            if is_person:
+                if rel_val >= 0.80:
+                    st.success(
+                        f"**{facet} reliability: {rel_val:.3f} (Good)** — "
+                        f"The model reliably distinguishes {facet.lower()} ability levels "
+                        f"(Separation *G* = {sep_val:.2f})."
+                    )
+                elif rel_val >= 0.50:
+                    st.info(
+                        f"**{facet} reliability: {rel_val:.3f} (Moderate)** — "
+                        "Person differentiation is moderate. Consider increasing "
+                        "the number of tasks or raters to improve precision."
+                    )
+                else:
+                    st.warning(
+                        f"**{facet} reliability: {rel_val:.3f} (Low)** — "
+                        "The model cannot reliably distinguish between persons. "
+                        "Add more observations per person (more raters, tasks, or criteria)."
+                    )
+            else:
+                # For non-person facets, low reliability can be desirable (rater interchangeability)
+                if rel_val >= 0.80:
+                    st.info(
+                        f"**{facet} reliability: {rel_val:.3f} (High differentiation)** — "
+                        f"{facet} elements differ significantly in severity "
+                        f"(Separation *G* = {sep_val:.2f}). "
+                        "If these are raters, this means raters are *not* interchangeable — "
+                        "consider rater training or calibration."
+                    )
+                elif rel_val >= 0.50:
+                    st.info(
+                        f"**{facet} reliability: {rel_val:.3f} (Moderate)** — "
+                        f"Some {facet.lower()} elements differ moderately. Review the "
+                        "Wright Map to see the spread of measures."
+                    )
+                else:
+                    st.success(
+                        f"**{facet} reliability: {rel_val:.3f} (Low = elements are similar)** — "
+                        f"{facet} elements have similar severity. "
+                        "If these are raters, this is the ideal outcome — raters are interchangeable."
+                    )
+
+    # Misfit interpretation
+    if not measures.empty and "Infit" in measures.columns:
+        infit_interp = pd.to_numeric(measures["Infit"], errors="coerce").dropna()
+        n_elements_interp = len(infit_interp)
+        n_misfit_interp = int(((infit_interp > 1.5) | (infit_interp < 0.5)).sum())
+        if n_elements_interp > 0:
+            pct_misfit = 100 * n_misfit_interp / n_elements_interp
+            if n_misfit_interp == 0:
+                st.success(
+                    "**Element fit: All acceptable** — No elements outside the 0.5–1.5 Infit range."
+                )
+            elif pct_misfit <= 15:
+                misfit_elements = measures[
+                    (infit_interp > 1.5) | (infit_interp < 0.5)
+                ]
+                names = ", ".join(
+                    misfit_elements["Level"].astype(str).tolist()[:5]
+                ) if "Level" in misfit_elements.columns else f"{n_misfit_interp} elements"
+                st.warning(
+                    f"**Element fit: {n_misfit_interp} misfitting ({pct_misfit:.0f}%)** — "
+                    f"Flagged: {names}. "
+                    "Check the Fit Details tab for details. Consider whether these elements "
+                    "should be removed, retrained (if raters), or revised (if tasks)."
+                )
+            else:
+                st.error(
+                    f"**Element fit: {n_misfit_interp} misfitting ({pct_misfit:.0f}%)** — "
+                    "A large proportion of elements show misfit. This suggests the model "
+                    "may not be appropriate for this data. Consider simplifying the model, "
+                    "collapsing categories, or checking for data quality issues."
+                )
+
+    # Rating scale interpretation
+    steps_df_interp = result.get("steps", pd.DataFrame())
+    if isinstance(steps_df_interp, pd.DataFrame) and not steps_df_interp.empty:
+        sv = pd.to_numeric(
+            steps_df_interp.get("Estimate", pd.Series(dtype=float)), errors="coerce"
+        ).dropna()
+        if len(sv) >= 2:
+            diffs_interp = sv.diff().dropna()
+            ordered_interp = bool((diffs_interp > 0).all())
+            if ordered_interp:
+                st.success(
+                    "**Rating scale: Thresholds ordered** — The rubric categories function "
+                    "as intended. Each category represents a progressively higher level."
+                )
+            else:
+                disordered_pairs = []
+                for i, d in enumerate(diffs_interp):
+                    if d <= 0:
+                        disordered_pairs.append(f"step {i+1}→{i+2}")
+                st.error(
+                    f"**Rating scale: Thresholds disordered** at {', '.join(disordered_pairs)}. "
+                    "This means some adjacent categories are not being used as distinct levels. "
+                    "**Action:** Consider collapsing the affected categories (e.g., merge categories "
+                    "2 and 3 into a single 'moderate' category) and re-run the estimation."
+                )
+
+    # Bias interpretation
+    all_bias_interp = all_bias_results or {}
+    if not all_bias_interp and bias_results:
+        pk = f"{bias_results.get('facet_a', 'A')} x {bias_results.get('facet_b', 'B')}"
+        all_bias_interp = {pk: bias_results}
+    any_bias = False
+    for pair_key, br in all_bias_interp.items():
+        btbl = br.get("table", pd.DataFrame())
+        if not isinstance(btbl, pd.DataFrame) or btbl.empty:
+            continue
+        tc = next((c for c in ("t", "t_value", "T") if c in btbl.columns), None)
+        if not tc:
+            continue
+        tv = pd.to_numeric(btbl[tc], errors="coerce").dropna()
+        ns = int((tv.abs() >= 2).sum())
+        np_ = len(tv)
+        if np_ > 0 and ns > 0:
+            any_bias = True
+            st.warning(
+                f"**Bias: {pair_key}** — {ns} of {np_} pairs ({100*ns/np_:.0f}%) show "
+                "significant interaction (|*t*| ≥ 2). "
+                "This means certain element combinations produce unexpectedly high or low scores. "
+                "Check the Bias/Interaction tab to identify specific problematic pairings."
+            )
+    if all_bias_interp and not any_bias:
+        st.success(
+            "**Bias: No significant interactions** — All facet pairs behave as expected. "
+            "There are no systematic biases between elements."
+        )
+
+    # --- Overall decision summary ---
+    st.markdown("---")
+    st.markdown("#### Summary Decision")
+
+    issues: list[str] = []
+    if not obs_df_interp.empty and "StdResidual" in obs_df_interp.columns:
+        sr = pd.to_numeric(obs_df_interp["StdResidual"], errors="coerce").dropna()
+        if len(sr) > 0 and float((sr.abs() >= 2).mean() * 100) > 12:
+            issues.append("poor global fit")
+    if not rel_df_interp.empty:
+        for _, rr in rel_df_interp.iterrows():
+            if rr.get("Facet", "").lower() == "person":
+                rv = float(rr.get("Reliability", rr.get("reliability", 0)))
+                if rv < 0.50:
+                    issues.append("low person reliability")
+    if not measures.empty and "Infit" in measures.columns:
+        inf = pd.to_numeric(measures["Infit"], errors="coerce").dropna()
+        if len(inf) > 0 and ((inf > 1.5) | (inf < 0.5)).mean() > 0.25:
+            issues.append("widespread element misfit")
+    if isinstance(steps_df_interp, pd.DataFrame) and not steps_df_interp.empty:
+        sv2 = pd.to_numeric(
+            steps_df_interp.get("Estimate", pd.Series(dtype=float)), errors="coerce"
+        ).dropna()
+        if len(sv2) >= 2 and not bool((sv2.diff().dropna() > 0).all()):
+            issues.append("disordered rating scale thresholds")
+
+    if not issues:
+        st.success(
+            "**Overall: The model is performing well.** "
+            "No major issues detected. You can proceed with confidence to report these results. "
+            "Copy the APA text above and adapt it for your manuscript."
+        )
+    elif len(issues) <= 2:
+        st.warning(
+            f"**Overall: Some issues to address — {', '.join(issues)}.** "
+            "The results are usable but should be interpreted with caution. "
+            "Consider the recommended actions above before finalizing your manuscript. "
+            "The Report → Reporting Checklist tab can help ensure completeness."
+        )
+    else:
+        st.error(
+            f"**Overall: Multiple issues detected — {', '.join(issues)}.** "
+            "Significant revision of the model or data may be needed before results "
+            "can be reported. Consider simplifying the model, collapsing categories, "
+            "or removing problematic elements. See Help → Analysis Workflow for guidance."
+        )
+
+    st.markdown("---")
+
+    # Copy-ready plain text (without markdown italics)
+    plain_text = full_text.replace("*", "")
+    with st.expander("Copy-ready plain text"):
+        st.code(plain_text, language=None)
+        st.caption(
+            "Copy the text above into your manuscript. Remove or modify sections "
+            "as needed for your specific study. The text uses APA 7th edition formatting."
+        )
+
+    # Auto-generated references (only those cited)
+    _REFERENCES = {
+        "Eckes, 2005": "Eckes, T. (2005). Examining rater effects in TestDaF writing and speaking performance assessments. *Language Assessment Quarterly, 2*, 197–221.",
+        "Linacre, 1989": "Linacre, J. M. (1989). *Many-facet Rasch measurement*. MESA Press.",
+        "Linacre, 2004": "Linacre, J. M. (2004). Optimizing rating scale category effectiveness. In E. V. Smith & R. M. Smith (Eds.), *Introduction to Rasch measurement* (pp. 258–278). JAM Press.",
+        "Masters, 1982": "Masters, G. N. (1982). A Rasch model for partial credit scoring. *Psychometrika, 47*(2), 149–174.",
+        "Myford & Wolfe, 2003": "Myford, C. M., & Wolfe, E. W. (2003). Detecting and measuring rater effects using many-facet Rasch measurement: Part I. *Journal of Applied Measurement, 4*, 386–422.",
+        "Wright & Linacre, 1994": "Wright, B. D., & Linacre, J. M. (1994). Reasonable mean-square fit values. *Rasch Measurement Transactions, 8*, 370.",
+        "Wright & Masters, 1982": "Wright, B. D., & Masters, G. N. (1982). *Rating scale analysis*. MESA Press.",
+    }
+    if refs_used:
+        with st.expander("References cited in the report"):
+            st.caption(
+                "Add these references to your manuscript's reference list. "
+                "Only references actually cited in the generated text are shown."
+            )
+            for key in sorted(refs_used):
+                ref = _REFERENCES.get(key, key)
+                st.markdown(f"- {ref}")
+
+
+# ---------------------------------------------------------------------------
+# Report sub-tab: Reporting Checklist (auto-filled)
+# ---------------------------------------------------------------------------
+
+def _render_reporting_checklist(
+    result: dict, diagnostics: dict, all_bias_results: dict | None = None,
+) -> None:
+    """Auto-filled MFRM reporting checklist based on actual results."""
+    st.subheader("MFRM Reporting Checklist")
+    st.caption(
+        "Based on Eckes (2005), Koizumi et al. (2019), Myford & Wolfe (2003, 2004). "
+        "Items are auto-checked when the corresponding data is available."
+    )
+
+    config = result.get("config", {})
+    prep = result.get("prep", {})
+    measures = diagnostics.get("measures", pd.DataFrame())
+    obs_df = diagnostics.get("obs", pd.DataFrame())
+    rel_df = diagnostics.get("reliability", pd.DataFrame())
+    steps_df = result.get("steps", pd.DataFrame())
+    slopes_df = result.get("slopes", pd.DataFrame())
+    all_bias = all_bias_results or {}
+
+    def _check(condition: bool, text: str) -> str:
+        return f"- [x] {text}" if condition else f"- [ ] {text}"
+
+    lines: list[str] = []
+
+    # 1. Method
+    lines.append("#### 1. Method Section")
+    model = config.get("model", "?")
+    method = config.get("method", "?")
+    optimizer = config.get("optimizer", "L-BFGS-B")
+    lines.append(_check(model != "?", f"**Model specification**: {model}, {method}, {optimizer}"))
+    n_obs = prep.get("n_obs", 0)
+    n_person = prep.get("n_person", 0)
+    lines.append(_check(
+        isinstance(n_obs, int) and n_obs > 0,
+        f"**Data description**: {n_obs:,} observations, {n_person:,} persons, "
+        f"{config.get('n_cat', '?')} categories ({prep.get('rating_min', '?')}–{prep.get('rating_max', '?')})"
+    ))
+    opt_obj = result.get("opt", None)
+    conv_ok = getattr(opt_obj, "success", False) if opt_obj is not None else False
+    conv_msg = getattr(opt_obj, "message", "?") if opt_obj is not None else "not available"
+    lines.append(_check(conv_ok, f"**Convergence**: {conv_msg}"))
+    lines.append(_check(
+        diagnostics.get("obs") is not None,
+        "**Connectivity**: data connectivity assessed"
+    ))
+
+    # 2. Global fit
+    lines.append("\n#### 2. Global Fit")
+    has_resid = not obs_df.empty and "StdResidual" in obs_df.columns
+    lines.append(_check(has_resid, "**Standardized residuals**: % with |z| ≥ 2 and |z| ≥ 3"))
+    lines.append(_check(False, "**PCA of residuals**: 1st eigenvalue and % variance (see Dimensionality tab)"))
+
+    # 3. Facet-level
+    lines.append("\n#### 3. Facet-Level Statistics")
+    has_rel = isinstance(rel_df, pd.DataFrame) and not rel_df.empty
+    lines.append(_check(has_rel, "**Separation (G), Strata (H), Reliability (R)** per facet"))
+    lines.append(_check(has_rel, "**Fixed chi-square** test (see Tables & Figures sub-tab)"))
+    lines.append(_check(has_rel, "**RMSE and True SD** per facet"))
+
+    # 4. Element-level
+    lines.append("\n#### 4. Element-Level Statistics")
+    has_meas = not measures.empty and "Estimate" in measures.columns
+    has_ci = has_meas and "SE" in measures.columns
+    lines.append(_check(has_meas, "**Measure** (logits) with **SE** for each element"))
+    lines.append(_check(has_ci, "**95% CI** for each element (Estimate ± 1.96 × SE)"))
+    has_fit = has_meas and "Infit" in measures.columns
+    lines.append(_check(has_fit, "**Infit and Outfit MnSq** with control limits (0.5–1.5)"))
+    lines.append(_check(has_fit, "**Count and percentage** of misfitting elements"))
+
+    # 5. Rating scale
+    lines.append("\n#### 5. Rating Scale Diagnostics")
+    has_steps = isinstance(steps_df, pd.DataFrame) and not steps_df.empty
+    lines.append(_check(has_resid, "**Category counts** and percentages"))
+    lines.append(_check(False, "**Average measures** per category (see Categories/Steps tab)"))
+    lines.append(_check(has_steps, "**Rasch-Andrich thresholds** — ordering and distances"))
+    lines.append(_check(True, "**Category probability curves** (see Visuals tab)"))
+    if model == "GPCM":
+        has_slopes = isinstance(slopes_df, pd.DataFrame) and not slopes_df.empty
+        lines.append(_check(has_slopes, "**GPCM slopes** — report range and state geometric mean slope is fixed to 1"))
+        lines.append(_check(True, "**GPCM scope statement** — bounded model with slope_facet = step_facet; do not interpret slopes as severity"))
+
+    # 6. Bias
+    lines.append("\n#### 6. Bias/Interaction Analysis")
+    has_bias = bool(all_bias)
+    n_bias_pairs = len(all_bias)
+    lines.append(_check(has_bias, f"**Facet pairs tested**: {n_bias_pairs} pair(s)"))
+    lines.append(_check(has_bias, "**Significant interactions** count with Bonferroni correction"))
+
+    # 7. Visual
+    lines.append("\n#### 7. Visual Displays")
+    lines.append(_check(True, "**Wright Map** (see Wright Map tab)"))
+    lines.append(_check(True, "**Fit scatter, probability curves** (see Visuals tab)"))
+
+    st.markdown("\n".join(lines))
+
+    # Key references
+    with st.expander("Key References"):
+        st.markdown("""
+- Eckes, T. (2005). Examining rater effects in TestDaF writing and speaking performance assessments. *Language Assessment Quarterly, 2*, 197–221.
+- Koizumi, R., In'nami, Y., Asano, K., & Agawa, T. (2019). Validity argument for CEFR-J A1 spoken interaction tasks. *Papers in Language Testing and Assessment, 8*(2), 1–33.
+- Linacre, J. M. (1989). *Many-facet Rasch measurement*. MESA Press.
+- Linacre, J. M. (2004). Optimizing rating scale category effectiveness. In E. V. Smith & R. M. Smith (Eds.), *Introduction to Rasch measurement* (pp. 258–278). JAM Press.
+- Myford, C. M., & Wolfe, E. W. (2003). Detecting and measuring rater effects using MFRM: Part I. *Journal of Applied Measurement, 4*, 386–422.
+- Myford, C. M., & Wolfe, E. W. (2004). Detecting and measuring rater effects using MFRM: Part II. *Journal of Applied Measurement, 5*, 189–227.
+- Wright, B. D., & Linacre, J. M. (1994). Reasonable mean-square fit values. *Rasch Measurement Transactions, 8*, 370.
+- Wright, B. D., & Masters, G. N. (1982). *Rating scale analysis*. MESA Press.
+""")
+
+
+# ---------------------------------------------------------------------------
+# Report sub-tab: Facet Equivalence Analysis
+# ---------------------------------------------------------------------------
+
+def _render_facet_equivalence(result: dict, diagnostics: dict) -> None:
+    """Facet equivalence testing: TOST, BIC Bayes Factor, ROPE, forest plot."""
+    st.subheader("Facet Equivalence Analysis")
+    st.caption(
+        "Tests whether elements within a facet have statistically equivalent measures. "
+        "Combines frequentist (TOST), Bayesian (BIC Bayes Factor), and ROPE approaches. "
+        "For full Bayesian posterior inference, use the Stan Code tab."
+    )
+
+    measures = diagnostics.get("measures", pd.DataFrame())
+    if measures.empty or "Facet" not in measures.columns:
+        st.info("No measures available. Run estimation first.")
+        return
+
+    facet_names = result.get("config", {}).get("facet_names", [])
+    if not facet_names:
+        st.info("No facets available.")
+        return
+
+    col_a, col_b = st.columns(2)
+    with col_a:
+        eq_facet = st.selectbox(
+            "Facet to test", list(facet_names), index=0, key="eq_facet",
+            help="Select the facet to test for equivalence. For example, choose 'Rater' "
+                 "to test whether all raters have statistically equivalent severity.",
+        )
+    with col_b:
+        eq_bound = st.number_input(
+            "Equivalence bound (logits)", value=0.5, min_value=0.1, max_value=2.0,
+            step=0.1, key="eq_bound",
+            help="SESOI: smallest meaningful difference. 0.5 logits is a common threshold.",
+        )
+
+    elements = measures[measures["Facet"] == eq_facet].copy()
+    if len(elements) < 2:
+        st.info(f"Need ≥ 2 elements for '{eq_facet}'. Found {len(elements)}.")
+        return
+
+    for col in ["Estimate", "SE"]:
+        elements[col] = pd.to_numeric(elements[col], errors="coerce")
+    elements = elements.dropna(subset=["Estimate", "SE"])
+    est = elements["Estimate"].values
+    se = elements["SE"].values
+    n_elem = len(est)
+    elem_labels = elements["Element"].values if "Element" in elements.columns else elements["Level"].values if "Level" in elements.columns else np.arange(n_elem)
+
+    # Weighted grand mean
+    w = 1.0 / (se ** 2)
+    grand_mean = float(np.average(est, weights=w))
+
+    # --- 1. Fixed chi-square (Rasch separation test) ---
+    st.markdown("---")
+    st.markdown("**1. Fixed Chi-Square Test** (Linacre, 2024)")
+    chi2_val = float(np.sum(w * (est - grand_mean) ** 2))
+    df_chi = n_elem - 1
+    p_chi = float(1 - chi2.cdf(chi2_val, df_chi))
+    sep_sd = float(np.std(est, ddof=1))
+    rmse = float(np.sqrt(np.mean(se ** 2)))
+    true_sd = np.sqrt(max(sep_sd ** 2 - rmse ** 2, 0))
+    separation = true_sd / rmse if rmse > 0 else 0
+    reliability = separation ** 2 / (1 + separation ** 2)
+
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("χ²", f"{chi2_val:.2f}")
+    c2.metric("df", df_chi)
+    c3.metric("p", f"{p_chi:.4f}")
+    c4.metric("Separation", f"{separation:.2f}")
+
+    if p_chi >= 0.05:
+        st.success(
+            f"Fixed chi-square is non-significant (p = {p_chi:.3f}). "
+            "Cannot reject hypothesis that all elements have equal measures. "
+            "Note: non-significance does not prove equivalence."
+        )
+    else:
+        st.warning(
+            f"Fixed chi-square is significant (p = {p_chi:.4f}). "
+            "Elements are measurably different."
+        )
+
+    # --- 2. TOST Equivalence Test (Lakens, 2017) ---
+    st.markdown("---")
+    st.markdown("**2. TOST Equivalence Test** (Lakens, 2017)")
+    st.caption(f"Equivalence bound: ±{eq_bound:.1f} logits. Uses 90% CI (two one-sided α = .05).")
+
+    tost_rows = []
+    for (i, row_a), (j, row_b) in combinations(enumerate(est), 2):
+        diff = float(est[i] - est[j])
+        se_diff = float(np.sqrt(se[i]**2 + se[j]**2))
+        if se_diff == 0:
+            continue
+        z_lower = (diff - (-eq_bound)) / se_diff
+        z_upper = (diff - eq_bound) / se_diff
+        p_lower = float(_norm.sf(z_lower))
+        p_upper = float(_norm.cdf(z_upper))
+        p_tost = max(p_lower, p_upper)
+        equivalent = p_tost < 0.05
+        tost_rows.append({
+            "Element A": elem_labels[i],
+            "Element B": elem_labels[j],
+            "Diff (logits)": round(diff, 3),
+            "SE_diff": round(se_diff, 3),
+            "p_TOST": round(p_tost, 4),
+            "Equivalent": equivalent,
+        })
+
+    if tost_rows:
+        tost_df = pd.DataFrame(tost_rows)
+        n_equiv = int(tost_df["Equivalent"].sum())
+        n_total = len(tost_df)
+        if n_equiv == n_total:
+            st.success(f"All {n_total} pairwise comparisons are equivalent (p_TOST < .05).")
+        elif n_equiv > n_total / 2:
+            st.info(f"{n_equiv} of {n_total} pairs equivalent, {n_total - n_equiv} non-equivalent.")
+        else:
+            st.warning(f"Only {n_equiv} of {n_total} pairs equivalent.")
+        with st.expander("TOST pairwise details"):
+            st.dataframe(tost_df, width="stretch")
+
+    # --- 3. BIC-Based Bayes Factor (Wagenmakers, 2007) ---
+    st.markdown("---")
+    st.markdown("**3. BIC-Based Bayes Factor** (Wagenmakers, 2007)")
+
+    n_obs = result.get("prep", {}).get("n_obs", 1000)
+    bic_diff = chi2_val - df_chi * np.log(n_obs)
+    bf01 = float(np.exp(bic_diff / 2))
+    # Clamp for display
+    bf01_display = min(bf01, 1e6)
+
+    if bf01 > 100:
+        bf_label = "Extreme evidence for equivalence"
+    elif bf01 > 30:
+        bf_label = "Very strong evidence for equivalence"
+    elif bf01 > 10:
+        bf_label = "Strong evidence for equivalence"
+    elif bf01 > 3:
+        bf_label = "Moderate evidence for equivalence"
+    elif bf01 > 1:
+        bf_label = "Anecdotal evidence for equivalence"
+    elif bf01 > 1/3:
+        bf_label = "Anecdotal evidence against equivalence"
+    elif bf01 > 1/10:
+        bf_label = "Moderate evidence against equivalence"
+    else:
+        bf_label = "Strong evidence against equivalence"
+
+    bc1, bc2 = st.columns(2)
+    bc1.metric("BF₀₁", f"{bf01_display:.2f}")
+    bc2.metric("Interpretation", bf_label)
+    st.caption(
+        "BF₀₁ > 1 supports H₀ (equivalence); BF₀₁ < 1 supports H₁ (difference). "
+        "Jeffreys (1961) scale: 1–3 anecdotal, 3–10 moderate, 10–30 strong, >30 very strong."
+    )
+
+    # --- 4. ROPE Analysis (Kruschke, 2018) ---
+    st.markdown("---")
+    st.markdown("**4. ROPE Analysis** (Kruschke, 2018)")
+    st.caption(
+        f"Region of Practical Equivalence: [{-eq_bound:.1f}, {eq_bound:.1f}] logits "
+        "around the weighted grand mean. Shows the proportion of each element's "
+        "approximate posterior (normal) falling within the ROPE."
+    )
+
+    rope_rows = []
+    for i in range(n_elem):
+        deviation = float(est[i] - grand_mean)
+        p_in_rope = float(
+            _norm.cdf(eq_bound, loc=deviation, scale=se[i])
+            - _norm.cdf(-eq_bound, loc=deviation, scale=se[i])
+        )
+        rope_rows.append({
+            "Element": elem_labels[i],
+            "Measure": round(est[i], 3),
+            "Deviation": round(deviation, 3),
+            "SE": round(se[i], 3),
+            "% in ROPE": round(p_in_rope * 100, 1),
+        })
+    rope_df = pd.DataFrame(rope_rows)
+    mean_rope = float(rope_df["% in ROPE"].mean())
+
+    if mean_rope >= 95:
+        st.success(f"Mean ROPE probability = {mean_rope:.1f}% — strong evidence for practical equivalence.")
+    elif mean_rope >= 80:
+        st.info(f"Mean ROPE probability = {mean_rope:.1f}% — moderate evidence for practical equivalence.")
+    else:
+        st.warning(f"Mean ROPE probability = {mean_rope:.1f}% — limited evidence for practical equivalence.")
+    st.dataframe(rope_df, width="stretch")
+
+    # --- 5. Forest Plot with ROPE overlay ---
+    st.markdown("---")
+    st.markdown("**5. Forest Plot — Measures with 95% CI and ROPE**")
+
+    ci_lower = est - 1.96 * se
+    ci_upper = est + 1.96 * se
+
+    fig = go.Figure()
+    # ROPE band
+    fig.add_vrect(x0=grand_mean - eq_bound, x1=grand_mean + eq_bound,
+                  fillcolor="green", opacity=0.12, line_width=0,
+                  annotation_text=f"ROPE ±{eq_bound}", annotation_position="top left")
+    fig.add_vline(x=grand_mean, line_dash="dash", line_color="gray", line_width=1,
+                  annotation_text=f"Grand mean = {grand_mean:.2f}")
+
+    labels_str = [str(lbl) for lbl in elem_labels]
+    for i in range(n_elem):
+        in_rope_l = ci_lower[i] >= grand_mean - eq_bound
+        in_rope_u = ci_upper[i] <= grand_mean + eq_bound
+        if in_rope_l and in_rope_u:
+            color = "#2ecc71"
+        elif ci_lower[i] > grand_mean + eq_bound or ci_upper[i] < grand_mean - eq_bound:
+            color = "#e74c3c"
+        else:
+            color = "#f39c12"
+        fig.add_trace(go.Scatter(
+            x=[est[i]], y=[labels_str[i]], mode="markers",
+            marker=dict(size=8, color=color), showlegend=False,
+            error_x=dict(type="data", symmetric=False,
+                         array=[ci_upper[i] - est[i]], arrayminus=[est[i] - ci_lower[i]],
+                         color=color, thickness=2),
+            hovertemplate=f"{labels_str[i]}: {est[i]:.2f} [{ci_lower[i]:.2f}, {ci_upper[i]:.2f}]<extra></extra>",
+        ))
+
+    fig.update_layout(
+        xaxis_title="Measure (logits)",
+        title=f"{eq_facet} — Element Measures with 95% CI and ROPE",
+        yaxis=dict(autorange="reversed", categoryorder="array", categoryarray=labels_str),
+        height=max(300, n_elem * 30), template="plotly_white",
+    )
+    st.plotly_chart(fig, width="stretch")
+    _offer_fig_download(fig, "facet_equivalence_forest", "Download Forest Plot (PNG 300 DPI)")
+
+    # --- 6. Convergent interpretation ---
+    st.markdown("---")
+    st.markdown("**Convergent Interpretation**")
+    evidence_for = 0
+    evidence_against = 0
+    if p_chi >= 0.05:
+        evidence_for += 1
+    else:
+        evidence_against += 1
+    if tost_rows:
+        if n_equiv == n_total:
+            evidence_for += 1
+        elif n_equiv < n_total / 2:
+            evidence_against += 1
+    if bf01 > 3:
+        evidence_for += 1
+    elif bf01 < 1/3:
+        evidence_against += 1
+    if mean_rope >= 90:
+        evidence_for += 1
+    elif mean_rope < 50:
+        evidence_against += 1
+
+    if evidence_for >= 3:
+        st.success(
+            f"Convergent evidence supports practical equivalence of {eq_facet} elements "
+            f"(Fixed χ² p = {p_chi:.3f}, BF₀₁ = {bf01_display:.2f}, "
+            f"mean ROPE = {mean_rope:.1f}%)."
+        )
+    elif evidence_against >= 3:
+        st.error(
+            f"Convergent evidence against equivalence of {eq_facet} elements. "
+            "Elements are measurably and practically different."
+        )
+    else:
+        st.info(
+            f"Mixed evidence regarding {eq_facet} equivalence "
+            f"(Fixed χ² p = {p_chi:.3f}, BF₀₁ = {bf01_display:.2f}, "
+            f"mean ROPE = {mean_rope:.1f}%). "
+            "Consider full Bayesian analysis (Stan Code tab) for definitive inference."
+        )
+
+
+# ---------------------------------------------------------------------------
+# Report sub-tab: Stan Code Generator
+# ---------------------------------------------------------------------------
+
+def _render_stan_code(result: dict) -> None:
+    """Generate Stan model code for Bayesian MFRM based on data structure."""
+    st.subheader("Stan Code for Bayesian MFRM")
+    st.caption(
+        "Auto-generated Stan code for full Bayesian estimation of your MFRM design. "
+        "Run offline with CmdStanPy or CmdStanR for posterior distributions, "
+        "LOO cross-validation, and posterior predictive checks."
+    )
+
+    config = result.get("config", {})
+    prep = result.get("prep", {})
+    facet_names = config.get("facet_names", [])
+    n_cat = config.get("n_cat", 5)
+    model_type = config.get("model", "RSM")
+    n_obs = prep.get("n_obs", "N_OBS")
+    n_person = prep.get("n_person", "N_PERSON")
+
+    if not facet_names:
+        st.info("No facets available. Run estimation first.")
+        return
+    if model_type == "GPCM":
+        st.info(
+            "The Stan generator currently supports RSM and PCM only. "
+            "For this GPCM run, use the Python app-engine runner in the Downloads tab."
+        )
+        return
+
+    # Build Stan model
+    n_facets = len(facet_names)
+    facet_vars = [fn.lower().replace(" ", "_") for fn in facet_names]
+
+    # --- Data block ---
+    data_lines = [
+        "data {",
+        "  int<lower=1> N;           // number of observations",
+        "  int<lower=1> J;           // number of persons",
+    ]
+    for i, (fn, fv) in enumerate(zip(facet_names, facet_vars)):
+        data_lines.append(f"  int<lower=1> K_{fv};       // number of {fn} levels")
+    data_lines.append(f"  int<lower=2> C;           // number of categories")
+    data_lines.append("  array[N] int<lower=1, upper=J> person;  // person index")
+    for fv in facet_vars:
+        data_lines.append(f"  array[N] int<lower=1, upper=K_{fv}> {fv};  // {fv} index")
+    data_lines.append("  array[N] int<lower=0, upper=C-1> y;    // observed rating")
+    data_lines.append("}")
+
+    # --- Parameters block ---
+    param_lines = [
+        "parameters {",
+        "  vector[J] theta;          // person ability",
+    ]
+    for fn, fv in zip(facet_names, facet_vars):
+        param_lines.append(f"  vector[K_{fv}] delta_{fv};  // {fn} severity")
+    if model_type == "RSM":
+        param_lines.append("  ordered[C-1] tau;         // Rasch-Andrich thresholds (RSM)")
+    else:
+        # PCM: element-specific thresholds for first facet
+        param_lines.append(f"  matrix[K_{facet_vars[0]}, C-1] tau; // thresholds (PCM, per {facet_names[0]})")
+    param_lines.append("  real<lower=0> sigma_theta; // person ability SD")
+    param_lines.append("}")
+
+    # --- Model block ---
+    model_lines = [
+        "model {",
+        "  // Priors",
+        "  theta ~ normal(0, sigma_theta);",
+        "  sigma_theta ~ cauchy(0, 2.5);",
+    ]
+    for fv in facet_vars:
+        model_lines.append(f"  delta_{fv} ~ normal(0, 2);")
+    if model_type == "RSM":
+        model_lines.append("  tau ~ normal(0, 5);")
+    else:
+        model_lines.append(f"  to_vector(tau) ~ normal(0, 5);")
+
+    # Centering constraint
+    model_lines.append(f"  // Centering: sum-to-zero on first facet")
+    model_lines.append(f"  sum(delta_{facet_vars[0]}) ~ normal(0, 0.001 * K_{facet_vars[0]});")
+
+    model_lines.append("")
+    model_lines.append("  // Likelihood (Rating Scale Model)")
+    model_lines.append("  for (n in 1:N) {")
+    # Build eta
+    eta_parts = ["theta[person[n]]"]
+    for fv in facet_vars:
+        eta_parts.append(f"delta_{fv}[{fv}[n]]")
+    eta_expr = " - ".join(eta_parts)
+    model_lines.append(f"    real eta = {eta_expr};")
+    model_lines.append("    vector[C] log_prob;")
+    model_lines.append("    log_prob[1] = 0;")
+    if model_type == "RSM":
+        model_lines.append("    for (c in 2:C)")
+        model_lines.append("      log_prob[c] = log_prob[c-1] + eta - tau[c-1];")
+    else:
+        model_lines.append("    for (c in 2:C)")
+        model_lines.append(f"      log_prob[c] = log_prob[c-1] + eta - tau[{facet_vars[0]}[n], c-1];")
+    model_lines.append("    y[n] ~ categorical_logit(log_prob);")
+    model_lines.append("  }")
+    model_lines.append("}")
+
+    # --- Generated quantities ---
+    gq_lines = [
+        "generated quantities {",
+        "  vector[N] log_lik;  // for LOO cross-validation",
+        "  array[N] int y_rep; // posterior predictive",
+        "  for (n in 1:N) {",
+        f"    real eta = {eta_expr};",
+        "    vector[C] log_prob;",
+        "    log_prob[1] = 0;",
+    ]
+    if model_type == "RSM":
+        gq_lines.append("    for (c in 2:C)")
+        gq_lines.append("      log_prob[c] = log_prob[c-1] + eta - tau[c-1];")
+    else:
+        gq_lines.append("    for (c in 2:C)")
+        gq_lines.append(f"      log_prob[c] = log_prob[c-1] + eta - tau[{facet_vars[0]}[n], c-1];")
+    gq_lines.extend([
+        "    log_lik[n] = categorical_logit_lpmf(y[n] | log_prob);",
+        "    y_rep[n] = categorical_logit_rng(log_prob);",
+        "  }",
+        "}",
+    ])
+
+    stan_code = "\n".join(data_lines + [""] + param_lines + [""] + model_lines + [""] + gq_lines)
+
+    st.code(stan_code, language="stan")
+
+    # --- Python runner script ---
+    facet_n_lines = []
+    facet_data_lines = []
+    for fn, fv in zip(facet_names, facet_vars):
+        facet_n_lines.append(f'    "K_{fv}": int(data["{fn}"].nunique()),')
+        facet_data_lines.append(
+            f'    "{fv}": data["{fn}"].astype("category").cat.codes.values + 1,  # 1-indexed'
+        )
+
+    runner_code = f'''"""Run Bayesian MFRM with CmdStanPy."""
+import cmdstanpy
+import pandas as pd
+import numpy as np
+
+# Load your data (long format: one row per observation)
+data = pd.read_csv("your_data.csv")
+
+# Compile the Stan model
+model = cmdstanpy.CmdStanModel(stan_file="mfrm_model.stan")
+
+# Prepare data dictionary
+stan_data = {{
+    "N": len(data),
+    "J": int(data["Person"].nunique()),
+{chr(10).join(facet_n_lines)}
+    "C": {n_cat},
+    "person": data["Person"].astype("category").cat.codes.values + 1,
+{chr(10).join(facet_data_lines)}
+    "y": data["Score"].values,  # 0-indexed categories for categorical_logit
+}}
+
+# Sample from posterior
+fit = model.sample(
+    data=stan_data,
+    chains=4,
+    iter_warmup=1000,
+    iter_sampling=2000,
+    seed=42,
+    show_console=True,
+)
+
+# Diagnostics
+print(fit.diagnose())
+print(fit.summary())
+
+# LOO cross-validation
+import arviz as az
+idata = az.from_cmdstanpy(fit)
+loo = az.loo(idata, pointwise=True)
+print(loo)
+'''
+
+    with st.expander("Python runner script (CmdStanPy)"):
+        st.code(runner_code, language="python")
+
+    # R runner script
+    r_facet_n = ", ".join(f'K_{fv} = length(unique(data${fn}))' for fn, fv in zip(facet_names, facet_vars))
+    r_facet_data = ", ".join(f'{fv} = as.integer(factor(data${fn}))' for fn, fv in zip(facet_names, facet_vars))
+    r_runner = f'''# Run Bayesian MFRM with CmdStanR
+library(cmdstanr)
+
+data <- read.csv("your_data.csv")
+mod <- cmdstan_model("mfrm_model.stan")
+
+stan_data <- list(
+  N = nrow(data),
+  J = length(unique(data$Person)),
+  {r_facet_n},
+  C = {n_cat}L,
+  person = as.integer(factor(data$Person)),
+  {r_facet_data},
+  y = data$Score
+)
+
+fit <- mod$sample(
+  data = stan_data,
+  chains = 4, iter_warmup = 1000, iter_sampling = 2000,
+  seed = 42, parallel_chains = 4
+)
+
+fit$summary()
+fit$cmdstan_diagnose()
+
+# LOO
+library(loo)
+log_lik <- fit$draws("log_lik", format = "matrix")
+loo_result <- loo(log_lik)
+print(loo_result)
+'''
+
+    with st.expander("R runner script (CmdStanR)"):
+        st.code(r_runner, language="r")
+
+    # Download buttons
+    dc1, dc2, dc3 = st.columns(3)
+    with dc1:
+        st.download_button("Download Stan code", stan_code,
+                           file_name="mfrm_model.stan", mime="text/plain", key="dl_stan_code")
+    with dc2:
+        st.download_button("Download Python script", runner_code,
+                           file_name="run_mfrm_stan.py", mime="text/plain", key="dl_stan_py")
+    with dc3:
+        st.download_button("Download R script", r_runner,
+                           file_name="run_mfrm_stan.R", mime="text/plain", key="dl_stan_r")
+
+
+# ---------------------------------------------------------------------------
+# Fit Details tab
+# ---------------------------------------------------------------------------
+
+def show_fit_details_section(diagnostics: dict) -> None:
+    """Detailed fit statistics with misfit flagging and visualizations."""
+
+
+    st.subheader("Fit Statistics (FACETS Table 10 style)")
+    st.caption(
+        "Fit indices measure how well each element's responses conform to the Rasch model. "
+        "**Infit** is information-weighted (sensitive to unexpected patterns near the element's "
+        "measure). **Outfit** is unweighted (sensitive to outliers far from the element's measure)."
+    )
+
+    with st.expander("What do MnSq and ZSTD mean? (guide for beginners)", expanded=False):
+        st.markdown(
+            """
+**MnSq (Mean-Square)** is the average of squared standardized residuals.
+It tells you how well an element's observed responses match what the model predicts.
+
+- **MnSq = 1.0**: Perfect fit — responses are exactly as expected.
+- **MnSq > 1.0**: Underfit — responses are *more variable* (noisier) than the model expects.
+  For example, a rater who gives unexpectedly high scores to some examinees and unexpectedly
+  low scores to others.
+- **MnSq < 1.0**: Overfit — responses are *too predictable* (less variable than expected).
+  This can indicate redundancy or response dependencies (e.g., copying).
+
+**ZSTD (Z-Standardized)** is the MnSq value transformed into a z-score.
+It answers: "Is this MnSq statistically significantly different from 1.0?"
+
+- **|ZSTD| < 2.0**: The misfit is not statistically significant — acceptable.
+- **|ZSTD| > 2.0**: The misfit is statistically significant — investigate this element.
+- With large samples, even small deviations can be significant, so always interpret
+  ZSTD together with MnSq, not in isolation.
+
+**Infit vs Outfit**:
+- **Infit** (information-weighted): More sensitive to *systematic* misfit patterns.
+  It down-weights observations where the model is already uncertain (far from the element's
+  difficulty). Prioritize Infit for rater evaluation.
+- **Outfit** (unweighted): More sensitive to *outliers* — rare extreme unexpected responses.
+  A high Outfit with acceptable Infit often means a few isolated surprising responses,
+  not a systematic problem.
+
+**Practical decision rule**: Look at Infit MnSq first. If it's between 0.5 and 1.5,
+the element is generally acceptable. Then check Outfit for outlier concerns.
+"""
+        )
+
+    # Fit criteria reference (Wright & Linacre, 1994; Linacre, 2002)
+    st.markdown(
+        """
+| Criterion | Acceptable | Degrading | Distorting | Reference |
+|---|---|---|---|---|
+| **MnSq** | 0.5 – 1.5 | 1.5 – 2.0 or < 0.5 | > 2.0 | Wright & Linacre (1994) |
+| **ZSTD** | −2.0 to +2.0 | ±2.0 to ±3.0 | > ±3.0 | Linacre (2002) |
+
+*MnSq > 1.5*: Noisy data (unpredictable responses).
+*MnSq < 0.5*: Over-fit (too predictable, possible dependency; Linacre, 2002).
+*High Outfit with acceptable Infit*: Isolated outlier responses (Smith, 2000).
+"""
+    )
+
+    # Result-aware fit summary
+    _fit_summary_callout(diagnostics.get("measures", pd.DataFrame()))
+
+    fit_df = diagnostics.get("fit")
+    if not isinstance(fit_df, pd.DataFrame) or fit_df.empty:
+        measures = diagnostics.get("measures", pd.DataFrame())
+        if not measures.empty and "Infit" in measures.columns:
+            fit_df = measures.copy()
+        else:
+            st.info("Fit statistics not available.")
+            return
+
+    st.dataframe(fit_df, width="stretch")
+
+    # Misfit flagging
+    _show_misfit_flags(fit_df)
+
+    # Fit scatter plot: Infit vs Outfit
+    if "Infit" in fit_df.columns and "Outfit" in fit_df.columns:
+        _draw_fit_scatter(fit_df)
+
+    # ZSTD distribution
+    _draw_zstd_distribution(fit_df)
+
+    # Top misfit elements
+    _draw_misfit_ranking(fit_df)
+    show_marginal_fit_section(diagnostics)
+
+
+def _marginal_scope_label(row: pd.Series) -> str:
+    """Compact label for marginal diagnostic rows."""
+    if "FacetA" in row.index and pd.notna(row.get("FacetA", np.nan)):
+        return (
+            f"{row.get('FacetA')}:{row.get('LevelA')} x "
+            f"{row.get('FacetB')}:{row.get('LevelB')}"
+        )
+    if "Facet" in row.index and pd.notna(row.get("Facet", np.nan)):
+        return f"{row.get('Facet')}:{row.get('Level')}"
+    return str(row.get("Scope", "Overall"))
+
+
+def _prepare_marginal_plot_frame(summary: pd.DataFrame, top_n: int = 25) -> pd.DataFrame:
+    if not isinstance(summary, pd.DataFrame) or summary.empty or "MaxAbsStdResidual" not in summary.columns:
+        return pd.DataFrame()
+    plot_df = summary.copy()
+    plot_df["MaxAbsStdResidual"] = pd.to_numeric(plot_df["MaxAbsStdResidual"], errors="coerce")
+    plot_df["p"] = pd.to_numeric(plot_df.get("p", pd.Series(np.nan, index=plot_df.index)), errors="coerce")
+    plot_df = plot_df.dropna(subset=["MaxAbsStdResidual"])
+    if plot_df.empty:
+        return pd.DataFrame()
+    plot_df["_Label"] = plot_df.apply(_marginal_scope_label, axis=1)
+    plot_df["_StatusOrder"] = plot_df.get("Status", pd.Series("OK", index=plot_df.index)).map({"Review": 0, "OK": 1}).fillna(2)
+    plot_df = plot_df.sort_values(
+        ["_StatusOrder", "MaxAbsStdResidual", "p"],
+        ascending=[True, False, True],
+    ).head(int(top_n))
+    return plot_df
+
+
+def _make_marginal_summary_figure(summary: pd.DataFrame, title: str, top_n: int = 25):
+    plot_df = _prepare_marginal_plot_frame(summary, top_n=top_n)
+    if plot_df.empty:
+        return None
+    colors = plot_df.get("Status", pd.Series("OK", index=plot_df.index)).map({
+        "Review": "#d95f02",
+        "OK": "#1b9e77",
+    }).fillna("#7570b3")
+    custom = np.column_stack([
+        plot_df.get("Status", pd.Series("", index=plot_df.index)).astype(str).to_numpy(),
+        plot_df["p"].to_numpy(),
+        pd.to_numeric(plot_df.get("Rows", pd.Series(np.nan, index=plot_df.index)), errors="coerce").to_numpy(),
+    ])
+    fig = go.Figure(go.Bar(
+        x=plot_df["MaxAbsStdResidual"],
+        y=plot_df["_Label"],
+        orientation="h",
+        marker_color=colors,
+        customdata=custom,
+        hovertemplate=(
+            "%{y}<br>Max |Std residual|=%{x:.2f}"
+            "<br>Status=%{customdata[0]}"
+            "<br>p=%{customdata[1]:.3g}"
+            "<br>Rows=%{customdata[2]:.0f}<extra></extra>"
+        ),
+    ))
+    fig.add_vline(x=3.0, line_dash="dash", line_color="#d62728", line_width=0.8,
+                  annotation_text="review >= 3")
+    fig.update_layout(
+        title=title,
+        xaxis_title="Max |standardized observed-expected residual|",
+        yaxis=dict(autorange="reversed"),
+        height=max(340, 26 * len(plot_df) + 130),
+        template="plotly_white",
+        showlegend=False,
+    )
+    return fig
+
+
+def _make_marginal_heatmap_figure(
+    counts: pd.DataFrame,
+    title: str,
+    top_labels: list[str] | None = None,
+    top_n: int = 25,
+):
+    required = {"Category", "StdResidual"}
+    if not isinstance(counts, pd.DataFrame) or counts.empty or not required.issubset(counts.columns):
+        return None
+    plot_df = counts.copy()
+    plot_df["StdResidual"] = pd.to_numeric(plot_df["StdResidual"], errors="coerce")
+    plot_df = plot_df.dropna(subset=["StdResidual"])
+    if plot_df.empty:
+        return None
+    plot_df["_Label"] = plot_df.apply(_marginal_scope_label, axis=1)
+    if top_labels:
+        plot_df = plot_df[plot_df["_Label"].isin(top_labels)]
+    else:
+        top_labels = (
+            plot_df.groupby("_Label")["StdResidual"]
+            .apply(lambda s: float(np.nanmax(np.abs(s))))
+            .sort_values(ascending=False)
+            .head(int(top_n))
+            .index.tolist()
+        )
+        plot_df = plot_df[plot_df["_Label"].isin(top_labels)]
+    if plot_df.empty:
+        return None
+    plot_df["Category"] = plot_df["Category"].astype(str)
+    heat = plot_df.pivot_table(
+        index="_Label",
+        columns="Category",
+        values="StdResidual",
+        aggfunc="mean",
+        observed=False,
+    )
+    heat = heat.reindex([label for label in top_labels if label in heat.index])
+    if heat.empty:
+        return None
+    finite = np.asarray(heat.to_numpy(dtype=float))
+    zlim = float(np.nanmax(np.abs(finite))) if np.isfinite(finite).any() else 3.0
+    zlim = max(3.0, min(zlim, 8.0))
+    fig = go.Figure(data=go.Heatmap(
+        z=heat.to_numpy(dtype=float),
+        x=list(heat.columns),
+        y=list(heat.index),
+        zmid=0,
+        zmin=-zlim,
+        zmax=zlim,
+        colorscale=[
+            [0.0, "#2166ac"],
+            [0.5, "#f7f7f7"],
+            [1.0, "#b2182b"],
+        ],
+        colorbar=dict(title="Std residual"),
+        hovertemplate="%{y}<br>Category=%{x}<br>Std residual=%{z:.2f}<extra></extra>",
+    ))
+    fig.update_layout(
+        title=title,
+        xaxis_title="Score category",
+        yaxis_title="Marginal row",
+        height=max(340, 26 * len(heat.index) + 130),
+        template="plotly_white",
+    )
+    return fig
+
+
+def _add_figure_export(fig, name: str, figure_bytes: dict[str, bytes], figure_html: dict[str, str]) -> bool:
+    if fig is None:
+        return True
+    png_data = fig_to_png_bytes(fig)
+    if png_data is not None:
+        figure_bytes[name] = png_data
+        ok = True
+    else:
+        ok = False
+    figure_html[name] = fig.to_html(include_plotlyjs="cdn")
+    return ok
+
+
+def show_marginal_fit_section(diagnostics: dict) -> None:
+    """Render MML strict marginal distribution diagnostics."""
+    st.subheader("Strict marginal diagnostics (MML)")
+    marginal = diagnostics.get("marginal_fit", {})
+    if not diagnostics.get("marginal_fit_enabled", False):
+        st.info(
+            "Strict marginal diagnostics were skipped for this run. "
+            "Use Full publication or Custom > Compute strict marginal diagnostics with MML to enable them."
+        )
+        return
+    if not isinstance(marginal, dict) or not marginal.get("available"):
+        st.info(marginal.get("reason", "Strict marginal diagnostics are unavailable for this run."))
+        return
+
+    st.caption(
+        "This screen compares observed score-category counts with counts expected after "
+        "integrating over the MML population distribution. It is stricter than ordinary "
+        "residual displays for checking whether the model reproduces marginal score distributions."
+    )
+    st.info(marginal.get("interpretation", "Use this as a corroborating marginal fit screen."))
+
+    summary = marginal.get("summary", pd.DataFrame())
+    counts = marginal.get("counts", pd.DataFrame())
+    if isinstance(summary, pd.DataFrame) and not summary.empty:
+        display = summary.copy()
+        if "Status" in display.columns:
+            display["_order"] = display["Status"].map({"Review": 0, "OK": 1}).fillna(2)
+            display = display.sort_values(["_order", "p", "MaxAbsStdResidual"], ascending=[True, True, False]).drop(columns=["_order"])
+        n_review = int((display.get("Status", pd.Series(dtype=str)) == "Review").sum())
+        if n_review:
+            st.warning(f"{n_review} marginal row(s) flagged for review.")
+        else:
+            st.success("No strict marginal rows were flagged by the current screen.")
+        st.dataframe(display, width="stretch")
+        st.caption(
+            "Bars near 0 mean the model reproduces the marginal category distribution. "
+            "Values near or above 3 point to category/facet rows worth reviewing."
+        )
+        summary_fig = _make_marginal_summary_figure(display, "Largest marginal distribution deviations")
+        if summary_fig is not None:
+            st.plotly_chart(summary_fig, width="stretch")
+            _offer_fig_download(summary_fig, "strict_marginal_summary", "Download Marginal Summary (PNG 300 DPI)")
+    else:
+        st.info("No marginal summary table available.")
+
+    if isinstance(counts, pd.DataFrame) and not counts.empty:
+        if isinstance(summary, pd.DataFrame) and not summary.empty:
+            top_frame = _prepare_marginal_plot_frame(summary, top_n=25)
+            top_labels = top_frame["_Label"].tolist() if "_Label" in top_frame.columns else None
+        else:
+            top_labels = None
+        heatmap_fig = _make_marginal_heatmap_figure(
+            counts,
+            "Category-level marginal residual heatmap",
+            top_labels=top_labels,
+        )
+        if heatmap_fig is not None:
+            st.caption(
+                "Red cells have more observed responses than expected; blue cells have fewer. "
+                "Read this as a screening plot, then inspect the table before deciding what to report."
+            )
+            st.plotly_chart(heatmap_fig, width="stretch")
+            _offer_fig_download(heatmap_fig, "strict_marginal_heatmap", "Download Marginal Heatmap (PNG 300 DPI)")
+        with st.expander("Marginal category count details"):
+            st.dataframe(counts, width="stretch")
+
+    pairwise = marginal.get("pairwise", {})
+    st.subheader("Pairwise marginal screen")
+    if isinstance(pairwise, dict) and pairwise.get("available"):
+        pair_summary = pairwise.get("summary", pd.DataFrame())
+        pair_counts = pairwise.get("counts", pd.DataFrame())
+        st.caption(pairwise.get("reason", "Pairwise marginal diagnostics computed."))
+        if isinstance(pair_summary, pd.DataFrame) and not pair_summary.empty:
+            st.dataframe(pair_summary, width="stretch")
+            pair_fig = _make_marginal_summary_figure(
+                pair_summary,
+                "Largest pairwise marginal deviations",
+                top_n=30,
+            )
+            if pair_fig is not None:
+                st.plotly_chart(pair_fig, width="stretch")
+                _offer_fig_download(pair_fig, "strict_marginal_pairwise_summary", "Download Pairwise Marginal Summary (PNG 300 DPI)")
+        if isinstance(pair_counts, pd.DataFrame) and not pair_counts.empty:
+            pair_top = _prepare_marginal_plot_frame(pair_summary, top_n=30) if isinstance(pair_summary, pd.DataFrame) else pd.DataFrame()
+            pair_labels = pair_top["_Label"].tolist() if "_Label" in pair_top.columns else None
+            pair_heatmap = _make_marginal_heatmap_figure(
+                pair_counts,
+                "Pairwise category-level marginal residual heatmap",
+                top_labels=pair_labels,
+                top_n=30,
+            )
+            if pair_heatmap is not None:
+                st.plotly_chart(pair_heatmap, width="stretch")
+                _offer_fig_download(pair_heatmap, "strict_marginal_pairwise_heatmap", "Download Pairwise Marginal Heatmap (PNG 300 DPI)")
+            with st.expander("Pairwise marginal count details"):
+                st.dataframe(pair_counts, width="stretch")
+    else:
+        st.info(pairwise.get("reason", "Pairwise marginal diagnostics were not computed."))
+
+
+def _show_misfit_flags(fit_df: pd.DataFrame) -> None:
+    """Flag misfit elements with color-coded summary."""
+    if "Infit" not in fit_df.columns or "Outfit" not in fit_df.columns:
+        return
+
+    infit = pd.to_numeric(fit_df["Infit"], errors="coerce")
+    outfit = pd.to_numeric(fit_df["Outfit"], errors="coerce")
+    n_total = len(fit_df)
+
+    # Mutually exclusive categories: worst classification takes priority
+    # (distorting > overfit > noisy > acceptable)
+    is_distort = (infit > 2.0) | (outfit > 2.0)
+    is_overfit = ~is_distort & ((infit < 0.5) | (outfit < 0.5))
+    is_noisy = ~is_distort & ~is_overfit & (
+        ((infit > 1.5) & (infit <= 2.0)) | ((outfit > 1.5) & (outfit <= 2.0))
+    )
+    distort = int(is_distort.sum())
+    overfit = int(is_overfit.sum())
+    noisy = int(is_noisy.sum())
+    acceptable = n_total - overfit - noisy - distort
+
+    cols = st.columns(4)
+    cols[0].metric("Acceptable", f"{acceptable}/{n_total}", delta=f"{100*acceptable/n_total:.0f}%")
+    cols[1].metric("Over-fit (<0.5)", f"{overfit}", delta=f"{100*overfit/n_total:.0f}%" if overfit else "0%", delta_color="off")
+    cols[2].metric("Noisy (1.5–2.0)", f"{noisy}", delta=f"{100*noisy/n_total:.0f}%" if noisy else "0%", delta_color="off")
+    cols[3].metric("Distorting (>2.0)", f"{distort}", delta=f"{100*distort/n_total:.0f}%" if distort else "0%", delta_color="inverse")
+
+
+def _draw_fit_scatter(fit_df: pd.DataFrame) -> None:
+    """Infit vs Outfit scatter plot with reference zones."""
+
+
+    st.subheader("Fit scatter: Infit vs Outfit")
+    infit = pd.to_numeric(fit_df["Infit"], errors="coerce")
+    outfit = pd.to_numeric(fit_df["Outfit"], errors="coerce")
+    mask = infit.notna() & outfit.notna()
+
+    pdf = fit_df.loc[mask].copy()
+    pdf["Infit"] = infit[mask]
+    pdf["Outfit"] = outfit[mask]
+    if pdf.empty:
+        st.info("No valid Infit/Outfit pairs to plot.")
+        return
+
+    color_col = "Facet" if "Facet" in pdf.columns else None
+    hover_data = [c for c in ["Facet", "Level"] if c in pdf.columns] or None
+    fig = px.scatter(
+        pdf, x="Infit", y="Outfit", color=color_col,
+        hover_data=hover_data, opacity=0.7,
+        color_discrete_sequence=px.colors.qualitative.Set2,
+    )
+    fig.add_hrect(y0=0.5, y1=1.5, fillcolor="green", opacity=0.06, line_width=0)
+    fig.add_vrect(x0=0.5, x1=1.5, fillcolor="green", opacity=0.06, line_width=0)
+    for v in [0.5, 1.5]:
+        fig.add_hline(y=v, line_dash="dash", line_color="orange", line_width=0.7)
+        fig.add_vline(x=v, line_dash="dash", line_color="orange", line_width=0.7)
+    fig.add_hline(y=1.0, line_dash="dot", line_color="gray", line_width=0.5)
+    fig.add_vline(x=1.0, line_dash="dot", line_color="gray", line_width=0.5)
+    fig.update_layout(title="Fit Scatter Plot", xaxis_title="Infit MnSq",
+                      yaxis_title="Outfit MnSq", template="plotly_white", height=480)
+    st.plotly_chart(fig, width="stretch")
+    _offer_fig_download(fig, "fit_scatter", "Download Fit Scatter (PNG 300 DPI)")
+
+
+def _draw_zstd_distribution(fit_df: pd.DataFrame) -> None:
+    """ZSTD distribution histograms."""
+
+
+    zstd_cols = []
+    if "InfitZSTD" in fit_df.columns:
+        zstd_cols.append("InfitZSTD")
+    if "OutfitZSTD" in fit_df.columns:
+        zstd_cols.append("OutfitZSTD")
+    if not zstd_cols:
+        return
+
+    st.subheader("ZSTD distribution")
+    color_map = {"InfitZSTD": "#1b9e77", "OutfitZSTD": "#d95f02"}
+    fig = make_subplots(rows=1, cols=len(zstd_cols),
+                        subplot_titles=[c.replace("ZSTD", " ZSTD") for c in zstd_cols])
+    for ci, col in enumerate(zstd_cols, 1):
+        vals = pd.to_numeric(fit_df[col], errors="coerce").dropna()
+        if len(vals) < 3:
+            continue
+        fig.add_trace(go.Histogram(
+            x=vals, nbinsx=min(25, len(vals)), marker_color=color_map.get(col, "#666"),
+            histnorm="probability density", showlegend=False,
+        ), row=1, col=ci)
+        fig.add_vline(x=0, line_color="black", line_width=1, row=1, col=ci)
+        fig.add_vline(x=2, line_dash="dash", line_color="red", line_width=0.7, row=1, col=ci)
+        fig.add_vline(x=-2, line_dash="dash", line_color="red", line_width=0.7, row=1, col=ci)
+        fig.update_xaxes(title_text="ZSTD", row=1, col=ci)
+        fig.update_yaxes(title_text="Density", row=1, col=ci)
+    fig.update_layout(height=350, template="plotly_white")
+    st.plotly_chart(fig, width="stretch")
+
+
+def _draw_misfit_ranking(fit_df: pd.DataFrame) -> None:
+    """Top misfit elements ranked by max |ZSTD|."""
+
+
+    if "InfitZSTD" not in fit_df.columns and "OutfitZSTD" not in fit_df.columns:
+        return
+
+    st.subheader("Top misfit elements")
+
+    df = fit_df.copy()
+    abs_infit = pd.to_numeric(df.get("InfitZSTD", pd.Series(dtype=float)), errors="coerce").abs()
+    abs_outfit = pd.to_numeric(df.get("OutfitZSTD", pd.Series(dtype=float)), errors="coerce").abs()
+    df["MaxAbsZSTD"] = np.fmax(abs_infit.fillna(0), abs_outfit.fillna(0))
+
+    n_show = st.slider(
+        "Number of elements to show", 5, min(100, len(df)), min(20, len(df)),
+        key="misfit_top_n",
+        help="Maximum number of elements to display, ranked by absolute ZSTD.",
+    )
+    threshold = st.slider(
+        "ZSTD threshold", 0.0, 5.0, 2.0, 0.5, key="misfit_threshold",
+        help="Elements with |ZSTD| >= this threshold are flagged as misfitting. "
+             "2.0 is a common criterion; use 3.0 for stricter control.",
+    )
+
+    top = df.nlargest(n_show, "MaxAbsZSTD")
+    top = top[top["MaxAbsZSTD"] >= threshold]
+
+    if top.empty:
+        st.success(f"No elements with |ZSTD| >= {threshold:.1f}.")
+        return
+
+    top = top.reset_index(drop=True)
+
+    if "Level" in top.columns:
+        labels = top["Level"].astype(str).tolist()
+    else:
+        labels = [str(i) for i in range(len(top))]
+    if "Facet" in top.columns:
+        labels = [f"{top['Facet'].iloc[i]}: {labels[i]}" for i in range(len(top))]
+
+    colors = ["#d62728" if v >= 3 else "#ff7f0e" if v >= 2 else "#2ca02c"
+              for v in top["MaxAbsZSTD"]]
+
+    fig = go.Figure(go.Bar(
+        x=top["MaxAbsZSTD"].values, y=labels, orientation="h",
+        marker_color=colors,
+    ))
+    fig.add_vline(x=2, line_dash="dash", line_color="red", line_width=0.7,
+                  annotation_text="|ZSTD|=2")
+    fig.add_vline(x=3, line_dash="dot", line_color="darkred", line_width=0.7,
+                  annotation_text="|ZSTD|=3")
+    fig.update_layout(
+        xaxis_title="Max |ZSTD|", title=f"Top {len(top)} Misfit Elements",
+        yaxis=dict(autorange="reversed"), height=max(300, len(top) * 25),
+        template="plotly_white",
+    )
+    st.plotly_chart(fig, width="stretch")
+
+    st.dataframe(top, width="stretch")
+
+
+# ---------------------------------------------------------------------------
+# Plotly variants for fit scatter
+# ---------------------------------------------------------------------------
+# Visuals tab (Category Probability Curves, Pathway Map, Observed vs Expected)
+# ---------------------------------------------------------------------------
+
+def show_visuals_section(result: dict, diagnostics: dict) -> None:
+    """Comprehensive visualization suite."""
+    st.caption(
+        "Diagnostic visualizations for model-data fit and rating scale functioning. "
+        "Category probability curves show scale structure; the pathway map reveals "
+        "element-level fit patterns; facet distributions compare element spread; "
+        "observed-vs-expected plots test model accuracy."
+    )
+    vtabs = st.tabs([
+        "Category Probability Curves", "Pathway Map",
+        "Facet Distribution", "Observed vs Expected",
+    ])
+
+    with vtabs[0]:
+        _draw_category_probability_curves_plotly(result)
+
+    with vtabs[1]:
+        _draw_pathway_map_plotly(diagnostics)
+
+    with vtabs[2]:
+        _draw_facet_distribution_plotly(diagnostics)
+
+    with vtabs[3]:
+        _draw_observed_vs_expected(diagnostics)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# ---------------------------------------------------------------------------
+# Plotly variants for Visuals sub-tabs
+# ---------------------------------------------------------------------------
+
+def _draw_category_probability_curves_plotly(result: dict) -> None:
+    """Interactive Plotly category probability curves."""
+    st.subheader("Category Probability Curves")
+    st.caption(
+        "These curves show the probability of responding in each category as a "
+        "function of the latent measure (theta). Hover to read exact P(k) at any theta."
+    )
+
+    params = result.get("params", {})
+    config = result.get("config", {})
+    prep = result.get("prep", {})
+    steps = params.get("steps")
+    steps_mat = params.get("steps_mat")
+    model = config.get("model", "RSM")
+    rating_min = prep.get("rating_min", 0)
+    n_cat = config.get("n_cat")
+    curve_slope = 1.0
+
+    if model == "RSM" and steps is not None and len(steps) > 0:
+        step_cum = np.concatenate([[0.0], np.cumsum(steps)])
+        mean_steps = steps
+    elif model in {"PCM", "GPCM"} and steps_mat is not None and len(steps_mat) > 0:
+        mean_steps = np.mean(steps_mat, axis=0)
+        step_cum = np.concatenate([[0.0], np.cumsum(mean_steps)])
+        if model == "GPCM":
+            slopes = np.asarray(params.get("slopes", []), dtype=float)
+            finite_slopes = slopes[np.isfinite(slopes) & (slopes > 0)]
+            if finite_slopes.size:
+                curve_slope = float(np.nanmean(finite_slopes))
+    else:
+        st.info("Step parameters not available.")
+        return
+
+    if n_cat is None:
+        n_cat = len(step_cum)
+
+    theta_lo = min(-4, float(step_cum.min()) - 3)
+    theta_hi = max(4, float(step_cum.max()) + 3)
+    theta_grid = np.linspace(theta_lo, theta_hi, 121)
+    eta_mat = np.outer(theta_grid, np.arange(n_cat))
+    log_num = curve_slope * (eta_mat - step_cum)
+    log_denom = logsumexp(log_num, axis=1, keepdims=True)
+    probs = np.exp(log_num - log_denom)
+
+    colors = px.colors.qualitative.Set2
+    fig = go.Figure()
+    for k in range(n_cat):
+        fig.add_trace(go.Scatter(
+            x=theta_grid, y=probs[:, k], mode="lines",
+            name=f"Cat {rating_min + k}",
+            line=dict(color=colors[k % len(colors)], width=2),
+        ))
+
+    # Threshold lines
+    thresh = steps if (model == "RSM" and steps is not None) else mean_steps
+    for tau in (thresh if thresh is not None else []):
+        fig.add_vline(x=float(tau), line_dash="dot", line_color="gray", line_width=0.6)
+
+    fig.update_layout(
+        xaxis_title="Person Measure − Item Measure (logits)",
+        yaxis_title="Probability",
+        title=(
+            "Category Probability Curves (RSM)"
+            if model == "RSM"
+            else f"Category Probability Curves ({model}, averaged)"
+        ),
+        yaxis=dict(range=[0, 1]), xaxis=dict(range=[theta_lo, theta_hi]),
+        hovermode="x unified", height=450,
+    )
+    st.plotly_chart(fig, width="stretch")
+
+    # Expected score curve
+    k_vals = np.arange(n_cat) + rating_min
+    expected = probs.dot(k_vals)
+    fig2 = go.Figure()
+    fig2.add_trace(go.Scatter(
+        x=theta_grid, y=expected, mode="lines",
+        line=dict(color="#1b9e77", width=2), name="Expected Score",
+    ))
+    for tau in (thresh if thresh is not None else []):
+        fig2.add_vline(x=float(tau), line_dash="dot", line_color="gray", line_width=0.6)
+    fig2.update_layout(
+        xaxis_title="Person Measure − Item Measure (logits)",
+        yaxis_title="Expected Score",
+        title="Expected Score (Model ICC)",
+        yaxis=dict(range=[rating_min, rating_min + n_cat - 1]),
+        hovermode="x unified", height=350,
+    )
+    st.plotly_chart(fig2, width="stretch")
+
+
+def _draw_pathway_map_plotly(diagnostics: dict) -> None:
+    """Interactive Plotly pathway map: Measure vs Infit ZSTD."""
+    st.subheader("Pathway Map")
+    st.caption(
+        "Each point represents a facet element. Hover to identify elements. "
+        "Elements beyond ±2 ZSTD warrant investigation."
+    )
+
+    with st.expander("How to read the Pathway Map", expanded=False):
+        st.markdown(
+            """
+The Pathway Map plots each facet element's **measure** (Y-axis, in logits) against its
+**Infit ZSTD** (X-axis).
+
+**Reading the plot:**
+- **Y-axis (Measure)**: The estimated severity/difficulty of each element.
+  Higher values = more severe raters or harder items.
+- **X-axis (Infit ZSTD)**: How much the element's response pattern deviates from model
+  expectations. A z-score where 0 means perfect fit.
+- **Green zone (|ZSTD| < 2)**: Elements in this zone fit the model well. Their response
+  patterns are consistent with the Rasch model expectations.
+- **Red dashed lines (±2 ZSTD)**: Elements beyond these lines show statistically
+  significant misfit. Investigate their response patterns.
+
+**What to look for:**
+- *Elements far to the right (ZSTD > +2)*: Noisy — responses are more variable than expected.
+  The rater may be inconsistent, or the item may be ambiguous.
+- *Elements far to the left (ZSTD < −2)*: Over-fit — responses are too predictable.
+  Possible response dependencies or restricted range.
+- *Clusters of misfitting elements at similar measures*: May indicate a systematic issue
+  at that difficulty level (e.g., a problematic rubric criterion).
+- *Isolated outliers*: Often driven by a few unexpected responses (check Outfit too).
+"""
+        )
+
+    measures = diagnostics.get("measures", pd.DataFrame())
+    if measures.empty or "Estimate" not in measures.columns:
+        st.info("Measures not available for pathway map.")
+        return
+
+    zstd_col = "InfitZSTD" if "InfitZSTD" in measures.columns else None
+    if zstd_col is None:
+        st.info("Infit ZSTD not available.")
+        return
+
+    pdf = measures.copy()
+    pdf["Estimate"] = pd.to_numeric(pdf["Estimate"], errors="coerce")
+    pdf[zstd_col] = pd.to_numeric(pdf[zstd_col], errors="coerce")
+    pdf = pdf.dropna(subset=["Estimate", zstd_col])
+
+    color_col = "Facet" if "Facet" in pdf.columns else None
+    hover_data = ["Level"] if "Level" in pdf.columns else None
+
+    fig = px.scatter(
+        pdf, x=zstd_col, y="Estimate", color=color_col,
+        hover_data=hover_data, opacity=0.7,
+        color_discrete_sequence=px.colors.qualitative.Set2,
+    )
+    fig.add_vrect(x0=-2, x1=2, fillcolor="green", opacity=0.06, line_width=0)
+    fig.add_vline(x=2, line_dash="dash", line_color="red", line_width=0.7)
+    fig.add_vline(x=-2, line_dash="dash", line_color="red", line_width=0.7)
+    fig.add_vline(x=0, line_dash="dot", line_color="gray", line_width=0.5)
+    fig.update_layout(
+        xaxis_title="Infit ZSTD", yaxis_title="Measure (logits)",
+        title="Pathway Map: Measure vs Infit ZSTD", height=500,
+    )
+    st.plotly_chart(fig, width="stretch")
+
+
+def _draw_facet_distribution_plotly(diagnostics: dict) -> None:
+    """Interactive Plotly box + strip plot of facet distributions."""
+    st.subheader("Facet Element Distribution")
+    st.caption("Distribution of estimated measures within each facet.")
+
+    measures = diagnostics.get("measures", pd.DataFrame())
+    if measures.empty or "Facet" not in measures.columns or "Estimate" not in measures.columns:
+        st.info("Facet measures not available.")
+        return
+
+    pdf = measures.copy()
+    pdf["Estimate"] = pd.to_numeric(pdf["Estimate"], errors="coerce")
+    pdf = pdf.dropna(subset=["Estimate"])
+
+    hover_data = ["Level"] if "Level" in pdf.columns else None
+    fig = px.box(
+        pdf, x="Facet", y="Estimate", color="Facet",
+        points="all", hover_data=hover_data,
+        color_discrete_sequence=px.colors.qualitative.Set2,
+    )
+    fig.update_layout(
+        yaxis_title="Measure (logits)",
+        title="Facet Element Distributions",
+        showlegend=False, height=450,
+    )
+    st.plotly_chart(fig, width="stretch")
+
+
+def _draw_wright_map_plotly(
+    person_tbl: pd.DataFrame, facet_tbl: pd.DataFrame, step_tbl: pd.DataFrame,
+) -> None:
+    """Interactive Plotly Wright Map: person histogram (left) + facet dot plot (right)."""
+    person_est = pd.to_numeric(
+        person_tbl.get("Estimate", pd.Series(dtype=float)), errors="coerce"
+    ).dropna()
+    if person_est.empty:
+        st.caption("No finite person estimates for Wright Map.")
+        return
+
+    facet_est = facet_tbl.copy() if facet_tbl is not None else pd.DataFrame()
+    if "Estimate" in facet_est.columns:
+        facet_est["Estimate"] = pd.to_numeric(facet_est["Estimate"], errors="coerce")
+        facet_est = facet_est.dropna(subset=["Estimate"])
+
+    facet_names = list(facet_est["Facet"].unique()) if "Facet" in facet_est.columns else []
+
+    fig = make_subplots(
+        rows=1, cols=2, column_widths=[0.3, 0.7],
+        shared_yaxes=True,
+        subplot_titles=["Persons", "Facet & step locations"],
+    )
+
+    # Left: person histogram (horizontal)
+    fig.add_trace(go.Histogram(
+        y=person_est.values, nbinsy=30,
+        marker_color="#b0b0b0", name="Persons",
+    ), row=1, col=1)
+    fig.update_xaxes(autorange="reversed", title_text="Count", row=1, col=1)
+
+    # Right: facet element dots
+    colors = px.colors.qualitative.Set2
+    for i, fname in enumerate(facet_names):
+        fdata = facet_est[facet_est["Facet"] == fname]
+        # Show text labels only when ≤15 elements to avoid overlap
+        show_text = len(fdata) <= 15 and "Level" in fdata.columns
+        fig.add_trace(go.Scatter(
+            x=[fname] * len(fdata),
+            y=fdata["Estimate"].values,
+            mode="markers+text" if show_text else "markers",
+            marker=dict(size=8, color=colors[i % len(colors)]),
+            text=fdata["Level"].astype(str).values if show_text else None,
+            textposition="middle right", textfont=dict(size=9),
+            name=fname,
+            hovertext=fdata["Level"].astype(str).values if "Level" in fdata.columns else None,
+            hoverinfo="text+y",
+        ), row=1, col=2)
+
+    # Step thresholds
+    if step_tbl is not None and not step_tbl.empty:
+        step_vals = pd.to_numeric(
+            step_tbl.get("Estimate", pd.Series(dtype=float)), errors="coerce"
+        ).dropna()
+        for sv in step_vals:
+            fig.add_hline(y=float(sv), line_dash="dot", line_color="#d95f02", line_width=0.6, row=1, col=2)
+
+    fig.update_yaxes(title_text="Logit scale", row=1, col=1)
+    fig.update_layout(height=550, hovermode="closest")
+    st.plotly_chart(fig, width="stretch")
+
+
+def _draw_observed_vs_expected(diagnostics: dict) -> None:
+    """Observed vs expected score diagnostic plot."""
+
+
+    st.subheader("Observed vs Expected Scores")
+    st.caption(
+        "Points along the diagonal indicate good model fit. Systematic deviation "
+        "from the diagonal suggests model misspecification."
+    )
+
+    obs_df = diagnostics.get("obs")
+    if obs_df is None or obs_df.empty:
+        st.info("Observation data not available.")
+        return
+
+    if "Expected" not in obs_df.columns or "Observed" not in obs_df.columns:
+        st.info("Expected/Observed columns not found in diagnostics.")
+        return
+
+    expected = pd.to_numeric(obs_df["Expected"], errors="coerce")
+    observed = pd.to_numeric(obs_df["Observed"], errors="coerce")
+    mask = expected.notna() & observed.notna()
+
+    if mask.sum() < 10:
+        st.info("Too few valid observations for this plot.")
+        return
+
+    # Bin expected scores for cleaner visualization
+    n_bins = min(30, int(np.sqrt(mask.sum())))
+    exp_vals = expected[mask].values
+    obs_vals = observed[mask].values
+
+    bin_edges = np.linspace(exp_vals.min(), exp_vals.max(), n_bins + 1)
+    bin_idx = np.digitize(exp_vals, bin_edges[1:-1])
+    bin_exp = []
+    bin_obs = []
+    bin_n = []
+    for b in range(n_bins):
+        sel = bin_idx == b
+        if sel.sum() > 0:
+            bin_exp.append(float(exp_vals[sel].mean()))
+            bin_obs.append(float(obs_vals[sel].mean()))
+            bin_n.append(int(sel.sum()))
+
+    lo = min(min(bin_exp), min(bin_obs))
+    hi = max(max(bin_exp), max(bin_obs))
+    margin = (hi - lo) * 0.05
+    sizes = np.array(bin_n)
+    sizes_scaled = 8 + 30 * sizes / sizes.max()
+
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(
+        x=[lo - margin, hi + margin], y=[lo - margin, hi + margin],
+        mode="lines", line=dict(dash="dash", color="#999", width=1),
+        name="Perfect fit",
+    ))
+    fig.add_trace(go.Scatter(
+        x=bin_exp, y=bin_obs, mode="markers",
+        marker=dict(size=sizes_scaled, color="#1b9e77", opacity=0.7,
+                    line=dict(color="white", width=0.5)),
+        name="Observed", customdata=bin_n,
+        hovertemplate="Expected: %{x:.2f}<br>Observed: %{y:.2f}<br>n=%{customdata}<extra></extra>",
+    ))
+    fig.update_layout(
+        xaxis_title="Expected Score (model)", yaxis_title="Observed Score (actual)",
+        title="Observed vs Expected Scores", height=480, template="plotly_white",
+        yaxis=dict(scaleanchor="x", scaleratio=1),
+    )
+    st.plotly_chart(fig, width="stretch")
+
+
+# ---------------------------------------------------------------------------
+# Help / Glossary tab
+# ---------------------------------------------------------------------------
+
+def show_help_section() -> None:
+    """Comprehensive help section with literature-backed guidance for MFRM analysis."""
+    help_tabs = st.tabs([
+        "Quick Start",
+        "Analysis Workflow",
+        "Interpretation Guide",
+        "Rater Effects",
+        "Rating Scale Guide",
+        "Glossary",
+        "Reporting Guide",
+        "Troubleshooting",
+        "Model Capability",
+    ])
+
+    # ------------------------------------------------------------------
+    # Tab 1: Quick Start
+    # ------------------------------------------------------------------
+    with help_tabs[0]:
+        st.markdown(
+            """
+### Quick Start Workflow
+
+**Privacy first:** If your ratings include identifiable person, rater,
+institution, or subgroup data, run the app locally and remove unnecessary
+identifiers before upload or paste. Hosted deployments can process data on
+remote infrastructure.
+
+1. **Load data** via the sidebar (sample, paste, or upload).
+2. **Map columns**: identify Person, Score, and 2+ Facet columns.
+3. **Configure** missing value recoding if needed.
+4. **Click** "Run FACETS-mode estimation".
+5. **Review** results across the tabs.
+
+### Data Format
+
+Your data should be in **long format** (one observation per row):
+
+| Person | Rater | Task | Criterion | Score |
+|--------|-------|------|-----------|-------|
+| P1 | R1 | T1 | C1 | 3 |
+| P1 | R1 | T1 | C2 | 4 |
+| P1 | R2 | T1 | C1 | 2 |
+
+Each row represents one observation: one person scored by one rater
+on one task/criterion. This format is sometimes called "tidy" or
+"stacked" data. See the **Glossary** tab for "Long format".
+
+*Technical note:* The MFRM is a special case of a Generalized
+Linear Mixed Model (GLMM) with a logit link (Agresti, 2013;
+Dunn, 2024).
+
+### Sample Size Guidelines
+
+| Design aspect | Minimum | Recommended | Source |
+|---|---|---|---|
+| Persons | 30+ | 100+ | Uto & Ueno (2020) |
+| Persons (polytomous) | 50+ | 100+ | Linacre (2024) |
+| Observations per element | 10+ | 25+ | Linacre (2004) |
+| Categories | 3–7 | 4–6 optimal | Linacre (2004) |
+| Raters per person | 2+ | 3+ | Li et al. (2021) |
+
+D-study research shows the largest reliability gain comes from
+increasing raters from 1 to 2, and items from 3 to 4 (Li et al.,
+2021; Hass et al., 2018).
+
+### Model Settings
+
+- **RSM** (Rating Scale Model): All elements share one set of step
+  thresholds. Best when all elements use the same rubric (Andrich,
+  1978).
+- **PCM** (Partial Credit Model): Step thresholds vary by a selected
+  step facet. Use this when category structure differs across
+  raters, tasks, or criteria.
+- **GPCM** (bounded Generalized PCM): The selected step facet also
+  receives positive slope/discrimination parameters. Use this only
+  when slope differences are part of the analysis question; interpret
+  slopes separately from ordinary Rasch severity.
+- **JMLE** (Joint Maximum Likelihood Estimation): The default and
+  recommended method. Estimates all parameters simultaneously without
+  assuming a particular distribution of person abilities. This is
+  the standard method used in FACETS software.
+- Note: JMLE standard errors may be slightly underestimated compared
+  to Bayesian methods (Patz et al., 2002). For most practical
+  purposes this is acceptable.
+"""
+        )
+
+    # ------------------------------------------------------------------
+    # Tab 2: Analysis Workflow (NEW)
+    # ------------------------------------------------------------------
+    with help_tabs[1]:
+        st.markdown(
+            """
+### Recommended Analysis Workflow
+
+Based on Koizumi et al. (2019), Eckes (2005), and Myford & Wolfe
+(2003, 2004), a complete MFRM analysis follows these eight steps.
+Each step maps to a tab in this application.
+
+---
+
+#### Step 1. Data preparation & facet specification → *Data tab*
+
+**What to do:**
+- Prepare data in **long format** (1 row = 1 observation).
+- Identify the facets: Person + Rater + Task (+ Criterion, etc.).
+- Choose the measurement model: RSM (shared thresholds), PCM
+  (step-facet-specific thresholds), or bounded GPCM (step-facet-specific
+  thresholds plus slopes). Start with RSM unless there is a strong
+  reason to expect different threshold or slope structures across
+  elements.
+
+**What to check:**
+- All score categories have **adequate counts** (≥ 10 per category;
+  Linacre, 2002). Sparse categories may cause disordered thresholds.
+- Missing data is below **20%** (Little & Rubin, 2002). Higher rates
+  may bias estimates.
+- Data are **connected** (single subset). If multiple disconnected
+  subsets exist, measures are not comparable across subsets.
+
+**Common problems:**
+- "Only 1 distinct score value" → All observations have the same
+  score. This means there is no variability to model.
+- "Need 2+ facets" → You need at least Person + 2 facet columns.
+- Categories like 1, 3, 5 (non-contiguous) → Enable "Keep original
+  category values" or consider remapping.
+
+---
+
+#### Step 2. Run estimation & check convergence → *Report tab*
+
+**What to do:**
+- Click **Run estimation** with guided defaults; advanced controls use
+  JMLE `maxit=400` and `reltol=1e-6` unless you override them.
+- Check the convergence message above the tabs.
+
+**Decision criteria:**
+
+| Outcome | Action |
+|---------|--------|
+| "Converged" | Proceed to Step 3 |
+| "Precision loss" | Try increasing `maxit` to 1000 or relaxing `reltol` to 1e-6 |
+| "Did not converge" | Simplify the model (fewer facets, collapse categories), add anchors, or remove extreme elements |
+
+**If Bayesian estimation is used externally** (via generated Stan code):
+confirm R-hat < 1.1 and ESS > 400 for all parameters (Gelman &
+Rubin, 1992; Uto, 2022; Zitzmann & Hecht, 2019).
+
+---
+
+#### Step 3. Evaluate global model fit → *Dimensionality tab*
+
+**What to check:**
+- **Standardized residuals**: About **5%** should have |z| ≥ 2,
+  and about **1%** should have |z| ≥ 3 (Linacre, 2004; Eckes, 2005).
+  Much higher rates indicate poor model-data fit.
+- **PCA of residuals**: 1st eigenvalue < 2.0 supports
+  unidimensionality (Linacre, 2007). Values > 3.0 suggest a strong
+  secondary dimension.
+
+**Decision criteria:**
+
+| 1st Eigenvalue | Interpretation | Action |
+|---------------|---------------|--------|
+| < 2.0 | Good — no meaningful secondary dimension | Proceed |
+| 2.0–3.0 | Moderate — examine loadings for interpretable pattern | Consider splitting facets or adding a dimension |
+| > 3.0 | Strong secondary dimension detected | Investigate which elements load on the contrast; consider PCM or separate analyses |
+
+---
+
+#### Step 4. Evaluate rating scale functioning → *Categories/Steps tab*
+
+**What to check (Linacre's five criteria):**
+1. **Adequate counts**: Each category should have ≥ 10 observations.
+2. **Monotonic average measures**: Average ability should increase
+   with each category step.
+3. **Outfit MnSq < 2.0**: No category should have extreme misfit.
+4. **Ordered thresholds**: Step calibrations should increase
+   monotonically. Disordered thresholds indicate categories that are
+   not functioning as distinct levels.
+5. **Reasonable threshold spacing**: Adjacent thresholds separated
+   by 1.4–5.0 logits (Linacre, 2004).
+
+**If thresholds are disordered:**
+- Collapse adjacent categories (e.g., merge categories 2 and 3).
+- Reconsider whether the rubric has too many categories.
+- See the *Rating Scale Guide* tab for detailed guidance.
+
+---
+
+#### Step 5. Examine facet-level statistics → *Report → Tables tab*
+
+**What to check:**
+- For each facet, review **Separation**, **Strata**, and
+  **Reliability**.
+
+**Decision criteria:**
+
+| Statistic | Person | Rater | Task/Criterion |
+|-----------|--------|-------|----------------|
+| Separation > 2.0 | Good differentiation | High = raters differ (may need training) | High = tasks vary in difficulty |
+| Reliability > .80 | Good | Low is *desirable* (raters interchangeable) | Depends on purpose |
+| Strata > 3 | At least 3 ability levels | Low = uniform severity (good) | High = tasks span a range |
+
+**Key insight for raters:** Unlike persons, where high reliability
+is desired, **low rater reliability** indicates raters are
+interchangeable — this is the goal in standardized assessments
+(Eckes, 2011).
+
+**Fixed chi-square test:** A significant result (p < .05) means
+elements within the facet are *not* all equal. For raters, a
+non-significant result supports interchangeability. See the
+*Facet Equivalence* sub-tab in Report for formal equivalence tests.
+
+---
+
+#### Step 6. Examine element-level fit → *Fit Details tab*
+
+**What to check:**
+- Review **Infit** and **Outfit MnSq** for each element.
+- Prioritize **Infit** over Outfit for rater evaluation, as Outfit
+  is more sensitive to outliers (Eckes, 2005; Linacre, 2002).
+
+**Decision criteria:**
+
+| Infit MnSq | Interpretation | Action |
+|------------|---------------|--------|
+| > 1.5 | Noisy/erratic — data contains unexpected responses | Investigate element (review scoring, check for random responding) |
+| 0.5–1.5 | Productive for measurement | No action needed |
+| < 0.5 | Too predictable — may inflate reliability | Investigate (possible dependency, restricted range) |
+| > 2.0 | Distorting — degrades measurement | Strongly consider removing or retraining |
+
+**Outfit caveat:** A single outlier response can inflate Outfit
+dramatically. If Infit is acceptable but Outfit is high, examine
+individual responses rather than removing the element entirely
+(Wright & Linacre, 1994).
+
+**Bonferroni note:** When evaluating many elements, apply a
+Bonferroni-adjusted significance threshold for ZSTD (e.g.,
+p < .05/N_elements) to control for multiple testing.
+
+---
+
+#### Step 7. Conduct bias/interaction analysis → *Bias/Interaction tab*
+
+**What to do:**
+- Examine facet-pair interactions (e.g., Rater × Task, Rater ×
+  Criterion).
+- The bias interaction table shows whether a particular element of
+  one facet behaves differently depending on which element of the
+  other facet it is paired with.
+
+**Decision criteria:**
+
+| Absolute *t* value | Interpretation | Action |
+|---|---|---|
+| < 2 | No significant bias | None needed |
+| 2–3 | Moderate bias | Investigate pattern (is it systematic?) |
+| > 3 | Strong bias | Report and interpret substantively |
+
+**Common bias patterns (Myford & Wolfe, 2003, 2004):**
+- **Rater × Task**: A rater is lenient on easy tasks but severe on
+  hard tasks (differential severity).
+- **Rater × Criterion**: A rater emphasizes content but ignores
+  language (differential weighting of criteria).
+- **Rater × Person**: A rater is biased toward/against specific
+  examinees (halo/horn effect or familiarity bias).
+
+**Multiple testing:** With many facet combinations, apply
+**Bonferroni correction**: adjusted α = 0.05 / N_pairs
+(Eckes, 2005).
+
+---
+
+#### Step 8. Interpret the Wright Map → *Wright Map tab*
+
+**What to do:**
+- All facets are displayed on a common logit scale.
+- Compare the spread and overlap of persons with facet elements.
+
+**What to look for:**
+- **Person spread vs. facet spread**: If persons span −3 to +3
+  logits but raters only span −0.5 to +0.5, rater effects are small
+  relative to person differences (good).
+- **Gaps in the person distribution**: Large gaps suggest the scale
+  does not measure well at certain ability levels.
+- **Ceiling/floor effects**: If many persons cluster at the top/bottom
+  and no facet elements are nearby, the instrument may be too easy/hard.
+- **Rater ordering**: Examine whether rater severity aligns with
+  expectations (e.g., experienced vs. novice raters).
+
+---
+
+### Optional Extensions
+
+**Facet equivalence testing** → *Report → Facet Equivalence tab*
+- Use TOST, BIC Bayes Factor, and ROPE to formally test whether
+  facet elements (e.g., raters) are practically equivalent.
+- This goes beyond the fixed chi-square test by specifying an
+  equivalence bound (SESOI). See the **Facet Equivalence Analysis**
+  section above for detailed interpretation guidance, decision
+  rules, and forest plot color coding.
+
+**Bayesian estimation** → *Report → Stan Code tab*
+- Download auto-generated Stan code for full posterior inference.
+- Advantages: proper uncertainty quantification, LOO cross-validation,
+  posterior predictive checks (Patz et al., 2002; Uto, 2021, 2022).
+
+**G-theory**: Run a Generalizability study to estimate variance
+components and optimize the assessment design (number of raters,
+tasks) via D-study (Hass et al., 2018; Li et al., 2021).
+
+**Fair averages**: Compute severity-adjusted scores to compensate
+for rater differences. In Eckes (2005), 13–17% of examinees
+would have received different classifications based on fair vs.
+observed scores.
+"""
+        )
+
+    # ------------------------------------------------------------------
+    # Tab 3: Interpretation Guide (expanded)
+    # ------------------------------------------------------------------
+    with help_tabs[2]:
+        st.markdown(
+            """
+### Understanding Measures
+
+- **Logit scale**: The unit of measurement. One logit ≈ one unit of
+  log-odds.
+- **Person measure**: Higher = more ability / higher tendency to
+  receive high scores.
+- **Rater severity**: Higher = harsher rater (gives lower scores
+  than expected). Severity is *relative* to other raters in the
+  analysis — we cannot determine whether a rater is "too severe"
+  without external criteria (Myford & Wolfe, 2004).
+- **Task difficulty**: Higher = harder task.
+- **Zero logits**: The center of the scale (reference point).
+- **Fair average**: The score an examinee would receive if rated
+  by a rater of average severity (Eckes, 2005). Useful for
+  high-stakes pass/fail decisions.
+
+### Fit Statistics — Three-Tier Interpretation
+
+| MnSq Range | Label | Meaning | Action | Source |
+|---|---|---|---|---|
+| > 2.0 | **Distorting** | Degrades measurement | Remove or recode | Linacre (2002) |
+| 1.5–2.0 | **Unproductive** | Not useful but not distorting | Investigate | Linacre (2002) |
+| **0.5–1.5** | **Productive** | Good fit to the model | — | Linacre (2002) |
+| < 0.5 | **Too predictable** | Inflates reliability | Check for dependency | Linacre (2002) |
+
+*Alternative (strict) control limits:* 0.70–1.30 (Bond & Fox, 2001;
+McNamara, 1996). Eckes (2005) reported that 72–97% of raters fell
+within 0.70–1.30 in TestDaF assessments (Writing 72–76%; Speaking
+90–97%).
+
+**Infit vs. Outfit:**
+- **Infit** (information-weighted) is more sensitive to systematic
+  patterns near an element's measure. Prioritize Infit for rater
+  evaluation.
+- **Outfit** (unweighted) is sensitive to isolated extreme responses.
+  An element with acceptable Infit but high Outfit likely has a few
+  outlier ratings (Eckes, 2005; Smith, 2000).
+
+*For high-stakes assessments:* A tighter range of 0.8–1.2 is
+recommended (Linacre, 2024).
+
+**General Diagnostic Priority** (Linacre, 2024):
+1. First investigate **negative point-measure correlations** (may
+   indicate reversed scoring or data entry errors).
+2. Investigate **Outfit** before **Infit** (Outfit detects outlier
+   responses that may mask Infit patterns).
+3. **Mean-square** before **ZSTD**.
+4. **High values** (misfit) before **low values** (overfit).
+
+*For rater evaluation specifically*, prioritize **Infit** over
+Outfit — Infit better captures systematic rater patterns such as
+severity drift or halo effects (Eckes, 2005).
+
+**ZSTD and Sample Size:**
+- With < 30 observations per element, ZSTD is insensitive to misfit.
+- With > 300 observations, ZSTD is overly sensitive (may flag
+  trivially small departures). In this case, rely on MnSq for
+  practical significance (Linacre, 2024; Hagell & Westergren,
+  2016).
+
+### Global Model Fit
+
+Satisfactory model-data fit is indicated when (Linacre, 2004;
+Eckes, 2005):
+- About **5% or fewer** absolute standardized residuals are ≥ 2.
+- About **1% or fewer** are ≥ 3.
+
+### Separation, Strata, and Reliability
+
+| Statistic | Formula | Interpretation |
+|---|---|---|
+| **Separation (G)** | True SD / RMSE | Spread of measures relative to error |
+| **Strata (H)** | (4G + 1) / 3 | Number of statistically distinct levels |
+| **Reliability (R)** | G² / (1 + G²) | Proportion of observed variance that is true |
+
+| Facet | High reliability means | Low reliability means |
+|---|---|---|
+| **Persons** | Good differentiation among examinees | Examinees are not well separated |
+| **Raters** | Raters differ substantially in severity (problematic if homogeneity is desired) | Raters are interchangeable (desirable for standardized tests) |
+| **Tasks** | Tasks vary meaningfully in difficulty | Tasks are similar in difficulty |
+
+*Fixed chi-square test:* A significant result (p < .05) indicates
+elements within a facet differ significantly. Caution: this test
+is very sensitive to sample size (Myford & Wolfe, 2004).
+
+### Reliability Benchmarks
+
+| R | Interpretation | Source |
+|---|---|---|
+| ≥ 0.90 | Excellent | Wright & Masters (1982) |
+| 0.80–0.89 | Good | Wright & Masters (1982) |
+| 0.50–0.79 | Moderate | Wright & Masters (1982) |
+| < 0.50 | Differences mainly due to error | Myford & Wolfe (2003) |
+
+### Separation ↔ Strata ↔ Reliability Quick Reference
+
+| Separation (G) | Strata (H) | Reliability (R) | Practical meaning |
+|---|---|---|---|
+| 0 | 0.3 | 0.00 | No measurable differences |
+| 1 | 1.7 | 0.50 | 1–2 distinguishable levels |
+| 2 | 3.0 | 0.80 | 2–3 distinguishable levels |
+| 3 | 4.3 | 0.90 | 3–4 distinguishable levels |
+| 4 | 5.7 | 0.94 | 4–5 distinguishable levels |
+| 5 | 7.0 | 0.96 | 5–6 distinguishable levels |
+
+*(Linacre, 2024; Wright & Masters, 1982)*
+
+### Diagnosing Misfit Patterns
+
+| Element | Infit | Outfit | Likely cause | Investigation |
+|---|---|---|---|---|
+| Item | High | High | Qualitatively different item | Different content or process? |
+| Item | Low | Low | Redundant item | Too similar to other items? |
+| Hard item | High | High | Ambiguous or poorly worded | Review item text |
+| Rater | High | High | Inconsistent rater | Retraining needed? |
+| Rater | Low | Low | Central tendency or halo | Check category usage pattern |
+| Person | High | — | Careless or idiosyncratic | Data entry or engagement issue? |
+| Low person | — | High | Guessing or lucky responses | Unexpected correct answers? |
+
+*(Adapted from Linacre, 2024 misfit diagnosis table)*
+
+### Bias/Interaction Analysis
+
+- A **significant bias** (|t| ≥ 2 or |z| ≥ 2) means a specific
+  facet-level combination departs from the additive model prediction
+  (Myford & Wolfe, 2004; Eckes, 2005).
+- Example: Rater R3 is unusually harsh on Task T2 but lenient on
+  other tasks.
+- Under good model fit, expect about **5% of interactions** to
+  have |z| ≥ 2 by chance (Eckes, 2005).
+- **Bonferroni correction**: When testing many interactions, divide
+  α by the number of comparisons to control false positives
+  (Eckes, 2005).
+- Use the pairwise report to identify specific problematic
+  combinations.
+
+---
+
+### Facet Equivalence Analysis
+
+The Facet Equivalence tab (*Report → Facet Equivalence*) provides
+a **multi-method** assessment of whether facet elements (e.g.,
+raters) have practically equivalent measures. This goes beyond
+the traditional fixed chi-square test by combining four
+complementary approaches:
+
+#### 1. Fixed Chi-Square Test (Linacre, 2024)
+
+The standard Rasch separation test. A **non-significant** result
+(p ≥ .05) means we cannot reject the null that all elements share
+the same measure. However, non-significance does **not** prove
+equivalence — it may simply reflect low statistical power
+(Myford & Wolfe, 2004). This asymmetry motivates the additional
+tests below.
+
+#### 2. TOST — Two One-Sided Tests (Lakens, 2017)
+
+TOST reverses the burden of proof: instead of testing for
+difference, it tests whether differences are **small enough**
+to be considered negligible.
+
+- You specify an **equivalence bound** (SESOI = Smallest Effect
+  Size Of Interest) in logits.
+- Two one-sided z-tests check whether the pairwise difference
+  falls within [−bound, +bound].
+- If **both** tests are significant (p_TOST < .05), the pair
+  is declared **equivalent**.
+- Uses 90% CIs, which correspond to two one-sided α = .05 tests.
+
+**Choosing the equivalence bound:**
+
+| Bound (logits) | Rationale | When to use |
+|---|---|---|
+| 0.3 | Strict — less than one SE in most analyses | High-stakes certification |
+| **0.5** | Common default — ≈ "small" effect in Rasch terms | General purpose |
+| 1.0 | Lenient — approximately one difficulty unit | Low-stakes or screening |
+
+*The 0.5-logit bound is a pragmatic convention; no MFRM-specific
+literature prescribes a universal SESOI (see "Equivalence Bound
+Selection" below). Adjust based on the practical consequences of
+misclassification in your context.*
+
+**Key reference:** Lakens, D. (2017). Equivalence tests: A
+practical primer for *t* tests, correlations, and meta-analyses.
+*Social Psychological and Personality Science, 8*(4), 355–362.
+
+#### 3. BIC-Based Bayes Factor (Wagenmakers, 2007)
+
+An approximate Bayes factor derived from the chi-square statistic
+and the BIC penalty:
+
+```
+BF₀₁ = exp( (χ² − df × ln(N)) / 2 )
+```
+
+- **BF₀₁ > 1** favors H₀ (equivalence)
+- **BF₀₁ < 1** favors H₁ (difference)
+
+| BF₀₁ | Evidence |
+|---|---|
+| > 100 | Extreme for equivalence |
+| 30–100 | Very strong for equivalence |
+| 10–30 | Strong for equivalence |
+| 3–10 | Moderate for equivalence |
+| 1–3 | Anecdotal for equivalence |
+| 1/3–1 | Anecdotal against equivalence |
+| < 1/3 | Moderate+ against equivalence |
+
+*(Jeffreys, 1961; Wagenmakers, 2007)*
+
+#### 4. ROPE Analysis (Kruschke, 2018)
+
+The **Region of Practical Equivalence** is a Bayesian decision
+framework:
+
+- Define a ROPE around a reference point: [ref − bound, ref + bound].
+- For each element, compute the proportion of its approximate
+  posterior distribution (normal: *N*(measure, SE²)) that falls
+  **inside** the ROPE.
+- This "% in ROPE" directly answers: *How confident are we that
+  this element's true measure is practically equivalent to the
+  reference?*
+
+**Reference point (ROPE center):**
+
+The app uses the **weighted grand mean** of element measures as
+the ROPE center. This choice has important implications:
+
+| Facet type | Centering | Grand mean | ROPE center |
+|---|---|---|---|
+| **Centered facet** (e.g., Rater) | Sum-to-zero constraint | ≈ 0.0 | ≈ 0.0 (ROPE ≈ [−bound, +bound]) |
+| **Non-centered facet** (e.g., Person) | No constraint | Varies | Shifts with sample |
+| **Anchored facet** | Fixed values | Determined by anchors | May differ from 0.0 |
+
+For **centered facets** (the typical case for raters), the grand
+mean is close to zero due to the sum-to-zero constraint, so
+ROPE ≈ [−0.5, +0.5] with the default bound. For non-centered
+or anchored facets, the ROPE band shifts accordingly — e.g., if
+the grand mean is 0.5, the ROPE becomes [0.0, 1.0].
+
+This is the correct behavior: equivalence testing asks whether
+elements are close **to each other** (relative to the center),
+not whether they are close to an absolute value. Kruschke (2018)
+recommends centering the ROPE on a "theoretically meaningful
+null value," which for centered Rasch facets is 0.
+
+⚠️ **Caution with non-centered or anchored facets:** When the
+grand mean deviates substantially from zero, the ROPE region
+may span an asymmetric range around zero. Verify that the ROPE
+boundaries are substantively meaningful in your context by
+checking the reported grand mean value in the forest plot.
+
+**Decision rules (Kruschke, 2018):**
+
+| % in ROPE | Interpretation |
+|---|---|
+| ≥ 95% | Accept equivalence — practically identical |
+| 80–95% | Moderate evidence — likely equivalent |
+| 50–80% | Inconclusive — cannot decide |
+| < 50% | Reject equivalence — practically different |
+
+**Why ROPE matters for rater assessment:** Traditional significance
+testing tells you whether raters *differ* but not whether the
+differences are *meaningful*. A rater whose 95% CI falls entirely
+within the ROPE is practically interchangeable with the average
+rater, regardless of whether a chi-square test is significant
+(which it often is with large samples).
+
+**Key references:**
+- Kruschke, J. K. (2018). Rejecting or accepting parameter
+  values in Bayesian estimation. *Advances in Methods and
+  Practices in Psychological Science, 1*(2), 270–280.
+- Kruschke, J. K., & Liddell, T. M. (2018). The Bayesian new
+  statistics. *Psychonomic Bulletin & Review, 25*(1), 178–206.
+
+#### 5. Forest Plot — Reading the Visualization
+
+The forest plot displays each element's **measure ± 95% CI**
+overlaid on the ROPE region:
+
+| Color | Meaning | Interpretation |
+|---|---|---|
+| 🟢 Green | 95% CI entirely inside ROPE | Equivalent — element is practically at the grand mean |
+| 🟡 Orange | 95% CI partially overlaps ROPE | Inconclusive — element may or may not differ meaningfully |
+| 🔴 Red | 95% CI entirely outside ROPE | Different — element is measurably and practically distinct |
+
+**Reading the plot:**
+- The **green shaded band** shows the ROPE region.
+- The **dashed line** marks the weighted grand mean.
+- Each point is an element's estimated measure; error bars are
+  95% CIs.
+- Elements whose CIs are **wider** (less precise) are more likely
+  to fall inside the ROPE — this is appropriate because uncertain
+  estimates should not be declared different.
+
+#### 6. Convergent Interpretation
+
+The app synthesizes all four methods into an overall verdict:
+
+| Verdict | Criteria |
+|---|---|
+| **Equivalence supported** | ≥ 3 of 4 methods favor equivalence |
+| **Equivalence rejected** | ≥ 3 of 4 methods favor difference |
+| **Mixed evidence** | Methods disagree — report all four results |
+
+This triangulation approach is recommended because each method has
+different strengths and assumptions:
+- Fixed χ² has high Type II error with small samples
+- TOST requires specification of the equivalence bound
+- BIC BF can be sensitive to sample size
+- ROPE depends on the prior (here: approximate normal)
+
+When methods agree, conclusions are robust. When they disagree,
+report all results transparently and discuss possible reasons
+(e.g., large sample inflating χ² while ROPE shows practical
+equivalence).
+
+#### Methodological Transparency
+
+The facet equivalence analysis in this app is an **applied
+integration** of general statistical frameworks into the MFRM
+context. Each individual method has established literature:
+
+| Method | Original domain | Key reference |
+|---|---|---|
+| TOST | General hypothesis testing | Lakens (2017) |
+| BIC Bayes Factor | Model comparison | Wagenmakers (2007) |
+| ROPE | Bayesian estimation | Kruschke (2018) |
+| Fixed χ² | Rasch measurement | Linacre (2024) |
+
+However, the **combination of TOST + BIC BF + ROPE for MFRM
+facet equivalence** has not been directly validated in
+published psychometric research. The traditional MFRM approach
+to rater interchangeability relies on the fixed chi-square
+test and separation index (Myford & Wolfe, 2004; Eckes, 2011),
+which test for *difference* but cannot directly demonstrate
+*equivalence*.
+
+This implementation extends the traditional approach by:
+1. Adding equivalence testing (TOST) — tests *for* equivalence
+   rather than merely failing to find difference
+2. Incorporating Bayesian evidence (BIC BF) — quantifies
+   relative evidence for H₀ vs. H₁
+3. Providing practical significance (ROPE) — evaluates whether
+   differences are meaningful in practice
+
+**Recommendation for reporting:** When using these results in
+publications, cite the original method references (Lakens,
+2017; Wagenmakers, 2007; Kruschke, 2018) and note that the
+combination represents an applied framework for MFRM equivalence
+assessment, not a single validated procedure.
+
+#### Equivalence Bound Selection
+
+The default equivalence bound of **0.5 logits** is a pragmatic
+convention. No MFRM-specific literature prescribes a universal
+SESOI (Smallest Effect Size Of Interest):
+
+| Source | Recommendation |
+|---|---|
+| Linacre (2024) | No specific equivalence bound; uses separation index |
+| Eckes (2011) | Reports rater severity ranges but no formal bound |
+| Myford & Wolfe (2004) | Flags "large" severity differences but no threshold |
+| This app (default) | 0.5 logits — comparable to "small" effect in many Rasch contexts |
+
+**Best practice:** Choose the equivalence bound based on the
+**practical consequences** of misclassification in your specific
+assessment context. For high-stakes certification exams, a
+stricter bound (0.3 logits) may be appropriate. For classroom
+assessments, a more lenient bound (1.0 logits) may suffice.
+If uncertain, report results at multiple bounds (e.g., 0.3,
+0.5, and 1.0) to show sensitivity.
+"""
+        )
+
+    # ------------------------------------------------------------------
+    # Tab 4: Rater Effects (NEW)
+    # ------------------------------------------------------------------
+    with help_tabs[3]:
+        st.markdown(
+            """
+### Five Rater Effects
+
+Myford & Wolfe (2003, 2004) identify five primary rater effects
+detectable via MFRM. No single indicator is definitive — always
+examine **multiple indicators simultaneously** (triangulation).
+
+---
+
+#### 1. Leniency / Severity
+
+A rater systematically gives higher (lenient) or lower (severe)
+scores than other raters.
+
+| Level | Indicator | What to look at |
+|---|---|---|
+| Group | Fixed chi-square for raters | Significant = raters differ in severity |
+| Group | Rater separation & reliability | High = substantial severity spread |
+| Individual | Rater measure on Wright Map | Position relative to other raters |
+| Individual | Fair average | Severity-adjusted scores differ from observed |
+
+#### 2. Central Tendency (Range Restriction)
+
+A rater avoids extreme categories, clustering scores near the
+middle of the scale.
+
+| Level | Indicator | What to look at |
+|---|---|---|
+| Individual | Rater Infit < 0.75 | Strong standalone indicator (Engelhard, 1994) |
+| Individual | r(residual, expected) < −0.30 | Best single non-Bayesian indicator (Wolfe & Song, 2015) |
+| Individual | SD of rater-specific thresholds | High SD = more central (Eckes & Jin, 2021) |
+| Individual | Category probability curves | Compressed middle peaks |
+
+**Compound flagging criterion** (Wolfe & Song, 2015):
+r(residual, expected) < −0.30 **AND** Infit MnSq ≤ 1.40.
+Note: The Infit ≤ 1.40 threshold here is an *inclusive* upper bound
+(most raters have Infit below this), not the same as the strict
+Infit < 0.75 standalone criterion from Engelhard (1994).
+
+⚠ Overfit (Infit < 1) does *not* always indicate central tendency —
+it can also reflect accurate rating when element measures are
+similar (Myford & Wolfe, 2004).
+
+#### 3. Randomness
+
+A rater assigns scores with little consistency or pattern.
+
+| Level | Indicator | What to look at |
+|---|---|---|
+| Individual | Rater Infit > 1.5 | More variation than expected |
+| Individual | SR/ROR correlation | Low value (e.g., < 0.30) compared to other raters |
+
+SR/ROR = Single Rater vs. Rest of Raters correlation ("PtBis"
+in FACETS). Typical well-functioning raters show values around
+0.90–0.96; a notably lower value (e.g., 0.70 vs. 0.95) signals
+randomness (Myford & Wolfe, 2004).
+
+#### 4. Halo Effect
+
+A rater fails to distinguish among traits/criteria, assigning
+similar scores across all dimensions regardless of actual
+performance.
+
+| Level | Indicator | What to look at |
+|---|---|---|
+| Group | Fixed chi-square for traits | Non-significant may suggest halo |
+| Group | Trait separation & reliability | Low separation = possible halo |
+| Individual | Rater Infit < 1 | When traits genuinely differ in difficulty |
+| Individual | Identical rating strings | Same score across all criteria |
+| Individual | Rater × Trait bias z-scores | |z| ≥ 2 flags differential scoring |
+
+#### 5. Differential Leniency / Severity
+
+A rater is disproportionately lenient or severe for a specific
+subgroup (e.g., gender, L1 background).
+
+| Level | Indicator | What to look at |
+|---|---|---|
+| Group | Fixed chi-square for groups | Significant = groups scored differently |
+| Individual | Rater × Group bias z-scores | |z| ≥ 2 flags differential severity |
+
+Eckes (2005) recommends **Bonferroni correction** when testing
+multiple Rater × Group interactions.
+
+---
+
+### Summary Detection Table
+
+*(Adapted from Myford & Wolfe, 2004, Table 17)*
+
+| Effect | Key group-level sign | Key individual-level sign |
+|---|---|---|
+| Severity | High rater separation | Extreme rater measure |
+| Central tendency | — | r(res,exp) < −0.30 AND Infit ≤ 1.40 (Wolfe & Song, 2015) |
+| Randomness | Low ratee separation | Infit > 1.5 + low SR/ROR |
+| Halo | Low trait separation | Infit < 1 + identical rating strings |
+| Differential severity | Significant group chi-sq | |z| ≥ 2 in Rater × Group bias |
+"""
+        )
+
+    # ------------------------------------------------------------------
+    # Tab 5: Rating Scale Guide (NEW)
+    # ------------------------------------------------------------------
+    with help_tabs[4]:
+        st.markdown(
+            """
+### Linacre's Five Criteria for Rating Scale Quality
+
+A well-functioning rating scale must satisfy all five criteria
+(Linacre, 2002, 2004; Koizumi et al., 2019). Check them in the
+**Categories/Steps** tab.
+
+---
+
+#### Criterion 1: Adequate Observations per Category
+
+Each rating category should have **at least 10 observations** to
+ensure stable parameter estimates.
+
+- If a category has fewer than 10 responses, consider collapsing
+  it with an adjacent category.
+
+#### Criterion 2: Monotonically Increasing Average Measures
+
+The average person measure for each category should increase
+as the category value increases. For example, persons receiving
+a "5" should have higher average ability than those receiving
+a "4".
+
+- Violations suggest a category is not functioning as intended.
+
+#### Criterion 3: Ordered Rasch-Andrich Thresholds
+
+Step calibrations (thresholds) should increase monotonically.
+The threshold τ_k is the point where P(X = k−1) = P(X = k).
+
+- **Disordered thresholds** indicate that a category is never
+  the most probable response for any region of the latent trait.
+- Remedy: collapse adjacent categories (e.g., merge 1+2 or 4+5)
+  and re-estimate.
+
+#### Criterion 4: Category Peaks on Probability Curves
+
+Each category should have a **distinct peak** on the category
+probability curve — a region of the latent trait where it is
+the most probable response.
+
+- Check the Category Probability Curves in the Visuals tab.
+- A category without a peak is empirically indistinguishable
+  from its neighbors.
+
+#### Criterion 5: Category Outfit MnSq < 2.0
+
+Each category's Outfit MnSq should be below 2.0. High outfit
+for a specific category suggests that responses in that category
+contain excessive noise.
+
+---
+
+### Threshold Distance Guidelines
+
+| Criterion | Value | Source |
+|---|---|---|
+| Minimum distance between adjacent thresholds | ≥ 1.4 logits | Linacre (2004) |
+| Maximum distance between adjacent thresholds | ≤ 5.0 logits | Linacre (2004) |
+
+- Thresholds too close together (< 1.4 logits) suggest categories
+  are hard to distinguish.
+- Thresholds too far apart (> 5.0 logits) suggest a gap in the
+  measurement continuum.
+
+### When to Collapse Categories
+
+Consider collapsing when:
+- A category has fewer than 10 observations.
+- Average measures are not monotonically increasing.
+- Thresholds are disordered.
+- A category has no distinct peak on the probability curve.
+
+**Procedure:** Merge the problematic category with its lower
+neighbor (e.g., recode 1 → 1, 2 → 1, 3 → 2, 4 → 3, 5 → 4),
+then re-run the estimation and re-check all five criteria.
+
+### Why Rasch, Not Raw Averages?
+
+Rating scales are **ordinal**, not interval. The psychological
+distance between "1" and "2" is not necessarily equal to the
+distance between "4" and "5" (Taylor et al., 2023). Treating
+ratings as continuous and computing raw means distorts
+measurement, especially when response distributions are skewed.
+
+The Rasch model properly handles ordinality by estimating
+**threshold parameters** that map a latent continuous trait to
+observed categories. This produces interval-level logit measures
+suitable for parametric analysis.
+"""
+        )
+
+    # ------------------------------------------------------------------
+    # Tab 6: Glossary (expanded from 33 to 50+ terms)
+    # ------------------------------------------------------------------
+    with help_tabs[5]:
+        st.markdown("### Glossary of MFRM Terms")
+        search = st.text_input("Search terms", "", key="glossary_search", placeholder="Type to filter...")
+
+        glossary = [
+            # --- Core concepts ---
+            ("Facet", "A source of systematic variability in ratings (e.g., rater, task, criterion)."),
+            ("Element", "A specific level within a facet (e.g., Rater R1, Task T3)."),
+            ("Observation", "A single rating: one person rated by one rater on one task/criterion."),
+            ("Measure", "The estimated parameter on the logit scale (ability, severity, difficulty)."),
+            ("Standard Error (SE)", "The precision of a measure estimate; smaller = more precise."),
+            ("Logit", "Log-odds unit; the interval scale produced by Rasch models."),
+            ("Theta (θ)", "Person ability parameter on the logit scale."),
+            # --- Models ---
+            ("MFRM", "Many-Facet Rasch Model: extends Rasch to multiple sources of variability (Linacre, 1989)."),
+            ("RSM", "Rating Scale Model: all elements share common step/threshold parameters (Andrich, 1978)."),
+            ("PCM", "Partial Credit Model: each element has its own set of thresholds (Masters, 1982)."),
+            ("GPCM", "Bounded Generalized Partial Credit Model in this app: the selected step facet also has positive slope/discrimination parameters, with the geometric mean slope fixed to 1."),
+            ("GPCM slope", "Positive discrimination parameter for the selected GPCM step facet. Above 1 = steeper category transitions; below 1 = flatter transitions. It is not a Rasch severity parameter."),
+            ("HRM", "Hierarchical Rater Model: introduces latent 'ideal ratings' between ability and observed scores, modeling rater effects as a separate measurement stage (Patz et al., 2002)."),
+            # --- Estimation ---
+            ("JMLE", "Joint Maximum Likelihood Estimation: estimates all parameters simultaneously. Standard in FACETS."),
+            ("MML", "Marginal Maximum Likelihood: integrates over a person ability distribution."),
+            ("Bayesian estimation", "Uses prior distributions + observed data to obtain posterior distributions of parameters. Provides full uncertainty quantification (Uto & Ueno, 2020)."),
+            ("MCMC", "Markov Chain Monte Carlo: iterative sampling algorithm for Bayesian estimation. Requires convergence diagnostics (R-hat, ESS)."),
+            ("R-hat (PSRF)", "Potential Scale Reduction Factor. Convergence diagnostic for MCMC; values < 1.1 indicate adequate convergence (Gelman & Rubin, 1992)."),
+            ("ESS", "Effective Sample Size: the number of independent draws from the posterior. ESS > 400 recommended (Zitzmann & Hecht, 2019)."),
+            ("WAIC", "Widely Applicable Information Criterion: Bayesian model comparison metric. Lower = better fit (Uto, 2021)."),
+            ("DIC", "Deviance Information Criterion: Bayesian model comparison metric. Lower = better fit (Eckes & Jin, 2021)."),
+            ("LOO-IC", "Leave-One-Out Information Criterion: cross-validation-based model comparison. Lower = better fit."),
+            # --- Categories & Thresholds ---
+            ("Category", "A rating level on the scale (e.g., 1, 2, 3, 4, 5)."),
+            ("Threshold", "The point on the logit scale where two adjacent categories are equally probable."),
+            ("Rasch-Andrich threshold", "Step difficulty parameter τ_k in the RSM. P(X=k−1) = P(X=k) at η = τ_k."),
+            ("Disordered thresholds", "Thresholds not in ascending order; suggests scale categories may not function distinctly (Linacre, 2004)."),
+            # --- Fit statistics ---
+            ("Infit MnSq", "Information-weighted mean-square residual. Sensitive to patterns near the element's measure. Priority over Outfit for rater evaluation (Eckes, 2005)."),
+            ("Outfit MnSq", "Unweighted mean-square residual. Sensitive to unexpected outlier responses (Smith, 2000)."),
+            ("ZSTD", "Standardized fit statistic (z-score of MnSq). |ZSTD| > 2 warrants attention (Linacre, 2002)."),
+            ("Residual", "Difference between observed and expected scores; basis for fit and PCA."),
+            ("Standardized residual", "Residual divided by its expected variance. ~5% should have |z| ≥ 2 under good fit (Eckes, 2005)."),
+            # --- Separation & Reliability ---
+            ("Separation (G)", "Ratio of True SD to RMSE. Higher = better discrimination among elements (Wright & Masters, 1982)."),
+            ("Reliability", "G²/(1+G²) where G = separation. Proportion of observed variance that is true."),
+            ("Strata", "(4G+1)/3; estimates the number of statistically distinct levels the facet can distinguish (Wright & Masters, 1982)."),
+            ("RMSE", "Root Mean Square Error of measurement; average imprecision across elements."),
+            ("True SD", "Standard deviation of measures after removing measurement error. True SD = √(max(0, Obs.Var − RMSE²))."),
+            ("Fixed chi-square", "Tests whether all elements in a facet have the same measure. Very sensitive to sample size (Myford & Wolfe, 2004)."),
+            # --- Rater effects ---
+            ("Leniency / Severity", "A rater systematically gives higher (lenient) or lower (severe) scores than expected (Myford & Wolfe, 2003)."),
+            ("Central tendency", "A rater avoids extreme categories, clustering scores near the scale midpoint (Myford & Wolfe, 2003; Eckes & Jin, 2021)."),
+            ("Halo effect", "A rater fails to distinguish among traits/criteria, assigning similar scores across all dimensions (Myford & Wolfe, 2003)."),
+            ("Randomness effect", "A rater assigns scores with little consistency or pattern. Detected by high Infit and low SR/ROR (Myford & Wolfe, 2004)."),
+            ("Differential severity", "A rater is disproportionately lenient or severe for a specific subgroup (Myford & Wolfe, 2004)."),
+            ("Rater consistency (α_r)", "How reliably a rater discriminates among examinees. α_r > 1 = highly consistent; α_r < 1 = inconsistent (Uto & Ueno, 2020)."),
+            ("Range restriction (d_rk)", "Tendency to avoid extreme rating categories. Captured in the generalized MFRM (Uto & Ueno, 2020)."),
+            ("Severity drift", "Change in rater severity over time. Modeled via a Markov chain on β_rt (Uto, 2022)."),
+            ("SR/ROR correlation", "Single Rater vs. Rest of Raters correlation ('PtBis' in FACETS). Low values signal randomness (Myford & Wolfe, 2004)."),
+            ("Fair average", "Severity-adjusted score: the score an examinee would receive from a rater of average severity (Eckes, 2005)."),
+            # --- Visualizations ---
+            ("Wright Map", "Visual display placing persons and elements on a common logit scale (Wright & Masters, 1982)."),
+            ("Yardstick", "FACETS Table 6.0 style vertical ruler showing all facets aligned on logits."),
+            ("Category probability curve", "Probability of each response category as a function of the latent measure (Andrich, 1978)."),
+            ("Expected score curve (ICC)", "The model-predicted average score (Σ k·P(k)) as a function of the latent measure."),
+            ("Pathway map", "Plot of element measures vs fit (ZSTD) to identify misfitting elements."),
+            # --- Analysis concepts ---
+            ("Bias/Interaction", "Departure from the additive model for a specific facet-level pair (FACETS Table 7). |t| ≥ 2 flags significance (Myford & Wolfe, 2004)."),
+            ("Bonferroni correction", "Adjusts the significance threshold (α/n) when testing multiple interactions to control false positives (Eckes, 2005)."),
+            ("Anchor", "A fixed (pre-set) parameter value for linking across studies or maintaining a scale."),
+            ("Extreme score", "An element receiving only the minimum or maximum possible rating; measure is infinite."),
+            ("Point-measure correlation (PtMea)", "Pearson correlation between an element's observed scores and the person measures. Negative values suggest reversed scoring or misfit (Linacre, 2002)."),
+            ("Connectivity / Disconnected subsets", "Whether all elements are linked through shared observations. Disconnected subsets have non-comparable estimates (Linacre, 2024)."),
+            ("PCA of residuals", "Principal component analysis of standardized residuals to check unidimensionality (Linacre, 2024)."),
+            ("Eigenvalue", "Variance explained by a principal component. 1st EV < 2.0 supports unidimensionality (Linacre, 2024)."),
+            # --- Missing data ---
+            ("MCAR", "Missing Completely At Random: missingness is unrelated to any data. Safe for most analyses (Little & Rubin, 2002)."),
+            ("MAR", "Missing At Random: missingness depends on observed (but not unobserved) values. FIML and MI are unbiased under MAR."),
+            ("MNAR", "Missing Not At Random: missingness depends on unobserved values. Neither FIML nor MI fully corrects bias."),
+            ("Multiple Imputation (MI)", "Creates multiple plausible complete datasets, analyzes each, and pools results via Rubin's rules."),
+            # --- G-theory ---
+            ("Generalizability coefficient (Eρ²)", "G-theory reliability for relative (norm-referenced) decisions. Target ≥ 0.80 (Hass et al., 2018)."),
+            ("Dependability coefficient (Φ)", "G-theory reliability for absolute (criterion-referenced) decisions. Target ≥ 0.80 (Hass et al., 2018)."),
+            # --- App-specific terms ---
+            ("Long format", "Data layout where each row represents one observation (one person–rater–task combination). Required input format for this app."),
+            ("maxit", "Maximum iterations for the estimation algorithm. Increase if convergence is not reached (default: 400)."),
+            ("reltol", "Relative tolerance for convergence. Smaller values give more precise estimates but take longer (default: 1e-6)."),
+            ("Xtreme correction", "Adjustment for extreme scores (all-minimum or all-maximum ratings). Adds a small fraction to allow finite measure estimation."),
+            ("ICC", "Item Characteristic Curve: the expected score as a function of person ability minus item difficulty. Also called expected score curve."),
+            ("D-study", "Decision study: projects reliability under different measurement designs (varying raters, tasks, etc.) to optimize assessment design."),
+        ]
+
+        if search.strip():
+            term = search.strip().lower()
+            glossary = [(t, d) for t, d in glossary if term in t.lower() or term in d.lower()]
+
+        if glossary:
+            for term, defn in glossary:
+                st.markdown(f"**{term}**  \n{defn}")
+        else:
+            st.caption("No matching terms found.")
+
+    # ------------------------------------------------------------------
+    # Tab 7: Reporting Guide (NEW)
+    # ------------------------------------------------------------------
+    with help_tabs[6]:
+        st.info(
+            "The reporting checklist and APA text are now **auto-generated** in the "
+            "**Report** tab based on your actual estimation results. "
+            "Navigate to Report → APA Report or Report → Reporting Checklist."
+        )
+        st.markdown(
+            """
+### What to Report in an MFRM Study
+
+When reporting MFRM results in a manuscript, include the following
+(Eckes, 2011; Linacre, 2024; Myford & Wolfe, 2003, 2004):
+
+**Method section:**
+1. **Model specification**: RSM, PCM, or bounded GPCM; estimation method; software
+2. **Data description**: N observations, N persons, N elements per facet, N score categories, missing data rate
+3. **Convergence**: whether the model converged and convergence criterion
+4. **Constraints**: which facet was non-centered, any anchors or dummy facets
+
+**Results section:**
+1. **Global fit**: % of standardized residuals |z| ≥ 2 (expect ≈ 5%) and |z| ≥ 3 (expect ≈ 1%)
+2. **Separation & reliability per facet**: Separation ratio, reliability index, number of strata
+   - Separation > 2.0 and reliability > .80 indicate good differentiation
+   - For raters, *low* separation is desirable (indicating interchangeability)
+3. **Facet measures**: range, mean, SD for each facet; flag extreme elements
+4. **Element fit**: Infit/Outfit MnSq for each element; flag values outside 0.5–1.5
+5. **Bias interactions**: significant bias pairs (|t| ≥ 2); interpret substantively
+6. **Rating scale functioning**: ordered thresholds, adequate counts per category
+
+**Tables & figures to include:**
+- Measurement report table (measures, SE, fit per element)
+- Wright map (variable map)
+- Category probability curves (if scale functioning is discussed)
+- Bias heatmap (if bias interactions are significant)
+
+> **Tip:** The **Report → APA Report** sub-tab auto-generates draft text
+> that covers all of the above. Copy and adapt it for your manuscript.
+"""
+        )
+        st.markdown(
+            """
+### Key References
+
+- Agresti, A. (2013). *Categorical data analysis* (3rd ed.).
+  John Wiley & Sons.
+- Andrich, D. (1978). A rating formulation for ordered response
+  categories. *Psychometrika, 43*, 561–573.
+- Bond, T. G., & Fox, C. M. (2001). *Applying the Rasch model*.
+  Erlbaum.
+- Dunn, K. J. (2024). Random-item Rasch models and explanatory
+  extensions: A worked example using L2 vocabulary test item
+  responses. *Research Methods in Applied Linguistics, 3*(3),
+  100091.
+- Eckes, T. (2005). Examining rater effects in TestDaF writing
+  and speaking performance assessments. *Language Assessment
+  Quarterly, 2*, 197–221.
+- Eckes, T., & Jin, K.-Y. (2021). Measuring rater centrality
+  effects. *Psychological Test and Assessment Modeling, 63*,
+  65–94.
+- Engelhard, G., Jr. (1994). Examining rater errors in the
+  assessment of written composition with a many-faceted Rasch
+  model. *Journal of Educational Measurement, 31*(2), 93–112.
+- Gelman, A., & Rubin, D. B. (1992). Inference from iterative
+  simulation using multiple sequences. *Statistical Science,
+  7*(4), 457–472.
+- Hagell, P., & Westergren, A. (2016). Sample size and
+  statistical conclusions from tests of fit to the Rasch model.
+  *Journal of Applied Measurement, 17*(4), 416–431.
+- Hass, R. W., Rivera, M., & Silvia, P. J. (2018). On the
+  dependability and feasibility of layperson ratings of divergent
+  thinking. *Frontiers in Psychology, 9*, 1343.
+- Jin, K.-Y., & Eckes, T. (2024). The impact of insufficient
+  effort responses on the order of category thresholds.
+  *Educational and Psychological Measurement, 84*(6), 1203–1231.
+- Koizumi, R., In'nami, Y., Asano, K., & Agawa, T. (2019).
+  Validity argument for CEFR-J A1 spoken interaction tasks.
+  *Papers in Language Testing and Assessment, 8*(2), 1–33.
+- Li, G., Pan, Y., & Wang, W. (2021). Using generalizability
+  theory and many-facet Rasch model to evaluate in-basket tests.
+  *Frontiers in Psychology, 12*, 660553.
+- Linacre, J. M. (1989). *Many-facet Rasch measurement*. MESA.
+- Linacre, J. M. (2002). What do infit and outfit, mean-square
+  and standardized mean? *Rasch Measurement Transactions, 16*,
+  878.
+- Linacre, J. M. (2004). *FACETS Rasch measurement computer
+  program* (Version 3.53). Winsteps.com.
+- Linacre, J. M. (2024). *Winsteps Rasch measurement computer
+  program user's guide* (Version 5.8). Winsteps.com.
+  https://www.winsteps.com
+- Little, R. J. A., & Rubin, D. B. (2002). *Statistical analysis
+  with missing data* (2nd ed.). John Wiley & Sons.
+- Masters, G. N. (1982). A Rasch model for partial credit
+  scoring. *Psychometrika, 47*(2), 149–174.
+- McNamara, T. F. (1996). *Measuring second language performance*.
+  Longman.
+- Myford, C. M., & Wolfe, E. W. (2003). Detecting and measuring
+  rater effects using MFRM: Part I. *Journal of Applied
+  Measurement, 4*, 386–422.
+- Myford, C. M., & Wolfe, E. W. (2004). Detecting and measuring
+  rater effects using MFRM: Part II. *Journal of Applied
+  Measurement, 5*, 189–227.
+- Patz, R. J., Junker, B. W., Johnson, M. S., & Mariano, L. T.
+  (2002). The hierarchical rater model for rated test items.
+  *Journal of Educational and Behavioral Statistics, 27*,
+  341–384.
+- Smith, E. V. (2000). Metric development and score reporting
+  in Rasch measurement. *Journal of Applied Measurement, 1*,
+  303–326.
+- Taylor, J. E., Rousselet, G. A., Scheepers, C., & Sereno, S. C.
+  (2023). Rating norms should be calculated from cumulative link
+  mixed effects models. *Behavior Research Methods, 55*,
+  2175–2196.
+- Uto, M. (2021). A multidimensional generalized many-facet Rasch
+  model for rubric-based performance assessment.
+  *Behaviormetrika, 48*(2), 425–457.
+- Uto, M. (2022). A Bayesian MFRM with Markov modeling for
+  rater severity drift. *Behavior Research Methods, 55*,
+  3910–3928.
+- Uto, M., & Ueno, M. (2020). A generalized many-facet Rasch
+  model. *Behaviormetrika, 47*, 469–496.
+- Wolfe, E. W., & Song, T. (2015). Methods for monitoring
+  rater centrality. *Journal of Applied Measurement, 16*,
+  240–261.
+- Wright, B. D., & Linacre, J. M. (1994). Reasonable mean-
+  square fit values. *Rasch Measurement Transactions, 8*, 370.
+- Wright, B. D., & Masters, G. N. (1982). *Rating scale
+  analysis*. MESA.
+- Zitzmann, S., & Hecht, M. (2019). Going beyond convergence
+  in Bayesian estimation: Why precision matters too.
+  *Structural Equation Modeling, 26*(4), 646–661.
+"""
+        )
+
+    # ------------------------------------------------------------------
+    # Tab 8: Troubleshooting (expanded)
+    # ------------------------------------------------------------------
+    with help_tabs[7]:
+        st.markdown(
+            """
+### Common Issues & Solutions
+
+---
+
+**"Select at least two facet columns"**
+- You need Person + at least 2 facets (e.g., Rater + Task).
+
+**"Only 1 distinct score value found"**
+- Your Score column has no variation. Check column mapping.
+
+**Estimation does not converge**
+- Increase `maxit` (e.g., 1000 or 2000).
+- Relax `reltol` (e.g., 1e-5).
+- Check for sparse categories or disconnected subsets.
+
+**Many elements with extreme scores**
+- Elements scored at the minimum or maximum have infinite measures.
+- The Xtreme correction adds a small fraction to enable estimation.
+
+**Disordered thresholds**
+- Collapse adjacent categories (e.g., merge 1+2 or 4+5).
+- Or, the sample may be too small for the number of categories.
+- Target: threshold distances between 1.4 and 5.0 logits
+  (Linacre, 2004).
+
+**GPCM slopes look extreme**
+- First check category counts for the GPCM step facet. Sparse or
+  zero-count categories can make slope estimates unstable.
+- Compare with PCM. If substantive conclusions change only because
+  of a few extreme slopes, treat the GPCM result as exploratory.
+- Remember: slopes describe steepness of category transitions, not
+  rater severity or task difficulty.
+
+**High misfit (Infit/Outfit > 2.0)**
+- Check for data entry errors or rater misunderstanding.
+- Consider whether the element belongs to the construct being
+  measured.
+- Outfit > 2.0 with acceptable Infit → isolated outlier responses
+  (Smith, 2000).
+
+**Disconnected subsets**
+- Not all persons are linked through shared facet levels.
+- Use anchor constraints or redesign the assessment for
+  connectivity.
+- For test linking across forms, ensure C_I + C_R ≥ 5–6 for
+  small-scale, ≥ 10–12 for large-scale assessments (Uto, 2021).
+
+**Very low reliability (< 0.50)**
+- The facet elements are not well-separated.
+- May indicate too few observations or too little true variability.
+- For person reliability, increase the number of ratings per
+  person. D-study (G-theory) can guide how many raters/tasks
+  are needed (Hass et al., 2018).
+
+**Poor global fit (> 5% residuals with |z| ≥ 2)**
+- Model assumptions may be violated.
+- Check for multidimensionality (PCA of residuals).
+- Check for local dependence (e.g., group oral assessments where
+  peers influence each other; Jin & Eckes, 2024).
+- Consider adding interaction terms or switching to a more
+  flexible model.
+
+**Rater reliability is unexpectedly high**
+- High rater reliability means raters differ substantially in
+  severity — they are *not* interchangeable.
+- This is expected when rater training is insufficient or when
+  raters use different internal standards.
+- Action: consider rater calibration sessions, use fair averages
+  for scoring decisions, or report severity-adjusted scores
+  (Eckes, 2005).
+
+**Suspected central tendency in a rater**
+- Check the three indicators (see Rater Effects tab):
+  r(residual, expected) < −0.30 AND Infit ≤ 1.40 (Wolfe & Song,
+  2015).
+- Do not rely on Infit alone — it is sensitive to multiple effects
+  (Eckes & Jin, 2021).
+
+**Missing data concerns**
+- **Planned incomplete designs** (not all raters score all
+  examinees) are handled naturally by MFRM estimation under the
+  MCAR/MAR assumption (Little & Rubin, 2002; Linacre, 2024).
+- **Avoid listwise deletion** — it biases means and attenuates
+  correlations, especially under MAR conditions (Little & Rubin,
+  2002).
+- **Avoid mean imputation** — it underestimates variance and
+  severely attenuates correlations.
+- If missing data is substantial (> 30%), consider whether the
+  design provides sufficient linkage across subsets.
+
+**Many significant bias interactions**
+- First, apply **Bonferroni correction** (α / number of tests).
+  Under good fit, ~5% of interactions will have |z| ≥ 2 by
+  chance (Eckes, 2005).
+- If the percentage of significant interactions substantially
+  exceeds 5% even after correction, investigate systematic
+  patterns (e.g., certain raters consistently harsh on specific
+  tasks).
+
+**Negative point-measure correlation**
+- A negative PtMea for an item or person indicates that higher
+  ability corresponds to lower scores — often a sign of reversed
+  scoring, data entry errors, or an item measuring a different
+  construct (Linacre, 2024).
+- **Investigate this before evaluating any other fit statistics.**
+
+**Overfit (MnSq < 0.5) across many elements**
+- Very low mean-squares and very negative ZSTD values suggest
+  local dependence or redundant items.
+- Impact: misleadingly inflates reliability and separation
+  statistics (Linacre, 2024).
+- Check for item redundancy or Guttman-like response patterns.
+
+**Large ZSTD with acceptable MnSq**
+- With large samples (> 300 observations per element), ZSTD may
+  flag trivially small departures from the model even when MnSq
+  is near 1.0.
+- In this case, rely on **MnSq for practical significance** and
+  disregard ZSTD (Linacre, 2024; Hagell & Westergren, 2016).
+"""
+        )
+
+    # ------------------------------------------------------------------
+    # Tab 9: Model Capability
+    # ------------------------------------------------------------------
+    with help_tabs[8]:
+        st.markdown(
+            """
+### Model Capability Matrix
+
+This table documents what the standalone Python app currently estimates.
+It is intentionally explicit so that RSM, PCM, and GPCM results are not
+over-interpreted as identical Rasch evidence.
+
+| Capability | RSM | PCM | Bounded GPCM |
+|---|---:|---:|---:|
+| Shared rating-scale thresholds | Yes | No | No |
+| Step-facet-specific thresholds | No | Yes | Yes |
+| Positive slope/discrimination parameters | No | No | Yes |
+| Slope identification | Not applicable | Not applicable | log slopes centered; geometric mean slope = 1 |
+| Current slope scope | Not applicable | Not applicable | `slope_facet == step_facet` only |
+| JMLE estimation | Yes | Yes | Yes |
+| MML EM / Direct / Hybrid / Auto | Yes | Yes | Yes |
+| Posterior EAP scoring | MML only | MML only | MML only |
+| Plausible values | MML only | MML only | MML only |
+| Strict marginal diagnostics | MML only | MML only | MML only |
+| Bias/interaction screening | Yes | Yes | Yes |
+| Residual PCA | Yes | Yes | Yes |
+| Category probability curves | Native | Averaged thresholds | Averaged thresholds and average slope |
+| FACETS-style fair score table | Native approximation | Step-facet-aware approximation | Step/slope-aware approximation; interpret cautiously |
+| Current-engine Python runner | Yes | Yes | Yes |
+| Portable self-contained JMLE script | Yes | Yes | Not yet |
+| Portable R script | Yes | Yes | Not yet |
+| Stan generator | Yes | Yes | Not yet |
+
+### How To Read GPCM Results
+
+- Use GPCM when the analysis question includes whether category
+  transitions are sharper or flatter for levels of a selected facet.
+- Read ordinary facet measures as severity/difficulty under the chosen
+  sign convention. Read GPCM slopes separately as transition steepness.
+- A slope above 1 means the model predicts sharper category transitions
+  for that step-facet level. A slope below 1 means flatter transitions.
+- The geometric mean slope is fixed to 1, so slope values are relative
+  within the selected step facet.
+- Large slope spread should trigger a data check: sparse categories,
+  near-extreme levels, or a weakly connected design can all create
+  unstable slope estimates.
+
+### Current Boundary
+
+The Python GPCM path follows the bounded branch: the same facet supplies
+thresholds and slopes. Broader interfaces where `slope_facet` differs
+from `step_facet`, multidimensional slopes, or latent-regression GPCM are
+not yet enabled. For reproducibility, use the app-engine runner rather
+than the portable scripts for GPCM runs.
+"""
+        )
+
+
+# ---------------------------------------------------------------------------
+# Bias/Interaction tab
+# ---------------------------------------------------------------------------
+
+
+def _draw_bias_heatmap(tbl: pd.DataFrame, facet_a: str, facet_b: str) -> None:
+    """Interactive Plotly heatmap of bias size or t-values (FacetA × FacetB)."""
+    if "FacetA_Level" not in tbl.columns or "FacetB_Level" not in tbl.columns:
+        return
+    metric = st.radio(
+        "Heatmap metric",
+        ["Bias Size (logits)", "t-value"],
+        horizontal=True,
+        key="bias_heatmap_metric",
+        help="Bias Size shows raw logit differences. t-value shows statistical significance. "
+             "Switching to t-value may take a moment as it requires additional computation.",
+    )
+    if "t-value" in metric:
+        st.caption("⏳ t-value computation may take a few seconds for large bias tables.")
+    val_col = "Bias Size" if "Bias" in metric else "t"
+    if val_col not in tbl.columns:
+        return
+
+    pivot = tbl.pivot_table(
+        index="FacetA_Level", columns="FacetB_Level", values=val_col, aggfunc="first",
+    )
+    if pivot.empty or not np.any(np.isfinite(pivot.values)):
+        st.info("No finite bias values to display in heatmap.")
+        return
+    # Build custom hover text
+    hover_pivot = tbl.pivot_table(
+        index="FacetA_Level", columns="FacetB_Level",
+        values=["Bias Size", "t", "Prob.", "Observd Count"],
+        aggfunc="first",
+    )
+    hover_text = []
+    for i, row_lbl in enumerate(pivot.index):
+        row_texts = []
+        for j, col_lbl in enumerate(pivot.columns):
+            parts = [f"{facet_a}: {row_lbl}", f"{facet_b}: {col_lbl}"]
+            for c in ["Bias Size", "t", "Prob.", "Observd Count"]:
+                if c in hover_pivot.columns.get_level_values(0):
+                    v = hover_pivot.loc[row_lbl, (c, col_lbl)]
+                    if pd.notna(v):
+                        parts.append(f"{c}: {v:.3f}" if isinstance(v, float) else f"{c}: {v}")
+            row_texts.append("<br>".join(parts))
+        hover_text.append(row_texts)
+
+    # Significance annotations
+    t_pivot = tbl.pivot_table(
+        index="FacetA_Level", columns="FacetB_Level", values="t", aggfunc="first",
+    )
+    annotations = []
+    for i, row_lbl in enumerate(pivot.index):
+        for j, col_lbl in enumerate(pivot.columns):
+            t_val = t_pivot.loc[row_lbl, col_lbl] if (row_lbl in t_pivot.index and col_lbl in t_pivot.columns) else np.nan
+            if pd.notna(t_val) and abs(t_val) >= 2:
+                annotations.append(
+                    dict(x=j, y=i, text="*", showarrow=False,
+                         font=dict(size=16, color="black"))
+                )
+
+    zmax = float(np.nanmax(np.abs(pivot.values))) if np.any(np.isfinite(pivot.values)) else 1.0
+    fig = go.Figure(data=go.Heatmap(
+        z=pivot.values,
+        x=[str(c) for c in pivot.columns],
+        y=[str(r) for r in pivot.index],
+        text=hover_text,
+        hoverinfo="text",
+        colorscale="RdBu_r",
+        zmid=0,
+        zmin=-zmax,
+        zmax=zmax,
+        colorbar=dict(title=val_col),
+    ))
+    fig.update_layout(
+        xaxis_title=facet_b,
+        yaxis_title=facet_a,
+        title=f"{metric} — {facet_a} × {facet_b}",
+        yaxis=dict(autorange="reversed"),
+        annotations=annotations,
+        height=max(300, 40 * len(pivot.index) + 100),
+    )
+    st.plotly_chart(fig, width="stretch")
+    st.caption("\\* indicates |t| ≥ 2 (statistically significant bias).")
+
+
+def show_bias_section(
+    bias_results: dict | None,
+    core: dict,
+    all_bias_results: dict[str, dict] | None = None,
+) -> None:
+    """Render Bias/Interaction analysis (FACETS Table 7 style)."""
+    st.subheader("Bias/Interaction Analysis")
+    st.caption(
+        "Bias analysis estimates interaction terms between two facets while holding "
+        "main effects fixed. This corresponds to FACETS Table 7. A significant bias "
+        "indicates that a specific facet-level combination deviates from additive "
+        "expectations (e.g., a rater is unusually harsh on a particular task)."
+    )
+
+    # Let user choose which pair to view
+    all_bias = all_bias_results or {}
+    if not all_bias and bias_results:
+        pair_key = f"{bias_results.get('facet_a', 'A')} x {bias_results.get('facet_b', 'B')}"
+        all_bias = {pair_key: bias_results}
+
+    if not all_bias:
+        st.info("No bias interactions were estimated. Ensure at least 2 facets are selected.")
+        return
+
+    pair_keys = list(all_bias.keys())
+    selected_pair = st.selectbox(
+        "Facet pair", pair_keys, index=0, key="bias_pair_selector",
+        help="Select which pair of facets to examine for systematic bias interactions. "
+             "A bias interaction means that a specific element of one facet behaves "
+             "differently depending on which element of the other facet it is paired with.",
+    )
+    bias_results = all_bias[selected_pair]
+    tbl = bias_results["table"].copy()
+
+    # Result-aware bias summary
+    if "t" in tbl.columns:
+        _t_vals = pd.to_numeric(tbl["t"], errors="coerce").dropna()
+        _n_sig = int((_t_vals.abs() >= 2.0).sum())
+        _n_pairs = len(_t_vals)
+        if _n_pairs > 0:
+            if _n_sig == 0:
+                st.success(f"No significant bias interactions among {_n_pairs} pairs (|*t*| < 2).")
+            else:
+                st.warning(
+                    f"**{_n_sig}** of {_n_pairs} pairs show significant bias (|*t*| ≥ 2) — "
+                    "review the table and heatmap below."
+                )
+
+    facet_a = bias_results.get("facet_a", selected_pair.split(" x ")[0])
+    facet_b = bias_results.get("facet_b", selected_pair.split(" x ")[-1])
+
+    # Add standardized effect size (Cohen's d ≈ Bias / pooled SD of measures)
+    if "Bias Size" in tbl.columns:
+        bias_vals = pd.to_numeric(tbl["Bias Size"], errors="coerce").dropna()
+        if len(bias_vals) > 1:
+            pooled_sd = float(bias_vals.std())
+            if pooled_sd > 0:
+                tbl["Effect (d)"] = (
+                    pd.to_numeric(tbl["Bias Size"], errors="coerce") / pooled_sd
+                ).round(2)
+
+    # Display columns with friendly names
+    display_cols = [
+        "Sq", "Observd Score", "Expctd Score", "Observd Count",
+        "Obs-Exp Average", "Bias Size", "Effect (d)", "S.E.", "t", "d.f.", "Prob.",
+        "Infit", "Outfit",
+        "FacetA_Index", "FacetA_Level", "FacetA_Measure",
+        "FacetB_Index", "FacetB_Level", "FacetB_Measure",
+    ]
+    display_cols = [c for c in display_cols if c in tbl.columns]
+    tbl_display = tbl[display_cols].rename(columns={
+        "S.E.": "Model S.E.",
+        "Infit": "Infit MnSq",
+        "Outfit": "Outfit MnSq",
+        "FacetA_Index": f"{facet_a} N",
+        "FacetA_Level": facet_a,
+        "FacetA_Measure": f"{facet_a} measr",
+        "FacetB_Index": f"{facet_b} N",
+        "FacetB_Level": facet_b,
+        "FacetB_Measure": f"{facet_b} measr",
+    })
+    st.dataframe(tbl_display, width="stretch")
+
+    # Interactive bias heatmap (Plotly)
+    st.subheader("Bias Heatmap")
+    st.caption(
+        "The heatmap visualises bias interactions across all facet-level combinations. "
+        "Cells marked with **\\*** are statistically significant (|t| ≥ 2)."
+    )
+    _draw_bias_heatmap(tbl, facet_a, facet_b)
+
+    # Iteration convergence report
+    iter_tbl = bias_results.get("iteration")
+    if iter_tbl is not None and not iter_tbl.empty:
+        st.subheader("Bias iteration report (convergence)")
+        iter_display = iter_tbl.copy()
+        iter_display["Iteration"] = iter_display["Iteration"].apply(
+            lambda v: f"BIAS {int(v)}" if pd.notna(v) else v
+        )
+        st.dataframe(iter_display.rename(columns={
+            "MaxScoreResidual": "Max. Score Residual",
+            "MaxScoreResidualPct": "%",
+            "MaxLogitChange": "Max. Logit Change",
+            "BiasCells": "Cells",
+        }), width="stretch")
+
+    # Summary statistics
+    st.subheader("Bias summary")
+    summary = bias_results.get("summary")
+    if summary is not None and not summary.empty:
+        st.dataframe(summary, width="stretch")
+
+    # Bias size distribution
+    bias_vals = tbl["Bias Size"].dropna()
+    if len(bias_vals) >= 3:
+        mean_b = float(bias_vals.mean())
+        sd_b = float(bias_vals.std())
+        fig_bias = make_subplots(rows=1, cols=2, subplot_titles=["Bias Size Distribution", "Bias Significance (t) Distribution"])
+        fig_bias.add_trace(go.Histogram(
+            x=bias_vals, nbinsx=min(20, len(bias_vals)), marker_color="#1b9e77", showlegend=False,
+        ), row=1, col=1)
+        fig_bias.add_vline(x=mean_b, line_color="black", line_width=1, row=1, col=1,
+                           annotation_text=f"Mean={mean_b:.2f}")
+        for mult in [1, 2]:
+            fig_bias.add_vline(x=mean_b + mult * sd_b, line_dash="dash", line_color="gray", line_width=0.7, row=1, col=1)
+            fig_bias.add_vline(x=mean_b - mult * sd_b, line_dash="dash", line_color="gray", line_width=0.7, row=1, col=1)
+        fig_bias.update_xaxes(title_text="Bias Size (logits)", row=1, col=1)
+        fig_bias.update_yaxes(title_text="Count", row=1, col=1)
+
+        t_vals = tbl["t"].dropna()
+        if len(t_vals) >= 3:
+            fig_bias.add_trace(go.Histogram(
+                x=t_vals, nbinsx=min(20, len(t_vals)), marker_color="#d95f02", showlegend=False,
+            ), row=1, col=2)
+            fig_bias.add_vline(x=0, line_color="black", line_width=1, row=1, col=2)
+            fig_bias.add_vline(x=2, line_dash="dash", line_color="red", line_width=0.7, row=1, col=2)
+            fig_bias.add_vline(x=-2, line_dash="dash", line_color="red", line_width=0.7, row=1, col=2)
+            fig_bias.update_xaxes(title_text="t-value", row=1, col=2)
+            fig_bias.update_yaxes(title_text="Count", row=1, col=2)
+
+        fig_bias.update_layout(height=380, template="plotly_white")
+        st.plotly_chart(fig_bias, width="stretch")
+        _offer_fig_download(fig_bias, "bias_distribution", "Download Bias Distribution (PNG 300 DPI)")
+
+    # Fixed chi-square test
+    chi_sq = bias_results.get("chi_sq")
+    if chi_sq is not None and not chi_sq.empty:
+        st.subheader("Fixed (all = 0) chi-square test")
+        st.dataframe(chi_sq, width="stretch")
+        chi_val = chi_sq["FixedChiSq"].iloc[0]
+        chi_df = chi_sq["FixedDF"].iloc[0]
+        chi_p = chi_sq["FixedProb"].iloc[0]
+        if np.isfinite(chi_p):
+            if chi_p < 0.01:
+                st.warning(
+                    f"Chi-square = {chi_val:.2f}, df = {int(chi_df)}, p = {chi_p:.4f}. "
+                    "Significant bias variability detected across the facet pair."
+                )
+            else:
+                st.success(
+                    f"Chi-square = {chi_val:.2f}, df = {int(chi_df)}, p = {chi_p:.4f}. "
+                    "No significant systematic bias variability."
+                )
+
+    # Pairwise bias report
+    calc_bias_pairwise_fn = core.get("calc_bias_pairwise")
+    if calc_bias_pairwise_fn:
+        st.subheader("Pairwise bias report")
+        target_facet = st.selectbox(
+            "Target facet", [facet_a, facet_b], index=0, key="bias_target_facet",
+            help="The facet whose elements are compared pairwise. For example, "
+                 "select 'Rater' to see how each rater pair differs in severity "
+                 "within the context of the other facet.",
+        )
+        context_facet = facet_b if target_facet == facet_a else facet_a
+        pairwise_tbl = calc_bias_pairwise_fn(bias_results["table"], target_facet, context_facet)
+        if pairwise_tbl.empty:
+            st.info("Pairwise bias report not available for this selection.")
+        else:
+            st.dataframe(pairwise_tbl, width="stretch")
+
+    # Download
+    st.download_button(
+        "Download bias table (CSV)",
+        data=to_csv_bytes(tbl),
+        file_name="mfrm_bias_table.csv",
+        mime="text/csv",
+    )
+
+
+# ---------------------------------------------------------------------------
+# Categories/Steps tab
+# ---------------------------------------------------------------------------
+
+def show_categories_section(result: dict, diagnostics: dict, core: dict) -> None:
+    """Render category diagnostics and step ordering checks."""
+    st.subheader("Category Diagnostics")
+    st.caption(
+        "Category-level statistics show how each rating scale category functions. "
+        "Look for: (1) adequate counts per category (>=10), (2) monotonically "
+        "increasing average measures, (3) ordered thresholds, and (4) acceptable "
+        "fit (Infit/Outfit MnSq 0.5--1.5)."
+    )
+
+    calc_cat_fn = core.get("calc_category_stats")
+    calc_step_fn = core.get("calc_step_order")
+    cat_warn_fn = core.get("category_warnings_text")
+    obs_df = diagnostics.get("obs")
+
+    if calc_cat_fn and obs_df is not None and not obs_df.empty:
+        cat_tbl = calc_cat_fn(obs_df, result)
+        if not cat_tbl.empty:
+            st.dataframe(cat_tbl, width="stretch")
+
+            # Category bar charts
+        
+
+            cats = cat_tbl["Category"].astype(str)
+            fig_cat = make_subplots(rows=1, cols=2, subplot_titles=["Category Counts", "Category Percent"])
+            fig_cat.add_trace(go.Bar(x=cats, y=cat_tbl["Count"], marker_color="#1b9e77", showlegend=False), row=1, col=1)
+            fig_cat.update_xaxes(title_text="Category", row=1, col=1)
+            fig_cat.update_yaxes(title_text="Count", row=1, col=1)
+            if "Percent" in cat_tbl.columns:
+                fig_cat.add_trace(go.Bar(x=cats, y=cat_tbl["Percent"], marker_color="#d95f02", showlegend=False), row=1, col=2)
+                fig_cat.update_xaxes(title_text="Category", row=1, col=2)
+                fig_cat.update_yaxes(title_text="Percent", row=1, col=2)
+            fig_cat.update_layout(height=370, template="plotly_white")
+            st.plotly_chart(fig_cat, width="stretch")
+
+            # Average measures monotonicity check
+            if "AvgPersonMeasure" in cat_tbl.columns:
+                avg_sorted = cat_tbl.dropna(subset=["AvgPersonMeasure"]).sort_values("Category")
+                if len(avg_sorted) >= 2:
+                    is_monotonic = avg_sorted["AvgPersonMeasure"].is_monotonic_increasing
+                    if is_monotonic:
+                        st.success("Average person measures are monotonically increasing across categories.")
+                    else:
+                        st.warning(
+                            "Average person measures are **not** monotonically increasing. "
+                            "This may indicate problematic category functioning."
+                        )
+
+            # Category warnings
+            step_order = None
+            if calc_step_fn and result.get("steps") is not None:
+                step_order = calc_step_fn(result["steps"])
+
+            if cat_warn_fn:
+                warnings_text = cat_warn_fn(cat_tbl, step_order)
+                if "No major" in warnings_text:
+                    st.success(warnings_text)
+                else:
+                    st.warning(warnings_text)
+
+            with st.expander("How to interpret this category screen", expanded=False):
+                low_count_levels = cat_tbl.loc[cat_tbl["Count"] < 10, "Category"].tolist() if "Count" in cat_tbl.columns else []
+                avg_tbl_for_note = (
+                    cat_tbl.dropna(subset=["AvgPersonMeasure"]).sort_values("Category")
+                    if "AvgPersonMeasure" in cat_tbl.columns else pd.DataFrame()
+                )
+                avg_ok = bool(len(avg_tbl_for_note) < 3 or avg_tbl_for_note["AvgPersonMeasure"].is_monotonic_increasing)
+                disordered_levels = (
+                    step_order.loc[step_order["Ordered"] == False, "Step"].astype(str).tolist()
+                    if isinstance(step_order, pd.DataFrame) and not step_order.empty and "Ordered" in step_order.columns else []
+                )
+                notes = []
+                if low_count_levels:
+                    notes.append(
+                        f"- Sparse categories: {', '.join(map(str, low_count_levels))}. "
+                        "Thresholds involving these categories are weakly identified."
+                    )
+                else:
+                    notes.append("- Category counts meet the >=10-per-category screening rule.")
+                notes.append(
+                    "- Average measures increase with category labels."
+                    if avg_ok else
+                    "- Average measures do not increase monotonically; adjacent category labels may not represent ordered performance."
+                )
+                if disordered_levels:
+                    notes.append(
+                        f"- Disordered thresholds: {', '.join(disordered_levels)}. "
+                        "Consider whether adjacent categories should be clarified or collapsed."
+                    )
+                else:
+                    notes.append("- No disordered threshold was detected in the current step table.")
+                notes.append(
+                    "- Treat this screen together with residual fit and rater/task design; a sparse category is not automatically invalid, but it needs a reporting note."
+                )
+                st.markdown("\n".join(notes))
+
+            st.download_button(
+                "Download category table (CSV)",
+                data=to_csv_bytes(cat_tbl),
+                file_name="mfrm_category_stats.csv",
+                mime="text/csv",
+            )
+        else:
+            st.info("Category diagnostics could not be computed.")
+    else:
+        st.info(
+            "Category diagnostics require `calc_category_stats` in the core module. "
+            "This function is not yet available."
+        )
+
+    # Step ordering
+    st.subheader("Step / Threshold Ordering")
+    st.caption(
+        "**Ordered** means each Rasch-Andrich threshold increases monotonically: "
+        "moving from category *k* to *k+1* always requires more of the latent trait "
+        "than *k−1* to *k*. Disordered thresholds indicate adjacent categories may not "
+        "be distinguishable — consider collapsing them (Linacre, 2002). "
+        "For PCM, thresholds are element-specific and may differ across items/raters."
+    )
+    step_tbl = result.get("steps")
+    if step_tbl is not None and not step_tbl.empty:
+        st.dataframe(step_tbl, width="stretch")
+        calc_step_fn = core.get("calc_step_order")
+        if calc_step_fn:
+            step_order = calc_step_fn(step_tbl)
+            if not step_order.empty:
+                st.dataframe(step_order, width="stretch")
+                disordered = step_order[step_order.get("Ordered", pd.Series(dtype=bool)) == False]
+                if not disordered.empty:
+                    st.warning(
+                        f"**{len(disordered)} disordered threshold(s)** detected. "
+                        "This may indicate that adjacent categories are not functioning distinctly."
+                    )
+                else:
+                    st.success("All thresholds are properly ordered.")
+    else:
+        st.caption("No step parameters available.")
+
+    slope_tbl = result.get("slopes", pd.DataFrame())
+    if isinstance(slope_tbl, pd.DataFrame) and not slope_tbl.empty:
+        st.subheader("GPCM Slope Parameters")
+        st.caption(
+            "Slope parameters are discrimination estimates for the GPCM step facet. "
+            "They are centered on the log scale, so the geometric mean slope is 1. "
+            "Large values sharpen category transitions; small values flatten them."
+        )
+        st.dataframe(slope_tbl, width="stretch")
+
+
+# ---------------------------------------------------------------------------
+# Facet Dashboard tab
+# ---------------------------------------------------------------------------
+
+def show_facet_dashboard(
+    result: dict, diagnostics: dict, facet_cols: list[str],
+    *, all_bias_results: dict | None = None,
+) -> None:
+    """Single-screen facet quality summary: severity, fit, central tendency, bias flags."""
+    st.subheader("Facet Quality Dashboard")
+    st.caption(
+        "At-a-glance summary of facet element functioning. "
+        "Select any facet (e.g., raters, criteria, tasks) to check for "
+        "extreme severity, misfit, central tendency, or significant bias interactions."
+    )
+
+    measures = diagnostics.get("measures", pd.DataFrame())
+    if measures.empty or "Facet" not in measures.columns:
+        st.info("No measures available. Run estimation first.")
+        return
+
+    # --- Identify rater facet ---
+    config_facet_names = result.get("config", {}).get("facet_names", facet_cols)
+    if not config_facet_names:
+        st.info("No facet columns available.")
+        return
+
+    rater_facet = st.selectbox(
+        "Target facet",
+        list(config_facet_names),
+        index=0,
+        key="rater_dashboard_facet",
+        help="Select the facet to evaluate (e.g., Rater, Criteria, Task).",
+    )
+
+    rater_df = measures[measures["Facet"] == rater_facet].copy()
+    if rater_df.empty:
+        st.info(f"No measures found for facet '{rater_facet}'.")
+        return
+
+    # Ensure numeric columns
+    for col in ["Estimate", "SE", "Infit", "Outfit", "Infit_ZSTD", "Outfit_ZSTD"]:
+        if col in rater_df.columns:
+            rater_df[col] = pd.to_numeric(rater_df[col], errors="coerce")
+
+    estimates = rater_df["Estimate"].dropna()
+    n_raters = len(rater_df)
+    if n_raters < 2:
+        st.info(f"Need at least 2 elements in '{rater_facet}' for dashboard analysis.")
+        return
+
+    mean_sev = float(estimates.mean())
+    sd_sev = float(estimates.std())
+
+    # --- Flag columns ---
+    flags = []
+
+    # 1) Severity outlier: |severity| > 2 SD from mean
+    if sd_sev > 0:
+        rater_df["Severity_Z"] = ((rater_df["Estimate"] - mean_sev) / sd_sev).round(2)
+        rater_df["Flag_Severity"] = rater_df["Severity_Z"].abs() > 2.0
+    else:
+        rater_df["Severity_Z"] = 0.0
+        rater_df["Flag_Severity"] = False
+    flags.append("Flag_Severity")
+
+    # 2) Misfit: Infit > 1.5 or Infit < 0.5 or Outfit > 2.0
+    rater_df["Flag_Misfit"] = False
+    if "Infit" in rater_df.columns:
+        rater_df["Flag_Misfit"] = (
+            (rater_df["Infit"] > 1.5) | (rater_df["Infit"] < 0.5)
+        )
+    if "Outfit" in rater_df.columns:
+        rater_df["Flag_Misfit"] = rater_df["Flag_Misfit"] | (rater_df["Outfit"] > 2.0)
+    flags.append("Flag_Misfit")
+
+    # 3) Central tendency (Myford & Wolfe, 2003): Infit ≤ 1.40 may indicate
+    #    restricted use of scale. We check Outfit_ZSTD < -2.0 as a proxy for
+    #    overly predictable (central tendency) patterns.
+    rater_df["Flag_Central"] = False
+    if "Outfit_ZSTD" in rater_df.columns and "Infit" in rater_df.columns:
+        rater_df["Flag_Central"] = (
+            (rater_df["Outfit_ZSTD"] < -2.0) & (rater_df["Infit"] <= 1.4)
+        )
+    flags.append("Flag_Central")
+
+    # 4) Significant bias count (from all_bias_results)
+    bias_counts: dict[str, int] = {}
+    all_bias = all_bias_results or {}
+    for pair_key, br in all_bias.items():
+        if rater_facet not in pair_key:
+            continue
+        tbl = br.get("table", pd.DataFrame())
+        if tbl.empty or "t" not in tbl.columns:
+            continue
+        t_col = pd.to_numeric(tbl["t"], errors="coerce")
+        # Identify which column holds the rater element
+        rater_col = None
+        for c in [rater_facet, "FacetA", "FacetB"]:
+            if c in tbl.columns:
+                rater_col = c
+                break
+        if rater_col is None:
+            continue
+        sig_mask = t_col.abs() >= 2.0
+        for elem, cnt in tbl.loc[sig_mask, rater_col].value_counts().items():
+            bias_counts[elem] = bias_counts.get(elem, 0) + int(cnt)
+
+    elem_col = "Element" if "Element" in rater_df.columns else rater_df.columns[1]
+    rater_df["Sig_Bias_Count"] = rater_df[elem_col].map(bias_counts).fillna(0).astype(int)
+    rater_df["Flag_Bias"] = rater_df["Sig_Bias_Count"] > 0
+    flags.append("Flag_Bias")
+
+    # --- Summary metrics ---
+    n_flagged_any = int(rater_df[flags].any(axis=1).sum())
+    col1, col2, col3, col4, col5 = st.columns(5)
+    col1.metric("Elements", n_raters)
+    col2.metric("Severity outliers", int(rater_df["Flag_Severity"].sum()),
+                help="|Severity Z| > 2.0")
+    col3.metric("Misfitting", int(rater_df["Flag_Misfit"].sum()),
+                help="Infit outside 0.5–1.5 or Outfit > 2.0")
+    col4.metric("Central tendency", int(rater_df["Flag_Central"].sum()),
+                help="Outfit ZSTD < −2.0 & Infit ≤ 1.4")
+    col5.metric("Any flag", n_flagged_any)
+
+    if n_flagged_any == 0:
+        st.success(f"No elements flagged. All {rater_facet} elements are functioning within acceptable limits.")
+    else:
+        st.warning(f"{n_flagged_any} of {n_raters} {rater_facet} elements flagged for review.")
+
+    # --- Full rater table ---
+    display_cols = [elem_col, "Estimate", "SE", "Severity_Z"]
+    for c in ["Infit", "Outfit", "Infit_ZSTD", "Outfit_ZSTD"]:
+        if c in rater_df.columns:
+            display_cols.append(c)
+    display_cols.extend(["Sig_Bias_Count"] + flags)
+
+    st.subheader(f"{rater_facet} detail table")
+    show_flagged_only = st.checkbox(
+        "Show flagged elements only", value=False, key="rater_dash_flagged",
+        help="Filter the table to show only elements with at least one quality flag.",
+    )
+    display_df = rater_df[display_cols].copy()
+    if show_flagged_only:
+        display_df = display_df[display_df[flags].any(axis=1)]
+
+    st.dataframe(
+        display_df.style.map(
+            lambda v: "background-color: #ffcccc" if v is True else "",
+            subset=flags,
+        ),
+        width="stretch",
+    )
+
+    # --- Severity distribution chart ---
+    st.subheader(f"{rater_facet} measure distribution")
+    sev_vals = rater_df["Estimate"].dropna().values
+    colors_sev = ["#e74c3c" if f else "#3498db" for f in rater_df["Flag_Severity"]]
+    labels_sev = [str(v) for v in rater_df[elem_col].values]
+
+    fig_sev = go.Figure(go.Bar(
+        x=sev_vals, y=labels_sev, orientation="h", marker_color=colors_sev,
+    ))
+    fig_sev.add_vline(x=mean_sev, line_dash="dash", line_color="black", line_width=1,
+                      annotation_text=f"Mean = {mean_sev:.2f}")
+    if sd_sev > 0:
+        fig_sev.add_vline(x=mean_sev - 2 * sd_sev, line_dash="dot", line_color="red", line_width=0.7,
+                          annotation_text="−2 SD")
+        fig_sev.add_vline(x=mean_sev + 2 * sd_sev, line_dash="dot", line_color="red", line_width=0.7,
+                          annotation_text="+2 SD")
+    fig_sev.update_layout(
+        xaxis_title="Severity (logits)", height=max(280, len(rater_df) * 25),
+        yaxis=dict(autorange="reversed"), template="plotly_white",
+    )
+    st.plotly_chart(fig_sev, width="stretch")
+    _offer_fig_download(fig_sev, "facet_severity", "Download Measure Distribution (PNG 300 DPI)")
+
+    # --- Interpretation guide ---
+    with st.expander("Interpretation guide"):
+        st.markdown(f"""
+**Severity outlier** (Flag_Severity): Element's measure is more than 2 SD from the {rater_facet} group mean.
+For raters: harsh raters have high positive measures; lenient raters have negative measures.
+For criteria/tasks: indicates unusually difficult or easy elements.
+
+**Misfit** (Flag_Misfit): Infit MnSq outside 0.5–1.5 or Outfit MnSq > 2.0.
+High misfit → inconsistent patterns; low misfit → overly predictable (possible Halo effect).
+
+**Central tendency** (Flag_Central): Outfit ZSTD < −2.0 combined with Infit ≤ 1.4.
+Indicates restricted use of the rating scale — element shows less variation than expected.
+
+**Bias count** (Sig_Bias_Count): Number of significant (|*t*| ≥ 2) bias interactions
+involving this element across all facet pairs. High counts suggest differential functioning.
+
+*References:* Myford & Wolfe (2003, 2004); Linacre (2002); Engelhard (2013).
+""")
+
+    st.download_button(
+        "Download rater dashboard (CSV)",
+        data=to_csv_bytes(display_df),
+        file_name="mfrm_rater_dashboard.csv",
+        mime="text/csv",
+        key="dl_rater_dashboard",
+    )
+
+
+# ---------------------------------------------------------------------------
+# Inter-rater Agreement tab
+# ---------------------------------------------------------------------------
+
+def show_agreement_section(
+    result: dict, diagnostics: dict, facet_cols: list[str], core: dict
+) -> None:
+    """Render inter-rater agreement metrics."""
+    st.subheader("Inter-Element Agreement")
+    st.caption(
+        "Agreement statistics between elements of a selected facet, computed across shared contexts. "
+        "For example, select a Rater facet to compute inter-rater agreement, or a Task facet to assess "
+        "task consistency. Metrics include exact agreement, adjacent agreement (±1 category), "
+        "mean absolute difference, and correlation."
+    )
+
+    calc_agreement_fn = core.get("calc_interrater_agreement")
+    obs_df = diagnostics.get("obs")
+
+    if not calc_agreement_fn:
+        st.info(
+            "Inter-rater agreement requires `calc_interrater_agreement` in the core module. "
+            "This function is not yet available."
+        )
+        return
+
+    if obs_df is None or obs_df.empty:
+        st.info("No observation data available for agreement analysis.")
+        return
+
+    config_facet_names = result.get("config", {}).get("facet_names", facet_cols)
+    if not config_facet_names:
+        st.info("No facet columns available for agreement analysis.")
+        return
+
+    agreement_facet = st.selectbox(
+        "Facet for agreement analysis",
+        list(config_facet_names),
+        index=0,
+        key="agreement_facet",
+        help="Select the facet whose elements you want to compare for consistency (e.g., Rater, Judge).",
+    )
+
+    all_facet_cols = ["Person"] + list(config_facet_names)
+    agreement = calc_agreement_fn(obs_df, all_facet_cols, agreement_facet, res=result)
+
+    if agreement["summary"].empty:
+        st.info(
+            f"Agreement summary not available. Ensure at least 2 {agreement_facet} elements "
+            "share common contexts (i.e., rate the same persons/items)."
+        )
+        return
+
+    st.subheader("Summary")
+    st.dataframe(agreement["summary"], width="stretch")
+
+    # Interpretation
+    summary = agreement["summary"]
+    if "ExactAgreement" in summary.columns:
+        exact_pct = summary["ExactAgreement"].iloc[0]
+        if np.isfinite(exact_pct):
+            exact_pct_100 = exact_pct * 100
+            if exact_pct_100 >= 70:
+                st.success(f"Exact agreement: {exact_pct_100:.1f}% — Good consistency across {agreement_facet} elements.")
+            elif exact_pct_100 >= 50:
+                st.info(f"Exact agreement: {exact_pct_100:.1f}% — Moderate consistency across {agreement_facet} elements.")
+            else:
+                st.warning(f"Exact agreement: {exact_pct_100:.1f}% — Low consistency across {agreement_facet} elements.")
+
+    st.subheader("Pairwise Details")
+    pairs_tbl = agreement.get("pairs", pd.DataFrame())
+    if not pairs_tbl.empty:
+        st.dataframe(pairs_tbl, width="stretch")
+
+        # Correlation heatmap (if enough pairs)
+        if len(pairs_tbl) >= 3 and "Corr" in pairs_tbl.columns:
+            raters = sorted(set(pairs_tbl["Element1"].tolist() + pairs_tbl["Element2"].tolist()))
+            n = len(raters)
+            corr_matrix = np.full((n, n), np.nan)
+            np.fill_diagonal(corr_matrix, 1.0)
+            rater_idx = {r: i for i, r in enumerate(raters)}
+            for _, row in pairs_tbl.iterrows():
+                i, j = rater_idx[row["Element1"]], rater_idx[row["Element2"]]
+                corr_matrix[i, j] = row["Corr"]
+                corr_matrix[j, i] = row["Corr"]
+
+            # Plotly heatmap
+            text_matrix = [[f"{corr_matrix[i, j]:.2f}" if np.isfinite(corr_matrix[i, j]) else ""
+                            for j in range(n)] for i in range(n)]
+            fig_hm = go.Figure(go.Heatmap(
+                z=corr_matrix, x=raters, y=raters,
+                colorscale="RdYlGn", zmin=0, zmax=1,
+                text=text_matrix, texttemplate="%{text}", textfont=dict(size=10),
+                colorbar=dict(title="Correlation"),
+            ))
+            fig_hm.update_layout(title=f"{agreement_facet} Correlation Matrix",
+                                 height=max(350, n * 40), template="plotly_white")
+            st.plotly_chart(fig_hm, width="stretch")
+
+        st.download_button(
+            "Download agreement pairs (CSV)",
+            data=to_csv_bytes(pairs_tbl),
+            file_name="mfrm_agreement_pairs.csv",
+            mime="text/csv",
+        )
+    else:
+        st.caption("No pairwise details available.")
+
+
+# ---------------------------------------------------------------------------
+# Reproducible script generators
+# ---------------------------------------------------------------------------
+
+def _records_json_for_script(df: pd.DataFrame, columns: list[str] | None = None) -> str:
+    if not isinstance(df, pd.DataFrame) or df.empty:
+        return "[]"
+    out = df.copy()
+    if columns is not None:
+        out = out[[col for col in columns if col in out.columns]]
+    out = out.where(pd.notna(out), None)
+    return json.dumps(out.to_dict("records"), ensure_ascii=False, default=str)
+
+
+def build_script_support_status(result: dict) -> dict:
+    """Describe which downloadable scripts can reproduce the current run."""
+    config = result.get("config", {}) if isinstance(result, dict) else {}
+    model = str(config.get("model", "RSM")).upper()
+    method = str(config.get("method", "JMLE")).upper()
+    pop = config.get("population_model", {})
+    uses_latent_regression = bool(isinstance(pop, dict) and pop.get("enabled"))
+    uses_gpcm = model == "GPCM"
+    portable_blockers = []
+    if uses_gpcm:
+        portable_blockers.append("bounded GPCM")
+    if uses_latent_regression:
+        portable_blockers.append("latent-regression population_formula")
+    portable_available = not portable_blockers
+    portable_scope = (
+        "RSM/PCM fixed-effect JMLE reproducibility check"
+        if portable_available else
+        "unsupported stub only"
+    )
+    portable_action = (
+        "Use for a compact fixed-effect check; app-engine runner is still the exact current path for MML outputs."
+        if portable_available and method == "MML" else
+        "Use for exact fixed-effect JMLE reproduction of ordinary RSM/PCM runs."
+        if portable_available else
+        "Use the Python app-engine runner; portable self-contained JMLE/R scripts do not implement "
+        + " + ".join(portable_blockers) + "."
+    )
+    rows = [
+        {
+            "Script": "Python app-engine runner",
+            "Available": True,
+            "ExactCurrentPath": True,
+            "Scope": "Imports streamlit_app.py and uses the current embedded engine, including MML, GPCM, latent regression, prediction, simulation, and diagnostics.",
+            "Action": "Use this for reproducibility of the current app result.",
+        },
+        {
+            "Script": "Python portable self-contained JMLE",
+            "Available": portable_available,
+            "ExactCurrentPath": portable_available and method == "JMLE",
+            "Scope": portable_scope,
+            "Action": portable_action,
+        },
+        {
+            "Script": "R portable self-contained JMLE",
+            "Available": portable_available,
+            "ExactCurrentPath": portable_available and method == "JMLE",
+            "Scope": portable_scope,
+            "Action": portable_action,
+        },
+    ]
+    table = pd.DataFrame(rows)
+    return {
+        "table": table,
+        "portable_available": bool(portable_available),
+        "portable_blockers": portable_blockers,
+        "app_engine_exact": True,
+        "scope": (
+            "app_engine_exact; portable_jmle_available_for_rsm_pcm_fixed_effect_checks"
+            if portable_available else
+            "app_engine_exact; portable_jmle_unsupported_stub_for_current_model"
+        ),
+    }
+
+
+def _generate_app_engine_runner_script(
+    result: dict,
+    diagnostics: dict,
+    bias_pairs: list[tuple[str, str]] | None = None,
+) -> str:
+    """Generate a runner that reuses this app's current embedded engine."""
+    config = result.get("config", {})
+    out = st.session_state.get("facets_mode_output", {})
+
+    method = config.get("method", "JMLE")
+    model = config.get("model", "RSM")
+    facet_names = config.get("facet_names", [])
+    step_facet = config.get("step_facet")
+    slope_facet = config.get("slope_facet")
+    weight_col = config.get("weight_col")
+    keep_original = bool(out.get("_keep_original", config.get("keep_original", False)))
+    input_rating_min = out.get("_rating_min", config.get("input_rating_min"))
+    input_rating_max = out.get("_rating_max", config.get("input_rating_max"))
+    maxit = out.get("_maxit", config.get("maxit", 400))
+    reltol = out.get("_reltol", config.get("reltol", 1e-6))
+    quad_points = int(config.get("quad_points") or out.get("_quad_points", 15) or 15)
+    mml_engine = (
+        config.get("mml_engine_requested")
+        or config.get("ui_mml_engine")
+        or config.get("mml_engine")
+        or "EM"
+    )
+    compute_pca = bool(config.get("compute_residual_pca", diagnostics.get("pca_enabled", True)))
+    compute_marginal = bool(config.get("compute_strict_marginal", diagnostics.get("marginal_fit_enabled", False)))
+    strict_pairwise = bool(config.get("strict_marginal_pairwise", False))
+    strict_max_pair_cells = int(config.get("strict_marginal_max_pair_cells") or 400)
+    compute_pv = bool(config.get("compute_plausible_values", False))
+    n_pv = int(config.get("n_plausible_values") or 0)
+    pv_seed = config.get("plausible_seed")
+    if pv_seed is None:
+        pv_seed = 20260411
+
+    anchor_audit = config.get("anchor_audit", {})
+    anchor_settings = anchor_audit.get("settings", {}) if isinstance(anchor_audit, dict) else {}
+    valid_anchors = anchor_audit.get("valid_anchors", pd.DataFrame()) if isinstance(anchor_audit, dict) else pd.DataFrame()
+    valid_group_anchors = anchor_audit.get("valid_group_anchors", pd.DataFrame()) if isinstance(anchor_audit, dict) else pd.DataFrame()
+    anchor_json = _records_json_for_script(valid_anchors, ["Facet", "Level", "Anchor"])
+    group_anchor_json = _records_json_for_script(valid_group_anchors, ["Facet", "Level", "Group", "GroupValue"])
+    population_bundle = result.get("population", {})
+    population_person = population_bundle.get("person_data", pd.DataFrame()) if isinstance(population_bundle, dict) else pd.DataFrame()
+    population_json = _records_json_for_script(population_person) if isinstance(population_person, pd.DataFrame) else "[]"
+    bias_pairs_repr = repr(list(bias_pairs or []))
+
+    script = f'''\
+#!/usr/bin/env python3
+"""
+Current-engine MFRM runner.
+
+This script imports streamlit_app.py and calls the same embedded Python engine
+used by the app. Use it when you need to reproduce the current optimizer path,
+including MML Auto/Direct/Hybrid/EM, PCM, strict marginal diagnostics, posterior
+scoring, plausible values, GPCM slope estimates, latent-regression population
+models, score-support handling, and anchor audit filtering.
+
+Place this file next to streamlit_app.py, put your data CSV in the same folder
+or edit DATA_FILE/APP_PATH, then run:
+
+    python mfrm_app_engine_runner.py
+"""
+
+from __future__ import annotations
+
+import importlib.util
+import json
+from itertools import combinations
+from pathlib import Path
+
+import pandas as pd
+
+
+DATA_FILE = "your_data.csv"
+NEW_DESIGN_FILE = ""  # Optional CSV/TSV with Person + fitted facet columns for scenario prediction.
+APP_PATH = Path(__file__).with_name("streamlit_app.py")
+
+PERSON_COL = {repr(out.get("person_col", "Person"))}
+FACET_COLS = {repr(list(out.get("facet_cols", facet_names)))}
+SCORE_COL = {repr(out.get("score_col", "Score"))}
+WEIGHT_COL = {repr(weight_col)}
+MODEL = {repr(model)}
+METHOD = {repr(method)}
+STEP_FACET = {repr(step_facet)}
+SLOPE_FACET = {repr(slope_facet)}
+NONCENTER_FACET = {repr(config.get("noncenter_facet", "Person"))}
+DUMMY_FACETS = {repr(list(config.get("dummy_facets", [])))}
+POSITIVE_FACETS = {repr(list(config.get("positive_facets", [])))}
+KEEP_ORIGINAL = {repr(keep_original)}
+RATING_MIN = {repr(input_rating_min)}
+RATING_MAX = {repr(input_rating_max)}
+QUAD_POINTS = {quad_points}
+POPULATION_PRIOR_SD = {repr(float(config.get("population_prior_sd") or 1.0))}
+MAXIT = {int(maxit)}
+RELTOL = {float(reltol)}
+MML_ENGINE = {repr(mml_engine)}
+POPULATION_FORMULA = {repr(config.get("population_formula", ""))}
+POPULATION_STANDARDIZE_NUMERIC = {repr(bool(config.get("population_standardize_numeric", False)))}
+POPULATION_CATEGORICAL_TERMS = {repr(list(config.get("population_categorical_terms", [])))}
+POPULATION_NUMERIC_TERMS = {repr(list(config.get("population_numeric_terms", [])))}
+PERSON_ID_COL = "Person"
+ANCHOR_POLICY = {repr(config.get("anchor_policy", "warn"))}
+MIN_COMMON_ANCHORS = {int(anchor_settings.get("min_common_anchors", 2))}
+MIN_OBS_PER_ELEMENT = {int(anchor_settings.get("min_obs_per_element", 2))}
+MIN_OBS_PER_CATEGORY = {int(anchor_settings.get("min_obs_per_category", 1))}
+COMPUTE_PCA = {repr(compute_pca)}
+COMPUTE_STRICT_MARGINAL = {repr(compute_marginal)}
+STRICT_MARGINAL_PAIRWISE = {repr(strict_pairwise)}
+STRICT_MARGINAL_MAX_PAIR_CELLS = {strict_max_pair_cells}
+COMPUTE_PLAUSIBLE_VALUES = {repr(compute_pv)}
+N_PLAUSIBLE_VALUES = {n_pv}
+PLAUSIBLE_SEED = {int(pv_seed)}
+RUN_FITTED_SIMULATION = False
+SIMULATION_REPLICATES = {int(st.session_state.get("prediction_sim_replicates", 100) or 100)}
+SIMULATION_SEED = {int(st.session_state.get("prediction_sim_seed", 20260411) or 20260411)}
+RUN_REFIT_SIMULATION = False
+REFIT_SIMULATION_REPLICATES = {int(st.session_state.get("refit_sim_replicates", 3) or 3)}
+REFIT_SIMULATION_MISSING_RATE = {float(st.session_state.get("refit_sim_missing_rate", 0.0) or 0.0)}
+REFIT_SIMULATION_MAXIT = {int(st.session_state.get("refit_sim_maxit", 30) or 30)}
+REFIT_SIMULATION_SEED = {int(st.session_state.get("refit_sim_seed", 20260411) or 20260411)}
+REFIT_SIMULATION_METHOD = {repr(st.session_state.get("refit_sim_method") or method)}
+BIAS_MODE = {repr(config.get("bias_mode", "Selected pair"))}
+SELECTED_BIAS_PAIR = {repr(config.get("selected_bias_pair"))}
+BIAS_PAIRS = {bias_pairs_repr}
+
+ANCHOR_RECORDS = json.loads({anchor_json!r})
+GROUP_ANCHOR_RECORDS = json.loads({group_anchor_json!r})
+POPULATION_PERSON_RECORDS = json.loads({population_json!r})
+
+
+def load_app_engine(app_path: Path):
+    if not app_path.exists():
+        raise FileNotFoundError(
+            f"Cannot find {{app_path}}. Place this runner next to streamlit_app.py "
+            "or edit APP_PATH."
+        )
+    spec = importlib.util.spec_from_file_location("mfrm_streamlit_app_engine", app_path)
+    if spec is None or spec.loader is None:
+        raise RuntimeError(f"Could not import app engine from {{app_path}}")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def write_csv(name: str, frame) -> bool:
+    if isinstance(frame, pd.DataFrame) and not frame.empty:
+        out_path = Path(f"mfrm_{{name}}.csv")
+        frame.to_csv(out_path, index=False)
+        print(f"  wrote {{out_path}} ({{len(frame)}} rows)")
+        return True
+    return False
+
+
+def main() -> None:
+    app = load_app_engine(APP_PATH)
+    data = pd.read_csv(DATA_FILE)
+    anchor_df = pd.DataFrame(ANCHOR_RECORDS)
+    group_anchor_df = pd.DataFrame(GROUP_ANCHOR_RECORDS)
+    population_person_df = pd.DataFrame(POPULATION_PERSON_RECORDS)
+
+    result = app.mfrm_estimate(
+        data=data,
+        person_col=PERSON_COL,
+        facet_cols=FACET_COLS,
+        score_col=SCORE_COL,
+        rating_min=RATING_MIN,
+        rating_max=RATING_MAX,
+        weight_col=WEIGHT_COL,
+        keep_original=KEEP_ORIGINAL,
+        model=MODEL,
+        method=METHOD,
+        step_facet=STEP_FACET,
+        slope_facet=SLOPE_FACET,
+        person_data=population_person_df,
+        person_id_col=PERSON_ID_COL,
+        population_formula=POPULATION_FORMULA,
+        population_standardize_numeric=POPULATION_STANDARDIZE_NUMERIC,
+        population_categorical_terms=POPULATION_CATEGORICAL_TERMS,
+        population_numeric_terms=POPULATION_NUMERIC_TERMS,
+        anchor_df=anchor_df,
+        group_anchor_df=group_anchor_df,
+        noncenter_facet=NONCENTER_FACET,
+        dummy_facets=DUMMY_FACETS,
+        positive_facets=POSITIVE_FACETS,
+        quad_points=QUAD_POINTS,
+        population_prior_sd=POPULATION_PRIOR_SD,
+        maxit=MAXIT,
+        reltol=RELTOL,
+        mml_engine=MML_ENGINE,
+        anchor_policy=ANCHOR_POLICY,
+        min_common_anchors=MIN_COMMON_ANCHORS,
+        min_obs_per_element=MIN_OBS_PER_ELEMENT,
+        min_obs_per_category=MIN_OBS_PER_CATEGORY,
+        compute_plausible_values=COMPUTE_PLAUSIBLE_VALUES,
+        n_plausible_values=N_PLAUSIBLE_VALUES,
+        plausible_seed=PLAUSIBLE_SEED,
+    )
+
+    diagnostics = app.mfrm_diagnostics(
+        result,
+        compute_pca=COMPUTE_PCA,
+        compute_marginal=COMPUTE_STRICT_MARGINAL,
+        marginal_pairwise=STRICT_MARGINAL_PAIRWISE,
+        marginal_max_pair_cells=STRICT_MARGINAL_MAX_PAIR_CELLS,
+    )
+
+    print(result["summary"].to_string(index=False))
+    print("\\nWriting CSV outputs:")
+    write_csv("summary", result.get("summary"))
+    write_csv("convergence", result.get("convergence"))
+    write_csv("score_map", result.get("prep", {{}}).get("score_map"))
+    write_csv("person_measures", result.get("facets", {{}}).get("person"))
+    write_csv("facet_measures", result.get("facets", {{}}).get("others"))
+    write_csv("steps", result.get("steps"))
+    write_csv("gpcm_slopes", result.get("slopes"))
+    population = result.get("population", {{}})
+    if isinstance(population, dict):
+        write_csv("population_coefficients", population.get("coefficients"))
+        write_csv("population_person_data", population.get("person_data"))
+        write_csv("population_numeric_transforms", population.get("numeric_transforms"))
+        term_types = pd.DataFrame([
+            {{"Term": term, "Type": term_type}}
+            for term, term_type in dict(population.get("term_types", {{}})).items()
+        ])
+        write_csv("population_term_types", term_types)
+    write_csv("diagnostic_measures", diagnostics.get("measures"))
+    write_csv("fit_statistics", diagnostics.get("fit"))
+    write_csv("reliability", diagnostics.get("reliability"))
+    write_csv("bias", diagnostics.get("bias"))
+    write_csv("interactions", diagnostics.get("interactions"))
+    write_csv("scorefile", app.compute_scorefile(result))
+    if hasattr(app, "compute_fitted_prediction_table"):
+        write_csv("fitted_predictions", app.compute_fitted_prediction_table(result))
+    if NEW_DESIGN_FILE and hasattr(app, "predict_mfrm_design"):
+        sep = "\\t" if str(NEW_DESIGN_FILE).lower().endswith((".tsv", ".txt")) else ","
+        new_design = pd.read_csv(NEW_DESIGN_FILE, sep=sep)
+        new_pred = app.predict_mfrm_design(
+            result,
+            new_design,
+            person_col="Person",
+            score_col="Score" if "Score" in new_design.columns else None,
+            person_data=population_person_df,
+            person_id_col=PERSON_ID_COL,
+        )
+        if isinstance(new_pred, dict):
+            write_csv("new_design_predictions", new_pred.get("table"))
+    if hasattr(app, "evaluate_design_from_fitted"):
+        design = app.evaluate_design_from_fitted(result, diagnostics, forecast_multipliers=(2.0,))
+        if isinstance(design, dict):
+            write_csv("design_overview", design.get("overview"))
+            write_csv("design_evaluation", design.get("summary"))
+            write_csv("design_reliability_forecast", design.get("forecast"))
+            write_csv("design_facet_counts", design.get("facet_counts"))
+    if RUN_FITTED_SIMULATION and hasattr(app, "simulate_from_fitted_model"):
+        sim = app.simulate_from_fitted_model(
+            result,
+            n_replicates=SIMULATION_REPLICATES,
+            seed=SIMULATION_SEED,
+            include_row_draws=False,
+        )
+        if isinstance(sim, dict):
+            write_csv("simulation_summary", sim.get("summary"))
+            write_csv("simulation_category_counts", sim.get("category_counts"))
+    if RUN_REFIT_SIMULATION and hasattr(app, "simulate_refit_design"):
+        refit_sim = app.simulate_refit_design(
+            result,
+            n_replicates=REFIT_SIMULATION_REPLICATES,
+            seed=REFIT_SIMULATION_SEED,
+            missing_rate=REFIT_SIMULATION_MISSING_RATE,
+            refit_maxit=REFIT_SIMULATION_MAXIT,
+            refit_method=REFIT_SIMULATION_METHOD,
+        )
+        if isinstance(refit_sim, dict):
+            write_csv("refit_simulation_summary", refit_sim.get("summary"))
+            write_csv("refit_simulation_category_counts", refit_sim.get("category_counts"))
+    write_csv("residuals", app.compute_residual_file(result))
+
+    if BIAS_MODE == "All facet pairs":
+        bias_scan_pairs = list(combinations(["Person"] + FACET_COLS, 2))
+    elif BIAS_MODE == "Selected pair" and SELECTED_BIAS_PAIR:
+        bias_scan_pairs = [tuple(SELECTED_BIAS_PAIR)]
+    else:
+        bias_scan_pairs = []
+    if bias_scan_pairs and hasattr(app, "estimate_bias_interaction"):
+        for fa, fb in bias_scan_pairs:
+            bundle = app.estimate_bias_interaction(
+                result,
+                diagnostics,
+                fa,
+                fb,
+                max_abs=10.0,
+                omit_extreme=True,
+            )
+            safe_pair = f"{{fa}}_{{fb}}".replace(" ", "_").replace("/", "_")
+            if isinstance(bundle, dict):
+                write_csv(f"bias_{{safe_pair}}", bundle.get("table"))
+                write_csv(f"bias_{{safe_pair}}_summary", bundle.get("summary"))
+
+    posterior = result.get("posterior", {{}})
+    if isinstance(posterior, dict):
+        write_csv("posterior_scores", posterior.get("scores"))
+        write_csv("plausible_values", posterior.get("plausible_values"))
+
+    marginal = diagnostics.get("marginal_fit", {{}})
+    if isinstance(marginal, dict):
+        write_csv("marginal_fit_summary", marginal.get("summary"))
+        write_csv("marginal_fit_counts", marginal.get("counts"))
+        pairwise = marginal.get("pairwise", {{}})
+        if isinstance(pairwise, dict):
+            write_csv("marginal_pairwise_summary", pairwise.get("summary"))
+            write_csv("marginal_pairwise_counts", pairwise.get("counts"))
+
+    anchor_audit = result.get("config", {{}}).get("anchor_audit", {{}})
+    if isinstance(anchor_audit, dict):
+        write_csv("anchor_audit_summary", anchor_audit.get("summary"))
+        write_csv("anchor_audit_issues", anchor_audit.get("issues"))
+        write_csv("valid_anchor_inputs", anchor_audit.get("valid_anchors"))
+        write_csv("valid_group_anchor_inputs", anchor_audit.get("valid_group_anchors"))
+    anchor_drift = result.get("anchor_drift", {{}})
+    if isinstance(anchor_drift, dict):
+        write_csv("anchor_drift_summary", anchor_drift.get("summary"))
+        write_csv("anchor_drift", anchor_drift.get("anchor_drift"))
+        write_csv("group_anchor_drift", anchor_drift.get("group_drift"))
+    equating_chain = result.get("equating_chain", {{}})
+    if isinstance(equating_chain, dict):
+        write_csv("equating_chain_summary", equating_chain.get("summary"))
+        write_csv("equating_chain_edges", equating_chain.get("edges"))
+
+
+if __name__ == "__main__":
+    main()
+'''
+    return script
+
+
+def _generate_repro_python_script(result: dict, bias_pairs: list[tuple[str, str]] | None = None) -> str:
+    """Generate a portable self-contained JMLE script for fixed-effect checks.
+
+    Embeds the complete likelihood, optimisation, diagnostics, and fit statistics
+    so the user does not need any external MFRM package. For the exact current
+    app path (MML/PV/strict marginal), use the app-engine runner instead.
+    """
+    config = result.get("config", {})
+    prep = result.get("prep", {})
+
+    model = config.get("model", "RSM")
+    n_cat = config.get("n_cat", 5)
+    facet_names = config.get("facet_names", [])
+    step_facet = config.get("step_facet")
+    noncenter_facet = config.get("noncenter_facet", "Person")
+    dummy_facets = list(config.get("dummy_facets", []))
+    positive_facets = list(config.get("positive_facets", []))
+    weight_col = config.get("weight_col")
+    keep_original = config.get("keep_original", False)
+    population_model = config.get("population_model", {})
+    if isinstance(population_model, dict) and population_model.get("enabled"):
+        return '''\
+#!/usr/bin/env python3
+"""
+Portable self-contained JMLE script.
+
+This run used a latent-regression population_formula. The portable fixed-effect
+script currently supports ordinary RSM/PCM JMLE only. Use the downloaded
+mfrm_app_engine_runner.py instead; it imports streamlit_app.py and reproduces
+the current standalone Python latent-regression MML engine.
+"""
+
+raise SystemExit(
+    "Latent-regression portable self-contained script is not available yet. "
+    "Use mfrm_app_engine_runner.py with requirements.txt for this run."
+)
+'''
+    if model == "GPCM":
+        return '''\
+#!/usr/bin/env python3
+"""
+Portable self-contained JMLE script.
+
+This run used GPCM. The portable fixed-effect script currently supports RSM
+and PCM only. Use the downloaded mfrm_app_engine_runner.py instead; it imports
+streamlit_app.py and reproduces the current standalone Python GPCM engine.
+"""
+
+raise SystemExit(
+    "GPCM portable self-contained script is not available yet. "
+    "Use mfrm_app_engine_runner.py with requirements.txt for this run."
+)
+'''
+
+    # Recover settings from session state snapshot (maxit/reltol not in config)
+    out = st.session_state.get("facets_mode_output", {})
+    maxit = out.get("_maxit", config.get("maxit", 400))
+    reltol = out.get("_reltol", config.get("reltol", 1e-6))
+    orig_person_col = out.get("person_col", "Person")
+    orig_score_col = out.get("score_col", "Score")
+    orig_facet_cols = out.get("facet_cols", facet_names)
+    keep_original = out.get("_keep_original", keep_original)
+    input_rating_min = out.get("_rating_min", config.get("input_rating_min"))
+    input_rating_max = out.get("_rating_max", config.get("input_rating_max"))
+
+    # Escape column names for safe embedding in string literals
+    def _esc(s: str) -> str:
+        return str(s).replace("\\", "\\\\").replace('"', '\\"')
+
+    facet_cols_repr = repr(list(orig_facet_cols))
+    pos_facets_repr = repr(list(positive_facets))
+    dummy_facets_repr = repr(list(dummy_facets))
+    step_facet_repr = repr(step_facet)
+    weight_col_repr = repr(weight_col)
+
+    # Build bias section
+    bias_section = ""
+    if bias_pairs:
+        pair_lines = []
+        for fa, fb in bias_pairs:
+            pair_lines.append(f'    ("{fa}", "{fb}"),')
+        bias_section = f'''
+# ── 5. Bias / Interaction analysis ──────────────────────────────────────────
+print("\\n── Bias / Interaction ──")
+bias_pairs = [
+{chr(10).join(pair_lines)}
+]
+for fa, fb in bias_pairs:
+    try:
+        btbl = estimate_bias(measures_df, obs_df, fa, fb, facet_signs)
+        if btbl is not None and not btbl.empty:
+            fname = f"bias_{{fa.lower()}}_{{fb.lower()}}.csv"
+            btbl.to_csv(fname, index=False)
+            sig = (btbl["t"].abs() >= 2).sum()
+            print(f"  {{fa}} x {{fb}}: {{len(btbl)}} pairs, {{sig}} significant -> {{fname}}")
+    except Exception as e:
+        print(f"  {{fa}} x {{fb}}: skipped ({{e}})")
+'''
+
+    script = f'''\
+#!/usr/bin/env python3
+"""
+Portable self-contained MFRM JMLE script.
+
+Generated by MFRM FACETS-mode app.
+Original app method: {config.get("method", "JMLE")} | Original optimizer: {config.get("optimizer")}
+Portable script path: fixed-effect JMLE (BFGS) | Model: {model} | maxit: {maxit} | reltol: {reltol}
+
+This script requires only: numpy, scipy, pandas (see requirements.txt).
+No external MFRM package is needed. To reproduce MML Auto/Direct/Hybrid/EM,
+posterior scoring, plausible values, and strict marginal diagnostics, use the
+app-engine runner download instead.
+"""
+
+from __future__ import annotations
+
+import sys
+from collections import OrderedDict
+from itertools import combinations
+
+import numpy as np
+import pandas as pd
+from scipy.optimize import minimize, minimize_scalar
+from scipy.special import logsumexp
+from scipy.stats import t as t_dist, chi2 as chi2_dist
+
+
+# ============================================================================
+#  Core MFRM engine (self-contained)
+# ============================================================================
+
+def center_sum_zero(x: np.ndarray) -> np.ndarray:
+    return x - np.mean(x) if x.size else x
+
+
+# ---- Likelihood functions ----
+
+def loglik_rsm(eta, score_k, step_cum, weight=None):
+    """RSM log-likelihood: log P(k|eta) summed over observations."""
+    if eta.size == 0:
+        return 0.0
+    k_cat = len(step_cum)
+    eta_mat = np.outer(eta, np.arange(k_cat))
+    log_num = eta_mat - step_cum
+    log_denom = logsumexp(log_num, axis=1)
+    diff = log_num[np.arange(len(eta)), score_k] - log_denom
+    return float(np.sum(diff * weight)) if weight is not None else float(np.sum(diff))
+
+
+def loglik_pcm(eta, score_k, step_cum_mat, criterion_idx, weight=None):
+    """PCM log-likelihood: per-criterion step parameters."""
+    if eta.size == 0:
+        return 0.0
+    total = 0.0
+    k_cat = step_cum_mat.shape[1]
+    for c in range(step_cum_mat.shape[0]):
+        rows = np.where(criterion_idx == c)[0]
+        if rows.size == 0:
+            continue
+        eta_mat = np.outer(eta[rows], np.arange(k_cat))
+        log_num = eta_mat - step_cum_mat[c]
+        log_denom = logsumexp(log_num, axis=1)
+        diff = log_num[np.arange(len(rows)), score_k[rows]] - log_denom
+        total += float(np.sum(diff * weight[rows])) if weight is not None else float(np.sum(diff))
+    return total
+
+
+def category_probs(eta, step_cum):
+    """Return (N, K) matrix of category probabilities."""
+    k_cat = len(step_cum)
+    eta_mat = np.outer(eta, np.arange(k_cat))
+    log_num = eta_mat - step_cum
+    log_denom = logsumexp(log_num, axis=1)
+    return np.exp(log_num - log_denom[:, None])
+
+
+# ---- Parameter packing / unpacking ----
+
+def build_sizes(n_person, facet_level_counts, n_cat, model, step_facet_n,
+                noncenter_facet, facet_names, dummy_facets=None):
+    """Compute number of free parameters per block."""
+    dummy_facets = set(dummy_facets or [])
+    sizes = OrderedDict()
+    # Person: dummy → 0, noncenter → n, else → n-1
+    if "Person" in dummy_facets:
+        sizes["Person"] = 0
+    else:
+        sizes["Person"] = n_person if noncenter_facet == "Person" else max(n_person - 1, 0)
+    for fn in facet_names:
+        if fn in dummy_facets:
+            sizes[fn] = 0
+        else:
+            m = facet_level_counts[fn]
+            sizes[fn] = m if noncenter_facet == fn else max(m - 1, 0)
+    n_steps = max(n_cat - 1, 0)
+    sizes["steps"] = n_steps if model == "RSM" else step_facet_n * n_steps
+    return sizes
+
+
+def expand_block(free_seg, total, centered, is_dummy=False):
+    """Expand free parameters to full vector, applying centering if needed."""
+    if is_dummy:
+        return np.zeros(total, dtype=float)
+    if total == 0:
+        return np.array([], dtype=float)
+    if not centered:
+        return np.array(free_seg[:total], dtype=float)
+    if total == 1:
+        return np.array([0.0])
+    seg = np.array(free_seg[: total - 1], dtype=float)
+    return np.concatenate([seg, [-np.sum(seg)]])
+
+
+def unpack(par, sizes, facet_names, noncenter_facet, n_cat, model, step_facet_n,
+           dummy_facets=None, facet_level_counts=None):
+    """Unpack flat parameter vector into structured dict."""
+    dummy_facets = set(dummy_facets or [])
+    facet_level_counts = facet_level_counts or {{}}
+    idx = 0
+    blocks = {{}}
+    for name, k in sizes.items():
+        blocks[name] = np.array(par[idx:idx + k], dtype=float) if k else np.array([], dtype=float)
+        idx += k
+
+    # Expand each block
+    result = {{}}
+    for name in ["Person"] + facet_names:
+        is_dummy = name in dummy_facets
+        if is_dummy:
+            total = facet_level_counts.get(name, 0) if name != "Person" else 0
+            result[name] = np.zeros(total, dtype=float)
+        else:
+            total = sizes[name] + (0 if noncenter_facet == name else 1)
+            centered = noncenter_facet != name
+            result[name] = expand_block(blocks[name], total, centered)
+
+    # Steps
+    n_steps = max(n_cat - 1, 0)
+    if model == "RSM":
+        result["steps"] = center_sum_zero(blocks["steps"])
+        result["steps_mat"] = None
+    else:
+        mat = blocks["steps"].reshape((step_facet_n, n_steps)) if step_facet_n and n_steps else np.zeros((step_facet_n, n_steps))
+        result["steps_mat"] = np.vstack([center_sum_zero(row) for row in mat])
+        result["steps"] = None
+    return result
+
+
+# ---- Negative log-likelihood (objective) ----
+
+def neg_loglik(par, person_idx, facet_idx_dict, score_k, weight,
+               sizes, facet_names, facet_signs, noncenter_facet,
+               n_cat, model, step_facet_n, step_idx,
+               dummy_facets=None, facet_level_counts=None):
+    """JMLE negative log-likelihood for BFGS optimisation."""
+    params = unpack(par, sizes, facet_names, noncenter_facet, n_cat, model, step_facet_n,
+                    dummy_facets=dummy_facets, facet_level_counts=facet_level_counts)
+    eta = params["Person"][person_idx]
+    for fn in facet_names:
+        eta = eta + facet_signs[fn] * params[fn][facet_idx_dict[fn]]
+    if model == "RSM":
+        step_cum = np.concatenate([[0.0], np.cumsum(params["steps"])])
+        ll = loglik_rsm(eta, score_k, step_cum, weight=weight)
+    else:
+        step_cum_mat = np.vstack([np.concatenate([[0.0], np.cumsum(row)]) for row in params["steps_mat"]])
+        ll = loglik_pcm(eta, score_k, step_cum_mat, step_idx, weight=weight)
+    return -ll
+
+
+# ---- Diagnostics ----
+
+def zstd_from_mnsq(mnsq, df):
+    """Wilson-Hilferty cube-root transformation."""
+    if not np.isfinite(mnsq) or not np.isfinite(df) or df <= 0:
+        return np.nan
+    return (mnsq ** (1 / 3) - (1 - 2 / (9 * df))) / np.sqrt(2 / (9 * df))
+
+
+def compute_diagnostics(eta, score_k, weight, step_cum, person_idx, facet_idx_dict,
+                        facet_names, person_levels, facet_levels_dict, model,
+                        step_cum_mat=None, step_idx=None):
+    """Compute observation-level residuals and element-level fit + SE."""
+    n = len(score_k)
+    if model == "RSM":
+        probs = category_probs(eta, step_cum)
+    else:
+        k_cat = step_cum_mat.shape[1]
+        probs = np.zeros((n, k_cat))
+        for c in range(step_cum_mat.shape[0]):
+            rows = np.where(step_idx == c)[0]
+            if rows.size:
+                probs[rows] = category_probs(eta[rows], step_cum_mat[c])
+
+    k_vals = np.arange(probs.shape[1])
+    expected = probs.dot(k_vals)
+    var_k = probs.dot(k_vals ** 2) - expected ** 2
+    var_k = np.where(var_k <= 1e-10, np.nan, var_k)
+    resid = score_k - expected
+    std_sq = resid ** 2 / var_k
+
+    # Element-level measures (fit + SE)
+    rows_out = []
+    for facet in ["Person"] + facet_names:
+        idx_arr = person_idx if facet == "Person" else facet_idx_dict[facet]
+        levels = person_levels if facet == "Person" else facet_levels_dict[facet]
+        for lev_i, lev_name in enumerate(levels):
+            mask = idx_arr == lev_i
+            w = weight[mask]
+            v = var_k[mask]
+            sq = std_sq[mask]
+            w_sum = np.nansum(w)
+            info = np.nansum(v * w)
+            infit = np.nansum(sq * v * w) / info if info > 0 else np.nan
+            outfit = np.nansum(sq * w) / w_sum if w_sum > 0 else np.nan
+            se = 1.0 / np.sqrt(info) if info > 0 else np.nan
+            rows_out.append({{
+                "Facet": facet, "Level": lev_name,
+                "N": w_sum, "SE": se,
+                "Infit": infit, "Outfit": outfit,
+                "InfitZSTD": zstd_from_mnsq(infit, info),
+                "OutfitZSTD": zstd_from_mnsq(outfit, w_sum),
+            }})
+    diag_df = pd.DataFrame(rows_out)
+
+    # Overall fit
+    w_all = weight
+    info_all = np.nansum(var_k * w_all)
+    infit_all = np.nansum(std_sq * var_k * w_all) / info_all if info_all > 0 else np.nan
+    outfit_all = np.nansum(std_sq * w_all) / np.nansum(w_all) if np.nansum(w_all) > 0 else np.nan
+
+    return diag_df, infit_all, outfit_all, expected, var_k, resid
+
+
+def calc_reliability(measures_df):
+    """Compute separation, reliability, strata per facet."""
+    rows = []
+    for facet, grp in measures_df.groupby("Facet"):
+        est = grp["Estimate"].to_numpy(dtype=float)
+        se = grp["SE"].to_numpy(dtype=float)
+        m_var = np.var(est, ddof=1) if len(est) > 1 else 0.0
+        e_var = np.mean(se ** 2)
+        t_var = max(m_var - e_var, 0.0)
+        sep = np.sqrt(t_var / e_var) if e_var > 0 else 0.0
+        rel = t_var / m_var if m_var > 0 else 0.0
+        strata = (4 * sep + 1) / 3
+        rows.append({{
+            "Facet": facet, "N": len(est),
+            "Separation": round(sep, 3), "Reliability": round(rel, 3),
+            "Strata": round(strata, 2), "RMSE": round(np.sqrt(e_var), 4),
+        }})
+    return pd.DataFrame(rows)
+
+
+def estimate_bias(measures_df, obs_df, facet_a, facet_b, facet_signs,
+                  max_abs=10.0, max_iter=4, tol=1e-3):
+    """Estimate pairwise bias/interaction between two facets."""
+    if facet_a not in obs_df.columns or facet_b not in obs_df.columns:
+        return None
+    groups = obs_df.groupby([facet_a, facet_b], observed=False)
+    rows = []
+    for (la, lb), sub in groups:
+        n = len(sub)
+        if n < 2:
+            continue
+        obs_mean = sub["Observed"].mean() if "Observed" in sub.columns else sub["score_k"].mean()
+        exp_mean = sub["Expected"].mean()
+        var_sum = sub["Var"].sum()
+        if var_sum <= 0 or not np.isfinite(var_sum):
+            continue
+        bias = obs_mean - exp_mean
+        se = np.sqrt(1.0 / var_sum) if var_sum > 0 else np.nan
+        t_val = bias / se if se > 0 and np.isfinite(se) else np.nan
+        df = n - 1
+        p_val = 2 * t_dist.sf(abs(t_val), df=df) if np.isfinite(t_val) and df > 0 else np.nan
+        rows.append({{
+            facet_a: la, facet_b: lb,
+            "N": n, "Obs-Exp": round(bias, 4),
+            "BiasSize": round(bias, 4), "SE": round(se, 4),
+            "t": round(t_val, 3), "df": df, "p": round(p_val, 4),
+        }})
+    return pd.DataFrame(rows) if rows else None
+
+
+# ============================================================================
+#  Analysis
+# ============================================================================
+
+if __name__ == "__main__":
+    # ── 0. Load data ────────────────────────────────────────────────────────
+    DATA_FILE = "your_data.csv"   # ← Replace with your data file
+    data = pd.read_csv(DATA_FILE)
+    print(f"Loaded {{len(data):,}} observations from {{DATA_FILE}}")
+
+    # ── 1. Settings (mirroring your app configuration) ──────────────────────
+    PERSON_COL   = "{_esc(orig_person_col)}"
+    FACET_COLS   = {facet_cols_repr}
+    SCORE_COL    = "{_esc(orig_score_col)}"
+    WEIGHT_COL   = {weight_col_repr}       # None = equal weights
+    MODEL        = "{model}"                # "RSM" or "PCM"
+    STEP_FACET   = {step_facet_repr}        # None for RSM
+    NONCENTER    = "{noncenter_facet}"
+    POSITIVE_FACETS = {pos_facets_repr}
+    DUMMY_FACETS = {dummy_facets_repr}      # Facets fixed at 0 (not estimated)
+    KEEP_ORIGINAL = {keep_original}         # If False, remap non-contiguous scores
+    RATING_MIN   = {repr(input_rating_min)} # None = infer from data
+    RATING_MAX   = {repr(input_rating_max)} # None = infer from data
+    MAXIT        = {maxit}
+    RELTOL       = {reltol}
+
+    # NOTE: If you used anchor constraints in the app, they are NOT embedded here.
+    # Anchored analyses require manual specification. Set ANCHORS below if needed:
+    ANCHORS = {{}}  # e.g. {{"Rater": {{"R1": 0.0}}, "Criterion": {{}}}}
+
+    # ── 2. Prepare data ─────────────────────────────────────────────────────
+    use_cols = [PERSON_COL] + FACET_COLS + [SCORE_COL]
+    if WEIGHT_COL:
+        use_cols.append(WEIGHT_COL)
+    df = data[use_cols].dropna().copy()
+    df.rename(columns={{PERSON_COL: "Person", SCORE_COL: "Score"}}, inplace=True)
+    if WEIGHT_COL:
+        df.rename(columns={{WEIGHT_COL: "Weight"}}, inplace=True)
+        df["Weight"] = pd.to_numeric(df["Weight"], errors="coerce")
+        df = df[df["Weight"] > 0]
+    df["Score"] = pd.to_numeric(df["Score"], errors="coerce")
+    frac = df["Score"].notna() & np.isfinite(df["Score"]) & ((df["Score"] - np.round(df["Score"])).abs() > np.sqrt(np.finfo(float).eps))
+    if frac.any():
+        raise ValueError("Score must contain ordered integer category codes; fractional values were found.")
+    df = df.dropna()
+    df["Person"] = df["Person"].astype(str)
+    for fc in FACET_COLS:
+        df[fc] = df[fc].astype(str)
+    df["Score"] = df["Score"].astype(int)
+
+    rating_min = int(df["Score"].min()) if RATING_MIN is None else int(RATING_MIN)
+    rating_max = int(df["Score"].max()) if RATING_MAX is None else int(RATING_MAX)
+    if rating_max <= rating_min:
+        raise ValueError("RATING_MAX must be larger than RATING_MIN.")
+    out_of_range = np.sort(df.loc[(df["Score"] < rating_min) | (df["Score"] > rating_max), "Score"].unique())
+    if out_of_range.size:
+        raise ValueError(f"Observed score categories outside rating range: {{out_of_range.tolist()}}")
+    if not KEEP_ORIGINAL:
+        score_vals = np.sort(df["Score"].unique())
+        expected_vals = np.arange(rating_min, rating_max + 1)
+        observed_contiguous = np.array_equal(score_vals, np.arange(score_vals[0], score_vals[-1] + 1))
+        boundary_only_gap = (RATING_MIN is not None or RATING_MAX is not None) and observed_contiguous and np.all(np.isin(score_vals, expected_vals))
+        if not np.array_equal(score_vals, expected_vals) and not boundary_only_gap:
+            mapping = {{val: rating_min + i for i, val in enumerate(score_vals)}}
+            df["Score"] = df["Score"].map(mapping).astype(int)
+            rating_max = rating_min + len(score_vals) - 1
+    df["score_k"] = df["Score"] - rating_min
+    n_cat = rating_max - rating_min + 1
+
+    df["Person"] = pd.Categorical(df["Person"])
+    for fc in FACET_COLS:
+        df[fc] = pd.Categorical(df[fc])
+    person_levels = list(df["Person"].cat.categories)
+    facet_levels = {{fc: list(df[fc].cat.categories) for fc in FACET_COLS}}
+    n_person = len(person_levels)
+
+    person_idx = df["Person"].cat.codes.to_numpy(dtype=int)
+    facet_idx_dict = {{fc: df[fc].cat.codes.to_numpy(dtype=int) for fc in FACET_COLS}}
+    score_k = df["score_k"].to_numpy(dtype=int)
+    weight = df["Weight"].to_numpy(dtype=float) if "Weight" in df.columns else np.ones(len(df), dtype=float)
+
+    step_idx = facet_idx_dict.get(STEP_FACET) if STEP_FACET else None
+    step_facet_n = len(facet_levels[STEP_FACET]) if STEP_FACET else 0
+    facet_signs = {{fc: (1 if fc in POSITIVE_FACETS else -1) for fc in FACET_COLS}}
+    facet_level_counts = {{fc: len(facet_levels[fc]) for fc in FACET_COLS}}
+
+    print(f"  Persons: {{n_person}}, Categories: {{n_cat}}, Model: {{MODEL}}")
+    for fc in FACET_COLS:
+        print(f"  Facet '{{fc}}': {{len(facet_levels[fc])}} levels")
+
+    # ── 3. Build parameter structure & optimise ─────────────────────────────
+    sizes = build_sizes(n_person, facet_level_counts, n_cat, MODEL, step_facet_n,
+                        NONCENTER, FACET_COLS, dummy_facets=DUMMY_FACETS)
+    n_params = sum(sizes.values())
+    print(f"\\nFree parameters: {{n_params}}")
+    if DUMMY_FACETS:
+        print(f"  Dummy facets (fixed at 0): {{DUMMY_FACETS}}")
+
+    step_init = np.linspace(-1, 1, max(n_cat - 1, 0)) if n_cat > 1 else np.array([])
+    start = np.concatenate([
+        np.zeros(sizes["Person"]),
+        *[np.zeros(sizes[fc]) for fc in FACET_COLS],
+        step_init if MODEL == "RSM" else np.tile(step_init, step_facet_n),
+    ])
+
+    print(f"Optimising (BFGS, maxit={{MAXIT}}, reltol={{RELTOL}}) ...")
+    opt = minimize(
+        neg_loglik, start,
+        args=(person_idx, facet_idx_dict, score_k, weight,
+              sizes, FACET_COLS, facet_signs, NONCENTER,
+              n_cat, MODEL, step_facet_n, step_idx,
+              DUMMY_FACETS, facet_level_counts),
+        method="BFGS",
+        options={{"maxiter": MAXIT, "gtol": RELTOL}},
+    )
+    print(f"Converged: {{opt.success}}  ({{opt.nit}} iterations, {{opt.nfev}} function evals)")
+    loglik = -opt.fun
+    aic = 2 * n_params - 2 * loglik
+    bic_val = np.log(len(df)) * n_params - 2 * loglik
+    print(f"LogLik: {{loglik:.2f}}, AIC: {{aic:.2f}}, BIC: {{bic_val:.2f}}")
+
+    # ── 4. Extract estimates & diagnostics ──────────────────────────────────
+    params = unpack(opt.x, sizes, FACET_COLS, NONCENTER, n_cat, MODEL, step_facet_n,
+                    dummy_facets=DUMMY_FACETS, facet_level_counts=facet_level_counts)
+
+    # Compute eta
+    eta = params["Person"][person_idx]
+    for fc in FACET_COLS:
+        eta = eta + facet_signs[fc] * params[fc][facet_idx_dict[fc]]
+
+    if MODEL == "RSM":
+        step_cum = np.concatenate([[0.0], np.cumsum(params["steps"])])
+        step_cum_mat_val = None
+    else:
+        step_cum_mat_val = np.vstack([np.concatenate([[0.0], np.cumsum(row)]) for row in params["steps_mat"]])
+        step_cum = None
+
+    diag_df, infit_all, outfit_all, expected, var_k, resid = compute_diagnostics(
+        eta, score_k, weight,
+        step_cum if step_cum is not None else step_cum_mat_val[0],
+        person_idx, facet_idx_dict, FACET_COLS,
+        person_levels, facet_levels, MODEL,
+        step_cum_mat=step_cum_mat_val, step_idx=step_idx,
+    )
+
+    # Build measures table
+    measures_rows = []
+    for facet in ["Person"] + FACET_COLS:
+        levels = person_levels if facet == "Person" else facet_levels[facet]
+        estimates = params[facet] if facet in params else params.get("Person", [])
+        for i, lev in enumerate(levels):
+            est_val = float(estimates[i]) if i < len(estimates) else np.nan
+            measures_rows.append({{"Facet": facet, "Level": lev, "Estimate": est_val}})
+    measures_df = pd.DataFrame(measures_rows)
+    measures_df = measures_df.merge(diag_df, on=["Facet", "Level"], how="left")
+
+    # Steps
+    if MODEL == "RSM":
+        steps_df = pd.DataFrame({{
+            "Step": [f"Step_{{i+1}}" for i in range(n_cat - 1)],
+            "Estimate": params["steps"],
+        }})
+    else:
+        step_rows = []
+        sf_levels = facet_levels[STEP_FACET]
+        for si, sf_lev in enumerate(sf_levels):
+            for j in range(n_cat - 1):
+                step_rows.append((sf_lev, f"Step_{{j+1}}", params["steps_mat"][si, j]))
+        steps_df = pd.DataFrame(step_rows, columns=["StepFacet", "Step", "Estimate"])
+
+    # Reliability
+    non_person = measures_df[measures_df["Facet"] != "Person"].copy()
+    rel_df = calc_reliability(non_person)
+
+    # Print results
+    print("\\n── Facet Measures ──")
+    for facet in FACET_COLS:
+        sub = measures_df[measures_df["Facet"] == facet]
+        print(f"\\n  {{facet}}:")
+        for _, r in sub.iterrows():
+            print(f"    {{r['Level']:>12s}}  Estimate={{r['Estimate']:+.3f}}  SE={{r['SE']:.3f}}  "
+                  f"Infit={{r['Infit']:.2f}}  Outfit={{r['Outfit']:.2f}}")
+
+    print("\\n── Step Parameters ──")
+    print(steps_df.to_string(index=False))
+
+    print("\\n── Reliability & Separation ──")
+    print(rel_df.to_string(index=False))
+
+    print(f"\\n── Overall Fit: Infit={{infit_all:.3f}}, Outfit={{outfit_all:.3f}} ──")
+
+    # Save outputs
+    measures_df.to_csv("measures.csv", index=False)
+    steps_df.to_csv("steps.csv", index=False)
+    rel_df.to_csv("reliability.csv", index=False)
+
+    # Observation-level residuals
+    obs_out = df.copy()
+    obs_out["Expected"] = rating_min + expected
+    obs_out["Observed"] = df["Score"]
+    obs_out["Residual"] = obs_out["Observed"] - obs_out["Expected"]
+    obs_out["Var"] = var_k
+    obs_out["StdResidual"] = resid / np.sqrt(np.where(var_k > 1e-10, var_k, np.nan))
+    obs_out.to_csv("residuals.csv", index=False)
+    print(f"\\nSaved: measures.csv, steps.csv, reliability.csv, residuals.csv")
+{bias_section}
+    print("\\n── Done. ──")
+'''
+    return script
+
+
+def _generate_repro_r_script(result: dict, bias_pairs: list[tuple[str, str]] | None = None) -> str:
+    """Generate a fully self-contained R script for MFRM estimation.
+
+    Uses only base R + stats::optim (BFGS). No external MFRM package required.
+    """
+    config = result.get("config", {})
+    prep = result.get("prep", {})
+
+    model = config.get("model", "RSM")
+    n_cat = config.get("n_cat", 5)
+    facet_names = config.get("facet_names", [])
+    step_facet = config.get("step_facet")
+    noncenter_facet = config.get("noncenter_facet", "Person")
+    dummy_facets = list(config.get("dummy_facets", []))
+    positive_facets = list(config.get("positive_facets", []))
+    weight_col = config.get("weight_col")
+    keep_original = config.get("keep_original", False)
+    population_model = config.get("population_model", {})
+    if isinstance(population_model, dict) and population_model.get("enabled"):
+        return '''\
+#!/usr/bin/env Rscript
+# Portable R JMLE script
+#
+# This run used a latent-regression population_formula. The portable R fixed-effect
+# script currently supports ordinary RSM/PCM JMLE only. Use the downloaded Python
+# mfrm_app_engine_runner.py instead; it reproduces the current standalone Python
+# latent-regression MML engine.
+
+stop("Latent-regression portable R script is not available yet. Use mfrm_app_engine_runner.py with requirements.txt for this run.")
+'''
+    if model == "GPCM":
+        return '''\
+#!/usr/bin/env Rscript
+# Portable R JMLE script
+#
+# This run used GPCM. The portable R fixed-effect script currently supports
+# RSM and PCM only. Use the downloaded Python mfrm_app_engine_runner.py instead;
+# it reproduces the current standalone Python GPCM engine.
+
+stop("GPCM portable R script is not available yet. Use mfrm_app_engine_runner.py with requirements.txt for this run.")
+'''
+
+    out = st.session_state.get("facets_mode_output", {})
+    maxit = out.get("_maxit", config.get("maxit", 400))
+    reltol = out.get("_reltol", config.get("reltol", 1e-6))
+    orig_person_col = out.get("person_col", "Person")
+    orig_score_col = out.get("score_col", "Score")
+    orig_facet_cols = out.get("facet_cols", facet_names)
+    keep_original = out.get("_keep_original", keep_original)
+    input_rating_min = out.get("_rating_min", config.get("input_rating_min"))
+    input_rating_max = out.get("_rating_max", config.get("input_rating_max"))
+
+    def _esc_r(s: str) -> str:
+        return str(s).replace("\\", "\\\\").replace('"', '\\"')
+
+    def r_vec(lst):
+        if not lst:
+            return "NULL"
+        return "c(" + ", ".join(f'"{x}"' for x in lst) + ")"
+
+    # Bias section
+    bias_section = ""
+    if bias_pairs:
+        pair_lines = []
+        for fa, fb in bias_pairs:
+            pair_lines.append(
+                f'tryCatch({{\n'
+                f'  btbl <- estimate_bias(measures_df, obs_df, "{fa}", "{fb}", facet_signs)\n'
+                f'  if (!is.null(btbl) && nrow(btbl) > 0) {{\n'
+                f'    write.csv(btbl, "bias_{fa.lower()}_{fb.lower()}.csv", row.names = FALSE)\n'
+                f'    cat(sprintf("  {fa} x {fb}: %d pairs\\n", nrow(btbl)))\n'
+                f'  }}\n'
+                f'}}, error = function(e) cat(sprintf("  {fa} x {fb}: skipped (%s)\\n", e$message)))\n'
+            )
+        bias_section = (
+            '\n# ── 5. Bias / Interaction ──\n'
+            'cat("\\n── Bias / Interaction ──\\n")\n'
+            + "\n".join(pair_lines)
+        )
+
+    facet_cols_r = r_vec(list(orig_facet_cols))
+    pos_facets_r = r_vec(list(positive_facets))
+    step_facet_r = f'"{step_facet}"' if step_facet else "NULL"
+    rating_min_r = "NA_integer_" if input_rating_min is None else f"{int(input_rating_min)}L"
+    rating_max_r = "NA_integer_" if input_rating_max is None else f"{int(input_rating_max)}L"
+
+    script = f'''\
+#!/usr/bin/env Rscript
+# Self-contained MFRM (Many-Facet Rasch Model) analysis script.
+#
+# Generated by MFRM FACETS-mode app.
+# Model: {model} | Method: JMLE (BFGS) | maxit: {maxit} | reltol: {reltol}
+#
+# Requirements: R >= 4.0 (no external packages needed — base R only).
+
+# ============================================================================
+#  Core MFRM engine (self-contained)
+# ============================================================================
+
+logsumexp <- function(x) {{
+  # Numerically stable log-sum-exp for a vector
+  m <- max(x)
+  m + log(sum(exp(x - m)))
+}}
+
+logsumexp_mat <- function(mat) {{
+  # Row-wise log-sum-exp for a matrix
+  m <- apply(mat, 1, max)
+  m + log(rowSums(exp(mat - m)))
+}}
+
+loglik_rsm <- function(eta, score_k, step_cum, weight = NULL) {{
+  # RSM log-likelihood
+  if (length(eta) == 0) return(0)
+  k_cat <- length(step_cum)
+  eta_mat <- outer(eta, 0:(k_cat - 1))  # N x K
+  log_num <- sweep(eta_mat, 2, step_cum)
+  log_denom <- logsumexp_mat(log_num)
+  idx <- cbind(seq_along(eta), score_k + 1L)
+  diff <- log_num[idx] - log_denom
+  if (is.null(weight)) sum(diff) else sum(diff * weight)
+}}
+
+loglik_pcm <- function(eta, score_k, step_cum_mat, criterion_idx, weight = NULL) {{
+  if (length(eta) == 0) return(0)
+  total <- 0
+  k_cat <- ncol(step_cum_mat)
+  for (c_idx in seq_len(nrow(step_cum_mat))) {{
+    rows <- which(criterion_idx == (c_idx - 1L))
+    if (length(rows) == 0) next
+    eta_c <- eta[rows]
+    eta_mat <- outer(eta_c, 0:(k_cat - 1))
+    log_num <- sweep(eta_mat, 2, step_cum_mat[c_idx, ])
+    log_denom <- logsumexp_mat(log_num)
+    idx_mat <- cbind(seq_along(rows), score_k[rows] + 1L)
+    diff <- log_num[idx_mat] - log_denom
+    if (is.null(weight)) total <- total + sum(diff) else total <- total + sum(diff * weight[rows])
+  }}
+  total
+}}
+
+category_probs <- function(eta, step_cum) {{
+  k_cat <- length(step_cum)
+  eta_mat <- outer(eta, 0:(k_cat - 1))
+  log_num <- sweep(eta_mat, 2, step_cum)
+  log_denom <- logsumexp_mat(log_num)
+  exp(log_num - log_denom)
+}}
+
+center_sum_zero <- function(x) {{
+  if (length(x) == 0) return(x)
+  x - mean(x)
+}}
+
+expand_block <- function(seg, total, centered) {{
+  if (total == 0) return(numeric(0))
+  if (!centered) return(seg[1:total])
+  if (total == 1) return(0)
+  s <- seg[1:(total - 1)]
+  c(s, -sum(s))
+}}
+
+# ── Settings ────────────────────────────────────────────────────────────────
+PERSON_COL      <- "{_esc_r(orig_person_col)}"
+FACET_COLS      <- {facet_cols_r}
+SCORE_COL       <- "{_esc_r(orig_score_col)}"
+WEIGHT_COL      <- {f'"{_esc_r(weight_col)}"' if weight_col else "NULL"}
+MODEL           <- "{model}"
+STEP_FACET      <- {step_facet_r}
+NONCENTER       <- "{noncenter_facet}"
+POSITIVE_FACETS <- {pos_facets_r}
+DUMMY_FACETS    <- {r_vec(dummy_facets)}
+KEEP_ORIGINAL   <- {"TRUE" if keep_original else "FALSE"}
+RATING_MIN      <- {rating_min_r}
+RATING_MAX      <- {rating_max_r}
+MAXIT           <- {maxit}L
+RELTOL          <- {reltol}
+
+# NOTE: If you used anchor constraints in the app, they are NOT embedded here.
+# Anchored analyses require manual specification.
+
+# ── 0. Load data ────────────────────────────────────────────────────────────
+DATA_FILE <- "your_data.csv"   # ← Replace with your data file
+dat <- read.csv(DATA_FILE, stringsAsFactors = FALSE)
+cat(sprintf("Loaded %d observations from %s\\n", nrow(dat), DATA_FILE))
+
+# ── 1. Prepare data ─────────────────────────────────────────────────────────
+cols <- c(PERSON_COL, FACET_COLS, SCORE_COL)
+if (!is.null(WEIGHT_COL)) cols <- c(cols, WEIGHT_COL)
+df <- dat[, cols, drop = FALSE]
+names(df)[names(df) == PERSON_COL] <- "Person"
+names(df)[names(df) == SCORE_COL] <- "Score"
+if (!is.null(WEIGHT_COL)) {{
+  names(df)[names(df) == WEIGHT_COL] <- "Weight"
+  df$Weight <- as.numeric(df$Weight)
+  df <- df[df$Weight > 0, ]
+}}
+score_num <- suppressWarnings(as.numeric(df$Score))
+frac <- is.finite(score_num) & abs(score_num - round(score_num)) > sqrt(.Machine$double.eps)
+if (any(frac, na.rm = TRUE)) stop("Score must contain ordered integer category codes; fractional values were found.")
+df$Score <- score_num
+df <- na.omit(df)
+df$Score <- as.integer(df$Score)
+df$Person <- as.factor(as.character(df$Person))
+for (fc in FACET_COLS) df[[fc]] <- as.factor(as.character(df[[fc]]))
+rating_min <- if (is.na(RATING_MIN)) min(df$Score) else as.integer(RATING_MIN)
+rating_max <- if (is.na(RATING_MAX)) max(df$Score) else as.integer(RATING_MAX)
+if (rating_max <= rating_min) stop("RATING_MAX must be larger than RATING_MIN.")
+out_of_range <- sort(unique(df$Score[df$Score < rating_min | df$Score > rating_max]))
+if (length(out_of_range) > 0) stop(sprintf("Observed score categories outside rating range: %s", paste(out_of_range, collapse = ", ")))
+if (!KEEP_ORIGINAL) {{
+  score_vals <- sort(unique(df$Score))
+  expected_vals <- seq(rating_min, rating_max)
+  observed_contiguous <- identical(score_vals, seq(min(score_vals), max(score_vals)))
+  boundary_only_gap <- (!is.na(RATING_MIN) || !is.na(RATING_MAX)) && observed_contiguous && all(score_vals %in% expected_vals)
+  if (!identical(score_vals, expected_vals) && !boundary_only_gap) {{
+    mapping <- setNames(rating_min + seq_along(score_vals) - 1L, score_vals)
+    df$Score <- as.integer(mapping[as.character(df$Score)])
+    rating_max <- rating_min + length(score_vals) - 1L
+  }}
+}}
+df$score_k <- df$Score - rating_min
+n_cat <- rating_max - rating_min + 1L
+weight <- if ("Weight" %in% names(df)) df$Weight else rep(1.0, nrow(df))
+
+person_levels <- levels(df$Person)
+facet_levels <- setNames(lapply(FACET_COLS, function(fc) levels(df[[fc]])), FACET_COLS)
+n_person <- length(person_levels)
+
+person_idx <- as.integer(df$Person) - 1L   # 0-based
+facet_idx <- setNames(lapply(FACET_COLS, function(fc) as.integer(df[[fc]]) - 1L), FACET_COLS)
+score_k <- df$score_k
+step_idx <- if (!is.null(STEP_FACET)) facet_idx[[STEP_FACET]] else NULL
+step_facet_n <- if (!is.null(STEP_FACET)) length(facet_levels[[STEP_FACET]]) else 0L
+facet_signs <- setNames(
+  ifelse(FACET_COLS %in% POSITIVE_FACETS, 1, -1),
+  FACET_COLS
+)
+facet_level_counts <- setNames(
+  sapply(FACET_COLS, function(fc) length(facet_levels[[fc]])),
+  FACET_COLS
+)
+
+cat(sprintf("  Persons: %d, Categories: %d, Model: %s\\n", n_person, n_cat, MODEL))
+for (fc in FACET_COLS) cat(sprintf("  Facet '%s': %d levels\\n", fc, facet_level_counts[fc]))
+
+# ── 2. Build parameter structure ────────────────────────────────────────────
+build_sizes <- function() {{
+  dummy <- if (is.null(DUMMY_FACETS)) character(0) else DUMMY_FACETS
+  sizes <- list()
+  if ("Person" %in% dummy) {{
+    sizes[["Person"]] <- 0L
+  }} else {{
+    sizes[["Person"]] <- if (NONCENTER == "Person") n_person else max(n_person - 1L, 0L)
+  }}
+  for (fn in FACET_COLS) {{
+    if (fn %in% dummy) {{
+      sizes[[fn]] <- 0L
+    }} else {{
+      m <- facet_level_counts[fn]
+      sizes[[fn]] <- if (NONCENTER == fn) m else max(m - 1L, 0L)
+    }}
+  }}
+  n_steps <- max(n_cat - 1L, 0L)
+  sizes[["steps"]] <- if (MODEL == "RSM") n_steps else step_facet_n * n_steps
+  sizes
+}}
+
+sizes <- build_sizes()
+n_params <- sum(unlist(sizes))
+cat(sprintf("\\nFree parameters: %d\\n", n_params))
+if (length(DUMMY_FACETS) > 0) cat(sprintf("  Dummy facets (fixed at 0): %s\\n", paste(DUMMY_FACETS, collapse = ", ")))
+
+unpack_params <- function(par) {{
+  dummy <- if (is.null(DUMMY_FACETS)) character(0) else DUMMY_FACETS
+  idx <- 1L
+  blocks <- list()
+  for (nm in names(sizes)) {{
+    k <- sizes[[nm]]
+    blocks[[nm]] <- if (k > 0) par[idx:(idx + k - 1L)] else numeric(0)
+    idx <- idx + k
+  }}
+  result <- list()
+  for (nm in c("Person", FACET_COLS)) {{
+    if (nm %in% dummy) {{
+      n_lvl <- if (nm == "Person") n_person else facet_level_counts[nm]
+      result[[nm]] <- rep(0, n_lvl)
+      next
+    }}
+    total <- sizes[[nm]] + if (NONCENTER == nm) 0L else 1L
+    centered <- NONCENTER != nm
+    result[[nm]] <- expand_block(blocks[[nm]], total, centered)
+  }}
+  n_steps <- max(n_cat - 1L, 0L)
+  if (MODEL == "RSM") {{
+    result$steps <- center_sum_zero(blocks$steps)
+    result$steps_mat <- NULL
+  }} else {{
+    mat <- matrix(blocks$steps, nrow = step_facet_n, ncol = n_steps, byrow = TRUE)
+    result$steps_mat <- t(apply(mat, 1, center_sum_zero))
+    result$steps <- NULL
+  }}
+  result
+}}
+
+neg_loglik_fn <- function(par) {{
+  params <- unpack_params(par)
+  eta <- params$Person[person_idx + 1L]
+  for (fc in FACET_COLS) {{
+    eta <- eta + facet_signs[fc] * params[[fc]][facet_idx[[fc]] + 1L]
+  }}
+  if (MODEL == "RSM") {{
+    step_cum <- c(0, cumsum(params$steps))
+    ll <- loglik_rsm(eta, score_k, step_cum, weight)
+  }} else {{
+    step_cum_mat <- t(apply(params$steps_mat, 1, function(r) c(0, cumsum(r))))
+    ll <- loglik_pcm(eta, score_k, step_cum_mat, step_idx, weight)
+  }}
+  -ll
+}}
+
+# ── 3. Optimise ─────────────────────────────────────────────────────────────
+n_steps <- max(n_cat - 1L, 0L)
+step_init <- if (n_steps > 0) seq(-1, 1, length.out = n_steps) else numeric(0)
+start <- c(
+  rep(0, sizes$Person),
+  unlist(lapply(FACET_COLS, function(fc) rep(0, sizes[[fc]]))),
+  if (MODEL == "RSM") step_init else rep(step_init, step_facet_n)
+)
+
+cat(sprintf("Optimising (BFGS, maxit=%d, reltol=%.1e) ...\\n", MAXIT, RELTOL))
+opt <- optim(
+  par     = start,
+  fn      = neg_loglik_fn,
+  method  = "BFGS",
+  control = list(maxit = MAXIT, reltol = RELTOL)
+)
+cat(sprintf("Converged: %s  (%d function evals)\\n",
+            if (opt$convergence == 0) "TRUE" else "FALSE", opt$counts["function"]))
+loglik_val <- -opt$value
+aic_val <- 2 * n_params - 2 * loglik_val
+bic_val <- log(nrow(df)) * n_params - 2 * loglik_val
+cat(sprintf("LogLik: %.2f, AIC: %.2f, BIC: %.2f\\n", loglik_val, aic_val, bic_val))
+
+# ── 4. Extract estimates & diagnostics ──────────────────────────────────────
+params <- unpack_params(opt$par)
+
+eta <- params$Person[person_idx + 1L]
+for (fc in FACET_COLS) {{
+  eta <- eta + facet_signs[fc] * params[[fc]][facet_idx[[fc]] + 1L]
+}}
+
+if (MODEL == "RSM") {{
+  step_cum <- c(0, cumsum(params$steps))
+  probs <- category_probs(eta, step_cum)
+}} else {{
+  step_cum_mat <- t(apply(params$steps_mat, 1, function(r) c(0, cumsum(r))))
+  probs <- matrix(0, nrow = length(eta), ncol = n_cat)
+  for (ci in seq_len(nrow(step_cum_mat))) {{
+    rows <- which(step_idx == (ci - 1L))
+    if (length(rows) > 0) probs[rows, ] <- category_probs(eta[rows], step_cum_mat[ci, ])
+  }}
+}}
+
+k_vals <- 0:(n_cat - 1L)
+expected <- probs %*% k_vals
+var_k <- probs %*% (k_vals^2) - expected^2
+var_k[var_k <= 1e-10] <- NA
+resid <- score_k - expected
+std_sq <- resid^2 / var_k
+
+zstd_from_mnsq <- function(mnsq, df_val) {{
+  if (!is.finite(mnsq) || !is.finite(df_val) || df_val <= 0) return(NA)
+  (mnsq^(1/3) - (1 - 2/(9*df_val))) / sqrt(2/(9*df_val))
+}}
+
+# Element-level fit
+measures_rows <- list()
+for (facet in c("Person", FACET_COLS)) {{
+  idx_arr <- if (facet == "Person") person_idx else facet_idx[[facet]]
+  lvls <- if (facet == "Person") person_levels else facet_levels[[facet]]
+  ests <- params[[facet]]
+  for (li in seq_along(lvls)) {{
+    mask <- idx_arr == (li - 1L)
+    w <- weight[mask]; v <- var_k[mask]; sq <- std_sq[mask]
+    w_sum <- sum(w, na.rm = TRUE)
+    info <- sum(v * w, na.rm = TRUE)
+    infit <- if (info > 0) sum(sq * v * w, na.rm = TRUE) / info else NA
+    outfit <- if (w_sum > 0) sum(sq * w, na.rm = TRUE) / w_sum else NA
+    se <- if (info > 0) 1 / sqrt(info) else NA
+    measures_rows[[length(measures_rows) + 1]] <- data.frame(
+      Facet = facet, Level = lvls[li], Estimate = ests[li],
+      N = w_sum, SE = se, Infit = infit, Outfit = outfit,
+      InfitZSTD = zstd_from_mnsq(infit, info),
+      OutfitZSTD = zstd_from_mnsq(outfit, w_sum),
+      stringsAsFactors = FALSE
+    )
+  }}
+}}
+measures_df <- do.call(rbind, measures_rows)
+
+# Steps
+if (MODEL == "RSM") {{
+  steps_df <- data.frame(
+    Step = paste0("Step_", seq_len(n_steps)),
+    Estimate = params$steps,
+    stringsAsFactors = FALSE
+  )
+}} else {{
+  step_rows <- list()
+  sf_lvls <- facet_levels[[STEP_FACET]]
+  for (si in seq_along(sf_lvls)) {{
+    for (j in seq_len(n_steps)) {{
+      step_rows[[length(step_rows) + 1]] <- data.frame(
+        StepFacet = sf_lvls[si], Step = paste0("Step_", j),
+        Estimate = params$steps_mat[si, j], stringsAsFactors = FALSE)
+    }}
+  }}
+  steps_df <- do.call(rbind, step_rows)
+}}
+
+# Reliability
+calc_reliability <- function(mdf) {{
+  facets_unique <- unique(mdf$Facet[mdf$Facet != "Person"])
+  rows <- lapply(facets_unique, function(fac) {{
+    sub <- mdf[mdf$Facet == fac, ]
+    est <- sub$Estimate; se <- sub$SE
+    m_var <- if (length(est) > 1) var(est) else 0
+    e_var <- mean(se^2, na.rm = TRUE)
+    t_var <- max(m_var - e_var, 0)
+    sep <- if (e_var > 0) sqrt(t_var / e_var) else 0
+    rel <- if (m_var > 0) t_var / m_var else 0
+    strata <- (4 * sep + 1) / 3
+    data.frame(Facet = fac, N = nrow(sub), Separation = round(sep, 3),
+               Reliability = round(rel, 3), Strata = round(strata, 2),
+               RMSE = round(sqrt(e_var), 4), stringsAsFactors = FALSE)
+  }})
+  do.call(rbind, rows)
+}}
+rel_df <- calc_reliability(measures_df)
+
+# Bias estimation function
+estimate_bias <- function(measures_df, obs_df, facet_a, facet_b, fsigns) {{
+  if (!(facet_a %in% names(obs_df)) || !(facet_b %in% names(obs_df))) return(NULL)
+  pairs <- unique(obs_df[, c(facet_a, facet_b)])
+  rows <- lapply(seq_len(nrow(pairs)), function(i) {{
+    la <- pairs[i, facet_a]; lb <- pairs[i, facet_b]
+    sub <- obs_df[obs_df[[facet_a]] == la & obs_df[[facet_b]] == lb, ]
+    n <- nrow(sub)
+    if (n < 2) return(NULL)
+    obs_mean <- mean(sub$Observed, na.rm = TRUE)
+    exp_mean <- mean(sub$Expected, na.rm = TRUE)
+    var_sum <- sum(sub$Var, na.rm = TRUE)
+    if (var_sum <= 0 || !is.finite(var_sum)) return(NULL)
+    bias <- obs_mean - exp_mean
+    se <- 1 / sqrt(var_sum)
+    t_val <- bias / se
+    df_val <- n - 1L
+    p_val <- 2 * pt(-abs(t_val), df = df_val)
+    data.frame(A = la, B = lb, N = n, Obs_Exp = round(bias, 4),
+               BiasSize = round(bias, 4), SE = round(se, 4),
+               t = round(t_val, 3), df = df_val, p = round(p_val, 4),
+               stringsAsFactors = FALSE)
+  }})
+  result <- do.call(rbind, Filter(Nonnull <- function(x) !is.null(x), rows))
+  if (!is.null(result)) {{
+    names(result)[1:2] <- c(facet_a, facet_b)
+  }}
+  result
+}}
+
+# Print results
+cat("\\n── Facet Measures ──\\n")
+for (fc in FACET_COLS) {{
+  sub <- measures_df[measures_df$Facet == fc, ]
+  cat(sprintf("\\n  %s:\\n", fc))
+  for (i in seq_len(nrow(sub))) {{
+    cat(sprintf("    %12s  Estimate=%+.3f  SE=%.3f  Infit=%.2f  Outfit=%.2f\\n",
+                sub$Level[i], sub$Estimate[i], sub$SE[i], sub$Infit[i], sub$Outfit[i]))
+  }}
+}}
+
+cat("\\n── Step Parameters ──\\n")
+print(steps_df, row.names = FALSE)
+
+cat("\\n── Reliability & Separation ──\\n")
+print(rel_df, row.names = FALSE)
+
+# Build obs_df for bias
+obs_df <- df
+obs_df$Observed <- df$Score
+obs_df$Expected <- rating_min + as.numeric(expected)
+obs_df$Var <- as.numeric(var_k)
+obs_df$Residual <- obs_df$Observed - obs_df$Expected
+
+# Save outputs
+write.csv(measures_df, "measures.csv", row.names = FALSE)
+write.csv(steps_df, "steps.csv", row.names = FALSE)
+write.csv(rel_df, "reliability.csv", row.names = FALSE)
+write.csv(obs_df, "residuals.csv", row.names = FALSE)
+cat("\\nSaved: measures.csv, steps.csv, reliability.csv, residuals.csv\\n")
+{bias_section}
+cat("\\n── Done. ──\\n")
+'''
+    return script
+
+
+def _generate_requirements_txt() -> str:
+    """Generate requirements.txt for the Python reproducible script."""
+    return (
+        "# Requirements for MFRM reproducible analysis script\n"
+        "# The app-engine runner imports streamlit_app.py, so it uses the app stack.\n"
+        "numpy>=1.24\n"
+        "pandas>=2.0\n"
+        "scipy>=1.10\n"
+        "plotly>=5.15\n"
+        "kaleido>=0.2.1,<1.0\n"
+        "streamlit>=1.54\n"
+        "openpyxl>=3.1\n"
+    )
+
+
+# ---------------------------------------------------------------------------
+# Phase 4-7: Multi-format downloads
+# ---------------------------------------------------------------------------
+
+def _render_downloads(
+    result: dict,
+    diagnostics: dict,
+    report_tables: dict,
+    scorefile: pd.DataFrame,
+    residuals: pd.DataFrame,
+    bias_results: dict | None = None,
+    all_bias_results: dict | None = None,
+    generate_figures: bool = True,
+) -> None:
+    """Download section with sub-tabs: Data Tables, Figures, Scripts."""
+    st.subheader("Downloads")
+    st.caption(
+        "All analysis outputs organized for download. Use the ZIP buttons for "
+        "one-click bundled downloads, or expand individual items below."
+    )
+
+    dl_tabs = st.tabs(["Data Tables", "Figures", "Scripts & Config"])
+
+    # ---- Collect all data frames ----
+    summary = result.get("summary", pd.DataFrame())
+    measures_dl = diagnostics.get("measures", pd.DataFrame())
+    reliability_dl = diagnostics.get("reliability", pd.DataFrame())
+    steps_dl = result.get("steps", pd.DataFrame())
+    if not isinstance(steps_dl, pd.DataFrame):
+        steps_dl = pd.DataFrame()
+    slopes_dl = result.get("slopes", pd.DataFrame())
+    if not isinstance(slopes_dl, pd.DataFrame):
+        slopes_dl = pd.DataFrame()
+    fit_dl = diagnostics.get("fit", pd.DataFrame())
+    if not isinstance(fit_dl, pd.DataFrame):
+        fit_dl = pd.DataFrame()
+
+    all_frames: dict[str, pd.DataFrame] = {}
+    if not summary.empty:
+        all_frames["summary"] = summary
+    convergence_dl = result.get("convergence", pd.DataFrame())
+    if isinstance(convergence_dl, pd.DataFrame) and not convergence_dl.empty:
+        all_frames["convergence"] = convergence_dl
+    prep = result.get("prep", {})
+    score_map = prep.get("score_map", pd.DataFrame())
+    if isinstance(score_map, pd.DataFrame) and not score_map.empty:
+        all_frames["score_map"] = score_map
+    if not measures_dl.empty:
+        all_frames["measures"] = measures_dl
+    if not reliability_dl.empty:
+        all_frames["reliability"] = reliability_dl
+    try:
+        readiness_dl = build_final_report_readiness(result, diagnostics, all_bias_results)
+        if isinstance(readiness_dl, pd.DataFrame) and not readiness_dl.empty:
+            all_frames["final_report_readiness"] = readiness_dl
+    except Exception:
+        readiness_dl = pd.DataFrame()
+    if not steps_dl.empty:
+        all_frames["steps"] = steps_dl
+    if not slopes_dl.empty:
+        all_frames["gpcm_slopes"] = slopes_dl
+    population_dl = result.get("population", {})
+    if isinstance(population_dl, dict):
+        pop_coef = population_dl.get("coefficients", pd.DataFrame())
+        pop_person = population_dl.get("person_data", pd.DataFrame())
+        pop_transforms = population_dl.get("numeric_transforms", pd.DataFrame())
+        pop_term_types = pd.DataFrame(
+            [
+                {"Term": term, "Type": term_type}
+                for term, term_type in dict(population_dl.get("term_types", {})).items()
+            ]
+        )
+        if isinstance(pop_coef, pd.DataFrame) and not pop_coef.empty:
+            all_frames["population_coefficients"] = pop_coef
+        if isinstance(pop_person, pd.DataFrame) and not pop_person.empty and bool(population_dl.get("enabled", False)):
+            all_frames["population_person_data"] = pop_person
+        if isinstance(pop_transforms, pd.DataFrame) and not pop_transforms.empty:
+            all_frames["population_numeric_transforms"] = pop_transforms
+        if not pop_term_types.empty:
+            all_frames["population_term_types"] = pop_term_types
+    if isinstance(scorefile, pd.DataFrame) and not scorefile.empty:
+        all_frames["scorefile"] = scorefile
+    try:
+        prediction_dl = compute_fitted_prediction_table(result)
+        if isinstance(prediction_dl, pd.DataFrame) and not prediction_dl.empty:
+            all_frames["fitted_predictions"] = prediction_dl
+    except Exception:
+        prediction_dl = pd.DataFrame()
+    session_new_pred = st.session_state.get("mfrm_new_design_prediction_bundle", {})
+    if isinstance(session_new_pred, dict):
+        new_pred_tbl = session_new_pred.get("table", pd.DataFrame())
+        if isinstance(new_pred_tbl, pd.DataFrame) and not new_pred_tbl.empty:
+            all_frames["new_design_predictions"] = new_pred_tbl
+    session_refit_sim = st.session_state.get("mfrm_refit_simulation_bundle", {})
+    if isinstance(session_refit_sim, dict):
+        refit_summary = session_refit_sim.get("summary", pd.DataFrame())
+        refit_counts = session_refit_sim.get("category_counts", pd.DataFrame())
+        if isinstance(refit_summary, pd.DataFrame) and not refit_summary.empty:
+            all_frames["refit_simulation_summary"] = refit_summary
+        if isinstance(refit_counts, pd.DataFrame) and not refit_counts.empty:
+            all_frames["refit_simulation_category_counts"] = refit_counts
+    try:
+        design_dl = evaluate_design_from_fitted(result, diagnostics, forecast_multipliers=(2.0,))
+        if isinstance(design_dl, dict) and design_dl.get("available"):
+            design_overview = design_dl.get("overview", pd.DataFrame())
+            design_summary = design_dl.get("summary", pd.DataFrame())
+            design_forecast = design_dl.get("forecast", pd.DataFrame())
+            design_counts = design_dl.get("facet_counts", pd.DataFrame())
+            if isinstance(design_overview, pd.DataFrame) and not design_overview.empty:
+                all_frames["design_overview"] = design_overview
+            if isinstance(design_summary, pd.DataFrame) and not design_summary.empty:
+                all_frames["design_evaluation"] = design_summary
+            if isinstance(design_forecast, pd.DataFrame) and not design_forecast.empty:
+                all_frames["design_reliability_forecast"] = design_forecast
+            if isinstance(design_counts, pd.DataFrame) and not design_counts.empty:
+                all_frames["design_facet_counts"] = design_counts
+    except Exception:
+        design_dl = {}
+    if isinstance(residuals, pd.DataFrame) and not residuals.empty:
+        all_frames["residuals"] = residuals
+    posterior_dl = result.get("posterior", {})
+    if isinstance(posterior_dl, dict):
+        posterior_scores = posterior_dl.get("scores", pd.DataFrame())
+        plausible_values = posterior_dl.get("plausible_values", pd.DataFrame())
+        if isinstance(posterior_scores, pd.DataFrame) and not posterior_scores.empty:
+            all_frames["posterior_scores"] = posterior_scores
+        if isinstance(plausible_values, pd.DataFrame) and not plausible_values.empty:
+            all_frames["plausible_values"] = plausible_values
+    if not fit_dl.empty:
+        all_frames["fit_statistics"] = fit_dl
+    for facet_name, tbl in (report_tables or {}).items():
+        safe_name = facet_name.replace(" ", "_")[:31]
+        all_frames[f"facets_{safe_name}"] = tbl
+    if bias_results and bias_results.get("table") is not None and not bias_results["table"].empty:
+        all_frames["bias_table"] = bias_results["table"]
+        if bias_results.get("summary") is not None:
+            all_frames["bias_summary"] = bias_results["summary"]
+    if all_bias_results:
+        for pair_key, pair_bundle in all_bias_results.items():
+            pair_table = pair_bundle.get("table") if isinstance(pair_bundle, dict) else None
+            if isinstance(pair_table, pd.DataFrame) and not pair_table.empty:
+                safe_pair = re.sub(r"[^A-Za-z0-9]+", "_", str(pair_key)).strip("_")[:40]
+                all_frames[f"bias_{safe_pair}"] = pair_table
+    marginal_fit = diagnostics.get("marginal_fit", {})
+    if isinstance(marginal_fit, dict):
+        marginal_summary = marginal_fit.get("summary", pd.DataFrame())
+        marginal_counts = marginal_fit.get("counts", pd.DataFrame())
+        marginal_pairwise = marginal_fit.get("pairwise", {}) if isinstance(marginal_fit.get("pairwise", {}), dict) else {}
+        pair_summary = marginal_pairwise.get("summary", pd.DataFrame())
+        pair_counts = marginal_pairwise.get("counts", pd.DataFrame())
+        if isinstance(marginal_summary, pd.DataFrame) and not marginal_summary.empty:
+            all_frames["marginal_fit_summary"] = marginal_summary
+        if isinstance(marginal_counts, pd.DataFrame) and not marginal_counts.empty:
+            all_frames["marginal_fit_counts"] = marginal_counts
+        if isinstance(pair_summary, pd.DataFrame) and not pair_summary.empty:
+            all_frames["marginal_pairwise_summary"] = pair_summary
+        if isinstance(pair_counts, pd.DataFrame) and not pair_counts.empty:
+            all_frames["marginal_pairwise_counts"] = pair_counts
+    anchor_audit = result.get("config", {}).get("anchor_audit", {})
+    if isinstance(anchor_audit, dict):
+        audit_summary = anchor_audit.get("summary", pd.DataFrame())
+        audit_issues = anchor_audit.get("issues", pd.DataFrame())
+        valid_anchors = anchor_audit.get("valid_anchors", pd.DataFrame())
+        valid_group_anchors = anchor_audit.get("valid_group_anchors", pd.DataFrame())
+        if isinstance(audit_summary, pd.DataFrame) and not audit_summary.empty:
+            all_frames["anchor_audit_summary"] = audit_summary
+        if isinstance(audit_issues, pd.DataFrame) and not audit_issues.empty:
+            all_frames["anchor_audit_issues"] = audit_issues
+        if isinstance(valid_anchors, pd.DataFrame) and not valid_anchors.empty:
+            all_frames["valid_anchor_inputs"] = valid_anchors
+        if isinstance(valid_group_anchors, pd.DataFrame) and not valid_group_anchors.empty:
+            all_frames["valid_group_anchor_inputs"] = valid_group_anchors
+    drift_review = result.get("anchor_drift", {})
+    if isinstance(drift_review, dict):
+        drift_summary = drift_review.get("summary", pd.DataFrame())
+        anchor_drift_tbl = drift_review.get("anchor_drift", pd.DataFrame())
+        group_drift_tbl = drift_review.get("group_drift", pd.DataFrame())
+        if isinstance(drift_summary, pd.DataFrame) and not drift_summary.empty:
+            all_frames["anchor_drift_summary"] = drift_summary
+        if isinstance(anchor_drift_tbl, pd.DataFrame) and not anchor_drift_tbl.empty:
+            all_frames["anchor_drift"] = anchor_drift_tbl
+        if isinstance(group_drift_tbl, pd.DataFrame) and not group_drift_tbl.empty:
+            all_frames["group_anchor_drift"] = group_drift_tbl
+    chain_review = result.get("equating_chain", {})
+    if isinstance(chain_review, dict):
+        chain_summary = chain_review.get("summary", pd.DataFrame())
+        chain_edges = chain_review.get("edges", pd.DataFrame())
+        if isinstance(chain_summary, pd.DataFrame) and not chain_summary.empty:
+            all_frames["equating_chain_summary"] = chain_summary
+        if isinstance(chain_edges, pd.DataFrame) and not chain_edges.empty:
+            all_frames["equating_chain_edges"] = chain_edges
+
+    # Anchor data
+    anchor_parts = []
+    others_df = result.get("facets", {}).get("others", pd.DataFrame())
+    if not others_df.empty and "Facet" in others_df.columns and "Level" in others_df.columns and "Estimate" in others_df.columns:
+        for _, row in others_df.iterrows():
+            anchor_parts.append({
+                "Facet": row["Facet"],
+                "Level": row["Level"],
+                "Anchor": round(float(row["Estimate"]), 4),
+            })
+    if anchor_parts:
+        all_frames["anchors"] = pd.DataFrame(anchor_parts)
+    all_frames_key = frames_fingerprint(all_frames)
+
+    # ================================================================
+    # Sub-tab 0: Data Tables
+    # ================================================================
+    with dl_tabs[0]:
+        st.markdown(f"**{len(all_frames)} table(s)** available for download.")
+
+        z_col1, z_col2, z_col3 = st.columns(3)
+        with z_col1:
+            st.download_button(
+                "Download ALL tables (ZIP)",
+                data=cached_tables_zip(all_frames, all_frames_key),
+                file_name="MFRM_Tables.zip",
+                mime="application/zip",
+                key="dl_tables_zip",
+            )
+        with z_col2:
+            try:
+                st.download_button(
+                    "Download Excel (.xlsx)",
+                    data=cached_excel_bytes(all_frames, all_frames_key),
+                    file_name="MFRM_Report.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    key="dl_tables_xlsx",
+                )
+            except Exception as xl_exc:
+                st.caption(f"Excel export failed: {xl_exc}")
+        with z_col3:
+            st.download_button(
+                "Download HTML report",
+                data=cached_html_report(all_frames, all_frames_key),
+                file_name="MFRM_Report.html",
+                mime="text/html",
+                key="dl_tables_html",
+            )
+
+        # --- Individual CSVs in expander ---
+        with st.expander(f"Individual CSV downloads ({len(all_frames)} files)"):
+            cols = st.columns(3)
+            for idx, (name, df) in enumerate(all_frames.items()):
+                with cols[idx % 3]:
+                    st.download_button(
+                        f"{name}.csv ({len(df)} rows)",
+                        data=to_csv_bytes(df),
+                        file_name=f"mfrm_{name}.csv",
+                        mime="text/csv",
+                        key=f"dl_csv_{name}",
+                    )
+
+    # ================================================================
+    # Sub-tab 1: Figures
+    # ================================================================
+    with dl_tabs[1]:
+        st.caption(
+            "Download key diagnostic plots. PNG (300 DPI) is attempted first; "
+            "if kaleido is not available, interactive HTML files are offered instead."
+        )
+        if not generate_figures:
+            st.info(
+                "Figure export bundle generation was skipped for this run. "
+                "Re-run with Analysis depth = Full publication or Custom > "
+                "Prepare figure export bundle to build downloadable plot files."
+            )
+            figure_result = {}
+            figure_measures = pd.DataFrame()
+            figure_steps = pd.DataFrame()
+        else:
+            figure_result = result
+            figure_measures = measures_dl
+            figure_steps = steps_dl
+
+        # Generate all key figures
+        figure_bytes: dict[str, bytes] = {}  # PNG bytes (if kaleido works)
+        figure_html: dict[str, str] = {}     # HTML fallback (always available)
+        _fig_errors: list[str] = []
+        _kaleido_ok: bool = True  # track whether kaleido works
+
+        # Wright Map
+        facets_data = figure_result.get("facets", {})
+        person_tbl = facets_data.get("person", pd.DataFrame())
+        facet_tbl = facets_data.get("others", pd.DataFrame())
+        step_tbl = figure_steps
+        if not person_tbl.empty:
+            try:
+                p_est = pd.to_numeric(person_tbl.get("Estimate", pd.Series(dtype=float)), errors="coerce").dropna()
+                f_est = pd.to_numeric(facet_tbl.get("Estimate", pd.Series(dtype=float)), errors="coerce").dropna() if not facet_tbl.empty else pd.Series(dtype=float)
+                if len(p_est) > 0:
+                    fig_wm = make_subplots(rows=1, cols=2, shared_yaxes=True,
+                                           subplot_titles=["Persons", "Facets"])
+                    fig_wm.add_trace(go.Histogram(y=p_est.values, marker_color="#3498db",
+                                                   showlegend=False), row=1, col=1)
+                    if len(f_est) > 0:
+                        fig_wm.add_trace(go.Scatter(
+                            x=np.zeros(len(f_est)), y=f_est.values, mode="markers",
+                            marker=dict(symbol="diamond", color="#e74c3c", size=8),
+                            showlegend=False,
+                        ), row=1, col=2)
+                    fig_wm.update_layout(title="Wright Map", height=450, template="plotly_white")
+                    _wb = fig_to_png_bytes(fig_wm)
+                    if _wb is not None:
+                        figure_bytes["wright_map"] = _wb
+                    else:
+                        _kaleido_ok = False
+                    figure_html["wright_map"] = fig_wm.to_html(include_plotlyjs="cdn")
+            except Exception as e:
+                _fig_errors.append(f"Wright Map: {e}")
+
+        # Fit Scatter
+        if not figure_measures.empty and "Infit" in figure_measures.columns and "Outfit" in figure_measures.columns:
+            try:
+                infit = pd.to_numeric(figure_measures["Infit"], errors="coerce")
+                outfit = pd.to_numeric(figure_measures["Outfit"], errors="coerce")
+                fig_fs = go.Figure()
+                fig_fs.add_trace(go.Scatter(x=infit, y=outfit, mode="markers",
+                                            marker=dict(size=6, opacity=0.6, color="#1b9e77"),
+                                            showlegend=False))
+                for v in [0.5, 1.5]:
+                    fig_fs.add_hline(y=v, line_dash="dash", line_color="orange", line_width=0.7)
+                    fig_fs.add_vline(x=v, line_dash="dash", line_color="orange", line_width=0.7)
+                fig_fs.update_layout(xaxis_title="Infit MnSq", yaxis_title="Outfit MnSq",
+                                     title="Fit Scatter Plot", height=450, template="plotly_white")
+                _fb = fig_to_png_bytes(fig_fs)
+                if _fb is not None:
+                    figure_bytes["fit_scatter"] = _fb
+                else:
+                    _kaleido_ok = False
+                figure_html["fit_scatter"] = fig_fs.to_html(include_plotlyjs="cdn")
+            except Exception as e:
+                _fig_errors.append(f"Fit Scatter: {e}")
+
+        # Category Probability Curves
+        if isinstance(step_tbl, pd.DataFrame) and not step_tbl.empty:
+            try:
+                tau = pd.to_numeric(step_tbl["Estimate"], errors="coerce").dropna().values
+                n_cat_dl = len(tau) + 1
+                theta = np.linspace(-5, 5, 200)
+                probs_dl = np.zeros((len(theta), n_cat_dl))
+                for t_idx, th in enumerate(theta):
+                    log_num = np.zeros(n_cat_dl)
+                    for k in range(1, n_cat_dl):
+                        log_num[k] = log_num[k - 1] + th - tau[k - 1]
+                    log_denom = logsumexp(log_num)
+                    probs_dl[t_idx] = np.exp(log_num - log_denom)
+                colors_cpc = px.colors.qualitative.Set2
+                fig_cpc = go.Figure()
+                for k in range(n_cat_dl):
+                    fig_cpc.add_trace(go.Scatter(x=theta, y=probs_dl[:, k], mode="lines",
+                                                  name=f"Cat {k}",
+                                                  line=dict(color=colors_cpc[k % len(colors_cpc)], width=2)))
+                fig_cpc.update_layout(xaxis_title="Theta (logits)", yaxis_title="Probability",
+                                      title="Category Probability Curves", height=400,
+                                      template="plotly_white")
+                _cb = fig_to_png_bytes(fig_cpc)
+                if _cb is not None:
+                    figure_bytes["category_probability_curves"] = _cb
+                else:
+                    _kaleido_ok = False
+                figure_html["category_probability_curves"] = fig_cpc.to_html(include_plotlyjs="cdn")
+            except Exception as e:
+                _fig_errors.append(f"CPC: {e}")
+
+        # Facet Distribution (box)
+        if not figure_measures.empty and "Facet" in figure_measures.columns:
+            try:
+                pdf_dl = figure_measures.copy()
+                pdf_dl["Estimate"] = pd.to_numeric(pdf_dl["Estimate"], errors="coerce")
+                pdf_dl = pdf_dl.dropna(subset=["Estimate"])
+                if not pdf_dl.empty:
+                    fig_fd = px.box(pdf_dl, x="Facet", y="Estimate", color="Facet",
+                                    color_discrete_sequence=px.colors.qualitative.Set2)
+                    fig_fd.update_layout(yaxis_title="Measure (logits)", title="Facet Distribution",
+                                         showlegend=False, height=400, template="plotly_white")
+                    _db = fig_to_png_bytes(fig_fd)
+                    if _db is not None:
+                        figure_bytes["facet_distribution"] = _db
+                    else:
+                        _kaleido_ok = False
+                    figure_html["facet_distribution"] = fig_fd.to_html(include_plotlyjs="cdn")
+            except Exception as e:
+                _fig_errors.append(f"Facet Distribution: {e}")
+
+        # Strict marginal diagnostics
+        if generate_figures:
+            try:
+                marginal_fit_dl = diagnostics.get("marginal_fit", {})
+                if isinstance(marginal_fit_dl, dict) and marginal_fit_dl.get("available"):
+                    marginal_summary_dl = marginal_fit_dl.get("summary", pd.DataFrame())
+                    marginal_counts_dl = marginal_fit_dl.get("counts", pd.DataFrame())
+                    fig_ms = _make_marginal_summary_figure(
+                        marginal_summary_dl,
+                        "Largest marginal distribution deviations",
+                    )
+                    if fig_ms is not None:
+                        _kaleido_ok = _add_figure_export(
+                            fig_ms,
+                            "strict_marginal_summary",
+                            figure_bytes,
+                            figure_html,
+                        ) and _kaleido_ok
+                    top_frame_dl = _prepare_marginal_plot_frame(marginal_summary_dl, top_n=25)
+                    top_labels_dl = top_frame_dl["_Label"].tolist() if "_Label" in top_frame_dl.columns else None
+                    fig_mh = _make_marginal_heatmap_figure(
+                        marginal_counts_dl,
+                        "Category-level marginal residual heatmap",
+                        top_labels=top_labels_dl,
+                    )
+                    if fig_mh is not None:
+                        _kaleido_ok = _add_figure_export(
+                            fig_mh,
+                            "strict_marginal_heatmap",
+                            figure_bytes,
+                            figure_html,
+                        ) and _kaleido_ok
+
+                    pairwise_dl = marginal_fit_dl.get("pairwise", {})
+                    if isinstance(pairwise_dl, dict) and pairwise_dl.get("available"):
+                        pair_summary_dl = pairwise_dl.get("summary", pd.DataFrame())
+                        pair_counts_dl = pairwise_dl.get("counts", pd.DataFrame())
+                        fig_ps = _make_marginal_summary_figure(
+                            pair_summary_dl,
+                            "Largest pairwise marginal deviations",
+                            top_n=30,
+                        )
+                        if fig_ps is not None:
+                            _kaleido_ok = _add_figure_export(
+                                fig_ps,
+                                "strict_marginal_pairwise_summary",
+                                figure_bytes,
+                                figure_html,
+                            ) and _kaleido_ok
+                        pair_top_dl = _prepare_marginal_plot_frame(pair_summary_dl, top_n=30)
+                        pair_labels_dl = pair_top_dl["_Label"].tolist() if "_Label" in pair_top_dl.columns else None
+                        fig_ph = _make_marginal_heatmap_figure(
+                            pair_counts_dl,
+                            "Pairwise category-level marginal residual heatmap",
+                            top_labels=pair_labels_dl,
+                            top_n=30,
+                        )
+                        if fig_ph is not None:
+                            _kaleido_ok = _add_figure_export(
+                                fig_ph,
+                                "strict_marginal_pairwise_heatmap",
+                                figure_bytes,
+                                figure_html,
+                            ) and _kaleido_ok
+            except Exception as e:
+                _fig_errors.append(f"Strict marginal diagnostics: {e}")
+
+        if generate_figures:
+            n_available = len(figure_bytes) if figure_bytes else len(figure_html)
+            fmt_label = "PNG" if figure_bytes else "HTML"
+            st.markdown(f"**{n_available} figure(s)** available ({fmt_label} format).")
+
+        if not _kaleido_ok and figure_html:
+            st.info(
+                "PNG export is unavailable (kaleido not configured on this server). "
+                "Interactive HTML figures are offered instead. "
+                "To enable PNG, install kaleido: `pip install kaleido`"
+            )
+
+        if _fig_errors:
+            with st.expander(f"⚠ {len(_fig_errors)} figure(s) could not be generated"):
+                for err in _fig_errors:
+                    st.caption(err)
+
+        if figure_bytes:
+            # ZIP of all figures (PNG)
+            figure_bytes_key = bytes_mapping_fingerprint(figure_bytes)
+            st.download_button(
+                "Download ALL figures (ZIP, PNG)",
+                data=cached_named_asset_zip(figure_bytes, figure_bytes_key, "png"),
+                file_name="MFRM_Figures.zip",
+                mime="application/zip",
+                key="dl_figs_zip",
+            )
+
+            # Individual PNG downloads
+            with st.expander(f"Individual figure downloads ({len(figure_bytes)} files)"):
+                fig_cols = st.columns(min(3, len(figure_bytes)))
+                for idx, (name, png_data) in enumerate(figure_bytes.items()):
+                    with fig_cols[idx % len(fig_cols)]:
+                        st.download_button(
+                            f"{name}.png",
+                            data=png_data,
+                            file_name=f"{name}.png",
+                            mime="image/png",
+                            key=f"dl_fig_dl_{name}",
+                        )
+        elif figure_html:
+            # Fallback: ZIP of HTML figures
+            figure_html_key = bytes_mapping_fingerprint(figure_html)
+            st.download_button(
+                "Download ALL figures (ZIP, HTML)",
+                data=cached_named_asset_zip(figure_html, figure_html_key, "html"),
+                file_name="MFRM_Figures_HTML.zip",
+                mime="application/zip",
+                key="dl_figs_zip",
+            )
+
+            # Individual HTML downloads
+            with st.expander(f"Individual figure downloads ({len(figure_html)} files)"):
+                fig_cols = st.columns(min(3, len(figure_html)))
+                for idx, (name, html_data) in enumerate(figure_html.items()):
+                    with fig_cols[idx % len(fig_cols)]:
+                        st.download_button(
+                            f"{name}.html",
+                            data=html_data.encode("utf-8"),
+                            file_name=f"{name}.html",
+                            mime="text/html",
+                            key=f"dl_fig_dl_{name}",
+                        )
+        elif generate_figures:
+            st.info("No figures available. Run estimation first.")
+
+    # ================================================================
+    # Sub-tab 2: Scripts & Config
+    # ================================================================
+    with dl_tabs[2]:
+        st.caption(
+            "Reproducible analysis scripts (Python & R), configuration JSON, "
+            "anchor files for scale linking, and Stan code for Bayesian estimation."
+        )
+
+        # --- Analysis configuration JSON ---
+        st.subheader("Analysis configuration")
+        config = result.get("config", {})
+        prep = result.get("prep", {})
+        score_map_records = []
+        if isinstance(prep.get("score_map"), pd.DataFrame):
+            score_map_records = prep["score_map"].to_dict(orient="records")
+        opt_export = result.get("opt")
+        grad_export = pd.to_numeric(
+            pd.Series([getattr(opt_export, "gradient_norm", np.nan)]),
+            errors="coerce",
+        ).iloc[0]
+        elapsed_export = pd.to_numeric(
+            pd.Series([getattr(opt_export, "elapsed_seconds", np.nan)]),
+            errors="coerce",
+        ).iloc[0]
+        script_support = build_script_support_status(result)
+        optimizer_label = config.get("optimizer") or config.get("mml_engine") or "unknown optimizer"
+        software_label = f"MFRM FACETS-mode (standalone Python; {optimizer_label}; no mfrmr/R engine)"
+        config_export = {
+            "app_version": config.get("app_version", APP_VERSION),
+            "release_label": config.get("release_label", APP_RELEASE_LABEL),
+            "runtime_scope": config.get("runtime_scope", "standalone Python; no external MFRM engine called"),
+            "validation_stance": "Functional parity target; exact cross-package numerical equality is not claimed without a specific parity report.",
+            "run_fingerprint": config.get("run_fingerprint"),
+            "analysis_config_fingerprint": config.get("analysis_config_fingerprint"),
+            "input_data_fingerprint": config.get("input_data_fingerprint"),
+            "anchor_data_fingerprint": config.get("anchor_data_fingerprint"),
+            "group_anchor_data_fingerprint": config.get("group_anchor_data_fingerprint"),
+            "population_data_fingerprint": config.get("population_data_fingerprint"),
+            "fingerprint_scope": "short SHA-256 digests for reproducibility checks; not a privacy guarantee or encrypted data store",
+            "model": config.get("model", "RSM"),
+            "method": config.get("method", "JMLE"),
+            "n_obs": prep.get("n_obs"),
+            "n_person": prep.get("n_person"),
+            "n_cat": config.get("n_cat"),
+            "rating_min": prep.get("rating_min"),
+            "rating_max": prep.get("rating_max"),
+            "keep_original": prep.get("keep_original"),
+            "score_range_explicit": prep.get("score_range_explicit"),
+            "unused_score_categories": prep.get("unused_score_categories", []),
+            "score_map": score_map_records,
+            "facet_names": config.get("facet_names", []),
+            "workflow_mode": config.get("workflow_mode"),
+            "advanced_controls": config.get("advanced_controls"),
+            "step_facet": config.get("step_facet"),
+            "slope_facet": config.get("slope_facet"),
+            "gpcm_spec": config.get("gpcm_spec"),
+            "noncenter_facet": config.get("noncenter_facet"),
+            "dummy_facets": config.get("dummy_facets", []),
+            "positive_facets": config.get("positive_facets", []),
+            "optimizer": config.get("optimizer"),
+            "mml_engine": config.get("mml_engine"),
+            "mml_engine_requested": config.get("mml_engine_requested"),
+            "mml_engine_auto_selected": config.get("mml_engine_auto_selected"),
+            "mml_engine_auto_attempted": config.get("mml_engine_auto_attempted"),
+            "mml_engine_auto_fallback_reason": config.get("mml_engine_auto_fallback_reason"),
+            "ui_mml_engine": config.get("ui_mml_engine"),
+            "quad_points": config.get("quad_points"),
+            "population_prior_sd": config.get("population_prior_sd"),
+            "population_formula": config.get("population_formula"),
+            "population_terms": (
+                config.get("population_model", {}).get("terms")
+                if isinstance(config.get("population_model"), dict) else None
+            ),
+            "population_columns": (
+                config.get("population_model", {}).get("columns")
+                if isinstance(config.get("population_model"), dict) else None
+            ),
+            "population_standardize_numeric": (
+                config.get("population_model", {}).get("standardize_numeric")
+                if isinstance(config.get("population_model"), dict) else None
+            ),
+            "population_categorical_terms": config.get("population_categorical_terms", []),
+            "population_numeric_terms": config.get("population_numeric_terms", []),
+            "population_term_types": (
+                config.get("population_model", {}).get("term_types")
+                if isinstance(config.get("population_model"), dict) else None
+            ),
+            "population_numeric_transforms": (
+                config.get("population_model", {}).get("numeric_transforms")
+                if isinstance(config.get("population_model"), dict) else None
+            ),
+            "population_enabled": (
+                config.get("population_model", {}).get("enabled")
+                if isinstance(config.get("population_model"), dict) else None
+            ),
+            "anchor_policy": config.get("anchor_policy"),
+            "anchor_audit_status": (
+                config.get("anchor_audit", {}).get("overall_status")
+                if isinstance(config.get("anchor_audit"), dict) else None
+            ),
+            "anchor_audit_settings": (
+                config.get("anchor_audit", {}).get("settings")
+                if isinstance(config.get("anchor_audit"), dict) else None
+            ),
+            "anchor_drift_scope": config.get("anchor_drift_scope"),
+            "anchor_drift_available": (
+                result.get("anchor_drift", {}).get("available")
+                if isinstance(result.get("anchor_drift"), dict) else None
+            ),
+            "equating_chain_scope": config.get("equating_chain_scope"),
+            "equating_chain_available": (
+                result.get("equating_chain", {}).get("available")
+                if isinstance(result.get("equating_chain"), dict) else None
+            ),
+            "maxit": config.get("maxit"),
+            "reltol": config.get("reltol"),
+            "analysis_depth": config.get("analysis_depth"),
+            "compute_residual_pca": config.get("compute_residual_pca", diagnostics.get("pca_enabled")),
+            "compute_strict_marginal": config.get("compute_strict_marginal", diagnostics.get("marginal_fit_enabled")),
+            "strict_marginal_pairwise": config.get("strict_marginal_pairwise"),
+            "strict_marginal_max_pair_cells": config.get("strict_marginal_max_pair_cells"),
+            "strict_marginal_available": (
+                diagnostics.get("marginal_fit", {}).get("available")
+                if isinstance(diagnostics.get("marginal_fit"), dict) else None
+            ),
+            "compute_plausible_values": config.get("compute_plausible_values"),
+            "n_plausible_values": config.get("n_plausible_values"),
+            "plausible_seed": config.get("plausible_seed"),
+            "posterior_scoring_available": (
+                result.get("posterior", {}).get("available")
+                if isinstance(result.get("posterior"), dict) else None
+            ),
+            "prediction_scope": "fitted_rows_conditional; supplied_new_rows_known_person_conditional_or_unknown_person_mml_population_marginal",
+            "simulation_scope": "optional_fixed_parameter_row_probability_simulation",
+            "fitted_simulation_settings": {
+                "replicates": st.session_state.get("prediction_sim_replicates"),
+                "seed": st.session_state.get("prediction_sim_seed"),
+                "include_row_draws": st.session_state.get("prediction_sim_row_draws"),
+            },
+            "refit_simulation_scope": "optional_small_replicate_random_missingness_refit_stress_test",
+            "refit_simulation_settings": {
+                "replicates": st.session_state.get("refit_sim_replicates"),
+                "missing_rate": st.session_state.get("refit_sim_missing_rate"),
+                "maxit": st.session_state.get("refit_sim_maxit"),
+                "seed": st.session_state.get("refit_sim_seed"),
+                "method": st.session_state.get("refit_sim_method"),
+            },
+            "design_evaluation_scope": "observed_design_balance_reliability_forecast",
+            "script_support_scope": script_support.get("scope"),
+            "portable_self_contained_jmle_available": script_support.get("portable_available"),
+            "portable_self_contained_jmle_blockers": script_support.get("portable_blockers"),
+            "bias_mode": config.get("bias_mode"),
+            "selected_bias_pair": config.get("selected_bias_pair"),
+            "render_interactive_plots": config.get("render_interactive_plots"),
+            "generate_figure_exports": config.get("generate_figure_exports"),
+            "converged": bool(getattr(result.get("opt"), "success", False)),
+            "convergence_message": str(getattr(result.get("opt"), "message", "")),
+            "gradient_norm": float(grad_export) if np.isfinite(grad_export) else None,
+            "elapsed_seconds": float(elapsed_export) if np.isfinite(elapsed_export) else None,
+            "software": software_label,
+        }
+        config_export["config_export_fingerprint"] = stable_json_fingerprint(config_export)
+        config_json = json.dumps(config_export, indent=2, ensure_ascii=False, default=str)
+        with st.expander("View config JSON"):
+            st.code(config_json, language="json")
+        st.download_button(
+            "Download config (JSON)",
+            data=config_json.encode("utf-8"),
+            file_name="mfrm_config.json",
+            mime="application/json",
+            key="dl_config_json",
+        )
+
+        method_appendix = generate_method_appendix_text(result, diagnostics, all_bias_results)
+        st.subheader("Compact method appendix")
+        with st.expander("View method appendix"):
+            st.code(method_appendix, language="markdown")
+        st.download_button(
+            "Download method appendix (Markdown)",
+            data=method_appendix.encode("utf-8"),
+            file_name="mfrm_method_appendix.md",
+            mime="text/markdown",
+            key="dl_method_appendix_md",
+        )
+
+        # --- Anchor file ---
+        if anchor_parts:
+            st.subheader("Anchor file")
+            st.caption("Estimated measures as anchor values for linking future analyses.")
+            anchor_df_out = pd.DataFrame(anchor_parts)
+            st.download_button(
+                "Download anchors (CSV)",
+                data=to_csv_bytes(anchor_df_out),
+                file_name="mfrm_anchors.csv",
+                mime="text/csv",
+                key="dl_anchors_csv",
+            )
+
+        # --- Reproducible analysis scripts ---
+        st.subheader("Reproducible analysis scripts")
+        st.caption(
+            "Use the Python app-engine runner to reproduce the current app path, "
+            "including MML Auto/Direct/Hybrid/EM, PCM/GPCM, latent regression, posterior scoring, plausible "
+            "values, strict marginal diagnostics, and anchor audit filtering. "
+            "A portable self-contained JMLE script is also available for fixed-effect checks."
+        )
+        script_support = build_script_support_status(result)
+        support_table = script_support.get("table", pd.DataFrame())
+        if isinstance(support_table, pd.DataFrame) and not support_table.empty:
+            st.dataframe(support_table, width="stretch")
+        if not script_support.get("portable_available", False):
+            blockers = ", ".join(script_support.get("portable_blockers", []))
+            st.warning(
+                "Portable self-contained JMLE/R scripts are unsupported for this run "
+                f"({blockers}). Download the Python app-engine runner for reproducibility."
+            )
+        elif result.get("config", {}).get("method") == "MML":
+            st.info(
+                "The portable self-contained scripts run a fixed-effect JMLE check. "
+                "Use the Python app-engine runner to reproduce MML posterior, plausible-value, and marginal diagnostics exactly."
+            )
+
+        # Determine bias pairs that were computed
+        _bias_pairs: list[tuple[str, str]] = []
+        if all_bias_results:
+            for pair_key in all_bias_results:
+                parts = pair_key.split(" x ", 1)
+                if len(parts) == 2:
+                    _bias_pairs.append((parts[0], parts[1]))
+
+        col_py, col_r = st.columns(2)
+
+        with col_py:
+            st.markdown("**Python current-engine runner** (`pip install -r requirements.txt`)")
+            runner_script = _generate_app_engine_runner_script(
+                result,
+                diagnostics,
+                bias_pairs=_bias_pairs,
+            )
+            with st.expander("View Python app-engine runner"):
+                st.code(runner_script, language="python")
+            st.download_button(
+                "Download Python app-engine runner (.py)",
+                data=runner_script.encode("utf-8"),
+                file_name="mfrm_app_engine_runner.py",
+                mime="text/x-python",
+                key="dl_app_engine_runner_py",
+            )
+            req_txt = _generate_requirements_txt()
+            st.download_button(
+                "Download requirements.txt",
+                data=req_txt.encode("utf-8"),
+                file_name="requirements.txt",
+                mime="text/plain",
+                key="dl_requirements_txt",
+            )
+            py_script = _generate_repro_python_script(result, bias_pairs=_bias_pairs)
+            with st.expander("View portable self-contained JMLE script"):
+                st.code(py_script, language="python")
+            st.download_button(
+                (
+                    "Download unsupported JMLE stub (.py)"
+                    if not script_support.get("portable_available", False)
+                    else "Download self-contained JMLE script (.py)"
+                ),
+                data=py_script.encode("utf-8"),
+                file_name="mfrm_jmle_self_contained.py",
+                mime="text/x-python",
+                key="dl_repro_py_jmle",
+            )
+
+        with col_r:
+            st.markdown("**R portable JMLE** (base R only — no packages needed)")
+            r_script = _generate_repro_r_script(result, bias_pairs=_bias_pairs)
+            with st.expander("View R script"):
+                st.code(r_script, language="r")
+            st.download_button(
+                (
+                    "Download unsupported R stub (.R)"
+                    if not script_support.get("portable_available", False)
+                    else "Download R script (.R)"
+                ),
+                data=r_script.encode("utf-8"),
+                file_name="mfrm_analysis.R",
+                mime="text/plain",
+                key="dl_repro_r",
+            )
+
+        # --- Stan code reference ---
+        st.subheader("Stan code for Bayesian MFRM")
+        st.info(
+            "Stan code is auto-generated in the **Report → Stan Code** tab based on "
+            "your data structure. Navigate there to preview and download the Stan model, "
+            "Python runner (CmdStanPy), and R runner (CmdStanR) scripts."
+        )
+
+        # --- OSF-ready package ---
+        st.subheader("OSF-ready package")
+        st.caption("Complete package with all tables + config for open science repositories.")
+        try:
+            st.download_button(
+                "Download OSF package (.zip)",
+                data=cached_osf_zip(all_frames, all_frames_key),
+                file_name="MFRM_OSF_Package.zip",
+                mime="application/zip",
+                key="dl_osf_zip",
+            )
+        except Exception as zip_exc:
+            st.caption(f"ZIP packaging failed: {zip_exc}")
+
+
+# ---------------------------------------------------------------------------
+# App entry point
+# ---------------------------------------------------------------------------
+
+def _make_self_test_rating_data(scores) -> pd.DataFrame:
+    rows = []
+    for i, score in enumerate(scores):
+        rows.append({
+            "Person": f"P{i % 8 + 1}",
+            "Rater": f"R{i % 2 + 1}",
+            "Task": f"T{i % 2 + 1}",
+            "Score": score,
+        })
+    return pd.DataFrame(rows)
+
+
+def _make_self_test_gradient_data() -> pd.DataFrame:
+    rows = []
+    for pi, person in enumerate(["P1", "P2", "P3"]):
+        for ri, rater in enumerate(["R1", "R2"]):
+            for ti, task in enumerate(["T1", "T2"]):
+                rows.append({
+                    "Person": person,
+                    "Rater": rater,
+                    "Task": task,
+                    "Score": (pi + ri + ti) % 3,
+                })
+    return pd.DataFrame(rows)
+
+
+def _self_test_assert(condition, message: str) -> None:
+    if not bool(condition):
+        raise AssertionError(message)
+
+
+def _central_difference_gradient_check(fun_grad, par, eps: float = 1e-6) -> tuple[float, float]:
+    par = np.asarray(par, dtype=float)
+    value, grad = fun_grad(par)
+    grad = np.asarray(grad, dtype=float)
+    if par.size == 0:
+        return 0.0, 0.0
+    num_grad = np.zeros_like(par, dtype=float)
+    for i in range(par.size):
+        step = eps * max(1.0, abs(float(par[i])))
+        plus = par.copy()
+        minus = par.copy()
+        plus[i] += step
+        minus[i] -= step
+        f_plus = float(fun_grad(plus)[0])
+        f_minus = float(fun_grad(minus)[0])
+        num_grad[i] = (f_plus - f_minus) / (2.0 * step)
+    denom = np.maximum(1.0, np.maximum(np.abs(num_grad), np.abs(grad)))
+    rel_err = float(np.max(np.abs(num_grad - grad) / denom))
+    abs_err = float(np.max(np.abs(num_grad - grad)))
+    _self_test_assert(np.isfinite(value), "gradient-check objective is not finite")
+    _self_test_assert(np.all(np.isfinite(grad)), "analytical gradient contains non-finite values")
+    _self_test_assert(np.all(np.isfinite(num_grad)), "finite-difference gradient contains non-finite values")
+    return rel_err, abs_err
+
+
+def _self_test_zero_count_category_support() -> None:
+    data = _make_self_test_rating_data([1, 2, 4, 5] * 4)
+    res = mfrm_estimate(
+        data,
+        person_col="Person",
+        facet_cols=["Rater", "Task"],
+        score_col="Score",
+        rating_min=1,
+        rating_max=5,
+        keep_original=True,
+        model="RSM",
+        method="JMLE",
+        maxit=40,
+        reltol=1e-4,
+    )
+    score_map = res["prep"]["score_map"]
+    _self_test_assert(res["config"]["n_cat"] == 5, "zero-count intermediate category was not retained")
+    _self_test_assert(res["prep"]["unused_score_categories"] == [3], "unused intermediate category was not reported")
+    _self_test_assert(score_map["OriginalScore"].tolist() == [1, 2, 3, 4, 5], "original score support is wrong")
+    _self_test_assert(score_map["InternalScore"].tolist() == [1, 2, 3, 4, 5], "internal score support is wrong")
+
+
+def _self_test_nonconsecutive_recode() -> None:
+    data = _make_self_test_rating_data([1, 2, 4, 5] * 4)
+    res = mfrm_estimate(
+        data,
+        person_col="Person",
+        facet_cols=["Rater", "Task"],
+        score_col="Score",
+        keep_original=False,
+        model="RSM",
+        method="JMLE",
+        maxit=40,
+        reltol=1e-4,
+    )
+    score_map = res["prep"]["score_map"]
+    _self_test_assert(res["config"]["n_cat"] == 4, "non-consecutive scores were not compactly recoded")
+    _self_test_assert(res["prep"]["unused_score_categories"] == [], "recoded support should not report unused categories")
+    _self_test_assert(score_map["OriginalScore"].tolist() == [1, 2, 4, 5], "recoded original score map is wrong")
+    _self_test_assert(score_map["InternalScore"].tolist() == [1, 2, 3, 4], "recoded internal score map is wrong")
+
+
+def _self_test_boundary_gap_support() -> None:
+    data = _make_self_test_rating_data([2, 3, 4, 5] * 4)
+    res = mfrm_estimate(
+        data,
+        person_col="Person",
+        facet_cols=["Rater", "Task"],
+        score_col="Score",
+        rating_min=1,
+        rating_max=5,
+        keep_original=False,
+        model="RSM",
+        method="JMLE",
+        maxit=40,
+        reltol=1e-4,
+    )
+    score_map = res["prep"]["score_map"]
+    _self_test_assert(res["config"]["n_cat"] == 5, "explicit boundary gap was not retained")
+    _self_test_assert(res["prep"]["unused_score_categories"] == [1], "unused boundary category was not reported")
+    _self_test_assert(score_map["OriginalScore"].tolist() == [1, 2, 3, 4, 5], "boundary score map is wrong")
+
+
+def _self_test_fractional_score_rejection() -> None:
+    data = _make_self_test_rating_data([1, 2, 3, 4, 5] * 4)
+    data["Score"] = data["Score"].astype(float)
+    data.loc[0, "Score"] = 2.5
+    try:
+        mfrm_estimate(
+            data,
+            person_col="Person",
+            facet_cols=["Rater", "Task"],
+            score_col="Score",
+            model="RSM",
+            method="JMLE",
+            maxit=5,
+            reltol=1e-3,
+        )
+    except ValueError as exc:
+        _self_test_assert("Fractional" in str(exc), "fractional-score error message changed unexpectedly")
+        return
+    raise AssertionError("fractional score was accepted")
+
+
+def _self_test_jmle_rsm_pcm_smoke() -> None:
+    sample = sample_mfrm_data(seed=20260411)
+    keep_persons = sample["Person"].drop_duplicates().head(6)
+    sample = sample[sample["Person"].isin(keep_persons)].copy()
+    for model in ("RSM", "PCM", "GPCM"):
+        res = mfrm_estimate(
+            sample,
+            person_col="Person",
+            facet_cols=["Rater", "Task", "Criterion"],
+            score_col="Score",
+            model=model,
+            method="JMLE",
+            maxit=30,
+            reltol=1e-3,
+        )
+        loglik = float(res["summary"]["LogLik"].iloc[0])
+        _self_test_assert(np.isfinite(loglik), f"{model} JMLE log-likelihood is not finite")
+        _self_test_assert(not res["convergence"].empty, f"{model} JMLE convergence table is empty")
+        if model == "GPCM":
+            slopes = res.get("slopes", pd.DataFrame())
+            slope_vals = pd.to_numeric(slopes.get("Estimate", pd.Series(dtype=float)), errors="coerce").dropna()
+            _self_test_assert(not slopes.empty, "GPCM slope table is empty")
+            _self_test_assert(bool((slope_vals > 0).all()), "GPCM slopes must be positive")
+            _self_test_assert(abs(float(np.exp(np.mean(np.log(slope_vals)))) - 1.0) < 1e-6, "GPCM geometric mean slope is not fixed to 1")
+
+
+def _self_test_gradient_checks() -> None:
+    data = _make_self_test_gradient_data()
+    rng = np.random.default_rng(20260411)
+    tolerance = 1e-5
+    for method in ("JMLE", "MML"):
+        for model in ("RSM", "PCM", "GPCM"):
+            res = mfrm_estimate(
+                data,
+                person_col="Person",
+                facet_cols=["Rater", "Task"],
+                score_col="Score",
+                model=model,
+                method=method,
+                mml_engine="Direct",
+                quad_points=5,
+                maxit=8,
+                reltol=1e-4,
+            )
+            par = np.asarray(res["opt"].x, dtype=float)
+            if par.size:
+                par = par + rng.normal(0.0, 0.05, par.size)
+            config = res["config"]
+            sizes = build_param_sizes(config)
+            idx = build_indices(res["prep"], step_facet=config["step_facet"], slope_facet=config.get("slope_facet"))
+            if method == "JMLE":
+                fun_grad = lambda x: mfrm_loglik_jmle_value_grad(x, idx, config, sizes)
+            else:
+                quad = make_mml_quadrature(config, 5)
+                fun_grad = lambda x: mfrm_loglik_mml_value_grad(x, idx, config, sizes, quad)
+            rel_err, abs_err = _central_difference_gradient_check(fun_grad, par)
+            _self_test_assert(
+                rel_err < tolerance,
+                f"{method} {model} gradient check failed: rel_err={rel_err:.3e}, abs_err={abs_err:.3e}",
+            )
+            if method == "MML":
+                params = expand_params(par, sizes, config)
+                post_weights, _ = _e_step_posteriors(idx, config, params, quad)
+                m_step_fun_grad = (
+                    lambda x: _m_step_expected_ll_value_grad(
+                        x, idx, config, sizes, quad, post_weights
+                    )
+                )
+                rel_err, abs_err = _central_difference_gradient_check(m_step_fun_grad, par)
+                _self_test_assert(
+                    rel_err < tolerance,
+                    f"{method} {model} M-step gradient check failed: rel_err={rel_err:.3e}, abs_err={abs_err:.3e}",
+                )
+
+
+def _self_test_analysis_depth_presets() -> None:
+    fast = resolve_analysis_depth_settings("Fast preview", "MML")
+    _self_test_assert(not fast["compute_residual_pca"], "Fast preview should skip residual PCA")
+    _self_test_assert(not fast["compute_strict_marginal"], "Fast preview should skip strict marginal diagnostics")
+    _self_test_assert(fast["bias_mode"] == "Skip", "Fast preview should skip bias scans")
+    _self_test_assert(not fast["render_interactive_plots"], "Fast preview should skip interactive plots")
+    _self_test_assert(not fast["generate_figure_exports"], "Fast preview should skip figure exports")
+
+    standard = resolve_analysis_depth_settings("Standard (recommended)", "MML")
+    _self_test_assert(standard["compute_residual_pca"], "Standard should compute residual PCA")
+    _self_test_assert(not standard["compute_strict_marginal"], "Standard should skip strict marginal diagnostics")
+    _self_test_assert(not standard["compute_plausible_values"], "Standard should skip plausible values")
+    _self_test_assert(standard["bias_mode"] == "Selected pair", "Standard should estimate one selected bias pair")
+    _self_test_assert(standard["render_interactive_plots"], "Standard should render interactive plots")
+    _self_test_assert(not standard["generate_figure_exports"], "Standard should skip figure export bundle")
+
+    full_mml = resolve_analysis_depth_settings("Full publication", "MML")
+    _self_test_assert(full_mml["compute_residual_pca"], "Full publication should compute residual PCA")
+    _self_test_assert(full_mml["compute_strict_marginal"], "Full MML should compute strict marginal diagnostics")
+    _self_test_assert(full_mml["strict_marginal_pairwise"], "Full MML should compute pairwise strict marginal diagnostics")
+    _self_test_assert(full_mml["strict_marginal_max_pair_cells"] == 800, "Full MML pairwise cell limit changed")
+    _self_test_assert(full_mml["compute_plausible_values"], "Full MML should export plausible values")
+    _self_test_assert(full_mml["n_plausible_values"] == 10, "Full MML plausible-value count changed")
+    _self_test_assert(full_mml["bias_mode"] == "All facet pairs", "Full publication should scan all bias pairs")
+    _self_test_assert(full_mml["generate_figure_exports"], "Full publication should prepare figure exports")
+
+    full_jmle = resolve_analysis_depth_settings("Full publication", "JMLE")
+    _self_test_assert(not full_jmle["compute_strict_marginal"], "JMLE should not enable strict marginal diagnostics")
+    _self_test_assert(not full_jmle["strict_marginal_pairwise"], "JMLE should not enable pairwise strict marginal diagnostics")
+    _self_test_assert(not full_jmle["compute_plausible_values"], "JMLE should not enable plausible values")
+    _self_test_assert(full_jmle["n_plausible_values"] == 0, "JMLE plausible-value count should be zero")
+    _self_test_assert(full_jmle["bias_mode"] == "All facet pairs", "Full JMLE should still scan all bias pairs")
+
+    custom_forced_jmle = resolve_analysis_depth_settings(
+        "Custom",
+        "JMLE",
+        custom={
+            "compute_strict_marginal": True,
+            "strict_marginal_pairwise": True,
+            "compute_plausible_values": True,
+            "n_plausible_values": 9,
+        },
+    )
+    _self_test_assert(not custom_forced_jmle["compute_strict_marginal"], "Custom JMLE should force strict marginal off")
+    _self_test_assert(not custom_forced_jmle["strict_marginal_pairwise"], "Custom JMLE should force pairwise strict marginal off")
+    _self_test_assert(not custom_forced_jmle["compute_plausible_values"], "Custom JMLE should force plausible values off")
+    _self_test_assert(custom_forced_jmle["n_plausible_values"] == 0, "Custom JMLE should force plausible-value count to zero")
+
+
+def _self_test_mml_auto_posterior_and_marginal() -> None:
+    sample = sample_mfrm_data(seed=20260411)
+    keep_persons = sample["Person"].drop_duplicates().head(6)
+    sample = sample[sample["Person"].isin(keep_persons)].copy()
+    for model in ("RSM", "PCM", "GPCM"):
+        res = mfrm_estimate(
+            sample,
+            person_col="Person",
+            facet_cols=["Rater", "Task", "Criterion"],
+            score_col="Score",
+            model=model,
+            method="MML",
+            mml_engine="Auto (recommended)",
+            quad_points=5,
+            maxit=8,
+            reltol=1e-3,
+            compute_plausible_values=True,
+            n_plausible_values=2,
+            plausible_seed=20260411,
+        )
+        loglik = float(res["summary"]["LogLik"].iloc[0])
+        _self_test_assert(np.isfinite(loglik), f"{model} MML log-likelihood is not finite")
+        _self_test_assert(not res["convergence"].empty, f"{model} convergence table is empty")
+        _self_test_assert(res["posterior"]["available"], f"{model} posterior scores were not computed")
+        _self_test_assert(res["posterior"]["scores"].shape[0] == 6, f"{model} posterior score row count is wrong")
+        _self_test_assert(res["posterior"]["plausible_values"].shape == (6, 3), f"{model} plausible-value shape is wrong")
+
+    diagnostics = mfrm_diagnostics(
+        res,
+        compute_pca=False,
+        compute_marginal=True,
+        marginal_pairwise=True,
+        marginal_max_pair_cells=200,
+    )
+    marginal_fit = diagnostics.get("marginal_fit", {})
+    _self_test_assert(marginal_fit.get("available"), "strict marginal diagnostics are not available")
+    _self_test_assert(not marginal_fit.get("summary", pd.DataFrame()).empty, "strict marginal summary is empty")
+
+
+def _self_test_mml_engine_branches_and_negative_inputs() -> None:
+    sample = sample_mfrm_data(seed=20260411)
+    keep_persons = sample["Person"].drop_duplicates().head(6)
+    sample = sample[sample["Person"].isin(keep_persons)].copy()
+
+    for requested, expected in (("Direct", "direct"), ("Hybrid", "hybrid"), ("EM", "em")):
+        res = mfrm_estimate(
+            sample,
+            person_col="Person",
+            facet_cols=["Rater", "Task", "Criterion"],
+            score_col="Score",
+            model="RSM",
+            method="MML",
+            mml_engine=requested,
+            quad_points=5,
+            maxit=8,
+            reltol=1e-3,
+        )
+        _self_test_assert(
+            res["config"].get("mml_engine") == expected,
+            f"MML engine {requested} resolved to {res['config'].get('mml_engine')}, expected {expected}",
+        )
+        _self_test_assert(np.isfinite(float(res["summary"]["LogLik"].iloc[0])), f"{requested} MML logLik is not finite")
+
+    original_hybrid = globals()["mfrm_hybrid_mml"]
+
+    def forced_hybrid_failure(start, idx, config, sizes, quad, maxit=400, reltol=1e-6):
+        class ForcedOpt:
+            pass
+
+        opt = ForcedOpt()
+        opt.x = np.array(start, dtype=float, copy=True)
+        opt.fun = np.inf
+        opt.success = False
+        opt.message = "forced hybrid failure for self-test"
+        opt.jac = np.zeros_like(opt.x)
+        opt.nit = 0
+        opt.nfev = 0
+        opt.ll_trace = []
+        opt.mml_engine = "hybrid"
+        return opt
+
+    globals()["mfrm_hybrid_mml"] = forced_hybrid_failure
+    try:
+        auto_res = mfrm_estimate(
+            sample,
+            person_col="Person",
+            facet_cols=["Rater", "Task", "Criterion"],
+            score_col="Score",
+            model="RSM",
+            method="MML",
+            mml_engine="Auto (recommended)",
+            quad_points=5,
+            maxit=6,
+            reltol=1e-3,
+        )
+    finally:
+        globals()["mfrm_hybrid_mml"] = original_hybrid
+    _self_test_assert(auto_res["config"].get("mml_engine") == "em", "Auto MML fallback did not select EM")
+    _self_test_assert(
+        auto_res["config"].get("mml_engine_auto_attempted") == ["hybrid", "em"],
+        "Auto MML fallback did not record both attempted engines",
+    )
+    _self_test_assert(
+        "forced hybrid failure" in str(auto_res["config"].get("mml_engine_auto_fallback_reason", "")),
+        "Auto MML fallback reason was not recorded",
+    )
+
+    persons = sample["Person"].drop_duplicates().astype(str).tolist()
+    person_data = pd.DataFrame({
+        "Person": persons,
+        "Grade": [1 + (i // 2) for i in range(len(persons))],
+        "Group": ["A" if i % 2 == 0 else "B" for i in range(len(persons))],
+    })
+    duplicate_person_data = pd.concat([person_data, person_data.iloc[[0]]], ignore_index=True)
+    try:
+        mfrm_estimate(
+            sample,
+            person_col="Person",
+            facet_cols=["Rater", "Task", "Criterion"],
+            score_col="Score",
+            model="RSM",
+            method="MML",
+            mml_engine="Direct",
+            quad_points=5,
+            maxit=4,
+            reltol=1e-3,
+            person_data=duplicate_person_data,
+            person_id_col="Person",
+            population_formula="~ Grade",
+        )
+    except ValueError as exc:
+        _self_test_assert("duplicate person IDs" in str(exc), "duplicate person_data error message changed")
+    else:
+        raise AssertionError("duplicate person_data was accepted")
+
+    bad_numeric = person_data.copy()
+    bad_numeric["Grade"] = bad_numeric["Grade"].astype(object)
+    bad_numeric.loc[0, "Grade"] = "not_numeric"
+    try:
+        mfrm_estimate(
+            sample,
+            person_col="Person",
+            facet_cols=["Rater", "Task", "Criterion"],
+            score_col="Score",
+            model="RSM",
+            method="MML",
+            mml_engine="Direct",
+            quad_points=5,
+            maxit=4,
+            reltol=1e-3,
+            person_data=bad_numeric,
+            person_id_col="Person",
+            population_formula="~ Grade",
+            population_numeric_terms=["Grade"],
+        )
+    except ValueError as exc:
+        _self_test_assert("forced numeric" in str(exc), "forced numeric covariate error message changed")
+    else:
+        raise AssertionError("forced numeric covariate accepted non-numeric values")
+
+    pop_res = mfrm_estimate(
+        sample,
+        person_col="Person",
+        facet_cols=["Rater", "Task", "Criterion"],
+        score_col="Score",
+        model="RSM",
+        method="MML",
+        mml_engine="Direct",
+        quad_points=5,
+        maxit=6,
+        reltol=1e-3,
+        person_data=person_data,
+        person_id_col="Person",
+        population_formula="~ Group",
+    )
+    scenario = sample.head(1)[["Person", "Rater", "Task", "Criterion", "Score"]].copy()
+    scenario.loc[:, "Person"] = "NEW_UNKNOWN_GROUP"
+    scenario.loc[:, "Group"] = "C"
+    try:
+        predict_mfrm_design(pop_res, scenario, score_col="Score")
+    except ValueError as exc:
+        _self_test_assert("not seen in the fitted population data" in str(exc), "unknown population level error changed")
+    else:
+        raise AssertionError("unknown population covariate level was accepted")
+
+
+def _self_test_latent_regression_population_formula() -> None:
+    sample = sample_mfrm_data(seed=20260411)
+    keep_persons = sample["Person"].drop_duplicates().head(6)
+    sample = sample[sample["Person"].isin(keep_persons)].copy()
+    persons = sample["Person"].drop_duplicates().astype(str).tolist()
+    person_data = pd.DataFrame({
+        "Person": persons,
+        "Grade": [1, 1, 2, 2, 3, 3],
+        "Group": ["A", "B", "A", "B", "A", "B"],
+        "GradeCode": [1, 2, 2, 1, 1, 2],
+    })
+    res = mfrm_estimate(
+        sample,
+        person_col="Person",
+        facet_cols=["Rater", "Task", "Criterion"],
+        score_col="Score",
+        model="RSM",
+        method="MML",
+        mml_engine="Direct",
+        quad_points=5,
+        population_prior_sd=1.25,
+        maxit=8,
+        reltol=1e-3,
+        person_data=person_data,
+        person_id_col="Person",
+        population_formula="~ Grade + Group + GradeCode",
+        population_standardize_numeric=True,
+        population_categorical_terms=["GradeCode"],
+        compute_plausible_values=True,
+        n_plausible_values=2,
+        plausible_seed=20260411,
+    )
+    population = res.get("population", {})
+    coeff = population.get("coefficients", pd.DataFrame()) if isinstance(population, dict) else pd.DataFrame()
+    _self_test_assert(population.get("enabled"), "population model was not enabled")
+    _self_test_assert(
+        set(coeff["Term"].tolist()) == {"Intercept", "Grade", "Group_B", "GradeCode_2"},
+        "population coefficient terms are wrong",
+    )
+    transforms = population.get("numeric_transforms", pd.DataFrame()) if isinstance(population, dict) else pd.DataFrame()
+    _self_test_assert(not transforms.empty, "population numeric transform table is empty")
+    grade_transform = transforms.loc[transforms["Term"].astype(str) == "Grade"]
+    _self_test_assert(not grade_transform.empty, "Grade numeric transform is missing")
+    _self_test_assert(bool(grade_transform["Standardized"].iloc[0]), "Grade covariate was not marked standardized")
+    _self_test_assert(float(grade_transform["Scale"].iloc[0]) > 0, "Grade numeric transform scale is invalid")
+    _self_test_assert(
+        bool(res["config"]["population_model"].get("standardize_numeric", False)),
+        "population model config did not record numeric standardization",
+    )
+    _self_test_assert(
+        res["config"]["population_model"].get("term_types", {}).get("GradeCode") == "categorical",
+        "forced categorical population covariate was not recorded",
+    )
+    _self_test_assert(
+        "GradeCode" not in set(transforms.get("Term", pd.Series(dtype=str)).astype(str).tolist()),
+        "forced categorical covariate should not have a numeric transform",
+    )
+    _self_test_assert(
+        abs(float(res["config"].get("population_prior_sd", 0.0)) - 1.25) < 1e-12,
+        "population prior SD was not recorded",
+    )
+    posterior_scores = res.get("posterior", {}).get("scores", pd.DataFrame())
+    _self_test_assert("PopulationMean" in posterior_scores.columns, "posterior scores missing PopulationMean")
+    _self_test_assert(res["posterior"]["plausible_values"].shape == (6, 3), "latent-regression plausible-value shape is wrong")
+
+    config = res["config"]
+    sizes = build_param_sizes(config)
+    idx = build_indices(res["prep"], step_facet=config["step_facet"], slope_facet=config.get("slope_facet"))
+    par = np.asarray(res["opt"].x, dtype=float)
+    rng = np.random.default_rng(20260412)
+    if par.size:
+        par = par + rng.normal(0.0, 0.03, par.size)
+    quad = make_mml_quadrature(config, 5)
+    fun_grad = lambda x: mfrm_loglik_mml_value_grad(x, idx, config, sizes, quad)
+    rel_err, abs_err = _central_difference_gradient_check(fun_grad, par)
+    _self_test_assert(
+        rel_err < 1e-5,
+        f"latent regression MML gradient check failed: rel_err={rel_err:.3e}, abs_err={abs_err:.3e}",
+    )
+
+
+def _self_test_prediction_simulation_design() -> None:
+    sample = sample_mfrm_data(seed=20260411)
+    keep_persons = sample["Person"].drop_duplicates().head(6)
+    sample = sample[sample["Person"].isin(keep_persons)].copy()
+    res = mfrm_estimate(
+        sample,
+        person_col="Person",
+        facet_cols=["Rater", "Task", "Criterion"],
+        score_col="Score",
+        model="RSM",
+        method="JMLE",
+        maxit=30,
+        reltol=1e-3,
+    )
+    pred = compute_fitted_prediction_table(res)
+    _self_test_assert(not pred.empty, "fitted prediction table is empty")
+    _self_test_assert("PredictedCategory" in pred.columns, "prediction table missing PredictedCategory")
+    prob_cols = [f"P_{v}" for v in range(res["prep"]["rating_min"], res["prep"]["rating_max"] + 1)]
+    _self_test_assert(all(c in pred.columns for c in prob_cols), "prediction probability columns are incomplete")
+    prob_sum = pred[prob_cols].sum(axis=1).to_numpy(dtype=float)
+    _self_test_assert(float(np.max(np.abs(prob_sum - 1.0))) < 1e-8, "prediction probabilities do not sum to 1")
+    entropy = pd.to_numeric(pred["PredictionEntropy"], errors="coerce")
+    _self_test_assert(bool(np.isfinite(entropy).all()), "prediction entropy contains non-finite values")
+
+    heldout = sample.head(4)[["Person", "Rater", "Task", "Criterion", "Score"]].copy()
+    heldout_pred = predict_mfrm_design(res, heldout, score_col="Score")
+    _self_test_assert(heldout_pred.get("available"), "held-out prediction is unavailable")
+    heldout_tbl = heldout_pred["table"]
+    _self_test_assert("StdResidual" in heldout_tbl.columns, "held-out prediction missing residuals")
+    heldout_prob_sum = heldout_tbl[prob_cols].sum(axis=1).to_numpy(dtype=float)
+    _self_test_assert(float(np.max(np.abs(heldout_prob_sum - 1.0))) < 1e-8, "held-out probabilities do not sum to 1")
+
+    unknown_jmle = heldout.copy()
+    unknown_jmle.loc[:, "Person"] = "NEW_PERSON"
+    try:
+        predict_mfrm_design(res, unknown_jmle)
+    except ValueError as exc:
+        _self_test_assert("requires MML" in str(exc), "JMLE unknown-person error message changed")
+    else:
+        raise AssertionError("JMLE accepted unknown-person prediction")
+
+    mml_res = mfrm_estimate(
+        sample,
+        person_col="Person",
+        facet_cols=["Rater", "Task", "Criterion"],
+        score_col="Score",
+        model="RSM",
+        method="MML",
+        mml_engine="Direct",
+        quad_points=5,
+        population_prior_sd=1.25,
+        maxit=6,
+        reltol=1e-3,
+    )
+    unknown_mml = heldout.head(3).copy()
+    unknown_mml.loc[:, "Person"] = ["NEW_A", "NEW_B", "NEW_C"]
+    unknown_pred = predict_mfrm_design(mml_res, unknown_mml)
+    _self_test_assert(unknown_pred.get("available"), "MML unknown-person prediction is unavailable")
+    unknown_tbl = unknown_pred["table"]
+    _self_test_assert(set(unknown_tbl["PersonStatus"].tolist()) == {"Unknown"}, "unknown-person status is wrong")
+    _self_test_assert(
+        set(unknown_tbl["PredictionScope"].tolist()) == {"unknown_person_mml_population_marginal"},
+        "unknown-person prediction scope is wrong",
+    )
+
+    persons = sample["Person"].drop_duplicates().astype(str).tolist()
+    person_data = pd.DataFrame({
+        "Person": persons,
+        "Grade": [1 + (i // 2) for i in range(len(persons))],
+        "Group": ["A" if i % 2 == 0 else "B" for i in range(len(persons))],
+    })
+    mml_pop_res = mfrm_estimate(
+        sample,
+        person_col="Person",
+        facet_cols=["Rater", "Task", "Criterion"],
+        score_col="Score",
+        model="RSM",
+        method="MML",
+        mml_engine="Direct",
+        quad_points=5,
+        maxit=6,
+        reltol=1e-3,
+        person_data=person_data,
+        person_id_col="Person",
+        population_formula="~ Grade + Group",
+        population_standardize_numeric=True,
+    )
+    pop_scenario = heldout.head(2).copy()
+    pop_scenario.loc[:, "Person"] = ["NEW_D", "NEW_E"]
+    pop_scenario["Grade"] = [2, 3]
+    pop_scenario["Group"] = ["A", "B"]
+    pop_pred = predict_mfrm_design(mml_pop_res, pop_scenario, score_col="Score")
+    _self_test_assert(pop_pred.get("available"), "population scenario prediction is unavailable")
+    pop_tbl = pop_pred["table"]
+    _self_test_assert("PopulationMean" in pop_tbl.columns, "population scenario missing PopulationMean")
+    _self_test_assert(
+        bool(pd.to_numeric(pop_tbl["PopulationMean"], errors="coerce").notna().all()),
+        "population scenario PopulationMean contains missing values",
+    )
+
+    sim = simulate_from_fitted_model(res, n_replicates=5, seed=20260411)
+    _self_test_assert(sim.get("available"), "fitted simulation is unavailable")
+    _self_test_assert(sim["summary"].shape[0] == 5, "simulation summary replicate count is wrong")
+    _self_test_assert(sim["category_counts"].shape[0] == 5 * res["config"]["n_cat"], "simulation category count shape is wrong")
+
+    refit_sim = simulate_refit_design(
+        res,
+        n_replicates=2,
+        seed=20260411,
+        missing_rate=0.10,
+        refit_maxit=8,
+        refit_reltol=1e-3,
+        refit_method="JMLE",
+    )
+    _self_test_assert(refit_sim.get("available"), "refit simulation is unavailable")
+    _self_test_assert(refit_sim["summary"].shape[0] == 2, "refit simulation summary replicate count is wrong")
+    _self_test_assert("RowsAfterMissing" in refit_sim["summary"].columns, "refit simulation missing row count output")
+    _self_test_assert(
+        refit_sim["category_counts"].shape[0] == 2 * res["config"]["n_cat"],
+        "refit simulation category count shape is wrong",
+    )
+
+    diagnostics = mfrm_diagnostics(res, compute_pca=False)
+    design = evaluate_design_from_fitted(res, diagnostics, forecast_multipliers=(2.0,))
+    _self_test_assert(design.get("available"), "design evaluation is unavailable")
+    _self_test_assert(not design["summary"].empty, "design evaluation summary is empty")
+    _self_test_assert("RecommendedAction" in design["summary"].columns, "design evaluation lacks action text")
+    _self_test_assert("ForecastReliability" in design["forecast"].columns, "design forecast lacks reliability column")
+
+
+def _self_test_report_readiness_and_method_appendix() -> None:
+    sample = sample_mfrm_data(seed=20260411)
+    keep_persons = sample["Person"].drop_duplicates().head(6)
+    sample = sample[sample["Person"].isin(keep_persons)].copy()
+    res = mfrm_estimate(
+        sample,
+        person_col="Person",
+        facet_cols=["Rater", "Task", "Criterion"],
+        score_col="Score",
+        model="RSM",
+        method="JMLE",
+        maxit=30,
+        reltol=1e-3,
+    )
+    diagnostics = mfrm_diagnostics(res, compute_pca=True)
+    readiness = build_final_report_readiness(res, diagnostics, all_bias_results={})
+    _self_test_assert(not readiness.empty, "final report readiness table is empty")
+    _self_test_assert(
+        {"Check", "Status", "Evidence", "ActionBeforeFinalReport", "Required"}.issubset(readiness.columns),
+        "readiness table is missing required columns",
+    )
+    _self_test_assert("Convergence" in readiness["Check"].tolist(), "readiness table missing convergence row")
+    appendix = generate_method_appendix_text(res, diagnostics, all_bias_results={})
+    _self_test_assert("standalone Python" in appendix, "method appendix does not state standalone Python scope")
+    _self_test_assert("- Model: RSM." in appendix, "method appendix missing model line")
+    _self_test_assert("no `mfrmr`" in appendix, "method appendix does not document no-mfrmr boundary")
+
+
+def _self_test_export_bundle_contents() -> None:
+    frames = {
+        "summary": pd.DataFrame({"Metric": ["LogLik"], "Value": [-12.34]}),
+        "population_term_types": pd.DataFrame({"Term": ["GradeCode"], "Type": ["categorical"]}),
+    }
+    zip_bytes = build_osf_zip(frames, title="MFRM_SelfTest")
+    with zipfile.ZipFile(io.BytesIO(zip_bytes), "r") as zf:
+        names = set(zf.namelist())
+        _self_test_assert("summary.csv" in names, "OSF ZIP missing summary.csv")
+        _self_test_assert("population_term_types.csv" in names, "OSF ZIP missing population term types")
+        _self_test_assert("MFRM_SelfTest.xlsx" in names, "OSF ZIP missing Excel workbook")
+        _self_test_assert("MFRM_SelfTest.html" in names, "OSF ZIP missing HTML report")
+        summary_text = zf.read("summary.csv").decode("utf-8")
+        _self_test_assert("LogLik" in summary_text and "-12.34" in summary_text, "OSF ZIP summary.csv content changed")
+
+
+def _self_test_anchor_audit() -> None:
+    sample = sample_mfrm_data(seed=20260411)
+    keep_persons = sample["Person"].drop_duplicates().head(6)
+    sample = sample[sample["Person"].isin(keep_persons)].copy()
+    prep = prepare_mfrm_data(
+        sample,
+        person_col="Person",
+        facet_cols=["Rater", "Task", "Criterion"],
+        score_col="Score",
+        keep_original=True,
+    )
+    anchor_df = pd.DataFrame({
+        "Facet": ["Rater", "Rater"],
+        "Level": ["R1", "R2"],
+        "Anchor": [0.0, 0.15],
+    })
+    audit = audit_mfrm_anchors(
+        prep,
+        anchor_df=anchor_df,
+        min_common_anchors=2,
+        min_obs_per_element=2,
+        min_obs_per_category=1,
+    )
+    valid_anchors = audit.get("valid_anchors", pd.DataFrame())
+    _self_test_assert(len(valid_anchors) == 2, "valid anchors were not retained")
+    summary = audit.get("summary", pd.DataFrame())
+    rater_status = summary.loc[summary["Facet"] == "Rater", "Status"].tolist()
+    _self_test_assert(rater_status == ["Linked"], "rater anchor audit did not report a linked facet")
+    res = mfrm_estimate(
+        sample,
+        person_col="Person",
+        facet_cols=["Rater", "Task", "Criterion"],
+        score_col="Score",
+        keep_original=True,
+        model="RSM",
+        method="JMLE",
+        anchor_df=anchor_df,
+        min_common_anchors=2,
+        maxit=20,
+        reltol=1e-3,
+    )
+    drift = res.get("anchor_drift", {})
+    _self_test_assert(drift.get("available"), "anchor drift review is unavailable")
+    drift_summary = drift.get("summary", pd.DataFrame())
+    _self_test_assert(not drift_summary.empty, "anchor drift summary is empty")
+    _self_test_assert(
+        int(drift_summary["ReviewCount"].iloc[0]) == 0,
+        "anchor drift review unexpectedly flagged constrained anchors",
+    )
+    chain = res.get("equating_chain", {})
+    _self_test_assert(chain.get("available"), "equating-chain summary is unavailable")
+    edges = chain.get("edges", pd.DataFrame())
+    _self_test_assert(not edges.empty, "equating-chain edges are empty")
+    _self_test_assert("Rater" in edges["Facet"].astype(str).tolist(), "equating-chain edges missing anchored Rater facet")
+
+
+def _self_test_script_support_boundaries() -> None:
+    gpcm_result = {"config": {"model": "GPCM", "method": "JMLE", "population_model": {}}}
+    gpcm_support = build_script_support_status(gpcm_result)
+    _self_test_assert(not gpcm_support["portable_available"], "GPCM portable script should be marked unavailable")
+    _self_test_assert("bounded GPCM" in gpcm_support["portable_blockers"], "GPCM blocker is missing")
+    gpcm_py = _generate_repro_python_script(gpcm_result)
+    gpcm_r = _generate_repro_r_script(gpcm_result)
+    _self_test_assert("GPCM portable self-contained script is not available yet" in gpcm_py, "GPCM Python stub changed")
+    _self_test_assert("GPCM portable R script is not available yet" in gpcm_r, "GPCM R stub changed")
+
+    latent_result = {
+        "config": {
+            "model": "RSM",
+            "method": "MML",
+            "population_model": {"enabled": True},
+            "population_formula": "~ Grade + Group",
+        }
+    }
+    latent_support = build_script_support_status(latent_result)
+    _self_test_assert(not latent_support["portable_available"], "latent-regression portable script should be unavailable")
+    _self_test_assert("latent-regression population_formula" in latent_support["portable_blockers"], "latent blocker is missing")
+    latent_py = _generate_repro_python_script(latent_result)
+    latent_r = _generate_repro_r_script(latent_result)
+    _self_test_assert(
+        "Latent-regression portable self-contained script is not available yet" in latent_py,
+        "latent-regression Python stub changed",
+    )
+    _self_test_assert(
+        "Latent-regression portable R script is not available yet" in latent_r,
+        "latent-regression R stub changed",
+    )
+
+    ordinary_result = {"config": {"model": "PCM", "method": "JMLE", "population_model": {}}}
+    ordinary_support = build_script_support_status(ordinary_result)
+    _self_test_assert(ordinary_support["portable_available"], "ordinary PCM JMLE portable script should be available")
+
+
+def _self_test_reproducibility_fingerprints() -> None:
+    sample = pd.DataFrame({
+        "Person": ["P1", "P2"],
+        "Score": [1, 2],
+        "Facet": ["R1", "R2"],
+    })
+    same = sample.copy()
+    changed = sample.copy()
+    changed.loc[1, "Score"] = 3
+    _self_test_assert(
+        dataframe_fingerprint(sample) == dataframe_fingerprint(same),
+        "dataframe fingerprint is not stable for identical data",
+    )
+    _self_test_assert(
+        dataframe_fingerprint(sample) != dataframe_fingerprint(changed),
+        "dataframe fingerprint did not change after data change",
+    )
+    config = {"model": "RSM", "method": "JMLE", "run_fingerprint": "derived"}
+    _self_test_assert(
+        config_fingerprint(config) == config_fingerprint({"model": "RSM", "method": "JMLE"}),
+        "config fingerprint should ignore derived fingerprint fields",
+    )
+
+
+def _self_test_cached_static_assets_and_exports() -> None:
+    for asset_name in [
+        "anchor_table_blank.csv",
+        "anchor_table_example.csv",
+        "group_anchor_table_blank.csv",
+        "group_anchor_table_example.csv",
+        "anchor_user_guidelines.md",
+    ]:
+        payload = get_bundled_asset_bytes(asset_name)
+        _self_test_assert(len(payload) > 0, f"bundled asset is empty: {asset_name}")
+
+    frames = {
+        "summary": pd.DataFrame({"Metric": ["LogLik"], "Value": [-12.34]}),
+        "fit_statistics": pd.DataFrame({"Facet": ["Rater"], "Infit": [1.02]}),
+    }
+    frames_key = frames_fingerprint(frames)
+    zip_payload = cached_tables_zip(frames, frames_key)
+    with zipfile.ZipFile(io.BytesIO(zip_payload), "r") as zf:
+        _self_test_assert("summary.csv" in zf.namelist(), "cached table ZIP missing summary.csv")
+    _self_test_assert(cached_excel_bytes(frames, frames_key).startswith(b"PK"), "cached Excel export is not a ZIP workbook")
+    _self_test_assert(b"MFRM Report" in cached_html_report(frames, frames_key), "cached HTML report missing title")
+    osf_payload = cached_osf_zip(frames, frames_key, title="MFRM_SelfTest")
+    with zipfile.ZipFile(io.BytesIO(osf_payload), "r") as zf:
+        names = set(zf.namelist())
+        _self_test_assert("MFRM_SelfTest.xlsx" in names, "cached OSF ZIP missing workbook")
+        _self_test_assert("MFRM_SelfTest.html" in names, "cached OSF ZIP missing HTML report")
+
+    asset_bundle = {"one": b"abc", "two": "def"}
+    asset_key = bytes_mapping_fingerprint(asset_bundle)
+    with zipfile.ZipFile(io.BytesIO(cached_named_asset_zip(asset_bundle, asset_key, "txt")), "r") as zf:
+        _self_test_assert(set(zf.namelist()) == {"one.txt", "two.txt"}, "cached named asset ZIP contents changed")
+
+
+def export_reference_parity_fixture(output_dir: str) -> int:
+    """Export deterministic Python outputs for external TAM/sirt/mirt checks."""
+    out_dir = Path(output_dir).expanduser().resolve()
+    out_dir.mkdir(parents=True, exist_ok=True)
+    data = sample_mfrm_data(seed=20260411)
+    keep_persons = data["Person"].drop_duplicates().head(8)
+    data = data[data["Person"].isin(keep_persons)].copy()
+    data_path = out_dir / "mfrm_parity_data_long.csv"
+    data.to_csv(data_path, index=False)
+
+    persons = data["Person"].drop_duplicates().astype(str).tolist()
+    person_data = pd.DataFrame({
+        "Person": persons,
+        "Grade": [1 + (i // 2) for i in range(len(persons))],
+        "Group": ["A" if i % 2 == 0 else "B" for i in range(len(persons))],
+    })
+    person_data_path = out_dir / "mfrm_parity_person_data.csv"
+    person_data.to_csv(person_data_path, index=False)
+
+    sirt_long = data.copy()
+    sirt_long["SirtItem"] = sirt_long["Task"].astype(str) + "__" + sirt_long["Criterion"].astype(str)
+    sirt_response = sirt_long.pivot_table(
+        index=["Person", "Rater"],
+        columns="SirtItem",
+        values="Score",
+        aggfunc="first",
+    )
+    sirt_item_cols = sorted(map(str, sirt_response.columns))
+    sirt_response = sirt_response.reindex(columns=sirt_item_cols).reset_index()
+    sirt_response.to_csv(out_dir / "sirt_rater_facets_response.csv", index=False)
+    sirt_item_metadata = (
+        sirt_long[["SirtItem", "Task", "Criterion"]]
+        .drop_duplicates()
+        .set_index("SirtItem")
+        .loc[sirt_item_cols]
+        .reset_index()
+    )
+    sirt_item_metadata.to_csv(out_dir / "sirt_rater_facets_items.csv", index=False)
+
+    scenarios = [
+        {
+            "name": "jmle_rsm",
+            "method": "JMLE",
+            "model": "RSM",
+            "mml_engine": "EM",
+            "population_formula": None,
+            "person_data": None,
+        },
+        {
+            "name": "jmle_pcm_task_steps",
+            "method": "JMLE",
+            "model": "PCM",
+            "mml_engine": "EM",
+            "step_facet": "Task",
+            "population_formula": None,
+            "person_data": None,
+        },
+        {
+            "name": "mml_rsm_fixed_prior",
+            "method": "MML",
+            "model": "RSM",
+            "mml_engine": "EM",
+            "population_formula": None,
+            "person_data": None,
+        },
+        {
+            "name": "mml_rsm_latent_regression",
+            "method": "MML",
+            "model": "RSM",
+            "mml_engine": "EM",
+            "population_formula": "~ Grade + Group",
+            "person_data": person_data,
+        },
+    ]
+    manifest_rows = []
+    for scenario in scenarios:
+        res = mfrm_estimate(
+            data,
+            person_col="Person",
+            facet_cols=["Rater", "Task", "Criterion"],
+            score_col="Score",
+            model=scenario["model"],
+            method=scenario["method"],
+            step_facet=scenario.get("step_facet"),
+            mml_engine=scenario["mml_engine"],
+            quad_points=7,
+            population_prior_sd=1.0,
+            maxit=60,
+            reltol=1e-5,
+            person_data=scenario["person_data"],
+            person_id_col="Person" if scenario["person_data"] is not None else None,
+            population_formula=scenario["population_formula"],
+            population_standardize_numeric=True if scenario["population_formula"] else False,
+            compute_plausible_values=scenario["method"] == "MML",
+            n_plausible_values=3,
+            plausible_seed=20260411,
+        )
+        diagnostics = mfrm_diagnostics(res, compute_pca=True, compute_marginal=scenario["method"] == "MML")
+        prefix = scenario["name"]
+        frames = {
+            "summary": res.get("summary", pd.DataFrame()),
+            "convergence": res.get("convergence", pd.DataFrame()),
+            "person_measures": res.get("facets", {}).get("person", pd.DataFrame()),
+            "facet_measures": res.get("facets", {}).get("others", pd.DataFrame()),
+            "steps": res.get("steps", pd.DataFrame()),
+            "gpcm_slopes": res.get("slopes", pd.DataFrame()),
+            "population_coefficients": res.get("population", {}).get("coefficients", pd.DataFrame()),
+            "population_person_data": res.get("population", {}).get("person_data", pd.DataFrame()),
+            "posterior_scores": res.get("posterior", {}).get("scores", pd.DataFrame()),
+            "fit_statistics": diagnostics.get("fit", pd.DataFrame()),
+            "reliability": diagnostics.get("reliability", pd.DataFrame()),
+            "score_map": res.get("prep", {}).get("score_map", pd.DataFrame()),
+        }
+        written = []
+        for key, frame in frames.items():
+            if isinstance(frame, pd.DataFrame) and not frame.empty:
+                file_name = f"{prefix}_{key}.csv"
+                frame.to_csv(out_dir / file_name, index=False)
+                written.append(file_name)
+        summary = res.get("summary", pd.DataFrame())
+        manifest_rows.append({
+            "Scenario": prefix,
+            "Method": scenario["method"],
+            "Model": scenario["model"],
+            "StepFacet": scenario.get("step_facet"),
+            "MmlEngine": res.get("config", {}).get("mml_engine"),
+            "PopulationFormula": scenario["population_formula"] or "",
+            "LogLik": float(summary["LogLik"].iloc[0]) if isinstance(summary, pd.DataFrame) and not summary.empty else np.nan,
+            "Converged": bool(summary["Converged"].iloc[0]) if isinstance(summary, pd.DataFrame) and not summary.empty else False,
+            "Files": ";".join(written),
+        })
+    pd.DataFrame(manifest_rows).to_csv(out_dir / "python_parity_manifest.csv", index=False)
+
+    readme = """# MFRM Python Parity Fixture
+
+This folder contains deterministic Python outputs for external comparison with
+TAM, sirt, mirt, FACETS, or ConQuest. The goal is not to claim exact parameter
+identity across all packages. Use it to separate expected parameterisation
+differences from implementation regressions.
+
+Files:
+- `mfrm_parity_data_long.csv`: long-format data fitted by the Python app.
+- `mfrm_parity_person_data.csv`: person-level covariates for latent regression.
+- `sirt_rater_facets_response.csv` and `sirt_rater_facets_items.csv`: wide
+  person-rater response matrix plus item metadata for a direct `sirt::rm.facets`
+  rater-facet smoke check.
+- `python_parity_manifest.csv`: scenario index and Python log-likelihoods.
+- `*_summary.csv`, `*_person_measures.csv`, `*_facet_measures.csv`, `*_steps.csv`:
+  Python reference outputs for each scenario.
+
+Comparison rules:
+- JMLE RSM/PCM is closest to FACETS-style fixed-effect estimation, but optimizer
+  and constraints can still differ.
+- MML RSM is closest to TAM/ConQuest-style MML, except this app fixes the prior
+  SD through `population_prior_sd` rather than estimating the latent variance.
+- sirt `rm.facets()` is closest for rater-facet MML with optional slopes.
+- mirt is useful for broad IRT checks such as GPCM, EAP/factor scores, and
+  plausible values, but it does not natively decompose arbitrary MFRM facets in
+  the same long-format layout.
+
+Suggested tolerance policy:
+- Exact row counts, category support, and missingness flags should match.
+- Log-likelihood and parameter differences should be reviewed with package-
+  specific constraints documented; start with absolute differences <= 0.05 logits
+  for comparable centered fixed-effect measures and relax only with justification.
+- Do not compare unconstrained slopes, latent variances, or anchoring constants
+  as if they were the same parameter without a parameterization map.
+"""
+    (out_dir / "README.md").write_text(readme, encoding="utf-8")
+
+    r_script = """# External R cross-check scaffold for the MFRM Python parity fixture.
+# Run from this folder after installing any packages you want to compare:
+# install.packages(c("TAM", "sirt", "mirt", "tidyr", "dplyr"))
+
+status <- data.frame(
+  Package = character(),
+  Check = character(),
+  Status = character(),
+  Detail = character(),
+  LogLik = numeric(),
+  stringsAsFactors = FALSE
+)
+
+record_status <- function(package, check, status_value, detail, logLik = NA_real_) {
+  status <<- rbind(
+    status,
+    data.frame(
+      Package = package,
+      Check = check,
+      Status = status_value,
+      Detail = detail,
+      LogLik = as.numeric(logLik),
+      stringsAsFactors = FALSE
+    )
+  )
+}
+
+dat <- read.csv("mfrm_parity_data_long.csv")
+person_data <- read.csv("mfrm_parity_person_data.csv")
+manifest <- read.csv("python_parity_manifest.csv")
+
+if (requireNamespace("tidyr", quietly = TRUE) && requireNamespace("dplyr", quietly = TRUE)) {
+  suppressPackageStartupMessages(library(dplyr))
+  suppressPackageStartupMessages(library(tidyr))
+  wide <- dat |>
+    mutate(item_id = paste(Rater, Task, Criterion, sep = "_")) |>
+    select(Person, item_id, Score) |>
+    pivot_wider(id_cols = Person, names_from = item_id, values_from = Score)
+  resp <- as.matrix(wide[, -1])
+  rownames(resp) <- wide$Person
+  facets <- dat |>
+    distinct(Rater, Task, Criterion) |>
+    mutate(item_id = paste(Rater, Task, Criterion, sep = "_"))
+
+  if (requireNamespace("TAM", quietly = TRUE)) {
+    message("TAM cross-check: MML/facet design reference, not exact Python parity.")
+    tam_result <- tryCatch({
+      tam_mod <- TAM::tam.mml.mfr(
+        resp = resp,
+        facets = facets[, c("Rater", "Task", "Criterion")],
+        formulaA = ~ item + Rater + Task + Criterion + step,
+        pid = wide$Person,
+        control = list(maxiter = 120, progress = FALSE)
+      )
+      write.csv(tam_mod$xsi.facets, "tam_xsi_facets.csv", row.names = FALSE)
+      write.csv(tam_mod$person, "tam_person.csv", row.names = FALSE)
+      tam_loglik <- if (!is.null(tam_mod$deviance)) -0.5 * tam_mod$deviance else NA_real_
+      record_status("TAM", "tam.mml.mfr", "ok", "Wrote tam_xsi_facets.csv and tam_person.csv", tam_loglik)
+      TRUE
+    }, error = function(e) {
+      record_status("TAM", "tam.mml.mfr", "error", conditionMessage(e), NA_real_)
+      FALSE
+    })
+  } else {
+    record_status("TAM", "tam.mml.mfr", "missing", "Package TAM is not installed", NA_real_)
+  }
+
+  if (requireNamespace("mirt", quietly = TRUE)) {
+    message("mirt cross-check: item-level GPCM check, not arbitrary-facet decomposition.")
+    mirt_result <- tryCatch({
+      resp0 <- resp - min(dat$Score, na.rm = TRUE)
+      mirt_mod <- mirt::mirt(resp0, 1, itemtype = "gpcm", verbose = FALSE, technical = list(NCYCLES = 100))
+      write.csv(as.data.frame(mirt::fscores(mirt_mod, method = "EAP")), "mirt_gpcm_eap_scores.csv")
+      write.csv(as.data.frame(mirt::coef(mirt_mod, simplify = TRUE)$items), "mirt_gpcm_item_parameters.csv")
+      mirt_loglik <- tryCatch(as.numeric(mirt_mod@Fit$logLik), error = function(e) NA_real_)
+      record_status("mirt", "gpcm item-level", "ok", "Wrote mirt_gpcm_eap_scores.csv and mirt_gpcm_item_parameters.csv", mirt_loglik)
+      TRUE
+    }, error = function(e) {
+      record_status("mirt", "gpcm item-level", "error", conditionMessage(e), NA_real_)
+      FALSE
+    })
+  } else {
+    record_status("mirt", "gpcm item-level", "missing", "Package mirt is not installed", NA_real_)
+  }
+} else {
+  record_status("tidyr/dplyr", "wide data build", "missing", "Install tidyr and dplyr to run R cross-checks", NA_real_)
+}
+
+if (requireNamespace("sirt", quietly = TRUE)) {
+  message("sirt cross-check: direct rater-facet smoke check with person-rater rows.")
+  sirt_result <- tryCatch({
+    sirt_resp <- read.csv("sirt_rater_facets_response.csv", check.names = FALSE)
+    sirt_items <- read.csv("sirt_rater_facets_items.csv", check.names = FALSE)
+    sirt_pid <- sirt_resp$Person
+    sirt_rater <- as.character(sirt_resp$Rater)
+    sirt_dat <- as.matrix(sirt_resp[, setdiff(names(sirt_resp), c("Person", "Rater")), drop = FALSE])
+    storage.mode(sirt_dat) <- "numeric"
+    sirt_dat <- sirt_dat - min(sirt_dat, na.rm = TRUE)
+    if (!all(colnames(sirt_dat) %in% sirt_items$SirtItem)) {
+      stop("sirt item metadata does not cover all response columns")
+    }
+    sirt_fit_log <- capture.output({
+      sirt_mod <- sirt::rm.facets(
+        dat = sirt_dat,
+        pid = sirt_pid,
+        rater = sirt_rater,
+        est.b.rater = TRUE,
+        est.a.item = FALSE,
+        est.a.rater = FALSE,
+        rater_item_int = FALSE,
+        maxiter = 60
+      )
+    })
+    saveRDS(sirt_mod, "sirt_rater_facets_model.rds")
+    writeLines(sirt_fit_log, "sirt_rater_facets_fit_log.txt")
+    writeLines(capture.output(print(summary(sirt_mod))), "sirt_rater_facets_summary.txt")
+    sirt_loglik <- tryCatch({
+      raw_loglik <- as.numeric(sirt_mod$ic$loglike)
+      if (length(raw_loglik) == 0) NA_real_ else raw_loglik[1]
+    }, error = function(e) NA_real_)
+    record_status("sirt", "rm.facets rater fixture", "ok", "Wrote sirt_rater_facets_model.rds, fit log, and summary text", sirt_loglik)
+    TRUE
+  }, error = function(e) {
+    record_status("sirt", "rm.facets rater fixture", "error", conditionMessage(e), NA_real_)
+    FALSE
+  })
+} else {
+  record_status("sirt", "rm.facets rater fixture", "missing", "Package sirt is not installed", NA_real_)
+}
+
+write.csv(status, "r_crosscheck_status.csv", row.names = FALSE)
+
+report <- c(
+  "# R Cross-Check Status",
+  "",
+  "This report records whether the generated parity fixture can be fitted by selected R packages.",
+  "Use the outputs for directional checks only; exact equality is not expected because parameterisation, constraints, and latent variance handling differ.",
+  "",
+  paste(capture.output(print(status)), collapse = "\n"),
+  "",
+  "Python manifest:",
+  paste(capture.output(print(manifest[, c('Scenario', 'Method', 'Model', 'LogLik', 'Converged')])), collapse = "\n")
+)
+writeLines(report, "r_crosscheck_report.md")
+message("Wrote r_crosscheck_status.csv and r_crosscheck_report.md")
+"""
+    (out_dir / "r_crosscheck_scaffold.R").write_text(r_script, encoding="utf-8")
+    print(f"Wrote parity fixture to: {out_dir}")
+    print("Key files: mfrm_parity_data_long.csv, python_parity_manifest.csv, r_crosscheck_scaffold.R")
+    return 0
+
+
+def _benchmark_data_subset(base: pd.DataFrame, n_persons: int) -> pd.DataFrame:
+    keep_persons = base["Person"].drop_duplicates().head(int(n_persons))
+    return base[base["Person"].isin(keep_persons)].copy()
+
+
+def _benchmark_bias_scan(result: dict, diagnostics: dict, facet_cols: list[str], bias_mode: str) -> tuple[float, int]:
+    if bias_mode == "Skip":
+        return 0.0, 0
+    pairs_available = list(combinations(["Person"] + list(facet_cols), 2))
+    if bias_mode == "All facet pairs":
+        pairs = pairs_available
+    elif bias_mode == "Selected pair" and pairs_available:
+        pairs = [pairs_available[0]]
+    else:
+        pairs = []
+    start_time = time.perf_counter()
+    n_tables = 0
+    for facet_a, facet_b in pairs:
+        try:
+            bundle = estimate_bias_interaction(
+                result,
+                diagnostics,
+                facet_a,
+                facet_b,
+                max_abs=10.0,
+                omit_extreme=True,
+            )
+            table = bundle.get("table") if isinstance(bundle, dict) else None
+            if isinstance(table, pd.DataFrame) and not table.empty:
+                n_tables += 1
+        except Exception:
+            continue
+    return float(time.perf_counter() - start_time), n_tables
+
+
+def _version_tuple(version_text: str) -> tuple[int, ...]:
+    parts = re.findall(r"\d+", str(version_text))
+    return tuple(int(part) for part in parts[:3]) if parts else (0,)
+
+
+def _version_meets_floor(version_text: str, floor_text: str) -> bool:
+    observed = _version_tuple(version_text)
+    floor = _version_tuple(floor_text)
+    max_len = max(len(observed), len(floor))
+    observed = observed + (0,) * (max_len - len(observed))
+    floor = floor + (0,) * (max_len - len(floor))
+    return observed >= floor
+
+
+def run_doctor(json_output: bool = False) -> int:
+    """Run lightweight environment checks for local support and CI."""
+    rows = []
+
+    def record(check: str, status: str, detail: str) -> None:
+        rows.append({"Check": check, "Status": status, "Detail": detail})
+
+    record(
+        "app_version",
+        "ok",
+        f"{APP_RELEASE_LABEL} {APP_VERSION}; standalone Python; no external MFRM engine is called",
+    )
+    record(
+        "python",
+        "ok" if sys.version_info >= (3, 11) else "warn",
+        sys.version.split()[0],
+    )
+
+    for package_name, floor in RUNTIME_PACKAGE_FLOORS.items():
+        try:
+            version_text = importlib_metadata.version(package_name)
+            status = "ok" if _version_meets_floor(version_text, floor) else "warn"
+            record(f"package:{package_name}", status, f"{version_text} (required >= {floor})")
+        except importlib_metadata.PackageNotFoundError:
+            record(f"package:{package_name}", "error", f"missing (required >= {floor})")
+
+    for asset_name in BUNDLED_ANCHOR_ASSETS:
+        try:
+            path = _bundled_asset_path(asset_name)
+            payload = get_bundled_asset_bytes(asset_name)
+            status = "ok" if payload else "error"
+            record(f"asset:{asset_name}", status, f"{len(payload)} bytes at {path.name}")
+        except Exception as exc:
+            record(f"asset:{asset_name}", "error", str(exc))
+
+    try:
+        sample = cached_sample_mfrm_data(seed=20240101)
+        record("sample_data", "ok" if isinstance(sample, pd.DataFrame) and not sample.empty else "error", f"{getattr(sample, 'shape', None)}")
+    except Exception as exc:
+        record("sample_data", "error", str(exc))
+
+    try:
+        ns = load_core_namespace()
+        required_names = ["mfrm_estimate", "mfrm_diagnostics", "read_flexible_table"]
+        missing = [name for name in required_names if name not in ns]
+        record("core_namespace", "ok" if not missing else "error", "missing: " + ", ".join(missing) if missing else f"{len(ns)} functions")
+    except Exception as exc:
+        record("core_namespace", "error", str(exc))
+
+    record(
+        "privacy_boundary",
+        "ok",
+        "uploaded/pasted rating data are not cached as resources; export-byte caches are bounded and short-lived",
+    )
+    record(
+        "runtime_boundary",
+        "ok",
+        "mfrmr, rpy2, Rscript, FACETS, TAM, sirt, and mirt are not runtime dependencies",
+    )
+
+    if json_output:
+        print(json.dumps(rows, indent=2, ensure_ascii=False))
+    else:
+        width = max(len(row["Check"]) for row in rows) if rows else 5
+        for row in rows:
+            print(f"[{row['Status'].upper():5}] {row['Check']:<{width}}  {row['Detail']}")
+
+    return 1 if any(row["Status"] == "error" for row in rows) else 0
+
+
+def run_benchmarks(csv_path: str | None = None, quick: bool = False) -> int:
+    """Run small benchmark snapshots without opening Streamlit."""
+    base = sample_mfrm_data(seed=20260411)
+    facet_cols = ["Rater", "Task", "Criterion"]
+    scenarios = [
+        {
+            "Scenario": "small_fast_preview_jmle_rsm",
+            "Persons": 6,
+            "Model": "RSM",
+            "Method": "JMLE",
+            "AnalysisDepth": "Fast preview",
+            "Maxit": 40,
+            "Reltol": 1e-3,
+            "QuadPoints": None,
+        },
+        {
+            "Scenario": "medium_standard_jmle_rsm",
+            "Persons": 15,
+            "Model": "RSM",
+            "Method": "JMLE",
+            "AnalysisDepth": "Standard (recommended)",
+            "Maxit": 40,
+            "Reltol": 1e-3,
+            "QuadPoints": None,
+        },
+        {
+            "Scenario": "large_standard_jmle_rsm",
+            "Persons": 30,
+            "Model": "RSM",
+            "Method": "JMLE",
+            "AnalysisDepth": "Standard (recommended)",
+            "Maxit": 40,
+            "Reltol": 1e-3,
+            "QuadPoints": None,
+        },
+        {
+            "Scenario": "small_full_publication_mml_rsm",
+            "Persons": 6,
+            "Model": "RSM",
+            "Method": "MML",
+            "AnalysisDepth": "Full publication",
+            "Maxit": 8,
+            "Reltol": 1e-3,
+            "QuadPoints": 5,
+        },
+        {
+            "Scenario": "small_full_publication_mml_pcm",
+            "Persons": 6,
+            "Model": "PCM",
+            "Method": "MML",
+            "AnalysisDepth": "Full publication",
+            "Maxit": 8,
+            "Reltol": 1e-3,
+            "QuadPoints": 5,
+        },
+        {
+            "Scenario": "small_full_publication_mml_gpcm",
+            "Persons": 6,
+            "Model": "GPCM",
+            "Method": "MML",
+            "AnalysisDepth": "Full publication",
+            "Maxit": 8,
+            "Reltol": 1e-3,
+            "QuadPoints": 5,
+        },
+        {
+            "Scenario": "small_full_publication_mml_latent_regression",
+            "Persons": 6,
+            "Model": "RSM",
+            "Method": "MML",
+            "AnalysisDepth": "Full publication",
+            "Maxit": 8,
+            "Reltol": 1e-3,
+            "QuadPoints": 5,
+            "PopulationFormula": "~ Grade + Group",
+        },
+    ]
+    if quick:
+        keep_scenarios = {
+            "small_fast_preview_jmle_rsm",
+            "small_full_publication_mml_rsm",
+        }
+        scenarios = [scenario for scenario in scenarios if scenario["Scenario"] in keep_scenarios]
+    rows = []
+    for scenario in scenarios:
+        data = _benchmark_data_subset(base, scenario["Persons"])
+        person_data = None
+        if scenario.get("PopulationFormula"):
+            persons = data["Person"].drop_duplicates().astype(str).tolist()
+            person_data = pd.DataFrame({
+                "Person": persons,
+                "Grade": [1 + (i // 2) for i in range(len(persons))],
+                "Group": ["A" if i % 2 == 0 else "B" for i in range(len(persons))],
+            })
+        settings = resolve_analysis_depth_settings(
+            scenario["AnalysisDepth"],
+            scenario["Method"],
+        )
+        fit_start = time.perf_counter()
+        result = mfrm_estimate(
+            data,
+            person_col="Person",
+            facet_cols=facet_cols,
+            score_col="Score",
+            model=scenario["Model"],
+            method=scenario["Method"],
+            mml_engine="Auto (recommended)",
+            quad_points=int(scenario["QuadPoints"] or 5),
+            maxit=int(scenario["Maxit"]),
+            reltol=float(scenario["Reltol"]),
+            person_data=person_data,
+            person_id_col="Person" if person_data is not None else None,
+            population_formula=scenario.get("PopulationFormula"),
+            compute_plausible_values=bool(settings["compute_plausible_values"]),
+            n_plausible_values=int(settings["n_plausible_values"]),
+            plausible_seed=int(settings["plausible_seed"]),
+        )
+        estimate_seconds = float(time.perf_counter() - fit_start)
+
+        diag_start = time.perf_counter()
+        diagnostics = mfrm_diagnostics(
+            result,
+            compute_pca=bool(settings["compute_residual_pca"]),
+            compute_marginal=bool(settings["compute_strict_marginal"]),
+            marginal_pairwise=bool(settings["strict_marginal_pairwise"]),
+            marginal_max_pair_cells=int(settings["strict_marginal_max_pair_cells"]),
+        )
+        diagnostics_seconds = float(time.perf_counter() - diag_start)
+        bias_seconds, bias_tables = _benchmark_bias_scan(
+            result,
+            diagnostics,
+            facet_cols,
+            settings["bias_mode"],
+        )
+
+        summary = result["summary"].iloc[0]
+        rows.append({
+            "Scenario": scenario["Scenario"],
+            "AnalysisDepth": scenario["AnalysisDepth"],
+            "Method": scenario["Method"],
+            "Model": scenario["Model"],
+            "Rows": int(len(data)),
+            "Persons": int(data["Person"].nunique()),
+            "FacetCount": int(len(facet_cols)),
+            "Categories": int(result["config"]["n_cat"]),
+            "Maxit": int(scenario["Maxit"]),
+            "Reltol": float(scenario["Reltol"]),
+            "QuadPoints": scenario["QuadPoints"],
+            "PopulationFormula": scenario.get("PopulationFormula", ""),
+            "MmlEngine": result["config"].get("mml_engine"),
+            "ComputePCA": bool(settings["compute_residual_pca"]),
+            "ComputeStrictMarginal": bool(settings["compute_strict_marginal"]),
+            "StrictMarginalPairwise": bool(settings["strict_marginal_pairwise"]),
+            "ComputePlausibleValues": bool(settings["compute_plausible_values"]),
+            "PlausibleValues": int(settings["n_plausible_values"]),
+            "BiasMode": settings["bias_mode"],
+            "BiasTables": int(bias_tables),
+            "EstimateSeconds": estimate_seconds,
+            "DiagnosticsSeconds": diagnostics_seconds,
+            "BiasSeconds": float(bias_seconds),
+            "TotalSeconds": estimate_seconds + diagnostics_seconds + float(bias_seconds),
+            "Converged": bool(summary.get("Converged", False)),
+            "Iterations": int(summary.get("Iterations", 0) or 0),
+            "GradientNorm": float(summary.get("GradientNorm", np.nan)),
+            "LogLik": float(summary.get("LogLik", np.nan)),
+        })
+
+    out = pd.DataFrame(rows)
+    display_cols = [
+        "Scenario",
+        "Rows",
+        "Method",
+        "Model",
+        "AnalysisDepth",
+        "MmlEngine",
+        "EstimateSeconds",
+        "DiagnosticsSeconds",
+        "BiasSeconds",
+        "TotalSeconds",
+        "Converged",
+        "Iterations",
+        "GradientNorm",
+    ]
+    print(out[display_cols].to_string(index=False))
+    if csv_path:
+        csv_out_path = Path(csv_path).expanduser()
+        csv_out_path.parent.mkdir(parents=True, exist_ok=True)
+        out.to_csv(csv_out_path, index=False)
+        print(f"\nWrote benchmark snapshot: {csv_out_path}")
+    return 0
+
+
+def run_self_tests() -> int:
+    tests = [
+        ("zero-count intermediate category support", _self_test_zero_count_category_support),
+        ("non-consecutive score recode", _self_test_nonconsecutive_recode),
+        ("explicit boundary gap support", _self_test_boundary_gap_support),
+        ("fractional score rejection", _self_test_fractional_score_rejection),
+        ("JMLE RSM, PCM, and GPCM smoke", _self_test_jmle_rsm_pcm_smoke),
+        ("analytical gradient checks", _self_test_gradient_checks),
+        ("analysis-depth preset smoke", _self_test_analysis_depth_presets),
+        ("MML Auto posterior, PCM/GPCM, and strict marginal", _self_test_mml_auto_posterior_and_marginal),
+        ("MML engine branches and negative inputs", _self_test_mml_engine_branches_and_negative_inputs),
+        ("latent regression population_formula", _self_test_latent_regression_population_formula),
+        ("prediction simulation and design evaluation", _self_test_prediction_simulation_design),
+        ("report readiness and method appendix", _self_test_report_readiness_and_method_appendix),
+        ("export bundle contents", _self_test_export_bundle_contents),
+        ("anchor audit", _self_test_anchor_audit),
+        ("script support boundaries", _self_test_script_support_boundaries),
+        ("reproducibility fingerprints", _self_test_reproducibility_fingerprints),
+        ("cached static assets and exports", _self_test_cached_static_assets_and_exports),
+    ]
+    failures = []
+    for name, test_func in tests:
+        try:
+            test_func()
+            print(f"[PASS] {name}")
+        except Exception as exc:
+            failures.append((name, exc))
+            print(f"[FAIL] {name}: {exc}")
+    if failures:
+        print(f"\n{len(failures)} self-test(s) failed.")
+        return 1
+    print(f"\nAll {len(tests)} self-tests passed.")
+    return 0
+
+
+def main() -> None:
+    st.set_page_config(page_title="MFRM FACETS-mode", layout="wide")
+    st.title("MFRM FACETS-mode")
+    st.caption(
+        f"A single-file Streamlit application for estimating Many-Facet Rasch Models (MFRM) "
+        f"— {APP_RELEASE_LABEL} {APP_VERSION}"
+    )
+    render_app_scope_badges(where="main")
+    render_data_privacy_notice(where="main")
+
+    # Phase 1-1: Tutorial before analysis
+    show_tutorial()
+
+    core = load_core_namespace()
+    data = read_input_data(core)
+    if data.empty:
+        st.info("Provide input data from the sidebar to begin.")
+        return
+
+    st.subheader("Input preview")
+    st.dataframe(data.head(20), width="stretch")
+    run_facets_mode(core, data)
+
+
+if __name__ == "__main__":
+    if "--doctor" in sys.argv:
+        raise SystemExit(run_doctor(json_output="--json" in sys.argv))
+    if "--self-test" in sys.argv:
+        raise SystemExit(run_self_tests())
+    if "--benchmark" in sys.argv or "--benchmark-quick" in sys.argv:
+        benchmark_csv_path = None
+        if "--benchmark-csv" in sys.argv:
+            csv_arg_idx = sys.argv.index("--benchmark-csv") + 1
+            if csv_arg_idx >= len(sys.argv):
+                raise SystemExit("--benchmark-csv requires an output path")
+            benchmark_csv_path = sys.argv[csv_arg_idx]
+        raise SystemExit(run_benchmarks(csv_path=benchmark_csv_path, quick="--benchmark-quick" in sys.argv))
+    if "--export-parity-fixture" in sys.argv:
+        out_arg_idx = sys.argv.index("--export-parity-fixture") + 1
+        if out_arg_idx >= len(sys.argv):
+            raise SystemExit("--export-parity-fixture requires an output directory")
+        raise SystemExit(export_reference_parity_fixture(sys.argv[out_arg_idx]))
+    main()

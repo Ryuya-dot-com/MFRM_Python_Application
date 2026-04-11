@@ -154,6 +154,9 @@ categorical.
 The app and demo export also include public-beta limitations and release
 readiness tables. Use these to keep public claims aligned with what the
 standalone Python engine currently supports.
+The same public-beta bundle includes `mfrmr_015_migration_coverage.csv`, which
+maps the local mfrmr 0.1.5 feature surface to Python support, boundaries, and
+next validation actions.
 
 The Visuals tab also includes a downloadable visual interpretation checklist.
 It maps each figure to the first signal to read, the review trigger, and the
@@ -173,8 +176,8 @@ python streamlit_app.py --export-demo-report validation/generated/demo_report
 Open `validation/generated/demo_report/MFRM_Demo_Report.html` first, then read
 `final_report_readiness.csv`, `visual_interpretation_checklist.csv`,
 `visual_method_evidence.csv`, `public_beta_limitations.csv`,
-`public_release_readiness.csv`, and the interactive category curves in
-`figures_html/`.
+`mfrmr_015_migration_coverage.csv`, `public_release_readiness.csv`, and the
+interactive category curves in `figures_html/`.
 
 ## Statistical Caveats
 
@@ -206,6 +209,10 @@ to interactive HTML figures instead of blocking the analysis.
 - mfrmr: functional capability reference for the Python migration target.
 
 For the cross-package validation matrix and tolerance policy, see `validation/README.md`.
+The parity fixture also includes official documentation touchpoints, an
+artifact checklist, an external validation report template, and the mfrmr 0.1.5
+migration coverage table so external checks can be archived without making
+R packages a runtime dependency.
 
 ## Continuous Integration
 

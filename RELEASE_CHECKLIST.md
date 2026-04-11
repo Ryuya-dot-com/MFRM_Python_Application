@@ -35,6 +35,7 @@ Use this checklist before tagging or pushing a public beta release.
 python -m pip install -r requirements-dev.txt
 python -m py_compile streamlit_app.py
 python streamlit_app.py --doctor
+python streamlit_app.py --release-check
 python streamlit_app.py --self-test
 python -m pytest tests
 python streamlit_app.py --benchmark-quick --benchmark-csv validation/generated/benchmark_smoke.csv

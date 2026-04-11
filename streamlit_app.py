@@ -282,6 +282,83 @@ def public_beta_limitations_table() -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
+def mfrmr_015_migration_coverage_table() -> pd.DataFrame:
+    """Migration coverage map for the local mfrmr 0.1.5 feature surface."""
+    rows = [
+        {
+            "mfrmr015Area": "Ordered score-category support",
+            "PythonStatus": "Ready",
+            "PythonEvidence": "Explicit rating_min/rating_max, keep_original support, score_map export, fractional score rejection, and zero-count category self-tests.",
+            "Boundary": "Sparse or zero-count categories are retained for support but remain weakly identified for threshold interpretation.",
+            "NextValidation": "Compare score_map and category-support rows before any external package comparison.",
+        },
+        {
+            "mfrmr015Area": "MML recommended workflow",
+            "PythonStatus": "Ready with review",
+            "PythonEvidence": "MML direct, EM, and hybrid paths; first-read readiness; strict marginal diagnostics; method appendix.",
+            "Boundary": "The app fixes population_prior_sd unless a future estimator expands latent variance handling.",
+            "NextValidation": "Document quadrature points, prior SD, constraints, and convergence before comparing with TAM or ConQuest-style MML.",
+        },
+        {
+            "mfrmr015Area": "Reporting checklist and summary bundles",
+            "PythonStatus": "Partial equivalent",
+            "PythonEvidence": "final_report_readiness, visual_interpretation_checklist, method appendix, demo report, and OSF-style table bundles.",
+            "Boundary": "Not a one-to-one port of every mfrmr APA/reporting helper.",
+            "NextValidation": "Check that final report warnings, caveats, and beginner next actions are present in every exported report bundle.",
+        },
+        {
+            "mfrmr015Area": "Latent regression / population_formula",
+            "PythonStatus": "Ready with review",
+            "PythonEvidence": "MML population_formula, person_data merge, covariate type preview, fixed prior SD, EAP, plausible values, and prediction exports.",
+            "Boundary": "Population variance is fixed; interactions, arbitrary transformations, and multidimensional latent regression are not enabled.",
+            "NextValidation": "Compare covariate coding, coefficient direction, EAP group shifts, and complete-case handling against the reference workflow.",
+        },
+        {
+            "mfrmr015Area": "Bounded GPCM",
+            "PythonStatus": "Ready with documented limitation",
+            "PythonEvidence": "Positive slopes, geometric mean slope identification, GPCM self-tests, category curves, slope exports, and diagnostics.",
+            "Boundary": "Requires slope_facet == step_facet; fair-average and broader APA/QC semantics remain outside the formal GPCM boundary.",
+            "NextValidation": "Use mirt only as an item-level GPCM reference unless a facet-to-item parameter map is supplied.",
+        },
+        {
+            "mfrmr015Area": "Strict marginal follow-up",
+            "PythonStatus": "Ready as diagnostic",
+            "PythonEvidence": "Observed-expected marginal summaries, optional pairwise marginal checks, heatmaps, and first-read flags.",
+            "Boundary": "Definitions are model-internal and should not be treated as identical to every package residual statistic.",
+            "NextValidation": "Compare directional flags and sparse-cell behavior, not exact residual equality by default.",
+        },
+        {
+            "mfrmr015Area": "Prediction and plausible values",
+            "PythonStatus": "Ready with review",
+            "PythonEvidence": "Posterior scores, plausible-value draws, new-unit prediction, held-out scoring fingerprints, and population prediction helpers.",
+            "Boundary": "Plausible-value draws are simulation draws and are not expected to match draw-by-draw across packages.",
+            "NextValidation": "Compare distribution means, variances, and downstream regression trends rather than individual draws.",
+        },
+        {
+            "mfrmr015Area": "Simulation and design evaluation",
+            "PythonStatus": "Ready as planning screen",
+            "PythonEvidence": "Simulation/design tab, refit stress tests, expected-score forecasts, and benchmark smoke runs.",
+            "Boundary": "Design evaluation inherits the fitted model and should not be reported as empirical validation of future data.",
+            "NextValidation": "Archive simulation settings, random seeds, refit convergence, and forecast reliability before using for planning decisions.",
+        },
+        {
+            "mfrmr015Area": "Anchor audit, linking, and drift review",
+            "PythonStatus": "Ready for Rasch-family review",
+            "PythonEvidence": "Anchor templates, anchor audit, hard-anchor drift check, equating chain, linking review, and downloadable guidance.",
+            "Boundary": "Operational linking claims still require common-anchor design evidence and documented scale constants.",
+            "NextValidation": "Review common-anchor counts, connectedness, hard-anchor drift, and facet coverage before scale-linking claims.",
+        },
+        {
+            "mfrmr015Area": "ConQuest/FACETS/mfrmr equivalence claims",
+            "PythonStatus": "Documented boundary",
+            "PythonEvidence": "Parity fixture, tolerance policy, public beta limitations, release check, and runtime independence warnings.",
+            "Boundary": "The Python app does not call external engines and does not claim exact numerical equivalence by default.",
+            "NextValidation": "Archive fixture, external package versions, parameterization map, and comparison tables before making parity claims.",
+        },
+    ]
+    return pd.DataFrame(rows)
+
+
 def public_release_readiness_table() -> pd.DataFrame:
     """Repository-level public beta readiness checks."""
     root = Path(__file__).resolve().parent
@@ -331,6 +408,12 @@ def public_release_readiness_table() -> pd.DataFrame:
             "Status": "Documented",
             "Evidence": "Cross-package validation plan and tolerance policy are available.",
             "Action": "Treat TAM/sirt/mirt/FACETS/mfrmr equality as validation evidence only after explicit cross-checks.",
+        },
+        {
+            "Check": "mfrmr 0.1.5 migration coverage",
+            "Status": "Ready" if not mfrmr_015_migration_coverage_table().empty else "Review",
+            "Evidence": f"{len(mfrmr_015_migration_coverage_table())} migration-scope rows documented.",
+            "Action": "Use this table to avoid overstating one-to-one coverage of the R package surface.",
         },
         {
             "Check": "Release checklist",
@@ -14612,6 +14695,19 @@ teaching materials based on app output.
             mime="text/csv",
             key="dl_public_beta_limitations_help",
         )
+        st.markdown("### mfrmr 0.1.5 Migration Coverage")
+        st.caption(
+            "This table maps the local mfrmr 0.1.5 feature surface to the current "
+            "standalone Python implementation and its public-beta boundaries."
+        )
+        st.dataframe(mfrmr_015_migration_coverage_table(), width="stretch", hide_index=True)
+        st.download_button(
+            "Download mfrmr 0.1.5 migration coverage (CSV)",
+            data=to_csv_bytes(mfrmr_015_migration_coverage_table()),
+            file_name="mfrm_mfrmr_015_migration_coverage.csv",
+            mime="text/csv",
+            key="dl_mfrmr_015_migration_coverage_help",
+        )
         st.markdown("### Release Readiness")
         st.caption(
             "This is a repository-level checklist. It does not replace a successful CI run, "
@@ -17031,6 +17127,9 @@ def _render_downloads(
     public_beta_dl = public_beta_limitations_table()
     if isinstance(public_beta_dl, pd.DataFrame) and not public_beta_dl.empty:
         all_frames["public_beta_limitations"] = public_beta_dl
+    mfrmr_coverage_dl = mfrmr_015_migration_coverage_table()
+    if isinstance(mfrmr_coverage_dl, pd.DataFrame) and not mfrmr_coverage_dl.empty:
+        all_frames["mfrmr_015_migration_coverage"] = mfrmr_coverage_dl
     public_readiness_dl = public_release_readiness_table()
     if isinstance(public_readiness_dl, pd.DataFrame) and not public_readiness_dl.empty:
         all_frames["public_release_readiness"] = public_readiness_dl
@@ -18542,6 +18641,7 @@ def _self_test_report_readiness_and_method_appendix() -> None:
         "visual_interpretation_checklist",
         "visual_method_evidence",
         "public_beta_limitations",
+        "mfrmr_015_migration_coverage",
         "public_release_readiness",
         "category_probability_curves",
     ]:
@@ -18986,6 +19086,181 @@ def cross_package_tolerance_policy() -> pd.DataFrame:
     )
 
 
+def external_reference_documentation_table() -> pd.DataFrame:
+    """Official documentation touchpoints used to scope optional validation."""
+    rows = [
+        {
+            "Reference": "TAM tam.mml.mfr",
+            "OfficialUrl": "https://www.rdocumentation.org/packages/TAM/topics/tam.mml",
+            "RelevantSurface": "facets, formulaA, pid, faceted MML, latent regression formulaY/dataY, variance controls",
+            "PythonUse": "MML RSM/PCM directional reference and latent-regression coding review.",
+            "NonEquivalenceBoundary": "Do not compare likelihood or coefficients as identical unless quadrature, latent variance, constraints, and constants are aligned.",
+        },
+        {
+            "Reference": "mirt mirt",
+            "OfficialUrl": "https://philchalmers.github.io/mirt/reference/mirt.html",
+            "RelevantSurface": "itemtype choices including GPCM-style item models, quadrature, optimizers, and item-level parameter tables",
+            "PythonUse": "Item-level GPCM and posterior-score reference checks.",
+            "NonEquivalenceBoundary": "mirt item parameters are not an arbitrary many-facet decomposition without a facet-to-item map.",
+        },
+        {
+            "Reference": "mirt fscores",
+            "OfficialUrl": "https://philchalmers.github.io/mirt/reference/fscores.html",
+            "RelevantSurface": "EAP factor scores and plausible-value draws through plausible.draws",
+            "PythonUse": "Distribution-level EAP and plausible-value review.",
+            "NonEquivalenceBoundary": "Plausible-value draws are not expected to match draw-by-draw.",
+        },
+        {
+            "Reference": "mirt mixedmirt",
+            "OfficialUrl": "https://philchalmers.github.io/mirt/docs/reference/mixedmirt.html",
+            "RelevantSurface": "latent-regression concepts through lr.fixed and lr.random style inputs",
+            "PythonUse": "Latent-regression conceptual reference.",
+            "NonEquivalenceBoundary": "Covariate coding and latent variance treatment must be documented before coefficient comparison.",
+        },
+        {
+            "Reference": "sirt rm.facets",
+            "OfficialUrl": "https://alexanderrobitzsch.github.io/sirt/reference/rm.facets.html",
+            "RelevantSurface": "person-rater rows, rater severity, item/rater slopes, EAP, modelfit, and MML EM estimation",
+            "PythonUse": "Direct rater-facet smoke check and slope-boundary reference.",
+            "NonEquivalenceBoundary": "sirt centering, slope, and trait-standard-deviation options can differ from this app.",
+        },
+        {
+            "Reference": "mfrmr 0.1.5 local source",
+            "OfficialUrl": "https://github.com/Ryuya-dot-com/R_package_mfrmr",
+            "RelevantSurface": "fit_mfrm, diagnose_mfrm, reporting_checklist, bounded GPCM, latent regression, strict marginal diagnostics, prediction, plausible values, simulation, and linking helpers",
+            "PythonUse": "Migration coverage reference for the standalone Python app.",
+            "NonEquivalenceBoundary": "The Python app should not call mfrmr at runtime and should not claim one-to-one helper parity unless the migration coverage table says so.",
+        },
+    ]
+    return pd.DataFrame(rows)
+
+
+def external_validation_artifact_checklist() -> pd.DataFrame:
+    """Artifacts required before making cross-package validation claims."""
+    rows = [
+        {
+            "Artifact": "Generated fixture folder",
+            "RequiredForClaim": "All claims",
+            "ExpectedFileOrEvidence": "mfrm_parity_data_long.csv plus python_parity_manifest.csv",
+            "ReviewQuestion": "Can the exact Python data and run settings be regenerated?",
+        },
+        {
+            "Artifact": "Score support and recode map",
+            "RequiredForClaim": "All parameter comparisons",
+            "ExpectedFileOrEvidence": "*_score_map.csv and category counts in app outputs",
+            "ReviewQuestion": "Do observed, zero-count, and internally recoded categories match across tools?",
+        },
+        {
+            "Artifact": "External package versions",
+            "RequiredForClaim": "Any TAM/sirt/mirt/mfrmr comparison",
+            "ExpectedFileOrEvidence": "r_crosscheck_package_versions.csv or a manually archived sessionInfo() log",
+            "ReviewQuestion": "Are package versions and R version visible in the validation archive?",
+        },
+        {
+            "Artifact": "Parameterization map",
+            "RequiredForClaim": "Numerical parameter comparison",
+            "ExpectedFileOrEvidence": "cross_package_parameterization_notes.csv plus project-specific notes",
+            "ReviewQuestion": "Are signs, centering constants, latent variance, and category origin aligned?",
+        },
+        {
+            "Artifact": "Tolerance policy",
+            "RequiredForClaim": "Numerical parameter comparison",
+            "ExpectedFileOrEvidence": "cross_package_tolerance_policy.csv",
+            "ReviewQuestion": "Are review thresholds stated before reading the results?",
+        },
+        {
+            "Artifact": "R cross-check status",
+            "RequiredForClaim": "Any R package fit claim",
+            "ExpectedFileOrEvidence": "r_crosscheck_status.csv and r_crosscheck_report.md",
+            "ReviewQuestion": "Did the external check run, fail, or remain missing because a package was unavailable?",
+        },
+        {
+            "Artifact": "Final comparison table",
+            "RequiredForClaim": "Any public equivalence or validation statement",
+            "ExpectedFileOrEvidence": "external_validation_report_template.csv filled with results",
+            "ReviewQuestion": "Does the final claim match the actual comparison evidence and expected non-equivalence notes?",
+        },
+    ]
+    return pd.DataFrame(rows)
+
+
+def external_validation_report_template() -> pd.DataFrame:
+    """Blank template for reviewers to fill after running optional external checks."""
+    rows = [
+        {
+            "ClaimArea": "Data support",
+            "PythonScenario": "all",
+            "ExternalPackage": "all",
+            "EvidenceFile": "mfrm_parity_data_long.csv; *_score_map.csv",
+            "ObservedResult": "",
+            "Status": "Not run",
+            "AcceptablePublicWording": "Data support and score coding matched the archived fixture.",
+            "ReviewerNotes": "",
+        },
+        {
+            "ClaimArea": "Faceted MML",
+            "PythonScenario": "mml_rsm_fixed_prior",
+            "ExternalPackage": "TAM",
+            "EvidenceFile": "tam_xsi_facets.csv; tam_person.csv; python_parity_manifest.csv",
+            "ObservedResult": "",
+            "Status": "Not run",
+            "AcceptablePublicWording": "TAM directional checks were reviewed under documented constraints.",
+            "ReviewerNotes": "",
+        },
+        {
+            "ClaimArea": "Latent regression",
+            "PythonScenario": "mml_rsm_latent_regression",
+            "ExternalPackage": "TAM/mirt",
+            "EvidenceFile": "population_coefficients; package-specific latent-regression output",
+            "ObservedResult": "",
+            "Status": "Not run",
+            "AcceptablePublicWording": "Coefficient direction and covariate coding were reviewed; exact equality is not claimed.",
+            "ReviewerNotes": "",
+        },
+        {
+            "ClaimArea": "Bounded GPCM",
+            "PythonScenario": "mml_gpcm_task_steps",
+            "ExternalPackage": "mirt",
+            "EvidenceFile": "mirt_gpcm_item_parameters.csv; *_gpcm_slopes.csv",
+            "ObservedResult": "",
+            "Status": "Not run",
+            "AcceptablePublicWording": "mirt was used as an item-level GPCM check, not a full MFRM facet equivalence proof.",
+            "ReviewerNotes": "",
+        },
+        {
+            "ClaimArea": "Rater facet",
+            "PythonScenario": "sirt_rater_facets_response.csv",
+            "ExternalPackage": "sirt",
+            "EvidenceFile": "sirt_rater_facets_summary.txt; sirt_rater_facets_fit_log.txt",
+            "ObservedResult": "",
+            "Status": "Not run",
+            "AcceptablePublicWording": "sirt rm.facets was used as a rater-facet smoke check.",
+            "ReviewerNotes": "",
+        },
+        {
+            "ClaimArea": "Plausible values",
+            "PythonScenario": "MML scenarios",
+            "ExternalPackage": "TAM/mirt/sirt",
+            "EvidenceFile": "posterior_scores; package factor-score/PV outputs",
+            "ObservedResult": "",
+            "Status": "Not run",
+            "AcceptablePublicWording": "Plausible-value distributions were compared; draw-by-draw equality is not claimed.",
+            "ReviewerNotes": "",
+        },
+        {
+            "ClaimArea": "mfrmr 0.1.5 migration",
+            "PythonScenario": "all relevant scenarios",
+            "ExternalPackage": "mfrmr",
+            "EvidenceFile": "mfrmr_015_migration_coverage.csv",
+            "ObservedResult": "",
+            "Status": "Not run",
+            "AcceptablePublicWording": "The Python app covers the listed mfrmr 0.1.5 areas with documented boundaries.",
+            "ReviewerNotes": "",
+        },
+    ]
+    return pd.DataFrame(rows)
+
+
 def _self_test_cross_package_validation_plan() -> None:
     plan = cross_package_validation_plan()
     _self_test_assert(not plan.empty, "cross-package validation plan is empty")
@@ -18995,6 +19270,18 @@ def _self_test_cross_package_validation_plan() -> None:
     _self_test_assert("Latent variance" in notes["Topic"].tolist(), "parameterization notes missing latent variance")
     tol = cross_package_tolerance_policy()
     _self_test_assert("Log-likelihood" in tol["EvidenceType"].tolist(), "tolerance policy missing log-likelihood rule")
+    docs = external_reference_documentation_table()
+    _self_test_assert(
+        {"TAM tam.mml.mfr", "mirt mirt", "sirt rm.facets", "mfrmr 0.1.5 local source"}.issubset(set(docs["Reference"])),
+        "external reference documentation table missing required references",
+    )
+    checklist = external_validation_artifact_checklist()
+    _self_test_assert("External package versions" in checklist["Artifact"].tolist(), "artifact checklist missing package versions")
+    template = external_validation_report_template()
+    _self_test_assert("mfrmr 0.1.5 migration" in template["ClaimArea"].tolist(), "validation report template missing mfrmr migration row")
+    coverage = mfrmr_015_migration_coverage_table()
+    _self_test_assert("Bounded GPCM" in coverage["mfrmr015Area"].tolist(), "mfrmr 0.1.5 coverage missing GPCM row")
+    _self_test_assert("Latent regression / population_formula" in coverage["mfrmr015Area"].tolist(), "mfrmr 0.1.5 coverage missing latent regression row")
 
 
 def _self_test_public_beta_release_contract() -> None:
@@ -19171,6 +19458,10 @@ def export_reference_parity_fixture(output_dir: str) -> int:
     cross_package_validation_plan().to_csv(out_dir / "cross_package_validation_plan.csv", index=False)
     cross_package_parameterization_notes().to_csv(out_dir / "cross_package_parameterization_notes.csv", index=False)
     cross_package_tolerance_policy().to_csv(out_dir / "cross_package_tolerance_policy.csv", index=False)
+    external_reference_documentation_table().to_csv(out_dir / "external_reference_documentation.csv", index=False)
+    external_validation_artifact_checklist().to_csv(out_dir / "external_validation_artifact_checklist.csv", index=False)
+    external_validation_report_template().to_csv(out_dir / "external_validation_report_template.csv", index=False)
+    mfrmr_015_migration_coverage_table().to_csv(out_dir / "mfrmr_015_migration_coverage.csv", index=False)
 
     readme = """# MFRM Python Parity Fixture
 
@@ -19191,8 +19482,18 @@ Files:
 - `cross_package_parameterization_notes.csv`: conventions to align before
   numerical comparisons.
 - `cross_package_tolerance_policy.csv`: default review thresholds.
+- `external_reference_documentation.csv`: official documentation touchpoints
+  used to scope optional validation.
+- `external_validation_artifact_checklist.csv`: artifacts to archive before
+  making public comparison claims.
+- `external_validation_report_template.csv`: blank reviewer table for the
+  final external validation summary.
+- `mfrmr_015_migration_coverage.csv`: migration coverage map for the local
+  mfrmr 0.1.5 feature surface.
 - `*_summary.csv`, `*_person_measures.csv`, `*_facet_measures.csv`, `*_steps.csv`:
   Python reference outputs for each scenario.
+- `r_crosscheck_scaffold.R`: optional R script. It is not used by the
+  Streamlit app at runtime.
 
 Comparison rules:
 - JMLE RSM/PCM is closest to FACETS-style fixed-effect estimation, but optimizer
@@ -19207,6 +19508,9 @@ Comparison rules:
   distributions and downstream regression trends.
 - Strict marginal diagnostics and package residual diagnostics are screening
   evidence, not proof of model truth.
+- The Python app should be described as covering the listed mfrmr 0.1.5
+  migration areas with documented boundaries, not as a runtime wrapper around
+  mfrmr.
 
 Suggested tolerance policy:
 - Exact row counts, category support, and missingness flags should match.
@@ -19215,6 +19519,13 @@ Suggested tolerance policy:
   for comparable centered fixed-effect measures and relax only with justification.
 - Do not compare unconstrained slopes, latent variances, or anchoring constants
   as if they were the same parameter without a parameterization map.
+
+Optional R handoff:
+1. Run `Rscript r_crosscheck_scaffold.R` from this folder.
+2. Review `r_crosscheck_status.csv`, `r_crosscheck_package_versions.csv`, and
+   `r_crosscheck_report.md`.
+3. Copy supported findings into `external_validation_report_template.csv`.
+4. Keep rows marked `missing` or `error` out of public validation claims.
 """
     (out_dir / "README.md").write_text(readme, encoding="utf-8")
 
@@ -19244,6 +19555,35 @@ record_status <- function(package, check, status_value, detail, logLik = NA_real
     )
   )
 }
+
+package_version_text <- function(package) {
+  if (!requireNamespace(package, quietly = TRUE)) {
+    return(NA_character_)
+  }
+  as.character(utils::packageVersion(package))
+}
+
+package_versions <- data.frame(
+  Package = c("R", "TAM", "sirt", "mirt", "tidyr", "dplyr"),
+  Version = c(
+    paste(R.version$major, R.version$minor, sep = "."),
+    package_version_text("TAM"),
+    package_version_text("sirt"),
+    package_version_text("mirt"),
+    package_version_text("tidyr"),
+    package_version_text("dplyr")
+  ),
+  Installed = c(
+    TRUE,
+    requireNamespace("TAM", quietly = TRUE),
+    requireNamespace("sirt", quietly = TRUE),
+    requireNamespace("mirt", quietly = TRUE),
+    requireNamespace("tidyr", quietly = TRUE),
+    requireNamespace("dplyr", quietly = TRUE)
+  ),
+  stringsAsFactors = FALSE
+)
+write.csv(package_versions, "r_crosscheck_package_versions.csv", row.names = FALSE)
 
 dat <- read.csv("mfrm_parity_data_long.csv")
 person_data <- read.csv("mfrm_parity_person_data.csv")
@@ -19356,17 +19696,28 @@ report <- c(
   "This report records whether the generated parity fixture can be fitted by selected R packages.",
   "Use the outputs for directional checks only; exact equality is not expected because parameterisation, constraints, and latent variance handling differ.",
   "",
+  "Package versions:",
+  paste(capture.output(print(package_versions)), collapse = "\n"),
+  "",
   paste(capture.output(print(status)), collapse = "\n"),
   "",
   "Python manifest:",
   paste(capture.output(print(manifest[, c('Scenario', 'Method', 'Model', 'LogLik', 'Converged')])), collapse = "\n")
 )
 writeLines(report, "r_crosscheck_report.md")
-message("Wrote r_crosscheck_status.csv and r_crosscheck_report.md")
+
+created_files <- list.files(pattern = "^(tam_|mirt_|sirt_|r_crosscheck_|external_|cross_package_|mfrmr_|python_|mfrm_|README)")
+file_manifest <- data.frame(
+  File = created_files,
+  Bytes = file.info(created_files)$size,
+  stringsAsFactors = FALSE
+)
+write.csv(file_manifest, "r_crosscheck_file_manifest.csv", row.names = FALSE)
+message("Wrote r_crosscheck_status.csv, r_crosscheck_package_versions.csv, and r_crosscheck_report.md")
 """
     (out_dir / "r_crosscheck_scaffold.R").write_text(r_script, encoding="utf-8")
     print(f"Wrote parity fixture to: {out_dir}")
-    print("Key files: mfrm_parity_data_long.csv, python_parity_manifest.csv, r_crosscheck_scaffold.R")
+    print("Key files: mfrm_parity_data_long.csv, python_parity_manifest.csv, external_validation_report_template.csv, r_crosscheck_scaffold.R")
     return 0
 
 
@@ -19407,6 +19758,7 @@ def build_demo_report_frames(
     frames["visual_interpretation_checklist"] = visual_interpretation_checklist()
     frames["visual_method_evidence"] = visual_method_evidence_table()
     frames["public_beta_limitations"] = public_beta_limitations_table()
+    frames["mfrmr_015_migration_coverage"] = mfrmr_015_migration_coverage_table()
     frames["public_release_readiness"] = public_release_readiness_table()
     person = result.get("facets", {}).get("person", pd.DataFrame())
     if isinstance(person, pd.DataFrame) and not person.empty:
@@ -19549,11 +19901,12 @@ It demonstrates the standalone Python workflow without calling `mfrmr`,
 3. `visual_interpretation_checklist.csv`: how to read each plot.
 4. `visual_method_evidence.csv`: methodological basis and readability rules for plots.
 5. `public_beta_limitations.csv`: what this beta release supports and does not claim.
-6. `public_release_readiness.csv`: repository-level public release checklist.
-7. `category_probability_curves.csv`: long-form PCM curve data for the
+6. `mfrmr_015_migration_coverage.csv`: how the local mfrmr 0.1.5 feature surface maps to this Python app.
+7. `public_release_readiness.csv`: repository-level public release checklist.
+8. `category_probability_curves.csv`: long-form PCM curve data for the
    averaged view and each Task level.
-8. `figures_html/`: interactive category probability and expected-score curves.
-9. `method_appendix.md`: reproducible method notes for this demo run.
+9. `figures_html/`: interactive category probability and expected-score curves.
+10. `method_appendix.md`: reproducible method notes for this demo run.
 
 ## Demo model
 
@@ -19696,12 +20049,14 @@ def run_release_check(json_output: bool = False) -> int:
     """Run static public-beta release readiness checks."""
     readiness = public_release_readiness_table()
     limitations = public_beta_limitations_table()
+    migration = mfrmr_015_migration_coverage_table()
     payload = {
         "release_status": "public beta / research preview",
         "app_version": APP_VERSION,
         "release_label": APP_RELEASE_LABEL,
         "readiness": readiness.to_dict(orient="records"),
         "limitations": limitations.to_dict(orient="records"),
+        "mfrmr_015_migration_coverage": migration.to_dict(orient="records"),
     }
     if json_output:
         print(json.dumps(payload, indent=2, ensure_ascii=False))
@@ -19715,6 +20070,7 @@ def run_release_check(json_output: bool = False) -> int:
         print("\nPublic beta limitations:")
         for _, row in limitations.iterrows():
             print(f"- {row['Area']}: {row['PublicBetaStatus']} - {row['Boundary']}")
+        print(f"\nmfrmr 0.1.5 migration coverage rows: {len(migration)}")
     blocker_count = int((readiness["Status"].astype(str) == "Blocker").sum()) if "Status" in readiness.columns else 1
     return 1 if blocker_count else 0
 

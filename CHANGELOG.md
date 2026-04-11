@@ -13,6 +13,7 @@ All notable changes to this standalone Streamlit distribution should be recorded
 - Visual method evidence table plus readability safeguards for dense Wright maps, yardsticks, marginal heatmaps, and bias heatmaps.
 - Latent-regression covariate type preview and export table for numeric, categorical, and integer-code review decisions.
 - Public-beta limitation and release-readiness tables in the app, demo report export, and CLI release check.
+- mfrmr 0.1.5 migration coverage table plus external validation artifact checklist, official-reference table, and reviewer template in the parity fixture.
 
 ### Changed
 
@@ -22,6 +23,7 @@ All notable changes to this standalone Streamlit distribution should be recorded
 - New/held-out prediction session-state invalidation now fingerprints uploaded file content, not only file name and size.
 - Uploaded CSV/TSV reads are now non-destructive, so sidebar previews do not consume the file stream before estimation.
 - `make verify` now includes `python streamlit_app.py --release-check`.
+- The optional R cross-check scaffold now records package versions and output file manifests for archived validation evidence.
 
 ### Validation
 

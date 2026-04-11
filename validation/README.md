@@ -34,6 +34,10 @@ The generated folder includes:
 - `cross_package_validation_plan.csv`.
 - `cross_package_parameterization_notes.csv`.
 - `cross_package_tolerance_policy.csv`.
+- `external_reference_documentation.csv`.
+- `external_validation_artifact_checklist.csv`.
+- `external_validation_report_template.csv`.
+- `mfrmr_015_migration_coverage.csv`.
 - `r_crosscheck_scaffold.R`.
 - notes explaining why exact equality is not expected.
 
@@ -52,9 +56,31 @@ Generated files are intentionally ignored by Git under `validation/generated/`.
 | Plausible values | TAM, mirt, and sirt plausible-value or factor-score routines | distribution means, variances, covariate trends | draw-by-draw plausible-value equality |
 | Anchor/linking | FACETS/TAM/ConQuest-style anchor workflows | anchor count, connectedness, hard-constraint drift | linking claims without common-scale evidence |
 | Strict marginal diagnostics | TAM/mirt residual and fit diagnostics where applicable | directional flags and sparse-cell warnings | proof of model truth |
+| mfrmr 0.1.5 migration coverage | local mfrmr 0.1.5 source and package documentation | feature-level support, boundaries, next validation action | one-to-one helper parity or runtime wrapping |
 
 The exporter writes a machine-readable version of this plan to
 `cross_package_validation_plan.csv`.
+
+## Optional External R Handoff
+
+The generated `r_crosscheck_scaffold.R` is an optional validation helper, not an
+app dependency. Run it from the generated fixture folder only when you want to
+archive external evidence:
+
+```bash
+Rscript r_crosscheck_scaffold.R
+```
+
+It writes:
+
+- `r_crosscheck_status.csv`: whether each optional package check ran, failed, or was skipped because the package was missing.
+- `r_crosscheck_package_versions.csv`: R and package versions for TAM, sirt, mirt, tidyr, and dplyr.
+- `r_crosscheck_report.md`: human-readable status plus the Python manifest.
+- `r_crosscheck_file_manifest.csv`: files present after the R check.
+
+Then fill `external_validation_report_template.csv` only for rows with actual
+supporting evidence. Rows marked `missing`, `error`, or `Not run` should not be
+used in public parity claims.
 
 ## Default Tolerance Policy
 
@@ -80,8 +106,9 @@ The exporter writes a machine-readable version of this plan to
 - mirt `mirt`: itemtype choices include Rasch/PCM-style and GPCM-style models; `quadpts`, `dentype`, and optimizer choices affect comparability. See the mirt reference: https://philchalmers.github.io/mirt/reference/mirt.html
 - mirt `fscores`: EAP is the default factor-score method, and plausible-value support is exposed through `plausible.draws`. See: https://philchalmers.github.io/mirt/reference/fscores.html
 - mirt `mixedmirt`: latent-regression inputs are modeled through `lr.fixed` / `lr.random` style arguments. See: https://philchalmers.github.io/mirt/docs/reference/mixedmirt.html
-- sirt `rm.facets`: rater-facet models use person-rater rows and optional item/rater intercept and slope settings. See the CRAN sirt manual: https://cran.r-project.org/web/packages/sirt/sirt.pdf
+- sirt `rm.facets`: rater-facet models use person-rater rows, rater severity, optional item/rater slopes, EAP factor scores, and modelfit methods. See the sirt pkgdown reference: https://alexanderrobitzsch.github.io/sirt/reference/rm.facets.html
 - sirt plausible-value tools: distributional checks should be preferred over draw-by-draw equality. See the CRAN sirt manual: https://cran.r-project.org/web/packages/sirt/sirt.pdf
+- mfrmr 0.1.5: the local source is used as the migration coverage reference; the generated `mfrmr_015_migration_coverage.csv` separates Python support from one-to-one parity claims.
 
 ## Reporting Rule
 

@@ -5490,13 +5490,19 @@ def calc_interrater_agreement(obs_df, facet_cols, rater_facet, res=None):
         base_cols.append("Weight")
     df = df[base_cols].copy()
     if "Weight" in df.columns:
+        df["_weighted_observed"] = df["Observed"].astype(float) * df["Weight"].astype(float)
         df_obs = (
-            df.groupby(["_context", rater_facet])
-            .apply(lambda g: weighted_mean(g["Observed"].to_numpy(), g["Weight"].to_numpy()))
-            .reset_index(name="Score")
+            df.groupby(["_context", rater_facet], observed=False, as_index=False)
+            .agg(WeightedObserved=("_weighted_observed", "sum"), Weight=("Weight", "sum"))
         )
+        df_obs["Score"] = np.where(
+            df_obs["Weight"].to_numpy(dtype=float) > 0,
+            df_obs["WeightedObserved"].to_numpy(dtype=float) / df_obs["Weight"].to_numpy(dtype=float),
+            np.nan,
+        )
+        df_obs = df_obs[["_context", rater_facet, "Score"]]
     else:
-        df_obs = df.groupby(["_context", rater_facet], as_index=False).agg(Score=("Observed", "mean"))
+        df_obs = df.groupby(["_context", rater_facet], observed=False, as_index=False).agg(Score=("Observed", "mean"))
     if df_obs.empty:
         return {"summary": pd.DataFrame(), "pairs": pd.DataFrame()}
 
@@ -5510,7 +5516,7 @@ def calc_interrater_agreement(obs_df, facet_cols, rater_facet, res=None):
                 df_probs[col] = probs[:, i]
             if "Weight" in df.columns:
                 df_probs["Weight"] = df["Weight"].to_numpy()
-            for (ctx, r), g in df_probs.groupby(["_context", rater_facet]):
+            for (ctx, r), g in df_probs.groupby(["_context", rater_facet], observed=False):
                 if "Weight" in g.columns:
                     w = g["Weight"].to_numpy(dtype=float)
                     ok = np.isfinite(w) & (w > 0)
@@ -5835,7 +5841,7 @@ def calc_facets_report_tbls(
             extreme_levels[facet] = []
             continue
         stat = (
-            obs_df.groupby(facet)["Observed"]
+            obs_df.groupby(facet, observed=False)["Observed"]
             .agg(MinScore="min", MaxScore="max")
             .reset_index()
         )
@@ -5860,7 +5866,7 @@ def calc_facets_report_tbls(
         if facet not in obs_df.columns:
             continue
         status_tbl = (
-            obs_df.groupby(facet)["Observed"]
+            obs_df.groupby(facet, observed=False)["Observed"]
             .agg(MinScore="min", MaxScore="max", TotalCountAll="size")
             .reset_index()
         )
@@ -5873,7 +5879,7 @@ def calc_facets_report_tbls(
             active_mask = (extreme_count == 0) | ((extreme_count == 1) & flag)
             score_source = obs_df.loc[active_mask]
         score_rows = []
-        for level_val, df_lvl in score_source.groupby(facet):
+        for level_val, df_lvl in score_source.groupby(facet, observed=False):
             total_score = float(df_lvl["Observed"].sum())
             total_count = float(len(df_lvl))
             if "Weight" in df_lvl.columns:
@@ -7853,7 +7859,10 @@ def _show_top_level_warnings(
 
     # Display
     if not alerts:
-        st.success("Estimation completed successfully.")
+        st.success(
+            f"Estimation completed successfully for {len(data):,} observations, "
+            f"{data[person_col].nunique():,} persons, and {len(facet_cols)} facets."
+        )
     else:
         has_error = any(level == "error" for level, _ in alerts)
         if has_error:
@@ -9278,7 +9287,8 @@ def run_facets_mode(core: dict, data: pd.DataFrame) -> None:
 
         n_obs = len(data)
         n_persons = data[person_col].nunique()
-        st.info(
+        run_status = st.empty()
+        run_status.info(
             f"Starting estimation with **{n_obs:,}** observations, "
             f"**{n_persons:,}** persons, **{len(facet_cols)}** facets. "
             "This may take a few seconds to several minutes depending on data size."
@@ -9459,6 +9469,7 @@ def run_facets_mode(core: dict, data: pd.DataFrame) -> None:
                 "_render_interactive_plots": bool(render_interactive_plots),
                 "_generate_figure_exports": bool(generate_figure_exports),
             }
+            run_status.empty()
         except Exception as exc:
             st.error(
                 "**Estimation failed.** Common causes and remedies:\n\n"

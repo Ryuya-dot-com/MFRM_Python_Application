@@ -178,7 +178,7 @@ def visual_method_evidence_table() -> pd.DataFrame:
             "Visualization": "Wright map / yardstick",
             "Purpose": "Put person, facet, and threshold locations on a common logit ruler.",
             "MethodBasis": "Rasch variable maps and FACETS-style measurement rulers.",
-            "AppReadabilityRule": "Use hover labels by default when a facet has many elements; direct labels are optional.",
+            "AppReadabilityRule": "Use hover labels by default when a facet has many elements, long labels, or tightly spaced estimates; direct labels are optional.",
             "PrimaryReference": "Wright & Masters (1982); Linacre FACETS/Winsteps map tables",
         },
         {
@@ -7550,6 +7550,87 @@ def to_csv_bytes(df: pd.DataFrame) -> bytes:
     return df.to_csv(index=False).encode("utf-8")
 
 
+def _render_compact_dataframe(
+    df: pd.DataFrame,
+    columns: list[str],
+    *,
+    details_label: str = "Show full table",
+    hide_index: bool = True,
+    height: int | None = None,
+    wrap_text: bool = False,
+    max_wrapped_rows: int = 25,
+) -> None:
+    """Render a readable subset first while preserving full table access."""
+    if not isinstance(df, pd.DataFrame) or df.empty:
+        st.info("No rows available.")
+        return
+    dataframe_kwargs = {"width": "stretch", "hide_index": hide_index}
+    if height is not None:
+        dataframe_kwargs["height"] = height
+    display_cols = [col for col in columns if col in df.columns]
+    if not display_cols:
+        st.dataframe(df, **dataframe_kwargs)
+        return
+    display_df = df.loc[:, display_cols].copy()
+    if wrap_text and len(display_df) <= max_wrapped_rows:
+        st.markdown(
+            display_df.to_html(index=not hide_index, escape=True, classes="mfrm-wrapped-table"),
+            unsafe_allow_html=True,
+        )
+    else:
+        st.dataframe(display_df, **dataframe_kwargs)
+    hidden_cols = [col for col in df.columns if col not in display_cols]
+    if hidden_cols:
+        with st.expander(f"{details_label} ({len(hidden_cols)} hidden column(s))", expanded=False):
+            st.dataframe(df, width="stretch", hide_index=hide_index)
+
+
+def _inject_desktop_readability_css() -> None:
+    """Reduce desktop tab-bar horizontal scrolling without changing app structure."""
+    st.markdown(
+        """
+<style>
+@media (min-width: 900px) {
+  div[data-baseweb="tab-list"] {
+    flex-wrap: wrap;
+    gap: 0.25rem 0.5rem;
+  }
+  div[data-baseweb="tab-list"] button[role="tab"] {
+    flex: 0 1 auto;
+    max-width: 16rem;
+  }
+  div[data-baseweb="tab-list"] button[role="tab"] p {
+    white-space: normal;
+    line-height: 1.2;
+  }
+}
+table.mfrm-wrapped-table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: auto;
+  font-size: 0.9rem;
+  margin: 0.35rem 0 0.75rem 0;
+}
+table.mfrm-wrapped-table th,
+table.mfrm-wrapped-table td {
+  border-bottom: 1px solid rgba(49, 51, 63, 0.15);
+  padding: 0.45rem 0.55rem;
+  text-align: left;
+  vertical-align: top;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+table.mfrm-wrapped-table th {
+  font-weight: 700;
+  background: rgba(49, 51, 63, 0.04);
+  white-space: nowrap;
+}
+</style>
+""",
+        unsafe_allow_html=True,
+    )
+
+
 def to_excel_bytes(frames: dict[str, pd.DataFrame]) -> bytes:
     """Write multiple DataFrames to an in-memory Excel workbook, one sheet per key."""
     buf = io.BytesIO()
@@ -8403,6 +8484,23 @@ def _show_pca_panel(
 # Phase 3-10: Wright Map + Yardstick
 # ---------------------------------------------------------------------------
 
+def _minimum_within_facet_logit_gap(facet_est: pd.DataFrame) -> float:
+    """Smallest within-facet vertical gap, used to avoid label collisions."""
+    if (
+        not isinstance(facet_est, pd.DataFrame)
+        or facet_est.empty
+        or "Facet" not in facet_est.columns
+        or "Estimate" not in facet_est.columns
+    ):
+        return float("inf")
+    gaps: list[float] = []
+    for _, sub in facet_est.groupby("Facet", dropna=False):
+        vals = pd.to_numeric(sub["Estimate"], errors="coerce").dropna().sort_values().to_numpy()
+        if len(vals) >= 2:
+            gaps.extend(float(v) for v in np.diff(vals) if np.isfinite(v))
+    return min(gaps) if gaps else float("inf")
+
+
 def show_wright_map_section(result: dict, diagnostics: dict) -> None:
     """Render both the classic Wright Map and the FACETS-style yardstick."""
     st.caption(
@@ -8475,18 +8573,26 @@ histogram on the leftmost column. Each subsequent column represents one facet.
         st.caption("Not enough facets to draw a yardstick.")
         return
     max_elements_per_facet = int(facet_est.groupby("Facet").size().max()) if "Facet" in facet_est.columns and not facet_est.empty else 0
-    crowded = max_elements_per_facet > 12 or n_cols > 6
-    show_direct_labels = st.checkbox(
+    label_max = (
+        int(facet_est.get("Level", pd.Series(dtype=str)).astype(str).str.len().max())
+        if "Level" in facet_est.columns and not facet_est.empty else 0
+    )
+    min_label_gap = _minimum_within_facet_logit_gap(facet_est)
+    tight_labels = min_label_gap < 0.30
+    crowded = max_elements_per_facet > 8 or n_cols > 5 or label_max > 18 or tight_labels
+    requested_direct_labels = st.checkbox(
         "Show yardstick labels directly on plot",
         value=not crowded,
-        key="yardstick_show_direct_labels",
+        key="yardstick_show_direct_labels_tight" if tight_labels else "yardstick_show_direct_labels",
+        disabled=tight_labels,
         help=(
             "Direct text labels are useful for small designs. For dense designs, leave this off "
             "and use hover labels to avoid overlapping text."
         ),
     )
+    show_direct_labels = bool(requested_direct_labels and not tight_labels)
     if crowded and not show_direct_labels:
-        st.caption("Dense yardstick: direct labels are hidden to prevent overlap. Hover points to read full labels.")
+        st.caption("Dense or tightly spaced yardstick: direct labels are hidden to prevent overlap. Hover points to read full labels.")
 
     y_all = list(person_est)
     if not facet_est.empty:
@@ -8517,7 +8623,7 @@ histogram on the leftmost column. Each subsequent column represents one facet.
             full_labels = [str(lbl) for lbl in sub.get("Level", sub.index)]
             fig.add_trace(go.Scatter(
                 x=[0.5] * len(sub), y=sub["Estimate"].tolist(),
-                mode="markers+text" if show_direct_labels else "markers",
+                mode="markers+text" if show_direct_labels and len(sub) <= 30 else "markers",
                 marker=dict(size=8, color="#1b9e77", symbol="square"),
                 text=_compact_label_list(full_labels, max_chars=18) if show_direct_labels else None,
                 textposition="middle right", textfont=dict(size=9),
@@ -8530,10 +8636,10 @@ histogram on the leftmost column. Each subsequent column represents one facet.
 
     fig.update_layout(
         title="Yardstick (FACETS-style)",
-        height=max(550, 24 * max_elements_per_facet + 220 if show_direct_labels else 550),
+        height=max(550, 28 * max_elements_per_facet + 220 if show_direct_labels else 550),
         template="plotly_white",
         showlegend=False,
-        margin=dict(l=80, r=40, t=90, b=60),
+        margin=dict(l=90, r=50, t=90, b=80),
     )
     st.plotly_chart(fig, width="stretch")
 
@@ -11266,7 +11372,13 @@ def _render_manuscript_claim_guide_section(
             st.error("Resolve the highest-priority blocker rows before writing final conclusions.")
         elif int(action_counts.get("Report with caveat", 0)) or int(action_counts.get("Review", 0)) or int(action_counts.get("Missing", 0)):
             st.warning("Use caveat language for the rows marked Caveat, Review, or Missing.")
-        st.dataframe(action_plan, width="stretch", hide_index=True)
+        _render_compact_dataframe(
+            action_plan,
+            ["Priority", "Status", "Topic", "ImmediateAction"],
+            details_label="Show full submission action plan",
+            hide_index=True,
+            wrap_text=True,
+        )
         st.download_button(
             "Download submission action plan (CSV)",
             data=to_csv_bytes(action_plan),
@@ -11292,7 +11404,13 @@ def _render_manuscript_claim_guide_section(
     cols[3].metric("Boundary", int(status_counts.get("Boundary", 0)))
     if int(status_counts.get("Do not claim", 0)):
         st.warning("Do not make rows marked 'Do not claim' until the listed action is complete.")
-    st.dataframe(guide, width="stretch", hide_index=True)
+    _render_compact_dataframe(
+        guide,
+        ["ManuscriptArea", "ClaimStatus", "NextAction"],
+        details_label="Show full manuscript claim guide",
+        hide_index=True,
+        wrap_text=True,
+    )
     st.download_button(
         "Download manuscript claim guide (CSV)",
         data=to_csv_bytes(guide),
@@ -11313,7 +11431,13 @@ def _render_manuscript_claim_guide_section(
         case_cols[1].metric("Caveat", int(case_counts.get("Report with caveat", 0)))
         case_cols[2].metric("Boundary", int(case_counts.get("Boundary", 0)))
         case_cols[3].metric("Ready", int(case_counts.get("Ready", 0)))
-        st.dataframe(case_guide, width="stretch", hide_index=True)
+        _render_compact_dataframe(
+            case_guide,
+            ["Priority", "Case", "Status", "NextAction"],
+            details_label="Show full beginner case guide",
+            hide_index=True,
+            wrap_text=True,
+        )
         wording_cols = ["Case", "Status", "AvoidWording", "SaferWording", "NextAction"]
         if set(wording_cols).issubset(case_guide.columns):
             wording_rows = case_guide.loc[
@@ -11321,7 +11445,13 @@ def _render_manuscript_claim_guide_section(
             ]
             if not wording_rows.empty:
                 with st.expander("Copy-edit wording repairs", expanded=True):
-                    st.dataframe(wording_rows, width="stretch", hide_index=True)
+                    _render_compact_dataframe(
+                        wording_rows,
+                        ["Case", "Status", "AvoidWording", "SaferWording"],
+                        details_label="Show full wording-repair table",
+                        hide_index=True,
+                        wrap_text=True,
+                    )
         st.download_button(
             "Download case-specific beginner guide (CSV)",
             data=to_csv_bytes(case_guide),
@@ -12222,7 +12352,13 @@ of a research paper that uses MFRM.
                 "Read these rows before copying APA-style text. They combine the gate, "
                 "claim guide, readiness checks, and wording repairs."
             )
-            st.dataframe(top_actions, width="stretch", hide_index=True)
+            _render_compact_dataframe(
+                top_actions,
+                ["Priority", "Status", "Topic", "ImmediateAction"],
+                details_label="Show full first-action table",
+                hide_index=True,
+                wrap_text=True,
+            )
     if isinstance(case_guidance, pd.DataFrame) and not case_guidance.empty:
         wording_cols = ["Case", "Status", "AvoidWording", "SaferWording", "NextAction"]
         if set(wording_cols).issubset(case_guidance.columns):
@@ -12234,7 +12370,13 @@ of a research paper that uses MFRM.
                     "Before copying APA text, review these result-specific wording repairs."
                 )
                 with st.expander("Case-specific wording repairs for this report", expanded=True):
-                    st.dataframe(copy_flags, width="stretch", hide_index=True)
+                    _render_compact_dataframe(
+                        copy_flags,
+                        ["Case", "Status", "AvoidWording", "SaferWording"],
+                        details_label="Show full wording-repair table",
+                        hide_index=True,
+                        wrap_text=True,
+                    )
 
     method_parts: list[str] = []
     results_parts: list[str] = []
@@ -14259,18 +14401,26 @@ def _draw_wright_map_plotly(
 
     facet_names = list(facet_est["Facet"].unique()) if "Facet" in facet_est.columns else []
     max_elements_per_facet = int(facet_est.groupby("Facet").size().max()) if "Facet" in facet_est.columns and not facet_est.empty else 0
-    crowded = max_elements_per_facet > 12 or len(facet_names) > 6
-    show_direct_labels = st.checkbox(
+    label_max = (
+        int(facet_est.get("Level", pd.Series(dtype=str)).astype(str).str.len().max())
+        if "Level" in facet_est.columns and not facet_est.empty else 0
+    )
+    min_label_gap = _minimum_within_facet_logit_gap(facet_est)
+    tight_labels = min_label_gap < 0.30
+    crowded = max_elements_per_facet > 8 or len(facet_names) > 4 or label_max > 18 or tight_labels
+    requested_direct_labels = st.checkbox(
         "Show Wright map point labels directly on plot",
         value=not crowded,
-        key="wright_map_show_direct_labels",
+        key="wright_map_show_direct_labels_tight" if tight_labels else "wright_map_show_direct_labels",
+        disabled=tight_labels,
         help=(
             "Turn this off for dense designs. Full element labels remain available in hover text, "
             "which prevents overlapping plot labels."
         ),
     )
+    show_direct_labels = bool(requested_direct_labels and not tight_labels)
     if crowded and not show_direct_labels:
-        st.caption("Dense Wright map: direct labels are hidden to prevent overlap. Hover points to read full labels.")
+        st.caption("Dense or tightly spaced Wright map: direct labels are hidden to prevent overlap. Hover points to read full labels.")
 
     fig = make_subplots(
         rows=1, cols=2, column_widths=[0.3, 0.7],
@@ -14290,7 +14440,7 @@ def _draw_wright_map_plotly(
     for i, fname in enumerate(facet_names):
         fdata = facet_est[facet_est["Facet"] == fname]
         full_labels = fdata["Level"].astype(str).values if "Level" in fdata.columns else np.array([str(idx) for idx in fdata.index])
-        show_text = show_direct_labels and len(fdata) <= 40
+        show_text = show_direct_labels and len(fdata) <= 25
         fig.add_trace(go.Scatter(
             x=[fname] * len(fdata),
             y=fdata["Estimate"].values,
@@ -14315,7 +14465,22 @@ def _draw_wright_map_plotly(
     fig.update_layout(
         height=max(550, 22 * max_elements_per_facet + 220 if show_direct_labels else 550),
         hovermode="closest",
-        margin=dict(l=80, r=40, t=90, b=80),
+        margin=_readable_plot_margins(
+            x_labels=[str(v) for v in facet_names],
+            base_left=90,
+            base_bottom=90,
+        ),
+    )
+    facet_tick_angle = (
+        -30 if len(facet_names) > 4
+        or max((len(str(v)) for v in facet_names), default=0) > 12
+        else 0
+    )
+    fig.update_xaxes(
+        tickangle=facet_tick_angle,
+        automargin=True,
+        row=1,
+        col=2,
     )
     st.plotly_chart(fig, width="stretch")
 
@@ -21519,6 +21684,7 @@ def run_self_tests() -> int:
 
 def main() -> None:
     st.set_page_config(page_title="MFRM FACETS-mode", layout="wide")
+    _inject_desktop_readability_css()
     st.title("MFRM FACETS-mode")
     st.caption(
         f"A single-file Streamlit application for estimating Many-Facet Rasch Models (MFRM) "

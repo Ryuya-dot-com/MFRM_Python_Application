@@ -173,6 +173,10 @@ The app and demo export also include a manuscript claim guide, public-beta
 limitations, and release readiness tables. The submission action plan combines
 these sources into a prioritized first-read table so public claims stay aligned
 with what the standalone Python engine currently supports.
+In the app UI, wide reporting tables show the most important columns first,
+wrap short guide tables for reading, and place full-detail tables in expanders;
+downloads still contain the complete columns. On desktop screens, long result-tab
+bars wrap instead of forcing users to rely on horizontal scrolling.
 The same public-beta bundle includes `mfrmr_015_migration_coverage.csv`, which
 maps the local mfrmr 0.1.5 feature surface to Python support, boundaries, and
 next validation actions.

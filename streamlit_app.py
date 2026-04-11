@@ -5,7 +5,9 @@ import hashlib
 import importlib.metadata as importlib_metadata
 import importlib.util
 import json
+import os
 import re
+import shutil
 import sys
 import time
 import zipfile
@@ -31,8 +33,8 @@ RUNTIME_PACKAGE_FLOORS = OrderedDict([
     ("numpy", "1.24"),
     ("pandas", "2.0"),
     ("scipy", "1.10"),
-    ("plotly", "5.15"),
-    ("kaleido", "0.2.1"),
+    ("plotly", "6.1.1"),
+    ("kaleido", "1.0"),
     ("streamlit", "1.54"),
     ("openpyxl", "3.1"),
 ])
@@ -43,6 +45,7 @@ BUNDLED_ANCHOR_ASSETS = [
     "group_anchor_table_example.csv",
     "anchor_user_guidelines.md",
 ]
+_STATIC_PNG_BROWSER_AVAILABLE: bool | None = None
 
 
 def visual_interpretation_checklist() -> pd.DataFrame:
@@ -7045,13 +7048,55 @@ def cached_html_report(_frames: dict[str, pd.DataFrame], frames_key: str, title:
     return to_html_report(_frames, title=title)
 
 
+def _static_png_browser_available() -> bool:
+    """Return True when Kaleido 1.x can plausibly find Chrome/Chromium."""
+    global _STATIC_PNG_BROWSER_AVAILABLE
+    if _STATIC_PNG_BROWSER_AVAILABLE is not None:
+        return _STATIC_PNG_BROWSER_AVAILABLE
+    env_candidates = [
+        os.environ.get("BROWSER_PATH"),
+        os.environ.get("CHROME_PATH"),
+        os.environ.get("CHROMIUM_PATH"),
+    ]
+    if any(candidate and Path(candidate).exists() for candidate in env_candidates):
+        _STATIC_PNG_BROWSER_AVAILABLE = True
+        return True
+    binary_names = [
+        "google-chrome",
+        "google-chrome-stable",
+        "chromium",
+        "chromium-browser",
+        "chrome",
+        "msedge",
+        "microsoft-edge",
+    ]
+    if any(shutil.which(name) for name in binary_names):
+        _STATIC_PNG_BROWSER_AVAILABLE = True
+        return True
+    path_candidates = [
+        "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+        "/Applications/Chromium.app/Contents/MacOS/Chromium",
+        "/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge",
+        "/usr/bin/google-chrome",
+        "/usr/bin/google-chrome-stable",
+        "/usr/bin/chromium",
+        "/usr/bin/chromium-browser",
+        "/snap/bin/chromium",
+        r"C:\Program Files\Google\Chrome\Application\chrome.exe",
+        r"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe",
+        r"C:\Program Files\Microsoft\Edge\Application\msedge.exe",
+    ]
+    _STATIC_PNG_BROWSER_AVAILABLE = any(Path(candidate).exists() for candidate in path_candidates)
+    return _STATIC_PNG_BROWSER_AVAILABLE
+
+
 @st.cache_data(show_spinner=False, max_entries=8, ttl=1800)
 def cached_plotly_png_bytes(_fig, fig_key: str, dpi: int = 300) -> bytes | None:
     """Cache Plotly PNG bytes by explicit figure fingerprint."""
     _ = fig_key
     scale = dpi / 72  # plotly default is 72 dpi
     try:
-        return _fig.to_image(format="png", scale=scale, engine="kaleido")
+        return _fig.to_image(format="png", scale=scale)
     except Exception:
         return None
 
@@ -7062,6 +7107,8 @@ def fig_to_png_bytes(fig, dpi: int = 300) -> bytes | None:
     Returns None if kaleido is not available or fails (e.g., on Streamlit Cloud
     where the Chrome binary required by kaleido >= 1.0 is not present).
     """
+    if not _static_png_browser_available():
+        return None
     try:
         fig_key = hashlib.sha256(fig.to_json().encode("utf-8")).hexdigest()[:32]
     except Exception:
@@ -16159,8 +16206,8 @@ def _generate_requirements_txt() -> str:
         "numpy>=1.24\n"
         "pandas>=2.0\n"
         "scipy>=1.10\n"
-        "plotly>=5.15\n"
-        "kaleido>=0.2.1,<1.0\n"
+        "plotly>=6.1.1\n"
+        "kaleido>=1.0\n"
         "streamlit>=1.54\n"
         "openpyxl>=3.1\n"
     )
@@ -16625,7 +16672,7 @@ def _render_downloads(
             st.info(
                 "PNG export is unavailable (kaleido not configured on this server). "
                 "Interactive HTML figures are offered instead. "
-                "To enable PNG, install kaleido: `pip install kaleido`"
+                "To enable PNG with kaleido >= 1.0, install Chrome or Chromium in the runtime."
             )
 
         if _fig_errors:
@@ -17685,6 +17732,19 @@ def _self_test_report_readiness_and_method_appendix() -> None:
     _self_test_assert("standalone Python" in appendix, "method appendix does not state standalone Python scope")
     _self_test_assert("- Model: RSM." in appendix, "method appendix missing model line")
     _self_test_assert("no `mfrmr`" in appendix, "method appendix does not document no-mfrmr boundary")
+    demo_frames = build_demo_report_frames(res, diagnostics, sample, all_bias_results={})
+    for required in [
+        "demo_manifest",
+        "sample_data",
+        "final_report_readiness",
+        "visual_interpretation_checklist",
+        "category_probability_curves",
+    ]:
+        _self_test_assert(required in demo_frames, f"demo report frames missing {required}")
+    _self_test_assert(
+        "no mfrmr" in str(demo_frames["demo_manifest"]["RuntimeBoundary"].iloc[0]),
+        "demo manifest does not document standalone runtime boundary",
+    )
 
 
 def _self_test_visual_interpretation_checklist() -> None:
@@ -18459,6 +18519,203 @@ message("Wrote r_crosscheck_status.csv and r_crosscheck_report.md")
     return 0
 
 
+def build_demo_report_frames(
+    result: dict,
+    diagnostics: dict,
+    data: pd.DataFrame,
+    all_bias_results: dict | None = None,
+) -> OrderedDict[str, pd.DataFrame]:
+    """Assemble beginner-facing demo report tables for CLI export."""
+    frames: OrderedDict[str, pd.DataFrame] = OrderedDict()
+    frames["demo_manifest"] = pd.DataFrame([
+        {
+            "AppVersion": APP_VERSION,
+            "ReleaseLabel": APP_RELEASE_LABEL,
+            "Dataset": "built-in synthetic sample",
+            "Model": result.get("config", {}).get("model"),
+            "Method": result.get("config", {}).get("method"),
+            "RuntimeBoundary": "standalone Python; no mfrmr/rpy2/Rscript/FACETS/TAM/sirt/mirt runtime call",
+            "PrivacyNote": "The demo uses synthetic built-in data only.",
+            "ReadFirst": "Open final_report_readiness, then visual_interpretation_checklist, then measures and category_probability_curves.",
+        }
+    ])
+    frames["sample_data"] = data.copy()
+    summary = result.get("summary", pd.DataFrame())
+    if isinstance(summary, pd.DataFrame) and not summary.empty:
+        frames["summary"] = summary
+    convergence = result.get("convergence", pd.DataFrame())
+    if isinstance(convergence, pd.DataFrame) and not convergence.empty:
+        frames["convergence"] = convergence
+    prep = result.get("prep", {})
+    score_map = prep.get("score_map", pd.DataFrame())
+    if isinstance(score_map, pd.DataFrame) and not score_map.empty:
+        frames["score_map"] = score_map
+    readiness = build_final_report_readiness(result, diagnostics, all_bias_results or {})
+    if isinstance(readiness, pd.DataFrame) and not readiness.empty:
+        frames["final_report_readiness"] = readiness
+    frames["visual_interpretation_checklist"] = visual_interpretation_checklist()
+    person = result.get("facets", {}).get("person", pd.DataFrame())
+    if isinstance(person, pd.DataFrame) and not person.empty:
+        frames["person_measures"] = person
+    others = result.get("facets", {}).get("others", pd.DataFrame())
+    if isinstance(others, pd.DataFrame) and not others.empty:
+        frames["facet_measures"] = others
+    steps = result.get("steps", pd.DataFrame())
+    if isinstance(steps, pd.DataFrame) and not steps.empty:
+        frames["steps"] = steps
+    slopes = result.get("slopes", pd.DataFrame())
+    if isinstance(slopes, pd.DataFrame) and not slopes.empty:
+        frames["gpcm_slopes"] = slopes
+    reliability = diagnostics.get("reliability", pd.DataFrame())
+    if isinstance(reliability, pd.DataFrame) and not reliability.empty:
+        frames["reliability"] = reliability
+    fit = diagnostics.get("fit", pd.DataFrame())
+    if isinstance(fit, pd.DataFrame) and not fit.empty:
+        frames["fit_statistics"] = fit
+    obs = diagnostics.get("obs", pd.DataFrame())
+    if isinstance(obs, pd.DataFrame) and not obs.empty:
+        frames["residuals"] = obs
+        try:
+            cat_stats = calc_category_stats(obs, result)
+            if isinstance(cat_stats, pd.DataFrame) and not cat_stats.empty:
+                frames["category_diagnostics"] = cat_stats
+        except Exception:
+            pass
+    try:
+        step_order = calc_step_order(result.get("steps", pd.DataFrame()))
+        if isinstance(step_order, pd.DataFrame) and not step_order.empty:
+            frames["step_order"] = step_order
+    except Exception:
+        pass
+    curve_export = category_probability_curve_export_table(result)
+    if isinstance(curve_export, pd.DataFrame) and not curve_export.empty:
+        frames["category_probability_curves"] = curve_export
+    try:
+        predictions = compute_fitted_prediction_table(result)
+        if isinstance(predictions, pd.DataFrame) and not predictions.empty:
+            frames["fitted_predictions"] = predictions
+    except Exception:
+        pass
+    for pair_key, bundle in (all_bias_results or {}).items():
+        table = bundle.get("table") if isinstance(bundle, dict) else None
+        summary_tbl = bundle.get("summary") if isinstance(bundle, dict) else None
+        safe_pair = re.sub(r"[^A-Za-z0-9]+", "_", str(pair_key)).strip("_")[:40]
+        if isinstance(table, pd.DataFrame) and not table.empty:
+            frames[f"bias_{safe_pair}"] = table
+        if isinstance(summary_tbl, pd.DataFrame) and not summary_tbl.empty:
+            frames[f"bias_{safe_pair}_summary"] = summary_tbl
+    return frames
+
+
+def export_demo_report(output_dir: str) -> int:
+    """Export a deterministic beginner-facing demo report from built-in sample data."""
+    out_dir = Path(output_dir).expanduser().resolve()
+    out_dir.mkdir(parents=True, exist_ok=True)
+    data = sample_mfrm_data(seed=20260411)
+    keep_persons = data["Person"].drop_duplicates().head(12)
+    data = data[data["Person"].isin(keep_persons)].copy()
+    data.to_csv(out_dir / "demo_sample_data.csv", index=False)
+
+    result = mfrm_estimate(
+        data,
+        person_col="Person",
+        facet_cols=["Rater", "Task", "Criterion"],
+        score_col="Score",
+        model="PCM",
+        method="JMLE",
+        step_facet="Task",
+        maxit=80,
+        reltol=1e-5,
+    )
+    diagnostics = mfrm_diagnostics(result, compute_pca=True, compute_marginal=False)
+    all_bias_results: dict[str, dict] = {}
+    try:
+        all_bias_results["Rater x Task"] = estimate_bias_interaction(
+            result,
+            diagnostics,
+            "Rater",
+            "Task",
+            max_abs=10.0,
+            omit_extreme=True,
+        )
+    except Exception:
+        all_bias_results = {}
+
+    frames = build_demo_report_frames(result, diagnostics, data, all_bias_results=all_bias_results)
+    for name, frame in frames.items():
+        frame.to_csv(out_dir / f"{name}.csv", index=False)
+    (out_dir / "MFRM_Demo_Report.xlsx").write_bytes(to_excel_bytes(frames))
+    (out_dir / "MFRM_Demo_Report.html").write_bytes(to_html_report(frames, title="MFRM Demo Report"))
+    (out_dir / "MFRM_Demo_Report.zip").write_bytes(build_osf_zip(frames, title="MFRM_Demo_Report"))
+    method_appendix = generate_method_appendix_text(result, diagnostics, all_bias_results=all_bias_results)
+    (out_dir / "method_appendix.md").write_text(method_appendix, encoding="utf-8")
+
+    figure_html: dict[str, str] = {}
+    figure_png: dict[str, bytes] = {}
+    curve_options = category_probability_curve_options(result)
+    for row in curve_options.itertuples(index=False):
+        is_average = bool(getattr(row, "IsAverage"))
+        level_idx = None if is_average else int(getattr(row, "LevelIndex"))
+        curve = build_category_probability_curve_data(result, step_level_index=level_idx)
+        fig_curve, fig_expected = _make_category_probability_curve_figures(curve)
+        safe_label = re.sub(r"[^A-Za-z0-9]+", "_", str(getattr(row, "Label"))).strip("_")[:80] or "curve"
+        if fig_curve is not None:
+            figure_html[f"category_probability_curve_{safe_label}"] = fig_curve.to_html(include_plotlyjs="cdn")
+            png = fig_to_png_bytes(fig_curve)
+            if png is not None:
+                figure_png[f"category_probability_curve_{safe_label}"] = png
+        if fig_expected is not None:
+            figure_html[f"expected_score_curve_{safe_label}"] = fig_expected.to_html(include_plotlyjs="cdn")
+            png = fig_to_png_bytes(fig_expected)
+            if png is not None:
+                figure_png[f"expected_score_curve_{safe_label}"] = png
+    if figure_html:
+        fig_dir = out_dir / "figures_html"
+        fig_dir.mkdir(exist_ok=True)
+        for name, html in figure_html.items():
+            (fig_dir / f"{name}.html").write_text(html, encoding="utf-8")
+        (out_dir / "MFRM_Demo_Figures_HTML.zip").write_bytes(cached_named_asset_zip(figure_html, bytes_mapping_fingerprint(figure_html), "html"))
+    if figure_png:
+        png_dir = out_dir / "figures_png"
+        png_dir.mkdir(exist_ok=True)
+        for name, png in figure_png.items():
+            (png_dir / f"{name}.png").write_bytes(png)
+        (out_dir / "MFRM_Demo_Figures_PNG.zip").write_bytes(cached_named_asset_zip(figure_png, bytes_mapping_fingerprint(figure_png), "png"))
+
+    readme = f"""# MFRM Demo Report
+
+This folder was generated from the app's built-in synthetic sample data.
+It demonstrates the standalone Python workflow without calling `mfrmr`,
+`rpy2`, `Rscript`, FACETS, TAM, sirt, or mirt at runtime.
+
+## Files to open first
+
+1. `MFRM_Demo_Report.html`: browser-readable table report.
+2. `final_report_readiness.csv`: what to resolve before final reporting.
+3. `visual_interpretation_checklist.csv`: how to read each plot.
+4. `category_probability_curves.csv`: long-form PCM curve data for the
+   averaged view and each Task level.
+5. `figures_html/`: interactive category probability and expected-score curves.
+6. `method_appendix.md`: reproducible method notes for this demo run.
+
+## Demo model
+
+- Model: PCM
+- Estimation: JMLE
+- Step facet: Task
+- Observations: {len(data):,}
+- App version: {APP_VERSION}
+
+The data are synthetic, but the report structure is the same one to use with
+real rating data. For confidential real data, run locally and remove direct
+identifiers before upload or paste.
+"""
+    (out_dir / "README.md").write_text(readme, encoding="utf-8")
+    print(f"Wrote demo report to: {out_dir}")
+    print("Key files: MFRM_Demo_Report.html, MFRM_Demo_Report.xlsx, final_report_readiness.csv, figures_html/")
+    return 0
+
+
 def _benchmark_data_subset(base: pd.DataFrame, n_persons: int) -> pd.DataFrame:
     keep_persons = base["Person"].drop_duplicates().head(int(n_persons))
     return base[base["Person"].isin(keep_persons)].copy()
@@ -18845,6 +19102,11 @@ if __name__ == "__main__":
                 raise SystemExit("--benchmark-csv requires an output path")
             benchmark_csv_path = sys.argv[csv_arg_idx]
         raise SystemExit(run_benchmarks(csv_path=benchmark_csv_path, quick="--benchmark-quick" in sys.argv))
+    if "--export-demo-report" in sys.argv:
+        out_arg_idx = sys.argv.index("--export-demo-report") + 1
+        if out_arg_idx >= len(sys.argv):
+            raise SystemExit("--export-demo-report requires an output directory")
+        raise SystemExit(export_demo_report(sys.argv[out_arg_idx]))
     if "--export-parity-fixture" in sys.argv:
         out_arg_idx = sys.argv.index("--export-parity-fixture") + 1
         if out_arg_idx >= len(sys.argv):

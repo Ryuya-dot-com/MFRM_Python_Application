@@ -81,5 +81,8 @@ jobs:
       - name: Run benchmark smoke
         run: python streamlit_app.py --benchmark-quick --benchmark-csv validation/generated/benchmark_smoke.csv
 
+      - name: Export demo report smoke
+        run: python streamlit_app.py --export-demo-report validation/generated/demo_report
+
       - name: Export parity fixture smoke
         run: python streamlit_app.py --export-parity-fixture validation/generated/parity_fixture

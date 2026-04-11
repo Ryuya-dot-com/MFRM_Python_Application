@@ -27,7 +27,7 @@ Use these settings when deploying from GitHub:
 - Development-only dependencies: `requirements-dev.txt` is for CI and local verification, not the hosted runtime.
 - Secrets: none are required by the app. Do not add confidential data to `.streamlit/secrets.toml`.
 
-The root `requirements.txt` is intentional because Streamlit Community Cloud installs app dependencies from a requirements file in the repository root or next to the entrypoint file. A `packages.txt` file is not currently needed because the app does not require apt-managed system packages.
+The root `requirements.txt` is intentional because Streamlit Community Cloud installs app dependencies from a requirements file in the repository root or next to the entrypoint file. A `packages.txt` file is not currently needed for core analysis because the app falls back to interactive HTML figure exports if Chrome or Chromium is unavailable for Kaleido PNG export.
 
 Set the Python version deliberately in the Streamlit Community Cloud Advanced settings. After deployment, changing the Python version requires deleting and redeploying the app, so record the chosen version with the app release notes.
 

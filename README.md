@@ -62,6 +62,7 @@ python streamlit_app.py --doctor
 python streamlit_app.py --self-test
 python -m pytest tests
 python streamlit_app.py --benchmark-quick --benchmark-csv validation/generated/benchmark_smoke.csv
+python streamlit_app.py --export-demo-report validation/generated/demo_report
 python streamlit_app.py --export-parity-fixture validation/generated/parity_fixture
 ```
 
@@ -145,6 +146,16 @@ For PCM and bounded GPCM, category probability curves can be read either as an
 averaged overview or for each selected step-facet level. The downloadable table
 bundle also includes long-form curve data for all available curve scopes.
 
+To generate a synthetic beginner-facing report without uploading data:
+
+```bash
+python streamlit_app.py --export-demo-report validation/generated/demo_report
+```
+
+Open `validation/generated/demo_report/MFRM_Demo_Report.html` first, then read
+`final_report_readiness.csv`, `visual_interpretation_checklist.csv`, and the
+interactive category curves in `figures_html/`.
+
 ## Statistical Caveats
 
 - GPCM is not a strict Rasch model. Its slope parameters change the interpretation of invariance and should be reported explicitly.
@@ -159,6 +170,13 @@ bundle also includes long-form curve data for all available curve scopes.
 - `st.cache_resource` is used only for the read-only core function namespace.
 - `st.cache_data` is used for built-in sample data, bundled anchor templates/guidelines, and short-lived export bytes keyed by reproducibility fingerprints.
 - Uploaded or pasted rating data are not cached as a resource. Export-byte caches are bounded and short-lived, but confidential analyses should still be run locally.
+
+## Figure Exports
+
+Interactive HTML figure exports are always attempted. Static PNG exports use
+Plotly/Kaleido and require Chrome or Chromium in the runtime when using
+`kaleido >= 1.0`; if that browser dependency is unavailable, the app falls back
+to interactive HTML figures instead of blocking the analysis.
 
 ## External Reference Roles
 
@@ -185,6 +203,7 @@ It runs:
 - `python streamlit_app.py --self-test`
 - `python streamlit_app.py --benchmark-quick --benchmark-csv validation/generated/benchmark_smoke.csv`
 - Streamlit AppTest smoke check
+- demo report export smoke check
 - parity fixture export smoke check
 
 If this directory is used as a standalone GitHub repository, the workflow will be discovered normally. If it remains a subdirectory inside a larger repository, copy or mirror the workflow into the repository root `.github/workflows/` directory.

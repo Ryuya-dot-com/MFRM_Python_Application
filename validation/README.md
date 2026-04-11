@@ -36,10 +36,13 @@ The generated folder includes:
 - `cross_package_tolerance_policy.csv`.
 - `external_reference_documentation.csv`.
 - `external_simulation_reference_inventory.csv`.
+- `external_simulation_template_inventory.csv`.
 - `external_validation_artifact_checklist.csv`.
 - `external_validation_report_template.csv`.
 - `mfrmr_015_migration_coverage.csv`.
 - `r_crosscheck_scaffold.R`.
+- `README_external_simulation_templates.md` plus sanitized Python/R/Julia
+  template scripts for optional Simulation-style handoff checks.
 - notes explaining why exact equality is not expected.
 
 Generated files are intentionally ignored by Git under `validation/generated/`.
@@ -141,3 +144,8 @@ used throughout this validation directory.
 See `SIMULATION_REFERENCE_STATUS.md` for the local Simulation-directory
 inventory that should guide external-data numerical validation without bundling
 private or large datasets into this public app repository.
+
+The generated parity fixture and the app's Downloads tab also expose sanitized
+Python/R/Julia template scripts. They require users to pass `MFRM_INPUT_CSV` and
+`MFRM_OUTPUT_DIR` through environment variables, so local absolute paths are not
+embedded in public artifacts.

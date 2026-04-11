@@ -422,6 +422,12 @@ def public_release_readiness_table() -> pd.DataFrame:
             "Action": "Use the inventory for numerical validation planning; do not bundle private or large Simulation data in the public app.",
         },
         {
+            "Check": "Simulation validation templates",
+            "Status": "Ready" if len(external_simulation_template_scripts()) >= 4 else "Review",
+            "Evidence": f"{len(external_simulation_template_inventory())} Python/R/Julia template rows are documented.",
+            "Action": "Use sanitized templates for external validation handoff; keep local paths and private data out of the public repo.",
+        },
+        {
             "Check": "mfrmr 0.1.5 migration coverage",
             "Status": "Ready" if not mfrmr_015_migration_coverage_table().empty else "Review",
             "Evidence": f"{len(mfrmr_015_migration_coverage_table())} migration-scope rows documented.",
@@ -18577,6 +18583,457 @@ def _generate_requirements_txt() -> str:
     )
 
 
+def external_simulation_template_inventory() -> pd.DataFrame:
+    """Downloadable sanitized templates for external Simulation validation."""
+    rows = [
+        {
+            "Template": "simulation_validation_python_template.py",
+            "Runtime": "Python",
+            "PrimaryUse": "Refit an anonymized long-format CSV with the standalone Python app engine or a supplied Python engine file.",
+            "RequiredInputs": "MFRM_INPUT_CSV; MFRM_OUTPUT_DIR; MFRM_PERSON_COL; MFRM_SCORE_COL; MFRM_FACET_COLS",
+            "OptionalInputs": "MFRM_PY_ENGINE_PATH; MFRM_MODEL; MFRM_METHOD; MFRM_STEP_FACET; MFRM_SLOPE_FACET; MFRM_MAXIT; MFRM_RELTOL",
+            "PrivacyBoundary": "No absolute path, raw observed data, or local Dropbox path is embedded.",
+            "OutputFiles": "python_template_status.csv; python_data_audit.csv; python_summary.csv; python_person_measures.csv; python_facet_measures.csv; python_steps.csv",
+        },
+        {
+            "Template": "simulation_validation_r_template.R",
+            "Runtime": "R",
+            "PrimaryUse": "Audit an anonymized long-format CSV and optionally run mfrmr when an installed package or sourced core is supplied.",
+            "RequiredInputs": "MFRM_INPUT_CSV; MFRM_OUTPUT_DIR; MFRM_PERSON_COL; MFRM_SCORE_COL; MFRM_FACET_COLS",
+            "OptionalInputs": "MFRM_R_SOURCE; MFRM_MODEL; MFRM_METHOD; MFRM_MAXIT; MFRM_RELTOL",
+            "PrivacyBoundary": "No absolute path, raw observed data, package cache path, or local Dropbox path is embedded.",
+            "OutputFiles": "r_template_status.csv; r_data_audit.csv; r_category_counts.csv; r_facet_counts.csv; optional r_mfrmr_summary.csv",
+        },
+        {
+            "Template": "simulation_validation_julia_template.jl",
+            "Runtime": "Julia",
+            "PrimaryUse": "Audit an anonymized long-format CSV and optionally run a supplied Julia MFRM engine file.",
+            "RequiredInputs": "MFRM_INPUT_CSV; MFRM_OUTPUT_DIR; MFRM_PERSON_COL; MFRM_SCORE_COL; MFRM_FACET_COLS",
+            "OptionalInputs": "MFRM_JULIA_ENGINE_PATH; MFRM_MODEL; MFRM_METHOD; MFRM_MAXIT; MFRM_RELTOL",
+            "PrivacyBoundary": "No absolute path, raw observed data, sysimage path, or local Dropbox path is embedded.",
+            "OutputFiles": "julia_template_status.csv; julia_data_audit.csv; julia_category_counts.csv; optional julia_summary.csv",
+        },
+    ]
+    return pd.DataFrame(rows)
+
+
+def external_simulation_template_scripts() -> dict[str, str]:
+    """Return sanitized Python/R/Julia templates for external validation handoff."""
+    readme = """# External Simulation Validation Templates
+
+These templates are sanitized handoff scripts. They do not contain raw data,
+absolute local paths, Dropbox paths, package-cache paths, or personal machine
+names.
+
+Use them only after creating an anonymized long-format CSV. Set paths through
+environment variables instead of editing local absolute paths into the scripts.
+
+Required environment variables:
+- `MFRM_INPUT_CSV`: path to the anonymized long-format CSV.
+- `MFRM_OUTPUT_DIR`: output folder for generated validation artifacts.
+- `MFRM_PERSON_COL`: person identifier column, default `Person`.
+- `MFRM_SCORE_COL`: score column, default `Score`.
+- `MFRM_FACET_COLS`: comma-separated facet columns, default `Rater,Criteria,Region`.
+
+Examples:
+
+```bash
+MFRM_INPUT_CSV=writing_long_anonymized.csv \\
+MFRM_OUTPUT_DIR=validation_outputs/python \\
+MFRM_FACET_COLS=Rater,Criteria,Region \\
+python simulation_validation_python_template.py
+```
+
+```bash
+MFRM_INPUT_CSV=writing_long_anonymized.csv \\
+MFRM_OUTPUT_DIR=validation_outputs/r \\
+Rscript simulation_validation_r_template.R
+```
+
+```bash
+MFRM_INPUT_CSV=writing_long_anonymized.csv \\
+MFRM_OUTPUT_DIR=validation_outputs/julia \\
+julia simulation_validation_julia_template.jl
+```
+
+The Python template can import this public app (`streamlit_app.py`) when it is
+on `PYTHONPATH` or in the current directory. The R and Julia templates run data
+audits by default and only attempt optional engine refits when a local package
+or engine file is explicitly supplied through an environment variable.
+"""
+
+    python_template = r"""#!/usr/bin/env python3
+# Sanitized external Simulation validation template for the MFRM Streamlit app.
+# No absolute local paths or raw data are embedded. Configure by environment.
+
+from __future__ import annotations
+
+import importlib.util
+import os
+import sys
+import time
+from pathlib import Path
+
+import pandas as pd
+
+
+INPUT_CSV = Path(os.environ.get("MFRM_INPUT_CSV", "input_long.csv")).expanduser()
+OUTPUT_DIR = Path(os.environ.get("MFRM_OUTPUT_DIR", "validation_outputs/python")).expanduser()
+PERSON_COL = os.environ.get("MFRM_PERSON_COL", "Person")
+SCORE_COL = os.environ.get("MFRM_SCORE_COL", "Score")
+FACET_COLS = [x.strip() for x in os.environ.get("MFRM_FACET_COLS", "Rater,Criteria,Region").split(",") if x.strip()]
+MODEL = os.environ.get("MFRM_MODEL", "RSM")
+METHOD = os.environ.get("MFRM_METHOD", "JMLE")
+STEP_FACET = os.environ.get("MFRM_STEP_FACET") or None
+SLOPE_FACET = os.environ.get("MFRM_SLOPE_FACET") or None
+MAXIT = int(os.environ.get("MFRM_MAXIT", "250"))
+RELTOL = float(os.environ.get("MFRM_RELTOL", "5e-5"))
+ENGINE_PATH = os.environ.get("MFRM_PY_ENGINE_PATH", "")
+
+
+def load_engine():
+    if ENGINE_PATH:
+        path = Path(ENGINE_PATH).expanduser().resolve()
+        spec = importlib.util.spec_from_file_location("mfrm_python_engine", path)
+        if spec is None or spec.loader is None:
+            raise RuntimeError(f"Could not load Python engine from {path}")
+        module = importlib.util.module_from_spec(spec)
+        sys.modules["mfrm_python_engine"] = module
+        spec.loader.exec_module(module)
+        return module
+    try:
+        import streamlit_app as app_engine
+    except ImportError as exc:
+        raise RuntimeError(
+            "streamlit_app.py is not importable. Run this from the app folder, "
+            "set PYTHONPATH to the app folder, or set MFRM_PY_ENGINE_PATH."
+        ) from exc
+    return app_engine
+
+
+def data_audit(df: pd.DataFrame) -> pd.DataFrame:
+    missing_cols = [c for c in [PERSON_COL, SCORE_COL, *FACET_COLS] if c not in df.columns]
+    rows = [
+        {"Check": "input_csv", "Value": str(INPUT_CSV), "Status": "ok" if INPUT_CSV.exists() else "missing"},
+        {"Check": "n_rows", "Value": len(df), "Status": "ok" if len(df) > 0 else "empty"},
+        {"Check": "person_col", "Value": PERSON_COL, "Status": "ok" if PERSON_COL in df.columns else "missing"},
+        {"Check": "score_col", "Value": SCORE_COL, "Status": "ok" if SCORE_COL in df.columns else "missing"},
+        {"Check": "facet_cols", "Value": ",".join(FACET_COLS), "Status": "ok" if not missing_cols else "missing:" + ",".join(missing_cols)},
+    ]
+    if SCORE_COL in df.columns and len(df) > 0:
+        score = pd.to_numeric(df[SCORE_COL], errors="coerce")
+        rows.extend([
+            {"Check": "score_min", "Value": score.min(), "Status": "ok"},
+            {"Check": "score_max", "Value": score.max(), "Status": "ok"},
+            {"Check": "score_missing", "Value": int(score.isna().sum()), "Status": "review" if score.isna().any() else "ok"},
+            {"Check": "observed_categories", "Value": ",".join(map(str, sorted(score.dropna().unique()))), "Status": "ok"},
+        ])
+    return pd.DataFrame(rows)
+
+
+def write_frame(name: str, frame) -> None:
+    if isinstance(frame, pd.DataFrame) and not frame.empty:
+        frame.to_csv(OUTPUT_DIR / name, index=False)
+
+
+def main() -> int:
+    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+    status_rows = []
+    if not INPUT_CSV.exists():
+        pd.DataFrame([{"Status": "error", "Detail": f"Input CSV not found: {INPUT_CSV}"}]).to_csv(
+            OUTPUT_DIR / "python_template_status.csv", index=False
+        )
+        return 1
+
+    df = pd.read_csv(INPUT_CSV)
+    audit = data_audit(df)
+    audit.to_csv(OUTPUT_DIR / "python_data_audit.csv", index=False)
+    if audit["Status"].astype(str).str.startswith("missing").any() or len(df) == 0:
+        pd.DataFrame([{"Status": "error", "Detail": "Required columns or rows are missing. See python_data_audit.csv."}]).to_csv(
+            OUTPUT_DIR / "python_template_status.csv", index=False
+        )
+        return 1
+
+    engine = load_engine()
+    t0 = time.time()
+    try:
+        result = engine.mfrm_estimate(
+            df,
+            person_col=PERSON_COL,
+            facet_cols=FACET_COLS,
+            score_col=SCORE_COL,
+            model=MODEL,
+            method=METHOD,
+            step_facet=STEP_FACET,
+            slope_facet=SLOPE_FACET,
+            maxit=MAXIT,
+            reltol=RELTOL,
+        )
+        elapsed = time.time() - t0
+        diagnostics = {}
+        if hasattr(engine, "mfrm_diagnostics"):
+            diagnostics = engine.mfrm_diagnostics(result, compute_pca=False, compute_marginal=False)
+        summary = result.get("summary", pd.DataFrame()).copy()
+        if not summary.empty:
+            summary["TemplateElapsedSeconds"] = elapsed
+            summary["TemplateEngine"] = "Python"
+        write_frame("python_summary.csv", summary)
+        write_frame("python_convergence.csv", result.get("convergence", pd.DataFrame()))
+        facets = result.get("facets", {}) if isinstance(result, dict) else {}
+        write_frame("python_person_measures.csv", facets.get("person", pd.DataFrame()) if isinstance(facets, dict) else pd.DataFrame())
+        write_frame("python_facet_measures.csv", facets.get("others", pd.DataFrame()) if isinstance(facets, dict) else pd.DataFrame())
+        write_frame("python_steps.csv", result.get("steps", pd.DataFrame()))
+        write_frame("python_fit_statistics.csv", diagnostics.get("fit", pd.DataFrame()) if isinstance(diagnostics, dict) else pd.DataFrame())
+        status_rows.append({"Status": "ok", "Detail": "Python validation refit completed.", "ElapsedSeconds": elapsed})
+    except Exception as exc:
+        status_rows.append({"Status": "error", "Detail": str(exc), "ElapsedSeconds": time.time() - t0})
+
+    pd.DataFrame(status_rows).to_csv(OUTPUT_DIR / "python_template_status.csv", index=False)
+    return 0 if status_rows and status_rows[-1]["Status"] == "ok" else 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
+"""
+
+    r_template = r"""#!/usr/bin/env Rscript
+# Sanitized external Simulation validation template for optional R/mfrmr checks.
+# No absolute local paths or raw data are embedded. Configure by environment.
+
+input_csv <- Sys.getenv("MFRM_INPUT_CSV", "input_long.csv")
+output_dir <- Sys.getenv("MFRM_OUTPUT_DIR", "validation_outputs/r")
+person_col <- Sys.getenv("MFRM_PERSON_COL", "Person")
+score_col <- Sys.getenv("MFRM_SCORE_COL", "Score")
+facet_cols <- strsplit(Sys.getenv("MFRM_FACET_COLS", "Rater,Criteria,Region"), ",", fixed = TRUE)[[1]]
+facet_cols <- trimws(facet_cols[nzchar(trimws(facet_cols))])
+model <- Sys.getenv("MFRM_MODEL", "RSM")
+method <- Sys.getenv("MFRM_METHOD", "JMLE")
+maxit <- as.integer(Sys.getenv("MFRM_MAXIT", "250"))
+reltol <- as.numeric(Sys.getenv("MFRM_RELTOL", "5e-5"))
+r_source <- Sys.getenv("MFRM_R_SOURCE", "")
+
+dir.create(output_dir, recursive = TRUE, showWarnings = FALSE)
+
+write_status <- function(status, detail) {
+  write.csv(
+    data.frame(Status = status, Detail = detail, stringsAsFactors = FALSE),
+    file.path(output_dir, "r_template_status.csv"),
+    row.names = FALSE
+  )
+}
+
+if (!file.exists(input_csv)) {
+  write_status("error", paste("Input CSV not found:", input_csv))
+  quit(status = 1)
+}
+
+dat <- read.csv(input_csv, stringsAsFactors = FALSE, check.names = FALSE)
+required_cols <- c(person_col, score_col, facet_cols)
+missing_cols <- setdiff(required_cols, names(dat))
+
+audit <- data.frame(
+  Check = c("input_csv", "n_rows", "person_col", "score_col", "facet_cols"),
+  Value = c(input_csv, nrow(dat), person_col, score_col, paste(facet_cols, collapse = ",")),
+  Status = c(
+    "ok",
+    ifelse(nrow(dat) > 0, "ok", "empty"),
+    ifelse(person_col %in% names(dat), "ok", "missing"),
+    ifelse(score_col %in% names(dat), "ok", "missing"),
+    ifelse(length(missing_cols) == 0, "ok", paste("missing", paste(missing_cols, collapse = ",")))
+  ),
+  stringsAsFactors = FALSE
+)
+write.csv(audit, file.path(output_dir, "r_data_audit.csv"), row.names = FALSE)
+
+if (length(missing_cols) > 0 || nrow(dat) == 0) {
+  write_status("error", "Required columns or rows are missing. See r_data_audit.csv.")
+  quit(status = 1)
+}
+
+category_counts <- as.data.frame(table(dat[[score_col]], useNA = "ifany"), stringsAsFactors = FALSE)
+names(category_counts) <- c("Score", "N")
+write.csv(category_counts, file.path(output_dir, "r_category_counts.csv"), row.names = FALSE)
+
+facet_counts <- do.call(
+  rbind,
+  lapply(facet_cols, function(fc) {
+    out <- as.data.frame(table(dat[[fc]], useNA = "ifany"), stringsAsFactors = FALSE)
+    names(out) <- c("Level", "N")
+    out$Facet <- fc
+    out[, c("Facet", "Level", "N")]
+  })
+)
+write.csv(facet_counts, file.path(output_dir, "r_facet_counts.csv"), row.names = FALSE)
+
+if (nzchar(r_source)) {
+  source(r_source)
+}
+
+fit_fun <- NULL
+if (exists("fit_mfrm", mode = "function")) {
+  fit_fun <- get("fit_mfrm")
+} else if (requireNamespace("mfrmr", quietly = TRUE) && exists("fit_mfrm", where = asNamespace("mfrmr"), inherits = FALSE)) {
+  fit_fun <- get("fit_mfrm", envir = asNamespace("mfrmr"))
+}
+
+if (is.null(fit_fun)) {
+  write_status("audit_only", "No fit_mfrm() function found. Data audit files were written; set MFRM_R_SOURCE or install/load mfrmr for an optional refit.")
+  quit(status = 0)
+}
+
+t0 <- proc.time()[["elapsed"]]
+fit <- tryCatch(
+  fit_fun(
+    data = dat,
+    person_col = person_col,
+    facet_cols = facet_cols,
+    score_col = score_col,
+    model = model,
+    method = method,
+    maxit = maxit,
+    reltol = reltol
+  ),
+  error = function(e) e
+)
+elapsed <- proc.time()[["elapsed"]] - t0
+
+if (inherits(fit, "error")) {
+  write_status("error", conditionMessage(fit))
+  quit(status = 1)
+}
+
+summary_out <- data.frame(
+  model = model,
+  method = method,
+  n_rows = nrow(dat),
+  n_persons = length(unique(dat[[person_col]])),
+  elapsed_sec = elapsed,
+  stringsAsFactors = FALSE
+)
+write.csv(summary_out, file.path(output_dir, "r_mfrmr_summary.csv"), row.names = FALSE)
+saveRDS(fit, file.path(output_dir, "r_mfrmr_fit.rds"))
+write_status("ok", "R optional mfrmr refit completed. Review parameterization before comparing with Python.")
+"""
+
+    julia_template = r"""#!/usr/bin/env julia
+# Sanitized external Simulation validation template for optional Julia checks.
+# No absolute local paths, sysimage paths, or raw data are embedded. Configure by environment.
+
+using CSV
+using DataFrames
+using Statistics
+
+input_csv = get(ENV, "MFRM_INPUT_CSV", "input_long.csv")
+output_dir = get(ENV, "MFRM_OUTPUT_DIR", "validation_outputs/julia")
+person_col = Symbol(get(ENV, "MFRM_PERSON_COL", "Person"))
+score_col = Symbol(get(ENV, "MFRM_SCORE_COL", "Score"))
+facet_cols = Symbol.(strip.(split(get(ENV, "MFRM_FACET_COLS", "Rater,Criteria,Region"), ",")))
+model = get(ENV, "MFRM_MODEL", "RSM")
+method = get(ENV, "MFRM_METHOD", "JMLE")
+maxit = parse(Int, get(ENV, "MFRM_MAXIT", "250"))
+reltol = parse(Float64, get(ENV, "MFRM_RELTOL", "5e-5"))
+engine_path = get(ENV, "MFRM_JULIA_ENGINE_PATH", "")
+
+mkpath(output_dir)
+
+function write_status(status::AbstractString, detail::AbstractString)
+    CSV.write(joinpath(output_dir, "julia_template_status.csv"), DataFrame(Status=[status], Detail=[detail]))
+end
+
+if !isfile(input_csv)
+    write_status("error", "Input CSV not found: $(input_csv)")
+    exit(1)
+end
+
+dat = CSV.read(input_csv, DataFrame)
+required_cols = vcat([person_col, score_col], facet_cols)
+missing_cols = [String(c) for c in required_cols if !(String(c) in names(dat))]
+audit = DataFrame(
+    Check = ["input_csv", "n_rows", "person_col", "score_col", "facet_cols"],
+    Value = [input_csv, string(nrow(dat)), String(person_col), String(score_col), join(String.(facet_cols), ",")],
+    Status = [
+        "ok",
+        nrow(dat) > 0 ? "ok" : "empty",
+        String(person_col) in names(dat) ? "ok" : "missing",
+        String(score_col) in names(dat) ? "ok" : "missing",
+        isempty(missing_cols) ? "ok" : "missing:" * join(missing_cols, ",")
+    ],
+)
+CSV.write(joinpath(output_dir, "julia_data_audit.csv"), audit)
+
+if !isempty(missing_cols) || nrow(dat) == 0
+    write_status("error", "Required columns or rows are missing. See julia_data_audit.csv.")
+    exit(1)
+end
+
+category_counts = combine(groupby(dat, score_col), nrow => :N)
+CSV.write(joinpath(output_dir, "julia_category_counts.csv"), category_counts)
+
+facet_counts = DataFrame(Facet=String[], Level=String[], N=Int[])
+for fc in facet_cols
+    counts = combine(groupby(dat, fc), nrow => :N)
+    append!(facet_counts, DataFrame(Facet=fill(String(fc), nrow(counts)), Level=string.(counts[!, fc]), N=counts.N))
+end
+CSV.write(joinpath(output_dir, "julia_facet_counts.csv"), facet_counts)
+
+if isempty(engine_path)
+    write_status("audit_only", "No Julia engine supplied. Data audit files were written; set MFRM_JULIA_ENGINE_PATH for an optional refit.")
+    exit(0)
+end
+
+include(engine_path)
+if !isdefined(Main, :mfrm_estimate)
+    write_status("error", "MFRM_JULIA_ENGINE_PATH did not define mfrm_estimate().")
+    exit(1)
+end
+
+t0 = time()
+try
+    result = mfrm_estimate(
+        dat;
+        person_col=person_col,
+        facet_cols=facet_cols,
+        score_col=score_col,
+        model=model,
+        method=method,
+        maxit=maxit,
+        reltol=reltol,
+    )
+    elapsed = time() - t0
+    sm = result.summary
+    summary_df = DataFrame(
+        model=[model],
+        method=[method],
+        n_rows=[nrow(dat)],
+        n_persons=[length(unique(dat[!, person_col]))],
+        elapsed_sec=[elapsed],
+        loglik=[haskey(sm, "LogLik") ? Float64(sm["LogLik"]) : missing],
+        converged=[haskey(sm, "Converged") ? Bool(sm["Converged"]) : missing],
+    )
+    CSV.write(joinpath(output_dir, "julia_summary.csv"), summary_df)
+    CSV.write(joinpath(output_dir, "julia_person_measures.csv"), result.person)
+    CSV.write(joinpath(output_dir, "julia_facet_measures.csv"), result.facets)
+    CSV.write(joinpath(output_dir, "julia_steps.csv"), result.steps)
+    if isdefined(Main, :diagnose_mfrm)
+        diag = diagnose_mfrm(result, dat; person_col=person_col, facet_cols=facet_cols, score_col=score_col)
+        CSV.write(joinpath(output_dir, "julia_measures.csv"), diag.measures)
+        CSV.write(joinpath(output_dir, "julia_reliability.csv"), diag.reliability)
+    end
+    write_status("ok", "Julia optional refit completed. Review parameterization before comparing with Python.")
+catch err
+    write_status("error", sprint(showerror, err))
+    exit(1)
+end
+"""
+
+    return {
+        "README_external_simulation_templates.md": readme,
+        "simulation_validation_python_template.py": python_template,
+        "simulation_validation_r_template.R": r_template,
+        "simulation_validation_julia_template.jl": julia_template,
+    }
+
+
 # ---------------------------------------------------------------------------
 # Phase 4-7: Multi-format downloads
 # ---------------------------------------------------------------------------
@@ -18670,6 +19127,9 @@ def _render_downloads(
     simulation_inventory_dl = external_simulation_reference_inventory()
     if isinstance(simulation_inventory_dl, pd.DataFrame) and not simulation_inventory_dl.empty:
         all_frames["external_simulation_reference_inventory"] = simulation_inventory_dl
+    simulation_templates_dl = external_simulation_template_inventory()
+    if isinstance(simulation_templates_dl, pd.DataFrame) and not simulation_templates_dl.empty:
+        all_frames["external_simulation_template_inventory"] = simulation_templates_dl
     mfrmr_coverage_dl = mfrmr_015_migration_coverage_table()
     if isinstance(mfrmr_coverage_dl, pd.DataFrame) and not mfrmr_coverage_dl.empty:
         all_frames["mfrmr_015_migration_coverage"] = mfrmr_coverage_dl
@@ -19270,9 +19730,11 @@ def _render_downloads(
 
         method_appendix = generate_method_appendix_text(result, diagnostics, all_bias_results)
         manuscript_template = generate_manuscript_reporting_template(result, diagnostics, all_bias_results)
+        external_template_assets = external_simulation_template_scripts()
         text_assets = {
             "method_appendix.md": method_appendix,
             "manuscript_template.md": manuscript_template,
+            **external_template_assets,
         }
         text_assets_key = bytes_mapping_fingerprint(text_assets)
         st.subheader("Compact method appendix")
@@ -19401,6 +19863,40 @@ def _render_downloads(
                 mime="text/plain",
                 key="dl_repro_r",
             )
+
+        # --- External Simulation validation templates ---
+        st.subheader("External Simulation validation templates")
+        st.caption(
+            "Sanitized Python/R/Julia templates for external numerical validation. "
+            "They use environment variables for input/output paths and do not embed "
+            "local absolute paths, Dropbox paths, or raw data."
+        )
+        template_inventory = external_simulation_template_inventory()
+        st.dataframe(template_inventory, width="stretch", hide_index=True)
+        template_assets = external_simulation_template_scripts()
+        template_assets_key = bytes_mapping_fingerprint(template_assets)
+        st.download_button(
+            "Download Python/R/Julia validation templates (ZIP)",
+            data=cached_mixed_asset_zip(template_assets, template_assets_key),
+            file_name="MFRM_External_Simulation_Validation_Templates.zip",
+            mime="application/zip",
+            key="dl_external_simulation_template_zip",
+        )
+        with st.expander("Individual external validation template downloads"):
+            template_cols = st.columns(2)
+            for idx, (file_name, script_text) in enumerate(template_assets.items()):
+                with template_cols[idx % len(template_cols)]:
+                    suffix = Path(file_name).suffix.lower()
+                    mime = "text/markdown" if suffix == ".md" else "text/plain"
+                    if suffix == ".py":
+                        mime = "text/x-python"
+                    st.download_button(
+                        file_name,
+                        data=script_text.encode("utf-8"),
+                        file_name=file_name,
+                        mime=mime,
+                        key=f"dl_external_simulation_template_{idx}",
+                    )
 
         # --- Stan code reference ---
         st.subheader("Stan code for Bayesian MFRM")
@@ -20249,6 +20745,7 @@ def _self_test_report_readiness_and_method_appendix() -> None:
         "visual_method_evidence",
         "public_beta_limitations",
         "external_simulation_reference_inventory",
+        "external_simulation_template_inventory",
         "mfrmr_015_migration_coverage",
         "public_release_readiness",
         "category_probability_curves",
@@ -20432,6 +20929,21 @@ def _self_test_script_support_boundaries() -> None:
     ordinary_result = {"config": {"model": "PCM", "method": "JMLE", "population_model": {}}}
     ordinary_support = build_script_support_status(ordinary_result)
     _self_test_assert(ordinary_support["portable_available"], "ordinary PCM JMLE portable script should be available")
+    external_templates = external_simulation_template_scripts()
+    _self_test_assert(
+        {
+            "simulation_validation_python_template.py",
+            "simulation_validation_r_template.R",
+            "simulation_validation_julia_template.jl",
+        }.issubset(set(external_templates)),
+        "external Simulation template script bundle missing a language template",
+    )
+    joined_templates = "\n".join(external_templates.values())
+    _self_test_assert("MFRM_INPUT_CSV" in joined_templates, "external Simulation templates missing env-var input path")
+    _self_test_assert(
+        "/Users/" not in joined_templates and "C:/Users/" not in joined_templates,
+        "external Simulation templates contain local absolute paths",
+    )
 
 
 def _self_test_reproducibility_fingerprints() -> None:
@@ -20878,6 +21390,12 @@ def external_validation_artifact_checklist() -> pd.DataFrame:
             "ReviewQuestion": "Were private data, absolute paths, zero-byte replicates, and package-specific parameterizations handled before public reporting?",
         },
         {
+            "Artifact": "Simulation validation template scripts",
+            "RequiredForClaim": "Any reusable external Simulation handoff workflow",
+            "ExpectedFileOrEvidence": "external_simulation_template_inventory.csv plus README_external_simulation_templates.md and simulation_validation_* templates",
+            "ReviewQuestion": "Do the scripts avoid hard-coded local paths and require users to provide anonymized input data explicitly?",
+        },
+        {
             "Artifact": "R cross-check status",
             "RequiredForClaim": "Any R package fit claim",
             "ExpectedFileOrEvidence": "r_crosscheck_status.csv and r_crosscheck_report.md",
@@ -21002,6 +21520,11 @@ def _self_test_cross_package_validation_plan() -> None:
     _self_test_assert(
         sim_inventory["PublicHandling"].astype(str).str.contains("Do not", case=False, na=False).any(),
         "Simulation reference inventory must document public-data handling boundaries",
+    )
+    sim_templates = external_simulation_template_inventory()
+    _self_test_assert(
+        {"Python", "R", "Julia"}.issubset(set(sim_templates["Runtime"])),
+        "Simulation template inventory missing Python/R/Julia rows",
     )
     checklist = external_validation_artifact_checklist()
     _self_test_assert("External package versions" in checklist["Artifact"].tolist(), "artifact checklist missing package versions")
@@ -21188,9 +21711,12 @@ def export_reference_parity_fixture(output_dir: str) -> int:
     cross_package_tolerance_policy().to_csv(out_dir / "cross_package_tolerance_policy.csv", index=False)
     external_reference_documentation_table().to_csv(out_dir / "external_reference_documentation.csv", index=False)
     external_simulation_reference_inventory().to_csv(out_dir / "external_simulation_reference_inventory.csv", index=False)
+    external_simulation_template_inventory().to_csv(out_dir / "external_simulation_template_inventory.csv", index=False)
     external_validation_artifact_checklist().to_csv(out_dir / "external_validation_artifact_checklist.csv", index=False)
     external_validation_report_template().to_csv(out_dir / "external_validation_report_template.csv", index=False)
     mfrmr_015_migration_coverage_table().to_csv(out_dir / "mfrmr_015_migration_coverage.csv", index=False)
+    for name, script_text in external_simulation_template_scripts().items():
+        (out_dir / name).write_text(script_text, encoding="utf-8")
 
     readme = """# MFRM Python Parity Fixture
 
@@ -21216,6 +21742,12 @@ Files:
 - `external_simulation_reference_inventory.csv`: local Simulation-directory
   artifacts that can support numerical validation without becoming runtime
   dependencies or bundled private data.
+- `external_simulation_template_inventory.csv`: index of sanitized Python/R/Julia
+  handoff templates for optional external validation.
+- `README_external_simulation_templates.md`,
+  `simulation_validation_python_template.py`,
+  `simulation_validation_r_template.R`, and
+  `simulation_validation_julia_template.jl`: optional sanitized handoff scripts.
 - `external_validation_artifact_checklist.csv`: artifacts to archive before
   making public comparison claims.
 - `external_validation_report_template.csv`: blank reviewer table for the
@@ -21503,6 +22035,7 @@ def build_demo_report_frames(
     frames["visual_method_evidence"] = visual_method_evidence_table()
     frames["public_beta_limitations"] = public_beta_limitations_table()
     frames["external_simulation_reference_inventory"] = external_simulation_reference_inventory()
+    frames["external_simulation_template_inventory"] = external_simulation_template_inventory()
     frames["mfrmr_015_migration_coverage"] = mfrmr_015_migration_coverage_table()
     frames["public_release_readiness"] = public_release_readiness_table()
     person = result.get("facets", {}).get("person", pd.DataFrame())
@@ -21605,10 +22138,13 @@ def export_demo_report(output_dir: str) -> int:
         text_assets={
             "method_appendix.md": method_appendix,
             "manuscript_template.md": manuscript_template,
+            **external_simulation_template_scripts(),
         },
     ))
     (out_dir / "method_appendix.md").write_text(method_appendix, encoding="utf-8")
     (out_dir / "manuscript_template.md").write_text(manuscript_template, encoding="utf-8")
+    for name, script_text in external_simulation_template_scripts().items():
+        (out_dir / name).write_text(script_text, encoding="utf-8")
 
     figure_html: dict[str, str] = {}
     figure_png: dict[str, bytes] = {}
@@ -21697,14 +22233,18 @@ It demonstrates the standalone Python workflow without calling `mfrmr`,
 10. `public_beta_limitations.csv`: what this beta release supports and does not claim.
 11. `external_simulation_reference_inventory.csv`: local Simulation-directory
    validation artifacts to consult without bundling private data.
-12. `mfrmr_015_migration_coverage.csv`: how the local mfrmr 0.1.5 feature surface maps to this Python app.
-13. `public_release_readiness.csv`: repository-level public release checklist.
-14. `category_probability_curves.csv`: long-form PCM curve data for the
+12. `external_simulation_template_inventory.csv`: index of sanitized Python/R/Julia
+   external validation templates.
+13. `README_external_simulation_templates.md` and `simulation_validation_*`:
+   sanitized handoff scripts for optional external validation.
+14. `mfrmr_015_migration_coverage.csv`: how the local mfrmr 0.1.5 feature surface maps to this Python app.
+15. `public_release_readiness.csv`: repository-level public release checklist.
+16. `category_probability_curves.csv`: long-form PCM curve data for the
    averaged view and each Task level.
-15. `figure_manifest.csv`: manuscript-use notes and available formats for exported figures.
-16. `MFRM_Demo_Publication_Figures.zip`: publication-styled PNG/HTML figure bundle.
-17. `figures_html/`: interactive publication-styled diagnostic figures.
-18. `method_appendix.md`: reproducible method notes for this demo run.
+17. `figure_manifest.csv`: manuscript-use notes and available formats for exported figures.
+18. `MFRM_Demo_Publication_Figures.zip`: publication-styled PNG/HTML figure bundle.
+19. `figures_html/`: interactive publication-styled diagnostic figures.
+20. `method_appendix.md`: reproducible method notes for this demo run.
 
 ## Demo model
 
@@ -21849,6 +22389,7 @@ def run_release_check(json_output: bool = False) -> int:
     limitations = public_beta_limitations_table()
     migration = mfrmr_015_migration_coverage_table()
     simulation_inventory = external_simulation_reference_inventory()
+    simulation_templates = external_simulation_template_inventory()
     payload = {
         "release_status": "public beta / research preview",
         "app_version": APP_VERSION,
@@ -21856,6 +22397,7 @@ def run_release_check(json_output: bool = False) -> int:
         "readiness": readiness.to_dict(orient="records"),
         "limitations": limitations.to_dict(orient="records"),
         "external_simulation_reference_inventory": simulation_inventory.to_dict(orient="records"),
+        "external_simulation_template_inventory": simulation_templates.to_dict(orient="records"),
         "mfrmr_015_migration_coverage": migration.to_dict(orient="records"),
     }
     if json_output:
@@ -21871,6 +22413,7 @@ def run_release_check(json_output: bool = False) -> int:
         for _, row in limitations.iterrows():
             print(f"- {row['Area']}: {row['PublicBetaStatus']} - {row['Boundary']}")
         print(f"\nExternal Simulation reference inventory rows: {len(simulation_inventory)}")
+        print(f"\nExternal Simulation template rows: {len(simulation_templates)}")
         print(f"\nmfrmr 0.1.5 migration coverage rows: {len(migration)}")
     blocker_count = int((readiness["Status"].astype(str) == "Blocker").sum()) if "Status" in readiness.columns else 1
     return 1 if blocker_count else 0

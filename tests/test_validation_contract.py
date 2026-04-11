@@ -25,9 +25,23 @@ def test_cross_package_validation_plan_contract():
     assert {"Main engine refit sweep", "Validation input replicates"}.issubset(set(simulation_inventory["ReferenceSet"]))
     assert simulation_inventory["PublicHandling"].str.contains("Do not", case=False, na=False).any()
 
+    simulation_templates = app.external_simulation_template_inventory()
+    assert {"Python", "R", "Julia"}.issubset(set(simulation_templates["Runtime"]))
+    script_bundle = app.external_simulation_template_scripts()
+    assert {
+        "simulation_validation_python_template.py",
+        "simulation_validation_r_template.R",
+        "simulation_validation_julia_template.jl",
+    }.issubset(set(script_bundle))
+    joined = "\n".join(script_bundle.values())
+    assert "MFRM_INPUT_CSV" in joined
+    assert "/Users/" not in joined
+    assert "C:/Users/" not in joined
+
     artifacts = app.external_validation_artifact_checklist()
     assert "External package versions" in artifacts["Artifact"].tolist()
     assert "Simulation reference inventory" in artifacts["Artifact"].tolist()
+    assert "Simulation validation template scripts" in artifacts["Artifact"].tolist()
 
     template = app.external_validation_report_template()
     assert "mfrmr 0.1.5 migration" in template["ClaimArea"].tolist()

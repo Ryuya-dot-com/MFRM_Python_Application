@@ -248,9 +248,10 @@ For the local Simulation-directory numerical validation inventory, see
 `validation/SIMULATION_REFERENCE_STATUS.md`.
 The parity fixture also includes official documentation touchpoints, an
 artifact checklist, a local Simulation-reference inventory, an external
-validation report template, and the mfrmr 0.1.5 migration coverage table so
-external checks can be archived without making R packages or local Dropbox
-artifacts runtime dependencies.
+validation report template, sanitized Python/R/Julia Simulation validation
+templates, and the mfrmr 0.1.5 migration coverage table so external checks can
+be archived without making R packages or local Dropbox artifacts runtime
+dependencies.
 
 ## Continuous Integration
 

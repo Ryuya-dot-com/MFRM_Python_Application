@@ -27,3 +27,14 @@ the tolerance policy before making any numerical-validation claim.
 The app exports the same policy as
 `external_simulation_reference_inventory.csv` through the parity fixture and
 demo/report downloads.
+
+The same export path now includes sanitized handoff templates:
+
+- `simulation_validation_python_template.py`
+- `simulation_validation_r_template.R`
+- `simulation_validation_julia_template.jl`
+
+These scripts use environment variables such as `MFRM_INPUT_CSV` and
+`MFRM_OUTPUT_DIR` instead of local absolute paths. They are templates for
+auditing and optional external refits, not bundled copies of the private
+Simulation data.

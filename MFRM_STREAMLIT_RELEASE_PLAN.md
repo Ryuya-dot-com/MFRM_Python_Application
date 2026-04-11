@@ -149,6 +149,7 @@
 - [x] Choose and add a license before public distribution.
 - [x] Confirm `origin/main` has an existing history; do not overwrite it without an explicit replacement decision.
 - [x] Explicit replacement of `origin/main` approved by the project owner.
+- [x] Replace `origin/main` with this standalone Streamlit app history.
 
 ## Immediate Next Step
 

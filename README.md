@@ -152,7 +152,7 @@ After fitting a model, inspect results in this order:
 8. Anchor / linking review: check connectedness and anchor stability before comparing runs or groups.
 9. Strict marginal diagnostics: use for final MML reports when feasible.
 10. Publication gate: check whether APA-style conclusions are ready, caveated, or blocked.
-11. Beginner case guidance: review common interpretation traps detected in the current run.
+11. Beginner case guidance: review common interpretation traps and safer wording repairs detected in the current run.
 12. Final-report readiness: use the generated checklist before writing conclusions.
 13. Manuscript claim guide: check what is safe to claim, what requires a caveat, and what should not be claimed yet.
 14. Manuscript template: adapt the generated Methods, Results, limitations, and reviewer preflight scaffold after resolving claim-guide cautions.

@@ -10531,6 +10531,8 @@ def build_beginner_case_guidance(
         guardrail: str,
         action: str,
         where: str,
+        avoid_wording: str,
+        safer_wording: str,
     ) -> None:
         rows.append({
             "Priority": int(priority),
@@ -10541,6 +10543,8 @@ def build_beginner_case_guidance(
             "ManuscriptGuardrail": str(guardrail),
             "NextAction": str(action),
             "WhereToInspect": str(where),
+            "AvoidWording": str(avoid_wording),
+            "SaferWording": str(safer_wording),
         })
 
     overall_gate = pd.Series(dtype=object)
@@ -10559,6 +10563,8 @@ def build_beginner_case_guidance(
             "Do not turn draft APA text into a final conclusion when the gate is caveated or blocked.",
             str(overall_gate.get("ManuscriptAction", "Review gate details.")),
             "Report -> APA Report / publication_gate_summary.csv",
+            "The model results conclusively support the study conclusions.",
+            f"The MFRM output was interpreted with the publication gate status of {gate_status}, and final claims were limited to supported diagnostics.",
         )
 
     unused_raw = prep.get("unused_score_categories", [])
@@ -10583,6 +10589,8 @@ def build_beginner_case_guidance(
             "Do not claim that every rating category functioned distinctly unless counts, average measures, and thresholds support it.",
             "Inspect category counts and threshold order; collapse adjacent categories only with substantive rubric justification.",
             "Categories/Steps; category_probability_curves.csv",
+            "All rating categories functioned as intended.",
+            "The rating scale was interpreted with caution because sparse or unused categories weaken threshold and category-functioning evidence.",
         )
 
     pca_ready = readiness_row("Dimensionality screen")
@@ -10597,6 +10605,8 @@ def build_beginner_case_guidance(
             "Do not claim unidimensionality from global residual fit alone.",
             "Open Dimensionality and either report the PCA caveat or enable PCA for final reporting.",
             "Dimensionality; publication_gate_summary.csv",
+            "The assessment was unidimensional.",
+            "Global fit was interpreted together with the residual dimensionality screen; unidimensionality claims were limited by the PCA status.",
         )
 
     all_bias = all_bias_results or {}
@@ -10622,6 +10632,8 @@ def build_beginner_case_guidance(
             "Do not make no-bias claims outside the facet pairs and cells that were actually screened.",
             "For final reporting, run the intended selected pair or full publication screen and review flagged cells substantively.",
             "Bias/Interaction; manuscript_claim_guide.csv",
+            "There was no rater bias.",
+            "The bias/local interaction screen was treated as a diagnostic screen, and no-bias claims were limited to the facet pairs and cells actually examined.",
         )
 
     if str(config.get("method", "")).upper() == "MML":
@@ -10642,6 +10654,8 @@ def build_beginner_case_guidance(
                 "Do not describe an MML run as fully screened if strict marginal diagnostics were skipped or flagged.",
                 "Enable strict marginal diagnostics when feasible and include flagged marginal rows in the limitation language.",
                 "Fit Details / Downloads -> marginal_fit_summary.csv",
+                "The MML model fully reproduced the observed marginal distributions.",
+                "The MML fit was interpreted together with the strict marginal diagnostic status, and any skipped or flagged marginal rows were reported as limitations.",
             )
 
     rel_df = diagnostics.get("reliability", pd.DataFrame())
@@ -10660,6 +10674,8 @@ def build_beginner_case_guidance(
                     "Do not write that high rater reliability proves raters were interchangeable.",
                     "Report rater severity spread and consider rater training/calibration if the study requires interchangeability.",
                     "Report -> Tables; Wright Map; Measures",
+                    "High rater reliability shows that raters agreed well.",
+                    "High rater facet reliability was interpreted as evidence of severity differentiation, not automatic rater agreement.",
                 )
 
     anchor_ready = readiness_row("Anchor / linking audit")
@@ -10674,6 +10690,8 @@ def build_beginner_case_guidance(
             "Do not compare cohorts, forms, administrations, or studies on a common scale without anchor/linking evidence.",
             "Use anchor audit, drift, and equating-chain outputs before writing cross-run comparison claims.",
             "Data -> Anchor/linking audit; Report -> Facet Equivalence",
+            "These measures can be compared directly with another administration or form.",
+            "Measures were interpreted within the current connected run unless anchor/linking evidence supported cross-run comparison.",
         )
 
     if not rows:
@@ -10686,6 +10704,8 @@ def build_beginner_case_guidance(
             "Still edit all generated text for study design, rubric content, and local reporting standards.",
             "Proceed through the Manuscript Template and Reporting Checklist before submission.",
             "Report -> Manuscript Template / Reporting Checklist",
+            "The generated text can be submitted without revision.",
+            "The generated text was used as a draft and edited for study design, rubric content, and reporting standards.",
         )
 
     out = pd.DataFrame(rows)
@@ -10708,6 +10728,7 @@ def generate_manuscript_reporting_template(
     all_bias = all_bias_results or {}
     guide = build_manuscript_claim_guide(result, diagnostics, all_bias)
     readiness = build_final_report_readiness(result, diagnostics, all_bias)
+    case_guidance = build_beginner_case_guidance(result, diagnostics, all_bias)
 
     def guide_value(area: str, column: str, default: str = "No result-specific guidance recorded.") -> str:
         if not isinstance(guide, pd.DataFrame) or guide.empty:
@@ -10791,6 +10812,21 @@ def generate_manuscript_reporting_template(
                 )
     if not caution_rows:
         caution_rows.append("- No caution rows were generated by the claim guide. Still review all diagnostics before submission.")
+    wording_rows: list[str] = []
+    if isinstance(case_guidance, pd.DataFrame) and not case_guidance.empty:
+        case_flags = case_guidance.loc[
+            case_guidance["Status"].astype(str) != "Ready"
+        ] if "Status" in case_guidance.columns else case_guidance
+        for _, row in case_flags.iterrows():
+            wording_rows.extend([
+                f"- **{row.get('Case', 'Unknown case')}** ({row.get('Status', 'Review')}):",
+                f"  - Avoid: {row.get('AvoidWording', 'No avoid wording recorded.')}",
+                f"  - Safer: {row.get('SaferWording', 'No safer wording recorded.')}",
+                f"  - Evidence: {row.get('Evidence', 'No evidence recorded.')}",
+                f"  - Next action: {row.get('NextAction', 'No action recorded.')}",
+            ])
+    if not wording_rows:
+        wording_rows.append("- No case-specific wording repair was generated. Still edit the template for the study context before submission.")
 
     suggested_results = [
         "Rating-scale functioning",
@@ -10872,6 +10908,10 @@ def generate_manuscript_reporting_template(
         "## Claims Requiring Caution",
         "",
         *caution_rows,
+        "",
+        "## Result-Specific Wording Repairs",
+        "",
+        *wording_rows,
         "",
         "## Reviewer Preflight Checklist",
         "",
@@ -11107,6 +11147,14 @@ def _render_manuscript_claim_guide_section(
         case_cols[2].metric("Boundary", int(case_counts.get("Boundary", 0)))
         case_cols[3].metric("Ready", int(case_counts.get("Ready", 0)))
         st.dataframe(case_guide, width="stretch", hide_index=True)
+        wording_cols = ["Case", "Status", "AvoidWording", "SaferWording", "NextAction"]
+        if set(wording_cols).issubset(case_guide.columns):
+            wording_rows = case_guide.loc[
+                case_guide["Status"].astype(str) != "Ready", wording_cols
+            ]
+            if not wording_rows.empty:
+                with st.expander("Copy-edit wording repairs", expanded=True):
+                    st.dataframe(wording_rows, width="stretch", hide_index=True)
         st.download_button(
             "Download case-specific beginner guide (CSV)",
             data=to_csv_bytes(case_guide),
@@ -11977,6 +12025,7 @@ of a research paper that uses MFRM.
     facet_names = config.get("facet_names", [])
     measures = diagnostics.get("measures", pd.DataFrame())
     gate_summary = build_publication_gate_summary(result, diagnostics, all_bias_results)
+    case_guidance = build_beginner_case_guidance(result, diagnostics, all_bias_results)
     overall_gate = pd.Series(dtype=object)
     if isinstance(gate_summary, pd.DataFrame) and not gate_summary.empty:
         overall_hit = gate_summary.loc[
@@ -11998,6 +12047,18 @@ of a research paper that uses MFRM.
                 st.success(gate_text)
             with st.expander("View manuscript gate details", expanded=False):
                 st.dataframe(gate_summary, width="stretch", hide_index=True)
+    if isinstance(case_guidance, pd.DataFrame) and not case_guidance.empty:
+        wording_cols = ["Case", "Status", "AvoidWording", "SaferWording", "NextAction"]
+        if set(wording_cols).issubset(case_guidance.columns):
+            copy_flags = case_guidance.loc[
+                case_guidance["Status"].astype(str) != "Ready", wording_cols
+            ]
+            if not copy_flags.empty:
+                st.warning(
+                    "Before copying APA text, review these result-specific wording repairs."
+                )
+                with st.expander("Case-specific wording repairs for this report", expanded=True):
+                    st.dataframe(copy_flags, width="stretch", hide_index=True)
 
     method_parts: list[str] = []
     results_parts: list[str] = []
@@ -19504,8 +19565,17 @@ def _self_test_report_readiness_and_method_appendix() -> None:
             "ManuscriptGuardrail",
             "NextAction",
             "WhereToInspect",
+            "AvoidWording",
+            "SaferWording",
         }.issubset(beginner_cases.columns),
         "beginner case guidance is missing required columns",
+    )
+    template_with_cases = generate_manuscript_reporting_template(res, diagnostics, all_bias_results={})
+    _self_test_assert(
+        "## Result-Specific Wording Repairs" in template_with_cases
+        and "Avoid:" in template_with_cases
+        and "Safer:" in template_with_cases,
+        "manuscript template missing case-specific wording repairs",
     )
     threshold_result = {
         "opt": type("Opt", (), {"success": True, "message": "ok"})(),

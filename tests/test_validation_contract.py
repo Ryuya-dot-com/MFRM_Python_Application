@@ -138,9 +138,13 @@ def test_manuscript_claim_guide_contract():
         "ManuscriptGuardrail",
         "NextAction",
         "WhereToInspect",
+        "AvoidWording",
+        "SaferWording",
     }.issubset(cases.columns)
     assert "Dimensionality caveat" in cases["Case"].astype(str).tolist()
     assert "Bias/local interaction screen" in cases["Case"].astype(str).tolist()
+    assert cases["AvoidWording"].astype(str).str.len().gt(0).all()
+    assert cases["SaferWording"].astype(str).str.len().gt(0).all()
 
 
 def test_uploaded_file_fingerprint_uses_content_not_only_name_and_size():

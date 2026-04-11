@@ -20,6 +20,7 @@ All notable changes to this standalone Streamlit distribution should be recorded
 - Result-aware Markdown manuscript template for Methods, Results, limitations, reviewer preflight checks, and OSF/demo report exports.
 - Publication gate summary that aligns APA Report conclusions with readiness checks and manuscript claim guardrails.
 - Case-specific beginner guidance for sparse categories, dimensionality, bias screens, MML marginal checks, rater reliability, and linking claims.
+- Result-specific avoid/safer wording repairs in APA Report guidance, manuscript templates, and beginner case-guide exports.
 
 ### Changed
 

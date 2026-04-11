@@ -13,6 +13,7 @@
 - Primary app entrypoint: `streamlit_app.py`
 - Documentation: `README.md`
 - Dependency file: `requirements.txt`
+- Development dependency file: `requirements-dev.txt`
 - CI: `.github/workflows/python-streamlit.yml`
 - Optional Streamlit config: `.streamlit/config.toml`
 - Validation artifacts: `validation/`
@@ -33,6 +34,7 @@
 - [x] Copy `MFRM_Python_Application/streamlit_app.py` to `MFRM_Streamlit/streamlit_app.py`.
 - [x] Copy anchor templates/guidelines into `anchor_templates_and_guideline/`.
 - [x] Create a fresh `requirements.txt` in the target directory.
+- [x] Create a fresh `requirements-dev.txt` for CI and local smoke tests.
 - [x] Exclude `__pycache__` and any generated local artifacts.
 - [x] Add a local `.gitignore` if the target directory is expected to be versioned independently.
 - [x] Run `python3 -m py_compile streamlit_app.py`.
@@ -70,6 +72,7 @@
   - [x] checkout
   - [x] set up Python 3.11 or 3.12
   - [x] install `requirements.txt`
+  - [x] install `requirements-dev.txt` in CI so local and GitHub AppTest paths match
   - [x] run `python -m py_compile streamlit_app.py`
   - [x] run `python streamlit_app.py --doctor`
   - [x] run `python streamlit_app.py --self-test`

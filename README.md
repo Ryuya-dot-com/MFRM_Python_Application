@@ -40,6 +40,12 @@ python -m pip install --upgrade pip
 python -m pip install -r requirements.txt
 ```
 
+For local verification and CI-equivalent smoke tests, install the development dependencies:
+
+```bash
+python -m pip install -r requirements-dev.txt
+```
+
 ## Run
 
 ```bash
@@ -52,6 +58,7 @@ streamlit run streamlit_app.py
 python -m py_compile streamlit_app.py
 python streamlit_app.py --doctor
 python streamlit_app.py --self-test
+python -m pytest tests/test_app_smoke.py
 python streamlit_app.py --benchmark-quick --benchmark-csv validation/generated/benchmark_smoke.csv
 python streamlit_app.py --export-parity-fixture validation/generated/parity_fixture
 ```
@@ -176,6 +183,7 @@ If this directory is used as a standalone GitHub repository, the workflow will b
 Makefile
 streamlit_app.py
 requirements.txt
+requirements-dev.txt
 README.md
 CHANGELOG.md
 CONTRIBUTING.md

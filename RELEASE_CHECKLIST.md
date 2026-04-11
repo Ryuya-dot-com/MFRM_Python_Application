@@ -26,13 +26,15 @@ Use this checklist before tagging or pushing a public beta release.
 ## Commands
 
 ```bash
+python -m pip install -r requirements-dev.txt
 python -m py_compile streamlit_app.py
 python streamlit_app.py --doctor
 python streamlit_app.py --self-test
+python -m pytest tests/test_app_smoke.py
 python streamlit_app.py --benchmark-quick --benchmark-csv validation/generated/benchmark_smoke.csv
 python streamlit_app.py --export-parity-fixture validation/generated/parity_fixture
-python -c 'from streamlit.testing.v1 import AppTest; at = AppTest.from_file("streamlit_app.py").run(timeout=30); assert not at.exception'
-rm -rf __pycache__ .pytest_cache validation/generated
+rm -rf .pytest_cache validation/generated
+find . -type d -name __pycache__ -prune -exec rm -rf {} +
 ```
 
 ## GitHub Release

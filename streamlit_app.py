@@ -25,7 +25,7 @@ from scipy.stats import chi2, norm as _norm, t as t_dist
 import streamlit as st
 
 
-APP_VERSION = "0.1.0-beta"
+APP_VERSION = "0.1.2-beta-dev"
 APP_RELEASE_LABEL = "standalone Python beta"
 RUNTIME_PACKAGE_FLOORS = OrderedDict([
     ("numpy", "1.24"),
@@ -43,6 +43,113 @@ BUNDLED_ANCHOR_ASSETS = [
     "group_anchor_table_example.csv",
     "anchor_user_guidelines.md",
 ]
+
+
+def visual_interpretation_checklist() -> pd.DataFrame:
+    """Beginner-facing map from diagnostic visuals to interpretation actions."""
+    rows = [
+        {
+            "Priority": 1,
+            "Visualization": "First-read guide",
+            "Where": "Above result tabs",
+            "PrimaryQuestion": "Can the run be interpreted at all?",
+            "ReadFirst": "Convergence, category support, reliability, fit, bias, anchor/linking, and marginal flags.",
+            "ReviewTrigger": "Any row marked Review, Caution, Skipped when required, or Do not interpret yet.",
+            "BeginnerAction": "Resolve the highest-priority flagged row before reading individual plots.",
+            "Caveat": "This is a triage screen, not a substitute for the detailed tabs.",
+        },
+        {
+            "Priority": 2,
+            "Visualization": "Wright map and yardstick",
+            "Where": "Wright Map tab",
+            "PrimaryQuestion": "Do persons and facet elements overlap on the logit scale?",
+            "ReadFirst": "Person distribution, facet element locations, threshold lines, and large empty gaps.",
+            "ReviewTrigger": "Little or no overlap, many persons at one end, or a facet range far outside the person range.",
+            "BeginnerAction": "Check for ceiling/floor effects and whether the design has enough difficulty/severity spread.",
+            "Caveat": "Location depends on constraints and anchors; compare only after confirming the scale origin.",
+        },
+        {
+            "Priority": 3,
+            "Visualization": "Category probability curves",
+            "Where": "Visuals tab",
+            "PrimaryQuestion": "Does each rating category have a distinct region where it is most probable?",
+            "ReadFirst": "Peaks, crossings, expected score curve, and whether intermediate categories disappear.",
+            "ReviewTrigger": "A category has no peak, curves are out of order, or expected score is nearly flat.",
+            "BeginnerAction": "Open Categories/Steps and inspect sparse counts, average measures, and threshold order.",
+            "Caveat": "PCM/GPCM curves are averaged over the selected step facet unless a level-specific view is added later.",
+        },
+        {
+            "Priority": 4,
+            "Visualization": "Category counts and threshold ordering",
+            "Where": "Categories/Steps tab",
+            "PrimaryQuestion": "Is the rating scale functioning as ordered categories?",
+            "ReadFirst": "Counts per category, average person measure monotonicity, step order, and GPCM slope spread.",
+            "ReviewTrigger": "Count below 10, non-monotonic average measures, disordered thresholds, or extreme slopes.",
+            "BeginnerAction": "Consider clarifying or collapsing adjacent categories, then re-estimate and compare.",
+            "Caveat": "Sparse categories can still be substantively important; document them rather than deleting by default.",
+        },
+        {
+            "Priority": 5,
+            "Visualization": "Fit scatter and misfit ranking",
+            "Where": "Fit Details tab",
+            "PrimaryQuestion": "Which elements show noisy, distorting, or overly predictable response patterns?",
+            "ReadFirst": "Infit and Outfit zones, top |ZSTD| elements, and whether flags cluster by facet.",
+            "ReviewTrigger": "Infit or Outfit outside 0.5-1.5, Outfit above 2.0, or many |ZSTD| values above 2.",
+            "BeginnerAction": "Inspect the flagged element's raw rows before removing or recoding it.",
+            "Caveat": "Large samples can make ZSTD overly sensitive; prioritize mean-square size for practical decisions.",
+        },
+        {
+            "Priority": 6,
+            "Visualization": "Residual PCA scree plot",
+            "Where": "Dimensionality tab",
+            "PrimaryQuestion": "Is there evidence for a secondary dimension after the Rasch dimension is extracted?",
+            "ReadFirst": "First eigenvalue, PC1/PC2 ratio, and the largest PC1 loadings.",
+            "ReviewTrigger": "First eigenvalue at least 2.0, especially at least 3.0, or interpretable loading clusters.",
+            "BeginnerAction": "Review content clusters and consider PCM, separate analyses, or a multidimensional extension.",
+            "Caveat": "PCA of residuals is a diagnostic screen; it does not prove a second substantive trait by itself.",
+        },
+        {
+            "Priority": 7,
+            "Visualization": "Bias heatmap",
+            "Where": "Bias/Interaction tab",
+            "PrimaryQuestion": "Do specific facet-level pairs depart from the additive model?",
+            "ReadFirst": "Cells with |t| at least 2, large absolute bias size, and coherent rows or columns of flagged cells.",
+            "ReviewTrigger": "Many significant cells after considering multiple testing or a substantively coherent pattern.",
+            "BeginnerAction": "Interpret the pair in context, check sample size, and avoid treating isolated flags as proof.",
+            "Caveat": "Bias screening is exploratory unless linking, design balance, and precision support stronger claims.",
+        },
+        {
+            "Priority": 8,
+            "Visualization": "Strict marginal summary and heatmaps",
+            "Where": "Fit Details and figure exports",
+            "PrimaryQuestion": "Do observed marginal category distributions agree with model-expected distributions?",
+            "ReadFirst": "Largest standardized marginal residuals and sparse cells.",
+            "ReviewTrigger": "Repeated high residuals for the same facet, category, or pairwise cell.",
+            "BeginnerAction": "Use this as corroborating evidence with fit scatter, category diagnostics, and bias heatmap.",
+            "Caveat": "Definitions differ across software; compare direction and pattern, not exact residual equality by default.",
+        },
+        {
+            "Priority": 9,
+            "Visualization": "Facet dashboard and rater agreement",
+            "Where": "Facet Dashboard and Agreement tabs",
+            "PrimaryQuestion": "Which facet elements need substantive review?",
+            "ReadFirst": "Severity/order, misfit flags, central tendency proxies, and pairwise agreement.",
+            "ReviewTrigger": "Severity outliers, low agreement, central-tendency flags, or concentrated bias counts.",
+            "BeginnerAction": "For raters, combine severity, fit, agreement, and bias evidence before recommending retraining.",
+            "Caveat": "High rater reliability means raters differ; it is not automatically good for standardized scoring.",
+        },
+        {
+            "Priority": 10,
+            "Visualization": "Prediction, simulation, and design evaluation",
+            "Where": "Prediction/Simulation tab",
+            "PrimaryQuestion": "How stable are expected scores and reliability under plausible future designs?",
+            "ReadFirst": "Expected category probabilities, simulated score distributions, refit stress tests, and forecast reliability.",
+            "ReviewTrigger": "Forecast reliability remains low, simulated categories collapse, or refits fail under missingness.",
+            "BeginnerAction": "Increase raters, tasks, or targeted observations before treating fine-grained differences as stable.",
+            "Caveat": "These are model-based forecasts; they inherit the current model's assumptions and data limitations.",
+        },
+    ]
+    return pd.DataFrame(rows)
 
 
 def stable_json_fingerprint(payload: object, length: int = 16) -> str:
@@ -11853,6 +11960,20 @@ def show_visuals_section(result: dict, diagnostics: dict) -> None:
         "element-level fit patterns; facet distributions compare element spread; "
         "observed-vs-expected plots test model accuracy."
     )
+    with st.expander("Visual interpretation roadmap", expanded=True):
+        st.caption(
+            "Use this roadmap when you are new to MFRM output. Read plots in priority "
+            "order, and stop at the first serious review trigger before making final claims."
+        )
+        checklist = visual_interpretation_checklist()
+        st.dataframe(checklist, width="stretch", hide_index=True)
+        st.download_button(
+            "Download visual interpretation checklist (CSV)",
+            data=to_csv_bytes(checklist),
+            file_name="mfrm_visual_interpretation_checklist.csv",
+            mime="text/csv",
+            key="dl_visual_interpretation_checklist",
+        )
     vtabs = st.tabs([
         "Category Probability Curves", "Pathway Map",
         "Facet Distribution", "Observed vs Expected",
@@ -15873,6 +15994,9 @@ def _render_downloads(
             all_frames["final_report_readiness"] = readiness_dl
     except Exception:
         readiness_dl = pd.DataFrame()
+    visual_checklist_dl = visual_interpretation_checklist()
+    if isinstance(visual_checklist_dl, pd.DataFrame) and not visual_checklist_dl.empty:
+        all_frames["visual_interpretation_checklist"] = visual_checklist_dl
     if not steps_dl.empty:
         all_frames["steps"] = steps_dl
     if not slopes_dl.empty:
@@ -17340,6 +17464,26 @@ def _self_test_report_readiness_and_method_appendix() -> None:
     _self_test_assert("no `mfrmr`" in appendix, "method appendix does not document no-mfrmr boundary")
 
 
+def _self_test_visual_interpretation_checklist() -> None:
+    checklist = visual_interpretation_checklist()
+    required_cols = {
+        "Priority",
+        "Visualization",
+        "Where",
+        "PrimaryQuestion",
+        "ReadFirst",
+        "ReviewTrigger",
+        "BeginnerAction",
+        "Caveat",
+    }
+    _self_test_assert(not checklist.empty, "visual interpretation checklist is empty")
+    _self_test_assert(required_cols.issubset(checklist.columns), "visual checklist missing required columns")
+    _self_test_assert(checklist["Priority"].is_monotonic_increasing, "visual checklist priority is not ordered")
+    joined = " ".join(checklist["Visualization"].astype(str))
+    for expected in ["Wright map", "Category probability curves", "Residual PCA", "Bias heatmap"]:
+        _self_test_assert(expected in joined, f"visual checklist missing {expected}")
+
+
 def _self_test_export_bundle_contents() -> None:
     frames = {
         "summary": pd.DataFrame({"Metric": ["LogLik"], "Value": [-12.34]}),
@@ -18386,6 +18530,7 @@ def run_self_tests() -> int:
         ("latent regression population_formula", _self_test_latent_regression_population_formula),
         ("prediction simulation and design evaluation", _self_test_prediction_simulation_design),
         ("report readiness and method appendix", _self_test_report_readiness_and_method_appendix),
+        ("visual interpretation checklist", _self_test_visual_interpretation_checklist),
         ("export bundle contents", _self_test_export_bundle_contents),
         ("anchor audit", _self_test_anchor_audit),
         ("script support boundaries", _self_test_script_support_boundaries),

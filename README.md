@@ -119,6 +119,7 @@ Implemented in the standalone Python engine:
 - prediction for fitted, held-out, and scenario rows
 - simulation and design evaluation
 - final-report readiness checklist
+- visual interpretation checklist for beginner-friendly figure reading
 - downloadable tables, configuration, scripts, and method appendix
 - reproducibility/config fingerprints for analysis exports
 
@@ -136,6 +137,10 @@ After fitting a model, inspect results in this order:
 8. Anchor / linking review: check connectedness and anchor stability before comparing runs or groups.
 9. Strict marginal diagnostics: use for final MML reports when feasible.
 10. Final-report readiness: use the generated checklist before writing conclusions.
+
+The Visuals tab also includes a downloadable visual interpretation checklist.
+It maps each figure to the first signal to read, the review trigger, and the
+recommended next action for beginners.
 
 ## Statistical Caveats
 

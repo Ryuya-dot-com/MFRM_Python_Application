@@ -2,6 +2,20 @@
 
 All notable changes to this standalone Streamlit distribution should be recorded here.
 
+## Unreleased
+
+### Added
+
+- Beginner-facing visual interpretation checklist in the app and downloadable report bundle.
+
+### Changed
+
+- App version label now marks post-0.1.1 development as `0.1.2-beta-dev`.
+
+### Validation
+
+- `make verify` passed with 19 built-in self-tests, 3 pytest checks, benchmark smoke, and parity fixture export.
+
 ## 0.1.1-beta - 2026-04-12
 
 ### Added

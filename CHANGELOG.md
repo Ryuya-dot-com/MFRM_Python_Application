@@ -2,6 +2,60 @@
 
 All notable changes to this standalone Streamlit distribution should be recorded here.
 
+## 0.2.3-beta - 2026-04-17
+
+Third-pass hotfix landing the remaining findings from a second,
+post-v0.2.2 comprehensive gap audit. Focus: reconciling in-app text
+and metadata tables with the feature surface that actually ships.
+
+### Fixed
+
+- `public_release_readiness_table` row "Simulation validation
+  templates" had Status predicate reading from a 4-key scripts
+  dict while Evidence sentence quoted a 3-row inventory. Aligned
+  both on the inventory so "X rows are documented" and the
+  Ready / Review flag cannot drift apart.
+- `_render_reporting_checklist` two cells were hardcoded to
+  unchecked (PCA of residuals, Average measures per category)
+  regardless of whether the diagnostic was actually available.
+  Wire them to the real data.
+- 11 stale tab-reference strings updated to match the v0.2.0 Report
+  meta-grouping: `Report → Stan Code` → `Report → 💾 Exports → Stan
+  Code`, `Report → Tables` → `Report → 📊 Tables & checks → Tables`,
+  `Report → APA Report` → `Report → 📝 Reports → APA Report`, etc.
+
+### Added
+
+- Help tab Quick Start + Troubleshooting documenting every v0.2.x
+  feature and diagnostic (shipped in a separate commit on the same
+  release branch).
+- `README.md` "What's new in v0.2.0 → v0.2.2" covers the four
+  feature tracks plus both post-release hotfix passes.
+- `SECURITY.md` Posterior Viewer Uploads and Advanced-Model Stan
+  Code Downloads sections document the two v0.2.x file-upload /
+  file-download surfaces distinct from rating-data handling.
+- `public_beta_limitations_table` rows for Advanced models (Stan,
+  download-only), Posterior Viewer (upload), and Publication
+  Document (Word / PDF / HTML).
+- `mfrmr_015_migration_coverage_table` rows for Advanced response
+  models (Stan generators only) and Posterior Viewer (diagnostic).
+- `visual_method_evidence_table` row for Posterior trace / ridge /
+  pair / forest diagnostics with primary references.
+- `external_reference_documentation_table` rows for arviz and
+  cmdstan / cmdstanpy / rstan so reviewers have explicit hooks.
+- Dimensionality readiness row now concatenates
+  `diagnostics['pca_reason']` into its Evidence sentence, so the
+  readiness table, manuscript claim guide, publication gate, and
+  submission action plan all explain WHY PCA was skipped (small
+  data / single item-combination / disabled by Analysis depth /
+  >95% NaN).
+- Onboarding-banner tip line carries a one-line v0.2.x feature
+  catalogue (Publication Document / Posterior Viewer / Advanced
+  models / Run history) so new users discover them before clicking
+  "Got it".
+- Self-tests `_self_test_publication_document_html` (#32) and
+  `_self_test_diagnose_estimation_error_patterns` (#33).
+
 ## 0.2.2-beta - 2026-04-17
 
 Second-pass hotfix completing the remaining MAJOR and MINOR items

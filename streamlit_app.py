@@ -10087,6 +10087,10 @@ def run_facets_mode(core: dict, data: pd.DataFrame) -> None:
 
     # Phase 1-5: Estimation time warning
     run_clicked = st.sidebar.button("Run FACETS-mode estimation", type="primary")
+    # One-click quickstart: consume the onboarding flag so the pipeline
+    # fires on the next rerender without the user touching the sidebar.
+    if st.session_state.pop("_onboarding_quickstart_fired", False):
+        run_clicked = True
     if run_clicked:
         if len(facet_cols) < 2:
             st.error("Select at least two facet columns.")
@@ -23279,6 +23283,58 @@ def run_self_tests() -> int:
     return 0
 
 
+def render_onboarding_banner() -> None:
+    """Dismissible 3-step quickstart banner + one-click sample-data Run.
+
+    Shown above the tutorial for first-time users. The "🎯 Run with
+    sample data" button sets `_force_rerun_from_onboarding` so the
+    estimation pipeline fires automatically without touching the sidebar.
+    The banner disappears after either button is clicked and does not
+    reappear for the rest of the session.
+    """
+    if st.session_state.get("_onboarding_dismissed", False):
+        return
+
+    with st.container(border=True):
+        st.markdown(
+            """
+##### 👋 New here? Follow these 3 steps to run your first analysis
+
+| Step | Action | Where |
+|---|---|---|
+| **1️⃣** | **Choose a data source** (Sample data is loaded by default) | Sidebar ← top |
+| **2️⃣** | **Map your columns** — Person, Score, and two or more facet columns | Sidebar ← Column mapping |
+| **3️⃣** | **Click `Run FACETS-mode estimation`** at the bottom of the sidebar | Sidebar bottom |
+
+Afterwards, use the tabs (Measures, Fit, Dimensionality, Visuals, Report, ...)
+that appear below to explore diagnostics and build a publication document.
+"""
+        )
+        cols = st.columns([3, 2, 1])
+        cols[0].caption(
+            "💡 Tip: expand the **Tutorial: Key concepts before you begin** section below "
+            "for a primer on MFRM terminology (person / rater / facet / logit)."
+        )
+        if cols[1].button(
+            "🎯 Run with sample data",
+            key="onboarding_quickstart",
+            use_container_width=True,
+            help=(
+                "One-click quickstart: uses the built-in MFRM sample dataset "
+                "with default column mapping and runs the full estimation pipeline. "
+                "Great for exploring the UI before uploading your own data."
+            ),
+        ):
+            st.session_state["_onboarding_dismissed"] = True
+            st.session_state["_onboarding_quickstart_fired"] = True
+            st.rerun()
+        if cols[2].button(
+            "Got it", key="onboarding_dismiss", use_container_width=True,
+        ):
+            st.session_state["_onboarding_dismissed"] = True
+            st.rerun()
+
+
 def main() -> None:
     st.set_page_config(page_title="MFRM FACETS-mode", layout="wide")
     _inject_desktop_readability_css()
@@ -23289,6 +23345,9 @@ def main() -> None:
     )
     render_app_scope_badges(where="main")
     render_data_privacy_notice(where="main")
+
+    # Dismissible onboarding banner with one-click "Run with sample data" button.
+    render_onboarding_banner()
 
     # Phase 1-1: Tutorial before analysis
     show_tutorial()

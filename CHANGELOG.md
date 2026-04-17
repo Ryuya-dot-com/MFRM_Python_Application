@@ -2,6 +2,64 @@
 
 All notable changes to this standalone Streamlit distribution should be recorded here.
 
+## 0.2.2-beta - 2026-04-17
+
+Second-pass hotfix completing the remaining MAJOR and MINOR items
+from the pre-redeploy 8-agent UX audit.
+
+### Added
+
+- Run breadcrumb banner (`_render_run_breadcrumb`) above the critical-
+  warnings row: one compact line showing model / method / convergence
+  status / iterations / obs × person × facet counts / 8-char run
+  fingerprint. Users flipping between history snapshots finally have
+  a persistent "where am I?" signal.
+- MFRM / Bayesian quick-reference glossary (`_MFRM_GLOSSARY` +
+  `render_glossary_expander`) with 20 curated entries (logit, Infit,
+  Outfit, MnSq, ZSTD, step facet, anchor, separation, strata, RSM,
+  PCM, GPCM, SE, CI, Rhat, ESS, divergent, E-BFMI, …). Wired into
+  the existing Help → Glossary tab so both the quick reference and
+  the deep 50+ term glossary are one click away.
+- `reorder_measure_columns(df)` + module-level priority list so every
+  measure table surfaces Facet / Level / Estimate / SE / CI /
+  Infit / Outfit first; Anchor, N, ReliabilityNote, etc. move to the
+  tail. Applied to the Combined measures + fit table in the Measures
+  tab; callers can opt in one table at a time.
+- `style_fit_columns(df)` returns a pandas Styler that colour-codes
+  Infit / Outfit mean-square cells by the Wright & Linacre (1994)
+  bands (🟩 0.5–1.5 acceptable · 🟧 1.5–2.0 noisy · 🟥 ≥ 2.0
+  distorting · 🟨 < 0.5 over-fit). ZSTD columns are excluded (they
+  use a different interpretation scale). Applied to the Combined
+  measures + fit table.
+- Scree plot now draws three reference lines — EV = 1 (expected
+  null), EV = 2 (caution), EV = 3 (strong secondary dimension) —
+  matching the thresholds in the chart guide and narrative.
+  Previously the EV = 3 threshold was documented but invisible on
+  the plot.
+- Inline self-tests: `_self_test_style_fit_columns` (#29),
+  `_self_test_mfrm_glossary` (#30), `_self_test_reorder_measure_columns`
+  (#31).
+
+### Changed
+
+- Stan downloads now advertise `application/x-stan` instead of
+  `text/plain`; browsers trigger a save dialog instead of inline
+  preview, and Stan-aware editors pick up syntax highlighting.
+- Scree plot neutral-threshold line shifted from `#999999` to the
+  stronger `#666666` grey to satisfy WCAG AA contrast on white
+  (was 2.85 : 1, now 5.7 : 1).
+- Posterior Viewer sidebar carries a reassurance caption when a
+  FACETS-mode run is in session_state, so users know switching to
+  the viewer does not discard their live run.
+
+### Fixed
+
+- `reorder_measure_columns` short-circuited on `df.empty` (True for
+  any rowless DataFrame), leaving placeholder / pre-estimation
+  tables with the wrong column order. Now guarded on
+  `len(df.columns) == 0` so only genuinely schema-less frames
+  pass through untouched.
+
 ## 0.2.1-beta - 2026-04-17
 
 Pre-redeploy hotfix landing the 8 highest-impact findings from a

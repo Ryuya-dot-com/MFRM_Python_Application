@@ -2,6 +2,65 @@
 
 All notable changes to this standalone Streamlit distribution should be recorded here.
 
+## 0.2.6-beta - 2026-04-17
+
+Progressive-disclosure polish + self-test expansion. Continues the
+cognitive-load reduction started in v0.2.5: every major diagnostic
+chart now has a just-in-time help popover, the Essential view-density
+mode is extended to Help and Report (not just Visuals), and four new
+contract-level self-tests pin previously manually-tested code paths.
+
+### Added
+
+- **Help popover library expanded from 13 → 18 topics.** New entries:
+  `misfit_ranking`, `facet_distribution`, `rater_agreement`,
+  `threshold_map`, `zstd_distribution`. Each follows the existing
+  What it shows / How to read / Watch for schema.
+- **Five more charts wired to popovers:** ZSTD distribution histogram,
+  Top-misfit ranking, Facet element distribution, Step / Threshold
+  Ordering, and Inter-Element Agreement. Combined with v0.2.5's
+  Wright Map / Scree / Fit-scatter / Category-probability /
+  Bias-heatmap wiring, every chart in the core results tabs now
+  has a one-click "❓ How to read" affordance next to its subheader.
+- **Essential mode extended to Help and Report sub-tabs.** Help drops
+  from 10 → 7 tabs in Essential (hides Rating Scale Guide, Model
+  Capability, Public Beta). Report drops from 10 → 6 sub-tabs in
+  Essential (hides Manuscript Template, Method Appendix, Facet
+  Equivalence, Stan Code). Full mode (sidebar toggle) restores all
+  sub-tabs for publication-depth work.
+- **Four new inline self-tests** raise the total from 35 → 39:
+  `_self_test_posterior_load_netcdf` (synthetic 2-chain × 100-draw
+  round-trip via `az.from_dict` → `.to_netcdf()` → uploader wrapper,
+  portable across arviz 0.x / 1.x),
+  `_self_test_posterior_load_cmdstan_csvs` (two minimal CmdStan CSVs
+  → `_posterior_load_cmdstan_csvs` → shape assertions),
+  `_self_test_config_json_import_whitelist` (23-key frozenset +
+  critical-key check + filter drop-through),
+  `_self_test_run_history_clear_confirmation` (push N+2 runs, verify
+  cap, verify clear + confirm flag independence).
+- **`_self_test_essential_mode_tab_filters`** pins the exact
+  Essential-visible label sets for the Help and Report tabs so a
+  future tab rename or reorder surfaces as a failing test rather
+  than a silently-hidden sub-tab.
+
+### Changed
+
+- `_CONFIG_JSON_IMPORT_WHITELIST` extracted from an inline `set` inside
+  the Report tab's import handler to a module-level `frozenset` near
+  `_RUN_HISTORY_KEY`, so the new whitelist test pins the same object
+  the handler uses. No behavioural change — same 23 keys, same filter.
+- `show_help_section` and `show_report_section` now build their tab
+  lists dynamically based on the View density setting, with a
+  `{label: tab}` dict replacing positional `help_tabs[4]` indexing so
+  hiding a tab in the middle no longer shifts downstream indices.
+
+### Unchanged on purpose
+
+- All 10 Help tabs and 10 Report sub-tabs remain reachable in Full
+  mode — Essential only hides the *default* view.
+- Popover library topics from v0.2.5 are untouched; v0.2.6 only
+  appends new entries.
+
 ## 0.2.5-beta - 2026-04-17
 
 Cognitive-load hotfix. The v0.2.0 → v0.2.4 feature stack added 23

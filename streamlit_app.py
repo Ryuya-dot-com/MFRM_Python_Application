@@ -653,6 +653,54 @@ def build_category_probability_curve_data(
     }
 
 
+# Canonical numeric rounding for user-facing measure tables.
+# The audit found inconsistent rounding across tables (3 / 4 / 6 decimals
+# mixed). Standard: measures / SE / CI / eigenvalues / reliability all
+# at 3 decimals; RMSE / Variance / Separation at 3 decimals; probabilities
+# at 4 decimals (to avoid "1.00" collapsing to 1). Use this helper for
+# any table going into the UI so rounding drifts toward one place.
+
+_MEASURE_DECIMALS: int = 3
+_PROBABILITY_DECIMALS: int = 4
+
+
+def format_measure_table(
+    df: "pd.DataFrame",
+    *,
+    measure_decimals: int = _MEASURE_DECIMALS,
+    probability_decimals: int = _PROBABILITY_DECIMALS,
+) -> "pd.DataFrame":
+    """Return ``df`` with standardised numeric rounding for display.
+
+    Measure-like columns (Estimate, SE, CI_*, Infit, Outfit, RMSE,
+    Separation, Strata, Reliability, Eigenvalue, etc.) round to
+    ``measure_decimals`` (default 3); columns whose names look like
+    probabilities or shares round to ``probability_decimals`` (default
+    4). Non-numeric columns pass through untouched.
+    """
+    if not isinstance(df, pd.DataFrame) or df.empty:
+        return df
+    out = df.copy()
+    measure_patterns = (
+        "estimate", "se", "ci_", "infit", "outfit", "zstd",
+        "rmse", "separation", "strata", "reliability",
+        "eigenvalue", "measure", "logit", "theta", "bias",
+    )
+    prob_patterns = (
+        "prob", "proportion", "pct", "percent", "share", "rate",
+        "variance",
+    )
+    for col in out.columns:
+        if not pd.api.types.is_numeric_dtype(out[col]):
+            continue
+        lower = str(col).lower()
+        if any(p in lower for p in prob_patterns):
+            out[col] = out[col].round(probability_decimals)
+        elif any(p in lower for p in measure_patterns):
+            out[col] = out[col].round(measure_decimals)
+    return out
+
+
 def stable_json_fingerprint(payload: object, length: int = 16) -> str:
     """Stable short SHA-256 digest for reproducibility metadata."""
     text = json.dumps(
@@ -12363,7 +12411,10 @@ A single connected subset means all measures are on the same scale.
             else:
                 st.dataframe(person_df, width="stretch")
         else:
-            st.info("No person measures available.")
+            st.info(
+                "No person measures yet. Click **Run FACETS-mode estimation** "
+                "in the sidebar to generate them."
+            )
         show_posterior_scoring_section(result)
         population_bundle = result.get("population", {})
         if isinstance(population_bundle, dict) and population_bundle.get("enabled"):
@@ -12395,13 +12446,20 @@ A single connected subset means all measures are on the same scale.
         if not others_df.empty:
             st.dataframe(others_df, width="stretch")
         else:
-            st.info("No facet measures available.")
+            st.info(
+                "No facet measures yet — select at least two facet columns "
+                "in the sidebar and re-run the estimation."
+            )
         st.subheader("Step parameters")
         steps_df = result.get("steps", pd.DataFrame())
         if isinstance(steps_df, pd.DataFrame) and not steps_df.empty:
             st.dataframe(steps_df, width="stretch")
         else:
-            st.info("No step parameters available.")
+            st.info(
+                "No step parameters for this configuration. Rating scale step "
+                "thresholds appear only when a polytomous (≥3-category) model "
+                "runs successfully."
+            )
         slopes_df = result.get("slopes", pd.DataFrame())
         if isinstance(slopes_df, pd.DataFrame) and not slopes_df.empty:
             st.subheader("GPCM slope parameters")
@@ -12430,7 +12488,10 @@ A single connected subset means all measures are on the same scale.
             if "CI_Lower" in measures_df.columns:
                 st.caption("CI = 95% confidence interval (Estimate ± 1.96 × SE).")
         else:
-            st.info("No combined measures available.")
+            st.info(
+                "No combined measures yet. This table is built after estimation "
+                "completes; click **Run FACETS-mode estimation** in the sidebar."
+            )
 
     # --- Fit Details tab ---
     with tabs[3]:
@@ -24260,6 +24321,28 @@ def _self_test_publication_document_pdf() -> None:
     _self_test_assert(len(data) > 2000, f"PDF seems too small: {len(data)} bytes")
 
 
+def _self_test_format_measure_table() -> None:
+    """Pin the canonical rounding helper for user-facing measure tables."""
+    df = pd.DataFrame({
+        "Facet": ["A", "B"],
+        "Estimate": [0.123456789, -0.987654321],
+        "SE": [0.11111111, 0.22222222],
+        "Infit": [1.234567, 0.987654],
+        "Probability": [0.123456789, 0.9876543],
+        "CategoryLabel": ["x", "y"],
+    })
+    out = format_measure_table(df)
+    _self_test_assert(out["Estimate"].tolist() == [0.123, -0.988], f"Estimate rounding wrong: {out['Estimate'].tolist()}")
+    _self_test_assert(out["SE"].tolist() == [0.111, 0.222], f"SE rounding wrong: {out['SE'].tolist()}")
+    _self_test_assert(out["Infit"].tolist() == [1.235, 0.988], f"Infit rounding wrong: {out['Infit'].tolist()}")
+    _self_test_assert(out["Probability"].tolist() == [0.1235, 0.9877], f"Prob rounding wrong: {out['Probability'].tolist()}")
+    # Non-numeric columns pass through untouched
+    _self_test_assert(out["CategoryLabel"].tolist() == ["x", "y"], "non-numeric column mutated")
+    # Empty / non-DataFrame inputs are tolerated
+    empty = format_measure_table(pd.DataFrame())
+    _self_test_assert(empty.empty, "empty df handling broke")
+
+
 def _self_test_apa_reference_list() -> None:
     """Pin the APA 7 reference library to the narrative conventions used here."""
     # Library is well-formed
@@ -25369,6 +25452,7 @@ def run_self_tests() -> int:
         ("Posterior Viewer loaders / plots", _self_test_posterior_viewer_loaders),
         ("Unified chart guide library", _self_test_chart_guide_library),
         ("Advanced-model Stan generators", _self_test_advanced_model_generators),
+        ("Measure table rounding helper", _self_test_format_measure_table),
     ]
     failures = []
     for name, test_func in tests:

@@ -9756,12 +9756,20 @@ def run_facets_mode(core: dict, data: pd.DataFrame) -> None:
 
         n_obs = len(data)
         n_persons = data[person_col].nunique()
-        run_status = st.empty()
-        run_status.info(
-            f"Starting estimation with **{n_obs:,}** observations, "
-            f"**{n_persons:,}** persons, **{len(facet_cols)}** facets. "
+        # Step-by-step progress via st.status (replaces plain info banner).
+        # Each phase calls run_status.write(...) so users see what the app
+        # is actually doing during long runs.
+        run_status = st.status(
+            f"Running {est_method} estimation...",
+            expanded=True,
+        )
+        run_status.write(
+            f"📥 Starting: **{n_obs:,}** observations × **{n_persons:,}** persons × "
+            f"**{len(facet_cols)}** facets. "
             "This may take a few seconds to several minutes depending on data size."
         )
+        import time as _time
+        _run_t0 = _time.perf_counter()
 
         try:
             anchor_df = core["read_flexible_table"](anchor_text, anchor_file, header=True)
@@ -9771,6 +9779,7 @@ def run_facets_mode(core: dict, data: pd.DataFrame) -> None:
                 if population_enabled else pd.DataFrame()
             )
 
+            run_status.write(f"🧮 Estimating {model_type} with {est_method}...")
             with st.spinner(f"Running {est_method} estimation... please wait."):
                 result = core["mfrm_estimate"](
                     data=data,
@@ -9840,6 +9849,7 @@ def run_facets_mode(core: dict, data: pd.DataFrame) -> None:
                 })
                 result["config"]["analysis_config_fingerprint"] = config_fingerprint(result.get("config", {}))
                 result["config"]["run_fingerprint"] = result["config"]["analysis_config_fingerprint"]
+            run_status.write("🔬 Computing fit, reliability, and PCA diagnostics...")
             with st.spinner("Computing diagnostics..."):
                 diagnostics = core["mfrm_diagnostics"](
                     result,
@@ -9849,6 +9859,7 @@ def run_facets_mode(core: dict, data: pd.DataFrame) -> None:
                     marginal_pairwise=bool(strict_marginal_pairwise),
                     marginal_max_pair_cells=int(strict_marginal_max_pair_cells),
                 )
+            run_status.write("🗒 Building FACETS-style report tables and exports...")
             report_tables = core["calc_facets_report_tbls"](
                 result,
                 diagnostics,
@@ -9871,6 +9882,7 @@ def run_facets_mode(core: dict, data: pd.DataFrame) -> None:
                     pairs = [selected_bias_pair]
                 else:
                     pairs = []
+                run_status.write(f"📐 Estimating bias interactions for {len(pairs)} facet pair(s)...")
                 with st.spinner(f"Estimating bias/interaction for {len(pairs)} pair(s)..."):
                     for fa, fb in pairs:
                         try:
@@ -9938,8 +9950,22 @@ def run_facets_mode(core: dict, data: pd.DataFrame) -> None:
                 "_render_interactive_plots": bool(render_interactive_plots),
                 "_generate_figure_exports": bool(generate_figure_exports),
             }
-            run_status.empty()
+            _elapsed_sec = _time.perf_counter() - _run_t0
+            run_status.update(
+                label=f"✅ Analysis complete in {_elapsed_sec:.1f}s",
+                state="complete",
+                expanded=False,
+            )
         except Exception as exc:
+            # Mark the status accordion as failed so users see it at a glance
+            try:
+                run_status.update(
+                    label="❌ Estimation failed — see details below",
+                    state="error",
+                    expanded=False,
+                )
+            except Exception:
+                pass
             # Pattern-match the exception to a targeted remedy before falling back
             # to the generic checklist. Keeps the full list as a safety net.
             _matched_remedy = diagnose_estimation_error(exc)

@@ -94,3 +94,67 @@ def test_apptest_with_clinical_osce_runs_visuals_without_crash():
     # the initial-render path alone exercises the widget math that
     # blew up. A clean run here is the pass condition.
     assert not at.exception, f"AppTest raised: {at.exception}"
+
+
+# ---------------------------------------------------------------------------
+# Boundary-case unit tests: feed extreme small inputs directly to every
+# renderer that contains a data-dependent widget. These go beyond the
+# shipped scenarios to simulate user-provided data with 2 raters, 1 task,
+# or 1-element facets — shapes plausible in real research.
+# ---------------------------------------------------------------------------
+
+def test_forest_plot_single_row_facet_does_not_crash():
+    """1-row facet: the widget must be skipped, plot still attempted."""
+    diag = {
+        "measures": pd.DataFrame({
+            "Facet": ["Rater"],
+            "Level": ["R_ONLY"],
+            "Estimate": [0.0],
+            "SE": [0.2],
+            "Infit": [1.0],
+            "Outfit": [1.0],
+        }),
+    }
+    try:
+        app._draw_measures_forest_plotly(diag)
+    except Exception as exc:
+        msg = f"{type(exc).__name__}: {exc}"
+        assert "ValueBelowMinError" not in msg, msg
+        assert "ValueAboveMaxError" not in msg, msg
+        assert "StreamlitAPIException" not in msg, msg
+
+
+def test_misfit_ranking_single_row_does_not_crash():
+    fit = pd.DataFrame({
+        "Facet": ["Rater"],
+        "Level": ["R_ONLY"],
+        "InfitZSTD": [0.5],
+        "OutfitZSTD": [0.5],
+    })
+    try:
+        app._draw_misfit_ranking(fit)
+    except Exception as exc:
+        msg = f"{type(exc).__name__}: {exc}"
+        assert "ValueBelowMinError" not in msg, msg
+        assert "ValueAboveMaxError" not in msg, msg
+        assert "StreamlitAPIException" not in msg, msg
+
+
+def test_bias_heatmap_tiny_pivot_does_not_crash():
+    """A 2x2 pivot exercises the slider-bounds-clamping branch."""
+    tiny_tbl = pd.DataFrame({
+        "FacetA": ["Rater"] * 4,
+        "FacetB": ["Task"] * 4,
+        "FacetA_Level": ["R1", "R1", "R2", "R2"],
+        "FacetB_Level": ["T1", "T2", "T1", "T2"],
+        "BiasSize": [0.1, -0.2, 0.3, -0.1],
+        "BiasSE": [0.15] * 4,
+        "t": [0.7, -1.3, 2.0, -0.7],
+    })
+    try:
+        app._draw_bias_heatmap(tiny_tbl, "Rater", "Task")
+    except Exception as exc:
+        msg = f"{type(exc).__name__}: {exc}"
+        assert "ValueBelowMinError" not in msg, msg
+        assert "ValueAboveMaxError" not in msg, msg
+        assert "StreamlitAPIException" not in msg, msg

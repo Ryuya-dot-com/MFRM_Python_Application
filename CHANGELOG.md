@@ -2,6 +2,63 @@
 
 All notable changes to this standalone Streamlit distribution should be recorded here.
 
+## 0.2.12-beta - 2026-04-18
+
+Process hotfix responding to a user question after the v0.2.11
+widget-crash ship-and-patch cycle: *"Why did this happen and aren't
+there other bugs like it?"*
+
+Honest root-cause: v0.2.7 added four sample scenarios including
+Clinical OSCE (3 competencies) and the Writing Essay default (4
+raters). Tests verified the generator functions but never ran the
+generated data through the full UI pipeline. This release installs
+the CI gate that would have caught the v0.2.10 bug and completes the
+systematic audit of related hazards.
+
+### Added
+
+- **`tests/test_end_to_end_scenarios.py`** (5 tests). For every key
+  in `SAMPLE_DATA_SCENARIOS`, boot the app via
+  `streamlit.testing.v1.AppTest`, switch the data-source radio to
+  that scenario, click **Run FACETS-mode estimation**, and assert
+  `at.exception` stays empty across the full post-run tab render.
+  This would have caught the v0.2.10 `StreamlitValueBelowMinError`
+  before release. Total end-to-end runtime ≈ 2 min on a CI runner.
+- **Three additional boundary-case tests** in
+  `tests/test_small_data_widgets.py`: 1-row forest plot, 1-row
+  misfit ranking, 2×2 bias heatmap. These cover user-provided data
+  shapes that do not match any built-in scenario but are plausible
+  in real research (e.g., a pilot design with 2 raters).
+
+### Audited (no additional fixes required)
+
+A 5-pattern systematic sweep of the whole monolith found no further
+reachable crashes:
+
+1. **Data-dependent widget bounds** — 18 call sites scanned. The 3
+   unsafe ones were already fixed in v0.2.11; the remaining 15 use
+   literal bounds only.
+2. **Statistical calls on small samples** (`std(ddof=1)`,
+   `quantile`, `percentile`) — 7 call sites. All either guarded by
+   `if n > 1` / `if levels > 1` or downstream of a `len(elements) <
+   2` return (Facet Equivalence, Rater Dashboard, Q-Q plot).
+3. **Division by data length** — 8 call sites. All guarded by
+   `if n_ok == 0 / len(data) > 0 / max(total, 1)` or similar.
+4. **Facet Equivalence chi-square** — guarded by
+   `len(elements) < 2: return` at L16948 so `df_chi = n_elem - 1 ≥
+   1`.
+5. **Q-Q residual plot `.std(ddof=1)`** — guarded by `residuals.size
+   < 20: return` at L18763.
+
+### Process improvement
+
+- Scenario additions now require an end-to-end AppTest gate before
+  release. Unit tests for the generator alone are not sufficient:
+  the bug class that shipped was "valid DataFrame → widget
+  constraint violation", which only the full pipeline exercises.
+- Total pytest count: 178 → **186** (+5 end-to-end, +3 boundary).
+- 41 inline self-tests continue to pass.
+
 ## 0.2.11-beta - 2026-04-18
 
 Widget small-data hotfix. A user reported a hard crash with

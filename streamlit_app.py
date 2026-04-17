@@ -10407,6 +10407,304 @@ def build_publication_pdf_bytes(
     return buf.getvalue()
 
 
+# ---------------------------------------------------------------------------
+# HTML publication document builder (stdlib only)
+# ---------------------------------------------------------------------------
+
+def _html_escape(text: str) -> str:
+    return (
+        text.replace("&", "&amp;")
+            .replace("<", "&lt;")
+            .replace(">", "&gt;")
+    )
+
+
+def _markdown_to_html(markdown_text: str) -> str:
+    """Minimal markdown → HTML converter used by the HTML publication
+    document. Handles headings, paragraphs, bullet lists, horizontal
+    rules, and markdown tables (pipe-delimited)."""
+    if not markdown_text:
+        return ""
+    lines = markdown_text.splitlines()
+    out: list[str] = []
+    i = 0
+    in_list = False
+    while i < len(lines):
+        line = lines[i]
+        stripped = line.strip()
+        if not stripped:
+            if in_list:
+                out.append("</ul>")
+                in_list = False
+            i += 1
+            continue
+        if stripped == "---":
+            if in_list:
+                out.append("</ul>")
+                in_list = False
+            out.append("<hr/>")
+            i += 1
+            continue
+        if stripped.startswith("### "):
+            if in_list:
+                out.append("</ul>")
+                in_list = False
+            out.append(f"<h3>{_html_escape(stripped[4:].strip())}</h3>")
+        elif stripped.startswith("## "):
+            if in_list:
+                out.append("</ul>")
+                in_list = False
+            out.append(f"<h2>{_html_escape(stripped[3:].strip())}</h2>")
+        elif stripped.startswith("# "):
+            if in_list:
+                out.append("</ul>")
+                in_list = False
+            out.append(f"<h1>{_html_escape(stripped[2:].strip())}</h1>")
+        elif stripped.startswith(("- ", "* ")):
+            if not in_list:
+                out.append("<ul>")
+                in_list = True
+            out.append(f"<li>{_html_escape(stripped[2:].strip())}</li>")
+        elif stripped.startswith("|"):
+            if in_list:
+                out.append("</ul>")
+                in_list = False
+            rows: list[list[str]] = []
+            while i < len(lines) and lines[i].strip().startswith("|"):
+                cells = [c.strip() for c in lines[i].strip().strip("|").split("|")]
+                rows.append(cells)
+                i += 1
+            rows = [r for r in rows if not all(set(c) <= set("-: ") for c in r)]
+            if rows:
+                out.append("<table>")
+                for r_idx, row in enumerate(rows):
+                    tag = "th" if r_idx == 0 else "td"
+                    out.append("<tr>" + "".join(f"<{tag}>{_html_escape(c)}</{tag}>" for c in row) + "</tr>")
+                out.append("</table>")
+            continue
+        else:
+            if in_list:
+                out.append("</ul>")
+                in_list = False
+            out.append(f"<p>{_html_escape(stripped)}</p>")
+        i += 1
+    if in_list:
+        out.append("</ul>")
+    return "\n".join(out)
+
+
+_PUBLICATION_HTML_STYLE = """
+<style>
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+         max-width: 820px; margin: 2em auto; padding: 0 1em; line-height: 1.55; color: #222; }
+  h1 { font-size: 1.9em; border-bottom: 2px solid #1b9e77; padding-bottom: 0.25em; }
+  h2 { font-size: 1.4em; color: #1b9e77; margin-top: 1.8em; }
+  h3 { font-size: 1.15em; color: #555; }
+  table { border-collapse: collapse; margin: 1em 0; font-size: 0.92em; }
+  th, td { border: 1px solid #bbb; padding: 4px 8px; text-align: left; }
+  th { background: #e9eef5; }
+  hr { border: none; border-top: 1px solid #ccc; margin: 1.5em 0; }
+  .abstract { background: #f5f7fa; padding: 0.8em 1em; border-left: 4px solid #1b9e77; margin: 1em 0; }
+  .figure-caption { font-style: italic; font-size: 0.9em; color: #555; margin: 0.3em 0 1.5em 0; }
+  .ref { text-indent: -1.5em; padding-left: 1.5em; margin-bottom: 0.4em; }
+</style>
+"""
+
+
+def build_publication_html_bytes(
+    result: dict,
+    diagnostics: dict,
+    all_bias_results: dict | None = None,
+) -> bytes:
+    """Build a manuscript-ready HTML document as UTF-8 bytes (no JS, no external assets)."""
+    config = result.get("config", {}) if isinstance(result, dict) else {}
+    prep = result.get("prep", {}) if isinstance(result, dict) else {}
+    model_name = str(config.get("model", "MFRM"))
+    method_name = str(config.get("method", "estimation"))
+    n_obs = prep.get("n_obs", "?")
+    n_person = prep.get("n_person", "?")
+    facet_names = config.get("facet_names", [])
+
+    try:
+        methods_text = generate_method_appendix_text(result, diagnostics, all_bias_results)
+    except Exception:
+        methods_text = "# Methods\n\n(Method appendix could not be generated for this run.)"
+    try:
+        manuscript_text = generate_manuscript_reporting_template(result, diagnostics, all_bias_results)
+    except Exception:
+        manuscript_text = "# Results\n\n(Manuscript template could not be generated for this run.)"
+
+    narrative_for_refs = (methods_text or "") + "\n" + (manuscript_text or "")
+    refs = build_apa_reference_list(
+        narrative_for_refs, always_include=_PUBLICATION_DOCUMENT_CORE_REFS,
+    )
+
+    # Tables rendered as HTML via pandas (escape-safe)
+    measures = diagnostics.get("measures") if isinstance(diagnostics, dict) else None
+    reliability = diagnostics.get("reliability") if isinstance(diagnostics, dict) else None
+    measures_html = ""
+    if isinstance(measures, pd.DataFrame) and not measures.empty:
+        measures_html = (
+            "<h2>Table 1. Element measures, standard errors, and fit statistics</h2>\n"
+            + measures.round(3).to_html(index=False, border=0)
+        )
+    reliability_html = ""
+    if isinstance(reliability, pd.DataFrame) and not reliability.empty:
+        reliability_html = (
+            "<h2>Table 2. Reliability and separation by facet</h2>\n"
+            + reliability.round(3).to_html(index=False, border=0)
+        )
+
+    # Embed figures as base64 PNG so the HTML stays self-contained
+    import base64
+    figures = _publication_figure_payloads(result, diagnostics)
+    figures_html = ""
+    if figures:
+        figures_html = "<h2>Figures</h2>\n"
+        for idx, (fig_id, caption, png) in enumerate(figures, start=1):
+            b64 = base64.b64encode(png).decode("ascii")
+            figures_html += (
+                f'<figure><img src="data:image/png;base64,{b64}" '
+                f'alt="{_html_escape(caption)}" style="max-width:100%;"/>'
+                f'<figcaption class="figure-caption">Figure {idx}. {_html_escape(caption)}</figcaption></figure>\n'
+            )
+
+    refs_html = ""
+    if refs:
+        refs_html = "<h2>References</h2>\n" + "\n".join(
+            f'<p class="ref">{_html_escape(r)}</p>' for r in refs
+        )
+
+    body = f"""
+<h1>Many-Facet Rasch Measurement analysis</h1>
+<div class="abstract">
+  <strong>Abstract.</strong> This document reports a {_html_escape(model_name)} analysis
+  estimated via {_html_escape(method_name)} on {n_obs} observations from {n_person}
+  persons across {len(facet_names)} facets
+  ({_html_escape(', '.join(map(str, facet_names)) or 'none')}).
+  The sections below follow the APA 7 reporting layout: exhaustive Methods,
+  Results with embedded figures and tables, and a references list.
+  All content is auto-generated from the current analysis configuration;
+  edit freely for your manuscript.
+</div>
+{_markdown_to_html(methods_text)}
+<hr/>
+{_markdown_to_html(manuscript_text)}
+{measures_html}
+{reliability_html}
+{figures_html}
+{refs_html}
+"""
+    html = (
+        "<!DOCTYPE html>\n<html lang='en'><head><meta charset='utf-8'/>"
+        "<title>MFRM publication document</title>"
+        + _PUBLICATION_HTML_STYLE
+        + "</head><body>\n" + body + "\n</body></html>"
+    )
+    return html.encode("utf-8")
+
+
+# ---------------------------------------------------------------------------
+# Report-tab section: Publication Document (Word / PDF / HTML)
+# ---------------------------------------------------------------------------
+
+def _render_publication_document_section(
+    result: dict,
+    diagnostics: dict,
+    all_bias_results: dict | None = None,
+) -> None:
+    """Render the download buttons for the Word / PDF / HTML publication docs."""
+    st.subheader("📄 Publication Document")
+    st.caption(
+        "Download a manuscript-ready document combining the auto-generated "
+        "abstract, an exhaustive Methods section, results tables, embedded "
+        "figures, and an APA 7 reference list. Choose the format that fits "
+        "your workflow: Word for further editing, PDF for sharing, HTML for web."
+    )
+
+    # Build the three documents lazily — on first button click only — so
+    # users who don't want a publication download aren't paying the cost.
+    # The actual bytes are regenerated on each click so edits to the sidebar
+    # are reflected; document size is small enough that this is fine.
+    col_w, col_p, col_h = st.columns(3)
+
+    with col_w:
+        if st.button(
+            "📄 Generate & download Word",
+            key="publication_doc_word_build",
+            use_container_width=True,
+            help="Build a .docx document with auto Methods, tables, figures, and References.",
+        ):
+            try:
+                data = build_publication_word_bytes(result, diagnostics, all_bias_results)
+                st.session_state["_publication_doc_word_bytes"] = data
+            except RuntimeError as exc:
+                st.error(f"Word export unavailable: {exc}")
+            except Exception as exc:  # pragma: no cover - defensive
+                st.error(f"Word build failed: {exc}")
+        if "_publication_doc_word_bytes" in st.session_state:
+            st.download_button(
+                "⬇ Download .docx",
+                data=st.session_state["_publication_doc_word_bytes"],
+                file_name="mfrm_publication_document.docx",
+                mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                key="publication_doc_word_dl",
+                use_container_width=True,
+            )
+
+    with col_p:
+        if st.button(
+            "📄 Generate & download PDF",
+            key="publication_doc_pdf_build",
+            use_container_width=True,
+            help="Build a letter-size PDF with the same content as the Word export.",
+        ):
+            try:
+                data = build_publication_pdf_bytes(result, diagnostics, all_bias_results)
+                st.session_state["_publication_doc_pdf_bytes"] = data
+            except RuntimeError as exc:
+                st.error(f"PDF export unavailable: {exc}")
+            except Exception as exc:  # pragma: no cover
+                st.error(f"PDF build failed: {exc}")
+        if "_publication_doc_pdf_bytes" in st.session_state:
+            st.download_button(
+                "⬇ Download .pdf",
+                data=st.session_state["_publication_doc_pdf_bytes"],
+                file_name="mfrm_publication_document.pdf",
+                mime="application/pdf",
+                key="publication_doc_pdf_dl",
+                use_container_width=True,
+            )
+
+    with col_h:
+        if st.button(
+            "📄 Generate & download HTML",
+            key="publication_doc_html_build",
+            use_container_width=True,
+            help="Build a self-contained HTML page (no external assets).",
+        ):
+            try:
+                data = build_publication_html_bytes(result, diagnostics, all_bias_results)
+                st.session_state["_publication_doc_html_bytes"] = data
+            except Exception as exc:  # pragma: no cover
+                st.error(f"HTML build failed: {exc}")
+        if "_publication_doc_html_bytes" in st.session_state:
+            st.download_button(
+                "⬇ Download .html",
+                data=st.session_state["_publication_doc_html_bytes"],
+                file_name="mfrm_publication_document.html",
+                mime="text/html",
+                key="publication_doc_html_dl",
+                use_container_width=True,
+            )
+
+    st.caption(
+        "💡 All three formats share the same narrative source, so content is "
+        "identical. The Word version is the easiest to edit; the PDF is "
+        "print-ready; the HTML is self-contained and works offline."
+    )
+
+
 _ESTIMATION_ERROR_PATTERNS: list[tuple[str, tuple[str, str, str]]] = [
     # (case-insensitive needle, (diagnosis, action, keyword))
     (
@@ -13381,7 +13679,7 @@ def show_report_section(
     report_tabs = st.tabs([
         "APA Report", "Readiness", "Claim Guide", "Manuscript Template",
         "Tables", "Reporting Checklist", "Method Appendix", "Facet Equivalence",
-        "Stan Code",
+        "Stan Code", "📄 Publication Document",
     ])
 
     # ---- Sub-tab 0: APA Report ----
@@ -13421,6 +13719,10 @@ def show_report_section(
     # ---- Sub-tab 8: Stan Code ----
     with report_tabs[8]:
         _render_stan_code(result)
+
+    # ---- Sub-tab 9: Publication Document (Word / PDF / HTML) ----
+    with report_tabs[9]:
+        _render_publication_document_section(result, diagnostics, all_bias_results)
 
 
 def show_convergence_section(result: dict) -> None:

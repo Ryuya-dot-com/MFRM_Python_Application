@@ -17518,11 +17518,52 @@ institution, or subgroup data, run the app locally and remove unnecessary
 identifiers before upload or paste. Hosted deployments can process data on
 remote infrastructure.
 
-1. **Load data** via the sidebar (sample, paste, or upload).
+1. **Load data** via the sidebar (sample, paste, or upload). Quickest
+   path: click the 🎯 **Run with sample data** button in the onboarding
+   banner to fire estimation with one click using the built-in demo.
 2. **Map columns**: identify Person, Score, and 2+ Facet columns.
+   The **pre-estimation readiness panel** above the Run button
+   surfaces 🟢 / 🟡 / 🔴 data-quality checks so you can fix issues
+   BEFORE clicking Run, not after a failure.
 3. **Configure** missing value recoding if needed.
-4. **Click** "Run FACETS-mode estimation".
-5. **Review** results across the tabs.
+4. **Click** "Run FACETS-mode estimation" — a step-by-step progress
+   accordion shows which phase is running (📥 Estimate → 🔬 Diagnostics
+   → 🗒 Report tables → 📐 Bias interactions). Completion fires a toast.
+5. **Review** results across the tabs. A **Run breadcrumb** at the top
+   of the results always shows which run you are currently viewing.
+
+### What's new in v0.2.x
+
+- **📄 Publication Document** (Report → 💾 Exports) — one-click Word,
+  PDF, or HTML manuscript with auto-generated Methods, results tables,
+  embedded figures, and an APA 7 reference list.
+- **🧮 Posterior Viewer (upload)** — pick this mode in the sidebar's
+  top *App mode* radio to inspect externally-produced posterior draws
+  (CmdStan CSV, Apache Parquet, or ArviZ NetCDF) with trace / ridge /
+  pair / forest plots and HMC diagnostics (Rhat, ESS, divergences,
+  E-BFMI). Estimation itself still runs on your machine via the
+  runner script downloaded from **Report → 💾 Exports → Stan Code**.
+- **🧪 Advanced models (Stan, download-only)** — expand the sidebar
+  section to generate Stan code for DINA (with Q-matrix upload), HRM,
+  Testlet RI / Bifactor, Mixture Rasch, 2PL Binary, and Pairwise BTL.
+  Compile and sample locally, then drop the posterior files back into
+  the Posterior Viewer.
+- **🕒 Run history + 🔀 Compare two runs** — the last 5 runs are
+  restorable from the history panel above the result tabs. Pick any
+  two to see a side-by-side comparison of convergence, element-level
+  Pearson r + RMSE, and per-facet reliability.
+- **Pattern-matched estimation errors** — if the estimator fails, the
+  app shows a specific remedy (singular matrix → non-centered facet;
+  maxit reached → raise to 1000; rating scale error → check Score
+  column) instead of a generic checklist.
+- **🟨🟩🟧🟥 Fit colour formatting** — the Combined measures + fit
+  table highlights Infit / Outfit mean-square cells by the Wright &
+  Linacre (1994) bands so misfit jumps out visually.
+- **📖 Glossary** — see the Glossary sub-tab below for a 20-term
+  quick reference (logit, Infit, Outfit, MnSq, ZSTD, step facet,
+  separation, Rhat, ESS, E-BFMI, …).
+
+### Full workflow
 
 ### Data Format
 
@@ -18649,6 +18690,19 @@ When reporting MFRM results in a manuscript, include the following
 
 ---
 
+**Tip:** since v0.2.1 the app's estimation error panel shows a
+*pattern-matched* remedy for the most common failure modes — singular
+matrix → set a non-centered facet; maxit reached → raise to 1000;
+rating scale error → check the Score column; memory error → reduce
+facet cardinality; anchor error → fix the anchor table; etc. The
+generic checklist below is the fallback for unrecognised patterns.
+
+**Tip:** the pre-estimation **readiness panel** above the Run button
+surfaces 🟢 / 🟡 / 🔴 data-quality checks (observation count, person
+count, score-column dtype, facet cardinality, per-person coverage,
+column-role overlap) BEFORE you click Run, so many of the issues
+below are caught upstream.
+
 **"Select at least two facet columns"**
 - You need Person + at least 2 facets (e.g., Rater + Task).
 
@@ -18659,6 +18713,31 @@ When reporting MFRM results in a manuscript, include the following
 - Increase `maxit` (e.g., 1000 or 2000).
 - Relax `reltol` (e.g., 1e-5).
 - Check for sparse categories or disconnected subsets.
+
+**"PCA of residuals could not be computed"**
+- The Dimensionality tab now shows an explicit reason (e.g., only
+  1 item-combination column, <2 persons in the residual matrix, or
+  Analysis depth disabled PCA). Follow the inline hint — broaden
+  your facet selection, include more levels, or re-run with
+  Analysis depth = Standard / Full publication.
+
+**"Bias interaction could not be computed for X × Y"**
+- The Bias/Interaction tab now carries a `_skip_reason` explaining
+  which cell failed (same-facet pair, empty observation table,
+  unknown facet names after renaming, or no valid cells after
+  extreme-level filtering). Fix the indicated condition and re-run.
+
+**File upload is slow / crashes**
+- The sidebar uploader warns at ≥50 MB and errors at ≥100 MB. On
+  Streamlit Community Cloud (~1 GB memory budget) multi-hundred-MB
+  CSVs will OOM before parsing finishes. Sample rows locally first
+  or run the app on your own machine.
+
+**Clearing history removed my snapshots**
+- The 🗑 Clear history button now requires a two-step confirmation.
+  If you cleared by accident, re-run the pipeline with the same
+  settings — the results (table rows, convergence, plots) are
+  deterministic given the input and config.
 
 **Many elements with extreme scores**
 - Elements scored at the minimum or maximum have infinite measures.

@@ -11,3 +11,9 @@ openpyxl>=3.1
 # Publication-ready Word / PDF export (Report tab → Publication Document).
 python-docx>=1.0
 reportlab>=4.0
+# Posterior Viewer mode: inspect externally-produced posterior draws
+# (CmdStan CSV / Apache Parquet / ArviZ NetCDF) with trace, ridge, pair,
+# and forest plots plus HMC diagnostics.
+arviz>=0.17
+netcdf4>=1.6
+pyarrow>=15.0

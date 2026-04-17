@@ -8,3 +8,6 @@ plotly>=6.1.1
 kaleido>=1.0
 streamlit>=1.54
 openpyxl>=3.1
+# Publication-ready Word / PDF export (Report tab → Publication Document).
+python-docx>=1.0
+reportlab>=4.0

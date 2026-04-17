@@ -4,6 +4,40 @@ All notable changes to this standalone Streamlit distribution should be recorded
 
 ## Unreleased
 
+### Added — Phase B (Posterior Viewer)
+
+- New top-level app mode "Posterior Viewer (upload)" exposed via the
+  sidebar radio, for inspecting externally-produced posterior draws
+  without leaving the browser. Estimation itself still happens locally
+  (Streamlit Cloud is used only as a visualisation frontend).
+- Upload pipeline supports three formats with auto-detection by file
+  extension:
+  - CmdStan CSV (one or more per-chain outputs, loaded via
+    `arviz.from_cmdstan`).
+  - Apache Parquet (any DataFrame with `chain`, `draw`, and one
+    column per parameter).
+  - ArviZ NetCDF `.nc` (round-tripped via `arviz.from_netcdf`).
+- Summary table with mean / sd / median / 5% / 95% / n_eff / Rhat
+  (the ESS and Rhat columns come from `arviz.ess` / `arviz.rhat`) plus
+  a one-click CSV download.
+- HMC transition diagnostics banner with coloured metrics: divergent
+  transitions count + %, max-treedepth hits, acceptance rate mean,
+  step-size mean, and E-BFMI min across chains. Inline guidance triggers
+  when thresholds are crossed (e.g. `adapt_delta 0.95 → 0.99` for
+  divergences, `max_treedepth 10 → 12` for treedepth hits, or
+  re-parameterisation for E-BFMI < 0.3).
+- Plot suite (Plotly, matches the rest of the app):
+  - 📈 Trace — chain-coloured trace per parameter
+  - 🏔 Ridge — offset KDE ridge across selected parameters
+  - 🔗 Pair  — scatter-matrix with divergence highlights
+  - 🌲 Forest — posterior mean + 50% and 95% CIs
+- Parameter multi-select (defaults to the first 6 parameters) drives
+  every plot and the summary table.
+- Inline self-test `_self_test_posterior_viewer_loaders` round-trips
+  synthetic parquet draws through the loader, summary, HMC diagnostics,
+  and plot builders. Gracefully skipped when `arviz` / `pyarrow` are
+  not yet installed.
+
 ### Added — Phase A (publication export)
 
 - Word (.docx) publication document builder with auto-generated abstract,
@@ -85,6 +119,9 @@ All notable changes to this standalone Streamlit distribution should be recorded
 
 - Added `python-docx >= 1.0` (Word publication export).
 - Added `reportlab >= 4.0` (PDF publication export).
+- Added `arviz >= 0.17` (Posterior Viewer — Rhat / ESS / InferenceData I/O).
+- Added `netcdf4 >= 1.6` (Posterior Viewer — NetCDF file round-trip).
+- Added `pyarrow >= 15.0` (Posterior Viewer — Apache Parquet draws).
 
 ## 0.1.2-beta - 2026-04-12
 

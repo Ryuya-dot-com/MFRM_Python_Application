@@ -23691,6 +23691,84 @@ def _self_test_publication_document_word() -> None:
     )
 
 
+def _self_test_posterior_viewer_loaders() -> None:
+    """Round-trip synthetic posterior draws through the parquet + NetCDF loaders."""
+    import io as _io
+    try:
+        import arviz as _az  # noqa: F401
+    except ImportError:
+        return  # arviz not installed yet — skip gracefully
+
+    rng = np.random.default_rng(20260417)
+    chains, draws = 4, 200
+    params = ["alpha", "beta", "sigma"]
+
+    # Build a synthetic parquet DataFrame
+    rows = []
+    for c in range(1, chains + 1):
+        for d in range(draws):
+            rows.append({
+                "chain": c,
+                "draw": d,
+                "alpha": float(rng.normal(0.5, 0.2)),
+                "beta": float(rng.normal(-0.3, 0.4)),
+                "sigma": float(abs(rng.normal(0.8, 0.1))),
+            })
+    df = pd.DataFrame(rows)
+    buf = _io.BytesIO()
+    try:
+        df.to_parquet(buf)
+    except Exception:
+        # pyarrow not installed — skip
+        return
+    buf.seek(0)
+    # Mimic a Streamlit UploadedFile: it exposes .getvalue() / .read()
+    class _FakeUpload:
+        def __init__(self, data: bytes, name: str):
+            self._data = data
+            self.name = name
+        def getvalue(self) -> bytes:
+            return self._data
+        def read(self) -> bytes:
+            return self._data
+    fake = _FakeUpload(buf.getvalue(), "draws.parquet")
+
+    payload = _posterior_load_parquet(fake)
+    _self_test_assert(payload is not None, "parquet loader returned None")
+    _self_test_assert(payload["n_chains"] == chains, f"n_chains mismatch: {payload['n_chains']}")
+    _self_test_assert(payload["n_draws"] == draws, f"n_draws mismatch: {payload['n_draws']}")
+    _self_test_assert(
+        set(params).issubset(payload["parameter_names"]),
+        f"param names missing: {payload['parameter_names']}",
+    )
+
+    # Summary must return one row per parameter with finite mean/sd
+    summary = _posterior_compute_summary(payload, params)
+    _self_test_assert(len(summary) == len(params), "summary row count mismatch")
+    for col in ("mean", "sd", "median", "q05", "q95"):
+        _self_test_assert(col in summary.columns, f"summary missing {col} column")
+        _self_test_assert(
+            np.all(np.isfinite(summary[col].to_numpy())),
+            f"summary {col} has non-finite values",
+        )
+
+    # Plot builders return either a figure or None, never raise
+    for fn in (_posterior_trace_figure, _posterior_ridge_figure,
+               _posterior_forest_figure):
+        fig = fn(payload, params)
+        _self_test_assert(fig is not None, f"{fn.__name__} returned None for valid input")
+    pair = _posterior_pair_figure(payload, params)
+    _self_test_assert(pair is not None, "_posterior_pair_figure returned None for valid input")
+
+    # HMC diagnostics on a parquet payload (no sample_stats) returns a
+    # dict with all keys None — must not crash.
+    hmc = _posterior_hmc_diagnostics_summary(payload)
+    _self_test_assert(
+        isinstance(hmc, dict) and "divergences" in hmc,
+        "HMC diagnostics summary has unexpected shape",
+    )
+
+
 def _self_test_publication_document_pdf() -> None:
     """Build a PDF from a minimal synthetic result and verify its bytes."""
     try:
@@ -24832,6 +24910,7 @@ def run_self_tests() -> int:
         ("APA 7 reference list generator", _self_test_apa_reference_list),
         ("Word publication document builder", _self_test_publication_document_word),
         ("PDF publication document builder", _self_test_publication_document_pdf),
+        ("Posterior Viewer loaders / plots", _self_test_posterior_viewer_loaders),
     ]
     failures = []
     for name, test_func in tests:

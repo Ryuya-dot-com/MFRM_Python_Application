@@ -12525,28 +12525,39 @@ def run_facets_mode(core: dict, data: pd.DataFrame) -> None:
     result_render_plots = bool(render_interactive_plots)
     result_generate_figures = bool(generate_figure_exports)
 
-    # --- Run breadcrumb (always visible, above critical warnings) ---
+    # --- Run breadcrumb (always visible, 1 compact line) ---
     try:
         _render_run_breadcrumb(result, est_facet_cols)
     except Exception:  # pragma: no cover - UX helper must not break results
         pass
 
-    # --- Critical warnings ABOVE tabs (always visible) ---
+    # --- Critical warnings ABOVE tabs (always visible — these are alerts) ---
     _show_top_level_warnings(result, diagnostics, data,
                              out.get("person_col", person_col),
                              est_facet_cols,
                              out.get("score_col", score_col),
                              core)
-    _show_first_read_guide(result, diagnostics, out.get("all_bias_results", {}))
 
-    # Run history panel (collapsed by default) — lets users swap between
-    # recent runs without re-executing the pipeline.
+    # --- First-read guide: collapsed by default (v0.2.5 density reduction) ---
+    # The guide is useful but long. Before v0.2.5 it rendered unfolded
+    # above the tabs on every rerun, adding ~40 lines of material
+    # between the warning banners and the actual results tabs. Tuck it
+    # into a collapsed expander so returning users see the result tabs
+    # immediately; first-time users still see the "Where to look first"
+    # affordance at the top and can click to expand.
+    with st.expander(
+        "📋 Where to look first — first-read guide (5-step checklist)",
+        expanded=False,
+    ):
+        _show_first_read_guide(result, diagnostics, out.get("all_bias_results", {}))
+
+    # Run history panel (already collapsed by default internally).
     try:
         render_run_history_panel()
     except Exception:  # pragma: no cover - UX helper
         pass
 
-    # Two-run comparison selector — only appears with ≥2 runs in history.
+    # Two-run comparison selector (collapsed; only appears with ≥2 runs).
     try:
         render_comparison_selector()
     except Exception:  # pragma: no cover - UX helper
@@ -17152,7 +17163,7 @@ def show_visuals_section(result: dict, diagnostics: dict) -> None:
         "element-level fit patterns; facet distributions compare element spread; "
         "observed-vs-expected plots test model accuracy."
     )
-    with st.expander("Visual interpretation roadmap", expanded=True):
+    with st.expander("Visual interpretation roadmap", expanded=False):
         st.caption(
             "Use this roadmap when you are new to MFRM output. Read plots in priority "
             "order, and stop at the first serious review trigger before making final claims."

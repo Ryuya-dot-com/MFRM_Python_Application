@@ -8696,6 +8696,7 @@ def _show_pca_panel(
                       title=f"Scree Plot — {label}", yaxis_rangemode="tozero",
                       xaxis=dict(dtick=1), height=350, template="plotly_white")
     st.plotly_chart(fig, width="stretch")
+    render_chart_guide("scree")
 
     # --- Eigenvalue table ---
     n_show = min(10, len(eigenvalues))
@@ -8949,6 +8950,7 @@ histogram on the leftmost column. Each subsequent column represents one facet.
         margin=dict(l=90, r=50, t=90, b=80),
     )
     st.plotly_chart(fig, width="stretch")
+    render_chart_guide("wright_map")
 
 
 # ---------------------------------------------------------------------------
@@ -16870,6 +16872,7 @@ def _draw_category_probability_curves_plotly(result: dict) -> None:
     scope_key = re.sub(r"[^A-Za-z0-9]+", "_", str(meta.get("Scope", "curve"))).strip("_")[:80] or "curve"
     if fig is not None:
         st.plotly_chart(fig, width="stretch")
+        render_chart_guide("category_probability")
         _offer_fig_download(fig, f"category_probability_curve_{model}_{scope_key}", "Download displayed category curve (PNG 300 DPI)")
     if fig_expected is not None:
         st.plotly_chart(fig_expected, width="stretch")
@@ -16952,6 +16955,7 @@ The Pathway Map plots each facet element's **measure** (Y-axis, in logits) again
         title="Pathway Map: Measure vs Infit ZSTD", height=500,
     )
     st.plotly_chart(fig, width="stretch")
+    render_chart_guide("pathway_map")
 
 
 def _draw_facet_distribution_plotly(diagnostics: dict) -> None:
@@ -16980,6 +16984,7 @@ def _draw_facet_distribution_plotly(diagnostics: dict) -> None:
         showlegend=False, height=450,
     )
     st.plotly_chart(fig, width="stretch")
+    render_chart_guide("facet_distribution")
 
 
 def _draw_wright_map_plotly(
@@ -26559,12 +26564,14 @@ def render_posterior_viewer_mode() -> None:
         fig = _posterior_trace_figure(payload, selected)
         if fig is not None:
             st.plotly_chart(fig, width="stretch")
+            render_chart_guide("posterior_trace")
         else:
             st.info("Trace plot unavailable for the current selection.")
     with plot_tabs[1]:
         fig = _posterior_ridge_figure(payload, selected)
         if fig is not None:
             st.plotly_chart(fig, width="stretch")
+            render_chart_guide("posterior_ridge")
         else:
             st.info("Ridge plot unavailable (need ≥10 draws per parameter).")
     with plot_tabs[2]:

@@ -756,6 +756,43 @@ def render_glossary_expander(scope: str = "global") -> None:
         )
 
 
+_MEASURE_COLUMN_PRIORITY: list[str] = [
+    # Identifying columns first, then key measurement columns, then fit
+    # statistics, then anchor / metadata. Anything not listed here keeps
+    # its original order and lands at the end.
+    "Facet", "Level", "Person", "Element",
+    "Estimate", "Measure",
+    "SE", "CI_Lower", "CI_Upper",
+    "Infit", "InfitMnSq", "InfitZStd", "Infit_ZSTD",
+    "Outfit", "OutfitMnSq", "OutfitZStd", "Outfit_ZSTD",
+    "PtMeaCorr",
+    "Reliability", "Separation", "Strata",
+    "Bias", "Bias Size", "Bias_t",
+    "N", "N_Fit", "N_Bias", "TotalCount", "TotalCountAll",
+    "Anchor", "Status",
+    "ReliabilityNote", "FitNote",
+]
+
+
+def reorder_measure_columns(df: "pd.DataFrame") -> "pd.DataFrame":
+    """Return ``df`` with columns reordered so identity + measure columns
+    appear before fit statistics, and low-priority metadata (anchors,
+    count columns, notes) move to the end.
+
+    The priority list is a guide, not a schema — columns that are not in
+    the list keep their original order and land after the ranked ones.
+    Non-DataFrame / empty inputs pass through untouched.
+    """
+    if not isinstance(df, pd.DataFrame) or df.empty:
+        return df
+    ranked = [c for c in _MEASURE_COLUMN_PRIORITY if c in df.columns]
+    remaining = [c for c in df.columns if c not in set(ranked)]
+    ordered = ranked + remaining
+    if ordered == list(df.columns):
+        return df
+    return df.reindex(columns=ordered)
+
+
 def style_fit_columns(df: "pd.DataFrame"):
     """Return a Styler that highlights Infit / Outfit mean-square columns.
 
@@ -12636,8 +12673,12 @@ A single connected subset means all measures are on the same scale.
                     measures_df.columns.get_loc("CI_Lower") + 1,
                     "CI_Upper", (est + 1.96 * se).round(3),
                 )
-            # Apply rounding + fit-statistic conditional formatting before render.
-            measures_display = format_measure_table(measures_df)
+            # Reorder → round → fit-colour before render. Column priority
+            # (Facet / Level / Estimate / SE / CI / Infit / Outfit …) surfaces
+            # the most-used columns on the left so users don't have to
+            # scroll horizontally past anchor / metadata columns.
+            measures_display = reorder_measure_columns(measures_df)
+            measures_display = format_measure_table(measures_display)
             st.dataframe(style_fit_columns(measures_display), width="stretch")
             if "CI_Lower" in measures_df.columns:
                 st.caption(
@@ -24502,6 +24543,28 @@ def _self_test_mfrm_glossary() -> None:
         )
 
 
+def _self_test_reorder_measure_columns() -> None:
+    """Pin column reordering: identity + measures first, metadata last."""
+    df = pd.DataFrame(columns=[
+        "Anchor", "TotalCount", "Level", "Infit", "SE", "Estimate",
+        "Facet", "Outfit", "UnknownColumn",
+    ])
+    out = reorder_measure_columns(df)
+    expected_prefix = ["Facet", "Level", "Estimate", "SE", "Infit", "Outfit"]
+    _self_test_assert(
+        list(out.columns)[: len(expected_prefix)] == expected_prefix,
+        f"expected prefix {expected_prefix}, got {list(out.columns)[: len(expected_prefix)]}",
+    )
+    # Anchor / TotalCount land after the ranked columns
+    anchor_idx = list(out.columns).index("Anchor")
+    estimate_idx = list(out.columns).index("Estimate")
+    _self_test_assert(anchor_idx > estimate_idx, "Anchor should come after Estimate")
+    # Unknown columns are preserved (tail)
+    _self_test_assert("UnknownColumn" in out.columns, "Unknown column dropped")
+    # Pass-through on empty / non-DataFrame
+    _self_test_assert(reorder_measure_columns(pd.DataFrame()).empty, "empty handling broke")
+
+
 def _self_test_style_fit_columns() -> None:
     """Pin conditional formatting for Infit / Outfit mean-square columns."""
     # DataFrame with representative fit values across all four bins
@@ -25666,6 +25729,7 @@ def run_self_tests() -> int:
         ("Measure table rounding helper", _self_test_format_measure_table),
         ("Fit-column conditional styling", _self_test_style_fit_columns),
         ("MFRM quick-reference glossary", _self_test_mfrm_glossary),
+        ("Measure column reordering", _self_test_reorder_measure_columns),
     ]
     failures = []
     for name, test_func in tests:

@@ -11378,7 +11378,7 @@ def run_facets_mode(core: dict, data: pd.DataFrame) -> None:
                     "⬇ Download .stan",
                     data=st.session_state["_advanced_model_stan_code"].encode("utf-8"),
                     file_name=f"mfrm_{str(st.session_state.get('_advanced_model_stan_name', 'advanced')).lower()}.stan",
-                    mime="text/plain",
+                    mime="application/x-stan",
                     key="facets_mode_advanced_dl",
                     use_container_width=True,
                 )
@@ -16247,7 +16247,7 @@ print(loo_result)
     dc1, dc2, dc3 = st.columns(3)
     with dc1:
         st.download_button("Download Stan code", stan_code,
-                           file_name="mfrm_model.stan", mime="text/plain", key="dl_stan_code")
+                           file_name="mfrm_model.stan", mime="application/x-stan", key="dl_stan_code")
     with dc2:
         st.download_button("Download Python script", runner_code,
                            file_name="run_mfrm_stan.py", mime="text/plain", key="dl_stan_py")
@@ -27113,6 +27113,19 @@ def main() -> None:
             "(CmdStan CSV, parquet, ArviZ NetCDF) and reuse the visualizations."
         ),
     )
+
+    # Mode-switch awareness: if the user jumps to Posterior Viewer while
+    # FACETS-mode results are in session_state, show a gentle caption so
+    # they know the results are preserved and will still be there when
+    # they switch back. Prevents the "did I lose my run?" panic.
+    if (
+        app_mode == "Posterior Viewer (upload)"
+        and "facets_mode_output" in st.session_state
+    ):
+        st.sidebar.caption(
+            "ℹ️ Your FACETS-mode run is preserved in this session. "
+            "Switch back via the radio above to resume."
+        )
 
     # Keyboard shortcuts cheat sheet (collapsed) — always rendered so it
     # is one click away regardless of app mode.

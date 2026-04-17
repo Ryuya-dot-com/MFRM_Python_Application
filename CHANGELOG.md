@@ -2,6 +2,69 @@
 
 All notable changes to this standalone Streamlit distribution should be recorded here.
 
+## 0.2.1-beta - 2026-04-17
+
+Pre-redeploy hotfix landing the 8 highest-impact findings from a
+parallel UI / UX audit (downloads, tables, charts, information
+architecture, microcopy, onboarding, accessibility, performance).
+
+### Added
+
+- Downloadable built-in sample dataset (⬇ Download sample CSV) in the
+  sidebar when "Sample data (built-in)" is selected, so users can
+  inspect the exact column structure the estimator expects before
+  preparing their own upload.
+- File-size preflight on CSV uploads: ≥50 MB shows a st.warning,
+  ≥100 MB shows a st.error, before pandas parsing consumes memory.
+- Clear-history confirmation: the 🗑 Clear history button now uses a
+  two-step flow (first click surfaces a warning with explicit
+  "Yes, delete all N snapshots" / "Cancel" buttons), preventing
+  accidental one-click loss of the run stack.
+- Publication Document signpost at the top of the Downloads tab, so
+  users expecting a Word/PDF manuscript file are pointed at
+  Report → 💾 Exports → 📄 Publication Document instead of bouncing.
+- Read-only companion import for `mfrm_config.json`: upload a
+  previously downloaded config file to inspect its settings as a
+  table. Does not overwrite sidebar state (most fields are
+  run-specific metadata rather than replayable inputs).
+- Canonical rounding helper `format_measure_table()` with `3` decimals
+  for measure-like columns (Estimate / SE / CI / Infit / Outfit /
+  RMSE / Separation / Eigenvalue …) and `4` decimals for probability-
+  like columns (Probability / Proportion / Percent / Share / Rate).
+- Inline self-tests `_self_test_format_measure_table` (case #28).
+
+### Changed
+
+- `render_chart_guide()` (v0.2.0-beta Phase D) was dead code — the
+  11-entry library was registered but never rendered. Now called
+  after the scree plot, yardstick Wright map, category probability
+  curves, pathway map, facet distribution, posterior trace, and
+  posterior ridge, so every diagnostic plot carries a consistent
+  ❓ "How to read this" expander backed by the library.
+- Readiness-panel traffic lights pair their 🟢 / 🟡 / 🔴 icons with
+  textual labels [OK] / [CAUTION] / [ISSUE] at every render site,
+  so users with deuteranopia / protanopia / tritanopia can
+  distinguish severity without hue alone.
+- Run-history snapshot cap lowered from 10 → 5 to cut
+  session-state memory pressure on Streamlit Community Cloud
+  (each deep-copy of facets_mode_output can reach 50+ MB on
+  realistic datasets).
+- Four most prominent empty-state messages in the Measures tab
+  ("No person measures available" → "No person measures yet. Click
+  Run FACETS-mode estimation …") rewritten to be action-oriented
+  and explain when the table becomes available.
+
+### Accessibility
+
+- Global CSS additions via `_inject_desktop_readability_css`:
+  - `:focus-visible` outline 3 px #0066cc at 2 px offset for
+    keyboard users (WCAG 2.4.7 Focus Visible).
+  - `prefers-reduced-motion` suppresses all animations /
+    transitions / smooth scrolling for vestibular-sensitive users.
+  - `@media (max-width: 899px)` wraps tabs and tightens the
+    container padding so the wide layout does not crush tablet /
+    iPad content.
+
 ## 0.2.0-beta - 2026-04-17
 
 ### Added — Phase C (advanced model Stan code generators, download-only)

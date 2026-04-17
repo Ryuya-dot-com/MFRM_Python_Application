@@ -7831,6 +7831,50 @@ table.mfrm-wrapped-table th {
   background: rgba(49, 51, 63, 0.04);
   white-space: nowrap;
 }
+/* Accessibility — keyboard focus indicator.
+   Streamlit's default focus ring is faint; boost it for keyboard users
+   so button and tab focus is always visible at WCAG 2.4.7 level. */
+button:focus-visible,
+button[role="tab"]:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible,
+[role="radio"]:focus-visible,
+[role="checkbox"]:focus-visible {
+  outline: 3px solid #0066cc;
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+/* Accessibility — reduced-motion preference.
+   Suppress Streamlit spinner / toast / transition animations for users
+   who have set prefers-reduced-motion (vestibular disorders, anxiety). */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+/* Narrow-screen fallback — below 900 px the wide layout crushes
+   content; let tabs wrap and reduce horizontal padding so tablet /
+   iPad users still get a usable view. */
+@media (max-width: 899px) {
+  div[data-baseweb="tab-list"] {
+    flex-wrap: wrap;
+    gap: 0.25rem;
+  }
+  div[data-baseweb="tab-list"] button[role="tab"] {
+    flex: 1 1 auto;
+    max-width: 100%;
+  }
+  .main .block-container {
+    padding-left: 0.75rem;
+    padding-right: 0.75rem;
+  }
+}
 </style>
 """,
         unsafe_allow_html=True,
@@ -9426,7 +9470,11 @@ def render_comparison_selector() -> None:
             )
 
 
+# Traffic-light icons — paired with textual labels everywhere they render
+# so users with colour-vision deficiencies (deuteranopia, protanopia,
+# tritanopia) can distinguish severity without relying on hue alone.
 _READINESS_ICON: dict[str, str] = {"ok": "🟢", "warning": "🟡", "issue": "🔴"}
+_READINESS_TEXT_LABEL: dict[str, str] = {"ok": "OK", "warning": "CAUTION", "issue": "ISSUE"}
 
 
 def _readiness_severity_max(*severities: str) -> str:
@@ -9676,13 +9724,21 @@ def build_readiness_report(
 
 
 def render_readiness_panel(report: dict) -> None:
-    """Streamlit panel showing the readiness traffic-light + details."""
+    """Streamlit panel showing the readiness traffic-light + details.
+
+    Each severity state renders BOTH an icon (🟢 / 🟡 / 🔴) AND a
+    textual label ([OK] / [CAUTION] / [ISSUE]) so users with colour-
+    vision deficiencies can distinguish severity without hue alone.
+    """
     overall = report.get("overall", "ok")
     checks = report.get("checks", [])
     icon = _READINESS_ICON.get(overall, "⚪")
+    text = _READINESS_TEXT_LABEL.get(overall, "")
 
     if overall == "ok":
-        st.success(f"{icon} **Ready to run.** All {len(checks)} data-quality checks passed.")
+        st.success(
+            f"{icon} **[{text}] Ready to run.** All {len(checks)} data-quality checks passed."
+        )
         with st.expander("Show data quality detail", expanded=False):
             _render_readiness_checklist(checks)
         return
@@ -9690,7 +9746,7 @@ def render_readiness_panel(report: dict) -> None:
     if overall == "warning":
         n_w = report.get("n_warnings", 0)
         st.warning(
-            f"{icon} **Proceed with caution.** {n_w} warning(s) found — "
+            f"{icon} **[{text}] Proceed with caution.** {n_w} warning(s) found — "
             "you can still run, but results may be weak. See details below."
         )
         with st.expander("Show all checks", expanded=True):
@@ -9699,8 +9755,8 @@ def render_readiness_panel(report: dict) -> None:
 
     # issue
     st.error(
-        f"{icon} **Not ready to run.** {report.get('n_issues', 0)} issue(s) will block "
-        "or degrade estimation. Fix the red items below before clicking Run."
+        f"{icon} **[{text}] Not ready to run.** {report.get('n_issues', 0)} issue(s) will block "
+        "or degrade estimation. Fix the flagged items below before clicking Run."
     )
     with st.expander("Show all checks", expanded=True):
         _render_readiness_checklist(checks)
@@ -9708,8 +9764,11 @@ def render_readiness_panel(report: dict) -> None:
 
 def _render_readiness_checklist(checks: list[dict]) -> None:
     for c in checks:
-        icon = _READINESS_ICON.get(c.get("severity", "ok"), "⚪")
-        st.markdown(f"{icon} **{c['headline']}** — {c['detail']}")
+        severity = c.get("severity", "ok")
+        icon = _READINESS_ICON.get(severity, "⚪")
+        text = _READINESS_TEXT_LABEL.get(severity, "")
+        label = f"[{text}] " if text else ""
+        st.markdown(f"{icon} **{label}{c['headline']}** — {c['detail']}")
 
 
 # ---------------------------------------------------------------------------

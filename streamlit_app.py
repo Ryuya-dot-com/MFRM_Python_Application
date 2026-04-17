@@ -9150,6 +9150,213 @@ def render_run_history_panel() -> None:
             st.rerun()
 
 
+def _comparison_extract_label(snapshot: dict) -> str:
+    """Build a short 'MODEL / METHOD' label from a run snapshot."""
+    model = str(snapshot.get("model_type", "") or "")
+    method = str(snapshot.get("_est_method", "") or "")
+    summary = (snapshot.get("result") or {}).get("summary")
+    if isinstance(summary, pd.DataFrame) and not summary.empty:
+        row = summary.iloc[0]
+        if "Model" in summary.columns and not model:
+            model = str(row.get("Model", model))
+        if "Method" in summary.columns and not method:
+            method = str(row.get("Method", method))
+    return f"{model or '?'} / {method or '?'}"
+
+
+def _comparison_extract_conv(snapshot: dict) -> tuple[bool, int]:
+    summary = (snapshot.get("result") or {}).get("summary")
+    if isinstance(summary, pd.DataFrame) and not summary.empty:
+        row = summary.iloc[0]
+        try:
+            iters = int(row.get("Iterations", 0))
+        except (TypeError, ValueError):
+            iters = 0
+        return bool(row.get("Converged", False)), iters
+    return False, 0
+
+
+def _comparison_measures_diff(snap_a: dict, snap_b: dict) -> dict | None:
+    """Merge the two runs' measures on (Facet, Level) and compute corr + RMSE."""
+    da = (snap_a.get("diagnostics") or {}).get("measures")
+    db = (snap_b.get("diagnostics") or {}).get("measures")
+    if not isinstance(da, pd.DataFrame) or not isinstance(db, pd.DataFrame):
+        return None
+    if da.empty or db.empty:
+        return None
+    req = {"Facet", "Level", "Estimate"}
+    if not req.issubset(da.columns) or not req.issubset(db.columns):
+        return None
+    left = da[["Facet", "Level", "Estimate"]].rename(columns={"Estimate": "Estimate_A"})
+    right = db[["Facet", "Level", "Estimate"]].rename(columns={"Estimate": "Estimate_B"})
+    merged = left.merge(right, on=["Facet", "Level"], how="inner")
+    if merged.empty:
+        return {"merged": merged, "correlation": float("nan"), "rmse": float("nan"), "n_overlap": 0}
+    ea = pd.to_numeric(merged["Estimate_A"], errors="coerce")
+    eb = pd.to_numeric(merged["Estimate_B"], errors="coerce")
+    valid = ea.notna() & eb.notna()
+    n_valid = int(valid.sum())
+    corr = float(np.corrcoef(ea[valid], eb[valid])[0, 1]) if n_valid >= 2 else float("nan")
+    rmse = float(np.sqrt(np.mean((ea[valid] - eb[valid]) ** 2))) if n_valid else float("nan")
+    merged["diff"] = eb - ea
+    return {"merged": merged, "correlation": corr, "rmse": rmse, "n_overlap": n_valid}
+
+
+def _comparison_reliability_diff(snap_a: dict, snap_b: dict) -> pd.DataFrame | None:
+    ra = (snap_a.get("diagnostics") or {}).get("reliability")
+    rb = (snap_b.get("diagnostics") or {}).get("reliability")
+    if not isinstance(ra, pd.DataFrame) or not isinstance(rb, pd.DataFrame):
+        return None
+    if ra.empty or rb.empty or "Facet" not in ra.columns or "Facet" not in rb.columns:
+        return None
+    keep = ["Facet", "Separation", "Reliability", "Strata"]
+    la = ra[[c for c in keep if c in ra.columns]].rename(columns={
+        "Separation": "Separation_A", "Reliability": "Reliability_A", "Strata": "Strata_A",
+    })
+    lb = rb[[c for c in keep if c in rb.columns]].rename(columns={
+        "Separation": "Separation_B", "Reliability": "Reliability_B", "Strata": "Strata_B",
+    })
+    return la.merge(lb, on="Facet", how="outer")
+
+
+def render_comparison_panel(snap_a: dict, snap_b: dict) -> None:
+    """Render a side-by-side comparison between two run snapshots."""
+    label_a = _comparison_extract_label(snap_a)
+    label_b = _comparison_extract_label(snap_b)
+    conv_a, iters_a = _comparison_extract_conv(snap_a)
+    conv_b, iters_b = _comparison_extract_conv(snap_b)
+
+    with st.container(border=True):
+        st.markdown(f"### 🔀 Comparison: `{label_a}` vs `{label_b}`")
+
+        cols = st.columns(2)
+        cols[0].metric(
+            "Convergence",
+            "✅ both" if conv_a and conv_b else
+            ("⚠️ A only" if conv_a else ("⚠️ B only" if conv_b else "❌ neither")),
+        )
+        cols[1].metric(
+            "Iterations",
+            f"{iters_a} vs {iters_b}",
+            delta=iters_b - iters_a,
+            delta_color="inverse",
+        )
+
+        measures = _comparison_measures_diff(snap_a, snap_b)
+        if measures is not None:
+            st.markdown("#### Element-level measure agreement")
+            if measures["n_overlap"] == 0:
+                st.info(
+                    "No overlapping (Facet, Level) elements between the two runs — "
+                    "measures cannot be compared."
+                )
+            else:
+                mcols = st.columns(3)
+                mcols[0].metric("Overlap (elements)", measures["n_overlap"])
+                mcols[1].metric(
+                    "Pearson r",
+                    f"{measures['correlation']:.4f}" if pd.notna(measures["correlation"]) else "n/a",
+                )
+                mcols[2].metric(
+                    "RMSE",
+                    f"{measures['rmse']:.3f}" if pd.notna(measures["rmse"]) else "n/a",
+                )
+                # Scatter (45° reference)
+                try:
+                    fig = go.Figure()
+                    for facet, grp in measures["merged"].groupby("Facet"):
+                        fig.add_trace(go.Scatter(
+                            x=grp["Estimate_A"], y=grp["Estimate_B"],
+                            mode="markers", name=str(facet),
+                            text=grp["Level"], hovertemplate="<b>%{text}</b><br>A=%{x:.3f}<br>B=%{y:.3f}<extra></extra>",
+                        ))
+                    est_min = float(min(measures["merged"]["Estimate_A"].min(),
+                                        measures["merged"]["Estimate_B"].min()))
+                    est_max = float(max(measures["merged"]["Estimate_A"].max(),
+                                        measures["merged"]["Estimate_B"].max()))
+                    fig.add_shape(type="line", x0=est_min, y0=est_min, x1=est_max, y1=est_max,
+                                  line=dict(color="gray", dash="dash", width=1))
+                    fig.update_layout(
+                        xaxis_title=f"Estimate — {label_a}",
+                        yaxis_title=f"Estimate — {label_b}",
+                        title="Element measures (dashed line = perfect agreement)",
+                        height=420, template="plotly_white",
+                    )
+                    st.plotly_chart(fig, width="stretch")
+                except Exception:
+                    st.dataframe(measures["merged"].head(20), width="stretch", hide_index=True)
+
+                with st.expander("Top 10 elements by |diff|", expanded=False):
+                    sorted_diff = measures["merged"].reindex(
+                        measures["merged"]["diff"].abs().sort_values(ascending=False).index
+                    ).head(10)
+                    st.dataframe(sorted_diff, width="stretch", hide_index=True)
+
+                # Interpretation
+                corr = measures["correlation"]
+                if pd.notna(corr):
+                    if corr >= 0.98:
+                        st.success(f"Near-perfect agreement (r = {corr:.3f}). Methods produce effectively identical measures.")
+                    elif corr >= 0.90:
+                        st.info(f"Strong agreement (r = {corr:.3f}). Differences are minor; either method is defensible.")
+                    elif corr >= 0.70:
+                        st.warning(f"Moderate agreement (r = {corr:.3f}). Inspect the scatter for outlier elements.")
+                    else:
+                        st.error(f"Weak agreement (r = {corr:.3f}). Methods disagree substantially; check assumptions.")
+
+        reliability = _comparison_reliability_diff(snap_a, snap_b)
+        if reliability is not None:
+            st.markdown("#### Reliability / separation")
+            st.dataframe(reliability.round(3), width="stretch", hide_index=True)
+
+
+def render_comparison_selector() -> None:
+    """Expander that lets the user pick two runs from history and compare."""
+    history = get_run_history()
+    if len(history) < 2:
+        return
+    with st.expander("🔀 Compare two runs", expanded=False):
+        st.caption(
+            "Pick two analyses from your run history to view a side-by-side "
+            "comparison of convergence, element measures, and reliability."
+        )
+        labels = [
+            f"{h['timestamp']} — {h['model']}/{h['method']}"
+            + (" — ✅" if h["converged"] else " — ❌")
+            + f" ({h['iterations']} iter, {h['elapsed_sec']:.1f}s)"
+            for h in history
+        ]
+        cols = st.columns([5, 5, 2])
+        idx_a = cols[0].selectbox(
+            "Run A",
+            options=list(range(len(labels))),
+            format_func=lambda i: labels[i],
+            index=max(0, len(labels) - 2),
+            key="compare_run_a",
+        )
+        idx_b = cols[1].selectbox(
+            "Run B",
+            options=list(range(len(labels))),
+            format_func=lambda i: labels[i],
+            index=len(labels) - 1,
+            key="compare_run_b",
+        )
+        do_compare = cols[2].button(
+            "Compare",
+            key="compare_trigger",
+            use_container_width=True,
+            type="primary",
+        )
+        if do_compare:
+            if idx_a == idx_b:
+                st.info("Pick two different runs to compare.")
+                return
+            render_comparison_panel(
+                history[idx_a]["output_snapshot"],
+                history[idx_b]["output_snapshot"],
+            )
+
+
 _READINESS_ICON: dict[str, str] = {"ok": "🟢", "warning": "🟡", "issue": "🔴"}
 
 
@@ -10622,6 +10829,12 @@ def run_facets_mode(core: dict, data: pd.DataFrame) -> None:
     # recent runs without re-executing the pipeline.
     try:
         render_run_history_panel()
+    except Exception:  # pragma: no cover - UX helper
+        pass
+
+    # Two-run comparison selector — only appears with ≥2 runs in history.
+    try:
+        render_comparison_selector()
     except Exception:  # pragma: no cover - UX helper
         pass
 

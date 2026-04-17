@@ -5073,17 +5073,32 @@ def estimate_bias_interaction(
     max_iter=4,
     tol=1e-3,
 ):
+    # Returns either:
+    #   - a full results dict (table, summary, chi-sq, ...) on success
+    #   - a dict with a single "_skip_reason" key explaining why
+    #     the computation was not possible. This lets the UI surface
+    #     the cause instead of showing "not computed" silently.
     if res is None or diagnostics is None:
-        return {}
+        return {"_skip_reason": "estimation result or diagnostics missing"}
     obs_df = diagnostics.get("obs")
     if obs_df is None or obs_df.empty:
-        return {}
+        return {"_skip_reason": "observation table is empty (no usable rows for bias analysis)"}
     if facet_a == facet_b:
-        return {}
+        return {
+            "_skip_reason": (
+                f"bias analysis requires two distinct facets, not `{facet_a}` × `{facet_a}`"
+            )
+        }
 
     facet_names = ["Person"] + res["config"]["facet_names"]
     if facet_a not in facet_names or facet_b not in facet_names:
-        return {}
+        missing = [f for f in (facet_a, facet_b) if f not in facet_names]
+        return {
+            "_skip_reason": (
+                f"facet(s) {missing} not in estimated facets {facet_names} "
+                "(did you rename a column after running the estimation?)"
+            )
+        }
 
     prep = res["prep"]
     config = res["config"]
@@ -5330,7 +5345,12 @@ def estimate_bias_interaction(
 
     bias_tbl = pd.DataFrame(rows)
     if bias_tbl.empty:
-        return {}
+        return {
+            "_skip_reason": (
+                f"no valid `{facet_a}` × `{facet_b}` cells after filtering "
+                "(all-extreme levels were removed and no valid observations remain)"
+            )
+        }
 
     numeric_cols = ["Observd Score", "Expctd Score", "Observd Count", "Obs-Exp Average", "Bias Size", "S.E."]
     mean_row = bias_tbl[numeric_cols].mean(numeric_only=True)
@@ -6099,6 +6119,13 @@ def calc_facets_report_tbls(
 
 
 def calc_reliability(measure_df):
+    """Compute Separation / Reliability / Strata for each facet.
+
+    Adds a ``ReliabilityNote`` column that diagnoses *why* Separation or
+    Reliability is NaN for a given facet, so the Measures tab can show a
+    concrete reason (e.g., "all levels have identical measures") instead
+    of a bare NaN cell that users interpret as a bug.
+    """
     rows = []
     if measure_df.empty:
         return pd.DataFrame()
@@ -6106,15 +6133,27 @@ def calc_reliability(measure_df):
         mv = np.nanvar(df["Estimate"], ddof=1)
         ev = np.nanmean(df["SE"] ** 2)
         rmse = np.sqrt(ev) if np.isfinite(ev) else np.nan
+        note = ""
         if np.isfinite(mv) and np.isfinite(ev) and mv > 0 and ev > 0:
             tv = max(mv - ev, 0.0)
             separation = np.sqrt(tv / ev) if tv > 0 else 0.0
             reliability = tv / mv if mv > 0 else np.nan
             strata = (4 * separation + 1) / 3
+            if tv == 0:
+                note = "measurement variance ≤ error variance; separation = 0"
         else:
             separation = np.nan
             reliability = np.nan
             strata = np.nan
+            # Diagnose the exact NaN cause so the UI can surface it to the user
+            if len(df) < 2:
+                note = f"only {len(df)} level — need ≥2 for separation"
+            elif not np.isfinite(mv) or mv == 0:
+                note = "all levels have identical (or NaN) measures"
+            elif not np.isfinite(ev) or ev == 0:
+                note = "standard errors are zero or NaN (check fit statistics)"
+            else:
+                note = "variance components are invalid (mv or ev non-finite)"
         rows.append({
             "Facet": facet,
             "Levels": len(df),
@@ -6125,6 +6164,7 @@ def calc_reliability(measure_df):
             "Reliability": reliability,
             "MeanInfit": np.nanmean(df["Infit"]),
             "MeanOutfit": np.nanmean(df["Outfit"]),
+            "ReliabilityNote": note,
         })
     return pd.DataFrame(rows)
 
@@ -16699,6 +16739,14 @@ def show_bias_section(
              "differently depending on which element of the other facet it is paired with.",
     )
     bias_results = all_bias[selected_pair]
+    # If estimate_bias_interaction returned a skip-reason instead of results,
+    # surface it here instead of crashing on the missing "table" key.
+    if isinstance(bias_results, dict) and "_skip_reason" in bias_results and "table" not in bias_results:
+        st.warning(
+            f"**Bias interaction could not be computed for `{selected_pair}`** — "
+            f"{bias_results['_skip_reason']}"
+        )
+        return
     tbl = bias_results["table"].copy()
 
     # Result-aware bias summary

@@ -2,6 +2,55 @@
 
 All notable changes to this standalone Streamlit distribution should be recorded here.
 
+## 0.2.4-beta - 2026-04-17
+
+Visualization-coverage hotfix. Six new diagnostic plots land across
+the Data tab, Visuals tab, and Posterior Viewer, closing the gaps
+identified by the post-v0.2.3 chart-coverage audit. All new plots
+are Plotly-based, respect the v0.2.2 WCAG palette (primary teal
+`#0d7a5a`, warn `#c24e00`, neutral `#666666`), and degrade to an
+st.info notice when their required data is missing rather than
+rendering broken canvases.
+
+### Added — Data tab
+
+- **Observation coverage heatmap** (`_draw_data_coverage_heatmap`).
+  Person × first-facet grid, blue cells = ≥ 1 observation, white =
+  none. Capped at 80 persons for readability; fires a warning when
+  > 40 % of displayed cells are empty (connectivity risk).
+- **Category usage bar chart** (`_draw_category_usage_bar`). Raw
+  observed frequency per score category, with an optional "split
+  by facet" stack. Categories below `max(5, 1%)` of the total are
+  called out in a warning so under-used rating categories are
+  caught before they cascade into disordered thresholds downstream
+  (Linacre 2004).
+
+### Added — Visuals tab (three new sub-tabs)
+
+- **Forest plot** (`_draw_measures_forest_plotly`). Per-facet
+  forest of element measures with dot = Estimate, thick bar =
+  50 % CI (± 0.67 · SE), thin bar = 95 % CI (± 1.96 · SE). The
+  frequentist analogue of the Bayesian forest already in
+  Posterior Viewer; covers JMLE / MML users who do not cross into
+  Stan.
+- **Q-Q plot** (`_draw_residual_qq_plotly`). Standardized residuals
+  vs N(0, 1) theoretical quantiles with 45° reference. Requires
+  ≥ 20 residuals. Heavy tails flag extreme-score misfit; S-shape
+  flags potential multidimensionality.
+- **ECDF of measures** (`_draw_measure_ecdf_plotly`). Empirical
+  cumulative distribution of person and facet-element measures on
+  a shared logit axis. Flat stretches = measurement gaps; steep
+  jumps = clusters. Complements the Wright Map binned histogram.
+
+### Added — Posterior Viewer
+
+- **Rhat / ESS bar chart tab** (`_posterior_rhat_ess_figure`).
+  Two-panel horizontal bar chart with dashed reference at
+  Rhat = 1.01 and ESS = 400. Bars turn red (#c24e00) when either
+  threshold is crossed so convergence issues jump out without
+  reading the full summary table row by row. Reuses
+  `_posterior_compute_summary` so numbers stay in sync.
+
 ## 0.2.3-beta - 2026-04-17
 
 Third-pass hotfix landing the remaining findings from a second,

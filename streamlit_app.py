@@ -12568,6 +12568,12 @@ def run_facets_mode(core: dict, data: pd.DataFrame) -> None:
             "missing data rates, and facet connectivity. "
             "Review these checks before interpreting estimation results."
         )
+        # Visual data-coverage diagnostics (added v0.2.4)
+        try:
+            _draw_data_coverage_heatmap(data, est_facet_cols, person_col)
+            _draw_category_usage_bar(data, score_col, est_facet_cols)
+        except Exception:  # pragma: no cover - diagnostic helpers must not break Data tab
+            pass
         prep = result.get("prep", {})
         score_messages = prep.get("score_messages", [])
         score_map = prep.get("score_map", pd.DataFrame())
@@ -17376,6 +17382,177 @@ def _draw_category_probability_curves_plotly(result: dict) -> None:
         mime="text/csv",
         key=f"dl_category_probability_curve_{model}_{meta['Scope']}",
     )
+
+
+def _draw_data_coverage_heatmap(
+    data: "pd.DataFrame",
+    facet_cols: list,
+    person_col: str,
+) -> None:
+    """Heatmap of person × (first-facet concat) coverage — where observations exist.
+
+    Shows which cells of the design have any observation (blue) vs which
+    are missing (white). Large white blocks flag disconnected subsets or
+    heavily sparse designs. Capped at the first facet × 80 persons so
+    the Data tab stays readable on Community Cloud.
+    """
+    if (
+        not isinstance(data, pd.DataFrame)
+        or data.empty
+        or person_col not in data.columns
+        or not facet_cols
+    ):
+        return
+    missing_cols = [f for f in facet_cols if f not in data.columns]
+    if missing_cols:
+        return
+
+    st.markdown("##### 🗺 Observation coverage heatmap")
+    st.caption(
+        "Blue cells = at least one observation; white = no observation. "
+        "Large white blocks flag sparse or disconnected designs. Cap: "
+        "first facet × up to 80 persons."
+    )
+    try:
+        facet = facet_cols[0]
+        # Cap to 80 persons so the heatmap stays legible
+        persons = data[person_col].astype(str).unique().tolist()
+        persons = persons[: min(80, len(persons))]
+        levels = sorted(data[facet].dropna().astype(str).unique().tolist())
+        if not persons or not levels:
+            st.info("Not enough levels in the first facet to build a coverage heatmap.")
+            return
+        # Count of observations per (person, level) cell
+        slim = data[data[person_col].astype(str).isin(persons)][[person_col, facet]].copy()
+        slim[person_col] = slim[person_col].astype(str)
+        slim[facet] = slim[facet].astype(str)
+        counts = slim.groupby([person_col, facet]).size().unstack(fill_value=0)
+        counts = counts.reindex(index=persons, columns=levels, fill_value=0)
+        # Boolean heatmap (has observation / not)
+        z = (counts.to_numpy() > 0).astype(int)
+        total_cells = z.size
+        missing_cells = int((z == 0).sum())
+        missing_pct = 100.0 * missing_cells / total_cells if total_cells else 0.0
+
+        fig = go.Figure(data=go.Heatmap(
+            z=z,
+            x=levels,
+            y=persons,
+            colorscale=[[0, "#ffffff"], [1, "#0d7a5a"]],
+            showscale=False,
+            hovertemplate=(
+                f"{facet}=%{{x}}<br>{person_col}=%{{y}}<br>"
+                "Observed=%{z}<extra></extra>"
+            ),
+        ))
+        fig.update_layout(
+            title=(
+                f"Coverage of `{person_col}` × `{facet}` "
+                f"({missing_pct:.0f}% cells empty in the displayed slice)"
+            ),
+            xaxis_title=facet,
+            yaxis_title=person_col,
+            template="plotly_white",
+            height=max(280, 14 * len(persons)),
+        )
+        st.plotly_chart(fig, width="stretch")
+        if missing_pct > 40:
+            st.warning(
+                f"{missing_pct:.0f}% of the displayed `{person_col}` × `{facet}` "
+                "cells have no observation. Review connectivity and consider "
+                "anchoring or redesign before drawing cross-group conclusions."
+            )
+    except Exception as exc:  # pragma: no cover - defensive
+        st.caption(f"Coverage heatmap could not be built: {type(exc).__name__}: {exc}")
+
+
+def _draw_category_usage_bar(
+    data: "pd.DataFrame",
+    score_col: str,
+    facet_cols: list,
+) -> None:
+    """Bar chart of observed score-category frequencies, optionally stacked by facet level.
+
+    Answers "is every rating category actually used?" at a glance.
+    Low or zero counts for a category usually signal disordered
+    thresholds downstream (Linacre 2004), so catching the issue early
+    in the Data tab saves users from chasing category-probability
+    oddities later.
+    """
+    if (
+        not isinstance(data, pd.DataFrame)
+        or data.empty
+        or score_col not in data.columns
+    ):
+        return
+    scores = pd.to_numeric(data[score_col], errors="coerce").dropna()
+    if scores.empty:
+        return
+
+    st.markdown("##### 📊 Category usage")
+    st.caption(
+        "Raw observed frequency of each score category. Low or zero "
+        "counts suggest the category is under-used and may collapse into "
+        "a neighbouring one (disordered thresholds; Linacre 2004)."
+    )
+    try:
+        facet_options = ["(none — overall)"] + list(facet_cols)
+        split_by = st.selectbox(
+            "Split categories by facet",
+            options=facet_options,
+            index=0,
+            key="category_usage_split_by",
+            help="Stack category counts by a facet's levels to see where under-used categories concentrate.",
+        )
+        if split_by == "(none — overall)" or split_by not in data.columns:
+            counts = scores.value_counts().sort_index()
+            fig = go.Figure(go.Bar(
+                x=[str(int(c)) if float(c).is_integer() else str(c) for c in counts.index],
+                y=counts.values,
+                marker_color="#0d7a5a",
+                hovertemplate="Category %{x}<br>Count=%{y}<extra></extra>",
+            ))
+            fig.update_layout(
+                title="Overall category usage",
+                xaxis_title="Score category",
+                yaxis_title="Observed count",
+                template="plotly_white", height=360,
+            )
+        else:
+            slim = data[[score_col, split_by]].copy()
+            slim[score_col] = pd.to_numeric(slim[score_col], errors="coerce")
+            slim = slim.dropna(subset=[score_col])
+            slim[split_by] = slim[split_by].astype(str)
+            piv = slim.groupby([score_col, split_by]).size().unstack(fill_value=0)
+            piv = piv.sort_index()
+            fig = go.Figure()
+            for level in piv.columns:
+                fig.add_trace(go.Bar(
+                    name=str(level),
+                    x=[str(int(c)) if float(c).is_integer() else str(c) for c in piv.index],
+                    y=piv[level].values,
+                    hovertemplate=f"<b>{level}</b><br>Category %{{x}}<br>Count=%{{y}}<extra></extra>",
+                ))
+            fig.update_layout(
+                title=f"Category usage stacked by {split_by}",
+                xaxis_title="Score category",
+                yaxis_title="Observed count",
+                barmode="stack",
+                template="plotly_white", height=360,
+            )
+        st.plotly_chart(fig, width="stretch")
+
+        # Highlight categories with suspicious low counts
+        overall = scores.value_counts().sort_index()
+        total = int(overall.sum())
+        low = overall[overall < max(5, int(0.01 * total))]
+        if not low.empty:
+            st.warning(
+                f"**Low-use categories**: {dict(low)} — each with < 1% of the total "
+                f"{total:,} observations. Review threshold ordering in the Categories/Steps tab."
+            )
+    except Exception as exc:  # pragma: no cover - defensive
+        st.caption(f"Category usage chart could not be built: {type(exc).__name__}: {exc}")
 
 
 def _draw_measures_forest_plotly(diagnostics: dict) -> None:

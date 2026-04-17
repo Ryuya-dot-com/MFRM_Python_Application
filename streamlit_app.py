@@ -9087,7 +9087,12 @@ def resolve_analysis_depth_settings(
 
 
 _RUN_HISTORY_KEY = "_facets_mode_run_history"
-_RUN_HISTORY_MAX = 10
+# Cap the deep-copied snapshot stack at 5 entries (was 10). On Streamlit
+# Community Cloud (~1 GB) each deepcopy can be 50+ MB for a 1000-person
+# dataset, so 10 full copies plus the live output_snapshot can cause
+# silent OOM. Five is still more than enough for "compare my last few
+# tries" while leaving memory headroom.
+_RUN_HISTORY_MAX = 5
 
 
 def _run_history_extract_summary(output: dict) -> tuple[bool, int, str, str]:

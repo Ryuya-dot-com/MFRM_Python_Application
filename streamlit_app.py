@@ -664,6 +664,98 @@ _MEASURE_DECIMALS: int = 3
 _PROBABILITY_DECIMALS: int = 4
 
 
+def _render_run_breadcrumb(result: dict, facet_cols: list[str]) -> None:
+    """Render a compact one-line banner showing which run is currently
+    displayed — model, method, convergence status, iterations, n obs /
+    persons / facets, and an abbreviated data fingerprint.
+
+    Helps users orient themselves when they have multiple runs in the
+    history stack and are clicking Restore between them: previously the
+    results area gave no "where am I?" signal after a restore.
+    """
+    if not isinstance(result, dict):
+        return
+    config = result.get("config", {}) or {}
+    prep = result.get("prep", {}) or {}
+    summary = result.get("summary")
+
+    model = str(config.get("model", "?"))
+    method = str(config.get("method", "?"))
+    n_obs = prep.get("n_obs", "?")
+    n_person = prep.get("n_person", "?")
+    n_facets = len(facet_cols) if isinstance(facet_cols, (list, tuple)) else "?"
+    converged = "?"
+    iterations = "?"
+    if isinstance(summary, pd.DataFrame) and not summary.empty:
+        row = summary.iloc[0]
+        converged = "✅ converged" if bool(row.get("Converged", False)) else "❌ not converged"
+        try:
+            iterations = f"{int(row.get('Iterations', 0))} iter"
+        except (TypeError, ValueError):
+            iterations = "? iter"
+    fingerprint = str(config.get("run_fingerprint", config.get("analysis_config_fingerprint", "")))
+    fingerprint_short = fingerprint[:8] if fingerprint else "—"
+
+    with st.container(border=True):
+        st.markdown(
+            f"**Current run** · `{model}` / `{method}` · {converged} · "
+            f"{iterations} · **{n_obs:,}** obs × **{n_person:,}** persons × "
+            f"**{n_facets}** facets · fingerprint `{fingerprint_short}`"
+            if isinstance(n_obs, int) and isinstance(n_person, int)
+            else
+            f"**Current run** · `{model}` / `{method}` · {converged} · "
+            f"{iterations} · **{n_obs}** obs × **{n_person}** persons × "
+            f"**{n_facets}** facets · fingerprint `{fingerprint_short}`"
+        )
+
+
+_MFRM_GLOSSARY: dict[str, str] = {
+    "logit": "log-odds scale; 1 logit ≈ one step on the linear trait axis.",
+    "infit": "inlier-sensitive information-weighted mean-square; 0.5–1.5 ≈ acceptable.",
+    "outfit": "outlier-sensitive unweighted mean-square; same 0.5–1.5 interpretation band.",
+    "mnsq": "mean-square fit statistic (observed / expected variance ratio); 1.0 = perfect fit.",
+    "zstd": "standardised z-score of the mean-square; |z| > 2 ≈ statistically significant misfit.",
+    "step facet": "facet whose levels carry separate step thresholds in PCM / GPCM / GRM.",
+    "anchor": "fixing an element's measure to a known value so other parameters are estimated relative to it.",
+    "separation": "ratio of true variance to error variance; separation ≥ 2 is a common floor.",
+    "strata": "reliably distinguishable performance levels ≈ (4·separation + 1) / 3.",
+    "rsm": "Rating Scale Model (Andrich 1978); all items share one set of step thresholds.",
+    "pcm": "Partial Credit Model (Masters 1982); each item has its own step thresholds.",
+    "gpcm": "Generalized PCM (Muraki 1992); PCM plus a positive slope per step-facet level.",
+    "sesoi": "smallest effect size of interest; used in equivalence / bias claim tests.",
+    "se": "standard error of a measure, in logits.",
+    "ci": "confidence interval (default 95% = estimate ± 1.96 × SE).",
+    "rhat": "potential scale reduction factor (Gelman & Rubin 1992); > 1.01 flags non-mixing.",
+    "ess": "effective sample size of posterior draws; < 400 flags sampling inefficiency.",
+    "divergent": "HMC transition that fell off the typical set; indicates posterior geometry issues.",
+    "ebfmi": "energy Bayesian fraction of missing information; < 0.3 flags poor energy exploration.",
+}
+
+
+def render_glossary_expander(scope: str = "global") -> None:
+    """Render the MFRM / Bayesian glossary as a collapsed expander.
+
+    Call once per tab / section where Rasch vocabulary shows up. The
+    glossary text is single-sourced from ``_MFRM_GLOSSARY`` so adding a
+    new term propagates everywhere.
+    """
+    with st.expander("📖 MFRM / Bayesian glossary", expanded=False):
+        st.caption(
+            "Quick reference for terms used across this app. Hover over "
+            "column headers in result tables (where available) to see "
+            "the same definitions as tooltips."
+        )
+        glossary_rows = [
+            {"Term": term.upper() if len(term) <= 4 else term.title(), "Definition": defn}
+            for term, defn in _MFRM_GLOSSARY.items()
+        ]
+        st.dataframe(
+            pd.DataFrame(glossary_rows),
+            width="stretch",
+            hide_index=True,
+        )
+
+
 def style_fit_columns(df: "pd.DataFrame"):
     """Return a Styler that highlights Infit / Outfit mean-square columns.
 
@@ -12258,6 +12350,12 @@ def run_facets_mode(core: dict, data: pd.DataFrame) -> None:
     result_render_plots = bool(render_interactive_plots)
     result_generate_figures = bool(generate_figure_exports)
 
+    # --- Run breadcrumb (always visible, above critical warnings) ---
+    try:
+        _render_run_breadcrumb(result, est_facet_cols)
+    except Exception:  # pragma: no cover - UX helper must not break results
+        pass
+
     # --- Critical warnings ABOVE tabs (always visible) ---
     _show_top_level_warnings(result, diagnostics, data,
                              out.get("person_col", person_col),
@@ -18258,6 +18356,11 @@ suitable for parametric analysis.
     # ------------------------------------------------------------------
     with help_tabs[5]:
         st.markdown("### Glossary of MFRM Terms")
+        # Quick-reference glossary at the top (same data source used by
+        # render_glossary_expander) so column headers and tooltips stay
+        # in sync with Help-tab definitions.
+        render_glossary_expander(scope="help_tab")
+        st.markdown("---")
         search = st.text_input("Search terms", "", key="glossary_search", placeholder="Type to filter...")
 
         glossary = [
@@ -24381,6 +24484,24 @@ def _self_test_publication_document_pdf() -> None:
     _self_test_assert(len(data) > 2000, f"PDF seems too small: {len(data)} bytes")
 
 
+def _self_test_mfrm_glossary() -> None:
+    """Pin the MFRM quick-reference glossary shape and coverage."""
+    _self_test_assert(
+        len(_MFRM_GLOSSARY) >= 15,
+        f"glossary should list ≥15 terms, has {len(_MFRM_GLOSSARY)}",
+    )
+    # Critical Rasch terms must always be present
+    for term in ("logit", "infit", "outfit", "mnsq", "zstd",
+                 "separation", "strata", "rsm", "pcm", "gpcm"):
+        _self_test_assert(term in _MFRM_GLOSSARY, f"glossary missing {term!r}")
+    # Definitions are non-empty strings
+    for term, defn in _MFRM_GLOSSARY.items():
+        _self_test_assert(
+            isinstance(defn, str) and len(defn) > 20,
+            f"glossary entry for {term!r} is too short",
+        )
+
+
 def _self_test_style_fit_columns() -> None:
     """Pin conditional formatting for Infit / Outfit mean-square columns."""
     # DataFrame with representative fit values across all four bins
@@ -25544,6 +25665,7 @@ def run_self_tests() -> int:
         ("Advanced-model Stan generators", _self_test_advanced_model_generators),
         ("Measure table rounding helper", _self_test_format_measure_table),
         ("Fit-column conditional styling", _self_test_style_fit_columns),
+        ("MFRM quick-reference glossary", _self_test_mfrm_glossary),
     ]
     failures = []
     for name, test_func in tests:

@@ -423,7 +423,13 @@ def public_release_readiness_table() -> pd.DataFrame:
         },
         {
             "Check": "Simulation validation templates",
-            "Status": "Ready" if len(external_simulation_template_scripts()) >= 4 else "Review",
+            # The Status predicate and the Evidence string both now read from
+            # external_simulation_template_inventory (3 rows: Python / R / Julia),
+            # so the "X template rows are documented" sentence and the
+            # Ready / Review flag cannot drift apart as they did in v0.2.2-beta
+            # where Status consulted the 4-key scripts dict while Evidence
+            # quoted the 3-row inventory.
+            "Status": "Ready" if len(external_simulation_template_inventory()) >= 3 else "Review",
             "Evidence": f"{len(external_simulation_template_inventory())} Python/R/Julia template rows are documented.",
             "Action": "Use sanitized templates for external validation handoff; keep local paths and private data out of the public repo.",
         },
@@ -13376,7 +13382,7 @@ def build_beginner_case_guidance(
             "This is the first stop before copying APA-style text into a paper.",
             "Do not turn draft APA text into a final conclusion when the gate is caveated or blocked.",
             str(overall_gate.get("ManuscriptAction", "Review gate details.")),
-            "Report -> APA Report / publication_gate_summary.csv",
+            "Report -> 📝 Reports -> APA Report / publication_gate_summary.csv",
             "The model results conclusively support the study conclusions.",
             f"The MFRM output was interpreted with the publication gate status of {gate_status}, and final claims were limited to supported diagnostics.",
         )
@@ -13503,7 +13509,7 @@ def build_beginner_case_guidance(
             "Single-run measures can be interpreted within the current connected design; cross-run claims require more evidence.",
             "Do not compare cohorts, forms, administrations, or studies on a common scale without anchor/linking evidence.",
             "Use anchor audit, drift, and equating-chain outputs before writing cross-run comparison claims.",
-            "Data -> Anchor/linking audit; Report -> Facet Equivalence",
+            "Data -> Anchor/linking audit; Report -> 📊 Tables & checks -> Facet Equivalence",
             "These measures can be compared directly with another administration or form.",
             "Measures were interpreted within the current connected run unless anchor/linking evidence supported cross-run comparison.",
         )
@@ -13601,7 +13607,7 @@ def build_submission_action_plan(
                     status,
                     row.get("Evidence", ""),
                     row.get("ManuscriptAction", "Review gate details before reporting."),
-                    "Report -> APA Report / publication_gate_summary.csv",
+                    "Report -> 📝 Reports -> APA Report / publication_gate_summary.csv",
                 )
 
     if isinstance(beginner, pd.DataFrame) and not beginner.empty:
@@ -13648,7 +13654,7 @@ def build_submission_action_plan(
                     status,
                     row.get("Evidence", ""),
                     row.get("ActionBeforeFinalReport", "Review readiness row before reporting."),
-                    "Report -> Reporting Checklist / final_report_readiness.csv",
+                    "Report -> 📊 Tables & checks -> Reporting Checklist / final_report_readiness.csv",
                 )
 
     if not rows:
@@ -15682,13 +15688,17 @@ def _render_reporting_checklist(
     lines.append("\n#### 2. Global Fit")
     has_resid = not obs_df.empty and "StdResidual" in obs_df.columns
     lines.append(_check(has_resid, "**Standardized residuals**: % with |z| ≥ 2 and |z| ≥ 3"))
-    lines.append(_check(False, "**PCA of residuals**: 1st eigenvalue and % variance (see Dimensionality tab)"))
+    # PCA availability: True iff mfrm_diagnostics produced the pca bundle
+    # for this run. Previously hardcoded to False, so the checklist cell
+    # was always rendered unchecked even when PCA was computed.
+    has_pca = isinstance(diagnostics.get("pca"), dict) and bool(diagnostics["pca"])
+    lines.append(_check(has_pca, "**PCA of residuals**: 1st eigenvalue and % variance (see Dimensionality tab)"))
 
     # 3. Facet-level
     lines.append("\n#### 3. Facet-Level Statistics")
     has_rel = isinstance(rel_df, pd.DataFrame) and not rel_df.empty
     lines.append(_check(has_rel, "**Separation (G), Strata (H), Reliability (R)** per facet"))
-    lines.append(_check(has_rel, "**Fixed chi-square** test (see Tables & Figures sub-tab)"))
+    lines.append(_check(has_rel, "**Fixed chi-square** test (see Report → 📊 Tables & checks → Tables)"))
     lines.append(_check(has_rel, "**RMSE and True SD** per facet"))
 
     # 4. Element-level
@@ -15705,7 +15715,10 @@ def _render_reporting_checklist(
     lines.append("\n#### 5. Rating Scale Diagnostics")
     has_steps = isinstance(steps_df, pd.DataFrame) and not steps_df.empty
     lines.append(_check(has_resid, "**Category counts** and percentages"))
-    lines.append(_check(False, "**Average measures** per category (see Categories/Steps tab)"))
+    # Average-measure-per-category is computed whenever observation table
+    # and Score column are present. Previously hardcoded False.
+    has_obs_for_categories = has_resid and "Score" in obs_df.columns
+    lines.append(_check(has_obs_for_categories, "**Average measures** per category (see Categories/Steps tab)"))
     lines.append(_check(has_steps, "**Rasch-Andrich thresholds** — ordering and distances"))
     lines.append(_check(True, "**Category probability curves** (see Visuals tab)"))
     if model == "GPCM":
@@ -17722,7 +17735,7 @@ Rubin, 1992; Uto, 2022; Zitzmann & Hecht, 2019).
 
 ---
 
-#### Step 5. Examine facet-level statistics → *Report → Tables tab*
+#### Step 5. Examine facet-level statistics → *Report → 📊 Tables & checks → Tables*
 
 **What to check:**
 - For each facet, review **Separation**, **Strata**, and
@@ -17827,7 +17840,7 @@ p < .05/N_elements) to control for multiple testing.
 
 ### Optional Extensions
 
-**Facet equivalence testing** → *Report → Facet Equivalence tab*
+**Facet equivalence testing** → *Report → 📊 Tables & checks → Facet Equivalence*
 - Use TOST, BIC Bayes Factor, and ROPE to formally test whether
   facet elements (e.g., raters) are practically equivalent.
 - This goes beyond the fixed chi-square test by specifying an
@@ -17835,7 +17848,7 @@ p < .05/N_elements) to control for multiple testing.
   section above for detailed interpretation guidance, decision
   rules, and forest plot color coding.
 
-**Bayesian estimation** → *Report → Stan Code tab*
+**Bayesian estimation** → *Report → 💾 Exports → Stan Code*
 - Download auto-generated Stan code for full posterior inference.
 - Advantages: proper uncertainty quantification, LOO cross-validation,
   posterior predictive checks (Patz et al., 2002; Uto, 2021, 2022).
@@ -17997,7 +18010,7 @@ is very sensitive to sample size (Myford & Wolfe, 2004).
 
 ### Facet Equivalence Analysis
 
-The Facet Equivalence tab (*Report → Facet Equivalence*) provides
+The Facet Equivalence tab (*Report → 📊 Tables & checks → Facet Equivalence*) provides
 a **multi-method** assessment of whether facet elements (e.g.,
 raters) have practically equivalent measures. This goes beyond
 the traditional fixed chi-square test by combining four
@@ -18551,7 +18564,7 @@ suitable for parametric analysis.
         st.info(
             "The reporting checklist and APA text are now **auto-generated** in the "
             "**Report** tab based on your actual estimation results. "
-            "Navigate to Report → APA Report or Report → Reporting Checklist."
+            "Navigate to Report → 📝 Reports → APA Report or Report → 📊 Tables & checks → Reporting Checklist."
         )
         st.markdown(
             """
@@ -18582,7 +18595,7 @@ When reporting MFRM results in a manuscript, include the following
 - Category probability curves (if scale functioning is discussed)
 - Bias heatmap (if bias interactions are significant)
 
-> **Tip:** The **Report → APA Report** sub-tab auto-generates draft text
+> **Tip:** The **Report → 📝 Reports → APA Report** sub-tab auto-generates draft text
 > that covers all of the above. Copy and adapt it for your manuscript.
 """
         )
@@ -22705,7 +22718,7 @@ def _render_downloads(
         # --- Stan code reference ---
         st.subheader("Stan code for Bayesian MFRM")
         st.info(
-            "Stan code is auto-generated in the **Report → Stan Code** tab based on "
+            "Stan code is auto-generated in the **Report → 💾 Exports → Stan Code** sub-tab based on "
             "your data structure. Navigate there to preview and download the Stan model, "
             "Python runner (CmdStanPy), and R runner (CmdStanR) scripts."
         )
@@ -26962,7 +26975,7 @@ def render_posterior_viewer_mode() -> None:
         "Parquet, or ArviZ NetCDF) to inspect trace, ridge, pair, and "
         "forest plots and summary diagnostics — without leaving the browser. "
         "Estimation itself is not performed here; use the runner scripts "
-        "emitted from the FACETS-mode *Report → Stan Code* tab to sample "
+        "emitted from the FACETS-mode *Report → 💾 Exports → Stan Code* sub-tab to sample "
         "locally, then upload the output files."
     )
 

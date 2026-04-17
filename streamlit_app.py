@@ -22126,6 +22126,66 @@ def _render_downloads(
             key="dl_config_json",
         )
 
+        # --- Import companion for Download config ---
+        # A previously downloaded mfrm_config.json can be uploaded here to
+        # inspect the run's settings. The import is read-only — it parses
+        # the JSON, validates the schema, and shows the values in a table
+        # — because most of the fields in the exported payload are
+        # run-specific metadata (fingerprint, convergence status, elapsed
+        # seconds) rather than sidebar inputs that can be replayed
+        # losslessly. Users who want to re-run with the imported settings
+        # copy the model / method / analysis-depth values manually.
+        uploaded_config = st.file_uploader(
+            "Import config JSON (read-only inspection)",
+            type=["json"],
+            key="import_config_json_v021",
+            help=(
+                "Upload a previously downloaded mfrm_config.json to verify "
+                "what settings produced an earlier run. This panel shows the "
+                "settings as a table; it does not overwrite sidebar inputs, "
+                "so accidental imports can't corrupt your current run."
+            ),
+        )
+        if uploaded_config is not None:
+            try:
+                imported = json.loads(uploaded_config.read().decode("utf-8"))
+                # Keep only the settings that map back to sidebar inputs.
+                whitelist = {
+                    "model_type", "method", "analysis_depth", "workflow_mode",
+                    "bias_mode", "selected_bias_pair",
+                    "render_interactive_plots", "generate_figure_exports",
+                    "rating_min", "rating_max", "keep_original",
+                    "noncenter_facet", "dummy_facets", "positive_facets",
+                    "maxit", "reltol", "anchor_policy",
+                    "population_enabled", "population_formula",
+                    "compute_residual_pca", "compute_strict_marginal",
+                    "compute_plausible_values", "n_plausible_values",
+                }
+                settings_rows = [
+                    {"setting": k, "value": str(imported[k])}
+                    for k in sorted(whitelist)
+                    if k in imported
+                ]
+                if settings_rows:
+                    st.success(
+                        f"Imported {len(settings_rows)} setting(s) from "
+                        f"{uploaded_config.name}. Review the values, then "
+                        "update the sidebar manually if you want to re-run."
+                    )
+                    st.dataframe(
+                        pd.DataFrame(settings_rows),
+                        width="stretch", hide_index=True,
+                    )
+                else:
+                    st.warning(
+                        "Imported JSON had no recognisable MFRM settings. "
+                        "Is this the config file downloaded from this app?"
+                    )
+            except json.JSONDecodeError as exc:
+                st.error(f"Could not parse JSON: {exc}")
+            except Exception as exc:  # pragma: no cover - defensive
+                st.error(f"Import failed: {type(exc).__name__}: {exc}")
+
         method_appendix = generate_method_appendix_text(result, diagnostics, all_bias_results)
         manuscript_template = generate_manuscript_reporting_template(result, diagnostics, all_bias_results)
         external_template_assets = external_simulation_template_scripts()

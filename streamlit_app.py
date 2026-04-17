@@ -43,7 +43,7 @@ if any(flag in sys.argv for flag in CLI_CHECK_FLAGS):
     logging.getLogger("streamlit.runtime.caching.cache_resource_api").setLevel(logging.ERROR)
 
 
-APP_VERSION = "0.2.10-beta"
+APP_VERSION = "0.2.11-beta"
 APP_RELEASE_LABEL = "standalone Python beta"
 RUNTIME_PACKAGE_FLOORS = OrderedDict([
     ("numpy", "1.24"),
@@ -18103,11 +18103,24 @@ def _draw_misfit_ranking(fit_df: pd.DataFrame) -> None:
     abs_outfit = pd.to_numeric(df.get("OutfitZSTD", pd.Series(dtype=float)), errors="coerce").abs()
     df["MaxAbsZSTD"] = np.fmax(abs_infit.fillna(0), abs_outfit.fillna(0))
 
-    n_show = st.slider(
-        "Number of elements to show", 5, min(100, len(df)), min(20, len(df)),
-        key="misfit_top_n",
-        help="Maximum number of elements to display, ranked by absolute ZSTD.",
-    )
+    # v0.2.11-beta bug fix: on very small fit tables (< 5 rows) the
+    # original slider bounds went min=5, max=len(df), which is
+    # max<min → StreamlitAPIException. Skip the widget for tiny
+    # tables and plot everything.
+    n_total = len(df)
+    if n_total < 6:
+        n_show = n_total
+    else:
+        slider_max = max(6, min(100, n_total))
+        slider_val = max(5, min(20, n_total))
+        n_show = st.slider(
+            "Number of elements to show",
+            min_value=5,
+            max_value=slider_max,
+            value=slider_val,
+            key="misfit_top_n",
+            help="Maximum number of elements to display, ranked by absolute ZSTD.",
+        )
     threshold = st.slider(
         "ZSTD threshold", 0.0, 5.0, 2.0, 0.5, key="misfit_threshold",
         help="Elements with |ZSTD| >= this threshold are flagged as misfitting. "
@@ -18654,14 +18667,27 @@ def _draw_measures_forest_plotly(diagnostics: dict) -> None:
         st.info(f"No valid Estimate/SE rows for facet `{picked}`.")
         return
 
-    max_rows = st.number_input(
-        "Show top N elements (sorted by Estimate)",
-        min_value=5,
-        max_value=max(5, min(500, len(sub))),
-        value=min(40, len(sub)),
-        step=5,
-        help="Large facets are truncated for readability; full data is in the Measures tab.",
-    )
+    # v0.2.11-beta bug fix: when a facet has fewer than 5 rows the
+    # widget hit `value < min_value` and raised
+    # `StreamlitValueBelowMinError`. Small facets need no truncation
+    # — skip the widget entirely and plot every row.
+    n_rows_available = len(sub)
+    if n_rows_available <= 5:
+        max_rows = n_rows_available
+    else:
+        # Cap the ceiling at a sensible upper bound but guarantee it
+        # is strictly greater than `min_value=5` so Streamlit accepts
+        # the numeric range.
+        max_rows_ceiling = min(500, max(6, n_rows_available))
+        default_value = max(5, min(40, n_rows_available))
+        max_rows = int(st.number_input(
+            "Show top N elements (sorted by Estimate)",
+            min_value=5,
+            max_value=max_rows_ceiling,
+            value=default_value,
+            step=5,
+            help="Large facets are truncated for readability; full data is in the Measures tab.",
+        ))
     sub = sub.sort_values("Estimate", ascending=True).tail(int(max_rows))
     labels = sub["Level"].astype(str).tolist()
     est = sub["Estimate"].to_numpy()
@@ -20668,19 +20694,30 @@ def _draw_bias_heatmap(tbl: pd.DataFrame, facet_a: str, facet_b: str) -> None:
         st.info("No finite bias values to display in heatmap.")
         return
     safe_pair_key = re.sub(r"[^A-Za-z0-9]+", "_", f"{facet_a}_{facet_b}")
-    max_axis_default = min(35, max(10, max(pivot.shape)))
-    max_axis = st.slider(
-        "Maximum labels per heatmap axis",
-        min_value=8,
-        max_value=min(80, max(8, max(pivot.shape))),
-        value=max_axis_default,
-        step=1,
-        key=f"bias_heatmap_max_axis_{safe_pair_key}",
-        help=(
-            "Large bias matrices become unreadable when every label is drawn. "
-            "The compact view keeps the strongest rows and columns by absolute heatmap value."
-        ),
-    )
+    # v0.2.11-beta bug fix: on narrow/short pivots, `max_axis_default`
+    # could exceed the slider's `max_value` (or equal its `min_value`,
+    # making the slider degenerate). Clamp all three relative to the
+    # actual pivot size so Streamlit always receives a valid range.
+    axis_extent = max(1, int(max(pivot.shape)))
+    if axis_extent <= 8:
+        # Too few labels to need a trimming widget at all.
+        max_axis = axis_extent
+    else:
+        slider_max_val = max(9, min(80, axis_extent))
+        slider_default = max(8, min(35, axis_extent))
+        slider_default = min(slider_default, slider_max_val)
+        max_axis = st.slider(
+            "Maximum labels per heatmap axis",
+            min_value=8,
+            max_value=slider_max_val,
+            value=slider_default,
+            step=1,
+            key=f"bias_heatmap_max_axis_{safe_pair_key}",
+            help=(
+                "Large bias matrices become unreadable when every label is drawn. "
+                "The compact view keeps the strongest rows and columns by absolute heatmap value."
+            ),
+        )
     auto_rows, auto_cols, auto_filtered = _select_heatmap_labels(pivot, max_rows=max_axis, max_cols=max_axis)
     show_all = st.checkbox(
         "Show all heatmap rows/columns",

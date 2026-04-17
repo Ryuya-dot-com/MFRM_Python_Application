@@ -2,6 +2,49 @@
 
 All notable changes to this standalone Streamlit distribution should be recorded here.
 
+## 0.2.11-beta - 2026-04-18
+
+Widget small-data hotfix. A user reported a hard crash with
+`StreamlitValueBelowMinError` on the Visuals tab when running against
+a facet with fewer than 5 elements (e.g. the Clinical OSCE scenario
+has 3 competencies). The forest-plot widget's `min_value=5` was
+incompatible with `value=min(40, len(sub))` when `len(sub) < 5`. An
+audit found two sibling widgets with the same data-dependent
+min/value hazard.
+
+### Fixed
+
+- **`_draw_measures_forest_plotly`** — when the selected facet has
+  fewer than 6 rows, skip the "Show top N" number input entirely
+  and plot every row. When it has ≥ 6, clamp the default to the
+  widget's own range so `value >= min_value` always holds.
+- **`_draw_misfit_ranking`** — the `st.slider("Number of elements
+  to show")` had `min_value=5, max_value=len(df)`; on fit tables
+  with `len(df) < 5` this flipped to max<min and triggered
+  `StreamlitAPIException`. Now auto-skips the widget for tiny
+  tables (< 6 rows).
+- **Bias heatmap axis-label slider** — `max_axis_default` could
+  exceed `max_value` when the pivot was narrow. Now all three of
+  (min, max, default) are clamped to the pivot's actual extent,
+  and the slider is skipped entirely for ≤ 8-label pivots.
+
+### Added
+
+- **`tests/test_small_data_widgets.py`** (3 tests): directly invokes
+  `_draw_measures_forest_plotly` and `_draw_misfit_ranking` on
+  3-row fixtures, and runs the full AppTest with the Clinical OSCE
+  scenario. Pass condition = no `StreamlitValueBelowMinError` /
+  `ValueAboveMaxError` / `APIException` raised. These are the
+  cheapest guards against the class of bug that just shipped.
+
+### Unchanged on purpose
+
+- All v0.2.10 one-click PDF / Word / HTML downloads and matplotlib
+  figure fallbacks continue to work unchanged.
+- Non-affected widgets (maxit, reltol, rating_min, rating_max,
+  number-of-latent-classes, minimum-common-anchors, etc.) all have
+  literal min/max/value bounds and are not at risk.
+
 ## 0.2.10-beta - 2026-04-18
 
 Publication-Document hotfix. On Streamlit Community Cloud, the

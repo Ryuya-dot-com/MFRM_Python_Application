@@ -8998,6 +8998,158 @@ def resolve_analysis_depth_settings(
     return settings
 
 
+_RUN_HISTORY_KEY = "_facets_mode_run_history"
+_RUN_HISTORY_MAX = 10
+
+
+def _run_history_extract_summary(output: dict) -> tuple[bool, int, str, str]:
+    """Pull Converged / Iterations / Model / Method from the output's summary row."""
+    result = output.get("result", {}) if isinstance(output, dict) else {}
+    summary = result.get("summary") if isinstance(result, dict) else None
+    converged = False
+    iters = 0
+    model = str(output.get("model_type") or "?") if isinstance(output, dict) else "?"
+    method = ""
+    if isinstance(summary, pd.DataFrame) and not summary.empty:
+        row = summary.iloc[0]
+        converged = bool(row.get("Converged", False))
+        try:
+            iters = int(row.get("Iterations", 0))
+        except (TypeError, ValueError):
+            iters = 0
+        if "Method" in summary.columns:
+            method = str(row.get("Method", ""))
+        if "Model" in summary.columns and (not model or model == "?"):
+            model = str(row.get("Model", model))
+    if not method and isinstance(output, dict):
+        method = str(output.get("_est_method", ""))
+    return converged, iters, model, method
+
+
+def record_run_in_history(*, output: dict, elapsed_sec: float) -> dict:
+    """Push a compact snapshot of this run onto the session history stack.
+
+    Keeps at most _RUN_HISTORY_MAX entries, dropping oldest first. The
+    snapshot is a deep copy of `facets_mode_output` so past runs can be
+    restored losslessly. Returns the entry just recorded.
+    """
+    import copy as _copy
+    import datetime as _dt
+
+    converged, iters, model, method = _run_history_extract_summary(output)
+    facet_cols = output.get("facet_cols", []) if isinstance(output, dict) else []
+    n_facets = len(facet_cols) if isinstance(facet_cols, (list, tuple)) else 0
+    prep = (output.get("result", {}) or {}).get("prep", {}) if isinstance(output, dict) else {}
+    try:
+        n_obs = int(prep.get("n_obs", 0))
+    except (TypeError, ValueError):
+        n_obs = 0
+    try:
+        n_persons = int(prep.get("n_person", 0))
+    except (TypeError, ValueError):
+        n_persons = 0
+
+    entry = {
+        "run_id": f"run-{_dt.datetime.now().strftime('%Y%m%d-%H%M%S-%f')}",
+        "timestamp": _dt.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "model": model,
+        "method": method,
+        "n_obs": n_obs,
+        "n_persons": n_persons,
+        "n_facets": n_facets,
+        "converged": converged,
+        "iterations": iters,
+        "elapsed_sec": float(elapsed_sec or 0.0),
+        "output_snapshot": _copy.deepcopy(output) if isinstance(output, dict) else {},
+    }
+    history = list(st.session_state.get(_RUN_HISTORY_KEY, []))
+    history.append(entry)
+    if len(history) > _RUN_HISTORY_MAX:
+        history = history[-_RUN_HISTORY_MAX:]
+    st.session_state[_RUN_HISTORY_KEY] = history
+    return entry
+
+
+def get_run_history() -> list[dict]:
+    """Return the current run history list (may be empty)."""
+    return list(st.session_state.get(_RUN_HISTORY_KEY, []))
+
+
+def restore_run_from_history(run_id: str) -> bool:
+    """Restore a past run's output snapshot into the live facets_mode_output."""
+    import copy as _copy
+    for entry in get_run_history():
+        if entry.get("run_id") == run_id:
+            st.session_state["facets_mode_output"] = _copy.deepcopy(entry["output_snapshot"])
+            return True
+    return False
+
+
+def clear_run_history() -> None:
+    """Wipe all recorded runs."""
+    if _RUN_HISTORY_KEY in st.session_state:
+        del st.session_state[_RUN_HISTORY_KEY]
+
+
+def render_run_history_panel() -> None:
+    """Collapsible panel showing recent runs with Restore buttons."""
+    history = get_run_history()
+    if not history:
+        return
+
+    with st.expander(
+        f"🕒 Run history ({len(history)} run{'s' if len(history) > 1 else ''})",
+        expanded=False,
+    ):
+        st.caption(
+            "Recent analyses in this session. Click **Restore** to swap back to a past "
+            "result — the dashboard, tabs, and report will all rebuild from the snapshot."
+        )
+        # Compact table view (newest first)
+        display_rows = []
+        for h in reversed(history):
+            display_rows.append({
+                "timestamp": h["timestamp"],
+                "model": h["model"],
+                "method": h["method"],
+                "n_obs": h["n_obs"],
+                "n_persons": h["n_persons"],
+                "n_facets": h["n_facets"],
+                "converged": h["converged"],
+                "iterations": h["iterations"],
+                "elapsed_sec": round(h["elapsed_sec"], 2),
+            })
+        st.dataframe(pd.DataFrame(display_rows), width="stretch", hide_index=True)
+
+        # Per-entry Restore buttons
+        for entry in reversed(history):
+            cols = st.columns([5, 1])
+            label = (
+                f"**{entry['timestamp']}** — {entry['model']} / {entry['method']} — "
+                f"{'✅ converged' if entry['converged'] else '❌ not converged'}"
+                f" — {entry['elapsed_sec']:.1f}s"
+            )
+            cols[0].markdown(label)
+            if cols[1].button(
+                "Restore",
+                key=f"restore_{entry['run_id']}",
+                use_container_width=True,
+                help="Load this run's results into the current view.",
+            ):
+                if restore_run_from_history(entry["run_id"]):
+                    st.success(f"Restored run from {entry['timestamp']}")
+                    st.rerun()
+
+        st.markdown("---")
+        if st.button(
+            "🗑 Clear history",
+            key="run_history_clear",
+            help="Remove all stored snapshots. The current view is not affected.",
+        ):
+            clear_run_history()
+            st.rerun()
+
+
 _READINESS_ICON: dict[str, str] = {"ok": "🟢", "warning": "🟡", "issue": "🔴"}
 
 
@@ -10296,6 +10448,15 @@ def run_facets_mode(core: dict, data: pd.DataFrame) -> None:
                 "_generate_figure_exports": bool(generate_figure_exports),
             }
             _elapsed_sec = _time.perf_counter() - _run_t0
+            # Record this run in the session history so users can swap
+            # between past runs via the Run history panel.
+            try:
+                record_run_in_history(
+                    output=st.session_state["facets_mode_output"],
+                    elapsed_sec=_elapsed_sec,
+                )
+            except Exception:  # pragma: no cover - history is a UX helper
+                pass
             run_status.update(
                 label=f"✅ Analysis complete in {_elapsed_sec:.1f}s",
                 state="complete",
@@ -10456,6 +10617,13 @@ def run_facets_mode(core: dict, data: pd.DataFrame) -> None:
                              out.get("score_col", score_col),
                              core)
     _show_first_read_guide(result, diagnostics, out.get("all_bias_results", {}))
+
+    # Run history panel (collapsed by default) — lets users swap between
+    # recent runs without re-executing the pipeline.
+    try:
+        render_run_history_panel()
+    except Exception:  # pragma: no cover - UX helper
+        pass
 
     tabs = st.tabs([
         "Data", "Report", "Measures", "Fit Details",

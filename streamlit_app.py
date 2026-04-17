@@ -43,7 +43,7 @@ if any(flag in sys.argv for flag in CLI_CHECK_FLAGS):
     logging.getLogger("streamlit.runtime.caching.cache_resource_api").setLevel(logging.ERROR)
 
 
-APP_VERSION = "0.2.12-beta"
+APP_VERSION = "0.2.13-beta"
 APP_RELEASE_LABEL = "standalone Python beta"
 RUNTIME_PACKAGE_FLOORS = OrderedDict([
     ("numpy", "1.24"),
@@ -1869,6 +1869,20 @@ def prepare_mfrm_data(
         rename_map[weight_col] = "Weight"
     df.rename(columns=rename_map, inplace=True)
 
+    # v0.2.13-beta guard: if the rename produces duplicate column names
+    # (e.g. a facet named "Score" alongside a score_col renamed to
+    # "Score"), `df["Score"]` would return a DataFrame and
+    # `pd.to_numeric(…)` raises a cryptic TypeError. Detect the
+    # collision up front and explain the fix.
+    if df.columns.duplicated().any():
+        dups = df.columns[df.columns.duplicated()].tolist()
+        raise ValueError(
+            f"Column rename produced duplicates: {dups!r}. This typically "
+            "means one of your facet columns has the same name as the "
+            "Person or Score role after renaming. Rename or drop the "
+            "conflicting facet column before fitting."
+        )
+
     score_num = pd.to_numeric(df["Score"], errors="coerce")
     score_tol = np.sqrt(np.finfo(float).eps)
     fractional_score = score_num.notna() & np.isfinite(score_num) & ((score_num - np.round(score_num)).abs() > score_tol)
@@ -2214,6 +2228,56 @@ def _params_clinical_osce() -> dict:
     }
 
 
+def _params_reading_testlet_binary() -> dict:
+    """Reading-comprehension testlet design with BINARY (0/1) responses.
+
+    Six passages × four items each, scored correct/incorrect by a
+    single-scorer (or automatic) key. Columns are
+    `Person / Scorer / Text / Item / Score` so the Text facet acts as
+    the "testlet" grouping and Item is the within-testlet question.
+    This is the canonical data shape that reading, listening, or
+    SJT-style tests produce and which users upload most often.
+
+    MFRM vs testlet models
+    ----------------------
+    MFRM treats each facet level (incl. Text and Item) as a *fixed*
+    effect, so a Text effect is estimated as a single logit per
+    passage. Classical testlet models (Wainer & Kiely, 1987;
+    Bradlow, Wainer & Wang, 1999) instead add a RANDOM person-by-
+    testlet effect γ_{jd} to absorb local dependence within a
+    passage. Rijmen (2010) formally links testlet and bifactor
+    models. Practically:
+      - Use MFRM (this engine) when passage-level variation is a
+        *systematic effect* of interest and items within a passage
+        are reasonably LI-compliant.
+      - Use the **TESTLET_RI / TESTLET_BIFACTOR** Stan generators
+        (sidebar → Advanced models) when local item dependence
+        within a passage is substantively important — those programs
+        model γ_{jd} explicitly.
+
+    Published parameter ranges
+    --------------------------
+      - Person ability SD ≈ 1.0 logits (Wainer & Kiely, 1987).
+      - Text (passage) difficulty range ≈ 1.2 logits: some passages
+        are harder than others (Wang, Bradlow, & Wainer, 2002).
+      - Item difficulty range ≈ 0.8 logits within passages.
+      - Binary scoring (0 = incorrect, 1 = correct), so `tau`
+        contains a single threshold at 0.
+    """
+    return {
+        "persons": [f"R{idx:03d}" for idx in range(1, 101)],
+        "raters": ["Scorer"],
+        "tasks": [f"Passage_{idx}" for idx in range(1, 7)],
+        "criteria": [f"Q{idx}" for idx in range(1, 5)],
+        "theta_sd": 1.0,
+        "rater_severities": [0.0],
+        "task_difficulties": [-0.60, -0.30, -0.10, 0.15, 0.35, 0.50],
+        "criterion_difficulties": [-0.40, -0.10, 0.15, 0.35],
+        "tau": [0.0],  # 2-category scale → binary Rasch (1PL)
+        "columns": ["Person", "Scorer", "Text", "Item", "Score"],
+    }
+
+
 SAMPLE_DATA_SCENARIOS: dict[str, dict] = {
     "writing_essay": {
         "label": "✏️ Writing essay (30×4×2×4, 960 obs)",
@@ -2296,6 +2360,32 @@ SAMPLE_DATA_SCENARIOS: dict[str, dict] = {
             "(Downing & Yudkowsky, 2009)",
             "(Tavakol & Dennick, 2011)",
             "(Wolfe & Song, 2015)",
+        ],
+    },
+    "reading_testlet_binary": {
+        "label": "📖 Reading testlet — binary (100×1×6×4, 2,400 obs)",
+        "short": "Binary 0/1 scoring. Person × Scorer × Text × Item.",
+        "description": (
+            "100 examinees × single scorer × 6 reading passages × 4 "
+            "questions per passage = 2,400 observations on a binary "
+            "(0 = incorrect, 1 = correct) scale. This is the classic "
+            "testlet shape used in reading / listening / SJT tests. "
+            "MFRM treats each passage and each item as a fixed-effect "
+            "facet, which is adequate when local item dependence "
+            "inside a passage is modest. When local dependence is "
+            "large, download the Stan **TESTLET_RI** or "
+            "**TESTLET_BIFACTOR** generator (sidebar → Advanced "
+            "models) and fit a random-effects testlet model locally."
+        ),
+        "dimensions": {"persons": 100, "raters": 1, "tasks": 6, "criteria": 4, "n_cat": 2},
+        "n_obs": 100 * 1 * 6 * 4,
+        "build_params": _params_reading_testlet_binary,
+        "citations": [
+            "(Wainer & Kiely, 1987)",
+            "(Bradlow, Wainer & Wang, 1999)",
+            "(Wang, Bradlow & Wainer, 2002)",
+            "(Rijmen, 2010)",
+            "(DeMars, 2006)",
         ],
     },
 }
@@ -2381,9 +2471,25 @@ def render_loaded_data_banner() -> None:
 
 
 def guess_col(cols, patterns, fallback=0):
+    """Guess the most plausible column for a given semantic role.
+
+    Prefers an EXACT (case-insensitive) pattern match over a substring
+    match. This matters for datasets that contain both "Score" and
+    "Scorer": substring-only matching greedily returns "Scorer" for
+    pattern "score", which caused a v0.2.12 crash when the binary
+    testlet scenario hit the UI's auto-pick. Exact match first avoids
+    the collision; substring match is kept as a fallback so typical
+    datasets like "raw_score" still resolve.
+    """
     if not cols:
         return None
     lowered = [c.lower() for c in cols]
+    # Pass 1: exact match (case-insensitive)
+    for pattern in patterns:
+        for idx, name in enumerate(lowered):
+            if pattern == name:
+                return cols[idx]
+    # Pass 2: substring match (legacy behavior)
     for pattern in patterns:
         for idx, name in enumerate(lowered):
             if pattern in name:
@@ -6788,7 +6894,12 @@ def calc_reliability(measure_df):
     if measure_df.empty:
         return pd.DataFrame()
     for facet, df in measure_df.groupby("Facet"):
-        mv = np.nanvar(df["Estimate"], ddof=1)
+        # `ddof=1` on a single-element slice (common with singleton
+        # Scorer facets in binary testlet data) raises a
+        # RuntimeWarning from numpy. Cleanly return NaN instead of
+        # dumping the warning into the Streamlit log.
+        finite_est = df["Estimate"].dropna()
+        mv = float(np.nanvar(finite_est, ddof=1)) if len(finite_est) >= 2 else np.nan
         ev = np.nanmean(df["SE"] ** 2)
         rmse = np.sqrt(ev) if np.isfinite(ev) else np.nan
         note = ""
@@ -10782,6 +10893,11 @@ _APA_REFERENCE_LIBRARY: dict[str, str] = {
         "Bachman, L. F., & Palmer, A. S. (1996). Language testing in practice: "
         "Designing and developing useful language tests. Oxford University Press."
     ),
+    "Bradlow_Wainer_Wang_1999": (
+        "Bradlow, E. T., Wainer, H., & Wang, X. (1999). A Bayesian random "
+        "effects model for testlets. Psychometrika, 64(2), 153–168. "
+        "https://doi.org/10.1007/BF02294533"
+    ),
     "Bock_Aitkin_1981": (
         "Bock, R. D., & Aitkin, M. (1981). Marginal maximum likelihood estimation "
         "of item parameters: Application of an EM algorithm. Psychometrika, 46(4), "
@@ -10796,6 +10912,12 @@ _APA_REFERENCE_LIBRARY: dict[str, str] = {
         "Chalmers, R. P. (2012). mirt: A multidimensional item response theory "
         "package for the R environment. Journal of Statistical Software, 48(6), "
         "1–29. https://doi.org/10.18637/jss.v048.i06"
+    ),
+    "DeMars_2006": (
+        "DeMars, C. E. (2006). Application of the bi-factor multidimensional "
+        "item response theory model to testlet-based tests. Journal of "
+        "Educational Measurement, 43(2), 145–168. "
+        "https://doi.org/10.1111/j.1745-3984.2006.00010.x"
     ),
     "Downing_Yudkowsky_2009": (
         "Downing, S. M., & Yudkowsky, R. (Eds.). (2009). Assessment in health "
@@ -10900,6 +11022,12 @@ _APA_REFERENCE_LIBRARY: dict[str, str] = {
         "multifactor tests: Results and implications. Journal of Educational "
         "Statistics, 4(3), 207–230. https://doi.org/10.2307/1164671"
     ),
+    "Rijmen_2010": (
+        "Rijmen, F. (2010). Formal relations and an empirical comparison "
+        "among the bi-factor, the testlet, and a second-order multidimensional "
+        "IRT model. Journal of Educational Measurement, 47(3), 361–372. "
+        "https://doi.org/10.1111/j.1745-3984.2010.00118.x"
+    ),
     "Smith_2000": (
         "Smith, E. V. (2000). Metric development and score reporting in Rasch "
         "measurement. Journal of Applied Measurement, 1(3), 303–326."
@@ -10928,6 +11056,18 @@ _APA_REFERENCE_LIBRARY: dict[str, str] = {
         "Uto, M., & Ueno, M. (2020). A generalized many-facet Rasch model and "
         "its Bayesian estimation using Hamiltonian Monte Carlo. Behaviormetrika, "
         "47(2), 469–496. https://doi.org/10.1007/s41237-020-00115-7"
+    ),
+    "Wainer_Kiely_1987": (
+        "Wainer, H., & Kiely, G. L. (1987). Item clusters and computerized "
+        "adaptive testing: A case for testlets. Journal of Educational "
+        "Measurement, 24(3), 185–201. "
+        "https://doi.org/10.1111/j.1745-3984.1987.tb00274.x"
+    ),
+    "Wang_Bradlow_Wainer_2002": (
+        "Wang, X., Bradlow, E. T., & Wainer, H. (2002). A general Bayesian "
+        "model for testlets: Theory and applications. Applied Psychological "
+        "Measurement, 26(1), 109–128. "
+        "https://doi.org/10.1177/0146621602026001007"
     ),
     "Wagenmakers_2007": (
         "Wagenmakers, E.-J. (2007). A practical solution to the pervasive "
@@ -10961,8 +11101,10 @@ _CITATION_TO_KEY: dict[str, str] = {
     "(Andrich, 1978)": "Andrich_1978",
     "(Bachman & Palmer, 1996)": "Bachman_Palmer_1996",
     "(Bock & Aitkin, 1981)": "Bock_Aitkin_1981",
+    "(Bradlow, Wainer & Wang, 1999)": "Bradlow_Wainer_Wang_1999",
     "(Bock & Mislevy, 1982)": "Bock_Mislevy_1982",
     "(Chalmers, 2012)": "Chalmers_2012",
+    "(DeMars, 2006)": "DeMars_2006",
     "(Downing & Yudkowsky, 2009)": "Downing_Yudkowsky_2009",
     "(Eckes, 2005)": "Eckes_2005",
     "(Eckes, 2011)": "Eckes_2011",
@@ -10986,6 +11128,7 @@ _CITATION_TO_KEY: dict[str, str] = {
     "(Myford & Wolfe, 2003)": "Myford_Wolfe_2003",
     "(Myford & Wolfe, 2004)": "Myford_Wolfe_2004",
     "(Reckase, 1979)": "Reckase_1979",
+    "(Rijmen, 2010)": "Rijmen_2010",
     "(Smith, 2000)": "Smith_2000",
     "(Smith, 2002)": "Smith_2002",
     "(Tavakol & Dennick, 2011)": "Tavakol_Dennick_2011",
@@ -10993,6 +11136,8 @@ _CITATION_TO_KEY: dict[str, str] = {
     "(Uto, 2022)": "Uto_2022",
     "(Uto & Ueno, 2020)": "Uto_Ueno_2020",
     "(Wagenmakers, 2007)": "Wagenmakers_2007",
+    "(Wainer & Kiely, 1987)": "Wainer_Kiely_1987",
+    "(Wang, Bradlow & Wainer, 2002)": "Wang_Bradlow_Wainer_2002",
     "(Wolfe & Song, 2015)": "Wolfe_Song_2015",
     "(Wright & Linacre, 1994)": "Wright_Linacre_1994",
     "(Wright & Masters, 1982)": "Wright_Masters_1982",
@@ -20591,6 +20736,105 @@ thresholds and slopes. Broader interfaces where `slope_facet` differs
 from `step_facet`, multidimensional slopes, or latent-regression GPCM are
 not yet enabled. For reproducibility, use the app-engine runner rather
 than the portable scripts for GPCM runs.
+
+---
+
+### Binary (0 / 1) Responses
+
+The RSM / PCM / GPCM path supports **binary rating scales natively**.
+A `Score` column containing only 0 and 1 yields a single Rasch–Andrich
+threshold, making RSM with `n_cat = 2` mathematically equivalent to the
+**1PL Rasch model**. The built-in ✏️ Reading testlet scenario demonstrates
+this shape. For discrimination-aware binary analysis (2PL), use the
+sidebar's **🧪 Advanced models → IRT_2PL_BINARY** generator to download
+Stan code and fit the discrimination parameters locally.
+
+**Sample-size note for binary**: Reliability collapses faster with binary
+than with polytomous data. Linacre (2024) recommends ≥ 100 observations
+per element when the scale is binary, versus ≥ 25 for typical 5-point
+rating scales.
+
+---
+
+### Testlet-format Data (item-text-person)
+
+A very common upload is **reading / listening / SJT data with items
+nested inside passages (testlets)**. The natural tidy-long representation is:
+
+| Person | Scorer | Text | Item | Score |
+|---|---|---|---|---|
+| R001 | S1 | Passage_1 | Q1 | 1 |
+| R001 | S1 | Passage_1 | Q2 | 0 |
+| … | … | … | … | … |
+
+The **📖 Reading testlet — binary** scenario in the sidebar is exactly
+this shape (100 × 1 × 6 × 4 = 2,400 observations). MFRM estimates a
+fixed-effect logit for every passage and every item, and the Bias /
+Interaction tab can surface Text × Person dependence.
+
+#### How MFRM differs from classical testlet models
+
+Wainer & Kiely (1987) introduced *testlets* (item clusters sharing a
+common stimulus) and argued that items inside a testlet violate the
+local-independence (LI) assumption of standard IRT: a reader who
+misunderstood the passage will miss several items for a correlated
+reason. Bradlow, Wainer, and Wang (1999) formalised this with a Bayesian
+random-effects testlet model that adds a **person × testlet random
+effect** γ_{jd} to the item-response equation:
+
+```
+P(Y_{ijd} = 1 | θ_j, b_i, γ_{jd})
+  = logit⁻¹(θ_j − b_i + γ_{jd})
+  γ_{jd} ~ N(0, σ²_d)
+```
+
+Each testlet *d* has its own variance σ²_d. When σ²_d is small, testlet
+effects are negligible and the standard Rasch/2PL is adequate; when
+σ²_d is large, ignoring it over-states the test's precision.
+
+**MFRM** treats the testlet (Text) as a **fixed-effect facet** —
+it estimates one logit per passage, but does not estimate a per-person
+random effect inside the passage. Practical implications:
+
+| Aspect | MFRM (this engine) | Testlet model (Bradlow+ 1999) |
+|---|---|---|
+| Testlet effect | Fixed logit per passage | Random γ_{jd} per person × testlet |
+| Local independence | Assumed | Relaxed via γ_{jd} |
+| Reliability estimate | Can be optimistic when testlet effect is large | Shrinks with σ²_d |
+| Can I inspect passage difficulty? | Yes (Measures / Wright map) | Yes, similarly |
+| Can I inspect local item dependence inside a passage? | Only indirectly (Bias heatmap) | Directly via σ²_d |
+| Download Stan code from this app | — (use core RSM/PCM/GPCM) | **TESTLET_RI** / **TESTLET_BIFACTOR** |
+
+Rijmen (2010) showed that the testlet model is a **constrained bi-factor
+model**, so the bi-factor family (DeMars, 2006) gives a third, equivalent
+route when the testlet count is small.
+
+**Recommendation**
+
+- Use MFRM (this engine, no Stan needed) when the Text × Person bias
+  heatmap shows modest local dependence and passage-level difficulty is
+  the effect of interest.
+- Use **TESTLET_RI** (sidebar → Advanced models) when you need to report
+  σ²_d per testlet or correct reliability for local dependence.
+- Use **TESTLET_BIFACTOR** when you also want a shared general factor
+  alongside per-testlet specific factors (DeMars, 2006).
+
+#### References
+
+- Bradlow, E. T., Wainer, H., & Wang, X. (1999). A Bayesian random
+  effects model for testlets. *Psychometrika, 64*(2), 153–168.
+- DeMars, C. E. (2006). Application of the bi-factor multidimensional
+  item response theory model to testlet-based tests. *Journal of
+  Educational Measurement, 43*(2), 145–168.
+- Rijmen, F. (2010). Formal relations and an empirical comparison among
+  the bi-factor, the testlet, and a second-order multidimensional IRT
+  model. *Journal of Educational Measurement, 47*(3), 361–372.
+- Wainer, H., & Kiely, G. L. (1987). Item clusters and computerized
+  adaptive testing: A case for testlets. *Journal of Educational
+  Measurement, 24*(3), 185–201.
+- Wang, X., Bradlow, E. T., & Wainer, H. (2002). A general Bayesian
+  model for testlets: Theory and applications. *Applied Psychological
+  Measurement, 26*(1), 109–128.
 """
             )
 
@@ -26656,9 +26900,18 @@ def _self_test_sample_data_scenarios() -> None:
                 df[col].notna().all(),
                 f"scenario {key!r}: column {col!r} has NaN values",
             )
+            # Most facets must have ≥ 2 levels so the facet contributes
+            # estimable variance, BUT a pro-forma singleton (e.g., the
+            # single-scorer in the binary testlet scenario, or an
+            # automatic-key design) is legitimate — MFRM simply centers
+            # it to 0 at estimation. Enforce ≥ 1 level always; enforce
+            # ≥ 2 only on facets that the scenario declares as
+            # dimensional (persons / tasks / criteria).
+            min_levels = 1 if col in ("Rater", "Scorer") else 2
             _self_test_assert(
-                df[col].nunique() >= 2,
-                f"scenario {key!r}: column {col!r} has < 2 unique levels",
+                df[col].nunique() >= min_levels,
+                f"scenario {key!r}: column {col!r} has < "
+                f"{min_levels} unique level(s)",
             )
 
         # Score bounds

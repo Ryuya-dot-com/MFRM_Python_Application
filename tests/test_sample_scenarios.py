@@ -64,11 +64,14 @@ def test_scenario_score_bounds(key: str):
 @pytest.mark.parametrize("key", ALL_KEYS)
 def test_scenario_facets_have_multiple_levels(key: str):
     df = app.sample_mfrm_data_by_key(key, seed=42)
-    # All columns except the last (score) are facet columns and should
-    # have ≥ 2 unique levels.
+    # Facet columns should have ≥ 2 unique levels — except pro-forma
+    # singleton Rater / Scorer facets used by single-scorer binary
+    # testlet designs. MFRM simply centers those to 0; they contribute
+    # zero variance and are not a bug.
     for col in df.columns[:-1]:
-        assert df[col].nunique() >= 2, (
-            f"{key!r}: column {col!r} has < 2 levels"
+        min_levels = 1 if col in ("Rater", "Scorer") else 2
+        assert df[col].nunique() >= min_levels, (
+            f"{key!r}: column {col!r} has < {min_levels} level(s)"
         )
         assert df[col].notna().all(), f"{key!r}: column {col!r} has NaN"
 

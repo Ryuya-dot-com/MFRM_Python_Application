@@ -102,6 +102,7 @@ def test_scenario_names_match_registry():
     """Sanity: the parametrize values in use match the registry keys."""
     keys = set(app.SAMPLE_DATA_SCENARIOS.keys())
     assert keys == {"writing_essay", "large_writing_pca",
-                    "speaking_test", "clinical_osce"}, (
+                    "speaking_test", "clinical_osce",
+                    "reading_testlet_binary"}, (
         f"Scenario registry drifted: {keys}"
     )

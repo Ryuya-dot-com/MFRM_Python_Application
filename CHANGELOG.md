@@ -2,6 +2,77 @@
 
 All notable changes to this standalone Streamlit distribution should be recorded here.
 
+## 0.2.13-beta - 2026-04-18
+
+Binary / testlet data support, plus two bugs the new end-to-end
+AppTest gate (introduced v0.2.12) caught before release. Demonstrates
+the gate working as intended: issues surface in CI, not production.
+
+### Added
+
+- **`reading_testlet_binary` sample scenario** — 100 examinees × 1
+  scorer × 6 passages × 4 items = 2,400 binary (0/1) observations.
+  Grounded in the testlet literature (Wainer & Kiely, 1987;
+  Bradlow, Wainer & Wang, 1999). Columns are
+  `Person / Scorer / Text / Item / Score`, the tidy-long shape that
+  reading / listening / SJT tests produce.
+- **Help → Model Capability → "Testlet-format Data"** section
+  (~120 lines). Compares MFRM to classical testlet models
+  (Bradlow+ 1999) and the bi-factor equivalent (Rijmen, 2010;
+  DeMars, 2006). Includes a recommendation flow for when to use
+  MFRM's fixed-effect Text facet vs. the **TESTLET_RI** /
+  **TESTLET_BIFACTOR** Stan downloads for random-effects
+  modelling of local item dependence.
+- **Five new APA 7 references**:
+  Bradlow, Wainer & Wang (1999), DeMars (2006), Rijmen (2010),
+  Wainer & Kiely (1987), Wang, Bradlow & Wainer (2002). All
+  wired into `_APA_REFERENCE_LIBRARY` + `_CITATION_TO_KEY`.
+- **`tests/test_binary_testlet.py`** (7 tests) — schema, JMLE
+  convergence on 2,400-row binary data, citation resolution,
+  Help-doc content pin, generator determinism.
+
+### Fixed (bugs the new end-to-end gate caught before release)
+
+- **`guess_col` greedy substring match.** Column auto-detection on
+  a testlet dataset (`Person, Scorer, Text, Item, Score`) picked
+  `Scorer` as the Score column because `"score" in "scorer"` is
+  True. After rename-collision, `pd.to_numeric(df["Score"])` hit
+  a DataFrame with two "Score" columns and raised `arg must be a
+  list, tuple, 1-d array, or Series`. Fix: `guess_col` now makes
+  two passes — exact case-insensitive match first, substring match
+  only if nothing exact was found.
+- **`prepare_mfrm_data` silent rename-collision** — the same class
+  of bug could still surface if a user-uploaded dataset had a
+  facet literally named "Score" or "Person". Added a
+  `df.columns.duplicated()` check with a clear error message.
+- **`np.nanvar(..., ddof=1)` runtime warning** on singleton-facet
+  groups (the new binary testlet has a single scorer). Pre-check
+  `len(finite_est) >= 2` to avoid the numpy warning on
+  zero-variance slices.
+- **APA citation regex** rejected 3-author forms like
+  `(Bradlow, Wainer & Wang, 1999)`. Loosened to accept any
+  `(Surname…, YYYY)` shape.
+
+### Unchanged on purpose
+
+- Binary support was *already* present in the core
+  RSM/PCM/GPCM estimator — a Score column with 0/1 values and
+  `n_cat = 2` produces a single Rasch–Andrich threshold, which
+  is mathematically equivalent to the 1PL Rasch model. This
+  release just documents and tests that pathway and adds the
+  testlet-shaped scenario that exercises it.
+- For discrimination-aware binary analysis (2PL), the existing
+  sidebar **🧪 Advanced models → IRT_2PL_BINARY** Stan generator
+  remains the recommended download-only path.
+
+### Verification
+
+- 41 inline self-tests pass.
+- **200 pytest tests** pass (was 186) — +14 including 7 new
+  binary/testlet tests and the updated regression guards.
+- End-to-end AppTest covers all 5 scenarios × Run without
+  exception (≈ 2 min CI runtime).
+
 ## 0.2.12-beta - 2026-04-18
 
 Process hotfix responding to a user question after the v0.2.11

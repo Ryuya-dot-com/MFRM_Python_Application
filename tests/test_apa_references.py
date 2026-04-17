@@ -39,8 +39,14 @@ def test_citation_keys_follow_lastname_year_convention():
 
 
 def test_citation_parens_use_correct_form():
-    """Every citation string should be `(Author, Year)` or `(Author & Author, Year)`."""
-    pattern = re.compile(r"^\([A-Z][^,]+, \d{4}\)$")
+    """Every citation string should end with `, YYYY)` and start with `(Surname`.
+
+    Accepts 1-, 2-, and 3-author forms:
+      (Linacre, 2024)
+      (Wright & Masters, 1982)
+      (Bradlow, Wainer & Wang, 1999)
+    """
+    pattern = re.compile(r"^\([A-Z][^)]+, \d{4}\)$")
     bad = [c for c in app._CITATION_TO_KEY if not pattern.match(c)]
     assert not bad, f"malformed citation strings: {bad}"
 

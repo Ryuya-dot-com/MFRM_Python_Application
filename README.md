@@ -142,9 +142,14 @@ python -m pip install -r requirements-dev.txt
 streamlit run streamlit_app.py
 ```
 
-For a first local smoke check, keep **Sample data (built-in)** selected, leave
-the guided defaults unchanged, click **Run FACETS-mode estimation**, then open
-the **What should I look at first?**, **Data**, **Visuals**, and **Help** tabs.
+For a first local smoke check, keep **Sample data (built-in)** selected (the
+default scenario — ✏️ Writing essay — is loaded automatically), leave the
+guided defaults unchanged, click **Run FACETS-mode estimation**, then open the
+**What should I look at first?**, **Data**, **Visuals**, and **Help** tabs.
+Switch the **Sample scenario** selectbox to *📚 Large-scale writing* for a
+PCA-ready demo, *🎙️ L2 speaking* for an analytic-rubric / PCM experiment, or
+*🏥 Clinical OSCE* for a station-dominant design. Each scenario's sidebar
+**📚 About this dataset** expander lists its APA 7 references.
 
 For deployment notes, including Streamlit Community Cloud settings and privacy gates for hosted use, see `DEPLOYMENT.md`.
 

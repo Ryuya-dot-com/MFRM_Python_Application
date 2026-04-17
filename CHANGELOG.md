@@ -2,6 +2,71 @@
 
 All notable changes to this standalone Streamlit distribution should be recorded here.
 
+## 0.2.7-beta - 2026-04-17
+
+Sample-data enrichment. Replaces the single hardcoded 960-observation
+demo with a registry of four literature-grounded synthetic scenarios,
+each sized and parameterised for a different diagnostic emphasis.
+Users who want to see residual PCA, bias heatmaps, or the rater-
+severity Wright-map callout at publication-realistic scale can now
+pick a scenario that actually exercises those paths.
+
+### Added
+
+- **Four built-in sample-data scenarios** selectable from a new
+  `Sample scenario` sidebar selectbox:
+  - ✏️ **Writing essay** (30×4×2×4, 960 obs) — the v0.1+ default,
+    retained unchanged. (Eckes, 2011; McNamara, 1996; Linacre, 1989)
+  - 📚 **Large-scale writing** (120×4×2×3, 2,880 obs) — sized for
+    stable residual-PCA; one rater deliberately injected at +1.6
+    logits of severity so the bias heatmap and misfit ranking have a
+    legible signal. (Myford & Wolfe, 2003, 2004; Engelhard, 1994,
+    2013; Smith, 2002)
+  - 🎙️ **L2 speaking** (80×3×3×5, 3,600 obs) — analytic rubric with
+    five criteria; Pronunciation is hardest by design. Tighter rater
+    severity spread typical of trained panels.
+    (McNamara, 1996; Bachman & Palmer, 1996; Luoma, 2004)
+  - 🏥 **Clinical OSCE** (60×4×5×3, 3,600 obs) — five stations ×
+    three competencies on a compact 4-point scale; station difficulty
+    is the dominant source of variation. (Downing & Yudkowsky, 2009;
+    Tavakol & Dennick, 2011; Wolfe & Song, 2015)
+- **"📚 About this dataset" sidebar expander** renders the chosen
+  scenario's description, design dimensions, observation count, and
+  APA 7 reference list built from the same `_APA_REFERENCE_LIBRARY`
+  the Publication Document uses.
+- **Five new APA 7 references** added to support the new scenarios:
+  Bachman & Palmer (1996), Downing & Yudkowsky (2009), Engelhard
+  (2013), Luoma (2004), Tavakol & Dennick (2011). All integrated
+  into `_CITATION_TO_KEY` so they are pickupable by the narrative
+  citation scanner.
+- **`_self_test_sample_data_scenarios`** (test #40) pins every
+  scenario's row-count / score-bounds / citation resolution /
+  determinism contract and enforces backward compatibility of the
+  legacy `sample_mfrm_data()` signature.
+
+### Changed
+
+- `sample_mfrm_data(seed)` is now a thin wrapper over the new
+  `sample_mfrm_data_by_key(DEFAULT_SAMPLE_SCENARIO_KEY, seed)`. The
+  default scenario still produces the same 960-row writing-essay
+  demo as v0.1–v0.2.6, so existing screenshots, saved configs, and
+  onboarding tours continue to match.
+- New module-level helper `_generate_mfrm_rsm_from_params(params, seed)`
+  is the single RSM-family generator every scenario shares; each
+  scenario only owns its parameter dict, not the sampling loop.
+- Sample-data CSV download filename now encodes the chosen scenario
+  (`mfrm_sample_<key>.csv`) so users can re-download each scenario
+  without overwriting the previous one.
+
+### Unchanged on purpose
+
+- `cached_sample_mfrm_data(seed)` is retained with the same
+  signature for existing call sites; `cached_sample_mfrm_data_by_key`
+  is the new per-scenario cache.
+- The "Run with sample data" onboarding banner still fires the
+  default writing-essay scenario — first-time users get the familiar
+  small dataset before they discover the selectbox.
+
 ## 0.2.6-beta - 2026-04-17
 
 Progressive-disclosure polish + self-test expansion. Continues the

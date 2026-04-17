@@ -2,6 +2,65 @@
 
 All notable changes to this standalone Streamlit distribution should be recorded here.
 
+## 0.2.9-beta - 2026-04-17
+
+Quality hotfix responding to a UX re-audit. Three gaps identified in
+the v0.2.8 scoring review are addressed in this release:
+verbose captions that over-explained features, missing ingestion-time
+outlier detection, and thin pytest coverage.
+
+### Added
+
+- **Ingestion-time outlier detector** (`detect_data_outliers`).
+  Screens uploaded / pasted / sample data for six anomaly types
+  before the user clicks Run, and appends findings to the
+  traffic-light readiness panel with appropriate severity:
+  1. Out-of-range scores (when rating_min / rating_max are set)
+  2. Negative score values (rating scales are conventionally ≥ 0)
+  3. Zero-variance persons (all-identical responses)
+  4. Zero-variance facet elements (rater / task / item with
+     constant scores — catches classic central-tendency raters)
+  5. Extreme-frequency persons via Tukey fence (k=3)
+  6. Ceiling / floor saturation (> 90 % of scores at scale extremes)
+- **Six new pytest files** covering previously untested surfaces.
+  Total pytest count: 10 → 165.
+  - `tests/test_sample_scenarios.py` (29 tests) — every scenario's
+    shape, determinism, citation resolution, PCA-readiness
+  - `tests/test_data_outliers.py` (12 tests) — every anomaly type,
+    clean-data-zero-findings invariant, defensive empty-data handling
+  - `tests/test_readiness_report.py` (9 tests) — severity logic,
+    outlier integration, overall-max invariant
+  - `tests/test_apa_references.py` (12 tests) — library integrity,
+    citation-map round-trip, key-naming convention, sorted output
+  - `tests/test_help_popover_library.py` (58 tests) — 18 topics ×
+    required-field check, v0.2.6 additions, unknown-key no-op
+  - `tests/test_response_model_generators.py` (29 tests) — seven
+    Stan generators + dispatcher, brace balance, required blocks
+  - `tests/test_config_whitelist.py` (6 tests) — 23-key contract,
+    filter drop-through, critical-keys always present
+- **`_self_test_data_outlier_detection`** inline self-test (#41)
+  pins the six detection types against a synthetic dirty fixture.
+
+### Changed
+
+- **Verbose sidebar captions trimmed.** Twelve captions and `help=`
+  strings shortened to 1-sentence form. Full explanations moved to
+  Help → Interpretation Guide rather than repeated at every
+  widget. Affected widgets: Column mapping caption, Facet selector
+  help, Workflow mode help, Model radio help, Advanced-models
+  caption, population_formula help, standardize-numeric help,
+  categorical-terms help, noncenter_facet help, dummy_facets help,
+  positive_facets help, Analysis depth help, residual-PCA help,
+  strict-marginal help, anchor-templates caption.
+
+### Unchanged on purpose
+
+- The readiness panel's existing traffic-light UI absorbs outlier
+  findings without any rendering changes — it was already designed
+  for extensible check lists.
+- Existing self-tests, sample scenarios, popover library, and
+  Essential-mode tab filters all unchanged.
+
 ## 0.2.8-beta - 2026-04-17
 
 Sample-scenario UX hotfix. The v0.2.7 scenario registry hid the

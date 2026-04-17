@@ -43,7 +43,7 @@ if any(flag in sys.argv for flag in CLI_CHECK_FLAGS):
     logging.getLogger("streamlit.runtime.caching.cache_resource_api").setLevel(logging.ERROR)
 
 
-APP_VERSION = "0.2.8-beta"
+APP_VERSION = "0.2.9-beta"
 APP_RELEASE_LABEL = "standalone Python beta"
 RUNTIME_PACKAGE_FLOORS = OrderedDict([
     ("numpy", "1.24"),
@@ -10509,6 +10509,19 @@ def build_readiness_report(
     except Exception:  # pragma: no cover - defensive
         pass
 
+    # v0.2.9-beta: ingestion-time outlier detection. Appends check
+    # entries for zero-variance persons/elements, extreme-frequency
+    # outliers, negative scores, and ceiling/floor saturation. All
+    # findings piggy-back on the same traffic-light UI.
+    try:
+        outlier_checks = detect_data_outliers(
+            data, person_col=person_col, score_col=score_col,
+            facet_cols=facet_cols,
+        )
+        checks.extend(outlier_checks)
+    except Exception:  # pragma: no cover - outlier detection must not break readiness
+        pass
+
     overall = "ok"
     for c in checks:
         overall = _readiness_severity_max(overall, c["severity"])
@@ -10519,6 +10532,186 @@ def build_readiness_report(
         "n_issues": sum(1 for c in checks if c["severity"] == "issue"),
         "n_warnings": sum(1 for c in checks if c["severity"] == "warning"),
     }
+
+
+def detect_data_outliers(
+    data: pd.DataFrame,
+    *,
+    person_col: str,
+    score_col: str,
+    facet_cols: list[str],
+    rating_min: int | float | None = None,
+    rating_max: int | float | None = None,
+) -> list[dict]:
+    """Screen uploaded data for common ingestion-time anomalies.
+
+    Returns a list of readiness-check dicts ({"name", "severity",
+    "headline", "detail"}) so the caller can fold them into the
+    traffic-light readiness report. Each check is defensive — if the
+    relevant columns are missing or the data is too small to compute a
+    meaningful fence, the check is simply skipped.
+
+    Anomaly types detected:
+      1. **Out-of-range scores** (only when `rating_min`/`rating_max`
+         are provided explicitly). Flags ratings that fall outside
+         the declared scale.
+      2. **Negative scores**. Rating scales are conventionally
+         non-negative; negatives usually indicate an encoding error.
+      3. **Zero-variance persons**. Persons whose Score column is
+         constant cannot contribute to ability estimation.
+      4. **Zero-variance facet elements**. Raters / items / tasks
+         whose Score is constant cannot be calibrated. This catches
+         classic "agreeing" or "central-tendency" raters with zero
+         spread.
+      5. **Extreme-frequency persons** (Tukey fence with k=3). Users
+         with far more or far fewer observations than the cohort
+         median — often a cleaning / duplication artefact.
+      6. **Ceiling / floor saturation**. Over 90 % of observations at
+         the scale extremes suggests scale misspecification or
+         response-set behaviour.
+    """
+    findings: list[dict] = []
+
+    if data is None or not hasattr(data, "columns"):
+        return findings
+    cols = set(data.columns)
+
+    # Precompute numeric scores once; all score-based checks use this.
+    scores_num: pd.Series | None = None
+    if score_col in cols:
+        scores_num = pd.to_numeric(data[score_col], errors="coerce")
+
+    # 1. Out-of-range scores (needs an explicit rating scale)
+    if scores_num is not None and rating_min is not None:
+        below = int((scores_num < rating_min).sum())
+        if below > 0:
+            findings.append({
+                "name": "scores_below_range",
+                "severity": "warning" if below < 10 else "issue",
+                "headline": f"{below} score(s) below rating_min ({rating_min})",
+                "detail": "Verify the intended scale; out-of-range scores will be recoded.",
+            })
+    if scores_num is not None and rating_max is not None:
+        above = int((scores_num > rating_max).sum())
+        if above > 0:
+            findings.append({
+                "name": "scores_above_range",
+                "severity": "warning" if above < 10 else "issue",
+                "headline": f"{above} score(s) above rating_max ({rating_max})",
+                "detail": "Verify the intended scale; out-of-range scores will be recoded.",
+            })
+
+    # 2. Negative scores (most rating scales are 0-based or 1-based)
+    if scores_num is not None:
+        n_negative = int((scores_num < 0).sum())
+        if n_negative > 0:
+            findings.append({
+                "name": "scores_negative",
+                "severity": "warning",
+                "headline": f"{n_negative} negative score value(s)",
+                "detail": "Rating scales are typically non-negative — check for encoding errors.",
+            })
+
+    # 3. Zero-variance persons
+    if scores_num is not None and person_col in cols:
+        per_person = pd.Series(scores_num.values).groupby(data[person_col].values).std()
+        # `std` returns NaN for singleton groups — exclude them from
+        # "zero variance" because one observation cannot have zero
+        # variance in a meaningful sense.
+        zero_var_ids = per_person[(per_person == 0) & per_person.notna()].index.tolist()
+        if zero_var_ids:
+            n_zero = len(zero_var_ids)
+            examples = ", ".join(str(x) for x in zero_var_ids[:3])
+            suffix = f", … ({n_zero} total)" if n_zero > 3 else ""
+            findings.append({
+                "name": "zero_variance_persons",
+                "severity": "warning" if n_zero <= 5 else "issue",
+                "headline": f"{n_zero} person(s) with zero score variance",
+                "detail": (
+                    f"All responses identical for: {examples}{suffix}. "
+                    "Their person measures cannot be estimated precisely."
+                ),
+            })
+
+    # 4. Zero-variance facet elements
+    for facet in facet_cols:
+        if scores_num is not None and facet in cols:
+            per_elem = pd.Series(scores_num.values).groupby(data[facet].values).std()
+            zero_var_ids = per_elem[(per_elem == 0) & per_elem.notna()].index.tolist()
+            if zero_var_ids:
+                n_zero = len(zero_var_ids)
+                examples = ", ".join(str(x) for x in zero_var_ids[:3])
+                suffix = f", … ({n_zero} total)" if n_zero > 3 else ""
+                findings.append({
+                    "name": f"zero_variance_{facet}",
+                    "severity": "warning" if n_zero <= 3 else "issue",
+                    "headline": f"{n_zero} `{facet}` element(s) with zero score variance",
+                    "detail": (
+                        f"Constant responses from: {examples}{suffix}. "
+                        "Cannot calibrate these element measures."
+                    ),
+                })
+
+    # 5. Extreme-frequency persons (Tukey fence, k=3)
+    if person_col in cols:
+        counts = data[person_col].value_counts()
+        if len(counts) >= 10:
+            q1 = float(counts.quantile(0.25))
+            q3 = float(counts.quantile(0.75))
+            iqr = q3 - q1
+            if iqr > 0:
+                upper = q3 + 3 * iqr
+                lower = max(1.0, q1 - 3 * iqr)
+                highs = counts[counts > upper]
+                lows = counts[counts < lower]
+                if len(highs) > 0:
+                    findings.append({
+                        "name": "person_over_observed",
+                        "severity": "warning",
+                        "headline": f"{len(highs)} person(s) over-observed",
+                        "detail": (
+                            f"Highest observation count = {int(counts.max())} "
+                            f"(cohort median = {int(counts.median())}). "
+                            "Check for duplicated rows or inconsistent sampling."
+                        ),
+                    })
+                if len(lows) > 0:
+                    findings.append({
+                        "name": "person_under_observed",
+                        "severity": "warning",
+                        "headline": f"{len(lows)} person(s) under-observed",
+                        "detail": (
+                            f"Lowest observation count = {int(counts.min())} "
+                            f"(cohort median = {int(counts.median())}). "
+                            "Their measures will have wide SE."
+                        ),
+                    })
+
+    # 6. Ceiling / floor saturation
+    if scores_num is not None:
+        valid = scores_num.dropna()
+        if len(valid) >= 50:
+            s_min = float(valid.min())
+            s_max = float(valid.max())
+            if s_max > s_min:
+                frac_floor = float((valid == s_min).mean())
+                frac_ceiling = float((valid == s_max).mean())
+                if frac_ceiling > 0.9:
+                    findings.append({
+                        "name": "ceiling_saturation",
+                        "severity": "warning",
+                        "headline": f"{frac_ceiling:.0%} of scores at the ceiling ({s_max:g})",
+                        "detail": "Targeting is poor — most ratings are at the top of the scale.",
+                    })
+                elif frac_floor > 0.9:
+                    findings.append({
+                        "name": "floor_saturation",
+                        "severity": "warning",
+                        "headline": f"{frac_floor:.0%} of scores at the floor ({s_min:g})",
+                        "detail": "Targeting is poor — most ratings are at the bottom of the scale.",
+                    })
+
+    return findings
 
 
 def render_readiness_panel(report: dict) -> None:
@@ -11794,10 +11987,7 @@ def run_facets_mode(core: dict, data: pd.DataFrame) -> None:
     weight_default = next((c for c in cols if "weight" in c.lower()), None)
 
     st.sidebar.subheader("Column mapping")
-    st.sidebar.caption(
-        "Map your columns to MFRM roles. *Person* = examinee/subject; "
-        "*Score* = raw observed rating; facets = sources of systematic variability."
-    )
+    st.sidebar.caption("Map columns to Person, Score, and 2+ facets.")
     person_col = st.sidebar.selectbox(
         "Person column", cols, index=cols.index(person_default),
         help="The column identifying examinees, participants, or subjects being measured.",
@@ -11827,9 +12017,8 @@ def run_facets_mode(core: dict, data: pd.DataFrame) -> None:
         facet_candidates,
         default=default_facets,
         help=(
-            "Select 2 or more facets — sources of systematic variability in the ratings. "
-            "Common facets: Rater (judge), Task (item/prompt), Criterion (rubric dimension). "
-            "Person is handled separately and should NOT be selected here."
+            "2+ sources of variability — e.g. Rater, Task, Criterion. "
+            "Person is handled separately."
         ),
     )
     workflow_mode = st.sidebar.radio(
@@ -11837,16 +12026,12 @@ def run_facets_mode(core: dict, data: pd.DataFrame) -> None:
         ["Guided defaults", "Advanced controls"],
         index=0,
         horizontal=True,
-        help=(
-            "Guided defaults keeps common RSM/PCM settings compact. "
-            "Advanced controls exposes optimizer, constraint, scaling, and script-level tuning."
-        ),
+        help="Guided = compact defaults. Advanced = optimizer / constraint tuning.",
     )
     advanced_controls = workflow_mode == "Advanced controls"
     if not advanced_controls:
         st.sidebar.caption(
-            "Guided defaults are active. Open the collapsed advanced sections only when you need "
-            "custom score ranges, constraints, optimizer tuning, or publication-specific outputs."
+            "Guided defaults active. Switch to Advanced for custom ranges or constraints."
         )
 
     # Phase 2-6: Missing value recoding
@@ -11859,13 +12044,10 @@ def run_facets_mode(core: dict, data: pd.DataFrame) -> None:
         index=0,
         horizontal=True,
         help=(
-            "**RSM** (Rating Scale Model): All elements share common step thresholds. "
-            "Appropriate when the rating scale functions identically across elements "
-            "(e.g., all items use the same rubric). "
-            "**PCM** (Partial Credit Model): Each element of the step facet has its own "
-            "thresholds. Use when categories have different meaning across elements. "
-            "**GPCM** (bounded Generalized PCM): Step-facet levels also get positive "
-            "discrimination/slope parameters. Use as an exploratory slope-aware model."
+            "RSM: shared thresholds across elements. "
+            "PCM: per-element thresholds. "
+            "GPCM: per-element thresholds + discrimination (exploratory). "
+            "See Help → Interpretation Guide for full details."
         ),
     )
 
@@ -11875,9 +12057,8 @@ def run_facets_mode(core: dict, data: pd.DataFrame) -> None:
     # default so it doesn't clutter the sidebar for RSM/PCM/GPCM users.
     with st.sidebar.expander("🧪 Advanced models (Stan, download only)", expanded=False):
         st.caption(
-            "These models are estimated by compiling and sampling Stan "
-            "**locally on your machine** using the exported runner script. "
-            "This app never compiles or samples them in the browser."
+            "Compile and sample Stan locally with the exported runner. "
+            "The app never samples in the browser."
         )
         _advanced_enabled = st.checkbox(
             "Enable advanced model download",
@@ -12070,10 +12251,7 @@ def run_facets_mode(core: dict, data: pd.DataFrame) -> None:
             population_formula = st.text_input(
                 "population_formula",
                 value="~ 1",
-                help=(
-                    "Use '~ 1' for an estimated population intercept, or '~ grade + ses' "
-                    "for person-level covariates. Interactions and transformations are not yet enabled."
-                ),
+                help="'~ 1' = intercept. '~ grade + ses' = covariates. Interactions not yet supported.",
             )
             population_person_id_col = st.text_input(
                 "Person ID column in person_data",
@@ -12083,17 +12261,14 @@ def run_facets_mode(core: dict, data: pd.DataFrame) -> None:
             population_standardize_numeric = st.checkbox(
                 "Standardize numeric covariates",
                 value=False,
-                help=(
-                    "Centers and scales numeric population_formula covariates before MML fitting. "
-                    "The same saved mean/SD are applied to prediction rows for unknown persons."
-                ),
+                help="Centers and scales numeric covariates; same mean/SD applied to predictions.",
             )
             population_categorical_terms = st.text_input(
                 "Force categorical covariates (optional)",
                 value="",
                 help=(
-                    "Comma-separated population_formula terms to dummy-code as categorical even when they look numeric, "
-                    "for example 'grade_code, school_type'. This avoids treating numeric IDs as continuous predictors."
+                    "Comma-separated terms to dummy-code (e.g. 'grade_code, school_type'). "
+                    "Use to stop numeric IDs being treated as continuous."
                 ),
             )
             population_numeric_terms = st.text_input(
@@ -12206,11 +12381,8 @@ def run_facets_mode(core: dict, data: pd.DataFrame) -> None:
             ["Person"] + facet_cols,
             index=0,
             help=(
-                "The facet whose parameters are **not** sum-to-zero constrained. "
-                "Typically 'Person' — meaning person abilities float freely while "
-                "all other facet parameters are constrained to sum to zero. "
-                "Change this only if you want to free a different facet "
-                "(e.g., fix raters and let items float)."
+                "Facet left free (not sum-to-zero). Default 'Person' = abilities float, "
+                "other facets centered. Change only to free a different facet."
             ),
         )
         dummy_facets = st.multiselect(
@@ -12218,11 +12390,8 @@ def run_facets_mode(core: dict, data: pd.DataFrame) -> None:
             ["Person"] + facet_cols,
             default=[],
             help=(
-                "Facets listed here are **not centered** (no sum-to-zero constraint). "
-                "Use for facets that are nuisance variables — their parameters are estimated "
-                "but not interpreted substantively. Example: if 'Task' is a grouping variable "
-                "with unbalanced design, treating it as dummy prevents it from distorting "
-                "the logit scale."
+                "Uncentered nuisance facets — estimated but not substantively interpreted. "
+                "Useful for unbalanced grouping variables that would otherwise distort the scale."
             ),
         )
         positive_facets = st.multiselect(
@@ -12230,10 +12399,8 @@ def run_facets_mode(core: dict, data: pd.DataFrame) -> None:
             facet_cols,
             default=[],
             help=(
-                "By default, higher facet measures indicate **more severity** (harder/stricter). "
-                "List facets here if higher measures should indicate a **positive** contribution "
-                "(e.g., 'Ability' where higher = better). This reverses the sign convention "
-                "for the selected facets."
+                "Reverses the sign convention: higher = more positive (e.g. 'Ability'), "
+                "instead of the default higher = more severe."
             ),
         )
         maxit = int(st.number_input(
@@ -12290,7 +12457,7 @@ def run_facets_mode(core: dict, data: pd.DataFrame) -> None:
             placeholder="Facet,Level,Group,GroupValue\nRater,R1,Expert,0.0\nRater,R2,Expert,0.0",
         )
     with st.sidebar.expander("Bundled anchor templates", expanded=False):
-        st.caption("Download blank/example files or read the short anchor guideline before using linking constraints.")
+        st.caption("Blank / example anchor files.")
         template_files = [
             ("anchor_table_blank.csv", "Blank fixed-anchor CSV"),
             ("anchor_table_example.csv", "Example fixed-anchor CSV"),
@@ -12402,30 +12569,20 @@ def run_facets_mode(core: dict, data: pd.DataFrame) -> None:
         "Analysis depth",
         ["Fast preview", "Standard (recommended)", "Full publication", "Custom"],
         index=1,
-        help=(
-            "Controls expensive post-estimation diagnostics. Fast preview skips "
-            "PCA, bias scans, and plot rendering. Full publication computes the "
-            "heaviest outputs for final review."
-        ),
+        help="Fast = skip PCA/bias/plots. Full = all publication outputs.",
     )
     preset_settings = resolve_analysis_depth_settings(analysis_depth, est_method)
     if analysis_depth == "Custom":
         compute_residual_pca = st.sidebar.checkbox(
             "Compute residual PCA",
             value=bool(preset_settings["compute_residual_pca"]),
-            help=(
-                "PCA checks whether residuals still contain a secondary dimension. "
-                "Turn off for very large data or quick iteration."
-            ),
+            help="Secondary-dimension check. Skip for very large data.",
         )
         compute_strict_marginal = st.sidebar.checkbox(
             "Compute strict marginal diagnostics",
             value=bool(preset_settings["compute_strict_marginal"]),
             disabled=(est_method != "MML"),
-            help=(
-                "MML-only screen comparing observed category counts to model-implied "
-                "marginal expected counts. Use for final reporting or suspicious fit."
-            ),
+            help="MML-only screen: observed vs. model-implied category counts.",
         )
         strict_marginal_pairwise = bool(preset_settings["strict_marginal_pairwise"])
         strict_marginal_max_pair_cells = int(preset_settings["strict_marginal_max_pair_cells"])
@@ -25963,6 +26120,103 @@ def _self_test_essential_mode_tab_filters() -> None:
     )
 
 
+def _self_test_data_outlier_detection() -> None:
+    """Pin the six ingestion-time anomaly detectors in `detect_data_outliers`.
+
+    Builds a synthetic dataset that intentionally contains one case of
+    each anomaly the function screens for, then asserts each check
+    type appears in the findings list. Clean data produces zero
+    findings — no false positives.
+    """
+    rng = np.random.default_rng(20260417)
+    rows: list[tuple] = []
+    # Baseline: 20 normal persons × 3 raters × 2 tasks = 120 rows
+    for pi in range(1, 21):
+        for ri in range(1, 4):
+            for ti in range(1, 3):
+                rows.append((f"P{pi:02d}", f"R{ri}", f"T{ti}",
+                             int(rng.integers(0, 6))))
+    clean_df = pd.DataFrame(rows, columns=["Person", "Rater", "Task", "Score"])
+
+    # Clean data → zero findings
+    findings = detect_data_outliers(
+        clean_df, person_col="Person", score_col="Score",
+        facet_cols=["Rater", "Task"],
+    )
+    _self_test_assert(
+        len(findings) == 0,
+        f"clean dataset produced {len(findings)} false-positive findings: "
+        f"{[f['name'] for f in findings]}",
+    )
+
+    # Inject every anomaly type
+    rows_dirty = list(rows)
+    # Zero-variance person
+    for ri in range(1, 4):
+        for ti in range(1, 3):
+            rows_dirty.append(("P21_CONSTANT", f"R{ri}", f"T{ti}", 3))
+    # Zero-variance rater
+    for pi in range(1, 15):
+        rows_dirty.append((f"P{pi:02d}", "R4_CONSTANT", "T1", 5))
+    # Negative + out-of-range
+    rows_dirty.append(("P_NEG", "R1", "T1", -2))
+    rows_dirty.append(("P_HIGH", "R1", "T1", 99))
+    # Over-observed person
+    for _ in range(250):
+        rows_dirty.append(("P_OVER", "R1", "T1", int(rng.integers(0, 6))))
+    dirty_df = pd.DataFrame(rows_dirty, columns=["Person", "Rater", "Task", "Score"])
+
+    findings_dirty = detect_data_outliers(
+        dirty_df, person_col="Person", score_col="Score",
+        facet_cols=["Rater", "Task"],
+        rating_min=0, rating_max=5,
+    )
+    found_names = {f["name"] for f in findings_dirty}
+    expected = {
+        "scores_below_range",
+        "scores_above_range",
+        "scores_negative",
+        "zero_variance_persons",
+        "zero_variance_Rater",
+        "person_over_observed",
+    }
+    missing = expected - found_names
+    _self_test_assert(
+        not missing,
+        f"outlier detection failed to flag: {missing}. Found: {found_names}",
+    )
+
+    # Every finding has the readiness-check shape.
+    for f in findings_dirty:
+        for required in ("name", "severity", "headline", "detail"):
+            _self_test_assert(
+                required in f,
+                f"finding {f.get('name', '?')!r} missing field {required!r}",
+            )
+        _self_test_assert(
+            f["severity"] in ("ok", "warning", "issue"),
+            f"finding {f['name']!r} has invalid severity {f['severity']!r}",
+        )
+
+    # Ceiling saturation (separate fixture because it requires ≥ 50 rows
+    # with > 90 % at the max).
+    ceiling_df = pd.DataFrame({
+        "Person": [f"C{i:02d}" for i in range(60)],
+        "Rater": ["R1"] * 60,
+        "Task": ["T1"] * 60,
+        "Score": [5] * 55 + [3, 4, 4, 5, 4],
+    })
+    ceiling_findings = detect_data_outliers(
+        ceiling_df, person_col="Person", score_col="Score",
+        facet_cols=["Rater", "Task"],
+    )
+    ceiling_names = {f["name"] for f in ceiling_findings}
+    _self_test_assert(
+        "ceiling_saturation" in ceiling_names,
+        f"ceiling saturation not detected: {ceiling_names}",
+    )
+
+
 def _self_test_sample_data_scenarios() -> None:
     """Validate every entry in `SAMPLE_DATA_SCENARIOS` generates usable data.
 
@@ -27665,6 +27919,7 @@ def run_self_tests() -> int:
         ("Help popover library", _self_test_help_popover_library),
         ("Essential-mode tab filters", _self_test_essential_mode_tab_filters),
         ("Sample-data scenarios", _self_test_sample_data_scenarios),
+        ("Data-outlier detection", _self_test_data_outlier_detection),
         ("Posterior NetCDF round-trip", _self_test_posterior_load_netcdf),
         ("Posterior CmdStan CSV loader", _self_test_posterior_load_cmdstan_csvs),
         ("Config-JSON import whitelist", _self_test_config_json_import_whitelist),

@@ -43,7 +43,7 @@ if any(flag in sys.argv for flag in CLI_CHECK_FLAGS):
     logging.getLogger("streamlit.runtime.caching.cache_resource_api").setLevel(logging.ERROR)
 
 
-APP_VERSION = "0.2.9-beta"
+APP_VERSION = "0.2.10-beta"
 APP_RELEASE_LABEL = "standalone Python beta"
 RUNTIME_PACKAGE_FLOORS = OrderedDict([
     ("numpy", "1.24"),
@@ -11061,74 +11061,382 @@ _PUBLICATION_DOCUMENT_CORE_REFS: list[str] = [
 ]
 
 
+# ---------------------------------------------------------------------------
+# matplotlib fallback for publication figures (v0.2.10-beta)
+#
+# Problem: kaleido 1.x requires a Chrome / Chromium binary to render
+# Plotly figures to PNG. Streamlit Community Cloud does not ship
+# Chrome, so `fig_to_png_bytes()` silently returns None there and the
+# Publication Document PDF ends up with no plots. Matplotlib is a
+# pure-Python rendering path with no browser dependency, so we use it
+# as a guaranteed fallback. When Chrome IS available the Plotly path
+# is preferred because the interactive-styled Plotly figure is what
+# users see on screen.
+#
+# Each helper below renders one publication figure from the raw data
+# in the result / diagnostics dicts (not from the Plotly figure
+# object) so it works even when the Plotly build fails.
+# ---------------------------------------------------------------------------
+
+
+def _mpl_safe_import():
+    """Import matplotlib.pyplot with the Agg backend. Returns (plt, None) or (None, error_str)."""
+    try:
+        import matplotlib
+        matplotlib.use("Agg", force=False)
+        import matplotlib.pyplot as plt
+        return plt, None
+    except ImportError as exc:
+        return None, f"matplotlib not available: {exc}"
+
+
+def _mpl_fig_to_png_bytes(fig, dpi: int = PUBLICATION_FIGURE_DPI) -> bytes | None:
+    """Serialise a matplotlib Figure to PNG bytes and close it."""
+    try:
+        import io as _io
+        buf = _io.BytesIO()
+        fig.savefig(buf, format="png", dpi=dpi, bbox_inches="tight")
+        return buf.getvalue()
+    except Exception:
+        return None
+    finally:
+        try:
+            import matplotlib.pyplot as plt
+            plt.close(fig)
+        except Exception:
+            pass
+
+
+def _mpl_wright_map_png(result: dict, diagnostics: dict) -> bytes | None:
+    """Matplotlib Wright map: person abilities (left) vs. facet elements (right)."""
+    plt, err = _mpl_safe_import()
+    if plt is None:
+        return None
+    try:
+        # Person ability distribution
+        facets = result.get("facets", {}) if isinstance(result, dict) else {}
+        person_df = facets.get("person") if isinstance(facets, dict) else None
+        measures = diagnostics.get("measures") if isinstance(diagnostics, dict) else None
+        if not isinstance(person_df, pd.DataFrame) or person_df.empty:
+            return None
+
+        person_est = pd.to_numeric(person_df.get("Estimate"), errors="coerce").dropna()
+        if person_est.empty:
+            return None
+
+        fig, (ax_l, ax_r) = plt.subplots(
+            1, 2, figsize=(10, 6), sharey=True,
+            gridspec_kw={"width_ratios": [1, 1.4], "wspace": 0.08},
+        )
+        # Persons — horizontal histogram
+        ax_l.hist(
+            person_est.values, bins=20, orientation="horizontal",
+            color="#0d7a5a", edgecolor="white", alpha=0.85,
+        )
+        ax_l.set_title("Persons", fontsize=11)
+        ax_l.set_xlabel("Count")
+        ax_l.invert_xaxis()
+        ax_l.grid(axis="y", alpha=0.25)
+        ax_l.axhline(0, color="#666666", linewidth=0.7)
+
+        # Facet elements — scatter with labels
+        if isinstance(measures, pd.DataFrame) and not measures.empty:
+            facet_col = "Facet" if "Facet" in measures.columns else None
+            if facet_col is not None:
+                colors = plt.cm.tab10.colors
+                facet_names = list(measures[facet_col].astype(str).unique())
+                offsets = {name: i for i, name in enumerate(facet_names)}
+                for name in facet_names:
+                    sub = measures[measures[facet_col].astype(str) == name]
+                    y = pd.to_numeric(sub.get("Estimate"), errors="coerce")
+                    x = [offsets[name]] * len(sub)
+                    color = colors[offsets[name] % len(colors)]
+                    ax_r.scatter(x, y, color=color, s=35, alpha=0.8, label=name)
+                ax_r.set_xticks(list(offsets.values()))
+                ax_r.set_xticklabels(list(offsets.keys()), rotation=25, ha="right")
+        ax_r.set_title("Facet elements", fontsize=11)
+        ax_r.set_ylabel("Logit measure")
+        ax_r.axhline(0, color="#666666", linewidth=0.7)
+        ax_r.grid(axis="y", alpha=0.25)
+
+        fig.suptitle("Wright map (person–element targeting)", fontsize=13, y=1.02)
+        return _mpl_fig_to_png_bytes(fig)
+    except Exception:
+        return None
+
+
+def _mpl_fit_scatter_png(diagnostics: dict) -> bytes | None:
+    """Matplotlib fit scatter: Infit (x) vs Outfit (y) with acceptable-zone bands."""
+    plt, err = _mpl_safe_import()
+    if plt is None:
+        return None
+    try:
+        measures = diagnostics.get("measures") if isinstance(diagnostics, dict) else None
+        if not isinstance(measures, pd.DataFrame) or measures.empty:
+            return None
+        infit = pd.to_numeric(measures.get("Infit"), errors="coerce")
+        outfit = pd.to_numeric(measures.get("Outfit"), errors="coerce")
+        mask = infit.notna() & outfit.notna()
+        if int(mask.sum()) < 2:
+            return None
+        infit = infit[mask]
+        outfit = outfit[mask]
+
+        fig, ax = plt.subplots(figsize=(7.5, 6))
+        # Acceptable zone shading (0.5–1.5 on both axes)
+        ax.axhspan(0.5, 1.5, facecolor="#b2dfb8", alpha=0.25, zorder=0)
+        ax.axvspan(0.5, 1.5, facecolor="#b2dfb8", alpha=0.25, zorder=0)
+        # Reference lines at 1.0 (expected value)
+        ax.axhline(1.0, color="#444444", linewidth=0.8, linestyle="--", zorder=1)
+        ax.axvline(1.0, color="#444444", linewidth=0.8, linestyle="--", zorder=1)
+        # Scatter
+        facet_col = "Facet" if "Facet" in measures.columns else None
+        if facet_col is not None:
+            facets = measures.loc[mask, facet_col].astype(str)
+            colors = plt.cm.tab10.colors
+            for i, name in enumerate(facets.unique()):
+                sel = facets == name
+                ax.scatter(
+                    infit[sel], outfit[sel],
+                    color=colors[i % len(colors)], label=name,
+                    alpha=0.8, s=40, edgecolor="white", linewidth=0.5,
+                )
+            ax.legend(loc="best", fontsize=9, framealpha=0.9)
+        else:
+            ax.scatter(infit, outfit, color="#0d7a5a", alpha=0.8, s=40)
+
+        ax.set_xlabel("Infit mean-square", fontsize=12)
+        ax.set_ylabel("Outfit mean-square", fontsize=12)
+        ax.set_title("Fit scatter (Infit vs Outfit)", fontsize=13)
+        ax.grid(alpha=0.3)
+        ax.set_xlim(max(0, min(infit.min(), 0.4)), max(infit.max() * 1.05, 2.0))
+        ax.set_ylim(max(0, min(outfit.min(), 0.4)), max(outfit.max() * 1.05, 2.0))
+        return _mpl_fig_to_png_bytes(fig)
+    except Exception:
+        return None
+
+
+def _mpl_category_probability_png(result: dict) -> bytes | None:
+    """Matplotlib category probability curves across the latent scale."""
+    plt, err = _mpl_safe_import()
+    if plt is None:
+        return None
+    try:
+        # `build_category_probability_curve_data` is the public helper
+        # that returns {"available": bool, "probability": DataFrame, ...}
+        builder = globals().get("build_category_probability_curve_data")
+        if not callable(builder):
+            return None
+        curve = builder(result)
+        if not isinstance(curve, dict) or not curve.get("available"):
+            return None
+        prob = curve.get("probability")
+        if not isinstance(prob, pd.DataFrame) or prob.empty or "Theta" not in prob.columns:
+            return None
+
+        theta = pd.to_numeric(prob["Theta"], errors="coerce").values
+        category_cols = [c for c in prob.columns if c not in ("Theta", "Expected")]
+        if not category_cols:
+            return None
+
+        fig, ax = plt.subplots(figsize=(8, 5.5))
+        colors = plt.cm.viridis(np.linspace(0, 0.9, len(category_cols)))
+        for i, cname in enumerate(category_cols):
+            y = pd.to_numeric(prob[cname], errors="coerce").values
+            ax.plot(theta, y, color=colors[i], linewidth=2, label=str(cname))
+        ax.set_xlabel("Latent measure θ (logits)", fontsize=12)
+        ax.set_ylabel("P(category)", fontsize=12)
+        ax.set_title("Category probability curves", fontsize=13)
+        ax.grid(alpha=0.3)
+        ax.set_ylim(-0.02, 1.02)
+        ax.legend(title="Category", loc="best", fontsize=9, framealpha=0.9)
+        return _mpl_fig_to_png_bytes(fig)
+    except Exception:
+        return None
+
+
+def _mpl_facet_distribution_png(diagnostics: dict) -> bytes | None:
+    """Matplotlib box plot of measures within each facet."""
+    plt, err = _mpl_safe_import()
+    if plt is None:
+        return None
+    try:
+        measures = diagnostics.get("measures") if isinstance(diagnostics, dict) else None
+        if not isinstance(measures, pd.DataFrame) or measures.empty:
+            return None
+        if "Facet" not in measures.columns or "Estimate" not in measures.columns:
+            return None
+
+        pdf = measures.copy()
+        pdf["Estimate"] = pd.to_numeric(pdf["Estimate"], errors="coerce")
+        pdf = pdf.dropna(subset=["Estimate"])
+        if pdf.empty:
+            return None
+
+        facet_groups: list[tuple[str, np.ndarray]] = []
+        for name in pdf["Facet"].astype(str).unique():
+            vals = pdf.loc[pdf["Facet"].astype(str) == name, "Estimate"].values
+            if len(vals) >= 1:
+                facet_groups.append((name, vals))
+        if not facet_groups:
+            return None
+
+        fig, ax = plt.subplots(figsize=(8, 5.5))
+        labels = [g[0] for g in facet_groups]
+        values = [g[1] for g in facet_groups]
+        # `tick_labels` replaced the deprecated `labels` kwarg in
+        # matplotlib 3.9; fall back to the old name when older versions
+        # are installed so we stay compatible with the pinned floor.
+        try:
+            bp = ax.boxplot(
+                values, tick_labels=labels, patch_artist=True, widths=0.55,
+                medianprops={"color": "#222222", "linewidth": 1.5},
+            )
+        except TypeError:
+            bp = ax.boxplot(
+                values, labels=labels, patch_artist=True, widths=0.55,
+                medianprops={"color": "#222222", "linewidth": 1.5},
+            )
+        colors = plt.cm.tab10.colors
+        for i, patch in enumerate(bp["boxes"]):
+            patch.set_facecolor(colors[i % len(colors)])
+            patch.set_alpha(0.55)
+        # Overlay strip-plot of raw values
+        for i, (_, vals) in enumerate(facet_groups, start=1):
+            jitter = (np.random.default_rng(42 + i).normal(0, 0.05, size=len(vals)))
+            ax.scatter(np.full_like(vals, i, dtype=float) + jitter, vals,
+                       color="#222222", alpha=0.55, s=12, zorder=3)
+
+        ax.set_ylabel("Logit measure", fontsize=12)
+        ax.set_title("Facet element distribution", fontsize=13)
+        ax.grid(axis="y", alpha=0.3)
+        ax.axhline(0, color="#666666", linewidth=0.7, linestyle="--")
+        fig.autofmt_xdate(rotation=20)
+        return _mpl_fig_to_png_bytes(fig)
+    except Exception:
+        return None
+
+
+def _plotly_or_matplotlib_png(
+    plotly_fig,
+    matplotlib_fallback,
+) -> bytes | None:
+    """Try Plotly (kaleido → Chrome) first; fall back to matplotlib.
+
+    The Plotly path produces PNGs styled identically to the on-screen
+    figure, so it is preferred when Chrome is available. On Streamlit
+    Community Cloud Chrome is typically absent and `fig_to_png_bytes`
+    returns None — we then call the matplotlib fallback, which needs
+    nothing beyond the raw data and always succeeds.
+    """
+    if plotly_fig is not None:
+        png = fig_to_png_bytes(plotly_fig)
+        if png:
+            return png
+    # matplotlib_fallback is a zero-arg callable that produces bytes
+    try:
+        return matplotlib_fallback()
+    except Exception:
+        return None
+
+
 def _publication_figure_payloads(
     result: dict, diagnostics: dict,
 ) -> list[tuple[str, str, bytes]]:
     """Render the core publication figures as PNG bytes for Word/PDF embedding.
 
-    Returns a list of (figure_id, caption, png_bytes). Figures that cannot be
-    rendered (missing data, kaleido unavailable) are silently omitted so the
-    document still builds.
+    Returns a list of (figure_id, caption, png_bytes). Prefers the
+    Plotly export (kaleido + Chrome) for parity with the on-screen
+    visuals, but falls back to matplotlib when Chrome is unavailable
+    — so PDFs / Word docs always have their core figures embedded,
+    even on Streamlit Community Cloud.
     """
     out: list[tuple[str, str, bytes]] = []
 
     # Wright map
     try:
-        wright_fig = _make_wright_map_export_figure(result, diagnostics)
-        if wright_fig is not None:
-            png = fig_to_png_bytes(wright_fig)
-            if png:
-                out.append((
-                    "wright_map",
-                    "Wright map aligning person abilities and facet element measures on a common logit scale.",
-                    png,
-                ))
+        wright_fig = None
+        try:
+            wright_fig = _make_wright_map_export_figure(result, diagnostics)
+        except Exception:
+            pass
+        png = _plotly_or_matplotlib_png(
+            wright_fig,
+            lambda: _mpl_wright_map_png(result, diagnostics),
+        )
+        if png:
+            out.append((
+                "wright_map",
+                "Wright map aligning person abilities and facet element measures on a common logit scale.",
+                png,
+            ))
     except Exception:  # pragma: no cover - figure helpers may refuse some inputs
         pass
 
     # Fit scatter (Infit vs Outfit)
     try:
+        fit_fig = None
         measures = diagnostics.get("measures")
         if isinstance(measures, pd.DataFrame) and not measures.empty:
-            fit_fig = _make_fit_scatter_export_figure(measures)
-            if fit_fig is not None:
-                png = fig_to_png_bytes(fit_fig)
-                if png:
-                    out.append((
-                        "fit_scatter",
-                        "Infit vs Outfit mean-square statistics across facet elements (1.0 = expected).",
-                        png,
-                    ))
+            try:
+                fit_fig = _make_fit_scatter_export_figure(measures)
+            except Exception:
+                pass
+        png = _plotly_or_matplotlib_png(
+            fit_fig,
+            lambda: _mpl_fit_scatter_png(diagnostics),
+        )
+        if png:
+            out.append((
+                "fit_scatter",
+                "Infit vs Outfit mean-square statistics across facet elements (1.0 = expected).",
+                png,
+            ))
     except Exception:
         pass
 
     # Category probability curves
     try:
-        cp_figs = _make_category_probability_curve_figures(result)
-        if isinstance(cp_figs, dict):
-            for cp_name, cp_fig in cp_figs.items():
-                png = fig_to_png_bytes(cp_fig)
-                if png:
-                    out.append((
-                        f"category_curves_{cp_name}",
-                        f"Category probability curves — {cp_name}.",
-                        png,
-                    ))
-                    break  # First curve is enough for the publication doc
+        cp_figs: dict | None = None
+        try:
+            cp_figs = _make_category_probability_curve_figures(result)
+        except Exception:
+            cp_figs = None
+        first_plotly = None
+        first_name = ""
+        if isinstance(cp_figs, dict) and cp_figs:
+            first_name, first_plotly = next(iter(cp_figs.items()))
+        png = _plotly_or_matplotlib_png(
+            first_plotly,
+            lambda: _mpl_category_probability_png(result),
+        )
+        if png:
+            label = first_name or "Average"
+            out.append((
+                f"category_curves_{label}",
+                f"Category probability curves — {label}.",
+                png,
+            ))
     except Exception:
         pass
 
     # Facet distribution
     try:
-        fd_fig = _make_facet_distribution_export_figure(diagnostics)
-        if fd_fig is not None:
-            png = fig_to_png_bytes(fd_fig)
-            if png:
-                out.append((
-                    "facet_distribution",
-                    "Facet distribution of element measures.",
-                    png,
-                ))
+        fd_fig = None
+        try:
+            fd_fig = _make_facet_distribution_export_figure(diagnostics)
+        except Exception:
+            pass
+        png = _plotly_or_matplotlib_png(
+            fd_fig,
+            lambda: _mpl_facet_distribution_png(diagnostics),
+        )
+        if png:
+            out.append((
+                "facet_distribution",
+                "Facet distribution of element measures.",
+                png,
+            ))
     except Exception:
         pass
 
@@ -11768,86 +12076,111 @@ def _render_publication_document_section(
         "your workflow: Word for further editing, PDF for sharing, HTML for web."
     )
 
-    # Build the three documents lazily — on first button click only — so
-    # users who don't want a publication download aren't paying the cost.
-    # The actual bytes are regenerated on each click so edits to the sidebar
-    # are reflected; document size is small enough that this is fine.
+    # v0.2.10-beta: one-click downloads for all three formats. Each
+    # format is built lazily on first entry to this tab and cached in
+    # session_state keyed by a fingerprint of the current run; subsequent
+    # sidebar reruns reuse the cached bytes so only genuinely new runs
+    # trigger a rebuild. The PDF button is promoted to `type="primary"`
+    # because the user explicitly asked for the PDF to be the easy path.
+
+    # Fingerprint the current run so cache invalidates only when the
+    # underlying results actually change, not on every sidebar rerun.
+    try:
+        _run_fp = stable_json_fingerprint({
+            "config": result.get("config", {}),
+            "prep": result.get("prep", {}),
+            "summary_len": len(result.get("summary", pd.DataFrame())),
+            "measures_len": len(diagnostics.get("measures", pd.DataFrame())),
+        })
+    except Exception:
+        _run_fp = f"no_fp_{id(result)}"
+
+    def _cached_build(
+        label: str, kind: str, builder, allow_runtime_error: bool = True,
+    ) -> tuple[bytes | None, str | None]:
+        """Build document bytes or pull them from session_state cache."""
+        cache_key = f"_publication_doc_{kind}_bytes"
+        fp_key = f"_publication_doc_{kind}_fp"
+        if (
+            cache_key in st.session_state
+            and st.session_state.get(fp_key) == _run_fp
+        ):
+            return st.session_state[cache_key], None
+        try:
+            with st.spinner(f"Building {label}…"):
+                data = builder(result, diagnostics, all_bias_results)
+            st.session_state[cache_key] = data
+            st.session_state[fp_key] = _run_fp
+            return data, None
+        except RuntimeError as exc:
+            if allow_runtime_error:
+                return None, f"{label} export unavailable: {exc}"
+            raise
+        except Exception as exc:  # pragma: no cover
+            return None, f"{label} build failed: {exc}"
+
     col_w, col_p, col_h = st.columns(3)
 
     with col_w:
-        if st.button(
-            "📄 Generate & download Word",
-            key="publication_doc_word_build",
-            use_container_width=True,
-            help="Build a .docx document with auto Methods, tables, figures, and References.",
-        ):
-            try:
-                data = build_publication_word_bytes(result, diagnostics, all_bias_results)
-                st.session_state["_publication_doc_word_bytes"] = data
-            except RuntimeError as exc:
-                st.error(f"Word export unavailable: {exc}")
-            except Exception as exc:  # pragma: no cover - defensive
-                st.error(f"Word build failed: {exc}")
-        if "_publication_doc_word_bytes" in st.session_state:
+        word_bytes, word_err = _cached_build(
+            "Word", "word", build_publication_word_bytes,
+        )
+        if word_bytes is not None:
             st.download_button(
-                "⬇ Download .docx",
-                data=st.session_state["_publication_doc_word_bytes"],
+                "⬇ Download Word (.docx)",
+                data=word_bytes,
                 file_name="mfrm_publication_document.docx",
                 mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
                 key="publication_doc_word_dl",
                 use_container_width=True,
+                help="Editable manuscript with tables + embedded figures.",
             )
+        elif word_err:
+            st.caption(f"⚠️ {word_err}")
 
     with col_p:
-        if st.button(
-            "📄 Generate & download PDF",
-            key="publication_doc_pdf_build",
-            use_container_width=True,
-            help="Build a letter-size PDF with the same content as the Word export.",
-        ):
-            try:
-                data = build_publication_pdf_bytes(result, diagnostics, all_bias_results)
-                st.session_state["_publication_doc_pdf_bytes"] = data
-            except RuntimeError as exc:
-                st.error(f"PDF export unavailable: {exc}")
-            except Exception as exc:  # pragma: no cover
-                st.error(f"PDF build failed: {exc}")
-        if "_publication_doc_pdf_bytes" in st.session_state:
+        pdf_bytes, pdf_err = _cached_build(
+            "PDF", "pdf", build_publication_pdf_bytes,
+        )
+        if pdf_bytes is not None:
             st.download_button(
-                "⬇ Download .pdf",
-                data=st.session_state["_publication_doc_pdf_bytes"],
+                "⬇ Download PDF (with plots)",
+                data=pdf_bytes,
                 file_name="mfrm_publication_document.pdf",
                 mime="application/pdf",
                 key="publication_doc_pdf_dl",
                 use_container_width=True,
+                type="primary",
+                help=(
+                    "Letter-size PDF with Methods, tables, embedded figures "
+                    "(Wright map, Fit scatter, Category probability, Facet "
+                    "distribution), and APA 7 references."
+                ),
             )
+        elif pdf_err:
+            st.caption(f"⚠️ {pdf_err}")
 
     with col_h:
-        if st.button(
-            "📄 Generate & download HTML",
-            key="publication_doc_html_build",
-            use_container_width=True,
-            help="Build a self-contained HTML page (no external assets).",
-        ):
-            try:
-                data = build_publication_html_bytes(result, diagnostics, all_bias_results)
-                st.session_state["_publication_doc_html_bytes"] = data
-            except Exception as exc:  # pragma: no cover
-                st.error(f"HTML build failed: {exc}")
-        if "_publication_doc_html_bytes" in st.session_state:
+        html_bytes, html_err = _cached_build(
+            "HTML", "html", build_publication_html_bytes,
+        )
+        if html_bytes is not None:
             st.download_button(
-                "⬇ Download .html",
-                data=st.session_state["_publication_doc_html_bytes"],
+                "⬇ Download HTML",
+                data=html_bytes,
                 file_name="mfrm_publication_document.html",
                 mime="text/html",
                 key="publication_doc_html_dl",
                 use_container_width=True,
+                help="Self-contained HTML page (no external assets).",
             )
+        elif html_err:
+            st.caption(f"⚠️ {html_err}")
 
     st.caption(
-        "💡 All three formats share the same narrative source, so content is "
-        "identical. The Word version is the easiest to edit; the PDF is "
-        "print-ready; the HTML is self-contained and works offline."
+        "💡 All three formats share the same narrative source — content "
+        "is identical. Word = editable, PDF = print-ready (with embedded "
+        "plots), HTML = self-contained and works offline."
     )
 
 
@@ -25991,7 +26324,8 @@ def _self_test_publication_document_pdf() -> None:
         return
     res = {
         "config": {"model": "RSM", "method": "JMLE", "facet_names": ["Rater", "Task"], "n_cat": 5},
-        "prep": {"n_obs": 120, "n_person": 20, "rating_min": 1, "rating_max": 5, "unused_score_categories": []},
+        "prep": {"n_obs": 120, "n_person": 20, "rating_min": 0, "rating_max": 4, "unused_score_categories": []},
+        "params": {"steps": [-1.5, -0.5, 0.5, 1.5]},
         "opt": None,
         "summary": pd.DataFrame([{"Model": "RSM", "Method": "JMLE", "Converged": True, "Iterations": 42, "LogLik": -180.0}]),
         "facets": {
@@ -26002,8 +26336,12 @@ def _self_test_publication_document_pdf() -> None:
     }
     diag = {
         "measures": pd.DataFrame({
-            "Facet": ["Rater"] * 3, "Level": ["R1", "R2", "R3"],
-            "Estimate": [-0.3, 0.0, 0.4], "SE": [0.15, 0.14, 0.16],
+            "Facet": ["Rater"] * 3 + ["Task"] * 2,
+            "Level": ["R1", "R2", "R3", "T1", "T2"],
+            "Estimate": [-0.3, 0.0, 0.4, -0.2, 0.2],
+            "SE": [0.15, 0.14, 0.16, 0.17, 0.15],
+            "Infit": [1.0, 0.95, 1.05, 0.98, 1.02],
+            "Outfit": [1.05, 0.95, 1.10, 0.95, 1.05],
         }),
         "reliability": pd.DataFrame({
             "Facet": ["Person", "Rater"], "Separation": [2.5, 1.8], "Reliability": [0.88, 0.76], "Strata": [3.7, 2.7],
@@ -26014,6 +26352,18 @@ def _self_test_publication_document_pdf() -> None:
     _self_test_assert(isinstance(data, (bytes, bytearray)), "PDF builder did not return bytes")
     _self_test_assert(data[:4] == b"%PDF", f"PDF magic bytes missing: {data[:8]!r}")
     _self_test_assert(len(data) > 2000, f"PDF seems too small: {len(data)} bytes")
+    # v0.2.10-beta: PDF MUST contain embedded plots. Previously on
+    # hosts without Chrome the figures silently vanished. The
+    # matplotlib fallback guarantees non-trivial byte size + image
+    # stream markers.
+    _self_test_assert(
+        len(data) > 100_000,
+        f"PDF size {len(data):,} bytes is too small — figures probably missing",
+    )
+    _self_test_assert(
+        b"FlateDecode" in data,
+        "PDF does not contain compressed image streams (embedded figures absent?)",
+    )
 
 
 def _self_test_mfrm_glossary() -> None:

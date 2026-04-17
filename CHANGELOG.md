@@ -2,6 +2,66 @@
 
 All notable changes to this standalone Streamlit distribution should be recorded here.
 
+## 0.2.10-beta - 2026-04-18
+
+Publication-Document hotfix. On Streamlit Community Cloud, the
+Publication PDF shipped without any plots because kaleido 1.x
+requires a Chrome binary that Cloud does not install — every figure
+call silently returned `None` and the PDF ended up as a
+tables-and-text document. This release adds a matplotlib fallback
+that never needs Chrome, and streamlines the download UI so users
+can grab the PDF in one click.
+
+### Added
+
+- **Matplotlib fallback for publication figures.** Four new helpers
+  render the core figures directly from the result / diagnostics
+  dicts, bypassing the Plotly → kaleido → Chrome chain entirely:
+  - `_mpl_wright_map_png()`
+  - `_mpl_fit_scatter_png()`
+  - `_mpl_category_probability_png()`
+  - `_mpl_facet_distribution_png()`
+- **Hybrid selector** `_plotly_or_matplotlib_png()` tries the Plotly
+  export first (for parity with the on-screen look when Chrome is
+  available) and falls back to matplotlib when it returns `None`. So
+  the Publication Document always ships with its core figures,
+  regardless of host environment.
+- **`matplotlib>=3.8`** added to `requirements.txt`.
+- **New pytest file** `tests/test_publication_figures.py` (10 tests)
+  pins: every matplotlib helper produces valid PNG bytes, the
+  payload integration function emits all 4 figures, the full PDF
+  builder's output contains compressed image streams, and empty
+  inputs never raise.
+- **Strengthened `_self_test_publication_document_pdf`** — the test
+  now enforces `len(pdf) > 100 KB` and `b"FlateDecode" in pdf` so
+  the regression where figures silently vanished will fire the next
+  time it happens.
+
+### Changed
+
+- **One-click Publication Document downloads.** The previous
+  two-step "Generate → wait → Download" flow is replaced by a
+  single prominent download button per format. The bytes are built
+  eagerly on tab entry with a visible spinner, and cached in
+  `session_state` keyed by a run-level fingerprint so subsequent
+  sidebar reruns reuse the cache rather than rebuilding.
+- **PDF button promoted to primary action** (`type="primary"`) and
+  relabelled "⬇ Download PDF (with plots)" to make its content
+  explicit after the figure-regression fix.
+- Consistent button labels across formats: "Download Word (.docx)",
+  "Download PDF (with plots)", "Download HTML".
+
+### Unchanged on purpose
+
+- The Plotly export path is still tried first when kaleido + Chrome
+  are available; it produces PNGs that match the on-screen look
+  exactly. The matplotlib fallback only fires when that path
+  returns `None`.
+- Figure content, captions, and ordering remain identical to v0.2.9.
+- Word / HTML builders unchanged apart from sharing the same
+  one-click UI pattern; their existing embedding paths already
+  benefited from the shared `_publication_figure_payloads()` fix.
+
 ## 0.2.9-beta - 2026-04-17
 
 Quality hotfix responding to a UX re-audit. Three gaps identified in

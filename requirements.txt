@@ -6,6 +6,10 @@ pandas>=2.0
 scipy>=1.10
 plotly>=6.1.1
 kaleido>=1.0
+# Chrome-free PNG fallback for the Publication Document (Word / PDF /
+# HTML). When kaleido cannot reach a Chrome binary (common on
+# Streamlit Community Cloud), matplotlib renders the figures instead.
+matplotlib>=3.8
 streamlit>=1.54
 openpyxl>=3.1
 # Publication-ready Word / PDF export (Report tab → Publication Document).

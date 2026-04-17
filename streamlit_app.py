@@ -664,6 +664,52 @@ _MEASURE_DECIMALS: int = 3
 _PROBABILITY_DECIMALS: int = 4
 
 
+def style_fit_columns(df: "pd.DataFrame"):
+    """Return a Styler that highlights Infit / Outfit mean-square columns.
+
+    Mean-square interpretation (Wright & Linacre 1994):
+      * < 0.50          over-fit   (too predictable)        — yellow
+      * 0.50 – 1.50     acceptable                          — green
+      * 1.50 – 2.00     noisy                               — orange
+      * ≥ 2.00          distorting (significant misfit)     — red
+
+    The helper returns a Styler if the DataFrame has Infit / Outfit-like
+    columns, else the DataFrame untouched. Callers pass the result to
+    `st.dataframe(...)`, which renders the styled cells unchanged.
+    """
+    if not isinstance(df, pd.DataFrame) or df.empty:
+        return df
+
+    def _fit_color(value: float) -> str:
+        if value is None or pd.isna(value):
+            return ""
+        if value >= 2.0:
+            return "background-color: #fde0dc"  # light red
+        if value >= 1.5:
+            return "background-color: #ffe8cc"  # light orange
+        if value < 0.5:
+            return "background-color: #fff4cc"  # light yellow
+        return "background-color: #dff5e4"      # light green (acceptable)
+
+    fit_cols = [
+        c for c in df.columns
+        if any(tok in str(c).lower() for tok in ("infit", "outfit"))
+        and "zstd" not in str(c).lower()  # ZSTD uses a different scale
+        and "note" not in str(c).lower()
+        and pd.api.types.is_numeric_dtype(df[c])
+    ]
+    if not fit_cols:
+        return df
+    try:
+        return df.style.map(_fit_color, subset=fit_cols)
+    except Exception:
+        # Older pandas Styler used .applymap(); fall back.
+        try:
+            return df.style.applymap(_fit_color, subset=fit_cols)
+        except Exception:
+            return df
+
+
 def format_measure_table(
     df: "pd.DataFrame",
     *,
@@ -8780,9 +8826,17 @@ def _show_pca_panel(
     fig.add_trace(go.Scatter(x=components, y=list(ev_plot), mode="lines+markers",
                              marker=dict(size=7, color="#1b9e77"),
                              line=dict(width=2, color="#1b9e77"), name="Eigenvalue"))
+    # Three reference lines matching the interpretation thresholds cited in
+    # the chart guide and narrative — EV=1 (expected random), EV=2 (caution),
+    # EV=3 (strong secondary dimension; Linacre 2024). Previously only EV=1
+    # and EV=2 were drawn, making the "EV > 3 flags a secondary dimension"
+    # guidance invisible on the plot itself.
+    fig.add_hline(y=3.0, line_dash="dash", line_color="#c0392b", line_width=1,
+                  annotation_text="Strong 2nd dimension (EV=3.0)",
+                  annotation_position="top right")
     fig.add_hline(y=2.0, line_dash="dash", line_color="#d95f02", line_width=1,
                   annotation_text="Caution (EV=2.0)", annotation_position="top right")
-    fig.add_hline(y=1.0, line_dash="dot", line_color="#999999", line_width=1,
+    fig.add_hline(y=1.0, line_dash="dot", line_color="#666666", line_width=1,
                   annotation_text="Expected (EV=1.0)", annotation_position="bottom right")
     fig.update_layout(xaxis_title="Component", yaxis_title="Eigenvalue",
                       title=f"Scree Plot — {label}", yaxis_rangemode="tozero",
@@ -12484,9 +12538,15 @@ A single connected subset means all measures are on the same scale.
                     measures_df.columns.get_loc("CI_Lower") + 1,
                     "CI_Upper", (est + 1.96 * se).round(3),
                 )
-            st.dataframe(measures_df, width="stretch")
+            # Apply rounding + fit-statistic conditional formatting before render.
+            measures_display = format_measure_table(measures_df)
+            st.dataframe(style_fit_columns(measures_display), width="stretch")
             if "CI_Lower" in measures_df.columns:
-                st.caption("CI = 95% confidence interval (Estimate ± 1.96 × SE).")
+                st.caption(
+                    "CI = 95% confidence interval (Estimate ± 1.96 × SE). "
+                    "Fit columns: 🟩 0.5–1.5 acceptable · 🟧 1.5–2.0 noisy · "
+                    "🟥 ≥ 2.0 distorting · 🟨 < 0.5 over-fit (Wright & Linacre, 1994)."
+                )
         else:
             st.info(
                 "No combined measures yet. This table is built after estimation "
@@ -24321,6 +24381,36 @@ def _self_test_publication_document_pdf() -> None:
     _self_test_assert(len(data) > 2000, f"PDF seems too small: {len(data)} bytes")
 
 
+def _self_test_style_fit_columns() -> None:
+    """Pin conditional formatting for Infit / Outfit mean-square columns."""
+    # DataFrame with representative fit values across all four bins
+    df = pd.DataFrame({
+        "Facet": ["A", "B", "C", "D"],
+        "Estimate": [0.1, 0.2, 0.3, 0.4],
+        "Infit": [0.3, 1.0, 1.7, 2.5],       # yellow / green / orange / red
+        "Outfit": [0.4, 1.2, 1.8, 3.0],
+        "Infit_ZSTD": [-2.5, 0.0, 2.5, 4.0], # ZSTD must NOT be styled
+        "ReliabilityNote": ["", "", "", ""],  # string column must be ignored
+    })
+    styler = style_fit_columns(df)
+    # When fit columns are present, we get a Styler back
+    _self_test_assert(
+        hasattr(styler, "to_html"),
+        "style_fit_columns did not return a Styler for valid input",
+    )
+    # Empty / fit-less DataFrame passes through untouched
+    passthrough = style_fit_columns(pd.DataFrame({"Facet": ["X"], "Value": [1]}))
+    _self_test_assert(
+        isinstance(passthrough, pd.DataFrame),
+        "expected DataFrame passthrough for fit-less table",
+    )
+    # Empty input tolerated
+    _self_test_assert(
+        style_fit_columns(pd.DataFrame()).empty,
+        "empty DataFrame mishandled",
+    )
+
+
 def _self_test_format_measure_table() -> None:
     """Pin the canonical rounding helper for user-facing measure tables."""
     df = pd.DataFrame({
@@ -25453,6 +25543,7 @@ def run_self_tests() -> int:
         ("Unified chart guide library", _self_test_chart_guide_library),
         ("Advanced-model Stan generators", _self_test_advanced_model_generators),
         ("Measure table rounding helper", _self_test_format_measure_table),
+        ("Fit-column conditional styling", _self_test_style_fit_columns),
     ]
     failures = []
     for name, test_func in tests:

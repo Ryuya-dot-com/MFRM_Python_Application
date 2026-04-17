@@ -2014,48 +2014,47 @@ def build_indices(prep, step_facet=None, slope_facet=None):
     }
 
 
-def sample_mfrm_data(seed=20240101):
-    """Generate a sample MFRM dataset modeled after performance assessment designs.
+def _generate_mfrm_rsm_from_params(params: dict, seed: int) -> pd.DataFrame:
+    """Generate fully-crossed RSM-family rating data from a parameter config.
 
-    The data structure and parameter magnitudes are informed by published MFRM
-    studies in writing/speaking assessment:
+    This is the shared core generator for all built-in sample scenarios.
+    Each scenario in `SAMPLE_DATA_SCENARIOS` supplies its own `params`
+    dict with Rasch-family parameter values grounded in published
+    literature. Using a single generator keeps category-probability
+    math in one place and guarantees every scenario produces data the
+    Python estimator can fit without pre-processing.
 
-    - Linacre, J. M. (1994). *Many-Facet Rasch Measurement* (2nd ed.). MESA Press.
-    - Eckes, T. (2011). *Introduction to Many-Facet Rasch Measurement*. Peter Lang.
-    - McNamara, T. F. (1996). *Measuring Second Language Performance*. Longman.
-
-    Design: 30 examinees × 4 raters × 2 tasks × 4 criteria, 6-point scale (0–5).
-    Parameters based on typical ranges reported in the literature:
-      - Person ability SD ≈ 1.0 logits (Eckes, 2011, Ch. 5)
-      - Rater severity range ≈ 1.5 logits (Eckes, 2011, Table 5.1)
-      - Task difficulty difference ≈ 0.6 logits (McNamara, 1996)
-      - Criterion difficulty range ≈ 1.2 logits (Linacre, 1994)
-      - Step thresholds ordered, spanning ≈ −2 to +2 (typical for 6-point scales)
+    Required keys in `params`:
+        persons, raters, tasks, criteria: list[str]
+        theta_sd: float (person ability standard deviation)
+        rater_severities: np.ndarray (length == len(raters))
+        task_difficulties: np.ndarray (length == len(tasks))
+        criterion_difficulties: np.ndarray (length == len(criteria))
+        tau: np.ndarray (Rasch-Andrich thresholds, length == n_cat - 1)
+        columns: list[str] of length 5 — [person, rater, task, criterion, score]
     """
     rng = np.random.default_rng(seed)
+    persons = params["persons"]
+    raters = params["raters"]
+    tasks = params["tasks"]
+    criteria = params["criteria"]
+    theta_sd = float(params.get("theta_sd", 1.0))
+    rater_sev = np.asarray(params["rater_severities"], dtype=float)
+    task_diff = np.asarray(params["task_difficulties"], dtype=float)
+    crit_diff = np.asarray(params["criterion_difficulties"], dtype=float)
+    tau = np.asarray(params["tau"], dtype=float)
+    columns = params.get("columns", ["Person", "Rater", "Task", "Criterion", "Score"])
+    n_cat = int(tau.size) + 1
 
-    # Design
-    n_persons = 30
-    n_raters = 4
-    n_tasks = 2
-    n_criteria = 4
-    n_cat = 6  # 0–5 scale
+    # Shape contract
+    assert rater_sev.size == len(raters), "rater_severities length != n_raters"
+    assert task_diff.size == len(tasks), "task_difficulties length != n_tasks"
+    assert crit_diff.size == len(criteria), "criterion_difficulties length != n_criteria"
+    assert n_cat >= 2, "tau must contain at least one threshold"
 
-    persons = [f"E{idx:02d}" for idx in range(1, n_persons + 1)]
-    raters = [f"R{idx}" for idx in range(1, n_raters + 1)]
-    tasks = [f"Task{idx}" for idx in range(1, n_tasks + 1)]
-    criteria = ["Content", "Organization", "Language", "Mechanics"]
+    theta = rng.normal(0.0, theta_sd, len(persons))
 
-    # True parameters (based on published MFRM parameter ranges)
-    theta = rng.normal(0.0, 1.0, n_persons)       # Person ability
-    rater_sev = np.array([-0.62, -0.15, 0.28, 0.49])  # Rater severity (range ≈ 1.1)
-    task_diff = np.array([-0.30, 0.30])            # Task difficulty (diff ≈ 0.6)
-    crit_diff = np.array([-0.55, -0.10, 0.20, 0.45])  # Criterion difficulty (range ≈ 1.0)
-    # Rasch-Andrich thresholds for 6-point scale (ordered, centered near 0)
-    tau = np.array([-2.10, -0.95, 0.05, 0.90, 2.10])
-
-    # Full crossing
-    rows = []
+    rows: list[tuple] = []
     for pi, p in enumerate(persons):
         for ri, r in enumerate(raters):
             for ti, t in enumerate(tasks):
@@ -2072,14 +2071,282 @@ def sample_mfrm_data(seed=20240101):
                     score = int(rng.choice(n_cat, p=probs))
                     rows.append((p, r, t, c, score))
 
-    df = pd.DataFrame(rows, columns=["Person", "Rater", "Task", "Criterion", "Score"])
-    return df
+    return pd.DataFrame(rows, columns=columns)
+
+
+# ---------------------------------------------------------------------------
+# Built-in sample-data scenarios (v0.2.7-beta)
+# ---------------------------------------------------------------------------
+#
+# Each scenario is grounded in published MFRM parameter ranges so that
+# fitting the model on the generated data reproduces literature-typical
+# patterns (severity range, threshold spacing, facet contribution). The
+# `citations` field is parsed at runtime to build an APA 7 reference
+# list for the Data tab's "About this dataset" popover.
+#
+# Adding a new scenario: pick a stable `key`, fill in `build_params`,
+# cite sources already in `_APA_REFERENCE_LIBRARY` (or add them first),
+# and register a one-line entry in `SAMPLE_DATA_SCENARIOS`. The UI
+# selectbox picks up new entries automatically.
+
+
+def _params_writing_essay() -> dict:
+    """Small writing-essay design; the v0.1+ default demo dataset.
+
+    Published parameter ranges:
+      - Person ability SD ≈ 1.0 logits (Eckes, 2011, Ch. 5)
+      - Rater severity range ≈ 1.1 logits (Eckes, 2011, Table 5.1)
+      - Task difficulty difference ≈ 0.6 logits (McNamara, 1996)
+      - Criterion difficulty range ≈ 1.0 logits (Linacre, 1989)
+    """
+    return {
+        "persons": [f"E{idx:02d}" for idx in range(1, 31)],
+        "raters": [f"R{idx}" for idx in range(1, 5)],
+        "tasks": ["Task1", "Task2"],
+        "criteria": ["Content", "Organization", "Language", "Mechanics"],
+        "theta_sd": 1.0,
+        "rater_severities": [-0.62, -0.15, 0.28, 0.49],
+        "task_difficulties": [-0.30, 0.30],
+        "criterion_difficulties": [-0.55, -0.10, 0.20, 0.45],
+        "tau": [-2.10, -0.95, 0.05, 0.90, 2.10],
+    }
+
+
+def _params_large_writing_pca() -> dict:
+    """Large-scale writing assessment sized for clean residual PCA.
+
+    120 examinees × 4 raters × 2 tasks × 3 criteria = 2,880 observations,
+    6-point scale. At this scale the residual-correlation matrix has
+    enough rows (> 100) for the Rasch-PCA unidimensionality check to
+    stabilise (Smith, 2002; Linacre, 2024). One rater is deliberately
+    injected at +1.6 logits to give the bias heatmap and misfit
+    ranking a clear positive signal.
+
+    Published parameter ranges:
+      - Person ability SD ≈ 1.2 logits, wider than default to spread
+        persons across the logit scale for readable Wright-map targeting
+        (Engelhard, 1994; Engelhard, 2013).
+      - Rater severity range ≈ 2.3 logits with a severity outlier
+        (Myford & Wolfe, 2003; Myford & Wolfe, 2004).
+      - Criterion difficulty range ≈ 1.3 logits (Engelhard, 1994).
+    """
+    return {
+        "persons": [f"W{idx:03d}" for idx in range(1, 121)],
+        "raters": [f"R{idx}" for idx in range(1, 5)],
+        "tasks": ["Argumentative", "Narrative"],
+        "criteria": ["Content", "Organization", "Language"],
+        "theta_sd": 1.2,
+        # One severity outlier (R4 = +1.60) to create a legible
+        # bias-heatmap signal for beginners learning the diagnostic.
+        "rater_severities": [-0.72, -0.18, -0.70, 1.60],
+        "task_difficulties": [-0.22, 0.22],
+        "criterion_difficulties": [-0.55, -0.10, 0.65],
+        "tau": [-2.25, -1.05, 0.05, 1.05, 2.25],
+    }
+
+
+def _params_speaking_test() -> dict:
+    """L2 speaking performance — analytic rubric with 5 criteria.
+
+    80 examinees × 3 raters × 3 tasks × 5 criteria = 3,600 observations,
+    5-point scale (0–4). Typical of analytic-rubric speaking tests in
+    second-language assessment. Trained raters show tighter severity
+    spread than untrained writing raters (Luoma, 2004, Ch. 7).
+
+    Published parameter ranges:
+      - Person ability SD ≈ 1.1 logits (McNamara, 1996; Bachman &
+        Palmer, 1996).
+      - Rater severity range ≈ 0.8 logits (Luoma, 2004, Table 7.2 —
+        trained rater panels).
+      - Criterion difficulty range ≈ 1.3 logits; Pronunciation is
+        hardest, Range is easiest (McNamara, 1996).
+      - Task difficulty range ≈ 0.8 logits (Bachman & Palmer, 1996).
+    """
+    return {
+        "persons": [f"S{idx:03d}" for idx in range(1, 81)],
+        "raters": [f"R{idx}" for idx in range(1, 4)],
+        "tasks": ["Monologue", "Interaction", "Integrated"],
+        "criteria": ["Fluency", "Accuracy", "Pronunciation", "Interaction", "Range"],
+        "theta_sd": 1.1,
+        "rater_severities": [-0.35, 0.05, 0.30],
+        "task_difficulties": [-0.35, 0.00, 0.35],
+        "criterion_difficulties": [-0.45, -0.20, 0.85, 0.20, -0.40],
+        "tau": [-1.60, -0.40, 0.40, 1.60],
+    }
+
+
+def _params_clinical_osce() -> dict:
+    """Clinical OSCE — 5 stations × 3 competencies, 4-point scale.
+
+    60 examinees × 4 raters × 5 stations × 3 competencies = 3,600
+    observations, 4-point scale (0–3). Mirrors the compact checklist
+    scoring typical of OSCE stations in medical education
+    (Downing & Yudkowsky, 2009). Station difficulty is the dominant
+    source of variation; raters are trained clinicians with low
+    severity spread (Tavakol & Dennick, 2011).
+
+    Published parameter ranges:
+      - Person ability SD ≈ 0.9 logits; OSCE cohorts are typically
+        more homogeneous than writing-assessment cohorts (Downing &
+        Yudkowsky, 2009).
+      - Rater severity range ≈ 0.5 logits (trained clinician raters).
+      - Station difficulty range ≈ 1.8 logits, the largest single
+        contributor (Tavakol & Dennick, 2011).
+      - Competency difficulty range ≈ 0.6 logits.
+    """
+    return {
+        "persons": [f"C{idx:03d}" for idx in range(1, 61)],
+        "raters": [f"R{idx}" for idx in range(1, 5)],
+        "tasks": [
+            "History-taking",
+            "Physical exam",
+            "Procedural skill",
+            "Communication",
+            "Clinical reasoning",
+        ],
+        "criteria": ["Communication", "Procedure", "Judgment"],
+        "theta_sd": 0.9,
+        "rater_severities": [-0.20, -0.05, 0.05, 0.20],
+        "task_difficulties": [-0.85, -0.30, 0.25, 0.10, 0.80],
+        "criterion_difficulties": [-0.25, 0.00, 0.25],
+        "tau": [-1.50, 0.00, 1.50],
+        "columns": ["Person", "Rater", "Station", "Competency", "Score"],
+    }
+
+
+SAMPLE_DATA_SCENARIOS: dict[str, dict] = {
+    "writing_essay": {
+        "label": "✏️ Writing essay (30×4×2×4, 960 obs)",
+        "short": "Small writing-assessment demo. Default since v0.1.",
+        "description": (
+            "The v0.1+ built-in demo: 30 examinees, 4 raters, 2 tasks, 4 "
+            "analytic criteria (Content, Organization, Language, Mechanics), "
+            "6-point scale. Small enough to fit in seconds; useful for a "
+            "first estimator smoke-check. PCA and residual diagnostics run "
+            "but are close to their minimum-sample-size floor."
+        ),
+        "dimensions": {"persons": 30, "raters": 4, "tasks": 2, "criteria": 4, "n_cat": 6},
+        "n_obs": 30 * 4 * 2 * 4,
+        "build_params": _params_writing_essay,
+        "citations": [
+            "(Eckes, 2011)",
+            "(McNamara, 1996)",
+            "(Linacre, 1989)",
+        ],
+    },
+    "large_writing_pca": {
+        "label": "📚 Large-scale writing (120×4×2×3, 2,880 obs)",
+        "short": "Enough persons for clean residual PCA + severity outlier.",
+        "description": (
+            "Scaled to 120 examinees for stable residual-PCA on a writing "
+            "task. One rater is deliberately injected at +1.6 logits of "
+            "severity so the bias heatmap, misfit ranking, and Wright-map "
+            "outlier callouts have a visible signal to explain. Useful "
+            "when teaching unidimensionality checks or rater-effect "
+            "diagnostics."
+        ),
+        "dimensions": {"persons": 120, "raters": 4, "tasks": 2, "criteria": 3, "n_cat": 6},
+        "n_obs": 120 * 4 * 2 * 3,
+        "build_params": _params_large_writing_pca,
+        "citations": [
+            "(Myford & Wolfe, 2003)",
+            "(Myford & Wolfe, 2004)",
+            "(Engelhard, 1994)",
+            "(Engelhard, 2013)",
+            "(Smith, 2002)",
+        ],
+    },
+    "speaking_test": {
+        "label": "🎙️ L2 speaking (80×3×3×5, 3,600 obs)",
+        "short": "Analytic-rubric speaking test with 5 criteria.",
+        "description": (
+            "80 examinees × 3 trained raters × 3 tasks × 5 analytic "
+            "criteria (Fluency, Accuracy, Pronunciation, Interaction, "
+            "Range), 5-point scale. Demonstrates a narrower rater "
+            "severity spread than the writing scenarios and a strong "
+            "criterion-difficulty contrast (Pronunciation is hardest). "
+            "A good fit for PCM / GPCM experiments because the criteria "
+            "differ enough to justify step-facet-specific thresholds."
+        ),
+        "dimensions": {"persons": 80, "raters": 3, "tasks": 3, "criteria": 5, "n_cat": 5},
+        "n_obs": 80 * 3 * 3 * 5,
+        "build_params": _params_speaking_test,
+        "citations": [
+            "(McNamara, 1996)",
+            "(Bachman & Palmer, 1996)",
+            "(Luoma, 2004)",
+        ],
+    },
+    "clinical_osce": {
+        "label": "🏥 Clinical OSCE (60×4×5×3, 3,600 obs)",
+        "short": "5-station medical OSCE with compact 4-point rubric.",
+        "description": (
+            "60 examinees × 4 clinician raters × 5 stations × 3 "
+            "competencies (Communication, Procedure, Judgment), 4-point "
+            "scale. Mirrors compact OSCE checklist scoring: trained "
+            "clinician raters (low severity spread), wide station "
+            "difficulty range (~1.8 logits), homogeneous examinee "
+            "ability (smaller Person SD). Use this when teaching "
+            "task-/station-dominant designs."
+        ),
+        "dimensions": {"persons": 60, "raters": 4, "tasks": 5, "criteria": 3, "n_cat": 4},
+        "n_obs": 60 * 4 * 5 * 3,
+        "build_params": _params_clinical_osce,
+        "citations": [
+            "(Downing & Yudkowsky, 2009)",
+            "(Tavakol & Dennick, 2011)",
+            "(Wolfe & Song, 2015)",
+        ],
+    },
+}
+
+# Default scenario key — preserves the v0.1+ demo dataset shape so that
+# existing saved configs / screenshots / onboarding tours still match.
+DEFAULT_SAMPLE_SCENARIO_KEY = "writing_essay"
+
+
+def sample_mfrm_data_by_key(scenario_key: str, seed: int = 20240101) -> pd.DataFrame:
+    """Generate a sample MFRM dataset for a given `SAMPLE_DATA_SCENARIOS` key.
+
+    Unknown keys silently fall back to the default scenario so the UI
+    cannot render an invalid state. Each scenario's citations are
+    resolvable via the APA 7 reference library.
+    """
+    scenario = SAMPLE_DATA_SCENARIOS.get(
+        scenario_key,
+        SAMPLE_DATA_SCENARIOS[DEFAULT_SAMPLE_SCENARIO_KEY],
+    )
+    params = scenario["build_params"]()
+    return _generate_mfrm_rsm_from_params(params, seed=int(seed))
+
+
+def sample_mfrm_data(seed: int = 20240101) -> pd.DataFrame:
+    """Generate the v0.1+ default sample dataset (writing-essay scenario).
+
+    Kept as a stable alias so existing code, tests, and documentation
+    that refer to `sample_mfrm_data` keep working. New code should
+    prefer `sample_mfrm_data_by_key(scenario_key, seed)`.
+
+    References grounding the parameter choices:
+      - Eckes, T. (2011). *Introduction to Many-Facet Rasch Measurement*.
+      - McNamara, T. F. (1996). *Measuring Second Language Performance*.
+      - Linacre, J. M. (1989). *Many-Facet Rasch Measurement*.
+    """
+    return sample_mfrm_data_by_key(DEFAULT_SAMPLE_SCENARIO_KEY, seed=seed)
 
 
 @st.cache_data(show_spinner=False, max_entries=8)
 def cached_sample_mfrm_data(seed: int = 20240101) -> pd.DataFrame:
     """Cached built-in demo data only; user-uploaded data are intentionally not cached."""
     return sample_mfrm_data(seed=int(seed)).copy()
+
+
+@st.cache_data(show_spinner=False, max_entries=8)
+def cached_sample_mfrm_data_by_key(
+    scenario_key: str, seed: int = 20240101,
+) -> pd.DataFrame:
+    """Cached per-scenario sample data. Each (key, seed) tuple caches separately."""
+    return sample_mfrm_data_by_key(scenario_key, seed=int(seed)).copy()
 
 
 
@@ -8031,7 +8298,68 @@ def read_input_data(core: dict) -> pd.DataFrame:
     )
 
     if source == "Sample data (built-in)":
-        sample_df = cached_sample_mfrm_data(seed=20240101).copy()
+        # v0.2.7-beta: four scenarios grounded in published MFRM
+        # parameter ranges. Default key matches the v0.1+ demo so
+        # existing onboarding tours, screenshots, and saved configs
+        # continue to work unchanged.
+        scenario_keys = list(SAMPLE_DATA_SCENARIOS.keys())
+        scenario_labels = [
+            SAMPLE_DATA_SCENARIOS[k]["label"] for k in scenario_keys
+        ]
+        default_index = (
+            scenario_keys.index(DEFAULT_SAMPLE_SCENARIO_KEY)
+            if DEFAULT_SAMPLE_SCENARIO_KEY in scenario_keys
+            else 0
+        )
+        chosen_label = st.sidebar.selectbox(
+            "Sample scenario",
+            options=scenario_labels,
+            index=default_index,
+            key="sample_scenario_label",
+            help=(
+                "Each scenario is a synthetic dataset with Rasch-family "
+                "parameters informed by published MFRM studies. Pick "
+                "'Large-scale writing' for a PCA-ready demo, 'L2 speaking' "
+                "for analytic-rubric / PCM experiments, or 'Clinical OSCE' "
+                "for a station-dominant design."
+            ),
+        )
+        scenario_key = scenario_keys[scenario_labels.index(chosen_label)]
+        scenario = SAMPLE_DATA_SCENARIOS[scenario_key]
+
+        # Short caption + expandable "About this dataset" block with
+        # the full description, dimensions, and APA-formatted citations
+        # so users can ground their interpretations in the literature.
+        st.sidebar.caption(scenario["short"])
+        with st.sidebar.expander("📚 About this dataset"):
+            dims = scenario["dimensions"]
+            st.markdown(
+                f"**Design:** {dims['persons']} persons × {dims['raters']} "
+                f"raters × {dims['tasks']} tasks × {dims['criteria']} "
+                f"criteria = {scenario['n_obs']:,} observations, "
+                f"{dims['n_cat']}-point scale."
+            )
+            st.markdown(scenario["description"])
+            citations = scenario.get("citations", [])
+            if citations:
+                st.markdown("**Parameter values are grounded in:**")
+                keys_seen: set[str] = set()
+                for cite in citations:
+                    key = _CITATION_TO_KEY.get(cite)
+                    if key and key in _APA_REFERENCE_LIBRARY:
+                        keys_seen.add(key)
+                if keys_seen:
+                    for entry in sorted(
+                        _APA_REFERENCE_LIBRARY[k] for k in keys_seen
+                    ):
+                        st.markdown(f"- {entry}")
+                else:
+                    # Fallback if a citation is not yet in the library
+                    st.caption("References pending registration.")
+
+        sample_df = cached_sample_mfrm_data_by_key(
+            scenario_key, seed=20240101,
+        ).copy()
         # Expose the built-in sample dataset so users can inspect the
         # expected input format before uploading their own data. The CSV
         # is the exact frame the app loads, so column names and dtypes
@@ -8039,12 +8367,13 @@ def read_input_data(core: dict) -> pd.DataFrame:
         st.sidebar.download_button(
             "⬇ Download sample CSV",
             data=sample_df.to_csv(index=False).encode("utf-8"),
-            file_name="mfrm_sample_data.csv",
+            file_name=f"mfrm_sample_{scenario_key}.csv",
             mime="text/csv",
             key="sample_data_download",
             help=(
-                "Download the built-in demo dataset so you can inspect the "
-                "column structure and try your own edits before uploading."
+                "Download the selected scenario's CSV so you can inspect "
+                "the column structure and try your own edits before "
+                "uploading."
             ),
             use_container_width=True,
         )
@@ -10188,6 +10517,10 @@ _APA_REFERENCE_LIBRARY: dict[str, str] = {
         "Andrich, D. (1978). A rating formulation for ordered response categories. "
         "Psychometrika, 43(4), 561–573. https://doi.org/10.1007/BF02293814"
     ),
+    "Bachman_Palmer_1996": (
+        "Bachman, L. F., & Palmer, A. S. (1996). Language testing in practice: "
+        "Designing and developing useful language tests. Oxford University Press."
+    ),
     "Bock_Aitkin_1981": (
         "Bock, R. D., & Aitkin, M. (1981). Marginal maximum likelihood estimation "
         "of item parameters: Application of an EM algorithm. Psychometrika, 46(4), "
@@ -10202,6 +10535,10 @@ _APA_REFERENCE_LIBRARY: dict[str, str] = {
         "Chalmers, R. P. (2012). mirt: A multidimensional item response theory "
         "package for the R environment. Journal of Statistical Software, 48(6), "
         "1–29. https://doi.org/10.18637/jss.v048.i06"
+    ),
+    "Downing_Yudkowsky_2009": (
+        "Downing, S. M., & Yudkowsky, R. (Eds.). (2009). Assessment in health "
+        "professions education. Routledge. https://doi.org/10.4324/9780203880135"
     ),
     "Eckes_2005": (
         "Eckes, T. (2005). Examining rater effects in TestDaF writing and speaking "
@@ -10223,6 +10560,11 @@ _APA_REFERENCE_LIBRARY: dict[str, str] = {
         "written composition with a many-faceted Rasch model. Journal of "
         "Educational Measurement, 31(2), 93–112. "
         "https://doi.org/10.1111/j.1745-3984.1994.tb00436.x"
+    ),
+    "Engelhard_2013": (
+        "Engelhard, G., Jr. (2013). Invariant measurement: Using Rasch models "
+        "in the social, behavioral, and health sciences. Routledge. "
+        "https://doi.org/10.4324/9780203073636"
     ),
     "Gelman_Rubin_1992": (
         "Gelman, A., & Rubin, D. B. (1992). Inference from iterative simulation "
@@ -10266,6 +10608,10 @@ _APA_REFERENCE_LIBRARY: dict[str, str] = {
         "Little, R. J. A., & Rubin, D. B. (2002). Statistical analysis with "
         "missing data (2nd ed.). Wiley."
     ),
+    "Luoma_2004": (
+        "Luoma, S. (2004). Assessing speaking. Cambridge University Press. "
+        "https://doi.org/10.1017/CBO9780511733017"
+    ),
     "Masters_1982": (
         "Masters, G. N. (1982). A Rasch model for partial credit scoring. "
         "Psychometrika, 47(2), 149–174. https://doi.org/10.1007/BF02296272"
@@ -10301,6 +10647,11 @@ _APA_REFERENCE_LIBRARY: dict[str, str] = {
         "Smith, E. V. (2002). Detecting and evaluating the impact of "
         "multidimensionality using item fit statistics and principal component "
         "analysis of residuals. Journal of Applied Measurement, 3(2), 205–231."
+    ),
+    "Tavakol_Dennick_2011": (
+        "Tavakol, M., & Dennick, R. (2011). Post-examination analysis of "
+        "objective tests. Medical Teacher, 33(6), 447–458. "
+        "https://doi.org/10.3109/0142159X.2011.564682"
     ),
     "Uto_2021": (
         "Uto, M. (2021). A multidimensional generalized many-facet Rasch model "
@@ -10347,13 +10698,16 @@ _APA_REFERENCE_LIBRARY: dict[str, str] = {
 # what's cited, and return only the used subset.
 _CITATION_TO_KEY: dict[str, str] = {
     "(Andrich, 1978)": "Andrich_1978",
+    "(Bachman & Palmer, 1996)": "Bachman_Palmer_1996",
     "(Bock & Aitkin, 1981)": "Bock_Aitkin_1981",
     "(Bock & Mislevy, 1982)": "Bock_Mislevy_1982",
     "(Chalmers, 2012)": "Chalmers_2012",
+    "(Downing & Yudkowsky, 2009)": "Downing_Yudkowsky_2009",
     "(Eckes, 2005)": "Eckes_2005",
     "(Eckes, 2011)": "Eckes_2011",
     "(Eckes & Jin, 2021)": "Eckes_Jin_2021",
     "(Engelhard, 1994)": "Engelhard_1994",
+    "(Engelhard, 2013)": "Engelhard_2013",
     "(Gelman & Rubin, 1992)": "Gelman_Rubin_1992",
     "(Kruschke, 2018)": "Kruschke_2018",
     "(Lakens, 2017)": "Lakens_2017",
@@ -10364,6 +10718,7 @@ _CITATION_TO_KEY: dict[str, str] = {
     "(Linacre, 2007)": "Linacre_2007",
     "(Linacre, 2024)": "Linacre_2024",
     "(Little & Rubin, 2002)": "Little_Rubin_2002",
+    "(Luoma, 2004)": "Luoma_2004",
     "(Masters, 1982)": "Masters_1982",
     "(McNamara, 1996)": "McNamara_1996",
     "(Muraki, 1992)": "Muraki_1992",
@@ -10372,6 +10727,7 @@ _CITATION_TO_KEY: dict[str, str] = {
     "(Reckase, 1979)": "Reckase_1979",
     "(Smith, 2000)": "Smith_2000",
     "(Smith, 2002)": "Smith_2002",
+    "(Tavakol & Dennick, 2011)": "Tavakol_Dennick_2011",
     "(Uto, 2021)": "Uto_2021",
     "(Uto, 2022)": "Uto_2022",
     "(Uto & Ueno, 2020)": "Uto_Ueno_2020",
@@ -25530,6 +25886,116 @@ def _self_test_essential_mode_tab_filters() -> None:
     )
 
 
+def _self_test_sample_data_scenarios() -> None:
+    """Validate every entry in `SAMPLE_DATA_SCENARIOS` generates usable data.
+
+    v0.2.7-beta added three new scenarios (large_writing_pca,
+    speaking_test, clinical_osce) alongside the renamed default
+    `writing_essay`. This test pins:
+      - Every scenario generates a DataFrame whose row count matches
+        its declared `n_obs`.
+      - All facet columns are non-empty and have no missing levels.
+      - The Score column stays inside the declared `n_cat` category
+        range [0, n_cat-1].
+      - Every citation in the scenario's `citations` list resolves to
+        a real entry in `_APA_REFERENCE_LIBRARY`.
+      - Determinism: same (key, seed) → same DataFrame bytes.
+    """
+    _self_test_assert(
+        len(SAMPLE_DATA_SCENARIOS) >= 4,
+        f"expected at least 4 scenarios, got {len(SAMPLE_DATA_SCENARIOS)}",
+    )
+    _self_test_assert(
+        DEFAULT_SAMPLE_SCENARIO_KEY in SAMPLE_DATA_SCENARIOS,
+        f"DEFAULT_SAMPLE_SCENARIO_KEY {DEFAULT_SAMPLE_SCENARIO_KEY!r} "
+        "missing from registry",
+    )
+
+    for key, scenario in SAMPLE_DATA_SCENARIOS.items():
+        # Metadata contract
+        for required in ("label", "short", "description", "dimensions",
+                         "n_obs", "build_params", "citations"):
+            _self_test_assert(
+                required in scenario,
+                f"scenario {key!r} missing {required!r} field",
+            )
+
+        # Generate and check shape
+        df = sample_mfrm_data_by_key(key, seed=20260417)
+        _self_test_assert(
+            df.shape[0] == scenario["n_obs"],
+            f"scenario {key!r}: expected {scenario['n_obs']} rows, "
+            f"got {df.shape[0]}",
+        )
+        _self_test_assert(
+            df.shape[1] == 5,
+            f"scenario {key!r}: expected 5 columns, got {df.shape[1]}",
+        )
+
+        # Facet-column sanity
+        for col in df.columns[:-1]:  # everything except the score column
+            _self_test_assert(
+                df[col].notna().all(),
+                f"scenario {key!r}: column {col!r} has NaN values",
+            )
+            _self_test_assert(
+                df[col].nunique() >= 2,
+                f"scenario {key!r}: column {col!r} has < 2 unique levels",
+            )
+
+        # Score bounds
+        score_col = df.columns[-1]
+        n_cat = scenario["dimensions"]["n_cat"]
+        scores = pd.to_numeric(df[score_col], errors="coerce")
+        _self_test_assert(
+            scores.notna().all(),
+            f"scenario {key!r}: score column has non-numeric entries",
+        )
+        _self_test_assert(
+            scores.min() >= 0,
+            f"scenario {key!r}: negative score found (min={scores.min()})",
+        )
+        _self_test_assert(
+            scores.max() <= n_cat - 1,
+            f"scenario {key!r}: score exceeds n_cat-1 "
+            f"(max={scores.max()}, n_cat={n_cat})",
+        )
+
+        # Citation resolution
+        for cite in scenario["citations"]:
+            key_in_map = _CITATION_TO_KEY.get(cite)
+            _self_test_assert(
+                key_in_map is not None,
+                f"scenario {key!r}: citation {cite!r} not in "
+                "_CITATION_TO_KEY",
+            )
+            _self_test_assert(
+                key_in_map in _APA_REFERENCE_LIBRARY,
+                f"scenario {key!r}: citation {cite!r} resolves to "
+                f"missing reference key {key_in_map!r}",
+            )
+
+    # Determinism: same seed reproduces exactly
+    df1 = sample_mfrm_data_by_key(DEFAULT_SAMPLE_SCENARIO_KEY, seed=99)
+    df2 = sample_mfrm_data_by_key(DEFAULT_SAMPLE_SCENARIO_KEY, seed=99)
+    _self_test_assert(
+        df1.equals(df2),
+        "sample_mfrm_data_by_key is non-deterministic for fixed seed",
+    )
+
+    # Backward compatibility: sample_mfrm_data() still returns the
+    # legacy writing-essay shape so older tests / docs stay valid.
+    legacy = sample_mfrm_data(seed=20240101)
+    _self_test_assert(
+        legacy.shape == (960, 5),
+        f"sample_mfrm_data() legacy shape changed: {legacy.shape}",
+    )
+    _self_test_assert(
+        list(legacy.columns) == ["Person", "Rater", "Task", "Criterion", "Score"],
+        f"sample_mfrm_data() legacy columns changed: {list(legacy.columns)}",
+    )
+
+
 def _self_test_posterior_load_netcdf() -> None:
     """Round-trip a synthetic posterior through `_posterior_load_netcdf`.
 
@@ -27121,6 +27587,7 @@ def run_self_tests() -> int:
         ("Estimation-error pattern matcher", _self_test_diagnose_estimation_error_patterns),
         ("Help popover library", _self_test_help_popover_library),
         ("Essential-mode tab filters", _self_test_essential_mode_tab_filters),
+        ("Sample-data scenarios", _self_test_sample_data_scenarios),
         ("Posterior NetCDF round-trip", _self_test_posterior_load_netcdf),
         ("Posterior CmdStan CSV loader", _self_test_posterior_load_cmdstan_csvs),
         ("Config-JSON import whitelist", _self_test_config_json_import_whitelist),

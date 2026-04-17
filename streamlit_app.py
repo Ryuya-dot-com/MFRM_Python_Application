@@ -27618,6 +27618,77 @@ def _posterior_pair_figure(payload: dict, parameters: list[str]):
         return None
 
 
+def _posterior_rhat_ess_figure(payload: dict, parameters: list[str]):
+    """Two-panel bar chart of Rhat and ESS per selected parameter.
+
+    The summary table in the Posterior Viewer shows the same numbers
+    but reading ten rows at a time is slower than scanning a bar with
+    coloured thresholds. Parameters where Rhat ≥ 1.01 or ESS < 400 are
+    highlighted red so convergence issues jump out.
+    """
+    if not parameters:
+        return None
+    summary = _posterior_compute_summary(payload, parameters)
+    if summary is None or summary.empty:
+        return None
+    if "Rhat" not in summary.columns or "n_eff" not in summary.columns:
+        return None
+    rhats = pd.to_numeric(summary["Rhat"], errors="coerce").to_numpy()
+    esses = pd.to_numeric(summary["n_eff"], errors="coerce").to_numpy()
+    names = summary["parameter"].astype(str).tolist()
+    if not names:
+        return None
+
+    # Colour: red when threshold crossed, teal otherwise
+    rhat_colors = [
+        "#c24e00" if (np.isfinite(v) and v >= 1.01) else "#0d7a5a"
+        for v in rhats
+    ]
+    ess_colors = [
+        "#c24e00" if (np.isfinite(v) and v < 400) else "#0d7a5a"
+        for v in esses
+    ]
+
+    from plotly.subplots import make_subplots
+    fig = make_subplots(
+        rows=1, cols=2, shared_yaxes=False,
+        subplot_titles=("Rhat (target < 1.01)", "ESS (target ≥ 400)"),
+        horizontal_spacing=0.12,
+    )
+    fig.add_trace(
+        go.Bar(
+            x=rhats, y=names, orientation="h",
+            marker_color=rhat_colors,
+            hovertemplate="<b>%{y}</b><br>Rhat=%{x:.4f}<extra></extra>",
+            name="Rhat",
+        ),
+        row=1, col=1,
+    )
+    fig.add_trace(
+        go.Bar(
+            x=esses, y=names, orientation="h",
+            marker_color=ess_colors,
+            hovertemplate="<b>%{y}</b><br>ESS=%{x:.0f}<extra></extra>",
+            name="ESS",
+        ),
+        row=1, col=2,
+    )
+    fig.add_vline(x=1.01, line_dash="dash", line_color="#666666",
+                  line_width=1, row=1, col=1)
+    fig.add_vline(x=400, line_dash="dash", line_color="#666666",
+                  line_width=1, row=1, col=2)
+    fig.update_layout(
+        title="Convergence diagnostics — Rhat and ESS per parameter",
+        template="plotly_white",
+        showlegend=False,
+        height=max(300, 22 * len(names)),
+        margin=dict(l=100, r=40, t=80, b=40),
+    )
+    fig.update_xaxes(title_text="Rhat", row=1, col=1)
+    fig.update_xaxes(title_text="ESS", row=1, col=2)
+    return fig
+
+
 def _posterior_forest_figure(payload: dict, parameters: list[str]):
     """Forest plot: posterior mean + 50% and 95% CIs per parameter."""
     import numpy as _np
@@ -27860,7 +27931,9 @@ def render_posterior_viewer_mode() -> None:
 
     # Plot suite (tabs)
     st.subheader("Plots")
-    plot_tabs = st.tabs(["📈 Trace", "🏔 Ridge", "🔗 Pair", "🌲 Forest"])
+    plot_tabs = st.tabs([
+        "📈 Trace", "🏔 Ridge", "🔗 Pair", "🌲 Forest", "📊 Rhat / ESS",
+    ])
     with plot_tabs[0]:
         fig = _posterior_trace_figure(payload, selected)
         if fig is not None:
@@ -27887,6 +27960,20 @@ def render_posterior_viewer_mode() -> None:
             st.plotly_chart(fig, width="stretch")
         else:
             st.info("Forest plot unavailable.")
+    with plot_tabs[4]:
+        fig = _posterior_rhat_ess_figure(payload, selected)
+        if fig is not None:
+            st.plotly_chart(fig, width="stretch")
+            st.caption(
+                "Rhat ≥ 1.01 and ESS < 400 are shown against dashed reference "
+                "lines. Parameters beyond these thresholds are flagged with a "
+                "red marker. Run longer / more chains if many parameters cross."
+            )
+        else:
+            st.info(
+                "Rhat / ESS chart needs at least one parameter with computed "
+                "diagnostic values."
+            )
 
 
 def main() -> None:

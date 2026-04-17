@@ -10915,6 +10915,112 @@ def run_facets_mode(core: dict, data: pd.DataFrame) -> None:
             "discrimination/slope parameters. Use as an exploratory slope-aware model."
         ),
     )
+
+    # Advanced response-model picker (Stan-first, download-only). The core
+    # estimator never runs these locally; this widget just makes the Stan
+    # code available as a download from the Report tab. Collapsed by
+    # default so it doesn't clutter the sidebar for RSM/PCM/GPCM users.
+    with st.sidebar.expander("🧪 Advanced models (Stan, download only)", expanded=False):
+        st.caption(
+            "These models are estimated by compiling and sampling Stan "
+            "**locally on your machine** using the exported runner script. "
+            "This app never compiles or samples them in the browser."
+        )
+        _advanced_enabled = st.checkbox(
+            "Enable advanced model download",
+            value=False,
+            key="facets_mode_advanced_enabled",
+            help="Uncheck to keep the sidebar focused on RSM / PCM / GPCM.",
+        )
+        _advanced_model_key = None
+        if _advanced_enabled:
+            opts = advanced_model_options()
+            labels = [label for _, label in opts]
+            picked_label = st.selectbox(
+                "Advanced model family",
+                options=labels,
+                index=0,
+                key="facets_mode_advanced_model_label",
+                help=(
+                    "DINA: Cognitive diagnostic with Q-matrix. "
+                    "HRM: Hierarchical rater model. "
+                    "Testlet RI / Bifactor: item bundles. "
+                    "Mixture Rasch: latent classes. "
+                    "2PL Binary: free-discrimination dichotomous. "
+                    "Pairwise BTL: head-to-head comparisons."
+                ),
+            )
+            _advanced_model_key = next((k for k, lbl in opts if lbl == picked_label), None)
+
+            meta = advanced_model_metadata(_advanced_model_key or "")
+            _advanced_q_matrix_df: pd.DataFrame | None = None
+            _advanced_n_classes = 2
+            if meta.get("needs_q_matrix") == "true":
+                q_file = st.file_uploader(
+                    "Q-matrix CSV (items × attributes, values 0/1)",
+                    type=["csv"],
+                    key="facets_mode_advanced_q_matrix",
+                    help="First row = attribute names, first column = item names (optional).",
+                )
+                if q_file is not None:
+                    try:
+                        _advanced_q_matrix_df = pd.read_csv(q_file, index_col=0)
+                    except Exception:
+                        q_file.seek(0)
+                        _advanced_q_matrix_df = pd.read_csv(q_file)
+                    _valid = validate_q_matrix(_advanced_q_matrix_df)
+                    if _valid["valid"]:
+                        st.success(
+                            f"Q-matrix OK — {_valid['n_items']} items × "
+                            f"{_valid['n_attributes']} attributes "
+                            f"({_valid['coverage']:.0%} coverage)."
+                        )
+                    else:
+                        for msg in _valid["messages"]:
+                            st.warning(msg)
+            if meta.get("needs_class_count") == "true":
+                _advanced_n_classes = int(st.number_input(
+                    "Number of latent classes",
+                    min_value=2, max_value=10, value=2, step=1,
+                    key="facets_mode_advanced_n_classes",
+                    help="Rost (1990) Mixture Rasch typically uses 2–3 classes.",
+                ))
+
+            # Download button: build the Stan code on click
+            if st.button(
+                "📥 Generate Stan code for this advanced model",
+                key="facets_mode_advanced_generate",
+                use_container_width=True,
+                type="primary",
+            ):
+                try:
+                    stan_src = generate_advanced_model_stan_code(
+                        _advanced_model_key or "",
+                        n_items=(_advanced_q_matrix_df.shape[0]
+                                 if isinstance(_advanced_q_matrix_df, pd.DataFrame) else 10),
+                        n_attributes=(_advanced_q_matrix_df.shape[1]
+                                      if isinstance(_advanced_q_matrix_df, pd.DataFrame) else 3),
+                        n_categories=5,
+                        n_classes=_advanced_n_classes,
+                    )
+                    st.session_state["_advanced_model_stan_code"] = stan_src
+                    st.session_state["_advanced_model_stan_name"] = _advanced_model_key
+                except Exception as exc:
+                    st.error(f"Could not generate Stan code: {exc}")
+            if "_advanced_model_stan_code" in st.session_state:
+                st.download_button(
+                    "⬇ Download .stan",
+                    data=st.session_state["_advanced_model_stan_code"].encode("utf-8"),
+                    file_name=f"mfrm_{str(st.session_state.get('_advanced_model_stan_name', 'advanced')).lower()}.stan",
+                    mime="text/plain",
+                    key="facets_mode_advanced_dl",
+                    use_container_width=True,
+                )
+                st.caption(
+                    "Compile locally with cmdstan / cmdstanpy / rstan. Use "
+                    "this file plus your own data bundle; see the Stan Code "
+                    "sub-tab (Report → 💾 Exports) for a runner script."
+                )
     step_facet = None
     if model_type in {"PCM", "GPCM"}:
         step_facet = st.sidebar.selectbox(
@@ -23753,6 +23859,62 @@ def _self_test_publication_document_word() -> None:
     )
 
 
+def _self_test_advanced_model_generators() -> None:
+    """Every advanced Stan generator must produce a well-formed program
+    with the four canonical Stan blocks and balanced braces."""
+    required_blocks = ("data", "parameters", "model", "generated quantities")
+    for model_name in _ADVANCED_RESPONSE_MODELS:
+        code = generate_advanced_model_stan_code(
+            model_name, n_items=5, n_attributes=2, n_categories=4, n_classes=2,
+        )
+        _self_test_assert(
+            isinstance(code, str) and len(code) > 200,
+            f"{model_name}: Stan code too short ({len(code) if code else 0})",
+        )
+        for block in required_blocks:
+            _self_test_assert(
+                f"{block} {{" in code or f"{block}{{" in code,
+                f"{model_name}: missing `{block}` block in generated Stan code",
+            )
+        # Brace balance
+        n_open = code.count("{")
+        n_close = code.count("}")
+        _self_test_assert(
+            n_open == n_close,
+            f"{model_name}: unbalanced braces ({n_open} open vs {n_close} close)",
+        )
+        # Model-specific keyword markers
+        if model_name == "DINA":
+            _self_test_assert("bernoulli_lpmf" in code, "DINA missing bernoulli_lpmf")
+            _self_test_assert("profile" in code, "DINA missing profile class enumeration")
+        if model_name == "HRM":
+            _self_test_assert("categorical_logit" in code, "HRM missing categorical_logit")
+            _self_test_assert("phi" in code, "HRM missing phi (rater accuracy)")
+        if model_name in {"TESTLET_RI", "TESTLET_BIFACTOR"}:
+            _self_test_assert("gamma_testlet" in code, f"{model_name} missing gamma_testlet")
+        if model_name == "MIXTURE_RASCH":
+            _self_test_assert("simplex" in code, "MIXTURE_RASCH missing simplex class_probs")
+            _self_test_assert("dirichlet" in code, "MIXTURE_RASCH missing dirichlet prior")
+        if model_name == "IRT_2PL_BINARY":
+            _self_test_assert("alpha_item" in code, "2PL missing alpha_item (discrimination)")
+        if model_name == "PAIRWISE_BTL":
+            _self_test_assert("ability" in code, "BTL missing ability parameter")
+
+    # Q-matrix validator
+    good_q = pd.DataFrame([[1, 0, 0], [0, 1, 0], [1, 1, 0], [0, 0, 1], [1, 0, 1]])
+    res = validate_q_matrix(good_q)
+    _self_test_assert(res["valid"], f"well-formed Q-matrix flagged invalid: {res['messages']}")
+    _self_test_assert(res["n_items"] == 5 and res["n_attributes"] == 3, "Q-matrix dims wrong")
+
+    bad_q = pd.DataFrame([[1, 0, 0], [0, 0, 0]])  # second item has no attributes
+    res = validate_q_matrix(bad_q)
+    _self_test_assert(not res["valid"], "empty-row Q-matrix not flagged")
+    _self_test_assert(
+        any("no attributes" in m for m in res["messages"]),
+        f"expected 'no attributes' message, got: {res['messages']}",
+    )
+
+
 def _self_test_chart_guide_library() -> None:
     """Pin the unified chart-guide library shape so renderers behave consistently."""
     expected_keys = {
@@ -24996,6 +25158,7 @@ def run_self_tests() -> int:
         ("PDF publication document builder", _self_test_publication_document_pdf),
         ("Posterior Viewer loaders / plots", _self_test_posterior_viewer_loaders),
         ("Unified chart guide library", _self_test_chart_guide_library),
+        ("Advanced-model Stan generators", _self_test_advanced_model_generators),
     ]
     failures = []
     for name, test_func in tests:
@@ -25118,6 +25281,467 @@ _CHART_GUIDE_LIBRARY: dict[str, dict[str, str]] = {
         ),
     },
 }
+
+
+# ---------------------------------------------------------------------------
+# Advanced response-model registry (Phase C) — download-only Stan generators
+# ---------------------------------------------------------------------------
+# The core RSM / PCM / GPCM estimators run locally (Python/EM/JMLE). The
+# advanced models below add Stan code + data-bundle generators for
+# Cognitive Diagnostic (DINA), Hierarchical Rater (HRM), testlet models
+# (random intercept + bifactor), Mixture Rasch, 2PL Binary, and
+# Pairwise BTL. Actual sampling is done offline via the runner scripts
+# this app already exports — Streamlit Cloud never invokes cmdstan.
+
+_ADVANCED_RESPONSE_MODELS: dict[str, dict[str, str]] = {
+    "DINA": {
+        "label": "DINA (Cognitive Diagnostic; de la Torre 2009)",
+        "family": "CDM",
+        "binary": "true",
+        "needs_q_matrix": "true",
+        "needs_testlet_column": "false",
+        "needs_class_count": "false",
+    },
+    "HRM": {
+        "label": "HRM (Hierarchical Rater Model; Patz et al. 2002)",
+        "family": "Rater",
+        "binary": "false",
+        "needs_q_matrix": "false",
+        "needs_testlet_column": "false",
+        "needs_class_count": "false",
+    },
+    "TESTLET_RI": {
+        "label": "Testlet Random Intercept (Bradlow et al. 1999)",
+        "family": "Testlet",
+        "binary": "false",
+        "needs_q_matrix": "false",
+        "needs_testlet_column": "true",
+        "needs_class_count": "false",
+    },
+    "TESTLET_BIFACTOR": {
+        "label": "Testlet Bifactor (DeMars 2006)",
+        "family": "Testlet",
+        "binary": "false",
+        "needs_q_matrix": "false",
+        "needs_testlet_column": "true",
+        "needs_class_count": "false",
+    },
+    "MIXTURE_RASCH": {
+        "label": "Mixture Rasch (Rost 1990)",
+        "family": "Mixture",
+        "binary": "false",
+        "needs_q_matrix": "false",
+        "needs_testlet_column": "false",
+        "needs_class_count": "true",
+    },
+    "IRT_2PL_BINARY": {
+        "label": "2PL Binary (Birnbaum 1968)",
+        "family": "IRT",
+        "binary": "true",
+        "needs_q_matrix": "false",
+        "needs_testlet_column": "false",
+        "needs_class_count": "false",
+    },
+    "PAIRWISE_BTL": {
+        "label": "Pairwise Bradley-Terry-Luce (Bradley & Terry 1952)",
+        "family": "IRT",
+        "binary": "true",
+        "needs_q_matrix": "false",
+        "needs_testlet_column": "false",
+        "needs_class_count": "false",
+    },
+}
+
+
+def is_advanced_response_model(name: str | None) -> bool:
+    """True if `name` is one of the Stan-first-only advanced models."""
+    if not name:
+        return False
+    return str(name).upper() in _ADVANCED_RESPONSE_MODELS
+
+
+def advanced_model_metadata(name: str) -> dict[str, str]:
+    """Return the registry entry for an advanced model, or an empty dict."""
+    return dict(_ADVANCED_RESPONSE_MODELS.get(str(name).upper(), {}))
+
+
+def advanced_model_options() -> list[tuple[str, str]]:
+    """List of `(key, human_label)` tuples for the sidebar picker."""
+    return [(k, v["label"]) for k, v in _ADVANCED_RESPONSE_MODELS.items()]
+
+
+# ---------------------------------------------------------------------------
+# Stan code generators (C2 – C6)
+# ---------------------------------------------------------------------------
+# Each generator returns a complete, well-formed Stan program as a string.
+# The programs are written to be compiled with cmdstan / cmdstanpy / rstan
+# on the user's own machine; this file does not compile or sample them.
+
+def generate_dina_stan_code(n_items: int, n_attributes: int) -> str:
+    """DINA CDM (de la Torre 2009) with slip / guess priors and profile class.
+
+    Signature matches `Y[person, item] ~ Bernoulli(phi)` where
+    phi = (1 - s_i) * eta + g_i * (1 - eta), eta = prod_k alpha_k^{q_ik}.
+    """
+    return f"""data {{
+  int<lower=1> J;                // persons
+  int<lower=1> I;                // items
+  int<lower=1> K;                // attributes
+  int<lower=0, upper=1> Y[J, I]; // response matrix
+  matrix<lower=0, upper=1>[I, K] Q;
+}}
+transformed data {{
+  int<lower=1> C = 1;
+  for (k in 1:K) C = C * 2;
+  matrix[C, K] profile;
+  for (c in 1:C) {{
+    int rem = c - 1;
+    for (k in 1:K) {{
+      profile[c, k] = rem % 2;
+      rem = rem / 2;
+    }}
+  }}
+}}
+parameters {{
+  simplex[C] class_probs;
+  vector<lower=0, upper=0.5>[I] slip;
+  vector<lower=0, upper=0.5>[I] guess;
+}}
+model {{
+  slip ~ beta(2, 10);
+  guess ~ beta(2, 10);
+  for (j in 1:J) {{
+    vector[C] lps;
+    for (c in 1:C) {{
+      real lp = log(class_probs[c]);
+      for (i in 1:I) {{
+        real eta = 1.0;
+        for (k in 1:K) eta = eta * (Q[i, k] == 0 ? 1.0 : profile[c, k]);
+        real phi = (1 - slip[i]) * eta + guess[i] * (1 - eta);
+        lp += bernoulli_lpmf(Y[j, i] | phi);
+      }}
+      lps[c] = lp;
+    }}
+    target += log_sum_exp(lps);
+  }}
+}}
+generated quantities {{
+  int<lower=1, upper=C> profile_class[J];
+  vector[J] log_lik;
+  for (j in 1:J) {{
+    vector[C] lps;
+    for (c in 1:C) {{
+      real lp = log(class_probs[c]);
+      for (i in 1:I) {{
+        real eta = 1.0;
+        for (k in 1:K) eta = eta * (Q[i, k] == 0 ? 1.0 : profile[c, k]);
+        real phi = (1 - slip[i]) * eta + guess[i] * (1 - eta);
+        lp += bernoulli_lpmf(Y[j, i] | phi);
+      }}
+      lps[c] = lp;
+    }}
+    log_lik[j] = log_sum_exp(lps);
+    profile_class[j] = categorical_rng(softmax(lps));
+  }}
+}}
+"""
+
+
+def generate_hrm_stan_code(n_categories: int) -> str:
+    """Hierarchical Rater Model (Patz et al. 2002) with signal-detection
+    parameters phi (accuracy) and eta (bias)."""
+    return f"""data {{
+  int<lower=1> N;                              // number of observations
+  int<lower=1> J;                              // persons
+  int<lower=1> I;                              // items
+  int<lower=1> R;                              // raters
+  int<lower=2> K;                              // number of categories ({n_categories} expected)
+  int<lower=1, upper=J> person[N];
+  int<lower=1, upper=I> item[N];
+  int<lower=1, upper=R> rater[N];
+  int<lower=1, upper=K> y[N];
+}}
+parameters {{
+  vector[J] theta;
+  vector[I] beta_item;
+  ordered[K-1] kappa;                          // global step thresholds
+  vector<lower=0>[R] phi;                      // rater accuracy (signal)
+  vector[R] eta;                               // rater bias
+  real<lower=0> sigma_phi;
+  real<lower=0> sigma_eta;
+}}
+model {{
+  theta ~ std_normal();
+  beta_item ~ normal(0, 1);
+  kappa ~ normal(0, 2);
+  phi ~ lognormal(0, sigma_phi);
+  eta ~ normal(0, sigma_eta);
+  sigma_phi ~ normal(0, 1);
+  sigma_eta ~ normal(0, 1);
+  for (n in 1:N) {{
+    vector[K] ps;
+    real mu = phi[rater[n]] * (theta[person[n]] - beta_item[item[n]]) + eta[rater[n]];
+    for (k in 1:K) ps[k] = 0;
+    for (k in 2:K) ps[k] = ps[k-1] + mu - kappa[k-1];
+    y[n] ~ categorical_logit(ps);
+  }}
+}}
+generated quantities {{
+  vector[N] log_lik;
+  int<lower=1, upper=K> y_rep[N];
+  for (n in 1:N) {{
+    vector[K] ps;
+    real mu = phi[rater[n]] * (theta[person[n]] - beta_item[item[n]]) + eta[rater[n]];
+    ps[1] = 0;
+    for (k in 2:K) ps[k] = ps[k-1] + mu - kappa[k-1];
+    log_lik[n] = categorical_logit_lpmf(y[n] | ps);
+    y_rep[n] = categorical_logit_rng(ps);
+  }}
+}}
+"""
+
+
+def generate_testlet_stan_code(n_categories: int, *, bifactor: bool = False) -> str:
+    """Testlet model: random intercept (Bradlow 1999) or bifactor (DeMars 2006)."""
+    extra_theta = "  vector[T] theta_testlet_general;\n" if bifactor else ""
+    gen_mu = (
+        "    real mu = theta[person[n]] + theta_testlet_general[testlet[n]]"
+        " + gamma_testlet[testlet[n]] - beta_item[item[n]];"
+        if bifactor
+        else "    real mu = theta[person[n]] + gamma_testlet[testlet[n]] - beta_item[item[n]];"
+    )
+    bifactor_prior = (
+        "  theta_testlet_general ~ normal(0, sigma_general);\n"
+        "  real<lower=0> sigma_general = 1;\n"
+        if bifactor
+        else ""
+    )
+    return f"""data {{
+  int<lower=1> N;
+  int<lower=1> J;
+  int<lower=1> I;
+  int<lower=1> T;                 // number of testlets
+  int<lower=2> K;                 // {n_categories} categories
+  int<lower=1, upper=J> person[N];
+  int<lower=1, upper=I> item[N];
+  int<lower=1, upper=T> testlet[N];
+  int<lower=1, upper=K> y[N];
+}}
+parameters {{
+  vector[J] theta;
+  vector[I] beta_item;
+  ordered[K-1] kappa;
+  vector[T] gamma_testlet;        // testlet random intercepts
+  real<lower=0> sigma_testlet;
+{extra_theta}}}
+model {{
+  theta ~ std_normal();
+  beta_item ~ normal(0, 1);
+  kappa ~ normal(0, 2);
+  gamma_testlet ~ normal(0, sigma_testlet);
+  sigma_testlet ~ normal(0, 1);
+{bifactor_prior}  for (n in 1:N) {{
+    vector[K] ps;
+{gen_mu}
+    ps[1] = 0;
+    for (k in 2:K) ps[k] = ps[k-1] + mu - kappa[k-1];
+    y[n] ~ categorical_logit(ps);
+  }}
+}}
+generated quantities {{
+  vector[N] log_lik;
+  int<lower=1, upper=K> y_rep[N];
+  for (n in 1:N) {{
+    vector[K] ps;
+{gen_mu}
+    ps[1] = 0;
+    for (k in 2:K) ps[k] = ps[k-1] + mu - kappa[k-1];
+    log_lik[n] = categorical_logit_lpmf(y[n] | ps);
+    y_rep[n] = categorical_logit_rng(ps);
+  }}
+}}
+"""
+
+
+def generate_mixture_rasch_stan_code(n_classes: int) -> str:
+    """Mixture Rasch (Rost 1990): latent classes with class-specific item difficulties."""
+    return f"""data {{
+  int<lower=1> N;
+  int<lower=1> J;
+  int<lower=1> I;
+  int<lower=2> C_mix;                  // number of latent classes ({n_classes})
+  int<lower=1, upper=J> person[N];
+  int<lower=1, upper=I> item[N];
+  int<lower=0, upper=1> y[N];
+}}
+parameters {{
+  simplex[C_mix] class_probs;
+  vector[J] theta;
+  matrix[C_mix, I] beta_class;
+}}
+model {{
+  class_probs ~ dirichlet(rep_vector(1, C_mix));
+  theta ~ std_normal();
+  to_vector(beta_class) ~ normal(0, 2);
+  for (j in 1:J) {{
+    vector[C_mix] lps;
+    for (c in 1:C_mix) {{
+      real lp = log(class_probs[c]);
+      for (n in 1:N) {{
+        if (person[n] == j) {{
+          lp += bernoulli_logit_lpmf(y[n] | theta[j] - beta_class[c, item[n]]);
+        }}
+      }}
+      lps[c] = lp;
+    }}
+    target += log_sum_exp(lps);
+  }}
+}}
+generated quantities {{
+  int<lower=1, upper=C_mix> person_class[J];
+  vector[J] log_lik;
+  for (j in 1:J) {{
+    vector[C_mix] lps;
+    for (c in 1:C_mix) {{
+      real lp = log(class_probs[c]);
+      for (n in 1:N) {{
+        if (person[n] == j) {{
+          lp += bernoulli_logit_lpmf(y[n] | theta[j] - beta_class[c, item[n]]);
+        }}
+      }}
+      lps[c] = lp;
+    }}
+    person_class[j] = categorical_rng(softmax(lps));
+    log_lik[j] = log_sum_exp(lps);
+  }}
+}}
+"""
+
+
+def generate_2pl_binary_stan_code() -> str:
+    """2PL Binary (Birnbaum 1968): free discrimination + difficulty."""
+    return """data {
+  int<lower=1> N;
+  int<lower=1> J;
+  int<lower=1> I;
+  int<lower=1, upper=J> person[N];
+  int<lower=1, upper=I> item[N];
+  int<lower=0, upper=1> y[N];
+}
+parameters {
+  vector[J] theta;
+  vector[I] beta_item;
+  vector<lower=0>[I] alpha_item;
+}
+model {
+  theta ~ std_normal();
+  beta_item ~ normal(0, 1);
+  alpha_item ~ lognormal(0, 0.5);
+  for (n in 1:N) {
+    y[n] ~ bernoulli_logit(alpha_item[item[n]] * (theta[person[n]] - beta_item[item[n]]));
+  }
+}
+generated quantities {
+  vector[N] log_lik;
+  int<lower=0, upper=1> y_rep[N];
+  for (n in 1:N) {
+    real logit_p = alpha_item[item[n]] * (theta[person[n]] - beta_item[item[n]]);
+    log_lik[n] = bernoulli_logit_lpmf(y[n] | logit_p);
+    y_rep[n] = bernoulli_logit_rng(logit_p);
+  }
+}
+"""
+
+
+def generate_pairwise_btl_stan_code() -> str:
+    """Pairwise Bradley-Terry-Luce: probability that object A beats opponent B."""
+    return """data {
+  int<lower=1> N;                       // comparisons
+  int<lower=1> J;                       // objects being compared
+  int<lower=1, upper=J> object_a[N];
+  int<lower=1, upper=J> object_b[N];
+  int<lower=0, upper=1> wins_a[N];
+}
+parameters {
+  vector[J] ability;
+}
+model {
+  ability ~ std_normal();
+  for (n in 1:N) {
+    wins_a[n] ~ bernoulli_logit(ability[object_a[n]] - ability[object_b[n]]);
+  }
+}
+generated quantities {
+  vector[N] log_lik;
+  int<lower=0, upper=1> wins_rep[N];
+  for (n in 1:N) {
+    real diff = ability[object_a[n]] - ability[object_b[n]];
+    log_lik[n] = bernoulli_logit_lpmf(wins_a[n] | diff);
+    wins_rep[n] = bernoulli_logit_rng(diff);
+  }
+}
+"""
+
+
+def generate_advanced_model_stan_code(
+    model_name: str,
+    *,
+    n_items: int = 10,
+    n_attributes: int = 3,
+    n_categories: int = 5,
+    n_classes: int = 2,
+) -> str:
+    """Dispatch to the right Stan-code generator for an advanced model."""
+    name = str(model_name).upper()
+    if name == "DINA":
+        return generate_dina_stan_code(n_items, n_attributes)
+    if name == "HRM":
+        return generate_hrm_stan_code(n_categories)
+    if name == "TESTLET_RI":
+        return generate_testlet_stan_code(n_categories, bifactor=False)
+    if name == "TESTLET_BIFACTOR":
+        return generate_testlet_stan_code(n_categories, bifactor=True)
+    if name == "MIXTURE_RASCH":
+        return generate_mixture_rasch_stan_code(n_classes)
+    if name == "IRT_2PL_BINARY":
+        return generate_2pl_binary_stan_code()
+    if name == "PAIRWISE_BTL":
+        return generate_pairwise_btl_stan_code()
+    raise ValueError(f"Unknown advanced model: {model_name}")
+
+
+def validate_q_matrix(q_df: pd.DataFrame) -> dict:
+    """Validate a user-supplied Q-matrix for DINA / G-DINA.
+
+    Returns a dict with
+      - `valid` (bool)
+      - `messages` (list[str])  — human-readable problems (empty if valid)
+      - `n_items`, `n_attributes`, `coverage`
+    """
+    messages: list[str] = []
+    if q_df is None or q_df.empty:
+        return {"valid": False, "messages": ["Q-matrix is empty."], "n_items": 0, "n_attributes": 0, "coverage": 0.0}
+    numeric = q_df.apply(pd.to_numeric, errors="coerce")
+    if numeric.isna().any().any():
+        messages.append("Q-matrix contains non-numeric values (cells must be 0 or 1).")
+    unique = set(pd.unique(numeric.values.ravel())) - {np.nan}
+    if not unique.issubset({0, 1, 0.0, 1.0}):
+        messages.append(f"Q-matrix values must be 0 or 1; found {sorted(unique)}.")
+    row_sums = numeric.fillna(0).sum(axis=1)
+    if (row_sums <= 0).any():
+        messages.append(f"{int((row_sums <= 0).sum())} item(s) have no attributes (empty row in Q).")
+    col_sums = numeric.fillna(0).sum(axis=0)
+    if (col_sums <= 0).any():
+        messages.append(f"{int((col_sums <= 0).sum())} attribute(s) cover no items (empty column in Q).")
+    n_items, n_attributes = numeric.shape
+    coverage = float((numeric.fillna(0) > 0).values.mean()) if numeric.size else 0.0
+    return {
+        "valid": not messages,
+        "messages": messages,
+        "n_items": int(n_items),
+        "n_attributes": int(n_attributes),
+        "coverage": coverage,
+    }
 
 
 def render_keyboard_shortcuts_help() -> None:

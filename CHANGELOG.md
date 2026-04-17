@@ -4,6 +4,52 @@ All notable changes to this standalone Streamlit distribution should be recorded
 
 ## Unreleased
 
+### Added — Phase C (advanced model Stan code generators, download-only)
+
+- Seven advanced response models registered in `_ADVANCED_RESPONSE_MODELS`:
+  `DINA` (CDM; de la Torre 2009), `HRM` (Patz et al. 2002), `TESTLET_RI`
+  and `TESTLET_BIFACTOR` (Bradlow 1999 / DeMars 2006), `MIXTURE_RASCH`
+  (Rost 1990), `IRT_2PL_BINARY` (Birnbaum 1968), `PAIRWISE_BTL`
+  (Bradley & Terry 1952). Each entry carries `family`, `binary`,
+  `needs_q_matrix`, `needs_testlet_column`, and `needs_class_count`
+  metadata so the sidebar can surface the right extra widgets.
+- Per-model Stan code generators:
+  - `generate_dina_stan_code(n_items, n_attributes)` — Bernoulli
+    likelihood with slip / guess Beta(2, 10) priors, enumerated
+    profile class, `log_lik`, and `profile_class` in
+    `generated quantities`.
+  - `generate_hrm_stan_code(n_categories)` — signal-detection
+    parameters phi (accuracy, lognormal) and eta (bias), ordered
+    kappa thresholds, `y_rep` posterior predictive.
+  - `generate_testlet_stan_code(n_categories, bifactor)` — random
+    intercept by default; bifactor adds a `theta_testlet_general`
+    latent factor per testlet.
+  - `generate_mixture_rasch_stan_code(n_classes)` — latent classes
+    with class-specific item difficulties, Dirichlet prior on class
+    probabilities.
+  - `generate_2pl_binary_stan_code()` — free discrimination
+    (lognormal) + difficulty, `y_rep` PPC.
+  - `generate_pairwise_btl_stan_code()` — ability vector + pairwise
+    Bernoulli logit.
+  - `generate_advanced_model_stan_code(name, ...)` — dispatcher.
+- `validate_q_matrix(df)` validates DINA Q-matrices (0/1 values,
+  attribute coverage, item coverage, per-item / per-attribute row
+  and column sums) and returns a structured verdict with messages.
+- New sidebar section "🧪 Advanced models (Stan, download only)"
+  (collapsed by default) with:
+  - enable checkbox
+  - model family picker (labels from the registry)
+  - Q-matrix uploader (DINA), class-count input (Mixture Rasch)
+  - 📥 "Generate Stan code" button that serialises the Stan program
+    into session_state and exposes a ⬇ Download .stan button.
+- Inline self-test `_self_test_advanced_model_generators` walks every
+  registered advanced model, verifies that the generated Stan code
+  contains each of the four canonical blocks, has balanced braces,
+  carries model-specific keyword markers (bernoulli_lpmf for DINA,
+  phi for HRM, gamma_testlet for testlets, simplex + dirichlet for
+  mixture, alpha_item for 2PL, ability for BTL), and exercises
+  `validate_q_matrix` on well-formed and broken inputs.
+
 ### Added — Phase D (UX tweaks)
 
 - Toast notification (`st.toast`) fires in addition to the persistent

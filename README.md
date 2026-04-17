@@ -6,13 +6,47 @@ This app is designed to run without `mfrmr`, `rpy2`, `Rscript`, FACETS, TAM, sir
 
 ## Status
 
-- Release status: public beta / research preview
+- Release status: public beta / research preview (**v0.2.0-beta**)
 - Runtime engine: standalone Python
 - Primary entrypoint: `streamlit_app.py`
 - Intended use: exploratory analysis, teaching, reporting support, and research workflow prototyping
 - Not intended as: a validated drop-in replacement for FACETS, TAM, sirt, mirt, or `mfrmr`
 
 Before using results for high-stakes scoring, placement, certification, employment, or institutional decisions, cross-check the analysis with an established workflow and document the model assumptions.
+
+## What's new in v0.2.0-beta
+
+- **📄 Publication Document downloads** — one click to produce a
+  manuscript-ready Word (.docx), PDF, or HTML file with auto-generated
+  abstract, exhaustive Methods, results tables, embedded figures, and an
+  APA 7 reference list. Accessible from **Report → 💾 Exports**.
+- **🧮 Posterior Viewer mode** — upload posterior draws produced offline
+  (CmdStan CSV, Apache Parquet, or ArviZ NetCDF) and get trace / ridge
+  / pair / forest plots plus HMC diagnostics (Rhat, ESS, divergences,
+  E-BFMI) without leaving the browser. Select the mode from the sidebar top.
+- **🧪 Advanced model Stan generators** (download-only) — DINA, HRM,
+  Testlet (Random Intercept + Bifactor), Mixture Rasch, 2PL Binary,
+  and Pairwise BTL. The app emits a `.stan` file + data bundle; you
+  compile and sample locally with cmdstan / cmdstanpy / rstan, then
+  bring the draws back to the Posterior Viewer.
+- **Pattern-matched estimation errors** — instead of a generic "common
+  causes" checklist, failures now surface a specific diagnosis + action
+  (singular matrix → non-centered facet, maxit reached → raise to 1000,
+  rating scale error → check Score column, …).
+- **Pre-estimation readiness panel** — 🟢 / 🟡 / 🔴 traffic-light across
+  eight data-quality checks before the Run button fires.
+- **Run history + two-run comparison** — the last 10 runs sit behind a
+  Restore button; pick any two to compare convergence, element-level
+  Pearson r + RMSE, and reliability in a side-by-side panel.
+- **Step-by-step progress** — `st.status` accordion reports Estimate →
+  Diagnostics → Report tables → Bias interactions instead of a silent
+  spinner, with a completion toast.
+- **Surface-reason diagnostics** — residual PCA, bias interaction, and
+  reliability now explain *why* they were skipped instead of returning
+  a blank "not available".
+
+See `CHANGELOG.md` for the full list and `docs/v0.2.0_beta_plan.md`
+for the release checklist.
 
 ## Preview
 

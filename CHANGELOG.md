@@ -2,7 +2,7 @@
 
 All notable changes to this standalone Streamlit distribution should be recorded here.
 
-## Unreleased
+## 0.2.0-beta - 2026-04-17
 
 ### Added — Phase C (advanced model Stan code generators, download-only)
 
@@ -196,6 +196,21 @@ All notable changes to this standalone Streamlit distribution should be recorded
 - Added `arviz >= 0.17` (Posterior Viewer — Rhat / ESS / InferenceData I/O).
 - Added `netcdf4 >= 1.6` (Posterior Viewer — NetCDF file round-trip).
 - Added `pyarrow >= 15.0` (Posterior Viewer — Apache Parquet draws).
+
+### Changed
+
+- App version label: `0.1.2-beta` → `0.2.0-beta`.
+- Report tab restructured into three meta-categories (📝 Reports /
+  📊 Tables & checks / 💾 Exports); individual sub-section renderers
+  unchanged.
+- Residual-PCA skip-path surfaces a structured reason instead of the
+  generic "not available" fallback.
+- Estimation failure UI uses pattern-matched specific remedies instead
+  of a generic four-bullet checklist.
+
+## Unreleased
+
+No unreleased changes yet.
 
 ## 0.1.2-beta - 2026-04-12
 

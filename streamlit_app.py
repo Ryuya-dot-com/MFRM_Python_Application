@@ -43,7 +43,7 @@ if any(flag in sys.argv for flag in CLI_CHECK_FLAGS):
     logging.getLogger("streamlit.runtime.caching.cache_resource_api").setLevel(logging.ERROR)
 
 
-APP_VERSION = "0.2.7-beta"
+APP_VERSION = "0.2.8-beta"
 APP_RELEASE_LABEL = "standalone Python beta"
 RUNTIME_PACKAGE_FLOORS = OrderedDict([
     ("numpy", "1.24"),
@@ -2348,6 +2348,36 @@ def cached_sample_mfrm_data_by_key(
     """Cached per-scenario sample data. Each (key, seed) tuple caches separately."""
     return sample_mfrm_data_by_key(scenario_key, seed=int(seed)).copy()
 
+
+def render_loaded_data_banner() -> None:
+    """Show a one-line banner in the main area naming the loaded scenario.
+
+    The banner is only rendered when a built-in scenario is loaded
+    (marked by `_loaded_sample_scenario_key` in session state). When
+    the user switches to Paste or Upload, the sidebar clears the
+    marker and this helper no-ops — we do not want to imply that a
+    user-provided file came from the literature.
+
+    Design: st.info-colored callout with the scenario label, obs count,
+    and a subtle nudge pointing at the "Try another scenario" buttons
+    back in the sidebar so first-time users discover the switcher.
+    """
+    key = st.session_state.get("_loaded_sample_scenario_key")
+    if not key:
+        return
+    scenario = SAMPLE_DATA_SCENARIOS.get(key)
+    if not scenario:
+        return
+    dims = scenario["dimensions"]
+    st.info(
+        f"📂 **Loaded sample data:** {scenario['label']} — "
+        f"{dims['persons']} × {dims['raters']} × {dims['tasks']} × "
+        f"{dims['criteria']} = **{scenario['n_obs']:,} observations**, "
+        f"{dims['n_cat']}-point scale. "
+        f"Switch scenario from the **Data source** radio in the sidebar, "
+        f"or use one of the 'Try another scenario' quick-switch buttons "
+        f"below the info card."
+    )
 
 
 def guess_col(cols, patterns, fallback=0):
@@ -8290,59 +8320,95 @@ def render_data_privacy_notice(where: str = "main") -> None:
 
 
 def read_input_data(core: dict) -> pd.DataFrame:
-    source = st.sidebar.radio(
-        "Data source",
-        ["Sample data (built-in)", "Paste table", "Upload file"],
-        index=0,
-        help="Choose how to provide your data. 'Sample data' loads a built-in dataset for demonstration.",
+    # v0.2.8-beta: Flat single-radio data-source picker. Previously the
+    # user faced a two-step flow (Sample data radio → Sample scenario
+    # selectbox) where the scenario switch was easy to miss. Now all
+    # four sample scenarios are first-class options alongside Paste and
+    # Upload, so the scenario switcher is impossible to overlook.
+    st.sidebar.markdown("### 📥 Data source")
+
+    # Build the option list: scenarios first (in registry order),
+    # then paste / upload. Each entry records its kind so we can
+    # dispatch without string-matching the label.
+    _options: list[dict] = []
+    for key, meta in SAMPLE_DATA_SCENARIOS.items():
+        _options.append({
+            "label": meta["label"],
+            "kind": "scenario",
+            "scenario_key": key,
+        })
+    _options.append({"label": "📋 Paste CSV/TSV text",  "kind": "paste",  "scenario_key": None})
+    _options.append({"label": "📤 Upload your own file", "kind": "upload", "scenario_key": None})
+    _option_labels = [opt["label"] for opt in _options]
+
+    # Default to the writing-essay scenario so existing onboarding
+    # tours and screenshots still match without user action.
+    default_idx = 0
+    for i, opt in enumerate(_options):
+        if opt.get("scenario_key") == DEFAULT_SAMPLE_SCENARIO_KEY:
+            default_idx = i
+            break
+
+    chosen_label = st.sidebar.radio(
+        "Choose one — all four built-in samples plus your own data "
+        "are listed here. Each sample is synthetic with parameters "
+        "grounded in published MFRM studies.",
+        options=_option_labels,
+        index=default_idx,
+        key="data_source_flat",
     )
+    chosen = _options[_option_labels.index(chosen_label)]
 
-    if source == "Sample data (built-in)":
-        # v0.2.7-beta: four scenarios grounded in published MFRM
-        # parameter ranges. Default key matches the v0.1+ demo so
-        # existing onboarding tours, screenshots, and saved configs
-        # continue to work unchanged.
-        scenario_keys = list(SAMPLE_DATA_SCENARIOS.keys())
-        scenario_labels = [
-            SAMPLE_DATA_SCENARIOS[k]["label"] for k in scenario_keys
-        ]
-        default_index = (
-            scenario_keys.index(DEFAULT_SAMPLE_SCENARIO_KEY)
-            if DEFAULT_SAMPLE_SCENARIO_KEY in scenario_keys
-            else 0
-        )
-        chosen_label = st.sidebar.selectbox(
-            "Sample scenario",
-            options=scenario_labels,
-            index=default_index,
-            key="sample_scenario_label",
-            help=(
-                "Each scenario is a synthetic dataset with Rasch-family "
-                "parameters informed by published MFRM studies. Pick "
-                "'Large-scale writing' for a PCA-ready demo, 'L2 speaking' "
-                "for analytic-rubric / PCM experiments, or 'Clinical OSCE' "
-                "for a station-dominant design."
-            ),
-        )
-        scenario_key = scenario_keys[scenario_labels.index(chosen_label)]
+    if chosen["kind"] == "scenario":
+        scenario_key = chosen["scenario_key"]
         scenario = SAMPLE_DATA_SCENARIOS[scenario_key]
+        dims = scenario["dimensions"]
 
-        # Short caption + expandable "About this dataset" block with
-        # the full description, dimensions, and APA-formatted citations
-        # so users can ground their interpretations in the literature.
-        st.sidebar.caption(scenario["short"])
-        with st.sidebar.expander("📚 About this dataset"):
-            dims = scenario["dimensions"]
-            st.markdown(
-                f"**Design:** {dims['persons']} persons × {dims['raters']} "
-                f"raters × {dims['tasks']} tasks × {dims['criteria']} "
-                f"criteria = {scenario['n_obs']:,} observations, "
-                f"{dims['n_cat']}-point scale."
-            )
+        # Inline info card (always visible — no expander gate). Users
+        # immediately see what they just selected: dimensions, obs
+        # count, and one-line diagnostic hint. Full description +
+        # references move to a secondary expander below.
+        st.sidebar.info(
+            f"**Loaded:** {scenario['label']}\n\n"
+            f"**Design:** {dims['persons']} × {dims['raters']} × "
+            f"{dims['tasks']} × {dims['criteria']} = "
+            f"**{scenario['n_obs']:,} observations**, "
+            f"{dims['n_cat']}-point scale.\n\n"
+            f"{scenario['short']}"
+        )
+
+        # Scenario switch buttons — shown only for the *other* three
+        # scenarios so users have a one-click way to see how a
+        # diagnostic looks on a different design without hunting back
+        # up to the radio.
+        _other_scenarios = [
+            (k, SAMPLE_DATA_SCENARIOS[k])
+            for k in SAMPLE_DATA_SCENARIOS
+            if k != scenario_key
+        ]
+        if _other_scenarios:
+            st.sidebar.caption("Try another scenario:")
+            for other_key, other_meta in _other_scenarios:
+                if st.sidebar.button(
+                    other_meta["label"],
+                    key=f"switch_scenario_{other_key}",
+                    use_container_width=True,
+                    help=other_meta["short"],
+                ):
+                    # Update the radio to the chosen scenario. Streamlit
+                    # will rerun on the next render and the radio reflects
+                    # the new selection automatically.
+                    st.session_state["data_source_flat"] = other_meta["label"]
+                    st.rerun()
+
+        # Full description + APA references in a collapsed expander
+        # so the info card stays compact. Opening this gives users
+        # everything they need to cite the scenario in a manuscript.
+        with st.sidebar.expander("📚 Full description + references"):
             st.markdown(scenario["description"])
             citations = scenario.get("citations", [])
             if citations:
-                st.markdown("**Parameter values are grounded in:**")
+                st.markdown("**Parameter values grounded in:**")
                 keys_seen: set[str] = set()
                 for cite in citations:
                     key = _CITATION_TO_KEY.get(cite)
@@ -8354,32 +8420,34 @@ def read_input_data(core: dict) -> pd.DataFrame:
                     ):
                         st.markdown(f"- {entry}")
                 else:
-                    # Fallback if a citation is not yet in the library
                     st.caption("References pending registration.")
 
         sample_df = cached_sample_mfrm_data_by_key(
             scenario_key, seed=20240101,
         ).copy()
-        # Expose the built-in sample dataset so users can inspect the
-        # expected input format before uploading their own data. The CSV
-        # is the exact frame the app loads, so column names and dtypes
-        # match what the estimator expects.
         st.sidebar.download_button(
-            "⬇ Download sample CSV",
+            "⬇ Download this scenario's CSV",
             data=sample_df.to_csv(index=False).encode("utf-8"),
             file_name=f"mfrm_sample_{scenario_key}.csv",
             mime="text/csv",
             key="sample_data_download",
             help=(
-                "Download the selected scenario's CSV so you can inspect "
-                "the column structure and try your own edits before "
-                "uploading."
+                "Download the exact CSV the app loads. Inspect the "
+                "column structure or use it as a template for your "
+                "own data."
             ),
             use_container_width=True,
         )
+        # Remember which scenario is loaded so the main area can
+        # surface a matching banner above the results tabs.
+        st.session_state["_loaded_sample_scenario_key"] = scenario_key
         return sample_df
 
-    if source == "Paste table":
+    # Non-scenario paths clear the loaded-scenario marker so the
+    # main-area banner does not lie about the data source.
+    st.session_state.pop("_loaded_sample_scenario_key", None)
+
+    if chosen["kind"] == "paste":
         render_data_privacy_notice(where="sidebar")
         text_value = st.sidebar.text_area(
             "Paste CSV/TSV text",
@@ -12481,6 +12549,15 @@ def run_facets_mode(core: dict, data: pd.DataFrame) -> None:
         "For first runs, use Standard. For final reporting, rerun with Full publication "
         "after the model and columns are settled."
     )
+
+    # v0.2.8-beta: main-area data banner. When the sidebar loads one of
+    # the four built-in scenarios, surface the scenario name + design
+    # dimensions at the top of the main area so users always know which
+    # dataset is about to run — not just when they scroll the sidebar.
+    try:
+        render_loaded_data_banner()
+    except Exception:  # pragma: no cover - banner is a UX helper
+        pass
 
     # Pre-estimation data quality readiness panel — always visible so users
     # see potential problems BEFORE clicking Run rather than after failure.
@@ -28589,9 +28666,13 @@ def render_onboarding_banner() -> None:
 
 | Step | Action | Where |
 |---|---|---|
-| **1️⃣** | **Choose a data source** (Sample data is loaded by default) | Sidebar ← top |
+| **1️⃣** | **Pick a data source** — four built-in sample scenarios + paste + upload | Sidebar ← 📥 Data source |
 | **2️⃣** | **Map your columns** — Person, Score, and two or more facet columns | Sidebar ← Column mapping |
 | **3️⃣** | **Click `Run FACETS-mode estimation`** at the bottom of the sidebar | Sidebar bottom |
+
+**Built-in scenarios** (all synthetic, MFRM-literature-grounded):
+✏️ Writing essay (960 obs, default) · 📚 Large-scale writing (2,880 obs, **PCA-ready**) ·
+🎙️ L2 speaking (3,600 obs) · 🏥 Clinical OSCE (3,600 obs).
 
 Afterwards, use the tabs (Measures, Fit, Dimensionality, Visuals, Report, ...)
 that appear below to explore diagnostics and build a publication document.

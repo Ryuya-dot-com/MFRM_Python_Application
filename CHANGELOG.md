@@ -2,6 +2,54 @@
 
 All notable changes to this standalone Streamlit distribution should be recorded here.
 
+## 0.2.8-beta - 2026-04-17
+
+Sample-scenario UX hotfix. The v0.2.7 scenario registry hid the
+switcher behind a two-step flow: users had to first select
+"Sample data (built-in)" on a radio, then spot a selectbox below
+labelled "Sample scenario". Early testers missed that the selectbox
+existed and assumed the app shipped a single sample. This release
+pulls the scenario choice out of hiding.
+
+### Changed
+
+- **Flat single-radio data-source picker.** The sidebar now shows
+  one radio with six options: the four built-in scenarios (with
+  emoji + observation count) followed by Paste CSV/TSV and Upload
+  file. No more two-step "Sample data → Sample scenario" flow.
+- **Inline info card** replaces the collapsed expander as the
+  primary surface for scenario metadata. The selected scenario's
+  name, design dimensions, observation count, and one-line
+  diagnostic hint are always visible in the sidebar directly under
+  the radio.
+- **"Try another scenario" quick-switch buttons.** When any scenario
+  is loaded, the sidebar now shows one-click buttons for each of the
+  other three scenarios so users can hop between designs without
+  scrolling back to the radio. Each button is tooltipped with the
+  scenario's short description.
+
+### Added
+
+- **Main-area data banner** (`render_loaded_data_banner`). When a
+  built-in scenario is loaded, a one-line callout appears above the
+  readiness panel naming the scenario, its dimensions, and pointing
+  at the sidebar switcher. Clears automatically when the user
+  switches to Paste or Upload so the banner never implies a
+  user-provided file came from the literature.
+- **Onboarding banner updated** to list all four built-in
+  scenarios (✏️ Writing essay / 📚 Large-scale writing / 🎙️ L2
+  speaking / 🏥 Clinical OSCE) with observation counts, so the
+  quickstart flow advertises the scenarios before the user even
+  reaches the sidebar.
+
+### Unchanged on purpose
+
+- The "🎯 Run with sample data" onboarding quickstart button still
+  fires the default writing-essay scenario — first-timers still get
+  a small dataset before they meet the switcher.
+- All four scenarios, their parameter values, and their APA 7
+  references are identical to v0.2.7. Only the UI wrapping changed.
+
 ## 0.2.7-beta - 2026-04-17
 
 Sample-data enrichment. Replaces the single hardcoded 960-observation

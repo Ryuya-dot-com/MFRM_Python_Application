@@ -8998,6 +8998,292 @@ def resolve_analysis_depth_settings(
     return settings
 
 
+_READINESS_ICON: dict[str, str] = {"ok": "🟢", "warning": "🟡", "issue": "🔴"}
+
+
+def _readiness_severity_max(*severities: str) -> str:
+    """Combine severities: issue > warning > ok."""
+    order = {"ok": 0, "warning": 1, "issue": 2}
+    reverse = {v: k for k, v in order.items()}
+    return reverse[max(order.get(s, 0) for s in severities)]
+
+
+def build_readiness_report(
+    *,
+    data: pd.DataFrame,
+    person_col: str,
+    score_col: str,
+    facet_cols: list[str],
+) -> dict:
+    """Build a pre-estimation readiness report from the uploaded data.
+
+    Returns a dict with:
+        overall     -- "ok" | "warning" | "issue"
+        checks      -- list of {"name", "severity", "headline", "detail"}
+        n_issues, n_warnings
+
+    Each check diagnoses one dimension (n_obs, n_persons, score column,
+    facet cardinality, facet coverage, column role overlap). The UI
+    renders this as a traffic-light banner with an expandable detail panel.
+    """
+    if data is None or (hasattr(data, "empty") and data.empty):
+        return {
+            "overall": "issue",
+            "checks": [{
+                "name": "data", "severity": "issue",
+                "headline": "No data uploaded",
+                "detail": "Upload a CSV/TSV file or load sample data to run MFRM.",
+            }],
+            "n_issues": 1, "n_warnings": 0,
+        }
+
+    facet_cols = list(facet_cols)
+    checks: list[dict] = []
+
+    # Column role overlap check
+    seen: dict[str, list[str]] = {}
+    for role, col in [("Person", person_col), ("Score", score_col)] + [
+        (f"Facet[{i}]", f) for i, f in enumerate(facet_cols)
+    ]:
+        seen.setdefault(col, []).append(role)
+    conflicts = {col: roles for col, roles in seen.items() if len(roles) > 1}
+    if conflicts:
+        first_col, first_roles = next(iter(conflicts.items()))
+        checks.append({
+            "name": "column_overlap", "severity": "issue",
+            "headline": f"Column `{first_col}` assigned to multiple roles",
+            "detail": f"Roles: {', '.join(first_roles)}. Each column must serve exactly one role.",
+        })
+
+    # N observations
+    n = len(data)
+    if n >= 300:
+        checks.append({
+            "name": "n_observations", "severity": "ok",
+            "headline": f"{n:,} observations",
+            "detail": "Good sample size for reliable MFRM estimation.",
+        })
+    elif n >= 100:
+        checks.append({
+            "name": "n_observations", "severity": "warning",
+            "headline": f"{n:,} observations (low)",
+            "detail": "MFRM needs ≥100 observations for usable estimates; ≥300 recommended.",
+        })
+    else:
+        checks.append({
+            "name": "n_observations", "severity": "issue",
+            "headline": f"{n:,} observations (too few)",
+            "detail": "Need at least ~30 observations to estimate measures; 100+ preferred.",
+        })
+
+    # N persons
+    if person_col not in data.columns:
+        checks.append({
+            "name": "n_persons", "severity": "issue",
+            "headline": "Person column missing",
+            "detail": f"Column `{person_col}` not found in the data.",
+        })
+    else:
+        np_count = data[person_col].nunique()
+        if np_count >= 30:
+            checks.append({
+                "name": "n_persons", "severity": "ok",
+                "headline": f"{np_count} unique persons",
+                "detail": "Sufficient person sample for ability estimation.",
+            })
+        elif np_count >= 10:
+            checks.append({
+                "name": "n_persons", "severity": "warning",
+                "headline": f"{np_count} unique persons (low)",
+                "detail": "Person reliability will be weak with <30 persons.",
+            })
+        else:
+            checks.append({
+                "name": "n_persons", "severity": "issue",
+                "headline": f"{np_count} unique persons (too few)",
+                "detail": "Need ≥10 persons; person measures are unstable with fewer.",
+            })
+
+    # Score column
+    if score_col not in data.columns:
+        checks.append({
+            "name": "score", "severity": "issue",
+            "headline": "Score column missing",
+            "detail": f"Column `{score_col}` not found in the data.",
+        })
+    else:
+        scores = pd.to_numeric(data[score_col], errors="coerce")
+        n_numeric = int(scores.notna().sum())
+        n_total = len(scores)
+        if n_numeric == 0:
+            checks.append({
+                "name": "score", "severity": "issue",
+                "headline": "Score column has no numeric values",
+                "detail": "All values in the Score column are non-numeric. Check for text labels.",
+            })
+        else:
+            missing_pct = (1 - n_numeric / max(n_total, 1)) * 100
+            unique = scores.dropna().unique()
+            n_unique = len(unique)
+            if missing_pct > 50:
+                checks.append({
+                    "name": "score", "severity": "issue",
+                    "headline": f"Score column is {missing_pct:.0f}% missing",
+                    "detail": "Over half of score values are missing or non-numeric.",
+                })
+            elif n_unique < 2:
+                checks.append({
+                    "name": "score", "severity": "issue",
+                    "headline": f"Score has only {n_unique} unique value",
+                    "detail": "MFRM needs at least 2 rating categories.",
+                })
+            elif n_unique > 15:
+                checks.append({
+                    "name": "score", "severity": "warning",
+                    "headline": f"Score has {n_unique} unique values",
+                    "detail": "Typical rating scales have 2–7. Consider whether this is continuous.",
+                })
+            elif missing_pct > 20:
+                checks.append({
+                    "name": "score", "severity": "warning",
+                    "headline": f"Score is {missing_pct:.0f}% missing",
+                    "detail": f"Missing rate is {missing_pct:.0f}% — expect reduced effective sample size.",
+                })
+            else:
+                checks.append({
+                    "name": "score", "severity": "ok",
+                    "headline": f"Score: {n_unique} categories, {missing_pct:.0f}% missing",
+                    "detail": f"Looks well-formed.",
+                })
+
+    # Facet count
+    if len(facet_cols) < 2:
+        checks.append({
+            "name": "n_facets", "severity": "issue",
+            "headline": f"{len(facet_cols)} facet(s) selected",
+            "detail": "MFRM needs at least 2 facets (e.g., Rater + Task).",
+        })
+    else:
+        checks.append({
+            "name": "n_facets", "severity": "ok",
+            "headline": f"{len(facet_cols)} facets selected",
+            "detail": f"Facets: {', '.join(facet_cols)}",
+        })
+
+    # Per-facet level count
+    for facet in facet_cols:
+        if facet not in data.columns:
+            checks.append({
+                "name": f"facet:{facet}", "severity": "issue",
+                "headline": f"`{facet}` column missing",
+                "detail": f"Column `{facet}` not found in the data.",
+            })
+            continue
+        levels = data[facet].nunique()
+        if levels < 2:
+            checks.append({
+                "name": f"facet:{facet}", "severity": "issue",
+                "headline": f"`{facet}` has only {levels} level",
+                "detail": "Every facet needs ≥2 levels to estimate a severity/difficulty measure.",
+            })
+        elif levels > 100:
+            checks.append({
+                "name": f"facet:{facet}", "severity": "warning",
+                "headline": f"`{facet}` has {levels} levels",
+                "detail": (
+                    f"High-cardinality facets ({levels}+ levels) slow estimation and "
+                    "produce noisy measures. Consider grouping levels."
+                ),
+            })
+        else:
+            checks.append({
+                "name": f"facet:{facet}", "severity": "ok",
+                "headline": f"`{facet}`: {levels} levels",
+                "detail": f"OK",
+            })
+
+    # Per-person coverage (each person should see ≥2 distinct facet-level combos)
+    try:
+        if person_col in data.columns and facet_cols and all(f in data.columns for f in facet_cols):
+            grouped = data.groupby(person_col)[facet_cols].nunique()
+            per_person_combos = grouped.prod(axis=1) if len(facet_cols) > 1 else grouped.iloc[:, 0]
+            single_obs_persons = int((per_person_combos <= 1).sum())
+            total_persons = int(len(grouped))
+            if single_obs_persons == 0:
+                checks.append({
+                    "name": "coverage", "severity": "ok",
+                    "headline": "Every person has ≥2 observations",
+                    "detail": "Good coverage across facet levels.",
+                })
+            else:
+                frac = single_obs_persons / max(total_persons, 1)
+                if frac > 0.5:
+                    checks.append({
+                        "name": "coverage", "severity": "issue",
+                        "headline": f"{single_obs_persons}/{total_persons} persons have only 1 observation",
+                        "detail": (
+                            f"{frac:.0%} of persons never see multiple facet-level combinations; "
+                            "person measures cannot be estimated precisely."
+                        ),
+                    })
+                else:
+                    checks.append({
+                        "name": "coverage", "severity": "warning",
+                        "headline": f"{single_obs_persons}/{total_persons} persons have only 1 observation",
+                        "detail": f"{frac:.0%} of persons have limited coverage — their measures will be imprecise.",
+                    })
+    except Exception:  # pragma: no cover - defensive
+        pass
+
+    overall = "ok"
+    for c in checks:
+        overall = _readiness_severity_max(overall, c["severity"])
+
+    return {
+        "overall": overall,
+        "checks": checks,
+        "n_issues": sum(1 for c in checks if c["severity"] == "issue"),
+        "n_warnings": sum(1 for c in checks if c["severity"] == "warning"),
+    }
+
+
+def render_readiness_panel(report: dict) -> None:
+    """Streamlit panel showing the readiness traffic-light + details."""
+    overall = report.get("overall", "ok")
+    checks = report.get("checks", [])
+    icon = _READINESS_ICON.get(overall, "⚪")
+
+    if overall == "ok":
+        st.success(f"{icon} **Ready to run.** All {len(checks)} data-quality checks passed.")
+        with st.expander("Show data quality detail", expanded=False):
+            _render_readiness_checklist(checks)
+        return
+
+    if overall == "warning":
+        n_w = report.get("n_warnings", 0)
+        st.warning(
+            f"{icon} **Proceed with caution.** {n_w} warning(s) found — "
+            "you can still run, but results may be weak. See details below."
+        )
+        with st.expander("Show all checks", expanded=True):
+            _render_readiness_checklist(checks)
+        return
+
+    # issue
+    st.error(
+        f"{icon} **Not ready to run.** {report.get('n_issues', 0)} issue(s) will block "
+        "or degrade estimation. Fix the red items below before clicking Run."
+    )
+    with st.expander("Show all checks", expanded=True):
+        _render_readiness_checklist(checks)
+
+
+def _render_readiness_checklist(checks: list[dict]) -> None:
+    for c in checks:
+        icon = _READINESS_ICON.get(c.get("severity", "ok"), "⚪")
+        st.markdown(f"{icon} **{c['headline']}** — {c['detail']}")
+
+
 _ESTIMATION_ERROR_PATTERNS: list[tuple[str, tuple[str, str, str]]] = [
     # (case-insensitive needle, (diagnosis, action, keyword))
     (
@@ -9783,6 +10069,21 @@ def run_facets_mode(core: dict, data: pd.DataFrame) -> None:
         "For first runs, use Standard. For final reporting, rerun with Full publication "
         "after the model and columns are settled."
     )
+
+    # Pre-estimation data quality readiness panel — always visible so users
+    # see potential problems BEFORE clicking Run rather than after failure.
+    # Rendered in the main area just above the Input preview; overall status
+    # (🟢 Ready / 🟡 Warnings / 🔴 Issues) + collapsible detail.
+    try:
+        _readiness_report = build_readiness_report(
+            data=data,
+            person_col=person_col,
+            score_col=score_col,
+            facet_cols=facet_cols,
+        )
+        render_readiness_panel(_readiness_report)
+    except Exception:  # pragma: no cover - readiness is a UX helper
+        pass
 
     # Phase 1-5: Estimation time warning
     run_clicked = st.sidebar.button("Run FACETS-mode estimation", type="primary")

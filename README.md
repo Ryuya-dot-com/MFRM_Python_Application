@@ -14,7 +14,14 @@ This app is designed to run without `mfrmr`, `rpy2`, `Rscript`, FACETS, TAM, sir
 
 Before using results for high-stakes scoring, placement, certification, employment, or institutional decisions, cross-check the analysis with an established workflow and document the model assumptions.
 
-## What's new in v0.2.0-beta
+## What's new in v0.2.0 → v0.2.2
+
+v0.2.0-beta (2026-04-17) shipped four major feature tracks; v0.2.1 and
+v0.2.2 are post-release hotfixes landing the findings from a parallel
+8-agent UX audit. All three versions are covered below; see
+`CHANGELOG.md` for per-version breakdown.
+
+### New in v0.2.0
 
 - **📄 Publication Document downloads** — one click to produce a
   manuscript-ready Word (.docx), PDF, or HTML file with auto-generated
@@ -35,8 +42,9 @@ Before using results for high-stakes scoring, placement, certification, employme
   rating scale error → check Score column, …).
 - **Pre-estimation readiness panel** — 🟢 / 🟡 / 🔴 traffic-light across
   eight data-quality checks before the Run button fires.
-- **Run history + two-run comparison** — the last 10 runs sit behind a
-  Restore button; pick any two to compare convergence, element-level
+- **Run history + two-run comparison** — up to 5 recent runs sit behind a
+  Restore button (v0.2.1 lowered the cap from 10 → 5 for Community Cloud
+  memory safety); pick any two to compare convergence, element-level
   Pearson r + RMSE, and reliability in a side-by-side panel.
 - **Step-by-step progress** — `st.status` accordion reports Estimate →
   Diagnostics → Report tables → Bias interactions instead of a silent
@@ -45,8 +53,48 @@ Before using results for high-stakes scoring, placement, certification, employme
   reliability now explain *why* they were skipped instead of returning
   a blank "not available".
 
-See `CHANGELOG.md` for the full list and `docs/v0.2.0_beta_plan.md`
-for the release checklist.
+### New in v0.2.1 (first UX-audit hotfix pass)
+
+- **🎯 Download sample CSV** — inspect the built-in demo dataset's
+  column structure before preparing your own upload.
+- **Upload size preflight** — ≥50 MB warns, ≥100 MB errors, before
+  pandas parsing consumes memory on Streamlit Community Cloud.
+- **Clear-history confirmation** — the 🗑 Clear history button now
+  requires an explicit "Yes, delete all N snapshots" confirmation.
+- **Downloads tab signpost** — a clear pointer to Publication Document
+  so users don't hunt for the Word / PDF export.
+- **Config JSON import** — upload a previously downloaded config to
+  inspect its settings as a table (read-only).
+- **Accessibility CSS** — `:focus-visible` outline for keyboard users,
+  `prefers-reduced-motion` support, narrow-screen (<900 px) layout.
+- **Traffic-light text redundancy** — 🟢 / 🟡 / 🔴 icons now also carry
+  [OK] / [CAUTION] / [ISSUE] labels for colour-blind users.
+
+### New in v0.2.2 (second UX-audit hotfix pass)
+
+- **📖 MFRM / Bayesian quick-reference glossary** — 20-term table
+  (logit / Infit / Outfit / MnSq / ZSTD / step facet / Rhat / ESS / …)
+  surfaced under Help → Glossary.
+- **Run breadcrumb** — a persistent one-line banner above the results
+  showing model / method / convergence / counts / fingerprint so users
+  always know which run they are viewing after a history restore.
+- **Measure table reorder** — Facet / Level / Estimate / SE / CI /
+  Infit / Outfit columns are surfaced first; Anchor / N / metadata
+  move to the tail.
+- **Fit-cell colour highlighting** — Infit / Outfit mean-square cells
+  colour-coded to the Wright & Linacre (1994) interpretation bands
+  (🟩 0.5–1.5 acceptable · 🟧 1.5–2.0 noisy · 🟥 ≥ 2.0 distorting ·
+  🟨 < 0.5 over-fit).
+- **Scree plot EV = 3 reference line** — previously only EV = 1 and
+  EV = 2 were drawn; the "EV > 3 = strong secondary dimension"
+  threshold is now visible on the plot itself.
+- **Stan `application/x-stan` MIME** — browsers save .stan files
+  correctly and Stan-aware editors pick up syntax highlighting.
+- **Help tab refresh** — Quick Start documents all v0.2.x features;
+  Troubleshooting cites the new diagnostic helpers.
+
+See `CHANGELOG.md` for the per-commit breakdown and
+`docs/v0.2.0_beta_plan.md` for the original v0.2.0 release checklist.
 
 ## Preview
 

@@ -14389,6 +14389,16 @@ def show_report_section(
         "for full Bayesian estimation."
     )
 
+    # v0.2.6-beta: Essential mode hides advanced Report sub-tabs
+    # (Manuscript Template, Method Appendix, Facet Equivalence, Stan
+    # Code) so beginners see a focused 6-sub-tab Report section. Full
+    # view restores all 10. The always-visible set (APA Report, Claim
+    # Guide, Tables, Reporting Checklist, Readiness, Publication
+    # Document) covers typical first-pass reporting needs.
+    essential_mode = (
+        st.session_state.get("app_view_density", "Essential") == "Essential"
+    )
+
     # Grouped into 3 meta-categories (📝 Reports / 📊 Tables & checks /
     # 💾 Exports) so the 10 sub-tabs are easier to scan. Each meta-tab
     # holds its own nested st.tabs with the related sub-sections; the
@@ -14401,64 +14411,99 @@ def show_report_section(
 
     # --- 📝 Reports: narrative documents ---
     with report_meta_tabs[0]:
-        st.caption(
-            "Auto-generated narrative outputs. APA Report is a one-page results "
-            "summary; Manuscript Template gives a fuller Methods + Results "
-            "scaffold; Method Appendix provides an exhaustive technical description; "
-            "Claim Guide guards against over-claiming."
-        )
-        narrative_tabs = st.tabs([
-            "APA Report",
-            "Manuscript Template",
-            "Method Appendix",
-            "Claim Guide",
-        ])
-        with narrative_tabs[0]:
+        if essential_mode:
+            st.caption(
+                "Auto-generated narrative outputs. APA Report is a one-page "
+                "results summary; Claim Guide guards against over-claiming. "
+                "Switch **View density** to Full (sidebar top) to access "
+                "Manuscript Template and Method Appendix."
+            )
+            narrative_labels = ["APA Report", "Claim Guide"]
+        else:
+            st.caption(
+                "Auto-generated narrative outputs. APA Report is a one-page results "
+                "summary; Manuscript Template gives a fuller Methods + Results "
+                "scaffold; Method Appendix provides an exhaustive technical description; "
+                "Claim Guide guards against over-claiming."
+            )
+            narrative_labels = [
+                "APA Report",
+                "Manuscript Template",
+                "Method Appendix",
+                "Claim Guide",
+            ]
+        narrative_tabs = st.tabs(narrative_labels)
+        narrative_tab = {
+            label: narrative_tabs[i] for i, label in enumerate(narrative_labels)
+        }
+        with narrative_tab["APA Report"]:
             _render_apa_report(result, diagnostics,
                                bias_results=bias_results,
                                all_bias_results=all_bias_results)
-        with narrative_tabs[1]:
-            _render_manuscript_template_section(result, diagnostics, all_bias_results)
-        with narrative_tabs[2]:
-            _render_method_appendix_section(result, diagnostics, all_bias_results)
-        with narrative_tabs[3]:
+        if "Manuscript Template" in narrative_tab:
+            with narrative_tab["Manuscript Template"]:
+                _render_manuscript_template_section(result, diagnostics, all_bias_results)
+        if "Method Appendix" in narrative_tab:
+            with narrative_tab["Method Appendix"]:
+                _render_method_appendix_section(result, diagnostics, all_bias_results)
+        with narrative_tab["Claim Guide"]:
             _render_manuscript_claim_guide_section(result, diagnostics, all_bias_results)
 
     # --- 📊 Tables & checks: structured data + quality gates ---
     with report_meta_tabs[1]:
-        st.caption(
-            "Results tables, reporting completeness checklist, facet equivalence "
-            "analysis, and final-report readiness gate."
-        )
-        check_tabs = st.tabs([
-            "Tables",
-            "Reporting Checklist",
-            "Facet Equivalence",
-            "Readiness",
-        ])
-        with check_tabs[0]:
+        if essential_mode:
+            st.caption(
+                "Results tables, reporting completeness checklist, and "
+                "final-report readiness gate. Switch **View density** to "
+                "Full for Facet Equivalence diagnostics."
+            )
+            check_labels = ["Tables", "Reporting Checklist", "Readiness"]
+        else:
+            st.caption(
+                "Results tables, reporting completeness checklist, facet equivalence "
+                "analysis, and final-report readiness gate."
+            )
+            check_labels = [
+                "Tables",
+                "Reporting Checklist",
+                "Facet Equivalence",
+                "Readiness",
+            ]
+        check_tabs = st.tabs(check_labels)
+        check_tab = {label: check_tabs[i] for i, label in enumerate(check_labels)}
+        with check_tab["Tables"]:
             _render_report_tables(result, diagnostics)
-        with check_tabs[1]:
+        with check_tab["Reporting Checklist"]:
             _render_reporting_checklist(result, diagnostics, all_bias_results)
-        with check_tabs[2]:
-            _render_facet_equivalence(result, diagnostics)
-        with check_tabs[3]:
+        if "Facet Equivalence" in check_tab:
+            with check_tab["Facet Equivalence"]:
+                _render_facet_equivalence(result, diagnostics)
+        with check_tab["Readiness"]:
             _render_final_readiness_section(result, diagnostics, all_bias_results)
 
     # --- 💾 Exports: downloadable artefacts ---
     with report_meta_tabs[2]:
-        st.caption(
-            "Download-ready artefacts. Stan Code is the runner for full-Bayesian "
-            "replication; Publication Document bundles Abstract / Methods / Results "
-            "/ Figures / References into Word, PDF, or HTML."
-        )
-        export_tabs = st.tabs([
-            "Stan Code",
-            "📄 Publication Document",
-        ])
-        with export_tabs[0]:
-            _render_stan_code(result)
-        with export_tabs[1]:
+        if essential_mode:
+            st.caption(
+                "Download-ready artefact. Publication Document bundles "
+                "Abstract / Methods / Results / Figures / References into "
+                "Word, PDF, or HTML. Switch **View density** to Full to "
+                "also generate Stan Code for Bayesian replication."
+            )
+            export_labels = ["📄 Publication Document"]
+        else:
+            st.caption(
+                "Download-ready artefacts. Stan Code is the runner for full-Bayesian "
+                "replication; Publication Document bundles Abstract / Methods / Results "
+                "/ Figures / References into Word, PDF, or HTML."
+            )
+            export_labels = ["Stan Code", "📄 Publication Document"]
+        export_tabs = st.tabs(export_labels)
+        export_tab = {label: export_tabs[i] for i, label in enumerate(export_labels)}
+        if "Stan Code" in export_tab:
+            with export_tab["Stan Code"]:
+                _render_stan_code(result)
+        with export_tab["📄 Publication Document"]:
             _render_publication_document_section(result, diagnostics, all_bias_results)
 
 
@@ -18146,7 +18191,19 @@ def _draw_observed_vs_expected(diagnostics: dict) -> None:
 
 def show_help_section() -> None:
     """Comprehensive help section with literature-backed guidance for MFRM analysis."""
-    help_tabs = st.tabs([
+    # v0.2.6-beta: Essential mode hides advanced help sub-tabs (Rating
+    # Scale Guide, Model Capability, Public Beta) so beginners see a
+    # focused 7-tab section. Full view restores all 10. Users can switch
+    # from the sidebar's View density toggle (top of sidebar).
+    essential_mode = (
+        st.session_state.get("app_view_density", "Essential") == "Essential"
+    )
+    ADVANCED_HELP_TABS = {
+        "Rating Scale Guide",
+        "Model Capability",
+        "Public Beta",
+    }
+    all_help_labels = [
         "Quick Start",
         "Analysis Workflow",
         "Interpretation Guide",
@@ -18157,12 +18214,24 @@ def show_help_section() -> None:
         "Troubleshooting",
         "Model Capability",
         "Public Beta",
-    ])
+    ]
+    if essential_mode:
+        visible_labels = [l for l in all_help_labels if l not in ADVANCED_HELP_TABS]
+        st.caption(
+            "💡 3 advanced help topics (Rating Scale Guide, Model Capability, "
+            "Public Beta) are hidden in **Essential** view. Switch to **Full** "
+            "from the sidebar's View density toggle before writing manuscript "
+            "methods or citing scale-quality criteria."
+        )
+    else:
+        visible_labels = all_help_labels
+    help_tabs = st.tabs(visible_labels)
+    help_tab = {label: help_tabs[i] for i, label in enumerate(visible_labels)}
 
     # ------------------------------------------------------------------
     # Tab 1: Quick Start
     # ------------------------------------------------------------------
-    with help_tabs[0]:
+    with help_tab["Quick Start"]:
         st.markdown(
             """
 ### Quick Start Workflow
@@ -18276,7 +18345,7 @@ increasing raters from 1 to 2, and items from 3 to 4 (Li et al.,
     # ------------------------------------------------------------------
     # Tab 2: Analysis Workflow (NEW)
     # ------------------------------------------------------------------
-    with help_tabs[1]:
+    with help_tab["Analysis Workflow"]:
         st.markdown(
             """
 ### Recommended Analysis Workflow
@@ -18508,7 +18577,7 @@ observed scores.
     # ------------------------------------------------------------------
     # Tab 3: Interpretation Guide (expanded)
     # ------------------------------------------------------------------
-    with help_tabs[2]:
+    with help_tab["Interpretation Guide"]:
         st.markdown(
             """
 ### Understanding Measures
@@ -18889,7 +18958,7 @@ If uncertain, report results at multiple bounds (e.g., 0.3,
     # ------------------------------------------------------------------
     # Tab 4: Rater Effects (NEW)
     # ------------------------------------------------------------------
-    with help_tabs[3]:
+    with help_tab["Rater Effects"]:
         st.markdown(
             """
 ### Five Rater Effects
@@ -18992,11 +19061,12 @@ multiple Rater × Group interactions.
         )
 
     # ------------------------------------------------------------------
-    # Tab 5: Rating Scale Guide (NEW)
+    # Tab 5: Rating Scale Guide (hidden in Essential mode)
     # ------------------------------------------------------------------
-    with help_tabs[4]:
-        st.markdown(
-            """
+    if "Rating Scale Guide" in help_tab:
+        with help_tab["Rating Scale Guide"]:
+            st.markdown(
+                """
 ### Linacre's Five Criteria for Rating Scale Quality
 
 A well-functioning rating scale must satisfy all five criteria
@@ -19092,7 +19162,7 @@ suitable for parametric analysis.
     # ------------------------------------------------------------------
     # Tab 6: Glossary (expanded from 33 to 50+ terms)
     # ------------------------------------------------------------------
-    with help_tabs[5]:
+    with help_tab["Glossary"]:
         st.markdown("### Glossary of MFRM Terms")
         # Quick-reference glossary at the top (same data source used by
         # render_glossary_expander) so column headers and tooltips stay
@@ -19201,7 +19271,7 @@ suitable for parametric analysis.
     # ------------------------------------------------------------------
     # Tab 7: Reporting Guide (NEW)
     # ------------------------------------------------------------------
-    with help_tabs[6]:
+    with help_tab["Reporting Guide"]:
         st.info(
             "The reporting checklist and APA text are now **auto-generated** in the "
             "**Report** tab based on your actual estimation results. "
@@ -19337,7 +19407,7 @@ When reporting MFRM results in a manuscript, include the following
     # ------------------------------------------------------------------
     # Tab 8: Troubleshooting (expanded)
     # ------------------------------------------------------------------
-    with help_tabs[7]:
+    with help_tab["Troubleshooting"]:
         st.markdown(
             """
 ### Common Issues & Solutions
@@ -19498,14 +19568,15 @@ below are caught upstream.
 - In this case, rely on **MnSq for practical significance** and
   disregard ZSTD (Linacre, 2024; Hagell & Westergren, 2016).
 """
-        )
+            )
 
     # ------------------------------------------------------------------
-    # Tab 9: Model Capability
+    # Tab 9: Model Capability (hidden in Essential mode)
     # ------------------------------------------------------------------
-    with help_tabs[8]:
-        st.markdown(
-            """
+    if "Model Capability" in help_tab:
+        with help_tab["Model Capability"]:
+            st.markdown(
+                """
 ### Model Capability Matrix
 
 This table documents what the standalone Python app currently estimates.
@@ -19555,14 +19626,15 @@ from `step_facet`, multidimensional slopes, or latent-regression GPCM are
 not yet enabled. For reproducibility, use the app-engine runner rather
 than the portable scripts for GPCM runs.
 """
-        )
+            )
 
     # ------------------------------------------------------------------
-    # Tab 10: Public Beta
+    # Tab 10: Public Beta (hidden in Essential mode)
     # ------------------------------------------------------------------
-    with help_tabs[9]:
-        st.markdown(
-            """
+    if "Public Beta" in help_tab:
+        with help_tab["Public Beta"]:
+            st.markdown(
+                """
 ### Public Beta Boundaries
 
 This app should be presented as a **public beta / research preview**. The table
@@ -19570,55 +19642,55 @@ below states what the app currently supports and what should not be
 over-claimed. Use it when writing documentation, release notes, manuscripts, or
 teaching materials based on app output.
 """
-        )
-        st.dataframe(public_beta_limitations_table(), width="stretch", hide_index=True)
-        st.download_button(
-            "Download public beta limitations (CSV)",
-            data=to_csv_bytes(public_beta_limitations_table()),
-            file_name="mfrm_public_beta_limitations.csv",
-            mime="text/csv",
-            key="dl_public_beta_limitations_help",
-        )
-        st.markdown("### External Simulation Validation Inventory")
-        st.caption(
-            "This table records local Simulation-directory artifacts that can support "
-            "numerical validation. It intentionally avoids runtime dependencies on local "
-            "Dropbox paths and warns against bundling private or large data."
-        )
-        st.dataframe(external_simulation_reference_inventory(), width="stretch", hide_index=True)
-        st.download_button(
-            "Download Simulation validation inventory (CSV)",
-            data=to_csv_bytes(external_simulation_reference_inventory()),
-            file_name="mfrm_external_simulation_reference_inventory.csv",
-            mime="text/csv",
-            key="dl_external_simulation_reference_inventory_help",
-        )
-        st.markdown("### mfrmr 0.1.5 Migration Coverage")
-        st.caption(
-            "This table maps the local mfrmr 0.1.5 feature surface to the current "
-            "standalone Python implementation and its public-beta boundaries."
-        )
-        st.dataframe(mfrmr_015_migration_coverage_table(), width="stretch", hide_index=True)
-        st.download_button(
-            "Download mfrmr 0.1.5 migration coverage (CSV)",
-            data=to_csv_bytes(mfrmr_015_migration_coverage_table()),
-            file_name="mfrm_mfrmr_015_migration_coverage.csv",
-            mime="text/csv",
-            key="dl_mfrmr_015_migration_coverage_help",
-        )
-        st.markdown("### Release Readiness")
-        st.caption(
-            "This is a repository-level checklist. It does not replace a successful CI run, "
-            "but it catches missing release files and over-claiming risks."
-        )
-        st.dataframe(public_release_readiness_table(), width="stretch", hide_index=True)
-        st.download_button(
-            "Download release readiness (CSV)",
-            data=to_csv_bytes(public_release_readiness_table()),
-            file_name="mfrm_public_release_readiness.csv",
-            mime="text/csv",
-            key="dl_public_release_readiness_help",
-        )
+            )
+            st.dataframe(public_beta_limitations_table(), width="stretch", hide_index=True)
+            st.download_button(
+                "Download public beta limitations (CSV)",
+                data=to_csv_bytes(public_beta_limitations_table()),
+                file_name="mfrm_public_beta_limitations.csv",
+                mime="text/csv",
+                key="dl_public_beta_limitations_help",
+            )
+            st.markdown("### External Simulation Validation Inventory")
+            st.caption(
+                "This table records local Simulation-directory artifacts that can support "
+                "numerical validation. It intentionally avoids runtime dependencies on local "
+                "Dropbox paths and warns against bundling private or large data."
+            )
+            st.dataframe(external_simulation_reference_inventory(), width="stretch", hide_index=True)
+            st.download_button(
+                "Download Simulation validation inventory (CSV)",
+                data=to_csv_bytes(external_simulation_reference_inventory()),
+                file_name="mfrm_external_simulation_reference_inventory.csv",
+                mime="text/csv",
+                key="dl_external_simulation_reference_inventory_help",
+            )
+            st.markdown("### mfrmr 0.1.5 Migration Coverage")
+            st.caption(
+                "This table maps the local mfrmr 0.1.5 feature surface to the current "
+                "standalone Python implementation and its public-beta boundaries."
+            )
+            st.dataframe(mfrmr_015_migration_coverage_table(), width="stretch", hide_index=True)
+            st.download_button(
+                "Download mfrmr 0.1.5 migration coverage (CSV)",
+                data=to_csv_bytes(mfrmr_015_migration_coverage_table()),
+                file_name="mfrm_mfrmr_015_migration_coverage.csv",
+                mime="text/csv",
+                key="dl_mfrmr_015_migration_coverage_help",
+            )
+            st.markdown("### Release Readiness")
+            st.caption(
+                "This is a repository-level checklist. It does not replace a successful CI run, "
+                "but it catches missing release files and over-claiming risks."
+            )
+            st.dataframe(public_release_readiness_table(), width="stretch", hide_index=True)
+            st.download_button(
+                "Download release readiness (CSV)",
+                data=to_csv_bytes(public_release_readiness_table()),
+                file_name="mfrm_public_release_readiness.csv",
+                mime="text/csv",
+                key="dl_public_release_readiness_help",
+            )
 
 
 # ---------------------------------------------------------------------------
@@ -25394,6 +25466,63 @@ def _self_test_help_popover_library() -> None:
         )
 
 
+def _self_test_essential_mode_tab_filters() -> None:
+    """Pin the Essential-mode hidden-tab sets for Help + Report tabs.
+
+    The filtering logic lives inline inside `show_help_section` and
+    `show_report_section`; this test mirrors those sets so that if
+    someone renames or reorders a label, CI catches the drift before
+    Essential mode silently drops a user-visible tab.
+    """
+    # Help tab: 10 labels total; 3 hidden in Essential, 7 visible.
+    help_all_labels = [
+        "Quick Start", "Analysis Workflow", "Interpretation Guide",
+        "Rater Effects", "Rating Scale Guide", "Glossary",
+        "Reporting Guide", "Troubleshooting", "Model Capability",
+        "Public Beta",
+    ]
+    help_advanced = {"Rating Scale Guide", "Model Capability", "Public Beta"}
+    help_essential = [l for l in help_all_labels if l not in help_advanced]
+    _self_test_assert(
+        len(help_all_labels) == 10,
+        f"Help tab label count drifted: {len(help_all_labels)} != 10",
+    )
+    _self_test_assert(
+        len(help_essential) == 7,
+        f"Help tab Essential-visible count wrong: {len(help_essential)} != 7",
+    )
+    _self_test_assert(
+        help_advanced.issubset(set(help_all_labels)),
+        "Help tab ADVANCED set contains labels not in master list",
+    )
+
+    # Report tab narrative-group: 4 labels total, 2 in Essential.
+    report_narrative_all = [
+        "APA Report", "Manuscript Template", "Method Appendix", "Claim Guide",
+    ]
+    report_narrative_essential = ["APA Report", "Claim Guide"]
+    _self_test_assert(
+        set(report_narrative_essential).issubset(set(report_narrative_all)),
+        "Report narrative Essential-visible set drifted from master list",
+    )
+
+    # Report tab checks-group: 4 labels total, 3 in Essential.
+    report_checks_all = ["Tables", "Reporting Checklist", "Facet Equivalence", "Readiness"]
+    report_checks_essential = ["Tables", "Reporting Checklist", "Readiness"]
+    _self_test_assert(
+        set(report_checks_essential).issubset(set(report_checks_all)),
+        "Report checks Essential-visible set drifted from master list",
+    )
+
+    # Report tab exports-group: 2 labels total, 1 in Essential.
+    report_exports_all = ["Stan Code", "📄 Publication Document"]
+    report_exports_essential = ["📄 Publication Document"]
+    _self_test_assert(
+        set(report_exports_essential).issubset(set(report_exports_all)),
+        "Report exports Essential-visible set drifted from master list",
+    )
+
+
 def _self_test_publication_document_html() -> None:
     """Build an HTML publication document from a minimal synthetic result."""
     res = {
@@ -26653,6 +26782,7 @@ def run_self_tests() -> int:
         ("HTML publication document builder", _self_test_publication_document_html),
         ("Estimation-error pattern matcher", _self_test_diagnose_estimation_error_patterns),
         ("Help popover library", _self_test_help_popover_library),
+        ("Essential-mode tab filters", _self_test_essential_mode_tab_filters),
     ]
     failures = []
     for name, test_func in tests:

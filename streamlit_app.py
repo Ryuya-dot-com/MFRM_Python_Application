@@ -9643,6 +9643,251 @@ def _render_readiness_checklist(checks: list[dict]) -> None:
         st.markdown(f"{icon} **{c['headline']}** — {c['detail']}")
 
 
+# ---------------------------------------------------------------------------
+# APA 7 reference list generator (used by Word / PDF publication exports)
+# ---------------------------------------------------------------------------
+# Maps a short citation key (used in the code as (Author, Year) tokens) to
+# an APA 7 reference entry. The entry is already-formatted text; the list
+# builder collates, deduplicates, and alphabetises them.
+#
+# Adding a new reference: pick a stable `key` (typically "Lastname_YYYY"),
+# insert the APA 7 entry below, and cite the source in the narrative using
+# the same (Author, Year) form you see elsewhere in this file.
+
+_APA_REFERENCE_LIBRARY: dict[str, str] = {
+    "Andrich_1978": (
+        "Andrich, D. (1978). A rating formulation for ordered response categories. "
+        "Psychometrika, 43(4), 561–573. https://doi.org/10.1007/BF02293814"
+    ),
+    "Bock_Aitkin_1981": (
+        "Bock, R. D., & Aitkin, M. (1981). Marginal maximum likelihood estimation "
+        "of item parameters: Application of an EM algorithm. Psychometrika, 46(4), "
+        "443–459. https://doi.org/10.1007/BF02293801"
+    ),
+    "Bock_Mislevy_1982": (
+        "Bock, R. D., & Mislevy, R. J. (1982). Adaptive EAP estimation of ability "
+        "in a microcomputer environment. Applied Psychological Measurement, 6(4), "
+        "431–444. https://doi.org/10.1177/014662168200600405"
+    ),
+    "Chalmers_2012": (
+        "Chalmers, R. P. (2012). mirt: A multidimensional item response theory "
+        "package for the R environment. Journal of Statistical Software, 48(6), "
+        "1–29. https://doi.org/10.18637/jss.v048.i06"
+    ),
+    "Eckes_2005": (
+        "Eckes, T. (2005). Examining rater effects in TestDaF writing and speaking "
+        "performance assessments: A many-facet Rasch analysis. Language Assessment "
+        "Quarterly, 2(3), 197–221. https://doi.org/10.1207/s15434311laq0203_2"
+    ),
+    "Eckes_2011": (
+        "Eckes, T. (2011). Introduction to many-facet Rasch measurement: Analyzing "
+        "and evaluating rater-mediated assessments. Peter Lang."
+    ),
+    "Eckes_Jin_2021": (
+        "Eckes, T., & Jin, K.-Y. (2021). Detecting rater drift using many-facet "
+        "Rasch measurement and a cumulative sum approach. Educational and "
+        "Psychological Measurement, 81(5), 933–957. "
+        "https://doi.org/10.1177/0013164420982136"
+    ),
+    "Engelhard_1994": (
+        "Engelhard, G. (1994). Examining rater errors in the assessment of "
+        "written composition with a many-faceted Rasch model. Journal of "
+        "Educational Measurement, 31(2), 93–112. "
+        "https://doi.org/10.1111/j.1745-3984.1994.tb00436.x"
+    ),
+    "Gelman_Rubin_1992": (
+        "Gelman, A., & Rubin, D. B. (1992). Inference from iterative simulation "
+        "using multiple sequences. Statistical Science, 7(4), 457–472. "
+        "https://doi.org/10.1214/ss/1177011136"
+    ),
+    "Kruschke_2018": (
+        "Kruschke, J. K. (2018). Rejecting or accepting parameter values in "
+        "Bayesian estimation. Advances in Methods and Practices in Psychological "
+        "Science, 1(2), 270–280. https://doi.org/10.1177/2515245918771304"
+    ),
+    "Lakens_2017": (
+        "Lakens, D. (2017). Equivalence tests: A practical primer for t tests, "
+        "correlations, and meta-analyses. Social Psychological and Personality "
+        "Science, 8(4), 355–362. https://doi.org/10.1177/1948550617697177"
+    ),
+    "Linacre_1989": (
+        "Linacre, J. M. (1989). Many-facet Rasch measurement. MESA Press."
+    ),
+    "Linacre_1994": (
+        "Linacre, J. M. (1994). Sample size and item calibration stability. "
+        "Rasch Measurement Transactions, 7(4), 328."
+    ),
+    "Linacre_2002": (
+        "Linacre, J. M. (2002). What do infit and outfit, mean-square and "
+        "standardized mean? Rasch Measurement Transactions, 16(2), 878."
+    ),
+    "Linacre_2004": (
+        "Linacre, J. M. (2004). Test validity and Rasch measurement: Construct, "
+        "content, etc. Rasch Measurement Transactions, 18(1), 970–971."
+    ),
+    "Linacre_2007": (
+        "Linacre, J. M. (2007). A user's guide to Facets: Rasch-model computer "
+        "programs. Winsteps.com."
+    ),
+    "Linacre_2024": (
+        "Linacre, J. M. (2024). A user's guide to Winsteps Ministep Rasch-model "
+        "computer programs. Winsteps.com."
+    ),
+    "Little_Rubin_2002": (
+        "Little, R. J. A., & Rubin, D. B. (2002). Statistical analysis with "
+        "missing data (2nd ed.). Wiley."
+    ),
+    "Masters_1982": (
+        "Masters, G. N. (1982). A Rasch model for partial credit scoring. "
+        "Psychometrika, 47(2), 149–174. https://doi.org/10.1007/BF02296272"
+    ),
+    "McNamara_1996": (
+        "McNamara, T. (1996). Measuring second language performance. Longman."
+    ),
+    "Muraki_1992": (
+        "Muraki, E. (1992). A generalized partial credit model: Application of "
+        "an EM algorithm. Applied Psychological Measurement, 16(2), 159–176. "
+        "https://doi.org/10.1177/014662169201600206"
+    ),
+    "Myford_Wolfe_2003": (
+        "Myford, C. M., & Wolfe, E. W. (2003). Detecting and measuring rater "
+        "effects using many-facet Rasch measurement: Part I. Journal of Applied "
+        "Measurement, 4(4), 386–422."
+    ),
+    "Myford_Wolfe_2004": (
+        "Myford, C. M., & Wolfe, E. W. (2004). Detecting and measuring rater "
+        "effects using many-facet Rasch measurement: Part II. Journal of Applied "
+        "Measurement, 5(2), 189–227."
+    ),
+    "Reckase_1979": (
+        "Reckase, M. D. (1979). Unifactor latent trait models applied to "
+        "multifactor tests: Results and implications. Journal of Educational "
+        "Statistics, 4(3), 207–230. https://doi.org/10.2307/1164671"
+    ),
+    "Smith_2000": (
+        "Smith, E. V. (2000). Metric development and score reporting in Rasch "
+        "measurement. Journal of Applied Measurement, 1(3), 303–326."
+    ),
+    "Smith_2002": (
+        "Smith, E. V. (2002). Detecting and evaluating the impact of "
+        "multidimensionality using item fit statistics and principal component "
+        "analysis of residuals. Journal of Applied Measurement, 3(2), 205–231."
+    ),
+    "Uto_2021": (
+        "Uto, M. (2021). A multidimensional generalized many-facet Rasch model "
+        "for rubric-based performance assessment. Behaviormetrika, 48(2), "
+        "425–457. https://doi.org/10.1007/s41237-021-00144-w"
+    ),
+    "Uto_2022": (
+        "Uto, M. (2022). A Bayesian many-facet Rasch model with Markov modeling "
+        "for rater severity drift. Behavior Research Methods, 54(6), 2977–2993. "
+        "https://doi.org/10.3758/s13428-022-01803-w"
+    ),
+    "Uto_Ueno_2020": (
+        "Uto, M., & Ueno, M. (2020). A generalized many-facet Rasch model and "
+        "its Bayesian estimation using Hamiltonian Monte Carlo. Behaviormetrika, "
+        "47(2), 469–496. https://doi.org/10.1007/s41237-020-00115-7"
+    ),
+    "Wagenmakers_2007": (
+        "Wagenmakers, E.-J. (2007). A practical solution to the pervasive "
+        "problems of p values. Psychonomic Bulletin & Review, 14(5), 779–804. "
+        "https://doi.org/10.3758/BF03194105"
+    ),
+    "Wolfe_Song_2015": (
+        "Wolfe, E. W., & Song, T. (2015). Comparison of models and indices for "
+        "detecting rater centrality. Journal of Applied Measurement, 16(3), "
+        "228–241."
+    ),
+    "Wright_Linacre_1994": (
+        "Wright, B. D., & Linacre, J. M. (1994). Reasonable mean-square fit "
+        "values. Rasch Measurement Transactions, 8(3), 370."
+    ),
+    "Wright_Masters_1982": (
+        "Wright, B. D., & Masters, G. N. (1982). Rating scale analysis. "
+        "MESA Press."
+    ),
+    "Wright_Stone_1999": (
+        "Wright, B. D., & Stone, M. H. (1999). Measurement essentials (2nd ed.). "
+        "Wide Range."
+    ),
+}
+
+
+# Maps each narrative citation form "(Author, Year)" to its library key.
+# Populated from _APA_REFERENCE_LIBRARY so we can scan a text body, find
+# what's cited, and return only the used subset.
+_CITATION_TO_KEY: dict[str, str] = {
+    "(Andrich, 1978)": "Andrich_1978",
+    "(Bock & Aitkin, 1981)": "Bock_Aitkin_1981",
+    "(Bock & Mislevy, 1982)": "Bock_Mislevy_1982",
+    "(Chalmers, 2012)": "Chalmers_2012",
+    "(Eckes, 2005)": "Eckes_2005",
+    "(Eckes, 2011)": "Eckes_2011",
+    "(Eckes & Jin, 2021)": "Eckes_Jin_2021",
+    "(Engelhard, 1994)": "Engelhard_1994",
+    "(Gelman & Rubin, 1992)": "Gelman_Rubin_1992",
+    "(Kruschke, 2018)": "Kruschke_2018",
+    "(Lakens, 2017)": "Lakens_2017",
+    "(Linacre, 1989)": "Linacre_1989",
+    "(Linacre, 1994)": "Linacre_1994",
+    "(Linacre, 2002)": "Linacre_2002",
+    "(Linacre, 2004)": "Linacre_2004",
+    "(Linacre, 2007)": "Linacre_2007",
+    "(Linacre, 2024)": "Linacre_2024",
+    "(Little & Rubin, 2002)": "Little_Rubin_2002",
+    "(Masters, 1982)": "Masters_1982",
+    "(McNamara, 1996)": "McNamara_1996",
+    "(Muraki, 1992)": "Muraki_1992",
+    "(Myford & Wolfe, 2003)": "Myford_Wolfe_2003",
+    "(Myford & Wolfe, 2004)": "Myford_Wolfe_2004",
+    "(Reckase, 1979)": "Reckase_1979",
+    "(Smith, 2000)": "Smith_2000",
+    "(Smith, 2002)": "Smith_2002",
+    "(Uto, 2021)": "Uto_2021",
+    "(Uto, 2022)": "Uto_2022",
+    "(Uto & Ueno, 2020)": "Uto_Ueno_2020",
+    "(Wagenmakers, 2007)": "Wagenmakers_2007",
+    "(Wolfe & Song, 2015)": "Wolfe_Song_2015",
+    "(Wright & Linacre, 1994)": "Wright_Linacre_1994",
+    "(Wright & Masters, 1982)": "Wright_Masters_1982",
+    "(Wright & Stone, 1999)": "Wright_Stone_1999",
+}
+
+
+def collect_cited_references(text: str) -> list[str]:
+    """Return the APA 7 entries for every `(Author, Year)` citation in `text`.
+
+    Scans the narrative for citations that match a known library key,
+    deduplicates by key, and returns an alphabetised list of ready-to-
+    render APA entries. Unknown citations are silently ignored — callers
+    should add them to `_APA_REFERENCE_LIBRARY` if they want them surfaced.
+    """
+    keys_seen: set[str] = set()
+    for citation, key in _CITATION_TO_KEY.items():
+        if citation in text and key in _APA_REFERENCE_LIBRARY:
+            keys_seen.add(key)
+    entries = [_APA_REFERENCE_LIBRARY[k] for k in keys_seen]
+    return sorted(entries)
+
+
+def build_apa_reference_list(text: str, *, always_include: list[str] | None = None) -> list[str]:
+    """Build the APA reference list for a publication document.
+
+    - `text`: the narrative body (Methods + Results) that was just rendered;
+      every `(Author, Year)` token present in it is included.
+    - `always_include`: reference keys that must appear regardless of
+      whether they were cited (used for core MFRM references).
+    """
+    keys_seen: set[str] = set()
+    for citation, key in _CITATION_TO_KEY.items():
+        if citation in text and key in _APA_REFERENCE_LIBRARY:
+            keys_seen.add(key)
+    for key in always_include or []:
+        if key in _APA_REFERENCE_LIBRARY:
+            keys_seen.add(key)
+    return sorted(_APA_REFERENCE_LIBRARY[k] for k in keys_seen)
+
+
 _ESTIMATION_ERROR_PATTERNS: list[tuple[str, tuple[str, str, str]]] = [
     # (case-insensitive needle, (diagnosis, action, keyword))
     (
@@ -22576,6 +22821,37 @@ def _self_test_public_beta_release_contract() -> None:
     )
 
 
+def _self_test_apa_reference_list() -> None:
+    """Pin the APA 7 reference library to the narrative conventions used here."""
+    # Library is well-formed
+    _self_test_assert(
+        len(_APA_REFERENCE_LIBRARY) >= 30,
+        f"APA library should have ≥30 entries, has {len(_APA_REFERENCE_LIBRARY)}",
+    )
+    # Citation-to-key map is consistent with the library
+    for citation, key in _CITATION_TO_KEY.items():
+        _self_test_assert(
+            key in _APA_REFERENCE_LIBRARY,
+            f"citation map points at missing library key: {citation} -> {key}",
+        )
+    # Returned entries are alphabetised and deduplicated
+    narrative = (
+        "Estimation follows Masters (1982) (Masters, 1982) and uses the "
+        "EM algorithm of (Bock & Aitkin, 1981). Fit interpretation follows "
+        "(Linacre, 2002) and (Wright & Linacre, 1994). (Masters, 1982) again."
+    )
+    refs = build_apa_reference_list(narrative)
+    _self_test_assert(len(refs) == 4, f"expected 4 unique refs, got {len(refs)}")
+    _self_test_assert(refs == sorted(refs), "reference list is not alphabetised")
+    # Always-include injection works even when the citation is not in the text
+    refs2 = build_apa_reference_list("No citations here.", always_include=["Andrich_1978"])
+    _self_test_assert(len(refs2) == 1, "always_include failed to inject")
+    _self_test_assert("Andrich, D. (1978)" in refs2[0], "always_include returned wrong entry")
+    # Unknown citations are silently ignored rather than erroring
+    refs3 = build_apa_reference_list("(NotACitedAuthor, 9999)")
+    _self_test_assert(refs3 == [], "unknown citations must be ignored")
+
+
 def export_reference_parity_fixture(output_dir: str) -> int:
     """Export deterministic Python outputs for external TAM/sirt/mirt checks."""
     out_dir = Path(output_dir).expanduser().resolve()
@@ -23648,6 +23924,7 @@ def run_self_tests() -> int:
         ("cached static assets and exports", _self_test_cached_static_assets_and_exports),
         ("cross-package validation plan", _self_test_cross_package_validation_plan),
         ("public beta release contract", _self_test_public_beta_release_contract),
+        ("APA 7 reference list generator", _self_test_apa_reference_list),
     ]
     failures = []
     for name, test_func in tests:

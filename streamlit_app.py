@@ -11731,6 +11731,26 @@ def run_facets_mode(core: dict, data: pd.DataFrame) -> None:
                 state="complete",
                 expanded=False,
             )
+            # Transient toast in addition to the persistent status accordion,
+            # so users who scrolled away from the Run panel still get a
+            # completion signal (disappears after ~4 seconds by default).
+            try:
+                _converged_flag = False
+                _summary = result.get("summary") if isinstance(result, dict) else None
+                if isinstance(_summary, pd.DataFrame) and not _summary.empty:
+                    _converged_flag = bool(_summary.iloc[0].get("Converged", False))
+                if _converged_flag:
+                    st.toast(
+                        f"✅ Analysis complete in {_elapsed_sec:.1f}s — scroll to explore results",
+                        icon="🎉",
+                    )
+                else:
+                    st.toast(
+                        f"⚠️ Analysis finished in {_elapsed_sec:.1f}s but did not converge — check the Summary",
+                        icon="⚠️",
+                    )
+            except Exception:  # pragma: no cover - toast is a UX nicety
+                pass
         except Exception as exc:
             # Mark the status accordion as failed so users see it at a glance
             try:
@@ -11739,6 +11759,11 @@ def run_facets_mode(core: dict, data: pd.DataFrame) -> None:
                     state="error",
                     expanded=False,
                 )
+            except Exception:
+                pass
+            try:
+                st.toast("❌ Estimation failed — see the error panel for fix suggestions",
+                         icon="🚨")
             except Exception:
                 pass
             # Pattern-match the exception to a targeted remedy before falling back
@@ -11862,10 +11887,23 @@ def run_facets_mode(core: dict, data: pd.DataFrame) -> None:
     if out.get("_selected_bias_pair") != selected_bias_pair:
         stale_reasons.append("selected bias pair")
     if stale_reasons:
-        st.warning(
-            f"Settings changed since the last run ({', '.join(stale_reasons)}). "
-            "Click **Run FACETS-mode estimation** to update results."
+        banner_cols = st.columns([4, 1])
+        banner_cols[0].warning(
+            f"Settings changed since the last run "
+            f"({', '.join(stale_reasons[:4])}{'…' if len(stale_reasons) > 4 else ''}). "
+            "The results below reflect the previous configuration; rerun to refresh."
         )
+        # One-click rerun directly from the banner so the user doesn't
+        # have to scroll back up to the sidebar Run button.
+        if banner_cols[1].button(
+            "🔁 Rerun now",
+            key="stale_rerun",
+            use_container_width=True,
+            type="primary",
+            help="Re-fires the estimation pipeline with the updated settings.",
+        ):
+            st.session_state["_facets_mode_force_rerun"] = True
+            st.rerun()
         return
 
     result = out["result"]
@@ -13676,53 +13714,77 @@ def show_report_section(
         "for full Bayesian estimation."
     )
 
-    report_tabs = st.tabs([
-        "APA Report", "Readiness", "Claim Guide", "Manuscript Template",
-        "Tables", "Reporting Checklist", "Method Appendix", "Facet Equivalence",
-        "Stan Code", "📄 Publication Document",
+    # Grouped into 3 meta-categories (📝 Reports / 📊 Tables & checks /
+    # 💾 Exports) so the 10 sub-tabs are easier to scan. Each meta-tab
+    # holds its own nested st.tabs with the related sub-sections; the
+    # individual renderers are unchanged.
+    report_meta_tabs = st.tabs([
+        "📝 Reports",
+        "📊 Tables & checks",
+        "💾 Exports",
     ])
 
-    # ---- Sub-tab 0: APA Report ----
-    with report_tabs[0]:
-        _render_apa_report(result, diagnostics,
-                           bias_results=bias_results,
-                           all_bias_results=all_bias_results)
+    # --- 📝 Reports: narrative documents ---
+    with report_meta_tabs[0]:
+        st.caption(
+            "Auto-generated narrative outputs. APA Report is a one-page results "
+            "summary; Manuscript Template gives a fuller Methods + Results "
+            "scaffold; Method Appendix provides an exhaustive technical description; "
+            "Claim Guide guards against over-claiming."
+        )
+        narrative_tabs = st.tabs([
+            "APA Report",
+            "Manuscript Template",
+            "Method Appendix",
+            "Claim Guide",
+        ])
+        with narrative_tabs[0]:
+            _render_apa_report(result, diagnostics,
+                               bias_results=bias_results,
+                               all_bias_results=all_bias_results)
+        with narrative_tabs[1]:
+            _render_manuscript_template_section(result, diagnostics, all_bias_results)
+        with narrative_tabs[2]:
+            _render_method_appendix_section(result, diagnostics, all_bias_results)
+        with narrative_tabs[3]:
+            _render_manuscript_claim_guide_section(result, diagnostics, all_bias_results)
 
-    # ---- Sub-tab 1: Tables & Figures ----
-    with report_tabs[1]:
-        _render_final_readiness_section(result, diagnostics, all_bias_results)
+    # --- 📊 Tables & checks: structured data + quality gates ---
+    with report_meta_tabs[1]:
+        st.caption(
+            "Results tables, reporting completeness checklist, facet equivalence "
+            "analysis, and final-report readiness gate."
+        )
+        check_tabs = st.tabs([
+            "Tables",
+            "Reporting Checklist",
+            "Facet Equivalence",
+            "Readiness",
+        ])
+        with check_tabs[0]:
+            _render_report_tables(result, diagnostics)
+        with check_tabs[1]:
+            _render_reporting_checklist(result, diagnostics, all_bias_results)
+        with check_tabs[2]:
+            _render_facet_equivalence(result, diagnostics)
+        with check_tabs[3]:
+            _render_final_readiness_section(result, diagnostics, all_bias_results)
 
-    # ---- Sub-tab 2: Manuscript claim guide ----
-    with report_tabs[2]:
-        _render_manuscript_claim_guide_section(result, diagnostics, all_bias_results)
-
-    # ---- Sub-tab 3: Manuscript Template ----
-    with report_tabs[3]:
-        _render_manuscript_template_section(result, diagnostics, all_bias_results)
-
-    # ---- Sub-tab 4: Tables & Figures ----
-    with report_tabs[4]:
-        _render_report_tables(result, diagnostics)
-
-    # ---- Sub-tab 5: Reporting Checklist ----
-    with report_tabs[5]:
-        _render_reporting_checklist(result, diagnostics, all_bias_results)
-
-    # ---- Sub-tab 6: Method Appendix ----
-    with report_tabs[6]:
-        _render_method_appendix_section(result, diagnostics, all_bias_results)
-
-    # ---- Sub-tab 7: Facet Equivalence ----
-    with report_tabs[7]:
-        _render_facet_equivalence(result, diagnostics)
-
-    # ---- Sub-tab 8: Stan Code ----
-    with report_tabs[8]:
-        _render_stan_code(result)
-
-    # ---- Sub-tab 9: Publication Document (Word / PDF / HTML) ----
-    with report_tabs[9]:
-        _render_publication_document_section(result, diagnostics, all_bias_results)
+    # --- 💾 Exports: downloadable artefacts ---
+    with report_meta_tabs[2]:
+        st.caption(
+            "Download-ready artefacts. Stan Code is the runner for full-Bayesian "
+            "replication; Publication Document bundles Abstract / Methods / Results "
+            "/ Figures / References into Word, PDF, or HTML."
+        )
+        export_tabs = st.tabs([
+            "Stan Code",
+            "📄 Publication Document",
+        ])
+        with export_tabs[0]:
+            _render_stan_code(result)
+        with export_tabs[1]:
+            _render_publication_document_section(result, diagnostics, all_bias_results)
 
 
 def show_convergence_section(result: dict) -> None:
@@ -23691,6 +23753,28 @@ def _self_test_publication_document_word() -> None:
     )
 
 
+def _self_test_chart_guide_library() -> None:
+    """Pin the unified chart-guide library shape so renderers behave consistently."""
+    expected_keys = {
+        "wright_map", "pathway_map", "category_probability", "threshold_map",
+        "icc", "scree", "facet_distribution", "reliability",
+        "rater_agreement", "posterior_trace", "posterior_ridge",
+    }
+    missing = expected_keys - set(_CHART_GUIDE_LIBRARY.keys())
+    _self_test_assert(not missing, f"chart guide missing keys: {missing}")
+    for name, entry in _CHART_GUIDE_LIBRARY.items():
+        _self_test_assert("headline" in entry, f"{name} missing headline")
+        _self_test_assert("body" in entry, f"{name} missing body")
+        _self_test_assert(
+            len(entry["headline"]) > 10,
+            f"{name} headline is suspiciously short",
+        )
+        _self_test_assert(
+            len(entry["body"]) > 40,
+            f"{name} body is suspiciously short",
+        )
+
+
 def _self_test_posterior_viewer_loaders() -> None:
     """Round-trip synthetic posterior draws through the parquet + NetCDF loaders."""
     import io as _io
@@ -24911,6 +24995,7 @@ def run_self_tests() -> int:
         ("Word publication document builder", _self_test_publication_document_word),
         ("PDF publication document builder", _self_test_publication_document_pdf),
         ("Posterior Viewer loaders / plots", _self_test_posterior_viewer_loaders),
+        ("Unified chart guide library", _self_test_chart_guide_library),
     ]
     failures = []
     for name, test_func in tests:
@@ -24925,6 +25010,155 @@ def run_self_tests() -> int:
         return 1
     print(f"\nAll {len(tests)} self-tests passed.")
     return 0
+
+
+# ---------------------------------------------------------------------------
+# Unified chart interpretation guide (D3)
+# ---------------------------------------------------------------------------
+# Every diagnostic plot across the Visuals / Dimensionality / Wright Map
+# sections ends up under a familiar ❓ "How to read this" expander rendered
+# by render_chart_guide. Keeping the library in one place prevents the
+# explanatory text from drifting between tabs.
+
+_CHART_GUIDE_LIBRARY: dict[str, dict[str, str]] = {
+    "wright_map": {
+        "headline": "Wright Map — persons (left) vs item/facet elements (right) on a common logit scale.",
+        "body": (
+            "**How to read:** higher = more able persons / harder items. "
+            "A healthy map has items spread across the person range (good "
+            "targeting); items clustered above the person mean imply a test "
+            "too hard, below imply too easy. Wright & Stone (1999) and "
+            "Linacre (2024) call this the primary visual check."
+        ),
+    },
+    "pathway_map": {
+        "headline": "Pathway Map — measure on x-axis, Infit MnSq on y-axis, with element labels.",
+        "body": (
+            "**How to read:** points near y = 1.0 fit the Rasch expectation. "
+            "Values > 1.4 indicate noisy (distorting) responses for that "
+            "element; values < 0.6 indicate over-fit (Wright & Linacre, 1994)."
+        ),
+    },
+    "category_probability": {
+        "headline": "Category Probability Curves — probability of each response category vs latent trait.",
+        "body": (
+            "**How to read:** each curve should peak exclusively at some "
+            "trait range, and all categories should be the most probable "
+            "choice over some interval. Overlapping / dominated curves "
+            "suggest an unused or redundant category (Linacre, 2004; "
+            "Andrich, 1978)."
+        ),
+    },
+    "threshold_map": {
+        "headline": "Threshold Map — ordered step thresholds across elements.",
+        "body": (
+            "**How to read:** adjacent thresholds should increase "
+            "monotonically. Disordered thresholds (a later step with a "
+            "lower threshold) flag category misuse (Linacre, 2002)."
+        ),
+    },
+    "icc": {
+        "headline": "ICC — Item Characteristic Curve overlaying observed vs expected scores.",
+        "body": (
+            "**How to read:** the empirical (dots) should track the "
+            "model-implied S-curve. Systematic departures indicate model "
+            "misfit or multidimensionality."
+        ),
+    },
+    "scree": {
+        "headline": "Scree Plot — eigenvalues of the residual correlation matrix.",
+        "body": (
+            "**How to read:** the first eigenvalue < 2.0 supports "
+            "unidimensionality; 2.0–3.0 is a grey zone; > 3.0 flags a "
+            "strong secondary dimension. Eigenvalues of the residuals "
+            "should then hover near 1.0 (Smith, 2002; Linacre, 2024)."
+        ),
+    },
+    "facet_distribution": {
+        "headline": "Facet Distribution — boxplots / strip plots of element measures by facet.",
+        "body": (
+            "**How to read:** compare the spread of each facet's measures. "
+            "A facet with very tight measures contributes less to person "
+            "ordering; very wide spread may warrant splitting."
+        ),
+    },
+    "reliability": {
+        "headline": "Reliability / Separation — separation index and Rasch reliability per facet.",
+        "body": (
+            "**How to read:** person separation ≥ 2 (reliability ≥ 0.80) "
+            "is usually the floor for scoring decisions; ≥ 3 for higher "
+            "stakes (Linacre, 2024). Non-person facets report the same "
+            "quantities but interpret them as precision of the facet's "
+            "element measures."
+        ),
+    },
+    "rater_agreement": {
+        "headline": "Rater Agreement — exact / adjacent percent agreement and κ.",
+        "body": (
+            "**How to read:** MFRM does not require high agreement; the "
+            "model itself absorbs rater severity. Still, very low agreement "
+            "(< 40% exact) combined with poor fit suggests rater-specific "
+            "confusion (Myford & Wolfe, 2003)."
+        ),
+    },
+    "posterior_trace": {
+        "headline": "Trace Plot — chain-by-chain draws across iterations.",
+        "body": (
+            "**How to read:** chains should overlap and wander without "
+            "trends (the hairy caterpillar). Separated or drifting chains "
+            "imply non-mixing; Rhat ≥ 1.01 confirms it (Gelman & Rubin, 1992)."
+        ),
+    },
+    "posterior_ridge": {
+        "headline": "Ridge Plot — posterior densities stacked across parameters.",
+        "body": (
+            "**How to read:** compare shape and location at a glance. "
+            "Bimodal / skewed densities often point to identifiability or "
+            "prior-sensitivity issues (Kruschke, 2018)."
+        ),
+    },
+}
+
+
+def render_keyboard_shortcuts_help() -> None:
+    """Collapsed sidebar expander summarising keyboard shortcuts.
+
+    Streamlit itself ships with several built-in shortcuts; the app adds
+    none of its own because the hotkey surface is shared with every
+    widget. This section just documents what already works so users
+    don't have to guess.
+    """
+    with st.sidebar.expander("⌨️ Keyboard shortcuts", expanded=False):
+        st.markdown(
+            "| Key | Action |\n"
+            "|---|---|\n"
+            "| `R` | Re-run the app (also: top-right ⋮ menu → Rerun) |\n"
+            "| `C` | Clear the app cache (⋮ menu → Clear cache) |\n"
+            "| `Esc` | Close modals / dialogs |\n"
+            "| `?` | Keyboard shortcuts cheat sheet (this list) |\n"
+            "| `Tab` / `Shift+Tab` | Move focus across widgets |\n"
+            "| `Space` / `Enter` | Toggle checkboxes / activate buttons |\n"
+            "| `Ctrl/Cmd + F` | Browser page search (works across tabs) |\n"
+            "\n"
+            "💡 The **Run FACETS-mode estimation** button is the primary "
+            "Streamlit button on the sidebar — `Tab` to reach it, `Enter` to fire."
+        )
+
+
+def render_chart_guide(chart_name: str, *, expanded: bool = False) -> None:
+    """Render a consistent 'How to read this' expander under any diagnostic chart.
+
+    If the chart_name is not in the library we silently no-op (so new
+    callers can register lazily and the app stays unbroken).
+    """
+    guide = _CHART_GUIDE_LIBRARY.get(chart_name)
+    if guide is None:
+        return
+    headline = guide.get("headline", chart_name)
+    body = guide.get("body", "")
+    with st.expander(f"❓ How to read this — {headline}", expanded=expanded):
+        if body:
+            st.markdown(body)
 
 
 def render_onboarding_banner() -> None:
@@ -25675,6 +25909,13 @@ def main() -> None:
             "(CmdStan CSV, parquet, ArviZ NetCDF) and reuse the visualizations."
         ),
     )
+
+    # Keyboard shortcuts cheat sheet (collapsed) — always rendered so it
+    # is one click away regardless of app mode.
+    try:
+        render_keyboard_shortcuts_help()
+    except Exception:
+        pass
 
     if app_mode == "Posterior Viewer (upload)":
         render_posterior_viewer_mode()

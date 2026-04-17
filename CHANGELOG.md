@@ -4,6 +4,34 @@ All notable changes to this standalone Streamlit distribution should be recorded
 
 ## Unreleased
 
+### Added — Phase D (UX tweaks)
+
+- Toast notification (`st.toast`) fires in addition to the persistent
+  `st.status` accordion whenever estimation completes — ✅ / ⚠️ / ❌
+  variants communicate convergence, non-convergence, and failure.
+  Users who scroll away from the sidebar still get a completion signal.
+- Report tab regrouped into three meta-categories:
+  📝 Reports (APA Report, Manuscript Template, Method Appendix, Claim Guide),
+  📊 Tables & checks (Tables, Reporting Checklist, Facet Equivalence, Readiness),
+  💾 Exports (Stan Code, Publication Document).
+  Individual sub-section renderers are unchanged; only the surface shape is.
+- Unified chart interpretation helper `render_chart_guide(chart_name)`
+  backed by `_CHART_GUIDE_LIBRARY`. Every diagnostic plot can now drop
+  a consistent ❓ "How to read this" expander with headline + body text
+  sourced from a single library (Wright map, pathway map, category
+  probability curves, threshold map, ICC, scree, facet distribution,
+  reliability, rater agreement, posterior trace, posterior ridge).
+- Keyboard shortcut cheat sheet (`render_keyboard_shortcuts_help`) lives
+  in a collapsed sidebar expander so the shortcut surface is documented
+  once and kept up to date (R rerun, C clear cache, Esc close, ? cheat
+  sheet, Tab focus, Enter activate, Ctrl/Cmd+F search).
+- Cache-stale detection banner now exposes a one-click 🔁 **Rerun now**
+  button that sets `_facets_mode_force_rerun` and triggers
+  `st.rerun()`, so users don't have to scroll back to the sidebar.
+- Inline self-test `_self_test_chart_guide_library` pins the chart-guide
+  library key set and enforces a minimum text budget per entry so the
+  explanatory text doesn't silently empty out over time.
+
 ### Added — Phase B (Posterior Viewer)
 
 - New top-level app mode "Posterior Viewer (upload)" exposed via the

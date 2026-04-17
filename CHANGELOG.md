@@ -2,6 +2,52 @@
 
 All notable changes to this standalone Streamlit distribution should be recorded here.
 
+## 0.2.5-beta - 2026-04-17
+
+Cognitive-load hotfix. The v0.2.0 → v0.2.4 feature stack added 23
+diagnostic visualisations and roughly 40 new widgets, tabs, and
+expanders, crossing the threshold where the default view started to
+overwhelm first-time users. This release layers three fixes on top
+without removing any existing feature.
+
+### Added
+
+- **Just-in-time help popovers** backed by `_HELP_POPOVER_LIBRARY`
+  with 13 three-section entries (What it shows / How to read /
+  Watch for). The new helper `render_help_popover(topic_key)`
+  mounts an `st.popover` button next to chart titles so users get
+  focused guidance without leaving the current tab. Wired into the
+  Pathway Map, Forest plot, Q-Q plot, ECDF, Observation-coverage
+  heatmap, Category-usage bar, Posterior trace, and Posterior
+  Rhat/ESS bars. On Streamlit < 1.32 the helper falls back to an
+  expander so help is still reachable.
+- **View density toggle** in the sidebar (radio: Essential / Full,
+  default Essential). Essential hides the three advanced Visuals
+  sub-tabs (Forest / Q-Q / ECDF) and shows a compact caption
+  pointing users at the Full mode when they need publication-depth
+  diagnostics. State survives reruns via
+  `st.session_state["app_view_density"]`.
+- Inline self-test `_self_test_help_popover_library` (#34) pins the
+  13 required topic keys and enforces minimum prose length so the
+  library cannot silently empty out.
+
+### Changed
+
+- **First-read guide is collapsed by default** (was unfolded on
+  every rerun). Returning users see the result tabs immediately;
+  first-time users still see the affordance at the top.
+- **Visual interpretation roadmap expander** in the Visuals tab
+  defaults to collapsed (was `expanded=True`), so the four core
+  diagnostic sub-tabs are the first thing users see.
+
+### Unchanged on purpose
+
+- Readiness panel in Warning / Issue state still renders expanded
+  (alerts must stay visible).
+- Anchor-issues, submission action plan "first actions", and
+  copy-edit wording repair expanders stay expanded (all three are
+  actionable blockers before final reporting).
+
 ## 0.2.4-beta - 2026-04-17
 
 Visualization-coverage hotfix. Six new diagnostic plots land across

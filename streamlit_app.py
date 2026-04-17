@@ -7670,7 +7670,24 @@ def read_input_data(core: dict) -> pd.DataFrame:
     )
 
     if source == "Sample data (built-in)":
-        return cached_sample_mfrm_data(seed=20240101).copy()
+        sample_df = cached_sample_mfrm_data(seed=20240101).copy()
+        # Expose the built-in sample dataset so users can inspect the
+        # expected input format before uploading their own data. The CSV
+        # is the exact frame the app loads, so column names and dtypes
+        # match what the estimator expects.
+        st.sidebar.download_button(
+            "⬇ Download sample CSV",
+            data=sample_df.to_csv(index=False).encode("utf-8"),
+            file_name="mfrm_sample_data.csv",
+            mime="text/csv",
+            key="sample_data_download",
+            help=(
+                "Download the built-in demo dataset so you can inspect the "
+                "column structure and try your own edits before uploading."
+            ),
+            use_container_width=True,
+        )
+        return sample_df
 
     if source == "Paste table":
         render_data_privacy_notice(where="sidebar")
@@ -7687,10 +7704,35 @@ def read_input_data(core: dict) -> pd.DataFrame:
     render_data_privacy_notice(where="sidebar")
     upload = st.sidebar.file_uploader(
         "Upload data file", type=["csv", "tsv", "txt"],
-        help="Upload a CSV, TSV, or TXT file. Data must be in long format (one row per observation).",
+        help=(
+            "Upload a CSV, TSV, or TXT file. Data must be in long format "
+            "(one row per observation). Files over ~50 MB may exceed the "
+            "Streamlit Community Cloud memory budget."
+        ),
     )
     if upload is None:
         return pd.DataFrame()
+    # Preflight: warn before parsing if the file is so large that it may
+    # OOM the Streamlit Cloud instance. 50 MB is the soft warning; 200 MB
+    # is the configured maximum upload size.
+    upload_size_mb = 0.0
+    try:
+        upload_size_mb = float(getattr(upload, "size", 0) or 0) / (1024 * 1024)
+    except (TypeError, ValueError):
+        upload_size_mb = 0.0
+    if upload_size_mb >= 100:
+        st.sidebar.error(
+            f"⚠️ Uploaded file is **{upload_size_mb:.0f} MB** — this is "
+            "very likely to exceed the hosted instance's 1 GB memory "
+            "budget during estimation. Consider sampling rows locally "
+            "first, or run the app on your own machine."
+        )
+    elif upload_size_mb >= 50:
+        st.sidebar.warning(
+            f"Uploaded file is **{upload_size_mb:.0f} MB**. Estimation "
+            "may be slow or fail on Streamlit Community Cloud. A "
+            "local Python install is recommended for large datasets."
+        )
     return core["read_flexible_table"]("", upload, header=True)
 
 
@@ -9141,13 +9183,38 @@ def render_run_history_panel() -> None:
                     st.rerun()
 
         st.markdown("---")
-        if st.button(
-            "🗑 Clear history",
-            key="run_history_clear",
-            help="Remove all stored snapshots. The current view is not affected.",
-        ):
-            clear_run_history()
-            st.rerun()
+        # Two-step confirmation for Clear history — a single stray click
+        # used to wipe all snapshots permanently with no recovery path.
+        if st.session_state.get("_run_history_clear_confirm", False):
+            st.warning(
+                f"⚠️ Delete all **{len(history)}** snapshots? "
+                "This cannot be undone."
+            )
+            confirm_cols = st.columns([1, 1, 3])
+            if confirm_cols[0].button(
+                "Yes, delete all",
+                key="run_history_clear_yes",
+                type="primary",
+                use_container_width=True,
+            ):
+                clear_run_history()
+                st.session_state["_run_history_clear_confirm"] = False
+                st.rerun()
+            if confirm_cols[1].button(
+                "Cancel",
+                key="run_history_clear_no",
+                use_container_width=True,
+            ):
+                st.session_state["_run_history_clear_confirm"] = False
+                st.rerun()
+        else:
+            if st.button(
+                "🗑 Clear history",
+                key="run_history_clear",
+                help="Remove all stored snapshots. Requires confirmation.",
+            ):
+                st.session_state["_run_history_clear_confirm"] = True
+                st.rerun()
 
 
 def _comparison_extract_label(snapshot: dict) -> str:

@@ -21375,6 +21375,20 @@ def _render_downloads(
         "one-click bundled downloads, or expand individual items below."
     )
 
+    # Prominent cross-reference: the publication-ready Word / PDF / HTML
+    # export lives under Report → 💾 Exports → 📄 Publication Document.
+    # Users who open Downloads tab expecting a manuscript file should be
+    # pointed there explicitly.
+    with st.container(border=True):
+        st.markdown(
+            "📄 **Looking for a manuscript-ready Word, PDF, or HTML document?** "
+            "The single-file Publication Document (abstract + Methods + Results + "
+            "figures + APA 7 references) lives under "
+            "**Report → 💾 Exports → 📄 Publication Document**. "
+            "This Downloads tab hosts the underlying data tables, figures, "
+            "and reproducibility scripts instead."
+        )
+
     dl_tabs = st.tabs(["Data Tables", "Figures", "Scripts & Config"])
 
     # ---- Collect all data frames ----

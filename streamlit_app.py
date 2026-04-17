@@ -13058,10 +13058,21 @@ def build_final_report_readiness(
             "Inspect Dimensionality tab and consider a multidimensional explanation." if not pca_ok else "No action needed.",
         ))
     else:
+        # Surface the concrete skip reason (set by mfrm_diagnostics via
+        # diagnose_pca_skip_reason) so the readiness row and exported CSV
+        # tell users WHY PCA is missing — small data, single
+        # item-combination, >95% NaN, disabled by Analysis depth, etc. —
+        # instead of the previous generic "skipped or unavailable".
+        pca_skip_reason = ""
+        if isinstance(diagnostics, dict):
+            pca_skip_reason = str(diagnostics.get("pca_reason") or "")
+        evidence = "Residual PCA was skipped or unavailable."
+        if pca_skip_reason:
+            evidence = f"Residual PCA was skipped or unavailable. Reason: {pca_skip_reason}"
         rows.append(_readiness_row(
             "Dimensionality screen",
             "Review",
-            "Residual PCA was skipped or unavailable.",
+            evidence,
             "Enable residual PCA for final reports unless the analysis is explicitly exploratory.",
         ))
 
@@ -24841,6 +24852,70 @@ def _self_test_mfrm_glossary() -> None:
         )
 
 
+def _self_test_publication_document_html() -> None:
+    """Build an HTML publication document from a minimal synthetic result."""
+    res = {
+        "config": {"model": "RSM", "method": "JMLE", "facet_names": ["Rater", "Task"], "n_cat": 5},
+        "prep": {"n_obs": 120, "n_person": 20, "rating_min": 1, "rating_max": 5, "unused_score_categories": []},
+        "opt": None,
+        "summary": pd.DataFrame([{"Model": "RSM", "Method": "JMLE", "Converged": True, "Iterations": 42, "LogLik": -180.0}]),
+        "facets": {
+            "person": pd.DataFrame({"Person": [f"P{i}" for i in range(20)], "Estimate": np.linspace(-1.5, 1.5, 20)}),
+            "others": pd.DataFrame({"Facet": ["Rater"] * 3, "Level": ["R1", "R2", "R3"], "Estimate": [-0.3, 0.0, 0.4]}),
+        },
+        "steps": pd.DataFrame({"Step": ["S1", "S2", "S3", "S4"], "Estimate": [-1.5, -0.5, 0.5, 1.5]}),
+    }
+    diag = {
+        "measures": pd.DataFrame({
+            "Facet": ["Rater"] * 3, "Level": ["R1", "R2", "R3"],
+            "Estimate": [-0.3, 0.0, 0.4], "SE": [0.15, 0.14, 0.16],
+        }),
+        "reliability": pd.DataFrame({
+            "Facet": ["Person", "Rater"], "Separation": [2.5, 1.8], "Reliability": [0.88, 0.76], "Strata": [3.7, 2.7],
+        }),
+    }
+    data = build_publication_html_bytes(res, diag, all_bias_results={})
+    _self_test_assert(isinstance(data, (bytes, bytearray)), "HTML builder did not return bytes")
+    text = data.decode("utf-8", errors="replace")
+    _self_test_assert("<!DOCTYPE html>" in text, "HTML doc missing DOCTYPE")
+    _self_test_assert("<html" in text.lower(), "HTML doc missing <html> tag")
+    _self_test_assert("Many-Facet Rasch Measurement" in text, "HTML doc missing title")
+    _self_test_assert("References" in text or "reference" in text.lower(), "HTML doc missing references")
+    _self_test_assert(len(data) > 2000, f"HTML doc seems too small: {len(data)} bytes")
+
+
+def _self_test_diagnose_estimation_error_patterns() -> None:
+    """Confirm every registered error-pattern needle round-trips through the matcher."""
+    # Sample message → expected keyword for each entry in _ESTIMATION_ERROR_PATTERNS
+    expected: list[tuple[str, str]] = [
+        ("matrix is singular", "noncenter_facet"),
+        ("Covariance not positive semi-definite", "reltol"),
+        ("Reached Maximum iterations without convergence", "maxit"),
+        ("Estimator did not converge.", "maxit"),
+        ("all observations are extreme", "xtreme"),
+        ("Rating scale cannot be constructed", "score_col"),
+        ("KeyError: 'Person' column", "person_col"),
+        ("empty dataframe after filter", "data"),
+        ("MemoryError: could not allocate", "facet_cols"),
+        ("anchor row does not exist", "anchor_df"),
+    ]
+    for msg, keyword in expected:
+        remedy = diagnose_estimation_error(Exception(msg))
+        _self_test_assert(
+            remedy is not None,
+            f"message {msg!r} did not match any known pattern",
+        )
+        _self_test_assert(
+            remedy[2] == keyword,
+            f"message {msg!r} expected keyword {keyword!r}, got {remedy[2]!r}",
+        )
+    # Unknown pattern returns None
+    _self_test_assert(
+        diagnose_estimation_error(Exception("a totally novel failure signature")) is None,
+        "unknown pattern incorrectly matched",
+    )
+
+
 def _self_test_reorder_measure_columns() -> None:
     """Pin column reordering: identity + measures first, metadata last."""
     df = pd.DataFrame([{
@@ -26033,6 +26108,8 @@ def run_self_tests() -> int:
         ("Fit-column conditional styling", _self_test_style_fit_columns),
         ("MFRM quick-reference glossary", _self_test_mfrm_glossary),
         ("Measure column reordering", _self_test_reorder_measure_columns),
+        ("HTML publication document builder", _self_test_publication_document_html),
+        ("Estimation-error pattern matcher", _self_test_diagnose_estimation_error_patterns),
     ]
     failures = []
     for name, test_func in tests:
@@ -26689,7 +26766,10 @@ that appear below to explore diagnostics and build a publication document.
         cols = st.columns([3, 2, 1])
         cols[0].caption(
             "💡 Tip: expand the **Tutorial: Key concepts before you begin** section below "
-            "for a primer on MFRM terminology (person / rater / facet / logit)."
+            "for a primer on MFRM terminology (person / rater / facet / logit). "
+            "New in v0.2.x: 📄 Publication Document (Word / PDF / HTML) · 🧮 Posterior "
+            "Viewer (upload Stan draws) · 🧪 Advanced models (DINA / HRM / Testlet) · "
+            "🕒 Run history + 🔀 Compare."
         )
         if cols[1].button(
             "🎯 Run with sample data",

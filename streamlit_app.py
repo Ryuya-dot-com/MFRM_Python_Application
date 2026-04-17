@@ -9085,6 +9085,11 @@ def _show_pca_panel(
         return
 
     # --- Scree plot ---
+    header_cols = st.columns([5, 1])
+    with header_cols[0]:
+        st.markdown("##### Scree plot — residual PCA eigenvalues")
+    with header_cols[1]:
+        render_help_popover("scree")
     max_components = min(20, len(eigenvalues))
     components = list(range(1, max_components + 1))
     ev_plot = eigenvalues[:max_components]
@@ -9224,6 +9229,11 @@ def _minimum_within_facet_logit_gap(facet_est: pd.DataFrame) -> float:
 
 def show_wright_map_section(result: dict, diagnostics: dict) -> None:
     """Render both the classic Wright Map and the FACETS-style yardstick."""
+    header_cols = st.columns([5, 1])
+    with header_cols[0]:
+        st.markdown("##### Wright Map (variable map)")
+    with header_cols[1]:
+        render_help_popover("wright_map")
     st.caption(
         "The Wright Map (variable map) places all persons and facet elements on a single "
         "logit scale. Persons on the left; facet elements and thresholds on the right. "
@@ -17017,7 +17027,11 @@ def _draw_fit_scatter(fit_df: pd.DataFrame) -> None:
     """Infit vs Outfit scatter plot with reference zones."""
 
 
-    st.subheader("Fit scatter: Infit vs Outfit")
+    header_cols = st.columns([5, 1])
+    with header_cols[0]:
+        st.subheader("Fit scatter: Infit vs Outfit")
+    with header_cols[1]:
+        render_help_popover("fit_scatter")
     infit = pd.to_numeric(fit_df["Infit"], errors="coerce")
     outfit = pd.to_numeric(fit_df["Outfit"], errors="coerce")
     mask = infit.notna() & outfit.notna()
@@ -17061,7 +17075,11 @@ def _draw_zstd_distribution(fit_df: pd.DataFrame) -> None:
     if not zstd_cols:
         return
 
-    st.subheader("ZSTD distribution")
+    header_cols = st.columns([5, 1])
+    with header_cols[0]:
+        st.subheader("ZSTD distribution")
+    with header_cols[1]:
+        render_help_popover("zstd_distribution")
     color_map = {"InfitZSTD": "#1b9e77", "OutfitZSTD": "#d95f02"}
     fig = make_subplots(rows=1, cols=len(zstd_cols),
                         subplot_titles=[c.replace("ZSTD", " ZSTD") for c in zstd_cols])
@@ -17089,7 +17107,11 @@ def _draw_misfit_ranking(fit_df: pd.DataFrame) -> None:
     if "InfitZSTD" not in fit_df.columns and "OutfitZSTD" not in fit_df.columns:
         return
 
-    st.subheader("Top misfit elements")
+    header_cols = st.columns([5, 1])
+    with header_cols[0]:
+        st.subheader("Top misfit elements")
+    with header_cols[1]:
+        render_help_popover("misfit_ranking")
 
     df = fit_df.copy()
     abs_infit = pd.to_numeric(df.get("InfitZSTD", pd.Series(dtype=float)), errors="coerce").abs()
@@ -17341,7 +17363,11 @@ def _make_category_probability_curve_figures(curve: dict) -> tuple[go.Figure | N
 
 def _draw_category_probability_curves_plotly(result: dict) -> None:
     """Interactive Plotly category probability curves."""
-    st.subheader("Category Probability Curves")
+    header_cols = st.columns([5, 1])
+    with header_cols[0]:
+        st.subheader("Category Probability Curves")
+    with header_cols[1]:
+        render_help_popover("category_probability")
     st.caption(
         "These curves show the probability of responding in each category as a "
         "function of the latent measure (theta). Hover to read exact P(k) at any theta. "
@@ -17910,7 +17936,11 @@ The Pathway Map plots each facet element's **measure** (Y-axis, in logits) again
 
 def _draw_facet_distribution_plotly(diagnostics: dict) -> None:
     """Interactive Plotly box + strip plot of facet distributions."""
-    st.subheader("Facet Element Distribution")
+    header_cols = st.columns([5, 1])
+    with header_cols[0]:
+        st.subheader("Facet Element Distribution")
+    with header_cols[1]:
+        render_help_popover("facet_distribution")
     st.caption("Distribution of estimated measures within each facet.")
 
     measures = diagnostics.get("measures", pd.DataFrame())
@@ -19600,6 +19630,11 @@ def _draw_bias_heatmap(tbl: pd.DataFrame, facet_a: str, facet_b: str) -> None:
     """Interactive Plotly heatmap of bias size or t-values (FacetA × FacetB)."""
     if "FacetA_Level" not in tbl.columns or "FacetB_Level" not in tbl.columns:
         return
+    header_cols = st.columns([5, 1])
+    with header_cols[0]:
+        st.markdown(f"##### Bias heatmap — {facet_a} × {facet_b}")
+    with header_cols[1]:
+        render_help_popover("bias_heatmap")
     metric = st.radio(
         "Heatmap metric",
         ["Bias Size (logits)", "t-value"],
@@ -20046,7 +20081,11 @@ def show_categories_section(result: dict, diagnostics: dict, core: dict) -> None
         )
 
     # Step ordering
-    st.subheader("Step / Threshold Ordering")
+    header_cols = st.columns([5, 1])
+    with header_cols[0]:
+        st.subheader("Step / Threshold Ordering")
+    with header_cols[1]:
+        render_help_popover("threshold_map")
     st.caption(
         "**Ordered** means each Rasch-Andrich threshold increases monotonically: "
         "moving from category *k* to *k+1* always requires more of the latent trait "
@@ -20305,7 +20344,11 @@ def show_agreement_section(
     result: dict, diagnostics: dict, facet_cols: list[str], core: dict
 ) -> None:
     """Render inter-rater agreement metrics."""
-    st.subheader("Inter-Element Agreement")
+    header_cols = st.columns([5, 1])
+    with header_cols[0]:
+        st.subheader("Inter-Element Agreement")
+    with header_cols[1]:
+        render_help_popover("rater_agreement")
     st.caption(
         "Agreement statistics between elements of a selected facet, computed across shared contexts. "
         "For example, select a Rater facet to compute inter-rater agreement, or a Task facet to assess "
@@ -25329,6 +25372,9 @@ def _self_test_help_popover_library() -> None:
         "fit_scatter", "bias_heatmap", "forest_measures", "qq_residuals",
         "ecdf_measures", "posterior_trace", "posterior_rhat_ess",
         "coverage_heatmap", "category_usage",
+        # v0.2.6-beta additions
+        "misfit_ranking", "facet_distribution", "rater_agreement",
+        "threshold_map", "zstd_distribution",
     }
     missing = expected_topics - set(_HELP_POPOVER_LIBRARY.keys())
     _self_test_assert(not missing, f"help popover missing topics: {missing}")
@@ -27441,6 +27487,93 @@ _HELP_POPOVER_LIBRARY: dict[str, dict[str, str]] = {
         "watch": (
             "Low-use categories often cascade into disordered thresholds "
             "downstream (Linacre 2004)."
+        ),
+    },
+    "misfit_ranking": {
+        "title": "Misfit ranking",
+        "what": (
+            "Facet elements sorted by |ZSTD| — the largest deviations "
+            "from expected fit."
+        ),
+        "how": (
+            "• Top 5-10 are the priority review list.\n"
+            "• Positive ZSTD → responses are more variable than expected.\n"
+            "• Negative ZSTD → responses are too predictable (over-fit).\n"
+            "• Check element content, rater training, or sparse cells."
+        ),
+        "watch": (
+            "Pair with Pathway Map to see misfit in the measure × fit plane. "
+            "Rows with few observations get unstable ZSTD regardless of fit."
+        ),
+    },
+    "facet_distribution": {
+        "title": "Facet element distribution",
+        "what": (
+            "Box plot (with points) of estimated measures within each facet."
+        ),
+        "how": (
+            "• Spread = how much that facet contributes to person ordering.\n"
+            "• Tight facet → low discrimination; few options with real impact.\n"
+            "• Wide facet → explains large chunks of rating variation.\n"
+            "• Outlier points → consider splitting or anchoring."
+        ),
+        "watch": (
+            "Pair with the reliability table: high spread + high reliability "
+            "usually means the facet is informative."
+        ),
+    },
+    "rater_agreement": {
+        "title": "Rater agreement",
+        "what": (
+            "Pairwise agreement / correlation / κ among raters on the same "
+            "person × item."
+        ),
+        "how": (
+            "• Exact agreement ≥ 60 %: high consistency.\n"
+            "• Adjacent agreement (within 1 category) ≥ 80 %: acceptable.\n"
+            "• κ ≥ 0.60: moderate agreement beyond chance.\n"
+            "• Very low agreement with acceptable MFRM fit → raters apply "
+            "different severities but consistently; the model absorbs it."
+        ),
+        "watch": (
+            "MFRM does not require high raw agreement — the model models "
+            "rater severity. Very low agreement combined with poor fit is "
+            "the real red flag (Myford & Wolfe 2003)."
+        ),
+    },
+    "threshold_map": {
+        "title": "Threshold map",
+        "what": (
+            "Ordered step thresholds (Rasch-Andrich) across rating-scale "
+            "categories for each step-facet level."
+        ),
+        "how": (
+            "• Thresholds should increase monotonically (Cat 1 → Cat 2 → …).\n"
+            "• Disordered thresholds (a later step has lower threshold) "
+            "indicate category misuse.\n"
+            "• Distances < 1.4 or > 5 logits often warrant review."
+        ),
+        "watch": (
+            "Disordering alone is not disqualifying — inspect category "
+            "probability curves before collapsing categories (Linacre 2004)."
+        ),
+    },
+    "zstd_distribution": {
+        "title": "ZSTD distribution",
+        "what": (
+            "Histogram of Infit (and Outfit) ZSTD values across all facet "
+            "elements."
+        ),
+        "how": (
+            "• Most mass within ±2 → model fits well.\n"
+            "• Heavy right tail → many noisy elements.\n"
+            "• Heavy left tail → over-fit dependence or restricted range.\n"
+            "• Bimodal distribution → subgroups with different fit."
+        ),
+        "watch": (
+            "With many elements (hundreds+) a few > |2| ZSTD is expected "
+            "by chance; focus on the magnitude of the tail, not its "
+            "presence."
         ),
     },
 }

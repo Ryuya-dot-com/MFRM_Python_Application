@@ -17191,11 +17191,22 @@ def show_visuals_section(result: dict, diagnostics: dict) -> None:
             mime="text/csv",
             key="dl_visual_method_evidence",
         )
-    vtabs = st.tabs([
-        "Category Probability Curves", "Pathway Map",
-        "Facet Distribution", "Observed vs Expected",
-        "Forest plot", "Q-Q plot", "ECDF",
-    ])
+    # View-density aware sub-tab inventory. Essential hides Forest / Q-Q /
+    # ECDF so beginner runs see only the four core diagnostic plots.
+    # Switch to Full (sidebar top) before publication-depth analysis.
+    essential_mode = st.session_state.get("app_view_density", "Essential") == "Essential"
+    if essential_mode:
+        vtab_labels = [
+            "Category Probability Curves", "Pathway Map",
+            "Facet Distribution", "Observed vs Expected",
+        ]
+    else:
+        vtab_labels = [
+            "Category Probability Curves", "Pathway Map",
+            "Facet Distribution", "Observed vs Expected",
+            "Forest plot", "Q-Q plot", "ECDF",
+        ]
+    vtabs = st.tabs(vtab_labels)
 
     with vtabs[0]:
         _draw_category_probability_curves_plotly(result)
@@ -17209,14 +17220,19 @@ def show_visuals_section(result: dict, diagnostics: dict) -> None:
     with vtabs[3]:
         _draw_observed_vs_expected(diagnostics)
 
-    with vtabs[4]:
-        _draw_measures_forest_plotly(diagnostics)
-
-    with vtabs[5]:
-        _draw_residual_qq_plotly(diagnostics)
-
-    with vtabs[6]:
-        _draw_measure_ecdf_plotly(result, diagnostics)
+    if not essential_mode:
+        with vtabs[4]:
+            _draw_measures_forest_plotly(diagnostics)
+        with vtabs[5]:
+            _draw_residual_qq_plotly(diagnostics)
+        with vtabs[6]:
+            _draw_measure_ecdf_plotly(result, diagnostics)
+    else:
+        st.caption(
+            "💡 Three additional diagnostic plots (Forest, Q-Q, ECDF) "
+            "are available in **Full** view density. Switch from the "
+            "sidebar top toggle before a publication-depth analysis."
+        )
 
 
 
@@ -28345,6 +28361,26 @@ def main() -> None:
             "ℹ️ Your FACETS-mode run is preserved in this session. "
             "Switch back via the radio above to resume."
         )
+
+    # View density toggle (v0.2.5+) — Essential hides advanced diagnostic
+    # sub-tabs and secondary expanders to reduce cognitive load for
+    # beginners and quick runs. Full restores every v0.2.x feature for
+    # researchers and publication-ready analyses. Defaults to Essential
+    # so first-time users do not face the full 7-sub-tab Visuals section
+    # and 10-sub-tab Help section on landing.
+    st.sidebar.radio(
+        "View density",
+        options=["Essential", "Full"],
+        index=0,
+        key="app_view_density",
+        help=(
+            "Essential hides advanced diagnostic sub-tabs (Forest / Q-Q / "
+            "ECDF in Visuals, plus advanced Help sections). Full shows every "
+            "v0.2.x feature. Switch to Full before writing manuscript "
+            "methods or running a publication-depth analysis."
+        ),
+        horizontal=True,
+    )
 
     # Keyboard shortcuts cheat sheet (collapsed) — always rendered so it
     # is one click away regardless of app mode.

@@ -9888,6 +9888,291 @@ def build_apa_reference_list(text: str, *, always_include: list[str] | None = No
     return sorted(_APA_REFERENCE_LIBRARY[k] for k in keys_seen)
 
 
+# ---------------------------------------------------------------------------
+# Word (.docx) publication document builder
+# ---------------------------------------------------------------------------
+# Produces a single manuscript-ready Word file containing:
+#   - Title + auto-generated abstract
+#   - Methods (from generate_method_appendix_text)
+#   - Manuscript template (from generate_manuscript_reporting_template)
+#   - Embedded figures (Wright map, pathway, scree, category curves)
+#   - Embedded core tables (measures, reliability, fit summary)
+#   - APA 7 reference list (via build_apa_reference_list)
+#
+# python-docx is lazy-imported so the app still boots if the package
+# is missing (e.g. mid-deploy); the Report tab surfaces an install hint
+# instead of crashing.
+
+_PUBLICATION_DOCUMENT_CORE_REFS: list[str] = [
+    "Andrich_1978",         # RSM
+    "Masters_1982",         # PCM
+    "Linacre_1989",         # Many-facet Rasch measurement
+    "Linacre_2024",         # Fit interpretation
+    "Myford_Wolfe_2003",    # Rater effects I
+    "Myford_Wolfe_2004",    # Rater effects II
+    "Smith_2002",           # PCA of residuals
+    "Wright_Masters_1982",  # Rating scale analysis
+]
+
+
+def _publication_figure_payloads(
+    result: dict, diagnostics: dict,
+) -> list[tuple[str, str, bytes]]:
+    """Render the core publication figures as PNG bytes for Word/PDF embedding.
+
+    Returns a list of (figure_id, caption, png_bytes). Figures that cannot be
+    rendered (missing data, kaleido unavailable) are silently omitted so the
+    document still builds.
+    """
+    out: list[tuple[str, str, bytes]] = []
+
+    # Wright map
+    try:
+        wright_fig = _make_wright_map_export_figure(result, diagnostics)
+        if wright_fig is not None:
+            png = fig_to_png_bytes(wright_fig)
+            if png:
+                out.append((
+                    "wright_map",
+                    "Wright map aligning person abilities and facet element measures on a common logit scale.",
+                    png,
+                ))
+    except Exception:  # pragma: no cover - figure helpers may refuse some inputs
+        pass
+
+    # Fit scatter (Infit vs Outfit)
+    try:
+        measures = diagnostics.get("measures")
+        if isinstance(measures, pd.DataFrame) and not measures.empty:
+            fit_fig = _make_fit_scatter_export_figure(measures)
+            if fit_fig is not None:
+                png = fig_to_png_bytes(fit_fig)
+                if png:
+                    out.append((
+                        "fit_scatter",
+                        "Infit vs Outfit mean-square statistics across facet elements (1.0 = expected).",
+                        png,
+                    ))
+    except Exception:
+        pass
+
+    # Category probability curves
+    try:
+        cp_figs = _make_category_probability_curve_figures(result)
+        if isinstance(cp_figs, dict):
+            for cp_name, cp_fig in cp_figs.items():
+                png = fig_to_png_bytes(cp_fig)
+                if png:
+                    out.append((
+                        f"category_curves_{cp_name}",
+                        f"Category probability curves — {cp_name}.",
+                        png,
+                    ))
+                    break  # First curve is enough for the publication doc
+    except Exception:
+        pass
+
+    # Facet distribution
+    try:
+        fd_fig = _make_facet_distribution_export_figure(diagnostics)
+        if fd_fig is not None:
+            png = fig_to_png_bytes(fd_fig)
+            if png:
+                out.append((
+                    "facet_distribution",
+                    "Facet distribution of element measures.",
+                    png,
+                ))
+    except Exception:
+        pass
+
+    return out
+
+
+def _add_markdown_to_docx(document, markdown_text: str) -> None:
+    """Render a minimal subset of markdown (headings, paragraphs, bullets,
+    horizontal rules) into a python-docx Document. Anything we don't
+    recognise falls through as a plain paragraph."""
+    if not markdown_text:
+        return
+    lines = markdown_text.splitlines()
+    i = 0
+    while i < len(lines):
+        line = lines[i]
+        stripped = line.strip()
+        if not stripped:
+            i += 1
+            continue
+        if stripped.startswith("### "):
+            document.add_heading(stripped[4:].strip(), level=3)
+        elif stripped.startswith("## "):
+            document.add_heading(stripped[3:].strip(), level=2)
+        elif stripped.startswith("# "):
+            document.add_heading(stripped[2:].strip(), level=1)
+        elif stripped.startswith(("- ", "* ")):
+            document.add_paragraph(stripped[2:].strip(), style="List Bullet")
+        elif stripped == "---":
+            document.add_paragraph("").add_run()  # blank spacer
+        elif stripped.startswith("|") and "|" in stripped[1:]:
+            # Minimal markdown table support: collect contiguous | rows
+            table_rows = []
+            while i < len(lines) and lines[i].strip().startswith("|"):
+                row = [c.strip() for c in lines[i].strip().strip("|").split("|")]
+                table_rows.append(row)
+                i += 1
+            # Drop markdown alignment row (---|---)
+            table_rows = [r for r in table_rows if not all(set(c) <= set("-: ") for c in r)]
+            if table_rows:
+                cols = max(len(r) for r in table_rows)
+                tbl = document.add_table(rows=len(table_rows), cols=cols)
+                tbl.style = "Light Grid Accent 1"
+                for r_idx, row in enumerate(table_rows):
+                    for c_idx in range(cols):
+                        tbl.cell(r_idx, c_idx).text = row[c_idx] if c_idx < len(row) else ""
+            continue  # i already advanced past the table
+        else:
+            document.add_paragraph(stripped)
+        i += 1
+
+
+def _add_dataframe_to_docx(document, df: "pd.DataFrame", caption: str | None = None) -> None:
+    """Render a pandas DataFrame as a Word table (with optional caption above)."""
+    if not isinstance(df, pd.DataFrame) or df.empty:
+        return
+    if caption:
+        p = document.add_paragraph()
+        run = p.add_run(caption)
+        run.italic = True
+    # Cap very wide / long tables so the Word file stays reasonable
+    display = df.copy()
+    if len(display.columns) > 12:
+        display = display.iloc[:, :12]
+    if len(display) > 60:
+        display = display.head(60)
+    tbl = document.add_table(rows=len(display) + 1, cols=len(display.columns))
+    tbl.style = "Light Grid Accent 1"
+    for j, col in enumerate(display.columns):
+        tbl.cell(0, j).text = str(col)
+    for i_row, (_, row) in enumerate(display.iterrows(), start=1):
+        for j, col in enumerate(display.columns):
+            value = row[col]
+            if isinstance(value, float):
+                tbl.cell(i_row, j).text = f"{value:.3f}"
+            else:
+                tbl.cell(i_row, j).text = str(value)
+
+
+def build_publication_word_bytes(
+    result: dict,
+    diagnostics: dict,
+    all_bias_results: dict | None = None,
+) -> bytes:
+    """Build a manuscript-ready Word (.docx) document as bytes.
+
+    Raises RuntimeError if python-docx is unavailable (callers should catch
+    and show an install hint). Figure / table embeds that fail are silently
+    skipped so the document always assembles.
+    """
+    try:
+        from docx import Document
+        from docx.shared import Inches
+    except ImportError as exc:
+        raise RuntimeError(
+            "python-docx is not installed. Add `python-docx>=1.0` to "
+            "requirements.txt and reinstall."
+        ) from exc
+    import io as _io
+
+    document = Document()
+    config = result.get("config", {}) if isinstance(result, dict) else {}
+    prep = result.get("prep", {}) if isinstance(result, dict) else {}
+
+    # --- Title + auto-abstract ---
+    model_name = str(config.get("model", "MFRM"))
+    method_name = str(config.get("method", "estimation"))
+    n_obs = prep.get("n_obs", "?")
+    n_person = prep.get("n_person", "?")
+    facet_names = config.get("facet_names", [])
+
+    document.add_heading("Many-Facet Rasch Measurement analysis", level=0)
+    abstract = document.add_paragraph()
+    abstract.add_run("Abstract. ").bold = True
+    abstract.add_run(
+        f"This document reports a {model_name} analysis estimated via {method_name} "
+        f"on {n_obs} observations from {n_person} persons across "
+        f"{len(facet_names)} facets ({', '.join(map(str, facet_names)) or 'none'}). "
+        "The sections below follow the APA 7 reporting layout: exhaustive Methods, "
+        "Results with embedded figures and tables, and a references list. "
+        "All content is auto-generated from the current analysis configuration; "
+        "edit freely for your manuscript."
+    )
+
+    # --- Methods (reuse existing narrative generator) ---
+    methods_text = ""
+    try:
+        methods_text = generate_method_appendix_text(result, diagnostics, all_bias_results)
+    except Exception:
+        methods_text = "# Methods\n\n(Method appendix could not be generated for this run.)"
+    _add_markdown_to_docx(document, methods_text)
+
+    # --- Manuscript template (Methods + Results narrative) ---
+    document.add_page_break()
+    manuscript_text = ""
+    try:
+        manuscript_text = generate_manuscript_reporting_template(result, diagnostics, all_bias_results)
+    except Exception:
+        manuscript_text = "# Results\n\n(Manuscript template could not be generated for this run.)"
+    _add_markdown_to_docx(document, manuscript_text)
+
+    # --- Core results tables ---
+    document.add_heading("Results tables", level=1)
+    measures = diagnostics.get("measures") if isinstance(diagnostics, dict) else None
+    if isinstance(measures, pd.DataFrame) and not measures.empty:
+        _add_dataframe_to_docx(
+            document, measures.round(3),
+            caption="Table 1. Element measures, standard errors, and fit statistics.",
+        )
+    reliability = diagnostics.get("reliability") if isinstance(diagnostics, dict) else None
+    if isinstance(reliability, pd.DataFrame) and not reliability.empty:
+        _add_dataframe_to_docx(
+            document, reliability.round(3),
+            caption="Table 2. Reliability and separation by facet.",
+        )
+
+    # --- Embedded figures ---
+    figures = _publication_figure_payloads(result, diagnostics)
+    if figures:
+        document.add_heading("Figures", level=1)
+        for idx, (fig_id, caption, png) in enumerate(figures, start=1):
+            buf = _io.BytesIO(png)
+            try:
+                document.add_picture(buf, width=Inches(6))
+            except Exception:
+                continue
+            p = document.add_paragraph()
+            p.add_run(f"Figure {idx}. {caption}").italic = True
+
+    # --- References ---
+    document.add_page_break()
+    document.add_heading("References", level=1)
+    narrative_for_refs = (methods_text or "") + "\n" + (manuscript_text or "")
+    refs = build_apa_reference_list(
+        narrative_for_refs,
+        always_include=_PUBLICATION_DOCUMENT_CORE_REFS,
+    )
+    if refs:
+        for ref in refs:
+            p = document.add_paragraph(ref)
+            p.paragraph_format.first_line_indent = Inches(-0.5)
+            p.paragraph_format.left_indent = Inches(0.5)
+    else:
+        document.add_paragraph("(No references cited in the current narrative.)")
+
+    out = _io.BytesIO()
+    document.save(out)
+    return out.getvalue()
+
+
 _ESTIMATION_ERROR_PATTERNS: list[tuple[str, tuple[str, str, str]]] = [
     # (case-insensitive needle, (diagnosis, action, keyword))
     (
@@ -22821,6 +23106,55 @@ def _self_test_public_beta_release_contract() -> None:
     )
 
 
+def _self_test_publication_document_word() -> None:
+    """Build a Word document from a minimal synthetic result and verify its shape."""
+    try:
+        from docx import Document
+    except ImportError:
+        # python-docx not yet installed — skip so CI doesn't hard-fail before
+        # the Streamlit Cloud rebuild lands.
+        return
+    import io as _io
+
+    res = {
+        "config": {"model": "RSM", "method": "JMLE", "facet_names": ["Rater", "Task"], "n_cat": 5},
+        "prep": {"n_obs": 120, "n_person": 20, "rating_min": 1, "rating_max": 5, "unused_score_categories": []},
+        "opt": None,
+        "summary": pd.DataFrame([{"Model": "RSM", "Method": "JMLE", "Converged": True, "Iterations": 42, "LogLik": -180.0}]),
+        "facets": {
+            "person": pd.DataFrame({"Person": [f"P{i}" for i in range(20)], "Estimate": np.linspace(-1.5, 1.5, 20)}),
+            "others": pd.DataFrame({"Facet": ["Rater"] * 3, "Level": ["R1", "R2", "R3"], "Estimate": [-0.3, 0.0, 0.4]}),
+        },
+        "steps": pd.DataFrame({"Step": ["S1", "S2", "S3", "S4"], "Estimate": [-1.5, -0.5, 0.5, 1.5]}),
+    }
+    diag = {
+        "measures": pd.DataFrame({
+            "Facet": ["Rater"] * 3, "Level": ["R1", "R2", "R3"],
+            "Estimate": [-0.3, 0.0, 0.4], "SE": [0.15, 0.14, 0.16],
+            "Infit": [0.9, 1.0, 1.1], "Outfit": [0.95, 1.02, 1.08],
+        }),
+        "reliability": pd.DataFrame({
+            "Facet": ["Person", "Rater"], "Levels": [20, 3],
+            "Separation": [2.5, 1.8], "Reliability": [0.88, 0.76], "Strata": [3.7, 2.7],
+        }),
+    }
+
+    data = build_publication_word_bytes(res, diag, all_bias_results={})
+    _self_test_assert(isinstance(data, (bytes, bytearray)), "Word builder did not return bytes")
+    _self_test_assert(len(data) > 2000, f"Word document seems too small: {len(data)} bytes")
+    # Open the generated file and look for expected content
+    doc = Document(_io.BytesIO(data))
+    text = "\n".join(p.text for p in doc.paragraphs)
+    _self_test_assert("Many-Facet Rasch Measurement analysis" in text, "Word doc missing title heading")
+    _self_test_assert("Abstract." in text, "Word doc missing abstract")
+    _self_test_assert("References" in text, "Word doc missing references heading")
+    # At least one reference entry ended up in the document
+    _self_test_assert(
+        any("(19" in p.text or "(20" in p.text for p in doc.paragraphs),
+        "Word doc references section appears empty",
+    )
+
+
 def _self_test_apa_reference_list() -> None:
     """Pin the APA 7 reference library to the narrative conventions used here."""
     # Library is well-formed
@@ -23925,6 +24259,7 @@ def run_self_tests() -> int:
         ("cross-package validation plan", _self_test_cross_package_validation_plan),
         ("public beta release contract", _self_test_public_beta_release_contract),
         ("APA 7 reference list generator", _self_test_apa_reference_list),
+        ("Word publication document builder", _self_test_publication_document_word),
     ]
     failures = []
     for name, test_func in tests:

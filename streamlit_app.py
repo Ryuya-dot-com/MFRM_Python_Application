@@ -17177,6 +17177,7 @@ def show_visuals_section(result: dict, diagnostics: dict) -> None:
     vtabs = st.tabs([
         "Category Probability Curves", "Pathway Map",
         "Facet Distribution", "Observed vs Expected",
+        "Forest plot", "Q-Q plot", "ECDF",
     ])
 
     with vtabs[0]:
@@ -17190,6 +17191,15 @@ def show_visuals_section(result: dict, diagnostics: dict) -> None:
 
     with vtabs[3]:
         _draw_observed_vs_expected(diagnostics)
+
+    with vtabs[4]:
+        _draw_measures_forest_plotly(diagnostics)
+
+    with vtabs[5]:
+        _draw_residual_qq_plotly(diagnostics)
+
+    with vtabs[6]:
+        _draw_measure_ecdf_plotly(result, diagnostics)
 
 
 
@@ -17365,6 +17375,238 @@ def _draw_category_probability_curves_plotly(result: dict) -> None:
         file_name="mfrm_category_probability_curve.csv",
         mime="text/csv",
         key=f"dl_category_probability_curve_{model}_{meta['Scope']}",
+    )
+
+
+def _draw_measures_forest_plotly(diagnostics: dict) -> None:
+    """Forest plot: element measures with 50% and 95% confidence intervals.
+
+    A frequentist analogue of the Bayesian forest plot in Posterior Viewer —
+    shows each facet element's point estimate, thick 50% CI (≈ ±0.67·SE),
+    and thin 95% CI (±1.96·SE) on a single horizontal axis. Useful for
+    publication: one figure communicates precision and ordering at once.
+    """
+    st.subheader("Forest plot of element measures (± 50 % / 95 % CI)")
+    st.caption(
+        "Each row is one facet element. Thick bar = 50 % CI (≈ ± 0.67 · SE); "
+        "thin bar = 95 % CI (± 1.96 · SE). Dot = point estimate (logits). "
+        "Useful for communicating ordering + precision in a single figure."
+    )
+
+    measures = diagnostics.get("measures", pd.DataFrame()) if isinstance(diagnostics, dict) else pd.DataFrame()
+    if not isinstance(measures, pd.DataFrame) or measures.empty:
+        st.info("No measure table available yet. Run FACETS-mode estimation first.")
+        return
+    if not {"Facet", "Level", "Estimate", "SE"}.issubset(measures.columns):
+        st.info("Measure table is missing Facet / Level / Estimate / SE columns.")
+        return
+
+    facet_options = sorted(measures["Facet"].dropna().unique().astype(str).tolist())
+    if not facet_options:
+        st.info("No facet-level rows found.")
+        return
+    # Default to the first non-Person facet if available so item / rater
+    # distinctions are foregrounded; Person can still be picked explicitly.
+    default_idx = 0
+    for i, f in enumerate(facet_options):
+        if f != "Person":
+            default_idx = i
+            break
+    picked = st.selectbox(
+        "Facet to plot",
+        options=facet_options,
+        index=default_idx,
+        key="forest_plot_facet",
+        help="Pick one facet — persons can be hundreds of rows, so per-facet plots stay readable.",
+    )
+    sub = measures[measures["Facet"].astype(str) == picked].copy()
+    sub["Estimate"] = pd.to_numeric(sub["Estimate"], errors="coerce")
+    sub["SE"] = pd.to_numeric(sub["SE"], errors="coerce")
+    sub = sub.dropna(subset=["Estimate", "SE"])
+    if sub.empty:
+        st.info(f"No valid Estimate/SE rows for facet `{picked}`.")
+        return
+
+    max_rows = st.number_input(
+        "Show top N elements (sorted by Estimate)",
+        min_value=5,
+        max_value=max(5, min(500, len(sub))),
+        value=min(40, len(sub)),
+        step=5,
+        help="Large facets are truncated for readability; full data is in the Measures tab.",
+    )
+    sub = sub.sort_values("Estimate", ascending=True).tail(int(max_rows))
+    labels = sub["Level"].astype(str).tolist()
+    est = sub["Estimate"].to_numpy()
+    se = sub["SE"].to_numpy()
+    ci50_lo = est - 0.67 * se
+    ci50_hi = est + 0.67 * se
+    ci95_lo = est - 1.96 * se
+    ci95_hi = est + 1.96 * se
+
+    fig = go.Figure()
+    for i, lbl in enumerate(labels):
+        fig.add_trace(go.Scatter(
+            x=[ci95_lo[i], ci95_hi[i]], y=[lbl, lbl],
+            mode="lines", line=dict(width=1, color="#9aa0a6"),
+            showlegend=False, hoverinfo="skip",
+        ))
+    for i, lbl in enumerate(labels):
+        fig.add_trace(go.Scatter(
+            x=[ci50_lo[i], ci50_hi[i]], y=[lbl, lbl],
+            mode="lines", line=dict(width=5, color="#0d7a5a"),
+            showlegend=False, hoverinfo="skip",
+        ))
+    fig.add_trace(go.Scatter(
+        x=list(est), y=labels, mode="markers",
+        marker=dict(size=8, color="#c24e00"),
+        name="Estimate",
+        hovertemplate=(
+            "<b>%{y}</b><br>Estimate=%{x:.3f}<extra></extra>"
+        ),
+    ))
+    fig.add_vline(x=0, line_dash="dot", line_color="#666666", line_width=1)
+    fig.update_layout(
+        title=f"Forest plot — {picked}",
+        xaxis_title="Measure (logits)",
+        yaxis_title=picked,
+        template="plotly_white",
+        height=max(260, 24 * len(labels)),
+    )
+    st.plotly_chart(fig, width="stretch")
+    st.caption(
+        "Interpretation tip: elements with non-overlapping 95% CIs differ "
+        "significantly; overlapping 50% CIs is weak evidence at best."
+    )
+
+
+def _draw_residual_qq_plotly(diagnostics: dict) -> None:
+    """Q-Q plot of standardized residuals against a standard normal.
+
+    Classical residual diagnostic: if the Rasch model fits, standardised
+    residuals should be approximately N(0, 1). Deviations in the tails
+    indicate misfit concentrated on extreme persons / items.
+    """
+    st.subheader("Q-Q plot of standardized residuals")
+    st.caption(
+        "Standardized residuals on the y-axis against theoretical N(0, 1) "
+        "quantiles on the x-axis. Under a well-fitting Rasch model, points "
+        "lie on the 45° reference line. Heavy tails → extreme-score misfit; "
+        "S-shape → potential multidimensionality."
+    )
+
+    obs_df = diagnostics.get("obs") if isinstance(diagnostics, dict) else None
+    if not isinstance(obs_df, pd.DataFrame) or obs_df.empty:
+        st.info("No observation table with standardized residuals is available.")
+        return
+    if "StdResidual" not in obs_df.columns:
+        st.info("StdResidual column missing from the observation table.")
+        return
+    residuals = pd.to_numeric(obs_df["StdResidual"], errors="coerce").dropna().to_numpy()
+    if residuals.size < 20:
+        st.info(
+            f"Only {residuals.size} standardized residuals found; Q-Q plot "
+            "needs ≥20 observations to be interpretable."
+        )
+        return
+
+    try:
+        from scipy.stats import probplot
+        osm, osr = probplot(residuals, dist="norm", fit=False)
+        theoretical = osm
+        sample = osr
+    except Exception as exc:
+        st.warning(f"Could not build Q-Q plot ({type(exc).__name__}: {exc}).")
+        return
+
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(
+        x=theoretical, y=sample, mode="markers",
+        marker=dict(size=5, color="#0d7a5a", opacity=0.6),
+        name="Residuals",
+        hovertemplate="Theoretical=%{x:.2f}<br>Sample=%{y:.2f}<extra></extra>",
+    ))
+    lo = float(min(theoretical.min(), sample.min()))
+    hi = float(max(theoretical.max(), sample.max()))
+    fig.add_shape(
+        type="line", x0=lo, y0=lo, x1=hi, y1=hi,
+        line=dict(color="#666666", dash="dash", width=1),
+    )
+    fig.update_layout(
+        title="Q-Q plot — standardized residuals vs N(0, 1)",
+        xaxis_title="Theoretical quantiles (N(0, 1))",
+        yaxis_title="Sample quantiles (standardized residual)",
+        template="plotly_white", height=450,
+    )
+    st.plotly_chart(fig, width="stretch")
+    st.caption(
+        f"Sample size = {residuals.size:,}. "
+        f"Observed mean = {residuals.mean():.3f}, SD = {residuals.std(ddof=1):.3f} "
+        "(target ≈ 0, 1 under a fitting Rasch model)."
+    )
+
+
+def _draw_measure_ecdf_plotly(result: dict, diagnostics: dict) -> None:
+    """Empirical CDF of person and facet-element measures on the logit scale.
+
+    Complements the Wright Map histogram by showing cumulative coverage —
+    useful for identifying scale gaps where no element sits, or person
+    concentrations that Wright Map's binned histogram hides.
+    """
+    st.subheader("Empirical cumulative distribution of measures")
+    st.caption(
+        "Cumulative share of persons / facet elements at each logit value. "
+        "Flat segments are scale gaps (no measures in that range); steep "
+        "segments are clusters. Easier than the Wright Map for spotting "
+        "holes in measurement coverage."
+    )
+
+    def _collect(df: pd.DataFrame, label: str, estimate_col: str = "Estimate") -> pd.DataFrame:
+        if not isinstance(df, pd.DataFrame) or df.empty or estimate_col not in df.columns:
+            return pd.DataFrame()
+        values = pd.to_numeric(df[estimate_col], errors="coerce").dropna().to_numpy()
+        if values.size == 0:
+            return pd.DataFrame()
+        xs = np.sort(values)
+        ys = np.arange(1, xs.size + 1) / xs.size
+        return pd.DataFrame({"logit": xs, "cumulative_share": ys, "group": label})
+
+    person_df = (result.get("facets", {}) or {}).get("person", pd.DataFrame()) if isinstance(result, dict) else pd.DataFrame()
+    measures = diagnostics.get("measures", pd.DataFrame()) if isinstance(diagnostics, dict) else pd.DataFrame()
+
+    frames = [_collect(person_df, "Persons")]
+    if isinstance(measures, pd.DataFrame) and not measures.empty and "Facet" in measures.columns:
+        for facet_name, sub in measures.groupby("Facet"):
+            if str(facet_name).lower() == "person":
+                continue
+            frames.append(_collect(sub, str(facet_name)))
+    frames = [f for f in frames if not f.empty]
+    if not frames:
+        st.info("No measure data available for the ECDF plot yet.")
+        return
+    ecdf = pd.concat(frames, ignore_index=True)
+
+    fig = go.Figure()
+    for grp_name, grp_df in ecdf.groupby("group"):
+        fig.add_trace(go.Scatter(
+            x=grp_df["logit"], y=grp_df["cumulative_share"],
+            mode="lines", name=str(grp_name),
+            hovertemplate="<b>%{fullData.name}</b><br>Logit=%{x:.3f}<br>Share=%{y:.2%}<extra></extra>",
+        ))
+    fig.add_vline(x=0, line_dash="dot", line_color="#666666", line_width=1,
+                  annotation_text="Origin", annotation_position="top right")
+    fig.update_layout(
+        title="Empirical CDF — persons and facet elements",
+        xaxis_title="Logit",
+        yaxis_title="Cumulative share",
+        template="plotly_white", height=460,
+        yaxis=dict(range=[0, 1]),
+    )
+    st.plotly_chart(fig, width="stretch")
+    st.caption(
+        "Tip: long flat stretches indicate logit ranges with no element — "
+        "targets for adding items or tasks. Steep jumps mean measurement "
+        "density where further discrimination is already precise."
     )
 
 

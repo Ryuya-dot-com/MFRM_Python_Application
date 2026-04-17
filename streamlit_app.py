@@ -781,9 +781,11 @@ def reorder_measure_columns(df: "pd.DataFrame") -> "pd.DataFrame":
 
     The priority list is a guide, not a schema — columns that are not in
     the list keep their original order and land after the ranked ones.
-    Non-DataFrame / empty inputs pass through untouched.
+    Non-DataFrame / schema-less inputs pass through untouched. Empty
+    rowcount DataFrames are still reordered so tables whose data arrives
+    later render consistently.
     """
-    if not isinstance(df, pd.DataFrame) or df.empty:
+    if not isinstance(df, pd.DataFrame) or len(df.columns) == 0:
         return df
     ranked = [c for c in _MEASURE_COLUMN_PRIORITY if c in df.columns]
     remaining = [c for c in df.columns if c not in set(ranked)]
@@ -24545,10 +24547,11 @@ def _self_test_mfrm_glossary() -> None:
 
 def _self_test_reorder_measure_columns() -> None:
     """Pin column reordering: identity + measures first, metadata last."""
-    df = pd.DataFrame(columns=[
-        "Anchor", "TotalCount", "Level", "Infit", "SE", "Estimate",
-        "Facet", "Outfit", "UnknownColumn",
-    ])
+    df = pd.DataFrame([{
+        "Anchor": "A", "TotalCount": 10, "Level": "R1", "Infit": 1.0,
+        "SE": 0.1, "Estimate": 0.5, "Facet": "Rater", "Outfit": 1.1,
+        "UnknownColumn": "x",
+    }])
     out = reorder_measure_columns(df)
     expected_prefix = ["Facet", "Level", "Estimate", "SE", "Infit", "Outfit"]
     _self_test_assert(
@@ -24561,8 +24564,12 @@ def _self_test_reorder_measure_columns() -> None:
     _self_test_assert(anchor_idx > estimate_idx, "Anchor should come after Estimate")
     # Unknown columns are preserved (tail)
     _self_test_assert("UnknownColumn" in out.columns, "Unknown column dropped")
-    # Pass-through on empty / non-DataFrame
-    _self_test_assert(reorder_measure_columns(pd.DataFrame()).empty, "empty handling broke")
+    # Truly empty DataFrame (no columns) passes through untouched
+    truly_empty = pd.DataFrame()
+    _self_test_assert(
+        len(reorder_measure_columns(truly_empty).columns) == 0,
+        "column-less DataFrame handling broke",
+    )
 
 
 def _self_test_style_fit_columns() -> None:

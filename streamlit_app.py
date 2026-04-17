@@ -10173,6 +10173,240 @@ def build_publication_word_bytes(
     return out.getvalue()
 
 
+# ---------------------------------------------------------------------------
+# PDF publication document builder (reportlab)
+# ---------------------------------------------------------------------------
+# Same content as the Word builder, rendered as a flowable PDF via
+# reportlab's platypus stack. Per the earlier decision the PDF excludes
+# the reproducibility code appendix that the Word version carries —
+# users who need the code path should use the Word export (or the
+# Downloads tab zip).
+
+def _pdf_markdown_to_flowables(markdown_text: str, styles):
+    """Convert a minimal subset of markdown into reportlab flowables.
+
+    Handles headings (`#`, `##`, `###`), paragraphs, bullet lists,
+    horizontal rules. Markdown tables are rendered as a monospaced
+    block for readability (full table styling is reserved for core
+    result tables passed via _pdf_dataframe_flowable).
+    """
+    from reportlab.platypus import Paragraph, Spacer
+    flowables = []
+    if not markdown_text:
+        return flowables
+    lines = markdown_text.splitlines()
+    for raw in lines:
+        line = raw.rstrip()
+        if not line.strip():
+            flowables.append(Spacer(1, 6))
+            continue
+        if line.startswith("### "):
+            flowables.append(Paragraph(line[4:].strip(), styles["Heading3"]))
+        elif line.startswith("## "):
+            flowables.append(Paragraph(line[3:].strip(), styles["Heading2"]))
+        elif line.startswith("# "):
+            flowables.append(Paragraph(line[2:].strip(), styles["Heading1"]))
+        elif line.startswith(("- ", "* ")):
+            flowables.append(Paragraph(f"• {line[2:].strip()}", styles["BodyText"]))
+        elif line.strip() == "---":
+            flowables.append(Spacer(1, 10))
+        elif line.startswith("|"):
+            # Monospaced fallback for markdown tables
+            flowables.append(Paragraph(f"<font face='Courier'>{line}</font>", styles["BodyText"]))
+        else:
+            # Reportlab uses simple HTML-ish markup for inline formatting;
+            # escape existing <> so the markdown source doesn't break the parser.
+            safe = line.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+            flowables.append(Paragraph(safe, styles["BodyText"]))
+    return flowables
+
+
+def _pdf_dataframe_flowable(df: "pd.DataFrame", caption: str | None = None):
+    """Render a DataFrame as a reportlab Table flowable."""
+    from reportlab.platypus import Paragraph, Spacer, Table, TableStyle
+    from reportlab.lib import colors
+    from reportlab.lib.styles import getSampleStyleSheet
+
+    if not isinstance(df, pd.DataFrame) or df.empty:
+        return []
+    styles = getSampleStyleSheet()
+    display = df.copy()
+    if len(display.columns) > 10:
+        display = display.iloc[:, :10]
+    if len(display) > 50:
+        display = display.head(50)
+    # Round floats for compactness
+    for col in display.columns:
+        if pd.api.types.is_float_dtype(display[col]):
+            display[col] = display[col].round(3)
+
+    rows = [list(display.columns)]
+    for _, row in display.iterrows():
+        rows.append([str(v) for v in row.tolist()])
+    tbl = Table(rows, repeatRows=1)
+    tbl.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#D9E1F2")),
+        ("TEXTCOLOR", (0, 0), (-1, 0), colors.black),
+        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+        ("FONTSIZE", (0, 0), (-1, -1), 8),
+        ("GRID", (0, 0), (-1, -1), 0.25, colors.grey),
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+    ]))
+    out = []
+    if caption:
+        out.append(Paragraph(f"<i>{caption}</i>", styles["BodyText"]))
+        out.append(Spacer(1, 4))
+    out.append(tbl)
+    out.append(Spacer(1, 10))
+    return out
+
+
+def build_publication_pdf_bytes(
+    result: dict,
+    diagnostics: dict,
+    all_bias_results: dict | None = None,
+) -> bytes:
+    """Build a manuscript-ready PDF document as bytes.
+
+    Raises RuntimeError if reportlab is unavailable. Figure / table embeds
+    that fail are silently skipped so the document always assembles.
+    """
+    try:
+        from reportlab.lib.pagesizes import LETTER
+        from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+        from reportlab.lib.units import inch
+        from reportlab.platypus import (
+            Image,
+            PageBreak,
+            Paragraph,
+            SimpleDocTemplate,
+            Spacer,
+        )
+    except ImportError as exc:
+        raise RuntimeError(
+            "reportlab is not installed. Add `reportlab>=4.0` to "
+            "requirements.txt and reinstall."
+        ) from exc
+    import io as _io
+
+    config = result.get("config", {}) if isinstance(result, dict) else {}
+    prep = result.get("prep", {}) if isinstance(result, dict) else {}
+
+    model_name = str(config.get("model", "MFRM"))
+    method_name = str(config.get("method", "estimation"))
+    n_obs = prep.get("n_obs", "?")
+    n_person = prep.get("n_person", "?")
+    facet_names = config.get("facet_names", [])
+
+    buf = _io.BytesIO()
+    doc = SimpleDocTemplate(
+        buf, pagesize=LETTER,
+        topMargin=0.75 * inch, bottomMargin=0.75 * inch,
+        leftMargin=0.85 * inch, rightMargin=0.85 * inch,
+        title="MFRM publication document",
+    )
+    styles = getSampleStyleSheet()
+    # Custom title style
+    styles.add(ParagraphStyle(
+        name="DocTitle",
+        parent=styles["Title"],
+        fontSize=18,
+        spaceAfter=12,
+    ))
+
+    story: list = []
+
+    # --- Title ---
+    story.append(Paragraph("Many-Facet Rasch Measurement analysis", styles["DocTitle"]))
+    story.append(Spacer(1, 6))
+
+    # --- Abstract ---
+    abstract_text = (
+        f"<b>Abstract.</b> This document reports a {model_name} analysis "
+        f"estimated via {method_name} on {n_obs} observations from "
+        f"{n_person} persons across {len(facet_names)} facets "
+        f"({', '.join(map(str, facet_names)) or 'none'}). "
+        "Sections below follow the APA 7 reporting layout: exhaustive "
+        "Methods, Results with embedded figures and tables, and a "
+        "references list. All content is auto-generated from the current "
+        "analysis configuration; edit freely for your manuscript."
+    )
+    story.append(Paragraph(abstract_text, styles["BodyText"]))
+    story.append(Spacer(1, 12))
+
+    # --- Methods ---
+    methods_text = ""
+    try:
+        methods_text = generate_method_appendix_text(result, diagnostics, all_bias_results)
+    except Exception:
+        methods_text = "# Methods\n\n(Method appendix could not be generated for this run.)"
+    story.extend(_pdf_markdown_to_flowables(methods_text, styles))
+
+    # --- Manuscript template ---
+    story.append(PageBreak())
+    manuscript_text = ""
+    try:
+        manuscript_text = generate_manuscript_reporting_template(result, diagnostics, all_bias_results)
+    except Exception:
+        manuscript_text = "# Results\n\n(Manuscript template could not be generated for this run.)"
+    story.extend(_pdf_markdown_to_flowables(manuscript_text, styles))
+
+    # --- Results tables ---
+    story.append(Paragraph("Results tables", styles["Heading1"]))
+    measures = diagnostics.get("measures") if isinstance(diagnostics, dict) else None
+    if isinstance(measures, pd.DataFrame) and not measures.empty:
+        story.extend(_pdf_dataframe_flowable(
+            measures,
+            caption="Table 1. Element measures, standard errors, and fit statistics.",
+        ))
+    reliability = diagnostics.get("reliability") if isinstance(diagnostics, dict) else None
+    if isinstance(reliability, pd.DataFrame) and not reliability.empty:
+        story.extend(_pdf_dataframe_flowable(
+            reliability,
+            caption="Table 2. Reliability and separation by facet.",
+        ))
+
+    # --- Figures ---
+    figures = _publication_figure_payloads(result, diagnostics)
+    if figures:
+        story.append(PageBreak())
+        story.append(Paragraph("Figures", styles["Heading1"]))
+        for idx, (fig_id, caption, png) in enumerate(figures, start=1):
+            try:
+                img_buf = _io.BytesIO(png)
+                story.append(Image(img_buf, width=6.0 * inch, height=4.0 * inch, kind="proportional"))
+            except Exception:
+                continue
+            story.append(Paragraph(f"<i>Figure {idx}. {caption}</i>", styles["BodyText"]))
+            story.append(Spacer(1, 10))
+
+    # --- References ---
+    story.append(PageBreak())
+    story.append(Paragraph("References", styles["Heading1"]))
+    narrative_for_refs = (methods_text or "") + "\n" + (manuscript_text or "")
+    refs = build_apa_reference_list(
+        narrative_for_refs,
+        always_include=_PUBLICATION_DOCUMENT_CORE_REFS,
+    )
+    if refs:
+        # Hanging-indent style (APA 7)
+        ref_style = ParagraphStyle(
+            name="APARef",
+            parent=styles["BodyText"],
+            firstLineIndent=-18,
+            leftIndent=18,
+            spaceAfter=6,
+        )
+        for ref in refs:
+            safe = ref.replace("&", "&amp;")
+            story.append(Paragraph(safe, ref_style))
+    else:
+        story.append(Paragraph("(No references cited in the current narrative.)", styles["BodyText"]))
+
+    doc.build(story)
+    return buf.getvalue()
+
+
 _ESTIMATION_ERROR_PATTERNS: list[tuple[str, tuple[str, str, str]]] = [
     # (case-insensitive needle, (diagnosis, action, keyword))
     (
@@ -23155,6 +23389,41 @@ def _self_test_publication_document_word() -> None:
     )
 
 
+def _self_test_publication_document_pdf() -> None:
+    """Build a PDF from a minimal synthetic result and verify its bytes."""
+    try:
+        import reportlab  # noqa: F401
+    except ImportError:
+        # reportlab not yet installed — skip so CI doesn't hard-fail before
+        # the Streamlit Cloud rebuild lands.
+        return
+    res = {
+        "config": {"model": "RSM", "method": "JMLE", "facet_names": ["Rater", "Task"], "n_cat": 5},
+        "prep": {"n_obs": 120, "n_person": 20, "rating_min": 1, "rating_max": 5, "unused_score_categories": []},
+        "opt": None,
+        "summary": pd.DataFrame([{"Model": "RSM", "Method": "JMLE", "Converged": True, "Iterations": 42, "LogLik": -180.0}]),
+        "facets": {
+            "person": pd.DataFrame({"Person": [f"P{i}" for i in range(20)], "Estimate": np.linspace(-1.5, 1.5, 20)}),
+            "others": pd.DataFrame({"Facet": ["Rater"] * 3, "Level": ["R1", "R2", "R3"], "Estimate": [-0.3, 0.0, 0.4]}),
+        },
+        "steps": pd.DataFrame({"Step": ["S1", "S2", "S3", "S4"], "Estimate": [-1.5, -0.5, 0.5, 1.5]}),
+    }
+    diag = {
+        "measures": pd.DataFrame({
+            "Facet": ["Rater"] * 3, "Level": ["R1", "R2", "R3"],
+            "Estimate": [-0.3, 0.0, 0.4], "SE": [0.15, 0.14, 0.16],
+        }),
+        "reliability": pd.DataFrame({
+            "Facet": ["Person", "Rater"], "Separation": [2.5, 1.8], "Reliability": [0.88, 0.76], "Strata": [3.7, 2.7],
+        }),
+    }
+
+    data = build_publication_pdf_bytes(res, diag, all_bias_results={})
+    _self_test_assert(isinstance(data, (bytes, bytearray)), "PDF builder did not return bytes")
+    _self_test_assert(data[:4] == b"%PDF", f"PDF magic bytes missing: {data[:8]!r}")
+    _self_test_assert(len(data) > 2000, f"PDF seems too small: {len(data)} bytes")
+
+
 def _self_test_apa_reference_list() -> None:
     """Pin the APA 7 reference library to the narrative conventions used here."""
     # Library is well-formed
@@ -24260,6 +24529,7 @@ def run_self_tests() -> int:
         ("public beta release contract", _self_test_public_beta_release_contract),
         ("APA 7 reference list generator", _self_test_apa_reference_list),
         ("Word publication document builder", _self_test_publication_document_word),
+        ("PDF publication document builder", _self_test_publication_document_pdf),
     ]
     failures = []
     for name, test_func in tests:

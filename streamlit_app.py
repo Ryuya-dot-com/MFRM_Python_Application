@@ -8958,6 +8958,130 @@ def resolve_analysis_depth_settings(
     return settings
 
 
+_ESTIMATION_ERROR_PATTERNS: list[tuple[str, tuple[str, str, str]]] = [
+    # (case-insensitive needle, (diagnosis, action, keyword))
+    (
+        "singular",
+        (
+            "The information matrix is singular, meaning the model cannot separate "
+            "one facet effect from another (identifiability problem).",
+            "Set a non-centered facet in **FACETS-mode settings → Non-centered facet**, "
+            "or declare one facet dummy (e.g., Rater) under **Dummy facets** to break the degeneracy.",
+            "noncenter_facet",
+        ),
+    ),
+    (
+        "positive semi-definite",
+        (
+            "The covariance / information matrix is not positive semi-definite.",
+            "Loosen `reltol` to 1e-5, increase `maxit` to 1000, or remove near-duplicate facet "
+            "levels that make the design matrix rank-deficient.",
+            "reltol",
+        ),
+    ),
+    (
+        "maximum iterations",
+        (
+            "The estimator reached `maxit` without converging.",
+            "Increase **maxit** to 1000 or 2000 in the sidebar, and/or relax **reltol** to 1e-5. "
+            "Also check the Fit Details tab for unusually large fit statistics.",
+            "maxit",
+        ),
+    ),
+    (
+        "did not converge",
+        (
+            "Iterations stopped before convergence was reached.",
+            "Increase **maxit**, relax **reltol**, or enable **Omit extreme elements** in the sidebar.",
+            "maxit",
+        ),
+    ),
+    (
+        "all observations are extreme",
+        (
+            "Every observation falls at the minimum or maximum rating category, "
+            "so the model has no information to estimate measures.",
+            "Check your Score column for values outside the rating scale. "
+            "Set **Xtreme correction > 0** (e.g., 0.3) or re-verify the data mapping.",
+            "xtreme",
+        ),
+    ),
+    (
+        "rating scale",
+        (
+            "The rating scale could not be constructed. Score values may be non-contiguous, "
+            "non-integer, or outside the expected range.",
+            "Confirm the **Score column** contains consecutive integers. Use the **Missing value "
+            "recoding** panel for sentinel codes (99, NA, blank). Enable **Keep original "
+            "categories** only when you know the scale is already compact.",
+            "score_col",
+        ),
+    ),
+    (
+        "column",
+        (
+            "A required data column was missing or could not be parsed.",
+            "Re-check **Column mapping** at the top of the sidebar — Person, Score, and at least "
+            "2 Facet columns must all be present in the uploaded data.",
+            "person_col",
+        ),
+    ),
+    (
+        "empty dataframe",
+        (
+            "The data frame is empty after filtering (no rows left to estimate).",
+            "Widen your data subset, reduce missing-value recoding, and verify your upload wasn't "
+            "truncated. You need at least ~30 observations across multiple facet levels.",
+            "data",
+        ),
+    ),
+    (
+        "memory",
+        (
+            "The estimator ran out of memory while building the design matrix.",
+            "Reduce the number of facets, drop high-cardinality ID facets, or downsample to "
+            "~10k observations for the first pass, then expand.",
+            "facet_cols",
+        ),
+    ),
+    (
+        "anchor",
+        (
+            "An anchor constraint could not be applied.",
+            "Open **Anchor constraints** in the sidebar and check that every anchor row refers to "
+            "a Facet/Level that actually exists in your data. Column names must match exactly.",
+            "anchor_df",
+        ),
+    ),
+]
+
+
+def diagnose_estimation_error(exc: BaseException) -> tuple[str, str, str] | None:
+    """Pattern-match an estimation exception to a specific, actionable remedy.
+
+    Returns a ``(diagnosis, action, keyword)`` triple if the exception message
+    matches a known failure mode, else ``None`` so the caller can fall back
+    to the generic remedy list.
+    """
+    message = str(exc).lower()
+    if not message:
+        return None
+    for needle, triple in _ESTIMATION_ERROR_PATTERNS:
+        if needle in message:
+            return triple
+    return None
+
+
+def format_estimation_remedy(remedy: tuple[str, str, str]) -> str:
+    """Render a matched remedy triple as compact markdown for `st.error`."""
+    diagnosis, action, _keyword = remedy
+    return (
+        f"**Estimation failed.**\n\n"
+        f"**What went wrong:** {diagnosis}\n\n"
+        f"**Try this next:** {action}"
+    )
+
+
 def run_facets_mode(core: dict, data: pd.DataFrame) -> None:
     cols = list(data.columns)
     if len(cols) < 4:
@@ -9816,16 +9940,22 @@ def run_facets_mode(core: dict, data: pd.DataFrame) -> None:
             }
             run_status.empty()
         except Exception as exc:
-            st.error(
-                "**Estimation failed.** Common causes and remedies:\n\n"
-                "- **Too few observations**: Ensure each facet level has multiple observations.\n"
-                "- **Extreme scores**: Elements with all-minimum or all-maximum scores "
-                "can cause non-convergence. Enable *Omit extreme elements* or set "
-                "*Xtreme correction* > 0.\n"
-                "- **Non-convergence**: Try increasing `maxit` (e.g., 1000) "
-                "or relaxing `reltol` (e.g., 1e-5).\n"
-                "- **Data format**: Verify that score and facet columns contain the expected values."
-            )
+            # Pattern-match the exception to a targeted remedy before falling back
+            # to the generic checklist. Keeps the full list as a safety net.
+            _matched_remedy = diagnose_estimation_error(exc)
+            if _matched_remedy is not None:
+                st.error(format_estimation_remedy(_matched_remedy))
+            else:
+                st.error(
+                    "**Estimation failed.** Common causes and remedies:\n\n"
+                    "- **Too few observations**: Ensure each facet level has multiple observations.\n"
+                    "- **Extreme scores**: Elements with all-minimum or all-maximum scores "
+                    "can cause non-convergence. Enable *Omit extreme elements* or set "
+                    "*Xtreme correction* > 0.\n"
+                    "- **Non-convergence**: Try increasing `maxit` (e.g., 1000) "
+                    "or relaxing `reltol` (e.g., 1e-5).\n"
+                    "- **Data format**: Verify that score and facet columns contain the expected values."
+                )
             with st.expander("Technical details"):
                 st.exception(exc)
             return

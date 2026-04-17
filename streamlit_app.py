@@ -221,6 +221,24 @@ def visual_method_evidence_table() -> pd.DataFrame:
             "AppReadabilityRule": "Limit heatmaps to top residual rows and keep exact values in hover/table export.",
             "PrimaryReference": "TAM/mirt-style marginal and residual diagnostic practice",
         },
+        {
+            "Visualization": "Posterior trace / ridge / pair / forest (Posterior Viewer)",
+            "Purpose": (
+                "Confirm Bayesian sampler mixing, compare posterior shapes "
+                "across parameters, identify divergent transitions, and "
+                "communicate posterior mean + 50% / 95% credible intervals."
+            ),
+            "MethodBasis": (
+                "arviz HMC diagnostics (Rhat, ESS, divergences, E-BFMI); "
+                "ShinyStan-style trace/ridge/pair convention."
+            ),
+            "AppReadabilityRule": (
+                "Trace colour-codes chains; ridge normalises density height "
+                "per parameter so shape reads over absolute scale; pair "
+                "highlights divergences; forest uses thick 50% + thin 95% CIs."
+            ),
+            "PrimaryReference": "Gelman & Rubin (1992); Vehtari et al. (2021); ArviZ / Stan convention",
+        },
     ]
     return pd.DataFrame(rows)
 
@@ -283,6 +301,74 @@ def public_beta_limitations_table() -> pd.DataFrame:
             "SupportedNow": "Current-engine runner supports the app path; portable self-contained scripts support ordinary JMLE/R workflows.",
             "Boundary": "Portable self-contained GPCM and latent-regression scripts are intentionally blocked with explicit stubs.",
             "UserAction": "Use the app-engine runner for GPCM, MML engine variants, latent regression, PV, and strict marginal reproduction.",
+        },
+        {
+            "Area": "Advanced models (Stan, download-only)",
+            "PublicBetaStatus": "Ready as download-only",
+            "SupportedNow": (
+                "Stan code generators for DINA (with Q-matrix upload), HRM, "
+                "Testlet RI / Bifactor, Mixture Rasch, 2PL Binary, and Pairwise BTL. "
+                "Each generator emits a complete Stan program with priors, "
+                "log_lik, and posterior-predictive blocks."
+            ),
+            "Boundary": (
+                "The app never compiles or samples these models in-process. "
+                "Users run cmdstan / cmdstanpy / rstan locally and (optionally) "
+                "upload the draws into Posterior Viewer mode for trace / ridge / "
+                "pair / forest inspection."
+            ),
+            "UserAction": (
+                "Do not describe these as estimated in the Streamlit app. "
+                "Pair the Stan program with your own Stan environment, cite "
+                "the sampler and settings in your methods, and (for DINA) "
+                "review the Q-matrix validator output before fitting."
+            ),
+        },
+        {
+            "Area": "Posterior Viewer (upload)",
+            "PublicBetaStatus": "Ready as diagnostic",
+            "SupportedNow": (
+                "Upload posterior draws in CmdStan CSV, Apache Parquet, or "
+                "ArviZ NetCDF. Shows a Summary table (mean / sd / median / "
+                "5% / 95% / n_eff / Rhat), a coloured HMC diagnostics banner "
+                "(divergences / max-treedepth hits / acceptance / step size / "
+                "E-BFMI), and Plotly trace / ridge / pair / forest plots."
+            ),
+            "Boundary": (
+                "Diagnostic and visualisation only. The viewer does not "
+                "estimate, compile, or refit models, and does not compute "
+                "posterior predictive statistics beyond the summary thresholds "
+                "arviz exposes."
+            ),
+            "UserAction": (
+                "Use this mode to confirm Bayesian convergence (Rhat < 1.01, "
+                "ESS > 400), inspect divergent transitions, and eyeball chain "
+                "mixing before writing Bayesian claims. Generate the draws "
+                "with trusted Stan tooling."
+            ),
+        },
+        {
+            "Area": "Publication Document (Word / PDF / HTML)",
+            "PublicBetaStatus": "Ready",
+            "SupportedNow": (
+                "One-click export of a manuscript-ready document with auto-"
+                "generated abstract, exhaustive Methods, results tables, "
+                "embedded figures, and an APA 7 reference list. Word uses "
+                "python-docx; PDF uses reportlab; HTML uses stdlib with "
+                "base64-embedded figures."
+            ),
+            "Boundary": (
+                "The document is a starting point, not a finished manuscript. "
+                "Figures are embedded at 6-inch width; tables cap at 60 rows "
+                "× 12 cols for Word and 50 × 10 for PDF so the file stays "
+                "reasonable. The PDF intentionally excludes a reproducibility "
+                "code appendix (use Word or the Downloads tab scripts zip)."
+            ),
+            "UserAction": (
+                "Treat the document as a draft. Revise the Methods narrative "
+                "for your context, add substantive content interpretation "
+                "before submission, and re-cite primary sources."
+            ),
         },
     ]
     return pd.DataFrame(rows)
@@ -360,6 +446,50 @@ def mfrmr_015_migration_coverage_table() -> pd.DataFrame:
             "PythonEvidence": "Parity fixture, tolerance policy, public beta limitations, release check, and runtime independence warnings.",
             "Boundary": "The Python app does not call external engines and does not claim exact numerical equivalence by default.",
             "NextValidation": "Archive fixture, external package versions, parameterization map, and comparison tables before making parity claims.",
+        },
+        {
+            "mfrmr015Area": "Advanced response models (Stan, download-only)",
+            "PythonStatus": "Ready as download-only",
+            "PythonEvidence": (
+                "Seven Stan code generators (DINA with Q-matrix uploader + "
+                "validator, HRM, Testlet RI / Bifactor, Mixture Rasch, 2PL "
+                "Binary, Pairwise BTL), each emitting data / parameters / "
+                "model / generated quantities with priors, log_lik, and "
+                "posterior-predictive blocks. Advertised via "
+                "application/x-stan MIME for download."
+            ),
+            "Boundary": (
+                "Generation only. The Python app does not compile, sample, or "
+                "execute these programs at runtime; users run cmdstan / "
+                "cmdstanpy / rstan locally."
+            ),
+            "NextValidation": (
+                "Compare Python-generated Stan programs against mfrmr's "
+                "own Stan surface only after confirming parameterisation, "
+                "prior choices, and identification constraints match."
+            ),
+        },
+        {
+            "mfrmr015Area": "Posterior Viewer (upload)",
+            "PythonStatus": "Ready as diagnostic",
+            "PythonEvidence": (
+                "Multi-format posterior loader (CmdStan CSV, parquet, "
+                "ArviZ NetCDF) powered by arviz >= 0.17; summary table "
+                "with mean / sd / median / 5% / 95% / n_eff / Rhat; HMC "
+                "diagnostics banner (divergences, treedepth hits, accept "
+                "rate, step size, E-BFMI); trace / ridge / pair / forest "
+                "Plotly panels."
+            ),
+            "Boundary": (
+                "Visualisation + diagnostics only; does not compile or "
+                "refit models. Trusts the producer of the draws for "
+                "numerical integrity."
+            ),
+            "NextValidation": (
+                "Confirm Rhat < 1.01 and ESS > 400 across all parameters "
+                "before writing Bayesian inference claims. Document the "
+                "sampler, iter / warmup / chains, and adapt_delta."
+            ),
         },
     ]
     return pd.DataFrame(rows)
@@ -23944,6 +24074,80 @@ def cross_package_validation_plan() -> pd.DataFrame:
             "ReviewThreshold": "review any failed manifest row, missing summary output, zero-byte replicate selected for validation, or unarchived parameterization note",
             "ExpectedNonEquivalence": "historical artifacts can contain OS-specific absolute paths and package-specific constants",
             "Action": "Use the Simulation inventory as reviewer evidence only after archiving sanitized manifests and comparison summaries.",
+        },
+        {
+            "Area": "Posterior Viewer / Bayesian diagnostics (v0.2.0+)",
+            "PythonScenario": (
+                "upload of externally-produced posterior draws "
+                "(CmdStan CSV / Apache Parquet / ArviZ NetCDF) for "
+                "trace / ridge / pair / forest inspection and HMC "
+                "diagnostics"
+            ),
+            "ExternalReference": (
+                "ArviZ (https://arviz-devs.github.io/arviz/), "
+                "Stan sampler diagnostics (Vehtari et al. 2021; "
+                "Gelman & Rubin 1992)"
+            ),
+            "OfficialHook": (
+                "arviz.from_cmdstan / arviz.from_netcdf / pyarrow "
+                "parquet loader; arviz.rhat / arviz.ess"
+            ),
+            "ComparableEvidence": (
+                "posterior summaries (mean / sd / median / 5% / 95% / "
+                "n_eff / Rhat), divergent transition counts, max-tree "
+                "depth hits, E-BFMI per chain"
+            ),
+            "ReviewThreshold": (
+                "Rhat < 1.01 and ESS > 400 for every parameter; zero "
+                "divergent transitions after adapt_delta tuning; E-BFMI > 0.3"
+            ),
+            "ExpectedNonEquivalence": (
+                "the app never samples; diagnostics reflect the upstream "
+                "Stan run, not a Streamlit-side fit"
+            ),
+            "Action": (
+                "Report the sampler (cmdstan / cmdstanpy / rstan), chains, "
+                "iterations, warmup, adapt_delta, and max_treedepth when "
+                "citing these diagnostics in methods."
+            ),
+        },
+        {
+            "Area": "Advanced response models (Stan, download-only; v0.2.0+)",
+            "PythonScenario": (
+                "sidebar emits a complete .stan program for DINA, HRM, "
+                "Testlet RI / Bifactor, Mixture Rasch, 2PL Binary, or "
+                "Pairwise BTL; the user compiles and samples locally"
+            ),
+            "ExternalReference": (
+                "cmdstan / cmdstanpy / rstan documentation; primary "
+                "model references (de la Torre 2009; Patz et al. 2002; "
+                "Bradlow et al. 1999; DeMars 2006; Rost 1990; "
+                "Birnbaum 1968; Bradley & Terry 1952)"
+            ),
+            "OfficialHook": (
+                "cmdstanpy.CmdStanModel.sample / cmdstanr $sample; "
+                "any downstream toolchain that ingests .stan files"
+            ),
+            "ComparableEvidence": (
+                "generated Stan code always contains data / parameters / "
+                "model / generated quantities blocks with log_lik and a "
+                "posterior predictive check; brace balance and model-"
+                "specific keyword markers pinned by self-test"
+            ),
+            "ReviewThreshold": (
+                "review any parameterisation, prior, or constraint "
+                "difference before comparing estimates with mfrmr or "
+                "any other Bayesian MFRM implementation"
+            ),
+            "ExpectedNonEquivalence": (
+                "Stan programs are generated fresh per request; numerical "
+                "parity with external packages is not claimed by default"
+            ),
+            "Action": (
+                "Treat the .stan file as a scaffold. Document the exact "
+                "Stan source, sampler version, and compilation flags "
+                "you used alongside your results."
+            ),
         },
     ]
     return pd.DataFrame(rows)

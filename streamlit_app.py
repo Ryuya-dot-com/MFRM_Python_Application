@@ -24900,9 +24900,707 @@ that appear below to explore diagnostics and build a publication document.
             st.rerun()
 
 
+# ---------------------------------------------------------------------------
+# Posterior Viewer (Phase B) — ShinyStan-like mode for externally-produced
+# posterior draws.
+# ---------------------------------------------------------------------------
+# The app itself does not compile or sample Stan (Streamlit Cloud resource
+# limits make that impractical). Instead, users run Stan locally with the
+# runner scripts this app exports, then upload the resulting draws here
+# to get trace / ridge / pair / forest plots plus HMC diagnostics.
+
+_POSTERIOR_UPLOAD_FORMATS = {
+    # suffix → (human label, loader key)
+    ".csv":     ("CmdStan CSV (one chain)",    "cmdstan_csv"),
+    ".parquet": ("Apache Parquet draws table", "parquet"),
+    ".nc":      ("ArviZ NetCDF (.nc)",         "netcdf"),
+    ".netcdf":  ("ArviZ NetCDF (.nc)",         "netcdf"),
+}
+
+
+def _posterior_detect_format(filename: str) -> str | None:
+    name = (filename or "").lower()
+    for suffix, (_, key) in _POSTERIOR_UPLOAD_FORMATS.items():
+        if name.endswith(suffix):
+            return key
+    return None
+
+
+def _posterior_load_cmdstan_csvs(files: list) -> "dict | None":
+    """Load one or more CmdStan output CSVs via arviz.from_cmdstan.
+
+    Returns a standardised dict with `inference_data`, `parameter_names`,
+    `n_chains`, `n_draws`, and a `diagnostics` subdict. Streams each upload
+    to a temp path because arviz needs file paths, not buffers.
+    """
+    import tempfile
+    import os as _os
+
+    try:
+        import arviz as _az  # noqa: N813
+    except ImportError:
+        raise RuntimeError(
+            "arviz is not installed. Add `arviz>=0.17` to requirements.txt "
+            "and reinstall."
+        )
+
+    temp_paths: list[str] = []
+    try:
+        for f in files:
+            suffix = ".csv"
+            buf = tempfile.NamedTemporaryFile(suffix=suffix, delete=False)
+            buf.write(f.getvalue() if hasattr(f, "getvalue") else f.read())
+            buf.close()
+            temp_paths.append(buf.name)
+        idata = _az.from_cmdstan(posterior=temp_paths)
+    finally:
+        for p in temp_paths:
+            try:
+                _os.unlink(p)
+            except OSError:
+                pass
+
+    return _posterior_summarise_inference_data(idata, source="cmdstan_csv")
+
+
+def _posterior_load_parquet(file) -> "dict | None":
+    """Load posterior draws from an Apache Parquet file.
+
+    Expected schema: one row per draw, columns include `chain` (int),
+    `draw` (int), and one column per parameter. If `chain` is missing
+    we treat the whole file as chain 1.
+    """
+    import io as _io
+    df = pd.read_parquet(_io.BytesIO(file.getvalue() if hasattr(file, "getvalue") else file.read()))
+    if df.empty:
+        raise RuntimeError("Parquet file contains no rows.")
+    if "chain" not in df.columns:
+        df = df.assign(chain=1)
+    if "draw" not in df.columns:
+        df = df.assign(draw=range(len(df)))
+    param_cols = [c for c in df.columns if c not in {"chain", "draw"}]
+    if not param_cols:
+        raise RuntimeError("Parquet file has no parameter columns.")
+    # Pivot into (chain, draw, param) 3-D array
+    import numpy as _np
+    chains = sorted(df["chain"].unique())
+    max_draw = int(df.groupby("chain")["draw"].count().max())
+    arr = _np.full((len(chains), max_draw, len(param_cols)), _np.nan)
+    for ci, c in enumerate(chains):
+        sub = df[df["chain"] == c].sort_values("draw")
+        arr[ci, : len(sub), :] = sub[param_cols].to_numpy(dtype=float, na_value=_np.nan)
+    # Build a minimal arviz InferenceData so downstream code is uniform
+    try:
+        import arviz as _az
+        import xarray as _xr
+        posterior = _xr.Dataset({
+            name: _xr.DataArray(arr[:, :, i], dims=["chain", "draw"])
+            for i, name in enumerate(param_cols)
+        })
+        idata = _az.InferenceData(posterior=posterior)
+    except Exception:
+        idata = None
+    return {
+        "inference_data": idata,
+        "parameter_names": param_cols,
+        "n_chains": len(chains),
+        "n_draws": max_draw,
+        "draws_array": arr,
+        "source": "parquet",
+        "diagnostics": {},
+    }
+
+
+def _posterior_load_netcdf(file) -> "dict | None":
+    import tempfile, os as _os
+    try:
+        import arviz as _az
+    except ImportError:
+        raise RuntimeError(
+            "arviz is not installed. Add `arviz>=0.17` to requirements.txt "
+            "and reinstall."
+        )
+    buf = tempfile.NamedTemporaryFile(suffix=".nc", delete=False)
+    try:
+        buf.write(file.getvalue() if hasattr(file, "getvalue") else file.read())
+        buf.close()
+        idata = _az.from_netcdf(buf.name)
+    finally:
+        try:
+            _os.unlink(buf.name)
+        except OSError:
+            pass
+    return _posterior_summarise_inference_data(idata, source="netcdf")
+
+
+def _posterior_summarise_inference_data(idata, *, source: str) -> dict:
+    """Extract the per-parameter draws + HMC diagnostics from an arviz InferenceData."""
+    import numpy as _np
+    posterior = getattr(idata, "posterior", None)
+    if posterior is None:
+        raise RuntimeError(
+            f"Loaded file does not contain a 'posterior' group "
+            "(is this actually a posterior draws file?)"
+        )
+    param_names = [str(v) for v in posterior.data_vars]
+    try:
+        n_chains = int(posterior.sizes.get("chain", 0))
+        n_draws = int(posterior.sizes.get("draw", 0))
+    except Exception:
+        n_chains = n_draws = 0
+    # Diagnostics
+    diagnostics: dict[str, _np.ndarray | None] = {
+        "divergent": None,
+        "treedepth": None,
+        "accept_stat": None,
+        "step_size": None,
+        "energy": None,
+    }
+    sample_stats = getattr(idata, "sample_stats", None)
+    if sample_stats is not None:
+        for key in ("diverging", "treedepth", "acceptance_rate", "step_size", "energy"):
+            if key in sample_stats.data_vars:
+                arr = sample_stats[key].to_numpy()
+                canonical = {
+                    "diverging": "divergent",
+                    "treedepth": "treedepth",
+                    "acceptance_rate": "accept_stat",
+                    "step_size": "step_size",
+                    "energy": "energy",
+                }[key]
+                diagnostics[canonical] = arr
+    return {
+        "inference_data": idata,
+        "parameter_names": param_names,
+        "n_chains": n_chains,
+        "n_draws": n_draws,
+        "source": source,
+        "diagnostics": diagnostics,
+    }
+
+
+def _posterior_draws_array(payload: dict, parameter: str) -> "np.ndarray | None":
+    """Return the (chain, draw) draws array for a named parameter."""
+    idata = payload.get("inference_data")
+    posterior = getattr(idata, "posterior", None) if idata is not None else None
+    if posterior is not None and parameter in getattr(posterior, "data_vars", {}):
+        arr = posterior[parameter].to_numpy()
+        # If the parameter has extra dims (e.g. per-item), flatten to (chain, draw)
+        if arr.ndim == 2:
+            return arr
+        if arr.ndim == 3:
+            return arr[:, :, 0]  # first index of the extra dim
+        if arr.ndim > 3:
+            return arr.reshape(arr.shape[0], arr.shape[1], -1)[:, :, 0]
+        return arr
+    # Parquet-array fallback
+    draws_array = payload.get("draws_array")
+    if draws_array is not None:
+        params = payload.get("parameter_names", [])
+        if parameter in params:
+            i = params.index(parameter)
+            return draws_array[:, :, i]
+    return None
+
+
+def _posterior_compute_summary(payload: dict, parameters: list[str]) -> pd.DataFrame:
+    """Per-parameter summary table: mean / sd / median / 5% / 95% / ESS / Rhat."""
+    import numpy as _np
+    rows = []
+    for p in parameters:
+        arr = _posterior_draws_array(payload, p)
+        if arr is None or arr.size == 0:
+            continue
+        flat = arr.reshape(-1)
+        mean = float(_np.nanmean(flat))
+        sd = float(_np.nanstd(flat, ddof=1)) if flat.size > 1 else _np.nan
+        median = float(_np.nanmedian(flat))
+        q05 = float(_np.nanquantile(flat, 0.05))
+        q95 = float(_np.nanquantile(flat, 0.95))
+
+        # Rhat (Gelman-Rubin) and ESS per arviz if available
+        rhat = ess = _np.nan
+        try:
+            import arviz as _az
+            ida = payload.get("inference_data")
+            if ida is not None and p in getattr(getattr(ida, "posterior", None), "data_vars", {}):
+                try:
+                    rhat_ds = _az.rhat(ida, var_names=[p])
+                    if p in rhat_ds.data_vars:
+                        rhat = float(rhat_ds[p].to_numpy())
+                except Exception:
+                    pass
+                try:
+                    ess_ds = _az.ess(ida, var_names=[p])
+                    if p in ess_ds.data_vars:
+                        ess = float(ess_ds[p].to_numpy())
+                except Exception:
+                    pass
+        except ImportError:
+            pass
+
+        rows.append({
+            "parameter": p,
+            "mean": mean, "sd": sd, "median": median,
+            "q05": q05, "q95": q95,
+            "n_eff": ess, "Rhat": rhat,
+        })
+    return pd.DataFrame(rows)
+
+
+def _posterior_hmc_diagnostics_summary(payload: dict) -> dict:
+    """Aggregate HMC transition diagnostics for the diagnostic banner."""
+    import numpy as _np
+    diag = payload.get("diagnostics", {}) or {}
+    out: dict = {"divergences": None, "treedepth_hits": None,
+                 "accept_stat_mean": None, "step_size_mean": None,
+                 "energy_ebfmi": None}
+    divergent = diag.get("divergent")
+    if divergent is not None:
+        arr = _np.asarray(divergent, dtype=float)
+        total = int(_np.nansum(arr))
+        pct = float(_np.nanmean(arr)) * 100 if arr.size else 0.0
+        out["divergences"] = {"count": total, "pct": pct}
+    treedepth = diag.get("treedepth")
+    if treedepth is not None:
+        arr = _np.asarray(treedepth, dtype=float)
+        # Max treedepth 10 is arviz default; anything ≥10 counts as a hit
+        hits = int(_np.sum(arr >= 10))
+        out["treedepth_hits"] = {"count": hits, "max_observed": float(_np.nanmax(arr))}
+    accept = diag.get("accept_stat")
+    if accept is not None:
+        out["accept_stat_mean"] = float(_np.nanmean(accept))
+    step = diag.get("step_size")
+    if step is not None:
+        out["step_size_mean"] = float(_np.nanmean(step))
+    energy = diag.get("energy")
+    if energy is not None and energy.size > 1:
+        # E-BFMI per chain (Betancourt 2017): var(delta E) / var(E)
+        arr = _np.asarray(energy, dtype=float)
+        try:
+            delta = _np.diff(arr, axis=-1)
+            num = _np.nanvar(delta, axis=-1, ddof=1)
+            den = _np.nanvar(arr, axis=-1, ddof=1)
+            with _np.errstate(invalid="ignore", divide="ignore"):
+                ebfmi = num / den
+            out["energy_ebfmi"] = {
+                "min": float(_np.nanmin(ebfmi)) if ebfmi.size else _np.nan,
+                "mean": float(_np.nanmean(ebfmi)) if ebfmi.size else _np.nan,
+            }
+        except Exception:
+            pass
+    return out
+
+
+def _posterior_trace_figure(payload: dict, parameters: list[str]):
+    """Return a Plotly figure with a trace plot (chain-colored) per parameter."""
+    from plotly.subplots import make_subplots
+    n = len(parameters)
+    if n == 0:
+        return None
+    fig = make_subplots(rows=n, cols=1, shared_xaxes=True,
+                        subplot_titles=parameters, vertical_spacing=0.04)
+    for r, p in enumerate(parameters, start=1):
+        arr = _posterior_draws_array(payload, p)
+        if arr is None:
+            continue
+        for c in range(arr.shape[0]):
+            fig.add_trace(
+                go.Scatter(
+                    x=list(range(arr.shape[1])),
+                    y=list(arr[c]),
+                    mode="lines",
+                    name=f"chain {c + 1}" if r == 1 else None,
+                    showlegend=(r == 1),
+                    line=dict(width=0.8),
+                ),
+                row=r, col=1,
+            )
+    fig.update_layout(
+        height=max(260, 180 * n),
+        template="plotly_white",
+        title_text="Posterior trace",
+    )
+    fig.update_xaxes(title_text="Draw")
+    return fig
+
+
+def _posterior_ridge_figure(payload: dict, parameters: list[str]):
+    """Offset-density ridge plot across parameters."""
+    import numpy as _np
+    from scipy.stats import gaussian_kde
+    if not parameters:
+        return None
+    fig = go.Figure()
+    offset = 0.0
+    y_ticks = []
+    for p in parameters:
+        arr = _posterior_draws_array(payload, p)
+        if arr is None:
+            continue
+        flat = arr.reshape(-1)
+        if flat.size < 10:
+            continue
+        try:
+            kde = gaussian_kde(flat)
+        except Exception:
+            continue
+        xs = _np.linspace(_np.nanmin(flat), _np.nanmax(flat), 200)
+        ys = kde(xs)
+        # Normalise so each ridge has similar visual weight
+        ys_norm = ys / (_np.nanmax(ys) or 1.0)
+        fig.add_trace(go.Scatter(
+            x=xs, y=ys_norm + offset,
+            mode="lines", name=p,
+            fill="tozeroy", opacity=0.6,
+            line=dict(width=1),
+        ))
+        y_ticks.append((offset + 0.5, p))
+        offset += 1.2
+    fig.update_layout(
+        template="plotly_white",
+        title_text="Posterior densities (ridge)",
+        yaxis=dict(
+            tickmode="array",
+            tickvals=[t for t, _ in y_ticks],
+            ticktext=[name for _, name in y_ticks],
+        ),
+        height=max(260, 80 * len(y_ticks)),
+        xaxis_title="Parameter value",
+    )
+    return fig
+
+
+def _posterior_pair_figure(payload: dict, parameters: list[str]):
+    """Scatter-matrix across 2–6 parameters, colouring divergences red."""
+    import numpy as _np
+    parameters = parameters[:6]
+    if len(parameters) < 2:
+        return None
+    data = {}
+    for p in parameters:
+        arr = _posterior_draws_array(payload, p)
+        if arr is None:
+            return None
+        data[p] = arr.reshape(-1)
+    df = pd.DataFrame(data)
+    divergent = payload.get("diagnostics", {}).get("divergent")
+    color = "#e41a1c" if divergent is not None else None
+    color_col = None
+    if divergent is not None and _np.asarray(divergent).size == len(df):
+        df["_divergent"] = _np.asarray(divergent).reshape(-1).astype(bool)
+        color_col = "_divergent"
+    try:
+        import plotly.express as px
+        if color_col:
+            fig = px.scatter_matrix(
+                df, dimensions=parameters, color=color_col,
+                color_discrete_map={True: "#e41a1c", False: "#377eb8"},
+                title="Pair plot (divergences highlighted)",
+            )
+        else:
+            fig = px.scatter_matrix(df, dimensions=parameters, title="Pair plot")
+        fig.update_traces(diagonal_visible=False, showupperhalf=False,
+                          marker=dict(size=3, opacity=0.6))
+        fig.update_layout(height=max(400, 160 * len(parameters)), template="plotly_white")
+        return fig
+    except Exception:
+        return None
+
+
+def _posterior_forest_figure(payload: dict, parameters: list[str]):
+    """Forest plot: posterior mean + 50% and 95% CIs per parameter."""
+    import numpy as _np
+    rows = []
+    for p in parameters:
+        arr = _posterior_draws_array(payload, p)
+        if arr is None:
+            continue
+        flat = arr.reshape(-1)
+        rows.append({
+            "parameter": p,
+            "mean": float(_np.nanmean(flat)),
+            "ci50_lo": float(_np.nanquantile(flat, 0.25)),
+            "ci50_hi": float(_np.nanquantile(flat, 0.75)),
+            "ci95_lo": float(_np.nanquantile(flat, 0.025)),
+            "ci95_hi": float(_np.nanquantile(flat, 0.975)),
+        })
+    if not rows:
+        return None
+    df = pd.DataFrame(rows)
+    fig = go.Figure()
+    # 95% CI (thin line)
+    for _, r in df.iterrows():
+        fig.add_trace(go.Scatter(
+            x=[r["ci95_lo"], r["ci95_hi"]],
+            y=[r["parameter"], r["parameter"]],
+            mode="lines", line=dict(width=1, color="#aaaaaa"),
+            showlegend=False,
+        ))
+    # 50% CI (thicker)
+    for _, r in df.iterrows():
+        fig.add_trace(go.Scatter(
+            x=[r["ci50_lo"], r["ci50_hi"]],
+            y=[r["parameter"], r["parameter"]],
+            mode="lines", line=dict(width=5, color="#1b9e77"),
+            showlegend=False,
+        ))
+    # Means (dots)
+    fig.add_trace(go.Scatter(
+        x=df["mean"], y=df["parameter"],
+        mode="markers", marker=dict(size=8, color="#d95f02"),
+        name="Posterior mean",
+    ))
+    fig.update_layout(
+        title="Forest plot (50% thick, 95% thin)",
+        template="plotly_white",
+        xaxis_title="Parameter value",
+        height=max(260, 28 * len(df)),
+    )
+    return fig
+
+
+def render_posterior_viewer_mode() -> None:
+    """Top-level renderer for the Posterior Viewer app mode."""
+    st.title("🧮 Posterior Viewer")
+    st.caption(
+        "Upload externally-produced posterior draws (CmdStan CSV, Apache "
+        "Parquet, or ArviZ NetCDF) to inspect trace, ridge, pair, and "
+        "forest plots and summary diagnostics — without leaving the browser. "
+        "Estimation itself is not performed here; use the runner scripts "
+        "emitted from the FACETS-mode *Report → Stan Code* tab to sample "
+        "locally, then upload the output files."
+    )
+
+    with st.expander("ℹ️ How to produce compatible posterior files", expanded=False):
+        st.markdown(
+            "- **CmdStan CSV**: run `cmdstanpy` or the `cmdstan` CLI "
+            "(`./model sample data=data.json output file=output-1.csv`) "
+            "and upload all per-chain CSVs at once.\n"
+            "- **Apache Parquet**: any `DataFrame` with columns "
+            "`chain`, `draw`, and one column per parameter. `chain` "
+            "defaults to 1 if missing.\n"
+            "- **ArviZ NetCDF**: serialise an `InferenceData` via "
+            "`idata.to_netcdf('draws.nc')`; the posterior + `sample_stats` "
+            "groups are read automatically."
+        )
+
+    st.subheader("Upload")
+    format_label = st.radio(
+        "File format",
+        options=["Auto-detect", "CmdStan CSV", "Parquet", "ArviZ NetCDF"],
+        horizontal=True,
+        index=0,
+        help="Pick the upload type; Auto-detect infers from the file extension.",
+    )
+    if format_label == "CmdStan CSV":
+        files = st.file_uploader(
+            "CmdStan output CSVs (one per chain)",
+            type=["csv"], accept_multiple_files=True,
+            key="posterior_viewer_cmdstan",
+        )
+    elif format_label == "Parquet":
+        files = st.file_uploader(
+            "Posterior draws (.parquet)",
+            type=["parquet"], key="posterior_viewer_parquet",
+        )
+    elif format_label == "ArviZ NetCDF":
+        files = st.file_uploader(
+            "InferenceData (.nc)",
+            type=["nc", "netcdf"], key="posterior_viewer_netcdf",
+        )
+    else:
+        files = st.file_uploader(
+            "Any posterior file (auto-detected)",
+            type=["csv", "parquet", "nc", "netcdf"],
+            accept_multiple_files=True,
+            key="posterior_viewer_auto",
+        )
+
+    if not files:
+        st.info("Upload posterior files above to continue.")
+        return
+
+    # Load. Accept a list of files (CmdStan CSVs) OR a single file.
+    try:
+        if isinstance(files, list):
+            # Auto-detect: mix of formats; prefer CmdStan if any CSV
+            if format_label == "CmdStan CSV" or (
+                format_label == "Auto-detect" and
+                any(getattr(f, "name", "").lower().endswith(".csv") for f in files)
+            ):
+                payload = _posterior_load_cmdstan_csvs(files)
+            else:
+                # Take the first non-CSV file
+                candidate = files[0]
+                fmt = _posterior_detect_format(getattr(candidate, "name", "")) or "parquet"
+                payload = (
+                    _posterior_load_parquet(candidate) if fmt == "parquet"
+                    else _posterior_load_netcdf(candidate)
+                )
+        else:
+            fmt = _posterior_detect_format(getattr(files, "name", "")) or "parquet"
+            if fmt == "cmdstan_csv":
+                payload = _posterior_load_cmdstan_csvs([files])
+            elif fmt == "netcdf":
+                payload = _posterior_load_netcdf(files)
+            else:
+                payload = _posterior_load_parquet(files)
+    except RuntimeError as exc:
+        st.error(f"Could not load posterior draws: {exc}")
+        return
+    except Exception as exc:
+        st.error(f"Load failed: {type(exc).__name__}: {exc}")
+        return
+
+    if not payload:
+        st.error("Loader returned no data.")
+        return
+
+    n_chains = payload.get("n_chains", 0)
+    n_draws = payload.get("n_draws", 0)
+    n_params = len(payload.get("parameter_names", []))
+    st.success(
+        f"Loaded **{n_params}** parameters × **{n_chains}** chains × "
+        f"**{n_draws}** draws ({payload.get('source', 'unknown')} format)."
+    )
+
+    # HMC diagnostics banner
+    hmc = _posterior_hmc_diagnostics_summary(payload)
+    with st.container(border=True):
+        st.markdown("### HMC transition diagnostics")
+        cols = st.columns(5)
+        div = hmc.get("divergences")
+        if div is not None:
+            severity = "error" if div["count"] > 0 else "off"
+            cols[0].metric(
+                "Divergences", f"{div['count']} ({div['pct']:.1f}%)",
+                delta_color=severity if severity == "off" else "inverse",
+            )
+        else:
+            cols[0].metric("Divergences", "—")
+        tree = hmc.get("treedepth_hits")
+        if tree is not None:
+            cols[1].metric(
+                "Max treedepth hits", f"{tree['count']}",
+                delta=f"max observed = {tree['max_observed']:.0f}",
+                delta_color="inverse" if tree["count"] > 0 else "off",
+            )
+        else:
+            cols[1].metric("Treedepth hits", "—")
+        acc = hmc.get("accept_stat_mean")
+        cols[2].metric("Accept rate mean", f"{acc:.3f}" if acc is not None else "—")
+        stp = hmc.get("step_size_mean")
+        cols[3].metric("Step size mean", f"{stp:.3e}" if stp is not None else "—")
+        ebfmi = hmc.get("energy_ebfmi")
+        if ebfmi is not None:
+            color = "inverse" if (ebfmi.get("min") or 1.0) < 0.3 else "off"
+            cols[4].metric(
+                "E-BFMI min", f"{ebfmi['min']:.2f}",
+                delta=f"mean={ebfmi['mean']:.2f}",
+                delta_color=color,
+            )
+        else:
+            cols[4].metric("E-BFMI", "—")
+
+        if div and div["count"] > 0:
+            st.error(
+                f"**{div['count']} divergent transition(s)** detected. "
+                "Consider `adapt_delta = 0.95 → 0.99`, re-parameterising "
+                "the problem, or tightening priors."
+            )
+        if tree and tree["count"] > 0:
+            st.warning(
+                f"**{tree['count']} max-treedepth hits.** "
+                "Try increasing `max_treedepth` (default 10 → 12 or 15)."
+            )
+        if ebfmi is not None and (ebfmi.get("min") or 1.0) < 0.3:
+            st.warning(
+                f"**E-BFMI = {ebfmi['min']:.2f} < 0.3** in at least one chain. "
+                "The sampler is having trouble exploring the energy distribution; "
+                "consider re-parameterising."
+            )
+
+    # Parameter picker
+    st.subheader("Parameter selection")
+    all_params = payload.get("parameter_names", [])
+    default_params = all_params[:6]
+    selected = st.multiselect(
+        "Parameters to display",
+        options=all_params,
+        default=default_params,
+        help="Pick 2-6 parameters for pair plots; trace and ridge plots "
+        "scale to the full selection.",
+    )
+    if not selected:
+        st.info("Pick at least one parameter.")
+        return
+
+    # Summary table
+    st.subheader("Summary")
+    summary = _posterior_compute_summary(payload, selected)
+    if not summary.empty:
+        st.dataframe(summary.round(4), width="stretch", hide_index=True)
+        st.download_button(
+            "⬇ Download summary (CSV)",
+            data=summary.to_csv(index=False).encode("utf-8"),
+            file_name="posterior_summary.csv",
+            mime="text/csv",
+        )
+
+    # Plot suite (tabs)
+    st.subheader("Plots")
+    plot_tabs = st.tabs(["📈 Trace", "🏔 Ridge", "🔗 Pair", "🌲 Forest"])
+    with plot_tabs[0]:
+        fig = _posterior_trace_figure(payload, selected)
+        if fig is not None:
+            st.plotly_chart(fig, width="stretch")
+        else:
+            st.info("Trace plot unavailable for the current selection.")
+    with plot_tabs[1]:
+        fig = _posterior_ridge_figure(payload, selected)
+        if fig is not None:
+            st.plotly_chart(fig, width="stretch")
+        else:
+            st.info("Ridge plot unavailable (need ≥10 draws per parameter).")
+    with plot_tabs[2]:
+        fig = _posterior_pair_figure(payload, selected)
+        if fig is not None:
+            st.plotly_chart(fig, width="stretch")
+        else:
+            st.info("Pair plot needs at least 2 parameters.")
+    with plot_tabs[3]:
+        fig = _posterior_forest_figure(payload, selected)
+        if fig is not None:
+            st.plotly_chart(fig, width="stretch")
+        else:
+            st.info("Forest plot unavailable.")
+
+
 def main() -> None:
     st.set_page_config(page_title="MFRM FACETS-mode", layout="wide")
     _inject_desktop_readability_css()
+
+    # Top-level app mode selector. Defaults to the estimation pipeline.
+    # The Posterior Viewer is an alternative "upload-and-inspect" mode
+    # for users who have already run Stan locally with the runner script
+    # this app provides, and want ShinyStan-like diagnostics and plots.
+    app_mode = st.sidebar.radio(
+        "App mode",
+        options=["FACETS-mode estimation", "Posterior Viewer (upload)"],
+        index=0,
+        key="app_top_level_mode",
+        help=(
+            "FACETS-mode: full estimation pipeline (data → MFRM → diagnostics). "
+            "Posterior Viewer: upload externally-produced posterior draws "
+            "(CmdStan CSV, parquet, ArviZ NetCDF) and reuse the visualizations."
+        ),
+    )
+
+    if app_mode == "Posterior Viewer (upload)":
+        render_posterior_viewer_mode()
+        return
+
     st.title("MFRM FACETS-mode")
     st.caption(
         f"A single-file Streamlit application for estimating Many-Facet Rasch Models (MFRM) "

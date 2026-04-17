@@ -17407,7 +17407,11 @@ def _draw_data_coverage_heatmap(
     if missing_cols:
         return
 
-    st.markdown("##### 🗺 Observation coverage heatmap")
+    header_cols = st.columns([5, 1])
+    with header_cols[0]:
+        st.markdown("##### 🗺 Observation coverage heatmap")
+    with header_cols[1]:
+        render_help_popover("coverage_heatmap")
     st.caption(
         "Blue cells = at least one observation; white = no observation. "
         "Large white blocks flag sparse or disconnected designs. Cap: "
@@ -17489,7 +17493,11 @@ def _draw_category_usage_bar(
     if scores.empty:
         return
 
-    st.markdown("##### 📊 Category usage")
+    header_cols = st.columns([5, 1])
+    with header_cols[0]:
+        st.markdown("##### 📊 Category usage")
+    with header_cols[1]:
+        render_help_popover("category_usage")
     st.caption(
         "Raw observed frequency of each score category. Low or zero "
         "counts suggest the category is under-used and may collapse into "
@@ -17563,7 +17571,11 @@ def _draw_measures_forest_plotly(diagnostics: dict) -> None:
     and thin 95% CI (±1.96·SE) on a single horizontal axis. Useful for
     publication: one figure communicates precision and ordering at once.
     """
-    st.subheader("Forest plot of element measures (± 50 % / 95 % CI)")
+    header_cols = st.columns([5, 1])
+    with header_cols[0]:
+        st.subheader("Forest plot of element measures (± 50 % / 95 % CI)")
+    with header_cols[1]:
+        render_help_popover("forest_measures")
     st.caption(
         "Each row is one facet element. Thick bar = 50 % CI (≈ ± 0.67 · SE); "
         "thin bar = 95 % CI (± 1.96 · SE). Dot = point estimate (logits). "
@@ -17664,7 +17676,11 @@ def _draw_residual_qq_plotly(diagnostics: dict) -> None:
     residuals should be approximately N(0, 1). Deviations in the tails
     indicate misfit concentrated on extreme persons / items.
     """
-    st.subheader("Q-Q plot of standardized residuals")
+    header_cols = st.columns([5, 1])
+    with header_cols[0]:
+        st.subheader("Q-Q plot of standardized residuals")
+    with header_cols[1]:
+        render_help_popover("qq_residuals")
     st.caption(
         "Standardized residuals on the y-axis against theoretical N(0, 1) "
         "quantiles on the x-axis. Under a well-fitting Rasch model, points "
@@ -17730,7 +17746,11 @@ def _draw_measure_ecdf_plotly(result: dict, diagnostics: dict) -> None:
     useful for identifying scale gaps where no element sits, or person
     concentrations that Wright Map's binned histogram hides.
     """
-    st.subheader("Empirical cumulative distribution of measures")
+    header_cols = st.columns([5, 1])
+    with header_cols[0]:
+        st.subheader("Empirical cumulative distribution of measures")
+    with header_cols[1]:
+        render_help_popover("ecdf_measures")
     st.caption(
         "Cumulative share of persons / facet elements at each logit value. "
         "Flat segments are scale gaps (no measures in that range); steep "
@@ -17789,7 +17809,11 @@ def _draw_measure_ecdf_plotly(result: dict, diagnostics: dict) -> None:
 
 def _draw_pathway_map_plotly(diagnostics: dict) -> None:
     """Interactive Plotly pathway map: Measure vs Infit ZSTD."""
-    st.subheader("Pathway Map")
+    header_cols = st.columns([5, 1])
+    with header_cols[0]:
+        st.subheader("Pathway Map")
+    with header_cols[1]:
+        render_help_popover("pathway_map")
     st.caption(
         "Each point represents a facet element. Hover to identify elements. "
         "Elements beyond ±2 ZSTD warrant investigation."
@@ -25271,6 +25295,32 @@ def _self_test_mfrm_glossary() -> None:
         )
 
 
+def _self_test_help_popover_library() -> None:
+    """Pin the just-in-time help popover library shape and coverage."""
+    expected_topics = {
+        "wright_map", "category_probability", "pathway_map", "scree",
+        "fit_scatter", "bias_heatmap", "forest_measures", "qq_residuals",
+        "ecdf_measures", "posterior_trace", "posterior_rhat_ess",
+        "coverage_heatmap", "category_usage",
+    }
+    missing = expected_topics - set(_HELP_POPOVER_LIBRARY.keys())
+    _self_test_assert(not missing, f"help popover missing topics: {missing}")
+    for key, entry in _HELP_POPOVER_LIBRARY.items():
+        for required in ("title", "what", "how"):
+            _self_test_assert(
+                required in entry,
+                f"help topic {key!r} missing {required!r} field",
+            )
+        _self_test_assert(
+            len(entry["what"]) > 30,
+            f"help topic {key!r} 'what' is suspiciously short",
+        )
+        _self_test_assert(
+            len(entry["how"]) > 50,
+            f"help topic {key!r} 'how' is suspiciously short",
+        )
+
+
 def _self_test_publication_document_html() -> None:
     """Build an HTML publication document from a minimal synthetic result."""
     res = {
@@ -26529,6 +26579,7 @@ def run_self_tests() -> int:
         ("Measure column reordering", _self_test_reorder_measure_columns),
         ("HTML publication document builder", _self_test_publication_document_html),
         ("Estimation-error pattern matcher", _self_test_diagnose_estimation_error_patterns),
+        ("Help popover library", _self_test_help_popover_library),
     ]
     failures = []
     for name, test_func in tests:
@@ -27137,6 +27188,271 @@ def render_keyboard_shortcuts_help() -> None:
             "💡 The **Run FACETS-mode estimation** button is the primary "
             "Streamlit button on the sidebar — `Tab` to reach it, `Enter` to fire."
         )
+
+
+# ---------------------------------------------------------------------------
+# Just-in-time contextual help (v0.2.5+)
+# ---------------------------------------------------------------------------
+# Each help topic answers three short questions in the popover:
+#   What it shows — one sentence.
+#   How to read — 2-3 actionable lines.
+#   Common issues — what might surprise you.
+# The popover footer links users to Help → Interpretation Guide for depth.
+
+_HELP_POPOVER_LIBRARY: dict[str, dict[str, str]] = {
+    "wright_map": {
+        "title": "Wright Map",
+        "what": (
+            "Persons (left) and facet elements (right) on a shared logit "
+            "axis — higher = more able / harder."
+        ),
+        "how": (
+            "• Good targeting: items span the person range with items at "
+            "roughly every quartile.\n"
+            "• Floor effect: items clustered above person mean.\n"
+            "• Ceiling effect: items clustered below person mean.\n"
+            "• Tight item cluster: limited discrimination → add items "
+            "at varied difficulty."
+        ),
+        "watch": (
+            "If persons and items are on opposite halves, the test is not "
+            "targeting the population. Consider revising item difficulty."
+        ),
+    },
+    "category_probability": {
+        "title": "Category probability curves",
+        "what": (
+            "For each rating category, the probability that a person at "
+            "trait θ chooses that category."
+        ),
+        "how": (
+            "• Each category should have a range of θ where it is the most "
+            "probable choice.\n"
+            "• Curves should peak in order of category number (1, 2, 3, …).\n"
+            "• Overlapping / dominated categories suggest collapse candidates."
+        ),
+        "watch": (
+            "Categories that never become most probable hint at disordered "
+            "thresholds (Linacre 2004). Inspect counts + thresholds."
+        ),
+    },
+    "pathway_map": {
+        "title": "Pathway Map",
+        "what": (
+            "Each facet element's measure (y) against its Infit ZSTD (x)."
+        ),
+        "how": (
+            "• |ZSTD| < 2 → acceptable fit.\n"
+            "• ZSTD > +2 → noisy (unpredictable).\n"
+            "• ZSTD < −2 → over-fit (too predictable).\n"
+            "• Cluster of misfit at similar measures → systematic issue."
+        ),
+        "watch": (
+            "Zoom the hover tooltip on outliers to identify the specific "
+            "rater / item element."
+        ),
+    },
+    "scree": {
+        "title": "Scree plot (PCA of residuals)",
+        "what": (
+            "Eigenvalues of the residual correlation matrix after the "
+            "primary Rasch dimension is extracted."
+        ),
+        "how": (
+            "• 1st eigenvalue < 2.0 → unidimensionality supported.\n"
+            "• 2.0–3.0 → minor secondary dimension possible.\n"
+            "• ≥ 3.0 → strong evidence of a second dimension.\n"
+            "Reference lines on the plot mark each threshold."
+        ),
+        "watch": (
+            "A high 1st eigenvalue with structurally-meaningful loadings "
+            "suggests reporting the construct as multidimensional."
+        ),
+    },
+    "fit_scatter": {
+        "title": "Fit scatter (Infit vs Outfit MnSq)",
+        "what": (
+            "Each element's inlier-sensitive Infit mean-square (x) vs "
+            "outlier-sensitive Outfit mean-square (y)."
+        ),
+        "how": (
+            "• Both in 0.5–1.5 → acceptable.\n"
+            "• Outfit > 2.0 with acceptable Infit → a few outlier responses.\n"
+            "• Both > 2.0 → widespread noise; revise item or rater training.\n"
+            "• Both < 0.5 → dependency between responses."
+        ),
+        "watch": (
+            "MnSq is on a multiplicative scale; 1.0 is the expected value, "
+            "not 0."
+        ),
+    },
+    "bias_heatmap": {
+        "title": "Bias / interaction heatmap",
+        "what": (
+            "A × B facet-pair interactions — the residual after main "
+            "effects are removed."
+        ),
+        "how": (
+            "• Near 0 → the pair follows additive expectation.\n"
+            "• |t| ≥ 2 → statistically significant bias for that cell.\n"
+            "• Check adjusted counts: sparse cells inflate |t|.\n"
+            "• Apply multiplicity correction for many cells."
+        ),
+        "watch": (
+            "Do not make no-bias claims from a single pair. Review all-pair "
+            "scans and content evidence."
+        ),
+    },
+    "forest_measures": {
+        "title": "Forest plot — element measures",
+        "what": (
+            "Each element's Estimate (dot), 50 % CI (thick bar) and 95 % CI "
+            "(thin bar) on the logit scale."
+        ),
+        "how": (
+            "• Non-overlapping 95 % CIs → significantly different measures.\n"
+            "• Overlapping 50 % CIs → weak evidence; do not over-interpret.\n"
+            "• Wide CIs → precision is low; increase observations per element."
+        ),
+        "watch": (
+            "CIs are Estimate ± 0.67 · SE (50 %) and ± 1.96 · SE (95 %). "
+            "Use Bayesian forest (Posterior Viewer) for posterior intervals."
+        ),
+    },
+    "qq_residuals": {
+        "title": "Q-Q plot — standardized residuals",
+        "what": (
+            "Standardized residuals vs theoretical N(0, 1) quantiles with "
+            "a 45° reference line."
+        ),
+        "how": (
+            "• Points near the line → model fits.\n"
+            "• Heavy tails → extreme persons or items misfit.\n"
+            "• S-shape → potential multidimensionality.\n"
+            "• Stepped plateaus → scoring discretization artifact."
+        ),
+        "watch": (
+            "Needs ≥ 20 residuals. Combine with PCA and Pathway Map for "
+            "a full diagnostic picture."
+        ),
+    },
+    "ecdf_measures": {
+        "title": "ECDF — measures",
+        "what": (
+            "Empirical cumulative distribution function of person and "
+            "facet-element measures on the logit scale."
+        ),
+        "how": (
+            "• Flat stretches = scale gaps (no element sits in that range).\n"
+            "• Steep segments = clusters.\n"
+            "• Compare persons vs items: aligned curves ⇒ good targeting."
+        ),
+        "watch": (
+            "Complements Wright Map; better for spotting narrow coverage "
+            "gaps than a binned histogram."
+        ),
+    },
+    "posterior_trace": {
+        "title": "Posterior trace plot",
+        "what": (
+            "Chain-by-chain draws across iterations for each selected "
+            "parameter."
+        ),
+        "how": (
+            "• Chains overlapping and stationary → good mixing.\n"
+            "• Chains drifting apart → Rhat will exceed 1.01.\n"
+            "• Spikes / gaps → divergent transitions to investigate."
+        ),
+        "watch": (
+            "Visual inspection is a supplement to Rhat / ESS — not a "
+            "replacement (Gelman & Rubin 1992)."
+        ),
+    },
+    "posterior_rhat_ess": {
+        "title": "Rhat / ESS bars",
+        "what": (
+            "Rhat and effective sample size per selected parameter with "
+            "threshold reference lines."
+        ),
+        "how": (
+            "• Rhat < 1.01 → chains have mixed.\n"
+            "• ESS ≥ 400 → adequate sampling resolution.\n"
+            "• Red bars cross the threshold — review those parameters first."
+        ),
+        "watch": (
+            "If many parameters cross, resample with more iterations / "
+            "higher adapt_delta before citing the posterior."
+        ),
+    },
+    "coverage_heatmap": {
+        "title": "Observation coverage heatmap",
+        "what": (
+            "Which (person, facet-level) cells have at least one observation."
+        ),
+        "how": (
+            "• Mostly blue → well-covered design.\n"
+            "• Large white blocks → sparse or disconnected cells.\n"
+            "• Concentrated gaps → redesign sampling or anchor facet levels."
+        ),
+        "watch": (
+            "> 40 % empty cells in the displayed slice usually means a "
+            "connectivity review is warranted."
+        ),
+    },
+    "category_usage": {
+        "title": "Category usage bar chart",
+        "what": (
+            "Raw observed frequency of each score category (optionally "
+            "stacked by a facet)."
+        ),
+        "how": (
+            "• Every category should be used ≥ 1 % of total.\n"
+            "• Zero / near-zero counts → category collapse candidates.\n"
+            "• Skewed usage by facet level → possible rater bias or "
+            "content effect."
+        ),
+        "watch": (
+            "Low-use categories often cascade into disordered thresholds "
+            "downstream (Linacre 2004)."
+        ),
+    },
+}
+
+
+def render_help_popover(topic_key: str, *, button_label: str = "❓ How to read") -> None:
+    """Render a just-in-time contextual help popover next to a chart.
+
+    Streamlit's `st.popover` opens a floating panel on click, which is
+    the right UX for one-off "what is this?" questions: users don't
+    leave their current tab, the popover closes as soon as they click
+    elsewhere, and the content stays hidden when they don't need it.
+
+    Unknown topic keys silently no-op so adding a new chart that isn't
+    yet in the library does not crash the tab.
+    """
+    topic = _HELP_POPOVER_LIBRARY.get(topic_key)
+    if topic is None:
+        return
+    try:
+        popover = st.popover(button_label, use_container_width=False)
+    except Exception:
+        # Streamlit older than 1.32 lacked st.popover; fall back to an
+        # expander so help is still accessible.
+        with st.expander(button_label, expanded=False):
+            st.markdown(f"**{topic.get('title', topic_key)}**")
+            st.markdown(f"**What it shows:** {topic.get('what', '')}")
+            st.markdown(f"**How to read:**\n{topic.get('how', '')}")
+            if topic.get("watch"):
+                st.markdown(f"**Watch for:** {topic['watch']}")
+            st.caption("Need more? See the **Help → Interpretation Guide** tab.")
+        return
+    with popover:
+        st.markdown(f"### {topic.get('title', topic_key)}")
+        st.markdown(f"**What it shows.** {topic.get('what', '')}")
+        st.markdown(f"**How to read.**\n{topic.get('how', '')}")
+        if topic.get("watch"):
+            st.markdown(f"**Watch for.** {topic['watch']}")
+        st.caption("See **Help → Interpretation Guide** for full references.")
 
 
 def render_chart_guide(chart_name: str, *, expanded: bool = False) -> None:
@@ -27937,6 +28253,11 @@ def render_posterior_viewer_mode() -> None:
     with plot_tabs[0]:
         fig = _posterior_trace_figure(payload, selected)
         if fig is not None:
+            header_cols = st.columns([5, 1])
+            with header_cols[0]:
+                st.markdown("##### Posterior trace plot")
+            with header_cols[1]:
+                render_help_popover("posterior_trace")
             st.plotly_chart(fig, width="stretch")
             render_chart_guide("posterior_trace")
         else:
@@ -27963,6 +28284,11 @@ def render_posterior_viewer_mode() -> None:
     with plot_tabs[4]:
         fig = _posterior_rhat_ess_figure(payload, selected)
         if fig is not None:
+            header_cols = st.columns([5, 1])
+            with header_cols[0]:
+                st.markdown("##### Rhat / ESS bars")
+            with header_cols[1]:
+                render_help_popover("posterior_rhat_ess")
             st.plotly_chart(fig, width="stretch")
             st.caption(
                 "Rhat ≥ 1.01 and ESS < 400 are shown against dashed reference "

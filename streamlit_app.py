@@ -6443,6 +6443,92 @@ def compute_pca_by_facet(obs_df, facet_names):
     return out
 
 
+def diagnose_pca_skip_reason(obs_df, facet_names, *, mode="overall", facet=None):
+    """Return a human-readable reason why residual PCA could not be computed.
+
+    Called by ``mfrm_diagnostics`` whenever ``compute_pca_overall`` /
+    ``compute_pca_by_facet`` returns None. The Dimensionality tab now
+    surfaces this reason instead of the silent "PCA of residuals is
+    not available for this estimation" message.
+
+    Parameters
+    ----------
+    obs_df : pd.DataFrame | None
+        Observation table from ``compute_obs_table(res)``.
+    facet_names : list[str] | None
+        Facet names from ``res["config"]["facet_names"]``.
+    mode : {"overall", "facet"}
+        "overall" concatenates all facets into ``item_combination``;
+        "facet" keys the residual matrix by a single facet level.
+    facet : str | None
+        Required when ``mode="facet"``.
+
+    Returns
+    -------
+    str
+        Non-empty English reason such as
+        ``"only 1 item-combination column(s); PCA needs ≥2"``.
+    """
+    if obs_df is None:
+        return "observation table is None (estimation may have failed)"
+    if not isinstance(obs_df, pd.DataFrame):
+        return f"observation table has unexpected type: {type(obs_df).__name__}"
+    if obs_df.empty:
+        return "observation table is empty"
+    if mode == "overall" and not facet_names:
+        return "no facet names configured in result['config']"
+    if mode == "facet":
+        if not facet:
+            return "facet name not provided"
+        if facet not in obs_df.columns:
+            return f"facet column `{facet}` is not in the observation table"
+    if "Person" not in obs_df.columns:
+        return "`Person` column missing from observation table"
+    if "StdResidual" not in obs_df.columns:
+        return "`StdResidual` column missing; standardized residuals were not computed"
+
+    try:
+        df_aug = obs_df.copy()
+        df_aug["Person"] = df_aug["Person"].astype(str)
+        if mode == "overall":
+            df_aug["_col_key"] = df_aug[facet_names].astype(str).agg("_".join, axis=1)
+        else:
+            df_aug["_col_key"] = df_aug[facet].astype(str)
+        residual_matrix_prep = (
+            df_aug.groupby(["Person", "_col_key"])["StdResidual"].mean().reset_index()
+        )
+        residual_matrix_wide = residual_matrix_prep.pivot(
+            index="Person", columns="_col_key", values="StdResidual"
+        )
+    except Exception as exc:  # pragma: no cover - defensive
+        return f"residual matrix construction raised {type(exc).__name__}: {exc}"
+
+    n_persons, n_cols = residual_matrix_wide.shape
+    if n_persons < 2:
+        return f"only {n_persons} person(s) in the residual matrix; PCA needs ≥2"
+    if n_cols < 2:
+        key_label = "item-combination" if mode == "overall" else f"`{facet}` level"
+        return (
+            f"only {n_cols} {key_label} column(s); PCA needs ≥2. "
+            "Broaden your facet selection or include more levels."
+        )
+    clean = residual_matrix_wide.dropna(axis=1, how="all")
+    if clean.shape[1] < 2:
+        return (
+            f"after removing all-NaN columns, only {clean.shape[1]} remain "
+            "(residuals are too sparse — many persons never saw each level)"
+        )
+
+    nan_share = float(residual_matrix_wide.isna().to_numpy().mean())
+    if nan_share > 0.95:
+        return f"residual matrix is {nan_share:.0%} NaN; likely connectivity issue"
+
+    return (
+        "unknown — residual matrix shape looks valid but compute_pca_bundle returned None "
+        "(possibly a numpy eigendecomposition edge case)"
+    )
+
+
 def calc_expected_category_counts(res):
     if res is None:
         return pd.DataFrame()
@@ -6697,15 +6783,34 @@ def mfrm_diagnostics(
     facet_names = res["config"]["facet_names"]
     pca_overall = None
     pca_by_facet = {}
+    pca_reason: str | None = None
+    pca_by_facet_reasons: dict[str, str] = {}
     if compute_pca:
         try:
             pca_overall = compute_pca_overall(obs_df, facet_names)
-        except Exception as _pca_err:  # noqa: F841 — logged below if needed
+            if pca_overall is None:
+                pca_reason = diagnose_pca_skip_reason(obs_df, facet_names, mode="overall")
+        except Exception as exc:
             pca_overall = None
+            pca_reason = f"exception during compute_pca_overall: {type(exc).__name__}: {exc}"
         try:
             pca_by_facet = compute_pca_by_facet(obs_df, facet_names)
-        except Exception:
+            # Record a per-facet skip reason so each Dimensionality sub-tab
+            # can show *why* its panel is empty even when overall PCA succeeded.
+            for facet in facet_names or []:
+                bundle = pca_by_facet.get(facet) if isinstance(pca_by_facet, dict) else None
+                if bundle is None:
+                    pca_by_facet_reasons[facet] = diagnose_pca_skip_reason(
+                        obs_df, facet_names, mode="facet", facet=facet,
+                    )
+        except Exception as exc:
             pca_by_facet = {}
+            pca_by_facet_reasons = {
+                facet: f"exception: {type(exc).__name__}: {exc}"
+                for facet in (facet_names or [])
+            }
+    else:
+        pca_reason = "residual PCA was disabled by the Analysis depth setting"
 
     marginal_fit = {
         "available": False,
@@ -6740,6 +6845,8 @@ def mfrm_diagnostics(
         "interactions": interaction_tbl,
         "pca": pca_overall,
         "pca_by_facet": pca_by_facet,
+        "pca_reason": pca_reason,
+        "pca_by_facet_reasons": pca_by_facet_reasons,
         "pca_enabled": bool(compute_pca),
         "marginal_fit": marginal_fit,
         "marginal_fit_enabled": bool(compute_marginal),
@@ -8340,7 +8447,14 @@ def show_dimensionality_section(diagnostics: dict, facet_cols: list[str], core: 
     """Render PCA / dimensionality analysis with scree plot and interpretation."""
     pca = diagnostics.get("pca")
     if pca is None:
-        st.info("PCA of residuals is not available for this estimation.")
+        reason = diagnostics.get("pca_reason") or "unknown (no reason recorded)"
+        st.warning(
+            f"**PCA of residuals could not be computed.** Reason: {reason}\n\n"
+            "Typical fixes: select at least 2 facets with ≥2 levels each, ensure "
+            "every person sees multiple item-combinations, or widen your data subset. "
+            "If the reason is `residual PCA was disabled by the Analysis depth setting`, "
+            "re-run with Analysis depth = Standard, Full publication, or Custom > Compute residual PCA."
+        )
         return
 
     st.markdown(
@@ -8446,7 +8560,17 @@ def _show_pca_panel(
 
     if tbl is None or (hasattr(tbl, "__len__") and len(tbl) == 0):
         if eigenvalues is None:
-            st.caption(f"No PCA results available for {label}.")
+            # Surface the per-facet skip reason recorded in mfrm_diagnostics
+            reason = None
+            if mode == "facet" and facet_name and isinstance(diagnostics, dict):
+                reason_map = diagnostics.get("pca_by_facet_reasons") or {}
+                reason = reason_map.get(facet_name)
+            elif mode == "overall" and isinstance(diagnostics, dict):
+                reason = diagnostics.get("pca_reason")
+            if reason:
+                st.warning(f"PCA could not be computed for **{label}** — {reason}")
+            else:
+                st.caption(f"No PCA results available for {label}.")
             return
 
     st.markdown(f"**{label}**")

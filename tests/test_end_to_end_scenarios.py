@@ -103,6 +103,7 @@ def test_scenario_names_match_registry():
     keys = set(app.SAMPLE_DATA_SCENARIOS.keys())
     assert keys == {"writing_essay", "large_writing_pca",
                     "speaking_test", "clinical_osce",
+                    "writing_with_missing", "music_peer_rating",
                     "reading_testlet_binary"}, (
         f"Scenario registry drifted: {keys}"
     )

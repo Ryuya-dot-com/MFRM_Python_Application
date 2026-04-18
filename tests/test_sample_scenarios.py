@@ -35,9 +35,16 @@ def test_scenario_metadata_shape(key: str):
     dims = meta["dimensions"]
     for dkey in ("persons", "raters", "tasks", "criteria", "n_cat"):
         assert dkey in dims, f"{key!r} dimensions missing {dkey!r}"
-    assert meta["n_obs"] == (
-        dims["persons"] * dims["raters"] * dims["tasks"] * dims["criteria"]
-    ), f"{key!r}: n_obs does not match dimension product"
+    # Scenarios with `missing_rate` or sparse generators (peer-rating)
+    # decouple n_obs from the simple dimension product.
+    params = meta["build_params"]()
+    is_sparse_or_missing = (
+        params.get("missing_rate", 0) or "generator" in meta
+    )
+    if not is_sparse_or_missing:
+        assert meta["n_obs"] == (
+            dims["persons"] * dims["raters"] * dims["tasks"] * dims["criteria"]
+        ), f"{key!r}: n_obs does not match dimension product"
 
 
 @pytest.mark.parametrize("key", ALL_KEYS)
@@ -45,7 +52,17 @@ def test_scenario_generates_expected_shape(key: str):
     meta = app.SAMPLE_DATA_SCENARIOS[key]
     df = app.sample_mfrm_data_by_key(key, seed=42)
     assert isinstance(df, pd.DataFrame)
-    assert df.shape == (meta["n_obs"], 5)
+    assert df.shape[1] == 5
+    # Scenarios with stochastic missingness allow ±5 % around n_obs.
+    params = meta["build_params"]()
+    if params.get("missing_rate", 0):
+        tol = max(20, int(meta["n_obs"] * 0.05))
+        assert abs(df.shape[0] - meta["n_obs"]) <= tol, (
+            f"{key!r}: row count {df.shape[0]} too far from "
+            f"target {meta['n_obs']} (tol ±{tol})"
+        )
+    else:
+        assert df.shape[0] == meta["n_obs"]
 
 
 @pytest.mark.parametrize("key", ALL_KEYS)

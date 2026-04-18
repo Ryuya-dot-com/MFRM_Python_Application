@@ -146,9 +146,10 @@ For a first local smoke check, keep **Sample data (built-in)** selected (the
 default scenario — ✏️ Writing essay — is loaded automatically), leave the
 guided defaults unchanged, click **Run FACETS-mode estimation**, then open the
 **What should I look at first?**, **Data**, **Visuals**, and **Help** tabs.
-Switch the **Sample scenario** selectbox to *📚 Large-scale writing* for a
-PCA-ready demo, *🎙️ L2 speaking* for an analytic-rubric / PCM experiment, or
-*🏥 Clinical OSCE* for a station-dominant design. Each scenario's sidebar
+Other built-in scenarios switchable from the **📥 Data source** radio:
+*📚 Large-scale writing* (PCA-ready), *🎙️ L2 speaking* (analytic-rubric /
+PCM), *🏥 Clinical OSCE* (station-dominant), *📖 Reading testlet — binary*
+(0/1 scoring with item-text-person nesting). Each scenario's sidebar
 **📚 About this dataset** expander lists its APA 7 references.
 
 For deployment notes, including Streamlit Community Cloud settings and privacy gates for hosted use, see `DEPLOYMENT.md`.

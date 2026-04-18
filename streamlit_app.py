@@ -43,7 +43,7 @@ if any(flag in sys.argv for flag in CLI_CHECK_FLAGS):
     logging.getLogger("streamlit.runtime.caching.cache_resource_api").setLevel(logging.ERROR)
 
 
-APP_VERSION = "0.2.13-beta"
+APP_VERSION = "0.2.14-beta"
 APP_RELEASE_LABEL = "standalone Python beta"
 RUNTIME_PACKAGE_FLOORS = OrderedDict([
     ("numpy", "1.24"),
@@ -2228,6 +2228,140 @@ def _params_clinical_osce() -> dict:
     }
 
 
+def _params_writing_with_missing() -> dict:
+    """Writing assessment with ~15% missing observations (MAR).
+
+    Uses the same Rasch parameters as the default writing scenario
+    but with 80 examinees × 4 raters × 2 tasks × 3 criteria =
+    1,920 fully-crossed observations, of which ~15 % are dropped
+    uniformly at random to simulate incomplete rating panels. After
+    drop the bundle ships roughly 1,632 rows, letting users exercise:
+      - the readiness panel's missing-rate warning
+      - the connectivity check
+      - MFRM's tolerance of missing-at-random data
+
+    Reference: Little & Rubin (2002) on MAR handling.
+    """
+    return {
+        "persons": [f"E{idx:02d}" for idx in range(1, 81)],
+        "raters": [f"R{idx}" for idx in range(1, 5)],
+        "tasks": ["Argumentative", "Narrative"],
+        "criteria": ["Content", "Organization", "Language"],
+        "theta_sd": 1.0,
+        "rater_severities": [-0.55, -0.10, 0.25, 0.40],
+        "task_difficulties": [-0.25, 0.25],
+        "criterion_difficulties": [-0.50, -0.05, 0.55],
+        "tau": [-2.10, -0.95, 0.05, 0.90, 2.10],
+        # v0.2.14-beta: `missing_rate` is consumed by
+        # `sample_mfrm_data_by_key` to drop rows after generation.
+        "missing_rate": 0.15,
+    }
+
+
+def _generate_mfrm_peer_rating_data(params: dict, seed: int) -> pd.DataFrame:
+    """Generate sparse peer-rating (round-robin) rating data.
+
+    Every "Person" in the pool also rates others; the schedule is
+    cyclic: Person_i is rated by Person_(i+1 mod N) and
+    Person_(i+2 mod N). No self-ratings. This produces a sparsely-
+    connected (examinee, rater) graph — each rater sees only ~2
+    examinees — which is the real-world shape of peer-assessment
+    classrooms (Myford & Wolfe, 2004).
+
+    Each rater has both an *ability* (as examinee) and a *severity*
+    (as rater). These are drawn independently here for clarity; a
+    realistic panel would correlate them positively (skilled
+    musicians tend to be stricter raters, Linacre 2007).
+
+    Required keys in `params`:
+        persons: list[str] — shared examinee + rater pool
+        pieces:  list[str] — tasks (e.g., two musical pieces)
+        criteria: list[str] — rubric criteria
+        theta_sd, severity_sd: float
+        piece_difficulties: array (len == len(pieces))
+        criterion_difficulties: array (len == len(criteria))
+        tau: array (len == n_cat - 1)
+        columns: list[str] — 5 output column names
+    """
+    rng = np.random.default_rng(seed)
+    persons = list(params["persons"])
+    n = len(persons)
+    pieces = list(params["pieces"])
+    criteria = list(params["criteria"])
+    theta_sd = float(params.get("theta_sd", 1.0))
+    severity_sd = float(params.get("severity_sd", 0.5))
+    piece_diff = np.asarray(params["piece_difficulties"], dtype=float)
+    crit_diff = np.asarray(params["criterion_difficulties"], dtype=float)
+    tau = np.asarray(params["tau"], dtype=float)
+    columns = params.get(
+        "columns",
+        ["Person", "Rater", "Piece", "Criterion", "Score"],
+    )
+    n_cat = int(tau.size) + 1
+
+    assert piece_diff.size == len(pieces), "piece_difficulties length != n_pieces"
+    assert crit_diff.size == len(criteria), "criterion_difficulties length != n_criteria"
+    assert n >= 3, "peer-rating needs at least 3 persons for the cyclic schedule"
+
+    theta = rng.normal(0.0, theta_sd, n)
+    severity = rng.normal(0.0, severity_sd, n)
+
+    rows: list[tuple] = []
+    # Cyclic assignment: examinee i rated by (i+1) and (i+2) mod n.
+    # This guarantees a single connected component and no self-rating.
+    for i, p in enumerate(persons):
+        for k in (1, 2):
+            r_idx = (i + k) % n
+            r = persons[r_idx]
+            for pi, piece in enumerate(pieces):
+                for ci, c in enumerate(criteria):
+                    eta = (
+                        theta[i]
+                        - severity[r_idx]
+                        - piece_diff[pi]
+                        - crit_diff[ci]
+                    )
+                    cum = np.zeros(n_cat)
+                    for kk in range(1, n_cat):
+                        cum[kk] = cum[kk - 1] + tau[kk - 1]
+                    log_num = np.arange(n_cat) * eta - cum
+                    log_num -= log_num.max()
+                    probs = np.exp(log_num)
+                    probs /= probs.sum()
+                    score = int(rng.choice(n_cat, p=probs))
+                    rows.append((p, r, piece, c, score))
+
+    return pd.DataFrame(rows, columns=columns)
+
+
+def _params_music_peer_rating() -> dict:
+    """Music peer-rating: 120 musicians, cyclic 2-rater-per-examinee design.
+
+    Each musician is rated by two peers (musician i rated by i+1 and
+    i+2, modulo 120). All 120 musicians appear in both the Person
+    (examinee) and Rater columns, but the Person × Rater crossing is
+    sparse — only 240 unique pairs out of 120 × 120 = 14,400 possible.
+    MFRM still estimates ability and severity on a shared scale via
+    the connected peer-rating graph.
+
+    References
+    ----------
+    - Myford & Wolfe (2004) — detecting rater effects with MFRM
+    - Linacre (2007) — FACETS guide, peer-rating connectivity
+    """
+    return {
+        "persons": [f"M{idx:03d}" for idx in range(1, 121)],
+        "pieces": ["Piece_A", "Piece_B"],
+        "criteria": ["Technique", "Musicality", "Dynamics", "Expression"],
+        "theta_sd": 1.0,
+        "severity_sd": 0.6,
+        "piece_difficulties": [-0.20, 0.20],
+        "criterion_difficulties": [-0.40, 0.00, 0.10, 0.30],
+        "tau": [-1.60, -0.40, 0.40, 1.60],
+        "columns": ["Person", "Rater", "Piece", "Criterion", "Score"],
+    }
+
+
 def _params_reading_testlet_binary() -> dict:
     """Reading-comprehension testlet design with BINARY (0/1) responses.
 
@@ -2362,6 +2496,53 @@ SAMPLE_DATA_SCENARIOS: dict[str, dict] = {
             "(Wolfe & Song, 2015)",
         ],
     },
+    "writing_with_missing": {
+        "label": "📉 Writing with missing (80×4×2×3, ~1,632 obs)",
+        "short": "Incomplete rating panel (~15% MAR).",
+        "description": (
+            "Demonstrates MFRM's handling of missing-at-random data. "
+            "Full design is 80 × 4 × 2 × 3 = 1,920 observations, of "
+            "which ~15 % are dropped uniformly at random before the "
+            "app sees the file. Useful for teaching the readiness "
+            "panel's missing-rate flag, the connectivity check, and "
+            "the fact that MFRM does NOT require a fully-crossed "
+            "design to estimate measures (Little & Rubin, 2002)."
+        ),
+        "dimensions": {"persons": 80, "raters": 4, "tasks": 2, "criteria": 3, "n_cat": 6},
+        "n_obs": int(80 * 4 * 2 * 3 * 0.85),
+        "build_params": _params_writing_with_missing,
+        "citations": [
+            "(Little & Rubin, 2002)",
+            "(Eckes, 2011)",
+            "(Linacre, 2024)",
+        ],
+    },
+    "music_peer_rating": {
+        "label": "🎸 Music peer-rating (120×2 cyclic×2×4, 1,920 obs)",
+        "short": "Round-robin peer assessment — sparse Person × Rater graph.",
+        "description": (
+            "120 musicians grade each other on 2 pieces × 4 criteria. "
+            "Every musician rates two peers in a cyclic schedule "
+            "(Person_i rated by Person_(i+1) and Person_(i+2)), so "
+            "the Person × Rater crossing is sparse — only 240 unique "
+            "pairs out of 120 × 120 = 14,400 possible. MFRM still "
+            "estimates ability and severity on the shared logit "
+            "scale via the connected peer-rating graph. The Rater "
+            "and Person columns share the same ID space (M001–M120). "
+            "Useful for demonstrating sparse-connectivity handling "
+            "and peer-assessment use cases (Myford & Wolfe, 2004; "
+            "Linacre, 2007)."
+        ),
+        "dimensions": {"persons": 120, "raters": 120, "tasks": 2, "criteria": 4, "n_cat": 5},
+        "n_obs": 120 * 2 * 2 * 4,
+        "build_params": _params_music_peer_rating,
+        "generator": _generate_mfrm_peer_rating_data,
+        "citations": [
+            "(Myford & Wolfe, 2004)",
+            "(Linacre, 2007)",
+            "(Eckes, 2011)",
+        ],
+    },
     "reading_testlet_binary": {
         "label": "📖 Reading testlet — binary (100×1×6×4, 2,400 obs)",
         "short": "Binary 0/1 scoring. Person × Scorer × Text × Item.",
@@ -2401,13 +2582,29 @@ def sample_mfrm_data_by_key(scenario_key: str, seed: int = 20240101) -> pd.DataF
     Unknown keys silently fall back to the default scenario so the UI
     cannot render an invalid state. Each scenario's citations are
     resolvable via the APA 7 reference library.
+
+    Scenario registry support (v0.2.14-beta):
+      - `generator` — optional callable `(params, seed) -> DataFrame`;
+        defaults to `_generate_mfrm_rsm_from_params` when absent.
+      - `params["missing_rate"]` — if present and > 0, drop rows
+        uniformly at random after generation (missing-at-random).
     """
     scenario = SAMPLE_DATA_SCENARIOS.get(
         scenario_key,
         SAMPLE_DATA_SCENARIOS[DEFAULT_SAMPLE_SCENARIO_KEY],
     )
     params = scenario["build_params"]()
-    return _generate_mfrm_rsm_from_params(params, seed=int(seed))
+    generator = scenario.get("generator", _generate_mfrm_rsm_from_params)
+    df = generator(params, seed=int(seed))
+
+    missing_rate = float(params.get("missing_rate", 0.0) or 0.0)
+    if missing_rate > 0:
+        # Use a distinct RNG stream so the kept-row mask is
+        # reproducible but does not disturb the response seed.
+        drop_rng = np.random.default_rng(int(seed) + 7919)
+        keep_mask = drop_rng.random(len(df)) >= missing_rate
+        df = df[keep_mask].reset_index(drop=True)
+    return df
 
 
 def sample_mfrm_data(seed: int = 20240101) -> pd.DataFrame:
@@ -6293,8 +6490,13 @@ def calc_interrater_agreement(obs_df, facet_cols, rater_facet, res=None):
     df = df[base_cols].copy()
     if "Weight" in df.columns:
         df["_weighted_observed"] = df["Observed"].astype(float) * df["Weight"].astype(float)
+        # observed=True: skip empty Cartesian combinations. Required
+        # for sparse designs (e.g., peer-rating where 118 of 120
+        # raters never see each examinee). Previously `observed=False`
+        # materialised the full 120×N_context cross and pandas raised
+        # a length-mismatch on the post-agg insert.
         df_obs = (
-            df.groupby(["_context", rater_facet], observed=False, as_index=False)
+            df.groupby(["_context", rater_facet], observed=True, as_index=False)
             .agg(WeightedObserved=("_weighted_observed", "sum"), Weight=("Weight", "sum"))
         )
         df_obs["Score"] = np.where(
@@ -6304,7 +6506,7 @@ def calc_interrater_agreement(obs_df, facet_cols, rater_facet, res=None):
         )
         df_obs = df_obs[["_context", rater_facet, "Score"]]
     else:
-        df_obs = df.groupby(["_context", rater_facet], observed=False, as_index=False).agg(Score=("Observed", "mean"))
+        df_obs = df.groupby(["_context", rater_facet], observed=True, as_index=False).agg(Score=("Observed", "mean"))
     if df_obs.empty:
         return {"summary": pd.DataFrame(), "pairs": pd.DataFrame()}
 
@@ -8434,7 +8636,7 @@ def read_input_data(core: dict) -> pd.DataFrame:
     # v0.2.8-beta: Flat single-radio data-source picker. Previously the
     # user faced a two-step flow (Sample data radio → Sample scenario
     # selectbox) where the scenario switch was easy to miss. Now all
-    # four sample scenarios are first-class options alongside Paste and
+    # sample scenarios are first-class options alongside Paste and
     # Upload, so the scenario switcher is impossible to overlook.
     st.sidebar.markdown("### 📥 Data source")
 
@@ -8460,10 +8662,11 @@ def read_input_data(core: dict) -> pd.DataFrame:
             default_idx = i
             break
 
+    _n_scenarios = len(SAMPLE_DATA_SCENARIOS)
     chosen_label = st.sidebar.radio(
-        "Choose one — all four built-in samples plus your own data "
-        "are listed here. Each sample is synthetic with parameters "
-        "grounded in published MFRM studies.",
+        f"Choose one — all {_n_scenarios} built-in samples plus your "
+        "own data are listed here. Each sample is synthetic with "
+        "parameters grounded in published MFRM studies.",
         options=_option_labels,
         index=default_idx,
         key="data_source_flat",
@@ -8808,6 +9011,152 @@ def cached_tables_zip(_frames: dict[str, pd.DataFrame], frames_key: str) -> byte
         for name, df in _frames.items():
             zf.writestr(f"{name}.csv", df.to_csv(index=False))
     return zip_buf.getvalue()
+
+
+def build_result_bundle_frames(
+    result: dict,
+    diagnostics: dict,
+    *,
+    bias_results: dict | None = None,
+    all_bias_results: dict | None = None,
+) -> dict[str, pd.DataFrame]:
+    """Assemble the core DataFrames for a one-click results bundle.
+
+    This is the FACETS-analogue export: one ZIP containing the tables
+    every user wants after a run (Summary, Measures, Reliability,
+    Element-level fit, optional Bias). Surfaced from the
+    `render_quick_results_download` helper right below the Run
+    history panel so initial / casual users never have to discover
+    the full Downloads tab to leave with their results.
+
+    Returns a {filename_stem: DataFrame} dict the `cached_tables_zip`
+    helper can serialise directly.
+    """
+    frames: dict[str, pd.DataFrame] = {}
+    if not isinstance(result, dict):
+        return frames
+    summary = result.get("summary")
+    if isinstance(summary, pd.DataFrame) and not summary.empty:
+        frames["summary"] = summary
+    convergence = result.get("convergence")
+    if isinstance(convergence, pd.DataFrame) and not convergence.empty:
+        frames["convergence"] = convergence
+    if isinstance(diagnostics, dict):
+        measures = diagnostics.get("measures")
+        if isinstance(measures, pd.DataFrame) and not measures.empty:
+            frames["measures"] = measures
+        reliability = diagnostics.get("reliability")
+        if isinstance(reliability, pd.DataFrame) and not reliability.empty:
+            frames["reliability"] = reliability
+        fit = diagnostics.get("fit")
+        if isinstance(fit, pd.DataFrame) and not fit.empty:
+            frames["fit"] = fit
+        pca = diagnostics.get("pca")
+        if isinstance(pca, dict):
+            eigen = pca.get("eigenvalues")
+            if isinstance(eigen, pd.DataFrame) and not eigen.empty:
+                frames["pca_eigenvalues"] = eigen
+            elif hasattr(eigen, "__iter__"):
+                try:
+                    frames["pca_eigenvalues"] = pd.DataFrame({"Eigenvalue": list(eigen)})
+                except Exception:
+                    pass
+    # Person / facet measures split (nice to have separately, matches
+    # the way FACETS groups its output facet-tables).
+    facets = result.get("facets", {}) if isinstance(result, dict) else {}
+    if isinstance(facets, dict):
+        person_df = facets.get("person")
+        if isinstance(person_df, pd.DataFrame) and not person_df.empty:
+            frames["person_measures"] = person_df
+        others_df = facets.get("others")
+        if isinstance(others_df, pd.DataFrame) and not others_df.empty:
+            frames["facet_element_measures"] = others_df
+    steps_df = result.get("steps")
+    if isinstance(steps_df, pd.DataFrame) and not steps_df.empty:
+        frames["step_thresholds"] = steps_df
+    # Bias tables — prefer the all-pair dict when available.
+    if isinstance(all_bias_results, dict) and all_bias_results:
+        for pair_label, pair_res in all_bias_results.items():
+            if not isinstance(pair_res, dict):
+                continue
+            tbl = pair_res.get("bias_tbl")
+            if isinstance(tbl, pd.DataFrame) and not tbl.empty:
+                safe_pair = re.sub(r"[^A-Za-z0-9]+", "_", str(pair_label)).strip("_")
+                frames[f"bias_{safe_pair}"] = tbl
+    elif isinstance(bias_results, dict) and bias_results:
+        tbl = bias_results.get("bias_tbl")
+        if isinstance(tbl, pd.DataFrame) and not tbl.empty:
+            frames["bias"] = tbl
+    return frames
+
+
+def render_quick_results_download(
+    result: dict,
+    diagnostics: dict,
+    *,
+    bias_results: dict | None = None,
+    all_bias_results: dict | None = None,
+) -> None:
+    """FACETS-style one-click results bundle, surfaced above the result tabs.
+
+    Shows a prominent **⬇ Download all results (ZIP)** button right
+    after the Run history panel so beginners leaving with their data
+    do not have to hunt through the Downloads sub-tab first. Also
+    offers an Excel (multi-sheet) variant for users who prefer that.
+    """
+    frames = build_result_bundle_frames(
+        result, diagnostics,
+        bias_results=bias_results, all_bias_results=all_bias_results,
+    )
+    if not frames:
+        return
+    try:
+        frames_key = frames_fingerprint(frames)
+    except Exception:
+        frames_key = f"quick_dl_{id(result)}"
+
+    with st.container(border=True):
+        st.markdown(
+            f"##### ⬇ Quick download — all {len(frames)} result tables in one click"
+        )
+        st.caption(
+            "FACETS-style bundle: Summary, Measures, Reliability, Fit, "
+            "PCA, and Bias tables in a single ZIP. For the full download "
+            "surface (Publication Document, Stan code, per-table CSVs) "
+            "use the **Report → 💾 Exports** sub-tab."
+        )
+        c1, c2 = st.columns([1, 1])
+        with c1:
+            try:
+                st.download_button(
+                    "⬇ Download all results (ZIP)",
+                    data=cached_tables_zip(frames, frames_key),
+                    file_name="mfrm_results_bundle.zip",
+                    mime="application/zip",
+                    key="dl_quick_bundle_zip",
+                    type="primary",
+                    use_container_width=True,
+                    help=(
+                        f"ZIP with {len(frames)} CSV files: "
+                        + ", ".join(list(frames.keys())[:6])
+                        + (" …" if len(frames) > 6 else "")
+                    ),
+                )
+            except Exception as zip_exc:
+                st.caption(f"⚠️ ZIP export failed: {zip_exc}")
+        with c2:
+            try:
+                st.download_button(
+                    "⬇ Download all results (Excel)",
+                    data=cached_excel_bytes(frames, frames_key),
+                    file_name="mfrm_results_bundle.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    key="dl_quick_bundle_xlsx",
+                    use_container_width=True,
+                    help="One .xlsx with each table on its own sheet.",
+                )
+            except Exception as xl_exc:
+                st.caption(f"⚠️ Excel export failed: {xl_exc}")
 
 
 @st.cache_data(show_spinner=False, max_entries=4, ttl=1800)
@@ -10566,10 +10915,21 @@ def build_readiness_report(
             continue
         levels = data[facet].nunique()
         if levels < 2:
+            # v0.2.14-beta: downgraded from issue → warning. MFRM
+            # centers a singleton facet to 0 without error; no
+            # severity/difficulty is estimable but the fit itself
+            # proceeds. A hard block was overkill for legitimate
+            # single-scorer / single-form designs (e.g., binary
+            # reading testlets).
             checks.append({
-                "name": f"facet:{facet}", "severity": "issue",
+                "name": f"facet:{facet}", "severity": "warning",
                 "headline": f"`{facet}` has only {levels} level",
-                "detail": "Every facet needs ≥2 levels to estimate a severity/difficulty measure.",
+                "detail": (
+                    "Singleton facets contribute no estimable "
+                    "severity/difficulty — MFRM centers them to 0. "
+                    "Remove from facet selection if the column is "
+                    "not informative for your research question."
+                ),
             })
         elif levels > 100:
             checks.append({
@@ -12489,6 +12849,18 @@ def run_facets_mode(core: dict, data: pd.DataFrame) -> None:
         blocked.add(weight_col)
     facet_candidates = [c for c in cols if c not in blocked]
     default_facets = [c for c in pick_default_facets(facet_candidates) if c in facet_candidates]
+    # v0.2.14-beta: exclude columns with < 2 unique levels from the
+    # auto-selected facet set. A singleton facet (e.g., single-Scorer
+    # binary testlet data) contributes zero variance and was
+    # incorrectly blocking the readiness panel with a hard [ISSUE].
+    # Users can still manually add a singleton if they want; we just
+    # do not force them to deselect it on every new scenario.
+    try:
+        default_facets = [
+            c for c in default_facets if data[c].nunique(dropna=True) >= 2
+        ]
+    except Exception:  # pragma: no cover — defensive
+        pass
 
     facet_cols = st.sidebar.multiselect(
         "Facet columns (2+)",
@@ -13186,7 +13558,7 @@ def run_facets_mode(core: dict, data: pd.DataFrame) -> None:
     )
 
     # v0.2.8-beta: main-area data banner. When the sidebar loads one of
-    # the four built-in scenarios, surface the scenario name + design
+    # the built-in scenarios, surface the scenario name + design
     # dimensions at the top of the main area so users always know which
     # dataset is about to run — not just when they scroll the sidebar.
     try:
@@ -13649,6 +14021,18 @@ def run_facets_mode(core: dict, data: pd.DataFrame) -> None:
     # Run history panel (already collapsed by default internally).
     try:
         render_run_history_panel()
+    except Exception:  # pragma: no cover - UX helper
+        pass
+
+    # v0.2.14-beta: FACETS-style one-click results bundle right below
+    # Run history. Beginners can leave with their full results without
+    # hunting through the Downloads sub-tab first.
+    try:
+        render_quick_results_download(
+            result, diagnostics,
+            bias_results=bias_results,
+            all_bias_results=out.get("all_bias_results", {}),
+        )
     except Exception:  # pragma: no cover - UX helper
         pass
 
@@ -26864,8 +27248,8 @@ def _self_test_sample_data_scenarios() -> None:
       - Determinism: same (key, seed) → same DataFrame bytes.
     """
     _self_test_assert(
-        len(SAMPLE_DATA_SCENARIOS) >= 4,
-        f"expected at least 4 scenarios, got {len(SAMPLE_DATA_SCENARIOS)}",
+        len(SAMPLE_DATA_SCENARIOS) >= 5,
+        f"expected at least 5 scenarios, got {len(SAMPLE_DATA_SCENARIOS)}",
     )
     _self_test_assert(
         DEFAULT_SAMPLE_SCENARIO_KEY in SAMPLE_DATA_SCENARIOS,
@@ -26882,13 +27266,27 @@ def _self_test_sample_data_scenarios() -> None:
                 f"scenario {key!r} missing {required!r} field",
             )
 
-        # Generate and check shape
+        # Generate and check shape. Scenarios with a `missing_rate`
+        # produce a stochastic row count (e.g., 15% MAR drop on a
+        # 1,920-row design lands somewhere around 1,632 ± a few),
+        # so allow a 5% tolerance on either side for those.
         df = sample_mfrm_data_by_key(key, seed=20260417)
-        _self_test_assert(
-            df.shape[0] == scenario["n_obs"],
-            f"scenario {key!r}: expected {scenario['n_obs']} rows, "
-            f"got {df.shape[0]}",
-        )
+        params_for_tol = scenario["build_params"]()
+        missing_rate = float(params_for_tol.get("missing_rate", 0.0) or 0.0)
+        if missing_rate > 0:
+            tolerance = max(20, int(scenario["n_obs"] * 0.05))
+            _self_test_assert(
+                abs(df.shape[0] - scenario["n_obs"]) <= tolerance,
+                f"scenario {key!r}: expected ~{scenario['n_obs']} rows "
+                f"(±{tolerance} for {missing_rate:.0%} missing), "
+                f"got {df.shape[0]}",
+            )
+        else:
+            _self_test_assert(
+                df.shape[0] == scenario["n_obs"],
+                f"scenario {key!r}: expected {scenario['n_obs']} rows, "
+                f"got {df.shape[0]}",
+            )
         _self_test_assert(
             df.shape[1] == 5,
             f"scenario {key!r}: expected 5 columns, got {df.shape[1]}",
@@ -29554,20 +29952,31 @@ def render_onboarding_banner() -> None:
     if st.session_state.get("_onboarding_dismissed", False):
         return
 
+    # Build scenario list dynamically so the banner stays in sync with
+    # SAMPLE_DATA_SCENARIOS — adding a new scenario does not require
+    # editing the onboarding text.
+    n_scen = len(SAMPLE_DATA_SCENARIOS)
+    scen_lines: list[str] = []
+    for key, meta in SAMPLE_DATA_SCENARIOS.items():
+        emoji_label = meta["label"].split(" (")[0]  # strip the "(NxNxN)" tail
+        n_obs_str = f"{meta['n_obs']:,} obs"
+        suffix = " (default)" if key == DEFAULT_SAMPLE_SCENARIO_KEY else ""
+        scen_lines.append(f"{emoji_label} ({n_obs_str}){suffix}")
+    scenario_summary = " · ".join(scen_lines)
+
     with st.container(border=True):
         st.markdown(
-            """
+            f"""
 ##### 👋 New here? Follow these 3 steps to run your first analysis
 
 | Step | Action | Where |
 |---|---|---|
-| **1️⃣** | **Pick a data source** — four built-in sample scenarios + paste + upload | Sidebar ← 📥 Data source |
+| **1️⃣** | **Pick a data source** — {n_scen} built-in sample scenarios + paste + upload | Sidebar ← 📥 Data source |
 | **2️⃣** | **Map your columns** — Person, Score, and two or more facet columns | Sidebar ← Column mapping |
 | **3️⃣** | **Click `Run FACETS-mode estimation`** at the bottom of the sidebar | Sidebar bottom |
 
 **Built-in scenarios** (all synthetic, MFRM-literature-grounded):
-✏️ Writing essay (960 obs, default) · 📚 Large-scale writing (2,880 obs, **PCA-ready**) ·
-🎙️ L2 speaking (3,600 obs) · 🏥 Clinical OSCE (3,600 obs).
+{scenario_summary}.
 
 Afterwards, use the tabs (Measures, Fit, Dimensionality, Visuals, Report, ...)
 that appear below to explore diagnostics and build a publication document.

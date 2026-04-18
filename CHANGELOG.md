@@ -2,6 +2,93 @@
 
 All notable changes to this standalone Streamlit distribution should be recorded here.
 
+## 0.2.14-beta - 2026-04-18
+
+User feedback after v0.2.13: documentation said "four scenarios" in
+several places after a fifth was added; the readiness panel blocked
+the binary testlet scenario with a hard [ISSUE] for its single-scorer
+facet (working as designed but UX-hostile); the Run history area
+needed a FACETS-style one-click bundle download; and two more
+scenarios (missing data + peer-rating) were requested. This release
+addresses all five points and — once again — the v0.2.12 end-to-end
+gate caught two real bugs in CI before users would have hit them.
+
+### Added
+
+- **Two new sample scenarios** (registry now has 7 total):
+  - 📉 **Writing with missing** (80×4×2×3, ~1,632 obs after 15 %
+    MAR drop) — exercises MFRM's tolerance of missing-at-random
+    observations, the readiness-panel missing-rate flag, and the
+    connectivity check. (Little & Rubin, 2002)
+  - 🎸 **Music peer-rating** (120 musicians × 2 cyclic raters × 2
+    pieces × 4 criteria, 1,920 obs) — sparse round-robin design
+    where every musician is both an examinee and a rater. Person_i
+    rated by Person_(i+1) and Person_(i+2). 240 unique pairs out
+    of 14,400 possible. (Myford & Wolfe, 2004; Linacre, 2007)
+- **`render_quick_results_download()`** — FACETS-style one-click
+  results bundle surfaced right below the Run history panel.
+  Offers ZIP (CSVs) and Excel (multi-sheet) variants. Beginners
+  can leave with their full results without discovering the
+  Downloads sub-tab. Built via new helper
+  `build_result_bundle_frames()`.
+- **`_generate_mfrm_peer_rating_data()`** — sparse cyclic
+  generator for round-robin peer-assessment data. The first
+  generator in the registry that does NOT assume a fully-crossed
+  design.
+- **`missing_rate` parameter support** in the scenario registry —
+  any scenario can declare a stochastic MAR drop applied after
+  generation (separate RNG stream so the response seed is
+  unaffected).
+- **`tests/test_v0214_scenarios.py`** (12 tests) covering the
+  missing-rate drop, the peer-rating generator's structural
+  invariants (no self-rating, exactly 2 raters per examinee,
+  shared ID pool), the result-bundle helper, and the singleton-
+  facet readiness downgrade.
+
+### Changed
+
+- **Readiness check for singleton facets downgraded** from
+  [ISSUE] to [CAUTION]. MFRM centers a singleton facet to 0
+  without error; a hard block was overkill for legitimate single-
+  scorer / single-form designs (e.g., binary reading testlets).
+  The detail message now explains the model behaviour.
+- **`pick_default_facets` post-filter**: columns with < 2 unique
+  levels are excluded from the auto-selected facet set so users
+  do not have to deselect them manually for every scenario.
+- **Onboarding banner is now dynamic** — scenario list builds from
+  `SAMPLE_DATA_SCENARIOS`, no more hardcoded "four built-in
+  scenarios" text. Adding a scenario will not desynchronise docs.
+- **Sidebar Data source caption** uses the same dynamic count.
+- **Inline `_self_test_sample_data_scenarios`** allows ±5 %
+  tolerance on row count for scenarios with `missing_rate > 0`.
+- **README.md** scenario list expanded to mention all five built-
+  ins (was four).
+
+### Fixed (caught by the v0.2.12 end-to-end gate before release)
+
+- **`calc_interrater_agreement` `observed=False` groupby
+  expansion** crashed `pd.insert` with
+  `ValueError: Length of values (960) does not match length of
+  index (57600)` on the music peer-rating scenario. The
+  Categorical-grouped agg was materialising the full 120 ×
+  N_context Cartesian even though only 240 cells had data. Fix:
+  `observed=True` on both group-by sites so empty cells are
+  skipped — correct behaviour for sparse designs and identical for
+  fully-crossed ones.
+- **`guess_col` greedy substring match** (carryover from v0.2.13):
+  reading-testlet column auto-detect picked `Scorer` for the
+  `score` pattern, which collided after rename. Fix landed in
+  v0.2.13.
+
+### Verification
+
+- 41 inline self-tests pass.
+- **226 pytest tests pass** (was 200) — +26: 12 v0.2.14 tests, 7
+  binary/testlet (carried), and 7 across the existing files for
+  the new scenarios.
+- End-to-end AppTest covers all 7 scenarios × Run without any
+  exception (≈ 3 min CI runtime).
+
 ## 0.2.13-beta - 2026-04-18
 
 Binary / testlet data support, plus two bugs the new end-to-end

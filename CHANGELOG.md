@@ -40,6 +40,11 @@ All notable changes to this standalone Streamlit distribution should be recorded
 - Reproducible script downloads now include a local batch workflow note so
   repeated refits stay outside hosted Streamlit.
 
+### Fixed
+
+- Data source radio now shows the 7 built-in samples plus Paste and Upload
+  exactly once; Paste/Upload are no longer repeated after every sample option.
+
 ## 0.2.14-beta - 2026-04-18
 
 User feedback after v0.2.13: documentation said "four scenarios" in

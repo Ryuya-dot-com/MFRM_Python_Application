@@ -10468,6 +10468,20 @@ def render_data_privacy_notice(where: str = "main") -> None:
         st.warning(DATA_PRIVACY_NOTICE)
 
 
+def build_data_source_options() -> list[dict]:
+    """Flat data-source radio options: all samples, then paste/upload exactly once."""
+    options: list[dict] = []
+    for key, meta in SAMPLE_DATA_SCENARIOS.items():
+        options.append({
+            "label": meta["label"],
+            "kind": "scenario",
+            "scenario_key": key,
+        })
+    options.append({"label": "📋 Paste CSV/TSV text", "kind": "paste", "scenario_key": None})
+    options.append({"label": "📤 Upload your own file", "kind": "upload", "scenario_key": None})
+    return options
+
+
 def read_input_data(core: dict) -> pd.DataFrame:
     # v0.2.8-beta: Flat single-radio data-source picker. Previously the
     # user faced a two-step flow (Sample data radio → Sample scenario
@@ -10479,15 +10493,7 @@ def read_input_data(core: dict) -> pd.DataFrame:
     # Build the option list: scenarios first (in registry order),
     # then paste / upload. Each entry records its kind so we can
     # dispatch without string-matching the label.
-    _options: list[dict] = []
-    for key, meta in SAMPLE_DATA_SCENARIOS.items():
-        _options.append({
-            "label": meta["label"],
-            "kind": "scenario",
-            "scenario_key": key,
-        })
-        _options.append({"label": "📋 Paste CSV/TSV text",  "kind": "paste",  "scenario_key": None})
-        _options.append({"label": "📤 Upload your own file", "kind": "upload", "scenario_key": None})
+    _options = build_data_source_options()
     _option_labels = [opt["label"] for opt in _options]
 
     # Default to the writing-essay scenario so existing onboarding
@@ -30857,6 +30863,20 @@ def _self_test_sample_data_scenarios() -> None:
         DEFAULT_SAMPLE_SCENARIO_KEY in SAMPLE_DATA_SCENARIOS,
         f"DEFAULT_SAMPLE_SCENARIO_KEY {DEFAULT_SAMPLE_SCENARIO_KEY!r} "
         "missing from registry",
+    )
+    data_source_options = build_data_source_options()
+    labels = [opt["label"] for opt in data_source_options]
+    _self_test_assert(
+        len(data_source_options) == len(SAMPLE_DATA_SCENARIOS) + 2,
+        "data-source radio should show every sample plus one Paste and one Upload option",
+    )
+    _self_test_assert(
+        len(labels) == len(set(labels)),
+        f"data-source radio labels must be unique, got duplicates in {labels}",
+    )
+    _self_test_assert(
+        labels[-2:] == ["📋 Paste CSV/TSV text", "📤 Upload your own file"],
+        f"data-source radio should end with Paste/Upload, got {labels[-2:]}",
     )
 
     for key, scenario in SAMPLE_DATA_SCENARIOS.items():

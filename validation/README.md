@@ -60,8 +60,8 @@ Generated files are intentionally ignored by Git under `validation/generated/`.
 | Plausible values | TAM, mirt, and sirt plausible-value or factor-score routines | distribution means, variances, covariate trends | draw-by-draw plausible-value equality |
 | Anchor/linking | FACETS/TAM/ConQuest-style anchor workflows | anchor count, connectedness, hard-constraint drift | linking claims without common-scale evidence |
 | Strict marginal diagnostics | TAM/mirt residual and fit diagnostics where applicable | directional flags and sparse-cell warnings | proof of model truth |
-| External Simulation repository sweep | local mfrmr/Python/Julia/FACETS artifacts | manifest status counts, full-reference summaries, runtime summaries, non-empty validation-input replicates | public runtime dependency on local Dropbox paths or exact parity without parameterization notes |
-| mfrmr 0.1.5 migration coverage | local mfrmr 0.1.5 source and package documentation | feature-level support, boundaries, next validation action | one-to-one helper parity or runtime wrapping |
+| Archived simulation validation sweep | archived mfrmr/Python/Julia/FACETS artifacts | manifest status counts, full-reference summaries, runtime summaries, non-empty validation-input replicates | public runtime dependency on private validation artifacts or exact parity without parameterization notes |
+| mfrmr 0.1.5 / 0.1.6 migration coverage | mfrmr package source and package documentation | feature-level support, boundaries, next validation action | one-to-one helper parity or runtime wrapping |
 
 The exporter writes a machine-readable version of this plan to
 `cross_package_validation_plan.csv`.
@@ -104,7 +104,7 @@ used in public parity claims.
 - mirt: GPCM, EAP/factor-score, plausible-value, and broader IRT diagnostic reference checks.
 - sirt: rater-facet, hierarchical rater-model, and plausible-value reference checks.
 - mfrmr: functional capability reference for migration completeness.
-- Simulation directory: local numerical validation evidence, including
+- Archived simulation artifacts: numerical validation evidence, including
   observed long-form data, repeated engine-refit manifests, runtime summaries,
   full-reference backup outputs, diagnostic spot checks, and validation-input
   replicates. Keep these artifacts out of the public repository unless they are
@@ -118,7 +118,7 @@ used in public parity claims.
 - mirt `mixedmirt`: latent-regression inputs are modeled through `lr.fixed` / `lr.random` style arguments. See: https://philchalmers.github.io/mirt/docs/reference/mixedmirt.html
 - sirt `rm.facets`: rater-facet models use person-rater rows, rater severity, optional item/rater slopes, EAP factor scores, and modelfit methods. See the sirt pkgdown reference: https://alexanderrobitzsch.github.io/sirt/reference/rm.facets.html
 - sirt plausible-value tools: distributional checks should be preferred over draw-by-draw equality. See the CRAN sirt manual: https://cran.r-project.org/web/packages/sirt/sirt.pdf
-- mfrmr 0.1.5: the local source is used as the migration coverage reference; the generated `mfrmr_015_migration_coverage.csv` separates Python support from one-to-one parity claims.
+- mfrmr 0.1.5 / 0.1.6: the package source is used as the migration coverage reference; the generated `mfrmr_015_migration_coverage.csv` and `mfrmr_016_migration_coverage.csv` separate Python support from one-to-one parity claims.
 
 ## Reporting Rule
 
@@ -134,18 +134,18 @@ When reporting a cross-package check, archive:
 
 Do not report exact cross-package parity unless those artifacts are included.
 
-## Latest Local Smoke Status
+## Latest Smoke Status
 
-See `R_CROSSCHECK_STATUS.md` for the latest archived local smoke run. That file
+See `R_CROSSCHECK_STATUS.md` for the latest archived smoke run. That file
 records whether the generated fixture could be fitted by the installed TAM,
 mirt, and sirt packages, while keeping the same non-parity interpretation rule
 used throughout this validation directory.
 
-See `SIMULATION_REFERENCE_STATUS.md` for the local Simulation-directory
+See `SIMULATION_REFERENCE_STATUS.md` for the archived validation-artifact
 inventory that should guide external-data numerical validation without bundling
 private or large datasets into this public app repository.
 
 The generated parity fixture and the app's Downloads tab also expose sanitized
 Python/R/Julia template scripts. They require users to pass `MFRM_INPUT_CSV` and
-`MFRM_OUTPUT_DIR` through environment variables, so local absolute paths are not
+`MFRM_OUTPUT_DIR` through environment variables, so machine-specific absolute paths are not
 embedded in public artifacts.

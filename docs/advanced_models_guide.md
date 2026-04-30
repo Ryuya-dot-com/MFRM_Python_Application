@@ -30,9 +30,10 @@ Stan and run on the user's own machine.
  │ 1. Sidebar →                           │
  │    🧪 Advanced models (Stan, DL only)  │
  │ 2. Enable + pick family                │
- │ 3. Upload Q-matrix (DINA) /             │
+ │ 3. Download the model data template     │
+ │ 4. Upload Q-matrix (DINA) /             │
  │    set class count (Mixture)           │
- │ 4. 📥 Generate + ⬇ Download .stan      │
+ │ 5. 📥 Generate + ⬇ Download .stan      │
  └────────────┬───────────────────────────┘
               │  file: mfrm_<model>.stan
               ▼
@@ -80,6 +81,37 @@ or plain 0/1 matrices. The app validates:
 
 Failing Q-matrices still render a warning but do not block the
 download — the generator just uses whatever shape arrived.
+
+## Data templates
+
+The sidebar now provides a CSV template for each Stan-first model. These
+templates are deliberately small and readable:
+
+- DINA uses a wide binary response matrix plus a separate Q-matrix.
+- HRM uses long ordinal rows: `person`, `item`, `rater`, `score`.
+- Testlet RI / Bifactor use long ordinal rows with a required `testlet`
+  column.
+- Mixture Rasch and 2PL use binary long rows: `person`, `item`, `score`.
+- Pairwise BTL uses `object_a`, `object_b`, `wins_a`.
+
+Before passing data to Stan, convert text labels to 1-based integer
+arrays that match the generated Stan `data` block.
+
+## Local dependence and mixture scope
+
+For the generated testlet models, **local dependence** means residual
+association among items sharing a passage, station, prompt bundle, or
+other testlet after the main trait is accounted for. The generated Stan
+program handles this through testlet random effects. This is different
+from FACETS-mode fixed bias/interaction tables between non-person
+facets.
+
+For the generated Mixture Rasch model, **mixture** means unobserved
+latent response-pattern classes with class-specific item difficulties.
+It does not mean response time, speededness, or inattentive rating. If
+response time is part of the study, extend the Stan data block and
+likelihood explicitly rather than treating the current mixture template
+as a response-time model.
 
 ## Running Stan locally
 
@@ -135,6 +167,9 @@ posterior predictive checks.
   Code sub-tab in **Report → 💾 Exports** provides a generic
   cmdstanpy / cmdstanr runner that you adapt to each model's data
   shape.
+- Hyperparameters are intentionally visible in generated Stan code.
+  Results can change when priors, class counts, or sampler settings
+  change; set these values based on study design and sensitivity checks.
 - Mixture Rasch and DINA both enumerate over classes/profiles; for
   large data you may want to factor the likelihood yourself.
 - HRM assumes a global set of step thresholds; for rater-specific

@@ -17,7 +17,7 @@ def test_whitelist_is_frozenset():
 
 def test_whitelist_size_is_pinned():
     # Bumping this number requires an entry in CHANGELOG.md.
-    assert len(app._CONFIG_JSON_IMPORT_WHITELIST) == 23
+    assert len(app._CONFIG_JSON_IMPORT_WHITELIST) == 25
 
 
 def test_critical_sidebar_settings_are_whitelisted():

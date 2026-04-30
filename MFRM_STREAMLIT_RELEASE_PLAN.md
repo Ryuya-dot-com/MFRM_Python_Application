@@ -4,12 +4,12 @@
 
 - Build a clean, standalone Streamlit distribution of the current Python MFRM app in this directory.
 - Keep the application independent from `mfrmr`, `rpy2`, `Rscript`, FACETS, TAM, sirt, and mirt at runtime.
-- Treat TAM, sirt, mirt, and `mfrmr 0.1.5` as external statistical references for validation language and parity checks, not as engines called by the app.
+- Treat TAM, sirt, mirt, and `mfrmr 0.1.6` as external statistical references for validation language and parity checks, not as engines called by the app.
 - Make the app suitable for a public beta release, while avoiding any claim of exact numerical parity with established statistical packages until cross-package tolerances are documented.
 
 ## Directory Scope
 
-- Target directory: `/Users/ryuya/Library/CloudStorage/Dropbox/MFRM_Application/MFRM_App/MFRM_Streamlit`
+- Target directory: repository root for the standalone Streamlit app
 - Primary app entrypoint: `streamlit_app.py`
 - Documentation: `README.md`
 - Deployment guide: `DEPLOYMENT.md`
@@ -37,7 +37,7 @@
 - [x] Copy anchor templates/guidelines into `anchor_templates_and_guideline/`.
 - [x] Create a fresh `requirements.txt` in the target directory.
 - [x] Create a fresh `requirements-dev.txt` for CI and local smoke tests.
-- [x] Exclude `__pycache__` and any generated local artifacts.
+- [x] Exclude `__pycache__` and any generated machine-specific artifacts.
 - [x] Add a local `.gitignore` if the target directory is expected to be versioned independently.
 - [x] Run `python3 -m py_compile streamlit_app.py`.
 - [x] Run `python3 streamlit_app.py --self-test`.
@@ -110,7 +110,7 @@
   - [x] TAM: MML/faceted design and latent regression reference
   - [x] mirt: GPCM, EAP/factor scores, plausible values reference
   - [x] sirt: rater-facet and hierarchical rater model reference
-  - [x] mfrmr 0.1.5: functional capability reference
+  - [x] mfrmr 0.1.6: functional capability reference
 - [x] Add or improve a `validation/` fixture workflow:
   - [x] deterministic Python fixture generation
   - [x] R scaffold for TAM/mirt/sirt checks

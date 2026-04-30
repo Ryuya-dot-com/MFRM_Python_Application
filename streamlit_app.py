@@ -53,6 +53,7 @@ RUNTIME_PACKAGE_FLOORS = OrderedDict([
     ("kaleido", "1.0"),
     ("streamlit", "1.54"),
     ("openpyxl", "3.1"),
+    ("pyarrow", "15.0"),
 ])
 BUNDLED_ANCHOR_ASSETS = [
     "anchor_table_blank.csv",
@@ -296,6 +297,13 @@ def public_beta_limitations_table() -> pd.DataFrame:
             "UserAction": "Run locally for confidential data; remove direct identifiers and unnecessary columns.",
         },
         {
+            "Area": "License and responsible use",
+            "PublicBetaStatus": "Ready",
+            "SupportedNow": "MIT License with a plain-language responsible-use notice.",
+            "Boundary": "Commercial use is permitted, but the software and documentation are provided as-is without warranty.",
+            "UserAction": "Retain the license notice, do not imply author endorsement, and validate outputs before operational or high-stakes use.",
+        },
+        {
             "Area": "Portable scripts",
             "PublicBetaStatus": "Partial",
             "SupportedNow": "Current-engine runner supports the app path; portable self-contained scripts support ordinary JMLE/R workflows.",
@@ -375,7 +383,7 @@ def public_beta_limitations_table() -> pd.DataFrame:
 
 
 def mfrmr_015_migration_coverage_table() -> pd.DataFrame:
-    """Migration coverage map for the local mfrmr 0.1.5 feature surface."""
+    """Migration coverage map for the mfrmr 0.1.5 package feature surface."""
     rows = [
         {
             "mfrmr015Area": "Ordered score-category support",
@@ -495,6 +503,56 @@ def mfrmr_015_migration_coverage_table() -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
+def mfrmr_016_migration_coverage_table() -> pd.DataFrame:
+    """Migration coverage map for the mfrmr 0.1.6 package feature surface."""
+    base = mfrmr_015_migration_coverage_table().rename(columns={"mfrmr015Area": "mfrmr016Area"})
+    rows = [
+        {
+            "mfrmr016Area": "Empirical-Bayes facet shrinkage",
+            "PythonStatus": "Ready as post-hoc advisory",
+            "PythonEvidence": "Full publication computes non-person facet EB shrinkage; Standard can opt in. Exports include shrinkage report/measures and a forest plot.",
+            "Boundary": "Raw estimates, SE, fit, LogLik, AIC, and BIC remain unchanged; this is not a random-effects model.",
+            "NextValidation": "Report raw estimates as primary and use ShrunkEstimate/ShrinkageFactor as small-N sensitivity evidence.",
+        },
+        {
+            "mfrmr016Area": "Facet sample-size adequacy",
+            "PythonStatus": "Ready as design audit",
+            "PythonEvidence": "Per-level raw rows/effective weight and sparse/marginal/standard/strong bands are shown in Data and Design evaluation tabs.",
+            "Boundary": "Uses likelihood-included rows after missing/weight filtering; does not prove estimator quality by itself.",
+            "NextValidation": "Review levels with effective N < 10 before interpreting fine facet differences.",
+        },
+        {
+            "mfrmr016Area": "Facet nesting / hierarchical structure",
+            "PythonStatus": "Ready as descriptive audit",
+            "PythonEvidence": "Conditional-entropy ordered facet-pair table classifies crossed, partial, near-perfect, and deterministic relations.",
+            "Boundary": "No random-effects hierarchy is fitted; the screen describes observed design structure.",
+            "NextValidation": "Use nesting/crossing evidence before making crossed-facet interpretation or linking claims.",
+        },
+        {
+            "mfrmr016Area": "Intraclass ICC / design effect / effective N",
+            "PythonStatus": "Ready as dependency-free screen",
+            "PythonEvidence": "Prediction/Simulation -> Design evaluation reports cluster ICC, design effect, and effective N.",
+            "Boundary": "Cluster ICC is an ANOVA-style descriptive statistic, not an item-characteristic curve and not a mixed-effects MFRM.",
+            "NextValidation": "Avoid the bare label ICC; write intraclass correlation (cluster ICC).",
+        },
+        {
+            "mfrmr016Area": "Information / targeting curves",
+            "PythonStatus": "Ready in Full view",
+            "PythonEvidence": "Visuals -> Information Curves and downloads expose model-based information and conditional SE across theta.",
+            "Boundary": "Curves inherit fitted thresholds/slopes and are a targeting screen, not prospective validation.",
+            "NextValidation": "Read together with Wright map, category curves, and score-category support.",
+        },
+        {
+            "mfrmr016Area": "Misfit casebook and weighting audit",
+            "PythonStatus": "Ready as reporting support",
+            "PythonEvidence": "Fit Details shows a casebook assembled from fit, bias, marginal, PCA, and anchor evidence; Report/Downloads include weighting policy audit.",
+            "Boundary": "Casebook rows are triage prompts; they do not automatically justify deletion or rater retraining.",
+            "NextValidation": "Document substantive review decisions for each high-priority case.",
+        },
+    ]
+    return pd.concat([base, pd.DataFrame(rows)], ignore_index=True)
+
+
 def public_release_readiness_table() -> pd.DataFrame:
     """Repository-level public beta readiness checks."""
     root = Path(__file__).resolve().parent
@@ -506,8 +564,16 @@ def public_release_readiness_table() -> pd.DataFrame:
         {
             "Check": "License",
             "Status": "Ready" if exists("LICENSE") else "Blocker",
-            "Evidence": "MIT LICENSE file present." if exists("LICENSE") else "LICENSE is missing.",
-            "Action": "No action needed." if exists("LICENSE") else "Add a project license before public release.",
+            "Evidence": (
+                "MIT LICENSE and plain-language responsible-use notice are present."
+                if exists("LICENSE") and exists("LICENSE_NOTICE.md") else
+                "LICENSE or LICENSE_NOTICE.md is missing."
+            ),
+            "Action": (
+                "Keep commercial-use permission and as-is/no-warranty language visible."
+                if exists("LICENSE") and exists("LICENSE_NOTICE.md") else
+                "Add a project license and responsible-use notice before public release."
+            ),
         },
         {
             "Check": "Runtime dependencies",
@@ -546,10 +612,10 @@ def public_release_readiness_table() -> pd.DataFrame:
             "Action": "Treat TAM/sirt/mirt/FACETS/mfrmr equality as validation evidence only after explicit cross-checks.",
         },
         {
-            "Check": "Simulation external validation inventory",
+            "Check": "Archived validation artifact inventory",
             "Status": "Documented",
-            "Evidence": f"{len(external_simulation_reference_inventory())} local Simulation artifact rows are documented.",
-            "Action": "Use the inventory for numerical validation planning; do not bundle private or large Simulation data in the public app.",
+            "Evidence": f"{len(external_simulation_reference_inventory())} archived validation-artifact rows are documented.",
+            "Action": "Use the inventory for numerical validation planning; do not bundle private or large validation data in the public app.",
         },
         {
             "Check": "Simulation validation templates",
@@ -561,12 +627,12 @@ def public_release_readiness_table() -> pd.DataFrame:
             # quoted the 3-row inventory.
             "Status": "Ready" if len(external_simulation_template_inventory()) >= 3 else "Review",
             "Evidence": f"{len(external_simulation_template_inventory())} Python/R/Julia template rows are documented.",
-            "Action": "Use sanitized templates for external validation handoff; keep local paths and private data out of the public repo.",
+            "Action": "Use sanitized templates for external validation handoff; keep machine-specific paths and sensitive data out of the public repo.",
         },
         {
-            "Check": "mfrmr 0.1.5 migration coverage",
-            "Status": "Ready" if not mfrmr_015_migration_coverage_table().empty else "Review",
-            "Evidence": f"{len(mfrmr_015_migration_coverage_table())} migration-scope rows documented.",
+            "Check": "mfrmr 0.1.6 migration coverage",
+            "Status": "Ready" if not mfrmr_016_migration_coverage_table().empty else "Review",
+            "Evidence": f"{len(mfrmr_016_migration_coverage_table())} migration-scope rows documented through mfrmr 0.1.6.",
             "Action": "Use this table to avoid overstating one-to-one coverage of the R package surface.",
         },
         {
@@ -3259,6 +3325,88 @@ def render_loaded_data_banner() -> None:
     )
 
 
+def render_input_overview(data: pd.DataFrame) -> None:
+    """Render a compact raw-table overview before column mapping."""
+    if not isinstance(data, pd.DataFrame) or data.empty:
+        return
+    n_rows, n_cols = data.shape
+    n_cells = int(n_rows * n_cols)
+    n_missing = int(data.isna().sum().sum()) if n_cells else 0
+    missing_pct = (100.0 * n_missing / n_cells) if n_cells else 0.0
+    preview_rows = min(20, n_rows)
+    metric_cols = st.columns(4)
+    metric_cols[0].metric("Rows", f"{n_rows:,}")
+    metric_cols[1].metric("Columns", f"{n_cols:,}")
+    metric_cols[2].metric("Missing cells", f"{missing_pct:.1f}%")
+    metric_cols[3].metric("Previewed", f"{preview_rows:,}")
+    if n_missing:
+        st.caption(
+            f"{n_missing:,} blank cell(s) are present in the raw table. "
+            "After column mapping, the readiness panel and Data tab show which "
+            "score rows are excluded from likelihood calculations."
+        )
+    else:
+        st.caption("No blank cells were detected in the raw table preview.")
+
+
+def _short_value_list(values: list[str] | tuple[str, ...], max_items: int = 4) -> str:
+    labels = [str(v) for v in values]
+    if not labels:
+        return "(none selected)"
+    if len(labels) <= max_items:
+        return ", ".join(labels)
+    return f"{', '.join(labels[:max_items])}, +{len(labels) - max_items} more"
+
+
+def render_sidebar_run_setup_summary(
+    data: pd.DataFrame,
+    *,
+    person_col: str,
+    score_col: str,
+    facet_cols: list[str],
+    weight_col: str | None,
+    model_type: str,
+    est_method: str,
+    analysis_depth: str,
+    workflow_mode: str,
+) -> None:
+    """Show the current estimation setup close to the Run button."""
+    st.sidebar.subheader("Run summary")
+    try:
+        n_rows = int(len(data))
+        n_persons = int(data[person_col].nunique(dropna=True))
+        n_score_missing = int(data[score_col].isna().sum())
+    except Exception:  # pragma: no cover - summary must not block analysis
+        n_rows = 0
+        n_persons = 0
+        n_score_missing = 0
+
+    if len(facet_cols) < 2:
+        st.sidebar.warning("Select at least two facet columns before running.")
+    else:
+        st.sidebar.info(
+            f"{n_rows:,} rows, {n_persons:,} persons, "
+            f"{len(facet_cols)} facet columns selected."
+        )
+
+    with st.sidebar.expander("Review current setup", expanded=False):
+        st.markdown(
+            "\n".join([
+                f"- Person: `{person_col}`",
+                f"- Score: `{score_col}`",
+                f"- Facets: `{_short_value_list(list(facet_cols))}`",
+                f"- Weight: `{weight_col or 'none'}`",
+                f"- Model / method: `{model_type}` / `{est_method}`",
+                f"- Workflow / depth: `{workflow_mode}` / `{analysis_depth}`",
+            ])
+        )
+        if n_score_missing:
+            st.caption(
+                f"{n_score_missing:,} row(s) have missing scores after mapping; "
+                "they are tracked in the readiness and Data-tab audits."
+            )
+
+
 def guess_col(cols, patterns, fallback=0):
     """Guess the most plausible column for a given semantic role.
 
@@ -5249,6 +5397,98 @@ def build_equating_chain_summary(result: dict) -> dict:
     }
 
 
+def build_anchor_equating_workflow_plan(result: dict) -> pd.DataFrame:
+    """Operational anchor/equating checklist for the current Streamlit run."""
+    config = result.get("config", {}) if isinstance(result, dict) else {}
+    audit = config.get("anchor_audit", {}) if isinstance(config, dict) else {}
+    drift = result.get("anchor_drift", {}) if isinstance(result, dict) else {}
+    chain = result.get("equating_chain", {}) if isinstance(result, dict) else {}
+    rows: list[dict] = []
+
+    if not isinstance(audit, dict):
+        return pd.DataFrame([{
+            "Step": 1,
+            "Check": "Anchor inputs",
+            "Status": "Missing",
+            "Evidence": "Anchor audit was not recorded for this run.",
+            "Action": "Run the model again with current anchor settings before making linking claims.",
+        }])
+
+    audit_status = str(audit.get("overall_status", "unknown"))
+    audit_summary = audit.get("summary", pd.DataFrame())
+    audit_issues = audit.get("issues", pd.DataFrame())
+    n_issues = len(audit_issues) if isinstance(audit_issues, pd.DataFrame) else 0
+    rows.append({
+        "Step": 1,
+        "Check": "Anchor input validation",
+        "Status": "Ready" if audit_status == "ok" else "Review",
+        "Evidence": f"{audit.get('message', 'No audit message.')} Issues: {n_issues}.",
+        "Action": "Fix format, spelling, duplicate, sparse, or missing-anchor issues before claiming a linked scale.",
+    })
+
+    linked = weak = unanchored = 0
+    if isinstance(audit_summary, pd.DataFrame) and not audit_summary.empty:
+        chain_summary = chain.get("summary", pd.DataFrame()) if isinstance(chain, dict) else pd.DataFrame()
+        if isinstance(chain_summary, pd.DataFrame) and not chain_summary.empty and "Strength" in chain_summary.columns:
+            linked = int(chain_summary["Strength"].astype(str).eq("Linked").sum())
+            weak = int(chain_summary["Strength"].astype(str).eq("Weak link").sum())
+            unanchored = int(chain_summary["Strength"].astype(str).eq("Unanchored").sum())
+    common_status = "Ready" if linked > 0 and weak == 0 else "Review" if linked or weak else "Not linked"
+    rows.append({
+        "Step": 2,
+        "Check": "Common-anchor coverage",
+        "Status": common_status,
+        "Evidence": f"Linked facets: {linked}; weak links: {weak}; unanchored facets: {unanchored}.",
+        "Action": "Use at least the configured minimum common anchors per linking facet and document content equivalence.",
+    })
+
+    if isinstance(drift, dict) and drift.get("available"):
+        drift_summary = drift.get("summary", pd.DataFrame())
+        drift_status = "Review"
+        evidence = drift.get("reason", "Anchor drift review available.")
+        if isinstance(drift_summary, pd.DataFrame) and not drift_summary.empty:
+            drift_status = str(drift_summary.get("Status", pd.Series(["Review"])).iloc[0])
+            evidence = (
+                f"Max fixed-anchor drift: {drift_summary.get('MaxAbsAnchorDrift', pd.Series([np.nan])).iloc[0]}; "
+                f"max group mean drift: {drift_summary.get('MaxAbsGroupMeanDrift', pd.Series([np.nan])).iloc[0]}."
+            )
+        rows.append({
+            "Step": 3,
+            "Check": "Hard-anchor consistency",
+            "Status": "Ready" if drift_status == "Ready" else "Review",
+            "Evidence": evidence,
+            "Action": "Resolve drift or convergence warnings before reporting linked results.",
+        })
+    else:
+        rows.append({
+            "Step": 3,
+            "Check": "Hard-anchor consistency",
+            "Status": "Not applicable",
+            "Evidence": drift.get("reason", "No fixed anchors or group anchors were supplied.") if isinstance(drift, dict) else "No drift review.",
+            "Action": "For cross-run linking, supply fixed anchors or group anchors and rerun.",
+        })
+
+    chain_available = bool(isinstance(chain, dict) and chain.get("available"))
+    rows.append({
+        "Step": 4,
+        "Check": "Equating-chain scope",
+        "Status": "Ready" if chain_available else "Not linked",
+        "Evidence": (
+            chain.get("interpretation", chain.get("reason", "No chain summary."))
+            if isinstance(chain, dict) else "No chain summary."
+        ),
+        "Action": "Treat this as a current-run link to supplied baselines; keep historical multi-run chain evidence separately.",
+    })
+    rows.append({
+        "Step": 5,
+        "Check": "Next-run anchor package",
+        "Status": "Ready" if chain_available else "Optional",
+        "Evidence": "Downloads include current estimated anchors, anchor audit tables, drift tables, and equating summary when available.",
+        "Action": "Export anchors after a vetted run, version the file, and reuse unchanged labels for the next administration.",
+    })
+    return pd.DataFrame(rows)
+
+
 def mfrm_estimate(
     data,
     person_col,
@@ -5759,6 +5999,7 @@ def mfrm_estimate(
     result["likelihood_information"] = build_likelihood_information_criteria(result)
     result["anchor_drift"] = build_anchor_drift_review(result)
     result["equating_chain"] = build_equating_chain_summary(result)
+    result["anchor_equating_workflow"] = build_anchor_equating_workflow_plan(result)
     config["anchor_drift_scope"] = result["anchor_drift"].get("scope")
     config["equating_chain_scope"] = result["equating_chain"].get("scope")
     return result
@@ -6602,6 +6843,10 @@ def evaluate_design_from_fitted(res, diagnostics=None, forecast_multipliers=(1.5
             "reason": "No fitted design data are available.",
             "overview": pd.DataFrame(),
             "facet_counts": pd.DataFrame(),
+            "sample_size_adequacy": pd.DataFrame(),
+            "sample_size_summary": pd.DataFrame(),
+            "nesting_audit": pd.DataFrame(),
+            "design_effect": pd.DataFrame(),
             "summary": pd.DataFrame(),
             "forecast": pd.DataFrame(),
         }
@@ -6613,6 +6858,7 @@ def evaluate_design_from_fitted(res, diagnostics=None, forecast_multipliers=(1.5
 
     count_rows = []
     summary_rows = []
+    dummy_facets = config.get("dummy_facets", []) or []
     for facet in facets:
         counts = data.groupby(facet, observed=False).size().astype(float)
         levels = int(len(counts))
@@ -6684,11 +6930,25 @@ def evaluate_design_from_fitted(res, diagnostics=None, forecast_multipliers=(1.5
                 "Assumption": "Spearman-Brown style forecast; assumes added ratings behave like current ratings.",
             })
 
+    sample_audit = build_facet_sample_size_audit(
+        data,
+        facets,
+        weight_col="Weight",
+        dummy_facets=dummy_facets,
+    )
+    sample_summary = summarize_facet_sample_size_audit(sample_audit)
+    nesting_audit = build_facet_nesting_audit(data, facets, weight_col="Weight")
+    design_effect = compute_intraclass_design_effect(data, facets, score_col="Score")
+
     return {
         "available": True,
         "reason": "Design evaluation from fitted reliability and observed design balance.",
         "overview": overview,
         "facet_counts": pd.DataFrame(count_rows),
+        "sample_size_adequacy": sample_audit,
+        "sample_size_summary": sample_summary,
+        "nesting_audit": nesting_audit,
+        "design_effect": design_effect,
         "summary": pd.DataFrame(summary_rows),
         "forecast": pd.DataFrame(forecast_rows),
         "interpretation": (
@@ -6892,6 +7152,347 @@ def weighted_mean(x, w):
     if w_sum <= 0:
         return np.nan
     return float(np.sum(x[ok] * w[ok]) / w_sum)
+
+
+FACET_SAMPLE_ADEQUACY_THRESHOLDS = OrderedDict([
+    ("sparse", 10.0),
+    ("marginal", 30.0),
+    ("standard", 50.0),
+])
+
+
+def _facet_sample_category(n_effective: float) -> str:
+    n = float(n_effective) if pd.notna(n_effective) else np.nan
+    if not np.isfinite(n):
+        return "unknown"
+    if n < FACET_SAMPLE_ADEQUACY_THRESHOLDS["sparse"]:
+        return "sparse"
+    if n < FACET_SAMPLE_ADEQUACY_THRESHOLDS["marginal"]:
+        return "marginal"
+    if n < FACET_SAMPLE_ADEQUACY_THRESHOLDS["standard"]:
+        return "standard"
+    return "strong"
+
+
+def _facet_sample_action(category: str, facet: str, *, is_dummy: bool = False) -> str:
+    if is_dummy:
+        return "Structural/dummy facet fixed at zero; do not interpret level differences."
+    if category == "sparse":
+        return f"Collect more observations or merge/review sparse {facet} levels before interpreting fine differences."
+    if category == "marginal":
+        return f"Interpret {facet} level estimates with caution and report the small-N limitation."
+    if category == "standard":
+        return f"{facet} level counts are adequate for routine review; still inspect SE and fit."
+    if category == "strong":
+        return f"{facet} level counts are strong for this descriptive screen."
+    return f"{facet} sample adequacy could not be classified."
+
+
+def build_facet_sample_size_audit(
+    data: pd.DataFrame,
+    facets: list[str],
+    *,
+    weight_col: str = "Weight",
+    dummy_facets: Iterable[str] | None = None,
+) -> pd.DataFrame:
+    """Per-facet level sample adequacy using likelihood-included rows."""
+    if not isinstance(data, pd.DataFrame) or data.empty or not facets:
+        return pd.DataFrame()
+    dummy_set = {str(v) for v in (dummy_facets or [])}
+    rows: list[dict[str, object]] = []
+    has_weight = weight_col in data.columns
+    weights = pd.to_numeric(data.get(weight_col, pd.Series(1.0, index=data.index)), errors="coerce")
+    weights = weights.where(np.isfinite(weights) & (weights > 0), 0.0)
+    for facet in facets:
+        if facet not in data.columns:
+            continue
+        tmp = pd.DataFrame({
+            "Level": data[facet].astype(str),
+            "Weight": weights.to_numpy(dtype=float) if has_weight else np.ones(len(data), dtype=float),
+        })
+        grouped = tmp.groupby("Level", observed=False).agg(
+            RawRows=("Level", "size"),
+            EffectiveWeight=("Weight", "sum"),
+        ).reset_index()
+        for row in grouped.itertuples(index=False):
+            eff = float(getattr(row, "EffectiveWeight", np.nan))
+            category = _facet_sample_category(eff)
+            is_dummy = str(facet) in dummy_set
+            rows.append({
+                "Facet": str(facet),
+                "Level": str(row.Level),
+                "RawRows": int(getattr(row, "RawRows", 0)),
+                "EffectiveWeight": eff,
+                "SampleCategory": "structural" if is_dummy else category,
+                "ThresholdRule": "sparse <10; marginal <30; standard <50; strong >=50",
+                "DummyFacet": bool(is_dummy),
+                "RecommendedAction": _facet_sample_action(category, str(facet), is_dummy=is_dummy),
+            })
+    out = pd.DataFrame(rows)
+    if out.empty:
+        return out
+    order = {"structural": -1, "sparse": 0, "marginal": 1, "standard": 2, "strong": 3, "unknown": 4}
+    out["_order"] = out["SampleCategory"].map(order).fillna(5)
+    out = out.sort_values(["_order", "Facet", "EffectiveWeight", "Level"]).drop(columns=["_order"])
+    return out.reset_index(drop=True)
+
+
+def summarize_facet_sample_size_audit(audit: pd.DataFrame) -> pd.DataFrame:
+    if not isinstance(audit, pd.DataFrame) or audit.empty:
+        return pd.DataFrame()
+    rows = []
+    for facet, df in audit.groupby("Facet", observed=False):
+        categories = df["SampleCategory"].astype(str)
+        non_struct = df.loc[categories != "structural"]
+        source = non_struct if not non_struct.empty else df
+        rows.append({
+            "Facet": str(facet),
+            "Levels": int(len(df)),
+            "SparseLevels": int((categories == "sparse").sum()),
+            "MarginalLevels": int((categories == "marginal").sum()),
+            "StandardLevels": int((categories == "standard").sum()),
+            "StrongLevels": int((categories == "strong").sum()),
+            "WorstCategory": str(source["SampleCategory"].iloc[0]) if not source.empty else "unknown",
+            "MinEffectiveWeight": float(pd.to_numeric(source["EffectiveWeight"], errors="coerce").min()) if not source.empty else np.nan,
+            "RecommendedAction": (
+                "Review sparse levels before publication."
+                if int((categories == "sparse").sum()) else
+                "Report marginal levels with caution."
+                if int((categories == "marginal").sum()) else
+                "No small-sample level flagged by this screen."
+            ),
+        })
+    return pd.DataFrame(rows)
+
+
+def _weighted_entropy(values: pd.Series, weights: pd.Series | None = None) -> float:
+    if values is None:
+        return 0.0
+    if weights is None:
+        weights = pd.Series(1.0, index=values.index)
+    frame = pd.DataFrame({"Value": values.astype(str), "Weight": pd.to_numeric(weights, errors="coerce")})
+    frame["Weight"] = frame["Weight"].where(np.isfinite(frame["Weight"]) & (frame["Weight"] > 0), 0.0)
+    counts = frame.groupby("Value", observed=False)["Weight"].sum().to_numpy(dtype=float)
+    total = float(np.nansum(counts))
+    if total <= 0:
+        return 0.0
+    p = counts[counts > 0] / total
+    return float(-np.sum(p * np.log(p)))
+
+
+def build_facet_nesting_audit(
+    data: pd.DataFrame,
+    facets: list[str],
+    *,
+    weight_col: str = "Weight",
+) -> pd.DataFrame:
+    """Ordered conditional-entropy nesting/crossing screen for facets."""
+    if not isinstance(data, pd.DataFrame) or data.empty:
+        return pd.DataFrame()
+    available = [str(f) for f in facets if str(f) in data.columns]
+    if len(available) < 2:
+        return pd.DataFrame()
+    w = pd.to_numeric(data.get(weight_col, pd.Series(1.0, index=data.index)), errors="coerce")
+    w = w.where(np.isfinite(w) & (w > 0), 0.0)
+    rows: list[dict[str, object]] = []
+    for facet_a in available:
+        for facet_b in available:
+            if facet_a == facet_b:
+                continue
+            frame = pd.DataFrame({
+                "A": data[facet_a].astype(str),
+                "B": data[facet_b].astype(str),
+                "Weight": w,
+            })
+            total_w = float(frame["Weight"].sum())
+            h_b = _weighted_entropy(frame["B"], frame["Weight"])
+            h_cond = 0.0
+            unique_b_per_a = []
+            dominance = []
+            for _, sub in frame.groupby("A", observed=False):
+                sub_w = float(sub["Weight"].sum())
+                if sub_w <= 0 or total_w <= 0:
+                    continue
+                h_cond += (sub_w / total_w) * _weighted_entropy(sub["B"], sub["Weight"])
+                counts = sub.groupby("B", observed=False)["Weight"].sum()
+                unique_b_per_a.append(int((counts > 0).sum()))
+                dominance.append(float(counts.max() / counts.sum()) if counts.sum() > 0 else np.nan)
+            index = 1.0 - (h_cond / h_b) if h_b > 0 else np.nan
+            if np.isfinite(index) and index >= 0.999:
+                classification = "Fully nested / deterministic"
+            elif np.isfinite(index) and index >= 0.95:
+                classification = "Near-perfectly nested"
+            elif np.isfinite(index) and index >= 0.50:
+                classification = "Partially nested"
+            elif np.isfinite(index):
+                classification = "Crossed"
+            else:
+                classification = "Degenerate"
+            rows.append({
+                "FacetA": facet_a,
+                "FacetB": facet_b,
+                "Interpretation": f"{facet_b} predictable from {facet_a}",
+                "NestingIndex": index,
+                "EntropyB": h_b,
+                "ConditionalEntropyBGivenA": h_cond,
+                "MedianUniqueBPerA": float(np.nanmedian(unique_b_per_a)) if unique_b_per_a else np.nan,
+                "MaxUniqueBPerA": int(np.nanmax(unique_b_per_a)) if unique_b_per_a else 0,
+                "MeanDominanceShare": float(np.nanmean(dominance)) if dominance else np.nan,
+                "Classification": classification,
+            })
+    out = pd.DataFrame(rows)
+    if out.empty:
+        return out
+    return out.sort_values(["NestingIndex", "FacetA", "FacetB"], ascending=[False, True, True]).reset_index(drop=True)
+
+
+def compute_intraclass_design_effect(
+    data: pd.DataFrame,
+    facets: list[str],
+    *,
+    score_col: str = "Score",
+) -> pd.DataFrame:
+    """ANOVA-style cluster ICC and design effect by facet."""
+    if not isinstance(data, pd.DataFrame) or data.empty or score_col not in data.columns:
+        return pd.DataFrame()
+    score = pd.to_numeric(data[score_col], errors="coerce")
+    rows: list[dict[str, object]] = []
+    for facet in facets:
+        if facet not in data.columns:
+            continue
+        frame = pd.DataFrame({"Level": data[facet].astype(str), "Score": score}).dropna(subset=["Score"])
+        if frame.empty:
+            continue
+        grouped = frame.groupby("Level", observed=False)["Score"]
+        means = grouped.mean()
+        ns = grouped.size().astype(float)
+        k = int(len(ns))
+        n = float(ns.sum())
+        if k < 2 or n <= k:
+            icc = np.nan
+            ms_between = np.nan
+            ms_within = np.nan
+            n_bar = np.nan
+        else:
+            grand = float(frame["Score"].mean())
+            ss_between = float(np.sum(ns * (means - grand) ** 2))
+            ss_within = float(grouped.apply(lambda s: np.sum((s - s.mean()) ** 2)).sum())
+            ms_between = ss_between / (k - 1)
+            ms_within = ss_within / (n - k)
+            n_bar = (n - float(np.sum(ns ** 2)) / n) / (k - 1) if k > 1 and n > 0 else np.nan
+            denom = ms_between + (n_bar - 1.0) * ms_within
+            icc = (ms_between - ms_within) / denom if np.isfinite(denom) and denom > 0 else np.nan
+        icc_for_deff = max(float(icc), 0.0) if np.isfinite(icc) else np.nan
+        mean_cluster = float(ns.mean()) if k else np.nan
+        deff = 1.0 + (mean_cluster - 1.0) * icc_for_deff if np.isfinite(icc_for_deff) and np.isfinite(mean_cluster) else np.nan
+        eff_n = n / deff if np.isfinite(deff) and deff > 0 else np.nan
+        rows.append({
+            "Facet": str(facet),
+            "Levels": k,
+            "Rows": int(n),
+            "MeanClusterSize": mean_cluster,
+            "IntraclassCorrelationClusterICC": icc,
+            "DesignEffect": deff,
+            "EffectiveN": eff_n,
+            "MSBetween": ms_between,
+            "MSWithin": ms_within,
+            "Method": "one-way ANOVA descriptive screen on observed scores",
+            "Caution": "Cluster ICC here is not an item-characteristic curve and not a random-effects MFRM estimate.",
+        })
+    return pd.DataFrame(rows)
+
+
+def compute_empirical_bayes_shrinkage(
+    measures: pd.DataFrame,
+    *,
+    min_levels: int = 3,
+    shrink_person: bool = False,
+    facet_prior_sd: float | None = None,
+) -> dict:
+    """Post-hoc James-Stein / empirical-Bayes shrinkage for facet measures."""
+    empty = {
+        "available": False,
+        "reason": "Measure table is unavailable.",
+        "measures": pd.DataFrame(),
+        "report": pd.DataFrame(),
+    }
+    required = {"Facet", "Level", "Estimate", "SE"}
+    if not isinstance(measures, pd.DataFrame) or measures.empty or not required.issubset(measures.columns):
+        return empty
+    rows: list[pd.DataFrame] = []
+    report_rows: list[dict[str, object]] = []
+    for facet, df in measures.groupby("Facet", observed=False):
+        if str(facet) == "Person" and not shrink_person:
+            continue
+        sub = df.copy()
+        sub["Estimate"] = pd.to_numeric(sub["Estimate"], errors="coerce")
+        sub["SE"] = pd.to_numeric(sub["SE"], errors="coerce")
+        valid = sub["Estimate"].notna() & sub["SE"].notna() & np.isfinite(sub["SE"]) & (sub["SE"] > 0)
+        k_valid = int(valid.sum())
+        sub["ShrinkageTau2"] = np.nan
+        sub["ShrinkageFactor"] = 0.0
+        sub["ShrunkEstimate"] = sub["Estimate"]
+        sub["ShrunkSE"] = sub["SE"]
+        sub["ShrinkageStatus"] = "not enough valid levels" if k_valid < int(min_levels) else "not shrunk"
+        if k_valid >= int(min_levels):
+            est = sub.loc[valid, "Estimate"].to_numpy(dtype=float)
+            se = sub.loc[valid, "SE"].to_numpy(dtype=float)
+            if facet_prior_sd is not None and np.isfinite(float(facet_prior_sd)) and float(facet_prior_sd) > 0:
+                tau2 = float(facet_prior_sd) ** 2
+                tau_source = "user-specified prior SD"
+            else:
+                tau2 = max(0.0, float(np.mean(est ** 2) - np.mean(se ** 2)))
+                tau_source = "method-of-moments EB"
+            denom = tau2 + se ** 2
+            b = np.where(denom > 0, se ** 2 / denom, 1.0)
+            b = np.clip(b, 0.0, 1.0)
+            shrunk = (1.0 - b) * est
+            shrunk_se = np.sqrt(np.maximum((1.0 - b) * se ** 2, 0.0))
+            sub.loc[valid, "ShrinkageTau2"] = tau2
+            sub.loc[valid, "ShrinkageFactor"] = b
+            sub.loc[valid, "ShrunkEstimate"] = shrunk
+            sub.loc[valid, "ShrunkSE"] = shrunk_se
+            sub.loc[valid, "ShrinkageStatus"] = "shrunk"
+            report_rows.append({
+                "Facet": str(facet),
+                "ValidLevels": k_valid,
+                "Tau2": tau2,
+                "TauSource": tau_source,
+                "MeanShrinkageFactor": float(np.mean(b)),
+                "MaxShrinkageFactor": float(np.max(b)),
+                "EffectiveDF": float(np.sum(1.0 - b)),
+                "Caution": (
+                    "Posterior SE treats tau2 as known; raw estimates remain the primary fitted estimates. "
+                    "This is post-hoc shrinkage, not a random-effects model."
+                ),
+            })
+        else:
+            report_rows.append({
+                "Facet": str(facet),
+                "ValidLevels": k_valid,
+                "Tau2": np.nan,
+                "TauSource": "not estimated",
+                "MeanShrinkageFactor": np.nan,
+                "MaxShrinkageFactor": np.nan,
+                "EffectiveDF": np.nan,
+                "Caution": f"At least {int(min_levels)} valid levels with positive SE are required.",
+            })
+        rows.append(sub)
+    if not rows:
+        return {
+            "available": False,
+            "reason": "No non-person facet measures with usable SE were available.",
+            "measures": pd.DataFrame(),
+            "report": pd.DataFrame(report_rows),
+        }
+    out = pd.concat(rows, ignore_index=True)
+    out["ShrinkageDelta"] = pd.to_numeric(out["ShrunkEstimate"], errors="coerce") - pd.to_numeric(out["Estimate"], errors="coerce")
+    return {
+        "available": True,
+        "reason": "Post-hoc empirical-Bayes shrinkage computed for non-person facet measures.",
+        "measures": out,
+        "report": pd.DataFrame(report_rows),
+    }
 
 
 
@@ -7382,6 +7983,175 @@ def calc_bias_pairwise(bias_tbl, target_facet, context_facet):
             })
 
     return pd.DataFrame(rows)
+
+
+def adjust_p_values(p_values, method: str = "holm") -> np.ndarray:
+    """Multiplicity adjustment for bias/DFF screening without extra dependencies."""
+    p = np.asarray(p_values, dtype=float)
+    out = np.full(p.shape, np.nan, dtype=float)
+    ok = np.isfinite(p)
+    if not np.any(ok):
+        return out
+    vals = np.clip(p[ok], 0.0, 1.0)
+    order = np.argsort(vals)
+    sorted_p = vals[order]
+    m = len(sorted_p)
+    method_l = str(method).lower()
+    if method_l in {"bh", "fdr", "benjamini-hochberg", "benjamini_hochberg"}:
+        ranks = np.arange(1, m + 1, dtype=float)
+        adjusted_sorted = sorted_p * m / ranks
+        adjusted_sorted = np.minimum.accumulate(adjusted_sorted[::-1])[::-1]
+    elif method_l in {"holm", "holm-bonferroni", "holm_bonferroni"}:
+        adjusted_sorted = sorted_p * (m - np.arange(m, dtype=float))
+        adjusted_sorted = np.maximum.accumulate(adjusted_sorted)
+    else:
+        adjusted_sorted = sorted_p
+    adjusted_sorted = np.clip(adjusted_sorted, 0.0, 1.0)
+    adjusted = np.empty(m, dtype=float)
+    adjusted[order] = adjusted_sorted
+    out[np.where(ok)[0]] = adjusted
+    return out
+
+
+def build_dff_bias_screening_table(
+    bias_results: dict | pd.DataFrame | None,
+    *,
+    alpha: float = 0.05,
+    min_n: int = 5,
+    practical_logit: float = 0.50,
+) -> pd.DataFrame:
+    """Create a DFF/bias screening table with multiplicity and sparse-cell flags."""
+    if isinstance(bias_results, pd.DataFrame):
+        tbl = bias_results.copy()
+    elif isinstance(bias_results, dict):
+        tbl = bias_results.get("table", pd.DataFrame()).copy()
+    else:
+        tbl = pd.DataFrame()
+    if tbl.empty or "Bias Size" not in tbl.columns:
+        return pd.DataFrame(columns=[
+            "FacetPair", "FacetA", "FacetA_Level", "FacetB", "FacetB_Level",
+            "ObsN", "BiasSize", "SE", "t", "p", "p_holm", "p_bh",
+            "AbsBias", "Direction", "EvidenceLevel", "Flag", "Interpretation", "NextAction",
+        ])
+    tbl = tbl.reset_index(drop=True)
+
+    def col_series(name: str, default=np.nan) -> pd.Series:
+        if name in tbl.columns:
+            return tbl[name]
+        return pd.Series([default] * len(tbl))
+
+    p_vals = pd.to_numeric(col_series("Prob."), errors="coerce").to_numpy(dtype=float)
+    bias_vals = pd.to_numeric(col_series("Bias Size"), errors="coerce")
+    se_vals = pd.to_numeric(col_series("S.E."), errors="coerce")
+    t_vals = pd.to_numeric(col_series("t"), errors="coerce")
+    obs_source = tbl["ObsN"] if "ObsN" in tbl.columns else col_series("Observd Count")
+    obs_n = pd.to_numeric(obs_source, errors="coerce")
+    out = pd.DataFrame({
+        "FacetPair": col_series("FacetA", "FacetA").astype(str)
+        + " x "
+        + col_series("FacetB", "FacetB").astype(str),
+        "FacetA": col_series("FacetA", "").astype(str),
+        "FacetA_Level": col_series("FacetA_Level", "").astype(str),
+        "FacetB": col_series("FacetB", "").astype(str),
+        "FacetB_Level": col_series("FacetB_Level", "").astype(str),
+        "ObsN": obs_n,
+        "BiasSize": bias_vals,
+        "SE": se_vals,
+        "t": t_vals,
+        "p": p_vals,
+        "p_holm": adjust_p_values(p_vals, "holm"),
+        "p_bh": adjust_p_values(p_vals, "bh"),
+    })
+    out["AbsBias"] = out["BiasSize"].abs()
+    out["Direction"] = np.select(
+        [out["BiasSize"] > 0, out["BiasSize"] < 0],
+        ["Observed higher than expected", "Observed lower than expected"],
+        default="No signed departure",
+    )
+
+    sparse = pd.to_numeric(out["ObsN"], errors="coerce").fillna(0) < int(min_n)
+    stat_holm = pd.to_numeric(out["p_holm"], errors="coerce") < float(alpha)
+    stat_bh_t = (
+        (pd.to_numeric(out["p_bh"], errors="coerce") < float(alpha))
+        & (pd.to_numeric(out["t"], errors="coerce").abs() >= 2.0)
+    )
+    practical = pd.to_numeric(out["AbsBias"], errors="coerce") >= float(practical_logit)
+    levels = np.select(
+        [
+            sparse,
+            stat_holm & practical,
+            stat_holm | stat_bh_t,
+            practical,
+        ],
+        [
+            "Sparse cell",
+            "Strong review",
+            "Statistical review",
+            "Practical review",
+        ],
+        default="No flag",
+    )
+    out["EvidenceLevel"] = levels
+    out["Flag"] = out["EvidenceLevel"].ne("No flag")
+    out["Interpretation"] = np.select(
+        [
+            out["EvidenceLevel"].eq("Sparse cell"),
+            out["EvidenceLevel"].eq("Strong review"),
+            out["EvidenceLevel"].eq("Statistical review"),
+            out["EvidenceLevel"].eq("Practical review"),
+        ],
+        [
+            "Too few observations for a stable DFF/bias claim.",
+            "Cell is statistically flagged after Holm correction and practically large.",
+            "Cell is statistically flagged after multiplicity screening.",
+            "Cell is practically large but not multiplicity-adjusted significant.",
+        ],
+        default="No clear DFF/bias signal under the current screening thresholds.",
+    )
+    out["NextAction"] = np.select(
+        [
+            out["EvidenceLevel"].eq("Sparse cell"),
+            out["EvidenceLevel"].eq("Strong review"),
+            out["EvidenceLevel"].eq("Statistical review"),
+            out["EvidenceLevel"].eq("Practical review"),
+        ],
+        [
+            "Add observations or combine substantively defensible levels before interpreting.",
+            "Review scoring rubrics, rater notes, content match, and rerun sensitivity checks.",
+            "Inspect heatmap pattern and corroborate with fit, residual, and substantive evidence.",
+            "Decide whether this logit departure is substantively meaningful for the use case.",
+        ],
+        default="No special action beyond routine review.",
+    )
+    return out.sort_values(["Flag", "AbsBias"], ascending=[False, False]).reset_index(drop=True)
+
+
+def summarize_dff_bias_screening(dff_tbl: pd.DataFrame) -> pd.DataFrame:
+    """Compact counts for the DFF/bias screening panel and exports."""
+    if dff_tbl is None or dff_tbl.empty:
+        return pd.DataFrame(columns=["Metric", "Value", "Interpretation"])
+    levels = dff_tbl["EvidenceLevel"].astype(str) if "EvidenceLevel" in dff_tbl.columns else pd.Series(dtype=str)
+    abs_bias = pd.to_numeric(dff_tbl.get("AbsBias", pd.Series(dtype=float)), errors="coerce")
+    p_holm = pd.to_numeric(dff_tbl.get("p_holm", pd.Series(dtype=float)), errors="coerce")
+    p_bh = pd.to_numeric(dff_tbl.get("p_bh", pd.Series(dtype=float)), errors="coerce")
+    flagged = dff_tbl[dff_tbl.get("Flag", pd.Series([False] * len(dff_tbl))).astype(bool)]
+    strongest = "none"
+    if len(flagged) and "FacetA_Level" in flagged.columns and "FacetB_Level" in flagged.columns:
+        row = flagged.iloc[0]
+        strongest = (
+            f"{row.get('FacetA', 'FacetA')}={row.get('FacetA_Level', '')} x "
+            f"{row.get('FacetB', 'FacetB')}={row.get('FacetB_Level', '')}"
+        )
+    return pd.DataFrame([
+        {"Metric": "Cells screened", "Value": int(len(dff_tbl)), "Interpretation": "Facet-level combinations in this pair."},
+        {"Metric": "Flagged cells", "Value": int(len(flagged)), "Interpretation": "Sparse, statistical, or practical review prompts."},
+        {"Metric": "Strong review", "Value": int((levels == "Strong review").sum()), "Interpretation": "Holm-adjusted and practically large cells."},
+        {"Metric": "Holm p < .05", "Value": int((p_holm < 0.05).sum()), "Interpretation": "Familywise-error adjusted statistical flags."},
+        {"Metric": "BH q < .05", "Value": int((p_bh < 0.05).sum()), "Interpretation": "False-discovery-rate adjusted statistical flags."},
+        {"Metric": "Sparse cells", "Value": int((levels == "Sparse cell").sum()), "Interpretation": "Cells below the minimum observation threshold."},
+        {"Metric": "Max |bias|", "Value": float(abs_bias.max()) if len(abs_bias.dropna()) else np.nan, "Interpretation": "Largest absolute logit departure."},
+        {"Metric": "Strongest flagged cell", "Value": strongest, "Interpretation": "First flagged row after sorting by |bias|."},
+    ])
 
 
 def safe_cor(x, y, w=None):
@@ -8698,6 +9468,7 @@ def mfrm_diagnostics(
     compute_marginal=False,
     marginal_pairwise=False,
     marginal_max_pair_cells=400,
+    compute_eb_shrinkage=False,
 ):
     obs_df = compute_obs_table(res)
     facet_cols = ["Person"] + res["config"]["facet_names"]
@@ -8794,6 +9565,16 @@ def mfrm_diagnostics(
                 "pairwise": {"available": False, "reason": f"Strict marginal diagnostics failed: {marg_exc}", "summary": pd.DataFrame(), "counts": pd.DataFrame()},
             }
 
+    if compute_eb_shrinkage:
+        shrinkage = compute_empirical_bayes_shrinkage(measures)
+    else:
+        shrinkage = {
+            "available": False,
+            "reason": "Empirical-Bayes shrinkage was not requested for this run.",
+            "measures": pd.DataFrame(),
+            "report": pd.DataFrame(),
+        }
+
     return {
         "obs": obs_df,
         "overall_fit": overall_fit,
@@ -8809,6 +9590,8 @@ def mfrm_diagnostics(
         "pca_enabled": bool(compute_pca),
         "marginal_fit": marginal_fit,
         "marginal_fit_enabled": bool(compute_marginal),
+        "eb_shrinkage": shrinkage,
+        "eb_shrinkage_enabled": bool(compute_eb_shrinkage),
     }
 
 
@@ -8825,6 +9608,20 @@ TABLE_DELIMITER_OPTIONS = {
     "Tab": "\t",
     "Semicolon (;)": ";",
 }
+
+TABLE_FILE_UPLOAD_TYPES = ["csv", "tsv", "txt", "xlsx", "xlsm", "parquet", "json"]
+TABLE_FILE_UPLOAD_LABEL = "CSV, TSV, TXT, Excel (.xlsx/.xlsm), Parquet, or JSON"
+
+
+TEACHER_PASTE_EXAMPLE_CSV = """Student,Rater,Assignment,Criterion,Score
+S01,TeacherA,Essay1,Content,4
+S01,TeacherA,Essay1,Organization,3
+S01,TeacherB,Essay1,Content,5
+S02,TeacherA,Essay1,Content,2
+S02,TeacherB,Essay1,Organization,3"""
+
+
+TEACHER_PASTE_EXAMPLE_TSV = TEACHER_PASTE_EXAMPLE_CSV.replace(",", "\t")
 
 
 def infer_table_delimiter(text_value: str | bytes | None, file_name: str | None = None) -> str:
@@ -8864,6 +9661,26 @@ def resolve_table_delimiter(delimiter: str | None, text_value=None, file_name: s
     return infer_table_delimiter(text_value, file_name=file_name)
 
 
+def _normalize_loaded_table(df: pd.DataFrame) -> pd.DataFrame:
+    """Return a DataFrame with stable string column names after file parsing."""
+    if df is None:
+        return pd.DataFrame()
+    out = df.copy()
+    out.columns = [str(c) for c in out.columns]
+    return out
+
+
+def _read_json_table_bytes(raw: bytes) -> pd.DataFrame:
+    """Read ordinary JSON records or JSON-lines as a tabular input file."""
+    text = normalize_csv_newlines(raw).decode("utf-8-sig", errors="replace").strip()
+    if not text:
+        return pd.DataFrame()
+    try:
+        return pd.read_json(io.StringIO(text))
+    except ValueError:
+        return pd.read_json(io.StringIO(text), lines=True)
+
+
 def read_flexible_table(text_value, file_input, header=True, delimiter: str | None = None):
     if file_input is not None:
         name = file_input.name.lower()
@@ -8875,18 +9692,31 @@ def read_flexible_table(text_value, file_input, header=True, delimiter: str | No
                 file_input.seek(0)
             except Exception:
                 pass
-        if isinstance(raw, str):
-            raw = normalize_csv_newlines(raw)
-            sep = resolve_table_delimiter(delimiter, raw, file_name=name)
-            return pd.read_csv(io.StringIO(raw), sep=sep, header=0 if header else None, dtype=str)
-        raw = normalize_csv_newlines(bytes(raw))
-        sep = resolve_table_delimiter(delimiter, raw, file_name=name)
-        return pd.read_csv(io.BytesIO(raw), sep=sep, header=0 if header else None, dtype=str)
+        raw_bytes = raw.encode("utf-8") if isinstance(raw, str) else bytes(raw)
+        suffix = Path(name).suffix.lower()
+        if suffix in {".xlsx", ".xlsm"}:
+            return _normalize_loaded_table(pd.read_excel(
+                io.BytesIO(raw_bytes),
+                sheet_name=0,
+                header=0 if header else None,
+                dtype=str,
+                engine="openpyxl",
+            ))
+        if suffix == ".parquet":
+            return _normalize_loaded_table(pd.read_parquet(io.BytesIO(raw_bytes)))
+        if suffix == ".json":
+            return _normalize_loaded_table(_read_json_table_bytes(raw_bytes))
+        raw_norm = normalize_csv_newlines(raw if isinstance(raw, str) else raw_bytes)
+        if isinstance(raw_norm, str):
+            sep = resolve_table_delimiter(delimiter, raw_norm, file_name=name)
+            return _normalize_loaded_table(pd.read_csv(io.StringIO(raw_norm), sep=sep, header=0 if header else None, dtype=str))
+        sep = resolve_table_delimiter(delimiter, raw_norm, file_name=name)
+        return _normalize_loaded_table(pd.read_csv(io.BytesIO(raw_norm), sep=sep, header=0 if header else None, dtype=str))
     if text_value is None or not str(text_value).strip():
         return pd.DataFrame()
     text_value = normalize_csv_newlines(str(text_value)).strip()
     sep = resolve_table_delimiter(delimiter, text_value)
-    return pd.read_csv(io.StringIO(text_value), sep=sep, header=0 if header else None, dtype=str)
+    return _normalize_loaded_table(pd.read_csv(io.StringIO(text_value), sep=sep, header=0 if header else None, dtype=str))
 
 
 
@@ -8934,6 +9764,8 @@ def load_core_namespace() -> dict:
         "calc_subsets",
         "estimate_bias_interaction",
         "calc_bias_pairwise",
+        "build_dff_bias_screening_table",
+        "summarize_dff_bias_screening",
         "calc_category_stats",
         "calc_step_order",
         "category_warnings_text",
@@ -9654,8 +10486,8 @@ def read_input_data(core: dict) -> pd.DataFrame:
             "kind": "scenario",
             "scenario_key": key,
         })
-    _options.append({"label": "📋 Paste CSV/TSV text",  "kind": "paste",  "scenario_key": None})
-    _options.append({"label": "📤 Upload your own file", "kind": "upload", "scenario_key": None})
+        _options.append({"label": "📋 Paste CSV/TSV text",  "kind": "paste",  "scenario_key": None})
+        _options.append({"label": "📤 Upload your own file", "kind": "upload", "scenario_key": None})
     _option_labels = [opt["label"] for opt in _options]
 
     # Default to the writing-essay scenario so existing onboarding
@@ -9777,9 +10609,32 @@ def read_input_data(core: dict) -> pd.DataFrame:
         text_value = st.sidebar.text_area(
             "Paste CSV/TSV text",
             height=180,
-            placeholder="Person,Rater,Task,Criterion,Score\nP1,R1,T1,C1,3",
-            help="Paste data in CSV, TSV, or semicolon-delimited format. First row should be column headers.",
+            placeholder=TEACHER_PASTE_EXAMPLE_CSV,
+            help=(
+                "Paste data copied from Excel, Google Sheets, CSV, TSV, or semicolon-delimited text. "
+                "Keep one header row. Each row should be one rating event."
+            ),
         )
+        with st.sidebar.expander("Teacher paste guide", expanded=not bool(text_value.strip())):
+            st.markdown(
+                """
+1. In your spreadsheet, keep one row per rating.
+2. Include a header row such as `Student`, `Rater`, `Assignment`, `Criterion`, `Score`.
+3. Select the table, copy it, and paste it here.
+4. After the preview appears, map `Student` to **Person**, `Score` to **Score**, and the other columns to facets.
+
+Do not paste total scores if rubric-level ratings are available. Blank scores are treated as missing and are excluded from the likelihood.
+"""
+            )
+            st.code(TEACHER_PASTE_EXAMPLE_CSV, language="csv")
+            st.download_button(
+                "Download teacher paste template (CSV)",
+                data=TEACHER_PASTE_EXAMPLE_CSV.encode("utf-8"),
+                file_name="mfrm_teacher_paste_template.csv",
+                mime="text/csv",
+                key="teacher_paste_template_download",
+                use_container_width=True,
+            )
         if not text_value.strip():
             return pd.DataFrame()
         try:
@@ -9810,10 +10665,10 @@ def read_input_data(core: dict) -> pd.DataFrame:
         help="Auto detects comma, tab, or semicolon from the uploaded file content.",
     )
     upload = st.sidebar.file_uploader(
-        "Upload data file", type=["csv", "tsv", "txt"],
+        "Upload data file", type=TABLE_FILE_UPLOAD_TYPES,
         help=(
-            "Upload a CSV, TSV, or TXT file. Data must be in long format "
-            "(one row per observation). Files over ~50 MB may exceed the "
+            f"Upload {TABLE_FILE_UPLOAD_LABEL}. Data must be in long format "
+            "(one row per observation). Excel uses the first worksheet. Files over ~50 MB may exceed the "
             "Streamlit Community Cloud memory budget."
         ),
     )
@@ -9845,7 +10700,7 @@ def read_input_data(core: dict) -> pd.DataFrame:
     except Exception as exc:
         st.sidebar.error(
             "We couldn't read this file as a table. Try choosing a delimiter above, "
-            "saving as comma CSV, or uploading a TSV file."
+            "saving as comma CSV, or uploading an .xlsx file with one header row."
         )
         with st.sidebar.expander("Technical parse details", expanded=False):
             st.exception(exc)
@@ -10119,6 +10974,14 @@ def build_result_bundle_frames(
         fit = diagnostics.get("fit")
         if isinstance(fit, pd.DataFrame) and not fit.empty:
             frames["fit"] = fit
+        shrinkage = diagnostics.get("eb_shrinkage")
+        if isinstance(shrinkage, dict) and shrinkage.get("available"):
+            shr_report = shrinkage.get("report", pd.DataFrame())
+            shr_measures = shrinkage.get("measures", pd.DataFrame())
+            if isinstance(shr_report, pd.DataFrame) and not shr_report.empty:
+                frames["eb_shrinkage_report"] = shr_report
+            if isinstance(shr_measures, pd.DataFrame) and not shr_measures.empty:
+                frames["eb_shrinkage_measures"] = shr_measures
         pca = diagnostics.get("pca")
         if isinstance(pca, dict):
             eigen = pca.get("eigenvalues")
@@ -10142,6 +11005,29 @@ def build_result_bundle_frames(
     steps_df = result.get("steps")
     if isinstance(steps_df, pd.DataFrame) and not steps_df.empty:
         frames["step_thresholds"] = steps_df
+    weight_audit = build_weighting_policy_audit(result)
+    if isinstance(weight_audit, pd.DataFrame) and not weight_audit.empty:
+        frames["weighting_policy_audit"] = weight_audit
+    try:
+        design_bundle = evaluate_design_from_fitted(result, diagnostics, forecast_multipliers=(2.0,))
+        if isinstance(design_bundle, dict) and design_bundle.get("available"):
+            for key, frame_name in (
+                ("sample_size_summary", "facet_sample_size_summary"),
+                ("sample_size_adequacy", "facet_sample_size_adequacy"),
+                ("nesting_audit", "facet_nesting_audit"),
+                ("design_effect", "intraclass_icc_design_effect"),
+            ):
+                frame = design_bundle.get(key, pd.DataFrame())
+                if isinstance(frame, pd.DataFrame) and not frame.empty:
+                    frames[frame_name] = frame
+    except Exception:
+        pass
+    try:
+        casebook = build_misfit_casebook(result, diagnostics, all_bias_results or {})
+        if isinstance(casebook, pd.DataFrame) and not casebook.empty:
+            frames["misfit_casebook"] = casebook
+    except Exception:
+        pass
     # Bias tables — prefer the all-pair dict when available.
     if isinstance(all_bias_results, dict) and all_bias_results:
         for pair_label, pair_res in all_bias_results.items():
@@ -10153,12 +11039,18 @@ def build_result_bundle_frames(
             if isinstance(tbl, pd.DataFrame) and not tbl.empty:
                 safe_pair = re.sub(r"[^A-Za-z0-9]+", "_", str(pair_label)).strip("_")
                 frames[f"bias_{safe_pair}"] = tbl
+                dff_tbl = build_dff_bias_screening_table(pair_res)
+                if isinstance(dff_tbl, pd.DataFrame) and not dff_tbl.empty:
+                    frames[f"dff_bias_{safe_pair}"] = dff_tbl
     elif isinstance(bias_results, dict) and bias_results:
         tbl = bias_results.get("table")
         if not isinstance(tbl, pd.DataFrame) or tbl.empty:
             tbl = bias_results.get("bias_tbl")
         if isinstance(tbl, pd.DataFrame) and not tbl.empty:
             frames["bias"] = tbl
+            dff_tbl = build_dff_bias_screening_table(bias_results)
+            if isinstance(dff_tbl, pd.DataFrame) and not dff_tbl.empty:
+                frames["dff_bias_screening"] = dff_tbl
     return frames
 
 
@@ -10595,12 +11487,12 @@ def _show_top_level_warnings(
                 st.warning(msg)
 
 
-def _show_first_read_guide(
+def build_first_read_guide_rows(
     result: dict,
     diagnostics: dict,
     all_bias_results: dict | None = None,
-) -> None:
-    """Beginner-facing first-read checklist for interpreting the result."""
+) -> list[dict[str, str]]:
+    """Build the beginner-facing first-read checklist rows."""
     rows: list[dict[str, str]] = []
 
     opt = result.get("opt")
@@ -10792,12 +11684,74 @@ def _show_first_read_guide(
                 "Next action": "Use MML and enable strict marginal diagnostics for this screen.",
             })
 
-    with st.expander("What should I look at first?", expanded=not converged):
-        st.caption(
-            "Read results in this order. Stop early if a row says 'Do not interpret yet' "
-            "or 'Caution' and resolve that issue before writing final conclusions."
-        )
-        st.dataframe(pd.DataFrame(rows), width="stretch", hide_index=True)
+    return rows
+
+
+def first_read_guide_should_expand(rows: list[dict[str, str]]) -> bool:
+    """Open the first-read guide automatically for blocking or caution states."""
+    return any(str(row.get("Status", "")) in {"Do not interpret yet", "Caution"} for row in rows)
+
+
+def _first_read_tab_hint(check: str) -> str:
+    check_text = str(check)
+    if "Convergence" in check_text:
+        return "Report"
+    if "GPCM" in check_text or "slope" in check_text:
+        return "Categories/Steps"
+    if "Global residual" in check_text or "Strict marginal" in check_text:
+        return "Fit Details"
+    if "Reliability" in check_text:
+        return "Report"
+    if "Dimensionality" in check_text:
+        return "Dimensionality"
+    if "Bias" in check_text:
+        return "Bias/Interaction"
+    if "Anchor" in check_text:
+        return "Data"
+    return "Report"
+
+
+def _show_first_read_guide(
+    result: dict,
+    diagnostics: dict,
+    all_bias_results: dict | None = None,
+    *,
+    rows: list[dict[str, str]] | None = None,
+) -> None:
+    """Render the first-read checklist with a single prioritized next stop."""
+    guide_rows = rows if rows is not None else build_first_read_guide_rows(
+        result, diagnostics, all_bias_results
+    )
+    guide_df = pd.DataFrame(guide_rows)
+    if guide_df.empty:
+        st.info("No first-read checks were generated for this run.")
+        return
+
+    priority_order = ["Do not interpret yet", "Caution", "Review", "Skipped"]
+    priority_row = None
+    for status in priority_order:
+        hits = guide_df.loc[guide_df["Status"].astype(str) == status]
+        if not hits.empty:
+            priority_row = hits.iloc[0]
+            break
+
+    if priority_row is None:
+        st.success("First read: no high-priority interpretation blockers were detected.")
+    else:
+        check = str(priority_row.get("Check", "Review result"))
+        status = str(priority_row.get("Status", "Review"))
+        tab_hint = _first_read_tab_hint(check)
+        action = str(priority_row.get("Next action", "Review the flagged row before reporting."))
+        if status in {"Do not interpret yet", "Caution"}:
+            st.warning(f"Start with {tab_hint}: {check} is marked '{status}'. {action}")
+        else:
+            st.info(f"Suggested next stop: {tab_hint}. {check} is marked '{status}'. {action}")
+
+    st.caption(
+        "Read results in this order. Stop early if a row says 'Do not interpret yet' "
+        "or 'Caution' and resolve that issue before writing final conclusions."
+    )
+    st.dataframe(guide_df, width="stretch", hide_index=True)
 
 
 def _show_data_tab_checks(data: pd.DataFrame, score_col: str) -> None:
@@ -11410,6 +12364,7 @@ def resolve_analysis_depth_settings(
             "bias_mode": "Skip",
             "render_interactive_plots": False,
             "generate_figure_exports": False,
+            "compute_eb_shrinkage": False,
         }
     elif analysis_depth == "Full publication":
         settings = {
@@ -11423,6 +12378,7 @@ def resolve_analysis_depth_settings(
             "bias_mode": "All facet pairs",
             "render_interactive_plots": True,
             "generate_figure_exports": True,
+            "compute_eb_shrinkage": True,
         }
     elif analysis_depth == "Custom":
         settings = {
@@ -11436,6 +12392,7 @@ def resolve_analysis_depth_settings(
             "bias_mode": "Selected pair",
             "render_interactive_plots": True,
             "generate_figure_exports": False,
+            "compute_eb_shrinkage": True,
         }
         if custom:
             settings.update(custom)
@@ -11451,6 +12408,7 @@ def resolve_analysis_depth_settings(
             "bias_mode": "Selected pair",
             "render_interactive_plots": True,
             "generate_figure_exports": False,
+            "compute_eb_shrinkage": False,
         }
 
     settings["compute_residual_pca"] = bool(settings.get("compute_residual_pca", True))
@@ -11463,6 +12421,7 @@ def resolve_analysis_depth_settings(
     settings["bias_mode"] = str(settings.get("bias_mode", "Selected pair"))
     settings["render_interactive_plots"] = bool(settings.get("render_interactive_plots", True))
     settings["generate_figure_exports"] = bool(settings.get("generate_figure_exports", False))
+    settings["compute_eb_shrinkage"] = bool(settings.get("compute_eb_shrinkage", False))
 
     if not is_mml:
         settings["compute_strict_marginal"] = False
@@ -11485,6 +12444,7 @@ def analysis_depth_sidebar_summary(settings: dict) -> str:
         ("compute_strict_marginal", "strict marginal"),
         ("strict_marginal_pairwise", "pairwise marginal"),
         ("compute_plausible_values", "plausible values"),
+        ("compute_eb_shrinkage", "EB shrinkage advisory"),
         ("render_interactive_plots", "interactive plots"),
         ("generate_figure_exports", "figure export bundle"),
     ]
@@ -12025,7 +12985,7 @@ def build_readiness_report(
             "checks": [{
                 "name": "data", "severity": "issue",
                 "headline": "No data uploaded",
-                "detail": "Upload a CSV/TSV file or load sample data to run MFRM.",
+                "detail": f"Upload {TABLE_FILE_UPLOAD_LABEL}, paste spreadsheet text, or load sample data to run MFRM.",
             }],
             "n_issues": 1, "n_warnings": 0,
         }
@@ -14271,6 +15231,26 @@ def run_facets_mode(core: dict, data: pd.DataFrame) -> None:
             _advanced_model_key = next((k for k, lbl in opts if lbl == picked_label), None)
 
             meta = advanced_model_metadata(_advanced_model_key or "")
+            template_info = advanced_model_data_template(_advanced_model_key or "")
+            if template_info.get("note"):
+                st.info(template_info["note"])
+            scope_note = advanced_model_scope_notes(_advanced_model_key or "")
+            with st.expander("Model scope and data shape", expanded=False):
+                st.markdown(scope_note)
+                st.caption(
+                    "The template is a human-readable starting point. Convert text labels to 1-based "
+                    "integer arrays before calling cmdstanpy/cmdstanr, matching the generated Stan data block."
+                )
+            template_df = template_info.get("data")
+            if isinstance(template_df, pd.DataFrame) and not template_df.empty:
+                st.download_button(
+                    "Download data template for this Stan model",
+                    data=to_csv_bytes(template_df),
+                    file_name=template_info.get("file_name", "mfrm_advanced_model_template.csv"),
+                    mime="text/csv",
+                    key=f"facets_mode_advanced_template_{_advanced_model_key}",
+                    use_container_width=True,
+                )
             _advanced_q_matrix_df: pd.DataFrame | None = None
             _advanced_n_classes = 2
             if meta.get("needs_q_matrix") == "true":
@@ -14544,8 +15524,9 @@ def run_facets_mode(core: dict, data: pd.DataFrame) -> None:
             )
             population_file = st.file_uploader(
                 "person_data file",
-                type=["csv", "tsv", "txt"],
+                type=TABLE_FILE_UPLOAD_TYPES,
                 key="facets_mode_population_file",
+                help=f"Upload {TABLE_FILE_UPLOAD_LABEL}. Excel uses the first worksheet.",
             )
             population_text = st.text_area(
                 "Or paste person_data",
@@ -14693,8 +15674,9 @@ def run_facets_mode(core: dict, data: pd.DataFrame) -> None:
         )
         anchor_file = st.file_uploader(
             "Anchor table file",
-            type=["csv", "tsv", "txt"],
+            type=TABLE_FILE_UPLOAD_TYPES,
             key="facets_mode_anchor_file",
+            help=f"Upload {TABLE_FILE_UPLOAD_LABEL}. Required columns: Facet, Level, Anchor.",
         )
         anchor_text = st.text_area(
             "Or paste anchor table",
@@ -14711,8 +15693,9 @@ def run_facets_mode(core: dict, data: pd.DataFrame) -> None:
         )
         group_anchor_file = st.file_uploader(
             "Group anchor file",
-            type=["csv", "tsv", "txt"],
+            type=TABLE_FILE_UPLOAD_TYPES,
             key="facets_mode_group_anchor_file",
+            help=f"Upload {TABLE_FILE_UPLOAD_LABEL}. Required columns: Facet, Level, Group, GroupValue.",
         )
         group_anchor_text = st.text_area(
             "Or paste group anchor table",
@@ -14896,6 +15879,14 @@ def run_facets_mode(core: dict, data: pd.DataFrame) -> None:
         else:
             n_plausible_values = 0
             plausible_seed = 20260411
+        compute_eb_shrinkage = st.sidebar.checkbox(
+            "Compute EB shrinkage advisory",
+            value=bool(preset_settings["compute_eb_shrinkage"]),
+            help=(
+                "Post-hoc empirical-Bayes shrinkage table for non-person facet estimates. "
+                "Raw estimates remain unchanged."
+            ),
+        )
         bias_mode = st.sidebar.radio(
             "Bias/interaction estimation",
             ["Skip", "Selected pair", "All facet pairs"],
@@ -14927,6 +15918,7 @@ def run_facets_mode(core: dict, data: pd.DataFrame) -> None:
                 "compute_plausible_values": compute_plausible_values,
                 "n_plausible_values": n_plausible_values,
                 "plausible_seed": plausible_seed,
+                "compute_eb_shrinkage": compute_eb_shrinkage,
                 "bias_mode": bias_mode,
                 "render_interactive_plots": render_interactive_plots,
                 "generate_figure_exports": generate_figure_exports,
@@ -14934,6 +15926,17 @@ def run_facets_mode(core: dict, data: pd.DataFrame) -> None:
         )
     else:
         preset_settings = resolve_analysis_depth_settings(analysis_depth, est_method)
+        if analysis_depth == "Standard (recommended)":
+            preset_settings["compute_eb_shrinkage"] = st.sidebar.checkbox(
+                "Compute EB shrinkage advisory",
+                value=False,
+                help=(
+                    "Optional post-hoc shrinkage review for small non-person facets. "
+                    "Full publication turns this on automatically."
+                ),
+            )
+        elif analysis_depth == "Full publication":
+            st.sidebar.caption("Full publication includes post-hoc EB shrinkage advisory for non-person facets.")
 
     compute_residual_pca = bool(preset_settings["compute_residual_pca"])
     compute_strict_marginal = bool(preset_settings["compute_strict_marginal"])
@@ -14942,6 +15945,7 @@ def run_facets_mode(core: dict, data: pd.DataFrame) -> None:
     compute_plausible_values = bool(preset_settings["compute_plausible_values"])
     n_plausible_values = int(preset_settings["n_plausible_values"])
     plausible_seed = int(preset_settings["plausible_seed"])
+    compute_eb_shrinkage = bool(preset_settings["compute_eb_shrinkage"])
     bias_mode = preset_settings["bias_mode"]
     render_interactive_plots = bool(preset_settings["render_interactive_plots"])
     generate_figure_exports = bool(preset_settings["generate_figure_exports"])
@@ -14970,6 +15974,17 @@ def run_facets_mode(core: dict, data: pd.DataFrame) -> None:
         "after the model and columns are settled."
     )
     st.sidebar.caption(analysis_depth_sidebar_summary(preset_settings))
+    render_sidebar_run_setup_summary(
+        data,
+        person_col=person_col,
+        score_col=score_col,
+        facet_cols=list(facet_cols),
+        weight_col=weight_col,
+        model_type=model_type,
+        est_method=est_method,
+        analysis_depth=analysis_depth,
+        workflow_mode=workflow_mode,
+    )
 
     current_input_data_fingerprint = dataframe_fingerprint(data)
     current_anchor_source_fingerprint = table_source_fingerprint(
@@ -15121,6 +16136,7 @@ def run_facets_mode(core: dict, data: pd.DataFrame) -> None:
                     "compute_strict_marginal": bool(compute_strict_marginal),
                     "strict_marginal_pairwise": bool(strict_marginal_pairwise),
                     "strict_marginal_max_pair_cells": int(strict_marginal_max_pair_cells),
+                    "compute_eb_shrinkage": bool(compute_eb_shrinkage),
                     "compute_plausible_values": bool(compute_plausible_values),
                     "n_plausible_values": int(n_plausible_values),
                     "plausible_seed": int(plausible_seed) if compute_plausible_values else None,
@@ -15156,6 +16172,7 @@ def run_facets_mode(core: dict, data: pd.DataFrame) -> None:
                     compute_marginal=bool(compute_strict_marginal),
                     marginal_pairwise=bool(strict_marginal_pairwise),
                     marginal_max_pair_cells=int(strict_marginal_max_pair_cells),
+                    compute_eb_shrinkage=bool(compute_eb_shrinkage),
                 )
             run_status.write("🗒 Building FACETS-style report tables and exports...")
             report_tables = core["calc_facets_report_tbls"](
@@ -15242,6 +16259,7 @@ def run_facets_mode(core: dict, data: pd.DataFrame) -> None:
                 "_compute_strict_marginal": bool(compute_strict_marginal),
                 "_strict_marginal_pairwise": bool(strict_marginal_pairwise),
                 "_strict_marginal_max_pair_cells": int(strict_marginal_max_pair_cells),
+                "_compute_eb_shrinkage": bool(compute_eb_shrinkage),
                 "_compute_plausible_values": bool(compute_plausible_values),
                 "_n_plausible_values": int(n_plausible_values),
                 "_plausible_seed": int(plausible_seed),
@@ -15327,7 +16345,10 @@ def run_facets_mode(core: dict, data: pd.DataFrame) -> None:
 
     out = st.session_state.get("facets_mode_output")
     if not out:
-        st.info("Set columns and click 'Run FACETS-mode estimation'.")
+        st.info(
+            "Ready for estimation. Review the data-quality panel above, then run "
+            "FACETS-mode estimation from the sidebar."
+        )
         return
 
     # Invalidate stale results if settings or raw inputs changed.
@@ -15429,6 +16450,8 @@ def run_facets_mode(core: dict, data: pd.DataFrame) -> None:
         stale_reasons.append("pairwise marginal diagnostics option")
     if out.get("_strict_marginal_max_pair_cells") is not None and out["_strict_marginal_max_pair_cells"] != int(strict_marginal_max_pair_cells):
         stale_reasons.append("pairwise marginal cell limit")
+    if out.get("_compute_eb_shrinkage") is not None and out["_compute_eb_shrinkage"] != bool(compute_eb_shrinkage):
+        stale_reasons.append("EB shrinkage advisory option")
     if out.get("_compute_plausible_values") is not None and out["_compute_plausible_values"] != bool(compute_plausible_values):
         stale_reasons.append("plausible value export option")
     if out.get("_n_plausible_values") is not None and out["_n_plausible_values"] != int(n_plausible_values):
@@ -15502,18 +16525,26 @@ def run_facets_mode(core: dict, data: pd.DataFrame) -> None:
                              out.get("score_col", score_col),
                              core)
 
-    # --- First-read guide: collapsed by default (v0.2.5 density reduction) ---
-    # The guide is useful but long. Before v0.2.5 it rendered unfolded
-    # above the tabs on every rerun, adding ~40 lines of material
-    # between the warning banners and the actual results tabs. Tuck it
-    # into a collapsed expander so returning users see the result tabs
-    # immediately; first-time users still see the "Where to look first"
-    # affordance at the top and can click to expand.
+    # --- First-read guide: open only when interpretation should pause. ---
+    # Returning users get the result tabs quickly when the run is clean, while
+    # beginners see the checklist automatically if convergence or caution rows
+    # need attention before interpretation.
+    try:
+        first_read_rows = build_first_read_guide_rows(
+            result, diagnostics, out.get("all_bias_results", {})
+        )
+    except Exception:  # pragma: no cover - UX helper must not break results
+        first_read_rows = []
     with st.expander(
-        "📋 Where to look first — first-read guide (5-step checklist)",
-        expanded=False,
+        "📋 Where to look first — first-read guide",
+        expanded=first_read_guide_should_expand(first_read_rows),
     ):
-        _show_first_read_guide(result, diagnostics, out.get("all_bias_results", {}))
+        _show_first_read_guide(
+            result,
+            diagnostics,
+            out.get("all_bias_results", {}),
+            rows=first_read_rows,
+        )
 
     # Run history panel (already collapsed by default internally).
     try:
@@ -15567,6 +16598,35 @@ def run_facets_mode(core: dict, data: pd.DataFrame) -> None:
             expanded=False,
             context="run",
         )
+        try:
+            design_screen = evaluate_design_from_fitted(result, diagnostics, forecast_multipliers=(2.0,))
+        except Exception:
+            design_screen = {}
+        if isinstance(design_screen, dict) and design_screen.get("available"):
+            sample_summary = design_screen.get("sample_size_summary", pd.DataFrame())
+            sample_audit = design_screen.get("sample_size_adequacy", pd.DataFrame())
+            nesting_audit = design_screen.get("nesting_audit", pd.DataFrame())
+            if isinstance(sample_summary, pd.DataFrame) and not sample_summary.empty:
+                st.subheader("Facet sample-size adequacy")
+                sparse_total = int(pd.to_numeric(sample_summary.get("SparseLevels", pd.Series(dtype=float)), errors="coerce").fillna(0).sum())
+                marginal_total = int(pd.to_numeric(sample_summary.get("MarginalLevels", pd.Series(dtype=float)), errors="coerce").fillna(0).sum())
+                if sparse_total:
+                    st.warning(f"{sparse_total} sparse facet level(s) have effective N < 10.")
+                elif marginal_total:
+                    st.info(f"{marginal_total} marginal facet level(s) have effective N < 30.")
+                else:
+                    st.success("No sparse or marginal facet levels were flagged by the current thresholds.")
+                st.dataframe(sample_summary, width="stretch", hide_index=True)
+                with st.expander("Per-level sample-size audit", expanded=False):
+                    st.caption("Based on likelihood-included rows after missing values and invalid weights are removed.")
+                    st.dataframe(sample_audit, width="stretch", hide_index=True)
+            if isinstance(nesting_audit, pd.DataFrame) and not nesting_audit.empty:
+                with st.expander("Facet nesting / crossing audit", expanded=False):
+                    st.caption(
+                        "Conditional-entropy screen: high index means FacetB is predictable from FacetA. "
+                        "Use this before interpreting crossed-facet claims."
+                    )
+                    st.dataframe(nesting_audit.round(4), width="stretch", hide_index=True)
         score_messages = prep.get("score_messages", [])
         score_map = prep.get("score_map", pd.DataFrame())
         if score_messages or isinstance(score_map, pd.DataFrame):
@@ -15655,6 +16715,14 @@ A single connected subset means all measures are on the same scale.
                     if isinstance(chain_summary, pd.DataFrame) and not chain_summary.empty:
                         st.markdown("**Facet-level link summary**")
                         st.dataframe(chain_summary, width="stretch")
+            workflow_plan = result.get("anchor_equating_workflow", pd.DataFrame())
+            if isinstance(workflow_plan, pd.DataFrame) and not workflow_plan.empty:
+                with st.expander("Anchor/equating workflow checklist", expanded=False):
+                    st.caption(
+                        "Use this as a reporting checklist before comparing administrations, forms, "
+                        "cohorts, or groups on a common scale."
+                    )
+                    st.dataframe(workflow_plan, width="stretch", hide_index=True)
 
         # Connectivity subset details (expandable, if available)
         calc_subsets_fn = core.get("calc_subsets") if core else None
@@ -15822,6 +16890,7 @@ A single connected subset means all measures are on the same scale.
                     "Fit columns: 🟩 0.5–1.5 acceptable · 🟧 1.5–2.0 noisy · "
                     "🟥 ≥ 2.0 distorting · 🟨 < 0.5 over-fit (Wright & Linacre, 1994)."
                 )
+            render_eb_shrinkage_section(result, diagnostics, expanded=False)
         else:
             st.info(
                 "No combined measures yet. This table is built after estimation "
@@ -15830,7 +16899,7 @@ A single connected subset means all measures are on the same scale.
 
     # --- Fit Details tab ---
     with tabs[3]:
-        show_fit_details_section(diagnostics)
+        show_fit_details_section(diagnostics, result=result, all_bias_results=out.get("all_bias_results", {}))
 
     # --- Dimensionality tab (Phase 3-8) ---
     with tabs[4]:
@@ -16460,6 +17529,170 @@ def build_publication_gate_summary(
     detail["_sort"] = detail["GateStatus"].map(status_order).fillna(3)
     detail = detail.sort_values(["_sort", "GateArea"]).drop(columns=["_sort"]).reset_index(drop=True)
     return pd.concat([overall, detail], ignore_index=True)
+
+
+def build_weighting_policy_audit(result: dict) -> pd.DataFrame:
+    """Summarize how row weights affected the fitted likelihood inputs."""
+    prep = result.get("prep", {}) if isinstance(result, dict) else {}
+    row_audit = prep.get("row_audit", pd.DataFrame())
+    data = prep.get("data", pd.DataFrame())
+    weight_col = prep.get("weight_col", "Weight")
+    rows: list[dict[str, object]] = []
+    if isinstance(row_audit, pd.DataFrame) and not row_audit.empty:
+        included = row_audit.get("IncludedInLikelihood", pd.Series(False, index=row_audit.index)).astype(bool)
+        weight_numeric = pd.to_numeric(row_audit.get("WeightNumeric", pd.Series(np.nan, index=row_audit.index)), errors="coerce")
+        rows.append({
+            "Area": "Input rows",
+            "RawRows": int(len(row_audit)),
+            "IncludedRows": int(included.sum()),
+            "ExcludedRows": int((~included).sum()),
+            "IncludedEffectiveWeight": float(weight_numeric.where(included & np.isfinite(weight_numeric) & (weight_numeric > 0), 0.0).sum()),
+            "MissingOrNonNumericWeightRows": int(row_audit.get("WeightMissingOrNonNumeric", pd.Series(False, index=row_audit.index)).astype(bool).sum()) if "WeightMissingOrNonNumeric" in row_audit else 0,
+            "NonPositiveWeightRows": int(row_audit.get("WeightNonPositive", pd.Series(False, index=row_audit.index)).astype(bool).sum()) if "WeightNonPositive" in row_audit else 0,
+            "WeightColumn": weight_col,
+            "Policy": "Rows with missing, non-finite, or non-positive weights are excluded from estimation.",
+        })
+    elif isinstance(data, pd.DataFrame) and not data.empty:
+        weights = pd.to_numeric(data.get("Weight", pd.Series(1.0, index=data.index)), errors="coerce")
+        rows.append({
+            "Area": "Likelihood rows",
+            "RawRows": int(len(data)),
+            "IncludedRows": int(len(data)),
+            "ExcludedRows": 0,
+            "IncludedEffectiveWeight": float(weights.where(np.isfinite(weights) & (weights > 0), 0.0).sum()),
+            "MissingOrNonNumericWeightRows": 0,
+            "NonPositiveWeightRows": 0,
+            "WeightColumn": "Weight" if "Weight" in data.columns else "implicit unit weights",
+            "Policy": "Positive likelihood weights are used in estimation, fit, bias, and SE calculations.",
+        })
+    out = pd.DataFrame(rows)
+    if not out.empty:
+        out["AffectedOutputs"] = "likelihood, element SE, fit statistics, bias screens, design effective N"
+    return out
+
+
+def build_misfit_casebook(
+    result: dict,
+    diagnostics: dict,
+    all_bias_results: dict | None = None,
+    *,
+    top_n: int = 30,
+) -> pd.DataFrame:
+    """Combine fit/bias/marginal/PCA evidence into a review casebook."""
+    if not (isinstance(result, dict) and result) and not (isinstance(diagnostics, dict) and diagnostics) and not all_bias_results:
+        return pd.DataFrame()
+    rows: list[dict[str, object]] = []
+
+    def add_case(source, priority, facet, level, evidence, suggested, where):
+        rows.append({
+            "Priority": int(priority),
+            "Source": str(source),
+            "Facet": str(facet) if facet is not None else "",
+            "Level": str(level) if level is not None else "",
+            "Evidence": str(evidence),
+            "SuggestedReview": str(suggested),
+            "WhereToInspect": str(where),
+            "ReportCaution": "Treat this as a review prompt; do not delete or explain away data automatically.",
+        })
+
+    fit = diagnostics.get("fit", pd.DataFrame()) if isinstance(diagnostics, dict) else pd.DataFrame()
+    if isinstance(fit, pd.DataFrame) and not fit.empty:
+        f = fit.copy()
+        infit = pd.to_numeric(f.get("Infit", pd.Series(np.nan, index=f.index)), errors="coerce")
+        outfit = pd.to_numeric(f.get("Outfit", pd.Series(np.nan, index=f.index)), errors="coerce")
+        iz = pd.to_numeric(f.get("InfitZSTD", pd.Series(np.nan, index=f.index)), errors="coerce").abs()
+        oz = pd.to_numeric(f.get("OutfitZSTD", pd.Series(np.nan, index=f.index)), errors="coerce").abs()
+        f["_score"] = np.nanmax(np.column_stack([iz.fillna(0), oz.fillna(0)]), axis=1)
+        f["_mn_flag"] = (infit > 1.5) | (outfit > 1.5) | (infit < 0.5) | (outfit < 0.5)
+        f = f[(f["_score"] >= 2.0) | f["_mn_flag"]].sort_values("_score", ascending=False).head(top_n)
+        for _, row in f.iterrows():
+            add_case(
+                "Fit",
+                1 if float(row.get("_score", 0.0)) >= 3.0 else 2,
+                row.get("Facet", ""),
+                row.get("Level", ""),
+                f"Infit={row.get('Infit', np.nan):.3g}; Outfit={row.get('Outfit', np.nan):.3g}; max |ZSTD|={row.get('_score', np.nan):.3g}",
+                "Inspect response patterns before interpreting this element or using it in high-stakes claims.",
+                "Fit Details",
+            )
+
+    all_bias = all_bias_results or {}
+    for pair_key, bundle in all_bias.items():
+        tbl = bundle.get("table") if isinstance(bundle, dict) else None
+        if not isinstance(tbl, pd.DataFrame) or tbl.empty:
+            continue
+        b = tbl.copy()
+        t_vals = pd.to_numeric(b.get("t", pd.Series(np.nan, index=b.index)), errors="coerce")
+        b["_abs_t"] = t_vals.abs()
+        b = b[b["_abs_t"] >= 2.0].sort_values("_abs_t", ascending=False).head(max(3, top_n // max(1, len(all_bias))))
+        for _, row in b.iterrows():
+            bias_value = row.get("Bias Size", row.get("Bias_Size", row.get("Bias", np.nan)))
+            add_case(
+                "Bias/interaction",
+                2,
+                str(pair_key),
+                row.get("Level", ""),
+                f"|t|={row.get('_abs_t', np.nan):.3g}; bias={bias_value}",
+                "Review local interaction substantively and consider multiplicity before reporting DIF/DFF-style claims.",
+                "Bias/Interaction",
+            )
+
+    marginal = diagnostics.get("marginal_fit", {}) if isinstance(diagnostics, dict) else {}
+    if isinstance(marginal, dict) and marginal.get("available"):
+        summary = marginal.get("summary", pd.DataFrame())
+        if isinstance(summary, pd.DataFrame) and not summary.empty:
+            m = summary.copy()
+            m["MaxAbsStdResidual"] = pd.to_numeric(m.get("MaxAbsStdResidual", pd.Series(np.nan, index=m.index)), errors="coerce")
+            m = m[m["MaxAbsStdResidual"] >= 3.0].sort_values("MaxAbsStdResidual", ascending=False).head(10)
+            for _, row in m.iterrows():
+                label = _marginal_scope_label(row)
+                add_case(
+                    "Strict marginal",
+                    2,
+                    row.get("Facet", row.get("Scope", "")),
+                    label,
+                    f"Max |standardized observed-expected residual|={row.get('MaxAbsStdResidual', np.nan):.3g}",
+                    "Use with residual, category, and design screens before claiming model-data reproduction.",
+                    "Fit Details -> Strict marginal diagnostics",
+                )
+
+    pca_reason = diagnostics.get("pca_reason") if isinstance(diagnostics, dict) else None
+    if pca_reason:
+        add_case(
+            "Dimensionality",
+            3,
+            "Residual PCA",
+            "",
+            pca_reason,
+            "Enable or justify residual PCA before making unidimensionality claims.",
+            "Dimensionality",
+        )
+
+    anchor = result.get("config", {}).get("anchor_audit", {}) if isinstance(result, dict) else {}
+    if isinstance(anchor, dict) and anchor.get("overall_status") in {"warning", "error"}:
+        add_case(
+            "Anchor/linking",
+            1 if anchor.get("overall_status") == "error" else 2,
+            "Anchor audit",
+            "",
+            anchor.get("message", "Anchor audit flagged issues."),
+            "Resolve anchor issues before linked-scale claims.",
+            "Data -> Anchor/linking audit",
+        )
+
+    out = pd.DataFrame(rows)
+    if out.empty:
+        return pd.DataFrame([{
+            "Priority": 9,
+            "Source": "Casebook",
+            "Facet": "",
+            "Level": "",
+            "Evidence": "No priority misfit cases were detected under the current thresholds.",
+            "SuggestedReview": "Still review residual, fit, bias, marginal, and design diagnostics before treating this as perfect fit.",
+            "WhereToInspect": "Fit Details; Bias/Interaction; Data",
+            "ReportCaution": "Absence of flags is not proof of perfect fit.",
+        }])
+    return out.sort_values(["Priority", "Source", "Facet", "Level"]).head(int(top_n)).reset_index(drop=True)
 
 
 def build_beginner_case_guidance(
@@ -17122,6 +18355,26 @@ def generate_method_appendix_text(
             "- Interpretation: this is penalized fixed-effect estimation for selected non-person facet main effects; it is not a random-effects model and not full Bayesian posterior sampling.",
             "- Likelihood note: reported LogLik, deviance, AIC, and BIC use the unpenalized likelihood evaluated at the fitted estimates; PenalizedObjective is shown separately.",
         ])
+    shrinkage = diagnostics.get("eb_shrinkage", {}) if isinstance(diagnostics, dict) else {}
+    if bool(diagnostics.get("eb_shrinkage_enabled", False)) or (
+        isinstance(shrinkage, dict) and shrinkage.get("available")
+    ):
+        report = shrinkage.get("report", pd.DataFrame()) if isinstance(shrinkage, dict) else pd.DataFrame()
+        mean_shrink = np.nan
+        if isinstance(report, pd.DataFrame) and not report.empty and "MeanShrinkageFactor" in report.columns:
+            vals = pd.to_numeric(report["MeanShrinkageFactor"], errors="coerce").dropna()
+            if len(vals):
+                mean_shrink = float(vals.mean())
+        lines.extend([
+            "",
+            "## Empirical-Bayes Facet Shrinkage Advisory",
+            "",
+            f"- Enabled: {bool(diagnostics.get('eb_shrinkage_enabled', False))}.",
+            f"- Available: {bool(isinstance(shrinkage, dict) and shrinkage.get('available', False))}.",
+            f"- Mean shrinkage factor across reported facets: {mean_shrink:.3f}" if np.isfinite(mean_shrink) else "- Mean shrinkage factor: not available.",
+            "- Interpretation: shrinkage estimates are post-hoc reporting diagnostics for non-person facet measures; raw fitted estimates, fit statistics, LogLik, AIC, and BIC are unchanged.",
+            "- Mathematical note: posterior SE treats the empirical prior variance as known, so small-facet uncertainty can be understated.",
+        ])
     script_support = build_script_support_status(result)
     lines.extend([
         "",
@@ -17153,13 +18406,25 @@ def generate_method_appendix_text(
             edges = chain.get("edges", pd.DataFrame())
             n_edges = len(edges) if isinstance(edges, pd.DataFrame) else 0
             lines.append(f"- Equating-chain summary: {n_edges} current-run anchor-chain edge(s); full historical multi-run chain reconstruction is not included.")
+        workflow_plan = result.get("anchor_equating_workflow", pd.DataFrame())
+        if isinstance(workflow_plan, pd.DataFrame) and not workflow_plan.empty:
+            review_steps = int(workflow_plan["Status"].astype(str).isin(["Review", "Missing"]).sum())
+            lines.append(f"- Anchor/equating workflow checklist rows: {len(workflow_plan)}; review/missing rows: {review_steps}.")
     all_bias = all_bias_results or {}
+    dff_tables = []
+    for bundle in all_bias.values():
+        dff_tbl = build_dff_bias_screening_table(bundle)
+        if isinstance(dff_tbl, pd.DataFrame) and not dff_tbl.empty:
+            dff_tables.append(dff_tbl)
+    dff_flag_count = int(sum(tbl["Flag"].astype(bool).sum() for tbl in dff_tables)) if dff_tables else 0
     lines.extend([
         "",
         "## Optional Screens",
         "",
         f"- Residual PCA enabled: {bool(diagnostics.get('pca_enabled', False))}.",
         f"- Bias/interaction pair outputs: {len(all_bias)}.",
+        f"- DFF/bias screening flags: {dff_flag_count}. Holm and BH adjusted p-values plus sparse-cell and practical-logit flags are review prompts, not proof of bias.",
+        f"- EB shrinkage advisory enabled: {bool(diagnostics.get('eb_shrinkage_enabled', False))}.",
         "- Prediction scope: fitted design rows plus supplied new/held-out rows. For supplied rows, known persons use fitted measures; unknown persons require MML and are integrated over the fitted population distribution.",
         "- Simulation scope: optional fixed-parameter row-probability simulation; not a full refit simulation.",
         "- Refit simulation scope: optional small replicate stress test with random row-level missingness and model refitting; not a formal power study.",
@@ -17674,10 +18939,13 @@ def show_prediction_simulation_section(result: dict, diagnostics: dict, core: di
             key="dl_new_design_template",
         )
         new_design_file = st.file_uploader(
-            "New/held-out design file (CSV/TSV)",
-            type=["csv", "tsv", "txt"],
+            "New/held-out design file",
+            type=TABLE_FILE_UPLOAD_TYPES,
             key="new_design_prediction_file",
-            help="The file should include Person and all fitted facet columns. Score is optional for held-out residuals.",
+            help=(
+                f"Upload {TABLE_FILE_UPLOAD_LABEL}. The file should include Person and all fitted facet columns. "
+                "Score is optional for held-out residuals."
+            ),
         )
         new_design_text = st.text_area(
             "Or paste new/held-out design rows",
@@ -17707,9 +18975,10 @@ def show_prediction_simulation_section(result: dict, diagnostics: dict, core: di
                     key="new_design_person_id_col",
                 )
                 supplemental_person_file = st.file_uploader(
-                    "Supplemental person_data (CSV/TSV)",
-                    type=["csv", "tsv", "txt"],
+                    "Supplemental person_data",
+                    type=TABLE_FILE_UPLOAD_TYPES,
                     key="new_design_person_data_file",
+                    help=f"Upload {TABLE_FILE_UPLOAD_LABEL}.",
                 )
                 supplemental_person_text = st.text_area(
                     "Or paste supplemental person_data",
@@ -18069,6 +19338,10 @@ def show_prediction_simulation_section(result: dict, diagnostics: dict, core: di
         summary = design_bundle.get("summary", pd.DataFrame())
         forecast = design_bundle.get("forecast", pd.DataFrame())
         counts = design_bundle.get("facet_counts", pd.DataFrame())
+        sample_summary = design_bundle.get("sample_size_summary", pd.DataFrame())
+        sample_audit = design_bundle.get("sample_size_adequacy", pd.DataFrame())
+        nesting_audit = design_bundle.get("nesting_audit", pd.DataFrame())
+        design_effect = design_bundle.get("design_effect", pd.DataFrame())
         if isinstance(overview, pd.DataFrame) and not overview.empty:
             st.dataframe(overview, width="stretch")
         if isinstance(summary, pd.DataFrame) and not summary.empty:
@@ -18087,6 +19360,21 @@ def show_prediction_simulation_section(result: dict, diagnostics: dict, core: di
                     "Forecasts assume added observations are exchangeable with current observations. "
                     "Use them to prioritize design changes, not as a final sample-size guarantee."
                 )
+        if isinstance(sample_summary, pd.DataFrame) and not sample_summary.empty:
+            with st.expander("Facet sample-size adequacy", expanded=True):
+                st.dataframe(sample_summary, width="stretch", hide_index=True)
+                if isinstance(sample_audit, pd.DataFrame) and not sample_audit.empty:
+                    st.dataframe(sample_audit, width="stretch", hide_index=True)
+        if isinstance(nesting_audit, pd.DataFrame) and not nesting_audit.empty:
+            with st.expander("Facet nesting / crossing audit", expanded=False):
+                st.dataframe(nesting_audit.round(4), width="stretch", hide_index=True)
+        if isinstance(design_effect, pd.DataFrame) and not design_effect.empty:
+            with st.expander("Intraclass correlation (cluster ICC) and design effect", expanded=False):
+                st.caption(
+                    "Cluster ICC is a descriptive design statistic. It is not an item-characteristic curve "
+                    "and not a random-effects MFRM estimate."
+                )
+                st.dataframe(design_effect.round(4), width="stretch", hide_index=True)
         if isinstance(counts, pd.DataFrame) and not counts.empty:
             with st.expander("Observed rows by facet level", expanded=False):
                 st.dataframe(counts, width="stretch")
@@ -18137,6 +19425,22 @@ def _render_report_tables(result: dict, diagnostics: dict) -> None:
             if isinstance(reg_audit, pd.DataFrame) and not reg_audit.empty:
                 with st.expander("Facet regularization audit", expanded=False):
                     st.dataframe(reg_audit, width="stretch", hide_index=True)
+
+    shrinkage = diagnostics.get("eb_shrinkage", {}) if isinstance(diagnostics, dict) else {}
+    if isinstance(shrinkage, dict) and diagnostics.get("eb_shrinkage_enabled", False):
+        st.subheader("Empirical-Bayes shrinkage advisory")
+        report = shrinkage.get("report", pd.DataFrame())
+        if shrinkage.get("available") and isinstance(report, pd.DataFrame) and not report.empty:
+            st.caption("Post-hoc non-person facet shrinkage; raw fitted estimates and information criteria are unchanged.")
+            st.dataframe(report.round(4), width="stretch", hide_index=True)
+        else:
+            st.info(shrinkage.get("reason", "EB shrinkage was requested but unavailable."))
+
+    weight_audit = build_weighting_policy_audit(result)
+    if isinstance(weight_audit, pd.DataFrame) and not weight_audit.empty:
+        st.subheader("Weighting policy audit")
+        st.caption("Documents how row weights were used or excluded before estimation and diagnostics.")
+        st.dataframe(weight_audit, width="stretch", hide_index=True)
 
     show_convergence_section(result)
 
@@ -19609,7 +20913,11 @@ print(loo_result)
 # Fit Details tab
 # ---------------------------------------------------------------------------
 
-def show_fit_details_section(diagnostics: dict) -> None:
+def show_fit_details_section(
+    diagnostics: dict,
+    result: dict | None = None,
+    all_bias_results: dict | None = None,
+) -> None:
     """Detailed fit statistics with misfit flagging and visualizations."""
 
 
@@ -19694,6 +21002,18 @@ the element is generally acceptable. Then check Outfit for outlier concerns.
 
     # Top misfit elements
     _draw_misfit_ranking(fit_df)
+    if isinstance(result, dict):
+        st.subheader("Misfit casebook")
+        casebook = build_misfit_casebook(result, diagnostics, all_bias_results or {})
+        if isinstance(casebook, pd.DataFrame) and not casebook.empty:
+            st.dataframe(casebook, width="stretch", hide_index=True)
+            st.download_button(
+                "Download misfit casebook (CSV)",
+                data=to_csv_bytes(casebook),
+                file_name="mfrm_misfit_casebook.csv",
+                mime="text/csv",
+                key="dl_misfit_casebook_fit_tab",
+            )
     show_marginal_fit_section(diagnostics)
 
 
@@ -20003,6 +21323,10 @@ def _figure_use_note(name: str) -> str:
         return "Rating-scale category functioning; use with threshold and category-count tables."
     if name.startswith("expected_score_curve"):
         return "Model-expected score curve; use when explaining category transitions."
+    if name.startswith("information_curve"):
+        return "Model-based targeting and local precision; report with category and Wright-map evidence."
+    if name.startswith("eb_shrinkage"):
+        return "Post-hoc small-N facet shrinkage advisory; raw fitted estimates remain primary."
     notes = {
         "wright_map": "Targeting and common-logit-scale overlap; use when discussing ceiling/floor effects and facet locations.",
         "fit_scatter": "Element fit screen; use with fit table, not as sole evidence for deletion.",
@@ -20405,7 +21729,7 @@ def show_visuals_section(result: dict, diagnostics: dict) -> None:
         ]
     else:
         vtab_labels = [
-            "Category Probability Curves", "Pathway Map",
+            "Category Probability Curves", "Information Curves", "Pathway Map",
             "Facet Distribution", "Observed vs Expected",
             "Forest plot", "Q-Q plot", "ECDF",
         ]
@@ -20414,25 +21738,31 @@ def show_visuals_section(result: dict, diagnostics: dict) -> None:
     with vtabs[0]:
         _draw_category_probability_curves_plotly(result)
 
-    with vtabs[1]:
-        _draw_pathway_map_plotly(diagnostics)
-
-    with vtabs[2]:
-        _draw_facet_distribution_plotly(diagnostics)
-
-    with vtabs[3]:
-        _draw_observed_vs_expected(diagnostics)
-
-    if not essential_mode:
-        with vtabs[4]:
-            _draw_measures_forest_plotly(diagnostics)
-        with vtabs[5]:
-            _draw_residual_qq_plotly(diagnostics)
-        with vtabs[6]:
-            _draw_measure_ecdf_plotly(result, diagnostics)
+    if essential_mode:
+        with vtabs[1]:
+            _draw_pathway_map_plotly(diagnostics)
+        with vtabs[2]:
+            _draw_facet_distribution_plotly(diagnostics)
+        with vtabs[3]:
+            _draw_observed_vs_expected(diagnostics)
     else:
+        with vtabs[1]:
+            _draw_information_curves_plotly(result)
+        with vtabs[2]:
+            _draw_pathway_map_plotly(diagnostics)
+        with vtabs[3]:
+            _draw_facet_distribution_plotly(diagnostics)
+        with vtabs[4]:
+            _draw_observed_vs_expected(diagnostics)
+        with vtabs[5]:
+            _draw_measures_forest_plotly(diagnostics)
+        with vtabs[6]:
+            _draw_residual_qq_plotly(diagnostics)
+        with vtabs[7]:
+            _draw_measure_ecdf_plotly(result, diagnostics)
+    if essential_mode:
         st.caption(
-            "💡 Three additional diagnostic plots (Forest, Q-Q, ECDF) "
+            "💡 Four additional diagnostic plots (Information, Forest, Q-Q, ECDF) "
             "are available in **Full** view density. Switch from the "
             "sidebar top toggle before a publication-depth analysis."
         )
@@ -20486,6 +21816,117 @@ def category_probability_curve_export_table(result: dict) -> pd.DataFrame:
         except Exception:
             continue
     return pd.concat(frames, ignore_index=True) if frames else pd.DataFrame()
+
+
+def build_information_curve_data(result: dict, step_level_index: int | None = None) -> dict:
+    """Build score-information / conditional-SE curves from category probabilities."""
+    curve = build_category_probability_curve_data(result, step_level_index=step_level_index)
+    if not isinstance(curve, dict) or not curve.get("available"):
+        return {"available": False, "reason": curve.get("reason", "Category curve unavailable.") if isinstance(curve, dict) else "Category curve unavailable."}
+    prob = curve.get("probability", pd.DataFrame())
+    meta = curve.get("metadata", {})
+    if not isinstance(prob, pd.DataFrame) or prob.empty or not isinstance(meta, dict):
+        return {"available": False, "reason": "Probability curve is empty."}
+    slope = float(meta.get("Slope", 1.0) or 1.0)
+    rows = []
+    for theta, df in prob.groupby("Theta", observed=False):
+        cats = pd.to_numeric(df["CategoryValue"], errors="coerce").to_numpy(dtype=float)
+        p = pd.to_numeric(df["Probability"], errors="coerce").to_numpy(dtype=float)
+        ok = np.isfinite(cats) & np.isfinite(p)
+        if not np.any(ok):
+            continue
+        cats = cats[ok]
+        p = p[ok]
+        total = float(np.sum(p))
+        if total <= 0:
+            continue
+        p = p / total
+        expected = float(np.sum(p * cats))
+        variance = float(np.sum(p * (cats - expected) ** 2))
+        information = float((slope ** 2) * variance)
+        rows.append({
+            "Theta": float(theta),
+            "ExpectedScore": expected,
+            "ScoreVariance": variance,
+            "Information": information,
+            "ConditionalSE": 1.0 / np.sqrt(information) if information > 0 else np.nan,
+        })
+    info = pd.DataFrame(rows)
+    if info.empty:
+        return {"available": False, "reason": "Information curve could not be computed."}
+    info["Scope"] = str(meta.get("Scope", "curve"))
+    info["Model"] = str(meta.get("Model", "Model"))
+    info["Slope"] = slope
+    max_idx = int(info["Information"].idxmax()) if info["Information"].notna().any() else None
+    summary = pd.DataFrame([{
+        "Scope": str(meta.get("Scope", "curve")),
+        "Model": str(meta.get("Model", "Model")),
+        "MaxInformation": float(info.loc[max_idx, "Information"]) if max_idx is not None else np.nan,
+        "ThetaAtMaxInformation": float(info.loc[max_idx, "Theta"]) if max_idx is not None else np.nan,
+        "MinConditionalSE": float(info["ConditionalSE"].min()) if info["ConditionalSE"].notna().any() else np.nan,
+        "Interpretation": "Higher information means better local precision; this is a model-based targeting screen.",
+    }])
+    return {"available": True, "curve": info, "summary": summary, "metadata": meta}
+
+
+def information_curve_export_table(result: dict) -> pd.DataFrame:
+    options = category_probability_curve_options(result)
+    frames = []
+    for row in options.itertuples(index=False):
+        try:
+            is_average = bool(getattr(row, "IsAverage"))
+            level_idx = None if is_average else int(getattr(row, "LevelIndex"))
+            bundle = build_information_curve_data(result, step_level_index=level_idx)
+            frame = bundle.get("curve", pd.DataFrame()) if isinstance(bundle, dict) else pd.DataFrame()
+            if isinstance(frame, pd.DataFrame) and not frame.empty:
+                frame = frame.copy()
+                frame["CurveLabel"] = str(getattr(row, "Label"))
+                frames.append(frame)
+        except Exception:
+            continue
+    return pd.concat(frames, ignore_index=True) if frames else pd.DataFrame()
+
+
+def _make_information_curve_figure(bundle: dict) -> go.Figure | None:
+    if not isinstance(bundle, dict) or not bundle.get("available"):
+        return None
+    curve = bundle.get("curve", pd.DataFrame())
+    if not isinstance(curve, pd.DataFrame) or curve.empty:
+        return None
+    scope = str(curve["Scope"].iloc[0]) if "Scope" in curve.columns else "curve"
+    fig = make_subplots(specs=[[{"secondary_y": True}]])
+    fig.add_trace(
+        go.Scatter(
+            x=curve["Theta"],
+            y=curve["Information"],
+            mode="lines",
+            name="Information",
+            line=dict(color="#1b9e77", width=2),
+            hovertemplate="Theta=%{x:.2f}<br>Information=%{y:.3f}<extra></extra>",
+        ),
+        secondary_y=False,
+    )
+    fig.add_trace(
+        go.Scatter(
+            x=curve["Theta"],
+            y=curve["ConditionalSE"],
+            mode="lines",
+            name="Conditional SE",
+            line=dict(color="#d95f02", width=2, dash="dot"),
+            hovertemplate="Theta=%{x:.2f}<br>Conditional SE=%{y:.3f}<extra></extra>",
+        ),
+        secondary_y=True,
+    )
+    fig.update_layout(
+        title=f"Information / targeting curve ({scope})",
+        xaxis_title="Person Measure - Item Measure (logits)",
+        hovermode="x unified",
+        height=420,
+        template="plotly_white",
+    )
+    fig.update_yaxes(title_text="Information", secondary_y=False)
+    fig.update_yaxes(title_text="Conditional SE", secondary_y=True)
+    return fig
 
 
 def _make_category_probability_curve_figures(curve: dict) -> tuple[go.Figure | None, go.Figure | None]:
@@ -20616,6 +22057,51 @@ def _draw_category_probability_curves_plotly(result: dict) -> None:
         mime="text/csv",
         key=f"dl_category_probability_curve_{model}_{meta['Scope']}",
     )
+
+
+def _draw_information_curves_plotly(result: dict) -> None:
+    st.subheader("Information / Targeting Curves")
+    st.caption(
+        "Model-based local precision across the latent scale. This is different from "
+        "intraclass correlation (cluster ICC) in the design audit."
+    )
+    config = result.get("config", {})
+    model = config.get("model", "RSM")
+    options = category_probability_curve_options(result)
+    selected_level_index: int | None = None
+    if model in {"PCM", "GPCM"} and not options.empty and len(options) > 1:
+        selected_option = st.selectbox(
+            "Information curve scope",
+            options["OptionIndex"].astype(int).tolist(),
+            format_func=lambda idx: str(options.loc[options["OptionIndex"] == idx, "Label"].iloc[0]),
+            key=f"information_curve_scope_{model}_{config.get('step_facet')}",
+            help="Average is compact; level-specific curves show precision for individual step-facet levels.",
+        )
+        selected_row = options.loc[options["OptionIndex"] == selected_option].iloc[0]
+        if not bool(selected_row["IsAverage"]):
+            selected_level_index = int(selected_row["LevelIndex"])
+    bundle = build_information_curve_data(result, step_level_index=selected_level_index)
+    if not bundle.get("available"):
+        st.info(bundle.get("reason", "Information curve is unavailable."))
+        return
+    summary = bundle.get("summary", pd.DataFrame())
+    if isinstance(summary, pd.DataFrame) and not summary.empty:
+        st.dataframe(summary, width="stretch", hide_index=True)
+    fig = _make_information_curve_figure(bundle)
+    if fig is not None:
+        st.plotly_chart(fig, width="stretch")
+        scope = bundle.get("metadata", {}).get("Scope", "curve") if isinstance(bundle.get("metadata"), dict) else "curve"
+        scope_key = re.sub(r"[^A-Za-z0-9]+", "_", str(scope)).strip("_")[:80] or "curve"
+        _offer_fig_download(fig, f"information_curve_{model}_{scope_key}", "Download information curve (PNG 300 DPI)")
+    curve = bundle.get("curve", pd.DataFrame())
+    if isinstance(curve, pd.DataFrame) and not curve.empty:
+        st.download_button(
+            "Download displayed information curve data (CSV)",
+            data=to_csv_bytes(curve),
+            file_name="mfrm_information_curve.csv",
+            mime="text/csv",
+            key=f"dl_information_curve_{model}",
+        )
 
 
 def _draw_data_coverage_heatmap(
@@ -20795,6 +22281,108 @@ def _draw_category_usage_bar(
             )
     except Exception as exc:  # pragma: no cover - defensive
         st.caption(f"Category usage chart could not be built: {type(exc).__name__}: {exc}")
+
+
+def _make_eb_shrinkage_figure(shrinkage: dict) -> go.Figure | None:
+    measures = shrinkage.get("measures", pd.DataFrame()) if isinstance(shrinkage, dict) else pd.DataFrame()
+    if not isinstance(measures, pd.DataFrame) or measures.empty:
+        return None
+    required = {"Facet", "Level", "Estimate", "ShrunkEstimate", "SE", "ShrunkSE"}
+    if not required.issubset(measures.columns):
+        return None
+    plot_df = measures.copy()
+    for col in ["Estimate", "ShrunkEstimate", "SE", "ShrunkSE", "ShrinkageFactor"]:
+        if col in plot_df.columns:
+            plot_df[col] = pd.to_numeric(plot_df[col], errors="coerce")
+    plot_df = plot_df.dropna(subset=["Estimate", "ShrunkEstimate"])
+    plot_df = plot_df.sort_values(["Facet", "ShrinkageFactor", "Level"], ascending=[True, False, True]).head(80)
+    if plot_df.empty:
+        return None
+    plot_df["_Label"] = plot_df["Facet"].astype(str) + ": " + plot_df["Level"].astype(str)
+    y = plot_df["_Label"].tolist()
+    fig = go.Figure()
+    for _, row in plot_df.iterrows():
+        fig.add_trace(go.Scatter(
+            x=[row["Estimate"], row["ShrunkEstimate"]],
+            y=[row["_Label"], row["_Label"]],
+            mode="lines",
+            line=dict(color="#9e9e9e", width=1),
+            showlegend=False,
+            hoverinfo="skip",
+        ))
+    fig.add_trace(go.Scatter(
+        x=plot_df["Estimate"],
+        y=plot_df["_Label"],
+        mode="markers",
+        name="Raw estimate",
+        marker=dict(color="#7570b3", size=8),
+        error_x=dict(
+            type="data",
+            array=1.96 * plot_df["SE"],
+            visible=bool(plot_df["SE"].notna().any()),
+            thickness=0.8,
+        ),
+        customdata=np.column_stack([plot_df["Facet"], plot_df["Level"], plot_df.get("ShrinkageFactor", pd.Series(np.nan, index=plot_df.index))]),
+        hovertemplate="%{customdata[0]}: %{customdata[1]}<br>Raw=%{x:.3f}<br>Shrinkage=%{customdata[2]:.3f}<extra></extra>",
+    ))
+    fig.add_trace(go.Scatter(
+        x=plot_df["ShrunkEstimate"],
+        y=plot_df["_Label"],
+        mode="markers",
+        name="Shrunk estimate",
+        marker=dict(color="#1b9e77", size=8, symbol="diamond"),
+        error_x=dict(
+            type="data",
+            array=1.96 * plot_df["ShrunkSE"],
+            visible=bool(plot_df["ShrunkSE"].notna().any()),
+            thickness=0.8,
+        ),
+        hovertemplate="%{y}<br>Shrunk=%{x:.3f}<extra></extra>",
+    ))
+    fig.add_vline(x=0, line_dash="dot", line_color="#666666", line_width=0.7)
+    fig.update_layout(
+        title="Post-hoc empirical-Bayes shrinkage of facet estimates",
+        xaxis_title="Measure (logits)",
+        yaxis=dict(autorange="reversed"),
+        height=max(420, 24 * len(plot_df) + 120),
+        template="plotly_white",
+        margin=_readable_plot_margins(y_labels=y, base_left=140),
+    )
+    fig.update_yaxes(tickmode="array", tickvals=y, ticktext=_compact_label_list(y, max_chars=46), automargin=True)
+    return fig
+
+
+def render_eb_shrinkage_section(result: dict, diagnostics: dict, *, expanded: bool = False) -> None:
+    shrinkage = diagnostics.get("eb_shrinkage", {}) if isinstance(diagnostics, dict) else {}
+    enabled = bool(diagnostics.get("eb_shrinkage_enabled", False)) if isinstance(diagnostics, dict) else False
+    if not enabled and not (isinstance(shrinkage, dict) and shrinkage.get("available")):
+        return
+    st.subheader("Empirical-Bayes facet shrinkage advisory")
+    st.caption(
+        "Post-hoc shrinkage for non-person facet estimates. Raw estimates, SE, fit, "
+        "LogLik, AIC, and BIC are unchanged."
+    )
+    if result.get("config", {}).get("facet_regularization_enabled"):
+        st.warning(
+            "This run also used MAP-style facet regularization during estimation. "
+            "Treat EB shrinkage as an additional reporting sensitivity check, not a second fitted model."
+        )
+    if not isinstance(shrinkage, dict) or not shrinkage.get("available"):
+        st.info(shrinkage.get("reason", "EB shrinkage was not available for this run.") if isinstance(shrinkage, dict) else "EB shrinkage was not available.")
+        return
+    report = shrinkage.get("report", pd.DataFrame())
+    measures = shrinkage.get("measures", pd.DataFrame())
+    with st.expander("Shrinkage report", expanded=expanded):
+        if isinstance(report, pd.DataFrame) and not report.empty:
+            st.dataframe(report.round(4), width="stretch", hide_index=True)
+        if isinstance(measures, pd.DataFrame) and not measures.empty:
+            st.dataframe(format_measure_table(reorder_measure_columns(measures)).head(500), width="stretch")
+            if len(measures) > 500:
+                st.caption(f"Showing first 500 of {len(measures):,} shrinkage rows. Use Downloads for the full table.")
+    fig = _make_eb_shrinkage_figure(shrinkage)
+    if fig is not None:
+        st.plotly_chart(fig, width="stretch")
+        _offer_fig_download(fig, "eb_shrinkage_forest", "Download EB shrinkage figure (PNG 300 DPI)")
 
 
 def _draw_measures_forest_plotly(diagnostics: dict) -> None:
@@ -21450,6 +23038,45 @@ Your data should be in **long format** (one observation per row):
 Each row represents one observation: one person scored by one rater
 on one task/criterion. This format is sometimes called "tidy" or
 "stacked" data. See the **Glossary** tab for "Long format".
+
+### For teachers: paste from a spreadsheet
+
+If you are working from Excel, Google Sheets, or a gradebook export:
+
+1. Put the column names in the first row.
+2. Keep one row per rating event, not one total-score row per student.
+3. Copy the table and choose **Data source → Paste CSV/TSV text**.
+4. If the preview shows one long column, change **Delimiter** to **Tab**.
+5. Map `Student` to **Person**, `Score` to **Score**, and use `Rater`,
+   `Assignment`, and `Criterion` as facets.
+
+If you prefer files, upload CSV, TSV, TXT, Excel `.xlsx/.xlsm`, Parquet, or
+JSON/JSON-lines from **Data source → Upload your own file**. Excel imports use
+the first worksheet.
+
+```csv
+Student,Rater,Assignment,Criterion,Score
+S01,TeacherA,Essay1,Content,4
+S01,TeacherA,Essay1,Organization,3
+S01,TeacherB,Essay1,Content,5
+S02,TeacherA,Essay1,Content,2
+```
+
+Blank scores are treated as missing and are excluded from the likelihood. Keep
+student names anonymized before pasting if the app is hosted.
+
+### License and responsible use
+
+The repository uses the MIT License. Commercial use is permitted, including
+paid teaching, consulting, internal training, and hosted demonstrations, as
+long as the license notice is retained. The app is provided as-is, without
+warranty. You are responsible for privacy review, model assumptions,
+interpretation, and external validation before using results for operational or
+high-stakes decisions.
+
+CC BY-NC is intentionally not used because its NonCommercial restriction would
+conflict with commercial use. See `LICENSE` and `LICENSE_NOTICE.md` in the
+repository for the full notice.
 
 *Technical note:* The MFRM is a special case of a Generalized
 Linear Mixed Model (GLMM) with a logit link (Agresti, 2013;
@@ -22899,11 +24526,11 @@ teaching materials based on app output.
                 mime="text/csv",
                 key="dl_public_beta_limitations_help",
             )
-            st.markdown("### External Simulation Validation Inventory")
+            st.markdown("### External Validation Artifact Inventory")
             st.caption(
-                "This table records local Simulation-directory artifacts that can support "
-                "numerical validation. It intentionally avoids runtime dependencies on local "
-                "Dropbox paths and warns against bundling private or large data."
+                "This table records archived validation artifacts that can support "
+                "numerical checks. It intentionally avoids runtime dependencies on "
+                "machine-specific paths and warns against bundling private or large data."
             )
             st.dataframe(external_simulation_reference_inventory(), width="stretch", hide_index=True)
             st.download_button(
@@ -22913,18 +24540,18 @@ teaching materials based on app output.
                 mime="text/csv",
                 key="dl_external_simulation_reference_inventory_help",
             )
-            st.markdown("### mfrmr 0.1.5 Migration Coverage")
+            st.markdown("### mfrmr 0.1.6 Migration Coverage")
             st.caption(
-                "This table maps the local mfrmr 0.1.5 feature surface to the current "
+                "This table maps the mfrmr 0.1.6 package feature surface to the current "
                 "standalone Python implementation and its public-beta boundaries."
             )
-            st.dataframe(mfrmr_015_migration_coverage_table(), width="stretch", hide_index=True)
+            st.dataframe(mfrmr_016_migration_coverage_table(), width="stretch", hide_index=True)
             st.download_button(
-                "Download mfrmr 0.1.5 migration coverage (CSV)",
-                data=to_csv_bytes(mfrmr_015_migration_coverage_table()),
-                file_name="mfrm_mfrmr_015_migration_coverage.csv",
+                "Download mfrmr 0.1.6 migration coverage (CSV)",
+                data=to_csv_bytes(mfrmr_016_migration_coverage_table()),
+                file_name="mfrm_mfrmr_016_migration_coverage.csv",
                 mime="text/csv",
-                key="dl_mfrmr_015_migration_coverage_help",
+                key="dl_mfrmr_016_migration_coverage_help",
             )
             st.markdown("### Release Readiness")
             st.caption(
@@ -23157,6 +24784,88 @@ def show_bias_section(
 
     facet_a = bias_results.get("facet_a", selected_pair.split(" x ")[0])
     facet_b = bias_results.get("facet_b", selected_pair.split(" x ")[-1])
+    safe_pair_key = re.sub(r"[^A-Za-z0-9]+", "_", selected_pair).strip("_").lower() or "selected_pair"
+
+    st.subheader("DFF / bias screening")
+    st.caption(
+        "This panel turns the FACETS-style bias table into review prompts with sparse-cell checks, "
+        "Holm familywise correction, BH false-discovery-rate correction, and a practical logit threshold. "
+        "It is a screening aid, not standalone proof of differential facet functioning."
+    )
+    with st.expander("DFF / bias screening settings", expanded=False):
+        cols = st.columns(3)
+        with cols[0]:
+            dff_alpha = float(st.number_input(
+                "Alpha",
+                min_value=0.001,
+                max_value=0.500,
+                value=0.050,
+                step=0.005,
+                format="%.3f",
+                key=f"dff_alpha_{safe_pair_key}",
+                help="Significance level used for Holm and BH adjusted p-values.",
+            ))
+        with cols[1]:
+            dff_practical = float(st.number_input(
+                "Practical |bias| threshold",
+                min_value=0.00,
+                max_value=5.00,
+                value=0.50,
+                step=0.05,
+                format="%.2f",
+                key=f"dff_practical_{safe_pair_key}",
+                help="Logit-size threshold for practical review. Keep this aligned with your study's smallest effect of interest.",
+            ))
+        with cols[2]:
+            dff_min_n = int(st.number_input(
+                "Minimum cell N",
+                min_value=1,
+                max_value=100,
+                value=5,
+                step=1,
+                key=f"dff_min_n_{safe_pair_key}",
+                help="Cells below this observation count are flagged as sparse before substantive interpretation.",
+            ))
+        st.caption(
+            "Default settings are conservative enough for classroom and demonstration use. "
+            "For confirmatory research, pre-register thresholds and corroborate with study-specific evidence."
+        )
+    dff_tbl = build_dff_bias_screening_table(
+        bias_results,
+        alpha=dff_alpha,
+        min_n=dff_min_n,
+        practical_logit=dff_practical,
+    )
+    dff_summary = summarize_dff_bias_screening(dff_tbl)
+    if dff_tbl.empty:
+        st.info("No DFF/bias screening table could be built for this pair.")
+    else:
+        summary_values = dict(zip(dff_summary["Metric"], dff_summary["Value"])) if not dff_summary.empty else {}
+        metric_cols = st.columns(4)
+        metric_cols[0].metric("Cells", int(summary_values.get("Cells screened", len(dff_tbl))))
+        metric_cols[1].metric("Flagged", int(summary_values.get("Flagged cells", 0)))
+        metric_cols[2].metric("Strong", int(summary_values.get("Strong review", 0)))
+        max_abs_bias = summary_values.get("Max |bias|", np.nan)
+        metric_cols[3].metric("Max |bias|", f"{float(max_abs_bias):.2f}" if np.isfinite(max_abs_bias) else "n/a")
+        st.dataframe(dff_summary, width="stretch", hide_index=True)
+        flagged_dff = dff_tbl[dff_tbl["Flag"].astype(bool)] if "Flag" in dff_tbl.columns else pd.DataFrame()
+        with st.expander("Flagged DFF / bias cells", expanded=not flagged_dff.empty):
+            if flagged_dff.empty:
+                st.success("No DFF/bias cells were flagged under the current thresholds.")
+            else:
+                show_cols = [
+                    "FacetA", "FacetA_Level", "FacetB", "FacetB_Level", "ObsN",
+                    "BiasSize", "SE", "t", "p", "p_holm", "p_bh",
+                    "EvidenceLevel", "Direction", "NextAction",
+                ]
+                st.dataframe(flagged_dff[[c for c in show_cols if c in flagged_dff.columns]], width="stretch")
+        st.download_button(
+            "Download DFF / bias screening (CSV)",
+            data=to_csv_bytes(dff_tbl),
+            file_name="mfrm_dff_bias_screening.csv",
+            mime="text/csv",
+            key=f"dl_dff_bias_screening_{safe_pair_key}",
+        )
 
     # Add standardized effect size (Cohen's d ≈ Bias / pooled SD of measures)
     if "Bias Size" in tbl.columns:
@@ -23917,14 +25626,14 @@ including MML Auto/Direct/Hybrid/EM, PCM, strict marginal diagnostics, posterior
 scoring, plausible values, GPCM slope estimates, latent-regression population
 models, score-support handling, and anchor audit filtering.
 
-Place this file next to streamlit_app.py, put your data CSV in the same folder
-or edit DATA_FILE/APP_PATH, then run:
+Place this file next to streamlit_app.py and pass a data CSV:
 
-    python mfrm_app_engine_runner.py
+    python mfrm_app_engine_runner.py --input your_data.csv --output-dir mfrm_outputs
 """
 
 from __future__ import annotations
 
+import argparse
 import importlib.util
 import json
 from itertools import combinations
@@ -23936,6 +25645,7 @@ import pandas as pd
 DATA_FILE = "your_data.csv"
 NEW_DESIGN_FILE = ""  # Optional CSV/TSV with Person + fitted facet columns for scenario prediction.
 APP_PATH = Path(__file__).with_name("streamlit_app.py")
+OUTPUT_DIR = Path("mfrm_outputs")
 
 PERSON_COL = {repr(out.get("person_col", "Person"))}
 FACET_COLS = {repr(list(out.get("facet_cols", facet_names)))}
@@ -23969,6 +25679,7 @@ COMPUTE_PCA = {repr(compute_pca)}
 COMPUTE_STRICT_MARGINAL = {repr(compute_marginal)}
 STRICT_MARGINAL_PAIRWISE = {repr(strict_pairwise)}
 STRICT_MARGINAL_MAX_PAIR_CELLS = {strict_max_pair_cells}
+COMPUTE_EB_SHRINKAGE = {repr(bool(config.get("compute_eb_shrinkage", diagnostics.get("eb_shrinkage_enabled", False))))}
 COMPUTE_PLAUSIBLE_VALUES = {repr(compute_pv)}
 N_PLAUSIBLE_VALUES = {n_pv}
 PLAUSIBLE_SEED = {int(pv_seed)}
@@ -24004,9 +25715,19 @@ def load_app_engine(app_path: Path):
     return module
 
 
+def parse_args():
+    parser = argparse.ArgumentParser(description="Run the MFRM Streamlit app engine locally.")
+    parser.add_argument("--input", default=DATA_FILE, help="Long-format rating data CSV.")
+    parser.add_argument("--output-dir", default=str(OUTPUT_DIR), help="Folder for generated CSV outputs.")
+    parser.add_argument("--app-path", default=str(APP_PATH), help="Path to streamlit_app.py.")
+    parser.add_argument("--new-design", default=NEW_DESIGN_FILE, help="Optional held-out design CSV/TSV.")
+    return parser.parse_args()
+
+
 def write_csv(name: str, frame) -> bool:
     if isinstance(frame, pd.DataFrame) and not frame.empty:
-        out_path = Path(f"mfrm_{{name}}.csv")
+        OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+        out_path = OUTPUT_DIR / f"mfrm_{{name}}.csv"
         frame.to_csv(out_path, index=False)
         print(f"  wrote {{out_path}} ({{len(frame)}} rows)")
         return True
@@ -24014,8 +25735,11 @@ def write_csv(name: str, frame) -> bool:
 
 
 def main() -> None:
-    app = load_app_engine(APP_PATH)
-    data = pd.read_csv(DATA_FILE)
+    global OUTPUT_DIR
+    args = parse_args()
+    OUTPUT_DIR = Path(args.output_dir).expanduser()
+    app = load_app_engine(Path(args.app_path).expanduser())
+    data = pd.read_csv(args.input)
     anchor_df = pd.DataFrame(ANCHOR_RECORDS)
     group_anchor_df = pd.DataFrame(GROUP_ANCHOR_RECORDS)
     population_person_df = pd.DataFrame(POPULATION_PERSON_RECORDS)
@@ -24064,6 +25788,7 @@ def main() -> None:
         compute_marginal=COMPUTE_STRICT_MARGINAL,
         marginal_pairwise=STRICT_MARGINAL_PAIRWISE,
         marginal_max_pair_cells=STRICT_MARGINAL_MAX_PAIR_CELLS,
+        compute_eb_shrinkage=COMPUTE_EB_SHRINKAGE,
     )
 
     print(result["summary"].to_string(index=False))
@@ -24093,9 +25818,9 @@ def main() -> None:
     write_csv("scorefile", app.compute_scorefile(result))
     if hasattr(app, "compute_fitted_prediction_table"):
         write_csv("fitted_predictions", app.compute_fitted_prediction_table(result))
-    if NEW_DESIGN_FILE and hasattr(app, "predict_mfrm_design"):
-        sep = "\\t" if str(NEW_DESIGN_FILE).lower().endswith((".tsv", ".txt")) else ","
-        new_design = pd.read_csv(NEW_DESIGN_FILE, sep=sep)
+    if args.new_design and hasattr(app, "predict_mfrm_design"):
+        sep = "\\t" if str(args.new_design).lower().endswith((".tsv", ".txt")) else ","
+        new_design = pd.read_csv(args.new_design, sep=sep)
         new_pred = app.predict_mfrm_design(
             result,
             new_design,
@@ -24113,6 +25838,16 @@ def main() -> None:
             write_csv("design_evaluation", design.get("summary"))
             write_csv("design_reliability_forecast", design.get("forecast"))
             write_csv("design_facet_counts", design.get("facet_counts"))
+            write_csv("facet_sample_size_summary", design.get("sample_size_summary"))
+            write_csv("facet_sample_size_adequacy", design.get("sample_size_adequacy"))
+            write_csv("facet_nesting_audit", design.get("nesting_audit"))
+            write_csv("intraclass_icc_design_effect", design.get("design_effect"))
+    shrinkage = diagnostics.get("eb_shrinkage", {{}})
+    if isinstance(shrinkage, dict):
+        write_csv("eb_shrinkage_report", shrinkage.get("report"))
+        write_csv("eb_shrinkage_measures", shrinkage.get("measures"))
+    if hasattr(app, "build_weighting_policy_audit"):
+        write_csv("weighting_policy_audit", app.build_weighting_policy_audit(result))
     if RUN_FITTED_SIMULATION and hasattr(app, "simulate_from_fitted_model"):
         sim = app.simulate_from_fitted_model(
             result,
@@ -24157,6 +25892,8 @@ def main() -> None:
             if isinstance(bundle, dict):
                 write_csv(f"bias_{{safe_pair}}", bundle.get("table"))
                 write_csv(f"bias_{{safe_pair}}_summary", bundle.get("summary"))
+                if hasattr(app, "build_dff_bias_screening_table"):
+                    write_csv(f"dff_bias_{{safe_pair}}", app.build_dff_bias_screening_table(bundle))
 
     posterior = result.get("posterior", {{}})
     if isinstance(posterior, dict):
@@ -24187,6 +25924,7 @@ def main() -> None:
     if isinstance(equating_chain, dict):
         write_csv("equating_chain_summary", equating_chain.get("summary"))
         write_csv("equating_chain_edges", equating_chain.get("edges"))
+    write_csv("anchor_equating_workflow", result.get("anchor_equating_workflow"))
 
 
 if __name__ == "__main__":
@@ -25308,7 +27046,46 @@ def _generate_requirements_txt() -> str:
         "kaleido>=1.0\n"
         "streamlit>=1.54\n"
         "openpyxl>=3.1\n"
+        "pyarrow>=15.0\n"
     )
+
+
+def generate_local_batch_readme() -> str:
+    """Short local-batch guidance for users who should not run loops in Streamlit."""
+    return """# Local batch workflow for MFRM Streamlit exports
+
+The Streamlit app is intended for interactive analysis, teaching, and single-run review. For repeated refits, many files, or large data, run batch jobs locally.
+
+## Recommended files to download
+
+1. `mfrm_app_engine_runner.py`
+2. `requirements.txt`
+3. `mfrm_config.json`
+4. The original long-format rating data
+
+## One-file reproduction
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+python3 -m pip install -r requirements.txt
+python3 mfrm_app_engine_runner.py --input ratings.csv --output-dir output_single
+```
+
+## Batch pattern
+
+Keep the app-generated runner unchanged, and loop over files in your shell or notebook:
+
+```bash
+mkdir -p batch_outputs
+for f in data/*.csv; do
+  stem=$(basename "$f" .csv)
+  python3 mfrm_app_engine_runner.py --input "$f" --output-dir "batch_outputs/$stem"
+done
+```
+
+Record package versions, input fingerprints, and `mfrm_config.json` with every batch output. Do not upload confidential classroom, patient, or institutional data to hosted Streamlit unless your data governance policy explicitly permits it.
+"""
 
 
 def external_simulation_template_inventory() -> pd.DataFrame:
@@ -25320,7 +27097,7 @@ def external_simulation_template_inventory() -> pd.DataFrame:
             "PrimaryUse": "Refit an anonymized long-format CSV with the standalone Python app engine or a supplied Python engine file.",
             "RequiredInputs": "MFRM_INPUT_CSV; MFRM_OUTPUT_DIR; MFRM_PERSON_COL; MFRM_SCORE_COL; MFRM_FACET_COLS",
             "OptionalInputs": "MFRM_PY_ENGINE_PATH; MFRM_MODEL; MFRM_METHOD; MFRM_STEP_FACET; MFRM_SLOPE_FACET; MFRM_MAXIT; MFRM_RELTOL",
-            "PrivacyBoundary": "No absolute path, raw observed data, or local Dropbox path is embedded.",
+            "PrivacyBoundary": "No absolute path, raw observed data, or machine-specific path is embedded.",
             "OutputFiles": "python_template_status.csv; python_data_audit.csv; python_summary.csv; python_person_measures.csv; python_facet_measures.csv; python_steps.csv",
         },
         {
@@ -25329,7 +27106,7 @@ def external_simulation_template_inventory() -> pd.DataFrame:
             "PrimaryUse": "Audit an anonymized long-format CSV and optionally run mfrmr when an installed package or sourced core is supplied.",
             "RequiredInputs": "MFRM_INPUT_CSV; MFRM_OUTPUT_DIR; MFRM_PERSON_COL; MFRM_SCORE_COL; MFRM_FACET_COLS",
             "OptionalInputs": "MFRM_R_SOURCE; MFRM_MODEL; MFRM_METHOD; MFRM_MAXIT; MFRM_RELTOL",
-            "PrivacyBoundary": "No absolute path, raw observed data, package cache path, or local Dropbox path is embedded.",
+            "PrivacyBoundary": "No absolute path, raw observed data, package cache path, or machine-specific path is embedded.",
             "OutputFiles": "r_template_status.csv; r_data_audit.csv; r_category_counts.csv; r_facet_counts.csv; optional r_mfrmr_summary.csv",
         },
         {
@@ -25338,7 +27115,7 @@ def external_simulation_template_inventory() -> pd.DataFrame:
             "PrimaryUse": "Audit an anonymized long-format CSV and optionally run a supplied Julia MFRM engine file.",
             "RequiredInputs": "MFRM_INPUT_CSV; MFRM_OUTPUT_DIR; MFRM_PERSON_COL; MFRM_SCORE_COL; MFRM_FACET_COLS",
             "OptionalInputs": "MFRM_JULIA_ENGINE_PATH; MFRM_MODEL; MFRM_METHOD; MFRM_MAXIT; MFRM_RELTOL",
-            "PrivacyBoundary": "No absolute path, raw observed data, sysimage path, or local Dropbox path is embedded.",
+            "PrivacyBoundary": "No absolute path, raw observed data, sysimage path, or machine-specific path is embedded.",
             "OutputFiles": "julia_template_status.csv; julia_data_audit.csv; julia_category_counts.csv; optional julia_summary.csv",
         },
     ]
@@ -25350,11 +27127,11 @@ def external_simulation_template_scripts() -> dict[str, str]:
     readme = """# External Simulation Validation Templates
 
 These templates are sanitized handoff scripts. They do not contain raw data,
-absolute local paths, Dropbox paths, package-cache paths, or personal machine
+absolute paths, package-cache paths, or personal machine
 names.
 
 Use them only after creating an anonymized long-format CSV. Set paths through
-environment variables instead of editing local absolute paths into the scripts.
+environment variables instead of editing machine-specific absolute paths into the scripts.
 
 Required environment variables:
 - `MFRM_INPUT_CSV`: path to the anonymized long-format CSV.
@@ -25392,7 +27169,7 @@ or engine file is explicitly supplied through an environment variable.
 
     python_template = r"""#!/usr/bin/env python3
 # Sanitized external Simulation validation template for the MFRM Streamlit app.
-# No absolute local paths or raw data are embedded. Configure by environment.
+# No machine-specific absolute paths or raw data are embedded. Configure by environment.
 
 from __future__ import annotations
 
@@ -25526,7 +27303,7 @@ if __name__ == "__main__":
 
     r_template = r"""#!/usr/bin/env Rscript
 # Sanitized external Simulation validation template for optional R/mfrmr checks.
-# No absolute local paths or raw data are embedded. Configure by environment.
+# No machine-specific absolute paths or raw data are embedded. Configure by environment.
 
 input_csv <- Sys.getenv("MFRM_INPUT_CSV", "input_long.csv")
 output_dir <- Sys.getenv("MFRM_OUTPUT_DIR", "validation_outputs/r")
@@ -25645,7 +27422,7 @@ write_status("ok", "R optional mfrmr refit completed. Review parameterization be
 
     julia_template = r"""#!/usr/bin/env julia
 # Sanitized external Simulation validation template for optional Julia checks.
-# No absolute local paths, sysimage paths, or raw data are embedded. Configure by environment.
+# No machine-specific absolute paths, sysimage paths, or raw data are embedded. Configure by environment.
 
 using CSV
 using DataFrames
@@ -25850,8 +27627,22 @@ def _render_downloads(
         all_frames["response_data_excluded_rows"] = excluded_rows
     if not measures_dl.empty:
         all_frames["measures"] = measures_dl
+    shrinkage_dl = diagnostics.get("eb_shrinkage", {})
+    if isinstance(shrinkage_dl, dict) and shrinkage_dl.get("available"):
+        shr_report_dl = shrinkage_dl.get("report", pd.DataFrame())
+        shr_measures_dl = shrinkage_dl.get("measures", pd.DataFrame())
+        if isinstance(shr_report_dl, pd.DataFrame) and not shr_report_dl.empty:
+            all_frames["eb_shrinkage_report"] = shr_report_dl
+        if isinstance(shr_measures_dl, pd.DataFrame) and not shr_measures_dl.empty:
+            all_frames["eb_shrinkage_measures"] = shr_measures_dl
     if not reliability_dl.empty:
         all_frames["reliability"] = reliability_dl
+    try:
+        weight_audit_dl = build_weighting_policy_audit(result)
+        if isinstance(weight_audit_dl, pd.DataFrame) and not weight_audit_dl.empty:
+            all_frames["weighting_policy_audit"] = weight_audit_dl
+    except Exception:
+        weight_audit_dl = pd.DataFrame()
     try:
         publication_gate_dl = build_publication_gate_summary(result, diagnostics, all_bias_results)
         if isinstance(publication_gate_dl, pd.DataFrame) and not publication_gate_dl.empty:
@@ -25870,6 +27661,12 @@ def _render_downloads(
             all_frames["beginner_case_guidance"] = beginner_case_dl
     except Exception:
         beginner_case_dl = pd.DataFrame()
+    try:
+        misfit_casebook_dl = build_misfit_casebook(result, diagnostics, all_bias_results)
+        if isinstance(misfit_casebook_dl, pd.DataFrame) and not misfit_casebook_dl.empty:
+            all_frames["misfit_casebook"] = misfit_casebook_dl
+    except Exception:
+        misfit_casebook_dl = pd.DataFrame()
     try:
         readiness_dl = build_final_report_readiness(result, diagnostics, all_bias_results)
         if isinstance(readiness_dl, pd.DataFrame) and not readiness_dl.empty:
@@ -25900,6 +27697,9 @@ def _render_downloads(
     mfrmr_coverage_dl = mfrmr_015_migration_coverage_table()
     if isinstance(mfrmr_coverage_dl, pd.DataFrame) and not mfrmr_coverage_dl.empty:
         all_frames["mfrmr_015_migration_coverage"] = mfrmr_coverage_dl
+    mfrmr_016_coverage_dl = mfrmr_016_migration_coverage_table()
+    if isinstance(mfrmr_016_coverage_dl, pd.DataFrame) and not mfrmr_016_coverage_dl.empty:
+        all_frames["mfrmr_016_migration_coverage"] = mfrmr_016_coverage_dl
     public_readiness_dl = public_release_readiness_table()
     if isinstance(public_readiness_dl, pd.DataFrame) and not public_readiness_dl.empty:
         all_frames["public_release_readiness"] = public_readiness_dl
@@ -25913,6 +27713,12 @@ def _render_downloads(
             all_frames["category_probability_curves"] = category_curve_dl
     except Exception:
         category_curve_dl = pd.DataFrame()
+    try:
+        information_curve_dl = information_curve_export_table(result)
+        if isinstance(information_curve_dl, pd.DataFrame) and not information_curve_dl.empty:
+            all_frames["information_curves"] = information_curve_dl
+    except Exception:
+        information_curve_dl = pd.DataFrame()
     population_dl = result.get("population", {})
     if isinstance(population_dl, dict):
         pop_coef = population_dl.get("coefficients", pd.DataFrame())
@@ -25963,6 +27769,10 @@ def _render_downloads(
             design_summary = design_dl.get("summary", pd.DataFrame())
             design_forecast = design_dl.get("forecast", pd.DataFrame())
             design_counts = design_dl.get("facet_counts", pd.DataFrame())
+            design_sample_summary = design_dl.get("sample_size_summary", pd.DataFrame())
+            design_sample_audit = design_dl.get("sample_size_adequacy", pd.DataFrame())
+            design_nesting = design_dl.get("nesting_audit", pd.DataFrame())
+            design_effect = design_dl.get("design_effect", pd.DataFrame())
             if isinstance(design_overview, pd.DataFrame) and not design_overview.empty:
                 all_frames["design_overview"] = design_overview
             if isinstance(design_summary, pd.DataFrame) and not design_summary.empty:
@@ -25971,6 +27781,14 @@ def _render_downloads(
                 all_frames["design_reliability_forecast"] = design_forecast
             if isinstance(design_counts, pd.DataFrame) and not design_counts.empty:
                 all_frames["design_facet_counts"] = design_counts
+            if isinstance(design_sample_summary, pd.DataFrame) and not design_sample_summary.empty:
+                all_frames["facet_sample_size_summary"] = design_sample_summary
+            if isinstance(design_sample_audit, pd.DataFrame) and not design_sample_audit.empty:
+                all_frames["facet_sample_size_adequacy"] = design_sample_audit
+            if isinstance(design_nesting, pd.DataFrame) and not design_nesting.empty:
+                all_frames["facet_nesting_audit"] = design_nesting
+            if isinstance(design_effect, pd.DataFrame) and not design_effect.empty:
+                all_frames["intraclass_icc_design_effect"] = design_effect
     except Exception:
         design_dl = {}
     if isinstance(residuals, pd.DataFrame) and not residuals.empty:
@@ -25990,6 +27808,9 @@ def _render_downloads(
         all_frames[f"facets_{safe_name}"] = tbl
     if bias_results and bias_results.get("table") is not None and not bias_results["table"].empty:
         all_frames["bias_table"] = bias_results["table"]
+        dff_tbl = build_dff_bias_screening_table(bias_results)
+        if isinstance(dff_tbl, pd.DataFrame) and not dff_tbl.empty:
+            all_frames["dff_bias_screening"] = dff_tbl
         if bias_results.get("summary") is not None:
             all_frames["bias_summary"] = bias_results["summary"]
     if all_bias_results:
@@ -25998,6 +27819,9 @@ def _render_downloads(
             if isinstance(pair_table, pd.DataFrame) and not pair_table.empty:
                 safe_pair = re.sub(r"[^A-Za-z0-9]+", "_", str(pair_key)).strip("_")[:40]
                 all_frames[f"bias_{safe_pair}"] = pair_table
+                dff_pair = build_dff_bias_screening_table(pair_bundle)
+                if isinstance(dff_pair, pd.DataFrame) and not dff_pair.empty:
+                    all_frames[f"dff_bias_{safe_pair}"] = dff_pair
     marginal_fit = diagnostics.get("marginal_fit", {})
     if isinstance(marginal_fit, dict):
         marginal_summary = marginal_fit.get("summary", pd.DataFrame())
@@ -26046,6 +27870,9 @@ def _render_downloads(
             all_frames["equating_chain_summary"] = chain_summary
         if isinstance(chain_edges, pd.DataFrame) and not chain_edges.empty:
             all_frames["equating_chain_edges"] = chain_edges
+    workflow_plan = result.get("anchor_equating_workflow", pd.DataFrame())
+    if isinstance(workflow_plan, pd.DataFrame) and not workflow_plan.empty:
+        all_frames["anchor_equating_workflow"] = workflow_plan
 
     # Anchor data
     anchor_parts = []
@@ -26176,6 +28003,33 @@ def _render_downloads(
             ) and _kaleido_ok
         except Exception as e:
             _fig_errors.append(f"Category Probability Curves: {e}")
+
+        # Information / targeting curve
+        try:
+            info_curve_dl = build_information_curve_data(figure_result)
+            fig_info = _make_information_curve_figure(info_curve_dl)
+            if fig_info is not None:
+                _kaleido_ok = _add_figure_export(
+                    fig_info,
+                    "information_curve_average",
+                    figure_bytes,
+                    figure_html,
+                ) and _kaleido_ok
+        except Exception as e:
+            _fig_errors.append(f"Information curve: {e}")
+
+        # EB shrinkage forest
+        try:
+            fig_shr = _make_eb_shrinkage_figure(diagnostics.get("eb_shrinkage", {}))
+            if fig_shr is not None:
+                _kaleido_ok = _add_figure_export(
+                    fig_shr,
+                    "eb_shrinkage_forest",
+                    figure_bytes,
+                    figure_html,
+                ) and _kaleido_ok
+        except Exception as e:
+            _fig_errors.append(f"EB shrinkage forest: {e}")
 
         # Facet Distribution (box)
         if not figure_measures.empty and "Facet" in figure_measures.columns:
@@ -26457,6 +28311,13 @@ def _render_downloads(
                 diagnostics.get("marginal_fit", {}).get("available")
                 if isinstance(diagnostics.get("marginal_fit"), dict) else None
             ),
+            "compute_eb_shrinkage": config.get("compute_eb_shrinkage", diagnostics.get("eb_shrinkage_enabled")),
+            "eb_shrinkage_available": (
+                diagnostics.get("eb_shrinkage", {}).get("available")
+                if isinstance(diagnostics.get("eb_shrinkage"), dict) else None
+            ),
+            "facet_sample_adequacy_thresholds": dict(FACET_SAMPLE_ADEQUACY_THRESHOLDS),
+            "nesting_audit_rule": "conditional entropy index = 1 - H(FacetB|FacetA)/H(FacetB)",
             "compute_plausible_values": config.get("compute_plausible_values"),
             "n_plausible_values": config.get("n_plausible_values"),
             "plausible_seed": config.get("plausible_seed"),
@@ -26558,9 +28419,11 @@ def _render_downloads(
         method_appendix = generate_method_appendix_text(result, diagnostics, all_bias_results)
         manuscript_template = generate_manuscript_reporting_template(result, diagnostics, all_bias_results)
         external_template_assets = external_simulation_template_scripts()
+        local_batch_readme = generate_local_batch_readme()
         text_assets = {
             "method_appendix.md": method_appendix,
             "manuscript_template.md": manuscript_template,
+            "local_batch_workflow.md": local_batch_readme,
             **external_template_assets,
         }
         text_assets_key = bytes_mapping_fingerprint(text_assets)
@@ -26659,6 +28522,13 @@ def _render_downloads(
                 mime="text/plain",
                 key="dl_requirements_txt",
             )
+            st.download_button(
+                "Download local batch workflow (Markdown)",
+                data=local_batch_readme.encode("utf-8"),
+                file_name="mfrm_local_batch_workflow.md",
+                mime="text/markdown",
+                key="dl_local_batch_workflow_md",
+            )
             py_script = _generate_repro_python_script(result, bias_pairs=_bias_pairs)
             with st.expander("View portable self-contained JMLE script"):
                 st.code(py_script, language="python")
@@ -26696,7 +28566,7 @@ def _render_downloads(
         st.caption(
             "Sanitized Python/R/Julia templates for external numerical validation. "
             "They use environment variables for input/output paths and do not embed "
-            "local absolute paths, Dropbox paths, or raw data."
+            "machine-specific paths or raw data."
         )
         template_inventory = external_simulation_template_inventory()
         st.dataframe(template_inventory, width="stretch", hide_index=True)
@@ -26980,6 +28850,7 @@ def _self_test_analysis_depth_presets() -> None:
     _self_test_assert(fast["bias_mode"] == "Skip", "Fast preview should skip bias scans")
     _self_test_assert(not fast["render_interactive_plots"], "Fast preview should skip interactive plots")
     _self_test_assert(not fast["generate_figure_exports"], "Fast preview should skip figure exports")
+    _self_test_assert(not fast["compute_eb_shrinkage"], "Fast preview should skip EB shrinkage")
     _self_test_assert("Runs:" in analysis_depth_sidebar_summary(fast), "analysis-depth sidebar summary missing Runs label")
 
     standard = resolve_analysis_depth_settings("Standard (recommended)", "MML")
@@ -26989,6 +28860,7 @@ def _self_test_analysis_depth_presets() -> None:
     _self_test_assert(standard["bias_mode"] == "Selected pair", "Standard should estimate one selected bias pair")
     _self_test_assert(standard["render_interactive_plots"], "Standard should render interactive plots")
     _self_test_assert(not standard["generate_figure_exports"], "Standard should skip figure export bundle")
+    _self_test_assert(not standard["compute_eb_shrinkage"], "Standard should leave EB shrinkage optional/off by default")
 
     full_mml = resolve_analysis_depth_settings("Full publication", "MML")
     _self_test_assert(full_mml["compute_residual_pca"], "Full publication should compute residual PCA")
@@ -26999,6 +28871,7 @@ def _self_test_analysis_depth_presets() -> None:
     _self_test_assert(full_mml["n_plausible_values"] == 10, "Full MML plausible-value count changed")
     _self_test_assert(full_mml["bias_mode"] == "All facet pairs", "Full publication should scan all bias pairs")
     _self_test_assert(full_mml["generate_figure_exports"], "Full publication should prepare figure exports")
+    _self_test_assert(full_mml["compute_eb_shrinkage"], "Full publication should compute EB shrinkage advisory")
 
     full_jmle = resolve_analysis_depth_settings("Full publication", "JMLE")
     _self_test_assert(not full_jmle["compute_strict_marginal"], "JMLE should not enable strict marginal diagnostics")
@@ -27576,6 +29449,7 @@ def _self_test_report_readiness_and_method_appendix() -> None:
         "external_simulation_reference_inventory",
         "external_simulation_template_inventory",
         "mfrmr_015_migration_coverage",
+        "mfrmr_016_migration_coverage",
         "public_release_readiness",
         "category_probability_curves",
     ]:
@@ -27739,6 +29613,9 @@ def _self_test_anchor_audit() -> None:
     edges = chain.get("edges", pd.DataFrame())
     _self_test_assert(not edges.empty, "equating-chain edges are empty")
     _self_test_assert("Rater" in edges["Facet"].astype(str).tolist(), "equating-chain edges missing anchored Rater facet")
+    workflow = res.get("anchor_equating_workflow", pd.DataFrame())
+    _self_test_assert(not workflow.empty, "anchor/equating workflow checklist is empty")
+    _self_test_assert("Common-anchor coverage" in workflow["Check"].astype(str).tolist(), "workflow checklist missing common-anchor row")
 
 
 def _self_test_script_support_boundaries() -> None:
@@ -27789,7 +29666,7 @@ def _self_test_script_support_boundaries() -> None:
     _self_test_assert("MFRM_INPUT_CSV" in joined_templates, "external Simulation templates missing env-var input path")
     _self_test_assert(
         "/Users/" not in joined_templates and "C:/Users/" not in joined_templates,
-        "external Simulation templates contain local absolute paths",
+        "external Simulation templates contain machine-specific absolute paths",
     )
 
 
@@ -27966,14 +29843,14 @@ def cross_package_validation_plan() -> pd.DataFrame:
             "Action": "Label these as diagnostic screens rather than proof of model truth.",
         },
         {
-            "Area": "External Simulation repository sweep",
-            "PythonScenario": "local Simulation validation inputs and engine refit manifests",
-            "ExternalReference": "mfrmr/Python/Julia/FACETS local Simulation artifacts",
-            "OfficialHook": "archived local numerical validation outputs, not runtime dependencies",
+            "Area": "Archived simulation validation sweep",
+            "PythonScenario": "sanitized validation inputs and engine refit manifests",
+            "ExternalReference": "archived mfrmr/Python/Julia/FACETS validation artifacts",
+            "OfficialHook": "archived numerical validation outputs, not runtime dependencies",
             "ComparableEvidence": "manifest status counts, full-reference summaries, runtime summaries, and non-empty validation-input replicates",
             "ReviewThreshold": "review any failed manifest row, missing summary output, zero-byte replicate selected for validation, or unarchived parameterization note",
-            "ExpectedNonEquivalence": "historical artifacts can contain OS-specific absolute paths and package-specific constants",
-            "Action": "Use the Simulation inventory as reviewer evidence only after archiving sanitized manifests and comparison summaries.",
+            "ExpectedNonEquivalence": "historical artifacts may use package-specific constants or earlier parameterization conventions",
+            "Action": "Use the validation-artifact inventory as reviewer evidence only after archiving sanitized manifests and comparison summaries.",
         },
         {
             "Area": "Posterior Viewer / Bayesian diagnostics (v0.2.0+)",
@@ -28193,9 +30070,9 @@ def external_reference_documentation_table() -> pd.DataFrame:
             "NonEquivalenceBoundary": "sirt centering, slope, and trait-standard-deviation options can differ from this app.",
         },
         {
-            "Reference": "mfrmr 0.1.5 local source",
+            "Reference": "mfrmr 0.1.6 package source",
             "OfficialUrl": "https://github.com/Ryuya-dot-com/R_package_mfrmr",
-            "RelevantSurface": "fit_mfrm, diagnose_mfrm, reporting_checklist, bounded GPCM, latent regression, strict marginal diagnostics, prediction, plausible values, simulation, and linking helpers",
+            "RelevantSurface": "fit_mfrm, diagnose_mfrm, reporting_checklist, bounded GPCM, latent regression, strict marginal diagnostics, prediction, plausible values, simulation, linking helpers, and 0.1.6 interaction/reporting refinements",
             "PythonUse": "Migration coverage reference for the standalone Python app.",
             "NonEquivalenceBoundary": "The Python app should not call mfrmr at runtime and should not claim one-to-one helper parity unless the migration coverage table says so.",
         },
@@ -28204,17 +30081,17 @@ def external_reference_documentation_table() -> pd.DataFrame:
 
 
 def external_simulation_reference_inventory() -> pd.DataFrame:
-    """Local Simulation repository artifacts available for numerical validation.
+    """Archived validation artifacts available for numerical validation.
 
     These rows intentionally store relative artifact names and review actions
-    rather than local absolute paths. The public app should not depend on the
-    Dropbox/Simulation directory at runtime.
+    rather than machine-specific absolute paths. The public app should not
+    depend on private validation directories at runtime.
     """
     rows = [
         {
             "ReferenceSet": "Observed long-form rating data",
             "RelativeArtifacts": "data/writing_long.csv; data/speaking_long.csv",
-            "LocalEvidence": "writing_long.csv: 111,995 rows x 8 columns; speaking_long.csv: 111,993 rows x 8 columns.",
+            "ArchivedEvidence": "writing_long.csv: 111,995 rows x 8 columns; speaking_long.csv: 111,993 rows x 8 columns.",
             "NumericalUse": "End-to-end data import, score support, missingness, and category-distribution validation on realistic long-format data.",
             "PublicHandling": "Do not bundle raw observed data in the public repository; archive only de-identified derived summaries when needed.",
             "ValidationAction": "Check column mapping, category support, row counts, and privacy review before any manuscript-facing validation claim.",
@@ -28222,15 +30099,15 @@ def external_simulation_reference_inventory() -> pd.DataFrame:
         {
             "ReferenceSet": "Main engine refit sweep",
             "RelativeArtifacts": "results/engine_refit_manifest.csv",
-            "LocalEvidence": "4,004 manifest rows; 1,001 rows each for mfrmr JMLE, mfrmr MML, Python JMLE, and Julia JMLE; all rows marked ok in the inspected local copy.",
+            "ArchivedEvidence": "4,004 manifest rows; 1,001 rows each for mfrmr JMLE, mfrmr MML, Python JMLE, and Julia JMLE; all inspected rows marked ok.",
             "NumericalUse": "Large-scale regression evidence that repeated simulated validation datasets were refit across engines.",
-            "PublicHandling": "Use sanitized manifest counts and summary tables; do not publish local absolute paths embedded in historical manifests.",
+            "PublicHandling": "Use sanitized manifest counts and summary tables; do not publish machine-specific absolute paths embedded in historical manifests.",
             "ValidationAction": "Before citing, regenerate or sanitize paths and pair each manifest row with parameterization/tolerance notes.",
         },
         {
             "ReferenceSet": "Runtime benchmark sweep",
             "RelativeArtifacts": "results/runtime_validation_summary.csv; results/runtime_validation_long.csv; results/runtime_fullref.csv",
-            "LocalEvidence": "runtime_validation_summary.csv: 4 rows x 7 columns; runtime_validation_long.csv: 4,000 rows x 7 columns; runtime_fullref.csv: 4 rows x 6 columns.",
+            "ArchivedEvidence": "runtime_validation_summary.csv: 4 rows x 7 columns; runtime_validation_long.csv: 4,000 rows x 7 columns; runtime_fullref.csv: 4 rows x 6 columns.",
             "NumericalUse": "Performance and convergence smoke evidence for full-reference and repeated validation refits.",
             "PublicHandling": "Report aggregate timings only when hardware, versions, and sample size are stated.",
             "ValidationAction": "Use as performance evidence, not as statistical equivalence evidence.",
@@ -28238,7 +30115,7 @@ def external_simulation_reference_inventory() -> pd.DataFrame:
         {
             "ReferenceSet": "Full-reference backup outputs",
             "RelativeArtifacts": "results_backup_20260407_pre_diag/*_full_ref/sim_summary_*.csv; sim_person_*.csv; sim_facets_*.csv",
-            "LocalEvidence": "Available full-reference summaries for R/mfrmr JMLE and MML, Python JMLE, Julia JMLE, and FACETS-style outputs.",
+            "ArchivedEvidence": "Available full-reference summaries for R/mfrmr JMLE and MML, Python JMLE, Julia JMLE, and FACETS-style outputs.",
             "NumericalUse": "Small, auditable cross-engine reference set for summary, person-measure, and facet-measure comparisons.",
             "PublicHandling": "Archive summary/person/facet comparison tables with package versions; avoid claiming exact equality unless constraints and constants are aligned.",
             "ValidationAction": "Use centered/rank comparisons and keep FACETS, mfrmr, Python, and Julia parameterization notes beside the results.",
@@ -28246,15 +30123,15 @@ def external_simulation_reference_inventory() -> pd.DataFrame:
         {
             "ReferenceSet": "Diagnostic spot-check manifests",
             "RelativeArtifacts": "results_diagcheck_all/engine_refit_manifest.csv; results_julia_diag/engine_refit_manifest.csv; results_mmlcheck/engine_refit_manifest.csv; results_backup_20260407_pre_diag/engine_refit_manifest.csv",
-            "LocalEvidence": "Inspected local manifests include diagcheck_all: 3 ok rows; julia_diag: 1 ok row; mmlcheck: 2 ok rows; backup pre_diag: 16 ok rows.",
+            "ArchivedEvidence": "Archived manifests include diagcheck_all: 3 ok rows; julia_diag: 1 ok row; mmlcheck: 2 ok rows; backup pre_diag: 16 ok rows.",
             "NumericalUse": "Targeted regression checks for diagnostics, Julia output paths, and mfrmr MML/JMLE output availability.",
-            "PublicHandling": "Treat as local smoke evidence until regenerated in the public CI or archived with environment details.",
+            "PublicHandling": "Treat as smoke evidence until regenerated in public CI or archived with environment details.",
             "ValidationAction": "Use to prioritize numerical tests when diagnostic or MML code paths change.",
         },
         {
             "ReferenceSet": "Validation input replicates",
             "RelativeArtifacts": "results/validation_inputs/rep_*_writing_long.csv",
-            "LocalEvidence": "Large replicate input CSVs are present; inspected examples include a non-empty rep_010 file with 83,996 lines and zero-line placeholders for rep_001 and rep_100.",
+            "ArchivedEvidence": "Large replicate input CSVs are present; inspected examples include a non-empty rep_010 file with 83,996 lines and zero-line placeholders for rep_001 and rep_100.",
             "NumericalUse": "Stress-test parsing, empty-file handling, category support, and batch validation robustness.",
             "PublicHandling": "Do not copy the replicate data into the public repository without a privacy and size review.",
             "ValidationAction": "Filter zero-byte or zero-line inputs before batch refits and record which replicates were actually analyzed.",
@@ -28262,9 +30139,9 @@ def external_simulation_reference_inventory() -> pd.DataFrame:
         {
             "ReferenceSet": "Quarto empirical-study artifacts",
             "RelativeArtifacts": "icnale_empirical_study.qmd; icnale_observed_data_preprocessing.qmd; rendered HTML and figure outputs",
-            "LocalEvidence": "Local Quarto analysis sources and rendered reports are available in the Simulation directory.",
+            "ArchivedEvidence": "Quarto analysis sources and rendered reports are available as optional validation artifacts.",
             "NumericalUse": "Method narrative, preprocessing audit, and figure-level triangulation for reviewer documentation.",
-            "PublicHandling": "Use as local study documentation; avoid embedding private source paths or raw data excerpts in the app repository.",
+            "PublicHandling": "Use as study documentation only after review; avoid embedding private file paths or raw data excerpts in the app repository.",
             "ValidationAction": "When publishing, cite only sanitized methods/results summaries that match the current Python app output.",
         },
     ]
@@ -28306,7 +30183,7 @@ def external_validation_artifact_checklist() -> pd.DataFrame:
         },
         {
             "Artifact": "Simulation reference inventory",
-            "RequiredForClaim": "Any claim based on the local Simulation directory",
+            "RequiredForClaim": "Any claim based on archived simulation-validation artifacts",
             "ExpectedFileOrEvidence": "external_simulation_reference_inventory.csv plus sanitized manifest/comparison summaries",
             "ReviewQuestion": "Were private data, absolute paths, zero-byte replicates, and package-specific parameterizations handled before public reporting?",
         },
@@ -28397,22 +30274,22 @@ def external_validation_report_template() -> pd.DataFrame:
         },
         {
             "ClaimArea": "External Simulation numerical validation",
-            "PythonScenario": "local Simulation manifests and validation inputs",
-            "ExternalPackage": "mfrmr/Python/Julia/FACETS local artifacts",
+            "PythonScenario": "archived simulation manifests and validation inputs",
+            "ExternalPackage": "mfrmr/Python/Julia/FACETS archived artifacts",
             "EvidenceFile": "external_simulation_reference_inventory.csv; sanitized engine_refit_manifest.csv; sanitized comparison summaries",
             "ObservedResult": "",
             "Status": "Not run",
-            "AcceptablePublicWording": "Local Simulation artifacts were used as archived numerical validation evidence under documented parameterization and privacy boundaries.",
+            "AcceptablePublicWording": "Archived simulation artifacts were used as numerical validation evidence under documented parameterization and privacy boundaries.",
             "ReviewerNotes": "",
         },
         {
-            "ClaimArea": "mfrmr 0.1.5 migration",
+            "ClaimArea": "mfrmr 0.1.6 migration",
             "PythonScenario": "all relevant scenarios",
             "ExternalPackage": "mfrmr",
-            "EvidenceFile": "mfrmr_015_migration_coverage.csv",
+            "EvidenceFile": "mfrmr_016_migration_coverage.csv; mfrmr_015_migration_coverage.csv",
             "ObservedResult": "",
             "Status": "Not run",
-            "AcceptablePublicWording": "The Python app covers the listed mfrmr 0.1.5 areas with documented boundaries.",
+            "AcceptablePublicWording": "The Python app covers the listed mfrmr 0.1.6 areas with documented boundaries.",
             "ReviewerNotes": "",
         },
     ]
@@ -28430,13 +30307,13 @@ def _self_test_cross_package_validation_plan() -> None:
     _self_test_assert("Log-likelihood" in tol["EvidenceType"].tolist(), "tolerance policy missing log-likelihood rule")
     docs = external_reference_documentation_table()
     _self_test_assert(
-        {"TAM tam.mml.mfr", "mirt mirt", "sirt rm.facets", "mfrmr 0.1.5 local source"}.issubset(set(docs["Reference"])),
+        {"TAM tam.mml.mfr", "mirt mirt", "sirt rm.facets", "mfrmr 0.1.6 package source"}.issubset(set(docs["Reference"])),
         "external reference documentation table missing required references",
     )
     sim_inventory = external_simulation_reference_inventory()
     _self_test_assert(
         {"Main engine refit sweep", "Validation input replicates"}.issubset(set(sim_inventory["ReferenceSet"])),
-        "Simulation reference inventory missing required local validation artifacts",
+        "Simulation reference inventory missing required archived validation artifacts",
     )
     _self_test_assert(
         sim_inventory["PublicHandling"].astype(str).str.contains("Do not", case=False, na=False).any(),
@@ -28450,10 +30327,13 @@ def _self_test_cross_package_validation_plan() -> None:
     checklist = external_validation_artifact_checklist()
     _self_test_assert("External package versions" in checklist["Artifact"].tolist(), "artifact checklist missing package versions")
     template = external_validation_report_template()
-    _self_test_assert("mfrmr 0.1.5 migration" in template["ClaimArea"].tolist(), "validation report template missing mfrmr migration row")
+    _self_test_assert("mfrmr 0.1.6 migration" in template["ClaimArea"].tolist(), "validation report template missing mfrmr migration row")
     coverage = mfrmr_015_migration_coverage_table()
     _self_test_assert("Bounded GPCM" in coverage["mfrmr015Area"].tolist(), "mfrmr 0.1.5 coverage missing GPCM row")
     _self_test_assert("Latent regression / population_formula" in coverage["mfrmr015Area"].tolist(), "mfrmr 0.1.5 coverage missing latent regression row")
+    coverage_016 = mfrmr_016_migration_coverage_table()
+    _self_test_assert("Empirical-Bayes facet shrinkage" in coverage_016["mfrmr016Area"].tolist(), "mfrmr 0.1.6 coverage missing EB shrinkage row")
+    _self_test_assert("Facet nesting / hierarchical structure" in coverage_016["mfrmr016Area"].tolist(), "mfrmr 0.1.6 coverage missing nesting row")
 
 
 def _self_test_public_beta_release_contract() -> None:
@@ -28576,6 +30456,15 @@ def _self_test_advanced_model_generators() -> None:
             _self_test_assert("alpha_item" in code, "2PL missing alpha_item (discrimination)")
         if model_name == "PAIRWISE_BTL":
             _self_test_assert("ability" in code, "BTL missing ability parameter")
+        template = advanced_model_data_template(model_name)
+        _self_test_assert(
+            isinstance(template.get("data"), pd.DataFrame) and not template["data"].empty,
+            f"{model_name}: data template missing",
+        )
+        _self_test_assert(
+            str(template.get("file_name", "")).endswith(".csv"),
+            f"{model_name}: template filename should be CSV",
+        )
 
     # Q-matrix validator
     good_q = pd.DataFrame([[1, 0, 0], [0, 1, 0], [1, 1, 0], [0, 0, 1], [1, 0, 1]])
@@ -29737,6 +31626,7 @@ def export_reference_parity_fixture(output_dir: str) -> int:
     external_validation_artifact_checklist().to_csv(out_dir / "external_validation_artifact_checklist.csv", index=False)
     external_validation_report_template().to_csv(out_dir / "external_validation_report_template.csv", index=False)
     mfrmr_015_migration_coverage_table().to_csv(out_dir / "mfrmr_015_migration_coverage.csv", index=False)
+    mfrmr_016_migration_coverage_table().to_csv(out_dir / "mfrmr_016_migration_coverage.csv", index=False)
     for name, script_text in external_simulation_template_scripts().items():
         (out_dir / name).write_text(script_text, encoding="utf-8")
 
@@ -29761,9 +31651,9 @@ Files:
 - `cross_package_tolerance_policy.csv`: default review thresholds.
 - `external_reference_documentation.csv`: official documentation touchpoints
   used to scope optional validation.
-- `external_simulation_reference_inventory.csv`: local Simulation-directory
-  artifacts that can support numerical validation without becoming runtime
-  dependencies or bundled private data.
+- `external_simulation_reference_inventory.csv`: archived validation artifacts
+  that can support numerical validation without becoming runtime dependencies
+  or bundled private data.
 - `external_simulation_template_inventory.csv`: index of sanitized Python/R/Julia
   handoff templates for optional external validation.
 - `README_external_simulation_templates.md`,
@@ -29774,8 +31664,8 @@ Files:
   making public comparison claims.
 - `external_validation_report_template.csv`: blank reviewer table for the
   final external validation summary.
-- `mfrmr_015_migration_coverage.csv`: migration coverage map for the local
-  mfrmr 0.1.5 feature surface.
+- `mfrmr_015_migration_coverage.csv` and `mfrmr_016_migration_coverage.csv`:
+  migration coverage maps for the mfrmr package feature surface through 0.1.6.
 - `*_summary.csv`, `*_person_measures.csv`, `*_facet_measures.csv`, `*_steps.csv`:
   Python reference outputs for each scenario.
 - `r_crosscheck_scaffold.R`: optional R script. It is not used by the
@@ -29794,7 +31684,7 @@ Comparison rules:
   distributions and downstream regression trends.
 - Strict marginal diagnostics and package residual diagnostics are screening
   evidence, not proof of model truth.
-- The Python app should be described as covering the listed mfrmr 0.1.5
+- The Python app should be described as covering the listed mfrmr 0.1.6
   migration areas with documented boundaries, not as a runtime wrapper around
   mfrmr.
 
@@ -30059,6 +31949,7 @@ def build_demo_report_frames(
     frames["external_simulation_reference_inventory"] = external_simulation_reference_inventory()
     frames["external_simulation_template_inventory"] = external_simulation_template_inventory()
     frames["mfrmr_015_migration_coverage"] = mfrmr_015_migration_coverage_table()
+    frames["mfrmr_016_migration_coverage"] = mfrmr_016_migration_coverage_table()
     frames["public_release_readiness"] = public_release_readiness_table()
     person = result.get("facets", {}).get("person", pd.DataFrame())
     if isinstance(person, pd.DataFrame) and not person.empty:
@@ -30108,6 +31999,9 @@ def build_demo_report_frames(
         safe_pair = re.sub(r"[^A-Za-z0-9]+", "_", str(pair_key)).strip("_")[:40]
         if isinstance(table, pd.DataFrame) and not table.empty:
             frames[f"bias_{safe_pair}"] = table
+            dff_tbl = build_dff_bias_screening_table(bundle)
+            if isinstance(dff_tbl, pd.DataFrame) and not dff_tbl.empty:
+                frames[f"dff_bias_{safe_pair}"] = dff_tbl
         if isinstance(summary_tbl, pd.DataFrame) and not summary_tbl.empty:
             frames[f"bias_{safe_pair}_summary"] = summary_tbl
     return frames
@@ -30253,13 +32147,13 @@ It demonstrates the standalone Python workflow without calling `mfrmr`,
 8. `visual_interpretation_checklist.csv`: how to read each plot.
 9. `visual_method_evidence.csv`: methodological basis and readability rules for plots.
 10. `public_beta_limitations.csv`: what this beta release supports and does not claim.
-11. `external_simulation_reference_inventory.csv`: local Simulation-directory
-   validation artifacts to consult without bundling private data.
+11. `external_simulation_reference_inventory.csv`: archived validation artifacts
+   to consult without bundling private data.
 12. `external_simulation_template_inventory.csv`: index of sanitized Python/R/Julia
    external validation templates.
 13. `README_external_simulation_templates.md` and `simulation_validation_*`:
    sanitized handoff scripts for optional external validation.
-14. `mfrmr_015_migration_coverage.csv`: how the local mfrmr 0.1.5 feature surface maps to this Python app.
+14. `mfrmr_015_migration_coverage.csv` and `mfrmr_016_migration_coverage.csv`: how the mfrmr package feature surface through 0.1.6 maps to this Python app.
 15. `public_release_readiness.csv`: repository-level public release checklist.
 16. `category_probability_curves.csv`: long-form PCM curve data for the
    averaged view and each Task level.
@@ -30410,6 +32304,7 @@ def run_release_check(json_output: bool = False) -> int:
     readiness = public_release_readiness_table()
     limitations = public_beta_limitations_table()
     migration = mfrmr_015_migration_coverage_table()
+    migration_016 = mfrmr_016_migration_coverage_table()
     simulation_inventory = external_simulation_reference_inventory()
     simulation_templates = external_simulation_template_inventory()
     payload = {
@@ -30421,6 +32316,7 @@ def run_release_check(json_output: bool = False) -> int:
         "external_simulation_reference_inventory": simulation_inventory.to_dict(orient="records"),
         "external_simulation_template_inventory": simulation_templates.to_dict(orient="records"),
         "mfrmr_015_migration_coverage": migration.to_dict(orient="records"),
+        "mfrmr_016_migration_coverage": migration_016.to_dict(orient="records"),
     }
     if json_output:
         print(json.dumps(payload, indent=2, ensure_ascii=False))
@@ -30434,9 +32330,10 @@ def run_release_check(json_output: bool = False) -> int:
         print("\nPublic beta limitations:")
         for _, row in limitations.iterrows():
             print(f"- {row['Area']}: {row['PublicBetaStatus']} - {row['Boundary']}")
-        print(f"\nExternal Simulation reference inventory rows: {len(simulation_inventory)}")
-        print(f"\nExternal Simulation template rows: {len(simulation_templates)}")
+        print(f"\nArchived validation artifact inventory rows: {len(simulation_inventory)}")
+        print(f"\nExternal validation template rows: {len(simulation_templates)}")
         print(f"\nmfrmr 0.1.5 migration coverage rows: {len(migration)}")
+        print(f"mfrmr 0.1.6 migration coverage rows: {len(migration_016)}")
     blocker_count = int((readiness["Status"].astype(str) == "Blocker").sum()) if "Status" in readiness.columns else 1
     return 1 if blocker_count else 0
 
@@ -30567,6 +32464,7 @@ def run_benchmarks(csv_path: str | None = None, quick: bool = False) -> int:
             compute_marginal=bool(settings["compute_strict_marginal"]),
             marginal_pairwise=bool(settings["strict_marginal_pairwise"]),
             marginal_max_pair_cells=int(settings["strict_marginal_max_pair_cells"]),
+            compute_eb_shrinkage=bool(settings["compute_eb_shrinkage"]),
         )
         diagnostics_seconds = float(time.perf_counter() - diag_start)
         bias_seconds, bias_tables = _benchmark_bias_scan(
@@ -30671,6 +32569,41 @@ def _self_test_table_delimiter_and_stale_fingerprints() -> None:
     _self_test_assert(uploaded.shape == (2, 3), f"semicolon uploaded CSV parsed to {uploaded.shape}")
     _self_test_assert(infer_table_delimiter(semi_text) == ";", "semicolon delimiter inference failed")
 
+    class _ExcelUpload:
+        name = "ratings.xlsx"
+
+        def getvalue(self):
+            buf = io.BytesIO()
+            pd.DataFrame({"Person": ["P1", "P2"], "Rater": ["R1", "R2"], "Score": [1, 2]}).to_excel(
+                buf, index=False, engine="openpyxl"
+            )
+            return buf.getvalue()
+
+    xlsx = read_flexible_table("", _ExcelUpload(), header=True)
+    _self_test_assert(xlsx.shape == (2, 3), f"Excel uploaded table parsed to {xlsx.shape}")
+
+    class _JsonUpload:
+        name = "ratings.json"
+
+        def getvalue(self):
+            return b'[{"Person":"P1","Rater":"R1","Score":1},{"Person":"P2","Rater":"R2","Score":2}]'
+
+    parsed_json = read_flexible_table("", _JsonUpload(), header=True)
+    _self_test_assert(parsed_json.shape == (2, 3), f"JSON uploaded table parsed to {parsed_json.shape}")
+
+    class _ParquetUpload:
+        name = "ratings.parquet"
+
+        def getvalue(self):
+            buf = io.BytesIO()
+            pd.DataFrame({"Person": ["P1", "P2"], "Rater": ["R1", "R2"], "Score": [1, 2]}).to_parquet(
+                buf, index=False
+            )
+            return buf.getvalue()
+
+    parsed_parquet = read_flexible_table("", _ParquetUpload(), header=True)
+    _self_test_assert(parsed_parquet.shape == (2, 3), f"Parquet uploaded table parsed to {parsed_parquet.shape}")
+
     data_a = pd.DataFrame({"Person": ["P1"], "Rater": ["R1"], "Score": [1]})
     data_b = pd.DataFrame({"Person": ["P1"], "Rater": ["R1"], "Score": [2]})
     fp_a = dataframe_fingerprint(data_a)
@@ -30736,6 +32669,28 @@ def _self_test_likelihood_information_criteria() -> None:
     )
     desc = build_likelihood_descriptives(rows)
     _self_test_assert("AIC" in desc["Metric"].tolist(), "likelihood descriptives missing AIC")
+
+
+def _self_test_dff_bias_screening() -> None:
+    bias_tbl = pd.DataFrame({
+        "FacetA": ["Rater", "Rater", "Rater"],
+        "FacetA_Level": ["R1", "R2", "R3"],
+        "FacetB": ["Task", "Task", "Task"],
+        "FacetB_Level": ["T1", "T1", "T2"],
+        "ObsN": [30, 4, 30],
+        "Bias Size": [0.80, 0.10, 0.60],
+        "S.E.": [0.10, 0.50, 0.30],
+        "t": [8.0, 0.2, 2.0],
+        "Prob.": [0.001, 0.84, 0.046],
+    })
+    dff = build_dff_bias_screening_table({"table": bias_tbl}, alpha=0.05, min_n=5, practical_logit=0.5)
+    _self_test_assert(not dff.empty and "p_holm" in dff.columns and "p_bh" in dff.columns, "DFF table missing adjusted p-values")
+    _self_test_assert("Strong review" in dff["EvidenceLevel"].astype(str).tolist(), "strong DFF review flag missing")
+    _self_test_assert("Sparse cell" in dff["EvidenceLevel"].astype(str).tolist(), "sparse DFF cell flag missing")
+    summary = summarize_dff_bias_screening(dff)
+    _self_test_assert(not summary.empty, "DFF screening summary is empty")
+    values = dict(zip(summary["Metric"], summary["Value"]))
+    _self_test_assert(int(values.get("Flagged cells", 0)) >= 2, "DFF summary undercounts flagged cells")
 
 
 def _self_test_facet_regularization() -> None:
@@ -30829,6 +32784,71 @@ def _self_test_facet_regularization() -> None:
             raise AssertionError(f"invalid regularization spec was accepted: {bad_spec}")
 
 
+def _self_test_mfrmr_016_audits_and_shrinkage() -> None:
+    data = pd.DataFrame({
+        "Person": ["P1", "P1", "P2", "P2", "P3", "P3", "P4", "P4"],
+        "Rater": ["R1", "R1", "R2", "R2", "R3", "R3", "R4", "R4"],
+        "Task": ["T1", "T1", "T1", "T1", "T2", "T2", "T2", "T2"],
+        "Score": [1, 2, 2, 3, 3, 4, 4, 5],
+        "Weight": [1, 1, 1, 1, 2, 2, 2, 2],
+    })
+    audit = build_facet_sample_size_audit(data, ["Person", "Rater", "Task"], dummy_facets=["Task"])
+    _self_test_assert(not audit.empty, "facet sample-size audit is empty")
+    _self_test_assert("structural" in audit["SampleCategory"].astype(str).tolist(), "dummy facet was not marked structural")
+    summary = summarize_facet_sample_size_audit(audit)
+    _self_test_assert("SparseLevels" in summary.columns, "sample-size summary missing sparse count")
+
+    nesting = build_facet_nesting_audit(data, ["Rater", "Task"])
+    _self_test_assert(not nesting.empty, "nesting audit is empty")
+    rater_to_task = nesting[(nesting["FacetA"] == "Rater") & (nesting["FacetB"] == "Task")]
+    _self_test_assert(
+        not rater_to_task.empty and float(rater_to_task["NestingIndex"].iloc[0]) > 0.9,
+        "nested Rater -> Task relation was not detected",
+    )
+
+    design_effect = compute_intraclass_design_effect(data, ["Rater", "Task"], score_col="Score")
+    _self_test_assert("IntraclassCorrelationClusterICC" in design_effect.columns, "cluster ICC column missing")
+    _self_test_assert("DesignEffect" in design_effect.columns, "design effect column missing")
+
+    measures = pd.DataFrame({
+        "Facet": ["Rater", "Rater", "Rater", "Rater", "Task", "Task"],
+        "Level": ["R1", "R2", "R3", "R4", "T1", "T2"],
+        "Estimate": [-0.8, -0.2, 0.3, 0.7, -0.1, 0.1],
+        "SE": [0.20, 0.30, 0.25, 0.35, 0.2, 0.2],
+    })
+    shrinkage = compute_empirical_bayes_shrinkage(measures)
+    shr = shrinkage.get("measures", pd.DataFrame())
+    _self_test_assert(shrinkage.get("available"), "EB shrinkage should be available")
+    _self_test_assert({"ShrunkEstimate", "ShrunkSE", "ShrinkageFactor"}.issubset(shr.columns), "EB shrinkage columns missing")
+    factors = pd.to_numeric(shr["ShrinkageFactor"], errors="coerce").dropna()
+    _self_test_assert(bool(((factors >= 0) & (factors <= 1)).all()), "shrinkage factors outside [0, 1]")
+    task_rows = shr[shr["Facet"].astype(str) == "Task"]
+    _self_test_assert(
+        bool(np.allclose(task_rows["Estimate"], task_rows["ShrunkEstimate"], equal_nan=True)),
+        "K<3 facet should pass through without shrinkage",
+    )
+
+
+def _self_test_information_curve_contract() -> None:
+    res = mfrm_estimate(
+        _make_self_test_rating_data([1, 2, 3, 4] * 6),
+        person_col="Person",
+        facet_cols=["Rater", "Task"],
+        score_col="Score",
+        model="RSM",
+        method="JMLE",
+        maxit=20,
+        reltol=1e-3,
+    )
+    bundle = build_information_curve_data(res)
+    _self_test_assert(bundle.get("available"), "information curve unavailable")
+    curve = bundle.get("curve", pd.DataFrame())
+    _self_test_assert(not curve.empty, "information curve table is empty")
+    _self_test_assert(bool((pd.to_numeric(curve["Information"], errors="coerce") >= 0).all()), "information must be nonnegative")
+    export = information_curve_export_table(res)
+    _self_test_assert(not export.empty and "ConditionalSE" in export.columns, "information curve export missing ConditionalSE")
+
+
 def run_self_tests() -> int:
     tests = [
         ("zero-count intermediate category support", _self_test_zero_count_category_support),
@@ -30870,7 +32890,10 @@ def run_self_tests() -> int:
         ("CSV newline normalization", _self_test_csv_newline_normalization),
         ("Table delimiter and stale-input fingerprints", _self_test_table_delimiter_and_stale_fingerprints),
         ("Likelihood information criteria", _self_test_likelihood_information_criteria),
+        ("DFF bias screening", _self_test_dff_bias_screening),
         ("Facet regularization", _self_test_facet_regularization),
+        ("mfrmr 0.1.6 audits and EB shrinkage", _self_test_mfrmr_016_audits_and_shrinkage),
+        ("information curve contract", _self_test_information_curve_contract),
         ("Data-outlier detection", _self_test_data_outlier_detection),
         ("Posterior NetCDF round-trip", _self_test_posterior_load_netcdf),
         ("Posterior CmdStan CSV loader", _self_test_posterior_load_cmdstan_csvs),
@@ -31085,6 +33108,105 @@ def advanced_model_metadata(name: str) -> dict[str, str]:
 def advanced_model_options() -> list[tuple[str, str]]:
     """List of `(key, human_label)` tuples for the sidebar picker."""
     return [(k, v["label"]) for k, v in _ADVANCED_RESPONSE_MODELS.items()]
+
+
+def advanced_model_data_template(model_name: str) -> dict:
+    """Return a small user-facing data template for the selected Stan model."""
+    name = str(model_name or "").upper()
+    if name == "DINA":
+        df = pd.DataFrame({
+            "person": ["P1", "P2", "P3"],
+            "I1": [1, 0, 1],
+            "I2": [0, 1, 1],
+            "I3": [1, 1, 0],
+        })
+        note = "Wide binary response matrix. Pair with a Q-matrix whose item rows match I1, I2, I3."
+        file_name = "mfrm_dina_response_matrix_template.csv"
+    elif name == "HRM":
+        df = pd.DataFrame({
+            "person": ["P1", "P1", "P2", "P2"],
+            "item": ["Task1", "Task1", "Task1", "Task2"],
+            "rater": ["R1", "R2", "R1", "R2"],
+            "score": [3, 4, 2, 3],
+        })
+        note = "Long ordinal ratings. Map labels to 1-based integer IDs before passing data to Stan."
+        file_name = "mfrm_hrm_long_template.csv"
+    elif name in {"TESTLET_RI", "TESTLET_BIFACTOR"}:
+        df = pd.DataFrame({
+            "person": ["P1", "P1", "P2", "P2"],
+            "item": ["Item1", "Item2", "Item1", "Item3"],
+            "testlet": ["PassageA", "PassageA", "PassageA", "PassageB"],
+            "score": [1, 2, 0, 1],
+        })
+        note = (
+            "Long ordinal ratings with a testlet/passage column. "
+            "Use when local dependence is expected within item bundles."
+        )
+        file_name = f"mfrm_{name.lower()}_long_template.csv"
+    elif name == "MIXTURE_RASCH":
+        df = pd.DataFrame({
+            "person": ["P1", "P1", "P2", "P2"],
+            "item": ["Item1", "Item2", "Item1", "Item2"],
+            "score": [1, 0, 0, 1],
+        })
+        note = (
+            "Binary long-format responses for latent-class Rasch. "
+            "This mixture is a latent response-pattern class model, not a response-time model."
+        )
+        file_name = "mfrm_mixture_rasch_long_template.csv"
+    elif name == "IRT_2PL_BINARY":
+        df = pd.DataFrame({
+            "person": ["P1", "P1", "P2", "P2"],
+            "item": ["Item1", "Item2", "Item1", "Item2"],
+            "score": [1, 0, 0, 1],
+        })
+        note = "Binary long-format responses for a 2PL model with item discrimination."
+        file_name = "mfrm_2pl_binary_long_template.csv"
+    elif name == "PAIRWISE_BTL":
+        df = pd.DataFrame({
+            "object_a": ["EssayA", "EssayA", "EssayB"],
+            "object_b": ["EssayB", "EssayC", "EssayC"],
+            "wins_a": [1, 0, 1],
+        })
+        note = "Pairwise-comparison outcomes. wins_a is 1 when object_a is preferred to object_b."
+        file_name = "mfrm_pairwise_btl_template.csv"
+    else:
+        df = pd.DataFrame()
+        note = "No template is registered for this model."
+        file_name = "mfrm_advanced_model_template.csv"
+    return {"data": df, "file_name": file_name, "note": note}
+
+
+def advanced_model_scope_notes(model_name: str) -> str:
+    """Beginner-safe wording for advanced Stan model boundaries."""
+    name = str(model_name or "").upper()
+    if name in {"TESTLET_RI", "TESTLET_BIFACTOR"}:
+        return (
+            "Local dependence here means residual association among items that share a passage, station, "
+            "or testlet after the main trait is accounted for. The generated Stan code models that dependence "
+            "with testlet random effects. It is separate from the fixed non-person facet interactions in the "
+            "FACETS-mode bias table."
+        )
+    if name == "MIXTURE_RASCH":
+        return (
+            "Mixture Rasch here means unobserved latent classes with class-specific item difficulties. "
+            "It does not use response time. If response time is part of the study, extend the Stan data block "
+            "and likelihood explicitly rather than treating this mixture as a speed or inattentive-rating model."
+        )
+    if name == "HRM":
+        return (
+            "The hierarchical rater model separates rater accuracy and rater bias in a Bayesian ordinal model. "
+            "Run it locally in Stan when rater behavior itself is the target of inference."
+        )
+    if name == "DINA":
+        return (
+            "DINA is for binary cognitive-diagnostic data with a Q-matrix. It is not a many-facet rating-scale "
+            "replacement unless the assessment design is explicitly attribute based."
+        )
+    return (
+        "The generated Stan model is a local-analysis template. Check priors, constraints, and data indexing "
+        "before using posterior summaries in a report."
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -31895,9 +34017,15 @@ def render_onboarding_banner() -> None:
 **Built-in scenarios** (all synthetic, MFRM-literature-grounded):
 {scenario_summary}.
 
+For your own classroom data, the fastest path is **Data source → Paste CSV/TSV
+text**. File upload also accepts CSV, TSV, TXT, Excel `.xlsx/.xlsm`, Parquet,
+and JSON. Use headers such as `Student`, `Rater`, `Assignment`, `Criterion`,
+`Score`; then map `Student` to **Person** and use the other non-score columns
+as facets.
+
 Afterwards, use the tabs (Measures, Fit, Dimensionality, Visuals, Report, ...)
 that appear below to explore diagnostics and build a publication document.
-"""
+	"""
         )
         cols = st.columns([3, 2, 1])
         cols[0].caption(
@@ -32788,6 +34916,7 @@ def main() -> None:
         return
 
     st.subheader("Input preview")
+    render_input_overview(data)
     st.dataframe(data.head(20), width="stretch")
     run_facets_mode(core, data)
 

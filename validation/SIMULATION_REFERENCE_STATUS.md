@@ -1,12 +1,12 @@
 # Simulation Reference Status
 
-Last local inspection: 2026-04-12
+Last archived inspection: 2026-04-12
 
-This file records what the sibling/local Simulation directory can contribute to
-numerical validation. It is not a data bundle and should not be treated as a
+This file records archived simulation-validation artifacts that can contribute
+to numerical validation. It is not a data bundle and should not be treated as a
 runtime dependency for the Streamlit app.
 
-## Local Evidence Inventory
+## Archived Evidence Inventory
 
 | Reference set | Artifacts | Local inspection result | Validation use |
 | --- | --- | --- | --- |
@@ -20,9 +20,10 @@ runtime dependency for the Streamlit app.
 ## Public Reporting Rule
 
 Do not copy raw observed data, generated replicate data, or historical manifests
-with local absolute paths into the public repository. For public validation,
-archive sanitized summary tables, package versions, parameterization notes, and
-the tolerance policy before making any numerical-validation claim.
+with machine-specific absolute paths into the public repository. For public
+validation, archive sanitized summary tables, package versions,
+parameterization notes, and the tolerance policy before making any
+numerical-validation claim.
 
 The app exports the same policy as
 `external_simulation_reference_inventory.csv` through the parity fixture and
@@ -35,6 +36,6 @@ The same export path now includes sanitized handoff templates:
 - `simulation_validation_julia_template.jl`
 
 These scripts use environment variables such as `MFRM_INPUT_CSV` and
-`MFRM_OUTPUT_DIR` instead of local absolute paths. They are templates for
+`MFRM_OUTPUT_DIR` instead of machine-specific absolute paths. They are templates for
 auditing and optional external refits, not bundled copies of the private
 Simulation data.

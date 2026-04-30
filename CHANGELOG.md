@@ -2,6 +2,44 @@
 
 All notable changes to this standalone Streamlit distribution should be recorded here.
 
+## Unreleased
+
+### Added
+
+- mfrmr 0.1.6 migration coverage table and exports, extending the prior
+  0.1.5 map with EB shrinkage advisory, facet sample-size adequacy,
+  nesting/crossing audit, intraclass-cluster-ICC design effect,
+  information curves, and misfit/weighting audit support.
+- Full publication mode now computes non-person facet EB shrinkage as a
+  post-hoc reporting advisory; Standard mode leaves it optional/off by
+  default.
+- `LICENSE_NOTICE.md` clarifies MIT licensing, commercial-use permission,
+  no-warranty/as-is status, and responsible-use boundaries.
+- Teacher-facing paste-data guidance now appears in the sidebar, onboarding
+  text, README, and Help quick start, with a downloadable classroom template.
+- Upload parsing now accepts Excel `.xlsx/.xlsm`, Apache Parquet, and JSON /
+  JSON-lines in addition to CSV/TSV/TXT for rating data, person data, anchors,
+  and held-out prediction rows.
+- Bias/interaction output now includes a DFF-style screening table with
+  sparse-cell flags, Holm adjustment, BH/FDR adjustment, practical logit
+  thresholds, interpretation text, and CSV/export-bundle coverage.
+- Advanced Stan-model downloads now include model-specific data templates and
+  clearer scope notes for local dependence and Mixture Rasch.
+- Anchor/linking output now includes an anchor/equating workflow checklist for
+  current-run linking evidence and export review.
+
+### Changed
+
+- Design evaluation and report/download bundles now include the new
+  0.1.6-oriented audit tables so beginners see warnings in the UI and
+  expert users can export full CSV/Excel evidence.
+- Config JSON import contract is pinned at 25 replayable settings so restored
+  runs preserve the current analysis-depth and diagnostic controls.
+- Public-facing README, Help, release-check, and validation wording now avoid
+  machine-specific paths and internal workspace terminology.
+- Reproducible script downloads now include a local batch workflow note so
+  repeated refits stay outside hosted Streamlit.
+
 ## 0.2.14-beta - 2026-04-18
 
 User feedback after v0.2.13: documentation said "four scenarios" in
@@ -1053,7 +1091,7 @@ No unreleased changes yet.
 - Submission action plan that combines publication gates, readiness checks, claim guardrails, and wording repairs into a prioritized first-read table.
 - Desktop readability refinements for result-tab wrapping, wrapped guide tables, and dense or tightly spaced Wright map / yardstick labels.
 - Publication-styled figure export bundle with 300 DPI PNG target, matching HTML figures, and a figure-use manifest.
-- Local Simulation-directory validation inventory for external numerical validation planning without bundling private data or local absolute paths.
+- Archived simulation-validation inventory for external numerical validation planning without bundling private data or machine-specific absolute paths.
 - Sanitized Python/R/Julia external Simulation validation templates, downloadable from the app, OSF/demo report exports, and parity fixture exports.
 
 ### Changed

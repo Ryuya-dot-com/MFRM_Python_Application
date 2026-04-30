@@ -19,7 +19,7 @@ def test_cross_package_validation_plan_contract():
     assert "Plausible-value draws" in tolerance["EvidenceType"].tolist()
 
     docs = app.external_reference_documentation_table()
-    assert {"TAM tam.mml.mfr", "mirt mirt", "sirt rm.facets", "mfrmr 0.1.5 local source"}.issubset(set(docs["Reference"]))
+    assert {"TAM tam.mml.mfr", "mirt mirt", "sirt rm.facets", "mfrmr 0.1.6 package source"}.issubset(set(docs["Reference"]))
 
     simulation_inventory = app.external_simulation_reference_inventory()
     assert {"Main engine refit sweep", "Validation input replicates"}.issubset(set(simulation_inventory["ReferenceSet"]))
@@ -44,7 +44,7 @@ def test_cross_package_validation_plan_contract():
     assert "Simulation validation template scripts" in artifacts["Artifact"].tolist()
 
     template = app.external_validation_report_template()
-    assert "mfrmr 0.1.5 migration" in template["ClaimArea"].tolist()
+    assert "mfrmr 0.1.6 migration" in template["ClaimArea"].tolist()
     assert "External Simulation numerical validation" in template["ClaimArea"].tolist()
 
     coverage = app.mfrmr_015_migration_coverage_table()

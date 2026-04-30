@@ -6,7 +6,7 @@ This app is designed to run without `mfrmr`, `rpy2`, `Rscript`, FACETS, TAM, sir
 
 ## Status
 
-- Release status: public beta / research preview (**v0.2.0-beta**)
+- Release status: public beta / research preview (**v0.2.14-beta**; current branch also includes the Unreleased items in `CHANGELOG.md`)
 - Runtime engine: standalone Python
 - Primary entrypoint: `streamlit_app.py`
 - Intended use: exploratory analysis, teaching, reporting support, and research workflow prototyping
@@ -14,12 +14,17 @@ This app is designed to run without `mfrmr`, `rpy2`, `Rscript`, FACETS, TAM, sir
 
 Before using results for high-stakes scoring, placement, certification, employment, or institutional decisions, cross-check the analysis with an established workflow and document the model assumptions.
 
-## What's new in v0.2.0 → v0.2.2
+## What's new in the current beta line
 
-v0.2.0-beta (2026-04-17) shipped four major feature tracks; v0.2.1 and
-v0.2.2 are post-release hotfixes landing the findings from a parallel
-8-agent UX audit. All three versions are covered below; see
-`CHANGELOG.md` for per-version breakdown.
+The current app label is v0.2.14-beta. This branch also includes Unreleased
+refinements documented in `CHANGELOG.md`, including mfrmr 0.1.6 migration
+coverage, EB shrinkage advisory outputs, facet sample-size / nesting / design
+effect audits, information curves, and public-facing wording cleanup.
+
+Earlier v0.2.0-beta (2026-04-17) shipped four major feature tracks; v0.2.1 and
+v0.2.2 were post-release hotfixes landing the findings from a parallel UX audit.
+Those foundational features are summarized below; see `CHANGELOG.md` for the
+full per-version breakdown.
 
 ### New in v0.2.0
 
@@ -123,7 +128,8 @@ The app is intended to keep uploaded data in memory during the session unless th
 Use a virtual environment:
 
 ```bash
-cd /Users/ryuya/Library/CloudStorage/Dropbox/MFRM_Application/MFRM_App/MFRM_Streamlit
+git clone https://github.com/Ryuya-dot-com/MFRM_Python_Application.git
+cd MFRM_Python_Application
 python3 -m venv .venv
 source .venv/bin/activate
 python -m pip install --upgrade pip
@@ -177,7 +183,9 @@ make run
 
 ## Data Format
 
-Use long-format rating data:
+Use long-format rating data. The interactive upload path accepts CSV, TSV, TXT,
+Excel `.xlsx` / `.xlsm` (first worksheet), Apache Parquet, and JSON / JSON-lines.
+Pasted spreadsheet text supports comma, tab, or semicolon delimiters.
 
 ```csv
 Person,Rater,Task,Criterion,Score
@@ -200,6 +208,25 @@ Supported score handling includes:
 - Optional recoding of non-consecutive observed categories
 - Rejection of fractional categories with a clear error
 
+### Paste From a Spreadsheet
+
+Teachers and workshop users can paste directly from Excel, Google Sheets, or a
+gradebook export. Keep the first row as column names, then select the cells and
+copy/paste them into **Data source → Paste CSV/TSV text** in the sidebar.
+
+```csv
+Student,Rater,Assignment,Criterion,Score
+S01,TeacherA,Essay1,Content,4
+S01,TeacherA,Essay1,Organization,3
+S01,TeacherB,Essay1,Content,5
+S02,TeacherA,Essay1,Content,2
+```
+
+When mapping columns in the app, choose `Student` as **Person**, `Score` as
+**Score**, and use `Rater`, `Assignment`, and `Criterion` as facets. Do not paste
+total scores if rubric-level ratings are available; one row should represent one
+rating event.
+
 ## Model Scope
 
 Implemented in the standalone Python engine:
@@ -215,9 +242,11 @@ Implemented in the standalone Python engine:
 - plausible values
 - strict marginal diagnostics
 - residual PCA diagnostics
-- bias / local interaction screening
+- bias / local interaction screening with DFF-style sparse-cell, Holm, BH/FDR,
+  and practical-logit review flags
 - anchor audit and linking review
 - anchor drift and equating-chain summaries
+- anchor/equating workflow checklist for current-run linking evidence
 - prediction for fitted, held-out, and scenario rows
 - simulation and design evaluation
 - final-report readiness checklist
@@ -235,7 +264,7 @@ After fitting a model, inspect results in this order:
 3. Reliability / separation: confirm whether the design supports stable person and facet ordering.
 4. Wright map targeting: check whether person locations and facet difficulty/severity ranges overlap.
 5. Fit diagnostics: review large standardized residuals and misfitting elements.
-6. Bias / local interaction: treat flags as review prompts, not automatic proof of bias.
+6. Bias / local interaction: treat DFF/bias flags as review prompts, not automatic proof of bias.
 7. PCA / dimensionality: check whether residual structure suggests a second dimension.
 8. Anchor / linking review: check connectedness and anchor stability before comparing runs or groups.
 9. Strict marginal diagnostics: use for final MML reports when feasible.
@@ -265,9 +294,12 @@ In the app UI, wide reporting tables show the most important columns first,
 wrap short guide tables for reading, and place full-detail tables in expanders;
 downloads still contain the complete columns. On desktop screens, long result-tab
 bars wrap instead of forcing users to rely on horizontal scrolling.
-The same public-beta bundle includes `mfrmr_015_migration_coverage.csv`, which
-maps the local mfrmr 0.1.5 feature surface to Python support, boundaries, and
-next validation actions.
+The same public-beta bundle includes `mfrmr_015_migration_coverage.csv` and
+`mfrmr_016_migration_coverage.csv`, which map the mfrmr package feature surface
+through 0.1.6 to Python support, boundaries, and next validation actions.
+The 0.1.6 map covers the new post-hoc EB shrinkage advisory, facet sample-size
+adequacy, nesting/crossing screens, intraclass-cluster-ICC design effect,
+information curves, and misfit/weighting audit support.
 
 The Visuals tab also includes a downloadable visual interpretation checklist.
 It maps each figure to the first signal to read, the review trigger, and the
@@ -296,7 +328,8 @@ Open `validation/generated/demo_report/MFRM_Demo_Report.html` first, then read
 `manuscript_template.md`,
 `visual_interpretation_checklist.csv`, `visual_method_evidence.csv`,
 `public_beta_limitations.csv`, `mfrmr_015_migration_coverage.csv`,
-`public_release_readiness.csv`, `figure_manifest.csv`,
+`mfrmr_016_migration_coverage.csv`, `public_release_readiness.csv`,
+`figure_manifest.csv`,
 `MFRM_Demo_Publication_Figures.zip`, and the interactive diagnostic figures in
 `figures_html/`.
 
@@ -330,16 +363,16 @@ to interactive HTML figures instead of blocking the analysis.
 - mfrmr: functional capability reference for the Python migration target.
 
 For the cross-package validation matrix and tolerance policy, see `validation/README.md`.
-For the latest archived local R smoke status, see
+For the archived optional R smoke status, see
 `validation/R_CROSSCHECK_STATUS.md`.
-For the local Simulation-directory numerical validation inventory, see
+For the archived external numerical-validation inventory, see
 `validation/SIMULATION_REFERENCE_STATUS.md`.
 The parity fixture also includes official documentation touchpoints, an
-artifact checklist, a local Simulation-reference inventory, an external
+artifact checklist, an archived validation-artifact inventory, an external
 validation report template, sanitized Python/R/Julia Simulation validation
-templates, and the mfrmr 0.1.5 migration coverage table so external checks can
-be archived without making R packages or local Dropbox artifacts runtime
-dependencies.
+templates, and the mfrmr 0.1.5 / 0.1.6 migration coverage tables so external
+checks can be archived without making R packages or private validation artifacts
+runtime dependencies.
 
 ## Continuous Integration
 
@@ -365,11 +398,25 @@ If this directory is used as a standalone GitHub repository, the workflow will b
 
 ## License
 
-MIT License. See `LICENSE`.
+MIT License. See `LICENSE` and `LICENSE_NOTICE.md`.
+
+Commercial use is permitted, including paid teaching, consulting, internal
+training, hosted demonstrations, and product evaluation. The app and
+documentation are provided as-is, without warranty. Users are responsible for
+data privacy, model assumptions, interpretation, external validation, and
+institutional approval before relying on outputs in operational or high-stakes
+settings.
+
+We intentionally do not use CC BY-NC because the NonCommercial restriction would
+conflict with the intended permission for commercial use. If documentation or
+teaching excerpts are reused separately, keep attribution and do not imply author
+endorsement.
 
 ## Publication Note
 
-`origin` is set to `https://github.com/Ryuya-dot-com/MFRM_Python_Application.git`. That repository already had a separate `main` history when this standalone Streamlit distribution was prepared. The intended publication path is an explicit replacement of `origin/main` with this standalone app history.
+This repository is the publication target for the standalone Streamlit app.
+Keep generated validation outputs, private datasets, and machine-specific paths
+out of the public branch unless they have been explicitly sanitized.
 
 ## Files
 

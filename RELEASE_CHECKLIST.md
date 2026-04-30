@@ -4,7 +4,7 @@ Use this checklist before tagging or pushing a public beta release.
 
 ## Scope
 
-- [ ] Confirm this repository is being used as an independent repo, not accidentally committed as ordinary files inside the parent `MFRM_Application` repo.
+- [ ] Confirm this repository is being used as an independent repo, not accidentally committed as ordinary files inside a private parent workspace.
 - [ ] If the parent repo should reference this project, decide between a Git submodule and a parent-level ignore rule.
 - [ ] Confirm the release label remains `standalone Python beta` unless the validation scope has changed.
 - [ ] Confirm the README still states that the app is not an exact replacement for FACETS, TAM, sirt, mirt, or `mfrmr`.
@@ -50,6 +50,7 @@ find . -type d -name __pycache__ -prune -exec rm -rf {} +
 ## GitHub Release
 
 - [x] Choose a license before public distribution.
+- [ ] Confirm `LICENSE_NOTICE.md` still states commercial use is permitted and the software is provided as-is without warranty.
 - [x] Add a remote with `git remote add origin <repo-url>`.
 - [x] Because `origin/main` already has a separate history, choose a publication path: branch/PR, new repository, or explicit replacement.
 - [x] Explicit replacement of `origin/main` approved by the project owner.

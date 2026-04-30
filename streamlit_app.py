@@ -851,6 +851,8 @@ _MFRM_GLOSSARY: dict[str, str] = {
     "outfit": "outlier-sensitive unweighted mean-square; same 0.5–1.5 interpretation band.",
     "mnsq": "mean-square fit statistic (observed / expected variance ratio); 1.0 = perfect fit.",
     "zstd": "standardised z-score of the mean-square; |z| > 2 ≈ statistically significant misfit.",
+    "jmle": "joint maximum likelihood estimation; estimates person and facet parameters together.",
+    "mml": "marginal maximum likelihood estimation; integrates over the person ability distribution.",
     "step facet": "facet whose levels carry separate step thresholds in PCM / GPCM / GRM.",
     "anchor": "fixing an element's measure to a known value so other parameters are estimated relative to it.",
     "separation": "ratio of true variance to error variance; separation ≥ 2 is a common floor.",
@@ -861,6 +863,9 @@ _MFRM_GLOSSARY: dict[str, str] = {
     "sesoi": "smallest effect size of interest; used in equivalence / bias claim tests.",
     "se": "standard error of a measure, in logits.",
     "ci": "confidence interval (default 95% = estimate ± 1.96 × SE).",
+    "population prior sd": "user-set person ability SD used by MML quadrature; separate from facet regularization.",
+    "facet regularization": "optional Gaussian MAP-style penalty on selected free non-person facet effects.",
+    "penalized objective": "negative log-likelihood plus regularization penalty; not itself an ordinary likelihood.",
     "rhat": "potential scale reduction factor (Gelman & Rubin 1992); > 1.01 flags non-mixing.",
     "ess": "effective sample size of posterior draws; < 400 flags sampling inefficiency.",
     "divergent": "HMC transition that fell off the typical set; indicates posterior geometry issues.",
@@ -1078,6 +1083,32 @@ def uploaded_file_fingerprint(file_obj, length: int = 16) -> str | None:
             "name": getattr(file_obj, "name", None),
             "size": getattr(file_obj, "size", len(raw)),
             "sha256": hashlib.sha256(raw).hexdigest(),
+        },
+        length=length,
+    )
+
+
+def table_source_fingerprint(
+    *,
+    text_value: str | None = None,
+    file_input=None,
+    delimiter: str | None = None,
+    length: int = 16,
+) -> str | None:
+    """Fingerprint raw table input controls for stale-result detection."""
+    text_norm = None
+    if text_value is not None and str(text_value).strip():
+        text_norm = str(text_value).replace("\r\n", "\n").replace("\r", "\n").strip()
+    file_fp = uploaded_file_fingerprint(file_input, length=32)
+    if text_norm is None and file_fp is None:
+        return None
+    return stable_json_fingerprint(
+        {
+            "text": text_norm,
+            "file": file_fp,
+            "file_name": getattr(file_input, "name", None) if file_input is not None else None,
+            "file_size": getattr(file_input, "size", None) if file_input is not None else None,
+            "delimiter": delimiter or "auto",
         },
         length=length,
     )
@@ -1835,7 +1866,549 @@ def build_optimizer_bounds(sizes, config):
     return bounds if bounds else None
 
 
+FACET_REGULARIZATION_PRESET_SDS = {
+    "weak": 3.0,
+    "light": 3.0,
+    "moderate": 1.5,
+    "strong": 0.75,
+}
+
+
+def _coerce_bool(value, default: bool = True) -> bool:
+    if value is None or (isinstance(value, float) and np.isnan(value)):
+        return default
+    if isinstance(value, str):
+        text = value.strip().lower()
+        if text in {"", "na", "nan", "none"}:
+            return default
+        if text in {"true", "t", "yes", "y", "1", "enabled", "on"}:
+            return True
+        if text in {"false", "f", "no", "n", "0", "disabled", "off"}:
+            return False
+    return bool(value)
+
+
+def normalize_facet_regularization_rows(facet_regularization) -> pd.DataFrame:
+    """Normalize optional facet-regularization input to a row table."""
+    columns = ["Facet", "Level", "ParameterClass", "Mean", "SD", "Enabled", "Source"]
+    if facet_regularization is None or facet_regularization is False:
+        return pd.DataFrame(columns=columns)
+    if isinstance(facet_regularization, pd.DataFrame):
+        raw = facet_regularization.copy()
+    elif isinstance(facet_regularization, dict):
+        if not _coerce_bool(facet_regularization.get("enabled", True), default=True):
+            return pd.DataFrame(columns=columns)
+        if "specs" in facet_regularization:
+            raw = pd.DataFrame(facet_regularization.get("specs") or [])
+        elif "rows" in facet_regularization:
+            raw = pd.DataFrame(facet_regularization.get("rows") or [])
+        else:
+            facets = facet_regularization.get("facets") or facet_regularization.get("facet") or []
+            if isinstance(facets, str):
+                facets = [facets]
+            sd = facet_regularization.get("sd", facet_regularization.get("SD", facet_regularization.get("prior_sd", np.nan)))
+            mean = facet_regularization.get("mean", facet_regularization.get("Mean", 0.0))
+            raw = pd.DataFrame([
+                {
+                    "Facet": facet,
+                    "Level": "*",
+                    "ParameterClass": "facet",
+                    "Mean": mean,
+                    "SD": sd,
+                    "Enabled": True,
+                    "Source": facet_regularization.get("source", "dict"),
+                }
+                for facet in facets
+            ])
+    elif isinstance(facet_regularization, (list, tuple)):
+        raw = pd.DataFrame(list(facet_regularization))
+    else:
+        raise ValueError("facet_regularization must be None, a dict, a DataFrame, or a list of row dicts.")
+    if raw.empty:
+        return pd.DataFrame(columns=columns)
+    out = raw.copy()
+    rename = {}
+    for col in out.columns:
+        lower = str(col).strip().lower()
+        if lower in {"facet", "facetname"}:
+            rename[col] = "Facet"
+        elif lower in {"level", "element"}:
+            rename[col] = "Level"
+        elif lower in {"parameterclass", "parameter_class", "class"}:
+            rename[col] = "ParameterClass"
+        elif lower in {"mean", "prior_mean", "target"}:
+            rename[col] = "Mean"
+        elif lower in {"sd", "prior_sd", "sigma", "scale"}:
+            rename[col] = "SD"
+        elif lower in {"enabled", "enable", "active"}:
+            rename[col] = "Enabled"
+        elif lower in {"source"}:
+            rename[col] = "Source"
+    out = out.rename(columns=rename)
+    for col in columns:
+        if col not in out.columns:
+            if col == "Level":
+                out[col] = "*"
+            elif col == "ParameterClass":
+                out[col] = "facet"
+            elif col == "Mean":
+                out[col] = 0.0
+            elif col == "Enabled":
+                out[col] = True
+            elif col == "Source":
+                out[col] = "user"
+            else:
+                out[col] = np.nan
+    return out[columns]
+
+
+def prepare_facet_regularization(facet_regularization, config: dict, sizes: OrderedDict) -> dict:
+    """Validate facet regularization and align it to constrained facet levels.
+
+    This implements a Gaussian MAP-style penalty on non-person facet main
+    effects only. It does not make facets random effects and it does not alter
+    the MML person population distribution.
+    """
+    rows = normalize_facet_regularization_rows(facet_regularization)
+    facet_names = list(config.get("facet_names", []))
+    means: dict[str, list[float]] = {}
+    sds: dict[str, list[float]] = {}
+    active: dict[str, list[bool]] = {}
+    for facet in facet_names:
+        levels = list(config.get("facet_levels", {}).get(facet, []))
+        means[facet] = [0.0] * len(levels)
+        sds[facet] = [np.nan] * len(levels)
+        active[facet] = [False] * len(levels)
+
+    audit_rows: list[dict] = []
+    if rows.empty:
+        return {
+            "enabled": False,
+            "requested": False,
+            "mode": "off",
+            "scope": "none",
+            "spec": pd.DataFrame(columns=["Facet", "Level", "ParameterClass", "Mean", "SD", "Enabled", "Source"]),
+            "audit": pd.DataFrame(columns=["Facet", "Level", "Status", "Message", "Mean", "SD", "Source"]),
+            "runtime": {
+                "enabled": False,
+                "means": means,
+                "sds": sds,
+                "active": active,
+                "fingerprint": stable_json_fingerprint({"enabled": False}),
+            },
+        }
+
+    for i, row in rows.iterrows():
+        enabled = _coerce_bool(row.get("Enabled"), default=True)
+        facet = str(row.get("Facet", "")).strip()
+        level = str(row.get("Level", "*")).strip() or "*"
+        parameter_class = str(row.get("ParameterClass", "facet")).strip().lower() or "facet"
+        source = str(row.get("Source", "user")).strip() or "user"
+        if not enabled or not facet:
+            continue
+        if parameter_class not in {"facet", "main", "severity", "difficulty"}:
+            audit_rows.append({
+                "Facet": facet, "Level": level, "Status": "ignored",
+                "Message": f"Unsupported ParameterClass '{parameter_class}'. Only facet main effects are supported in Phase 1.",
+                "Mean": row.get("Mean", np.nan), "SD": row.get("SD", np.nan), "Source": source,
+            })
+            continue
+        if facet == "Person":
+            audit_rows.append({
+                "Facet": facet, "Level": level, "Status": "ignored",
+                "Message": "Person ability distribution is controlled by Person population SD (MML), not facet regularization.",
+                "Mean": row.get("Mean", np.nan), "SD": row.get("SD", np.nan), "Source": source,
+            })
+            continue
+        if facet not in facet_names:
+            raise ValueError(f"facet_regularization refers to unknown facet '{facet}'.")
+        mean = float(row.get("Mean", 0.0) if pd.notna(row.get("Mean", 0.0)) else 0.0)
+        sd = float(row.get("SD", np.nan))
+        if not np.isfinite(sd) or sd <= 0:
+            raise ValueError(f"facet_regularization SD must be positive and finite for facet '{facet}', level '{level}'.")
+        levels = list(config.get("facet_levels", {}).get(facet, []))
+        spec = config.get("facet_specs", {}).get(facet, {})
+        anchors = np.asarray(spec.get("anchors", np.full(len(levels), np.nan)), dtype=float)
+        if sizes.get(facet, 0) <= 0:
+            audit_rows.append({
+                "Facet": facet, "Level": level, "Status": "ignored",
+                "Message": "Facet has no free parameters after anchors/dummy constraints.",
+                "Mean": mean, "SD": sd, "Source": source,
+            })
+            continue
+        target_levels = levels if level == "*" or level.lower() == "all" else [level]
+        for target_level in target_levels:
+            if target_level not in levels:
+                raise ValueError(f"facet_regularization refers to unknown level '{target_level}' in facet '{facet}'.")
+            j = levels.index(target_level)
+            if j < anchors.size and np.isfinite(anchors[j]):
+                audit_rows.append({
+                    "Facet": facet, "Level": target_level, "Status": "ignored",
+                    "Message": "Anchored or dummy-constrained level is fixed and is not regularized.",
+                    "Mean": mean, "SD": sd, "Source": source,
+                })
+                continue
+            status = "applied"
+            message = "Gaussian MAP-style regularization applied to this free facet level."
+            if active[facet][j]:
+                status = "applied_override"
+                message = "Duplicate regularization row; later row overrides earlier mean/SD."
+            means[facet][j] = mean
+            sds[facet][j] = sd
+            active[facet][j] = True
+            audit_rows.append({
+                "Facet": facet, "Level": target_level, "Status": status,
+                "Message": message,
+                "Mean": mean, "SD": sd, "Source": source,
+            })
+
+    audit = pd.DataFrame(audit_rows, columns=["Facet", "Level", "Status", "Message", "Mean", "SD", "Source"])
+    applied = audit[audit["Status"].astype(str).str.startswith("applied")].copy() if not audit.empty else pd.DataFrame()
+    runtime_payload = {"enabled": not applied.empty, "means": means, "sds": sds, "active": active}
+    runtime_payload["fingerprint"] = stable_json_fingerprint(runtime_payload)
+    return {
+        "enabled": bool(not applied.empty),
+        "requested": bool(len(rows) > 0),
+        "mode": "normal_map_penalty" if not applied.empty else "requested_no_free_parameters",
+        "scope": "non-person facet main effects",
+        "spec": rows.copy(),
+        "audit": audit,
+        "runtime": runtime_payload,
+    }
+
+
+def facet_regularization_value_grad(par, sizes, config):
+    """Return Gaussian facet regularization penalty and gradient."""
+    runtime = config.get("facet_regularization", {})
+    if not isinstance(runtime, dict) or not runtime.get("enabled"):
+        return 0.0, np.zeros(len(par), dtype=float)
+    params = expand_params(par, sizes, config)
+    means = runtime.get("means", {})
+    sds = runtime.get("sds", {})
+    active = runtime.get("active", {})
+    value = 0.0
+    grad_parts = []
+    for name, k in sizes.items():
+        k = int(k)
+        if k <= 0:
+            continue
+        if name in config.get("facet_names", []):
+            full = np.asarray(params["facets"].get(name, np.array([], dtype=float)), dtype=float)
+            mean = np.asarray(means.get(name, [0.0] * len(full)), dtype=float)
+            sd = np.asarray(sds.get(name, [np.nan] * len(full)), dtype=float)
+            is_active = np.asarray(active.get(name, [False] * len(full)), dtype=bool)
+            valid = is_active & np.isfinite(sd) & (sd > 0)
+            full_grad = np.zeros(len(full), dtype=float)
+            if valid.any():
+                diff = full[valid] - mean[valid]
+                value += 0.5 * float(np.sum((diff / sd[valid]) ** 2))
+                full_grad[valid] = diff / (sd[valid] ** 2)
+            collapsed = collapse_facet_gradient(full_grad, config["facet_specs"][name])
+            if collapsed.size != k:
+                raise RuntimeError(f"Facet regularization gradient size mismatch for {name}: expected {k}, got {collapsed.size}.")
+            grad_parts.append(collapsed)
+        else:
+            grad_parts.append(np.zeros(k, dtype=float))
+    grad = np.concatenate(grad_parts) if grad_parts else np.zeros(len(par), dtype=float)
+    if grad.size != len(par):
+        raise RuntimeError(f"Facet regularization gradient size mismatch: expected {len(par)}, got {grad.size}.")
+    return value, grad
+
+
+def facet_regularization_penalty_summary(par, sizes, config) -> pd.DataFrame:
+    """Per-facet penalty contribution at the fitted estimates."""
+    runtime = config.get("facet_regularization", {})
+    if not isinstance(runtime, dict) or not runtime.get("enabled"):
+        return pd.DataFrame(columns=["Facet", "PenalizedLevels", "PenaltyValue", "MeanSD", "Scope"])
+    params = expand_params(par, sizes, config)
+    rows = []
+    for facet in config.get("facet_names", []):
+        full = np.asarray(params["facets"].get(facet, np.array([], dtype=float)), dtype=float)
+        sd = np.asarray(runtime.get("sds", {}).get(facet, [np.nan] * len(full)), dtype=float)
+        mean = np.asarray(runtime.get("means", {}).get(facet, [0.0] * len(full)), dtype=float)
+        is_active = np.asarray(runtime.get("active", {}).get(facet, [False] * len(full)), dtype=bool)
+        valid = is_active & np.isfinite(sd) & (sd > 0)
+        penalty = 0.0
+        if valid.any():
+            penalty = 0.5 * float(np.sum(((full[valid] - mean[valid]) / sd[valid]) ** 2))
+        rows.append({
+            "Facet": facet,
+            "PenalizedLevels": int(valid.sum()),
+            "PenaltyValue": penalty,
+            "MeanSD": float(np.nanmean(sd[valid])) if valid.any() else np.nan,
+            "Scope": "free facet main effects only",
+        })
+    out = pd.DataFrame(rows)
+    if not out.empty:
+        out.loc[len(out)] = {
+            "Facet": "TOTAL",
+            "PenalizedLevels": int(out["PenalizedLevels"].sum()),
+            "PenaltyValue": float(out["PenaltyValue"].sum()),
+            "MeanSD": np.nan,
+            "Scope": "normal MAP-style penalty; not full Bayesian sampling",
+        }
+    return out
+
+
 # ---- data preparation ----
+def _blank_or_na_mask(series: pd.Series) -> pd.Series:
+    """Return True for true NA or whitespace-only cells."""
+    s = pd.Series(series)
+    text = s.astype(object).where(~s.isna(), "").map(lambda x: str(x).strip())
+    return s.isna() | text.eq("")
+
+
+def normalize_response_input_data(
+    data: pd.DataFrame,
+    *,
+    person_col: str,
+    facet_cols: list[str],
+    score_col: str,
+    weight_col: str | None = None,
+) -> pd.DataFrame:
+    """Normalize blank selected response cells to NA before model preparation."""
+    out = data.copy()
+    selected = [person_col, score_col, *list(facet_cols)]
+    if weight_col:
+        selected.append(weight_col)
+    for col in dict.fromkeys(selected):
+        if col in out.columns:
+            mask = _blank_or_na_mask(out[col])
+            if mask.any():
+                out.loc[mask, col] = np.nan
+    return out
+
+
+def build_response_data_audit(
+    data: pd.DataFrame,
+    *,
+    person_col: str,
+    facet_cols: list[str],
+    score_col: str,
+    weight_col: str | None = None,
+) -> dict:
+    """Describe which input rows enter the likelihood and why rows are excluded."""
+    facet_cols = list(facet_cols or [])
+    selected = [person_col, score_col, *facet_cols]
+    if weight_col:
+        selected.append(weight_col)
+    selected_unique = list(dict.fromkeys([c for c in selected if c is not None]))
+
+    if data is None or not isinstance(data, pd.DataFrame):
+        empty = pd.DataFrame()
+        summary = pd.DataFrame([
+            {
+                "Item": "Input rows",
+                "Count": 0,
+                "Percent": 0.0,
+                "Interpretation": "No input data were available.",
+            }
+        ])
+        return {"summary": summary, "rows": empty, "excluded_rows": empty}
+
+    n = len(data)
+    audit = pd.DataFrame({
+        "InputRow": np.arange(1, n + 1, dtype=int),
+        "OriginalIndex": data.index.astype(str),
+    })
+    for col in selected_unique:
+        if col in data.columns:
+            audit[col] = data[col].astype(object).where(~data[col].isna(), "")
+
+    missing_required_cols = [c for c in selected_unique if c not in data.columns]
+    if missing_required_cols:
+        audit["IncludedInLikelihood"] = False
+        audit["LikelihoodAction"] = "error_before_fit"
+        audit["ExclusionReason"] = "Selected column(s) missing: " + ", ".join(missing_required_cols)
+        audit["MissingColumns"] = ", ".join(missing_required_cols)
+        summary = pd.DataFrame([
+            {
+                "Item": "Input rows",
+                "Count": int(n),
+                "Percent": 100.0 if n else 0.0,
+                "Interpretation": "Selected columns are missing; estimation cannot start.",
+            }
+        ])
+        return {"summary": summary, "rows": audit, "excluded_rows": audit.copy()}
+
+    person_missing = _blank_or_na_mask(data[person_col])
+    score_blank = _blank_or_na_mask(data[score_col])
+    score_numeric = pd.to_numeric(data[score_col], errors="coerce")
+    score_non_numeric = (~score_blank) & score_numeric.isna()
+    score_tol = np.sqrt(np.finfo(float).eps)
+    score_fractional = (
+        score_numeric.notna()
+        & np.isfinite(score_numeric)
+        & ((score_numeric - np.round(score_numeric)).abs() > score_tol)
+    )
+
+    facet_missing_by_col: dict[str, pd.Series] = {}
+    facet_missing_any = pd.Series(False, index=data.index)
+    for facet in facet_cols:
+        mask = _blank_or_na_mask(data[facet])
+        facet_missing_by_col[facet] = mask
+        facet_missing_any = facet_missing_any | mask
+
+    if weight_col:
+        weight_blank = _blank_or_na_mask(data[weight_col])
+        weight_numeric = pd.to_numeric(data[weight_col], errors="coerce")
+        weight_non_numeric = (~weight_blank) & weight_numeric.isna()
+        weight_missing_or_non_numeric = weight_blank | weight_non_numeric
+        weight_non_positive = weight_numeric.notna() & (weight_numeric <= 0)
+    else:
+        weight_numeric = pd.Series(np.ones(n, dtype=float), index=data.index)
+        weight_missing_or_non_numeric = pd.Series(False, index=data.index)
+        weight_non_positive = pd.Series(False, index=data.index)
+
+    score_missing_or_non_numeric = score_blank | score_non_numeric
+    excluded = (
+        person_missing
+        | score_missing_or_non_numeric
+        | facet_missing_any
+        | weight_missing_or_non_numeric
+        | weight_non_positive
+    )
+    error_before_fit = score_fractional
+    included = (~excluded) & (~error_before_fit)
+
+    missing_columns_per_row = []
+    reasons_per_row = []
+    actions = []
+    for idx in data.index:
+        missing_cols = []
+        reasons = []
+        if bool(person_missing.loc[idx]):
+            missing_cols.append(person_col)
+            reasons.append("missing person")
+        if bool(score_blank.loc[idx]):
+            missing_cols.append(score_col)
+            reasons.append("missing score")
+        elif bool(score_non_numeric.loc[idx]):
+            missing_cols.append(score_col)
+            reasons.append("non-numeric score")
+        if bool(score_fractional.loc[idx]):
+            reasons.append("fractional score")
+        for facet, mask in facet_missing_by_col.items():
+            if bool(mask.loc[idx]):
+                missing_cols.append(facet)
+                reasons.append(f"missing {facet}")
+        if weight_col:
+            if bool(weight_missing_or_non_numeric.loc[idx]):
+                missing_cols.append(weight_col)
+                reasons.append("missing or non-numeric weight")
+            elif bool(weight_non_positive.loc[idx]):
+                reasons.append("non-positive weight")
+        if bool(error_before_fit.loc[idx]):
+            actions.append("error_before_fit")
+        elif bool(included.loc[idx]):
+            actions.append("included")
+        else:
+            actions.append("excluded")
+        missing_columns_per_row.append(", ".join(dict.fromkeys(missing_cols)))
+        reasons_per_row.append("; ".join(dict.fromkeys(reasons)))
+
+    audit["ScoreNumeric"] = score_numeric.to_numpy()
+    if weight_col:
+        audit["WeightNumeric"] = weight_numeric.to_numpy()
+    audit["PersonMissing"] = person_missing.to_numpy(dtype=bool)
+    audit["ScoreMissingOrNonNumeric"] = score_missing_or_non_numeric.to_numpy(dtype=bool)
+    audit["ScoreFractional"] = score_fractional.to_numpy(dtype=bool)
+    audit["FacetMissing"] = facet_missing_any.to_numpy(dtype=bool)
+    if weight_col:
+        audit["WeightMissingOrNonNumeric"] = weight_missing_or_non_numeric.to_numpy(dtype=bool)
+        audit["WeightNonPositive"] = weight_non_positive.to_numpy(dtype=bool)
+    audit["IncludedInLikelihood"] = included.to_numpy(dtype=bool)
+    audit["LikelihoodAction"] = actions
+    audit["MissingColumns"] = missing_columns_per_row
+    audit["ExclusionReason"] = reasons_per_row
+
+    included_count = int(included.sum())
+    excluded_count = int(excluded.sum())
+    error_count = int(error_before_fit.sum())
+    not_used_count = int((~included).sum())
+    included_weight = float(weight_numeric[included].sum()) if included_count else 0.0
+
+    def pct(count: int) -> float:
+        return round(100.0 * int(count) / n, 2) if n else 0.0
+
+    summary_rows = [
+        {
+            "Item": "Input rows",
+            "Count": int(n),
+            "Percent": 100.0 if n else 0.0,
+            "Interpretation": "Rows supplied by the user after optional missing-code recoding.",
+        },
+        {
+            "Item": "Rows included in likelihood",
+            "Count": included_count,
+            "Percent": pct(included_count),
+            "Interpretation": "Rows with non-missing person, facets, integer score, and positive weight.",
+        },
+        {
+            "Item": "Rows not used in likelihood",
+            "Count": not_used_count,
+            "Percent": pct(not_used_count),
+            "Interpretation": "Rows excluded as missing/zero-weight plus rows that trigger pre-fit errors.",
+        },
+        {
+            "Item": "Rows excluded before likelihood",
+            "Count": excluded_count,
+            "Percent": pct(excluded_count),
+            "Interpretation": "Rows treated as structurally absent, not as zero scores.",
+        },
+        {
+            "Item": "Effective included weight",
+            "Count": included_weight,
+            "Percent": np.nan,
+            "Interpretation": "Sum of positive weights for rows entering the likelihood.",
+        },
+        {
+            "Item": "Missing/non-numeric score",
+            "Count": int(score_missing_or_non_numeric.sum()),
+            "Percent": pct(int(score_missing_or_non_numeric.sum())),
+            "Interpretation": "Rows excluded because the score is absent or cannot be parsed.",
+        },
+        {
+            "Item": "Missing person",
+            "Count": int(person_missing.sum()),
+            "Percent": pct(int(person_missing.sum())),
+            "Interpretation": "Rows excluded because the measured object is absent.",
+        },
+        {
+            "Item": "Missing selected facet cell",
+            "Count": int(facet_missing_any.sum()),
+            "Percent": pct(int(facet_missing_any.sum())),
+            "Interpretation": "Rows excluded because at least one selected facet level is absent.",
+        },
+    ]
+    if weight_col:
+        summary_rows.extend([
+            {
+                "Item": "Missing/non-numeric weight",
+                "Count": int(weight_missing_or_non_numeric.sum()),
+                "Percent": pct(int(weight_missing_or_non_numeric.sum())),
+                "Interpretation": "Rows excluded because the selected weight cannot be used.",
+            },
+            {
+                "Item": "Non-positive weight",
+                "Count": int(weight_non_positive.sum()),
+                "Percent": pct(int(weight_non_positive.sum())),
+                "Interpretation": "Rows excluded because weight <= 0 contributes no likelihood.",
+            },
+        ])
+    if error_count:
+        summary_rows.append({
+            "Item": "Fractional score error",
+            "Count": error_count,
+            "Percent": pct(error_count),
+            "Interpretation": "The run stops until these scores are recoded to integer categories.",
+        })
+
+    summary = pd.DataFrame(summary_rows)
+    excluded_rows = audit.loc[~audit["IncludedInLikelihood"]].copy()
+    return {"summary": summary, "rows": audit, "excluded_rows": excluded_rows}
+
+
 def prepare_mfrm_data(
     data,
     person_col,
@@ -1859,6 +2432,21 @@ def prepare_mfrm_data(
             raise ValueError("Selected columns include duplicate names in the data. Please rename columns to be unique.")
     if len(facet_cols) == 0:
         raise ValueError("Select at least one facet column.")
+
+    audit_bundle = build_response_data_audit(
+        data,
+        person_col=person_col,
+        facet_cols=list(facet_cols),
+        score_col=score_col,
+        weight_col=weight_col,
+    )
+    data = normalize_response_input_data(
+        data,
+        person_col=person_col,
+        facet_cols=list(facet_cols),
+        score_col=score_col,
+        weight_col=weight_col,
+    )
 
     cols = [person_col] + list(facet_cols) + [score_col]
     if weight_col:
@@ -2000,6 +2588,10 @@ def prepare_mfrm_data(
         "score_map": score_map,
         "unused_score_categories": unused_score_categories,
         "score_messages": score_messages,
+        "response_data_audit": audit_bundle,
+        "row_audit": audit_bundle.get("rows", pd.DataFrame()),
+        "excluded_rows": audit_bundle.get("excluded_rows", pd.DataFrame()),
+        "audit_summary": audit_bundle.get("summary", pd.DataFrame()),
         "keep_original": bool(keep_original),
         "score_range_explicit": bool(rating_min_supplied or rating_max_supplied),
         "facet_names": list(facet_cols),
@@ -2994,6 +3586,10 @@ def mfrm_loglik_jmle_value_grad(par, idx, config, sizes):
     grad = np.concatenate([g for g in grad_parts if g.size]) if grad_parts else np.array([], dtype=float)
     if grad.size != len(par):
         raise RuntimeError(f"Internal gradient size mismatch: expected {len(par)}, got {grad.size}.")
+    penalty_value, penalty_grad = facet_regularization_value_grad(par, sizes, config)
+    if config.get("facet_regularization", {}).get("enabled"):
+        nll += penalty_value
+        grad = grad + penalty_grad
     return nll, grad
 
 
@@ -3074,7 +3670,8 @@ def mfrm_loglik_mml_value_grad(par, idx, config, sizes, quad):
     params = expand_params(par, sizes, config)
     post_weights, marginal_ll = _e_step_posteriors(idx, config, params, quad)
     _, grad = _m_step_expected_ll_value_grad(par, idx, config, sizes, quad, post_weights)
-    return -marginal_ll, grad
+    penalty_value, _ = facet_regularization_value_grad(par, sizes, config)
+    return -marginal_ll + penalty_value, grad
 
 
 def mfrm_direct_mml(start, idx, config, sizes, quad, maxit=400, reltol=1e-6):
@@ -3089,7 +3686,11 @@ def mfrm_direct_mml(start, idx, config, sizes, quad, maxit=400, reltol=1e-6):
         options={"maxiter": maxit, "gtol": reltol, "ftol": reltol},
     )
     opt.mml_engine = "direct"
-    opt.ll_trace = [-float(opt.fun)] if np.isfinite(opt.fun) else []
+    raw_nll = mfrm_loglik_mml(opt.x, idx, config, sizes, quad)
+    penalty_value, _ = facet_regularization_value_grad(opt.x, sizes, config)
+    opt.raw_fun = raw_nll
+    opt.penalty_value = penalty_value
+    opt.ll_trace = [-float(raw_nll)] if np.isfinite(raw_nll) else []
     opt.gradient_norm = float(np.linalg.norm(opt.jac)) if getattr(opt, "jac", None) is not None else np.nan
     return opt
 
@@ -3155,6 +3756,7 @@ def build_convergence_summary(opt, config: dict, loglik: float, elapsed_seconds:
         "RequestedMmlEngine": config.get("mml_engine_requested"),
         "ResolvedMmlEngine": config.get("mml_engine"),
         "Optimizer": config.get("optimizer"),
+        "FacetRegularization": "On" if config.get("facet_regularization_enabled") else "Off",
         "Converged": bool(getattr(opt, "success", False)),
         "Message": str(getattr(opt, "message", "")),
         "Iterations": int(getattr(opt, "nit", 0) or 0),
@@ -3164,12 +3766,275 @@ def build_convergence_summary(opt, config: dict, loglik: float, elapsed_seconds:
         "FinalLogLik": ll_final,
         "LogLikStart": ll_start,
         "LogLikChange": ll_change,
+        "RegularizationPenalty": float(getattr(opt, "penalty_value", np.nan))
+        if np.isfinite(getattr(opt, "penalty_value", np.nan)) else np.nan,
+        "FinalPenalizedObjective": (
+            -ll_final + float(getattr(opt, "penalty_value", 0.0))
+            if np.isfinite(ll_final) and np.isfinite(getattr(opt, "penalty_value", 0.0)) else np.nan
+        ),
         "GradientNorm": float(grad_norm) if np.isfinite(grad_norm) else np.nan,
         "ElapsedSeconds": float(elapsed_seconds) if elapsed_seconds is not None and np.isfinite(elapsed_seconds) else np.nan,
         "AutoAttempted": ", ".join(getattr(opt, "auto_attempted", []) or []),
         "AutoSelected": getattr(opt, "auto_selected", ""),
         "AutoFallbackReason": getattr(opt, "auto_fallback_reason", ""),
     }]
+    return pd.DataFrame(rows)
+
+
+def _safe_float(value, default: float = np.nan) -> float:
+    """Coerce a scalar to float; return default for missing/non-finite failures."""
+    try:
+        out = float(value)
+    except (TypeError, ValueError):
+        return default
+    return out if np.isfinite(out) else default
+
+
+def _summary_metric(summary: pd.DataFrame | None, name: str, default: float = np.nan) -> float:
+    if not isinstance(summary, pd.DataFrame) or summary.empty or name not in summary.columns:
+        return default
+    return _safe_float(summary.iloc[0].get(name), default=default)
+
+
+def build_likelihood_information_criteria(result: dict | None) -> pd.DataFrame:
+    """Single-run likelihood and information-criteria table for reporting."""
+    if not isinstance(result, dict):
+        return pd.DataFrame()
+    summary = result.get("summary")
+    if not isinstance(summary, pd.DataFrame) or summary.empty:
+        return pd.DataFrame()
+    row = summary.iloc[0]
+    config = result.get("config", {}) if isinstance(result.get("config", {}), dict) else {}
+    loglik = _summary_metric(summary, "LogLik")
+    n_eff = _summary_metric(summary, "N")
+    k_params = _summary_metric(summary, "KParams")
+    if not np.isfinite(k_params):
+        k_params = _summary_metric(summary, "Parameters")
+    if not np.isfinite(k_params):
+        k_params = _safe_float(config.get("parameter_count"))
+    deviance = _summary_metric(summary, "Deviance")
+    if not np.isfinite(deviance) and np.isfinite(loglik):
+        deviance = -2.0 * loglik
+    aic = _summary_metric(summary, "AIC")
+    if not np.isfinite(aic) and np.isfinite(deviance) and np.isfinite(k_params):
+        aic = deviance + 2.0 * k_params
+    bic = _summary_metric(summary, "BIC")
+    if not np.isfinite(bic) and np.isfinite(deviance) and np.isfinite(k_params) and np.isfinite(n_eff) and n_eff > 0:
+        bic = deviance + np.log(n_eff) * k_params
+    penalty_value = _summary_metric(summary, "RegularizationPenalty", default=0.0)
+    penalized_objective = _summary_metric(summary, "PenalizedObjective")
+    if not np.isfinite(penalized_objective) and np.isfinite(deviance):
+        penalized_objective = -loglik + penalty_value if np.isfinite(loglik) else np.nan
+
+    def per_obs(value: float) -> float:
+        return float(value / n_eff) if np.isfinite(value) and np.isfinite(n_eff) and n_eff > 0 else np.nan
+
+    model = str(row.get("Model", config.get("model", "")))
+    method = str(row.get("Method", config.get("method", "")))
+    rows = [
+        {
+            "Metric": "N",
+            "Value": n_eff,
+            "PreferredDirection": "context",
+            "Formula": "effective likelihood rows or total positive weight",
+            "Interpretation": "Number of observations contributing to the fitted likelihood.",
+        },
+        {
+            "Metric": "KParams",
+            "Value": k_params,
+            "PreferredDirection": "context",
+            "Formula": "free estimated parameters counted for AIC/BIC",
+            "Interpretation": "Penalty term size; larger models are penalized more strongly.",
+        },
+        {
+            "Metric": "LogLik",
+            "Value": loglik,
+            "PreferredDirection": "higher",
+            "Formula": "maximized log-likelihood",
+            "Interpretation": "Higher is better only under the same likelihood definition and data.",
+        },
+        {
+            "Metric": "Deviance",
+            "Value": deviance,
+            "PreferredDirection": "lower",
+            "Formula": "-2 * LogLik",
+            "Interpretation": "Lower is better under comparable likelihoods.",
+        },
+        {
+            "Metric": "RegularizationPenalty",
+            "Value": penalty_value,
+            "PreferredDirection": "context",
+            "Formula": "0.5 * sum(((facet effect - mean) / SD)^2)",
+            "Interpretation": "Penalty added to the optimized objective; zero for unpenalized runs.",
+        },
+        {
+            "Metric": "PenalizedObjective",
+            "Value": penalized_objective,
+            "PreferredDirection": "lower",
+            "Formula": "-LogLik + RegularizationPenalty",
+            "Interpretation": "Objective minimized when facet regularization is active; not an ordinary log-likelihood.",
+        },
+        {
+            "Metric": "AIC",
+            "Value": aic,
+            "PreferredDirection": "lower",
+            "Formula": "2 * KParams - 2 * unpenalized LogLik",
+            "Interpretation": "Lower AIC favors the model after a lighter complexity penalty.",
+        },
+        {
+            "Metric": "BIC",
+            "Value": bic,
+            "PreferredDirection": "lower",
+            "Formula": "log(N) * KParams - 2 * unpenalized LogLik",
+            "Interpretation": "Lower BIC favors the model after a stronger sample-size penalty.",
+        },
+        {
+            "Metric": "LogLikPerObs",
+            "Value": per_obs(loglik),
+            "PreferredDirection": "higher",
+            "Formula": "LogLik / N",
+            "Interpretation": "Scale-normalized likelihood index for descriptive review.",
+        },
+        {
+            "Metric": "AICPerObs",
+            "Value": per_obs(aic),
+            "PreferredDirection": "lower",
+            "Formula": "AIC / N",
+            "Interpretation": "Scale-normalized information criterion for descriptive review.",
+        },
+        {
+            "Metric": "BICPerObs",
+            "Value": per_obs(bic),
+            "PreferredDirection": "lower",
+            "Formula": "BIC / N",
+            "Interpretation": "Scale-normalized information criterion for descriptive review.",
+        },
+    ]
+    out = pd.DataFrame(rows)
+    out.insert(0, "Method", method)
+    out.insert(0, "Model", model)
+    return out
+
+
+def extract_run_likelihood_row(output: dict, *, timestamp: str = "", label: str = "") -> dict:
+    """Extract one compact likelihood/information-criteria row from a run snapshot."""
+    output_dict = output if isinstance(output, dict) else {}
+    result = output_dict.get("result", {})
+    summary = result.get("summary") if isinstance(result, dict) else None
+    config = result.get("config", {}) if isinstance(result, dict) and isinstance(result.get("config", {}), dict) else {}
+    row = summary.iloc[0] if isinstance(summary, pd.DataFrame) and not summary.empty else {}
+    model = str(row.get("Model", output_dict.get("model_type", config.get("model", ""))) if isinstance(row, pd.Series) else output_dict.get("model_type", ""))
+    method = str(row.get("Method", output_dict.get("_est_method", config.get("method", ""))) if isinstance(row, pd.Series) else output_dict.get("_est_method", ""))
+    n_eff = _summary_metric(summary, "N")
+    k_params = _summary_metric(summary, "KParams")
+    if not np.isfinite(k_params):
+        k_params = _safe_float(config.get("parameter_count"))
+    loglik = _summary_metric(summary, "LogLik")
+    deviance = _summary_metric(summary, "Deviance")
+    if not np.isfinite(deviance) and np.isfinite(loglik):
+        deviance = -2.0 * loglik
+    aic = _summary_metric(summary, "AIC")
+    bic = _summary_metric(summary, "BIC")
+    penalty_value = _summary_metric(summary, "RegularizationPenalty", default=0.0)
+    penalized_objective = _summary_metric(summary, "PenalizedObjective")
+    reg_enabled = bool(config.get("facet_regularization_enabled", False)) or bool(np.isfinite(penalty_value) and penalty_value > 0)
+    comparability_key = stable_json_fingerprint({
+        "model": model,
+        "method": method,
+        "n": n_eff,
+        "input": config.get("input_data_fingerprint"),
+        "rating_min": config.get("rating_min"),
+        "rating_max": config.get("rating_max"),
+        "keep_original": config.get("keep_original"),
+        "score_range_explicit": config.get("score_range_explicit"),
+        "step_facet": config.get("step_facet"),
+        "slope_facet": config.get("slope_facet"),
+        "noncenter_facet": config.get("noncenter_facet"),
+        "dummy_facets": sorted(map(str, config.get("dummy_facets", []) or [])),
+        "positive_facets": sorted(map(str, config.get("positive_facets", []) or [])),
+        "anchor_source": config.get("anchor_source_fingerprint"),
+        "group_anchor_source": config.get("group_anchor_source_fingerprint"),
+        "regularization": config.get("facet_regularization_fingerprint") if reg_enabled else "off",
+    })
+    return {
+        "Label": label,
+        "Timestamp": timestamp,
+        "Model": model,
+        "Method": method,
+        "EstimatorLabel": str(row.get("EstimatorLabel", method) if isinstance(row, pd.Series) else method),
+        "N": n_eff,
+        "KParams": k_params,
+        "LogLik": loglik,
+        "Deviance": deviance,
+        "Regularization": "On" if reg_enabled else "Off",
+        "RegularizationPenalty": penalty_value,
+        "PenalizedObjective": penalized_objective,
+        "RegularizationFingerprint": config.get("facet_regularization_fingerprint") if reg_enabled else "off",
+        "ComparabilityKey": comparability_key,
+        "AIC": aic,
+        "BIC": bic,
+        "LogLikPerObs": loglik / n_eff if np.isfinite(loglik) and np.isfinite(n_eff) and n_eff > 0 else np.nan,
+        "AICPerObs": aic / n_eff if np.isfinite(aic) and np.isfinite(n_eff) and n_eff > 0 else np.nan,
+        "BICPerObs": bic / n_eff if np.isfinite(bic) and np.isfinite(n_eff) and n_eff > 0 else np.nan,
+    }
+
+
+def build_run_history_likelihood_table(history: list[dict]) -> pd.DataFrame:
+    """Run-history table with likelihood criteria and delta AIC/BIC."""
+    rows = []
+    for entry in history or []:
+        if not isinstance(entry, dict):
+            continue
+        output = entry.get("output_snapshot", {})
+        rows.append(extract_run_likelihood_row(
+            output,
+            timestamp=str(entry.get("timestamp", "")),
+            label=str(entry.get("label", "")),
+        ))
+    out = pd.DataFrame(rows)
+    if out.empty:
+        return out
+    numeric_cols = [
+        "N", "KParams", "LogLik", "Deviance", "RegularizationPenalty",
+        "PenalizedObjective", "AIC", "BIC", "LogLikPerObs", "AICPerObs", "BICPerObs",
+    ]
+    for col in numeric_cols:
+        if col in out.columns:
+            out[col] = pd.to_numeric(out[col], errors="coerce")
+    for metric in ["AIC", "BIC", "Deviance"]:
+        if metric in out.columns and out[metric].notna().any():
+            out[f"Delta{metric}"] = out[metric] - out[metric].min(skipna=True)
+    if "ComparabilityKey" in out.columns:
+        keys = set(out["ComparabilityKey"].fillna("").astype(str).tolist())
+        out["ComparableIC"] = len(keys) <= 1
+    return out
+
+
+def build_likelihood_descriptives(likelihood_rows: pd.DataFrame) -> pd.DataFrame:
+    """Descriptive statistics for likelihood/info criteria across stored runs."""
+    if not isinstance(likelihood_rows, pd.DataFrame) or likelihood_rows.empty:
+        return pd.DataFrame()
+    metric_cols = [
+        "LogLik", "Deviance", "RegularizationPenalty", "PenalizedObjective",
+        "AIC", "BIC", "LogLikPerObs", "AICPerObs", "BICPerObs",
+    ]
+    rows = []
+    for metric in metric_cols:
+        if metric not in likelihood_rows.columns:
+            continue
+        values = pd.to_numeric(likelihood_rows[metric], errors="coerce").dropna()
+        if values.empty:
+            continue
+        rows.append({
+            "Metric": metric,
+            "N_Runs": int(values.size),
+            "Mean": float(values.mean()),
+            "SD": float(values.std(ddof=1)) if values.size >= 2 else np.nan,
+            "Min": float(values.min()),
+            "Median": float(values.median()),
+            "Max": float(values.max()),
+            "PreferredDirection": "higher" if metric.startswith("LogLik") else ("context" if "Penalty" in metric else "lower"),
+        })
     return pd.DataFrame(rows)
 
 
@@ -3481,6 +4346,10 @@ def _m_step_expected_ll_value_grad(par, idx, config, sizes, quad, post_weights):
     grad = np.concatenate([g for g in grad_parts if g.size]) if grad_parts else np.array([], dtype=float)
     if grad.size != len(par):
         raise RuntimeError(f"Internal MML gradient size mismatch: expected {len(par)}, got {grad.size}.")
+    penalty_value, penalty_grad = facet_regularization_value_grad(par, sizes, config)
+    if config.get("facet_regularization", {}).get("enabled"):
+        nll += penalty_value
+        grad = grad + penalty_grad
     return nll, grad
 
 
@@ -3576,7 +4445,10 @@ def mfrm_em_mml(start, idx, config, sizes, quad, maxit=200, reltol=1e-6):
 
     result = EMResult()
     result.x = par
-    result.fun = -final_ll          # negative LL (same sign convention)
+    penalty_value, _ = facet_regularization_value_grad(par, sizes, config)
+    result.raw_fun = -final_ll
+    result.penalty_value = penalty_value
+    result.fun = -final_ll + penalty_value
     result.success = converged
     result.nit = len(ll_trace) - 1
     result.nfev = total_nfev
@@ -4403,6 +5275,7 @@ def mfrm_estimate(
     positive_facets=None,
     quad_points=15,
     population_prior_sd=1.0,
+    facet_regularization=None,
     maxit=400,
     reltol=1e-6,
     mml_engine="EM",
@@ -4414,9 +5287,31 @@ def mfrm_estimate(
     n_plausible_values=5,
     plausible_seed=20260411,
 ):
-    if method == "JMLE" and SHARED_SIM_ENGINE is not None and not USE_EMBEDDED_ENGINE_ONLY:
-        return SHARED_SIM_ENGINE.mfrm_estimate(
-            data=data,
+    response_data_audit = build_response_data_audit(
+        data,
+        person_col=person_col,
+        facet_cols=list(facet_cols),
+        score_col=score_col,
+        weight_col=weight_col,
+    )
+    data_for_fit = normalize_response_input_data(
+        data,
+        person_col=person_col,
+        facet_cols=list(facet_cols),
+        score_col=score_col,
+        weight_col=weight_col,
+    )
+    facet_regularization_rows_for_dispatch = normalize_facet_regularization_rows(facet_regularization)
+    facet_regularization_requested = not facet_regularization_rows_for_dispatch.empty
+
+    if (
+        method == "JMLE"
+        and SHARED_SIM_ENGINE is not None
+        and not USE_EMBEDDED_ENGINE_ONLY
+        and not facet_regularization_requested
+    ):
+        shared_result = SHARED_SIM_ENGINE.mfrm_estimate(
+            data=data_for_fit,
             person_col=person_col,
             facet_cols=facet_cols,
             score_col=score_col,
@@ -4437,9 +5332,16 @@ def mfrm_estimate(
             reltol=reltol,
             jmle_optimizer="AUTO",
         )
+        if isinstance(shared_result, dict):
+            shared_prep = shared_result.setdefault("prep", {})
+            shared_prep["response_data_audit"] = response_data_audit
+            shared_prep["row_audit"] = response_data_audit.get("rows", pd.DataFrame())
+            shared_prep["excluded_rows"] = response_data_audit.get("excluded_rows", pd.DataFrame())
+            shared_prep["audit_summary"] = response_data_audit.get("summary", pd.DataFrame())
+        return shared_result
 
     prep = prepare_mfrm_data(
-        data,
+        data_for_fit,
         person_col=person_col,
         facet_cols=facet_cols,
         score_col=score_col,
@@ -4448,6 +5350,10 @@ def mfrm_estimate(
         weight_col=weight_col,
         keep_original=keep_original,
     )
+    prep["response_data_audit"] = response_data_audit
+    prep["row_audit"] = response_data_audit.get("rows", pd.DataFrame())
+    prep["excluded_rows"] = response_data_audit.get("excluded_rows", pd.DataFrame())
+    prep["audit_summary"] = response_data_audit.get("summary", pd.DataFrame())
 
     model = str(model or "RSM").upper()
     if model not in {"RSM", "PCM", "GPCM"}:
@@ -4606,6 +5512,13 @@ def mfrm_estimate(
     config["anchor_audit"] = anchor_audit
 
     sizes = build_param_sizes(config)
+    regularization_bundle = prepare_facet_regularization(facet_regularization, config, sizes)
+    config["facet_regularization"] = regularization_bundle["runtime"]
+    config["facet_regularization_scope"] = regularization_bundle["scope"]
+    config["facet_regularization_mode"] = regularization_bundle["mode"]
+    config["facet_regularization_objective_mode"] = regularization_bundle["mode"]
+    config["facet_regularization_enabled"] = bool(regularization_bundle["enabled"])
+    config["facet_regularization_fingerprint"] = regularization_bundle["runtime"].get("fingerprint")
 
     step_init = np.linspace(-1, 1, max(n_cat - 1, 0)) if n_cat > 1 else np.array([], dtype=float)
     facet_starts = np.concatenate([np.zeros(sizes[f]) for f in config["facet_names"]]) if config["facet_names"] else np.array([], dtype=float)
@@ -4741,8 +5654,19 @@ def mfrm_estimate(
         columns=["Term", "Center", "Scale", "Standardized"],
     )
 
-    k_params = sum(sizes.values())
-    loglik = -opt.fun
+    k_params = int(sum(sizes.values()))
+    config["parameter_count"] = k_params
+    if method == "MML":
+        final_quad_for_ll = make_mml_quadrature(config, quad_points)
+        final_raw_nll = mfrm_loglik_mml(opt.x, idx, config, sizes, final_quad_for_ll)
+    else:
+        final_raw_nll = mfrm_loglik_jmle(opt.x, idx, config, sizes)
+    penalty_value, _ = facet_regularization_value_grad(opt.x, sizes, config)
+    penalized_objective = final_raw_nll + penalty_value
+    loglik = -final_raw_nll
+    opt.raw_fun = final_raw_nll
+    opt.penalty_value = penalty_value
+    opt.penalized_objective = penalized_objective
     if not np.isfinite(getattr(opt, "gradient_norm", np.nan)):
         try:
             if method == "MML":
@@ -4761,21 +5685,39 @@ def mfrm_estimate(
         n_obs = len(prep["data"])
     aic = 2 * k_params - 2 * loglik
     bic = np.log(n_obs) * k_params - 2 * loglik if n_obs > 0 else np.nan
+    deviance = -2 * loglik
+    loglik_per_obs = loglik / n_obs if n_obs > 0 else np.nan
+    aic_per_obs = aic / n_obs if n_obs > 0 else np.nan
+    bic_per_obs = bic / n_obs if n_obs > 0 else np.nan
 
     n_iter = getattr(opt, "nit", opt.nfev)
     summary_tbl = pd.DataFrame({
         "Model": [model],
         "Method": [method],
+        "EstimatorLabel": [f"Penalized {method}" if regularization_bundle["enabled"] else method],
         "MML Engine": [config.get("mml_engine") if method == "MML" else None],
         "PopulationPriorSD": [config.get("population_prior_sd") if method == "MML" else None],
+        "FacetRegularization": ["On" if regularization_bundle["enabled"] else "Off"],
         "Optimizer": [config.get("optimizer")],
         "N": [n_obs],
         "Persons": [n_person],
         "Facets": [len(config["facet_names"])],
         "Categories": [n_cat],
+        "KParams": [k_params],
         "LogLik": [loglik],
+        "Deviance": [deviance],
+        "RegularizationPenalty": [penalty_value],
+        "PenalizedObjective": [penalized_objective],
+        "ObjectiveBasis": [
+            "negative log-likelihood + Gaussian facet penalty"
+            if regularization_bundle["enabled"] else "negative log-likelihood"
+        ],
+        "LogLikBasis": ["unpenalized likelihood evaluated at fitted estimates"],
         "AIC": [aic],
         "BIC": [bic],
+        "LogLikPerObs": [loglik_per_obs],
+        "AICPerObs": [aic_per_obs],
+        "BICPerObs": [bic_per_obs],
         "Converged": [bool(opt.success)],
         "Iterations": [n_iter],
         "GradientNorm": [getattr(opt, "gradient_norm", np.nan)],
@@ -4808,7 +5750,13 @@ def mfrm_estimate(
         "params": params,
         "convergence": convergence_tbl,
         "posterior": posterior_outputs,
+        "regularization": {
+            "settings": regularization_bundle["spec"],
+            "audit": regularization_bundle["audit"],
+            "penalty_summary": facet_regularization_penalty_summary(opt.x, sizes, config),
+        },
     }
+    result["likelihood_information"] = build_likelihood_information_criteria(result)
     result["anchor_drift"] = build_anchor_drift_review(result)
     result["equating_chain"] = build_equating_chain_summary(result)
     config["anchor_drift_scope"] = result["anchor_drift"].get("scope")
@@ -7864,10 +8812,61 @@ def mfrm_diagnostics(
     }
 
 
-def read_flexible_table(text_value, file_input, header=True):
+def normalize_csv_newlines(value):
+    """Normalize CRLF and old-Mac CR line endings before CSV/TSV parsing."""
+    if isinstance(value, bytes):
+        return value.replace(b"\r\n", b"\n").replace(b"\r", b"\n")
+    return str(value).replace("\r\n", "\n").replace("\r", "\n")
+
+
+TABLE_DELIMITER_OPTIONS = {
+    "Auto": None,
+    "Comma (,)": ",",
+    "Tab": "\t",
+    "Semicolon (;)": ";",
+}
+
+
+def infer_table_delimiter(text_value: str | bytes | None, file_name: str | None = None) -> str:
+    """Infer a simple CSV/TSV delimiter from text content and file name."""
+    if text_value is None:
+        return "\t" if str(file_name or "").lower().endswith((".tsv", ".txt")) else ","
+    if isinstance(text_value, bytes):
+        try:
+            text = text_value[:8192].decode("utf-8-sig", errors="ignore")
+        except Exception:
+            text = ""
+    else:
+        text = str(text_value)[:8192]
+    text = normalize_csv_newlines(text)
+    lines = [ln for ln in text.split("\n") if ln.strip()][:10]
+    if not lines:
+        return "\t" if str(file_name or "").lower().endswith((".tsv", ".txt")) else ","
+    counts = {
+        "\t": sum(ln.count("\t") for ln in lines),
+        ";": sum(ln.count(";") for ln in lines),
+        ",": sum(ln.count(",") for ln in lines),
+    }
+    best, n_best = max(counts.items(), key=lambda kv: kv[1])
+    if n_best > 0:
+        return best
+    return "\t" if str(file_name or "").lower().endswith((".tsv", ".txt")) else ","
+
+
+def resolve_table_delimiter(delimiter: str | None, text_value=None, file_name: str | None = None) -> str:
+    """Resolve UI/API delimiter labels to an actual pandas separator."""
+    if delimiter in TABLE_DELIMITER_OPTIONS:
+        explicit = TABLE_DELIMITER_OPTIONS[delimiter]
+        if explicit is not None:
+            return explicit
+    if delimiter in {",", "\t", ";"}:
+        return delimiter
+    return infer_table_delimiter(text_value, file_name=file_name)
+
+
+def read_flexible_table(text_value, file_input, header=True, delimiter: str | None = None):
     if file_input is not None:
         name = file_input.name.lower()
-        sep = "\t" if name.endswith((".tsv", ".txt")) else ","
         try:
             raw = file_input.getvalue()
         except Exception:
@@ -7877,17 +8876,16 @@ def read_flexible_table(text_value, file_input, header=True):
             except Exception:
                 pass
         if isinstance(raw, str):
+            raw = normalize_csv_newlines(raw)
+            sep = resolve_table_delimiter(delimiter, raw, file_name=name)
             return pd.read_csv(io.StringIO(raw), sep=sep, header=0 if header else None, dtype=str)
-        return pd.read_csv(io.BytesIO(bytes(raw)), sep=sep, header=0 if header else None, dtype=str)
+        raw = normalize_csv_newlines(bytes(raw))
+        sep = resolve_table_delimiter(delimiter, raw, file_name=name)
+        return pd.read_csv(io.BytesIO(raw), sep=sep, header=0 if header else None, dtype=str)
     if text_value is None or not str(text_value).strip():
         return pd.DataFrame()
-    text_value = str(text_value).strip()
-    if "\t" in text_value:
-        sep = "\t"
-    elif ";" in text_value:
-        sep = ";"
-    else:
-        sep = ","
+    text_value = normalize_csv_newlines(str(text_value)).strip()
+    sep = resolve_table_delimiter(delimiter, text_value)
     return pd.read_csv(io.StringIO(text_value), sep=sep, header=0 if header else None, dtype=str)
 
 
@@ -8511,6 +9509,12 @@ absent, following FACETS conventions). Before running, use the **Missing value
 recoding** panel in the sidebar to convert placeholder codes (e.g., `99`, `999`,
 `N`, `NA`, `-1`, blank) into true missing values. See Linacre (2024) *A User's
 Guide to FACETS*, Section 3 for details on missing data handling.
+
+The **Response-data audit** keeps the original input row numbers and reports
+whether each row entered the likelihood. Rows with missing Person, Score, or
+selected facet values, non-numeric scores, or non-positive weights are excluded
+before likelihood calculation; they are not recoded to zero or to any score
+category.
 """
         )
 
@@ -8763,6 +9767,13 @@ def read_input_data(core: dict) -> pd.DataFrame:
 
     if chosen["kind"] == "paste":
         render_data_privacy_notice(where="sidebar")
+        paste_delimiter = st.sidebar.selectbox(
+            "Delimiter",
+            list(TABLE_DELIMITER_OPTIONS.keys()),
+            index=0,
+            key="paste_data_delimiter",
+            help="Auto detects comma, tab, or semicolon. Choose a delimiter if the preview looks wrong.",
+        )
         text_value = st.sidebar.text_area(
             "Paste CSV/TSV text",
             height=180,
@@ -8771,9 +9782,33 @@ def read_input_data(core: dict) -> pd.DataFrame:
         )
         if not text_value.strip():
             return pd.DataFrame()
-        return core["read_flexible_table"](text_value, None, header=True)
+        try:
+            parsed = core["read_flexible_table"](text_value, None, header=True, delimiter=paste_delimiter)
+        except Exception as exc:
+            st.sidebar.error(
+                "We couldn't read the pasted text as a table. Try choosing a delimiter above, "
+                "or paste a CSV/TSV with one header row."
+            )
+            with st.sidebar.expander("Technical parse details", expanded=False):
+                st.exception(exc)
+            return pd.DataFrame()
+        if parsed.shape[1] < 2:
+            st.sidebar.warning(
+                "Only one column was detected. Choose Tab or Semicolon if your data are not comma-delimited."
+            )
+        else:
+            preview_cols = ", ".join(map(str, parsed.columns[:5]))
+            st.sidebar.caption(f"Detected {parsed.shape[1]} columns: {preview_cols}{'...' if parsed.shape[1] > 5 else ''}")
+        return parsed
 
     render_data_privacy_notice(where="sidebar")
+    upload_delimiter = st.sidebar.selectbox(
+        "Delimiter",
+        list(TABLE_DELIMITER_OPTIONS.keys()),
+        index=0,
+        key="upload_data_delimiter",
+        help="Auto detects comma, tab, or semicolon from the uploaded file content.",
+    )
     upload = st.sidebar.file_uploader(
         "Upload data file", type=["csv", "tsv", "txt"],
         help=(
@@ -8805,7 +9840,24 @@ def read_input_data(core: dict) -> pd.DataFrame:
             "may be slow or fail on Streamlit Community Cloud. A "
             "local Python install is recommended for large datasets."
         )
-    return core["read_flexible_table"]("", upload, header=True)
+    try:
+        parsed = core["read_flexible_table"]("", upload, header=True, delimiter=upload_delimiter)
+    except Exception as exc:
+        st.sidebar.error(
+            "We couldn't read this file as a table. Try choosing a delimiter above, "
+            "saving as comma CSV, or uploading a TSV file."
+        )
+        with st.sidebar.expander("Technical parse details", expanded=False):
+            st.exception(exc)
+        return pd.DataFrame()
+    if parsed.shape[1] < 2:
+        st.sidebar.warning(
+            "Only one column was detected. Choose Tab or Semicolon if the file is not comma-delimited."
+        )
+    else:
+        preview_cols = ", ".join(map(str, parsed.columns[:5]))
+        st.sidebar.caption(f"Detected {parsed.shape[1]} columns: {preview_cols}{'...' if parsed.shape[1] > 5 else ''}")
+    return parsed
 
 
 # ---------------------------------------------------------------------------
@@ -9038,6 +10090,22 @@ def build_result_bundle_frames(
     summary = result.get("summary")
     if isinstance(summary, pd.DataFrame) and not summary.empty:
         frames["summary"] = summary
+    likelihood_info = result.get("likelihood_information")
+    if not isinstance(likelihood_info, pd.DataFrame) or likelihood_info.empty:
+        likelihood_info = build_likelihood_information_criteria(result)
+    if isinstance(likelihood_info, pd.DataFrame) and not likelihood_info.empty:
+        frames["likelihood_information_criteria"] = likelihood_info
+    regularization = result.get("regularization", {})
+    if isinstance(regularization, dict):
+        reg_settings = regularization.get("settings", pd.DataFrame())
+        reg_audit = regularization.get("audit", pd.DataFrame())
+        reg_penalty = regularization.get("penalty_summary", pd.DataFrame())
+        if isinstance(reg_settings, pd.DataFrame) and not reg_settings.empty:
+            frames["facet_regularization_settings"] = reg_settings
+        if isinstance(reg_audit, pd.DataFrame) and not reg_audit.empty:
+            frames["facet_regularization_audit"] = reg_audit
+        if isinstance(reg_penalty, pd.DataFrame) and not reg_penalty.empty:
+            frames["regularization_penalty_summary"] = reg_penalty
     convergence = result.get("convergence")
     if isinstance(convergence, pd.DataFrame) and not convergence.empty:
         frames["convergence"] = convergence
@@ -9079,12 +10147,16 @@ def build_result_bundle_frames(
         for pair_label, pair_res in all_bias_results.items():
             if not isinstance(pair_res, dict):
                 continue
-            tbl = pair_res.get("bias_tbl")
+            tbl = pair_res.get("table")
+            if not isinstance(tbl, pd.DataFrame) or tbl.empty:
+                tbl = pair_res.get("bias_tbl")
             if isinstance(tbl, pd.DataFrame) and not tbl.empty:
                 safe_pair = re.sub(r"[^A-Za-z0-9]+", "_", str(pair_label)).strip("_")
                 frames[f"bias_{safe_pair}"] = tbl
     elif isinstance(bias_results, dict) and bias_results:
-        tbl = bias_results.get("bias_tbl")
+        tbl = bias_results.get("table")
+        if not isinstance(tbl, pd.DataFrame) or tbl.empty:
+            tbl = bias_results.get("bias_tbl")
         if isinstance(tbl, pd.DataFrame) and not tbl.empty:
             frames["bias"] = tbl
     return frames
@@ -9121,9 +10193,9 @@ def render_quick_results_download(
         )
         st.caption(
             "FACETS-style bundle: Summary, Measures, Reliability, Fit, "
-            "PCA, and Bias tables in a single ZIP. For the full download "
-            "surface (Publication Document, Stan code, per-table CSVs) "
-            "use the **Report → 💾 Exports** sub-tab."
+            "PCA, and Bias tables in a single ZIP. For publication Word/PDF/HTML "
+            "and Stan code, use **Report → 💾 Exports**. For every CSV, figure, "
+            "script, and config file, use the **Downloads** tab."
         )
         c1, c2 = st.columns([1, 1])
         with c1:
@@ -9754,6 +10826,88 @@ def _show_data_tab_checks(data: pd.DataFrame, score_col: str) -> None:
     )
 
 
+def render_response_data_audit_panel(
+    audit_bundle: dict | None,
+    *,
+    expanded: bool = False,
+    context: str = "pre",
+) -> None:
+    """Render the row-level audit that links user input to likelihood rows."""
+    if not isinstance(audit_bundle, dict):
+        return
+    summary = audit_bundle.get("summary", pd.DataFrame())
+    rows = audit_bundle.get("rows", pd.DataFrame())
+    excluded_rows = audit_bundle.get("excluded_rows", pd.DataFrame())
+    if not isinstance(rows, pd.DataFrame) or rows.empty:
+        return
+    if not isinstance(summary, pd.DataFrame):
+        summary = pd.DataFrame()
+    if not isinstance(excluded_rows, pd.DataFrame):
+        excluded_rows = pd.DataFrame()
+
+    included = int(rows["IncludedInLikelihood"].sum()) if "IncludedInLikelihood" in rows.columns else 0
+    excluded = int((~rows["IncludedInLikelihood"]).sum()) if "IncludedInLikelihood" in rows.columns else 0
+    errors = int((rows["LikelihoodAction"].astype(str) == "error_before_fit").sum()) if "LikelihoodAction" in rows.columns else 0
+    total = len(rows)
+
+    st.subheader("Response-data audit")
+    st.caption(
+        "This audit preserves the user's input row numbers and shows which rows enter "
+        "the likelihood. Missing responses are treated as structurally absent, not as zero scores."
+    )
+    m1, m2, m3 = st.columns(3)
+    m1.metric("Input rows", f"{total:,}")
+    m2.metric("Rows in likelihood", f"{included:,}")
+    m3.metric("Rows not used", f"{excluded:,}")
+
+    if errors:
+        st.error(
+            f"{errors:,} row(s) contain fractional score values. Recode them to ordered "
+            "integer categories before fitting."
+        )
+    elif excluded:
+        st.warning(
+            f"{excluded:,} input row(s) are excluded before likelihood calculation. "
+            "Open the table below to inspect exact row numbers and reasons."
+        )
+    else:
+        st.success("Every input row is usable for likelihood calculation.")
+
+    expander_label = (
+        "Inspect likelihood-row mapping"
+        if context == "pre" else
+        "Inspect likelihood-row mapping used in this run"
+    )
+    with st.expander(expander_label, expanded=expanded or bool(excluded or errors)):
+        if isinstance(summary, pd.DataFrame) and not summary.empty:
+            st.markdown("**Audit summary**")
+            st.dataframe(summary, width="stretch", hide_index=True)
+        if not excluded_rows.empty:
+            st.markdown("**Excluded/error rows**")
+            st.dataframe(excluded_rows.head(500), width="stretch", hide_index=True)
+            if len(excluded_rows) > 500:
+                st.caption(f"Showing first 500 of {len(excluded_rows):,} excluded/error rows.")
+        else:
+            st.caption("No excluded rows.")
+        st.download_button(
+            "Download full row audit CSV",
+            data=to_csv_bytes(rows),
+            file_name="mfrm_response_data_row_audit.csv",
+            mime="text/csv",
+            key=f"response_data_row_audit_{context}",
+            use_container_width=True,
+        )
+        if not excluded_rows.empty:
+            st.download_button(
+                "Download excluded rows CSV",
+                data=to_csv_bytes(excluded_rows),
+                file_name="mfrm_response_data_excluded_rows.csv",
+                mime="text/csv",
+                key=f"response_data_excluded_rows_{context}",
+                use_container_width=True,
+            )
+
+
 def _fit_summary_callout(measures_df: pd.DataFrame, facet_filter: str | None = None) -> None:
     """Result-aware success/warning/error callout summarising fit."""
     if measures_df.empty or "Infit" not in measures_df.columns:
@@ -10322,6 +11476,31 @@ def resolve_analysis_depth_settings(
     return settings
 
 
+def analysis_depth_sidebar_summary(settings: dict) -> str:
+    """Compact read-only summary of what the selected performance preset runs."""
+    enabled: list[str] = []
+    skipped: list[str] = []
+    feature_map = [
+        ("compute_residual_pca", "residual PCA"),
+        ("compute_strict_marginal", "strict marginal"),
+        ("strict_marginal_pairwise", "pairwise marginal"),
+        ("compute_plausible_values", "plausible values"),
+        ("render_interactive_plots", "interactive plots"),
+        ("generate_figure_exports", "figure export bundle"),
+    ]
+    for key, label in feature_map:
+        (enabled if bool(settings.get(key)) else skipped).append(label)
+    bias_mode = str(settings.get("bias_mode", "Skip"))
+    if bias_mode != "Skip":
+        enabled.append(f"bias scan: {bias_mode}")
+    else:
+        skipped.append("bias scan")
+    return (
+        f"Runs: {', '.join(enabled) if enabled else 'core estimation only'}. "
+        f"Skips: {', '.join(skipped) if skipped else 'none'}."
+    )
+
+
 _RUN_HISTORY_KEY = "_facets_mode_run_history"
 # Cap the deep-copied snapshot stack at 5 entries (was 10). On Streamlit
 # Community Cloud (~1 GB) each deepcopy can be 50+ MB for a 1000-person
@@ -10343,6 +11522,7 @@ _CONFIG_JSON_IMPORT_WHITELIST: frozenset[str] = frozenset({
     "noncenter_facet", "dummy_facets", "positive_facets",
     "maxit", "reltol", "anchor_policy",
     "population_enabled", "population_formula",
+    "facet_regularization_ui_mode", "facet_regularization_specs",
     "compute_residual_pca", "compute_strict_marginal",
     "compute_plausible_values", "n_plausible_values",
 })
@@ -10394,6 +11574,9 @@ def record_run_in_history(*, output: dict, elapsed_sec: float) -> dict:
         n_persons = int(prep.get("n_person", 0))
     except (TypeError, ValueError):
         n_persons = 0
+    like_row = extract_run_likelihood_row(output)
+    result_cfg = (output.get("result", {}) or {}).get("config", {}) if isinstance(output, dict) else {}
+    reg_label = "On" if isinstance(result_cfg, dict) and result_cfg.get("facet_regularization_enabled") else "Off"
 
     entry = {
         "run_id": f"run-{_dt.datetime.now().strftime('%Y%m%d-%H%M%S-%f')}",
@@ -10406,6 +11589,12 @@ def record_run_in_history(*, output: dict, elapsed_sec: float) -> dict:
         "converged": converged,
         "iterations": iters,
         "elapsed_sec": float(elapsed_sec or 0.0),
+        "regularization": reg_label,
+        "loglik": like_row.get("LogLik", np.nan),
+        "deviance": like_row.get("Deviance", np.nan),
+        "aic": like_row.get("AIC", np.nan),
+        "bic": like_row.get("BIC", np.nan),
+        "k_params": like_row.get("KParams", np.nan),
         "output_snapshot": _copy.deepcopy(output) if isinstance(output, dict) else {},
     }
     history = list(st.session_state.get(_RUN_HISTORY_KEY, []))
@@ -10427,6 +11616,12 @@ def restore_run_from_history(run_id: str) -> bool:
     for entry in get_run_history():
         if entry.get("run_id") == run_id:
             st.session_state["facets_mode_output"] = _copy.deepcopy(entry["output_snapshot"])
+            st.session_state["_facets_mode_restored_snapshot"] = {
+                "run_id": entry.get("run_id"),
+                "timestamp": entry.get("timestamp"),
+                "model": entry.get("model"),
+                "method": entry.get("method"),
+            }
             return True
     return False
 
@@ -10463,9 +11658,48 @@ def render_run_history_panel() -> None:
                 "n_facets": h["n_facets"],
                 "converged": h["converged"],
                 "iterations": h["iterations"],
+                "regularization": h.get("regularization", "Off"),
+                "LogLik": h.get("loglik", np.nan),
+                "AIC": h.get("aic", np.nan),
+                "BIC": h.get("bic", np.nan),
                 "elapsed_sec": round(h["elapsed_sec"], 2),
             })
-        st.dataframe(pd.DataFrame(display_rows), width="stretch", hide_index=True)
+        compact_history = pd.DataFrame(display_rows)
+        if not compact_history.empty:
+            for col in ["LogLik", "AIC", "BIC"]:
+                if col in compact_history.columns:
+                    compact_history[col] = pd.to_numeric(compact_history[col], errors="coerce").round(3)
+        st.dataframe(compact_history, width="stretch", hide_index=True)
+
+        likelihood_history = build_run_history_likelihood_table(history)
+        if isinstance(likelihood_history, pd.DataFrame) and not likelihood_history.empty:
+            with st.expander("Maximized likelihood / information criteria across run history", expanded=False):
+                st.caption(
+                    "Use these descriptively unless runs share the same response rows, score map, "
+                    "missing-data rule, likelihood definition, and identification constraints. "
+                    "AIC/BIC are lower-is-better; LogLik is higher-is-better."
+                )
+                display_cols = [
+                    c for c in [
+                        "Timestamp", "Model", "Method", "N", "KParams",
+                        "Regularization", "LogLik", "Deviance", "RegularizationPenalty",
+                        "PenalizedObjective", "AIC", "BIC",
+                        "DeltaAIC", "DeltaBIC", "DeltaDeviance",
+                        "LogLikPerObs", "AICPerObs", "BICPerObs", "ComparableIC",
+                    ] if c in likelihood_history.columns
+                ]
+                st.dataframe(likelihood_history[display_cols].round(4), width="stretch", hide_index=True)
+                desc = build_likelihood_descriptives(likelihood_history)
+                if isinstance(desc, pd.DataFrame) and not desc.empty:
+                    st.markdown("**Descriptive statistics across stored runs**")
+                    st.dataframe(desc.round(4), width="stretch", hide_index=True)
+                st.download_button(
+                    "Download run-history likelihood criteria (CSV)",
+                    data=to_csv_bytes(likelihood_history),
+                    file_name="mfrm_run_history_likelihood_criteria.csv",
+                    mime="text/csv",
+                    key="dl_run_history_likelihood_criteria",
+                )
 
         # Per-entry Restore buttons
         for entry in reversed(history):
@@ -10613,6 +11847,30 @@ def render_comparison_panel(snap_a: dict, snap_b: dict) -> None:
             delta_color="inverse",
         )
 
+        likelihood_cmp = build_run_history_likelihood_table([
+            {"timestamp": "Run A", "output_snapshot": snap_a},
+            {"timestamp": "Run B", "output_snapshot": snap_b},
+        ])
+        if isinstance(likelihood_cmp, pd.DataFrame) and not likelihood_cmp.empty:
+            metric_cols = [
+                c for c in [
+                        "Timestamp", "Model", "Method", "N", "KParams",
+                        "Regularization", "LogLik", "Deviance", "RegularizationPenalty",
+                        "PenalizedObjective", "AIC", "BIC",
+                        "DeltaAIC", "DeltaBIC", "DeltaDeviance",
+                        "LogLikPerObs", "AICPerObs", "BICPerObs", "ComparableIC",
+                    ] if c in likelihood_cmp.columns
+                ]
+            if any(pd.to_numeric(likelihood_cmp.get(c, pd.Series(dtype=float)), errors="coerce").notna().any()
+                   for c in ["LogLik", "AIC", "BIC"]):
+                st.markdown("#### Maximized likelihood / information criteria")
+                st.caption(
+                    "Compare AIC/BIC/LRT-style likelihood quantities only when both runs use the same "
+                    "response rows, score map, missing-data rule, likelihood definition, constraints, "
+                    "and regularization settings."
+                )
+                st.dataframe(likelihood_cmp[metric_cols].round(4), width="stretch", hide_index=True)
+
         measures = _comparison_measures_diff(snap_a, snap_b)
         if measures is not None:
             st.markdown("#### Element-level measure agreement")
@@ -10748,6 +12006,7 @@ def build_readiness_report(
     person_col: str,
     score_col: str,
     facet_cols: list[str],
+    weight_col: str | None = None,
 ) -> dict:
     """Build a pre-estimation readiness report from the uploaded data.
 
@@ -10889,6 +12148,50 @@ def build_readiness_report(
                     "headline": f"Score: {n_unique} categories, {missing_pct:.0f}% missing",
                     "detail": f"Looks well-formed.",
                 })
+
+    try:
+        audit = build_response_data_audit(
+            data,
+            person_col=person_col,
+            facet_cols=facet_cols,
+            score_col=score_col,
+            weight_col=weight_col,
+        )
+        audit_rows = audit.get("rows", pd.DataFrame())
+        if isinstance(audit_rows, pd.DataFrame) and not audit_rows.empty:
+            included = int(audit_rows.get("IncludedInLikelihood", pd.Series(dtype=bool)).sum())
+            excluded = int((~audit_rows.get("IncludedInLikelihood", pd.Series(dtype=bool))).sum())
+            errors = int((audit_rows.get("LikelihoodAction", pd.Series(dtype=str)) == "error_before_fit").sum())
+            pct_excluded = 100.0 * excluded / max(len(audit_rows), 1)
+            if included == 0:
+                checks.append({
+                    "name": "likelihood_rows", "severity": "issue",
+                    "headline": "No rows can enter the likelihood",
+                    "detail": "Every input row is missing a required role, has an unusable score, or has non-positive weight.",
+                })
+            elif errors > 0:
+                checks.append({
+                    "name": "likelihood_rows", "severity": "issue",
+                    "headline": f"{errors:,} row(s) have fractional score values",
+                    "detail": "The run stops until fractional scores are recoded to ordered integer categories.",
+                })
+            elif excluded > 0:
+                checks.append({
+                    "name": "likelihood_rows", "severity": "warning",
+                    "headline": f"{excluded:,} row(s) excluded before likelihood ({pct_excluded:.1f}%)",
+                    "detail": (
+                        f"{included:,} row(s) will be used. Open the response-data audit to see the exact "
+                        "input row numbers and exclusion reasons."
+                    ),
+                })
+            else:
+                checks.append({
+                    "name": "likelihood_rows", "severity": "ok",
+                    "headline": "All rows enter the likelihood",
+                    "detail": "No missing selected cells, unusable scores, or non-positive weights were detected.",
+                })
+    except Exception:  # pragma: no cover - readiness should stay non-blocking
+        pass
 
     # Facet count
     if len(facet_cols) < 2:
@@ -12723,7 +14026,8 @@ _ESTIMATION_ERROR_PATTERNS: list[tuple[str, tuple[str, str, str]]] = [
         "did not converge",
         (
             "Iterations stopped before convergence was reached.",
-            "Increase **maxit**, relax **reltol**, or enable **Omit extreme elements** in the sidebar.",
+            "Increase **maxit**, relax **reltol**, try MML, simplify the model, "
+            "or review the response-data audit for extreme or sparse patterns.",
             "maxit",
         ),
     ),
@@ -12732,8 +14036,9 @@ _ESTIMATION_ERROR_PATTERNS: list[tuple[str, tuple[str, str, str]]] = [
         (
             "Every observation falls at the minimum or maximum rating category, "
             "so the model has no information to estimate measures.",
-            "Check your Score column for values outside the rating scale. "
-            "Set **Xtreme correction > 0** (e.g., 0.3) or re-verify the data mapping.",
+            "Check your Score column and rating scale. If specific elements are all-minimum "
+            "or all-maximum, remove/merge those elements, simplify the model, or try MML. "
+            "Xtreme correction affects report tables after a successful fit; it is not a fitting remedy.",
             "xtreme",
         ),
     ),
@@ -12811,6 +14116,34 @@ def format_estimation_remedy(remedy: tuple[str, str, str]) -> str:
         f"**What went wrong:** {diagnosis}\n\n"
         f"**Try this next:** {action}"
     )
+
+
+def build_input_stale_reasons(
+    output: dict | None,
+    *,
+    current_input_data_fingerprint: str | None,
+    current_anchor_source_fingerprint: str | None,
+    current_group_anchor_source_fingerprint: str | None,
+    current_population_source_fingerprint: str | None,
+) -> list[str]:
+    """Return stale-result reasons caused by changed input sources."""
+    if not isinstance(output, dict):
+        return []
+    result_cfg = (output.get("result", {}) or {}).get("config", {}) if isinstance(output.get("result", {}), dict) else {}
+    reasons: list[str] = []
+    stored_input_fp = output.get("_input_data_fingerprint") or result_cfg.get("input_data_fingerprint")
+    if stored_input_fp and current_input_data_fingerprint and stored_input_fp != current_input_data_fingerprint:
+        reasons.append("rating data")
+    stored_anchor_fp = output.get("_anchor_source_fingerprint") or result_cfg.get("anchor_source_fingerprint")
+    if stored_anchor_fp != current_anchor_source_fingerprint:
+        reasons.append("anchor input")
+    stored_group_anchor_fp = output.get("_group_anchor_source_fingerprint") or result_cfg.get("group_anchor_source_fingerprint")
+    if stored_group_anchor_fp != current_group_anchor_source_fingerprint:
+        reasons.append("group-anchor input")
+    stored_population_fp = output.get("_population_source_fingerprint") or result_cfg.get("population_source_fingerprint")
+    if stored_population_fp != current_population_source_fingerprint:
+        reasons.append("person_data input")
+    return reasons
 
 
 def run_facets_mode(core: dict, data: pd.DataFrame) -> None:
@@ -12910,6 +14243,7 @@ def run_facets_mode(core: dict, data: pd.DataFrame) -> None:
             "Compile and sample Stan locally with the exported runner. "
             "The app never samples in the browser."
         )
+        st.warning(STAN_SENSITIVITY_WARNING)
         _advanced_enabled = st.checkbox(
             "Enable advanced model download",
             value=False,
@@ -13027,9 +14361,9 @@ def run_facets_mode(core: dict, data: pd.DataFrame) -> None:
             "**JMLE** (Joint Maximum Likelihood): Estimates person abilities and "
             "facet parameters simultaneously using the app's analytical-gradient "
             "quasi-Newton backend. Fast but may be biased with short tests. "
-            "**MML** (Marginal Maximum Likelihood): EM algorithm (Bock & Aitkin, 1981) "
-            "with Gauss-Hermite quadrature. Integrates over person ability distribution; "
-            "person abilities computed post-hoc via EAP (Bock & Mislevy, 1982)."
+            "**MML** (Marginal Maximum Likelihood): integrates over the person ability "
+            "distribution with Gauss-Hermite quadrature. Guided mode uses Auto "
+            "(Hybrid first, EM fallback); person abilities are computed post-hoc via EAP."
         ),
     )
     mml_engine = "EM"
@@ -13060,22 +14394,101 @@ def run_facets_mode(core: dict, data: pd.DataFrame) -> None:
                 ),
             ))
             population_prior_sd = float(st.sidebar.number_input(
-                "Population prior SD",
+                "Person population SD (MML)",
                 min_value=0.10,
                 max_value=10.0,
                 value=1.0,
                 step=0.10,
                 format="%.2f",
                 help=(
-                    "Fixed SD of the MML population distribution. Default 1.00 uses N(X beta, 1). "
-                    "Larger values assume more person heterogeneity; smaller values shrink EAP scores more strongly."
+                    "Controls the assumed person ability distribution used by MML quadrature: "
+                    "theta_j ~ N(X_j beta, SD^2). This is separate from facet regularization "
+                    "and separate from Bayesian Stan priors."
                 ),
             ))
         else:
             mml_engine = "Auto (recommended)"
-            st.sidebar.caption(
-                "MML guided defaults: Auto engine, 15 quadrature points, population prior SD 1.00."
+        st.sidebar.info(
+            f"**MML assumptions:** Engine `{mml_engine}`; quadrature `{quad_points}` points; "
+            f"person population SD fixed at `{population_prior_sd:.2f}`. "
+            "Switch to Advanced controls to edit these settings."
+        )
+    facet_regularization_specs: list[dict] = []
+    facet_regularization_mode = "Off: unpenalized JMLE/MML"
+    facet_regularization_fingerprint = stable_json_fingerprint({"mode": "off"})
+    with st.sidebar.expander("Facet regularization (optional)", expanded=False):
+        st.caption(
+            "Regularization adds a MAP-style penalty to free non-person facet parameters. "
+            "It is separate from the MML person population distribution and from full Bayesian Stan sampling."
+        )
+        facet_regularization_mode = st.selectbox(
+            "Mode",
+            [
+                "Off: unpenalized JMLE/MML",
+                "Light shrinkage on all selected facets",
+                "Custom by facet",
+            ],
+            index=0,
+            key="facet_regularization_mode",
+            help=(
+                "Leave Off for the first run and for direct comparison with unpenalized FACETS/TAM-style results. "
+                "Light shrinkage applies to all free levels in all selected facets; use Custom for targeted rows."
+            ),
+        )
+        if not facet_cols:
+            st.info("Select facet columns before configuring facet regularization.")
+        elif facet_regularization_mode == "Light shrinkage on all selected facets":
+            st.warning(
+                "Light shrinkage applies to all free levels in all selected facets and changes the estimation target. "
+                "AIC/BIC remain based on the unpenalized likelihood evaluated at the regularized estimates."
             )
+            for facet in facet_cols:
+                facet_regularization_specs.append({
+                    "Facet": facet,
+                    "Level": "*",
+                    "ParameterClass": "facet",
+                    "Mean": 0.0,
+                    "SD": FACET_REGULARIZATION_PRESET_SDS["light"],
+                    "Enabled": True,
+                    "Source": "ui_light",
+                })
+        elif facet_regularization_mode == "Custom by facet":
+            st.warning(
+                "Custom regularization is a penalized fixed-effect/MAP-style estimator, not a random-effects model "
+                "and not full Bayesian posterior sampling."
+            )
+            default_rows = pd.DataFrame([
+                {
+                    "Facet": facet,
+                    "Level": "*",
+                    "ParameterClass": "facet",
+                    "Mean": 0.0,
+                    "SD": FACET_REGULARIZATION_PRESET_SDS["light"],
+                    "Enabled": False,
+                    "Source": "ui_custom",
+                }
+                for facet in facet_cols
+            ])
+            edited_rows = st.data_editor(
+                default_rows,
+                key="facet_regularization_table",
+                hide_index=True,
+                num_rows="dynamic",
+                use_container_width=True,
+                column_config={
+                    "Facet": st.column_config.SelectboxColumn("Facet", options=list(facet_cols), required=True),
+                    "Level": st.column_config.TextColumn("Level", help="Use * to apply to all free levels in the facet."),
+                    "Mean": st.column_config.NumberColumn("Mean", format="%.3f"),
+                    "SD": st.column_config.NumberColumn("SD", min_value=0.05, max_value=20.0, format="%.3f"),
+                    "Enabled": st.column_config.CheckboxColumn("Enabled"),
+                },
+            )
+            if isinstance(edited_rows, pd.DataFrame) and not edited_rows.empty:
+                facet_regularization_specs = edited_rows.to_dict(orient="records")
+        facet_regularization_fingerprint = stable_json_fingerprint({
+            "mode": facet_regularization_mode,
+            "specs": facet_regularization_specs,
+        })
     population_enabled = False
     population_formula = ""
     population_person_id_col = "Person"
@@ -13556,6 +14969,24 @@ def run_facets_mode(core: dict, data: pd.DataFrame) -> None:
         "For first runs, use Standard. For final reporting, rerun with Full publication "
         "after the model and columns are settled."
     )
+    st.sidebar.caption(analysis_depth_sidebar_summary(preset_settings))
+
+    current_input_data_fingerprint = dataframe_fingerprint(data)
+    current_anchor_source_fingerprint = table_source_fingerprint(
+        text_value=anchor_text,
+        file_input=anchor_file,
+    )
+    current_group_anchor_source_fingerprint = table_source_fingerprint(
+        text_value=group_anchor_text,
+        file_input=group_anchor_file,
+    )
+    current_population_source_fingerprint = (
+        table_source_fingerprint(
+            text_value=population_text,
+            file_input=population_file,
+        )
+        if population_enabled else None
+    )
 
     # v0.2.8-beta: main-area data banner. When the sidebar loads one of
     # the built-in scenarios, surface the scenario name + design
@@ -13576,18 +15007,30 @@ def run_facets_mode(core: dict, data: pd.DataFrame) -> None:
             person_col=person_col,
             score_col=score_col,
             facet_cols=facet_cols,
+            weight_col=weight_col,
         )
         render_readiness_panel(_readiness_report)
+        _response_data_audit = build_response_data_audit(
+            data,
+            person_col=person_col,
+            facet_cols=facet_cols,
+            score_col=score_col,
+            weight_col=weight_col,
+        )
+        render_response_data_audit_panel(_response_data_audit, expanded=False, context="pre")
     except Exception:  # pragma: no cover - readiness is a UX helper
         pass
 
     # Phase 1-5: Estimation time warning
     run_clicked = st.sidebar.button("Run FACETS-mode estimation", type="primary")
+    if st.session_state.pop("_facets_mode_force_rerun", False):
+        run_clicked = True
     # One-click quickstart: consume the onboarding flag so the pipeline
     # fires on the next rerender without the user touching the sidebar.
     if st.session_state.pop("_onboarding_quickstart_fired", False):
         run_clicked = True
     if run_clicked:
+        st.session_state.pop("_facets_mode_restored_snapshot", None)
         if len(facet_cols) < 2:
             st.error("Select at least two facet columns.")
             return
@@ -13647,6 +15090,14 @@ def run_facets_mode(core: dict, data: pd.DataFrame) -> None:
                     positive_facets=positive_facets,
                     quad_points=quad_points,
                     population_prior_sd=population_prior_sd,
+                    facet_regularization=(
+                        {
+                            "enabled": True,
+                            "mode": facet_regularization_mode,
+                            "specs": facet_regularization_specs,
+                        }
+                        if facet_regularization_mode != "Off: unpenalized JMLE/MML" else None
+                    ),
                     maxit=maxit,
                     reltol=reltol,
                     mml_engine=mml_engine,
@@ -13676,6 +15127,9 @@ def run_facets_mode(core: dict, data: pd.DataFrame) -> None:
                     "ui_mml_engine": mml_engine if est_method == "MML" else None,
                     "quad_points": quad_points if est_method == "MML" else None,
                     "population_prior_sd": population_prior_sd if est_method == "MML" else None,
+                    "facet_regularization_ui_mode": facet_regularization_mode,
+                    "facet_regularization_specs": facet_regularization_specs,
+                    "facet_regularization_ui_fingerprint": facet_regularization_fingerprint,
                     "population_enabled": bool(population_enabled),
                     "population_formula": population_formula if population_enabled else "",
                     "population_person_id_col": population_person_id_col if population_enabled else None,
@@ -13683,10 +15137,13 @@ def run_facets_mode(core: dict, data: pd.DataFrame) -> None:
                     "population_categorical_terms": parse_population_covariate_terms(population_categorical_terms) if population_enabled else [],
                     "population_numeric_terms": parse_population_covariate_terms(population_numeric_terms) if population_enabled else [],
                     "anchor_policy": anchor_policy,
-                    "input_data_fingerprint": dataframe_fingerprint(data),
+                    "input_data_fingerprint": current_input_data_fingerprint,
                     "anchor_data_fingerprint": dataframe_fingerprint(anchor_df) if not anchor_df.empty else None,
+                    "anchor_source_fingerprint": current_anchor_source_fingerprint,
                     "group_anchor_data_fingerprint": dataframe_fingerprint(group_anchor_df) if not group_anchor_df.empty else None,
+                    "group_anchor_source_fingerprint": current_group_anchor_source_fingerprint,
                     "population_data_fingerprint": dataframe_fingerprint(person_data_df) if not person_data_df.empty else None,
+                    "population_source_fingerprint": current_population_source_fingerprint,
                 })
                 result["config"]["analysis_config_fingerprint"] = config_fingerprint(result.get("config", {}))
                 result["config"]["run_fingerprint"] = result["config"]["analysis_config_fingerprint"]
@@ -13768,6 +15225,8 @@ def run_facets_mode(core: dict, data: pd.DataFrame) -> None:
                 "_mml_engine": mml_engine if est_method == "MML" else None,
                 "_quad_points": quad_points if est_method == "MML" else None,
                 "_population_prior_sd": population_prior_sd if est_method == "MML" else None,
+                "_facet_regularization_mode": facet_regularization_mode,
+                "_facet_regularization_fingerprint": facet_regularization_fingerprint,
                 "_population_enabled": bool(population_enabled),
                 "_population_formula": population_formula if population_enabled else "",
                 "_population_person_id_col": population_person_id_col if population_enabled else None,
@@ -13790,6 +15249,10 @@ def run_facets_mode(core: dict, data: pd.DataFrame) -> None:
                 "_selected_bias_pair": selected_bias_pair,
                 "_render_interactive_plots": bool(render_interactive_plots),
                 "_generate_figure_exports": bool(generate_figure_exports),
+                "_input_data_fingerprint": current_input_data_fingerprint,
+                "_anchor_source_fingerprint": current_anchor_source_fingerprint,
+                "_group_anchor_source_fingerprint": current_group_anchor_source_fingerprint,
+                "_population_source_fingerprint": current_population_source_fingerprint,
             }
             _elapsed_sec = _time.perf_counter() - _run_t0
             # Record this run in the session history so users can swap
@@ -13851,8 +15314,9 @@ def run_facets_mode(core: dict, data: pd.DataFrame) -> None:
                     "**Estimation failed.** Common causes and remedies:\n\n"
                     "- **Too few observations**: Ensure each facet level has multiple observations.\n"
                     "- **Extreme scores**: Elements with all-minimum or all-maximum scores "
-                    "can cause non-convergence. Enable *Omit extreme elements* or set "
-                    "*Xtreme correction* > 0.\n"
+                    "can cause non-convergence. Try MML, simplify the model, remove or merge "
+                    "all-min/all-max elements, or review the response-data audit. "
+                    "`Xtreme correction` only affects report tables after a successful fit.\n"
                     "- **Non-convergence**: Try increasing `maxit` (e.g., 1000) "
                     "or relaxing `reltol` (e.g., 1e-5).\n"
                     "- **Data format**: Verify that score and facet columns contain the expected values."
@@ -13866,8 +15330,15 @@ def run_facets_mode(core: dict, data: pd.DataFrame) -> None:
         st.info("Set columns and click 'Run FACETS-mode estimation'.")
         return
 
-    # Invalidate stale results if settings changed
-    stale_reasons: list[str] = []
+    # Invalidate stale results if settings or raw inputs changed.
+    restored_snapshot = st.session_state.get("_facets_mode_restored_snapshot")
+    stale_reasons: list[str] = build_input_stale_reasons(
+        out,
+        current_input_data_fingerprint=current_input_data_fingerprint,
+        current_anchor_source_fingerprint=current_anchor_source_fingerprint,
+        current_group_anchor_source_fingerprint=current_group_anchor_source_fingerprint,
+        current_population_source_fingerprint=current_population_source_fingerprint,
+    )
     if out.get("person_col") != person_col:
         stale_reasons.append("person column")
     if out.get("score_col") != score_col:
@@ -13907,6 +15378,13 @@ def run_facets_mode(core: dict, data: pd.DataFrame) -> None:
         stale_reasons.append("quadrature points")
     if out.get("_population_prior_sd") != current_population_prior_sd:
         stale_reasons.append("population prior SD")
+    if out.get("_facet_regularization_mode") is not None and out["_facet_regularization_mode"] != facet_regularization_mode:
+        stale_reasons.append("facet regularization mode")
+    if (
+        out.get("_facet_regularization_fingerprint") is not None
+        and out["_facet_regularization_fingerprint"] != facet_regularization_fingerprint
+    ):
+        stale_reasons.append("facet regularization settings")
     if out.get("_population_enabled") is not None and out["_population_enabled"] != bool(population_enabled):
         stale_reasons.append("population model option")
     current_population_formula = population_formula if population_enabled else ""
@@ -13962,24 +15440,43 @@ def run_facets_mode(core: dict, data: pd.DataFrame) -> None:
     if out.get("_selected_bias_pair") != selected_bias_pair:
         stale_reasons.append("selected bias pair")
     if stale_reasons:
-        banner_cols = st.columns([4, 1])
-        banner_cols[0].warning(
-            f"Settings changed since the last run "
-            f"({', '.join(stale_reasons[:4])}{'…' if len(stale_reasons) > 4 else ''}). "
-            "The results below reflect the previous configuration; rerun to refresh."
-        )
-        # One-click rerun directly from the banner so the user doesn't
-        # have to scroll back up to the sidebar Run button.
-        if banner_cols[1].button(
-            "🔁 Rerun now",
-            key="stale_rerun",
-            use_container_width=True,
-            type="primary",
-            help="Re-fires the estimation pipeline with the updated settings.",
-        ):
-            st.session_state["_facets_mode_force_rerun"] = True
-            st.rerun()
-        return
+        stale_text = f"{', '.join(stale_reasons[:4])}{'...' if len(stale_reasons) > 4 else ''}"
+        if isinstance(restored_snapshot, dict):
+            banner_cols = st.columns([4, 1])
+            banner_cols[0].info(
+                f"Viewing restored run from {restored_snapshot.get('timestamp', 'history')}. "
+                f"The current sidebar/input differs ({stale_text}); tables and downloads below belong "
+                "to the restored snapshot."
+            )
+            if banner_cols[1].button(
+                "Run current settings",
+                key="restored_run_current_settings",
+                use_container_width=True,
+                type="primary",
+                help="Run a new analysis using the current sidebar settings and current input data.",
+            ):
+                st.session_state.pop("_facets_mode_restored_snapshot", None)
+                st.session_state["_facets_mode_force_rerun"] = True
+                st.rerun()
+        else:
+            banner_cols = st.columns([4, 1])
+            banner_cols[0].warning(
+                f"Input or settings changed since the last run ({stale_text}). "
+                "The previous results are hidden to avoid mixing old outputs with current inputs. "
+                "Run updated settings to refresh."
+            )
+            # One-click rerun directly from the banner so the user doesn't
+            # have to scroll back up to the sidebar Run button.
+            if banner_cols[1].button(
+                "Run updated settings",
+                key="stale_rerun",
+                use_container_width=True,
+                type="primary",
+                help="Re-fires the estimation pipeline with the updated settings and input data.",
+            ):
+                st.session_state["_facets_mode_force_rerun"] = True
+                st.rerun()
+            return
 
     result = out["result"]
     diagnostics = out["diagnostics"]
@@ -14065,6 +15562,11 @@ def run_facets_mode(core: dict, data: pd.DataFrame) -> None:
         except Exception:  # pragma: no cover - diagnostic helpers must not break Data tab
             pass
         prep = result.get("prep", {})
+        render_response_data_audit_panel(
+            prep.get("response_data_audit"),
+            expanded=False,
+            context="run",
+        )
         score_messages = prep.get("score_messages", [])
         score_map = prep.get("score_map", pd.DataFrame())
         if score_messages or isinstance(score_map, pd.DataFrame):
@@ -15596,6 +17098,30 @@ def generate_method_appendix_text(
             f"- Plausible values requested: {bool(config.get('compute_plausible_values', False))}; draws: {int(config.get('n_plausible_values') or 0)}.",
             f"- Strict marginal diagnostics enabled: {bool(diagnostics.get('marginal_fit_enabled', False))}.",
         ])
+    regularization = result.get("regularization", {})
+    reg_penalty = regularization.get("penalty_summary", pd.DataFrame()) if isinstance(regularization, dict) else pd.DataFrame()
+    reg_audit = regularization.get("audit", pd.DataFrame()) if isinstance(regularization, dict) else pd.DataFrame()
+    if bool(config.get("facet_regularization_enabled", False)) or (
+        isinstance(reg_audit, pd.DataFrame) and not reg_audit.empty
+    ):
+        applied_levels = 0
+        if isinstance(reg_penalty, pd.DataFrame) and not reg_penalty.empty and "PenalizedLevels" in reg_penalty.columns:
+            total_row = reg_penalty.loc[reg_penalty["Facet"].astype(str) == "TOTAL"]
+            source = total_row if not total_row.empty else reg_penalty
+            applied_levels = int(pd.to_numeric(source["PenalizedLevels"], errors="coerce").fillna(0).max())
+        lines.extend([
+            "",
+            "## Facet Regularization",
+            "",
+            f"- Enabled: {bool(config.get('facet_regularization_enabled', False))}.",
+            f"- UI mode: {config.get('facet_regularization_ui_mode', 'not recorded')}.",
+            f"- Objective mode: {config.get('facet_regularization_objective_mode', config.get('facet_regularization_mode', 'not recorded'))}.",
+            f"- Scope: {config.get('facet_regularization_scope', 'not recorded')}.",
+            f"- Penalized free facet levels: {applied_levels}.",
+            f"- Penalty value at estimates: {float(getattr(opt, 'penalty_value', np.nan)) if opt is not None and np.isfinite(getattr(opt, 'penalty_value', np.nan)) else 'not recorded'}.",
+            "- Interpretation: this is penalized fixed-effect estimation for selected non-person facet main effects; it is not a random-effects model and not full Bayesian posterior sampling.",
+            "- Likelihood note: reported LogLik, deviance, AIC, and BIC use the unpenalized likelihood evaluated at the fitted estimates; PenalizedObjective is shown separately.",
+        ])
     script_support = build_script_support_status(result)
     lines.extend([
         "",
@@ -16580,6 +18106,37 @@ def _render_report_tables(result: dict, diagnostics: dict) -> None:
         st.dataframe(summary_df, width="stretch")
     else:
         st.info("No estimation summary available.")
+
+    likelihood_info = result.get("likelihood_information", pd.DataFrame())
+    if not isinstance(likelihood_info, pd.DataFrame) or likelihood_info.empty:
+        likelihood_info = build_likelihood_information_criteria(result)
+    if isinstance(likelihood_info, pd.DataFrame) and not likelihood_info.empty:
+        st.subheader("Maximized likelihood / information criteria")
+        st.caption(
+            "Descriptive fit indices from the maximized fitted likelihood. "
+            "Use AIC/BIC for model comparison only when candidate models use the same response rows, "
+            "score map, missing-data rule, likelihood definition, and identification constraints."
+        )
+        st.dataframe(likelihood_info.round(4), width="stretch", hide_index=True)
+
+    regularization = result.get("regularization", {})
+    if isinstance(regularization, dict):
+        reg_penalty = regularization.get("penalty_summary", pd.DataFrame())
+        reg_audit = regularization.get("audit", pd.DataFrame())
+        if isinstance(reg_penalty, pd.DataFrame) and not reg_penalty.empty:
+            active = bool(result.get("config", {}).get("facet_regularization_enabled", False))
+            st.subheader("Facet regularization")
+            if active:
+                st.warning(
+                    "This run used MAP-style regularization on selected free facet parameters. "
+                    "This is penalized fixed-effect estimation, not a random-effects model and not full Bayesian sampling."
+                )
+            else:
+                st.caption("Facet regularization was off for this run.")
+            st.dataframe(reg_penalty.round(4), width="stretch", hide_index=True)
+            if isinstance(reg_audit, pd.DataFrame) and not reg_audit.empty:
+                with st.expander("Facet regularization audit", expanded=False):
+                    st.dataframe(reg_audit, width="stretch", hide_index=True)
 
     show_convergence_section(result)
 
@@ -17718,6 +19275,37 @@ def _render_facet_equivalence(result: dict, diagnostics: dict) -> None:
 # Report sub-tab: Stan Code Generator
 # ---------------------------------------------------------------------------
 
+STAN_SENSITIVITY_WARNING = (
+    "Generated Stan files are templates, not invariant defaults. Results can "
+    "change with prior and hyperparameter choices, identification constraints, "
+    "initialization, and sampler controls. Set these values from prior studies, "
+    "the rubric/scale design, pilot data, and sensitivity analyses before "
+    "reporting posterior results."
+)
+
+STAN_SENSITIVITY_CHECKLIST_MD = """
+- Review the prior scales in the Stan `data` block or `model` block before sampling.
+- Treat the provided numeric values as starting points, not universal defaults.
+- Adjust `chains`, `iter_warmup`, `iter_sampling`, `seed`, `adapt_delta`, and `max_treedepth` based on diagnostics and computing budget.
+- Report the chosen priors/hyperparameters, sampler settings, Rhat, ESS, divergences, treedepth warnings, and E-BFMI with any Bayesian result.
+"""
+
+
+def stan_code_sensitivity_notice(model_label: str = "Stan model") -> str:
+    """Header comment prepended to downloadable Stan templates."""
+    safe_label = str(model_label).replace("\n", " ").strip() or "Stan model"
+    return (
+        f"// Generated Stan template: {safe_label}\n"
+        "// Sensitivity notice:\n"
+        "// - Posterior results can change with prior/hyperparameter choices,\n"
+        "//   identification constraints, initialization, and sampler controls.\n"
+        "// - Replace template values with choices justified by prior studies,\n"
+        "//   rubric/scale design, pilot data, and sensitivity analysis.\n"
+        "// - Report priors/hyperparameters, chains, warmup/sampling iterations,\n"
+        "//   seed, adapt_delta, max_treedepth, Rhat, ESS, divergences, and E-BFMI.\n"
+    )
+
+
 def _render_stan_code(result: dict) -> None:
     """Generate Stan model code for Bayesian MFRM based on data structure."""
     st.subheader("Stan Code for Bayesian MFRM")
@@ -17726,6 +19314,9 @@ def _render_stan_code(result: dict) -> None:
         "Run offline with CmdStanPy or CmdStanR for posterior distributions, "
         "LOO cross-validation, and posterior predictive checks."
     )
+    st.warning(STAN_SENSITIVITY_WARNING)
+    with st.expander("Stan settings to review before sampling", expanded=False):
+        st.markdown(STAN_SENSITIVITY_CHECKLIST_MD)
 
     config = result.get("config", {})
     prep = result.get("prep", {})
@@ -17761,7 +19352,10 @@ def _render_stan_code(result: dict) -> None:
     data_lines.append("  array[N] int<lower=1, upper=J> person;  // person index")
     for fv in facet_vars:
         data_lines.append(f"  array[N] int<lower=1, upper=K_{fv}> {fv};  // {fv} index")
-    data_lines.append("  array[N] int<lower=0, upper=C-1> y;    // observed rating")
+    data_lines.append("  array[N] int<lower=1, upper=C> y;      // observed rating, 1-indexed for Stan")
+    data_lines.append("  real<lower=0> sigma_theta_prior_scale; // scale for ability SD prior")
+    data_lines.append("  real<lower=0> facet_prior_scale;       // severity prior SD")
+    data_lines.append("  real<lower=0> step_prior_scale;        // threshold prior SD")
     data_lines.append("}")
 
     # --- Parameters block ---
@@ -17782,16 +19376,16 @@ def _render_stan_code(result: dict) -> None:
     # --- Model block ---
     model_lines = [
         "model {",
-        "  // Priors",
+        "  // Priors: set scales in the data block from substantive knowledge",
         "  theta ~ normal(0, sigma_theta);",
-        "  sigma_theta ~ cauchy(0, 2.5);",
+        "  sigma_theta ~ cauchy(0, sigma_theta_prior_scale);",
     ]
     for fv in facet_vars:
-        model_lines.append(f"  delta_{fv} ~ normal(0, 2);")
+        model_lines.append(f"  delta_{fv} ~ normal(0, facet_prior_scale);")
     if model_type == "RSM":
-        model_lines.append("  tau ~ normal(0, 5);")
+        model_lines.append("  tau ~ normal(0, step_prior_scale);")
     else:
-        model_lines.append(f"  to_vector(tau) ~ normal(0, 5);")
+        model_lines.append(f"  to_vector(tau) ~ normal(0, step_prior_scale);")
 
     # Centering constraint
     model_lines.append(f"  // Centering: sum-to-zero on first facet")
@@ -17842,6 +19436,7 @@ def _render_stan_code(result: dict) -> None:
     ])
 
     stan_code = "\n".join(data_lines + [""] + param_lines + [""] + model_lines + [""] + gq_lines)
+    stan_code = stan_code_sensitivity_notice("Bayesian MFRM RSM/PCM") + "\n" + stan_code
 
     st.code(stan_code, language="stan")
 
@@ -17854,13 +19449,37 @@ def _render_stan_code(result: dict) -> None:
             f'    "{fv}": data["{fn}"].astype("category").cat.codes.values + 1,  # 1-indexed'
         )
 
-    runner_code = f'''"""Run Bayesian MFRM with CmdStanPy."""
+    runner_code = f'''"""Run Bayesian MFRM with CmdStanPy.
+
+Edit prior hyperparameters and sampler controls before reporting results.
+Template values are starting points; justify final values from prior studies,
+rubric/scale design, pilot data, and sensitivity analyses.
+"""
 import cmdstanpy
 import pandas as pd
 import numpy as np
 
+# Prior hyperparameters passed to the Stan data block.
+SIGMA_THETA_PRIOR_SCALE = 2.5
+FACET_PRIOR_SCALE = 2.0
+STEP_PRIOR_SCALE = 5.0
+N_CATEGORIES = {n_cat}
+
+# Sampler controls. Increase ADAPT_DELTA / MAX_TREEDEPTH if diagnostics require it.
+CHAINS = 4
+ITER_WARMUP = 1000
+ITER_SAMPLING = 2000
+SEED = 42
+ADAPT_DELTA = 0.95
+MAX_TREEDEPTH = 12
+
 # Load your data (long format: one row per observation)
 data = pd.read_csv("your_data.csv")
+score = pd.to_numeric(data["Score"], errors="raise").astype(int)
+if score.min() == 0:
+    score = score + 1
+if score.min() < 1 or score.max() > N_CATEGORIES:
+    raise ValueError("Score must be 0..C-1 or 1..C before Stan recoding.")
 
 # Compile the Stan model
 model = cmdstanpy.CmdStanModel(stan_file="mfrm_model.stan")
@@ -17870,19 +19489,24 @@ stan_data = {{
     "N": len(data),
     "J": int(data["Person"].nunique()),
 {chr(10).join(facet_n_lines)}
-    "C": {n_cat},
+    "C": N_CATEGORIES,
     "person": data["Person"].astype("category").cat.codes.values + 1,
 {chr(10).join(facet_data_lines)}
-    "y": data["Score"].values,  # 0-indexed categories for categorical_logit
+    "y": score.values,  # 1-indexed categories for Stan categorical_logit
+    "sigma_theta_prior_scale": SIGMA_THETA_PRIOR_SCALE,
+    "facet_prior_scale": FACET_PRIOR_SCALE,
+    "step_prior_scale": STEP_PRIOR_SCALE,
 }}
 
 # Sample from posterior
 fit = model.sample(
     data=stan_data,
-    chains=4,
-    iter_warmup=1000,
-    iter_sampling=2000,
-    seed=42,
+    chains=CHAINS,
+    iter_warmup=ITER_WARMUP,
+    iter_sampling=ITER_SAMPLING,
+    seed=SEED,
+    adapt_delta=ADAPT_DELTA,
+    max_treedepth=MAX_TREEDEPTH,
     show_console=True,
 )
 
@@ -17904,25 +19528,55 @@ print(loo)
     r_facet_n = ", ".join(f'K_{fv} = length(unique(data${fn}))' for fn, fv in zip(facet_names, facet_vars))
     r_facet_data = ", ".join(f'{fv} = as.integer(factor(data${fn}))' for fn, fv in zip(facet_names, facet_vars))
     r_runner = f'''# Run Bayesian MFRM with CmdStanR
+# Edit prior hyperparameters and sampler controls before reporting results.
+# Template values are starting points; justify final values from prior studies,
+# rubric/scale design, pilot data, and sensitivity analyses.
 library(cmdstanr)
 
+SIGMA_THETA_PRIOR_SCALE <- 2.5
+FACET_PRIOR_SCALE <- 2.0
+STEP_PRIOR_SCALE <- 5.0
+N_CATEGORIES <- {n_cat}L
+
+CHAINS <- 4L
+ITER_WARMUP <- 1000L
+ITER_SAMPLING <- 2000L
+SEED <- 42L
+ADAPT_DELTA <- 0.95
+MAX_TREEDEPTH <- 12L
+
 data <- read.csv("your_data.csv")
+score <- as.integer(data$Score)
+if (min(score, na.rm = TRUE) == 0L) {{
+  score <- score + 1L
+}}
+if (min(score, na.rm = TRUE) < 1L || max(score, na.rm = TRUE) > N_CATEGORIES) {{
+  stop("Score must be 0..C-1 or 1..C before Stan recoding.")
+}}
 mod <- cmdstan_model("mfrm_model.stan")
 
 stan_data <- list(
   N = nrow(data),
   J = length(unique(data$Person)),
   {r_facet_n},
-  C = {n_cat}L,
+  C = N_CATEGORIES,
   person = as.integer(factor(data$Person)),
   {r_facet_data},
-  y = data$Score
+  y = score,
+  sigma_theta_prior_scale = SIGMA_THETA_PRIOR_SCALE,
+  facet_prior_scale = FACET_PRIOR_SCALE,
+  step_prior_scale = STEP_PRIOR_SCALE
 )
 
 fit <- mod$sample(
   data = stan_data,
-  chains = 4, iter_warmup = 1000, iter_sampling = 2000,
-  seed = 42, parallel_chains = 4
+  chains = CHAINS,
+  iter_warmup = ITER_WARMUP,
+  iter_sampling = ITER_SAMPLING,
+  seed = SEED,
+  parallel_chains = CHAINS,
+  adapt_delta = ADAPT_DELTA,
+  max_treedepth = MAX_TREEDEPTH
 )
 
 fit$summary()
@@ -24162,6 +25816,22 @@ def _render_downloads(
     all_frames: dict[str, pd.DataFrame] = {}
     if not summary.empty:
         all_frames["summary"] = summary
+    likelihood_info_dl = result.get("likelihood_information", pd.DataFrame())
+    if not isinstance(likelihood_info_dl, pd.DataFrame) or likelihood_info_dl.empty:
+        likelihood_info_dl = build_likelihood_information_criteria(result)
+    if isinstance(likelihood_info_dl, pd.DataFrame) and not likelihood_info_dl.empty:
+        all_frames["likelihood_information_criteria"] = likelihood_info_dl
+    regularization_dl = result.get("regularization", {})
+    if isinstance(regularization_dl, dict):
+        reg_settings_dl = regularization_dl.get("settings", pd.DataFrame())
+        reg_audit_dl = regularization_dl.get("audit", pd.DataFrame())
+        reg_penalty_dl = regularization_dl.get("penalty_summary", pd.DataFrame())
+        if isinstance(reg_settings_dl, pd.DataFrame) and not reg_settings_dl.empty:
+            all_frames["facet_regularization_settings"] = reg_settings_dl
+        if isinstance(reg_audit_dl, pd.DataFrame) and not reg_audit_dl.empty:
+            all_frames["facet_regularization_audit"] = reg_audit_dl
+        if isinstance(reg_penalty_dl, pd.DataFrame) and not reg_penalty_dl.empty:
+            all_frames["regularization_penalty_summary"] = reg_penalty_dl
     convergence_dl = result.get("convergence", pd.DataFrame())
     if isinstance(convergence_dl, pd.DataFrame) and not convergence_dl.empty:
         all_frames["convergence"] = convergence_dl
@@ -24169,6 +25839,15 @@ def _render_downloads(
     score_map = prep.get("score_map", pd.DataFrame())
     if isinstance(score_map, pd.DataFrame) and not score_map.empty:
         all_frames["score_map"] = score_map
+    audit_summary = prep.get("audit_summary", pd.DataFrame())
+    if isinstance(audit_summary, pd.DataFrame) and not audit_summary.empty:
+        all_frames["response_data_audit_summary"] = audit_summary
+    row_audit = prep.get("row_audit", pd.DataFrame())
+    if isinstance(row_audit, pd.DataFrame) and not row_audit.empty:
+        all_frames["response_data_row_audit"] = row_audit
+    excluded_rows = prep.get("excluded_rows", pd.DataFrame())
+    if isinstance(excluded_rows, pd.DataFrame) and not excluded_rows.empty:
+        all_frames["response_data_excluded_rows"] = excluded_rows
     if not measures_dl.empty:
         all_frames["measures"] = measures_dl
     if not reliability_dl.empty:
@@ -24679,8 +26358,11 @@ def _render_downloads(
             "analysis_config_fingerprint": config.get("analysis_config_fingerprint"),
             "input_data_fingerprint": config.get("input_data_fingerprint"),
             "anchor_data_fingerprint": config.get("anchor_data_fingerprint"),
+            "anchor_source_fingerprint": config.get("anchor_source_fingerprint"),
             "group_anchor_data_fingerprint": config.get("group_anchor_data_fingerprint"),
+            "group_anchor_source_fingerprint": config.get("group_anchor_source_fingerprint"),
             "population_data_fingerprint": config.get("population_data_fingerprint"),
+            "population_source_fingerprint": config.get("population_source_fingerprint"),
             "fingerprint_scope": "short SHA-256 digests for reproducibility checks; not a privacy guarantee or encrypted data store",
             "model": config.get("model", "RSM"),
             "method": config.get("method", "JMLE"),
@@ -24711,6 +26393,13 @@ def _render_downloads(
             "ui_mml_engine": config.get("ui_mml_engine"),
             "quad_points": config.get("quad_points"),
             "population_prior_sd": config.get("population_prior_sd"),
+            "facet_regularization_enabled": config.get("facet_regularization_enabled"),
+            "facet_regularization_mode": config.get("facet_regularization_mode"),
+            "facet_regularization_objective_mode": config.get("facet_regularization_objective_mode"),
+            "facet_regularization_scope": config.get("facet_regularization_scope"),
+            "facet_regularization_fingerprint": config.get("facet_regularization_fingerprint"),
+            "facet_regularization_ui_mode": config.get("facet_regularization_ui_mode"),
+            "facet_regularization_ui_specs": config.get("facet_regularization_specs"),
             "population_formula": config.get("population_formula"),
             "population_terms": (
                 config.get("population_model", {}).get("terms")
@@ -25043,6 +26732,7 @@ def _render_downloads(
             "your data structure. Navigate there to preview and download the Stan model, "
             "Python runner (CmdStanPy), and R runner (CmdStanR) scripts."
         )
+        st.warning(STAN_SENSITIVITY_WARNING)
 
         # --- OSF-ready package ---
         st.subheader("OSF-ready package")
@@ -25290,6 +26980,7 @@ def _self_test_analysis_depth_presets() -> None:
     _self_test_assert(fast["bias_mode"] == "Skip", "Fast preview should skip bias scans")
     _self_test_assert(not fast["render_interactive_plots"], "Fast preview should skip interactive plots")
     _self_test_assert(not fast["generate_figure_exports"], "Fast preview should skip figure exports")
+    _self_test_assert("Runs:" in analysis_depth_sidebar_summary(fast), "analysis-depth sidebar summary missing Runs label")
 
     standard = resolve_analysis_depth_settings("Standard (recommended)", "MML")
     _self_test_assert(standard["compute_residual_pca"], "Standard should compute residual PCA")
@@ -25974,6 +27665,24 @@ def _self_test_export_bundle_contents() -> None:
         _self_test_assert("manuscript_template.md" in names, "OSF ZIP missing manuscript template text asset")
         summary_text = zf.read("summary.csv").decode("utf-8")
         _self_test_assert("LogLik" in summary_text and "-12.34" in summary_text, "OSF ZIP summary.csv content changed")
+
+    quick_frames = build_result_bundle_frames(
+        {"summary": pd.DataFrame({"Model": ["RSM"], "LogLik": [-12.34]}), "facets": {}},
+        {
+            "measures": pd.DataFrame({"Facet": ["Rater"], "Level": ["R1"], "Estimate": [0.1]}),
+            "reliability": pd.DataFrame({"Facet": ["Person"], "Reliability": [0.8]}),
+            "fit": pd.DataFrame({"Facet": ["Rater"], "Level": ["R1"], "Infit": [1.0]}),
+        },
+        all_bias_results={
+            "Rater x Task": {
+                "table": pd.DataFrame({"FacetA": ["Rater"], "FacetB": ["Task"], "Bias Size": [0.2]}),
+            }
+        },
+    )
+    _self_test_assert(
+        "bias_Rater_x_Task" in quick_frames,
+        "quick results bundle did not include bias table from estimate_bias_interaction output",
+    )
 
 
 def _self_test_anchor_audit() -> None:
@@ -26835,6 +28544,10 @@ def _self_test_advanced_model_generators() -> None:
             isinstance(code, str) and len(code) > 200,
             f"{model_name}: Stan code too short ({len(code) if code else 0})",
         )
+        _self_test_assert(
+            "Sensitivity notice" in code and "hyperparameter" in code,
+            f"{model_name}: generated Stan code missing sensitivity notice",
+        )
         for block in required_blocks:
             _self_test_assert(
                 f"{block} {{" in code or f"{block}{{" in code,
@@ -27572,7 +29285,7 @@ def _self_test_posterior_load_cmdstan_csvs() -> None:
 
 
 def _self_test_config_json_import_whitelist() -> None:
-    """Pin the 24-key config-import whitelist and its behaviour under import.
+    """Pin the 25-key config-import whitelist and its behaviour under import.
 
     The `_CONFIG_JSON_IMPORT_WHITELIST` set is the contract between
     `Download config (JSON)` (writer) and `Import config JSON` (reader).
@@ -27583,14 +29296,15 @@ def _self_test_config_json_import_whitelist() -> None:
     """
     # Size contract — bumping this number requires an entry in CHANGELOG.
     _self_test_assert(
-        len(_CONFIG_JSON_IMPORT_WHITELIST) == 23,
-        f"config-import whitelist size drifted: {len(_CONFIG_JSON_IMPORT_WHITELIST)} != 23",
+        len(_CONFIG_JSON_IMPORT_WHITELIST) == 25,
+        f"config-import whitelist size drifted: {len(_CONFIG_JSON_IMPORT_WHITELIST)} != 25",
     )
     # Keys the sidebar MUST round-trip.
     critical_keys = {
         "model_type", "method", "analysis_depth",
         "rating_min", "rating_max",
         "maxit", "reltol", "anchor_policy",
+        "facet_regularization_ui_mode", "facet_regularization_specs",
     }
     missing = critical_keys - _CONFIG_JSON_IMPORT_WHITELIST
     _self_test_assert(
@@ -28919,6 +30633,202 @@ def run_benchmarks(csv_path: str | None = None, quick: bool = False) -> int:
     return 0
 
 
+def _self_test_csv_newline_normalization() -> None:
+    """Pasted and uploaded CSV/TSV data should parse after newline normalization."""
+    csv_text = "Person,Rater,Score\rP1,R1,1\rP2,R2,2\r"
+    df = read_flexible_table(csv_text, None, header=True)
+    _self_test_assert(df.shape == (2, 3), f"CR-only pasted CSV parsed to {df.shape}")
+    _self_test_assert(df.iloc[1]["Person"] == "P2", "CR-only pasted CSV row order changed")
+
+    class _Upload:
+        name = "ratings.csv"
+
+        def getvalue(self):
+            return b"Person,Rater,Score\r\nP1,R1,1\r\nP2,R2,2\r\n"
+
+    uploaded = read_flexible_table("", _Upload(), header=True)
+    _self_test_assert(uploaded.shape == (2, 3), f"CRLF uploaded CSV parsed to {uploaded.shape}")
+    _self_test_assert(normalize_csv_newlines("a\rb\r\nc") == "a\nb\nc", "text newline normalization failed")
+    _self_test_assert(normalize_csv_newlines(b"a\rb\r\nc") == b"a\nb\nc", "byte newline normalization failed")
+
+
+def _self_test_table_delimiter_and_stale_fingerprints() -> None:
+    """Table parsing and stale-input fingerprints should catch common UX traps."""
+    semi_text = "Person;Rater;Score\rP1;R1;1\rP2;R2;2\r"
+    parsed = read_flexible_table(semi_text, None, header=True, delimiter="Auto")
+    _self_test_assert(parsed.shape == (2, 3), f"semicolon pasted table parsed to {parsed.shape}")
+    forced_comma = read_flexible_table(semi_text, None, header=True, delimiter="Comma (,)")
+    _self_test_assert(forced_comma.shape[1] == 1, "forced comma delimiter should expose one-column parse")
+
+    class _SemiUpload:
+        name = "ratings.csv"
+        size = len(b"Person;Rater;Score\nP1;R1;1\n")
+
+        def getvalue(self):
+            return b"Person;Rater;Score\nP1;R1;1\nP2;R2;2\n"
+
+    uploaded = read_flexible_table("", _SemiUpload(), header=True, delimiter="Auto")
+    _self_test_assert(uploaded.shape == (2, 3), f"semicolon uploaded CSV parsed to {uploaded.shape}")
+    _self_test_assert(infer_table_delimiter(semi_text) == ";", "semicolon delimiter inference failed")
+
+    data_a = pd.DataFrame({"Person": ["P1"], "Rater": ["R1"], "Score": [1]})
+    data_b = pd.DataFrame({"Person": ["P1"], "Rater": ["R1"], "Score": [2]})
+    fp_a = dataframe_fingerprint(data_a)
+    fp_b = dataframe_fingerprint(data_b)
+    anchor_a = table_source_fingerprint(text_value="Facet,Level,Anchor\nRater,R1,0\n")
+    anchor_b = table_source_fingerprint(text_value="Facet,Level,Anchor\nRater,R1,1\n")
+    output = {
+        "_input_data_fingerprint": fp_a,
+        "_anchor_source_fingerprint": anchor_a,
+        "_group_anchor_source_fingerprint": None,
+        "_population_source_fingerprint": None,
+        "result": {"config": {}},
+    }
+    reasons = build_input_stale_reasons(
+        output,
+        current_input_data_fingerprint=fp_b,
+        current_anchor_source_fingerprint=anchor_b,
+        current_group_anchor_source_fingerprint=None,
+        current_population_source_fingerprint=None,
+    )
+    _self_test_assert("rating data" in reasons, "changed rating data fingerprint was not stale")
+    _self_test_assert("anchor input" in reasons, "changed anchor source fingerprint was not stale")
+
+
+def _self_test_likelihood_information_criteria() -> None:
+    summary = pd.DataFrame([{
+        "Model": "RSM",
+        "Method": "JMLE",
+        "N": 100,
+        "KParams": 8,
+        "LogLik": -50.0,
+        "AIC": 116.0,
+        "BIC": 136.841361,
+    }])
+    result = {"summary": summary, "config": {"parameter_count": 8}}
+    info = build_likelihood_information_criteria(result)
+    _self_test_assert(not info.empty, "likelihood information table is empty")
+    values = dict(zip(info["Metric"], info["Value"]))
+    _self_test_assert(abs(float(values["Deviance"]) - 100.0) < 1e-8, "deviance should equal -2LL")
+    _self_test_assert("AICPerObs" in values and abs(float(values["AICPerObs"]) - 1.16) < 1e-8, "AIC per observation missing")
+
+    history = [
+        {"timestamp": "A", "output_snapshot": {"result": result}},
+        {"timestamp": "B", "output_snapshot": {"result": {
+            "summary": pd.DataFrame([{
+                "Model": "PCM",
+                "Method": "JMLE",
+                "N": 100,
+                "KParams": 12,
+                "LogLik": -46.0,
+                "AIC": 116.0,
+                "BIC": 147.262042,
+            }]),
+            "config": {"parameter_count": 12},
+        }}},
+    ]
+    rows = build_run_history_likelihood_table(history)
+    _self_test_assert(len(rows) == 2, "run-history likelihood table row count changed")
+    _self_test_assert("DeltaAIC" in rows.columns and rows["DeltaAIC"].min() == 0, "DeltaAIC not computed")
+    _self_test_assert(
+        "ComparableIC" in rows.columns and not bool(rows["ComparableIC"].all()),
+        "run-history ComparableIC should be false when model/method/data comparability differs",
+    )
+    desc = build_likelihood_descriptives(rows)
+    _self_test_assert("AIC" in desc["Metric"].tolist(), "likelihood descriptives missing AIC")
+
+
+def _self_test_facet_regularization() -> None:
+    """Facet regularization should be explicit, audited, and gradient-safe."""
+    data = _make_self_test_gradient_data()
+    spec = [{
+        "Facet": "Rater",
+        "Level": "*",
+        "ParameterClass": "facet",
+        "Mean": 0.0,
+        "SD": 3.0,
+        "Enabled": True,
+        "Source": "self_test",
+    }]
+    res = mfrm_estimate(
+        data,
+        person_col="Person",
+        facet_cols=["Rater", "Task"],
+        score_col="Score",
+        model="RSM",
+        method="JMLE",
+        facet_regularization={"enabled": True, "specs": spec},
+        maxit=20,
+        reltol=1e-4,
+    )
+    summary = res["summary"].iloc[0]
+    _self_test_assert(summary.get("FacetRegularization") == "On", "regularized run was not labelled On")
+    _self_test_assert(str(summary.get("EstimatorLabel")) == "Penalized JMLE", "regularized estimator label changed")
+    _self_test_assert(np.isfinite(float(summary.get("RegularizationPenalty"))), "regularization penalty is not finite")
+    _self_test_assert(np.isfinite(float(summary.get("PenalizedObjective"))), "penalized objective is not finite")
+    _self_test_assert(
+        str(summary.get("LogLikBasis")) == "unpenalized likelihood evaluated at fitted estimates",
+        "log-likelihood basis note changed",
+    )
+    info = build_likelihood_information_criteria(res)
+    _self_test_assert(
+        "RegularizationPenalty" in info["Metric"].tolist(),
+        "likelihood information table omits regularization penalty",
+    )
+    reg = res.get("regularization", {})
+    audit = reg.get("audit", pd.DataFrame()) if isinstance(reg, dict) else pd.DataFrame()
+    penalty_summary = reg.get("penalty_summary", pd.DataFrame()) if isinstance(reg, dict) else pd.DataFrame()
+    _self_test_assert(not audit.empty, "regularization audit table is empty")
+    _self_test_assert(
+        bool(audit["Status"].astype(str).str.startswith("applied").any()),
+        "regularization audit has no applied row",
+    )
+    _self_test_assert(
+        not penalty_summary.empty and "TOTAL" in penalty_summary["Facet"].astype(str).tolist(),
+        "regularization penalty summary missing TOTAL row",
+    )
+    appendix = generate_method_appendix_text(res, {"marginal_fit_enabled": False}, all_bias_results={})
+    _self_test_assert("## Facet Regularization" in appendix, "method appendix missing facet regularization section")
+    _self_test_assert("not a random-effects model" in appendix, "method appendix missing regularization caveat")
+
+    par = np.asarray(res["opt"].x, dtype=float)
+    if par.size:
+        par = par + np.random.default_rng(20260501).normal(0.0, 0.03, par.size)
+    config = res["config"]
+    sizes = build_param_sizes(config)
+    idx = build_indices(res["prep"], step_facet=config["step_facet"], slope_facet=config.get("slope_facet"))
+    rel_err, abs_err = _central_difference_gradient_check(
+        lambda x: mfrm_loglik_jmle_value_grad(x, idx, config, sizes),
+        par,
+    )
+    _self_test_assert(
+        rel_err < 1e-5,
+        f"regularized JMLE gradient check failed: rel_err={rel_err:.3e}, abs_err={abs_err:.3e}",
+    )
+
+    for bad_spec, expected_text in (
+        ([{"Facet": "Rater", "Level": "*", "SD": 0.0}], "SD must be positive"),
+        ([{"Facet": "NotAFacet", "Level": "*", "SD": 1.0}], "unknown facet"),
+        ([{"Facet": "Rater", "Level": "NotALevel", "SD": 1.0}], "unknown level"),
+    ):
+        try:
+            mfrm_estimate(
+                data,
+                person_col="Person",
+                facet_cols=["Rater", "Task"],
+                score_col="Score",
+                model="RSM",
+                method="JMLE",
+                facet_regularization=bad_spec,
+                maxit=2,
+                reltol=1e-3,
+            )
+        except ValueError as exc:
+            _self_test_assert(expected_text in str(exc), f"unexpected regularization error: {exc}")
+        else:
+            raise AssertionError(f"invalid regularization spec was accepted: {bad_spec}")
+
+
 def run_self_tests() -> int:
     tests = [
         ("zero-count intermediate category support", _self_test_zero_count_category_support),
@@ -28957,6 +30867,10 @@ def run_self_tests() -> int:
         ("Help popover library", _self_test_help_popover_library),
         ("Essential-mode tab filters", _self_test_essential_mode_tab_filters),
         ("Sample-data scenarios", _self_test_sample_data_scenarios),
+        ("CSV newline normalization", _self_test_csv_newline_normalization),
+        ("Table delimiter and stale-input fingerprints", _self_test_table_delimiter_and_stale_fingerprints),
+        ("Likelihood information criteria", _self_test_likelihood_information_criteria),
+        ("Facet regularization", _self_test_facet_regularization),
         ("Data-outlier detection", _self_test_data_outlier_detection),
         ("Posterior NetCDF round-trip", _self_test_posterior_load_netcdf),
         ("Posterior CmdStan CSV loader", _self_test_posterior_load_cmdstan_csvs),
@@ -29497,20 +31411,23 @@ def generate_advanced_model_stan_code(
     """Dispatch to the right Stan-code generator for an advanced model."""
     name = str(model_name).upper()
     if name == "DINA":
-        return generate_dina_stan_code(n_items, n_attributes)
-    if name == "HRM":
-        return generate_hrm_stan_code(n_categories)
-    if name == "TESTLET_RI":
-        return generate_testlet_stan_code(n_categories, bifactor=False)
-    if name == "TESTLET_BIFACTOR":
-        return generate_testlet_stan_code(n_categories, bifactor=True)
-    if name == "MIXTURE_RASCH":
-        return generate_mixture_rasch_stan_code(n_classes)
-    if name == "IRT_2PL_BINARY":
-        return generate_2pl_binary_stan_code()
-    if name == "PAIRWISE_BTL":
-        return generate_pairwise_btl_stan_code()
-    raise ValueError(f"Unknown advanced model: {model_name}")
+        code = generate_dina_stan_code(n_items, n_attributes)
+    elif name == "HRM":
+        code = generate_hrm_stan_code(n_categories)
+    elif name == "TESTLET_RI":
+        code = generate_testlet_stan_code(n_categories, bifactor=False)
+    elif name == "TESTLET_BIFACTOR":
+        code = generate_testlet_stan_code(n_categories, bifactor=True)
+    elif name == "MIXTURE_RASCH":
+        code = generate_mixture_rasch_stan_code(n_classes)
+    elif name == "IRT_2PL_BINARY":
+        code = generate_2pl_binary_stan_code()
+    elif name == "PAIRWISE_BTL":
+        code = generate_pairwise_btl_stan_code()
+    else:
+        raise ValueError(f"Unknown advanced model: {model_name}")
+    label = advanced_model_metadata(name).get("label", name)
+    return stan_code_sensitivity_notice(label) + "\n" + code
 
 
 def validate_q_matrix(q_df: pd.DataFrame) -> dict:

@@ -3482,7 +3482,7 @@ def render_sidebar_run_setup_summary(
     workflow_mode: str,
 ) -> None:
     """Show the current estimation setup close to the Run button."""
-    st.sidebar.subheader("Run summary")
+    st.sidebar.subheader(t("sidebar_run_setup.subheader"))
     try:
         n_rows = int(len(data))
         n_persons = int(data[person_col].nunique(dropna=True))
@@ -3493,28 +3493,35 @@ def render_sidebar_run_setup_summary(
         n_score_missing = 0
 
     if len(facet_cols) < 2:
-        st.sidebar.warning("Select at least two facet columns before running.")
+        st.sidebar.warning(t("sidebar_run_setup.needs_two_facets_warning"))
     else:
         st.sidebar.info(
-            f"{n_rows:,} rows, {n_persons:,} persons, "
-            f"{len(facet_cols)} facet columns selected."
+            t(
+                "sidebar_run_setup.selection_info_template",
+                n_rows=f"{n_rows:,}",
+                n_persons=f"{n_persons:,}",
+                n_facets=len(facet_cols),
+            )
         )
 
-    with st.sidebar.expander("Review current setup", expanded=False):
+    with st.sidebar.expander(t("sidebar_run_setup.review_setup_expander"), expanded=False):
+        weight_display = weight_col or t("sidebar_run_setup.weight_none_value")
         st.markdown(
             "\n".join([
-                f"- Person: `{person_col}`",
-                f"- Score: `{score_col}`",
-                f"- Facets: `{_short_value_list(list(facet_cols))}`",
-                f"- Weight: `{weight_col or 'none'}`",
-                f"- Model / method: `{model_type}` / `{est_method}`",
-                f"- Workflow / depth: `{workflow_mode}` / `{analysis_depth}`",
+                f"- {t('sidebar_run_setup.person_label')}: `{person_col}`",
+                f"- {t('sidebar_run_setup.score_label')}: `{score_col}`",
+                f"- {t('sidebar_run_setup.facets_label')}: `{_short_value_list(list(facet_cols))}`",
+                f"- {t('sidebar_run_setup.weight_label')}: `{weight_display}`",
+                f"- {t('sidebar_run_setup.model_method_label')}: `{model_type}` / `{est_method}`",
+                f"- {t('sidebar_run_setup.workflow_depth_label')}: `{workflow_mode}` / `{analysis_depth}`",
             ])
         )
         if n_score_missing:
             st.caption(
-                f"{n_score_missing:,} row(s) have missing scores after mapping; "
-                "they are tracked in the readiness and Data-tab audits."
+                t(
+                    "sidebar_run_setup.score_missing_caption_template",
+                    n_score_missing=f"{n_score_missing:,}",
+                )
             )
 
 
@@ -10433,24 +10440,21 @@ _COMMON_MISSING_CODES = ["99", "999", "-1", "N", "NA", "n/a", ".", ""]
 
 def missing_value_recoding(data: pd.DataFrame, score_col: str) -> pd.DataFrame:
     """Sidebar UI for recoding missing values in the score column."""
-    with st.sidebar.expander("Missing value recoding"):
-        st.caption(
-            "Convert placeholder codes in the Score column to true missing values (NaN). "
-            "These observations will be excluded from estimation."
-        )
+    with st.sidebar.expander(t("sidebar_missing.expander")):
+        st.caption(t("sidebar_missing.caption"))
         presets = st.multiselect(
-            "Common codes to treat as missing",
+            t("sidebar_missing.presets_label"),
             _COMMON_MISSING_CODES,
             default=[],
             key="missing_presets",
-            help="Select codes that represent missing data in your score column (e.g., 99, NA, -1).",
+            help=t("sidebar_missing.presets_help"),
         )
         custom_raw = st.text_input(
-            "Additional custom codes (comma-separated)",
+            t("sidebar_missing.custom_label"),
             value="",
             key="missing_custom",
-            placeholder="e.g., -9, X, n.a.",
-            help="Enter any other codes not in the preset list, separated by commas.",
+            placeholder=t("sidebar_missing.custom_placeholder"),
+            help=t("sidebar_missing.custom_help"),
         )
         custom_codes = [c.strip() for c in custom_raw.split(",") if c.strip()] if custom_raw.strip() else []
         all_codes = list(dict.fromkeys(presets + custom_codes))
@@ -10464,11 +10468,17 @@ def missing_value_recoding(data: pd.DataFrame, score_col: str) -> pd.DataFrame:
             data[score_col] = pd.to_numeric(data[score_col], errors="coerce")
             total_missing = int(data[score_col].isna().sum())
             if recoded > 0:
-                st.info(f"Recoded **{recoded}** observations to missing (total missing: {total_missing}).")
+                st.info(
+                    t(
+                        "sidebar_missing.recoded_info_template",
+                        recoded=recoded,
+                        total_missing=total_missing,
+                    )
+                )
                 if total_missing == len(data):
-                    st.error("All scores are now missing. Check your missing codes.")
+                    st.error(t("sidebar_missing.all_missing_error"))
             else:
-                st.caption("No additional values matched the specified codes.")
+                st.caption(t("sidebar_missing.no_match_caption"))
     return data
 
 

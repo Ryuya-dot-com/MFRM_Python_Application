@@ -217,6 +217,32 @@
     "no_combined_measures_info_template": "結合測定値はまだ生成されていない。このテーブルは推定完了後に構築される。サイドバーの **{run_button}** をクリックする。",
     "no_measure_table_info_template": "測定値テーブルはまだ利用できない。まず「{run_button}」をクリックする。"
   },
+  "sidebar_run_setup": {
+    "subheader": "実行サマリ",
+    "needs_two_facets_warning": "実行前に facet 列を 2 つ以上選択する。",
+    "selection_info_template": "{n_rows} 行、{n_persons} Person、facet 列 {n_facets} 個を選択中。",
+    "review_setup_expander": "現在の設定を確認する",
+    "person_label": "Person",
+    "score_label": "Score",
+    "facets_label": "Facets",
+    "weight_label": "Weight",
+    "weight_none_value": "なし",
+    "model_method_label": "モデル / 推定法",
+    "workflow_depth_label": "ワークフロー / 解析の深さ",
+    "score_missing_caption_template": "マッピング後に {n_score_missing} 行のスコアが欠測。readiness と Data タブの監査で追跡される。"
+  },
+  "sidebar_missing": {
+    "expander": "欠測値の再コーディング",
+    "caption": "Score 列のプレースホルダコードを真の欠測 (NaN) に変換する。これらの観測値は推定から除外される。",
+    "presets_label": "欠測として扱う共通コード",
+    "presets_help": "Score 列で欠測を表すコードを選択する (例: 99、NA、-1)。",
+    "custom_label": "追加のカスタムコード (カンマ区切り)",
+    "custom_placeholder": "例: -9, X, n.a.",
+    "custom_help": "プリセットに無い他のコードをカンマ区切りで入力する。",
+    "recoded_info_template": "**{recoded}** 件の観測値を欠測に再コーディング (合計欠測: {total_missing})。",
+    "all_missing_error": "すべてのスコアが欠測になった。欠測コードの指定を確認する。",
+    "no_match_caption": "指定したコードに一致する追加の値はなかった。"
+  },
   "sidebar_estimation": {
     "column_mapping_subheader": "列マッピング",
     "column_mapping_caption": "Person、Score、2 つ以上の facet に列をマッピングする。",

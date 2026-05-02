@@ -217,6 +217,32 @@
     "no_combined_measures_info_template": "No combined measures yet. This table is built after estimation completes; click **{run_button}** in the sidebar.",
     "no_measure_table_info_template": "No measure table available yet. {run_button} first."
   },
+  "sidebar_run_setup": {
+    "subheader": "Run summary",
+    "needs_two_facets_warning": "Select at least two facet columns before running.",
+    "selection_info_template": "{n_rows} rows, {n_persons} persons, {n_facets} facet columns selected.",
+    "review_setup_expander": "Review current setup",
+    "person_label": "Person",
+    "score_label": "Score",
+    "facets_label": "Facets",
+    "weight_label": "Weight",
+    "weight_none_value": "none",
+    "model_method_label": "Model / method",
+    "workflow_depth_label": "Workflow / depth",
+    "score_missing_caption_template": "{n_score_missing} row(s) have missing scores after mapping; they are tracked in the readiness and Data-tab audits."
+  },
+  "sidebar_missing": {
+    "expander": "Missing value recoding",
+    "caption": "Convert placeholder codes in the Score column to true missing values (NaN). These observations will be excluded from estimation.",
+    "presets_label": "Common codes to treat as missing",
+    "presets_help": "Select codes that represent missing data in your score column (e.g., 99, NA, -1).",
+    "custom_label": "Additional custom codes (comma-separated)",
+    "custom_placeholder": "e.g., -9, X, n.a.",
+    "custom_help": "Enter any other codes not in the preset list, separated by commas.",
+    "recoded_info_template": "Recoded **{recoded}** observations to missing (total missing: {total_missing}).",
+    "all_missing_error": "All scores are now missing. Check your missing codes.",
+    "no_match_caption": "No additional values matched the specified codes."
+  },
   "sidebar_estimation": {
     "column_mapping_subheader": "Column mapping",
     "column_mapping_caption": "Map columns to Person, Score, and 2+ facets.",

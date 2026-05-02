@@ -9247,26 +9247,28 @@ def diagnose_pca_skip_reason(obs_df, facet_names, *, mode="overall", facet=None)
     Returns
     -------
     str
-        Non-empty English reason such as
-        ``"only 1 item-combination column(s); PCA needs ≥2"``.
+        Non-empty localized reason resolved through ``t()`` (English by
+        default, Japanese when ``st.session_state["lang"] == "ja"``).
+        Callers must treat the value as opaque display text and never
+        match it against fixed English literals.
     """
     if obs_df is None:
-        return "observation table is None (estimation may have failed)"
+        return t("dimensionality.skip_reason_obs_none")
     if not isinstance(obs_df, pd.DataFrame):
-        return f"observation table has unexpected type: {type(obs_df).__name__}"
+        return t("dimensionality.skip_reason_obs_type_template", type_name=type(obs_df).__name__)
     if obs_df.empty:
-        return "observation table is empty"
+        return t("dimensionality.skip_reason_obs_empty")
     if mode == "overall" and not facet_names:
-        return "no facet names configured in result['config']"
+        return t("dimensionality.skip_reason_no_facets")
     if mode == "facet":
         if not facet:
-            return "facet name not provided"
+            return t("dimensionality.skip_reason_facet_not_provided")
         if facet not in obs_df.columns:
-            return f"facet column `{facet}` is not in the observation table"
+            return t("dimensionality.skip_reason_facet_not_in_obs_template", facet=facet)
     if "Person" not in obs_df.columns:
-        return "`Person` column missing from observation table"
+        return t("dimensionality.skip_reason_person_missing")
     if "StdResidual" not in obs_df.columns:
-        return "`StdResidual` column missing; standardized residuals were not computed"
+        return t("dimensionality.skip_reason_stdresidual_missing")
 
     try:
         df_aug = obs_df.copy()
@@ -9282,32 +9284,41 @@ def diagnose_pca_skip_reason(obs_df, facet_names, *, mode="overall", facet=None)
             index="Person", columns="_col_key", values="StdResidual"
         )
     except Exception as exc:  # pragma: no cover - defensive
-        return f"residual matrix construction raised {type(exc).__name__}: {exc}"
+        return t(
+            "dimensionality.skip_reason_construction_error_template",
+            error_type=type(exc).__name__,
+            error=str(exc),
+        )
 
     n_persons, n_cols = residual_matrix_wide.shape
     if n_persons < 2:
-        return f"only {n_persons} person(s) in the residual matrix; PCA needs ≥2"
+        return t("dimensionality.skip_reason_too_few_persons_template", n_persons=n_persons)
     if n_cols < 2:
-        key_label = "item-combination" if mode == "overall" else f"`{facet}` level"
-        return (
-            f"only {n_cols} {key_label} column(s); PCA needs ≥2. "
-            "Broaden your facet selection or include more levels."
+        key_label = (
+            t("dimensionality.skip_key_label_item_combination")
+            if mode == "overall"
+            else t("dimensionality.skip_key_label_facet_template", facet=facet)
+        )
+        return t(
+            "dimensionality.skip_reason_too_few_cols_template",
+            n_cols=n_cols,
+            key_label=key_label,
         )
     clean = residual_matrix_wide.dropna(axis=1, how="all")
     if clean.shape[1] < 2:
-        return (
-            f"after removing all-NaN columns, only {clean.shape[1]} remain "
-            "(residuals are too sparse — many persons never saw each level)"
+        return t(
+            "dimensionality.skip_reason_after_dropna_template",
+            n_remaining=clean.shape[1],
         )
 
     nan_share = float(residual_matrix_wide.isna().to_numpy().mean())
     if nan_share > 0.95:
-        return f"residual matrix is {nan_share:.0%} NaN; likely connectivity issue"
+        return t(
+            "dimensionality.skip_reason_too_sparse_template",
+            nan_pct=f"{nan_share:.0%}",
+        )
 
-    return (
-        "unknown — residual matrix shape looks valid but compute_pca_bundle returned None "
-        "(possibly a numpy eigendecomposition edge case)"
-    )
+    return t("dimensionality.skip_reason_unknown")
 
 
 def calc_expected_category_counts(res):
@@ -11882,36 +11893,10 @@ def show_dimensionality_section(diagnostics: dict, facet_cols: list[str], core: 
     pca = diagnostics.get("pca")
     if pca is None:
         reason = diagnostics.get("pca_reason") or "unknown (no reason recorded)"
-        st.warning(
-            f"**PCA of residuals could not be computed.** Reason: {reason}\n\n"
-            "Typical fixes: select at least 2 facets with ≥2 levels each, ensure "
-            "every person sees multiple item-combinations, or widen your data subset. "
-            "If the reason is `residual PCA was disabled by the Analysis depth setting`, "
-            "re-run with Analysis depth = Standard, Full publication, or Custom > Compute residual PCA."
-        )
+        st.warning(t("dimensionality.warning_pca_failed_template", reason=reason))
         return
 
-    st.markdown(
-        """
-**How to interpret the PCA of standardized residuals:**
-
-The PCA decomposes the *unexplained* variance (residuals) after the Rasch dimension
-is extracted. If the data are unidimensional, residuals should be random noise and
-no principal component should stand out.
-
-| Criterion | Guideline | Reference |
-|---|---|---|
-| 1st eigenvalue < 2.0 | Supports unidimensionality | Linacre (2024) |
-| 1st eigenvalue 2.0--3.0 | Minor secondary dimension possible; inspect content | Smith (2002) |
-| 1st eigenvalue > 3.0 | Strong evidence of a secondary dimension | Linacre (2024) |
-| Unexplained variance in 1st PC < 5% | Acceptable | Smith (2002) |
-| Unexplained variance in 1st PC 5--10% | Investigate | Linacre (2024) |
-| Eigenvalue ratio (PC1/PC2) >= 3 | Supports single dominant dimension | Reckase (1979) |
-
-Use the scree plot below: a clear "elbow" after the 1st component, with subsequent
-eigenvalues close to 1.0, supports unidimensionality.
-"""
-    )
+    st.markdown(t("dimensionality.interpretation_main"))
 
     # Determine default tab -- prefer first rater facet if available
     rater_facets = [f for f in facet_cols if "rater" in f.lower() or "judge" in f.lower()]
@@ -11973,7 +11958,7 @@ def _show_pca_panel(
                     var_pct = pca_bundle.get("variance_pct")
                     loadings = pca_bundle.get("loadings")
             except Exception as pca_exc:
-                st.caption(f"PCA computation failed (using pre-computed): {pca_exc}")
+                st.caption(t("dimensionality.computation_failed_caption_template", error=str(pca_exc)))
         elif eigenvalues is None and mode == "facet" and core.get("compute_pca_by_facet") and obs is not None and facet_name:
             try:
                 pca_bundles = core["compute_pca_by_facet"](obs, [facet_name])
@@ -11983,14 +11968,19 @@ def _show_pca_panel(
                     var_pct = pca_bundle.get("variance_pct")
                     loadings = pca_bundle.get("loadings")
             except Exception as pca_exc:
-                st.caption(f"PCA computation failed (using pre-computed): {pca_exc}")
+                st.caption(t("dimensionality.computation_failed_caption_template", error=str(pca_exc)))
 
     # --- Fall back to pca dict from diagnostics ---
     tbl = None
+    # Plotly chart titles stay in English regardless of locale (per i18n
+    # policy: figures may be exported to publications). The Streamlit
+    # text label uses the translated form.
     if mode == "overall":
-        label = "Overall standardized residuals"
+        label_plot = "Overall standardized residuals"
+        label_ui = t("dimensionality.label_overall")
     else:
-        label = f"Residuals for facet: {facet_name}"
+        label_plot = f"Residuals for facet: {facet_name}"
+        label_ui = t("dimensionality.label_facet_template", facet_name=facet_name)
 
     if tbl is None or (hasattr(tbl, "__len__") and len(tbl) == 0):
         if eigenvalues is None:
@@ -12002,12 +11992,12 @@ def _show_pca_panel(
             elif mode == "overall" and isinstance(diagnostics, dict):
                 reason = diagnostics.get("pca_reason")
             if reason:
-                st.warning(f"PCA could not be computed for **{label}** — {reason}")
+                st.warning(t("dimensionality.warning_label_reason_template", label=label_ui, reason=reason))
             else:
-                st.caption(f"No PCA results available for {label}.")
+                st.caption(t("dimensionality.no_results_caption_template", label=label_ui))
             return
 
-    st.markdown(f"**{label}**")
+    st.markdown(f"**{label_ui}**")
     if tbl is not None and not (hasattr(tbl, "empty") and tbl.empty):
         st.dataframe(tbl, width="stretch")
 
@@ -12028,13 +12018,13 @@ def _show_pca_panel(
                 break
 
     if eigenvalues is None or len(eigenvalues) < 2:
-        st.caption("Insufficient eigenvalues for dimensionality analysis (need at least 2 components).")
+        st.caption(t("dimensionality.insufficient_caption"))
         return
 
     # --- Scree plot ---
     header_cols = st.columns([5, 1])
     with header_cols[0]:
-        st.markdown("##### Scree plot — residual PCA eigenvalues")
+        st.markdown(f"##### {t('dimensionality.scree_plot_header')}")
     with header_cols[1]:
         render_help_popover("scree")
     max_components = min(20, len(eigenvalues))
@@ -12058,7 +12048,7 @@ def _show_pca_panel(
     fig.add_hline(y=1.0, line_dash="dot", line_color="#666666", line_width=1,
                   annotation_text="Expected (EV=1.0)", annotation_position="bottom right")
     fig.update_layout(xaxis_title="Component", yaxis_title="Eigenvalue",
-                      title=f"Scree Plot — {label}", yaxis_rangemode="tozero",
+                      title=f"Scree Plot — {label_plot}", yaxis_rangemode="tozero",
                       xaxis=dict(dtick=1), height=350, template="plotly_white")
     st.plotly_chart(fig, width="stretch")
     render_chart_guide("scree")
@@ -12073,7 +12063,7 @@ def _show_pca_panel(
         eigen_df_data["Variance %"] = list(var_pct[:n_show])
         eigen_df_data["Cumulative %"] = list(np.cumsum(var_pct[:n_show]))
     eigen_df = pd.DataFrame(eigen_df_data)
-    st.subheader("Eigenvalues and variance explained")
+    st.subheader(t("dimensionality.eigenvalues_subheader"))
     st.dataframe(eigen_df.round(3), width="stretch")
 
     # --- PC1 loadings bar chart ---
@@ -12113,16 +12103,19 @@ def _show_pca_panel(
     # Note: var_pct is % of residual variance.  In a typical Rasch analysis the
     # model explains 50-70% of total variance, so 10% of residual ≈ 3-5% of total.
     # The Smith (2002) criterion of <5% total roughly maps to ~10-15% of residual.
-    assessment = "Acceptable unidimensionality"
+    assessment = t("dimensionality.assessment_acceptable")
     if ev1 >= 3.0:
-        assessment = "Potential multidimensionality (strong 1st eigenvalue)"
+        assessment = t("dimensionality.assessment_potential_multi_strong")
     elif ev1 >= 2.0:
-        assessment = "Minor secondary dimension possible (1st eigenvalue 2.0–3.0; Smith, 2002)"
+        assessment = t("dimensionality.assessment_minor_secondary")
     elif np.isfinite(pc1_var) and pc1_var > 15:
-        assessment = "Potential multidimensionality (high PC1 residual variance)"
+        assessment = t("dimensionality.assessment_potential_multi_var")
     elif np.isfinite(eig_ratio) and eig_ratio < 3:
-        assessment = "Potential multidimensionality (low eigenvalue ratio)"
+        assessment = t("dimensionality.assessment_potential_multi_ratio")
 
+    # DataFrame column names ("Metric", "Value") and the row labels
+    # ("1st eigenvalue", etc.) stay in English so CSV/Excel exports keep
+    # consistent column naming across locales.
     assess_df = pd.DataFrame({
         "Metric": [
             "1st eigenvalue",
@@ -12139,18 +12132,19 @@ def _show_pca_panel(
             assessment,
         ],
     })
-    st.subheader("Unidimensionality assessment")
+    st.subheader(t("dimensionality.assessment_subheader"))
     st.dataframe(assess_df, width="stretch")
 
     # --- Interpretation badge ---
+    ev1_fmt = f"{ev1:.2f}"
     if ev1 < 1.5:
-        st.success(f"1st eigenvalue = {ev1:.2f} -- Good support for unidimensionality.")
+        st.success(t("dimensionality.badge_good_template", ev1=ev1_fmt))
     elif ev1 < FINAL_PCA_EIGENVALUE_READY:
-        st.info(f"1st eigenvalue = {ev1:.2f} -- Acceptable; monitor for secondary dimension.")
+        st.info(t("dimensionality.badge_acceptable_template", ev1=ev1_fmt))
     elif ev1 < FINAL_PCA_EIGENVALUE_REVIEW:
-        st.warning(f"1st eigenvalue = {ev1:.2f} -- Possible secondary dimension. Inspect item content.")
+        st.warning(t("dimensionality.badge_warning_template", ev1=ev1_fmt))
     else:
-        st.error(f"1st eigenvalue = {ev1:.2f} -- Strong evidence of multidimensionality.")
+        st.error(t("dimensionality.badge_error_template", ev1=ev1_fmt))
 
 
 # ---------------------------------------------------------------------------

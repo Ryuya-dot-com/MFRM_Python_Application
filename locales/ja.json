@@ -66,7 +66,11 @@
     "skip_key_label_facet_template": "`{facet}` レベル",
     "skip_reason_after_dropna_template": "全 NaN の列を除外後、残った列が {n_remaining} 列のみ (残差が疎すぎる — 多くの person が各レベルを観測していない)",
     "skip_reason_too_sparse_template": "residual matrix の {nan_pct} が NaN (connectivity の問題の可能性)",
-    "skip_reason_unknown": "不明 — residual matrix の形状は妥当だが compute_pca_bundle が None を返した (numpy の eigendecomposition のエッジケースの可能性)"
+    "skip_reason_unknown": "不明 — residual matrix の形状は妥当だが compute_pca_bundle が None を返した (numpy の eigendecomposition のエッジケースの可能性)",
+    "exception_overall_template": "compute_pca_overall で例外発生: {error_type}: {error}",
+    "exception_facet_template": "例外発生: {error_type}: {error}",
+    "disabled_by_depth_setting": "Analysis depth 設定で residual PCA が無効化されている",
+    "tab_label_overall": "全体"
   },
   "tutorial": {
     "expander_label": "Tutorial: 始める前に押さえておきたい主要概念",

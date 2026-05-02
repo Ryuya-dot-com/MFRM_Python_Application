@@ -9585,7 +9585,11 @@ def mfrm_diagnostics(
                 pca_reason = diagnose_pca_skip_reason(obs_df, facet_names, mode="overall")
         except Exception as exc:
             pca_overall = None
-            pca_reason = f"exception during compute_pca_overall: {type(exc).__name__}: {exc}"
+            pca_reason = t(
+                "dimensionality.exception_overall_template",
+                error_type=type(exc).__name__,
+                error=str(exc),
+            )
         try:
             pca_by_facet = compute_pca_by_facet(obs_df, facet_names)
             # Record a per-facet skip reason so each Dimensionality sub-tab
@@ -9599,11 +9603,15 @@ def mfrm_diagnostics(
         except Exception as exc:
             pca_by_facet = {}
             pca_by_facet_reasons = {
-                facet: f"exception: {type(exc).__name__}: {exc}"
+                facet: t(
+                    "dimensionality.exception_facet_template",
+                    error_type=type(exc).__name__,
+                    error=str(exc),
+                )
                 for facet in (facet_names or [])
             }
     else:
-        pca_reason = "residual PCA was disabled by the Analysis depth setting"
+        pca_reason = t("dimensionality.disabled_by_depth_setting")
 
     marginal_fit = {
         "available": False,
@@ -11898,24 +11906,31 @@ def show_dimensionality_section(diagnostics: dict, facet_cols: list[str], core: 
 
     st.markdown(t("dimensionality.interpretation_main"))
 
-    # Determine default tab -- prefer first rater facet if available
+    # Determine default tab -- prefer first rater facet if available.
+    # ``tab_keys`` are stable identifiers used for routing (the "overall"
+    # key drives the mode='overall' branch). ``tab_display`` are the
+    # translated labels shown in the Streamlit tab strip; the two arrays
+    # stay aligned by index so tab_keys[i] always describes tab_display[i].
     rater_facets = [f for f in facet_cols if "rater" in f.lower() or "judge" in f.lower()]
-    tab_labels = ["Overall"] + facet_cols
-    default_idx = (tab_labels.index(rater_facets[0]) if rater_facets else 0)
+    tab_keys = ["overall"] + facet_cols
+    tab_display = [t("dimensionality.tab_label_overall")] + facet_cols
+    default_idx = (tab_keys.index(rater_facets[0]) if rater_facets else 0)
 
-    # Build tab list, put default first by reordering
+    # Build tab list, put default first by reordering both arrays in lockstep.
     if default_idx > 0:
-        reordered = [tab_labels[default_idx]] + [t for i, t in enumerate(tab_labels) if i != default_idx]
+        order = [default_idx] + [i for i in range(len(tab_keys)) if i != default_idx]
     else:
-        reordered = tab_labels
-    dim_tabs = st.tabs(reordered)
+        order = list(range(len(tab_keys)))
+    reordered_keys = [tab_keys[i] for i in order]
+    reordered_display = [tab_display[i] for i in order]
+    dim_tabs = st.tabs(reordered_display)
 
-    for i, tab_label in enumerate(reordered):
+    for i, key in enumerate(reordered_keys):
         with dim_tabs[i]:
-            if tab_label == "Overall":
+            if key == "overall":
                 _show_pca_panel(pca, mode="overall", core=core, diagnostics=diagnostics, facet_cols=facet_cols)
             else:
-                _show_pca_panel(pca, mode="facet", facet_name=tab_label, core=core, diagnostics=diagnostics, facet_cols=facet_cols)
+                _show_pca_panel(pca, mode="facet", facet_name=key, core=core, diagnostics=diagnostics, facet_cols=facet_cols)
 
 
 def _show_pca_panel(

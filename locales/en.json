@@ -66,7 +66,11 @@
     "skip_key_label_facet_template": "`{facet}` level",
     "skip_reason_after_dropna_template": "after removing all-NaN columns, only {n_remaining} remain (residuals are too sparse — many persons never saw each level)",
     "skip_reason_too_sparse_template": "residual matrix is {nan_pct} NaN; likely connectivity issue",
-    "skip_reason_unknown": "unknown — residual matrix shape looks valid but compute_pca_bundle returned None (possibly a numpy eigendecomposition edge case)"
+    "skip_reason_unknown": "unknown — residual matrix shape looks valid but compute_pca_bundle returned None (possibly a numpy eigendecomposition edge case)",
+    "exception_overall_template": "exception during compute_pca_overall: {error_type}: {error}",
+    "exception_facet_template": "exception: {error_type}: {error}",
+    "disabled_by_depth_setting": "residual PCA was disabled by the Analysis depth setting",
+    "tab_label_overall": "Overall"
   },
   "tutorial": {
     "expander_label": "Tutorial: Key concepts before you begin",

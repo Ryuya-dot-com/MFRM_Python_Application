@@ -78,6 +78,47 @@ sidebar language picker (English / Japanese) keeps working. New strings:
 - Indent locale JSON with 2 spaces, UTF-8 without BOM, and end with a
   trailing newline.
 
+### Plotly figure text
+
+All Plotly figure text (chart `title`, `xaxis_title`, `yaxis_title`,
+`annotation_text`, legend entries, hover templates) stays in English
+regardless of locale. Streamlit re-renders figures every rerun; keeping
+them in English ensures publication exports (PNG/SVG/PDF via Kaleido or
+matplotlib) reproduce the wording cited in the manuscript and supports
+side-by-side comparison with FACETS / Winsteps screenshots.
+
+When the same string is used in both a Plotly figure and an adjacent
+`st.markdown` / `st.warning` label, hold both forms — see
+`_show_pca_panel` in `streamlit_app.py` for the canonical pattern:
+
+```python
+if mode == "overall":
+    label_plot = "Overall standardized residuals"           # English, for Plotly title
+    label_ui = t("dimensionality.label_overall")            # Translated, for st.markdown
+else:
+    label_plot = f"Residuals for facet: {facet_name}"
+    label_ui = t("dimensionality.label_facet_template", facet_name=facet_name)
+```
+
+### Statistical term translations
+
+The following terms have established Japanese translations in the
+psychometric / language-testing literature and are translated rather
+than kept in English in `ja.json`:
+
+| English source | JA translation |
+|---|---|
+| eigenvalue | 固有値 |
+| component (in PCA contexts) | 主成分 |
+| residual | 残差 |
+| variance explained | 説明分散 |
+| dimension(ality) | 次元 (性) |
+
+Conversely, model names, estimator acronyms, Greek letters in math
+notation, and Rasch-specific facet names (Person, Rater, Task,
+Criterion, Item, Facet, Score) stay in English. When in doubt, prefer
+keeping the term in English and revisit during translation review.
+
 ## Pull Request Checklist
 
 - [ ] No confidential data or generated artifacts are committed.

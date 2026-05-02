@@ -9107,9 +9107,10 @@ def compute_pca_bundle(residual_matrix_wide):
 
     cor_df = residual_matrix_clean.corr(min_periods=2)
     cor_df = cor_df.fillna(0)
-    np.fill_diagonal(cor_df.values, 1)
+    cor_arr = cor_df.to_numpy(copy=True)
+    np.fill_diagonal(cor_arr, 1)
 
-    cor_pd = ensure_positive_definite(cor_df.values)
+    cor_pd = ensure_positive_definite(cor_arr)
     cor_pd_df = pd.DataFrame(cor_pd, index=cor_df.index, columns=cor_df.columns)
 
     eigvals, eigvecs = np.linalg.eigh(cor_pd)

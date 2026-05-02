@@ -70,7 +70,8 @@
     "exception_overall_template": "exception during compute_pca_overall: {error_type}: {error}",
     "exception_facet_template": "exception: {error_type}: {error}",
     "disabled_by_depth_setting": "residual PCA was disabled by the Analysis depth setting",
-    "tab_label_overall": "Overall"
+    "tab_label_overall": "Overall",
+    "reason_unknown_fallback": "unknown (no reason recorded)"
   },
   "tutorial": {
     "expander_label": "Tutorial: Key concepts before you begin",

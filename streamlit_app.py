@@ -121,6 +121,66 @@ def t(key: str, default: str | None = None, **fmt) -> str:
     return text
 
 
+def _make_reason(key: str, **kwargs) -> dict:
+    """Return a serializable reason payload that defers locale resolution.
+
+    Diagnostics that surface user-visible messages (notably ``pca_reason``)
+    must keep working when the sidebar language is toggled *after* the
+    estimation run. Storing the i18n key + format kwargs — rather than the
+    rendered string — lets the Dimensionality tab re-translate on every
+    rerun without re-running the estimator.
+    """
+    return {"key": key, "kwargs": dict(kwargs)}
+
+
+def _render_reason(payload, *, default: str | None = None) -> str:
+    """Resolve a reason payload to display text in the active locale.
+
+    Accepts the dict form produced by ``_make_reason``, gracefully falls
+    back when ``payload`` is a legacy plain string (e.g. cached in
+    session_state from an older app version), and returns ``default``
+    (or an empty string) when the payload is missing or malformed.
+    """
+    if isinstance(payload, dict) and isinstance(payload.get("key"), str):
+        kwargs = payload.get("kwargs") or {}
+        if not isinstance(kwargs, dict):
+            kwargs = {}
+        return t(payload["key"], **kwargs)
+    if isinstance(payload, str) and payload:
+        return payload  # legacy / pre-W2 sessions
+    return default if default is not None else ""
+
+
+class _LazyKeyLabel:
+    """Locale-aware fragment used inside reason payload kwargs.
+
+    Some reason templates embed a smaller translated phrase (e.g. the
+    ``{key_label}`` slot in ``skip_reason_too_few_cols_template`` is
+    either ``"item-combination"`` or `` `<facet>` レベル``). Because the
+    full reason payload is rendered at display time — possibly long
+    after estimation — the embedded phrase must also resolve in the
+    active locale, not in whatever locale was active when the diagnostic
+    ran. This class wraps the discriminator so ``str.format`` resolves
+    the inner key via ``t()`` on every render.
+    """
+
+    __slots__ = ("mode", "facet")
+
+    def __init__(self, *, mode: str, facet: str | None = None) -> None:
+        self.mode = mode
+        self.facet = facet
+
+    def __str__(self) -> str:
+        if self.mode == "overall":
+            return t("dimensionality.skip_key_label_item_combination")
+        return t("dimensionality.skip_key_label_facet_template", facet=self.facet)
+
+    def __format__(self, spec: str) -> str:
+        # ``str.format`` defers to __format__ first; ignore spec since
+        # we always emit a plain string fragment.
+        return str(self)
+
+
 def visual_interpretation_checklist() -> pd.DataFrame:
     """Beginner-facing map from diagnostic visuals to interpretation actions."""
     rows = [
@@ -9246,29 +9306,37 @@ def diagnose_pca_skip_reason(obs_df, facet_names, *, mode="overall", facet=None)
 
     Returns
     -------
-    str
-        Non-empty localized reason resolved through ``t()`` (English by
-        default, Japanese when ``st.session_state["lang"] == "ja"``).
-        Callers must treat the value as opaque display text and never
-        match it against fixed English literals.
+    dict
+        A reason payload of the form ``{"key": str, "kwargs": dict}``
+        suitable for ``_render_reason``. The payload is locale-agnostic
+        and re-translates on every Streamlit rerun, so the Dimensionality
+        tab matches the active sidebar language even when the user
+        toggles language *after* the run. Callers must treat the value
+        as opaque and never match it against fixed English literals.
     """
     if obs_df is None:
-        return t("dimensionality.skip_reason_obs_none")
+        return _make_reason("dimensionality.skip_reason_obs_none")
     if not isinstance(obs_df, pd.DataFrame):
-        return t("dimensionality.skip_reason_obs_type_template", type_name=type(obs_df).__name__)
+        return _make_reason(
+            "dimensionality.skip_reason_obs_type_template",
+            type_name=type(obs_df).__name__,
+        )
     if obs_df.empty:
-        return t("dimensionality.skip_reason_obs_empty")
+        return _make_reason("dimensionality.skip_reason_obs_empty")
     if mode == "overall" and not facet_names:
-        return t("dimensionality.skip_reason_no_facets")
+        return _make_reason("dimensionality.skip_reason_no_facets")
     if mode == "facet":
         if not facet:
-            return t("dimensionality.skip_reason_facet_not_provided")
+            return _make_reason("dimensionality.skip_reason_facet_not_provided")
         if facet not in obs_df.columns:
-            return t("dimensionality.skip_reason_facet_not_in_obs_template", facet=facet)
+            return _make_reason(
+                "dimensionality.skip_reason_facet_not_in_obs_template",
+                facet=facet,
+            )
     if "Person" not in obs_df.columns:
-        return t("dimensionality.skip_reason_person_missing")
+        return _make_reason("dimensionality.skip_reason_person_missing")
     if "StdResidual" not in obs_df.columns:
-        return t("dimensionality.skip_reason_stdresidual_missing")
+        return _make_reason("dimensionality.skip_reason_stdresidual_missing")
 
     try:
         df_aug = obs_df.copy()
@@ -9284,7 +9352,7 @@ def diagnose_pca_skip_reason(obs_df, facet_names, *, mode="overall", facet=None)
             index="Person", columns="_col_key", values="StdResidual"
         )
     except Exception as exc:  # pragma: no cover - defensive
-        return t(
+        return _make_reason(
             "dimensionality.skip_reason_construction_error_template",
             error_type=type(exc).__name__,
             error=str(exc),
@@ -9292,33 +9360,40 @@ def diagnose_pca_skip_reason(obs_df, facet_names, *, mode="overall", facet=None)
 
     n_persons, n_cols = residual_matrix_wide.shape
     if n_persons < 2:
-        return t("dimensionality.skip_reason_too_few_persons_template", n_persons=n_persons)
-    if n_cols < 2:
-        key_label = (
-            t("dimensionality.skip_key_label_item_combination")
-            if mode == "overall"
-            else t("dimensionality.skip_key_label_facet_template", facet=facet)
+        return _make_reason(
+            "dimensionality.skip_reason_too_few_persons_template",
+            n_persons=n_persons,
         )
-        return t(
+    if n_cols < 2:
+        # ``key_label`` itself is a translatable fragment, so we record the
+        # mode discriminator and the facet kwarg and let _render_reason
+        # resolve the final concatenation at display time.
+        if mode == "overall":
+            return _make_reason(
+                "dimensionality.skip_reason_too_few_cols_template",
+                n_cols=n_cols,
+                key_label=_LazyKeyLabel(mode="overall"),
+            )
+        return _make_reason(
             "dimensionality.skip_reason_too_few_cols_template",
             n_cols=n_cols,
-            key_label=key_label,
+            key_label=_LazyKeyLabel(mode="facet", facet=facet),
         )
     clean = residual_matrix_wide.dropna(axis=1, how="all")
     if clean.shape[1] < 2:
-        return t(
+        return _make_reason(
             "dimensionality.skip_reason_after_dropna_template",
             n_remaining=clean.shape[1],
         )
 
     nan_share = float(residual_matrix_wide.isna().to_numpy().mean())
     if nan_share > 0.95:
-        return t(
+        return _make_reason(
             "dimensionality.skip_reason_too_sparse_template",
             nan_pct=f"{nan_share:.0%}",
         )
 
-    return t("dimensionality.skip_reason_unknown")
+    return _make_reason("dimensionality.skip_reason_unknown")
 
 
 def calc_expected_category_counts(res):
@@ -9576,8 +9651,11 @@ def mfrm_diagnostics(
     facet_names = res["config"]["facet_names"]
     pca_overall = None
     pca_by_facet = {}
-    pca_reason: str | None = None
-    pca_by_facet_reasons: dict[str, str] = {}
+    pca_reason: dict | None = None
+    # Reason payloads are stored as dicts ({"key": ..., "kwargs": ...}) so
+    # the Dimensionality tab can re-translate them on every rerun even
+    # when the user toggles the sidebar language after the run completes.
+    pca_by_facet_reasons: dict[str, dict] = {}
     if compute_pca:
         try:
             pca_overall = compute_pca_overall(obs_df, facet_names)
@@ -9585,7 +9663,7 @@ def mfrm_diagnostics(
                 pca_reason = diagnose_pca_skip_reason(obs_df, facet_names, mode="overall")
         except Exception as exc:
             pca_overall = None
-            pca_reason = t(
+            pca_reason = _make_reason(
                 "dimensionality.exception_overall_template",
                 error_type=type(exc).__name__,
                 error=str(exc),
@@ -9603,7 +9681,7 @@ def mfrm_diagnostics(
         except Exception as exc:
             pca_by_facet = {}
             pca_by_facet_reasons = {
-                facet: t(
+                facet: _make_reason(
                     "dimensionality.exception_facet_template",
                     error_type=type(exc).__name__,
                     error=str(exc),
@@ -9611,7 +9689,7 @@ def mfrm_diagnostics(
                 for facet in (facet_names or [])
             }
     else:
-        pca_reason = t("dimensionality.disabled_by_depth_setting")
+        pca_reason = _make_reason("dimensionality.disabled_by_depth_setting")
 
     marginal_fit = {
         "available": False,
@@ -11900,7 +11978,10 @@ def show_dimensionality_section(diagnostics: dict, facet_cols: list[str], core: 
     """Render PCA / dimensionality analysis with scree plot and interpretation."""
     pca = diagnostics.get("pca")
     if pca is None:
-        reason = diagnostics.get("pca_reason") or "unknown (no reason recorded)"
+        reason = _render_reason(
+            diagnostics.get("pca_reason"),
+            default=t("dimensionality.reason_unknown_fallback"),
+        )
         st.warning(t("dimensionality.warning_pca_failed_template", reason=reason))
         return
 
@@ -11999,13 +12080,16 @@ def _show_pca_panel(
 
     if tbl is None or (hasattr(tbl, "__len__") and len(tbl) == 0):
         if eigenvalues is None:
-            # Surface the per-facet skip reason recorded in mfrm_diagnostics
-            reason = None
+            # Surface the per-facet skip reason recorded in mfrm_diagnostics.
+            # The payload is stored as a dict by ``_make_reason`` so we
+            # resolve it here in the active locale via ``_render_reason``.
+            reason_payload = None
             if mode == "facet" and facet_name and isinstance(diagnostics, dict):
                 reason_map = diagnostics.get("pca_by_facet_reasons") or {}
-                reason = reason_map.get(facet_name)
+                reason_payload = reason_map.get(facet_name)
             elif mode == "overall" and isinstance(diagnostics, dict):
-                reason = diagnostics.get("pca_reason")
+                reason_payload = diagnostics.get("pca_reason")
+            reason = _render_reason(reason_payload)
             if reason:
                 st.warning(t("dimensionality.warning_label_reason_template", label=label_ui, reason=reason))
             else:
@@ -17123,7 +17207,10 @@ def build_final_report_readiness(
         # instead of the previous generic "skipped or unavailable".
         pca_skip_reason = ""
         if isinstance(diagnostics, dict):
-            pca_skip_reason = str(diagnostics.get("pca_reason") or "")
+            # ``pca_reason`` is now a localizable payload (see _make_reason);
+            # resolve it to display text in the active locale before embedding
+            # in readiness CSV output.
+            pca_skip_reason = _render_reason(diagnostics.get("pca_reason"))
         evidence = "Residual PCA was skipped or unavailable."
         if pca_skip_reason:
             evidence = f"Residual PCA was skipped or unavailable. Reason: {pca_skip_reason}"
@@ -17647,14 +17734,15 @@ def build_misfit_casebook(
                     "Fit Details -> Strict marginal diagnostics",
                 )
 
-    pca_reason = diagnostics.get("pca_reason") if isinstance(diagnostics, dict) else None
-    if pca_reason:
+    pca_reason_payload = diagnostics.get("pca_reason") if isinstance(diagnostics, dict) else None
+    pca_reason_text = _render_reason(pca_reason_payload)
+    if pca_reason_text:
         add_case(
             "Dimensionality",
             3,
             "Residual PCA",
             "",
-            pca_reason,
+            pca_reason_text,
             "Enable or justify residual PCA before making unidimensionality claims.",
             "Dimensionality",
         )

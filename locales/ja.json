@@ -70,7 +70,8 @@
     "exception_overall_template": "compute_pca_overall で例外発生: {error_type}: {error}",
     "exception_facet_template": "例外発生: {error_type}: {error}",
     "disabled_by_depth_setting": "Analysis depth 設定で residual PCA が無効化されている",
-    "tab_label_overall": "全体"
+    "tab_label_overall": "全体",
+    "reason_unknown_fallback": "不明 (理由が記録されていない)"
   },
   "tutorial": {
     "expander_label": "Tutorial: 始める前に押さえておきたい主要概念",

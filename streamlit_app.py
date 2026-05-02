@@ -34076,52 +34076,20 @@ def render_onboarding_banner() -> None:
     scenario_summary = " · ".join(scen_lines)
 
     with st.container(border=True):
-        st.markdown(
-            f"""
-##### 👋 New here? Follow these 3 steps to run your first analysis
-
-| Step | Action | Where |
-|---|---|---|
-| **1️⃣** | **Pick a data source** — {n_scen} built-in sample scenarios + paste + upload | Sidebar ← 📥 Data source |
-| **2️⃣** | **Map your columns** — Person, Score, and two or more facet columns | Sidebar ← Column mapping |
-| **3️⃣** | **Click `Run FACETS-mode estimation`** at the bottom of the sidebar | Sidebar bottom |
-
-**Built-in scenarios** (all synthetic, MFRM-literature-grounded):
-{scenario_summary}.
-
-For your own classroom data, the fastest path is **Data source → Paste CSV/TSV
-text**. File upload also accepts CSV, TSV, TXT, Excel `.xlsx/.xlsm`, Parquet,
-and JSON. Use headers such as `Student`, `Rater`, `Assignment`, `Criterion`,
-`Score`; then map `Student` to **Person** and use the other non-score columns
-as facets.
-
-Afterwards, use the tabs (Measures, Fit, Dimensionality, Visuals, Report, ...)
-that appear below to explore diagnostics and build a publication document.
-	"""
-        )
+        st.markdown(t("onboarding.banner_main", n_scen=n_scen, scenario_summary=scenario_summary))
         cols = st.columns([3, 2, 1])
-        cols[0].caption(
-            "💡 Tip: expand the **Tutorial: Key concepts before you begin** section below "
-            "for a primer on MFRM terminology (person / rater / facet / logit). "
-            "New in v0.2.x: 📄 Publication Document (Word / PDF / HTML) · 🧮 Posterior "
-            "Viewer (upload Stan draws) · 🧪 Advanced models (DINA / HRM / Testlet) · "
-            "🕒 Run history + 🔀 Compare."
-        )
+        cols[0].caption(t("onboarding.tip_caption"))
         if cols[1].button(
-            "🎯 Run with sample data",
+            t("onboarding.quickstart_button"),
             key="onboarding_quickstart",
             use_container_width=True,
-            help=(
-                "One-click quickstart: uses the built-in MFRM sample dataset "
-                "with default column mapping and runs the full estimation pipeline. "
-                "Great for exploring the UI before uploading your own data."
-            ),
+            help=t("onboarding.quickstart_help"),
         ):
             st.session_state["_onboarding_dismissed"] = True
             st.session_state["_onboarding_quickstart_fired"] = True
             st.rerun()
         if cols[2].button(
-            "Got it", key="onboarding_dismiss", use_container_width=True,
+            t("onboarding.dismiss_button"), key="onboarding_dismiss", use_container_width=True,
         ):
             st.session_state["_onboarding_dismissed"] = True
             st.rerun()

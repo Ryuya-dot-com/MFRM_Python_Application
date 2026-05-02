@@ -22,5 +22,12 @@
     "subtitle_template": "A single-file Streamlit application for estimating Many-Facet Rasch Models (MFRM) — {release_label} {version}",
     "input_preview_header": "Input preview",
     "no_input_info": "Provide input data from the sidebar to begin."
+  },
+  "onboarding": {
+    "banner_main": "##### 👋 New here? Follow these 3 steps to run your first analysis\n\n| Step | Action | Where |\n|---|---|---|\n| **1️⃣** | **Pick a data source** — {n_scen} built-in sample scenarios + paste + upload | Sidebar ← 📥 Data source |\n| **2️⃣** | **Map your columns** — Person, Score, and two or more facet columns | Sidebar ← Column mapping |\n| **3️⃣** | **Click `Run FACETS-mode estimation`** at the bottom of the sidebar | Sidebar bottom |\n\n**Built-in scenarios** (all synthetic, MFRM-literature-grounded):\n{scenario_summary}.\n\nFor your own classroom data, the fastest path is **Data source → Paste CSV/TSV text**. File upload also accepts CSV, TSV, TXT, Excel `.xlsx/.xlsm`, Parquet, and JSON. Use headers such as `Student`, `Rater`, `Assignment`, `Criterion`, `Score`; then map `Student` to **Person** and use the other non-score columns as facets.\n\nAfterwards, use the tabs (Measures, Fit, Dimensionality, Visuals, Report, ...) that appear below to explore diagnostics and build a publication document.\n\t",
+    "tip_caption": "💡 Tip: expand the **Tutorial: Key concepts before you begin** section below for a primer on MFRM terminology (person / rater / facet / logit). New in v0.2.x: 📄 Publication Document (Word / PDF / HTML) · 🧮 Posterior Viewer (upload Stan draws) · 🧪 Advanced models (DINA / HRM / Testlet) · 🕒 Run history + 🔀 Compare.",
+    "quickstart_button": "🎯 Run with sample data",
+    "quickstart_help": "One-click quickstart: uses the built-in MFRM sample dataset with default column mapping and runs the full estimation pipeline. Great for exploring the UI before uploading your own data.",
+    "dismiss_button": "Got it"
   }
 }

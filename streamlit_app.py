@@ -12271,15 +12271,10 @@ def show_wright_map_section(result: dict, diagnostics: dict) -> None:
     """Render both the classic Wright Map and the FACETS-style yardstick."""
     header_cols = st.columns([5, 1])
     with header_cols[0]:
-        st.markdown("##### Wright Map (variable map)")
+        st.markdown(f"##### {t('visuals.wright_map_header')}")
     with header_cols[1]:
         render_help_popover("wright_map")
-    st.caption(
-        "The Wright Map (variable map) places all persons and facet elements on a single "
-        "logit scale. Persons on the left; facet elements and thresholds on the right. "
-        "Good measurement requires that person abilities overlap with item/facet difficulty "
-        "— large gaps indicate ceiling or floor effects."
-    )
+    st.caption(t("visuals.wright_map_caption"))
 
     facets = result.get("facets", {})
     person_tbl = facets.get("person", pd.DataFrame())
@@ -12292,14 +12287,22 @@ def show_wright_map_section(result: dict, diagnostics: dict) -> None:
     if len(_p_est) > 0 and len(_f_est) > 0:
         overlap = min(float(_p_est.max()), float(_f_est.max())) - max(float(_p_est.min()), float(_f_est.min()))
         if overlap > 0:
-            st.success(f"Person and facet distributions overlap by {overlap:.2f} logits — good targeting.")
+            st.success(t(
+                "visuals.targeting_overlap_success_template",
+                overlap=f"{overlap:.2f}",
+            ))
         else:
-            st.warning(
-                f"Person and facet distributions do not overlap (gap = {-overlap:.2f} logits) "
-                "— possible ceiling or floor effect."
-            )
+            st.warning(t(
+                "visuals.targeting_overlap_warning_template",
+                gap=f"{-overlap:.2f}",
+            ))
 
-    wm_tabs = st.tabs(["Wright Map", "Yardstick (FACETS-style)"])
+    # Tabs are accessed by index (wm_tabs[0]/[1]) below, so the labels can be
+    # safely translated without breaking routing.
+    wm_tabs = st.tabs([
+        t("visuals.tab_label_wright_map"),
+        t("visuals.tab_label_yardstick"),
+    ])
 
     with wm_tabs[0]:
         _draw_wright_map_plotly(person_tbl, facet_tbl, step_tbl)
@@ -12318,19 +12321,11 @@ def _draw_yardstick(
     """FACETS Table 6.0 style yardstick: vertical logit ruler with facet columns."""
 
 
-    st.markdown(
-        """
-**Yardstick (FACETS Table 6.0 style)**
-
-This vertical display places all facets on a common logit ruler so you can
-visually compare their relative locations. Persons are shown as a frequency
-histogram on the leftmost column. Each subsequent column represents one facet.
-"""
-    )
+    st.markdown(t("visuals.yardstick_intro_markdown"))
 
     person_est = pd.to_numeric(person_tbl.get("Estimate", pd.Series(dtype=float)), errors="coerce").dropna()
     if person_est.empty:
-        st.caption("No finite person estimates.")
+        st.caption(t("visuals.no_finite_person_estimates"))
         return
 
     facet_est = facet_tbl.copy() if facet_tbl is not None else pd.DataFrame()
@@ -12341,7 +12336,7 @@ histogram on the leftmost column. Each subsequent column represents one facet.
     facet_names = list(facet_est["Facet"].unique()) if "Facet" in facet_est.columns else []
     n_cols = 1 + len(facet_names)  # person + each facet
     if n_cols < 2:
-        st.caption("Not enough facets to draw a yardstick.")
+        st.caption(t("visuals.not_enough_facets_yardstick"))
         return
     max_elements_per_facet = int(facet_est.groupby("Facet").size().max()) if "Facet" in facet_est.columns and not facet_est.empty else 0
     label_max = (
@@ -12363,7 +12358,7 @@ histogram on the leftmost column. Each subsequent column represents one facet.
     )
     show_direct_labels = bool(requested_direct_labels and not tight_labels)
     if crowded and not show_direct_labels:
-        st.caption("Dense or tightly spaced yardstick: direct labels are hidden to prevent overlap. Hover points to read full labels.")
+        st.caption(t("visuals.dense_yardstick_caption"))
 
     y_all = list(person_est)
     if not facet_est.empty:

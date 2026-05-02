@@ -73,6 +73,18 @@
     "tab_label_overall": "Overall",
     "reason_unknown_fallback": "unknown (no reason recorded)"
   },
+  "visuals": {
+    "wright_map_header": "Wright Map (variable map)",
+    "wright_map_caption": "The Wright Map (variable map) places all persons and facet elements on a single logit scale. Persons on the left; facet elements and thresholds on the right. Good measurement requires that person abilities overlap with item/facet difficulty — large gaps indicate ceiling or floor effects.",
+    "targeting_overlap_success_template": "Person and facet distributions overlap by {overlap} logits — good targeting.",
+    "targeting_overlap_warning_template": "Person and facet distributions do not overlap (gap = {gap} logits) — possible ceiling or floor effect.",
+    "tab_label_wright_map": "Wright Map",
+    "tab_label_yardstick": "Yardstick (FACETS-style)",
+    "yardstick_intro_markdown": "**Yardstick (FACETS Table 6.0 style)**\n\nThis vertical display places all facets on a common logit ruler so you can\nvisually compare their relative locations. Persons are shown as a frequency\nhistogram on the leftmost column. Each subsequent column represents one facet.",
+    "no_finite_person_estimates": "No finite person estimates.",
+    "not_enough_facets_yardstick": "Not enough facets to draw a yardstick.",
+    "dense_yardstick_caption": "Dense or tightly spaced yardstick: direct labels are hidden to prevent overlap. Hover points to read full labels."
+  },
   "report_tables": {
     "estimation_summary_subheader": "Estimation summary",
     "no_estimation_summary": "No estimation summary available.",

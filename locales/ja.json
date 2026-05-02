@@ -73,6 +73,18 @@
     "tab_label_overall": "全体",
     "reason_unknown_fallback": "不明 (理由が記録されていない)"
   },
+  "visuals": {
+    "wright_map_header": "Wright Map (variable map)",
+    "wright_map_caption": "Wright Map (variable map) はすべての person と facet element を 1 つの logit スケール上に配置する。person は左、facet element と threshold は右に表示される。良好な測定には person の ability が item / facet の difficulty と重なる必要があり、大きなギャップは天井効果や床効果を示唆する。",
+    "targeting_overlap_success_template": "Person 分布と facet 分布が {overlap} logit 重なっており、targeting は良好。",
+    "targeting_overlap_warning_template": "Person 分布と facet 分布が重なっていない (ギャップ = {gap} logit) — 天井効果や床効果の可能性あり。",
+    "tab_label_wright_map": "Wright Map",
+    "tab_label_yardstick": "Yardstick (FACETS-style)",
+    "yardstick_intro_markdown": "**Yardstick (FACETS Table 6.0 style)**\n\nこの縦軸表示はすべての facet を共通の logit スケール上に配置し、相対的な位置関係を視覚的に比較できる。person は最左列に度数ヒストグラムとして表示され、続く各列は 1 つの facet を表す。",
+    "no_finite_person_estimates": "有限な person 推定値がない。",
+    "not_enough_facets_yardstick": "Yardstick を描画するには facet 数が不足している。",
+    "dense_yardstick_caption": "Yardstick が密集している場合、ラベルの重なりを防ぐため直接表示を無効化している。点にホバーすると完全なラベルを確認できる。"
+  },
   "report_tables": {
     "estimation_summary_subheader": "推定サマリ",
     "no_estimation_summary": "推定サマリが利用できません。",

@@ -10542,7 +10542,14 @@ def render_data_privacy_notice(where: str = "main") -> None:
 
 
 def build_data_source_options() -> list[dict]:
-    """Flat data-source radio options: all samples, then paste/upload exactly once."""
+    """Flat data-source radio options: all samples, then paste/upload exactly once.
+
+    Scenario labels stay in their data-driven form (English, sourced from
+    ``SAMPLE_DATA_SCENARIOS``) — translating them would require localizing
+    the scenario registry itself, which is deferred. The non-scenario
+    options resolve through ``t()`` so the radio matches the active
+    sidebar locale.
+    """
     options: list[dict] = []
     for key, meta in SAMPLE_DATA_SCENARIOS.items():
         options.append({
@@ -10550,8 +10557,8 @@ def build_data_source_options() -> list[dict]:
             "kind": "scenario",
             "scenario_key": key,
         })
-    options.append({"label": "📋 Paste CSV/TSV text", "kind": "paste", "scenario_key": None})
-    options.append({"label": "📤 Upload your own file", "kind": "upload", "scenario_key": None})
+    options.append({"label": t("data_source.option_paste"), "kind": "paste", "scenario_key": None})
+    options.append({"label": t("data_source.option_upload"), "kind": "upload", "scenario_key": None})
     return options
 
 
@@ -10561,7 +10568,7 @@ def read_input_data(core: dict) -> pd.DataFrame:
     # selectbox) where the scenario switch was easy to miss. Now all
     # sample scenarios are first-class options alongside Paste and
     # Upload, so the scenario switcher is impossible to overlook.
-    st.sidebar.markdown("### 📥 Data source")
+    st.sidebar.markdown(f"### {t('data_source.header')}")
 
     # Build the option list: scenarios first (in registry order),
     # then paste / upload. Each entry records its kind so we can
@@ -10579,9 +10586,7 @@ def read_input_data(core: dict) -> pd.DataFrame:
 
     _n_scenarios = len(SAMPLE_DATA_SCENARIOS)
     chosen_label = st.sidebar.radio(
-        f"Choose one — all {_n_scenarios} built-in samples plus your "
-        "own data are listed here. Each sample is synthetic with "
-        "parameters grounded in published MFRM studies.",
+        t("data_source.radio_prompt_template", n_scenarios=_n_scenarios),
         options=_option_labels,
         index=default_idx,
         key="data_source_flat",
@@ -10597,14 +10602,17 @@ def read_input_data(core: dict) -> pd.DataFrame:
         # immediately see what they just selected: dimensions, obs
         # count, and one-line diagnostic hint. Full description +
         # references move to a secondary expander below.
-        st.sidebar.info(
-            f"**Loaded:** {scenario['label']}\n\n"
-            f"**Design:** {dims['persons']} × {dims['raters']} × "
-            f"{dims['tasks']} × {dims['criteria']} = "
-            f"**{scenario['n_obs']:,} observations**, "
-            f"{dims['n_cat']}-point scale.\n\n"
-            f"{scenario['short']}"
-        )
+        st.sidebar.info(t(
+            "data_source.scenario_info_template",
+            label=scenario["label"],
+            persons=dims["persons"],
+            raters=dims["raters"],
+            tasks=dims["tasks"],
+            criteria=dims["criteria"],
+            n_obs=f"{scenario['n_obs']:,}",
+            n_cat=dims["n_cat"],
+            short=scenario["short"],
+        ))
 
         # Scenario switch buttons — shown only for the *other* three
         # scenarios so users have a one-click way to see how a
@@ -10616,7 +10624,7 @@ def read_input_data(core: dict) -> pd.DataFrame:
             if k != scenario_key
         ]
         if _other_scenarios:
-            st.sidebar.caption("Try another scenario:")
+            st.sidebar.caption(t("data_source.try_another_scenario_caption"))
             for other_key, other_meta in _other_scenarios:
                 if st.sidebar.button(
                     other_meta["label"],
@@ -10633,11 +10641,11 @@ def read_input_data(core: dict) -> pd.DataFrame:
         # Full description + APA references in a collapsed expander
         # so the info card stays compact. Opening this gives users
         # everything they need to cite the scenario in a manuscript.
-        with st.sidebar.expander("📚 Full description + references"):
+        with st.sidebar.expander(t("data_source.full_description_expander")):
             st.markdown(scenario["description"])
             citations = scenario.get("citations", [])
             if citations:
-                st.markdown("**Parameter values grounded in:**")
+                st.markdown(t("data_source.parameter_values_grounded_label"))
                 keys_seen: set[str] = set()
                 for cite in citations:
                     key = _CITATION_TO_KEY.get(cite)
@@ -10649,22 +10657,18 @@ def read_input_data(core: dict) -> pd.DataFrame:
                     ):
                         st.markdown(f"- {entry}")
                 else:
-                    st.caption("References pending registration.")
+                    st.caption(t("data_source.references_pending_caption"))
 
         sample_df = cached_sample_mfrm_data_by_key(
             scenario_key, seed=20240101,
         ).copy()
         st.sidebar.download_button(
-            "⬇ Download this scenario's CSV",
+            t("data_source.download_scenario_button"),
             data=sample_df.to_csv(index=False).encode("utf-8"),
             file_name=f"mfrm_sample_{scenario_key}.csv",
             mime="text/csv",
             key="sample_data_download",
-            help=(
-                "Download the exact CSV the app loads. Inspect the "
-                "column structure or use it as a template for your "
-                "own data."
-            ),
+            help=t("data_source.download_scenario_help"),
             use_container_width=True,
         )
         # Remember which scenario is loaded so the main area can
@@ -10679,35 +10683,26 @@ def read_input_data(core: dict) -> pd.DataFrame:
     if chosen["kind"] == "paste":
         render_data_privacy_notice(where="sidebar")
         paste_delimiter = st.sidebar.selectbox(
-            "Delimiter",
+            t("data_source.delimiter_label"),
             list(TABLE_DELIMITER_OPTIONS.keys()),
             index=0,
             key="paste_data_delimiter",
-            help="Auto detects comma, tab, or semicolon. Choose a delimiter if the preview looks wrong.",
+            help=t("data_source.paste_delimiter_help"),
         )
         text_value = st.sidebar.text_area(
-            "Paste CSV/TSV text",
+            t("data_source.paste_textarea_label"),
             height=180,
             placeholder=TEACHER_PASTE_EXAMPLE_CSV,
-            help=(
-                "Paste data copied from Excel, Google Sheets, CSV, TSV, or semicolon-delimited text. "
-                "Keep one header row. Each row should be one rating event."
-            ),
+            help=t("data_source.paste_textarea_help"),
         )
-        with st.sidebar.expander("Teacher paste guide", expanded=not bool(text_value.strip())):
-            st.markdown(
-                """
-1. In your spreadsheet, keep one row per rating.
-2. Include a header row such as `Student`, `Rater`, `Assignment`, `Criterion`, `Score`.
-3. Select the table, copy it, and paste it here.
-4. After the preview appears, map `Student` to **Person**, `Score` to **Score**, and the other columns to facets.
-
-Do not paste total scores if rubric-level ratings are available. Blank scores are treated as missing and are excluded from the likelihood.
-"""
-            )
+        with st.sidebar.expander(
+            t("data_source.teacher_paste_guide_expander"),
+            expanded=not bool(text_value.strip()),
+        ):
+            st.markdown(t("data_source.teacher_paste_guide_body"))
             st.code(TEACHER_PASTE_EXAMPLE_CSV, language="csv")
             st.download_button(
-                "Download teacher paste template (CSV)",
+                t("data_source.download_teacher_template_button"),
                 data=TEACHER_PASTE_EXAMPLE_CSV.encode("utf-8"),
                 file_name="mfrm_teacher_paste_template.csv",
                 mime="text/csv",
@@ -10719,37 +10714,34 @@ Do not paste total scores if rubric-level ratings are available. Blank scores ar
         try:
             parsed = core["read_flexible_table"](text_value, None, header=True, delimiter=paste_delimiter)
         except Exception as exc:
-            st.sidebar.error(
-                "We couldn't read the pasted text as a table. Try choosing a delimiter above, "
-                "or paste a CSV/TSV with one header row."
-            )
-            with st.sidebar.expander("Technical parse details", expanded=False):
+            st.sidebar.error(t("data_source.paste_parse_error"))
+            with st.sidebar.expander(t("data_source.technical_parse_details_expander"), expanded=False):
                 st.exception(exc)
             return pd.DataFrame()
         if parsed.shape[1] < 2:
-            st.sidebar.warning(
-                "Only one column was detected. Choose Tab or Semicolon if your data are not comma-delimited."
-            )
+            st.sidebar.warning(t("data_source.single_column_warning_paste"))
         else:
             preview_cols = ", ".join(map(str, parsed.columns[:5]))
-            st.sidebar.caption(f"Detected {parsed.shape[1]} columns: {preview_cols}{'...' if parsed.shape[1] > 5 else ''}")
+            st.sidebar.caption(t(
+                "data_source.detected_columns_caption_template",
+                n_cols=parsed.shape[1],
+                preview_cols=preview_cols,
+                ellipsis="..." if parsed.shape[1] > 5 else "",
+            ))
         return parsed
 
     render_data_privacy_notice(where="sidebar")
     upload_delimiter = st.sidebar.selectbox(
-        "Delimiter",
+        t("data_source.delimiter_label"),
         list(TABLE_DELIMITER_OPTIONS.keys()),
         index=0,
         key="upload_data_delimiter",
-        help="Auto detects comma, tab, or semicolon from the uploaded file content.",
+        help=t("data_source.upload_delimiter_help"),
     )
     upload = st.sidebar.file_uploader(
-        "Upload data file", type=TABLE_FILE_UPLOAD_TYPES,
-        help=(
-            f"Upload {TABLE_FILE_UPLOAD_LABEL}. Data must be in long format "
-            "(one row per observation). Excel uses the first worksheet. Files over ~50 MB may exceed the "
-            "Streamlit Community Cloud memory budget."
-        ),
+        t("data_source.upload_file_label"),
+        type=TABLE_FILE_UPLOAD_TYPES,
+        help=t("data_source.upload_file_help_template", file_label=TABLE_FILE_UPLOAD_LABEL),
     )
     if upload is None:
         return pd.DataFrame()
@@ -10762,35 +10754,32 @@ Do not paste total scores if rubric-level ratings are available. Blank scores ar
     except (TypeError, ValueError):
         upload_size_mb = 0.0
     if upload_size_mb >= 100:
-        st.sidebar.error(
-            f"⚠️ Uploaded file is **{upload_size_mb:.0f} MB** — this is "
-            "very likely to exceed the hosted instance's 1 GB memory "
-            "budget during estimation. Consider sampling rows locally "
-            "first, or run the app on your own machine."
-        )
+        st.sidebar.error(t(
+            "data_source.upload_size_critical_template",
+            size_mb=f"{upload_size_mb:.0f}",
+        ))
     elif upload_size_mb >= 50:
-        st.sidebar.warning(
-            f"Uploaded file is **{upload_size_mb:.0f} MB**. Estimation "
-            "may be slow or fail on Streamlit Community Cloud. A "
-            "local Python install is recommended for large datasets."
-        )
+        st.sidebar.warning(t(
+            "data_source.upload_size_warning_template",
+            size_mb=f"{upload_size_mb:.0f}",
+        ))
     try:
         parsed = core["read_flexible_table"]("", upload, header=True, delimiter=upload_delimiter)
     except Exception as exc:
-        st.sidebar.error(
-            "We couldn't read this file as a table. Try choosing a delimiter above, "
-            "saving as comma CSV, or uploading an .xlsx file with one header row."
-        )
-        with st.sidebar.expander("Technical parse details", expanded=False):
+        st.sidebar.error(t("data_source.upload_parse_error"))
+        with st.sidebar.expander(t("data_source.technical_parse_details_expander"), expanded=False):
             st.exception(exc)
         return pd.DataFrame()
     if parsed.shape[1] < 2:
-        st.sidebar.warning(
-            "Only one column was detected. Choose Tab or Semicolon if the file is not comma-delimited."
-        )
+        st.sidebar.warning(t("data_source.single_column_warning_upload"))
     else:
         preview_cols = ", ".join(map(str, parsed.columns[:5]))
-        st.sidebar.caption(f"Detected {parsed.shape[1]} columns: {preview_cols}{'...' if parsed.shape[1] > 5 else ''}")
+        st.sidebar.caption(t(
+            "data_source.detected_columns_caption_template",
+            n_cols=parsed.shape[1],
+            preview_cols=preview_cols,
+            ellipsis="..." if parsed.shape[1] > 5 else "",
+        ))
     return parsed
 
 

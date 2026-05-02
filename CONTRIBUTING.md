@@ -51,6 +51,33 @@ When changing the UI or supported workflow, update at least one of:
 - `RELEASE_CHECKLIST.md`
 - `CHANGELOG.md`
 
+## Localization (i18n)
+
+User-visible strings should resolve through the ``t()`` helper so the
+sidebar language picker (English / Japanese) keeps working. New strings:
+
+- Add the English source under `locales/en.json` first; the locale code
+  in `_metadata.code` must match the filename stem.
+- Mirror the same dotted key in `locales/ja.json` with the Japanese
+  translation. `tests/test_i18n_parity.py` enforces key, placeholder, and
+  non-empty parity in CI; treat a failing parity test as a release
+  blocker.
+- Use `snake_case` for key segments and at most three dot-separated
+  levels (e.g. `tab.diagnostics.fit.header`); deeper trees should be
+  refactored into a new section.
+- Keep MFRM/statistical jargon in English (``MFRM``, ``RSM``, ``PCM``,
+  ``GPCM``, ``JMLE``, ``MML``, ``Infit``, ``Outfit``, ``MNSQ``, ``ZSTD``,
+  ``Person``, ``Rater``, ``Criterion``, ``Item``, ``Task``, ``Region``).
+  Translate generic UI vocabulary (``preview``, ``upload``, ``data``,
+  ``pipeline``, ``diagnostics``, ``sub-tab``).
+- Reuse Python ``str.format`` placeholders verbatim across locales
+  (e.g. ``{release_label}``); never translate placeholder names.
+- Do not commit translation tooling artefacts (``.po``, ``.mo``,
+  ``poedit`` caches). The repo is plain JSON to keep Streamlit Community
+  Cloud and GitHub Pages deployments dependency-free.
+- Indent locale JSON with 2 spaces, UTF-8 without BOM, and end with a
+  trailing newline.
+
 ## Pull Request Checklist
 
 - [ ] No confidential data or generated artifacts are committed.

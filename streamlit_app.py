@@ -15817,102 +15817,105 @@ def run_facets_mode(core: dict, data: pd.DataFrame) -> None:
     # Bias settings: use sensible defaults (adjustable in Bias/Interaction tab)
     bias_max_abs = 10.0
     bias_omit_extreme = True
-    st.sidebar.subheader("Performance options")
+    st.sidebar.subheader(t("sidebar_perf.performance_options_subheader"))
+    # Analysis depth IDs are routing-sensitive; format_func translates the
+    # display while ``analysis_depth == "Custom"`` etc. drives the branches.
     analysis_depth = st.sidebar.selectbox(
-        "Analysis depth",
+        t("sidebar_perf.analysis_depth_label"),
         ["Fast preview", "Standard (recommended)", "Full publication", "Custom"],
         index=1,
-        help="Fast = skip PCA/bias/plots. Full = all publication outputs.",
+        format_func=lambda v: {
+            "Fast preview": t("sidebar_perf.analysis_depth_fast_display"),
+            "Standard (recommended)": t("sidebar_perf.analysis_depth_standard_display"),
+            "Full publication": t("sidebar_perf.analysis_depth_full_display"),
+            "Custom": t("sidebar_perf.analysis_depth_custom_display"),
+        }.get(v, v),
+        help=t("sidebar_perf.analysis_depth_help"),
     )
     preset_settings = resolve_analysis_depth_settings(analysis_depth, est_method)
     if analysis_depth == "Custom":
         compute_residual_pca = st.sidebar.checkbox(
-            "Compute residual PCA",
+            t("sidebar_perf.compute_residual_pca_checkbox"),
             value=bool(preset_settings["compute_residual_pca"]),
-            help="Secondary-dimension check. Skip for very large data.",
+            help=t("sidebar_perf.compute_residual_pca_help"),
         )
         compute_strict_marginal = st.sidebar.checkbox(
-            "Compute strict marginal diagnostics",
+            t("sidebar_perf.compute_strict_marginal_checkbox"),
             value=bool(preset_settings["compute_strict_marginal"]),
             disabled=(est_method != "MML"),
-            help="MML-only screen: observed vs. model-implied category counts.",
+            help=t("sidebar_perf.compute_strict_marginal_help"),
         )
         strict_marginal_pairwise = bool(preset_settings["strict_marginal_pairwise"])
         strict_marginal_max_pair_cells = int(preset_settings["strict_marginal_max_pair_cells"])
         if compute_strict_marginal:
             strict_marginal_pairwise = st.sidebar.checkbox(
-                "Include pairwise marginal screen",
+                t("sidebar_perf.include_pairwise_marginal_checkbox"),
                 value=bool(preset_settings["strict_marginal_pairwise"]),
-                help=(
-                    "Adds pairwise facet-level marginal checks. This can be slow and "
-                    "is best reserved for final runs."
-                ),
+                help=t("sidebar_perf.include_pairwise_marginal_help"),
             )
             if strict_marginal_pairwise:
                 strict_marginal_max_pair_cells = int(st.sidebar.number_input(
-                    "Max pairwise marginal cells",
+                    t("sidebar_perf.max_pairwise_cells_label"),
                     min_value=100,
                     max_value=10000,
                     value=int(preset_settings["strict_marginal_max_pair_cells"]),
                     step=100,
-                    help="Safety limit for pairwise marginal expected cells.",
+                    help=t("sidebar_perf.max_pairwise_cells_help"),
                 ))
         compute_plausible_values = st.sidebar.checkbox(
-            "Export plausible values",
+            t("sidebar_perf.export_plausible_values_checkbox"),
             value=bool(preset_settings["compute_plausible_values"]),
             disabled=(est_method != "MML"),
-            help=(
-                "MML-only. Draws person plausible values from the posterior quadrature "
-                "distribution for group-level uncertainty analyses. Do not use PVs to rank individuals."
-            ),
+            help=t("sidebar_perf.export_plausible_values_help"),
         )
         if compute_plausible_values:
             n_plausible_values = int(st.sidebar.number_input(
-                "Number of plausible values",
+                t("sidebar_perf.n_plausible_values_label"),
                 min_value=1,
                 max_value=50,
                 value=int(max(1, preset_settings["n_plausible_values"])),
                 step=1,
-                help="Use 5-10 for common group summaries; more values increase download size.",
+                help=t("sidebar_perf.n_plausible_values_help"),
             ))
             plausible_seed = int(st.sidebar.number_input(
-                "Plausible value seed",
+                t("sidebar_perf.plausible_seed_label"),
                 min_value=0,
                 max_value=2_147_483_647,
                 value=int(preset_settings["plausible_seed"]),
                 step=1,
-                help="Seed used to reproduce plausible value draws.",
+                help=t("sidebar_perf.plausible_seed_help"),
             ))
         else:
             n_plausible_values = 0
             plausible_seed = 20260411
         compute_eb_shrinkage = st.sidebar.checkbox(
-            "Compute EB shrinkage advisory",
+            t("sidebar_perf.compute_eb_shrinkage_checkbox"),
             value=bool(preset_settings["compute_eb_shrinkage"]),
-            help=(
-                "Post-hoc empirical-Bayes shrinkage table for non-person facet estimates. "
-                "Raw estimates remain unchanged."
-            ),
+            help=t("sidebar_perf.compute_eb_shrinkage_custom_help"),
         )
+        # Bias mode IDs ("Skip", "Selected pair", "All facet pairs") are
+        # routing-sensitive (used in ``bias_mode == "..."`` checks below).
         bias_mode = st.sidebar.radio(
-            "Bias/interaction estimation",
+            t("sidebar_perf.bias_mode_label"),
             ["Skip", "Selected pair", "All facet pairs"],
             index=["Skip", "Selected pair", "All facet pairs"].index(preset_settings["bias_mode"])
             if preset_settings["bias_mode"] in {"Skip", "Selected pair", "All facet pairs"} else 1,
-            help=(
-                "Bias scans compare local observed-minus-expected behavior across "
-                "facet pairs. All-pair scans are useful for final reports but can be slow."
-            ),
+            format_func=lambda v: {
+                "Skip": t("sidebar_perf.bias_mode_skip_display"),
+                "Selected pair": t("sidebar_perf.bias_mode_selected_pair_display"),
+                "All facet pairs": t("sidebar_perf.bias_mode_all_pairs_display"),
+            }.get(v, v),
+            help=t("sidebar_perf.bias_mode_help"),
         )
         render_interactive_plots = st.sidebar.checkbox(
-            "Render interactive plots in result tabs",
+            t("sidebar_perf.render_interactive_plots_checkbox"),
             value=bool(preset_settings["render_interactive_plots"]),
-            help="Turn off to keep reruns fast after estimation; tables and downloads remain available.",
+            help=t("sidebar_perf.render_interactive_plots_help"),
         )
         generate_figure_exports = st.sidebar.checkbox(
-            "Prepare figure export bundle",
+            t("sidebar_perf.generate_figure_exports_checkbox"),
             value=bool(preset_settings["generate_figure_exports"]),
-            help="Generate downloadable PNG/HTML figure bundles in the Downloads tab.",
+            help=t("sidebar_perf.generate_figure_exports_help"),
         )
         preset_settings = resolve_analysis_depth_settings(
             analysis_depth,
@@ -15935,15 +15938,12 @@ def run_facets_mode(core: dict, data: pd.DataFrame) -> None:
         preset_settings = resolve_analysis_depth_settings(analysis_depth, est_method)
         if analysis_depth == "Standard (recommended)":
             preset_settings["compute_eb_shrinkage"] = st.sidebar.checkbox(
-                "Compute EB shrinkage advisory",
+                t("sidebar_perf.compute_eb_shrinkage_checkbox"),
                 value=False,
-                help=(
-                    "Optional post-hoc shrinkage review for small non-person facets. "
-                    "Full publication turns this on automatically."
-                ),
+                help=t("sidebar_perf.compute_eb_shrinkage_standard_help"),
             )
         elif analysis_depth == "Full publication":
-            st.sidebar.caption("Full publication includes post-hoc EB shrinkage advisory for non-person facets.")
+            st.sidebar.caption(t("sidebar_perf.full_publication_eb_caption"))
 
     compute_residual_pca = bool(preset_settings["compute_residual_pca"])
     compute_strict_marginal = bool(preset_settings["compute_strict_marginal"])
@@ -15962,24 +15962,17 @@ def run_facets_mode(core: dict, data: pd.DataFrame) -> None:
     if bias_mode == "Selected pair" and bias_pairs_available:
         bias_pair_labels = [f"{fa} x {fb}" for fa, fb in bias_pairs_available]
         selected_bias_label = st.sidebar.selectbox(
-            "Bias pair",
+            t("sidebar_perf.bias_pair_label"),
             bias_pair_labels,
             index=0,
-            help=(
-                "Start with the pair most central to your research question, "
-                "for example Rater x Criterion or Rater x Task. Use Full publication "
-                "to scan all pairs."
-            ),
+            help=t("sidebar_perf.bias_pair_help"),
         )
         selected_bias_pair = bias_pairs_available[bias_pair_labels.index(selected_bias_label)]
     elif bias_mode == "All facet pairs" and bias_pairs_available:
-        st.sidebar.caption(f"Bias scan will estimate {len(bias_pairs_available)} facet pair(s).")
+        st.sidebar.caption(t("sidebar_perf.bias_scan_count_caption_template", n=len(bias_pairs_available)))
     elif bias_mode != "Skip":
-        st.sidebar.caption("Bias estimation needs at least two selected facet columns.")
-    st.sidebar.caption(
-        "For first runs, use Standard. For final reporting, rerun with Full publication "
-        "after the model and columns are settled."
-    )
+        st.sidebar.caption(t("sidebar_perf.bias_needs_two_facets_caption"))
+    st.sidebar.caption(t("sidebar_perf.first_runs_standard_caption"))
     st.sidebar.caption(analysis_depth_sidebar_summary(preset_settings))
     render_sidebar_run_setup_summary(
         data,
@@ -16044,7 +16037,7 @@ def run_facets_mode(core: dict, data: pd.DataFrame) -> None:
         pass
 
     # Phase 1-5: Estimation time warning
-    run_clicked = st.sidebar.button("Run FACETS-mode estimation", type="primary")
+    run_clicked = st.sidebar.button(t("sidebar_perf.run_button"), type="primary")
     if st.session_state.pop("_facets_mode_force_rerun", False):
         run_clicked = True
     # One-click quickstart: consume the onboarding flag so the pipeline
@@ -16812,8 +16805,10 @@ A single connected subset means all measures are on the same scale.
                 st.dataframe(person_df, width="stretch")
         else:
             st.info(
-                "No person measures yet. Click **Run FACETS-mode estimation** "
-                "in the sidebar to generate them."
+                t(
+                    "sidebar_perf.no_person_measures_info_template",
+                    run_button=t("sidebar_perf.run_button"),
+                )
             )
         show_posterior_scoring_section(result)
         population_bundle = result.get("population", {})
@@ -16900,8 +16895,10 @@ A single connected subset means all measures are on the same scale.
             render_eb_shrinkage_section(result, diagnostics, expanded=False)
         else:
             st.info(
-                "No combined measures yet. This table is built after estimation "
-                "completes; click **Run FACETS-mode estimation** in the sidebar."
+                t(
+                    "sidebar_perf.no_combined_measures_info_template",
+                    run_button=t("sidebar_perf.run_button"),
+                )
             )
 
     # --- Fit Details tab ---
@@ -22414,7 +22411,12 @@ def _draw_measures_forest_plotly(diagnostics: dict) -> None:
 
     measures = diagnostics.get("measures", pd.DataFrame()) if isinstance(diagnostics, dict) else pd.DataFrame()
     if not isinstance(measures, pd.DataFrame) or measures.empty:
-        st.info("No measure table available yet. Run FACETS-mode estimation first.")
+        st.info(
+            t(
+                "sidebar_perf.no_measure_table_info_template",
+                run_button=t("sidebar_perf.run_button"),
+            )
+        )
         return
     if not {"Facet", "Level", "Estimate", "SE"}.issubset(measures.columns):
         st.info("Measure table is missing Facet / Level / Estimate / SE columns.")

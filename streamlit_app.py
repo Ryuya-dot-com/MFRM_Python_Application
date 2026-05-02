@@ -15176,23 +15176,27 @@ def run_facets_mode(core: dict, data: pd.DataFrame) -> None:
     score_default = guess_col(cols, ["score", "rating", "mark"], fallback=min(1, len(cols) - 1))
     weight_default = next((c for c in cols if "weight" in c.lower()), None)
 
-    st.sidebar.subheader("Column mapping")
-    st.sidebar.caption("Map columns to Person, Score, and 2+ facets.")
+    st.sidebar.subheader(t("sidebar_estimation.column_mapping_subheader"))
+    st.sidebar.caption(t("sidebar_estimation.column_mapping_caption"))
     person_col = st.sidebar.selectbox(
-        "Person column", cols, index=cols.index(person_default),
-        help="The column identifying examinees, participants, or subjects being measured.",
+        t("sidebar_estimation.person_column_label"), cols, index=cols.index(person_default),
+        help=t("sidebar_estimation.person_column_help"),
     )
     score_col = st.sidebar.selectbox(
-        "Score column", cols, index=cols.index(score_default),
-        help="The column containing the observed rating or score (integer values).",
+        t("sidebar_estimation.score_column_label"), cols, index=cols.index(score_default),
+        help=t("sidebar_estimation.score_column_help"),
     )
+    # Stable internal ID "(None)" drives the routing below; format_func
+    # translates the displayed label so locale switching does not break
+    # the comparison ``weight_col_raw == "(None)"``.
     weight_opts = ["(None)"] + cols
     weight_idx = weight_opts.index(weight_default) if weight_default in weight_opts else 0
     weight_col_raw = st.sidebar.selectbox(
-        "Weight column (optional)",
+        t("sidebar_estimation.weight_column_label"),
         weight_opts,
         index=weight_idx,
-        help="Assign differential importance to observations. Leave as (None) for equal weights.",
+        format_func=lambda v: t("sidebar_estimation.weight_column_none_display") if v == "(None)" else v,
+        help=t("sidebar_estimation.weight_column_help"),
     )
     weight_col = None if weight_col_raw == "(None)" else weight_col_raw
 
@@ -15215,77 +15219,66 @@ def run_facets_mode(core: dict, data: pd.DataFrame) -> None:
         pass
 
     facet_cols = st.sidebar.multiselect(
-        "Facet columns (2+)",
+        t("sidebar_estimation.facet_columns_label"),
         facet_candidates,
         default=default_facets,
-        help=(
-            "2+ sources of variability — e.g. Rater, Task, Criterion. "
-            "Person is handled separately."
-        ),
+        help=t("sidebar_estimation.facet_columns_help"),
     )
+    # Stable internal IDs drive the ``workflow_mode == "Advanced controls"``
+    # check below; format_func handles the localized display.
     workflow_mode = st.sidebar.radio(
-        "Workflow mode",
+        t("sidebar_estimation.workflow_mode_label"),
         ["Guided defaults", "Advanced controls"],
         index=0,
         horizontal=True,
-        help="Guided = compact defaults. Advanced = optimizer / constraint tuning.",
+        format_func=lambda v: (
+            t("sidebar_estimation.workflow_mode_guided_display")
+            if v == "Guided defaults"
+            else t("sidebar_estimation.workflow_mode_advanced_display")
+        ),
+        help=t("sidebar_estimation.workflow_mode_help"),
     )
     advanced_controls = workflow_mode == "Advanced controls"
     if not advanced_controls:
-        st.sidebar.caption(
-            "Guided defaults active. Switch to Advanced for custom ranges or constraints."
-        )
+        st.sidebar.caption(t("sidebar_estimation.guided_defaults_active_caption"))
 
     # Phase 2-6: Missing value recoding
     data = missing_value_recoding(data, score_col)
 
-    st.sidebar.subheader("FACETS-mode settings")
+    st.sidebar.subheader(t("sidebar_estimation.facets_mode_settings_subheader"))
+    # Model option IDs (RSM/PCM/GPCM) are also their display labels —
+    # they are Rasch model names kept in English by policy.
     model_type = st.sidebar.radio(
-        "Model",
+        t("sidebar_estimation.model_label"),
         ["RSM", "PCM", "GPCM"],
         index=0,
         horizontal=True,
-        help=(
-            "RSM: shared thresholds across elements. "
-            "PCM: per-element thresholds. "
-            "GPCM: per-element thresholds + discrimination (exploratory). "
-            "See Help → Interpretation Guide for full details."
-        ),
+        help=t("sidebar_estimation.model_help"),
     )
 
     # Advanced response-model picker (Stan-first, download-only). The core
     # estimator never runs these locally; this widget just makes the Stan
     # code available as a download from the Report tab. Collapsed by
     # default so it doesn't clutter the sidebar for RSM/PCM/GPCM users.
-    with st.sidebar.expander("🧪 Advanced models (Stan, download only)", expanded=False):
-        st.caption(
-            "Compile and sample Stan locally with the exported runner. "
-            "The app never samples in the browser."
-        )
+    with st.sidebar.expander(t("sidebar_estimation.advanced_models_expander"), expanded=False):
+        st.caption(t("sidebar_estimation.advanced_models_caption"))
         st.warning(STAN_SENSITIVITY_WARNING)
         _advanced_enabled = st.checkbox(
-            "Enable advanced model download",
+            t("sidebar_estimation.advanced_enable_checkbox"),
             value=False,
             key="facets_mode_advanced_enabled",
-            help="Uncheck to keep the sidebar focused on RSM / PCM / GPCM.",
+            help=t("sidebar_estimation.advanced_enable_help"),
         )
         _advanced_model_key = None
         if _advanced_enabled:
             opts = advanced_model_options()
             labels = [label for _, label in opts]
             picked_label = st.selectbox(
-                "Advanced model family",
+                t("sidebar_estimation.advanced_model_family_label"),
                 options=labels,
                 index=0,
                 key="facets_mode_advanced_model_label",
-                help=(
-                    "DINA: Cognitive diagnostic with Q-matrix. "
-                    "HRM: Hierarchical rater model. "
-                    "Testlet RI / Bifactor: item bundles. "
-                    "Mixture Rasch: latent classes. "
-                    "2PL Binary: free-discrimination dichotomous. "
-                    "Pairwise BTL: head-to-head comparisons."
-                ),
+                help=t("sidebar_estimation.advanced_model_family_help"),
             )
             _advanced_model_key = next((k for k, lbl in opts if lbl == picked_label), None)
 
@@ -15294,16 +15287,13 @@ def run_facets_mode(core: dict, data: pd.DataFrame) -> None:
             if template_info.get("note"):
                 st.info(template_info["note"])
             scope_note = advanced_model_scope_notes(_advanced_model_key or "")
-            with st.expander("Model scope and data shape", expanded=False):
+            with st.expander(t("sidebar_estimation.model_scope_data_shape_expander"), expanded=False):
                 st.markdown(scope_note)
-                st.caption(
-                    "The template is a human-readable starting point. Convert text labels to 1-based "
-                    "integer arrays before calling cmdstanpy/cmdstanr, matching the generated Stan data block."
-                )
+                st.caption(t("sidebar_estimation.advanced_template_caption"))
             template_df = template_info.get("data")
             if isinstance(template_df, pd.DataFrame) and not template_df.empty:
                 st.download_button(
-                    "Download data template for this Stan model",
+                    t("sidebar_estimation.download_advanced_template_button"),
                     data=to_csv_bytes(template_df),
                     file_name=template_info.get("file_name", "mfrm_advanced_model_template.csv"),
                     mime="text/csv",
@@ -15314,10 +15304,10 @@ def run_facets_mode(core: dict, data: pd.DataFrame) -> None:
             _advanced_n_classes = 2
             if meta.get("needs_q_matrix") == "true":
                 q_file = st.file_uploader(
-                    "Q-matrix CSV (items × attributes, values 0/1)",
+                    t("sidebar_estimation.q_matrix_uploader_label"),
                     type=["csv"],
                     key="facets_mode_advanced_q_matrix",
-                    help="First row = attribute names, first column = item names (optional).",
+                    help=t("sidebar_estimation.q_matrix_uploader_help"),
                 )
                 if q_file is not None:
                     try:
@@ -15327,25 +15317,26 @@ def run_facets_mode(core: dict, data: pd.DataFrame) -> None:
                         _advanced_q_matrix_df = pd.read_csv(q_file)
                     _valid = validate_q_matrix(_advanced_q_matrix_df)
                     if _valid["valid"]:
-                        st.success(
-                            f"Q-matrix OK — {_valid['n_items']} items × "
-                            f"{_valid['n_attributes']} attributes "
-                            f"({_valid['coverage']:.0%} coverage)."
-                        )
+                        st.success(t(
+                            "sidebar_estimation.q_matrix_ok_template",
+                            n_items=_valid["n_items"],
+                            n_attributes=_valid["n_attributes"],
+                            coverage=f"{_valid['coverage']:.0%}",
+                        ))
                     else:
                         for msg in _valid["messages"]:
                             st.warning(msg)
             if meta.get("needs_class_count") == "true":
                 _advanced_n_classes = int(st.number_input(
-                    "Number of latent classes",
+                    t("sidebar_estimation.n_classes_label"),
                     min_value=2, max_value=10, value=2, step=1,
                     key="facets_mode_advanced_n_classes",
-                    help="Rost (1990) Mixture Rasch typically uses 2–3 classes.",
+                    help=t("sidebar_estimation.n_classes_help"),
                 ))
 
             # Download button: build the Stan code on click
             if st.button(
-                "📥 Generate Stan code for this advanced model",
+                t("sidebar_estimation.generate_stan_button"),
                 key="facets_mode_advanced_generate",
                 use_container_width=True,
                 type="primary",
@@ -15363,95 +15354,91 @@ def run_facets_mode(core: dict, data: pd.DataFrame) -> None:
                     st.session_state["_advanced_model_stan_code"] = stan_src
                     st.session_state["_advanced_model_stan_name"] = _advanced_model_key
                 except Exception as exc:
-                    st.error(f"Could not generate Stan code: {exc}")
+                    st.error(t("sidebar_estimation.stan_generation_error_template", error=str(exc)))
             if "_advanced_model_stan_code" in st.session_state:
                 st.download_button(
-                    "⬇ Download .stan",
+                    t("sidebar_estimation.download_stan_button"),
                     data=st.session_state["_advanced_model_stan_code"].encode("utf-8"),
                     file_name=f"mfrm_{str(st.session_state.get('_advanced_model_stan_name', 'advanced')).lower()}.stan",
                     mime="application/x-stan",
                     key="facets_mode_advanced_dl",
                     use_container_width=True,
                 )
-                st.caption(
-                    "Compile locally with cmdstan / cmdstanpy / rstan. Use "
-                    "this file plus your own data bundle; see the Stan Code "
-                    "sub-tab (Report → 💾 Exports) for a runner script."
-                )
+                st.caption(t("sidebar_estimation.compile_stan_locally_caption"))
     step_facet = None
     if model_type in {"PCM", "GPCM"}:
+        # ``"(select facets first)"`` is a sentinel placeholder shown only
+        # when the user has not yet picked any facet column; format_func
+        # surfaces the localized form while the underlying option list
+        # is left untouched (no routing depends on it).
+        step_facet_options = facet_cols if facet_cols else ["(select facets first)"]
         step_facet = st.sidebar.selectbox(
-            f"Step facet ({model_type})",
-            facet_cols if facet_cols else ["(select facets first)"],
+            t("sidebar_estimation.step_facet_label_template", model_type=model_type),
+            step_facet_options,
             index=0,
-            help="Facet whose levels get their own threshold parameters. For GPCM, the same facet also gets slope parameters.",
+            format_func=lambda v: (
+                t("sidebar_estimation.step_facet_select_first_display")
+                if v == "(select facets first)"
+                else v
+            ),
+            help=t("sidebar_estimation.step_facet_help"),
         )
         if model_type == "GPCM":
-            st.sidebar.caption(
-                "GPCM scope: bounded Python implementation with slope_facet = step_facet, "
-                "positive slopes, and geometric mean slope fixed to 1."
-            )
+            st.sidebar.caption(t("sidebar_estimation.gpcm_scope_caption"))
+    # JMLE/MML are method names kept in English by policy; ``est_method ==
+    # "MML"`` drives the conditional widgets below.
     est_method = st.sidebar.radio(
-        "Estimation method",
+        t("sidebar_estimation.estimation_method_label"),
         ["JMLE", "MML"],
         index=0,
         horizontal=True,
-        help=(
-            "**JMLE** (Joint Maximum Likelihood): Estimates person abilities and "
-            "facet parameters simultaneously using the app's analytical-gradient "
-            "quasi-Newton backend. Fast but may be biased with short tests. "
-            "**MML** (Marginal Maximum Likelihood): integrates over the person ability "
-            "distribution with Gauss-Hermite quadrature. Guided mode uses Auto "
-            "(Hybrid first, EM fallback); person abilities are computed post-hoc via EAP."
-        ),
+        help=t("sidebar_estimation.estimation_method_help"),
     )
     mml_engine = "EM"
     quad_points = 15
     population_prior_sd = 1.0
     if est_method == "MML":
         if advanced_controls:
+            # Stable internal IDs route the MML branches; only the "Auto
+            # (recommended)" variant gets a localized display because the
+            # other engine names ("Hybrid", "Direct", "EM") are technical
+            # terms kept in English.
             mml_engine = st.sidebar.selectbox(
-                "MML engine",
+                t("sidebar_estimation.mml_engine_label"),
                 ["Auto (recommended)", "Hybrid", "Direct", "EM"],
                 index=0,
-                help=(
-                    "Auto tries Hybrid first and falls back to EM if Hybrid does not converge. "
-                    "Hybrid starts with a few EM iterations and then switches to direct "
-                    "marginal-likelihood L-BFGS-B. Direct is often faster after good starts. "
-                    "EM is the conservative reference route."
+                format_func=lambda v: (
+                    t("sidebar_estimation.mml_engine_auto_display")
+                    if v == "Auto (recommended)"
+                    else v
                 ),
+                help=t("sidebar_estimation.mml_engine_help"),
             )
             quad_points = int(st.sidebar.number_input(
-                "Quadrature points",
+                t("sidebar_estimation.quad_points_label"),
                 min_value=5,
                 max_value=41,
                 value=15,
                 step=2,
-                help=(
-                    "More points improve the approximation of the person ability distribution "
-                    "but increase runtime. Use 7-11 for quick checks and 15+ for final review."
-                ),
+                help=t("sidebar_estimation.quad_points_help"),
             ))
             population_prior_sd = float(st.sidebar.number_input(
-                "Person population SD (MML)",
+                t("sidebar_estimation.population_prior_sd_label"),
                 min_value=0.10,
                 max_value=10.0,
                 value=1.0,
                 step=0.10,
                 format="%.2f",
-                help=(
-                    "Controls the assumed person ability distribution used by MML quadrature: "
-                    "theta_j ~ N(X_j beta, SD^2). This is separate from facet regularization "
-                    "and separate from Bayesian Stan priors."
-                ),
+                help=t("sidebar_estimation.population_prior_sd_help"),
             ))
         else:
             mml_engine = "Auto (recommended)"
-        st.sidebar.info(
-            f"**MML assumptions:** Engine `{mml_engine}`; quadrature `{quad_points}` points; "
-            f"person population SD fixed at `{population_prior_sd:.2f}`. "
-            "Switch to Advanced controls to edit these settings."
-        )
+        st.sidebar.info(t(
+            "sidebar_estimation.mml_assumptions_info_template",
+            engine=mml_engine,
+            quad_points=quad_points,
+            prior_sd=f"{population_prior_sd:.2f}",
+        ))
     facet_regularization_specs: list[dict] = []
     facet_regularization_mode = "Off: unpenalized JMLE/MML"
     facet_regularization_fingerprint = stable_json_fingerprint({"mode": "off"})

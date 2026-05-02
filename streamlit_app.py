@@ -12970,7 +12970,7 @@ def render_comparison_panel(snap_a: dict, snap_b: dict) -> None:
 
         reliability = _comparison_reliability_diff(snap_a, snap_b)
         if reliability is not None:
-            st.markdown("#### Reliability / separation")
+            st.markdown(f"#### {t('report_tables.comparison_reliability_separation_header')}")
             st.dataframe(reliability.round(3), width="stretch", hide_index=True)
 
 
@@ -19467,23 +19467,19 @@ def show_prediction_simulation_section(result: dict, diagnostics: dict, core: di
 
 def _render_report_tables(result: dict, diagnostics: dict) -> None:
     """Estimation summary tables for the Report tab."""
-    st.subheader("Estimation summary")
+    st.subheader(t("report_tables.estimation_summary_subheader"))
     summary_df = result.get("summary", pd.DataFrame())
     if isinstance(summary_df, pd.DataFrame) and not summary_df.empty:
         st.dataframe(summary_df, width="stretch")
     else:
-        st.info("No estimation summary available.")
+        st.info(t("report_tables.no_estimation_summary"))
 
     likelihood_info = result.get("likelihood_information", pd.DataFrame())
     if not isinstance(likelihood_info, pd.DataFrame) or likelihood_info.empty:
         likelihood_info = build_likelihood_information_criteria(result)
     if isinstance(likelihood_info, pd.DataFrame) and not likelihood_info.empty:
-        st.subheader("Maximized likelihood / information criteria")
-        st.caption(
-            "Descriptive fit indices from the maximized fitted likelihood. "
-            "Use AIC/BIC for model comparison only when candidate models use the same response rows, "
-            "score map, missing-data rule, likelihood definition, and identification constraints."
-        )
+        st.subheader(t("report_tables.likelihood_info_subheader"))
+        st.caption(t("report_tables.likelihood_info_caption"))
         st.dataframe(likelihood_info.round(4), width="stretch", hide_index=True)
 
     regularization = result.get("regularization", {})
@@ -19492,43 +19488,43 @@ def _render_report_tables(result: dict, diagnostics: dict) -> None:
         reg_audit = regularization.get("audit", pd.DataFrame())
         if isinstance(reg_penalty, pd.DataFrame) and not reg_penalty.empty:
             active = bool(result.get("config", {}).get("facet_regularization_enabled", False))
-            st.subheader("Facet regularization")
+            st.subheader(t("report_tables.facet_regularization_subheader"))
             if active:
-                st.warning(
-                    "This run used MAP-style regularization on selected free facet parameters. "
-                    "This is penalized fixed-effect estimation, not a random-effects model and not full Bayesian sampling."
-                )
+                st.warning(t("report_tables.facet_regularization_warning_active"))
             else:
-                st.caption("Facet regularization was off for this run.")
+                st.caption(t("report_tables.facet_regularization_off_caption"))
             st.dataframe(reg_penalty.round(4), width="stretch", hide_index=True)
             if isinstance(reg_audit, pd.DataFrame) and not reg_audit.empty:
-                with st.expander("Facet regularization audit", expanded=False):
+                with st.expander(t("report_tables.facet_regularization_audit_expander"), expanded=False):
                     st.dataframe(reg_audit, width="stretch", hide_index=True)
 
     shrinkage = diagnostics.get("eb_shrinkage", {}) if isinstance(diagnostics, dict) else {}
     if isinstance(shrinkage, dict) and diagnostics.get("eb_shrinkage_enabled", False):
-        st.subheader("Empirical-Bayes shrinkage advisory")
+        st.subheader(t("report_tables.eb_shrinkage_subheader"))
         report = shrinkage.get("report", pd.DataFrame())
         if shrinkage.get("available") and isinstance(report, pd.DataFrame) and not report.empty:
-            st.caption("Post-hoc non-person facet shrinkage; raw fitted estimates and information criteria are unchanged.")
+            st.caption(t("report_tables.eb_shrinkage_caption"))
             st.dataframe(report.round(4), width="stretch", hide_index=True)
         else:
-            st.info(shrinkage.get("reason", "EB shrinkage was requested but unavailable."))
+            # ``shrinkage["reason"]`` is upstream-supplied dynamic text (locale-
+            # neutral). Fall back to the translated default when absent.
+            reason = shrinkage.get("reason") or t("report_tables.eb_shrinkage_unavailable")
+            st.info(reason)
 
     weight_audit = build_weighting_policy_audit(result)
     if isinstance(weight_audit, pd.DataFrame) and not weight_audit.empty:
-        st.subheader("Weighting policy audit")
-        st.caption("Documents how row weights were used or excluded before estimation and diagnostics.")
+        st.subheader(t("report_tables.weighting_policy_audit_subheader"))
+        st.caption(t("report_tables.weighting_policy_audit_caption"))
         st.dataframe(weight_audit, width="stretch", hide_index=True)
 
     show_convergence_section(result)
 
-    st.subheader("Overall fit")
+    st.subheader(t("report_tables.overall_fit_subheader"))
     overall_fit_df = diagnostics.get("overall_fit", pd.DataFrame())
     if isinstance(overall_fit_df, pd.DataFrame) and not overall_fit_df.empty:
         st.dataframe(overall_fit_df, width="stretch")
     else:
-        st.info("No overall fit statistics available.")
+        st.info(t("report_tables.no_overall_fit"))
 
     # Observation-level standardized residual check (Eckes, 2005)
     obs_df = diagnostics.get("obs", pd.DataFrame())
@@ -19540,36 +19536,45 @@ def _render_report_tables(result: dict, diagnostics: dict) -> None:
             pct_ge3 = float((abs_res >= 3).mean() * 100)
             n_total = len(std_res)
             fit_lines = [
-                f"- Observations with |z| ≥ 2: **{(abs_res >= 2).sum()}** / "
-                f"{n_total} (**{pct_ge2:.1f}%**; expected ~5%)",
-                f"- Observations with |z| ≥ 3: **{(abs_res >= 3).sum()}** / "
-                f"{n_total} (**{pct_ge3:.1f}%**; expected ~1%)",
+                t(
+                    "report_tables.fit_obs_z2_template",
+                    n_z2=int((abs_res >= 2).sum()),
+                    n_total=n_total,
+                    pct_ge2=f"{pct_ge2:.1f}",
+                ),
+                t(
+                    "report_tables.fit_obs_z3_template",
+                    n_z3=int((abs_res >= 3).sum()),
+                    n_total=n_total,
+                    pct_ge3=f"{pct_ge3:.1f}",
+                ),
             ]
-            st.markdown("**Global fit — observation-level residuals** (Eckes, 2005)")
+            st.markdown(t("report_tables.global_fit_header"))
             st.markdown("\n".join(fit_lines))
             if pct_ge2 > FINAL_RESIDUAL_PCT_GE2_REVIEW:
-                st.warning(
-                    f"|z| >= 2 is {pct_ge2:.1f}%, well above the "
-                    f"{FINAL_RESIDUAL_PCT_GE2_READY:.0f}% final-report benchmark. "
-                    "Consider reviewing data for systematic misfit."
-                )
+                st.warning(t(
+                    "report_tables.fit_warning_template",
+                    pct_ge2=f"{pct_ge2:.1f}",
+                    threshold=f"{FINAL_RESIDUAL_PCT_GE2_READY:.0f}",
+                ))
             elif pct_ge2 > FINAL_RESIDUAL_PCT_GE2_READY:
-                st.info(
-                    f"|z| >= 2 is {pct_ge2:.1f}%, above the "
-                    f"{FINAL_RESIDUAL_PCT_GE2_READY:.0f}% final-report benchmark."
-                )
+                st.info(t(
+                    "report_tables.fit_info_template",
+                    pct_ge2=f"{pct_ge2:.1f}",
+                    threshold=f"{FINAL_RESIDUAL_PCT_GE2_READY:.0f}",
+                ))
 
-    st.subheader("Reliability & separation")
+    st.subheader(t("report_tables.reliability_subheader"))
     rel_df = diagnostics.get("reliability", pd.DataFrame())
     if isinstance(rel_df, pd.DataFrame) and not rel_df.empty:
         st.dataframe(rel_df, width="stretch")
     else:
-        st.info("No reliability statistics available.")
+        st.info(t("report_tables.no_reliability"))
 
     # Measurement report by facet
     measures = diagnostics.get("measures", pd.DataFrame())
     if not measures.empty and "Facet" in measures.columns:
-        st.subheader("Measurement report by facet")
+        st.subheader(t("report_tables.measurement_report_subheader"))
         report_rows = []
         for facet_name, grp in measures.groupby("Facet"):
             estimates = pd.to_numeric(grp.get("Estimate", pd.Series(dtype=float)), errors="coerce").dropna()
@@ -19605,19 +19610,11 @@ def _render_report_tables(result: dict, diagnostics: dict) -> None:
         if report_rows:
             report_df = pd.DataFrame(report_rows)
             st.dataframe(report_df, width="stretch")
-            st.caption(
-                "**Obs. SD** = observed SD of estimates; "
-                "**RMSE** = root mean square of SEs; "
-                "**True SD** = √(Obs.SD² − RMSE²); "
-                "**Separation (G)** = True SD / RMSE; "
-                "**Strata (H)** = (4G+1)/3; "
-                "**Reliability** = G²/(1+G²). "
-                "See Wright & Masters (1982), Linacre (2024)."
-            )
+            st.caption(t("report_tables.measurement_report_caption"))
 
     # Measures with 95% CI
     if not measures.empty and "Estimate" in measures.columns and "SE" in measures.columns:
-        st.subheader("Element measures with 95% CI")
+        st.subheader(t("report_tables.element_measures_ci_subheader"))
         ci_df = measures.copy()
         est = pd.to_numeric(ci_df["Estimate"], errors="coerce")
         se = pd.to_numeric(ci_df["SE"], errors="coerce")
@@ -19627,7 +19624,7 @@ def _render_report_tables(result: dict, diagnostics: dict) -> None:
         show_cols = [c for c in ["Facet", "Element", "Level", "Estimate", "SE",
                                   "CI_Lower", "CI_Upper", "Infit", "Outfit"] if c in ci_df.columns]
         st.dataframe(ci_df[show_cols], width="stretch")
-        st.caption("CI = 95% confidence interval (Estimate ± 1.96 × SE).")
+        st.caption(t("report_tables.element_measures_ci_caption"))
 
 
 def _render_apa_report(

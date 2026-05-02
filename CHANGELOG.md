@@ -6,6 +6,10 @@ All notable changes to this standalone Streamlit distribution should be recorded
 
 ### Added
 
+- Bilingual i18n scaffold (English / Japanese) for the sidebar header, app
+  title, language picker, and starter messages; translation dictionaries live
+  in `locales/{en,ja}.json` and resolve via the new `t()` helper with English
+  fallback. Persists the choice in `st.session_state["lang"]`.
 - mfrmr 0.1.6 migration coverage table and exports, extending the prior
   0.1.5 map with EB shrinkage advisory, facet sample-size adequacy,
   nesting/crossing audit, intraclass-cluster-ICC design effect,

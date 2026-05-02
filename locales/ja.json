@@ -1,0 +1,26 @@
+{
+  "_metadata": {
+    "language": "日本語",
+    "code": "ja"
+  },
+  "sidebar": {
+    "language_label": "言語 / Language",
+    "english": "English",
+    "japanese": "日本語",
+    "app_mode_label": "アプリモード",
+    "app_mode_facets": "FACETS-mode 推定",
+    "app_mode_posterior": "Posterior Viewer (アップロード)",
+    "app_mode_help": "FACETS-mode: 推定パイプライン全体 (データ → MFRM → 診断)。Posterior Viewer: 外部で生成済みの posterior draws (CmdStan CSV, parquet, ArviZ NetCDF) をアップロードして可視化を再利用します。",
+    "posterior_preserved_note": "ℹ️ FACETS-mode の実行結果はこのセッションに保持されています。上のラジオボタンで戻ると再開できます。",
+    "view_density_label": "画面密度",
+    "view_density_essential": "Essential (簡易)",
+    "view_density_full": "Full (完全)",
+    "view_density_help": "Essential は高度な診断サブタブ (Visuals 内の Forest / Q-Q / ECDF、および詳細な Help セクション) を非表示にします。Full は v0.2.x の全機能を表示します。原稿の Methods 節を書く前や publication-depth の分析を行う前に Full に切り替えてください。"
+  },
+  "app": {
+    "title": "多相ラッシュモデル (MFRM) FACETS-mode",
+    "subtitle_template": "MFRM を推定する Streamlit 製の単一ファイルアプリケーション — {release_label} {version}",
+    "input_preview_header": "入力データのプレビュー",
+    "no_input_info": "サイドバーから入力データを指定して開始してください。"
+  }
+}

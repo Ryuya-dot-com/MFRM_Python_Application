@@ -69,6 +69,57 @@ PUBLICATION_FIGURE_MIN_HEIGHT = 420
 PUBLICATION_FIGURE_MAX_HEIGHT = 1400
 PUBLICATION_FIGURE_FONT = "Arial, Helvetica, sans-serif"
 
+LOCALES_DIR = Path(__file__).resolve().parent / "locales"
+SUPPORTED_LANGS = ("en", "ja")
+DEFAULT_LANG = "en"
+
+
+@st.cache_data(show_spinner=False)
+def _load_locale(lang: str) -> dict:
+    path = LOCALES_DIR / f"{lang}.json"
+    if not path.exists():
+        return {}
+    try:
+        with path.open(encoding="utf-8") as fh:
+            return json.load(fh)
+    except (OSError, json.JSONDecodeError):
+        return {}
+
+
+def _resolve_locale_key(data: dict, key: str):
+    node = data
+    for part in key.split("."):
+        if isinstance(node, dict) and part in node:
+            node = node[part]
+        else:
+            return None
+    return node if isinstance(node, str) else None
+
+
+def t(key: str, default: str | None = None, **fmt) -> str:
+    """Translate a dotted i18n key for the active session language.
+
+    Resolves ``key`` (e.g. ``"sidebar.app_mode_label"``) against the active
+    locale stored in ``st.session_state["lang"]``. Falls back to English when
+    the key is missing in the active locale, then to ``default`` (or the key
+    itself) if both locales lack it. Optional ``**fmt`` substitutes
+    ``str.format`` placeholders inside the resolved string.
+    """
+    lang = st.session_state.get("lang", DEFAULT_LANG)
+    if lang not in SUPPORTED_LANGS:
+        lang = DEFAULT_LANG
+    text = _resolve_locale_key(_load_locale(lang), key)
+    if text is None and lang != DEFAULT_LANG:
+        text = _resolve_locale_key(_load_locale(DEFAULT_LANG), key)
+    if text is None:
+        text = default if default is not None else key
+    if fmt:
+        try:
+            text = text.format(**fmt)
+        except (KeyError, IndexError, ValueError):
+            pass
+    return text
+
 
 def visual_interpretation_checklist() -> pd.DataFrame:
     """Beginner-facing map from diagnostic visuals to interpretation actions."""
@@ -34856,20 +34907,31 @@ def main() -> None:
     st.set_page_config(page_title="MFRM FACETS-mode", layout="wide")
     _inject_desktop_readability_css()
 
+    # Language selector at the top of the sidebar. The widget's ``key="lang"``
+    # writes directly to ``st.session_state["lang"]``, which the ``t()`` helper
+    # reads on every rerun, so the choice persists for the whole session.
+    st.sidebar.radio(
+        t("sidebar.language_label"),
+        options=SUPPORTED_LANGS,
+        format_func=lambda code: t("sidebar.english") if code == "en" else t("sidebar.japanese"),
+        index=SUPPORTED_LANGS.index(st.session_state.get("lang", DEFAULT_LANG))
+            if st.session_state.get("lang", DEFAULT_LANG) in SUPPORTED_LANGS else 0,
+        key="lang",
+        horizontal=True,
+    )
+
     # Top-level app mode selector. Defaults to the estimation pipeline.
     # The Posterior Viewer is an alternative "upload-and-inspect" mode
     # for users who have already run Stan locally with the runner script
     # this app provides, and want ShinyStan-like diagnostics and plots.
+    app_mode_options = ["FACETS-mode estimation", "Posterior Viewer (upload)"]
     app_mode = st.sidebar.radio(
-        "App mode",
-        options=["FACETS-mode estimation", "Posterior Viewer (upload)"],
+        t("sidebar.app_mode_label"),
+        options=app_mode_options,
+        format_func=lambda v: t("sidebar.app_mode_facets") if v == "FACETS-mode estimation" else t("sidebar.app_mode_posterior"),
         index=0,
         key="app_top_level_mode",
-        help=(
-            "FACETS-mode: full estimation pipeline (data → MFRM → diagnostics). "
-            "Posterior Viewer: upload externally-produced posterior draws "
-            "(CmdStan CSV, parquet, ArviZ NetCDF) and reuse the visualizations."
-        ),
+        help=t("sidebar.app_mode_help"),
     )
 
     # Mode-switch awareness: if the user jumps to Posterior Viewer while
@@ -34880,10 +34942,7 @@ def main() -> None:
         app_mode == "Posterior Viewer (upload)"
         and "facets_mode_output" in st.session_state
     ):
-        st.sidebar.caption(
-            "ℹ️ Your FACETS-mode run is preserved in this session. "
-            "Switch back via the radio above to resume."
-        )
+        st.sidebar.caption(t("sidebar.posterior_preserved_note"))
 
     # View density toggle (v0.2.5+) — Essential hides advanced diagnostic
     # sub-tabs and secondary expanders to reduce cognitive load for
@@ -34891,17 +34950,14 @@ def main() -> None:
     # researchers and publication-ready analyses. Defaults to Essential
     # so first-time users do not face the full 7-sub-tab Visuals section
     # and 10-sub-tab Help section on landing.
+    view_density_options = ["Essential", "Full"]
     st.sidebar.radio(
-        "View density",
-        options=["Essential", "Full"],
+        t("sidebar.view_density_label"),
+        options=view_density_options,
+        format_func=lambda v: t("sidebar.view_density_essential") if v == "Essential" else t("sidebar.view_density_full"),
         index=0,
         key="app_view_density",
-        help=(
-            "Essential hides advanced diagnostic sub-tabs (Forest / Q-Q / "
-            "ECDF in Visuals, plus advanced Help sections). Full shows every "
-            "v0.2.x feature. Switch to Full before writing manuscript "
-            "methods or running a publication-depth analysis."
-        ),
+        help=t("sidebar.view_density_help"),
         horizontal=True,
     )
 
@@ -34916,11 +34972,8 @@ def main() -> None:
         render_posterior_viewer_mode()
         return
 
-    st.title("MFRM FACETS-mode")
-    st.caption(
-        f"A single-file Streamlit application for estimating Many-Facet Rasch Models (MFRM) "
-        f"— {APP_RELEASE_LABEL} {APP_VERSION}"
-    )
+    st.title(t("app.title"))
+    st.caption(t("app.subtitle_template", release_label=APP_RELEASE_LABEL, version=APP_VERSION))
     render_app_scope_badges(where="main")
     render_data_privacy_notice(where="main")
 
@@ -34933,10 +34986,10 @@ def main() -> None:
     core = load_core_namespace()
     data = read_input_data(core)
     if data.empty:
-        st.info("Provide input data from the sidebar to begin.")
+        st.info(t("app.no_input_info"))
         return
 
-    st.subheader("Input preview")
+    st.subheader(t("app.input_preview_header"))
     render_input_overview(data)
     st.dataframe(data.head(20), width="stretch")
     run_facets_mode(core, data)

@@ -1,0 +1,26 @@
+{
+  "_metadata": {
+    "language": "English",
+    "code": "en"
+  },
+  "sidebar": {
+    "language_label": "Language",
+    "english": "English",
+    "japanese": "日本語",
+    "app_mode_label": "App mode",
+    "app_mode_facets": "FACETS-mode estimation",
+    "app_mode_posterior": "Posterior Viewer (upload)",
+    "app_mode_help": "FACETS-mode: full estimation pipeline (data → MFRM → diagnostics). Posterior Viewer: upload externally-produced posterior draws (CmdStan CSV, parquet, ArviZ NetCDF) and reuse the visualizations.",
+    "posterior_preserved_note": "ℹ️ Your FACETS-mode run is preserved in this session. Switch back via the radio above to resume.",
+    "view_density_label": "View density",
+    "view_density_essential": "Essential",
+    "view_density_full": "Full",
+    "view_density_help": "Essential hides advanced diagnostic sub-tabs (Forest / Q-Q / ECDF in Visuals, plus advanced Help sections). Full shows every v0.2.x feature. Switch to Full before writing manuscript methods or running a publication-depth analysis."
+  },
+  "app": {
+    "title": "MFRM FACETS-mode",
+    "subtitle_template": "A single-file Streamlit application for estimating Many-Facet Rasch Models (MFRM) — {release_label} {version}",
+    "input_preview_header": "Input preview",
+    "no_input_info": "Provide input data from the sidebar to begin."
+  }
+}

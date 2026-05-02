@@ -434,6 +434,7 @@ SECURITY.md
 MFRM_STREAMLIT_RELEASE_PLAN.md
 RELEASE_CHECKLIST.md
 anchor_templates_and_guideline/
+locales/
 .streamlit/config.toml
 .github/workflows/python-streamlit.yml
 .github/ISSUE_TEMPLATE/

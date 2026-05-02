@@ -15442,13 +15442,12 @@ def run_facets_mode(core: dict, data: pd.DataFrame) -> None:
     facet_regularization_specs: list[dict] = []
     facet_regularization_mode = "Off: unpenalized JMLE/MML"
     facet_regularization_fingerprint = stable_json_fingerprint({"mode": "off"})
-    with st.sidebar.expander("Facet regularization (optional)", expanded=False):
-        st.caption(
-            "Regularization adds a MAP-style penalty to free non-person facet parameters. "
-            "It is separate from the MML person population distribution and from full Bayesian Stan sampling."
-        )
+    with st.sidebar.expander(t("sidebar_advanced.facet_reg_expander"), expanded=False):
+        st.caption(t("sidebar_advanced.facet_reg_caption"))
+        # Routing-sensitive internal IDs drive the comparisons below;
+        # format_func handles the localized display.
         facet_regularization_mode = st.selectbox(
-            "Mode",
+            t("sidebar_advanced.facet_reg_mode_label"),
             [
                 "Off: unpenalized JMLE/MML",
                 "Light shrinkage on all selected facets",
@@ -15456,18 +15455,17 @@ def run_facets_mode(core: dict, data: pd.DataFrame) -> None:
             ],
             index=0,
             key="facet_regularization_mode",
-            help=(
-                "Leave Off for the first run and for direct comparison with unpenalized FACETS/TAM-style results. "
-                "Light shrinkage applies to all free levels in all selected facets; use Custom for targeted rows."
-            ),
+            format_func=lambda v: {
+                "Off: unpenalized JMLE/MML": t("sidebar_advanced.facet_reg_mode_off_display"),
+                "Light shrinkage on all selected facets": t("sidebar_advanced.facet_reg_mode_light_display"),
+                "Custom by facet": t("sidebar_advanced.facet_reg_mode_custom_display"),
+            }.get(v, v),
+            help=t("sidebar_advanced.facet_reg_mode_help"),
         )
         if not facet_cols:
-            st.info("Select facet columns before configuring facet regularization.")
+            st.info(t("sidebar_advanced.facet_reg_no_facets_info"))
         elif facet_regularization_mode == "Light shrinkage on all selected facets":
-            st.warning(
-                "Light shrinkage applies to all free levels in all selected facets and changes the estimation target. "
-                "AIC/BIC remain based on the unpenalized likelihood evaluated at the regularized estimates."
-            )
+            st.warning(t("sidebar_advanced.facet_reg_light_warning"))
             for facet in facet_cols:
                 facet_regularization_specs.append({
                     "Facet": facet,
@@ -15479,10 +15477,7 @@ def run_facets_mode(core: dict, data: pd.DataFrame) -> None:
                     "Source": "ui_light",
                 })
         elif facet_regularization_mode == "Custom by facet":
-            st.warning(
-                "Custom regularization is a penalized fixed-effect/MAP-style estimator, not a random-effects model "
-                "and not full Bayesian posterior sampling."
-            )
+            st.warning(t("sidebar_advanced.facet_reg_custom_warning"))
             default_rows = pd.DataFrame([
                 {
                     "Facet": facet,
@@ -15503,7 +15498,7 @@ def run_facets_mode(core: dict, data: pd.DataFrame) -> None:
                 use_container_width=True,
                 column_config={
                     "Facet": st.column_config.SelectboxColumn("Facet", options=list(facet_cols), required=True),
-                    "Level": st.column_config.TextColumn("Level", help="Use * to apply to all free levels in the facet."),
+                    "Level": st.column_config.TextColumn("Level", help=t("sidebar_advanced.facet_reg_level_help")),
                     "Mean": st.column_config.NumberColumn("Mean", format="%.3f"),
                     "SD": st.column_config.NumberColumn("SD", min_value=0.05, max_value=20.0, format="%.3f"),
                     "Enabled": st.column_config.CheckboxColumn("Enabled"),
@@ -15523,72 +15518,59 @@ def run_facets_mode(core: dict, data: pd.DataFrame) -> None:
     population_numeric_terms = ""
     population_file = None
     population_text = ""
-    with st.sidebar.expander("Latent regression / population model (MML)", expanded=False):
+    with st.sidebar.expander(t("sidebar_advanced.latent_regression_expander"), expanded=False):
         population_enabled = st.checkbox(
-            "Enable population_formula",
+            t("sidebar_advanced.enable_population_formula_checkbox"),
             value=False,
             disabled=(est_method != "MML"),
-            help=(
-                "MML-only. Replaces the zero-mean person distribution with "
-                "theta_j ~ N(X_j beta, population_prior_sd^2). Current support is one-dimensional, user-set fixed variance, "
-                "and main effects such as '~ grade + ses'."
-            ),
+            help=t("sidebar_advanced.enable_population_formula_help"),
         )
         if est_method != "MML":
-            st.caption("Switch Estimation method to MML to enable latent regression.")
+            st.caption(t("sidebar_advanced.switch_to_mml_caption"))
         if population_enabled:
             population_formula = st.text_input(
-                "population_formula",
+                t("sidebar_advanced.population_formula_label"),
                 value="~ 1",
-                help="'~ 1' = intercept. '~ grade + ses' = covariates. Interactions not yet supported.",
+                help=t("sidebar_advanced.population_formula_help"),
             )
             population_person_id_col = st.text_input(
-                "Person ID column in person_data",
+                t("sidebar_advanced.person_id_col_label"),
                 value=person_col,
-                help="Column in the person-level table that matches the selected Person column.",
+                help=t("sidebar_advanced.person_id_col_help"),
             )
             population_standardize_numeric = st.checkbox(
-                "Standardize numeric covariates",
+                t("sidebar_advanced.standardize_numeric_checkbox"),
                 value=False,
-                help="Centers and scales numeric covariates; same mean/SD applied to predictions.",
+                help=t("sidebar_advanced.standardize_numeric_help"),
             )
             population_categorical_terms = st.text_input(
-                "Force categorical covariates (optional)",
+                t("sidebar_advanced.force_categorical_label"),
                 value="",
-                help=(
-                    "Comma-separated terms to dummy-code (e.g. 'grade_code, school_type'). "
-                    "Use to stop numeric IDs being treated as continuous."
-                ),
+                help=t("sidebar_advanced.force_categorical_help"),
             )
             population_numeric_terms = st.text_input(
-                "Force numeric covariates (optional)",
+                t("sidebar_advanced.force_numeric_label"),
                 value="",
-                help=(
-                    "Comma-separated population_formula terms that must be numeric. The run stops if any listed term "
-                    "contains non-numeric values."
-                ),
+                help=t("sidebar_advanced.force_numeric_help"),
             )
             population_file = st.file_uploader(
-                "person_data file",
+                t("sidebar_advanced.person_data_file_label"),
                 type=TABLE_FILE_UPLOAD_TYPES,
                 key="facets_mode_population_file",
-                help=f"Upload {TABLE_FILE_UPLOAD_LABEL}. Excel uses the first worksheet.",
+                help=t("sidebar_advanced.person_data_file_help_template", file_label=TABLE_FILE_UPLOAD_LABEL),
             )
             population_text = st.text_area(
-                "Or paste person_data",
+                t("sidebar_advanced.person_data_paste_label"),
                 key="facets_mode_population_text",
                 placeholder=f"{person_col},grade,ses\nP1,1,0.2\nP2,2,-0.1",
             )
-            st.caption(
-                "Every fitted person must appear once in person_data when covariates are used. "
-                "Categorical covariates are dummy-coded with the first level as reference."
-            )
+            st.caption(t("sidebar_advanced.person_data_caption"))
             try:
                 parsed_preview = parse_population_formula(population_formula)
                 if parsed_preview.get("terms"):
                     preview_person_data = read_flexible_table(population_text, population_file, header=True)
                     if preview_person_data.empty:
-                        st.info("Upload or paste person_data to preview numeric vs categorical covariate coding before fitting.")
+                        st.info(t("sidebar_advanced.covariate_preview_info"))
                     else:
                         preview_person_levels = (
                             data[person_col].dropna().astype(str).drop_duplicates().tolist()
@@ -15602,7 +15584,7 @@ def run_facets_mode(core: dict, data: pd.DataFrame) -> None:
                             numeric_terms=population_numeric_terms,
                             person_levels=preview_person_levels,
                         )
-                        st.markdown("**Covariate type preview**")
+                        st.markdown(t("sidebar_advanced.covariate_type_preview_header"))
                         preview_cols = [
                             "Term", "InferredType", "Override", "UniqueValues",
                             "IntegerLike", "ReviewFlag", "ExampleValues",
@@ -15612,9 +15594,9 @@ def run_facets_mode(core: dict, data: pd.DataFrame) -> None:
                         for msg in flagged["Recommendation"].astype(str).head(3):
                             st.warning(msg)
                 else:
-                    st.caption("Intercept-only population model; no person-level covariate coding needed.")
+                    st.caption(t("sidebar_advanced.intercept_only_caption"))
             except Exception as preview_exc:
-                st.warning(f"Covariate type preview could not be generated: {preview_exc}")
+                st.warning(t("sidebar_advanced.covariate_preview_error_template", error=str(preview_exc)))
     score_num_for_range = pd.to_numeric(data[score_col], errors="coerce") if score_col in data.columns else pd.Series(dtype=float)
     score_num_for_range = score_num_for_range.dropna()
     if not score_num_for_range.empty:
@@ -15626,135 +15608,111 @@ def run_facets_mode(core: dict, data: pd.DataFrame) -> None:
         detected_rating_min, detected_rating_max = 0, 1
     rating_min = None
     rating_max = None
-    with st.sidebar.expander("Score scale options", expanded=advanced_controls):
+    with st.sidebar.expander(t("sidebar_advanced.score_scale_expander"), expanded=advanced_controls):
         keep_original = st.checkbox(
-            "Keep original category values",
+            t("sidebar_advanced.keep_original_categories_checkbox"),
             value=False,
-            help=(
-                "If checked, categories are used as-is (e.g., 1-5). "
-                "If unchecked, non-consecutive categories are recoded to a contiguous internal scale."
-            ),
+            help=t("sidebar_advanced.keep_original_categories_help"),
         )
         explicit_rating_range = st.checkbox(
-            "Set intended rating scale range",
+            t("sidebar_advanced.explicit_rating_range_checkbox"),
             value=False,
-            help=(
-                "Use this when the intended scale includes boundary categories not observed "
-                "in the current data, e.g. a 1-5 scale with only 2-5 observed."
-            ),
+            help=t("sidebar_advanced.explicit_rating_range_help"),
         )
-        st.caption(
-            f"Detected score range: {detected_rating_min} to {detected_rating_max}. "
-            "Set an intended range when a category is possible but absent in this file."
-        )
+        st.caption(t(
+            "sidebar_advanced.detected_score_range_caption_template",
+            min=detected_rating_min,
+            max=detected_rating_max,
+        ))
         if explicit_rating_range:
             c_min, c_max = st.columns(2)
             with c_min:
                 rating_min = int(st.number_input(
-                    "Min category",
+                    t("sidebar_advanced.min_category_label"),
                     value=detected_rating_min,
                     step=1,
-                    help="Intended lowest score category.",
+                    help=t("sidebar_advanced.min_category_help"),
                 ))
             with c_max:
                 rating_max = int(st.number_input(
-                    "Max category",
+                    t("sidebar_advanced.max_category_label"),
                     value=detected_rating_max,
                     step=1,
-                    help="Intended highest score category.",
+                    help=t("sidebar_advanced.max_category_help"),
                 ))
             if rating_max <= rating_min:
-                st.error("Max category must be larger than min category.")
-    with st.sidebar.expander("Advanced identification and optimizer controls", expanded=advanced_controls):
+                st.error(t("sidebar_advanced.category_range_error"))
+    with st.sidebar.expander(t("sidebar_advanced.advanced_id_expander"), expanded=advanced_controls):
         noncenter_facet = st.selectbox(
-            "Non-centered facet",
+            t("sidebar_advanced.noncenter_facet_label"),
             ["Person"] + facet_cols,
             index=0,
-            help=(
-                "Facet left free (not sum-to-zero). Default 'Person' = abilities float, "
-                "other facets centered. Change only to free a different facet."
-            ),
+            help=t("sidebar_advanced.noncenter_facet_help"),
         )
         dummy_facets = st.multiselect(
-            "Dummy facets",
+            t("sidebar_advanced.dummy_facets_label"),
             ["Person"] + facet_cols,
             default=[],
-            help=(
-                "Uncentered nuisance facets — estimated but not substantively interpreted. "
-                "Useful for unbalanced grouping variables that would otherwise distort the scale."
-            ),
+            help=t("sidebar_advanced.dummy_facets_help"),
         )
         positive_facets = st.multiselect(
-            "Positive facets",
+            t("sidebar_advanced.positive_facets_label"),
             facet_cols,
             default=[],
-            help=(
-                "Reverses the sign convention: higher = more positive (e.g. 'Ability'), "
-                "instead of the default higher = more severe."
-            ),
+            help=t("sidebar_advanced.positive_facets_help"),
         )
         maxit = int(st.number_input(
-            "maxit",
+            t("sidebar_advanced.maxit_label"),
             min_value=50,
             max_value=10000,
             value=400,
             step=50,
-            help="Maximum number of optimizer iterations. Increase (e.g., 1000) if estimation does not converge.",
+            help=t("sidebar_advanced.maxit_help"),
         ))
         reltol = float(st.number_input(
-            "reltol",
+            t("sidebar_advanced.reltol_label"),
             min_value=1e-10,
             max_value=1.0,
             value=1e-6,
             format="%.1e",
-            help="Relative tolerance for convergence. Smaller = stricter. Default 1e-6 is sufficient for most analyses.",
+            help=t("sidebar_advanced.reltol_help"),
         ))
 
-    st.sidebar.subheader("Anchor constraints")
-    with st.sidebar.expander("Anchors (Facet,Level,Anchor)", expanded=False):
-        st.caption(
-            "Fix specific element measures to known values. Use when linking across "
-            "administrations or when some elements have established calibrations. "
-            "Format: CSV with columns **Facet, Level, Anchor** (logit value). "
-            "Anchored elements are held constant; all other elements are estimated relative to them."
-        )
+    st.sidebar.subheader(t("sidebar_advanced.anchor_constraints_subheader"))
+    with st.sidebar.expander(t("sidebar_advanced.anchors_expander"), expanded=False):
+        st.caption(t("sidebar_advanced.anchors_caption"))
         anchor_file = st.file_uploader(
-            "Anchor table file",
+            t("sidebar_advanced.anchor_file_label"),
             type=TABLE_FILE_UPLOAD_TYPES,
             key="facets_mode_anchor_file",
-            help=f"Upload {TABLE_FILE_UPLOAD_LABEL}. Required columns: Facet, Level, Anchor.",
+            help=t("sidebar_advanced.anchor_file_help_template", file_label=TABLE_FILE_UPLOAD_LABEL),
         )
         anchor_text = st.text_area(
-            "Or paste anchor table",
+            t("sidebar_advanced.anchor_paste_label"),
             key="facets_mode_anchor_text",
             placeholder="Facet,Level,Anchor\nRater,R1,0.0\nRater,R2,-0.5",
         )
 
-    with st.sidebar.expander("Group anchors (Facet,Level,Group,GroupValue)", expanded=False):
-        st.caption(
-            "Constrain groups of elements to share the same measure. "
-            "Use when elements belong to known groups that should be equivalent "
-            "(e.g., raters trained to the same standard). "
-            "Format: CSV with columns **Facet, Level, Group, GroupValue** (logit value)."
-        )
+    with st.sidebar.expander(t("sidebar_advanced.group_anchors_expander"), expanded=False):
+        st.caption(t("sidebar_advanced.group_anchors_caption"))
         group_anchor_file = st.file_uploader(
-            "Group anchor file",
+            t("sidebar_advanced.group_anchor_file_label"),
             type=TABLE_FILE_UPLOAD_TYPES,
             key="facets_mode_group_anchor_file",
-            help=f"Upload {TABLE_FILE_UPLOAD_LABEL}. Required columns: Facet, Level, Group, GroupValue.",
+            help=t("sidebar_advanced.group_anchor_file_help_template", file_label=TABLE_FILE_UPLOAD_LABEL),
         )
         group_anchor_text = st.text_area(
-            "Or paste group anchor table",
+            t("sidebar_advanced.group_anchor_paste_label"),
             key="facets_mode_group_anchor_text",
             placeholder="Facet,Level,Group,GroupValue\nRater,R1,Expert,0.0\nRater,R2,Expert,0.0",
         )
-    with st.sidebar.expander("Bundled anchor templates", expanded=False):
-        st.caption("Blank / example anchor files.")
+    with st.sidebar.expander(t("sidebar_advanced.bundled_templates_expander"), expanded=False):
+        st.caption(t("sidebar_advanced.bundled_templates_caption"))
         template_files = [
-            ("anchor_table_blank.csv", "Blank fixed-anchor CSV"),
-            ("anchor_table_example.csv", "Example fixed-anchor CSV"),
-            ("group_anchor_table_blank.csv", "Blank group-anchor CSV"),
-            ("group_anchor_table_example.csv", "Example group-anchor CSV"),
+            ("anchor_table_blank.csv", t("sidebar_advanced.anchor_template_blank_label")),
+            ("anchor_table_example.csv", t("sidebar_advanced.anchor_template_example_label")),
+            ("group_anchor_table_blank.csv", t("sidebar_advanced.group_anchor_template_blank_label")),
+            ("group_anchor_table_example.csv", t("sidebar_advanced.group_anchor_template_example_label")),
         ]
         for asset_name, label in template_files:
             try:
@@ -15766,91 +15724,94 @@ def run_facets_mode(core: dict, data: pd.DataFrame) -> None:
                     key=f"dl_static_{asset_name}",
                 )
             except Exception as asset_exc:
-                st.caption(f"{asset_name} unavailable: {asset_exc}")
-        show_anchor_guideline = st.checkbox("Show anchor guideline preview", value=False, key="show_anchor_guideline_preview")
+                st.caption(t(
+                    "sidebar_advanced.asset_unavailable_caption_template",
+                    asset_name=asset_name,
+                    error=str(asset_exc),
+                ))
+        show_anchor_guideline = st.checkbox(
+            t("sidebar_advanced.show_anchor_guideline_checkbox"),
+            value=False,
+            key="show_anchor_guideline_preview",
+        )
         if show_anchor_guideline:
             try:
                 st.markdown(get_bundled_asset_text("anchor_user_guidelines.md"))
             except Exception as guide_exc:
-                st.caption(f"Anchor guideline unavailable: {guide_exc}")
-    with st.sidebar.expander("Anchor audit settings", expanded=False):
+                st.caption(t(
+                    "sidebar_advanced.anchor_guideline_unavailable_caption_template",
+                    error=str(guide_exc),
+                ))
+    with st.sidebar.expander(t("sidebar_advanced.anchor_audit_expander"), expanded=False):
+        # The radio values warn/error/silent are stable internal IDs used
+        # downstream; the help text describes them by name so we keep
+        # them as-is on display rather than translating each option.
         anchor_policy = st.radio(
-            "Anchor issue policy",
+            t("sidebar_advanced.anchor_policy_label"),
             ["warn", "error", "silent"],
             index=0,
             horizontal=True,
-            help=(
-                "warn shows anchor/linking issues but still estimates with valid rows. "
-                "error stops estimation when any anchor audit issue is found. "
-                "silent records issues in downloads/config only."
-            ),
+            help=t("sidebar_advanced.anchor_policy_help"),
         )
         min_common_anchors = int(st.number_input(
-            "Minimum common anchors",
+            t("sidebar_advanced.min_common_anchors_label"),
             min_value=1,
             max_value=50,
             value=2,
             step=1,
-            help="Minimum anchored/common levels per facet before making linking claims.",
+            help=t("sidebar_advanced.min_common_anchors_help"),
         ))
         min_obs_per_element = int(st.number_input(
-            "Minimum observations per anchored level",
+            t("sidebar_advanced.min_obs_per_element_label"),
             min_value=1,
             max_value=100,
             value=2,
             step=1,
-            help="Anchored levels below this observation count are flagged as weak.",
+            help=t("sidebar_advanced.min_obs_per_element_help"),
         ))
         min_obs_per_category = int(st.number_input(
-            "Minimum observations per score category",
+            t("sidebar_advanced.min_obs_per_category_label"),
             min_value=1,
             max_value=100,
             value=1,
             step=1,
-            help="Score categories below this count are flagged for linking/category stability.",
+            help=t("sidebar_advanced.min_obs_per_category_help"),
         ))
 
-    with st.sidebar.expander("Report scaling options", expanded=advanced_controls):
+    with st.sidebar.expander(t("sidebar_advanced.report_scaling_expander"), expanded=advanced_controls):
         totalscore = st.checkbox(
-            "Include extreme elements in totalscore",
+            t("sidebar_advanced.totalscore_checkbox"),
             value=True,
-            help="Include elements with all-minimum or all-maximum scores in the total score calculation.",
+            help=t("sidebar_advanced.totalscore_help"),
         )
         omit_unobserved = st.checkbox(
-            "Omit unobserved elements",
+            t("sidebar_advanced.omit_unobserved_checkbox"),
             value=False,
-            help="Exclude elements with zero observations from the report tables.",
+            help=t("sidebar_advanced.omit_unobserved_help"),
         )
         xtreme = float(st.number_input(
-            "Xtreme correction",
+            t("sidebar_advanced.xtreme_label"),
             value=0.0,
             step=0.1,
-            help=(
-                "Correction applied to extreme scores (all-min or all-max). "
-                "0 = no correction (extreme elements receive infinite estimates). "
-                "0.3-0.5 = typical correction to obtain finite estimates."
-            ),
+            help=t("sidebar_advanced.xtreme_help"),
         ))
         umean = float(st.number_input(
-            "Umean",
+            t("sidebar_advanced.umean_label"),
             value=0.0,
-            help="User-scaled mean for reported measures. Default 0.0 keeps the logit metric.",
+            help=t("sidebar_advanced.umean_help"),
         ))
         uscale = float(st.number_input(
-            "Uscale",
+            t("sidebar_advanced.uscale_label"),
             value=1.0,
-            help=(
-                "User-scaled SD multiplier. Default 1.0 keeps the logit metric. "
-                "Set to e.g. 100 with Umean=500 for T-score-like reporting."
-            ),
+            help=t("sidebar_advanced.uscale_help"),
         ))
         udecimals = int(st.number_input(
-            "Udecimals",
+            t("sidebar_advanced.udecimals_label"),
             min_value=0,
             max_value=6,
             value=2,
             step=1,
-            help="Decimal places for user-scaled measures in report tables.",
+            help=t("sidebar_advanced.udecimals_help"),
         ))
 
     # Bias settings: use sensible defaults (adjustable in Bias/Interaction tab)

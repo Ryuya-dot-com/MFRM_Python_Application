@@ -113,6 +113,9 @@ than kept in English in `ja.json`:
 | residual | 残差 |
 | variance explained | 説明分散 |
 | dimension(ality) | 次元 (性) |
+| regularization | 正則化 |
+| ceiling effect | 天井効果 |
+| floor effect | 床効果 |
 
 Conversely, model names, estimator acronyms, Greek letters in math
 notation, and Rasch-specific facet names (Person, Rater, Task,

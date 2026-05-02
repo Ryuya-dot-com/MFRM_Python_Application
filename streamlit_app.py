@@ -9834,70 +9834,17 @@ def load_core_namespace() -> dict:
 
 def show_tutorial() -> None:
     """Collapsible tutorial section shown before analysis."""
-    with st.expander("Tutorial: Key concepts before you begin", expanded=False):
+    with st.expander(t("tutorial.expander_label"), expanded=False):
+        st.markdown(t("tutorial.section_glossary"))
+        st.markdown(t("tutorial.section_scores"))
+        st.markdown(t("tutorial.section_weight"))
+        st.markdown(t("tutorial.section_estimation_method"))
+        # Likelihood functions and cross-validation guidance stay in English
+        # by design — LaTeX equations and R code blocks are universally
+        # readable, and translating the surrounding prose would multiply
+        # maintenance cost without clear benefit for the target audience.
         st.markdown(
             """
-### Terminology glossary
-
-| This app uses | Also known as | Meaning |
-|---|---|---|
-| **Person** | Subject, Participant, Examinee, Student, Candidate | The individual being measured. In MFRM the *person* ability is the latent trait (theta) we estimate. |
-| **Rater** | Judge, Assessor, Scorer, Evaluator | A human who assigns ratings. Rater severity/leniency is modeled as a facet. |
-| **Task** | Item, Prompt, Topic | The stimulus or prompt that the person responds to. |
-| **Criterion** | Rubric dimension, Trait, Sub-scale | A scoring dimension within a rubric (e.g., Content, Organization, Language). |
-| **Facet** | — | Any systematic source of variability besides the person (rater, task, criterion, etc.). |
-
-### Raw score vs. Scale score
-
-- **Raw score** (observed rating): the actual value assigned by a rater (e.g., 1--5 on a rubric).
-  This is what appears in your *Score* column.
-- **Scale score** (theta, logit measure): the estimated latent measure on the logit scale,
-  produced by the Rasch/MFRM model. Scale scores are *interval-level* and comparable
-  across facets, whereas raw scores are *ordinal*.
-
-> In the output tables, **Estimate** always refers to the scale score (theta in logits),
-> while **Score** or **ObsScore** refers to the original raw score.
-
-### Weight column
-
-The optional **Weight** column lets you assign differential importance to observations.
-
-- A weight of **1.0** (the default when no weight column is specified) treats every
-  observation equally.
-- Weights **> 1** increase the influence of that observation; weights **< 1** decrease it.
-- Weights of **0** effectively exclude the observation from estimation.
-- Typical use cases: down-weighting practice items, adjusting for unequal sample designs,
-  or giving more emphasis to certain rater--task combinations.
-
-### About estimation method
-
-This app uses **JMLE** (Joint Maximum Likelihood Estimation) by default.
-
-- **JMLE** estimates person parameters and facet parameters simultaneously
-  using analytical-gradient quasi-Newton optimisation in the current
-  Python backend. It does not assume a prior distribution for persons.
-  This is the same broad fixed-effect estimation philosophy used by
-  FACETS (Linacre, 2024).
-- **MML** (Marginal Maximum Likelihood) uses the **EM algorithm**
-  (Bock & Aitkin, 1981) with Gauss-Hermite quadrature:
-  - **E-step**: Compute posterior P(θ_q | x_j, δ^(t)) for each person j
-    at each quadrature node q, using the current item/facet estimates.
-  - **M-step**: Maximise the expected complete-data log-likelihood
-    Q(δ | δ^(t)) = Σ_j Σ_q r_jq log L(x_j | θ_q, δ) w.r.t. δ.
-  - Iterate until the marginal log-likelihood converges (monotonic
-    non-decrease guaranteed by the EM property).
-  - Person abilities are computed post-hoc via **EAP** (Expected A
-    Posteriori; Bock & Mislevy, 1982).
-  - MML results are influenced by the *assumed prior* (normal with
-    configurable fixed SD). If the true distribution deviates from normality,
-    estimates may be biased. Always check whether the normality
-    assumption is reasonable for your sample.
-  - This is the same broad MML/EM family used by ConQuest and TAM, but this app
-    uses a user-configurable fixed prior SD rather than estimating the latent
-    population variance by default.
-
----
-
 ### Likelihood functions — mathematical detail
 
 #### 1. Linear predictor ($\\eta$)
@@ -10374,33 +10321,10 @@ most closely matches this app's model specification and
 supports MFRM natively. Use **mirt** for additional IRT
 analyses (information functions, DIF). Use **eRm** if CMLE
 is required.
-
-### Estimation time
-
-Estimation may take from a few seconds to several minutes depending on:
-
-- Number of persons, raters, tasks, and categories
-- Number of observations (rows in your data)
-- Convergence tolerance (`reltol`) and maximum iterations (`maxit`)
-
-A progress spinner will be shown during estimation. Please be patient and do not
-close the browser tab.
-
-### Missing values
-
-Responses coded as missing are excluded from estimation (treated as structurally
-absent, following FACETS conventions). Before running, use the **Missing value
-recoding** panel in the sidebar to convert placeholder codes (e.g., `99`, `999`,
-`N`, `NA`, `-1`, blank) into true missing values. See Linacre (2024) *A User's
-Guide to FACETS*, Section 3 for details on missing data handling.
-
-The **Response-data audit** keeps the original input row numbers and reports
-whether each row entered the likelihood. Rows with missing Person, Score, or
-selected facet values, non-numeric scores, or non-positive weights are excluded
-before likelihood calculation; they are not recoded to zero or to any score
-category.
 """
         )
+        st.markdown(t("tutorial.section_estimation_time"))
+        st.markdown(t("tutorial.section_missing_values"))
 
 
 # ---------------------------------------------------------------------------

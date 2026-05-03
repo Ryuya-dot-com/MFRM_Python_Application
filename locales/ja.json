@@ -679,5 +679,31 @@
     "dimensionality_skipped_info": "この実行では residual PCA をスキップした。Analysis depth = Standard、Full publication、または Custom > Compute residual PCA で再実行して有効化する。",
     "wright_map_subheader": "Wright Map / Yardstick",
     "wright_map_skipped_info": "この実行では interactive プロット描画をスキップした。テーブルは利用できる。Wright Map と yardstick を表示するには、プロット描画を有効化して再実行する。"
+  },
+  "downloads": {
+    "subheader": "Downloads",
+    "intro_caption": "全分析出力をダウンロード用に整理した。一括ダウンロードには ZIP ボタンを使い、個別項目は下で展開する。",
+    "manuscript_pointer_markdown": "📄 **Manuscript 用の Word、PDF、HTML ドキュメントが必要な場合** 単一ファイルの Publication Document (Abstract + Methods + Results + 図 + APA 7 参考文献) は **Report → 💾 Exports → 📄 Publication Document** にある。本 Downloads タブでは、その基礎となるデータテーブル、図、再現用スクリプトを提供する。",
+    "tab_data_tables": "Data Tables",
+    "tab_figures": "Figures",
+    "tab_scripts_config": "Scripts & Config",
+    "tables_count_markdown_template": "**{n} 件のテーブル** がダウンロード可能。",
+    "tables_zip_button": "全テーブルをダウンロード (ZIP)",
+    "tables_excel_button": "Excel をダウンロード (.xlsx)",
+    "tables_excel_failed_caption_template": "Excel エクスポートに失敗: {error}",
+    "tables_html_button": "HTML レポートをダウンロード",
+    "tables_individual_expander_template": "個別 CSV ダウンロード ({n} ファイル)",
+    "figures_caption": "本アプリの manuscript エクスポートプロファイルで主要な診断プロットをダウンロードする: 白背景、一貫したフォント、コンパクトな余白、static エクスポート可能な場合は 300 DPI PNG、加えてレビュー用の interactive HTML。",
+    "figures_skipped_info": "この実行では図エクスポートバンドルの生成をスキップした。Analysis depth = Full publication、または Custom > Prepare figure export bundle で再実行してダウンロード可能なプロットファイルを構築する。",
+    "figures_count_markdown_template": "**{n} 件の図** が利用可能 ({fmt} 形式)。",
+    "figures_kaleido_info": "PNG エクスポートは利用不可 (このサーバーで kaleido が未設定)。代わりに interactive HTML の図を提供する。kaleido >= 1.0 で PNG を有効化するには、ランタイムに Chrome または Chromium をインストールする。",
+    "figures_errors_expander_template": "⚠ {n} 件の図を生成できなかった",
+    "figures_manifest_markdown": "**Figure エクスポートマニフェスト**",
+    "figures_manifest_download_button": "Figure マニフェストをダウンロード (CSV)",
+    "figures_bundle_zip_button": "Publication 図バンドルをダウンロード (ZIP)",
+    "figures_individual_expander_template": "個別図ダウンロード ({n} 件)",
+    "figures_no_data_info": "利用可能な図がない。先に推定を実行する。",
+    "scripts_caption": "再現用の分析スクリプト (Python と R)、設定 JSON、scale linking 用の anchor ファイル、Bayesian 推定用の Stan code。",
+    "scripts_config_subheader": "分析設定"
   }
 }

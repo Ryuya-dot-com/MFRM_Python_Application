@@ -679,5 +679,31 @@
     "dimensionality_skipped_info": "Residual PCA was skipped for this run. Re-run with Analysis depth = Standard, Full publication, or Custom > Compute residual PCA to enable it.",
     "wright_map_subheader": "Wright Map / Yardstick",
     "wright_map_skipped_info": "Interactive plot rendering was skipped for this run. Tables remain available; re-run with plot rendering enabled to view the Wright Map and yardstick."
+  },
+  "downloads": {
+    "subheader": "Downloads",
+    "intro_caption": "All analysis outputs organized for download. Use the ZIP buttons for one-click bundled downloads, or expand individual items below.",
+    "manuscript_pointer_markdown": "📄 **Looking for a manuscript-ready Word, PDF, or HTML document?** The single-file Publication Document (abstract + Methods + Results + figures + APA 7 references) lives under **Report → 💾 Exports → 📄 Publication Document**. This Downloads tab hosts the underlying data tables, figures, and reproducibility scripts instead.",
+    "tab_data_tables": "Data Tables",
+    "tab_figures": "Figures",
+    "tab_scripts_config": "Scripts & Config",
+    "tables_count_markdown_template": "**{n} table(s)** available for download.",
+    "tables_zip_button": "Download ALL tables (ZIP)",
+    "tables_excel_button": "Download Excel (.xlsx)",
+    "tables_excel_failed_caption_template": "Excel export failed: {error}",
+    "tables_html_button": "Download HTML report",
+    "tables_individual_expander_template": "Individual CSV downloads ({n} files)",
+    "figures_caption": "Download key diagnostic plots using the app's manuscript export profile: white background, consistent font, compact margins, 300 DPI PNG when static export is available, and matching interactive HTML for review.",
+    "figures_skipped_info": "Figure export bundle generation was skipped for this run. Re-run with Analysis depth = Full publication or Custom > Prepare figure export bundle to build downloadable plot files.",
+    "figures_count_markdown_template": "**{n} figure(s)** available ({fmt} format).",
+    "figures_kaleido_info": "PNG export is unavailable (kaleido not configured on this server). Interactive HTML figures are offered instead. To enable PNG with kaleido >= 1.0, install Chrome or Chromium in the runtime.",
+    "figures_errors_expander_template": "⚠ {n} figure(s) could not be generated",
+    "figures_manifest_markdown": "**Figure export manifest**",
+    "figures_manifest_download_button": "Download figure manifest (CSV)",
+    "figures_bundle_zip_button": "Download publication figure bundle (ZIP)",
+    "figures_individual_expander_template": "Individual figure downloads ({n} figure(s))",
+    "figures_no_data_info": "No figures available. Run estimation first.",
+    "scripts_caption": "Reproducible analysis scripts (Python & R), configuration JSON, anchor files for scale linking, and Stan code for Bayesian estimation.",
+    "scripts_config_subheader": "Analysis configuration"
   }
 }

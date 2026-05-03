@@ -26075,27 +26075,21 @@ def _render_downloads(
     generate_figures: bool = True,
 ) -> None:
     """Download section with sub-tabs: Data Tables, Figures, Scripts."""
-    st.subheader("Downloads")
-    st.caption(
-        "All analysis outputs organized for download. Use the ZIP buttons for "
-        "one-click bundled downloads, or expand individual items below."
-    )
+    st.subheader(t("downloads.subheader"))
+    st.caption(t("downloads.intro_caption"))
 
     # Prominent cross-reference: the publication-ready Word / PDF / HTML
     # export lives under Report → 💾 Exports → 📄 Publication Document.
     # Users who open Downloads tab expecting a manuscript file should be
     # pointed there explicitly.
     with st.container(border=True):
-        st.markdown(
-            "📄 **Looking for a manuscript-ready Word, PDF, or HTML document?** "
-            "The single-file Publication Document (abstract + Methods + Results + "
-            "figures + APA 7 references) lives under "
-            "**Report → 💾 Exports → 📄 Publication Document**. "
-            "This Downloads tab hosts the underlying data tables, figures, "
-            "and reproducibility scripts instead."
-        )
+        st.markdown(t("downloads.manuscript_pointer_markdown"))
 
-    dl_tabs = st.tabs(["Data Tables", "Figures", "Scripts & Config"])
+    dl_tabs = st.tabs([
+        t("downloads.tab_data_tables"),
+        t("downloads.tab_figures"),
+        t("downloads.tab_scripts_config"),
+    ])
 
     # ---- Collect all data frames ----
     summary = result.get("summary", pd.DataFrame())
@@ -26413,12 +26407,12 @@ def _render_downloads(
     # Sub-tab 0: Data Tables
     # ================================================================
     with dl_tabs[0]:
-        st.markdown(f"**{len(all_frames)} table(s)** available for download.")
+        st.markdown(t("downloads.tables_count_markdown_template", n=len(all_frames)))
 
         z_col1, z_col2, z_col3 = st.columns(3)
         with z_col1:
             st.download_button(
-                "Download ALL tables (ZIP)",
+                t("downloads.tables_zip_button"),
                 data=cached_tables_zip(all_frames, all_frames_key),
                 file_name="MFRM_Tables.zip",
                 mime="application/zip",
@@ -26427,17 +26421,17 @@ def _render_downloads(
         with z_col2:
             try:
                 st.download_button(
-                    "Download Excel (.xlsx)",
+                    t("downloads.tables_excel_button"),
                     data=cached_excel_bytes(all_frames, all_frames_key),
                     file_name="MFRM_Report.xlsx",
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                     key="dl_tables_xlsx",
                 )
             except Exception as xl_exc:
-                st.caption(f"Excel export failed: {xl_exc}")
+                st.caption(t("downloads.tables_excel_failed_caption_template", error=str(xl_exc)))
         with z_col3:
             st.download_button(
-                "Download HTML report",
+                t("downloads.tables_html_button"),
                 data=cached_html_report(all_frames, all_frames_key),
                 file_name="MFRM_Report.html",
                 mime="text/html",
@@ -26445,7 +26439,7 @@ def _render_downloads(
             )
 
         # --- Individual CSVs in expander ---
-        with st.expander(f"Individual CSV downloads ({len(all_frames)} files)"):
+        with st.expander(t("downloads.tables_individual_expander_template", n=len(all_frames))):
             cols = st.columns(3)
             for idx, (name, df) in enumerate(all_frames.items()):
                 with cols[idx % 3]:
@@ -26461,17 +26455,9 @@ def _render_downloads(
     # Sub-tab 1: Figures
     # ================================================================
     with dl_tabs[1]:
-        st.caption(
-            "Download key diagnostic plots using the app's manuscript export profile: "
-            "white background, consistent font, compact margins, 300 DPI PNG when static "
-            "export is available, and matching interactive HTML for review."
-        )
+        st.caption(t("downloads.figures_caption"))
         if not generate_figures:
-            st.info(
-                "Figure export bundle generation was skipped for this run. "
-                "Re-run with Analysis depth = Full publication or Custom > "
-                "Prepare figure export bundle to build downloadable plot files."
-            )
+            st.info(t("downloads.figures_skipped_info"))
             figure_result = {}
             figure_measures = pd.DataFrame()
             figure_steps = pd.DataFrame()
@@ -26630,23 +26616,19 @@ def _render_downloads(
         if generate_figures:
             n_available = len(set(figure_html) | set(figure_bytes))
             fmt_label = "PNG + HTML" if figure_bytes else "HTML"
-            st.markdown(f"**{n_available} figure(s)** available ({fmt_label} format).")
+            st.markdown(t("downloads.figures_count_markdown_template", n=n_available, fmt=fmt_label))
 
         if not _kaleido_ok and figure_html:
-            st.info(
-                "PNG export is unavailable (kaleido not configured on this server). "
-                "Interactive HTML figures are offered instead. "
-                "To enable PNG with kaleido >= 1.0, install Chrome or Chromium in the runtime."
-            )
+            st.info(t("downloads.figures_kaleido_info"))
 
         if _fig_errors:
-            with st.expander(f"⚠ {len(_fig_errors)} figure(s) could not be generated"):
+            with st.expander(t("downloads.figures_errors_expander_template", n=len(_fig_errors))):
                 for err in _fig_errors:
                     st.caption(err)
 
         figure_manifest = _figure_export_manifest(figure_html, figure_bytes)
         if generate_figures and not figure_manifest.empty:
-            st.markdown("**Figure export manifest**")
+            st.markdown(t("downloads.figures_manifest_markdown"))
             _render_compact_dataframe(
                 figure_manifest,
                 ["FigureName", "FormatsAvailable", "ManuscriptUse"],
@@ -26655,7 +26637,7 @@ def _render_downloads(
                 wrap_text=True,
             )
             st.download_button(
-                "Download figure manifest (CSV)",
+                t("downloads.figures_manifest_download_button"),
                 data=to_csv_bytes(figure_manifest),
                 file_name="figure_manifest.csv",
                 mime="text/csv",
@@ -26666,14 +26648,14 @@ def _render_downloads(
             figure_assets = _figure_bundle_assets(figure_html, figure_bytes, figure_manifest)
             figure_assets_key = bytes_mapping_fingerprint(figure_assets)
             st.download_button(
-                "Download publication figure bundle (ZIP)",
+                t("downloads.figures_bundle_zip_button"),
                 data=cached_mixed_asset_zip(figure_assets, figure_assets_key),
                 file_name="MFRM_Publication_Figures.zip",
                 mime="application/zip",
                 key="dl_figs_zip",
             )
 
-            with st.expander(f"Individual figure downloads ({len(set(figure_html) | set(figure_bytes))} figure(s))"):
+            with st.expander(t("downloads.figures_individual_expander_template", n=len(set(figure_html) | set(figure_bytes)))):
                 fig_cols = st.columns(3)
                 for idx, name in enumerate(sorted(set(figure_html) | set(figure_bytes))):
                     with fig_cols[idx % len(fig_cols)]:
@@ -26694,19 +26676,16 @@ def _render_downloads(
                                 key=f"dl_fig_html_dl_{name}",
                             )
         elif generate_figures:
-            st.info("No figures available. Run estimation first.")
+            st.info(t("downloads.figures_no_data_info"))
 
     # ================================================================
     # Sub-tab 2: Scripts & Config
     # ================================================================
     with dl_tabs[2]:
-        st.caption(
-            "Reproducible analysis scripts (Python & R), configuration JSON, "
-            "anchor files for scale linking, and Stan code for Bayesian estimation."
-        )
+        st.caption(t("downloads.scripts_caption"))
 
         # --- Analysis configuration JSON ---
-        st.subheader("Analysis configuration")
+        st.subheader(t("downloads.scripts_config_subheader"))
         config = result.get("config", {})
         prep = result.get("prep", {})
         score_map_records = []

@@ -754,5 +754,22 @@
     "interpretation_expander": "解釈ガイド",
     "interpretation_body_template": "**Severity outlier** (Flag_Severity): Element の measure が {facet} グループ平均から 2 SD 以上離れている。\nRater の場合: 厳しい rater は大きな正の measure、寛容な rater は負の measure を持つ。\nCriteria / task の場合: 異常に難しい / 易しい element を示す。\n\n**Misfit** (Flag_Misfit): Infit MnSq が 0.5–1.5 の範囲外、または Outfit MnSq > 2.0。\n強い misfit → 一貫しないパターン、弱い misfit → 過度に予測可能 (Halo 効果の可能性)。\n\n**Central tendency** (Flag_Central): Outfit ZSTD < −2.0 と Infit ≤ 1.4 の組合せ。\nRating scale の使用が制限されていることを示す — element は想定より変動が小さい。\n\n**Bias count** (Sig_Bias_Count): 全 facet ペアにわたるこの element に関する有意 (|*t*| ≥ 2) な bias interaction の件数。多いほど differential functioning を示唆する。\n\n*参考文献:* Myford & Wolfe (2003, 2004); Linacre (2002); Engelhard (2013).",
     "download_button": "Rater ダッシュボードをダウンロード (CSV)"
+  },
+  "agreement": {
+    "subheader": "Inter-Element Agreement",
+    "intro_caption": "選択した facet の element 間で、共有された文脈にわたって計算された agreement 統計量。例えば Rater facet を選べば inter-rater agreement、Task facet を選べば task の一貫性を評価する。指標は exact agreement、adjacent agreement (±1 category)、平均絶対差、相関を含む。",
+    "no_calc_fn_info": "Inter-rater agreement には core モジュールの `calc_interrater_agreement` が必要。この関数はまだ利用できない。",
+    "no_obs_info": "Agreement 分析に利用できる observation データがない。",
+    "no_facet_cols_info": "Agreement 分析に利用できる facet 列がない。",
+    "facet_select_label": "Agreement 分析対象の facet",
+    "facet_select_help": "一貫性を比較したい element を持つ facet を選ぶ (例: Rater、Judge)。",
+    "no_summary_info_template": "Agreement サマリは利用できない。{facet} の element が 2 つ以上、共通の文脈 (同じ person / item を評価) を共有していることを確認する。",
+    "summary_subheader": "サマリ",
+    "exact_good_template": "Exact agreement: {pct}% — {facet} element 間で良好な一貫性。",
+    "exact_moderate_template": "Exact agreement: {pct}% — {facet} element 間で中程度の一貫性。",
+    "exact_low_template": "Exact agreement: {pct}% — {facet} element 間で一貫性が低い。",
+    "pairwise_subheader": "Pairwise の詳細",
+    "pairs_download_button": "Agreement ペアをダウンロード (CSV)",
+    "no_pairs_caption": "Pairwise の詳細は利用できない。"
   }
 }

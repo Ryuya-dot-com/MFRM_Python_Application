@@ -23913,54 +23913,43 @@ def show_agreement_section(
     """Render inter-rater agreement metrics."""
     header_cols = st.columns([5, 1])
     with header_cols[0]:
-        st.subheader("Inter-Element Agreement")
+        st.subheader(t("agreement.subheader"))
     with header_cols[1]:
         render_help_popover("rater_agreement")
-    st.caption(
-        "Agreement statistics between elements of a selected facet, computed across shared contexts. "
-        "For example, select a Rater facet to compute inter-rater agreement, or a Task facet to assess "
-        "task consistency. Metrics include exact agreement, adjacent agreement (±1 category), "
-        "mean absolute difference, and correlation."
-    )
+    st.caption(t("agreement.intro_caption"))
 
     calc_agreement_fn = core.get("calc_interrater_agreement")
     obs_df = diagnostics.get("obs")
 
     if not calc_agreement_fn:
-        st.info(
-            "Inter-rater agreement requires `calc_interrater_agreement` in the core module. "
-            "This function is not yet available."
-        )
+        st.info(t("agreement.no_calc_fn_info"))
         return
 
     if obs_df is None or obs_df.empty:
-        st.info("No observation data available for agreement analysis.")
+        st.info(t("agreement.no_obs_info"))
         return
 
     config_facet_names = result.get("config", {}).get("facet_names", facet_cols)
     if not config_facet_names:
-        st.info("No facet columns available for agreement analysis.")
+        st.info(t("agreement.no_facet_cols_info"))
         return
 
     agreement_facet = st.selectbox(
-        "Facet for agreement analysis",
+        t("agreement.facet_select_label"),
         list(config_facet_names),
         index=0,
         key="agreement_facet",
-        help="Select the facet whose elements you want to compare for consistency (e.g., Rater, Judge).",
+        help=t("agreement.facet_select_help"),
     )
 
     all_facet_cols = ["Person"] + list(config_facet_names)
     agreement = calc_agreement_fn(obs_df, all_facet_cols, agreement_facet, res=result)
 
     if agreement["summary"].empty:
-        st.info(
-            f"Agreement summary not available. Ensure at least 2 {agreement_facet} elements "
-            "share common contexts (i.e., rate the same persons/items)."
-        )
+        st.info(t("agreement.no_summary_info_template", facet=agreement_facet))
         return
 
-    st.subheader("Summary")
+    st.subheader(t("agreement.summary_subheader"))
     st.dataframe(agreement["summary"], width="stretch")
 
     # Interpretation
@@ -23969,14 +23958,15 @@ def show_agreement_section(
         exact_pct = summary["ExactAgreement"].iloc[0]
         if np.isfinite(exact_pct):
             exact_pct_100 = exact_pct * 100
+            pct_str = f"{exact_pct_100:.1f}"
             if exact_pct_100 >= 70:
-                st.success(f"Exact agreement: {exact_pct_100:.1f}% — Good consistency across {agreement_facet} elements.")
+                st.success(t("agreement.exact_good_template", pct=pct_str, facet=agreement_facet))
             elif exact_pct_100 >= 50:
-                st.info(f"Exact agreement: {exact_pct_100:.1f}% — Moderate consistency across {agreement_facet} elements.")
+                st.info(t("agreement.exact_moderate_template", pct=pct_str, facet=agreement_facet))
             else:
-                st.warning(f"Exact agreement: {exact_pct_100:.1f}% — Low consistency across {agreement_facet} elements.")
+                st.warning(t("agreement.exact_low_template", pct=pct_str, facet=agreement_facet))
 
-    st.subheader("Pairwise Details")
+    st.subheader(t("agreement.pairwise_subheader"))
     pairs_tbl = agreement.get("pairs", pd.DataFrame())
     if not pairs_tbl.empty:
         st.dataframe(pairs_tbl, width="stretch")
@@ -24007,13 +23997,13 @@ def show_agreement_section(
             st.plotly_chart(fig_hm, width="stretch")
 
         st.download_button(
-            "Download agreement pairs (CSV)",
+            t("agreement.pairs_download_button"),
             data=to_csv_bytes(pairs_tbl),
             file_name="mfrm_agreement_pairs.csv",
             mime="text/csv",
         )
     else:
-        st.caption("No pairwise details available.")
+        st.caption(t("agreement.no_pairs_caption"))
 
 
 # ---------------------------------------------------------------------------

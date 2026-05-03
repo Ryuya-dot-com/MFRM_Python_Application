@@ -754,5 +754,22 @@
     "interpretation_expander": "Interpretation guide",
     "interpretation_body_template": "**Severity outlier** (Flag_Severity): Element's measure is more than 2 SD from the {facet} group mean.\nFor raters: harsh raters have high positive measures; lenient raters have negative measures.\nFor criteria/tasks: indicates unusually difficult or easy elements.\n\n**Misfit** (Flag_Misfit): Infit MnSq outside 0.5–1.5 or Outfit MnSq > 2.0.\nHigh misfit → inconsistent patterns; low misfit → overly predictable (possible Halo effect).\n\n**Central tendency** (Flag_Central): Outfit ZSTD < −2.0 combined with Infit ≤ 1.4.\nIndicates restricted use of the rating scale — element shows less variation than expected.\n\n**Bias count** (Sig_Bias_Count): Number of significant (|*t*| ≥ 2) bias interactions involving this element across all facet pairs. High counts suggest differential functioning.\n\n*References:* Myford & Wolfe (2003, 2004); Linacre (2002); Engelhard (2013).",
     "download_button": "Download rater dashboard (CSV)"
+  },
+  "agreement": {
+    "subheader": "Inter-Element Agreement",
+    "intro_caption": "Agreement statistics between elements of a selected facet, computed across shared contexts. For example, select a Rater facet to compute inter-rater agreement, or a Task facet to assess task consistency. Metrics include exact agreement, adjacent agreement (±1 category), mean absolute difference, and correlation.",
+    "no_calc_fn_info": "Inter-rater agreement requires `calc_interrater_agreement` in the core module. This function is not yet available.",
+    "no_obs_info": "No observation data available for agreement analysis.",
+    "no_facet_cols_info": "No facet columns available for agreement analysis.",
+    "facet_select_label": "Facet for agreement analysis",
+    "facet_select_help": "Select the facet whose elements you want to compare for consistency (e.g., Rater, Judge).",
+    "no_summary_info_template": "Agreement summary not available. Ensure at least 2 {facet} elements share common contexts (i.e., rate the same persons/items).",
+    "summary_subheader": "Summary",
+    "exact_good_template": "Exact agreement: {pct}% — Good consistency across {facet} elements.",
+    "exact_moderate_template": "Exact agreement: {pct}% — Moderate consistency across {facet} elements.",
+    "exact_low_template": "Exact agreement: {pct}% — Low consistency across {facet} elements.",
+    "pairwise_subheader": "Pairwise Details",
+    "pairs_download_button": "Download agreement pairs (CSV)",
+    "no_pairs_caption": "No pairwise details available."
   }
 }

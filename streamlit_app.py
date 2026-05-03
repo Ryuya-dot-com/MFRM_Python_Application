@@ -20936,60 +20936,14 @@ def show_fit_details_section(
     """Detailed fit statistics with misfit flagging and visualizations."""
 
 
-    st.subheader("Fit Statistics (FACETS Table 10 style)")
-    st.caption(
-        "Fit indices measure how well each element's responses conform to the Rasch model. "
-        "**Infit** is information-weighted (sensitive to unexpected patterns near the element's "
-        "measure). **Outfit** is unweighted (sensitive to outliers far from the element's measure)."
-    )
+    st.subheader(t("fit_details.subheader"))
+    st.caption(t("fit_details.caption"))
 
-    with st.expander("What do MnSq and ZSTD mean? (guide for beginners)", expanded=False):
-        st.markdown(
-            """
-**MnSq (Mean-Square)** is the average of squared standardized residuals.
-It tells you how well an element's observed responses match what the model predicts.
-
-- **MnSq = 1.0**: Perfect fit — responses are exactly as expected.
-- **MnSq > 1.0**: Underfit — responses are *more variable* (noisier) than the model expects.
-  For example, a rater who gives unexpectedly high scores to some examinees and unexpectedly
-  low scores to others.
-- **MnSq < 1.0**: Overfit — responses are *too predictable* (less variable than expected).
-  This can indicate redundancy or response dependencies (e.g., copying).
-
-**ZSTD (Z-Standardized)** is the MnSq value transformed into a z-score.
-It answers: "Is this MnSq statistically significantly different from 1.0?"
-
-- **|ZSTD| < 2.0**: The misfit is not statistically significant — acceptable.
-- **|ZSTD| > 2.0**: The misfit is statistically significant — investigate this element.
-- With large samples, even small deviations can be significant, so always interpret
-  ZSTD together with MnSq, not in isolation.
-
-**Infit vs Outfit**:
-- **Infit** (information-weighted): More sensitive to *systematic* misfit patterns.
-  It down-weights observations where the model is already uncertain (far from the element's
-  difficulty). Prioritize Infit for rater evaluation.
-- **Outfit** (unweighted): More sensitive to *outliers* — rare extreme unexpected responses.
-  A high Outfit with acceptable Infit often means a few isolated surprising responses,
-  not a systematic problem.
-
-**Practical decision rule**: Look at Infit MnSq first. If it's between 0.5 and 1.5,
-the element is generally acceptable. Then check Outfit for outlier concerns.
-"""
-        )
+    with st.expander(t("fit_details.guide_expander"), expanded=False):
+        st.markdown(t("fit_details.guide_body"))
 
     # Fit criteria reference (Wright & Linacre, 1994; Linacre, 2002)
-    st.markdown(
-        """
-| Criterion | Acceptable | Degrading | Distorting | Reference |
-|---|---|---|---|---|
-| **MnSq** | 0.5 – 1.5 | 1.5 – 2.0 or < 0.5 | > 2.0 | Wright & Linacre (1994) |
-| **ZSTD** | −2.0 to +2.0 | ±2.0 to ±3.0 | > ±3.0 | Linacre (2002) |
-
-*MnSq > 1.5*: Noisy data (unpredictable responses).
-*MnSq < 0.5*: Over-fit (too predictable, possible dependency; Linacre, 2002).
-*High Outfit with acceptable Infit*: Isolated outlier responses (Smith, 2000).
-"""
-    )
+    st.markdown(t("fit_details.criteria_table"))
 
     # Result-aware fit summary
     _fit_summary_callout(diagnostics.get("measures", pd.DataFrame()))
@@ -21000,7 +20954,7 @@ the element is generally acceptable. Then check Outfit for outlier concerns.
         if not measures.empty and "Infit" in measures.columns:
             fit_df = measures.copy()
         else:
-            st.info("Fit statistics not available.")
+            st.info(t("fit_details.no_fit_info"))
             return
 
     st.dataframe(fit_df, width="stretch")
@@ -21018,12 +20972,12 @@ the element is generally acceptable. Then check Outfit for outlier concerns.
     # Top misfit elements
     _draw_misfit_ranking(fit_df)
     if isinstance(result, dict):
-        st.subheader("Misfit casebook")
+        st.subheader(t("fit_details.misfit_casebook_subheader"))
         casebook = build_misfit_casebook(result, diagnostics, all_bias_results or {})
         if isinstance(casebook, pd.DataFrame) and not casebook.empty:
             st.dataframe(casebook, width="stretch", hide_index=True)
             st.download_button(
-                "Download misfit casebook (CSV)",
+                t("fit_details.misfit_casebook_download_button"),
                 data=to_csv_bytes(casebook),
                 file_name="mfrm_misfit_casebook.csv",
                 mime="text/csv",

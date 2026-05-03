@@ -573,5 +573,15 @@
     "step_no_params_caption": "Step parameter は利用できない。",
     "slope_subheader": "GPCM Slope パラメータ",
     "slope_caption": "Slope parameter は GPCM step facet の discrimination 推定値である。Log scale で中心化されており、幾何平均 slope は 1 になる。大きな値は category 遷移を急峻にし、小さな値は平坦にする。"
+  },
+  "fit_details": {
+    "subheader": "Fit 統計量 (FACETS Table 10 形式)",
+    "caption": "Fit 指標は、各 element の反応が Rasch モデルにどれだけ適合しているかを測る。**Infit** は情報量で重みづけされる (element の measure 近傍の想定外パターンに敏感)。**Outfit** は重みなしである (element の measure から離れた外れ値に敏感)。",
+    "guide_expander": "MnSq と ZSTD とは? (初心者向けガイド)",
+    "guide_body": "\n**MnSq (Mean-Square)** は標準化残差の二乗の平均である。Element の観測反応がモデル予測にどれだけ一致しているかを示す。\n\n- **MnSq = 1.0**: 完全な fit — 反応がちょうど想定どおりである。\n- **MnSq > 1.0**: Underfit — 反応がモデル想定より *変動が大きい* (ノイジー) ことを示す。例えば、想定外に高いスコアを与える受験者と想定外に低いスコアを与える受験者が両方いる rater など。\n- **MnSq < 1.0**: Overfit — 反応が *過度に予測可能* (想定より変動が小さい) ことを示す。冗長性や反応依存性 (例: 模倣) を示唆しうる。\n\n**ZSTD (Z-Standardized)** は MnSq 値を z-score に変換した量である。「この MnSq は 1.0 から統計的に有意に異なるか?」に答える。\n\n- **|ZSTD| < 2.0**: Misfit は統計的に有意でない — 許容範囲。\n- **|ZSTD| > 2.0**: Misfit は統計的に有意 — その element を調査する。\n- 大標本では小さな逸脱でも有意になりうるため、ZSTD は単独でなく必ず MnSq とあわせて解釈する。\n\n**Infit と Outfit**:\n- **Infit** (情報量重みづけ): *体系的* な misfit パターンに敏感。モデルがすでに不確実な観測 (element の difficulty から遠い観測) を下げる。Rater 評価では Infit を優先する。\n- **Outfit** (重みなし): *外れ値* (まれな極端で想定外の反応) に敏感。Outfit が高く Infit が許容範囲のとき、体系的問題ではなく単発の意外な反応が数件あることを意味することが多い。\n\n**実用判定ルール**: まず Infit MnSq を見る。0.5–1.5 の範囲なら element は概ね許容範囲。次に外れ値の懸念について Outfit を確認する。\n",
+    "criteria_table": "\n| 基準 | 許容範囲 | 劣化 | 歪み | 文献 |\n|---|---|---|---|---|\n| **MnSq** | 0.5 – 1.5 | 1.5 – 2.0 または < 0.5 | > 2.0 | Wright & Linacre (1994) |\n| **ZSTD** | −2.0 〜 +2.0 | ±2.0 〜 ±3.0 | > ±3.0 | Linacre (2002) |\n\n*MnSq > 1.5*: ノイジーなデータ (予測不能な反応)。\n*MnSq < 0.5*: Over-fit (過度に予測可能、依存性の可能性; Linacre, 2002)。\n*Outfit が高く Infit が許容範囲*: 単発の外れ値反応 (Smith, 2000)。\n",
+    "no_fit_info": "Fit 統計量を利用できない。",
+    "misfit_casebook_subheader": "Misfit casebook",
+    "misfit_casebook_download_button": "Misfit casebook をダウンロード (CSV)"
   }
 }

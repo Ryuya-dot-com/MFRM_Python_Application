@@ -573,5 +573,15 @@
     "step_no_params_caption": "No step parameters available.",
     "slope_subheader": "GPCM Slope Parameters",
     "slope_caption": "Slope parameters are discrimination estimates for the GPCM step facet. They are centered on the log scale, so the geometric mean slope is 1. Large values sharpen category transitions; small values flatten them."
+  },
+  "fit_details": {
+    "subheader": "Fit Statistics (FACETS Table 10 style)",
+    "caption": "Fit indices measure how well each element's responses conform to the Rasch model. **Infit** is information-weighted (sensitive to unexpected patterns near the element's measure). **Outfit** is unweighted (sensitive to outliers far from the element's measure).",
+    "guide_expander": "What do MnSq and ZSTD mean? (guide for beginners)",
+    "guide_body": "\n**MnSq (Mean-Square)** is the average of squared standardized residuals.\nIt tells you how well an element's observed responses match what the model predicts.\n\n- **MnSq = 1.0**: Perfect fit — responses are exactly as expected.\n- **MnSq > 1.0**: Underfit — responses are *more variable* (noisier) than the model expects.\n  For example, a rater who gives unexpectedly high scores to some examinees and unexpectedly\n  low scores to others.\n- **MnSq < 1.0**: Overfit — responses are *too predictable* (less variable than expected).\n  This can indicate redundancy or response dependencies (e.g., copying).\n\n**ZSTD (Z-Standardized)** is the MnSq value transformed into a z-score.\nIt answers: \"Is this MnSq statistically significantly different from 1.0?\"\n\n- **|ZSTD| < 2.0**: The misfit is not statistically significant — acceptable.\n- **|ZSTD| > 2.0**: The misfit is statistically significant — investigate this element.\n- With large samples, even small deviations can be significant, so always interpret\n  ZSTD together with MnSq, not in isolation.\n\n**Infit vs Outfit**:\n- **Infit** (information-weighted): More sensitive to *systematic* misfit patterns.\n  It down-weights observations where the model is already uncertain (far from the element's\n  difficulty). Prioritize Infit for rater evaluation.\n- **Outfit** (unweighted): More sensitive to *outliers* — rare extreme unexpected responses.\n  A high Outfit with acceptable Infit often means a few isolated surprising responses,\n  not a systematic problem.\n\n**Practical decision rule**: Look at Infit MnSq first. If it's between 0.5 and 1.5,\nthe element is generally acceptable. Then check Outfit for outlier concerns.\n",
+    "criteria_table": "\n| Criterion | Acceptable | Degrading | Distorting | Reference |\n|---|---|---|---|---|\n| **MnSq** | 0.5 – 1.5 | 1.5 – 2.0 or < 0.5 | > 2.0 | Wright & Linacre (1994) |\n| **ZSTD** | −2.0 to +2.0 | ±2.0 to ±3.0 | > ±3.0 | Linacre (2002) |\n\n*MnSq > 1.5*: Noisy data (unpredictable responses).\n*MnSq < 0.5*: Over-fit (too predictable, possible dependency; Linacre, 2002).\n*High Outfit with acceptable Infit*: Isolated outlier responses (Smith, 2000).\n",
+    "no_fit_info": "Fit statistics not available.",
+    "misfit_casebook_subheader": "Misfit casebook",
+    "misfit_casebook_download_button": "Download misfit casebook (CSV)"
   }
 }

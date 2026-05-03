@@ -23148,216 +23148,47 @@ def show_help_section() -> None:
     # ------------------------------------------------------------------
     if "Model Capability" in help_tab:
         with help_tab["Model Capability"]:
-            st.markdown(
-                """
-### Model Capability Matrix
-
-This table documents what the standalone Python app currently estimates.
-It is intentionally explicit so that RSM, PCM, and GPCM results are not
-over-interpreted as identical Rasch evidence.
-
-| Capability | RSM | PCM | Bounded GPCM |
-|---|---:|---:|---:|
-| Shared rating-scale thresholds | Yes | No | No |
-| Step-facet-specific thresholds | No | Yes | Yes |
-| Positive slope/discrimination parameters | No | No | Yes |
-| Slope identification | Not applicable | Not applicable | log slopes centered; geometric mean slope = 1 |
-| Current slope scope | Not applicable | Not applicable | `slope_facet == step_facet` only |
-| JMLE estimation | Yes | Yes | Yes |
-| MML EM / Direct / Hybrid / Auto | Yes | Yes | Yes |
-| Posterior EAP scoring | MML only | MML only | MML only |
-| Plausible values | MML only | MML only | MML only |
-| Strict marginal diagnostics | MML only | MML only | MML only |
-| Bias/interaction screening | Yes | Yes | Yes |
-| Residual PCA | Yes | Yes | Yes |
-| Category probability curves | Native | Averaged and step-facet-level thresholds | Averaged and step-facet-level thresholds/slopes |
-| FACETS-style fair score table | Native approximation | Step-facet-aware approximation | Step/slope-aware approximation; interpret cautiously |
-| Current-engine Python runner | Yes | Yes | Yes |
-| Portable self-contained JMLE script | Yes | Yes | Not yet |
-| Portable R script | Yes | Yes | Not yet |
-| Stan generator | Yes | Yes | Not yet |
-
-### How To Read GPCM Results
-
-- Use GPCM when the analysis question includes whether category
-  transitions are sharper or flatter for levels of a selected facet.
-- Read ordinary facet measures as severity/difficulty under the chosen
-  sign convention. Read GPCM slopes separately as transition steepness.
-- A slope above 1 means the model predicts sharper category transitions
-  for that step-facet level. A slope below 1 means flatter transitions.
-- The geometric mean slope is fixed to 1, so slope values are relative
-  within the selected step facet.
-- Large slope spread should trigger a data check: sparse categories,
-  near-extreme levels, or a weakly connected design can all create
-  unstable slope estimates.
-
-### Current Boundary
-
-The Python GPCM path follows the bounded branch: the same facet supplies
-thresholds and slopes. Broader interfaces where `slope_facet` differs
-from `step_facet`, multidimensional slopes, or latent-regression GPCM are
-not yet enabled. For reproducibility, use the app-engine runner rather
-than the portable scripts for GPCM runs.
-
----
-
-### Binary (0 / 1) Responses
-
-The RSM / PCM / GPCM path supports **binary rating scales natively**.
-A `Score` column containing only 0 and 1 yields a single Rasch–Andrich
-threshold, making RSM with `n_cat = 2` mathematically equivalent to the
-**1PL Rasch model**. The built-in ✏️ Reading testlet scenario demonstrates
-this shape. For discrimination-aware binary analysis (2PL), use the
-sidebar's **🧪 Advanced models → IRT_2PL_BINARY** generator to download
-Stan code and fit the discrimination parameters locally.
-
-**Sample-size note for binary**: Reliability collapses faster with binary
-than with polytomous data. Linacre (2024) recommends ≥ 100 observations
-per element when the scale is binary, versus ≥ 25 for typical 5-point
-rating scales.
-
----
-
-### Testlet-format Data (item-text-person)
-
-A very common upload is **reading / listening / SJT data with items
-nested inside passages (testlets)**. The natural tidy-long representation is:
-
-| Person | Scorer | Text | Item | Score |
-|---|---|---|---|---|
-| R001 | S1 | Passage_1 | Q1 | 1 |
-| R001 | S1 | Passage_1 | Q2 | 0 |
-| … | … | … | … | … |
-
-The **📖 Reading testlet — binary** scenario in the sidebar is exactly
-this shape (100 × 1 × 6 × 4 = 2,400 observations). MFRM estimates a
-fixed-effect logit for every passage and every item, and the Bias /
-Interaction tab can surface Text × Person dependence.
-
-#### How MFRM differs from classical testlet models
-
-Wainer & Kiely (1987) introduced *testlets* (item clusters sharing a
-common stimulus) and argued that items inside a testlet violate the
-local-independence (LI) assumption of standard IRT: a reader who
-misunderstood the passage will miss several items for a correlated
-reason. Bradlow, Wainer, and Wang (1999) formalised this with a Bayesian
-random-effects testlet model that adds a **person × testlet random
-effect** γ_{jd} to the item-response equation:
-
-```
-P(Y_{ijd} = 1 | θ_j, b_i, γ_{jd})
-  = logit⁻¹(θ_j − b_i + γ_{jd})
-  γ_{jd} ~ N(0, σ²_d)
-```
-
-Each testlet *d* has its own variance σ²_d. When σ²_d is small, testlet
-effects are negligible and the standard Rasch/2PL is adequate; when
-σ²_d is large, ignoring it over-states the test's precision.
-
-**MFRM** treats the testlet (Text) as a **fixed-effect facet** —
-it estimates one logit per passage, but does not estimate a per-person
-random effect inside the passage. Practical implications:
-
-| Aspect | MFRM (this engine) | Testlet model (Bradlow+ 1999) |
-|---|---|---|
-| Testlet effect | Fixed logit per passage | Random γ_{jd} per person × testlet |
-| Local independence | Assumed | Relaxed via γ_{jd} |
-| Reliability estimate | Can be optimistic when testlet effect is large | Shrinks with σ²_d |
-| Can I inspect passage difficulty? | Yes (Measures / Wright map) | Yes, similarly |
-| Can I inspect local item dependence inside a passage? | Only indirectly (Bias heatmap) | Directly via σ²_d |
-| Download Stan code from this app | — (use core RSM/PCM/GPCM) | **TESTLET_RI** / **TESTLET_BIFACTOR** |
-
-Rijmen (2010) showed that the testlet model is a **constrained bi-factor
-model**, so the bi-factor family (DeMars, 2006) gives a third, equivalent
-route when the testlet count is small.
-
-**Recommendation**
-
-- Use MFRM (this engine, no Stan needed) when the Text × Person bias
-  heatmap shows modest local dependence and passage-level difficulty is
-  the effect of interest.
-- Use **TESTLET_RI** (sidebar → Advanced models) when you need to report
-  σ²_d per testlet or correct reliability for local dependence.
-- Use **TESTLET_BIFACTOR** when you also want a shared general factor
-  alongside per-testlet specific factors (DeMars, 2006).
-
-#### References
-
-- Bradlow, E. T., Wainer, H., & Wang, X. (1999). A Bayesian random
-  effects model for testlets. *Psychometrika, 64*(2), 153–168.
-- DeMars, C. E. (2006). Application of the bi-factor multidimensional
-  item response theory model to testlet-based tests. *Journal of
-  Educational Measurement, 43*(2), 145–168.
-- Rijmen, F. (2010). Formal relations and an empirical comparison among
-  the bi-factor, the testlet, and a second-order multidimensional IRT
-  model. *Journal of Educational Measurement, 47*(3), 361–372.
-- Wainer, H., & Kiely, G. L. (1987). Item clusters and computerized
-  adaptive testing: A case for testlets. *Journal of Educational
-  Measurement, 24*(3), 185–201.
-- Wang, X., Bradlow, E. T., & Wainer, H. (2002). A general Bayesian
-  model for testlets: Theory and applications. *Applied Psychological
-  Measurement, 26*(1), 109–128.
-"""
-            )
+            st.markdown(t("help.model_capability_body"))
 
     # ------------------------------------------------------------------
     # Tab 10: Public Beta (hidden in Essential mode)
     # ------------------------------------------------------------------
     if "Public Beta" in help_tab:
         with help_tab["Public Beta"]:
-            st.markdown(
-                """
-### Public Beta Boundaries
-
-This app should be presented as a **public beta / research preview**. The table
-below states what the app currently supports and what should not be
-over-claimed. Use it when writing documentation, release notes, manuscripts, or
-teaching materials based on app output.
-"""
-            )
+            st.markdown(t("help.public_beta_intro"))
             st.dataframe(public_beta_limitations_table(), width="stretch", hide_index=True)
             st.download_button(
-                "Download public beta limitations (CSV)",
+                t("help.public_beta_download_limitations"),
                 data=to_csv_bytes(public_beta_limitations_table()),
                 file_name="mfrm_public_beta_limitations.csv",
                 mime="text/csv",
                 key="dl_public_beta_limitations_help",
             )
-            st.markdown("### External Validation Artifact Inventory")
-            st.caption(
-                "This table records archived validation artifacts that can support "
-                "numerical checks. It intentionally avoids runtime dependencies on "
-                "machine-specific paths and warns against bundling private or large data."
-            )
+            st.markdown(t("help.public_beta_validation_inventory_header"))
+            st.caption(t("help.public_beta_validation_inventory_caption"))
             st.dataframe(external_simulation_reference_inventory(), width="stretch", hide_index=True)
             st.download_button(
-                "Download Simulation validation inventory (CSV)",
+                t("help.public_beta_download_validation_inventory"),
                 data=to_csv_bytes(external_simulation_reference_inventory()),
                 file_name="mfrm_external_simulation_reference_inventory.csv",
                 mime="text/csv",
                 key="dl_external_simulation_reference_inventory_help",
             )
-            st.markdown("### mfrmr 0.1.6 Migration Coverage")
-            st.caption(
-                "This table maps the mfrmr 0.1.6 package feature surface to the current "
-                "standalone Python implementation and its public-beta boundaries."
-            )
+            st.markdown(t("help.public_beta_migration_header"))
+            st.caption(t("help.public_beta_migration_caption"))
             st.dataframe(mfrmr_016_migration_coverage_table(), width="stretch", hide_index=True)
             st.download_button(
-                "Download mfrmr 0.1.6 migration coverage (CSV)",
+                t("help.public_beta_download_migration"),
                 data=to_csv_bytes(mfrmr_016_migration_coverage_table()),
                 file_name="mfrm_mfrmr_016_migration_coverage.csv",
                 mime="text/csv",
                 key="dl_mfrmr_016_migration_coverage_help",
             )
-            st.markdown("### Release Readiness")
-            st.caption(
-                "This is a repository-level checklist. It does not replace a successful CI run, "
-                "but it catches missing release files and over-claiming risks."
-            )
+            st.markdown(t("help.public_beta_release_readiness_header"))
+            st.caption(t("help.public_beta_release_readiness_caption"))
             st.dataframe(public_release_readiness_table(), width="stretch", hide_index=True)
             st.download_button(
-                "Download release readiness (CSV)",
+                t("help.public_beta_download_release_readiness"),
                 data=to_csv_bytes(public_release_readiness_table()),
                 file_name="mfrm_public_release_readiness.csv",
                 mime="text/csv",

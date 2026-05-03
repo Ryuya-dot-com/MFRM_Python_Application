@@ -615,5 +615,23 @@
     "marginal_pairwise_default_reason": "Pairwise marginal 診断が計算された。",
     "marginal_pairwise_unavailable_default": "Pairwise marginal 診断は計算されなかった。",
     "marginal_pairwise_counts_expander": "Pairwise marginal 度数の詳細"
+  },
+  "visuals_top": {
+    "intro_caption": "モデル-データ適合と rating scale 機能の診断可視化。Category probability curve は scale 構造を、pathway map は element レベルの fit パターンを、facet 分布は element の広がりを、observed-vs-expected プロットはモデル精度を示す。",
+    "roadmap_expander": "可視化解釈ロードマップ",
+    "roadmap_caption": "MFRM の出力に慣れていない場合はこのロードマップを使う。優先度順にプロットを読み、最終的な主張を出す前に最初の重大なレビュー誘因で立ち止まる。",
+    "roadmap_download_button": "可視化解釈チェックリストをダウンロード (CSV)",
+    "evidence_expander": "Evidence basis と label 戦略",
+    "evidence_caption": "本アプリは一般的な Rasch / MFRM 診断プロットに準拠するが、密なレポートでも読みやすいよう、対話的な hover テキストとコンパクトな軸を用いる。",
+    "evidence_download_button": "可視化エビデンス基盤をダウンロード (CSV)",
+    "tab_category_probability_curves": "Category Probability Curves",
+    "tab_information_curves": "Information Curves",
+    "tab_pathway_map": "Pathway Map",
+    "tab_facet_distribution": "Facet Distribution",
+    "tab_observed_vs_expected": "Observed vs Expected",
+    "tab_forest_plot": "Forest plot",
+    "tab_qq_plot": "Q-Q plot",
+    "tab_ecdf": "ECDF",
+    "essential_mode_caption": "💡 4 つの追加診断プロット (Information、Forest、Q-Q、ECDF) は **Full** view density で利用できる。公表水準の分析を行う前にサイドバー上部のトグルから切り替える。"
   }
 }

@@ -615,5 +615,23 @@
     "marginal_pairwise_default_reason": "Pairwise marginal diagnostics computed.",
     "marginal_pairwise_unavailable_default": "Pairwise marginal diagnostics were not computed.",
     "marginal_pairwise_counts_expander": "Pairwise marginal count details"
+  },
+  "visuals_top": {
+    "intro_caption": "Diagnostic visualizations for model-data fit and rating scale functioning. Category probability curves show scale structure; the pathway map reveals element-level fit patterns; facet distributions compare element spread; observed-vs-expected plots test model accuracy.",
+    "roadmap_expander": "Visual interpretation roadmap",
+    "roadmap_caption": "Use this roadmap when you are new to MFRM output. Read plots in priority order, and stop at the first serious review trigger before making final claims.",
+    "roadmap_download_button": "Download visual interpretation checklist (CSV)",
+    "evidence_expander": "Evidence basis and label strategy",
+    "evidence_caption": "The app follows common Rasch/MFRM diagnostic plots, but uses interactive hover text and compact axes so dense reports remain readable.",
+    "evidence_download_button": "Download visual evidence basis (CSV)",
+    "tab_category_probability_curves": "Category Probability Curves",
+    "tab_information_curves": "Information Curves",
+    "tab_pathway_map": "Pathway Map",
+    "tab_facet_distribution": "Facet Distribution",
+    "tab_observed_vs_expected": "Observed vs Expected",
+    "tab_forest_plot": "Forest plot",
+    "tab_qq_plot": "Q-Q plot",
+    "tab_ecdf": "ECDF",
+    "essential_mode_caption": "💡 Four additional diagnostic plots (Information, Forest, Q-Q, ECDF) are available in **Full** view density. Switch from the sidebar top toggle before a publication-depth analysis."
   }
 }

@@ -21640,35 +21640,24 @@ def _draw_misfit_ranking(fit_df: pd.DataFrame) -> None:
 
 def show_visuals_section(result: dict, diagnostics: dict) -> None:
     """Comprehensive visualization suite."""
-    st.caption(
-        "Diagnostic visualizations for model-data fit and rating scale functioning. "
-        "Category probability curves show scale structure; the pathway map reveals "
-        "element-level fit patterns; facet distributions compare element spread; "
-        "observed-vs-expected plots test model accuracy."
-    )
-    with st.expander("Visual interpretation roadmap", expanded=False):
-        st.caption(
-            "Use this roadmap when you are new to MFRM output. Read plots in priority "
-            "order, and stop at the first serious review trigger before making final claims."
-        )
+    st.caption(t("visuals_top.intro_caption"))
+    with st.expander(t("visuals_top.roadmap_expander"), expanded=False):
+        st.caption(t("visuals_top.roadmap_caption"))
         checklist = visual_interpretation_checklist()
         st.dataframe(checklist, width="stretch", hide_index=True)
         st.download_button(
-            "Download visual interpretation checklist (CSV)",
+            t("visuals_top.roadmap_download_button"),
             data=to_csv_bytes(checklist),
             file_name="mfrm_visual_interpretation_checklist.csv",
             mime="text/csv",
             key="dl_visual_interpretation_checklist",
         )
-    with st.expander("Evidence basis and label strategy", expanded=False):
-        st.caption(
-            "The app follows common Rasch/MFRM diagnostic plots, but uses interactive "
-            "hover text and compact axes so dense reports remain readable."
-        )
+    with st.expander(t("visuals_top.evidence_expander"), expanded=False):
+        st.caption(t("visuals_top.evidence_caption"))
         evidence = visual_method_evidence_table()
         st.dataframe(evidence, width="stretch", hide_index=True)
         st.download_button(
-            "Download visual evidence basis (CSV)",
+            t("visuals_top.evidence_download_button"),
             data=to_csv_bytes(evidence),
             file_name="mfrm_visual_method_evidence.csv",
             mime="text/csv",
@@ -21680,14 +21669,21 @@ def show_visuals_section(result: dict, diagnostics: dict) -> None:
     essential_mode = st.session_state.get("app_view_density", "Essential") == "Essential"
     if essential_mode:
         vtab_labels = [
-            "Category Probability Curves", "Pathway Map",
-            "Facet Distribution", "Observed vs Expected",
+            t("visuals_top.tab_category_probability_curves"),
+            t("visuals_top.tab_pathway_map"),
+            t("visuals_top.tab_facet_distribution"),
+            t("visuals_top.tab_observed_vs_expected"),
         ]
     else:
         vtab_labels = [
-            "Category Probability Curves", "Information Curves", "Pathway Map",
-            "Facet Distribution", "Observed vs Expected",
-            "Forest plot", "Q-Q plot", "ECDF",
+            t("visuals_top.tab_category_probability_curves"),
+            t("visuals_top.tab_information_curves"),
+            t("visuals_top.tab_pathway_map"),
+            t("visuals_top.tab_facet_distribution"),
+            t("visuals_top.tab_observed_vs_expected"),
+            t("visuals_top.tab_forest_plot"),
+            t("visuals_top.tab_qq_plot"),
+            t("visuals_top.tab_ecdf"),
         ]
     vtabs = st.tabs(vtab_labels)
 
@@ -21717,11 +21713,7 @@ def show_visuals_section(result: dict, diagnostics: dict) -> None:
         with vtabs[7]:
             _draw_measure_ecdf_plotly(result, diagnostics)
     if essential_mode:
-        st.caption(
-            "💡 Four additional diagnostic plots (Information, Forest, Q-Q, ECDF) "
-            "are available in **Full** view density. Switch from the "
-            "sidebar top toggle before a publication-depth analysis."
-        )
+        st.caption(t("visuals_top.essential_mode_caption"))
 
 
 

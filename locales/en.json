@@ -808,5 +808,23 @@
     "subset_details_expander": "Subset details",
     "subsets_connected_success": "All elements are connected in a single subset — measures are on a common scale.",
     "connectivity_failed_info_template": "Connectivity analysis could not be completed: {error}. This may happen with very small datasets. Estimation results are still usable but connectivity should be verified manually."
+  },
+  "response_audit": {
+    "subheader": "Response-data audit",
+    "caption": "This audit preserves the user's input row numbers and shows which rows enter the likelihood. Missing responses are treated as structurally absent, not as zero scores.",
+    "metric_input_rows": "Input rows",
+    "metric_likelihood_rows": "Rows in likelihood",
+    "metric_excluded_rows": "Rows not used",
+    "fractional_error_template": "{n} row(s) contain fractional score values. Recode them to ordered integer categories before fitting.",
+    "excluded_warning_template": "{n} input row(s) are excluded before likelihood calculation. Open the table below to inspect exact row numbers and reasons.",
+    "all_usable_success": "Every input row is usable for likelihood calculation.",
+    "expander_pre": "Inspect likelihood-row mapping",
+    "expander_post": "Inspect likelihood-row mapping used in this run",
+    "summary_markdown": "**Audit summary**",
+    "excluded_markdown": "**Excluded/error rows**",
+    "first_500_caption_template": "Showing first 500 of {n} excluded/error rows.",
+    "no_excluded_caption": "No excluded rows.",
+    "download_full_button": "Download full row audit CSV",
+    "download_excluded_button": "Download excluded rows CSV"
   }
 }

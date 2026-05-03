@@ -808,5 +808,23 @@
     "subset_details_expander": "サブセット詳細",
     "subsets_connected_success": "すべての element が単一のサブセットで接続されている — measure は共通の scale 上にある。",
     "connectivity_failed_info_template": "Connectivity 分析を完了できなかった: {error}。非常に小さなデータセットで起こりうる。推定結果は引き続き利用可能だが、connectivity は手動で確認する必要がある。"
+  },
+  "response_audit": {
+    "subheader": "Response データ監査",
+    "caption": "本監査はユーザー入力の行番号を保持し、どの行が likelihood に入るかを示す。欠測反応は構造的不在として扱われ、ゼロ得点とは見なさない。",
+    "metric_input_rows": "入力行数",
+    "metric_likelihood_rows": "Likelihood に入る行数",
+    "metric_excluded_rows": "未使用の行数",
+    "fractional_error_template": "{n} 行が小数の score 値を含む。Fitting の前に順序付き整数 category に再コーディングする。",
+    "excluded_warning_template": "{n} 入力行が likelihood 計算前に除外された。下の表を開いて正確な行番号と理由を確認する。",
+    "all_usable_success": "すべての入力行が likelihood 計算で利用可能。",
+    "expander_pre": "Likelihood 行マッピングを確認する",
+    "expander_post": "本 run で用いた likelihood 行マッピングを確認する",
+    "summary_markdown": "**監査サマリ**",
+    "excluded_markdown": "**除外 / エラー行**",
+    "first_500_caption_template": "{n} 件の除外 / エラー行のうち先頭 500 件を表示。",
+    "no_excluded_caption": "除外行はない。",
+    "download_full_button": "全行監査 CSV をダウンロード",
+    "download_excluded_button": "除外行 CSV をダウンロード"
   }
 }

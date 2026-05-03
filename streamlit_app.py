@@ -11882,47 +11882,38 @@ def render_response_data_audit_panel(
     errors = int((rows["LikelihoodAction"].astype(str) == "error_before_fit").sum()) if "LikelihoodAction" in rows.columns else 0
     total = len(rows)
 
-    st.subheader("Response-data audit")
-    st.caption(
-        "This audit preserves the user's input row numbers and shows which rows enter "
-        "the likelihood. Missing responses are treated as structurally absent, not as zero scores."
-    )
+    st.subheader(t("response_audit.subheader"))
+    st.caption(t("response_audit.caption"))
     m1, m2, m3 = st.columns(3)
-    m1.metric("Input rows", f"{total:,}")
-    m2.metric("Rows in likelihood", f"{included:,}")
-    m3.metric("Rows not used", f"{excluded:,}")
+    m1.metric(t("response_audit.metric_input_rows"), f"{total:,}")
+    m2.metric(t("response_audit.metric_likelihood_rows"), f"{included:,}")
+    m3.metric(t("response_audit.metric_excluded_rows"), f"{excluded:,}")
 
     if errors:
-        st.error(
-            f"{errors:,} row(s) contain fractional score values. Recode them to ordered "
-            "integer categories before fitting."
-        )
+        st.error(t("response_audit.fractional_error_template", n=f"{errors:,}"))
     elif excluded:
-        st.warning(
-            f"{excluded:,} input row(s) are excluded before likelihood calculation. "
-            "Open the table below to inspect exact row numbers and reasons."
-        )
+        st.warning(t("response_audit.excluded_warning_template", n=f"{excluded:,}"))
     else:
-        st.success("Every input row is usable for likelihood calculation.")
+        st.success(t("response_audit.all_usable_success"))
 
     expander_label = (
-        "Inspect likelihood-row mapping"
+        t("response_audit.expander_pre")
         if context == "pre" else
-        "Inspect likelihood-row mapping used in this run"
+        t("response_audit.expander_post")
     )
     with st.expander(expander_label, expanded=expanded or bool(excluded or errors)):
         if isinstance(summary, pd.DataFrame) and not summary.empty:
-            st.markdown("**Audit summary**")
+            st.markdown(t("response_audit.summary_markdown"))
             st.dataframe(summary, width="stretch", hide_index=True)
         if not excluded_rows.empty:
-            st.markdown("**Excluded/error rows**")
+            st.markdown(t("response_audit.excluded_markdown"))
             st.dataframe(excluded_rows.head(500), width="stretch", hide_index=True)
             if len(excluded_rows) > 500:
-                st.caption(f"Showing first 500 of {len(excluded_rows):,} excluded/error rows.")
+                st.caption(t("response_audit.first_500_caption_template", n=f"{len(excluded_rows):,}"))
         else:
-            st.caption("No excluded rows.")
+            st.caption(t("response_audit.no_excluded_caption"))
         st.download_button(
-            "Download full row audit CSV",
+            t("response_audit.download_full_button"),
             data=to_csv_bytes(rows),
             file_name="mfrm_response_data_row_audit.csv",
             mime="text/csv",
@@ -11931,7 +11922,7 @@ def render_response_data_audit_panel(
         )
         if not excluded_rows.empty:
             st.download_button(
-                "Download excluded rows CSV",
+                t("response_audit.download_excluded_button"),
                 data=to_csv_bytes(excluded_rows),
                 file_name="mfrm_response_data_excluded_rows.csv",
                 mime="text/csv",

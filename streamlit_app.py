@@ -16573,11 +16573,21 @@ def run_facets_mode(core: dict, data: pd.DataFrame) -> None:
         pass
 
     tabs = st.tabs([
-        "Data", "Report", "Measures", "Fit Details",
-        "Dimensionality", "Wright Map", "Visuals",
-        "Bias/Interaction", "Categories/Steps",
-        "Agreement", "FACETS-style tables", "Facet Dashboard",
-        "Prediction/Simulation", "Downloads", "Help",
+        t("main_tabs.data"),
+        t("main_tabs.report"),
+        t("main_tabs.measures"),
+        t("main_tabs.fit_details"),
+        t("main_tabs.dimensionality"),
+        t("main_tabs.wright_map"),
+        t("main_tabs.visuals"),
+        t("main_tabs.bias_interaction"),
+        t("main_tabs.categories_steps"),
+        t("main_tabs.agreement"),
+        t("main_tabs.facets_style_tables"),
+        t("main_tabs.facet_dashboard"),
+        t("main_tabs.prediction_simulation"),
+        t("main_tabs.downloads"),
+        t("main_tabs.help"),
     ])
 
     # --- Data tab ---

@@ -826,5 +826,22 @@
     "no_excluded_caption": "No excluded rows.",
     "download_full_button": "Download full row audit CSV",
     "download_excluded_button": "Download excluded rows CSV"
+  },
+  "main_tabs": {
+    "data": "Data",
+    "report": "Report",
+    "measures": "Measures",
+    "fit_details": "Fit Details",
+    "dimensionality": "Dimensionality",
+    "wright_map": "Wright Map",
+    "visuals": "Visuals",
+    "bias_interaction": "Bias/Interaction",
+    "categories_steps": "Categories/Steps",
+    "agreement": "Agreement",
+    "facets_style_tables": "FACETS-style tables",
+    "facet_dashboard": "Facet Dashboard",
+    "prediction_simulation": "Prediction/Simulation",
+    "downloads": "Downloads",
+    "help": "Help"
   }
 }

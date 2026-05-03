@@ -549,5 +549,29 @@
     "pairwise_target_help": "Element をペアごとに比較する facet。例えば 'Rater' を選ぶと、もう一方の facet の文脈で各 rater ペアが severity においてどう異なるかを見られる。",
     "pairwise_no_results_info": "この選択に対する pairwise bias レポートは利用できない。",
     "download_button": "Bias テーブルをダウンロード (CSV)"
+  },
+  "categories_steps": {
+    "category_diagnostics_subheader": "Category 診断",
+    "category_diagnostics_caption": "Category レベルの統計量は、各 rating scale category がどう機能しているかを示す。確認点: (1) 各 category に十分な度数 (>= 10)、(2) 平均 measure が単調増加、(3) ordered threshold、(4) 許容範囲の fit (Infit / Outfit MnSq 0.5–1.5)。",
+    "monotonic_success": "Category 全体で平均 person measure が単調増加している。",
+    "monotonic_warning": "平均 person measure が単調増加 **していない**。Category の機能に問題がある可能性を示す。",
+    "interpret_screen_expander": "この category スクリーンの解釈方法",
+    "screen_note_sparse_template": "- Sparse な category: {levels}。これらの category を含む threshold は弱くしか識別されない。",
+    "screen_note_counts_ok": "- Category 度数は「各 category ≥ 10」のスクリーニング基準を満たしている。",
+    "screen_note_avg_ok": "- 平均 measure が category ラベルとともに増加している。",
+    "screen_note_avg_not_monotonic": "- 平均 measure が単調増加していない。隣接する category ラベルが ordered な performance を表していない可能性がある。",
+    "screen_note_disordered_template": "- Disordered threshold: {levels}。隣接 category を明確化するか統合することを検討する。",
+    "screen_note_no_disordered": "- 現在の step テーブルでは disordered threshold は検出されなかった。",
+    "screen_note_residual_advice": "- このスクリーンは residual fit や rater / task デザインと併せて扱う。Sparse な category は自動的に無効ではないが、報告時に注記が必要である。",
+    "download_button": "Category テーブルをダウンロード (CSV)",
+    "no_diagnostics_info": "Category 診断を計算できなかった。",
+    "no_calc_fn_info": "Category 診断には core モジュールの `calc_category_stats` が必要である。この関数はまだ利用できない。",
+    "step_subheader": "Step / Threshold の順序",
+    "step_caption": "**Ordered** とは、各 Rasch-Andrich threshold が単調増加していることを意味する: category *k* から *k+1* へ移るには常に *k−1* から *k* よりも大きな latent trait が必要である。Disordered threshold は隣接 category が区別できない可能性を示す — 統合を検討する (Linacre, 2002)。PCM では threshold が element 固有で、item / rater 間で異なりうる。",
+    "step_disordered_warning_template": "**{n} 個の disordered threshold** を検出した。隣接 category が明確に区別されて機能していない可能性がある。",
+    "step_ordered_success": "すべての threshold が適切に順序づけられている。",
+    "step_no_params_caption": "Step parameter は利用できない。",
+    "slope_subheader": "GPCM Slope パラメータ",
+    "slope_caption": "Slope parameter は GPCM step facet の discrimination 推定値である。Log scale で中心化されており、幾何平均 slope は 1 になる。大きな値は category 遷移を急峻にし、小さな値は平坦にする。"
   }
 }

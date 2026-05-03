@@ -23635,13 +23635,8 @@ def show_bias_section(
 
 def show_categories_section(result: dict, diagnostics: dict, core: dict) -> None:
     """Render category diagnostics and step ordering checks."""
-    st.subheader("Category Diagnostics")
-    st.caption(
-        "Category-level statistics show how each rating scale category functions. "
-        "Look for: (1) adequate counts per category (>=10), (2) monotonically "
-        "increasing average measures, (3) ordered thresholds, and (4) acceptable "
-        "fit (Infit/Outfit MnSq 0.5--1.5)."
-    )
+    st.subheader(t("categories_steps.category_diagnostics_subheader"))
+    st.caption(t("categories_steps.category_diagnostics_caption"))
 
     calc_cat_fn = core.get("calc_category_stats")
     calc_step_fn = core.get("calc_step_order")
@@ -23674,12 +23669,9 @@ def show_categories_section(result: dict, diagnostics: dict, core: dict) -> None
                 if len(avg_sorted) >= 2:
                     is_monotonic = avg_sorted["AvgPersonMeasure"].is_monotonic_increasing
                     if is_monotonic:
-                        st.success("Average person measures are monotonically increasing across categories.")
+                        st.success(t("categories_steps.monotonic_success"))
                     else:
-                        st.warning(
-                            "Average person measures are **not** monotonically increasing. "
-                            "This may indicate problematic category functioning."
-                        )
+                        st.warning(t("categories_steps.monotonic_warning"))
 
             # Category warnings
             step_order = None
@@ -23693,7 +23685,7 @@ def show_categories_section(result: dict, diagnostics: dict, core: dict) -> None
                 else:
                     st.warning(warnings_text)
 
-            with st.expander("How to interpret this category screen", expanded=False):
+            with st.expander(t("categories_steps.interpret_screen_expander"), expanded=False):
                 low_count_levels = cat_tbl.loc[cat_tbl["Count"] < 10, "Category"].tolist() if "Count" in cat_tbl.columns else []
                 avg_tbl_for_note = (
                     cat_tbl.dropna(subset=["AvgPersonMeasure"]).sort_values("Category")
@@ -23707,55 +23699,48 @@ def show_categories_section(result: dict, diagnostics: dict, core: dict) -> None
                 notes = []
                 if low_count_levels:
                     notes.append(
-                        f"- Sparse categories: {', '.join(map(str, low_count_levels))}. "
-                        "Thresholds involving these categories are weakly identified."
+                        t(
+                            "categories_steps.screen_note_sparse_template",
+                            levels=", ".join(map(str, low_count_levels)),
+                        )
                     )
                 else:
-                    notes.append("- Category counts meet the >=10-per-category screening rule.")
+                    notes.append(t("categories_steps.screen_note_counts_ok"))
                 notes.append(
-                    "- Average measures increase with category labels."
+                    t("categories_steps.screen_note_avg_ok")
                     if avg_ok else
-                    "- Average measures do not increase monotonically; adjacent category labels may not represent ordered performance."
+                    t("categories_steps.screen_note_avg_not_monotonic")
                 )
                 if disordered_levels:
                     notes.append(
-                        f"- Disordered thresholds: {', '.join(disordered_levels)}. "
-                        "Consider whether adjacent categories should be clarified or collapsed."
+                        t(
+                            "categories_steps.screen_note_disordered_template",
+                            levels=", ".join(disordered_levels),
+                        )
                     )
                 else:
-                    notes.append("- No disordered threshold was detected in the current step table.")
-                notes.append(
-                    "- Treat this screen together with residual fit and rater/task design; a sparse category is not automatically invalid, but it needs a reporting note."
-                )
+                    notes.append(t("categories_steps.screen_note_no_disordered"))
+                notes.append(t("categories_steps.screen_note_residual_advice"))
                 st.markdown("\n".join(notes))
 
             st.download_button(
-                "Download category table (CSV)",
+                t("categories_steps.download_button"),
                 data=to_csv_bytes(cat_tbl),
                 file_name="mfrm_category_stats.csv",
                 mime="text/csv",
             )
         else:
-            st.info("Category diagnostics could not be computed.")
+            st.info(t("categories_steps.no_diagnostics_info"))
     else:
-        st.info(
-            "Category diagnostics require `calc_category_stats` in the core module. "
-            "This function is not yet available."
-        )
+        st.info(t("categories_steps.no_calc_fn_info"))
 
     # Step ordering
     header_cols = st.columns([5, 1])
     with header_cols[0]:
-        st.subheader("Step / Threshold Ordering")
+        st.subheader(t("categories_steps.step_subheader"))
     with header_cols[1]:
         render_help_popover("threshold_map")
-    st.caption(
-        "**Ordered** means each Rasch-Andrich threshold increases monotonically: "
-        "moving from category *k* to *k+1* always requires more of the latent trait "
-        "than *k−1* to *k*. Disordered thresholds indicate adjacent categories may not "
-        "be distinguishable — consider collapsing them (Linacre, 2002). "
-        "For PCM, thresholds are element-specific and may differ across items/raters."
-    )
+    st.caption(t("categories_steps.step_caption"))
     step_tbl = result.get("steps")
     if step_tbl is not None and not step_tbl.empty:
         st.dataframe(step_tbl, width="stretch")
@@ -23767,22 +23752,17 @@ def show_categories_section(result: dict, diagnostics: dict, core: dict) -> None
                 disordered = step_order[step_order.get("Ordered", pd.Series(dtype=bool)) == False]
                 if not disordered.empty:
                     st.warning(
-                        f"**{len(disordered)} disordered threshold(s)** detected. "
-                        "This may indicate that adjacent categories are not functioning distinctly."
+                        t("categories_steps.step_disordered_warning_template", n=len(disordered))
                     )
                 else:
-                    st.success("All thresholds are properly ordered.")
+                    st.success(t("categories_steps.step_ordered_success"))
     else:
-        st.caption("No step parameters available.")
+        st.caption(t("categories_steps.step_no_params_caption"))
 
     slope_tbl = result.get("slopes", pd.DataFrame())
     if isinstance(slope_tbl, pd.DataFrame) and not slope_tbl.empty:
-        st.subheader("GPCM Slope Parameters")
-        st.caption(
-            "Slope parameters are discrimination estimates for the GPCM step facet. "
-            "They are centered on the log scale, so the geometric mean slope is 1. "
-            "Large values sharpen category transitions; small values flatten them."
-        )
+        st.subheader(t("categories_steps.slope_subheader"))
+        st.caption(t("categories_steps.slope_caption"))
         st.dataframe(slope_tbl, width="stretch")
 
 

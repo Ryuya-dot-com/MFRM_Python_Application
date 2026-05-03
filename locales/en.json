@@ -549,5 +549,29 @@
     "pairwise_target_help": "The facet whose elements are compared pairwise. For example, select 'Rater' to see how each rater pair differs in severity within the context of the other facet.",
     "pairwise_no_results_info": "Pairwise bias report not available for this selection.",
     "download_button": "Download bias table (CSV)"
+  },
+  "categories_steps": {
+    "category_diagnostics_subheader": "Category Diagnostics",
+    "category_diagnostics_caption": "Category-level statistics show how each rating scale category functions. Look for: (1) adequate counts per category (>=10), (2) monotonically increasing average measures, (3) ordered thresholds, and (4) acceptable fit (Infit/Outfit MnSq 0.5--1.5).",
+    "monotonic_success": "Average person measures are monotonically increasing across categories.",
+    "monotonic_warning": "Average person measures are **not** monotonically increasing. This may indicate problematic category functioning.",
+    "interpret_screen_expander": "How to interpret this category screen",
+    "screen_note_sparse_template": "- Sparse categories: {levels}. Thresholds involving these categories are weakly identified.",
+    "screen_note_counts_ok": "- Category counts meet the >=10-per-category screening rule.",
+    "screen_note_avg_ok": "- Average measures increase with category labels.",
+    "screen_note_avg_not_monotonic": "- Average measures do not increase monotonically; adjacent category labels may not represent ordered performance.",
+    "screen_note_disordered_template": "- Disordered thresholds: {levels}. Consider whether adjacent categories should be clarified or collapsed.",
+    "screen_note_no_disordered": "- No disordered threshold was detected in the current step table.",
+    "screen_note_residual_advice": "- Treat this screen together with residual fit and rater/task design; a sparse category is not automatically invalid, but it needs a reporting note.",
+    "download_button": "Download category table (CSV)",
+    "no_diagnostics_info": "Category diagnostics could not be computed.",
+    "no_calc_fn_info": "Category diagnostics require `calc_category_stats` in the core module. This function is not yet available.",
+    "step_subheader": "Step / Threshold Ordering",
+    "step_caption": "**Ordered** means each Rasch-Andrich threshold increases monotonically: moving from category *k* to *k+1* always requires more of the latent trait than *k−1* to *k*. Disordered thresholds indicate adjacent categories may not be distinguishable — consider collapsing them (Linacre, 2002). For PCM, thresholds are element-specific and may differ across items/raters.",
+    "step_disordered_warning_template": "**{n} disordered threshold(s)** detected. This may indicate that adjacent categories are not functioning distinctly.",
+    "step_ordered_success": "All thresholds are properly ordered.",
+    "step_no_params_caption": "No step parameters available.",
+    "slope_subheader": "GPCM Slope Parameters",
+    "slope_caption": "Slope parameters are discrimination estimates for the GPCM step facet. They are centered on the log scale, so the geometric mean slope is 1. Large values sharpen category transitions; small values flatten them."
   }
 }

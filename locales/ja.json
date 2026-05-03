@@ -727,5 +727,32 @@
     "posterior_pv_caption_template": "Person あたり {n} 個の plausible value を seed {seed} で生成した。",
     "posterior_pv_expander": "Plausible values",
     "posterior_no_pv_info": "この実行では plausible value のエクスポートが要求されなかった。MML で Full publication または Custom > Export plausible values を使い PV 列を生成する。"
+  },
+  "facet_dashboard": {
+    "subheader": "Facet Quality Dashboard",
+    "intro_caption": "Facet element の機能を一望できるサマリ。任意の facet (例: rater、criteria、task) を選び、極端な severity、misfit、中心化傾向、有意な bias interaction の有無を確認する。",
+    "no_measures_info": "Measure が利用できない。先に推定を実行する。",
+    "no_facet_cols_info": "Facet 列が利用できない。",
+    "target_facet_label": "対象 facet",
+    "target_facet_help": "評価する facet を選ぶ (例: Rater、Criteria、Task)。",
+    "no_facet_measures_info_template": "facet '{facet}' に対する measure が見つからない。",
+    "need_two_elements_info_template": "ダッシュボード分析には '{facet}' に最低 2 element が必要。",
+    "metric_elements": "Elements",
+    "metric_severity_outliers": "Severity outliers",
+    "metric_severity_outliers_help": "|Severity Z| > 2.0",
+    "metric_misfitting": "Misfitting",
+    "metric_misfitting_help": "Infit が 0.5–1.5 の範囲外、または Outfit > 2.0",
+    "metric_central_tendency": "Central tendency",
+    "metric_central_tendency_help": "Outfit ZSTD < −2.0 かつ Infit ≤ 1.4",
+    "metric_any_flag": "Any flag",
+    "all_clean_success_template": "フラグされた element はなし。すべての {facet} element は許容範囲内で機能している。",
+    "flagged_warning_template": "{n_total} 個の {facet} element 中 {n_flagged} 個がレビュー対象としてフラグされた。",
+    "detail_subheader_template": "{facet} 詳細テーブル",
+    "show_flagged_only_label": "フラグされた element のみ表示",
+    "show_flagged_only_help": "少なくとも 1 つの quality flag を持つ element のみが表示されるようテーブルを絞り込む。",
+    "distribution_subheader_template": "{facet} measure 分布",
+    "interpretation_expander": "解釈ガイド",
+    "interpretation_body_template": "**Severity outlier** (Flag_Severity): Element の measure が {facet} グループ平均から 2 SD 以上離れている。\nRater の場合: 厳しい rater は大きな正の measure、寛容な rater は負の measure を持つ。\nCriteria / task の場合: 異常に難しい / 易しい element を示す。\n\n**Misfit** (Flag_Misfit): Infit MnSq が 0.5–1.5 の範囲外、または Outfit MnSq > 2.0。\n強い misfit → 一貫しないパターン、弱い misfit → 過度に予測可能 (Halo 効果の可能性)。\n\n**Central tendency** (Flag_Central): Outfit ZSTD < −2.0 と Infit ≤ 1.4 の組合せ。\nRating scale の使用が制限されていることを示す — element は想定より変動が小さい。\n\n**Bias count** (Sig_Bias_Count): 全 facet ペアにわたるこの element に関する有意 (|*t*| ≥ 2) な bias interaction の件数。多いほど differential functioning を示唆する。\n\n*参考文献:* Myford & Wolfe (2003, 2004); Linacre (2002); Engelhard (2013).",
+    "download_button": "Rater ダッシュボードをダウンロード (CSV)"
   }
 }

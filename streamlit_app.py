@@ -23702,35 +23702,31 @@ def show_facet_dashboard(
     *, all_bias_results: dict | None = None,
 ) -> None:
     """Single-screen facet quality summary: severity, fit, central tendency, bias flags."""
-    st.subheader("Facet Quality Dashboard")
-    st.caption(
-        "At-a-glance summary of facet element functioning. "
-        "Select any facet (e.g., raters, criteria, tasks) to check for "
-        "extreme severity, misfit, central tendency, or significant bias interactions."
-    )
+    st.subheader(t("facet_dashboard.subheader"))
+    st.caption(t("facet_dashboard.intro_caption"))
 
     measures = diagnostics.get("measures", pd.DataFrame())
     if measures.empty or "Facet" not in measures.columns:
-        st.info("No measures available. Run estimation first.")
+        st.info(t("facet_dashboard.no_measures_info"))
         return
 
     # --- Identify rater facet ---
     config_facet_names = result.get("config", {}).get("facet_names", facet_cols)
     if not config_facet_names:
-        st.info("No facet columns available.")
+        st.info(t("facet_dashboard.no_facet_cols_info"))
         return
 
     rater_facet = st.selectbox(
-        "Target facet",
+        t("facet_dashboard.target_facet_label"),
         list(config_facet_names),
         index=0,
         key="rater_dashboard_facet",
-        help="Select the facet to evaluate (e.g., Rater, Criteria, Task).",
+        help=t("facet_dashboard.target_facet_help"),
     )
 
     rater_df = measures[measures["Facet"] == rater_facet].copy()
     if rater_df.empty:
-        st.info(f"No measures found for facet '{rater_facet}'.")
+        st.info(t("facet_dashboard.no_facet_measures_info_template", facet=rater_facet))
         return
 
     # Ensure numeric columns
@@ -23741,7 +23737,7 @@ def show_facet_dashboard(
     estimates = rater_df["Estimate"].dropna()
     n_raters = len(rater_df)
     if n_raters < 2:
-        st.info(f"Need at least 2 elements in '{rater_facet}' for dashboard analysis.")
+        st.info(t("facet_dashboard.need_two_elements_info_template", facet=rater_facet))
         return
 
     mean_sev = float(estimates.mean())
@@ -23809,19 +23805,35 @@ def show_facet_dashboard(
     # --- Summary metrics ---
     n_flagged_any = int(rater_df[flags].any(axis=1).sum())
     col1, col2, col3, col4, col5 = st.columns(5)
-    col1.metric("Elements", n_raters)
-    col2.metric("Severity outliers", int(rater_df["Flag_Severity"].sum()),
-                help="|Severity Z| > 2.0")
-    col3.metric("Misfitting", int(rater_df["Flag_Misfit"].sum()),
-                help="Infit outside 0.5–1.5 or Outfit > 2.0")
-    col4.metric("Central tendency", int(rater_df["Flag_Central"].sum()),
-                help="Outfit ZSTD < −2.0 & Infit ≤ 1.4")
-    col5.metric("Any flag", n_flagged_any)
+    col1.metric(t("facet_dashboard.metric_elements"), n_raters)
+    col2.metric(
+        t("facet_dashboard.metric_severity_outliers"),
+        int(rater_df["Flag_Severity"].sum()),
+        help=t("facet_dashboard.metric_severity_outliers_help"),
+    )
+    col3.metric(
+        t("facet_dashboard.metric_misfitting"),
+        int(rater_df["Flag_Misfit"].sum()),
+        help=t("facet_dashboard.metric_misfitting_help"),
+    )
+    col4.metric(
+        t("facet_dashboard.metric_central_tendency"),
+        int(rater_df["Flag_Central"].sum()),
+        help=t("facet_dashboard.metric_central_tendency_help"),
+    )
+    col5.metric(t("facet_dashboard.metric_any_flag"), n_flagged_any)
 
     if n_flagged_any == 0:
-        st.success(f"No elements flagged. All {rater_facet} elements are functioning within acceptable limits.")
+        st.success(t("facet_dashboard.all_clean_success_template", facet=rater_facet))
     else:
-        st.warning(f"{n_flagged_any} of {n_raters} {rater_facet} elements flagged for review.")
+        st.warning(
+            t(
+                "facet_dashboard.flagged_warning_template",
+                n_flagged=n_flagged_any,
+                n_total=n_raters,
+                facet=rater_facet,
+            )
+        )
 
     # --- Full rater table ---
     display_cols = [elem_col, "Estimate", "SE", "Severity_Z"]
@@ -23830,10 +23842,10 @@ def show_facet_dashboard(
             display_cols.append(c)
     display_cols.extend(["Sig_Bias_Count"] + flags)
 
-    st.subheader(f"{rater_facet} detail table")
+    st.subheader(t("facet_dashboard.detail_subheader_template", facet=rater_facet))
     show_flagged_only = st.checkbox(
-        "Show flagged elements only", value=False, key="rater_dash_flagged",
-        help="Filter the table to show only elements with at least one quality flag.",
+        t("facet_dashboard.show_flagged_only_label"), value=False, key="rater_dash_flagged",
+        help=t("facet_dashboard.show_flagged_only_help"),
     )
     display_df = rater_df[display_cols].copy()
     if show_flagged_only:
@@ -23848,7 +23860,7 @@ def show_facet_dashboard(
     )
 
     # --- Severity distribution chart ---
-    st.subheader(f"{rater_facet} measure distribution")
+    st.subheader(t("facet_dashboard.distribution_subheader_template", facet=rater_facet))
     sev_vals = rater_df["Estimate"].dropna().values
     colors_sev = ["#e74c3c" if f else "#3498db" for f in rater_df["Flag_Severity"]]
     labels_sev = [str(v) for v in rater_df[elem_col].values]
@@ -23879,26 +23891,11 @@ def show_facet_dashboard(
     _offer_fig_download(fig_sev, "facet_severity", "Download Measure Distribution (PNG 300 DPI)")
 
     # --- Interpretation guide ---
-    with st.expander("Interpretation guide"):
-        st.markdown(f"""
-**Severity outlier** (Flag_Severity): Element's measure is more than 2 SD from the {rater_facet} group mean.
-For raters: harsh raters have high positive measures; lenient raters have negative measures.
-For criteria/tasks: indicates unusually difficult or easy elements.
-
-**Misfit** (Flag_Misfit): Infit MnSq outside 0.5–1.5 or Outfit MnSq > 2.0.
-High misfit → inconsistent patterns; low misfit → overly predictable (possible Halo effect).
-
-**Central tendency** (Flag_Central): Outfit ZSTD < −2.0 combined with Infit ≤ 1.4.
-Indicates restricted use of the rating scale — element shows less variation than expected.
-
-**Bias count** (Sig_Bias_Count): Number of significant (|*t*| ≥ 2) bias interactions
-involving this element across all facet pairs. High counts suggest differential functioning.
-
-*References:* Myford & Wolfe (2003, 2004); Linacre (2002); Engelhard (2013).
-""")
+    with st.expander(t("facet_dashboard.interpretation_expander")):
+        st.markdown(t("facet_dashboard.interpretation_body_template", facet=rater_facet))
 
     st.download_button(
-        "Download rater dashboard (CSV)",
+        t("facet_dashboard.download_button"),
         data=to_csv_bytes(display_df),
         file_name="mfrm_rater_dashboard.csv",
         mime="text/csv",

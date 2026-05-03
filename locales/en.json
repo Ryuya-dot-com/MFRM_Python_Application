@@ -727,5 +727,32 @@
     "posterior_pv_caption_template": "{n} plausible value(s) per person generated with seed {seed}.",
     "posterior_pv_expander": "Plausible values",
     "posterior_no_pv_info": "Plausible value export was not requested for this run. Use Full publication or Custom > Export plausible values with MML to generate PV columns."
+  },
+  "facet_dashboard": {
+    "subheader": "Facet Quality Dashboard",
+    "intro_caption": "At-a-glance summary of facet element functioning. Select any facet (e.g., raters, criteria, tasks) to check for extreme severity, misfit, central tendency, or significant bias interactions.",
+    "no_measures_info": "No measures available. Run estimation first.",
+    "no_facet_cols_info": "No facet columns available.",
+    "target_facet_label": "Target facet",
+    "target_facet_help": "Select the facet to evaluate (e.g., Rater, Criteria, Task).",
+    "no_facet_measures_info_template": "No measures found for facet '{facet}'.",
+    "need_two_elements_info_template": "Need at least 2 elements in '{facet}' for dashboard analysis.",
+    "metric_elements": "Elements",
+    "metric_severity_outliers": "Severity outliers",
+    "metric_severity_outliers_help": "|Severity Z| > 2.0",
+    "metric_misfitting": "Misfitting",
+    "metric_misfitting_help": "Infit outside 0.5–1.5 or Outfit > 2.0",
+    "metric_central_tendency": "Central tendency",
+    "metric_central_tendency_help": "Outfit ZSTD < −2.0 & Infit ≤ 1.4",
+    "metric_any_flag": "Any flag",
+    "all_clean_success_template": "No elements flagged. All {facet} elements are functioning within acceptable limits.",
+    "flagged_warning_template": "{n_flagged} of {n_total} {facet} elements flagged for review.",
+    "detail_subheader_template": "{facet} detail table",
+    "show_flagged_only_label": "Show flagged elements only",
+    "show_flagged_only_help": "Filter the table to show only elements with at least one quality flag.",
+    "distribution_subheader_template": "{facet} measure distribution",
+    "interpretation_expander": "Interpretation guide",
+    "interpretation_body_template": "**Severity outlier** (Flag_Severity): Element's measure is more than 2 SD from the {facet} group mean.\nFor raters: harsh raters have high positive measures; lenient raters have negative measures.\nFor criteria/tasks: indicates unusually difficult or easy elements.\n\n**Misfit** (Flag_Misfit): Infit MnSq outside 0.5–1.5 or Outfit MnSq > 2.0.\nHigh misfit → inconsistent patterns; low misfit → overly predictable (possible Halo effect).\n\n**Central tendency** (Flag_Central): Outfit ZSTD < −2.0 combined with Infit ≤ 1.4.\nIndicates restricted use of the rating scale — element shows less variation than expected.\n\n**Bias count** (Sig_Bias_Count): Number of significant (|*t*| ≥ 2) bias interactions involving this element across all facet pairs. High counts suggest differential functioning.\n\n*References:* Myford & Wolfe (2003, 2004); Linacre (2002); Engelhard (2013).",
+    "download_button": "Download rater dashboard (CSV)"
   }
 }

@@ -633,5 +633,28 @@
     "tab_qq_plot": "Q-Q plot",
     "tab_ecdf": "ECDF",
     "essential_mode_caption": "💡 4 つの追加診断プロット (Information、Forest、Q-Q、ECDF) は **Full** view density で利用できる。公表水準の分析を行う前にサイドバー上部のトグルから切り替える。"
+  },
+  "report_top": {
+    "subheader": "Publication 水準のレポート",
+    "intro_caption": "Manuscript 向けの総合レポート出力。APA テキストの自動生成、readiness チェック、主張範囲のガードレール、manuscript テンプレート、サマリテーブル、自動入力済みの reporting checklist、facet equivalence 分析、完全 Bayesian 推定用の Stan code を含む。",
+    "meta_reports": "📝 Reports",
+    "meta_tables_checks": "📊 Tables & checks",
+    "meta_exports": "💾 Exports",
+    "reports_essential_caption": "自動生成される文章出力。APA Report は 1 ページの結果サマリ。Claim Guide は過度な主張を防ぐ。Manuscript Template と Method Appendix を利用するには **View density** を Full (サイドバー上部) に切り替える。",
+    "reports_full_caption": "自動生成される文章出力。APA Report は 1 ページの結果サマリ。Manuscript Template はより詳細な Methods + Results の骨格を提供する。Method Appendix は徹底的な技術記述を提供する。Claim Guide は過度な主張を防ぐ。",
+    "tab_apa_report": "APA Report",
+    "tab_manuscript_template": "Manuscript Template",
+    "tab_method_appendix": "Method Appendix",
+    "tab_claim_guide": "Claim Guide",
+    "checks_essential_caption": "結果テーブル、reporting 完全性チェックリスト、最終レポート readiness ゲート。Facet Equivalence 診断を利用するには **View density** を Full に切り替える。",
+    "checks_full_caption": "結果テーブル、reporting 完全性チェックリスト、facet equivalence 分析、最終レポート readiness ゲート。",
+    "tab_tables": "Tables",
+    "tab_reporting_checklist": "Reporting Checklist",
+    "tab_facet_equivalence": "Facet Equivalence",
+    "tab_readiness": "Readiness",
+    "exports_essential_caption": "ダウンロード用成果物。Publication Document は Abstract / Methods / Results / Figures / References を Word、PDF、HTML にまとめる。Bayesian 再現用の Stan Code も生成するには **View density** を Full に切り替える。",
+    "exports_full_caption": "ダウンロード用成果物。Stan Code は完全 Bayesian 再現用の runner。Publication Document は Abstract / Methods / Results / Figures / References を Word、PDF、HTML にまとめる。",
+    "tab_stan_code": "Stan Code",
+    "tab_publication_document": "📄 Publication Document"
   }
 }

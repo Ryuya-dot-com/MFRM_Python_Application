@@ -18660,13 +18660,8 @@ def show_report_section(
     all_bias_results: dict | None = None,
 ) -> None:
     """Publication-quality report with APA text, tables, checklist, equivalence, Stan."""
-    st.subheader("Publication-Quality Report")
-    st.caption(
-        "Comprehensive reporting output for manuscripts. Includes auto-generated APA text, "
-        "readiness checks, claim guardrails, a manuscript template, summary tables, "
-        "an auto-filled reporting checklist, facet equivalence analysis, and Stan code "
-        "for full Bayesian estimation."
-    )
+    st.subheader(t("report_top.subheader"))
+    st.caption(t("report_top.intro_caption"))
 
     # v0.2.6-beta: Essential mode hides advanced Report sub-tabs
     # (Manuscript Template, Method Appendix, Facet Equivalence, Stan
@@ -18683,35 +18678,44 @@ def show_report_section(
     # holds its own nested st.tabs with the related sub-sections; the
     # individual renderers are unchanged.
     report_meta_tabs = st.tabs([
-        "📝 Reports",
-        "📊 Tables & checks",
-        "💾 Exports",
+        t("report_top.meta_reports"),
+        t("report_top.meta_tables_checks"),
+        t("report_top.meta_exports"),
     ])
+
+    # Sub-tab routing: keep English internal IDs; resolve display via t().
+    _NARRATIVE_DISPLAY = {
+        "APA Report": t("report_top.tab_apa_report"),
+        "Manuscript Template": t("report_top.tab_manuscript_template"),
+        "Method Appendix": t("report_top.tab_method_appendix"),
+        "Claim Guide": t("report_top.tab_claim_guide"),
+    }
+    _CHECK_DISPLAY = {
+        "Tables": t("report_top.tab_tables"),
+        "Reporting Checklist": t("report_top.tab_reporting_checklist"),
+        "Facet Equivalence": t("report_top.tab_facet_equivalence"),
+        "Readiness": t("report_top.tab_readiness"),
+    }
+    _EXPORT_DISPLAY = {
+        "Stan Code": t("report_top.tab_stan_code"),
+        "📄 Publication Document": t("report_top.tab_publication_document"),
+    }
 
     # --- 📝 Reports: narrative documents ---
     with report_meta_tabs[0]:
         if essential_mode:
-            st.caption(
-                "Auto-generated narrative outputs. APA Report is a one-page "
-                "results summary; Claim Guide guards against over-claiming. "
-                "Switch **View density** to Full (sidebar top) to access "
-                "Manuscript Template and Method Appendix."
-            )
+            st.caption(t("report_top.reports_essential_caption"))
             narrative_labels = ["APA Report", "Claim Guide"]
         else:
-            st.caption(
-                "Auto-generated narrative outputs. APA Report is a one-page results "
-                "summary; Manuscript Template gives a fuller Methods + Results "
-                "scaffold; Method Appendix provides an exhaustive technical description; "
-                "Claim Guide guards against over-claiming."
-            )
+            st.caption(t("report_top.reports_full_caption"))
             narrative_labels = [
                 "APA Report",
                 "Manuscript Template",
                 "Method Appendix",
                 "Claim Guide",
             ]
-        narrative_tabs = st.tabs(narrative_labels)
+        narrative_displays = [_NARRATIVE_DISPLAY[label] for label in narrative_labels]
+        narrative_tabs = st.tabs(narrative_displays)
         narrative_tab = {
             label: narrative_tabs[i] for i, label in enumerate(narrative_labels)
         }
@@ -18731,24 +18735,18 @@ def show_report_section(
     # --- 📊 Tables & checks: structured data + quality gates ---
     with report_meta_tabs[1]:
         if essential_mode:
-            st.caption(
-                "Results tables, reporting completeness checklist, and "
-                "final-report readiness gate. Switch **View density** to "
-                "Full for Facet Equivalence diagnostics."
-            )
+            st.caption(t("report_top.checks_essential_caption"))
             check_labels = ["Tables", "Reporting Checklist", "Readiness"]
         else:
-            st.caption(
-                "Results tables, reporting completeness checklist, facet equivalence "
-                "analysis, and final-report readiness gate."
-            )
+            st.caption(t("report_top.checks_full_caption"))
             check_labels = [
                 "Tables",
                 "Reporting Checklist",
                 "Facet Equivalence",
                 "Readiness",
             ]
-        check_tabs = st.tabs(check_labels)
+        check_displays = [_CHECK_DISPLAY[label] for label in check_labels]
+        check_tabs = st.tabs(check_displays)
         check_tab = {label: check_tabs[i] for i, label in enumerate(check_labels)}
         with check_tab["Tables"]:
             _render_report_tables(result, diagnostics)
@@ -18763,21 +18761,13 @@ def show_report_section(
     # --- 💾 Exports: downloadable artefacts ---
     with report_meta_tabs[2]:
         if essential_mode:
-            st.caption(
-                "Download-ready artefact. Publication Document bundles "
-                "Abstract / Methods / Results / Figures / References into "
-                "Word, PDF, or HTML. Switch **View density** to Full to "
-                "also generate Stan Code for Bayesian replication."
-            )
+            st.caption(t("report_top.exports_essential_caption"))
             export_labels = ["📄 Publication Document"]
         else:
-            st.caption(
-                "Download-ready artefacts. Stan Code is the runner for full-Bayesian "
-                "replication; Publication Document bundles Abstract / Methods / Results "
-                "/ Figures / References into Word, PDF, or HTML."
-            )
+            st.caption(t("report_top.exports_full_caption"))
             export_labels = ["Stan Code", "📄 Publication Document"]
-        export_tabs = st.tabs(export_labels)
+        export_displays = [_EXPORT_DISPLAY[label] for label in export_labels]
+        export_tabs = st.tabs(export_displays)
         export_tab = {label: export_tabs[i] for i, label in enumerate(export_labels)}
         if "Stan Code" in export_tab:
             with export_tab["Stan Code"]:

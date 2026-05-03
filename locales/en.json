@@ -633,5 +633,28 @@
     "tab_qq_plot": "Q-Q plot",
     "tab_ecdf": "ECDF",
     "essential_mode_caption": "💡 Four additional diagnostic plots (Information, Forest, Q-Q, ECDF) are available in **Full** view density. Switch from the sidebar top toggle before a publication-depth analysis."
+  },
+  "report_top": {
+    "subheader": "Publication-Quality Report",
+    "intro_caption": "Comprehensive reporting output for manuscripts. Includes auto-generated APA text, readiness checks, claim guardrails, a manuscript template, summary tables, an auto-filled reporting checklist, facet equivalence analysis, and Stan code for full Bayesian estimation.",
+    "meta_reports": "📝 Reports",
+    "meta_tables_checks": "📊 Tables & checks",
+    "meta_exports": "💾 Exports",
+    "reports_essential_caption": "Auto-generated narrative outputs. APA Report is a one-page results summary; Claim Guide guards against over-claiming. Switch **View density** to Full (sidebar top) to access Manuscript Template and Method Appendix.",
+    "reports_full_caption": "Auto-generated narrative outputs. APA Report is a one-page results summary; Manuscript Template gives a fuller Methods + Results scaffold; Method Appendix provides an exhaustive technical description; Claim Guide guards against over-claiming.",
+    "tab_apa_report": "APA Report",
+    "tab_manuscript_template": "Manuscript Template",
+    "tab_method_appendix": "Method Appendix",
+    "tab_claim_guide": "Claim Guide",
+    "checks_essential_caption": "Results tables, reporting completeness checklist, and final-report readiness gate. Switch **View density** to Full for Facet Equivalence diagnostics.",
+    "checks_full_caption": "Results tables, reporting completeness checklist, facet equivalence analysis, and final-report readiness gate.",
+    "tab_tables": "Tables",
+    "tab_reporting_checklist": "Reporting Checklist",
+    "tab_facet_equivalence": "Facet Equivalence",
+    "tab_readiness": "Readiness",
+    "exports_essential_caption": "Download-ready artefact. Publication Document bundles Abstract / Methods / Results / Figures / References into Word, PDF, or HTML. Switch **View density** to Full to also generate Stan Code for Bayesian replication.",
+    "exports_full_caption": "Download-ready artefacts. Stan Code is the runner for full-Bayesian replication; Publication Document bundles Abstract / Methods / Results / Figures / References into Word, PDF, or HTML.",
+    "tab_stan_code": "Stan Code",
+    "tab_publication_document": "📄 Publication Document"
   }
 }

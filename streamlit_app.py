@@ -16591,12 +16591,8 @@ def run_facets_mode(core: dict, data: pd.DataFrame) -> None:
 
     # --- Data tab ---
     with tabs[0]:
-        st.subheader("Data quality checks")
-        st.caption(
-            "Pre-estimation data screening: score category distribution, "
-            "missing data rates, and facet connectivity. "
-            "Review these checks before interpreting estimation results."
-        )
+        st.subheader(t("data_quality.data_quality_subheader"))
+        st.caption(t("data_quality.data_quality_caption"))
         # Visual data-coverage diagnostics (added v0.2.4)
         try:
             _draw_data_coverage_heatmap(data, est_facet_cols, person_col)
@@ -16618,121 +16614,97 @@ def run_facets_mode(core: dict, data: pd.DataFrame) -> None:
             sample_audit = design_screen.get("sample_size_adequacy", pd.DataFrame())
             nesting_audit = design_screen.get("nesting_audit", pd.DataFrame())
             if isinstance(sample_summary, pd.DataFrame) and not sample_summary.empty:
-                st.subheader("Facet sample-size adequacy")
+                st.subheader(t("data_quality.sample_size_subheader"))
                 sparse_total = int(pd.to_numeric(sample_summary.get("SparseLevels", pd.Series(dtype=float)), errors="coerce").fillna(0).sum())
                 marginal_total = int(pd.to_numeric(sample_summary.get("MarginalLevels", pd.Series(dtype=float)), errors="coerce").fillna(0).sum())
                 if sparse_total:
-                    st.warning(f"{sparse_total} sparse facet level(s) have effective N < 10.")
+                    st.warning(t("data_quality.sparse_warning_template", n=sparse_total))
                 elif marginal_total:
-                    st.info(f"{marginal_total} marginal facet level(s) have effective N < 30.")
+                    st.info(t("data_quality.marginal_info_template", n=marginal_total))
                 else:
-                    st.success("No sparse or marginal facet levels were flagged by the current thresholds.")
+                    st.success(t("data_quality.no_sparse_success"))
                 st.dataframe(sample_summary, width="stretch", hide_index=True)
-                with st.expander("Per-level sample-size audit", expanded=False):
-                    st.caption("Based on likelihood-included rows after missing values and invalid weights are removed.")
+                with st.expander(t("data_quality.per_level_audit_expander"), expanded=False):
+                    st.caption(t("data_quality.per_level_audit_caption"))
                     st.dataframe(sample_audit, width="stretch", hide_index=True)
             if isinstance(nesting_audit, pd.DataFrame) and not nesting_audit.empty:
-                with st.expander("Facet nesting / crossing audit", expanded=False):
-                    st.caption(
-                        "Conditional-entropy screen: high index means FacetB is predictable from FacetA. "
-                        "Use this before interpreting crossed-facet claims."
-                    )
+                with st.expander(t("data_quality.nesting_audit_expander"), expanded=False):
+                    st.caption(t("data_quality.nesting_audit_caption"))
                     st.dataframe(nesting_audit.round(4), width="stretch", hide_index=True)
         score_messages = prep.get("score_messages", [])
         score_map = prep.get("score_map", pd.DataFrame())
         if score_messages or isinstance(score_map, pd.DataFrame):
-            st.subheader("Score category support")
+            st.subheader(t("data_quality.score_category_subheader"))
             for msg in score_messages:
                 st.warning(msg)
             if isinstance(score_map, pd.DataFrame) and not score_map.empty:
-                with st.expander("Score map", expanded=bool(score_messages)):
+                with st.expander(t("data_quality.score_map_expander"), expanded=bool(score_messages)):
                     st.dataframe(score_map, width="stretch")
 
-        with st.expander("What to check", expanded=False):
-            st.markdown(
-                """
-**Score distribution:** All categories should have adequate counts (≥ 10 per category is ideal;
-Linacre, 2002). Very sparse categories may cause disordered thresholds.
-
-**Missing data:** < 5% is typical; 5–20% is manageable but consider whether missingness is random.
-> 20% may bias parameter estimates (Little & Rubin, 2002).
-
-**Connectivity:** All persons and facet elements should be connected in a single network.
-If multiple disconnected subsets exist, measures are not comparable across subsets.
-A single connected subset means all measures are on the same scale.
-"""
-            )
+        with st.expander(t("data_quality.what_to_check_expander"), expanded=False):
+            st.markdown(t("data_quality.what_to_check_body"))
 
         # Data-specific checks only (convergence/connectivity shown above tabs)
         _show_data_tab_checks(data, out.get("score_col", score_col))
 
         anchor_audit = result.get("config", {}).get("anchor_audit", {})
         if isinstance(anchor_audit, dict):
-            st.subheader("Anchor/linking audit")
+            st.subheader(t("data_quality.anchor_subheader"))
             status = anchor_audit.get("overall_status", "ok")
-            message = anchor_audit.get("message", "No anchor audit message available.")
+            message = anchor_audit.get("message", t("data_quality.anchor_default_message"))
             if status == "error":
                 st.error(message)
             elif status == "warning":
                 st.warning(message)
             else:
                 st.success(message)
-            st.caption(
-                "Use this audit when you anchor elements or compare/link results across administrations. "
-                "For a single unanchored run, 'Unanchored' is normal and does not by itself indicate a problem."
-            )
+            st.caption(t("data_quality.anchor_caption"))
             audit_summary = anchor_audit.get("summary", pd.DataFrame())
             audit_issues = anchor_audit.get("issues", pd.DataFrame())
-            with st.expander("Anchor summary", expanded=status != "ok"):
+            with st.expander(t("data_quality.anchor_summary_expander"), expanded=status != "ok"):
                 if isinstance(audit_summary, pd.DataFrame) and not audit_summary.empty:
                     st.dataframe(audit_summary, width="stretch")
                 else:
-                    st.info("No anchor summary available.")
+                    st.info(t("data_quality.anchor_no_summary_info"))
             if isinstance(audit_issues, pd.DataFrame) and not audit_issues.empty:
-                with st.expander("Anchor issues and recommended actions", expanded=True):
+                with st.expander(t("data_quality.anchor_issues_expander"), expanded=True):
                     st.dataframe(audit_issues, width="stretch")
             else:
-                st.caption("No anchor-input issues detected.")
+                st.caption(t("data_quality.anchor_no_issues_caption"))
             drift_review = result.get("anchor_drift", {})
             if isinstance(drift_review, dict) and drift_review.get("available"):
                 drift_summary = drift_review.get("summary", pd.DataFrame())
                 anchor_drift_tbl = drift_review.get("anchor_drift", pd.DataFrame())
                 group_drift_tbl = drift_review.get("group_drift", pd.DataFrame())
-                with st.expander("Anchor drift / constraint consistency", expanded=False):
-                    st.caption(
-                        "This checks whether supplied anchors and group-anchor target means are respected after fitting. "
-                        "Because anchor inputs are used as hard constraints, this is not an unconstrained empirical drift estimate."
-                    )
+                with st.expander(t("data_quality.anchor_drift_expander"), expanded=False):
+                    st.caption(t("data_quality.anchor_drift_caption"))
                     if isinstance(drift_summary, pd.DataFrame) and not drift_summary.empty:
                         st.dataframe(drift_summary, width="stretch")
                     if isinstance(anchor_drift_tbl, pd.DataFrame) and not anchor_drift_tbl.empty:
-                        st.markdown("**Fixed anchors**")
+                        st.markdown(t("data_quality.anchor_drift_fixed_markdown"))
                         st.dataframe(anchor_drift_tbl, width="stretch")
                     if isinstance(group_drift_tbl, pd.DataFrame) and not group_drift_tbl.empty:
-                        st.markdown("**Group-anchor target means**")
+                        st.markdown(t("data_quality.anchor_drift_group_means_markdown"))
                         st.dataframe(group_drift_tbl, width="stretch")
             chain_review = result.get("equating_chain", {})
             if isinstance(chain_review, dict) and chain_review.get("available"):
                 chain_summary = chain_review.get("summary", pd.DataFrame())
                 chain_edges = chain_review.get("edges", pd.DataFrame())
-                with st.expander("Equating-chain summary", expanded=False):
+                with st.expander(t("data_quality.equating_chain_expander"), expanded=False):
                     st.caption(chain_review.get(
                         "interpretation",
-                        "This summarizes how the current run links to supplied anchor baselines.",
+                        t("data_quality.equating_chain_default_interpretation"),
                     ))
                     if isinstance(chain_edges, pd.DataFrame) and not chain_edges.empty:
-                        st.markdown("**Chain edges**")
+                        st.markdown(t("data_quality.equating_chain_edges_markdown"))
                         st.dataframe(chain_edges, width="stretch")
                     if isinstance(chain_summary, pd.DataFrame) and not chain_summary.empty:
-                        st.markdown("**Facet-level link summary**")
+                        st.markdown(t("data_quality.equating_chain_facet_link_markdown"))
                         st.dataframe(chain_summary, width="stretch")
             workflow_plan = result.get("anchor_equating_workflow", pd.DataFrame())
             if isinstance(workflow_plan, pd.DataFrame) and not workflow_plan.empty:
-                with st.expander("Anchor/equating workflow checklist", expanded=False):
-                    st.caption(
-                        "Use this as a reporting checklist before comparing administrations, forms, "
-                        "cohorts, or groups on a common scale."
-                    )
+                with st.expander(t("data_quality.anchor_workflow_expander"), expanded=False):
+                    st.caption(t("data_quality.anchor_workflow_caption"))
                     st.dataframe(workflow_plan, width="stretch", hide_index=True)
 
         # Connectivity subset details (expandable, if available)
@@ -16743,24 +16715,16 @@ A single connected subset means all measures are on the same scale.
                 subsets = calc_subsets_fn(diagnostics["obs"], ["Person"] + list(config_facet_names))
                 summary_df = subsets.get("summary", pd.DataFrame()) if subsets else pd.DataFrame()
                 if not summary_df.empty and len(summary_df) >= 2:
-                    st.warning(
-                        f"**{len(summary_df)} disconnected subsets detected.** "
-                        "Measures across subsets are not directly comparable. "
-                        "Consider adding linking elements or anchoring."
-                    )
-                    with st.expander("Subset details"):
+                    st.warning(t("data_quality.subsets_warning_template", n=len(summary_df)))
+                    with st.expander(t("data_quality.subset_details_expander")):
                         st.dataframe(summary_df, width="stretch")
                         nodes_df = subsets.get("nodes", pd.DataFrame()) if subsets else pd.DataFrame()
                         if not nodes_df.empty:
                             st.dataframe(nodes_df, width="stretch")
                 elif not summary_df.empty:
-                    st.success("All elements are connected in a single subset — measures are on a common scale.")
+                    st.success(t("data_quality.subsets_connected_success"))
             except Exception as conn_exc:
-                st.info(
-                    f"Connectivity analysis could not be completed: {conn_exc}. "
-                    "This may happen with very small datasets. Estimation results are still usable "
-                    "but connectivity should be verified manually."
-                )
+                st.info(t("data_quality.connectivity_failed_info_template", error=str(conn_exc)))
 
         st.subheader(t("result_tabs.input_preview_subheader"))
         st.dataframe(data.head(50), width="stretch")

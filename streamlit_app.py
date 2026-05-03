@@ -23029,110 +23029,105 @@ def show_help_section() -> None:
     # Tab 6: Glossary (expanded from 33 to 50+ terms)
     # ------------------------------------------------------------------
     with help_tab["Glossary"]:
-        st.markdown("### Glossary of MFRM Terms")
+        st.markdown(t("help.glossary_heading"))
         # Quick-reference glossary at the top (same data source used by
         # render_glossary_expander) so column headers and tooltips stay
         # in sync with Help-tab definitions.
         render_glossary_expander(scope="help_tab")
         st.markdown("---")
-        search = st.text_input("Search terms", "", key="glossary_search", placeholder="Type to filter...")
+        search = st.text_input(
+            t("help.glossary_search_label"),
+            "",
+            key="glossary_search",
+            placeholder=t("help.glossary_search_placeholder"),
+        )
 
+        # Term labels stay English (jargon; matches body text); definitions
+        # resolve through t() so the active locale drives the prose.
         glossary = [
-            # --- Core concepts ---
-            ("Facet", "A source of systematic variability in ratings (e.g., rater, task, criterion)."),
-            ("Element", "A specific level within a facet (e.g., Rater R1, Task T3)."),
-            ("Observation", "A single rating: one person rated by one rater on one task/criterion."),
-            ("Measure", "The estimated parameter on the logit scale (ability, severity, difficulty)."),
-            ("Standard Error (SE)", "The precision of a measure estimate; smaller = more precise."),
-            ("Logit", "Log-odds unit; the interval scale produced by Rasch models."),
-            ("Theta (θ)", "Person ability parameter on the logit scale."),
-            # --- Models ---
-            ("MFRM", "Many-Facet Rasch Model: extends Rasch to multiple sources of variability (Linacre, 1989)."),
-            ("RSM", "Rating Scale Model: all elements share common step/threshold parameters (Andrich, 1978)."),
-            ("PCM", "Partial Credit Model: each element has its own set of thresholds (Masters, 1982)."),
-            ("GPCM", "Bounded Generalized Partial Credit Model in this app: the selected step facet also has positive slope/discrimination parameters, with the geometric mean slope fixed to 1."),
-            ("GPCM slope", "Positive discrimination parameter for the selected GPCM step facet. Above 1 = steeper category transitions; below 1 = flatter transitions. It is not a Rasch severity parameter."),
-            ("HRM", "Hierarchical Rater Model: introduces latent 'ideal ratings' between ability and observed scores, modeling rater effects as a separate measurement stage (Patz et al., 2002)."),
-            # --- Estimation ---
-            ("JMLE", "Joint Maximum Likelihood Estimation: estimates all parameters simultaneously. Standard in FACETS."),
-            ("MML", "Marginal Maximum Likelihood: integrates over a person ability distribution."),
-            ("Bayesian estimation", "Uses prior distributions + observed data to obtain posterior distributions of parameters. Provides full uncertainty quantification (Uto & Ueno, 2020)."),
-            ("MCMC", "Markov Chain Monte Carlo: iterative sampling algorithm for Bayesian estimation. Requires convergence diagnostics (R-hat, ESS)."),
-            ("R-hat (PSRF)", "Potential Scale Reduction Factor. Convergence diagnostic for MCMC; values < 1.1 indicate adequate convergence (Gelman & Rubin, 1992)."),
-            ("ESS", "Effective Sample Size: the number of independent draws from the posterior. ESS > 400 recommended (Zitzmann & Hecht, 2019)."),
-            ("WAIC", "Widely Applicable Information Criterion: Bayesian model comparison metric. Lower = better fit (Uto, 2021)."),
-            ("DIC", "Deviance Information Criterion: Bayesian model comparison metric. Lower = better fit (Eckes & Jin, 2021)."),
-            ("LOO-IC", "Leave-One-Out Information Criterion: cross-validation-based model comparison. Lower = better fit."),
-            # --- Categories & Thresholds ---
-            ("Category", "A rating level on the scale (e.g., 1, 2, 3, 4, 5)."),
-            ("Threshold", "The point on the logit scale where two adjacent categories are equally probable."),
-            ("Rasch-Andrich threshold", "Step difficulty parameter τ_k in the RSM. P(X=k−1) = P(X=k) at η = τ_k."),
-            ("Disordered thresholds", "Thresholds not in ascending order; suggests scale categories may not function distinctly (Linacre, 2004)."),
-            # --- Fit statistics ---
-            ("Infit MnSq", "Information-weighted mean-square residual. Sensitive to patterns near the element's measure. Priority over Outfit for rater evaluation (Eckes, 2005)."),
-            ("Outfit MnSq", "Unweighted mean-square residual. Sensitive to unexpected outlier responses (Smith, 2000)."),
-            ("ZSTD", "Standardized fit statistic (z-score of MnSq). |ZSTD| > 2 warrants attention (Linacre, 2002)."),
-            ("Residual", "Difference between observed and expected scores; basis for fit and PCA."),
-            ("Standardized residual", "Residual divided by its expected variance. ~5% should have |z| ≥ 2 under good fit (Eckes, 2005)."),
-            # --- Separation & Reliability ---
-            ("Separation (G)", "Ratio of True SD to RMSE. Higher = better discrimination among elements (Wright & Masters, 1982)."),
-            ("Reliability", "G²/(1+G²) where G = separation. Proportion of observed variance that is true."),
-            ("Strata", "(4G+1)/3; estimates the number of statistically distinct levels the facet can distinguish (Wright & Masters, 1982)."),
-            ("RMSE", "Root Mean Square Error of measurement; average imprecision across elements."),
-            ("True SD", "Standard deviation of measures after removing measurement error. True SD = √(max(0, Obs.Var − RMSE²))."),
-            ("Fixed chi-square", "Tests whether all elements in a facet have the same measure. Very sensitive to sample size (Myford & Wolfe, 2004)."),
-            # --- Rater effects ---
-            ("Leniency / Severity", "A rater systematically gives higher (lenient) or lower (severe) scores than expected (Myford & Wolfe, 2003)."),
-            ("Central tendency", "A rater avoids extreme categories, clustering scores near the scale midpoint (Myford & Wolfe, 2003; Eckes & Jin, 2021)."),
-            ("Halo effect", "A rater fails to distinguish among traits/criteria, assigning similar scores across all dimensions (Myford & Wolfe, 2003)."),
-            ("Randomness effect", "A rater assigns scores with little consistency or pattern. Detected by high Infit and low SR/ROR (Myford & Wolfe, 2004)."),
-            ("Differential severity", "A rater is disproportionately lenient or severe for a specific subgroup (Myford & Wolfe, 2004)."),
-            ("Rater consistency (α_r)", "How reliably a rater discriminates among examinees. α_r > 1 = highly consistent; α_r < 1 = inconsistent (Uto & Ueno, 2020)."),
-            ("Range restriction (d_rk)", "Tendency to avoid extreme rating categories. Captured in the generalized MFRM (Uto & Ueno, 2020)."),
-            ("Severity drift", "Change in rater severity over time. Modeled via a Markov chain on β_rt (Uto, 2022)."),
-            ("SR/ROR correlation", "Single Rater vs. Rest of Raters correlation ('PtBis' in FACETS). Low values signal randomness (Myford & Wolfe, 2004)."),
-            ("Fair average", "Severity-adjusted score: the score an examinee would receive from a rater of average severity (Eckes, 2005)."),
-            # --- Visualizations ---
-            ("Wright Map", "Visual display placing persons and elements on a common logit scale (Wright & Masters, 1982)."),
-            ("Yardstick", "FACETS Table 6.0 style vertical ruler showing all facets aligned on logits."),
-            ("Category probability curve", "Probability of each response category as a function of the latent measure (Andrich, 1978)."),
-            ("Expected score curve (ICC)", "The model-predicted average score (Σ k·P(k)) as a function of the latent measure."),
-            ("Pathway map", "Plot of element measures vs fit (ZSTD) to identify misfitting elements."),
-            # --- Analysis concepts ---
-            ("Bias/Interaction", "Departure from the additive model for a specific facet-level pair (FACETS Table 7). |t| ≥ 2 flags significance (Myford & Wolfe, 2004)."),
-            ("Bonferroni correction", "Adjusts the significance threshold (α/n) when testing multiple interactions to control false positives (Eckes, 2005)."),
-            ("Anchor", "A fixed (pre-set) parameter value for linking across studies or maintaining a scale."),
-            ("Extreme score", "An element receiving only the minimum or maximum possible rating; measure is infinite."),
-            ("Point-measure correlation (PtMea)", "Pearson correlation between an element's observed scores and the person measures. Negative values suggest reversed scoring or misfit (Linacre, 2002)."),
-            ("Connectivity / Disconnected subsets", "Whether all elements are linked through shared observations. Disconnected subsets have non-comparable estimates (Linacre, 2024)."),
-            ("PCA of residuals", "Principal component analysis of standardized residuals to check unidimensionality (Linacre, 2024)."),
-            ("Eigenvalue", "Variance explained by a principal component. 1st EV < 2.0 supports unidimensionality (Linacre, 2024)."),
-            # --- Missing data ---
-            ("MCAR", "Missing Completely At Random: missingness is unrelated to any data. Safe for most analyses (Little & Rubin, 2002)."),
-            ("MAR", "Missing At Random: missingness depends on observed (but not unobserved) values. FIML and MI are unbiased under MAR."),
-            ("MNAR", "Missing Not At Random: missingness depends on unobserved values. Neither FIML nor MI fully corrects bias."),
-            ("Multiple Imputation (MI)", "Creates multiple plausible complete datasets, analyzes each, and pools results via Rubin's rules."),
-            # --- G-theory ---
-            ("Generalizability coefficient (Eρ²)", "G-theory reliability for relative (norm-referenced) decisions. Target ≥ 0.80 (Hass et al., 2018)."),
-            ("Dependability coefficient (Φ)", "G-theory reliability for absolute (criterion-referenced) decisions. Target ≥ 0.80 (Hass et al., 2018)."),
-            # --- App-specific terms ---
-            ("Long format", "Data layout where each row represents one observation (one person–rater–task combination). Required input format for this app."),
-            ("maxit", "Maximum iterations for the estimation algorithm. Increase if convergence is not reached (default: 400)."),
-            ("reltol", "Relative tolerance for convergence. Smaller values give more precise estimates but take longer (default: 1e-6)."),
-            ("Xtreme correction", "Adjustment for extreme scores (all-minimum or all-maximum ratings). Adds a small fraction to allow finite measure estimation."),
-            ("ICC", "Item Characteristic Curve: the expected score as a function of person ability minus item difficulty. Also called expected score curve."),
-            ("D-study", "Decision study: projects reliability under different measurement designs (varying raters, tasks, etc.) to optimize assessment design."),
+            ("Facet", t("help.glossary.facet")),
+            ("Element", t("help.glossary.element")),
+            ("Observation", t("help.glossary.observation")),
+            ("Measure", t("help.glossary.measure")),
+            ("Standard Error (SE)", t("help.glossary.standard_error")),
+            ("Logit", t("help.glossary.logit")),
+            ("Theta (θ)", t("help.glossary.theta")),
+            ("MFRM", t("help.glossary.mfrm")),
+            ("RSM", t("help.glossary.rsm")),
+            ("PCM", t("help.glossary.pcm")),
+            ("GPCM", t("help.glossary.gpcm")),
+            ("GPCM slope", t("help.glossary.gpcm_slope")),
+            ("HRM", t("help.glossary.hrm")),
+            ("JMLE", t("help.glossary.jmle")),
+            ("MML", t("help.glossary.mml")),
+            ("Bayesian estimation", t("help.glossary.bayesian_estimation")),
+            ("MCMC", t("help.glossary.mcmc")),
+            ("R-hat (PSRF)", t("help.glossary.r_hat")),
+            ("ESS", t("help.glossary.ess")),
+            ("WAIC", t("help.glossary.waic")),
+            ("DIC", t("help.glossary.dic")),
+            ("LOO-IC", t("help.glossary.loo_ic")),
+            ("Category", t("help.glossary.category")),
+            ("Threshold", t("help.glossary.threshold")),
+            ("Rasch-Andrich threshold", t("help.glossary.rasch_andrich_threshold")),
+            ("Disordered thresholds", t("help.glossary.disordered_thresholds")),
+            ("Infit MnSq", t("help.glossary.infit_mnsq")),
+            ("Outfit MnSq", t("help.glossary.outfit_mnsq")),
+            ("ZSTD", t("help.glossary.zstd")),
+            ("Residual", t("help.glossary.residual")),
+            ("Standardized residual", t("help.glossary.standardized_residual")),
+            ("Separation (G)", t("help.glossary.separation")),
+            ("Reliability", t("help.glossary.reliability")),
+            ("Strata", t("help.glossary.strata")),
+            ("RMSE", t("help.glossary.rmse")),
+            ("True SD", t("help.glossary.true_sd")),
+            ("Fixed chi-square", t("help.glossary.fixed_chi_square")),
+            ("Leniency / Severity", t("help.glossary.leniency_severity")),
+            ("Central tendency", t("help.glossary.central_tendency")),
+            ("Halo effect", t("help.glossary.halo_effect")),
+            ("Randomness effect", t("help.glossary.randomness_effect")),
+            ("Differential severity", t("help.glossary.differential_severity")),
+            ("Rater consistency (α_r)", t("help.glossary.rater_consistency")),
+            ("Range restriction (d_rk)", t("help.glossary.range_restriction")),
+            ("Severity drift", t("help.glossary.severity_drift")),
+            ("SR/ROR correlation", t("help.glossary.sr_ror")),
+            ("Fair average", t("help.glossary.fair_average")),
+            ("Wright Map", t("help.glossary.wright_map")),
+            ("Yardstick", t("help.glossary.yardstick")),
+            ("Category probability curve", t("help.glossary.category_probability_curve")),
+            ("Expected score curve (ICC)", t("help.glossary.expected_score_curve")),
+            ("Pathway map", t("help.glossary.pathway_map")),
+            ("Bias/Interaction", t("help.glossary.bias_interaction")),
+            ("Bonferroni correction", t("help.glossary.bonferroni_correction")),
+            ("Anchor", t("help.glossary.anchor")),
+            ("Extreme score", t("help.glossary.extreme_score")),
+            ("Point-measure correlation (PtMea)", t("help.glossary.point_measure_correlation")),
+            ("Connectivity / Disconnected subsets", t("help.glossary.connectivity")),
+            ("PCA of residuals", t("help.glossary.pca_of_residuals")),
+            ("Eigenvalue", t("help.glossary.eigenvalue")),
+            ("MCAR", t("help.glossary.mcar")),
+            ("MAR", t("help.glossary.mar")),
+            ("MNAR", t("help.glossary.mnar")),
+            ("Multiple Imputation (MI)", t("help.glossary.multiple_imputation")),
+            ("Generalizability coefficient (Eρ²)", t("help.glossary.generalizability_coefficient")),
+            ("Dependability coefficient (Φ)", t("help.glossary.dependability_coefficient")),
+            ("Long format", t("help.glossary.long_format")),
+            ("maxit", t("help.glossary.maxit")),
+            ("reltol", t("help.glossary.reltol")),
+            ("Xtreme correction", t("help.glossary.xtreme_correction")),
+            ("ICC", t("help.glossary.icc")),
+            ("D-study", t("help.glossary.d_study")),
         ]
 
         if search.strip():
             term = search.strip().lower()
-            glossary = [(t, d) for t, d in glossary if term in t.lower() or term in d.lower()]
+            glossary = [(t_, d) for t_, d in glossary if term in t_.lower() or term in d.lower()]
 
         if glossary:
             for term, defn in glossary:
                 st.markdown(f"**{term}**  \n{defn}")
         else:
-            st.caption("No matching terms found.")
+            st.caption(t("help.glossary_no_match"))
 
     # ------------------------------------------------------------------
     # Tab 7: Reporting Guide (NEW)

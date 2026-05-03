@@ -99,12 +99,19 @@ def test_binary_score_range_works_in_generator():
 
 
 def test_readme_help_section_contains_testlet_content():
-    """The Help tab → Model Capability section must explain MFRM vs testlet."""
-    import re
-    with open("streamlit_app.py", "r", encoding="utf-8") as fh:
-        src = fh.read()
-    # Pin a handful of keywords that must appear in the doc so a
-    # future refactor doesn't silently drop the comparison table.
+    """The Help tab → Model Capability section must explain MFRM vs testlet.
+
+    The content lives in `locales/en.json` (key
+    ``help.model_capability_body``) since the i18n refactor moved help
+    markdown out of the Python source. This test pins a handful of
+    keywords there so a future refactor cannot silently drop the
+    comparison table from the canonical English source.
+    """
+    import json
+    from pathlib import Path
+    en_path = Path("locales/en.json")
+    src = en_path.read_text(encoding="utf-8")
+    body = json.loads(src).get("help", {}).get("model_capability_body", "")
     must_contain = [
         "Testlet-format Data",
         "Bradlow, Wainer, and Wang",
@@ -114,4 +121,4 @@ def test_readme_help_section_contains_testlet_content():
         "Wainer & Kiely",
     ]
     for phrase in must_contain:
-        assert phrase in src, f"Help doc missing {phrase!r}"
+        assert phrase in body, f"Help doc missing {phrase!r}"

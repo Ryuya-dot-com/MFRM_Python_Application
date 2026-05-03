@@ -11959,14 +11959,15 @@ def _fit_summary_callout(measures_df: pd.DataFrame, facet_filter: str | None = N
     n_misfit = int(misfit_mask.sum())
     pct = 100 * n_misfit / n_total
     label = f" ({facet_filter})" if facet_filter else ""
+    pct_int = f"{pct:.0f}"
     if n_misfit == 0:
-        st.success(f"All {n_total} elements{label} show acceptable fit (Infit MnSq 0.5–1.5).")
+        st.success(t("fit_details.summary_all_acceptable_template", n_total=n_total, label=label))
     elif pct <= 10:
-        st.info(f"{n_misfit} of {n_total} elements{label} show misfit — within typical range.")
+        st.info(t("fit_details.summary_within_typical_template", n_misfit=n_misfit, n_total=n_total, label=label))
     elif pct <= 25:
-        st.warning(f"{n_misfit} of {n_total} elements{label} show misfit ({pct:.0f}%) — review flagged elements.")
+        st.warning(t("fit_details.summary_review_warning_template", n_misfit=n_misfit, n_total=n_total, label=label, pct=pct_int))
     else:
-        st.error(f"{n_misfit} of {n_total} elements{label} show misfit ({pct:.0f}%) — widespread misfit detected.")
+        st.error(t("fit_details.summary_widespread_error_template", n_misfit=n_misfit, n_total=n_total, label=label, pct=pct_int))
 
 
 # ---------------------------------------------------------------------------
@@ -21358,24 +21359,17 @@ def _add_figure_export(fig, name: str, figure_bytes: dict[str, bytes], figure_ht
 
 def show_marginal_fit_section(diagnostics: dict) -> None:
     """Render MML strict marginal distribution diagnostics."""
-    st.subheader("Strict marginal diagnostics (MML)")
+    st.subheader(t("fit_details.marginal_subheader"))
     marginal = diagnostics.get("marginal_fit", {})
     if not diagnostics.get("marginal_fit_enabled", False):
-        st.info(
-            "Strict marginal diagnostics were skipped for this run. "
-            "Use Full publication or Custom > Compute strict marginal diagnostics with MML to enable them."
-        )
+        st.info(t("fit_details.marginal_disabled_info"))
         return
     if not isinstance(marginal, dict) or not marginal.get("available"):
-        st.info(marginal.get("reason", "Strict marginal diagnostics are unavailable for this run."))
+        st.info(marginal.get("reason", t("fit_details.marginal_unavailable_default")))
         return
 
-    st.caption(
-        "This screen compares observed score-category counts with counts expected after "
-        "integrating over the MML population distribution. It is stricter than ordinary "
-        "residual displays for checking whether the model reproduces marginal score distributions."
-    )
-    st.info(marginal.get("interpretation", "Use this as a corroborating marginal fit screen."))
+    st.caption(t("fit_details.marginal_intro_caption"))
+    st.info(marginal.get("interpretation", t("fit_details.marginal_default_interpretation")))
 
     summary = marginal.get("summary", pd.DataFrame())
     counts = marginal.get("counts", pd.DataFrame())
@@ -21386,20 +21380,17 @@ def show_marginal_fit_section(diagnostics: dict) -> None:
             display = display.sort_values(["_order", "p", "MaxAbsStdResidual"], ascending=[True, True, False]).drop(columns=["_order"])
         n_review = int((display.get("Status", pd.Series(dtype=str)) == "Review").sum())
         if n_review:
-            st.warning(f"{n_review} marginal row(s) flagged for review.")
+            st.warning(t("fit_details.marginal_review_warning_template", n_review=n_review))
         else:
-            st.success("No strict marginal rows were flagged by the current screen.")
+            st.success(t("fit_details.marginal_no_flags_success"))
         st.dataframe(display, width="stretch")
-        st.caption(
-            "Bars near 0 mean the model reproduces the marginal category distribution. "
-            "Values near or above 3 point to category/facet rows worth reviewing."
-        )
+        st.caption(t("fit_details.marginal_summary_caption"))
         summary_fig = _make_marginal_summary_figure(display, "Largest marginal distribution deviations")
         if summary_fig is not None:
             st.plotly_chart(summary_fig, width="stretch")
             _offer_fig_download(summary_fig, "strict_marginal_summary", "Download Marginal Summary (PNG 300 DPI)")
     else:
-        st.info("No marginal summary table available.")
+        st.info(t("fit_details.marginal_no_summary_info"))
 
     if isinstance(counts, pd.DataFrame) and not counts.empty:
         if isinstance(summary, pd.DataFrame) and not summary.empty:
@@ -21413,21 +21404,18 @@ def show_marginal_fit_section(diagnostics: dict) -> None:
             top_labels=top_labels,
         )
         if heatmap_fig is not None:
-            st.caption(
-                "Red cells have more observed responses than expected; blue cells have fewer. "
-                "Read this as a screening plot, then inspect the table before deciding what to report."
-            )
+            st.caption(t("fit_details.marginal_heatmap_caption"))
             st.plotly_chart(heatmap_fig, width="stretch")
             _offer_fig_download(heatmap_fig, "strict_marginal_heatmap", "Download Marginal Heatmap (PNG 300 DPI)")
-        with st.expander("Marginal category count details"):
+        with st.expander(t("fit_details.marginal_counts_expander")):
             st.dataframe(counts, width="stretch")
 
     pairwise = marginal.get("pairwise", {})
-    st.subheader("Pairwise marginal screen")
+    st.subheader(t("fit_details.marginal_pairwise_subheader"))
     if isinstance(pairwise, dict) and pairwise.get("available"):
         pair_summary = pairwise.get("summary", pd.DataFrame())
         pair_counts = pairwise.get("counts", pd.DataFrame())
-        st.caption(pairwise.get("reason", "Pairwise marginal diagnostics computed."))
+        st.caption(pairwise.get("reason", t("fit_details.marginal_pairwise_default_reason")))
         if isinstance(pair_summary, pd.DataFrame) and not pair_summary.empty:
             st.dataframe(pair_summary, width="stretch")
             pair_fig = _make_marginal_summary_figure(
@@ -21450,10 +21438,10 @@ def show_marginal_fit_section(diagnostics: dict) -> None:
             if pair_heatmap is not None:
                 st.plotly_chart(pair_heatmap, width="stretch")
                 _offer_fig_download(pair_heatmap, "strict_marginal_pairwise_heatmap", "Download Pairwise Marginal Heatmap (PNG 300 DPI)")
-            with st.expander("Pairwise marginal count details"):
+            with st.expander(t("fit_details.marginal_pairwise_counts_expander")):
                 st.dataframe(pair_counts, width="stretch")
     else:
-        st.info(pairwise.get("reason", "Pairwise marginal diagnostics were not computed."))
+        st.info(pairwise.get("reason", t("fit_details.marginal_pairwise_unavailable_default")))
 
 
 def _show_misfit_flags(fit_df: pd.DataFrame) -> None:
@@ -21478,10 +21466,10 @@ def _show_misfit_flags(fit_df: pd.DataFrame) -> None:
     acceptable = n_total - overfit - noisy - distort
 
     cols = st.columns(4)
-    cols[0].metric("Acceptable", f"{acceptable}/{n_total}", delta=f"{100*acceptable/n_total:.0f}%")
-    cols[1].metric("Over-fit (<0.5)", f"{overfit}", delta=f"{100*overfit/n_total:.0f}%" if overfit else "0%", delta_color="off")
-    cols[2].metric("Noisy (1.5–2.0)", f"{noisy}", delta=f"{100*noisy/n_total:.0f}%" if noisy else "0%", delta_color="off")
-    cols[3].metric("Distorting (>2.0)", f"{distort}", delta=f"{100*distort/n_total:.0f}%" if distort else "0%", delta_color="inverse")
+    cols[0].metric(t("fit_details.flag_metric_acceptable"), f"{acceptable}/{n_total}", delta=f"{100*acceptable/n_total:.0f}%")
+    cols[1].metric(t("fit_details.flag_metric_overfit"), f"{overfit}", delta=f"{100*overfit/n_total:.0f}%" if overfit else "0%", delta_color="off")
+    cols[2].metric(t("fit_details.flag_metric_noisy"), f"{noisy}", delta=f"{100*noisy/n_total:.0f}%" if noisy else "0%", delta_color="off")
+    cols[3].metric(t("fit_details.flag_metric_distorting"), f"{distort}", delta=f"{100*distort/n_total:.0f}%" if distort else "0%", delta_color="inverse")
 
 
 def _draw_fit_scatter(fit_df: pd.DataFrame) -> None:
@@ -21490,7 +21478,7 @@ def _draw_fit_scatter(fit_df: pd.DataFrame) -> None:
 
     header_cols = st.columns([5, 1])
     with header_cols[0]:
-        st.subheader("Fit scatter: Infit vs Outfit")
+        st.subheader(t("fit_details.scatter_subheader"))
     with header_cols[1]:
         render_help_popover("fit_scatter")
     infit = pd.to_numeric(fit_df["Infit"], errors="coerce")
@@ -21501,7 +21489,7 @@ def _draw_fit_scatter(fit_df: pd.DataFrame) -> None:
     pdf["Infit"] = infit[mask]
     pdf["Outfit"] = outfit[mask]
     if pdf.empty:
-        st.info("No valid Infit/Outfit pairs to plot.")
+        st.info(t("fit_details.scatter_no_data_info"))
         return
 
     color_col = "Facet" if "Facet" in pdf.columns else None
@@ -21538,7 +21526,7 @@ def _draw_zstd_distribution(fit_df: pd.DataFrame) -> None:
 
     header_cols = st.columns([5, 1])
     with header_cols[0]:
-        st.subheader("ZSTD distribution")
+        st.subheader(t("fit_details.zstd_subheader"))
     with header_cols[1]:
         render_help_popover("zstd_distribution")
     color_map = {"InfitZSTD": "#1b9e77", "OutfitZSTD": "#d95f02"}
@@ -21570,7 +21558,7 @@ def _draw_misfit_ranking(fit_df: pd.DataFrame) -> None:
 
     header_cols = st.columns([5, 1])
     with header_cols[0]:
-        st.subheader("Top misfit elements")
+        st.subheader(t("fit_details.ranking_subheader"))
     with header_cols[1]:
         render_help_popover("misfit_ranking")
 
@@ -21590,24 +21578,23 @@ def _draw_misfit_ranking(fit_df: pd.DataFrame) -> None:
         slider_max = max(6, min(100, n_total))
         slider_val = max(5, min(20, n_total))
         n_show = st.slider(
-            "Number of elements to show",
+            t("fit_details.ranking_n_show_label"),
             min_value=5,
             max_value=slider_max,
             value=slider_val,
             key="misfit_top_n",
-            help="Maximum number of elements to display, ranked by absolute ZSTD.",
+            help=t("fit_details.ranking_n_show_help"),
         )
     threshold = st.slider(
-        "ZSTD threshold", 0.0, 5.0, 2.0, 0.5, key="misfit_threshold",
-        help="Elements with |ZSTD| >= this threshold are flagged as misfitting. "
-             "2.0 is a common criterion; use 3.0 for stricter control.",
+        t("fit_details.ranking_threshold_label"), 0.0, 5.0, 2.0, 0.5, key="misfit_threshold",
+        help=t("fit_details.ranking_threshold_help"),
     )
 
     top = df.nlargest(n_show, "MaxAbsZSTD")
     top = top[top["MaxAbsZSTD"] >= threshold]
 
     if top.empty:
-        st.success(f"No elements with |ZSTD| >= {threshold:.1f}.")
+        st.success(t("fit_details.ranking_no_misfit_success_template", threshold=f"{threshold:.1f}"))
         return
 
     top = top.reset_index(drop=True)

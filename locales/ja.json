@@ -705,5 +705,27 @@
     "figures_no_data_info": "利用可能な図がない。先に推定を実行する。",
     "scripts_caption": "再現用の分析スクリプト (Python と R)、設定 JSON、scale linking 用の anchor ファイル、Bayesian 推定用の Stan code。",
     "scripts_config_subheader": "分析設定"
+  },
+  "estimation_subsections": {
+    "convergence_no_data_info": "Optimizer の収束診断は利用できない。",
+    "convergence_subheader": "収束診断",
+    "convergence_success": "Optimizer は収束を報告した。残りの診断は optimizer の失敗ではなく、モデル適合と rating scale 挙動のチェックとして扱う。",
+    "convergence_error": "Optimizer は収束基準を満たさなかった。Sparse / 極端なデータを確認するか `maxit` を増やすまで、推定値を最終解釈に用いない。",
+    "convergence_auto_info_template": "Auto MML は **{resolved}** を選択した。Auto はまず hybrid を試行し、hybrid が収束しない場合のみ EM にフォールバックする。",
+    "convergence_auto_unknown": "不明",
+    "convergence_grad_small_caption_template": "最終 gradient norm = {grad}。値が小さいほど最適点が平坦であることを示す。",
+    "convergence_grad_large_caption_template": "最終 gradient norm = {grad}。収束状態とあわせて解釈する。値が大きい場合は optimizer の動きが残っている可能性を示す。",
+    "convergence_elapsed_caption_template": "Optimizer の経過時間: {elapsed} 秒。",
+    "posterior_subheader": "Posterior スコア / plausible values",
+    "posterior_unavailable_default": "Posterior スコアと plausible values は MML 実行でのみ利用できる。",
+    "posterior_intro_caption": "Posterior スコアは各 person の MML posterior 分布を要約する。Posterior 平均が EAP スコア、posterior SD と 5%-95% quantiles が不確実性を示す。Plausible values は group レベルの不確実性分析用のランダムな posterior draw であり、個人ランキング用ではない。",
+    "posterior_default_interpretation": "Posterior スコアは fit や reliability チェックと併せて利用する。",
+    "posterior_metric_persons": "Posterior スコア対象 person",
+    "posterior_metric_mean_sd": "平均 posterior SD",
+    "posterior_metric_mean_width": "平均 90% 区間幅",
+    "posterior_no_scores_info": "Posterior スコアテーブルは利用できない。",
+    "posterior_pv_caption_template": "Person あたり {n} 個の plausible value を seed {seed} で生成した。",
+    "posterior_pv_expander": "Plausible values",
+    "posterior_no_pv_info": "この実行では plausible value のエクスポートが要求されなかった。MML で Full publication または Custom > Export plausible values を使い PV 列を生成する。"
   }
 }

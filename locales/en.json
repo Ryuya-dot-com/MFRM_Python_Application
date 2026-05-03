@@ -705,5 +705,27 @@
     "figures_no_data_info": "No figures available. Run estimation first.",
     "scripts_caption": "Reproducible analysis scripts (Python & R), configuration JSON, anchor files for scale linking, and Stan code for Bayesian estimation.",
     "scripts_config_subheader": "Analysis configuration"
+  },
+  "estimation_subsections": {
+    "convergence_no_data_info": "No optimizer convergence diagnostics available.",
+    "convergence_subheader": "Convergence diagnostics",
+    "convergence_success": "The optimizer reported convergence. Treat the remaining diagnostics as checks of model fit and rating-scale behavior rather than as optimizer failures.",
+    "convergence_error": "The optimizer did not meet its convergence rule. Do not use estimates for final interpretation until you inspect sparse/extreme data or increase `maxit`.",
+    "convergence_auto_info_template": "Auto MML selected **{resolved}**. Auto tries hybrid first and falls back to EM only if the hybrid path does not converge.",
+    "convergence_auto_unknown": "unknown",
+    "convergence_grad_small_caption_template": "Final gradient norm = {grad}. Smaller values indicate a flatter optimum.",
+    "convergence_grad_large_caption_template": "Final gradient norm = {grad}. Interpret together with convergence status; large values can indicate remaining optimizer movement.",
+    "convergence_elapsed_caption_template": "Optimizer elapsed time: {elapsed} seconds.",
+    "posterior_subheader": "Posterior scoring / plausible values",
+    "posterior_unavailable_default": "Posterior scoring and plausible values are available for MML runs only.",
+    "posterior_intro_caption": "Posterior scores summarize each person's MML posterior distribution. The posterior mean is the EAP score; posterior SD and 5%-95% quantiles show uncertainty. Plausible values are random posterior draws for group-level uncertainty analyses, not individual ranking.",
+    "posterior_default_interpretation": "Use posterior scores together with fit and reliability checks.",
+    "posterior_metric_persons": "Posterior-scored persons",
+    "posterior_metric_mean_sd": "Mean posterior SD",
+    "posterior_metric_mean_width": "Mean 90% interval width",
+    "posterior_no_scores_info": "No posterior score table available.",
+    "posterior_pv_caption_template": "{n} plausible value(s) per person generated with seed {seed}.",
+    "posterior_pv_expander": "Plausible values",
+    "posterior_no_pv_info": "Plausible value export was not requested for this run. Use Full publication or Custom > Export plausible values with MML to generate PV columns."
   }
 }

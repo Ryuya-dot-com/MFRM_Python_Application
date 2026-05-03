@@ -18775,10 +18775,10 @@ def show_convergence_section(result: dict) -> None:
     """Render optimizer convergence diagnostics with beginner-facing interpretation."""
     convergence = result.get("convergence", pd.DataFrame())
     if not isinstance(convergence, pd.DataFrame) or convergence.empty:
-        st.info("No optimizer convergence diagnostics available.")
+        st.info(t("estimation_subsections.convergence_no_data_info"))
         return
 
-    st.subheader("Convergence diagnostics")
+    st.subheader(t("estimation_subsections.convergence_subheader"))
     display = convergence.copy()
     for col in ["FinalLogLik", "LogLikStart", "LogLikChange", "GradientNorm", "ElapsedSeconds"]:
         if col in display.columns:
@@ -18792,51 +18792,60 @@ def show_convergence_section(result: dict) -> None:
     grad = pd.to_numeric(pd.Series([row.get("GradientNorm", np.nan)]), errors="coerce").iloc[0]
     elapsed = pd.to_numeric(pd.Series([row.get("ElapsedSeconds", np.nan)]), errors="coerce").iloc[0]
     if converged:
-        st.success(
-            "The optimizer reported convergence. Treat the remaining diagnostics "
-            "as checks of model fit and rating-scale behavior rather than as optimizer failures."
-        )
+        st.success(t("estimation_subsections.convergence_success"))
     else:
-        st.error(
-            "The optimizer did not meet its convergence rule. Do not use estimates for final "
-            "interpretation until you inspect sparse/extreme data or increase `maxit`."
-        )
+        st.error(t("estimation_subsections.convergence_error"))
     if requested.lower().startswith("auto"):
         st.info(
-            f"Auto MML selected **{resolved or 'unknown'}**. "
-            "Auto tries hybrid first and falls back to EM only if the hybrid path does not converge."
+            t(
+                "estimation_subsections.convergence_auto_info_template",
+                resolved=resolved or t("estimation_subsections.convergence_auto_unknown"),
+            )
         )
     if np.isfinite(grad):
         if grad <= 1e-3:
-            st.caption(f"Final gradient norm = {grad:.2e}. Smaller values indicate a flatter optimum.")
+            st.caption(
+                t(
+                    "estimation_subsections.convergence_grad_small_caption_template",
+                    grad=f"{grad:.2e}",
+                )
+            )
         else:
             st.caption(
-                f"Final gradient norm = {grad:.2e}. Interpret together with convergence status; "
-                "large values can indicate remaining optimizer movement."
+                t(
+                    "estimation_subsections.convergence_grad_large_caption_template",
+                    grad=f"{grad:.2e}",
+                )
             )
     if np.isfinite(elapsed):
-        st.caption(f"Optimizer elapsed time: {elapsed:.2f} seconds.")
+        st.caption(
+            t(
+                "estimation_subsections.convergence_elapsed_caption_template",
+                elapsed=f"{elapsed:.2f}",
+            )
+        )
 
 
 def show_posterior_scoring_section(result: dict) -> None:
     """Render MML posterior score and plausible-value outputs."""
-    st.subheader("Posterior scoring / plausible values")
+    st.subheader(t("estimation_subsections.posterior_subheader"))
     posterior = result.get("posterior", {})
     if not isinstance(posterior, dict) or not posterior.get("available"):
         st.info(
             posterior.get(
                 "reason",
-                "Posterior scoring and plausible values are available for MML runs only.",
+                t("estimation_subsections.posterior_unavailable_default"),
             )
         )
         return
 
-    st.caption(
-        "Posterior scores summarize each person's MML posterior distribution. "
-        "The posterior mean is the EAP score; posterior SD and 5%-95% quantiles show uncertainty. "
-        "Plausible values are random posterior draws for group-level uncertainty analyses, not individual ranking."
+    st.caption(t("estimation_subsections.posterior_intro_caption"))
+    st.info(
+        posterior.get(
+            "interpretation",
+            t("estimation_subsections.posterior_default_interpretation"),
+        )
     )
-    st.info(posterior.get("interpretation", "Use posterior scores together with fit and reliability checks."))
 
     scores = posterior.get("scores", pd.DataFrame())
     if isinstance(scores, pd.DataFrame) and not scores.empty:
@@ -18845,26 +18854,26 @@ def show_posterior_scoring_section(result: dict) -> None:
         q95 = pd.to_numeric(scores.get("PosteriorQ95", pd.Series(dtype=float)), errors="coerce")
         width = (q95 - q05).dropna()
         cols = st.columns(3)
-        cols[0].metric("Posterior-scored persons", f"{len(scores):,}")
-        cols[1].metric("Mean posterior SD", f"{sd.mean():.3f}" if len(sd) else "n/a")
-        cols[2].metric("Mean 90% interval width", f"{width.mean():.3f}" if len(width) else "n/a")
+        cols[0].metric(t("estimation_subsections.posterior_metric_persons"), f"{len(scores):,}")
+        cols[1].metric(t("estimation_subsections.posterior_metric_mean_sd"), f"{sd.mean():.3f}" if len(sd) else "n/a")
+        cols[2].metric(t("estimation_subsections.posterior_metric_mean_width"), f"{width.mean():.3f}" if len(width) else "n/a")
         st.dataframe(scores, width="stretch")
     else:
-        st.info("No posterior score table available.")
+        st.info(t("estimation_subsections.posterior_no_scores_info"))
 
     pv = posterior.get("plausible_values", pd.DataFrame())
     if isinstance(pv, pd.DataFrame) and not pv.empty:
         st.caption(
-            f"{posterior.get('n_plausible_values', pv.shape[1] - 1)} plausible value(s) per person "
-            f"generated with seed {posterior.get('seed', 'n/a')}."
+            t(
+                "estimation_subsections.posterior_pv_caption_template",
+                n=posterior.get('n_plausible_values', pv.shape[1] - 1),
+                seed=posterior.get('seed', 'n/a'),
+            )
         )
-        with st.expander("Plausible values", expanded=False):
+        with st.expander(t("estimation_subsections.posterior_pv_expander"), expanded=False):
             st.dataframe(pv, width="stretch")
     else:
-        st.info(
-            "Plausible value export was not requested for this run. "
-            "Use Full publication or Custom > Export plausible values with MML to generate PV columns."
-        )
+        st.info(t("estimation_subsections.posterior_no_pv_info"))
 
 
 def show_prediction_simulation_section(result: dict, diagnostics: dict, core: dict | None = None) -> None:

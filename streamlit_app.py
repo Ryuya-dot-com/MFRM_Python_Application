@@ -22960,6 +22960,7 @@ def show_help_section() -> None:
         "Model Capability",
         "Public Beta",
     }
+    # Internal IDs (English) drive routing; display labels resolve via t().
     all_help_labels = [
         "Quick Start",
         "Analysis Workflow",
@@ -22972,17 +22973,25 @@ def show_help_section() -> None:
         "Model Capability",
         "Public Beta",
     ]
+    _HELP_TAB_KEY_BY_ID = {
+        "Quick Start": "help.tab_quick_start",
+        "Analysis Workflow": "help.tab_analysis_workflow",
+        "Interpretation Guide": "help.tab_interpretation_guide",
+        "Rater Effects": "help.tab_rater_effects",
+        "Rating Scale Guide": "help.tab_rating_scale_guide",
+        "Glossary": "help.tab_glossary",
+        "Reporting Guide": "help.tab_reporting_guide",
+        "Troubleshooting": "help.tab_troubleshooting",
+        "Model Capability": "help.tab_model_capability",
+        "Public Beta": "help.tab_public_beta",
+    }
     if essential_mode:
         visible_labels = [l for l in all_help_labels if l not in ADVANCED_HELP_TABS]
-        st.caption(
-            "💡 3 advanced help topics (Rating Scale Guide, Model Capability, "
-            "Public Beta) are hidden in **Essential** view. Switch to **Full** "
-            "from the sidebar's View density toggle before writing manuscript "
-            "methods or citing scale-quality criteria."
-        )
+        st.caption(t("help.essential_mode_caption"))
     else:
         visible_labels = all_help_labels
-    help_tabs = st.tabs(visible_labels)
+    visible_displays = [t(_HELP_TAB_KEY_BY_ID[label]) for label in visible_labels]
+    help_tabs = st.tabs(visible_displays)
     help_tab = {label: help_tabs[i] for i, label in enumerate(visible_labels)}
 
     # ------------------------------------------------------------------
@@ -33961,7 +33970,7 @@ _HELP_POPOVER_LIBRARY: dict[str, dict[str, str]] = {
 }
 
 
-def render_help_popover(topic_key: str, *, button_label: str = "❓ How to read") -> None:
+def render_help_popover(topic_key: str, *, button_label: str | None = None) -> None:
     """Render a just-in-time contextual help popover next to a chart.
 
     Streamlit's `st.popover` opens a floating panel on click, which is
@@ -33975,26 +33984,30 @@ def render_help_popover(topic_key: str, *, button_label: str = "❓ How to read"
     topic = _HELP_POPOVER_LIBRARY.get(topic_key)
     if topic is None:
         return
+    label = button_label if button_label is not None else t("help.popover_button_label")
+    what_label = t("help.popover_what_label")
+    how_label = t("help.popover_how_label")
+    watch_label = t("help.popover_watch_label")
     try:
-        popover = st.popover(button_label, use_container_width=False)
+        popover = st.popover(label, use_container_width=False)
     except Exception:
         # Streamlit older than 1.32 lacked st.popover; fall back to an
         # expander so help is still accessible.
-        with st.expander(button_label, expanded=False):
+        with st.expander(label, expanded=False):
             st.markdown(f"**{topic.get('title', topic_key)}**")
-            st.markdown(f"**What it shows:** {topic.get('what', '')}")
-            st.markdown(f"**How to read:**\n{topic.get('how', '')}")
+            st.markdown(f"**{what_label}:** {topic.get('what', '')}")
+            st.markdown(f"**{how_label}:**\n{topic.get('how', '')}")
             if topic.get("watch"):
-                st.markdown(f"**Watch for:** {topic['watch']}")
-            st.caption("Need more? See the **Help → Interpretation Guide** tab.")
+                st.markdown(f"**{watch_label}:** {topic['watch']}")
+            st.caption(t("help.popover_more_caption_fallback"))
         return
     with popover:
         st.markdown(f"### {topic.get('title', topic_key)}")
-        st.markdown(f"**What it shows.** {topic.get('what', '')}")
-        st.markdown(f"**How to read.**\n{topic.get('how', '')}")
+        st.markdown(f"**{what_label}.** {topic.get('what', '')}")
+        st.markdown(f"**{how_label}.**\n{topic.get('how', '')}")
         if topic.get("watch"):
-            st.markdown(f"**Watch for.** {topic['watch']}")
-        st.caption("See **Help → Interpretation Guide** for full references.")
+            st.markdown(f"**{watch_label}.** {topic['watch']}")
+        st.caption(t("help.popover_more_caption"))
 
 
 def render_chart_guide(chart_name: str, *, expanded: bool = False) -> None:
@@ -34008,7 +34021,7 @@ def render_chart_guide(chart_name: str, *, expanded: bool = False) -> None:
         return
     headline = guide.get("headline", chart_name)
     body = guide.get("body", "")
-    with st.expander(f"❓ How to read this — {headline}", expanded=expanded):
+    with st.expander(t("help.chart_guide_expander_template", headline=headline), expanded=expanded):
         if body:
             st.markdown(body)
 

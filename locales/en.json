@@ -243,6 +243,26 @@
     "all_missing_error": "All scores are now missing. Check your missing codes.",
     "no_match_caption": "No additional values matched the specified codes."
   },
+  "help": {
+    "tab_quick_start": "Quick Start",
+    "tab_analysis_workflow": "Analysis Workflow",
+    "tab_interpretation_guide": "Interpretation Guide",
+    "tab_rater_effects": "Rater Effects",
+    "tab_rating_scale_guide": "Rating Scale Guide",
+    "tab_glossary": "Glossary",
+    "tab_reporting_guide": "Reporting Guide",
+    "tab_troubleshooting": "Troubleshooting",
+    "tab_model_capability": "Model Capability",
+    "tab_public_beta": "Public Beta",
+    "essential_mode_caption": "💡 3 advanced help topics (Rating Scale Guide, Model Capability, Public Beta) are hidden in **Essential** view. Switch to **Full** from the sidebar's View density toggle before writing manuscript methods or citing scale-quality criteria.",
+    "popover_button_label": "❓ How to read",
+    "popover_what_label": "What it shows",
+    "popover_how_label": "How to read",
+    "popover_watch_label": "Watch for",
+    "popover_more_caption": "See **Help → Interpretation Guide** for full references.",
+    "popover_more_caption_fallback": "Need more? See the **Help → Interpretation Guide** tab.",
+    "chart_guide_expander_template": "❓ How to read this — {headline}"
+  },
   "sidebar_estimation": {
     "column_mapping_subheader": "Column mapping",
     "column_mapping_caption": "Map columns to Person, Score, and 2+ facets.",

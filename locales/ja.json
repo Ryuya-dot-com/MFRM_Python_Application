@@ -243,6 +243,26 @@
     "all_missing_error": "すべてのスコアが欠測になった。欠測コードの指定を確認する。",
     "no_match_caption": "指定したコードに一致する追加の値はなかった。"
   },
+  "help": {
+    "tab_quick_start": "Quick Start",
+    "tab_analysis_workflow": "Analysis Workflow",
+    "tab_interpretation_guide": "Interpretation Guide",
+    "tab_rater_effects": "Rater Effects",
+    "tab_rating_scale_guide": "Rating Scale Guide",
+    "tab_glossary": "Glossary",
+    "tab_reporting_guide": "Reporting Guide",
+    "tab_troubleshooting": "Troubleshooting",
+    "tab_model_capability": "Model Capability",
+    "tab_public_beta": "Public Beta",
+    "essential_mode_caption": "💡 3 つの advanced ヘルプ項目 (Rating Scale Guide、Model Capability、Public Beta) は **Essential** ビューでは非表示。Manuscript の Methods 執筆や scale 品質基準を引用する前に、サイドバーの View density で **Full** に切り替える。",
+    "popover_button_label": "❓ 読み方ガイド",
+    "popover_what_label": "図の内容",
+    "popover_how_label": "読み方",
+    "popover_watch_label": "注意点",
+    "popover_more_caption": "詳しくは **Help → Interpretation Guide** を参照する。",
+    "popover_more_caption_fallback": "もっと知りたい場合は **Help → Interpretation Guide** タブを参照する。",
+    "chart_guide_expander_template": "❓ 読み方ガイド — {headline}"
+  },
   "sidebar_estimation": {
     "column_mapping_subheader": "列マッピング",
     "column_mapping_caption": "Person、Score、2 つ以上の facet に列をマッピングする。",

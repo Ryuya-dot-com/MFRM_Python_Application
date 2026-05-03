@@ -23207,19 +23207,25 @@ def _draw_bias_heatmap(tbl: pd.DataFrame, facet_a: str, facet_b: str) -> None:
         return
     header_cols = st.columns([5, 1])
     with header_cols[0]:
-        st.markdown(f"##### Bias heatmap — {facet_a} × {facet_b}")
+        st.markdown(t("bias_interaction.heatmap_header_template", facet_a=facet_a, facet_b=facet_b))
     with header_cols[1]:
         render_help_popover("bias_heatmap")
+    # Internal IDs (English) drive routing; format_func provides display labels.
+    _heatmap_metric_options = ["Bias Size (logits)", "t-value"]
+    _heatmap_metric_displays = {
+        "Bias Size (logits)": t("bias_interaction.heatmap_metric_bias_size_display"),
+        "t-value": t("bias_interaction.heatmap_metric_t_value_display"),
+    }
     metric = st.radio(
-        "Heatmap metric",
-        ["Bias Size (logits)", "t-value"],
+        t("bias_interaction.heatmap_metric_label"),
+        _heatmap_metric_options,
         horizontal=True,
         key="bias_heatmap_metric",
-        help="Bias Size shows raw logit differences. t-value shows statistical significance. "
-             "Switching to t-value may take a moment as it requires additional computation.",
+        format_func=lambda v: _heatmap_metric_displays.get(v, v),
+        help=t("bias_interaction.heatmap_metric_help"),
     )
     if "t-value" in metric:
-        st.caption("⏳ t-value computation may take a few seconds for large bias tables.")
+        st.caption(t("bias_interaction.heatmap_t_value_caption"))
     val_col = "Bias Size" if "Bias" in metric else "t"
     if val_col not in tbl.columns:
         return
@@ -23228,7 +23234,7 @@ def _draw_bias_heatmap(tbl: pd.DataFrame, facet_a: str, facet_b: str) -> None:
         index="FacetA_Level", columns="FacetB_Level", values=val_col, aggfunc="first",
     )
     if pivot.empty or not np.any(np.isfinite(pivot.values)):
-        st.info("No finite bias values to display in heatmap.")
+        st.info(t("bias_interaction.heatmap_no_finite_info"))
         return
     safe_pair_key = re.sub(r"[^A-Za-z0-9]+", "_", f"{facet_a}_{facet_b}")
     # v0.2.11-beta bug fix: on narrow/short pivots, `max_axis_default`
@@ -23244,30 +23250,32 @@ def _draw_bias_heatmap(tbl: pd.DataFrame, facet_a: str, facet_b: str) -> None:
         slider_default = max(8, min(35, axis_extent))
         slider_default = min(slider_default, slider_max_val)
         max_axis = st.slider(
-            "Maximum labels per heatmap axis",
+            t("bias_interaction.heatmap_max_labels_label"),
             min_value=8,
             max_value=slider_max_val,
             value=slider_default,
             step=1,
             key=f"bias_heatmap_max_axis_{safe_pair_key}",
-            help=(
-                "Large bias matrices become unreadable when every label is drawn. "
-                "The compact view keeps the strongest rows and columns by absolute heatmap value."
-            ),
+            help=t("bias_interaction.heatmap_max_labels_help"),
         )
     auto_rows, auto_cols, auto_filtered = _select_heatmap_labels(pivot, max_rows=max_axis, max_cols=max_axis)
     show_all = st.checkbox(
-        "Show all heatmap rows/columns",
+        t("bias_interaction.heatmap_show_all_label"),
         value=not auto_filtered,
         key=f"bias_heatmap_show_all_{safe_pair_key}",
-        help="Turn on only for small matrices or when you need to inspect every cell visually. The table export always contains all rows.",
+        help=t("bias_interaction.heatmap_show_all_help"),
     )
     if not show_all and auto_filtered:
         original_shape = pivot.shape
         pivot = pivot.loc[auto_rows, auto_cols]
         st.caption(
-            f"Compact heatmap view: showing {pivot.shape[0]} of {original_shape[0]} rows "
-            f"and {pivot.shape[1]} of {original_shape[1]} columns. Download the table for all cells."
+            t(
+                "bias_interaction.heatmap_compact_caption_template",
+                rows=pivot.shape[0],
+                total_rows=original_shape[0],
+                cols=pivot.shape[1],
+                total_cols=original_shape[1],
+            )
         )
     # Build custom hover text
     hover_pivot = tbl.pivot_table(
@@ -23349,9 +23357,9 @@ def _draw_bias_heatmap(tbl: pd.DataFrame, facet_a: str, facet_b: str) -> None:
     )
     st.plotly_chart(fig, width="stretch")
     if show_star_text:
-        st.caption("\\* indicates |t| >= 2 (statistically significant bias). Full values are in hover text and the downloadable table.")
+        st.caption(t("bias_interaction.heatmap_significance_caption"))
     else:
-        st.caption("Dense heatmap: significance markers are hidden to avoid clutter. Use hover text and the downloadable table.")
+        st.caption(t("bias_interaction.heatmap_dense_caption"))
 
 
 def show_bias_section(
@@ -23360,13 +23368,8 @@ def show_bias_section(
     all_bias_results: dict[str, dict] | None = None,
 ) -> None:
     """Render Bias/Interaction analysis (FACETS Table 7 style)."""
-    st.subheader("Bias/Interaction Analysis")
-    st.caption(
-        "Bias analysis estimates interaction terms between two facets while holding "
-        "main effects fixed. This corresponds to FACETS Table 7. A significant bias "
-        "indicates that a specific facet-level combination deviates from additive "
-        "expectations (e.g., a rater is unusually harsh on a particular task)."
-    )
+    st.subheader(t("bias_interaction.heading"))
+    st.caption(t("bias_interaction.intro_caption"))
 
     # Let user choose which pair to view
     all_bias = all_bias_results or {}
@@ -23375,23 +23378,24 @@ def show_bias_section(
         all_bias = {pair_key: bias_results}
 
     if not all_bias:
-        st.info("No bias interactions were estimated. Ensure at least 2 facets are selected.")
+        st.info(t("bias_interaction.no_results_info"))
         return
 
     pair_keys = list(all_bias.keys())
     selected_pair = st.selectbox(
-        "Facet pair", pair_keys, index=0, key="bias_pair_selector",
-        help="Select which pair of facets to examine for systematic bias interactions. "
-             "A bias interaction means that a specific element of one facet behaves "
-             "differently depending on which element of the other facet it is paired with.",
+        t("bias_interaction.facet_pair_label"), pair_keys, index=0, key="bias_pair_selector",
+        help=t("bias_interaction.facet_pair_help"),
     )
     bias_results = all_bias[selected_pair]
     # If estimate_bias_interaction returned a skip-reason instead of results,
     # surface it here instead of crashing on the missing "table" key.
     if isinstance(bias_results, dict) and "_skip_reason" in bias_results and "table" not in bias_results:
         st.warning(
-            f"**Bias interaction could not be computed for `{selected_pair}`** — "
-            f"{bias_results['_skip_reason']}"
+            t(
+                "bias_interaction.skip_reason_warning_template",
+                pair=selected_pair,
+                reason=bias_results["_skip_reason"],
+            )
         )
         return
     tbl = bias_results["table"].copy()
@@ -23403,61 +23407,57 @@ def show_bias_section(
         _n_pairs = len(_t_vals)
         if _n_pairs > 0:
             if _n_sig == 0:
-                st.success(f"No significant bias interactions among {_n_pairs} pairs (|*t*| < 2).")
+                st.success(t("bias_interaction.no_significant_success_template", n_pairs=_n_pairs))
             else:
                 st.warning(
-                    f"**{_n_sig}** of {_n_pairs} pairs show significant bias (|*t*| ≥ 2) — "
-                    "review the table and heatmap below."
+                    t(
+                        "bias_interaction.has_significant_warning_template",
+                        n_sig=_n_sig,
+                        n_pairs=_n_pairs,
+                    )
                 )
 
     facet_a = bias_results.get("facet_a", selected_pair.split(" x ")[0])
     facet_b = bias_results.get("facet_b", selected_pair.split(" x ")[-1])
     safe_pair_key = re.sub(r"[^A-Za-z0-9]+", "_", selected_pair).strip("_").lower() or "selected_pair"
 
-    st.subheader("DFF / bias screening")
-    st.caption(
-        "This panel turns the FACETS-style bias table into review prompts with sparse-cell checks, "
-        "Holm familywise correction, BH false-discovery-rate correction, and a practical logit threshold. "
-        "It is a screening aid, not standalone proof of differential facet functioning."
-    )
-    with st.expander("DFF / bias screening settings", expanded=False):
+    st.subheader(t("bias_interaction.dff_subheader"))
+    st.caption(t("bias_interaction.dff_caption"))
+    with st.expander(t("bias_interaction.dff_settings_expander"), expanded=False):
         cols = st.columns(3)
         with cols[0]:
             dff_alpha = float(st.number_input(
-                "Alpha",
+                t("bias_interaction.dff_alpha_label"),
                 min_value=0.001,
                 max_value=0.500,
                 value=0.050,
                 step=0.005,
                 format="%.3f",
                 key=f"dff_alpha_{safe_pair_key}",
-                help="Significance level used for Holm and BH adjusted p-values.",
+                help=t("bias_interaction.dff_alpha_help"),
             ))
         with cols[1]:
             dff_practical = float(st.number_input(
-                "Practical |bias| threshold",
+                t("bias_interaction.dff_practical_label"),
                 min_value=0.00,
                 max_value=5.00,
                 value=0.50,
                 step=0.05,
                 format="%.2f",
                 key=f"dff_practical_{safe_pair_key}",
-                help="Logit-size threshold for practical review. Keep this aligned with your study's smallest effect of interest.",
+                help=t("bias_interaction.dff_practical_help"),
             ))
         with cols[2]:
             dff_min_n = int(st.number_input(
-                "Minimum cell N",
+                t("bias_interaction.dff_min_n_label"),
                 min_value=1,
                 max_value=100,
                 value=5,
                 step=1,
                 key=f"dff_min_n_{safe_pair_key}",
-                help="Cells below this observation count are flagged as sparse before substantive interpretation.",
+                help=t("bias_interaction.dff_min_n_help"),
             ))
-        st.caption(
-            "Default settings are conservative enough for classroom and demonstration use. "
-            "For confirmatory research, pre-register thresholds and corroborate with study-specific evidence."
-        )
+        st.caption(t("bias_interaction.dff_defaults_caption"))
     dff_tbl = build_dff_bias_screening_table(
         bias_results,
         alpha=dff_alpha,
@@ -23466,20 +23466,20 @@ def show_bias_section(
     )
     dff_summary = summarize_dff_bias_screening(dff_tbl)
     if dff_tbl.empty:
-        st.info("No DFF/bias screening table could be built for this pair.")
+        st.info(t("bias_interaction.dff_no_table_info"))
     else:
         summary_values = dict(zip(dff_summary["Metric"], dff_summary["Value"])) if not dff_summary.empty else {}
         metric_cols = st.columns(4)
-        metric_cols[0].metric("Cells", int(summary_values.get("Cells screened", len(dff_tbl))))
-        metric_cols[1].metric("Flagged", int(summary_values.get("Flagged cells", 0)))
-        metric_cols[2].metric("Strong", int(summary_values.get("Strong review", 0)))
+        metric_cols[0].metric(t("bias_interaction.dff_metric_cells"), int(summary_values.get("Cells screened", len(dff_tbl))))
+        metric_cols[1].metric(t("bias_interaction.dff_metric_flagged"), int(summary_values.get("Flagged cells", 0)))
+        metric_cols[2].metric(t("bias_interaction.dff_metric_strong"), int(summary_values.get("Strong review", 0)))
         max_abs_bias = summary_values.get("Max |bias|", np.nan)
-        metric_cols[3].metric("Max |bias|", f"{float(max_abs_bias):.2f}" if np.isfinite(max_abs_bias) else "n/a")
+        metric_cols[3].metric(t("bias_interaction.dff_metric_max_abs_bias"), f"{float(max_abs_bias):.2f}" if np.isfinite(max_abs_bias) else "n/a")
         st.dataframe(dff_summary, width="stretch", hide_index=True)
         flagged_dff = dff_tbl[dff_tbl["Flag"].astype(bool)] if "Flag" in dff_tbl.columns else pd.DataFrame()
-        with st.expander("Flagged DFF / bias cells", expanded=not flagged_dff.empty):
+        with st.expander(t("bias_interaction.dff_flagged_expander"), expanded=not flagged_dff.empty):
             if flagged_dff.empty:
-                st.success("No DFF/bias cells were flagged under the current thresholds.")
+                st.success(t("bias_interaction.dff_no_flags_success"))
             else:
                 show_cols = [
                     "FacetA", "FacetA_Level", "FacetB", "FacetB_Level", "ObsN",
@@ -23488,7 +23488,7 @@ def show_bias_section(
                 ]
                 st.dataframe(flagged_dff[[c for c in show_cols if c in flagged_dff.columns]], width="stretch")
         st.download_button(
-            "Download DFF / bias screening (CSV)",
+            t("bias_interaction.dff_download_button"),
             data=to_csv_bytes(dff_tbl),
             file_name="mfrm_dff_bias_screening.csv",
             mime="text/csv",
@@ -23528,17 +23528,14 @@ def show_bias_section(
     st.dataframe(tbl_display, width="stretch")
 
     # Interactive bias heatmap (Plotly)
-    st.subheader("Bias Heatmap")
-    st.caption(
-        "The heatmap visualises bias interactions across all facet-level combinations. "
-        "Cells marked with **\\*** are statistically significant (|t| ≥ 2)."
-    )
+    st.subheader(t("bias_interaction.heatmap_subheader"))
+    st.caption(t("bias_interaction.heatmap_caption"))
     _draw_bias_heatmap(tbl, facet_a, facet_b)
 
     # Iteration convergence report
     iter_tbl = bias_results.get("iteration")
     if iter_tbl is not None and not iter_tbl.empty:
-        st.subheader("Bias iteration report (convergence)")
+        st.subheader(t("bias_interaction.iteration_subheader"))
         iter_display = iter_tbl.copy()
         iter_display["Iteration"] = iter_display["Iteration"].apply(
             lambda v: f"BIAS {int(v)}" if pd.notna(v) else v
@@ -23551,7 +23548,7 @@ def show_bias_section(
         }), width="stretch")
 
     # Summary statistics
-    st.subheader("Bias summary")
+    st.subheader(t("bias_interaction.summary_subheader"))
     summary = bias_results.get("summary")
     if summary is not None and not summary.empty:
         st.dataframe(summary, width="stretch")
@@ -23591,43 +23588,41 @@ def show_bias_section(
     # Fixed chi-square test
     chi_sq = bias_results.get("chi_sq")
     if chi_sq is not None and not chi_sq.empty:
-        st.subheader("Fixed (all = 0) chi-square test")
+        st.subheader(t("bias_interaction.chi_sq_subheader"))
         st.dataframe(chi_sq, width="stretch")
         chi_val = chi_sq["FixedChiSq"].iloc[0]
         chi_df = chi_sq["FixedDF"].iloc[0]
         chi_p = chi_sq["FixedProb"].iloc[0]
         if np.isfinite(chi_p):
+            tmpl_kwargs = dict(
+                chi_val=f"{chi_val:.2f}",
+                chi_df=int(chi_df),
+                chi_p=f"{chi_p:.4f}",
+            )
             if chi_p < 0.01:
-                st.warning(
-                    f"Chi-square = {chi_val:.2f}, df = {int(chi_df)}, p = {chi_p:.4f}. "
-                    "Significant bias variability detected across the facet pair."
-                )
+                st.warning(t("bias_interaction.chi_sq_warning_template", **tmpl_kwargs))
             else:
-                st.success(
-                    f"Chi-square = {chi_val:.2f}, df = {int(chi_df)}, p = {chi_p:.4f}. "
-                    "No significant systematic bias variability."
-                )
+                st.success(t("bias_interaction.chi_sq_success_template", **tmpl_kwargs))
 
     # Pairwise bias report
     calc_bias_pairwise_fn = core.get("calc_bias_pairwise")
     if calc_bias_pairwise_fn:
-        st.subheader("Pairwise bias report")
+        st.subheader(t("bias_interaction.pairwise_subheader"))
         target_facet = st.selectbox(
-            "Target facet", [facet_a, facet_b], index=0, key="bias_target_facet",
-            help="The facet whose elements are compared pairwise. For example, "
-                 "select 'Rater' to see how each rater pair differs in severity "
-                 "within the context of the other facet.",
+            t("bias_interaction.pairwise_target_label"),
+            [facet_a, facet_b], index=0, key="bias_target_facet",
+            help=t("bias_interaction.pairwise_target_help"),
         )
         context_facet = facet_b if target_facet == facet_a else facet_a
         pairwise_tbl = calc_bias_pairwise_fn(bias_results["table"], target_facet, context_facet)
         if pairwise_tbl.empty:
-            st.info("Pairwise bias report not available for this selection.")
+            st.info(t("bias_interaction.pairwise_no_results_info"))
         else:
             st.dataframe(pairwise_tbl, width="stretch")
 
     # Download
     st.download_button(
-        "Download bias table (CSV)",
+        t("bias_interaction.download_button"),
         data=to_csv_bytes(tbl),
         file_name="mfrm_bias_table.csv",
         mime="text/csv",

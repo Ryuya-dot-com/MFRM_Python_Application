@@ -16762,7 +16762,7 @@ A single connected subset means all measures are on the same scale.
                     "but connectivity should be verified manually."
                 )
 
-        st.subheader("Input data preview")
+        st.subheader(t("result_tabs.input_preview_subheader"))
         st.dataframe(data.head(50), width="stretch")
 
     # --- Report tab ---
@@ -16772,31 +16772,34 @@ A single connected subset means all measures are on the same scale.
 
     # --- Measures tab ---
     with tabs[2]:
-        st.subheader("Person measures")
-        st.caption(
-            "Measures (logits) are estimated abilities (persons) and difficulties/severities "
-            "(facets) on a shared interval scale. Unlike raw scores, logit measures are linear "
-            "and directly comparable across facets. 0 = model origin (typically average difficulty); "
-            "positive = higher ability or greater severity."
-        )
+        st.subheader(t("result_tabs.persons_subheader"))
+        st.caption(t("result_tabs.persons_caption"))
         person_df = result.get("facets", {}).get("person", pd.DataFrame())
         if not person_df.empty and "Estimate" in person_df.columns:
             _p_est = pd.to_numeric(person_df["Estimate"], errors="coerce").dropna()
             _p_se = pd.to_numeric(person_df.get("SE", pd.Series(dtype=float)), errors="coerce").dropna()
             if len(_p_est) > 0:
+                _se_clause = (
+                    t("result_tabs.persons_se_clause_template", mean_se=f"{_p_se.mean():.3f}")
+                    if len(_p_se) > 0 else ""
+                )
                 st.info(
-                    f"**{len(_p_est):,}** persons measured. "
-                    f"Range: {_p_est.min():.2f} to {_p_est.max():.2f} logits "
-                    f"(spread = {_p_est.max() - _p_est.min():.2f}). "
-                    + (f"Mean SE = {_p_se.mean():.3f}." if len(_p_se) > 0 else "")
+                    t(
+                        "result_tabs.persons_info_template",
+                        n_persons=f"{len(_p_est):,}",
+                        min=f"{_p_est.min():.2f}",
+                        max=f"{_p_est.max():.2f}",
+                        spread=f"{_p_est.max() - _p_est.min():.2f}",
+                        se_clause=_se_clause,
+                    )
                 )
         if not person_df.empty:
             n_persons_display = len(person_df)
             # Search/filter for large tables
             if n_persons_display > 100:
                 search_query = st.text_input(
-                    "Search persons",
-                    placeholder="Type person ID or name to filter...",
+                    t("result_tabs.persons_search_label"),
+                    placeholder=t("result_tabs.persons_search_placeholder"),
                     key="person_search",
                 )
                 if search_query:
@@ -16805,10 +16808,22 @@ A single connected subset means all measures are on the same scale.
                         axis=1,
                     )
                     filtered = person_df[mask]
-                    st.caption(f"{len(filtered):,} of {n_persons_display:,} persons match '{search_query}'")
+                    st.caption(
+                        t(
+                            "result_tabs.persons_search_match_caption_template",
+                            n_match=f"{len(filtered):,}",
+                            n_total=f"{n_persons_display:,}",
+                            query=search_query,
+                        )
+                    )
                     st.dataframe(filtered, width="stretch")
                 elif n_persons_display > 500:
-                    st.caption(f"Showing first 500 of {n_persons_display:,} persons. Use search or download full table from Downloads tab.")
+                    st.caption(
+                        t(
+                            "result_tabs.persons_show_first_500_caption_template",
+                            n_total=f"{n_persons_display:,}",
+                        )
+                    )
                     st.dataframe(person_df.head(500), width="stretch")
                 else:
                     st.dataframe(person_df, width="stretch")
@@ -16847,34 +16862,24 @@ A single connected subset means all measures are on the same scale.
                     st.dataframe(pop_type_summary, width="stretch", hide_index=True)
             for msg in population_bundle.get("warnings", []):
                 st.warning(msg)
-        st.subheader("Facet measures")
+        st.subheader(t("result_tabs.facets_subheader"))
         others_df = result.get("facets", {}).get("others", pd.DataFrame())
         if not others_df.empty:
             st.dataframe(others_df, width="stretch")
         else:
-            st.info(
-                "No facet measures yet — select at least two facet columns "
-                "in the sidebar and re-run the estimation."
-            )
-        st.subheader("Step parameters")
+            st.info(t("result_tabs.facets_no_data_info"))
+        st.subheader(t("result_tabs.steps_subheader"))
         steps_df = result.get("steps", pd.DataFrame())
         if isinstance(steps_df, pd.DataFrame) and not steps_df.empty:
             st.dataframe(steps_df, width="stretch")
         else:
-            st.info(
-                "No step parameters for this configuration. Rating scale step "
-                "thresholds appear only when a polytomous (≥3-category) model "
-                "runs successfully."
-            )
+            st.info(t("result_tabs.steps_no_data_info"))
         slopes_df = result.get("slopes", pd.DataFrame())
         if isinstance(slopes_df, pd.DataFrame) and not slopes_df.empty:
-            st.subheader("GPCM slope parameters")
-            st.caption(
-                "GPCM slopes are positive discrimination parameters for the step facet. "
-                "Values above 1 indicate steeper category transitions; values below 1 indicate flatter transitions."
-            )
+            st.subheader(t("result_tabs.slopes_subheader"))
+            st.caption(t("result_tabs.slopes_caption"))
             st.dataframe(slopes_df, width="stretch")
-        st.subheader("Combined measures + fit")
+        st.subheader(t("result_tabs.combined_subheader"))
         measures_df = diagnostics.get("measures", pd.DataFrame())
         if not measures_df.empty:
             # Ensure 95% CI columns are visible (computed by core)
@@ -16898,11 +16903,7 @@ A single connected subset means all measures are on the same scale.
             measures_display = format_measure_table(measures_display)
             st.dataframe(style_fit_columns(measures_display), width="stretch")
             if "CI_Lower" in measures_df.columns:
-                st.caption(
-                    "CI = 95% confidence interval (Estimate ± 1.96 × SE). "
-                    "Fit columns: 🟩 0.5–1.5 acceptable · 🟧 1.5–2.0 noisy · "
-                    "🟥 ≥ 2.0 distorting · 🟨 < 0.5 over-fit (Wright & Linacre, 1994)."
-                )
+                st.caption(t("result_tabs.combined_ci_caption"))
             render_eb_shrinkage_section(result, diagnostics, expanded=False)
         else:
             st.info(
@@ -16918,25 +16919,19 @@ A single connected subset means all measures are on the same scale.
 
     # --- Dimensionality tab (Phase 3-8) ---
     with tabs[4]:
-        st.subheader("Dimensionality assessment (PCA of residuals)")
+        st.subheader(t("result_tabs.dimensionality_subheader"))
         if result_compute_pca:
             show_dimensionality_section(diagnostics, est_facet_cols, core=core)
         else:
-            st.info(
-                "Residual PCA was skipped for this run. Re-run with Analysis depth = "
-                "Standard, Full publication, or Custom > Compute residual PCA to enable it."
-            )
+            st.info(t("result_tabs.dimensionality_skipped_info"))
 
     # --- Wright Map tab (Phase 3-10) ---
     with tabs[5]:
-        st.subheader("Wright Map / Yardstick")
+        st.subheader(t("result_tabs.wright_map_subheader"))
         if result_render_plots:
             show_wright_map_section(result, diagnostics)
         else:
-            st.info(
-                "Interactive plot rendering was skipped for this run. Tables remain available; "
-                "re-run with plot rendering enabled to view the Wright Map and yardstick."
-            )
+            st.info(t("result_tabs.wright_map_skipped_info"))
 
     # --- Visuals tab ---
     with tabs[6]:

@@ -656,5 +656,28 @@
     "exports_full_caption": "Download-ready artefacts. Stan Code is the runner for full-Bayesian replication; Publication Document bundles Abstract / Methods / Results / Figures / References into Word, PDF, or HTML.",
     "tab_stan_code": "Stan Code",
     "tab_publication_document": "📄 Publication Document"
+  },
+  "result_tabs": {
+    "input_preview_subheader": "Input data preview",
+    "persons_subheader": "Person measures",
+    "persons_caption": "Measures (logits) are estimated abilities (persons) and difficulties/severities (facets) on a shared interval scale. Unlike raw scores, logit measures are linear and directly comparable across facets. 0 = model origin (typically average difficulty); positive = higher ability or greater severity.",
+    "persons_info_template": "**{n_persons}** persons measured. Range: {min} to {max} logits (spread = {spread}). {se_clause}",
+    "persons_se_clause_template": "Mean SE = {mean_se}.",
+    "persons_search_label": "Search persons",
+    "persons_search_placeholder": "Type person ID or name to filter...",
+    "persons_search_match_caption_template": "{n_match} of {n_total} persons match '{query}'",
+    "persons_show_first_500_caption_template": "Showing first 500 of {n_total} persons. Use search or download full table from Downloads tab.",
+    "facets_subheader": "Facet measures",
+    "facets_no_data_info": "No facet measures yet — select at least two facet columns in the sidebar and re-run the estimation.",
+    "steps_subheader": "Step parameters",
+    "steps_no_data_info": "No step parameters for this configuration. Rating scale step thresholds appear only when a polytomous (≥3-category) model runs successfully.",
+    "slopes_subheader": "GPCM slope parameters",
+    "slopes_caption": "GPCM slopes are positive discrimination parameters for the step facet. Values above 1 indicate steeper category transitions; values below 1 indicate flatter transitions.",
+    "combined_subheader": "Combined measures + fit",
+    "combined_ci_caption": "CI = 95% confidence interval (Estimate ± 1.96 × SE). Fit columns: 🟩 0.5–1.5 acceptable · 🟧 1.5–2.0 noisy · 🟥 ≥ 2.0 distorting · 🟨 < 0.5 over-fit (Wright & Linacre, 1994).",
+    "dimensionality_subheader": "Dimensionality assessment (PCA of residuals)",
+    "dimensionality_skipped_info": "Residual PCA was skipped for this run. Re-run with Analysis depth = Standard, Full publication, or Custom > Compute residual PCA to enable it.",
+    "wright_map_subheader": "Wright Map / Yardstick",
+    "wright_map_skipped_info": "Interactive plot rendering was skipped for this run. Tables remain available; re-run with plot rendering enabled to view the Wright Map and yardstick."
   }
 }

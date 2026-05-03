@@ -656,5 +656,28 @@
     "exports_full_caption": "ダウンロード用成果物。Stan Code は完全 Bayesian 再現用の runner。Publication Document は Abstract / Methods / Results / Figures / References を Word、PDF、HTML にまとめる。",
     "tab_stan_code": "Stan Code",
     "tab_publication_document": "📄 Publication Document"
+  },
+  "result_tabs": {
+    "input_preview_subheader": "入力データのプレビュー",
+    "persons_subheader": "Person measure",
+    "persons_caption": "Measure (logit) は、共通の間隔尺度における推定 ability (person) と difficulty / severity (facet) を表す。Raw score と異なり、logit measure は線形で、facet 間で直接比較できる。0 = モデルの原点 (典型的には平均 difficulty)、正値 = より高い ability またはより大きな severity を示す。",
+    "persons_info_template": "**{n_persons}** persons を測定。範囲: {min} 〜 {max} logit (広がり = {spread})。{se_clause}",
+    "persons_se_clause_template": "平均 SE = {mean_se}。",
+    "persons_search_label": "Person を検索",
+    "persons_search_placeholder": "Person ID または名前を入力して絞り込み...",
+    "persons_search_match_caption_template": "{n_total} persons 中 {n_match} が '{query}' に一致",
+    "persons_show_first_500_caption_template": "{n_total} persons のうち先頭 500 件を表示。検索で絞り込むか、Downloads タブから全テーブルをダウンロードする。",
+    "facets_subheader": "Facet measure",
+    "facets_no_data_info": "Facet measure が未生成 — サイドバーで facet 列を 2 つ以上選択し、推定を再実行する。",
+    "steps_subheader": "Step parameter",
+    "steps_no_data_info": "この設定では step parameter はない。Rating scale の step threshold は、polytomous (≥ 3 category) モデルが正常に実行された場合にのみ表示される。",
+    "slopes_subheader": "GPCM slope parameter",
+    "slopes_caption": "GPCM slope は step facet の正の discrimination parameter。1 より大なら category 遷移が急峻、1 より小なら緩やかであることを示す。",
+    "combined_subheader": "結合 measure + fit",
+    "combined_ci_caption": "CI = 95% 信頼区間 (Estimate ± 1.96 × SE)。Fit 列: 🟩 0.5–1.5 acceptable · 🟧 1.5–2.0 noisy · 🟥 ≥ 2.0 distorting · 🟨 < 0.5 over-fit (Wright & Linacre, 1994)。",
+    "dimensionality_subheader": "Dimensionality 評価 (PCA of residuals)",
+    "dimensionality_skipped_info": "この実行では residual PCA をスキップした。Analysis depth = Standard、Full publication、または Custom > Compute residual PCA で再実行して有効化する。",
+    "wright_map_subheader": "Wright Map / Yardstick",
+    "wright_map_skipped_info": "この実行では interactive プロット描画をスキップした。テーブルは利用できる。Wright Map と yardstick を表示するには、プロット描画を有効化して再実行する。"
   }
 }

@@ -838,7 +838,7 @@ architecture, microcopy, onboarding, accessibility, performance).
 
 ### Changed
 
-- `render_chart_guide()` (v0.2.0-beta Phase D) was dead code — the
+- `render_chart_guide()` (v0.2.0-beta) was dead code — the
   11-entry library was registered but never rendered. Now called
   after the scree plot, yardstick Wright map, category probability
   curves, pathway map, facet distribution, posterior trace, and
@@ -870,7 +870,7 @@ architecture, microcopy, onboarding, accessibility, performance).
 
 ## 0.2.0-beta - 2026-04-17
 
-### Added — Phase C (advanced model Stan code generators, download-only)
+### Added — advanced model Stan code generators (download-only)
 
 - Seven advanced response models registered in `_ADVANCED_RESPONSE_MODELS`:
   `DINA` (CDM; de la Torre 2009), `HRM` (Patz et al. 2002), `TESTLET_RI`
@@ -916,7 +916,7 @@ architecture, microcopy, onboarding, accessibility, performance).
   mixture, alpha_item for 2PL, ability for BTL), and exercises
   `validate_q_matrix` on well-formed and broken inputs.
 
-### Added — Phase D (UX tweaks)
+### Added — UX tweaks
 
 - Toast notification (`st.toast`) fires in addition to the persistent
   `st.status` accordion whenever estimation completes — ✅ / ⚠️ / ❌
@@ -944,7 +944,7 @@ architecture, microcopy, onboarding, accessibility, performance).
   library key set and enforces a minimum text budget per entry so the
   explanatory text doesn't silently empty out over time.
 
-### Added — Phase B (Posterior Viewer)
+### Added — Posterior Viewer
 
 - New top-level app mode "Posterior Viewer (upload)" exposed via the
   sidebar radio, for inspecting externally-produced posterior draws
@@ -978,7 +978,7 @@ architecture, microcopy, onboarding, accessibility, performance).
   and plot builders. Gracefully skipped when `arviz` / `pyarrow` are
   not yet installed.
 
-### Added — Phase A (publication export)
+### Added — publication export
 
 - Word (.docx) publication document builder with auto-generated abstract,
   exhaustive Methods (estimator / priors / anchor policy / convergence

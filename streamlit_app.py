@@ -31499,7 +31499,7 @@ _CHART_GUIDE_LIBRARY: dict[str, dict[str, str]] = {
 
 
 # ---------------------------------------------------------------------------
-# Advanced response-model registry (Phase C) — download-only Stan generators
+# Advanced response-model registry — download-only Stan generators
 # ---------------------------------------------------------------------------
 # The core RSM / PCM / GPCM estimators run locally (Python/EM/JMLE). The
 # advanced models below add Stan code + data-bundle generators for
@@ -32503,7 +32503,7 @@ def render_onboarding_banner() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Posterior Viewer (Phase B) — ShinyStan-like mode for externally-produced
+# Posterior Viewer — ShinyStan-like mode for externally-produced
 # posterior draws.
 # ---------------------------------------------------------------------------
 # The app itself does not compile or sample Stan (Streamlit Cloud resource

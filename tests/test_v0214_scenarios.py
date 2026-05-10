@@ -116,7 +116,7 @@ def test_music_peer_rating_estimator_completes():
 
 
 # ---------------------------------------------------------------------------
-# Quick-download bundle (Phase B)
+# Quick-download bundle
 # ---------------------------------------------------------------------------
 
 def test_build_result_bundle_frames_minimum_set():
@@ -168,7 +168,7 @@ def test_build_result_bundle_frames_empty_input():
 
 
 # ---------------------------------------------------------------------------
-# Phase A: singleton-facet handling
+# Singleton-facet handling
 # ---------------------------------------------------------------------------
 
 def test_singleton_facet_readiness_check_is_warning_not_issue():

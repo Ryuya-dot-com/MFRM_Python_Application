@@ -8550,15 +8550,54 @@ def calc_subsets(obs_df, facet_cols):
     return {"summary": summary_tbl, "nodes": node_tbl}
 
 
+# =============================================================================
+# Slope-aware GPCM kernel for fair-average evaluation
+# -----------------------------------------------------------------------------
+# References
+#   Muraki, E. (1992). A Generalized Partial Credit Model: Application of an
+#     EM Algorithm. Applied Psychological Measurement, 16(2), 159-176.
+#     Equations 2-3 and 10 define the category-probability kernel
+#         P_k(eta; a, sc) = exp(a*(k*eta - sc_k)) / sum_r exp(a*(r*eta - sc_r))
+#     where sc_k is the cumulative threshold and a is the discrimination (slope).
+#   Muraki, E. (1993). Information Functions of the Generalized Partial Credit
+#     Model. Applied Psychological Measurement, 17(4), 351-363. Equations 7
+#     and 16 give E[X|eta] = sum_k k*P_k and the analytic relation
+#         d E[X|eta] / d eta = a * Var[X|eta].
+#   Linacre, J. M. FACETS Manual, section "Fair Average". Defines Fair-M and
+#     Fair-Z averages by substituting other-facet measures with their
+#     facet-level mean (Fair-M) or with zero (Fair-Z) and recomputing the
+#     expected score under the resulting eta.
+# Identification: log-slopes are constrained to sum to zero so the
+# discrimination geometric mean is exactly one. Rows whose facet is not the
+# slope facet therefore receive slope = 1 (the neutral slope under that
+# identification), which makes the GPCM kernel reduce exactly to the PCM
+# Linacre fair-average for those rows.
+# =============================================================================
+
+
 def expected_score_from_eta(eta, step_cum, rating_min, slope=1.0):
+    """Expected score under the slope-aware GPCM / PCM / RSM kernel.
+
+    At ``slope == 1`` the body reduces byte-for-byte to the PCM/RSM Linacre
+    expected score; for ``slope > 0`` it implements the GPCM kernel of
+    Muraki (1992, Eqs. 2-3, 10) in log-space via ``logsumexp`` for numerical
+    stability. A non-finite or non-positive slope returns ``np.nan`` rather
+    than silently falling back to slope = 1, so a degenerate fit cannot
+    masquerade as a successful one.
+    """
+
     if not np.isfinite(eta) or step_cum is None or len(step_cum) == 0:
         return np.nan
     step_cum = np.asarray(step_cum, dtype=float)
     if step_cum.ndim != 1:
         return np.nan
-    slope = float(slope) if np.isfinite(slope) and slope > 0 else 1.0
+    if not np.isfinite(slope) or slope <= 0:
+        return np.nan
+    slope = float(slope)
     k_vals = np.arange(len(step_cum), dtype=float)
     log_num = slope * (eta * k_vals - step_cum)
+    if not np.all(np.isfinite(log_num)):
+        return np.nan
     log_denom = logsumexp(log_num)
     probs = np.exp(log_num - log_denom)
     return float(rating_min + np.sum(probs * k_vals))
@@ -8649,7 +8688,6 @@ def calc_facets_report_tbls(
         step_cum_common = np.concatenate([[0.0], np.cumsum(params["steps"])])
         step_cum_mean = step_cum_common
         slope_by_step_level = np.array([], dtype=float)
-        slope_mean = 1.0
     else:
         step_mat = params["steps_mat"]
         if step_mat is None or len(step_mat) == 0:
@@ -8663,11 +8701,8 @@ def calc_facets_report_tbls(
             step_cum_mean = np.concatenate([[0.0], np.cumsum(step_mean)])
         if config["model"] == "GPCM":
             slope_by_step_level = np.asarray(params.get("slopes", []), dtype=float)
-            slope_ok = slope_by_step_level[np.isfinite(slope_by_step_level) & (slope_by_step_level > 0)]
-            slope_mean = float(np.nanmean(slope_ok)) if slope_ok.size else 1.0
         else:
             slope_by_step_level = np.array([], dtype=float)
-            slope_mean = 1.0
 
     facet_names = ["Person"] + config["facet_names"]
     facet_levels_all = {
@@ -8810,6 +8845,18 @@ def calc_facets_report_tbls(
             eta_m = theta_mean + other_sum + sign * tbl["Estimate"]
             eta_z = sign * tbl["Estimate"]
 
+        # Build per-row step-cumulative thresholds and per-row slopes for the
+        # slope-aware GPCM Linacre fair-average. The contract here matches the
+        # mfrmr R reference implementation:
+        #   * Step facet's own rows use that level's own cumulative thresholds.
+        #   * Slope facet's own rows use that level's own discrimination.
+        #   * Any other facet row uses (a) the column-mean cumulative
+        #     thresholds and (b) slope = 1, which is the discrimination
+        #     geometric mean under the sum-to-zero log-slope identification.
+        # The "slope = 1" choice (rather than the arithmetic mean of the
+        # estimated slopes) makes the GPCM fair-average reduce exactly to the
+        # PCM Linacre construction on non-slope-facet rows, restoring continuity
+        # with the simpler models.
         slope_list = [1.0 for _ in range(len(tbl))]
         if config["model"] in {"PCM", "GPCM"} and config.get("step_facet"):
             step_levels = prep["levels"][config["step_facet"]]
@@ -8820,17 +8867,21 @@ def calc_facets_report_tbls(
                     idx = step_levels.index(lvl) if lvl in step_levels else None
                     if idx is not None and idx < len(step_cum_common):
                         step_cum_list.append(step_cum_common[idx])
-                        slope_list.append(
-                            float(slope_by_step_level[idx])
-                            if config["model"] == "GPCM" and idx < len(slope_by_step_level) and np.isfinite(slope_by_step_level[idx])
-                            else 1.0
-                        )
+                        if (
+                            config["model"] == "GPCM"
+                            and idx < len(slope_by_step_level)
+                            and np.isfinite(slope_by_step_level[idx])
+                            and slope_by_step_level[idx] > 0
+                        ):
+                            slope_list.append(float(slope_by_step_level[idx]))
+                        else:
+                            slope_list.append(1.0)
                     else:
                         step_cum_list.append(step_cum_mean)
-                        slope_list.append(slope_mean if config["model"] == "GPCM" else 1.0)
+                        slope_list.append(1.0)
             else:
                 step_cum_list = [step_cum_mean for _ in range(len(tbl))]
-                slope_list = [slope_mean if config["model"] == "GPCM" else 1.0 for _ in range(len(tbl))]
+                slope_list = [1.0 for _ in range(len(tbl))]
         else:
             step_cum_list = [step_cum_common for _ in range(len(tbl))]
 

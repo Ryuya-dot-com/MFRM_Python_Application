@@ -31,7 +31,7 @@
 - Required caveat: results should be cross-checked before high-stakes operational decisions.
 - Required privacy caveat: uploaded rating data may contain examinee, rater, or institution information. Prefer local execution for confidential data. If deployed to Streamlit Community Cloud or another hosted service, users must confirm their data handling obligations before uploading.
 
-## Phase 1: Clean Copy
+## Clean Copy
 
 - [x] Copy `MFRM_Python_Application/streamlit_app.py` to `MFRM_Streamlit/streamlit_app.py`.
 - [x] Copy anchor templates/guidelines into `anchor_templates_and_guideline/`.
@@ -42,7 +42,7 @@
 - [x] Run `python3 -m py_compile streamlit_app.py`.
 - [x] Run `python3 streamlit_app.py --self-test`.
 
-## Phase 2: README and Public Documentation
+## README and Public Documentation
 
 - [x] Create a new README that matches the actual entrypoint: `streamlit run streamlit_app.py`.
 - [x] Document install and run steps for local execution.
@@ -67,7 +67,7 @@
 - [x] Add a privacy and data-governance section.
 - [x] Add a verification section listing `py_compile`, `--self-test`, benchmark smoke, and optional external R cross-check scaffold.
 
-## Phase 3: App CI
+## App CI
 
 - [x] Add a Python GitHub Actions workflow in `.github/workflows/python-streamlit.yml`.
 - [x] CI steps:
@@ -82,7 +82,7 @@
   - [x] run a Streamlit AppTest smoke once the app can run without manual inputs
 - [x] Keep R cross-checks optional because they add package installation time and are not runtime dependencies.
 
-## Phase 4: Data Privacy Warning
+## Data Privacy Warning
 
 - [x] Add prominent in-app warning near file upload / paste input.
 - [x] State that confidential rating data should be run locally.
@@ -91,7 +91,7 @@
 - [x] Mirror the same warning in README.
 - [x] Ensure no uploaded data are written to disk unless the user explicitly exports/downloads files.
 
-## Phase 5: Streamlit Caching
+## Streamlit Caching
 
 - [x] Use `st.cache_data` for deterministic, trusted, pure data transformations when the cache key can represent the input safely.
 - [x] Candidate cache targets:
@@ -104,7 +104,7 @@
 - [x] Add a small cache invalidation helper based on a reproducibility/config fingerprint.
 - [x] Run self-tests after every cache-related change to prevent stale output.
 
-## Phase 6: Statistical Refinements
+## Statistical Refinements
 
 - [x] Strengthen validation language against external references:
   - [x] TAM: MML/faceted design and latent regression reference
@@ -122,7 +122,7 @@
 - [x] Review latent regression documentation so users understand the population distribution and prior SD assumptions.
 - [x] Review strict marginal diagnostics thresholds and label them as diagnostic screens rather than proof of model truth.
 
-## Phase 7: Final Public-Beta Gate
+## Final Public-Beta Gate
 
 - [x] Fresh target directory contains no `__pycache__`.
 - [x] `streamlit_app.py` compiles.
@@ -137,7 +137,7 @@
 - [x] Known limitations are explicit.
 - [x] Validation scaffold exists or is documented as optional.
 
-## Phase 8: Git Repository Setup
+## Git Repository Setup
 
 - [x] Initialize this directory as an independent Git repository on branch `main`.
 - [x] Commit the standalone Streamlit app and support files.

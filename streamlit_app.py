@@ -2186,7 +2186,7 @@ def prepare_facet_regularization(facet_regularization, config: dict, sizes: Orde
         if parameter_class not in {"facet", "main", "severity", "difficulty"}:
             audit_rows.append({
                 "Facet": facet, "Level": level, "Status": "ignored",
-                "Message": f"Unsupported ParameterClass '{parameter_class}'. Only facet main effects are supported in Phase 1.",
+                "Message": f"Unsupported ParameterClass '{parameter_class}'. Only facet main effects are currently supported.",
                 "Mean": row.get("Mean", np.nan), "SD": row.get("SD", np.nan), "Source": source,
             })
             continue
@@ -9933,7 +9933,7 @@ def load_core_namespace() -> dict:
 
 
 # ---------------------------------------------------------------------------
-# Phase 1-1: Terminology tutorial
+# Terminology tutorial
 # ---------------------------------------------------------------------------
 
 def show_tutorial() -> None:
@@ -10432,7 +10432,7 @@ is required.
 
 
 # ---------------------------------------------------------------------------
-# Phase 2-6: Missing value recoding
+# Missing value recoding
 # ---------------------------------------------------------------------------
 
 _COMMON_MISSING_CODES = ["99", "999", "-1", "N", "NA", "n/a", ".", ""]
@@ -11457,7 +11457,7 @@ def cached_mixed_asset_zip(_assets: dict[str, bytes | str], assets_key: str) -> 
 
 
 # ---------------------------------------------------------------------------
-# Phase 2-9: Top-level warnings (above tabs)
+# Top-level warnings (above tabs)
 # ---------------------------------------------------------------------------
 
 def _show_top_level_warnings(
@@ -11962,7 +11962,7 @@ def _fit_summary_callout(measures_df: pd.DataFrame, facet_filter: str | None = N
 
 
 # ---------------------------------------------------------------------------
-# Phase 3-8: Dimensionality / PCA interpretation
+# Dimensionality / PCA interpretation
 # ---------------------------------------------------------------------------
 
 def show_dimensionality_section(diagnostics: dict, facet_cols: list[str], core: dict | None = None) -> None:
@@ -12238,7 +12238,7 @@ def _show_pca_panel(
 
 
 # ---------------------------------------------------------------------------
-# Phase 3-10: Wright Map + Yardstick
+# Wright Map + Yardstick
 # ---------------------------------------------------------------------------
 
 def _minimum_within_facet_logit_gap(facet_est: pd.DataFrame) -> float:
@@ -15244,7 +15244,7 @@ def run_facets_mode(core: dict, data: pd.DataFrame) -> None:
     if not advanced_controls:
         st.sidebar.caption(t("sidebar_estimation.guided_defaults_active_caption"))
 
-    # Phase 2-6: Missing value recoding
+    # Missing value recoding
     data = missing_value_recoding(data, score_col)
 
     st.sidebar.subheader(t("sidebar_estimation.facets_mode_settings_subheader"))
@@ -16038,7 +16038,7 @@ def run_facets_mode(core: dict, data: pd.DataFrame) -> None:
     except Exception:  # pragma: no cover - readiness is a UX helper
         pass
 
-    # Phase 1-5: Estimation time warning
+    # Estimation time warning
     run_clicked = st.sidebar.button(t("sidebar_perf.run_button"), type="primary")
     if st.session_state.pop("_facets_mode_force_rerun", False):
         run_clicked = True
@@ -16882,7 +16882,7 @@ def run_facets_mode(core: dict, data: pd.DataFrame) -> None:
     with tabs[3]:
         show_fit_details_section(diagnostics, result=result, all_bias_results=out.get("all_bias_results", {}))
 
-    # --- Dimensionality tab (Phase 3-8) ---
+    # --- Dimensionality tab ---
     with tabs[4]:
         st.subheader(t("result_tabs.dimensionality_subheader"))
         if result_compute_pca:
@@ -16890,7 +16890,7 @@ def run_facets_mode(core: dict, data: pd.DataFrame) -> None:
         else:
             st.info(t("result_tabs.dimensionality_skipped_info"))
 
-    # --- Wright Map tab (Phase 3-10) ---
+    # --- Wright Map tab ---
     with tabs[5]:
         st.subheader(t("result_tabs.wright_map_subheader"))
         if result_render_plots:
@@ -26022,7 +26022,7 @@ end
 
 
 # ---------------------------------------------------------------------------
-# Phase 4-7: Multi-format downloads
+# Multi-format downloads
 # ---------------------------------------------------------------------------
 
 def _render_downloads(
@@ -33355,7 +33355,7 @@ def main() -> None:
     # Dismissible onboarding banner with one-click "Run with sample data" button.
     render_onboarding_banner()
 
-    # Phase 1-1: Tutorial before analysis
+    # Tutorial before analysis
     show_tutorial()
 
     core = load_core_namespace()

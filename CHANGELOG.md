@@ -226,6 +226,26 @@ All notable changes to this standalone Streamlit distribution should be recorded
     "negligible" threshold cited in Linacre's FACETS Manual. The
     categorical fields (`Profile CI Status`, `InferenceTier`) must
     agree exactly.
+- **Wide-format Excel / spreadsheet upload with automatic melt to
+  long format.** Excel users typically have one row per
+  ``(Person, Rater)`` and one column per item being scored (e.g. C1,
+  C2, C3 for criteria); the MFRM likelihood pipeline expects long
+  format (one row per observation), so the upload sidebar now offers
+  an inline melt step. A new ``detect_wide_format_columns(df)``
+  heuristic classifies the parsed table as long or wide by counting
+  numeric vs non-numeric columns: 3+ numeric columns plus 1+ id
+  column flips the auto-detect to "wide" and the layout expander
+  defaults to open. A new ``apply_wide_to_long_pivot(df, id_cols,
+  score_cols, new_facet_name, score_col_name)`` helper performs the
+  melt, dropping blank / non-numeric score cells so the likelihood
+  never sees zeros for missing observations. The sidebar UI surfaces
+  ID-columns / score-columns multiselects, a new-facet name input
+  (default ``Criterion``), and a long-format preview after pivot. Math
+  contract pinned in ``tests/test_wide_to_long_pivot.py`` (11 tests:
+  detection on canonical wide / long fixtures, pivot row-count
+  identity, id-column preservation, blank cell handling, refusal on
+  overlapping / missing / name-collision inputs, end-to-end fit
+  through ``mfrm_estimate`` on pivoted data).
 - **Self-tests for the seven 0.2.0 helpers** added in this session
   (FACETS d.f. / ZSTD alignment, model-choice AICc + Akaike weights,
   G/D-study Brennan 3-way identity, design network topology, rater

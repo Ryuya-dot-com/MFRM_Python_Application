@@ -15377,6 +15377,138 @@ def _read_json_table_bytes(raw: bytes) -> pd.DataFrame:
         return pd.read_json(io.StringIO(text), lines=True)
 
 
+def detect_wide_format_columns(df: pd.DataFrame) -> dict:
+    """Heuristic detection of whether an uploaded table is in wide format.
+
+    A wide-format rating table typically has one row per (Person, Rater)
+    combination and three or more numeric "score" columns whose headers
+    name the items being scored (e.g. C1, C2, C3 for criteria, or
+    Question1, Question2, ...). This helper returns:
+
+    * ``looks_wide`` (bool) — best guess that the table is wide
+    * ``probable_id_cols`` (list[str]) — non-score candidate id columns
+    * ``probable_score_cols`` (list[str]) — numeric columns the helper
+      thinks are score columns
+    * ``reason`` (str) — one-line rationale
+
+    The detection is conservative: if any single column looks like a
+    plausible long-format score column (e.g. it's the *only* numeric
+    column and there are non-numeric facet columns), the table is
+    classified as long.
+    """
+    if not isinstance(df, pd.DataFrame) or df.empty:
+        return {
+            "looks_wide": False,
+            "probable_id_cols": [],
+            "probable_score_cols": [],
+            "reason": "empty table",
+        }
+    numeric_mask: dict[str, bool] = {}
+    for c in df.columns:
+        coerced = pd.to_numeric(df[c], errors="coerce")
+        # A column is "numeric" if at least 70 % of non-blank values
+        # parse to a finite number. This guards against partial
+        # contamination from spreadsheet stray characters.
+        non_blank = df[c].astype(str).str.strip().replace({"": pd.NA}).dropna()
+        if non_blank.empty:
+            numeric_mask[c] = False
+            continue
+        valid = coerced.dropna()
+        numeric_mask[c] = (
+            len(valid) >= max(1, int(0.7 * len(non_blank)))
+        )
+    score_candidates = [c for c, is_num in numeric_mask.items() if is_num]
+    id_candidates = [c for c, is_num in numeric_mask.items() if not is_num]
+
+    # A typical long-format rating table has columns like
+    # (Person, Rater, Criterion, Score) — exactly one numeric score
+    # column and two-plus id columns. If we see >= 3 numeric columns
+    # AND >= 1 id column, the table is likely wide.
+    looks_wide = len(score_candidates) >= 3 and len(id_candidates) >= 1
+    if looks_wide:
+        reason = (
+            f"{len(score_candidates)} numeric columns + {len(id_candidates)} "
+            "non-numeric columns suggests one row per id with several score "
+            "columns (wide-format Excel layout)."
+        )
+    elif len(score_candidates) <= 1:
+        reason = (
+            "<=1 numeric column; data is already in long format "
+            "(one row per observation)."
+        )
+    else:
+        reason = (
+            f"{len(score_candidates)} numeric columns but no non-numeric "
+            "id columns; treating as long format."
+        )
+    return {
+        "looks_wide": looks_wide,
+        "probable_id_cols": id_candidates,
+        "probable_score_cols": score_candidates,
+        "reason": reason,
+    }
+
+
+def apply_wide_to_long_pivot(
+    df: pd.DataFrame,
+    *,
+    id_cols: list[str],
+    score_cols: list[str],
+    new_facet_name: str = "Item",
+    score_col_name: str = "Score",
+) -> pd.DataFrame:
+    """Melt a wide-format rating table into the canonical long format.
+
+    ``id_cols`` columns are repeated for every (id_row, score_col) pair;
+    ``score_cols`` headers become the levels of the new facet
+    ``new_facet_name``; the corresponding cell value goes into
+    ``score_col_name``. Empty / missing cells are dropped so the
+    likelihood pipeline does not attempt to estimate on blanks.
+
+    Raises ``ValueError`` for inconsistent inputs (overlapping id /
+    score columns, missing columns, empty score_cols list).
+    """
+    if not isinstance(df, pd.DataFrame) or df.empty:
+        return pd.DataFrame()
+    id_cols = list(id_cols or [])
+    score_cols = list(score_cols or [])
+    if not score_cols:
+        raise ValueError("apply_wide_to_long_pivot: score_cols is empty.")
+    overlap = set(id_cols) & set(score_cols)
+    if overlap:
+        raise ValueError(
+            f"apply_wide_to_long_pivot: id and score columns overlap: {sorted(overlap)}."
+        )
+    missing = [c for c in (id_cols + score_cols) if c not in df.columns]
+    if missing:
+        raise ValueError(
+            f"apply_wide_to_long_pivot: columns not in input: {missing}."
+        )
+    if new_facet_name in id_cols:
+        raise ValueError(
+            f"apply_wide_to_long_pivot: new_facet_name {new_facet_name!r} collides with an id column."
+        )
+    if score_col_name in id_cols:
+        raise ValueError(
+            f"apply_wide_to_long_pivot: score_col_name {score_col_name!r} collides with an id column."
+        )
+
+    melted = df.melt(
+        id_vars=id_cols,
+        value_vars=score_cols,
+        var_name=new_facet_name,
+        value_name=score_col_name,
+    )
+    # Drop rows with blank / non-numeric scores so they don't enter the
+    # likelihood as zeros. The downstream pipeline already does its own
+    # NA handling, but the melt produces a long table that's roughly
+    # n_id_rows * n_score_cols rows, and the bulk of "missing" cells
+    # in wide layouts are genuinely missing observations (not zeros).
+    melted[score_col_name] = pd.to_numeric(melted[score_col_name], errors="coerce")
+    melted = melted.dropna(subset=[score_col_name])
+    return melted.reset_index(drop=True)
+
+
 def read_flexible_table(text_value, file_input, header=True, delimiter: str | None = None):
     if file_input is not None:
         name = file_input.name.lower()
@@ -16330,6 +16462,99 @@ def read_input_data(core: dict) -> pd.DataFrame:
             preview_cols=preview_cols,
             ellipsis="..." if parsed.shape[1] > 5 else "",
         ))
+
+    # Wide-to-long pivot. Excel / spreadsheet users often have one row
+    # per (Person, Rater) and one column per item being scored; the
+    # likelihood pipeline expects long format, so we offer an inline
+    # melt step. The heuristic detector pre-fills a sensible default
+    # layout (long) but flips to "wide" when it sees several numeric
+    # columns and at least one non-numeric id column.
+    wide_detect = detect_wide_format_columns(parsed)
+    default_layout = "wide" if wide_detect["looks_wide"] else "long"
+    layout_label_long = t("data_source.layout_long")
+    layout_label_wide = t("data_source.layout_wide")
+    layout_options = {layout_label_long: "long", layout_label_wide: "wide"}
+    default_label = layout_label_wide if default_layout == "wide" else layout_label_long
+    with st.sidebar.expander(
+        t("data_source.layout_expander"),
+        expanded=wide_detect["looks_wide"],
+    ):
+        st.caption(t("data_source.layout_expander_help"))
+        if wide_detect["looks_wide"]:
+            st.caption(
+                t("data_source.layout_auto_detect_template",
+                  reason=wide_detect["reason"])
+            )
+        layout_choice = st.radio(
+            t("data_source.layout_radio_label"),
+            list(layout_options.keys()),
+            index=list(layout_options.keys()).index(default_label),
+            key="upload_layout_choice",
+            horizontal=True,
+        )
+        if layout_options[layout_choice] == "wide":
+            cols_in_df = list(parsed.columns)
+            default_score_cols = wide_detect["probable_score_cols"]
+            default_id_cols = wide_detect["probable_id_cols"]
+            id_cols = st.multiselect(
+                t("data_source.layout_id_cols_label"),
+                options=cols_in_df,
+                default=default_id_cols,
+                key="upload_wide_id_cols",
+                help=t("data_source.layout_id_cols_help"),
+            )
+            remaining_for_score = [c for c in cols_in_df if c not in id_cols]
+            score_cols = st.multiselect(
+                t("data_source.layout_score_cols_label"),
+                options=remaining_for_score,
+                default=[c for c in default_score_cols if c in remaining_for_score],
+                key="upload_wide_score_cols",
+                help=t("data_source.layout_score_cols_help"),
+            )
+            new_facet_name = st.text_input(
+                t("data_source.layout_new_facet_label"),
+                value="Criterion",
+                key="upload_wide_new_facet",
+                help=t("data_source.layout_new_facet_help"),
+            ).strip() or "Item"
+            score_col_name = st.text_input(
+                t("data_source.layout_score_col_label"),
+                value="Score",
+                key="upload_wide_score_col",
+                help=t("data_source.layout_score_col_help"),
+            ).strip() or "Score"
+            if not id_cols or not score_cols:
+                st.warning(t("data_source.layout_incomplete_warning"))
+                return parsed
+            try:
+                pivoted = apply_wide_to_long_pivot(
+                    parsed,
+                    id_cols=id_cols,
+                    score_cols=score_cols,
+                    new_facet_name=new_facet_name,
+                    score_col_name=score_col_name,
+                )
+            except ValueError as exc:
+                st.error(
+                    t("data_source.layout_pivot_error_template", error=str(exc))
+                )
+                return parsed
+            if pivoted.empty:
+                st.warning(t("data_source.layout_pivot_empty_warning"))
+                return parsed
+            st.success(
+                t(
+                    "data_source.layout_pivot_success_template",
+                    rows_wide=len(parsed),
+                    rows_long=len(pivoted),
+                    facet=new_facet_name,
+                    n_levels=len(score_cols),
+                )
+            )
+            with st.expander(t("data_source.layout_pivot_preview"), expanded=False):
+                st.dataframe(pivoted.head(20), width="stretch", hide_index=True)
+            return pivoted
+
     return parsed
 
 

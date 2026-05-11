@@ -843,5 +843,17 @@
     "prediction_simulation": "Prediction/Simulation",
     "downloads": "Downloads",
     "help": "Help"
+  },
+  "facets_tables": {
+    "fair_se_toggle_label": "Show fair-average standard errors and confidence intervals",
+    "fair_se_toggle_help": "Adds Fair(M) and Fair(Z) S.E. and CI columns to each table. Uses the structural delta method on the MML observed information; adds a few seconds to the first render of this tab.",
+    "fair_se_ci_level_label": "Confidence level",
+    "fair_se_ci_level_help": "Coverage of the structural confidence interval. 95% is the conventional reporting choice.",
+    "fair_se_computing_spinner": "Computing observed information and fair-average gradients...",
+    "fair_se_method_caption": "S.E.: structural delta method on the MML observed information (Cramer 1946; Louis 1982). The standard error of each Fair(M) / Fair(Z) value is sqrt(gradᵀ Cov grad), where Cov is the inverse Fisher information at the MLE.",
+    "fair_se_person_caption": "Person rows are marked \"not available\": MML EAP person estimates are conditioned on rather than included in the structural Hessian. Non-GPCM fits are marked \"not_applicable\".",
+    "fair_se_unavailable_method": "Structural delta-method standard errors are only available for MML fits; this run used {method}.",
+    "fair_se_unavailable_model": "Structural delta-method standard errors are currently implemented for GPCM fits; this run used {model}.",
+    "fair_se_compute_failed": "Observed-information covariance could not be computed: {detail}"
   }
 }

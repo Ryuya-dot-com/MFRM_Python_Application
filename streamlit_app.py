@@ -9518,6 +9518,63 @@ def fair_average_table(res, diagnostics, fair_se=False, ci_level=0.95, **kwargs)
     return add_gpcm_fair_average_delta_se(raw_tbls, res, ci_level=ci_level)
 
 
+# Display ordering for the FACETS-style tables tab. Keeps each fair-average
+# value adjacent to its standard error, confidence-interval bounds, and
+# status flag for quick visual scanning. Lower-priority columns (S.E.
+# method label, longer-form detail strings, the CI level itself) move to
+# the right edge of the table so the centre stays focused on measurement
+# values that drive interpretation.
+_FACETS_TABLE_DISPLAY_ORDER = (
+    "TotalScore", "TotalCount", "WeightdScore", "WeightdCount", "ObservedAverage",
+    "FairM", "FairMSE", "FairM_CI_Lower", "FairM_CI_Upper", "FairM_SE_Status",
+    "FairZ", "FairZSE", "FairZ_CI_Lower", "FairZ_CI_Upper", "FairZ_SE_Status",
+    "Measure", "ModelSE", "RealSE",
+    "InfitMnSq", "InfitZStd", "OutfitMnSq", "OutfitZStd",
+    "PtMeaCorr", "Anchor", "Status", "Level",
+    "FairM_CI_Level", "FairM_SE_Method", "FairM_SE_Detail",
+    "FairZ_CI_Level", "FairZ_SE_Method", "FairZ_SE_Detail",
+)
+
+
+def _reorder_facets_table_columns(tbl):
+    """Reorder a fair-average facet table so SE / CI / status columns sit
+    adjacent to their parent metric.
+
+    The function is a no-op for ``None`` or empty tables. Columns that are
+    not in the display order template are preserved at the right edge in
+    their original relative order, so downstream consumers (CSV exports,
+    custom forks adding new columns) are not broken by this reorder.
+    """
+    if tbl is None or len(tbl) == 0:
+        return tbl
+    cols = list(tbl.columns)
+    ordered = [c for c in _FACETS_TABLE_DISPLAY_ORDER if c in cols]
+    extras = [c for c in cols if c not in ordered]
+    return tbl[ordered + extras]
+
+
+def _facets_fair_se_cache_key(res, ci_level):
+    """Stable session-state key for the SE-annotated facet tables.
+
+    Keyed on a content hash of the optimised parameter vector and the CI
+    level so a re-run with the same fit and the same CI choice reuses the
+    cached annotation, but a fresh fit (different ``opt.x``) triggers a
+    fresh Hessian / delta-method evaluation.
+    """
+    par = _get_opt_par(res)
+    if par is None:
+        return None
+    try:
+        par_hash = hash(par.tobytes())
+    except Exception:
+        return None
+    try:
+        ci = float(ci_level)
+    except Exception:
+        ci = 0.95
+    return ("_fair_se_facets_tables_cache", par_hash, ci)
+
+
 def calc_reliability(measure_df):
     """Compute Separation / Reliability / Strata for each facet.
 
@@ -17526,18 +17583,79 @@ def run_facets_mode(core: dict, data: pd.DataFrame) -> None:
             "Each table shows element measures, model SE, and fit statistics "
             "in the layout familiar to FACETS software users."
         )
-        if not report_tables:
+
+        # Fair-average standard error / confidence interval controls. The
+        # heavy compute (Hessian + per-row delta-method gradient) only runs
+        # when the toggle is enabled and the fit is GPCM MML, and is cached
+        # in session_state for the duration of the run so subsequent
+        # interactions with this tab are instantaneous.
+        fit_config = result.get("config", {}) if isinstance(result, dict) else {}
+        fit_method = str(fit_config.get("method") or "")
+        fit_model = str(fit_config.get("model") or "")
+        fit_supports_fair_se = fit_method == "MML" and fit_model == "GPCM"
+
+        with st.container(border=True):
+            col_toggle, col_ci = st.columns([3, 1], vertical_alignment="center")
+            with col_toggle:
+                fair_se_enabled = st.checkbox(
+                    t("facets_tables.fair_se_toggle_label"),
+                    value=False,
+                    help=t("facets_tables.fair_se_toggle_help"),
+                    key="facets_table_fair_se_enabled",
+                    disabled=not fit_supports_fair_se,
+                )
+            with col_ci:
+                _ci_options = [0.90, 0.95, 0.99]
+                ci_level = st.selectbox(
+                    t("facets_tables.fair_se_ci_level_label"),
+                    options=_ci_options,
+                    index=1,
+                    format_func=lambda v: f"{int(round(v * 100))}%",
+                    help=t("facets_tables.fair_se_ci_level_help"),
+                    key="facets_table_fair_se_ci_level",
+                    disabled=not (fit_supports_fair_se and fair_se_enabled),
+                )
+            if not fit_supports_fair_se:
+                if fit_method != "MML":
+                    st.caption(
+                        t("facets_tables.fair_se_unavailable_method").format(
+                            method=fit_method or "unknown"
+                        )
+                    )
+                elif fit_model != "GPCM":
+                    st.caption(
+                        t("facets_tables.fair_se_unavailable_model").format(
+                            model=fit_model or "unknown"
+                        )
+                    )
+
+        display_tables = report_tables
+        if fair_se_enabled and fit_supports_fair_se and report_tables:
+            cache_key = _facets_fair_se_cache_key(result, ci_level)
+            if cache_key is not None and cache_key not in st.session_state:
+                with st.spinner(t("facets_tables.fair_se_computing_spinner")):
+                    annotated = add_gpcm_fair_average_delta_se(
+                        report_tables, result, ci_level=float(ci_level)
+                    )
+                st.session_state[cache_key] = annotated
+            if cache_key is not None:
+                display_tables = st.session_state.get(cache_key, report_tables)
+            st.caption(t("facets_tables.fair_se_method_caption"))
+            st.caption(t("facets_tables.fair_se_person_caption"))
+
+        if not display_tables:
             st.info("No FACETS-style report tables were generated.")
         else:
-            _n_facets = len(report_tables)
-            _n_elements = sum(len(t) for t in report_tables.values())
+            _n_facets = len(display_tables)
+            _n_elements = sum(len(t) for t in display_tables.values())
             st.info(f"{_n_facets} facet table(s), {_n_elements} total elements.")
-            for facet, tbl in report_tables.items():
+            for facet, tbl in display_tables.items():
                 st.markdown(f"**{facet}**")
-                st.dataframe(tbl, width="stretch")
+                view = _reorder_facets_table_columns(tbl) if fair_se_enabled else tbl
+                st.dataframe(view, width="stretch")
             # Combined report download
             combined_parts = []
-            for facet, df in report_tables.items():
+            for facet, df in display_tables.items():
                 tmp = df.copy()
                 tmp.insert(0, "Facet", facet)
                 combined_parts.append(tmp)

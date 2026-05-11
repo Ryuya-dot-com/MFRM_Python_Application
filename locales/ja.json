@@ -843,5 +843,17 @@
     "prediction_simulation": "Prediction/Simulation",
     "downloads": "Downloads",
     "help": "Help"
+  },
+  "facets_tables": {
+    "fair_se_toggle_label": "Fair-average の標準誤差と信頼区間を表示",
+    "fair_se_toggle_help": "各 facet 表に Fair(M) と Fair(Z) の S.E. と信頼区間列を追加する。MML observed information に対する structural delta method を使用。このタブの初回描画に数秒追加。",
+    "fair_se_ci_level_label": "信頼水準",
+    "fair_se_ci_level_help": "structural 信頼区間のカバレッジ。95% が標準的な報告水準。",
+    "fair_se_computing_spinner": "observed information と fair-average gradient を計算中...",
+    "fair_se_method_caption": "S.E.: MML observed information に対する structural delta method (Cramer 1946; Louis 1982)。各 Fair(M) / Fair(Z) の標準誤差は sqrt(gradᵀ Cov grad)。Cov は MLE における Fisher information の逆行列。",
+    "fair_se_person_caption": "Person 行は MML EAP が structural Hessian の外側にあるため「not available」と表示される。GPCM 以外の fit は「not_applicable」と表示される。",
+    "fair_se_unavailable_method": "Structural delta-method 標準誤差は MML fit のみ利用可能。この run は {method} を使用。",
+    "fair_se_unavailable_model": "Structural delta-method 標準誤差は現在 GPCM fit のみ実装。この run は {model} を使用。",
+    "fair_se_compute_failed": "observed-information 共分散を計算できなかった: {detail}"
   }
 }

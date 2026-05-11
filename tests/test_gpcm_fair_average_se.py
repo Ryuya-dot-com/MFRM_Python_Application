@@ -381,3 +381,111 @@ def test_fair_average_table_adds_se_columns_when_fair_se_true(
         # CI level column reflects the request.
         assert (tbl["FairM_CI_Level"] == 0.95).all()
         assert (tbl["FairZ_CI_Level"] == 0.95).all()
+
+
+# -----------------------------------------------------------------------------
+# UI helpers: column reorder and cache key
+# -----------------------------------------------------------------------------
+
+
+def test_reorder_facets_table_columns_groups_se_with_metric():
+    """FairMSE / FairM_CI_Lower / FairM_CI_Upper / FairM_SE_Status must appear
+    right after FairM, and the same grouping applies to FairZ. Verbose
+    columns (Method / Detail / CI Level) move to the right edge."""
+    tbl = pd.DataFrame(
+        {
+            "TotalCount": [10],
+            "FairM": [1.5],
+            "FairMSE": [0.1],
+            "FairM_CI_Lower": [1.3],
+            "FairM_CI_Upper": [1.7],
+            "FairM_CI_Level": [0.95],
+            "FairM_SE_Status": ["ok"],
+            "FairM_SE_Method": ["structural delta method"],
+            "FairM_SE_Detail": ["..."],
+            "FairZ": [0.5],
+            "FairZSE": [0.1],
+            "FairZ_CI_Lower": [0.3],
+            "FairZ_CI_Upper": [0.7],
+            "FairZ_CI_Level": [0.95],
+            "FairZ_SE_Status": ["ok"],
+            "FairZ_SE_Method": ["structural delta method"],
+            "FairZ_SE_Detail": ["..."],
+            "Measure": [0.0],
+            "ModelSE": [0.2],
+            "Level": ["A"],
+        }
+    )
+    reordered = app._reorder_facets_table_columns(tbl)
+    cols = list(reordered.columns)
+    # Fair(M) cluster sits together, with status next to bounds.
+    fair_m_block = ["FairM", "FairMSE", "FairM_CI_Lower", "FairM_CI_Upper", "FairM_SE_Status"]
+    fair_z_block = ["FairZ", "FairZSE", "FairZ_CI_Lower", "FairZ_CI_Upper", "FairZ_SE_Status"]
+    for block in (fair_m_block, fair_z_block):
+        for a, b in zip(block, block[1:]):
+            assert cols.index(b) == cols.index(a) + 1, (a, b, cols)
+    # Verbose columns are after Measure / Level.
+    measure_idx = cols.index("Measure")
+    for verbose in ("FairM_SE_Method", "FairZ_SE_Detail"):
+        assert cols.index(verbose) > measure_idx
+
+
+def test_reorder_facets_table_columns_preserves_unknown_columns_at_right_edge():
+    tbl = pd.DataFrame(
+        {
+            "FairM": [1.0],
+            "FairMSE": [0.1],
+            "_DownstreamExtraColumn": ["x"],
+            "Level": ["A"],
+        }
+    )
+    reordered = app._reorder_facets_table_columns(tbl)
+    cols = list(reordered.columns)
+    # FairM block sits at the left as templated, and the unknown column is
+    # preserved at the right.
+    assert cols.index("FairM") < cols.index("FairMSE") < cols.index("_DownstreamExtraColumn")
+
+
+def test_reorder_facets_table_columns_is_noop_on_none_or_empty():
+    assert app._reorder_facets_table_columns(None) is None
+    empty = pd.DataFrame()
+    out = app._reorder_facets_table_columns(empty)
+    assert out is empty or out.empty
+
+
+def test_facets_fair_se_cache_key_is_stable_for_same_fit(small_gpcm_mml_fit):
+    """Same fit + same CI level => same cache key. Cache hits round-trip."""
+    k1 = app._facets_fair_se_cache_key(small_gpcm_mml_fit, 0.95)
+    k2 = app._facets_fair_se_cache_key(small_gpcm_mml_fit, 0.95)
+    assert k1 is not None
+    assert k1 == k2
+
+
+def test_facets_fair_se_cache_key_changes_with_ci_level(small_gpcm_mml_fit):
+    """A different CI level must produce a different cache key."""
+    k_90 = app._facets_fair_se_cache_key(small_gpcm_mml_fit, 0.90)
+    k_95 = app._facets_fair_se_cache_key(small_gpcm_mml_fit, 0.95)
+    k_99 = app._facets_fair_se_cache_key(small_gpcm_mml_fit, 0.99)
+    assert len({k_90, k_95, k_99}) == 3
+
+
+def test_facets_fair_se_cache_key_changes_with_par(small_gpcm_mml_fit):
+    """A different parameter vector must produce a different cache key,
+    so re-running estimation invalidates the cached SE annotation."""
+    k_original = app._facets_fair_se_cache_key(small_gpcm_mml_fit, 0.95)
+
+    # Construct a perturbed result with the same shape but different par.
+    mutated_par = app._get_opt_par(small_gpcm_mml_fit).copy()
+    mutated_par[0] = mutated_par[0] + 0.5
+    mutated_opt = type("Opt", (), {"x": mutated_par})()
+    mutated_result = {**small_gpcm_mml_fit, "opt": mutated_opt}
+    k_mutated = app._facets_fair_se_cache_key(mutated_result, 0.95)
+
+    assert k_original != k_mutated
+
+
+def test_facets_fair_se_cache_key_handles_missing_par_gracefully():
+    """If the result has no optimisation parameter vector, the helper
+    returns ``None`` rather than raising."""
+    assert app._facets_fair_se_cache_key({}, 0.95) is None
+    assert app._facets_fair_se_cache_key({"opt": None}, 0.95) is None

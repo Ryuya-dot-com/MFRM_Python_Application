@@ -68,6 +68,18 @@ All notable changes to this standalone Streamlit distribution should be recorded
   structural Hessian; non-GPCM fits are marked `"not_applicable"`.
   Reference: standard large-sample delta method (e.g. Cramer 1946);
   observed-information identity for MML estimators (Louis 1982).
+- **FACETS-style tables tab now exposes the fair-average SE / CI inline.**
+  A new toggle at the top of the tab lets the user request fair-average
+  standard errors and confidence intervals; a confidence-level selector
+  (90 % / 95 % / 99 %) sits next to it. The toggle is disabled for non
+  GPCM-MML fits with a one-line explanation. When enabled, a spinner runs
+  the Hessian + delta-method evaluation once per fit, the result is cached
+  in `st.session_state` keyed on a content hash of the optimisation
+  parameter vector so subsequent tab interactions are instantaneous, and
+  the table columns are reordered so each `Fair(M)` / `Fair(Z)` value
+  sits adjacent to its S.E., CI bounds, and status flag. Method and
+  citation captions are rendered below the controls when the toggle is
+  on. Strings are localised in both English and Japanese.
 
 ### Changed
 

@@ -226,6 +226,49 @@ All notable changes to this standalone Streamlit distribution should be recorded
     "negligible" threshold cited in Linacre's FACETS Manual. The
     categorical fields (`Profile CI Status`, `InferenceTier`) must
     agree exactly.
+- **Nonparametric DIMTEST for essential unidimensionality** (Stout,
+  1987, Psychometrika 52; polytomous adaptation per Nandakumar & Yu,
+  1996). A new ``compute_dimtest_nonparametric(res, diagnostics)``
+  helper tests whether the criteria measure a single latent
+  dimension after the fitted MFRM main effects are accounted for.
+  The test averages the rater scores per (Person, Item), partitions
+  the items into an Assessment subtest (AT) and a Partitioning
+  subtest (PT), stratifies persons by their PT total score, and
+  computes the pooled within-stratum covariance among AT items as
+  the test statistic T_L. Under essential unidimensionality T_L is
+  asymptotically zero; departures signal a residual secondary
+  dimension. The standard error and p-value come from a cluster
+  bootstrap on persons (Efron & Tibshirani, 1993, Ch. 19) rather
+  than the asymptotic null distribution; this keeps the pipeline
+  purely nonparametric and side-steps the parametric bias-
+  correction term T_B from Stout (1987) that would require fitting
+  an auxiliary unidimensional IRT model on the AT subtest.
+
+  AT / PT subtest selection follows Roussos & Stout (1996): the
+  default ``pc2_loading_sign`` auto-split uses the PC2 loadings on
+  the item facet from the existing residual-PCA pipeline. The
+  auto-split inherits a known selection-bias inflation of Type I
+  error (PC2 already maximises an approximately-orthogonal
+  covariance direction); for a rigorous confirmatory test, pass
+  ``at_items=`` and ``pt_items=`` derived from substantive
+  considerations or from a separate calibration sample. The
+  ``split_method`` field on the returned bundle names the active
+  path.
+
+  The Dimensionality tab gains a DIMTEST panel below the residual-
+  PCA tabs with controls for the item facet, the AT / PT split
+  method (auto vs user-specified multi-select), bootstrap
+  replicates, and confidence level. The result reports T_L, Z,
+  p-value, person count, the bootstrap CI, the AT / PT split, and a
+  Reject (p < 0.05) / Retain status banner. Math contract pinned in
+  ``tests/test_dimtest_nonparametric.py`` (10 tests: refusal on
+  invalid input, overlap detection, unidim-fails-to-reject on a-
+  priori split, 2-dim-rejects on correct split, T_L magnitude
+  ordering, bootstrap determinism, bundle field completeness, the
+  selection-bias caveat appears on the auto-split path, and the
+  closed-form two-sided p-value identity). Three new APA references
+  (Stout, 1987; Nandakumar & Yu, 1996; Roussos & Stout, 1996) are
+  added to the library and citation map.
 - **Bootstrap CI for G / Phi coefficients** (Efron & Tibshirani, 1993,
   Ch. 19). ``compute_generalizability_study()`` now accepts
   ``bootstrap_ci=True`` and runs a cluster-bootstrap resampling on

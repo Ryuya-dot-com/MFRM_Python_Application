@@ -9154,6 +9154,370 @@ def evaluate_parameter_recovery(
 
 
 # ============================================================================
+# ============================================================================
+# Nonparametric dimensionality test (Stout 1987; Nandakumar & Yu 1996)
+# ============================================================================
+# Adapts Stout's (1987, Psychometrika 52) DIMTEST framework for the
+# essential-unidimensionality null hypothesis to MFRM data. For each
+# Person, the rater scores on a given Criterion are averaged to produce
+# a Person x Criterion item-response matrix; the criteria are then
+# partitioned into an Assessment subtest (AT) and a Partitioning
+# subtest (PT) using PC2 loading signs from the existing residual-PCA
+# pipeline (Roussos & Stout, 1996). The test statistic is the pooled
+# within-stratum covariance among AT items after stratifying persons
+# by their PT total score; under essential unidimensionality the
+# pooled covariance is asymptotically zero, and any systematic
+# departure from zero is evidence of a residual secondary dimension
+# beyond what the fitted MFRM accounts for.
+#
+# This is the conditional-covariance core of DIMTEST. The full Stout
+# (1987) procedure includes a parametric bias-correction term T_B
+# that requires fitting an auxiliary unidimensional IRT model on each
+# subtest; that step is documented as future work in the bundle's
+# caveat field. Standard errors and p-values here are based on a
+# cluster bootstrap on persons (Efron & Tibshirani, 1993, Ch. 19)
+# rather than the asymptotic null distribution, which keeps the
+# implementation purely nonparametric and side-steps the bias-
+# correction derivation.
+#
+# Polytomous adaptation: Nandakumar & Yu (1996) extension applies
+# because the AT covariances and the PT total score are well-defined
+# for ordered polytomous data; no rescaling to 0/1 is performed.
+
+
+def _dimtest_build_person_item_matrix(
+    obs_df: pd.DataFrame,
+    item_facet: str,
+    score_col: str = "Score",
+) -> pd.DataFrame:
+    """Build the Person x Item score matrix by averaging across raters.
+
+    Returns an N_persons x N_items DataFrame with the per-cell average
+    score; rows are Person identifiers and columns are Item levels.
+    Missing cells are returned as NaN.
+    """
+    if not isinstance(obs_df, pd.DataFrame) or obs_df.empty:
+        return pd.DataFrame()
+    if item_facet not in obs_df.columns or "Person" not in obs_df.columns:
+        return pd.DataFrame()
+    work = obs_df[["Person", item_facet, score_col]].copy()
+    work["Person"] = work["Person"].astype(str)
+    work[item_facet] = work[item_facet].astype(str)
+    work[score_col] = pd.to_numeric(work[score_col], errors="coerce")
+    work = work.dropna(subset=[score_col])
+    if work.empty:
+        return pd.DataFrame()
+    return work.pivot_table(
+        index="Person", columns=item_facet, values=score_col, aggfunc="mean",
+    )
+
+
+def _dimtest_at_pt_split_from_pca(
+    pca_bundle: dict | None,
+    items: list[str],
+) -> tuple[list[str], list[str], str]:
+    """Pick AT / PT items from the existing PCA-of-residuals PC2 loadings.
+
+    Roussos & Stout (1996) recommend forming AT from items that load
+    on the suspected secondary dimension and using the remaining items
+    as the partitioning subtest. We project PC2 sign onto the supplied
+    item list; positive-loading items go to AT, negative-loading items
+    to PT. If the PCA bundle is unavailable or its loadings frame does
+    not cover the items, we fall back to a deterministic alphabetical
+    split so the test always returns a well-defined result; the
+    ``split_method`` field on the returned bundle names the path.
+    """
+    if isinstance(pca_bundle, dict):
+        loadings = pca_bundle.get("loadings")
+    else:
+        loadings = None
+    pc2_values: dict[str, float] = {}
+    if isinstance(loadings, pd.DataFrame) and "PC2" in loadings.columns:
+        for item in items:
+            # The PCA loadings are indexed by item label; for some
+            # facets the label is exactly ``item``, for others (overall
+            # PCA) it is a concatenation. Try the direct match first.
+            if item in loadings.index:
+                try:
+                    pc2_values[item] = float(loadings.at[item, "PC2"])
+                except Exception:
+                    continue
+    if len(pc2_values) >= len(items) and len(items) >= 4:
+        at = [it for it in items if pc2_values.get(it, 0.0) >= 0]
+        pt = [it for it in items if pc2_values.get(it, 0.0) < 0]
+        # Both halves must contain >= 2 items for the AT covariance
+        # statistic to have a finite SE.
+        if len(at) >= 2 and len(pt) >= 2:
+            return at, pt, "pc2_loading_sign"
+    # Fallback: deterministic alphabetical split.
+    sorted_items = sorted(items)
+    cut = len(sorted_items) // 2
+    return sorted_items[cut:], sorted_items[:cut], "alphabetical_fallback"
+
+
+def _dimtest_t_l_statistic(
+    matrix: pd.DataFrame,
+    at_items: list[str],
+    pt_items: list[str],
+    n_strata: int = 5,
+) -> tuple[float, int, list[int]]:
+    """Compute the pooled within-stratum covariance statistic.
+
+    Strata are equal-frequency cuts on the PT total score; for each
+    stratum the AT-pair covariance is pooled into a single weighted
+    average. Returns ``(T_L, n_used, stratum_sizes)``.
+    """
+    finite = matrix.dropna(subset=at_items + pt_items, how="any")
+    n = int(len(finite))
+    if n < 2 * n_strata or len(at_items) < 2:
+        return float("nan"), 0, []
+    pt_total = finite[pt_items].sum(axis=1)
+    # Equal-frequency strata via quantile cuts; collapse adjacent ties
+    # by adjusting the requested stratum count downward if needed.
+    quantiles = np.linspace(0.0, 1.0, n_strata + 1)
+    cuts = pt_total.quantile(quantiles).to_numpy()
+    cuts = np.unique(cuts)
+    if cuts.size < 3:
+        return float("nan"), n, []
+    bins = pd.cut(pt_total, bins=cuts, include_lowest=True, duplicates="drop")
+    grouped = finite.groupby(bins, observed=False)
+    t_l = 0.0
+    n_total_used = 0
+    sizes: list[int] = []
+    at_arr_cols = at_items
+    for _, sub in grouped:
+        n_s = int(len(sub))
+        if n_s < 2:
+            continue
+        sizes.append(n_s)
+        n_total_used += n_s
+        # Within-stratum covariance among AT items; ddof=1 sample
+        # covariance, then sum over the strict upper triangle.
+        sub_at = sub[at_arr_cols].to_numpy(dtype=float)
+        if sub_at.shape[0] < 2:
+            continue
+        cov_mat = np.cov(sub_at, rowvar=False, ddof=1)
+        # Sum strictly upper-triangular off-diagonal entries.
+        triu = np.triu_indices_from(cov_mat, k=1)
+        s_cov_sum = float(np.sum(cov_mat[triu]))
+        t_l += (n_s / max(n, 1)) * s_cov_sum
+    return float(t_l), n_total_used, sizes
+
+
+def compute_dimtest_nonparametric(
+    res: dict,
+    diagnostics: dict | None = None,
+    *,
+    item_facet: str = "Criterion",
+    at_items: list[str] | None = None,
+    pt_items: list[str] | None = None,
+    n_strata: int = 5,
+    n_bootstrap: int = 200,
+    confidence: float = 0.95,
+    seed: int | None = 20260612,
+) -> dict:
+    """Polytomous adaptation of Stout's nonparametric DIMTEST for MFRM data.
+
+    Tests the essential-unidimensionality null hypothesis after the
+    fitted MFRM main effects are accounted for. Each Person x Item
+    score is the raw rating averaged across raters; AT / PT items are
+    auto-split from the existing residual-PCA PC2 loadings (Roussos &
+    Stout, 1996). The test statistic is the pooled within-stratum
+    covariance among AT items after stratifying persons by PT total
+    score (Stout 1987 framework, Nandakumar & Yu 1996 polytomous
+    extension). Standard error and p-value come from a cluster
+    bootstrap on persons (Efron & Tibshirani 1993, Ch. 19).
+
+    Returns
+    -------
+    dict
+        With keys ``available``, ``reason``, ``T_L``, ``SE``, ``Z``,
+        ``p_value``, ``ci_lower``, ``ci_upper``, ``n_persons``,
+        ``n_strata``, ``at_items``, ``pt_items``, ``split_method``,
+        ``method``, ``references``, ``caveat``, ``settings``.
+    """
+    empty = {
+        "available": False, "reason": "",
+        "T_L": np.nan, "SE": np.nan, "Z": np.nan, "p_value": np.nan,
+        "ci_lower": np.nan, "ci_upper": np.nan,
+        "n_persons": 0, "n_strata": 0,
+        "at_items": [], "pt_items": [],
+        "split_method": "",
+        "method": "conditional_covariance_with_cluster_bootstrap_se",
+        "references": (
+            "Stout (1987); Nandakumar & Yu (1996); "
+            "Roussos & Stout (1996); Efron & Tibshirani (1993)."
+        ),
+        "caveat": "",
+        "settings": {},
+    }
+    if not isinstance(res, dict):
+        empty["reason"] = "Result is not a fit dictionary."
+        return empty
+    prep = res.get("prep") if isinstance(res, dict) else {}
+    config = res.get("config") if isinstance(res, dict) else {}
+    if not isinstance(prep, dict) or not isinstance(config, dict):
+        empty["reason"] = "Fit dictionary missing prep / config."
+        return empty
+    facet_names = list(config.get("facet_names", []))
+    if item_facet not in facet_names:
+        empty["reason"] = (
+            f"item_facet {item_facet!r} is not a facet on this fit; choose one of "
+            f"{facet_names}."
+        )
+        return empty
+
+    obs_df = None
+    if isinstance(diagnostics, dict):
+        obs_df = diagnostics.get("obs")
+    if obs_df is None:
+        try:
+            obs_df = compute_obs_table(res)
+        except Exception:
+            obs_df = None
+    if not isinstance(obs_df, pd.DataFrame) or obs_df.empty:
+        empty["reason"] = "Per-observation diagnostics frame is empty."
+        return empty
+
+    matrix = _dimtest_build_person_item_matrix(obs_df, item_facet)
+    if matrix.empty or matrix.shape[1] < 4:
+        empty["reason"] = (
+            f"Need >= 4 distinct {item_facet} levels to form AT / PT subtests; "
+            f"got {matrix.shape[1]}."
+        )
+        return empty
+
+    items = list(matrix.columns.astype(str))
+
+    # AT / PT subtest selection. If the caller passes a priori
+    # ``at_items`` and ``pt_items``, use them verbatim (the rigorous
+    # path that side-steps the selection bias in PCA-driven splits).
+    # Otherwise fall back to the PCA PC2 loading-sign auto-split with
+    # an explicit caveat about the inflated Type I error rate that
+    # comes from picking AT / PT from the same data.
+    user_specified = bool(at_items) and bool(pt_items)
+    if user_specified:
+        at_items = [str(x) for x in at_items if str(x) in items]
+        pt_items = [str(x) for x in pt_items if str(x) in items]
+        split_method = "user_specified"
+    else:
+        pca_bundle = None
+        if isinstance(diagnostics, dict):
+            pca_by_facet = diagnostics.get("pca_by_facet") or {}
+            pca_bundle = (
+                pca_by_facet.get(item_facet) if isinstance(pca_by_facet, dict) else None
+            )
+            if pca_bundle is None:
+                pca_bundle = diagnostics.get("pca")
+        at_items, pt_items, split_method = _dimtest_at_pt_split_from_pca(
+            pca_bundle, items
+        )
+    if len(at_items) < 2 or len(pt_items) < 2:
+        empty["reason"] = (
+            "AT / PT split produced an empty subtest; need >= 2 items in each."
+        )
+        return empty
+    if set(at_items) & set(pt_items):
+        empty["reason"] = "at_items and pt_items must be disjoint."
+        return empty
+
+    matrix = matrix.dropna(subset=at_items + pt_items, how="any")
+    n_persons = int(len(matrix))
+    if n_persons < max(2 * int(n_strata), 10):
+        empty["reason"] = (
+            f"Need at least max(2 * n_strata, 10) = {max(2 * int(n_strata), 10)} "
+            f"persons with complete AT + PT scores; got {n_persons}."
+        )
+        return empty
+
+    t_l_observed, n_used, stratum_sizes = _dimtest_t_l_statistic(
+        matrix, at_items, pt_items, n_strata=n_strata,
+    )
+    if not np.isfinite(t_l_observed):
+        empty["reason"] = "T_L could not be computed on the observed sample."
+        return empty
+
+    # Cluster bootstrap on persons. Resample with replacement and
+    # recompute T_L on each replicate.
+    rng = np.random.default_rng(int(seed) if seed is not None else None)
+    persons_arr = matrix.index.to_numpy()
+    replicates: list[float] = []
+    for _ in range(int(n_bootstrap)):
+        idx = rng.choice(persons_arr.size, size=persons_arr.size, replace=True)
+        # Re-label resampled persons with unique identifiers (the
+        # bootstrap needs each draw to be a distinct row).
+        boot = matrix.iloc[idx].copy()
+        boot.index = [f"BOOT_{k:05d}" for k in range(boot.shape[0])]
+        t_b, _, _ = _dimtest_t_l_statistic(
+            boot, at_items, pt_items, n_strata=n_strata,
+        )
+        if np.isfinite(t_b):
+            replicates.append(float(t_b))
+    rep_arr = np.asarray(replicates, dtype=float)
+    if rep_arr.size < 10:
+        empty["reason"] = "Insufficient bootstrap replicates produced a finite T_L."
+        return empty
+    se = float(np.std(rep_arr, ddof=1))
+    z_stat = float(t_l_observed / se) if (np.isfinite(se) and se > 0) else float("nan")
+    p_value = float(2.0 * (1.0 - _norm.cdf(abs(z_stat)))) if np.isfinite(z_stat) else float("nan")
+    alpha_lo = (1.0 - float(confidence)) / 2.0
+    ci_lo = float(np.quantile(rep_arr, alpha_lo))
+    ci_hi = float(np.quantile(rep_arr, 1.0 - alpha_lo))
+
+    return {
+        "available": True,
+        "reason": "",
+        "T_L": float(t_l_observed),
+        "SE": se,
+        "Z": z_stat,
+        "p_value": p_value,
+        "ci_lower": ci_lo,
+        "ci_upper": ci_hi,
+        "n_persons": n_persons,
+        "n_strata_requested": int(n_strata),
+        "n_strata_used": int(len(stratum_sizes)),
+        "stratum_sizes": stratum_sizes,
+        "at_items": at_items,
+        "pt_items": pt_items,
+        "split_method": split_method,
+        "method": "conditional_covariance_with_cluster_bootstrap_se",
+        "references": (
+            "Stout (1987); Nandakumar & Yu (1996); "
+            "Roussos & Stout (1996); Efron & Tibshirani (1993)."
+        ),
+        "caveat": (
+            "T_L is the pooled within-stratum covariance among AT items "
+            "after partitioning on the PT total score. Under essential "
+            "unidimensionality (conditional independence of AT items "
+            "given the latent trait), T_L is asymptotically zero. The "
+            "standard error and p-value come from a cluster bootstrap "
+            "on persons; the full Stout (1987) procedure also subtracts "
+            "an analytic bias-correction term T_B that requires fitting "
+            "an auxiliary unidimensional IRT model on the AT subtest, "
+            "which this initial port omits in favour of the purely "
+            "nonparametric bootstrap variance estimate. When AT / PT is "
+            "chosen by the PC2 loading sign on the same data (the "
+            "default), the test inherits a selection-bias inflation of "
+            "Type I error because PC2 already maximises an "
+            "approximately-orthogonal covariance direction. For a "
+            "rigorous confirmatory test, pass a priori at_items and "
+            "pt_items derived from substantive considerations or from "
+            "a separate calibration sample (Roussos & Stout, 1996). "
+            "Read the p-value alongside the existing residual PCA: "
+            "agreement across the two diagnostics is the strongest "
+            "signal."
+        ),
+        "settings": {
+            "item_facet": item_facet,
+            "n_strata": int(n_strata),
+            "n_bootstrap": int(n_bootstrap),
+            "confidence": float(confidence),
+            "seed": int(seed) if seed is not None else None,
+        },
+    }
+
+
+# ============================================================================
 # Design network analysis: connectivity, articulation points, bridges
 # ============================================================================
 # Treats the rating design as an undirected weighted graph: nodes are
@@ -17097,6 +17461,164 @@ def show_dimensionality_section(diagnostics: dict, facet_cols: list[str], core: 
             else:
                 _show_pca_panel(pca, mode="facet", facet_name=key, core=core, diagnostics=diagnostics, facet_cols=facet_cols)
 
+    # Nonparametric DIMTEST (Stout 1987; Nandakumar & Yu 1996),
+    # complementary to the residual PCA above.
+    result = (core or {}).get("result") if isinstance(core, dict) else None
+    render_dimtest_panel(result, diagnostics, facet_cols)
+
+
+def render_dimtest_panel(
+    result: dict | None,
+    diagnostics: dict | None,
+    facet_cols: list[str] | None = None,
+) -> None:
+    """Render the nonparametric DIMTEST panel.
+
+    Sits below the residual-PCA tabs as a complementary nonparametric
+    check on essential unidimensionality. Runs on demand because the
+    cluster bootstrap can be slow on large designs.
+    """
+    if result is None or not isinstance(facet_cols, list) or not facet_cols:
+        return
+    st.subheader(t("dimensionality.dimtest_subheader"))
+    st.caption(t("dimensionality.dimtest_caption"))
+
+    # Pick a default item facet: prefer "Criterion" if present, else
+    # the first non-rater-like facet.
+    item_facet_default = next(
+        (f for f in facet_cols if f.lower() == "criterion"),
+        next((f for f in facet_cols if "rater" not in f.lower() and "judge" not in f.lower()),
+             facet_cols[0]),
+    )
+    item_facet = st.selectbox(
+        t("dimensionality.dimtest_item_facet_label"),
+        options=facet_cols,
+        index=facet_cols.index(item_facet_default),
+        key=f"dimtest_item_facet::{id(result)}",
+    )
+
+    # Build the candidate items list (so the user can pick a-priori
+    # AT / PT). Read from the prep['levels'][item_facet].
+    prep = result.get("prep", {}) if isinstance(result, dict) else {}
+    levels = prep.get("levels", {}) if isinstance(prep, dict) else {}
+    items = [str(x) for x in levels.get(item_facet, [])]
+    if len(items) < 4:
+        st.info(
+            t(
+                "dimensionality.dimtest_too_few_items_template",
+                item_facet=item_facet, n=len(items),
+            )
+        )
+        return
+
+    use_auto = st.checkbox(
+        t("dimensionality.dimtest_use_auto_split"),
+        value=True, key=f"dimtest_use_auto::{id(result)}",
+    )
+    at_items: list[str] = []
+    pt_items: list[str] = []
+    if not use_auto:
+        cols = st.columns(2)
+        with cols[0]:
+            at_items = st.multiselect(
+                t("dimensionality.dimtest_at_label"),
+                options=items, default=items[: max(2, len(items) // 2)],
+                key=f"dimtest_at::{id(result)}",
+            )
+        with cols[1]:
+            pt_items = st.multiselect(
+                t("dimensionality.dimtest_pt_label"),
+                options=[x for x in items if x not in at_items],
+                default=[x for x in items if x not in at_items],
+                key=f"dimtest_pt::{id(result)}",
+            )
+
+    nb_col, conf_col = st.columns(2)
+    with nb_col:
+        n_bootstrap = int(
+            st.number_input(
+                t("dimensionality.dimtest_n_bootstrap"),
+                min_value=50, max_value=2000, value=200, step=50,
+                key=f"dimtest_n_boot::{id(result)}",
+            )
+        )
+    with conf_col:
+        confidence = float(
+            st.selectbox(
+                t("dimensionality.dimtest_confidence"),
+                options=[0.90, 0.95, 0.99], index=1,
+                key=f"dimtest_conf::{id(result)}",
+            )
+        )
+
+    cache_key = "|".join([
+        str(item_facet), str(use_auto),
+        ",".join(at_items), ",".join(pt_items),
+        str(n_bootstrap), str(confidence),
+    ])
+    state_key = f"dimtest_bundle::{id(result)}::{cache_key}"
+    bundle = st.session_state.get(state_key)
+    if bundle is None:
+        if st.button(
+            t("dimensionality.dimtest_run_button"),
+            help=t("dimensionality.dimtest_run_help"),
+            key=f"dimtest_run::{id(result)}::{cache_key}",
+        ):
+            with st.spinner(t("dimensionality.dimtest_running_spinner")):
+                bundle = compute_dimtest_nonparametric(
+                    result, diagnostics,
+                    item_facet=item_facet,
+                    at_items=at_items if not use_auto else None,
+                    pt_items=pt_items if not use_auto else None,
+                    n_bootstrap=n_bootstrap,
+                    confidence=confidence,
+                )
+            st.session_state[state_key] = bundle
+        else:
+            return
+
+    if not bundle.get("available"):
+        st.info(
+            t(
+                "dimensionality.dimtest_unavailable_template",
+                reason=str(bundle.get("reason", "")),
+            )
+        )
+        return
+
+    z_val = float(bundle.get("Z", float("nan")))
+    p_val = float(bundle.get("p_value", float("nan")))
+    t_l = float(bundle.get("T_L", float("nan")))
+    cols = st.columns(4)
+    cols[0].metric(t("dimensionality.dimtest_metric_T_L"), f"{t_l:.4f}")
+    cols[1].metric(t("dimensionality.dimtest_metric_Z"), f"{z_val:.3f}")
+    cols[2].metric(t("dimensionality.dimtest_metric_p"), f"{p_val:.4f}")
+    cols[3].metric(
+        t("dimensionality.dimtest_metric_n_persons"),
+        f"{int(bundle.get('n_persons', 0)):,}",
+    )
+
+    st.caption(
+        t(
+            "dimensionality.dimtest_summary_caption_template",
+            at=", ".join(bundle.get("at_items", [])),
+            pt=", ".join(bundle.get("pt_items", [])),
+            split=str(bundle.get("split_method", "")),
+            confidence=int(round(float(bundle.get("settings", {}).get("confidence", 0.95)) * 100)),
+            ci_low=f"{float(bundle.get('ci_lower', float('nan'))):.4f}",
+            ci_high=f"{float(bundle.get('ci_upper', float('nan'))):.4f}",
+        )
+    )
+
+    if p_val < 0.05:
+        st.warning(t("dimensionality.dimtest_reject_warning"))
+    else:
+        st.success(t("dimensionality.dimtest_retain_success"))
+
+    caveat = bundle.get("caveat", "")
+    if caveat:
+        st.caption(t("dimensionality.dimtest_caveat_label") + ": " + str(caveat))
+
 
 def _show_pca_panel(
     pca: dict,
@@ -18893,6 +19415,22 @@ _APA_REFERENCE_LIBRARY: dict[str, str] = {
         "Smith, E. V. (2000). Metric development and score reporting in Rasch "
         "measurement. Journal of Applied Measurement, 1(3), 303–326."
     ),
+    "Stout_1987": (
+        "Stout, W. F. (1987). A nonparametric approach for assessing latent "
+        "trait unidimensionality. Psychometrika, 52(4), 589–617. "
+        "https://doi.org/10.1007/BF02294821"
+    ),
+    "Nandakumar_Yu_1996": (
+        "Nandakumar, R., & Yu, F. (1996). Empirical validation of "
+        "DIMTEST on nonnormal ability distributions. Journal of "
+        "Educational Measurement, 33(4), 355–368. "
+        "https://doi.org/10.1111/j.1745-3984.1996.tb00497.x"
+    ),
+    "Roussos_Stout_1996": (
+        "Roussos, L. A., & Stout, W. F. (1996). A multidimensionality-based "
+        "DIF analysis paradigm. Applied Psychological Measurement, 20(4), "
+        "355–371. https://doi.org/10.1177/014662169602000404"
+    ),
     "Snijders_2001": (
         "Snijders, T. A. B. (2001). Asymptotic null distribution of person fit "
         "statistics with estimated person parameter. Psychometrika, 66(3), "
@@ -19019,6 +19557,9 @@ _CITATION_TO_KEY: dict[str, str] = {
     "(Schwarz, 1978)": "Schwarz_1978",
     "(Smith, 2000)": "Smith_2000",
     "(Smith, 2002)": "Smith_2002",
+    "(Stout, 1987)": "Stout_1987",
+    "(Nandakumar & Yu, 1996)": "Nandakumar_Yu_1996",
+    "(Roussos & Stout, 1996)": "Roussos_Stout_1996",
     "(Snijders, 2001)": "Snijders_2001",
     "(Tavakol & Dennick, 2011)": "Tavakol_Dennick_2011",
     "(Uto, 2021)": "Uto_2021",
@@ -22415,7 +22956,12 @@ def run_facets_mode(core: dict, data: pd.DataFrame) -> None:
     with tabs[4]:
         st.subheader(t("result_tabs.dimensionality_subheader"))
         if result_compute_pca:
-            show_dimensionality_section(diagnostics, est_facet_cols, core=core)
+            # Thread `result` through `core` so the DIMTEST panel can
+            # read the fit's per-facet level lists without changing
+            # the public signature of `show_dimensionality_section`.
+            dim_core = dict(core) if isinstance(core, dict) else {}
+            dim_core["result"] = result
+            show_dimensionality_section(diagnostics, est_facet_cols, core=dim_core)
         else:
             st.info(t("result_tabs.dimensionality_skipped_info"))
 

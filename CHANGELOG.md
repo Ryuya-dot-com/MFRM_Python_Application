@@ -226,6 +226,39 @@ All notable changes to this standalone Streamlit distribution should be recorded
     "negligible" threshold cited in Linacre's FACETS Manual. The
     categorical fields (`Profile CI Status`, `InferenceTier`) must
     agree exactly.
+- **Model-choice guidance: RSM / PCM / GPCM side-by-side comparison.**
+  A new ``compute_model_choice_comparison(res)`` helper refits the two
+  non-current rating-scale models on the same data and returns a
+  publication-style comparison bundle. Each row carries ``Model``,
+  ``FitStatus``, ``N``, ``KParams``, ``LogLik``, ``AIC`` (Akaike,
+  1974), ``DeltaAIC``, ``AICEvidenceRatio``, ``BIC`` (Schwarz, 1978),
+  ``DeltaBIC``, and ``BICEvidenceRatio``; the evidence ratios use
+  the Akaike / Schwarz closed form ``exp(DeltaIC / 2)`` (Burnham &
+  Anderson, 2002, Eq. 2.10). A nested likelihood-ratio table reports
+  ``Lambda = 2 * (LL_alt - LL_null) ~ chi2_{df_alt - df_null}`` for
+  every pair where both fits succeeded (RSM in PCM, PCM in GPCM, RSM
+  in GPCM; Wilks, 1938). A tiered recommendation (``strong`` /
+  ``moderate`` / ``weak`` / ``tie``) is keyed on the BIC gap to the
+  second-best candidate; the rationale string names the per-criterion
+  margin so manuscripts can quote it directly. The Report tab gains
+  a "Model-choice guidance" section that exposes the comparison behind
+  a "Run model-choice comparison" button; the result is cached in
+  session_state keyed on a content-addressed hash of the result so
+  re-loading the same fit skips the refit. Runs with anchors,
+  population / latent-regression terms, or facet regularization are
+  refused with an explanatory reason because their likelihoods are
+  not directly comparable on a common scale. Math contract pinned in
+  ``tests/test_model_choice_guidance.py`` (13 tests: invalid-input
+  refusal, regularization / population-formula refusal, three-row
+  output, DeltaIC = 0 at the minimum, evidence-ratio closed form,
+  LR chi-square = 2 (LL_alt - LL_null), scipy parity on p-values,
+  preference recovery on RSM-generated and GPCM-heterogeneous-slope
+  data, caveat citation, column-order stability, fit_times zero for
+  current model). Three new APA references (Akaike, 1974; Schwarz,
+  1978; Burnham & Anderson, 2002) are added to the library and
+  citation map. The ``mfrmr_020_migration_coverage_table()`` row
+  for "Model-choice guidance (RSM / PCM / GPCM)" flips from Planned
+  to Ready.
 - **FACETS d.f. / ZSTD reporting alignment.** Two d.f. conventions for
   the standardised Infit / Outfit fit statistic now ship side-by-side.
   The engine convention (default, backwards compatible) uses

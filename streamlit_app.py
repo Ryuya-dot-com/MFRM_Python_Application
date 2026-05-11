@@ -970,23 +970,43 @@ def mfrmr_020_migration_coverage_table() -> pd.DataFrame:
         },
         {
             "mfrmr020Area": "Model-choice guidance (RSM / PCM / GPCM)",
-            "PythonStatus": "Planned",
+            "PythonStatus": "Ready",
             "PythonEvidence": (
-                "The mfrmr 0.2.0 reference adds build_model_choice_review() "
-                "which compares RSM / PCM / GPCM fits on the same data and "
-                "writes a decision-support paragraph (Likelihood-ratio "
-                "evidence, AIC / BIC, parameter parsimony, interpretation "
-                "trade-offs)."
+                "compute_model_choice_comparison() refits the two non-current "
+                "models on the same data and returns a comparison bundle: "
+                "per-model AIC (Akaike, 1974), BIC (Schwarz, 1978), DeltaIC, "
+                "and Akaike / Schwarz evidence ratios (Burnham & Anderson, "
+                "2002, Eq. 2.10); nested likelihood-ratio chi-square tests "
+                "for RSM in PCM in GPCM (Wilks, 1938); and a tiered "
+                "recommendation (strong / moderate / weak / tie) keyed on "
+                "the BIC gap to the second-best candidate. The Report tab "
+                "exposes the comparison behind a Run-on-demand button (the "
+                "refit cost is paid once per result and cached in "
+                "session_state). The math contract is pinned in "
+                "tests/test_model_choice_guidance.py (DeltaIC = 0 at the "
+                "minimum, evidence ratio closed form, LR chi-square = "
+                "2 * (LL_alt - LL_null), scipy parity on p-values, and "
+                "preference recovery on RSM- and GPCM-generated synthetic "
+                "data)."
             ),
             "Boundary": (
-                "The current readiness panel hints at model choice but does "
-                "not run a side-by-side comparison or write the decision-"
-                "support paragraph."
+                "AIC / BIC and the LR test are evaluated on the same data, "
+                "same method, and the same identification constraints. Runs "
+                "with anchors, latent-regression / population-formula "
+                "terms, or facet regularization are refused with an "
+                "explanatory reason because their likelihoods are not "
+                "directly comparable on a common scale; rerun the comparison "
+                "on the unanchored / unregularized data set when needed. "
+                "BIC favours parsimony more strongly than AIC; when the two "
+                "criteria disagree, the recommendation reads on BIC first "
+                "and downgrades the tier to weak / tie when the gap is "
+                "small."
             ),
             "NextValidation": (
-                "Run RSM and PCM (and, if GPCM is plausible, GPCM) manually "
-                "in separate runs and compare the AIC / BIC reported on the "
-                "Summary cards until the comparison helper ships."
+                "Re-run with anchors / regularization disabled before using "
+                "the recommendation in a manuscript; cross-check the "
+                "DeltaAIC / DeltaBIC against a stand-alone refit pair if "
+                "the two criteria disagree."
             ),
         },
         {
@@ -4843,6 +4863,383 @@ def build_likelihood_information_criteria(result: dict | None) -> pd.DataFrame:
     out.insert(0, "Method", method)
     out.insert(0, "Model", model)
     return out
+
+
+# ============================================================================
+# Model-choice guidance: refit RSM / PCM / GPCM and compare
+# ============================================================================
+# The three rating-scale models form a nested hierarchy
+#   RSM (Andersen 1977 / Andrich 1978) is a special case of
+#   PCM (Masters 1982) when per-step thresholds collapse to a common set;
+#   PCM is a special case of GPCM (Muraki 1992) when all slopes equal one.
+# AIC (Akaike 1974) and BIC (Schwarz 1978) compare any of the three on a
+# common information scale; the LR chi-square pivotal (Wilks 1938) gives
+# an additional inferential check on the nested pairs (RSM vs PCM,
+# PCM vs GPCM, and RSM vs GPCM).
+# The helper below refits the two non-current models on the same data
+# and returns a publication-style comparison table with the per-row
+# DeltaAIC / DeltaBIC, evidence ratios (Burnham & Anderson 2002), and
+# a recommendation tier informed by the joint AIC/BIC ordering. Refits
+# inherit ``method``, ``maxit``, ``reltol``, ``quad_points`` and the
+# step / slope facet conventions from the original fit; runs with
+# anchors, population formulas, or facet regularization are surfaced
+# as ``available = False`` because their likelihoods are not directly
+# comparable on the same scale.
+
+_MODEL_CHOICE_CANDIDATES = ("RSM", "PCM", "GPCM")
+
+
+def _select_first_polytomous_facet(res: dict) -> str | None:
+    """Pick a sensible default step facet for refits.
+
+    Returns the original step facet when present; otherwise the first
+    non-Person facet with more than one level, since RSM-style fits
+    routinely omit the step facet and PCM / GPCM refits need one.
+    """
+    config = res.get("config", {}) if isinstance(res, dict) else {}
+    chosen = config.get("step_facet")
+    if isinstance(chosen, str) and chosen:
+        return chosen
+    facet_names = list(config.get("facet_names", []))
+    prep = res.get("prep", {}) if isinstance(res, dict) else {}
+    levels = prep.get("levels", {}) if isinstance(prep, dict) else {}
+    for facet in facet_names:
+        n_levels = len(levels.get(facet, []))
+        if n_levels > 1 and facet != "Person":
+            return facet
+    return None
+
+
+def _model_choice_can_compare(res: dict) -> tuple[bool, str]:
+    """Return ``(ok, reason)`` for the comparison pipeline.
+
+    Refuses runs whose likelihood scale differs from a plain refit
+    (anchored, population-regressed, regularized, weight-aware), since
+    AIC / BIC must be evaluated on a common likelihood.
+    """
+    if not isinstance(res, dict):
+        return False, "Result is not a fit dictionary."
+    config = res.get("config", {}) if isinstance(res, dict) else {}
+    if not isinstance(config, dict) or not config.get("model"):
+        return False, "Fit configuration is missing a model name."
+    prep = res.get("prep", {}) if isinstance(res, dict) else {}
+    if not isinstance(prep, dict) or not isinstance(prep.get("data"), pd.DataFrame):
+        return False, "Fit does not carry a raw data frame for re-fitting."
+    if config.get("facet_regularization_enabled"):
+        return (
+            False,
+            "Facet regularization is active; the penalized objective is not a "
+            "comparable likelihood. Re-fit without regularization to run the "
+            "model-choice comparison."
+        )
+    pop = config.get("population_model", {}) if isinstance(config.get("population_model", {}), dict) else {}
+    if pop.get("enabled"):
+        return (
+            False,
+            "Population / latent-regression terms are active; refits under the "
+            "same prior require additional plumbing that is not yet in scope."
+        )
+    if config.get("anchors_active") or res.get("anchors", {}).get("active"):
+        return (
+            False,
+            "Anchored runs use fixed parameters that may not be compatible with "
+            "every candidate model; run the comparison on the unanchored data set."
+        )
+    n_cat = int(config.get("n_cat", 0) or 0)
+    if n_cat < 2:
+        return False, "Number of score categories is below 2; cannot compare."
+    return True, ""
+
+
+def _refit_candidate_model(
+    res: dict,
+    candidate: str,
+    *,
+    step_facet: str | None,
+    slope_facet: str | None,
+):
+    """Refit a candidate model on the same raw data, inheriting fit knobs.
+
+    Returns the new ``res`` dict on success, or ``None`` on failure.
+    """
+    config = res.get("config", {}) if isinstance(res, dict) else {}
+    prep = res.get("prep", {}) if isinstance(res, dict) else {}
+    data = prep.get("data")
+    if not isinstance(data, pd.DataFrame) or data.empty:
+        return None
+
+    # RSM has no step facet (shared step thresholds); PCM / GPCM use the
+    # chosen step facet (mirrors the original convention).
+    refit_step_facet = None if candidate == "RSM" else step_facet
+    refit_slope_facet = None if candidate != "GPCM" else (slope_facet or step_facet)
+    weight_col = "Weight" if "Weight" in data.columns else None
+    try:
+        return mfrm_estimate(
+            data=data,
+            person_col="Person",
+            facet_cols=list(config.get("facet_names", [])),
+            score_col="Score",
+            rating_min=prep.get("rating_min"),
+            rating_max=(prep.get("rating_min", 0) + int(config.get("n_cat", 2) or 2) - 1),
+            weight_col=weight_col,
+            model=candidate,
+            method=str(config.get("method", "JMLE")),
+            step_facet=refit_step_facet,
+            slope_facet=refit_slope_facet,
+            noncenter_facet=str(config.get("noncenter_facet", "Person")),
+            dummy_facets=list(config.get("dummy_facets", [])) or None,
+            positive_facets=list(config.get("positive_facets", [])) or None,
+            quad_points=int(config.get("quad_points", 15) or 15),
+            maxit=int(config.get("maxit", 400) or 400),
+            reltol=float(config.get("reltol", 1e-6) or 1e-6),
+            mml_engine=str(config.get("mml_engine", "EM")),
+        )
+    except Exception:
+        return None
+
+
+def _model_choice_evidence_ratio(delta_ic: float) -> float:
+    """Akaike / Schwarz evidence ratio ``exp(delta_ic / 2)`` for AIC or BIC.
+
+    The reference model (lowest IC) has DeltaIC = 0 and evidence ratio 1.
+    Larger ratios mean stronger evidence against the candidate.
+    """
+    if not np.isfinite(delta_ic) or delta_ic < 0:
+        return np.nan
+    try:
+        return float(np.exp(delta_ic / 2.0))
+    except OverflowError:
+        return float("inf")
+
+
+def _model_choice_recommend(comparison: pd.DataFrame) -> dict:
+    """Return ``{"model", "tier", "rationale"}`` from the comparison table.
+
+    Reading order: prefer the lowest BIC for evidence-weight assessment
+    (Schwarz 1978 is consistent under regularity); break ties by AIC
+    (Akaike 1974); when |DeltaBIC| < 2 between the top two, downgrade
+    the tier to ``"weak"`` so the recommendation does not over-state.
+    """
+    if comparison is None or comparison.empty:
+        return {
+            "model": "",
+            "tier": "not_available",
+            "rationale": "Comparison table is empty.",
+        }
+    finite = comparison.dropna(subset=["BIC", "AIC"])
+    if finite.empty:
+        return {
+            "model": "",
+            "tier": "not_available",
+            "rationale": "No model produced a finite BIC / AIC.",
+        }
+    ranked = finite.sort_values(["BIC", "AIC"], ascending=True)
+    best = ranked.iloc[0]
+    if len(ranked) >= 2:
+        second = ranked.iloc[1]
+        delta_bic = float(second["BIC"] - best["BIC"])
+        delta_aic = float(second["AIC"] - best["AIC"])
+    else:
+        delta_bic = float("inf")
+        delta_aic = float("inf")
+    if delta_bic >= 10 or delta_aic >= 10:
+        tier = "strong"
+    elif delta_bic >= 6 or delta_aic >= 6:
+        tier = "moderate"
+    elif delta_bic >= 2 or delta_aic >= 2:
+        tier = "weak"
+    else:
+        tier = "tie"
+    return {
+        "model": str(best["Model"]),
+        "tier": tier,
+        "rationale": (
+            f"Lowest BIC ({best['BIC']:.2f}) and AIC ({best['AIC']:.2f}); "
+            f"gap to second-best is DeltaBIC = {delta_bic:.2f}, "
+            f"DeltaAIC = {delta_aic:.2f}."
+        ),
+    }
+
+
+def _model_choice_lr_tests(model_results: dict[str, dict]) -> pd.DataFrame:
+    """Return a per-pair LR-test table for the nested comparisons.
+
+    RSM ⊂ PCM ⊂ GPCM is the standard nesting; the chi-square pivotal
+    is ``Lambda = 2 * (LL_alt - LL_null) ~ chi2_{df_alt - df_null}``
+    (Wilks 1938). Only pairs where both fits succeeded contribute a
+    row; the d.f. for each pair is the difference in counted free
+    parameters. Returns an empty frame if no nested pair is available.
+    """
+    rows = []
+    pairs = [("RSM", "PCM"), ("PCM", "GPCM"), ("RSM", "GPCM")]
+    for null_name, alt_name in pairs:
+        null = model_results.get(null_name)
+        alt = model_results.get(alt_name)
+        if null is None or alt is None:
+            continue
+        null_ll = _summary_metric(null.get("summary"), "LogLik")
+        alt_ll = _summary_metric(alt.get("summary"), "LogLik")
+        null_k = _summary_metric(null.get("summary"), "KParams")
+        alt_k = _summary_metric(alt.get("summary"), "KParams")
+        if not (np.isfinite(null_ll) and np.isfinite(alt_ll) and np.isfinite(null_k) and np.isfinite(alt_k)):
+            continue
+        chi_sq = 2.0 * (alt_ll - null_ll)
+        df = int(round(alt_k - null_k))
+        if df <= 0:
+            continue
+        p_val = float(chi2.sf(chi_sq, df=df)) if np.isfinite(chi_sq) and chi_sq >= 0 else np.nan
+        if not np.isfinite(p_val):
+            decision = "not available"
+        elif p_val < 0.001:
+            decision = "reject null (p < 0.001)"
+        elif p_val < 0.01:
+            decision = "reject null (p < 0.01)"
+        elif p_val < 0.05:
+            decision = "reject null (p < 0.05)"
+        else:
+            decision = "retain null"
+        rows.append({
+            "Null": null_name,
+            "Alternative": alt_name,
+            "ChiSq": float(chi_sq),
+            "df": df,
+            "p": p_val,
+            "Decision": decision,
+        })
+    return pd.DataFrame(rows)
+
+
+def compute_model_choice_comparison(res: dict) -> dict:
+    """Refit RSM / PCM / GPCM on the same data and return a comparison bundle.
+
+    The bundle keys are:
+
+    * ``available`` (bool) — comparison is reportable
+    * ``reason`` (str) — only populated when ``available`` is False
+    * ``comparison`` (DataFrame) — one row per model with
+      ``Model, N, KParams, LogLik, AIC, BIC, DeltaAIC, DeltaBIC,
+      AICEvidenceRatio, BICEvidenceRatio, FitStatus``
+    * ``lr_tests`` (DataFrame) — nested-pair likelihood-ratio tests
+    * ``recommendation`` (dict) — ``model``, ``tier``, ``rationale``
+    * ``caveat`` (str) — manuscript-ready caveat about scope
+    * ``fit_times`` (dict) — elapsed seconds per refit
+
+    Refits inherit ``method`` (JMLE / MML), ``maxit``, ``reltol``,
+    ``quad_points``, ``step_facet``, and ``slope_facet`` from the
+    original fit. Runs with anchors, population formulas, facet
+    regularization, or non-positive number of score categories are
+    refused with an explanatory ``reason``.
+    """
+    ok, reason = _model_choice_can_compare(res)
+    if not ok:
+        return {
+            "available": False,
+            "reason": reason,
+            "comparison": pd.DataFrame(),
+            "lr_tests": pd.DataFrame(),
+            "recommendation": {"model": "", "tier": "not_available", "rationale": ""},
+            "caveat": "",
+            "fit_times": {},
+        }
+
+    config = res.get("config", {})
+    current_model = str(config.get("model", "")).upper()
+    step_facet = _select_first_polytomous_facet(res)
+    slope_facet = config.get("slope_facet") or step_facet
+
+    import time
+
+    model_results: dict[str, dict] = {}
+    fit_times: dict[str, float] = {}
+
+    # Reuse the original fit for its own model row.
+    if current_model in _MODEL_CHOICE_CANDIDATES:
+        model_results[current_model] = res
+        fit_times[current_model] = 0.0
+
+    for candidate in _MODEL_CHOICE_CANDIDATES:
+        if candidate in model_results:
+            continue
+        start = time.perf_counter()
+        refit = _refit_candidate_model(
+            res, candidate, step_facet=step_facet, slope_facet=slope_facet
+        )
+        fit_times[candidate] = float(time.perf_counter() - start)
+        if refit is None:
+            continue
+        model_results[candidate] = refit
+
+    rows = []
+    for candidate in _MODEL_CHOICE_CANDIDATES:
+        if candidate not in model_results:
+            rows.append({
+                "Model": candidate,
+                "N": np.nan,
+                "KParams": np.nan,
+                "LogLik": np.nan,
+                "AIC": np.nan,
+                "BIC": np.nan,
+                "FitStatus": "refit_failed",
+            })
+            continue
+        cand_res = model_results[candidate]
+        summary = cand_res.get("summary", pd.DataFrame())
+        rows.append({
+            "Model": candidate,
+            "N": _summary_metric(summary, "N"),
+            "KParams": _summary_metric(summary, "KParams"),
+            "LogLik": _summary_metric(summary, "LogLik"),
+            "AIC": _summary_metric(summary, "AIC"),
+            "BIC": _summary_metric(summary, "BIC"),
+            "FitStatus": (
+                "current" if candidate == current_model else "refit_ok"
+            ),
+        })
+    comparison = pd.DataFrame(rows)
+
+    if comparison["AIC"].notna().any():
+        min_aic = float(comparison["AIC"].min(skipna=True))
+        comparison["DeltaAIC"] = comparison["AIC"] - min_aic
+        comparison["AICEvidenceRatio"] = comparison["DeltaAIC"].apply(_model_choice_evidence_ratio)
+    else:
+        comparison["DeltaAIC"] = np.nan
+        comparison["AICEvidenceRatio"] = np.nan
+
+    if comparison["BIC"].notna().any():
+        min_bic = float(comparison["BIC"].min(skipna=True))
+        comparison["DeltaBIC"] = comparison["BIC"] - min_bic
+        comparison["BICEvidenceRatio"] = comparison["DeltaBIC"].apply(_model_choice_evidence_ratio)
+    else:
+        comparison["DeltaBIC"] = np.nan
+        comparison["BICEvidenceRatio"] = np.nan
+
+    comparison = comparison[[
+        "Model", "FitStatus", "N", "KParams", "LogLik",
+        "AIC", "DeltaAIC", "AICEvidenceRatio",
+        "BIC", "DeltaBIC", "BICEvidenceRatio",
+    ]]
+
+    lr_tests = _model_choice_lr_tests(model_results)
+    recommendation = _model_choice_recommend(comparison)
+
+    caveat = (
+        "AIC and BIC are evaluated on the same data and method; both penalize "
+        "model complexity, with BIC favouring parsimony more strongly. The LR "
+        "chi-square pivotal (Wilks, 1938) gives an additional inferential check "
+        "on the nested pairs (RSM in PCM in GPCM). Refits inherit the original "
+        "method, step facet, and slope facet; differences across runs reflect "
+        "the model term itself, not the optimizer or the data."
+    )
+
+    return {
+        "available": True,
+        "reason": "",
+        "comparison": comparison,
+        "lr_tests": lr_tests,
+        "recommendation": recommendation,
+        "caveat": caveat,
+        "fit_times": fit_times,
+    }
 
 
 def extract_run_likelihood_row(output: dict, *, timestamp: str = "", label: str = "") -> dict:
@@ -15723,6 +16120,16 @@ _APA_REFERENCE_LIBRARY: dict[str, str] = {
     "McNamara_1996": (
         "McNamara, T. (1996). Measuring second language performance. Longman."
     ),
+    "Akaike_1974": (
+        "Akaike, H. (1974). A new look at the statistical model identification. "
+        "IEEE Transactions on Automatic Control, 19(6), 716–723. "
+        "https://doi.org/10.1109/TAC.1974.1100705"
+    ),
+    "Burnham_Anderson_2002": (
+        "Burnham, K. P., & Anderson, D. R. (2002). Model selection and "
+        "multimodel inference: A practical information-theoretic approach "
+        "(2nd ed.). Springer."
+    ),
     "Cox_1975": (
         "Cox, D. R. (1975). Partial likelihood. Biometrika, 62(2), 269–276. "
         "https://doi.org/10.1093/biomet/62.2.269"
@@ -15773,6 +16180,10 @@ _APA_REFERENCE_LIBRARY: dict[str, str] = {
         "among the bi-factor, the testlet, and a second-order multidimensional "
         "IRT model. Journal of Educational Measurement, 47(3), 361–372. "
         "https://doi.org/10.1111/j.1745-3984.2010.00118.x"
+    ),
+    "Schwarz_1978": (
+        "Schwarz, G. (1978). Estimating the dimension of a model. The Annals "
+        "of Statistics, 6(2), 461–464. https://doi.org/10.1214/aos/1176344136"
     ),
     "Smith_2000": (
         "Smith, E. V. (2000). Metric development and score reporting in Rasch "
@@ -15854,7 +16265,9 @@ _APA_REFERENCE_LIBRARY: dict[str, str] = {
 # Populated from _APA_REFERENCE_LIBRARY so we can scan a text body, find
 # what's cited, and return only the used subset.
 _CITATION_TO_KEY: dict[str, str] = {
+    "(Akaike, 1974)": "Akaike_1974",
     "(Andrich, 1978)": "Andrich_1978",
+    "(Burnham & Anderson, 2002)": "Burnham_Anderson_2002",
     "(Bachman & Palmer, 1996)": "Bachman_Palmer_1996",
     "(Bock & Aitkin, 1981)": "Bock_Aitkin_1981",
     "(Bradlow, Wainer & Wang, 1999)": "Bradlow_Wainer_Wang_1999",
@@ -15890,6 +16303,7 @@ _CITATION_TO_KEY: dict[str, str] = {
     "(Myford & Wolfe, 2004)": "Myford_Wolfe_2004",
     "(Reckase, 1979)": "Reckase_1979",
     "(Rijmen, 2010)": "Rijmen_2010",
+    "(Schwarz, 1978)": "Schwarz_1978",
     "(Smith, 2000)": "Smith_2000",
     "(Smith, 2002)": "Smith_2002",
     "(Snijders, 2001)": "Snijders_2001",
@@ -21714,6 +22128,144 @@ def show_prediction_simulation_section(result: dict, diagnostics: dict, core: di
         st.info((design_bundle or {}).get("reason", "Design evaluation is unavailable for this run."))
 
 
+def _model_choice_cache_key(result: dict) -> str:
+    """Stable cache key for a model-choice run, derived from the result.
+
+    The key is content-addressed (model + method + facet names + n_cat +
+    a parameter-vector hash) so that re-loading the same result skips a
+    re-run, but switching to a different fit (or changing relevant fit
+    knobs) triggers a fresh comparison.
+    """
+    config = result.get("config", {}) if isinstance(result, dict) else {}
+    params = result.get("params", {}) if isinstance(result, dict) else {}
+    par_vec = params.get("par") if isinstance(params, dict) else None
+    if isinstance(par_vec, np.ndarray) and par_vec.size:
+        par_hash = hex(int(hash(par_vec.tobytes())) & 0xFFFFFFFF)
+    else:
+        par_hash = "0x0"
+    return "|".join([
+        str(config.get("model", "")),
+        str(config.get("method", "")),
+        ",".join(map(str, config.get("facet_names", []))),
+        str(config.get("step_facet", "")),
+        str(config.get("slope_facet", "")),
+        str(config.get("n_cat", "")),
+        par_hash,
+    ])
+
+
+_MODEL_CHOICE_REC_TIER_KEYS = {
+    "strong": "report_tables.model_choice_recommendation_strong_template",
+    "moderate": "report_tables.model_choice_recommendation_moderate_template",
+    "weak": "report_tables.model_choice_recommendation_weak_template",
+    "tie": "report_tables.model_choice_recommendation_tie_template",
+}
+
+
+def render_model_choice_guidance(result: dict) -> None:
+    """Render the RSM / PCM / GPCM comparison and recommendation.
+
+    The comparison is run on demand (refit cost is non-trivial) and
+    cached in ``st.session_state`` keyed on the content hash of the
+    result. The widget surfaces (1) the per-model AIC / BIC table with
+    deltas and evidence ratios, (2) the nested LR tests, (3) a
+    recommendation tier with rationale, and (4) a downloadable CSV.
+    """
+    if not isinstance(result, dict):
+        return
+    st.subheader(t("report_tables.model_choice_subheader"))
+    st.caption(t("report_tables.model_choice_caption"))
+
+    ok, reason = _model_choice_can_compare(result)
+    if not ok:
+        st.info(
+            t(
+                "report_tables.model_choice_unavailable_template",
+                reason=reason,
+            )
+        )
+        return
+
+    cache_key = _model_choice_cache_key(result)
+    state_key = f"model_choice_comparison::{cache_key}"
+    bundle = st.session_state.get(state_key)
+
+    if bundle is None:
+        if st.button(
+            t("report_tables.model_choice_run_button"),
+            help=t("report_tables.model_choice_run_button_help"),
+            key=f"model_choice_run::{cache_key}",
+        ):
+            with st.spinner(t("report_tables.model_choice_running_spinner")):
+                bundle = compute_model_choice_comparison(result)
+            st.session_state[state_key] = bundle
+        else:
+            return
+
+    if not bundle or not bundle.get("available"):
+        st.info(
+            t(
+                "report_tables.model_choice_unavailable_template",
+                reason=str(bundle.get("reason", "")) if isinstance(bundle, dict) else "",
+            )
+        )
+        return
+
+    comparison: pd.DataFrame = bundle["comparison"]
+    lr_tests: pd.DataFrame = bundle["lr_tests"]
+    recommendation: dict = bundle["recommendation"]
+
+    display = comparison.copy()
+    for col in ["LogLik", "AIC", "BIC", "DeltaAIC", "DeltaBIC",
+                "AICEvidenceRatio", "BICEvidenceRatio"]:
+        if col in display.columns:
+            display[col] = pd.to_numeric(display[col], errors="coerce").round(3)
+    st.caption(t("report_tables.model_choice_comparison_table_caption"))
+    st.dataframe(display, width="stretch", hide_index=True)
+
+    st.markdown("**" + t("report_tables.model_choice_lr_subheader") + "**")
+    st.caption(t("report_tables.model_choice_lr_caption"))
+    if isinstance(lr_tests, pd.DataFrame) and not lr_tests.empty:
+        lr_display = lr_tests.copy()
+        for col in ["ChiSq", "p"]:
+            if col in lr_display.columns:
+                lr_display[col] = pd.to_numeric(lr_display[col], errors="coerce").round(4)
+        st.dataframe(lr_display, width="stretch", hide_index=True)
+    else:
+        st.info(t("report_tables.model_choice_lr_no_pairs_info"))
+
+    tier = recommendation.get("tier", "not_available")
+    key = _MODEL_CHOICE_REC_TIER_KEYS.get(tier)
+    if key:
+        st.success(
+            t(
+                key,
+                model=str(recommendation.get("model", "")),
+                rationale=str(recommendation.get("rationale", "")),
+            )
+        )
+
+    caveat = bundle.get("caveat", "")
+    if caveat:
+        st.caption(
+            t("report_tables.model_choice_caveat_label") + ": " + str(caveat)
+        )
+
+    combined = comparison.copy()
+    combined["_section"] = "model_choice_comparison"
+    if isinstance(lr_tests, pd.DataFrame) and not lr_tests.empty:
+        lr_combined = lr_tests.copy()
+        lr_combined["_section"] = "model_choice_lr_tests"
+        combined = pd.concat([combined, lr_combined], ignore_index=True)
+    st.download_button(
+        t("report_tables.model_choice_download_button"),
+        data=to_csv_bytes(combined),
+        file_name="mfrm_model_choice_comparison.csv",
+        mime="text/csv",
+        key=f"model_choice_download::{cache_key}",
+    )
+
+
 # ---------------------------------------------------------------------------
 # Report sub-tab: Tables & Figures
 # ---------------------------------------------------------------------------
@@ -21734,6 +22286,8 @@ def _render_report_tables(result: dict, diagnostics: dict) -> None:
         st.subheader(t("report_tables.likelihood_info_subheader"))
         st.caption(t("report_tables.likelihood_info_caption"))
         st.dataframe(likelihood_info.round(4), width="stretch", hide_index=True)
+
+    render_model_choice_guidance(result)
 
     regularization = result.get("regularization", {})
     if isinstance(regularization, dict):

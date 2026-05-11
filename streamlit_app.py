@@ -3183,14 +3183,40 @@ def _params_reading_testlet_binary() -> dict:
 
 SAMPLE_DATA_SCENARIOS: dict[str, dict] = {
     "writing_essay": {
-        "label": "✏️ Writing essay (30×4×2×4, 960 obs)",
+        "label": "Writing essay (30×4×2×4, 960 obs)",
         "short": "Small writing-assessment demo. Default since v0.1.",
         "description": (
-            "The v0.1+ built-in demo: 30 examinees, 4 raters, 2 tasks, 4 "
-            "analytic criteria (Content, Organization, Language, Mechanics), "
-            "6-point scale. Small enough to fit in seconds; useful for a "
-            "first estimator smoke-check. PCA and residual diagnostics run "
-            "but are close to their minimum-sample-size floor."
+            "The default built-in demo since v0.1: 30 examinees, 4 raters, "
+            "2 writing tasks, 4 analytic criteria (Content, Organization, "
+            "Language, Mechanics), 6-point scale. The design is fully "
+            "crossed (every examinee is rated by every rater on every task "
+            "× criterion), so the data set exercises the cleanest possible "
+            "MFRM setup.\n\n"
+            "**Why it is the default.** It is small enough that the full "
+            "estimation pipeline (estimate → diagnostics → report tables → "
+            "bias interactions) typically finishes in a few seconds even on "
+            "a modest laptop. Use it for a first feel of the app before "
+            "uploading your own data.\n\n"
+            "**What to look at first.** After clicking Run, work through the "
+            "tabs left to right:\n"
+            "- *Measures* shows the person ability, rater severity, task "
+            "difficulty, and criterion difficulty estimates on a shared "
+            "logit scale.\n"
+            "- *Wright Map* visualises those measures so you can see "
+            "whether person ability and item difficulty overlap.\n"
+            "- *Fit Details* flags any element with infit / outfit "
+            "outside the Wright & Linacre (1994) productive-for-measurement "
+            "bands.\n"
+            "- *FACETS-style tables* is the publication-ready report "
+            "layout familiar to FACETS users; this is also where the "
+            "fair-average S.E. / CI annotation lives.\n\n"
+            "**Learning points specific to this data set.** The four raters "
+            "have a deliberately modest severity spread (~0.5 logits), so "
+            "the bias heatmap and rater-effect tables stay near zero — a "
+            "good starting point before moving to a more contentious "
+            "scenario. Residual PCA runs but is near its minimum-sample-"
+            "size floor (n = 30); treat its second-dimension claims as "
+            "directional rather than decisive."
         ),
         "dimensions": {"persons": 30, "raters": 4, "tasks": 2, "criteria": 4, "n_cat": 6},
         "n_obs": 30 * 4 * 2 * 4,
@@ -3202,7 +3228,7 @@ SAMPLE_DATA_SCENARIOS: dict[str, dict] = {
         ],
     },
     "large_writing_pca": {
-        "label": "📚 Large-scale writing (120×4×2×3, 2,880 obs)",
+        "label": "Large-scale writing (120×4×2×3, 2,880 obs)",
         "short": "Enough persons for clean residual PCA + severity outlier.",
         "description": (
             "Scaled to 120 examinees for stable residual-PCA on a writing "
@@ -3224,7 +3250,7 @@ SAMPLE_DATA_SCENARIOS: dict[str, dict] = {
         ],
     },
     "speaking_test": {
-        "label": "🎙️ L2 speaking (80×3×3×5, 3,600 obs)",
+        "label": "L2 speaking (80×3×3×5, 3,600 obs)",
         "short": "Analytic-rubric speaking test with 5 criteria.",
         "description": (
             "80 examinees × 3 trained raters × 3 tasks × 5 analytic "
@@ -3245,7 +3271,7 @@ SAMPLE_DATA_SCENARIOS: dict[str, dict] = {
         ],
     },
     "clinical_osce": {
-        "label": "🏥 Clinical OSCE (60×4×5×3, 3,600 obs)",
+        "label": "Clinical OSCE (60×4×5×3, 3,600 obs)",
         "short": "5-station medical OSCE with compact 4-point rubric.",
         "description": (
             "60 examinees × 4 clinician raters × 5 stations × 3 "
@@ -3266,7 +3292,7 @@ SAMPLE_DATA_SCENARIOS: dict[str, dict] = {
         ],
     },
     "writing_with_missing": {
-        "label": "📉 Writing with missing (80×4×2×3, ~1,632 obs)",
+        "label": "Writing with missing (80×4×2×3, ~1,632 obs)",
         "short": "Incomplete rating panel (~15% MAR).",
         "description": (
             "Demonstrates MFRM's handling of missing-at-random data. "
@@ -3287,7 +3313,7 @@ SAMPLE_DATA_SCENARIOS: dict[str, dict] = {
         ],
     },
     "music_peer_rating": {
-        "label": "🎸 Music peer-rating (120×2 cyclic×2×4, 1,920 obs)",
+        "label": "Music peer-rating (120×2 cyclic×2×4, 1,920 obs)",
         "short": "Round-robin peer assessment — sparse Person × Rater graph.",
         "description": (
             "120 musicians grade each other on 2 pieces × 4 criteria. "
@@ -3313,7 +3339,7 @@ SAMPLE_DATA_SCENARIOS: dict[str, dict] = {
         ],
     },
     "reading_testlet_binary": {
-        "label": "📖 Reading testlet — binary (100×1×6×4, 2,400 obs)",
+        "label": "Reading testlet — binary (100×1×6×4, 2,400 obs)",
         "short": "Binary 0/1 scoring. Person × Scorer × Text × Item.",
         "description": (
             "100 examinees × single scorer × 6 reading passages × 4 "
@@ -33175,34 +33201,48 @@ def render_chart_guide(chart_name: str, *, expanded: bool = False) -> None:
 
 
 def render_onboarding_banner() -> None:
-    """Dismissible 3-step quickstart banner + one-click sample-data Run.
+    """Dismissible quickstart banner with a collapsible three-step guide.
 
-    Shown above the tutorial for first-time users. The "🎯 Run with
-    sample data" button sets `_force_rerun_from_onboarding` so the
-    estimation pipeline fires automatically without touching the sidebar.
-    The banner disappears after either button is clicked and does not
-    reappear for the rest of the session.
+    Shown above the tutorial for first-time users. The 3-step explanation
+    lives inside a Streamlit expander (default expanded, so first-time
+    visitors see the guide immediately, but the user can fold it after a
+    first read without dismissing the whole banner). The Run / Dismiss
+    buttons stay visible regardless of the expander state. The
+    ``Run with sample data`` button sets
+    ``_onboarding_quickstart_fired`` so the estimation pipeline fires
+    automatically without touching the sidebar. The banner disappears
+    after either button is clicked and does not reappear for the rest of
+    the session.
     """
     if st.session_state.get("_onboarding_dismissed", False):
         return
 
-    # Build scenario list dynamically so the banner stays in sync with
-    # SAMPLE_DATA_SCENARIOS — adding a new scenario does not require
+    # Build the scenario summary dynamically so the banner stays in sync
+    # with SAMPLE_DATA_SCENARIOS -- adding a new scenario does not require
     # editing the onboarding text.
     n_scen = len(SAMPLE_DATA_SCENARIOS)
     scen_lines: list[str] = []
     for key, meta in SAMPLE_DATA_SCENARIOS.items():
-        emoji_label = meta["label"].split(" (")[0]  # strip the "(NxNxN)" tail
+        name = meta["label"].split(" (")[0]  # strip the "(NxNxN)" parenthetical
         n_obs_str = f"{meta['n_obs']:,} obs"
         suffix = " (default)" if key == DEFAULT_SAMPLE_SCENARIO_KEY else ""
-        scen_lines.append(f"{emoji_label} ({n_obs_str}){suffix}")
+        scen_lines.append(f"{name} ({n_obs_str}){suffix}")
     scenario_summary = " · ".join(scen_lines)
 
     with st.container(border=True):
-        st.markdown(t("onboarding.banner_main", n_scen=n_scen, scenario_summary=scenario_summary))
-        cols = st.columns([3, 2, 1])
-        cols[0].caption(t("onboarding.tip_caption"))
-        if cols[1].button(
+        with st.expander(
+            t("onboarding.banner_steps_label"),
+            expanded=not st.session_state.get("_onboarding_steps_collapsed", False),
+        ):
+            st.markdown(
+                t(
+                    "onboarding.banner_steps_body",
+                    n_scen=n_scen,
+                    scenario_summary=scenario_summary,
+                )
+            )
+        cols = st.columns([3, 1])
+        if cols[0].button(
             t("onboarding.quickstart_button"),
             key="onboarding_quickstart",
             use_container_width=True,
@@ -33211,8 +33251,10 @@ def render_onboarding_banner() -> None:
             st.session_state["_onboarding_dismissed"] = True
             st.session_state["_onboarding_quickstart_fired"] = True
             st.rerun()
-        if cols[2].button(
-            t("onboarding.dismiss_button"), key="onboarding_dismiss", use_container_width=True,
+        if cols[1].button(
+            t("onboarding.dismiss_button"),
+            key="onboarding_dismiss",
+            use_container_width=True,
         ):
             st.session_state["_onboarding_dismissed"] = True
             st.rerun()

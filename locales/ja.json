@@ -24,9 +24,9 @@
     "no_input_info": "サイドバーから入力データを指定して開始してください。"
   },
   "onboarding": {
-    "banner_main": "##### 👋 はじめての方へ — 以下の 3 ステップで初回分析を実行できます\n\n| ステップ | 操作 | 場所 |\n|---|---|---|\n| **1️⃣** | **データソースを選択** — {n_scen} 種のサンプルシナリオ + ペースト + アップロード | サイドバー ← 📥 Data source |\n| **2️⃣** | **列をマッピング** — Person、Score、2 つ以上の facet 列 | サイドバー ← Column mapping |\n| **3️⃣** | サイドバー最下部の **`Run FACETS-mode estimation`** をクリック | サイドバー最下部 |\n\n**組込みシナリオ** (すべて MFRM 文献に基づく合成データ):\n{scenario_summary}。\n\n手元の授業データを使う場合、最速の手順は **Data source → Paste CSV/TSV text** です。アップロードでは CSV、TSV、TXT、Excel `.xlsx/.xlsm`、Parquet、JSON も受け付けます。ヘッダー例: `Student`、`Rater`、`Assignment`、`Criterion`、`Score`。`Student` を **Person** にマッピングし、その他の非スコア列を facet として指定してください。\n\nこの後、下に表示されるタブ (Measures、Fit、Dimensionality、Visuals、Report ...) で診断を確認し、publication document を作成できます。\n\t",
-    "tip_caption": "💡 ヒント: 下にある **Tutorial: Key concepts before you begin** セクションを開くと、MFRM の用語 (person / rater / facet / logit) の入門解説を読めます。v0.2.x の新機能: 📄 Publication Document (Word / PDF / HTML)、🧮 Posterior Viewer (Stan draws のアップロード)、🧪 Advanced models (DINA / HRM / Testlet)、🕒 Run history + 🔀 Compare。",
-    "quickstart_button": "🎯 サンプルデータで実行",
+    "banner_steps_label": "初めての方へ: 3 ステップで最初の分析を実行できます",
+    "banner_steps_body": "1. **データソースを選択** — サイドバーの *Data source* に {n_scen} 種の組込みサンプル、ペースト、ファイルアップロードがあります。\n2. **列をマッピング** — サイドバーの *Column mapping* で Person、Score、2 つ以上の facet 列を指定します。\n3. **サイドバー最下部の `Run FACETS-mode estimation` をクリック** します。\n\n**組込みサンプル**: {scenario_summary}\n\n**自分のデータを使う場合**: 最速の経路は *Data source → Paste CSV/TSV text*。ファイルアップロードは CSV、TSV、TXT、Excel `.xlsx/.xlsm`、Parquet、JSON に対応します。subject 列を **Person** に、その他の非 score 列を facet にマッピングしてください。Run の前に、下の *Tutorial* expander を開くと MFRM の用語入門を確認できます。",
+    "quickstart_button": "サンプルデータで実行",
     "quickstart_help": "ワンクリックのクイックスタート: 組込みの MFRM サンプルデータセットをデフォルトの列マッピングで使用し、推定パイプライン全体を実行します。手元のデータをアップロードする前に UI を試したい場合に最適です。",
     "dismiss_button": "了解"
   },

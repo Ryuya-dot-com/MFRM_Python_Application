@@ -83,6 +83,24 @@ All notable changes to this standalone Streamlit distribution should be recorded
 
 ### Changed
 
+- **Onboarding banner is now compressed and foldable.** The 3-step
+  quickstart guide moved into a Streamlit expander (default expanded for
+  first-time visitors, collapsible thereafter) so the Run / Dismiss
+  buttons stay visible without paying a large vertical footprint for the
+  explanatory text. The redundant tip-caption row (which advertised
+  past v0.2.x features and pointed at the Tutorial expander that already
+  sits directly below) was dropped; the Tutorial pointer is now folded
+  into the bottom of the banner body.
+- **Decorative emojis removed from sample-data scenario labels and from
+  the onboarding banner.** Functional status indicators (red / amber /
+  green readiness colours, Wright & Linacre fit-band swatches) are
+  retained because they pair text labels with a redundant colour signal
+  for accessibility (WCAG 1.4.1).
+- **Default sample-data scenario (`writing_essay`) description expanded.**
+  Added a "why it is the default" paragraph, a "what to look at first"
+  walkthrough of the result tabs in their natural reading order, and a
+  "learning points specific to this data set" section that notes the
+  modest rater-severity spread and the PCA sample-size caveat at n = 30.
 - Design evaluation and report/download bundles now include the new
   0.1.6-oriented audit tables so beginners see warnings in the UI and
   expert users can export full CSV/Excel evidence.

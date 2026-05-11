@@ -6,6 +6,27 @@ All notable changes to this standalone Streamlit distribution should be recorded
 
 ### Added
 
+- **Configurable visualization CI level**. The classical 95 % Wald CI
+  band on forest plots and EB-shrinkage error bars is now a
+  user-selectable level: 50 % / 66 % / 80 % / 89 % / 90 % / 95 % /
+  99 %. Sidebar control labelled "Visualization CI level" lives in
+  `run_facets_mode` next to Workflow mode; selection persists in
+  `st.session_state["viz_ci_level"]` and propagates to
+  `_draw_measures_forest_plotly` (outer CI band + caption + title)
+  and `_make_eb_shrinkage_figure` (raw and shrunk SE error bars + legend +
+  title). New helpers `get_viz_ci_level()`, `_ci_z(level)`, and
+  `_ci_level_pct_label(level)` centralise the level → critical value
+  conversion via `Phi^{-1}((1 + c) / 2)`. The numeric `CI_Lower` /
+  `CI_Upper` columns in exported measure tables stay at 95 % for
+  backwards compatibility with downstream parsers — only the rendered
+  visualizations change. The three pre-existing per-feature CI
+  selectboxes (DIMTEST p-value, G-study bootstrap, GPCM fair-average
+  SE) also broaden from `[0.90, 0.95, 0.99]` to the full
+  `VIZ_CI_LEVEL_OPTIONS` list. 22 unit tests in
+  `tests/test_viz_ci_level.py` pin the `Phi^{-1}` values for all seven
+  canonical levels, the soft-fallback to 95 % on NaN / out-of-range
+  / non-numeric input, the percent-label trailing-zero formatting,
+  and the sidebar selector defaults / clamping.
 - **Smart column-role detection** for the upload UI. New
   `auto_detect_column_roles(df)` helper combines a multilingual keyword
   dictionary (English + Japanese: 学生 / 受験者 / 評価者 / 採点者 / 観点 /

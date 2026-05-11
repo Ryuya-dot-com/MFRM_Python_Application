@@ -4371,6 +4371,62 @@ def truncate_label(value, width=28):
     return text[: max(0, width - 1)] + "…"
 
 
+# ---------------------------------------------------------------------------
+# Visualization CI level (user-configurable; default 95 %)
+# ---------------------------------------------------------------------------
+
+# Levels surfaced in the sidebar selector. 0.66 and 0.89 are conventional
+# Bayesian credible levels (66 % is roughly ± 1 SD, 89 % is McElreath /
+# Statistical Rethinking's default and avoids the "95 %" connotation
+# of significance testing). 0.50 / 0.80 / 0.99 round out the options.
+VIZ_CI_LEVEL_OPTIONS: tuple[float, ...] = (0.50, 0.66, 0.80, 0.89, 0.90, 0.95, 0.99)
+VIZ_CI_LEVEL_DEFAULT: float = 0.95
+
+
+def get_viz_ci_level() -> float:
+    """Return the user-selected visualization CI level (default 0.95).
+
+    Read from ``st.session_state["viz_ci_level"]`` if set; otherwise
+    fall back to ``VIZ_CI_LEVEL_DEFAULT``. Always clamped into ``(0, 1)``
+    so a corrupted session value cannot crash a plot."""
+    try:
+        level = float(st.session_state.get("viz_ci_level", VIZ_CI_LEVEL_DEFAULT))
+    except (TypeError, ValueError, AttributeError):
+        level = VIZ_CI_LEVEL_DEFAULT
+    if not (0.0 < level < 1.0):
+        return VIZ_CI_LEVEL_DEFAULT
+    return level
+
+
+def _ci_z(level: float) -> float:
+    """Return the two-sided normal z critical value for a given CI level.
+
+    For a confidence level ``c`` in ``(0, 1)``, this returns
+    ``Phi^{-1}((1 + c) / 2)``: ``z`` ≈ 1.96 for 0.95, 1.6449 for 0.90,
+    1.5982 for 0.89, 0.6745 for 0.50, etc. Used to size error bars and
+    forest-plot CI rules to a user-chosen level. Non-numeric / NaN /
+    out-of-range inputs fall back to the 95 % critical value so a
+    corrupted session value never crashes a plot."""
+    try:
+        lvl = float(level)
+    except (TypeError, ValueError):
+        return float(_norm.ppf(0.975))
+    if not np.isfinite(lvl) or not (0.0 < lvl < 1.0):
+        return float(_norm.ppf(0.975))
+    return float(_norm.ppf((1.0 + lvl) / 2.0))
+
+
+def _ci_level_pct_label(level: float) -> str:
+    """Format ``level`` as a percentage label without trailing zeros.
+
+    ``0.95 -> "95"``, ``0.66 -> "66"``, ``0.665 -> "66.5"``. Used in
+    plot titles and captions to advertise the chosen CI level."""
+    pct = float(level) * 100.0
+    if abs(pct - round(pct)) < 1e-6:
+        return str(int(round(pct)))
+    return f"{pct:.1f}"
+
+
 # ---- likelihoods ----
 def loglik_rsm(eta, score_k, step_cum, weight=None):
     if eta.size == 0:
@@ -18058,8 +18114,11 @@ def render_dimtest_panel(
         confidence = float(
             st.selectbox(
                 t("dimensionality.dimtest_confidence"),
-                options=[0.90, 0.95, 0.99], index=1,
+                options=list(VIZ_CI_LEVEL_OPTIONS),
+                index=VIZ_CI_LEVEL_OPTIONS.index(0.95)
+                    if 0.95 in VIZ_CI_LEVEL_OPTIONS else 5,
                 key=f"dimtest_conf::{id(result)}",
+                format_func=lambda v: f"{_ci_level_pct_label(v)} %",
             )
         )
 
@@ -21887,6 +21946,35 @@ def run_facets_mode(core: dict, data: pd.DataFrame) -> None:
     if not advanced_controls:
         st.sidebar.caption(t("sidebar_estimation.guided_defaults_active_caption"))
 
+    # Visualization CI level — controls the width of CI bars on forest
+    # plots, EB shrinkage error bars, and any other Wald-style CI band
+    # that is drawn for display. The core ``CI_Lower`` / ``CI_Upper``
+    # columns in exported measure tables stay at 95 % for backwards
+    # compatibility with downstream parsers; this control only affects
+    # the rendered visualizations and their caption labels.
+    _viz_ci_default_idx = (
+        VIZ_CI_LEVEL_OPTIONS.index(VIZ_CI_LEVEL_DEFAULT)
+        if VIZ_CI_LEVEL_DEFAULT in VIZ_CI_LEVEL_OPTIONS else 5
+    )
+    _viz_ci_level = st.sidebar.selectbox(
+        t("sidebar_estimation.viz_ci_level_label"),
+        options=list(VIZ_CI_LEVEL_OPTIONS),
+        index=_viz_ci_default_idx,
+        format_func=lambda v: t(
+            "sidebar_estimation.viz_ci_level_option_template",
+            pct=_ci_level_pct_label(v),
+        ),
+        help=t("sidebar_estimation.viz_ci_level_help"),
+        key="viz_ci_level",
+    )
+    if abs(float(_viz_ci_level) - VIZ_CI_LEVEL_DEFAULT) > 1e-9:
+        st.sidebar.caption(
+            t(
+                "sidebar_estimation.viz_ci_level_non_default_caption",
+                pct=_ci_level_pct_label(_viz_ci_level),
+            )
+        )
+
     # Missing value recoding
     data = missing_value_recoding(data, score_col)
 
@@ -23599,12 +23687,12 @@ def run_facets_mode(core: dict, data: pd.DataFrame) -> None:
                     disabled=not fit_supports_fair_se,
                 )
             with col_ci:
-                _ci_options = [0.90, 0.95, 0.99]
+                _ci_options = list(VIZ_CI_LEVEL_OPTIONS)
                 ci_level = st.selectbox(
                     t("facets_tables.fair_se_ci_level_label"),
                     options=_ci_options,
-                    index=1,
-                    format_func=lambda v: f"{int(round(v * 100))}%",
+                    index=_ci_options.index(0.95) if 0.95 in _ci_options else 5,
+                    format_func=lambda v: f"{_ci_level_pct_label(v)}%",
                     help=t("facets_tables.fair_se_ci_level_help"),
                     key="facets_table_fair_se_ci_level",
                     disabled=not (fit_supports_fair_se and fair_se_enabled),
@@ -26814,8 +26902,11 @@ def render_g_d_study_section(result: dict) -> None:
         bootstrap_conf = float(
             st.selectbox(
                 t("report_tables.g_d_study_bootstrap_conf"),
-                options=[0.90, 0.95, 0.99],
-                index=1, key=bootstrap_conf_key,
+                options=list(VIZ_CI_LEVEL_OPTIONS),
+                index=VIZ_CI_LEVEL_OPTIONS.index(0.95)
+                    if 0.95 in VIZ_CI_LEVEL_OPTIONS else 5,
+                key=bootstrap_conf_key,
+                format_func=lambda v: f"{_ci_level_pct_label(v)} %",
             )
         )
 
@@ -30428,6 +30519,11 @@ def _make_eb_shrinkage_figure(shrinkage: dict) -> go.Figure | None:
     required = {"Facet", "Level", "Estimate", "ShrunkEstimate", "SE", "ShrunkSE"}
     if not required.issubset(measures.columns):
         return None
+    # Error bars sized to the user-selected visualization CI level so the
+    # forest scales with the sidebar control rather than a hardcoded 95 %.
+    viz_level = get_viz_ci_level()
+    viz_z = _ci_z(viz_level)
+    viz_pct = _ci_level_pct_label(viz_level)
     plot_df = measures.copy()
     for col in ["Estimate", "ShrunkEstimate", "SE", "ShrunkSE", "ShrinkageFactor"]:
         if col in plot_df.columns:
@@ -30452,11 +30548,11 @@ def _make_eb_shrinkage_figure(shrinkage: dict) -> go.Figure | None:
         x=plot_df["Estimate"],
         y=plot_df["_Label"],
         mode="markers",
-        name="Raw estimate",
+        name=f"Raw estimate ± {viz_pct} % CI",
         marker=dict(color="#7570b3", size=8),
         error_x=dict(
             type="data",
-            array=1.96 * plot_df["SE"],
+            array=viz_z * plot_df["SE"],
             visible=bool(plot_df["SE"].notna().any()),
             thickness=0.8,
         ),
@@ -30467,11 +30563,11 @@ def _make_eb_shrinkage_figure(shrinkage: dict) -> go.Figure | None:
         x=plot_df["ShrunkEstimate"],
         y=plot_df["_Label"],
         mode="markers",
-        name="Shrunk estimate",
+        name=f"Shrunk estimate ± {viz_pct} % CI",
         marker=dict(color="#1b9e77", size=8, symbol="diamond"),
         error_x=dict(
             type="data",
-            array=1.96 * plot_df["ShrunkSE"],
+            array=viz_z * plot_df["ShrunkSE"],
             visible=bool(plot_df["ShrunkSE"].notna().any()),
             thickness=0.8,
         ),
@@ -30479,7 +30575,7 @@ def _make_eb_shrinkage_figure(shrinkage: dict) -> go.Figure | None:
     ))
     fig.add_vline(x=0, line_dash="dot", line_color="#666666", line_width=0.7)
     fig.update_layout(
-        title="Post-hoc empirical-Bayes shrinkage of facet estimates",
+        title=f"Post-hoc empirical-Bayes shrinkage of facet estimates (± {viz_pct} % CI)",
         xaxis_title="Measure (logits)",
         yaxis=dict(autorange="reversed"),
         height=max(420, 24 * len(plot_df) + 120),
@@ -30524,22 +30620,29 @@ def render_eb_shrinkage_section(result: dict, diagnostics: dict, *, expanded: bo
 
 
 def _draw_measures_forest_plotly(diagnostics: dict) -> None:
-    """Forest plot: element measures with 50% and 95% confidence intervals.
+    """Forest plot: element measures with two confidence-interval bands.
 
     A frequentist analogue of the Bayesian forest plot in Posterior Viewer —
-    shows each facet element's point estimate, thick 50% CI (≈ ±0.67·SE),
-    and thin 95% CI (±1.96·SE) on a single horizontal axis. Useful for
-    publication: one figure communicates precision and ordering at once.
-    """
+    shows each facet element's point estimate, a thick inner CI band at
+    50 % (≈ ±0.67·SE) for at-a-glance ordering, and a thin outer CI band
+    at the user-selected visualization CI level (default 95 %; configure
+    via the sidebar ``Visualization CI level`` selector). Useful for
+    publication: one figure communicates precision and ordering at once."""
+    outer_level = get_viz_ci_level()
+    outer_z = _ci_z(outer_level)
+    outer_pct = _ci_level_pct_label(outer_level)
     header_cols = st.columns([5, 1])
     with header_cols[0]:
-        st.subheader("Forest plot of element measures (± 50 % / 95 % CI)")
+        st.subheader(
+            f"Forest plot of element measures (± 50 % / {outer_pct} % CI)"
+        )
     with header_cols[1]:
         render_help_popover("forest_measures")
     st.caption(
-        "Each row is one facet element. Thick bar = 50 % CI (≈ ± 0.67 · SE); "
-        "thin bar = 95 % CI (± 1.96 · SE). Dot = point estimate (logits). "
-        "Useful for communicating ordering + precision in a single figure."
+        f"Each row is one facet element. Thick bar = 50 % CI (≈ ± 0.67 · SE); "
+        f"thin bar = {outer_pct} % CI (± {outer_z:.3f} · SE). Dot = point "
+        f"estimate (logits). Useful for communicating ordering + precision "
+        f"in a single figure."
     )
 
     measures = diagnostics.get("measures", pd.DataFrame()) if isinstance(diagnostics, dict) else pd.DataFrame()
@@ -30608,8 +30711,8 @@ def _draw_measures_forest_plotly(diagnostics: dict) -> None:
     se = sub["SE"].to_numpy()
     ci50_lo = est - 0.67 * se
     ci50_hi = est + 0.67 * se
-    ci95_lo = est - 1.96 * se
-    ci95_hi = est + 1.96 * se
+    ci95_lo = est - outer_z * se
+    ci95_hi = est + outer_z * se
 
     fig = go.Figure()
     for i, lbl in enumerate(labels):
@@ -30642,8 +30745,9 @@ def _draw_measures_forest_plotly(diagnostics: dict) -> None:
     )
     st.plotly_chart(fig, width="stretch")
     st.caption(
-        "Interpretation tip: elements with non-overlapping 95% CIs differ "
-        "significantly; overlapping 50% CIs is weak evidence at best."
+        f"Interpretation tip: elements with non-overlapping {outer_pct} % CIs "
+        f"differ at the matching level; overlapping 50 % CIs is weak evidence "
+        f"at best."
     )
 
 

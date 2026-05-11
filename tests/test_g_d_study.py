@@ -183,6 +183,78 @@ def test_decomposition_label_records_brennan_eq_3_18(crossed_rating_fit):
     assert coef["details"]["decomposition"] == "full_3way_brennan_eq_3_18"
 
 
+# -----------------------------------------------------------------------------
+# Bootstrap CI for G / Phi
+# -----------------------------------------------------------------------------
+
+
+def test_bootstrap_ci_disabled_by_default(crossed_rating_fit):
+    out = app.compute_generalizability_study(crossed_rating_fit)
+    assert "bootstrap_ci" in out
+    assert out["bootstrap_ci"]["available"] is False
+    assert "not requested" in out["bootstrap_ci"]["reason"].lower()
+
+
+def test_bootstrap_ci_produces_finite_band_when_enabled(crossed_rating_fit):
+    """With B = 50 replicates the percentile CI must produce finite
+    lower / upper bounds that bracket the observed G and Phi (or are
+    very close to them; the percentile CI can occasionally exclude
+    the point estimate under small B but should at least be finite
+    and ordered)."""
+    out = app.compute_generalizability_study(
+        crossed_rating_fit, bootstrap_ci=True, n_bootstrap=50,
+        bootstrap_seed=20260612,
+    )
+    ci = out["bootstrap_ci"]
+    assert ci["available"] is True
+    assert ci["n_success"] >= 30  # at least 60% replicates produced a finite G
+    assert np.isfinite(ci["G_lower"]) and np.isfinite(ci["G_upper"])
+    assert ci["G_lower"] <= ci["G_upper"]
+    assert np.isfinite(ci["Phi_lower"]) and np.isfinite(ci["Phi_upper"])
+    assert ci["Phi_lower"] <= ci["Phi_upper"]
+
+
+def test_bootstrap_ci_widens_with_smaller_confidence(crossed_rating_fit):
+    """A 99% CI must be at least as wide as a 90% CI (percentile
+    method is monotone in confidence level)."""
+    out_90 = app.compute_generalizability_study(
+        crossed_rating_fit, bootstrap_ci=True, n_bootstrap=80,
+        bootstrap_confidence=0.90, bootstrap_seed=42,
+    )
+    out_99 = app.compute_generalizability_study(
+        crossed_rating_fit, bootstrap_ci=True, n_bootstrap=80,
+        bootstrap_confidence=0.99, bootstrap_seed=42,
+    )
+    w90 = out_90["bootstrap_ci"]["G_upper"] - out_90["bootstrap_ci"]["G_lower"]
+    w99 = out_99["bootstrap_ci"]["G_upper"] - out_99["bootstrap_ci"]["G_lower"]
+    assert w99 + 1e-9 >= w90
+
+
+def test_bootstrap_ci_seed_makes_results_deterministic(crossed_rating_fit):
+    """Same seed must produce identical bootstrap output."""
+    a = app.compute_generalizability_study(
+        crossed_rating_fit, bootstrap_ci=True, n_bootstrap=20,
+        bootstrap_seed=2026,
+    )["bootstrap_ci"]
+    b = app.compute_generalizability_study(
+        crossed_rating_fit, bootstrap_ci=True, n_bootstrap=20,
+        bootstrap_seed=2026,
+    )["bootstrap_ci"]
+    assert a["G_lower"] == pytest.approx(b["G_lower"], abs=1e-12)
+    assert a["G_upper"] == pytest.approx(b["G_upper"], abs=1e-12)
+
+
+def test_bootstrap_replicates_bound_in_unit_interval(crossed_rating_fit):
+    out = app.compute_generalizability_study(
+        crossed_rating_fit, bootstrap_ci=True, n_bootstrap=40,
+        bootstrap_seed=20260615,
+    )
+    g_reps = out["bootstrap_ci"]["G_replicates"]
+    phi_reps = out["bootstrap_ci"]["Phi_replicates"]
+    assert (g_reps >= -1e-12).all() and (g_reps <= 1.0 + 1e-12).all()
+    assert (phi_reps >= -1e-12).all() and (phi_reps <= 1.0 + 1e-12).all()
+
+
 def test_phi_is_le_g(crossed_rating_fit):
     """Phi (absolute decisions) must be at most G (relative decisions)
     under the standard one-observation-per-cell decomposition."""

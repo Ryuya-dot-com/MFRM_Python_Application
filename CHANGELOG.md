@@ -226,6 +226,29 @@ All notable changes to this standalone Streamlit distribution should be recorded
     "negligible" threshold cited in Linacre's FACETS Manual. The
     categorical fields (`Profile CI Status`, `InferenceTier`) must
     agree exactly.
+- **Bootstrap CI for G / Phi coefficients** (Efron & Tibshirani, 1993,
+  Ch. 19). ``compute_generalizability_study()`` now accepts
+  ``bootstrap_ci=True`` and runs a cluster-bootstrap resampling on
+  persons (the object of measurement): each replicate resamples
+  persons with replacement, re-runs the variance-component
+  decomposition on the bootstrapped sample, and recomputes G / Phi.
+  The bundle's new ``bootstrap_ci`` field reports
+  ``G_lower / G_upper``, ``Phi_lower / Phi_upper``,
+  ``G_replicates / Phi_replicates`` (the full replicate arrays for
+  downstream diagnostics), and the active settings
+  (``confidence``, ``n_bootstrap``, ``n_success``, ``method =
+  "cluster_bootstrap_on_persons"``). Person-level cluster
+  resampling is the standard nonparametric bootstrap for G-theory
+  because it respects the within-person correlation structure that
+  drives both relative and absolute error. The Report tab gains a
+  Bootstrap CI expander with a checkbox, replicate count, and
+  confidence-level dropdown; when enabled the panel reports the
+  CI in a single caption line below the observed G / Phi metrics.
+  Math contract pinned in ``tests/test_g_d_study.py`` (default-off
+  behaviour, finite-ordered bands when enabled, CI widening with
+  confidence level, seed determinism, [0, 1] bounds on the
+  replicate arrays). One new APA reference (Efron & Tibshirani,
+  1993).
 - **G/D-study: full Brennan (2001) 3-way decomposition with explicit
   two-way interaction terms** for the canonical balanced p x i x j
   design with one observation per cell.

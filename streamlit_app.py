@@ -10710,6 +10710,133 @@ def _build_d_study_grid(
     return pd.DataFrame(rows)
 
 
+def _bootstrap_g_phi_ci(
+    data: pd.DataFrame,
+    *,
+    object_facet: str,
+    random_facets: list[str],
+    score_col: str,
+    facet_observations: dict[str, int],
+    n_bootstrap: int = 200,
+    confidence: float = 0.95,
+    seed: int | None = 20260601,
+) -> dict:
+    """Cluster bootstrap CI for G and Phi coefficients.
+
+    Resamples persons (the object of measurement) with replacement,
+    recomputes the variance-component decomposition on each
+    bootstrap sample, and reports the percentile-based CI for G and
+    Phi at the observed design. Person-level cluster resampling is
+    the standard nonparametric bootstrap for G-theory (Efron &
+    Tibshirani, 1993, Ch. 19) and respects the within-person
+    correlation structure that drives both relative and absolute
+    error.
+
+    Returns
+    -------
+    dict
+        With keys ``available``, ``reason``, ``G_lower``, ``G_upper``,
+        ``Phi_lower``, ``Phi_upper``, ``G_replicates``,
+        ``Phi_replicates``, ``confidence``, ``n_bootstrap``,
+        ``n_success``.
+    """
+    if not isinstance(data, pd.DataFrame) or data.empty:
+        return {
+            "available": False, "reason": "Empty data frame.",
+            "G_lower": np.nan, "G_upper": np.nan,
+            "Phi_lower": np.nan, "Phi_upper": np.nan,
+            "G_replicates": np.array([]), "Phi_replicates": np.array([]),
+            "confidence": float(confidence),
+            "n_bootstrap": int(n_bootstrap), "n_success": 0,
+        }
+    n_bootstrap = max(int(n_bootstrap), 1)
+    confidence = float(min(max(confidence, 0.0), 1.0))
+    alpha_low = (1.0 - confidence) / 2.0
+    alpha_high = 1.0 - alpha_low
+
+    rng = np.random.default_rng(int(seed) if seed is not None else None)
+    persons = data[object_facet].astype(str).unique()
+    n_persons = int(persons.size)
+    if n_persons < 2:
+        return {
+            "available": False, "reason": "Need >= 2 persons to bootstrap.",
+            "G_lower": np.nan, "G_upper": np.nan,
+            "Phi_lower": np.nan, "Phi_upper": np.nan,
+            "G_replicates": np.array([]), "Phi_replicates": np.array([]),
+            "confidence": confidence,
+            "n_bootstrap": n_bootstrap, "n_success": 0,
+        }
+
+    # Pre-index rows by person for fast resampling.
+    rows_by_person = {
+        str(p): data[data[object_facet].astype(str) == str(p)]
+        for p in persons
+    }
+    g_replicates: list[float] = []
+    phi_replicates: list[float] = []
+    for _ in range(n_bootstrap):
+        sample_persons = rng.choice(persons, size=n_persons, replace=True)
+        # Re-label resampled persons with unique identifiers so the
+        # ANOVA treats each draw as a distinct level (necessary because
+        # a single original person can appear multiple times under
+        # cluster resampling and ANOVA needs each cluster as a
+        # different unit of measurement).
+        parts = []
+        for k, p in enumerate(sample_persons):
+            sub = rows_by_person[str(p)].copy()
+            sub[object_facet] = f"BOOT_{k:04d}_{p}"
+            parts.append(sub)
+        boot_df = pd.concat(parts, ignore_index=True)
+        try:
+            var_components = _crossed_anova_variance_components(
+                boot_df,
+                object_facet=object_facet,
+                random_facets=random_facets,
+                score_col=score_col,
+            )
+            if var_components.empty:
+                continue
+            coef = _g_phi_from_variance_components(
+                var_components,
+                object_facet=object_facet,
+                facet_observations=facet_observations,
+            )
+            g_val = float(coef.get("G", np.nan))
+            phi_val = float(coef.get("Phi", np.nan))
+            if np.isfinite(g_val):
+                g_replicates.append(g_val)
+            if np.isfinite(phi_val):
+                phi_replicates.append(phi_val)
+        except Exception:
+            continue
+
+    g_arr = np.asarray(g_replicates, dtype=float)
+    phi_arr = np.asarray(phi_replicates, dtype=float)
+    def _percentile_ci(arr: np.ndarray):
+        if arr.size < 2:
+            return (np.nan, np.nan)
+        return (
+            float(np.quantile(arr, alpha_low)),
+            float(np.quantile(arr, alpha_high)),
+        )
+    g_lo, g_hi = _percentile_ci(g_arr)
+    phi_lo, phi_hi = _percentile_ci(phi_arr)
+    return {
+        "available": bool(g_arr.size >= 2 or phi_arr.size >= 2),
+        "reason": (
+            "" if (g_arr.size >= 2 or phi_arr.size >= 2)
+            else "Insufficient bootstrap replicates produced finite coefficients."
+        ),
+        "G_lower": g_lo, "G_upper": g_hi,
+        "Phi_lower": phi_lo, "Phi_upper": phi_hi,
+        "G_replicates": g_arr, "Phi_replicates": phi_arr,
+        "confidence": confidence,
+        "n_bootstrap": n_bootstrap,
+        "n_success": int(g_arr.size),
+        "method": "cluster_bootstrap_on_persons",
+    }
+
+
 def compute_generalizability_study(
     res: dict,
     *,
@@ -10717,6 +10844,10 @@ def compute_generalizability_study(
     random_facets: list[str] | None = None,
     n_max_per_facet: int = 10,
     score_col: str = "Score",
+    bootstrap_ci: bool = False,
+    n_bootstrap: int = 200,
+    bootstrap_confidence: float = 0.95,
+    bootstrap_seed: int | None = 20260601,
 ) -> dict:
     """Run a G-study + D-study on the rating data backing a fit.
 
@@ -10888,8 +11019,30 @@ def compute_generalizability_study(
             "for high-stakes decisions, >= 0.7 for routine reporting."
         )
     reference = (
-        "Cronbach, Gleser, Nanda, & Rajaratnam (1972); Brennan (2001)."
+        "Cronbach, Gleser, Nanda, & Rajaratnam (1972); Brennan (2001). "
+        "Bootstrap CI: Efron & Tibshirani (1993, Ch. 19)."
     )
+
+    bootstrap = {
+        "available": False, "reason": "Bootstrap CI was not requested.",
+        "G_lower": np.nan, "G_upper": np.nan,
+        "Phi_lower": np.nan, "Phi_upper": np.nan,
+        "confidence": float(bootstrap_confidence),
+        "n_bootstrap": int(n_bootstrap),
+        "n_success": 0,
+    }
+    if bootstrap_ci:
+        bootstrap = _bootstrap_g_phi_ci(
+            data,
+            object_facet=object_facet,
+            random_facets=list(random_facets),
+            score_col=score_col,
+            facet_observations=observed_n,
+            n_bootstrap=int(n_bootstrap),
+            confidence=float(bootstrap_confidence),
+            seed=bootstrap_seed,
+        )
+
     return {
         "available": True,
         "reason": "",
@@ -10899,6 +11052,7 @@ def compute_generalizability_study(
         "design": design,
         "caveat": caveat,
         "reference": reference,
+        "bootstrap_ci": bootstrap,
     }
 
 
@@ -18684,6 +18838,10 @@ _APA_REFERENCE_LIBRARY: dict[str, str] = {
         "Cramer, H. (1946). Mathematical methods of statistics. "
         "Princeton University Press."
     ),
+    "Efron_Tibshirani_1993": (
+        "Efron, B., & Tibshirani, R. J. (1993). An introduction to the "
+        "bootstrap. Chapman & Hall."
+    ),
     "Drasgow_Levine_Williams_1985": (
         "Drasgow, F., Levine, M. V., & Williams, E. A. (1985). Appropriateness "
         "measurement with polychotomous item response models and standardized "
@@ -18824,6 +18982,7 @@ _CITATION_TO_KEY: dict[str, str] = {
     "(DeMars, 2006)": "DeMars_2006",
     "(Downing & Yudkowsky, 2009)": "Downing_Yudkowsky_2009",
     "(Drasgow, Levine & Williams, 1985)": "Drasgow_Levine_Williams_1985",
+    "(Efron & Tibshirani, 1993)": "Efron_Tibshirani_1993",
     "(Eckes, 2005)": "Eckes_2005",
     "(Eckes, 2011)": "Eckes_2011",
     "(Eckes & Jin, 2021)": "Eckes_Jin_2021",
@@ -25503,14 +25662,53 @@ def render_g_d_study_section(result: dict) -> None:
 
     The math layer is fast (a few ANOVA reductions on the rating
     data plus a Cartesian-product grid), so the panel runs every
-    page load without a Run-on-demand button.
+    page load without a Run-on-demand button. The bootstrap CI for
+    G / Phi is gated behind a toggle because it pays the cost of
+    re-decomposing the data across the resampled persons.
     """
     if not isinstance(result, dict):
         return
     st.subheader(t("report_tables.g_d_study_subheader"))
     st.caption(t("report_tables.g_d_study_caption"))
 
-    bundle = compute_generalizability_study(result)
+    # Bootstrap CI toggle. Keeps the initial render light; users who
+    # want inferential bands click the checkbox and the bundle is
+    # recomputed with bootstrap_ci=True (cached in session state).
+    bootstrap_key = f"g_d_study_bootstrap_ci::{id(result)}"
+    bootstrap_n_key = f"g_d_study_bootstrap_n::{id(result)}"
+    bootstrap_conf_key = f"g_d_study_bootstrap_conf::{id(result)}"
+    with st.expander(
+        t("report_tables.g_d_study_bootstrap_expander"), expanded=False
+    ):
+        do_bootstrap = st.checkbox(
+            t("report_tables.g_d_study_bootstrap_enable"),
+            value=False, key=bootstrap_key,
+        )
+        bootstrap_n = int(
+            st.number_input(
+                t("report_tables.g_d_study_bootstrap_n"),
+                min_value=50, max_value=2000, value=200, step=50,
+                key=bootstrap_n_key,
+            )
+        )
+        bootstrap_conf = float(
+            st.selectbox(
+                t("report_tables.g_d_study_bootstrap_conf"),
+                options=[0.90, 0.95, 0.99],
+                index=1, key=bootstrap_conf_key,
+            )
+        )
+
+    if do_bootstrap:
+        with st.spinner(t("report_tables.g_d_study_bootstrap_running")):
+            bundle = compute_generalizability_study(
+                result,
+                bootstrap_ci=True,
+                n_bootstrap=bootstrap_n,
+                bootstrap_confidence=bootstrap_conf,
+            )
+    else:
+        bundle = compute_generalizability_study(result)
     if not bundle.get("available"):
         st.info(
             t(
@@ -25552,6 +25750,20 @@ def render_g_d_study_section(result: dict) -> None:
             n_obs=f"{int(design.get('n_observations', 0)):,}",
         )
     )
+
+    bootstrap = bundle.get("bootstrap_ci", {})
+    if isinstance(bootstrap, dict) and bootstrap.get("available"):
+        st.caption(
+            t(
+                "report_tables.g_d_study_bootstrap_ci_template",
+                confidence=int(round(float(bootstrap.get("confidence", 0.95)) * 100)),
+                n_success=int(bootstrap.get("n_success", 0)),
+                g_lower=f"{float(bootstrap.get('G_lower', float('nan'))):.3f}",
+                g_upper=f"{float(bootstrap.get('G_upper', float('nan'))):.3f}",
+                phi_lower=f"{float(bootstrap.get('Phi_lower', float('nan'))):.3f}",
+                phi_upper=f"{float(bootstrap.get('Phi_upper', float('nan'))):.3f}",
+            )
+        )
 
     if isinstance(d_study, pd.DataFrame) and not d_study.empty:
         st.markdown("**" + t("report_tables.g_d_study_d_study_subheader") + "**")

@@ -889,21 +889,34 @@ def mfrmr_020_migration_coverage_table() -> pd.DataFrame:
         },
         {
             "mfrmr020Area": "Polytomous person-fit correction (Snijders lz*)",
-            "PythonStatus": "Planned",
+            "PythonStatus": "Ready",
             "PythonEvidence": (
-                "The Snijders (2001) lz* correction adjusts the standardised "
-                "person-fit statistic for the fact that theta_n was "
-                "estimated; the mfrmr 0.2.0 reference adds this correction "
-                "for MAP / JML person estimates."
+                "compute_person_fit_indices() reports the Drasgow, Levine, "
+                "and Williams (1985) standardised polytomous lz and the "
+                "Snijders (2001, Eq. 16) lz* correction for JML person "
+                "estimates. The math contract (closed-form lz, lz*, c_n, "
+                "and corrected variance on hand-built obs frames) is "
+                "pinned in tests/test_person_fit_indices.py; the Measures "
+                "tab surfaces the chosen ReportIndex (lz* under JMLE, lz "
+                "otherwise) with explicit caveats and exposes the full "
+                "table plus a CSV download. MML / EAP estimates report "
+                "lz_star_status = 'not_applicable_eap' so the unadjusted "
+                "lz is never silently treated as Snijders-corrected."
             ),
             "Boundary": (
-                "The current person-fit panel reports the unadjusted lz; "
-                "interpret z-scores conservatively until the corrected form "
-                "ships."
+                "lz* under JML is conditional on the fitted non-person "
+                "calibration; non-person parameter uncertainty is not "
+                "propagated. Treat lz* as a screening tool rather than a "
+                "definitive misfit test, and read flagged rows alongside "
+                "Infit / Outfit."
             ),
             "NextValidation": (
-                "Report unadjusted lz with an explicit note in manuscripts "
-                "where the asymptotic null distribution is relied on."
+                "MML lz* (with the additional population-prior correction) "
+                "remains future work; the current pipeline reports the "
+                "unadjusted lz on the MML path with an explicit caveat. "
+                "An R parity test against mfrmr 0.2.0 "
+                "compute_person_fit_indices() is the next high-value "
+                "addition for manuscript-citation confidence."
             ),
         },
         {
@@ -6620,7 +6633,437 @@ def compute_obs_table(res):
     df["Residual"] = df["Observed"] - df["Expected"]
     df["StdResidual"] = df["Residual"] / np.sqrt(df["Var"])
     df["StdSq"] = std_sq
+
+    # ---- Per-observation diagnostics for polytomous person-fit ----
+    # These six columns are the inputs to the Drasgow (1985) lz statistic
+    # and the Snijders (2001) lz* correction (Snijders, 2001, Eq. 16). The
+    # math is summarised in the lz / lz* helpers below; the columns are
+    # added here so a single pass over the per-observation
+    # probability matrix produces every term they need.
+    n_rows = probs.shape[0]
+    score_k_int = idx["score_k"].astype(int)
+    pr_observed = np.full(n_rows, np.nan)
+    if n_rows > 0:
+        valid_score = (score_k_int >= 0) & (score_k_int < probs.shape[1])
+        rows_idx = np.where(valid_score)[0]
+        pr_observed[rows_idx] = probs[rows_idx, score_k_int[rows_idx]]
+    # Use clipping to avoid log(0); the clip floor mirrors the R reference
+    # (.Machine$double.eps in R, np.finfo(float).eps here).
+    eps = float(np.finfo(float).eps)
+    log_p_mat = np.log(np.clip(probs, eps, None))
+    # E[log P]_i = sum_k P_k * log P_k   (per-item negentropy; the R code
+    # calls this ItemEntropy for parity with mfrmr 0.2.0, even though
+    # information-theoretically it is the negative of Shannon entropy).
+    item_entropy = np.sum(probs * log_p_mat, axis=1)
+    # Var[log P]_i = sum_k P_k * (log P_k)^2  -  (E[log P])^2
+    item_var_logp = np.sum(probs * log_p_mat ** 2, axis=1) - item_entropy ** 2
+    item_var_logp = np.maximum(item_var_logp, 0.0)
+    # Slope per observation (1.0 for RSM / PCM; estimated for GPCM under
+    # the geometric-mean-one identification).
+    if config["model"] == "GPCM":
+        slope_idx_arr = idx.get("slope_idx")
+        if slope_idx_arr is None:
+            slope_idx_arr = idx["step_idx"]
+        slope_obs = np.asarray(params["slopes"], dtype=float)[slope_idx_arr]
+    else:
+        slope_obs = np.ones(n_rows, dtype=float)
+    # ScoreInformation_i = a^2 * Var[X|theta]   (Muraki, 1993, Eq. 16).
+    score_information = (slope_obs ** 2) * var_k
+    # ObservedScoreDerivative_i = d log P_i / d theta evaluated at the
+    # observed category: a_i * (X_i - E[X|theta]). At the JML estimate
+    # of theta_n the sum across a person's observations is zero
+    # (definition of the MLE); for any individual observation it can
+    # take either sign.
+    observed_score_derivative = slope_obs * (idx["score_k"].astype(float) - expected_k)
+    # ItemLogPScoreCov_i = Cov[log P, score]_i
+    #   = a_i * Cov[log P, X | theta]_i
+    #   = a_i * (E[X * log P]_i - E[X]_i * E[log P]_i)
+    # where E[X * log P]_i = sum_k k * P_k * log P_k.
+    item_e_k_logp = np.sum(k_vals * probs * log_p_mat, axis=1)
+    item_logp_score_cov = slope_obs * (item_e_k_logp - expected_k * item_entropy)
+
+    df["PrObserved"] = pr_observed
+    df["ItemEntropy"] = item_entropy
+    df["ItemVarLogP"] = item_var_logp
+    df["ItemLogPScoreCov"] = item_logp_score_cov
+    df["ScoreInformation"] = score_information
+    df["ObservedScoreDerivative"] = observed_score_derivative
     return df
+
+
+# ============================================================================
+# Person-fit indices: Drasgow (1985) lz and Snijders (2001) lz*
+# ============================================================================
+# lz is the standardised polytomous log-likelihood (Drasgow, Levine, &
+# Williams, 1985). For person n responding to items i = 1..I:
+#
+#     l_n        = sum_i log P_i(X_i | theta_n)
+#     E[l_n]     = sum_i E[log P_i | theta_n]              (ItemEntropy)
+#     Var[l_n]   = sum_i Var[log P_i | theta_n]            (ItemVarLogP)
+#     lz_n       = (l_n - E[l_n]) / sqrt(Var[l_n])
+#
+# At the true theta_n, lz is asymptotically standard normal. When theta_n
+# is replaced by its JML estimate the variance shrinks because the
+# estimator was fit to the observed log-likelihood; the asymptotic null
+# distribution is no longer N(0, 1) and lz over-rejects in the tails.
+#
+# Snijders (2001, Eq. 16) gives the leading-order correction: regress
+# l_n on the score function S_n = sum_i a_i (X_i - E[X_i]), then take
+# the residual variance as the new denominator. With
+#     c_n           = Cov[l, S] / I(theta)            (ItemLogPScoreCov / ScoreInformation)
+#     corrected_var = Var[l]    - Cov[l, S]^2 / I(theta)
+# we get
+#     lz*_n         = (l_n - E[l_n] - c_n * S_n) / sqrt(corrected_var)
+#
+# The correction is JML-specific because S_n is exactly zero at the JML
+# estimate of theta_n, so the centring term c_n * S_n vanishes in
+# expectation but its variance contribution is what restores the N(0, 1)
+# null. For MML (EAP / MAP) estimates the population prior contributes a
+# separate shrinkage term that Snijders (2001) does not address, so we
+# refuse to ship a half-correct lz* there and surface unadjusted lz with
+# an explicit caveat instead.
+
+_PERSON_FIT_Z_5PCT = float(_norm.ppf(0.975))
+_PERSON_FIT_Z_1PCT = float(_norm.ppf(0.995))
+
+_PERSON_FIT_OBS_REQUIRED_COLUMNS = (
+    "Person",
+    "PrObserved",
+    "ItemEntropy",
+    "ItemVarLogP",
+)
+
+_PERSON_FIT_LZ_STAR_REQUIRED_COLUMNS = (
+    "ItemLogPScoreCov",
+    "ScoreInformation",
+)
+
+
+def _compute_snijders_lz_star(obs, persons, res=None):
+    """Return Snijders (2001) lz* for each person.
+
+    Parameters
+    ----------
+    obs : pandas.DataFrame
+        Per-observation diagnostics frame as produced by ``compute_obs_table``.
+        Must carry ``Person``, ``PrObserved``, ``ItemEntropy``, ``ItemVarLogP``
+        plus the lz*-specific columns ``ItemLogPScoreCov`` and
+        ``ScoreInformation``. ``ObservedScoreDerivative`` is also required;
+        if absent, it is reconstructed from ``ScoreSlope * (Observed -
+        Expected)`` when those columns exist.
+    persons : sequence
+        The roster of person identifiers to report on (one row per person
+        in the returned frame, in the supplied order).
+    res : dict | None
+        The fit result dictionary; used only to read ``config['method']``.
+        If ``None`` or non-JMLE the function reports a status reason
+        without raising — the public ``compute_person_fit_indices``
+        wrapper handles fallback to unadjusted lz.
+
+    Returns
+    -------
+    pandas.DataFrame
+        Columns: ``Person``, ``lz_star``, ``lz_star_status``,
+        ``lz_star_c``, ``lz_star_variance``. ``lz_star_status`` is one of:
+
+        - ``"fit_required"`` — ``res`` was ``None``.
+        - ``"invalid_fit"`` — ``res`` lacks a recognisable config block.
+        - ``"not_applicable_eap"`` — fit method is MML/EAP/MAP; the
+          correction does not apply.
+        - ``"diagnostics_missing_snijders_terms"`` — obs lacks the lz*
+          covariance / information columns.
+        - ``"insufficient_information"`` — per-person numeric guard rails
+          tripped (no usable rows, zero information, non-positive
+          corrected variance).
+        - ``"computed_jml_conditional_calibration"`` — value reported.
+    """
+    persons_arr = np.asarray([str(p) for p in persons], dtype=object)
+    empty = pd.DataFrame(
+        {
+            "Person": persons_arr,
+            "lz_star": np.full(len(persons_arr), np.nan),
+            "lz_star_status": np.array(["fit_required"] * len(persons_arr), dtype=object),
+            "lz_star_c": np.full(len(persons_arr), np.nan),
+            "lz_star_variance": np.full(len(persons_arr), np.nan),
+        }
+    )
+    if res is None:
+        return empty
+
+    config = res.get("config") if isinstance(res, dict) else None
+    if not isinstance(config, dict):
+        empty["lz_star_status"] = "invalid_fit"
+        return empty
+
+    method = str(config.get("method", "")).upper()
+    if method == "JMLE":
+        method = "JML"
+    if method != "JML":
+        empty["lz_star_status"] = "not_applicable_eap"
+        return empty
+
+    missing_cols = [c for c in _PERSON_FIT_LZ_STAR_REQUIRED_COLUMNS if c not in obs.columns]
+    if missing_cols:
+        empty["lz_star_status"] = "diagnostics_missing_snijders_terms"
+        return empty
+
+    work = obs.copy()
+    work["Person"] = work["Person"].astype(str)
+    work["ItemLogPScoreCov"] = pd.to_numeric(work["ItemLogPScoreCov"], errors="coerce")
+    work["ScoreInformation"] = pd.to_numeric(work["ScoreInformation"], errors="coerce")
+    if "ObservedScoreDerivative" in work.columns:
+        work["ObservedScoreDerivative"] = pd.to_numeric(work["ObservedScoreDerivative"], errors="coerce")
+    elif {"ScoreSlope", "Observed", "Expected"}.issubset(work.columns):
+        work["ObservedScoreDerivative"] = (
+            pd.to_numeric(work["ScoreSlope"], errors="coerce")
+            * (pd.to_numeric(work["Observed"], errors="coerce")
+               - pd.to_numeric(work["Expected"], errors="coerce"))
+        )
+    else:
+        empty["lz_star_status"] = "diagnostics_missing_snijders_terms"
+        return empty
+
+    eps = float(np.finfo(float).eps)
+    log_p = np.log(np.maximum(work["PrObserved"].to_numpy(dtype=float), eps))
+    work["_WCentered"] = log_p - work["ItemEntropy"].to_numpy(dtype=float)
+
+    out = empty.copy()
+    out["lz_star_status"] = "insufficient_information"
+    sqrt_eps = float(np.sqrt(eps))
+    grouped = {str(name): grp for name, grp in work.groupby("Person", sort=False)}
+    for i, person in enumerate(persons_arr):
+        d = grouped.get(str(person))
+        if d is None or len(d) == 0:
+            continue
+        w_centered = d["_WCentered"].to_numpy(dtype=float)
+        item_var_logp = d["ItemVarLogP"].to_numpy(dtype=float)
+        item_cov = d["ItemLogPScoreCov"].to_numpy(dtype=float)
+        score_info = d["ScoreInformation"].to_numpy(dtype=float)
+        score_deriv = d["ObservedScoreDerivative"].to_numpy(dtype=float)
+        ok = (
+            np.isfinite(w_centered)
+            & np.isfinite(item_var_logp)
+            & (item_var_logp >= 0)
+            & np.isfinite(item_cov)
+            & np.isfinite(score_info)
+            & (score_info > 0)
+            & np.isfinite(score_deriv)
+        )
+        if not np.any(ok):
+            continue
+        info_total = float(np.sum(score_info[ok]))
+        cov_total = float(np.sum(item_cov[ok]))
+        var_logp_total = float(np.sum(item_var_logp[ok]))
+        if not (np.isfinite(info_total) and info_total > 0):
+            continue
+        if not (np.isfinite(var_logp_total) and var_logp_total > 0):
+            continue
+        c_n = cov_total / info_total
+        corrected_var = var_logp_total - (cov_total ** 2) / info_total
+        if not np.isfinite(corrected_var) or corrected_var <= sqrt_eps:
+            out.at[i, "lz_star_c"] = c_n
+            out.at[i, "lz_star_variance"] = corrected_var
+            continue
+        centered_loglik = float(np.sum(w_centered[ok]))
+        score_sum = float(np.sum(score_deriv[ok]))
+        out.at[i, "lz_star"] = (centered_loglik - c_n * score_sum) / float(np.sqrt(corrected_var))
+        out.at[i, "lz_star_status"] = "computed_jml_conditional_calibration"
+        out.at[i, "lz_star_c"] = c_n
+        out.at[i, "lz_star_variance"] = corrected_var
+    return out
+
+
+def _add_person_fit_reporting_columns(out: pd.DataFrame) -> pd.DataFrame:
+    """Add the report-ready flag/caveat columns to a person-fit frame.
+
+    The reporting layer chooses ``lz_star`` when it was successfully
+    computed and falls back to unadjusted ``lz`` otherwise. The flag
+    columns use the practical two-sided thresholds |z| > 1.96 (5%) and
+    |z| > 2.58 (1%) on the standard normal. ``ReviewStatus`` /
+    ``ReviewReason`` / ``ReportCaveat`` give a human-readable reading
+    so manuscripts can quote the column directly without re-deriving
+    the rule.
+    """
+    z5 = _PERSON_FIT_Z_5PCT
+    z1 = _PERSON_FIT_Z_1PCT
+
+    lz = pd.to_numeric(out["lz"], errors="coerce")
+    lz_star = pd.to_numeric(out["lz_star"], errors="coerce")
+    status = out["lz_star_status"].astype(str)
+
+    out["lz_flag_5pct"] = lz.abs().gt(z5).fillna(False)
+    out["lz_flag_1pct"] = lz.abs().gt(z1).fillna(False)
+    out["lz_star_flag_5pct"] = lz_star.abs().gt(z5).fillna(False)
+    out["lz_star_flag_1pct"] = lz_star.abs().gt(z1).fillna(False)
+
+    snijders_ready = lz_star.notna() & status.eq("computed_jml_conditional_calibration")
+    lz_ready = (~snijders_ready) & lz.notna()
+
+    out["ReportIndex"] = np.where(snijders_ready, "lz_star",
+                                  np.where(lz_ready, "lz", "none"))
+    report_value = np.where(snijders_ready, lz_star,
+                            np.where(lz_ready, lz, np.nan))
+    out["ReportValue"] = report_value
+    abs_report = np.abs(report_value)
+    flag_level = np.where(
+        ~np.isfinite(abs_report), "not_available",
+        np.where(abs_report > z1, "1pct",
+                 np.where(abs_report > z5, "5pct", "none")),
+    )
+    out["ReportFlagLevel"] = flag_level
+    out["ReportFlag"] = np.isin(flag_level, ["5pct", "1pct"])
+    out["ReviewStatus"] = np.where(
+        flag_level == "1pct", "review_1pct",
+        np.where(flag_level == "5pct", "review_5pct",
+                 np.where(flag_level == "none", "not_flagged", "not_available")),
+    )
+
+    report_index_arr = np.asarray(out["ReportIndex"])
+    review_reason = np.where(
+        flag_level == "1pct",
+        np.array([f"{ri} exceeds |z| > 2.58." for ri in report_index_arr]),
+        np.where(
+            flag_level == "5pct",
+            np.array([f"{ri} exceeds |z| > 1.96." for ri in report_index_arr]),
+            np.where(
+                flag_level == "none",
+                "No report-level flag under the practical two-sided thresholds.",
+                "No finite person-fit statistic is available for report-level flagging.",
+            ),
+        ),
+    )
+    out["ReviewReason"] = review_reason
+
+    status_arr = status.to_numpy()
+    snijders_caveat = (
+        "lz_star applies the Snijders correction conditional on fitted "
+        "non-person calibration; non-person parameter uncertainty is not "
+        "propagated."
+    )
+    out["ReportCaveat"] = np.where(
+        snijders_ready.to_numpy(),
+        snijders_caveat,
+        np.where(
+            lz_ready.to_numpy(),
+            np.array([
+                f"lz is the uncorrected standardized log-likelihood; lz_star_status = {s}."
+                for s in status_arr
+            ]),
+            np.array([
+                f"No report index selected; lz_star_status = {s}."
+                for s in status_arr
+            ]),
+        ),
+    )
+    return out
+
+
+def compute_person_fit_indices(res, obs=None):
+    """Return per-person Drasgow lz and Snijders lz* statistics.
+
+    Mirrors mfrmr ``compute_person_fit_indices`` (R/api-person-fit.R).
+    The function consumes the per-observation diagnostics frame produced
+    by ``compute_obs_table`` and reports both the uncorrected lz and
+    Snijders lz*; lz* is only populated for JML/fixed-effect person
+    estimates because the Snijders (2001) correction assumes a JML
+    likelihood (the MML / EAP correction requires a different
+    derivation that this codebase does not yet ship).
+
+    Returned columns
+    ----------------
+    Person, N, LogLik, lz, lz_star, lz_star_status, lz_star_c,
+    lz_star_variance, lz_flag_5pct, lz_flag_1pct, lz_star_flag_5pct,
+    lz_star_flag_1pct, ReportIndex, ReportValue, ReportFlagLevel,
+    ReportFlag, ReviewStatus, ReviewReason, ReportCaveat.
+    """
+    if obs is None:
+        obs = compute_obs_table(res)
+    if obs is None or not isinstance(obs, pd.DataFrame):
+        raise ValueError(
+            "compute_person_fit_indices requires a per-observation "
+            "diagnostics frame from compute_obs_table()."
+        )
+
+    missing_cols = [c for c in _PERSON_FIT_OBS_REQUIRED_COLUMNS if c not in obs.columns]
+    if missing_cols:
+        raise ValueError(
+            "obs is missing required person-fit columns: "
+            + ", ".join(missing_cols)
+            + ". This typically means the diagnostics frame was generated by "
+            "an older codepath that did not populate the per-observation "
+            "probability columns; recompute via compute_obs_table()."
+        )
+
+    obs_work = obs.copy()
+    obs_work["Person"] = obs_work["Person"].astype(str)
+    obs_work["PrObserved"] = pd.to_numeric(obs_work["PrObserved"], errors="coerce")
+    obs_work["ItemEntropy"] = pd.to_numeric(obs_work["ItemEntropy"], errors="coerce")
+    obs_work["ItemVarLogP"] = pd.to_numeric(obs_work["ItemVarLogP"], errors="coerce")
+
+    eps = float(np.finfo(float).eps)
+    log_p = np.log(np.maximum(obs_work["PrObserved"].to_numpy(dtype=float), eps))
+    obs_work["_LogP"] = log_p
+
+    # Preserve the order of persons as they appear in the fit (prep
+    # level order if available, otherwise first-seen order in obs).
+    person_levels = None
+    if isinstance(res, dict):
+        prep = res.get("prep") if isinstance(res.get("prep"), dict) else None
+        if prep and isinstance(prep.get("levels"), dict):
+            raw_levels = prep["levels"].get("Person")
+            if raw_levels is not None:
+                person_levels = [str(p) for p in raw_levels]
+    if person_levels is None:
+        person_levels = list(dict.fromkeys(obs_work["Person"].tolist()))
+
+    rows = []
+    grouped = {str(name): grp for name, grp in obs_work.groupby("Person", sort=False)}
+    for person in person_levels:
+        d = grouped.get(person)
+        if d is None or len(d) == 0:
+            rows.append({"Person": person, "N": 0, "LogLik": np.nan, "lz": np.nan})
+            continue
+        log_p = d["_LogP"].to_numpy(dtype=float)
+        e_logp = d["ItemEntropy"].to_numpy(dtype=float)
+        var_logp = d["ItemVarLogP"].to_numpy(dtype=float)
+        ok = np.isfinite(log_p) & np.isfinite(e_logp) & np.isfinite(var_logp) & (var_logp >= 0)
+        if not np.any(ok):
+            rows.append({"Person": person, "N": 0, "LogLik": np.nan, "lz": np.nan})
+            continue
+        ll = float(np.sum(log_p[ok]))
+        e_ll = float(np.sum(e_logp[ok]))
+        var_ll = float(np.sum(var_logp[ok]))
+        lz_val = (ll - e_ll) / float(np.sqrt(var_ll)) if var_ll > 0 else np.nan
+        rows.append({"Person": person, "N": int(np.sum(ok)), "LogLik": ll, "lz": lz_val})
+    out = pd.DataFrame(rows, columns=["Person", "N", "LogLik", "lz"])
+    out["N"] = out["N"].astype(int)
+
+    lz_star_tbl = _compute_snijders_lz_star(obs_work, out["Person"].tolist(), res=res)
+    merged = out.merge(lz_star_tbl, on="Person", how="left")
+    merged["lz_star_status"] = merged["lz_star_status"].fillna("fit_required")
+    out = _add_person_fit_reporting_columns(merged)
+
+    column_order = [
+        "Person", "N", "LogLik", "lz", "lz_star", "lz_star_status",
+        "lz_star_c", "lz_star_variance",
+        "lz_flag_5pct", "lz_flag_1pct",
+        "lz_star_flag_5pct", "lz_star_flag_1pct",
+        "ReportIndex", "ReportValue", "ReportFlagLevel", "ReportFlag",
+        "ReviewStatus", "ReviewReason", "ReportCaveat",
+    ]
+    return out[column_order]
+
+
+def person_fit_threshold_table() -> pd.DataFrame:
+    """Two-sided z-thresholds used by the report-ready flag columns."""
+    return pd.DataFrame(
+        {
+            "Threshold": ["5pct", "1pct"],
+            "TwoSidedAlpha": [0.05, 0.01],
+            "AbsZ": [_PERSON_FIT_Z_5PCT, _PERSON_FIT_Z_1PCT],
+            "Rule": ["|z| > 1.96", "|z| > 2.58"],
+        }
+    )
 
 
 def compute_prob_matrix(res):
@@ -12379,6 +12822,15 @@ def build_result_bundle_frames(
         person_df = facets.get("person")
         if isinstance(person_df, pd.DataFrame) and not person_df.empty:
             frames["person_measures"] = person_df
+            try:
+                person_fit_idx = compute_person_fit_indices(
+                    result,
+                    obs=diagnostics.get("obs") if isinstance(diagnostics, dict) else None,
+                )
+            except Exception:
+                person_fit_idx = pd.DataFrame()
+            if isinstance(person_fit_idx, pd.DataFrame) and not person_fit_idx.empty:
+                frames["person_fit_indices"] = person_fit_idx
         others_df = facets.get("others")
         if isinstance(others_df, pd.DataFrame) and not others_df.empty:
             frames["facet_element_measures"] = others_df
@@ -14996,6 +15448,12 @@ _APA_REFERENCE_LIBRARY: dict[str, str] = {
         "Cramer, H. (1946). Mathematical methods of statistics. "
         "Princeton University Press."
     ),
+    "Drasgow_Levine_Williams_1985": (
+        "Drasgow, F., Levine, M. V., & Williams, E. A. (1985). Appropriateness "
+        "measurement with polychotomous item response models and standardized "
+        "indices. British Journal of Mathematical and Statistical Psychology, "
+        "38(1), 67–86. https://doi.org/10.1111/j.2044-8317.1985.tb00817.x"
+    ),
     "Louis_1982": (
         "Louis, T. A. (1982). Finding the observed information matrix when "
         "using the EM algorithm. Journal of the Royal Statistical Society: "
@@ -15036,6 +15494,11 @@ _APA_REFERENCE_LIBRARY: dict[str, str] = {
     "Smith_2000": (
         "Smith, E. V. (2000). Metric development and score reporting in Rasch "
         "measurement. Journal of Applied Measurement, 1(3), 303–326."
+    ),
+    "Snijders_2001": (
+        "Snijders, T. A. B. (2001). Asymptotic null distribution of person fit "
+        "statistics with estimated person parameter. Psychometrika, 66(3), "
+        "331–342. https://doi.org/10.1007/BF02294437"
     ),
     "Smith_2002": (
         "Smith, E. V. (2002). Detecting and evaluating the impact of "
@@ -15116,6 +15579,7 @@ _CITATION_TO_KEY: dict[str, str] = {
     "(Chalmers, 2012)": "Chalmers_2012",
     "(DeMars, 2006)": "DeMars_2006",
     "(Downing & Yudkowsky, 2009)": "Downing_Yudkowsky_2009",
+    "(Drasgow, Levine & Williams, 1985)": "Drasgow_Levine_Williams_1985",
     "(Eckes, 2005)": "Eckes_2005",
     "(Eckes, 2011)": "Eckes_2011",
     "(Eckes & Jin, 2021)": "Eckes_Jin_2021",
@@ -15145,6 +15609,7 @@ _CITATION_TO_KEY: dict[str, str] = {
     "(Rijmen, 2010)": "Rijmen_2010",
     "(Smith, 2000)": "Smith_2000",
     "(Smith, 2002)": "Smith_2002",
+    "(Snijders, 2001)": "Snijders_2001",
     "(Tavakol & Dennick, 2011)": "Tavakol_Dennick_2011",
     "(Uto, 2021)": "Uto_2021",
     "(Uto, 2022)": "Uto_2022",
@@ -18239,6 +18704,7 @@ def run_facets_mode(core: dict, data: pd.DataFrame) -> None:
                     run_button=t("sidebar_perf.run_button"),
                 )
             )
+        show_person_fit_section(result, diagnostics)
         show_posterior_scoring_section(result)
         population_bundle = result.get("population", {})
         if isinstance(population_bundle, dict) and population_bundle.get("enabled"):
@@ -20288,6 +20754,112 @@ def show_convergence_section(result: dict) -> None:
                 elapsed=f"{elapsed:.2f}",
             )
         )
+
+
+def show_person_fit_section(result: dict, diagnostics: dict) -> None:
+    """Render Drasgow (1985) lz and Snijders (2001) lz* person-fit indices.
+
+    The math layer ``compute_person_fit_indices`` always reports lz; lz*
+    is only populated under JMLE because the Snijders correction
+    assumes a JML likelihood. The UI surfaces the chosen ReportIndex
+    (lz* when available, lz otherwise), highlights flagged persons,
+    and exposes the full table behind an expander so the default
+    Measures-tab reading stays compact.
+    """
+    st.subheader(t("result_tabs.person_fit_subheader"))
+
+    obs_df = diagnostics.get("obs") if isinstance(diagnostics, dict) else None
+    try:
+        fit_idx = compute_person_fit_indices(result, obs=obs_df)
+    except ValueError as exc:
+        st.info(
+            t(
+                "result_tabs.person_fit_unavailable_template",
+                reason=str(exc),
+            )
+        )
+        return
+    except Exception as exc:  # pragma: no cover - defensive
+        st.warning(
+            t(
+                "result_tabs.person_fit_error_template",
+                error=str(exc),
+            )
+        )
+        return
+
+    if fit_idx is None or fit_idx.empty:
+        st.info(t("result_tabs.person_fit_no_persons"))
+        return
+
+    success_mask = fit_idx["lz_star_status"].eq("computed_jml_conditional_calibration")
+    has_lz_star = bool(success_mask.any())
+    if has_lz_star:
+        st.caption(t("result_tabs.person_fit_caption_jmle"))
+    else:
+        st.caption(t("result_tabs.person_fit_caption_mml"))
+
+    n_persons = len(fit_idx)
+    flag_levels = fit_idx["ReportFlagLevel"].astype(str)
+    n_5pct = int((flag_levels == "5pct").sum())
+    n_1pct = int((flag_levels == "1pct").sum())
+    n_unavailable = int((flag_levels == "not_available").sum())
+    n_flagged = n_5pct + n_1pct
+
+    cols = st.columns(4)
+    cols[0].metric(t("result_tabs.person_fit_metric_persons"), f"{n_persons:,}")
+    cols[1].metric(t("result_tabs.person_fit_metric_flag_5pct"), f"{n_5pct:,}")
+    cols[2].metric(t("result_tabs.person_fit_metric_flag_1pct"), f"{n_1pct:,}")
+    cols[3].metric(
+        t("result_tabs.person_fit_metric_report_index"),
+        "lz*" if has_lz_star else "lz",
+    )
+
+    if n_flagged > 0:
+        st.markdown(
+            "**"
+            + t(
+                "result_tabs.person_fit_flagged_heading_template",
+                n_flagged=f"{n_flagged:,}",
+            )
+            + "**"
+        )
+        flagged = fit_idx[fit_idx["ReportFlag"].astype(bool)].copy()
+        flagged["_AbsReport"] = pd.to_numeric(flagged["ReportValue"], errors="coerce").abs()
+        flagged = flagged.sort_values("_AbsReport", ascending=False).drop(columns="_AbsReport")
+        flagged_view = flagged[
+            ["Person", "N", "ReportIndex", "ReportValue", "ReviewStatus", "ReviewReason"]
+        ].copy()
+        flagged_view["ReportValue"] = pd.to_numeric(
+            flagged_view["ReportValue"], errors="coerce"
+        ).round(3)
+        st.dataframe(flagged_view, width="stretch", hide_index=True)
+    elif n_unavailable > 0 and n_unavailable == n_persons:
+        st.info(t("result_tabs.person_fit_all_unavailable_info"))
+    else:
+        st.success(t("result_tabs.person_fit_no_flags_info"))
+
+    with st.expander(
+        t("result_tabs.person_fit_full_table_expander_template", n=f"{n_persons:,}"),
+        expanded=False,
+    ):
+        full_view = fit_idx.copy()
+        for col in ("LogLik", "lz", "lz_star", "lz_star_c", "lz_star_variance", "ReportValue"):
+            if col in full_view.columns:
+                full_view[col] = pd.to_numeric(full_view[col], errors="coerce").round(4)
+        st.dataframe(full_view, width="stretch", hide_index=True)
+        st.download_button(
+            t("result_tabs.person_fit_download_button"),
+            data=to_csv_bytes(fit_idx),
+            file_name="mfrm_person_fit_indices.csv",
+            mime="text/csv",
+            key="dl_person_fit_indices_tab",
+        )
+
+    if has_lz_star:
+        st.caption(t("result_tabs.person_fit_lz_star_caveat"))
+    else:
+        st.caption(t("result_tabs.person_fit_lz_only_caveat"))
 
 
 def show_posterior_scoring_section(result: dict) -> None:

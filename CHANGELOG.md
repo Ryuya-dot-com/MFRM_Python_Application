@@ -226,6 +226,45 @@ All notable changes to this standalone Streamlit distribution should be recorded
     "negligible" threshold cited in Linacre's FACETS Manual. The
     categorical fields (`Profile CI Status`, `InferenceTier`) must
     agree exactly.
+- **Polytomous person-fit indices: lz (Drasgow et al., 1985) and lz*
+  (Snijders, 2001).** A new ``compute_person_fit_indices(res)`` reports
+  the standardised polytomous log-likelihood for every fitted person.
+  Under JMLE the report carries the Snijders (2001, Eq. 16) correction:
+  ``c_n = Cov[l, S] / I(theta)``, corrected variance
+  ``Var[l] - Cov[l, S]^2 / I(theta)``, and ``lz* = (l - E[l] - c_n * S)
+  / sqrt(corrected_var)``. Under MML / EAP the function reports the
+  unadjusted ``lz`` with the status field
+  ``"not_applicable_eap"`` so the unadjusted form is never silently
+  treated as Snijders-corrected. The six per-observation diagnostic
+  columns ``PrObserved``, ``ItemEntropy``, ``ItemVarLogP``,
+  ``ItemLogPScoreCov``, ``ScoreInformation``, and
+  ``ObservedScoreDerivative`` are added to ``compute_obs_table(res)``
+  in a single pass over the per-observation probability matrix; the lz
+  / lz* aggregation reads them by name. Reporting columns
+  (``ReportIndex``, ``ReportValue``, ``ReportFlagLevel``,
+  ``ReviewStatus``, ``ReviewReason``, ``ReportCaveat``) choose lz*
+  when computed and fall back to lz otherwise, using the standard
+  normal thresholds ``|z| > qnorm(0.975)`` (5 %) and
+  ``|z| > qnorm(0.995)`` (1 %). The Measures tab surfaces a compact
+  panel: a four-metric strip (persons measured, flagged at 5 %, flagged
+  at 1 %, chosen report index), a flagged-rows table sorted by
+  ``|ReportValue|`` when any person trips the practical threshold, the
+  full per-person table behind an expander, a CSV download, and a
+  method-aware caveat (``Snijders correction conditional on fitted
+  non-person calibration`` vs ``uncorrected lz; interpret tail z-scores
+  conservatively``). The lz / lz* indices also ship in the per-run
+  downloads bundle as ``person_fit_indices``. Two new APA references
+  (Drasgow, Levine & Williams, 1985; Snijders, 2001) are added to the
+  library and citation map so a Methods narrative that mentions either
+  in ``(Author, Year)`` form auto-resolves to a properly alphabetised
+  references list. The math contract is pinned in
+  ``tests/test_person_fit_indices.py`` (17 tests covering the closed-
+  form lz identity, the closed-form lz* / c_n / corrected-variance
+  identity, the threshold rule, status-field fallback for MML and for
+  missing-column / degenerate inputs, the small JMLE end-to-end fit,
+  and column-order stability). The ``mfrmr_020_migration_coverage_table()``
+  row for "Polytomous person-fit correction (Snijders lz*)" flips from
+  Planned to Ready with the new evidence narrative.
 - **Remaining six sample-data scenarios** (large-scale writing, L2
   speaking, clinical OSCE, writing with missing, music peer-rating,
   reading testlet binary) now follow the same expanded template:

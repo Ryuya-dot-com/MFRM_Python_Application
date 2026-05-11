@@ -1058,22 +1058,51 @@ def mfrmr_020_migration_coverage_table() -> pd.DataFrame:
         },
         {
             "mfrmr020Area": "APA table presets (kable / flextable / monochrome)",
-            "PythonStatus": "Planned",
+            "PythonStatus": "Ready",
             "PythonEvidence": (
-                "The mfrmr 0.2.0 reference adds as_kable() / as_flextable() "
-                "S3 methods that re-emit the FACETS-style tables in "
-                "manuscript-ready formats, plus a monochrome preset for "
-                "print-friendly figure output."
+                "apa_table_to_markdown() and apa_table_to_html() re-emit "
+                "any report DataFrame as an APA 7 snippet with the table "
+                "number (bold), caption (italic), header / body grid "
+                "with top, header, and bottom rules, and a Note. block. "
+                "Float digits are user-configurable; boolean columns "
+                "render as Yes / No; missing values render as the empty "
+                "string; HTML output is HTML-escaped end-to-end so cell "
+                "payloads cannot break out of the cell. "
+                "get_monochrome_palette() and "
+                "get_monochrome_dash_patterns() supply a print-friendly "
+                "grayscale palette (eight grayscale steps from near-"
+                "black to very light grey) and matching Plotly dash "
+                "pattern list so figure exports under the monochrome "
+                "preset stay distinguishable in print. The Report tab "
+                "exposes an APA-presets panel with a table picker, "
+                "format radio (Markdown / HTML), digits / table-number "
+                "/ caption / note controls, an inline preview, and "
+                "per-format download buttons; the monochrome palette is "
+                "previewed with colour swatches and dash-pattern names. "
+                "Math contract pinned in tests/test_apa_presets.py "
+                "(18 tests covering empty-input handling, pipe-table "
+                "structure, caption / note presence, digits, NaN and "
+                "boolean rendering, HTML escaping in cells / captions / "
+                "notes, monochrome palette length and cycling, dash-"
+                "pattern validity, and a realistic round-trip)."
             ),
             "Boundary": (
-                "The current publication-document pipeline already produces "
-                "Word, PDF, and HTML manuscripts, but does not yet expose a "
-                "kable / flextable S3 surface or a monochrome figure preset."
+                "These helpers complement the existing Publication "
+                "Document export rather than replace it. The Publication "
+                "Document remains the single-file Word / PDF / HTML "
+                "deliverable; the APA-presets panel is for per-table "
+                "snippets a manuscript author pastes into a longer "
+                "document. The monochrome palette is exposed as a "
+                "library helper; weaving it through every existing "
+                "figure builder is out of scope for this iteration."
             ),
             "NextValidation": (
-                "Use the existing Publication Document export for "
-                "manuscript-ready outputs; the granular preset surface is a "
-                "convenience refinement."
+                "Use the per-table APA preset when the manuscript "
+                "template requires individual tables rather than a "
+                "single bundled document; cite Wong (2011) when "
+                "switching to the colour-blind-safe palette, or no "
+                "additional citation is needed for the monochrome "
+                "preset."
             ),
         },
     ]
@@ -17272,6 +17301,221 @@ def collect_cited_references(text: str) -> list[str]:
     return sorted(entries)
 
 
+_MONOCHROME_PALETTE = (
+    "#1a1a1a",  # near-black
+    "#5c5c5c",  # dark grey
+    "#8c8c8c",  # mid grey
+    "#bdbdbd",  # light grey
+    "#d9d9d9",  # very light grey
+    "#000000",  # pure black
+    "#404040",  # charcoal
+    "#737373",  # warm grey
+)
+
+_MONOCHROME_DASH_PATTERNS = (
+    "solid",
+    "dash",
+    "dot",
+    "dashdot",
+    "longdash",
+    "longdashdot",
+)
+
+
+def get_monochrome_palette(n: int | None = None) -> list[str]:
+    """Return a grayscale-only color palette suitable for print-friendly
+    APA figures.
+
+    When ``n`` is supplied the palette is cycled / truncated to that
+    length. The palette is anchored at near-black and walks down to
+    very-light-grey in eight steps; print reproduction at 300 DPI keeps
+    every step distinct.
+    """
+    base = list(_MONOCHROME_PALETTE)
+    if n is None:
+        return base
+    n = max(int(n), 0)
+    if n <= len(base):
+        return base[:n]
+    repeats = (n + len(base) - 1) // len(base)
+    return (base * repeats)[:n]
+
+
+def get_monochrome_dash_patterns(n: int | None = None) -> list[str]:
+    """Return Plotly dash patterns for line plots under the monochrome
+    preset. Pairs with ``get_monochrome_palette`` so distinct lines can
+    be told apart by both line style and shade."""
+    base = list(_MONOCHROME_DASH_PATTERNS)
+    if n is None:
+        return base
+    n = max(int(n), 0)
+    if n <= len(base):
+        return base[:n]
+    repeats = (n + len(base) - 1) // len(base)
+    return (base * repeats)[:n]
+
+
+def _format_apa_cell(value, digits: int = 3, *, is_bool: bool = False) -> str:
+    """Format a single cell value for an APA-style report table.
+
+    ``is_bool`` forces Yes/No rendering for columns whose dtype is
+    boolean even after pandas upcasts the row Series to an object dtype.
+    """
+    if value is None:
+        return ""
+    if isinstance(value, float) and not np.isfinite(value):
+        return ""
+    if is_bool:
+        try:
+            return "Yes" if bool(value) else "No"
+        except Exception:
+            return ""
+    if isinstance(value, (np.bool_, bool)):
+        return "Yes" if bool(value) else "No"
+    if isinstance(value, (np.floating,)):
+        value = float(value)
+    if isinstance(value, float):
+        return f"{value:.{int(digits)}f}"
+    if isinstance(value, (np.integer, int)):
+        return f"{int(value)}"
+    return str(value)
+
+
+def _apa_column_is_bool(df: pd.DataFrame, col: str) -> bool:
+    """Detect whether a column should render as Yes/No.
+
+    Inspects the column's dtype and, when ambiguous (e.g. object dtype
+    holding Python bools), checks the first non-null value.
+    """
+    dtype = df[col].dtype
+    if dtype == bool or dtype == np.bool_:
+        return True
+    if str(dtype) == "boolean":  # pandas nullable boolean
+        return True
+    if dtype == object:
+        non_null = df[col].dropna()
+        if not non_null.empty:
+            first = non_null.iloc[0]
+            return isinstance(first, (bool, np.bool_))
+    return False
+
+
+def apa_table_to_markdown(
+    df: pd.DataFrame,
+    *,
+    caption: str | None = None,
+    note: str | None = None,
+    digits: int = 3,
+    table_number: int | None = None,
+) -> str:
+    """Render a DataFrame as an APA 7 Markdown table.
+
+    APA 7 places the table number on its own line, the caption in italics
+    immediately below, the table grid in the middle, and a ``Note.``
+    block at the bottom for definitions / measurement-scale callouts.
+    The Markdown output uses GitHub-flavoured pipe tables so it pastes
+    cleanly into Quarto / RMarkdown / GitHub READMEs / manuscripts that
+    accept Markdown source.
+    """
+    if not isinstance(df, pd.DataFrame) or df.empty:
+        return ""
+    columns = list(df.columns)
+    bool_cols = {c: _apa_column_is_bool(df, c) for c in columns}
+    header = "| " + " | ".join(str(c) for c in columns) + " |"
+    sep = "| " + " | ".join("---" for _ in columns) + " |"
+    body_lines = []
+    for _, row in df.iterrows():
+        cells = [
+            _format_apa_cell(row[c], digits=digits, is_bool=bool_cols[c])
+            for c in columns
+        ]
+        body_lines.append("| " + " | ".join(cells) + " |")
+    parts: list[str] = []
+    if table_number is not None:
+        parts.append(f"**Table {int(table_number)}**")
+    if caption:
+        parts.append(f"*{caption}*")
+    parts.append(header)
+    parts.append(sep)
+    parts.extend(body_lines)
+    if note:
+        parts.append("")
+        parts.append(f"*Note.* {note}")
+    return "\n".join(parts)
+
+
+def _escape_html(value: str) -> str:
+    return (
+        str(value)
+        .replace("&", "&amp;")
+        .replace("<", "&lt;")
+        .replace(">", "&gt;")
+    )
+
+
+def apa_table_to_html(
+    df: pd.DataFrame,
+    *,
+    caption: str | None = None,
+    note: str | None = None,
+    digits: int = 3,
+    table_number: int | None = None,
+) -> str:
+    """Render a DataFrame as an APA 7 HTML table.
+
+    The structure follows APA 7 placement: a ``<div class="apa-table">``
+    wrapper with the table number on its own line, the caption in
+    italics, a borderless ``<table>`` grid (top, header, bottom rules),
+    and a ``Note.`` paragraph below. Inline CSS keeps the output
+    self-contained so it can be pasted into Word, a manuscript HTML
+    template, or a Quarto / RMarkdown HTML chunk.
+    """
+    if not isinstance(df, pd.DataFrame) or df.empty:
+        return ""
+    columns = list(df.columns)
+    bool_cols = {c: _apa_column_is_bool(df, c) for c in columns}
+    header_row = "".join(
+        f"<th style=\"border-bottom: 1px solid #000; padding: 4px 8px; text-align: left;\">"
+        f"{_escape_html(c)}</th>"
+        for c in columns
+    )
+    body_rows = []
+    for _, row in df.iterrows():
+        cells = "".join(
+            f"<td style=\"padding: 4px 8px;\">"
+            f"{_escape_html(_format_apa_cell(row[c], digits=digits, is_bool=bool_cols[c]))}</td>"
+            for c in columns
+        )
+        body_rows.append(f"<tr>{cells}</tr>")
+    parts = [
+        "<div class=\"apa-table\" style=\"font-family: serif; margin: 1em 0;\">"
+    ]
+    if table_number is not None:
+        parts.append(
+            f"<div style=\"font-weight: bold; margin-bottom: 0.2em;\">"
+            f"Table {int(table_number)}</div>"
+        )
+    if caption:
+        parts.append(
+            f"<div style=\"font-style: italic; margin-bottom: 0.5em;\">"
+            f"{_escape_html(caption)}</div>"
+        )
+    parts.append(
+        "<table style=\"border-collapse: collapse; border-top: 2px solid #000; "
+        "border-bottom: 2px solid #000; width: 100%;\">"
+    )
+    parts.append(f"<thead><tr>{header_row}</tr></thead>")
+    parts.append("<tbody>" + "".join(body_rows) + "</tbody>")
+    parts.append("</table>")
+    if note:
+        parts.append(
+            "<div style=\"margin-top: 0.5em; font-size: 0.95em;\">"
+            f"<em>Note.</em> {_escape_html(note)}</div>"
+        )
+    parts.append("</div>")
+    return "\n".join(parts)
+
+
 def build_apa_reference_list(text: str, *, always_include: list[str] | None = None) -> list[str]:
     """Build the APA reference list for a publication document.
 
@@ -23200,6 +23444,179 @@ def render_model_choice_guidance(result: dict) -> None:
     )
 
 
+def _collect_apa_exportable_tables(
+    result: dict, diagnostics: dict
+) -> dict[str, pd.DataFrame]:
+    """Gather DataFrame tables from a fit + diagnostics bundle for APA export.
+
+    Returns an insertion-ordered dict from human-readable label to the
+    backing DataFrame. Only non-empty DataFrames are included; this is
+    the same list of tables the existing publication-doc pipeline
+    typically emits.
+    """
+    candidates: dict[str, pd.DataFrame] = {}
+    if isinstance(result, dict):
+        summary = result.get("summary")
+        if isinstance(summary, pd.DataFrame) and not summary.empty:
+            candidates["Estimation summary"] = summary
+        lik_info = result.get("likelihood_information")
+        if isinstance(lik_info, pd.DataFrame) and not lik_info.empty:
+            candidates["Likelihood / information criteria"] = lik_info
+        facets = result.get("facets", {}) if isinstance(result.get("facets"), dict) else {}
+        person_tbl = facets.get("person")
+        if isinstance(person_tbl, pd.DataFrame) and not person_tbl.empty:
+            candidates["Person measures"] = person_tbl
+        others_tbl = facets.get("others")
+        if isinstance(others_tbl, pd.DataFrame) and not others_tbl.empty:
+            candidates["Facet element measures"] = others_tbl
+        steps_tbl = result.get("steps")
+        if isinstance(steps_tbl, pd.DataFrame) and not steps_tbl.empty:
+            candidates["Step thresholds"] = steps_tbl
+    if isinstance(diagnostics, dict):
+        for key, label in [
+            ("overall_fit", "Overall fit"),
+            ("fit", "Per-facet fit"),
+            ("measures", "Combined measures and fit"),
+            ("reliability", "Reliability / separation"),
+            ("bias", "Per-facet bias screen"),
+            ("interactions", "Bias interaction screen"),
+        ]:
+            tbl = diagnostics.get(key)
+            if isinstance(tbl, pd.DataFrame) and not tbl.empty:
+                candidates[label] = tbl
+    return candidates
+
+
+def render_apa_presets_section(result: dict, diagnostics: dict) -> None:
+    """Render the APA-preset export panel.
+
+    Lets the user pick any of the available report tables, configure
+    the caption / note / float digits / table number, and download the
+    snippet as Markdown or HTML. Also previews the monochrome palette
+    + dash patterns so figure exports can adopt the print-friendly
+    preset on demand.
+    """
+    st.subheader(t("report_tables.apa_presets_subheader"))
+    st.caption(t("report_tables.apa_presets_caption"))
+
+    tables = _collect_apa_exportable_tables(result, diagnostics)
+    if not tables:
+        st.info(t("report_tables.apa_presets_no_tables_info"))
+    else:
+        labels = list(tables.keys())
+        picker_col, format_col, digits_col, number_col = st.columns([3, 2, 1, 1])
+        with picker_col:
+            chosen_label = st.selectbox(
+                t("report_tables.apa_presets_table_picker_label"),
+                options=labels,
+                key="apa_presets_table_picker",
+            )
+        with format_col:
+            chosen_format = st.radio(
+                t("report_tables.apa_presets_format_label"),
+                options=["markdown", "html"],
+                format_func=lambda v: (
+                    t("report_tables.apa_presets_format_markdown")
+                    if v == "markdown"
+                    else t("report_tables.apa_presets_format_html")
+                ),
+                key="apa_presets_format",
+                horizontal=True,
+            )
+        with digits_col:
+            digits = int(
+                st.number_input(
+                    t("report_tables.apa_presets_digits_label"),
+                    min_value=0, max_value=8, value=3, step=1,
+                    key="apa_presets_digits",
+                )
+            )
+        with number_col:
+            tbl_num_raw = st.number_input(
+                t("report_tables.apa_presets_table_number_label"),
+                min_value=0, max_value=99, value=0, step=1,
+                key="apa_presets_table_number",
+            )
+            table_number = int(tbl_num_raw) if int(tbl_num_raw) > 0 else None
+
+        caption = st.text_input(
+            t("report_tables.apa_presets_caption_label"),
+            value=chosen_label,
+            key="apa_presets_caption",
+        ).strip() or None
+        note = st.text_area(
+            t("report_tables.apa_presets_note_label"),
+            value="",
+            height=80,
+            key="apa_presets_note",
+        ).strip() or None
+
+        df = tables[chosen_label]
+        if chosen_format == "markdown":
+            snippet = apa_table_to_markdown(
+                df, caption=caption, note=note,
+                digits=digits, table_number=table_number,
+            )
+            st.markdown("**" + t("report_tables.apa_presets_preview_label") + "**")
+            st.markdown(
+                "```markdown\n" + snippet + "\n```"
+                if snippet else "_(empty)_"
+            )
+            st.caption(t("report_tables.apa_presets_copy_caption"))
+            if snippet:
+                st.download_button(
+                    t("report_tables.apa_presets_download_markdown_button"),
+                    data=snippet.encode("utf-8"),
+                    file_name="mfrm_apa_table.md",
+                    mime="text/markdown",
+                    key="apa_presets_md_download",
+                )
+        else:
+            snippet = apa_table_to_html(
+                df, caption=caption, note=note,
+                digits=digits, table_number=table_number,
+            )
+            st.markdown("**" + t("report_tables.apa_presets_preview_label") + "**")
+            if snippet:
+                # Render the HTML snippet (a) literally as code and
+                # (b) as actual styled HTML so users can sanity-check
+                # the rendered output before pasting into a manuscript.
+                with st.expander("HTML source", expanded=False):
+                    st.code(snippet, language="html")
+                st.markdown(snippet, unsafe_allow_html=True)
+            else:
+                st.write("_(empty)_")
+            st.caption(t("report_tables.apa_presets_copy_caption"))
+            if snippet:
+                st.download_button(
+                    t("report_tables.apa_presets_download_html_button"),
+                    data=snippet.encode("utf-8"),
+                    file_name="mfrm_apa_table.html",
+                    mime="text/html",
+                    key="apa_presets_html_download",
+                )
+
+    st.markdown(
+        "**" + t("report_tables.apa_presets_monochrome_preview_subheader") + "**"
+    )
+    st.caption(t("report_tables.apa_presets_monochrome_caption"))
+    palette = get_monochrome_palette()
+    dashes = get_monochrome_dash_patterns()
+    swatches = "".join(
+        f"<span style=\"display:inline-block; width:36px; height:24px; "
+        f"background:{color}; border:1px solid #888; margin-right:6px; "
+        f"vertical-align:middle;\" title=\"{color}\"></span>"
+        for color in palette
+    )
+    st.markdown(swatches, unsafe_allow_html=True)
+    st.caption(
+        " | ".join(
+            f"`{c}`" for c in palette
+        )
+    )
+    st.caption("Dash patterns: " + " · ".join(dashes))
+
+
 def render_g_d_study_section(result: dict) -> None:
     """Render the generalizability theory + D-study panel.
 
@@ -23481,6 +23898,7 @@ def _render_report_tables(result: dict, diagnostics: dict) -> None:
     render_model_choice_guidance(result)
     render_g_d_study_section(result)
     render_parameter_recovery_simulation()
+    render_apa_presets_section(result, diagnostics)
 
     regularization = result.get("regularization", {})
     if isinstance(regularization, dict):

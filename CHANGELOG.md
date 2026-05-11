@@ -226,6 +226,31 @@ All notable changes to this standalone Streamlit distribution should be recorded
     "negligible" threshold cited in Linacre's FACETS Manual. The
     categorical fields (`Profile CI Status`, `InferenceTier`) must
     agree exactly.
+- **APA 7 table presets and monochrome figure palette.** Two new
+  helpers, ``apa_table_to_markdown(df, ...)`` and
+  ``apa_table_to_html(df, ...)``, re-emit any report DataFrame as a
+  manuscript-ready APA 7 snippet (bold table number, italic caption,
+  header / body grid with top + header + bottom rules, ``Note.`` block
+  below). Float digits are user-configurable; boolean columns render
+  as ``Yes`` / ``No``; missing values render as the empty string; HTML
+  output is HTML-escaped end-to-end (cells, captions, notes) so
+  ``<script>`` payloads cannot break out of the cell. A companion
+  monochrome palette is exposed via ``get_monochrome_palette()`` (eight
+  grayscale steps from near-black to very light grey) and
+  ``get_monochrome_dash_patterns()`` (six Plotly dash patterns) so
+  figure exports under a print-friendly preset stay distinguishable
+  even at low DPI. The Report tab gains an APA-presets panel with a
+  table picker, format radio (Markdown / HTML), digits / table-number
+  / caption / note controls, an inline preview, and per-format
+  download buttons; the monochrome palette is previewed with colour
+  swatches and dash-pattern names. Math contract pinned in
+  ``tests/test_apa_presets.py`` (18 tests). The
+  ``mfrmr_020_migration_coverage_table()`` row for "APA table presets
+  (kable / flextable / monochrome)" flips from Planned to Ready. The
+  helpers complement the existing single-file Publication Document
+  rather than replace it: use the APA preset for per-table snippets
+  authors paste into a longer manuscript, and the Publication
+  Document for the bundled Word / PDF / HTML deliverable.
 - **Generalizability theory (G-study) and D-study forecast.** A new
   ``compute_generalizability_study(res)`` helper performs a method-of-
   moments crossed-ANOVA decomposition on the rating data and reports

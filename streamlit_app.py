@@ -809,23 +809,38 @@ def mfrmr_020_migration_coverage_table() -> pd.DataFrame:
         },
         {
             "mfrmr020Area": "FACETS df / ZSTD reporting alignment",
-            "PythonStatus": "Planned",
+            "PythonStatus": "Ready",
             "PythonEvidence": (
-                "Existing Fit Details tab reports infit / outfit mean-square "
-                "and ZSTD in the engine convention. The mfrmr 0.2.0 reference "
-                "introduces a toggle to render df / ZSTD using FACETS "
-                "conventions and a helper that imports a FACETS fit table for "
-                "side-by-side comparison."
+                "compute_obs_table() now carries the per-observation fourth "
+                "central moment, calc_overall_fit() / calc_facet_fit() expose "
+                "both the engine d.f. (sum of variance / weight) and the "
+                "Wright-Masters Welch-Satterthwaite d.f. used by FACETS "
+                "(Wright & Masters, 1982, Eqs. 4.20 / 4.27), and "
+                "zstd_from_mnsq_facets() applies the FACETS +/- 9 cap on "
+                "extreme standardised values. The Fit Details tab has a "
+                "three-way radio (engine / FACETS / both) that recomputes "
+                "the on-screen fit table without re-fitting, plus an "
+                "Import-FACETS-fit-table comparison widget that joins on "
+                "(Facet, Level), reports the per-row delta InfitZSTD / "
+                "OutfitZSTD against the imported values, and exposes a CSV "
+                "download. Math contract pinned in "
+                "tests/test_facets_df_zstd_alignment.py (closed-form fourth "
+                "moment, Welch-Satterthwaite formula, dispatch column shape, "
+                "ZSTD cap)."
             ),
             "Boundary": (
-                "Until the toggle ships, FACETS users see Python-engine df / "
-                "ZSTD values that may differ from FACETS-reported values for "
-                "the same fit; the disagreement is a reporting-convention "
-                "issue, not a fit-quality issue."
+                "The dispatch is purely a reporting choice and does not "
+                "refit the model. FACETS / Wright-Masters d.f. uses an "
+                "asymptotic Welch-Satterthwaite approximation; very sparse "
+                "cells with near-zero variance heterogeneity can produce "
+                "fractional or near-zero d.f. and correspondingly extreme "
+                "ZSTDs that the cap clamps to +/- 9."
             ),
             "NextValidation": (
-                "Document the engine-vs-FACETS df convention used in the "
-                "manuscript Methods section."
+                "When reporting fit statistics in a manuscript, name the "
+                "convention used (engine vs FACETS) and the cap value; the "
+                "Fit Details panel's metadata caption makes this explicit on "
+                "every run."
             ),
         },
         {
@@ -4143,6 +4158,190 @@ def zstd_from_mnsq(mnsq, df, whexact=False):
     return (mnsq ** (1 / 3) - (1 - 2 / (9 * df))) / np.sqrt(2 / (9 * df))
 
 
+# ----------------------------------------------------------------------------
+# FACETS / Wright-Masters ZSTD convention
+# ----------------------------------------------------------------------------
+# The engine ZSTD uses d.f. = sum(Var * w) for Infit and d.f. = sum(w) for
+# Outfit, which assumes the per-observation variances are homogeneous enough
+# that the residual sum of squares behaves like a chi-square with that d.f.
+# FACETS / Wright-Masters (1982, Eqs. 4.20, 4.27) use a Welch-Satterthwaite
+# d.f. that captures the variance heterogeneity:
+#   DF_Infit_FACETS  = 2 * (sum sigma^2 w)^2 / sum w * (M4 - sigma^4)
+#   DF_Outfit_FACETS = 2 * (sum w)^2 / sum w * (M4 / sigma^4 - 1)
+# where M4 = E[(X - E[X])^4 | theta_i] is the fourth central moment of the
+# polytomous response at observation i. Variance heterogeneity drives both
+# denominators away from zero and so shrinks the d.f. below the engine
+# convention; cells with extreme imbalance can produce d.f. << 1, which
+# in turn produces extreme ZSTDs that FACETS caps at +/- 9 by default.
+# The dispatch helper ``_apply_fit_df_method`` lets callers choose
+# ``"engine"`` (default, backwards compatible), ``"facets"`` (primary
+# ZSTD columns use the FACETS values), or ``"both"`` (both conventions
+# carried side-by-side under *_ENGINE / *_FACETS suffix columns).
+
+_FIT_DF_METHOD_CHOICES = ("engine", "facets", "both")
+
+
+def _resolve_fit_df_method(fit_df_method) -> str:
+    """Coerce ``fit_df_method`` to a known token, defaulting to ``"engine"``."""
+    token = str(fit_df_method or "engine").strip().lower()
+    if token in _FIT_DF_METHOD_CHOICES:
+        return token
+    return "engine"
+
+
+def zstd_from_mnsq_facets(mnsq, df, whexact: bool = False, cap: float = 9.0):
+    """FACETS-style ZSTD with explicit cap on extreme values.
+
+    Implements the same Wilson-Hilferty cube-root transformation as
+    ``zstd_from_mnsq`` but with the FACETS convention:
+
+    * ``df > 0`` (rather than ``>= 1``) is accepted because the
+      Wright-Masters Welch-Satterthwaite d.f. can be fractional;
+    * the result is clamped to ``[-cap, +cap]`` (FACETS default 9.0).
+    """
+    if not np.isfinite(mnsq) or not np.isfinite(df) or mnsq <= 0 or df <= 0:
+        return np.nan
+    if whexact:
+        z = (mnsq - 1) * np.sqrt(df / 2)
+    else:
+        z = (mnsq ** (1 / 3) - (1 - 2 / (9 * df))) / np.sqrt(2 / (9 * df))
+    if cap is None or not np.isfinite(cap) or cap <= 0:
+        return float(z)
+    return float(np.clip(z, -float(cap), float(cap)))
+
+
+def _facets_fit_df_terms(var, fourth, weight):
+    """Return the Wright-Masters denominators for the FACETS d.f.
+
+    The denominators are ``sum w * (M4 - sigma^4)`` for Infit and
+    ``sum w * (M4 / sigma^4 - 1)`` for Outfit, evaluated only over
+    observations with strictly positive variance and finite fourth
+    moment. ``weight`` defaults to all-ones if ``None`` is passed.
+    """
+    var = np.asarray(var, dtype=float)
+    fourth = np.asarray(fourth, dtype=float)
+    if weight is None:
+        weight = np.ones_like(var)
+    else:
+        weight = np.asarray(weight, dtype=float)
+    if weight.shape != var.shape:
+        weight = np.broadcast_to(weight, var.shape).astype(float, copy=True)
+    safe_var = np.where(np.isfinite(var) & (var > 1e-12), var, np.nan)
+    valid = (
+        np.isfinite(safe_var)
+        & np.isfinite(fourth)
+        & np.isfinite(weight)
+        & (weight > 0)
+    )
+    denom_infit = float(np.nansum(weight[valid] * (fourth[valid] - safe_var[valid] ** 2)))
+    denom_outfit = float(
+        np.nansum(weight[valid] * (fourth[valid] / (safe_var[valid] ** 2) - 1))
+    )
+    return denom_infit, denom_outfit
+
+
+def _facets_fit_df(sum_var_w: float, sum_w: float, denom_infit: float, denom_outfit: float):
+    """Return ``(DF_Infit_FACETS, DF_Outfit_FACETS)`` from cell totals."""
+    if (
+        np.isfinite(denom_infit)
+        and denom_infit > 1e-12
+        and np.isfinite(sum_var_w)
+        and sum_var_w > 0
+    ):
+        df_infit = 2.0 * (sum_var_w ** 2) / denom_infit
+    else:
+        df_infit = np.nan
+    if (
+        np.isfinite(denom_outfit)
+        and denom_outfit > 1e-12
+        and np.isfinite(sum_w)
+        and sum_w > 0
+    ):
+        df_outfit = 2.0 * (sum_w ** 2) / denom_outfit
+    else:
+        df_outfit = np.nan
+    return float(df_infit), float(df_outfit)
+
+
+def fit_zstd_transform_label(whexact: bool = False) -> str:
+    """Human-readable label for the ZSTD transform used in a report."""
+    return "linear normal approximation" if whexact else "Wilson-Hilferty"
+
+
+def _apply_fit_df_method(
+    tbl: pd.DataFrame,
+    fit_df_method: str = "engine",
+    whexact: bool = False,
+    facets_zstd_cap: float = 9.0,
+) -> pd.DataFrame:
+    """Dispatch a fit table between engine, FACETS, or both d.f. conventions.
+
+    Expects ``tbl`` to carry ``Infit``, ``Outfit``, ``InfitZSTD``,
+    ``OutfitZSTD``, ``DF_Infit``, ``DF_Outfit``, ``DF_Infit_FACETS``,
+    ``DF_Outfit_FACETS``. Returns a frame whose primary columns reflect
+    the requested method:
+
+    * ``"engine"`` (default, backwards compatible): drops every FACETS
+      column and the status fields, leaving the engine values as-is.
+    * ``"facets"``: primary ``InfitZSTD`` / ``OutfitZSTD`` / ``DF_*``
+      become the FACETS values; original engine values are preserved
+      under ``*_ENGINE`` suffix columns; FACETS values also under
+      ``*_FACETS`` for symmetry.
+    * ``"both"``: keeps both ``*_ENGINE`` and ``*_FACETS`` suffix
+      columns; primary columns continue to hold the engine values.
+
+    Adds ``FitDfMethod``, ``FitZSTDTransform``, and ``FitZSTDCap``
+    metadata columns in the non-engine modes so downstream consumers
+    can read the convention off the row.
+    """
+    method = _resolve_fit_df_method(fit_df_method)
+    required = (
+        "Infit", "Outfit", "InfitZSTD", "OutfitZSTD",
+        "DF_Infit", "DF_Outfit", "DF_Infit_FACETS", "DF_Outfit_FACETS",
+    )
+    if not all(c in tbl.columns for c in required):
+        return tbl
+
+    out = tbl.copy()
+    out["DF_Infit_ENGINE"] = out["DF_Infit"]
+    out["DF_Outfit_ENGINE"] = out["DF_Outfit"]
+    out["InfitZSTD_ENGINE"] = out["InfitZSTD"]
+    out["OutfitZSTD_ENGINE"] = out["OutfitZSTD"]
+    out["InfitZSTD_FACETS"] = [
+        zstd_from_mnsq_facets(m, d, whexact=whexact, cap=facets_zstd_cap)
+        for m, d in zip(out["Infit"], out["DF_Infit_FACETS"])
+    ]
+    out["OutfitZSTD_FACETS"] = [
+        zstd_from_mnsq_facets(m, d, whexact=whexact, cap=facets_zstd_cap)
+        for m, d in zip(out["Outfit"], out["DF_Outfit_FACETS"])
+    ]
+
+    if method == "facets":
+        out["DF_Infit"] = out["DF_Infit_FACETS"]
+        out["DF_Outfit"] = out["DF_Outfit_FACETS"]
+        out["InfitZSTD"] = out["InfitZSTD_FACETS"]
+        out["OutfitZSTD"] = out["OutfitZSTD_FACETS"]
+        out["FitDfMethod"] = "facets_wright_masters"
+    elif method == "both":
+        out["FitDfMethod"] = "engine_primary_facets_available"
+    else:  # engine
+        drop_cols = [
+            "DF_Infit_ENGINE", "DF_Outfit_ENGINE",
+            "InfitZSTD_ENGINE", "OutfitZSTD_ENGINE",
+            "DF_Infit_FACETS", "DF_Outfit_FACETS",
+            "InfitZSTD_FACETS", "OutfitZSTD_FACETS",
+        ]
+        return out.drop(columns=[c for c in drop_cols if c in out.columns])
+
+    out["FitZSTDTransform"] = fit_zstd_transform_label(whexact)
+    out["FitZSTDCap"] = (
+        float(facets_zstd_cap)
+        if (facets_zstd_cap is not None and np.isfinite(facets_zstd_cap) and facets_zstd_cap > 0)
+        else np.nan
+    )
+    return out
+
+
 def compute_base_eta(idx, params, config):
     eta = np.zeros_like(idx["score_k"], dtype=float)
     facet_signs = config.get("facet_signs", {})
@@ -6624,12 +6823,19 @@ def compute_obs_table(res):
     var_k = np.where(var_k <= 1e-10, np.nan, var_k)
     resid_k = idx["score_k"] - expected_k
     std_sq = resid_k ** 2 / var_k
+    # E[(X - E[X])^4 | theta_i] for the polytomous model, in closed form:
+    # M4_i = sum_k P_k * (k - E[X])^4. Used by the FACETS / Wright-Masters
+    # Welch-Satterthwaite d.f. for ZSTD reporting (Wright & Masters, 1982,
+    # Eqs. 4.20 and 4.27).
+    diff_k = k_vals[np.newaxis, :] - expected_k[:, np.newaxis]
+    fourth_central_moment = np.sum(probs * (diff_k ** 4), axis=1)
 
     df = prep["data"].copy()
     df["PersonMeasure"] = person_measure_by_row
     df["Observed"] = prep["rating_min"] + idx["score_k"]
     df["Expected"] = prep["rating_min"] + expected_k
     df["Var"] = var_k
+    df["FourthCentralMoment"] = fourth_central_moment
     df["Residual"] = df["Observed"] - df["Expected"]
     df["StdResidual"] = df["Residual"] / np.sqrt(df["Var"])
     df["StdSq"] = std_sq
@@ -7989,32 +8195,81 @@ def get_weights(df):
     return np.ones(len(df), dtype=float)
 
 
-def calc_overall_fit(obs_df, whexact=False):
+def calc_overall_fit(
+    obs_df,
+    whexact: bool = False,
+    fit_df_method: str = "engine",
+    facets_zstd_cap: float = 9.0,
+):
+    """Overall Infit / Outfit mean-square with optional FACETS d.f.
+
+    The primary ``InfitZSTD`` / ``OutfitZSTD`` columns use the engine
+    d.f. convention by default (``sum(Var * w)`` for Infit, ``sum(w)``
+    for Outfit). Pass ``fit_df_method="facets"`` to swap them for the
+    Wright-Masters Welch-Satterthwaite d.f., or ``"both"`` to keep
+    side-by-side ``*_ENGINE`` / ``*_FACETS`` suffix columns. The
+    ``facets_zstd_cap`` argument (default 9.0) bounds the FACETS ZSTD
+    on extreme cells to match the FACETS software convention.
+    """
     w = get_weights(obs_df)
+    var = pd.to_numeric(obs_df["Var"], errors="coerce").to_numpy(dtype=float)
+    fourth = (
+        pd.to_numeric(obs_df.get("FourthCentralMoment"), errors="coerce").to_numpy(dtype=float)
+        if "FourthCentralMoment" in obs_df.columns
+        else np.full(len(obs_df), np.nan)
+    )
     infit = np.nansum(obs_df["StdSq"] * obs_df["Var"] * w) / np.nansum(obs_df["Var"] * w)
     outfit = np.nansum(obs_df["StdSq"] * w) / np.nansum(w)
-    df_infit = np.nansum(obs_df["Var"] * w)
-    df_outfit = np.nansum(w)
-    return pd.DataFrame({
+    df_infit = float(np.nansum(obs_df["Var"] * w))
+    df_outfit = float(np.nansum(w))
+    denom_infit, denom_outfit = _facets_fit_df_terms(var, fourth, w)
+    df_infit_facets, df_outfit_facets = _facets_fit_df(df_infit, df_outfit, denom_infit, denom_outfit)
+    tbl = pd.DataFrame({
         "Infit": [infit],
         "Outfit": [outfit],
         "InfitZSTD": [zstd_from_mnsq(infit, df_infit, whexact=whexact)],
         "OutfitZSTD": [zstd_from_mnsq(outfit, df_outfit, whexact=whexact)],
         "DF_Infit": [df_infit],
         "DF_Outfit": [df_outfit],
+        "DF_Infit_FACETS": [df_infit_facets],
+        "DF_Outfit_FACETS": [df_outfit_facets],
     })
+    return _apply_fit_df_method(
+        tbl,
+        fit_df_method=fit_df_method,
+        whexact=whexact,
+        facets_zstd_cap=facets_zstd_cap,
+    )
 
 
-def calc_facet_fit(obs_df, facet_cols, whexact=False):
+def calc_facet_fit(
+    obs_df,
+    facet_cols,
+    whexact: bool = False,
+    fit_df_method: str = "engine",
+    facets_zstd_cap: float = 9.0,
+):
+    """Per-facet/-level Infit / Outfit mean-square with optional FACETS d.f."""
     rows = []
+    has_fourth = "FourthCentralMoment" in obs_df.columns
     for facet in facet_cols:
         grp = obs_df.groupby(facet, observed=False)
         for level, df in grp:
             w = get_weights(df)
             infit = np.nansum(df["StdSq"] * df["Var"] * w) / np.nansum(df["Var"] * w)
             outfit = np.nansum(df["StdSq"] * w) / np.nansum(w)
-            df_infit = np.nansum(df["Var"] * w)
-            df_outfit = np.nansum(w)
+            df_infit = float(np.nansum(df["Var"] * w))
+            df_outfit = float(np.nansum(w))
+            var = pd.to_numeric(df["Var"], errors="coerce").to_numpy(dtype=float)
+            fourth = (
+                pd.to_numeric(df["FourthCentralMoment"], errors="coerce").to_numpy(dtype=float)
+                if has_fourth
+                else np.full(len(df), np.nan)
+            )
+            denom_infit, denom_outfit = _facets_fit_df_terms(var, fourth, w)
+            df_infit_facets, df_outfit_facets = _facets_fit_df(
+                df_infit, df_outfit, denom_infit, denom_outfit
+            )
             rows.append({
                 "Facet": facet,
                 "Level": level,
@@ -8025,8 +8280,15 @@ def calc_facet_fit(obs_df, facet_cols, whexact=False):
                 "OutfitZSTD": zstd_from_mnsq(outfit, df_outfit, whexact=whexact),
                 "DF_Infit": df_infit,
                 "DF_Outfit": df_outfit,
+                "DF_Infit_FACETS": df_infit_facets,
+                "DF_Outfit_FACETS": df_outfit_facets,
             })
-    return pd.DataFrame(rows)
+    return _apply_fit_df_method(
+        pd.DataFrame(rows),
+        fit_df_method=fit_df_method,
+        whexact=whexact,
+        facets_zstd_cap=facets_zstd_cap,
+    )
 
 
 def calc_facet_se(obs_df, facet_cols):
@@ -11359,11 +11621,25 @@ def mfrm_diagnostics(
     marginal_pairwise=False,
     marginal_max_pair_cells=400,
     compute_eb_shrinkage=False,
+    fit_df_method: str = "engine",
+    facets_zstd_cap: float = 9.0,
 ):
+    fit_df_method = _resolve_fit_df_method(fit_df_method)
     obs_df = compute_obs_table(res)
     facet_cols = ["Person"] + res["config"]["facet_names"]
-    overall_fit = calc_overall_fit(obs_df, whexact=whexact)
-    fit_tbl = calc_facet_fit(obs_df, facet_cols, whexact=whexact)
+    overall_fit = calc_overall_fit(
+        obs_df,
+        whexact=whexact,
+        fit_df_method=fit_df_method,
+        facets_zstd_cap=facets_zstd_cap,
+    )
+    fit_tbl = calc_facet_fit(
+        obs_df,
+        facet_cols,
+        whexact=whexact,
+        fit_df_method=fit_df_method,
+        facets_zstd_cap=facets_zstd_cap,
+    )
     se_tbl = calc_facet_se(obs_df, facet_cols)
     bias_tbl = calc_bias_facet(obs_df, facet_cols)
     interaction_tbl = calc_bias_interactions(obs_df, facet_cols, pairs=interaction_pairs, top_n=top_n_interactions)
@@ -11493,6 +11769,13 @@ def mfrm_diagnostics(
         "marginal_fit_enabled": bool(compute_marginal),
         "eb_shrinkage": shrinkage,
         "eb_shrinkage_enabled": bool(compute_eb_shrinkage),
+        "fit_df_method": fit_df_method,
+        "fit_zstd_transform": fit_zstd_transform_label(whexact),
+        "facets_zstd_cap": (
+            float(facets_zstd_cap)
+            if (facets_zstd_cap is not None and np.isfinite(facets_zstd_cap) and facets_zstd_cap > 0)
+            else None
+        ),
     }
 
 
@@ -22959,6 +23242,233 @@ print(loo_result)
 # Fit Details tab
 # ---------------------------------------------------------------------------
 
+_FIT_DF_METHOD_RADIO_KEYS = {
+    "engine": "fit_details.fit_df_method_option_engine",
+    "facets": "fit_details.fit_df_method_option_facets",
+    "both": "fit_details.fit_df_method_option_both",
+}
+
+
+def _recompute_fit_with_method(
+    diagnostics: dict,
+    method: str,
+    *,
+    whexact: bool = False,
+    facets_zstd_cap: float = 9.0,
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Rebuild the overall and per-facet fit tables under a different
+    d.f. convention without refitting the model.
+
+    Reads ``diagnostics["obs"]`` and rebuilds ``calc_overall_fit`` /
+    ``calc_facet_fit`` with the requested method. Returns the two
+    tables (overall, facet-level). On error or missing obs, returns
+    the originals from ``diagnostics``.
+    """
+    obs = diagnostics.get("obs") if isinstance(diagnostics, dict) else None
+    if not isinstance(obs, pd.DataFrame) or obs.empty:
+        return (
+            diagnostics.get("overall_fit", pd.DataFrame()),
+            diagnostics.get("fit", pd.DataFrame()),
+        )
+    fit_tbl = diagnostics.get("fit", pd.DataFrame())
+    facet_cols = (
+        sorted(fit_tbl["Facet"].astype(str).unique().tolist())
+        if isinstance(fit_tbl, pd.DataFrame) and "Facet" in fit_tbl.columns
+        else []
+    )
+    if not facet_cols:
+        # Fall back to all observation columns minus the diagnostic ones.
+        skip = {
+            "PersonMeasure", "Observed", "Expected", "Var", "FourthCentralMoment",
+            "Residual", "StdResidual", "StdSq", "PrObserved", "ItemEntropy",
+            "ItemVarLogP", "ItemLogPScoreCov", "ScoreInformation",
+            "ObservedScoreDerivative", "Score", "Weight",
+        }
+        facet_cols = [c for c in obs.columns if c not in skip]
+    try:
+        overall = calc_overall_fit(
+            obs,
+            whexact=whexact,
+            fit_df_method=method,
+            facets_zstd_cap=facets_zstd_cap,
+        )
+        per_facet = calc_facet_fit(
+            obs,
+            facet_cols,
+            whexact=whexact,
+            fit_df_method=method,
+            facets_zstd_cap=facets_zstd_cap,
+        )
+    except Exception:
+        return (
+            diagnostics.get("overall_fit", pd.DataFrame()),
+            diagnostics.get("fit", pd.DataFrame()),
+        )
+    return overall, per_facet
+
+
+def render_fit_df_method_controls(
+    diagnostics: dict, *, key_prefix: str = "fit_df_method"
+) -> dict:
+    """Render the ZSTD reporting-convention controls and return the chosen
+    settings.
+
+    The selected method and cap are stored in ``st.session_state`` so
+    repeated reruns of the Fit Details tab do not reset the user's
+    choice. Returns a dict with ``method``, ``cap``, and the updated
+    ``overall_fit`` / ``fit`` tables under the chosen convention.
+    """
+    st.markdown("**" + t("fit_details.fit_df_method_subheader") + "**")
+    st.caption(t("fit_details.fit_df_method_caption"))
+
+    current_method = _resolve_fit_df_method(
+        st.session_state.get(f"{key_prefix}_method", diagnostics.get("fit_df_method", "engine"))
+    )
+    options = list(_FIT_DF_METHOD_CHOICES)
+    option_labels = {opt: t(_FIT_DF_METHOD_RADIO_KEYS[opt]) for opt in options}
+    chosen = st.radio(
+        t("fit_details.fit_df_method_radio_label"),
+        options=options,
+        index=options.index(current_method),
+        format_func=lambda v: option_labels[v],
+        horizontal=True,
+        key=f"{key_prefix}_method",
+    )
+    if chosen != "engine":
+        default_cap = float(diagnostics.get("facets_zstd_cap") or 9.0)
+        cap = float(
+            st.number_input(
+                t("fit_details.fit_df_method_cap_label"),
+                min_value=0.0,
+                max_value=50.0,
+                value=default_cap,
+                step=0.5,
+                help=t("fit_details.fit_df_method_cap_help"),
+                key=f"{key_prefix}_cap",
+            )
+        )
+    else:
+        cap = 9.0
+
+    overall_fit, per_facet_fit = _recompute_fit_with_method(
+        diagnostics, chosen, facets_zstd_cap=cap
+    )
+
+    transform_label = diagnostics.get("fit_zstd_transform") or fit_zstd_transform_label(False)
+    cap_label = "disabled" if (chosen == "engine" or cap <= 0) else f"{cap:.1f}"
+    st.caption(
+        t(
+            "fit_details.fit_df_method_metadata_caption_template",
+            method=option_labels[chosen],
+            transform=transform_label,
+            cap=cap_label,
+        )
+    )
+    return {
+        "method": chosen,
+        "cap": cap,
+        "overall_fit": overall_fit,
+        "fit": per_facet_fit,
+    }
+
+
+def render_facets_fit_table_comparison(
+    fit_df: pd.DataFrame, *, key_prefix: str = "facets_compare"
+) -> None:
+    """Upload a FACETS-side fit table and render a side-by-side comparison.
+
+    Joins on ``(Facet, Level)`` and reports per-row deltas (Python
+    minus uploaded) for ``InfitZSTD`` and ``OutfitZSTD``. The widget
+    is non-blocking: when the user has not uploaded a file, the
+    expander stays empty.
+    """
+    with st.expander(t("fit_details.facets_compare_expander"), expanded=False):
+        st.caption(t("fit_details.facets_compare_intro_caption"))
+        uploaded = st.file_uploader(
+            t("fit_details.facets_compare_upload_label"),
+            type=["csv", "tsv", "txt"],
+            help=t("fit_details.facets_compare_upload_help"),
+            key=f"{key_prefix}_uploader",
+        )
+        if uploaded is None:
+            return
+        try:
+            raw_bytes = uploaded.getvalue() if hasattr(uploaded, "getvalue") else uploaded.read()
+            normalized = normalize_csv_newlines(raw_bytes) if "normalize_csv_newlines" in globals() else raw_bytes
+            from io import BytesIO
+            buf = BytesIO(normalized if isinstance(normalized, bytes) else normalized.encode("utf-8"))
+            try:
+                imported = pd.read_csv(buf)
+            except Exception:
+                buf.seek(0)
+                imported = pd.read_csv(buf, sep="\t")
+        except Exception as exc:
+            st.warning(f"Could not parse uploaded file: {exc}")
+            return
+
+        required = {"Facet", "Level", "InfitZSTD", "OutfitZSTD"}
+        missing = required - set(imported.columns)
+        if missing:
+            st.warning(
+                f"Uploaded table is missing required columns: {', '.join(sorted(missing))}."
+            )
+            return
+
+        py = fit_df.copy()
+        py["Facet"] = py["Facet"].astype(str)
+        py["Level"] = py["Level"].astype(str)
+        imp = imported.copy()
+        imp["Facet"] = imp["Facet"].astype(str)
+        imp["Level"] = imp["Level"].astype(str)
+        merged = py.merge(
+            imp[["Facet", "Level", "InfitZSTD", "OutfitZSTD"]],
+            on=["Facet", "Level"],
+            how="inner",
+            suffixes=("", "_Imported"),
+        )
+        if merged.empty:
+            st.info(t("fit_details.facets_compare_no_overlap_info"))
+            return
+
+        merged["delta_InfitZSTD"] = (
+            pd.to_numeric(merged["InfitZSTD"], errors="coerce")
+            - pd.to_numeric(merged["InfitZSTD_Imported"], errors="coerce")
+        )
+        merged["delta_OutfitZSTD"] = (
+            pd.to_numeric(merged["OutfitZSTD"], errors="coerce")
+            - pd.to_numeric(merged["OutfitZSTD_Imported"], errors="coerce")
+        )
+        n_matched = len(merged)
+        n_python = len(py)
+        med_infit = float(merged["delta_InfitZSTD"].abs().median()) if n_matched else float("nan")
+        med_outfit = float(merged["delta_OutfitZSTD"].abs().median()) if n_matched else float("nan")
+        st.markdown(
+            t(
+                "fit_details.facets_compare_summary_template",
+                n_matched=f"{n_matched:,}",
+                n_python=f"{n_python:,}",
+                med_infit=f"{med_infit:.3f}" if np.isfinite(med_infit) else "n/a",
+                med_outfit=f"{med_outfit:.3f}" if np.isfinite(med_outfit) else "n/a",
+            )
+        )
+
+        view_cols = [
+            "Facet", "Level",
+            "InfitZSTD", "InfitZSTD_Imported", "delta_InfitZSTD",
+            "OutfitZSTD", "OutfitZSTD_Imported", "delta_OutfitZSTD",
+        ]
+        view_cols = [c for c in view_cols if c in merged.columns]
+        st.caption(t("fit_details.facets_compare_table_caption"))
+        st.dataframe(merged[view_cols], width="stretch", hide_index=True)
+        st.download_button(
+            t("fit_details.facets_compare_download_button"),
+            data=to_csv_bytes(merged[view_cols]),
+            file_name="mfrm_fit_facets_comparison.csv",
+            mime="text/csv",
+            key=f"{key_prefix}_download",
+        )
+
+
 def show_fit_details_section(
     diagnostics: dict,
     result: dict | None = None,
@@ -22976,10 +23486,17 @@ def show_fit_details_section(
     # Fit criteria reference (Wright & Linacre, 1994; Linacre, 2002)
     st.markdown(t("fit_details.criteria_table"))
 
+    # FACETS d.f. / ZSTD reporting convention controls. Recomputes the
+    # fit table on-the-fly without re-fitting; the selected method
+    # propagates to every downstream display in this section.
+    fit_df_controls = render_fit_df_method_controls(diagnostics)
+
     # Result-aware fit summary
     _fit_summary_callout(diagnostics.get("measures", pd.DataFrame()))
 
-    fit_df = diagnostics.get("fit")
+    fit_df = fit_df_controls.get("fit")
+    if not isinstance(fit_df, pd.DataFrame) or fit_df.empty:
+        fit_df = diagnostics.get("fit")
     if not isinstance(fit_df, pd.DataFrame) or fit_df.empty:
         measures = diagnostics.get("measures", pd.DataFrame())
         if not measures.empty and "Infit" in measures.columns:
@@ -22989,6 +23506,7 @@ def show_fit_details_section(
             return
 
     st.dataframe(fit_df, width="stretch")
+    render_facets_fit_table_comparison(fit_df)
 
     # Misfit flagging
     _show_misfit_flags(fit_df)

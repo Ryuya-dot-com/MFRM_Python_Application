@@ -226,6 +226,38 @@ All notable changes to this standalone Streamlit distribution should be recorded
     "negligible" threshold cited in Linacre's FACETS Manual. The
     categorical fields (`Profile CI Status`, `InferenceTier`) must
     agree exactly.
+- **FACETS d.f. / ZSTD reporting alignment.** Two d.f. conventions for
+  the standardised Infit / Outfit fit statistic now ship side-by-side.
+  The engine convention (default, backwards compatible) uses
+  ``DF_Infit = sum(Var * w)`` and ``DF_Outfit = sum(w)`` and reports
+  the Wilson-Hilferty (1931) standardised value through
+  ``zstd_from_mnsq``. The new FACETS / Wright-Masters convention
+  (``Wright & Masters, 1982``, Eqs. 4.20 / 4.27) applies a Welch-
+  Satterthwaite d.f. that captures variance heterogeneity through the
+  per-observation fourth central moment
+  ``M4_i = sum_k P_k * (k - E[X | theta])^4``:
+  ``DF_Infit_FACETS = 2 * (sum Var * w)^2 / sum w * (M4 - Var^2)`` and
+  ``DF_Outfit_FACETS = 2 * (sum w)^2 / sum w * (M4 / Var^2 - 1)``.
+  ``compute_obs_table`` now adds a ``FourthCentralMoment`` column;
+  ``calc_overall_fit`` and ``calc_facet_fit`` accept a ``fit_df_method``
+  argument with values ``"engine"``, ``"facets"``, or ``"both"``; and
+  ``zstd_from_mnsq_facets`` applies the FACETS ``+/- 9`` cap (with the
+  cap exposed as a parameter so users can disable it). The Fit Details
+  tab has a three-way radio that switches the on-screen fit table
+  between conventions without re-fitting, plus a metadata caption that
+  names the active method, ZSTD transform, and cap on every render.
+  An Import-FACETS-fit-table expander accepts a CSV/TSV with ``Facet /
+  Level / InfitZSTD / OutfitZSTD`` columns, joins on ``(Facet, Level)``,
+  and renders a per-row delta table (Python minus imported) so users
+  can verify the Python output against an external FACETS run. Math
+  contract pinned in ``tests/test_facets_df_zstd_alignment.py`` (15
+  tests covering the closed-form fourth moment, ``M4 >= Var^2`` bound,
+  Wilson-Hilferty cap behaviour, Welch-Satterthwaite formula, and the
+  three-way dispatch column shape including the engine-only backward-
+  compatibility guarantee). The ``mfrmr_020_migration_coverage_table()``
+  row for "FACETS df / ZSTD reporting alignment" flips from Planned to
+  Ready. References: Wright & Masters (1982); Wilson-Hilferty cube-root
+  transformation as cited in Linacre (2002).
 - **Polytomous person-fit indices: lz (Drasgow et al., 1985) and lz*
   (Snijders, 2001).** A new ``compute_person_fit_indices(res)`` reports
   the standardised polytomous log-likelihood for every fitted person.

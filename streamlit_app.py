@@ -9345,6 +9345,12 @@ def _rater_severity_pair_metrics(
     * ``Rater1HigherProp`` — share of disagreements where R1 was higher
     * ``Rater2HigherProp`` — share of disagreements where R2 was higher
     * ``DirectionN`` — number of disagreement opportunities
+
+    Set ``score_col`` to ``"Residual"`` (or another diagnostic column)
+    to switch the metric from raw-score differences to MFRM-
+    residualized differences; the same identity holds either way
+    because the math depends only on the relative ordering of the
+    two raters' values, not on their absolute scale.
     """
     cols_required = [rater_facet, score_col] + list(context_facets)
     missing = [c for c in cols_required if c not in data.columns]
@@ -9415,6 +9421,7 @@ def compute_rater_severity_network(
     context_facets: list[str] | None = None,
     min_pair_n: int = 1,
     score_diff_tolerance: float = 0.0,
+    score_source: str = "observed",
     include_graph: bool = False,
 ) -> dict:
     """Directed rater severity / leniency network.
@@ -9425,6 +9432,21 @@ def compute_rater_severity_network(
     out-degree (large total ``Rater1HigherProp``) means a rater scores
     higher than their peers more often than not — a leniency signal.
     A high in-degree means the opposite (severity signal).
+
+    ``score_source`` chooses the comparison metric:
+
+    * ``"observed"`` (default) — raw scores; the classic descriptive
+      screen. Useful when the user wants a non-IRT view of who scores
+      higher.
+    * ``"residual"`` — MFRM-corrected ``(Observed - Expected)``
+      residuals from ``compute_obs_table``; controls for person
+      ability and criterion difficulty so the leniency rank reflects
+      systematic rater bias rather than chance encounters with
+      higher- or lower-ability persons. Recommended by Eckes (2011)
+      for severity comparisons. Requires the residuals to be
+      computable from the fit (RSM / PCM / GPCM after a successful
+      run); falls back to ``"observed"`` if residuals are not
+      available.
 
     Returns a bundle with ``available``, ``reason``, ``pair_metrics``,
     ``node_metrics`` (per-rater out-degree, in-degree, mean MAD,
@@ -9465,8 +9487,39 @@ def compute_rater_severity_network(
             rater_facet,
         )
 
+    # Optional residualized metric: replace raw Score with the
+    # MFRM-corrected (Observed - Expected) residuals from
+    # compute_obs_table when ``score_source = "residual"``. Falls back
+    # to raw scores if the residuals cannot be computed.
+    score_source = str(score_source or "observed").strip().lower()
+    effective_score_col = "Score"
+    residual_data = None
+    if score_source == "residual":
+        try:
+            obs_df = compute_obs_table(res)
+            if isinstance(obs_df, pd.DataFrame) and "Residual" in obs_df.columns:
+                residual_data = data.copy()
+                # Length parity: compute_obs_table preserves prep['data']
+                # row ordering, so a positional copy of the Residual
+                # column is correct.
+                if len(obs_df) == len(residual_data):
+                    residual_data["_ResidScore"] = pd.to_numeric(
+                        obs_df["Residual"], errors="coerce"
+                    ).to_numpy()
+                    effective_score_col = "_ResidScore"
+                else:
+                    residual_data = None
+        except Exception:
+            residual_data = None
+    work_data = residual_data if residual_data is not None else data
+    if effective_score_col != "Score" and effective_score_col not in work_data.columns:
+        effective_score_col = "Score"
+        work_data = data
+
     pair_metrics = _rater_severity_pair_metrics(
-        data, rater_facet, context_facets, score_diff_tolerance=score_diff_tolerance,
+        work_data, rater_facet, context_facets,
+        score_col=effective_score_col,
+        score_diff_tolerance=score_diff_tolerance,
     )
     if pair_metrics.empty:
         return _empty_rater_severity_bundle(
@@ -9579,9 +9632,17 @@ def compute_rater_severity_network(
             "context_facets": list(context_facets),
             "min_pair_n": int(min_pair_n),
             "score_diff_tolerance": float(score_diff_tolerance),
+            "score_source": (
+                "residual" if effective_score_col == "_ResidScore" else "observed"
+            ),
             "edge_definition": (
                 "directed edge from rater A to rater B with weight = "
-                "P(A > B | the two raters disagree on a shared context)"
+                "P(A > B | the two raters disagree on a shared context); "
+                "comparisons run on " + (
+                    "MFRM-corrected residuals (Observed - Expected)"
+                    if effective_score_col == "_ResidScore"
+                    else "raw observed scores"
+                )
             ),
         },
     }
@@ -9663,23 +9724,44 @@ def _halo_node_score_matrix(
     return wide, node_tbl
 
 
-def _spearman_correlation_safe(x: np.ndarray, y: np.ndarray) -> tuple[float, float]:
-    """Return (rho, p-value) for the Spearman correlation, NaN on failure.
+def _halo_correlation_safe(
+    x: np.ndarray, y: np.ndarray, method: str = "spearman"
+) -> tuple[float, float]:
+    """Return (rho, p-value) for the requested correlation, NaN on failure.
 
-    Uses scipy when available; falls back to a numpy implementation that
-    ranks the inputs and computes the Pearson correlation of the ranks
-    (which equals Spearman's rho). The p-value comes from a t-distribution
-    approximation under H0: rho = 0, df = n - 2.
+    ``method`` is one of ``"spearman"`` (default, rank-based; robust to
+    non-linearity in score profiles), ``"pearson"`` (linear correlation
+    on raw scores; matches the L2-norm interpretation of halo), or
+    ``"kendall"`` (rank-based tau; more conservative for small N and
+    ties). All three flavours use ``scipy.stats``; NaN is returned on
+    any failure (e.g. constant series, NaN inputs).
     """
+    method = str(method or "spearman").strip().lower()
+    if method not in {"spearman", "pearson", "kendall"}:
+        return np.nan, np.nan
     try:
-        from scipy.stats import spearmanr
-        with np.errstate(all="ignore"):
-            res = spearmanr(x, y, nan_policy="omit")
+        if method == "spearman":
+            from scipy.stats import spearmanr
+            with np.errstate(all="ignore"):
+                res = spearmanr(x, y, nan_policy="omit")
+        elif method == "pearson":
+            from scipy.stats import pearsonr
+            with np.errstate(all="ignore"):
+                res = pearsonr(x, y)
+        else:  # kendall
+            from scipy.stats import kendalltau
+            with np.errstate(all="ignore"):
+                res = kendalltau(x, y, nan_policy="omit")
         rho = float(res.statistic) if hasattr(res, "statistic") else float(res[0])
         pval = float(res.pvalue) if hasattr(res, "pvalue") else float(res[1])
         return rho, pval
     except Exception:
         return np.nan, np.nan
+
+
+def _spearman_correlation_safe(x: np.ndarray, y: np.ndarray) -> tuple[float, float]:
+    """Backwards-compatible alias for the Spearman-only flavour."""
+    return _halo_correlation_safe(x, y, method="spearman")
 
 
 def _bonferroni_adjust(pvals: np.ndarray) -> np.ndarray:
@@ -9700,6 +9782,7 @@ def compute_rater_halo_network(
     rater_facet: str | None = None,
     criterion_facet: str | None = None,
     context_facets: list[str] | None = None,
+    method: str = "spearman",
     min_pair_n: int = 5,
     alpha: float = 0.05,
     min_abs_weight: float = 0.0,
@@ -9781,8 +9864,10 @@ def compute_rater_halo_network(
         if n < int(min_pair_n):
             rho, pval = np.nan, np.nan
         else:
-            rho, pval = _spearman_correlation_safe(
-                sub[a].to_numpy(dtype=float), sub[b].to_numpy(dtype=float)
+            rho, pval = _halo_correlation_safe(
+                sub[a].to_numpy(dtype=float),
+                sub[b].to_numpy(dtype=float),
+                method=method,
             )
         rater_a = node_tbl.loc[node_tbl["Node"] == a, "Rater"].iloc[0]
         crit_a = node_tbl.loc[node_tbl["Node"] == a, "Criterion"].iloc[0]
@@ -9978,7 +10063,7 @@ def compute_rater_halo_network(
             "rater_facet": rater_facet,
             "criterion_facet": criterion_facet,
             "context_facets": list(context_facets),
-            "method": "spearman",
+            "method": str(method or "spearman").lower(),
             "min_pair_n": int(min_pair_n),
             "alpha": float(alpha),
             "p_adjust": "bonferroni",
@@ -10080,7 +10165,22 @@ def _crossed_anova_variance_components(
         ss_facet = float(np.sum(ns.to_numpy() * (means.to_numpy() - grand_mean) ** 2))
         df_facet = k - 1
         ms_facet = ss_facet / df_facet if df_facet > 0 else np.nan
-        mean_obs_per_level = float(n_obs / k)
+        # Harmonic-mean observations per level. Under a balanced design
+        # this equals n_obs / k exactly. Under unbalanced designs it
+        # gives the correct unbiased denominator for the random-effects
+        # method-of-moments estimator
+        # ``sigma2_facet = (MS_facet - MS_residual) / m_per_level``;
+        # cf. Searle, Casella, & McCulloch (1992, Section 3.4) for the
+        # Henderson III formulation. The harmonic mean prevents the
+        # estimator from being biased upward when one level has many
+        # observations and others have few.
+        ns_arr = ns.to_numpy(dtype=float)
+        ns_valid = ns_arr[ns_arr > 0]
+        if ns_valid.size > 0 and np.all(ns_valid > 0):
+            harmonic_mean_n = float(ns_valid.size / np.sum(1.0 / ns_valid))
+        else:
+            harmonic_mean_n = float(n_obs / max(k, 1))
+        mean_obs_per_level = harmonic_mean_n
         explained_ss += ss_facet
         rows.append({
             "Source": facet,

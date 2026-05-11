@@ -311,3 +311,78 @@ def test_halo_node_count_equals_rater_times_criterion(halo_patterned_fit):
     out = app.compute_rater_halo_network(halo_patterned_fit, min_pair_n=10)
     nodes = out["node_metrics"]
     assert len(nodes) == 3 * 4  # n_rater x n_criterion in the fixture
+
+
+# -----------------------------------------------------------------------------
+# Correlation method dispatch: Pearson / Kendall / Spearman
+# -----------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("method", ["spearman", "pearson", "kendall"])
+def test_halo_supports_pearson_spearman_kendall(halo_patterned_fit, method):
+    """All three correlation methods must produce a bundle with a
+    populated settings.method field and retain edges on halo-patterned
+    data (the correlation flavour changes the exact values, but a
+    deliberately halo-patterned design fires retention under any of
+    the three rank- or moment-based families)."""
+    out = app.compute_rater_halo_network(
+        halo_patterned_fit, method=method, min_pair_n=10, alpha=0.05,
+    )
+    assert out["available"] is True
+    assert out["settings"]["method"] == method
+    assert int(out["summary"].iloc[0]["RetainedEdges"]) > 0
+
+
+def test_halo_unknown_method_returns_nan_correlations(halo_patterned_fit):
+    """An unsupported method label produces NaN correlations rather than
+    raising; the bundle stays well-formed."""
+    out = app.compute_rater_halo_network(
+        halo_patterned_fit, method="bogus", min_pair_n=10,
+    )
+    assert out["available"] is True
+    pair_estimates = pd.to_numeric(out["pair_metrics"]["Estimate"], errors="coerce")
+    assert pair_estimates.isna().all()
+
+
+# -----------------------------------------------------------------------------
+# Rater severity score_source: residual vs observed
+# -----------------------------------------------------------------------------
+
+
+def test_rater_severity_residual_mode_runs_on_clean_fit(graded_severity_fit):
+    """The MFRM-residualized mode must run without error and surface
+    its mode in the settings field; the SeverityRank may differ
+    slightly from the observed-mode rank when raters happen to
+    encounter different ability distributions."""
+    out_obs = app.compute_rater_severity_network(
+        graded_severity_fit, score_source="observed",
+    )
+    out_res = app.compute_rater_severity_network(
+        graded_severity_fit, score_source="residual",
+    )
+    assert out_obs["available"] is True
+    assert out_res["available"] is True
+    assert out_obs["settings"]["score_source"] == "observed"
+    assert out_res["settings"]["score_source"] == "residual"
+    # Each rater still appears in both rankings.
+    assert set(out_obs["node_metrics"]["Rater"]) == set(out_res["node_metrics"]["Rater"])
+
+
+def test_rater_severity_higher_prop_identity_holds_under_residual(graded_severity_fit):
+    """The closed-form Rater1HigherProp + Rater2HigherProp = 1 identity
+    must continue to hold when comparisons run on residuals instead of
+    raw scores; the math depends on the relative ordering, not the
+    absolute scale."""
+    out = app.compute_rater_severity_network(
+        graded_severity_fit, score_source="residual",
+    )
+    pairs = out["pair_metrics"]
+    pairs_with_dir = pairs[pairs["DirectionN"] > 0]
+    if pairs_with_dir.empty:
+        pytest.skip("No directional disagreement on residual scale.")
+    sums = (
+        pd.to_numeric(pairs_with_dir["Rater1HigherProp"], errors="coerce")
+        + pd.to_numeric(pairs_with_dir["Rater2HigherProp"], errors="coerce")
+    )
+    for v in sums:
+        assert v == pytest.approx(1.0, abs=1e-12)

@@ -230,6 +230,26 @@ def test_design_block_round_trips_observed_design(crossed_rating_fit):
 # -----------------------------------------------------------------------------
 
 
+def test_mean_obs_per_level_equals_n_total_over_levels_on_balanced(
+    crossed_rating_fit,
+):
+    """For a balanced design the harmonic mean of per-level observation
+    counts equals ``n_obs / n_levels`` exactly (every level has the
+    same count, so the harmonic mean is the level count). Pins the
+    refinement to the canonical balanced-design formula."""
+    out = app.compute_generalizability_study(crossed_rating_fit)
+    var = out["variance_components"]
+    n_obs = int(out["design"]["n_observations"])
+    for _, row in var.iterrows():
+        if row["Source"] == "Residual":
+            continue
+        # 40 persons x 3 raters x 4 criteria = 480 observations
+        # Levels = {Person: 40, Rater: 3, Criterion: 4}
+        # mean_obs_per_level = 480 / 40 = 12 (Person), 480 / 3 = 160 (Rater), 480 / 4 = 120 (Criterion)
+        expected = float(n_obs / int(row["Levels"]))
+        assert float(row["MeanObsPerLevel"]) == pytest.approx(expected, abs=1e-9)
+
+
 def test_g_phi_remain_in_unit_interval(crossed_rating_fit):
     """Variance components are clamped at zero so G and Phi always lie
     in [0, 1] in the math layer (subject to numerical noise)."""

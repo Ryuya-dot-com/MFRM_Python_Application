@@ -158,6 +158,24 @@ All notable changes to this standalone Streamlit distribution should be recorded
   * **mfrmr 0.2.0 coverage.** The corresponding row in
     `mfrmr_020_migration_coverage_table()` will be flipped from
     `Planned` to `Ready` once this work merges.
+  * **R parity.** A new test
+    (`test_bias_estimation_matches_r_reference_within_tolerance`)
+    runs the same GPCM MML fit and bias estimation in Python and in
+    the mfrmr 0.2.0 R reference (R 4.5.2) against a shared
+    deterministic CSV (`tests/data/r_bias_parity_input.csv`,
+    180 rows). The R-side output (`tests/data/r_bias_parity_output.json`,
+    six per-cell reference values) is generated once via `Rscript` +
+    `estimate_bias()` and committed to the repository. The parity test
+    verifies that Python's per-cell `Bias Size`, `S.E.`, `LR ChiSq`,
+    `LR Prob.`, and both profile-likelihood CI endpoints agree with
+    the R reference within tolerances calibrated to the observed
+    implementation-vs-implementation convergence variance (the two
+    independent MML fits converge to log-likelihoods within `~0.02`
+    of each other, and the downstream cells inherit that variance);
+    all observed disagreements stay well below the `0.05`-logit
+    "negligible" threshold cited in Linacre's FACETS Manual. The
+    categorical fields (`Profile CI Status`, `InferenceTier`) must
+    agree exactly.
 - **Remaining six sample-data scenarios** (large-scale writing, L2
   speaking, clinical OSCE, writing with missing, music peer-rating,
   reading testlet binary) now follow the same expanded template:

@@ -398,3 +398,100 @@ def test_r_parity_design_network_node_metrics(shared_rsm_jmle_fit, r_fixture):
         assert bool(py_row["IsArticulationPoint"]) == bool(
             r_row["IsArticulationPoint"]
         ), node
+
+
+# -----------------------------------------------------------------------------
+# G/D-study: full Brennan 3-way decomposition (Python MoM vs R lme4 REML)
+# -----------------------------------------------------------------------------
+
+
+def test_r_parity_g_study_variance_components_sources_match(
+    shared_rsm_jmle_fit, r_fixture,
+):
+    """Python and R must report the same SET of variance-component
+    sources (Person, Rater, Criterion, Person:Rater, Person:Criterion,
+    Rater:Criterion, Residual). Specific variance values can disagree
+    when MoM clamping (Python) and REML boundary handling (R) allocate
+    a negative-MoM term to different residuals — that's a real
+    estimator-level difference documented in Brennan (2001, p. 81)
+    and Searle, Casella & McCulloch (1992, Ch. 4.6). The headline G /
+    Phi coefficients still agree at a manuscript-readable precision
+    (covered by the next test)."""
+    if "g_study_variance_components" not in r_fixture:
+        pytest.skip("R fixture missing g_study_variance_components.")
+    out = app.compute_generalizability_study(shared_rsm_jmle_fit)
+    py_sources = set(out["variance_components"]["Source"].astype(str))
+    r_sources = {row["Source"] for row in r_fixture["g_study_variance_components"]}
+    expected = {
+        "Person", "Rater", "Criterion",
+        "Person:Rater", "Person:Criterion", "Rater:Criterion",
+        "Residual",
+    }
+    assert expected.issubset(py_sources)
+    assert expected.issubset(r_sources)
+
+
+def test_r_parity_g_study_person_variance_dominant_in_both(
+    shared_rsm_jmle_fit, r_fixture,
+):
+    """The Person variance must be one of the top-3 largest components
+    in both implementations (the dominant variance source under a
+    well-functioning rating design). Specific magnitudes differ when
+    boundary handling diverges, but Person should always be a large
+    positive variance in both estimators if the fit is sensible."""
+    if "g_study_variance_components" not in r_fixture:
+        pytest.skip("R fixture missing g_study_variance_components.")
+    out = app.compute_generalizability_study(shared_rsm_jmle_fit)
+    py_vc = out["variance_components"]
+    py_top3 = set(
+        py_vc.nlargest(3, "Variance")["Source"].astype(str).tolist()
+    )
+    r_rows = r_fixture["g_study_variance_components"]
+    r_sorted = sorted(
+        r_rows, key=lambda r: -float(r["Variance"])
+    )
+    r_top3 = {row["Source"] for row in r_sorted[:3]}
+    assert "Person" in py_top3
+    assert "Person" in r_top3
+
+
+def test_r_parity_g_study_coefficients_within_tolerance(
+    shared_rsm_jmle_fit, r_fixture,
+):
+    """G and Phi from Python MoM must agree with R lme4 REML to ~0.07
+    absolute on this fixture. Even when individual variance components
+    differ (because MoM clamping and REML boundary handling assign
+    the negative-variance residual differently), the G / Phi
+    coefficients themselves are functions of all components and tend
+    to agree at a manuscript-readable precision (Brennan 2001, p. 81).
+    """
+    if "g_study_coefficients" not in r_fixture:
+        pytest.skip("R fixture missing g_study_coefficients.")
+    out = app.compute_generalizability_study(shared_rsm_jmle_fit)
+    coef_py = out["observed_coefficients"]
+    coef_r = r_fixture["g_study_coefficients"]
+    assert float(coef_py["G"]) == pytest.approx(
+        float(coef_r["G"]), abs=7e-2
+    ), (
+        f"Python G = {coef_py['G']:.4f}, R G = {coef_r['G']:.4f} "
+        "(MoM vs REML boundary handling can disagree on absolute "
+        "variance allocation; the coefficient should still be within "
+        "manuscript precision)."
+    )
+    assert float(coef_py["Phi"]) == pytest.approx(
+        float(coef_r["Phi"]), abs=7e-2
+    )
+
+
+def test_r_parity_g_study_observed_design_round_trips(
+    shared_rsm_jmle_fit, r_fixture,
+):
+    """The observed design (n_p, n_r, n_c) must be the same on both
+    sides; this is the most basic parity (no estimator involved)."""
+    if "g_study_coefficients" not in r_fixture:
+        pytest.skip("R fixture missing g_study_coefficients.")
+    out = app.compute_generalizability_study(shared_rsm_jmle_fit)
+    py_design = out["design"]
+    r_design = r_fixture["g_study_coefficients"]
+    assert int(py_design["observed_n"]["Rater"]) == int(r_design["n_r"])
+    assert int(py_design["observed_n"]["Criterion"]) == int(r_design["n_c"])

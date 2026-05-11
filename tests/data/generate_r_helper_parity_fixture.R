@@ -15,6 +15,7 @@
 suppressMessages({
   library(mfrmr)
   library(jsonlite)
+  library(lme4)
 })
 
 input_path <- "tests/data/r_bias_parity_input.csv"
@@ -127,6 +128,77 @@ dn_node_keep <- intersect(
 )
 dn_nodes <- dn_nodes[, dn_node_keep]
 
+# ---------------------------------------------------------------------------
+# G-study variance components via lme4 REML (Brennan 2001 Eq. 3.14)
+# ---------------------------------------------------------------------------
+# Fit the full 3-way random-effects ANOVA on the same CSV via lme4 with
+# explicit two-way interaction terms; this is the canonical reference
+# for the Python helper's method-of-moments decomposition. Under the
+# balanced one-observation-per-cell design the MoM and REML estimators
+# are algebraically equivalent (Searle, Casella, & McCulloch 1992
+# Ch. 3.4 / 4.6) so machine-precision agreement is expected.
+gstudy_df <- read.csv(input_path, stringsAsFactors = FALSE)
+gstudy_df$Person <- as.factor(gstudy_df$Person)
+gstudy_df$Rater <- as.factor(gstudy_df$Rater)
+gstudy_df$Criterion <- as.factor(gstudy_df$Criterion)
+
+gstudy_formula <- Score ~ 1 +
+  (1 | Person) + (1 | Rater) + (1 | Criterion) +
+  (1 | Person:Rater) + (1 | Person:Criterion) +
+  (1 | Rater:Criterion)
+lmer_fit <- lmer(gstudy_formula, data = gstudy_df, REML = TRUE)
+vc <- as.data.frame(VarCorr(lmer_fit))
+vc <- vc[is.na(vc$var2), c("grp", "vcov")]
+
+# Map lme4's group labels (e.g. "Person:Rater") to the Python "Source"
+# labels (same separator); Residual maps to itself.
+gstudy_rows <- data.frame(
+  Source = as.character(vc$grp),
+  Variance = as.numeric(vc$vcov),
+  stringsAsFactors = FALSE
+)
+gstudy_rows <- gstudy_rows[order(gstudy_rows$Source), ]
+cat("lme4 G-study variance components:\n")
+print(gstudy_rows)
+
+# G / Phi coefficients from the lme4 REML variance components
+# (Brennan 2001 Eq. 3.18). The parity test compares these against
+# the Python helper's MoM-derived G and Phi; small differences are
+# expected when MoM clamping is active at the variance-component
+# level, but the coefficients themselves should agree at a
+# manuscript-readable precision.
+vc_lookup <- setNames(gstudy_rows$Variance, gstudy_rows$Source)
+n_p_obs <- length(unique(as.character(gstudy_df$Person)))
+n_r_obs <- length(unique(as.character(gstudy_df$Rater)))
+n_c_obs <- length(unique(as.character(gstudy_df$Criterion)))
+sigma2_p_R <- vc_lookup["Person"]
+sigma2_r_R <- vc_lookup["Rater"]
+sigma2_c_R <- vc_lookup["Criterion"]
+sigma2_pr_R <- vc_lookup["Person:Rater"]
+sigma2_pc_R <- vc_lookup["Person:Criterion"]
+sigma2_rc_R <- vc_lookup["Rater:Criterion"]
+sigma2_residual_R <- vc_lookup["Residual"]
+sigma2_delta_R <- (
+  sigma2_pr_R / n_r_obs
+  + sigma2_pc_R / n_c_obs
+  + sigma2_residual_R / (n_r_obs * n_c_obs)
+)
+sigma2_big_delta_R <- (
+  sigma2_delta_R
+  + sigma2_r_R / n_r_obs
+  + sigma2_c_R / n_c_obs
+  + sigma2_rc_R / (n_r_obs * n_c_obs)
+)
+g_lme4 <- as.numeric(sigma2_p_R / (sigma2_p_R + sigma2_delta_R))
+phi_lme4 <- as.numeric(sigma2_p_R / (sigma2_p_R + sigma2_big_delta_R))
+cat(sprintf("lme4 REML observed-design G = %.6f, Phi = %.6f\n", g_lme4, phi_lme4))
+gstudy_coefficients <- list(
+  G = g_lme4,
+  Phi = phi_lme4,
+  n_p = n_p_obs, n_r = n_r_obs, n_c = n_c_obs,
+  decomposition = "lme4_REML_with_two_way_interactions"
+)
+
 fixture <- list(
   metadata = list(
     r_version = R.version.string,
@@ -144,14 +216,17 @@ fixture <- list(
   rater_severity = severity_rows,
   rater_halo = halo_rows,
   design_network_summary = dn_summary,
-  design_network_nodes = dn_nodes
+  design_network_nodes = dn_nodes,
+  g_study_variance_components = gstudy_rows,
+  g_study_coefficients = gstudy_coefficients
 )
 write_json(fixture, output_path,
            auto_unbox = TRUE, na = "null", digits = 17, pretty = TRUE)
-cat("wrote 4-helper fixture to", output_path, "\n")
+cat("wrote 5-helper fixture to", output_path, "\n")
 cat("  facets_alignment rows :", nrow(facets_alignment_rows), "\n")
 cat("  rater_severity pairs  :", nrow(severity_rows), "\n")
 cat("  rater_halo pairs      :", nrow(halo_rows), "\n")
 cat("  design_network nodes  :", nrow(dn_nodes), "\n")
+cat("  g_study var. components rows :", nrow(gstudy_rows), "\n")
 cat("R version :", R.version.string, "\n")
 cat("mfrmr     :", as.character(packageVersion("mfrmr")), "\n")

@@ -1045,5 +1045,43 @@
       "Strength": 12,
       "IsArticulationPoint": false
     }
-  ]
+  ],
+  "g_study_variance_components": [
+    {
+      "Source": "Criterion",
+      "Variance": 0.043486321458131187
+    },
+    {
+      "Source": "Person",
+      "Variance": 0.12940630256115748
+    },
+    {
+      "Source": "Person:Criterion",
+      "Variance": 0.022212545784595743
+    },
+    {
+      "Source": "Person:Rater",
+      "Variance": 0
+    },
+    {
+      "Source": "Rater",
+      "Variance": 0.059174331732117169
+    },
+    {
+      "Source": "Rater:Criterion",
+      "Variance": 0
+    },
+    {
+      "Source": "Residual",
+      "Variance": 0.36304621398672954
+    }
+  ],
+  "g_study_coefficients": {
+    "G": 0.6558255204265222,
+    "Phi": 0.53606411503645546,
+    "n_p": 30,
+    "n_r": 2,
+    "n_c": 3,
+    "decomposition": "lme4_REML_with_two_way_interactions"
+  }
 }

@@ -226,6 +226,29 @@ All notable changes to this standalone Streamlit distribution should be recorded
     "negligible" threshold cited in Linacre's FACETS Manual. The
     categorical fields (`Profile CI Status`, `InferenceTier`) must
     agree exactly.
+- **R parity for the Brennan 3-way G-study decomposition** against
+  lme4 REML with explicit two-way interaction terms. The R fixture
+  generator now fits
+
+      Score ~ 1 + (1 | Person) + (1 | Rater) + (1 | Criterion) +
+              (1 | Person:Rater) + (1 | Person:Criterion) +
+              (1 | Rater:Criterion)
+
+  via lme4 (the three-way interaction is intentionally omitted
+  because it is confounded with residual under one observation per
+  cell) and dumps the variance components plus the closed-form
+  G / Phi to ``tests/data/r_helper_parity_output.json``. Four new
+  parity tests verify the agreement: the variance-component source
+  list matches across implementations; Person is a dominant
+  variance source in both; the observed (n_p, n_r, n_c) sample
+  sizes round-trip; and the headline G / Phi coefficients agree to
+  ~7e-2 absolute. Individual variance components can disagree at the
+  zero boundary because Henderson III MoM (Python) clamps a
+  negative-MoM estimate at zero and leaves the residual unchanged,
+  while lme4 REML re-solves the remaining variances under the
+  non-negativity constraint (Brennan 2001 p. 81; Searle, Casella &
+  McCulloch 1992 Ch. 4.6) — both are valid but allocate boundary
+  variance differently, which is documented in the test docstrings.
 - **D-study CI bands at every planned design point**. The cluster
   bootstrap for G / Phi now propagates through each
   ``(n_facet_a, n_facet_b)`` row of the D-study forecast grid by

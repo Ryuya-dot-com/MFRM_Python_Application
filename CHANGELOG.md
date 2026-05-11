@@ -226,6 +226,18 @@ All notable changes to this standalone Streamlit distribution should be recorded
     "negligible" threshold cited in Linacre's FACETS Manual. The
     categorical fields (`Profile CI Status`, `InferenceTier`) must
     agree exactly.
+- **Akaike / Schwarz / AICc weights in model-choice guidance** (Burnham
+  & Anderson, 2002, Eq. 2.8). Each model-choice comparison row now
+  also carries an ``AICWeight``, ``AICcWeight``, and ``BICWeight``
+  column. The weights are computed as ``w_i = exp(-DeltaIC_i / 2) /
+  sum_j exp(-DeltaIC_j / 2)`` and admit a probability interpretation:
+  ``w_i`` is the relative likelihood that model ``i`` is the
+  Kullback-Leibler best of the candidate set (Burnham & Anderson,
+  2002, Section 2.9). The weights sum to 1 over the finite-DeltaIC
+  rows by construction; manuscripts that quote a "best model
+  probability" can read it directly off the table. Math contract
+  pinned in ``tests/test_model_choice_guidance.py`` (sum-to-one,
+  closed-form match, best-row carries the largest weight).
 - **AICc finite-sample correction in model-choice guidance** (Hurvich &
   Tsai, 1989, Eq. 1). Each model-choice comparison row now carries
   ``AICc = AIC + 2 K (K + 1) / (N - K - 1)`` alongside the existing AIC

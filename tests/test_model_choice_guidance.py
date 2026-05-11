@@ -270,11 +270,68 @@ def test_model_choice_comparison_column_order_is_stable(
     expected = [
         "Model", "FitStatus", "N", "KParams", "N_over_K", "AICcRecommended",
         "LogLik",
-        "AIC", "DeltaAIC", "AICEvidenceRatio",
-        "AICc", "DeltaAICc", "AICcEvidenceRatio",
-        "BIC", "DeltaBIC", "BICEvidenceRatio",
+        "AIC", "DeltaAIC", "AICEvidenceRatio", "AICWeight",
+        "AICc", "DeltaAICc", "AICcEvidenceRatio", "AICcWeight",
+        "BIC", "DeltaBIC", "BICEvidenceRatio", "BICWeight",
     ]
     assert list(out["comparison"].columns) == expected
+
+
+def test_model_choice_information_weights_sum_to_one(rsm_fit_for_model_choice):
+    """Akaike / Schwarz weights sum to 1 over the finite-DeltaIC rows
+    (Burnham & Anderson 2002, Eq. 2.8)."""
+    out = app.compute_model_choice_comparison(rsm_fit_for_model_choice)
+    comp = out["comparison"]
+    for col in ["AICWeight", "AICcWeight", "BICWeight"]:
+        weights = pd.to_numeric(comp[col], errors="coerce").dropna()
+        if weights.empty:
+            continue
+        assert float(weights.sum()) == pytest.approx(1.0, abs=1e-12), col
+
+
+def test_model_choice_information_weights_match_closed_form(
+    rsm_fit_for_model_choice,
+):
+    """w_i = exp(-DeltaIC_i / 2) / sum_j exp(-DeltaIC_j / 2)
+    (Burnham & Anderson 2002, Eq. 2.8). Pin to machine precision."""
+    out = app.compute_model_choice_comparison(rsm_fit_for_model_choice)
+    comp = out["comparison"]
+    for delta_col, weight_col in [
+        ("DeltaAIC", "AICWeight"),
+        ("DeltaAICc", "AICcWeight"),
+        ("DeltaBIC", "BICWeight"),
+    ]:
+        deltas = pd.to_numeric(comp[delta_col], errors="coerce")
+        weights = pd.to_numeric(comp[weight_col], errors="coerce")
+        finite = deltas.notna()
+        if not finite.any():
+            continue
+        rel = np.exp(-deltas[finite].to_numpy() / 2.0)
+        expected = rel / rel.sum()
+        actual = weights[finite].to_numpy()
+        assert np.allclose(actual, expected, atol=1e-12), (
+            f"Weight mismatch for {weight_col}: actual={actual}, expected={expected}"
+        )
+
+
+def test_model_choice_best_model_carries_largest_weight(rsm_fit_for_model_choice):
+    """The row with DeltaIC = 0 must also have the largest weight
+    (the weight is a monotone-decreasing function of DeltaIC)."""
+    out = app.compute_model_choice_comparison(rsm_fit_for_model_choice)
+    comp = out["comparison"]
+    for delta_col, weight_col in [
+        ("DeltaAIC", "AICWeight"),
+        ("DeltaAICc", "AICcWeight"),
+        ("DeltaBIC", "BICWeight"),
+    ]:
+        finite = comp.dropna(subset=[delta_col, weight_col])
+        if finite.empty:
+            continue
+        best_idx = finite[delta_col].idxmin()
+        best_weight = float(finite.loc[best_idx, weight_col])
+        assert best_weight == pytest.approx(
+            float(finite[weight_col].max()), abs=1e-12
+        )
 
 
 def test_model_choice_fit_times_keyed_by_model_and_current_is_zero(

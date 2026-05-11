@@ -469,7 +469,7 @@
     "model_choice_run_button": "Run model-choice comparison",
     "model_choice_run_button_help": "Refits the two non-current models on the same data; the refit time is logged in the fit_times column of the bundle. Cached in session state once computed.",
     "model_choice_running_spinner": "Refitting candidate models...",
-    "model_choice_comparison_table_caption": "DeltaAIC / DeltaAICc / DeltaBIC are measured relative to the row with the lowest IC; the EvidenceRatio columns are the Akaike / Schwarz evidence ratios exp(DeltaIC / 2). AICc is the Hurvich & Tsai (1989) finite-sample correction; AICcRecommended fires when N / K < 40 (Burnham & Anderson, 2002, p. 66).",
+    "model_choice_comparison_table_caption": "DeltaAIC / DeltaAICc / DeltaBIC are measured relative to the row with the lowest IC; the EvidenceRatio columns are the Akaike / Schwarz evidence ratios exp(DeltaIC / 2); the Weight columns are the Akaike weights w_i = exp(-DeltaIC_i / 2) / sum_j exp(-DeltaIC_j / 2) (Burnham & Anderson, 2002, Eq. 2.8) that admit a probability interpretation (the relative likelihood that the row is the KL-best model). AICc is the Hurvich & Tsai (1989) finite-sample correction; AICcRecommended fires when N / K < 40 (Burnham & Anderson, 2002, p. 66).",
     "model_choice_lr_subheader": "Nested LR tests (Wilks, 1938)",
     "model_choice_lr_caption": "Each row tests whether the alternative model fits significantly better than the null model under the same data. Decision uses the LR chi-square pivotal at alpha = 0.05.",
     "model_choice_lr_no_pairs_info": "No nested pair could be compared (need both fits to succeed).",

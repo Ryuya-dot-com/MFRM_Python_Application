@@ -5147,6 +5147,40 @@ def _model_choice_evidence_ratio(delta_ic: float) -> float:
         return float("inf")
 
 
+def _model_choice_information_weights(delta_ic_series: pd.Series) -> pd.Series:
+    """Akaike / Schwarz / AICc weights from a DeltaIC column.
+
+    For a set of models indexed by ``i`` with DeltaIC values d_i,
+    the information weight is
+
+        w_i = exp(-d_i / 2) / sum_j exp(-d_j / 2)
+
+    (Burnham & Anderson, 2002, Eq. 2.8). The weights sum to 1
+    across the finite-DeltaIC rows and admit a probability
+    interpretation: w_i is the relative likelihood that model i is
+    the Kullback-Leibler best of the candidate set. Non-finite
+    DeltaIC entries map to ``NaN``.
+    """
+    arr = pd.to_numeric(delta_ic_series, errors="coerce").to_numpy(dtype=float)
+    out = np.full_like(arr, np.nan)
+    finite = np.isfinite(arr)
+    if not finite.any():
+        return pd.Series(out, index=delta_ic_series.index)
+    # Subtract the minimum to keep exp() within range and avoid
+    # underflow at the high-DeltaIC tail (DeltaIC values are already
+    # non-negative when computed relative to the minimum, but defensive
+    # subtraction guards against numerical drift).
+    centred = arr.copy()
+    centred[finite] = centred[finite] - float(np.min(centred[finite]))
+    relative = np.zeros_like(arr)
+    relative[finite] = np.exp(-centred[finite] / 2.0)
+    total = float(np.sum(relative[finite]))
+    if total <= 0 or not np.isfinite(total):
+        return pd.Series(out, index=delta_ic_series.index)
+    out[finite] = relative[finite] / total
+    return pd.Series(out, index=delta_ic_series.index)
+
+
 def _model_choice_recommend(comparison: pd.DataFrame) -> dict:
     """Return ``{"model", "tier", "rationale"}`` from the comparison table.
 
@@ -5372,25 +5406,31 @@ def compute_model_choice_comparison(res: dict) -> dict:
         min_aic = float(comparison["AIC"].min(skipna=True))
         comparison["DeltaAIC"] = comparison["AIC"] - min_aic
         comparison["AICEvidenceRatio"] = comparison["DeltaAIC"].apply(_model_choice_evidence_ratio)
+        comparison["AICWeight"] = _model_choice_information_weights(comparison["DeltaAIC"])
     else:
         comparison["DeltaAIC"] = np.nan
         comparison["AICEvidenceRatio"] = np.nan
+        comparison["AICWeight"] = np.nan
 
     if comparison["AICc"].notna().any():
         min_aicc = float(comparison["AICc"].min(skipna=True))
         comparison["DeltaAICc"] = comparison["AICc"] - min_aicc
         comparison["AICcEvidenceRatio"] = comparison["DeltaAICc"].apply(_model_choice_evidence_ratio)
+        comparison["AICcWeight"] = _model_choice_information_weights(comparison["DeltaAICc"])
     else:
         comparison["DeltaAICc"] = np.nan
         comparison["AICcEvidenceRatio"] = np.nan
+        comparison["AICcWeight"] = np.nan
 
     if comparison["BIC"].notna().any():
         min_bic = float(comparison["BIC"].min(skipna=True))
         comparison["DeltaBIC"] = comparison["BIC"] - min_bic
         comparison["BICEvidenceRatio"] = comparison["DeltaBIC"].apply(_model_choice_evidence_ratio)
+        comparison["BICWeight"] = _model_choice_information_weights(comparison["DeltaBIC"])
     else:
         comparison["DeltaBIC"] = np.nan
         comparison["BICEvidenceRatio"] = np.nan
+        comparison["BICWeight"] = np.nan
 
     # Compute n / k ratio per row for AICc applicability guidance.
     comparison["N_over_K"] = comparison["N"] / comparison["KParams"]
@@ -5401,9 +5441,9 @@ def compute_model_choice_comparison(res: dict) -> dict:
     comparison = comparison[[
         "Model", "FitStatus", "N", "KParams", "N_over_K", "AICcRecommended",
         "LogLik",
-        "AIC", "DeltaAIC", "AICEvidenceRatio",
-        "AICc", "DeltaAICc", "AICcEvidenceRatio",
-        "BIC", "DeltaBIC", "BICEvidenceRatio",
+        "AIC", "DeltaAIC", "AICEvidenceRatio", "AICWeight",
+        "AICc", "DeltaAICc", "AICcEvidenceRatio", "AICcWeight",
+        "BIC", "DeltaBIC", "BICEvidenceRatio", "BICWeight",
     ]]
 
     lr_tests = _model_choice_lr_tests(model_results)
@@ -24636,7 +24676,8 @@ def render_model_choice_guidance(result: dict) -> None:
     display = comparison.copy()
     for col in ["LogLik", "AIC", "AICc", "BIC", "N_over_K",
                 "DeltaAIC", "DeltaAICc", "DeltaBIC",
-                "AICEvidenceRatio", "AICcEvidenceRatio", "BICEvidenceRatio"]:
+                "AICEvidenceRatio", "AICcEvidenceRatio", "BICEvidenceRatio",
+                "AICWeight", "AICcWeight", "BICWeight"]:
         if col in display.columns:
             display[col] = pd.to_numeric(display[col], errors="coerce").round(3)
     st.caption(t("report_tables.model_choice_comparison_table_caption"))

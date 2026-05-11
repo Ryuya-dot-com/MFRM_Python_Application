@@ -31,6 +31,21 @@ All notable changes to this standalone Streamlit distribution should be recorded
   clearer scope notes for local dependence and Mixture Rasch.
 - Anchor/linking output now includes an anchor/equating workflow checklist for
   current-run linking evidence and export review.
+- **GPCM fair-average kernel test suite** (`tests/test_gpcm_fair_average.py`,
+  13 tests). Pins reduction to the PCM/RSM softmax reference at slope = 1,
+  the worked example at slope = 1.2 (1.8381511), the analytic derivative
+  identity `dE[X]/d eta = a * Var[X|eta]`, invariance under the GPCM
+  identification rescaling, the NaN-on-degenerate-slope contract, binary
+  and singleton boundary fixtures, and the slope-1 / per-level-slope wiring
+  in `calc_facets_report_tbls()`. Includes a 27-case parity fixture
+  generated from the mfrmr R kernel (mfrmr 0.2.0, R 4.5.2) at 1e-10
+  agreement.
+- **Naming-hygiene gate** (`tests/test_naming_hygiene.py`). Parameterised
+  test that scans code, tests, locales, validation docs, project docs,
+  CI workflows, and project metadata for internal milestone codenames
+  (numeric, single-letter, and a finite vocabulary of multi-letter forms
+  such as NATO phonetics and spelled-out numbers). Public commits must
+  not ship internal sprint or phase labels.
 
 ### Changed
 
@@ -46,6 +61,25 @@ All notable changes to this standalone Streamlit distribution should be recorded
 
 ### Fixed
 
+- **GPCM Linacre fair-average on non slope-facet rows** (Person, and any
+  non-step facet such as Rater or Task under a `step_facet = Criterion`
+  fit) is now evaluated at slope = 1, the geometric-mean discrimination
+  under the sum-to-zero log-slope identification. The previous code
+  substituted the arithmetic mean of the estimated slopes, which by the
+  arithmetic-mean / geometric-mean inequality is always >= 1 and so
+  reported a systematically over-discriminated fair average there. The
+  step-facet's own rows continue to use that level's own discrimination
+  and that level's own step thresholds. Reported FairM / FairZ values
+  in the FACETS-style report table will change for GPCM fits; RSM and
+  PCM fits, and non slope-facet rows under PCM, are unaffected.
+  Reference: Muraki (1992), Eqs. 2-3 and 10; Muraki (1993), Eqs. 7
+  and 16; Linacre, FACETS Manual section "Fair Average". Cross-checked
+  against the mfrmr R reference (0.2.0) at 1e-10 across 27 fixture
+  cases.
+- `expected_score_from_eta()` now returns `np.nan` for a non-finite or
+  non-positive slope instead of silently falling back to slope = 1, so
+  a degenerate GPCM fit can no longer masquerade as a healthy one
+  through the fair-average path.
 - Data source radio now shows the 7 built-in samples plus Paste and Upload
   exactly once; Paste/Upload are no longer repeated after every sample option.
 

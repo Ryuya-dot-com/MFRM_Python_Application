@@ -19,6 +19,27 @@ from pathlib import Path
 import pytest
 
 
+# NATO phonetic alphabet + number words + a small set of common milestone
+# words. Using a finite vocabulary rather than ``\b[A-Z][a-z]+\b`` keeps prose
+# like "phase transition" or "phase diagram" out of scope; capitalized common
+# nouns that happen to follow "Phase " do not trigger the gate unless they
+# match the vocabulary below.
+_MULTI_LETTER_CODENAMES = (
+    # NATO phonetic alphabet
+    "Alpha", "Bravo", "Charlie", "Delta", "Echo", "Foxtrot", "Golf", "Hotel",
+    "India", "Juliet", "Kilo", "Lima", "Mike", "November", "Oscar", "Papa",
+    "Quebec", "Romeo", "Sierra", "Tango", "Uniform", "Victor", "Whiskey",
+    "Yankee", "Zulu",
+    # Spelled-out numbers
+    "Zero", "One", "Two", "Three", "Four", "Five", "Six", "Seven", "Eight",
+    "Nine", "Ten",
+    # Greek letters frequently used as milestone codenames
+    "Beta", "Gamma", "Epsilon", "Theta", "Lambda", "Sigma", "Omega",
+    # Common release / sprint vocabulary
+    "Initial", "Final", "Pilot", "Cleanup", "Polish", "Rollout",
+)
+
+
 FORBIDDEN = re.compile(
     # Numeric milestone codenames: the label keyword followed by a number,
     # optionally with a sub-component (1-5, 2.0) and/or a trailing lowercase
@@ -29,6 +50,9 @@ FORBIDDEN = re.compile(
     # keeps prose like "the alpha phase" or all-caps acronyms ("Phase UX")
     # out of scope -- only an isolated capital letter qualifies.
     r"|\b[Pp]hase[ -][A-Z]\b"
+    # Multi-letter codenames drawn from a finite vocabulary so prose like
+    # "phase transition" cannot self-trip the gate.
+    r"|\b[Pp]hase[ -](?:" + "|".join(_MULTI_LETTER_CODENAMES) + r")\b"
     # Sprint codenames, in case sprint-style numbering ever reappears.
     r"|\b[Ss]print[ -][0-9]+\b"
 )
@@ -51,6 +75,16 @@ SCAN_PATTERNS: tuple[str, ...] = (
     "docs/*.md",
     "docs/**/*.md",
     "*.md",
+    # CI workflow files: Phase labels in workflow names or comments would be
+    # equally visible to anyone browsing the repository.
+    ".github/workflows/*.yml",
+    ".github/workflows/*.yaml",
+    ".github/*.md",
+    ".github/**/*.md",
+    # Project metadata files.
+    "*.toml",
+    "*.cfg",
+    "Makefile",
 )
 
 

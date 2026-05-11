@@ -845,22 +845,52 @@ def mfrmr_020_migration_coverage_table() -> pd.DataFrame:
         },
         {
             "mfrmr020Area": "Network analysis (mfrm / rater / rater-halo)",
-            "PythonStatus": "Planned",
+            "PythonStatus": "Ready (design network); rater / halo "
+                            "screens remain follow-up work",
             "PythonEvidence": (
-                "The mfrmr 0.2.0 reference adds connectivity / strength / "
-                "betweenness / articulation-point analyses for the design "
-                "graph (mfrm_network_analysis), a directed severity / leniency "
-                "graph (rater_network_analysis), and a same-rater cross-"
-                "criterion halo screen (rater_halo_network_analysis)."
+                "compute_design_network_analysis() treats the rating "
+                "design as an undirected weighted graph (nodes = "
+                "(Facet, Level), edges = co-observed in a rating row, "
+                "weight = co-observation count) and reports the "
+                "canonical connectivity diagnostics: graph-level "
+                "summary (components, density, mean degree, "
+                "articulation points, bridges, diameter, mean "
+                "distance), per-node centralities (degree, strength, "
+                "betweenness, closeness, eigenvector) with an "
+                "articulation-point flag, per-edge bridge flag, and "
+                "per-facet aggregates. The Report tab gains a Design "
+                "Network section with the summary table, per-facet "
+                "aggregate, articulation-point and bridge-edge "
+                "callouts (with green-success messages when none are "
+                "found), a per-node metrics expander, and a CSV "
+                "download. Math contract pinned in "
+                "tests/test_design_network.py (14 tests). Underlying "
+                "graph algorithms come from networkx (Hagberg, "
+                "Schult, & Swart, 2008), matching the same algorithms "
+                "used by the igraph (Csardi & Nepusz, 2006) wrapper "
+                "in the R reference."
             ),
             "Boundary": (
-                "Subset and connectivity diagnostics are available in the "
-                "current Python build through the Measures tab; the broader "
-                "network / halo analyses are planned as a new tab."
+                "The Design Network panel covers the canonical "
+                "mfrm_network_analysis(): undirected co-observation "
+                "graph diagnostics. The directed severity / leniency "
+                "graph (rater_network_analysis) and same-rater cross-"
+                "criterion halo screen (rater_halo_network_analysis) "
+                "from mfrmr 0.2.0 are not yet ported; they require "
+                "per-rater pairwise severity comparisons and rater x "
+                "criterion residual decomposition respectively. The "
+                "design connectivity diagnostics are the most "
+                "consequential of the three for incomplete-design "
+                "linking review, so the Design Network panel "
+                "addresses the highest-priority gap."
             ),
             "NextValidation": (
-                "Use the existing Subsets / connectivity check as the "
-                "fallback graph diagnostic until the dedicated tab ships."
+                "When you need a rater-vs-rater severity ranking or a "
+                "halo screen, use the existing per-rater bias "
+                "interaction table together with the design network "
+                "diagnostics; a dedicated directed-rater-network tab "
+                "is a candidate for follow-up if reviewer feedback "
+                "asks for it."
             ),
         },
         {
@@ -8992,6 +9022,281 @@ def evaluate_parameter_recovery(
 
 
 # ============================================================================
+# Design network analysis: connectivity, articulation points, bridges
+# ============================================================================
+# Treats the rating design as an undirected weighted graph: nodes are
+# (Facet, Level) pairs, edges connect levels that co-occur in at least
+# one observed rating, edge weights are co-observation counts. Returns
+# a bundle with summary metrics (components, density, mean degree),
+# per-node metrics (degree, strength, betweenness, closeness,
+# eigenvector centrality, cutpoint flag), per-edge metrics (weight,
+# bridge flag, edge betweenness), and a per-facet aggregate. The
+# resulting numbers are *design diagnostics* — they describe how
+# tightly the design is linked, not the psychometric quality of any
+# person or rater.
+#
+# References:
+# - Csardi & Nepusz (2006) on the igraph library that the R reference
+#   wraps; here we use networkx (Hagberg, Schult & Swart 2008) for
+#   the same algorithms.
+# - Newman (2010) Networks: An Introduction for the underlying
+#   centrality definitions.
+
+
+def _network_node_id(facet: str, level: str) -> str:
+    return f"{facet}:{level}"
+
+
+def compute_design_network_analysis(
+    res: dict,
+    *,
+    min_observations: int = 1,
+    include_graph: bool = False,
+) -> dict:
+    """Undirected weighted co-observation graph diagnostics for a fit.
+
+    Parameters
+    ----------
+    res : dict
+        Fit result dictionary from ``mfrm_estimate`` (uses
+        ``prep['data']`` plus ``config['facet_names']``).
+    min_observations : int
+        Drop edges with weight strictly below this threshold.
+    include_graph : bool
+        Embed the underlying ``networkx.Graph`` object in the return
+        bundle under the ``graph`` key. Defaults to ``False`` so the
+        bundle stays cheap to serialize.
+
+    Returns
+    -------
+    dict
+        With keys ``available``, ``reason``, ``summary``,
+        ``node_metrics``, ``edge_metrics``, ``facet_summary``,
+        ``cut_nodes``, ``bridge_edges``, ``settings``, and optionally
+        ``graph``.
+    """
+    import networkx as nx
+
+    if not isinstance(res, dict):
+        return {
+            "available": False,
+            "reason": "Result is not a fit dictionary.",
+            "summary": pd.DataFrame(),
+            "node_metrics": pd.DataFrame(),
+            "edge_metrics": pd.DataFrame(),
+            "facet_summary": pd.DataFrame(),
+            "cut_nodes": pd.DataFrame(),
+            "bridge_edges": pd.DataFrame(),
+            "settings": {},
+        }
+    config = res.get("config", {}) if isinstance(res.get("config"), dict) else {}
+    prep = res.get("prep", {}) if isinstance(res.get("prep"), dict) else {}
+    data = prep.get("data")
+    if not isinstance(data, pd.DataFrame) or data.empty:
+        return {
+            "available": False,
+            "reason": "Fit does not carry a raw data frame.",
+            "summary": pd.DataFrame(),
+            "node_metrics": pd.DataFrame(),
+            "edge_metrics": pd.DataFrame(),
+            "facet_summary": pd.DataFrame(),
+            "cut_nodes": pd.DataFrame(),
+            "bridge_edges": pd.DataFrame(),
+            "settings": {},
+        }
+    facet_names = ["Person"] + list(config.get("facet_names", []))
+    facet_names = [f for f in facet_names if f in data.columns]
+    if len(facet_names) < 2:
+        return {
+            "available": False,
+            "reason": "Need at least two facet columns to build a network.",
+            "summary": pd.DataFrame(),
+            "node_metrics": pd.DataFrame(),
+            "edge_metrics": pd.DataFrame(),
+            "facet_summary": pd.DataFrame(),
+            "cut_nodes": pd.DataFrame(),
+            "bridge_edges": pd.DataFrame(),
+            "settings": {},
+        }
+
+    # Build the weighted co-observation graph.
+    graph = nx.Graph()
+    node_facet = {}
+    node_level = {}
+    for facet in facet_names:
+        for level in data[facet].astype(str).unique():
+            node_id = _network_node_id(facet, str(level))
+            graph.add_node(node_id, facet=facet, level=str(level))
+            node_facet[node_id] = facet
+            node_level[node_id] = str(level)
+
+    # Edges: every observation row connects every pair of (facet, level)
+    # nodes it touches. Aggregate edge weights as co-observation counts.
+    import itertools
+    edge_weights: dict[tuple[str, str], float] = {}
+    for _, row in data.iterrows():
+        ids = [_network_node_id(f, str(row[f])) for f in facet_names]
+        for a, b in itertools.combinations(sorted(ids), 2):
+            edge_weights[(a, b)] = edge_weights.get((a, b), 0.0) + 1.0
+    for (a, b), w in edge_weights.items():
+        if w < float(min_observations):
+            continue
+        graph.add_edge(a, b, weight=float(w), distance=1.0 / max(float(w), 1.0))
+
+    n_nodes = int(graph.number_of_nodes())
+    n_edges = int(graph.number_of_edges())
+    if n_nodes == 0:
+        return {
+            "available": False,
+            "reason": "No usable nodes in the design graph.",
+            "summary": pd.DataFrame(),
+            "node_metrics": pd.DataFrame(),
+            "edge_metrics": pd.DataFrame(),
+            "facet_summary": pd.DataFrame(),
+            "cut_nodes": pd.DataFrame(),
+            "bridge_edges": pd.DataFrame(),
+            "settings": {},
+        }
+
+    components = [c for c in nx.connected_components(graph)]
+    n_components = len(components)
+    component_sizes = [len(c) for c in components]
+    largest_size = max(component_sizes) if component_sizes else 0
+    largest_share = largest_size / n_nodes if n_nodes else np.nan
+    density = nx.density(graph)
+    mean_degree = (
+        float(np.mean([d for _, d in graph.degree()])) if n_nodes else np.nan
+    )
+    mean_strength = (
+        float(np.mean([graph.degree(n, weight="weight") for n in graph.nodes()]))
+        if n_nodes else np.nan
+    )
+
+    # Articulation points / bridges work on connected graphs; networkx
+    # treats disconnected graphs as a forest and reports the points /
+    # bridges across each component, which is what we want.
+    articulation_set = set(nx.articulation_points(graph))
+    bridge_set = set(map(frozenset, nx.bridges(graph)))
+
+    # Centralities. Use the inverse-weight distance for path-based
+    # measures so frequent co-observation edges are "shorter".
+    try:
+        betweenness = nx.betweenness_centrality(graph, weight="distance", normalized=True)
+    except Exception:
+        betweenness = {n: np.nan for n in graph.nodes()}
+    try:
+        closeness = nx.closeness_centrality(graph, distance="distance")
+    except Exception:
+        closeness = {n: np.nan for n in graph.nodes()}
+    try:
+        eigen = nx.eigenvector_centrality_numpy(graph, weight="weight")
+    except Exception:
+        eigen = {n: np.nan for n in graph.nodes()}
+
+    # Diameter / mean distance: defined per component; report the
+    # largest-component value for the bundle summary.
+    diameter = np.nan
+    mean_distance = np.nan
+    if components and largest_size > 1:
+        sub = graph.subgraph(max(components, key=len))
+        try:
+            diameter = float(nx.diameter(sub, weight="distance"))
+        except Exception:
+            diameter = np.nan
+        try:
+            mean_distance = float(nx.average_shortest_path_length(sub, weight="distance"))
+        except Exception:
+            mean_distance = np.nan
+
+    summary = pd.DataFrame([{
+        "Nodes": n_nodes,
+        "Edges": n_edges,
+        "Components": n_components,
+        "LargestComponentNodes": int(largest_size),
+        "LargestComponentShare": float(largest_share) if np.isfinite(largest_share) else np.nan,
+        "Density": float(density),
+        "MeanDegree": float(mean_degree),
+        "MeanStrength": float(mean_strength),
+        "ArticulationPoints": int(len(articulation_set)),
+        "Bridges": int(len(bridge_set)),
+        "Connected": bool(n_components == 1),
+        "Diameter": float(diameter) if np.isfinite(diameter) else np.nan,
+        "MeanDistance": float(mean_distance) if np.isfinite(mean_distance) else np.nan,
+    }])
+
+    node_rows = []
+    for node in graph.nodes():
+        node_rows.append({
+            "Node": node,
+            "Facet": node_facet.get(node, ""),
+            "Level": node_level.get(node, ""),
+            "Degree": int(graph.degree(node)),
+            "Strength": float(graph.degree(node, weight="weight")),
+            "Betweenness": float(betweenness.get(node, np.nan)),
+            "Closeness": float(closeness.get(node, np.nan)),
+            "EigenvectorCentrality": float(eigen.get(node, np.nan)),
+            "IsArticulationPoint": bool(node in articulation_set),
+        })
+    node_metrics = pd.DataFrame(node_rows).sort_values(
+        ["Facet", "Level"]
+    ).reset_index(drop=True)
+
+    edge_rows = []
+    for u, v, attrs in graph.edges(data=True):
+        edge_rows.append({
+            "From": u,
+            "To": v,
+            "Weight": float(attrs.get("weight", 0.0)),
+            "IsBridge": bool(frozenset((u, v)) in bridge_set),
+        })
+    edge_metrics = pd.DataFrame(edge_rows).sort_values(
+        ["From", "To"]
+    ).reset_index(drop=True)
+
+    facet_summary_rows = []
+    if not node_metrics.empty:
+        for facet, sub in node_metrics.groupby("Facet"):
+            facet_summary_rows.append({
+                "Facet": str(facet),
+                "Nodes": int(len(sub)),
+                "MeanDegree": float(sub["Degree"].mean()),
+                "MeanBetweenness": float(sub["Betweenness"].mean()),
+                "MeanCloseness": float(sub["Closeness"].mean()),
+                "ArticulationCount": int(sub["IsArticulationPoint"].sum()),
+            })
+    facet_summary = pd.DataFrame(facet_summary_rows)
+
+    cut_nodes = (
+        node_metrics[node_metrics["IsArticulationPoint"]].copy()
+        if not node_metrics.empty else pd.DataFrame()
+    )
+    bridge_edges = (
+        edge_metrics[edge_metrics["IsBridge"]].copy()
+        if not edge_metrics.empty else pd.DataFrame()
+    )
+
+    out = {
+        "available": True,
+        "reason": "",
+        "summary": summary,
+        "node_metrics": node_metrics,
+        "edge_metrics": edge_metrics,
+        "facet_summary": facet_summary,
+        "cut_nodes": cut_nodes,
+        "bridge_edges": bridge_edges,
+        "settings": {
+            "min_observations": int(min_observations),
+            "graph_definition": "undirected weighted co-observation graph",
+            "centrality_weighting": "betweenness / closeness use inverse-weight distances; eigenvector uses raw weights",
+            "facet_names": list(facet_names),
+        },
+    }
+    if include_graph:
+        out["graph"] = graph
+    return out
+
+
+# ============================================================================
 # Generalizability theory (G-study) and design-of-measurement (D-study)
 # ============================================================================
 # `compute_generalizability_study(res)` runs a method-of-moments ANOVA
@@ -17094,6 +17399,16 @@ _APA_REFERENCE_LIBRARY: dict[str, str] = {
         "Cox, D. R. (1975). Partial likelihood. Biometrika, 62(2), 269–276. "
         "https://doi.org/10.1093/biomet/62.2.269"
     ),
+    "Csardi_Nepusz_2006": (
+        "Csardi, G., & Nepusz, T. (2006). The igraph software package for "
+        "complex network research. InterJournal, Complex Systems, 1695."
+    ),
+    "Hagberg_Schult_Swart_2008": (
+        "Hagberg, A. A., Schult, D. A., & Swart, P. J. (2008). Exploring "
+        "network structure, dynamics, and function using NetworkX. In G. "
+        "Varoquaux, T. Vaught, & J. Millman (Eds.), Proceedings of the 7th "
+        "Python in Science Conference (pp. 11–15)."
+    ),
     "Cramer_1946": (
         "Cramer, H. (1946). Mathematical methods of statistics. "
         "Princeton University Press."
@@ -17258,6 +17573,8 @@ _CITATION_TO_KEY: dict[str, str] = {
     "(McNamara, 1996)": "McNamara_1996",
     "(Morris, White & Crowther, 2019)": "Morris_White_Crowther_2019",
     "(Cox, 1975)": "Cox_1975",
+    "(Csardi & Nepusz, 2006)": "Csardi_Nepusz_2006",
+    "(Hagberg, Schult & Swart, 2008)": "Hagberg_Schult_Swart_2008",
     "(Cramer, 1946)": "Cramer_1946",
     "(Louis, 1982)": "Louis_1982",
     "(Muraki, 1992)": "Muraki_1992",
@@ -23444,6 +23761,96 @@ def render_model_choice_guidance(result: dict) -> None:
     )
 
 
+def render_design_network_section(result: dict) -> None:
+    """Render the design network analysis panel.
+
+    Reports graph-level connectivity, per-node centrality measures,
+    and articulation-point / bridge flags. Useful for spotting
+    fragile linking in incomplete rater-mediated designs before
+    interpreting facet measures.
+    """
+    if not isinstance(result, dict):
+        return
+    st.subheader(t("report_tables.design_network_subheader"))
+    st.caption(t("report_tables.design_network_caption"))
+
+    bundle = compute_design_network_analysis(result)
+    if not bundle.get("available"):
+        st.info(
+            t(
+                "report_tables.design_network_unavailable_template",
+                reason=str(bundle.get("reason", "")),
+            )
+        )
+        return
+
+    summary: pd.DataFrame = bundle["summary"]
+    if isinstance(summary, pd.DataFrame) and not summary.empty:
+        display = summary.copy()
+        for col in ["LargestComponentShare", "Density", "MeanDegree",
+                    "MeanStrength", "Diameter", "MeanDistance"]:
+            if col in display.columns:
+                display[col] = pd.to_numeric(display[col], errors="coerce").round(4)
+        st.caption(t("report_tables.design_network_summary_caption"))
+        st.dataframe(display, width="stretch", hide_index=True)
+
+    facet_summary: pd.DataFrame = bundle.get("facet_summary", pd.DataFrame())
+    if isinstance(facet_summary, pd.DataFrame) and not facet_summary.empty:
+        st.markdown("**" + t("report_tables.design_network_facet_summary_subheader") + "**")
+        display_f = facet_summary.copy()
+        for col in ["MeanDegree", "MeanBetweenness", "MeanCloseness"]:
+            if col in display_f.columns:
+                display_f[col] = pd.to_numeric(display_f[col], errors="coerce").round(4)
+        st.dataframe(display_f, width="stretch", hide_index=True)
+
+    cut_nodes: pd.DataFrame = bundle.get("cut_nodes", pd.DataFrame())
+    st.markdown("**" + t("report_tables.design_network_cut_nodes_subheader") + "**")
+    if isinstance(cut_nodes, pd.DataFrame) and not cut_nodes.empty:
+        st.dataframe(cut_nodes, width="stretch", hide_index=True)
+    else:
+        st.success(t("report_tables.design_network_cut_nodes_info"))
+
+    bridge_edges: pd.DataFrame = bundle.get("bridge_edges", pd.DataFrame())
+    st.markdown("**" + t("report_tables.design_network_bridge_edges_subheader") + "**")
+    if isinstance(bridge_edges, pd.DataFrame) and not bridge_edges.empty:
+        st.dataframe(bridge_edges, width="stretch", hide_index=True)
+    else:
+        st.success(t("report_tables.design_network_bridge_edges_info"))
+
+    node_metrics: pd.DataFrame = bundle.get("node_metrics", pd.DataFrame())
+    if isinstance(node_metrics, pd.DataFrame) and not node_metrics.empty:
+        with st.expander(
+            t("report_tables.design_network_node_metrics_subheader"), expanded=False
+        ):
+            display_n = node_metrics.copy()
+            for col in ["Strength", "Betweenness", "Closeness", "EigenvectorCentrality"]:
+                if col in display_n.columns:
+                    display_n[col] = pd.to_numeric(display_n[col], errors="coerce").round(4)
+            st.caption(t("report_tables.design_network_node_metrics_caption"))
+            st.dataframe(display_n, width="stretch", hide_index=True)
+
+    download_frames = []
+    for label, frame in [
+        ("summary", summary),
+        ("facet_summary", facet_summary),
+        ("node_metrics", node_metrics),
+        ("edge_metrics", bundle.get("edge_metrics", pd.DataFrame())),
+    ]:
+        if isinstance(frame, pd.DataFrame) and not frame.empty:
+            cp = frame.copy()
+            cp["_section"] = label
+            download_frames.append(cp)
+    if download_frames:
+        combined = pd.concat(download_frames, ignore_index=True)
+        st.download_button(
+            t("report_tables.design_network_download_button"),
+            data=to_csv_bytes(combined),
+            file_name="mfrm_design_network.csv",
+            mime="text/csv",
+            key=f"design_network_download::{id(result)}",
+        )
+
+
 def _collect_apa_exportable_tables(
     result: dict, diagnostics: dict
 ) -> dict[str, pd.DataFrame]:
@@ -23897,6 +24304,7 @@ def _render_report_tables(result: dict, diagnostics: dict) -> None:
 
     render_model_choice_guidance(result)
     render_g_d_study_section(result)
+    render_design_network_section(result)
     render_parameter_recovery_simulation()
     render_apa_presets_section(result, diagnostics)
 

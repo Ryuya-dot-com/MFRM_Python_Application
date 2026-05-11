@@ -226,6 +226,38 @@ All notable changes to this standalone Streamlit distribution should be recorded
     "negligible" threshold cited in Linacre's FACETS Manual. The
     categorical fields (`Profile CI Status`, `InferenceTier`) must
     agree exactly.
+- **Design network analysis (connectivity, articulation points, bridges,
+  betweenness centrality).** A new ``compute_design_network_analysis(res)``
+  helper treats the rating design as an undirected weighted graph
+  (nodes = ``(Facet, Level)`` pairs, edges = co-observed in at least
+  one rating row, weight = co-observation count) and computes the
+  canonical connectivity diagnostics from networkx (Hagberg, Schult,
+  & Swart, 2008): graph-level summary (Nodes, Edges, Components,
+  LargestComponentNodes, LargestComponentShare, Density, MeanDegree,
+  MeanStrength, ArticulationPoints, Bridges, Connected, Diameter,
+  MeanDistance), per-node metrics (Degree, Strength, Betweenness,
+  Closeness, EigenvectorCentrality) with an ``IsArticulationPoint``
+  flag, per-edge bridge flag, and per-facet aggregates. The Report
+  tab gains a Design Network section with the summary table, the
+  per-facet aggregate, articulation-point and bridge-edge callouts
+  (green-success messages when none are found), a per-node metrics
+  expander, and a CSV download for the combined summary + node +
+  edge + facet tables. ``min_observations`` lets the user drop weak
+  edges; ``include_graph=True`` round-trips the underlying
+  ``networkx.Graph`` for downstream visualisation. Math contract
+  pinned in ``tests/test_design_network.py`` (14 tests covering
+  refusal on invalid input, node-count identity, fully-crossed
+  designs having 1 component and no cut-points, disjoint designs
+  reporting Components >= 2, facet-summary aggregation parity, cut-
+  node / bridge-edge subset invariants, ``min_observations`` filter,
+  ``include_graph`` round-trip, and centrality [0, 1] bounds). Two
+  new APA references (Csardi & Nepusz, 2006; Hagberg, Schult, &
+  Swart, 2008) are added. The
+  ``mfrmr_020_migration_coverage_table()`` row for "Network analysis
+  (mfrm / rater / rater-halo)" flips from Planned to
+  "Ready (design network); rater / halo screens remain follow-up
+  work" — the directed severity / halo screens require per-rater
+  pairwise comparison machinery not yet in scope.
 - **APA 7 table presets and monochrome figure palette.** Two new
   helpers, ``apa_table_to_markdown(df, ...)`` and
   ``apa_table_to_html(df, ...)``, re-emit any report DataFrame as a

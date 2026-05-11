@@ -123,9 +123,18 @@ def test_proportion_variance_sums_to_one(crossed_rating_fit):
     assert finite.sum() == pytest.approx(1.0, abs=1e-9)
 
 
-def test_g_phi_match_closed_form(crossed_rating_fit):
-    """G = sigma2_p / (sigma2_p + sigma2_e / n_total),
-    Phi = sigma2_p / (sigma2_p + sum facet_var / n_facet + sigma2_e / n_total)."""
+def test_g_phi_match_brennan_3way_closed_form(crossed_rating_fit):
+    """For a balanced 3-way crossed p x i x j design under one
+    observation per cell, the G / Phi formulas (Brennan 2001 Eq. 3.18)
+    are:
+
+        sigma2(delta) = sigma2_pi / n_i + sigma2_pj / n_j +
+                        sigma2_pij / (n_i n_j)
+        sigma2(Delta) = sigma2(delta) + sigma2_i / n_i +
+                        sigma2_j / n_j + sigma2_ij / (n_i n_j)
+        G   = sigma2_p / (sigma2_p + sigma2(delta))
+        Phi = sigma2_p / (sigma2_p + sigma2(Delta))
+    """
     out = app.compute_generalizability_study(crossed_rating_fit)
     var = out["variance_components"]
     coef = out["observed_coefficients"]
@@ -134,15 +143,44 @@ def test_g_phi_match_closed_form(crossed_rating_fit):
     sigma2_e = lookup["Residual"]
     sigma2_r = lookup["Rater"]
     sigma2_c = lookup["Criterion"]
+    sigma2_pr = lookup["Person:Rater"]
+    sigma2_pc = lookup["Person:Criterion"]
+    sigma2_rc = lookup["Rater:Criterion"]
     n_r = out["design"]["observed_n"]["Rater"]
     n_c = out["design"]["observed_n"]["Criterion"]
-    n_total = n_r * n_c
-    expected_g = sigma2_p / (sigma2_p + sigma2_e / n_total)
-    expected_phi = sigma2_p / (
-        sigma2_p + sigma2_r / n_r + sigma2_c / n_c + sigma2_e / n_total
+
+    expected_relative = (
+        sigma2_pr / n_r + sigma2_pc / n_c + sigma2_e / (n_r * n_c)
     )
+    expected_absolute = expected_relative + (
+        sigma2_r / n_r + sigma2_c / n_c + sigma2_rc / (n_r * n_c)
+    )
+    expected_g = sigma2_p / (sigma2_p + expected_relative)
+    expected_phi = sigma2_p / (sigma2_p + expected_absolute)
     assert coef["G"] == pytest.approx(expected_g, abs=1e-10)
     assert coef["Phi"] == pytest.approx(expected_phi, abs=1e-10)
+
+
+def test_variance_components_carry_two_way_interaction_rows(crossed_rating_fit):
+    """Under the full 3-way decomposition, the variance-components
+    table carries seven rows: three main effects + three two-way
+    interactions + residual."""
+    out = app.compute_generalizability_study(crossed_rating_fit)
+    var = out["variance_components"]
+    sources = set(var["Source"].astype(str))
+    assert "Person:Rater" in sources
+    assert "Person:Criterion" in sources
+    assert "Rater:Criterion" in sources
+    assert "Residual" in sources
+    assert (var["Term"] == "two-way").sum() == 3
+    assert (var["Term"] == "main").sum() == 3
+    assert (var["Term"] == "residual").sum() == 1
+
+
+def test_decomposition_label_records_brennan_eq_3_18(crossed_rating_fit):
+    out = app.compute_generalizability_study(crossed_rating_fit)
+    coef = out["observed_coefficients"]
+    assert coef["details"]["decomposition"] == "full_3way_brennan_eq_3_18"
 
 
 def test_phi_is_le_g(crossed_rating_fit):

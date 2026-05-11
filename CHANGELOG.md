@@ -226,6 +226,54 @@ All notable changes to this standalone Streamlit distribution should be recorded
     "negligible" threshold cited in Linacre's FACETS Manual. The
     categorical fields (`Profile CI Status`, `InferenceTier`) must
     agree exactly.
+- **G/D-study: full Brennan (2001) 3-way decomposition with explicit
+  two-way interaction terms** for the canonical balanced p x i x j
+  design with one observation per cell.
+  ``compute_generalizability_study()`` now detects whether the
+  design admits the full random-effects ANOVA (object_facet plus
+  exactly two random facets, balanced, one observation per cell)
+  and dispatches to a new
+  ``_crossed_anova_two_way_variance_components`` helper that returns
+  seven variance components: the three main effects, the three
+  two-way interactions (``object:facetA``, ``object:facetB``,
+  ``facetA:facetB``), and a Residual term that is the three-way
+  interaction confounded with error (the standard one-observation-
+  per-cell confounding). The method-of-moments estimators follow
+  Brennan (2001, Table 3.5):
+
+      sigma2_p   = (MS_p   - MS_pi - MS_pj + MS_pij) / (n_i n_j)
+      sigma2_i   = (MS_i   - MS_pi - MS_ij + MS_pij) / (n_p n_j)
+      sigma2_j   = (MS_j   - MS_pj - MS_ij + MS_pij) / (n_p n_i)
+      sigma2_pi  = (MS_pi  - MS_pij) / n_j
+      sigma2_pj  = (MS_pj  - MS_pij) / n_i
+      sigma2_ij  = (MS_ij  - MS_pij) / n_p
+      sigma2_pij = MS_pij
+
+  Negative MoM estimates are clamped at zero per the Henderson III
+  convention (Brennan 2001 p. 81). The G / Phi formulas use Brennan
+  (2001) Eq. 3.18 / 3.19 with explicit interaction variances:
+
+      sigma2(delta) = sigma2_pi / n_i + sigma2_pj / n_j +
+                      sigma2_pij / (n_i n_j)
+      sigma2(Delta) = sigma2(delta) + sigma2_i / n_i +
+                      sigma2_j / n_j + sigma2_ij / (n_i n_j)
+      G   = sigma2_p / (sigma2_p + sigma2(delta))
+      Phi = sigma2_p / (sigma2_p + sigma2(Delta))
+
+  The bundle's ``observed_coefficients.details.decomposition``
+  field names the active mode (``"full_3way_brennan_eq_3_18"``
+  vs ``"main_effects_only_approximation"``) so downstream
+  consumers and manuscripts can name the formula they used. For
+  designs with one random facet, three or more random facets, or
+  unbalanced cells, the helper falls back to the existing main-
+  effects-only ANOVA approximation; the existing caveat is
+  preserved for that path. Math contract pinned in
+  ``tests/test_g_d_study.py``: the seven-source variance-component
+  layout, Brennan Eq. 3.18 closed-form G / Phi identity, and the
+  decomposition label. ``mfrmr_020_migration_coverage_table()``
+  boundary text updated so manuscripts no longer see "main-effects-
+  only" as the default characterisation; the new boundary names
+  the dispatch logic explicitly.
 - **Akaike / Schwarz / AICc weights in model-choice guidance** (Burnham
   & Anderson, 2002, Eq. 2.8). Each model-choice comparison row now
   also carries an ``AICWeight``, ``AICcWeight``, and ``BICWeight``

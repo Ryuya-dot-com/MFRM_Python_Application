@@ -925,13 +925,20 @@ def mfrmr_020_migration_coverage_table() -> pd.DataFrame:
                 "citation hygiene)."
             ),
             "Boundary": (
-                "Main-effects-only one-observation-per-cell "
-                "approximation: every person-by-facet interaction is "
-                "folded into the Residual term, which biases G "
-                "downward when person x facet interactions are "
-                "substantively large. G is for relative decisions; "
-                "Phi for absolute decisions; the helper does not "
-                "refit the data as a random-effects model."
+                "For the canonical balanced p x i x j design with one "
+                "observation per cell the helper now uses the full "
+                "Brennan (2001, Table 3.5) random-effects 3-way "
+                "decomposition with explicit two-way interaction "
+                "variances; the Residual remains the three-way "
+                "interaction confounded with error (the standard "
+                "one-observation-per-cell confounding). For designs "
+                "with one random facet, three or more random facets, "
+                "or unbalanced cells, the helper falls back to the "
+                "main-effects-only ANOVA approximation; the bundle's "
+                "details.decomposition field names the active mode. "
+                "G is for relative decisions; Phi for absolute "
+                "decisions; the helper does not refit the data as a "
+                "random-effects model with lme4."
             ),
             "NextValidation": (
                 "Read the variance components alongside the existing "
@@ -10240,6 +10247,175 @@ def _empty_halo_bundle(reason: str) -> dict:
 _GD_STUDY_DEFAULT_GRID = (1, 2, 3, 4, 5, 6, 8, 10)
 
 
+def _is_balanced_one_obs_per_cell(
+    work: pd.DataFrame,
+    facets: list[str],
+) -> bool:
+    """Detect whether the design has exactly one observation per cell."""
+    if work.empty or not facets:
+        return False
+    cells = work.groupby(facets, observed=False).size()
+    return bool((cells == 1).all() and cells.size > 0)
+
+
+def _crossed_anova_two_way_variance_components(
+    work: pd.DataFrame,
+    *,
+    object_facet: str,
+    random_facets: list[str],
+    score_col: str,
+    grand_mean: float,
+    ss_total: float,
+) -> pd.DataFrame | None:
+    """Full random-effects 3-way ANOVA decomposition under one-obs-per-cell.
+
+    For a balanced p x i x j design with one observation per cell, all
+    factors random, and Person as the object of measurement, the
+    method-of-moments equations from Brennan (2001, Table 3.5) yield:
+
+      sigma2_p   = (MS_p   - MS_pi - MS_pj + MS_pij) / (n_i n_j)
+      sigma2_i   = (MS_i   - MS_pi - MS_ij + MS_pij) / (n_p n_j)
+      sigma2_j   = (MS_j   - MS_pj - MS_ij + MS_pij) / (n_p n_i)
+      sigma2_pi  = (MS_pi  - MS_pij) / n_j
+      sigma2_pj  = (MS_pj  - MS_pij) / n_i
+      sigma2_ij  = (MS_ij  - MS_pij) / n_p
+      sigma2_pij = MS_pij              (residual; confounded with error)
+
+    Returns the variance-component table with seven rows (three main
+    effects + three two-way interactions + residual) when applicable,
+    or ``None`` when the design does not satisfy the one-observation-
+    per-cell balanced assumption. Variance estimates are clamped at
+    zero (Henderson III convention; Brennan 2001 p. 81).
+    """
+    if len(random_facets) != 2:
+        return None
+    p_facet = object_facet
+    i_facet, j_facet = random_facets[0], random_facets[1]
+    facets_3way = [p_facet, i_facet, j_facet]
+    if not _is_balanced_one_obs_per_cell(work, facets_3way):
+        return None
+
+    n_p = int(work[p_facet].nunique())
+    n_i = int(work[i_facet].nunique())
+    n_j = int(work[j_facet].nunique())
+    if min(n_p, n_i, n_j) < 2:
+        return None
+
+    def cell_mean(group_cols):
+        return work.groupby(group_cols, observed=False)[score_col].mean()
+
+    # Main-effect SS (each weighted by the cell count of the
+    # marginalised facets so the formula matches the balanced ANOVA).
+    means_p = cell_mean(p_facet)
+    ss_p = float(n_i * n_j * np.sum((means_p.to_numpy(dtype=float) - grand_mean) ** 2))
+    means_i = cell_mean(i_facet)
+    ss_i = float(n_p * n_j * np.sum((means_i.to_numpy(dtype=float) - grand_mean) ** 2))
+    means_j = cell_mean(j_facet)
+    ss_j = float(n_p * n_i * np.sum((means_j.to_numpy(dtype=float) - grand_mean) ** 2))
+
+    # Two-way SS: SS_pi = n_j * sum (bar_Y_pi. - bar_Y_p.. - bar_Y_.i. + bar_Y_...)^2
+    means_pi = cell_mean([p_facet, i_facet]).unstack().to_numpy()
+    means_pj = cell_mean([p_facet, j_facet]).unstack().to_numpy()
+    means_ij = cell_mean([i_facet, j_facet]).unstack().to_numpy()
+    means_p_arr = means_p.to_numpy(dtype=float).reshape(-1, 1)
+    means_i_arr = means_i.to_numpy(dtype=float).reshape(-1, 1)
+    means_j_arr = means_j.to_numpy(dtype=float).reshape(-1, 1)
+
+    diff_pi = (
+        means_pi - means_p_arr - means_i.to_numpy(dtype=float).reshape(1, -1) + grand_mean
+    )
+    ss_pi = float(n_j * np.sum(diff_pi ** 2))
+    diff_pj = (
+        means_pj - means_p_arr - means_j.to_numpy(dtype=float).reshape(1, -1) + grand_mean
+    )
+    ss_pj = float(n_i * np.sum(diff_pj ** 2))
+    diff_ij = (
+        means_ij - means_i_arr - means_j.to_numpy(dtype=float).reshape(1, -1) + grand_mean
+    )
+    ss_ij = float(n_p * np.sum(diff_ij ** 2))
+
+    # Residual (= three-way interaction confounded with error under
+    # one obs per cell) by subtraction.
+    ss_residual = max(ss_total - ss_p - ss_i - ss_j - ss_pi - ss_pj - ss_ij, 0.0)
+
+    # Degrees of freedom for each source (Brennan 2001 Table 3.5).
+    df_p = n_p - 1
+    df_i = n_i - 1
+    df_j = n_j - 1
+    df_pi = df_p * df_i
+    df_pj = df_p * df_j
+    df_ij = df_i * df_j
+    df_residual = df_p * df_i * df_j
+
+    def safe_div(num, den):
+        return float(num / den) if (np.isfinite(num) and den > 0) else np.nan
+
+    ms_p = safe_div(ss_p, df_p)
+    ms_i = safe_div(ss_i, df_i)
+    ms_j = safe_div(ss_j, df_j)
+    ms_pi = safe_div(ss_pi, df_pi)
+    ms_pj = safe_div(ss_pj, df_pj)
+    ms_ij = safe_div(ss_ij, df_ij)
+    ms_residual = safe_div(ss_residual, df_residual)
+
+    # Method-of-moments variance estimators. Clamp at zero per
+    # Henderson III convention (negative MoM estimates are a
+    # finite-sample artefact; Brennan 2001 p. 81).
+    sigma2_residual = max(ms_residual, 0.0)
+    sigma2_pi = max((ms_pi - ms_residual) / max(n_j, 1), 0.0)
+    sigma2_pj = max((ms_pj - ms_residual) / max(n_i, 1), 0.0)
+    sigma2_ij = max((ms_ij - ms_residual) / max(n_p, 1), 0.0)
+    sigma2_p = max(
+        (ms_p - ms_pi - ms_pj + ms_residual) / max(n_i * n_j, 1), 0.0
+    )
+    sigma2_i = max(
+        (ms_i - ms_pi - ms_ij + ms_residual) / max(n_p * n_j, 1), 0.0
+    )
+    sigma2_j = max(
+        (ms_j - ms_pj - ms_ij + ms_residual) / max(n_p * n_i, 1), 0.0
+    )
+
+    rows = [
+        {"Source": p_facet, "SumSquares": ss_p, "df": df_p,
+         "MeanSquares": ms_p, "Variance": sigma2_p,
+         "MeanObsPerLevel": float(n_i * n_j), "Levels": n_p,
+         "Term": "main"},
+        {"Source": i_facet, "SumSquares": ss_i, "df": df_i,
+         "MeanSquares": ms_i, "Variance": sigma2_i,
+         "MeanObsPerLevel": float(n_p * n_j), "Levels": n_i,
+         "Term": "main"},
+        {"Source": j_facet, "SumSquares": ss_j, "df": df_j,
+         "MeanSquares": ms_j, "Variance": sigma2_j,
+         "MeanObsPerLevel": float(n_p * n_i), "Levels": n_j,
+         "Term": "main"},
+        {"Source": f"{p_facet}:{i_facet}", "SumSquares": ss_pi, "df": df_pi,
+         "MeanSquares": ms_pi, "Variance": sigma2_pi,
+         "MeanObsPerLevel": float(n_j), "Levels": n_p * n_i,
+         "Term": "two-way"},
+        {"Source": f"{p_facet}:{j_facet}", "SumSquares": ss_pj, "df": df_pj,
+         "MeanSquares": ms_pj, "Variance": sigma2_pj,
+         "MeanObsPerLevel": float(n_i), "Levels": n_p * n_j,
+         "Term": "two-way"},
+        {"Source": f"{i_facet}:{j_facet}", "SumSquares": ss_ij, "df": df_ij,
+         "MeanSquares": ms_ij, "Variance": sigma2_ij,
+         "MeanObsPerLevel": float(n_p), "Levels": n_i * n_j,
+         "Term": "two-way"},
+        {"Source": "Residual", "SumSquares": ss_residual, "df": df_residual,
+         "MeanSquares": ms_residual, "Variance": sigma2_residual,
+         "MeanObsPerLevel": float("nan"),
+         "Levels": None, "Term": "residual"},
+    ]
+    out = pd.DataFrame(rows)
+    total_var = float(np.nansum(out["Variance"]))
+    out["ProportionVariance"] = (
+        out["Variance"] / total_var if total_var > 0 else np.nan
+    )
+    return out[[
+        "Source", "Term", "Variance", "ProportionVariance",
+        "SumSquares", "df", "MeanSquares", "MeanObsPerLevel", "Levels",
+    ]]
+
+
 def _crossed_anova_variance_components(
     obs_df: pd.DataFrame,
     *,
@@ -10254,6 +10430,14 @@ def _crossed_anova_variance_components(
     MeanObsPerLevel. For balanced data the variance estimates match the
     classical ANOVA method-of-moments solutions; for mildly unbalanced
     data the estimates remain useful summaries even if not unbiased.
+
+    When the design admits a full 3-way ANOVA (object + exactly two
+    random facets, balanced, one observation per cell), the helper
+    delegates to ``_crossed_anova_two_way_variance_components`` which
+    estimates the three two-way interaction variances explicitly per
+    Brennan (2001, Table 3.5). The main-effects-only path below is
+    used for designs with 1 random facet, 3+ random facets, or any
+    unbalanced cell structure.
     """
     needed = [object_facet] + list(random_facets) + [score_col]
     missing = [c for c in needed if c not in obs_df.columns]
@@ -10270,6 +10454,22 @@ def _crossed_anova_variance_components(
 
     grand_mean = float(work[score_col].mean())
     ss_total = float(((work[score_col] - grand_mean) ** 2).sum())
+
+    # Try the full 3-way decomposition first (Brennan 2001 Table 3.5).
+    # When the design admits it, this gives explicit two-way
+    # interaction variances and a residual that is the three-way
+    # interaction confounded with error; otherwise fall through to the
+    # main-effects-only approximation below.
+    two_way = _crossed_anova_two_way_variance_components(
+        work,
+        object_facet=object_facet,
+        random_facets=list(random_facets),
+        score_col=score_col,
+        grand_mean=grand_mean,
+        ss_total=ss_total,
+    )
+    if two_way is not None and not two_way.empty:
+        return two_way
 
     rows = []
     explained_ss = 0.0
@@ -10303,6 +10503,7 @@ def _crossed_anova_variance_components(
         explained_ss += ss_facet
         rows.append({
             "Source": facet,
+            "Term": "main",
             "SumSquares": ss_facet,
             "df": df_facet,
             "MeanSquares": ms_facet,
@@ -10314,11 +10515,12 @@ def _crossed_anova_variance_components(
     ms_residual = ss_residual / df_residual if df_residual > 0 else np.nan
     rows.append({
         "Source": "Residual",
+        "Term": "residual",
         "SumSquares": ss_residual,
         "df": df_residual,
         "MeanSquares": ms_residual,
         "MeanObsPerLevel": float("nan"),
-        "Levels": int(n_obs - sum(int(r["Levels"]) for r in rows[:-0])) if False else None,
+        "Levels": None,
     })
 
     out = pd.DataFrame(rows)
@@ -10341,7 +10543,7 @@ def _crossed_anova_variance_components(
         out["Variance"] / total_var if total_var > 0 else np.nan
     )
     return out[
-        ["Source", "Variance", "ProportionVariance", "SumSquares", "df",
+        ["Source", "Term", "Variance", "ProportionVariance", "SumSquares", "df",
          "MeanSquares", "MeanObsPerLevel", "Levels"]
     ]
 
@@ -10354,16 +10556,36 @@ def _g_phi_from_variance_components(
 ) -> dict:
     """Compute G / Phi from a variance-component table.
 
-    For a crossed object x facet1 x ... x facetK design under the
-    one-observation-per-cell approximation, the residual term absorbs
-    every interaction and observational error. G and Phi are reported
-    per-decision-replicate (i.e. assuming the planned number of
-    observations per facet level from ``facet_observations``); when
-    no plan is supplied, the observed design is used (single
-    observation per cell of the conditions of measurement).
+    Two formulas are used depending on what the variance-component
+    table carries:
+
+    * **Full 3-way decomposition** (the table has explicit two-way
+      interaction terms ``object:facetA``, ``object:facetB``,
+      ``facetA:facetB``): the canonical Brennan (2001, Eq. 3.18)
+      formulas with explicit interaction variances:
+
+          sigma2(delta) = sigma2_pi / n_i + sigma2_pj / n_j + sigma2_pij / (n_i n_j)
+          sigma2(Delta) = sigma2(delta) + sigma2_i / n_i + sigma2_j / n_j + sigma2_ij / (n_i n_j)
+          G   = sigma2_p / (sigma2_p + sigma2(delta))
+          Phi = sigma2_p / (sigma2_p + sigma2(Delta))
+
+      Here ``sigma2_pij`` is the residual term (three-way interaction
+      confounded with error under one observation per cell).
+
+    * **Main-effects-only fallback**: every facet other than the
+      object contributes ``sigma2_facet / n_facet`` to absolute error
+      and the residual contributes ``sigma2_residual / n_total`` to
+      both relative and absolute error. This path is used for 1-
+      random-facet designs, 3+-random-facet designs, and any
+      unbalanced cell structure. The caveat field documents that
+      person-by-facet interaction variance is absorbed into the
+      residual in this mode.
     """
     if not isinstance(var_components, pd.DataFrame) or var_components.empty:
         return {"G": np.nan, "Phi": np.nan, "details": {}}
+
+    # Lookup by Source name; the table may also carry a Term column
+    # ("main" / "two-way" / "residual") to flag interaction rows.
     lookup = {
         str(row["Source"]): float(row["Variance"])
         for _, row in var_components.iterrows()
@@ -10374,6 +10596,65 @@ def _g_phi_from_variance_components(
         return {"G": np.nan, "Phi": np.nan, "details": {"sigma2_p": sigma2_p, "sigma2_e": sigma2_e}}
 
     facet_obs = facet_observations or {}
+    has_term = "Term" in var_components.columns
+    two_way_rows = (
+        var_components[var_components["Term"] == "two-way"]
+        if has_term else pd.DataFrame()
+    )
+    using_interactions = not two_way_rows.empty
+
+    if using_interactions:
+        # Full 3-way decomposition. Identify the two random facets
+        # from the two-way Source labels that involve the object_facet.
+        random_facets: list[str] = []
+        for src in two_way_rows["Source"]:
+            parts = [p for p in str(src).split(":") if p != object_facet]
+            for p in parts:
+                if p not in random_facets:
+                    random_facets.append(p)
+        n_a = max(int(facet_obs.get(random_facets[0], 1)), 1) if random_facets else 1
+        n_b = max(int(facet_obs.get(random_facets[1], 1)), 1) if len(random_facets) > 1 else 1
+
+        def lookup_two_way(facets: tuple[str, str]) -> float:
+            for src, var in lookup.items():
+                parts = set(str(src).split(":"))
+                if parts == set(facets):
+                    return float(var)
+            return 0.0
+
+        i_facet = random_facets[0] if random_facets else None
+        j_facet = random_facets[1] if len(random_facets) > 1 else None
+        sigma2_pi = lookup_two_way((object_facet, i_facet)) if i_facet else 0.0
+        sigma2_pj = lookup_two_way((object_facet, j_facet)) if j_facet else 0.0
+        sigma2_ij = lookup_two_way((i_facet, j_facet)) if i_facet and j_facet else 0.0
+        sigma2_i = lookup.get(i_facet, 0.0) if i_facet else 0.0
+        sigma2_j = lookup.get(j_facet, 0.0) if j_facet else 0.0
+
+        # Brennan (2001) Eq. 3.18 / 3.19.
+        sigma2_delta = (
+            sigma2_pi / n_a + sigma2_pj / n_b + sigma2_e / (n_a * n_b)
+        )
+        sigma2_big_delta = (
+            sigma2_delta
+            + sigma2_i / n_a + sigma2_j / n_b + sigma2_ij / (n_a * n_b)
+        )
+        g_coef = sigma2_p / (sigma2_p + sigma2_delta)
+        phi_coef = sigma2_p / (sigma2_p + sigma2_big_delta)
+        return {
+            "G": float(g_coef),
+            "Phi": float(phi_coef),
+            "details": {
+                "sigma2_object": sigma2_p,
+                "sigma2_residual": sigma2_e,
+                "sigma2_relative_error": sigma2_delta,
+                "sigma2_absolute_error": sigma2_big_delta,
+                "facet_observations": dict(facet_obs),
+                "decomposition": "full_3way_brennan_eq_3_18",
+                "random_facets": list(random_facets),
+            },
+        }
+
+    # Main-effects-only fallback.
     sigma2_main_per_obs = 0.0
     for source, variance in lookup.items():
         if source in {object_facet, "Residual"} or not np.isfinite(variance):
@@ -10397,6 +10678,7 @@ def _g_phi_from_variance_components(
             "sigma2_main_per_obs": sigma2_main_per_obs,
             "n_total": n_total,
             "facet_observations": dict(facet_obs),
+            "decomposition": "main_effects_only_approximation",
         },
     }
 
@@ -10566,16 +10848,45 @@ def compute_generalizability_study(
         "n_observations": int(len(data)),
         "grand_mean": float(pd.to_numeric(data[score_col], errors="coerce").mean()),
     }
-    caveat = (
-        "Main-effects-only crossed ANOVA decomposition under the standard "
-        "one-observation-per-cell approximation. All two-way and higher "
-        "person-by-facet interactions are folded into the Residual term, "
-        "which can bias G downward when person x facet interactions are "
-        "substantively large. G is appropriate for relative decisions "
-        "(rank ordering); Phi for absolute decisions (cut-score "
-        "classification). Reporting bands follow Brennan (2001): G / Phi "
-        ">= 0.8 for high-stakes decisions, >= 0.7 for routine reporting."
+    # Caveat depends on which decomposition path the helper took. For
+    # the canonical balanced 3-way design with one observation per
+    # cell the bundle reports explicit two-way interaction variances
+    # (Brennan 2001 Table 3.5); otherwise it falls back to the main-
+    # effects-only approximation.
+    using_full = (
+        observed_coefficients.get("details", {}).get("decomposition")
+        == "full_3way_brennan_eq_3_18"
     )
+    if using_full:
+        caveat = (
+            "Full random-effects 3-way ANOVA decomposition (Brennan, "
+            "2001, Table 3.5) on the balanced one-observation-per-cell "
+            "design. The variance-components table carries the three "
+            "main effects, the three two-way interactions, and a "
+            "Residual term that is the three-way interaction confounded "
+            "with error (the standard one-observation-per-cell "
+            "confounding). G is appropriate for relative decisions "
+            "(rank ordering); Phi for absolute decisions (cut-score "
+            "classification). Reporting bands follow Brennan (2001): "
+            "G / Phi >= 0.8 for high-stakes decisions, >= 0.7 for "
+            "routine reporting."
+        )
+    else:
+        caveat = (
+            "Main-effects-only crossed ANOVA decomposition (used when "
+            "the design has only one random facet, three or more "
+            "random facets, or an unbalanced cell structure). All "
+            "two-way and higher person-by-facet interactions are "
+            "folded into the Residual term, which can bias G downward "
+            "when person x facet interactions are substantively large. "
+            "For the canonical balanced p x i x j design with one "
+            "observation per cell the bundle uses the full 3-way "
+            "decomposition (Brennan 2001 Table 3.5) automatically. "
+            "G is appropriate for relative decisions (rank ordering); "
+            "Phi for absolute decisions (cut-score classification). "
+            "Reporting bands follow Brennan (2001): G / Phi >= 0.8 "
+            "for high-stakes decisions, >= 0.7 for routine reporting."
+        )
     reference = (
         "Cronbach, Gleser, Nanda, & Rajaratnam (1972); Brennan (2001)."
     )

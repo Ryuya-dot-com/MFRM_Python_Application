@@ -155,9 +155,24 @@ All notable changes to this standalone Streamlit distribution should be recorded
     and reminds readers that theta, step thresholds, slopes, and
     other facet estimates are held fixed inside the conditional
     profile. RSM / PCM fits show the unavailable caption.
-  * **mfrmr 0.2.0 coverage.** The corresponding row in
-    `mfrmr_020_migration_coverage_table()` will be flipped from
-    `Planned` to `Ready` once this work merges.
+  * **mfrmr 0.2.0 coverage.** `mfrmr_020_migration_coverage_table()`
+    has the `GPCM bias inference - slope-aware` row updated from
+    `Planned` to `Ready`. The new `PythonEvidence` cites the
+    slope-aware Fisher information identity (Muraki, 1993, Eqs. 7,
+    16), the LR chi-square pivotal (Wilks, 1938), the
+    profile-likelihood CI inversion (Cox, 1975), and the publication-
+    document integration; the `Boundary` paragraph documents the
+    still-uniformly-`screening` inference tier and the conditional
+    profile semantics (theta, step thresholds, slopes, and other
+    facet measures held fixed). The Bounded GPCM row's `Boundary` is
+    also updated to remove the obsolete "bias inference still uses
+    the non-slope-aware identity pending a follow-up" caveat; the
+    paragraph now points directly at the dedicated 0.2.0 bias row
+    for the slope-aware machinery. The
+    `external_validation_report_template` claim row for
+    `mfrmr 0.2.0 migration` is updated in lock-step so the
+    public-wording paragraph names slope-aware GPCM bias inference
+    among the shipped pieces rather than among the roadmap items.
   * **Publication-document integration.** The Word, PDF, and HTML
     manuscript exports now embed a bias / interaction table after the
     element-measures and reliability tables. For GPCM fits the

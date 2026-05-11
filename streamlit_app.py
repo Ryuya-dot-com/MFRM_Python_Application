@@ -700,14 +700,16 @@ def mfrmr_020_migration_coverage_table() -> pd.DataFrame:
             "slope_facet == step_facet still required (the mfrmr R reference "
             "also blocks generic GPCM today); Person rows under the structural "
             "delta-method SE are marked 'not available' because MML EAPs are "
-            "not part of the marginal-likelihood Hessian; bias inference still "
-            "uses the non-slope-aware information identity pending a follow-up."
+            "not part of the marginal-likelihood Hessian. Bias inference under "
+            "GPCM now uses the slope-aware Fisher information identity with "
+            "an accompanying likelihood-ratio test and profile-likelihood "
+            "confidence interval (see the dedicated 0.2.0 row below)."
         )
         base.loc[gpcm_mask, "NextValidation"] = (
             "Report the slope-aware Fair(M) / Fair(Z) with their structural "
-            "delta-method CIs; flag Person rows in manuscript text as "
-            "unavailable through this code path; defer SE-based bias inference "
-            "claims to the follow-up release."
+            "delta-method CIs and the slope-aware bias S.E. / LR / profile CI; "
+            "flag Person rows in manuscript text as unavailable through the "
+            "fair-average SE code path."
         )
 
     rows = [
@@ -764,24 +766,45 @@ def mfrmr_020_migration_coverage_table() -> pd.DataFrame:
         },
         {
             "mfrmr020Area": "GPCM bias inference - slope-aware",
-            "PythonStatus": "Planned",
+            "PythonStatus": "Ready",
             "PythonEvidence": (
-                "Bias point estimates and SE are currently computed under the "
-                "non-slope-aware information identity (sum of var_k * weight, "
-                "not sum of a_i^2 * var_k * weight). The mfrmr R reference "
-                "uses the slope-aware identity for GPCM fits and adds a "
-                "likelihood-ratio test plus a profile-likelihood confidence "
-                "interval for each additive bias shift."
+                "estimate_bias_interaction() under GPCM now uses the "
+                "slope-aware Fisher information identity "
+                "I(b) = sum_i a_i^2 * Var[X_i | eta_i + b] * w_i "
+                "(Muraki, 1993, Eqs. 7, 16) for the bias-cell standard "
+                "error; the previous non-slope-aware fall-back applied a^2 "
+                "= 1 and overstated GPCM bias SE. Each GPCM cell additionally "
+                "reports LR ChiSq = max(0, 2 * (loglik(bias_hat) - "
+                "loglik(0))) with 1 d.f. (Wilks, 1938) and a profile-"
+                "likelihood confidence interval obtained by inverting "
+                "2 * (NLL(b) - NLL(bias_hat)) = chi2_{1, 0.95} via Brent "
+                "root-finding on each side of bias_hat (Cox, 1975). The "
+                "publication-document builders (Word / PDF / HTML) embed "
+                "the LR / Profile-CI columns in a Results table whose "
+                "caption cites the chain. R parity at manuscript-citation "
+                "tolerance across six bias cells against mfrmr 0.2.0 / "
+                "R 4.5.2 is pinned by "
+                "tests/test_gpcm_bias_inference.py::"
+                "test_bias_estimation_matches_r_reference_within_tolerance."
             ),
             "Boundary": (
-                "The current bias SE under GPCM is a screening-tier value "
-                "until the slope-aware identity, the LR test, and the profile "
-                "CI are integrated."
+                "RSM and PCM fits stay in the t-based screening tier "
+                "(InferenceTier = 'screening' on every cell) because the "
+                "chi-square pivotal relies on the slope-aware information "
+                "identity above. The current InferenceTier is uniformly "
+                "'screening'; a 'confirmatory' tier requiring post-hoc "
+                "adjustment or rater anchoring is on the roadmap. The "
+                "profile-likelihood CI is a conditional profile with theta, "
+                "step thresholds, slopes, and other facet measures held "
+                "fixed at fit-time values; uncertainty inherited from those "
+                "anchors is not propagated."
             ),
             "NextValidation": (
-                "Treat the current GPCM bias SE as a screening-tier value; "
-                "defer SE-based bias inference claims until the slope-aware "
-                "identity + LR test + profile CI ship in the follow-up release."
+                "Report Bias Size with the slope-aware S.E. plus LR ChiSq / "
+                "LR Prob. and the profile CI; cite Muraki (1993), Wilks "
+                "(1938), and Cox (1975) in the Methods section. The "
+                "publication-document Bias / Interaction table already "
+                "carries these columns with a citation-bearing caption."
             ),
         },
         {
@@ -30249,9 +30272,12 @@ def external_validation_report_template() -> pd.DataFrame:
             "Status": "Not run",
             "AcceptablePublicWording": (
                 "The Python app covers the listed mfrmr 0.2.0 areas with documented "
-                "boundaries; the 0.2.0-new slope-aware GPCM fair-average and the "
-                "structural delta-method SE ship in this release, and the remaining "
-                "0.2.0 areas (slope-aware bias inference, FACETS df reporting, "
+                "boundaries; the 0.2.0-new slope-aware GPCM fair-average, the "
+                "structural delta-method SE for the fair-average, and the slope-"
+                "aware GPCM bias inference (Fisher information identity, "
+                "likelihood-ratio test, profile-likelihood CI, plus publication-"
+                "document integration of the LR / Profile-CI columns) ship in "
+                "this release. The remaining 0.2.0 areas (FACETS df reporting, "
                 "network analysis, D-study planning, ADEMP recovery, lz* "
                 "correction, category-specific information, model-choice review, "
                 "APA presets) are on the roadmap."

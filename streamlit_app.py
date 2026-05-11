@@ -4348,6 +4348,16 @@ def _facets_fit_df_terms(var, fourth, weight):
     ``sum w * (M4 / sigma^4 - 1)`` for Outfit, evaluated only over
     observations with strictly positive variance and finite fourth
     moment. ``weight`` defaults to all-ones if ``None`` is passed.
+
+    The linear-``w`` form matches the mfrmr 0.2.0 reference exactly
+    and is the formula reported in the Wright & Masters (1982,
+    Eq. 4.27) literature. The independence-based derivation under
+    non-unit weights would substitute ``w^2`` for ``w``; for the
+    typical MFRM case of unit observation weights the two forms are
+    identical, and the linear-``w`` form is what FACETS / Wright-
+    Masters report. The bundle's ``settings`` field names the
+    formula in plain English so downstream consumers can name it
+    correctly in a manuscript.
     """
     var = np.asarray(var, dtype=float)
     fourth = np.asarray(fourth, dtype=float)
@@ -4453,8 +4463,10 @@ def _apply_fit_df_method(
         out["InfitZSTD"] = out["InfitZSTD_FACETS"]
         out["OutfitZSTD"] = out["OutfitZSTD_FACETS"]
         out["FitDfMethod"] = "facets_wright_masters"
+        out["FitDfFormula"] = "linear_w_wright_masters_eq_4_27"
     elif method == "both":
         out["FitDfMethod"] = "engine_primary_facets_available"
+        out["FitDfFormula"] = "linear_w_wright_masters_eq_4_27"
     else:  # engine
         drop_cols = [
             "DF_Infit_ENGINE", "DF_Outfit_ENGINE",

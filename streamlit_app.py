@@ -14951,10 +14951,29 @@ _APA_REFERENCE_LIBRARY: dict[str, str] = {
     "McNamara_1996": (
         "McNamara, T. (1996). Measuring second language performance. Longman."
     ),
+    "Cox_1975": (
+        "Cox, D. R. (1975). Partial likelihood. Biometrika, 62(2), 269–276. "
+        "https://doi.org/10.1093/biomet/62.2.269"
+    ),
+    "Cramer_1946": (
+        "Cramer, H. (1946). Mathematical methods of statistics. "
+        "Princeton University Press."
+    ),
+    "Louis_1982": (
+        "Louis, T. A. (1982). Finding the observed information matrix when "
+        "using the EM algorithm. Journal of the Royal Statistical Society: "
+        "Series B (Methodological), 44(2), 226–233. "
+        "https://doi.org/10.1111/j.2517-6161.1982.tb01203.x"
+    ),
     "Muraki_1992": (
         "Muraki, E. (1992). A generalized partial credit model: Application of "
         "an EM algorithm. Applied Psychological Measurement, 16(2), 159–176. "
         "https://doi.org/10.1177/014662169201600206"
+    ),
+    "Muraki_1993": (
+        "Muraki, E. (1993). Information functions of the generalized partial "
+        "credit model. Applied Psychological Measurement, 17(4), 351–363. "
+        "https://doi.org/10.1177/014662169301700403"
     ),
     "Myford_Wolfe_2003": (
         "Myford, C. M., & Wolfe, E. W. (2003). Detecting and measuring rater "
@@ -15040,6 +15059,11 @@ _APA_REFERENCE_LIBRARY: dict[str, str] = {
         "Wright, B. D., & Stone, M. H. (1999). Measurement essentials (2nd ed.). "
         "Wide Range."
     ),
+    "Wilks_1938": (
+        "Wilks, S. S. (1938). The large-sample distribution of the likelihood "
+        "ratio for testing composite hypotheses. The Annals of Mathematical "
+        "Statistics, 9(1), 60–62. https://doi.org/10.1214/aoms/1177732360"
+    ),
 }
 
 
@@ -15073,7 +15097,11 @@ _CITATION_TO_KEY: dict[str, str] = {
     "(Luoma, 2004)": "Luoma_2004",
     "(Masters, 1982)": "Masters_1982",
     "(McNamara, 1996)": "McNamara_1996",
+    "(Cox, 1975)": "Cox_1975",
+    "(Cramer, 1946)": "Cramer_1946",
+    "(Louis, 1982)": "Louis_1982",
     "(Muraki, 1992)": "Muraki_1992",
+    "(Muraki, 1993)": "Muraki_1993",
     "(Myford & Wolfe, 2003)": "Myford_Wolfe_2003",
     "(Myford & Wolfe, 2004)": "Myford_Wolfe_2004",
     "(Reckase, 1979)": "Reckase_1979",
@@ -15086,6 +15114,7 @@ _CITATION_TO_KEY: dict[str, str] = {
     "(Uto & Ueno, 2020)": "Uto_Ueno_2020",
     "(Wagenmakers, 2007)": "Wagenmakers_2007",
     "(Wainer & Kiely, 1987)": "Wainer_Kiely_1987",
+    "(Wilks, 1938)": "Wilks_1938",
     "(Wang, Bradlow & Wainer, 2002)": "Wang_Bradlow_Wainer_2002",
     "(Wolfe & Song, 2015)": "Wolfe_Song_2015",
     "(Wright & Linacre, 1994)": "Wright_Linacre_1994",
@@ -15583,6 +15612,80 @@ def _add_markdown_to_docx(document, markdown_text: str) -> None:
         i += 1
 
 
+def _bias_table_for_publication(
+    all_bias_results: dict | None,
+    model: str | None,
+) -> "pd.DataFrame | None":
+    """Build a publication-ready bias / interaction table.
+
+    Concatenates every facet pair in ``all_bias_results`` into one
+    DataFrame. For GPCM fits the slope-aware Fisher information SE, the
+    likelihood-ratio test, and the profile-likelihood CI columns are
+    appended after the base bias / t / Prob. block; for RSM and PCM
+    fits only the t-based screening columns are included because the
+    chi-square pivotal pertains only to the slope-aware GPCM kernel
+    (Wilks, 1938; Cox, 1975).
+    """
+    if not all_bias_results:
+        return None
+    parts: list[pd.DataFrame] = []
+    for pair_key, bias_results in all_bias_results.items():
+        if not isinstance(bias_results, dict) or "table" not in bias_results:
+            continue
+        tbl = bias_results["table"]
+        if not isinstance(tbl, pd.DataFrame) or tbl.empty:
+            continue
+        rows = tbl.copy()
+        rows.insert(0, "Pair", str(pair_key))
+        parts.append(rows)
+    if not parts:
+        return None
+    out = pd.concat(parts, ignore_index=True)
+    base_cols = [
+        "Pair", "FacetA_Level", "FacetB_Level",
+        "Bias Size", "S.E.", "t", "d.f.", "Prob.",
+    ]
+    gpcm_cols = [
+        "LR ChiSq", "LR Prob.",
+        "Profile CI Lower", "Profile CI Upper", "Profile CI Status",
+    ]
+    cols = list(base_cols)
+    if (model or "").upper() == "GPCM" and "LR ChiSq" in out.columns and pd.to_numeric(
+        out["LR ChiSq"], errors="coerce"
+    ).notna().any():
+        cols.extend(gpcm_cols)
+    cols = [c for c in cols if c in out.columns]
+    return out[cols].copy()
+
+
+def _bias_table_caption(model: str | None, table_idx: int) -> str:
+    """Caption for the publication bias / interaction table.
+
+    The GPCM caption cites Muraki (1993) for the slope-aware Fisher
+    information identity, Wilks (1938) for the chi-square pivotal that
+    underwrites the likelihood-ratio test, and Cox (1975) for the
+    profile-likelihood confidence interval. The RSM / PCM caption stays
+    in the original t-based screening framing (Myford & Wolfe, 2003).
+    """
+    if (model or "").upper() == "GPCM":
+        return (
+            f"Table {table_idx}. Bias / interaction analysis with slope-aware "
+            "GPCM inference. Bias Size is the additive bias shift in logits; "
+            "S.E. is the conditional Fisher information standard error "
+            "sum_i a_i^2 * Var[X_i | eta_i + b_hat] * w_i (Muraki, 1993); "
+            "LR ChiSq is the likelihood-ratio test of bias = 0 with one "
+            "degree of freedom (Wilks, 1938); Profile CI is the 95% profile-"
+            "likelihood confidence interval (Cox, 1975) holding theta, step "
+            "thresholds, slopes, and other facet estimates fixed."
+        )
+    return (
+        f"Table {table_idx}. Bias / interaction analysis. Bias Size is the "
+        "additive bias shift in logits; S.E. is the conditional information "
+        "standard error; t and Prob. are the t-test of bias = 0 (Myford & "
+        "Wolfe, 2003)."
+    )
+
+
 def _add_dataframe_to_docx(document, df: "pd.DataFrame", caption: str | None = None) -> None:
     """Render a pandas DataFrame as a Word table (with optional caption above)."""
     if not isinstance(df, pd.DataFrame) or df.empty:
@@ -15674,18 +15777,28 @@ def build_publication_word_bytes(
 
     # --- Core results tables ---
     document.add_heading("Results tables", level=1)
+    table_idx = 1
     measures = diagnostics.get("measures") if isinstance(diagnostics, dict) else None
     if isinstance(measures, pd.DataFrame) and not measures.empty:
         _add_dataframe_to_docx(
             document, measures.round(3),
-            caption="Table 1. Element measures, standard errors, and fit statistics.",
+            caption=f"Table {table_idx}. Element measures, standard errors, and fit statistics.",
         )
+        table_idx += 1
     reliability = diagnostics.get("reliability") if isinstance(diagnostics, dict) else None
     if isinstance(reliability, pd.DataFrame) and not reliability.empty:
         _add_dataframe_to_docx(
             document, reliability.round(3),
-            caption="Table 2. Reliability and separation by facet.",
+            caption=f"Table {table_idx}. Reliability and separation by facet.",
         )
+        table_idx += 1
+    bias_publication_tbl = _bias_table_for_publication(all_bias_results, config.get("model"))
+    if bias_publication_tbl is not None and not bias_publication_tbl.empty:
+        _add_dataframe_to_docx(
+            document, bias_publication_tbl.round(3),
+            caption=_bias_table_caption(config.get("model"), table_idx),
+        )
+        table_idx += 1
 
     # --- Embedded figures ---
     figures = _publication_figure_payloads(result, diagnostics)
@@ -15901,18 +16014,28 @@ def build_publication_pdf_bytes(
 
     # --- Results tables ---
     story.append(Paragraph("Results tables", styles["Heading1"]))
+    table_idx = 1
     measures = diagnostics.get("measures") if isinstance(diagnostics, dict) else None
     if isinstance(measures, pd.DataFrame) and not measures.empty:
         story.extend(_pdf_dataframe_flowable(
             measures,
-            caption="Table 1. Element measures, standard errors, and fit statistics.",
+            caption=f"Table {table_idx}. Element measures, standard errors, and fit statistics.",
         ))
+        table_idx += 1
     reliability = diagnostics.get("reliability") if isinstance(diagnostics, dict) else None
     if isinstance(reliability, pd.DataFrame) and not reliability.empty:
         story.extend(_pdf_dataframe_flowable(
             reliability,
-            caption="Table 2. Reliability and separation by facet.",
+            caption=f"Table {table_idx}. Reliability and separation by facet.",
         ))
+        table_idx += 1
+    bias_publication_tbl = _bias_table_for_publication(all_bias_results, config.get("model"))
+    if bias_publication_tbl is not None and not bias_publication_tbl.empty:
+        story.extend(_pdf_dataframe_flowable(
+            bias_publication_tbl,
+            caption=_bias_table_caption(config.get("model"), table_idx),
+        ))
+        table_idx += 1
 
     # --- Figures ---
     figures = _publication_figure_payloads(result, diagnostics)
@@ -16090,18 +16213,30 @@ def build_publication_html_bytes(
     # Tables rendered as HTML via pandas (escape-safe)
     measures = diagnostics.get("measures") if isinstance(diagnostics, dict) else None
     reliability = diagnostics.get("reliability") if isinstance(diagnostics, dict) else None
+    table_idx = 1
     measures_html = ""
     if isinstance(measures, pd.DataFrame) and not measures.empty:
         measures_html = (
-            "<h2>Table 1. Element measures, standard errors, and fit statistics</h2>\n"
+            f"<h2>Table {table_idx}. Element measures, standard errors, and fit statistics</h2>\n"
             + measures.round(3).to_html(index=False, border=0)
         )
+        table_idx += 1
     reliability_html = ""
     if isinstance(reliability, pd.DataFrame) and not reliability.empty:
         reliability_html = (
-            "<h2>Table 2. Reliability and separation by facet</h2>\n"
+            f"<h2>Table {table_idx}. Reliability and separation by facet</h2>\n"
             + reliability.round(3).to_html(index=False, border=0)
         )
+        table_idx += 1
+    bias_publication_tbl = _bias_table_for_publication(all_bias_results, config.get("model"))
+    bias_html = ""
+    if bias_publication_tbl is not None and not bias_publication_tbl.empty:
+        bias_caption = _bias_table_caption(config.get("model"), table_idx)
+        bias_html = (
+            f"<h2>{_html_escape(bias_caption)}</h2>\n"
+            + bias_publication_tbl.round(3).to_html(index=False, border=0)
+        )
+        table_idx += 1
 
     # Embed figures as base64 PNG so the HTML stays self-contained
     import base64
@@ -16140,6 +16275,7 @@ def build_publication_html_bytes(
 {_markdown_to_html(manuscript_text)}
 {measures_html}
 {reliability_html}
+{bias_html}
 {figures_html}
 {refs_html}
 """

@@ -158,6 +158,23 @@ All notable changes to this standalone Streamlit distribution should be recorded
   * **mfrmr 0.2.0 coverage.** The corresponding row in
     `mfrmr_020_migration_coverage_table()` will be flipped from
     `Planned` to `Ready` once this work merges.
+  * **Publication-document integration.** The Word, PDF, and HTML
+    manuscript exports now embed a bias / interaction table after the
+    element-measures and reliability tables. For GPCM fits the
+    table includes the new ``LR ChiSq``, ``LR Prob.``, ``Profile CI
+    Lower``, ``Profile CI Upper``, and ``Profile CI Status`` columns;
+    RSM and PCM fits show the t-based screening columns only. Two
+    new helpers ``_bias_table_for_publication`` and
+    ``_bias_table_caption`` are shared across the three builders so
+    the column selection and the caption stay in lock-step.
+    Captions cite Muraki (1993) for the slope-aware information
+    identity, Wilks (1938) for the LR chi-square pivotal, and
+    Cox (1975) for the profile-likelihood confidence interval; the
+    APA reference library and the citation map gain entries for
+    Wilks (1938), Cox (1975), Louis (1982), Cramer (1946), and
+    Muraki (1993) so a Methods narrative that mentions these
+    citations in ``(Author, Year)`` form auto-resolves to a
+    properly alphabetised references list.
   * **R parity.** A new test
     (`test_bias_estimation_matches_r_reference_within_tolerance`)
     runs the same GPCM MML fit and bias estimation in Python and in

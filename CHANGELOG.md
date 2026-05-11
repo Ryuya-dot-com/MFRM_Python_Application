@@ -226,6 +226,45 @@ All notable changes to this standalone Streamlit distribution should be recorded
     "negligible" threshold cited in Linacre's FACETS Manual. The
     categorical fields (`Profile CI Status`, `InferenceTier`) must
     agree exactly.
+- **Rater severity / leniency directed network and rater halo
+  cross-criterion screen.** Two further network screens
+  complete the mfrmr 0.2.0 network-analysis triple alongside the
+  earlier design network. ``compute_rater_severity_network(res)``
+  builds the directed rater-leniency graph: for every pair of raters
+  with shared scoring contexts, the edge ``A -> B`` carries weight
+  ``P(A > B | A != B)`` from the directional higher-count diagnostic,
+  and the per-rater ``LeniencyIndex = out_mass - in_mass`` plus
+  ``SeverityRank`` give a Rasch-style severity ranking that recovers
+  the data-generating order exactly on the synthetic fixture (R1
+  generated with the smallest ``rater_eff`` ends up at rank 1).
+  ``compute_rater_halo_network(res)`` builds the
+  ``(Rater, Criterion)`` node graph with Spearman edge weights and
+  Bonferroni-adjusted retention; per-rater ``ReviewStatus`` of
+  ``warning`` / ``review`` / ``ok`` is keyed on the configurable
+  ``halo_weight_review`` and ``halo_contrast_review`` thresholds. The
+  warning tier upgrades when the halo signal dominates the retained
+  edges (high same-rater cross-criterion mean correlation AND either
+  a clear halo / non-halo contrast or no non-halo edges retained at
+  all). The Report tab gains two new panels — Rater severity and
+  Rater halo — each with summary, per-rater table, expander for the
+  full pair / edge metrics, and per-table CSV download. Math contract
+  pinned in ``tests/test_rater_networks.py`` (16 tests covering
+  refusal on invalid input, the directional-count identity
+  ``Rater1HigherProp + Rater2HigherProp = 1``, severity-rank recovery
+  on synthetic data, ``sum(LeniencyIndex) = 0`` under a fully crossed
+  design, halo refusal on coinciding facets, warning detection on
+  halo-patterned data, ``ok`` retention on clean RSM data, the
+  contrast identity ``HaloNonHaloContrast = HaloMeanWeight -
+  NonHaloMeanWeight``, settings round-trip, and node-count parity).
+  Two new APA references (Lai, Wolfe, & Vickers, 2015; Lamprianou,
+  2025) are added. The
+  ``mfrmr_020_migration_coverage_table()`` row for "Network analysis
+  (mfrm / rater / rater-halo)" flips from "Ready (design network);
+  rater / halo screens remain follow-up work" to plain "Ready". The
+  Welch test contrasting halo vs non-halo edge weights is reported
+  but described as descriptive only (edge weights are clustered by
+  rater and node), so ``ReviewStatus = 'warning'`` should be read as
+  a follow-up trigger rather than a causal halo diagnosis.
 - **Design network analysis (connectivity, articulation points, bridges,
   betweenness centrality).** A new ``compute_design_network_analysis(res)``
   helper treats the rating design as an undirected weighted graph

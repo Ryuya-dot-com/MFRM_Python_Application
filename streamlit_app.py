@@ -845,52 +845,57 @@ def mfrmr_020_migration_coverage_table() -> pd.DataFrame:
         },
         {
             "mfrmr020Area": "Network analysis (mfrm / rater / rater-halo)",
-            "PythonStatus": "Ready (design network); rater / halo "
-                            "screens remain follow-up work",
+            "PythonStatus": "Ready",
             "PythonEvidence": (
-                "compute_design_network_analysis() treats the rating "
-                "design as an undirected weighted graph (nodes = "
-                "(Facet, Level), edges = co-observed in a rating row, "
-                "weight = co-observation count) and reports the "
-                "canonical connectivity diagnostics: graph-level "
-                "summary (components, density, mean degree, "
-                "articulation points, bridges, diameter, mean "
-                "distance), per-node centralities (degree, strength, "
-                "betweenness, closeness, eigenvector) with an "
-                "articulation-point flag, per-edge bridge flag, and "
-                "per-facet aggregates. The Report tab gains a Design "
-                "Network section with the summary table, per-facet "
-                "aggregate, articulation-point and bridge-edge "
-                "callouts (with green-success messages when none are "
-                "found), a per-node metrics expander, and a CSV "
-                "download. Math contract pinned in "
-                "tests/test_design_network.py (14 tests). Underlying "
-                "graph algorithms come from networkx (Hagberg, "
-                "Schult, & Swart, 2008), matching the same algorithms "
-                "used by the igraph (Csardi & Nepusz, 2006) wrapper "
-                "in the R reference."
+                "Three complementary network screens are shipped. "
+                "(1) compute_design_network_analysis() handles the "
+                "undirected co-observation graph (nodes = (Facet, "
+                "Level), edges = co-observed in a rating row, weight "
+                "= co-observation count) with graph-level connectivity "
+                "summary, per-node centralities, articulation-point "
+                "and bridge flags, per-facet aggregate. (2) "
+                "compute_rater_severity_network() builds the directed "
+                "rater leniency graph: edge A -> B weight = P(A > B | "
+                "A != B) on shared scoring contexts, per-rater "
+                "LeniencyIndex = out_mass - in_mass with a "
+                "SeverityRank tie-breaker (the Rasch-style severity "
+                "ordering is recovered exactly on the synthetic "
+                "fixture). (3) compute_rater_halo_network() builds "
+                "the (Rater, Criterion) node graph with Spearman edge "
+                "weights, Bonferroni-adjusted retention, per-rater "
+                "ReviewStatus of warning / review / ok keyed on the "
+                "configurable halo_weight_review and "
+                "halo_contrast_review thresholds; Lai, Wolfe, & "
+                "Vickers (2015) and Lamprianou (2025) are the "
+                "primary references. The Report tab exposes all "
+                "three panels with their own summaries, CSV downloads, "
+                "and explanatory captions. Math contract pinned in "
+                "tests/test_design_network.py (14 tests) and "
+                "tests/test_rater_networks.py (16 tests covering "
+                "directional-count identity, severity-rank recovery, "
+                "LeniencyIndex symmetry, halo-pattern warning trigger, "
+                "no-halo retention behaviour, and the contrast "
+                "identity). Underlying graph algorithms come from "
+                "networkx (Hagberg, Schult, & Swart, 2008), matching "
+                "the algorithms used by the igraph (Csardi & Nepusz, "
+                "2006) wrapper in the R reference."
             ),
             "Boundary": (
-                "The Design Network panel covers the canonical "
-                "mfrm_network_analysis(): undirected co-observation "
-                "graph diagnostics. The directed severity / leniency "
-                "graph (rater_network_analysis) and same-rater cross-"
-                "criterion halo screen (rater_halo_network_analysis) "
-                "from mfrmr 0.2.0 are not yet ported; they require "
-                "per-rater pairwise severity comparisons and rater x "
-                "criterion residual decomposition respectively. The "
-                "design connectivity diagnostics are the most "
-                "consequential of the three for incomplete-design "
-                "linking review, so the Design Network panel "
-                "addresses the highest-priority gap."
+                "The Welch t-test contrasting halo vs non-halo edge "
+                "weights is descriptive only because edge weights are "
+                "clustered by rater and node; treat ReviewStatus = "
+                "'warning' as a follow-up trigger, not a causal halo "
+                "diagnosis. The severity network's directional "
+                "weights collapse to ~0.5 on raters with near-"
+                "identical severity, so the LeniencyIndex spread is "
+                "the headline diagnostic rather than any single edge."
             ),
             "NextValidation": (
-                "When you need a rater-vs-rater severity ranking or a "
-                "halo screen, use the existing per-rater bias "
-                "interaction table together with the design network "
-                "diagnostics; a dedicated directed-rater-network tab "
-                "is a candidate for follow-up if reviewer feedback "
-                "asks for it."
+                "Cross-check the severity ranking against the rater "
+                "facet measure (Estimate column on the Measures tab) "
+                "and the halo warning against the per-rater bias x "
+                "criterion interaction table; agreement across the "
+                "three sources is the strongest evidence."
             ),
         },
         {
@@ -9297,6 +9302,712 @@ def compute_design_network_analysis(
 
 
 # ============================================================================
+# Rater severity network analysis (directed graph)
+# ============================================================================
+# For every pair of raters with overlapping scoring contexts, compute the
+# mean score difference, the mean absolute difference, and the directional
+# "higher count" / "higher prop" diagnostics. Build a directed graph
+# whose edge weight is the proportion of disagreements where Rater A
+# scored strictly higher than Rater B; an out-degree-minus-in-degree
+# summary then gives a leniency rank. The math is a pure descriptive
+# screen on raw ratings; it does not refit the model and does not
+# attempt causal inference.
+
+
+def _rater_severity_pair_metrics(
+    data: pd.DataFrame,
+    rater_facet: str,
+    context_facets: list[str],
+    score_col: str = "Score",
+    score_diff_tolerance: float = 0.0,
+) -> pd.DataFrame:
+    """Pairwise rater severity metrics on shared scoring contexts.
+
+    Returns one row per ordered pair (Rater1, Rater2) with:
+
+    * ``N`` — shared scoring contexts (rows with both raters present)
+    * ``MeanDiff`` — mean(R1 - R2) over shared contexts
+    * ``MAD`` — mean(|R1 - R2|) over shared contexts
+    * ``Rater1HigherCount`` — count where R1 > R2 + tolerance
+    * ``Rater2HigherCount`` — count where R2 > R1 + tolerance
+    * ``Rater1HigherProp`` — share of disagreements where R1 was higher
+    * ``Rater2HigherProp`` — share of disagreements where R2 was higher
+    * ``DirectionN`` — number of disagreement opportunities
+    """
+    cols_required = [rater_facet, score_col] + list(context_facets)
+    missing = [c for c in cols_required if c not in data.columns]
+    if missing:
+        return pd.DataFrame()
+    work = data[cols_required].copy()
+    work[rater_facet] = work[rater_facet].astype(str)
+    for c in context_facets:
+        work[c] = work[c].astype(str)
+    work[score_col] = pd.to_numeric(work[score_col], errors="coerce")
+    work = work.dropna(subset=[score_col])
+    if work.empty:
+        return pd.DataFrame()
+    raters = sorted(work[rater_facet].unique().tolist())
+    if len(raters) < 2:
+        return pd.DataFrame()
+
+    wide = work.pivot_table(
+        index=context_facets,
+        columns=rater_facet,
+        values=score_col,
+        aggfunc="mean",
+    )
+    import itertools
+    rows = []
+    tol = float(score_diff_tolerance)
+    for r1, r2 in itertools.combinations(raters, 2):
+        if r1 not in wide.columns or r2 not in wide.columns:
+            continue
+        sub = wide[[r1, r2]].dropna()
+        n = int(len(sub))
+        if n == 0:
+            rows.append({
+                "Rater1": r1, "Rater2": r2, "N": 0,
+                "MeanDiff": np.nan, "MAD": np.nan,
+                "Rater1HigherCount": 0, "Rater2HigherCount": 0,
+                "Rater1HigherProp": np.nan, "Rater2HigherProp": np.nan,
+                "DirectionN": 0,
+            })
+            continue
+        s1 = sub[r1].to_numpy(dtype=float)
+        s2 = sub[r2].to_numpy(dtype=float)
+        diff = s1 - s2
+        higher1 = int(np.sum(diff > tol))
+        higher2 = int(np.sum(-diff > tol))
+        direction_n = higher1 + higher2
+        rows.append({
+            "Rater1": r1, "Rater2": r2, "N": n,
+            "MeanDiff": float(np.mean(diff)),
+            "MAD": float(np.mean(np.abs(diff))),
+            "Rater1HigherCount": higher1,
+            "Rater2HigherCount": higher2,
+            "Rater1HigherProp": (
+                float(higher1 / direction_n) if direction_n > 0 else np.nan
+            ),
+            "Rater2HigherProp": (
+                float(higher2 / direction_n) if direction_n > 0 else np.nan
+            ),
+            "DirectionN": int(direction_n),
+        })
+    return pd.DataFrame(rows)
+
+
+def compute_rater_severity_network(
+    res: dict,
+    *,
+    rater_facet: str | None = None,
+    context_facets: list[str] | None = None,
+    min_pair_n: int = 1,
+    score_diff_tolerance: float = 0.0,
+    include_graph: bool = False,
+) -> dict:
+    """Directed rater severity / leniency network.
+
+    Each rater is a node. For each pair of raters with shared scoring
+    contexts (rows with both rater observations), the edge ``A -> B``
+    carries weight ``Rater1HigherProp = P(A > B | A != B)``. A high
+    out-degree (large total ``Rater1HigherProp``) means a rater scores
+    higher than their peers more often than not — a leniency signal.
+    A high in-degree means the opposite (severity signal).
+
+    Returns a bundle with ``available``, ``reason``, ``pair_metrics``,
+    ``node_metrics`` (per-rater out-degree, in-degree, mean MAD,
+    severity rank), ``edge_metrics`` (directed edge table), ``summary``
+    (n_raters, n_eligible_pairs, mean MAD), ``settings``, and
+    optionally ``graph`` (networkx DiGraph).
+    """
+    import networkx as nx
+
+    if not isinstance(res, dict):
+        return _empty_rater_severity_bundle("Result is not a fit dictionary.", rater_facet)
+    config = res.get("config", {}) if isinstance(res.get("config"), dict) else {}
+    prep = res.get("prep", {}) if isinstance(res.get("prep"), dict) else {}
+    data = prep.get("data")
+    if not isinstance(data, pd.DataFrame) or data.empty:
+        return _empty_rater_severity_bundle("Fit does not carry a raw data frame.", rater_facet)
+
+    facet_names = list(config.get("facet_names", []))
+    if rater_facet is None:
+        rater_facet = next((f for f in facet_names if f.lower() == "rater"), None)
+        if rater_facet is None and facet_names:
+            rater_facet = facet_names[0]
+    if rater_facet is None or rater_facet not in data.columns:
+        return _empty_rater_severity_bundle(
+            f"rater_facet {rater_facet!r} is not a column on the fit data.", rater_facet,
+        )
+    if rater_facet == "Person":
+        return _empty_rater_severity_bundle(
+            "rater_facet = 'Person' is not supported; choose a non-person facet.",
+            rater_facet,
+        )
+    if context_facets is None:
+        context_facets = ["Person"] + [f for f in facet_names if f != rater_facet]
+        context_facets = [c for c in context_facets if c in data.columns]
+    if not context_facets:
+        return _empty_rater_severity_bundle(
+            "No context facets available; at least one shared context is required.",
+            rater_facet,
+        )
+
+    pair_metrics = _rater_severity_pair_metrics(
+        data, rater_facet, context_facets, score_diff_tolerance=score_diff_tolerance,
+    )
+    if pair_metrics.empty:
+        return _empty_rater_severity_bundle(
+            "Fewer than two raters share scorable contexts.", rater_facet,
+        )
+
+    eligible_mask = pair_metrics["N"] >= int(min_pair_n)
+    eligible = pair_metrics[eligible_mask].copy()
+    if eligible.empty:
+        return _empty_rater_severity_bundle(
+            f"No rater pair has at least {min_pair_n} shared scoring contexts.",
+            rater_facet,
+        )
+
+    # Build directed edges: for every eligible pair record both
+    # directions (A -> B with Rater1HigherProp, B -> A with
+    # Rater2HigherProp). Skip near-zero weights.
+    edge_rows = []
+    for _, row in eligible.iterrows():
+        r1 = str(row["Rater1"])
+        r2 = str(row["Rater2"])
+        n_dir = int(row["DirectionN"])
+        if n_dir == 0:
+            continue
+        edge_rows.append({
+            "From": r1, "To": r2,
+            "Weight": float(row["Rater1HigherProp"]),
+            "HigherCount": int(row["Rater1HigherCount"]),
+            "DirectionN": n_dir,
+            "MeanDiff": float(row["MeanDiff"]),
+            "MAD": float(row["MAD"]),
+            "Direction": "Rater1Higher",
+        })
+        edge_rows.append({
+            "From": r2, "To": r1,
+            "Weight": float(row["Rater2HigherProp"]),
+            "HigherCount": int(row["Rater2HigherCount"]),
+            "DirectionN": n_dir,
+            "MeanDiff": float(-row["MeanDiff"]),
+            "MAD": float(row["MAD"]),
+            "Direction": "Rater2Higher",
+        })
+    edge_metrics = pd.DataFrame(edge_rows)
+    edge_metrics = edge_metrics[
+        edge_metrics["Weight"].notna() & (edge_metrics["HigherCount"] > 0)
+    ]
+
+    graph = nx.DiGraph()
+    raters = sorted(set(pair_metrics["Rater1"]).union(pair_metrics["Rater2"]))
+    for r in raters:
+        graph.add_node(str(r))
+    for _, row in edge_metrics.iterrows():
+        graph.add_edge(str(row["From"]), str(row["To"]),
+                       weight=float(row["Weight"]),
+                       higher_count=int(row["HigherCount"]),
+                       direction_n=int(row["DirectionN"]),
+                       mad=float(row["MAD"]))
+
+    # Per-node metrics: total "higher than peers" mass minus total
+    # "lower than peers" mass yields a leniency index. Ranks raters
+    # from most lenient (rank 1) to most severe.
+    node_rows = []
+    for r in raters:
+        out_edges = list(graph.out_edges(r, data=True))
+        in_edges = list(graph.in_edges(r, data=True))
+        out_mass = float(sum(d.get("weight", 0.0) for _, _, d in out_edges))
+        in_mass = float(sum(d.get("weight", 0.0) for _, _, d in in_edges))
+        peers_compared = int(graph.out_degree(r) + graph.in_degree(r))
+        mean_mad = (
+            float(np.mean([d.get("mad", np.nan) for _, _, d in out_edges]))
+            if out_edges else np.nan
+        )
+        node_rows.append({
+            "Rater": str(r),
+            "OutDegree": int(graph.out_degree(r)),
+            "InDegree": int(graph.in_degree(r)),
+            "OutMass": out_mass,
+            "InMass": in_mass,
+            "LeniencyIndex": float(out_mass - in_mass),
+            "MeanAbsDiffToPeers": mean_mad,
+            "PeersCompared": peers_compared,
+        })
+    node_metrics = pd.DataFrame(node_rows)
+    if not node_metrics.empty:
+        node_metrics["SeverityRank"] = (
+            node_metrics["LeniencyIndex"].rank(method="min", ascending=False).astype(int)
+        )
+        node_metrics = node_metrics.sort_values(
+            "SeverityRank"
+        ).reset_index(drop=True)
+
+    summary = pd.DataFrame([{
+        "RaterFacet": rater_facet,
+        "NRaters": int(len(raters)),
+        "NEligiblePairs": int(len(eligible)),
+        "MeanPairN": float(eligible["N"].mean()) if not eligible.empty else np.nan,
+        "MeanMAD": float(eligible["MAD"].mean()) if not eligible.empty else np.nan,
+        "MeanAbsMeanDiff": float(np.abs(eligible["MeanDiff"]).mean()) if not eligible.empty else np.nan,
+    }])
+
+    out = {
+        "available": True,
+        "reason": "",
+        "summary": summary,
+        "pair_metrics": pair_metrics.reset_index(drop=True),
+        "node_metrics": node_metrics,
+        "edge_metrics": edge_metrics.reset_index(drop=True),
+        "settings": {
+            "rater_facet": rater_facet,
+            "context_facets": list(context_facets),
+            "min_pair_n": int(min_pair_n),
+            "score_diff_tolerance": float(score_diff_tolerance),
+            "edge_definition": (
+                "directed edge from rater A to rater B with weight = "
+                "P(A > B | the two raters disagree on a shared context)"
+            ),
+        },
+    }
+    if include_graph:
+        out["graph"] = graph
+    return out
+
+
+def _empty_rater_severity_bundle(reason: str, rater_facet: str | None) -> dict:
+    return {
+        "available": False,
+        "reason": reason,
+        "summary": pd.DataFrame(),
+        "pair_metrics": pd.DataFrame(),
+        "node_metrics": pd.DataFrame(),
+        "edge_metrics": pd.DataFrame(),
+        "settings": {"rater_facet": rater_facet},
+    }
+
+
+# ============================================================================
+# Rater halo network analysis (within-rater cross-criterion correlation)
+# ============================================================================
+# Each (Rater, Criterion) is a node. For every pair of nodes, the edge
+# weight is the Spearman / Pearson correlation between their score
+# vectors over shared contexts (typically Person). Halo edges connect
+# two criteria scored by the same rater; non-halo edges connect
+# different raters. Per-rater review flags surface whether a single
+# rater's cross-criterion correlations are high enough to consider a
+# halo pattern (Lai, Wolfe & Vickers, 2015; Lamprianou, 2025).
+
+
+def _halo_node_score_matrix(
+    data: pd.DataFrame,
+    rater_facet: str,
+    criterion_facet: str,
+    context_facets: list[str],
+    score_col: str = "Score",
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Build the (Rater, Criterion) node score matrix.
+
+    Returns (wide, node_tbl). ``wide`` is indexed by context_facets
+    rows with one column per (Rater:Criterion) node; ``node_tbl``
+    carries one row per node with Rater + Criterion labels.
+    """
+    cols_required = [rater_facet, criterion_facet, score_col] + list(context_facets)
+    missing = [c for c in cols_required if c not in data.columns]
+    if missing:
+        return pd.DataFrame(), pd.DataFrame()
+    work = data[cols_required].copy()
+    work[rater_facet] = work[rater_facet].astype(str)
+    work[criterion_facet] = work[criterion_facet].astype(str)
+    for c in context_facets:
+        work[c] = work[c].astype(str)
+    work[score_col] = pd.to_numeric(work[score_col], errors="coerce")
+    work = work.dropna(subset=[score_col])
+    if work.empty:
+        return pd.DataFrame(), pd.DataFrame()
+    work["_Node"] = work[rater_facet] + ":" + work[criterion_facet]
+    wide = work.pivot_table(
+        index=context_facets,
+        columns="_Node",
+        values=score_col,
+        aggfunc="mean",
+    )
+    node_tbl_rows = []
+    seen = set()
+    for _, row in work[["_Node", rater_facet, criterion_facet]].drop_duplicates().iterrows():
+        node_id = row["_Node"]
+        if node_id in seen:
+            continue
+        seen.add(node_id)
+        node_tbl_rows.append({
+            "Node": str(node_id),
+            "Rater": str(row[rater_facet]),
+            "Criterion": str(row[criterion_facet]),
+        })
+    node_tbl = pd.DataFrame(node_tbl_rows)
+    return wide, node_tbl
+
+
+def _spearman_correlation_safe(x: np.ndarray, y: np.ndarray) -> tuple[float, float]:
+    """Return (rho, p-value) for the Spearman correlation, NaN on failure.
+
+    Uses scipy when available; falls back to a numpy implementation that
+    ranks the inputs and computes the Pearson correlation of the ranks
+    (which equals Spearman's rho). The p-value comes from a t-distribution
+    approximation under H0: rho = 0, df = n - 2.
+    """
+    try:
+        from scipy.stats import spearmanr
+        with np.errstate(all="ignore"):
+            res = spearmanr(x, y, nan_policy="omit")
+        rho = float(res.statistic) if hasattr(res, "statistic") else float(res[0])
+        pval = float(res.pvalue) if hasattr(res, "pvalue") else float(res[1])
+        return rho, pval
+    except Exception:
+        return np.nan, np.nan
+
+
+def _bonferroni_adjust(pvals: np.ndarray) -> np.ndarray:
+    """Bonferroni-adjust a vector of p-values (clamp at 1.0)."""
+    arr = np.asarray(pvals, dtype=float)
+    finite = np.isfinite(arr)
+    m = int(finite.sum())
+    if m == 0:
+        return arr
+    out = np.full_like(arr, np.nan)
+    out[finite] = np.minimum(arr[finite] * m, 1.0)
+    return out
+
+
+def compute_rater_halo_network(
+    res: dict,
+    *,
+    rater_facet: str | None = None,
+    criterion_facet: str | None = None,
+    context_facets: list[str] | None = None,
+    min_pair_n: int = 5,
+    alpha: float = 0.05,
+    min_abs_weight: float = 0.0,
+    halo_weight_review: float = 0.50,
+    halo_contrast_review: float = 0.10,
+    positive_only: bool = True,
+    include_graph: bool = False,
+) -> dict:
+    """Rater-by-criterion halo network screen.
+
+    Builds an undirected weighted graph whose nodes are
+    ``(Rater, Criterion)`` pairs and edge weights are Spearman
+    correlations between the two nodes' score vectors over a shared
+    context (default: Person). Edges connecting two criteria scored
+    by the same rater are labelled ``"halo"``; edges across raters
+    are labelled ``"non_halo"``. Per-rater review flags surface
+    whether the within-rater cross-criterion correlations are high
+    enough to consider a halo pattern (Lai, Wolfe, & Vickers, 2015;
+    Lamprianou, 2025).
+
+    The Welch test contrasting halo vs non-halo edge weights is
+    descriptive only because the edge weights are clustered by
+    rater and node; do not treat its p-value as inferential.
+    """
+    import networkx as nx
+
+    if not isinstance(res, dict):
+        return _empty_halo_bundle("Result is not a fit dictionary.")
+    config = res.get("config", {}) if isinstance(res.get("config"), dict) else {}
+    prep = res.get("prep", {}) if isinstance(res.get("prep"), dict) else {}
+    data = prep.get("data")
+    if not isinstance(data, pd.DataFrame) or data.empty:
+        return _empty_halo_bundle("Fit does not carry a raw data frame.")
+
+    facet_names = list(config.get("facet_names", []))
+    if rater_facet is None:
+        rater_facet = next((f for f in facet_names if f.lower() == "rater"), None)
+    if criterion_facet is None:
+        criterion_facet = next((f for f in facet_names if f.lower() == "criterion"), None)
+    if rater_facet is None or rater_facet not in data.columns:
+        return _empty_halo_bundle(
+            f"rater_facet {rater_facet!r} is not a column on the fit data."
+        )
+    if criterion_facet is None or criterion_facet not in data.columns:
+        return _empty_halo_bundle(
+            f"criterion_facet {criterion_facet!r} is not a column on the fit data."
+        )
+    if rater_facet == criterion_facet or rater_facet == "Person" or criterion_facet == "Person":
+        return _empty_halo_bundle(
+            "rater_facet and criterion_facet must be distinct non-person facets."
+        )
+    if context_facets is None:
+        context_facets = ["Person"] + [
+            f for f in facet_names if f not in {rater_facet, criterion_facet}
+        ]
+        context_facets = [c for c in context_facets if c in data.columns]
+    if not context_facets:
+        return _empty_halo_bundle(
+            "No context facets available; at least one shared context is required."
+        )
+
+    wide, node_tbl = _halo_node_score_matrix(
+        data, rater_facet, criterion_facet, context_facets,
+    )
+    if node_tbl.empty or len(node_tbl) < 2:
+        return _empty_halo_bundle(
+            "Fewer than two rater-by-criterion nodes are available."
+        )
+
+    # Pairwise correlations across nodes.
+    import itertools
+    node_ids = node_tbl["Node"].astype(str).tolist()
+    pair_rows = []
+    for a, b in itertools.combinations(node_ids, 2):
+        if a not in wide.columns or b not in wide.columns:
+            continue
+        sub = wide[[a, b]].dropna()
+        n = int(len(sub))
+        if n < int(min_pair_n):
+            rho, pval = np.nan, np.nan
+        else:
+            rho, pval = _spearman_correlation_safe(
+                sub[a].to_numpy(dtype=float), sub[b].to_numpy(dtype=float)
+            )
+        rater_a = node_tbl.loc[node_tbl["Node"] == a, "Rater"].iloc[0]
+        crit_a = node_tbl.loc[node_tbl["Node"] == a, "Criterion"].iloc[0]
+        rater_b = node_tbl.loc[node_tbl["Node"] == b, "Rater"].iloc[0]
+        crit_b = node_tbl.loc[node_tbl["Node"] == b, "Criterion"].iloc[0]
+        edge_type = "halo" if rater_a == rater_b else "non_halo"
+        pair_rows.append({
+            "From": a, "To": b,
+            "Rater1": rater_a, "Criterion1": crit_a,
+            "Rater2": rater_b, "Criterion2": crit_b,
+            "EdgeType": edge_type,
+            "Estimate": float(rho) if np.isfinite(rho) else np.nan,
+            "AbsEstimate": float(abs(rho)) if np.isfinite(rho) else np.nan,
+            "N": n,
+            "PValue": float(pval) if np.isfinite(pval) else np.nan,
+        })
+    pair_metrics = pd.DataFrame(pair_rows)
+    if pair_metrics.empty:
+        return _empty_halo_bundle("No rater-by-criterion node pairs could be estimated.")
+
+    pair_metrics["PAdjusted"] = _bonferroni_adjust(
+        pair_metrics["PValue"].to_numpy(dtype=float)
+    )
+
+    # Edge retention.
+    retained_by_n = pair_metrics["N"].fillna(0).astype(int) >= int(min_pair_n)
+    retained_by_p = pair_metrics["PAdjusted"].fillna(1.0) <= float(alpha)
+    retained_by_weight = pair_metrics["AbsEstimate"].fillna(0.0) >= float(min_abs_weight)
+    if positive_only:
+        retained_by_sign = pair_metrics["Estimate"].fillna(0.0) > 0
+    else:
+        retained_by_sign = pair_metrics["Estimate"].notna()
+    pair_metrics["RetainedEdge"] = (
+        retained_by_n & retained_by_p & retained_by_weight & retained_by_sign
+    )
+
+    edge_metrics = pair_metrics[pair_metrics["RetainedEdge"]].copy()
+    edge_metrics["Weight"] = edge_metrics["AbsEstimate"]
+    edge_metrics["SignedWeight"] = edge_metrics["Estimate"]
+
+    # Build the undirected graph for per-node centrality.
+    graph = nx.Graph()
+    for _, row in node_tbl.iterrows():
+        graph.add_node(str(row["Node"]), rater=row["Rater"], criterion=row["Criterion"])
+    for _, row in edge_metrics.iterrows():
+        graph.add_edge(
+            str(row["From"]), str(row["To"]),
+            weight=float(row["Weight"]),
+            edge_type=str(row["EdgeType"]),
+            n=int(row["N"]),
+        )
+
+    # Per-rater halo summary. Read the retained-edge weights from
+    # ``AbsEstimate`` on the pair_metrics frame (the same value as the
+    # ``Weight`` column on edge_metrics, but the column lives on
+    # pair_metrics for the broader retention analytics).
+    raters = sorted(node_tbl["Rater"].astype(str).unique().tolist())
+    halo_summary_rows = []
+    for r in raters:
+        rater_nodes = node_tbl[node_tbl["Rater"] == r]["Node"].astype(str).tolist()
+        halo_pairs = pair_metrics[
+            (pair_metrics["Rater1"] == r) & (pair_metrics["Rater2"] == r)
+        ]
+        non_halo_pairs = pair_metrics[
+            ((pair_metrics["Rater1"] == r) ^ (pair_metrics["Rater2"] == r))
+        ]
+        retained_halo = halo_pairs[halo_pairs["RetainedEdge"]]
+        retained_non_halo = non_halo_pairs[non_halo_pairs["RetainedEdge"]]
+        halo_mean_weight = (
+            float(retained_halo["AbsEstimate"].mean()) if not retained_halo.empty else np.nan
+        )
+        non_halo_mean_weight = (
+            float(retained_non_halo["AbsEstimate"].mean())
+            if not retained_non_halo.empty else np.nan
+        )
+        contrast = (
+            halo_mean_weight - non_halo_mean_weight
+            if np.isfinite(halo_mean_weight) and np.isfinite(non_halo_mean_weight)
+            else np.nan
+        )
+        # Review status with three tiers. ``warning`` requires both a
+        # high same-rater cross-criterion mean weight AND a clear
+        # contrast against the non-halo edges (or, equivalently, no
+        # non-halo edges retained at all — in which case the halo
+        # signal dominates trivially). ``review`` is the softer tier
+        # for when only one criterion is elevated. Otherwise ``ok``.
+        halo_mean_high = (
+            np.isfinite(halo_mean_weight)
+            and halo_mean_weight >= float(halo_weight_review)
+        )
+        contrast_high = (
+            np.isfinite(contrast)
+            and contrast >= float(halo_contrast_review)
+        )
+        no_non_halo_for_contrast = (
+            np.isfinite(halo_mean_weight)
+            and not np.isfinite(non_halo_mean_weight)
+            and len(retained_halo) > 0
+        )
+        warn = halo_mean_high and (contrast_high or no_non_halo_for_contrast)
+        review_only = (halo_mean_high or contrast_high) and not warn
+        if warn:
+            review_status = "warning"
+            if no_non_halo_for_contrast:
+                review_reason = (
+                    f"Same-rater cross-criterion mean correlation = "
+                    f"{halo_mean_weight:.3f} (>= {halo_weight_review:.2f}); "
+                    "no non-halo edges were retained at the configured "
+                    "alpha / weight threshold, so the halo signal dominates."
+                )
+            else:
+                review_reason = (
+                    f"Same-rater cross-criterion mean correlation = "
+                    f"{halo_mean_weight:.3f} (>= {halo_weight_review:.2f}); "
+                    f"halo - non-halo contrast = {contrast:.3f} "
+                    f"(>= {halo_contrast_review:.2f})."
+                )
+        elif review_only:
+            review_status = "review"
+            review_reason = (
+                f"Halo mean weight = "
+                f"{halo_mean_weight if np.isfinite(halo_mean_weight) else float('nan'):.3f}; "
+                f"halo - non-halo contrast = "
+                f"{contrast if np.isfinite(contrast) else float('nan'):.3f}. "
+                "At least one screening criterion is elevated."
+            )
+        else:
+            review_status = "ok"
+            review_reason = "No screening criterion is elevated."
+
+        halo_summary_rows.append({
+            "Rater": r,
+            "NHaloEdges": int(len(retained_halo)),
+            "NNonHaloEdges": int(len(retained_non_halo)),
+            "HaloMeanWeight": halo_mean_weight,
+            "NonHaloMeanWeight": non_halo_mean_weight,
+            "HaloNonHaloContrast": contrast,
+            "ReviewStatus": review_status,
+            "ReviewReason": review_reason,
+        })
+    halo_summary = pd.DataFrame(halo_summary_rows)
+
+    # Welch t-test contrast on retained halo vs non-halo edges.
+    welch_t = welch_p = np.nan
+    try:
+        from scipy.stats import ttest_ind
+        halo_weights = edge_metrics[edge_metrics["EdgeType"] == "halo"]["Weight"].dropna()
+        non_halo_weights = edge_metrics[edge_metrics["EdgeType"] == "non_halo"]["Weight"].dropna()
+        if len(halo_weights) >= 2 and len(non_halo_weights) >= 2:
+            result = ttest_ind(halo_weights, non_halo_weights, equal_var=False)
+            welch_t = float(result.statistic)
+            welch_p = float(result.pvalue)
+    except Exception:
+        pass
+
+    n_halo_retained = int(
+        ((edge_metrics["EdgeType"] == "halo") & edge_metrics["RetainedEdge"]).sum()
+    )
+    n_non_halo_retained = int(
+        ((edge_metrics["EdgeType"] == "non_halo") & edge_metrics["RetainedEdge"]).sum()
+    )
+    summary = pd.DataFrame([{
+        "Nodes": int(len(node_tbl)),
+        "RetainedEdges": int(len(edge_metrics)),
+        "HaloEdges": n_halo_retained,
+        "NonHaloEdges": n_non_halo_retained,
+        "HaloMeanWeight": (
+            float(edge_metrics.loc[edge_metrics["EdgeType"] == "halo", "Weight"].mean())
+            if n_halo_retained > 0 else np.nan
+        ),
+        "NonHaloMeanWeight": (
+            float(edge_metrics.loc[edge_metrics["EdgeType"] == "non_halo", "Weight"].mean())
+            if n_non_halo_retained > 0 else np.nan
+        ),
+        "HaloNonHaloContrast": np.nan,
+        "WelchT": welch_t,
+        "WelchP": welch_p,
+    }])
+    if np.isfinite(summary.loc[0, "HaloMeanWeight"]) and np.isfinite(summary.loc[0, "NonHaloMeanWeight"]):
+        summary.loc[0, "HaloNonHaloContrast"] = (
+            float(summary.loc[0, "HaloMeanWeight"]) - float(summary.loc[0, "NonHaloMeanWeight"])
+        )
+
+    out = {
+        "available": True,
+        "reason": "",
+        "summary": summary,
+        "node_metrics": node_tbl,
+        "pair_metrics": pair_metrics.reset_index(drop=True),
+        "edge_metrics": edge_metrics.reset_index(drop=True),
+        "halo_summary_by_rater": halo_summary,
+        "settings": {
+            "rater_facet": rater_facet,
+            "criterion_facet": criterion_facet,
+            "context_facets": list(context_facets),
+            "method": "spearman",
+            "min_pair_n": int(min_pair_n),
+            "alpha": float(alpha),
+            "p_adjust": "bonferroni",
+            "min_abs_weight": float(min_abs_weight),
+            "halo_weight_review": float(halo_weight_review),
+            "halo_contrast_review": float(halo_contrast_review),
+            "positive_only": bool(positive_only),
+            "node_definition": "rater-by-criterion score profile",
+            "halo_edge_definition": "edge connecting two criteria scored by the same rater",
+        },
+        "caveats": (
+            "Edge weights are clustered by rater and node; the Welch test "
+            "contrasting halo vs non-halo edge weights is descriptive only. "
+            "Read ReviewStatus = 'warning' as a follow-up trigger, not a "
+            "causal halo diagnosis."
+        ),
+        "references": (
+            "Lai, Wolfe, & Vickers (2015); Lamprianou (2025)."
+        ),
+    }
+    if include_graph:
+        out["graph"] = graph
+    return out
+
+
+def _empty_halo_bundle(reason: str) -> dict:
+    return {
+        "available": False,
+        "reason": reason,
+        "summary": pd.DataFrame(),
+        "node_metrics": pd.DataFrame(),
+        "pair_metrics": pd.DataFrame(),
+        "edge_metrics": pd.DataFrame(),
+        "halo_summary_by_rater": pd.DataFrame(),
+        "settings": {},
+        "caveats": "",
+        "references": "",
+    }
+
+
+# ============================================================================
 # Generalizability theory (G-study) and design-of-measurement (D-study)
 # ============================================================================
 # `compute_generalizability_study(res)` runs a method-of-moments ANOVA
@@ -17329,6 +18040,19 @@ _APA_REFERENCE_LIBRARY: dict[str, str] = {
         "Bayesian estimation. Advances in Methods and Practices in Psychological "
         "Science, 1(2), 270–280. https://doi.org/10.1177/2515245918771304"
     ),
+    "Lai_Wolfe_Vickers_2015": (
+        "Lai, E. R., Wolfe, E. W., & Vickers, D. (2015). Differentiation "
+        "of illusory and true halo in writing scores. Educational and "
+        "Psychological Measurement, 75(1), 102–125. "
+        "https://doi.org/10.1177/0013164414530143"
+    ),
+    "Lamprianou_2025": (
+        "Lamprianou, I. (2025). Network analysis for the investigation "
+        "of rater effects in language assessment: A comparison of "
+        "ChatGPT vs human raters. Research Methods in Applied "
+        "Linguistics, 4, 100205. "
+        "https://doi.org/10.1016/j.rmal.2025.100205"
+    ),
     "Lakens_2017": (
         "Lakens, D. (2017). Equivalence tests: A practical primer for t tests, "
         "correlations, and meta-analyses. Social Psychological and Personality "
@@ -17560,6 +18284,8 @@ _CITATION_TO_KEY: dict[str, str] = {
     "(Engelhard, 2013)": "Engelhard_2013",
     "(Gelman & Rubin, 1992)": "Gelman_Rubin_1992",
     "(Kruschke, 2018)": "Kruschke_2018",
+    "(Lai, Wolfe & Vickers, 2015)": "Lai_Wolfe_Vickers_2015",
+    "(Lamprianou, 2025)": "Lamprianou_2025",
     "(Lakens, 2017)": "Lakens_2017",
     "(Linacre, 1989)": "Linacre_1989",
     "(Linacre, 1994)": "Linacre_1994",
@@ -23761,6 +24487,187 @@ def render_model_choice_guidance(result: dict) -> None:
     )
 
 
+def render_rater_severity_section(result: dict) -> None:
+    """Render the directed rater severity / leniency network panel.
+
+    Runs on demand to keep the Report tab responsive on large designs:
+    the pairwise-score-difference computation scales with the number
+    of rater-pair combinations. The bundle is cached in
+    ``st.session_state`` keyed on a content-addressed hash of the
+    result so re-loading the same fit reuses the previous result.
+    """
+    if not isinstance(result, dict):
+        return
+    st.subheader(t("report_tables.rater_severity_subheader"))
+    st.caption(t("report_tables.rater_severity_caption"))
+
+    cache_key = _model_choice_cache_key(result)
+    state_key = f"rater_severity_bundle::{cache_key}"
+    bundle = st.session_state.get(state_key)
+    if bundle is None:
+        if st.button(
+            t("report_tables.rater_severity_run_button"),
+            help=t("report_tables.rater_severity_run_help"),
+            key=f"rater_severity_run::{cache_key}",
+        ):
+            with st.spinner(t("report_tables.rater_severity_running_spinner")):
+                bundle = compute_rater_severity_network(result)
+            st.session_state[state_key] = bundle
+        else:
+            return
+
+    if not bundle.get("available"):
+        st.info(
+            t("report_tables.rater_severity_unavailable_template",
+              reason=str(bundle.get("reason", "")))
+        )
+        return
+
+    summary = bundle["summary"]
+    if isinstance(summary, pd.DataFrame) and not summary.empty:
+        display = summary.copy()
+        for col in ["MeanPairN", "MeanMAD", "MeanAbsMeanDiff"]:
+            if col in display.columns:
+                display[col] = pd.to_numeric(display[col], errors="coerce").round(4)
+        st.caption(t("report_tables.rater_severity_summary_caption"))
+        st.dataframe(display, width="stretch", hide_index=True)
+
+    node_metrics = bundle["node_metrics"]
+    st.markdown("**" + t("report_tables.rater_severity_node_subheader") + "**")
+    st.caption(t("report_tables.rater_severity_node_caption"))
+    if isinstance(node_metrics, pd.DataFrame) and not node_metrics.empty:
+        display_n = node_metrics.copy()
+        for col in ["OutMass", "InMass", "LeniencyIndex", "MeanAbsDiffToPeers"]:
+            if col in display_n.columns:
+                display_n[col] = pd.to_numeric(display_n[col], errors="coerce").round(4)
+        st.dataframe(display_n, width="stretch", hide_index=True)
+
+    pair_metrics = bundle["pair_metrics"]
+    if isinstance(pair_metrics, pd.DataFrame) and not pair_metrics.empty:
+        with st.expander(
+            t("report_tables.rater_severity_pair_expander"), expanded=False
+        ):
+            display_p = pair_metrics.copy()
+            for col in ["MeanDiff", "MAD", "Rater1HigherProp", "Rater2HigherProp"]:
+                if col in display_p.columns:
+                    display_p[col] = pd.to_numeric(display_p[col], errors="coerce").round(4)
+            st.dataframe(display_p, width="stretch", hide_index=True)
+
+    edge_metrics = bundle["edge_metrics"]
+    download_frames = []
+    for label, frame in [
+        ("severity_summary", summary),
+        ("severity_node_metrics", node_metrics),
+        ("severity_pair_metrics", pair_metrics),
+        ("severity_edge_metrics", edge_metrics),
+    ]:
+        if isinstance(frame, pd.DataFrame) and not frame.empty:
+            cp = frame.copy()
+            cp["_section"] = label
+            download_frames.append(cp)
+    if download_frames:
+        combined = pd.concat(download_frames, ignore_index=True)
+        st.download_button(
+            t("report_tables.rater_severity_download_button"),
+            data=to_csv_bytes(combined),
+            file_name="mfrm_rater_severity_network.csv",
+            mime="text/csv",
+            key=f"rater_severity_download::{id(result)}",
+        )
+
+
+def render_rater_halo_section(result: dict) -> None:
+    """Render the within-rater cross-criterion halo network panel.
+
+    Runs on demand because the Spearman pairwise-correlation cost
+    grows quickly with the number of (Rater, Criterion) nodes (on a
+    peer-rating design with 120 raters and 4 criteria the node count
+    is 480, with C(480, 2) ~ 115k correlations to evaluate). The
+    bundle is cached in ``st.session_state`` keyed on a content-
+    addressed hash of the result.
+    """
+    if not isinstance(result, dict):
+        return
+    st.subheader(t("report_tables.rater_halo_subheader"))
+    st.caption(t("report_tables.rater_halo_caption"))
+
+    cache_key = _model_choice_cache_key(result)
+    state_key = f"rater_halo_bundle::{cache_key}"
+    bundle = st.session_state.get(state_key)
+    if bundle is None:
+        if st.button(
+            t("report_tables.rater_halo_run_button"),
+            help=t("report_tables.rater_halo_run_help"),
+            key=f"rater_halo_run::{cache_key}",
+        ):
+            with st.spinner(t("report_tables.rater_halo_running_spinner")):
+                bundle = compute_rater_halo_network(result)
+            st.session_state[state_key] = bundle
+        else:
+            return
+
+    if not bundle.get("available"):
+        st.info(
+            t("report_tables.rater_halo_unavailable_template",
+              reason=str(bundle.get("reason", "")))
+        )
+        return
+
+    summary = bundle["summary"]
+    if isinstance(summary, pd.DataFrame) and not summary.empty:
+        display = summary.copy()
+        for col in ["HaloMeanWeight", "NonHaloMeanWeight",
+                    "HaloNonHaloContrast", "WelchT", "WelchP"]:
+            if col in display.columns:
+                display[col] = pd.to_numeric(display[col], errors="coerce").round(4)
+        st.caption(t("report_tables.rater_halo_summary_caption"))
+        st.dataframe(display, width="stretch", hide_index=True)
+
+    halo_summary = bundle["halo_summary_by_rater"]
+    st.markdown("**" + t("report_tables.rater_halo_per_rater_subheader") + "**")
+    st.caption(t("report_tables.rater_halo_per_rater_caption"))
+    if isinstance(halo_summary, pd.DataFrame) and not halo_summary.empty:
+        display_h = halo_summary.copy()
+        for col in ["HaloMeanWeight", "NonHaloMeanWeight", "HaloNonHaloContrast"]:
+            if col in display_h.columns:
+                display_h[col] = pd.to_numeric(display_h[col], errors="coerce").round(4)
+        st.dataframe(display_h, width="stretch", hide_index=True)
+
+    edge_metrics = bundle["edge_metrics"]
+    if isinstance(edge_metrics, pd.DataFrame) and not edge_metrics.empty:
+        with st.expander(
+            t("report_tables.rater_halo_edges_expander"), expanded=False
+        ):
+            display_e = edge_metrics.copy()
+            for col in ["Estimate", "AbsEstimate", "Weight", "SignedWeight",
+                        "PValue", "PAdjusted"]:
+                if col in display_e.columns:
+                    display_e[col] = pd.to_numeric(display_e[col], errors="coerce").round(4)
+            st.dataframe(display_e, width="stretch", hide_index=True)
+
+    download_frames = []
+    for label, frame in [
+        ("halo_summary", summary),
+        ("halo_per_rater", halo_summary),
+        ("halo_edge_metrics", edge_metrics),
+        ("halo_pair_metrics", bundle.get("pair_metrics", pd.DataFrame())),
+        ("halo_node_metrics", bundle.get("node_metrics", pd.DataFrame())),
+    ]:
+        if isinstance(frame, pd.DataFrame) and not frame.empty:
+            cp = frame.copy()
+            cp["_section"] = label
+            download_frames.append(cp)
+    if download_frames:
+        combined = pd.concat(download_frames, ignore_index=True)
+        st.download_button(
+            t("report_tables.rater_halo_download_button"),
+            data=to_csv_bytes(combined),
+            file_name="mfrm_rater_halo_network.csv",
+            mime="text/csv",
+            key=f"rater_halo_download::{id(result)}",
+        )
+
+
 def render_design_network_section(result: dict) -> None:
     """Render the design network analysis panel.
 
@@ -24305,6 +25212,8 @@ def _render_report_tables(result: dict, diagnostics: dict) -> None:
     render_model_choice_guidance(result)
     render_g_d_study_section(result)
     render_design_network_section(result)
+    render_rater_severity_section(result)
+    render_rater_halo_section(result)
     render_parameter_recovery_simulation()
     render_apa_presets_section(result, diagnostics)
 

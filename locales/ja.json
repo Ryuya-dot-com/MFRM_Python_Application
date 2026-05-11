@@ -515,6 +515,8 @@
     "dff_min_n_label": "セル N の最小値",
     "dff_min_n_help": "観測数がこれ未満のセルは、内容的解釈の前に sparse としてフラグされる。",
     "dff_defaults_caption": "デフォルト設定は教室利用やデモには十分保守的である。確認的研究では threshold を事前登録し、研究固有のエビデンスで裏付ける。",
+    "gpcm_inference_caption": "LR ChiSq / LR Prob.: slope-aware GPCM カーネル下での bias = 0 vs bias = bias_hat の尤度比検定。自由度 1、χ² ピボタル (Wilks, 1938)。Profile CI: 95% 条件付きプロファイル尤度信頼区間 (Cox, 1975)。2 * (NLL(b) - NLL(bias_hat)) = χ²_{1, 0.95} を bias_hat の両側で Brent 法により逆解する。Theta、step threshold、slope、他 facet 推定値は fit 時点で固定。S.E. 列は slope-aware 情報量 sum a_i² * Var[X | eta + b] * w を採用済み。Profile CI Status = ok / limited by search range / not available。",
+    "gpcm_inference_unavailable_caption": "尤度比検定と profile-likelihood CI の列は GPCM fit のみに対して算出される。χ² ピボタルが上記の slope-aware 情報量同等性に依存するためである。RSM と PCM fit は Prob. 列で示される t ベースのスクリーニング層に留まる。",
     "dff_no_table_info": "このペアに対する DFF / bias スクリーニングテーブルを構築できなかった。",
     "dff_metric_cells": "Cells",
     "dff_metric_flagged": "Flagged",

@@ -8105,6 +8105,125 @@ def get_extreme_levels(obs_df, facet_names, rating_min, rating_max):
     return extreme_levels
 
 
+# =============================================================================
+# Conditional profile-likelihood inference for an additive bias shift
+# -----------------------------------------------------------------------------
+# Mathematical contract
+#   * Under the regularity conditions for maximum likelihood, the likelihood-
+#     ratio statistic ``Lambda = 2 * (ell(b_hat) - ell(b))`` follows a
+#     chi-square distribution with one degree of freedom in the limit
+#     (Wilks 1938). Inverting that pivotal yields a confidence set
+#         { b : 2 * (ell(b_hat) - ell(b)) <= chi^2_{1, 1-alpha} }
+#     which is the standard profile-likelihood confidence interval (Cox 1975).
+#   * For the additive bias shift b in this code path the profile is taken
+#     by holding theta, step thresholds, slopes, and other facet measures
+#     fixed at their fit-time values; the remaining one-parameter profile is
+#     a scalar in b, so the chi-square pivotal has one degree of freedom.
+#   * The endpoints of the confidence interval are roots of
+#         f(b) = 2 * (NLL(b) - NLL(b_hat)) - chi^2_{1, 1-alpha} = 0
+#     on the negative and positive sides of b_hat, found numerically via
+#     bracketed Brent root-finding. When f never crosses zero within
+#     ``[-max_abs, max_abs]`` the search returns the boundary with status
+#     ``"limited by search range"`` so the caller can communicate that the
+#     CI is wider than the bias-search bracket rather than reporting a
+#     spurious finite endpoint.
+# =============================================================================
+
+
+def _safe_nll_value(nll, b):
+    """Robust wrapper for evaluating a negative log-likelihood closure.
+
+    Catches arbitrary exceptions (degenerate observation slices, log of
+    zero from probabilities that collapse, etc.) and returns ``nan`` so
+    the profile-likelihood search and the LR statistic can degrade
+    gracefully instead of propagating a hard error from a single cell.
+    """
+    try:
+        val = float(nll(b))
+    except Exception:
+        return float("nan")
+    return val if np.isfinite(val) else float("nan")
+
+
+def _profile_bias_ci(nll, estimate, nll_min, max_abs, level=0.95):
+    """Profile-likelihood confidence interval for an additive scalar bias.
+
+    Parameters
+    ----------
+    nll : callable
+        Negative log-likelihood as a function of the bias scalar.
+    estimate : float
+        The MLE ``b_hat`` for the bias parameter.
+    nll_min : float
+        ``nll(estimate)`` at the MLE. Pre-evaluated so the helper does
+        not duplicate the cost of the optimisation.
+    max_abs : float
+        Half-width of the search bracket. The CI is computed inside
+        ``[-max_abs, max_abs]``.
+    level : float, default 0.95
+        Nominal CI coverage. Maps to the chi-square cutoff
+        ``chi2.ppf(level, df=1)``.
+
+    Returns
+    -------
+    dict with keys ``lower``, ``upper``, ``level``, ``status``. ``status``
+    is one of ``"ok"`` (both endpoints found via interior roots),
+    ``"limited by search range"`` (one or both endpoints hit the
+    ``max_abs`` boundary because the likelihood never fell far enough
+    inside the bracket), or ``"not available"`` (the search did not
+    return a finite endpoint).
+    """
+    if not np.isfinite(estimate) or not np.isfinite(nll_min) or not np.isfinite(max_abs) or max_abs <= 0:
+        return {"lower": float("nan"), "upper": float("nan"), "level": float(level), "status": "not available"}
+    if not (0.0 < level < 1.0):
+        return {"lower": float("nan"), "upper": float("nan"), "level": float(level), "status": "not available"}
+    cutoff = float(chi2.ppf(level, df=1))
+
+    def target(b):
+        val = _safe_nll_value(nll, b)
+        if not np.isfinite(val):
+            return float("nan")
+        return 2.0 * (val - nll_min) - cutoff
+
+    def root_side(bound):
+        if abs(bound - estimate) <= np.sqrt(np.finfo(float).eps):
+            return {"value": float(bound), "status": "limited by search range"}
+        t_bound = target(bound)
+        if not np.isfinite(t_bound):
+            return {"value": float("nan"), "status": "not available"}
+        if t_bound <= 0:
+            # The likelihood never drops by the cutoff inside the bracket,
+            # so the CI extends to or beyond ``bound``. Report the bound
+            # so the caller can flag the truncation in the status field.
+            return {"value": float(bound), "status": "limited by search range"}
+        lo = min(bound, estimate)
+        hi = max(bound, estimate)
+        try:
+            sol = root_scalar(target, bracket=(lo, hi), method="brentq", xtol=1e-8)
+        except Exception:
+            return {"value": float("nan"), "status": "not available"}
+        if not getattr(sol, "converged", False) or not np.isfinite(sol.root):
+            return {"value": float("nan"), "status": "not available"}
+        return {"value": float(sol.root), "status": "ok"}
+
+    lower = root_side(-abs(float(max_abs)))
+    upper = root_side(abs(float(max_abs)))
+    statuses: list[str] = []
+    for s in (lower["status"], upper["status"]):
+        if s not in statuses:
+            statuses.append(s)
+    if statuses == ["ok"]:
+        status = "ok"
+    else:
+        status = "; ".join(statuses)
+    return {
+        "lower": lower["value"],
+        "upper": upper["value"],
+        "level": float(level),
+        "status": status,
+    }
+
+
 def estimate_bias_interaction(
     res,
     diagnostics,
@@ -8197,20 +8316,34 @@ def estimate_bias_interaction(
             "idx": idx_rows,
         })
 
-    def estimate_bias_for_group(idx_rows):
+    def _slice_cell(idx_rows):
+        """Slice the captured per-observation arrays to a single bias cell."""
         eta_sub = eta_base[idx_rows]
         score_k_sub = score_k[idx_rows]
         weight_sub = weight[idx_rows] if weight is not None else None
         step_idx_sub = step_idx[idx_rows] if step_idx is not None else None
         slope_idx_sub = slope_idx[idx_rows] if slope_idx is not None else step_idx_sub
+        return eta_sub, score_k_sub, weight_sub, step_idx_sub, slope_idx_sub
 
+    def _make_nll(eta_sub, score_k_sub, weight_sub, step_idx_sub, slope_idx_sub):
+        """Per-cell negative log-likelihood closure for an additive bias shift.
+
+        The closure holds the conditional profile fixed: theta, step
+        thresholds, slopes, and the other facet estimates enter through
+        their fit-time values inside ``eta_sub`` and the captured step
+        and slope structures, and only the additive scalar ``b`` varies.
+        The same closure is consumed by ``minimize_scalar`` (to find the
+        bias MLE), by the LR test (to evaluate the null and the maximised
+        log-likelihood), and by the profile-likelihood CI (to invert the
+        chi-square pivotal).
+        """
         if config["model"] == "RSM":
             def nll(b):
                 return -loglik_rsm(eta_sub + b, score_k_sub, step_cum, weight=weight_sub)
         elif config["model"] == "PCM":
             def nll(b):
                 return -loglik_pcm(eta_sub + b, score_k_sub, step_cum_mat, step_idx_sub, weight=weight_sub)
-        else:
+        else:  # GPCM
             def nll(b):
                 return -loglik_gpcm(
                     eta_sub + b,
@@ -8221,7 +8354,10 @@ def estimate_bias_interaction(
                     slope_idx_sub,
                     weight=weight_sub,
                 )
+        return nll
 
+    def estimate_bias_for_group(idx_rows):
+        nll = _make_nll(*_slice_cell(idx_rows))
         try:
             opt = minimize_scalar(nll, bounds=(-max_abs, max_abs), method="bounded")
             if opt.success:
@@ -8314,11 +8450,7 @@ def estimate_bias_interaction(
         lvl_a_str, lvl_b_str = g["key"]
         idx_rows = g["idx"]
         bias_hat = bias_map.get(g["key"], np.nan)
-        eta_sub = eta_base[idx_rows]
-        score_k_sub = score_k[idx_rows]
-        weight_sub = weight[idx_rows] if weight is not None else None
-        step_idx_sub = step_idx[idx_rows] if step_idx is not None else None
-        slope_idx_sub = slope_idx[idx_rows] if slope_idx is not None else step_idx_sub
+        eta_sub, score_k_sub, weight_sub, step_idx_sub, slope_idx_sub = _slice_cell(idx_rows)
 
         if config["model"] == "RSM":
             probs = category_prob_rsm(eta_sub + (bias_hat if np.isfinite(bias_hat) else 0.0), step_cum)
@@ -8341,10 +8473,65 @@ def estimate_bias_interaction(
         std_sq = resid_k ** 2 / var_k
 
         w = weight_sub if weight_sub is not None else np.ones(len(idx_rows))
-        info = np.nansum(var_k * w)
+
+        # Slope-aware Fisher information for the additive bias shift ``b``.
+        # Under GPCM, d log L / d b = sum_i a_i * (X_i - E[X_i | eta_i + b]),
+        # so the conditional information for b is
+        #     I(b) = sum_i a_i^2 * Var[X_i | eta_i + b] * w_i.
+        # The slope^2 factor reduces to 1 for RSM/PCM (a_i = 1), so those
+        # branches keep the historical sum(var_k * w) form unchanged.
+        # Reference: Muraki (1993) AppliedPsychMeasurement 17(4) Eqs. 7, 16.
+        if (
+            config["model"] == "GPCM"
+            and slope_idx_sub is not None
+            and params.get("slopes") is not None
+            and len(params["slopes"]) > 0
+        ):
+            slope_obs_sub = np.asarray(params["slopes"], dtype=float)[slope_idx_sub]
+            info_var = np.where(
+                np.isfinite(slope_obs_sub) & (slope_obs_sub > 0),
+                (slope_obs_sub ** 2) * var_k,
+                np.nan,
+            )
+        else:
+            info_var = var_k
+        info = np.nansum(info_var * w)
         se = 1 / np.sqrt(info) if np.isfinite(info) and info > 0 else np.nan
         infit = np.nansum(std_sq * var_k * w) / np.nansum(var_k * w) if np.nansum(var_k * w) > 0 else np.nan
         outfit = np.nansum(std_sq * w) / np.nansum(w) if np.nansum(w) > 0 else np.nan
+
+        # Likelihood-ratio test and profile-likelihood confidence interval
+        # for the additive bias shift. Only computed for GPCM fits, because
+        # the slope-aware information identity above is the part that
+        # justifies treating the LR statistic as chi-square with 1 d.f. for
+        # this code path. RSM and PCM fits stay in the t-based screening
+        # tier already reported by the existing ``t`` / ``d.f.`` / ``Prob.``
+        # columns; their LR / profile columns are returned as ``nan`` with
+        # an explanatory ``Likelihood Basis`` string so downstream consumers
+        # can render an honest "not applicable" cell instead of a silent
+        # zero.
+        lr_chisq = np.nan
+        lr_df = np.nan
+        lr_prob = np.nan
+        profile_ci = {"lower": np.nan, "upper": np.nan, "level": 0.95, "status": "not available"}
+        likelihood_basis = (
+            f"not applicable (model is {config['model']}; profile-"
+            f"likelihood inference is reported under GPCM only)"
+        )
+        if config["model"] == "GPCM" and np.isfinite(bias_hat):
+            nll_sub = _make_nll(eta_sub, score_k_sub, weight_sub, step_idx_sub, slope_idx_sub)
+            nll_hat = _safe_nll_value(nll_sub, bias_hat)
+            nll_null = _safe_nll_value(nll_sub, 0.0)
+            if np.isfinite(nll_hat) and np.isfinite(nll_null):
+                lr_chisq = max(0.0, 2.0 * (nll_null - nll_hat))
+                lr_df = 1
+                lr_prob = float(chi2.sf(lr_chisq, df=lr_df))
+                profile_ci = _profile_bias_ci(nll_sub, bias_hat, nll_hat, max_abs, level=0.95)
+                likelihood_basis = (
+                    "conditional profile likelihood for one additive GPCM "
+                    "bias shift; theta, steps, slopes, and other facet "
+                    "estimates held fixed"
+                )
 
         obs_slice = obs_df.iloc[idx_rows]
         w_obs = obs_slice["Weight"].to_numpy(dtype=float) if "Weight" in obs_slice.columns else np.ones(len(obs_slice))
@@ -8369,6 +8556,15 @@ def estimate_bias_interaction(
             "t": t_val,
             "d.f.": df_t,
             "Prob.": p_val,
+            "LR ChiSq": lr_chisq,
+            "LR d.f.": lr_df,
+            "LR Prob.": lr_prob,
+            "Profile CI Lower": profile_ci["lower"],
+            "Profile CI Upper": profile_ci["upper"],
+            "Profile CI Level": profile_ci["level"],
+            "Profile CI Status": profile_ci["status"],
+            "Likelihood Basis": likelihood_basis,
+            "InferenceTier": "screening",
             "Infit": infit,
             "Outfit": outfit,
             "ObsN": n_obs,
@@ -24527,10 +24723,26 @@ def show_bias_section(
                     pd.to_numeric(tbl["Bias Size"], errors="coerce") / pooled_sd
                 ).round(2)
 
-    # Display columns with friendly names
+    # Display columns with friendly names. Under GPCM the LR / profile-CI
+    # columns carry the inferential content that the t-based screening
+    # columns can only approximate, so we slot them in right after the
+    # t-based block. RSM / PCM fits leave these columns NaN; rather than
+    # display empty cells we drop them from the visible dataframe when no
+    # row carries a finite ``LR ChiSq``.
+    gpcm_inference_active = (
+        "LR ChiSq" in tbl.columns
+        and pd.to_numeric(tbl["LR ChiSq"], errors="coerce").notna().any()
+    )
     display_cols = [
         "Sq", "Observd Score", "Expctd Score", "Observd Count",
         "Obs-Exp Average", "Bias Size", "Effect (d)", "S.E.", "t", "d.f.", "Prob.",
+    ]
+    if gpcm_inference_active:
+        display_cols += [
+            "LR ChiSq", "LR Prob.",
+            "Profile CI Lower", "Profile CI Upper", "Profile CI Status",
+        ]
+    display_cols += [
         "Infit", "Outfit",
         "FacetA_Index", "FacetA_Level", "FacetA_Measure",
         "FacetB_Index", "FacetB_Level", "FacetB_Measure",
@@ -24548,6 +24760,14 @@ def show_bias_section(
         "FacetB_Measure": f"{facet_b} measr",
     })
     st.dataframe(tbl_display, width="stretch")
+    if gpcm_inference_active:
+        st.caption(t("bias_interaction.gpcm_inference_caption"))
+    elif "LR ChiSq" in tbl.columns:
+        # The LR / profile columns exist in the raw table (so they appear in
+        # the CSV download for completeness) but are uniformly NaN under
+        # RSM / PCM; tell the reader why instead of leaving an unexplained
+        # gap between the dataframe and the heatmap below.
+        st.caption(t("bias_interaction.gpcm_inference_unavailable_caption"))
 
     # Interactive bias heatmap (Plotly)
     st.subheader(t("bias_interaction.heatmap_subheader"))

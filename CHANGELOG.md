@@ -117,6 +117,47 @@ All notable changes to this standalone Streamlit distribution should be recorded
   per-run download bundle, in the disk export, and in the
   external-validation report template; the public release-readiness
   check now reports against the 0.2.0 table.
+- **Slope-aware GPCM bias inference: information identity, likelihood-
+  ratio test, and profile-likelihood confidence interval.** Three
+  related fixes / additions to `estimate_bias_interaction()`:
+  * **Information identity.** Under GPCM the conditional Fisher
+    information for the additive bias shift `b` is
+    `I(b) = sum_i a_i^2 * Var[X_i | eta_i + b] * w_i`, where `a_i` is
+    the per-observation discrimination. The previous implementation
+    used `I(b) = sum_i Var[X_i | eta_i + b] * w_i`, which is the
+    RSM / PCM (a = 1) form; the resulting GPCM bias `S.E.` column was
+    systematically too large because the `a^2` factor was missing. The
+    fix is gated on `model == "GPCM"`, so RSM and PCM fits are
+    byte-identical to the previous release. Reference: Muraki (1993)
+    Applied Psychological Measurement 17(4), Eqs. 7 and 16.
+  * **Likelihood-ratio test.** Each GPCM bias cell now reports `LR
+    ChiSq`, `LR d.f.` (always 1), and `LR Prob.` from the chi-square
+    pivotal `Lambda = 2 * (loglik(bias_hat) - loglik(0)) ~ chi2_1`
+    (Wilks, 1938). RSM and PCM cells leave these columns as NaN with
+    an explanatory `Likelihood Basis` string instead of silently
+    reusing the t-based screening tier.
+  * **Profile-likelihood confidence interval.** The new
+    `_profile_bias_ci` helper inverts the same chi-square pivotal to
+    produce a `(1 - alpha)` confidence interval for the additive bias
+    shift, by solving `2 * (NLL(b) - NLL(bias_hat)) = chi2_{1, 1-alpha}`
+    on both sides of `bias_hat` via Brent root-finding inside
+    `[-max_abs, max_abs]`. When the likelihood never falls far enough
+    inside the bracket the endpoint is returned with `Profile CI
+    Status = "limited by search range"` so the caller can render the
+    truncation honestly. Status values are `"ok"`, `"limited by
+    search range"`, or `"not available"`. Reference: Cox (1975)
+    Biometrika 62(2).
+  * **UI.** The bias / interaction tab inserts `LR ChiSq`, `LR Prob.`,
+    `Profile CI Lower`, `Profile CI Upper`, and `Profile CI Status`
+    columns immediately after the existing t-based block when at
+    least one cell carries a finite `LR ChiSq` (i.e. for GPCM fits).
+    A short caption below the table cites Wilks (1938) and Cox (1975)
+    and reminds readers that theta, step thresholds, slopes, and
+    other facet estimates are held fixed inside the conditional
+    profile. RSM / PCM fits show the unavailable caption.
+  * **mfrmr 0.2.0 coverage.** The corresponding row in
+    `mfrmr_020_migration_coverage_table()` will be flipped from
+    `Planned` to `Ready` once this work merges.
 - **Remaining six sample-data scenarios** (large-scale writing, L2
   speaking, clinical OSCE, writing with missing, music peer-rating,
   reading testlet binary) now follow the same expanded template:

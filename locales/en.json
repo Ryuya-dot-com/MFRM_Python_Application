@@ -515,6 +515,8 @@
     "dff_min_n_label": "Minimum cell N",
     "dff_min_n_help": "Cells below this observation count are flagged as sparse before substantive interpretation.",
     "dff_defaults_caption": "Default settings are conservative enough for classroom and demonstration use. For confirmatory research, pre-register thresholds and corroborate with study-specific evidence.",
+    "gpcm_inference_caption": "LR ChiSq / LR Prob.: likelihood-ratio test of bias = 0 vs bias = bias_hat under the slope-aware GPCM kernel, 1 d.f., chi-square pivotal (Wilks, 1938). Profile CI: 95% conditional profile-likelihood confidence interval (Cox, 1975), obtained by inverting 2 * (NLL(b) - NLL(bias_hat)) = chi2_{1, 0.95} via Brent root-finding on each side of bias_hat. Theta, step thresholds, slopes, and other facet estimates are held fixed at their fit-time values; the SE column already uses the slope-aware information identity sum a_i^2 * Var[X | eta + b] * w. Profile CI Status = ok / limited by search range / not available.",
+    "gpcm_inference_unavailable_caption": "Likelihood-ratio test and profile-likelihood CI columns are populated only for GPCM fits, because the chi-square pivotal relies on the slope-aware information identity above. RSM and PCM fits stay in the t-based screening tier shown in the Prob. column.",
     "dff_no_table_info": "No DFF/bias screening table could be built for this pair.",
     "dff_metric_cells": "Cells",
     "dff_metric_flagged": "Flagged",

@@ -107,19 +107,51 @@ def graded_severity_fit():
     )
 
 
-def test_severity_higher_prop_sums_to_one_per_pair(graded_severity_fit):
+def test_severity_higher_cond_prop_sums_to_one_per_pair(graded_severity_fit):
     """For every pair with at least one disagreement,
-    Rater1HigherProp + Rater2HigherProp = 1 by construction."""
+    ``Rater1HigherCondProp + Rater2HigherCondProp = 1`` by construction
+    (the conditional probability is normalised by the disagreement
+    count, not by the total comparison count)."""
     out = app.compute_rater_severity_network(graded_severity_fit)
     assert out["available"] is True
     pairs = out["pair_metrics"]
     pairs_with_dir = pairs[pairs["DirectionN"] > 0]
     sums = (
-        pd.to_numeric(pairs_with_dir["Rater1HigherProp"], errors="coerce")
-        + pd.to_numeric(pairs_with_dir["Rater2HigherProp"], errors="coerce")
+        pd.to_numeric(pairs_with_dir["Rater1HigherCondProp"], errors="coerce")
+        + pd.to_numeric(pairs_with_dir["Rater2HigherCondProp"], errors="coerce")
     )
     for v in sums:
         assert v == pytest.approx(1.0, abs=1e-12)
+
+
+def test_severity_higher_prop_matches_mfrmr_convention(graded_severity_fit):
+    """``Rater1HigherProp + Rater2HigherProp + TieRate = 1`` by
+    construction; the proportions match the mfrmr / FACETS convention
+    (share of *all* shared contexts) so the R parity fixture lines up
+    with the Python output at machine precision."""
+    out = app.compute_rater_severity_network(graded_severity_fit)
+    pairs = out["pair_metrics"]
+    pairs_nonempty = pairs[pairs["N"] > 0]
+    tie_rate = pairs_nonempty["TieCount"] / pairs_nonempty["N"]
+    total = (
+        pd.to_numeric(pairs_nonempty["Rater1HigherProp"], errors="coerce")
+        + pd.to_numeric(pairs_nonempty["Rater2HigherProp"], errors="coerce")
+        + tie_rate
+    )
+    for v in total:
+        assert v == pytest.approx(1.0, abs=1e-12)
+
+
+def test_severity_higher_counts_and_ties_sum_to_n(graded_severity_fit):
+    """Rater1HigherCount + Rater2HigherCount + TieCount = N."""
+    out = app.compute_rater_severity_network(graded_severity_fit)
+    pairs = out["pair_metrics"]
+    totals = (
+        pairs["Rater1HigherCount"]
+        + pairs["Rater2HigherCount"]
+        + pairs["TieCount"]
+    )
+    assert (totals == pairs["N"]).all()
 
 
 def test_severity_higher_counts_sum_to_direction_n(graded_severity_fit):
@@ -368,11 +400,13 @@ def test_rater_severity_residual_mode_runs_on_clean_fit(graded_severity_fit):
     assert set(out_obs["node_metrics"]["Rater"]) == set(out_res["node_metrics"]["Rater"])
 
 
-def test_rater_severity_higher_prop_identity_holds_under_residual(graded_severity_fit):
-    """The closed-form Rater1HigherProp + Rater2HigherProp = 1 identity
-    must continue to hold when comparisons run on residuals instead of
-    raw scores; the math depends on the relative ordering, not the
-    absolute scale."""
+def test_rater_severity_higher_cond_prop_identity_holds_under_residual(
+    graded_severity_fit,
+):
+    """The closed-form Rater1HigherCondProp + Rater2HigherCondProp = 1
+    identity must continue to hold when comparisons run on residuals
+    instead of raw scores; the math depends on the relative ordering,
+    not the absolute scale."""
     out = app.compute_rater_severity_network(
         graded_severity_fit, score_source="residual",
     )
@@ -381,8 +415,8 @@ def test_rater_severity_higher_prop_identity_holds_under_residual(graded_severit
     if pairs_with_dir.empty:
         pytest.skip("No directional disagreement on residual scale.")
     sums = (
-        pd.to_numeric(pairs_with_dir["Rater1HigherProp"], errors="coerce")
-        + pd.to_numeric(pairs_with_dir["Rater2HigherProp"], errors="coerce")
+        pd.to_numeric(pairs_with_dir["Rater1HigherCondProp"], errors="coerce")
+        + pd.to_numeric(pairs_with_dir["Rater2HigherCondProp"], errors="coerce")
     )
     for v in sums:
         assert v == pytest.approx(1.0, abs=1e-12)

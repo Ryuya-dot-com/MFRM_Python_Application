@@ -4282,7 +4282,19 @@ def category_prob_gpcm(eta, step_cum_mat, step_idx, slopes, slope_idx):
 
 
 def zstd_from_mnsq(mnsq, df, whexact=False):
-    if not np.isfinite(mnsq) or not np.isfinite(df) or df <= 0:
+    """Wilson-Hilferty (1931) standardised MnSq, engine convention.
+
+    The engine convention guards against ``df < 1``: in that regime the
+    ``1 - 2/(9 df)`` centring term becomes dominant and the resulting
+    ZSTD can flip sign relative to the underlying MnSq, producing
+    spurious large values. mfrmr (and FACETS) report NaN there so the
+    user does not silently consume a misleading z-score. The
+    FACETS-convention helper ``zstd_from_mnsq_facets`` relaxes this to
+    ``df > 0`` (the Wright-Masters Welch-Satterthwaite d.f. can be
+    fractional by design) and applies an explicit cap for the
+    pathological cells.
+    """
+    if not np.isfinite(mnsq) or not np.isfinite(df) or df < 1:
         return np.nan
     if whexact:
         return (mnsq - 1) * np.sqrt(df / 2)
@@ -9387,7 +9399,9 @@ def _rater_severity_pair_metrics(
                 "Rater1": r1, "Rater2": r2, "N": 0,
                 "MeanDiff": np.nan, "MAD": np.nan,
                 "Rater1HigherCount": 0, "Rater2HigherCount": 0,
+                "TieCount": 0,
                 "Rater1HigherProp": np.nan, "Rater2HigherProp": np.nan,
+                "Rater1HigherCondProp": np.nan, "Rater2HigherCondProp": np.nan,
                 "DirectionN": 0,
             })
             continue
@@ -9397,16 +9411,25 @@ def _rater_severity_pair_metrics(
         higher1 = int(np.sum(diff > tol))
         higher2 = int(np.sum(-diff > tol))
         direction_n = higher1 + higher2
+        ties = n - direction_n
+        # Two complementary probabilities. ``Rater1HigherProp`` follows
+        # the mfrmr / FACETS convention (share of *all* shared contexts);
+        # ``Rater1HigherCondProp`` is the conditional share given the
+        # two raters disagree (preserves the +/- 1 ordering at the
+        # individual edge but loses tie information).
         rows.append({
             "Rater1": r1, "Rater2": r2, "N": n,
             "MeanDiff": float(np.mean(diff)),
             "MAD": float(np.mean(np.abs(diff))),
             "Rater1HigherCount": higher1,
             "Rater2HigherCount": higher2,
-            "Rater1HigherProp": (
+            "TieCount": int(ties),
+            "Rater1HigherProp": float(higher1 / n),
+            "Rater2HigherProp": float(higher2 / n),
+            "Rater1HigherCondProp": (
                 float(higher1 / direction_n) if direction_n > 0 else np.nan
             ),
-            "Rater2HigherProp": (
+            "Rater2HigherCondProp": (
                 float(higher2 / direction_n) if direction_n > 0 else np.nan
             ),
             "DirectionN": int(direction_n),

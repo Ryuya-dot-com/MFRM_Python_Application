@@ -4169,6 +4169,201 @@ def guess_col(cols, patterns, fallback=0):
     return cols[min(fallback, len(cols) - 1)]
 
 
+# Multilingual column-name dictionaries for the smart column-role detector.
+# Patterns are matched case-insensitively against the column names; both
+# substring and Japanese matches are supported. The order within each role
+# is the priority ranking when multiple patterns match.
+_COLUMN_ROLE_PATTERNS: dict[str, tuple[str, ...]] = {
+    "person": (
+        # English
+        "person", "examinee", "candidate", "participant", "subject",
+        "respondent", "student", "user", "id_person", "person_id",
+        # Japanese
+        "学生", "児童", "生徒", "受験者", "受検者", "学習者", "被験者",
+        "回答者", "対象者", "人物",
+    ),
+    "score": (
+        # English
+        "score", "rating", "mark", "marks", "points", "rate",
+        "raw_score", "total_score",
+        # Japanese
+        "得点", "点数", "評価", "評定", "採点", "スコア", "評点",
+    ),
+    "rater": (
+        # English
+        "rater", "judge", "evaluator", "scorer", "observer", "marker",
+        # Japanese
+        "評価者", "採点者", "評定者", "審査員", "判定者", "観察者",
+    ),
+    "criterion": (
+        # English
+        "criterion", "criteria", "item", "task", "question", "rubric",
+        "subscale", "dimension",
+        # Japanese
+        "観点", "項目", "課題", "評価項目", "問題", "ルーブリック",
+        "下位尺度", "次元", "設問",
+    ),
+    "weight": (
+        "weight", "wt", "frequency", "freq",
+        "重み", "重み付け", "重み係数",
+    ),
+}
+
+
+def _column_is_numeric(series: pd.Series, threshold: float = 0.7) -> bool:
+    """Return True if at least ``threshold`` of non-blank cells parse to
+    finite numbers — used by the smart column-role detector to bias
+    Score detection toward numeric columns and Person / facet
+    detection toward non-numeric (string-like) ones."""
+    if not isinstance(series, pd.Series) or series.empty:
+        return False
+    non_blank = series.astype(str).str.strip().replace({"": pd.NA}).dropna()
+    if non_blank.empty:
+        return False
+    coerced = pd.to_numeric(series, errors="coerce").dropna()
+    return (len(coerced) / len(non_blank)) >= threshold
+
+
+def auto_detect_column_roles(df: pd.DataFrame) -> dict:
+    """Suggest column-role assignments from an uploaded DataFrame.
+
+    Combines multilingual keyword matching (English + Japanese) with
+    dtype and cardinality cues:
+
+    * **Score** prefers numeric columns whose header matches a Score
+      keyword (得点, score, rating, ...). Pure-numeric columns without
+      a keyword match still qualify when the cardinality is small
+      (rating scales typically have <= 10 distinct values).
+    * **Person** prefers high-cardinality non-numeric columns whose
+      header matches a Person keyword (学生, person, examinee, ...).
+    * **Rater** prefers a non-numeric column whose header matches a
+      Rater keyword (評価者, rater, judge, ...).
+    * **Criterion** prefers a non-numeric column whose header matches
+      a Criterion keyword (観点, criterion, item, task, ...).
+    * **Weight** prefers a numeric column whose header matches a
+      Weight keyword (重み, weight, ...); returns ``None`` when no
+      such column exists (the typical case).
+
+    Returns a dict with keys ``person``, ``score``, ``rater``,
+    ``criterion``, ``weight``, ``suggested_facets`` (list), and
+    ``confidence`` (dict role -> float in [0, 1]).
+    """
+    if not isinstance(df, pd.DataFrame) or df.empty:
+        return {
+            "person": None, "score": None, "rater": None,
+            "criterion": None, "weight": None,
+            "suggested_facets": [], "confidence": {},
+        }
+    cols = list(df.columns)
+    lowered = {c: str(c).lower() for c in cols}
+    numeric_flag = {c: _column_is_numeric(df[c]) for c in cols}
+    cardinality = {
+        c: int(df[c].astype(str).str.strip().replace({"": pd.NA}).dropna().nunique())
+        for c in cols
+    }
+
+    def _score(role: str, col: str) -> float:
+        """Return a 0..1 confidence score for assigning ``col`` to ``role``."""
+        patterns = _COLUMN_ROLE_PATTERNS.get(role, ())
+        col_l = lowered[col]
+        keyword_score = 0.0
+        for i, p in enumerate(patterns):
+            if p == col_l:
+                # exact match has the highest weight; first pattern in the
+                # list scores highest.
+                keyword_score = max(keyword_score, 1.0 - i * 0.02)
+            elif p in col_l:
+                keyword_score = max(keyword_score, 0.6 - i * 0.01)
+        keyword_score = max(keyword_score, 0.0)
+        is_num = numeric_flag.get(col, False)
+        card = cardinality.get(col, 0)
+        n_rows = len(df)
+        dtype_score = 0.0
+        if role == "score":
+            # Numeric + small cardinality (rating scale) preferred.
+            if is_num:
+                dtype_score = 0.4 if card <= 12 else 0.2
+            else:
+                dtype_score = 0.0
+        elif role == "person":
+            # Non-numeric + high cardinality preferred.
+            if is_num:
+                dtype_score = -0.2
+            elif card >= max(2, n_rows // 4):
+                dtype_score = 0.3
+            else:
+                dtype_score = 0.0
+        elif role == "rater":
+            if is_num:
+                dtype_score = -0.1
+            elif 2 <= card <= max(50, n_rows // 4):
+                dtype_score = 0.2
+        elif role == "criterion":
+            if is_num:
+                dtype_score = -0.1
+            elif 2 <= card <= 50:
+                dtype_score = 0.2
+        elif role == "weight":
+            if is_num:
+                dtype_score = 0.3 if 0 < card <= 20 else 0.1
+            else:
+                dtype_score = -0.5
+        return float(min(max(keyword_score + dtype_score, 0.0), 1.0))
+
+    confidence: dict[str, float] = {}
+    assignments: dict[str, str | None] = {}
+    # Assign roles greedily by best-scoring column, with a minimum
+    # confidence threshold so we don't surface noise as a "suggestion".
+    used: set[str] = set()
+    role_threshold = {
+        "person": 0.15, "score": 0.15, "rater": 0.15,
+        "criterion": 0.15, "weight": 0.25,
+    }
+    # Run roles in order of how distinctive their keyword sets are.
+    role_order = ["score", "person", "rater", "criterion", "weight"]
+    for role in role_order:
+        best_col: str | None = None
+        best_score = -1.0
+        for col in cols:
+            if col in used:
+                continue
+            s = _score(role, col)
+            if s > best_score:
+                best_score = s
+                best_col = col
+        if best_col is not None and best_score >= role_threshold[role]:
+            assignments[role] = best_col
+            confidence[role] = best_score
+            used.add(best_col)
+        else:
+            assignments[role] = None
+
+    # Suggested facets = non-assigned non-numeric columns plus
+    # Rater / Criterion if we located them.
+    suggested_facets: list[str] = []
+    for role in ("rater", "criterion"):
+        if assignments.get(role):
+            suggested_facets.append(assignments[role])
+    for col in cols:
+        if col in used:
+            continue
+        if numeric_flag.get(col, False):
+            continue
+        if cardinality.get(col, 0) < 2:
+            continue
+        suggested_facets.append(col)
+
+    return {
+        "person": assignments["person"],
+        "score": assignments["score"],
+        "rater": assignments["rater"],
+        "criterion": assignments["criterion"],
+        "weight": assignments["weight"],
+        "suggested_facets": suggested_facets,
+        "confidence": confidence,
+    }
+
+
 def truncate_label(value, width=28):
     text = str(value)
     if len(text) <= width:
@@ -21560,9 +21755,35 @@ def run_facets_mode(core: dict, data: pd.DataFrame) -> None:
         return
 
     guess_col = core["guess_col"]
-    person_default = guess_col(cols, ["person", "participant", "student"], fallback=0)
-    score_default = guess_col(cols, ["score", "rating", "mark"], fallback=min(1, len(cols) - 1))
-    weight_default = next((c for c in cols if "weight" in c.lower()), None)
+    # Smart column-role detection: multilingual keyword + dtype + cardinality
+    # cues. Falls back to legacy keyword-only guess_col when auto-detection
+    # has no opinion (e.g., all-numeric headers like "1", "2", "3").
+    auto_roles = auto_detect_column_roles(data)
+    auto_confidence = auto_roles.get("confidence", {}) or {}
+    person_default = auto_roles.get("person") or guess_col(
+        cols, ["person", "participant", "student"], fallback=0
+    )
+    score_default = auto_roles.get("score") or guess_col(
+        cols, ["score", "rating", "mark"], fallback=min(1, len(cols) - 1)
+    )
+    weight_default = auto_roles.get("weight") or next(
+        (c for c in cols if "weight" in c.lower()), None
+    )
+
+    def _auto_caption(role: str, picked: str) -> str | None:
+        """Return a localized "Auto-detected — confidence X%" caption if
+        the auto-detector picked ``picked`` for ``role`` with non-trivial
+        confidence; otherwise None."""
+        suggested = auto_roles.get(role)
+        if suggested is None or suggested != picked:
+            return None
+        conf = auto_confidence.get(role)
+        if conf is None or conf < 0.2:
+            return None
+        return t(
+            "sidebar_estimation.auto_detected_caption",
+            column=str(picked), pct=f"{int(round(conf * 100))}",
+        )
 
     st.sidebar.subheader(t("sidebar_estimation.column_mapping_subheader"))
     st.sidebar.caption(t("sidebar_estimation.column_mapping_caption"))
@@ -21570,10 +21791,16 @@ def run_facets_mode(core: dict, data: pd.DataFrame) -> None:
         t("sidebar_estimation.person_column_label"), cols, index=cols.index(person_default),
         help=t("sidebar_estimation.person_column_help"),
     )
+    _cap = _auto_caption("person", person_col)
+    if _cap:
+        st.sidebar.caption(_cap)
     score_col = st.sidebar.selectbox(
         t("sidebar_estimation.score_column_label"), cols, index=cols.index(score_default),
         help=t("sidebar_estimation.score_column_help"),
     )
+    _cap = _auto_caption("score", score_col)
+    if _cap:
+        st.sidebar.caption(_cap)
     # Stable internal ID "(None)" drives the routing below; format_func
     # translates the displayed label so locale switching does not break
     # the comparison ``weight_col_raw == "(None)"``.
@@ -21592,7 +21819,19 @@ def run_facets_mode(core: dict, data: pd.DataFrame) -> None:
     if weight_col:
         blocked.add(weight_col)
     facet_candidates = [c for c in cols if c not in blocked]
-    default_facets = [c for c in pick_default_facets(facet_candidates) if c in facet_candidates]
+    # Prefer the smart detector's facet suggestions when they have
+    # support in the candidate list. Fall back to the keyword-only
+    # heuristic when the smart detector returned nothing useful — e.g.,
+    # when the user removed Rater / Criterion columns or the headers
+    # are too generic to classify.
+    suggested_facets = [
+        c for c in (auto_roles.get("suggested_facets") or [])
+        if c in facet_candidates
+    ]
+    if suggested_facets:
+        default_facets = suggested_facets
+    else:
+        default_facets = [c for c in pick_default_facets(facet_candidates) if c in facet_candidates]
     # v0.2.14-beta: exclude columns with < 2 unique levels from the
     # auto-selected facet set. A singleton facet (e.g., single-Scorer
     # binary testlet data) contributes zero variance and was
@@ -21612,6 +21851,24 @@ def run_facets_mode(core: dict, data: pd.DataFrame) -> None:
         default=default_facets,
         help=t("sidebar_estimation.facet_columns_help"),
     )
+    # Surface the auto-detected Rater / Criterion columns when they were
+    # included in the default selection — gives users a one-line cue that
+    # the choice came from a smart guess they can override.
+    _autodetected_facet_lines: list[str] = []
+    for _role in ("rater", "criterion"):
+        _picked = auto_roles.get(_role)
+        _conf = auto_confidence.get(_role)
+        if _picked and _picked in facet_cols and _conf is not None and _conf >= 0.2:
+            _autodetected_facet_lines.append(
+                t(
+                    "sidebar_estimation.auto_detected_facet_caption",
+                    role=t(f"sidebar_estimation.auto_role_{_role}"),
+                    column=str(_picked),
+                    pct=f"{int(round(_conf * 100))}",
+                )
+            )
+    if _autodetected_facet_lines:
+        st.sidebar.caption(" / ".join(_autodetected_facet_lines))
     # Stable internal IDs drive the ``workflow_mode == "Advanced controls"``
     # check below; format_func handles the localized display.
     workflow_mode = st.sidebar.radio(

@@ -386,6 +386,10 @@
   "sidebar_estimation": {
     "column_mapping_subheader": "列マッピング",
     "column_mapping_caption": "Person、Score、2 つ以上の facet に列をマッピングする。",
+    "auto_detected_caption": "自動検出 — 信頼度 {pct}%",
+    "auto_detected_facet_caption": "自動検出 {role}: {column} ({pct}%)",
+    "auto_role_rater": "評価者",
+    "auto_role_criterion": "観点",
     "person_column_label": "Person 列",
     "person_column_help": "測定対象 (受験者・参加者・被験者など) を識別する列。",
     "score_column_label": "Score 列",

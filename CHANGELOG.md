@@ -6,6 +6,27 @@ All notable changes to this standalone Streamlit distribution should be recorded
 
 ### Added
 
+- **Smart column-role detection** for the upload UI. New
+  `auto_detect_column_roles(df)` helper combines a multilingual keyword
+  dictionary (English + Japanese: 学生 / 受験者 / 評価者 / 採点者 / 観点 /
+  項目 / 得点 / 評定 / ...) with dtype and cardinality cues to pre-fill
+  the Person / Score / Rater / Criterion / Weight pickers in
+  `run_facets_mode`. Score detection prefers numeric small-cardinality
+  columns (≤ 12 distinct values), Person prefers high-cardinality
+  non-numeric columns, and a confidence caption surfaces under each
+  selectbox when the auto-detector picked the active value. Falls back
+  to the legacy keyword-only `guess_col` and `pick_default_facets`
+  when no Japanese / English keywords match, so existing English-only
+  CSV workflows are unchanged. 19 unit tests in
+  `tests/test_column_role_detection.py` cover canonical English / JA
+  headers, mixed-language headers, dtype/cardinality bias,
+  Weight-only-when-named, no-double-assignment, and confidence-in-unit
+  interval. New i18n keys in `locales/{en,ja}.json` keep both locales
+  in parity for the auto-detection captions. Companion fix:
+  `_column_is_numeric` now uses a direct ratio (`coerced / non_blank
+  >= threshold`) instead of `int(threshold * len(...))`, which was off
+  by one on small columns and let a 2-of-4-numeric column pass the
+  70 % threshold.
 - Bilingual i18n scaffold (English / Japanese) for the sidebar header, app
   title, language picker, and starter messages; translation dictionaries live
   in `locales/{en,ja}.json` and resolve via the new `t()` helper with English

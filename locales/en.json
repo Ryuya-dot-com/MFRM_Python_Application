@@ -386,6 +386,10 @@
   "sidebar_estimation": {
     "column_mapping_subheader": "Column mapping",
     "column_mapping_caption": "Map columns to Person, Score, and 2+ facets.",
+    "auto_detected_caption": "Auto-detected — confidence {pct}%",
+    "auto_detected_facet_caption": "Auto-detected {role}: {column} ({pct}%)",
+    "auto_role_rater": "Rater",
+    "auto_role_criterion": "Criterion",
     "person_column_label": "Person column",
     "person_column_help": "The column identifying examinees, participants, or subjects being measured.",
     "score_column_label": "Score column",

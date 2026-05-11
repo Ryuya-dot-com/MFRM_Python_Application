@@ -634,7 +634,9 @@
     "tab_forest_plot": "Forest plot",
     "tab_qq_plot": "Q-Q plot",
     "tab_ecdf": "ECDF",
-    "essential_mode_caption": "4 つの追加診断プロット (Information、Forest、Q-Q、ECDF) は **Full** view density で利用できる。公表水準の分析を行う前にサイドバー上部のトグルから切り替える。"
+    "essential_mode_caption": "4 つの追加診断プロット (Information、Forest、Q-Q、ECDF) は **Full** view density で利用できる。公表水準の分析を行う前にサイドバー上部のトグルから切り替える。",
+    "category_info_expander": "カテゴリ別 information の分解",
+    "category_info_caption": "総 information 曲線をカテゴリ別寄与 I_k(theta) = a^2 * P_k(theta) * (k - E[X | theta])^2 に分解する (Muraki, 1993, Eq. 16)。カテゴリ別の和は上の総 information 曲線と一致する。プロット上の破線は同一性確認のために総和を重ねたもの。各 theta でどのカテゴリが測定精度を駆動しているかを把握するのに有用。"
   },
   "report_top": {
     "subheader": "Publication 水準のレポート",

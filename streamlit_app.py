@@ -908,22 +908,36 @@ def mfrmr_020_migration_coverage_table() -> pd.DataFrame:
         },
         {
             "mfrmr020Area": "Category-specific information curves",
-            "PythonStatus": "Planned",
+            "PythonStatus": "Ready",
             "PythonEvidence": (
-                "The mfrmr 0.2.0 reference adds the category-specific "
-                "information formula a^2 * P_k(theta) * (k - E[X|theta])^2 "
-                "and exposes it as a curve mode alongside the existing "
-                "category probability curves and category boundary curves."
+                "build_category_information_curve_data() returns the per-"
+                "category contribution I_k(theta) = a^2 * P_k(theta) * "
+                "(k - E[X | theta])^2 at every theta on the curve grid "
+                "(Muraki, 1993, Eq. 16). The decomposition sums to the "
+                "existing total information curve (Visuals -> Information "
+                "Curves) by construction; the identity is pinned at machine "
+                "precision in tests/test_category_information_curves.py. A "
+                "new optional section in the Information Curves tab "
+                "renders the per-category breakdown alongside the total "
+                "(dashed overlay) using a Wong (2011) colour-blind-safe "
+                "palette, with summary table (peak, integrated share) and "
+                "CSV / PNG download buttons."
             ),
             "Boundary": (
-                "The current Visuals tab renders category probability and "
-                "boundary curves but does not yet break out per-category "
-                "information contributions."
+                "The Wong palette covers K <= 8 categories distinctly; "
+                "longer rating scales cycle through the same eight colours, "
+                "so the visual separation between categories degrades "
+                "(the data table and CSV download remain authoritative). "
+                "The decomposition inherits the same slope and step "
+                "thresholds as the total information curve, so a level "
+                "selector that changes the total curve also changes the "
+                "decomposition in lock-step."
             ),
             "NextValidation": (
-                "Use the existing total information curve when discussing "
-                "test targeting; the per-category breakdown is a future "
-                "diagnostic refinement."
+                "Read the per-category breakdown together with the total "
+                "information curve when discussing targeting (which "
+                "categories matter at which theta); cite Muraki (1993) "
+                "Eq. 16 in the Methods section."
             ),
         },
         {
@@ -23261,6 +23275,140 @@ def build_information_curve_data(result: dict, step_level_index: int | None = No
     return {"available": True, "curve": info, "summary": summary, "metadata": meta}
 
 
+def build_category_information_curve_data(
+    result: dict, step_level_index: int | None = None
+) -> dict:
+    """Per-category contribution to the information curve.
+
+    For each ``theta`` on the curve grid this helper returns the
+    contribution of every response category ``k`` to the total Fisher
+    information:
+
+        I_k(theta) = a^2 * P_k(theta) * (k - E[X | theta])^2
+
+    where ``a`` is the discrimination (``1`` for RSM and PCM,
+    estimated for GPCM under the geometric-mean-one identification),
+    ``P_k(theta)`` is the category response probability, and
+    ``E[X | theta] = sum_k k * P_k(theta)``. The category-specific
+    contributions sum to the total
+
+        sum_k I_k(theta) = a^2 * Var[X | theta] = I(theta)
+
+    so the curves render as a decomposition of the existing
+    information-curve total. Reference: Muraki (1993), Applied
+    Psychological Measurement 17(4), Eqs. 7, 16.
+
+    The function reuses ``build_category_probability_curve_data`` so
+    the slope and step thresholds are read off the fitted model in
+    exactly the way the existing total-information curve does;
+    callers who pass the same ``step_level_index`` get the matching
+    breakdown.
+    """
+    curve = build_category_probability_curve_data(
+        result, step_level_index=step_level_index
+    )
+    if not isinstance(curve, dict) or not curve.get("available"):
+        reason = (
+            curve.get("reason", "Category curve unavailable.")
+            if isinstance(curve, dict)
+            else "Category curve unavailable."
+        )
+        return {"available": False, "reason": reason}
+    prob = curve.get("probability", pd.DataFrame())
+    meta = curve.get("metadata", {})
+    if (
+        not isinstance(prob, pd.DataFrame)
+        or prob.empty
+        or not isinstance(meta, dict)
+    ):
+        return {"available": False, "reason": "Probability curve is empty."}
+    slope = float(meta.get("Slope", 1.0) or 1.0)
+    rows = []
+    for theta, df in prob.groupby("Theta", observed=False):
+        cats = pd.to_numeric(df["CategoryValue"], errors="coerce").to_numpy(dtype=float)
+        p = pd.to_numeric(df["Probability"], errors="coerce").to_numpy(dtype=float)
+        ok = np.isfinite(cats) & np.isfinite(p)
+        if not np.any(ok):
+            continue
+        cats = cats[ok]
+        p = p[ok]
+        total = float(np.sum(p))
+        if total <= 0:
+            continue
+        p = p / total
+        expected = float(np.sum(p * cats))
+        # I_k(theta) = a^2 * P_k(theta) * (k - E[X|theta])^2
+        contribution = (slope ** 2) * p * (cats - expected) ** 2
+        total_info = float(np.sum(contribution))
+        for k, prob_k, contrib_k in zip(cats, p, contribution):
+            rows.append(
+                {
+                    "Theta": float(theta),
+                    "CategoryValue": float(k),
+                    "Probability": float(prob_k),
+                    "ExpectedScore": expected,
+                    "CategoryInformation": float(contrib_k),
+                    "TotalInformation": total_info,
+                }
+            )
+    info = pd.DataFrame(rows)
+    if info.empty:
+        return {
+            "available": False,
+            "reason": "Category-specific information curve could not be computed.",
+        }
+    info["Scope"] = str(meta.get("Scope", "curve"))
+    info["Model"] = str(meta.get("Model", "Model"))
+    info["Slope"] = slope
+
+    # Per-category summary: peak information, theta at peak, share of total
+    # information integrated over the curve grid.
+    summary_rows = []
+    grouped = info.groupby("CategoryValue", observed=False)
+    for k, sub in grouped:
+        contrib = pd.to_numeric(sub["CategoryInformation"], errors="coerce")
+        thetas = pd.to_numeric(sub["Theta"], errors="coerce")
+        peak_idx = int(contrib.idxmax()) if contrib.notna().any() else None
+        summary_rows.append(
+            {
+                "CategoryValue": float(k),
+                "MaxCategoryInformation": (
+                    float(contrib.loc[peak_idx])
+                    if peak_idx is not None
+                    else float("nan")
+                ),
+                "ThetaAtMaxCategoryInformation": (
+                    float(thetas.loc[peak_idx])
+                    if peak_idx is not None
+                    else float("nan")
+                ),
+                "IntegratedCategoryInformation": float(
+                    np.trapezoid(contrib.to_numpy(dtype=float), thetas.to_numpy(dtype=float))
+                )
+                if contrib.notna().any()
+                else float("nan"),
+            }
+        )
+    summary = pd.DataFrame(summary_rows)
+    if not summary.empty:
+        integrated_total = float(summary["IntegratedCategoryInformation"].sum())
+        if integrated_total > 0:
+            summary["IntegratedShare"] = (
+                summary["IntegratedCategoryInformation"] / integrated_total
+            )
+        else:
+            summary["IntegratedShare"] = float("nan")
+        summary["Scope"] = str(meta.get("Scope", "curve"))
+        summary["Model"] = str(meta.get("Model", "Model"))
+
+    return {
+        "available": True,
+        "curve": info,
+        "summary": summary,
+        "metadata": meta,
+    }
+
+
 def information_curve_export_table(result: dict) -> pd.DataFrame:
     options = category_probability_curve_options(result)
     frames = []
@@ -23318,6 +23466,79 @@ def _make_information_curve_figure(bundle: dict) -> go.Figure | None:
     )
     fig.update_yaxes(title_text="Information", secondary_y=False)
     fig.update_yaxes(title_text="Conditional SE", secondary_y=True)
+    return fig
+
+
+# Colour-blind-safe palette for the per-category decomposition.
+# Picked from Wong (2011) Nature Methods "Color blindness", which is the
+# de-facto reference for qualitative palettes that remain distinguishable
+# under deuteranopia / protanopia / tritanopia. The first eight entries
+# cover the common K ≤ 8 rating-scale lengths; longer scales cycle.
+_CATEGORY_INFORMATION_PALETTE: tuple[str, ...] = (
+    "#000000",  # Black
+    "#E69F00",  # Orange
+    "#56B4E9",  # Sky blue
+    "#009E73",  # Bluish green
+    "#F0E442",  # Yellow
+    "#0072B2",  # Blue
+    "#D55E00",  # Vermillion
+    "#CC79A7",  # Reddish purple
+)
+
+
+def _make_category_information_curve_figure(bundle: dict) -> "go.Figure | None":
+    """Per-category contribution curves alongside the total information.
+
+    Returns a plotly figure where each category ``k`` is rendered as one
+    line in a Wong (2011) colour-blind-safe palette, with the total
+    information curve overlaid as a thicker dashed line so the
+    decomposition-equals-total identity is visible at a glance.
+    """
+    if not isinstance(bundle, dict) or not bundle.get("available"):
+        return None
+    curve = bundle.get("curve", pd.DataFrame())
+    if not isinstance(curve, pd.DataFrame) or curve.empty:
+        return None
+    scope = str(curve["Scope"].iloc[0]) if "Scope" in curve.columns else "curve"
+    fig = go.Figure()
+    categories = sorted(curve["CategoryValue"].unique().tolist())
+    for idx, k in enumerate(categories):
+        sub = curve[curve["CategoryValue"] == k].sort_values("Theta")
+        colour = _CATEGORY_INFORMATION_PALETTE[idx % len(_CATEGORY_INFORMATION_PALETTE)]
+        fig.add_trace(
+            go.Scatter(
+                x=sub["Theta"],
+                y=sub["CategoryInformation"],
+                mode="lines",
+                name=f"Category {int(k)}",
+                line=dict(color=colour, width=2),
+                hovertemplate=(
+                    "Theta=%{x:.2f}<br>"
+                    f"Category {int(k)} information=%{{y:.3f}}<extra></extra>"
+                ),
+            )
+        )
+    # Overlay the total information curve so the decomposition is
+    # visibly the sum of the parts.
+    by_theta = curve.groupby("Theta", observed=False)["CategoryInformation"].sum()
+    fig.add_trace(
+        go.Scatter(
+            x=by_theta.index,
+            y=by_theta.values,
+            mode="lines",
+            name="Total information",
+            line=dict(color="#333333", width=3, dash="dash"),
+            hovertemplate="Theta=%{x:.2f}<br>Total information=%{y:.3f}<extra></extra>",
+        )
+    )
+    fig.update_layout(
+        title=f"Category-specific information ({scope})",
+        xaxis_title="Person Measure - Item Measure (logits)",
+        yaxis_title="Information",
+        hovermode="x unified",
+        height=420,
+        template="plotly_white",
+    )
     return fig
 
 
@@ -23494,6 +23715,55 @@ def _draw_information_curves_plotly(result: dict) -> None:
             mime="text/csv",
             key=f"dl_information_curve_{model}",
         )
+
+    # Category-specific decomposition of the information curve. Optional
+    # because the total curve is the primary diagnostic; the breakdown
+    # answers a different question (which response category contributes
+    # how much information at each theta) and is most useful when a
+    # rubric has many categories that are not uniformly informative.
+    # Hidden behind an expander so the default render stays compact.
+    with st.expander(t("visuals_top.category_info_expander"), expanded=False):
+        st.caption(t("visuals_top.category_info_caption"))
+        cat_bundle = build_category_information_curve_data(
+            result, step_level_index=selected_level_index
+        )
+        if not cat_bundle.get("available"):
+            st.info(
+                cat_bundle.get(
+                    "reason", "Category-specific decomposition unavailable."
+                )
+            )
+        else:
+            cat_summary = cat_bundle.get("summary", pd.DataFrame())
+            if isinstance(cat_summary, pd.DataFrame) and not cat_summary.empty:
+                st.dataframe(
+                    cat_summary.round(3), width="stretch", hide_index=True
+                )
+            cat_fig = _make_category_information_curve_figure(cat_bundle)
+            if cat_fig is not None:
+                st.plotly_chart(cat_fig, width="stretch")
+                cat_scope = (
+                    cat_bundle.get("metadata", {}).get("Scope", "curve")
+                    if isinstance(cat_bundle.get("metadata"), dict)
+                    else "curve"
+                )
+                cat_scope_key = re.sub(
+                    r"[^A-Za-z0-9]+", "_", str(cat_scope)
+                ).strip("_")[:80] or "curve"
+                _offer_fig_download(
+                    cat_fig,
+                    f"category_information_curve_{model}_{cat_scope_key}",
+                    "Download category information curve (PNG 300 DPI)",
+                )
+            cat_curve = cat_bundle.get("curve", pd.DataFrame())
+            if isinstance(cat_curve, pd.DataFrame) and not cat_curve.empty:
+                st.download_button(
+                    "Download category information curve data (CSV)",
+                    data=to_csv_bytes(cat_curve),
+                    file_name="mfrm_category_information_curve.csv",
+                    mime="text/csv",
+                    key=f"dl_category_information_curve_{model}",
+                )
 
 
 def _draw_data_coverage_heatmap(

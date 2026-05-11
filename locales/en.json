@@ -634,7 +634,9 @@
     "tab_forest_plot": "Forest plot",
     "tab_qq_plot": "Q-Q plot",
     "tab_ecdf": "ECDF",
-    "essential_mode_caption": "Four additional diagnostic plots (Information, Forest, Q-Q, ECDF) are available in **Full** view density. Switch from the sidebar top toggle before a publication-depth analysis."
+    "essential_mode_caption": "Four additional diagnostic plots (Information, Forest, Q-Q, ECDF) are available in **Full** view density. Switch from the sidebar top toggle before a publication-depth analysis.",
+    "category_info_expander": "Category-specific information decomposition",
+    "category_info_caption": "Decompose the total information curve into per-category contributions I_k(theta) = a^2 * P_k(theta) * (k - E[X | theta])^2 (Muraki, 1993, Eq. 16). The sum of per-category contributions equals the total information curve above; the dashed line on the plot overlays the total for a side-by-side identity check. Useful for identifying which response categories drive test precision at each theta, especially when a rubric has many categories that are not uniformly informative."
   },
   "report_top": {
     "subheader": "Publication-Quality Report",

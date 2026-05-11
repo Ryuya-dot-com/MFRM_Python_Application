@@ -117,6 +117,23 @@ All notable changes to this standalone Streamlit distribution should be recorded
   per-run download bundle, in the disk export, and in the
   external-validation report template; the public release-readiness
   check now reports against the 0.2.0 table.
+- **Category-specific information curve decomposition.** A new helper
+  `build_category_information_curve_data()` returns the per-category
+  contribution to the total Fisher information at every theta on the
+  curve grid: `I_k(theta) = a^2 * P_k(theta) * (k - E[X | theta])^2`
+  (Muraki, 1993, Eq. 16). The contributions sum to the existing
+  total information curve by construction; the identity is pinned at
+  machine precision across a synthetic three-level GPCM fixture. A
+  new optional expander section in **Visuals -> Information
+  Curves** renders the per-category breakdown as one line per
+  category using a Wong (2011) colour-blind-safe palette, with the
+  total information curve overlaid as a dashed line so the
+  decomposition-equals-total identity is visible at a glance. A
+  per-category summary table reports the peak information, the theta
+  at the peak, the integrated information under the curve, and the
+  category's share of the integrated total. The data is also
+  downloadable as CSV. Reference: Muraki (1993) Applied Psychological
+  Measurement 17(4), Eq. 16.
 - **Slope-aware GPCM bias inference: information identity, likelihood-
   ratio test, and profile-likelihood confidence interval.** Three
   related fixes / additions to `estimate_bias_interaction()`:
@@ -156,7 +173,8 @@ All notable changes to this standalone Streamlit distribution should be recorded
     other facet estimates are held fixed inside the conditional
     profile. RSM / PCM fits show the unavailable caption.
   * **mfrmr 0.2.0 coverage.** `mfrmr_020_migration_coverage_table()`
-    has the `GPCM bias inference - slope-aware` row updated from
+    has the `GPCM bias inference - slope-aware` row and the
+    `Category-specific information curves` row both updated from
     `Planned` to `Ready`. The new `PythonEvidence` cites the
     slope-aware Fisher information identity (Muraki, 1993, Eqs. 7,
     16), the LR chi-square pivotal (Wilks, 1938), the

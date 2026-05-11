@@ -226,6 +226,21 @@ All notable changes to this standalone Streamlit distribution should be recorded
     "negligible" threshold cited in Linacre's FACETS Manual. The
     categorical fields (`Profile CI Status`, `InferenceTier`) must
     agree exactly.
+- **AICc finite-sample correction in model-choice guidance** (Hurvich &
+  Tsai, 1989, Eq. 1). Each model-choice comparison row now carries
+  ``AICc = AIC + 2 K (K + 1) / (N - K - 1)`` alongside the existing AIC
+  and BIC, plus the corresponding ``DeltaAICc`` and
+  ``AICcEvidenceRatio = exp(DeltaAICc / 2)`` columns. A new
+  ``AICcRecommended`` flag fires when ``N / K < 40`` (Burnham &
+  Anderson, 2002, p. 66), and the tiered recommendation logic switches
+  the secondary criterion from AIC to AICc whenever any candidate
+  satisfies the recommendation window — small-design users no longer
+  get an over-confident AIC-based ranking. The N / K ratio is reported
+  per row so the applicability is recoverable from the table itself.
+  Math contract pinned in
+  ``tests/test_model_choice_guidance.py`` (closed-form AICc identity,
+  applicability flag, ``AICc >= AIC`` bound, DeltaAICc minimum-is-zero,
+  caveat-mentions-AICc). One new APA reference (Hurvich & Tsai, 1989).
 - **R parity fixtures for four 0.2.0 helpers** (FACETS d.f. / ZSTD
   alignment, rater severity directed network, rater halo
   correlation network, design network connectivity). The R-side

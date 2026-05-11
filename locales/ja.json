@@ -469,7 +469,7 @@
     "model_choice_run_button": "モデル選択比較を実行",
     "model_choice_run_button_help": "現在のモデルを除く 2 候補を同データで refit する。refit 時間は bundle の fit_times に記録される。session state にキャッシュされる。",
     "model_choice_running_spinner": "候補モデルを refit 中...",
-    "model_choice_comparison_table_caption": "DeltaAIC / DeltaBIC は最小 IC の行に対する差。AICEvidenceRatio / BICEvidenceRatio は Akaike / Schwarz の evidence ratio exp(DeltaIC / 2)。",
+    "model_choice_comparison_table_caption": "DeltaAIC / DeltaAICc / DeltaBIC は最小 IC の行に対する差。EvidenceRatio 列は Akaike / Schwarz の evidence ratio exp(DeltaIC / 2)。AICc は Hurvich & Tsai (1989) の有限標本補正。AICcRecommended は N / K < 40 で fire (Burnham & Anderson, 2002, p. 66)。",
     "model_choice_lr_subheader": "ネスト LR 検定 (Wilks, 1938)",
     "model_choice_lr_caption": "各行は同データの下で alternative モデルが null モデルより有意に当てはまるかを検定する。Decision は alpha = 0.05 の LR カイ二乗 pivotal による。",
     "model_choice_lr_no_pairs_info": "ネスト対が比較できなかった (両方の fit が成功している必要がある)。",

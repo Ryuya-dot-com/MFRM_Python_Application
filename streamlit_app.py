@@ -5154,6 +5154,10 @@ def _model_choice_recommend(comparison: pd.DataFrame) -> dict:
     (Schwarz 1978 is consistent under regularity); break ties by AIC
     (Akaike 1974); when |DeltaBIC| < 2 between the top two, downgrade
     the tier to ``"weak"`` so the recommendation does not over-state.
+    When the design is small (any model with ``N / K < 40``), AICc
+    (Hurvich & Tsai 1989) replaces AIC for the secondary criterion
+    because the small-sample correction is recommended in that regime
+    (Burnham & Anderson 2002, p. 66).
     """
     if comparison is None or comparison.empty:
         return {
@@ -5168,30 +5172,43 @@ def _model_choice_recommend(comparison: pd.DataFrame) -> dict:
             "tier": "not_available",
             "rationale": "No model produced a finite BIC / AIC.",
         }
-    ranked = finite.sort_values(["BIC", "AIC"], ascending=True)
+    # Decide whether to use AICc as the secondary criterion. The
+    # AICcRecommended flag fires when any candidate has N / K < 40.
+    use_aicc = bool(finite.get("AICcRecommended", pd.Series([False])).any())
+    secondary_col = "AICc" if use_aicc and finite["AICc"].notna().any() else "AIC"
+    delta_secondary_label = "DeltaAICc" if secondary_col == "AICc" else "DeltaAIC"
+
+    ranked = finite.sort_values(["BIC", secondary_col], ascending=True)
     best = ranked.iloc[0]
     if len(ranked) >= 2:
         second = ranked.iloc[1]
         delta_bic = float(second["BIC"] - best["BIC"])
-        delta_aic = float(second["AIC"] - best["AIC"])
+        delta_secondary = float(second[secondary_col] - best[secondary_col])
     else:
         delta_bic = float("inf")
-        delta_aic = float("inf")
-    if delta_bic >= 10 or delta_aic >= 10:
+        delta_secondary = float("inf")
+    if delta_bic >= 10 or delta_secondary >= 10:
         tier = "strong"
-    elif delta_bic >= 6 or delta_aic >= 6:
+    elif delta_bic >= 6 or delta_secondary >= 6:
         tier = "moderate"
-    elif delta_bic >= 2 or delta_aic >= 2:
+    elif delta_bic >= 2 or delta_secondary >= 2:
         tier = "weak"
     else:
         tier = "tie"
+    rationale_extra = (
+        f" (AICc used as the secondary criterion because N / K < 40 on at "
+        f"least one candidate, per Burnham & Anderson 2002, p. 66)"
+        if use_aicc and secondary_col == "AICc"
+        else ""
+    )
     return {
         "model": str(best["Model"]),
         "tier": tier,
         "rationale": (
-            f"Lowest BIC ({best['BIC']:.2f}) and AIC ({best['AIC']:.2f}); "
+            f"Lowest BIC ({best['BIC']:.2f}) and {secondary_col} "
+            f"({best[secondary_col]:.2f}); "
             f"gap to second-best is DeltaBIC = {delta_bic:.2f}, "
-            f"DeltaAIC = {delta_aic:.2f}."
+            f"{delta_secondary_label} = {delta_secondary:.2f}{rationale_extra}."
         ),
     }
 
@@ -5313,18 +5330,37 @@ def compute_model_choice_comparison(res: dict) -> dict:
                 "KParams": np.nan,
                 "LogLik": np.nan,
                 "AIC": np.nan,
+                "AICc": np.nan,
                 "BIC": np.nan,
                 "FitStatus": "refit_failed",
             })
             continue
         cand_res = model_results[candidate]
         summary = cand_res.get("summary", pd.DataFrame())
+        n_val = _summary_metric(summary, "N")
+        k_val = _summary_metric(summary, "KParams")
+        aic_val = _summary_metric(summary, "AIC")
+        # AICc finite-sample correction (Hurvich & Tsai, 1989, Eq. 1):
+        # AICc = AIC + 2 k (k + 1) / (N - k - 1). Undefined when N - k - 1
+        # <= 0; recommended over AIC when N / k < ~40 (Burnham & Anderson
+        # 2002, p. 66). Falls back to NaN when any of N, k, or AIC is
+        # missing or when the small-sample denominator collapses.
+        if (
+            np.isfinite(n_val) and np.isfinite(k_val) and np.isfinite(aic_val)
+            and n_val > k_val + 1
+        ):
+            aicc_val = float(aic_val) + 2.0 * float(k_val) * (float(k_val) + 1.0) / (
+                float(n_val) - float(k_val) - 1.0
+            )
+        else:
+            aicc_val = np.nan
         rows.append({
             "Model": candidate,
-            "N": _summary_metric(summary, "N"),
-            "KParams": _summary_metric(summary, "KParams"),
+            "N": n_val,
+            "KParams": k_val,
             "LogLik": _summary_metric(summary, "LogLik"),
-            "AIC": _summary_metric(summary, "AIC"),
+            "AIC": aic_val,
+            "AICc": aicc_val,
             "BIC": _summary_metric(summary, "BIC"),
             "FitStatus": (
                 "current" if candidate == current_model else "refit_ok"
@@ -5340,6 +5376,14 @@ def compute_model_choice_comparison(res: dict) -> dict:
         comparison["DeltaAIC"] = np.nan
         comparison["AICEvidenceRatio"] = np.nan
 
+    if comparison["AICc"].notna().any():
+        min_aicc = float(comparison["AICc"].min(skipna=True))
+        comparison["DeltaAICc"] = comparison["AICc"] - min_aicc
+        comparison["AICcEvidenceRatio"] = comparison["DeltaAICc"].apply(_model_choice_evidence_ratio)
+    else:
+        comparison["DeltaAICc"] = np.nan
+        comparison["AICcEvidenceRatio"] = np.nan
+
     if comparison["BIC"].notna().any():
         min_bic = float(comparison["BIC"].min(skipna=True))
         comparison["DeltaBIC"] = comparison["BIC"] - min_bic
@@ -5348,9 +5392,17 @@ def compute_model_choice_comparison(res: dict) -> dict:
         comparison["DeltaBIC"] = np.nan
         comparison["BICEvidenceRatio"] = np.nan
 
+    # Compute n / k ratio per row for AICc applicability guidance.
+    comparison["N_over_K"] = comparison["N"] / comparison["KParams"]
+    comparison["AICcRecommended"] = (
+        comparison["N_over_K"] < 40.0
+    ).fillna(False)
+
     comparison = comparison[[
-        "Model", "FitStatus", "N", "KParams", "LogLik",
+        "Model", "FitStatus", "N", "KParams", "N_over_K", "AICcRecommended",
+        "LogLik",
         "AIC", "DeltaAIC", "AICEvidenceRatio",
+        "AICc", "DeltaAICc", "AICcEvidenceRatio",
         "BIC", "DeltaBIC", "BICEvidenceRatio",
     ]]
 
@@ -5358,12 +5410,16 @@ def compute_model_choice_comparison(res: dict) -> dict:
     recommendation = _model_choice_recommend(comparison)
 
     caveat = (
-        "AIC and BIC are evaluated on the same data and method; both penalize "
-        "model complexity, with BIC favouring parsimony more strongly. The LR "
-        "chi-square pivotal (Wilks, 1938) gives an additional inferential check "
-        "on the nested pairs (RSM in PCM in GPCM). Refits inherit the original "
-        "method, step facet, and slope facet; differences across runs reflect "
-        "the model term itself, not the optimizer or the data."
+        "AIC, AICc, and BIC are evaluated on the same data and method; all "
+        "three penalise model complexity, with BIC favouring parsimony most "
+        "strongly. AICc (Hurvich & Tsai, 1989) is the finite-sample "
+        "correction recommended over AIC when N / K < ~40 (Burnham & "
+        "Anderson, 2002, p. 66); see the AICcRecommended flag in the "
+        "comparison table. The LR chi-square pivotal (Wilks, 1938) gives "
+        "an additional inferential check on the nested pairs (RSM in "
+        "PCM in GPCM). Refits inherit the original method, step facet, "
+        "and slope facet; differences across runs reflect the model term "
+        "itself, not the optimizer or the data."
     )
 
     return {
@@ -18262,6 +18318,11 @@ _APA_REFERENCE_LIBRARY: dict[str, str] = {
         "Csardi, G., & Nepusz, T. (2006). The igraph software package for "
         "complex network research. InterJournal, Complex Systems, 1695."
     ),
+    "Hurvich_Tsai_1989": (
+        "Hurvich, C. M., & Tsai, C.-L. (1989). Regression and time series "
+        "model selection in small samples. Biometrika, 76(2), 297–307. "
+        "https://doi.org/10.1093/biomet/76.2.297"
+    ),
     "Hagberg_Schult_Swart_2008": (
         "Hagberg, A. A., Schult, D. A., & Swart, P. J. (2008). Exploring "
         "network structure, dynamics, and function using NetworkX. In G. "
@@ -18436,6 +18497,7 @@ _CITATION_TO_KEY: dict[str, str] = {
     "(Cox, 1975)": "Cox_1975",
     "(Csardi & Nepusz, 2006)": "Csardi_Nepusz_2006",
     "(Hagberg, Schult & Swart, 2008)": "Hagberg_Schult_Swart_2008",
+    "(Hurvich & Tsai, 1989)": "Hurvich_Tsai_1989",
     "(Cramer, 1946)": "Cramer_1946",
     "(Louis, 1982)": "Louis_1982",
     "(Muraki, 1992)": "Muraki_1992",
@@ -24572,8 +24634,9 @@ def render_model_choice_guidance(result: dict) -> None:
     recommendation: dict = bundle["recommendation"]
 
     display = comparison.copy()
-    for col in ["LogLik", "AIC", "BIC", "DeltaAIC", "DeltaBIC",
-                "AICEvidenceRatio", "BICEvidenceRatio"]:
+    for col in ["LogLik", "AIC", "AICc", "BIC", "N_over_K",
+                "DeltaAIC", "DeltaAICc", "DeltaBIC",
+                "AICEvidenceRatio", "AICcEvidenceRatio", "BICEvidenceRatio"]:
         if col in display.columns:
             display[col] = pd.to_numeric(display[col], errors="coerce").round(3)
     st.caption(t("report_tables.model_choice_comparison_table_caption"))

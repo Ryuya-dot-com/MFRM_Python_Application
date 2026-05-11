@@ -268,8 +268,10 @@ def test_model_choice_comparison_column_order_is_stable(
 ):
     out = app.compute_model_choice_comparison(rsm_fit_for_model_choice)
     expected = [
-        "Model", "FitStatus", "N", "KParams", "LogLik",
+        "Model", "FitStatus", "N", "KParams", "N_over_K", "AICcRecommended",
+        "LogLik",
         "AIC", "DeltaAIC", "AICEvidenceRatio",
+        "AICc", "DeltaAICc", "AICcEvidenceRatio",
         "BIC", "DeltaBIC", "BICEvidenceRatio",
     ]
     assert list(out["comparison"].columns) == expected
@@ -283,3 +285,80 @@ def test_model_choice_fit_times_keyed_by_model_and_current_is_zero(
     assert set(fit_times.keys()).issubset({"RSM", "PCM", "GPCM"})
     # The current model is not refit, so its time must be exactly zero.
     assert fit_times["RSM"] == 0.0
+
+
+# -----------------------------------------------------------------------------
+# AICc finite-sample correction (Hurvich & Tsai, 1989)
+# -----------------------------------------------------------------------------
+
+
+def test_model_choice_aicc_matches_closed_form(rsm_fit_for_model_choice):
+    """``AICc = AIC + 2 K (K + 1) / (N - K - 1)`` (Hurvich & Tsai, 1989,
+    Eq. 1). Pin to machine precision when the small-sample denominator
+    is positive; NaN otherwise."""
+    out = app.compute_model_choice_comparison(rsm_fit_for_model_choice)
+    comp = out["comparison"]
+    for _, row in comp.iterrows():
+        n = float(row["N"])
+        k = float(row["KParams"])
+        aic = float(row["AIC"])
+        aicc = float(row["AICc"]) if pd.notna(row["AICc"]) else float("nan")
+        if not (np.isfinite(n) and np.isfinite(k) and np.isfinite(aic)):
+            continue
+        if n > k + 1:
+            expected = aic + 2.0 * k * (k + 1.0) / (n - k - 1.0)
+            assert aicc == pytest.approx(expected, abs=1e-10)
+        else:
+            assert not np.isfinite(aicc)
+
+
+def test_model_choice_aicc_recommended_flag_fires_when_n_over_k_below_40(
+    rsm_fit_for_model_choice,
+):
+    """The ``AICcRecommended`` column flags rows with ``N / K < 40``
+    per Burnham & Anderson (2002, p. 66)."""
+    out = app.compute_model_choice_comparison(rsm_fit_for_model_choice)
+    comp = out["comparison"]
+    for _, row in comp.iterrows():
+        n = float(row["N"])
+        k = float(row["KParams"])
+        if not (np.isfinite(n) and np.isfinite(k) and k > 0):
+            continue
+        expected = (n / k) < 40.0
+        assert bool(row["AICcRecommended"]) == expected
+
+
+def test_model_choice_aicc_is_larger_than_aic_when_finite(
+    rsm_fit_for_model_choice,
+):
+    """AICc adds a non-negative correction term to AIC, so
+    ``AICc >= AIC`` always (with equality only in the limit
+    ``K -> 0`` or ``N -> infty``)."""
+    out = app.compute_model_choice_comparison(rsm_fit_for_model_choice)
+    comp = out["comparison"]
+    for _, row in comp.iterrows():
+        aic = float(row["AIC"]) if pd.notna(row["AIC"]) else float("nan")
+        aicc = float(row["AICc"]) if pd.notna(row["AICc"]) else float("nan")
+        if np.isfinite(aic) and np.isfinite(aicc):
+            assert aicc >= aic - 1e-12
+
+
+def test_model_choice_delta_aicc_minimum_is_zero(rsm_fit_for_model_choice):
+    """``DeltaAICc`` is computed relative to the minimum AICc row; the
+    minimum row must have ``DeltaAICc = 0``."""
+    out = app.compute_model_choice_comparison(rsm_fit_for_model_choice)
+    comp = out["comparison"]
+    finite = comp.dropna(subset=["AICc"])
+    if finite.empty:
+        pytest.skip("No row produced a finite AICc.")
+    assert float(finite["DeltaAICc"].min()) == pytest.approx(0.0, abs=1e-12)
+
+
+def test_model_choice_caveat_mentions_aicc_recommendation_window(
+    rsm_fit_for_model_choice,
+):
+    out = app.compute_model_choice_comparison(rsm_fit_for_model_choice)
+    caveat = out["caveat"]
+    assert "AICc" in caveat
+    assert "Hurvich" in caveat
+    assert "Burnham" in caveat

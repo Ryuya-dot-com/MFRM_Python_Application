@@ -8971,6 +8971,553 @@ def calc_facets_report_tbls(
     return out
 
 
+# =============================================================================
+# MML observed information and structural delta-method SE for the fair-average
+# -----------------------------------------------------------------------------
+# Mathematical contract
+#   * The MML observed information is the Hessian of the negative marginal
+#     log-likelihood at the MLE. We compute it as the numerical Jacobian of
+#     the analytical gradient returned by ``mfrm_loglik_mml_value_grad``,
+#     which costs O(P) gradient evaluations rather than O(P^2) function
+#     evaluations (P is the number of free parameters).
+#   * The parameter covariance ``Cov(par_hat) = I_obs^{-1}`` is obtained via
+#     eigendecomposition with regularization: any eigenvalue at or below
+#     ``max|lambda| * sqrt(eps)`` is floored, and the ``regularized`` flag is
+#     set so downstream consumers can label the resulting SE as
+#     regularization-aware.
+#   * For a fair-average scalar function ``g(par_hat)`` the structural
+#     delta-method standard error is ``sqrt(grad^T Cov grad)`` where ``grad``
+#     is the finite-difference gradient of ``g`` with respect to the
+#     optimization parameter vector. Person rows are returned as status
+#     ``"not available"`` because the EAP person estimates are not part of
+#     the marginal-likelihood Hessian.
+# References
+#   Muraki (1992) Eqs. 2-3, 10; Muraki (1993) Eqs. 7, 16; Linacre, FACETS
+#   Manual section "Fair Average"; Cox (1975) on profile-likelihood-based
+#   inference; standard delta-method treatment in any large-sample text.
+# =============================================================================
+
+
+def _invert_information_matrix(info):
+    """Invert a symmetric observed-information matrix with eigenvalue regularization.
+
+    Returns a tuple ``(cov, regularized, rank)`` where ``cov`` is the
+    inverse (or ``None`` if inversion failed), ``regularized`` is ``True``
+    when any eigenvalue was at or below the tolerance and had to be floored,
+    and ``rank`` is the count of eigenvalues strictly above the tolerance.
+    The tolerance follows ``np.linalg.matrix_rank``: ``max|lambda| * sqrt(eps)``.
+    """
+    if info is None:
+        return None, False, 0
+    info = np.asarray(info, dtype=float)
+    if info.size == 0 or info.ndim != 2 or info.shape[0] != info.shape[1]:
+        return None, False, 0
+    if not np.all(np.isfinite(info)):
+        return None, False, 0
+    info_sym = (info + info.T) / 2.0
+    try:
+        eigvals, eigvecs = np.linalg.eigh(info_sym)
+    except np.linalg.LinAlgError:
+        return None, False, 0
+    if eigvals.size == 0:
+        return None, False, 0
+    max_val = float(np.max(np.abs(eigvals)))
+    eps = float(np.finfo(float).eps)
+    tol = max_val * np.sqrt(eps) if max_val > 0 else np.sqrt(eps)
+    rank = int(np.sum(eigvals > tol))
+    regularized = bool(np.any(eigvals <= tol))
+    safe_eigvals = np.maximum(eigvals, tol)
+    cov = eigvecs @ np.diag(1.0 / safe_eigvals) @ eigvecs.T
+    cov = (cov + cov.T) / 2.0
+    return cov, regularized, rank
+
+
+def _compute_mml_observed_information(par, idx, config, sizes, quad, rel_step=1e-5):
+    """Observed information of the MML negative marginal log-likelihood.
+
+    Computed as the numerical Jacobian of the analytical gradient
+    returned by ``mfrm_loglik_mml_value_grad`` via central differences at
+    relative step size ``rel_step``. Symmetrised before return; downstream
+    inversion is responsible for regularising near-singular spectra.
+    """
+    par = np.asarray(par, dtype=float)
+    P = par.size
+    if P == 0:
+        return np.zeros((0, 0), dtype=float)
+    H = np.zeros((P, P), dtype=float)
+    for j in range(P):
+        h = rel_step * max(1.0, abs(float(par[j])))
+        par_p = par.copy()
+        par_m = par.copy()
+        par_p[j] += h
+        par_m[j] -= h
+        _, grad_p = mfrm_loglik_mml_value_grad(par_p, idx, config, sizes, quad)
+        _, grad_m = mfrm_loglik_mml_value_grad(par_m, idx, config, sizes, quad)
+        H[:, j] = (np.asarray(grad_p, dtype=float) - np.asarray(grad_m, dtype=float)) / (2.0 * h)
+    return (H + H.T) / 2.0
+
+
+def _build_param_slices(sizes):
+    """Return a dict mapping each parameter section name to its slice into ``par``."""
+    out = {}
+    cursor = 0
+    for name, count in sizes.items():
+        out[name] = slice(cursor, cursor + int(count))
+        cursor += int(count)
+    return out
+
+
+def _get_opt_par(res):
+    """Robustly extract the optimisation parameter vector from a fit result."""
+    opt = res.get("opt") if isinstance(res, dict) else None
+    if opt is None:
+        return None
+    if hasattr(opt, "x"):
+        return np.asarray(getattr(opt, "x"), dtype=float)
+    if isinstance(opt, dict):
+        for key in ("x", "par"):
+            if key in opt:
+                return np.asarray(opt[key], dtype=float)
+    return None
+
+
+def compute_mml_parameter_covariance(res, rel_step=1e-5):
+    """Compute the MML observed-information covariance for an MML fit.
+
+    Returns a dict with the keys ``cov`` (P x P ndarray or ``None``),
+    ``hessian`` (P x P ndarray or ``None``), ``sizes`` (the OrderedDict from
+    ``build_param_sizes``), ``param_slices`` (section-name -> slice),
+    ``status`` (``"ok" | "regularized" | "not_applicable" | "fallback"``),
+    ``detail`` (human-readable description), ``regularized`` (bool),
+    and ``rank`` (int).
+    """
+    config = (res or {}).get("config", {}) or {}
+    try:
+        sizes = build_param_sizes(config) if config.get("facet_names") else OrderedDict()
+    except Exception:
+        sizes = OrderedDict()
+    param_slices = _build_param_slices(sizes)
+
+    def envelope(status, detail, cov=None, hessian=None, regularized=False, rank=0):
+        return {
+            "cov": cov,
+            "hessian": hessian,
+            "sizes": sizes,
+            "param_slices": param_slices,
+            "status": status,
+            "detail": detail,
+            "regularized": regularized,
+            "rank": rank,
+        }
+
+    if config.get("method") != "MML":
+        return envelope(
+            "not_applicable",
+            "MML observed-information covariance is only computed for MML fits.",
+        )
+
+    par = _get_opt_par(res)
+    if par is None or par.size == 0:
+        return envelope(
+            "fallback",
+            "Optimised parameter vector was not available; observed-information covariance was not computed.",
+        )
+
+    try:
+        idx = build_indices(
+            res["prep"],
+            step_facet=config.get("step_facet"),
+            slope_facet=config.get("slope_facet"),
+        )
+    except Exception as exc:
+        return envelope(
+            "fallback",
+            f"Could not rebuild observation indices for covariance: {exc!s}",
+        )
+
+    quad_points = int(config.get("quad_points") or 15)
+    try:
+        quad = gauss_hermite_normal(max(1, quad_points), sd=get_population_prior_sd(config))
+    except Exception as exc:
+        return envelope(
+            "fallback",
+            f"Could not build Gauss-Hermite quadrature for covariance: {exc!s}",
+        )
+
+    try:
+        hess = _compute_mml_observed_information(par, idx, config, sizes, quad, rel_step=rel_step)
+    except Exception as exc:
+        return envelope(
+            "fallback",
+            f"Observed-information Hessian computation raised: {exc!s}",
+        )
+
+    if not np.all(np.isfinite(hess)):
+        return envelope(
+            "fallback",
+            "Observed-information matrix contained non-finite entries; covariance was not computed.",
+            hessian=hess,
+        )
+
+    cov, regularized, rank = _invert_information_matrix(hess)
+    if cov is None:
+        return envelope(
+            "fallback",
+            "Observed-information matrix could not be inverted; covariance was not computed.",
+            hessian=hess,
+        )
+
+    if regularized:
+        detail = (
+            "MML parameter covariance from observed information; a near-singular "
+            "Hessian was regularized during inversion."
+        )
+        status = "regularized"
+    else:
+        detail = "MML parameter covariance from observed information."
+        status = "ok"
+
+    return envelope(status, detail, cov=cov, hessian=hess, regularized=regularized, rank=rank)
+
+
+def _finite_difference_gradient(fn, par, rel_step=1e-5):
+    """Central-difference gradient of a scalar ``fn(par)``.
+
+    Falls back to one-sided differences if the symmetric perturbation
+    returns a non-finite value at either end (e.g. the per-row fair-average
+    crosses a rating bound). Returns NaN for entries that cannot be
+    estimated at all.
+    """
+    par = np.asarray(par, dtype=float)
+    P = par.size
+    if P == 0:
+        return np.zeros(0, dtype=float)
+    grad = np.full(P, np.nan, dtype=float)
+    try:
+        base_val = float(fn(par))
+    except Exception:
+        base_val = float("nan")
+    for j in range(P):
+        h = rel_step * max(1.0, abs(float(par[j])))
+        par_p = par.copy()
+        par_m = par.copy()
+        par_p[j] += h
+        par_m[j] -= h
+        try:
+            f_p = float(fn(par_p))
+        except Exception:
+            f_p = float("nan")
+        try:
+            f_m = float(fn(par_m))
+        except Exception:
+            f_m = float("nan")
+        if np.isfinite(f_p) and np.isfinite(f_m):
+            grad[j] = (f_p - f_m) / (2.0 * h)
+        elif np.isfinite(f_p) and np.isfinite(base_val):
+            grad[j] = (f_p - base_val) / h
+        elif np.isfinite(f_m) and np.isfinite(base_val):
+            grad[j] = (base_val - f_m) / h
+    return grad
+
+
+def _compute_fair_average_value_from_par(res, par, facet, level, metric="FairM"):
+    """Scalar fair-average value as a function of the optimisation parameter vector.
+
+    This is the function ``g(par)`` that the structural delta method
+    differentiates. For Person rows the function returns ``np.nan`` because
+    MML person estimates are not part of ``par`` and therefore the
+    structural Hessian cannot describe their uncertainty. For all other
+    rows the function rebuilds the slope-aware Linacre fair-average from
+    ``par`` using the same conventions as ``calc_facets_report_tbls``:
+    slope-facet rows use that level's own discrimination and own step
+    thresholds; non slope-facet rows use slope = 1 (the geometric-mean
+    discrimination under the sum-to-zero log-slope identification) and the
+    column-mean cumulative step thresholds.
+    """
+    if res is None:
+        return float("nan")
+    config = res.get("config", {}) if isinstance(res, dict) else {}
+    if config.get("model") != "GPCM":
+        return float("nan")
+    prep = res.get("prep", {}) if isinstance(res, dict) else {}
+    facet = str(facet)
+    level = str(level)
+    facet_names = list(config.get("facet_names", []))
+    if facet == "Person" or facet not in facet_names:
+        return float("nan")
+
+    try:
+        sizes = build_param_sizes(config)
+        params = expand_params(np.asarray(par, dtype=float), sizes, config)
+    except Exception:
+        return float("nan")
+
+    facet_levels = [str(x) for x in (prep.get("levels", {}).get(facet) or [])]
+    if level not in facet_levels:
+        return float("nan")
+    facet_idx = facet_levels.index(level)
+
+    person_frame = res.get("facets", {}).get("person") if isinstance(res.get("facets"), dict) else None
+    theta_mean = 0.0
+    if person_frame is not None:
+        try:
+            est_vals = np.asarray(person_frame["Estimate"].to_numpy(), dtype=float)
+            if est_vals.size:
+                m = float(np.nanmean(est_vals))
+                if np.isfinite(m):
+                    theta_mean = m
+        except Exception:
+            theta_mean = 0.0
+
+    facet_means = {}
+    for f in facet_names:
+        vals = np.asarray(params["facets"].get(f, np.array([])), dtype=float)
+        m = float(np.nanmean(vals)) if vals.size else 0.0
+        facet_means[f] = m if np.isfinite(m) else 0.0
+
+    facet_signs = config.get("facet_signs", {f: -1 for f in facet_names})
+    sign = float(facet_signs.get(facet, -1))
+    if not np.isfinite(sign):
+        sign = -1.0
+
+    facet_values = np.asarray(params["facets"].get(facet, np.array([])), dtype=float)
+    if facet_idx >= facet_values.size:
+        return float("nan")
+    estimate = float(facet_values[facet_idx])
+    if not np.isfinite(estimate):
+        return float("nan")
+
+    other_sum = 0.0
+    for f, mean_f in facet_means.items():
+        if f == facet:
+            continue
+        s = float(facet_signs.get(f, -1))
+        if not np.isfinite(s):
+            s = -1.0
+        other_sum += s * mean_f
+
+    if metric == "FairM":
+        eta = theta_mean + other_sum + sign * estimate
+    elif metric == "FairZ":
+        eta = sign * estimate
+    else:
+        return float("nan")
+    if not np.isfinite(eta):
+        return float("nan")
+
+    step_mat = params.get("steps_mat")
+    if step_mat is None or np.asarray(step_mat).size == 0:
+        return float("nan")
+    step_mat = np.asarray(step_mat, dtype=float)
+    step_profile = np.nanmean(step_mat, axis=0)
+    step_facet = config.get("step_facet")
+    if step_facet and facet == step_facet:
+        step_levels = [str(x) for x in (prep.get("levels", {}).get(step_facet) or [])]
+        if level in step_levels:
+            step_row_idx = step_levels.index(level)
+            if 0 <= step_row_idx < step_mat.shape[0]:
+                step_profile = step_mat[step_row_idx]
+    if not np.all(np.isfinite(step_profile)):
+        return float("nan")
+
+    step_cum = np.concatenate([[0.0], np.cumsum(step_profile)])
+
+    slope = 1.0
+    slope_facet = config.get("slope_facet") or step_facet
+    slopes = np.asarray(params.get("slopes", np.array([])), dtype=float)
+    if slope_facet and facet == slope_facet and slopes.size:
+        slope_levels = [str(x) for x in (prep.get("levels", {}).get(slope_facet) or [])]
+        if level in slope_levels:
+            slope_row_idx = slope_levels.index(level)
+            if 0 <= slope_row_idx < slopes.size:
+                candidate = float(slopes[slope_row_idx])
+                if np.isfinite(candidate) and candidate > 0:
+                    slope = candidate
+
+    return expected_score_from_eta(eta, step_cum, prep.get("rating_min", 0), slope=slope)
+
+
+def add_gpcm_fair_average_delta_se(raw_tbls, res, covariance=None, ci_level=0.95):
+    """Annotate fair-average tables with the structural delta-method SE / CI.
+
+    Non-Person rows under a GPCM MML fit receive a standard error
+    ``SE = sqrt(grad^T Cov grad)`` where ``Cov`` is the MML observed-
+    information covariance and ``grad`` is the finite-difference gradient
+    of the fair-average scalar function with respect to the optimisation
+    parameter vector. Person rows return ``status = "not available"``
+    because EAP person estimates are not part of the marginal-likelihood
+    Hessian. Rows from non-GPCM fits return ``status = "not_applicable"``.
+    """
+    if not raw_tbls:
+        return raw_tbls
+    config = (res or {}).get("config", {}) or {}
+    model = config.get("model")
+    ci_level = float(ci_level) if np.isfinite(ci_level) else 0.95
+    if not 0.0 < ci_level < 1.0:
+        ci_level = 0.95
+
+    def annotate_unavailable(tbl, status, detail):
+        if tbl is None:
+            return tbl
+        new_tbl = tbl.copy()
+        for prefix in ("FairM", "FairZ"):
+            new_tbl[f"{prefix}SE"] = np.nan
+            new_tbl[f"{prefix}_CI_Lower"] = np.nan
+            new_tbl[f"{prefix}_CI_Upper"] = np.nan
+            new_tbl[f"{prefix}_CI_Level"] = ci_level
+            new_tbl[f"{prefix}_SE_Method"] = "not available"
+            new_tbl[f"{prefix}_SE_Status"] = status
+            new_tbl[f"{prefix}_SE_Detail"] = detail
+        return new_tbl
+
+    if model != "GPCM":
+        return {
+            facet: annotate_unavailable(
+                tbl,
+                "not_applicable",
+                f"Structural delta-method fair-average SE is implemented for GPCM only; this fit is {model}.",
+            )
+            for facet, tbl in raw_tbls.items()
+        }
+
+    if covariance is None:
+        covariance = compute_mml_parameter_covariance(res)
+
+    if covariance.get("status") not in {"ok", "regularized"} or covariance.get("cov") is None:
+        return {
+            facet: annotate_unavailable(tbl, covariance.get("status", "fallback"), covariance.get("detail", ""))
+            for facet, tbl in raw_tbls.items()
+        }
+
+    par = _get_opt_par(res)
+    cov = np.asarray(covariance["cov"], dtype=float)
+    if par is None or par.size != cov.shape[0]:
+        return {
+            facet: annotate_unavailable(
+                tbl,
+                "fallback",
+                "Parameter vector length does not match the observed-information covariance shape.",
+            )
+            for facet, tbl in raw_tbls.items()
+        }
+
+    from scipy.stats import norm  # local import keeps module-level import surface stable
+    z = float(norm.ppf((1.0 + ci_level) / 2.0))
+    rating_min = res.get("prep", {}).get("rating_min", -np.inf)
+    rating_max = res.get("prep", {}).get("rating_max", np.inf)
+
+    se_method_main = (
+        "Structural delta method (MML observed information; regularized Hessian)"
+        if covariance.get("regularized")
+        else "Structural delta method (MML observed information)"
+    )
+    se_detail_main = (
+        "Propagates the structural covariance of facet, step, and slope "
+        "parameters; MML person EAP estimates are conditioned on rather "
+        "than included in the Hessian."
+    )
+
+    def compute_one(facet, level, estimate, metric):
+        if not np.isfinite(estimate):
+            return {
+                "se": np.nan,
+                "lower": np.nan,
+                "upper": np.nan,
+                "status": "not available",
+                "detail": "Fair-average estimate is not finite.",
+            }
+        if facet == "Person":
+            return {
+                "se": np.nan,
+                "lower": np.nan,
+                "upper": np.nan,
+                "status": "not available",
+                "detail": (
+                    "Person rows are not assigned structural fair-average SEs because "
+                    "MML EAP person estimates are not part of the structural Hessian."
+                ),
+            }
+        fn = lambda p: _compute_fair_average_value_from_par(res, p, facet, level, metric=metric)
+        grad = _finite_difference_gradient(fn, par)
+        if grad.size != cov.shape[0] or not np.any(np.isfinite(grad)):
+            return {
+                "se": np.nan,
+                "lower": np.nan,
+                "upper": np.nan,
+                "status": "not available",
+                "detail": "Finite-difference gradient was not available.",
+            }
+        grad = np.where(np.isfinite(grad), grad, 0.0)
+        var = float(grad @ cov @ grad)
+        if -1e-10 < var < 0:
+            var = 0.0
+        if not np.isfinite(var) or var < 0:
+            return {
+                "se": np.nan,
+                "lower": np.nan,
+                "upper": np.nan,
+                "status": "not available",
+                "detail": "Delta-method variance was not non-negative.",
+            }
+        se = float(np.sqrt(var))
+        lower = estimate - z * se
+        upper = estimate + z * se
+        if np.isfinite(rating_min):
+            lower = max(lower, rating_min)
+        if np.isfinite(rating_max):
+            upper = min(upper, rating_max)
+        return {
+            "se": se,
+            "lower": lower,
+            "upper": upper,
+            "status": covariance.get("status", "ok"),
+            "detail": se_detail_main,
+        }
+
+    out = {}
+    for facet, tbl in raw_tbls.items():
+        if tbl is None or len(tbl) == 0:
+            out[facet] = tbl
+            continue
+        new_tbl = tbl.copy()
+        for prefix in ("FairM", "FairZ"):
+            if prefix not in new_tbl.columns:
+                continue
+            results = []
+            for i in range(len(new_tbl)):
+                estimate = float(new_tbl.iloc[i][prefix])
+                level = str(new_tbl.iloc[i]["Level"]) if "Level" in new_tbl.columns else ""
+                results.append(compute_one(facet, level, estimate, prefix))
+            new_tbl[f"{prefix}SE"] = [r["se"] for r in results]
+            new_tbl[f"{prefix}_CI_Lower"] = [r["lower"] for r in results]
+            new_tbl[f"{prefix}_CI_Upper"] = [r["upper"] for r in results]
+            new_tbl[f"{prefix}_CI_Level"] = ci_level
+            new_tbl[f"{prefix}_SE_Method"] = se_method_main
+            new_tbl[f"{prefix}_SE_Status"] = [r["status"] for r in results]
+            new_tbl[f"{prefix}_SE_Detail"] = [r["detail"] for r in results]
+        out[facet] = new_tbl
+    return out
+
+
+def fair_average_table(res, diagnostics, fair_se=False, ci_level=0.95, **kwargs):
+    """Public wrapper: compute FACETS-style fair-average tables with optional
+    structural delta-method SE / CI columns for GPCM MML fits.
+
+    With ``fair_se=False`` (the default) the return value is identical to
+    ``calc_facets_report_tbls``. With ``fair_se=True`` each table gains
+    ``Fair{M,Z}SE``, ``Fair{M,Z}_CI_Lower``, ``Fair{M,Z}_CI_Upper``,
+    ``Fair{M,Z}_CI_Level``, ``Fair{M,Z}_SE_Method``,
+    ``Fair{M,Z}_SE_Status``, and ``Fair{M,Z}_SE_Detail`` columns. Person
+    rows are always marked ``status = "not available"`` because MML EAPs
+    are not part of the structural Hessian; non-GPCM fits are marked
+    ``status = "not_applicable"``.
+    """
+    raw_tbls = calc_facets_report_tbls(res, diagnostics, **kwargs)
+    if not fair_se:
+        return raw_tbls
+    return add_gpcm_fair_average_delta_se(raw_tbls, res, ci_level=ci_level)
+
+
 def calc_reliability(measure_df):
     """Compute Separation / Reliability / Strata for each facet.
 

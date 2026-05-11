@@ -46,6 +46,28 @@ All notable changes to this standalone Streamlit distribution should be recorded
   (numeric, single-letter, and a finite vocabulary of multi-letter forms
   such as NATO phonetics and spelled-out numbers). Public commits must
   not ship internal sprint or phase labels.
+- **MML observed-information covariance** (`compute_mml_parameter_covariance`).
+  For an MML fit, the structural parameter covariance is computed as the
+  inverse of the observed Fisher information, evaluated as the numerical
+  Jacobian of the analytical gradient returned by
+  `mfrm_loglik_mml_value_grad` (O(P) gradient calls, not O(P^2) function
+  calls). Inversion uses an eigendecomposition with regularization for
+  near-singular spectra; a `regularized` flag and a status field
+  (`"ok"`, `"regularized"`, `"not_applicable"`, `"fallback"`) propagate
+  to downstream consumers so they can label the resulting SE as
+  regularization-aware.
+- **Structural delta-method SE / CI for the GPCM Linacre fair-average**
+  (`add_gpcm_fair_average_delta_se`, `fair_average_table(fair_se=True)`).
+  For each non-Person row, the routine computes
+  `SE = sqrt(grad^T Cov grad)` where `Cov` is the MML observed-information
+  covariance and `grad` is the finite-difference gradient of the
+  fair-average scalar function with respect to the optimisation parameter
+  vector. Confidence intervals are reported at the requested `ci_level`
+  (default 0.95) and clipped to the rating bounds. Person rows are marked
+  `"not available"` because MML EAP person estimates are not part of the
+  structural Hessian; non-GPCM fits are marked `"not_applicable"`.
+  Reference: standard large-sample delta method (e.g. Cramer 1946);
+  observed-information identity for MML estimators (Louis 1982).
 
 ### Changed
 

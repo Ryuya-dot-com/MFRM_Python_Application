@@ -21,3 +21,7 @@ reportlab>=4.0
 arviz>=0.17
 netcdf4>=1.6
 pyarrow>=15.0
+# Graph-theoretic analyses (design connectivity, rater severity / halo
+# networks). Provides articulation-point, bridge, betweenness, and
+# eigenvector centrality on the rating design graph.
+networkx>=3.0

@@ -226,6 +226,25 @@ All notable changes to this standalone Streamlit distribution should be recorded
     "negligible" threshold cited in Linacre's FACETS Manual. The
     categorical fields (`Profile CI Status`, `InferenceTier`) must
     agree exactly.
+- **D-study CI bands at every planned design point**. The cluster
+  bootstrap for G / Phi now propagates through each
+  ``(n_facet_a, n_facet_b)`` row of the D-study forecast grid by
+  reusing the same B variance-component replicates: each replicate
+  re-evaluates Brennan (2001) Eq. 3.18 at every grid point so the
+  marginal cost per band is one closed-form arithmetic step rather
+  than another bootstrap loop. With ``bootstrap_ci=True`` the
+  ``d_study`` DataFrame gains ``G_lower``, ``G_upper``,
+  ``Phi_lower``, ``Phi_upper`` columns; manuscripts can now quote
+  "G = 0.85, 95% CI [0.79, 0.91] at n_rater = 4, n_criterion = 6"
+  directly from a single table. The observed-design row of the
+  grid matches the observed-design bootstrap CI to machine
+  precision (same replicate set). The Report-tab UI shows the
+  bands inline; a new caption explains the cost-sharing structure.
+  Math contract pinned in ``tests/test_g_d_study.py`` (CI columns
+  present only when bootstrap is enabled, ordered bounds inside
+  [0, 1], observed-design row matches the observed-design CI, band
+  width shrinks with design size on >= 70 % of comparable pairs,
+  seed determinism).
 - **Nonparametric DIMTEST for essential unidimensionality** (Stout,
   1987, Psychometrika 52; polytomous adaptation per Nandakumar & Yu,
   1996). A new ``compute_dimtest_nonparametric(res, diagnostics)``

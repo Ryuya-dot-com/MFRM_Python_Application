@@ -11084,6 +11084,7 @@ def _bootstrap_g_phi_ci(
     n_bootstrap: int = 200,
     confidence: float = 0.95,
     seed: int | None = 20260601,
+    extra_designs: list[dict[str, int]] | None = None,
 ) -> dict:
     """Cluster bootstrap CI for G and Phi coefficients.
 
@@ -11096,13 +11097,22 @@ def _bootstrap_g_phi_ci(
     correlation structure that drives both relative and absolute
     error.
 
+    When ``extra_designs`` is supplied, the same B variance-component
+    replicates are evaluated at every additional ``facet_observations``
+    dictionary in the list, and per-design replicate arrays are
+    returned under ``extra_design_replicates``. This is how the
+    D-study CI bands are computed: a single resample loop is shared
+    across the observed design and every grid point.
+
     Returns
     -------
     dict
         With keys ``available``, ``reason``, ``G_lower``, ``G_upper``,
         ``Phi_lower``, ``Phi_upper``, ``G_replicates``,
         ``Phi_replicates``, ``confidence``, ``n_bootstrap``,
-        ``n_success``.
+        ``n_success``, and optionally ``extra_design_replicates``
+        (list of dicts, one per ``extra_designs`` entry, each with
+        ``design`` plus the replicate arrays / CI bounds).
     """
     if not isinstance(data, pd.DataFrame) or data.empty:
         return {
@@ -11112,6 +11122,7 @@ def _bootstrap_g_phi_ci(
             "G_replicates": np.array([]), "Phi_replicates": np.array([]),
             "confidence": float(confidence),
             "n_bootstrap": int(n_bootstrap), "n_success": 0,
+            "extra_design_replicates": [],
         }
     n_bootstrap = max(int(n_bootstrap), 1)
     confidence = float(min(max(confidence, 0.0), 1.0))
@@ -11129,6 +11140,7 @@ def _bootstrap_g_phi_ci(
             "G_replicates": np.array([]), "Phi_replicates": np.array([]),
             "confidence": confidence,
             "n_bootstrap": n_bootstrap, "n_success": 0,
+            "extra_design_replicates": [],
         }
 
     # Pre-index rows by person for fast resampling.
@@ -11138,6 +11150,9 @@ def _bootstrap_g_phi_ci(
     }
     g_replicates: list[float] = []
     phi_replicates: list[float] = []
+    extra_designs = list(extra_designs or [])
+    extra_g_lists: list[list[float]] = [[] for _ in extra_designs]
+    extra_phi_lists: list[list[float]] = [[] for _ in extra_designs]
     for _ in range(n_bootstrap):
         sample_persons = rng.choice(persons, size=n_persons, replace=True)
         # Re-label resampled persons with unique identifiers so the
@@ -11171,6 +11186,20 @@ def _bootstrap_g_phi_ci(
                 g_replicates.append(g_val)
             if np.isfinite(phi_val):
                 phi_replicates.append(phi_val)
+            # Evaluate at every extra design with the same variance
+            # components; this is the heart of the D-study CI bands.
+            for k, design in enumerate(extra_designs):
+                coef_k = _g_phi_from_variance_components(
+                    var_components,
+                    object_facet=object_facet,
+                    facet_observations=design,
+                )
+                g_k = float(coef_k.get("G", np.nan))
+                phi_k = float(coef_k.get("Phi", np.nan))
+                if np.isfinite(g_k):
+                    extra_g_lists[k].append(g_k)
+                if np.isfinite(phi_k):
+                    extra_phi_lists[k].append(phi_k)
         except Exception:
             continue
 
@@ -11185,6 +11214,20 @@ def _bootstrap_g_phi_ci(
         )
     g_lo, g_hi = _percentile_ci(g_arr)
     phi_lo, phi_hi = _percentile_ci(phi_arr)
+
+    extra_results = []
+    for design, g_list, phi_list in zip(extra_designs, extra_g_lists, extra_phi_lists):
+        g_a = np.asarray(g_list, dtype=float)
+        phi_a = np.asarray(phi_list, dtype=float)
+        gl, gh = _percentile_ci(g_a)
+        pl, ph = _percentile_ci(phi_a)
+        extra_results.append({
+            "design": dict(design),
+            "G_lower": gl, "G_upper": gh,
+            "Phi_lower": pl, "Phi_upper": ph,
+            "n_success": int(g_a.size),
+        })
+
     return {
         "available": bool(g_arr.size >= 2 or phi_arr.size >= 2),
         "reason": (
@@ -11198,6 +11241,7 @@ def _bootstrap_g_phi_ci(
         "n_bootstrap": n_bootstrap,
         "n_success": int(g_arr.size),
         "method": "cluster_bootstrap_on_persons",
+        "extra_design_replicates": extra_results,
     }
 
 
@@ -11394,8 +11438,24 @@ def compute_generalizability_study(
         "confidence": float(bootstrap_confidence),
         "n_bootstrap": int(n_bootstrap),
         "n_success": 0,
+        "extra_design_replicates": [],
     }
     if bootstrap_ci:
+        # Build the list of extra designs to evaluate per replicate.
+        # Each d_study row contributes a facet_observations dict; the
+        # bootstrap loop computes the variance components ONCE per
+        # replicate and reuses them across all grid points, so the
+        # marginal cost of the D-study CI bands is small (one G/Phi
+        # closed-form evaluation per replicate per grid point).
+        extra_designs: list[dict[str, int]] = []
+        if isinstance(d_study, pd.DataFrame) and not d_study.empty:
+            for _, row in d_study.iterrows():
+                design_dict: dict[str, int] = {}
+                for facet in random_facets:
+                    if facet in row.index and pd.notna(row[facet]):
+                        design_dict[facet] = int(row[facet])
+                if design_dict:
+                    extra_designs.append(design_dict)
         bootstrap = _bootstrap_g_phi_ci(
             data,
             object_facet=object_facet,
@@ -11405,7 +11465,39 @@ def compute_generalizability_study(
             n_bootstrap=int(n_bootstrap),
             confidence=float(bootstrap_confidence),
             seed=bootstrap_seed,
+            extra_designs=extra_designs,
         )
+        # Merge per-design CIs into d_study DataFrame.
+        if (
+            isinstance(d_study, pd.DataFrame)
+            and not d_study.empty
+            and bootstrap.get("available")
+        ):
+            extra_replicates = bootstrap.get("extra_design_replicates", [])
+            # Match by (n_facet1, n_facet2, ...) tuple.
+            ci_rows: dict[tuple, dict] = {}
+            for entry in extra_replicates:
+                key = tuple(int(entry["design"].get(f, 0)) for f in random_facets)
+                ci_rows[key] = entry
+            g_lows, g_highs, phi_lows, phi_highs = [], [], [], []
+            for _, row in d_study.iterrows():
+                key = tuple(int(row[f]) if f in row.index else 0 for f in random_facets)
+                entry = ci_rows.get(key)
+                if entry is None:
+                    g_lows.append(np.nan)
+                    g_highs.append(np.nan)
+                    phi_lows.append(np.nan)
+                    phi_highs.append(np.nan)
+                else:
+                    g_lows.append(float(entry["G_lower"]))
+                    g_highs.append(float(entry["G_upper"]))
+                    phi_lows.append(float(entry["Phi_lower"]))
+                    phi_highs.append(float(entry["Phi_upper"]))
+            d_study = d_study.copy()
+            d_study["G_lower"] = g_lows
+            d_study["G_upper"] = g_highs
+            d_study["Phi_lower"] = phi_lows
+            d_study["Phi_upper"] = phi_highs
 
     return {
         "available": True,
@@ -26315,10 +26407,15 @@ def render_g_d_study_section(result: dict) -> None:
         st.markdown("**" + t("report_tables.g_d_study_d_study_subheader") + "**")
         st.caption(t("report_tables.g_d_study_d_study_caption"))
         display_d = d_study.copy()
-        if "G" in display_d.columns:
-            display_d["G"] = pd.to_numeric(display_d["G"], errors="coerce").round(4)
-        if "Phi" in display_d.columns:
-            display_d["Phi"] = pd.to_numeric(display_d["Phi"], errors="coerce").round(4)
+        for col in ["G", "Phi", "G_lower", "G_upper", "Phi_lower", "Phi_upper"]:
+            if col in display_d.columns:
+                display_d[col] = pd.to_numeric(display_d[col], errors="coerce").round(4)
+        has_ci_columns = all(
+            col in display_d.columns
+            for col in ["G_lower", "G_upper", "Phi_lower", "Phi_upper"]
+        )
+        if has_ci_columns:
+            st.caption(t("report_tables.g_d_study_d_study_ci_band_caption"))
         st.dataframe(display_d, width="stretch", hide_index=True)
 
     caveat = bundle.get("caveat", "")

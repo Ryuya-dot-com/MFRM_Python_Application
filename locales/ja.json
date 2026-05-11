@@ -536,6 +536,7 @@
     "g_d_study_bootstrap_conf": "信頼水準",
     "g_d_study_bootstrap_running": "Persons を resample して分散成分を再分解中...",
     "g_d_study_bootstrap_ci_template": "{confidence}% bootstrap CI ({n_success} replicates): G in [{g_lower}, {g_upper}], Phi in [{phi_lower}, {phi_upper}]。",
+    "g_d_study_d_study_ci_band_caption": "G_lower / G_upper / Phi_lower / Phi_upper は各計画 design における bootstrap CI 境界 (観測 design と同じ replicate 集合を共有 - 分散成分の使い回しでコストを grid 全体に償却)。",
     "apa_presets_subheader": "APA 7 preset (table export と monochrome figure)",
     "apa_presets_caption": "任意の report 表を APA 7 形式の Markdown / HTML snippet に再変換する (caption が上、header / body / 底罫線、Note. ブロックが下)。Monochrome palette は print-friendly な grayscale 出力のために figure export と組み合わせ可能。",
     "apa_presets_table_picker_label": "Export する表",

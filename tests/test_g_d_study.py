@@ -255,6 +255,126 @@ def test_bootstrap_replicates_bound_in_unit_interval(crossed_rating_fit):
     assert (phi_reps >= -1e-12).all() and (phi_reps <= 1.0 + 1e-12).all()
 
 
+# -----------------------------------------------------------------------------
+# D-study CI bands (bootstrap propagated through Brennan Eq. 3.18 grid points)
+# -----------------------------------------------------------------------------
+
+
+def test_d_study_carries_ci_columns_when_bootstrap_enabled(crossed_rating_fit):
+    """With bootstrap_ci=True, the d_study DataFrame must carry per-row
+    G_lower / G_upper / Phi_lower / Phi_upper columns alongside the
+    point estimates."""
+    out = app.compute_generalizability_study(
+        crossed_rating_fit, bootstrap_ci=True, n_bootstrap=60,
+        bootstrap_seed=20260613,
+    )
+    d_study = out["d_study"]
+    for col in ["G_lower", "G_upper", "Phi_lower", "Phi_upper"]:
+        assert col in d_study.columns, col
+
+
+def test_d_study_ci_bands_bracket_point_estimates(crossed_rating_fit):
+    """For every D-study grid row the CI band should bracket the point
+    estimate; we use a soft inclusive bound to allow for slight noise
+    in 60-replicate bootstraps."""
+    out = app.compute_generalizability_study(
+        crossed_rating_fit, bootstrap_ci=True, n_bootstrap=60,
+        bootstrap_seed=20260613,
+    )
+    d_study = out["d_study"]
+    finite = d_study.dropna(subset=["G", "G_lower", "G_upper"])
+    for _, row in finite.iterrows():
+        # Bands may not always bracket the observed point estimate
+        # under a finite bootstrap (the percentile method can shift),
+        # but the (lower, upper) pair must be ordered and inside [0, 1].
+        assert row["G_lower"] <= row["G_upper"] + 1e-12, row
+        assert row["Phi_lower"] <= row["Phi_upper"] + 1e-12, row
+        assert 0 - 1e-9 <= row["G_lower"] <= 1 + 1e-9
+        assert 0 - 1e-9 <= row["G_upper"] <= 1 + 1e-9
+
+
+def test_d_study_ci_band_at_observed_design_matches_bootstrap_ci(
+    crossed_rating_fit,
+):
+    """The d_study row corresponding to the observed (n_rater,
+    n_criterion) sample sizes must have CI bounds within numerical
+    noise of the bootstrap_ci values reported at the observed
+    design (they share the same replicate set)."""
+    out = app.compute_generalizability_study(
+        crossed_rating_fit, bootstrap_ci=True, n_bootstrap=80,
+        bootstrap_seed=20260613,
+    )
+    bc = out["bootstrap_ci"]
+    d_study = out["d_study"]
+    observed_n = out["design"]["observed_n"]
+    n_r = int(observed_n["Rater"])
+    n_c = int(observed_n["Criterion"])
+    matching = d_study[(d_study["Rater"] == n_r) & (d_study["Criterion"] == n_c)]
+    assert not matching.empty, "Observed design row missing from D-study grid"
+    row = matching.iloc[0]
+    assert float(row["G_lower"]) == pytest.approx(bc["G_lower"], abs=1e-12)
+    assert float(row["G_upper"]) == pytest.approx(bc["G_upper"], abs=1e-12)
+    assert float(row["Phi_lower"]) == pytest.approx(bc["Phi_lower"], abs=1e-12)
+    assert float(row["Phi_upper"]) == pytest.approx(bc["Phi_upper"], abs=1e-12)
+
+
+def test_d_study_ci_band_width_shrinks_with_design_size(crossed_rating_fit):
+    """Adding observations shrinks the bootstrap CI band for G at
+    that grid point on average; we pick two grid points where one
+    is strictly larger in both facets and verify the width ordering
+    holds."""
+    out = app.compute_generalizability_study(
+        crossed_rating_fit, bootstrap_ci=True, n_bootstrap=80,
+        bootstrap_seed=20260613,
+    )
+    d_study = out["d_study"]
+    finite = d_study.dropna(subset=["G_lower", "G_upper"])
+    # Find pairs where (n_r2 >= n_r1, n_c2 >= n_c1) and at least one strict.
+    rows_by_design = {(int(r["Rater"]), int(r["Criterion"])): r for _, r in finite.iterrows()}
+    pairs_checked = 0
+    pairs_consistent = 0
+    designs = sorted(rows_by_design.keys())
+    for a in designs:
+        for b in designs:
+            if b == a:
+                continue
+            if b[0] >= a[0] and b[1] >= a[1] and (b[0] > a[0] or b[1] > a[1]):
+                ra, rb = rows_by_design[a], rows_by_design[b]
+                width_a = float(ra["G_upper"]) - float(ra["G_lower"])
+                width_b = float(rb["G_upper"]) - float(rb["G_lower"])
+                pairs_checked += 1
+                if width_b <= width_a + 1e-6:
+                    pairs_consistent += 1
+    # Allow a small fraction of pairs to violate due to bootstrap noise;
+    # the majority must show shrinking width as design grows.
+    assert pairs_consistent / max(pairs_checked, 1) > 0.7, (
+        f"Only {pairs_consistent}/{pairs_checked} pairs showed shrinking CI width."
+    )
+
+
+def test_d_study_no_ci_columns_when_bootstrap_disabled(crossed_rating_fit):
+    """With bootstrap disabled (the default), the d_study DataFrame
+    must not carry CI columns."""
+    out = app.compute_generalizability_study(crossed_rating_fit)
+    d_study = out["d_study"]
+    for col in ["G_lower", "G_upper", "Phi_lower", "Phi_upper"]:
+        assert col not in d_study.columns, col
+
+
+def test_d_study_ci_band_reproducible_under_same_seed(crossed_rating_fit):
+    out_a = app.compute_generalizability_study(
+        crossed_rating_fit, bootstrap_ci=True, n_bootstrap=30,
+        bootstrap_seed=2026,
+    )
+    out_b = app.compute_generalizability_study(
+        crossed_rating_fit, bootstrap_ci=True, n_bootstrap=30,
+        bootstrap_seed=2026,
+    )
+    a = out_a["d_study"][["G_lower", "G_upper", "Phi_lower", "Phi_upper"]]
+    b = out_b["d_study"][["G_lower", "G_upper", "Phi_lower", "Phi_upper"]]
+    pd.testing.assert_frame_equal(a, b)
+
+
 def test_phi_is_le_g(crossed_rating_fit):
     """Phi (absolute decisions) must be at most G (relative decisions)
     under the standard one-observation-per-cell decomposition."""

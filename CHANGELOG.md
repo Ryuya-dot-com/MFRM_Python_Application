@@ -226,6 +226,40 @@ All notable changes to this standalone Streamlit distribution should be recorded
     "negligible" threshold cited in Linacre's FACETS Manual. The
     categorical fields (`Profile CI Status`, `InferenceTier`) must
     agree exactly.
+- **Parameter recovery (ADEMP) simulation.** A new
+  ``evaluate_parameter_recovery(...)`` helper runs a Monte Carlo
+  parameter-recovery study under one explicit data-generating setup
+  and reports the performance measures of Morris, White, and Crowther
+  (2019): bias, MCSE(bias), RMSE, MCSE(RMSE), MAE, raw / aligned
+  errors, Pearson correlation, mean SE, SE-availability rate, and
+  95 % coverage. The data-generating mechanism samples person
+  measures, rater severities, and criterion difficulties from
+  mean-zero independent normals; step thresholds are equally spaced
+  over a chosen logit span (RSM uses shared thresholds; PCM and GPCM
+  use per-criterion perturbed thresholds). Each replicate refits the
+  requested model via ``mfrm_estimate``, runs a lightweight
+  ``mfrm_diagnostics`` pass to populate SE on the measures table,
+  mean-aligns the location-indeterminate blocks (Person, Rater,
+  Criterion) against the truth, and computes per-row error +
+  coverage95. The bundle carries five fields: ``recovery``
+  (long table), ``recovery_summary`` (per-parameter-type aggregates),
+  ``rep_overview`` (per-rep convergence and timing), ``ademp``
+  (Aims / Data-generating mechanism / Estimands / Methods /
+  Performance measures narrative), and ``settings`` (round-trip of
+  the input arguments). The Report tab gains a Parameter-recovery
+  (ADEMP) section with eight controls (model, fit_method,
+  replicates, seed, n_person, n_rater, n_criterion, n_cat) and
+  caches the bundle in session_state keyed on the input settings.
+  Math contract pinned in ``tests/test_parameter_recovery.py``
+  (14 tests covering refusal on bad inputs, three location-block
+  ParameterType values, long-table row counts, the mean-alignment
+  identity at machine precision, Bias = mean(ErrorAligned), RMSE /
+  MAE closed forms, Coverage95 closed form, fixed-seed determinism,
+  ADEMP narrative completeness, and correlation positivity on a
+  clean RSM fit). One new APA reference (Morris, White, & Crowther,
+  2019) is added to the library and citation map. The
+  ``mfrmr_020_migration_coverage_table()`` row for "Parameter
+  recovery (ADEMP)" flips from Planned to Ready.
 - **Model-choice guidance: RSM / PCM / GPCM side-by-side comparison.**
   A new ``compute_model_choice_comparison(res)`` helper refits the two
   non-current rating-scale models on the same data and returns a

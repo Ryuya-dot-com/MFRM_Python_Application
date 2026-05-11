@@ -101,6 +101,32 @@ All notable changes to this standalone Streamlit distribution should be recorded
   walkthrough of the result tabs in their natural reading order, and a
   "learning points specific to this data set" section that notes the
   modest rater-severity spread and the PCA sample-size caveat at n = 30.
+- **Remaining six sample-data scenarios** (large-scale writing, L2
+  speaking, clinical OSCE, writing with missing, music peer-rating,
+  reading testlet binary) now follow the same expanded template:
+  a one-paragraph design summary, a "what this scenario teaches"
+  paragraph, a tab-by-tab "what to look at first" walkthrough, and
+  scenario-specific learning points (PCA at n = 120 for the severity-
+  outlier scenario, PCM/GPCM step thresholds for the L2 speaking
+  criterion contrast, low person separation as a feature for the
+  clinical OSCE cohort, the missing-rate and connectivity readiness
+  flags for the MAR scenario, the sparse Person × Rater graph for the
+  round-robin peer rating, and the local-item-dependence / Stan
+  TESTLET_RI hand-off for the binary reading testlet).
+- **Decorative emojis removed across the app and i18n.** Help text,
+  status messages, button labels, dict-keyed tab labels, and section
+  comments no longer carry decorative emoji ornaments (document,
+  chart, inbox, paste, microscope, abacus, test-tube, clock, shuffle,
+  book, notepad, ruler, floppy, party-popper, alarm-bell, and other
+  category badges). Status / severity markers are explicitly retained
+  because they pair text labels with a redundant colour signal for
+  WCAG 1.4.1 accessibility: red / amber / green readiness lights, the
+  Wright & Linacre fit-band swatches, the success / warning / error
+  severity icons, the no-severity default circle, and the structural
+  yes / no markers used inside capability-matrix tables. Toast
+  notifications now use consistent severity icons (`icon="✅"` for
+  success, `icon="❌"` for failure) instead of celebratory or alarm-
+  bell glyphs.
 - Design evaluation and report/download bundles now include the new
   0.1.6-oriented audit tables so beginners see warnings in the UI and
   expert users can export full CSV/Excel evidence.

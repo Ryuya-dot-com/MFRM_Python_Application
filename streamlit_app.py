@@ -1057,7 +1057,7 @@ def render_glossary_expander(scope: str = "global") -> None:
     glossary text is single-sourced from ``_MFRM_GLOSSARY`` so adding a
     new term propagates everywhere.
     """
-    with st.expander("📖 MFRM / Bayesian glossary", expanded=False):
+    with st.expander("MFRM / Bayesian glossary", expanded=False):
         st.caption(
             "Quick reference for terms used across this app. Hover over "
             "column headers in result tables (where available) to see "
@@ -3231,12 +3231,30 @@ SAMPLE_DATA_SCENARIOS: dict[str, dict] = {
         "label": "Large-scale writing (120×4×2×3, 2,880 obs)",
         "short": "Enough persons for clean residual PCA + severity outlier.",
         "description": (
-            "Scaled to 120 examinees for stable residual-PCA on a writing "
-            "task. One rater is deliberately injected at +1.6 logits of "
-            "severity so the bias heatmap, misfit ranking, and Wright-map "
-            "outlier callouts have a visible signal to explain. Useful "
-            "when teaching unidimensionality checks or rater-effect "
-            "diagnostics."
+            "Scaled to 120 examinees so residual PCA has enough rows for a "
+            "stable first-eigenvalue estimate. The design is 120 × 4 raters "
+            "× 2 writing tasks × 3 analytic criteria, 6-point scale.\n\n"
+            "**What this scenario teaches.** One rater is deliberately "
+            "injected at +1.6 logits of severity, so the bias heatmap, the "
+            "misfit ranking, and the Wright-map outlier callouts all have "
+            "a visible signal you can trace from numbers to plots and back. "
+            "Use it when teaching unidimensionality checks or rater-effect "
+            "diagnostics.\n\n"
+            "**What to look at first.**\n"
+            "- *Wright Map* shows the severe rater pulled to the high-"
+            "severity end of the rater column.\n"
+            "- *Fit Details* lists that rater near the top of the misfit "
+            "table because their residuals concentrate at the harsh end "
+            "of the rubric.\n"
+            "- *Bias/Interaction* shows a Rater × Person heatmap where the "
+            "severe rater's row is darker than the others.\n"
+            "- *Dimensionality* runs residual PCA at n = 120; treat "
+            "eigenvalues below ~1.5 as noise (Smith, 2002).\n\n"
+            "**Learning points specific to this data set.** With 120 "
+            "examinees the PCA is informative without being authoritative "
+            "— a single severe rater can still appear as a faint second "
+            "dimension in residuals. Do not interpret it as "
+            "multidimensionality without a content rationale."
         ),
         "dimensions": {"persons": 120, "raters": 4, "tasks": 2, "criteria": 3, "n_cat": 6},
         "n_obs": 120 * 4 * 2 * 3,
@@ -3255,11 +3273,27 @@ SAMPLE_DATA_SCENARIOS: dict[str, dict] = {
         "description": (
             "80 examinees × 3 trained raters × 3 tasks × 5 analytic "
             "criteria (Fluency, Accuracy, Pronunciation, Interaction, "
-            "Range), 5-point scale. Demonstrates a narrower rater "
-            "severity spread than the writing scenarios and a strong "
-            "criterion-difficulty contrast (Pronunciation is hardest). "
-            "A good fit for PCM / GPCM experiments because the criteria "
-            "differ enough to justify step-facet-specific thresholds."
+            "Range), 5-point scale. A small but realistic L2 speaking-"
+            "test design.\n\n"
+            "**What this scenario teaches.** The criteria have a "
+            "deliberately strong difficulty contrast (Pronunciation is "
+            "the hardest), which justifies a PCM or GPCM fit because step "
+            "thresholds will differ across criteria. The raters are "
+            "trained, so their severity spread is narrow — the bias and "
+            "misfit tables stay quiet by design.\n\n"
+            "**What to look at first.**\n"
+            "- *Measures* shows Pronunciation as the most difficult "
+            "criterion relative to Fluency and Range.\n"
+            "- *Categories/Steps* exposes how step thresholds differ "
+            "across criteria; switch the sidebar to PCM or GPCM with "
+            "step facet = Criterion and rerun to compare.\n"
+            "- *FACETS-style tables* gives the publication-ready "
+            "Criterion table; once GPCM is fit, this is where the slope-"
+            "aware fair-average S.E. / CI annotation appears.\n\n"
+            "**Learning points specific to this data set.** A narrow "
+            "rater severity spread is not the same as \"rater effects "
+            "are absent\" — inspect the Bias/Interaction tab even when "
+            "the marginal severity numbers look clean."
         ),
         "dimensions": {"persons": 80, "raters": 3, "tasks": 3, "criteria": 5, "n_cat": 5},
         "n_obs": 80 * 3 * 3 * 5,
@@ -3274,13 +3308,31 @@ SAMPLE_DATA_SCENARIOS: dict[str, dict] = {
         "label": "Clinical OSCE (60×4×5×3, 3,600 obs)",
         "short": "5-station medical OSCE with compact 4-point rubric.",
         "description": (
-            "60 examinees × 4 clinician raters × 5 stations × 3 "
+            "60 examinees × 4 clinician raters × 5 OSCE stations × 3 "
             "competencies (Communication, Procedure, Judgment), 4-point "
-            "scale. Mirrors compact OSCE checklist scoring: trained "
-            "clinician raters (low severity spread), wide station "
-            "difficulty range (~1.8 logits), homogeneous examinee "
-            "ability (smaller Person SD). Use this when teaching "
-            "task-/station-dominant designs."
+            "scale. A compact OSCE-style checklist design.\n\n"
+            "**What this scenario teaches.** Three features of clinical "
+            "assessment in tension: trained clinician raters (low "
+            "severity spread), a wide station-difficulty range (~1.8 "
+            "logits across the five stations), and a homogeneous "
+            "examinee group (smaller Person SD than in the writing "
+            "scenarios). Together they produce a station-dominant "
+            "design where most of the variance lives on the station "
+            "axis rather than the person axis.\n\n"
+            "**What to look at first.**\n"
+            "- *Wright Map* shows person ability packed tightly in the "
+            "middle of the scale and station difficulty spread wide.\n"
+            "- *Reliability* (in *Measures*) flags low person separation "
+            "as an expected feature of a homogeneous cohort — not a fit "
+            "problem.\n"
+            "- *Fit Details* should stay inside the productive-for-"
+            "measurement bands because the rater pool is trained.\n\n"
+            "**Learning points specific to this data set.** Low person "
+            "separation can look alarming on a Wright Map if you read it "
+            "as a writing scenario; here it is a property of the cohort, "
+            "not a sign that the model is broken. The 4-point rubric "
+            "trades resolution for category counts that are reliably "
+            "distinguishable."
         ),
         "dimensions": {"persons": 60, "raters": 4, "tasks": 5, "criteria": 3, "n_cat": 4},
         "n_obs": 60 * 4 * 5 * 3,
@@ -3295,13 +3347,31 @@ SAMPLE_DATA_SCENARIOS: dict[str, dict] = {
         "label": "Writing with missing (80×4×2×3, ~1,632 obs)",
         "short": "Incomplete rating panel (~15% MAR).",
         "description": (
-            "Demonstrates MFRM's handling of missing-at-random data. "
-            "Full design is 80 × 4 × 2 × 3 = 1,920 observations, of "
-            "which ~15 % are dropped uniformly at random before the "
-            "app sees the file. Useful for teaching the readiness "
-            "panel's missing-rate flag, the connectivity check, and "
-            "the fact that MFRM does NOT require a fully-crossed "
-            "design to estimate measures (Little & Rubin, 2002)."
+            "The writing_essay design extended to 80 examinees (full "
+            "panel 80 × 4 × 2 × 3 = 1,920 observations) with ~15 % of "
+            "observations dropped uniformly at random before the app "
+            "sees the file. The actual file is ~1,632 observations.\n\n"
+            "**What this scenario teaches.** That MFRM does not require "
+            "a fully-crossed design to estimate measures (Little & Rubin, "
+            "2002). The readiness panel raises a missing-rate amber flag "
+            "and the connectivity check stays green because the "
+            "connected component of the Person × Rater bipartite graph "
+            "still covers every element.\n\n"
+            "**What to look at first.**\n"
+            "- *Readiness panel* (above the Run button) shows the "
+            "missing-rate amber flag and the all-green connectivity "
+            "check.\n"
+            "- *Measures* yields finite estimates for every Person, "
+            "Rater, Task, and Criterion despite the gaps.\n"
+            "- *FACETS-style tables* makes the unbalanced TotalCount "
+            "column self-evident — different elements have different "
+            "effective sample sizes after the random drop.\n\n"
+            "**Learning points specific to this data set.** Missing-at-"
+            "random loss does not bias MFRM estimates but does inflate "
+            "their standard errors; expect slightly wider Model SE "
+            "columns than the same design without missingness. If your "
+            "own data raise a connectivity red flag, look at the "
+            "Subsets table to see which elements disconnected."
         ),
         "dimensions": {"persons": 80, "raters": 4, "tasks": 2, "criteria": 3, "n_cat": 6},
         "n_obs": int(80 * 4 * 2 * 3 * 0.85),
@@ -3317,16 +3387,31 @@ SAMPLE_DATA_SCENARIOS: dict[str, dict] = {
         "short": "Round-robin peer assessment — sparse Person × Rater graph.",
         "description": (
             "120 musicians grade each other on 2 pieces × 4 criteria. "
-            "Every musician rates two peers in a cyclic schedule "
-            "(Person_i rated by Person_(i+1) and Person_(i+2)), so "
-            "the Person × Rater crossing is sparse — only 240 unique "
-            "pairs out of 120 × 120 = 14,400 possible. MFRM still "
-            "estimates ability and severity on the shared logit "
-            "scale via the connected peer-rating graph. The Rater "
-            "and Person columns share the same ID space (M001–M120). "
-            "Useful for demonstrating sparse-connectivity handling "
-            "and peer-assessment use cases (Myford & Wolfe, 2004; "
-            "Linacre, 2007)."
+            "Each musician rates two peers in a cyclic schedule "
+            "(Person_i rated by Person_(i+1) and Person_(i+2)), so the "
+            "Person × Rater crossing is sparse — only 240 unique pairs "
+            "out of 120 × 120 = 14,400 possible. Person and Rater "
+            "columns share the same ID space (M001–M120).\n\n"
+            "**What this scenario teaches.** That MFRM still recovers "
+            "ability and severity on a shared logit scale when the "
+            "Person × Rater bipartite graph is sparse, as long as it is "
+            "connected (Myford & Wolfe, 2004; Linacre, 2007). Useful "
+            "for peer-assessment, self-assessment, and round-robin "
+            "tournament use cases.\n\n"
+            "**What to look at first.**\n"
+            "- *Subsets* (in *Measures*) confirms the peer-rating graph "
+            "is one connected component.\n"
+            "- *Wright Map* shows ability and severity for the same "
+            "individuals; the hardest grader is not necessarily the "
+            "strongest performer.\n"
+            "- *Bias/Interaction* surfaces directional asymmetries "
+            "(Person A grades Person B harshly while Person B grades "
+            "Person A leniently) when they exist.\n\n"
+            "**Learning points specific to this data set.** A sparse "
+            "design trades precision per element for the ability to "
+            "estimate any element at all. Standard errors are wider "
+            "than in a fully-crossed design of the same size, and "
+            "reciprocal-pair bias is the diagnostic to inspect."
         ),
         "dimensions": {"persons": 120, "raters": 120, "tasks": 2, "criteria": 4, "n_cat": 5},
         "n_obs": 120 * 2 * 2 * 4,
@@ -3343,15 +3428,34 @@ SAMPLE_DATA_SCENARIOS: dict[str, dict] = {
         "short": "Binary 0/1 scoring. Person × Scorer × Text × Item.",
         "description": (
             "100 examinees × single scorer × 6 reading passages × 4 "
-            "questions per passage = 2,400 observations on a binary "
-            "(0 = incorrect, 1 = correct) scale. This is the classic "
-            "testlet shape used in reading / listening / SJT tests. "
-            "MFRM treats each passage and each item as a fixed-effect "
-            "facet, which is adequate when local item dependence "
-            "inside a passage is modest. When local dependence is "
-            "large, download the Stan **TESTLET_RI** or "
-            "**TESTLET_BIFACTOR** generator (sidebar → Advanced "
-            "models) and fit a random-effects testlet model locally."
+            "questions per passage = 2,400 binary observations "
+            "(0 = incorrect, 1 = correct). The classic testlet shape "
+            "used in reading / listening / situational-judgment "
+            "tests.\n\n"
+            "**What this scenario teaches.** That MFRM can treat each "
+            "passage and each item as a fixed-effect facet, which is "
+            "adequate when local item dependence inside a passage is "
+            "modest. When local dependence is large, the random-effects "
+            "TESTLET_RI or TESTLET_BIFACTOR generators are the next "
+            "step; this scenario is the baseline they should be "
+            "compared against.\n\n"
+            "**What to look at first.**\n"
+            "- *Categories/Steps* trivially shows two categories; binary "
+            "scoring removes the rating-scale step structure but every "
+            "other MFRM diagnostic still applies.\n"
+            "- *Dimensionality* / residual PCA is the place to look for "
+            "local item dependence within a passage: a cluster of items "
+            "on the same passage co-loading on one residual factor is "
+            "the diagnostic signal.\n"
+            "- *Measures* gives the same logit estimates for every "
+            "passage and every item.\n\n"
+            "**Learning points specific to this data set.** Local item "
+            "dependence within a passage inflates information and "
+            "underestimates standard errors. The residual-PCA inspection "
+            "in *Dimensionality* is the first screen, and the Stan "
+            "TESTLET_RI / TESTLET_BIFACTOR generators in the sidebar "
+            "(Advanced models, download-only) are the next step if the "
+            "screen flags a problem."
         ),
         "dimensions": {"persons": 100, "raters": 1, "tasks": 6, "criteria": 4, "n_cat": 2},
         "n_obs": 100 * 1 * 6 * 4,
@@ -3452,7 +3556,7 @@ def render_loaded_data_banner() -> None:
         return
     dims = scenario["dimensions"]
     st.info(
-        f"📂 **Loaded sample data:** {scenario['label']} — "
+        f"**Loaded sample data:** {scenario['label']} — "
         f"{dims['persons']} × {dims['raters']} × {dims['tasks']} × "
         f"{dims['criteria']} = **{scenario['n_obs']:,} observations**, "
         f"{dims['n_cat']}-point scale. "
@@ -11845,7 +11949,7 @@ def render_quick_results_download(
         st.caption(
             "FACETS-style bundle: Summary, Measures, Reliability, Fit, "
             "PCA, and Bias tables in a single ZIP. For publication Word/PDF/HTML "
-            "and Stan code, use **Report → 💾 Exports**. For every CSV, figure, "
+            "and Stan code, use **Report → Exports**. For every CSV, figure, "
             "script, and config file, use the **Downloads** tab."
         )
         c1, c2 = st.columns([1, 1])
@@ -13341,7 +13445,7 @@ def render_run_history_panel() -> None:
         return
 
     with st.expander(
-        f"🕒 Run history ({len(history)} run{'s' if len(history) > 1 else ''})",
+        f"Run history ({len(history)} run{'s' if len(history) > 1 else ''})",
         expanded=False,
     ):
         st.caption(
@@ -13449,7 +13553,7 @@ def render_run_history_panel() -> None:
                 st.rerun()
         else:
             if st.button(
-                "🗑 Clear history",
+                "Clear history",
                 key="run_history_clear",
                 help="Remove all stored snapshots. Requires confirmation.",
             ):
@@ -13534,7 +13638,7 @@ def render_comparison_panel(snap_a: dict, snap_b: dict) -> None:
     conv_b, iters_b = _comparison_extract_conv(snap_b)
 
     with st.container(border=True):
-        st.markdown(f"### 🔀 Comparison: `{label_a}` vs `{label_b}`")
+        st.markdown(f"### Comparison: `{label_a}` vs `{label_b}`")
 
         cols = st.columns(2)
         cols[0].metric(
@@ -13646,7 +13750,7 @@ def render_comparison_selector() -> None:
     history = get_run_history()
     if len(history) < 2:
         return
-    with st.expander("🔀 Compare two runs", expanded=False):
+    with st.expander("Compare two runs", expanded=False):
         st.caption(
             "Pick two analyses from your run history to view a side-by-side "
             "comparison of convergence, element measures, and reliability."
@@ -15578,7 +15682,7 @@ def _render_publication_document_section(
     all_bias_results: dict | None = None,
 ) -> None:
     """Render the download buttons for the Word / PDF / HTML publication docs."""
-    st.subheader("📄 Publication Document")
+    st.subheader("Publication Document")
     st.caption(
         "Download a manuscript-ready document combining the auto-generated "
         "abstract, an exhaustive Methods section, results tables, embedded "
@@ -15688,7 +15792,7 @@ def _render_publication_document_section(
             st.caption(f"⚠️ {html_err}")
 
     st.caption(
-        "💡 All three formats share the same narrative source — content "
+        "All three formats share the same narrative source — content "
         "is identical. Word = editable, PDF = print-ready (with embedded "
         "plots), HTML = self-contained and works offline."
     )
@@ -16746,7 +16850,7 @@ def run_facets_mode(core: dict, data: pd.DataFrame) -> None:
             expanded=True,
         )
         run_status.write(
-            f"📥 Starting: **{n_obs:,}** observations × **{n_persons:,}** persons × "
+            f"Starting: **{n_obs:,}** observations × **{n_persons:,}** persons × "
             f"**{len(facet_cols)}** facets. "
             "This may take a few seconds to several minutes depending on data size."
         )
@@ -16761,7 +16865,7 @@ def run_facets_mode(core: dict, data: pd.DataFrame) -> None:
                 if population_enabled else pd.DataFrame()
             )
 
-            run_status.write(f"🧮 Estimating {model_type} with {est_method}...")
+            run_status.write(f"Estimating {model_type} with {est_method}...")
             with st.spinner(f"Running {est_method} estimation... please wait."):
                 result = core["mfrm_estimate"](
                     data=data,
@@ -16846,7 +16950,7 @@ def run_facets_mode(core: dict, data: pd.DataFrame) -> None:
                 })
                 result["config"]["analysis_config_fingerprint"] = config_fingerprint(result.get("config", {}))
                 result["config"]["run_fingerprint"] = result["config"]["analysis_config_fingerprint"]
-            run_status.write("🔬 Computing fit, reliability, and PCA diagnostics...")
+            run_status.write("Computing fit, reliability, and PCA diagnostics...")
             with st.spinner("Computing diagnostics..."):
                 diagnostics = core["mfrm_diagnostics"](
                     result,
@@ -16857,7 +16961,7 @@ def run_facets_mode(core: dict, data: pd.DataFrame) -> None:
                     marginal_max_pair_cells=int(strict_marginal_max_pair_cells),
                     compute_eb_shrinkage=bool(compute_eb_shrinkage),
                 )
-            run_status.write("🗒 Building FACETS-style report tables and exports...")
+            run_status.write("Building FACETS-style report tables and exports...")
             report_tables = core["calc_facets_report_tbls"](
                 result,
                 diagnostics,
@@ -16880,7 +16984,7 @@ def run_facets_mode(core: dict, data: pd.DataFrame) -> None:
                     pairs = [selected_bias_pair]
                 else:
                     pairs = []
-                run_status.write(f"📐 Estimating bias interactions for {len(pairs)} facet pair(s)...")
+                run_status.write(f"Estimating bias interactions for {len(pairs)} facet pair(s)...")
                 with st.spinner(f"Estimating bias/interaction for {len(pairs)} pair(s)..."):
                     for fa, fb in pairs:
                         try:
@@ -16981,7 +17085,7 @@ def run_facets_mode(core: dict, data: pd.DataFrame) -> None:
                 if _converged_flag:
                     st.toast(
                         f"✅ Analysis complete in {_elapsed_sec:.1f}s — scroll to explore results",
-                        icon="🎉",
+                        icon="✅",
                     )
                 else:
                     st.toast(
@@ -17002,7 +17106,7 @@ def run_facets_mode(core: dict, data: pd.DataFrame) -> None:
                 pass
             try:
                 st.toast("❌ Estimation failed — see the error panel for fix suggestions",
-                         icon="🚨")
+                         icon="❌")
             except Exception:
                 pass
             # Pattern-match the exception to a targeted remedy before falling back
@@ -17219,7 +17323,7 @@ def run_facets_mode(core: dict, data: pd.DataFrame) -> None:
     except Exception:  # pragma: no cover - UX helper must not break results
         first_read_rows = []
     with st.expander(
-        "📋 Where to look first — first-read guide",
+        "Where to look first — first-read guide",
         expanded=first_read_guide_should_expand(first_read_rows),
     ):
         _show_first_read_guide(
@@ -18475,7 +18579,7 @@ def build_beginner_case_guidance(
             "This is the first stop before copying APA-style text into a paper.",
             "Do not turn draft APA text into a final conclusion when the gate is caveated or blocked.",
             str(overall_gate.get("ManuscriptAction", "Review gate details.")),
-            "Report -> 📝 Reports -> APA Report / publication_gate_summary.csv",
+            "Report -> Reports -> APA Report / publication_gate_summary.csv",
             "The model results conclusively support the study conclusions.",
             f"The MFRM output was interpreted with the publication gate status of {gate_status}, and final claims were limited to supported diagnostics.",
         )
@@ -18602,7 +18706,7 @@ def build_beginner_case_guidance(
             "Single-run measures can be interpreted within the current connected design; cross-run claims require more evidence.",
             "Do not compare cohorts, forms, administrations, or studies on a common scale without anchor/linking evidence.",
             "Use anchor audit, drift, and equating-chain outputs before writing cross-run comparison claims.",
-            "Data -> Anchor/linking audit; Report -> 📊 Tables & checks -> Facet Equivalence",
+            "Data -> Anchor/linking audit; Report -> Tables & checks -> Facet Equivalence",
             "These measures can be compared directly with another administration or form.",
             "Measures were interpreted within the current connected run unless anchor/linking evidence supported cross-run comparison.",
         )
@@ -18700,7 +18804,7 @@ def build_submission_action_plan(
                     status,
                     row.get("Evidence", ""),
                     row.get("ManuscriptAction", "Review gate details before reporting."),
-                    "Report -> 📝 Reports -> APA Report / publication_gate_summary.csv",
+                    "Report -> Reports -> APA Report / publication_gate_summary.csv",
                 )
 
     if isinstance(beginner, pd.DataFrame) and not beginner.empty:
@@ -18747,7 +18851,7 @@ def build_submission_action_plan(
                     status,
                     row.get("Evidence", ""),
                     row.get("ActionBeforeFinalReport", "Review readiness row before reporting."),
-                    "Report -> 📊 Tables & checks -> Reporting Checklist / final_report_readiness.csv",
+                    "Report -> Tables & checks -> Reporting Checklist / final_report_readiness.csv",
                 )
 
     if not rows:
@@ -19375,8 +19479,8 @@ def show_report_section(
         st.session_state.get("app_view_density", "Essential") == "Essential"
     )
 
-    # Grouped into 3 meta-categories (📝 Reports / 📊 Tables & checks /
-    # 💾 Exports) so the 10 sub-tabs are easier to scan. Each meta-tab
+    # Grouped into 3 meta-categories (Reports / Tables & checks /
+    # Exports) so the 10 sub-tabs are easier to scan. Each meta-tab
     # holds its own nested st.tabs with the related sub-sections; the
     # individual renderers are unchanged.
     report_meta_tabs = st.tabs([
@@ -19400,10 +19504,10 @@ def show_report_section(
     }
     _EXPORT_DISPLAY = {
         "Stan Code": t("report_top.tab_stan_code"),
-        "📄 Publication Document": t("report_top.tab_publication_document"),
+        "Publication Document": t("report_top.tab_publication_document"),
     }
 
-    # --- 📝 Reports: narrative documents ---
+    # --- Reports: narrative documents ---
     with report_meta_tabs[0]:
         if essential_mode:
             st.caption(t("report_top.reports_essential_caption"))
@@ -19434,7 +19538,7 @@ def show_report_section(
         with narrative_tab["Claim Guide"]:
             _render_manuscript_claim_guide_section(result, diagnostics, all_bias_results)
 
-    # --- 📊 Tables & checks: structured data + quality gates ---
+    # --- Tables & checks: structured data + quality gates ---
     with report_meta_tabs[1]:
         if essential_mode:
             st.caption(t("report_top.checks_essential_caption"))
@@ -19460,21 +19564,21 @@ def show_report_section(
         with check_tab["Readiness"]:
             _render_final_readiness_section(result, diagnostics, all_bias_results)
 
-    # --- 💾 Exports: downloadable artefacts ---
+    # --- Exports: downloadable artefacts ---
     with report_meta_tabs[2]:
         if essential_mode:
             st.caption(t("report_top.exports_essential_caption"))
-            export_labels = ["📄 Publication Document"]
+            export_labels = ["Publication Document"]
         else:
             st.caption(t("report_top.exports_full_caption"))
-            export_labels = ["Stan Code", "📄 Publication Document"]
+            export_labels = ["Stan Code", "Publication Document"]
         export_displays = [_EXPORT_DISPLAY[label] for label in export_labels]
         export_tabs = st.tabs(export_displays)
         export_tab = {label: export_tabs[i] for i, label in enumerate(export_labels)}
         if "Stan Code" in export_tab:
             with export_tab["Stan Code"]:
                 _render_stan_code(result)
-        with export_tab["📄 Publication Document"]:
+        with export_tab["Publication Document"]:
             _render_publication_document_section(result, diagnostics, all_bias_results)
 
 
@@ -20958,7 +21062,7 @@ def _render_reporting_checklist(
     lines.append("\n#### 3. Facet-Level Statistics")
     has_rel = isinstance(rel_df, pd.DataFrame) and not rel_df.empty
     lines.append(_check(has_rel, "**Separation (G), Strata (H), Reliability (R)** per facet"))
-    lines.append(_check(has_rel, "**Fixed chi-square** test (see Report → 📊 Tables & checks → Tables)"))
+    lines.append(_check(has_rel, "**Fixed chi-square** test (see Report → Tables & checks → Tables)"))
     lines.append(_check(has_rel, "**RMSE and True SD** per facet"))
 
     # 4. Element-level
@@ -22778,7 +22882,7 @@ def _draw_data_coverage_heatmap(
 
     header_cols = st.columns([5, 1])
     with header_cols[0]:
-        st.markdown("##### 🗺 Observation coverage heatmap")
+        st.markdown("##### Observation coverage heatmap")
     with header_cols[1]:
         render_help_popover("coverage_heatmap")
     st.caption(
@@ -22864,7 +22968,7 @@ def _draw_category_usage_bar(
 
     header_cols = st.columns([5, 1])
     with header_cols[0]:
-        st.markdown("##### 📊 Category usage")
+        st.markdown("##### Category usage")
     with header_cols[1]:
         render_help_popover("category_usage")
     st.caption(
@@ -26782,7 +26886,7 @@ def _render_downloads(
     st.caption(t("downloads.intro_caption"))
 
     # Prominent cross-reference: the publication-ready Word / PDF / HTML
-    # export lives under Report → 💾 Exports → 📄 Publication Document.
+    # export lives under Report → Exports → Publication Document.
     # Users who open Downloads tab expecting a manuscript file should be
     # pointed there explicitly.
     with st.container(border=True):
@@ -27801,7 +27905,7 @@ def _render_downloads(
         # --- Stan code reference ---
         st.subheader("Stan code for Bayesian MFRM")
         st.info(
-            "Stan code is auto-generated in the **Report → 💾 Exports → Stan Code** sub-tab based on "
+            "Stan code is auto-generated in the **Report → Exports → Stan Code** sub-tab based on "
             "your data structure. Navigate there to preview and download the Stan model, "
             "Python runner (CmdStanPy), and R runner (CmdStanR) scripts."
         )
@@ -29932,8 +30036,8 @@ def _self_test_essential_mode_tab_filters() -> None:
     )
 
     # Report tab exports-group: 2 labels total, 1 in Essential.
-    report_exports_all = ["Stan Code", "📄 Publication Document"]
-    report_exports_essential = ["📄 Publication Document"]
+    report_exports_all = ["Stan Code", "Publication Document"]
+    report_exports_essential = ["Publication Document"]
     _self_test_assert(
         set(report_exports_essential).issubset(set(report_exports_all)),
         "Report exports Essential-visible set drifted from master list",
@@ -30072,7 +30176,7 @@ def _self_test_sample_data_scenarios() -> None:
         f"data-source radio labels must be unique, got duplicates in {labels}",
     )
     _self_test_assert(
-        labels[-2:] == ["📋 Paste CSV/TSV text", "📤 Upload your own file"],
+        labels[-2:] == ["Paste CSV/TSV text", "Upload your own file"],
         f"data-source radio should end with Paste/Upload, got {labels[-2:]}",
     )
 
@@ -32136,7 +32240,7 @@ def run_self_tests() -> int:
 # Unified chart interpretation guide (D3)
 # ---------------------------------------------------------------------------
 # Every diagnostic plot across the Visuals / Dimensionality / Wright Map
-# sections ends up under a familiar ❓ "How to read this" expander rendered
+# sections ends up under a familiar "How to read this" expander rendered
 # by render_chart_guide. Keeping the library in one place prevents the
 # explanatory text from drifting between tabs.
 
@@ -32823,7 +32927,7 @@ def render_keyboard_shortcuts_help() -> None:
             "| `Space` / `Enter` | Toggle checkboxes / activate buttons |\n"
             "| `Ctrl/Cmd + F` | Browser page search (works across tabs) |\n"
             "\n"
-            "💡 The **Run FACETS-mode estimation** button is the primary "
+            "The **Run FACETS-mode estimation** button is the primary "
             "Streamlit button on the sidebar — `Tab` to reach it, `Enter` to fire."
         )
 
@@ -33793,13 +33897,13 @@ def _posterior_forest_figure(payload: dict, parameters: list[str]):
 
 def render_posterior_viewer_mode() -> None:
     """Top-level renderer for the Posterior Viewer app mode."""
-    st.title("🧮 Posterior Viewer")
+    st.title("Posterior Viewer")
     st.caption(
         "Upload externally-produced posterior draws (CmdStan CSV, Apache "
         "Parquet, or ArviZ NetCDF) to inspect trace, ridge, pair, and "
         "forest plots and summary diagnostics — without leaving the browser. "
         "Estimation itself is not performed here; use the runner scripts "
-        "emitted from the FACETS-mode *Report → 💾 Exports → Stan Code* sub-tab to sample "
+        "emitted from the FACETS-mode *Report → Exports → Stan Code* sub-tab to sample "
         "locally, then upload the output files."
     )
 
@@ -33982,7 +34086,7 @@ def render_posterior_viewer_mode() -> None:
     # Plot suite (tabs)
     st.subheader("Plots")
     plot_tabs = st.tabs([
-        "📈 Trace", "🏔 Ridge", "🔗 Pair", "🌲 Forest", "📊 Rhat / ESS",
+        "Trace", "Ridge", "Pair", "Forest", "Rhat / ESS",
     ])
     with plot_tabs[0]:
         fig = _posterior_trace_figure(payload, selected)

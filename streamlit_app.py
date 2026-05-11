@@ -24783,17 +24783,34 @@ def render_rater_halo_section(result: dict) -> None:
 def render_design_network_section(result: dict) -> None:
     """Render the design network analysis panel.
 
-    Reports graph-level connectivity, per-node centrality measures,
-    and articulation-point / bridge flags. Useful for spotting
-    fragile linking in incomplete rater-mediated designs before
-    interpreting facet measures.
+    Runs on demand because the per-node centrality computation
+    (especially betweenness on a 200+ node design graph) can take
+    several seconds; gating the compute behind a button keeps the
+    Report-tab initial render responsive on large peer-rating /
+    cyclic-design fits. The bundle is cached in
+    ``st.session_state`` keyed on a content-addressed hash of the
+    result so re-loading the same fit reuses the previous result.
     """
     if not isinstance(result, dict):
         return
     st.subheader(t("report_tables.design_network_subheader"))
     st.caption(t("report_tables.design_network_caption"))
 
-    bundle = compute_design_network_analysis(result)
+    cache_key = _model_choice_cache_key(result)
+    state_key = f"design_network_bundle::{cache_key}"
+    bundle = st.session_state.get(state_key)
+    if bundle is None:
+        if st.button(
+            t("report_tables.design_network_run_button"),
+            help=t("report_tables.design_network_run_help"),
+            key=f"design_network_run::{cache_key}",
+        ):
+            with st.spinner(t("report_tables.design_network_running_spinner")):
+                bundle = compute_design_network_analysis(result)
+            st.session_state[state_key] = bundle
+        else:
+            return
+
     if not bundle.get("available"):
         st.info(
             t(

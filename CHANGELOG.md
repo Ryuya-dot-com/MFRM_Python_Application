@@ -226,6 +226,21 @@ All notable changes to this standalone Streamlit distribution should be recorded
     "negligible" threshold cited in Linacre's FACETS Manual. The
     categorical fields (`Profile CI Status`, `InferenceTier`) must
     agree exactly.
+- **Self-tests for the seven 0.2.0 helpers** added in this session
+  (FACETS d.f. / ZSTD alignment, model-choice AICc + Akaike weights,
+  G/D-study Brennan 3-way identity, design network topology, rater
+  severity higher-prop convention, APA preset Markdown / HTML
+  round-trip, DIMTEST nonparametric smoke). The module-level
+  ``_self_test_*`` functions run at import time via
+  ``run_self_tests()`` (now 55 tests, was 48) and complement the
+  pytest suite by exercising the helpers on a tiny shared fixture
+  ``_make_self_test_3way_rating_data()``. Each test pins a small
+  closed-form contract: the Welch-Satterthwaite denominator
+  identity, the Hurvich-Tsai AICc closed form and weight-sum-to-one
+  identity, Brennan Eq. 3.18 G computation, node-count parity in
+  the design graph, the Rater1HigherProp + Rater2HigherProp +
+  TieRate = 1 identity, HTML escaping in the APA preset, and the
+  Z / p-value finiteness on a small DIMTEST run.
 - **R parity for the Brennan 3-way G-study decomposition** against
   lme4 REML with explicit two-way interaction terms. The R fixture
   generator now fits

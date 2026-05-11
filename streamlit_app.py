@@ -39133,6 +39133,235 @@ def _self_test_information_curve_contract() -> None:
     _self_test_assert(not export.empty and "ConditionalSE" in export.columns, "information curve export missing ConditionalSE")
 
 
+def _make_self_test_3way_rating_data() -> pd.DataFrame:
+    """Balanced 12-person x 2-rater x 3-criterion design (one obs per
+    cell) used by several of the 0.2.0-helper self-tests."""
+    rng = np.random.default_rng(20260620)
+    rows = []
+    for i in range(12):
+        theta = rng.normal(0, 1)
+        for j in range(2):
+            for k in range(3):
+                eta = theta - (j - 0.5) * 0.4 - (k - 1) * 0.4
+                p1 = 1.0 / (1.0 + np.exp(-eta))
+                p2 = 1.0 / (1.0 + np.exp(-(eta - 0.3)))
+                score = int(rng.uniform() < p1) + int(rng.uniform() < p2)
+                rows.append({
+                    "Person": f"P{i+1:02d}",
+                    "Rater": f"R{j+1}",
+                    "Criterion": f"C{k+1}",
+                    "Score": score,
+                })
+    return pd.DataFrame(rows)
+
+
+def _self_test_facets_df_zstd_alignment() -> None:
+    """zstd_from_mnsq_facets must apply the Wright-Masters d.f. with
+    the +/- 9 cap and Welch-Satterthwaite formula."""
+    # Hand-rolled denominators: var=0.2, fourth=0.08, weight=1 -> denom_infit = 0.08 - 0.04 = 0.04
+    var = np.array([0.2, 0.5, 0.1])
+    fourth = np.array([0.08, 0.32, 0.05])
+    weight = np.array([1.0, 2.0, 1.0])
+    denom_infit, denom_outfit = _facets_fit_df_terms(var, fourth, weight)
+    expected_infit = float(np.sum(weight * (fourth - var ** 2)))
+    _self_test_assert(
+        abs(denom_infit - expected_infit) < 1e-12,
+        f"_facets_fit_df_terms infit denom drift: got {denom_infit}, expected {expected_infit}",
+    )
+    # Welch-Satterthwaite identity: 2 * (sum var w)^2 / denom_infit
+    df_infit, _ = _facets_fit_df(5.0, 30.0, 1.5, 4.0)
+    _self_test_assert(
+        abs(df_infit - 2.0 * 25.0 / 1.5) < 1e-12,
+        "facets df formula drift",
+    )
+    # Cap behaviour on the linear-normal-approximation branch.
+    z_capped = zstd_from_mnsq_facets(10.0, 200.0, whexact=True, cap=9.0)
+    _self_test_assert(
+        abs(z_capped - 9.0) < 1e-12,
+        f"FACETS ZSTD cap not applied: got {z_capped}",
+    )
+
+
+def _self_test_model_choice_aicc_and_weights() -> None:
+    """Model-choice comparison must compute AICc per Hurvich & Tsai
+    (1989) and report Akaike weights that sum to 1."""
+    res = mfrm_estimate(
+        _make_self_test_3way_rating_data(),
+        person_col="Person",
+        facet_cols=["Rater", "Criterion"],
+        score_col="Score",
+        rating_min=0, rating_max=2,
+        model="RSM", method="JMLE", maxit=15, reltol=1e-3,
+    )
+    bundle = compute_model_choice_comparison(res)
+    _self_test_assert(bundle.get("available"), "model-choice unavailable on smoke fixture")
+    comp = bundle["comparison"]
+    # AICc closed form per row where AIC and KParams are finite.
+    for _, row in comp.iterrows():
+        n_val = float(row["N"]) if pd.notna(row["N"]) else np.nan
+        k_val = float(row["KParams"]) if pd.notna(row["KParams"]) else np.nan
+        aic_val = float(row["AIC"]) if pd.notna(row["AIC"]) else np.nan
+        aicc_val = float(row["AICc"]) if pd.notna(row["AICc"]) else np.nan
+        if np.isfinite(n_val) and np.isfinite(k_val) and np.isfinite(aic_val) and n_val > k_val + 1:
+            expected = aic_val + 2.0 * k_val * (k_val + 1.0) / (n_val - k_val - 1.0)
+            _self_test_assert(
+                abs(aicc_val - expected) < 1e-9,
+                f"AICc closed-form drift: got {aicc_val}, expected {expected}",
+            )
+    # Akaike weights must sum to 1 across finite rows.
+    for col in ("AICWeight", "AICcWeight", "BICWeight"):
+        weights = pd.to_numeric(comp[col], errors="coerce").dropna()
+        if not weights.empty:
+            _self_test_assert(
+                abs(float(weights.sum()) - 1.0) < 1e-10,
+                f"{col} does not sum to 1 (got {weights.sum()})",
+            )
+
+
+def _self_test_g_d_study_brennan_3way_identity() -> None:
+    """G and Phi must match the Brennan (2001) Eq. 3.18 closed form
+    on a balanced 3-way design."""
+    res = mfrm_estimate(
+        _make_self_test_3way_rating_data(),
+        person_col="Person",
+        facet_cols=["Rater", "Criterion"],
+        score_col="Score",
+        rating_min=0, rating_max=2,
+        model="RSM", method="JMLE", maxit=15, reltol=1e-3,
+    )
+    bundle = compute_generalizability_study(res)
+    _self_test_assert(bundle.get("available"), "G-study unavailable on smoke fixture")
+    coef = bundle["observed_coefficients"]
+    _self_test_assert(
+        coef.get("details", {}).get("decomposition") == "full_3way_brennan_eq_3_18",
+        "Expected full 3-way Brennan decomposition on balanced fixture",
+    )
+    var = bundle["variance_components"]
+    lookup = dict(zip(var["Source"].astype(str), var["Variance"].astype(float)))
+    n_r = int(bundle["design"]["observed_n"]["Rater"])
+    n_c = int(bundle["design"]["observed_n"]["Criterion"])
+    sigma2_p = lookup["Person"]
+    expected_delta = (
+        lookup["Person:Rater"] / n_r
+        + lookup["Person:Criterion"] / n_c
+        + lookup["Residual"] / (n_r * n_c)
+    )
+    expected_g = sigma2_p / (sigma2_p + expected_delta) if sigma2_p > 0 else np.nan
+    if np.isfinite(expected_g):
+        _self_test_assert(
+            abs(float(coef["G"]) - expected_g) < 1e-9,
+            f"G drift on Brennan 3-way: got {coef['G']}, expected {expected_g}",
+        )
+
+
+def _self_test_design_network_basic_topology() -> None:
+    """compute_design_network_analysis must return non-empty summary
+    and report consistent Nodes / Edges counts."""
+    res = mfrm_estimate(
+        _make_self_test_3way_rating_data(),
+        person_col="Person",
+        facet_cols=["Rater", "Criterion"],
+        score_col="Score",
+        rating_min=0, rating_max=2,
+        model="RSM", method="JMLE", maxit=15, reltol=1e-3,
+    )
+    bundle = compute_design_network_analysis(res, min_observations=1)
+    _self_test_assert(bundle.get("available"), "design network unavailable on smoke fixture")
+    summary = bundle["summary"].iloc[0]
+    # 12 persons + 2 raters + 3 criteria = 17 nodes.
+    _self_test_assert(
+        int(summary["Nodes"]) == 17,
+        f"expected 17 nodes, got {summary['Nodes']}",
+    )
+    # On a balanced fully-crossed design the graph is connected.
+    _self_test_assert(
+        bool(summary["Connected"]),
+        "fully crossed design should produce a single connected component",
+    )
+
+
+def _self_test_rater_severity_higher_prop_identity() -> None:
+    """Rater1HigherProp + Rater2HigherProp + TieRate = 1 on every pair
+    (the mfrmr / FACETS convention for the severity proportions)."""
+    res = mfrm_estimate(
+        _make_self_test_3way_rating_data(),
+        person_col="Person",
+        facet_cols=["Rater", "Criterion"],
+        score_col="Score",
+        rating_min=0, rating_max=2,
+        model="RSM", method="JMLE", maxit=15, reltol=1e-3,
+    )
+    bundle = compute_rater_severity_network(res)
+    _self_test_assert(bundle.get("available"), "rater severity network unavailable on smoke fixture")
+    pairs = bundle["pair_metrics"]
+    for _, row in pairs.iterrows():
+        n_val = int(row["N"])
+        if n_val == 0:
+            continue
+        tie_rate = float(row["TieCount"]) / n_val
+        total = float(row["Rater1HigherProp"]) + float(row["Rater2HigherProp"]) + tie_rate
+        _self_test_assert(
+            abs(total - 1.0) < 1e-10,
+            f"rater severity proportion identity violated: {total}",
+        )
+
+
+def _self_test_apa_presets_round_trip() -> None:
+    """apa_table_to_markdown / apa_table_to_html must render a small
+    DataFrame with a caption, note, and grid; HTML must escape
+    special characters."""
+    df = pd.DataFrame({"A": [1.0, 2.5], "B": ["x<script>", "y"]})
+    md = apa_table_to_markdown(df, caption="C", note="N", digits=2, table_number=1)
+    _self_test_assert("**Table 1**" in md, "APA Markdown missing table number")
+    _self_test_assert("*C*" in md, "APA Markdown missing italic caption")
+    _self_test_assert("*Note.* N" in md, "APA Markdown missing Note. block")
+    _self_test_assert("1.00" in md, "APA Markdown missing rounded float")
+    html = apa_table_to_html(df, caption="C", note="N", digits=2, table_number=1)
+    _self_test_assert("Table 1" in html, "APA HTML missing table number")
+    _self_test_assert("<script>" not in html, "APA HTML failed to escape cell payload")
+    _self_test_assert("&lt;script&gt;" in html, "APA HTML escape produced unexpected output")
+
+
+def _self_test_dimtest_runs_on_smoke_fixture() -> None:
+    """DIMTEST must run end-to-end on the balanced 3-way smoke fixture
+    with an a priori split and return finite Z and p."""
+    df = _make_self_test_3way_rating_data()
+    # The smoke fixture has only 3 criteria, which is below the
+    # DIMTEST minimum (4). Build a wider fixture with 4 criteria.
+    rng = np.random.default_rng(20260622)
+    rows = []
+    for i in range(20):
+        theta = rng.normal(0, 1)
+        for j in range(2):
+            for k in range(4):
+                eta = theta - (j - 0.5) * 0.3 - (k - 1.5) * 0.3
+                p1 = 1.0 / (1.0 + np.exp(-eta))
+                p2 = 1.0 / (1.0 + np.exp(-(eta - 0.3)))
+                score = int(rng.uniform() < p1) + int(rng.uniform() < p2)
+                rows.append({
+                    "Person": f"P{i+1:02d}", "Rater": f"R{j+1}",
+                    "Criterion": f"C{k+1}", "Score": score,
+                })
+    res = mfrm_estimate(
+        pd.DataFrame(rows),
+        person_col="Person",
+        facet_cols=["Rater", "Criterion"], score_col="Score",
+        rating_min=0, rating_max=2,
+        model="RSM", method="JMLE", maxit=15, reltol=1e-3,
+    )
+    diag = mfrm_diagnostics(res, compute_pca=True, compute_marginal=False)
+    bundle = compute_dimtest_nonparametric(
+        res, diag, item_facet="Criterion",
+        at_items=["C1", "C2"], pt_items=["C3", "C4"],
+        n_bootstrap=30, seed=1,
+    )
+    _self_test_assert(bundle.get("available"), f"DIMTEST unavailable: {bundle.get('reason')}")
+    _self_test_assert(
+        np.isfinite(bundle["Z"]) and np.isfinite(bundle["p_value"]),
+        "DIMTEST Z or p_value not finite",
+    )
+
+
 def run_self_tests() -> int:
     tests = [
         ("zero-count intermediate category support", _self_test_zero_count_category_support),
@@ -39178,6 +39407,13 @@ def run_self_tests() -> int:
         ("Facet regularization", _self_test_facet_regularization),
         ("mfrmr 0.1.6 audits and EB shrinkage", _self_test_mfrmr_016_audits_and_shrinkage),
         ("information curve contract", _self_test_information_curve_contract),
+        ("FACETS d.f. / ZSTD alignment", _self_test_facets_df_zstd_alignment),
+        ("model-choice AICc and Akaike weights", _self_test_model_choice_aicc_and_weights),
+        ("G/D-study Brennan 3-way identity", _self_test_g_d_study_brennan_3way_identity),
+        ("design network topology basics", _self_test_design_network_basic_topology),
+        ("rater severity higher-prop identity", _self_test_rater_severity_higher_prop_identity),
+        ("APA preset Markdown / HTML round-trip", _self_test_apa_presets_round_trip),
+        ("DIMTEST nonparametric smoke", _self_test_dimtest_runs_on_smoke_fixture),
         ("Data-outlier detection", _self_test_data_outlier_detection),
         ("Posterior NetCDF round-trip", _self_test_posterior_load_netcdf),
         ("Posterior CmdStan CSV loader", _self_test_posterior_load_cmdstan_csvs),

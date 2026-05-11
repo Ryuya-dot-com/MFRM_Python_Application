@@ -664,6 +664,290 @@ def mfrmr_016_migration_coverage_table() -> pd.DataFrame:
     return pd.concat([base, pd.DataFrame(rows)], ignore_index=True)
 
 
+def mfrmr_020_migration_coverage_table() -> pd.DataFrame:
+    """Migration coverage map for the mfrmr 0.2.0 package feature surface.
+
+    The 0.2.0 release of the mfrmr R package introduces slope-aware GPCM
+    fair-average and bias kernels, the MML observed-information / delta-
+    method SE pipeline that consumes them, and a wider reporting / planning
+    surface (FACETS df reporting, network analysis, D-study, ADEMP
+    parameter recovery). This table inherits every row from
+    ``mfrmr_016_migration_coverage_table`` (renamed to a 0.2.0 column),
+    overrides the bounded-GPCM row to reflect this release's slope-aware
+    fair-average and SE work, and appends rows for the 0.2.0-new areas.
+    Areas that ship in this release are flagged ``Ready``; areas that are
+    on the roadmap but not yet implemented in this Python distribution are
+    flagged ``Planned``.
+    """
+    base = mfrmr_016_migration_coverage_table().rename(columns={"mfrmr016Area": "mfrmr020Area"})
+
+    # Override the inherited bounded-GPCM row. The 0.1.5/0.1.6 description
+    # said "fair-average and wider APA/QC are outside the GPCM boundary";
+    # this release lifts the fair-average half of that limitation.
+    gpcm_mask = base["mfrmr020Area"] == "Bounded GPCM"
+    if gpcm_mask.any():
+        base.loc[gpcm_mask, "PythonStatus"] = "Ready (slope-aware fair-average and structural SE)"
+        base.loc[gpcm_mask, "PythonEvidence"] = (
+            "Slope-aware Linacre fair-average via expected_score_from_eta(); "
+            "structural delta-method SE / CI via add_gpcm_fair_average_delta_se() "
+            "and fair_average_table(fair_se=True). Non slope-facet rows use slope = 1 "
+            "(the discrimination geometric mean under the sum-to-zero log-slope "
+            "identification); slope-facet rows use that level's own discrimination "
+            "and its own step cumulative thresholds. MML observed-information "
+            "covariance via compute_mml_parameter_covariance()."
+        )
+        base.loc[gpcm_mask, "Boundary"] = (
+            "slope_facet == step_facet still required (the mfrmr R reference "
+            "also blocks generic GPCM today); Person rows under the structural "
+            "delta-method SE are marked 'not available' because MML EAPs are "
+            "not part of the marginal-likelihood Hessian; bias inference still "
+            "uses the non-slope-aware information identity pending a follow-up."
+        )
+        base.loc[gpcm_mask, "NextValidation"] = (
+            "Report the slope-aware Fair(M) / Fair(Z) with their structural "
+            "delta-method CIs; flag Person rows in manuscript text as "
+            "unavailable through this code path; defer SE-based bias inference "
+            "claims to the follow-up release."
+        )
+
+    rows = [
+        {
+            "mfrmr020Area": "GPCM Linacre fair-average and structural SE",
+            "PythonStatus": "Ready",
+            "PythonEvidence": (
+                "calc_facets_report_tbls() rebuilds Fair(M) / Fair(Z) with "
+                "slope = 1 on non slope-facet rows and the per-level slope on "
+                "slope-facet rows. add_gpcm_fair_average_delta_se() and "
+                "fair_average_table(fair_se=True) attach a structural delta-"
+                "method standard error (SE = sqrt(grad^T Cov grad)) and a "
+                "rating-bound-clipped confidence interval. R parity at 1e-10 "
+                "across 27 (eta, slope, step_cum) cases. References: "
+                "Muraki (1992) Eqs. 2-3, 10; Muraki (1993) Eqs. 7, 16; "
+                "Linacre, FACETS Manual section Fair Average; "
+                "Cramer (1946); Louis (1982)."
+            ),
+            "Boundary": (
+                "Person rows return status 'not available' because MML EAP "
+                "person estimates are not part of the marginal-likelihood "
+                "Hessian; non-GPCM fits return status 'not_applicable'."
+            ),
+            "NextValidation": (
+                "Read the Fair(M) / Fair(Z) point estimates together with the "
+                "delta-method CIs; if the CI status is 'regularized', cite the "
+                "near-singular Hessian regularization in the manuscript."
+            ),
+        },
+        {
+            "mfrmr020Area": "MML observed-information covariance",
+            "PythonStatus": "Ready",
+            "PythonEvidence": (
+                "compute_mml_parameter_covariance() evaluates the observed "
+                "Fisher information as the numerical Jacobian of the "
+                "analytical gradient returned by mfrm_loglik_mml_value_grad "
+                "(O(P) gradient evaluations, not O(P^2) function "
+                "evaluations) and inverts it via eigendecomposition with "
+                "max|lambda| * sqrt(eps) regularization. Status field "
+                "propagates 'ok' / 'regularized' / 'not_applicable' / "
+                "'fallback' to downstream consumers."
+            ),
+            "Boundary": (
+                "Only computed for MML fits; not available under JMLE because "
+                "the marginal likelihood is not the optimised objective there. "
+                "Person estimates are not in the parameter vector and "
+                "therefore not in the covariance shape."
+            ),
+            "NextValidation": (
+                "Cite the observed-information identity (Louis, 1982) when "
+                "reporting structural standard errors derived from this "
+                "covariance."
+            ),
+        },
+        {
+            "mfrmr020Area": "GPCM bias inference - slope-aware",
+            "PythonStatus": "Planned",
+            "PythonEvidence": (
+                "Bias point estimates and SE are currently computed under the "
+                "non-slope-aware information identity (sum of var_k * weight, "
+                "not sum of a_i^2 * var_k * weight). The mfrmr R reference "
+                "uses the slope-aware identity for GPCM fits and adds a "
+                "likelihood-ratio test plus a profile-likelihood confidence "
+                "interval for each additive bias shift."
+            ),
+            "Boundary": (
+                "The current bias SE under GPCM is a screening-tier value "
+                "until the slope-aware identity, the LR test, and the profile "
+                "CI are integrated."
+            ),
+            "NextValidation": (
+                "Treat the current GPCM bias SE as a screening-tier value; "
+                "defer SE-based bias inference claims until the slope-aware "
+                "identity + LR test + profile CI ship in the follow-up release."
+            ),
+        },
+        {
+            "mfrmr020Area": "FACETS df / ZSTD reporting alignment",
+            "PythonStatus": "Planned",
+            "PythonEvidence": (
+                "Existing Fit Details tab reports infit / outfit mean-square "
+                "and ZSTD in the engine convention. The mfrmr 0.2.0 reference "
+                "introduces a toggle to render df / ZSTD using FACETS "
+                "conventions and a helper that imports a FACETS fit table for "
+                "side-by-side comparison."
+            ),
+            "Boundary": (
+                "Until the toggle ships, FACETS users see Python-engine df / "
+                "ZSTD values that may differ from FACETS-reported values for "
+                "the same fit; the disagreement is a reporting-convention "
+                "issue, not a fit-quality issue."
+            ),
+            "NextValidation": (
+                "Document the engine-vs-FACETS df convention used in the "
+                "manuscript Methods section."
+            ),
+        },
+        {
+            "mfrmr020Area": "Network analysis (mfrm / rater / rater-halo)",
+            "PythonStatus": "Planned",
+            "PythonEvidence": (
+                "The mfrmr 0.2.0 reference adds connectivity / strength / "
+                "betweenness / articulation-point analyses for the design "
+                "graph (mfrm_network_analysis), a directed severity / leniency "
+                "graph (rater_network_analysis), and a same-rater cross-"
+                "criterion halo screen (rater_halo_network_analysis)."
+            ),
+            "Boundary": (
+                "Subset and connectivity diagnostics are available in the "
+                "current Python build through the Measures tab; the broader "
+                "network / halo analyses are planned as a new tab."
+            ),
+            "NextValidation": (
+                "Use the existing Subsets / connectivity check as the "
+                "fallback graph diagnostic until the dedicated tab ships."
+            ),
+        },
+        {
+            "mfrmr020Area": "G/D-study planning (mfrm_d_study)",
+            "PythonStatus": "Planned",
+            "PythonEvidence": (
+                "The mfrmr 0.2.0 reference adds a G-theory / D-study planning "
+                "helper with heatmap, contour, and 3D surface visualisations "
+                "that estimate the marginal reliability of changing facet "
+                "counts before the next data-collection wave."
+            ),
+            "Boundary": (
+                "Until the planner ships, study designers can hand-compute "
+                "Generalizability coefficients from the variance components "
+                "already reported in the Reliability section."
+            ),
+            "NextValidation": (
+                "Cite the variance components when reporting design changes "
+                "and revisit the planner once it ships."
+            ),
+        },
+        {
+            "mfrmr020Area": "Parameter recovery (ADEMP)",
+            "PythonStatus": "Planned",
+            "PythonEvidence": (
+                "The mfrmr 0.2.0 reference adds evaluate_mfrm_recovery() and "
+                "assess_mfrm_recovery() which run ADEMP-style parameter "
+                "recovery simulations (Bias, RMSE, coverage at the chosen "
+                "CI) and aggregate the result into a release-readiness "
+                "checklist."
+            ),
+            "Boundary": (
+                "The current Simulate / Prediction tab inherits the fitted "
+                "model and is a planning screen, not a prospective recovery "
+                "check."
+            ),
+            "NextValidation": (
+                "Treat the current simulation output as a planning screen; "
+                "defer recovery-validation claims to the ADEMP path."
+            ),
+        },
+        {
+            "mfrmr020Area": "Polytomous person-fit correction (Snijders lz*)",
+            "PythonStatus": "Planned",
+            "PythonEvidence": (
+                "The Snijders (2001) lz* correction adjusts the standardised "
+                "person-fit statistic for the fact that theta_n was "
+                "estimated; the mfrmr 0.2.0 reference adds this correction "
+                "for MAP / JML person estimates."
+            ),
+            "Boundary": (
+                "The current person-fit panel reports the unadjusted lz; "
+                "interpret z-scores conservatively until the corrected form "
+                "ships."
+            ),
+            "NextValidation": (
+                "Report unadjusted lz with an explicit note in manuscripts "
+                "where the asymptotic null distribution is relied on."
+            ),
+        },
+        {
+            "mfrmr020Area": "Category-specific information curves",
+            "PythonStatus": "Planned",
+            "PythonEvidence": (
+                "The mfrmr 0.2.0 reference adds the category-specific "
+                "information formula a^2 * P_k(theta) * (k - E[X|theta])^2 "
+                "and exposes it as a curve mode alongside the existing "
+                "category probability curves and category boundary curves."
+            ),
+            "Boundary": (
+                "The current Visuals tab renders category probability and "
+                "boundary curves but does not yet break out per-category "
+                "information contributions."
+            ),
+            "NextValidation": (
+                "Use the existing total information curve when discussing "
+                "test targeting; the per-category breakdown is a future "
+                "diagnostic refinement."
+            ),
+        },
+        {
+            "mfrmr020Area": "Model-choice guidance (RSM / PCM / GPCM)",
+            "PythonStatus": "Planned",
+            "PythonEvidence": (
+                "The mfrmr 0.2.0 reference adds build_model_choice_review() "
+                "which compares RSM / PCM / GPCM fits on the same data and "
+                "writes a decision-support paragraph (Likelihood-ratio "
+                "evidence, AIC / BIC, parameter parsimony, interpretation "
+                "trade-offs)."
+            ),
+            "Boundary": (
+                "The current readiness panel hints at model choice but does "
+                "not run a side-by-side comparison or write the decision-"
+                "support paragraph."
+            ),
+            "NextValidation": (
+                "Run RSM and PCM (and, if GPCM is plausible, GPCM) manually "
+                "in separate runs and compare the AIC / BIC reported on the "
+                "Summary cards until the comparison helper ships."
+            ),
+        },
+        {
+            "mfrmr020Area": "APA table presets (kable / flextable / monochrome)",
+            "PythonStatus": "Planned",
+            "PythonEvidence": (
+                "The mfrmr 0.2.0 reference adds as_kable() / as_flextable() "
+                "S3 methods that re-emit the FACETS-style tables in "
+                "manuscript-ready formats, plus a monochrome preset for "
+                "print-friendly figure output."
+            ),
+            "Boundary": (
+                "The current publication-document pipeline already produces "
+                "Word, PDF, and HTML manuscripts, but does not yet expose a "
+                "kable / flextable S3 surface or a monochrome figure preset."
+            ),
+            "NextValidation": (
+                "Use the existing Publication Document export for "
+                "manuscript-ready outputs; the granular preset surface is a "
+                "convenience refinement."
+            ),
+        },
+    ]
+    return pd.concat([base, pd.DataFrame(rows)], ignore_index=True)
+
+
 def public_release_readiness_table() -> pd.DataFrame:
     """Repository-level public beta readiness checks."""
     root = Path(__file__).resolve().parent
@@ -741,9 +1025,9 @@ def public_release_readiness_table() -> pd.DataFrame:
             "Action": "Use sanitized templates for external validation handoff; keep machine-specific paths and sensitive data out of the public repo.",
         },
         {
-            "Check": "mfrmr 0.1.6 migration coverage",
-            "Status": "Ready" if not mfrmr_016_migration_coverage_table().empty else "Review",
-            "Evidence": f"{len(mfrmr_016_migration_coverage_table())} migration-scope rows documented through mfrmr 0.1.6.",
+            "Check": "mfrmr 0.2.0 migration coverage",
+            "Status": "Ready" if not mfrmr_020_migration_coverage_table().empty else "Review",
+            "Evidence": f"{len(mfrmr_020_migration_coverage_table())} migration-scope rows documented through mfrmr 0.2.0 (inherits the 0.1.5 / 0.1.6 surface).",
             "Action": "Use this table to avoid overstating one-to-one coverage of the R package surface.",
         },
         {
@@ -23914,13 +24198,13 @@ def show_help_section() -> None:
             )
             st.markdown(t("help.public_beta_migration_header"))
             st.caption(t("help.public_beta_migration_caption"))
-            st.dataframe(mfrmr_016_migration_coverage_table(), width="stretch", hide_index=True)
+            st.dataframe(mfrmr_020_migration_coverage_table(), width="stretch", hide_index=True)
             st.download_button(
                 t("help.public_beta_download_migration"),
-                data=to_csv_bytes(mfrmr_016_migration_coverage_table()),
-                file_name="mfrm_mfrmr_016_migration_coverage.csv",
+                data=to_csv_bytes(mfrmr_020_migration_coverage_table()),
+                file_name="mfrm_mfrmr_020_migration_coverage.csv",
                 mime="text/csv",
-                key="dl_mfrmr_016_migration_coverage_help",
+                key="dl_mfrmr_020_migration_coverage_help",
             )
             st.markdown(t("help.public_beta_release_readiness_header"))
             st.caption(t("help.public_beta_release_readiness_caption"))
@@ -27022,6 +27306,7 @@ def _render_downloads(
     mfrmr_016_coverage_dl = mfrmr_016_migration_coverage_table()
     if isinstance(mfrmr_016_coverage_dl, pd.DataFrame) and not mfrmr_016_coverage_dl.empty:
         all_frames["mfrmr_016_migration_coverage"] = mfrmr_016_coverage_dl
+        all_frames["mfrmr_020_migration_coverage"] = mfrmr_020_migration_coverage_table()
     public_readiness_dl = public_release_readiness_table()
     if isinstance(public_readiness_dl, pd.DataFrame) and not public_readiness_dl.empty:
         all_frames["public_release_readiness"] = public_readiness_dl
@@ -29599,6 +29884,24 @@ def external_validation_report_template() -> pd.DataFrame:
             "AcceptablePublicWording": "The Python app covers the listed mfrmr 0.1.6 areas with documented boundaries.",
             "ReviewerNotes": "",
         },
+        {
+            "ClaimArea": "mfrmr 0.2.0 migration",
+            "PythonScenario": "all relevant scenarios",
+            "ExternalPackage": "mfrmr",
+            "EvidenceFile": "mfrmr_020_migration_coverage.csv; mfrmr_016_migration_coverage.csv; mfrmr_015_migration_coverage.csv",
+            "ObservedResult": "",
+            "Status": "Not run",
+            "AcceptablePublicWording": (
+                "The Python app covers the listed mfrmr 0.2.0 areas with documented "
+                "boundaries; the 0.2.0-new slope-aware GPCM fair-average and the "
+                "structural delta-method SE ship in this release, and the remaining "
+                "0.2.0 areas (slope-aware bias inference, FACETS df reporting, "
+                "network analysis, D-study planning, ADEMP recovery, lz* "
+                "correction, category-specific information, model-choice review, "
+                "APA presets) are on the roadmap."
+            ),
+            "ReviewerNotes": "",
+        },
     ]
     return pd.DataFrame(rows)
 
@@ -29634,9 +29937,19 @@ def _self_test_cross_package_validation_plan() -> None:
     checklist = external_validation_artifact_checklist()
     _self_test_assert("External package versions" in checklist["Artifact"].tolist(), "artifact checklist missing package versions")
     template = external_validation_report_template()
-    _self_test_assert("mfrmr 0.1.6 migration" in template["ClaimArea"].tolist(), "validation report template missing mfrmr migration row")
+    _self_test_assert("mfrmr 0.1.6 migration" in template["ClaimArea"].tolist(), "validation report template missing mfrmr 0.1.6 migration row")
+    _self_test_assert("mfrmr 0.2.0 migration" in template["ClaimArea"].tolist(), "validation report template missing mfrmr 0.2.0 migration row")
     coverage = mfrmr_015_migration_coverage_table()
     _self_test_assert("Bounded GPCM" in coverage["mfrmr015Area"].tolist(), "mfrmr 0.1.5 coverage missing GPCM row")
+    coverage_020 = mfrmr_020_migration_coverage_table()
+    _self_test_assert(
+        "GPCM Linacre fair-average and structural SE" in coverage_020["mfrmr020Area"].tolist(),
+        "mfrmr 0.2.0 coverage missing slope-aware fair-average row",
+    )
+    _self_test_assert(
+        "MML observed-information covariance" in coverage_020["mfrmr020Area"].tolist(),
+        "mfrmr 0.2.0 coverage missing observed-information covariance row",
+    )
     _self_test_assert("Latent regression / population_formula" in coverage["mfrmr015Area"].tolist(), "mfrmr 0.1.5 coverage missing latent regression row")
     coverage_016 = mfrmr_016_migration_coverage_table()
     _self_test_assert("Empirical-Bayes facet shrinkage" in coverage_016["mfrmr016Area"].tolist(), "mfrmr 0.1.6 coverage missing EB shrinkage row")
@@ -30948,6 +31261,7 @@ def export_reference_parity_fixture(output_dir: str) -> int:
     external_validation_report_template().to_csv(out_dir / "external_validation_report_template.csv", index=False)
     mfrmr_015_migration_coverage_table().to_csv(out_dir / "mfrmr_015_migration_coverage.csv", index=False)
     mfrmr_016_migration_coverage_table().to_csv(out_dir / "mfrmr_016_migration_coverage.csv", index=False)
+    mfrmr_020_migration_coverage_table().to_csv(out_dir / "mfrmr_020_migration_coverage.csv", index=False)
     for name, script_text in external_simulation_template_scripts().items():
         (out_dir / name).write_text(script_text, encoding="utf-8")
 
@@ -31271,6 +31585,7 @@ def build_demo_report_frames(
     frames["external_simulation_template_inventory"] = external_simulation_template_inventory()
     frames["mfrmr_015_migration_coverage"] = mfrmr_015_migration_coverage_table()
     frames["mfrmr_016_migration_coverage"] = mfrmr_016_migration_coverage_table()
+    frames["mfrmr_020_migration_coverage"] = mfrmr_020_migration_coverage_table()
     frames["public_release_readiness"] = public_release_readiness_table()
     person = result.get("facets", {}).get("person", pd.DataFrame())
     if isinstance(person, pd.DataFrame) and not person.empty:
@@ -31626,6 +31941,7 @@ def run_release_check(json_output: bool = False) -> int:
     limitations = public_beta_limitations_table()
     migration = mfrmr_015_migration_coverage_table()
     migration_016 = mfrmr_016_migration_coverage_table()
+    migration_020 = mfrmr_020_migration_coverage_table()
     simulation_inventory = external_simulation_reference_inventory()
     simulation_templates = external_simulation_template_inventory()
     payload = {
@@ -31655,6 +31971,7 @@ def run_release_check(json_output: bool = False) -> int:
         print(f"\nExternal validation template rows: {len(simulation_templates)}")
         print(f"\nmfrmr 0.1.5 migration coverage rows: {len(migration)}")
         print(f"mfrmr 0.1.6 migration coverage rows: {len(migration_016)}")
+        print(f"mfrmr 0.2.0 migration coverage rows: {len(migration_020)}")
     blocker_count = int((readiness["Status"].astype(str) == "Blocker").sum()) if "Status" in readiness.columns else 1
     return 1 if blocker_count else 0
 

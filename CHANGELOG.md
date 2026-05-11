@@ -101,6 +101,22 @@ All notable changes to this standalone Streamlit distribution should be recorded
   walkthrough of the result tabs in their natural reading order, and a
   "learning points specific to this data set" section that notes the
   modest rater-severity spread and the PCA sample-size caveat at n = 30.
+- **`mfrmr_020_migration_coverage_table()`** documents the migration
+  surface for the mfrmr 0.2.0 R package release. It inherits every
+  0.1.5 / 0.1.6 row (renaming the area column), overrides the bounded-
+  GPCM row to reflect this release's slope-aware fair-average and
+  structural delta-method SE delivery, and appends eleven
+  0.2.0-specific rows: the slope-aware fair-average and SE pair
+  (Ready), the MML observed-information covariance (Ready), and nine
+  Planned rows tracking the slope-aware bias inference, the FACETS
+  df / ZSTD reporting layer, the network analysis triple, the G/D-
+  study planner, ADEMP parameter recovery, Snijders polytomous lz*
+  correction, category-specific information curves, the model-choice
+  review helper, and the kable / flextable / monochrome APA presets.
+  The new table is surfaced in the Help tab's coverage panel, in the
+  per-run download bundle, in the disk export, and in the
+  external-validation report template; the public release-readiness
+  check now reports against the 0.2.0 table.
 - **Remaining six sample-data scenarios** (large-scale writing, L2
   speaking, clinical OSCE, writing with missing, music peer-rating,
   reading testlet binary) now follow the same expanded template:

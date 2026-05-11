@@ -45,11 +45,35 @@ def test_cross_package_validation_plan_contract():
 
     template = app.external_validation_report_template()
     assert "mfrmr 0.1.6 migration" in template["ClaimArea"].tolist()
+    assert "mfrmr 0.2.0 migration" in template["ClaimArea"].tolist()
     assert "External Simulation numerical validation" in template["ClaimArea"].tolist()
 
     coverage = app.mfrmr_015_migration_coverage_table()
     assert "Bounded GPCM" in coverage["mfrmr015Area"].tolist()
     assert "Latent regression / population_formula" in coverage["mfrmr015Area"].tolist()
+
+    coverage_020 = app.mfrmr_020_migration_coverage_table()
+    # The 0.2.0 table inherits every 0.1.5 / 0.1.6 row and renames the area
+    # column. Inherited rows must still be findable on the new column.
+    assert "Bounded GPCM" in coverage_020["mfrmr020Area"].tolist()
+    assert "Empirical-Bayes facet shrinkage" in coverage_020["mfrmr020Area"].tolist()
+    # The slope-aware fair-average / structural SE work shipped in this
+    # release must show up as a Ready row.
+    assert "GPCM Linacre fair-average and structural SE" in coverage_020["mfrmr020Area"].tolist()
+    assert "MML observed-information covariance" in coverage_020["mfrmr020Area"].tolist()
+    # The slope-aware bias inference is still planned; the table must say so
+    # rather than silently inheriting the 0.1.6 description.
+    bias_row = coverage_020.loc[
+        coverage_020["mfrmr020Area"] == "GPCM bias inference - slope-aware"
+    ]
+    assert not bias_row.empty
+    assert bias_row.iloc[0]["PythonStatus"] == "Planned"
+    # The bounded-GPCM row must have been overridden to reflect the
+    # slope-aware fair-average / structural SE delivery; the fair-average
+    # half of the historic limitation is gone.
+    gpcm_row = coverage_020.loc[coverage_020["mfrmr020Area"] == "Bounded GPCM"]
+    assert not gpcm_row.empty
+    assert "slope-aware" in gpcm_row.iloc[0]["PythonStatus"].lower()
 
 
 def test_final_readiness_uses_five_percent_residual_benchmark():

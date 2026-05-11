@@ -226,6 +226,36 @@ All notable changes to this standalone Streamlit distribution should be recorded
     "negligible" threshold cited in Linacre's FACETS Manual. The
     categorical fields (`Profile CI Status`, `InferenceTier`) must
     agree exactly.
+- **Generalizability theory (G-study) and D-study forecast.** A new
+  ``compute_generalizability_study(res)`` helper performs a method-of-
+  moments crossed-ANOVA decomposition on the rating data and reports
+  the canonical generalizability-theory outputs (Cronbach, Gleser,
+  Nanda, & Rajaratnam, 1972; Brennan, 2001): per-source variance
+  components with proportion-of-variance shares, G (relative decision)
+  and Phi (absolute decision) coefficients at the observed design,
+  and a D-study forecast grid that scales G / Phi over planned
+  numbers of raters and criteria. The dispatch follows the standard
+  closed form: ``G = sigma2_p / (sigma2_p + sigma2_e / n_total)`` and
+  ``Phi = sigma2_p / (sigma2_p + sum(sigma2_facet / n_facet) +
+  sigma2_e / n_total)``. The Report tab gains a G-study / D-study
+  section with the variance-component table, an observed-design
+  G / Phi metric strip, the D-study forecast table, and a CSV
+  download; the panel runs every page load because the math is fast
+  (a few ANOVA reductions on the rating data). Math contract pinned
+  in ``tests/test_g_d_study.py`` (15 tests: refusal on invalid input,
+  variance-component non-negativity, required source list, proportion-
+  of-variance sum = 1, closed-form G / Phi identity, ``Phi <= G``,
+  D-study monotonicity in each facet sample size, D-study grid
+  contains the observed design, row count = product of facet grids,
+  bounds in [0, 1], and Brennan / Cronbach citation hygiene). Two
+  new APA references (Brennan, 2001; Cronbach, Gleser, Nanda, &
+  Rajaratnam, 1972) are added. ``mfrmr_020_migration_coverage_table()``
+  flips the "G/D-study planning (mfrm_d_study)" row from Planned to
+  Ready. The implementation deliberately uses the one-observation-
+  per-cell main-effects-only approximation (no explicit person-by-
+  facet interaction terms), which is the standard simplification when
+  ``lme4`` random-effects fitting is not available; the caveat
+  surfaces in the bundle's ``caveat`` field for manuscript citation.
 - **Parameter recovery (ADEMP) simulation.** A new
   ``evaluate_parameter_recovery(...)`` helper runs a Monte Carlo
   parameter-recovery study under one explicit data-generating setup

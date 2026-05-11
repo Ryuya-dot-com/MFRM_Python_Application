@@ -865,21 +865,44 @@ def mfrmr_020_migration_coverage_table() -> pd.DataFrame:
         },
         {
             "mfrmr020Area": "G/D-study planning (mfrm_d_study)",
-            "PythonStatus": "Planned",
+            "PythonStatus": "Ready",
             "PythonEvidence": (
-                "The mfrmr 0.2.0 reference adds a G-theory / D-study planning "
-                "helper with heatmap, contour, and 3D surface visualisations "
-                "that estimate the marginal reliability of changing facet "
-                "counts before the next data-collection wave."
+                "compute_generalizability_study() performs a method-of-"
+                "moments crossed-ANOVA decomposition on the rating data "
+                "and reports the canonical generalizability-theory "
+                "outputs (Cronbach, Gleser, Nanda, & Rajaratnam, 1972; "
+                "Brennan, 2001): per-source variance components with "
+                "proportion-of-variance shares; G (relative decision) "
+                "and Phi (absolute decision) coefficients at the "
+                "observed design; and a D-study forecast grid that "
+                "scales G / Phi over planned numbers of raters and "
+                "criteria. The Report tab gains a G-study / D-study "
+                "section with the variance-component table, an "
+                "observed-design G / Phi metric strip, the D-study "
+                "forecast table, and a CSV download. Math contract "
+                "pinned in tests/test_g_d_study.py (15 tests: refusal "
+                "on invalid input, non-negativity, the required source "
+                "list, proportion-of-variance sum = 1, closed-form "
+                "G / Phi identity, Phi <= G, D-study monotonicity in "
+                "each facet sample size, D-study grid contains the "
+                "observed design, D-study row count = product of "
+                "facet grids, [0, 1] bounds, and Brennan / Cronbach "
+                "citation hygiene)."
             ),
             "Boundary": (
-                "Until the planner ships, study designers can hand-compute "
-                "Generalizability coefficients from the variance components "
-                "already reported in the Reliability section."
+                "Main-effects-only one-observation-per-cell "
+                "approximation: every person-by-facet interaction is "
+                "folded into the Residual term, which biases G "
+                "downward when person x facet interactions are "
+                "substantively large. G is for relative decisions; "
+                "Phi for absolute decisions; the helper does not "
+                "refit the data as a random-effects model."
             ),
             "NextValidation": (
-                "Cite the variance components when reporting design changes "
-                "and revisit the planner once it ships."
+                "Read the variance components alongside the existing "
+                "Rasch reliability / separation indices; name the "
+                "design and facet sample sizes when citing the G or "
+                "Phi value in a manuscript."
             ),
         },
         {
@@ -8939,6 +8962,359 @@ def evaluate_parameter_recovery(
     }
 
 
+# ============================================================================
+# Generalizability theory (G-study) and design-of-measurement (D-study)
+# ============================================================================
+# `compute_generalizability_study(res)` runs a method-of-moments ANOVA
+# decomposition on the rating data and reports variance components,
+# G / Phi coefficients (Cronbach, Gleser, Nanda, & Rajaratnam, 1972;
+# Brennan, 2001), and a D-study forecast grid that scales G / Phi to
+# planned numbers of raters and criteria. The helper does NOT refit
+# the MFRM as a random-effects model; it treats the rating data as a
+# crossed main-effects ANOVA. Two-way and higher person-by-facet
+# interactions are folded into the residual, which is the standard
+# one-observation-per-cell approximation; the bundle's `caveat`
+# field documents this limitation in manuscript-ready language.
+
+_GD_STUDY_DEFAULT_GRID = (1, 2, 3, 4, 5, 6, 8, 10)
+
+
+def _crossed_anova_variance_components(
+    obs_df: pd.DataFrame,
+    *,
+    object_facet: str,
+    random_facets: list[str],
+    score_col: str = "Score",
+) -> pd.DataFrame:
+    """Method-of-moments variance components for a crossed main-effects design.
+
+    Returns one row per source (object_facet, each random_facet, Residual)
+    with Variance, ProportionVariance, SumSquares, df, MeanSquares,
+    MeanObsPerLevel. For balanced data the variance estimates match the
+    classical ANOVA method-of-moments solutions; for mildly unbalanced
+    data the estimates remain useful summaries even if not unbiased.
+    """
+    needed = [object_facet] + list(random_facets) + [score_col]
+    missing = [c for c in needed if c not in obs_df.columns]
+    if missing:
+        return pd.DataFrame()
+    work = obs_df[needed].copy()
+    work[score_col] = pd.to_numeric(work[score_col], errors="coerce")
+    work = work.dropna(subset=[score_col])
+    n_obs = int(len(work))
+    if n_obs == 0:
+        return pd.DataFrame()
+    for col in [object_facet] + list(random_facets):
+        work[col] = work[col].astype(str)
+
+    grand_mean = float(work[score_col].mean())
+    ss_total = float(((work[score_col] - grand_mean) ** 2).sum())
+
+    rows = []
+    explained_ss = 0.0
+    facet_terms = [object_facet] + list(random_facets)
+    for facet in facet_terms:
+        grouped = work.groupby(facet, observed=False)
+        means = grouped[score_col].mean()
+        ns = grouped[score_col].size().astype(float)
+        k = int(len(means))
+        if k < 2:
+            continue
+        ss_facet = float(np.sum(ns.to_numpy() * (means.to_numpy() - grand_mean) ** 2))
+        df_facet = k - 1
+        ms_facet = ss_facet / df_facet if df_facet > 0 else np.nan
+        mean_obs_per_level = float(n_obs / k)
+        explained_ss += ss_facet
+        rows.append({
+            "Source": facet,
+            "SumSquares": ss_facet,
+            "df": df_facet,
+            "MeanSquares": ms_facet,
+            "MeanObsPerLevel": mean_obs_per_level,
+            "Levels": k,
+        })
+    ss_residual = max(float(ss_total - explained_ss), 0.0)
+    df_residual = max(int(n_obs - sum(int(r["Levels"]) for r in rows) + len(rows) - 1), 1)
+    ms_residual = ss_residual / df_residual if df_residual > 0 else np.nan
+    rows.append({
+        "Source": "Residual",
+        "SumSquares": ss_residual,
+        "df": df_residual,
+        "MeanSquares": ms_residual,
+        "MeanObsPerLevel": float("nan"),
+        "Levels": int(n_obs - sum(int(r["Levels"]) for r in rows[:-0])) if False else None,
+    })
+
+    out = pd.DataFrame(rows)
+    sigma2_e = ms_residual if np.isfinite(ms_residual) else np.nan
+    variances = []
+    for _, row in out.iterrows():
+        source = row["Source"]
+        if source == "Residual":
+            variances.append(float(sigma2_e) if np.isfinite(sigma2_e) else np.nan)
+            continue
+        ms = float(row["MeanSquares"])
+        m_per = float(row["MeanObsPerLevel"]) if pd.notna(row["MeanObsPerLevel"]) else np.nan
+        if not (np.isfinite(ms) and np.isfinite(sigma2_e) and np.isfinite(m_per) and m_per > 0):
+            variances.append(np.nan)
+        else:
+            variances.append(max((ms - sigma2_e) / m_per, 0.0))
+    out["Variance"] = variances
+    total_var = float(np.nansum(out["Variance"]))
+    out["ProportionVariance"] = (
+        out["Variance"] / total_var if total_var > 0 else np.nan
+    )
+    return out[
+        ["Source", "Variance", "ProportionVariance", "SumSquares", "df",
+         "MeanSquares", "MeanObsPerLevel", "Levels"]
+    ]
+
+
+def _g_phi_from_variance_components(
+    var_components: pd.DataFrame,
+    *,
+    object_facet: str,
+    facet_observations: dict[str, int] | None = None,
+) -> dict:
+    """Compute G / Phi from a variance-component table.
+
+    For a crossed object x facet1 x ... x facetK design under the
+    one-observation-per-cell approximation, the residual term absorbs
+    every interaction and observational error. G and Phi are reported
+    per-decision-replicate (i.e. assuming the planned number of
+    observations per facet level from ``facet_observations``); when
+    no plan is supplied, the observed design is used (single
+    observation per cell of the conditions of measurement).
+    """
+    if not isinstance(var_components, pd.DataFrame) or var_components.empty:
+        return {"G": np.nan, "Phi": np.nan, "details": {}}
+    lookup = {
+        str(row["Source"]): float(row["Variance"])
+        for _, row in var_components.iterrows()
+    }
+    sigma2_p = lookup.get(object_facet, np.nan)
+    sigma2_e = lookup.get("Residual", np.nan)
+    if not (np.isfinite(sigma2_p) and np.isfinite(sigma2_e) and sigma2_p > 0):
+        return {"G": np.nan, "Phi": np.nan, "details": {"sigma2_p": sigma2_p, "sigma2_e": sigma2_e}}
+
+    facet_obs = facet_observations or {}
+    sigma2_main_per_obs = 0.0
+    for source, variance in lookup.items():
+        if source in {object_facet, "Residual"} or not np.isfinite(variance):
+            continue
+        n_per = facet_obs.get(source, 1)
+        sigma2_main_per_obs += variance / max(int(n_per), 1)
+
+    # Total number of conditions-of-measurement observations per object.
+    n_total = max(int(np.prod([max(facet_obs.get(s, 1), 1)
+                              for s in lookup
+                              if s not in {object_facet, "Residual"}])), 1)
+    relative_err = sigma2_e / n_total
+    g_coef = sigma2_p / (sigma2_p + relative_err)
+    phi_coef = sigma2_p / (sigma2_p + sigma2_main_per_obs + relative_err)
+    return {
+        "G": float(g_coef),
+        "Phi": float(phi_coef),
+        "details": {
+            "sigma2_object": sigma2_p,
+            "sigma2_residual": sigma2_e,
+            "sigma2_main_per_obs": sigma2_main_per_obs,
+            "n_total": n_total,
+            "facet_observations": dict(facet_obs),
+        },
+    }
+
+
+def _build_d_study_grid(
+    var_components: pd.DataFrame,
+    *,
+    object_facet: str,
+    random_facets: list[str],
+    facet_grids: dict[str, tuple[int, ...]],
+) -> pd.DataFrame:
+    """Forecast G / Phi over the cartesian product of facet sample sizes."""
+    if not isinstance(var_components, pd.DataFrame) or var_components.empty:
+        return pd.DataFrame()
+    if not random_facets:
+        return pd.DataFrame()
+    grids = [facet_grids.get(f, _GD_STUDY_DEFAULT_GRID) for f in random_facets]
+    rows = []
+    import itertools
+    for combo in itertools.product(*grids):
+        facet_obs = {f: int(n) for f, n in zip(random_facets, combo)}
+        gp = _g_phi_from_variance_components(
+            var_components, object_facet=object_facet, facet_observations=facet_obs,
+        )
+        row = {f: int(n) for f, n in zip(random_facets, combo)}
+        row["G"] = float(gp["G"]) if np.isfinite(gp.get("G", np.nan)) else np.nan
+        row["Phi"] = float(gp["Phi"]) if np.isfinite(gp.get("Phi", np.nan)) else np.nan
+        rows.append(row)
+    return pd.DataFrame(rows)
+
+
+def compute_generalizability_study(
+    res: dict,
+    *,
+    object_facet: str = "Person",
+    random_facets: list[str] | None = None,
+    n_max_per_facet: int = 10,
+    score_col: str = "Score",
+) -> dict:
+    """Run a G-study + D-study on the rating data backing a fit.
+
+    Parameters
+    ----------
+    res : dict
+        Result dictionary from ``mfrm_estimate`` (uses ``prep['data']``).
+    object_facet : str
+        Object of measurement (default ``"Person"``).
+    random_facets : list[str] | None
+        Random conditions of measurement. Defaults to every non-object
+        facet in the fit configuration.
+    n_max_per_facet : int
+        Upper bound on the D-study sample-size grid for each facet
+        (default 10). The grid is ``(1, 2, 3, 4, 5, 6, 8, 10)`` truncated
+        to ``n_max_per_facet``.
+    score_col : str
+        Name of the score column (default ``"Score"``).
+
+    Returns
+    -------
+    dict
+        Bundle with keys:
+
+        * ``available`` (bool) — pipeline produced a usable result
+        * ``reason`` (str) — populated when ``available`` is False
+        * ``variance_components`` (DataFrame) — Source / Variance /
+          ProportionVariance / SumSquares / df / MeanSquares
+        * ``observed_coefficients`` (dict) — ``G``, ``Phi`` at the
+          observed average number of observations per facet level
+        * ``d_study`` (DataFrame) — forecast G / Phi over a grid of
+          planned ``(n_facet1, n_facet2, ...)`` combinations
+        * ``design`` (dict) — object_facet, random_facets, observed_n,
+          grand_mean, n_observations
+        * ``caveat`` (str) — manuscript-ready scope statement
+        * ``reference`` (str) — APA citation hint
+
+    The math contract follows Cronbach et al. (1972) and Brennan (2001):
+    sigma2_object / (sigma2_object + sigma2_residual / n_obs) for G,
+    plus facet main-effect contributions for Phi.
+    """
+    if not isinstance(res, dict):
+        return {
+            "available": False,
+            "reason": "Result is not a fit dictionary.",
+            "variance_components": pd.DataFrame(),
+            "observed_coefficients": {"G": np.nan, "Phi": np.nan},
+            "d_study": pd.DataFrame(),
+            "design": {},
+            "caveat": "",
+            "reference": "",
+        }
+    config = res.get("config", {}) if isinstance(res, dict) else {}
+    prep = res.get("prep", {}) if isinstance(res, dict) else {}
+    data = prep.get("data") if isinstance(prep, dict) else None
+    if not isinstance(data, pd.DataFrame) or data.empty:
+        return {
+            "available": False,
+            "reason": "Fit does not carry a raw data frame for G-study.",
+            "variance_components": pd.DataFrame(),
+            "observed_coefficients": {"G": np.nan, "Phi": np.nan},
+            "d_study": pd.DataFrame(),
+            "design": {},
+            "caveat": "",
+            "reference": "",
+        }
+    facet_names = list(config.get("facet_names", []))
+    if random_facets is None:
+        random_facets = [f for f in facet_names if f != object_facet]
+    if not random_facets:
+        return {
+            "available": False,
+            "reason": "At least one non-object random facet is required for a G-study.",
+            "variance_components": pd.DataFrame(),
+            "observed_coefficients": {"G": np.nan, "Phi": np.nan},
+            "d_study": pd.DataFrame(),
+            "design": {},
+            "caveat": "",
+            "reference": "",
+        }
+
+    var_components = _crossed_anova_variance_components(
+        data,
+        object_facet=object_facet,
+        random_facets=random_facets,
+        score_col=score_col,
+    )
+    if var_components.empty:
+        return {
+            "available": False,
+            "reason": "Variance-component decomposition produced no usable rows.",
+            "variance_components": pd.DataFrame(),
+            "observed_coefficients": {"G": np.nan, "Phi": np.nan},
+            "d_study": pd.DataFrame(),
+            "design": {},
+            "caveat": "",
+            "reference": "",
+        }
+
+    # Observed facet sample sizes: number of distinct levels per facet
+    # (one observation per cell of the cross is assumed by the
+    # one-observation-per-cell approximation).
+    observed_n = {f: int(data[f].astype(str).nunique()) for f in random_facets}
+    observed_coefficients = _g_phi_from_variance_components(
+        var_components,
+        object_facet=object_facet,
+        facet_observations=observed_n,
+    )
+
+    # D-study grid: cap at min(observed * 2, n_max_per_facet).
+    facet_grids = {}
+    for facet in random_facets:
+        upper = max(observed_n.get(facet, 1) * 2, 4)
+        upper = min(upper, int(n_max_per_facet))
+        facet_grids[facet] = tuple(g for g in _GD_STUDY_DEFAULT_GRID if g <= upper)
+        if not facet_grids[facet]:
+            facet_grids[facet] = (1, observed_n.get(facet, 1))
+    d_study = _build_d_study_grid(
+        var_components,
+        object_facet=object_facet,
+        random_facets=random_facets,
+        facet_grids=facet_grids,
+    )
+
+    design = {
+        "object_facet": object_facet,
+        "random_facets": list(random_facets),
+        "observed_n": observed_n,
+        "n_observations": int(len(data)),
+        "grand_mean": float(pd.to_numeric(data[score_col], errors="coerce").mean()),
+    }
+    caveat = (
+        "Main-effects-only crossed ANOVA decomposition under the standard "
+        "one-observation-per-cell approximation. All two-way and higher "
+        "person-by-facet interactions are folded into the Residual term, "
+        "which can bias G downward when person x facet interactions are "
+        "substantively large. G is appropriate for relative decisions "
+        "(rank ordering); Phi for absolute decisions (cut-score "
+        "classification). Reporting bands follow Brennan (2001): G / Phi "
+        ">= 0.8 for high-stakes decisions, >= 0.7 for routine reporting."
+    )
+    reference = (
+        "Cronbach, Gleser, Nanda, & Rajaratnam (1972); Brennan (2001)."
+    )
+    return {
+        "available": True,
+        "reason": "",
+        "variance_components": var_components,
+        "observed_coefficients": observed_coefficients,
+        "d_study": d_study,
+        "design": design,
+        "caveat": caveat,
+        "reference": reference,
+    }
+
+
 def _spearman_brown_forecast(reliability, multiplier):
     rel = float(reliability) if pd.notna(reliability) else np.nan
     mult = float(multiplier)
@@ -16672,10 +17048,18 @@ _APA_REFERENCE_LIBRARY: dict[str, str] = {
         "IEEE Transactions on Automatic Control, 19(6), 716–723. "
         "https://doi.org/10.1109/TAC.1974.1100705"
     ),
+    "Brennan_2001": (
+        "Brennan, R. L. (2001). Generalizability theory. Springer-Verlag."
+    ),
     "Burnham_Anderson_2002": (
         "Burnham, K. P., & Anderson, D. R. (2002). Model selection and "
         "multimodel inference: A practical information-theoretic approach "
         "(2nd ed.). Springer."
+    ),
+    "Cronbach_Gleser_Nanda_Rajaratnam_1972": (
+        "Cronbach, L. J., Gleser, G. C., Nanda, H., & Rajaratnam, N. "
+        "(1972). The dependability of behavioral measurements: Theory of "
+        "generalizability for scores and profiles. Wiley."
     ),
     "Cox_1975": (
         "Cox, D. R. (1975). Partial likelihood. Biometrika, 62(2), 269–276. "
@@ -16814,7 +17198,9 @@ _APA_REFERENCE_LIBRARY: dict[str, str] = {
 _CITATION_TO_KEY: dict[str, str] = {
     "(Akaike, 1974)": "Akaike_1974",
     "(Andrich, 1978)": "Andrich_1978",
+    "(Brennan, 2001)": "Brennan_2001",
     "(Burnham & Anderson, 2002)": "Burnham_Anderson_2002",
+    "(Cronbach, Gleser, Nanda & Rajaratnam, 1972)": "Cronbach_Gleser_Nanda_Rajaratnam_1972",
     "(Bachman & Palmer, 1996)": "Bachman_Palmer_1996",
     "(Bock & Aitkin, 1981)": "Bock_Aitkin_1981",
     "(Bradlow, Wainer & Wang, 1999)": "Bradlow_Wainer_Wang_1999",
@@ -22814,6 +23200,97 @@ def render_model_choice_guidance(result: dict) -> None:
     )
 
 
+def render_g_d_study_section(result: dict) -> None:
+    """Render the generalizability theory + D-study panel.
+
+    The math layer is fast (a few ANOVA reductions on the rating
+    data plus a Cartesian-product grid), so the panel runs every
+    page load without a Run-on-demand button.
+    """
+    if not isinstance(result, dict):
+        return
+    st.subheader(t("report_tables.g_d_study_subheader"))
+    st.caption(t("report_tables.g_d_study_caption"))
+
+    bundle = compute_generalizability_study(result)
+    if not bundle.get("available"):
+        st.info(
+            t(
+                "report_tables.g_d_study_unavailable_template",
+                reason=str(bundle.get("reason", "")),
+            )
+        )
+        return
+
+    var_components: pd.DataFrame = bundle["variance_components"]
+    coef: dict = bundle["observed_coefficients"]
+    d_study: pd.DataFrame = bundle["d_study"]
+    design: dict = bundle["design"]
+
+    if isinstance(var_components, pd.DataFrame) and not var_components.empty:
+        display = var_components.copy()
+        for col in ["Variance", "ProportionVariance", "SumSquares",
+                    "MeanSquares", "MeanObsPerLevel"]:
+            if col in display.columns:
+                display[col] = pd.to_numeric(display[col], errors="coerce").round(4)
+        st.caption(t("report_tables.g_d_study_variance_table_caption"))
+        st.dataframe(display, width="stretch", hide_index=True)
+
+    st.markdown("**" + t("report_tables.g_d_study_coefficients_subheader") + "**")
+    cols = st.columns(2)
+    cols[0].metric(
+        t("report_tables.g_d_study_g_label"),
+        f"{float(coef.get('G', float('nan'))):.3f}",
+    )
+    cols[1].metric(
+        t("report_tables.g_d_study_phi_label"),
+        f"{float(coef.get('Phi', float('nan'))):.3f}",
+    )
+    st.caption(
+        t(
+            "report_tables.g_d_study_design_template",
+            object=str(design.get("object_facet", "")),
+            facets=", ".join(str(x) for x in design.get("random_facets", [])),
+            n_obs=f"{int(design.get('n_observations', 0)):,}",
+        )
+    )
+
+    if isinstance(d_study, pd.DataFrame) and not d_study.empty:
+        st.markdown("**" + t("report_tables.g_d_study_d_study_subheader") + "**")
+        st.caption(t("report_tables.g_d_study_d_study_caption"))
+        display_d = d_study.copy()
+        if "G" in display_d.columns:
+            display_d["G"] = pd.to_numeric(display_d["G"], errors="coerce").round(4)
+        if "Phi" in display_d.columns:
+            display_d["Phi"] = pd.to_numeric(display_d["Phi"], errors="coerce").round(4)
+        st.dataframe(display_d, width="stretch", hide_index=True)
+
+    caveat = bundle.get("caveat", "")
+    if caveat:
+        st.caption(
+            t("report_tables.g_d_study_caveat_label") + ": " + str(caveat)
+        )
+
+    download_frames = []
+    if isinstance(var_components, pd.DataFrame) and not var_components.empty:
+        vc_dl = var_components.copy()
+        vc_dl["_section"] = "variance_components"
+        download_frames.append(vc_dl)
+    if isinstance(d_study, pd.DataFrame) and not d_study.empty:
+        d_dl = d_study.copy()
+        d_dl["_section"] = "d_study"
+        download_frames.append(d_dl)
+    if download_frames:
+        combined = pd.concat(download_frames, ignore_index=True)
+        st.download_button(
+            t("report_tables.g_d_study_download_button"),
+            data=to_csv_bytes(combined),
+            file_name="mfrm_g_d_study.csv",
+            mime="text/csv",
+            key=f"g_d_study_download::{id(result)}",
+        )
+
+
 _PARAMETER_RECOVERY_MODELS = ("RSM", "PCM", "GPCM")
 _PARAMETER_RECOVERY_METHODS = ("JMLE", "MML")
 
@@ -23002,6 +23479,7 @@ def _render_report_tables(result: dict, diagnostics: dict) -> None:
         st.dataframe(likelihood_info.round(4), width="stretch", hide_index=True)
 
     render_model_choice_guidance(result)
+    render_g_d_study_section(result)
     render_parameter_recovery_simulation()
 
     regularization = result.get("regularization", {})

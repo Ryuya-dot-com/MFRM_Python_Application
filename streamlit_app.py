@@ -20396,6 +20396,349 @@ def build_apa_reference_list(text: str, *, always_include: list[str] | None = No
     return sorted(_APA_REFERENCE_LIBRARY[k] for k in keys_seen)
 
 
+def _cited_reference_keys(text: str, *, always_include: list[str] | None = None) -> list[str]:
+    """Return the reference keys cited in ``text`` (plus any
+    ``always_include`` overrides), in alphabetical order. Shared by the
+    BibTeX / RIS bundle exporters so the three formats (APA / BibTeX /
+    RIS) always include the same set of references for a given run."""
+    keys_seen: set[str] = set()
+    for citation, key in _CITATION_TO_KEY.items():
+        if citation in text and key in _APA_REFERENCE_LIBRARY:
+            keys_seen.add(key)
+    for key in always_include or []:
+        if key in _APA_REFERENCE_LIBRARY:
+            keys_seen.add(key)
+    return sorted(keys_seen)
+
+
+# ---------------------------------------------------------------------------
+# BibTeX / RIS conversion for the APA reference library
+# ---------------------------------------------------------------------------
+#
+# Academic users of the Streamlit app frequently maintain bibliographies in
+# BibTeX (LaTeX, Zotero) or RIS (EndNote). The APA prose entries already
+# stored in ``_APA_REFERENCE_LIBRARY`` are the source of truth; the helpers
+# below parse each prose entry on the fly into a structured record, then
+# serialise it to either format. Entries the parser cannot confidently
+# classify fall back to ``@misc`` (BibTeX) or ``TY  - GEN`` (RIS) with the
+# raw APA string in the ``note``/``N1`` field, so users still get a usable
+# reference even for unusual formats (RMT short notes, edited proceedings).
+
+# Matches an APA initial token: a single uppercase letter followed by ``.``,
+# optionally followed by one or more `` X.`` or ``-X.`` sequences. Covers
+# ``T.`` / ``E. R.`` / ``A. A.`` / ``K.-Y.``.
+_APA_AUTHOR_INITIAL_RE = re.compile(r"^[A-Z]\.(?:[\s-][A-Z]\.)*$")
+
+
+def _apa_authors_to_bibtex(authors_apa: str) -> str:
+    """Convert an APA author list to a BibTeX ``and``-separated string.
+
+    APA: ``"Lai, E. R., Wolfe, E. W., & Vickers, D."``
+    BibTeX: ``"Lai, E. R. and Wolfe, E. W. and Vickers, D."``
+
+    Preserves suffixes (``Jr.``) and editor markers (``(Ed.)``) verbatim so
+    Zotero / BibDesk display the entry correctly even when our parsing is
+    approximate."""
+    raw = authors_apa.strip()
+    if not raw:
+        return ""
+    # Pull the last author off the ``" & "`` separator if present; that
+    # handles all 2+-author cases. Single-author entries pass through.
+    if " & " in raw:
+        before_and, last_author = raw.rsplit(" & ", 1)
+    else:
+        before_and, last_author = raw, ""
+    # In ``before_and`` the authors are listed as ``Lastname1, Initials1, Lastname2, Initials2``.
+    # Pair them up greedily. The trailing chunk often carries the dangling
+    # ``,`` that precedes the ``" & "`` separator (e.g. ``"Eckes, T.,"``)
+    # — strip it so the initials regex still matches ``"T."``.
+    chunks = [c.strip().rstrip(",") for c in before_and.split(", ") if c.strip()]
+    paired: list[str] = []
+    i = 0
+    while i < len(chunks):
+        if i + 1 < len(chunks) and _APA_AUTHOR_INITIAL_RE.match(chunks[i + 1]):
+            paired.append(f"{chunks[i]}, {chunks[i + 1]}")
+            i += 2
+        else:
+            # No initials follow — likely a suffix like ``Jr.`` that
+            # belongs to the previous author. Glue it on.
+            if paired and chunks[i] in {"Jr.", "Sr.", "II", "III"}:
+                paired[-1] = f"{paired[-1]}, {chunks[i]}"
+            else:
+                paired.append(chunks[i])
+            i += 1
+    if last_author:
+        paired.append(last_author.strip())
+    return " and ".join(paired)
+
+
+def _split_apa_after_year(apa: str) -> tuple[str, str, str] | None:
+    """Split ``apa`` at the first ``(YYYY)`` token and return
+    ``(authors, year, rest)`` or ``None`` if no year is present. The
+    trailing period after the last initial (``"... J. M."``) is
+    preserved so the author-pairing regex can recognise the initials."""
+    year_match = re.search(r"\(((?:18|19|20)\d{2}[a-z]?)\)", apa)
+    if not year_match:
+        return None
+    year = year_match.group(1)
+    authors = apa[: year_match.start()].rstrip()
+    rest = apa[year_match.end():].lstrip(". ").strip()
+    return authors, year, rest
+
+
+def _extract_doi(rest: str) -> tuple[str, str]:
+    """Return ``(doi, rest_without_doi)``. Handles trailing punctuation."""
+    doi_match = re.search(r"https?://(?:dx\.)?doi\.org/(\S+?)\s*\.?\s*$", rest)
+    if not doi_match:
+        return "", rest
+    doi = doi_match.group(1).rstrip(".")
+    rest = rest[: doi_match.start()].rstrip().rstrip(".")
+    return doi, rest
+
+
+def _strip_trailing_period(title: str) -> str:
+    """Strip a trailing period from a title — BibTeX convention is to omit
+    the sentence-ending period because the bibliography style adds it.
+    A trailing ``?`` or ``!`` is meaningful punctuation and is kept."""
+    return title.strip().rstrip(".").strip()
+
+
+def _parse_apa_entry(key: str, apa: str) -> dict:
+    """Parse one APA prose entry into a structured BibTeX-ready record.
+
+    Returns a dict with keys ``type`` (``"article"`` / ``"book"`` /
+    ``"incollection"`` / ``"misc"``), ``key``, ``author``, ``year``,
+    ``title``, ``doi``, and type-specific fields (``journal`` /
+    ``publisher`` / ``booktitle`` / ``editor`` / ``volume`` / ``number``
+    / ``pages`` / ``edition``). ``"misc"`` types carry the original APA
+    prose in ``note`` so the user retains the raw reference even when
+    structure cannot be inferred."""
+    split = _split_apa_after_year(apa)
+    if split is None:
+        return {"type": "misc", "key": key, "note": apa.strip()}
+    authors, year, rest = split
+    doi, rest = _extract_doi(rest)
+
+    # Journal article: ``Title. Journal Name, V(N), pages``. The title can
+    # end with ``.``, ``?``, or ``!`` — capture the terminator inside the
+    # group so the question mark survives into the BibTeX output.
+    article_match = re.match(
+        r"^(?P<title>.+?[.?!])\s+(?P<journal>[^,]+),\s*(?P<volume>\d+)"
+        r"(?:\((?P<number>[^)]+)\))?,\s*(?P<pages>[\dA-Za-z–\-]+(?:[–\-][\dA-Za-z]+)?)\.?\s*$",
+        rest,
+    )
+    if article_match:
+        return {
+            "type": "article",
+            "key": key,
+            "author": authors,
+            "year": year,
+            "title": _strip_trailing_period(article_match.group("title")),
+            "journal": article_match.group("journal").strip(),
+            "volume": article_match.group("volume"),
+            "number": (article_match.group("number") or "").strip(),
+            "pages": article_match.group("pages").replace("–", "--"),
+            "doi": doi,
+        }
+
+    # Book chapter / proceedings: ``Title. In E. Editor (Ed.), Booktitle (pp. xx-yy). Publisher``
+    # Publisher is optional — some proceedings entries end at the page range.
+    chapter_match = re.match(
+        r"^(?P<title>.+?[.?!])\s+In\s+(?P<editor>.+?)\s*\((?:Ed|Eds)\.\),\s+"
+        r"(?P<booktitle>.+?)\s+\(pp\.\s*(?P<pages>[\d–\-]+)\)"
+        r"(?:\.\s+(?P<publisher>.+?))?\.?\s*$",
+        rest,
+    )
+    if chapter_match:
+        return {
+            "type": "incollection",
+            "key": key,
+            "author": authors,
+            "year": year,
+            "title": _strip_trailing_period(chapter_match.group("title")),
+            "editor": chapter_match.group("editor").strip(),
+            "booktitle": chapter_match.group("booktitle").strip(),
+            "pages": chapter_match.group("pages").replace("–", "--"),
+            "publisher": (chapter_match.group("publisher") or "").strip(),
+            "doi": doi,
+        }
+
+    # Book: ``Title. Publisher`` or ``Title (2nd ed.). Publisher``. Publisher
+    # may itself contain periods (``Winsteps.com``, ``Cambridge U.K.``), so we
+    # allow any chars in the trailing publisher.
+    book_match = re.match(r"^(?P<title>.+?[.?!])\s+(?P<publisher>.+?)\.?\s*$", rest)
+    if book_match:
+        title = _strip_trailing_period(book_match.group("title"))
+        publisher = book_match.group("publisher").strip()
+        edition_match = re.search(r"\s*\((\d+(?:st|nd|rd|th)\s*ed\.?)\)\s*$", title)
+        edition = ""
+        if edition_match:
+            edition = edition_match.group(1)
+            title = title[: edition_match.start()].rstrip()
+        return {
+            "type": "book",
+            "key": key,
+            "author": authors,
+            "year": year,
+            "title": title,
+            "publisher": publisher,
+            "edition": edition,
+            "doi": doi,
+        }
+
+    return {"type": "misc", "key": key, "note": apa.strip()}
+
+
+def _format_bibtex_entry(record: dict) -> str:
+    """Serialise a parsed reference record as a BibTeX entry."""
+    rtype = record.get("type", "misc")
+    key = record.get("key", "unknown")
+    if rtype == "misc":
+        # Fall back to ``@misc`` and stash the raw APA in ``note`` so the
+        # user still gets a usable citation in their bibliography.
+        return (
+            f"@misc{{{key},\n"
+            f"  note = {{{record.get('note', '')}}}\n"
+            f"}}"
+        )
+    fields: list[tuple[str, str]] = []
+    author = _apa_authors_to_bibtex(record.get("author", ""))
+    if author:
+        fields.append(("author", author))
+    if rtype == "incollection" and record.get("editor"):
+        fields.append(("editor", _apa_authors_to_bibtex(record["editor"])))
+    if record.get("title"):
+        fields.append(("title", record["title"]))
+    if rtype == "article" and record.get("journal"):
+        fields.append(("journal", record["journal"]))
+    if rtype == "incollection" and record.get("booktitle"):
+        fields.append(("booktitle", record["booktitle"]))
+    if record.get("year"):
+        fields.append(("year", record["year"]))
+    if record.get("volume"):
+        fields.append(("volume", record["volume"]))
+    if record.get("number"):
+        fields.append(("number", record["number"]))
+    if record.get("pages"):
+        fields.append(("pages", record["pages"]))
+    if record.get("publisher"):
+        fields.append(("publisher", record["publisher"]))
+    if record.get("edition"):
+        fields.append(("edition", record["edition"]))
+    if record.get("doi"):
+        fields.append(("doi", record["doi"]))
+    body = ",\n".join(f"  {name} = {{{value}}}" for name, value in fields)
+    return f"@{rtype}{{{key},\n{body}\n}}"
+
+
+def apa_entry_to_bibtex(key: str, apa: str) -> str:
+    """Convert one ``_APA_REFERENCE_LIBRARY`` entry to a BibTeX string.
+
+    Public wrapper around ``_parse_apa_entry`` + ``_format_bibtex_entry``
+    used by ``build_bibtex_from_cited`` and the BibTeX download button."""
+    return _format_bibtex_entry(_parse_apa_entry(key, apa))
+
+
+_RIS_TYPE_BY_BIB = {
+    "article": "JOUR",
+    "book": "BOOK",
+    "incollection": "CHAP",
+    "misc": "GEN",
+}
+
+
+def _format_ris_entry(record: dict) -> str:
+    """Serialise a parsed reference record as an RIS record."""
+    rtype = record.get("type", "misc")
+    ris_type = _RIS_TYPE_BY_BIB.get(rtype, "GEN")
+    lines: list[str] = [f"TY  - {ris_type}"]
+    if rtype == "misc":
+        lines.append(f"N1  - {record.get('note', '')}")
+        lines.append("ER  - ")
+        return "\n".join(lines)
+    raw_author = record.get("author", "")
+    # RIS expects one ``AU  -`` line per author in ``Lastname, Initials`` form,
+    # which is exactly the APA pairing produced by ``_apa_authors_to_bibtex``.
+    if raw_author:
+        for au in _apa_authors_to_bibtex(raw_author).split(" and "):
+            lines.append(f"AU  - {au}")
+    if rtype == "incollection" and record.get("editor"):
+        for ed in _apa_authors_to_bibtex(record["editor"]).split(" and "):
+            lines.append(f"A2  - {ed}")
+    if record.get("year"):
+        lines.append(f"PY  - {record['year']}")
+    if record.get("title"):
+        lines.append(f"TI  - {record['title']}")
+    if rtype == "article" and record.get("journal"):
+        lines.append(f"JO  - {record['journal']}")
+    if rtype == "incollection" and record.get("booktitle"):
+        lines.append(f"T2  - {record['booktitle']}")
+    if record.get("volume"):
+        lines.append(f"VL  - {record['volume']}")
+    if record.get("number"):
+        lines.append(f"IS  - {record['number']}")
+    if record.get("pages"):
+        pages = record["pages"]
+        if "--" in pages:
+            sp, ep = pages.split("--", 1)
+            lines.append(f"SP  - {sp}")
+            lines.append(f"EP  - {ep}")
+        else:
+            lines.append(f"SP  - {pages}")
+    if record.get("publisher"):
+        lines.append(f"PB  - {record['publisher']}")
+    if record.get("edition"):
+        lines.append(f"ET  - {record['edition']}")
+    if record.get("doi"):
+        lines.append(f"DO  - {record['doi']}")
+    lines.append("ER  - ")
+    return "\n".join(lines)
+
+
+def apa_entry_to_ris(key: str, apa: str) -> str:
+    """Convert one ``_APA_REFERENCE_LIBRARY`` entry to an RIS record."""
+    return _format_ris_entry(_parse_apa_entry(key, apa))
+
+
+def build_bibtex_from_cited(
+    text: str,
+    *,
+    always_include: list[str] | None = None,
+) -> str:
+    """Build a ``.bib`` file from references cited in ``text``.
+
+    Mirrors ``build_apa_reference_list`` so the BibTeX bundle always
+    matches the APA bundle for a given run. Returns the file contents
+    as a UTF-8 string with blank lines between entries."""
+    keys = _cited_reference_keys(text, always_include=always_include)
+    if not keys:
+        return ""
+    entries = [apa_entry_to_bibtex(k, _APA_REFERENCE_LIBRARY[k]) for k in keys]
+    header = (
+        "% BibTeX export of references cited in this MFRM analysis.\n"
+        f"% Generated by {APP_VERSION} ({APP_RELEASE_LABEL}).\n"
+        "% Review each entry before submission — parsing of APA prose is heuristic.\n\n"
+    )
+    return header + "\n\n".join(entries) + "\n"
+
+
+def build_ris_from_cited(
+    text: str,
+    *,
+    always_include: list[str] | None = None,
+) -> str:
+    """Build an RIS file from references cited in ``text``.
+
+    Companion to ``build_bibtex_from_cited`` for EndNote / Mendeley
+    users. Returns the file contents as a UTF-8 string."""
+    keys = _cited_reference_keys(text, always_include=always_include)
+    if not keys:
+        return ""
+    return "\n\n".join(
+        apa_entry_to_ris(k, _APA_REFERENCE_LIBRARY[k]) for k in keys
+    ) + "\n"
+
+
 # ---------------------------------------------------------------------------
 # Word (.docx) publication document builder
 # ---------------------------------------------------------------------------
@@ -27981,6 +28324,38 @@ of a research paper that uses MFRM.
             for key in sorted(refs_used):
                 ref = _REFERENCES.get(key, key)
                 st.markdown(f"- {ref}")
+
+    # Bibliography downloads — convert the citations found in the
+    # generated narrative into BibTeX (Zotero / LaTeX) and RIS
+    # (EndNote / Mendeley). Use the full APA library as the citation
+    # source (build_bibtex_from_cited matches on `_CITATION_TO_KEY`)
+    # so authors get well-formed entries even for references that
+    # the abbreviated ``_REFERENCES`` block above does not cover.
+    _bibtex_text = build_bibtex_from_cited(full_text)
+    _ris_text = build_ris_from_cited(full_text)
+    if _bibtex_text or _ris_text:
+        with st.expander(t("apa_report.bibliography_downloads_expander")):
+            st.caption(t("apa_report.bibliography_downloads_caption"))
+            _bib_col, _ris_col = st.columns(2)
+            if _bibtex_text:
+                _bib_col.download_button(
+                    label=t("apa_report.bibtex_download_label"),
+                    data=_bibtex_text.encode("utf-8"),
+                    file_name="mfrm_references.bib",
+                    mime="application/x-bibtex",
+                    help=t("apa_report.bibtex_download_help"),
+                    key=f"apa_bibtex_download::{id(result)}",
+                )
+            if _ris_text:
+                _ris_col.download_button(
+                    label=t("apa_report.ris_download_label"),
+                    data=_ris_text.encode("utf-8"),
+                    file_name="mfrm_references.ris",
+                    mime="application/x-research-info-systems",
+                    help=t("apa_report.ris_download_help"),
+                    key=f"apa_ris_download::{id(result)}",
+                )
+            st.caption(t("apa_report.bibliography_review_caveat"))
 
 
 # ---------------------------------------------------------------------------

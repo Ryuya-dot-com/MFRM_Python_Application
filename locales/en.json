@@ -506,6 +506,15 @@
     "not_enough_facets_yardstick": "Not enough facets to draw a yardstick.",
     "dense_yardstick_caption": "Dense or tightly spaced yardstick: direct labels are hidden to prevent overlap. Hover points to read full labels."
   },
+  "apa_report": {
+    "bibliography_downloads_expander": "Bibliography downloads (BibTeX / RIS)",
+    "bibliography_downloads_caption": "Download the cited references as a BibTeX file (LaTeX / Zotero) or an RIS file (EndNote / Mendeley). Both bundles contain exactly the references included in your APA reference list above.",
+    "bibtex_download_label": "Download cited references (BibTeX)",
+    "bibtex_download_help": "Drop the .bib file into your LaTeX project or import it into Zotero / BibDesk.",
+    "ris_download_label": "Download cited references (RIS)",
+    "ris_download_help": "Import the .ris file into EndNote, Mendeley, or Zotero.",
+    "bibliography_review_caveat": "Reference parsing is heuristic — review each entry once before submission, especially edition / publisher fields and any conference-proceedings citations."
+  },
   "report_tables": {
     "estimation_summary_subheader": "Estimation summary",
     "no_estimation_summary": "No estimation summary available.",

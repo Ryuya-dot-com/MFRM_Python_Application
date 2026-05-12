@@ -506,6 +506,15 @@
     "not_enough_facets_yardstick": "Yardstick を描画するには facet 数が不足している。",
     "dense_yardstick_caption": "Yardstick が密集している場合、ラベルの重なりを防ぐため直接表示を無効化している。点にホバーすると完全なラベルを確認できる。"
   },
+  "apa_report": {
+    "bibliography_downloads_expander": "文献ダウンロード (BibTeX / RIS)",
+    "bibliography_downloads_caption": "引用された文献を BibTeX 形式 (LaTeX / Zotero) または RIS 形式 (EndNote / Mendeley) でダウンロードする。両方の bundle は、上の APA 参考文献リストと同一のエントリを含む。",
+    "bibtex_download_label": "引用文献を BibTeX 形式でダウンロード",
+    "bibtex_download_help": ".bib ファイルを LaTeX プロジェクトに配置するか、Zotero / BibDesk にインポートする。",
+    "ris_download_label": "引用文献を RIS 形式でダウンロード",
+    "ris_download_help": ".ris ファイルを EndNote、Mendeley、Zotero にインポートする。",
+    "bibliography_review_caveat": "文献パースはヒューリスティクスのため、投稿前に各エントリを必ず確認すること (特に edition / publisher フィールドと、conference proceedings の引用)。"
+  },
   "report_tables": {
     "estimation_summary_subheader": "推定サマリ",
     "no_estimation_summary": "推定サマリが利用できません。",

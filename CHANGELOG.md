@@ -6,6 +6,34 @@ All notable changes to this standalone Streamlit distribution should be recorded
 
 ### Added
 
+- **BibTeX and RIS export of the cited reference library**. The Report
+  tab's APA-style report now includes a "Bibliography downloads"
+  expander with two buttons that emit a `.bib` (LaTeX / Zotero /
+  BibDesk) or `.ris` (EndNote / Mendeley / Zotero) file containing
+  exactly the references cited in the generated narrative. The
+  conversion is heuristic — `_parse_apa_entry` reads each APA prose
+  string in `_APA_REFERENCE_LIBRARY` and classifies it as
+  `@article` / `@book` / `@incollection`, extracting authors / year /
+  title / journal-or-publisher / volume / number / pages / DOI from
+  the canonical APA 7 layout. RIS uses the matching `TY  - JOUR / BOOK
+  / CHAP` records with one `AU  -` line per author. New helpers:
+  `apa_entry_to_bibtex(key, apa)`, `apa_entry_to_ris(key, apa)`,
+  `build_bibtex_from_cited(text, always_include=...)`,
+  `build_ris_from_cited(text, always_include=...)`,
+  `_cited_reference_keys(text, always_include=...)`. The author
+  parser handles single authors, 2–4 authors with `&` joiners,
+  hyphenated initials (`K.-Y.`), two-initial given names (`A. A.`),
+  and `Jr.` suffixes. Titles ending in `?` / `!` are preserved (the
+  Linacre 2002 RMT short note is one such case). All 66 entries in
+  the live library parse without falling back to `@misc` — a
+  regression test pins this so a future APA addition whose format
+  breaks the parser fails the suite immediately. 24 unit tests in
+  `tests/test_bibtex_ris_export.py` cover author conversion, every
+  citation type, the question-mark-title edge case, the
+  Winsteps.com-publisher case, proceedings entries with no
+  publisher, and parity between the BibTeX bundle and the APA
+  reference list. New i18n namespace `apa_report` in both
+  `locales/{en,ja}.json`.
 - **Configurable visualization CI level**. The classical 95 % Wald CI
   band on forest plots and EB-shrinkage error bars is now a
   user-selectable level: 50 % / 66 % / 80 % / 89 % / 90 % / 95 % /

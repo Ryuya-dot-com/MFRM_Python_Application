@@ -1,6 +1,6 @@
 """Contract tests for the just-in-time help popover library.
 
-Each of the 18 topics in `_HELP_POPOVER_LIBRARY` powers a "❓ How to
+Each of the 18 topics in `_HELP_POPOVER_LIBRARY` powers a "How to
 read" popover next to a specific diagnostic chart. Empty / missing /
 mis-keyed entries degrade the UX silently, so these tests pin the
 shape every entry must satisfy.
@@ -65,6 +65,15 @@ def test_core_visual_topics_are_present():
         "coverage_heatmap", "category_usage",
     }
     assert core_topics.issubset(app._HELP_POPOVER_LIBRARY.keys())
+
+
+def test_zstd_topics_disclose_approximation_boundary():
+    """ZSTD chart help must not imply exact FACETS parity."""
+    for topic_key in ("pathway_map", "misfit_ranking", "zstd_distribution"):
+        entry = app._HELP_POPOVER_LIBRARY[topic_key]
+        text = "\n".join(str(entry.get(field, "")) for field in ("what", "how", "watch"))
+        assert "approx" in text.lower(), f"{topic_key!r} does not disclose approximation"
+        assert "FACETS" in text, f"{topic_key!r} does not disclose FACETS boundary"
 
 
 def test_render_helper_handles_unknown_key_without_raising():

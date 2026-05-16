@@ -31,6 +31,17 @@ All notable changes to this standalone Streamlit distribution should be recorded
   clearer scope notes for local dependence and Mixture Rasch.
 - Anchor/linking output now includes an anchor/equating workflow checklist for
   current-run linking evidence and export review.
+- Data source now includes **Generate synthetic data**, a user-configurable
+  MFRM simulation panel with arbitrary facet counts, per-facet level and
+  spread settings, rotating first-facet assignment, optional zero-count score
+  categories, custom step thresholds, missing-row simulation, reactive preview
+  plots, reproducible seed control, and generated CSV download.
+- The simulation UI and README now state the adjacent-category data-generating
+  equation and distinguish literature-grounded model structure from
+  convenience choices such as normal effect draws, row deletion, and zero-count
+  recoding.
+- Data-source radio labels now use plain text in the modified source-picker
+  area to match the refined UI preference for this simulation workflow.
 
 ### Changed
 
@@ -46,8 +57,9 @@ All notable changes to this standalone Streamlit distribution should be recorded
 
 ### Fixed
 
-- Data source radio now shows the 7 built-in samples plus Paste and Upload
-  exactly once; Paste/Upload are no longer repeated after every sample option.
+- Data source radio now shows the 7 built-in samples plus Simulation, Paste,
+  and Upload exactly once; Paste/Upload are no longer repeated after every
+  sample option.
 
 ## 0.2.14-beta - 2026-04-18
 
@@ -63,11 +75,11 @@ gate caught two real bugs in CI before users would have hit them.
 ### Added
 
 - **Two new sample scenarios** (registry now has 7 total):
-  - 📉 **Writing with missing** (80×4×2×3, ~1,632 obs after 15 %
+  - **Writing with missing** (80×4×2×3, ~1,632 obs after 15 %
     MAR drop) — exercises MFRM's tolerance of missing-at-random
     observations, the readiness-panel missing-rate flag, and the
     connectivity check. (Little & Rubin, 2002)
-  - 🎸 **Music peer-rating** (120 musicians × 2 cyclic raters × 2
+  - **Music peer-rating** (120 musicians × 2 cyclic raters × 2
     pieces × 4 criteria, 1,920 obs) — sparse round-robin design
     where every musician is both an examinee and a rater. Person_i
     rated by Person_(i+1) and Person_(i+2). 240 unique pairs out
@@ -196,7 +208,7 @@ the gate working as intended: issues surface in CI, not production.
   release just documents and tests that pathway and adds the
   testlet-shaped scenario that exercises it.
 - For discrimination-aware binary analysis (2PL), the existing
-  sidebar **🧪 Advanced models → IRT_2PL_BINARY** Stan generator
+  sidebar **Advanced models → IRT_2PL_BINARY** Stan generator
   remains the recommended download-only path.
 
 ### Verification
@@ -351,7 +363,7 @@ can grab the PDF in one click.
   `session_state` keyed by a run-level fingerprint so subsequent
   sidebar reruns reuse the cache rather than rebuilding.
 - **PDF button promoted to primary action** (`type="primary"`) and
-  relabelled "⬇ Download PDF (with plots)" to make its content
+  relabelled "Download PDF (with plots)" to make its content
   explicit after the figure-regression fix.
 - Consistent button labels across formats: "Download Word (.docx)",
   "Download PDF (with plots)", "Download HTML".
@@ -379,7 +391,7 @@ outlier detection, and thin pytest coverage.
 - **Ingestion-time outlier detector** (`detect_data_outliers`).
   Screens uploaded / pasted / sample data for six anomaly types
   before the user clicks Run, and appends findings to the
-  traffic-light readiness panel with appropriate severity:
+  readiness panel with appropriate severity:
   1. Out-of-range scores (when rating_min / rating_max are set)
   2. Negative score values (rating scales are conventionally ≥ 0)
   3. Zero-variance persons (all-identical responses)
@@ -420,7 +432,7 @@ outlier detection, and thin pytest coverage.
 
 ### Unchanged on purpose
 
-- The readiness panel's existing traffic-light UI absorbs outlier
+- The readiness panel's existing status UI absorbs outlier
   findings without any rendering changes — it was already designed
   for extensible check lists.
 - Existing self-tests, sample scenarios, popover library, and
@@ -439,7 +451,7 @@ pulls the scenario choice out of hiding.
 
 - **Flat single-radio data-source picker.** The sidebar now shows
   one radio with six options: the four built-in scenarios (with
-  emoji + observation count) followed by Paste CSV/TSV and Upload
+  label + observation count) followed by Paste CSV/TSV and Upload
   file. No more two-step "Sample data → Sample scenario" flow.
 - **Inline info card** replaces the collapsed expander as the
   primary surface for scenario metadata. The selected scenario's
@@ -461,14 +473,14 @@ pulls the scenario choice out of hiding.
   switches to Paste or Upload so the banner never implies a
   user-provided file came from the literature.
 - **Onboarding banner updated** to list all four built-in
-  scenarios (✏️ Writing essay / 📚 Large-scale writing / 🎙️ L2
-  speaking / 🏥 Clinical OSCE) with observation counts, so the
+  scenarios (Writing essay / Large-scale writing / L2
+  speaking / Clinical OSCE) with observation counts, so the
   quickstart flow advertises the scenarios before the user even
   reaches the sidebar.
 
 ### Unchanged on purpose
 
-- The "🎯 Run with sample data" onboarding quickstart button still
+- The "Run with sample data" onboarding quickstart button still
   fires the default writing-essay scenario — first-timers still get
   a small dataset before they meet the switcher.
 - All four scenarios, their parameter values, and their APA 7
@@ -487,22 +499,22 @@ pick a scenario that actually exercises those paths.
 
 - **Four built-in sample-data scenarios** selectable from a new
   `Sample scenario` sidebar selectbox:
-  - ✏️ **Writing essay** (30×4×2×4, 960 obs) — the v0.1+ default,
+  - **Writing essay** (30×4×2×4, 960 obs) — the v0.1+ default,
     retained unchanged. (Eckes, 2011; McNamara, 1996; Linacre, 1989)
-  - 📚 **Large-scale writing** (120×4×2×3, 2,880 obs) — sized for
+  - **Large-scale writing** (120×4×2×3, 2,880 obs) — sized for
     stable residual-PCA; one rater deliberately injected at +1.6
     logits of severity so the bias heatmap and misfit ranking have a
     legible signal. (Myford & Wolfe, 2003, 2004; Engelhard, 1994,
     2013; Smith, 2002)
-  - 🎙️ **L2 speaking** (80×3×3×5, 3,600 obs) — analytic rubric with
+  - **L2 speaking** (80×3×3×5, 3,600 obs) — analytic rubric with
     five criteria; Pronunciation is hardest by design. Tighter rater
     severity spread typical of trained panels.
     (McNamara, 1996; Bachman & Palmer, 1996; Luoma, 2004)
-  - 🏥 **Clinical OSCE** (60×4×5×3, 3,600 obs) — five stations ×
+  - **Clinical OSCE** (60×4×5×3, 3,600 obs) — five stations ×
     three competencies on a compact 4-point scale; station difficulty
     is the dominant source of variation. (Downing & Yudkowsky, 2009;
     Tavakol & Dennick, 2011; Wolfe & Song, 2015)
-- **"📚 About this dataset" sidebar expander** renders the chosen
+- **"About this dataset" sidebar expander** renders the chosen
   scenario's description, design dimensions, observation count, and
   APA 7 reference list built from the same `_APA_REFERENCE_LIBRARY`
   the Publication Document uses.
@@ -558,7 +570,7 @@ contract-level self-tests pin previously manually-tested code paths.
   Ordering, and Inter-Element Agreement. Combined with v0.2.5's
   Wright Map / Scree / Fit-scatter / Category-probability /
   Bias-heatmap wiring, every chart in the core results tabs now
-  has a one-click "❓ How to read" affordance next to its subheader.
+  has a one-click "How to read" affordance next to its subheader.
 - **Essential mode extended to Help and Report sub-tabs.** Help drops
   from 10 → 7 tabs in Essential (hides Rating Scale Guide, Model
   Capability, Public Beta). Report drops from 10 → 6 sub-tabs in
@@ -678,7 +690,7 @@ rendering broken canvases.
 - **Q-Q plot** (`_draw_residual_qq_plotly`). Standardized residuals
   vs N(0, 1) theoretical quantiles with 45° reference. Requires
   ≥ 20 residuals. Heavy tails flag extreme-score misfit; S-shape
-  flags potential multidimensionality.
+  flags possible residual structure.
 - **ECDF of measures** (`_draw_measure_ecdf_plotly`). Empirical
   cumulative distribution of person and facet-element measures on
   a shared logit axis. Flat stretches = measurement gaps; steep
@@ -711,9 +723,9 @@ and metadata tables with the feature surface that actually ships.
   regardless of whether the diagnostic was actually available.
   Wire them to the real data.
 - 11 stale tab-reference strings updated to match the v0.2.0 Report
-  meta-grouping: `Report → Stan Code` → `Report → 💾 Exports → Stan
-  Code`, `Report → Tables` → `Report → 📊 Tables & checks → Tables`,
-  `Report → APA Report` → `Report → 📝 Reports → APA Report`, etc.
+  meta-grouping: `Report → Stan Code` → `Report → Exports → Stan
+  Code`, `Report → Tables` → `Report → Tables & checks → Tables`,
+  `Report → APA Report` → `Report → Reports → APA Report`, etc.
 
 ### Added
 
@@ -772,12 +784,12 @@ from the pre-redeploy 8-agent UX audit.
   tab; callers can opt in one table at a time.
 - `style_fit_columns(df)` returns a pandas Styler that colour-codes
   Infit / Outfit mean-square cells by the Wright & Linacre (1994)
-  bands (🟩 0.5–1.5 acceptable · 🟧 1.5–2.0 noisy · 🟥 ≥ 2.0
-  distorting · 🟨 < 0.5 over-fit). ZSTD columns are excluded (they
+  bands (0.5–1.5 acceptable · 1.5–2.0 noisy · ≥ 2.0
+  distorting · < 0.5 over-fit). ZSTD columns are excluded (they
   use a different interpretation scale). Applied to the Combined
   measures + fit table.
 - Scree plot now draws three reference lines — EV = 1 (expected
-  null), EV = 2 (caution), EV = 3 (strong secondary dimension) —
+  null), EV = 2 (caution), EV = 3 (strong secondary residual signal) —
   matching the thresholds in the chart guide and narrative.
   Previously the EV = 3 threshold was documented but invisible on
   the plot.
@@ -813,19 +825,19 @@ architecture, microcopy, onboarding, accessibility, performance).
 
 ### Added
 
-- Downloadable built-in sample dataset (⬇ Download sample CSV) in the
+- Downloadable built-in sample dataset (Download sample CSV) in the
   sidebar when "Sample data (built-in)" is selected, so users can
   inspect the exact column structure the estimator expects before
   preparing their own upload.
 - File-size preflight on CSV uploads: ≥50 MB shows a st.warning,
   ≥100 MB shows a st.error, before pandas parsing consumes memory.
-- Clear-history confirmation: the 🗑 Clear history button now uses a
+- Clear-history confirmation: the Clear history button now uses a
   two-step flow (first click surfaces a warning with explicit
   "Yes, delete all N snapshots" / "Cancel" buttons), preventing
   accidental one-click loss of the run stack.
 - Publication Document signpost at the top of the Downloads tab, so
   users expecting a Word/PDF manuscript file are pointed at
-  Report → 💾 Exports → 📄 Publication Document instead of bouncing.
+  Report → Exports → Publication Document instead of bouncing.
 - Read-only companion import for `mfrm_config.json`: upload a
   previously downloaded config file to inspect its settings as a
   table. Does not overwrite sidebar state (most fields are
@@ -843,11 +855,10 @@ architecture, microcopy, onboarding, accessibility, performance).
   after the scree plot, yardstick Wright map, category probability
   curves, pathway map, facet distribution, posterior trace, and
   posterior ridge, so every diagnostic plot carries a consistent
-  ❓ "How to read this" expander backed by the library.
-- Readiness-panel traffic lights pair their 🟢 / 🟡 / 🔴 icons with
-  textual labels [OK] / [CAUTION] / [ISSUE] at every render site,
-  so users with deuteranopia / protanopia / tritanopia can
-  distinguish severity without hue alone.
+  "How to read this" expander backed by the library.
+- Readiness-panel states render as textual [OK] / [CAUTION] / [ISSUE]
+  labels at every render site, so users can distinguish severity
+  without hue alone.
 - Run-history snapshot cap lowered from 10 → 5 to cut
   session-state memory pressure on Streamlit Community Cloud
   (each deep-copy of facets_mode_output can reach 50+ MB on
@@ -901,13 +912,13 @@ architecture, microcopy, onboarding, accessibility, performance).
 - `validate_q_matrix(df)` validates DINA Q-matrices (0/1 values,
   attribute coverage, item coverage, per-item / per-attribute row
   and column sums) and returns a structured verdict with messages.
-- New sidebar section "🧪 Advanced models (Stan, download only)"
+- New sidebar section "Advanced models (Stan, download only)"
   (collapsed by default) with:
   - enable checkbox
   - model family picker (labels from the registry)
   - Q-matrix uploader (DINA), class-count input (Mixture Rasch)
-  - 📥 "Generate Stan code" button that serialises the Stan program
-    into session_state and exposes a ⬇ Download .stan button.
+  - "Generate Stan code" button that serialises the Stan program
+    into session_state and exposes a Download .stan button.
 - Inline self-test `_self_test_advanced_model_generators` walks every
   registered advanced model, verifies that the generated Stan code
   contains each of the four canonical blocks, has balanced braces,
@@ -919,17 +930,17 @@ architecture, microcopy, onboarding, accessibility, performance).
 ### Added — Phase D (UX tweaks)
 
 - Toast notification (`st.toast`) fires in addition to the persistent
-  `st.status` accordion whenever estimation completes — ✅ / ⚠️ / ❌
-  variants communicate convergence, non-convergence, and failure.
+  `st.status` accordion whenever estimation completes; message variants
+  communicate convergence, non-convergence, and failure.
   Users who scroll away from the sidebar still get a completion signal.
 - Report tab regrouped into three meta-categories:
-  📝 Reports (APA Report, Manuscript Template, Method Appendix, Claim Guide),
-  📊 Tables & checks (Tables, Reporting Checklist, Facet Equivalence, Readiness),
-  💾 Exports (Stan Code, Publication Document).
+  Reports (APA Report, Manuscript Template, Method Appendix, Claim Guide),
+  Tables & checks (Tables, Reporting Checklist, Facet Equivalence, Readiness),
+  Exports (Stan Code, Publication Document).
   Individual sub-section renderers are unchanged; only the surface shape is.
 - Unified chart interpretation helper `render_chart_guide(chart_name)`
   backed by `_CHART_GUIDE_LIBRARY`. Every diagnostic plot can now drop
-  a consistent ❓ "How to read this" expander with headline + body text
+  a consistent "How to read this" expander with headline + body text
   sourced from a single library (Wright map, pathway map, category
   probability curves, threshold map, ICC, scree, facet distribution,
   reliability, rater agreement, posterior trace, posterior ridge).
@@ -937,7 +948,7 @@ architecture, microcopy, onboarding, accessibility, performance).
   in a collapsed sidebar expander so the shortcut surface is documented
   once and kept up to date (R rerun, C clear cache, Esc close, ? cheat
   sheet, Tab focus, Enter activate, Ctrl/Cmd+F search).
-- Cache-stale detection banner now exposes a one-click 🔁 **Rerun now**
+- Cache-stale detection banner now exposes a one-click **Rerun now**
   button that sets `_facets_mode_force_rerun` and triggers
   `st.rerun()`, so users don't have to scroll back to the sidebar.
 - Inline self-test `_self_test_chart_guide_library` pins the chart-guide
@@ -967,10 +978,10 @@ architecture, microcopy, onboarding, accessibility, performance).
   divergences, `max_treedepth 10 → 12` for treedepth hits, or
   re-parameterisation for E-BFMI < 0.3).
 - Plot suite (Plotly, matches the rest of the app):
-  - 📈 Trace — chain-coloured trace per parameter
-  - 🏔 Ridge — offset KDE ridge across selected parameters
-  - 🔗 Pair  — scatter-matrix with divergence highlights
-  - 🌲 Forest — posterior mean + 50% and 95% CIs
+  - Trace — chain-coloured trace per parameter
+  - Ridge — offset KDE ridge across selected parameters
+  - Pair  — scatter-matrix with divergence highlights
+  - Forest — posterior mean + 50% and 95% CIs
 - Parameter multi-select (defaults to the first 6 parameters) drives
   every plot and the summary table.
 - Inline self-test `_self_test_posterior_viewer_loaders` round-trips
@@ -1001,7 +1012,7 @@ architecture, microcopy, onboarding, accessibility, performance).
   document carries the foundational Rasch references (Andrich 1978,
   Masters 1982, Linacre 1989 / 2024, Myford & Wolfe 2003 / 2004,
   Smith 2002, Wright & Masters 1982).
-- New Report tab sub-tab "📄 Publication Document" exposing three
+- New Report tab sub-tab "Publication Document" exposing three
   download paths (Word / PDF / HTML) from identical narrative sources.
 - Inline self-tests: `_self_test_apa_reference_list`,
   `_self_test_publication_document_word`,
@@ -1039,15 +1050,15 @@ architecture, microcopy, onboarding, accessibility, performance).
   unrecognised failures.
 - Pre-estimation data-quality readiness panel above the Run button
   (`build_readiness_report`, `render_readiness_panel`) with a
-  🟢 / 🟡 / 🔴 traffic-light summary across eight checks (observation
+  [OK] / [CAUTION] / [ISSUE] readiness summary across eight checks (observation
   count, person count, score column dtype, facet count, per-facet
   level count, per-person coverage, column-role overlap).
-- Dismissible onboarding banner with a "🎯 Run with sample data"
+- Dismissible onboarding banner with a "Run with sample data"
   one-click quickstart that fires estimation with the built-in
   sample dataset and default column mapping.
 - Session-scoped run history (`record_run_in_history`,
   `render_run_history_panel`) caps the last 10 runs and offers a
-  Restore button per entry plus a "🗑 Clear history" control.
+  Restore button per entry plus a "Clear history" control.
 - Two-run comparison panel (`render_comparison_panel`,
   `render_comparison_selector`) on top of the history stack:
   convergence / iterations / elapsed delta, element-level Pearson r
@@ -1066,8 +1077,8 @@ architecture, microcopy, onboarding, accessibility, performance).
 ### Changed
 
 - App version label: `0.1.2-beta` → `0.2.0-beta`.
-- Report tab restructured into three meta-categories (📝 Reports /
-  📊 Tables & checks / 💾 Exports); individual sub-section renderers
+- Report tab restructured into three meta-categories (Reports /
+  Tables & checks / Exports); individual sub-section renderers
   unchanged.
 - Residual-PCA skip-path surfaces a structured reason instead of the
   generic "not available" fallback.

@@ -28,15 +28,15 @@ full per-version breakdown.
 
 ### New in v0.2.0
 
-- **📄 Publication Document downloads** — one click to produce a
+- **Publication Document downloads** — one click to produce a
   manuscript-ready Word (.docx), PDF, or HTML file with auto-generated
   abstract, exhaustive Methods, results tables, embedded figures, and an
-  APA 7 reference list. Accessible from **Report → 💾 Exports**.
-- **🧮 Posterior Viewer mode** — upload posterior draws produced offline
+  APA 7 reference list. Accessible from **Report → Exports**.
+- **Posterior Viewer mode** — upload posterior draws produced offline
   (CmdStan CSV, Apache Parquet, or ArviZ NetCDF) and get trace / ridge
   / pair / forest plots plus HMC diagnostics (Rhat, ESS, divergences,
   E-BFMI) without leaving the browser. Select the mode from the sidebar top.
-- **🧪 Advanced model Stan generators** (download-only) — DINA, HRM,
+- **Advanced model Stan generators** (download-only) — DINA, HRM,
   Testlet (Random Intercept + Bifactor), Mixture Rasch, 2PL Binary,
   and Pairwise BTL. The app emits a `.stan` file + data bundle; you
   compile and sample locally with cmdstan / cmdstanpy / rstan, then
@@ -45,7 +45,7 @@ full per-version breakdown.
   causes" checklist, failures now surface a specific diagnosis + action
   (singular matrix → non-centered facet, maxit reached → raise to 1000,
   rating scale error → check Score column, …).
-- **Pre-estimation readiness panel** — 🟢 / 🟡 / 🔴 traffic-light across
+- **Pre-estimation readiness panel** — [OK] / [CAUTION] / [ISSUE] statuses across
   eight data-quality checks before the Run button fires.
 - **Run history + two-run comparison** — up to 5 recent runs sit behind a
   Restore button (v0.2.1 lowered the cap from 10 → 5 for Community Cloud
@@ -60,24 +60,24 @@ full per-version breakdown.
 
 ### New in v0.2.1 (first UX-audit hotfix pass)
 
-- **🎯 Download sample CSV** — inspect the built-in demo dataset's
+- **Download sample CSV** — inspect the built-in demo dataset's
   column structure before preparing your own upload.
 - **Upload size preflight** — ≥50 MB warns, ≥100 MB errors, before
   pandas parsing consumes memory on Streamlit Community Cloud.
-- **Clear-history confirmation** — the 🗑 Clear history button now
+- **Clear-history confirmation** — the Clear history button now
   requires an explicit "Yes, delete all N snapshots" confirmation.
 - **Downloads tab signpost** — a clear pointer to Publication Document
-  so users don't hunt for the Word / PDF export.
+  so users can locate the Word / PDF export.
 - **Config JSON import** — upload a previously downloaded config to
   inspect its settings as a table (read-only).
 - **Accessibility CSS** — `:focus-visible` outline for keyboard users,
   `prefers-reduced-motion` support, narrow-screen (<900 px) layout.
-- **Traffic-light text redundancy** — 🟢 / 🟡 / 🔴 icons now also carry
-  [OK] / [CAUTION] / [ISSUE] labels for colour-blind users.
+- **Readiness status labels** — all readiness indicators use
+  [OK] / [CAUTION] / [ISSUE] labels instead of colour-only signals.
 
 ### New in v0.2.2 (second UX-audit hotfix pass)
 
-- **📖 MFRM / Bayesian quick-reference glossary** — 20-term table
+- **MFRM / Bayesian quick-reference glossary** — 20-term table
   (logit / Infit / Outfit / MnSq / ZSTD / step facet / Rhat / ESS / …)
   surfaced under Help → Glossary.
 - **Run breadcrumb** — a persistent one-line banner above the results
@@ -88,10 +88,10 @@ full per-version breakdown.
   move to the tail.
 - **Fit-cell colour highlighting** — Infit / Outfit mean-square cells
   colour-coded to the Wright & Linacre (1994) interpretation bands
-  (🟩 0.5–1.5 acceptable · 🟧 1.5–2.0 noisy · 🟥 ≥ 2.0 distorting ·
-  🟨 < 0.5 over-fit).
+  (0.5–1.5 acceptable · 1.5–2.0 noisy · ≥ 2.0 distorting ·
+  < 0.5 over-fit).
 - **Scree plot EV = 3 reference line** — previously only EV = 1 and
-  EV = 2 were drawn; the "EV > 3 = strong secondary dimension"
+  EV = 2 were drawn; the "EV > 3 = strong secondary residual signal"
   threshold is now visible on the plot itself.
 - **Stan `application/x-stan` MIME** — browsers save .stan files
   correctly and Stan-aware editors pick up syntax highlighting.
@@ -149,14 +149,32 @@ streamlit run streamlit_app.py
 ```
 
 For a first local smoke check, keep **Sample data (built-in)** selected (the
-default scenario — ✏️ Writing essay — is loaded automatically), leave the
+default Writing essay scenario is loaded automatically), leave the
 guided defaults unchanged, click **Run FACETS-mode estimation**, then open the
 **What should I look at first?**, **Data**, **Visuals**, and **Help** tabs.
-Other built-in scenarios switchable from the **📥 Data source** radio:
-*📚 Large-scale writing* (PCA-ready), *🎙️ L2 speaking* (analytic-rubric /
-PCM), *🏥 Clinical OSCE* (station-dominant), *📖 Reading testlet — binary*
+Other built-in scenarios switchable from the **Data source** radio:
+*Large-scale writing* (PCA-ready), *L2 speaking* (analytic-rubric /
+PCM), *Clinical OSCE* (station-dominant), *Reading testlet — binary*
 (0/1 scoring with item-text-person nesting). Each scenario's sidebar
-**📚 About this dataset** expander lists its APA 7 references.
+**About this dataset** expander lists its APA 7 references.
+
+The same **Data source** radio also includes **Generate synthetic data**.
+Use it to create public long-format MFRM simulation data by setting the number
+of facets, each facet's level count and spread, the score-category support,
+zero-count categories, threshold spacing, missingness, and seed values. The
+generated view includes reactive score-histogram, Wright-preview, and
+pathway-preview plots, plus a generated CSV download.
+
+The generator samples from an RSM-style many-facet adjacent-category model:
+`log(P_k/P_{k-1}) = eta - tau_k`, where
+`eta = person measure - sum(facet effects)`. This is the Andrich (1978)
+rating-scale form extended to many-facet main effects in the sense of Linacre
+(1989). The normal draws for effects, rotating first-facet assignment, row
+deletion for missingness, and zero-count category recoding are simulation
+conveniences for demonstrations and stress tests, not empirical defaults from
+those sources. Row deletion is uniform MCAR deletion. Observation noise and
+zero-count recoding deliberately depart from the pure RSM-style data-generating
+model; the reported truth thresholds describe the pre-recoding sampling model.
 
 For deployment notes, including Streamlit Community Cloud settings and privacy gates for hosted use, see `DEPLOYMENT.md`.
 
@@ -265,7 +283,7 @@ After fitting a model, inspect results in this order:
 4. Wright map targeting: check whether person locations and facet difficulty/severity ranges overlap.
 5. Fit diagnostics: review large standardized residuals and misfitting elements.
 6. Bias / local interaction: treat DFF/bias flags as review prompts, not automatic proof of bias.
-7. PCA / dimensionality: check whether residual structure suggests a second dimension.
+7. Residual dimensionality screen: check whether residual structure suggests a secondary residual dimension.
 8. Anchor / linking review: check connectedness and anchor stability before comparing runs or groups.
 9. Strict marginal diagnostics: use for final MML reports when feasible.
 10. Publication gate: check whether APA-style conclusions are ready, caveated, or blocked.
@@ -279,7 +297,9 @@ The final-report readiness checklist, publication gate, submission action plan,
 first-read guide, manuscript template, and generated report text use the same main thresholds:
 about 5% or fewer observation residuals with `|z| >= 2`, person reliability at
 least 0.80 when person separation is the goal, and residual PCA first eigenvalue
-below 2.0 for a clean screen.
+below 2.0 for a clean residual-structure screen. Residual PCA is not a
+standalone proof of unidimensionality and is not a DIMTEST/UNIDIM
+implementation; report it with fit and local-dependence evidence.
 
 For MML latent regression, inspect the covariate type preview before fitting.
 Integer-like columns such as `GradeCode = 1, 2, 3` are flagged so you can decide

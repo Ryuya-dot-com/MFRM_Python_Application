@@ -1,8 +1,8 @@
 """Tests for `build_readiness_report` — the pre-estimation data-quality gate.
 
 The readiness panel is the first structured feedback users get on
-their data. If it mis-classifies a bad upload as "🟢 Ready" or a
-clean upload as "🔴 Issues", users waste time. These tests pin the
+their data. If it mis-classifies a bad upload as "[OK] Ready" or a
+clean upload as "[ISSUE] Issues", users waste time. These tests pin the
 severity logic on representative fixtures.
 """
 
@@ -35,7 +35,7 @@ def test_empty_data_triggers_issue():
 
 
 def test_clean_sample_scenario_is_ok_or_warning():
-    """The built-in Writing Essay scenario is clean — must not produce 🔴."""
+    """The built-in Writing Essay scenario is clean — must not produce [ISSUE]."""
     df = _default_scenario_df()
     report = app.build_readiness_report(
         data=df, person_col="Person", score_col="Score",

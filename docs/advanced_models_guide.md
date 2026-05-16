@@ -28,12 +28,12 @@ Stan and run on the user's own machine.
  │ Streamlit app                          │
  │                                        │
  │ 1. Sidebar →                           │
- │    🧪 Advanced models (Stan, DL only)  │
+ │    Advanced models (Stan, DL only)     │
  │ 2. Enable + pick family                │
  │ 3. Download the model data template     │
  │ 4. Upload Q-matrix (DINA) /             │
  │    set class count (Mixture)           │
- │ 5. 📥 Generate + ⬇ Download .stan      │
+ │ 5. Generate + Download .stan           │
  └────────────┬───────────────────────────┘
               │  file: mfrm_<model>.stan
               ▼
@@ -51,7 +51,8 @@ Stan and run on the user's own machine.
  ┌────────────────────────────────────────┐
  │ Streamlit app                          │
  │                                        │
- │ 1. Sidebar → App mode = Posterior Viewer
+ │ 1. Sidebar → App mode =               │
+ │    Posterior Viewer                   │
  │ 2. Upload CmdStan CSV / parquet / .nc  │
  │ 3. Inspect:                            │
  │    summary, HMC diagnostics,            │
@@ -164,7 +165,7 @@ posterior predictive checks.
 ## Limitations
 
 - The app does **not** emit per-model runner scripts yet — the Stan
-  Code sub-tab in **Report → 💾 Exports** provides a generic
+  Code sub-tab in **Report → Exports** provides a generic
   cmdstanpy / cmdstanr runner that you adapt to each model's data
   shape.
 - Hyperparameters are intentionally visible in generated Stan code.

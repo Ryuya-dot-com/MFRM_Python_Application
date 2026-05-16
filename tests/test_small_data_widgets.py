@@ -84,7 +84,7 @@ def test_apptest_with_clinical_osce_runs_visuals_without_crash():
     for radio in at.radio:
         if radio.key == "data_source_flat":
             try:
-                radio.set_value("🏥 Clinical OSCE (60×4×5×3, 3,600 obs)")
+                radio.set_value("Clinical OSCE (60×4×5×3, 3,600 obs)")
             except Exception:
                 # Label may be slightly different — best-effort
                 pass

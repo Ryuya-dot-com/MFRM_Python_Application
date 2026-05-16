@@ -30,7 +30,7 @@ The Posterior Viewer app mode accepts externally-produced posterior draws in thr
 
 ## Advanced-Model Stan Code Downloads (v0.2.0 and later)
 
-The sidebar's "🧪 Advanced models (Stan, download only)" expander emits Stan programs for DINA, HRM, Testlet RI / Bifactor, Mixture Rasch, 2PL Binary, and Pairwise BTL. The app never compiles, samples, or executes these programs in-process — they are downloaded as `.stan` files and must be run locally with cmdstan / cmdstanpy / rstan. The Q-matrix uploader used by DINA treats the uploaded file as a configuration document, not as rating data, but users should still avoid embedding identifying labels in attribute / item column names.
+The sidebar's "Advanced models (Stan, download only)" expander emits Stan programs for DINA, HRM, Testlet RI / Bifactor, Mixture Rasch, 2PL Binary, and Pairwise BTL. The app never compiles, samples, or executes these programs in-process — they are downloaded as `.stan` files and must be run locally with cmdstan / cmdstanpy / rstan. The Q-matrix uploader used by DINA treats the uploaded file as a configuration document, not as rating data, but users should still avoid embedding identifying labels in attribute / item column names.
 
 ## Before Sharing Reproducible Examples
 

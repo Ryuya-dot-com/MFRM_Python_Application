@@ -1,6 +1,6 @@
 """Tests for the advanced-model Stan code generators.
 
-The sidebar's "🧪 Advanced models (Stan, download only)" expander can
+The sidebar's "Advanced models (Stan, download only)" expander can
 emit Stan programs for DINA, HRM, Testlet RI / Bifactor, Mixture
 Rasch, 2PL Binary, and Pairwise BTL. These tests verify each
 generator produces a syntactically-plausible Stan program (required

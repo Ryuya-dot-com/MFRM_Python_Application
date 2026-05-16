@@ -13,7 +13,7 @@ import sys
 import time
 import zipfile
 from collections import OrderedDict
-from itertools import combinations
+from itertools import combinations, product
 from pathlib import Path
 from typing import Iterable
 
@@ -1001,7 +1001,7 @@ def _render_run_breadcrumb(result: dict, facet_cols: list[str]) -> None:
     iterations = "?"
     if isinstance(summary, pd.DataFrame) and not summary.empty:
         row = summary.iloc[0]
-        converged = "✅ converged" if bool(row.get("Converged", False)) else "❌ not converged"
+        converged = "converged" if bool(row.get("Converged", False)) else "not converged"
         try:
             iterations = f"{int(row.get('Iterations', 0))} iter"
         except (TypeError, ValueError):
@@ -1027,7 +1027,7 @@ _MFRM_GLOSSARY: dict[str, str] = {
     "infit": "inlier-sensitive information-weighted mean-square; 0.5–1.5 ≈ acceptable.",
     "outfit": "outlier-sensitive unweighted mean-square; same 0.5–1.5 interpretation band.",
     "mnsq": "mean-square fit statistic (observed / expected variance ratio); 1.0 = perfect fit.",
-    "zstd": "standardised z-score of the mean-square; |z| > 2 ≈ statistically significant misfit.",
+    "zstd": "approximate standardised z-score of the mean-square; |z| > 2 ≈ statistically significant misfit. FACETS uses additional df handling, so exact parity is not guaranteed.",
     "jmle": "joint maximum likelihood estimation; estimates person and facet parameters together.",
     "mml": "marginal maximum likelihood estimation; integrates over the person ability distribution.",
     "step facet": "facet whose levels carry separate step thresholds in PCM / GPCM / GRM.",
@@ -1057,7 +1057,7 @@ def render_glossary_expander(scope: str = "global") -> None:
     glossary text is single-sourced from ``_MFRM_GLOSSARY`` so adding a
     new term propagates everywhere.
     """
-    with st.expander("📖 MFRM / Bayesian glossary", expanded=False):
+    with st.expander("MFRM / Bayesian glossary", expanded=False):
         st.caption(
             "Quick reference for terms used across this app. Hover over "
             "column headers in result tables (where available) to see "
@@ -2896,11 +2896,11 @@ def _params_writing_essay() -> dict:
 
 
 def _params_large_writing_pca() -> dict:
-    """Large-scale writing assessment sized for clean residual PCA.
+    """Large-scale writing assessment sized for stable residual PCA.
 
     120 examinees × 4 raters × 2 tasks × 3 criteria = 2,880 observations,
     6-point scale. At this scale the residual-correlation matrix has
-    enough rows (> 100) for the Rasch-PCA unidimensionality check to
+    enough rows (> 100) for the Rasch-PCA residual-structure screen to
     stabilise (Smith, 2002; Linacre, 2024). One rater is deliberately
     injected at +1.6 logits to give the bias heatmap and misfit
     ranking a clear positive signal.
@@ -3183,7 +3183,7 @@ def _params_reading_testlet_binary() -> dict:
 
 SAMPLE_DATA_SCENARIOS: dict[str, dict] = {
     "writing_essay": {
-        "label": "✏️ Writing essay (30×4×2×4, 960 obs)",
+        "label": "Writing essay (30×4×2×4, 960 obs)",
         "short": "Small writing-assessment demo. Default since v0.1.",
         "description": (
             "The v0.1+ built-in demo: 30 examinees, 4 raters, 2 tasks, 4 "
@@ -3202,14 +3202,14 @@ SAMPLE_DATA_SCENARIOS: dict[str, dict] = {
         ],
     },
     "large_writing_pca": {
-        "label": "📚 Large-scale writing (120×4×2×3, 2,880 obs)",
+        "label": "Large-scale writing (120×4×2×3, 2,880 obs)",
         "short": "Enough persons for clean residual PCA + severity outlier.",
         "description": (
             "Scaled to 120 examinees for stable residual-PCA on a writing "
             "task. One rater is deliberately injected at +1.6 logits of "
             "severity so the bias heatmap, misfit ranking, and Wright-map "
             "outlier callouts have a visible signal to explain. Useful "
-            "when teaching unidimensionality checks or rater-effect "
+            "when teaching residual-dimensionality screens or rater-effect "
             "diagnostics."
         ),
         "dimensions": {"persons": 120, "raters": 4, "tasks": 2, "criteria": 3, "n_cat": 6},
@@ -3224,7 +3224,7 @@ SAMPLE_DATA_SCENARIOS: dict[str, dict] = {
         ],
     },
     "speaking_test": {
-        "label": "🎙️ L2 speaking (80×3×3×5, 3,600 obs)",
+        "label": "L2 speaking (80×3×3×5, 3,600 obs)",
         "short": "Analytic-rubric speaking test with 5 criteria.",
         "description": (
             "80 examinees × 3 trained raters × 3 tasks × 5 analytic "
@@ -3245,7 +3245,7 @@ SAMPLE_DATA_SCENARIOS: dict[str, dict] = {
         ],
     },
     "clinical_osce": {
-        "label": "🏥 Clinical OSCE (60×4×5×3, 3,600 obs)",
+        "label": "Clinical OSCE (60×4×5×3, 3,600 obs)",
         "short": "5-station medical OSCE with compact 4-point rubric.",
         "description": (
             "60 examinees × 4 clinician raters × 5 stations × 3 "
@@ -3266,7 +3266,7 @@ SAMPLE_DATA_SCENARIOS: dict[str, dict] = {
         ],
     },
     "writing_with_missing": {
-        "label": "📉 Writing with missing (80×4×2×3, ~1,632 obs)",
+        "label": "Writing with missing (80×4×2×3, ~1,632 obs)",
         "short": "Incomplete rating panel (~15% MAR).",
         "description": (
             "Demonstrates MFRM's handling of missing-at-random data. "
@@ -3287,7 +3287,7 @@ SAMPLE_DATA_SCENARIOS: dict[str, dict] = {
         ],
     },
     "music_peer_rating": {
-        "label": "🎸 Music peer-rating (120×2 cyclic×2×4, 1,920 obs)",
+        "label": "Music peer-rating (120×2 cyclic×2×4, 1,920 obs)",
         "short": "Round-robin peer assessment — sparse Person × Rater graph.",
         "description": (
             "120 musicians grade each other on 2 pieces × 4 criteria. "
@@ -3313,7 +3313,7 @@ SAMPLE_DATA_SCENARIOS: dict[str, dict] = {
         ],
     },
     "reading_testlet_binary": {
-        "label": "📖 Reading testlet — binary (100×1×6×4, 2,400 obs)",
+        "label": "Reading testlet — binary (100×1×6×4, 2,400 obs)",
         "short": "Binary 0/1 scoring. Person × Scorer × Text × Item.",
         "description": (
             "100 examinees × single scorer × 6 reading passages × 4 "
@@ -3405,6 +3405,504 @@ def cached_sample_mfrm_data_by_key(
     return sample_mfrm_data_by_key(scenario_key, seed=int(seed)).copy()
 
 
+def default_custom_simulation_thresholds(
+    n_categories: int,
+    step_span: float = 2.0,
+) -> np.ndarray:
+    """Return a defensible default adjacent-category threshold vector."""
+    n_categories = int(n_categories)
+    if n_categories < 2:
+        raise ValueError("n_categories must be at least 2.")
+    if n_categories == 2:
+        return np.array([0.0], dtype=float)
+    span = abs(float(step_span))
+    return np.linspace(-span, span, n_categories - 1, dtype=float)
+
+
+def parse_custom_simulation_thresholds(
+    text: str,
+    n_categories: int,
+) -> np.ndarray:
+    """Parse comma/space/semicolon separated thresholds for custom simulation."""
+    tokens = [tok for tok in re.split(r"[,\s;]+", str(text).strip()) if tok]
+    expected = int(n_categories) - 1
+    if len(tokens) != expected:
+        raise ValueError(
+            f"Expected {expected} thresholds for {n_categories} score categories; "
+            f"got {len(tokens)}."
+        )
+    try:
+        values = np.asarray([float(tok) for tok in tokens], dtype=float)
+    except ValueError as exc:
+        raise ValueError("Thresholds must be numeric values.") from exc
+    if not np.all(np.isfinite(values)):
+        raise ValueError("Thresholds must be finite numeric values.")
+    return values
+
+
+def default_custom_simulation_facet_names(n_facets: int) -> list[str]:
+    """Return readable default facet names for synthetic MFRM designs."""
+    base = ["Rater", "Task", "Criterion"]
+    n_facets = max(1, int(n_facets))
+    return base[:n_facets] + [f"Facet{idx}" for idx in range(4, n_facets + 1)]
+
+
+def sanitize_custom_simulation_facet_names(names: Iterable[str]) -> list[str]:
+    """Make generated facet column names unique and estimator-safe."""
+    out: list[str] = []
+    seen: set[str] = {"Person", "Score", "Weight"}
+    for idx, raw in enumerate(names, start=1):
+        name = re.sub(r"\s+", "_", str(raw).strip()) or f"Facet{idx}"
+        name = re.sub(r"[^0-9A-Za-z_]+", "_", name).strip("_") or f"Facet{idx}"
+        if name[0].isdigit():
+            name = f"Facet_{name}"
+        if name in {"Person", "Score", "Weight"}:
+            name = f"{name}_Facet"
+        candidate = name
+        suffix = 2
+        while candidate in seen:
+            candidate = f"{name}_{suffix}"
+            suffix += 1
+        seen.add(candidate)
+        out.append(candidate)
+    return out
+
+
+def _custom_simulation_level_labels(facet_name: str, n_levels: int) -> list[str]:
+    """Create compact level labels without assuming a specific facet role."""
+    letters = "".join(ch for ch in facet_name.upper() if ch.isalpha())
+    if facet_name.lower() == "rater":
+        prefix = "R"
+    elif facet_name.lower() == "task":
+        prefix = "T"
+    elif facet_name.lower() in {"criterion", "criteria"}:
+        prefix = "C"
+    else:
+        prefix = (letters[:2] or "F")
+    return [f"{prefix}{idx:02d}" for idx in range(1, int(n_levels) + 1)]
+
+
+def _coerce_custom_simulation_facets(
+    *,
+    facet_names: Iterable[str] | None,
+    facet_level_counts: Iterable[int] | None,
+    facet_sds: Iterable[float] | None,
+    n_rater: int,
+    n_task: int,
+    n_criterion: int,
+    rater_sd: float,
+    task_sd: float,
+    criterion_sd: float,
+) -> tuple[list[str], list[int], list[float]]:
+    """Resolve old 3-facet args and new arbitrary-facet args to one spec."""
+    facet_level_counts_list = list(facet_level_counts) if facet_level_counts is not None else None
+    facet_sds_list = list(facet_sds) if facet_sds is not None else None
+    if facet_names is None and facet_level_counts is None:
+        names = ["Rater", "Task", "Criterion"]
+        counts = [int(n_rater), int(n_task), int(n_criterion)]
+        sds = [float(rater_sd), float(task_sd), float(criterion_sd)]
+    else:
+        if facet_names is None:
+            count_len = len(facet_level_counts_list) if facet_level_counts_list is not None else 3
+            raw_names = default_custom_simulation_facet_names(count_len)
+        else:
+            raw_names = list(facet_names)
+        names = sanitize_custom_simulation_facet_names(raw_names)
+        if facet_level_counts_list is None:
+            default_counts = ([4, 2, 4] + [2] * max(0, len(names) - 3))[:len(names)]
+            counts = default_counts
+        else:
+            counts = [int(x) for x in facet_level_counts_list]
+        if facet_sds_list is None:
+            default_sds = ([0.35, 0.25, 0.25] + [0.20] * max(0, len(names) - 3))[:len(names)]
+            sds = default_sds
+        else:
+            sds = [float(x) for x in facet_sds_list]
+
+    if len(names) < 1:
+        raise ValueError("At least one facet is required.")
+    if len(counts) != len(names):
+        raise ValueError("facet_level_counts must have one value per facet.")
+    if len(sds) != len(names):
+        raise ValueError("facet_sds must have one value per facet.")
+    if any(int(c) < 1 for c in counts):
+        raise ValueError("All facet level counts must be positive integers.")
+    if any((not np.isfinite(float(sd))) or float(sd) < 0 for sd in sds):
+        raise ValueError("All facet SDs must be finite non-negative values.")
+    return names, [int(c) for c in counts], [float(sd) for sd in sds]
+
+
+def generate_custom_mfrm_simulation_bundle(
+    *,
+    n_person: int = 50,
+    facet_names: Iterable[str] | None = None,
+    facet_level_counts: Iterable[int] | None = None,
+    facet_sds: Iterable[float] | None = None,
+    first_facet_levels_per_person: int | None = None,
+    n_rater: int = 4,
+    n_task: int = 2,
+    n_criterion: int = 4,
+    raters_per_person: int | None = None,
+    n_categories: int = 5,
+    theta_sd: float = 1.0,
+    rater_sd: float = 0.35,
+    task_sd: float = 0.25,
+    criterion_sd: float = 0.25,
+    thresholds: Iterable[float] | None = None,
+    step_span: float = 2.0,
+    noise_sd: float = 0.0,
+    missing_rate: float = 0.0,
+    zero_count_score: int | None = None,
+    seed: int = 20260515,
+) -> dict:
+    """Generate synthetic long-format MFRM data plus preview truth tables.
+
+    The generator uses the same adjacent-category RSM-family probability
+    contract as the built-in sample scenarios.  It supports both the earlier
+    Rater/Task/Criterion call signature and an arbitrary number of named
+    facets for manuscript-ready synthetic examples.
+    """
+    n_person = int(n_person)
+    n_categories = int(n_categories)
+    if n_person < 1:
+        raise ValueError("n_person must be a positive integer.")
+    if n_categories < 2:
+        raise ValueError("n_categories must be at least 2.")
+    facet_names, facet_level_counts, facet_sds = _coerce_custom_simulation_facets(
+        facet_names=facet_names,
+        facet_level_counts=facet_level_counts,
+        facet_sds=facet_sds,
+        n_rater=int(n_rater),
+        n_task=int(n_task),
+        n_criterion=int(n_criterion),
+        rater_sd=float(rater_sd),
+        task_sd=float(task_sd),
+        criterion_sd=float(criterion_sd),
+    )
+
+    if first_facet_levels_per_person is None:
+        first_facet_levels_per_person = raters_per_person
+    if first_facet_levels_per_person is None:
+        first_facet_levels_per_person = facet_level_counts[0]
+    first_facet_levels_per_person = max(
+        1,
+        min(int(first_facet_levels_per_person), int(facet_level_counts[0])),
+    )
+    missing_rate = min(max(float(missing_rate), 0.0), 0.95)
+    noise_sd = max(float(noise_sd), 0.0)
+    tail_rows = int(np.prod(facet_level_counts[1:], dtype=np.int64)) if len(facet_level_counts) > 1 else 1
+    full_rows = int(n_person * first_facet_levels_per_person * tail_rows)
+    if full_rows > 100_000:
+        raise ValueError(
+            "Custom simulation is capped at 100,000 rows before missingness "
+            "for hosted-app responsiveness."
+        )
+
+    if thresholds is None:
+        tau = default_custom_simulation_thresholds(n_categories, step_span=step_span)
+    else:
+        tau = np.asarray(list(thresholds), dtype=float)
+    if tau.size != n_categories - 1:
+        raise ValueError("thresholds must have length n_categories - 1.")
+    if not np.all(np.isfinite(tau)):
+        raise ValueError("thresholds must contain finite numeric values.")
+    if zero_count_score is not None:
+        zero_count_score = int(zero_count_score)
+        if zero_count_score < 0 or zero_count_score >= n_categories:
+            raise ValueError("zero_count_score must be inside the generated score range.")
+
+    rng = np.random.default_rng(int(seed))
+    persons = [f"P{idx:03d}" for idx in range(1, n_person + 1)]
+    facet_levels = [
+        _custom_simulation_level_labels(name, n_levels)
+        for name, n_levels in zip(facet_names, facet_level_counts)
+    ]
+
+    theta = rng.normal(0.0, float(theta_sd), n_person)
+    theta = theta - float(np.mean(theta))
+    facet_effects: list[np.ndarray] = []
+    for n_levels, sd in zip(facet_level_counts, facet_sds):
+        effects = rng.normal(0.0, float(sd), int(n_levels))
+        effects = effects - float(np.mean(effects))
+        facet_effects.append(effects)
+
+    cum_thresholds = np.zeros(n_categories, dtype=float)
+    for k in range(1, n_categories):
+        cum_thresholds[k] = cum_thresholds[k - 1] + tau[k - 1]
+    category_scores = np.arange(n_categories, dtype=int)
+
+    rows: list[list[object]] = []
+    tail_index_sets = [range(n) for n in facet_level_counts[1:]]
+    tail_combos = list(product(*tail_index_sets)) if tail_index_sets else [()]
+    for pi, person in enumerate(persons):
+        if first_facet_levels_per_person >= facet_level_counts[0]:
+            first_indices = range(facet_level_counts[0])
+        else:
+            first_indices = [((pi + offset) % facet_level_counts[0]) for offset in range(first_facet_levels_per_person)]
+        for first_idx in first_indices:
+            for tail in tail_combos:
+                facet_indices = (int(first_idx),) + tuple(int(x) for x in tail)
+                eta = theta[pi] - sum(
+                    float(effects[level_idx])
+                    for effects, level_idx in zip(facet_effects, facet_indices)
+                )
+                if noise_sd > 0:
+                    eta += float(rng.normal(0.0, noise_sd))
+                log_num = category_scores.astype(float) * eta - cum_thresholds
+                log_num -= float(np.max(log_num))
+                probs = np.exp(log_num)
+                probs = probs / probs.sum()
+                score = int(rng.choice(category_scores, p=probs))
+                rows.append(
+                    [person]
+                    + [facet_levels[j][idx] for j, idx in enumerate(facet_indices)]
+                    + [score]
+                )
+
+    df = pd.DataFrame(rows, columns=["Person", *facet_names, "Score"])
+    if zero_count_score is not None and not df.empty:
+        mask = df["Score"].astype(int) == int(zero_count_score)
+        if mask.any():
+            if int(zero_count_score) <= 0:
+                replacement = np.full(int(mask.sum()), 1, dtype=int)
+            elif int(zero_count_score) >= n_categories - 1:
+                replacement = np.full(int(mask.sum()), n_categories - 2, dtype=int)
+            else:
+                replacement = np.where(
+                    rng.random(int(mask.sum())) < 0.5,
+                    int(zero_count_score) - 1,
+                    int(zero_count_score) + 1,
+                )
+            df.loc[mask, "Score"] = replacement.astype(int)
+    if missing_rate > 0 and not df.empty:
+        keep = rng.random(len(df)) >= missing_rate
+        df = df.loc[keep].reset_index(drop=True)
+
+    person_truth = pd.DataFrame({"Person": persons, "Measure": theta})
+    facet_truth_parts = []
+    for name, levels, effects in zip(facet_names, facet_levels, facet_effects):
+        facet_truth_parts.append(pd.DataFrame({
+            "Facet": name,
+            "Level": levels,
+            "Measure": effects,
+        }))
+    facet_truth = pd.concat(facet_truth_parts, ignore_index=True) if facet_truth_parts else pd.DataFrame()
+    threshold_truth = pd.DataFrame({
+        "Step": [f"tau{k}" for k in range(1, n_categories)],
+        "Threshold": tau,
+        "CumulativeThreshold": cum_thresholds[1:],
+    })
+    category_counts = (
+        df["Score"].value_counts(dropna=False)
+        .reindex(range(n_categories), fill_value=0)
+        .rename_axis("Score")
+        .reset_index(name="Count")
+    )
+    category_counts["Percent"] = (
+        category_counts["Count"] / max(int(category_counts["Count"].sum()), 1)
+    )
+
+    return {
+        "data": df,
+        "person_truth": person_truth,
+        "facet_truth": facet_truth,
+        "threshold_truth": threshold_truth,
+        "category_counts": category_counts,
+        "meta": {
+            "n_person": n_person,
+            "facet_names": facet_names,
+            "facet_level_counts": facet_level_counts,
+            "facet_sds": facet_sds,
+            "first_facet_levels_per_person": first_facet_levels_per_person,
+            "n_categories": n_categories,
+            "n_obs": int(len(df)),
+            "full_rows": full_rows,
+            "missing_rate": missing_rate,
+            "zero_count_score": zero_count_score,
+            "seed": int(seed),
+        },
+    }
+
+
+def generate_custom_mfrm_simulation_data(
+    **kwargs,
+) -> pd.DataFrame:
+    """Generate user-configurable synthetic long-format MFRM data."""
+    return generate_custom_mfrm_simulation_bundle(**kwargs)["data"].copy()
+
+
+@st.cache_data(show_spinner=False, max_entries=16)
+def cached_custom_mfrm_simulation_bundle(
+    n_person: int,
+    facet_names_tuple: tuple[str, ...],
+    facet_level_counts_tuple: tuple[int, ...],
+    facet_sds_tuple: tuple[float, ...],
+    first_facet_levels_per_person: int,
+    n_categories: int,
+    theta_sd: float,
+    thresholds_tuple: tuple[float, ...],
+    step_span: float,
+    noise_sd: float,
+    missing_rate: float,
+    zero_count_score: int | None,
+    seed: int,
+) -> dict:
+    return generate_custom_mfrm_simulation_bundle(
+        n_person=n_person,
+        facet_names=facet_names_tuple,
+        facet_level_counts=facet_level_counts_tuple,
+        facet_sds=facet_sds_tuple,
+        first_facet_levels_per_person=first_facet_levels_per_person,
+        n_categories=n_categories,
+        theta_sd=theta_sd,
+        thresholds=thresholds_tuple,
+        step_span=step_span,
+        noise_sd=noise_sd,
+        missing_rate=missing_rate,
+        zero_count_score=zero_count_score,
+        seed=seed,
+    )
+
+
+def build_custom_simulation_score_histogram_figure(bundle: dict) -> go.Figure | None:
+    counts = bundle.get("category_counts")
+    if not isinstance(counts, pd.DataFrame) or counts.empty:
+        return None
+    fig = go.Figure(go.Bar(
+        x=counts["Score"].astype(str),
+        y=counts["Count"],
+        marker_color="#4C78A8",
+        hovertemplate="Score %{x}<br>Count %{y}<extra></extra>",
+    ))
+    fig.update_layout(
+        title="Score Category Histogram",
+        xaxis_title="Score category",
+        yaxis_title="Count",
+        height=320,
+        margin=dict(l=40, r=20, t=50, b=40),
+    )
+    return fig
+
+
+def build_custom_simulation_wright_preview_figure(bundle: dict) -> go.Figure | None:
+    person_truth = bundle.get("person_truth")
+    facet_truth = bundle.get("facet_truth")
+    threshold_truth = bundle.get("threshold_truth")
+    if not isinstance(person_truth, pd.DataFrame) or person_truth.empty:
+        return None
+    fig = go.Figure()
+    fig.add_trace(go.Box(
+        x=person_truth["Measure"],
+        y=["Persons"] * len(person_truth),
+        name="Persons",
+        marker_color="#4C78A8",
+        boxpoints="all",
+        jitter=0.35,
+        pointpos=0,
+        orientation="h",
+        hovertemplate="Person measure %{x:.2f}<extra></extra>",
+    ))
+    if isinstance(facet_truth, pd.DataFrame) and not facet_truth.empty:
+        for facet, part in facet_truth.groupby("Facet", sort=False):
+            fig.add_trace(go.Scatter(
+                x=part["Measure"],
+                y=[str(facet)] * len(part),
+                mode="markers",
+                name=str(facet),
+                marker=dict(size=8),
+                text=part["Level"],
+                hovertemplate="%{text}<br>Measure %{x:.2f}<extra></extra>",
+            ))
+    if isinstance(threshold_truth, pd.DataFrame) and not threshold_truth.empty:
+        for _, row in threshold_truth.iterrows():
+            fig.add_vline(
+                x=float(row["Threshold"]),
+                line_dash="dot",
+                line_color="#666666",
+                opacity=0.45,
+            )
+    fig.update_layout(
+        title="Wright Map Preview from Generating Values",
+        xaxis_title="Logit scale",
+        yaxis_title="Component",
+        height=360,
+        margin=dict(l=40, r=20, t=50, b=40),
+        showlegend=False,
+    )
+    return fig
+
+
+def build_custom_simulation_pathway_preview_figure(bundle: dict) -> go.Figure | None:
+    data = bundle.get("data")
+    meta = bundle.get("meta", {})
+    if not isinstance(data, pd.DataFrame) or data.empty:
+        return None
+    facet_names = [c for c in meta.get("facet_names", []) if c in data.columns]
+    nodes = [("Persons", int(data["Person"].nunique()))]
+    nodes.extend((facet, int(data[facet].nunique())) for facet in facet_names)
+    nodes.append(("Scores", int(data["Score"].nunique())))
+    x = list(range(len(nodes)))
+    y = [0] * len(nodes)
+    labels = [name for name, _ in nodes]
+    counts = [count for _, count in nodes]
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(
+        x=x,
+        y=y,
+        mode="lines",
+        line=dict(color="#8A8A8A", width=3),
+        hoverinfo="skip",
+        showlegend=False,
+    ))
+    fig.add_trace(go.Scatter(
+        x=x,
+        y=y,
+        mode="markers+text",
+        marker=dict(
+            size=[max(18, min(48, 12 + count * 2)) for count in counts],
+            color="#59A14F",
+            line=dict(width=1, color="#2F5D35"),
+        ),
+        text=[f"{label}<br>{count} levels" for label, count in nodes],
+        textposition="bottom center",
+        hovertemplate="%{text}<extra></extra>",
+        showlegend=False,
+    ))
+    fig.update_layout(
+        title="Pathway Preview of Generated Design",
+        xaxis=dict(visible=False, range=[-0.5, len(nodes) - 0.5]),
+        yaxis=dict(visible=False, range=[-1, 1]),
+        height=260,
+        margin=dict(l=20, r=20, t=50, b=80),
+    )
+    return fig
+
+
+def render_custom_simulation_preview_panel() -> None:
+    bundle = st.session_state.get("_custom_simulation_preview_bundle")
+    if not isinstance(bundle, dict):
+        return
+    st.markdown(f"##### {t('data_source.sim_preview_header')}")
+    st.caption(t("data_source.sim_preview_caption"))
+    tab_hist, tab_wright, tab_pathway = st.tabs([
+        t("data_source.sim_preview_tab_histogram"),
+        t("data_source.sim_preview_tab_wright"),
+        t("data_source.sim_preview_tab_pathway"),
+    ])
+    with tab_hist:
+        fig = build_custom_simulation_score_histogram_figure(bundle)
+        if fig is not None:
+            st.plotly_chart(fig, width="stretch")
+    with tab_wright:
+        fig = build_custom_simulation_wright_preview_figure(bundle)
+        if fig is not None:
+            st.plotly_chart(fig, width="stretch")
+    with tab_pathway:
+        fig = build_custom_simulation_pathway_preview_figure(bundle)
+        if fig is not None:
+            st.plotly_chart(fig, width="stretch")
+
+
 def render_loaded_data_banner() -> None:
     """Show a one-line banner in the main area naming the loaded scenario.
 
@@ -3418,6 +3916,27 @@ def render_loaded_data_banner() -> None:
     and a subtle nudge pointing at the "Try another scenario" buttons
     back in the sidebar so first-time users discover the switcher.
     """
+    custom_meta = st.session_state.get("_loaded_custom_simulation_meta")
+    if isinstance(custom_meta, dict):
+        facet_bits = [
+            f"{name}={count}"
+            for name, count in zip(
+                custom_meta.get("facet_names", []),
+                custom_meta.get("facet_level_counts", []),
+            )
+        ]
+        st.info(
+            "**Generated synthetic data:** "
+            f"{custom_meta.get('n_person', '?')} persons × "
+            f"{custom_meta.get('first_facet_levels_per_person', '?')} levels/person for "
+            f"{(custom_meta.get('facet_names') or ['first facet'])[0]} × "
+            f"{', '.join(facet_bits) or 'facets'} = "
+            f"**{custom_meta.get('n_obs', 0):,} observations**, "
+            f"{custom_meta.get('n_categories', '?')} score categories, "
+            f"seed `{custom_meta.get('seed', '?')}`."
+        )
+        return
+
     key = st.session_state.get("_loaded_sample_scenario_key")
     if not key:
         return
@@ -3426,7 +3945,7 @@ def render_loaded_data_banner() -> None:
         return
     dims = scenario["dimensions"]
     st.info(
-        f"📂 **Loaded sample data:** {scenario['label']} — "
+        f"**Loaded sample data:** {scenario['label']} — "
         f"{dims['persons']} × {dims['raters']} × {dims['tasks']} × "
         f"{dims['criteria']} = **{scenario['n_obs']:,} observations**, "
         f"{dims['n_cat']}-point scale. "
@@ -3672,6 +4191,12 @@ def category_prob_gpcm(eta, step_cum_mat, step_idx, slopes, slope_idx):
 
 
 def zstd_from_mnsq(mnsq, df, whexact=False):
+    """Approximate standardized fit from MnSq and an app-side df proxy.
+
+    FACETS applies specialized degrees-of-freedom handling for ZSTD. This
+    app reports a Wilson-Hilferty-style approximation for transparent local
+    diagnostics, not a byte-for-byte FACETS ZSTD reproduction.
+    """
     if not np.isfinite(mnsq) or not np.isfinite(df) or df <= 0:
         return np.nan
     if whexact:
@@ -10084,8 +10609,8 @@ software does and how this app relates.
 | **Person params** | Fixed effects | Random (integrated out) | Fixed effects | Random | Random | Random |
 | **Optimizer** | Analytical-gradient L-BFGS-B | Analytical-gradient L-BFGS-B within M-step | Newton-Raphson | Newton-Raphson | Newton-Raphson | L-BFGS |
 | **Response model** | Adjacent-category (RSM/PCM) | Adjacent-category (RSM/PCM) | Adjacent-category (RSM/PCM) | Adjacent-category | Adjacent-category | **Cumulative** logit |
-| **Multi-facet** | ✔ arbitrary facets | ✔ arbitrary facets | ✔ arbitrary facets | ✔ (via design matrix) | ✔ (via design matrix) | ✔ (as fixed/random effects) |
-| **Sufficient statistics** | ✔ (implicit via full likelihood) | — | ✔ (directly exploited) | — | — | — |
+| **Multi-facet** | Yes; arbitrary facets | Yes; arbitrary facets | Yes; arbitrary facets | Yes; via design matrix | Yes; via design matrix | Yes; as fixed/random effects |
+| **Sufficient statistics** | Yes; implicit via full likelihood | No | Yes; directly exploited | No | No | No |
 | **Prior for persons** | None | N(Xβ, fixed user-set σ²) | None | N(0, σ²) estimated | N(0, σ²) estimated | N(0, σ²) estimated |
 | **Person variance** | — | Fixed by `population_prior_sd` | — | Estimated | Estimated | Estimated |
 
@@ -10413,12 +10938,12 @@ rater×task combination as a separate item.
 
 | Package | Model | Estimation | Multi-facet | Adjacent-category |
 |---|---|---|---|---|
-| **TAM** | RSM, PCM, LLTM | MML (EM) | ✔ native (`tam.mml.mfr`) | ✔ |
-| **mirt** | RSM, PCM, GRM, 2PL+ | MML (EM) | △ (item coding) | ✔ (rsm/gpcm) |
-| **eRm** | RSM, PCM, LLTM | CMLE | △ (item coding) | ✔ |
-| **lme4** | GLMM | Laplace/AGQ | ✔ (as random effects) | ✗ (cumulative) |
-| **ordinal** | CLM/CLMM | Laplace/AGQ | ✔ (as random effects) | ✗ (cumulative) |
-| **This app** | RSM, PCM, bounded GPCM | JMLE or MML | ✔ native | ✔ |
+| **TAM** | RSM, PCM, LLTM | MML (EM) | Native (`tam.mml.mfr`) | Yes |
+| **mirt** | RSM, PCM, GRM, 2PL+ | MML (EM) | Partial; item coding | Yes (`rsm`/`gpcm`) |
+| **eRm** | RSM, PCM, LLTM | CMLE | Partial; item coding | Yes |
+| **lme4** | GLMM | Laplace/AGQ | Yes; as random effects | No; cumulative |
+| **ordinal** | CLM/CLMM | Laplace/AGQ | Yes; as random effects | No; cumulative |
+| **This app** | RSM, PCM, bounded GPCM | JMLE or MML | Native | Yes |
 
 **Recommendation:** For cross-validation, use **TAM** as it
 most closely matches this app's model specification and
@@ -10552,7 +11077,7 @@ def render_data_privacy_notice(where: str = "main") -> None:
 
 
 def build_data_source_options() -> list[dict]:
-    """Flat data-source radio options: all samples, then paste/upload exactly once.
+    """Flat data-source radio options: samples, simulation, paste, upload.
 
     Scenario labels stay in their data-driven form (English, sourced from
     ``SAMPLE_DATA_SCENARIOS``) — translating them would require localizing
@@ -10567,9 +11092,231 @@ def build_data_source_options() -> list[dict]:
             "kind": "scenario",
             "scenario_key": key,
         })
+    options.append({"label": t("data_source.option_simulate"), "kind": "simulate", "scenario_key": None})
     options.append({"label": t("data_source.option_paste"), "kind": "paste", "scenario_key": None})
     options.append({"label": t("data_source.option_upload"), "kind": "upload", "scenario_key": None})
     return options
+
+
+def render_custom_simulation_source() -> pd.DataFrame:
+    """Render sidebar controls for a user-configurable synthetic dataset."""
+    st.sidebar.info(t("data_source.sim_info"))
+    st.sidebar.caption(t("data_source.sim_method_caption"))
+
+    with st.sidebar.expander(t("data_source.sim_design_expander"), expanded=True):
+        n_person = int(st.number_input(
+            t("data_source.sim_n_person_label"),
+            min_value=10, max_value=200, value=50, step=5,
+            key="sim_n_person",
+            help=t("data_source.sim_n_person_help"),
+        ))
+        n_facets = int(st.number_input(
+            t("data_source.sim_n_facets_label"),
+            min_value=2, max_value=6, value=3, step=1,
+            key="sim_n_facets",
+            help=t("data_source.sim_n_facets_help"),
+        ))
+        n_categories = int(st.number_input(
+            t("data_source.sim_n_categories_label"),
+            min_value=2, max_value=7, value=5, step=1,
+            key="sim_n_categories",
+            help=t("data_source.sim_n_categories_help"),
+        ))
+        zero_count_enabled = st.checkbox(
+            t("data_source.sim_zero_count_enabled_label"),
+            value=False,
+            key="sim_zero_count_enabled",
+            help=t("data_source.sim_zero_count_enabled_help"),
+        )
+        zero_count_score: int | None = None
+        if zero_count_enabled:
+            zero_count_score = int(st.selectbox(
+                t("data_source.sim_zero_count_score_label"),
+                options=list(range(n_categories)),
+                index=min(3, n_categories - 1),
+                key=f"sim_zero_count_score_{n_categories}",
+                help=t("data_source.sim_zero_count_score_help"),
+            ))
+            st.caption(t("data_source.sim_zero_count_caption"))
+
+        default_names = default_custom_simulation_facet_names(n_facets)
+        facet_names_raw: list[str] = []
+        facet_level_counts: list[int] = []
+        st.markdown(f"**{t('data_source.sim_facets_expander')}**")
+        for idx in range(n_facets):
+            col_name, col_levels = st.columns([1.2, 0.8])
+            with col_name:
+                facet_names_raw.append(st.text_input(
+                    t("data_source.sim_facet_name_label_template", index=idx + 1),
+                    value=default_names[idx],
+                    key=f"sim_facet_name_{idx}",
+                ))
+            with col_levels:
+                default_count = [4, 2, 4, 2, 2, 2][idx] if idx < 6 else 2
+                facet_level_counts.append(int(st.number_input(
+                    t("data_source.sim_facet_levels_label_template", index=idx + 1),
+                    min_value=2,
+                    max_value=12,
+                    value=default_count,
+                    step=1,
+                    key=f"sim_facet_levels_{idx}",
+                )))
+        facet_names = sanitize_custom_simulation_facet_names(facet_names_raw)
+        first_facet_levels_per_person = int(st.number_input(
+            t("data_source.sim_first_facet_levels_per_person_label_template", facet=facet_names[0]),
+            min_value=1,
+            max_value=facet_level_counts[0],
+            value=min(2, facet_level_counts[0]),
+            step=1,
+            key=f"sim_first_facet_levels_per_person_{facet_level_counts[0]}",
+            help=t("data_source.sim_first_facet_levels_per_person_help"),
+        ))
+
+    with st.sidebar.expander(t("data_source.sim_parameters_expander"), expanded=False):
+        theta_sd = float(st.number_input(
+            t("data_source.sim_theta_sd_label"),
+            min_value=0.0, max_value=3.0, value=1.0, step=0.1,
+            format="%.2f", key="sim_theta_sd",
+        ))
+        facet_sds: list[float] = []
+        for idx, facet in enumerate(facet_names):
+            default_sd = [0.35, 0.25, 0.25, 0.20, 0.20, 0.20][idx] if idx < 6 else 0.20
+            facet_sds.append(float(st.number_input(
+                t("data_source.sim_facet_sd_label_template", facet=facet),
+                min_value=0.0, max_value=2.0, value=default_sd, step=0.05,
+                format="%.2f", key=f"sim_facet_sd_{idx}",
+            )))
+        noise_sd = float(st.number_input(
+            t("data_source.sim_noise_sd_label"),
+            min_value=0.0, max_value=2.0, value=0.0, step=0.05,
+            format="%.2f", key="sim_noise_sd",
+            help=t("data_source.sim_noise_sd_help"),
+        ))
+        missing_rate = float(st.slider(
+            t("data_source.sim_missing_rate_label"),
+            min_value=0.0, max_value=0.50, value=0.0, step=0.01,
+            key="sim_missing_rate",
+            help=t("data_source.sim_missing_rate_help"),
+        ))
+
+    step_span = 2.0
+    thresholds = default_custom_simulation_thresholds(n_categories, step_span=step_span)
+    with st.sidebar.expander(t("data_source.sim_thresholds_expander"), expanded=False):
+        threshold_mode = st.radio(
+            t("data_source.sim_threshold_mode_label"),
+            options=["even", "custom"],
+            format_func=lambda v: (
+                t("data_source.sim_threshold_mode_even")
+                if v == "even"
+                else t("data_source.sim_threshold_mode_custom")
+            ),
+            horizontal=True,
+            key="sim_threshold_mode",
+        )
+        if threshold_mode == "custom":
+            default_text = ", ".join(f"{x:.2f}" for x in thresholds)
+            threshold_text = st.text_input(
+                t("data_source.sim_threshold_text_label"),
+                value=default_text,
+                key=f"sim_threshold_text_{n_categories}",
+                help=t("data_source.sim_threshold_text_help"),
+            )
+            try:
+                thresholds = parse_custom_simulation_thresholds(
+                    threshold_text, n_categories,
+                )
+            except ValueError as exc:
+                st.sidebar.error(t("data_source.sim_threshold_error_template", error=str(exc)))
+                st.session_state.pop("_loaded_custom_simulation_meta", None)
+                st.session_state.pop("_custom_simulation_preview_bundle", None)
+                st.session_state.pop("_custom_simulation_facet_names", None)
+                return pd.DataFrame()
+        else:
+            step_span = float(st.slider(
+                t("data_source.sim_step_span_label"),
+                min_value=0.5, max_value=4.0, value=2.0, step=0.1,
+                key="sim_step_span",
+                help=t("data_source.sim_step_span_help"),
+            ))
+            thresholds = default_custom_simulation_thresholds(
+                n_categories, step_span=step_span,
+            )
+            st.caption(t(
+                "data_source.sim_threshold_preview_template",
+                thresholds=", ".join(f"{x:.2f}" for x in thresholds),
+            ))
+        if thresholds.size > 1 and np.any(np.diff(thresholds) <= 0):
+            st.warning(t("data_source.sim_threshold_order_warning"))
+
+    seed = int(st.sidebar.number_input(
+        t("data_source.sim_seed_label"),
+        min_value=1, max_value=2_147_483_647, value=20260515, step=1,
+        key="sim_seed",
+        help=t("data_source.sim_seed_help"),
+    ))
+
+    expected_rows = int(n_person * first_facet_levels_per_person * np.prod(facet_level_counts[1:], dtype=np.int64))
+    expected_after_missing = int(round(expected_rows * (1.0 - missing_rate)))
+    st.sidebar.caption(t(
+        "data_source.sim_expected_rows_template",
+        n_rows=f"{expected_after_missing:,}",
+        full_rows=f"{expected_rows:,}",
+    ))
+    if expected_rows > 100_000:
+        st.sidebar.error(t("data_source.sim_size_error"))
+        st.session_state.pop("_loaded_custom_simulation_meta", None)
+        st.session_state.pop("_custom_simulation_preview_bundle", None)
+        st.session_state.pop("_custom_simulation_facet_names", None)
+        return pd.DataFrame()
+    if expected_rows >= 50_000:
+        st.sidebar.warning(t("data_source.sim_size_warning"))
+
+    sim_bundle = cached_custom_mfrm_simulation_bundle(
+        n_person,
+        tuple(facet_names),
+        tuple(int(x) for x in facet_level_counts),
+        tuple(float(x) for x in facet_sds),
+        first_facet_levels_per_person,
+        n_categories,
+        theta_sd,
+        tuple(float(x) for x in thresholds),
+        step_span,
+        noise_sd,
+        missing_rate,
+        zero_count_score,
+        seed,
+    )
+    sim_df = sim_bundle["data"].copy()
+    st.sidebar.download_button(
+        t("data_source.sim_download_button"),
+        data=to_csv_bytes(sim_df),
+        file_name="mfrm_custom_simulation.csv",
+        mime="text/csv",
+        key="custom_simulation_download",
+        help=t("data_source.sim_download_help"),
+        use_container_width=True,
+    )
+    st.session_state.pop("_loaded_sample_scenario_key", None)
+    st.session_state["_custom_simulation_preview_bundle"] = sim_bundle
+    st.session_state["_custom_simulation_facet_names"] = facet_names
+    st.session_state["_custom_simulation_score_support"] = {
+        "rating_min": 0,
+        "rating_max": n_categories - 1,
+        "zero_count_score": zero_count_score,
+    }
+    st.session_state["_loaded_custom_simulation_meta"] = {
+        "n_person": n_person,
+        "n_facets": n_facets,
+        "facet_names": facet_names,
+        "facet_level_counts": facet_level_counts,
+        "facet_sds": facet_sds,
+        "first_facet_levels_per_person": first_facet_levels_per_person,
+        "n_categories": n_categories,
+        "n_obs": int(len(sim_df)),
+        "zero_count_score": zero_count_score,
+        "seed": seed,
+    }
+    return sim_df
 
 
 def read_input_data(core: dict) -> pd.DataFrame:
@@ -10580,8 +11327,8 @@ def read_input_data(core: dict) -> pd.DataFrame:
     # Upload, so the scenario switcher is impossible to overlook.
     st.sidebar.markdown(f"### {t('data_source.header')}")
 
-    # Build the option list: scenarios first (in registry order),
-    # then paste / upload. Each entry records its kind so we can
+    # Build the option list: scenarios first (in registry order), then
+    # simulation / paste / upload. Each entry records its kind so we can
     # dispatch without string-matching the label.
     _options = build_data_source_options()
     _option_labels = [opt["label"] for opt in _options]
@@ -10684,11 +11431,22 @@ def read_input_data(core: dict) -> pd.DataFrame:
         # Remember which scenario is loaded so the main area can
         # surface a matching banner above the results tabs.
         st.session_state["_loaded_sample_scenario_key"] = scenario_key
+        st.session_state.pop("_loaded_custom_simulation_meta", None)
+        st.session_state.pop("_custom_simulation_preview_bundle", None)
+        st.session_state.pop("_custom_simulation_facet_names", None)
+        st.session_state.pop("_custom_simulation_score_support", None)
         return sample_df
+
+    if chosen["kind"] == "simulate":
+        return render_custom_simulation_source()
 
     # Non-scenario paths clear the loaded-scenario marker so the
     # main-area banner does not lie about the data source.
     st.session_state.pop("_loaded_sample_scenario_key", None)
+    st.session_state.pop("_loaded_custom_simulation_meta", None)
+    st.session_state.pop("_custom_simulation_preview_bundle", None)
+    st.session_state.pop("_custom_simulation_facet_names", None)
+    st.session_state.pop("_custom_simulation_score_support", None)
 
     if chosen["kind"] == "paste":
         render_data_privacy_notice(where="sidebar")
@@ -11141,7 +11899,7 @@ def render_quick_results_download(
 ) -> None:
     """FACETS-style one-click results bundle, surfaced above the result tabs.
 
-    Shows a prominent **⬇ Download all results (ZIP)** button right
+    Shows a prominent **Download all results (ZIP)** button right
     after the Run history panel so beginners leaving with their data
     do not have to hunt through the Downloads sub-tab first. Also
     offers an Excel (multi-sheet) variant for users who prefer that.
@@ -11159,19 +11917,19 @@ def render_quick_results_download(
 
     with st.container(border=True):
         st.markdown(
-            f"##### ⬇ Quick download — all {len(frames)} result tables in one click"
+            f"##### Quick download — all {len(frames)} result tables in one click"
         )
         st.caption(
             "FACETS-style bundle: Summary, Measures, Reliability, Fit, "
             "PCA, and Bias tables in a single ZIP. For publication Word/PDF/HTML "
-            "and Stan code, use **Report → 💾 Exports**. For every CSV, figure, "
+            "and Stan code, use **Report → Exports**. For every CSV, figure, "
             "script, and config file, use the **Downloads** tab."
         )
         c1, c2 = st.columns([1, 1])
         with c1:
             try:
                 st.download_button(
-                    "⬇ Download all results (ZIP)",
+                    "Download all results (ZIP)",
                     data=cached_tables_zip(frames, frames_key),
                     file_name="mfrm_results_bundle.zip",
                     mime="application/zip",
@@ -11185,11 +11943,11 @@ def render_quick_results_download(
                     ),
                 )
             except Exception as zip_exc:
-                st.caption(f"⚠️ ZIP export failed: {zip_exc}")
+                st.caption(f"ZIP export failed: {zip_exc}")
         with c2:
             try:
                 st.download_button(
-                    "⬇ Download all results (Excel)",
+                    "Download all results (Excel)",
                     data=cached_excel_bytes(frames, frames_key),
                     file_name="mfrm_results_bundle.xlsx",
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -11198,7 +11956,7 @@ def render_quick_results_download(
                     help="One .xlsx with each table on its own sheet.",
                 )
             except Exception as xl_exc:
-                st.caption(f"⚠️ Excel export failed: {xl_exc}")
+                st.caption(f"Excel export failed: {xl_exc}")
 
 
 @st.cache_data(show_spinner=False, max_entries=4, ttl=1800)
@@ -11685,7 +12443,7 @@ def build_first_read_guide_rows(
             "Status": status,
             "What it means": f"First residual PCA eigenvalue is {ev1:.2f}.",
             "Next action": (
-                "Unidimensionality looks acceptable."
+                "No strong secondary residual signal."
                 if status == "OK" else
                 "Open the Dimensionality tab and inspect residual PCA content."
             ),
@@ -12127,11 +12885,11 @@ def _show_pca_panel(
                              line=dict(width=2, color="#1b9e77"), name="Eigenvalue"))
     # Three reference lines matching the interpretation thresholds cited in
     # the chart guide and narrative — EV=1 (expected random), EV=2 (caution),
-    # EV=3 (strong secondary dimension; Linacre 2024). Previously only EV=1
-    # and EV=2 were drawn, making the "EV > 3 flags a secondary dimension"
+    # EV=3 (strong secondary residual signal; Linacre 2024). Previously only EV=1
+    # and EV=2 were drawn, making the "EV > 3 flags a residual contrast"
     # guidance invisible on the plot itself.
     fig.add_hline(y=3.0, line_dash="dash", line_color="#c0392b", line_width=1,
-                  annotation_text="Strong 2nd dimension (EV=3.0)",
+                  annotation_text="Strong residual signal (EV=3.0)",
                   annotation_position="top right")
     fig.add_hline(y=2.0, line_dash="dash", line_color="#d95f02", line_width=1,
                   annotation_text="Caution (EV=2.0)", annotation_position="top right")
@@ -12183,7 +12941,7 @@ def _show_pca_panel(
         )
         st.plotly_chart(fig2, width="stretch")
 
-    # --- Unidimensionality assessment summary ---
+    # --- Residual dimensionality screening summary ---
     ev1 = float(eigenvalues[0])
     ev2 = float(eigenvalues[1]) if len(eigenvalues) > 1 else np.nan
     eig_ratio = ev1 / ev2 if np.isfinite(ev2) and ev2 > 0 else np.nan
@@ -12660,7 +13418,7 @@ def render_run_history_panel() -> None:
         return
 
     with st.expander(
-        f"🕒 Run history ({len(history)} run{'s' if len(history) > 1 else ''})",
+        f"Run history ({len(history)} run{'s' if len(history) > 1 else ''})",
         expanded=False,
     ):
         st.caption(
@@ -12727,7 +13485,7 @@ def render_run_history_panel() -> None:
             cols = st.columns([5, 1])
             label = (
                 f"**{entry['timestamp']}** — {entry['model']} / {entry['method']} — "
-                f"{'✅ converged' if entry['converged'] else '❌ not converged'}"
+                f"{'converged' if entry['converged'] else 'not converged'}"
                 f" — {entry['elapsed_sec']:.1f}s"
             )
             cols[0].markdown(label)
@@ -12746,7 +13504,7 @@ def render_run_history_panel() -> None:
         # used to wipe all snapshots permanently with no recovery path.
         if st.session_state.get("_run_history_clear_confirm", False):
             st.warning(
-                f"⚠️ Delete all **{len(history)}** snapshots? "
+                f"Delete all **{len(history)}** snapshots? "
                 "This cannot be undone."
             )
             confirm_cols = st.columns([1, 1, 3])
@@ -12768,7 +13526,7 @@ def render_run_history_panel() -> None:
                 st.rerun()
         else:
             if st.button(
-                "🗑 Clear history",
+                "Clear history",
                 key="run_history_clear",
                 help="Remove all stored snapshots. Requires confirmation.",
             ):
@@ -12853,13 +13611,13 @@ def render_comparison_panel(snap_a: dict, snap_b: dict) -> None:
     conv_b, iters_b = _comparison_extract_conv(snap_b)
 
     with st.container(border=True):
-        st.markdown(f"### 🔀 Comparison: `{label_a}` vs `{label_b}`")
+        st.markdown(f"### Comparison: `{label_a}` vs `{label_b}`")
 
         cols = st.columns(2)
         cols[0].metric(
             "Convergence",
-            "✅ both" if conv_a and conv_b else
-            ("⚠️ A only" if conv_a else ("⚠️ B only" if conv_b else "❌ neither")),
+            "both" if conv_a and conv_b else
+            ("A only" if conv_a else ("B only" if conv_b else "neither")),
         )
         cols[1].metric(
             "Iterations",
@@ -12965,14 +13723,14 @@ def render_comparison_selector() -> None:
     history = get_run_history()
     if len(history) < 2:
         return
-    with st.expander("🔀 Compare two runs", expanded=False):
+    with st.expander("Compare two runs", expanded=False):
         st.caption(
             "Pick two analyses from your run history to view a side-by-side "
             "comparison of convergence, element measures, and reliability."
         )
         labels = [
             f"{h['timestamp']} — {h['model']}/{h['method']}"
-            + (" — ✅" if h["converged"] else " — ❌")
+            + (" — converged" if h["converged"] else " — not converged")
             + f" ({h['iterations']} iter, {h['elapsed_sec']:.1f}s)"
             for h in history
         ]
@@ -13007,11 +13765,9 @@ def render_comparison_selector() -> None:
             )
 
 
-# Traffic-light icons — paired with textual labels everywhere they render
-# so users with colour-vision deficiencies (deuteranopia, protanopia,
-# tritanopia) can distinguish severity without relying on hue alone.
-_READINESS_ICON: dict[str, str] = {"ok": "🟢", "warning": "🟡", "issue": "🔴"}
-_READINESS_TEXT_LABEL: dict[str, str] = {"ok": "OK", "warning": "CAUTION", "issue": "ISSUE"}
+# Readiness status prefixes avoid colour-only signalling and keep the UI
+# legible in plain-text exports, screenshots, and assistive technologies.
+_READINESS_PREFIX: dict[str, str] = {"ok": "[OK] ", "warning": "[CAUTION] ", "issue": "[ISSUE] "}
 
 
 def _readiness_severity_max(*severities: str) -> str:
@@ -13038,7 +13794,7 @@ def build_readiness_report(
 
     Each check diagnoses one dimension (n_obs, n_persons, score column,
     facet cardinality, facet coverage, column role overlap). The UI
-    renders this as a traffic-light banner with an expandable detail panel.
+    renders this as a readiness status banner with an expandable detail panel.
     """
     if data is None or (hasattr(data, "empty") and data.empty):
         return {
@@ -13307,7 +14063,7 @@ def build_readiness_report(
     # v0.2.9-beta: ingestion-time outlier detection. Appends check
     # entries for zero-variance persons/elements, extreme-frequency
     # outliers, negative scores, and ceiling/floor saturation. All
-    # findings piggy-back on the same traffic-light UI.
+    # findings piggy-back on the same readiness UI.
     try:
         outlier_checks = detect_data_outliers(
             data, person_col=person_col, score_col=score_col,
@@ -13342,7 +14098,7 @@ def detect_data_outliers(
 
     Returns a list of readiness-check dicts ({"name", "severity",
     "headline", "detail"}) so the caller can fold them into the
-    traffic-light readiness report. Each check is defensive — if the
+    readiness report. Each check is defensive — if the
     relevant columns are missing or the data is too small to compute a
     meaningful fence, the check is simply skipped.
 
@@ -13510,20 +14266,18 @@ def detect_data_outliers(
 
 
 def render_readiness_panel(report: dict) -> None:
-    """Streamlit panel showing the readiness traffic-light + details.
+    """Streamlit panel showing the readiness status + details.
 
-    Each severity state renders BOTH an icon (🟢 / 🟡 / 🔴) AND a
-    textual label ([OK] / [CAUTION] / [ISSUE]) so users with colour-
-    vision deficiencies can distinguish severity without hue alone.
+    Each severity state uses a textual prefix so users can distinguish
+    status without relying on hue alone.
     """
     overall = report.get("overall", "ok")
     checks = report.get("checks", [])
-    icon = _READINESS_ICON.get(overall, "⚪")
-    text = _READINESS_TEXT_LABEL.get(overall, "")
+    prefix = _READINESS_PREFIX.get(overall, "")
 
     if overall == "ok":
         st.success(
-            f"{icon} **[{text}] Ready to run.** All {len(checks)} data-quality checks passed."
+            f"{prefix}**Ready to run.** All {len(checks)} data-quality checks passed."
         )
         with st.expander("Show data quality detail", expanded=False):
             _render_readiness_checklist(checks)
@@ -13532,7 +14286,7 @@ def render_readiness_panel(report: dict) -> None:
     if overall == "warning":
         n_w = report.get("n_warnings", 0)
         st.warning(
-            f"{icon} **[{text}] Proceed with caution.** {n_w} warning(s) found — "
+            f"{prefix}**Proceed with caution.** {n_w} warning(s) found — "
             "you can still run, but results may be weak. See details below."
         )
         with st.expander("Show all checks", expanded=True):
@@ -13541,7 +14295,7 @@ def render_readiness_panel(report: dict) -> None:
 
     # issue
     st.error(
-        f"{icon} **[{text}] Not ready to run.** {report.get('n_issues', 0)} issue(s) will block "
+        f"{prefix}**Not ready to run.** {report.get('n_issues', 0)} issue(s) will block "
         "or degrade estimation. Fix the flagged items below before clicking Run."
     )
     with st.expander("Show all checks", expanded=True):
@@ -13551,10 +14305,8 @@ def render_readiness_panel(report: dict) -> None:
 def _render_readiness_checklist(checks: list[dict]) -> None:
     for c in checks:
         severity = c.get("severity", "ok")
-        icon = _READINESS_ICON.get(severity, "⚪")
-        text = _READINESS_TEXT_LABEL.get(severity, "")
-        label = f"[{text}] " if text else ""
-        st.markdown(f"{icon} **{label}{c['headline']}** — {c['detail']}")
+        prefix = _READINESS_PREFIX.get(severity, "")
+        st.markdown(f"{prefix}**{c['headline']}** — {c['detail']}")
 
 
 # ---------------------------------------------------------------------------
@@ -13572,6 +14324,12 @@ _APA_REFERENCE_LIBRARY: dict[str, str] = {
     "Andrich_1978": (
         "Andrich, D. (1978). A rating formulation for ordered response categories. "
         "Psychometrika, 43(4), 561–573. https://doi.org/10.1007/BF02293814"
+    ),
+    "Aryadoust_Ng_Sayama_2021": (
+        "Aryadoust, V., Ng, L. Y., & Sayama, H. (2021). A comprehensive review "
+        "of Rasch measurement in language assessment: Recommendations and "
+        "guidelines for research. Language Testing, 38(1), 6–40. "
+        "https://doi.org/10.1177/0265532220927487"
     ),
     "Bachman_Palmer_1996": (
         "Bachman, L. F., & Palmer, A. S. (1996). Language testing in practice: "
@@ -13721,10 +14479,20 @@ _APA_REFERENCE_LIBRARY: dict[str, str] = {
         "multidimensionality using item fit statistics and principal component "
         "analysis of residuals. Journal of Applied Measurement, 3(2), 205–231."
     ),
+    "Stout_1987": (
+        "Stout, W. F. (1987). A nonparametric approach for assessing latent "
+        "trait unidimensionality. Psychometrika, 52(4), 589–617. "
+        "https://doi.org/10.1007/BF02294821"
+    ),
     "Tavakol_Dennick_2011": (
         "Tavakol, M., & Dennick, R. (2011). Post-examination analysis of "
         "objective tests. Medical Teacher, 33(6), 447–458. "
         "https://doi.org/10.3109/0142159X.2011.564682"
+    ),
+    "Tseng_2016": (
+        "Tseng, W.-T. (2016). Measuring English vocabulary size via "
+        "computerized adaptive testing. Computers & Education, 97, 69–85. "
+        "https://doi.org/10.1016/j.compedu.2016.02.018"
     ),
     "Uto_2021": (
         "Uto, M. (2021). A multidimensional generalized many-facet Rasch model "
@@ -13771,6 +14539,12 @@ _APA_REFERENCE_LIBRARY: dict[str, str] = {
         "Wright, B. D., & Masters, G. N. (1982). Rating scale analysis. "
         "MESA Press."
     ),
+    "Yamashita_2024": (
+        "Yamashita, T. (2024). An application of many-facet Rasch measurement "
+        "to evaluate automated essay scoring: A case of ChatGPT-4.0. Research "
+        "Methods in Applied Linguistics, 3(3), 100133. "
+        "https://doi.org/10.1016/j.rmal.2024.100133"
+    ),
     "Wright_Stone_1999": (
         "Wright, B. D., & Stone, M. H. (1999). Measurement essentials (2nd ed.). "
         "Wide Range."
@@ -13783,6 +14557,7 @@ _APA_REFERENCE_LIBRARY: dict[str, str] = {
 # what's cited, and return only the used subset.
 _CITATION_TO_KEY: dict[str, str] = {
     "(Andrich, 1978)": "Andrich_1978",
+    "(Aryadoust et al., 2021)": "Aryadoust_Ng_Sayama_2021",
     "(Bachman & Palmer, 1996)": "Bachman_Palmer_1996",
     "(Bock & Aitkin, 1981)": "Bock_Aitkin_1981",
     "(Bradlow, Wainer & Wang, 1999)": "Bradlow_Wainer_Wang_1999",
@@ -13815,7 +14590,9 @@ _CITATION_TO_KEY: dict[str, str] = {
     "(Rijmen, 2010)": "Rijmen_2010",
     "(Smith, 2000)": "Smith_2000",
     "(Smith, 2002)": "Smith_2002",
+    "(Stout, 1987)": "Stout_1987",
     "(Tavakol & Dennick, 2011)": "Tavakol_Dennick_2011",
+    "(Tseng, 2016)": "Tseng_2016",
     "(Uto, 2021)": "Uto_2021",
     "(Uto, 2022)": "Uto_2022",
     "(Uto & Ueno, 2020)": "Uto_Ueno_2020",
@@ -13826,6 +14603,7 @@ _CITATION_TO_KEY: dict[str, str] = {
     "(Wright & Linacre, 1994)": "Wright_Linacre_1994",
     "(Wright & Masters, 1982)": "Wright_Masters_1982",
     "(Wright & Stone, 1999)": "Wright_Stone_1999",
+    "(Yamashita, 2024)": "Yamashita_2024",
 }
 
 
@@ -14897,7 +15675,7 @@ def _render_publication_document_section(
     all_bias_results: dict | None = None,
 ) -> None:
     """Render the download buttons for the Word / PDF / HTML publication docs."""
-    st.subheader("📄 Publication Document")
+    st.subheader("Publication Document")
     st.caption(
         "Download a manuscript-ready document combining the auto-generated "
         "abstract, an exhaustive Methods section, results tables, embedded "
@@ -14956,7 +15734,7 @@ def _render_publication_document_section(
         )
         if word_bytes is not None:
             st.download_button(
-                "⬇ Download Word (.docx)",
+                "Download Word (.docx)",
                 data=word_bytes,
                 file_name="mfrm_publication_document.docx",
                 mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
@@ -14965,7 +15743,7 @@ def _render_publication_document_section(
                 help="Editable manuscript with tables + embedded figures.",
             )
         elif word_err:
-            st.caption(f"⚠️ {word_err}")
+            st.caption(str(word_err))
 
     with col_p:
         pdf_bytes, pdf_err = _cached_build(
@@ -14973,7 +15751,7 @@ def _render_publication_document_section(
         )
         if pdf_bytes is not None:
             st.download_button(
-                "⬇ Download PDF (with plots)",
+                "Download PDF (with plots)",
                 data=pdf_bytes,
                 file_name="mfrm_publication_document.pdf",
                 mime="application/pdf",
@@ -14987,7 +15765,7 @@ def _render_publication_document_section(
                 ),
             )
         elif pdf_err:
-            st.caption(f"⚠️ {pdf_err}")
+            st.caption(str(pdf_err))
 
     with col_h:
         html_bytes, html_err = _cached_build(
@@ -14995,7 +15773,7 @@ def _render_publication_document_section(
         )
         if html_bytes is not None:
             st.download_button(
-                "⬇ Download HTML",
+                "Download HTML",
                 data=html_bytes,
                 file_name="mfrm_publication_document.html",
                 mime="text/html",
@@ -15004,10 +15782,10 @@ def _render_publication_document_section(
                 help="Self-contained HTML page (no external assets).",
             )
         elif html_err:
-            st.caption(f"⚠️ {html_err}")
+            st.caption(str(html_err))
 
     st.caption(
-        "💡 All three formats share the same narrative source — content "
+        "Note: All three formats share the same narrative source — content "
         "is identical. Word = editable, PDF = print-ready (with embedded "
         "plots), HTML = self-contained and works offline."
     )
@@ -15219,11 +15997,27 @@ def run_facets_mode(core: dict, data: pd.DataFrame) -> None:
         ]
     except Exception:  # pragma: no cover — defensive
         pass
+    custom_sim_facets = st.session_state.get("_custom_simulation_facet_names")
+    if isinstance(custom_sim_facets, list) and custom_sim_facets:
+        try:
+            generated_defaults = [
+                c for c in custom_sim_facets
+                if c in facet_candidates and data[c].nunique(dropna=True) >= 2
+            ]
+            if generated_defaults:
+                default_facets = generated_defaults
+        except Exception:  # pragma: no cover — defensive
+            pass
 
+    facet_key_suffix = stable_json_fingerprint({
+        "columns": facet_candidates,
+        "custom_facets": custom_sim_facets if isinstance(custom_sim_facets, list) else None,
+    })
     facet_cols = st.sidebar.multiselect(
         t("sidebar_estimation.facet_columns_label"),
         facet_candidates,
         default=default_facets,
+        key=f"facets_mode_facet_cols_{facet_key_suffix}",
         help=t("sidebar_estimation.facet_columns_help"),
     )
     # Stable internal IDs drive the ``workflow_mode == "Advanced controls"``
@@ -15610,15 +16404,29 @@ def run_facets_mode(core: dict, data: pd.DataFrame) -> None:
         detected_rating_min, detected_rating_max = 0, 1
     rating_min = None
     rating_max = None
+    custom_score_support = st.session_state.get("_custom_simulation_score_support")
+    if not isinstance(custom_score_support, dict):
+        custom_score_support = {}
+    custom_zero_count_requested = custom_score_support.get("zero_count_score") is not None
+    default_keep_original = bool(custom_zero_count_requested)
+    default_explicit_rating_range = bool(custom_zero_count_requested)
+    default_rating_min = int(custom_score_support.get("rating_min", detected_rating_min))
+    default_rating_max = int(custom_score_support.get("rating_max", detected_rating_max))
+    score_scale_key_suffix = stable_json_fingerprint({
+        "score_col": score_col,
+        "support": custom_score_support if custom_zero_count_requested else None,
+    })
     with st.sidebar.expander(t("sidebar_advanced.score_scale_expander"), expanded=advanced_controls):
         keep_original = st.checkbox(
             t("sidebar_advanced.keep_original_categories_checkbox"),
-            value=False,
+            value=default_keep_original,
+            key=f"score_scale_keep_original_{score_scale_key_suffix}",
             help=t("sidebar_advanced.keep_original_categories_help"),
         )
         explicit_rating_range = st.checkbox(
             t("sidebar_advanced.explicit_rating_range_checkbox"),
-            value=False,
+            value=default_explicit_rating_range,
+            key=f"score_scale_explicit_range_{score_scale_key_suffix}",
             help=t("sidebar_advanced.explicit_rating_range_help"),
         )
         st.caption(t(
@@ -15626,20 +16434,28 @@ def run_facets_mode(core: dict, data: pd.DataFrame) -> None:
             min=detected_rating_min,
             max=detected_rating_max,
         ))
+        if custom_score_support:
+            st.caption(t(
+                "data_source.sim_score_support_caption_template",
+                min=default_rating_min,
+                max=default_rating_max,
+            ))
         if explicit_rating_range:
             c_min, c_max = st.columns(2)
             with c_min:
                 rating_min = int(st.number_input(
                     t("sidebar_advanced.min_category_label"),
-                    value=detected_rating_min,
+                    value=default_rating_min,
                     step=1,
+                    key=f"score_scale_min_category_{score_scale_key_suffix}",
                     help=t("sidebar_advanced.min_category_help"),
                 ))
             with c_max:
                 rating_max = int(st.number_input(
                     t("sidebar_advanced.max_category_label"),
-                    value=detected_rating_max,
+                    value=default_rating_max,
                     step=1,
+                    key=f"score_scale_max_category_{score_scale_key_suffix}",
                     help=t("sidebar_advanced.max_category_help"),
                 ))
             if rating_max <= rating_min:
@@ -16017,7 +16833,7 @@ def run_facets_mode(core: dict, data: pd.DataFrame) -> None:
     # Pre-estimation data quality readiness panel — always visible so users
     # see potential problems BEFORE clicking Run rather than after failure.
     # Rendered in the main area just above the Input preview; overall status
-    # (🟢 Ready / 🟡 Warnings / 🔴 Issues) + collapsible detail.
+    # ([OK] Ready / [CAUTION] Warnings / [ISSUE] Issues) + collapsible detail.
     try:
         _readiness_report = build_readiness_report(
             data=data,
@@ -16065,7 +16881,7 @@ def run_facets_mode(core: dict, data: pd.DataFrame) -> None:
             expanded=True,
         )
         run_status.write(
-            f"📥 Starting: **{n_obs:,}** observations × **{n_persons:,}** persons × "
+            f"Starting: **{n_obs:,}** observations × **{n_persons:,}** persons × "
             f"**{len(facet_cols)}** facets. "
             "This may take a few seconds to several minutes depending on data size."
         )
@@ -16080,7 +16896,7 @@ def run_facets_mode(core: dict, data: pd.DataFrame) -> None:
                 if population_enabled else pd.DataFrame()
             )
 
-            run_status.write(f"🧮 Estimating {model_type} with {est_method}...")
+            run_status.write(f"Estimating {model_type} with {est_method}...")
             with st.spinner(f"Running {est_method} estimation... please wait."):
                 result = core["mfrm_estimate"](
                     data=data,
@@ -16165,7 +16981,7 @@ def run_facets_mode(core: dict, data: pd.DataFrame) -> None:
                 })
                 result["config"]["analysis_config_fingerprint"] = config_fingerprint(result.get("config", {}))
                 result["config"]["run_fingerprint"] = result["config"]["analysis_config_fingerprint"]
-            run_status.write("🔬 Computing fit, reliability, and PCA diagnostics...")
+            run_status.write("Computing fit, reliability, and PCA diagnostics...")
             with st.spinner("Computing diagnostics..."):
                 diagnostics = core["mfrm_diagnostics"](
                     result,
@@ -16176,7 +16992,7 @@ def run_facets_mode(core: dict, data: pd.DataFrame) -> None:
                     marginal_max_pair_cells=int(strict_marginal_max_pair_cells),
                     compute_eb_shrinkage=bool(compute_eb_shrinkage),
                 )
-            run_status.write("🗒 Building FACETS-style report tables and exports...")
+            run_status.write("Building FACETS-style report tables and exports...")
             report_tables = core["calc_facets_report_tbls"](
                 result,
                 diagnostics,
@@ -16199,7 +17015,7 @@ def run_facets_mode(core: dict, data: pd.DataFrame) -> None:
                     pairs = [selected_bias_pair]
                 else:
                     pairs = []
-                run_status.write(f"📐 Estimating bias interactions for {len(pairs)} facet pair(s)...")
+                run_status.write(f"Estimating bias interactions for {len(pairs)} facet pair(s)...")
                 with st.spinner(f"Estimating bias/interaction for {len(pairs)} pair(s)..."):
                     for fa, fb in pairs:
                         try:
@@ -16211,7 +17027,7 @@ def run_facets_mode(core: dict, data: pd.DataFrame) -> None:
                             if br and br.get("table") is not None and not br["table"].empty:
                                 all_bias_results[f"{fa} x {fb}"] = br
                         except Exception as bias_err:
-                            st.caption(f"⚠ Bias estimation for {fa}×{fb} skipped: {bias_err}")
+                            st.caption(f"Bias estimation for {fa}×{fb} skipped: {bias_err}")
             # Primary bias_results = first available pair for APA/download
             bias_results = next(iter(all_bias_results.values()), None)
 
@@ -16285,7 +17101,7 @@ def run_facets_mode(core: dict, data: pd.DataFrame) -> None:
             except Exception:  # pragma: no cover - history is a UX helper
                 pass
             run_status.update(
-                label=f"✅ Analysis complete in {_elapsed_sec:.1f}s",
+                label=f"Analysis complete in {_elapsed_sec:.1f}s",
                 state="complete",
                 expanded=False,
             )
@@ -16299,13 +17115,11 @@ def run_facets_mode(core: dict, data: pd.DataFrame) -> None:
                     _converged_flag = bool(_summary.iloc[0].get("Converged", False))
                 if _converged_flag:
                     st.toast(
-                        f"✅ Analysis complete in {_elapsed_sec:.1f}s — scroll to explore results",
-                        icon="🎉",
+                        f"Analysis complete in {_elapsed_sec:.1f}s — scroll to explore results",
                     )
                 else:
                     st.toast(
-                        f"⚠️ Analysis finished in {_elapsed_sec:.1f}s but did not converge — check the Summary",
-                        icon="⚠️",
+                        f"Analysis finished in {_elapsed_sec:.1f}s but did not converge — check the Summary",
                     )
             except Exception:  # pragma: no cover - toast is a UX nicety
                 pass
@@ -16313,15 +17127,14 @@ def run_facets_mode(core: dict, data: pd.DataFrame) -> None:
             # Mark the status accordion as failed so users see it at a glance
             try:
                 run_status.update(
-                    label="❌ Estimation failed — see details below",
+                    label="Estimation failed — see details below",
                     state="error",
                     expanded=False,
                 )
             except Exception:
                 pass
             try:
-                st.toast("❌ Estimation failed — see the error panel for fix suggestions",
-                         icon="🚨")
+                st.toast("Estimation failed — see the error panel for fix suggestions")
             except Exception:
                 pass
             # Pattern-match the exception to a targeted remedy before falling back
@@ -16538,7 +17351,7 @@ def run_facets_mode(core: dict, data: pd.DataFrame) -> None:
     except Exception:  # pragma: no cover - UX helper must not break results
         first_read_rows = []
     with st.expander(
-        "📋 Where to look first — first-read guide",
+        "Where to look first — first-read guide",
         expanded=first_read_guide_should_expand(first_read_rows),
     ):
         _show_first_read_guide(
@@ -17360,13 +18173,13 @@ def build_manuscript_claim_guide(
                 readiness_status("Dimensionality screen"),
             ),
             "SafeManuscriptWording": (
-                "Report residual fit together with residual PCA when discussing model-data fit and dimensionality."
+                "Report residual fit together with residual PCA and local-dependence screens; describe them as residual-structure evidence, not proof of unidimensionality."
             ),
             "EvidenceToReport": (
                 f"{readiness_evidence('Global residual fit')} "
                 f"{readiness_evidence('Dimensionality screen')}"
             ).strip(),
-            "DoNotClaim": "Do not claim unidimensionality from fit statistics alone if residual PCA was skipped or flagged.",
+            "DoNotClaim": "Do not claim that unidimensionality was established from fit statistics alone, or if residual PCA was skipped or flagged.",
             "NextAction": "Open Fit Details and Dimensionality; discuss any review flags before final conclusions.",
         },
         {
@@ -17643,7 +18456,7 @@ def build_misfit_casebook(
             "Residual PCA",
             "",
             pca_reason_text,
-            "Enable or justify residual PCA before making unidimensionality claims.",
+            "Enable or justify residual PCA before making residual-dimensionality claims.",
             "Dimensionality",
         )
 
@@ -17733,7 +18546,7 @@ def build_beginner_case_guidance(
             "This is the first stop before copying APA-style text into a paper.",
             "Do not turn draft APA text into a final conclusion when the gate is caveated or blocked.",
             str(overall_gate.get("ManuscriptAction", "Review gate details.")),
-            "Report -> 📝 Reports -> APA Report / publication_gate_summary.csv",
+            "Report -> Reports -> APA Report / publication_gate_summary.csv",
             "The model results conclusively support the study conclusions.",
             f"The MFRM output was interpreted with the publication gate status of {gate_status}, and final claims were limited to supported diagnostics.",
         )
@@ -17773,10 +18586,10 @@ def build_beginner_case_guidance(
             "Report with caveat",
             str(pca_ready.get("Evidence", "Residual PCA was skipped or unavailable.")),
             "Residual structure may contain a secondary dimension, or PCA was not computed.",
-            "Do not claim unidimensionality from global residual fit alone.",
+            "Do not claim that unidimensionality was established from global residual fit alone.",
             "Open Dimensionality and either report the PCA caveat or enable PCA for final reporting.",
             "Dimensionality; publication_gate_summary.csv",
-            "The assessment was unidimensional.",
+            "Unidimensionality was established.",
             "Global fit was interpreted together with the residual dimensionality screen; unidimensionality claims were limited by the PCA status.",
         )
 
@@ -17860,7 +18673,7 @@ def build_beginner_case_guidance(
             "Single-run measures can be interpreted within the current connected design; cross-run claims require more evidence.",
             "Do not compare cohorts, forms, administrations, or studies on a common scale without anchor/linking evidence.",
             "Use anchor audit, drift, and equating-chain outputs before writing cross-run comparison claims.",
-            "Data -> Anchor/linking audit; Report -> 📊 Tables & checks -> Facet Equivalence",
+            "Data -> Anchor/linking audit; Report -> Tables & checks -> Facet Equivalence",
             "These measures can be compared directly with another administration or form.",
             "Measures were interpreted within the current connected run unless anchor/linking evidence supported cross-run comparison.",
         )
@@ -17958,7 +18771,7 @@ def build_submission_action_plan(
                     status,
                     row.get("Evidence", ""),
                     row.get("ManuscriptAction", "Review gate details before reporting."),
-                    "Report -> 📝 Reports -> APA Report / publication_gate_summary.csv",
+                    "Report -> Reports -> APA Report / publication_gate_summary.csv",
                 )
 
     if isinstance(beginner, pd.DataFrame) and not beginner.empty:
@@ -18005,7 +18818,7 @@ def build_submission_action_plan(
                     status,
                     row.get("Evidence", ""),
                     row.get("ActionBeforeFinalReport", "Review readiness row before reporting."),
-                    "Report -> 📊 Tables & checks -> Reporting Checklist / final_report_readiness.csv",
+                    "Report -> Tables & checks -> Reporting Checklist / final_report_readiness.csv",
                 )
 
     if not rows:
@@ -18211,7 +19024,7 @@ def generate_manuscript_reporting_template(
         "## Limitations Draft",
         "",
         "- This report is based on a standalone Python implementation and should be cited as such.",
-        f"- Residual PCA status: {pca_status}. Do not claim unidimensionality if this remains Review or Missing.",
+        f"- Residual PCA status: {pca_status}. Do not claim that unidimensionality was established if this remains Review or Missing.",
         f"- Bias/local interaction status: {bias_status}. Limit no-bias statements to screened facet pairs and cells.",
         f"- Anchor/linking status: {anchor_status}. Do not compare administrations, forms, cohorts, or studies on a common scale without anchor/linking evidence.",
         "- Prediction, plausible-value, simulation, and design-evaluation outputs are model-based sensitivity or planning tools, not causal or prospective validation evidence.",
@@ -18633,8 +19446,8 @@ def show_report_section(
         st.session_state.get("app_view_density", "Essential") == "Essential"
     )
 
-    # Grouped into 3 meta-categories (📝 Reports / 📊 Tables & checks /
-    # 💾 Exports) so the 10 sub-tabs are easier to scan. Each meta-tab
+    # Grouped into 3 meta-categories (Reports / Tables & checks /
+    # Exports) so the 10 sub-tabs are easier to scan. Each meta-tab
     # holds its own nested st.tabs with the related sub-sections; the
     # individual renderers are unchanged.
     report_meta_tabs = st.tabs([
@@ -18658,10 +19471,10 @@ def show_report_section(
     }
     _EXPORT_DISPLAY = {
         "Stan Code": t("report_top.tab_stan_code"),
-        "📄 Publication Document": t("report_top.tab_publication_document"),
+        "Publication Document": t("report_top.tab_publication_document"),
     }
 
-    # --- 📝 Reports: narrative documents ---
+    # --- Reports: narrative documents ---
     with report_meta_tabs[0]:
         if essential_mode:
             st.caption(t("report_top.reports_essential_caption"))
@@ -18692,7 +19505,7 @@ def show_report_section(
         with narrative_tab["Claim Guide"]:
             _render_manuscript_claim_guide_section(result, diagnostics, all_bias_results)
 
-    # --- 📊 Tables & checks: structured data + quality gates ---
+    # --- Tables & checks: structured data + quality gates ---
     with report_meta_tabs[1]:
         if essential_mode:
             st.caption(t("report_top.checks_essential_caption"))
@@ -18718,21 +19531,21 @@ def show_report_section(
         with check_tab["Readiness"]:
             _render_final_readiness_section(result, diagnostics, all_bias_results)
 
-    # --- 💾 Exports: downloadable artefacts ---
+    # --- Exports: downloadable artefacts ---
     with report_meta_tabs[2]:
         if essential_mode:
             st.caption(t("report_top.exports_essential_caption"))
-            export_labels = ["📄 Publication Document"]
+            export_labels = ["Publication Document"]
         else:
             st.caption(t("report_top.exports_full_caption"))
-            export_labels = ["Stan Code", "📄 Publication Document"]
+            export_labels = ["Stan Code", "Publication Document"]
         export_displays = [_EXPORT_DISPLAY[label] for label in export_labels]
         export_tabs = st.tabs(export_displays)
         export_tab = {label: export_tabs[i] for i, label in enumerate(export_labels)}
         if "Stan Code" in export_tab:
             with export_tab["Stan Code"]:
                 _render_stan_code(result)
-        with export_tab["📄 Publication Document"]:
+        with export_tab["Publication Document"]:
             _render_publication_document_section(result, diagnostics, all_bias_results)
 
 
@@ -20216,7 +21029,7 @@ def _render_reporting_checklist(
     lines.append("\n#### 3. Facet-Level Statistics")
     has_rel = isinstance(rel_df, pd.DataFrame) and not rel_df.empty
     lines.append(_check(has_rel, "**Separation (G), Strata (H), Reliability (R)** per facet"))
-    lines.append(_check(has_rel, "**Fixed chi-square** test (see Report → 📊 Tables & checks → Tables)"))
+    lines.append(_check(has_rel, "**Fixed chi-square** test (see Report → Tables & checks → Tables)"))
     lines.append(_check(has_rel, "**RMSE and True SD** per facet"))
 
     # 4. Element-level
@@ -21486,6 +22299,7 @@ def _draw_zstd_distribution(fit_df: pd.DataFrame) -> None:
     header_cols = st.columns([5, 1])
     with header_cols[0]:
         st.subheader(t("fit_details.zstd_subheader"))
+        st.caption(t("fit_details.zstd_approx_caption"))
     with header_cols[1]:
         render_help_popover("zstd_distribution")
     color_map = {"InfitZSTD": "#1b9e77", "OutfitZSTD": "#d95f02"}
@@ -22036,7 +22850,7 @@ def _draw_data_coverage_heatmap(
 
     header_cols = st.columns([5, 1])
     with header_cols[0]:
-        st.markdown("##### 🗺 Observation coverage heatmap")
+        st.markdown("##### Observation coverage heatmap")
     with header_cols[1]:
         render_help_popover("coverage_heatmap")
     st.caption(
@@ -22122,7 +22936,7 @@ def _draw_category_usage_bar(
 
     header_cols = st.columns([5, 1])
     with header_cols[0]:
-        st.markdown("##### 📊 Category usage")
+        st.markdown("##### Category usage")
     with header_cols[1]:
         render_help_popover("category_usage")
     st.caption(
@@ -22432,7 +23246,7 @@ def _draw_residual_qq_plotly(diagnostics: dict) -> None:
         "Standardized residuals on the y-axis against theoretical N(0, 1) "
         "quantiles on the x-axis. Under a well-fitting Rasch model, points "
         "lie on the 45° reference line. Heavy tails → extreme-score misfit; "
-        "S-shape → potential multidimensionality."
+        "S-shape → possible residual structure."
     )
 
     obs_df = diagnostics.get("obs") if isinstance(diagnostics, dict) else None
@@ -22548,7 +23362,7 @@ def _draw_measure_ecdf_plotly(result: dict, diagnostics: dict) -> None:
     )
     st.plotly_chart(fig, width="stretch")
     st.caption(
-        "Tip: long flat stretches indicate logit ranges with no element — "
+        "Note: long flat stretches indicate logit ranges with no element — "
         "targets for adding items or tasks. Steep jumps mean measurement "
         "density where further discrimination is already precise."
     )
@@ -22563,7 +23377,7 @@ def _draw_pathway_map_plotly(diagnostics: dict) -> None:
         render_help_popover("pathway_map")
     st.caption(
         "Each point represents a facet element. Hover to identify elements. "
-        "Elements beyond ±2 ZSTD warrant investigation."
+        "Elements beyond ±2 approximate ZSTD warrant investigation."
     )
 
     with st.expander("How to read the Pathway Map", expanded=False):
@@ -22576,7 +23390,9 @@ The Pathway Map plots each facet element's **measure** (Y-axis, in logits) again
 - **Y-axis (Measure)**: The estimated severity/difficulty of each element.
   Higher values = more severe raters or harder items.
 - **X-axis (Infit ZSTD)**: How much the element's response pattern deviates from model
-  expectations. A z-score where 0 means perfect fit.
+  expectations. This is an app-side Wilson-Hilferty approximation; FACETS uses
+  specialized degrees-of-freedom handling, so exact FACETS parity is not guaranteed.
+  A z-score where 0 means perfect fit.
 - **Green zone (|ZSTD| < 2)**: Elements in this zone fit the model well. Their response
   patterns are consistent with the Rasch model expectations.
 - **Red dashed lines (±2 ZSTD)**: Elements beyond these lines show statistically
@@ -22621,8 +23437,8 @@ The Pathway Map plots each facet element's **measure** (Y-axis, in logits) again
     fig.add_vline(x=-2, line_dash="dash", line_color="red", line_width=0.7)
     fig.add_vline(x=0, line_dash="dot", line_color="gray", line_width=0.5)
     fig.update_layout(
-        xaxis_title="Infit ZSTD", yaxis_title="Measure (logits)",
-        title="Pathway Map: Measure vs Infit ZSTD", height=500,
+        xaxis_title="Approx. Infit ZSTD", yaxis_title="Measure (logits)",
+        title="Pathway Map: Measure vs approximate Infit ZSTD", height=500,
     )
     st.plotly_chart(fig, width="stretch")
     render_chart_guide("pathway_map")
@@ -26040,7 +26856,7 @@ def _render_downloads(
     st.caption(t("downloads.intro_caption"))
 
     # Prominent cross-reference: the publication-ready Word / PDF / HTML
-    # export lives under Report → 💾 Exports → 📄 Publication Document.
+    # export lives under Report → Exports → Publication Document.
     # Users who open Downloads tab expecting a manuscript file should be
     # pointed there explicitly.
     with st.container(border=True):
@@ -27059,7 +27875,7 @@ def _render_downloads(
         # --- Stan code reference ---
         st.subheader("Stan code for Bayesian MFRM")
         st.info(
-            "Stan code is auto-generated in the **Report → 💾 Exports → Stan Code** sub-tab based on "
+            "Stan code is auto-generated in the **Report → Exports → Stan Code** sub-tab based on "
             "your data structure. Navigate there to preview and download the Stan model, "
             "Python runner (CmdStanPy), and R runner (CmdStanR) scripts."
         )
@@ -29190,8 +30006,8 @@ def _self_test_essential_mode_tab_filters() -> None:
     )
 
     # Report tab exports-group: 2 labels total, 1 in Essential.
-    report_exports_all = ["Stan Code", "📄 Publication Document"]
-    report_exports_essential = ["📄 Publication Document"]
+    report_exports_all = ["Stan Code", "Publication Document"]
+    report_exports_essential = ["Publication Document"]
     _self_test_assert(
         set(report_exports_essential).issubset(set(report_exports_all)),
         "Report exports Essential-visible set drifted from master list",
@@ -29322,16 +30138,20 @@ def _self_test_sample_data_scenarios() -> None:
     data_source_options = build_data_source_options()
     labels = [opt["label"] for opt in data_source_options]
     _self_test_assert(
-        len(data_source_options) == len(SAMPLE_DATA_SCENARIOS) + 2,
-        "data-source radio should show every sample plus one Paste and one Upload option",
+        len(data_source_options) == len(SAMPLE_DATA_SCENARIOS) + 3,
+        "data-source radio should show every sample plus Simulation, Paste, and Upload options",
     )
     _self_test_assert(
         len(labels) == len(set(labels)),
         f"data-source radio labels must be unique, got duplicates in {labels}",
     )
     _self_test_assert(
-        labels[-2:] == ["📋 Paste CSV/TSV text", "📤 Upload your own file"],
-        f"data-source radio should end with Paste/Upload, got {labels[-2:]}",
+        labels[-3:] == [
+            "Generate synthetic data",
+            "Paste CSV/TSV text",
+            "Upload your own file",
+        ],
+        f"data-source radio should end with Simulation/Paste/Upload, got {labels[-3:]}",
     )
 
     for key, scenario in SAMPLE_DATA_SCENARIOS.items():
@@ -31394,7 +32214,7 @@ def run_self_tests() -> int:
 # Unified chart interpretation guide (D3)
 # ---------------------------------------------------------------------------
 # Every diagnostic plot across the Visuals / Dimensionality / Wright Map
-# sections ends up under a familiar ❓ "How to read this" expander rendered
+# sections ends up under a familiar "How to read this" expander rendered
 # by render_chart_guide. Keeping the library in one place prevents the
 # explanatory text from drifting between tabs.
 
@@ -31440,16 +32260,16 @@ _CHART_GUIDE_LIBRARY: dict[str, dict[str, str]] = {
         "body": (
             "**How to read:** the empirical (dots) should track the "
             "model-implied S-curve. Systematic departures indicate model "
-            "misfit or multidimensionality."
+            "misfit or possible construct heterogeneity."
         ),
     },
     "scree": {
         "headline": "Scree Plot — eigenvalues of the residual correlation matrix.",
         "body": (
-            "**How to read:** the first eigenvalue < 2.0 supports "
-            "unidimensionality; 2.0–3.0 is a grey zone; > 3.0 flags a "
-            "strong secondary dimension. Eigenvalues of the residuals "
-            "should then hover near 1.0 (Smith, 2002; Linacre, 2024)."
+            "**How to read:** the first eigenvalue < 2.0 indicates no "
+            "strong secondary residual signal; 2.0–3.0 is a grey zone; "
+            "> 3.0 flags a strong residual contrast. Eigenvalues of the "
+            "residuals should then hover near 1.0 (Smith, 2002; Linacre, 2024)."
         ),
     },
     "facet_distribution": {
@@ -32069,7 +32889,7 @@ def render_keyboard_shortcuts_help() -> None:
     widget. This section just documents what already works so users
     don't have to guess.
     """
-    with st.sidebar.expander("⌨️ Keyboard shortcuts", expanded=False):
+    with st.sidebar.expander("Keyboard shortcuts", expanded=False):
         st.markdown(
             "| Key | Action |\n"
             "|---|---|\n"
@@ -32081,7 +32901,7 @@ def render_keyboard_shortcuts_help() -> None:
             "| `Space` / `Enter` | Toggle checkboxes / activate buttons |\n"
             "| `Ctrl/Cmd + F` | Browser page search (works across tabs) |\n"
             "\n"
-            "💡 The **Run FACETS-mode estimation** button is the primary "
+            "Note: The **Run FACETS-mode estimation** button is the primary "
             "Streamlit button on the sidebar — `Tab` to reach it, `Enter` to fire."
         )
 
@@ -32135,13 +32955,14 @@ _HELP_POPOVER_LIBRARY: dict[str, dict[str, str]] = {
     "pathway_map": {
         "title": "Pathway Map",
         "what": (
-            "Each facet element's measure (y) against its Infit ZSTD (x)."
+            "Each facet element's measure (y) against its approximate Infit ZSTD (x)."
         ),
         "how": (
             "• |ZSTD| < 2 → acceptable fit.\n"
             "• ZSTD > +2 → noisy (unpredictable).\n"
             "• ZSTD < −2 → over-fit (too predictable).\n"
-            "• Cluster of misfit at similar measures → systematic issue."
+            "• Cluster of misfit at similar measures → systematic issue.\n"
+            "• ZSTD is an app-side Wilson-Hilferty approximation; FACETS-specific df handling is not reproduced exactly."
         ),
         "watch": (
             "Zoom the hover tooltip on outliers to identify the specific "
@@ -32155,14 +32976,15 @@ _HELP_POPOVER_LIBRARY: dict[str, dict[str, str]] = {
             "primary Rasch dimension is extracted."
         ),
         "how": (
-            "• 1st eigenvalue < 2.0 → unidimensionality supported.\n"
-            "• 2.0–3.0 → minor secondary dimension possible.\n"
-            "• ≥ 3.0 → strong evidence of a second dimension.\n"
+            "• 1st eigenvalue < 2.0 → no strong secondary residual signal.\n"
+            "• 2.0–3.0 → minor secondary residual dimension possible.\n"
+            "• ≥ 3.0 → strong secondary residual-dimension signal.\n"
             "Reference lines on the plot mark each threshold."
         ),
         "watch": (
-            "A high 1st eigenvalue with structurally-meaningful loadings "
-            "suggests reporting the construct as multidimensional."
+            "A high 1st eigenvalue with structurally meaningful loadings "
+            "suggests content review and, when substantively justified, "
+            "separate analyses or multidimensional model extensions."
         ),
     },
     "fit_scatter": {
@@ -32224,7 +33046,7 @@ _HELP_POPOVER_LIBRARY: dict[str, dict[str, str]] = {
         "how": (
             "• Points near the line → model fits.\n"
             "• Heavy tails → extreme persons or items misfit.\n"
-            "• S-shape → potential multidimensionality.\n"
+            "• S-shape → possible residual structure.\n"
             "• Stepped plateaus → scoring discretization artifact."
         ),
         "watch": (
@@ -32315,7 +33137,7 @@ _HELP_POPOVER_LIBRARY: dict[str, dict[str, str]] = {
     "misfit_ranking": {
         "title": "Misfit ranking",
         "what": (
-            "Facet elements sorted by |ZSTD| — the largest deviations "
+            "Facet elements sorted by approximate |ZSTD| — the largest deviations "
             "from expected fit."
         ),
         "how": (
@@ -32326,7 +33148,8 @@ _HELP_POPOVER_LIBRARY: dict[str, dict[str, str]] = {
         ),
         "watch": (
             "Pair with Pathway Map to see misfit in the measure × fit plane. "
-            "Rows with few observations get unstable ZSTD regardless of fit."
+            "Rows with few observations get unstable ZSTD regardless of fit. "
+            "FACETS-specific df handling is not reproduced exactly."
         ),
     },
     "facet_distribution": {
@@ -32384,7 +33207,7 @@ _HELP_POPOVER_LIBRARY: dict[str, dict[str, str]] = {
     "zstd_distribution": {
         "title": "ZSTD distribution",
         "what": (
-            "Histogram of Infit (and Outfit) ZSTD values across all facet "
+            "Histogram of approximate Infit (and Outfit) ZSTD values across all facet "
             "elements."
         ),
         "how": (
@@ -32396,7 +33219,8 @@ _HELP_POPOVER_LIBRARY: dict[str, dict[str, str]] = {
         "watch": (
             "With many elements (hundreds+) a few > |2| ZSTD is expected "
             "by chance; focus on the magnitude of the tail, not its "
-            "presence."
+            "presence. These are app-side approximations, not exact FACETS "
+            "ZSTD reproductions."
         ),
     },
 }
@@ -32461,7 +33285,7 @@ def render_chart_guide(chart_name: str, *, expanded: bool = False) -> None:
 def render_onboarding_banner() -> None:
     """Dismissible 3-step quickstart banner + one-click sample-data Run.
 
-    Shown above the tutorial for first-time users. The "🎯 Run with
+    Shown above the tutorial for first-time users. The "Run with
     sample data" button sets `_force_rerun_from_onboarding` so the
     estimation pipeline fires automatically without touching the sidebar.
     The banner disappears after either button is clicked and does not
@@ -32476,10 +33300,10 @@ def render_onboarding_banner() -> None:
     n_scen = len(SAMPLE_DATA_SCENARIOS)
     scen_lines: list[str] = []
     for key, meta in SAMPLE_DATA_SCENARIOS.items():
-        emoji_label = meta["label"].split(" (")[0]  # strip the "(NxNxN)" tail
+        scenario_label = meta["label"].split(" (")[0]  # strip the "(NxNxN)" tail
         n_obs_str = f"{meta['n_obs']:,} obs"
         suffix = " (default)" if key == DEFAULT_SAMPLE_SCENARIO_KEY else ""
-        scen_lines.append(f"{emoji_label} ({n_obs_str}){suffix}")
+        scen_lines.append(f"{scenario_label} ({n_obs_str}){suffix}")
     scenario_summary = " · ".join(scen_lines)
 
     with st.container(border=True):
@@ -33035,17 +33859,17 @@ def _posterior_forest_figure(payload: dict, parameters: list[str]):
 
 def render_posterior_viewer_mode() -> None:
     """Top-level renderer for the Posterior Viewer app mode."""
-    st.title("🧮 Posterior Viewer")
+    st.title("Posterior Viewer")
     st.caption(
         "Upload externally-produced posterior draws (CmdStan CSV, Apache "
         "Parquet, or ArviZ NetCDF) to inspect trace, ridge, pair, and "
         "forest plots and summary diagnostics — without leaving the browser. "
         "Estimation itself is not performed here; use the runner scripts "
-        "emitted from the FACETS-mode *Report → 💾 Exports → Stan Code* sub-tab to sample "
+        "emitted from the FACETS-mode *Report → Exports → Stan Code* sub-tab to sample "
         "locally, then upload the output files."
     )
 
-    with st.expander("ℹ️ How to produce compatible posterior files", expanded=False):
+    with st.expander("How to produce compatible posterior files", expanded=False):
         st.markdown(
             "- **CmdStan CSV**: run `cmdstanpy` or the `cmdstan` CLI "
             "(`./model sample data=data.json output file=output-1.csv`) "
@@ -33215,7 +34039,7 @@ def render_posterior_viewer_mode() -> None:
     if not summary.empty:
         st.dataframe(summary.round(4), width="stretch", hide_index=True)
         st.download_button(
-            "⬇ Download summary (CSV)",
+            "Download summary (CSV)",
             data=summary.to_csv(index=False).encode("utf-8"),
             file_name="posterior_summary.csv",
             mime="text/csv",
@@ -33224,7 +34048,7 @@ def render_posterior_viewer_mode() -> None:
     # Plot suite (tabs)
     st.subheader("Plots")
     plot_tabs = st.tabs([
-        "📈 Trace", "🏔 Ridge", "🔗 Pair", "🌲 Forest", "📊 Rhat / ESS",
+        "Trace", "Ridge", "Pair", "Forest", "Rhat / ESS",
     ])
     with plot_tabs[0]:
         fig = _posterior_trace_figure(payload, selected)
@@ -33363,6 +34187,8 @@ def main() -> None:
     if data.empty:
         st.info(t("app.no_input_info"))
         return
+
+    render_custom_simulation_preview_panel()
 
     st.subheader(t("app.input_preview_header"))
     render_input_overview(data)

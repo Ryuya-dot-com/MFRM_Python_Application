@@ -16,8 +16,9 @@ Before using results for high-stakes scoring, placement, certification, employme
 
 ## Active Checkout
 
-The current working line for the latest UI, help, FACETS-style yardstick, and
-reproducibility refinements is the `slope-aware-bias-inference` branch.
+The current public-deployment line for the latest UI, help, FACETS-style
+yardstick, and reproducibility refinements is `main`. The earlier
+`slope-aware-bias-inference` development branch has been merged into `main`.
 
 If you keep more than one local checkout of this repository, verify the one you
 are running before starting Streamlit:
@@ -32,7 +33,7 @@ The app should be launched from the repository root that contains the updated
 `streamlit_app.py`, `locales/en.json`, and `locales/ja.json`. Seeing the old
 "Try another scenario" sidebar buttons or the old "Show yardstick labels
 directly on plot" control means the process is running an older checkout or the
-`main` branch, not this active branch.
+wrong commit, not the current `main`.
 
 ## What's new in the current beta line
 
@@ -152,7 +153,7 @@ Use a virtual environment:
 ```bash
 git clone https://github.com/Ryuya-dot-com/MFRM_Python_Application.git
 cd MFRM_Python_Application
-git checkout slope-aware-bias-inference
+git checkout main
 python3 -m venv .venv
 source .venv/bin/activate
 python -m pip install --upgrade pip

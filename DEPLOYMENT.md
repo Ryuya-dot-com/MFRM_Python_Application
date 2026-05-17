@@ -21,7 +21,7 @@ Before sharing results, remove direct identifiers where possible and keep only t
 Use these settings when deploying from GitHub:
 
 - Repository: `Ryuya-dot-com/MFRM_Python_Application`
-- Branch: `slope-aware-bias-inference`
+- Branch: `main`
 - Main file path: `streamlit_app.py`
 - Python dependencies: `requirements.txt`
 - Development-only dependencies: `requirements-dev.txt` is for CI and local verification, not the hosted runtime.
@@ -29,8 +29,8 @@ Use these settings when deploying from GitHub:
 
 If the hosted app still shows old sidebar scenario buttons or the old
 FACETS-style yardstick label toggle, it is usually deploying another checkout
-or the `main` branch. Confirm the app settings above before debugging the
-visualization code.
+or an older `main` commit. Confirm the app settings above and reboot the app
+from Streamlit Cloud before debugging the visualization code.
 
 The root `requirements.txt` is intentional because Streamlit Community Cloud installs app dependencies from a requirements file in the repository root or next to the entrypoint file. A `packages.txt` file is not currently needed for core analysis because the app falls back to interactive HTML figure exports if Chrome or Chromium is unavailable for Kaleido PNG export.
 
@@ -60,7 +60,7 @@ make clean
 
 Then confirm:
 
-- The active branch is `slope-aware-bias-inference`.
+- The active branch is `main`.
 - `git status --short` is clean.
 - `validation/generated/` is absent.
 - `__pycache__` and `.pytest_cache` are absent.

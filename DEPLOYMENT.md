@@ -30,7 +30,9 @@ Use these settings when deploying from GitHub:
 If the hosted app still shows old sidebar scenario buttons or the old
 FACETS-style yardstick label toggle, it is usually deploying another checkout
 or an older `main` commit. Confirm the app settings above and reboot the app
-from Streamlit Cloud before debugging the visualization code.
+from Streamlit Cloud before debugging the visualization code. The app header
+shows `source commit: <sha>` so you can compare the running app with
+`git rev-parse --short HEAD`.
 
 The root `requirements.txt` is intentional because Streamlit Community Cloud installs app dependencies from a requirements file in the repository root or next to the entrypoint file. A `packages.txt` file is not currently needed for core analysis because the app falls back to interactive HTML figure exports if Chrome or Chromium is unavailable for Kaleido PNG export.
 

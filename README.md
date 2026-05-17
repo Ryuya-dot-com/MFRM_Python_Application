@@ -35,6 +35,10 @@ The app should be launched from the repository root that contains the updated
 directly on plot" control means the process is running an older checkout or the
 wrong commit, not the current `main`.
 
+The app header now includes a short `source commit: <sha>` badge. Use it to
+confirm that a hosted Streamlit app is actually running the intended GitHub
+commit after a push or reboot.
+
 ## What's new in the current beta line
 
 The current app label is v0.2.14-beta. This branch also includes Unreleased

@@ -9,10 +9,12 @@ import logging
 import os
 import re
 import shutil
+import subprocess
 import sys
 import time
 import zipfile
 from collections import OrderedDict
+from functools import lru_cache
 from itertools import combinations, product
 from pathlib import Path
 from typing import Iterable
@@ -45,6 +47,12 @@ if any(flag in sys.argv for flag in CLI_CHECK_FLAGS):
 
 APP_VERSION = "0.2.14-beta"
 APP_RELEASE_LABEL = "standalone Python beta"
+APP_BUILD_ENV_KEYS = (
+    "STREAMLIT_GIT_COMMIT_HASH",
+    "GITHUB_SHA",
+    "COMMIT_SHA",
+    "SOURCE_COMMIT",
+)
 LOGGER = logging.getLogger(__name__)
 RUNTIME_PACKAGE_FLOORS = OrderedDict([
     ("numpy", "1.24"),
@@ -19443,9 +19451,36 @@ def get_bundled_asset_text(relative_path: str) -> str:
     return get_bundled_asset_bytes(relative_path).decode("utf-8")
 
 
+@lru_cache(maxsize=1)
+def get_runtime_build_id() -> str:
+    for env_key in APP_BUILD_ENV_KEYS:
+        env_value = os.environ.get(env_key, "").strip()
+        if re.fullmatch(r"[0-9a-fA-F]{7,40}", env_value):
+            return env_value[:7].lower()
+
+    try:
+        completed = subprocess.run(
+            ["git", "rev-parse", "--short=7", "HEAD"],
+            cwd=Path(__file__).resolve().parent,
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=2,
+        )
+    except Exception:
+        return "unknown"
+
+    build_id = completed.stdout.strip()
+    if re.fullmatch(r"[0-9a-fA-F]{7,40}", build_id):
+        return build_id[:7].lower()
+    return "unknown"
+
+
 def render_app_scope_badges(where: str = "main") -> None:
+    build_id = get_runtime_build_id()
     text = (
         f"{APP_RELEASE_LABEL} {APP_VERSION} | standalone Python runtime | "
+        f"source commit: {build_id} | "
         "no mfrmr/rpy2/Rscript/FACETS/TAM/sirt/mirt engine call"
     )
     if where == "sidebar":

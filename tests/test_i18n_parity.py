@@ -137,6 +137,31 @@ def test_japanese_safety_and_guidance_copy_uses_task_centered_terms(locales):
         "report_top.reports_essential_caption",
         "report_top.checks_essential_caption",
         "report_top.exports_essential_caption",
+        "main_tabs.panel_select_label",
+        "main_tabs.panel_select_help",
+        "downloads.panel_select_label",
+        "downloads.panel_select_help",
+        "downloads.tab_data_tables",
+        "downloads.tab_figures",
+        "downloads.tab_scripts_config",
+        "onboarding.banner_steps_body",
+        "guided.first_run_route_3_why",
+        "guided.first_run_route_4_why",
+        "guided.first_run_route_5_action",
+        "guided.interpret_heading",
+        "guided.interpret_caption",
+        "guided.interpret_col_main_item",
+        "guided.goal_focus_caption",
+        "guided.goal_locator_caption",
+        "data_source.scenario_info_template",
+        "data_source.delimiter_label",
+        "data_source.paste_textarea_help",
+        "sidebar_estimation.column_mapping_subheader",
+        "sidebar_estimation.column_mapping_caption",
+        "help.tab_quick_start",
+        "help.tab_analysis_workflow",
+        "help.quick_start_body",
+        "help.troubleshooting_body",
     }
     missing = checked_keys - set(ja)
     assert not missing, f"Missing Japanese copy keys: {sorted(missing)}"
@@ -146,9 +171,24 @@ def test_japanese_safety_and_guidance_copy_uses_task_centered_terms(locales):
         "初めての方へ",
         "\u521d\u5fc3\u8005",
         "簡易",
+        "サマリ",
         "完全/ private",
         "hosted Streamlit UI",
         "View density",
+        "Download panel",
+        "Results panel",
+        "Data Tables",
+        "Scripts & Config",
+        "Data source",
+        "Column mapping",
+        "Run FACETS-mode estimation",
+        "Caveat 付き",
+        "readiness",
+        "Current focus",
+        "detail section",
+        "next-action note",
+        "observations",
+        "Delimiter",
         "再実行すること",
         "指定すること",
         "判断すること",
@@ -162,6 +202,13 @@ def test_japanese_safety_and_guidance_copy_uses_task_centered_terms(locales):
     assert "公開・共有用エクスポートモード" in ja["downloads.public_export_mode_label"]
     assert "正式な非識別化保証ではありません" in ja["downloads.public_export_mode_help"]
     assert "解釈ガイド" in ja["fit_details.guide_expander"]
+    assert ja["downloads.panel_select_label"] == "ダウンロード項目"
+    assert ja["downloads.tab_data_tables"] == "データ表"
+    assert ja["main_tabs.panel_select_label"] == "結果パネル"
+    assert ja["guided.interpret_heading"] == "解釈の準備状況"
+    assert ja["sidebar_estimation.column_mapping_subheader"] == "列の対応づけ"
+    assert ja["data_source.delimiter_label"] == "区切り文字"
+    assert ja["help.tab_quick_start"] == "クイックスタート"
 
 
 def test_display_mode_and_analysis_depth_copy_are_not_conflated(locales):
@@ -185,6 +232,15 @@ def test_display_mode_and_analysis_depth_copy_are_not_conflated(locales):
     assert "PNG / HTML" in ja["downloads.figures_skipped_info"]
     assert "再推定しません" in ja["main_tabs.panel_select_caption"]
     assert "再推定するわけではありません" in ja["downloads.panel_select_help"]
+
+
+def test_japanese_summary_labels_use_natural_terms(locales):
+    ja_text = "\n".join(_flatten_leaves(locales["ja"]).values())
+
+    assert "サマリ" not in ja_text
+    assert "推定概要" in ja_text
+    assert "結果概要" in ja_text
+    assert "監査概要" in ja_text
 
 
 def test_help_copy_frames_thresholds_as_diagnostic_guidance(locales):

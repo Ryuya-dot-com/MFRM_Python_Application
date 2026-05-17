@@ -69,6 +69,33 @@ def test_collect_cited_references_finds_known_citation():
     assert any("Linacre" in r and "2002" in r for r in refs)
 
 
+def test_collect_cited_references_finds_multi_source_parenthetical():
+    text = (
+        "The Methods section cites several anchors together "
+        "(Rasch, 1980; Linacre, 1989; Yen, 1984)."
+    )
+    refs = app.collect_cited_references(text)
+    assert any("Rasch, G." in r and "1980" in r for r in refs)
+    assert any("Linacre" in r and "1989" in r for r in refs)
+    assert any("Yen" in r and "1984" in r for r in refs)
+
+
+def test_zotero_aligned_reference_additions_resolve():
+    expected = {
+        "(Rasch, 1980)": "Rasch_1980",
+        "(Andersen, 1973)": "Andersen_1973",
+        "(Warm, 1989)": "Warm_1989",
+        "(Yen, 1984)": "Yen_1984",
+        "(Christensen, Makransky & Horton, 2017)": "Christensen_Makransky_Horton_2017",
+        "(Mair & Hatzinger, 2007)": "Mair_Hatzinger_2007",
+        "(Rizopoulos, 2006)": "Rizopoulos_2006",
+        "(Bürkner, 2021)": "Buerkner_2021",
+    }
+    for citation, key in expected.items():
+        assert app._CITATION_TO_KEY.get(citation) == key
+        assert key in app._APA_REFERENCE_LIBRARY
+
+
 def test_collect_cited_references_deduplicates():
     text = "See (Linacre, 2002). Also (Linacre, 2002). And yet again (Linacre, 2002)."
     refs = app.collect_cited_references(text)

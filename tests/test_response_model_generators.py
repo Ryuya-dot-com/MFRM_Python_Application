@@ -2,7 +2,7 @@
 
 The sidebar's "Advanced models (Stan, download only)" expander can
 emit Stan programs for DINA, HRM, Testlet RI / Bifactor, Mixture
-Rasch, 2PL Binary, and Pairwise BTL. These tests verify each
+Rasch, 2PL Binary, Pairwise BTL, and Uto-family Bayesian MFRM. These tests verify each
 generator produces a syntactically-plausible Stan program (required
 blocks present, brace balance, no generator-crash regressions).
 """
@@ -131,6 +131,25 @@ def test_pairwise_btl_generator_has_ability_parameter():
 
 
 # ---------------------------------------------------------------------------
+# Uto-family Bayesian MFRM
+# ---------------------------------------------------------------------------
+
+def test_uto_bayesian_mfrm_generator_produces_non_empty_code():
+    code = app.generate_uto_bayesian_mfrm_stan_code(n_categories=5)
+    assert isinstance(code, str) and len(code) > 500
+
+
+def test_uto_bayesian_mfrm_generator_has_multidimensional_and_drift_terms():
+    code = app.generate_uto_bayesian_mfrm_stan_code(n_categories=5)
+    lowered = code.lower()
+    assert "theta_corr" in code
+    assert "rater_severity" in code
+    assert "time_block" in code
+    assert "ordered_logistic" in lowered
+    assert "uto" in lowered
+
+
+# ---------------------------------------------------------------------------
 # Global: every generator output parses with balanced braces
 # ---------------------------------------------------------------------------
 
@@ -142,6 +161,7 @@ def test_pairwise_btl_generator_has_ability_parameter():
     (app.generate_mixture_rasch_stan_code, {"n_classes": 2}),
     (app.generate_2pl_binary_stan_code, {}),
     (app.generate_pairwise_btl_stan_code, {}),
+    (app.generate_uto_bayesian_mfrm_stan_code, {"n_categories": 5}),
 ])
 def test_generator_output_has_balanced_braces(generator, kwargs):
     code = generator(**kwargs)
@@ -157,6 +177,7 @@ def test_generator_output_has_balanced_braces(generator, kwargs):
 @pytest.mark.parametrize("model_name", [
     "DINA", "HRM", "TESTLET_RI", "TESTLET_BIFACTOR",
     "MIXTURE_RASCH", "IRT_2PL_BINARY", "PAIRWISE_BTL",
+    "UTO_BAYESIAN_MFRM",
 ])
 def test_dispatch_returns_non_empty_code(model_name: str):
     code = app.generate_advanced_model_stan_code(model_name)

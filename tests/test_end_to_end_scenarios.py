@@ -36,10 +36,16 @@ from streamlit.testing.v1 import AppTest
 import streamlit_app as app
 
 
-# 90s timeout per scenario — the largest synthetic dataset is the
+# 180 s timeout per scenario — the largest synthetic dataset is the
 # speaking-test (3,600 obs) and estimation typically finishes well
-# within that on a CI runner.
-APPTEST_TIMEOUT = 90
+# within ~30 s on a fast runner. We saw the music_peer_rating
+# scenario consistently hit a 90 s AppTest timeout on the GitHub
+# Actions Python 3.12 hosted runner while the same scenario finished
+# in ~25 s on the 3.11 runner of the same run (same code, same
+# fixture, different runner-pool latency). 180 s preserves the
+# regression-catching role of the test without producing CI flakes
+# attributable purely to runner-allocation speed.
+APPTEST_TIMEOUT = 180
 
 
 @pytest.mark.parametrize("scenario_key", list(app.SAMPLE_DATA_SCENARIOS.keys()))

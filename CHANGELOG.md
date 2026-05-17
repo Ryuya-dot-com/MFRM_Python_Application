@@ -6,6 +6,175 @@ All notable changes to this standalone Streamlit distribution should be recorded
 
 ### Added
 
+- **Zotero-informed method reference audit**. A safe read-only audit of
+  the local Zotero/BibTeX library was used to expand the in-app APA
+  reference library with Rasch, fit, local-dependence, external-package,
+  and recent MFRM extension anchors. New `build_method_reference_audit()`
+  exports `method_reference_audit.csv`, mapping model, estimation,
+  fit/person-fit, residual PCA, bias/local interaction, simulation,
+  and external-validation surfaces to citation tokens, BibTeX/RIS export
+  status, manuscript use, and claim boundaries. Current-run reference
+  rows now feed the APA report, manuscript template, and
+  `claim_to_evidence_matrix.csv`, so citations and statistical claim
+  boundaries stay aligned with the analyses actually computed. Quick,
+  download, demo bundles, and the manuscript binder include these tables.
+- **APA sentence evidence audit**. Generated APA-style prose now has an
+  exportable `apa_report_sentence_audit.csv` that maps each draft
+  Method/Results sentence to the manuscript claim area, output evidence,
+  evidence files, suggested citations, citation boundaries, and copy
+  decision. The audit is visible in the APA Report and Claim Guide areas
+  and is included in quick/download/demo/manuscript-binder exports.
+- **Final-result manuscript handoff export**. Downloads now include
+  `mfrm_manuscript_handoff.md` and
+  `manuscript_handoff_checklist.csv`, a concise file-opening,
+  download, submission-preflight, privacy, and archiving guide that
+  links the Publication Document, table bundle, figure bundle, method
+  appendix, manuscript template, config JSON, app-engine runner, and
+  OSF package. The same assets are included in the OSF ZIP and
+  synthetic demo report export.
+- **Claim-to-evidence matrix and manuscript binder**. The Downloads
+  tab and demo export now include `claim_to_evidence_matrix.csv`,
+  which maps each manuscript area to claim status, gate status,
+  exported tables, figures, readiness checks, reviewer questions,
+  caveats, and archive files. A curated
+  `MFRM_Manuscript_Binder.zip` / `MFRM_Demo_Manuscript_Binder.zip`
+  collects the handoff, evidence matrix, action/gate tables, method
+  appendix, manuscript template, config, and figure manifest for
+  coauthor review and submission preparation.
+- **Visual evidence binder**. Figure downloads now include
+  `MFRM_Visual_Evidence_Binder.zip`, with the actual PNG/HTML figure
+  files, `visual_evidence_map.csv`, `visual_caption_drafts.md`,
+  `figure_manifest.csv`, visual interpretation and method-evidence
+  tables, and the claim-to-evidence matrix. The demo report exports
+  `MFRM_Demo_Visual_Evidence_Binder.zip` and
+  `visual_evidence_map.csv` as well.
+- **SE/CI coverage diagnostic for ADEMP recovery**.
+  `evaluate_parameter_recovery(...)` now preserves `SE_Method`,
+  `SE_Status`, `CI_Method`, `CI_Status`, and `UncertaintyCaution` in the
+  recovery long table, and attaches a separate `coverage_report`.
+  `build_se_ci_coverage_report(...)` and `evaluate_se_ci_coverage(...)`
+  expose nominal coverage, empirical Coverage95, coverage error,
+  SE/CI status summaries, interpretation, and recommended action for
+  manuscript caveats. The Report tab displays this diagnostic under the
+  parameter-recovery panel and offers `mfrm_se_ci_coverage_report.csv`.
+- **Executable MML fixed-prior-SD sensitivity**.
+  `evaluate_mml_prior_sd_sensitivity(...)` now refits the current MML
+  result across selected `population_prior_sd` values, reusing the
+  current result for the base SD and returning `summary`,
+  `measure_deltas`, optional `population_deltas`, and an interpretation
+  `report`. The Fit Details tab exposes this as an on-demand screen with
+  a ZIP download so final reports can document whether person EAPs,
+  non-person facet measures, ranks, and latent-regression coefficients
+  are stable to the fixed population variance setting.
+- **Conditional bias-inference audit**.
+  `build_bias_inference_audit(...)` now summarizes every exported
+  bias/local-interaction facet pair with cells screened, DFF flags,
+  strong-review cells, sparse cells, Holm/BH counts, practical-logit
+  counts, profile-CI status summaries, inference-tier summaries, and
+  connected-scale status. DFF tables now preserve the conditional
+  likelihood/SE/multiplicity basis from `estimate_bias_interaction(...)`
+  and add cell-level claim status plus reporting cautions. The
+  first-read guide, final-readiness gate, manuscript claim guide,
+  APA-style narrative, quick result bundle, Downloads ZIP, and demo
+  exports now use this audit instead of raw `|t| >= 2` counts.
+- **Residual PCA stability sensitivity audit**.
+  `compute_pca_bundle(...)` now augments the basic residual-matrix
+  checks with leave-one-column-out EV1/share/loading stability and a
+  deterministic row-bootstrap audit of EV1, EV1 CV, 5th/95th percentile
+  EV1, loading correlations, and EV=2/3 threshold crossings.
+  `collect_pca_stability_tables(...)` exports overall and per-facet
+  stability rows together as `pca_stability_all_scopes.csv`; the
+  Dimensionality panel now displays and downloads the stability audit
+  alongside the scree plot and loadings.
+- **MML covariance and SE/CI claim audit**.
+  `compute_mml_parameter_covariance(...)` now attaches an `audit` table
+  with Hessian rank, rank deficiency, eigenvalue floor tolerance,
+  regularized eigenvalue count, condition number, covariance diagonal
+  range, claim status, and recommended action. Normal diagnostics export
+  the same table as `mml_covariance_audit.csv`, and measure rows now
+  carry covariance status, claim status, condition number, rank, rank
+  deficiency, and regularized-eigenvalue metadata. ADEMP SE/CI coverage
+  reports now add `SEBasisRisk` and `CoverageClaimStatus` so coverage is
+  not cited without the matching SE basis and covariance caveat.
+- **Visualization preferences and visual QA preflight**. The sidebar now
+  lets users choose figure theme, label-density policy, base font size,
+  label truncation length, static export width, minimum figure height,
+  and caption-detail level. These settings are saved in
+  `visualization_settings.json` and `visualization_settings.csv`,
+  included in config JSON inspection via `visualization_preferences`,
+  propagated into `figure_manifest.csv`, `visual_evidence_map.csv`,
+  and caption drafts, and checked in
+  `visual_qa_preflight.csv` before manuscript use.
+- **BibTeX and RIS export of the cited reference library**. The Report
+  tab's APA-style report now includes a "Bibliography downloads"
+  expander with two buttons that emit a `.bib` (LaTeX / Zotero /
+  BibDesk) or `.ris` (EndNote / Mendeley / Zotero) file containing
+  exactly the references cited in the generated narrative. The
+  conversion is heuristic — `_parse_apa_entry` reads each APA prose
+  string in `_APA_REFERENCE_LIBRARY` and classifies it as
+  `@article` / `@book` / `@incollection`, extracting authors / year /
+  title / journal-or-publisher / volume / number / pages / DOI from
+  the canonical APA 7 layout. RIS uses the matching `TY  - JOUR / BOOK
+  / CHAP` records with one `AU  -` line per author. New helpers:
+  `apa_entry_to_bibtex(key, apa)`, `apa_entry_to_ris(key, apa)`,
+  `build_bibtex_from_cited(text, always_include=...)`,
+  `build_ris_from_cited(text, always_include=...)`,
+  `_cited_reference_keys(text, always_include=...)`. The author
+  parser handles single authors, 2–4 authors with `&` joiners,
+  hyphenated initials (`K.-Y.`), two-initial given names (`A. A.`),
+  and `Jr.` suffixes. Titles ending in `?` / `!` are preserved (the
+  Linacre 2002 RMT short note is one such case). All 66 entries in
+  the live library parse without falling back to `@misc` — a
+  regression test pins this so a future APA addition whose format
+  breaks the parser fails the suite immediately. 24 unit tests in
+  `tests/test_bibtex_ris_export.py` cover author conversion, every
+  citation type, the question-mark-title edge case, the
+  Winsteps.com-publisher case, proceedings entries with no
+  publisher, and parity between the BibTeX bundle and the APA
+  reference list. New i18n namespace `apa_report` in both
+  `locales/{en,ja}.json`.
+- **Configurable visualization CI level**. The classical 95 % Wald CI
+  band on forest plots and EB-shrinkage error bars is now a
+  user-selectable level: 50 % / 66 % / 80 % / 89 % / 90 % / 95 % /
+  99 %. Sidebar control labelled "Visualization CI level" lives in
+  `run_facets_mode` next to Workflow mode; selection persists in
+  `st.session_state["viz_ci_level"]` and propagates to
+  `_draw_measures_forest_plotly` (outer CI band + caption + title)
+  and `_make_eb_shrinkage_figure` (raw and shrunk SE error bars + legend +
+  title). New helpers `get_viz_ci_level()`, `_ci_z(level)`, and
+  `_ci_level_pct_label(level)` centralise the level → critical value
+  conversion via `Phi^{-1}((1 + c) / 2)`. The numeric `CI_Lower` /
+  `CI_Upper` columns in exported measure tables stay at 95 % for
+  backwards compatibility with downstream parsers — only the rendered
+  visualizations change. The three pre-existing per-feature CI
+  selectboxes (DIMTEST p-value, G-study bootstrap, GPCM fair-average
+  SE) also broaden from `[0.90, 0.95, 0.99]` to the full
+  `VIZ_CI_LEVEL_OPTIONS` list. 22 unit tests in
+  `tests/test_viz_ci_level.py` pin the `Phi^{-1}` values for all seven
+  canonical levels, the soft-fallback to 95 % on NaN / out-of-range
+  / non-numeric input, the percent-label trailing-zero formatting,
+  and the sidebar selector defaults / clamping.
+- **Smart column-role detection** for the upload UI. New
+  `auto_detect_column_roles(df)` helper combines a multilingual keyword
+  dictionary (English + Japanese: 学生 / 受験者 / 評価者 / 採点者 / 観点 /
+  項目 / 得点 / 評定 / ...) with dtype and cardinality cues to pre-fill
+  the Person / Score / Rater / Criterion / Weight pickers in
+  `run_facets_mode`. Score detection prefers numeric small-cardinality
+  columns (≤ 12 distinct values), Person prefers high-cardinality
+  non-numeric columns, and a confidence caption surfaces under each
+  selectbox when the auto-detector picked the active value. Falls back
+  to the legacy keyword-only `guess_col` and `pick_default_facets`
+  when no Japanese / English keywords match, so existing English-only
+  CSV workflows are unchanged. 19 unit tests in
+  `tests/test_column_role_detection.py` cover canonical English / JA
+  headers, mixed-language headers, dtype/cardinality bias,
+  Weight-only-when-named, no-double-assignment, and confidence-in-unit
+  interval. New i18n keys in `locales/{en,ja}.json` keep both locales
+  in parity for the auto-detection captions. Companion fix:
+  `_column_is_numeric` now uses a direct ratio (`coerced / non_blank
+  >= threshold`) instead of `int(threshold * len(...))`, which was off
+  by one on small columns and let a 2-of-4-numeric column pass the
+  70 % threshold.
 - Bilingual i18n scaffold (English / Japanese) for the sidebar header, app
   title, language picker, and starter messages; translation dictionaries live
   in `locales/{en,ja}.json` and resolve via the new `t()` helper with English
@@ -31,22 +200,758 @@ All notable changes to this standalone Streamlit distribution should be recorded
   clearer scope notes for local dependence and Mixture Rasch.
 - Anchor/linking output now includes an anchor/equating workflow checklist for
   current-run linking evidence and export review.
-- Data source now includes **Generate synthetic data**, a user-configurable
-  MFRM simulation panel with arbitrary facet counts, per-facet level and
-  spread settings, rotating first-facet assignment, optional zero-count score
-  categories, custom step thresholds, missing-row simulation, reactive preview
-  plots, reproducible seed control, and generated CSV download.
-- The simulation UI and README now state the adjacent-category data-generating
-  equation and distinguish literature-grounded model structure from
-  convenience choices such as normal effect draws, row deletion, and zero-count
-  recoding.
-- Data-source radio labels now use plain text in the modified source-picker
-  area to match the refined UI preference for this simulation workflow.
+- **GPCM fair-average kernel test suite** (`tests/test_gpcm_fair_average.py`,
+  13 tests). Pins reduction to the PCM/RSM softmax reference at slope = 1,
+  the worked example at slope = 1.2 (1.8381511), the analytic derivative
+  identity `dE[X]/d eta = a * Var[X|eta]`, invariance under the GPCM
+  identification rescaling, the NaN-on-degenerate-slope contract, binary
+  and singleton boundary fixtures, and the slope-1 / per-level-slope wiring
+  in `calc_facets_report_tbls()`. Includes a 27-case parity fixture
+  generated from the mfrmr R kernel (mfrmr 0.2.0, R 4.5.2) at 1e-10
+  agreement.
+- **Naming-hygiene gate** (`tests/test_naming_hygiene.py`). Parameterised
+  test that scans code, tests, locales, validation docs, project docs,
+  CI workflows, and project metadata for internal milestone codenames
+  (numeric, single-letter, and a finite vocabulary of multi-letter forms
+  such as NATO phonetics and spelled-out numbers). Public commits must
+  not ship internal sprint or phase labels.
+- **MML observed-information covariance** (`compute_mml_parameter_covariance`).
+  For an MML fit, the structural parameter covariance is computed as the
+  inverse of the observed Fisher information, evaluated as the numerical
+  Jacobian of the analytical gradient returned by
+  `mfrm_loglik_mml_value_grad` (O(P) gradient calls, not O(P^2) function
+  calls). Inversion uses an eigendecomposition with regularization for
+  near-singular spectra; a `regularized` flag and a status field
+  (`"ok"`, `"regularized"`, `"not_applicable"`, `"fallback"`) propagate
+  to downstream consumers so they can label the resulting SE as
+  regularization-aware.
+- **Structural delta-method SE / CI for the GPCM Linacre fair-average**
+  (`add_gpcm_fair_average_delta_se`, `fair_average_table(fair_se=True)`).
+  For each non-Person row, the routine computes
+  `SE = sqrt(grad^T Cov grad)` where `Cov` is the MML observed-information
+  covariance and `grad` is the finite-difference gradient of the
+  fair-average scalar function with respect to the optimisation parameter
+  vector. Confidence intervals are reported at the requested `ci_level`
+  (default 0.95) and clipped to the rating bounds. Person rows are marked
+  `"not available"` because MML EAP person estimates are not part of the
+  structural Hessian; non-GPCM fits are marked `"not_applicable"`.
+  Reference: standard large-sample delta method (e.g. Cramer 1946);
+  observed-information identity for MML estimators (Louis 1982).
+- **FACETS-style tables tab now exposes the fair-average SE / CI inline.**
+  A new toggle at the top of the tab lets the user request fair-average
+  standard errors and confidence intervals; a confidence-level selector
+  (90 % / 95 % / 99 %) sits next to it. The toggle is disabled for non
+  GPCM-MML fits with a one-line explanation. When enabled, a spinner runs
+  the Hessian + delta-method evaluation once per fit, the result is cached
+  in `st.session_state` keyed on a content hash of the optimisation
+  parameter vector so subsequent tab interactions are instantaneous, and
+  the table columns are reordered so each `Fair(M)` / `Fair(Z)` value
+  sits adjacent to its S.E., CI bounds, and status flag. Method and
+  citation captions are rendered below the controls when the toggle is
+  on. Strings are localised in both English and Japanese.
 
 ### Changed
 
+- **Onboarding banner is now compressed and foldable.** The 3-step
+  quickstart guide moved into a Streamlit expander (default expanded for
+  first-time visitors, collapsible thereafter) so the Run / Dismiss
+  buttons stay visible without paying a large vertical footprint for the
+  explanatory text. The redundant tip-caption row (which advertised
+  past v0.2.x features and pointed at the Tutorial expander that already
+  sits directly below) was dropped; the Tutorial pointer is now folded
+  into the bottom of the banner body.
+- **Decorative emojis removed from sample-data scenario labels and from
+  the onboarding banner.** Functional status indicators (red / amber /
+  green readiness colours, Wright & Linacre fit-band swatches) are
+  retained because they pair text labels with a redundant colour signal
+  for accessibility (WCAG 1.4.1).
+- **Default sample-data scenario (`writing_essay`) description expanded.**
+  Added a "why it is the default" paragraph, a "what to look at first"
+  walkthrough of the result tabs in their natural reading order, and a
+  "learning points specific to this data set" section that notes the
+  modest rater-severity spread and the PCA sample-size caveat at n = 30.
+- **`mfrmr_020_migration_coverage_table()`** documents the migration
+  surface for the mfrmr 0.2.0 R package release. It inherits every
+  0.1.5 / 0.1.6 row (renaming the area column), overrides the bounded-
+  GPCM row to reflect this release's slope-aware fair-average and
+  structural delta-method SE delivery, and appends eleven
+  0.2.0-specific rows: the slope-aware fair-average and SE pair
+  (Ready), the MML observed-information covariance (Ready), and nine
+  Planned rows tracking the slope-aware bias inference, the FACETS
+  df / ZSTD reporting layer, the network analysis triple, the G/D-
+  study planner, ADEMP parameter recovery, Snijders polytomous lz*
+  correction, category-specific information curves, the model-choice
+  review helper, and the kable / flextable / monochrome APA presets.
+  The new table is surfaced in the Help tab's coverage panel, in the
+  per-run download bundle, in the disk export, and in the
+  external-validation report template; the public release-readiness
+  check now reports against the 0.2.0 table.
+- **Category-specific information curve decomposition.** A new helper
+  `build_category_information_curve_data()` returns the per-category
+  contribution to the total Fisher information at every theta on the
+  curve grid: `I_k(theta) = a^2 * P_k(theta) * (k - E[X | theta])^2`
+  (Muraki, 1993, Eq. 16). The contributions sum to the existing
+  total information curve by construction; the identity is pinned at
+  machine precision across a synthetic three-level GPCM fixture. A
+  new optional expander section in **Visuals -> Information
+  Curves** renders the per-category breakdown as one line per
+  category using a Wong (2011) colour-blind-safe palette, with the
+  total information curve overlaid as a dashed line so the
+  decomposition-equals-total identity is visible at a glance. A
+  per-category summary table reports the peak information, the theta
+  at the peak, the integrated information under the curve, and the
+  category's share of the integrated total. The data is also
+  downloadable as CSV. Reference: Muraki (1993) Applied Psychological
+  Measurement 17(4), Eq. 16.
+- **Slope-aware GPCM bias inference: information identity, likelihood-
+  ratio test, and profile-likelihood confidence interval.** Three
+  related fixes / additions to `estimate_bias_interaction()`:
+  * **Information identity.** Under GPCM the conditional Fisher
+    information for the additive bias shift `b` is
+    `I(b) = sum_i a_i^2 * Var[X_i | eta_i + b] * w_i`, where `a_i` is
+    the per-observation discrimination. The previous implementation
+    used `I(b) = sum_i Var[X_i | eta_i + b] * w_i`, which is the
+    RSM / PCM (a = 1) form; the resulting GPCM bias `S.E.` column was
+    systematically too large because the `a^2` factor was missing. The
+    fix is gated on `model == "GPCM"`, so RSM and PCM fits are
+    byte-identical to the previous release. Reference: Muraki (1993)
+    Applied Psychological Measurement 17(4), Eqs. 7 and 16.
+  * **Likelihood-ratio test.** Each GPCM bias cell now reports `LR
+    ChiSq`, `LR d.f.` (always 1), and `LR Prob.` from the chi-square
+    pivotal `Lambda = 2 * (loglik(bias_hat) - loglik(0)) ~ chi2_1`
+    (Wilks, 1938). RSM and PCM cells leave these columns as NaN with
+    an explanatory `Likelihood Basis` string instead of silently
+    reusing the t-based screening tier.
+  * **Profile-likelihood confidence interval.** The new
+    `_profile_bias_ci` helper inverts the same chi-square pivotal to
+    produce a `(1 - alpha)` confidence interval for the additive bias
+    shift, by solving `2 * (NLL(b) - NLL(bias_hat)) = chi2_{1, 1-alpha}`
+    on both sides of `bias_hat` via Brent root-finding inside
+    `[-max_abs, max_abs]`. When the likelihood never falls far enough
+    inside the bracket the endpoint is returned with `Profile CI
+    Status = "limited by search range"` so the caller can render the
+    truncation honestly. Status values are `"ok"`, `"limited by
+    search range"`, or `"not available"`. Reference: Cox (1975)
+    Biometrika 62(2).
+  * **UI.** The bias / interaction tab inserts `LR ChiSq`, `LR Prob.`,
+    `Profile CI Lower`, `Profile CI Upper`, and `Profile CI Status`
+    columns immediately after the existing t-based block when at
+    least one cell carries a finite `LR ChiSq` (i.e. for GPCM fits).
+    A short caption below the table cites Wilks (1938) and Cox (1975)
+    and reminds readers that theta, step thresholds, slopes, and
+    other facet estimates are held fixed inside the conditional
+    profile. RSM / PCM fits show the unavailable caption.
+  * **mfrmr 0.2.0 coverage.** `mfrmr_020_migration_coverage_table()`
+    has the `GPCM bias inference - slope-aware` row and the
+    `Category-specific information curves` row both updated from
+    `Planned` to `Ready`. The new `PythonEvidence` cites the
+    slope-aware Fisher information identity (Muraki, 1993, Eqs. 7,
+    16), the LR chi-square pivotal (Wilks, 1938), the
+    profile-likelihood CI inversion (Cox, 1975), and the publication-
+    document integration; the `Boundary` paragraph documents the
+    still-uniformly-`screening` inference tier and the conditional
+    profile semantics (theta, step thresholds, slopes, and other
+    facet measures held fixed). The Bounded GPCM row's `Boundary` is
+    also updated to remove the obsolete "bias inference still uses
+    the non-slope-aware identity pending a follow-up" caveat; the
+    paragraph now points directly at the dedicated 0.2.0 bias row
+    for the slope-aware machinery. The
+    `external_validation_report_template` claim row for
+    `mfrmr 0.2.0 migration` is updated in lock-step so the
+    public-wording paragraph names slope-aware GPCM bias inference
+    among the shipped pieces rather than among the roadmap items.
+  * **Publication-document integration.** The Word, PDF, and HTML
+    manuscript exports now embed a bias / interaction table after the
+    element-measures and reliability tables. For GPCM fits the
+    table includes the new ``LR ChiSq``, ``LR Prob.``, ``Profile CI
+    Lower``, ``Profile CI Upper``, and ``Profile CI Status`` columns;
+    RSM and PCM fits show the t-based screening columns only. Two
+    new helpers ``_bias_table_for_publication`` and
+    ``_bias_table_caption`` are shared across the three builders so
+    the column selection and the caption stay in lock-step.
+    Captions cite Muraki (1993) for the slope-aware information
+    identity, Wilks (1938) for the LR chi-square pivotal, and
+    Cox (1975) for the profile-likelihood confidence interval; the
+    APA reference library and the citation map gain entries for
+    Wilks (1938), Cox (1975), Louis (1982), Cramer (1946), and
+    Muraki (1993) so a Methods narrative that mentions these
+    citations in ``(Author, Year)`` form auto-resolves to a
+    properly alphabetised references list.
+  * **R parity.** A new test
+    (`test_bias_estimation_matches_r_reference_within_tolerance`)
+    runs the same GPCM MML fit and bias estimation in Python and in
+    the mfrmr 0.2.0 R reference (R 4.5.2) against a shared
+    deterministic CSV (`tests/data/r_bias_parity_input.csv`,
+    180 rows). The R-side output (`tests/data/r_bias_parity_output.json`,
+    six per-cell reference values) is generated once via `Rscript` +
+    `estimate_bias()` and committed to the repository. The parity test
+    verifies that Python's per-cell `Bias Size`, `S.E.`, `LR ChiSq`,
+    `LR Prob.`, and both profile-likelihood CI endpoints agree with
+    the R reference within tolerances calibrated to the observed
+    implementation-vs-implementation convergence variance (the two
+    independent MML fits converge to log-likelihoods within `~0.02`
+    of each other, and the downstream cells inherit that variance);
+    all observed disagreements stay well below the `0.05`-logit
+    "negligible" threshold cited in Linacre's FACETS Manual. The
+    categorical fields (`Profile CI Status`, `InferenceTier`) must
+    agree exactly.
+- **Wide-format Excel / spreadsheet upload with automatic melt to
+  long format.** Excel users typically have one row per
+  ``(Person, Rater)`` and one column per item being scored (e.g. C1,
+  C2, C3 for criteria); the MFRM likelihood pipeline expects long
+  format (one row per observation), so the upload sidebar now offers
+  an inline melt step. A new ``detect_wide_format_columns(df)``
+  heuristic classifies the parsed table as long or wide by counting
+  numeric vs non-numeric columns: 3+ numeric columns plus 1+ id
+  column flips the auto-detect to "wide" and the layout expander
+  defaults to open. A new ``apply_wide_to_long_pivot(df, id_cols,
+  score_cols, new_facet_name, score_col_name)`` helper performs the
+  melt, dropping blank / non-numeric score cells so the likelihood
+  never sees zeros for missing observations. The sidebar UI surfaces
+  ID-columns / score-columns multiselects, a new-facet name input
+  (default ``Criterion``), and a long-format preview after pivot. Math
+  contract pinned in ``tests/test_wide_to_long_pivot.py`` (11 tests:
+  detection on canonical wide / long fixtures, pivot row-count
+  identity, id-column preservation, blank cell handling, refusal on
+  overlapping / missing / name-collision inputs, end-to-end fit
+  through ``mfrm_estimate`` on pivoted data).
+- **Self-tests for the seven 0.2.0 helpers** added in this session
+  (FACETS d.f. / ZSTD alignment, model-choice AICc + Akaike weights,
+  G/D-study Brennan 3-way identity, design network topology, rater
+  severity higher-prop convention, APA preset Markdown / HTML
+  round-trip, DIMTEST nonparametric smoke). The module-level
+  ``_self_test_*`` functions run at import time via
+  ``run_self_tests()`` (now 55 tests, was 48) and complement the
+  pytest suite by exercising the helpers on a tiny shared fixture
+  ``_make_self_test_3way_rating_data()``. Each test pins a small
+  closed-form contract: the Welch-Satterthwaite denominator
+  identity, the Hurvich-Tsai AICc closed form and weight-sum-to-one
+  identity, Brennan Eq. 3.18 G computation, node-count parity in
+  the design graph, the Rater1HigherProp + Rater2HigherProp +
+  TieRate = 1 identity, HTML escaping in the APA preset, and the
+  Z / p-value finiteness on a small DIMTEST run.
+- **R parity for the Brennan 3-way G-study decomposition** against
+  lme4 REML with explicit two-way interaction terms. The R fixture
+  generator now fits
+
+      Score ~ 1 + (1 | Person) + (1 | Rater) + (1 | Criterion) +
+              (1 | Person:Rater) + (1 | Person:Criterion) +
+              (1 | Rater:Criterion)
+
+  via lme4 (the three-way interaction is intentionally omitted
+  because it is confounded with residual under one observation per
+  cell) and dumps the variance components plus the closed-form
+  G / Phi to ``tests/data/r_helper_parity_output.json``. Four new
+  parity tests verify the agreement: the variance-component source
+  list matches across implementations; Person is a dominant
+  variance source in both; the observed (n_p, n_r, n_c) sample
+  sizes round-trip; and the headline G / Phi coefficients agree to
+  ~7e-2 absolute. Individual variance components can disagree at the
+  zero boundary because Henderson III MoM (Python) clamps a
+  negative-MoM estimate at zero and leaves the residual unchanged,
+  while lme4 REML re-solves the remaining variances under the
+  non-negativity constraint (Brennan 2001 p. 81; Searle, Casella &
+  McCulloch 1992 Ch. 4.6) — both are valid but allocate boundary
+  variance differently, which is documented in the test docstrings.
+- **D-study CI bands at every planned design point**. The cluster
+  bootstrap for G / Phi now propagates through each
+  ``(n_facet_a, n_facet_b)`` row of the D-study forecast grid by
+  reusing the same B variance-component replicates: each replicate
+  re-evaluates Brennan (2001) Eq. 3.18 at every grid point so the
+  marginal cost per band is one closed-form arithmetic step rather
+  than another bootstrap loop. With ``bootstrap_ci=True`` the
+  ``d_study`` DataFrame gains ``G_lower``, ``G_upper``,
+  ``Phi_lower``, ``Phi_upper`` columns; manuscripts can now quote
+  "G = 0.85, 95% CI [0.79, 0.91] at n_rater = 4, n_criterion = 6"
+  directly from a single table. The observed-design row of the
+  grid matches the observed-design bootstrap CI to machine
+  precision (same replicate set). The Report-tab UI shows the
+  bands inline; a new caption explains the cost-sharing structure.
+  Math contract pinned in ``tests/test_g_d_study.py`` (CI columns
+  present only when bootstrap is enabled, ordered bounds inside
+  [0, 1], observed-design row matches the observed-design CI, band
+  width shrinks with design size on >= 70 % of comparable pairs,
+  seed determinism).
+- **Nonparametric DIMTEST for essential unidimensionality** (Stout,
+  1987, Psychometrika 52; polytomous adaptation per Nandakumar & Yu,
+  1996). A new ``compute_dimtest_nonparametric(res, diagnostics)``
+  helper tests whether the criteria measure a single latent
+  dimension after the fitted MFRM main effects are accounted for.
+  The test averages the rater scores per (Person, Item), partitions
+  the items into an Assessment subtest (AT) and a Partitioning
+  subtest (PT), stratifies persons by their PT total score, and
+  computes the pooled within-stratum covariance among AT items as
+  the test statistic T_L. Under essential unidimensionality T_L is
+  asymptotically zero; departures signal a residual secondary
+  dimension. The standard error and p-value come from a cluster
+  bootstrap on persons (Efron & Tibshirani, 1993, Ch. 19) rather
+  than the asymptotic null distribution; this keeps the pipeline
+  purely nonparametric and side-steps the parametric bias-
+  correction term T_B from Stout (1987) that would require fitting
+  an auxiliary unidimensional IRT model on the AT subtest.
+
+  AT / PT subtest selection follows Roussos & Stout (1996): the
+  default ``pc2_loading_sign`` auto-split uses the PC2 loadings on
+  the item facet from the existing residual-PCA pipeline. The
+  auto-split inherits a known selection-bias inflation of Type I
+  error (PC2 already maximises an approximately-orthogonal
+  covariance direction); for a rigorous confirmatory test, pass
+  ``at_items=`` and ``pt_items=`` derived from substantive
+  considerations or from a separate calibration sample. The
+  ``split_method`` field on the returned bundle names the active
+  path.
+
+  The Dimensionality tab gains a DIMTEST panel below the residual-
+  PCA tabs with controls for the item facet, the AT / PT split
+  method (auto vs user-specified multi-select), bootstrap
+  replicates, and confidence level. The result reports T_L, Z,
+  p-value, person count, the bootstrap CI, the AT / PT split, and a
+  Reject (p < 0.05) / Retain status banner. Math contract pinned in
+  ``tests/test_dimtest_nonparametric.py`` (10 tests: refusal on
+  invalid input, overlap detection, unidim-fails-to-reject on a-
+  priori split, 2-dim-rejects on correct split, T_L magnitude
+  ordering, bootstrap determinism, bundle field completeness, the
+  selection-bias caveat appears on the auto-split path, and the
+  closed-form two-sided p-value identity). Three new APA references
+  (Stout, 1987; Nandakumar & Yu, 1996; Roussos & Stout, 1996) are
+  added to the library and citation map.
+- **Bootstrap CI for G / Phi coefficients** (Efron & Tibshirani, 1993,
+  Ch. 19). ``compute_generalizability_study()`` now accepts
+  ``bootstrap_ci=True`` and runs a cluster-bootstrap resampling on
+  persons (the object of measurement): each replicate resamples
+  persons with replacement, re-runs the variance-component
+  decomposition on the bootstrapped sample, and recomputes G / Phi.
+  The bundle's new ``bootstrap_ci`` field reports
+  ``G_lower / G_upper``, ``Phi_lower / Phi_upper``,
+  ``G_replicates / Phi_replicates`` (the full replicate arrays for
+  downstream diagnostics), and the active settings
+  (``confidence``, ``n_bootstrap``, ``n_success``, ``method =
+  "cluster_bootstrap_on_persons"``). Person-level cluster
+  resampling is the standard nonparametric bootstrap for G-theory
+  because it respects the within-person correlation structure that
+  drives both relative and absolute error. The Report tab gains a
+  Bootstrap CI expander with a checkbox, replicate count, and
+  confidence-level dropdown; when enabled the panel reports the
+  CI in a single caption line below the observed G / Phi metrics.
+  Math contract pinned in ``tests/test_g_d_study.py`` (default-off
+  behaviour, finite-ordered bands when enabled, CI widening with
+  confidence level, seed determinism, [0, 1] bounds on the
+  replicate arrays). One new APA reference (Efron & Tibshirani,
+  1993).
+- **G/D-study: full Brennan (2001) 3-way decomposition with explicit
+  two-way interaction terms** for the canonical balanced p x i x j
+  design with one observation per cell.
+  ``compute_generalizability_study()`` now detects whether the
+  design admits the full random-effects ANOVA (object_facet plus
+  exactly two random facets, balanced, one observation per cell)
+  and dispatches to a new
+  ``_crossed_anova_two_way_variance_components`` helper that returns
+  seven variance components: the three main effects, the three
+  two-way interactions (``object:facetA``, ``object:facetB``,
+  ``facetA:facetB``), and a Residual term that is the three-way
+  interaction confounded with error (the standard one-observation-
+  per-cell confounding). The method-of-moments estimators follow
+  Brennan (2001, Table 3.5):
+
+      sigma2_p   = (MS_p   - MS_pi - MS_pj + MS_pij) / (n_i n_j)
+      sigma2_i   = (MS_i   - MS_pi - MS_ij + MS_pij) / (n_p n_j)
+      sigma2_j   = (MS_j   - MS_pj - MS_ij + MS_pij) / (n_p n_i)
+      sigma2_pi  = (MS_pi  - MS_pij) / n_j
+      sigma2_pj  = (MS_pj  - MS_pij) / n_i
+      sigma2_ij  = (MS_ij  - MS_pij) / n_p
+      sigma2_pij = MS_pij
+
+  Negative MoM estimates are clamped at zero per the Henderson III
+  convention (Brennan 2001 p. 81). The G / Phi formulas use Brennan
+  (2001) Eq. 3.18 / 3.19 with explicit interaction variances:
+
+      sigma2(delta) = sigma2_pi / n_i + sigma2_pj / n_j +
+                      sigma2_pij / (n_i n_j)
+      sigma2(Delta) = sigma2(delta) + sigma2_i / n_i +
+                      sigma2_j / n_j + sigma2_ij / (n_i n_j)
+      G   = sigma2_p / (sigma2_p + sigma2(delta))
+      Phi = sigma2_p / (sigma2_p + sigma2(Delta))
+
+  The bundle's ``observed_coefficients.details.decomposition``
+  field names the active mode (``"full_3way_brennan_eq_3_18"``
+  vs ``"main_effects_only_approximation"``) so downstream
+  consumers and manuscripts can name the formula they used. For
+  designs with one random facet, three or more random facets, or
+  unbalanced cells, the helper falls back to the existing main-
+  effects-only ANOVA approximation; the existing caveat is
+  preserved for that path. Math contract pinned in
+  ``tests/test_g_d_study.py``: the seven-source variance-component
+  layout, Brennan Eq. 3.18 closed-form G / Phi identity, and the
+  decomposition label. ``mfrmr_020_migration_coverage_table()``
+  boundary text updated so manuscripts no longer see "main-effects-
+  only" as the default characterisation; the new boundary names
+  the dispatch logic explicitly.
+- **Akaike / Schwarz / AICc weights in model-choice guidance** (Burnham
+  & Anderson, 2002, Eq. 2.8). Each model-choice comparison row now
+  also carries an ``AICWeight``, ``AICcWeight``, and ``BICWeight``
+  column. The weights are computed as ``w_i = exp(-DeltaIC_i / 2) /
+  sum_j exp(-DeltaIC_j / 2)`` and admit a probability interpretation:
+  ``w_i`` is the relative likelihood that model ``i`` is the
+  Kullback-Leibler best of the candidate set (Burnham & Anderson,
+  2002, Section 2.9). The weights sum to 1 over the finite-DeltaIC
+  rows by construction; manuscripts that quote a "best model
+  probability" can read it directly off the table. Math contract
+  pinned in ``tests/test_model_choice_guidance.py`` (sum-to-one,
+  closed-form match, best-row carries the largest weight).
+- **AICc finite-sample correction in model-choice guidance** (Hurvich &
+  Tsai, 1989, Eq. 1). Each model-choice comparison row now carries
+  ``AICc = AIC + 2 K (K + 1) / (N - K - 1)`` alongside the existing AIC
+  and BIC, plus the corresponding ``DeltaAICc`` and
+  ``AICcEvidenceRatio = exp(DeltaAICc / 2)`` columns. A new
+  ``AICcRecommended`` flag fires when ``N / K < 40`` (Burnham &
+  Anderson, 2002, p. 66), and the tiered recommendation logic switches
+  the secondary criterion from AIC to AICc whenever any candidate
+  satisfies the recommendation window — small-design users no longer
+  get an over-confident AIC-based ranking. The N / K ratio is reported
+  per row so the applicability is recoverable from the table itself.
+  Math contract pinned in
+  ``tests/test_model_choice_guidance.py`` (closed-form AICc identity,
+  applicability flag, ``AICc >= AIC`` bound, DeltaAICc minimum-is-zero,
+  caveat-mentions-AICc). One new APA reference (Hurvich & Tsai, 1989).
+- **R parity fixtures for four 0.2.0 helpers** (FACETS d.f. / ZSTD
+  alignment, rater severity directed network, rater halo
+  correlation network, design network connectivity). The R-side
+  reference is regenerated by ``tests/data/generate_r_helper_parity_fixture.R``
+  against the same deterministic CSV the existing bias-inference
+  parity test consumes; the JSON output
+  (``tests/data/r_helper_parity_output.json``) carries the per-facet
+  d.f. / ZSTD columns from ``dx$fit`` under ``fit_df_method = "both"``,
+  the directed rater pair metrics from
+  ``rater_network_analysis(mode = "severity_direction")``, the
+  Spearman correlations from ``rater_halo_network_analysis(method =
+  "spearman")``, and the graph-level summary + per-node metrics from
+  ``mfrm_network_analysis()``. Both ecosystems run JML with
+  ``maxit = 200`` and ``reltol = 1e-6`` so the
+  implementation-vs-implementation drift stays inside the calibrated
+  0.02-log-likelihood band the existing bias-parity test
+  characterises. Five new parity tests pin the agreement:
+  exact counts on N / higher-counts / articulation flags, ~5e-2
+  absolute tolerance on d.f., ~1.5e-1 on ZSTD, machine precision on
+  the rater severity proportions, ~5e-6 on Spearman rho, and
+  byte-identical topology on the design graph.
+
+  Two **convention alignments to mfrmr** went with the R parity
+  fixtures so the numerical comparison is apples-to-apples:
+
+  * ``zstd_from_mnsq`` now guards ``df >= 1`` (matching the mfrmr
+    engine convention) instead of ``df > 0``. Cells with d.f. < 1
+    now report NaN ZSTD rather than a sign-flipped value driven by
+    the ``1 - 2/(9 df)`` centring term. The FACETS-convention
+    helper ``zstd_from_mnsq_facets`` retains ``df > 0`` with the
+    explicit cap (the Wright-Masters Welch-Satterthwaite d.f. is
+    fractional by design).
+  * ``_rater_severity_pair_metrics`` now reports
+    ``Rater1HigherProp = Rater1HigherCount / N`` (the mfrmr /
+    FACETS / Eckes (2011) "share of all shared contexts" convention)
+    as the primary proportion. The previous "share of disagreements"
+    conditional probability remains available as
+    ``Rater1HigherCondProp`` for callers that want the
+    sum-to-one normalisation on the disagreement subset, and the
+    new ``TieCount`` column carries the agreement count so
+    ``HigherCount1 + HigherCount2 + TieCount = N`` holds by
+    construction. The R parity fixture's
+    ``Rater1HigherProp`` line up with the Python column at
+    machine precision after the alignment.
+
+- **Rater severity / leniency directed network and rater halo
+  cross-criterion screen.** Two further network screens
+  complete the mfrmr 0.2.0 network-analysis triple alongside the
+  earlier design network. ``compute_rater_severity_network(res)``
+  builds the directed rater-leniency graph: for every pair of raters
+  with shared scoring contexts, the edge ``A -> B`` carries weight
+  ``P(A > B | A != B)`` from the directional higher-count diagnostic,
+  and the per-rater ``LeniencyIndex = out_mass - in_mass`` plus
+  ``SeverityRank`` give a Rasch-style severity ranking that recovers
+  the data-generating order exactly on the synthetic fixture (R1
+  generated with the smallest ``rater_eff`` ends up at rank 1).
+  ``compute_rater_halo_network(res)`` builds the
+  ``(Rater, Criterion)`` node graph with Spearman edge weights and
+  Bonferroni-adjusted retention; per-rater ``ReviewStatus`` of
+  ``warning`` / ``review`` / ``ok`` is keyed on the configurable
+  ``halo_weight_review`` and ``halo_contrast_review`` thresholds. The
+  warning tier upgrades when the halo signal dominates the retained
+  edges (high same-rater cross-criterion mean correlation AND either
+  a clear halo / non-halo contrast or no non-halo edges retained at
+  all). The Report tab gains two new panels — Rater severity and
+  Rater halo — each with summary, per-rater table, expander for the
+  full pair / edge metrics, and per-table CSV download. Math contract
+  pinned in ``tests/test_rater_networks.py`` (16 tests covering
+  refusal on invalid input, the directional-count identity
+  ``Rater1HigherProp + Rater2HigherProp = 1``, severity-rank recovery
+  on synthetic data, ``sum(LeniencyIndex) = 0`` under a fully crossed
+  design, halo refusal on coinciding facets, warning detection on
+  halo-patterned data, ``ok`` retention on clean RSM data, the
+  contrast identity ``HaloNonHaloContrast = HaloMeanWeight -
+  NonHaloMeanWeight``, settings round-trip, and node-count parity).
+  Two new APA references (Lai, Wolfe, & Vickers, 2015; Lamprianou,
+  2025) are added. The
+  ``mfrmr_020_migration_coverage_table()`` row for "Network analysis
+  (mfrm / rater / rater-halo)" flips from "Ready (design network);
+  rater / halo screens remain follow-up work" to plain "Ready". The
+  Welch test contrasting halo vs non-halo edge weights is reported
+  but described as descriptive only (edge weights are clustered by
+  rater and node), so ``ReviewStatus = 'warning'`` should be read as
+  a follow-up trigger rather than a causal halo diagnosis.
+- **Design network analysis (connectivity, articulation points, bridges,
+  betweenness centrality).** A new ``compute_design_network_analysis(res)``
+  helper treats the rating design as an undirected weighted graph
+  (nodes = ``(Facet, Level)`` pairs, edges = co-observed in at least
+  one rating row, weight = co-observation count) and computes the
+  canonical connectivity diagnostics from networkx (Hagberg, Schult,
+  & Swart, 2008): graph-level summary (Nodes, Edges, Components,
+  LargestComponentNodes, LargestComponentShare, Density, MeanDegree,
+  MeanStrength, ArticulationPoints, Bridges, Connected, Diameter,
+  MeanDistance), per-node metrics (Degree, Strength, Betweenness,
+  Closeness, EigenvectorCentrality) with an ``IsArticulationPoint``
+  flag, per-edge bridge flag, and per-facet aggregates. The Report
+  tab gains a Design Network section with the summary table, the
+  per-facet aggregate, articulation-point and bridge-edge callouts
+  (green-success messages when none are found), a per-node metrics
+  expander, and a CSV download for the combined summary + node +
+  edge + facet tables. ``min_observations`` lets the user drop weak
+  edges; ``include_graph=True`` round-trips the underlying
+  ``networkx.Graph`` for downstream visualisation. Math contract
+  pinned in ``tests/test_design_network.py`` (14 tests covering
+  refusal on invalid input, node-count identity, fully-crossed
+  designs having 1 component and no cut-points, disjoint designs
+  reporting Components >= 2, facet-summary aggregation parity, cut-
+  node / bridge-edge subset invariants, ``min_observations`` filter,
+  ``include_graph`` round-trip, and centrality [0, 1] bounds). Two
+  new APA references (Csardi & Nepusz, 2006; Hagberg, Schult, &
+  Swart, 2008) are added. The
+  ``mfrmr_020_migration_coverage_table()`` row for "Network analysis
+  (mfrm / rater / rater-halo)" flips from Planned to
+  "Ready (design network); rater / halo screens remain follow-up
+  work" — the directed severity / halo screens require per-rater
+  pairwise comparison machinery not yet in scope.
+- **APA 7 table presets and monochrome figure palette.** Two new
+  helpers, ``apa_table_to_markdown(df, ...)`` and
+  ``apa_table_to_html(df, ...)``, re-emit any report DataFrame as a
+  manuscript-ready APA 7 snippet (bold table number, italic caption,
+  header / body grid with top + header + bottom rules, ``Note.`` block
+  below). Float digits are user-configurable; boolean columns render
+  as ``Yes`` / ``No``; missing values render as the empty string; HTML
+  output is HTML-escaped end-to-end (cells, captions, notes) so
+  ``<script>`` payloads cannot break out of the cell. A companion
+  monochrome palette is exposed via ``get_monochrome_palette()`` (eight
+  grayscale steps from near-black to very light grey) and
+  ``get_monochrome_dash_patterns()`` (six Plotly dash patterns) so
+  figure exports under a print-friendly preset stay distinguishable
+  even at low DPI. The Report tab gains an APA-presets panel with a
+  table picker, format radio (Markdown / HTML), digits / table-number
+  / caption / note controls, an inline preview, and per-format
+  download buttons; the monochrome palette is previewed with colour
+  swatches and dash-pattern names. Math contract pinned in
+  ``tests/test_apa_presets.py`` (18 tests). The
+  ``mfrmr_020_migration_coverage_table()`` row for "APA table presets
+  (kable / flextable / monochrome)" flips from Planned to Ready. The
+  helpers complement the existing single-file Publication Document
+  rather than replace it: use the APA preset for per-table snippets
+  authors paste into a longer manuscript, and the Publication
+  Document for the bundled Word / PDF / HTML deliverable.
+- **Generalizability theory (G-study) and D-study forecast.** A new
+  ``compute_generalizability_study(res)`` helper performs a method-of-
+  moments crossed-ANOVA decomposition on the rating data and reports
+  the canonical generalizability-theory outputs (Cronbach, Gleser,
+  Nanda, & Rajaratnam, 1972; Brennan, 2001): per-source variance
+  components with proportion-of-variance shares, G (relative decision)
+  and Phi (absolute decision) coefficients at the observed design,
+  and a D-study forecast grid that scales G / Phi over planned
+  numbers of raters and criteria. The dispatch follows the standard
+  closed form: ``G = sigma2_p / (sigma2_p + sigma2_e / n_total)`` and
+  ``Phi = sigma2_p / (sigma2_p + sum(sigma2_facet / n_facet) +
+  sigma2_e / n_total)``. The Report tab gains a G-study / D-study
+  section with the variance-component table, an observed-design
+  G / Phi metric strip, the D-study forecast table, and a CSV
+  download; the panel runs every page load because the math is fast
+  (a few ANOVA reductions on the rating data). Math contract pinned
+  in ``tests/test_g_d_study.py`` (15 tests: refusal on invalid input,
+  variance-component non-negativity, required source list, proportion-
+  of-variance sum = 1, closed-form G / Phi identity, ``Phi <= G``,
+  D-study monotonicity in each facet sample size, D-study grid
+  contains the observed design, row count = product of facet grids,
+  bounds in [0, 1], and Brennan / Cronbach citation hygiene). Two
+  new APA references (Brennan, 2001; Cronbach, Gleser, Nanda, &
+  Rajaratnam, 1972) are added. ``mfrmr_020_migration_coverage_table()``
+  flips the "G/D-study planning (mfrm_d_study)" row from Planned to
+  Ready. The implementation deliberately uses the one-observation-
+  per-cell main-effects-only approximation (no explicit person-by-
+  facet interaction terms), which is the standard simplification when
+  ``lme4`` random-effects fitting is not available; the caveat
+  surfaces in the bundle's ``caveat`` field for manuscript citation.
+- **Parameter recovery (ADEMP) simulation.** A new
+  ``evaluate_parameter_recovery(...)`` helper runs a Monte Carlo
+  parameter-recovery study under one explicit data-generating setup
+  and reports the performance measures of Morris, White, and Crowther
+  (2019): bias, MCSE(bias), RMSE, MCSE(RMSE), MAE, raw / aligned
+  errors, Pearson correlation, mean SE, SE-availability rate, and
+  95 % coverage. The data-generating mechanism samples person
+  measures, rater severities, and criterion difficulties from
+  mean-zero independent normals; step thresholds are equally spaced
+  over a chosen logit span (RSM uses shared thresholds; PCM and GPCM
+  use per-criterion perturbed thresholds). Each replicate refits the
+  requested model via ``mfrm_estimate``, runs a lightweight
+  ``mfrm_diagnostics`` pass to populate SE on the measures table,
+  mean-aligns the location-indeterminate blocks (Person, Rater,
+  Criterion) against the truth, and computes per-row error +
+  coverage95. The bundle carries six fields: ``recovery``
+  (long table), ``recovery_summary`` (per-parameter-type aggregates),
+  ``coverage_report`` (SE/CI coverage diagnostic),
+  ``rep_overview`` (per-rep convergence and timing), ``ademp``
+  (Aims / Data-generating mechanism / Estimands / Methods /
+  Performance measures narrative), and ``settings`` (round-trip of
+  the input arguments). The Report tab gains a Parameter-recovery
+  (ADEMP) section with eight controls (model, fit_method,
+  replicates, seed, n_person, n_rater, n_criterion, n_cat) and
+  caches the bundle in session_state keyed on the input settings.
+  Math contract pinned in ``tests/test_parameter_recovery.py``
+  (18 tests covering refusal on bad inputs, three location-block
+  ParameterType values, long-table row counts, the mean-alignment
+  identity at machine precision, Bias = mean(ErrorAligned), RMSE /
+  MAE closed forms, Coverage95 closed form, SE/CI status propagation,
+  explicit coverage-report construction, fixed-seed determinism,
+  ADEMP narrative completeness, and correlation positivity on a
+  clean RSM fit). One new APA reference (Morris, White, & Crowther,
+  2019) is added to the library and citation map. The
+  ``mfrmr_020_migration_coverage_table()`` row for "Parameter
+  recovery (ADEMP)" flips from Planned to Ready.
+- **Model-choice guidance: RSM / PCM / GPCM side-by-side comparison.**
+  A new ``compute_model_choice_comparison(res)`` helper refits the two
+  non-current rating-scale models on the same data and returns a
+  publication-style comparison bundle. Each row carries ``Model``,
+  ``FitStatus``, ``N``, ``KParams``, ``LogLik``, ``AIC`` (Akaike,
+  1974), ``DeltaAIC``, ``AICEvidenceRatio``, ``BIC`` (Schwarz, 1978),
+  ``DeltaBIC``, and ``BICEvidenceRatio``; the evidence ratios use
+  the Akaike / Schwarz closed form ``exp(DeltaIC / 2)`` (Burnham &
+  Anderson, 2002, Eq. 2.10). A nested likelihood-ratio table reports
+  ``Lambda = 2 * (LL_alt - LL_null) ~ chi2_{df_alt - df_null}`` for
+  every pair where both fits succeeded (RSM in PCM, PCM in GPCM, RSM
+  in GPCM; Wilks, 1938). A tiered recommendation (``strong`` /
+  ``moderate`` / ``weak`` / ``tie``) is keyed on the BIC gap to the
+  second-best candidate; the rationale string names the per-criterion
+  margin so manuscripts can quote it directly. The Report tab gains
+  a "Model-choice guidance" section that exposes the comparison behind
+  a "Run model-choice comparison" button; the result is cached in
+  session_state keyed on a content-addressed hash of the result so
+  re-loading the same fit skips the refit. Runs with anchors,
+  population / latent-regression terms, or facet regularization are
+  refused with an explanatory reason because their likelihoods are
+  not directly comparable on a common scale. Math contract pinned in
+  ``tests/test_model_choice_guidance.py`` (13 tests: invalid-input
+  refusal, regularization / population-formula refusal, three-row
+  output, DeltaIC = 0 at the minimum, evidence-ratio closed form,
+  LR chi-square = 2 (LL_alt - LL_null), scipy parity on p-values,
+  preference recovery on RSM-generated and GPCM-heterogeneous-slope
+  data, caveat citation, column-order stability, fit_times zero for
+  current model). Three new APA references (Akaike, 1974; Schwarz,
+  1978; Burnham & Anderson, 2002) are added to the library and
+  citation map. The ``mfrmr_020_migration_coverage_table()`` row
+  for "Model-choice guidance (RSM / PCM / GPCM)" flips from Planned
+  to Ready.
+- **FACETS d.f. / ZSTD reporting alignment.** Two d.f. conventions for
+  the standardised Infit / Outfit fit statistic now ship side-by-side.
+  The engine convention (default, backwards compatible) uses
+  ``DF_Infit = sum(Var * w)`` and ``DF_Outfit = sum(w)`` and reports
+  the Wilson-Hilferty (1931) standardised value through
+  ``zstd_from_mnsq``. The new FACETS / Wright-Masters convention
+  (``Wright & Masters, 1982``, Eqs. 4.20 / 4.27) applies a Welch-
+  Satterthwaite d.f. that captures variance heterogeneity through the
+  per-observation fourth central moment
+  ``M4_i = sum_k P_k * (k - E[X | theta])^4``:
+  ``DF_Infit_FACETS = 2 * (sum Var * w)^2 / sum w * (M4 - Var^2)`` and
+  ``DF_Outfit_FACETS = 2 * (sum w)^2 / sum w * (M4 / Var^2 - 1)``.
+  ``compute_obs_table`` now adds a ``FourthCentralMoment`` column;
+  ``calc_overall_fit`` and ``calc_facet_fit`` accept a ``fit_df_method``
+  argument with values ``"engine"``, ``"facets"``, or ``"both"``; and
+  ``zstd_from_mnsq_facets`` applies the FACETS ``+/- 9`` cap (with the
+  cap exposed as a parameter so users can disable it). The Fit Details
+  tab has a three-way radio that switches the on-screen fit table
+  between conventions without re-fitting, plus a metadata caption that
+  names the active method, ZSTD transform, and cap on every render.
+  An Import-FACETS-fit-table expander accepts a CSV/TSV with ``Facet /
+  Level / InfitZSTD / OutfitZSTD`` columns, joins on ``(Facet, Level)``,
+  and renders a per-row delta table (Python minus imported) so users
+  can verify the Python output against an external FACETS run. Math
+  contract pinned in ``tests/test_facets_df_zstd_alignment.py`` (15
+  tests covering the closed-form fourth moment, ``M4 >= Var^2`` bound,
+  Wilson-Hilferty cap behaviour, Welch-Satterthwaite formula, and the
+  three-way dispatch column shape including the engine-only backward-
+  compatibility guarantee). The ``mfrmr_020_migration_coverage_table()``
+  row for "FACETS df / ZSTD reporting alignment" flips from Planned to
+  Ready. References: Wright & Masters (1982); Wilson-Hilferty cube-root
+  transformation as cited in Linacre (2002).
+- **Polytomous person-fit indices: lz (Drasgow et al., 1985) and lz*
+  (Snijders, 2001).** A new ``compute_person_fit_indices(res)`` reports
+  the standardised polytomous log-likelihood for every fitted person.
+  Under JMLE the report carries the Snijders (2001, Eq. 16) correction:
+  ``c_n = Cov[l, S] / I(theta)``, corrected variance
+  ``Var[l] - Cov[l, S]^2 / I(theta)``, and ``lz* = (l - E[l] - c_n * S)
+  / sqrt(corrected_var)``. Under MML / EAP the function reports the
+  unadjusted ``lz`` with the status field
+  ``"not_applicable_eap"`` so the unadjusted form is never silently
+  treated as Snijders-corrected. The six per-observation diagnostic
+  columns ``PrObserved``, ``ItemEntropy``, ``ItemVarLogP``,
+  ``ItemLogPScoreCov``, ``ScoreInformation``, and
+  ``ObservedScoreDerivative`` are added to ``compute_obs_table(res)``
+  in a single pass over the per-observation probability matrix; the lz
+  / lz* aggregation reads them by name. Reporting columns
+  (``ReportIndex``, ``ReportValue``, ``ReportFlagLevel``,
+  ``ReviewStatus``, ``ReviewReason``, ``ReportCaveat``) choose lz*
+  when computed and fall back to lz otherwise, using the standard
+  normal thresholds ``|z| > qnorm(0.975)`` (5 %) and
+  ``|z| > qnorm(0.995)`` (1 %). The Measures tab surfaces a compact
+  panel: a four-metric strip (persons measured, flagged at 5 %, flagged
+  at 1 %, chosen report index), a flagged-rows table sorted by
+  ``|ReportValue|`` when any person trips the practical threshold, the
+  full per-person table behind an expander, a CSV download, and a
+  method-aware caveat (``Snijders correction conditional on fitted
+  non-person calibration`` vs ``uncorrected lz; interpret tail z-scores
+  conservatively``). The lz / lz* indices also ship in the per-run
+  downloads bundle as ``person_fit_indices``. Two new APA references
+  (Drasgow, Levine & Williams, 1985; Snijders, 2001) are added to the
+  library and citation map so a Methods narrative that mentions either
+  in ``(Author, Year)`` form auto-resolves to a properly alphabetised
+  references list. The math contract is pinned in
+  ``tests/test_person_fit_indices.py`` (17 tests covering the closed-
+  form lz identity, the closed-form lz* / c_n / corrected-variance
+  identity, the threshold rule, status-field fallback for MML and for
+  missing-column / degenerate inputs, the small JMLE end-to-end fit,
+  and column-order stability). The ``mfrmr_020_migration_coverage_table()``
+  row for "Polytomous person-fit correction (Snijders lz*)" flips from
+  Planned to Ready with the new evidence narrative.
+- **Remaining six sample-data scenarios** (large-scale writing, L2
+  speaking, clinical OSCE, writing with missing, music peer-rating,
+  reading testlet binary) now follow the same expanded template:
+  a one-paragraph design summary, a "what this scenario teaches"
+  paragraph, a tab-by-tab "what to look at first" walkthrough, and
+  scenario-specific learning points (PCA at n = 120 for the severity-
+  outlier scenario, PCM/GPCM step thresholds for the L2 speaking
+  criterion contrast, low person separation as a feature for the
+  clinical OSCE cohort, the missing-rate and connectivity readiness
+  flags for the MAR scenario, the sparse Person × Rater graph for the
+  round-robin peer rating, and the local-item-dependence / Stan
+  TESTLET_RI hand-off for the binary reading testlet).
+- **Decorative emojis removed across the app and i18n.** Help text,
+  status messages, button labels, dict-keyed tab labels, and section
+  comments no longer carry decorative emoji ornaments (document,
+  chart, inbox, paste, microscope, abacus, test-tube, clock, shuffle,
+  book, notepad, ruler, floppy, party-popper, alarm-bell, and other
+  category badges). Status / severity markers are explicitly retained
+  because they pair text labels with a redundant colour signal for
+  WCAG 1.4.1 accessibility: red / amber / green readiness lights, the
+  Wright & Linacre fit-band swatches, the success / warning / error
+  severity icons, the no-severity default circle, and the structural
+  yes / no markers used inside capability-matrix tables. Toast
+  notifications now use consistent severity icons (`icon="✅"` for
+  success, `icon="❌"` for failure) instead of celebratory or alarm-
+  bell glyphs.
 - Design evaluation and report/download bundles now include the new
-  0.1.6-oriented audit tables so beginners see warnings in the UI and
+  0.1.6-oriented audit tables so Essential-view users see warnings in the UI and
   expert users can export full CSV/Excel evidence.
 - Config JSON import contract is pinned at 25 replayable settings so restored
   runs preserve the current analysis-depth and diagnostic controls.
@@ -57,9 +962,27 @@ All notable changes to this standalone Streamlit distribution should be recorded
 
 ### Fixed
 
-- Data source radio now shows the 7 built-in samples plus Simulation, Paste,
-  and Upload exactly once; Paste/Upload are no longer repeated after every
-  sample option.
+- **GPCM Linacre fair-average on non slope-facet rows** (Person, and any
+  non-step facet such as Rater or Task under a `step_facet = Criterion`
+  fit) is now evaluated at slope = 1, the geometric-mean discrimination
+  under the sum-to-zero log-slope identification. The previous code
+  substituted the arithmetic mean of the estimated slopes, which by the
+  arithmetic-mean / geometric-mean inequality is always >= 1 and so
+  reported a systematically over-discriminated fair average there. The
+  step-facet's own rows continue to use that level's own discrimination
+  and that level's own step thresholds. Reported FairM / FairZ values
+  in the FACETS-style report table will change for GPCM fits; RSM and
+  PCM fits, and non slope-facet rows under PCM, are unaffected.
+  Reference: Muraki (1992), Eqs. 2-3 and 10; Muraki (1993), Eqs. 7
+  and 16; Linacre, FACETS Manual section "Fair Average". Cross-checked
+  against the mfrmr R reference (0.2.0) at 1e-10 across 27 fixture
+  cases.
+- `expected_score_from_eta()` now returns `np.nan` for a non-finite or
+  non-positive slope instead of silently falling back to slope = 1, so
+  a degenerate GPCM fit can no longer masquerade as a healthy one
+  through the fair-average path.
+- Data source radio now shows the 7 built-in samples plus Paste and Upload
+  exactly once; Paste/Upload are no longer repeated after every sample option.
 
 ## 0.2.14-beta - 2026-04-18
 
@@ -86,8 +1009,8 @@ gate caught two real bugs in CI before users would have hit them.
     of 14,400 possible. (Myford & Wolfe, 2004; Linacre, 2007)
 - **`render_quick_results_download()`** — FACETS-style one-click
   results bundle surfaced right below the Run history panel.
-  Offers ZIP (CSVs) and Excel (multi-sheet) variants. Beginners
-  can leave with their full results without discovering the
+  Offers ZIP (CSVs) and Excel (multi-sheet) variants. Users
+  can download the full results bundle without discovering the
   Downloads sub-tab. Built via new helper
   `build_result_bundle_frames()`.
 - **`_generate_mfrm_peer_rating_data()`** — sparse cyclic
@@ -850,7 +1773,7 @@ architecture, microcopy, onboarding, accessibility, performance).
 
 ### Changed
 
-- `render_chart_guide()` (v0.2.0-beta Phase D) was dead code — the
+- `render_chart_guide()` (v0.2.0-beta) was dead code — the
   11-entry library was registered but never rendered. Now called
   after the scree plot, yardstick Wright map, category probability
   curves, pathway map, facet distribution, posterior trace, and
@@ -881,7 +1804,7 @@ architecture, microcopy, onboarding, accessibility, performance).
 
 ## 0.2.0-beta - 2026-04-17
 
-### Added — Phase C (advanced model Stan code generators, download-only)
+### Added — advanced model Stan code generators (download-only)
 
 - Seven advanced response models registered in `_ADVANCED_RESPONSE_MODELS`:
   `DINA` (CDM; de la Torre 2009), `HRM` (Patz et al. 2002), `TESTLET_RI`
@@ -927,7 +1850,7 @@ architecture, microcopy, onboarding, accessibility, performance).
   mixture, alpha_item for 2PL, ability for BTL), and exercises
   `validate_q_matrix` on well-formed and broken inputs.
 
-### Added — Phase D (UX tweaks)
+### Added — UX tweaks
 
 - Toast notification (`st.toast`) fires in addition to the persistent
   `st.status` accordion whenever estimation completes; message variants
@@ -955,7 +1878,7 @@ architecture, microcopy, onboarding, accessibility, performance).
   library key set and enforces a minimum text budget per entry so the
   explanatory text doesn't silently empty out over time.
 
-### Added — Phase B (Posterior Viewer)
+### Added — Posterior Viewer
 
 - New top-level app mode "Posterior Viewer (upload)" exposed via the
   sidebar radio, for inspecting externally-produced posterior draws
@@ -989,7 +1912,7 @@ architecture, microcopy, onboarding, accessibility, performance).
   and plot builders. Gracefully skipped when `arviz` / `pyarrow` are
   not yet installed.
 
-### Added — Phase A (publication export)
+### Added — publication export
 
 - Word (.docx) publication document builder with auto-generated abstract,
   exhaustive Methods (estimator / priors / anchor policy / convergence
@@ -1093,10 +2016,10 @@ No unreleased changes yet.
 
 ### Added
 
-- Beginner-facing visual interpretation checklist in the app and downloadable report bundle.
+- Guided visual interpretation checklist in the app and downloadable report bundle.
 - PCM/GPCM category probability curves can now be inspected by selected step-facet level, not only as averaged curves.
 - Category probability curve exports now use the same curve builder as the Visuals tab and include long-form data for all curve scopes.
-- Synthetic beginner-facing demo report export through `--export-demo-report`, including report tables, method appendix, and interactive category curves.
+- Synthetic guided demo report export through `--export-demo-report`, including report tables, method appendix, and interactive category curves.
 - Visual method evidence table plus readability safeguards for dense Wright maps, yardsticks, marginal heatmaps, and bias heatmaps.
 - Latent-regression covariate type preview and export table for numeric, categorical, and integer-code review decisions.
 - Public-beta limitation and release-readiness tables in the app, demo report export, and CLI release check.
@@ -1106,8 +2029,8 @@ No unreleased changes yet.
 - Result-aware manuscript claim guide in the Report tab, table downloads, and demo report export.
 - Result-aware Markdown manuscript template for Methods, Results, limitations, reviewer preflight checks, and OSF/demo report exports.
 - Publication gate summary that aligns APA Report conclusions with readiness checks and manuscript claim guardrails.
-- Case-specific beginner guidance for sparse categories, dimensionality, bias screens, MML marginal checks, rater reliability, and linking claims.
-- Result-specific avoid/safer wording repairs in APA Report guidance, manuscript templates, and beginner case-guide exports.
+- Case-specific interpretation guidance for sparse categories, dimensionality, bias screens, MML marginal checks, rater reliability, and linking claims.
+- Result-specific avoid/safer wording repairs in APA Report guidance, manuscript templates, and case-interpretation guidance exports.
 - Submission action plan that combines publication gates, readiness checks, claim guardrails, and wording repairs into a prioritized first-read table.
 - Desktop readability refinements for result-tab wrapping, wrapped guide tables, and dense or tightly spaced Wright map / yardstick labels.
 - Publication-styled figure export bundle with 300 DPI PNG target, matching HTML figures, and a figure-use manifest.

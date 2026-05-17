@@ -2,8 +2,9 @@
 gatherUsageStats = false
 
 [client]
-showErrorDetails = "stacktrace"
+showErrorDetails = "none"
 
 [server]
 enableXsrfProtection = true
 enableCORS = true
+maxUploadSize = 100

@@ -14,12 +14,34 @@ This app is designed to run without `mfrmr`, `rpy2`, `Rscript`, FACETS, TAM, sir
 
 Before using results for high-stakes scoring, placement, certification, employment, or institutional decisions, cross-check the analysis with an established workflow and document the model assumptions.
 
+## Active Checkout
+
+The current working line for the latest UI, help, FACETS-style yardstick, and
+reproducibility refinements is the `slope-aware-bias-inference` branch.
+
+If you keep more than one local checkout of this repository, verify the one you
+are running before starting Streamlit:
+
+```bash
+git status --short --branch
+git branch --show-current
+git rev-parse --show-toplevel
+```
+
+The app should be launched from the repository root that contains the updated
+`streamlit_app.py`, `locales/en.json`, and `locales/ja.json`. Seeing the old
+"Try another scenario" sidebar buttons or the old "Show yardstick labels
+directly on plot" control means the process is running an older checkout or the
+`main` branch, not this active branch.
+
 ## What's new in the current beta line
 
 The current app label is v0.2.14-beta. This branch also includes Unreleased
 refinements documented in `CHANGELOG.md`, including mfrmr 0.1.6 migration
-coverage, EB shrinkage advisory outputs, facet sample-size / nesting / design
-effect audits, information curves, and public-facing wording cleanup.
+coverage, EB shrinkage advisory outputs, SE/CI coverage diagnostics for ADEMP
+parameter recovery, conditional bias-inference audits, facet sample-size /
+nesting / design effect audits, information curves, and public-facing wording
+cleanup.
 
 Earlier v0.2.0-beta (2026-04-17) shipped four major feature tracks; v0.2.1 and
 v0.2.2 were post-release hotfixes landing the findings from a parallel UX audit.
@@ -107,7 +129,7 @@ See `CHANGELOG.md` for the per-commit breakdown and
 
 The screenshot uses the built-in synthetic sample data. It highlights the
 default guided sidebar, the visible data-privacy warning, the input preview,
-the post-estimation success status, and the beginner-oriented result tabs.
+the post-estimation success status, and the guided result tabs.
 
 ## Data Privacy
 
@@ -130,6 +152,7 @@ Use a virtual environment:
 ```bash
 git clone https://github.com/Ryuya-dot-com/MFRM_Python_Application.git
 cd MFRM_Python_Application
+git checkout slope-aware-bias-inference
 python3 -m venv .venv
 source .venv/bin/activate
 python -m pip install --upgrade pip
@@ -217,7 +240,7 @@ Required:
 
 - Person column
 - Score column with ordered integer categories
-- One or more facet columns such as rater, task, criterion, prompt, form, or occasion
+- At least two non-person facet columns such as rater, task, criterion, prompt, form, or occasion
 
 Supported score handling includes:
 
@@ -256,42 +279,65 @@ Implemented in the standalone Python engine:
 - MML via EM, Direct, Hybrid, and Auto engine selection
 - latent regression via constrained `population_formula`
 - fixed user-set population prior SD for the current MML population model path
+- on-demand MML prior-SD sensitivity refits with fit, measure-shift, rank, and
+  latent-regression coefficient diagnostics
+- MML observed-information covariance for non-person facet SE/CI when the
+  fitted parameter vector is small enough for routine diagnostics
+- MML covariance audit exports with Hessian rank, condition number,
+  eigenvalue regularization, fallback/skip status, and claim status
 - EAP posterior scoring
 - plausible values
 - strict marginal diagnostics
 - residual PCA diagnostics
+- residual PCA stability audit for sparse or weakly overlapped residual matrices,
+  leave-one-column-out EV1/loading sensitivity, and row-bootstrap EV1/loading
+  stability
 - bias / local interaction screening with DFF-style sparse-cell, Holm, BH/FDR,
   and practical-logit review flags
+- bias-inference audit exports that label conditionality, multiplicity family,
+  sparse cells, profile-CI status, and connected-scale caveats
 - anchor audit and linking review
 - anchor drift and equating-chain summaries
 - anchor/equating workflow checklist for current-run linking evidence
 - prediction for fitted, held-out, and scenario rows
 - simulation and design evaluation
 - final-report readiness checklist
-- visual interpretation checklist for beginner-friendly figure reading
+- visual interpretation checklist for guided figure reading
+- visual evidence binder with figure files, caption drafts, and figure-to-claim mapping
+- visualization preferences for theme, label density, font size, dimensions, and caption detail
+- claim-to-evidence matrix for manuscript and reviewer-response planning
+- method-reference audit that maps model, estimation, fit, dimensionality, bias, simulation, and external-validation claims to APA/Zotero-aligned references
 - latent-regression covariate type preview for numeric IDs/codes that may need categorical coding
-- downloadable tables, configuration, scripts, and method appendix
+- downloadable tables, configuration, scripts, method appendix, manuscript handoff, and manuscript binder
 - reproducibility/config fingerprints for analysis exports
 
-## Beginner Reporting Workflow
+## Guided Reporting Workflow
 
 After fitting a model, inspect results in this order:
 
 1. Convergence: do not interpret final measures until the optimizer converges.
-2. Category functioning: check sparse categories, monotonic average measures, and threshold order.
-3. Reliability / separation: confirm whether the design supports stable person and facet ordering.
-4. Wright map targeting: check whether person locations and facet difficulty/severity ranges overlap.
-5. Fit diagnostics: review large standardized residuals and misfitting elements.
-6. Bias / local interaction: treat DFF/bias flags as review prompts, not automatic proof of bias.
-7. Residual dimensionality screen: check whether residual structure suggests a secondary residual dimension.
-8. Anchor / linking review: check connectedness and anchor stability before comparing runs or groups.
-9. Strict marginal diagnostics: use for final MML reports when feasible.
-10. Publication gate: check whether APA-style conclusions are ready, caveated, or blocked.
-11. Submission action plan: fix prioritized blockers, caveats, boundaries, and wording repairs before manuscript use.
-12. Beginner case guidance: review common interpretation traps and safer wording repairs detected in the current run.
-13. Final-report readiness: use the generated checklist before writing conclusions.
-14. Manuscript claim guide: check what is safe to claim, what requires a caveat, and what should not be claimed yet.
-15. Manuscript template: adapt the generated Methods, Results, limitations, and reviewer preflight scaffold after resolving claim-guide cautions.
+2. SE/CI basis: review `SE_Method`, `SE_Status`, `CI_Method`, and
+   `CI_Status`; for MML also review `mml_covariance_audit.csv` before
+   using observed-information intervals in prose.
+3. Category functioning: check sparse categories, monotonic average measures, and threshold order.
+4. Reliability / separation: confirm whether the design supports stable person and facet ordering.
+5. Wright map targeting: check whether person locations and facet difficulty/severity ranges overlap.
+6. Fit diagnostics: review large standardized residuals and misfitting elements.
+7. Bias / local interaction: use `bias_inference_audit.csv` with the DFF tables; treat flags as review prompts, not automatic proof of bias.
+8. PCA / dimensionality: check both the residual PCA result and `pca_stability_audit.csv`, including missingness, pairwise overlap, leave-one-column-out, and bootstrap stability.
+9. MML prior SD: for MML reports, state the fixed population prior SD and use the Fit Details prior-SD sensitivity screen, or justify why the fixed scale is part of the design, when population-scale claims matter.
+10. Anchor / linking review: check connectedness and anchor stability before comparing runs or groups.
+11. Strict marginal diagnostics: use for final MML reports when feasible.
+12. Publication gate: check whether APA-style conclusions are ready, caveated, or blocked.
+13. Submission action plan: fix prioritized blockers, caveats, boundaries, and wording repairs before manuscript use.
+14. Case interpretation guidance: review common interpretation traps and safer wording repairs detected in the current run.
+15. Final-report readiness: use the generated checklist before writing conclusions.
+16. Manuscript claim guide: check what is safe to claim, what requires a caveat, and what should not be claimed yet.
+17. Claim-to-evidence matrix: map each manuscript claim to exported tables, figures, diagnostics, caveats, reviewer questions, and archive files.
+18. Method-reference audit: check which APA/Zotero-aligned references support each method surface before writing the literature-backed Methods and Limitations.
+19. Manuscript template: adapt the generated Methods, Results, limitations, and reviewer preflight scaffold after resolving claim-guide cautions.
+20. Visual evidence binder: review figure files, figure-to-claim links, caption drafts, and visual reviewer questions.
+21. Manuscript handoff and binder: download the final-result guide, checklist, and curated writing packet for coauthor review or submission prep.
 
 The final-report readiness checklist, publication gate, submission action plan,
 first-read guide, manuscript template, and generated report text use the same main thresholds:
@@ -306,10 +352,11 @@ Integer-like columns such as `GradeCode = 1, 2, 3` are flagged so you can decide
 whether they are continuous predictors or category labels that should be forced
 categorical.
 
-The app and demo export also include a manuscript claim guide, public-beta
-limitations, and release readiness tables. The submission action plan combines
-these sources into a prioritized first-read table so public claims stay aligned
-with what the standalone Python engine currently supports.
+The app and demo export also include a manuscript claim guide, claim-to-evidence
+matrix, method-reference audit, visual evidence binder, final-result handoff,
+manuscript binder, public-beta limitations, and release readiness tables. The submission action
+plan combines these sources into a prioritized first-read table so public claims
+stay aligned with what the standalone Python engine currently supports.
 In the app UI, wide reporting tables show the most important columns first,
 wrap short guide tables for reading, and place full-detail tables in expanders;
 downloads still contain the complete columns. On desktop screens, long result-tab
@@ -323,41 +370,61 @@ information curves, and misfit/weighting audit support.
 
 The Visuals tab also includes a downloadable visual interpretation checklist.
 It maps each figure to the first signal to read, the review trigger, and the
-recommended next action for beginners.
+recommended next action for guided review.
 It also includes a visual method evidence table that links each plot family to
 its Rasch/MFRM diagnostic role and explains the app's readability rules.
 Figure exports use a manuscript profile: white background, consistent font,
 compact margins, 300 DPI PNG when static export is available, and matching
-interactive HTML for inspection. The figure bundle includes `figure_manifest.csv`
-with the recommended manuscript use and reporting caution for each figure.
+interactive HTML for inspection. Users can also set the figure theme, label
+density, base font size, static width, minimum height, and caption-detail level
+from the sidebar. These choices are recorded in `visualization_settings.json`
+and `visualization_settings.csv` and propagated into `figure_manifest.csv`,
+`visual_evidence_map.csv`, caption
+drafts, and the visual QA preflight table. The figure bundle includes
+`figure_manifest.csv` with the recommended manuscript use and reporting caution
+for each figure.
+The visual evidence binder adds `visual_evidence_map.csv`,
+`visual_caption_drafts.md`, `visual_qa_preflight.csv`, the figure files,
+visual interpretation checklist, method evidence table, and claim-to-evidence
+matrix in one review packet.
 For PCM and bounded GPCM, category probability curves can be read either as an
 averaged overview or for each selected step-facet level. The downloadable table
 bundle also includes long-form curve data for all available curve scopes.
 
-To generate a synthetic beginner-facing report without uploading data:
+To generate a synthetic guided report without uploading data:
 
 ```bash
 python streamlit_app.py --export-demo-report validation/generated/demo_report
 ```
 
-Open `validation/generated/demo_report/MFRM_Demo_Report.html` first, then read
+Open `validation/generated/demo_report/manuscript_handoff.md` first, then read
+`manuscript_handoff_checklist.csv`, `claim_to_evidence_matrix.csv`,
+`apa_report_sentence_audit.csv`,
+`method_reference_audit.csv`,
+`visual_evidence_map.csv`, `visual_qa_preflight.csv`,
+`visualization_settings.json`, `visualization_settings.csv`,
+`MFRM_Demo_Visual_Evidence_Binder.zip`,
+`MFRM_Demo_Manuscript_Binder.zip`, `MFRM_Demo_Report.html`,
 `publication_gate_summary.csv`, `submission_action_plan.csv`,
-`beginner_case_guidance.csv`,
+`case_interpretation_guidance.csv`,
 `final_report_readiness.csv`,
 `manuscript_claim_guide.csv`,
 `manuscript_template.md`,
 `visual_interpretation_checklist.csv`, `visual_method_evidence.csv`,
 `public_beta_limitations.csv`, `mfrmr_015_migration_coverage.csv`,
 `mfrmr_016_migration_coverage.csv`, `public_release_readiness.csv`,
-`figure_manifest.csv`,
+`visual_caption_drafts.md`, `figure_manifest.csv`,
 `MFRM_Demo_Publication_Figures.zip`, and the interactive diagnostic figures in
 `figures_html/`.
 
 ## Statistical Caveats
 
 - GPCM is not a strict Rasch model. Its slope parameters change the interpretation of invariance and should be reported explicitly.
-- The current latent regression path uses the app's documented population prior SD behavior. Do not describe it as identical to TAM unless the model, quadrature, variance treatment, and constraints have been checked.
-- Bias and differential functioning outputs are screening tools unless linking, common-scale evidence, sample size, and precision support stronger claims.
+- Measure SE/CI columns now carry method/status metadata. Non-person MML facet SEs use observed-information delta-method covariance when available; otherwise conditional information approximations are labelled as such. MML person SEs are EAP posterior SDs, not structural fixed-effect ML SEs. For MML, archive `mml_covariance_audit.csv` with condition number, rank deficiency, and regularization status.
+- ADEMP parameter-recovery exports include an explicit SE/CI coverage diagnostic table with `SEBasisRisk` and `CoverageClaimStatus`. Treat it as design-specific Monte Carlo evidence: cite the generator, fit method, replicate count, seed, and SE/CI status before making interval-calibration claims.
+- The current latent regression path uses the app's documented fixed population prior SD behavior. Use the MML prior-SD sensitivity export before treating population-scale or latent-regression coefficients as robust; do not describe it as identical to TAM unless the model, quadrature, variance treatment, and constraints have been checked.
+- Bias and differential functioning outputs are conditional screening tools. Report the exported bias-inference audit with DFF tables; do not make no-bias or confirmatory bias claims unless linking, common-scale evidence, sample size, multiplicity review, and precision support that scope.
+- Residual PCA is a sparse-matrix diagnostic. Use the exported PCA stability audit before making dimensionality claims from eigenvalues or loadings; review leave-one-column-out and bootstrap sensitivity when the first residual component is near EV = 2 or EV = 3.
 - Cross-package equality is not expected by default because FACETS, TAM, sirt, mirt, and this app can use different parameterizations, constraints, latent variance handling, and optimization details.
 - Treat external R cross-check outputs as validation evidence, not as a runtime dependency.
 - Reproducibility fingerprints help confirm that a report came from the same data/settings, but they are not a privacy guarantee or encryption method.

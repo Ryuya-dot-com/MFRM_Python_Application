@@ -1,4 +1,5 @@
 import io
+import inspect
 import json
 import zipfile
 
@@ -593,6 +594,31 @@ def test_facets_yardstick_uses_text_first_columns_and_thresholds():
     assert "Betty" in trace_text
     assert "Enthusiasm" in trace_text
     assert "1|2" in trace_text
+    tick_traces = [
+        trace for trace in fig.data
+        if getattr(trace, "mode", "") == "lines"
+        and len(getattr(trace, "x", [])) >= 3
+        and list(trace.x)[:3] == [0.02, 0.1, None]
+    ]
+    assert tick_traces
+
+
+def test_yardstick_panel_keeps_direct_text_labels_by_default():
+    source = inspect.getsource(app._draw_yardstick)
+    assert "st.checkbox" not in source
+    assert "show_direct_labels = True" in source
+    assert "dense_yardstick_caption" in source
+
+
+def test_facets_yardstick_help_table_matches_current_renderer_contract():
+    table = app.facets_yardstick_help_table()
+    joined = " ".join(table.astype(str).to_numpy().ravel())
+    assert "direct text labels" in joined
+    assert "PlotY" in joined
+    assert "TextLane" in joined
+    assert "mfrm_yardstick_map.csv" in joined
+    source = inspect.getsource(app.show_help_section)
+    assert "facets_yardstick_help_table()" in source
 
 
 def test_yardstick_threshold_labels_use_rating_scale_boundaries():

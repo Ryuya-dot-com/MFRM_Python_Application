@@ -572,6 +572,43 @@ def visual_claim_guardrail_table() -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
+def facets_yardstick_help_table() -> pd.DataFrame:
+    """Help-page contract for the current FACETS-style yardstick renderer."""
+    rows = [
+        {
+            t("help.yardstick_help_col_topic"): t("help.yardstick_help_render_topic"),
+            t("help.yardstick_help_col_current_behavior"): t("help.yardstick_help_render_current"),
+            t("help.yardstick_help_col_why"): t("help.yardstick_help_render_why"),
+            t("help.yardstick_help_col_check"): t("help.yardstick_help_render_check"),
+        },
+        {
+            t("help.yardstick_help_col_topic"): t("help.yardstick_help_dense_topic"),
+            t("help.yardstick_help_col_current_behavior"): t("help.yardstick_help_dense_current"),
+            t("help.yardstick_help_col_why"): t("help.yardstick_help_dense_why"),
+            t("help.yardstick_help_col_check"): t("help.yardstick_help_dense_check"),
+        },
+        {
+            t("help.yardstick_help_col_topic"): t("help.yardstick_help_threshold_topic"),
+            t("help.yardstick_help_col_current_behavior"): t("help.yardstick_help_threshold_current"),
+            t("help.yardstick_help_col_why"): t("help.yardstick_help_threshold_why"),
+            t("help.yardstick_help_col_check"): t("help.yardstick_help_threshold_check"),
+        },
+        {
+            t("help.yardstick_help_col_topic"): t("help.yardstick_help_wright_topic"),
+            t("help.yardstick_help_col_current_behavior"): t("help.yardstick_help_wright_current"),
+            t("help.yardstick_help_col_why"): t("help.yardstick_help_wright_why"),
+            t("help.yardstick_help_col_check"): t("help.yardstick_help_wright_check"),
+        },
+        {
+            t("help.yardstick_help_col_topic"): t("help.yardstick_help_repro_topic"),
+            t("help.yardstick_help_col_current_behavior"): t("help.yardstick_help_repro_current"),
+            t("help.yardstick_help_col_why"): t("help.yardstick_help_repro_why"),
+            t("help.yardstick_help_col_check"): t("help.yardstick_help_repro_check"),
+        },
+    ]
+    return pd.DataFrame(rows)
+
+
 def _visual_guardrail_row_for_figure(figure_name: str) -> pd.Series | None:
     """Return the visual claim guardrail row that best matches a figure export name."""
     name = str(figure_name or "").lower()
@@ -4799,9 +4836,9 @@ def render_loaded_data_banner() -> None:
     marker and this helper no-ops — we do not want to imply that a
     user-provided file came from the literature.
 
-    Design: st.info-colored callout with the scenario label, obs count,
-    and a subtle nudge pointing at the "Try another scenario" buttons
-    back in the sidebar so first-time users discover the switcher.
+    Design: st.info-colored callout with the scenario label and obs
+    count. Scenario switching remains available from the Data source
+    radio in the sidebar.
     """
     key = st.session_state.get("_loaded_sample_scenario_key")
     if not key:
@@ -4815,9 +4852,7 @@ def render_loaded_data_banner() -> None:
         f"{dims['persons']} × {dims['raters']} × {dims['tasks']} × "
         f"{dims['criteria']} = **{scenario['n_obs']:,} observations**, "
         f"{dims['n_cat']}-point scale. "
-        f"Switch scenario from the **Data source** radio in the sidebar, "
-        f"or use one of the 'Try another scenario' quick-switch buttons "
-        f"below the info card."
+        f"Switch scenario from the **Data source** radio in the sidebar."
     )
 
 
@@ -18986,30 +19021,6 @@ def read_input_data(core: dict) -> pd.DataFrame:
             short=scenario["short"],
         ))
 
-        # Scenario switch buttons — shown only for the *other* three
-        # scenarios so users have a one-click way to see how a
-        # diagnostic looks on a different design without hunting back
-        # up to the radio.
-        _other_scenarios = [
-            (k, SAMPLE_DATA_SCENARIOS[k])
-            for k in SAMPLE_DATA_SCENARIOS
-            if k != scenario_key
-        ]
-        if _other_scenarios:
-            st.sidebar.caption(t("data_source.try_another_scenario_caption"))
-            for other_key, other_meta in _other_scenarios:
-                if st.sidebar.button(
-                    other_meta["label"],
-                    key=f"switch_scenario_{other_key}",
-                    use_container_width=True,
-                    help=other_meta["short"],
-                ):
-                    # Update the radio to the chosen scenario. Streamlit
-                    # will rerun on the next render and the radio reflects
-                    # the new selection automatically.
-                    st.session_state["data_source_flat"] = other_meta["label"]
-                    st.rerun()
-
         # Full description + APA references in a collapsed expander
         # so the info card stays compact. Opening this gives users
         # everything they need to cite the scenario in a manuscript.
@@ -22930,24 +22941,9 @@ def _draw_yardstick(
     min_label_gap = _minimum_within_facet_logit_gap(facet_est)
     tight_labels = min_label_gap < 0.30
     crowded = max_elements_per_facet > 18 or len(facet_names) > 7 or label_max > 28
-    requested_direct_labels = st.checkbox(
-        "Show FACETS-style direct text labels",
-        value=not crowded,
-        key="yardstick_show_direct_labels",
-        help=(
-            "Direct text labels mimic FACETS/geom_text-style yardsticks. Step thresholds also use "
-            "short horizontal boundary lines at the exact estimates. For dense designs, turn this "
-            "off if labels overlap; hover labels retain the full exact text and logit values."
-        ),
-    )
-    show_direct_labels = bool(requested_direct_labels)
-    if (crowded or tight_labels) and not show_direct_labels:
+    show_direct_labels = True
+    if crowded or tight_labels:
         st.caption(t("visuals.dense_yardstick_caption"))
-    elif tight_labels:
-        st.caption(t(
-            "visuals.tight_yardstick_caption",
-            default="Some facet labels are close on the logit ruler; hover text retains the exact estimates.",
-        ))
 
     fig = _make_yardstick_figure(
         person_tbl,
@@ -23189,7 +23185,7 @@ def make_yardstick_export_table(
                 "Role": "FacetElement",
                 "Facet": facet,
                 "RawLabel": raw_label,
-                "DisplayLabel": _compact_label(raw_label, 18),
+                "DisplayLabel": _compact_label(raw_label, 28),
                 "Estimate": float(row["Estimate"]),
                 "PlotY": float(row["Estimate"]),
                 "TextLane": 0,
@@ -23212,7 +23208,7 @@ def make_yardstick_export_table(
                 "Role": "Threshold",
                 "Facet": step_facet,
                 "RawLabel": str(row.get("RawLabel", row.get("Label", ""))),
-                "DisplayLabel": _compact_label(display, 18),
+                "DisplayLabel": _compact_label(display, 28),
                 "Estimate": float(row["Estimate"]),
                 "PlotY": float(row["Estimate"]),
                 "TextLane": 0,
@@ -23304,6 +23300,44 @@ def _make_yardstick_figure(
         column_widths=col_widths,
         horizontal_spacing=0.015,
     )
+    tick_values = list(range(int(np.floor(y_lo)), int(np.ceil(y_hi)) + 1))
+    text_font_size = 10
+    if max_elements_per_facet > 35:
+        text_font_size = 8
+    elif max_elements_per_facet > 18:
+        text_font_size = 9
+
+    def _add_yardstick_ruler(col_idx: int) -> None:
+        fig.add_trace(
+            go.Scatter(
+                x=[0.06, 0.06],
+                y=[y_lo, y_hi],
+                mode="lines",
+                line=dict(color="#111827", width=1.0),
+                hoverinfo="skip",
+                showlegend=False,
+            ),
+            row=1,
+            col=col_idx,
+        )
+        if tick_values:
+            tick_x: list[float | None] = []
+            tick_y: list[float | None] = []
+            for tick in tick_values:
+                tick_x.extend([0.02, 0.10, None])
+                tick_y.extend([float(tick), float(tick), None])
+            fig.add_trace(
+                go.Scatter(
+                    x=tick_x,
+                    y=tick_y,
+                    mode="lines",
+                    line=dict(color="#111827", width=0.7),
+                    hoverinfo="skip",
+                    showlegend=False,
+                ),
+                row=1,
+                col=col_idx,
+            )
 
     # Column 1: Person histogram (horizontal)
     bins_arr = np.linspace(y_lo, y_hi, max(15, int(len(person_est) ** 0.5)))
@@ -23320,23 +23354,12 @@ def _make_yardstick_figure(
     for i, fname in enumerate(facet_names):
         col_idx = i + 2
         sub = facet_est[facet_est["Facet"] == fname]
-        fig.add_trace(
-            go.Scatter(
-                x=[0.08, 0.08],
-                y=[y_lo, y_hi],
-                mode="lines",
-                line=dict(color="#333333", width=0.8),
-                hoverinfo="skip",
-                showlegend=False,
-            ),
-            row=1,
-            col=col_idx,
-        )
+        _add_yardstick_ruler(col_idx)
         if not sub.empty:
             full_labels = [str(lbl) for lbl in sub.get("Level", sub.index)]
             text_x, text_y, _ = _yardstick_label_layout(
                 sub["Estimate"].reset_index(drop=True),
-                base=0.12,
+                base=0.14,
                 lane_width=0.14,
                 min_gap=0.30,
                 max_lanes=5,
@@ -23344,9 +23367,10 @@ def _make_yardstick_figure(
             fig.add_trace(go.Scatter(
                 x=text_x, y=text_y,
                 mode="text" if show_direct_labels else "markers",
-                marker=dict(size=8, color="#1b9e77", symbol="line-ns"),
-                text=_compact_label_list(full_labels, max_chars=14) if show_direct_labels else None,
-                textposition="middle right", textfont=dict(size=9),
+                marker=dict(size=8, color="#111827", symbol="line-ns"),
+                text=_compact_label_list(full_labels, max_chars=24) if show_direct_labels else None,
+                textposition="middle right", textfont=dict(size=text_font_size, color="#111827"),
+                cliponaxis=False,
                 showlegend=False,
                 customdata=np.column_stack([
                     full_labels,
@@ -23355,23 +23379,12 @@ def _make_yardstick_figure(
                 ]),
                 hovertemplate="%{customdata[1]}: %{customdata[0]}<br>Logit=%{customdata[2]:.2f}<extra></extra>",
             ), row=1, col=col_idx)
-        fig.update_xaxes(range=[0, 1], showticklabels=False, row=1, col=col_idx)
+        fig.update_xaxes(range=[0, 1], showticklabels=False, showline=True, linecolor="#d1d5db", mirror=True, row=1, col=col_idx)
         fig.update_yaxes(range=[y_lo, y_hi], dtick=1, showgrid=True, gridcolor="#ececec", zeroline=True, zerolinecolor="#666666", row=1, col=col_idx)
 
     if include_thresholds:
         col_idx = n_cols
-        fig.add_trace(
-            go.Scatter(
-                x=[0.08, 0.08],
-                y=[y_lo, y_hi],
-                mode="lines",
-                line=dict(color="#333333", width=0.8),
-                hoverinfo="skip",
-                showlegend=False,
-            ),
-            row=1,
-            col=col_idx,
-        )
+        _add_yardstick_ruler(col_idx)
         threshold_labels = []
         for _, row in threshold_frame.iterrows():
             label = str(row.get("DisplayLabel", row.get("Label", "")))
@@ -23411,9 +23424,10 @@ def _make_yardstick_figure(
                 y=threshold_y,
                 mode="text" if show_direct_labels else "markers",
                 marker=dict(size=8, color="#d95f02", symbol="line-ew"),
-                text=_compact_label_list(threshold_labels, max_chars=14) if show_direct_labels else None,
+                text=_compact_label_list(threshold_labels, max_chars=22) if show_direct_labels else None,
                 textposition="middle right",
-                textfont=dict(size=9, color="#6b2d00"),
+                textfont=dict(size=text_font_size, color="#6b2d00"),
+                cliponaxis=False,
                 customdata=np.column_stack([
                     threshold_labels,
                     np.repeat("Threshold", len(threshold_frame)),
@@ -23425,16 +23439,18 @@ def _make_yardstick_figure(
             row=1,
             col=col_idx,
         )
-        fig.update_xaxes(range=[0, 1], showticklabels=False, row=1, col=col_idx)
+        fig.update_xaxes(range=[0, 1], showticklabels=False, showline=True, linecolor="#d1d5db", mirror=True, row=1, col=col_idx)
         fig.update_yaxes(range=[y_lo, y_hi], dtick=1, showgrid=True, gridcolor="#ececec", row=1, col=col_idx)
 
     fig.update_layout(
         title="Yardstick (FACETS-style text map)",
-        height=max(550, 28 * max(max_elements_per_facet, len(threshold_frame)) + 220 if show_direct_labels else 550),
+        height=max(620, 30 * max(max_elements_per_facet, len(threshold_frame)) + 240 if show_direct_labels else 620),
         template="plotly_white",
         showlegend=False,
         margin=dict(l=90, r=50, t=90, b=80),
         hovermode="closest",
+        font=dict(size=12),
+        plot_bgcolor="white",
     )
     return fig
 
@@ -42976,6 +42992,9 @@ def show_help_section(*, force_full: bool = False) -> None:
                 "Use this before interpreting Wright Maps, FACETS-style yardsticks, threshold lines, or category characteristic curves in a report."
             )
             st.dataframe(visual_claim_guardrail_table(), width="stretch", hide_index=True)
+        with st.expander(t("help.yardstick_help_expander"), expanded=False):
+            st.caption(t("help.yardstick_help_caption"))
+            st.dataframe(facets_yardstick_help_table(), width="stretch", hide_index=True)
         with st.expander(t("help.input_readiness_reference_expander"), expanded=False):
             st.caption(t("help.input_readiness_reference_caption"))
             st.dataframe(input_readiness_check_reference_help_table(), width="stretch", hide_index=True)
@@ -43058,6 +43077,9 @@ def show_help_section(*, force_full: bool = False) -> None:
             "This table keeps figure interpretation detailed but bounded: it separates what the visual shows from what the manuscript may safely claim."
         )
         st.dataframe(visual_claim_guardrail_table(), width="stretch", hide_index=True)
+        st.markdown(t("help.yardstick_help_heading"))
+        st.caption(t("help.yardstick_help_caption"))
+        st.dataframe(facets_yardstick_help_table(), width="stretch", hide_index=True)
 
     # ------------------------------------------------------------------
     # Tab 4: Rater Effects (NEW)
@@ -45982,6 +46004,9 @@ This bundle redraws the Streamlit FACETS-style yardstick from
 each row contains the role, facet, display label, logit estimate, and plot
 column used by the app. `Estimate` is the exact logit value; `PlotY` and
 `TextLane` are deterministic label-dodge fields for dense direct-text maps.
+The current Streamlit panel draws direct text labels by default and uses those
+dodge fields to keep FACETS-style labels readable instead of replacing them
+with unlabeled markers.
 For thresholds, `LineXStart` and `LineXEnd` draw a short horizontal boundary
 line at the exact `Estimate`.
 
@@ -54238,11 +54263,12 @@ _CHART_GUIDE_LIBRARY: dict[str, dict[str, str]] = {
         "body": (
             "**How to read:** this is intentionally closer to FACETS Table 6.0 "
             "than to a ggplot point map. The primary marks are text labels "
-            "placed at their logit estimates. Use it to read which rater, task, "
-            "criterion, or threshold sits above or below another on the same "
-            "scale. The general Wright Map is better for distribution shape, "
-            "uncertainty, and hover exploration; the FACETS-style yardstick is "
-            "better for printed inspection and reviewer-facing label lookup. "
+            "placed at their logit estimates; dense labels are dodged rather "
+            "than hidden. Use it to read which rater, task, criterion, or "
+            "threshold sits above or below another on the same scale. The "
+            "general Wright Map is better for distribution shape, uncertainty, "
+            "and hover exploration; the FACETS-style yardstick is better for "
+            "printed inspection and reviewer-facing label lookup. "
             "Threshold labels such as 0|1 or 4|5 mark adjacent category "
             "boundaries, not facet elements. The short horizontal threshold "
             "segments are drawn at the exact threshold estimates; nearby text "

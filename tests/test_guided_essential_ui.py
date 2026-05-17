@@ -149,6 +149,25 @@ def test_guided_diagnostics_selector_lazy_renders_one_panel():
     assert "st.tabs" not in source
 
 
+def test_guided_figures_selector_lazy_renders_one_panel():
+    options = app.guided_figure_panel_options()
+
+    assert list(options["PanelId"]) == [
+        "wright_map",
+        "visuals",
+        "export_status",
+    ]
+    assert list(options.columns) == [
+        "PanelId",
+        app.t("guided.figures_panel_col_panel"),
+    ]
+
+    source = inspect.getsource(app._render_guided_figures_section)
+    assert "st.segmented_control" in source
+    assert "guided_figures_panel" in source
+    assert "st.tabs" not in source
+
+
 def test_guided_first_run_route_table_links_sample_run_to_current_focus():
     table = app.guided_first_run_route_table()
 
@@ -321,6 +340,58 @@ def test_guided_figures_section_is_a_direct_visual_surface():
     assert "show_visuals_section(result, diagnostics" in source
     assert "downloads.figures_skipped_info" in source
     assert "guided.figures_location_markdown" in source
+    assert "guided.figures_panel_select_caption" in source
+
+
+def test_downloads_privacy_mode_is_defined_before_export_builders():
+    source = inspect.getsource(app._render_downloads)
+
+    assert "st.segmented_control" in source
+    assert "downloads_panel" in source
+    assert "st.tabs" not in source
+    checkbox_idx = source.index("public_export_mode = st.checkbox")
+    stan_manifest_idx = source.index("stan_reproducibility_package_assets(")
+    assert checkbox_idx < stan_manifest_idx
+
+
+def test_full_mode_main_results_panel_is_lazy_rendered():
+    source = inspect.getsource(app.run_facets_mode)
+
+    assert "main_results_panel" in source
+    assert "st.selectbox" in source
+    assert "main_tabs.panel_select_caption" in source
+    assert "tabs = st.tabs([" not in source
+    assert 'if selected_main_panel == "downloads"' in source
+
+
+def test_publication_figure_payloads_use_plotly_helpers_with_expected_inputs():
+    source = inspect.getsource(app._publication_figure_payloads)
+
+    assert "_make_wright_map_export_figure(person_tbl, facet_tbl, step_tbl)" in source
+    assert "build_category_probability_curve_data(result)" in source
+    assert "_make_category_probability_curve_figures(curve)" in source
+    assert "_make_facet_distribution_export_figure(diagnostics.get(\"measures\", pd.DataFrame()))" in source
+
+
+def test_run_staleness_tracks_report_scaling_and_visual_outputs():
+    source = inspect.getsource(app.run_facets_mode)
+
+    for token in [
+        '"_totalscore"',
+        '"_omit_unobserved"',
+        '"_xtreme"',
+        '"_umean"',
+        '"_uscale"',
+        '"_udecimals"',
+        '"_render_interactive_plots"',
+        '"_generate_figure_exports"',
+        '"_visualization_preferences"',
+        "mfrm_new_design_prediction_bundle",
+        "mfrm_refit_simulation_bundle",
+    ]:
+        assert token in source
+    assert "FACETS total-score reporting option" in source
+    assert "figure export bundle option" in source
 
 
 def test_guided_goal_step_tables_have_three_actionable_steps():

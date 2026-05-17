@@ -164,6 +164,29 @@ def test_japanese_safety_and_guidance_copy_uses_task_centered_terms(locales):
     assert "解釈ガイド" in ja["fit_details.guide_expander"]
 
 
+def test_display_mode_and_analysis_depth_copy_are_not_conflated(locales):
+    en = _flatten_leaves(locales["en"])
+    ja = _flatten_leaves(locales["ja"])
+
+    assert en["sidebar.view_density_label"] == "Display mode"
+    assert en["sidebar.view_density_full"] == "All panels"
+    assert "does not compute extra diagnostics" in en["sidebar.view_density_help"]
+    assert "Analysis depth" in en["sidebar.view_density_help"]
+    assert "Full publication" in en["sidebar_perf.analysis_depth_help"]
+    assert "All panels display mode" in en["downloads.figures_skipped_info"]
+    assert "PNG/HTML" in en["downloads.figures_skipped_info"]
+    assert "does not re-estimate" in en["main_tabs.panel_select_caption"]
+    assert "does not re-estimate" in en["downloads.panel_select_help"]
+
+    assert ja["sidebar.view_density_label"] == "表示モード"
+    assert ja["sidebar.view_density_full"] == "全パネル表示"
+    assert "追加診断や図ファイルは生成しません" in ja["sidebar.view_density_help"]
+    assert "全パネル表示" in ja["downloads.figures_skipped_info"]
+    assert "PNG / HTML" in ja["downloads.figures_skipped_info"]
+    assert "再推定しません" in ja["main_tabs.panel_select_caption"]
+    assert "再推定するわけではありません" in ja["downloads.panel_select_help"]
+
+
 def test_help_copy_frames_thresholds_as_diagnostic_guidance(locales):
     en = _flatten_leaves(locales["en"])
     ja = _flatten_leaves(locales["ja"])

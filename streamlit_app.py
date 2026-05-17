@@ -22870,14 +22870,21 @@ def _render_guided_figures_section(
         st.info(t("guided.figures_plots_skipped_info"))
         return
 
-    figure_tabs = st.tabs([
-        t("main_tabs.wright_map"),
-        t("main_tabs.visuals"),
-        t("guided.figures_export_tab"),
-    ])
-    with figure_tabs[0]:
+    selected_figure_panel = st.segmented_control(
+        t("guided.figures_panel_select_label"),
+        options=list(GUIDED_FIGURE_PANEL_IDS),
+        default="wright_map",
+        format_func=_guided_figure_panel_label,
+        key="guided_figures_panel",
+        help=t("guided.figures_panel_select_help"),
+        width="stretch",
+    )
+    selected_figure_panel = selected_figure_panel or "wright_map"
+    st.caption(t("guided.figures_panel_select_caption"))
+
+    if selected_figure_panel == "wright_map":
         show_wright_map_section(result, diagnostics)
-    with figure_tabs[1]:
+    elif selected_figure_panel == "visuals":
         force_full_visuals = st.checkbox(
             t("guided.show_full_visuals"),
             value=False,
@@ -22885,7 +22892,7 @@ def _render_guided_figures_section(
             help=t("guided.show_full_visuals_help"),
         )
         show_visuals_section(result, diagnostics, force_full=force_full_visuals)
-    with figure_tabs[2]:
+    elif selected_figure_panel == "export_status":
         if result_generate_figures:
             st.success(t("guided.figures_export_ready_info"))
         else:
@@ -22900,6 +22907,8 @@ def _render_guided_figures_section(
                 hide_index=True,
                 wrap_text=True,
             )
+    else:
+        show_wright_map_section(result, diagnostics)
 
 
 def _render_guided_report_export_section(
@@ -23000,6 +23009,16 @@ GUIDED_DIAGNOSTIC_PANEL_I18N_KEYS = {
 GUIDED_DIAGNOSTIC_PANEL_IDS = tuple(GUIDED_DIAGNOSTIC_PANEL_I18N_KEYS.keys())
 
 
+GUIDED_FIGURE_PANEL_I18N_KEYS = {
+    "wright_map": "main_tabs.wright_map",
+    "visuals": "main_tabs.visuals",
+    "export_status": "guided.figures_export_tab",
+}
+
+
+GUIDED_FIGURE_PANEL_IDS = tuple(GUIDED_FIGURE_PANEL_I18N_KEYS.keys())
+
+
 def _guided_section_label(section_id: str) -> str:
     safe_section = str(section_id)
     return t(
@@ -23012,6 +23031,14 @@ def _guided_diagnostic_panel_label(panel_id: str) -> str:
     safe_panel = str(panel_id)
     return t(
         GUIDED_DIAGNOSTIC_PANEL_I18N_KEYS.get(safe_panel, "main_tabs.fit_details"),
+        default=safe_panel,
+    )
+
+
+def _guided_figure_panel_label(panel_id: str) -> str:
+    safe_panel = str(panel_id)
+    return t(
+        GUIDED_FIGURE_PANEL_I18N_KEYS.get(safe_panel, "main_tabs.wright_map"),
         default=safe_panel,
     )
 
@@ -23035,6 +23062,17 @@ def guided_diagnostic_panel_options() -> pd.DataFrame:
             t("guided.diagnostics_panel_col_panel"): _guided_diagnostic_panel_label(panel_id),
         }
         for panel_id in GUIDED_DIAGNOSTIC_PANEL_IDS
+    ])
+
+
+def guided_figure_panel_options() -> pd.DataFrame:
+    """Return the lazy-rendered Essential Figures panels in display order."""
+    return pd.DataFrame([
+        {
+            "PanelId": panel_id,
+            t("guided.figures_panel_col_panel"): _guided_figure_panel_label(panel_id),
+        }
+        for panel_id in GUIDED_FIGURE_PANEL_IDS
     ])
 
 
@@ -27340,7 +27378,11 @@ def _publication_figure_payloads(
     try:
         wright_fig = None
         try:
-            wright_fig = _make_wright_map_export_figure(result, diagnostics)
+            facets = result.get("facets", {}) if isinstance(result, dict) else {}
+            person_tbl = facets.get("person", pd.DataFrame()) if isinstance(facets, dict) else pd.DataFrame()
+            facet_tbl = facets.get("others", pd.DataFrame()) if isinstance(facets, dict) else pd.DataFrame()
+            step_tbl = result.get("steps", pd.DataFrame()) if isinstance(result, dict) else pd.DataFrame()
+            wright_fig = _make_wright_map_export_figure(person_tbl, facet_tbl, step_tbl)
         except Exception:
             pass
         png = _plotly_or_matplotlib_png(
@@ -27380,15 +27422,17 @@ def _publication_figure_payloads(
 
     # Category probability curves
     try:
-        cp_figs: dict | None = None
-        try:
-            cp_figs = _make_category_probability_curve_figures(result)
-        except Exception:
-            cp_figs = None
         first_plotly = None
         first_name = ""
-        if isinstance(cp_figs, dict) and cp_figs:
-            first_name, first_plotly = next(iter(cp_figs.items()))
+        try:
+            curve = build_category_probability_curve_data(result)
+            avg_fig, level_fig = _make_category_probability_curve_figures(curve)
+            first_plotly = avg_fig or level_fig
+            meta = curve.get("metadata", {}) if isinstance(curve, dict) else {}
+            first_name = str(meta.get("Scope", "Average")) if isinstance(meta, dict) else "Average"
+        except Exception:
+            first_plotly = None
+            first_name = ""
         png = _plotly_or_matplotlib_png(
             first_plotly,
             lambda: _mpl_category_probability_png(result),
@@ -27407,7 +27451,7 @@ def _publication_figure_payloads(
     try:
         fd_fig = None
         try:
-            fd_fig = _make_facet_distribution_export_figure(diagnostics)
+            fd_fig = _make_facet_distribution_export_figure(diagnostics.get("measures", pd.DataFrame()))
         except Exception:
             pass
         png = _plotly_or_matplotlib_png(
@@ -29741,6 +29785,12 @@ def run_facets_mode(core: dict, data: pd.DataFrame) -> None:
                 "_plausible_seed": int(plausible_seed),
                 "_bias_mode": bias_mode,
                 "_selected_bias_pair": selected_bias_pair,
+                "_totalscore": bool(totalscore),
+                "_omit_unobserved": bool(omit_unobserved),
+                "_xtreme": float(xtreme),
+                "_umean": float(umean),
+                "_uscale": float(uscale),
+                "_udecimals": int(udecimals),
                 "_render_interactive_plots": bool(render_interactive_plots),
                 "_generate_figure_exports": bool(generate_figure_exports),
                 "_visualization_preferences": get_visualization_preferences(),
@@ -29749,6 +29799,13 @@ def run_facets_mode(core: dict, data: pd.DataFrame) -> None:
                 "_group_anchor_source_fingerprint": current_group_anchor_source_fingerprint,
                 "_population_source_fingerprint": current_population_source_fingerprint,
             }
+            for _derived_key in (
+                "mfrm_new_design_prediction_bundle",
+                "mfrm_new_design_prediction_meta",
+                "mfrm_refit_simulation_bundle",
+                "mfrm_refit_simulation_meta",
+            ):
+                st.session_state.pop(_derived_key, None)
             _elapsed_sec = _time.perf_counter() - _run_t0
             # Record this run in the session history so users can swap
             # between past runs via the Run history panel.
@@ -29938,6 +29995,34 @@ def run_facets_mode(core: dict, data: pd.DataFrame) -> None:
         stale_reasons.append("bias estimation option")
     if out.get("_selected_bias_pair") != selected_bias_pair:
         stale_reasons.append("selected bias pair")
+    if out.get("_totalscore") is not None and out["_totalscore"] != bool(totalscore):
+        stale_reasons.append("FACETS total-score reporting option")
+    if out.get("_omit_unobserved") is not None and out["_omit_unobserved"] != bool(omit_unobserved):
+        stale_reasons.append("FACETS unobserved-element reporting option")
+    if out.get("_xtreme") is not None and float(out["_xtreme"]) != float(xtreme):
+        stale_reasons.append("Xtreme correction")
+    if out.get("_umean") is not None and float(out["_umean"]) != float(umean):
+        stale_reasons.append("Umean report scaling")
+    if out.get("_uscale") is not None and float(out["_uscale"]) != float(uscale):
+        stale_reasons.append("Uscale report scaling")
+    if out.get("_udecimals") is not None and int(out["_udecimals"]) != int(udecimals):
+        stale_reasons.append("report decimal places")
+    if (
+        out.get("_render_interactive_plots") is not None
+        and out["_render_interactive_plots"] != bool(render_interactive_plots)
+    ):
+        stale_reasons.append("interactive plot rendering option")
+    if (
+        out.get("_generate_figure_exports") is not None
+        and out["_generate_figure_exports"] != bool(generate_figure_exports)
+    ):
+        stale_reasons.append("figure export bundle option")
+    current_visualization_preferences = get_visualization_preferences()
+    if (
+        out.get("_visualization_preferences") is not None
+        and out["_visualization_preferences"] != current_visualization_preferences
+    ):
+        stale_reasons.append("visualization preferences")
     if stale_reasons:
         stale_text = f"{', '.join(stale_reasons[:4])}{'...' if len(stale_reasons) > 4 else ''}"
         if isinstance(restored_snapshot, dict):
@@ -29985,8 +30070,8 @@ def run_facets_mode(core: dict, data: pd.DataFrame) -> None:
     est_facet_cols = out.get("facet_cols", facet_cols)
     bias_results = out.get("bias_results")
     result_compute_pca = bool(out.get("_compute_residual_pca", diagnostics.get("pca_enabled", True)))
-    result_render_plots = bool(render_interactive_plots)
-    result_generate_figures = bool(generate_figure_exports)
+    result_render_plots = bool(out.get("_render_interactive_plots", render_interactive_plots))
+    result_generate_figures = bool(out.get("_generate_figure_exports", generate_figure_exports))
 
     # --- Run breadcrumb (always visible, 1 compact line) ---
     try:
@@ -30087,26 +30172,36 @@ def run_facets_mode(core: dict, data: pd.DataFrame) -> None:
         )
         return
 
-    tabs = st.tabs([
-        t("main_tabs.data"),
-        t("main_tabs.report"),
-        t("main_tabs.measures"),
-        t("main_tabs.fit_details"),
-        t("main_tabs.dimensionality"),
-        t("main_tabs.wright_map"),
-        t("main_tabs.visuals"),
-        t("main_tabs.bias_interaction"),
-        t("main_tabs.categories_steps"),
-        t("main_tabs.agreement"),
-        t("main_tabs.facets_style_tables"),
-        t("main_tabs.facet_dashboard"),
-        t("main_tabs.prediction_simulation"),
-        t("main_tabs.downloads"),
-        t("main_tabs.help"),
-    ])
+    main_panel_labels = {
+        "data": t("main_tabs.data"),
+        "report": t("main_tabs.report"),
+        "measures": t("main_tabs.measures"),
+        "fit_details": t("main_tabs.fit_details"),
+        "dimensionality": t("main_tabs.dimensionality"),
+        "wright_map": t("main_tabs.wright_map"),
+        "visuals": t("main_tabs.visuals"),
+        "bias_interaction": t("main_tabs.bias_interaction"),
+        "categories_steps": t("main_tabs.categories_steps"),
+        "agreement": t("main_tabs.agreement"),
+        "facets_style_tables": t("main_tabs.facets_style_tables"),
+        "facet_dashboard": t("main_tabs.facet_dashboard"),
+        "prediction_simulation": t("main_tabs.prediction_simulation"),
+        "downloads": t("main_tabs.downloads"),
+        "help": t("main_tabs.help"),
+    }
+    selected_main_panel = st.selectbox(
+        t("main_tabs.panel_select_label"),
+        options=list(main_panel_labels),
+        default="data",
+        format_func=lambda panel_id: main_panel_labels.get(str(panel_id), str(panel_id)),
+        key="main_results_panel",
+        help=t("main_tabs.panel_select_help"),
+    )
+    selected_main_panel = selected_main_panel or "data"
+    st.caption(t("main_tabs.panel_select_caption"))
 
     # --- Data tab ---
-    with tabs[0]:
+    if selected_main_panel == "data":
         st.subheader(t("data_quality.data_quality_subheader"))
         st.caption(t("data_quality.data_quality_caption"))
         # Visual data-coverage diagnostics (added v0.2.4)
@@ -30246,12 +30341,12 @@ def run_facets_mode(core: dict, data: pd.DataFrame) -> None:
         st.dataframe(data.head(50), width="stretch")
 
     # --- Report tab ---
-    with tabs[1]:
+    if selected_main_panel == "report":
         show_report_section(result, diagnostics, bias_results=bias_results,
                             all_bias_results=out.get("all_bias_results", {}))
 
     # --- Measures tab ---
-    with tabs[2]:
+    if selected_main_panel == "measures":
         st.subheader(t("result_tabs.persons_subheader"))
         st.caption(t("result_tabs.persons_caption"))
         person_df = result.get("facets", {}).get("person", pd.DataFrame())
@@ -30395,11 +30490,11 @@ def run_facets_mode(core: dict, data: pd.DataFrame) -> None:
             )
 
     # --- Fit Details tab ---
-    with tabs[3]:
+    if selected_main_panel == "fit_details":
         show_fit_details_section(diagnostics, result=result, all_bias_results=out.get("all_bias_results", {}))
 
     # --- Dimensionality tab ---
-    with tabs[4]:
+    if selected_main_panel == "dimensionality":
         st.subheader(t("result_tabs.dimensionality_subheader"))
         if result_compute_pca:
             # Thread `result` through `core` so the DIMTEST panel can
@@ -30412,7 +30507,7 @@ def run_facets_mode(core: dict, data: pd.DataFrame) -> None:
             st.info(t("result_tabs.dimensionality_skipped_info"))
 
     # --- Wright Map tab ---
-    with tabs[5]:
+    if selected_main_panel == "wright_map":
         st.subheader(t("result_tabs.wright_map_subheader"))
         if result_render_plots:
             show_wright_map_section(result, diagnostics)
@@ -30420,7 +30515,7 @@ def run_facets_mode(core: dict, data: pd.DataFrame) -> None:
             st.info(t("result_tabs.wright_map_skipped_info"))
 
     # --- Visuals tab ---
-    with tabs[6]:
+    if selected_main_panel == "visuals":
         if result_render_plots:
             show_visuals_section(result, diagnostics)
         else:
@@ -30430,7 +30525,7 @@ def run_facets_mode(core: dict, data: pd.DataFrame) -> None:
             )
 
     # --- Bias/Interaction tab ---
-    with tabs[7]:
+    if selected_main_panel == "bias_interaction":
         all_bias = out.get("all_bias_results", {})
         show_bias_section(
             bias_results,
@@ -30441,15 +30536,15 @@ def run_facets_mode(core: dict, data: pd.DataFrame) -> None:
         )
 
     # --- Categories/Steps tab ---
-    with tabs[8]:
+    if selected_main_panel == "categories_steps":
         show_categories_section(result, diagnostics, core)
 
     # --- Agreement tab ---
-    with tabs[9]:
+    if selected_main_panel == "agreement":
         show_agreement_section(result, diagnostics, est_facet_cols, core)
 
     # --- FACETS-style tables tab ---
-    with tabs[10]:
+    if selected_main_panel == "facets_style_tables":
         st.caption(
             "Traditional FACETS measurement report format (Linacre, 2024). "
             "Each table shows element measures, model SE, and fit statistics "
@@ -30540,22 +30635,22 @@ def run_facets_mode(core: dict, data: pd.DataFrame) -> None:
             )
 
     # --- Facet Dashboard tab ---
-    with tabs[11]:
+    if selected_main_panel == "facet_dashboard":
         show_facet_dashboard(result, diagnostics, est_facet_cols,
                              all_bias_results=out.get("all_bias_results", {}))
 
     # --- Prediction/Simulation tab ---
-    with tabs[12]:
+    if selected_main_panel == "prediction_simulation":
         show_prediction_simulation_section(result, diagnostics, core=core)
 
     # --- Downloads tab ---
-    with tabs[13]:
+    if selected_main_panel == "downloads":
         _render_downloads(result, diagnostics, report_tables, scorefile, residuals, bias_results,
                           all_bias_results=out.get("all_bias_results", {}),
                           generate_figures=result_generate_figures)
 
     # --- Help tab ---
-    with tabs[14]:
+    if selected_main_panel == "help":
         show_help_section()
 
 
@@ -43859,7 +43954,7 @@ def show_help_section(*, force_full: bool = False) -> None:
     # v0.2.6-beta: Essential mode hides advanced help sub-tabs (Rating
     # Scale Guide, Model Capability, Public Beta) so Essential-view users see a
     # focused 7-tab section. Full view restores all 10. Users can switch
-    # from the sidebar's View density toggle (top of sidebar).
+    # from the sidebar's display-mode toggle (top of sidebar).
     essential_mode = (not force_full) and (
         st.session_state.get("app_view_density", "Essential") == "Essential"
     )
@@ -48149,11 +48244,28 @@ def _render_downloads(
     with st.container(border=True):
         st.markdown(t("downloads.manuscript_pointer_markdown"))
 
-    dl_tabs = st.tabs([
-        t("downloads.tab_data_tables"),
-        t("downloads.tab_figures"),
-        t("downloads.tab_scripts_config"),
-    ])
+    download_panel_labels = {
+        "data_tables": t("downloads.tab_data_tables"),
+        "figures": t("downloads.tab_figures"),
+        "scripts_config": t("downloads.tab_scripts_config"),
+    }
+    selected_download_panel = st.segmented_control(
+        t("downloads.panel_select_label"),
+        options=list(download_panel_labels),
+        default="data_tables",
+        format_func=lambda panel_id: download_panel_labels.get(str(panel_id), str(panel_id)),
+        key="downloads_panel",
+        help=t("downloads.panel_select_help"),
+        width="stretch",
+    )
+    selected_download_panel = selected_download_panel or "data_tables"
+    st.caption(t("downloads.panel_select_caption"))
+    public_export_mode = st.checkbox(
+        t("downloads.public_export_mode_label"),
+        value=True,
+        key="downloads_public_export_mode",
+        help=t("downloads.public_export_mode_help"),
+    )
 
     # ---- Collect all data frames ----
     summary = result.get("summary", pd.DataFrame())
@@ -48577,12 +48689,6 @@ def _render_downloads(
             })
     if anchor_parts:
         all_frames["anchors"] = pd.DataFrame(anchor_parts)
-    public_export_mode = st.checkbox(
-        t("downloads.public_export_mode_label"),
-        value=True,
-        key="downloads_public_export_mode",
-        help=t("downloads.public_export_mode_help"),
-    )
     stan_archive_contract_dl = stan_reproducibility_archive_contract_table(public_export_mode=bool(public_export_mode))
     if isinstance(stan_archive_contract_dl, pd.DataFrame) and not stan_archive_contract_dl.empty:
         all_frames["stan_reproducibility_archive_contract"] = stan_archive_contract_dl
@@ -48606,7 +48712,7 @@ def _render_downloads(
     # ================================================================
     # Sub-tab 0: Data Tables
     # ================================================================
-    with dl_tabs[0]:
+    if selected_download_panel == "data_tables":
         if public_export_mode:
             st.info(t("downloads.public_export_mode_info"))
         else:
@@ -48658,7 +48764,7 @@ def _render_downloads(
     # ================================================================
     # Sub-tab 1: Figures
     # ================================================================
-    with dl_tabs[1]:
+    if selected_download_panel == "figures":
         st.caption(t("downloads.figures_caption"))
         if not generate_figures:
             st.info(t("downloads.figures_skipped_info"))
@@ -49002,7 +49108,7 @@ def _render_downloads(
     # ================================================================
     # Sub-tab 2: Scripts & Config
     # ================================================================
-    with dl_tabs[2]:
+    if selected_download_panel == "scripts_config":
         st.caption(t("downloads.scripts_caption"))
 
         # --- Analysis configuration JSON ---
@@ -57601,7 +57707,7 @@ def main() -> None:
     ):
         st.sidebar.caption(t("sidebar.posterior_preserved_note"))
 
-    # View density toggle (v0.2.5+) — Essential hides advanced diagnostic
+    # Display-mode toggle (v0.2.5+) — Essential hides advanced diagnostic
     # sub-tabs and secondary expanders to reduce cognitive load for
     # users in guided workflows and quick runs. Full restores every v0.2.x feature for
     # researchers and publication-ready analyses. Defaults to Essential

@@ -21640,6 +21640,12 @@ def _guided_detail_navigator_table() -> pd.DataFrame:
             "Why": t("guided.nav_reason_assumptions"),
         },
         {
+            "Question": t("guided.nav_question_figures"),
+            "StartHere": t("guided.tab_figures"),
+            "ThenOpen": "Wright Map / Yardstick / Visuals",
+            "Why": t("guided.nav_reason_figures"),
+        },
+        {
             "Question": t("guided.nav_question_export"),
             "StartHere": t("guided.tab_report_export"),
             "ThenOpen": "Publication Document / Downloads",
@@ -22113,7 +22119,7 @@ def guided_goal_route_table() -> pd.DataFrame:
             t("guided.goal_col_when"): t("guided.goal_prepare_report_when"),
             t("guided.goal_col_start"): t("guided.tab_report_export"),
             t("guided.goal_col_next"): t("guided.goal_prepare_report_next"),
-            t("guided.goal_col_detail"): "Report & Export / Readiness / Publication Document",
+            t("guided.goal_col_detail"): "Report & Export / Figures / Readiness / Publication Document",
         },
         {
             "GoalId": "export_share",
@@ -22121,7 +22127,7 @@ def guided_goal_route_table() -> pd.DataFrame:
             t("guided.goal_col_when"): t("guided.goal_export_share_when"),
             t("guided.goal_col_start"): t("guided.tab_report_export"),
             t("guided.goal_col_next"): t("guided.goal_export_share_next"),
-            t("guided.goal_col_detail"): "Report & Export / Downloads",
+            t("guided.goal_col_detail"): "Report & Export / Downloads / Figures",
         },
         {
             "GoalId": "learn_terms",
@@ -22845,6 +22851,55 @@ def _render_guided_diagnostics_section(
         show_prediction_simulation_section(result, diagnostics, core=core)
 
 
+def _render_guided_figures_section(
+    result: dict,
+    diagnostics: dict,
+    *,
+    result_render_plots: bool,
+    result_generate_figures: bool,
+) -> None:
+    """Render figure-viewing surfaces as their own Essential section."""
+    st.subheader(t("guided.figures_subheader"))
+    st.caption(t("guided.figures_caption"))
+    with st.container(border=True):
+        st.markdown(t("guided.figures_location_markdown"))
+
+    if not result_render_plots:
+        st.info(t("guided.figures_plots_skipped_info"))
+        return
+
+    figure_tabs = st.tabs([
+        t("main_tabs.wright_map"),
+        t("main_tabs.visuals"),
+        t("guided.figures_export_tab"),
+    ])
+    with figure_tabs[0]:
+        show_wright_map_section(result, diagnostics)
+    with figure_tabs[1]:
+        force_full_visuals = st.checkbox(
+            t("guided.show_full_visuals"),
+            value=False,
+            key="guided_figures_show_full_visuals",
+            help=t("guided.show_full_visuals_help"),
+        )
+        show_visuals_section(result, diagnostics, force_full=force_full_visuals)
+    with figure_tabs[2]:
+        if result_generate_figures:
+            st.success(t("guided.figures_export_ready_info"))
+        else:
+            st.info(t("downloads.figures_skipped_info"))
+        st.markdown(t("guided.figures_export_hint_markdown"))
+        visual_guardrails = visual_claim_guardrail_table()
+        if isinstance(visual_guardrails, pd.DataFrame) and not visual_guardrails.empty:
+            _render_compact_dataframe(
+                visual_guardrails,
+                ["Visualization", "SafeReportWording", "DoNotWrite", "RequiredEvidence"],
+                details_label=t("guided.figures_guardrails_details_label"),
+                hide_index=True,
+                wrap_text=True,
+            )
+
+
 def _render_guided_report_export_section(
     result: dict,
     diagnostics: dict,
@@ -22918,6 +22973,7 @@ GUIDED_SECTION_I18N_KEYS = {
     "first_read": "guided.tab_first_read",
     "results": "guided.tab_results",
     "diagnostics": "guided.tab_diagnostics",
+    "figures": "guided.tab_figures",
     "report_export": "guided.tab_report_export",
     "learn": "guided.tab_learn",
 }
@@ -22964,14 +23020,16 @@ def _render_guided_essential_tabs(
     result_generate_figures: bool,
 ) -> None:
     """Render the selected Essential section without drawing every heavy panel."""
-    selected_section = st.selectbox(
+    selected_section = st.segmented_control(
         t("guided.section_select_label"),
         options=list(GUIDED_SECTION_IDS),
-        index=0,
+        default="start",
         format_func=_guided_section_label,
         key="guided_essential_section",
         help=t("guided.section_select_help"),
+        width="stretch",
     )
+    selected_section = selected_section or "start"
     st.caption(t("guided.section_select_caption"))
 
     if selected_section == "start":
@@ -23006,6 +23064,13 @@ def _render_guided_essential_tabs(
             all_bias_results,
             result_compute_pca=result_compute_pca,
             result_render_plots=result_render_plots,
+        )
+    elif selected_section == "figures":
+        _render_guided_figures_section(
+            result,
+            diagnostics,
+            result_render_plots=result_render_plots,
+            result_generate_figures=result_generate_figures,
         )
     elif selected_section == "report_export":
         _render_guided_report_export_section(

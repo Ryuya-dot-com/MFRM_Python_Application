@@ -48,6 +48,7 @@ def test_guided_detail_navigator_keeps_six_tab_path_visible():
         app.t("guided.tab_first_read"),
         app.t("guided.tab_results"),
         app.t("guided.tab_diagnostics"),
+        app.t("guided.tab_figures"),
         app.t("guided.tab_report_export"),
         app.t("guided.tab_learn"),
     }
@@ -107,6 +108,7 @@ def test_guided_section_selector_keeps_all_detail_sections_in_order():
         "first_read",
         "results",
         "diagnostics",
+        "figures",
         "report_export",
         "learn",
     ]
@@ -116,6 +118,7 @@ def test_guided_section_selector_keeps_all_detail_sections_in_order():
         app.t("guided.tab_first_read"),
         app.t("guided.tab_results"),
         app.t("guided.tab_diagnostics"),
+        app.t("guided.tab_figures"),
         app.t("guided.tab_report_export"),
         app.t("guided.tab_learn"),
     ]
@@ -284,6 +287,15 @@ def test_guided_goal_routes_cover_common_user_intents():
         app.t("guided.tab_report_export"),
         app.t("guided.tab_learn"),
     }
+
+
+def test_guided_figures_section_is_a_direct_visual_surface():
+    source = inspect.getsource(app._render_guided_figures_section)
+
+    assert "show_wright_map_section(result, diagnostics)" in source
+    assert "show_visuals_section(result, diagnostics" in source
+    assert "downloads.figures_skipped_info" in source
+    assert "guided.figures_location_markdown" in source
 
 
 def test_guided_goal_step_tables_have_three_actionable_steps():

@@ -2,7 +2,7 @@ name: Python Streamlit
 
 on:
   push:
-    branches: [main, master]
+    branches: [main, master, slope-aware-bias-inference]
     paths:
       - "streamlit_app.py"
       - "requirements.txt"
@@ -21,7 +21,7 @@ on:
       - "RELEASE_CHECKLIST.md"
       - "MFRM_STREAMLIT_RELEASE_PLAN.md"
   pull_request:
-    branches: [main, master]
+    branches: [main, master, slope-aware-bias-inference]
     paths:
       - "streamlit_app.py"
       - "requirements.txt"

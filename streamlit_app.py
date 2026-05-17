@@ -45,15 +45,22 @@ if any(flag in sys.argv for flag in CLI_CHECK_FLAGS):
 
 APP_VERSION = "0.2.14-beta"
 APP_RELEASE_LABEL = "standalone Python beta"
+LOGGER = logging.getLogger(__name__)
 RUNTIME_PACKAGE_FLOORS = OrderedDict([
     ("numpy", "1.24"),
     ("pandas", "2.0"),
     ("scipy", "1.10"),
     ("plotly", "6.1.1"),
     ("kaleido", "1.0"),
+    ("matplotlib", "3.8"),
     ("streamlit", "1.54"),
     ("openpyxl", "3.1"),
+    ("python-docx", "1.0"),
+    ("reportlab", "4.0"),
+    ("arviz", "0.17"),
+    ("netCDF4", "1.6"),
     ("pyarrow", "15.0"),
+    ("networkx", "3.0"),
 ])
 BUNDLED_ANCHOR_ASSETS = [
     "anchor_table_blank.csv",
@@ -68,6 +75,40 @@ PUBLICATION_FIGURE_WIDTH = 900
 PUBLICATION_FIGURE_MIN_HEIGHT = 420
 PUBLICATION_FIGURE_MAX_HEIGHT = 1400
 PUBLICATION_FIGURE_FONT = "Arial, Helvetica, sans-serif"
+TABLE_FILE_SOFT_WARNING_MB = 50
+TABLE_FILE_HARD_LIMIT_MB = 100
+TABLE_TEXT_HARD_LIMIT_MB = 10
+TABLE_MAX_ROWS = 250_000
+TABLE_MAX_COLUMNS = 250
+TABLE_MAX_CELLS = 2_500_000
+TABLE_FILE_SOFT_WARNING_BYTES = TABLE_FILE_SOFT_WARNING_MB * 1024 * 1024
+TABLE_FILE_HARD_LIMIT_BYTES = TABLE_FILE_HARD_LIMIT_MB * 1024 * 1024
+TABLE_TEXT_HARD_LIMIT_BYTES = TABLE_TEXT_HARD_LIMIT_MB * 1024 * 1024
+ESTIMATION_HOSTED_MAX_OBS = 100_000
+ESTIMATION_HOSTED_MAX_PARAMETERS = 30_000
+ESTIMATION_HOSTED_MAX_MML_EVALS = 5_000_000
+ESTIMATION_HOSTED_MAX_BIAS_CELLS = 250_000
+MML_COVARIANCE_AUTO_MAX_PARAMS = 180
+PCA_STABILITY_MIN_PERSONS = 30
+PCA_STABILITY_MIN_COLUMNS = 3
+PCA_STABILITY_MAX_MISSING_SHARE = 0.50
+PCA_STABILITY_MIN_PAIRWISE_N = 10
+PCA_STABILITY_LOO_MAX_COLUMNS = 40
+PCA_STABILITY_BOOTSTRAP_REPS = 40
+PCA_STABILITY_BOOTSTRAP_MAX_COLUMNS = 40
+PCA_STABILITY_BOOTSTRAP_SEED = 20260513
+PCA_STABILITY_MAX_LOO_EV1_DELTA = 0.50
+PCA_STABILITY_MAX_LOO_EV1_SHARE_DELTA = 0.10
+PCA_STABILITY_MAX_BOOTSTRAP_EV1_CV = 0.20
+PCA_STABILITY_MIN_LOADING_CORR = 0.70
+POSTERIOR_MAX_FILES = 8
+POSTERIOR_MAX_FILE_MB = 100
+POSTERIOR_MAX_TOTAL_MB = 250
+POSTERIOR_MAX_PARAMETERS = 2_000
+POSTERIOR_MAX_DRAWS_PER_CHAIN = 20_000
+POSTERIOR_MAX_DRAW_CELLS = 5_000_000
+POSTERIOR_MAX_FILE_BYTES = POSTERIOR_MAX_FILE_MB * 1024 * 1024
+POSTERIOR_MAX_TOTAL_BYTES = POSTERIOR_MAX_TOTAL_MB * 1024 * 1024
 
 LOCALES_DIR = Path(__file__).resolve().parent / "locales"
 SUPPORTED_LANGS = ("en", "ja")
@@ -119,6 +160,30 @@ def t(key: str, default: str | None = None, **fmt) -> str:
         except (KeyError, IndexError, ValueError):
             pass
     return text
+
+
+def _show_technical_error_details() -> bool:
+    """Return whether UI exception panels should expose stack traces."""
+    return str(os.environ.get("MFRM_SHOW_TECHNICAL_ERRORS", "")).strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+        "debug",
+    }
+
+
+def render_exception_details(exc: BaseException) -> None:
+    """Render exception details without leaking stack traces in hosted mode."""
+    if _show_technical_error_details():
+        st.exception(exc)
+        return
+    LOGGER.exception("Suppressed technical exception details in the Streamlit UI", exc_info=True)
+    st.caption(f"{type(exc).__name__}: {exc}")
+    st.caption(
+        "Stack trace hidden. Set MFRM_SHOW_TECHNICAL_ERRORS=1 in a local/dev runtime "
+        "to show full technical details."
+    )
 
 
 def _make_reason(key: str, **kwargs) -> dict:
@@ -182,7 +247,7 @@ class _LazyKeyLabel:
 
 
 def visual_interpretation_checklist() -> pd.DataFrame:
-    """Beginner-facing map from diagnostic visuals to interpretation actions."""
+    """Guided map from diagnostic visuals to interpretation actions."""
     rows = [
         {
             "Priority": 1,
@@ -191,7 +256,7 @@ def visual_interpretation_checklist() -> pd.DataFrame:
             "PrimaryQuestion": "Can the run be interpreted at all?",
             "ReadFirst": "Convergence, category support, reliability, fit, bias, anchor/linking, and marginal flags.",
             "ReviewTrigger": "Any row marked Review, Caution, Skipped when required, or Do not interpret yet.",
-            "BeginnerAction": "Resolve the highest-priority flagged row before reading individual plots.",
+            "SuggestedAction": "Resolve the highest-priority flagged row before reading individual plots.",
             "Caveat": "This is a triage screen, not a substitute for the detailed tabs.",
         },
         {
@@ -201,7 +266,7 @@ def visual_interpretation_checklist() -> pd.DataFrame:
             "PrimaryQuestion": "Do persons and facet elements overlap on the logit scale?",
             "ReadFirst": "Person distribution, facet element locations, threshold lines, and large empty gaps.",
             "ReviewTrigger": "Little or no overlap, many persons at one end, or a facet range far outside the person range.",
-            "BeginnerAction": "Check for ceiling/floor effects and whether the design has enough difficulty/severity spread.",
+            "SuggestedAction": "Check for ceiling/floor effects and whether the design has enough difficulty/severity spread.",
             "Caveat": "Location depends on constraints and anchors; compare only after confirming the scale origin.",
         },
         {
@@ -211,7 +276,7 @@ def visual_interpretation_checklist() -> pd.DataFrame:
             "PrimaryQuestion": "Does each rating category have a distinct region where it is most probable?",
             "ReadFirst": "Peaks, crossings, expected score curve, and whether intermediate categories disappear.",
             "ReviewTrigger": "A category has no peak, curves are out of order, or expected score is nearly flat.",
-            "BeginnerAction": "Open Categories/Steps and inspect sparse counts, average measures, and threshold order.",
+            "SuggestedAction": "Open Categories/Steps and inspect sparse counts, average measures, and threshold order.",
             "Caveat": "For PCM/GPCM, start with the averaged curve, then use the level selector to inspect each step-facet level.",
         },
         {
@@ -221,7 +286,7 @@ def visual_interpretation_checklist() -> pd.DataFrame:
             "PrimaryQuestion": "Is the rating scale functioning as ordered categories?",
             "ReadFirst": "Counts per category, average person measure monotonicity, step order, and GPCM slope spread.",
             "ReviewTrigger": "Count below 10, non-monotonic average measures, disordered thresholds, or extreme slopes.",
-            "BeginnerAction": "Consider clarifying or collapsing adjacent categories, then re-estimate and compare.",
+            "SuggestedAction": "Consider clarifying or collapsing adjacent categories, then re-estimate and compare.",
             "Caveat": "Sparse categories can still be substantively important; document them rather than deleting by default.",
         },
         {
@@ -231,7 +296,7 @@ def visual_interpretation_checklist() -> pd.DataFrame:
             "PrimaryQuestion": "Which elements show noisy, distorting, or overly predictable response patterns?",
             "ReadFirst": "Infit and Outfit zones, top |ZSTD| elements, and whether flags cluster by facet.",
             "ReviewTrigger": "Infit or Outfit outside 0.5-1.5, Outfit above 2.0, or many |ZSTD| values above 2.",
-            "BeginnerAction": "Inspect the flagged element's raw rows before removing or recoding it.",
+            "SuggestedAction": "Inspect the flagged element's raw rows before removing or recoding it.",
             "Caveat": "Large samples can make ZSTD overly sensitive; prioritize mean-square size for practical decisions.",
         },
         {
@@ -241,7 +306,7 @@ def visual_interpretation_checklist() -> pd.DataFrame:
             "PrimaryQuestion": "Is there evidence for a secondary dimension after the Rasch dimension is extracted?",
             "ReadFirst": "First eigenvalue, PC1/PC2 ratio, and the largest PC1 loadings.",
             "ReviewTrigger": "First eigenvalue at least 2.0, especially at least 3.0, or interpretable loading clusters.",
-            "BeginnerAction": "Review content clusters and consider PCM, separate analyses, or a multidimensional extension.",
+            "SuggestedAction": "Review content clusters and consider PCM, separate analyses, or a multidimensional extension.",
             "Caveat": "PCA of residuals is a diagnostic screen; it does not prove a second substantive trait by itself.",
         },
         {
@@ -251,7 +316,7 @@ def visual_interpretation_checklist() -> pd.DataFrame:
             "PrimaryQuestion": "Do specific facet-level pairs depart from the additive model?",
             "ReadFirst": "Cells with |t| at least 2, large absolute bias size, and coherent rows or columns of flagged cells.",
             "ReviewTrigger": "Many significant cells after considering multiple testing or a substantively coherent pattern.",
-            "BeginnerAction": "Interpret the pair in context, check sample size, and avoid treating isolated flags as proof.",
+            "SuggestedAction": "Interpret the pair in context, check sample size, and avoid treating isolated flags as proof.",
             "Caveat": "Bias screening is exploratory unless linking, design balance, and precision support stronger claims.",
         },
         {
@@ -261,7 +326,7 @@ def visual_interpretation_checklist() -> pd.DataFrame:
             "PrimaryQuestion": "Do observed marginal category distributions agree with model-expected distributions?",
             "ReadFirst": "Largest standardized marginal residuals and sparse cells.",
             "ReviewTrigger": "Repeated high residuals for the same facet, category, or pairwise cell.",
-            "BeginnerAction": "Use this as corroborating evidence with fit scatter, category diagnostics, and bias heatmap.",
+            "SuggestedAction": "Use this as corroborating evidence with fit scatter, category diagnostics, and bias heatmap.",
             "Caveat": "Definitions differ across software; compare direction and pattern, not exact residual equality by default.",
         },
         {
@@ -271,7 +336,7 @@ def visual_interpretation_checklist() -> pd.DataFrame:
             "PrimaryQuestion": "Which facet elements need substantive review?",
             "ReadFirst": "Severity/order, misfit flags, central tendency proxies, and pairwise agreement.",
             "ReviewTrigger": "Severity outliers, low agreement, central-tendency flags, or concentrated bias counts.",
-            "BeginnerAction": "For raters, combine severity, fit, agreement, and bias evidence before recommending retraining.",
+            "SuggestedAction": "For raters, combine severity, fit, agreement, and bias evidence before recommending retraining.",
             "Caveat": "High rater reliability means raters differ; it is not automatically good for standardized scoring.",
         },
         {
@@ -281,7 +346,7 @@ def visual_interpretation_checklist() -> pd.DataFrame:
             "PrimaryQuestion": "How stable are expected scores and reliability under plausible future designs?",
             "ReadFirst": "Expected category probabilities, simulated score distributions, refit stress tests, and forecast reliability.",
             "ReviewTrigger": "Forecast reliability remains low, simulated categories collapse, or refits fail under missingness.",
-            "BeginnerAction": "Increase raters, tasks, or targeted observations before treating fine-grained differences as stable.",
+            "SuggestedAction": "Increase raters, tasks, or targeted observations before treating fine-grained differences as stable.",
             "Caveat": "These are model-based forecasts; they inherit the current model's assumptions and data limitations.",
         },
     ]
@@ -353,6 +418,651 @@ def visual_method_evidence_table() -> pd.DataFrame:
         },
     ]
     return pd.DataFrame(rows)
+
+
+def visual_claim_guardrail_table() -> pd.DataFrame:
+    """Conservative claim boundaries for the main visual diagnostics."""
+    rows = [
+        {
+            "GuardrailID": "wright_map_targeting",
+            "Visualization": "Wright Map",
+            "AppliesTo": "wright_map",
+            "Where": "Wright Map tab; Downloads -> Figures",
+            "WhatCanBeRead": (
+                "Relative locations of persons, facet elements, and thresholds on the current fitted logit scale; "
+                "overlap, gaps, and possible ceiling or floor targeting."
+            ),
+            "SafeReportWording": (
+                "The Wright Map showed how person measures and facet-element locations overlapped on the fitted logit scale; "
+                "targeting was interpreted together with measures, reliability, category support, and fit diagnostics."
+            ),
+            "DoNotWrite": (
+                "Do not claim construct validity, absence of bias, external comparability, or causal explanations from the Wright Map alone."
+            ),
+            "RequiredEvidence": (
+                "measures.csv; person_measures.csv; facet_element_measures.csv; reliability.csv; final_report_readiness.csv"
+            ),
+            "ReviewTrigger": "Little person-item overlap, large empty gaps, extreme clustering, or scale-origin/anchor uncertainty.",
+            "NextAction": "Check ceiling/floor effects, reliability, anchors/linking, and fit before writing a targeting interpretation.",
+            "EvidenceFiles": "wright_map HTML/PNG; figure_manifest.csv; visual_evidence_map.csv",
+            "ArchiveFile": "visual_claim_guardrails.csv",
+        },
+        {
+            "GuardrailID": "facets_yardstick_text_map",
+            "Visualization": "FACETS-style yardstick",
+            "AppliesTo": "facets_yardstick_text_map; yardstick_map",
+            "Where": "Wright Map tab; Downloads -> FACETS-style yardstick reproduction",
+            "WhatCanBeRead": (
+                "Direct text-label lookup for persons, raters, tasks, criteria, and thresholds on the same ruler; "
+                "printed ordering of labels in a FACETS-like map."
+            ),
+            "SafeReportWording": (
+                "The FACETS-style yardstick was used as a direct text map for label lookup; threshold segments were drawn at fitted estimates, "
+                "while text dodging was used only for readability."
+            ),
+            "DoNotWrite": (
+                "Do not interpret label spacing or dodged text lanes as density, uncertainty, or additional model information; "
+                "do not compare yardsticks across runs without anchor/linking evidence."
+            ),
+            "RequiredEvidence": "yardstick_map.csv; mfrm_yardstick_map.csv; measures.csv; steps.csv; anchor_audit_summary.csv when linking is claimed",
+            "ReviewTrigger": "Crowded labels, overlapping estimates, long labels, or any cross-run comparison claim.",
+            "NextAction": "Use the yardstick for reviewer-facing label lookup and keep the full measures/steps tables beside it.",
+            "EvidenceFiles": "MFRM_FACETS_Yardstick_Reproduction.zip; mfrm_yardstick_geom_text.R; mfrm_yardstick_plotly.py; mfrm_yardstick_makie.jl",
+            "ArchiveFile": "visual_claim_guardrails.csv",
+        },
+        {
+            "GuardrailID": "threshold_step_lines",
+            "Visualization": "Threshold / step lines",
+            "AppliesTo": "threshold_map; category_probability_curve_*; facets_yardstick_text_map",
+            "Where": "Categories/Steps tab; Visuals -> Category Probability Curves; Wright Map tab",
+            "WhatCanBeRead": (
+                "Adjacent category boundary locations such as 0|1 or 4|5, step order, and the visual position of fitted thresholds."
+            ),
+            "SafeReportWording": (
+                "Step boundary lines identified the fitted adjacent-category thresholds; threshold interpretation was cross-checked against "
+                "step order, observed category counts, average measures, and category curves."
+            ),
+            "DoNotWrite": (
+                "Do not state that the rating scale is ordered or that all categories are distinct from threshold lines alone, "
+                "especially when categories are sparse or thresholds are disordered."
+            ),
+            "RequiredEvidence": "steps.csv; step_order.csv; category_diagnostics.csv; rating_scale_functioning_dashboard.csv",
+            "ReviewTrigger": "Disordered thresholds, very close/wide spacing, missing thresholds, or sparse adjacent categories.",
+            "NextAction": "Inspect the affected adjacent boundary and treat recoding as a sensitivity comparison only with rubric justification.",
+            "EvidenceFiles": "steps.csv; category_probability_curves.csv; rating_scale_decision_support.csv",
+            "ArchiveFile": "visual_claim_guardrails.csv",
+        },
+        {
+            "GuardrailID": "category_characteristic_curves",
+            "Visualization": "Category characteristic curves",
+            "AppliesTo": "category_probability_curve_*; expected_score_curve_*",
+            "Where": "Visuals -> Category Probability Curves; Categories/Steps tab",
+            "WhatCanBeRead": (
+                "Model-implied response probabilities, each category's peak, whether a category ever dominates, and expected-score shape."
+            ),
+            "SafeReportWording": (
+                "Category characteristic curves were used to check whether each category had a modeled peak and dominance region; "
+                "distinctness claims were limited to categories supported by counts, average measures, threshold order, and fit evidence."
+            ),
+            "DoNotWrite": (
+                "Do not collapse, retain, or rename categories solely from curve shape; do not infer the response process from curves without observed data support."
+            ),
+            "RequiredEvidence": "category_probability_curves.csv; category_curve_diagnostics.csv; category_diagnostics.csv; steps.csv",
+            "ReviewTrigger": "No dominance region, weak peak, flat expected-score curve, or level-specific GPCM curve contradicts the average curve.",
+            "NextAction": "Compare average and level-specific curves, then cross-check the same category in counts, thresholds, and fit residuals.",
+            "EvidenceFiles": "category_probability_curve HTML/PNG; expected_score_curve HTML/PNG; visual_evidence_map.csv",
+            "ArchiveFile": "visual_claim_guardrails.csv",
+        },
+        {
+            "GuardrailID": "category_count_threshold_support",
+            "Visualization": "Category counts and threshold-order support",
+            "AppliesTo": "category_usage; threshold_map; rating_scale_functioning_dashboard",
+            "Where": "Categories/Steps tab; Visuals -> Category usage / threshold map",
+            "WhatCanBeRead": "Observed category use, monotonicity of average measures, step order, and category-level residual evidence.",
+            "SafeReportWording": (
+                "Rating-scale functioning was evaluated by combining observed category counts, average person measures, threshold order, "
+                "category fit residuals, and category characteristic curves."
+            ),
+            "DoNotWrite": (
+                "Do not describe a category as functioning distinctly when it is unused, weakly supported, non-monotonic, or unsupported by curve evidence."
+            ),
+            "RequiredEvidence": "rating_scale_functioning_dashboard.csv; rating_scale_decision_support.csv; rating_scale_category_evidence.csv",
+            "ReviewTrigger": "Unused or low-count categories, non-monotonic average measures, large observed-expected category gaps, or fit flags.",
+            "NextAction": "Keep the original scoring as baseline and evaluate adjacent-category recodes only as documented sensitivity runs.",
+            "EvidenceFiles": "rating_scale_recode_candidates.csv; rating_scale_recode_map_long.csv; MFRM_Rating_Scale_Recode_Scripts.zip",
+            "ArchiveFile": "visual_claim_guardrails.csv",
+        },
+        {
+            "GuardrailID": "facet_measure_distribution",
+            "Visualization": "Facet measure distributions",
+            "AppliesTo": "facet_distribution; forest_measures; pathway_map",
+            "Where": "Visuals tab; Fit Details; Facet Dashboard",
+            "WhatCanBeRead": "Spread, ordering, uncertainty, and fit context for facet elements within the current connected design.",
+            "SafeReportWording": (
+                "Facet distributions summarized the spread and ordering of estimated elements within the fitted design; "
+                "substantive claims were checked against standard errors, reliability, sample-size adequacy, fit, and bias screens."
+            ),
+            "DoNotWrite": (
+                "Do not rank raters, items, tasks, or criteria as substantively different without uncertainty and sample-size evidence; "
+                "do not treat severity spread as automatically good or bad."
+            ),
+            "RequiredEvidence": "measures.csv; reliability.csv; facet_sample_size_adequacy.csv; fit_statistics.csv; bias_inference_audit.csv",
+            "ReviewTrigger": "Wide SEs, low sample adequacy, low reliability, misfit, or local interaction flags for the same facet level.",
+            "NextAction": "Pair the visual with measure tables and case-level diagnostics before drafting any intervention or rater-training claim.",
+            "EvidenceFiles": "facet_distribution HTML/PNG; forest_measures HTML/PNG; pathway_map HTML/PNG",
+            "ArchiveFile": "visual_claim_guardrails.csv",
+        },
+        {
+            "GuardrailID": "information_curve_targeting",
+            "Visualization": "Information curves",
+            "AppliesTo": "information_curve*",
+            "Where": "Visuals tab; Downloads -> Figures",
+            "WhatCanBeRead": "Where the fitted design provides more or less model-based measurement information on the trait scale.",
+            "SafeReportWording": (
+                "Information curves were used as model-based evidence about local precision and targeting, not as prospective validation evidence."
+            ),
+            "DoNotWrite": "Do not claim future design validity or causal improvement from information curves without a separate design study.",
+            "RequiredEvidence": "information_curves.csv; reliability.csv; design_evaluation.csv; refit_simulation_summary.csv when simulated",
+            "ReviewTrigger": "Information concentrated outside the intended score range or forecast reliability remains low.",
+            "NextAction": "Use design evaluation or refit simulation before recommending changes to raters, tasks, or rubric coverage.",
+            "EvidenceFiles": "information_curve HTML/PNG; design_evaluation.csv",
+            "ArchiveFile": "visual_claim_guardrails.csv",
+        },
+    ]
+    return pd.DataFrame(rows)
+
+
+def _visual_guardrail_row_for_figure(figure_name: str) -> pd.Series | None:
+    """Return the visual claim guardrail row that best matches a figure export name."""
+    name = str(figure_name or "").lower()
+    guardrails = visual_claim_guardrail_table()
+    if guardrails.empty:
+        return None
+    if "facets_yardstick" in name or "yardstick" in name:
+        key = "facets_yardstick_text_map"
+    elif "wright_map" in name:
+        key = "wright_map_targeting"
+    elif "category_probability" in name or "expected_score" in name:
+        key = "category_characteristic_curves"
+    elif "threshold" in name or "step" in name:
+        key = "threshold_step_lines"
+    elif "category_usage" in name:
+        key = "category_count_threshold_support"
+    elif "facet_distribution" in name or "forest" in name or "pathway" in name:
+        key = "facet_measure_distribution"
+    elif "information_curve" in name:
+        key = "information_curve_targeting"
+    else:
+        key = ""
+    if not key:
+        return None
+    hit = guardrails.loc[guardrails["GuardrailID"].astype(str) == key]
+    return hit.iloc[0] if not hit.empty else None
+
+
+def _citation_tokens_for_reference_keys(keys: Iterable[str]) -> list[str]:
+    """Return known ``(Author, Year)`` tokens for APA-library keys."""
+    tokens: list[str] = []
+    for key in keys:
+        for citation, mapped in _CITATION_TO_KEY.items():
+            if mapped == key:
+                tokens.append(citation)
+                break
+    return tokens
+
+
+def build_method_reference_audit() -> pd.DataFrame:
+    """Map app methodology surfaces to the shipped APA/Zotero reference basis.
+
+    The rows are static and reproducible: they summarize public references
+    confirmed from the local Zotero database / exported BibTeX audit, but the
+    app never reads a user's Zotero database at runtime.
+    """
+    rows_spec = [
+        {
+            "MethodArea": "Rasch and rating-scale model foundation",
+            "AppSurface": "Model scope; category diagnostics; method appendix",
+            "ReferenceKeys": [
+                "Rasch_1980",
+                "Andrich_1978",
+                "Masters_1982",
+                "Wright_Masters_1982",
+            ],
+            "ZoteroAlignment": "Confirmed in local Zotero/BibTeX audit: Rasch, Andrich, Masters, and Wright/Masters entries.",
+            "ManuscriptUse": "Cite when describing the Rasch-family measurement model, ordered-category response functions, and rating-scale/partial-credit interpretation.",
+            "ClaimBoundary": "These sources justify the model family, not the adequacy of the current dataset; adequacy still depends on convergence, category, fit, and design diagnostics.",
+        },
+        {
+            "MethodArea": "Many-facet rater-mediated measurement",
+            "AppSurface": "MFRM method text; rater/task/criterion measures; rater-effect interpretation",
+            "ReferenceKeys": [
+                "Linacre_1989",
+                "Linacre_2007",
+                "Eckes_2005",
+                "Eckes_2011",
+                "Engelhard_1994",
+                "Myford_Wolfe_2003",
+                "Myford_Wolfe_2004",
+                "Aryadoust_Ng_Sayama_2021",
+            ],
+            "ZoteroAlignment": "Confirmed in local Zotero collection `Many Facet Rasch Model` plus exported Rasch bibliography.",
+            "ManuscriptUse": "Cite when reporting rater-mediated language/performance assessment, rater severity, centrality, and many-facet reporting conventions.",
+            "ClaimBoundary": "Rater-effect sources do not by themselves support intervention or training claims; combine with fit, bias, agreement, and rubric-content review.",
+        },
+        {
+            "MethodArea": "MML, EM, EAP, and covariance diagnostics",
+            "AppSurface": "MML engine; posterior scoring; observed-information SE/CI audit",
+            "ReferenceKeys": [
+                "Bock_Aitkin_1981",
+                "Bock_Mislevy_1982",
+                "Louis_1982",
+                "Cramer_1946",
+            ],
+            "ZoteroAlignment": "Bock/Aitkin and Bock/Mislevy were confirmed in Zotero/BibTeX; Louis and Cramer are app-library statistical anchors.",
+            "ManuscriptUse": "Cite when describing marginal maximum likelihood, EM-based information, posterior/EAP scoring, and large-sample covariance approximations.",
+            "ClaimBoundary": "Observed-information SE/CI rows remain conditional on parameterization, rank, conditioning, eigenvalue regularization, and the fixed MML population scale.",
+        },
+        {
+            "MethodArea": "Fit, person-fit, and conditional estimation cautions",
+            "AppSurface": "Fit table; lz/lz* person fit; SE basis and conditional uncertainty cautions",
+            "ReferenceKeys": [
+                "Andersen_1973",
+                "Warm_1989",
+                "Wright_Linacre_1994",
+                "Linacre_2002",
+                "Drasgow_Levine_Williams_1985",
+                "Snijders_2001",
+            ],
+            "ZoteroAlignment": "Andersen and Warm were confirmed in the exported Rasch BibTeX bibliography; fit/person-fit anchors are in the app APA library.",
+            "ManuscriptUse": "Cite when discussing Rasch fit tests, weighted/conditional person estimation, mean-square fit, and person-fit indices.",
+            "ClaimBoundary": "Fit flags are diagnostic prompts; do not remove elements or claim invalidity without substantive review and design context.",
+        },
+        {
+            "MethodArea": "Local dependence, DIF, and bias/local-interaction screening",
+            "AppSurface": "Bias/local interaction tab; DFF tables; conditional bias-inference audit",
+            "ReferenceKeys": [
+                "Yen_1984",
+                "Christensen_Makransky_Horton_2017",
+                "Roussos_Stout_1996",
+                "Wilks_1938",
+                "Myford_Wolfe_2003",
+                "Myford_Wolfe_2004",
+            ],
+            "ZoteroAlignment": "Yen Q3 and Christensen/Makransky/Horton local-dependence entries were confirmed in local Zotero/BibTeX.",
+            "ManuscriptUse": "Cite when reporting residual correlations, local dependence, DIF/bias screening, likelihood-ratio/profile-CI logic, and rater-effect interactions.",
+            "ClaimBoundary": "The app reports conditional screens within computed facet-pair families; no-bias wording must not extend to untested cells, sparse cells, or disconnected designs.",
+        },
+        {
+            "MethodArea": "Residual PCA and dimensionality screening",
+            "AppSurface": "Dimensionality tab; residual PCA stability audit; visual evidence binder",
+            "ReferenceKeys": [
+                "Smith_2002",
+                "Reckase_1979",
+                "Stout_1987",
+                "Nandakumar_Yu_1996",
+                "Yen_1984",
+            ],
+            "ZoteroAlignment": "Residual-structure and local-dependence references align with the exported Rasch BibTeX bibliography and existing app library.",
+            "ManuscriptUse": "Cite when describing residual PCA as a dimensionality screen and when connecting secondary residual structure to local dependence.",
+            "ClaimBoundary": "Residual PCA is exploratory; use stability, overlap, bootstrap/LOO sensitivity, and substantive construct review before dimensionality claims.",
+        },
+        {
+            "MethodArea": "Simulation, bootstrap, and SE/CI coverage evidence",
+            "AppSurface": "ADEMP recovery; bootstrap/PCA stability; simulation and design evaluation",
+            "ReferenceKeys": [
+                "Morris_White_Crowther_2019",
+                "Efron_Tibshirani_1993",
+            ],
+            "ZoteroAlignment": "Morris/White/Crowther was confirmed in local Zotero; bootstrap anchor is already in the app APA library.",
+            "ManuscriptUse": "Cite when presenting parameter-recovery design, coverage diagnostics, bootstrap stability summaries, or model-based simulation limits.",
+            "ClaimBoundary": "Simulation outputs are method-evaluation or planning evidence; they are not prospective validation or causal evidence for the study sample.",
+        },
+        {
+            "MethodArea": "External R ecosystem and cross-package reference checks",
+            "AppSurface": "External validation templates; migration coverage; BibTeX/RIS export",
+            "ReferenceKeys": [
+                "Chalmers_2012",
+                "Mair_Hatzinger_2007",
+                "Rizopoulos_2006",
+                "Buerkner_2021",
+            ],
+            "ZoteroAlignment": "mirt, eRm, ltm, and brms/Stan references were confirmed in the exported Rasch BibTeX bibliography.",
+            "ManuscriptUse": "Cite only when a study explicitly discusses external package comparison, independent validation, or related Bayesian/IRT software ecosystems.",
+            "ClaimBoundary": "External packages are methodological references and validation targets; the Streamlit app does not call them at runtime.",
+        },
+        {
+            "MethodArea": "Recent MFRM extensions and Bayesian/rater drift context",
+            "AppSurface": "Limitations; extension roadmap; optional Stan/posterior context",
+            "ReferenceKeys": [
+                "Uto_Ueno_2020",
+                "Uto_2021",
+                "Uto_2023",
+                "Patz_Junker_Johnson_Mariano_2002",
+                "Orlando_Thissen_2000",
+                "Orlando_Thissen_2003",
+            ],
+            "ZoteroAlignment": "Uto, hierarchical rater model, and Orlando/Thissen item-fit records were confirmed in local Zotero.",
+            "ManuscriptUse": "Cite when positioning the app relative to Bayesian MFRM, hierarchical rater models, drift, or item-fit extensions not fully estimated by the current engine.",
+            "ClaimBoundary": "These references are context and roadmap anchors unless the corresponding model family was explicitly fitted and validated for the run.",
+        },
+    ]
+
+    rows: list[dict[str, object]] = []
+    for spec in rows_spec:
+        keys = [str(k) for k in spec["ReferenceKeys"]]
+        missing = [key for key in keys if key not in _APA_REFERENCE_LIBRARY]
+        parser_fallback = []
+        for key in keys:
+            if key in _APA_REFERENCE_LIBRARY:
+                try:
+                    if apa_entry_to_bibtex(key, _APA_REFERENCE_LIBRARY[key]).startswith("@misc"):
+                        parser_fallback.append(key)
+                except Exception:
+                    parser_fallback.append(key)
+        if missing:
+            coverage_status = "Missing reference"
+        elif parser_fallback:
+            coverage_status = "Needs parser review"
+        else:
+            coverage_status = "Ready"
+        rows.append({
+            "MethodArea": spec["MethodArea"],
+            "AppSurface": spec["AppSurface"],
+            "PrimaryReferenceKeys": "; ".join(keys),
+            "CitationTokens": "; ".join(_citation_tokens_for_reference_keys(keys)),
+            "ReferenceCoverageStatus": coverage_status,
+            "MissingReferenceKeys": "; ".join(missing),
+            "BibExportStatus": "Ready" if not parser_fallback else f"Parser fallback: {'; '.join(parser_fallback)}",
+            "ZoteroAlignment": spec["ZoteroAlignment"],
+            "ManuscriptUse": spec["ManuscriptUse"],
+            "ClaimBoundary": spec["ClaimBoundary"],
+        })
+    return pd.DataFrame(rows)
+
+
+def _method_reference_key_list(value: object) -> list[str]:
+    """Split semicolon-separated method-reference keys."""
+    if value is None:
+        return []
+    return [part.strip() for part in str(value).split(";") if part.strip()]
+
+
+def _nonempty_run_artifact(value: object) -> bool:
+    """Return True when a result/diagnostic object contains current-run evidence."""
+    if value is None:
+        return False
+    if isinstance(value, pd.DataFrame):
+        return not value.empty
+    if isinstance(value, pd.Series):
+        return not value.empty
+    if isinstance(value, dict):
+        return bool(value)
+    if isinstance(value, (list, tuple, set)):
+        return len(value) > 0
+    if isinstance(value, str):
+        return bool(value.strip())
+    try:
+        return bool(value)
+    except Exception:
+        return False
+
+
+def _reference_keys_from_method_reference_frame(frame: pd.DataFrame) -> list[str]:
+    """Resolve library keys represented in a method-reference audit frame."""
+    if not isinstance(frame, pd.DataFrame) or frame.empty or "PrimaryReferenceKeys" not in frame.columns:
+        return []
+    keys_seen: set[str] = set()
+    for raw in frame["PrimaryReferenceKeys"].tolist():
+        for key in _method_reference_key_list(raw):
+            if key in _APA_REFERENCE_LIBRARY:
+                keys_seen.add(key)
+    return sorted(keys_seen)
+
+
+def build_current_run_method_reference_audit(
+    result: dict,
+    diagnostics: dict,
+    all_bias_results: dict | None = None,
+) -> pd.DataFrame:
+    """Select method-reference audit rows activated by the current analysis.
+
+    The full audit is a static bibliography/claim-boundary map. This filtered
+    view is used by manuscript exports so references are tied to analyses that
+    were actually fitted or displayed in the current run.
+    """
+    audit = build_method_reference_audit()
+    if not isinstance(audit, pd.DataFrame) or audit.empty:
+        return pd.DataFrame()
+
+    config = result.get("config", {}) if isinstance(result, dict) else {}
+    prep = result.get("prep", {}) if isinstance(result, dict) else {}
+    method = str(config.get("method", "")).upper()
+    model = str(config.get("model", "")).upper()
+    triggers: dict[str, list[str]] = {}
+
+    def activate(area: str, evidence: str) -> None:
+        triggers.setdefault(area, [])
+        if evidence and evidence not in triggers[area]:
+            triggers[area].append(evidence)
+
+    activate(
+        "Rasch and rating-scale model foundation",
+        f"current model = {model or 'not recorded'}; score support = {prep.get('rating_min', '?')} to {prep.get('rating_max', '?')}",
+    )
+    activate(
+        "Many-facet rater-mediated measurement",
+        "facet measures and many-facet reporting text are generated for this run",
+    )
+
+    uncertainty = diagnostics.get("uncertainty", {}) if isinstance(diagnostics, dict) else {}
+    posterior = result.get("posterior", {}) if isinstance(result, dict) else {}
+    if (
+        method == "MML"
+        or _nonempty_run_artifact(uncertainty)
+        or (isinstance(posterior, dict) and posterior.get("available"))
+    ):
+        activate(
+            "MML, EM, EAP, and covariance diagnostics",
+            f"estimation method = {method or 'not recorded'}; uncertainty/posterior artifacts available = {bool(_nonempty_run_artifact(uncertainty) or _nonempty_run_artifact(posterior))}",
+        )
+
+    measures = diagnostics.get("measures", pd.DataFrame()) if isinstance(diagnostics, dict) else pd.DataFrame()
+    obs = diagnostics.get("obs", pd.DataFrame()) if isinstance(diagnostics, dict) else pd.DataFrame()
+    if (
+        isinstance(measures, pd.DataFrame)
+        and any(col in measures.columns for col in ["Infit", "Outfit", "SE", "SE_Status"])
+    ) or (
+        isinstance(obs, pd.DataFrame)
+        and any(col in obs.columns for col in ["StdResidual", "Residual", "Expected"])
+    ):
+        activate(
+            "Fit, person-fit, and conditional estimation cautions",
+            "fit/SE/residual diagnostics are available for manuscript reporting",
+        )
+
+    all_bias = all_bias_results or {}
+    if _nonempty_run_artifact(all_bias):
+        activate(
+            "Local dependence, DIF, and bias/local-interaction screening",
+            "bias/local-interaction result bundle is available for at least one facet pair",
+        )
+
+    pca_keys = [
+        "pca",
+        "pca_enabled",
+        "pca_eigenvalues",
+        "pca_loadings",
+        "pca_stability",
+        "pca_stability_audit",
+    ]
+    if isinstance(diagnostics, dict) and any(_nonempty_run_artifact(diagnostics.get(key)) for key in pca_keys):
+        activate(
+            "Residual PCA and dimensionality screening",
+            "residual PCA or PCA-stability diagnostics are available",
+        )
+
+    posterior_pv = (
+        posterior.get("plausible_values", pd.DataFrame())
+        if isinstance(posterior, dict) else pd.DataFrame()
+    )
+    simulation_candidates = [
+        result.get("fitted_predictions") if isinstance(result, dict) else None,
+        result.get("refit_simulation") if isinstance(result, dict) else None,
+        result.get("simulation") if isinstance(result, dict) else None,
+        diagnostics.get("design_evaluation") if isinstance(diagnostics, dict) else None,
+        posterior_pv,
+    ]
+    if (
+        bool(config.get("compute_plausible_values", False))
+        or any(_nonempty_run_artifact(value) for value in simulation_candidates)
+    ):
+        activate(
+            "Simulation, bootstrap, and SE/CI coverage evidence",
+            "prediction, plausible-value, simulation, bootstrap, or design-evaluation output is available",
+        )
+
+    if bool(config.get("external_validation_reported", False)) or bool(config.get("cross_package_validation_reported", False)):
+        activate(
+            "External R ecosystem and cross-package reference checks",
+            "current config marks an external/cross-package validation artifact as reported",
+        )
+
+    if bool(config.get("bayesian_extension_reported", False)) or bool(config.get("rater_drift_extension_reported", False)):
+        activate(
+            "Recent MFRM extensions and Bayesian/rater drift context",
+            "current config marks a Bayesian or rater-drift extension as reported",
+        )
+
+    selected = audit.loc[audit["MethodArea"].astype(str).isin(triggers.keys())].copy()
+    if selected.empty:
+        return selected
+    selected["CurrentRunUse"] = selected["MethodArea"].map(
+        lambda area: "Activated for this report" if area in triggers else "Reference boundary only"
+    )
+    selected["TriggerEvidence"] = selected["MethodArea"].map(
+        lambda area: "; ".join(triggers.get(str(area), []))
+    )
+    leading = [
+        "MethodArea",
+        "CurrentRunUse",
+        "TriggerEvidence",
+        "AppSurface",
+        "PrimaryReferenceKeys",
+        "CitationTokens",
+        "ReferenceCoverageStatus",
+        "BibExportStatus",
+        "ZoteroAlignment",
+        "ManuscriptUse",
+        "ClaimBoundary",
+    ]
+    return selected[[col for col in leading if col in selected.columns]]
+
+
+_CLAIM_AREA_TO_METHOD_REFERENCE_AREAS: dict[str, list[str]] = {
+    "Model and software scope": [
+        "Rasch and rating-scale model foundation",
+        "Many-facet rater-mediated measurement",
+        "MML, EM, EAP, and covariance diagnostics",
+    ],
+    "Convergence and final interpretability": [
+        "MML, EM, EAP, and covariance diagnostics",
+        "Fit, person-fit, and conditional estimation cautions",
+    ],
+    "MML population scale": [
+        "MML, EM, EAP, and covariance diagnostics",
+    ],
+    "Rating-scale functioning": [
+        "Rasch and rating-scale model foundation",
+        "Fit, person-fit, and conditional estimation cautions",
+    ],
+    "Reliability and separation": [
+        "Rasch and rating-scale model foundation",
+        "Many-facet rater-mediated measurement",
+    ],
+    "Fit and dimensionality": [
+        "Fit, person-fit, and conditional estimation cautions",
+        "Residual PCA and dimensionality screening",
+    ],
+    "Wright map targeting and measure interpretation": [
+        "Rasch and rating-scale model foundation",
+        "Many-facet rater-mediated measurement",
+    ],
+    "Bias / local interaction": [
+        "Local dependence, DIF, and bias/local-interaction screening",
+        "Many-facet rater-mediated measurement",
+    ],
+    "Anchoring and linking": [
+        "Many-facet rater-mediated measurement",
+    ],
+    "Prediction, plausible values, and simulation": [
+        "Simulation, bootstrap, and SE/CI coverage evidence",
+        "MML, EM, EAP, and covariance diagnostics",
+    ],
+    "External package comparison": [
+        "External R ecosystem and cross-package reference checks",
+    ],
+    "Bayesian / Uto-family extension": [
+        "Recent MFRM extensions and Bayesian/rater drift context",
+    ],
+}
+
+
+def _method_reference_summary_for_manuscript_area(
+    manuscript_area: str,
+    current_refs: pd.DataFrame,
+) -> dict[str, str]:
+    """Return citation/boundary strings for a claim-to-evidence matrix row."""
+    wanted = _CLAIM_AREA_TO_METHOD_REFERENCE_AREAS.get(str(manuscript_area), [])
+    if not wanted:
+        return {
+            "ReferenceAuditAreas": "",
+            "SuggestedCitations": "",
+            "CitationBoundary": "No dedicated method-reference area is mapped to this manuscript claim.",
+            "CitationEvidenceFile": "method_reference_audit.csv",
+        }
+    if isinstance(current_refs, pd.DataFrame) and not current_refs.empty:
+        selected = current_refs.loc[current_refs["MethodArea"].astype(str).isin(wanted)].copy()
+    else:
+        selected = pd.DataFrame()
+    if selected.empty and str(manuscript_area) == "External package comparison":
+        audit = build_method_reference_audit()
+        selected = audit.loc[audit["MethodArea"].astype(str).isin(wanted)].copy()
+    if selected.empty:
+        return {
+            "ReferenceAuditAreas": "; ".join(wanted),
+            "SuggestedCitations": "No current-run citation activated; treat this as a boundary unless the corresponding analysis was computed.",
+            "CitationBoundary": "Do not cite this area as evidence for the current run unless the analysis surface was enabled and archived.",
+            "CitationEvidenceFile": "method_reference_audit.csv",
+        }
+    return {
+        "ReferenceAuditAreas": "; ".join(selected["MethodArea"].astype(str).tolist()),
+        "SuggestedCitations": " | ".join(selected["CitationTokens"].astype(str).tolist()),
+        "CitationBoundary": " | ".join(selected["ClaimBoundary"].astype(str).tolist()),
+        "CitationEvidenceFile": "method_reference_audit.csv",
+    }
+
+
+def _method_reference_claim_boundary_lines(
+    result: dict,
+    diagnostics: dict,
+    all_bias_results: dict | None = None,
+    *,
+    max_rows: int = 8,
+) -> list[str]:
+    """Markdown bullets summarizing current-run method references."""
+    current_refs = build_current_run_method_reference_audit(result, diagnostics, all_bias_results)
+    if not isinstance(current_refs, pd.DataFrame) or current_refs.empty:
+        return ["- No current-run method-reference rows were activated; review `method_reference_audit.csv` before adding method citations."]
+    lines: list[str] = []
+    for _, row in current_refs.head(max_rows).iterrows():
+        lines.append(
+            f"- **{row.get('MethodArea', 'Method area')}**: cite {row.get('CitationTokens', 'not recorded')}. "
+            f"{row.get('ManuscriptUse', '')} Boundary: {row.get('ClaimBoundary', '')}"
+        )
+    remaining = len(current_refs) - min(len(current_refs), max_rows)
+    if remaining > 0:
+        lines.append(f"- Plus {remaining} additional current-run reference row(s) in `method_reference_audit.csv`.")
+    return lines
 
 
 def public_beta_limitations_table() -> pd.DataFrame:
@@ -506,16 +1216,25 @@ def mfrmr_015_migration_coverage_table() -> pd.DataFrame:
         {
             "mfrmr015Area": "MML recommended workflow",
             "PythonStatus": "Ready with review",
-            "PythonEvidence": "MML direct, EM, and hybrid paths; first-read readiness; strict marginal diagnostics; method appendix.",
+            "PythonEvidence": (
+                "MML direct, EM, Hybrid, and Auto paths; first-read readiness; "
+                "strict marginal diagnostics; method appendix; fixed-prior-SD "
+                "sensitivity plan and on-demand refit diagnostic via "
+                "evaluate_mml_prior_sd_sensitivity()."
+            ),
             "Boundary": "The app fixes population_prior_sd unless a future estimator expands latent variance handling.",
-            "NextValidation": "Document quadrature points, prior SD, constraints, and convergence before comparing with TAM or ConQuest-style MML.",
+            "NextValidation": (
+                "Document quadrature points, prior SD, constraints, convergence, "
+                "and prior-SD sensitivity before comparing with TAM or "
+                "ConQuest-style MML."
+            ),
         },
         {
             "mfrmr015Area": "Reporting checklist and summary bundles",
             "PythonStatus": "Partial equivalent",
             "PythonEvidence": "final_report_readiness, manuscript_claim_guide, visual_interpretation_checklist, method appendix, demo report, and OSF-style table bundles.",
             "Boundary": "Not a one-to-one port of every mfrmr APA/reporting helper.",
-            "NextValidation": "Check that final report warnings, caveats, and beginner next actions are present in every exported report bundle.",
+            "NextValidation": "Check that final report warnings, caveats, and guided next actions are present in every exported report bundle.",
         },
         {
             "mfrmr015Area": "Latent regression / population_formula",
@@ -959,7 +1678,11 @@ def mfrmr_020_migration_coverage_table() -> pd.DataFrame:
                 "Morris, White, and Crowther (2019): bias, MCSE(bias), "
                 "RMSE, MCSE(RMSE), MAE, raw / aligned errors, Pearson "
                 "correlation, mean SE, SE-availability rate, and 95 % "
-                "coverage (truth in estimate +/- 1.96 * SE). Location "
+                "coverage (truth in estimate +/- 1.96 * SE). "
+                "build_se_ci_coverage_report() separates the coverage "
+                "diagnostic into an exportable table with nominal coverage, "
+                "coverage error, SE/CI status summaries, interpretation, "
+                "and recommended action. Location "
                 "blocks (Person, Rater, Criterion) are mean-aligned per "
                 "replicate so the Rasch identification constant does not "
                 "appear as a systematic bias; the unaligned errors are "
@@ -968,12 +1691,13 @@ def mfrmr_020_migration_coverage_table() -> pd.DataFrame:
                 "model / fit_method / N / reps / seed; the simulation is "
                 "cached in session_state keyed on the input settings so "
                 "the cost is paid once per configuration. Math contract "
-                "pinned in tests/test_parameter_recovery.py (14 tests "
+                "pinned in tests/test_parameter_recovery.py (18 tests "
                 "covering refusal on bad inputs, three location-block "
                 "ParameterType values, long-table row counts, the "
                 "mean-alignment identity, Bias = mean(ErrorAligned), "
-                "RMSE / MAE closed forms, Coverage95 closed form, fixed-"
-                "seed determinism, ADEMP narrative completeness, and "
+                "RMSE / MAE closed forms, Coverage95 closed form, SE/CI "
+                "status propagation, explicit coverage report construction, "
+                "fixed-seed determinism, ADEMP narrative completeness, and "
                 "correlation positivity on a clean RSM fit)."
             ),
             "Boundary": (
@@ -1228,6 +1952,18 @@ def public_release_readiness_table() -> pd.DataFrame:
             "Action": "Use sanitized templates for external validation handoff; keep machine-specific paths and sensitive data out of the public repo.",
         },
         {
+            "Check": "Cross-language reproducibility scripts",
+            "Status": "Ready" if len(reproducibility_script_export_matrix()) >= 7 else "Review",
+            "Evidence": f"{len(reproducibility_script_export_matrix())} Python/R/Julia/Stan reproducibility rows are documented.",
+            "Action": "Archive the exact script, config, data fingerprint, package versions, and sampler settings used for each reproducibility claim.",
+        },
+        {
+            "Check": "Uto-family Bayesian MFRM Stan roadmap",
+            "Status": "Documented" if not bayesian_mfrm_stan_refinement_plan().empty else "Review",
+            "Evidence": "Uto & Ueno (2020), Uto (2021), and Uto (2023) are mapped to Stan implementation layers and claim boundaries.",
+            "Action": "Treat Uto-family Stan output as a Bayesian extension until model parameterization, priors, and diagnostics are validated.",
+        },
+        {
             "Check": "mfrmr 0.2.0 migration coverage",
             "Status": "Ready" if not mfrmr_020_migration_coverage_table().empty else "Review",
             "Evidence": f"{len(mfrmr_020_migration_coverage_table())} migration-scope rows documented through mfrmr 0.2.0 (inherits the 0.1.5 / 0.1.6 surface).",
@@ -1254,7 +1990,13 @@ def _compact_label(value, max_chars: int = 34) -> str:
 
 
 def _compact_label_list(values, max_chars: int = 34) -> list[str]:
-    return [_compact_label(value, max_chars=max_chars) for value in values]
+    prefs = get_visualization_preferences()
+    policy = str(prefs.get("label_policy", VISUAL_LABEL_POLICY_DEFAULT))
+    if policy == "Hover only":
+        return ["" for _ in values]
+    pref_max = int(prefs.get("label_max_chars", max_chars))
+    effective_max = pref_max if policy == "Show all" else min(int(max_chars), pref_max)
+    return [_compact_label(value, max_chars=effective_max) for value in values]
 
 
 def _readable_plot_margins(
@@ -1431,6 +2173,14 @@ def build_category_probability_curve_data(
         "Step": [f"Step_{idx + 1}" for idx in range(len(step_params))],
         "Estimate": np.asarray(step_params, dtype=float),
     })
+    if not thresholds.empty:
+        boundary = [
+            _yardstick_step_boundary(label, rating_min=rating_min)
+            for label in thresholds["Step"].astype(str).tolist()
+        ]
+        thresholds["DisplayLabel"] = [item[0] for item in boundary]
+        thresholds["BoundaryLower"] = [item[1] for item in boundary]
+        thresholds["BoundaryUpper"] = [item[2] for item in boundary]
     metadata = {
         "Model": model,
         "Scope": scope,
@@ -1442,6 +2192,8 @@ def build_category_probability_curve_data(
         "ThetaMin": theta_lo,
         "ThetaMax": theta_hi,
         "NCategories": n_cat,
+        "RatingMin": rating_min,
+        "RatingMax": int(rating_min + n_cat - 1),
     }
     return {
         "available": True,
@@ -1568,6 +2320,7 @@ _MEASURE_COLUMN_PRIORITY: list[str] = [
     "Facet", "Level", "Person", "Element",
     "Estimate", "Measure",
     "SE", "CI_Lower", "CI_Upper",
+    "SE_Method", "SE_Status", "CI_Method", "CI_Status", "UncertaintyCaution",
     "Infit", "InfitMnSq", "InfitZStd", "Infit_ZSTD",
     "Outfit", "OutfitMnSq", "OutfitZStd", "Outfit_ZSTD",
     "PtMeaCorr",
@@ -1719,6 +2472,21 @@ def uploaded_file_fingerprint(file_obj, length: int = 16) -> str | None:
     """Fingerprint uploaded-file content for session-state staleness checks."""
     if file_obj is None:
         return None
+    declared_size = getattr(file_obj, "size", None)
+    try:
+        declared_size_int = int(declared_size) if declared_size is not None else None
+    except (TypeError, ValueError):
+        declared_size_int = None
+    if declared_size_int is not None and declared_size_int >= TABLE_FILE_HARD_LIMIT_BYTES:
+        return stable_json_fingerprint(
+            {
+                "name": getattr(file_obj, "name", None),
+                "size": declared_size_int,
+                "sha256": None,
+                "content_hash_skipped": "file exceeds hard table-upload limit",
+            },
+            length=length,
+        )
     raw = b""
     try:
         raw = file_obj.getvalue()
@@ -3407,7 +4175,7 @@ def _params_large_writing_pca() -> dict:
         "criteria": ["Content", "Organization", "Language"],
         "theta_sd": 1.2,
         # One severity outlier (R4 = +1.60) to create a legible
-        # bias-heatmap signal for beginners learning the diagnostic.
+        # bias-heatmap signal for guided diagnostic review.
         "rater_severities": [-0.72, -0.18, -0.70, 1.60],
         "task_difficulties": [-0.22, 0.22],
         "criterion_difficulties": [-0.55, -0.10, 0.65],
@@ -4381,6 +5149,27 @@ def truncate_label(value, width=28):
 # of significance testing). 0.50 / 0.80 / 0.99 round out the options.
 VIZ_CI_LEVEL_OPTIONS: tuple[float, ...] = (0.50, 0.66, 0.80, 0.89, 0.90, 0.95, 0.99)
 VIZ_CI_LEVEL_DEFAULT: float = 0.95
+VISUAL_THEME_OPTIONS: tuple[str, ...] = (
+    "Manuscript white",
+    "Grayscale print",
+    "Colorblind-safe",
+    "Presentation",
+    "Dark inspection",
+)
+VISUAL_LABEL_POLICY_OPTIONS: tuple[str, ...] = (
+    "Auto",
+    "Show all",
+    "Important labels",
+    "Hover only",
+)
+VISUAL_CAPTION_DETAIL_OPTIONS: tuple[str, ...] = ("Short", "Standard", "Detailed")
+VISUAL_THEME_DEFAULT = "Manuscript white"
+VISUAL_LABEL_POLICY_DEFAULT = "Auto"
+VISUAL_CAPTION_DETAIL_DEFAULT = "Standard"
+VISUAL_BASE_FONT_SIZE_DEFAULT = 13
+VISUAL_LABEL_MAX_CHARS_DEFAULT = 34
+VISUAL_FIGURE_WIDTH_DEFAULT = PUBLICATION_FIGURE_WIDTH
+VISUAL_FIGURE_MIN_HEIGHT_DEFAULT = 540
 
 
 def get_viz_ci_level() -> float:
@@ -4396,6 +5185,167 @@ def get_viz_ci_level() -> float:
     if not (0.0 < level < 1.0):
         return VIZ_CI_LEVEL_DEFAULT
     return level
+
+
+def _session_value(key: str, default):
+    try:
+        return st.session_state.get(key, default)
+    except Exception:
+        return default
+
+
+def _clamp_int(value: object, default: int, min_value: int, max_value: int) -> int:
+    try:
+        out = int(value)
+    except (TypeError, ValueError):
+        out = default
+    return int(max(min_value, min(max_value, out)))
+
+
+def get_visualization_preferences() -> dict[str, object]:
+    """Return user-controlled visual export preferences with safe defaults."""
+    theme = str(_session_value("visual_theme", VISUAL_THEME_DEFAULT))
+    if theme not in VISUAL_THEME_OPTIONS:
+        theme = VISUAL_THEME_DEFAULT
+    label_policy = str(_session_value("visual_label_policy", VISUAL_LABEL_POLICY_DEFAULT))
+    if label_policy not in VISUAL_LABEL_POLICY_OPTIONS:
+        label_policy = VISUAL_LABEL_POLICY_DEFAULT
+    caption_detail = str(_session_value("visual_caption_detail", VISUAL_CAPTION_DETAIL_DEFAULT))
+    if caption_detail not in VISUAL_CAPTION_DETAIL_OPTIONS:
+        caption_detail = VISUAL_CAPTION_DETAIL_DEFAULT
+    return {
+        "theme": theme,
+        "label_policy": label_policy,
+        "caption_detail": caption_detail,
+        "base_font_size": _clamp_int(
+            _session_value("visual_base_font_size", VISUAL_BASE_FONT_SIZE_DEFAULT),
+            VISUAL_BASE_FONT_SIZE_DEFAULT,
+            9,
+            22,
+        ),
+        "label_max_chars": _clamp_int(
+            _session_value("visual_label_max_chars", VISUAL_LABEL_MAX_CHARS_DEFAULT),
+            VISUAL_LABEL_MAX_CHARS_DEFAULT,
+            8,
+            96,
+        ),
+        "figure_width": _clamp_int(
+            _session_value("visual_figure_width", VISUAL_FIGURE_WIDTH_DEFAULT),
+            VISUAL_FIGURE_WIDTH_DEFAULT,
+            640,
+            1600,
+        ),
+        "figure_min_height": _clamp_int(
+            _session_value("visual_figure_min_height", VISUAL_FIGURE_MIN_HEIGHT_DEFAULT),
+            VISUAL_FIGURE_MIN_HEIGHT_DEFAULT,
+            PUBLICATION_FIGURE_MIN_HEIGHT,
+            PUBLICATION_FIGURE_MAX_HEIGHT,
+        ),
+        "dpi": PUBLICATION_FIGURE_DPI,
+    }
+
+
+def _visualization_preferences_json() -> str:
+    return json.dumps(get_visualization_preferences(), indent=2, ensure_ascii=False, default=str)
+
+
+def build_visualization_preferences_table() -> pd.DataFrame:
+    prefs = get_visualization_preferences()
+    rows = [
+        {
+            "Setting": "Theme",
+            "Value": str(prefs.get("theme", VISUAL_THEME_DEFAULT)),
+            "Affects": "Figure background, grid, text color, and qualitative palette.",
+        },
+        {
+            "Setting": "Label policy",
+            "Value": str(prefs.get("label_policy", VISUAL_LABEL_POLICY_DEFAULT)),
+            "Affects": "Axis tick labels and dense categorical displays.",
+        },
+        {
+            "Setting": "Base font size",
+            "Value": str(prefs.get("base_font_size", VISUAL_BASE_FONT_SIZE_DEFAULT)),
+            "Affects": "Figure title, axis, legend, and annotation text size.",
+        },
+        {
+            "Setting": "Label max characters",
+            "Value": str(prefs.get("label_max_chars", VISUAL_LABEL_MAX_CHARS_DEFAULT)),
+            "Affects": "Maximum visible categorical label length before ellipsis.",
+        },
+        {
+            "Setting": "Static width",
+            "Value": str(prefs.get("figure_width", VISUAL_FIGURE_WIDTH_DEFAULT)),
+            "Affects": "PNG export width and publication figure layout.",
+        },
+        {
+            "Setting": "Minimum height",
+            "Value": str(prefs.get("figure_min_height", VISUAL_FIGURE_MIN_HEIGHT_DEFAULT)),
+            "Affects": "Minimum figure height before plot-specific expansion.",
+        },
+        {
+            "Setting": "Caption detail",
+            "Value": str(prefs.get("caption_detail", VISUAL_CAPTION_DETAIL_DEFAULT)),
+            "Affects": "Length and evidence detail of generated caption drafts.",
+        },
+    ]
+    return pd.DataFrame(rows)
+
+
+def _visual_theme_spec(theme: str) -> dict[str, object]:
+    if theme == "Dark inspection":
+        return {
+            "template": "plotly_dark",
+            "paper_bgcolor": "#111827",
+            "plot_bgcolor": "#111827",
+            "font_color": "#F9FAFB",
+            "axis_color": "#E5E7EB",
+            "grid_color": "#374151",
+            "legend_bgcolor": "rgba(17,24,39,0.86)",
+            "colorway": px.colors.qualitative.Safe,
+        }
+    if theme == "Grayscale print":
+        return {
+            "template": "plotly_white",
+            "paper_bgcolor": "white",
+            "plot_bgcolor": "white",
+            "font_color": "#111111",
+            "axis_color": "#222222",
+            "grid_color": "#D9D9D9",
+            "legend_bgcolor": "rgba(255,255,255,0.90)",
+            "colorway": ["#111111", "#555555", "#888888", "#BBBBBB", "#333333", "#777777"],
+        }
+    if theme == "Colorblind-safe":
+        return {
+            "template": "plotly_white",
+            "paper_bgcolor": "white",
+            "plot_bgcolor": "white",
+            "font_color": "#202124",
+            "axis_color": "#333333",
+            "grid_color": "#E2E2E2",
+            "legend_bgcolor": "rgba(255,255,255,0.90)",
+            "colorway": ["#0072B2", "#D55E00", "#009E73", "#CC79A7", "#F0E442", "#56B4E9", "#E69F00"],
+        }
+    if theme == "Presentation":
+        return {
+            "template": "plotly_white",
+            "paper_bgcolor": "white",
+            "plot_bgcolor": "white",
+            "font_color": "#111827",
+            "axis_color": "#1F2937",
+            "grid_color": "#D1D5DB",
+            "legend_bgcolor": "rgba(255,255,255,0.92)",
+            "colorway": px.colors.qualitative.Bold,
+        }
+    return {
+        "template": "plotly_white",
+        "paper_bgcolor": "white",
+        "plot_bgcolor": "white",
+        "font_color": "#222222",
+        "axis_color": "#444444",
+        "grid_color": "#E5E5E5",
+        "legend_bgcolor": "rgba(255,255,255,0.88)",
+        "colorway": px.colors.qualitative.Safe,
+    }
 
 
 def _ci_z(level: float) -> float:
@@ -5261,14 +6211,20 @@ def build_likelihood_information_criteria(result: dict | None) -> pd.DataFrame:
 # ============================================================================
 # Model-choice guidance: refit RSM / PCM / GPCM and compare
 # ============================================================================
-# The three rating-scale models form a nested hierarchy
+# The three rating-scale models form a nested hierarchy in the model
+# specification, but inferential LR-test wording depends on the
+# estimation route. With JMLE, incidental person parameters and bounded
+# GPCM slopes make Wilks-style p-values exploratory rather than
+# confirmatory. With comparable MML marginal likelihood fits, the
+# large-sample interpretation is more defensible when constraints and
+# quadrature/prior settings are aligned.
 #   RSM (Andersen 1977 / Andrich 1978) is a special case of
 #   PCM (Masters 1982) when per-step thresholds collapse to a common set;
 #   PCM is a special case of GPCM (Muraki 1992) when all slopes equal one.
 # AIC (Akaike 1974) and BIC (Schwarz 1978) compare any of the three on a
-# common information scale; the LR chi-square pivotal (Wilks 1938) gives
-# an additional inferential check on the nested pairs (RSM vs PCM,
-# PCM vs GPCM, and RSM vs GPCM).
+# common information scale; the LR chi-square pivotal (Wilks 1938) is
+# surfaced with caveats on the nested pairs (RSM vs PCM, PCM vs GPCM,
+# and RSM vs GPCM).
 # The helper below refits the two non-current models on the same data
 # and returns a publication-style comparison table with the per-row
 # DeltaAIC / DeltaBIC, evidence ratios (Burnham & Anderson 2002), and
@@ -5704,20 +6660,38 @@ def compute_model_choice_comparison(res: dict) -> dict:
         "BIC", "DeltaBIC", "BICEvidenceRatio", "BICWeight",
     ]]
 
+    method_label = str(config.get("method", "")).upper()
     lr_tests = _model_choice_lr_tests(model_results)
+    if isinstance(lr_tests, pd.DataFrame) and not lr_tests.empty:
+        lr_tests["InferenceScope"] = (
+            "exploratory_screening_jmle"
+            if method_label == "JMLE" else
+            "large_sample_mml_if_quadrature_prior_constraints_aligned"
+        )
     recommendation = _model_choice_recommend(comparison)
 
+    if method_label == "JMLE":
+        lr_scope = (
+            "For JMLE, LR-test p-values are exploratory screening indices because "
+            "person parameters are estimated jointly and GPCM slopes may be on "
+            "bounds; do not report them as confirmatory Wilks tests without "
+            "bootstrap or cross-validation evidence."
+        )
+    else:
+        lr_scope = (
+            "For MML, LR-test p-values are large-sample checks only when the "
+            "candidate fits use comparable marginal likelihoods with aligned "
+            "quadrature, prior SD, constraints, and no active boundary solutions."
+        )
     caveat = (
         "AIC, AICc, and BIC are evaluated on the same data and method; all "
         "three penalise model complexity, with BIC favouring parsimony most "
         "strongly. AICc (Hurvich & Tsai, 1989) is the finite-sample "
         "correction recommended over AIC when N / K < ~40 (Burnham & "
         "Anderson, 2002, p. 66); see the AICcRecommended flag in the "
-        "comparison table. The LR chi-square pivotal (Wilks, 1938) gives "
-        "an additional inferential check on the nested pairs (RSM in "
-        "PCM in GPCM). Refits inherit the original method, step facet, "
-        "and slope facet; differences across runs reflect the model term "
-        "itself, not the optimizer or the data."
+        f"comparison table. {lr_scope} Refits inherit the original method, "
+        "step facet, and slope facet; differences across runs reflect the "
+        "model term itself, not the optimizer or the data."
     )
 
     return {
@@ -5801,11 +6775,46 @@ def build_run_history_likelihood_table(history: list[dict]) -> pd.DataFrame:
         if not isinstance(entry, dict):
             continue
         output = entry.get("output_snapshot", {})
-        rows.append(extract_run_likelihood_row(
-            output,
-            timestamp=str(entry.get("timestamp", "")),
-            label=str(entry.get("label", "")),
-        ))
+        if _history_entry_has_snapshot(entry):
+            rows.append(extract_run_likelihood_row(
+                output,
+                timestamp=str(entry.get("timestamp", "")),
+                label=str(entry.get("label", "")),
+            ))
+        else:
+            rows.append({
+                "Label": str(entry.get("label", "")),
+                "Timestamp": str(entry.get("timestamp", "")),
+                "Model": entry.get("model", ""),
+                "Method": entry.get("method", ""),
+                "EstimatorLabel": entry.get("method", ""),
+                "N": entry.get("n_obs", np.nan),
+                "KParams": entry.get("k_params", np.nan),
+                "LogLik": entry.get("loglik", np.nan),
+                "Deviance": entry.get("deviance", np.nan),
+                "Regularization": entry.get("regularization", ""),
+                "AIC": entry.get("aic", np.nan),
+                "BIC": entry.get("bic", np.nan),
+                "LogLikPerObs": (
+                    entry.get("loglik", np.nan) / entry.get("n_obs", np.nan)
+                    if pd.notna(entry.get("loglik", np.nan)) and pd.notna(entry.get("n_obs", np.nan))
+                    and float(entry.get("n_obs", 0) or 0) > 0
+                    else np.nan
+                ),
+                "AICPerObs": (
+                    entry.get("aic", np.nan) / entry.get("n_obs", np.nan)
+                    if pd.notna(entry.get("aic", np.nan)) and pd.notna(entry.get("n_obs", np.nan))
+                    and float(entry.get("n_obs", 0) or 0) > 0
+                    else np.nan
+                ),
+                "BICPerObs": (
+                    entry.get("bic", np.nan) / entry.get("n_obs", np.nan)
+                    if pd.notna(entry.get("bic", np.nan)) and pd.notna(entry.get("n_obs", np.nan))
+                    and float(entry.get("n_obs", 0) or 0) > 0
+                    else np.nan
+                ),
+                "ComparableIC": False,
+            })
     out = pd.DataFrame(rows)
     if out.empty:
         return out
@@ -8982,8 +9991,12 @@ def _recovery_rows_from_fit(
     rows = []
     z95 = float(_norm.ppf(0.975))
 
-    # Build a (Facet, Level) -> SE lookup from the optional measures table.
+    # Build (Facet, Level) lookups from the optional measures table.
     se_lookup: dict[tuple[str, str], float] = {}
+    uncertainty_lookup: dict[tuple[str, str], dict[str, str]] = {}
+    uncertainty_cols = [
+        "SE_Method", "SE_Status", "CI_Method", "CI_Status", "UncertaintyCaution",
+    ]
     if isinstance(measures, pd.DataFrame) and not measures.empty and "SE" in measures.columns:
         for facet_val, level_val, se_val in zip(
             measures["Facet"].astype(str),
@@ -8995,8 +10008,31 @@ def _recovery_rows_from_fit(
             except (TypeError, ValueError):
                 continue
 
+        if {"Facet", "Level"}.issubset(measures.columns):
+            for _, measure_row in measures.iterrows():
+                key = (str(measure_row.get("Facet")), str(measure_row.get("Level")))
+                uncertainty_lookup[key] = {
+                    col: str(measure_row.get(col, "not_reported"))
+                    for col in uncertainty_cols
+                }
+
     def _se_for(facet_name: str, level: str) -> float:
         return float(se_lookup.get((facet_name, str(level)), np.nan))
+
+    def _uncertainty_for(facet_name: str, level: str) -> dict[str, str]:
+        default = {
+            "SE_Method": "not reported by diagnostics",
+            "SE_Status": "not_reported",
+            "CI_Method": "not reported by diagnostics",
+            "CI_Status": "not_reported",
+            "UncertaintyCaution": "Coverage is unavailable unless finite positive SE values are reported.",
+        }
+        found = uncertainty_lookup.get((facet_name, str(level)))
+        if not found:
+            return default
+        out = default.copy()
+        out.update({k: v for k, v in found.items() if v and v != "nan"})
+        return out
 
     # --- Person rows -------------------------------------------------------
     if include_person:
@@ -9020,6 +10056,7 @@ def _recovery_rows_from_fit(
                 se = _se_for("Person", str(p))
                 err_aligned = e_aligned - t_aligned
                 err_raw = e_val - t_val
+                uncertainty = _uncertainty_for("Person", str(p))
                 covered = (
                     bool(abs(err_aligned) <= z95 * se)
                     if np.isfinite(se) and se > 0
@@ -9038,6 +10075,13 @@ def _recovery_rows_from_fit(
                     "ErrorAligned": float(err_aligned),
                     "SE": float(se) if np.isfinite(se) else np.nan,
                     "Covered95": covered,
+                    "NominalCILevel": 0.95,
+                    "CoverageMethod": "mean-aligned Wald interval: abs(ErrorAligned) <= z_0.975 * SE",
+                    "SE_Method": uncertainty["SE_Method"],
+                    "SE_Status": uncertainty["SE_Status"],
+                    "CI_Method": uncertainty["CI_Method"],
+                    "CI_Status": uncertainty["CI_Status"],
+                    "UncertaintyCaution": uncertainty["UncertaintyCaution"],
                     "ComparisonScale": "logit_mean_aligned",
                     "RecoveryComparable": np.isfinite(err_aligned),
                     "RecoveryBasis": "mean_alignment",
@@ -9063,6 +10107,7 @@ def _recovery_rows_from_fit(
                 se = _se_for(facet_name, level)
                 err_aligned = e_aligned - t_aligned
                 err_raw = e_val - t_val
+                uncertainty = _uncertainty_for(facet_name, level)
                 covered = (
                     bool(abs(err_aligned) <= z95 * se)
                     if np.isfinite(se) and se > 0
@@ -9081,12 +10126,121 @@ def _recovery_rows_from_fit(
                     "ErrorAligned": float(err_aligned),
                     "SE": float(se) if np.isfinite(se) else np.nan,
                     "Covered95": covered,
+                    "NominalCILevel": 0.95,
+                    "CoverageMethod": "mean-aligned Wald interval: abs(ErrorAligned) <= z_0.975 * SE",
+                    "SE_Method": uncertainty["SE_Method"],
+                    "SE_Status": uncertainty["SE_Status"],
+                    "CI_Method": uncertainty["CI_Method"],
+                    "CI_Status": uncertainty["CI_Status"],
+                    "UncertaintyCaution": uncertainty["UncertaintyCaution"],
                     "ComparisonScale": "logit_mean_aligned",
                     "RecoveryComparable": np.isfinite(err_aligned),
                     "RecoveryBasis": "mean_alignment",
                 })
 
     return pd.DataFrame(rows)
+
+
+def _compact_value_counts(series: pd.Series | None, *, max_items: int = 4) -> str:
+    """Return a compact, stable value-count summary for status columns."""
+    if series is None:
+        return ""
+    clean = series.dropna().astype(str)
+    clean = clean[clean.str.len() > 0]
+    if clean.empty:
+        return ""
+    counts = clean.value_counts()
+    pieces = [f"{idx}={int(count)}" for idx, count in counts.head(max_items).items()]
+    remaining = int(counts.iloc[max_items:].sum()) if len(counts) > max_items else 0
+    if remaining:
+        pieces.append(f"other={remaining}")
+    return "; ".join(pieces)
+
+
+def _primary_status(series: pd.Series | None) -> str:
+    """Return the modal status value, or not_reported when unavailable."""
+    if series is None:
+        return "not_reported"
+    clean = series.dropna().astype(str)
+    clean = clean[clean.str.len() > 0]
+    if clean.empty:
+        return "not_reported"
+    return str(clean.value_counts().index[0])
+
+
+def _coverage_diagnostic_label(
+    coverage: float,
+    coverage_n: int,
+    *,
+    nominal: float = 0.95,
+) -> str:
+    """Classify Monte Carlo coverage against a nominal CI level."""
+    if coverage_n <= 0 or not np.isfinite(coverage):
+        return "No finite positive-SE rows; coverage not evaluated."
+    if coverage_n < 30:
+        return "Screening only; increase replicates before treating coverage as calibration evidence."
+    error = float(coverage - nominal)
+    if abs(error) <= 0.05:
+        return "Coverage close to nominal in this simulation condition."
+    if error < -0.05:
+        return "Under-coverage in this simulation condition; intervals may be too narrow."
+    return "Over-coverage in this simulation condition; intervals may be conservative."
+
+
+def _coverage_recommended_action(
+    coverage: float,
+    coverage_n: int,
+    primary_se_status: str,
+    *,
+    nominal: float = 0.95,
+) -> str:
+    """Translate the coverage diagnostic into a manuscript-facing action."""
+    if coverage_n <= 0 or not np.isfinite(coverage):
+        return "Report that finite positive SEs were unavailable for this block; do not cite CI coverage."
+    if coverage_n < 30:
+        return "Increase Monte Carlo replicates and match the generator to the intended study design before citing coverage."
+    error = float(coverage - nominal)
+    status_note = f"SE status: {primary_se_status}."
+    if abs(error) <= 0.05:
+        return f"Report as a design-specific validation screen, with model/design/reps/seed and {status_note}"
+    if error < -0.05:
+        return f"Treat reported CIs cautiously, inspect SE method/status, and run a larger validation grid. {status_note}"
+    return f"Intervals appear conservative in this condition; verify on adjacent designs before using as a general claim. {status_note}"
+
+
+def _se_basis_risk(primary_se_status: str, se_status_summary: str = "") -> str:
+    text = f"{primary_se_status} {se_status_summary}".lower()
+    if "not_reported" in text or "not_available" in text:
+        return "se_unavailable"
+    if "regularized" in text:
+        return "regularized_structural_covariance"
+    if "ok" in text and "conditional_approximation" not in text:
+        return "structural_covariance"
+    if "conditional_approximation" in text or "posterior" in text:
+        return "conditional_or_posterior_approximation"
+    return "mixed_or_unclassified"
+
+
+def _coverage_claim_status(
+    coverage: float,
+    coverage_n: int,
+    primary_se_status: str,
+    se_status_summary: str = "",
+    *,
+    nominal: float = 0.95,
+) -> str:
+    if coverage_n <= 0 or not np.isfinite(coverage):
+        return "Do not claim"
+    if coverage_n < 30:
+        return "Screening only"
+    risk = _se_basis_risk(primary_se_status, se_status_summary)
+    if risk in {"se_unavailable", "mixed_or_unclassified"}:
+        return "Report with caveat"
+    if risk in {"regularized_structural_covariance", "conditional_or_posterior_approximation"}:
+        return "Report with caveat"
+    if abs(float(coverage - nominal)) > 0.05:
+        return "Report with caveat"
+    return "Ready"
 
 
 def _recovery_summarize(rows: pd.DataFrame) -> pd.DataFrame:
@@ -9135,13 +10289,22 @@ def _recovery_summarize(rows: pd.DataFrame) -> pd.DataFrame:
         mean_se = float(np.mean(se[se_ok])) if se_ok.any() else np.nan
         se_rate = float(np.mean(se_ok))
         covered_arr = covered.dropna().astype(bool).to_numpy()
+        coverage_n = int(covered_arr.size)
         coverage = float(np.mean(covered_arr)) if covered_arr.size else np.nan
+        nominal = 0.95
+        coverage_error = float(coverage - nominal) if np.isfinite(coverage) else np.nan
+        se_status_series = grp["SE_Status"] if "SE_Status" in grp.columns else None
+        ci_status_series = grp["CI_Status"] if "CI_Status" in grp.columns else None
+        primary_se_status = _primary_status(se_status_series)
+        se_summary = _compact_value_counts(se_status_series)
+        ci_summary = _compact_value_counts(ci_status_series)
         summaries.append({
             "ParameterType": ptype,
             "Facet": facet,
             "ComparisonScale": scale,
             "Rows": int(len(grp)),
             "Reps": int(grp["rep"].nunique()),
+            "CoverageN": coverage_n,
             "MeanTruth": float(np.mean(truth[np.isfinite(truth)])) if np.any(np.isfinite(truth)) else np.nan,
             "MeanEstimate": float(np.mean(est_aligned[np.isfinite(est_aligned)])) if np.any(np.isfinite(est_aligned)) else np.nan,
             "Bias": bias,
@@ -9154,11 +10317,125 @@ def _recovery_summarize(rows: pd.DataFrame) -> pd.DataFrame:
             "Correlation": corr,
             "MeanSE": mean_se,
             "SEAvailableRate": se_rate,
+            "NominalCoverage": nominal,
             "Coverage95": coverage,
+            "CoverageErrorFromNominal": coverage_error,
+            "PrimarySEStatus": primary_se_status,
+            "SEStatusSummary": se_summary,
+            "CIStatusSummary": ci_summary,
+            "SEBasisRisk": _se_basis_risk(primary_se_status, se_summary),
+            "CoverageClaimStatus": _coverage_claim_status(
+                coverage, coverage_n, primary_se_status, se_summary, nominal=nominal
+            ),
+            "CoverageInterpretation": _coverage_diagnostic_label(
+                coverage, coverage_n, nominal=nominal
+            ),
+            "RecommendedAction": _coverage_recommended_action(
+                coverage, coverage_n, primary_se_status, nominal=nominal
+            ),
         })
     return pd.DataFrame(summaries).sort_values(
         ["ParameterType", "Facet", "ComparisonScale"]
     ).reset_index(drop=True)
+
+
+def build_se_ci_coverage_report(
+    recovery_bundle: dict | pd.DataFrame,
+    *,
+    nominal: float = 0.95,
+) -> pd.DataFrame:
+    """Build an explicit SE/CI coverage diagnostic table from recovery output.
+
+    The table is intentionally separate from the ADEMP performance summary so
+    manuscript exports can cite coverage only with its Monte Carlo size, SE
+    status, interpretation, and recommended action.
+    """
+    if isinstance(recovery_bundle, pd.DataFrame):
+        summary = _recovery_summarize(recovery_bundle)
+    elif isinstance(recovery_bundle, dict):
+        summary = recovery_bundle.get("recovery_summary", pd.DataFrame())
+        if not isinstance(summary, pd.DataFrame) or summary.empty:
+            recovery = recovery_bundle.get("recovery", pd.DataFrame())
+            summary = _recovery_summarize(recovery) if isinstance(recovery, pd.DataFrame) else pd.DataFrame()
+    else:
+        summary = pd.DataFrame()
+    if not isinstance(summary, pd.DataFrame) or summary.empty:
+        return pd.DataFrame()
+
+    report = summary.copy()
+    if "NominalCoverage" not in report.columns:
+        report["NominalCoverage"] = float(nominal)
+    else:
+        report["NominalCoverage"] = float(nominal)
+    if "CoverageN" not in report.columns:
+        report["CoverageN"] = np.nan
+    coverage = pd.to_numeric(report.get("Coverage95"), errors="coerce")
+    report["CoverageError"] = coverage - float(nominal)
+    report["CoverageAbsError"] = report["CoverageError"].abs()
+    if "PrimarySEStatus" not in report.columns:
+        report["PrimarySEStatus"] = "not_reported"
+    if "SEStatusSummary" not in report.columns:
+        report["SEStatusSummary"] = ""
+    if "CIStatusSummary" not in report.columns:
+        report["CIStatusSummary"] = ""
+    if "SEBasisRisk" not in report.columns:
+        report["SEBasisRisk"] = [
+            _se_basis_risk(status, summary)
+            for status, summary in zip(
+                report["PrimarySEStatus"].astype(str),
+                report["SEStatusSummary"].astype(str),
+            )
+        ]
+    if "CoverageClaimStatus" not in report.columns:
+        report["CoverageClaimStatus"] = [
+            _coverage_claim_status(
+                cov,
+                int(n) if np.isfinite(n) else 0,
+                str(status),
+                str(summary),
+                nominal=nominal,
+            )
+            for cov, n, status, summary in zip(
+                coverage,
+                pd.to_numeric(report["CoverageN"], errors="coerce"),
+                report["PrimarySEStatus"].astype(str),
+                report["SEStatusSummary"].astype(str),
+            )
+        ]
+    report["Interpretation"] = [
+        _coverage_diagnostic_label(cov, int(n) if np.isfinite(n) else 0, nominal=nominal)
+        for cov, n in zip(coverage, pd.to_numeric(report["CoverageN"], errors="coerce"))
+    ]
+    report["RecommendedAction"] = [
+        _coverage_recommended_action(
+            cov,
+            int(n) if np.isfinite(n) else 0,
+            str(status),
+            nominal=nominal,
+        )
+        for cov, n, status in zip(
+            coverage,
+            pd.to_numeric(report["CoverageN"], errors="coerce"),
+            report["PrimarySEStatus"].astype(str),
+        )
+    ]
+    ordered = [
+        "ParameterType", "Facet", "ComparisonScale", "Reps", "Rows",
+        "CoverageN", "NominalCoverage", "Coverage95", "CoverageError",
+        "CoverageAbsError", "SEAvailableRate", "MeanSE", "PrimarySEStatus",
+        "SEStatusSummary", "CIStatusSummary", "SEBasisRisk", "CoverageClaimStatus",
+        "Interpretation", "RecommendedAction",
+    ]
+    available_cols = [col for col in ordered if col in report.columns]
+    rest = [col for col in report.columns if col not in available_cols]
+    return report[available_cols + rest].reset_index(drop=True)
+
+
+def evaluate_se_ci_coverage(**kwargs) -> dict:
+    """Run parameter recovery and attach the explicit SE/CI coverage report."""
+    bundle = evaluate_parameter_recovery(**kwargs)
+    bundle["coverage_report"] = build_se_ci_coverage_report(bundle)
+    return bundle
 
 
 def evaluate_parameter_recovery(
@@ -9201,6 +10478,7 @@ def evaluate_parameter_recovery(
         * ``reason`` (str) — populated when ``available`` is False
         * ``recovery`` (DataFrame) — long table of per-rep, per-row errors
         * ``recovery_summary`` (DataFrame) — bias / RMSE / coverage95 aggregates
+        * ``coverage_report`` (DataFrame) — SE/CI coverage interpretation table
         * ``rep_overview`` (DataFrame) — per-rep convergence and timing
         * ``ademp`` (dict) — ADEMP-style narrative metadata
         * ``settings`` (dict) — generator and fit settings used
@@ -9212,6 +10490,7 @@ def evaluate_parameter_recovery(
             "reason": f"Unsupported model {model!r}; choose RSM, PCM, or GPCM.",
             "recovery": pd.DataFrame(),
             "recovery_summary": pd.DataFrame(),
+            "coverage_report": pd.DataFrame(),
             "rep_overview": pd.DataFrame(),
             "ademp": {},
             "settings": {},
@@ -9223,6 +10502,7 @@ def evaluate_parameter_recovery(
             "reason": f"Unsupported fit_method {fit_method!r}; choose JMLE or MML.",
             "recovery": pd.DataFrame(),
             "recovery_summary": pd.DataFrame(),
+            "coverage_report": pd.DataFrame(),
             "rep_overview": pd.DataFrame(),
             "ademp": {},
             "settings": {},
@@ -9233,6 +10513,7 @@ def evaluate_parameter_recovery(
             "reason": "n_cat must be >= 2.",
             "recovery": pd.DataFrame(),
             "recovery_summary": pd.DataFrame(),
+            "coverage_report": pd.DataFrame(),
             "rep_overview": pd.DataFrame(),
             "ademp": {},
             "settings": {},
@@ -9339,6 +10620,10 @@ def evaluate_parameter_recovery(
         else pd.DataFrame()
     )
     recovery_summary = _recovery_summarize(recovery)
+    coverage_report = build_se_ci_coverage_report({
+        "recovery": recovery,
+        "recovery_summary": recovery_summary,
+    })
     rep_overview = pd.DataFrame(rep_rows)
 
     ademp = {
@@ -9398,6 +10683,7 @@ def evaluate_parameter_recovery(
         "reason": "" if not recovery.empty else "All recovery replications failed before producing rows.",
         "recovery": recovery,
         "recovery_summary": recovery_summary,
+        "coverage_report": coverage_report,
         "rep_overview": rep_overview,
         "ademp": ademp,
         "settings": settings,
@@ -13069,6 +14355,15 @@ def estimate_bias_interaction(
             "Profile CI Level": profile_ci["level"],
             "Profile CI Status": profile_ci["status"],
             "Likelihood Basis": likelihood_basis,
+            "SE Basis": (
+                "conditional information for one additive bias shift at fitted "
+                "theta, facet, step, and slope values; main-effect uncertainty "
+                "is not propagated"
+            ),
+            "Multiplicity Basis": (
+                "cellwise screening statistics; use DFF table Holm/BH p-values, "
+                "sparse-cell flags, and substantive design review before claims"
+            ),
             "InferenceTier": "screening",
             "Infit": infit,
             "Outfit": outfit,
@@ -13264,7 +14559,12 @@ def build_dff_bias_screening_table(
         return pd.DataFrame(columns=[
             "FacetPair", "FacetA", "FacetA_Level", "FacetB", "FacetB_Level",
             "ObsN", "BiasSize", "SE", "t", "p", "p_holm", "p_bh",
-            "AbsBias", "Direction", "EvidenceLevel", "Flag", "Interpretation", "NextAction",
+            "AbsBias", "Direction", "SparseCell", "EvidenceLevel", "Flag",
+            "ClaimStatus", "LRChiSq", "LRProb", "ProfileCILower",
+            "ProfileCIUpper", "ProfileCIStatus", "LikelihoodBasis",
+            "SEBasis", "InferenceTier", "MultiplicityBasis",
+            "MultiplicityFamily", "ReportingCaution",
+            "Interpretation", "NextAction",
         ])
     tbl = tbl.reset_index(drop=True)
 
@@ -13309,6 +14609,7 @@ def build_dff_bias_screening_table(
         & (pd.to_numeric(out["t"], errors="coerce").abs() >= 2.0)
     )
     practical = pd.to_numeric(out["AbsBias"], errors="coerce") >= float(practical_logit)
+    out["SparseCell"] = sparse.astype(bool)
     levels = np.select(
         [
             sparse,
@@ -13326,6 +14627,45 @@ def build_dff_bias_screening_table(
     )
     out["EvidenceLevel"] = levels
     out["Flag"] = out["EvidenceLevel"].ne("No flag")
+    out["ClaimStatus"] = np.select(
+        [
+            out["EvidenceLevel"].eq("Sparse cell"),
+            out["Flag"].astype(bool),
+        ],
+        [
+            "Do not claim from this cell alone",
+            "Report with caveat",
+        ],
+        default="No computed local-bias flag",
+    )
+    out["LRChiSq"] = pd.to_numeric(col_series("LR ChiSq"), errors="coerce")
+    out["LRProb"] = pd.to_numeric(col_series("LR Prob."), errors="coerce")
+    out["ProfileCILower"] = pd.to_numeric(col_series("Profile CI Lower"), errors="coerce")
+    out["ProfileCIUpper"] = pd.to_numeric(col_series("Profile CI Upper"), errors="coerce")
+    out["ProfileCIStatus"] = col_series("Profile CI Status", "").astype(str)
+    out["LikelihoodBasis"] = col_series("Likelihood Basis", "").astype(str)
+    out["SEBasis"] = col_series("SE Basis", "").astype(str)
+    out["InferenceTier"] = col_series("InferenceTier", "").astype(str)
+    out["MultiplicityBasis"] = col_series("Multiplicity Basis", "").astype(str)
+    out["MultiplicityFamily"] = (
+        out["FacetPair"].astype(str)
+        + f" cell screen; alpha={float(alpha):.3g}, min_n={int(min_n)}, "
+        + f"practical_logit={float(practical_logit):.3g}"
+    )
+    out["ReportingCaution"] = np.select(
+        [
+            out["EvidenceLevel"].eq("Sparse cell"),
+            out["Flag"].astype(bool),
+        ],
+        [
+            "Sparse cells are design evidence, not stable bias estimates.",
+            "Treat as a conditional screening flag; corroborate with design, fit, and substantive evidence.",
+        ],
+        default=(
+            "No flag under this conditional screen; this is not evidence that "
+            "bias is absent outside the tested cell family."
+        ),
+    )
     out["Interpretation"] = np.select(
         [
             out["EvidenceLevel"].eq("Sparse cell"),
@@ -13367,6 +14707,7 @@ def summarize_dff_bias_screening(dff_tbl: pd.DataFrame) -> pd.DataFrame:
     abs_bias = pd.to_numeric(dff_tbl.get("AbsBias", pd.Series(dtype=float)), errors="coerce")
     p_holm = pd.to_numeric(dff_tbl.get("p_holm", pd.Series(dtype=float)), errors="coerce")
     p_bh = pd.to_numeric(dff_tbl.get("p_bh", pd.Series(dtype=float)), errors="coerce")
+    profile_status = dff_tbl["ProfileCIStatus"].astype(str) if "ProfileCIStatus" in dff_tbl.columns else pd.Series(dtype=str)
     flagged = dff_tbl[dff_tbl.get("Flag", pd.Series([False] * len(dff_tbl))).astype(bool)]
     strongest = "none"
     if len(flagged) and "FacetA_Level" in flagged.columns and "FacetB_Level" in flagged.columns:
@@ -13383,8 +14724,228 @@ def summarize_dff_bias_screening(dff_tbl: pd.DataFrame) -> pd.DataFrame:
         {"Metric": "BH q < .05", "Value": int((p_bh < 0.05).sum()), "Interpretation": "False-discovery-rate adjusted statistical flags."},
         {"Metric": "Sparse cells", "Value": int((levels == "Sparse cell").sum()), "Interpretation": "Cells below the minimum observation threshold."},
         {"Metric": "Max |bias|", "Value": float(abs_bias.max()) if len(abs_bias.dropna()) else np.nan, "Interpretation": "Largest absolute logit departure."},
+        {"Metric": "Profile CI ok", "Value": int((profile_status == "ok").sum()), "Interpretation": "GPCM cells with finite conditional profile-likelihood intervals."},
+        {"Metric": "Inference tier", "Value": "conditional screening", "Interpretation": "Other fitted parameters are held fixed; global uncertainty is not propagated."},
         {"Metric": "Strongest flagged cell", "Value": strongest, "Interpretation": "First flagged row after sorting by |bias|."},
     ])
+
+
+def _iter_bias_result_bundles(
+    bias_results: dict | pd.DataFrame | None,
+) -> list[tuple[str, dict]]:
+    """Normalize selected-pair and all-pair bias containers."""
+    if isinstance(bias_results, pd.DataFrame):
+        return [("Bias table", {"table": bias_results})]
+    if not isinstance(bias_results, dict) or not bias_results:
+        return []
+    if any(k in bias_results for k in ("table", "bias_tbl", "_skip_reason")):
+        label = "Bias table"
+        facet_a = bias_results.get("facet_a")
+        facet_b = bias_results.get("facet_b")
+        if facet_a or facet_b:
+            label = f"{facet_a or 'FacetA'} x {facet_b or 'FacetB'}"
+        return [(label, bias_results)]
+    out: list[tuple[str, dict]] = []
+    for pair_label, bundle in bias_results.items():
+        if isinstance(bundle, pd.DataFrame):
+            out.append((str(pair_label), {"table": bundle}))
+        elif isinstance(bundle, dict):
+            out.append((str(pair_label), bundle))
+    return out
+
+
+def _common_scale_bias_status(result: dict | None, diagnostics: dict | None) -> tuple[str, int | None]:
+    """Evaluate whether the observed design is connected for bias claims."""
+    if not isinstance(diagnostics, dict):
+        return "Not evaluated: diagnostics are unavailable.", None
+    obs = diagnostics.get("obs", pd.DataFrame())
+    if not isinstance(obs, pd.DataFrame) or obs.empty:
+        return "Not evaluated: observation-level diagnostics are unavailable.", None
+    config = result.get("config", {}) if isinstance(result, dict) else {}
+    configured = list(config.get("facet_names", []) or [])
+    facet_cols = ["Person"] + configured if "Person" in obs.columns else configured
+    facet_cols = [c for c in facet_cols if c in obs.columns]
+    if len(facet_cols) < 2:
+        return "Not evaluated: fewer than two observed facet columns are available.", None
+    try:
+        subsets = calc_subsets(obs, facet_cols)
+        summary = subsets.get("summary", pd.DataFrame()) if isinstance(subsets, dict) else pd.DataFrame()
+    except Exception as exc:
+        return f"Not evaluated: connectedness check failed ({exc}).", None
+    if not isinstance(summary, pd.DataFrame) or summary.empty:
+        return "Not evaluated: connectedness summary is empty.", None
+    n_subsets = int(summary["Subset"].nunique()) if "Subset" in summary.columns else int(len(summary))
+    if n_subsets > 1:
+        return (
+            f"Review: observed design has {n_subsets} disconnected subset(s); "
+            "bias cells across subsets are not on one common scale.",
+            n_subsets,
+        )
+    return (
+        "Ready: observed design is connected for the fitted Person + facet graph.",
+        1,
+    )
+
+
+def build_bias_inference_audit(
+    bias_results: dict | pd.DataFrame | None,
+    result: dict | None = None,
+    diagnostics: dict | None = None,
+    *,
+    alpha: float = 0.05,
+    min_n: int = 5,
+    practical_logit: float = 0.50,
+) -> pd.DataFrame:
+    """Pair-level guardrails for conditional bias / local-interaction claims."""
+    columns = [
+        "FacetPair", "Status", "ClaimStatus", "CellsScreened", "FlaggedCells",
+        "StrongReviewCells", "SparseCells", "HolmSignificantCells",
+        "BHSignificantCells", "PracticalCells", "MaxAbsBias",
+        "CommonScaleSubsets", "CommonScaleStatus", "InferenceScope",
+        "MultiplicityScope", "ProfileCIStatusSummary", "InferenceTierSummary",
+        "EvidenceSummary", "RecommendedAction",
+    ]
+    bundles = _iter_bias_result_bundles(bias_results)
+    if not bundles:
+        return pd.DataFrame(columns=columns)
+
+    common_status, common_subsets = _common_scale_bias_status(result, diagnostics)
+    disconnected = str(common_status).startswith("Review:")
+    rows: list[dict[str, object]] = []
+    inference_scope = (
+        "Conditional screening: fitted theta, facet, step, slope, and other "
+        "main-effect values are held fixed; global model uncertainty is not propagated."
+    )
+    multiplicity_scope = (
+        "Holm and BH adjustments are computed within each exported facet-pair "
+        "cell family; flags are review prompts, not confirmatory proof."
+    )
+    for pair_label, bundle in bundles:
+        if isinstance(bundle, dict) and "_skip_reason" in bundle and "table" not in bundle:
+            reason = str(bundle.get("_skip_reason", "Bias screen was skipped."))
+            rows.append({
+                "FacetPair": pair_label,
+                "Status": "Missing",
+                "ClaimStatus": "Do not claim",
+                "CellsScreened": 0,
+                "FlaggedCells": 0,
+                "StrongReviewCells": 0,
+                "SparseCells": 0,
+                "HolmSignificantCells": 0,
+                "BHSignificantCells": 0,
+                "PracticalCells": 0,
+                "MaxAbsBias": np.nan,
+                "CommonScaleSubsets": common_subsets,
+                "CommonScaleStatus": common_status,
+                "InferenceScope": inference_scope,
+                "MultiplicityScope": multiplicity_scope,
+                "ProfileCIStatusSummary": "",
+                "InferenceTierSummary": "",
+                "EvidenceSummary": reason,
+                "RecommendedAction": "Run a selected-pair or all-pair bias screen before writing no-bias claims.",
+            })
+            continue
+
+        dff_tbl = build_dff_bias_screening_table(
+            bundle,
+            alpha=alpha,
+            min_n=min_n,
+            practical_logit=practical_logit,
+        )
+        if dff_tbl.empty:
+            rows.append({
+                "FacetPair": pair_label,
+                "Status": "Missing",
+                "ClaimStatus": "Do not claim",
+                "CellsScreened": 0,
+                "FlaggedCells": 0,
+                "StrongReviewCells": 0,
+                "SparseCells": 0,
+                "HolmSignificantCells": 0,
+                "BHSignificantCells": 0,
+                "PracticalCells": 0,
+                "MaxAbsBias": np.nan,
+                "CommonScaleSubsets": common_subsets,
+                "CommonScaleStatus": common_status,
+                "InferenceScope": inference_scope,
+                "MultiplicityScope": multiplicity_scope,
+                "ProfileCIStatusSummary": "",
+                "InferenceTierSummary": "",
+                "EvidenceSummary": "No interpretable bias cells were exported.",
+                "RecommendedAction": "Check sparse/extreme data and rerun the bias screen if local interaction is a reporting target.",
+            })
+            continue
+
+        levels = dff_tbl["EvidenceLevel"].astype(str) if "EvidenceLevel" in dff_tbl.columns else pd.Series(dtype=str)
+        flags = dff_tbl["Flag"].astype(bool) if "Flag" in dff_tbl.columns else pd.Series([False] * len(dff_tbl))
+        p_holm = pd.to_numeric(dff_tbl.get("p_holm", pd.Series(dtype=float)), errors="coerce")
+        p_bh = pd.to_numeric(dff_tbl.get("p_bh", pd.Series(dtype=float)), errors="coerce")
+        abs_bias = pd.to_numeric(dff_tbl.get("AbsBias", pd.Series(dtype=float)), errors="coerce")
+        profile_status = (
+            dff_tbl["ProfileCIStatus"].astype(str)
+            if "ProfileCIStatus" in dff_tbl.columns else pd.Series(dtype=str)
+        )
+        tiers = (
+            dff_tbl["InferenceTier"].astype(str)
+            if "InferenceTier" in dff_tbl.columns else pd.Series(dtype=str)
+        )
+        flagged_n = int(flags.sum())
+        strong_n = int((levels == "Strong review").sum())
+        sparse_n = int((levels == "Sparse cell").sum())
+        holm_n = int((p_holm < float(alpha)).sum())
+        bh_n = int((p_bh < float(alpha)).sum())
+        practical_n = int((abs_bias >= float(practical_logit)).sum())
+        max_abs = float(abs_bias.max()) if len(abs_bias.dropna()) else np.nan
+        profile_summary = (
+            dict(profile_status[profile_status.ne("")].value_counts())
+            if len(profile_status) else {}
+        )
+        tier_summary = dict(tiers[tiers.ne("")].value_counts()) if len(tiers) else {}
+
+        if disconnected or sparse_n or flagged_n:
+            status = "Review"
+            claim_status = "Report with caveat"
+        else:
+            status = "Ready"
+            claim_status = "Ready"
+
+        if disconnected:
+            action = "Resolve linking/connectivity or restrict bias wording to each connected subset."
+        elif sparse_n:
+            action = "Treat sparse cells as design prompts; add observations or combine defensible levels before strong claims."
+        elif strong_n:
+            action = "Review scoring rubrics, rater notes, content match, fit, and sensitivity before reporting the flagged cells."
+        elif flagged_n:
+            action = "Use flagged cells as conditional screening evidence and corroborate with substantive design review."
+        else:
+            action = "Report only that no cell was flagged in the computed conditional screen; avoid broad no-bias claims."
+
+        rows.append({
+            "FacetPair": pair_label,
+            "Status": status,
+            "ClaimStatus": claim_status,
+            "CellsScreened": int(len(dff_tbl)),
+            "FlaggedCells": flagged_n,
+            "StrongReviewCells": strong_n,
+            "SparseCells": sparse_n,
+            "HolmSignificantCells": holm_n,
+            "BHSignificantCells": bh_n,
+            "PracticalCells": practical_n,
+            "MaxAbsBias": max_abs,
+            "CommonScaleSubsets": common_subsets,
+            "CommonScaleStatus": common_status,
+            "InferenceScope": inference_scope,
+            "MultiplicityScope": multiplicity_scope,
+            "ProfileCIStatusSummary": profile_summary,
+            "InferenceTierSummary": tier_summary,
+            "EvidenceSummary": (
+                f"{flagged_n} flagged of {len(dff_tbl)} screened cell(s); "
+                f"{strong_n} strong-review, {sparse_n} sparse, "
+                f"{holm_n} Holm-significant, {bh_n} BH-significant."
+            ),
+            "RecommendedAction": action,
+        })
+    return pd.DataFrame(rows, columns=columns)
 
 
 def safe_cor(x, y, w=None):
@@ -14147,6 +15708,138 @@ def _invert_information_matrix(info):
     return cov, regularized, rank
 
 
+def _information_matrix_spectrum(info) -> dict[str, object]:
+    """Numerical spectrum diagnostics for an observed-information matrix."""
+    out = {
+        "HessianFinite": False,
+        "ParamCount": 0,
+        "Rank": 0,
+        "RankDeficiency": np.nan,
+        "MinEigenvalue": np.nan,
+        "MaxEigenvalue": np.nan,
+        "MinPositiveEigenvalue": np.nan,
+        "EigFloorTolerance": np.nan,
+        "RegularizedEigenvalues": np.nan,
+        "ConditionNumber": np.nan,
+    }
+    if info is None:
+        return out
+    arr = np.asarray(info, dtype=float)
+    if arr.size == 0 or arr.ndim != 2 or arr.shape[0] != arr.shape[1]:
+        return out
+    out["ParamCount"] = int(arr.shape[0])
+    if not np.all(np.isfinite(arr)):
+        return out
+    info_sym = (arr + arr.T) / 2.0
+    try:
+        eigvals = np.linalg.eigvalsh(info_sym)
+    except np.linalg.LinAlgError:
+        return out
+    if eigvals.size == 0:
+        return out
+    max_abs = float(np.max(np.abs(eigvals)))
+    eps = float(np.finfo(float).eps)
+    tol = max_abs * np.sqrt(eps) if max_abs > 0 else np.sqrt(eps)
+    positive = eigvals[eigvals > tol]
+    rank = int(positive.size)
+    min_positive = float(np.min(positive)) if positive.size else np.nan
+    max_positive = float(np.max(positive)) if positive.size else np.nan
+    condition = (
+        float(max_positive / min_positive)
+        if np.isfinite(max_positive) and np.isfinite(min_positive) and min_positive > 0
+        else np.inf
+    )
+    out.update({
+        "HessianFinite": True,
+        "Rank": rank,
+        "RankDeficiency": int(arr.shape[0] - rank),
+        "MinEigenvalue": float(np.min(eigvals)),
+        "MaxEigenvalue": float(np.max(eigvals)),
+        "MinPositiveEigenvalue": min_positive,
+        "EigFloorTolerance": float(tol),
+        "RegularizedEigenvalues": int(np.sum(eigvals <= tol)),
+        "ConditionNumber": condition,
+    })
+    return out
+
+
+def build_mml_covariance_audit(covariance: dict | None, result: dict | None = None) -> pd.DataFrame:
+    """Machine-readable audit for MML observed-information covariance quality."""
+    cov_info = covariance if isinstance(covariance, dict) else {}
+    config = (result or {}).get("config", {}) if isinstance(result, dict) else {}
+    par = _get_opt_par(result or {}) if isinstance(result, dict) else None
+    hessian = cov_info.get("hessian")
+    spectrum = _information_matrix_spectrum(hessian)
+    param_count = int(spectrum.get("ParamCount") or 0)
+    if param_count == 0 and par is not None:
+        param_count = int(np.asarray(par).size)
+    status = str(cov_info.get("status", "not_available"))
+    detail = str(cov_info.get("detail", "MML covariance audit was not available."))
+    cov = cov_info.get("cov")
+    cov_arr = np.asarray(cov, dtype=float) if cov is not None else np.asarray([])
+    cov_finite = bool(cov_arr.size and cov_arr.ndim == 2 and np.all(np.isfinite(cov_arr)))
+    cov_diag = np.diag(cov_arr) if cov_finite and cov_arr.shape[0] == cov_arr.shape[1] else np.asarray([])
+    condition = float(spectrum.get("ConditionNumber", np.nan))
+    rank_def = spectrum.get("RankDeficiency", np.nan)
+    regularized_eigs = spectrum.get("RegularizedEigenvalues", np.nan)
+
+    if status == "ok":
+        claim_status = "Ready"
+        interpretation = "Observed-information covariance was inverted without eigenvalue regularization."
+        action = "Report SE/CI status and retain the covariance audit with the analysis archive."
+    elif status == "regularized":
+        claim_status = "Report with caveat"
+        interpretation = "Observed-information covariance required eigenvalue regularization; SEs are regularization-aware large-sample approximations."
+        action = "Report the regularized status, condition number, and sensitivity caveat before treating SE/CI as calibration evidence."
+    elif status == "skipped_large_parameter_count":
+        claim_status = "Report with caveat"
+        interpretation = "Routine observed-information covariance was skipped by the parameter-count gate."
+        action = "Use conditional SEs for screening, or rerun a smaller/targeted validation if structural SEs are required."
+    elif status == "not_applicable":
+        claim_status = "Not applicable"
+        interpretation = "Observed-information covariance is only defined for the current MML path."
+        action = "Use the method-specific SE/CI status columns instead of claiming structural MML covariance."
+    else:
+        claim_status = "Do not claim"
+        interpretation = "Observed-information covariance was unavailable or failed diagnostics."
+        action = "Do not claim structural covariance-based SE/CI; report fallback SE_Status and investigate the covariance failure."
+
+    if np.isfinite(condition) and condition > 1e8 and claim_status == "Ready":
+        claim_status = "Report with caveat"
+        interpretation += " The Hessian condition number is high."
+        action = "Report the high condition number and consider a sensitivity check or simpler parameterization."
+    if np.isfinite(rank_def) and float(rank_def) > 0 and claim_status == "Ready":
+        claim_status = "Report with caveat"
+
+    row = {
+        "Area": "MML observed-information covariance",
+        "Status": status,
+        "ClaimStatus": claim_status,
+        "Method": "numerical Jacobian of analytical MML gradient; eigendecomposition inverse",
+        "Model": str(config.get("model", "")),
+        "FitMethod": str(config.get("method", "")),
+        "ParamCount": param_count,
+        "AutoParamLimit": int(MML_COVARIANCE_AUTO_MAX_PARAMS),
+        "Rank": int(cov_info.get("rank", spectrum.get("Rank", 0)) or 0),
+        "RankDeficiency": rank_def,
+        "HessianFinite": bool(spectrum.get("HessianFinite", False)),
+        "MinEigenvalue": spectrum.get("MinEigenvalue", np.nan),
+        "MaxEigenvalue": spectrum.get("MaxEigenvalue", np.nan),
+        "MinPositiveEigenvalue": spectrum.get("MinPositiveEigenvalue", np.nan),
+        "EigFloorTolerance": spectrum.get("EigFloorTolerance", np.nan),
+        "RegularizedEigenvalues": regularized_eigs,
+        "ConditionNumber": condition,
+        "Regularized": bool(cov_info.get("regularized", False)),
+        "CovarianceFinite": cov_finite,
+        "CovarianceMinDiagonal": float(np.nanmin(cov_diag)) if cov_diag.size else np.nan,
+        "CovarianceMaxDiagonal": float(np.nanmax(cov_diag)) if cov_diag.size else np.nan,
+        "Detail": detail,
+        "Interpretation": interpretation,
+        "RecommendedAction": action,
+    }
+    return pd.DataFrame([row])
+
+
 def _compute_mml_observed_information(par, idx, config, sizes, quad, rel_step=1e-5):
     """Observed information of the MML negative marginal log-likelihood.
 
@@ -14204,7 +15897,8 @@ def compute_mml_parameter_covariance(res, rel_step=1e-5):
     ``build_param_sizes``), ``param_slices`` (section-name -> slice),
     ``status`` (``"ok" | "regularized" | "not_applicable" | "fallback"``),
     ``detail`` (human-readable description), ``regularized`` (bool),
-    and ``rank`` (int).
+    ``rank`` (int), and a one-row ``audit`` table with Hessian spectrum
+    and covariance quality diagnostics.
     """
     config = (res or {}).get("config", {}) or {}
     try:
@@ -14214,7 +15908,7 @@ def compute_mml_parameter_covariance(res, rel_step=1e-5):
     param_slices = _build_param_slices(sizes)
 
     def envelope(status, detail, cov=None, hessian=None, regularized=False, rank=0):
-        return {
+        out = {
             "cov": cov,
             "hessian": hessian,
             "sizes": sizes,
@@ -14224,6 +15918,8 @@ def compute_mml_parameter_covariance(res, rel_step=1e-5):
             "regularized": regularized,
             "rank": rank,
         }
+        out["audit"] = build_mml_covariance_audit(out, res)
+        return out
 
     if config.get("method") != "MML":
         return envelope(
@@ -14633,6 +16329,281 @@ def fair_average_table(res, diagnostics, fair_se=False, ci_level=0.95, **kwargs)
     return add_gpcm_fair_average_delta_se(raw_tbls, res, ci_level=ci_level)
 
 
+def _mml_covariance_for_diagnostics(res, max_params=MML_COVARIANCE_AUTO_MAX_PARAMS):
+    """Observed-information covariance with an automatic size gate for diagnostics.
+
+    ``compute_mml_parameter_covariance`` remains the exact public helper. This
+    wrapper is used during normal diagnostics so large MML runs do not silently
+    become much slower; when skipped, downstream tables keep conditional SEs and
+    carry an explicit ``skipped_large_parameter_count`` status.
+    """
+    config = (res or {}).get("config", {}) or {}
+    try:
+        sizes = build_param_sizes(config) if config.get("facet_names") else OrderedDict()
+    except Exception:
+        sizes = OrderedDict()
+    param_slices = _build_param_slices(sizes)
+
+    def envelope(status, detail):
+        out = {
+            "cov": None,
+            "hessian": None,
+            "sizes": sizes,
+            "param_slices": param_slices,
+            "status": status,
+            "detail": detail,
+            "regularized": False,
+            "rank": 0,
+        }
+        out["audit"] = build_mml_covariance_audit(out, res)
+        return out
+
+    if config.get("method") != "MML":
+        return envelope(
+            "not_applicable",
+            "MML observed-information covariance is only computed for MML fits.",
+        )
+    par = _get_opt_par(res)
+    if par is not None and max_params is not None and int(par.size) > int(max_params):
+        return envelope(
+            "skipped_large_parameter_count",
+            (
+                f"MML observed-information covariance was skipped for routine "
+                f"diagnostics because the parameter vector has {int(par.size)} "
+                f"parameters (auto limit {int(max_params)}). The measure table "
+                "keeps conditional information SEs; run a smaller or targeted "
+                "external validation when structural SEs are required."
+            ),
+        )
+    return compute_mml_parameter_covariance(res)
+
+
+def _compute_measure_value_from_par(res, par, facet, level):
+    """Return a non-person facet measure as a scalar function of ``par``."""
+    config = (res or {}).get("config", {}) or {}
+    if config.get("method") != "MML" or str(facet) == "Person":
+        return float("nan")
+    prep = (res or {}).get("prep", {}) or {}
+    facet = str(facet)
+    level = str(level)
+    if facet not in list(config.get("facet_names", [])):
+        return float("nan")
+    try:
+        sizes = build_param_sizes(config)
+        params = expand_params(np.asarray(par, dtype=float), sizes, config)
+    except Exception:
+        return float("nan")
+    levels = [str(x) for x in (prep.get("levels", {}).get(facet) or [])]
+    if level not in levels:
+        return float("nan")
+    idx = levels.index(level)
+    values = np.asarray(params.get("facets", {}).get(facet, np.array([])), dtype=float)
+    if idx >= values.size:
+        return float("nan")
+    value = float(values[idx])
+    return value if np.isfinite(value) else float("nan")
+
+
+def compute_mml_structural_measure_se_table(res, covariance=None, ci_level=0.95):
+    """Delta-method SEs for MML non-person facet estimates.
+
+    Person EAP estimates are posterior summaries and are intentionally excluded:
+    they are not coordinates of the marginal-likelihood parameter vector. The
+    returned table is keyed by ``Facet`` / ``Level`` and is merged into the main
+    measure table by ``annotate_measure_uncertainty`` when finite SEs are
+    available.
+    """
+    config = (res or {}).get("config", {}) or {}
+    if config.get("method") != "MML":
+        return pd.DataFrame()
+    if covariance is None:
+        covariance = _mml_covariance_for_diagnostics(res)
+    prep = (res or {}).get("prep", {}) or {}
+    par = _get_opt_par(res)
+    status = str((covariance or {}).get("status", "fallback"))
+    detail = str((covariance or {}).get("detail", "MML covariance unavailable."))
+    cov = (covariance or {}).get("cov")
+    rows: list[dict[str, object]] = []
+    z = float(_norm.ppf((1.0 + float(ci_level)) / 2.0)) if 0.0 < float(ci_level) < 1.0 else 1.959963984540054
+
+    for facet in list(config.get("facet_names", [])):
+        levels = [str(x) for x in (prep.get("levels", {}).get(facet) or [])]
+        for level in levels:
+            row = {
+                "Facet": str(facet),
+                "Level": str(level),
+                "StructuralSE": np.nan,
+                "StructuralCI_Lower": np.nan,
+                "StructuralCI_Upper": np.nan,
+                "StructuralCI_Level": float(ci_level),
+                "StructuralSE_Status": status,
+                "StructuralSE_Method": "MML observed-information delta method",
+                "StructuralSE_Detail": detail,
+            }
+            if status in {"ok", "regularized"} and cov is not None and par is not None:
+                cov_arr = np.asarray(cov, dtype=float)
+                if cov_arr.ndim == 2 and cov_arr.shape[0] == cov_arr.shape[1] == par.size:
+                    fn = lambda p, f=facet, lv=level: _compute_measure_value_from_par(res, p, f, lv)
+                    grad = _finite_difference_gradient(fn, par)
+                    if grad.size == cov_arr.shape[0] and np.any(np.isfinite(grad)):
+                        grad = np.where(np.isfinite(grad), grad, 0.0)
+                        var = float(grad @ cov_arr @ grad)
+                        if -1e-10 < var < 0:
+                            var = 0.0
+                        estimate = _compute_measure_value_from_par(res, par, facet, level)
+                        if np.isfinite(var) and var >= 0 and np.isfinite(estimate):
+                            se = float(np.sqrt(var))
+                            row.update({
+                                "StructuralSE": se,
+                                "StructuralCI_Lower": estimate - z * se,
+                                "StructuralCI_Upper": estimate + z * se,
+                                "StructuralSE_Status": status,
+                                "StructuralSE_Detail": detail,
+                            })
+                        else:
+                            row["StructuralSE_Status"] = "not_available"
+                            row["StructuralSE_Detail"] = "Delta-method variance was not finite and non-negative."
+                    else:
+                        row["StructuralSE_Status"] = "not_available"
+                        row["StructuralSE_Detail"] = "Finite-difference gradient was not available."
+            rows.append(row)
+    return pd.DataFrame(rows)
+
+
+def annotate_measure_uncertainty(measures, res, obs_df=None, *, ci_level=0.95):
+    """Attach SE/CI provenance columns to the measure table."""
+    if not isinstance(measures, pd.DataFrame) or measures.empty:
+        return measures, {
+            "covariance": {"status": "not_available", "detail": "Measure table is empty."},
+            "structural_se": pd.DataFrame(),
+            "summary": pd.DataFrame(),
+        }
+    out = measures.copy()
+    config = (res or {}).get("config", {}) or {}
+    method = str(config.get("method", ""))
+    z = float(_norm.ppf((1.0 + float(ci_level)) / 2.0)) if 0.0 < float(ci_level) < 1.0 else 1.959963984540054
+
+    out["SE_Method"] = "conditional information approximation: 1/sqrt(sum Var*w), other fitted parameters held fixed"
+    out["SE_Status"] = "conditional_approximation"
+    out["SE_Detail"] = "Does not propagate uncertainty from other estimated person, facet, step, slope, or anchor parameters."
+    out["CI_Level"] = float(ci_level)
+    out["CI_Method"] = "Wald normal CI from the reported SE"
+    out["CI_Status"] = "conditional_approximation"
+    out["UncertaintyCaution"] = "Use for screening unless the method/status column says structural covariance was used."
+
+    if method == "MML" and "Facet" in out.columns:
+        person_mask = out["Facet"].astype(str) == "Person"
+        out.loc[person_mask, "SE_Method"] = "MML EAP posterior SD from quadrature"
+        out.loc[person_mask, "SE_Status"] = "posterior_eap_sd"
+        out.loc[person_mask, "SE_Detail"] = (
+            "Person SE is the posterior SD of the EAP score, not a structural "
+            "marginal-likelihood SE."
+        )
+        out.loc[person_mask, "CI_Status"] = "posterior_interval_approximation"
+        out.loc[person_mask, "UncertaintyCaution"] = (
+            "Person interval uses EAP posterior SD; do not treat it as a "
+            "fixed-effect ML parameter CI."
+        )
+
+        covariance = _mml_covariance_for_diagnostics(res)
+        structural = compute_mml_structural_measure_se_table(
+            res,
+            covariance=covariance,
+            ci_level=ci_level,
+        )
+        if isinstance(structural, pd.DataFrame) and not structural.empty:
+            out = out.merge(structural, on=["Facet", "Level"], how="left")
+            structural_ok = (
+                out.get("StructuralSE").notna()
+                & out.get("StructuralSE_Status").astype(str).isin({"ok", "regularized"})
+            )
+            out.loc[structural_ok, "SE"] = out.loc[structural_ok, "StructuralSE"]
+            out.loc[structural_ok, "CI_Lower"] = out.loc[structural_ok, "StructuralCI_Lower"]
+            out.loc[structural_ok, "CI_Upper"] = out.loc[structural_ok, "StructuralCI_Upper"]
+            out.loc[structural_ok, "SE_Method"] = out.loc[structural_ok, "StructuralSE_Method"]
+            out.loc[structural_ok, "SE_Status"] = out.loc[structural_ok, "StructuralSE_Status"]
+            out.loc[structural_ok, "SE_Detail"] = out.loc[structural_ok, "StructuralSE_Detail"]
+            out.loc[structural_ok, "CI_Method"] = "Wald normal CI using MML observed-information delta-method SE"
+            out.loc[structural_ok, "CI_Status"] = out.loc[structural_ok, "StructuralSE_Status"]
+            out.loc[structural_ok, "UncertaintyCaution"] = (
+                "Non-person MML facet interval propagates structural covariance "
+                "for fitted model parameters; it remains a large-sample Wald CI."
+            )
+            helper_cols = [
+                "StructuralSE", "StructuralCI_Lower", "StructuralCI_Upper",
+                "StructuralCI_Level", "StructuralSE_Status",
+                "StructuralSE_Method", "StructuralSE_Detail",
+            ]
+            out = out.drop(columns=[c for c in helper_cols if c in out.columns])
+    else:
+        covariance = {"status": "not_applicable", "detail": "MML covariance is not applicable to this run."}
+        structural = pd.DataFrame()
+
+    covariance_audit = (
+        covariance.get("audit")
+        if isinstance(covariance, dict) and isinstance(covariance.get("audit"), pd.DataFrame)
+        else build_mml_covariance_audit(covariance, res)
+    )
+    if isinstance(covariance_audit, pd.DataFrame) and not covariance_audit.empty:
+        ca = covariance_audit.iloc[0]
+        out["SE_CovarianceStatus"] = str(ca.get("Status", "not_available"))
+        out["SE_CovarianceClaimStatus"] = str(ca.get("ClaimStatus", "Do not claim"))
+        out["SE_CovarianceConditionNumber"] = ca.get("ConditionNumber", np.nan)
+        out["SE_CovarianceRank"] = ca.get("Rank", np.nan)
+        out["SE_CovarianceRankDeficiency"] = ca.get("RankDeficiency", np.nan)
+        out["SE_CovarianceRegularizedEigenvalues"] = ca.get("RegularizedEigenvalues", np.nan)
+        out["SE_CovarianceDetail"] = str(ca.get("Detail", ""))
+    else:
+        out["SE_CovarianceStatus"] = "not_available"
+        out["SE_CovarianceClaimStatus"] = "Do not claim"
+        out["SE_CovarianceConditionNumber"] = np.nan
+        out["SE_CovarianceRank"] = np.nan
+        out["SE_CovarianceRankDeficiency"] = np.nan
+        out["SE_CovarianceRegularizedEigenvalues"] = np.nan
+        out["SE_CovarianceDetail"] = ""
+
+    est = pd.to_numeric(out.get("Estimate", pd.Series(dtype=float)), errors="coerce")
+    se = pd.to_numeric(out.get("SE", pd.Series(dtype=float)), errors="coerce")
+    needs_ci = out["CI_Lower"].isna() | out["CI_Upper"].isna() if {"CI_Lower", "CI_Upper"}.issubset(out.columns) else pd.Series(True, index=out.index)
+    out.loc[needs_ci, "CI_Lower"] = est.loc[needs_ci] - z * se.loc[needs_ci]
+    out.loc[needs_ci, "CI_Upper"] = est.loc[needs_ci] + z * se.loc[needs_ci]
+
+    summary_rows = []
+    if "SE_Status" in out.columns:
+        for status, sub in out.groupby("SE_Status", dropna=False, observed=False):
+            summary_rows.append({
+                "Area": "Measure SE/CI",
+                "Status": str(status),
+                "Rows": int(len(sub)),
+                "Method": "; ".join(sorted(set(sub["SE_Method"].astype(str))))[:500],
+                "Caution": "; ".join(sorted(set(sub["UncertaintyCaution"].astype(str))))[:500],
+            })
+    if method == "MML":
+        summary_rows.append({
+            "Area": "MML observed-information covariance",
+            "Status": str(covariance.get("status", "unknown")),
+            "Rows": int(len(out)),
+            "Method": "numerical Jacobian of analytical MML gradient; eigendecomposition inverse",
+            "Caution": str(covariance.get("detail", "")),
+            "ClaimStatus": (
+                str(covariance_audit.iloc[0].get("ClaimStatus", "Do not claim"))
+                if isinstance(covariance_audit, pd.DataFrame) and not covariance_audit.empty
+                else "Do not claim"
+            ),
+            "ConditionNumber": (
+                covariance_audit.iloc[0].get("ConditionNumber", np.nan)
+                if isinstance(covariance_audit, pd.DataFrame) and not covariance_audit.empty
+                else np.nan
+            ),
+        })
+    return out, {
+        "covariance": covariance,
+        "covariance_audit": covariance_audit,
+        "structural_se": structural,
+        "summary": pd.DataFrame(summary_rows),
+    }
+
+
 # Display ordering for the FACETS-style tables tab. Keeps each fair-average
 # value adjacent to its standard error, confidence-interval bounds, and
 # status flag for quick visual scanning. Lower-priority columns (S.E.
@@ -14731,6 +16702,18 @@ def calc_reliability(measure_df):
                 note = "standard errors are zero or NaN (check fit statistics)"
             else:
                 note = "variance components are invalid (mv or ev non-finite)"
+        se_status_counts = ""
+        if "SE_Status" in df.columns:
+            counts = df["SE_Status"].astype(str).value_counts().to_dict()
+            se_status_counts = "; ".join(f"{k}={v}" for k, v in sorted(counts.items()))
+            if note:
+                note = f"{note}; SE status: {se_status_counts}"
+            else:
+                note = f"SE status: {se_status_counts}"
+        reliability_basis = (
+            "Reliability is computed from observed estimate variance minus mean squared SE. "
+            "Its evidential strength follows the SE_Status values for this facet."
+        )
         rows.append({
             "Facet": facet,
             "Levels": len(df),
@@ -14742,6 +16725,8 @@ def calc_reliability(measure_df):
             "MeanInfit": np.nanmean(df["Infit"]),
             "MeanOutfit": np.nanmean(df["Outfit"]),
             "ReliabilityNote": note,
+            "SE_StatusSummary": se_status_counts,
+            "ReliabilityBasis": reliability_basis,
         })
     return pd.DataFrame(rows)
 
@@ -14983,16 +16968,13 @@ def ensure_positive_definite(mat, eps=1e-6):
     return mat
 
 
-def compute_pca_bundle(residual_matrix_wide):
-    if residual_matrix_wide is None:
+def _pca_core_from_residual_matrix(residual_matrix: pd.DataFrame | None) -> dict | None:
+    """Compute the correlation PCA core without recursive stability checks."""
+    if residual_matrix is None or residual_matrix.shape[0] < 2 or residual_matrix.shape[1] < 2:
         return None
-    if residual_matrix_wide.shape[0] < 2 or residual_matrix_wide.shape[1] < 2:
-        return None
-
-    residual_matrix_clean = residual_matrix_wide.dropna(axis=1, how="all")
+    residual_matrix_clean = residual_matrix.dropna(axis=1, how="all")
     if residual_matrix_clean.shape[1] < 2:
         return None
-
     cor_df = residual_matrix_clean.corr(min_periods=2)
     cor_df = cor_df.fillna(0)
     cor_arr = cor_df.to_numpy(copy=True)
@@ -15014,6 +16996,260 @@ def compute_pca_bundle(residual_matrix_wide):
         index=cor_pd_df.index,
         columns=[f"PC{i+1}" for i in range(loadings.shape[1])],
     )
+    return {
+        "eigenvalues": eigvals,
+        "variance_pct": var_pct,
+        "loadings": loadings_df,
+        "cor_matrix": cor_pd_df,
+        "residual_matrix_clean": residual_matrix_clean,
+    }
+
+
+def _abs_loading_correlation(reference: pd.Series, candidate: pd.Series) -> float:
+    joined = pd.concat([reference, candidate], axis=1, join="inner").dropna()
+    if joined.shape[0] < 2:
+        return np.nan
+    x = pd.to_numeric(joined.iloc[:, 0], errors="coerce")
+    y = pd.to_numeric(joined.iloc[:, 1], errors="coerce")
+    ok = x.notna() & y.notna()
+    if int(ok.sum()) < 2:
+        return np.nan
+    x_arr = x[ok].to_numpy(dtype=float)
+    y_arr = y[ok].to_numpy(dtype=float)
+    if np.nanstd(x_arr) <= 0 or np.nanstd(y_arr) <= 0:
+        return np.nan
+    return float(abs(np.corrcoef(x_arr, y_arr)[0, 1]))
+
+
+def _pca_leave_one_column_stability(
+    residual_matrix_clean: pd.DataFrame,
+    full_eigenvalues: np.ndarray,
+    full_loadings: pd.DataFrame,
+) -> dict[str, object]:
+    if (
+        residual_matrix_clean is None
+        or residual_matrix_clean.shape[1] < 3
+        or full_eigenvalues is None
+        or len(full_eigenvalues) == 0
+        or not isinstance(full_loadings, pd.DataFrame)
+        or "PC1" not in full_loadings.columns
+    ):
+        return {
+            "LOOColumnsEvaluated": 0,
+            "LOOEV1Min": np.nan,
+            "LOOEV1Max": np.nan,
+            "LOOEV1MaxAbsDelta": np.nan,
+            "LOOEV1ShareMin": np.nan,
+            "LOOEV1ShareMax": np.nan,
+            "LOOEV1ShareMaxAbsDelta": np.nan,
+            "LOOPC1MedianAbsLoadingCorrelation": np.nan,
+            "LOOPC1MinAbsLoadingCorrelation": np.nan,
+        }
+    columns = list(residual_matrix_clean.columns)
+    if len(columns) > PCA_STABILITY_LOO_MAX_COLUMNS:
+        columns = columns[:PCA_STABILITY_LOO_MAX_COLUMNS]
+    ev1_values: list[float] = []
+    ev1_shares: list[float] = []
+    loading_corrs: list[float] = []
+    full_ev1 = float(full_eigenvalues[0])
+    full_ev1_share = float(full_ev1 / residual_matrix_clean.shape[1]) if residual_matrix_clean.shape[1] else np.nan
+    for col in columns:
+        reduced = residual_matrix_clean.drop(columns=[col], errors="ignore")
+        core = _pca_core_from_residual_matrix(reduced)
+        if not core:
+            continue
+        eig = np.asarray(core.get("eigenvalues", []), dtype=float)
+        load = core.get("loadings")
+        if eig.size:
+            ev1_values.append(float(eig[0]))
+            ev1_shares.append(float(eig[0] / reduced.shape[1]) if reduced.shape[1] else np.nan)
+        if isinstance(load, pd.DataFrame) and "PC1" in load.columns:
+            corr = _abs_loading_correlation(full_loadings["PC1"].drop(index=[col], errors="ignore"), load["PC1"])
+            if np.isfinite(corr):
+                loading_corrs.append(float(corr))
+    ev_arr = np.asarray(ev1_values, dtype=float)
+    share_arr = np.asarray(ev1_shares, dtype=float)
+    corr_arr = np.asarray(loading_corrs, dtype=float)
+    return {
+        "LOOColumnsEvaluated": int(len(ev_arr)),
+        "LOOEV1Min": float(np.nanmin(ev_arr)) if ev_arr.size else np.nan,
+        "LOOEV1Max": float(np.nanmax(ev_arr)) if ev_arr.size else np.nan,
+        "LOOEV1MaxAbsDelta": float(np.nanmax(np.abs(ev_arr - full_ev1))) if ev_arr.size else np.nan,
+        "LOOEV1ShareMin": float(np.nanmin(share_arr)) if share_arr.size else np.nan,
+        "LOOEV1ShareMax": float(np.nanmax(share_arr)) if share_arr.size else np.nan,
+        "LOOEV1ShareMaxAbsDelta": float(np.nanmax(np.abs(share_arr - full_ev1_share))) if share_arr.size and np.isfinite(full_ev1_share) else np.nan,
+        "LOOPC1MedianAbsLoadingCorrelation": float(np.nanmedian(corr_arr)) if corr_arr.size else np.nan,
+        "LOOPC1MinAbsLoadingCorrelation": float(np.nanmin(corr_arr)) if corr_arr.size else np.nan,
+    }
+
+
+def _pca_row_bootstrap_stability(
+    residual_matrix_clean: pd.DataFrame,
+    full_eigenvalues: np.ndarray,
+    full_loadings: pd.DataFrame,
+) -> dict[str, object]:
+    if (
+        residual_matrix_clean is None
+        or residual_matrix_clean.shape[0] < 4
+        or residual_matrix_clean.shape[1] < 2
+        or full_eigenvalues is None
+        or len(full_eigenvalues) == 0
+        or not isinstance(full_loadings, pd.DataFrame)
+        or "PC1" not in full_loadings.columns
+    ):
+        return {
+            "BootstrapReplicates": 0,
+            "BootstrapEV1Mean": np.nan,
+            "BootstrapEV1SD": np.nan,
+            "BootstrapEV1CV": np.nan,
+            "BootstrapEV1P05": np.nan,
+            "BootstrapEV1P95": np.nan,
+            "BootstrapPC1MedianAbsLoadingCorrelation": np.nan,
+            "BootstrapPC1MinAbsLoadingCorrelation": np.nan,
+            "BootstrapEV1ThresholdCrossing": False,
+        }
+    work = residual_matrix_clean
+    if work.shape[1] > PCA_STABILITY_BOOTSTRAP_MAX_COLUMNS:
+        work = work.iloc[:, :PCA_STABILITY_BOOTSTRAP_MAX_COLUMNS]
+    full_pc1 = full_loadings["PC1"].reindex(work.columns)
+    rng = np.random.default_rng(PCA_STABILITY_BOOTSTRAP_SEED)
+    ev1_values: list[float] = []
+    loading_corrs: list[float] = []
+    n_rows = int(work.shape[0])
+    for _ in range(PCA_STABILITY_BOOTSTRAP_REPS):
+        idx = rng.integers(0, n_rows, size=n_rows)
+        boot = work.iloc[idx].reset_index(drop=True)
+        core = _pca_core_from_residual_matrix(boot)
+        if not core:
+            continue
+        eig = np.asarray(core.get("eigenvalues", []), dtype=float)
+        load = core.get("loadings")
+        if eig.size:
+            ev1_values.append(float(eig[0]))
+        if isinstance(load, pd.DataFrame) and "PC1" in load.columns:
+            corr = _abs_loading_correlation(full_pc1, load["PC1"])
+            if np.isfinite(corr):
+                loading_corrs.append(float(corr))
+    ev_arr = np.asarray(ev1_values, dtype=float)
+    corr_arr = np.asarray(loading_corrs, dtype=float)
+    ev_mean = float(np.nanmean(ev_arr)) if ev_arr.size else np.nan
+    ev_sd = float(np.nanstd(ev_arr, ddof=1)) if ev_arr.size > 1 else np.nan
+    ev_cv = float(ev_sd / ev_mean) if np.isfinite(ev_sd) and np.isfinite(ev_mean) and ev_mean > 0 else np.nan
+    ev_p05 = float(np.nanpercentile(ev_arr, 5)) if ev_arr.size else np.nan
+    ev_p95 = float(np.nanpercentile(ev_arr, 95)) if ev_arr.size else np.nan
+    full_ev1 = float(full_eigenvalues[0])
+    threshold_cross = False
+    for threshold in (FINAL_PCA_EIGENVALUE_READY, FINAL_PCA_EIGENVALUE_REVIEW):
+        if np.isfinite(ev_p05) and np.isfinite(ev_p95) and ev_p05 < threshold <= ev_p95:
+            threshold_cross = True
+        if np.isfinite(full_ev1) and full_ev1 < threshold <= ev_p95:
+            threshold_cross = True
+        if np.isfinite(full_ev1) and full_ev1 >= threshold and ev_p05 < threshold:
+            threshold_cross = True
+    return {
+        "BootstrapReplicates": int(len(ev_arr)),
+        "BootstrapEV1Mean": ev_mean,
+        "BootstrapEV1SD": ev_sd,
+        "BootstrapEV1CV": ev_cv,
+        "BootstrapEV1P05": ev_p05,
+        "BootstrapEV1P95": ev_p95,
+        "BootstrapPC1MedianAbsLoadingCorrelation": float(np.nanmedian(corr_arr)) if corr_arr.size else np.nan,
+        "BootstrapPC1MinAbsLoadingCorrelation": float(np.nanmin(corr_arr)) if corr_arr.size else np.nan,
+        "BootstrapEV1ThresholdCrossing": bool(threshold_cross),
+    }
+
+
+def compute_pca_bundle(residual_matrix_wide):
+    if residual_matrix_wide is None:
+        return None
+    if residual_matrix_wide.shape[0] < 2 or residual_matrix_wide.shape[1] < 2:
+        return None
+
+    residual_matrix_clean = residual_matrix_wide.dropna(axis=1, how="all")
+    if residual_matrix_clean.shape[1] < 2:
+        return None
+
+    valid_mask = residual_matrix_clean.notna().astype(int)
+    pairwise_n = valid_mask.T.dot(valid_mask)
+    if pairwise_n.shape[0] > 1:
+        off_diag = pairwise_n.to_numpy(dtype=float)
+        off_diag = off_diag[~np.eye(off_diag.shape[0], dtype=bool)]
+        min_pairwise_n = float(np.nanmin(off_diag)) if off_diag.size else np.nan
+        median_pairwise_n = float(np.nanmedian(off_diag)) if off_diag.size else np.nan
+    else:
+        min_pairwise_n = np.nan
+        median_pairwise_n = np.nan
+    missing_share = float(residual_matrix_clean.isna().to_numpy().mean())
+    n_persons, n_columns = residual_matrix_clean.shape
+    stability_flags = []
+    if n_persons < PCA_STABILITY_MIN_PERSONS:
+        stability_flags.append(f"fewer than {PCA_STABILITY_MIN_PERSONS} persons")
+    if n_columns < PCA_STABILITY_MIN_COLUMNS:
+        stability_flags.append(f"fewer than {PCA_STABILITY_MIN_COLUMNS} residual columns")
+    if missing_share > PCA_STABILITY_MAX_MISSING_SHARE:
+        stability_flags.append(f"{missing_share:.0%} matrix missingness")
+    if np.isfinite(min_pairwise_n) and min_pairwise_n < PCA_STABILITY_MIN_PAIRWISE_N:
+        stability_flags.append(f"minimum pairwise overlap {min_pairwise_n:.0f}")
+
+    core = _pca_core_from_residual_matrix(residual_matrix_clean)
+    if core is None:
+        return None
+    eigvals = np.asarray(core["eigenvalues"], dtype=float)
+    var_pct = np.asarray(core["variance_pct"], dtype=float)
+    loadings_df = core["loadings"]
+    cor_pd_df = core["cor_matrix"]
+
+    loo = _pca_leave_one_column_stability(residual_matrix_clean, eigvals, loadings_df)
+    boot = _pca_row_bootstrap_stability(residual_matrix_clean, eigvals, loadings_df)
+    sensitivity_flags: list[str] = []
+    loo_delta = float(loo.get("LOOEV1MaxAbsDelta", np.nan))
+    loo_share_delta = float(loo.get("LOOEV1ShareMaxAbsDelta", np.nan))
+    loo_corr = float(loo.get("LOOPC1MinAbsLoadingCorrelation", np.nan))
+    boot_cv = float(boot.get("BootstrapEV1CV", np.nan))
+    boot_corr = float(boot.get("BootstrapPC1MinAbsLoadingCorrelation", np.nan))
+    if np.isfinite(loo_share_delta) and loo_share_delta > PCA_STABILITY_MAX_LOO_EV1_SHARE_DELTA:
+        sensitivity_flags.append(f"leave-one-column EV1 share shift {loo_share_delta:.2f}")
+    if np.isfinite(loo_corr) and loo_corr < PCA_STABILITY_MIN_LOADING_CORR:
+        sensitivity_flags.append(f"leave-one-column loading correlation {loo_corr:.2f}")
+    if np.isfinite(boot_cv) and boot_cv > PCA_STABILITY_MAX_BOOTSTRAP_EV1_CV:
+        sensitivity_flags.append(f"bootstrap EV1 CV {boot_cv:.2f}")
+    if np.isfinite(boot_corr) and boot_corr < PCA_STABILITY_MIN_LOADING_CORR:
+        sensitivity_flags.append(f"bootstrap loading correlation {boot_corr:.2f}")
+    if bool(boot.get("BootstrapEV1ThresholdCrossing", False)):
+        sensitivity_flags.append("bootstrap EV1 interval crosses an interpretation threshold")
+    stability_flags.extend(sensitivity_flags)
+    stability_status = "Review" if stability_flags else "Stable screen"
+    stability_caution = (
+        "Residual PCA may be unstable because " + "; ".join(stability_flags) + ". "
+        "Use loadings as exploratory prompts and corroborate with fit, content, and marginal diagnostics."
+        if stability_flags else
+        "Residual matrix has adequate basic overlap for a screening PCA; still interpret as a diagnostic, not proof."
+    )
+    stability_row = {
+        "PCAStabilityStatus": stability_status,
+        "Persons": int(n_persons),
+        "ResidualColumns": int(n_columns),
+        "MissingShare": missing_share,
+        "MinPairwiseOverlap": min_pairwise_n,
+        "MedianPairwiseOverlap": median_pairwise_n,
+        "FullEV1": float(eigvals[0]) if eigvals.size else np.nan,
+        "FullEV2": float(eigvals[1]) if eigvals.size > 1 else np.nan,
+        "FullPC1VariancePct": float(var_pct[0]) if var_pct.size else np.nan,
+        "SensitivityFlagSummary": "; ".join(sensitivity_flags) if sensitivity_flags else "none",
+        "Rule": (
+            f"Review if persons < {PCA_STABILITY_MIN_PERSONS}, columns < "
+            f"{PCA_STABILITY_MIN_COLUMNS}, missing share > "
+            f"{PCA_STABILITY_MAX_MISSING_SHARE:.0%}, or min pairwise overlap < "
+            f"{PCA_STABILITY_MIN_PAIRWISE_N}; also review if leave-one-column "
+            f"EV1 share shift > {PCA_STABILITY_MAX_LOO_EV1_SHARE_DELTA:.0%}, bootstrap EV1 CV > "
+            f"{PCA_STABILITY_MAX_BOOTSTRAP_EV1_CV:.0%}, loading correlation < "
+            f"{PCA_STABILITY_MIN_LOADING_CORR}, or bootstrap EV1 crosses EV=2/3 thresholds."
+        ),
+        "Caution": stability_caution,
+    }
+    stability_row.update(loo)
+    stability_row.update(boot)
+    stability_table = pd.DataFrame([stability_row])
 
     return {
         "eigenvalues": eigvals,
@@ -15021,6 +17257,8 @@ def compute_pca_bundle(residual_matrix_wide):
         "loadings": loadings_df,
         "cor_matrix": cor_pd_df,
         "residual_matrix": residual_matrix_wide,
+        "stability": stability_table.iloc[0].to_dict(),
+        "stability_table": stability_table,
     }
 
 
@@ -15059,6 +17297,35 @@ def compute_pca_by_facet(obs_df, facet_names):
         )
         out[facet] = compute_pca_bundle(residual_matrix_wide)
     return out
+
+
+def collect_pca_stability_tables(diagnostics: dict | None) -> pd.DataFrame:
+    """Collect overall and per-facet PCA stability audits into one export table."""
+    rows: list[pd.DataFrame] = []
+    if not isinstance(diagnostics, dict):
+        return pd.DataFrame()
+    pca = diagnostics.get("pca")
+    if isinstance(pca, dict):
+        stability = pca.get("stability_table")
+        if isinstance(stability, pd.DataFrame) and not stability.empty:
+            df = stability.copy()
+            df.insert(0, "Scope", "overall")
+            df.insert(1, "Facet", "")
+            rows.append(df)
+    pca_by_facet = diagnostics.get("pca_by_facet")
+    if isinstance(pca_by_facet, dict):
+        for facet, bundle in pca_by_facet.items():
+            if not isinstance(bundle, dict):
+                continue
+            stability = bundle.get("stability_table")
+            if isinstance(stability, pd.DataFrame) and not stability.empty:
+                df = stability.copy()
+                df.insert(0, "Scope", "facet")
+                df.insert(1, "Facet", str(facet))
+                rows.append(df)
+    if not rows:
+        return pd.DataFrame()
+    return pd.concat(rows, ignore_index=True, sort=False)
 
 
 def diagnose_pca_skip_reason(obs_df, facet_names, *, mode="overall", facet=None):
@@ -15433,8 +17700,15 @@ def mfrm_diagnostics(
     measures = measures.merge(fit_tbl, on=["Facet", "Level"], how="left")
     measures = measures.merge(bias_tbl, on=["Facet", "Level"], how="left")
     measures = measures.merge(ptmea_tbl, on=["Facet", "Level"], how="left")
-    measures["CI_Lower"] = measures["Estimate"] - 1.96 * measures["SE"]
-    measures["CI_Upper"] = measures["Estimate"] + 1.96 * measures["SE"]
+    ci_z = float(_norm.ppf(0.975))
+    measures["CI_Lower"] = measures["Estimate"] - ci_z * measures["SE"]
+    measures["CI_Upper"] = measures["Estimate"] + ci_z * measures["SE"]
+    measures, uncertainty_bundle = annotate_measure_uncertainty(
+        measures,
+        res,
+        obs_df=obs_df,
+        ci_level=0.95,
+    )
 
     reliability_tbl = calc_reliability(measures)
 
@@ -15532,6 +17806,7 @@ def mfrm_diagnostics(
         "marginal_fit_enabled": bool(compute_marginal),
         "eb_shrinkage": shrinkage,
         "eb_shrinkage_enabled": bool(compute_eb_shrinkage),
+        "uncertainty": uncertainty_bundle,
         "fit_df_method": fit_df_method,
         "fit_zstd_transform": fit_zstd_transform_label(whexact),
         "facets_zstd_cap": (
@@ -15614,6 +17889,48 @@ def _normalize_loaded_table(df: pd.DataFrame) -> pd.DataFrame:
         return pd.DataFrame()
     out = df.copy()
     out.columns = [str(c) for c in out.columns]
+    return out
+
+
+def _uploaded_file_size_bytes(file_input) -> int | None:
+    """Return declared uploaded-file size without reading file contents."""
+    if file_input is None:
+        return None
+    size = getattr(file_input, "size", None)
+    try:
+        return int(size) if size is not None else None
+    except (TypeError, ValueError):
+        return None
+
+
+def _enforce_table_file_size(size_bytes: int | None, *, source_label: str) -> None:
+    if size_bytes is None:
+        return
+    if int(size_bytes) >= TABLE_FILE_HARD_LIMIT_BYTES:
+        size_mb = int(round(float(size_bytes) / (1024 * 1024)))
+        raise ValueError(
+            f"{source_label} is {size_mb} MB; files >= {TABLE_FILE_HARD_LIMIT_MB} MB "
+            "are not parsed in the Streamlit UI. Sample rows locally or run the app on a larger local machine."
+        )
+
+
+def _normalize_and_validate_loaded_table(df: pd.DataFrame, *, source_label: str) -> pd.DataFrame:
+    """Normalize parsed data and reject tables that exceed hosted-app budgets."""
+    out = _normalize_loaded_table(df)
+    n_rows, n_cols = out.shape
+    n_cells = int(n_rows) * int(n_cols)
+    if n_rows > TABLE_MAX_ROWS:
+        raise ValueError(
+            f"{source_label} has {n_rows:,} rows; the Streamlit UI limit is {TABLE_MAX_ROWS:,} rows."
+        )
+    if n_cols > TABLE_MAX_COLUMNS:
+        raise ValueError(
+            f"{source_label} has {n_cols:,} columns; the Streamlit UI limit is {TABLE_MAX_COLUMNS:,} columns."
+        )
+    if n_cells > TABLE_MAX_CELLS:
+        raise ValueError(
+            f"{source_label} has {n_cells:,} cells; the Streamlit UI limit is {TABLE_MAX_CELLS:,} cells."
+        )
     return out
 
 
@@ -15763,6 +18080,7 @@ def apply_wide_to_long_pivot(
 def read_flexible_table(text_value, file_input, header=True, delimiter: str | None = None):
     if file_input is not None:
         name = file_input.name.lower()
+        _enforce_table_file_size(_uploaded_file_size_bytes(file_input), source_label=name or "uploaded file")
         try:
             raw = file_input.getvalue()
         except Exception:
@@ -15772,34 +18090,155 @@ def read_flexible_table(text_value, file_input, header=True, delimiter: str | No
             except Exception:
                 pass
         raw_bytes = raw.encode("utf-8") if isinstance(raw, str) else bytes(raw)
+        _enforce_table_file_size(len(raw_bytes), source_label=name or "uploaded file")
         suffix = Path(name).suffix.lower()
         if suffix in {".xlsx", ".xlsm"}:
-            return _normalize_loaded_table(pd.read_excel(
+            return _normalize_and_validate_loaded_table(pd.read_excel(
                 io.BytesIO(raw_bytes),
                 sheet_name=0,
                 header=0 if header else None,
                 dtype=str,
                 engine="openpyxl",
-            ))
+            ), source_label=name or "uploaded file")
         if suffix == ".parquet":
-            return _normalize_loaded_table(pd.read_parquet(io.BytesIO(raw_bytes)))
+            return _normalize_and_validate_loaded_table(
+                pd.read_parquet(io.BytesIO(raw_bytes)),
+                source_label=name or "uploaded file",
+            )
         if suffix == ".json":
-            return _normalize_loaded_table(_read_json_table_bytes(raw_bytes))
+            return _normalize_and_validate_loaded_table(
+                _read_json_table_bytes(raw_bytes),
+                source_label=name or "uploaded file",
+            )
         raw_norm = normalize_csv_newlines(raw if isinstance(raw, str) else raw_bytes)
         if isinstance(raw_norm, str):
             sep = resolve_table_delimiter(delimiter, raw_norm, file_name=name)
-            return _normalize_loaded_table(pd.read_csv(io.StringIO(raw_norm), sep=sep, header=0 if header else None, dtype=str))
+            return _normalize_and_validate_loaded_table(
+                pd.read_csv(io.StringIO(raw_norm), sep=sep, header=0 if header else None, dtype=str),
+                source_label=name or "uploaded file",
+            )
         sep = resolve_table_delimiter(delimiter, raw_norm, file_name=name)
-        return _normalize_loaded_table(pd.read_csv(io.BytesIO(raw_norm), sep=sep, header=0 if header else None, dtype=str))
+        return _normalize_and_validate_loaded_table(
+            pd.read_csv(io.BytesIO(raw_norm), sep=sep, header=0 if header else None, dtype=str),
+            source_label=name or "uploaded file",
+        )
     if text_value is None or not str(text_value).strip():
         return pd.DataFrame()
     text_value = normalize_csv_newlines(str(text_value)).strip()
+    text_size = len(text_value.encode("utf-8"))
+    if text_size >= TABLE_TEXT_HARD_LIMIT_BYTES:
+        size_mb = int(round(float(text_size) / (1024 * 1024)))
+        raise ValueError(
+            f"Pasted text is {size_mb} MB; pasted tables are limited to "
+            f"{TABLE_TEXT_HARD_LIMIT_MB} MB in the Streamlit UI."
+        )
     sep = resolve_table_delimiter(delimiter, text_value)
-    return _normalize_loaded_table(pd.read_csv(io.StringIO(text_value), sep=sep, header=0 if header else None, dtype=str))
+    return _normalize_and_validate_loaded_table(
+        pd.read_csv(io.StringIO(text_value), sep=sep, header=0 if header else None, dtype=str),
+        source_label="pasted text",
+    )
 
 
 
 
+
+
+def maybe_apply_wide_to_long_sidebar(parsed: pd.DataFrame, *, key_prefix: str) -> pd.DataFrame:
+    """Offer the same wide-to-long pivot controls for pasted and uploaded tables."""
+    if not isinstance(parsed, pd.DataFrame) or parsed.empty or parsed.shape[1] < 2:
+        return parsed
+
+    wide_detect = detect_wide_format_columns(parsed)
+    default_layout = "wide" if wide_detect["looks_wide"] else "long"
+    layout_label_long = t("data_source.layout_long")
+    layout_label_wide = t("data_source.layout_wide")
+    layout_options = {layout_label_long: "long", layout_label_wide: "wide"}
+    default_label = layout_label_wide if default_layout == "wide" else layout_label_long
+    with st.sidebar.expander(
+        t("data_source.layout_expander"),
+        expanded=wide_detect["looks_wide"],
+    ):
+        st.caption(t("data_source.layout_expander_help"))
+        if wide_detect["looks_wide"]:
+            st.caption(
+                t("data_source.layout_auto_detect_template",
+                  reason=wide_detect["reason"])
+            )
+        layout_choice = st.radio(
+            t("data_source.layout_radio_label"),
+            list(layout_options.keys()),
+            index=list(layout_options.keys()).index(default_label),
+            key=f"{key_prefix}_layout_choice",
+            horizontal=True,
+        )
+        if layout_options[layout_choice] != "wide":
+            return parsed
+
+        cols_in_df = list(parsed.columns)
+        default_score_cols = wide_detect["probable_score_cols"]
+        default_id_cols = wide_detect["probable_id_cols"]
+        id_cols = st.multiselect(
+            t("data_source.layout_id_cols_label"),
+            options=cols_in_df,
+            default=default_id_cols,
+            key=f"{key_prefix}_wide_id_cols",
+            help=t("data_source.layout_id_cols_help"),
+        )
+        remaining_for_score = [c for c in cols_in_df if c not in id_cols]
+        score_cols = st.multiselect(
+            t("data_source.layout_score_cols_label"),
+            options=remaining_for_score,
+            default=[c for c in default_score_cols if c in remaining_for_score],
+            key=f"{key_prefix}_wide_score_cols",
+            help=t("data_source.layout_score_cols_help"),
+        )
+        new_facet_name = st.text_input(
+            t("data_source.layout_new_facet_label"),
+            value="Criterion",
+            key=f"{key_prefix}_wide_new_facet",
+            help=t("data_source.layout_new_facet_help"),
+        ).strip() or "Item"
+        score_col_name = st.text_input(
+            t("data_source.layout_score_col_label"),
+            value="Score",
+            key=f"{key_prefix}_wide_score_col",
+            help=t("data_source.layout_score_col_help"),
+        ).strip() or "Score"
+        if not id_cols or not score_cols:
+            st.warning(t("data_source.layout_incomplete_warning"))
+            return parsed
+        try:
+            pivoted = apply_wide_to_long_pivot(
+                parsed,
+                id_cols=id_cols,
+                score_cols=score_cols,
+                new_facet_name=new_facet_name,
+                score_col_name=score_col_name,
+            )
+            pivoted = _normalize_and_validate_loaded_table(
+                pivoted,
+                source_label="wide-to-long pivoted table",
+            )
+        except ValueError as exc:
+            st.error(
+                t("data_source.layout_pivot_error_template", error=str(exc))
+            )
+            return parsed
+        if pivoted.empty:
+            st.warning(t("data_source.layout_pivot_empty_warning"))
+            return parsed
+        st.success(
+            t(
+                "data_source.layout_pivot_success_template",
+                rows_wide=len(parsed),
+                rows_long=len(pivoted),
+                facet=new_facet_name,
+                n_levels=len(score_cols),
+            )
+        )
+        with st.expander(t("data_source.layout_pivot_preview"), expanded=False):
+            st.dataframe(pivoted.head(20), width="stretch", hide_index=True)
+        return pivoted
 
 
 # ---------------------------------------------------------------------------
@@ -16649,7 +19088,7 @@ def read_input_data(core: dict) -> pd.DataFrame:
         except Exception as exc:
             st.sidebar.error(t("data_source.paste_parse_error"))
             with st.sidebar.expander(t("data_source.technical_parse_details_expander"), expanded=False):
-                st.exception(exc)
+                render_exception_details(exc)
             return pd.DataFrame()
         if parsed.shape[1] < 2:
             st.sidebar.warning(t("data_source.single_column_warning_paste"))
@@ -16661,7 +19100,7 @@ def read_input_data(core: dict) -> pd.DataFrame:
                 preview_cols=preview_cols,
                 ellipsis="..." if parsed.shape[1] > 5 else "",
             ))
-        return parsed
+        return maybe_apply_wide_to_long_sidebar(parsed, key_prefix="paste")
 
     render_data_privacy_notice(where="sidebar")
     upload_delimiter = st.sidebar.selectbox(
@@ -16679,19 +19118,21 @@ def read_input_data(core: dict) -> pd.DataFrame:
     if upload is None:
         return pd.DataFrame()
     # Preflight: warn before parsing if the file is so large that it may
-    # OOM the Streamlit Cloud instance. 50 MB is the soft warning; 200 MB
-    # is the configured maximum upload size.
+    # OOM the Streamlit Cloud instance. 50 MB is the soft warning; 100 MB
+    # is a hard stop in the Streamlit UI.
     upload_size_mb = 0.0
     try:
         upload_size_mb = float(getattr(upload, "size", 0) or 0) / (1024 * 1024)
     except (TypeError, ValueError):
         upload_size_mb = 0.0
-    if upload_size_mb >= 100:
+    if upload_size_mb >= TABLE_FILE_HARD_LIMIT_MB:
         st.sidebar.error(t(
-            "data_source.upload_size_critical_template",
+            "data_source.upload_size_blocked_template",
             size_mb=f"{upload_size_mb:.0f}",
+            limit_mb=TABLE_FILE_HARD_LIMIT_MB,
         ))
-    elif upload_size_mb >= 50:
+        return pd.DataFrame()
+    elif upload_size_mb >= TABLE_FILE_SOFT_WARNING_MB:
         st.sidebar.warning(t(
             "data_source.upload_size_warning_template",
             size_mb=f"{upload_size_mb:.0f}",
@@ -16701,7 +19142,7 @@ def read_input_data(core: dict) -> pd.DataFrame:
     except Exception as exc:
         st.sidebar.error(t("data_source.upload_parse_error"))
         with st.sidebar.expander(t("data_source.technical_parse_details_expander"), expanded=False):
-            st.exception(exc)
+            render_exception_details(exc)
         return pd.DataFrame()
     if parsed.shape[1] < 2:
         st.sidebar.warning(t("data_source.single_column_warning_upload"))
@@ -16714,99 +19155,7 @@ def read_input_data(core: dict) -> pd.DataFrame:
             ellipsis="..." if parsed.shape[1] > 5 else "",
         ))
 
-    # Wide-to-long pivot. Excel / spreadsheet users often have one row
-    # per (Person, Rater) and one column per item being scored; the
-    # likelihood pipeline expects long format, so we offer an inline
-    # melt step. The heuristic detector pre-fills a sensible default
-    # layout (long) but flips to "wide" when it sees several numeric
-    # columns and at least one non-numeric id column.
-    wide_detect = detect_wide_format_columns(parsed)
-    default_layout = "wide" if wide_detect["looks_wide"] else "long"
-    layout_label_long = t("data_source.layout_long")
-    layout_label_wide = t("data_source.layout_wide")
-    layout_options = {layout_label_long: "long", layout_label_wide: "wide"}
-    default_label = layout_label_wide if default_layout == "wide" else layout_label_long
-    with st.sidebar.expander(
-        t("data_source.layout_expander"),
-        expanded=wide_detect["looks_wide"],
-    ):
-        st.caption(t("data_source.layout_expander_help"))
-        if wide_detect["looks_wide"]:
-            st.caption(
-                t("data_source.layout_auto_detect_template",
-                  reason=wide_detect["reason"])
-            )
-        layout_choice = st.radio(
-            t("data_source.layout_radio_label"),
-            list(layout_options.keys()),
-            index=list(layout_options.keys()).index(default_label),
-            key="upload_layout_choice",
-            horizontal=True,
-        )
-        if layout_options[layout_choice] == "wide":
-            cols_in_df = list(parsed.columns)
-            default_score_cols = wide_detect["probable_score_cols"]
-            default_id_cols = wide_detect["probable_id_cols"]
-            id_cols = st.multiselect(
-                t("data_source.layout_id_cols_label"),
-                options=cols_in_df,
-                default=default_id_cols,
-                key="upload_wide_id_cols",
-                help=t("data_source.layout_id_cols_help"),
-            )
-            remaining_for_score = [c for c in cols_in_df if c not in id_cols]
-            score_cols = st.multiselect(
-                t("data_source.layout_score_cols_label"),
-                options=remaining_for_score,
-                default=[c for c in default_score_cols if c in remaining_for_score],
-                key="upload_wide_score_cols",
-                help=t("data_source.layout_score_cols_help"),
-            )
-            new_facet_name = st.text_input(
-                t("data_source.layout_new_facet_label"),
-                value="Criterion",
-                key="upload_wide_new_facet",
-                help=t("data_source.layout_new_facet_help"),
-            ).strip() or "Item"
-            score_col_name = st.text_input(
-                t("data_source.layout_score_col_label"),
-                value="Score",
-                key="upload_wide_score_col",
-                help=t("data_source.layout_score_col_help"),
-            ).strip() or "Score"
-            if not id_cols or not score_cols:
-                st.warning(t("data_source.layout_incomplete_warning"))
-                return parsed
-            try:
-                pivoted = apply_wide_to_long_pivot(
-                    parsed,
-                    id_cols=id_cols,
-                    score_cols=score_cols,
-                    new_facet_name=new_facet_name,
-                    score_col_name=score_col_name,
-                )
-            except ValueError as exc:
-                st.error(
-                    t("data_source.layout_pivot_error_template", error=str(exc))
-                )
-                return parsed
-            if pivoted.empty:
-                st.warning(t("data_source.layout_pivot_empty_warning"))
-                return parsed
-            st.success(
-                t(
-                    "data_source.layout_pivot_success_template",
-                    rows_wide=len(parsed),
-                    rows_long=len(pivoted),
-                    facet=new_facet_name,
-                    n_levels=len(score_cols),
-                )
-            )
-            with st.expander(t("data_source.layout_pivot_preview"), expanded=False):
-                st.dataframe(pivoted.head(20), width="stretch", hide_index=True)
-            return pivoted
-
-    return parsed
+    return maybe_apply_wide_to_long_sidebar(parsed, key_prefix="upload")
 
 
 # ---------------------------------------------------------------------------
@@ -16954,12 +19303,53 @@ textarea:focus-visible,
     )
 
 
+def _safe_export_name(name: object, *, default: str = "table", max_len: int = 96) -> str:
+    """Sanitize a filename/sheet-name stem for generated export bundles."""
+    text = str(name or "").strip()
+    text = text.replace("\\", "_").replace("/", "_")
+    text = re.sub(r"[^A-Za-z0-9._ -]+", "_", text)
+    text = re.sub(r"\s+", "_", text).strip("._- ")
+    if not text:
+        text = default
+    # Avoid hidden files and Windows device-name oddities in downloaded ZIPs.
+    if text.startswith("."):
+        text = text.lstrip(".") or default
+    return text[:max_len].rstrip("._- ") or default
+
+
+def _safe_zip_entry_name(name: object, *, extension: str | None = None) -> str:
+    stem = _safe_export_name(name, default="asset")
+    ext = ""
+    if extension:
+        ext = str(extension).strip()
+        ext = ext if ext.startswith(".") else f".{ext}"
+        ext = re.sub(r"[^A-Za-z0-9.]+", "", ext)
+    if ext and not stem.lower().endswith(ext.lower()):
+        return f"{stem}{ext}"
+    return stem
+
+
+def _unique_excel_sheet_name(name: object, used: set[str]) -> str:
+    base = _safe_export_name(name, default="Sheet", max_len=31)
+    # Excel forbids these even when pandas would eventually error.
+    base = re.sub(r"[\[\]:*?/\\]", "_", base).strip("'") or "Sheet"
+    candidate = base[:31]
+    i = 2
+    while candidate in used:
+        suffix = f"_{i}"
+        candidate = f"{base[:31 - len(suffix)]}{suffix}"
+        i += 1
+    used.add(candidate)
+    return candidate
+
+
 def to_excel_bytes(frames: dict[str, pd.DataFrame]) -> bytes:
     """Write multiple DataFrames to an in-memory Excel workbook, one sheet per key."""
     buf = io.BytesIO()
+    used_sheets: set[str] = set()
     with pd.ExcelWriter(buf, engine="openpyxl") as writer:
         for name, df in frames.items():
-            sheet = name[:31]  # Excel sheet name limit
+            sheet = _unique_excel_sheet_name(name, used_sheets)
             df.to_excel(writer, sheet_name=sheet, index=False)
     return buf.getvalue()
 
@@ -17010,7 +19400,7 @@ def cached_tables_zip(_frames: dict[str, pd.DataFrame], frames_key: str) -> byte
     zip_buf = io.BytesIO()
     with zipfile.ZipFile(zip_buf, "w", zipfile.ZIP_DEFLATED) as zf:
         for name, df in _frames.items():
-            zf.writestr(f"{name}.csv", df.to_csv(index=False))
+            zf.writestr(_safe_zip_entry_name(name, extension="csv"), df.to_csv(index=False))
     return zip_buf.getvalue()
 
 
@@ -17062,6 +19452,43 @@ def build_result_bundle_frames(
         measures = diagnostics.get("measures")
         if isinstance(measures, pd.DataFrame) and not measures.empty:
             frames["measures"] = measures
+        uncertainty = diagnostics.get("uncertainty", {})
+        if isinstance(uncertainty, dict):
+            unc_summary = uncertainty.get("summary", pd.DataFrame())
+            cov_audit = uncertainty.get("covariance_audit", pd.DataFrame())
+            structural_se = uncertainty.get("structural_se", pd.DataFrame())
+            if isinstance(unc_summary, pd.DataFrame) and not unc_summary.empty:
+                frames["statistical_uncertainty_summary"] = unc_summary
+            if isinstance(cov_audit, pd.DataFrame) and not cov_audit.empty:
+                frames["mml_covariance_audit"] = cov_audit
+            if isinstance(structural_se, pd.DataFrame) and not structural_se.empty:
+                frames["mml_structural_measure_se"] = structural_se
+        prior_plan = build_mml_prior_sensitivity_plan(result)
+        if isinstance(prior_plan, pd.DataFrame) and not prior_plan.empty:
+            frames["mml_prior_sd_sensitivity_plan"] = prior_plan
+        bias_audit = build_bias_inference_audit(all_bias_results or bias_results or {}, result, diagnostics)
+        if isinstance(bias_audit, pd.DataFrame) and not bias_audit.empty:
+            frames["bias_inference_audit"] = bias_audit
+        assumption_audit = build_statistical_assumption_audit(result, diagnostics, all_bias_results or bias_results or {})
+        if isinstance(assumption_audit, pd.DataFrame) and not assumption_audit.empty:
+            frames["statistical_assumption_audit"] = assumption_audit
+        method_ref_audit = build_method_reference_audit() if frames else pd.DataFrame()
+        if isinstance(method_ref_audit, pd.DataFrame) and not method_ref_audit.empty:
+            frames["method_reference_audit"] = method_ref_audit
+        if frames:
+            try:
+                sentence_audit = build_apa_report_sentence_audit(
+                    result,
+                    diagnostics,
+                    bias_results=bias_results,
+                    all_bias_results=all_bias_results,
+                )
+            except Exception:
+                sentence_audit = pd.DataFrame()
+        else:
+            sentence_audit = pd.DataFrame()
+        if isinstance(sentence_audit, pd.DataFrame) and not sentence_audit.empty:
+            frames["apa_report_sentence_audit"] = sentence_audit
         reliability = diagnostics.get("reliability")
         if isinstance(reliability, pd.DataFrame) and not reliability.empty:
             frames["reliability"] = reliability
@@ -17086,6 +19513,12 @@ def build_result_bundle_frames(
                     frames["pca_eigenvalues"] = pd.DataFrame({"Eigenvalue": list(eigen)})
                 except Exception:
                     pass
+            stability = pca.get("stability_table")
+            if isinstance(stability, pd.DataFrame) and not stability.empty:
+                frames["pca_stability_audit"] = stability
+            stability_all = collect_pca_stability_tables(diagnostics)
+            if isinstance(stability_all, pd.DataFrame) and not stability_all.empty:
+                frames["pca_stability_all_scopes"] = stability_all
     # Person / facet measures split (nice to have separately, matches
     # the way FACETS groups its output facet-tables).
     facets = result.get("facets", {}) if isinstance(result, dict) else {}
@@ -17108,6 +19541,19 @@ def build_result_bundle_frames(
     steps_df = result.get("steps")
     if isinstance(steps_df, pd.DataFrame) and not steps_df.empty:
         frames["step_thresholds"] = steps_df
+    try:
+        facets_for_yardstick = result.get("facets", {}) if isinstance(result, dict) else {}
+        prep_for_yardstick = result.get("prep", {}) if isinstance(result, dict) else {}
+        yardstick_map = make_yardstick_export_table(
+            facets_for_yardstick.get("person", pd.DataFrame()) if isinstance(facets_for_yardstick, dict) else pd.DataFrame(),
+            facets_for_yardstick.get("others", pd.DataFrame()) if isinstance(facets_for_yardstick, dict) else pd.DataFrame(),
+            steps_df if isinstance(steps_df, pd.DataFrame) else pd.DataFrame(),
+            rating_min=prep_for_yardstick.get("rating_min") if isinstance(prep_for_yardstick, dict) else None,
+        )
+        if isinstance(yardstick_map, pd.DataFrame) and not yardstick_map.empty:
+            frames["yardstick_map"] = yardstick_map
+    except Exception:
+        pass
     weight_audit = build_weighting_policy_audit(result)
     if isinstance(weight_audit, pd.DataFrame) and not weight_audit.empty:
         frames["weighting_policy_audit"] = weight_audit
@@ -17133,6 +19579,9 @@ def build_result_bundle_frames(
         pass
     # Bias tables — prefer the all-pair dict when available.
     if isinstance(all_bias_results, dict) and all_bias_results:
+        bias_audit = build_bias_inference_audit(all_bias_results, result, diagnostics)
+        if isinstance(bias_audit, pd.DataFrame) and not bias_audit.empty:
+            frames["bias_inference_audit"] = bias_audit
         for pair_label, pair_res in all_bias_results.items():
             if not isinstance(pair_res, dict):
                 continue
@@ -17146,6 +19595,9 @@ def build_result_bundle_frames(
                 if isinstance(dff_tbl, pd.DataFrame) and not dff_tbl.empty:
                     frames[f"dff_bias_{safe_pair}"] = dff_tbl
     elif isinstance(bias_results, dict) and bias_results:
+        bias_audit = build_bias_inference_audit(bias_results, result, diagnostics)
+        if isinstance(bias_audit, pd.DataFrame) and not bias_audit.empty:
+            frames["bias_inference_audit"] = bias_audit
         tbl = bias_results.get("table")
         if not isinstance(tbl, pd.DataFrame) or tbl.empty:
             tbl = bias_results.get("bias_tbl")
@@ -17167,7 +19619,7 @@ def render_quick_results_download(
     """FACETS-style one-click results bundle, surfaced above the result tabs.
 
     Shows a prominent **⬇ Download all results (ZIP)** button right
-    after the Run history panel so beginners leaving with their data
+    after the Run history panel so users downloading results immediately
     do not have to hunt through the Downloads sub-tab first. Also
     offers an Excel (multi-sheet) variant for users who prefer that.
     """
@@ -17302,12 +19754,17 @@ def _coerce_publication_figure_height(fig) -> int:
     return max(PUBLICATION_FIGURE_MIN_HEIGHT, min(PUBLICATION_FIGURE_MAX_HEIGHT, height_int))
 
 
-def _prepare_publication_figure(fig, *, width: int = PUBLICATION_FIGURE_WIDTH):
+def _prepare_publication_figure(fig, *, width: int | None = None):
     """Return a copy with manuscript-oriented static export styling."""
     if fig is None:
         return None
     out = go.Figure(fig)
-    height = _coerce_publication_figure_height(out)
+    prefs = get_visualization_preferences()
+    theme = _visual_theme_spec(str(prefs.get("theme", VISUAL_THEME_DEFAULT)))
+    base_font = int(prefs.get("base_font_size", VISUAL_BASE_FONT_SIZE_DEFAULT))
+    preferred_width = int(prefs.get("figure_width", VISUAL_FIGURE_WIDTH_DEFAULT))
+    min_height = int(prefs.get("figure_min_height", VISUAL_FIGURE_MIN_HEIGHT_DEFAULT))
+    height = max(_coerce_publication_figure_height(out), min_height)
     existing_margin = getattr(out.layout, "margin", None)
     margin = {
         "l": max(int(getattr(existing_margin, "l", 0) or 0), 70),
@@ -17316,43 +19773,60 @@ def _prepare_publication_figure(fig, *, width: int = PUBLICATION_FIGURE_WIDTH):
         "b": max(int(getattr(existing_margin, "b", 0) or 0), 65),
     }
     out.update_layout(
-        width=int(width),
+        width=int(width or preferred_width),
         height=int(height),
-        template="plotly_white",
-        paper_bgcolor="white",
-        plot_bgcolor="white",
-        font=dict(family=PUBLICATION_FIGURE_FONT, size=13, color="#222222"),
-        title=dict(font=dict(size=17), x=0.02, xanchor="left"),
+        template=str(theme["template"]),
+        paper_bgcolor=str(theme["paper_bgcolor"]),
+        plot_bgcolor=str(theme["plot_bgcolor"]),
+        font=dict(family=PUBLICATION_FIGURE_FONT, size=base_font, color=str(theme["font_color"])),
+        title=dict(font=dict(size=base_font + 4), x=0.02, xanchor="left"),
         legend=dict(
-            font=dict(size=11),
-            bgcolor="rgba(255,255,255,0.88)",
+            font=dict(size=max(9, base_font - 2)),
+            bgcolor=str(theme["legend_bgcolor"]),
             borderwidth=0,
             orientation="v",
         ),
         margin=margin,
+        colorway=list(theme["colorway"]),
     )
     out.update_xaxes(
         automargin=True,
         showline=True,
-        linecolor="#444444",
+        linecolor=str(theme["axis_color"]),
         linewidth=1,
         ticks="outside",
-        tickfont=dict(size=11),
-        title_font=dict(size=13),
+        tickfont=dict(size=max(9, base_font - 2)),
+        title_font=dict(size=base_font),
         zeroline=False,
+        gridcolor=str(theme["grid_color"]),
     )
     out.update_yaxes(
         automargin=True,
         showline=True,
-        linecolor="#444444",
+        linecolor=str(theme["axis_color"]),
         linewidth=1,
         ticks="outside",
-        tickfont=dict(size=11),
-        title_font=dict(size=13),
+        tickfont=dict(size=max(9, base_font - 2)),
+        title_font=dict(size=base_font),
         zeroline=False,
+        gridcolor=str(theme["grid_color"]),
     )
+    label_policy = str(prefs.get("label_policy", VISUAL_LABEL_POLICY_DEFAULT))
+    if label_policy == "Hover only":
+        out.update_xaxes(showticklabels=False)
+        out.update_yaxes(showticklabels=False)
+    elif label_policy == "Important labels":
+        try:
+            out.update_xaxes(ticklabelstep=2)
+            out.update_yaxes(ticklabelstep=2)
+        except Exception:
+            pass
+    elif label_policy == "Show all":
+        out.update_xaxes(tickangle=-30)
     if out.layout.annotations:
-        out.update_annotations(font=dict(size=11, family=PUBLICATION_FIGURE_FONT, color="#222222"))
+        out.update_annotations(
+            font=dict(size=max(9, base_font - 2), family=PUBLICATION_FIGURE_FONT, color=str(theme["font_color"]))
+        )
     return out
 
 
@@ -17423,12 +19897,25 @@ def build_osf_zip(
     """Create a ZIP archive with CSV + Excel + HTML plus optional text assets."""
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        written: set[str] = set()
         for name, df in frames.items():
-            zf.writestr(f"{name}.csv", df.to_csv(index=False))
-        zf.writestr(f"{title}.xlsx", to_excel_bytes(frames))
-        zf.writestr(f"{title}.html", to_html_report(frames, title))
+            entry = _safe_zip_entry_name(name, extension="csv")
+            if entry not in written:
+                zf.writestr(entry, df.to_csv(index=False))
+                written.add(entry)
+        xlsx_entry = _safe_zip_entry_name(title, extension="xlsx")
+        if xlsx_entry not in written:
+            zf.writestr(xlsx_entry, to_excel_bytes(frames))
+            written.add(xlsx_entry)
+        html_entry = _safe_zip_entry_name(title, extension="html")
+        if html_entry not in written:
+            zf.writestr(html_entry, to_html_report(frames, title))
+            written.add(html_entry)
         for name, text in (text_assets or {}).items():
-            zf.writestr(str(name), str(text))
+            entry = _safe_zip_entry_name(name)
+            if entry not in written:
+                zf.writestr(entry, str(text))
+                written.add(entry)
     return buf.getvalue()
 
 
@@ -17444,6 +19931,128 @@ def cached_osf_zip(
     _ = frames_key
     _ = text_assets_key
     return build_osf_zip(_frames, title=title, text_assets=_text_assets)
+
+
+_PUBLIC_EXPORT_SENSITIVE_FRAME_NAMES: frozenset[str] = frozenset({
+    "response_data_row_audit",
+    "response_data_excluded_rows",
+    "scorefile",
+    "fitted_predictions",
+    "new_design_predictions",
+    "population_person_data",
+    "posterior_scores",
+    "plausible_values",
+    "residuals",
+    "person_measures",
+    "person_fit_indices",
+    "mfrm_stan_id_index_map",
+    "mfrm_uto_bayesian_mfrm_id_index_map",
+})
+
+
+def _drop_person_level_rows_for_public_export(df: pd.DataFrame) -> tuple[pd.DataFrame, int]:
+    """Remove person-level measure rows from aggregate tables in public exports."""
+    if not isinstance(df, pd.DataFrame) or df.empty or "Facet" not in df.columns:
+        return df, 0
+    facet_values = df["Facet"].astype(str).str.strip().str.lower()
+    mask_person = facet_values.isin({"person", "persons", "student", "students", "learner", "learners"})
+    n_removed = int(mask_person.sum())
+    if n_removed == 0:
+        return df, 0
+    return df.loc[~mask_person].reset_index(drop=True), n_removed
+
+
+def _frame_contains_public_identifier_risk(df: pd.DataFrame) -> bool:
+    """Heuristic for frames that should not appear in default public exports."""
+    if not isinstance(df, pd.DataFrame) or df.empty:
+        return False
+    identifier_cols = {"person", "student", "learner", "examinee", "candidate", "subject"}
+    if any(str(col).strip().lower() in identifier_cols for col in df.columns):
+        return True
+    facet_cols = {
+        "facet1", "facet2", "sourcefacet", "targetfacet",
+        "primaryfacet", "secondaryfacet",
+    }
+    person_tokens = {"person", "persons", "student", "students", "learner", "learners"}
+    for col in df.columns:
+        if str(col).strip().replace("_", "").lower() not in facet_cols:
+            continue
+        values = df[col].astype(str).str.strip().str.lower()
+        if values.isin(person_tokens).any():
+            return True
+    return False
+
+
+def prepare_download_frames_for_privacy(
+    frames: dict[str, pd.DataFrame],
+    *,
+    public_export_mode: bool,
+) -> dict[str, pd.DataFrame]:
+    """Return export frames with a manifest and public-mode privacy filtering."""
+    prepared: OrderedDict[str, pd.DataFrame] = OrderedDict()
+    manifest_rows: list[dict] = []
+    for name, df in (frames or {}).items():
+        frame_name = str(name)
+        if not isinstance(df, pd.DataFrame):
+            continue
+        name_lower = frame_name.lower()
+        reason = ""
+        if public_export_mode and (
+            frame_name in _PUBLIC_EXPORT_SENSITIVE_FRAME_NAMES
+            or "person" in name_lower
+            or name_lower.startswith("facets_person")
+            or _frame_contains_public_identifier_risk(df)
+        ):
+            reason = "Excluded from public export: row-level or person-level identifiers may be present."
+            manifest_rows.append({
+                "Frame": frame_name,
+                "Rows": int(len(df)),
+                "Columns": int(df.shape[1]),
+                "Status": "excluded_public_mode",
+                "Reason": reason,
+            })
+            continue
+
+        export_df = df.copy()
+        removed_person_rows = 0
+        if public_export_mode:
+            export_df, removed_person_rows = _drop_person_level_rows_for_public_export(export_df)
+            if export_df.empty and removed_person_rows:
+                reason = "Excluded from public export: all rows were person-level rows."
+                manifest_rows.append({
+                    "Frame": frame_name,
+                    "Rows": int(len(df)),
+                    "Columns": int(df.shape[1]),
+                    "Status": "excluded_public_mode",
+                    "Reason": reason,
+                })
+                continue
+        prepared[frame_name] = export_df
+        manifest_rows.append({
+            "Frame": frame_name,
+            "Rows": int(len(export_df)),
+            "Columns": int(export_df.shape[1]),
+            "Status": "included_public_mode" if public_export_mode else "included_private_mode",
+            "Reason": (
+                f"Included after removing {removed_person_rows} person-level row(s)."
+                if removed_person_rows else
+                ("Included in public export." if public_export_mode else "Included in complete/private export.")
+            ),
+        })
+
+    manifest_rows.append({
+        "Frame": "export_privacy_manifest",
+        "Rows": len(manifest_rows) + 1,
+        "Columns": 5,
+        "Status": "included",
+        "Reason": (
+            "Documents public-export filtering decisions. Public mode is not a formal de-identification guarantee."
+            if public_export_mode else
+            "Complete/private export selected; row-level tables may contain identifiers."
+        ),
+    })
+    prepared["export_privacy_manifest"] = pd.DataFrame(manifest_rows)
+    return dict(prepared)
 
 
 def bytes_mapping_fingerprint(assets: dict[str, bytes | str], length: int = 16) -> str:
@@ -17465,7 +20074,7 @@ def cached_named_asset_zip(_assets: dict[str, bytes | str], assets_key: str, ext
     with zipfile.ZipFile(zip_buf, "w", zipfile.ZIP_DEFLATED) as zf:
         for name, value in _assets.items():
             raw = value.encode("utf-8") if isinstance(value, str) else bytes(value)
-            zf.writestr(f"{name}.{extension}", raw)
+            zf.writestr(_safe_zip_entry_name(name, extension=extension), raw)
     return zip_buf.getvalue()
 
 
@@ -17477,7 +20086,7 @@ def cached_mixed_asset_zip(_assets: dict[str, bytes | str], assets_key: str) -> 
     with zipfile.ZipFile(zip_buf, "w", zipfile.ZIP_DEFLATED) as zf:
         for name, value in _assets.items():
             raw = value.encode("utf-8") if isinstance(value, str) else bytes(value)
-            zf.writestr(str(name), raw)
+            zf.writestr(_safe_zip_entry_name(name), raw)
     return zip_buf.getvalue()
 
 
@@ -17595,7 +20204,7 @@ def build_first_read_guide_rows(
     diagnostics: dict,
     all_bias_results: dict | None = None,
 ) -> list[dict[str, str]]:
-    """Build the beginner-facing first-read checklist rows."""
+    """Build the guided first-read checklist rows."""
     rows: list[dict[str, str]] = []
 
     opt = result.get("opt")
@@ -17668,25 +20277,49 @@ def build_first_read_guide_rows(
         })
 
     rel_df = diagnostics.get("reliability", pd.DataFrame())
-    if isinstance(rel_df, pd.DataFrame) and not rel_df.empty and "Reliability" in rel_df.columns:
-        rel_vals = pd.to_numeric(rel_df["Reliability"], errors="coerce").dropna()
-        if len(rel_vals):
-            min_rel = float(rel_vals.min())
+    if (
+        isinstance(rel_df, pd.DataFrame)
+        and not rel_df.empty
+        and {"Facet", "Reliability"}.issubset(rel_df.columns)
+    ):
+        rel_work = rel_df.copy()
+        rel_work["Reliability"] = pd.to_numeric(rel_work["Reliability"], errors="coerce")
+        person_rel = rel_work.loc[
+            rel_work["Facet"].astype(str).str.strip().str.lower() == "person",
+            "Reliability",
+        ].dropna()
+        if len(person_rel):
+            rel_value = float(person_rel.iloc[0])
             status = (
-                "OK" if min_rel >= FINAL_PERSON_RELIABILITY_READY
-                else "Review" if min_rel >= FINAL_PERSON_RELIABILITY_REVIEW
+                "OK" if rel_value >= FINAL_PERSON_RELIABILITY_READY
+                else "Review" if rel_value >= FINAL_PERSON_RELIABILITY_REVIEW
                 else "Caution"
             )
-            rows.append({
-                "Check": "3. Reliability / separation",
-                "Status": status,
-                "What it means": f"Lowest facet reliability is {min_rel:.2f}.",
-                "Next action": (
-                    "Use facet tables for substantive interpretation."
-                    if status == "OK" else
-                    "Consider whether there are enough raters/tasks/criteria and enough score spread."
-                ),
-            })
+            meaning = f"Person reliability is {rel_value:.2f}; this supports or limits learner ordering claims."
+            next_action = (
+                "Use person ordering claims with the facet tables and fit checks."
+                if status == "OK" else
+                "Avoid strong learner-ranking claims; inspect person spread, task coverage, and score range."
+            )
+        else:
+            nonperson_vals = rel_work["Reliability"].dropna()
+            status = "Review"
+            meaning = (
+                "Person reliability is unavailable. Non-person facet reliability is not automatically better when high; "
+                "for raters, low reliability can indicate desirable interchangeability."
+            )
+            next_action = (
+                "Interpret reliability facet-by-facet: person reliability for learner ordering, "
+                "rater reliability for interchangeability, task/criterion reliability for design spread."
+                if len(nonperson_vals) else
+                "Reliability values are unavailable; inspect estimation and data coverage first."
+            )
+        rows.append({
+            "Check": "3. Reliability / separation",
+            "Status": status,
+            "What it means": meaning,
+            "Next action": next_action,
+        })
 
     pca_enabled = bool(diagnostics.get("pca_enabled", diagnostics.get("pca") is not None))
     pca = diagnostics.get("pca")
@@ -17700,19 +20333,30 @@ def build_first_read_guide_rows(
     elif isinstance(pca, dict) and pca.get("eigenvalues") is not None:
         ev = np.asarray(pca.get("eigenvalues"), dtype=float)
         ev1 = float(ev[0]) if ev.size else np.nan
+        stability_tbl = pca.get("stability_table")
+        stability_status = ""
+        stability_flags = ""
+        if isinstance(stability_tbl, pd.DataFrame) and not stability_tbl.empty:
+            stability_status = str(stability_tbl.iloc[0].get("PCAStabilityStatus", ""))
+            stability_flags = str(stability_tbl.iloc[0].get("SensitivityFlagSummary", ""))
         status = (
-            "OK" if np.isfinite(ev1) and ev1 < FINAL_PCA_EIGENVALUE_READY
+            "OK" if np.isfinite(ev1) and ev1 < FINAL_PCA_EIGENVALUE_READY and stability_status != "Review"
             else "Review" if np.isfinite(ev1) and ev1 < FINAL_PCA_EIGENVALUE_REVIEW
             else "Caution"
         )
+        meaning = f"First residual PCA eigenvalue is {ev1:.2f}."
+        if stability_status:
+            meaning += f" Stability audit: {stability_status}."
+        if stability_flags and stability_flags != "none":
+            meaning += f" Sensitivity flags: {stability_flags}."
         rows.append({
             "Check": "4. Dimensionality",
             "Status": status,
-            "What it means": f"First residual PCA eigenvalue is {ev1:.2f}.",
+            "What it means": meaning,
             "Next action": (
-                "Unidimensionality looks acceptable."
+                "Unidimensionality screen is stable enough for scoped reporting."
                 if status == "OK" else
-                "Open the Dimensionality tab and inspect residual PCA content."
+                "Open the Dimensionality tab and inspect residual PCA stability, loadings, and content."
             ),
         })
 
@@ -17725,23 +20369,35 @@ def build_first_read_guide_rows(
             "Next action": "Use Selected pair for a targeted check or Full publication for all-pair screening.",
         })
     else:
-        n_sig = 0
-        n_total = 0
-        for bundle in all_bias.values():
-            tbl = bundle.get("table") if isinstance(bundle, dict) else None
-            if isinstance(tbl, pd.DataFrame) and "t" in tbl.columns:
-                t_vals = pd.to_numeric(tbl["t"], errors="coerce").dropna()
-                n_total += len(t_vals)
-                n_sig += int((t_vals.abs() >= 2).sum())
-        status = "OK" if n_sig == 0 else ("Review" if n_sig <= max(1, 0.05 * max(n_total, 1)) else "Caution")
+        bias_audit = build_bias_inference_audit(all_bias, result, diagnostics)
+        n_total = int(pd.to_numeric(bias_audit.get("CellsScreened", pd.Series(dtype=float)), errors="coerce").fillna(0).sum()) if isinstance(bias_audit, pd.DataFrame) else 0
+        n_flagged = int(pd.to_numeric(bias_audit.get("FlaggedCells", pd.Series(dtype=float)), errors="coerce").fillna(0).sum()) if isinstance(bias_audit, pd.DataFrame) else 0
+        n_strong = int(pd.to_numeric(bias_audit.get("StrongReviewCells", pd.Series(dtype=float)), errors="coerce").fillna(0).sum()) if isinstance(bias_audit, pd.DataFrame) else 0
+        n_sparse = int(pd.to_numeric(bias_audit.get("SparseCells", pd.Series(dtype=float)), errors="coerce").fillna(0).sum()) if isinstance(bias_audit, pd.DataFrame) else 0
+        has_disconnected = (
+            isinstance(bias_audit, pd.DataFrame)
+            and "CommonScaleStatus" in bias_audit.columns
+            and bias_audit["CommonScaleStatus"].astype(str).str.startswith("Review:").any()
+        )
+        if n_total == 0:
+            status = "Review"
+        elif n_flagged == 0 and n_sparse == 0 and not has_disconnected:
+            status = "OK"
+        elif n_strong or has_disconnected:
+            status = "Caution"
+        else:
+            status = "Review"
         rows.append({
             "Check": "5. Bias interactions",
             "Status": status,
-            "What it means": f"{n_sig} of {n_total} tested local interactions have |t| >= 2.",
+            "What it means": (
+                f"{n_flagged} of {n_total} screened local interactions are DFF/bias review flags; "
+                f"{n_strong} strong-review and {n_sparse} sparse cell(s)."
+            ),
             "Next action": (
-                "No immediate local-bias flag in the computed table."
-                if n_sig == 0 else
-                "Open Bias/Interaction and interpret flagged pairs substantively; avoid relying on p-values alone."
+                "No computed local-bias flag in the conditional screen; keep claims limited to screened pairs."
+                if status == "OK" else
+                "Open Bias/Interaction and use the bias inference audit; interpret flags with multiplicity, sparsity, and connectedness."
             ),
         })
 
@@ -17855,6 +20511,1717 @@ def _show_first_read_guide(
         "or 'Caution' and resolve that issue before writing final conclusions."
     )
     st.dataframe(guide_df, width="stretch", hide_index=True)
+
+
+GUIDED_STATUS_PRIORITY = {
+    "Do not interpret yet": 0,
+    "Caution": 1,
+    "Review": 2,
+    "Skipped": 3,
+    "OK": 4,
+}
+
+
+GUIDED_AREA_I18N_KEYS = {
+    "Estimation": "guided.area_estimation",
+    "Rating scale": "guided.area_rating_scale",
+    "Fit": "guided.area_fit",
+    "Measures": "guided.area_measures",
+    "Assumptions": "guided.area_assumptions",
+    "Bias / interaction": "guided.area_bias_interaction",
+    "Data / linking": "guided.area_data_linking",
+    "Reporting": "guided.area_reporting",
+}
+
+
+GUIDED_STATUS_I18N_KEYS = {
+    "Do not interpret yet": "guided.status_do_not_interpret",
+    "Caution": "guided.status_caution",
+    "Review": "guided.status_review",
+    "Skipped": "guided.status_skipped",
+    "OK": "guided.status_ok",
+}
+
+
+def _guided_area_for_check(check: str) -> str:
+    """Map a first-read check to a task area for the guided result view."""
+    check_text = str(check)
+    if "Convergence" in check_text:
+        return "Estimation"
+    if "GPCM" in check_text or "slope" in check_text:
+        return "Rating scale"
+    if "Global residual" in check_text or "Strict marginal" in check_text:
+        return "Fit"
+    if "Reliability" in check_text:
+        return "Measures"
+    if "Dimensionality" in check_text:
+        return "Assumptions"
+    if "Bias" in check_text:
+        return "Bias / interaction"
+    if "Anchor" in check_text:
+        return "Data / linking"
+    return "Reporting"
+
+
+def _guided_area_label(area: str) -> str:
+    return t(GUIDED_AREA_I18N_KEYS.get(str(area), "guided.area_reporting"), default=str(area))
+
+
+def _guided_status_label(status: str) -> str:
+    return t(GUIDED_STATUS_I18N_KEYS.get(str(status), "guided.status_review"), default=str(status))
+
+
+def _guided_detail_location_label(location: str) -> str:
+    key = "guided.detail_location_" + (
+        str(location)
+        .strip()
+        .lower()
+        .replace("/", "_")
+        .replace("-", "_")
+        .replace(" ", "_")
+    )
+    return t(key, default=str(location))
+
+
+def build_guided_action_plan(
+    result: dict,
+    diagnostics: dict,
+    all_bias_results: dict | None = None,
+) -> pd.DataFrame:
+    """Return the Essential-view action plan while preserving the detailed checks."""
+    rows = build_first_read_guide_rows(result, diagnostics, all_bias_results)
+    out: list[dict[str, object]] = []
+    for source_order, row in enumerate(rows, start=1):
+        check = str(row.get("Check", "Review result"))
+        status = str(row.get("Status", "Review"))
+        out.append({
+            "Priority": GUIDED_STATUS_PRIORITY.get(status, 9),
+            "SourceOrder": source_order,
+            "Area": _guided_area_for_check(check),
+            "Check": check,
+            "Status": status,
+            "WhatItSays": str(row.get("What it means", "")),
+            "NextAction": str(row.get("Next action", "")),
+            "DetailLocation": _first_read_tab_hint(check),
+        })
+    columns = [
+        "Priority",
+        "SourceOrder",
+        "Area",
+        "Check",
+        "Status",
+        "WhatItSays",
+        "NextAction",
+        "DetailLocation",
+    ]
+    if not out:
+        return pd.DataFrame(columns=columns)
+    plan = pd.DataFrame(out, columns=columns)
+    plan = plan.sort_values(["Priority", "SourceOrder"], kind="stable").reset_index(drop=True)
+    plan["Priority"] = [f"P{i}" for i in range(1, len(plan) + 1)]
+    return plan
+
+
+def guided_action_plan_display_frame(plan: pd.DataFrame, *, include_detail: bool = False) -> pd.DataFrame:
+    """Build a display-only action-plan table with localized labels."""
+    base_columns = [
+        t("guided.col_priority"),
+        t("guided.col_area"),
+        t("guided.col_status"),
+        t("guided.col_check"),
+        t("guided.col_next_action"),
+        t("guided.col_detail_location"),
+    ]
+    detail_columns = [
+        t("guided.col_what_it_says"),
+        t("guided.col_source_order"),
+        t("guided.col_raw_status"),
+    ]
+    columns = base_columns + (detail_columns if include_detail else [])
+    if not isinstance(plan, pd.DataFrame) or plan.empty:
+        return pd.DataFrame(columns=columns)
+    display = pd.DataFrame({
+        t("guided.col_priority"): plan.get("Priority", pd.Series(dtype=str)).astype(str),
+        t("guided.col_area"): plan.get("Area", pd.Series(dtype=str)).map(_guided_area_label),
+        t("guided.col_status"): plan.get("Status", pd.Series(dtype=str)).map(_guided_status_label),
+        t("guided.col_check"): plan.get("Check", pd.Series(dtype=str)).astype(str),
+        t("guided.col_next_action"): plan.get("NextAction", pd.Series(dtype=str)).astype(str),
+        t("guided.col_detail_location"): plan.get("DetailLocation", pd.Series(dtype=str)).map(_guided_detail_location_label),
+    })
+    if include_detail:
+        display[t("guided.col_what_it_says")] = plan.get("WhatItSays", pd.Series(dtype=str)).astype(str)
+        display[t("guided.col_source_order")] = plan.get("SourceOrder", pd.Series(dtype=str)).astype(str)
+        display[t("guided.col_raw_status")] = plan.get("Status", pd.Series(dtype=str)).astype(str)
+    return display
+
+
+def guided_status_legend_table() -> pd.DataFrame:
+    """Return a localized legend explaining first-read status levels."""
+    return pd.DataFrame([
+        {
+            t("guided.col_status"): _guided_status_label("Do not interpret yet"),
+            t("guided.legend_meaning_col"): t("guided.legend_pause_meaning"),
+            t("guided.legend_action_col"): t("guided.legend_pause_action"),
+        },
+        {
+            t("guided.col_status"): _guided_status_label("Caution"),
+            t("guided.legend_meaning_col"): t("guided.legend_caution_meaning"),
+            t("guided.legend_action_col"): t("guided.legend_caution_action"),
+        },
+        {
+            t("guided.col_status"): _guided_status_label("Review"),
+            t("guided.legend_meaning_col"): t("guided.legend_review_meaning"),
+            t("guided.legend_action_col"): t("guided.legend_review_action"),
+        },
+        {
+            t("guided.col_status"): _guided_status_label("Skipped"),
+            t("guided.legend_meaning_col"): t("guided.legend_skipped_meaning"),
+            t("guided.legend_action_col"): t("guided.legend_skipped_action"),
+        },
+        {
+            t("guided.col_status"): _guided_status_label("OK"),
+            t("guided.legend_meaning_col"): t("guided.legend_ok_meaning"),
+            t("guided.legend_action_col"): t("guided.legend_ok_action"),
+        },
+    ])
+
+
+def _guided_interpretation_main_item(row: pd.Series) -> str:
+    """Return the compact main blocker/caveat text for interpretation readiness."""
+    if row is None or row.empty:
+        return ""
+    focus = _guided_focus_label(row)
+    what_it_says = str(row.get("WhatItSays", "")).strip()
+    return f"{focus}: {what_it_says}" if what_it_says else focus
+
+
+def guided_interpretation_readiness_summary_table(action_plan: pd.DataFrame | None) -> pd.DataFrame:
+    """Summarize whether a completed run is ready for interpretation."""
+    columns = [
+        t("guided.interpret_col_status"),
+        t("guided.interpret_col_main_item"),
+        t("guided.interpret_col_open_next"),
+        t("guided.interpret_col_do_not_conclude"),
+        t("guided.interpret_col_safe_output"),
+    ]
+    if not isinstance(action_plan, pd.DataFrame) or action_plan.empty:
+        return pd.DataFrame([{
+            columns[0]: t("guided.interpret_status_run_first"),
+            columns[1]: t("guided.interpret_run_first_main"),
+            columns[2]: t("guided.tab_start"),
+            columns[3]: t("guided.interpret_run_first_do_not"),
+            columns[4]: t("guided.interpret_run_first_output"),
+        }], columns=columns)
+
+    hard_flags = _guided_focus_rows_by_class(action_plan, "hard_stop")
+    if not hard_flags.empty:
+        row = hard_flags.iloc[0]
+        return pd.DataFrame([{
+            columns[0]: t("guided.interpret_status_pause"),
+            columns[1]: _guided_interpretation_main_item(row),
+            columns[2]: _guided_detail_location_label(str(row.get("DetailLocation", ""))),
+            columns[3]: t("guided.interpret_pause_do_not"),
+            columns[4]: t("guided.interpret_pause_output"),
+        }], columns=columns)
+
+    caution_rows = action_plan.loc[action_plan["Status"].astype(str).eq("Caution")]
+    if not caution_rows.empty:
+        row = caution_rows.iloc[0]
+        return pd.DataFrame([{
+            columns[0]: t("guided.interpret_status_caution"),
+            columns[1]: _guided_interpretation_main_item(row),
+            columns[2]: _guided_detail_location_label(str(row.get("DetailLocation", ""))),
+            columns[3]: t("guided.interpret_caution_do_not"),
+            columns[4]: t("guided.interpret_caution_output"),
+        }], columns=columns)
+
+    review_rows = action_plan.loc[action_plan["Status"].astype(str).isin({"Review", "Skipped"})]
+    if not review_rows.empty:
+        row = review_rows.iloc[0]
+        return pd.DataFrame([{
+            columns[0]: t("guided.interpret_status_review"),
+            columns[1]: _guided_interpretation_main_item(row),
+            columns[2]: _guided_detail_location_label(str(row.get("DetailLocation", ""))),
+            columns[3]: t("guided.interpret_review_do_not"),
+            columns[4]: t("guided.interpret_review_output"),
+        }], columns=columns)
+
+    return pd.DataFrame([{
+        columns[0]: t("guided.interpret_status_ok"),
+        columns[1]: t("guided.interpret_ok_main"),
+        columns[2]: t("guided.interpret_ok_open_next"),
+        columns[3]: t("guided.interpret_ok_do_not"),
+        columns[4]: t("guided.interpret_ok_output"),
+    }], columns=columns)
+
+
+def _render_guided_action_plan(
+    result: dict,
+    diagnostics: dict,
+    all_bias_results: dict | None = None,
+    *,
+    expanded_details: bool = False,
+    key_suffix: str = "main",
+    plan: pd.DataFrame | None = None,
+) -> None:
+    """Render the first-read action plan with a compact summary and full detail."""
+    if plan is None:
+        plan = build_guided_action_plan(result, diagnostics, all_bias_results)
+    if plan.empty:
+        st.info(t("guided.no_rows_info"))
+        return
+
+    st.markdown(f"**{t('guided.interpret_heading')}**")
+    st.caption(t("guided.interpret_caption"))
+    st.dataframe(guided_interpretation_readiness_summary_table(plan), width="stretch", hide_index=True)
+
+    status_counts = plan["Status"].astype(str).value_counts()
+    metric_defs = [
+        (t("guided.metric_pause"), "Do not interpret yet"),
+        (t("guided.metric_caution"), "Caution"),
+        (t("guided.metric_review"), "Review"),
+        (t("guided.metric_ok"), "OK"),
+    ]
+    metric_cols = st.columns(len(metric_defs))
+    for col, (label, status) in zip(metric_cols, metric_defs, strict=False):
+        col.metric(label, int(status_counts.get(status, 0)))
+
+    priority_row = plan.iloc[0]
+    priority_status = str(priority_row.get("Status", "Review"))
+    priority_message = (
+        f"**{_guided_area_label(str(priority_row.get('Area')))} / {priority_row.get('Check')}**  \n"
+        f"{priority_row.get('NextAction')}  \n"
+        f"{t('guided.detail_location_label')}: "
+        f"{_guided_detail_location_label(str(priority_row.get('DetailLocation')))}"
+    )
+    if priority_status in {"Do not interpret yet", "Caution"}:
+        st.warning(priority_message)
+    elif priority_status == "Review":
+        st.info(priority_message)
+    else:
+        st.success(t("guided.clean_first_read_success"))
+
+    with st.expander(t("guided.status_legend_expander"), expanded=False):
+        st.dataframe(guided_status_legend_table(), width="stretch", hide_index=True)
+
+    compact_display = guided_action_plan_display_frame(plan, include_detail=False)
+    st.dataframe(compact_display, width="stretch", hide_index=True)
+    with st.expander(t("guided.action_plan_expander"), expanded=expanded_details):
+        st.caption(t("guided.action_plan_caption"))
+        full_display = guided_action_plan_display_frame(plan, include_detail=True)
+        st.dataframe(full_display, width="stretch", hide_index=True)
+        st.download_button(
+            t("guided.action_plan_download"),
+            data=to_csv_bytes(plan),
+            file_name="mfrm_guided_first_read_action_plan.csv",
+            mime="text/csv",
+            key=f"dl_guided_action_plan_{key_suffix}",
+            use_container_width=True,
+        )
+
+
+def _guided_detail_navigator_table() -> pd.DataFrame:
+    """Static map from user questions to the detailed sections that answer them."""
+    return pd.DataFrame([
+        {
+            "Question": t("guided.nav_question_interpret"),
+            "StartHere": t("guided.tab_first_read"),
+            "ThenOpen": "Report / Fit Details / Dimensionality",
+            "Why": t("guided.nav_reason_interpret"),
+        },
+        {
+            "Question": t("guided.nav_question_measures"),
+            "StartHere": t("guided.tab_results"),
+            "ThenOpen": "Measures / FACETS-style tables / Facet Dashboard",
+            "Why": t("guided.nav_reason_measures"),
+        },
+        {
+            "Question": t("guided.nav_question_assumptions"),
+            "StartHere": t("guided.tab_diagnostics"),
+            "ThenOpen": "Fit Details / Dimensionality / Categories / Bias",
+            "Why": t("guided.nav_reason_assumptions"),
+        },
+        {
+            "Question": t("guided.nav_question_export"),
+            "StartHere": t("guided.tab_report_export"),
+            "ThenOpen": "Publication Document / Downloads",
+            "Why": t("guided.nav_reason_export"),
+        },
+        {
+            "Question": t("guided.nav_question_terms"),
+            "StartHere": t("guided.tab_learn"),
+            "ThenOpen": "Interpretation Guide / Glossary / Troubleshooting",
+            "Why": t("guided.nav_reason_terms"),
+        },
+    ])
+
+
+def _render_guided_detail_navigator() -> None:
+    st.subheader(t("guided.navigator_subheader"))
+    st.caption(t("guided.navigator_caption"))
+    st.dataframe(_guided_detail_navigator_table(), width="stretch", hide_index=True)
+
+
+def guided_measures_reading_guide_table() -> pd.DataFrame:
+    """Return the Results/Measures reading guide shown before result tables."""
+    columns = [
+        t("guided.measures_col_surface"),
+        t("guided.measures_col_read_first"),
+        t("guided.measures_col_answers"),
+        t("guided.measures_col_do_not"),
+        t("guided.measures_col_safe_use"),
+        t("guided.measures_col_open_detail"),
+    ]
+    rows = []
+    for row_id in (
+        "convergence",
+        "combined",
+        "person",
+        "facet",
+        "steps",
+        "facets_style",
+    ):
+        rows.append({
+            columns[0]: t(f"guided.measures_{row_id}_surface"),
+            columns[1]: t(f"guided.measures_{row_id}_read_first"),
+            columns[2]: t(f"guided.measures_{row_id}_answers"),
+            columns[3]: t(f"guided.measures_{row_id}_do_not"),
+            columns[4]: t(f"guided.measures_{row_id}_safe_use"),
+            columns[5]: t(f"guided.measures_{row_id}_open_detail"),
+        })
+    return pd.DataFrame(rows, columns=columns)
+
+
+def render_guided_measures_reading_guide_tables() -> None:
+    """Render the measures guide in desktop-readable slices without removing detail."""
+    guide = guided_measures_reading_guide_table()
+    surface_col = t("guided.measures_col_surface")
+    read_first_col = t("guided.measures_col_read_first")
+    answers_col = t("guided.measures_col_answers")
+    do_not_col = t("guided.measures_col_do_not")
+    safe_use_col = t("guided.measures_col_safe_use")
+    open_detail_col = t("guided.measures_col_open_detail")
+
+    st.markdown(f"**{t('guided.measures_inspection_heading')}**")
+    st.caption(t("guided.measures_inspection_caption"))
+    st.dataframe(guide[[surface_col, read_first_col, answers_col]], width="stretch", hide_index=True)
+
+    st.markdown(f"**{t('guided.measures_boundary_heading')}**")
+    st.caption(t("guided.measures_boundary_caption"))
+    st.dataframe(guide[[surface_col, do_not_col, safe_use_col]], width="stretch", hide_index=True)
+
+    st.markdown(f"**{t('guided.measures_route_heading')}**")
+    st.caption(t("guided.measures_route_caption"))
+    st.dataframe(guide[[surface_col, open_detail_col]], width="stretch", hide_index=True)
+
+
+def guided_reproducibility_guardrail_table() -> pd.DataFrame:
+    """Return professional reporting and reproducibility checks for guided users."""
+    columns = [
+        t("guided.repro_col_check"),
+        t("guided.repro_col_verify"),
+        t("guided.repro_col_artifact"),
+        t("guided.repro_col_do_not"),
+    ]
+    rows = []
+    for row_id in (
+        "model_setup",
+        "estimation",
+        "diagnostic_scope",
+        "claim_trace",
+        "export_package",
+        "rerun",
+    ):
+        rows.append({
+            columns[0]: t(f"guided.repro_{row_id}_check"),
+            columns[1]: t(f"guided.repro_{row_id}_verify"),
+            columns[2]: t(f"guided.repro_{row_id}_artifact"),
+            columns[3]: t(f"guided.repro_{row_id}_do_not"),
+        })
+    return pd.DataFrame(rows, columns=columns)
+
+
+def _guided_claim_status_badge(status: object) -> str:
+    """Return a compact text badge for manuscript claim status."""
+    text = str(status or "Review")
+    if text in {"Not ready", "Do not claim"}:
+        return f"[BLOCKED] {text}"
+    if text in {"Report with caveat", "Review", "Missing"}:
+        return f"[CAVEAT] {text}"
+    if text == "Boundary":
+        return f"[BOUNDARY] {text}"
+    if text == "Ready":
+        return f"[READY] {text}"
+    return f"[REVIEW] {text}"
+
+
+def _guided_status_count_summary(frame: pd.DataFrame, column: str) -> str:
+    """Return a short status-count summary for a result-aware evidence table."""
+    if not isinstance(frame, pd.DataFrame) or frame.empty or column not in frame.columns:
+        return t("guided.claim_trace_no_rows")
+    counts = frame[column].astype(str).value_counts(dropna=False).to_dict()
+    ordered = sorted(counts.items(), key=lambda item: (-int(item[1]), str(item[0])))
+    return "; ".join(f"{status}: {count}" for status, count in ordered)
+
+
+def _safe_guided_evidence_frame(builder, *args, **kwargs) -> pd.DataFrame:
+    """Build optional evidence frames without breaking the guided report surface."""
+    try:
+        frame = builder(*args, **kwargs)
+    except Exception:
+        return pd.DataFrame()
+    return frame if isinstance(frame, pd.DataFrame) else pd.DataFrame()
+
+
+def _guided_overall_publication_gate_line(
+    result: dict,
+    diagnostics: dict,
+    all_bias_results: dict | None = None,
+) -> str:
+    """Return the current overall publication-gate signal for export guidance."""
+    gate = _safe_guided_evidence_frame(
+        build_publication_gate_summary,
+        result,
+        diagnostics,
+        all_bias_results or {},
+    )
+    status = "Review"
+    evidence = t("guided.export_preflight_gate_unavailable")
+    action = t("guided.claim_trace_overall_default_action")
+    if isinstance(gate, pd.DataFrame) and not gate.empty and {"GateArea", "GateStatus"}.issubset(gate.columns):
+        overall = gate.loc[gate["GateArea"].astype(str).eq("Overall manuscript gate")]
+        if not overall.empty:
+            overall_row = overall.iloc[0]
+            status = str(overall_row.get("GateStatus", status))
+            evidence = str(overall_row.get("Evidence", evidence))
+            action = str(overall_row.get("ManuscriptAction", action))
+    return t(
+        "guided.export_preflight_gate_line_template",
+        status=_guided_claim_status_badge(status),
+        evidence=evidence,
+        action=action,
+    )
+
+
+def guided_report_claim_trace_table(
+    result: dict,
+    diagnostics: dict,
+    all_bias_results: dict | None = None,
+) -> pd.DataFrame:
+    """Return claim badges and evidence traces for Report & Export."""
+    all_bias = all_bias_results or {}
+    gate = _safe_guided_evidence_frame(build_publication_gate_summary, result, diagnostics, all_bias)
+    claim_guide = _safe_guided_evidence_frame(build_manuscript_claim_guide, result, diagnostics, all_bias)
+    claim_matrix = _safe_guided_evidence_frame(build_claim_to_evidence_matrix, result, diagnostics, all_bias)
+    apa_audit = _safe_guided_evidence_frame(
+        build_apa_report_sentence_audit,
+        result,
+        diagnostics,
+        all_bias_results=all_bias,
+    )
+    columns = [
+        t("guided.claim_trace_col_item"),
+        t("guided.claim_trace_col_status"),
+        t("guided.claim_trace_col_evidence"),
+        t("guided.claim_trace_col_before_use"),
+        t("guided.claim_trace_col_open"),
+    ]
+
+    overall_status = "Review"
+    overall_evidence = t("guided.claim_trace_no_rows")
+    overall_action = t("guided.claim_trace_overall_default_action")
+    if isinstance(gate, pd.DataFrame) and not gate.empty and {"GateArea", "GateStatus"}.issubset(gate.columns):
+        overall = gate.loc[gate["GateArea"].astype(str).eq("Overall manuscript gate")]
+        if not overall.empty:
+            overall_row = overall.iloc[0]
+            overall_status = str(overall_row.get("GateStatus", overall_status))
+            overall_evidence = str(overall_row.get("Evidence", overall_evidence))
+            overall_action = str(overall_row.get("ManuscriptAction", overall_action))
+
+    rows = [
+        {
+            columns[0]: t("guided.claim_trace_overall_item"),
+            columns[1]: f"{_guided_claim_status_badge(overall_status)}; {overall_evidence}",
+            columns[2]: t("guided.claim_trace_overall_evidence"),
+            columns[3]: overall_action,
+            columns[4]: t("guided.claim_trace_overall_open"),
+        },
+        {
+            columns[0]: t("guided.claim_trace_apa_item"),
+            columns[1]: t(
+                "guided.claim_trace_apa_status_template",
+                n=len(apa_audit) if isinstance(apa_audit, pd.DataFrame) else 0,
+                counts=_guided_status_count_summary(apa_audit, "CopyDecision"),
+            ),
+            columns[2]: t("guided.claim_trace_apa_evidence"),
+            columns[3]: t("guided.claim_trace_apa_before_use"),
+            columns[4]: t("guided.claim_trace_apa_open"),
+        },
+        {
+            columns[0]: t("guided.claim_trace_claim_guide_item"),
+            columns[1]: _guided_status_count_summary(claim_guide, "ClaimStatus"),
+            columns[2]: t("guided.claim_trace_claim_guide_evidence"),
+            columns[3]: t("guided.claim_trace_claim_guide_before_use"),
+            columns[4]: t("guided.claim_trace_claim_guide_open"),
+        },
+        {
+            columns[0]: t("guided.claim_trace_matrix_item"),
+            columns[1]: t(
+                "guided.claim_trace_matrix_status_template",
+                n=len(claim_matrix) if isinstance(claim_matrix, pd.DataFrame) else 0,
+            ),
+            columns[2]: t("guided.claim_trace_matrix_evidence"),
+            columns[3]: t("guided.claim_trace_matrix_before_use"),
+            columns[4]: t("guided.claim_trace_matrix_open"),
+        },
+        {
+            columns[0]: t("guided.claim_trace_export_item"),
+            columns[1]: t("guided.claim_trace_export_status"),
+            columns[2]: t("guided.claim_trace_export_evidence"),
+            columns[3]: t("guided.claim_trace_export_before_use"),
+            columns[4]: t("guided.claim_trace_export_open"),
+        },
+    ]
+    return pd.DataFrame(rows, columns=columns)
+
+
+def guided_export_share_preflight_table(
+    result: dict,
+    diagnostics: dict,
+    all_bias_results: dict | None = None,
+) -> pd.DataFrame:
+    """Return export/share checks that preserve privacy, evidence, and scope."""
+    columns = [
+        t("guided.export_preflight_col_audience"),
+        t("guided.export_preflight_col_use"),
+        t("guided.export_preflight_col_required_checks"),
+        t("guided.export_preflight_col_keep"),
+        t("guided.export_preflight_col_stop"),
+    ]
+    current_gate = _guided_overall_publication_gate_line(result, diagnostics, all_bias_results)
+    rows = []
+    for row_id in (
+        "private_archive",
+        "public_package",
+        "manuscript_review",
+        "figure_bundle",
+        "reviewer_repo",
+        "external_validation",
+    ):
+        required_checks = t(f"guided.export_preflight_{row_id}_required_checks")
+        stop = t(f"guided.export_preflight_{row_id}_stop")
+        if row_id in {"manuscript_review", "reviewer_repo"}:
+            required_checks = t(
+                "guided.export_preflight_gate_check_template",
+                checks=required_checks,
+                gate=current_gate,
+            )
+        rows.append({
+            columns[0]: t(f"guided.export_preflight_{row_id}_audience"),
+            columns[1]: t(f"guided.export_preflight_{row_id}_use"),
+            columns[2]: required_checks,
+            columns[3]: t(f"guided.export_preflight_{row_id}_keep"),
+            columns[4]: stop,
+        })
+    return pd.DataFrame(rows, columns=columns)
+
+
+def guided_report_claim_trace_help_table() -> pd.DataFrame:
+    """Return the Help reference for claim-status and evidence-trace files."""
+    columns = [
+        t("help.claim_trace_col_file"),
+        t("help.claim_trace_col_use"),
+        t("help.claim_trace_col_checks"),
+        t("help.claim_trace_col_boundary"),
+    ]
+    rows = []
+    for file_id in (
+        "publication_gate",
+        "apa_audit",
+        "claim_matrix",
+        "claim_guide",
+        "export_manifest",
+    ):
+        rows.append({
+            columns[0]: t(f"help.claim_trace_{file_id}_file"),
+            columns[1]: t(f"help.claim_trace_{file_id}_use"),
+            columns[2]: t(f"help.claim_trace_{file_id}_checks"),
+            columns[3]: t(f"help.claim_trace_{file_id}_boundary"),
+        })
+    return pd.DataFrame(rows, columns=columns)
+
+
+def guided_export_share_preflight_help_table() -> pd.DataFrame:
+    """Return the Help reference for selecting safe export/share packages."""
+    columns = [
+        t("help.export_preflight_col_audience"),
+        t("help.export_preflight_col_use"),
+        t("help.export_preflight_col_checks"),
+        t("help.export_preflight_col_boundary"),
+    ]
+    rows = []
+    for row_id in (
+        "private_archive",
+        "public_package",
+        "manuscript_review",
+        "figure_bundle",
+        "reviewer_repo",
+        "external_validation",
+    ):
+        rows.append({
+            columns[0]: t(f"help.export_preflight_{row_id}_audience"),
+            columns[1]: t(f"help.export_preflight_{row_id}_use"),
+            columns[2]: t(f"help.export_preflight_{row_id}_checks"),
+            columns[3]: t(f"help.export_preflight_{row_id}_boundary"),
+        })
+    return pd.DataFrame(rows, columns=columns)
+
+
+def guided_stan_posterior_reproducibility_help_table() -> pd.DataFrame:
+    """Return the Help reference for Stan posterior reproducibility claims."""
+    columns = [
+        t("help.stan_repro_col_checkpoint"),
+        t("help.stan_repro_col_evidence"),
+        t("help.stan_repro_col_check"),
+        t("help.stan_repro_col_claim_boundary"),
+    ]
+    rows = []
+    for row_id in (
+        "route",
+        "complete_package",
+        "model_data_identity",
+        "uto_design_audit",
+        "prior_decision",
+        "sampler_settings",
+        "posterior_diagnostics",
+        "sensitivity_variants",
+        "privacy_governance",
+    ):
+        rows.append({
+            columns[0]: t(f"help.stan_repro_{row_id}_checkpoint"),
+            columns[1]: t(f"help.stan_repro_{row_id}_evidence"),
+            columns[2]: t(f"help.stan_repro_{row_id}_check"),
+            columns[3]: t(f"help.stan_repro_{row_id}_claim_boundary"),
+        })
+    return pd.DataFrame(rows, columns=columns)
+
+
+def guided_uto_claim_boundary_help_table() -> pd.DataFrame:
+    """Return the Help reference for Uto-family design-audit claim boundaries."""
+    columns = [
+        t("help.uto_claim_col_audit_row"),
+        t("help.uto_claim_col_ready_when"),
+        t("help.uto_claim_col_review_means"),
+        t("help.uto_claim_col_report_boundary"),
+        t("help.uto_claim_col_verify"),
+    ]
+    rows = []
+    for row_id in (
+        "rater",
+        "task",
+        "criterion",
+        "time",
+        "score",
+        "privacy",
+    ):
+        rows.append({
+            columns[0]: t(f"help.uto_claim_{row_id}_row"),
+            columns[1]: t(f"help.uto_claim_{row_id}_ready"),
+            columns[2]: t(f"help.uto_claim_{row_id}_review"),
+            columns[3]: t(f"help.uto_claim_{row_id}_boundary"),
+            columns[4]: t(f"help.uto_claim_{row_id}_verify"),
+        })
+    return pd.DataFrame(rows, columns=columns)
+
+
+def guided_uto_design_audit_field_help_table() -> pd.DataFrame:
+    """Return the Help reference for Uto-family design-audit columns."""
+    columns = [
+        t("help.uto_field_col_column"),
+        t("help.uto_field_col_meaning"),
+        t("help.uto_field_col_use"),
+    ]
+    rows = []
+    for row_id in (
+        "design_role",
+        "mapped_facet",
+        "stan_variable",
+        "status",
+        "evidence",
+        "claim_readiness",
+        "required_review",
+        "allowed_claim_boundary",
+        "reference_layer",
+    ):
+        rows.append({
+            columns[0]: t(f"help.uto_field_{row_id}_column"),
+            columns[1]: t(f"help.uto_field_{row_id}_meaning"),
+            columns[2]: t(f"help.uto_field_{row_id}_use"),
+        })
+    return pd.DataFrame(rows, columns=columns)
+
+
+def guided_first_run_route_table() -> pd.DataFrame:
+    """Return the shortest first-run path from sample/run to one next diagnostic."""
+    columns = [
+        t("guided.first_run_route_col_step"),
+        t("guided.first_run_route_col_action"),
+        t("guided.first_run_route_col_where"),
+        t("guided.first_run_route_col_why"),
+        t("guided.first_run_route_col_done"),
+    ]
+    rows = []
+    for step_number in range(1, 6):
+        rows.append({
+            columns[0]: t(f"guided.first_run_route_{step_number}_step"),
+            columns[1]: t(f"guided.first_run_route_{step_number}_action"),
+            columns[2]: t(f"guided.first_run_route_{step_number}_where"),
+            columns[3]: t(f"guided.first_run_route_{step_number}_why"),
+            columns[4]: t(f"guided.first_run_route_{step_number}_done"),
+        })
+    return pd.DataFrame(rows, columns=columns)
+
+
+def guided_goal_route_table() -> pd.DataFrame:
+    """Return goal-oriented routes for users who are unsure where to start."""
+    return pd.DataFrame([
+        {
+            "GoalId": "check_readiness",
+            t("guided.goal_col_goal"): t("guided.goal_check_readiness"),
+            t("guided.goal_col_when"): t("guided.goal_check_readiness_when"),
+            t("guided.goal_col_start"): t("guided.tab_first_read"),
+            t("guided.goal_col_next"): t("guided.goal_check_readiness_next"),
+            t("guided.goal_col_detail"): "First Read / Report / Fit Details",
+        },
+        {
+            "GoalId": "inspect_measures",
+            t("guided.goal_col_goal"): t("guided.goal_inspect_measures"),
+            t("guided.goal_col_when"): t("guided.goal_inspect_measures_when"),
+            t("guided.goal_col_start"): t("guided.tab_results"),
+            t("guided.goal_col_next"): t("guided.goal_inspect_measures_next"),
+            t("guided.goal_col_detail"): "Results / Measures / FACETS-style tables",
+        },
+        {
+            "GoalId": "diagnose_problem",
+            t("guided.goal_col_goal"): t("guided.goal_diagnose_problem"),
+            t("guided.goal_col_when"): t("guided.goal_diagnose_problem_when"),
+            t("guided.goal_col_start"): t("guided.tab_diagnostics"),
+            t("guided.goal_col_next"): t("guided.goal_diagnose_problem_next"),
+            t("guided.goal_col_detail"): "Diagnostics / Fit Details / Dimensionality / Bias",
+        },
+        {
+            "GoalId": "prepare_report",
+            t("guided.goal_col_goal"): t("guided.goal_prepare_report"),
+            t("guided.goal_col_when"): t("guided.goal_prepare_report_when"),
+            t("guided.goal_col_start"): t("guided.tab_report_export"),
+            t("guided.goal_col_next"): t("guided.goal_prepare_report_next"),
+            t("guided.goal_col_detail"): "Report & Export / Readiness / Publication Document",
+        },
+        {
+            "GoalId": "export_share",
+            t("guided.goal_col_goal"): t("guided.goal_export_share"),
+            t("guided.goal_col_when"): t("guided.goal_export_share_when"),
+            t("guided.goal_col_start"): t("guided.tab_report_export"),
+            t("guided.goal_col_next"): t("guided.goal_export_share_next"),
+            t("guided.goal_col_detail"): "Report & Export / Downloads",
+        },
+        {
+            "GoalId": "learn_terms",
+            t("guided.goal_col_goal"): t("guided.goal_learn_terms"),
+            t("guided.goal_col_when"): t("guided.goal_learn_terms_when"),
+            t("guided.goal_col_start"): t("guided.tab_learn"),
+            t("guided.goal_col_next"): t("guided.goal_learn_terms_next"),
+            t("guided.goal_col_detail"): "Learn / Interpretation Guide / Glossary",
+        },
+    ])
+
+
+GUIDED_GOAL_STEP_OPEN = {
+    "check_readiness": ["First Read", "Report & Export", "Diagnostics"],
+    "inspect_measures": ["Results", "Results", "Results / FACETS-style tables"],
+    "diagnose_problem": ["First Read", "Diagnostics", "Report & Export"],
+    "prepare_report": ["First Read", "Report & Export", "Report & Export"],
+    "export_share": ["Report & Export", "Report & Export / Downloads", "Report & Export / Downloads"],
+    "learn_terms": ["Learn", "Learn", "First Read"],
+}
+
+
+GUIDED_GOAL_IDS = tuple(GUIDED_GOAL_STEP_OPEN.keys())
+
+
+GUIDED_GOAL_REVIEW_STATUSES = {
+    "Caution",
+    "Review",
+    "Skipped",
+}
+
+
+GUIDED_FOCUS_CLAIM_CAVEAT_AREAS = {
+    "Fit",
+    "Assumptions",
+    "Bias / interaction",
+}
+
+
+GUIDED_FOCUS_HARD_STOP_AREAS = {
+    "Estimation",
+    "Data / linking",
+}
+
+
+GUIDED_GOALS_THAT_CAN_CONTINUE_WITH_CAVEATS = {
+    "inspect_measures",
+    "export_share",
+    "learn_terms",
+}
+
+
+GUIDED_GOAL_AREA_PRIORITY = {
+    "check_readiness": (
+        "Estimation",
+        "Data / linking",
+        "Fit",
+        "Rating scale",
+        "Assumptions",
+        "Bias / interaction",
+        "Reporting",
+        "Measures",
+    ),
+    "inspect_measures": (
+        "Measures",
+        "Rating scale",
+        "Fit",
+    ),
+    "diagnose_problem": (
+        "Fit",
+        "Assumptions",
+        "Rating scale",
+        "Bias / interaction",
+        "Data / linking",
+    ),
+    "prepare_report": (
+        "Reporting",
+        "Fit",
+        "Assumptions",
+        "Bias / interaction",
+        "Data / linking",
+    ),
+    "export_share": (
+        "Reporting",
+        "Data / linking",
+        "Measures",
+    ),
+    "learn_terms": (
+        "Rating scale",
+        "Fit",
+        "Assumptions",
+        "Measures",
+        "Bias / interaction",
+    ),
+}
+
+
+def _safe_guided_goal_id(goal_id: str) -> str:
+    safe_goal = str(goal_id)
+    return safe_goal if safe_goal in GUIDED_GOAL_IDS else "check_readiness"
+
+
+def guided_goal_decision_brief_table(goal_id: str) -> pd.DataFrame:
+    """Return the one-row decision brief for a selected goal."""
+    safe_goal = _safe_guided_goal_id(goal_id)
+    return pd.DataFrame([{
+        t("guided.goal_brief_col_prompt"): t(f"guided.goal_brief_{safe_goal}_prompt"),
+        t("guided.goal_brief_col_decide"): t(f"guided.goal_brief_{safe_goal}_decide"),
+        t("guided.goal_brief_col_do_not_decide"): t(f"guided.goal_brief_{safe_goal}_do_not_decide"),
+        t("guided.goal_brief_col_output"): t(f"guided.goal_brief_{safe_goal}_output"),
+        t("guided.goal_brief_col_caveat"): t(f"guided.goal_brief_{safe_goal}_caveat"),
+    }])
+
+
+def guided_goal_evidence_checklist(goal_id: str) -> pd.DataFrame:
+    """Return goal-specific evidence checks that support the selected decision."""
+    safe_goal = _safe_guided_goal_id(goal_id)
+    rows: list[dict[str, str]] = []
+    for row_number in range(1, 4):
+        rows.append({
+            t("guided.goal_evidence_col_evidence"): t(f"guided.goal_evidence_{safe_goal}_{row_number}_evidence"),
+            t("guided.goal_evidence_col_reason"): t(f"guided.goal_evidence_{safe_goal}_{row_number}_reason"),
+            t("guided.goal_evidence_col_caveat"): t(f"guided.goal_evidence_{safe_goal}_{row_number}_caveat"),
+        })
+    return pd.DataFrame(rows)
+
+
+def guided_goal_detail_locator_table(goal_id: str) -> pd.DataFrame:
+    """Return exact places to inspect for the selected goal."""
+    safe_goal = _safe_guided_goal_id(goal_id)
+    columns = [
+        t("guided.goal_locator_col_open"),
+        t("guided.goal_locator_col_place"),
+        t("guided.goal_locator_col_check"),
+        t("guided.goal_locator_col_use"),
+    ]
+    rows: list[dict[str, str]] = []
+    for row_number in range(1, 4):
+        rows.append({
+            columns[0]: t(f"guided.goal_locator_{safe_goal}_{row_number}_open"),
+            columns[1]: t(f"guided.goal_locator_{safe_goal}_{row_number}_place"),
+            columns[2]: t(f"guided.goal_locator_{safe_goal}_{row_number}_check"),
+            columns[3]: t(f"guided.goal_locator_{safe_goal}_{row_number}_use"),
+        })
+    return pd.DataFrame(rows, columns=columns)
+
+
+def guided_goal_step_table(goal_id: str) -> pd.DataFrame:
+    """Return the three-step reading route for a selected goal."""
+    safe_goal = _safe_guided_goal_id(goal_id)
+    rows: list[dict[str, object]] = []
+    for step_number, open_label in enumerate(GUIDED_GOAL_STEP_OPEN[safe_goal], start=1):
+        rows.append({
+            t("guided.goal_step_col_step"): step_number,
+            t("guided.goal_step_col_open"): open_label,
+            t("guided.goal_step_col_action"): t(f"guided.goal_step_{safe_goal}_{step_number}_action"),
+            t("guided.goal_step_col_done"): t(f"guided.goal_step_{safe_goal}_{step_number}_done"),
+        })
+    return pd.DataFrame(rows)
+
+
+def _guided_goal_route_row(goal_id: str) -> pd.Series:
+    """Return the localized route row for a goal, falling back to readiness."""
+    safe_goal = _safe_guided_goal_id(goal_id)
+    routes = guided_goal_route_table()
+    return routes.loc[routes["GoalId"].eq(safe_goal)].iloc[0]
+
+
+def _guided_focus_class(row: pd.Series) -> str:
+    """Classify a First Read row by how it should affect goal routing."""
+    status = str(row.get("Status", "Review"))
+    area = str(row.get("Area", "Reporting"))
+    if status == "OK":
+        return "ok"
+    if status == "Do not interpret yet":
+        return "hard_stop"
+    if status == "Caution" and area in GUIDED_FOCUS_HARD_STOP_AREAS:
+        return "hard_stop"
+    if area in GUIDED_FOCUS_CLAIM_CAVEAT_AREAS:
+        return "claim_caveat"
+    return "goal_review"
+
+
+def _guided_focus_rows_by_class(action_plan: pd.DataFrame, focus_class: str) -> pd.DataFrame:
+    """Return action-plan rows matching a focus class while preserving priority order."""
+    if not isinstance(action_plan, pd.DataFrame) or action_plan.empty:
+        return pd.DataFrame()
+    rows = [
+        row
+        for _, row in action_plan.iterrows()
+        if _guided_focus_class(row) == focus_class
+    ]
+    return pd.DataFrame(rows).reset_index(drop=True) if rows else pd.DataFrame()
+
+
+def _prefer_goal_relevant_focus_row(goal_id: str, rows: pd.DataFrame) -> pd.Series | None:
+    """Prefer a focus row whose topic is closest to the selected goal."""
+    if not isinstance(rows, pd.DataFrame) or rows.empty:
+        return None
+    if "Area" not in rows.columns:
+        return rows.iloc[0]
+    safe_goal = _safe_guided_goal_id(goal_id)
+    for area in GUIDED_GOAL_AREA_PRIORITY.get(safe_goal, ()):
+        hits = rows.loc[rows["Area"].astype(str).eq(area)]
+        if not hits.empty:
+            return hits.iloc[0]
+    return rows.iloc[0]
+
+
+def _guided_goal_focus_selection(
+    goal_id: str,
+    action_plan: pd.DataFrame,
+) -> tuple[pd.Series | None, str]:
+    """Return the run-specific focus row and the reason it was selected."""
+    if not isinstance(action_plan, pd.DataFrame) or action_plan.empty:
+        return None, "clean"
+    if "Status" not in action_plan.columns:
+        return action_plan.iloc[0], "flagged"
+    hard_flags = _guided_focus_rows_by_class(action_plan, "hard_stop")
+    if not hard_flags.empty:
+        return hard_flags.iloc[0], "hard"
+    review_flags = action_plan.loc[
+        action_plan["Status"].astype(str).isin(GUIDED_GOAL_REVIEW_STATUSES)
+    ]
+    if review_flags.empty:
+        return None, "clean"
+    focus_row = _prefer_goal_relevant_focus_row(goal_id, review_flags)
+    if focus_row is None:
+        return None, "clean"
+    if str(focus_row.get("Area", "")) in GUIDED_GOAL_AREA_PRIORITY.get(_safe_guided_goal_id(goal_id), ()):
+        return focus_row, "goal_relevant"
+    return focus_row, "flagged"
+
+
+def _guided_goal_row_from_route(goal_id: str, route: pd.Series) -> dict[str, str]:
+    """Return a row that lets the selected non-reporting goal proceed."""
+    safe_goal = _safe_guided_goal_id(goal_id)
+    return {
+        t("guided.goal_focus_col_focus"): (
+            f"{t('guided.goal_focus_selected_goal_prefix')}: "
+            f"{route[t('guided.goal_col_goal')]}"
+        ),
+        t("guided.goal_focus_col_why"): t("guided.goal_focus_can_continue_why"),
+        t("guided.goal_focus_col_open"): str(route[t("guided.goal_col_start")]),
+        t("guided.goal_focus_col_action"): str(route[t("guided.goal_col_next")]),
+    }
+
+
+def _guided_focus_label(row: pd.Series) -> str:
+    """Build the compact label for a First Read focus row."""
+    raw_status = str(row.get("Status", "Review"))
+    raw_area = str(row.get("Area", "Reporting"))
+    priority = str(row.get("Priority", "")).strip()
+    check = str(row.get("Check", "")).strip()
+    focus_label = " / ".join(
+        part for part in [
+            _guided_status_label(raw_status),
+            _guided_area_label(raw_area),
+            check,
+        ]
+        if part
+    )
+    if priority:
+        focus_label = f"{priority}: {focus_label}"
+    return focus_label
+
+
+def _guided_focus_table_row(row: pd.Series, reason_key: str) -> dict[str, str]:
+    """Return one display row for a First Read focus item."""
+    what_it_says = str(row.get("WhatItSays", "")).strip()
+    why = t(reason_key)
+    if what_it_says:
+        why = f"{why} {what_it_says}"
+    return {
+        t("guided.goal_focus_col_focus"): _guided_focus_label(row),
+        t("guided.goal_focus_col_why"): why,
+        t("guided.goal_focus_col_open"): _guided_detail_location_label(
+            str(row.get("DetailLocation", ""))
+        ),
+        t("guided.goal_focus_col_action"): str(row.get("NextAction", "")).strip(),
+    }
+
+
+def _guided_claim_caveat_table_row(row: pd.Series) -> dict[str, str]:
+    """Return a display row for a caveat that should travel with claims."""
+    display = _guided_focus_table_row(row, "guided.goal_focus_claim_caveat_why")
+    focus_col = t("guided.goal_focus_col_focus")
+    display[focus_col] = f"{t('guided.goal_focus_claim_caveat_prefix')}: {display[focus_col]}"
+    return display
+
+
+def guided_goal_current_focus_table(goal_id: str, action_plan: pd.DataFrame | None) -> pd.DataFrame:
+    """Return a one-row guide that combines the selected goal with this run."""
+    safe_goal = _safe_guided_goal_id(goal_id)
+    route = _guided_goal_route_row(safe_goal)
+    col_focus = t("guided.goal_focus_col_focus")
+    col_why = t("guided.goal_focus_col_why")
+    col_open = t("guided.goal_focus_col_open")
+    col_action = t("guided.goal_focus_col_action")
+
+    columns = [col_focus, col_why, col_open, col_action]
+    if not isinstance(action_plan, pd.DataFrame) or action_plan.empty:
+        return pd.DataFrame([{
+            col_focus: t("guided.goal_focus_unavailable_focus"),
+            col_why: t("guided.goal_focus_unavailable_why"),
+            col_open: route[t("guided.goal_col_start")],
+            col_action: route[t("guided.goal_col_next")],
+        }], columns=columns)
+
+    hard_flags = _guided_focus_rows_by_class(action_plan, "hard_stop")
+    if not hard_flags.empty:
+        return pd.DataFrame([
+            _guided_focus_table_row(hard_flags.iloc[0], "guided.goal_focus_hard_flagged_why")
+        ], columns=columns)
+
+    claim_caveats = _guided_focus_rows_by_class(action_plan, "claim_caveat")
+    goal_reviews = _guided_focus_rows_by_class(action_plan, "goal_review")
+    if safe_goal in GUIDED_GOALS_THAT_CAN_CONTINUE_WITH_CAVEATS and not claim_caveats.empty:
+        rows: list[dict[str, str]] = []
+        goal_row = _prefer_goal_relevant_focus_row(safe_goal, goal_reviews)
+        if goal_row is not None:
+            rows.append(_guided_focus_table_row(goal_row, "guided.goal_focus_goal_relevant_why"))
+        else:
+            rows.append(_guided_goal_row_from_route(safe_goal, route))
+        caveat_row = _prefer_goal_relevant_focus_row(safe_goal, claim_caveats)
+        if caveat_row is not None:
+            rows.append(_guided_claim_caveat_table_row(caveat_row))
+        return pd.DataFrame(rows, columns=columns)
+
+    focus_row, selection_reason = _guided_goal_focus_selection(safe_goal, action_plan)
+    if focus_row is None:
+        return pd.DataFrame([{
+            col_focus: t("guided.goal_focus_clean_focus"),
+            col_why: t(f"guided.goal_focus_{safe_goal}_clean_why"),
+            col_open: route[t("guided.goal_col_start")],
+            col_action: route[t("guided.goal_col_next")],
+        }], columns=columns)
+
+    reason_key = {
+        "hard": "guided.goal_focus_hard_flagged_why",
+        "goal_relevant": "guided.goal_focus_goal_relevant_why",
+    }.get(selection_reason, "guided.goal_focus_flagged_why")
+    if _guided_focus_class(focus_row) == "claim_caveat":
+        reason_key = "guided.goal_focus_claim_caveat_why"
+    return pd.DataFrame([
+        _guided_focus_table_row(focus_row, reason_key)
+    ], columns=columns)
+
+
+def guided_next_click_summary_table(goal_id: str, action_plan: pd.DataFrame | None) -> pd.DataFrame:
+    """Return the single next click implied by the selected goal and run status."""
+    safe_goal = _safe_guided_goal_id(goal_id)
+    focus = guided_goal_current_focus_table(safe_goal, action_plan)
+    col_focus = t("guided.goal_focus_col_focus")
+    col_open = t("guided.goal_focus_col_open")
+    col_action = t("guided.goal_focus_col_action")
+    columns = [
+        t("guided.next_click_col_next"),
+        t("guided.next_click_col_open"),
+        t("guided.next_click_col_do"),
+        t("guided.next_click_col_keep_visible"),
+    ]
+    if focus.empty:
+        return pd.DataFrame([{
+            columns[0]: t("guided.next_click_run_first"),
+            columns[1]: t("guided.tab_start"),
+            columns[2]: t("guided.goal_focus_unavailable_why"),
+            columns[3]: t("guided.next_click_keep_run_first"),
+        }], columns=columns)
+
+    first = focus.iloc[0]
+    open_value = str(first.get(col_open, ""))
+    action_value = str(first.get(col_action, ""))
+    hard_flags = _guided_focus_rows_by_class(action_plan, "hard_stop")
+    claim_caveats = _guided_focus_rows_by_class(action_plan, "claim_caveat")
+    if not isinstance(action_plan, pd.DataFrame) or action_plan.empty:
+        label = t("guided.next_click_run_first")
+        open_value = t("guided.tab_start")
+        action_value = t("guided.goal_focus_unavailable_why")
+        keep_visible = t("guided.next_click_keep_run_first")
+    elif not hard_flags.empty:
+        label = t("guided.next_click_hard_stop")
+        keep_visible = t("guided.next_click_keep_hard_stop")
+    elif len(focus) > 1:
+        label = t("guided.next_click_selected_goal")
+        keep_visible = f"{t('guided.next_click_keep_prefix')}: {focus.iloc[1][col_focus]}"
+    elif not claim_caveats.empty:
+        label = t("guided.next_click_claim_caveat")
+        keep_visible = t("guided.next_click_keep_claim_caveat")
+    elif str(first[col_focus]) == t("guided.goal_focus_clean_focus"):
+        label = t("guided.next_click_goal_route")
+        keep_visible = t("guided.next_click_keep_evidence")
+    else:
+        label = t("guided.next_click_review")
+        keep_visible = t("guided.next_click_keep_evidence")
+
+    return pd.DataFrame([{
+        columns[0]: label,
+        columns[1]: open_value,
+        columns[2]: action_value,
+        columns[3]: keep_visible,
+    }], columns=columns)
+
+
+def guided_goal_guardrail_summary_table(goal_id: str, action_plan: pd.DataFrame | None) -> pd.DataFrame:
+    """Return the compact interpretation guardrail for the selected goal."""
+    safe_goal = _safe_guided_goal_id(goal_id)
+    brief = guided_goal_decision_brief_table(safe_goal).iloc[0]
+    next_click = guided_next_click_summary_table(safe_goal, action_plan).iloc[0]
+    return pd.DataFrame([{
+        t("guided.goal_guardrail_col_do_not_decide"): str(
+            brief[t("guided.goal_brief_col_do_not_decide")]
+        ),
+        t("guided.goal_guardrail_col_keep_visible"): str(
+            next_click[t("guided.next_click_col_keep_visible")]
+        ),
+        t("guided.goal_guardrail_col_expected_output"): str(
+            brief[t("guided.goal_brief_col_output")]
+        ),
+    }])
+
+
+def _render_guided_goal_router(
+    *,
+    action_plan: pd.DataFrame | None = None,
+    key_suffix: str = "main",
+) -> None:
+    """Render a goal selector that routes to the appropriate guided section."""
+    routes = guided_goal_route_table()
+    if routes.empty:
+        return
+    st.subheader(t("guided.goal_router_subheader"))
+    st.caption(t("guided.goal_router_caption"))
+    goal_col = t("guided.goal_col_goal")
+    selected_goal = st.selectbox(
+        t("guided.goal_select_label"),
+        options=routes["GoalId"].tolist(),
+        index=0,
+        format_func=lambda goal_id: str(
+            routes.loc[routes["GoalId"].eq(goal_id), goal_col].iloc[0]
+        ),
+        key=f"guided_goal_route_{key_suffix}",
+        help=t("guided.goal_select_help"),
+    )
+    selected = routes.loc[routes["GoalId"].eq(selected_goal)].iloc[0]
+    with st.container(border=True):
+        st.markdown(
+            f"**{t('guided.goal_card_start')}**: {selected[t('guided.goal_col_start')]}  \n"
+            f"**{t('guided.goal_card_next')}**: {selected[t('guided.goal_col_next')]}  \n"
+            f"**{t('guided.goal_card_detail')}**: {selected[t('guided.goal_col_detail')]}"
+        )
+        st.caption(str(selected[t("guided.goal_col_when")]))
+    st.markdown(f"**{t('guided.goal_focus_heading')}**")
+    st.caption(t("guided.goal_focus_caption"))
+    st.dataframe(
+        guided_goal_current_focus_table(str(selected_goal), action_plan),
+        width="stretch",
+        hide_index=True,
+    )
+    st.markdown(f"**{t('guided.next_click_heading')}**")
+    st.caption(t("guided.next_click_caption"))
+    st.dataframe(
+        guided_next_click_summary_table(str(selected_goal), action_plan),
+        width="stretch",
+        hide_index=True,
+    )
+    st.markdown(f"**{t('guided.goal_locator_heading')}**")
+    st.caption(t("guided.goal_locator_caption"))
+    st.dataframe(guided_goal_detail_locator_table(str(selected_goal)), width="stretch", hide_index=True)
+    st.markdown(f"**{t('guided.goal_guardrail_heading')}**")
+    st.caption(t("guided.goal_guardrail_caption"))
+    st.dataframe(
+        guided_goal_guardrail_summary_table(str(selected_goal), action_plan),
+        width="stretch",
+        hide_index=True,
+    )
+    with st.expander(t("guided.goal_supporting_detail_expander"), expanded=False):
+        st.caption(t("guided.goal_supporting_detail_caption"))
+        st.markdown(f"**{t('guided.goal_brief_heading')}**")
+        st.dataframe(guided_goal_decision_brief_table(str(selected_goal)), width="stretch", hide_index=True)
+        st.markdown(f"**{t('guided.goal_evidence_heading')}**")
+        st.dataframe(guided_goal_evidence_checklist(str(selected_goal)), width="stretch", hide_index=True)
+        st.markdown(f"**{t('guided.goal_steps_heading')}**")
+        st.dataframe(guided_goal_step_table(str(selected_goal)), width="stretch", hide_index=True)
+        st.markdown(f"**{t('guided.goal_all_routes_expander')}**")
+        st.dataframe(routes.drop(columns=["GoalId"]), width="stretch", hide_index=True)
+
+
+def _render_guided_start_section(
+    core: dict,
+    data: pd.DataFrame,
+    result: dict,
+    diagnostics: dict,
+    est_facet_cols: list[str],
+    person_col: str,
+    score_col: str,
+) -> None:
+    st.subheader(t("guided.start_subheader"))
+    st.caption(t("guided.start_caption"))
+    with st.expander(t("guided.first_run_route_expander"), expanded=True):
+        st.caption(t("guided.first_run_route_caption"))
+        st.dataframe(guided_first_run_route_table(), width="stretch", hide_index=True)
+    obs_n = len(data) if isinstance(data, pd.DataFrame) else 0
+    person_n = data[person_col].nunique() if isinstance(data, pd.DataFrame) and person_col in data else 0
+    facet_n = len(est_facet_cols or [])
+    score_n = (
+        pd.to_numeric(data[score_col], errors="coerce").dropna().nunique()
+        if isinstance(data, pd.DataFrame) and score_col in data else 0
+    )
+    metric_cols = st.columns(4)
+    metric_cols[0].metric(t("guided.metric_observations"), f"{obs_n:,}")
+    metric_cols[1].metric(t("guided.metric_persons"), f"{person_n:,}")
+    metric_cols[2].metric(t("guided.metric_facets"), f"{facet_n:,}")
+    metric_cols[3].metric(t("guided.metric_score_categories"), f"{int(score_n):,}")
+
+    with st.expander(t("guided.data_quality_expander"), expanded=True):
+        try:
+            _draw_data_coverage_heatmap(data, est_facet_cols, person_col)
+            _draw_category_usage_bar(data, score_col, est_facet_cols)
+        except Exception:  # pragma: no cover - diagnostic helpers must not break guided view
+            pass
+        prep = result.get("prep", {}) if isinstance(result, dict) else {}
+        render_response_data_audit_panel(
+            prep.get("response_data_audit"),
+            expanded=False,
+            context="guided_run",
+        )
+        _show_data_tab_checks(data, score_col)
+
+        score_messages = prep.get("score_messages", [])
+        score_map = prep.get("score_map", pd.DataFrame())
+        for msg in score_messages:
+            st.warning(msg)
+        if isinstance(score_map, pd.DataFrame) and not score_map.empty:
+            with st.expander(t("data_quality.score_map_expander"), expanded=bool(score_messages)):
+                st.dataframe(score_map, width="stretch")
+
+        anchor_audit = result.get("config", {}).get("anchor_audit", {}) if isinstance(result, dict) else {}
+        if isinstance(anchor_audit, dict):
+            status = anchor_audit.get("overall_status", "ok")
+            message = anchor_audit.get("message", t("data_quality.anchor_default_message"))
+            if status == "error":
+                st.error(message)
+            elif status == "warning":
+                st.warning(message)
+            else:
+                st.success(message)
+            audit_summary = anchor_audit.get("summary", pd.DataFrame())
+            audit_issues = anchor_audit.get("issues", pd.DataFrame())
+            with st.expander(t("data_quality.anchor_summary_expander"), expanded=status != "ok"):
+                if isinstance(audit_summary, pd.DataFrame) and not audit_summary.empty:
+                    st.dataframe(audit_summary, width="stretch")
+                else:
+                    st.info(t("data_quality.anchor_no_summary_info"))
+            if isinstance(audit_issues, pd.DataFrame) and not audit_issues.empty:
+                with st.expander(t("data_quality.anchor_issues_expander"), expanded=True):
+                    st.dataframe(audit_issues, width="stretch")
+
+        calc_subsets_fn = core.get("calc_subsets") if isinstance(core, dict) else None
+        if calc_subsets_fn and diagnostics.get("obs") is not None:
+            try:
+                config_facet_names = result.get("config", {}).get("facet_names", est_facet_cols)
+                subsets = calc_subsets_fn(diagnostics["obs"], ["Person"] + list(config_facet_names))
+                summary_df = subsets.get("summary", pd.DataFrame()) if subsets else pd.DataFrame()
+                if not summary_df.empty and len(summary_df) >= 2:
+                    st.warning(t("data_quality.subsets_warning_template", n=len(summary_df)))
+                    with st.expander(t("data_quality.subset_details_expander")):
+                        st.dataframe(summary_df, width="stretch")
+                        nodes_df = subsets.get("nodes", pd.DataFrame()) if subsets else pd.DataFrame()
+                        if not nodes_df.empty:
+                            st.dataframe(nodes_df, width="stretch")
+                elif not summary_df.empty:
+                    st.success(t("data_quality.subsets_connected_success"))
+            except Exception as conn_exc:
+                st.info(t("data_quality.connectivity_failed_info_template", error=str(conn_exc)))
+
+    with st.expander(t("guided.input_preview_expander"), expanded=False):
+        st.dataframe(data.head(100), width="stretch")
+
+    _render_guided_detail_navigator()
+
+
+def _render_guided_results_section(result: dict, diagnostics: dict, report_tables: dict) -> None:
+    st.subheader(t("guided.results_subheader"))
+    st.caption(t("guided.results_caption"))
+    st.markdown(f"**{t('guided.measures_reading_heading')}**")
+    st.caption(t("guided.measures_reading_caption"))
+    render_guided_measures_reading_guide_tables()
+    show_convergence_section(result)
+
+    person_df = result.get("facets", {}).get("person", pd.DataFrame())
+    with st.expander(t("guided.person_measures_expander"), expanded=True):
+        st.caption(t("result_tabs.persons_caption"))
+        if isinstance(person_df, pd.DataFrame) and not person_df.empty:
+            st.dataframe(person_df, width="stretch")
+        else:
+            st.info(t("sidebar_perf.no_person_measures_info_template", run_button=t("sidebar_perf.run_button")))
+        show_person_fit_section(result, diagnostics)
+        show_posterior_scoring_section(result)
+
+    with st.expander(t("guided.facet_measures_expander"), expanded=False):
+        others_df = result.get("facets", {}).get("others", pd.DataFrame())
+        if isinstance(others_df, pd.DataFrame) and not others_df.empty:
+            st.dataframe(others_df, width="stretch")
+        else:
+            st.info(t("result_tabs.facets_no_data_info"))
+
+    with st.expander(t("guided.steps_expander"), expanded=False):
+        steps_df = result.get("steps", pd.DataFrame())
+        if isinstance(steps_df, pd.DataFrame) and not steps_df.empty:
+            st.dataframe(steps_df, width="stretch")
+        else:
+            st.info(t("result_tabs.steps_no_data_info"))
+        slopes_df = result.get("slopes", pd.DataFrame())
+        if isinstance(slopes_df, pd.DataFrame) and not slopes_df.empty:
+            st.subheader(t("result_tabs.slopes_subheader"))
+            st.caption(t("result_tabs.slopes_caption"))
+            st.dataframe(slopes_df, width="stretch")
+
+    with st.expander(t("guided.combined_measures_expander"), expanded=True):
+        measures_df = diagnostics.get("measures", pd.DataFrame())
+        if isinstance(measures_df, pd.DataFrame) and not measures_df.empty:
+            measures_display = measures_df.copy()
+            if "CI_Lower" not in measures_display.columns and "SE" in measures_display.columns:
+                se = pd.to_numeric(measures_display["SE"], errors="coerce")
+                est = pd.to_numeric(measures_display["Estimate"], errors="coerce")
+                measures_display.insert(
+                    measures_display.columns.get_loc("SE") + 1,
+                    "CI_Lower", (est - 1.96 * se).round(3),
+                )
+                measures_display.insert(
+                    measures_display.columns.get_loc("CI_Lower") + 1,
+                    "CI_Upper", (est + 1.96 * se).round(3),
+                )
+            measures_display = reorder_measure_columns(measures_display)
+            measures_display = format_measure_table(measures_display)
+            st.dataframe(style_fit_columns(measures_display), width="stretch")
+            if "CI_Lower" in measures_display.columns:
+                st.caption(t("result_tabs.combined_ci_caption"))
+            render_eb_shrinkage_section(result, diagnostics, expanded=False)
+        else:
+            st.info(t("sidebar_perf.no_combined_measures_info_template", run_button=t("sidebar_perf.run_button")))
+
+    with st.expander(t("guided.facets_tables_expander"), expanded=False):
+        if not report_tables:
+            st.info("No FACETS-style report tables were generated.")
+        else:
+            _n_facets = len(report_tables)
+            _n_elements = sum(len(tbl) for tbl in report_tables.values())
+            st.info(f"{_n_facets} facet table(s), {_n_elements} total elements.")
+            for facet, tbl in report_tables.items():
+                st.markdown(f"**{facet}**")
+                st.dataframe(tbl, width="stretch")
+
+
+def _render_guided_diagnostics_section(
+    core: dict,
+    result: dict,
+    diagnostics: dict,
+    est_facet_cols: list[str],
+    bias_results: dict | None,
+    all_bias_results: dict | None,
+    *,
+    result_compute_pca: bool,
+    result_render_plots: bool,
+) -> None:
+    st.subheader(t("guided.diagnostics_subheader"))
+    st.caption(t("guided.diagnostics_caption"))
+    diag_tabs = st.tabs([
+        t("main_tabs.fit_details"),
+        t("main_tabs.dimensionality"),
+        t("main_tabs.wright_map"),
+        t("main_tabs.visuals"),
+        t("main_tabs.bias_interaction"),
+        t("main_tabs.categories_steps"),
+        t("main_tabs.agreement"),
+        t("main_tabs.facet_dashboard"),
+        t("main_tabs.prediction_simulation"),
+    ])
+
+    with diag_tabs[0]:
+        show_fit_details_section(diagnostics, result=result, all_bias_results=all_bias_results or {})
+    with diag_tabs[1]:
+        if result_compute_pca:
+            dim_core = dict(core) if isinstance(core, dict) else {}
+            dim_core["result"] = result
+            show_dimensionality_section(diagnostics, est_facet_cols, core=dim_core)
+        else:
+            st.info(t("result_tabs.dimensionality_skipped_info"))
+    with diag_tabs[2]:
+        if result_render_plots:
+            show_wright_map_section(result, diagnostics)
+        else:
+            st.info(t("result_tabs.wright_map_skipped_info"))
+    with diag_tabs[3]:
+        if result_render_plots:
+            force_full_visuals = st.checkbox(
+                t("guided.show_full_visuals"),
+                value=False,
+                key="guided_show_full_visuals",
+                help=t("guided.show_full_visuals_help"),
+            )
+            show_visuals_section(result, diagnostics, force_full=force_full_visuals)
+        else:
+            st.info(t("guided.plots_skipped_info"))
+    with diag_tabs[4]:
+        show_bias_section(
+            bias_results,
+            core,
+            all_bias_results=all_bias_results or {},
+            result=result,
+            diagnostics=diagnostics,
+        )
+    with diag_tabs[5]:
+        show_categories_section(result, diagnostics, core)
+    with diag_tabs[6]:
+        show_agreement_section(result, diagnostics, est_facet_cols, core)
+    with diag_tabs[7]:
+        show_facet_dashboard(result, diagnostics, est_facet_cols, all_bias_results=all_bias_results or {})
+    with diag_tabs[8]:
+        show_prediction_simulation_section(result, diagnostics, core=core)
+
+
+def _render_guided_report_export_section(
+    result: dict,
+    diagnostics: dict,
+    report_tables: dict,
+    scorefile: pd.DataFrame,
+    residuals: pd.DataFrame,
+    bias_results: dict | None,
+    all_bias_results: dict | None,
+    *,
+    generate_figures: bool,
+) -> None:
+    st.subheader(t("guided.report_export_subheader"))
+    st.caption(t("guided.report_export_caption"))
+    st.markdown(f"**{t('guided.repro_heading')}**")
+    st.caption(t("guided.repro_caption"))
+    st.dataframe(guided_reproducibility_guardrail_table(), width="stretch", hide_index=True)
+    st.markdown(f"**{t('guided.claim_trace_heading')}**")
+    st.caption(t("guided.claim_trace_caption"))
+    st.dataframe(
+        guided_report_claim_trace_table(result, diagnostics, all_bias_results or {}),
+        width="stretch",
+        hide_index=True,
+    )
+    st.markdown(f"**{t('guided.export_preflight_heading')}**")
+    st.caption(t("guided.export_preflight_caption"))
+    st.dataframe(
+        guided_export_share_preflight_table(result, diagnostics, all_bias_results or {}),
+        width="stretch",
+        hide_index=True,
+    )
+    force_full_report = st.checkbox(
+        t("guided.show_full_report"),
+        value=False,
+        key="guided_show_full_report",
+        help=t("guided.show_full_report_help"),
+    )
+    show_report_section(
+        result,
+        diagnostics,
+        bias_results=bias_results,
+        all_bias_results=all_bias_results or {},
+        force_full=force_full_report,
+    )
+    with st.expander(t("guided.downloads_expander"), expanded=False):
+        _render_downloads(
+            result,
+            diagnostics,
+            report_tables,
+            scorefile,
+            residuals,
+            bias_results,
+            all_bias_results=all_bias_results or {},
+            generate_figures=generate_figures,
+        )
+
+
+def _render_guided_learn_section() -> None:
+    st.subheader(t("guided.learn_subheader"))
+    st.caption(t("guided.learn_caption"))
+    force_full_help = st.checkbox(
+        t("guided.show_full_help"),
+        value=False,
+        key="guided_show_full_help",
+        help=t("guided.show_full_help_help"),
+    )
+    show_help_section(force_full=force_full_help)
+
+
+GUIDED_SECTION_I18N_KEYS = {
+    "start": "guided.tab_start",
+    "first_read": "guided.tab_first_read",
+    "results": "guided.tab_results",
+    "diagnostics": "guided.tab_diagnostics",
+    "report_export": "guided.tab_report_export",
+    "learn": "guided.tab_learn",
+}
+
+
+GUIDED_SECTION_IDS = tuple(GUIDED_SECTION_I18N_KEYS.keys())
+
+
+def _guided_section_label(section_id: str) -> str:
+    safe_section = str(section_id)
+    return t(
+        GUIDED_SECTION_I18N_KEYS.get(safe_section, "guided.tab_start"),
+        default=safe_section,
+    )
+
+
+def guided_section_selector_options() -> pd.DataFrame:
+    """Return the Essential-view sections in the order shown to users."""
+    return pd.DataFrame([
+        {
+            "SectionId": section_id,
+            t("guided.section_col_section"): _guided_section_label(section_id),
+        }
+        for section_id in GUIDED_SECTION_IDS
+    ])
+
+
+def _render_guided_essential_tabs(
+    core: dict,
+    data: pd.DataFrame,
+    result: dict,
+    diagnostics: dict,
+    report_tables: dict,
+    scorefile: pd.DataFrame,
+    residuals: pd.DataFrame,
+    est_facet_cols: list[str],
+    person_col: str,
+    score_col: str,
+    bias_results: dict | None,
+    all_bias_results: dict | None,
+    *,
+    result_compute_pca: bool,
+    result_render_plots: bool,
+    result_generate_figures: bool,
+) -> None:
+    """Render the selected Essential section without drawing every heavy panel."""
+    selected_section = st.selectbox(
+        t("guided.section_select_label"),
+        options=list(GUIDED_SECTION_IDS),
+        index=0,
+        format_func=_guided_section_label,
+        key="guided_essential_section",
+        help=t("guided.section_select_help"),
+    )
+    st.caption(t("guided.section_select_caption"))
+
+    if selected_section == "start":
+        _render_guided_start_section(
+            core,
+            data,
+            result,
+            diagnostics,
+            est_facet_cols,
+            person_col,
+            score_col,
+        )
+    elif selected_section == "first_read":
+        st.subheader(t("guided.first_read_subheader"))
+        st.caption(t("guided.first_read_caption"))
+        _render_guided_action_plan(
+            result,
+            diagnostics,
+            all_bias_results,
+            expanded_details=True,
+            key_suffix="first_read",
+        )
+    elif selected_section == "results":
+        _render_guided_results_section(result, diagnostics, report_tables)
+    elif selected_section == "diagnostics":
+        _render_guided_diagnostics_section(
+            core,
+            result,
+            diagnostics,
+            est_facet_cols,
+            bias_results,
+            all_bias_results,
+            result_compute_pca=result_compute_pca,
+            result_render_plots=result_render_plots,
+        )
+    elif selected_section == "report_export":
+        _render_guided_report_export_section(
+            result,
+            diagnostics,
+            report_tables,
+            scorefile,
+            residuals,
+            bias_results,
+            all_bias_results,
+            generate_figures=result_generate_figures,
+        )
+    elif selected_section == "learn":
+        _render_guided_learn_section()
 
 
 def _show_data_tab_checks(data: pd.DataFrame, score_col: str) -> None:
@@ -18206,6 +22573,7 @@ def _show_pca_panel(
     eigenvalues = None
     var_pct = None
     loadings = None
+    stability_table = pd.DataFrame()
 
     # Prefer pre-computed PCA from mfrm_diagnostics so Streamlit reruns do not
     # recompute expensive decompositions just to redraw the page.
@@ -18213,12 +22581,14 @@ def _show_pca_panel(
         eigenvalues = pca.get("eigenvalues")
         var_pct = pca.get("variance_pct")
         loadings = pca.get("loadings")
+        stability_table = pca.get("stability_table", pd.DataFrame())
     elif mode == "facet" and diagnostics and facet_name:
         facet_pca = (diagnostics.get("pca_by_facet") or {}).get(facet_name)
         if isinstance(facet_pca, dict):
             eigenvalues = facet_pca.get("eigenvalues")
             var_pct = facet_pca.get("variance_pct")
             loadings = facet_pca.get("loadings")
+            stability_table = facet_pca.get("stability_table", pd.DataFrame())
 
     if core and diagnostics:
         obs = diagnostics.get("obs")
@@ -18230,6 +22600,7 @@ def _show_pca_panel(
                     eigenvalues = pca_bundle.get("eigenvalues")
                     var_pct = pca_bundle.get("variance_pct")
                     loadings = pca_bundle.get("loadings")
+                    stability_table = pca_bundle.get("stability_table", pd.DataFrame())
             except Exception as pca_exc:
                 st.caption(t("dimensionality.computation_failed_caption_template", error=str(pca_exc)))
         elif eigenvalues is None and mode == "facet" and core.get("compute_pca_by_facet") and obs is not None and facet_name:
@@ -18240,6 +22611,7 @@ def _show_pca_panel(
                     eigenvalues = pca_bundle.get("eigenvalues")
                     var_pct = pca_bundle.get("variance_pct")
                     loadings = pca_bundle.get("loadings")
+                    stability_table = pca_bundle.get("stability_table", pd.DataFrame())
             except Exception as pca_exc:
                 st.caption(t("dimensionality.computation_failed_caption_template", error=str(pca_exc)))
 
@@ -18341,6 +22713,36 @@ def _show_pca_panel(
     eigen_df = pd.DataFrame(eigen_df_data)
     st.subheader(t("dimensionality.eigenvalues_subheader"))
     st.dataframe(eigen_df.round(3), width="stretch")
+
+    if isinstance(stability_table, pd.DataFrame) and not stability_table.empty:
+        stability_status = str(stability_table.iloc[0].get("PCAStabilityStatus", "Review"))
+        stability_caution = str(stability_table.iloc[0].get("Caution", "Review PCA stability before using loadings."))
+        if stability_status == "Stable screen":
+            st.success(f"PCA stability audit: {stability_status}.")
+        else:
+            st.warning(f"PCA stability audit: {stability_status}.")
+        with st.expander("PCA stability audit", expanded=stability_status != "Stable screen"):
+            st.caption(stability_caution)
+            display_cols = [
+                "PCAStabilityStatus", "Persons", "ResidualColumns", "MissingShare",
+                "MinPairwiseOverlap", "MedianPairwiseOverlap", "FullEV1", "FullEV2",
+                "FullPC1VariancePct", "LOOColumnsEvaluated", "LOOEV1MaxAbsDelta",
+                "LOOEV1ShareMaxAbsDelta",
+                "LOOPC1MedianAbsLoadingCorrelation", "LOOPC1MinAbsLoadingCorrelation",
+                "BootstrapReplicates", "BootstrapEV1CV", "BootstrapEV1P05",
+                "BootstrapEV1P95", "BootstrapPC1MedianAbsLoadingCorrelation",
+                "BootstrapPC1MinAbsLoadingCorrelation", "BootstrapEV1ThresholdCrossing",
+                "SensitivityFlagSummary", "Rule", "Caution",
+            ]
+            st.dataframe(stability_table[[c for c in display_cols if c in stability_table.columns]], width="stretch", hide_index=True)
+            dl_label = re.sub(r"[^A-Za-z0-9]+", "_", label_plot).strip("_").lower() or "pca"
+            st.download_button(
+                "Download PCA stability audit CSV",
+                data=to_csv_bytes(stability_table),
+                file_name=f"mfrm_pca_stability_audit_{dl_label}.csv",
+                mime="text/csv",
+                key=f"dl_pca_stability_{mode}_{dl_label}",
+            )
 
     # --- PC1 loadings bar chart ---
     if loadings is not None and hasattr(loadings, "columns") and "PC1" in loadings.columns:
@@ -18485,7 +22887,9 @@ def show_wright_map_section(result: dict, diagnostics: dict) -> None:
         _draw_wright_map_plotly(person_tbl, facet_tbl, step_tbl)
 
     with wm_tabs[1]:
-        _draw_yardstick(person_tbl, facet_tbl, step_tbl)
+        prep = result.get("prep", {}) if isinstance(result, dict) else {}
+        rating_min = prep.get("rating_min")
+        _draw_yardstick(person_tbl, facet_tbl, step_tbl, rating_min=rating_min)
 
 
 
@@ -18493,7 +22897,11 @@ def show_wright_map_section(result: dict, diagnostics: dict) -> None:
 
 
 def _draw_yardstick(
-    person_tbl: pd.DataFrame, facet_tbl: pd.DataFrame, step_tbl: pd.DataFrame
+    person_tbl: pd.DataFrame,
+    facet_tbl: pd.DataFrame,
+    step_tbl: pd.DataFrame,
+    *,
+    rating_min: int | float | None = None,
 ) -> None:
     """FACETS Table 6.0 style yardstick: vertical logit ruler with facet columns."""
 
@@ -18511,8 +22919,7 @@ def _draw_yardstick(
         facet_est = facet_est.dropna(subset=["Estimate"])
 
     facet_names = list(facet_est["Facet"].unique()) if "Facet" in facet_est.columns else []
-    n_cols = 1 + len(facet_names)  # person + each facet
-    if n_cols < 2:
+    if len(facet_names) < 1:
         st.caption(t("visuals.not_enough_facets_yardstick"))
         return
     max_elements_per_facet = int(facet_est.groupby("Facet").size().max()) if "Facet" in facet_est.columns and not facet_est.empty else 0
@@ -18522,30 +22929,381 @@ def _draw_yardstick(
     )
     min_label_gap = _minimum_within_facet_logit_gap(facet_est)
     tight_labels = min_label_gap < 0.30
-    crowded = max_elements_per_facet > 8 or n_cols > 5 or label_max > 18 or tight_labels
+    crowded = max_elements_per_facet > 18 or len(facet_names) > 7 or label_max > 28
     requested_direct_labels = st.checkbox(
-        "Show yardstick labels directly on plot",
+        "Show FACETS-style direct text labels",
         value=not crowded,
-        key="yardstick_show_direct_labels_tight" if tight_labels else "yardstick_show_direct_labels",
-        disabled=tight_labels,
+        key="yardstick_show_direct_labels",
         help=(
-            "Direct text labels are useful for small designs. For dense designs, leave this off "
-            "and use hover labels to avoid overlapping text."
+            "Direct text labels mimic FACETS/geom_text-style yardsticks. Step thresholds also use "
+            "short horizontal boundary lines at the exact estimates. For dense designs, turn this "
+            "off if labels overlap; hover labels retain the full exact text and logit values."
         ),
     )
-    show_direct_labels = bool(requested_direct_labels and not tight_labels)
-    if crowded and not show_direct_labels:
+    show_direct_labels = bool(requested_direct_labels)
+    if (crowded or tight_labels) and not show_direct_labels:
         st.caption(t("visuals.dense_yardstick_caption"))
+    elif tight_labels:
+        st.caption(t(
+            "visuals.tight_yardstick_caption",
+            default="Some facet labels are close on the logit ruler; hover text retains the exact estimates.",
+        ))
+
+    fig = _make_yardstick_figure(
+        person_tbl,
+        facet_est,
+        step_tbl,
+        show_direct_labels=show_direct_labels,
+        rating_min=rating_min,
+    )
+    if fig is None:
+        st.caption(t("visuals.not_enough_facets_yardstick"))
+        return
+    st.plotly_chart(fig, width="stretch")
+    yardstick_map = make_yardstick_export_table(
+        person_tbl,
+        facet_est,
+        step_tbl,
+        rating_min=rating_min,
+    )
+    if not yardstick_map.empty:
+        script_assets = yardstick_reproducibility_scripts()
+        bundle_assets: dict[str, bytes | str] = {
+            "mfrm_yardstick_map.csv": yardstick_map.to_csv(index=False),
+            **script_assets,
+        }
+        with st.expander("Download / reproduce this FACETS-style yardstick", expanded=False):
+            st.caption(
+                "The CSV contains the exact logit positions and display labels used by the figure. "
+                "Threshold rows also include line positions for the short boundary segments. "
+                "The R script uses ggplot2::geom_text() and geom_segment(); Python and Julia templates are included for cross-language reproduction."
+            )
+            st.dataframe(
+                yardstick_map.loc[:, [
+                    c for c in [
+                        "Role", "Facet", "DisplayLabel", "Estimate", "PlotY",
+                        "TextLane", "LineXStart", "LineXEnd", "PlotColumn"
+                    ] if c in yardstick_map.columns
+                ]],
+                width="stretch",
+                hide_index=True,
+            )
+            ycol1, ycol2 = st.columns(2)
+            with ycol1:
+                st.download_button(
+                    "Download yardstick map CSV",
+                    data=to_csv_bytes(yardstick_map),
+                    file_name="mfrm_yardstick_map.csv",
+                    mime="text/csv",
+                    key="dl_yardstick_map_csv",
+                )
+            with ycol2:
+                st.download_button(
+                    "Download yardstick reproduction bundle",
+                    data=cached_mixed_asset_zip(bundle_assets, bytes_mapping_fingerprint(bundle_assets)),
+                    file_name="MFRM_FACETS_Yardstick_Reproduction.zip",
+                    mime="application/zip",
+                    key="dl_yardstick_reproduction_zip",
+                )
+    render_chart_guide("facets_yardstick")
+
+
+def _yardstick_step_boundary(label: object, *, rating_min: int | float | None = None) -> tuple[str, float | None, float | None]:
+    """Return a FACETS-style threshold label such as 0|1 or 4|5."""
+    raw = str(label or "").strip()
+    match = re.fullmatch(r"(?i)\s*step[\s_-]*(\d+)\s*", raw)
+    if not match:
+        return raw, None, None
+    step_index = int(match.group(1))
+    try:
+        base = int(float(rating_min)) if rating_min is not None and np.isfinite(float(rating_min)) else 1
+    except Exception:
+        base = 1
+    lower = base + step_index - 1
+    upper = lower + 1
+    return f"{lower}|{upper}", float(lower), float(upper)
+
+
+def _yardstick_threshold_frame(
+    step_tbl: pd.DataFrame | None,
+    *,
+    rating_min: int | float | None = None,
+) -> pd.DataFrame:
+    """Normalize step/threshold estimates for the FACETS-style yardstick column."""
+    if not isinstance(step_tbl, pd.DataFrame) or step_tbl.empty or "Estimate" not in step_tbl.columns:
+        return pd.DataFrame(columns=["Label", "RawLabel", "DisplayLabel", "Estimate"])
+    out = step_tbl.copy()
+    out["Estimate"] = pd.to_numeric(out["Estimate"], errors="coerce")
+    out = out.dropna(subset=["Estimate"])
+    if out.empty:
+        return pd.DataFrame(columns=["Label", "RawLabel", "DisplayLabel", "Estimate"])
+    if "Step" in out.columns:
+        labels = out["Step"].astype(str)
+    elif "Category" in out.columns:
+        labels = out["Category"].astype(str)
+    else:
+        labels = pd.Series([f"Step_{idx + 1}" for idx in range(len(out))], index=out.index)
+    boundary = [
+        _yardstick_step_boundary(label, rating_min=rating_min)
+        for label in labels.tolist()
+    ]
+    display_labels = [item[0] for item in boundary]
+    boundary_lower = [item[1] for item in boundary]
+    boundary_upper = [item[2] for item in boundary]
+    step_facet = (
+        out["StepFacet"].astype(str).to_numpy()
+        if "StepFacet" in out.columns else np.repeat("Common", len(out))
+    )
+    return pd.DataFrame({
+        "Label": display_labels,
+        "RawLabel": labels.to_numpy(),
+        "DisplayLabel": display_labels,
+        "StepFacet": step_facet,
+        "BoundaryLower": boundary_lower,
+        "BoundaryUpper": boundary_upper,
+        "Estimate": out["Estimate"].to_numpy(dtype=float),
+    })
+
+
+def _yardstick_label_x_positions(
+    estimates: pd.Series | list[float] | np.ndarray,
+    *,
+    base: float = 0.12,
+    lane_width: float = 0.14,
+    min_gap: float = 0.30,
+    max_lanes: int = 5,
+) -> list[float]:
+    """Horizontally stagger close labels while preserving their logit y-position."""
+    x_positions, _, _ = _yardstick_label_layout(
+        estimates,
+        base=base,
+        lane_width=lane_width,
+        min_gap=min_gap,
+        max_lanes=max_lanes,
+    )
+    return x_positions
+
+
+def _yardstick_label_layout(
+    estimates: pd.Series | list[float] | np.ndarray,
+    *,
+    base: float = 0.12,
+    lane_width: float = 0.14,
+    min_gap: float = 0.30,
+    max_lanes: int = 5,
+    min_y_gap: float = 0.16,
+) -> tuple[list[float], list[float], list[int]]:
+    """Return deterministic text lanes for dense FACETS-style yardstick labels.
+
+    The exported ``Estimate`` remains the exact logit value. ``PlotY`` is a
+    small display dodge used only when labels are too close to read.
+    """
+    vals = pd.to_numeric(pd.Series(estimates), errors="coerce")
+    if vals.empty:
+        return [], [], []
+    vals = vals.reset_index(drop=True)
+    positions = [base] * len(vals)
+    y_positions = [
+        float(value) if pd.notna(value) and np.isfinite(float(value)) else np.nan
+        for value in vals
+    ]
+    lanes = [0] * len(vals)
+    finite = vals.dropna().sort_values()
+    clusters: list[list[int]] = []
+    current: list[int] = []
+    last_val: float | None = None
+    for idx, val in finite.items():
+        val_f = float(val)
+        if last_val is None or abs(val_f - last_val) < min_gap:
+            current.append(int(idx))
+        else:
+            if current:
+                clusters.append(current)
+            current = [int(idx)]
+        last_val = val_f
+    if current:
+        clusters.append(current)
+    for cluster in clusters:
+        if len(cluster) <= 1:
+            continue
+        cluster_sorted = sorted(cluster, key=lambda idx: float(vals.iloc[idx]))
+        lane_count = max(1, min(int(max_lanes), len(cluster_sorted)))
+        raw_values = [float(vals.iloc[idx]) for idx in cluster_sorted]
+        actual_span = max(raw_values) - min(raw_values) if raw_values else 0.0
+        required_span = float(min_y_gap) * (len(cluster_sorted) - 1)
+        if actual_span < required_span:
+            center = float(np.mean(raw_values))
+            display_values = [
+                center + (rank - (len(cluster_sorted) - 1) / 2.0) * float(min_y_gap)
+                for rank in range(len(cluster_sorted))
+            ]
+        else:
+            display_values = raw_values
+        for lane_idx, original_idx in enumerate(cluster_sorted):
+            lane = lane_idx % lane_count
+            positions[original_idx] = base + lane * lane_width
+            y_positions[original_idx] = display_values[lane_idx]
+            lanes[original_idx] = lane
+    return positions, y_positions, lanes
+
+
+def make_yardstick_export_table(
+    person_tbl: pd.DataFrame,
+    facet_tbl: pd.DataFrame,
+    step_tbl: pd.DataFrame | None = None,
+    *,
+    rating_min: int | float | None = None,
+) -> pd.DataFrame:
+    """Create the portable data contract behind the FACETS-style yardstick."""
+    rows: list[dict[str, object]] = []
+
+    if isinstance(person_tbl, pd.DataFrame) and "Estimate" in person_tbl.columns:
+        person_est = pd.to_numeric(person_tbl["Estimate"], errors="coerce")
+        label_col = "Person" if "Person" in person_tbl.columns else None
+        for idx, estimate in person_est.dropna().items():
+            raw_label = str(person_tbl.loc[idx, label_col]) if label_col else ""
+            rows.append({
+                "Role": "Person",
+                "Facet": "Person",
+                "RawLabel": raw_label,
+                "DisplayLabel": raw_label,
+                "Estimate": float(estimate),
+                "PlotY": float(estimate),
+                "TextLane": 0,
+                "LineXStart": np.nan,
+                "LineXEnd": np.nan,
+                "PlotColumn": "Measr / Persons",
+                "PlotKind": "histogram_source",
+                "BoundaryLower": np.nan,
+                "BoundaryUpper": np.nan,
+            })
+
+    facet_est = facet_tbl.copy() if isinstance(facet_tbl, pd.DataFrame) else pd.DataFrame()
+    if not facet_est.empty and {"Facet", "Estimate"}.issubset(facet_est.columns):
+        facet_est["Estimate"] = pd.to_numeric(facet_est["Estimate"], errors="coerce")
+        facet_est = facet_est.dropna(subset=["Estimate"])
+        for _, row in facet_est.iterrows():
+            facet = str(row.get("Facet", "Facet"))
+            raw_label = str(row.get("Level", row.get("Element", "")))
+            rows.append({
+                "Role": "FacetElement",
+                "Facet": facet,
+                "RawLabel": raw_label,
+                "DisplayLabel": _compact_label(raw_label, 18),
+                "Estimate": float(row["Estimate"]),
+                "PlotY": float(row["Estimate"]),
+                "TextLane": 0,
+                "LineXStart": np.nan,
+                "LineXEnd": np.nan,
+                "PlotColumn": facet,
+                "PlotKind": "direct_text",
+                "BoundaryLower": np.nan,
+                "BoundaryUpper": np.nan,
+            })
+
+    threshold_frame = _yardstick_threshold_frame(step_tbl, rating_min=rating_min)
+    if not threshold_frame.empty:
+        for _, row in threshold_frame.iterrows():
+            step_facet = str(row.get("StepFacet", "Common"))
+            display = str(row.get("DisplayLabel", row.get("Label", "")))
+            if step_facet and step_facet != "Common":
+                display = f"{step_facet}: {display}"
+            rows.append({
+                "Role": "Threshold",
+                "Facet": step_facet,
+                "RawLabel": str(row.get("RawLabel", row.get("Label", ""))),
+                "DisplayLabel": _compact_label(display, 18),
+                "Estimate": float(row["Estimate"]),
+                "PlotY": float(row["Estimate"]),
+                "TextLane": 0,
+                "LineXStart": 0.08,
+                "LineXEnd": 0.20,
+                "PlotColumn": "Thresholds",
+                "PlotKind": "direct_text",
+                "BoundaryLower": row.get("BoundaryLower", np.nan),
+                "BoundaryUpper": row.get("BoundaryUpper", np.nan),
+            })
+
+    if not rows:
+        return pd.DataFrame(columns=[
+            "Role", "Facet", "RawLabel", "DisplayLabel", "Estimate", "PlotY", "TextLane",
+            "LineXStart", "LineXEnd", "PlotColumn", "PlotKind", "BoundaryLower", "BoundaryUpper",
+        ])
+    out = pd.DataFrame(rows)
+    out["Estimate"] = pd.to_numeric(out["Estimate"], errors="coerce")
+    out["PlotY"] = pd.to_numeric(out.get("PlotY", out["Estimate"]), errors="coerce")
+    out["TextLane"] = pd.to_numeric(out.get("TextLane", 0), errors="coerce").fillna(0).astype(int)
+    out["LineXStart"] = pd.to_numeric(out.get("LineXStart", np.nan), errors="coerce")
+    out["LineXEnd"] = pd.to_numeric(out.get("LineXEnd", np.nan), errors="coerce")
+    for _, idx in out[out["PlotKind"] == "direct_text"].groupby("PlotColumn").groups.items():
+        idx_list = list(idx)
+        _, plot_y, lanes = _yardstick_label_layout(
+            out.loc[idx_list, "Estimate"].reset_index(drop=True),
+            base=0.12,
+            lane_width=0.14,
+            min_gap=0.30,
+            max_lanes=5,
+        )
+        out.loc[idx_list, "PlotY"] = plot_y
+        out.loc[idx_list, "TextLane"] = lanes
+    return out.sort_values(["Role", "PlotColumn", "Estimate", "DisplayLabel"]).reset_index(drop=True)
+
+
+def _make_yardstick_figure(
+    person_tbl: pd.DataFrame,
+    facet_tbl: pd.DataFrame,
+    step_tbl: pd.DataFrame | None = None,
+    *,
+    show_direct_labels: bool = True,
+    rating_min: int | float | None = None,
+):
+    """Build a FACETS-like text-first yardstick figure.
+
+    This intentionally differs from the general Wright Map: the primary marks
+    are text labels placed on a vertical ruler, matching the way FACETS users
+    read Table 6.0-style maps. Points are used only when direct labels are
+    disabled for dense designs.
+    """
+    person_est = pd.to_numeric(
+        person_tbl.get("Estimate", pd.Series(dtype=float)), errors="coerce"
+    ).dropna() if isinstance(person_tbl, pd.DataFrame) else pd.Series(dtype=float)
+    if person_est.empty:
+        return None
+
+    facet_est = facet_tbl.copy() if isinstance(facet_tbl, pd.DataFrame) else pd.DataFrame()
+    if "Estimate" in facet_est.columns:
+        facet_est["Estimate"] = pd.to_numeric(facet_est["Estimate"], errors="coerce")
+        facet_est = facet_est.dropna(subset=["Estimate"])
+    facet_names = list(facet_est["Facet"].unique()) if "Facet" in facet_est.columns and not facet_est.empty else []
+    if not facet_names:
+        return None
+    max_elements_per_facet = int(facet_est.groupby("Facet").size().max()) if facet_names else 0
+    threshold_frame = _yardstick_threshold_frame(step_tbl, rating_min=rating_min)
+    include_thresholds = not threshold_frame.empty
 
     y_all = list(person_est)
     if not facet_est.empty:
         y_all.extend(facet_est["Estimate"].tolist())
+    if include_thresholds:
+        y_all.extend(threshold_frame["Estimate"].tolist())
     margin = 0.5
     y_lo, y_hi = min(y_all) - margin, max(y_all) + margin
 
-    col_titles = ["Person"] + facet_names
-    fig = make_subplots(rows=1, cols=n_cols, shared_yaxes=True,
-                        subplot_titles=col_titles, horizontal_spacing=0.02)
+    col_titles = ["Measr / Persons"] + [str(name) for name in facet_names]
+    if include_thresholds:
+        col_titles.append("Thresholds")
+    n_cols = len(col_titles)
+    col_widths = [0.22] + [0.18] * len(facet_names) + ([0.16] if include_thresholds else [])
+    total_width = sum(col_widths)
+    col_widths = [value / total_width for value in col_widths]
+    fig = make_subplots(
+        rows=1,
+        cols=n_cols,
+        shared_yaxes=True,
+        subplot_titles=col_titles,
+        column_widths=col_widths,
+        horizontal_spacing=0.015,
+    )
 
     # Column 1: Person histogram (horizontal)
     bins_arr = np.linspace(y_lo, y_hi, max(15, int(len(person_est) ** 0.5)))
@@ -18556,36 +23314,129 @@ def _draw_yardstick(
                          hovertemplate="n=%{customdata}<br>Logit=%{y:.2f}",
                          customdata=counts), row=1, col=1)
     fig.update_xaxes(title_text="n", autorange="reversed", row=1, col=1)
-    fig.update_yaxes(title_text="Logit scale", range=[y_lo, y_hi], row=1, col=1)
+    fig.update_yaxes(title_text="Logit scale", range=[y_lo, y_hi], dtick=1, row=1, col=1)
 
     # Facet columns
     for i, fname in enumerate(facet_names):
         col_idx = i + 2
         sub = facet_est[facet_est["Facet"] == fname]
+        fig.add_trace(
+            go.Scatter(
+                x=[0.08, 0.08],
+                y=[y_lo, y_hi],
+                mode="lines",
+                line=dict(color="#333333", width=0.8),
+                hoverinfo="skip",
+                showlegend=False,
+            ),
+            row=1,
+            col=col_idx,
+        )
         if not sub.empty:
             full_labels = [str(lbl) for lbl in sub.get("Level", sub.index)]
+            text_x, text_y, _ = _yardstick_label_layout(
+                sub["Estimate"].reset_index(drop=True),
+                base=0.12,
+                lane_width=0.14,
+                min_gap=0.30,
+                max_lanes=5,
+            )
             fig.add_trace(go.Scatter(
-                x=[0.5] * len(sub), y=sub["Estimate"].tolist(),
-                mode="markers+text" if show_direct_labels and len(sub) <= 30 else "markers",
-                marker=dict(size=8, color="#1b9e77", symbol="square"),
-                text=_compact_label_list(full_labels, max_chars=18) if show_direct_labels else None,
+                x=text_x, y=text_y,
+                mode="text" if show_direct_labels else "markers",
+                marker=dict(size=8, color="#1b9e77", symbol="line-ns"),
+                text=_compact_label_list(full_labels, max_chars=14) if show_direct_labels else None,
                 textposition="middle right", textfont=dict(size=9),
                 showlegend=False,
-                customdata=np.column_stack([full_labels, np.repeat(fname, len(sub))]),
-                hovertemplate="%{customdata[1]}: %{customdata[0]}<br>Logit=%{y:.2f}<extra></extra>",
+                customdata=np.column_stack([
+                    full_labels,
+                    np.repeat(fname, len(sub)),
+                    sub["Estimate"].to_numpy(dtype=float),
+                ]),
+                hovertemplate="%{customdata[1]}: %{customdata[0]}<br>Logit=%{customdata[2]:.2f}<extra></extra>",
             ), row=1, col=col_idx)
         fig.update_xaxes(range=[0, 1], showticklabels=False, row=1, col=col_idx)
-        fig.update_yaxes(range=[y_lo, y_hi], showgrid=True, gridcolor="#ececec", row=1, col=col_idx)
+        fig.update_yaxes(range=[y_lo, y_hi], dtick=1, showgrid=True, gridcolor="#ececec", zeroline=True, zerolinecolor="#666666", row=1, col=col_idx)
+
+    if include_thresholds:
+        col_idx = n_cols
+        fig.add_trace(
+            go.Scatter(
+                x=[0.08, 0.08],
+                y=[y_lo, y_hi],
+                mode="lines",
+                line=dict(color="#333333", width=0.8),
+                hoverinfo="skip",
+                showlegend=False,
+            ),
+            row=1,
+            col=col_idx,
+        )
+        threshold_labels = []
+        for _, row in threshold_frame.iterrows():
+            label = str(row.get("DisplayLabel", row.get("Label", "")))
+            step_facet = str(row.get("StepFacet", "Common"))
+            threshold_labels.append(f"{step_facet}: {label}" if step_facet != "Common" else label)
+        threshold_x, threshold_y, _ = _yardstick_label_layout(
+            threshold_frame["Estimate"].reset_index(drop=True),
+            base=0.24,
+            lane_width=0.14,
+            min_gap=0.30,
+            max_lanes=5,
+        )
+        line_x: list[float | None] = []
+        line_y: list[float | None] = []
+        line_custom: list[list[object] | None] = []
+        for label, estimate in zip(threshold_labels, threshold_frame["Estimate"].tolist()):
+            line_x.extend([0.08, 0.20, None])
+            line_y.extend([float(estimate), float(estimate), None])
+            line_custom.extend([[label, float(estimate)], [label, float(estimate)], [None, np.nan]])
+        fig.add_trace(
+            go.Scatter(
+                x=line_x,
+                y=line_y,
+                mode="lines",
+                line=dict(color="#8c4a14", width=1.4),
+                name="Threshold boundary lines",
+                customdata=line_custom,
+                hovertemplate="Threshold: %{customdata[0]}<br>Exact logit=%{customdata[1]:.2f}<extra></extra>",
+                showlegend=False,
+            ),
+            row=1,
+            col=col_idx,
+        )
+        fig.add_trace(
+            go.Scatter(
+                x=threshold_x,
+                y=threshold_y,
+                mode="text" if show_direct_labels else "markers",
+                marker=dict(size=8, color="#d95f02", symbol="line-ew"),
+                text=_compact_label_list(threshold_labels, max_chars=14) if show_direct_labels else None,
+                textposition="middle right",
+                textfont=dict(size=9, color="#6b2d00"),
+                customdata=np.column_stack([
+                    threshold_labels,
+                    np.repeat("Threshold", len(threshold_frame)),
+                    threshold_frame["Estimate"].to_numpy(dtype=float),
+                ]),
+                hovertemplate="%{customdata[1]}: %{customdata[0]}<br>Logit=%{customdata[2]:.2f}<extra></extra>",
+                showlegend=False,
+            ),
+            row=1,
+            col=col_idx,
+        )
+        fig.update_xaxes(range=[0, 1], showticklabels=False, row=1, col=col_idx)
+        fig.update_yaxes(range=[y_lo, y_hi], dtick=1, showgrid=True, gridcolor="#ececec", row=1, col=col_idx)
 
     fig.update_layout(
-        title="Yardstick (FACETS-style)",
-        height=max(550, 28 * max_elements_per_facet + 220 if show_direct_labels else 550),
+        title="Yardstick (FACETS-style text map)",
+        height=max(550, 28 * max(max_elements_per_facet, len(threshold_frame)) + 220 if show_direct_labels else 550),
         template="plotly_white",
         showlegend=False,
         margin=dict(l=90, r=50, t=90, b=80),
+        hovermode="closest",
     )
-    st.plotly_chart(fig, width="stretch")
-    render_chart_guide("wright_map")
+    return fig
 
 
 # ---------------------------------------------------------------------------
@@ -18708,12 +23559,195 @@ def analysis_depth_sidebar_summary(settings: dict) -> str:
     )
 
 
+def _allow_large_hosted_run_override() -> bool:
+    return str(os.environ.get("MFRM_ALLOW_LARGE_HOSTED_RUNS", "")).strip().lower() in {
+        "1", "true", "yes", "on"
+    }
+
+
+def build_estimation_resource_preflight(
+    *,
+    data: pd.DataFrame,
+    person_col: str,
+    score_col: str,
+    facet_cols: list[str],
+    model_type: str,
+    est_method: str,
+    maxit: int,
+    quad_points: int,
+    bias_mode: str,
+    bias_pairs_available: list[tuple[str, str]],
+    selected_bias_pair: tuple[str, str] | None,
+    compute_strict_marginal: bool,
+    strict_marginal_pairwise: bool,
+    strict_marginal_max_pair_cells: int,
+    generate_figure_exports: bool,
+) -> dict:
+    """Estimate hosted-runtime cost before the user starts a fit."""
+    if not isinstance(data, pd.DataFrame) or data.empty:
+        return {"block": False, "rows": []}
+
+    n_obs = int(len(data))
+    n_persons = int(data[person_col].nunique(dropna=True)) if person_col in data.columns else 0
+    facet_level_counts = {
+        str(facet): int(data[facet].nunique(dropna=True))
+        for facet in facet_cols
+        if facet in data.columns
+    }
+    score_unique = (
+        int(pd.to_numeric(data[score_col], errors="coerce").dropna().nunique())
+        if score_col in data.columns else 0
+    )
+    n_steps = 0
+    if score_unique >= 2:
+        if model_type in {"PCM", "GPCM"}:
+            step_levels = max(facet_level_counts.values(), default=1)
+            n_steps = max(0, score_unique - 1) * step_levels
+            if model_type == "GPCM":
+                n_steps += step_levels
+        else:
+            n_steps = max(0, score_unique - 1)
+    approx_params = (
+        (n_persons if est_method == "JMLE" else 0)
+        + sum(facet_level_counts.values())
+        + int(n_steps)
+    )
+    mml_evals = int(n_obs) * int(quad_points or 0) if est_method == "MML" else 0
+
+    pair_counts = {"Person": n_persons, **facet_level_counts}
+    if bias_mode == "All facet pairs":
+        bias_pairs = list(bias_pairs_available or [])
+    elif bias_mode == "Selected pair" and selected_bias_pair is not None:
+        bias_pairs = [selected_bias_pair]
+    else:
+        bias_pairs = []
+    bias_cells = int(sum(
+        max(0, pair_counts.get(str(a), 0)) * max(0, pair_counts.get(str(b), 0))
+        for a, b in bias_pairs
+    ))
+
+    rows: list[dict] = []
+
+    def add(metric: str, value: object, limit: object, status: str, action: str) -> None:
+        rows.append({
+            "Metric": metric,
+            "Value": value,
+            "HostedLimit": limit,
+            "Status": status,
+            "Action": action,
+        })
+
+    add(
+        "Observations",
+        f"{n_obs:,}",
+        f"{ESTIMATION_HOSTED_MAX_OBS:,}",
+        "Block" if n_obs > ESTIMATION_HOSTED_MAX_OBS else ("Review" if n_obs > 50_000 else "OK"),
+        "Sample rows, run Fast preview first, or run locally for large datasets.",
+    )
+    add(
+        "Approx. free parameters",
+        f"{approx_params:,}",
+        f"{ESTIMATION_HOSTED_MAX_PARAMETERS:,}",
+        "Block" if approx_params > ESTIMATION_HOSTED_MAX_PARAMETERS else ("Review" if approx_params > 12_000 else "OK"),
+        "Drop high-cardinality facets or avoid treating row IDs as facets.",
+    )
+    if est_method == "MML":
+        add(
+            "MML quadrature evaluations",
+            f"{mml_evals:,}",
+            f"{ESTIMATION_HOSTED_MAX_MML_EVALS:,}",
+            "Block" if mml_evals > ESTIMATION_HOSTED_MAX_MML_EVALS else ("Review" if mml_evals > 2_000_000 else "OK"),
+            "Reduce quadrature points, use JMLE preview, or run MML locally.",
+        )
+    if bias_pairs:
+        add(
+            "Bias/interaction candidate cells",
+            f"{bias_cells:,}",
+            f"{ESTIMATION_HOSTED_MAX_BIAS_CELLS:,}",
+            "Block" if bias_cells > ESTIMATION_HOSTED_MAX_BIAS_CELLS else ("Review" if bias_cells > 75_000 else "OK"),
+            "Use Selected pair or Skip for the first run; avoid all-pair Person interactions on large data.",
+        )
+    if compute_strict_marginal and strict_marginal_pairwise:
+        add(
+            "Strict marginal pairwise cap",
+            f"{strict_marginal_max_pair_cells:,}",
+            "800 recommended",
+            "Review" if strict_marginal_max_pair_cells > 2_000 else "OK",
+            "Keep pairwise marginal diagnostics capped for hosted use.",
+        )
+    if maxit > 3_000 and n_obs > 25_000:
+        add(
+            "Max iterations",
+            f"{maxit:,}",
+            "3,000 with large data",
+            "Review",
+            "Use a smaller preview first; high maxit on large designs can pin the hosted worker.",
+        )
+    if generate_figure_exports and n_obs > 50_000:
+        add(
+            "Figure export bundle",
+            "enabled",
+            "large-data caution",
+            "Review",
+            "Disable figure export for preview runs; generate publication figures after a stable fit.",
+        )
+
+    hard_block = any(row["Status"] == "Block" for row in rows)
+    override = _allow_large_hosted_run_override()
+    return {
+        "block": bool(hard_block and not override),
+        "override": override,
+        "rows": rows,
+        "approx_params": approx_params,
+        "mml_evals": mml_evals,
+        "bias_cells": bias_cells,
+    }
+
+
+def estimation_resource_preflight_status(preflight: dict) -> str:
+    rows = preflight.get("rows", []) if isinstance(preflight, dict) else []
+    if not rows:
+        return "OK"
+    statuses = {str(row.get("Status", "OK")) for row in rows if isinstance(row, dict)}
+    if "Block" in statuses and not preflight.get("override"):
+        return "Block"
+    if "Review" in statuses or preflight.get("override"):
+        return "Review"
+    return "OK"
+
+
+def should_render_estimation_resource_preflight(preflight: dict) -> bool:
+    """Avoid alert fatigue: only surface resource budget details when action is needed."""
+    return estimation_resource_preflight_status(preflight) != "OK"
+
+
+def render_estimation_resource_preflight(preflight: dict) -> None:
+    rows = preflight.get("rows", []) if isinstance(preflight, dict) else []
+    if not rows:
+        return
+    frame = pd.DataFrame(rows)
+    status = estimation_resource_preflight_status(preflight)
+    if status == "OK":
+        st.caption(t("resource_preflight.ok_caption"))
+        return
+    if status == "Block":
+        st.error(
+            t("resource_preflight.blocked_error")
+        )
+    else:
+        st.warning(
+            t("resource_preflight.review_warning")
+        )
+    with st.expander(t("resource_preflight.details_expander"), expanded=(status == "Block")):
+        st.dataframe(frame, width="stretch", hide_index=True)
+
+
 _RUN_HISTORY_KEY = "_facets_mode_run_history"
-# Cap the deep-copied snapshot stack at 5 entries (was 10). On Streamlit
-# Community Cloud (~1 GB) each deepcopy can be 50+ MB for a 1000-person
-# dataset, so 10 full copies plus the live output_snapshot can cause
-# silent OOM. Five is still more than enough for "compare my last few
-# tries" while leaving memory headroom.
+# Full restorable snapshots are opt-in because they duplicate row-level
+# outputs and can retain identifiable learner/rater data in session memory.
+_RUN_HISTORY_STORE_SNAPSHOTS_KEY = "_run_history_store_full_snapshots"
+# Keep compact run metadata for the last few analyses. When users opt into
+# full snapshots, the same cap also bounds the duplicated result bundles.
 _RUN_HISTORY_MAX = 5
 
 # Config-import whitelist (v0.2.6-beta extraction): sidebar-replayable
@@ -18732,6 +23766,7 @@ _CONFIG_JSON_IMPORT_WHITELIST: frozenset[str] = frozenset({
     "facet_regularization_ui_mode", "facet_regularization_specs",
     "compute_residual_pca", "compute_strict_marginal",
     "compute_plausible_values", "n_plausible_values",
+    "visualization_preferences",
 })
 
 
@@ -18759,12 +23794,17 @@ def _run_history_extract_summary(output: dict) -> tuple[bool, int, str, str]:
     return converged, iters, model, method
 
 
-def record_run_in_history(*, output: dict, elapsed_sec: float) -> dict:
-    """Push a compact snapshot of this run onto the session history stack.
+def _history_entry_has_snapshot(entry: dict) -> bool:
+    return bool(isinstance(entry, dict) and isinstance(entry.get("output_snapshot"), dict) and entry.get("output_snapshot"))
 
-    Keeps at most _RUN_HISTORY_MAX entries, dropping oldest first. The
-    snapshot is a deep copy of `facets_mode_output` so past runs can be
-    restored losslessly. Returns the entry just recorded.
+
+def record_run_in_history(*, output: dict, elapsed_sec: float) -> dict:
+    """Push a compact metadata entry for this run onto the session history stack.
+
+    Keeps at most _RUN_HISTORY_MAX entries, dropping oldest first. Full
+    result snapshots are stored only when the user opts in, because those
+    snapshots duplicate row-level outputs and identifiers in Streamlit
+    session state. Returns the entry just recorded.
     """
     import copy as _copy
     import datetime as _dt
@@ -18784,6 +23824,7 @@ def record_run_in_history(*, output: dict, elapsed_sec: float) -> dict:
     like_row = extract_run_likelihood_row(output)
     result_cfg = (output.get("result", {}) or {}).get("config", {}) if isinstance(output, dict) else {}
     reg_label = "On" if isinstance(result_cfg, dict) and result_cfg.get("facet_regularization_enabled") else "Off"
+    store_snapshot = bool(st.session_state.get(_RUN_HISTORY_STORE_SNAPSHOTS_KEY, False))
 
     entry = {
         "run_id": f"run-{_dt.datetime.now().strftime('%Y%m%d-%H%M%S-%f')}",
@@ -18802,7 +23843,8 @@ def record_run_in_history(*, output: dict, elapsed_sec: float) -> dict:
         "aic": like_row.get("AIC", np.nan),
         "bic": like_row.get("BIC", np.nan),
         "k_params": like_row.get("KParams", np.nan),
-        "output_snapshot": _copy.deepcopy(output) if isinstance(output, dict) else {},
+        "snapshot_available": bool(store_snapshot and isinstance(output, dict)),
+        "output_snapshot": _copy.deepcopy(output) if store_snapshot and isinstance(output, dict) else {},
     }
     history = list(st.session_state.get(_RUN_HISTORY_KEY, []))
     history.append(entry)
@@ -18821,7 +23863,7 @@ def restore_run_from_history(run_id: str) -> bool:
     """Restore a past run's output snapshot into the live facets_mode_output."""
     import copy as _copy
     for entry in get_run_history():
-        if entry.get("run_id") == run_id:
+        if entry.get("run_id") == run_id and _history_entry_has_snapshot(entry):
             st.session_state["facets_mode_output"] = _copy.deepcopy(entry["output_snapshot"])
             st.session_state["_facets_mode_restored_snapshot"] = {
                 "run_id": entry.get("run_id"),
@@ -18850,8 +23892,17 @@ def render_run_history_panel() -> None:
         expanded=False,
     ):
         st.caption(
-            "Recent analyses in this session. Click **Restore** to swap back to a past "
-            "result — the dashboard, tabs, and report will all rebuild from the snapshot."
+            "Recent analyses in this session. By default this stores compact metadata only "
+            "to avoid duplicating private row-level outputs in memory."
+        )
+        st.checkbox(
+            "Store restorable full snapshots for future runs",
+            value=bool(st.session_state.get(_RUN_HISTORY_STORE_SNAPSHOTS_KEY, False)),
+            key=_RUN_HISTORY_STORE_SNAPSHOTS_KEY,
+            help=(
+                "Opt in only for local, controlled sessions. Full snapshots enable Restore "
+                "and Compare, but duplicate result tables and identifiers in Streamlit session state."
+            ),
         )
         # Compact table view (newest first)
         display_rows = []
@@ -18869,6 +23920,7 @@ def render_run_history_panel() -> None:
                 "LogLik": h.get("loglik", np.nan),
                 "AIC": h.get("aic", np.nan),
                 "BIC": h.get("bic", np.nan),
+                "restorable": _history_entry_has_snapshot(h),
                 "elapsed_sec": round(h["elapsed_sec"], 2),
             })
         compact_history = pd.DataFrame(display_rows)
@@ -18911,17 +23963,24 @@ def render_run_history_panel() -> None:
         # Per-entry Restore buttons
         for entry in reversed(history):
             cols = st.columns([5, 1])
+            has_snapshot = _history_entry_has_snapshot(entry)
             label = (
                 f"**{entry['timestamp']}** — {entry['model']} / {entry['method']} — "
                 f"{'✅ converged' if entry['converged'] else '❌ not converged'}"
                 f" — {entry['elapsed_sec']:.1f}s"
+                f"{'' if has_snapshot else ' — metadata only'}"
             )
             cols[0].markdown(label)
             if cols[1].button(
                 "Restore",
                 key=f"restore_{entry['run_id']}",
                 use_container_width=True,
-                help="Load this run's results into the current view.",
+                disabled=not has_snapshot,
+                help=(
+                    "Load this run's results into the current view."
+                    if has_snapshot else
+                    "This entry has compact metadata only. Enable full snapshots before a future run to restore it."
+                ),
             ):
                 if restore_run_from_history(entry["run_id"]):
                     st.success(f"Restored run from {entry['timestamp']}")
@@ -19148,7 +24207,7 @@ def render_comparison_panel(snap_a: dict, snap_b: dict) -> None:
 
 def render_comparison_selector() -> None:
     """Expander that lets the user pick two runs from history and compare."""
-    history = get_run_history()
+    history = [h for h in get_run_history() if _history_entry_has_snapshot(h)]
     if len(history) < 2:
         return
     with st.expander("Compare two runs", expanded=False):
@@ -19515,6 +24574,169 @@ def build_readiness_report(
     }
 
 
+def _input_readiness_priority_check(report: dict) -> dict:
+    """Return the highest-priority pre-run readiness check."""
+    checks = report.get("checks", []) if isinstance(report, dict) else []
+    if not isinstance(checks, list) or not checks:
+        return {}
+    for severity in ("issue", "warning"):
+        for check in checks:
+            if isinstance(check, dict) and str(check.get("severity")) == severity:
+                return check
+    for check in checks:
+        if isinstance(check, dict):
+            return check
+    return {}
+
+
+def _input_readiness_action_key(check_name: str, severity: str) -> str:
+    """Map a readiness check to the localized next action users should take."""
+    name = str(check_name or "")
+    if severity == "ok":
+        return "ready_to_run"
+    if name == "data":
+        return "load_data"
+    if name == "column_overlap":
+        return "fix_column_overlap"
+    if name == "n_facets":
+        return "select_two_facets"
+    if name == "n_persons":
+        return "fix_person_column"
+    if name == "score":
+        return "fix_score_column"
+    if name == "likelihood_rows":
+        return "inspect_likelihood_rows"
+    if name == "n_observations":
+        return "review_sample_size"
+    if name == "coverage":
+        return "review_coverage"
+    if name.startswith("facet:"):
+        return "review_facet_column"
+    if name.startswith(("zero_variance", "scores_", "ceiling_", "floor_", "person_")):
+        return "review_score_patterns"
+    return "review_flagged_check"
+
+
+def _input_readiness_open_key(action_key: str) -> str:
+    """Map the readiness action to the UI surface where the user should look."""
+    return {
+        "ready_to_run": "run_button",
+        "load_data": "data_source",
+        "fix_column_overlap": "column_mapping",
+        "select_two_facets": "column_mapping",
+        "fix_person_column": "column_mapping",
+        "fix_score_column": "column_mapping",
+        "inspect_likelihood_rows": "response_audit",
+        "review_sample_size": "data_source",
+        "review_coverage": "data_shape",
+        "review_facet_column": "column_mapping",
+        "review_score_patterns": "readiness_detail",
+        "review_flagged_check": "readiness_detail",
+    }.get(action_key, "readiness_detail")
+
+
+def _input_readiness_guidance_key(check_name: str) -> str:
+    """Map a readiness check to stable explanation keys for the detail table."""
+    name = str(check_name or "")
+    if name in {
+        "data",
+        "column_overlap",
+        "n_observations",
+        "n_persons",
+        "score",
+        "likelihood_rows",
+        "n_facets",
+        "coverage",
+    }:
+        return name
+    if name.startswith("facet:"):
+        return "facet"
+    if name == "scores_negative":
+        return "score_negative"
+    if name.startswith("scores_"):
+        return "score_range"
+    if name == "zero_variance_persons":
+        return "zero_variance_persons"
+    if name.startswith("zero_variance_"):
+        return "zero_variance_facet"
+    if name.startswith("person_"):
+        return "person_frequency"
+    if name in {"ceiling_saturation", "floor_saturation"}:
+        return "score_saturation"
+    return "flagged_check"
+
+
+def build_input_readiness_next_action_table(report: dict) -> pd.DataFrame:
+    """Return a one-row pre-run readiness summary from a readiness report."""
+    overall = str(report.get("overall", "ok")) if isinstance(report, dict) else "ok"
+    priority = _input_readiness_priority_check(report)
+    severity = str(priority.get("severity", overall) or overall)
+    check_name = str(priority.get("name", "") or "")
+    action_key = _input_readiness_action_key(check_name, severity)
+    open_key = _input_readiness_open_key(action_key)
+    reason = str(priority.get("headline", "") or "").strip()
+    if not reason:
+        reason = t(f"input_readiness.reason_{severity}", default=t("input_readiness.reason_ok"))
+
+    columns = [
+        t("input_readiness.col_status"),
+        t("input_readiness.col_next_action"),
+        t("input_readiness.col_open"),
+        t("input_readiness.col_reason"),
+    ]
+    return pd.DataFrame([{
+        columns[0]: t(f"input_readiness.status_{severity}", default=severity),
+        columns[1]: t(f"input_readiness.action_{action_key}"),
+        columns[2]: t(f"input_readiness.open_{open_key}"),
+        columns[3]: reason,
+    }], columns=columns)
+
+
+def build_input_readiness_detail_table(checks: list[dict]) -> pd.DataFrame:
+    """Return all pre-run readiness checks in a guided, severity-first table."""
+    columns = [
+        t("input_readiness.col_status"),
+        t("input_readiness.col_check"),
+        t("input_readiness.col_meaning"),
+        t("input_readiness.col_impact"),
+        t("input_readiness.col_next_action"),
+        t("input_readiness.col_open"),
+        t("input_readiness.col_technical_detail"),
+    ]
+    if not isinstance(checks, list) or not checks:
+        return pd.DataFrame(columns=columns)
+
+    severity_order = {"issue": 0, "warning": 1, "ok": 2}
+    ordered_checks = sorted(
+        enumerate(checks),
+        key=lambda item: (
+            severity_order.get(str(item[1].get("severity", "ok")), 3),
+            item[0],
+        ),
+    )
+    rows: list[dict] = []
+    for _, check in ordered_checks:
+        if not isinstance(check, dict):
+            continue
+        severity = str(check.get("severity", "ok") or "ok")
+        check_name = str(check.get("name", "") or "")
+        action_key = _input_readiness_action_key(check_name, severity)
+        open_key = _input_readiness_open_key(action_key)
+        guidance_key = _input_readiness_guidance_key(check_name)
+        icon = _READINESS_ICON.get(severity, "⚪")
+        text = _READINESS_TEXT_LABEL.get(severity, severity.upper())
+        rows.append({
+            columns[0]: f"{icon} [{text}] {t(f'input_readiness.status_{severity}', default=severity)}",
+            columns[1]: str(check.get("headline", "") or check_name or "-"),
+            columns[2]: t(f"input_readiness.guidance_{guidance_key}_meaning"),
+            columns[3]: t(f"input_readiness.guidance_{guidance_key}_impact"),
+            columns[4]: t(f"input_readiness.action_{action_key}"),
+            columns[5]: t(f"input_readiness.open_{open_key}"),
+            columns[6]: str(check.get("detail", "") or "-"),
+        })
+    return pd.DataFrame(rows, columns=columns)
+
+
 def detect_data_outliers(
     data: pd.DataFrame,
     *,
@@ -19709,38 +24931,57 @@ def render_readiness_panel(report: dict) -> None:
 
     if overall == "ok":
         st.success(
-            f"{icon} **[{text}] Ready to run.** All {len(checks)} data-quality checks passed."
+            t(
+                "input_readiness.panel_ok_template",
+                icon=icon,
+                status=text,
+                n_checks=len(checks),
+            )
         )
-        with st.expander("Show data quality detail", expanded=False):
+        st.caption(t("input_readiness.next_action_caption"))
+        st.dataframe(build_input_readiness_next_action_table(report), width="stretch", hide_index=True)
+        with st.expander(t("input_readiness.detail_expander_ok"), expanded=False):
             _render_readiness_checklist(checks)
         return
 
     if overall == "warning":
         n_w = report.get("n_warnings", 0)
         st.warning(
-            f"{icon} **[{text}] Proceed with caution.** {n_w} warning(s) found — "
-            "you can still run, but results may be weak. See details below."
+            t(
+                "input_readiness.panel_warning_template",
+                icon=icon,
+                status=text,
+                n_warnings=n_w,
+            )
         )
-        with st.expander("Show all checks", expanded=True):
+        st.caption(t("input_readiness.next_action_caption"))
+        st.dataframe(build_input_readiness_next_action_table(report), width="stretch", hide_index=True)
+        with st.expander(t("input_readiness.detail_expander_action_needed"), expanded=True):
             _render_readiness_checklist(checks)
         return
 
     # issue
     st.error(
-        f"{icon} **[{text}] Not ready to run.** {report.get('n_issues', 0)} issue(s) will block "
-        "or degrade estimation. Fix the flagged items below before clicking Run."
+        t(
+            "input_readiness.panel_issue_template",
+            icon=icon,
+            status=text,
+            n_issues=report.get("n_issues", 0),
+        )
     )
-    with st.expander("Show all checks", expanded=True):
+    st.caption(t("input_readiness.next_action_caption"))
+    st.dataframe(build_input_readiness_next_action_table(report), width="stretch", hide_index=True)
+    with st.expander(t("input_readiness.detail_expander_action_needed"), expanded=True):
         _render_readiness_checklist(checks)
 
 
 def _render_readiness_checklist(checks: list[dict]) -> None:
-    for c in checks:
-        severity = c.get("severity", "ok")
-        icon = _READINESS_ICON.get(severity, "⚪")
-        text = _READINESS_TEXT_LABEL.get(severity, "")
-        label = f"[{text}] " if text else ""
-        st.markdown(f"{icon} **{label}{c['headline']}** — {c['detail']}")
+    st.caption(t("input_readiness.detail_caption"))
+    detail_table = build_input_readiness_detail_table(checks)
+    if detail_table.empty:
+        st.caption(t("input_readiness.detail_empty"))
+        return
+    st.dataframe(detail_table, width="stretch", hide_index=True)
 
 
 # ---------------------------------------------------------------------------
@@ -19755,9 +24996,19 @@ def _render_readiness_checklist(checks: list[dict]) -> None:
 # the same (Author, Year) form you see elsewhere in this file.
 
 _APA_REFERENCE_LIBRARY: dict[str, str] = {
+    "Andersen_1973": (
+        "Andersen, E. B. (1973). A goodness of fit test for the Rasch model. "
+        "Psychometrika, 38(1), 123–140. https://doi.org/10.1007/BF02291180"
+    ),
     "Andrich_1978": (
         "Andrich, D. (1978). A rating formulation for ordered response categories. "
         "Psychometrika, 43(4), 561–573. https://doi.org/10.1007/BF02293814"
+    ),
+    "Aryadoust_Ng_Sayama_2021": (
+        "Aryadoust, V., Ng, L. Y., & Sayama, H. (2021). A comprehensive "
+        "review of Rasch measurement in language assessment: Recommendations "
+        "and guidelines for research. Language Testing, 38(1), 6–40. "
+        "https://doi.org/10.1177/0265532220927487"
     ),
     "Bachman_Palmer_1996": (
         "Bachman, L. F., & Palmer, A. S. (1996). Language testing in practice: "
@@ -19778,10 +25029,26 @@ _APA_REFERENCE_LIBRARY: dict[str, str] = {
         "in a microcomputer environment. Applied Psychological Measurement, 6(4), "
         "431–444. https://doi.org/10.1177/014662168200600405"
     ),
+    "Boone_Noltemeyer_Yates_2017": (
+        "Boone, W. J., Noltemeyer, A., & Yates, G. (2017). Rasch analysis: "
+        "A primer for school psychology researchers and practitioners. Cogent "
+        "Education, 4(1), 1416898. https://doi.org/10.1080/2331186X.2017.1416898"
+    ),
+    "Buerkner_2021": (
+        "Bürkner, P.-C. (2021). Bayesian item response modeling in R with brms "
+        "and Stan. Journal of Statistical Software, 100(5), 1–54. "
+        "https://doi.org/10.18637/jss.v100.i05"
+    ),
     "Chalmers_2012": (
         "Chalmers, R. P. (2012). mirt: A multidimensional item response theory "
         "package for the R environment. Journal of Statistical Software, 48(6), "
         "1–29. https://doi.org/10.18637/jss.v048.i06"
+    ),
+    "Christensen_Makransky_Horton_2017": (
+        "Christensen, K. B., Makransky, G., & Horton, M. (2017). Critical "
+        "values for Yen's Q3: Identification of local dependence in the Rasch "
+        "model using residual correlations. Applied Psychological Measurement, "
+        "41(3), 178–194. https://doi.org/10.1177/0146621616677520"
     ),
     "DeMars_2006": (
         "DeMars, C. E. (2006). Application of the bi-factor multidimensional "
@@ -19957,6 +25224,12 @@ _APA_REFERENCE_LIBRARY: dict[str, str] = {
         "credit model. Applied Psychological Measurement, 17(4), 351–363. "
         "https://doi.org/10.1177/014662169301700403"
     ),
+    "Mair_Hatzinger_2007": (
+        "Mair, P., & Hatzinger, R. (2007). Extended Rasch modeling: The eRm "
+        "package for the application of item response theory models in R. "
+        "Journal of Statistical Software, 20(9), 1–20. "
+        "https://doi.org/10.18637/jss.v020.i09"
+    ),
     "Myford_Wolfe_2003": (
         "Myford, C. M., & Wolfe, E. W. (2003). Detecting and measuring rater "
         "effects using many-facet Rasch measurement: Part I. Journal of Applied "
@@ -19966,6 +25239,28 @@ _APA_REFERENCE_LIBRARY: dict[str, str] = {
         "Myford, C. M., & Wolfe, E. W. (2004). Detecting and measuring rater "
         "effects using many-facet Rasch measurement: Part II. Journal of Applied "
         "Measurement, 5(2), 189–227."
+    ),
+    "Orlando_Thissen_2000": (
+        "Orlando, M., & Thissen, D. (2000). Likelihood-based item-fit indices "
+        "for dichotomous item response theory models. Applied Psychological "
+        "Measurement, 24(1), 50–64. https://doi.org/10.1177/01466216000241003"
+    ),
+    "Orlando_Thissen_2003": (
+        "Orlando, M., & Thissen, D. (2003). Further investigation of the "
+        "performance of S-X2: An item fit index for use with dichotomous item "
+        "response theory models. Applied Psychological Measurement, 27(4), "
+        "289–298. https://doi.org/10.1177/0146621603027004004"
+    ),
+    "Patz_Junker_Johnson_Mariano_2002": (
+        "Patz, R. J., Junker, B. W., Johnson, M. S., & Mariano, L. T. (2002). "
+        "The hierarchical rater model for rated test items and its application "
+        "to large-scale educational assessment data. Journal of Educational "
+        "and Behavioral Statistics, 27(4), 341–384. "
+        "https://doi.org/10.3102/10769986027004341"
+    ),
+    "Rasch_1980": (
+        "Rasch, G. (1980). Probabilistic models for some intelligence and "
+        "attainment tests. University of Chicago Press. (Original work published 1960)"
     ),
     "Reckase_1979": (
         "Reckase, M. D. (1979). Unifactor latent trait models applied to "
@@ -19977,6 +25272,11 @@ _APA_REFERENCE_LIBRARY: dict[str, str] = {
         "among the bi-factor, the testlet, and a second-order multidimensional "
         "IRT model. Journal of Educational Measurement, 47(3), 361–372. "
         "https://doi.org/10.1111/j.1745-3984.2010.00118.x"
+    ),
+    "Rizopoulos_2006": (
+        "Rizopoulos, D. (2006). ltm: An R package for latent variable modeling "
+        "and item response theory analyses. Journal of Statistical Software, "
+        "17(5), 1–25. https://doi.org/10.18637/jss.v017.i05"
     ),
     "Schwarz_1978": (
         "Schwarz, G. (1978). Estimating the dimension of a model. The Annals "
@@ -20022,10 +25322,10 @@ _APA_REFERENCE_LIBRARY: dict[str, str] = {
         "for rubric-based performance assessment. Behaviormetrika, 48(2), "
         "425–457. https://doi.org/10.1007/s41237-021-00144-w"
     ),
-    "Uto_2022": (
-        "Uto, M. (2022). A Bayesian many-facet Rasch model with Markov modeling "
-        "for rater severity drift. Behavior Research Methods, 54(6), 2977–2993. "
-        "https://doi.org/10.3758/s13428-022-01803-w"
+    "Uto_2023": (
+        "Uto, M. (2023). A Bayesian many-facet Rasch model with Markov modeling "
+        "for rater severity drift. Behavior Research Methods, 55, 3910–3928. "
+        "https://doi.org/10.3758/s13428-022-01997-z"
     ),
     "Uto_Ueno_2020": (
         "Uto, M., & Ueno, M. (2020). A generalized many-facet Rasch model and "
@@ -20054,6 +25354,11 @@ _APA_REFERENCE_LIBRARY: dict[str, str] = {
         "detecting rater centrality. Journal of Applied Measurement, 16(3), "
         "228–241."
     ),
+    "Warm_1989": (
+        "Warm, T. A. (1989). Weighted likelihood estimation of ability in item "
+        "response theory. Psychometrika, 54(3), 427–450. "
+        "https://doi.org/10.1007/BF02294627"
+    ),
     "Wright_Linacre_1994": (
         "Wright, B. D., & Linacre, J. M. (1994). Reasonable mean-square fit "
         "values. Rasch Measurement Transactions, 8(3), 370."
@@ -20071,6 +25376,12 @@ _APA_REFERENCE_LIBRARY: dict[str, str] = {
         "ratio for testing composite hypotheses. The Annals of Mathematical "
         "Statistics, 9(1), 60–62. https://doi.org/10.1214/aoms/1177732360"
     ),
+    "Yen_1984": (
+        "Yen, W. M. (1984). Effects of local item dependence on the fit and "
+        "equating performance of the three-parameter logistic model. Applied "
+        "Psychological Measurement, 8(2), 125–145. "
+        "https://doi.org/10.1177/014662168400800201"
+    ),
 }
 
 
@@ -20079,7 +25390,9 @@ _APA_REFERENCE_LIBRARY: dict[str, str] = {
 # what's cited, and return only the used subset.
 _CITATION_TO_KEY: dict[str, str] = {
     "(Akaike, 1974)": "Akaike_1974",
+    "(Andersen, 1973)": "Andersen_1973",
     "(Andrich, 1978)": "Andrich_1978",
+    "(Aryadoust, Ng & Sayama, 2021)": "Aryadoust_Ng_Sayama_2021",
     "(Brennan, 2001)": "Brennan_2001",
     "(Burnham & Anderson, 2002)": "Burnham_Anderson_2002",
     "(Cronbach, Gleser, Nanda & Rajaratnam, 1972)": "Cronbach_Gleser_Nanda_Rajaratnam_1972",
@@ -20087,7 +25400,10 @@ _CITATION_TO_KEY: dict[str, str] = {
     "(Bock & Aitkin, 1981)": "Bock_Aitkin_1981",
     "(Bradlow, Wainer & Wang, 1999)": "Bradlow_Wainer_Wang_1999",
     "(Bock & Mislevy, 1982)": "Bock_Mislevy_1982",
+    "(Boone, Noltemeyer & Yates, 2017)": "Boone_Noltemeyer_Yates_2017",
+    "(Bürkner, 2021)": "Buerkner_2021",
     "(Chalmers, 2012)": "Chalmers_2012",
+    "(Christensen, Makransky & Horton, 2017)": "Christensen_Makransky_Horton_2017",
     "(DeMars, 2006)": "DeMars_2006",
     "(Downing & Yudkowsky, 2009)": "Downing_Yudkowsky_2009",
     "(Drasgow, Levine & Williams, 1985)": "Drasgow_Levine_Williams_1985",
@@ -20119,12 +25435,18 @@ _CITATION_TO_KEY: dict[str, str] = {
     "(Hurvich & Tsai, 1989)": "Hurvich_Tsai_1989",
     "(Cramer, 1946)": "Cramer_1946",
     "(Louis, 1982)": "Louis_1982",
+    "(Mair & Hatzinger, 2007)": "Mair_Hatzinger_2007",
     "(Muraki, 1992)": "Muraki_1992",
     "(Muraki, 1993)": "Muraki_1993",
     "(Myford & Wolfe, 2003)": "Myford_Wolfe_2003",
     "(Myford & Wolfe, 2004)": "Myford_Wolfe_2004",
+    "(Orlando & Thissen, 2000)": "Orlando_Thissen_2000",
+    "(Orlando & Thissen, 2003)": "Orlando_Thissen_2003",
+    "(Patz, Junker, Johnson & Mariano, 2002)": "Patz_Junker_Johnson_Mariano_2002",
+    "(Rasch, 1980)": "Rasch_1980",
     "(Reckase, 1979)": "Reckase_1979",
     "(Rijmen, 2010)": "Rijmen_2010",
+    "(Rizopoulos, 2006)": "Rizopoulos_2006",
     "(Schwarz, 1978)": "Schwarz_1978",
     "(Smith, 2000)": "Smith_2000",
     "(Smith, 2002)": "Smith_2002",
@@ -20134,17 +25456,38 @@ _CITATION_TO_KEY: dict[str, str] = {
     "(Snijders, 2001)": "Snijders_2001",
     "(Tavakol & Dennick, 2011)": "Tavakol_Dennick_2011",
     "(Uto, 2021)": "Uto_2021",
-    "(Uto, 2022)": "Uto_2022",
+    "(Uto, 2023)": "Uto_2023",
     "(Uto & Ueno, 2020)": "Uto_Ueno_2020",
     "(Wagenmakers, 2007)": "Wagenmakers_2007",
     "(Wainer & Kiely, 1987)": "Wainer_Kiely_1987",
     "(Wilks, 1938)": "Wilks_1938",
     "(Wang, Bradlow & Wainer, 2002)": "Wang_Bradlow_Wainer_2002",
     "(Wolfe & Song, 2015)": "Wolfe_Song_2015",
+    "(Warm, 1989)": "Warm_1989",
     "(Wright & Linacre, 1994)": "Wright_Linacre_1994",
     "(Wright & Masters, 1982)": "Wright_Masters_1982",
     "(Wright & Stone, 1999)": "Wright_Stone_1999",
+    "(Yen, 1984)": "Yen_1984",
 }
+
+
+def _citation_present_in_text(text: str, citation: str) -> bool:
+    """Return True when ``text`` cites ``citation``.
+
+    Accepts both exact one-citation tokens such as ``(Linacre, 1989)`` and
+    multi-source parentheticals such as ``(Rasch, 1980; Linacre, 1989)``.
+    """
+    if citation in text:
+        return True
+    label = str(citation).strip()
+    if not (label.startswith("(") and label.endswith(")")):
+        return False
+    inner = label[1:-1].strip()
+    for match in re.finditer(r"\(([^)]*)\)", str(text)):
+        parts = [part.strip() for part in match.group(1).split(";")]
+        if inner in parts:
+            return True
+    return False
 
 
 def collect_cited_references(text: str) -> list[str]:
@@ -20157,7 +25500,7 @@ def collect_cited_references(text: str) -> list[str]:
     """
     keys_seen: set[str] = set()
     for citation, key in _CITATION_TO_KEY.items():
-        if citation in text and key in _APA_REFERENCE_LIBRARY:
+        if _citation_present_in_text(text, citation) and key in _APA_REFERENCE_LIBRARY:
             keys_seen.add(key)
     entries = [_APA_REFERENCE_LIBRARY[k] for k in keys_seen]
     return sorted(entries)
@@ -20388,12 +25731,26 @@ def build_apa_reference_list(text: str, *, always_include: list[str] | None = No
     """
     keys_seen: set[str] = set()
     for citation, key in _CITATION_TO_KEY.items():
-        if citation in text and key in _APA_REFERENCE_LIBRARY:
+        if _citation_present_in_text(text, citation) and key in _APA_REFERENCE_LIBRARY:
             keys_seen.add(key)
     for key in always_include or []:
         if key in _APA_REFERENCE_LIBRARY:
             keys_seen.add(key)
     return sorted(_APA_REFERENCE_LIBRARY[k] for k in keys_seen)
+
+
+def _reference_keys_from_citation_labels(labels: Iterable[str]) -> list[str]:
+    """Resolve ``Author, Year`` labels used by the APA report to library keys."""
+    keys_seen: set[str] = set()
+    for label in labels:
+        token = str(label).strip()
+        if not token:
+            continue
+        citation = token if token.startswith("(") and token.endswith(")") else f"({token})"
+        key = _CITATION_TO_KEY.get(citation)
+        if key in _APA_REFERENCE_LIBRARY:
+            keys_seen.add(str(key))
+    return sorted(keys_seen)
 
 
 def _cited_reference_keys(text: str, *, always_include: list[str] | None = None) -> list[str]:
@@ -20403,7 +25760,7 @@ def _cited_reference_keys(text: str, *, always_include: list[str] | None = None)
     RIS) always include the same set of references for a given run."""
     keys_seen: set[str] = set()
     for citation, key in _CITATION_TO_KEY.items():
-        if citation in text and key in _APA_REFERENCE_LIBRARY:
+        if _citation_present_in_text(text, citation) and key in _APA_REFERENCE_LIBRARY:
             keys_seen.add(key)
     for key in always_include or []:
         if key in _APA_REFERENCE_LIBRARY:
@@ -20755,6 +26112,7 @@ def build_ris_from_cited(
 # instead of crashing.
 
 _PUBLICATION_DOCUMENT_CORE_REFS: list[str] = [
+    "Rasch_1980",           # Rasch model foundation
     "Andrich_1978",         # RSM
     "Masters_1982",         # PCM
     "Linacre_1989",         # Many-facet Rasch measurement
@@ -21258,13 +26616,15 @@ def _bias_table_caption(model: str | None, table_idx: int) -> str:
             "LR ChiSq is the likelihood-ratio test of bias = 0 with one "
             "degree of freedom (Wilks, 1938); Profile CI is the 95% profile-"
             "likelihood confidence interval (Cox, 1975) holding theta, step "
-            "thresholds, slopes, and other facet estimates fixed."
+            "thresholds, slopes, and other facet estimates fixed. These are "
+            "screening inferences, not full joint-uncertainty intervals."
         )
     return (
         f"Table {table_idx}. Bias / interaction analysis. Bias Size is the "
         "additive bias shift in logits; S.E. is the conditional information "
         "standard error; t and Prob. are the t-test of bias = 0 (Myford & "
-        "Wolfe, 2003)."
+        "Wolfe, 2003). These cellwise statistics are screening prompts and "
+        "do not propagate uncertainty from the rest of the fitted model."
     )
 
 
@@ -22317,6 +27677,65 @@ def run_facets_mode(core: dict, data: pd.DataFrame) -> None:
                 pct=_ci_level_pct_label(_viz_ci_level),
             )
         )
+    with st.sidebar.expander(t("sidebar_estimation.visual_preferences_expander"), expanded=False):
+        st.selectbox(
+            t("sidebar_estimation.visual_theme_label"),
+            list(VISUAL_THEME_OPTIONS),
+            index=list(VISUAL_THEME_OPTIONS).index(VISUAL_THEME_DEFAULT),
+            key="visual_theme",
+            help=t("sidebar_estimation.visual_theme_help"),
+        )
+        st.selectbox(
+            t("sidebar_estimation.visual_label_policy_label"),
+            list(VISUAL_LABEL_POLICY_OPTIONS),
+            index=list(VISUAL_LABEL_POLICY_OPTIONS).index(VISUAL_LABEL_POLICY_DEFAULT),
+            key="visual_label_policy",
+            help=t("sidebar_estimation.visual_label_policy_help"),
+        )
+        st.slider(
+            t("sidebar_estimation.visual_base_font_size_label"),
+            min_value=9,
+            max_value=22,
+            value=VISUAL_BASE_FONT_SIZE_DEFAULT,
+            step=1,
+            key="visual_base_font_size",
+            help=t("sidebar_estimation.visual_base_font_size_help"),
+        )
+        st.slider(
+            t("sidebar_estimation.visual_label_max_chars_label"),
+            min_value=8,
+            max_value=96,
+            value=VISUAL_LABEL_MAX_CHARS_DEFAULT,
+            step=2,
+            key="visual_label_max_chars",
+            help=t("sidebar_estimation.visual_label_max_chars_help"),
+        )
+        st.slider(
+            t("sidebar_estimation.visual_figure_width_label"),
+            min_value=640,
+            max_value=1600,
+            value=VISUAL_FIGURE_WIDTH_DEFAULT,
+            step=20,
+            key="visual_figure_width",
+            help=t("sidebar_estimation.visual_figure_width_help"),
+        )
+        st.slider(
+            t("sidebar_estimation.visual_figure_min_height_label"),
+            min_value=PUBLICATION_FIGURE_MIN_HEIGHT,
+            max_value=PUBLICATION_FIGURE_MAX_HEIGHT,
+            value=VISUAL_FIGURE_MIN_HEIGHT_DEFAULT,
+            step=20,
+            key="visual_figure_min_height",
+            help=t("sidebar_estimation.visual_figure_min_height_help"),
+        )
+        st.selectbox(
+            t("sidebar_estimation.visual_caption_detail_label"),
+            list(VISUAL_CAPTION_DETAIL_OPTIONS),
+            index=list(VISUAL_CAPTION_DETAIL_OPTIONS).index(VISUAL_CAPTION_DETAIL_DEFAULT),
+            key="visual_caption_detail",
+            help=t("sidebar_estimation.visual_caption_detail_help"),
+        )
+        st.caption(t("sidebar_estimation.visual_preferences_caption"))
 
     # Missing value recoding
     data = missing_value_recoding(data, score_col)
@@ -23061,6 +28480,23 @@ def run_facets_mode(core: dict, data: pd.DataFrame) -> None:
         analysis_depth=analysis_depth,
         workflow_mode=workflow_mode,
     )
+    resource_preflight = build_estimation_resource_preflight(
+        data=data,
+        person_col=person_col,
+        score_col=score_col,
+        facet_cols=list(facet_cols),
+        model_type=model_type,
+        est_method=est_method,
+        maxit=maxit,
+        quad_points=quad_points,
+        bias_mode=bias_mode,
+        bias_pairs_available=bias_pairs_available,
+        selected_bias_pair=selected_bias_pair,
+        compute_strict_marginal=compute_strict_marginal,
+        strict_marginal_pairwise=strict_marginal_pairwise,
+        strict_marginal_max_pair_cells=strict_marginal_max_pair_cells,
+        generate_figure_exports=generate_figure_exports,
+    )
 
     current_input_data_fingerprint = dataframe_fingerprint(data)
     current_anchor_source_fingerprint = table_source_fingerprint(
@@ -23111,6 +28547,8 @@ def run_facets_mode(core: dict, data: pd.DataFrame) -> None:
         render_response_data_audit_panel(_response_data_audit, expanded=False, context="pre")
     except Exception:  # pragma: no cover - readiness is a UX helper
         pass
+    if should_render_estimation_resource_preflight(resource_preflight):
+        render_estimation_resource_preflight(resource_preflight)
 
     # Estimation time warning
     run_clicked = st.sidebar.button(t("sidebar_perf.run_button"), type="primary")
@@ -23127,6 +28565,9 @@ def run_facets_mode(core: dict, data: pd.DataFrame) -> None:
             return
         if rating_min is not None and rating_max is not None and rating_max <= rating_min:
             st.error("Max category must be larger than min category.")
+            return
+        if resource_preflight.get("block"):
+            render_estimation_resource_preflight(resource_preflight)
             return
 
         n_obs = len(data)
@@ -23209,6 +28650,7 @@ def run_facets_mode(core: dict, data: pd.DataFrame) -> None:
                     "selected_bias_pair": list(selected_bias_pair) if selected_bias_pair is not None else None,
                     "render_interactive_plots": bool(render_interactive_plots),
                     "generate_figure_exports": bool(generate_figure_exports),
+                    "visualization_preferences": get_visualization_preferences(),
                     "compute_strict_marginal": bool(compute_strict_marginal),
                     "strict_marginal_pairwise": bool(strict_marginal_pairwise),
                     "strict_marginal_max_pair_cells": int(strict_marginal_max_pair_cells),
@@ -23343,6 +28785,7 @@ def run_facets_mode(core: dict, data: pd.DataFrame) -> None:
                 "_selected_bias_pair": selected_bias_pair,
                 "_render_interactive_plots": bool(render_interactive_plots),
                 "_generate_figure_exports": bool(generate_figure_exports),
+                "_visualization_preferences": get_visualization_preferences(),
                 "_input_data_fingerprint": current_input_data_fingerprint,
                 "_anchor_source_fingerprint": current_anchor_source_fingerprint,
                 "_group_anchor_source_fingerprint": current_group_anchor_source_fingerprint,
@@ -23416,7 +28859,7 @@ def run_facets_mode(core: dict, data: pd.DataFrame) -> None:
                     "- **Data format**: Verify that score and facet columns contain the expected values."
                 )
             with st.expander("Technical details"):
-                st.exception(exc)
+                render_exception_details(exc)
             return
 
     out = st.session_state.get("facets_mode_output")
@@ -23601,26 +29044,47 @@ def run_facets_mode(core: dict, data: pd.DataFrame) -> None:
                              out.get("score_col", score_col),
                              core)
 
-    # --- First-read guide: open only when interpretation should pause. ---
-    # Returning users get the result tabs quickly when the run is clean, while
-    # beginners see the checklist automatically if convergence or caution rows
-    # need attention before interpretation.
+    essential_mode = st.session_state.get("app_view_density", "Essential") == "Essential"
+
+    # --- First-read guide: Essential shows a compact action plan above the tabs;
+    # Full keeps the established collapsible first-read checklist.
     try:
         first_read_rows = build_first_read_guide_rows(
             result, diagnostics, out.get("all_bias_results", {})
         )
     except Exception:  # pragma: no cover - UX helper must not break results
         first_read_rows = []
-    with st.expander(
-        "Where to look first — first-read guide",
-        expanded=first_read_guide_should_expand(first_read_rows),
-    ):
-        _show_first_read_guide(
+    guided_action_plan = pd.DataFrame()
+    if essential_mode:
+        try:
+            guided_action_plan = build_guided_action_plan(
+                result, diagnostics, out.get("all_bias_results", {})
+            )
+        except Exception:  # pragma: no cover - UX helper must not break results
+            guided_action_plan = pd.DataFrame()
+    if essential_mode:
+        _render_guided_goal_router(action_plan=guided_action_plan, key_suffix="overview")
+        st.subheader(t("guided.overview_subheader"))
+        st.caption(t("guided.overview_caption"))
+        _render_guided_action_plan(
             result,
             diagnostics,
             out.get("all_bias_results", {}),
-            rows=first_read_rows,
+            expanded_details=False,
+            key_suffix="overview",
+            plan=guided_action_plan,
         )
+    else:
+        with st.expander(
+            "Where to look first — first-read guide",
+            expanded=first_read_guide_should_expand(first_read_rows),
+        ):
+            _show_first_read_guide(
+                result,
+                diagnostics,
+                out.get("all_bias_results", {}),
+                rows=first_read_rows,
+            )
 
     # Run history panel (already collapsed by default internally).
     try:
@@ -23629,7 +29093,7 @@ def run_facets_mode(core: dict, data: pd.DataFrame) -> None:
         pass
 
     # v0.2.14-beta: FACETS-style one-click results bundle right below
-    # Run history. Beginners can leave with their full results without
+    # Run history. Users can download with their full results without
     # hunting through the Downloads sub-tab first.
     try:
         render_quick_results_download(
@@ -23645,6 +29109,26 @@ def run_facets_mode(core: dict, data: pd.DataFrame) -> None:
         render_comparison_selector()
     except Exception:  # pragma: no cover - UX helper
         pass
+
+    if essential_mode:
+        _render_guided_essential_tabs(
+            core,
+            data,
+            result,
+            diagnostics,
+            report_tables,
+            scorefile,
+            residuals,
+            est_facet_cols,
+            out.get("person_col", person_col),
+            out.get("score_col", score_col),
+            bias_results,
+            out.get("all_bias_results", {}),
+            result_compute_pca=result_compute_pca,
+            result_render_plots=result_render_plots,
+            result_generate_figures=result_generate_figures,
+        )
+        return
 
     tabs = st.tabs([
         t("main_tabs.data"),
@@ -23991,7 +29475,13 @@ def run_facets_mode(core: dict, data: pd.DataFrame) -> None:
     # --- Bias/Interaction tab ---
     with tabs[7]:
         all_bias = out.get("all_bias_results", {})
-        show_bias_section(bias_results, core, all_bias_results=all_bias)
+        show_bias_section(
+            bias_results,
+            core,
+            all_bias_results=all_bias,
+            result=result,
+            diagnostics=diagnostics,
+        )
 
     # --- Categories/Steps tab ---
     with tabs[8]:
@@ -24132,6 +29622,619 @@ def _readiness_row(check, status, evidence, action, required=True):
     }
 
 
+MML_PRIOR_SENSITIVITY_DEFAULT_MULTIPLIERS = (0.5, 0.75, 1.0, 1.25, 1.5, 2.0)
+MML_PRIOR_SENSITIVITY_STABILITY_RULES = {
+    "max_abs_measure_shift": 0.25,
+    "measure_rmse": 0.10,
+    "rank_correlation": 0.98,
+    "population_coefficient_shift": 0.10,
+}
+
+
+def build_mml_prior_sensitivity_plan(
+    result: dict,
+    multipliers=MML_PRIOR_SENSITIVITY_DEFAULT_MULTIPLIERS,
+) -> pd.DataFrame:
+    """Recommended fixed-prior-SD sensitivity reruns for MML reports."""
+    config = (result or {}).get("config", {}) or {}
+    if config.get("method") != "MML":
+        return pd.DataFrame()
+    try:
+        base_sd = float(config.get("population_prior_sd") or 1.0)
+    except Exception:
+        base_sd = 1.0
+    if not np.isfinite(base_sd) or base_sd <= 0:
+        base_sd = 1.0
+    pop = config.get("population_model", {})
+    latent_regression = bool(isinstance(pop, dict) and pop.get("enabled"))
+    rows = []
+    seen: set[float] = set()
+    for mult in multipliers:
+        try:
+            sd = float(base_sd) * float(mult)
+        except Exception:
+            continue
+        if not np.isfinite(sd) or sd <= 0:
+            continue
+        sd_key = round(sd, 8)
+        if sd_key in seen:
+            continue
+        seen.add(sd_key)
+        rows.append({
+            "PopulationPriorSD": sd,
+            "Multiplier": float(mult),
+            "Role": "current fitted value" if abs(float(mult) - 1.0) < 1e-12 else "sensitivity rerun",
+            "RunStatus": "Already fit" if abs(float(mult) - 1.0) < 1e-12 else "Not run",
+            "RequiredBeforeClaim": (
+                "Yes for population-scale or latent-regression claims"
+                if latent_regression else
+                "Recommended for final MML claims"
+            ),
+            "PrimaryComparisons": (
+                "Compare log-likelihood/AIC/BIC, person EAP shifts, non-person "
+                "facet shifts, rank correlations, strict marginal diagnostics, "
+                "and latent-regression coefficients when present."
+            ),
+            "DecisionRule": (
+                "Review if max |measure shift| > "
+                f"{MML_PRIOR_SENSITIVITY_STABILITY_RULES['max_abs_measure_shift']:.2f} logits, "
+                "measure RMSE > "
+                f"{MML_PRIOR_SENSITIVITY_STABILITY_RULES['measure_rmse']:.2f}, "
+                "rank correlation < "
+                f"{MML_PRIOR_SENSITIVITY_STABILITY_RULES['rank_correlation']:.2f}, "
+                "or population coefficient shift > "
+                f"{MML_PRIOR_SENSITIVITY_STABILITY_RULES['population_coefficient_shift']:.2f}."
+            ),
+            "Purpose": (
+                "Check whether facet ordering, person EAP distribution, "
+                "latent-regression coefficients, and marginal diagnostics are "
+                "stable to the fixed population prior SD."
+            ),
+            "Boundary": (
+                "This app fixes population_prior_sd during MML quadrature; the "
+                "latent variance is not estimated as a free model parameter."
+            ),
+        })
+    return pd.DataFrame(rows)
+
+
+def _mml_prior_sensitivity_measure_long(result: dict) -> pd.DataFrame:
+    """Return Person + non-person estimates in one comparable long table."""
+    if not isinstance(result, dict):
+        return pd.DataFrame()
+    frames: list[pd.DataFrame] = []
+    person = result.get("facets", {}).get("person", pd.DataFrame())
+    if isinstance(person, pd.DataFrame) and not person.empty and {"Person", "Estimate"}.issubset(person.columns):
+        frames.append(pd.DataFrame({
+            "Facet": "Person",
+            "Level": person["Person"].astype(str),
+            "Estimate": pd.to_numeric(person["Estimate"], errors="coerce"),
+        }))
+    others = result.get("facets", {}).get("others", pd.DataFrame())
+    if isinstance(others, pd.DataFrame) and not others.empty and {"Facet", "Level", "Estimate"}.issubset(others.columns):
+        frames.append(pd.DataFrame({
+            "Facet": others["Facet"].astype(str),
+            "Level": others["Level"].astype(str),
+            "Estimate": pd.to_numeric(others["Estimate"], errors="coerce"),
+        }))
+    if not frames:
+        return pd.DataFrame(columns=["Facet", "Level", "Estimate"])
+    out = pd.concat(frames, ignore_index=True)
+    return out.dropna(subset=["Estimate"]).reset_index(drop=True)
+
+
+def _mml_prior_sensitivity_population_long(result: dict) -> pd.DataFrame:
+    pop = (result or {}).get("population", {}) if isinstance(result, dict) else {}
+    coef = pop.get("coefficients", pd.DataFrame()) if isinstance(pop, dict) else pd.DataFrame()
+    if not isinstance(coef, pd.DataFrame) or coef.empty or not {"Term", "Estimate"}.issubset(coef.columns):
+        return pd.DataFrame(columns=["Term", "Estimate"])
+    return pd.DataFrame({
+        "Term": coef["Term"].astype(str),
+        "Estimate": pd.to_numeric(coef["Estimate"], errors="coerce"),
+    }).dropna(subset=["Estimate"]).reset_index(drop=True)
+
+
+def _mml_prior_sensitivity_summary_row(
+    run: dict | None,
+    *,
+    population_prior_sd: float,
+    base_sd: float,
+    source: str,
+    run_ok: bool,
+    error: str = "",
+) -> dict:
+    summary = run.get("summary", pd.DataFrame()) if isinstance(run, dict) else pd.DataFrame()
+    srow = summary.iloc[0] if isinstance(summary, pd.DataFrame) and not summary.empty else {}
+    measures = _mml_prior_sensitivity_measure_long(run or {})
+    persons = measures[measures["Facet"] == "Person"] if not measures.empty else pd.DataFrame()
+    non_person = measures[measures["Facet"] != "Person"] if not measures.empty else pd.DataFrame()
+    pop = _mml_prior_sensitivity_population_long(run or {})
+    opt = run.get("opt") if isinstance(run, dict) else None
+    converged = bool(getattr(opt, "success", False))
+    if isinstance(srow, pd.Series) and "Converged" in srow.index:
+        converged = bool(srow.get("Converged"))
+    return {
+        "PopulationPriorSD": float(population_prior_sd),
+        "BasePopulationPriorSD": float(base_sd),
+        "Multiplier": float(population_prior_sd / base_sd) if base_sd > 0 else np.nan,
+        "Role": "current fitted value" if abs(float(population_prior_sd) - float(base_sd)) < 1e-10 else "sensitivity rerun",
+        "Source": source,
+        "RunOK": bool(run_ok),
+        "Converged": converged if run_ok else False,
+        "LogLik": float(srow.get("LogLik", np.nan)) if isinstance(srow, pd.Series) else np.nan,
+        "AIC": float(srow.get("AIC", np.nan)) if isinstance(srow, pd.Series) else np.nan,
+        "BIC": float(srow.get("BIC", np.nan)) if isinstance(srow, pd.Series) else np.nan,
+        "KParams": int(srow.get("KParams", 0)) if isinstance(srow, pd.Series) and pd.notna(srow.get("KParams", np.nan)) else 0,
+        "N": float(srow.get("N", np.nan)) if isinstance(srow, pd.Series) else np.nan,
+        "Iterations": int(srow.get("Iterations", 0)) if isinstance(srow, pd.Series) and pd.notna(srow.get("Iterations", np.nan)) else 0,
+        "GradientNorm": float(srow.get("GradientNorm", np.nan)) if isinstance(srow, pd.Series) else np.nan,
+        "ElapsedSeconds": float(srow.get("ElapsedSeconds", np.nan)) if isinstance(srow, pd.Series) else np.nan,
+        "PersonEstimateMean": float(persons["Estimate"].mean()) if not persons.empty else np.nan,
+        "PersonEstimateSD": float(persons["Estimate"].std(ddof=1)) if len(persons) > 1 else np.nan,
+        "NonPersonEstimateMean": float(non_person["Estimate"].mean()) if not non_person.empty else np.nan,
+        "NonPersonEstimateSD": float(non_person["Estimate"].std(ddof=1)) if len(non_person) > 1 else np.nan,
+        "PopulationCoefficientMaxAbs": float(pop["Estimate"].abs().max()) if not pop.empty else np.nan,
+        "Error": str(error)[:500],
+    }
+
+
+def _mml_prior_sensitivity_measure_deltas(
+    base_result: dict,
+    run: dict,
+    *,
+    population_prior_sd: float,
+    base_sd: float,
+) -> pd.DataFrame:
+    base = _mml_prior_sensitivity_measure_long(base_result)
+    other = _mml_prior_sensitivity_measure_long(run)
+    if base.empty or other.empty:
+        return pd.DataFrame()
+    merged = base.merge(
+        other,
+        on=["Facet", "Level"],
+        how="inner",
+        suffixes=("_Base", "_Sensitivity"),
+    )
+    if merged.empty:
+        return pd.DataFrame()
+    merged["Difference"] = merged["Estimate_Sensitivity"] - merged["Estimate_Base"]
+    rows = []
+    for facet, sub in merged.groupby("Facet", dropna=False, observed=False):
+        diff = pd.to_numeric(sub["Difference"], errors="coerce")
+        base_est = pd.to_numeric(sub["Estimate_Base"], errors="coerce")
+        sens_est = pd.to_numeric(sub["Estimate_Sensitivity"], errors="coerce")
+        ok = np.isfinite(diff) & np.isfinite(base_est) & np.isfinite(sens_est)
+        if not ok.any():
+            continue
+        corr = float(np.corrcoef(base_est[ok], sens_est[ok])[0, 1]) if int(ok.sum()) > 1 else np.nan
+        rank_corr = (
+            float(base_est[ok].rank(method="average").corr(sens_est[ok].rank(method="average")))
+            if int(ok.sum()) > 1 else np.nan
+        )
+        rows.append({
+            "PopulationPriorSD": float(population_prior_sd),
+            "BasePopulationPriorSD": float(base_sd),
+            "Multiplier": float(population_prior_sd / base_sd) if base_sd > 0 else np.nan,
+            "Facet": str(facet),
+            "MatchedLevels": int(ok.sum()),
+            "MeanDifference": float(diff[ok].mean()),
+            "MedianDifference": float(diff[ok].median()),
+            "MaxAbsDifference": float(diff[ok].abs().max()),
+            "RMSE": float(np.sqrt(np.mean(np.square(diff[ok])))),
+            "Correlation": corr,
+            "RankCorrelation": rank_corr,
+            "Status": (
+                "Review"
+                if (
+                    float(diff[ok].abs().max()) > MML_PRIOR_SENSITIVITY_STABILITY_RULES["max_abs_measure_shift"]
+                    or float(np.sqrt(np.mean(np.square(diff[ok])))) > MML_PRIOR_SENSITIVITY_STABILITY_RULES["measure_rmse"]
+                    or (np.isfinite(rank_corr) and rank_corr < MML_PRIOR_SENSITIVITY_STABILITY_RULES["rank_correlation"])
+                )
+                else "Stable screen"
+            ),
+        })
+    return pd.DataFrame(rows)
+
+
+def _mml_prior_sensitivity_population_deltas(
+    base_result: dict,
+    run: dict,
+    *,
+    population_prior_sd: float,
+    base_sd: float,
+) -> pd.DataFrame:
+    base = _mml_prior_sensitivity_population_long(base_result)
+    other = _mml_prior_sensitivity_population_long(run)
+    if base.empty or other.empty:
+        return pd.DataFrame()
+    merged = base.merge(other, on="Term", how="inner", suffixes=("_Base", "_Sensitivity"))
+    if merged.empty:
+        return pd.DataFrame()
+    merged["PopulationPriorSD"] = float(population_prior_sd)
+    merged["BasePopulationPriorSD"] = float(base_sd)
+    merged["Multiplier"] = float(population_prior_sd / base_sd) if base_sd > 0 else np.nan
+    merged["Difference"] = merged["Estimate_Sensitivity"] - merged["Estimate_Base"]
+    merged["AbsDifference"] = merged["Difference"].abs()
+    merged["Status"] = np.where(
+        merged["AbsDifference"] > MML_PRIOR_SENSITIVITY_STABILITY_RULES["population_coefficient_shift"],
+        "Review",
+        "Stable screen",
+    )
+    return merged[[
+        "PopulationPriorSD", "BasePopulationPriorSD", "Multiplier", "Term",
+        "Estimate_Base", "Estimate_Sensitivity", "Difference", "AbsDifference", "Status",
+    ]]
+
+
+def build_mml_prior_sensitivity_report(
+    summary: pd.DataFrame,
+    measure_deltas: pd.DataFrame,
+    population_deltas: pd.DataFrame | None = None,
+) -> pd.DataFrame:
+    """One-row interpretation layer for fixed-prior-SD sensitivity output."""
+    if not isinstance(summary, pd.DataFrame) or summary.empty:
+        return pd.DataFrame()
+    ok_summary = summary[summary.get("RunOK", pd.Series(False, index=summary.index)).astype(bool)]
+    failed = int(len(summary) - len(ok_summary))
+    non_base = ok_summary[ok_summary.get("Role", pd.Series("", index=ok_summary.index)).astype(str) != "current fitted value"]
+    if len(ok_summary) < 2 or non_base.empty:
+        status = "Review"
+        evidence = "Fewer than two successful prior-SD conditions were available."
+    else:
+        max_abs = (
+            float(pd.to_numeric(measure_deltas.get("MaxAbsDifference"), errors="coerce").max())
+            if isinstance(measure_deltas, pd.DataFrame) and not measure_deltas.empty else np.nan
+        )
+        max_rmse = (
+            float(pd.to_numeric(measure_deltas.get("RMSE"), errors="coerce").max())
+            if isinstance(measure_deltas, pd.DataFrame) and not measure_deltas.empty else np.nan
+        )
+        min_rank = (
+            float(pd.to_numeric(measure_deltas.get("RankCorrelation"), errors="coerce").min())
+            if isinstance(measure_deltas, pd.DataFrame) and not measure_deltas.empty else np.nan
+        )
+        max_pop = (
+            float(pd.to_numeric(population_deltas.get("AbsDifference"), errors="coerce").max())
+            if isinstance(population_deltas, pd.DataFrame) and not population_deltas.empty else np.nan
+        )
+        review = failed > 0
+        review = review or (np.isfinite(max_abs) and max_abs > MML_PRIOR_SENSITIVITY_STABILITY_RULES["max_abs_measure_shift"])
+        review = review or (np.isfinite(max_rmse) and max_rmse > MML_PRIOR_SENSITIVITY_STABILITY_RULES["measure_rmse"])
+        review = review or (np.isfinite(min_rank) and min_rank < MML_PRIOR_SENSITIVITY_STABILITY_RULES["rank_correlation"])
+        review = review or (np.isfinite(max_pop) and max_pop > MML_PRIOR_SENSITIVITY_STABILITY_RULES["population_coefficient_shift"])
+        status = "Review" if review else "Stable screen"
+        evidence = (
+            f"{len(ok_summary)} successful condition(s), {failed} failed; "
+            f"max |measure shift|={max_abs:.3g}; max RMSE={max_rmse:.3g}; "
+            f"min rank correlation={min_rank:.3g}; max population-coefficient shift={max_pop:.3g}."
+        )
+    interpretation = (
+        "This is a fixed-population-prior-SD sensitivity screen for the current "
+        "MML parameterization. It does not estimate the latent variance; it asks "
+        "whether conclusions are stable when the user-set prior SD is varied."
+    )
+    action = (
+        "If Status is Review, report the sensitivity range and avoid population-scale "
+        "or latent-regression claims until a larger grid or external MML/Bayesian "
+        "check supports the conclusion."
+        if status == "Review" else
+        "Report the tested prior-SD values, comparison metrics, and the fixed-variance boundary."
+    )
+    return pd.DataFrame([{
+        "Area": "MML fixed population prior SD sensitivity",
+        "Status": status,
+        "Evidence": evidence,
+        "Interpretation": interpretation,
+        "RecommendedAction": action,
+        "DecisionRule": (
+            "Review thresholds: max |measure shift| > "
+            f"{MML_PRIOR_SENSITIVITY_STABILITY_RULES['max_abs_measure_shift']:.2f}, "
+            "measure RMSE > "
+            f"{MML_PRIOR_SENSITIVITY_STABILITY_RULES['measure_rmse']:.2f}, "
+            "rank correlation < "
+            f"{MML_PRIOR_SENSITIVITY_STABILITY_RULES['rank_correlation']:.2f}, "
+            "or population coefficient shift > "
+            f"{MML_PRIOR_SENSITIVITY_STABILITY_RULES['population_coefficient_shift']:.2f}."
+        ),
+    }])
+
+
+def evaluate_mml_prior_sd_sensitivity(
+    result: dict,
+    *,
+    prior_sds: Iterable[float] | None = None,
+    multipliers=MML_PRIOR_SENSITIVITY_DEFAULT_MULTIPLIERS,
+    max_values: int | None = None,
+    maxit: int | None = None,
+    reltol: float | None = None,
+    mml_engine: str | None = None,
+    quad_points: int | None = None,
+) -> dict:
+    """Refit an MML run across fixed population-prior SD values.
+
+    The current fitted result is reused for the base SD. Other SD values are
+    refit on the normalized response table stored in ``result["prep"]["data"]``.
+    """
+    config = (result or {}).get("config", {}) if isinstance(result, dict) else {}
+    if config.get("method") != "MML":
+        return {
+            "available": False,
+            "reason": "MML prior-SD sensitivity is only available for MML runs.",
+            "summary": pd.DataFrame(),
+            "measure_deltas": pd.DataFrame(),
+            "population_deltas": pd.DataFrame(),
+            "report": pd.DataFrame(),
+            "plan": pd.DataFrame(),
+        }
+    prep = result.get("prep", {}) if isinstance(result, dict) else {}
+    data = prep.get("data", pd.DataFrame()) if isinstance(prep, dict) else pd.DataFrame()
+    facet_names = list(config.get("facet_names", []))
+    if not isinstance(data, pd.DataFrame) or data.empty or not facet_names:
+        return {
+            "available": False,
+            "reason": "The fitted result does not carry a reusable normalized response table.",
+            "summary": pd.DataFrame(),
+            "measure_deltas": pd.DataFrame(),
+            "population_deltas": pd.DataFrame(),
+            "report": pd.DataFrame(),
+            "plan": build_mml_prior_sensitivity_plan(result, multipliers=multipliers),
+        }
+    try:
+        base_sd = float(config.get("population_prior_sd") or 1.0)
+    except Exception:
+        base_sd = 1.0
+    if not np.isfinite(base_sd) or base_sd <= 0:
+        base_sd = 1.0
+    if prior_sds is None:
+        plan = build_mml_prior_sensitivity_plan(result, multipliers=multipliers)
+        candidate_sds = pd.to_numeric(plan.get("PopulationPriorSD"), errors="coerce").dropna().tolist()
+    else:
+        candidate_sds = []
+        for val in prior_sds:
+            try:
+                candidate_sds.append(float(val))
+            except Exception:
+                continue
+        plan = build_mml_prior_sensitivity_plan(
+            result,
+            multipliers=[sd / base_sd for sd in candidate_sds if base_sd > 0],
+        )
+    candidate_sds.append(base_sd)
+    cleaned: list[float] = []
+    for sd in candidate_sds:
+        if np.isfinite(sd) and sd > 0 and not any(abs(sd - prev) < 1e-10 for prev in cleaned):
+            cleaned.append(float(sd))
+    cleaned = sorted(cleaned)
+    if max_values is not None and len(cleaned) > int(max_values):
+        keep = {base_sd}
+        for sd in sorted(cleaned, key=lambda x: abs(x - base_sd)):
+            keep.add(sd)
+            if len(keep) >= int(max_values):
+                break
+        cleaned = sorted(keep)
+
+    anchor_audit = config.get("anchor_audit", {}) if isinstance(config.get("anchor_audit"), dict) else {}
+    population_model = config.get("population_model", {}) if isinstance(config.get("population_model"), dict) else {}
+    regularization = result.get("regularization", {}) if isinstance(result, dict) else {}
+    facet_regularization = regularization.get("settings") if isinstance(regularization, dict) else None
+    fit_kwargs_base = dict(
+        data=data.copy(),
+        person_col="Person",
+        facet_cols=facet_names,
+        score_col="Score",
+        rating_min=config.get("rating_min"),
+        rating_max=config.get("rating_max"),
+        weight_col="Weight" if "Weight" in data.columns else None,
+        keep_original=True,
+        model=config.get("model", "RSM"),
+        method="MML",
+        step_facet=config.get("step_facet"),
+        slope_facet=config.get("slope_facet"),
+        person_data=population_model.get("person_data") if population_model.get("enabled") else None,
+        person_id_col="Person" if population_model.get("enabled") else None,
+        population_formula=config.get("population_formula", ""),
+        population_standardize_numeric=bool(config.get("population_standardize_numeric", False)),
+        population_categorical_terms=config.get("population_categorical_terms", []),
+        population_numeric_terms=config.get("population_numeric_terms", []),
+        anchor_df=anchor_audit.get("valid_anchors", pd.DataFrame()),
+        group_anchor_df=anchor_audit.get("valid_group_anchors", pd.DataFrame()),
+        noncenter_facet=config.get("noncenter_facet", "Person"),
+        dummy_facets=config.get("dummy_facets", []),
+        positive_facets=config.get("positive_facets", []),
+        quad_points=int(quad_points or config.get("quad_points") or 7),
+        facet_regularization=facet_regularization,
+        maxit=int(maxit or config.get("maxit") or 100),
+        reltol=float(reltol or config.get("reltol") or 1e-5),
+        mml_engine=mml_engine or config.get("mml_engine_requested") or config.get("mml_engine") or "EM",
+        anchor_policy=config.get("anchor_policy", "warn"),
+        compute_plausible_values=False,
+    )
+
+    runs: dict[float, dict] = {}
+    summary_rows: list[dict] = []
+    delta_frames: list[pd.DataFrame] = []
+    pop_delta_frames: list[pd.DataFrame] = []
+    for sd in cleaned:
+        if abs(sd - base_sd) < 1e-10:
+            run = result
+            source = "current_result"
+            run_ok = True
+            err = ""
+        else:
+            source = "refit"
+            try:
+                run = mfrm_estimate(**{**fit_kwargs_base, "population_prior_sd": float(sd)})
+                run_ok = True
+                err = ""
+            except Exception as exc:
+                run = None
+                run_ok = False
+                err = f"{type(exc).__name__}: {exc}"
+        if run_ok and isinstance(run, dict):
+            runs[sd] = run
+            deltas = _mml_prior_sensitivity_measure_deltas(
+                result, run, population_prior_sd=sd, base_sd=base_sd
+            )
+            if not deltas.empty:
+                delta_frames.append(deltas)
+            pop_deltas = _mml_prior_sensitivity_population_deltas(
+                result, run, population_prior_sd=sd, base_sd=base_sd
+            )
+            if not pop_deltas.empty:
+                pop_delta_frames.append(pop_deltas)
+        summary_rows.append(_mml_prior_sensitivity_summary_row(
+            run,
+            population_prior_sd=sd,
+            base_sd=base_sd,
+            source=source,
+            run_ok=run_ok,
+            error=err,
+        ))
+
+    summary = pd.DataFrame(summary_rows)
+    measure_deltas = pd.concat(delta_frames, ignore_index=True) if delta_frames else pd.DataFrame()
+    population_deltas = pd.concat(pop_delta_frames, ignore_index=True) if pop_delta_frames else pd.DataFrame()
+    report = build_mml_prior_sensitivity_report(summary, measure_deltas, population_deltas)
+    return {
+        "available": bool(len(runs) >= 1 and not summary.empty),
+        "reason": "MML fixed-prior-SD sensitivity refits completed.",
+        "summary": summary,
+        "measure_deltas": measure_deltas,
+        "population_deltas": population_deltas,
+        "report": report,
+        "plan": plan,
+        "settings": {
+            "base_population_prior_sd": base_sd,
+            "tested_population_prior_sds": cleaned,
+            "maxit": fit_kwargs_base["maxit"],
+            "reltol": fit_kwargs_base["reltol"],
+            "quad_points": fit_kwargs_base["quad_points"],
+            "mml_engine": fit_kwargs_base["mml_engine"],
+        },
+    }
+
+
+def build_statistical_assumption_audit(
+    result: dict,
+    diagnostics: dict,
+    all_bias_results: dict | None = None,
+) -> pd.DataFrame:
+    """Machine-readable audit of the main statistical caveats for export."""
+    rows: list[dict[str, object]] = []
+    config = (result or {}).get("config", {}) or {}
+    uncertainty = diagnostics.get("uncertainty", {}) if isinstance(diagnostics, dict) else {}
+    unc_summary = uncertainty.get("summary", pd.DataFrame()) if isinstance(uncertainty, dict) else pd.DataFrame()
+    if isinstance(unc_summary, pd.DataFrame) and not unc_summary.empty:
+        for _, row in unc_summary.iterrows():
+            area = row.get("Area", "Measure SE/CI")
+            condition = row.get("ConditionNumber", np.nan)
+            claim = row.get("ClaimStatus", "")
+            evidence = f"{row.get('Rows', 0)} row(s): {row.get('Method', '')}"
+            if str(area) == "MML observed-information covariance":
+                if np.isfinite(pd.to_numeric(pd.Series([condition]), errors="coerce").iloc[0]):
+                    evidence += f"; condition number={float(condition):.3g}"
+                if str(claim):
+                    evidence += f"; claim status={claim}"
+            rows.append({
+                "Area": area,
+                "Status": row.get("Status", "unknown"),
+                "Evidence": evidence,
+                "Implication": row.get("Caution", ""),
+                "RecommendedAction": (
+                    "Report covariance audit condition number, rank, regularization, and fallback status with MML structural SE/CI."
+                    if str(area) == "MML observed-information covariance"
+                    else "Report SE_Method, SE_Status, CI_Method, and CI_Status with exported measures."
+                ),
+            })
+    if config.get("method") == "MML":
+        prior_sd = config.get("population_prior_sd", "unknown")
+        plan = build_mml_prior_sensitivity_plan(result)
+        rows.append({
+            "Area": "MML fixed population prior SD",
+            "Status": "Review",
+            "Evidence": f"population_prior_sd = {prior_sd}; {len(plan)} sensitivity value(s) listed.",
+            "Implication": (
+                "The person population variance is fixed by the user setting, "
+                "so MML estimates are conditional on that scale choice."
+            ),
+            "RecommendedAction": (
+                "Use evaluate_mml_prior_sd_sensitivity() / the Fit Details "
+                "prior-SD sensitivity screen, or state why the fixed SD is "
+                "part of the design."
+            ),
+        })
+    rel = diagnostics.get("reliability", pd.DataFrame()) if isinstance(diagnostics, dict) else pd.DataFrame()
+    if isinstance(rel, pd.DataFrame) and not rel.empty and "SE_StatusSummary" in rel.columns:
+        rows.append({
+            "Area": "Reliability / separation uncertainty",
+            "Status": "Review" if rel["SE_StatusSummary"].astype(str).str.contains("conditional_approximation|posterior", regex=True).any() else "Ready",
+            "Evidence": "; ".join(
+                f"{r.get('Facet')}: {r.get('SE_StatusSummary')}" for _, r in rel.iterrows()
+            )[:800],
+            "Implication": "Reliability and separation inherit the SE basis used for each facet.",
+            "RecommendedAction": "Do not compare reliability values across facets without noting their SE basis.",
+        })
+    pca = diagnostics.get("pca") if isinstance(diagnostics, dict) else None
+    if isinstance(pca, dict):
+        stability_tbl = pca.get("stability_table")
+        if isinstance(stability_tbl, pd.DataFrame) and not stability_tbl.empty:
+            s = stability_tbl.iloc[0]
+            rows.append({
+                "Area": "Residual PCA stability",
+                "Status": s.get("PCAStabilityStatus", "Review"),
+                "Evidence": (
+                    f"persons={s.get('Persons')}; residual columns={s.get('ResidualColumns')}; "
+                    f"missing share={float(s.get('MissingShare', np.nan)):.1%}; "
+                    f"min pairwise overlap={s.get('MinPairwiseOverlap')}; "
+                    f"LOO EV1 max shift={s.get('LOOEV1MaxAbsDelta', 'n/a')}; "
+                    f"bootstrap EV1 CV={s.get('BootstrapEV1CV', 'n/a')}; "
+                    f"sensitivity flags={s.get('SensitivityFlagSummary', 'n/a')}"
+                ),
+                "Implication": s.get("Caution", ""),
+                "RecommendedAction": "Use pca_stability_audit.csv before dimensionality claims; treat loadings as exploratory prompts when status is Review.",
+            })
+    all_bias = all_bias_results or {}
+    if all_bias:
+        bias_audit = build_bias_inference_audit(all_bias, result, diagnostics)
+        if isinstance(bias_audit, pd.DataFrame) and not bias_audit.empty:
+            flagged = int(pd.to_numeric(bias_audit.get("FlaggedCells", pd.Series(dtype=float)), errors="coerce").fillna(0).sum())
+            sparse = int(pd.to_numeric(bias_audit.get("SparseCells", pd.Series(dtype=float)), errors="coerce").fillna(0).sum())
+            strong = int(pd.to_numeric(bias_audit.get("StrongReviewCells", pd.Series(dtype=float)), errors="coerce").fillna(0).sum())
+            cells = int(pd.to_numeric(bias_audit.get("CellsScreened", pd.Series(dtype=float)), errors="coerce").fillna(0).sum())
+            statuses = dict(bias_audit.get("Status", pd.Series(dtype=str)).astype(str).value_counts())
+            common_status = "; ".join(
+                dict.fromkeys(bias_audit.get("CommonScaleStatus", pd.Series(dtype=str)).astype(str).tolist())
+            )[:500]
+            status = "Ready" if cells and statuses == {"Ready": len(bias_audit)} else "Review"
+            action = (
+                "Report only the computed conditional screen and keep no-bias wording limited to screened cells."
+                if status == "Ready" else
+                "Use bias_inference_audit plus DFF tables; resolve sparse cells, disconnected subsets, and flagged cells before strong bias claims."
+            )
+        else:
+            flagged = sparse = strong = cells = 0
+            statuses = {}
+            common_status = "Bias audit unavailable."
+            status = "Review"
+            action = "Rerun or inspect bias screen outputs before making local-interaction claims."
+        rows.append({
+            "Area": "Bias / local interaction inference",
+            "Status": status,
+            "Evidence": (
+                f"{len(all_bias)} facet pair bundle(s); {cells} cell(s); "
+                f"{flagged} flagged, {strong} strong-review, {sparse} sparse; "
+                f"pair status={statuses}; common-scale={common_status}"
+            ),
+            "Implication": (
+                "Bias cells are conditional screening results; GPCM profile CIs "
+                "hold other fitted parameters fixed and do not propagate global "
+                "model uncertainty."
+            ),
+            "RecommendedAction": action,
+        })
+    return pd.DataFrame(rows)
+
+
 def build_final_report_readiness(
     result: dict,
     diagnostics: dict,
@@ -24170,36 +30273,35 @@ def build_final_report_readiness(
             "Re-run diagnostics before final reporting.",
         ))
 
-    try:
-        cat_tbl = calc_category_stats(obs_df, result) if isinstance(obs_df, pd.DataFrame) and not obs_df.empty else pd.DataFrame()
-    except Exception as exc:
-        cat_tbl = pd.DataFrame()
-        cat_error = str(exc)
-    else:
-        cat_error = ""
-    step_order = calc_step_order(result.get("steps", pd.DataFrame()))
-    if isinstance(cat_tbl, pd.DataFrame) and not cat_tbl.empty:
-        min_count = pd.to_numeric(cat_tbl.get("Count", pd.Series(dtype=float)), errors="coerce").min()
-        low_count = bool(np.isfinite(min_count) and min_count < 10)
-        avg_tbl = cat_tbl.dropna(subset=["AvgPersonMeasure"]).sort_values("Category") if "AvgPersonMeasure" in cat_tbl.columns else pd.DataFrame()
-        avg_bad = bool(len(avg_tbl) >= 3 and not avg_tbl["AvgPersonMeasure"].is_monotonic_increasing)
-        disorder = bool(isinstance(step_order, pd.DataFrame) and not step_order.empty and (step_order.get("Ordered", pd.Series(dtype=bool)) == False).any())
-        cat_ok = not (low_count or avg_bad or disorder)
-        cat_evidence = []
-        cat_evidence.append(f"minimum category count = {min_count:.0f}" if np.isfinite(min_count) else "category counts unavailable")
-        cat_evidence.append("average measures monotonic" if not avg_bad else "average measures not monotonic")
-        cat_evidence.append("thresholds ordered" if not disorder else "disordered thresholds present")
+    rating_dashboard = rating_scale_functioning_dashboard(result, diagnostics)
+    if isinstance(rating_dashboard, pd.DataFrame) and not rating_dashboard.empty:
+        overall_row = rating_dashboard.loc[
+            rating_dashboard["Check"].astype(str) == "Overall rating-scale decision"
+        ]
+        status = str(overall_row["Status"].iloc[0]) if not overall_row.empty else "Review"
+        review_rows = rating_dashboard.loc[rating_dashboard["Status"].astype(str) == "Review"]
+        review_checks = _compact_value_list(review_rows["Check"].tolist()) if not review_rows.empty else "none"
+        evidence = (
+            str(overall_row["Evidence"].iloc[0]) if not overall_row.empty else
+            "rating-scale dashboard generated"
+        )
+        if review_checks != "none":
+            evidence = f"{evidence}; review checks: {review_checks}"
         rows.append(_readiness_row(
             "Category functioning",
-            _status_from_bool(cat_ok),
-            "; ".join(cat_evidence),
-            "Open Categories/Steps; consider collapsing sparse or non-distinct adjacent categories." if not cat_ok else "No action needed.",
+            status,
+            evidence,
+            (
+                "Open Categories/Steps and Visuals; consider collapsing sparse or non-distinct adjacent categories."
+                if status != "OK" else
+                "No action needed."
+            ),
         ))
     else:
         rows.append(_readiness_row(
             "Category functioning",
             "Missing",
-            f"Category table unavailable. {cat_error}".strip(),
+            "Rating-scale dashboard unavailable.",
             "Open Categories/Steps and confirm category diagnostics before final reporting.",
         ))
 
@@ -24210,15 +30312,26 @@ def build_final_report_readiness(
             rel_val = pd.to_numeric(person_rel["Reliability"], errors="coerce").iloc[0]
             rel_ok = bool(np.isfinite(rel_val) and rel_val >= FINAL_PERSON_RELIABILITY_READY)
             evidence = f"Person reliability = {rel_val:.3f}" if np.isfinite(rel_val) else "Person reliability unavailable."
+            action = (
+                "Use Design Evaluation to decide whether more ratings or linking observations are needed."
+                if not rel_ok else "No action needed."
+            )
         else:
             rel_vals = pd.to_numeric(rel_df["Reliability"], errors="coerce").dropna()
-            rel_ok = bool(len(rel_vals) and float(rel_vals.min()) >= FINAL_PERSON_RELIABILITY_READY)
-            evidence = f"lowest facet reliability = {rel_vals.min():.3f}" if len(rel_vals) else "Reliability values unavailable."
+            rel_ok = False
+            evidence = (
+                "Person reliability unavailable; non-person reliability must be interpreted facet-by-facet "
+                "(low rater reliability can be desirable)."
+                if len(rel_vals) else "Reliability values unavailable."
+            )
+            action = (
+                "Do not use a lowest-facet reliability rule. Interpret person, rater, task, and criterion reliability separately."
+            )
         rows.append(_readiness_row(
             "Reliability / separation",
             _status_from_bool(rel_ok),
             evidence,
-            "Use Design Evaluation to decide whether more ratings or linking observations are needed." if not rel_ok else "No action needed.",
+            action,
         ))
     else:
         rows.append(_readiness_row(
@@ -24233,12 +30346,41 @@ def build_final_report_readiness(
     if pca_enabled and isinstance(pca, dict) and pca.get("eigenvalues") is not None:
         ev = np.asarray(pca.get("eigenvalues"), dtype=float)
         ev1 = float(ev[0]) if ev.size else np.nan
-        pca_ok = bool(np.isfinite(ev1) and ev1 < FINAL_PCA_EIGENVALUE_READY)
+        stability_status = ""
+        stability_caution = ""
+        stability_flags = ""
+        boot_cv = np.nan
+        loo_delta = np.nan
+        loo_share_delta = np.nan
+        stability_tbl = pca.get("stability_table")
+        if isinstance(stability_tbl, pd.DataFrame) and not stability_tbl.empty:
+            stability_status = str(stability_tbl.iloc[0].get("PCAStabilityStatus", ""))
+            stability_caution = str(stability_tbl.iloc[0].get("Caution", ""))
+            stability_flags = str(stability_tbl.iloc[0].get("SensitivityFlagSummary", ""))
+            boot_cv = pd.to_numeric(pd.Series([stability_tbl.iloc[0].get("BootstrapEV1CV", np.nan)]), errors="coerce").iloc[0]
+            loo_delta = pd.to_numeric(pd.Series([stability_tbl.iloc[0].get("LOOEV1MaxAbsDelta", np.nan)]), errors="coerce").iloc[0]
+            loo_share_delta = pd.to_numeric(pd.Series([stability_tbl.iloc[0].get("LOOEV1ShareMaxAbsDelta", np.nan)]), errors="coerce").iloc[0]
+        pca_stable = stability_status != "Review"
+        pca_ok = bool(np.isfinite(ev1) and ev1 < FINAL_PCA_EIGENVALUE_READY and pca_stable)
+        evidence = f"first residual PCA eigenvalue = {ev1:.2f}" if np.isfinite(ev1) else "PCA result unavailable."
+        if stability_status:
+            evidence += f"; stability = {stability_status}"
+        if stability_flags and stability_flags != "none":
+            evidence += f"; sensitivity flags = {stability_flags}"
+        if np.isfinite(boot_cv):
+            evidence += f"; bootstrap EV1 CV = {float(boot_cv):.2f}"
+        if np.isfinite(loo_delta):
+            evidence += f"; LOO EV1 max shift = {float(loo_delta):.2f}"
+        if np.isfinite(loo_share_delta):
+            evidence += f"; LOO EV1 share max shift = {float(loo_share_delta):.2f}"
         rows.append(_readiness_row(
             "Dimensionality screen",
             _status_from_bool(pca_ok, missing=not np.isfinite(ev1)),
-            f"first residual PCA eigenvalue = {ev1:.2f}" if np.isfinite(ev1) else "PCA result unavailable.",
-            "Inspect Dimensionality tab and consider a multidimensional explanation." if not pca_ok else "No action needed.",
+            evidence,
+            (
+                f"Inspect Dimensionality tab; {stability_caution}"
+                if not pca_ok else "No action needed."
+            ),
         ))
     else:
         # Surface the concrete skip reason (set by mfrm_diagnostics via
@@ -24285,20 +30427,28 @@ def build_final_report_readiness(
 
     all_bias = all_bias_results or {}
     if all_bias:
-        n_sig = 0
-        n_total = 0
-        for bundle in all_bias.values():
-            tbl = bundle.get("table") if isinstance(bundle, dict) else None
-            if isinstance(tbl, pd.DataFrame) and "t" in tbl.columns:
-                t_vals = pd.to_numeric(tbl["t"], errors="coerce").dropna()
-                n_total += len(t_vals)
-                n_sig += int((t_vals.abs() >= 2).sum())
-        bias_ok = n_sig == 0 or n_sig <= max(1, int(0.05 * max(n_total, 1)))
+        bias_audit = build_bias_inference_audit(all_bias, result, diagnostics)
+        n_total = int(pd.to_numeric(bias_audit.get("CellsScreened", pd.Series(dtype=float)), errors="coerce").fillna(0).sum()) if isinstance(bias_audit, pd.DataFrame) else 0
+        n_flagged = int(pd.to_numeric(bias_audit.get("FlaggedCells", pd.Series(dtype=float)), errors="coerce").fillna(0).sum()) if isinstance(bias_audit, pd.DataFrame) else 0
+        n_strong = int(pd.to_numeric(bias_audit.get("StrongReviewCells", pd.Series(dtype=float)), errors="coerce").fillna(0).sum()) if isinstance(bias_audit, pd.DataFrame) else 0
+        n_sparse = int(pd.to_numeric(bias_audit.get("SparseCells", pd.Series(dtype=float)), errors="coerce").fillna(0).sum()) if isinstance(bias_audit, pd.DataFrame) else 0
+        has_ready_only = (
+            isinstance(bias_audit, pd.DataFrame)
+            and not bias_audit.empty
+            and bias_audit["Status"].astype(str).eq("Ready").all()
+        )
         rows.append(_readiness_row(
             "Bias / local interaction",
-            _status_from_bool(bias_ok),
-            f"{n_sig} of {n_total} tested interactions have |t| >= 2.",
-            "Substantively review flagged pairs; consider multiplicity and design balance." if n_sig else "No action needed.",
+            "Ready" if has_ready_only else "Review",
+            (
+                f"{n_flagged} of {n_total} screened interactions are DFF/bias review flags; "
+                f"{n_strong} strong-review and {n_sparse} sparse cell(s)."
+            ),
+            (
+                "Report the conditional screen scope and keep no-bias wording limited to screened cells."
+                if has_ready_only else
+                "Substantively review flagged or sparse cells; consider multiplicity, connectedness, and design balance."
+            ),
             required=False,
         ))
     else:
@@ -24368,6 +30518,23 @@ def build_final_report_readiness(
             required=False,
         ))
 
+    if config.get("method") == "MML":
+        prior_plan = build_mml_prior_sensitivity_plan(result)
+        rows.append(_readiness_row(
+            "MML fixed population prior SD",
+            "Review",
+            (
+                f"population_prior_sd = {config.get('population_prior_sd', 'unknown')}; "
+                f"{len(prior_plan)} recommended sensitivity value(s)."
+            ),
+            (
+                "Report that latent variance is fixed by the app setting, and "
+                "run or justify prior-SD sensitivity before population-scale or "
+                "latent-regression claims."
+            ),
+            required=False,
+        ))
+
     readiness = pd.DataFrame(rows)
     status_order = {"Not ready": 0, "Review": 1, "Missing": 2, "Ready": 3}
     if "Status" in readiness.columns:
@@ -24381,7 +30548,7 @@ def build_manuscript_claim_guide(
     diagnostics: dict,
     all_bias_results: dict | None = None,
 ) -> pd.DataFrame:
-    """Result-aware guardrails for beginner manuscript claims."""
+    """Result-aware guardrails for manuscript claims."""
     config = result.get("config", {})
     prep = result.get("prep", {})
     opt = result.get("opt")
@@ -24422,26 +30589,71 @@ def build_manuscript_claim_guide(
             return "Report with caveat"
         return "Report with caveat"
 
-    n_sig = 0
-    n_total = 0
-    for bundle in all_bias.values():
-        tbl = bundle.get("table") if isinstance(bundle, dict) else None
-        if isinstance(tbl, pd.DataFrame) and "t" in tbl.columns:
-            t_vals = pd.to_numeric(tbl["t"], errors="coerce").dropna()
-            n_total += len(t_vals)
-            n_sig += int((t_vals.abs() >= 2).sum())
+    bias_audit = build_bias_inference_audit(all_bias, result, diagnostics) if all_bias else pd.DataFrame()
+    n_total = int(pd.to_numeric(bias_audit.get("CellsScreened", pd.Series(dtype=float)), errors="coerce").fillna(0).sum()) if isinstance(bias_audit, pd.DataFrame) else 0
+    n_flagged = int(pd.to_numeric(bias_audit.get("FlaggedCells", pd.Series(dtype=float)), errors="coerce").fillna(0).sum()) if isinstance(bias_audit, pd.DataFrame) else 0
+    n_strong = int(pd.to_numeric(bias_audit.get("StrongReviewCells", pd.Series(dtype=float)), errors="coerce").fillna(0).sum()) if isinstance(bias_audit, pd.DataFrame) else 0
+    n_sparse = int(pd.to_numeric(bias_audit.get("SparseCells", pd.Series(dtype=float)), errors="coerce").fillna(0).sum()) if isinstance(bias_audit, pd.DataFrame) else 0
+    n_holm = int(pd.to_numeric(bias_audit.get("HolmSignificantCells", pd.Series(dtype=float)), errors="coerce").fillna(0).sum()) if isinstance(bias_audit, pd.DataFrame) else 0
+    bias_statuses = (
+        dict(bias_audit.get("Status", pd.Series(dtype=str)).astype(str).value_counts())
+        if isinstance(bias_audit, pd.DataFrame) and not bias_audit.empty else {}
+    )
     if not all_bias:
         bias_claim_status = "Do not claim"
         bias_safe = "No bias/interaction screen was run for this result."
         bias_action = "Run a selected pair or full publication bias screen before writing no-bias claims."
-    elif n_sig == 0:
+    elif isinstance(bias_audit, pd.DataFrame) and not bias_audit.empty and bias_audit["Status"].astype(str).eq("Ready").all():
         bias_claim_status = "Ready"
-        bias_safe = "For the computed facet-pair screen, no local interactions reached |t| >= 2."
-        bias_action = "Report the facet pairs that were screened and keep the claim limited to those pairs."
+        bias_safe = (
+            "For the computed facet-pair screen, no cell was flagged by the conditional DFF/bias "
+            "rules with Holm/BH multiplicity review."
+        )
+        bias_action = "Report the facet pairs and thresholds that were screened; keep the claim limited to those pairs and cells."
     else:
         bias_claim_status = "Report with caveat"
-        bias_safe = f"{n_sig} of {n_total} screened local interactions reached |t| >= 2 and need substantive review."
-        bias_action = "Report flagged pairs as review evidence; consider sparse cells, multiplicity, and rubric content."
+        bias_safe = (
+            f"{n_flagged} of {n_total} screened local interactions were flagged by the "
+            "conditional DFF/bias rules and need substantive review."
+        )
+        bias_action = "Report flagged pairs as review evidence; consider sparse cells, multiplicity, connectedness, and rubric content."
+
+    rating_decision = rating_scale_decision_support_table(result, diagnostics)
+    rating_decision_row = pd.DataFrame()
+    if isinstance(rating_decision, pd.DataFrame) and not rating_decision.empty:
+        rating_decision_row = rating_decision.loc[
+            rating_decision["DecisionArea"].astype(str) == "Overall reportability"
+        ]
+        if rating_decision_row.empty:
+            rating_decision_row = rating_decision.head(1)
+    rating_decision_status = (
+        str(rating_decision_row["DecisionStatus"].iloc[0])
+        if not rating_decision_row.empty and "DecisionStatus" in rating_decision_row.columns else
+        "Missing evidence"
+    )
+    rating_claim_status = (
+        "Ready" if rating_decision_status == "Ready" else
+        "Do not claim" if rating_decision_status in {"Do not claim yet", "Missing evidence"} else
+        "Report with caveat"
+    )
+    rating_safe_wording = (
+        str(rating_decision_row["SafeReportWording"].iloc[0])
+        if not rating_decision_row.empty and "SafeReportWording" in rating_decision_row.columns else
+        "Report category counts, average-measure ordering, threshold ordering, and category-curve peak/dominance evidence."
+    )
+    rating_do_not_claim = (
+        str(rating_decision_row["DoNotClaim"].iloc[0])
+        if not rating_decision_row.empty and "DoNotClaim" in rating_decision_row.columns else
+        "Do not state that all categories function distinctly if any category row is sparse, thresholds are disordered, or a category curve lacks a dominance region."
+    )
+    rating_next_action = (
+        str(rating_decision_row["RecommendedAction"].iloc[0])
+        if not rating_decision_row.empty and "RecommendedAction" in rating_decision_row.columns else
+        "Use Categories/Steps and category probability curves before deciding whether to collapse categories."
+    )
+    rating_evidence = readiness_evidence("Category functioning")
+    if not rating_decision_row.empty and "PrimaryEvidence" in rating_decision_row.columns:
+        rating_evidence = f"{rating_evidence} Decision support: {rating_decision_row['PrimaryEvidence'].iloc[0]}".strip()
 
     rows = [
         {
@@ -24475,14 +30687,33 @@ def build_manuscript_claim_guide(
             ),
         },
         {
-            "ManuscriptArea": "Rating-scale functioning",
-            "ClaimStatus": claim_status(readiness_status("Category functioning")),
-            "SafeManuscriptWording": (
-                "Report category counts, average-measure ordering, and threshold ordering as rating-scale evidence."
+            "ManuscriptArea": "MML population scale",
+            "ClaimStatus": (
+                "Report with caveat" if method == "MML" else "Ready"
             ),
-            "EvidenceToReport": readiness_evidence("Category functioning"),
-            "DoNotClaim": "Do not state that all categories function distinctly if any category row is sparse or thresholds are disordered.",
-            "NextAction": "Use Categories/Steps and category probability curves before deciding whether to collapse categories.",
+            "SafeManuscriptWording": (
+                f"The MML run used a fixed population prior SD of {config.get('population_prior_sd', 'not recorded')}; "
+                "population-scale conclusions are conditional on that setting."
+                if method == "MML" else
+                "No MML population prior SD was used because this run was not MML."
+            ),
+            "EvidenceToReport": readiness_evidence("MML fixed population prior SD", "Not an MML run."),
+            "DoNotClaim": (
+                "Do not state that the latent variance was estimated by the app or that the result is identical to TAM/ConQuest variance handling."
+            ),
+            "NextAction": (
+                "Run or justify prior-SD sensitivity before latent-regression or population-scale claims."
+                if method == "MML" else
+                "No action for non-MML reports."
+            ),
+        },
+        {
+            "ManuscriptArea": "Rating-scale functioning",
+            "ClaimStatus": rating_claim_status,
+            "SafeManuscriptWording": rating_safe_wording,
+            "EvidenceToReport": rating_evidence,
+            "DoNotClaim": rating_do_not_claim,
+            "NextAction": rating_next_action,
         },
         {
             "ManuscriptArea": "Reliability and separation",
@@ -24524,8 +30755,14 @@ def build_manuscript_claim_guide(
             "ManuscriptArea": "Bias / local interaction",
             "ClaimStatus": bias_claim_status,
             "SafeManuscriptWording": bias_safe,
-            "EvidenceToReport": f"{len(all_bias)} facet-pair bundle(s); {n_sig} of {n_total} screened local interactions have |t| >= 2.",
-            "DoNotClaim": "Do not claim that bias does not exist outside the facet pairs and cells that were actually screened.",
+            "EvidenceToReport": (
+                f"{len(all_bias)} facet-pair bundle(s); {n_flagged} of {n_total} screened local interactions flagged; "
+                f"{n_strong} strong-review, {n_sparse} sparse, {n_holm} Holm-significant; pair status={bias_statuses}."
+            ),
+            "DoNotClaim": (
+                "Do not claim that bias is absent outside the facet pairs and cells that were actually screened, "
+                "or that conditional bias CIs propagate global model uncertainty."
+            ),
             "NextAction": bias_action,
         },
         {
@@ -24561,6 +30798,18 @@ def build_manuscript_claim_guide(
             "EvidenceToReport": "See validation/README.md and validation/R_CROSSCHECK_STATUS.md when external checks are used.",
             "DoNotClaim": "Do not force or display R-vs-Python numerical equality claims unless the fixture, parameterization map, and tolerance report justify them.",
             "NextAction": "Keep the main manuscript focused on the Python app outputs unless the study explicitly includes cross-package validation.",
+        },
+        {
+            "ManuscriptArea": "Bayesian / Uto-family extension",
+            "ClaimStatus": "Boundary",
+            "SafeManuscriptWording": (
+                "Uto-family Bayesian MFRM references can motivate an extension analysis when a separate Stan model, priors, data map, diagnostics, and sensitivity checks are archived."
+            ),
+            "EvidenceToReport": "See bayesian_mfrm_stan_refinement_plan.csv, stan_reproducibility_archive_contract.csv, stan_posterior_reproducibility_route.csv, mfrm_stan_data_manifest.csv, mfrm_stan_data_dictionary.csv, mfrm_stan_prior_guidance.csv, mfrm_stan_prior_sensitivity_grid.csv, stan_posterior_handoff_checklist.csv, stan_run_manifest_template.csv, method_reference_audit.csv, and the exported Stan runner templates.",
+            "DoNotClaim": (
+                "Do not state that generalized Bayesian MFRM, multidimensional rubric traits, or rater severity drift were fitted unless the corresponding Stan scaffold was run and validated."
+            ),
+            "NextAction": "Use the Uto-family Stan scaffold as a separate reproducibility artifact; archive JSON data, priors, sampler settings, posterior diagnostics, and sensitivity variants.",
         },
     ]
     return pd.DataFrame(rows)
@@ -24815,12 +31064,12 @@ def build_misfit_casebook(
     return out.sort_values(["Priority", "Source", "Facet", "Level"]).head(int(top_n)).reset_index(drop=True)
 
 
-def build_beginner_case_guidance(
+def build_case_interpretation_guidance(
     result: dict,
     diagnostics: dict,
     all_bias_results: dict | None = None,
 ) -> pd.DataFrame:
-    """Case-specific interpretation prompts for common beginner pitfalls."""
+    """Case-specific interpretation prompts for common interpretation pitfalls."""
     config = result.get("config", {})
     prep = result.get("prep", {})
     readiness = build_final_report_readiness(result, diagnostics, all_bias_results or {})
@@ -24851,7 +31100,7 @@ def build_beginner_case_guidance(
             "Case": str(case),
             "Status": str(status),
             "Evidence": str(evidence),
-            "BeginnerInterpretation": str(interpretation),
+            "InterpretationNote": str(interpretation),
             "ManuscriptGuardrail": str(guardrail),
             "NextAction": str(action),
             "WhereToInspect": str(where),
@@ -24922,15 +31171,11 @@ def build_beginner_case_guidance(
         )
 
     all_bias = all_bias_results or {}
-    n_sig = 0
-    n_total = 0
-    for bundle in all_bias.values():
-        tbl = bundle.get("table") if isinstance(bundle, dict) else None
-        if isinstance(tbl, pd.DataFrame) and "t" in tbl.columns:
-            t_vals = pd.to_numeric(tbl["t"], errors="coerce").dropna()
-            n_total += len(t_vals)
-            n_sig += int((t_vals.abs() >= 2).sum())
-    if not all_bias or n_sig:
+    bias_audit = build_bias_inference_audit(all_bias, result, diagnostics) if all_bias else pd.DataFrame()
+    n_flagged = int(pd.to_numeric(bias_audit.get("FlaggedCells", pd.Series(dtype=float)), errors="coerce").fillna(0).sum()) if isinstance(bias_audit, pd.DataFrame) else 0
+    n_total = int(pd.to_numeric(bias_audit.get("CellsScreened", pd.Series(dtype=float)), errors="coerce").fillna(0).sum()) if isinstance(bias_audit, pd.DataFrame) else 0
+    n_sparse = int(pd.to_numeric(bias_audit.get("SparseCells", pd.Series(dtype=float)), errors="coerce").fillna(0).sum()) if isinstance(bias_audit, pd.DataFrame) else 0
+    if not all_bias or n_flagged or n_sparse:
         add_case(
             4,
             "Bias/local interaction screen",
@@ -24938,7 +31183,7 @@ def build_beginner_case_guidance(
             (
                 "No bias/interaction screen was computed."
                 if not all_bias else
-                f"{n_sig} of {n_total} screened local interactions have |t| >= 2."
+                f"{n_flagged} of {n_total} screened local interactions were DFF/bias flags; {n_sparse} sparse cell(s)."
             ),
             "Bias output is a screening prompt, not automatic proof of bias or proof of no bias.",
             "Do not make no-bias claims outside the facet pairs and cells that were actually screened.",
@@ -25009,7 +31254,7 @@ def build_beginner_case_guidance(
     if not rows:
         add_case(
             99,
-            "No common beginner pitfall flagged",
+            "No common interpretation pitfall flagged",
             "Ready",
             "No case-specific caution was generated.",
             "The main automated checks did not identify common reporting traps.",
@@ -25036,7 +31281,7 @@ def build_submission_action_plan(
     """One-screen priority list for manuscript-ready reporting decisions."""
     all_bias = all_bias_results or {}
     gate = build_publication_gate_summary(result, diagnostics, all_bias)
-    beginner = build_beginner_case_guidance(result, diagnostics, all_bias)
+    case_guidance = build_case_interpretation_guidance(result, diagnostics, all_bias)
     guide = build_manuscript_claim_guide(result, diagnostics, all_bias)
     readiness = build_final_report_readiness(result, diagnostics, all_bias)
     rows: list[dict[str, object]] = []
@@ -25102,13 +31347,13 @@ def build_submission_action_plan(
                     "Report -> Reports -> APA Report / publication_gate_summary.csv",
                 )
 
-    if isinstance(beginner, pd.DataFrame) and not beginner.empty:
-        for i, row in beginner.iterrows():
+    if isinstance(case_guidance, pd.DataFrame) and not case_guidance.empty:
+        for i, row in case_guidance.iterrows():
             status = str(row.get("Status", "Review"))
             if status != "Ready":
                 add_action(
                     status_rank(status) * 1000 + 100 + int(row.get("Priority", i + 1)),
-                    "Beginner case guide",
+                    "Case interpretation guide",
                     row.get("Case", "Case-specific guidance"),
                     status,
                     row.get("Evidence", ""),
@@ -25169,19 +31414,879 @@ def build_submission_action_plan(
     return out.drop(columns=["_Rank"])
 
 
+def _status_rank_for_handoff(status: object) -> int:
+    return {
+        "Not ready": 0,
+        "Do not claim": 0,
+        "Report with caveat": 1,
+        "Review": 1,
+        "Missing": 1,
+        "Boundary": 2,
+        "Ready": 3,
+    }.get(str(status), 2)
+
+
+def _overall_manuscript_gate_status(
+    result: dict,
+    diagnostics: dict,
+    all_bias_results: dict | None = None,
+) -> tuple[str, str]:
+    gate = build_publication_gate_summary(result, diagnostics, all_bias_results or {})
+    if not isinstance(gate, pd.DataFrame) or gate.empty:
+        return "Review", "Publication gate summary was not available."
+    if {"GateArea", "GateStatus"}.issubset(gate.columns):
+        overall = gate.loc[gate["GateArea"].astype(str) == "Overall manuscript gate"]
+        if not overall.empty:
+            row = overall.iloc[0]
+            return str(row.get("GateStatus", "Review")), str(row.get("Evidence", "Review gate evidence."))
+    if "GateStatus" in gate.columns:
+        statuses = gate["GateStatus"].astype(str).tolist()
+        status = min(statuses, key=_status_rank_for_handoff) if statuses else "Review"
+        return status, "Overall status inferred from component publication-gate rows."
+    return "Review", "Publication gate summary did not expose a status column."
+
+
+def _handoff_text(value: object, default: str = "") -> str:
+    if value is None:
+        return default
+    try:
+        if pd.isna(value):
+            return default
+    except Exception:
+        pass
+    text = str(value).strip()
+    return text if text else default
+
+
+def _table_row_by_value(df: pd.DataFrame, key_col: str, key_value: str) -> pd.Series | None:
+    if not isinstance(df, pd.DataFrame) or df.empty or key_col not in df.columns:
+        return None
+    hit = df.loc[df[key_col].astype(str) == str(key_value)]
+    return hit.iloc[0] if not hit.empty else None
+
+
+def build_claim_to_evidence_matrix(
+    result: dict,
+    diagnostics: dict,
+    all_bias_results: dict | None = None,
+) -> pd.DataFrame:
+    """Map manuscript claims to the concrete app evidence that supports them."""
+    all_bias = all_bias_results or {}
+    guide = build_manuscript_claim_guide(result, diagnostics, all_bias)
+    gate = build_publication_gate_summary(result, diagnostics, all_bias)
+    readiness = build_final_report_readiness(result, diagnostics, all_bias)
+    action_plan = build_submission_action_plan(result, diagnostics, all_bias)
+    current_method_refs = build_current_run_method_reference_audit(result, diagnostics, all_bias)
+    evidence_map: dict[str, dict[str, object]] = {
+        "Model and software scope": {
+            "ManuscriptSection": "Methods",
+            "PrimaryTables": "summary.csv; method_reference_audit.csv; mfrm_config.json; method_appendix.md",
+            "PrimaryFigures": "",
+            "ReadinessChecks": "Convergence",
+            "AppLocation": "Report -> Exports; Downloads -> Scripts & Config",
+            "ReviewerQuestion": "What software, model, estimation method, score support, and runtime boundary produced the results?",
+            "ArchiveFiles": "mfrm_config.json; mfrm_method_appendix.md; mfrm_app_engine_runner.py; requirements.txt",
+        },
+        "Convergence and final interpretability": {
+            "ManuscriptSection": "Methods; Results",
+            "PrimaryTables": "convergence.csv; publication_gate_summary.csv; final_report_readiness.csv",
+            "PrimaryFigures": "",
+            "ReadinessChecks": "Convergence",
+            "AppLocation": "Report -> Tables & checks; Downloads -> Data Tables",
+            "ReviewerQuestion": "Did the estimation converge strongly enough to interpret the fitted measures?",
+            "ArchiveFiles": "MFRM_Tables.zip; MFRM_Report.xlsx",
+        },
+        "Rating-scale functioning": {
+            "ManuscriptSection": "Results",
+            "PrimaryTables": "score_map.csv; steps.csv; category_diagnostics.csv; category_probability_curves.csv; visual_claim_guardrails.csv",
+            "PrimaryFigures": "category_probability_curves_average; expected_score_curve_average",
+            "ReadinessChecks": "Category functioning",
+            "AppLocation": "Results -> Categories/Steps; Downloads -> Figures",
+            "ReviewerQuestion": "Do observed category counts, average measures, and thresholds support the rating-scale interpretation?",
+            "ArchiveFiles": "MFRM_Tables.zip; MFRM_Publication_Figures.zip; visual_claim_guardrails.csv",
+        },
+        "Reliability and separation": {
+            "ManuscriptSection": "Results",
+            "PrimaryTables": "reliability.csv; design_evaluation.csv; facet_sample_size_adequacy.csv",
+            "PrimaryFigures": "wright_map; facet_distribution",
+            "ReadinessChecks": "Reliability / separation",
+            "AppLocation": "Results -> Reliability; Design evaluation; Downloads -> Data Tables",
+            "ReviewerQuestion": "Which facet's ordering is reliable, and is that reliability substantively desirable?",
+            "ArchiveFiles": "MFRM_Tables.zip; MFRM_Publication_Figures.zip",
+        },
+        "Fit and dimensionality": {
+            "ManuscriptSection": "Results; Limitations",
+            "PrimaryTables": "fit_statistics.csv; residuals.csv; pca_eigenvalues.csv; pca_stability_audit.csv; method_reference_audit.csv; final_report_readiness.csv",
+            "PrimaryFigures": "fit_scatter; strict_marginal_summary; strict_marginal_heatmap",
+            "ReadinessChecks": "Global residual fit; Dimensionality screen; Strict marginal diagnostics",
+            "AppLocation": "Fit Details; Dimensionality; Downloads -> Data Tables/Figures",
+            "ReviewerQuestion": "Do fit and residual structure support the dimensional interpretation being claimed?",
+            "ArchiveFiles": "MFRM_Tables.zip; MFRM_Publication_Figures.zip",
+        },
+        "Wright map targeting and measure interpretation": {
+            "ManuscriptSection": "Results",
+            "PrimaryTables": "measures.csv; person_measures.csv; facet_element_measures.csv; steps.csv; visual_claim_guardrails.csv",
+            "PrimaryFigures": "wright_map",
+            "ReadinessChecks": "Wright Map targeting",
+            "AppLocation": "Visuals -> Wright Map; Downloads -> Figures",
+            "ReviewerQuestion": "How well do person locations and facet/rubric locations overlap on the current scale?",
+            "ArchiveFiles": "MFRM_Tables.zip; MFRM_Publication_Figures.zip; visual_claim_guardrails.csv",
+        },
+        "Bias / local interaction": {
+            "ManuscriptSection": "Results; Limitations",
+            "PrimaryTables": "bias_*.csv; dff_bias_*.csv; bias_inference_audit.csv; method_reference_audit.csv; submission_action_plan.csv",
+            "PrimaryFigures": "",
+            "ReadinessChecks": "Bias / local interaction",
+            "AppLocation": "Bias / local interaction; Downloads -> Data Tables",
+            "ReviewerQuestion": "Which facet pairs and cells were screened, and are flagged cells sparse, multiplicity-adjusted, or substantively meaningful?",
+            "ArchiveFiles": "MFRM_Tables.zip; claim_to_evidence_matrix.csv",
+        },
+        "Anchoring and linking": {
+            "ManuscriptSection": "Methods; Results; Limitations",
+            "PrimaryTables": "anchor_audit_summary.csv; anchor_drift_summary.csv; equating_chain_summary.csv; anchors.csv",
+            "PrimaryFigures": "",
+            "ReadinessChecks": "Anchor / linking audit; Anchor drift; Equating-chain summary",
+            "AppLocation": "Data -> Anchor/linking audit; Downloads -> Data Tables",
+            "ReviewerQuestion": "Is there enough anchor/linking evidence to compare forms, cohorts, administrations, or studies?",
+            "ArchiveFiles": "anchors.csv; MFRM_Tables.zip; mfrm_config.json",
+        },
+        "Prediction, plausible values, and simulation": {
+            "ManuscriptSection": "Supplement; Limitations",
+            "PrimaryTables": "fitted_predictions.csv; posterior_scores.csv; plausible_values.csv; refit_simulation_summary.csv",
+            "PrimaryFigures": "",
+            "ReadinessChecks": "Strict marginal diagnostics",
+            "AppLocation": "Prediction/Simulation panels; Downloads -> Data Tables",
+            "ReviewerQuestion": "Are model-based predictions or simulations described as sensitivity/planning evidence rather than validation or causal evidence?",
+            "ArchiveFiles": "MFRM_Tables.zip; mfrm_config.json; mfrm_app_engine_runner.py",
+        },
+        "External package comparison": {
+            "ManuscriptSection": "Supplement; Validation appendix",
+            "PrimaryTables": "external_simulation_reference_inventory.csv; external_simulation_template_inventory.csv; method_reference_audit.csv; mfrmr_020_migration_coverage.csv",
+            "PrimaryFigures": "",
+            "ReadinessChecks": "",
+            "AppLocation": "Downloads -> Scripts & Config; validation artifacts",
+            "ReviewerQuestion": "If cross-package equality is claimed, where is the exact fixture, parameterization map, tolerance report, and output artifact?",
+            "ArchiveFiles": "MFRM_External_Simulation_Validation_Templates.zip; archived external validation outputs",
+        },
+        "Bayesian / Uto-family extension": {
+            "ManuscriptSection": "Methods; Supplement; Limitations",
+            "PrimaryTables": "bayesian_mfrm_stan_refinement_plan.csv; reproducibility_script_matrix.csv; stan_reproducibility_archive_contract.csv; stan_posterior_reproducibility_route.csv; mfrm_stan_data_manifest.csv; mfrm_stan_data_dictionary.csv; mfrm_stan_prior_guidance.csv; mfrm_stan_prior_sensitivity_grid.csv; mfrm_uto_bayesian_mfrm_design_audit.csv; mfrm_uto_bayesian_mfrm_claim_wording.csv; stan_posterior_handoff_checklist.csv; stan_run_manifest_template.csv; method_reference_audit.csv",
+            "PrimaryFigures": "posterior viewer exports when available",
+            "ReadinessChecks": "",
+            "AppLocation": "Report -> Exports -> Stan Code; Downloads -> Scripts & Config; Posterior Viewer",
+            "ReviewerQuestion": "Was the Uto-family Bayesian MFRM scaffold actually run, with priors, data JSON, sampler diagnostics, and sensitivity variants archived?",
+            "ArchiveFiles": "mfrm_uto_bayesian_mfrm.stan; mfrm_stan_data.json; mfrm_stan_prior_guidance.csv; mfrm_stan_prior_sensitivity_grid.csv; stan_run_manifest.json; stan_run_manifest.csv; posterior_manifest_check.csv; mfrm_uto_bayesian_mfrm_data_template.json; mfrm_uto_bayesian_mfrm_design_audit.csv; mfrm_uto_bayesian_mfrm_claim_wording.csv; MFRM_Bayesian_Stan_Runners.zip; CmdStan CSV chains; posterior diagnostics",
+        },
+    }
+
+    rows: list[dict[str, object]] = []
+    if not isinstance(guide, pd.DataFrame) or guide.empty:
+        return pd.DataFrame()
+    for idx, row in guide.iterrows():
+        area = _handoff_text(row.get("ManuscriptArea"), "Manuscript claim")
+        meta = evidence_map.get(area, {
+            "ManuscriptSection": "Results",
+            "PrimaryTables": "MFRM_Tables.zip",
+            "PrimaryFigures": "",
+            "ReadinessChecks": "",
+            "AppLocation": "Downloads",
+            "ReviewerQuestion": "Which app output supports this claim?",
+            "ArchiveFiles": "MFRM_OSF_Package.zip",
+        })
+        gate_row = _table_row_by_value(gate, "GateArea", area)
+        action_row = _table_row_by_value(action_plan, "Topic", area)
+        check_names = [
+            part.strip()
+            for part in _handoff_text(meta.get("ReadinessChecks")).split(";")
+            if part.strip()
+        ]
+        check_bits = []
+        evidence_bits = []
+        for check in check_names:
+            readiness_row = _table_row_by_value(readiness, "Check", check)
+            if readiness_row is None:
+                continue
+            status = _handoff_text(readiness_row.get("Status"), "Review")
+            evidence = _handoff_text(readiness_row.get("Evidence"), "No evidence recorded.")
+            check_bits.append(f"{check}: {status}")
+            evidence_bits.append(f"{check}: {evidence}")
+        ref_summary = _method_reference_summary_for_manuscript_area(area, current_method_refs)
+        rows.append({
+            "Priority": int(idx) + 1,
+            "ManuscriptArea": area,
+            "ManuscriptSection": _handoff_text(meta.get("ManuscriptSection"), "Results"),
+            "PrimaryClaim": _handoff_text(row.get("SafeManuscriptWording"), "Review manuscript wording."),
+            "ClaimStatus": _handoff_text(row.get("ClaimStatus"), "Review"),
+            "GateStatus": _handoff_text(gate_row.get("GateStatus") if gate_row is not None else "", "Ready"),
+            "EvidenceToReport": _handoff_text(row.get("EvidenceToReport"), "No evidence recorded."),
+            "PrimaryTables": _handoff_text(meta.get("PrimaryTables"), "MFRM_Tables.zip"),
+            "PrimaryFigures": _handoff_text(meta.get("PrimaryFigures"), ""),
+            "ReadinessChecks": "; ".join(check_bits) if check_bits else _handoff_text(meta.get("ReadinessChecks"), "No dedicated readiness row."),
+            "ReadinessEvidence": " | ".join(evidence_bits) if evidence_bits else "Use claim-guide and publication-gate evidence.",
+            "CaveatOrBoundary": _handoff_text(row.get("DoNotClaim"), "Keep claim within the computed evidence."),
+            "NextAction": _handoff_text(
+                action_row.get("ImmediateAction") if action_row is not None else row.get("NextAction"),
+                "Review before manuscript use.",
+            ),
+            "ReferenceAuditAreas": _handoff_text(ref_summary.get("ReferenceAuditAreas"), ""),
+            "SuggestedCitations": _handoff_text(ref_summary.get("SuggestedCitations"), ""),
+            "CitationBoundary": _handoff_text(ref_summary.get("CitationBoundary"), ""),
+            "CitationEvidenceFile": _handoff_text(ref_summary.get("CitationEvidenceFile"), "method_reference_audit.csv"),
+            "ReviewerQuestion": _handoff_text(meta.get("ReviewerQuestion"), "Which output supports this claim?"),
+            "ArchiveFiles": _handoff_text(meta.get("ArchiveFiles"), "MFRM_OSF_Package.zip"),
+            "AppLocation": _handoff_text(meta.get("AppLocation"), "Downloads"),
+        })
+    out = pd.DataFrame(rows)
+    status_order = {"Do not claim": 0, "Report with caveat": 1, "Review": 1, "Boundary": 2, "Ready": 3}
+    if "ClaimStatus" in out.columns:
+        out["_sort"] = out["ClaimStatus"].map(status_order).fillna(2)
+        out = out.sort_values(["_sort", "Priority"]).drop(columns=["_sort"]).reset_index(drop=True)
+        out["Priority"] = np.arange(1, len(out) + 1, dtype=int)
+    return out
+
+
+def build_apa_report_sentence_audit(
+    result: dict,
+    diagnostics: dict,
+    bias_results: dict | None = None,
+    all_bias_results: dict | None = None,
+) -> pd.DataFrame:
+    """Sentence-level evidence map for generated APA report prose.
+
+    This table is intentionally conservative: it links report-ready sentence
+    drafts to app evidence, method references, and claim boundaries so authors
+    can copy only the statements that remain supported after study-specific
+    editing.
+    """
+    if not isinstance(result, dict):
+        return pd.DataFrame()
+    config = result.get("config", {}) if isinstance(result.get("config", {}), dict) else {}
+    prep = result.get("prep", {}) if isinstance(result.get("prep", {}), dict) else {}
+    diagnostics = diagnostics if isinstance(diagnostics, dict) else {}
+    if (
+        not config
+        and not prep
+        and not any(_nonempty_run_artifact(value) for value in diagnostics.values())
+    ):
+        return pd.DataFrame()
+    all_bias = all_bias_results or {}
+    if not all_bias and bias_results:
+        all_bias = {f"{bias_results.get('facet_a', 'A')} x {bias_results.get('facet_b', 'B')}": bias_results}
+
+    try:
+        claim_evidence = build_claim_to_evidence_matrix(result, diagnostics, all_bias)
+    except Exception:
+        claim_evidence = pd.DataFrame()
+    current_refs = build_current_run_method_reference_audit(result, diagnostics, all_bias)
+    method = str(config.get("method", "unknown"))
+    model = str(config.get("model", "unknown"))
+    rows: list[dict[str, object]] = []
+
+    def claim_row(area: str) -> pd.Series | None:
+        return _table_row_by_value(claim_evidence, "ManuscriptArea", area)
+
+    def claim_value(area: str, column: str, default: str = "") -> str:
+        row = claim_row(area)
+        if row is None:
+            return default
+        return _handoff_text(row.get(column), default)
+
+    def copy_decision(area: str) -> str:
+        claim_status = claim_value(area, "ClaimStatus", "Review")
+        gate_status = claim_value(area, "GateStatus", "Ready")
+        if claim_status == "Do not claim" or gate_status == "Not ready":
+            return "Do not copy without revision and additional evidence."
+        if claim_status in {"Report with caveat", "Review", "Boundary"} or gate_status == "Report with caveat":
+            return "Copy only with the stated caveat and supporting table."
+        return "Copy after study-specific editing and reference-list review."
+
+    def linked_evidence(area: str) -> str:
+        bits = [
+            claim_value(area, "PrimaryTables", ""),
+            claim_value(area, "PrimaryFigures", ""),
+        ]
+        return "; ".join(bit for bit in bits if bit)
+
+    def add_row(
+        section: str,
+        role: str,
+        area: str,
+        draft_sentence: str,
+        output_evidence: str,
+        before_submission: str,
+    ) -> None:
+        ref_summary = _method_reference_summary_for_manuscript_area(area, current_refs)
+        rows.append({
+            "SentenceOrder": len(rows) + 1,
+            "APASection": section,
+            "SentenceRole": role,
+            "LinkedManuscriptArea": area,
+            "DraftSentence": draft_sentence,
+            "ClaimStatus": claim_value(area, "ClaimStatus", "Review"),
+            "GateStatus": claim_value(area, "GateStatus", "Ready"),
+            "EvidenceFiles": linked_evidence(area),
+            "OutputEvidence": output_evidence,
+            "SuggestedCitations": _handoff_text(
+                claim_value(area, "SuggestedCitations", ""),
+                ref_summary.get("SuggestedCitations", ""),
+            ),
+            "CitationBoundary": _handoff_text(
+                claim_value(area, "CitationBoundary", ""),
+                ref_summary.get("CitationBoundary", ""),
+            ),
+            "DoNotClaim": claim_value(area, "CaveatOrBoundary", "Keep the sentence within the computed evidence."),
+            "BeforeSubmissionCheck": before_submission,
+            "CopyDecision": copy_decision(area),
+            "CitationEvidenceFile": _handoff_text(
+                claim_value(area, "CitationEvidenceFile", ""),
+                ref_summary.get("CitationEvidenceFile", "method_reference_audit.csv"),
+            ),
+        })
+
+    n_obs = prep.get("n_obs", "unknown")
+    n_person = prep.get("n_person", "unknown")
+    facet_names = config.get("facet_names", []) or []
+    facet_label = ", ".join(map(str, facet_names)) if facet_names else "not recorded"
+    rating_min = prep.get("rating_min", "?")
+    rating_max = prep.get("rating_max", "?")
+    n_cat = config.get("n_cat", "unknown")
+    add_row(
+        "Method",
+        "Model, sample, and runtime scope",
+        "Model and software scope",
+        (
+            f"A many-facet Rasch-family model ({model}) was estimated using {method} "
+            f"with {n_obs} observations from {n_person} persons."
+        ),
+        f"facets={facet_label}; score support={rating_min} to {rating_max}; categories={n_cat}",
+        "Verify the app version, runtime boundary, model, facets, and score support against the exported config.",
+    )
+    if facet_names:
+        add_row(
+            "Method",
+            "Facet specification",
+            "Model and software scope",
+            f"The modeled facets were {facet_label}.",
+            f"facet_names={facet_label}",
+            "Confirm that each facet is substantively meaningful and present in the analysis design.",
+        )
+    add_row(
+        "Method",
+        "Estimation and uncertainty basis",
+        "MML population scale" if method.upper() == "MML" else "Model and software scope",
+        (
+            "Reported intervals are conditional approximations and should be read with the exported SE/CI basis metadata."
+            if method.upper() != "MML" else
+            f"The MML run used a fixed population prior SD of {config.get('population_prior_sd', 'not recorded')}; "
+            "population-scale and EAP claims are conditional on that setting."
+        ),
+        "measures.csv SE_Method/SE_Status; statistical_uncertainty_summary.csv; mml_covariance_audit.csv when available",
+        "Do not describe conditional or observed-information intervals as fully unconditional uncertainty.",
+    )
+    if model == "RSM":
+        add_row(
+            "Method",
+            "Rating-scale model citation",
+            "Rating-scale functioning",
+            "The rating-scale formulation follows the ordered-category RSM specification.",
+            "model=RSM; steps/category diagnostics available after estimation",
+            "Use this sentence only when the fitted model is RSM and category diagnostics are reported separately.",
+        )
+    elif model == "PCM":
+        add_row(
+            "Method",
+            "Partial-credit model citation",
+            "Rating-scale functioning",
+            "The partial-credit formulation allows category thresholds to vary by step structure.",
+            "model=PCM; step estimates exported when available",
+            "Use this sentence only when the fitted model is PCM.",
+        )
+    elif model == "GPCM":
+        add_row(
+            "Method",
+            "Generalized partial-credit model citation",
+            "Rating-scale functioning",
+            "The generalized partial-credit specification is reported with bounded positive slope constraints.",
+            f"model=GPCM; step_facet={config.get('step_facet')}; slope_facet={config.get('slope_facet')}",
+            "Report the slope constraint and avoid treating slopes as Rasch severity parameters.",
+        )
+
+    opt = result.get("opt")
+    add_row(
+        "Results",
+        "Convergence",
+        "Convergence and final interpretability",
+        (
+            "The optimizer reported convergence, so fitted measures can be interpreted with the remaining diagnostics."
+            if bool(getattr(opt, "success", False)) else
+            "The optimizer did not report convergence; fitted measures should not be treated as final."
+        ),
+        str(getattr(opt, "message", "optimizer message not available")),
+        "Resolve non-convergence before copying substantive measure interpretations.",
+    )
+
+    obs = diagnostics.get("obs", pd.DataFrame())
+    if isinstance(obs, pd.DataFrame) and "StdResidual" in obs.columns:
+        std_res = pd.to_numeric(obs["StdResidual"], errors="coerce").dropna()
+        if len(std_res):
+            pct_ge2 = float((std_res.abs() >= 2).mean() * 100)
+            add_row(
+                "Results",
+                "Global residual fit",
+                "Fit and dimensionality",
+                f"Global residual fit showed {pct_ge2:.1f}% of standardized residuals exceeding |2|.",
+                f"N residuals={len(std_res)}; % |StdResidual| >= 2 = {pct_ge2:.1f}",
+                "Read this with residual PCA/stability evidence before making dimensionality claims.",
+            )
+
+    rel = diagnostics.get("reliability", pd.DataFrame())
+    if isinstance(rel, pd.DataFrame) and not rel.empty:
+        facets = ", ".join(rel.get("Facet", pd.Series(dtype=str)).astype(str).tolist())
+        add_row(
+            "Results",
+            "Reliability and separation",
+            "Reliability and separation",
+            "Facet reliability and separation were summarized to evaluate distinguishability on the fitted scale.",
+            f"reliability rows={len(rel)}; facets={facets}",
+            "Interpret rater/facet reliability differently from person reliability; high rater separation may indicate severity differences.",
+        )
+
+    measures = diagnostics.get("measures", pd.DataFrame())
+    if isinstance(measures, pd.DataFrame) and "Infit" in measures.columns:
+        infit = pd.to_numeric(measures["Infit"], errors="coerce").dropna()
+        if len(infit):
+            n_misfit = int(((infit > 1.5) | (infit < 0.5)).sum())
+            add_row(
+                "Results",
+                "Element fit",
+                "Fit and dimensionality",
+                f"{n_misfit} of {len(infit)} elements showed Infit MnSq outside the 0.5-1.5 screening range.",
+                f"fit rows={len(infit)}; outside screening range={n_misfit}",
+                "Treat fit flags as diagnostic prompts; removal or invalidity claims require substantive review.",
+            )
+
+    steps = result.get("steps", pd.DataFrame())
+    if isinstance(steps, pd.DataFrame) and not steps.empty:
+        rating_dashboard = rating_scale_functioning_dashboard(result, diagnostics)
+        dashboard_evidence = (
+            f"rating-scale dashboard rows={len(rating_dashboard)}"
+            if isinstance(rating_dashboard, pd.DataFrame) and not rating_dashboard.empty
+            else f"step rows={len(steps)}"
+        )
+        add_row(
+            "Results",
+            "Rating-scale functioning",
+            "Rating-scale functioning",
+            "Rating-scale functioning was evaluated from category counts, average measures, threshold/step ordering, and category-curve peak/dominance diagnostics.",
+            dashboard_evidence,
+            "Do not claim distinct functioning for sparse, disordered, or curve-dominated categories without addressing the diagnostic rows.",
+        )
+
+    pca_available = any(
+        _nonempty_run_artifact(diagnostics.get(key))
+        for key in ["pca", "pca_enabled", "pca_eigenvalues", "pca_loadings", "pca_stability", "pca_stability_audit"]
+    )
+    if pca_available:
+        add_row(
+            "Results",
+            "Residual PCA dimensionality screen",
+            "Fit and dimensionality",
+            "Residual PCA was treated as an exploratory dimensionality screen rather than proof of unidimensionality.",
+            "pca_eigenvalues.csv and pca_stability_audit.csv when available",
+            "Require stability and substantive construct review before turning PCA evidence into a dimensionality conclusion.",
+        )
+
+    if all_bias:
+        bias_audit = build_bias_inference_audit(all_bias, result, diagnostics)
+        n_pairs = len(bias_audit) if isinstance(bias_audit, pd.DataFrame) else len(all_bias)
+        flagged = 0
+        if isinstance(bias_audit, pd.DataFrame) and "FlaggedCells" in bias_audit.columns:
+            flagged = int(pd.to_numeric(bias_audit["FlaggedCells"], errors="coerce").fillna(0).sum())
+        add_row(
+            "Results",
+            "Bias/local interaction screen",
+            "Bias / local interaction",
+            "Bias/local interaction results were reported as conditional screening evidence within the computed facet-pair family.",
+            f"facet-pair bundles={n_pairs}; flagged cells={flagged}",
+            "Limit no-bias wording to screened pairs and cells; do not generalize to sparse, untested, or disconnected cells.",
+        )
+
+    posterior = result.get("posterior", {}) if isinstance(result.get("posterior", {}), dict) else {}
+    simulation_available = (
+        bool(config.get("compute_plausible_values", False))
+        or _nonempty_run_artifact(result.get("fitted_predictions"))
+        or _nonempty_run_artifact(result.get("refit_simulation"))
+        or _nonempty_run_artifact(result.get("simulation"))
+        or _nonempty_run_artifact(diagnostics.get("design_evaluation"))
+        or _nonempty_run_artifact(posterior.get("plausible_values", pd.DataFrame()))
+    )
+    if simulation_available:
+        add_row(
+            "Supplement",
+            "Prediction, plausible values, or simulation",
+            "Prediction, plausible values, and simulation",
+            "Prediction, plausible values, and simulation outputs were treated as model-based sensitivity or planning evidence.",
+            f"plausible values requested={bool(config.get('compute_plausible_values', False))}; draws={int(config.get('n_plausible_values') or 0)}",
+            "Do not present model-based simulation as prospective validation or causal evidence.",
+        )
+
+    out = pd.DataFrame(rows)
+    if not out.empty:
+        out["SentenceOrder"] = np.arange(1, len(out) + 1, dtype=int)
+    return out
+
+
+def build_manuscript_handoff_checklist(
+    result: dict,
+    diagnostics: dict,
+    all_bias_results: dict | None = None,
+    *,
+    public_export_mode: bool = True,
+) -> pd.DataFrame:
+    """Ordered handoff checklist for moving final app outputs into a manuscript."""
+    all_bias = all_bias_results or {}
+    gate_status, gate_evidence = _overall_manuscript_gate_status(result, diagnostics, all_bias)
+    action_plan = build_submission_action_plan(result, diagnostics, all_bias)
+    statuses = (
+        action_plan["Status"].astype(str).tolist()
+        if isinstance(action_plan, pd.DataFrame) and "Status" in action_plan.columns else []
+    )
+    blocking_count = sum(status in {"Not ready", "Do not claim"} for status in statuses)
+    caveat_count = sum(status in {"Report with caveat", "Review", "Missing"} for status in statuses)
+    boundary_count = sum(status == "Boundary" for status in statuses)
+    action_status = (
+        "Not ready" if blocking_count
+        else "Review" if caveat_count
+        else "Boundary" if boundary_count
+        else "Ready"
+    )
+    privacy_status = "Ready" if public_export_mode else "Review"
+    privacy_action = (
+        "Keep public export mode enabled for files that may leave the controlled research workspace."
+        if public_export_mode else
+        "Complete/private export is selected; share only inside an approved confidential workflow."
+    )
+    config = result.get("config", {}) if isinstance(result, dict) else {}
+    prep = result.get("prep", {}) if isinstance(result, dict) else {}
+    opt = result.get("opt") if isinstance(result, dict) else None
+    n_obs = prep.get("n_obs", "unknown") if isinstance(prep, dict) else "unknown"
+    n_person = prep.get("n_person", "unknown") if isinstance(prep, dict) else "unknown"
+    model = config.get("model", "unknown") if isinstance(config, dict) else "unknown"
+    method = config.get("method", "unknown") if isinstance(config, dict) else "unknown"
+    converged = bool(getattr(opt, "success", False))
+
+    rows = [
+        {
+            "Step": 1,
+            "Phase": "Pre-download review",
+            "Status": gate_status,
+            "Task": "Confirm the overall manuscript gate before treating conclusions as final.",
+            "AppLocation": "Report -> Reports / Downloads -> Data Tables",
+            "DownloadFile": "publication_gate_summary.csv",
+            "Action": "Use final wording only when the gate is Ready; otherwise follow the gate action.",
+            "WhyItMatters": gate_evidence,
+        },
+        {
+            "Step": 2,
+            "Phase": "Pre-download review",
+            "Status": action_status,
+            "Task": "Resolve prioritized blockers, caveats, boundaries, and wording repairs.",
+            "AppLocation": "Report -> Reports / Downloads -> Data Tables",
+            "DownloadFile": "submission_action_plan.csv",
+            "Action": (
+                f"Review {blocking_count} blocker(s), {caveat_count} caveat/review row(s), "
+                f"and {boundary_count} boundary row(s) before manuscript use."
+            ),
+            "WhyItMatters": "This prevents generated text from outrunning the computed evidence.",
+        },
+        {
+            "Step": 3,
+            "Phase": "Privacy and sharing",
+            "Status": privacy_status,
+            "Task": "Choose the export privacy mode intentionally.",
+            "AppLocation": "Downloads -> Data Tables",
+            "DownloadFile": "export_privacy_manifest.csv",
+            "Action": privacy_action,
+            "WhyItMatters": "Public mode removes likely row-level or person-level tables, but it is not a formal de-identification guarantee.",
+        },
+        {
+            "Step": 4,
+            "Phase": "Core result archive",
+            "Status": "Ready",
+            "Task": "Download the complete table bundle for analysis records.",
+            "AppLocation": "Downloads -> Data Tables",
+            "DownloadFile": "MFRM_Tables.zip; MFRM_Report.xlsx; MFRM_Report.html",
+            "Action": "Archive the exact exported bundle with the manuscript draft.",
+            "WhyItMatters": f"This preserves the fitted {model}/{method} run with {n_obs} observations and {n_person} persons.",
+        },
+        {
+            "Step": 5,
+            "Phase": "Manuscript draft",
+            "Status": gate_status,
+            "Task": "Export the publication document and use it as a drafted report, not final prose.",
+            "AppLocation": "Report -> Exports -> Publication Document",
+            "DownloadFile": "Publication Document (.docx/.pdf/.html)",
+            "Action": "Edit all generated text for the study design, rubric, research questions, and journal style.",
+            "WhyItMatters": "The app can assemble evidence, but the paper still needs study-specific framing and scholarly judgment.",
+        },
+        {
+            "Step": 6,
+            "Phase": "Claim wording",
+            "Status": action_status,
+            "Task": "Match every Results and Discussion claim to evidence, caveats, and safer wording.",
+            "AppLocation": "Report -> Tables & checks / Downloads -> Data Tables",
+            "DownloadFile": "claim_to_evidence_matrix.csv; method_reference_audit.csv; manuscript_claim_guide.csv; case_interpretation_guidance.csv",
+            "Action": "Use the evidence and reference matrices as the bridge from manuscript claims to exported tables, figures, citations, and reviewer questions.",
+            "WhyItMatters": "This keeps reliability, fit, dimensionality, bias, linking, and citation language tied to the evidence actually computed.",
+        },
+        {
+            "Step": 7,
+            "Phase": "Methods and reproducibility",
+            "Status": "Ready" if converged else "Review",
+            "Task": "Save the method appendix, manuscript template, config JSON, and reproduction scripts.",
+            "AppLocation": "Downloads -> Scripts & Config",
+            "DownloadFile": "mfrm_method_appendix.md; mfrm_manuscript_template.md; mfrm_config.json; mfrm_app_engine_runner.py; requirements.txt",
+            "Action": "Use the appendix for methods details and the app-engine runner for exact current-path reproduction.",
+            "WhyItMatters": f"Convergence is {'recorded as successful' if converged else 'not recorded as successful'}; reproducibility files document the analysis path.",
+        },
+        {
+            "Step": 8,
+            "Phase": "Figures",
+            "Status": "Ready",
+            "Task": "Download figure assets and inspect readability before placing them in the paper.",
+            "AppLocation": "Downloads -> Figures",
+            "DownloadFile": "MFRM_Publication_Figures.zip; figure_manifest.csv",
+            "Action": "Prefer publication-styled PNG when available; keep HTML files for interactive inspection.",
+            "WhyItMatters": "The figure manifest records manuscript use and cautions for each exported figure.",
+        },
+        {
+            "Step": 9,
+            "Phase": "External validation",
+            "Status": "Boundary",
+            "Task": "Separate optional external package validation from the main app findings.",
+            "AppLocation": "Downloads -> Scripts & Config",
+            "DownloadFile": "MFRM_External_Simulation_Validation_Templates.zip",
+            "Action": "Run external validation only as a separate archived artifact when the paper needs that claim.",
+            "WhyItMatters": "Do not claim equality with FACETS, TAM, sirt, mirt, or mfrmr without a specific validation artifact.",
+        },
+        {
+            "Step": 10,
+            "Phase": "Final archive",
+            "Status": "Ready",
+            "Task": "Package final evidence for coauthors, reviewers, or OSF-style archiving.",
+            "AppLocation": "Downloads -> Scripts & Config",
+            "DownloadFile": "MFRM_OSF_Package.zip; mfrm_manuscript_handoff.md",
+            "Action": "Archive the OSF package, this handoff, and the exact manuscript version that used the outputs.",
+            "WhyItMatters": "A complete archive makes later revisions traceable without reopening the app session.",
+        },
+    ]
+    return pd.DataFrame(rows)
+
+
+def generate_manuscript_handoff_markdown(
+    result: dict,
+    diagnostics: dict,
+    all_bias_results: dict | None = None,
+    *,
+    public_export_mode: bool = True,
+) -> str:
+    """Markdown guide for downloading final results and converting them into a paper."""
+    all_bias = all_bias_results or {}
+    config = result.get("config", {}) if isinstance(result, dict) else {}
+    prep = result.get("prep", {}) if isinstance(result, dict) else {}
+    opt = result.get("opt") if isinstance(result, dict) else None
+    gate_status, gate_evidence = _overall_manuscript_gate_status(result, diagnostics, all_bias)
+    action_plan = build_submission_action_plan(result, diagnostics, all_bias)
+    checklist = build_manuscript_handoff_checklist(
+        result,
+        diagnostics,
+        all_bias,
+        public_export_mode=public_export_mode,
+    )
+
+    top_actions: list[str] = []
+    if isinstance(action_plan, pd.DataFrame) and not action_plan.empty:
+        plan = action_plan.copy()
+        if "Status" in plan.columns:
+            plan["_rank"] = plan["Status"].map(_status_rank_for_handoff).fillna(2)
+            plan = plan.sort_values(["_rank", "Priority"]).drop(columns=["_rank"])
+        for _, row in plan.head(5).iterrows():
+            top_actions.append(
+                f"- P{row.get('Priority', '?')} - {row.get('Status', 'Review')} - "
+                f"{row.get('Topic', 'Reporting item')}: {row.get('ImmediateAction', 'Review before manuscript use.')}"
+            )
+    if not top_actions:
+        top_actions.append("- No prioritized action rows were generated; still perform study-specific editing before submission.")
+
+    open_order = [
+        f"{int(row.Step)}. `{row.DownloadFile}` - {row.Task}"
+        for row in checklist.itertuples(index=False)
+    ]
+    facet_names = ", ".join(map(str, config.get("facet_names", []))) if isinstance(config, dict) else ""
+    lines = [
+        "# MFRM Final Results and Manuscript Handoff",
+        "",
+        "Use this handoff after the model has been fitted and before copying app-generated text into a manuscript.",
+        "",
+        "## Analysis Snapshot",
+        "",
+        f"- App version: {config.get('app_version', APP_VERSION) if isinstance(config, dict) else APP_VERSION}.",
+        f"- Model and method: {config.get('model', 'unknown') if isinstance(config, dict) else 'unknown'} / {config.get('method', 'unknown') if isinstance(config, dict) else 'unknown'}.",
+        f"- Observations and persons: {prep.get('n_obs', 'unknown') if isinstance(prep, dict) else 'unknown'} observations; {prep.get('n_person', 'unknown') if isinstance(prep, dict) else 'unknown'} persons.",
+        f"- Facets: {facet_names or 'not recorded'}.",
+        f"- Converged: {bool(getattr(opt, 'success', False))}. Optimizer message: {getattr(opt, 'message', 'not available')}.",
+        f"- Overall manuscript gate: {gate_status}. Evidence: {gate_evidence}",
+        f"- Export privacy mode: {'public/anonymized bundle mode' if public_export_mode else 'complete/private bundle mode'}.",
+        "",
+        "## Open In This Order",
+        "",
+        *open_order,
+        "",
+        "## Download Package",
+        "",
+        "- Publication Document: Report -> Exports -> Publication Document; download Word, PDF, or HTML for a draft report.",
+        "- Tables: Downloads -> Data Tables; download `MFRM_Tables.zip`, `MFRM_Report.xlsx`, and `MFRM_Report.html`.",
+        "- Figures: Downloads -> Figures; download `MFRM_Publication_Figures.zip` and `figure_manifest.csv`.",
+        "- Claim evidence: Downloads -> Data Tables or Scripts & Config; download `claim_to_evidence_matrix.csv`, `apa_report_sentence_audit.csv`, and `method_reference_audit.csv` before drafting Results and Discussion claims.",
+        "- Methods and scripts: Downloads -> Scripts & Config; download `mfrm_config.json`, `mfrm_method_appendix.md`, `mfrm_manuscript_template.md`, `mfrm_app_engine_runner.py`, and `requirements.txt`.",
+        "- Archive package: Downloads -> Scripts & Config; download `MFRM_OSF_Package.zip` using the intended privacy mode.",
+        "",
+        "## Before Manuscript Submission",
+        "",
+        "- Resolve every `Not ready` or `Do not claim` item before final conclusions.",
+        "- Use caveat language for `Report with caveat`, `Review`, or `Missing` items.",
+        "- Keep `Boundary` items inside the computed design and diagnostics.",
+        "- Confirm that each table and figure cited in the manuscript has a matching exported file.",
+        "- Record whether public or private export mode was used for any shared archive.",
+        "",
+        "## Priority Actions",
+        "",
+        *top_actions,
+        "",
+        "## Privacy And Archiving Note",
+        "",
+        "Public export mode removes likely row-level or person-level tables from the standard bundle and writes `export_privacy_manifest.csv`. It is not a formal de-identification guarantee. For confidential studies, review institutional policy before sharing any exported data, report, figure, or reproduction script.",
+        "",
+        "Archive the final manuscript version together with `MFRM_OSF_Package.zip`, this handoff, and any external validation artifacts used to support cross-package or cross-run claims.",
+    ]
+    return "\n".join(lines) + "\n"
+
+
+def generate_manuscript_binder_readme(
+    *,
+    public_export_mode: bool = True,
+    included_files: Iterable[str] | None = None,
+) -> str:
+    files = list(included_files or [])
+    file_lines = [f"- `{name}`" for name in sorted(files)] or ["- No files were added."]
+    lines = [
+        "# MFRM Manuscript Binder",
+        "",
+        "This bundle is a curated writing and review packet. It is smaller than the full OSF package and is intended for manuscript drafting, coauthor review, and reviewer-response planning.",
+        "",
+        f"- Export privacy mode at creation: {'public/anonymized bundle mode' if public_export_mode else 'complete/private bundle mode'}.",
+        "- Public mode is not a formal de-identification guarantee; review shared files before distribution.",
+        "",
+        "## Suggested Use",
+        "",
+        "1. Open `manuscript_handoff.md` first.",
+        "2. Use `claim_to_evidence_matrix.csv` to map each manuscript claim to tables, figures, diagnostics, caveats, and reviewer questions.",
+        "3. Use `apa_report_sentence_audit.csv` to check each generated APA sentence against evidence files, citations, and wording boundaries.",
+        "4. Use `visual_claim_guardrails.csv` before copying interpretation from Wright Maps, yardsticks, thresholds, or category curves.",
+        "5. Use `method_reference_audit.csv` to check which methodological references support each analysis surface.",
+        "6. If Stan posterior results are used, open `stan_posterior_reproducibility_handoff.md` and `stan_reproducibility_archive_contract.csv` before citing posterior intervals.",
+        "7. Use `submission_action_plan.csv` to resolve blockers and caveats before copying generated prose.",
+        "8. Use `method_appendix.md` and `manuscript_template.md` as draft scaffolds, not final manuscript text.",
+        "9. Keep the full `MFRM_OSF_Package.zip` or table bundle with this binder when archiving.",
+        "",
+        "## Included Files",
+        "",
+        *file_lines,
+    ]
+    return "\n".join(lines) + "\n"
+
+
+def build_manuscript_binder_assets(
+    frames: dict[str, pd.DataFrame],
+    text_assets: dict[str, str] | None = None,
+    *,
+    figure_manifest: pd.DataFrame | None = None,
+    visual_evidence_map: pd.DataFrame | None = None,
+    public_export_mode: bool = True,
+) -> dict[str, bytes | str]:
+    """Create a curated manuscript-writing bundle from current export assets."""
+    assets: dict[str, bytes | str] = {}
+    assets["visualization_settings.json"] = _visualization_preferences_json()
+    assets["visualization_settings.csv"] = to_csv_bytes(build_visualization_preferences_table())
+    for name, text in (text_assets or {}).items():
+        if name in {
+            "manuscript_handoff.md",
+            "method_appendix.md",
+            "manuscript_template.md",
+            "local_batch_workflow.md",
+            "mfrm_config.json",
+            "README_bayesian_mfrm_stan_runners.md",
+            "stan_posterior_reproducibility_handoff.md",
+        }:
+            assets[str(name)] = str(text)
+    selected_frames = [
+        "manuscript_handoff_checklist",
+        "claim_to_evidence_matrix",
+        "apa_report_sentence_audit",
+        "method_reference_audit",
+        "publication_gate_summary",
+        "submission_action_plan",
+        "case_interpretation_guidance",
+        "final_report_readiness",
+        "manuscript_claim_guide",
+        "visual_interpretation_checklist",
+        "visual_claim_guardrails",
+        "visual_method_evidence",
+        "export_privacy_manifest",
+        "summary",
+        "convergence",
+        "reliability",
+        "fit_statistics",
+        "category_probability_curves",
+        "bayesian_mfrm_stan_refinement_plan",
+        "stan_reproducibility_archive_contract",
+        "stan_posterior_reproducibility_route",
+        "stan_posterior_handoff_checklist",
+        "stan_run_manifest_template",
+        "mfrm_stan_prior_guidance",
+        "mfrm_stan_prior_sensitivity_grid",
+    ]
+    for frame_name in selected_frames:
+        frame = (frames or {}).get(frame_name)
+        if isinstance(frame, pd.DataFrame) and not frame.empty:
+            assets[f"{frame_name}.csv"] = to_csv_bytes(frame)
+    if isinstance(figure_manifest, pd.DataFrame) and not figure_manifest.empty:
+        assets["figure_manifest.csv"] = to_csv_bytes(figure_manifest)
+    if isinstance(visual_evidence_map, pd.DataFrame) and not visual_evidence_map.empty:
+        assets["visual_evidence_map.csv"] = to_csv_bytes(visual_evidence_map)
+        visual_qa = build_visual_qa_preflight(figure_manifest, visual_evidence_map)
+        if isinstance(visual_qa, pd.DataFrame) and not visual_qa.empty:
+            assets["visual_qa_preflight.csv"] = to_csv_bytes(visual_qa)
+    readme = generate_manuscript_binder_readme(
+        public_export_mode=public_export_mode,
+        included_files=assets.keys(),
+    )
+    return {"README_first.md": readme, **assets}
+
+
 def generate_manuscript_reporting_template(
     result: dict,
     diagnostics: dict,
     all_bias_results: dict | None = None,
 ) -> str:
-    """Result-aware manuscript skeleton for beginner reporting."""
+    """Result-aware manuscript skeleton for guided reporting."""
     config = result.get("config", {})
     prep = result.get("prep", {})
     opt = result.get("opt")
     all_bias = all_bias_results or {}
     guide = build_manuscript_claim_guide(result, diagnostics, all_bias)
     readiness = build_final_report_readiness(result, diagnostics, all_bias)
-    case_guidance = build_beginner_case_guidance(result, diagnostics, all_bias)
+    case_guidance = build_case_interpretation_guidance(result, diagnostics, all_bias)
 
     def guide_value(area: str, column: str, default: str = "No result-specific guidance recorded.") -> str:
         if not isinstance(guide, pd.DataFrame) or guide.empty:
@@ -25253,6 +32358,15 @@ def generate_manuscript_reporting_template(
     pca_status = readiness_value("Dimensionality screen", "Status", "Review")
     bias_status = status("Bias / local interaction")
     anchor_status = status("Anchoring and linking")
+    uncertainty = diagnostics.get("uncertainty", {}) if isinstance(diagnostics, dict) else {}
+    unc_summary = uncertainty.get("summary", pd.DataFrame()) if isinstance(uncertainty, dict) else pd.DataFrame()
+    if isinstance(unc_summary, pd.DataFrame) and not unc_summary.empty:
+        uncertainty_status = "; ".join(
+            f"{row.get('Status')}: {row.get('Rows')} row(s)" for _, row in unc_summary.iterrows()
+            if str(row.get("Area", "")).startswith("Measure")
+        ) or "not summarized"
+    else:
+        uncertainty_status = "not summarized"
     caution_rows = []
     if isinstance(guide, pd.DataFrame) and not guide.empty:
         for _, row in guide.iterrows():
@@ -25280,9 +32394,11 @@ def generate_manuscript_reporting_template(
             ])
     if not wording_rows:
         wording_rows.append("- No case-specific wording repair was generated. Still edit the template for the study context before submission.")
+    method_reference_rows = _method_reference_claim_boundary_lines(result, diagnostics, all_bias)
 
     suggested_results = [
         "Rating-scale functioning",
+        "MML population scale",
         "Reliability and separation",
         "Fit and dimensionality",
         "Wright map targeting and measure interpretation",
@@ -25333,6 +32449,12 @@ def generate_manuscript_reporting_template(
         "",
         "Report estimation settings here: optimizer/engine, maximum iterations, convergence tolerance, quadrature points for MML, latent-regression formula if used, anchor policy if used, and whether optional PCA, strict marginal diagnostics, bias screening, plausible values, prediction, simulation, or design evaluation were enabled.",
         "",
+        "## Method References And Claim Boundaries",
+        "",
+        "Use this section to keep method citations aligned with the analyses actually computed in this run. The downloadable `method_reference_audit.csv` is the canonical table; these bullets are a run-specific subset for drafting.",
+        "",
+        *method_reference_rows,
+        "",
         "## Results Draft",
         "",
         f"Convergence status: {'converged' if converged else 'not converged'}. Optimizer message: {getattr(opt, 'message', 'not available')}.",
@@ -25352,6 +32474,8 @@ def generate_manuscript_reporting_template(
         "## Limitations Draft",
         "",
         "- This report is based on a standalone Python implementation and should be cited as such.",
+        f"- Measure SE/CI basis: {uncertainty_status}. Report SE_Method and SE_Status from the exported measure table.",
+        f"- MML population scale status: {status('MML population scale')}. Do not imply that the latent variance was freely estimated by this app.",
         f"- Residual PCA status: {pca_status}. Do not claim unidimensionality if this remains Review or Missing.",
         f"- Bias/local interaction status: {bias_status}. Limit no-bias statements to screened facet pairs and cells.",
         f"- Anchor/linking status: {anchor_status}. Do not compare administrations, forms, cohorts, or studies on a common scale without anchor/linking evidence.",
@@ -25372,6 +32496,7 @@ def generate_manuscript_reporting_template(
         "- Sparse or zero-count categories are reported and category collapse decisions are justified.",
         "- Reliability/separation claims match the facet being interpreted.",
         "- Fit, dimensionality, and bias/local-interaction language matches the computed diagnostics.",
+        "- Each method citation and statistical claim has a matching row in `method_reference_audit.csv` or `claim_to_evidence_matrix.csv`.",
         "- Figures use readable labels; dense labels are shortened or inspected via interactive hover/downloads.",
         "- Cross-run linking claims are supported by anchor audit, drift, and chain evidence.",
         "- The data privacy warning is followed before sharing any real dataset or report bundle.",
@@ -25400,6 +32525,7 @@ def generate_method_appendix_text(
         f"- Model: {config.get('model', 'unknown')}.",
         f"- Estimation method: {config.get('method', 'unknown')}.",
         f"- Optimizer / engine: {config.get('optimizer', config.get('mml_engine', 'unknown'))}.",
+        "- Method reference audit: `method_reference_audit.csv` maps model, estimation, fit, dimensionality, bias, simulation, and external-validation claims to APA-library references confirmed from the Zotero/BibTeX audit.",
         f"- Observations: {prep.get('n_obs', 'unknown')}; persons: {prep.get('n_person', 'unknown')}; categories: {config.get('n_cat', 'unknown')} ({prep.get('rating_min', '?')} to {prep.get('rating_max', '?')}).",
         f"- Facets: {', '.join(map(str, config.get('facet_names', []))) or 'none recorded'}.",
         "",
@@ -25439,6 +32565,8 @@ def generate_method_appendix_text(
             f"- Fixed population prior SD: {float(config.get('population_prior_sd') or 1.0):.3f}; the variance is not estimated.",
         ])
     if config.get("method") == "MML":
+        prior_plan = build_mml_prior_sensitivity_plan(result)
+        covariance = diagnostics.get("uncertainty", {}).get("covariance", {}) if isinstance(diagnostics.get("uncertainty", {}), dict) else {}
         lines.extend([
             "",
             "## MML Diagnostics",
@@ -25447,6 +32575,9 @@ def generate_method_appendix_text(
             f"- Resolved MML engine: {config.get('mml_engine', 'unknown')}.",
             f"- Quadrature points: {config.get('quad_points', 'unknown')}.",
             f"- Population prior SD: {config.get('population_prior_sd', 'unknown')}.",
+            "- Population prior SD treatment: fixed user-set scale; the latent variance is not estimated as a free parameter.",
+            f"- Recommended prior-SD sensitivity values: {prior_plan['PopulationPriorSD'].round(4).tolist() if isinstance(prior_plan, pd.DataFrame) and not prior_plan.empty else 'not generated'}.",
+            f"- MML structural covariance status for measure SEs: {covariance.get('status', 'not recorded')}; {covariance.get('detail', '')}",
             f"- Posterior scoring available: {result.get('posterior', {}).get('available') if isinstance(result.get('posterior'), dict) else False}.",
             f"- Plausible values requested: {bool(config.get('compute_plausible_values', False))}; draws: {int(config.get('n_plausible_values') or 0)}.",
             f"- Strict marginal diagnostics enabled: {bool(diagnostics.get('marginal_fit_enabled', False))}.",
@@ -25651,7 +32782,7 @@ def _render_manuscript_claim_guide_section(
 
     st.subheader("Manuscript Claim Guide")
     st.caption(
-        "A beginner-facing bridge from diagnostics to publishable claims. "
+        "A guided bridge from diagnostics to publishable claims. "
         "Use this before copying APA text into a manuscript."
     )
     guide = build_manuscript_claim_guide(result, diagnostics, all_bias_results)
@@ -25680,9 +32811,9 @@ def _render_manuscript_claim_guide_section(
         mime="text/csv",
         key="dl_manuscript_claim_guide_report_tab",
     )
-    case_guide = build_beginner_case_guidance(result, diagnostics, all_bias_results)
+    case_guide = build_case_interpretation_guidance(result, diagnostics, all_bias_results)
     if isinstance(case_guide, pd.DataFrame) and not case_guide.empty:
-        st.subheader("Case-Specific Beginner Guide")
+        st.subheader("Case-Specific Interpretation Guide")
         st.caption(
             "Common interpretation traps detected from this run. "
             "Use this as a first-pass editing checklist for manuscript wording."
@@ -25696,7 +32827,7 @@ def _render_manuscript_claim_guide_section(
         _render_compact_dataframe(
             case_guide,
             ["Priority", "Case", "Status", "NextAction"],
-            details_label="Show full beginner case guide",
+            details_label="Show full case interpretation guide",
             hide_index=True,
             wrap_text=True,
         )
@@ -25715,11 +32846,53 @@ def _render_manuscript_claim_guide_section(
                         wrap_text=True,
                     )
         st.download_button(
-            "Download case-specific beginner guide (CSV)",
+            "Download case-specific interpretation guide (CSV)",
             data=to_csv_bytes(case_guide),
-            file_name="mfrm_beginner_case_guidance.csv",
+            file_name="mfrm_case_interpretation_guidance.csv",
             mime="text/csv",
-            key="dl_beginner_case_guidance_report_tab",
+            key="dl_case_interpretation_guidance_report_tab",
+        )
+    method_refs = build_method_reference_audit()
+    if isinstance(method_refs, pd.DataFrame) and not method_refs.empty:
+        st.subheader("Method Reference Audit")
+        st.caption(
+            "A Zotero/BibTeX-informed map from app methodology surfaces to "
+            "APA-library references, manuscript use, and claim boundaries."
+        )
+        _render_compact_dataframe(
+            method_refs,
+            ["MethodArea", "ReferenceCoverageStatus", "ManuscriptUse"],
+            details_label="Show full method reference audit",
+            hide_index=True,
+            wrap_text=True,
+        )
+        st.download_button(
+            "Download method reference audit (CSV)",
+            data=to_csv_bytes(method_refs),
+            file_name="mfrm_method_reference_audit.csv",
+            mime="text/csv",
+            key="dl_method_reference_audit_report_tab",
+        )
+    apa_sentence_audit = build_apa_report_sentence_audit(result, diagnostics, all_bias_results=all_bias_results)
+    if isinstance(apa_sentence_audit, pd.DataFrame) and not apa_sentence_audit.empty:
+        st.subheader("APA Sentence Evidence Audit")
+        st.caption(
+            "Sentence-level map from generated APA report prose to evidence files, "
+            "suggested citations, and claim boundaries."
+        )
+        _render_compact_dataframe(
+            apa_sentence_audit,
+            ["SentenceOrder", "APASection", "SentenceRole", "LinkedManuscriptArea", "CopyDecision"],
+            details_label="Show full APA sentence evidence audit",
+            hide_index=True,
+            wrap_text=True,
+        )
+        st.download_button(
+            "Download APA sentence evidence audit (CSV)",
+            data=to_csv_bytes(apa_sentence_audit),
+            file_name="apa_report_sentence_audit.csv",
+            mime="text/csv",
+            key="dl_apa_sentence_audit_report_tab",
         )
 
 
@@ -25759,6 +32932,7 @@ def show_report_section(
     result: dict, diagnostics: dict, *,
     bias_results: dict | None = None,
     all_bias_results: dict | None = None,
+    force_full: bool = False,
 ) -> None:
     """Publication-quality report with APA text, tables, checklist, equivalence, Stan."""
     st.subheader(t("report_top.subheader"))
@@ -25766,11 +32940,11 @@ def show_report_section(
 
     # v0.2.6-beta: Essential mode hides advanced Report sub-tabs
     # (Manuscript Template, Method Appendix, Facet Equivalence, Stan
-    # Code) so beginners see a focused 6-sub-tab Report section. Full
+    # Code) so Essential-view users see a focused 6-sub-tab Report section. Full
     # view restores all 10. The always-visible set (APA Report, Claim
     # Guide, Tables, Reporting Checklist, Readiness, Publication
     # Document) covers typical first-pass reporting needs.
-    essential_mode = (
+    essential_mode = (not force_full) and (
         st.session_state.get("app_view_density", "Essential") == "Essential"
     )
 
@@ -25878,7 +33052,7 @@ def show_report_section(
 
 
 def show_convergence_section(result: dict) -> None:
-    """Render optimizer convergence diagnostics with beginner-facing interpretation."""
+    """Render optimizer convergence diagnostics with guided interpretation."""
     convergence = result.get("convergence", pd.DataFrame())
     if not isinstance(convergence, pd.DataFrame) or convergence.empty:
         st.info(t("estimation_subsections.convergence_no_data_info"))
@@ -27481,12 +34655,40 @@ def render_parameter_recovery_simulation() -> None:
             "Bias", "MCSEBias", "RMSE", "MCSERMSE", "MAE",
             "RawBias", "RawRMSE", "Correlation",
             "MeanSE", "SEAvailableRate", "Coverage95",
+            "NominalCoverage", "CoverageErrorFromNominal",
             "MeanTruth", "MeanEstimate",
         ]:
             if col in display.columns:
                 display[col] = pd.to_numeric(display[col], errors="coerce").round(4)
         st.caption(t("report_tables.parameter_recovery_summary_caption"))
         st.dataframe(display, width="stretch", hide_index=True)
+
+    coverage_report: pd.DataFrame = bundle.get("coverage_report", pd.DataFrame())
+    if not isinstance(coverage_report, pd.DataFrame) or coverage_report.empty:
+        coverage_report = build_se_ci_coverage_report(bundle)
+    if isinstance(coverage_report, pd.DataFrame) and not coverage_report.empty:
+        coverage_display = coverage_report.copy()
+        for col in [
+            "NominalCoverage", "Coverage95", "CoverageError", "CoverageAbsError",
+            "SEAvailableRate", "MeanSE",
+        ]:
+            if col in coverage_display.columns:
+                coverage_display[col] = pd.to_numeric(
+                    coverage_display[col], errors="coerce"
+                ).round(4)
+        st.caption(t("report_tables.parameter_recovery_coverage_caption"))
+        _render_compact_dataframe(
+            coverage_display,
+            [
+                "ParameterType", "Facet", "CoverageN", "NominalCoverage",
+                "Coverage95", "CoverageError", "PrimarySEStatus",
+                "SEBasisRisk", "CoverageClaimStatus",
+                "Interpretation", "RecommendedAction",
+            ],
+            details_label=t("report_tables.parameter_recovery_coverage_details"),
+            hide_index=True,
+            wrap_text=True,
+        )
 
     rep_overview: pd.DataFrame = bundle["rep_overview"]
     with st.expander(
@@ -27511,6 +34713,10 @@ def render_parameter_recovery_simulation() -> None:
         s_dl = summary.copy()
         s_dl["_section"] = "recovery_summary"
         download_frames.append(s_dl)
+    if isinstance(coverage_report, pd.DataFrame) and not coverage_report.empty:
+        c_dl = coverage_report.copy()
+        c_dl["_section"] = "se_ci_coverage_report"
+        download_frames.append(c_dl)
     if isinstance(recovery, pd.DataFrame) and not recovery.empty:
         r_dl = recovery.copy()
         r_dl["_section"] = "recovery_long_table"
@@ -27523,6 +34729,14 @@ def render_parameter_recovery_simulation() -> None:
             file_name="mfrm_parameter_recovery.csv",
             mime="text/csv",
             key=f"param_recovery_download::{cache_key}",
+        )
+    if isinstance(coverage_report, pd.DataFrame) and not coverage_report.empty:
+        st.download_button(
+            t("report_tables.parameter_recovery_coverage_download_button"),
+            data=to_csv_bytes(coverage_report),
+            file_name="mfrm_se_ci_coverage_report.csv",
+            mime="text/csv",
+            key=f"param_recovery_coverage_download::{cache_key}",
         )
 
 
@@ -27713,7 +34927,7 @@ def _render_apa_report(
         "manuscript Method and Results sections. Review and adapt before submission."
     )
 
-    # --- Beginner guide ---
+    # --- Reading guide ---
     with st.expander("How to read this report", expanded=False):
         st.markdown(
             """
@@ -27729,7 +34943,7 @@ of a research paper that uses MFRM.
 | **Reliability & Separation** | Can the model distinguish between elements? | Higher is better for persons; for raters, *low* reliability means raters agree (good!) |
 | **Misfit** | Are there problematic elements? | Infit 0.5–1.5 is acceptable. Outside = erratic (>1.5) or too predictable (<0.5) |
 | **Rating scale** | Is the rubric working? | Ordered thresholds = good. Disordered = categories are confusing raters |
-| **Bias** | Are there systematic interactions? | |t| ≥ 2 = a rater treats certain tasks/persons differently than expected |
+| **Bias** | Are there systematic interactions? | Use the DFF/bias audit: sparse cells, Holm/BH multiplicity checks, and conditional inference scope determine what can be claimed |
 
 #### Key terms explained
 
@@ -27738,7 +34952,7 @@ of a research paper that uses MFRM.
 - **Strata (*H*)**: Number of statistically distinct groups. *H* = (4*G* + 1) / 3. For persons, *H* ≥ 3 means at least 3 ability levels.
 - **Infit MnSq**: Mean-square fit statistic weighted by information. 1.0 = perfect fit. Values far from 1.0 indicate misfit.
 - **Outfit MnSq**: Unweighted mean-square — sensitive to outliers. A single unexpected response can inflate Outfit.
-- **Bias (*t*-value)**: Tests whether a specific element pairing (e.g., Rater R1 on Task T3) deviates from the model prediction. |*t*| ≥ 2 is significant at *p* < .05.
+- **Bias / local interaction**: A conditional screening check for whether a specific element pairing (e.g., Rater R1 on Task T3) deviates from the model prediction. Interpret with sparse-cell flags, Holm/BH multiplicity checks, common-scale evidence, and the exported inference audit.
 - **Logit**: The unit of measurement in Rasch models. One logit difference ≈ the effect of one additional correct response.
 - **95% CI**: Confidence interval. If two elements' CIs do not overlap, they are significantly different at *p* < .05.
 
@@ -27756,8 +34970,24 @@ of a research paper that uses MFRM.
     facet_names = config.get("facet_names", [])
     measures = diagnostics.get("measures", pd.DataFrame())
     gate_summary = build_publication_gate_summary(result, diagnostics, all_bias_results)
-    case_guidance = build_beginner_case_guidance(result, diagnostics, all_bias_results)
+    case_guidance = build_case_interpretation_guidance(result, diagnostics, all_bias_results)
     action_plan = build_submission_action_plan(result, diagnostics, all_bias_results)
+    current_bias_results = all_bias_results or {}
+    if not current_bias_results and bias_results:
+        current_bias_results = {
+            f"{bias_results.get('facet_a', 'A')} x {bias_results.get('facet_b', 'B')}": bias_results
+        }
+    current_method_refs = build_current_run_method_reference_audit(
+        result,
+        diagnostics,
+        current_bias_results,
+    )
+    apa_sentence_audit = build_apa_report_sentence_audit(
+        result,
+        diagnostics,
+        bias_results=bias_results,
+        all_bias_results=current_bias_results,
+    )
     overall_gate = pd.Series(dtype=object)
     if isinstance(gate_summary, pd.DataFrame) and not gate_summary.empty:
         overall_hit = gate_summary.loc[
@@ -27812,6 +35042,20 @@ of a research paper that uses MFRM.
                         wrap_text=True,
                     )
 
+    if isinstance(current_method_refs, pd.DataFrame) and not current_method_refs.empty:
+        with st.expander("Method references and claim boundaries for this report", expanded=False):
+            st.caption(
+                "Run-specific subset of `method_reference_audit.csv`. These rows support "
+                "method description and claim boundaries; they do not by themselves validate the dataset."
+            )
+            _render_compact_dataframe(
+                current_method_refs,
+                ["MethodArea", "CitationTokens", "ManuscriptUse", "ClaimBoundary", "TriggerEvidence"],
+                details_label="Show full current-run reference audit",
+                hide_index=True,
+                wrap_text=True,
+            )
+
     method_parts: list[str] = []
     results_parts: list[str] = []
     refs_used: set[str] = set()
@@ -27827,15 +35071,19 @@ of a research paper that uses MFRM.
 
     if isinstance(n_obs, int) and isinstance(n_person, int):
         method_parts.append(
-            f"A *Many-Facet Rasch Model* (MFRM; {model}; Linacre, 1989) was estimated "
-            f"using {method} with *N* = {n_obs:,} observations from {n_person:,} persons."
+            f"A *Many-Facet Rasch Model* (MFRM; {model}) was estimated "
+            f"using {method} with *N* = {n_obs:,} observations from {n_person:,} persons, "
+            "following Rasch-family and many-facet measurement conventions "
+            "(Rasch, 1980; Linacre, 1989)."
         )
     else:
         method_parts.append(
-            f"A *Many-Facet Rasch Model* (MFRM; {model}; Linacre, 1989) was estimated "
-            f"using {method} with *N* = {n_obs} observations from {n_person} persons."
+            f"A *Many-Facet Rasch Model* (MFRM; {model}) was estimated "
+            f"using {method} with *N* = {n_obs} observations from {n_person} persons, "
+            "following Rasch-family and many-facet measurement conventions "
+            "(Rasch, 1980; Linacre, 1989)."
         )
-    refs_used.add("Linacre, 1989")
+    refs_used.update(["Rasch, 1980", "Linacre, 1989"])
 
     # Facet counts
     facet_desc_parts = []
@@ -27860,8 +35108,26 @@ of a research paper that uses MFRM.
     method_parts.append(
         f"The rating scale had {n_cat} categories ({rating_min}–{rating_max}). "
         f"Estimation was performed using {optimizer_desc}. "
-        "95% confidence intervals were computed as Estimate ± 1.96 × SE for all parameters."
+        "Reported 95% intervals use conditional approximate SEs "
+        "(Estimate ± 1.96 × SE); they do not propagate all non-person parameter "
+        "covariances or person-estimation uncertainty."
     )
+    if model == "RSM":
+        method_parts.append("The rating-scale formulation follows the ordered-category RSM specification (Andrich, 1978).")
+        refs_used.add("Andrich, 1978")
+    elif model == "PCM":
+        method_parts.append("The partial-credit formulation allows category thresholds to vary by step structure (Masters, 1982).")
+        refs_used.add("Masters, 1982")
+    elif model == "GPCM":
+        method_parts.append("The generalized partial-credit specification is reported with its bounded slope constraints (Masters, 1982; Muraki, 1992).")
+        refs_used.update(["Masters, 1982", "Muraki, 1992"])
+    if method == "MML":
+        method_parts.append(
+            "The MML/EAP path was treated as marginal EM estimation with posterior "
+            "scoring and observed-information caveats (Bock & Aitkin, 1981; "
+            "Bock & Mislevy, 1982; Louis, 1982)."
+        )
+        refs_used.update(["Bock & Aitkin, 1981", "Bock & Mislevy, 1982", "Louis, 1982"])
     if model == "GPCM":
         slope_tbl = result.get("slopes", pd.DataFrame())
         if isinstance(slope_tbl, pd.DataFrame) and not slope_tbl.empty:
@@ -27879,7 +35145,7 @@ of a research paper that uses MFRM.
                     "The GPCM specification used the bounded slope structure "
                     f"`slope_facet = step_facet = {config.get('step_facet')}`; slope estimates were not available for summarization."
                 )
-        refs_used.add("Masters, 1982")
+        refs_used.update(["Masters, 1982", "Muraki, 1992"])
 
     # --- Global fit ---
     obs_df = diagnostics.get("obs", pd.DataFrame())
@@ -27948,7 +35214,7 @@ of a research paper that uses MFRM.
             results_parts.append(
                 "; ".join(rel_sentences) + " (Wright & Masters, 1982)."
             )
-            refs_used.update(["Wright & Masters, 1982", "Myford & Wolfe, 2003"])
+            refs_used.add("Wright & Masters, 1982")
 
     # --- Misfit summary ---
     if not measures.empty and "Infit" in measures.columns:
@@ -28021,35 +35287,47 @@ of a research paper that uses MFRM.
                 if linacre_details:
                     rating_text += f"; issues: {'; '.join(linacre_details)}"
                 rating_text += "."
+                decision_support = rating_scale_decision_support_table(result, diagnostics)
+                if isinstance(decision_support, pd.DataFrame) and not decision_support.empty:
+                    overall_decision = decision_support.loc[
+                        decision_support["DecisionArea"].astype(str) == "Overall reportability"
+                    ]
+                    if not overall_decision.empty:
+                        decision_status = str(overall_decision["DecisionStatus"].iloc[0])
+                        safe_wording = str(overall_decision["SafeReportWording"].iloc[0]).rstrip(".")
+                        rating_text += (
+                            f" Integrated decision support status: {decision_status}; "
+                            f"{safe_wording}."
+                        )
                 results_parts.append(rating_text)
             refs_used.add("Linacre, 2004")
 
     # --- Bias/Interaction — ALL pairs ---
-    all_bias = all_bias_results or {}
-    if not all_bias and bias_results:
-        pair_key = f"{bias_results.get('facet_a', 'A')} x {bias_results.get('facet_b', 'B')}"
-        all_bias = {pair_key: bias_results}
-    for pair_key, br in all_bias.items():
-        bias_tbl = br.get("table", pd.DataFrame())
-        if not isinstance(bias_tbl, pd.DataFrame) or bias_tbl.empty:
-            continue
-        t_col = next((c for c in ("t", "t_value", "T") if c in bias_tbl.columns), None)
-        if not t_col:
-            continue
-        t_vals = pd.to_numeric(bias_tbl[t_col], errors="coerce").dropna()
-        n_sig = int((t_vals.abs() >= 2).sum())
-        n_pairs = len(t_vals)
-        fa = br.get("facet_a", pair_key.split(" x ")[0])
-        fb = br.get("facet_b", pair_key.split(" x ")[-1])
-        if n_pairs > 0:
-            bonf_alpha = 0.05 / n_pairs
-            interaction_label = "interaction" if n_sig == 1 else "interactions"
+    all_bias = current_bias_results
+    bias_audit = build_bias_inference_audit(all_bias, result, diagnostics) if all_bias else pd.DataFrame()
+    if isinstance(bias_audit, pd.DataFrame) and not bias_audit.empty:
+        for _, audit_row in bias_audit.iterrows():
+            n_pairs = int(audit_row.get("CellsScreened", 0) or 0)
+            if n_pairs <= 0:
+                continue
+            n_flagged = int(audit_row.get("FlaggedCells", 0) or 0)
+            n_strong = int(audit_row.get("StrongReviewCells", 0) or 0)
+            n_sparse = int(audit_row.get("SparseCells", 0) or 0)
+            pair_label = str(audit_row.get("FacetPair", "selected facet pair")).replace(" x ", " × ")
             results_parts.append(
-                f"Bias analysis of the {fa} × {fb} interaction revealed "
-                f"{n_sig} flagged {interaction_label} (|*t*| ≥ 2) "
-                f"out of {n_pairs} combinations ({100*n_sig/n_pairs:.0f}%; "
-                f"Bonferroni-corrected α = {bonf_alpha:.3f})."
+                f"Bias analysis of the {pair_label} interaction was treated as a "
+                f"conditional screening analysis: {n_flagged} of {n_pairs} cells were "
+                f"DFF/bias review flags ({n_strong} strong-review; {n_sparse} sparse), "
+                "with Holm/BH multiplicity checks applied within the exported cell family "
+                "(Yen, 1984; Christensen, Makransky & Horton, 2017; Myford & Wolfe, 2003; "
+                "Myford & Wolfe, 2004)."
             )
+            refs_used.update([
+                "Yen, 1984",
+                "Christensen, Makransky & Horton, 2017",
+                "Myford & Wolfe, 2003",
+                "Myford & Wolfe, 2004",
+            ])
 
     # --- Build final text ---
     method_text = "**Method.**  " + "  ".join(method_parts)
@@ -28057,6 +35335,26 @@ of a research paper that uses MFRM.
     full_text = method_text + "\n\n" + results_text
 
     st.markdown(full_text)
+    if isinstance(apa_sentence_audit, pd.DataFrame) and not apa_sentence_audit.empty:
+        with st.expander("Sentence-level evidence audit for the APA text", expanded=False):
+            st.caption(
+                "Use this table before copying generated prose. Each row links a report sentence "
+                "to evidence files, suggested citations, and wording boundaries."
+            )
+            _render_compact_dataframe(
+                apa_sentence_audit,
+                ["SentenceOrder", "APASection", "SentenceRole", "LinkedManuscriptArea", "CopyDecision"],
+                details_label="Show full APA sentence evidence audit",
+                hide_index=True,
+                wrap_text=True,
+            )
+            st.download_button(
+                "Download APA sentence evidence audit (CSV)",
+                data=to_csv_bytes(apa_sentence_audit),
+                file_name="apa_report_sentence_audit.csv",
+                mime="text/csv",
+                key=f"dl_apa_sentence_audit_apa_tab::{id(result)}",
+            )
 
     # --- Inline interpretation guidance (below the APA text) ---
     st.markdown("---")
@@ -28204,34 +35502,28 @@ of a research paper that uses MFRM.
                 )
 
     # Bias interpretation
-    all_bias_interp = all_bias_results or {}
-    if not all_bias_interp and bias_results:
-        pk = f"{bias_results.get('facet_a', 'A')} x {bias_results.get('facet_b', 'B')}"
-        all_bias_interp = {pk: bias_results}
+    all_bias_interp = current_bias_results
+    bias_audit_interp = build_bias_inference_audit(all_bias_interp, result, diagnostics) if all_bias_interp else pd.DataFrame()
     any_bias = False
-    for pair_key, br in all_bias_interp.items():
-        btbl = br.get("table", pd.DataFrame())
-        if not isinstance(btbl, pd.DataFrame) or btbl.empty:
-            continue
-        tc = next((c for c in ("t", "t_value", "T") if c in btbl.columns), None)
-        if not tc:
-            continue
-        tv = pd.to_numeric(btbl[tc], errors="coerce").dropna()
-        ns = int((tv.abs() >= 2).sum())
-        np_ = len(tv)
-        if np_ > 0 and ns > 0:
-            any_bias = True
-            st.warning(
-                f"**Bias: {pair_key}** — {ns} of {np_} pairs ({100*ns/np_:.0f}%) show "
-                "significant interaction (|*t*| ≥ 2). "
-                "This means certain element combinations produce unexpectedly high or low scores. "
-                "Check the Bias/Interaction tab to identify specific problematic pairings."
-            )
+    if isinstance(bias_audit_interp, pd.DataFrame) and not bias_audit_interp.empty:
+        for _, audit_row in bias_audit_interp.iterrows():
+            ns = int(audit_row.get("FlaggedCells", 0) or 0)
+            np_ = int(audit_row.get("CellsScreened", 0) or 0)
+            sparse = int(audit_row.get("SparseCells", 0) or 0)
+            strong = int(audit_row.get("StrongReviewCells", 0) or 0)
+            pair_key = str(audit_row.get("FacetPair", "Bias"))
+            if np_ > 0 and (ns > 0 or sparse > 0):
+                any_bias = True
+                st.warning(
+                    f"**Bias: {pair_key}** — {ns} of {np_} cells are DFF/bias review flags "
+                    f"({strong} strong-review; {sparse} sparse). "
+                    "Treat this as conditional screening evidence and review the Bias/Interaction audit."
+                )
     if all_bias_interp and not any_bias:
         st.success(
-            "**Bias: No significant interactions in the computed screen** — "
-            "No screened pair reached |*t*| ≥ 2. Keep the claim limited to "
-            "the facet pairs and cells that were actually tested."
+            "**Bias: No DFF/bias review flags in the computed screen** — "
+            "Keep the claim limited to the facet pairs and cells that were actually tested, "
+            "and report the conditional screening scope."
         )
 
     # --- Overall decision summary ---
@@ -28305,25 +35597,21 @@ of a research paper that uses MFRM.
             "as needed for your specific study. The text uses APA 7th edition formatting."
         )
 
-    # Auto-generated references (only those cited)
-    _REFERENCES = {
-        "Eckes, 2005": "Eckes, T. (2005). Examining rater effects in TestDaF writing and speaking performance assessments. *Language Assessment Quarterly, 2*, 197–221.",
-        "Linacre, 1989": "Linacre, J. M. (1989). *Many-facet Rasch measurement*. MESA Press.",
-        "Linacre, 2004": "Linacre, J. M. (2004). Optimizing rating scale category effectiveness. In E. V. Smith & R. M. Smith (Eds.), *Introduction to Rasch measurement* (pp. 258–278). JAM Press.",
-        "Masters, 1982": "Masters, G. N. (1982). A Rasch model for partial credit scoring. *Psychometrika, 47*(2), 149–174.",
-        "Myford & Wolfe, 2003": "Myford, C. M., & Wolfe, E. W. (2003). Detecting and measuring rater effects using many-facet Rasch measurement: Part I. *Journal of Applied Measurement, 4*, 386–422.",
-        "Wright & Linacre, 1994": "Wright, B. D., & Linacre, J. M. (1994). Reasonable mean-square fit values. *Rasch Measurement Transactions, 8*, 370.",
-        "Wright & Masters, 1982": "Wright, B. D., & Masters, G. N. (1982). *Rating scale analysis*. MESA Press.",
-    }
-    if refs_used:
+    # Auto-generated references: narrative citations plus current-run method
+    # audit rows that may be used in the manuscript template and claim matrix.
+    current_method_reference_keys = _reference_keys_from_method_reference_frame(current_method_refs)
+    reference_keys_used = sorted(
+        set(_reference_keys_from_citation_labels(refs_used)).union(current_method_reference_keys)
+    )
+    if reference_keys_used:
         with st.expander("References cited in the report"):
             st.caption(
-                "Add these references to your manuscript's reference list. "
-                "Only references actually cited in the generated text are shown."
+                "Add these references to your manuscript's reference list when you use "
+                "the generated APA text, method-reference audit, or claim matrix. "
+                "Review the list against the final manuscript before submission."
             )
-            for key in sorted(refs_used):
-                ref = _REFERENCES.get(key, key)
-                st.markdown(f"- {ref}")
+            for key in reference_keys_used:
+                st.markdown(f"- {_APA_REFERENCE_LIBRARY[key]}")
 
     # Bibliography downloads — convert the citations found in the
     # generated narrative into BibTeX (Zotero / LaTeX) and RIS
@@ -28331,8 +35619,8 @@ of a research paper that uses MFRM.
     # source (build_bibtex_from_cited matches on `_CITATION_TO_KEY`)
     # so authors get well-formed entries even for references that
     # the abbreviated ``_REFERENCES`` block above does not cover.
-    _bibtex_text = build_bibtex_from_cited(full_text)
-    _ris_text = build_ris_from_cited(full_text)
+    _bibtex_text = build_bibtex_from_cited(full_text, always_include=reference_keys_used)
+    _ris_text = build_ris_from_cited(full_text, always_include=reference_keys_used)
     if _bibtex_text or _ris_text:
         with st.expander(t("apa_report.bibliography_downloads_expander")):
             st.caption(t("apa_report.bibliography_downloads_caption"))
@@ -28430,7 +35718,10 @@ def _render_reporting_checklist(
     has_meas = not measures.empty and "Estimate" in measures.columns
     has_ci = has_meas and "SE" in measures.columns
     lines.append(_check(has_meas, "**Measure** (logits) with **SE** for each element"))
-    lines.append(_check(has_ci, "**95% CI** for each element (Estimate ± 1.96 × SE)"))
+    lines.append(_check(
+        has_ci,
+        "**Conditional approximate 95% interval** for each element (Estimate ± 1.96 × SE)"
+    ))
     has_fit = has_meas and "Infit" in measures.columns
     lines.append(_check(has_fit, "**Infit and Outfit MnSq** with control limits (0.5–1.5)"))
     lines.append(_check(has_fit, "**Count and percentage** of misfitting elements"))
@@ -28776,6 +36067,852 @@ STAN_SENSITIVITY_CHECKLIST_MD = """
 """
 
 
+def build_generic_mfrm_stan_code(result: dict) -> dict:
+    """Return the generic RSM/PCM Stan program for the current result."""
+    empty = {
+        "available": False,
+        "stan_code": "",
+        "model_file": "mfrm_model.stan",
+        "messages": [],
+        "facet_variable_map": pd.DataFrame(),
+    }
+    if not isinstance(result, dict):
+        return {**empty, "messages": ["No result object is available."]}
+    config = result.get("config", {}) if isinstance(result.get("config", {}), dict) else {}
+    prep = result.get("prep", {}) if isinstance(result.get("prep", {}), dict) else {}
+    facet_names = [str(f) for f in config.get("facet_names", prep.get("facet_names", []))]
+    model_type = str(config.get("model", "RSM")).upper()
+    n_cat = int(config.get("n_cat") or 5)
+    if not facet_names:
+        return {**empty, "messages": ["No non-person facets are available for the generic Stan model."]}
+    if model_type not in {"RSM", "PCM"}:
+        return {**empty, "messages": [f"Generic Stan code currently supports RSM/PCM, not {model_type}."]}
+
+    facet_vars = stan_facet_variable_names(facet_names)
+    facet_var_map = dict(zip(facet_names, facet_vars))
+    step_facet = str(config.get("step_facet") or facet_names[0]) if model_type == "PCM" else ""
+    if model_type == "PCM" and step_facet not in facet_var_map:
+        step_facet = facet_names[0]
+    step_var = facet_var_map.get(step_facet, facet_vars[0])
+
+    data_lines = [
+        "data {",
+        "  int<lower=1> N;           // number of observations",
+        "  int<lower=1> J;           // number of persons",
+    ]
+    for fn, fv in zip(facet_names, facet_vars):
+        data_lines.append(f"  int<lower=1> K_{fv};       // number of {fn} levels")
+    data_lines.append(f"  int<lower=2> C;           // number of categories ({n_cat} expected)")
+    data_lines.append("  array[N] int<lower=1, upper=J> person;  // person index")
+    for fv in facet_vars:
+        data_lines.append(f"  array[N] int<lower=1, upper=K_{fv}> {fv};  // {fv} index")
+    data_lines.append("  array[N] int<lower=1, upper=C> y;      // observed rating, 1-indexed for Stan")
+    data_lines.append("  real<lower=0> sigma_theta_prior_scale; // scale for ability SD prior")
+    data_lines.append("  real<lower=0> facet_prior_scale;       // severity prior SD")
+    data_lines.append("  real<lower=0> step_prior_scale;        // threshold prior SD")
+    data_lines.append("}")
+
+    param_lines = [
+        "parameters {",
+        "  vector[J] theta;          // person ability",
+    ]
+    for fn, fv in zip(facet_names, facet_vars):
+        param_lines.append(f"  vector[K_{fv}] delta_{fv};  // {fn} severity")
+    if model_type == "RSM":
+        param_lines.append("  ordered[C-1] tau;         // Rasch-Andrich thresholds (RSM)")
+    else:
+        param_lines.append(f"  matrix[K_{step_var}, C-1] tau; // thresholds (PCM, per {step_facet})")
+    param_lines.append("  real<lower=0> sigma_theta; // person ability SD")
+    param_lines.append("}")
+
+    model_lines = [
+        "model {",
+        "  // Priors: set scales in the data block from substantive knowledge",
+        "  theta ~ normal(0, sigma_theta);",
+        "  sigma_theta ~ cauchy(0, sigma_theta_prior_scale);",
+    ]
+    for fv in facet_vars:
+        model_lines.append(f"  delta_{fv} ~ normal(0, facet_prior_scale);")
+    if model_type == "RSM":
+        model_lines.append("  tau ~ normal(0, step_prior_scale);")
+    else:
+        model_lines.append(f"  to_vector(tau) ~ normal(0, step_prior_scale);")
+    model_lines.append("  // Centering: sum-to-zero on first facet")
+    model_lines.append(f"  sum(delta_{facet_vars[0]}) ~ normal(0, 0.001 * K_{facet_vars[0]});")
+    model_lines.append("")
+    model_lines.append("  // RSM/PCM ordinal likelihood")
+    model_lines.append("  for (n in 1:N) {")
+    eta_parts = ["theta[person[n]]"]
+    for fv in facet_vars:
+        eta_parts.append(f"delta_{fv}[{fv}[n]]")
+    eta_expr = " - ".join(eta_parts)
+    model_lines.append(f"    real eta = {eta_expr};")
+    model_lines.append("    vector[C] log_prob;")
+    model_lines.append("    log_prob[1] = 0;")
+    if model_type == "RSM":
+        model_lines.append("    for (c in 2:C)")
+        model_lines.append("      log_prob[c] = log_prob[c-1] + eta - tau[c-1];")
+    else:
+        model_lines.append("    for (c in 2:C)")
+        model_lines.append(f"      log_prob[c] = log_prob[c-1] + eta - tau[{step_var}[n], c-1];")
+    model_lines.append("    y[n] ~ categorical_logit(log_prob);")
+    model_lines.append("  }")
+    model_lines.append("}")
+
+    gq_lines = [
+        "generated quantities {",
+        "  vector[N] log_lik;  // for LOO cross-validation",
+        "  array[N] int y_rep; // posterior predictive",
+        "  for (n in 1:N) {",
+        f"    real eta = {eta_expr};",
+        "    vector[C] log_prob;",
+        "    log_prob[1] = 0;",
+    ]
+    if model_type == "RSM":
+        gq_lines.append("    for (c in 2:C)")
+        gq_lines.append("      log_prob[c] = log_prob[c-1] + eta - tau[c-1];")
+    else:
+        gq_lines.append("    for (c in 2:C)")
+        gq_lines.append(f"      log_prob[c] = log_prob[c-1] + eta - tau[{step_var}[n], c-1];")
+    gq_lines.extend([
+        "    log_lik[n] = categorical_logit_lpmf(y[n] | log_prob);",
+        "    y_rep[n] = categorical_logit_rng(log_prob);",
+        "  }",
+        "}",
+    ])
+    stan_code = "\n".join(data_lines + [""] + param_lines + [""] + model_lines + [""] + gq_lines)
+    stan_code = stan_code_sensitivity_notice("Bayesian MFRM RSM/PCM") + "\n" + stan_code
+    return {
+        "available": True,
+        "stan_code": stan_code,
+        "model_file": "mfrm_model.stan",
+        "model_type": model_type,
+        "n_categories": n_cat,
+        "step_facet": step_facet,
+        "step_variable": step_var,
+        "messages": [],
+        "facet_variable_map": pd.DataFrame([
+            {"Facet": facet, "StanVariable": var_name, "StanCountVariable": f"K_{var_name}"}
+            for facet, var_name in zip(facet_names, facet_vars)
+        ]),
+    }
+
+
+def stan_prior_setting_guidance(
+    *,
+    sigma_theta_prior_scale: float = 2.5,
+    facet_prior_scale: float = 2.0,
+    step_prior_scale: float = 5.0,
+) -> pd.DataFrame:
+    """Explain how to set and report the priors used by the generic Stan export."""
+    return pd.DataFrame([
+        {
+            "PriorTarget": "Person ability theta[j]",
+            "TemplatePrior": "theta[j] ~ normal(0, sigma_theta)",
+            "JsonField": "not a JSON hyperparameter",
+            "TemplateValue": "center fixed at 0",
+            "HowToSet": (
+                "The zero center is an identification/reference choice on the Rasch logit scale. "
+                "Do not move it unless the model is explicitly extended with a population mean or latent regression."
+            ),
+            "SensitivityCheck": "Changing the center should be treated as a different parameterization, not a routine sensitivity variant.",
+            "ReportingNote": "State the ability scale is centered at zero and identify which facet is constrained for comparability.",
+        },
+        {
+            "PriorTarget": "Person ability SD sigma_theta",
+            "TemplatePrior": "sigma_theta ~ cauchy(0, sigma_theta_prior_scale), sigma_theta > 0",
+            "JsonField": "sigma_theta_prior_scale",
+            "TemplateValue": float(sigma_theta_prior_scale),
+            "HowToSet": (
+                "Use the default as a weakly informative starting value. Use a smaller scale when the assessment is designed "
+                "for a narrow ability range; use a wider scale only when prior studies or pilot data support broad heterogeneity."
+            ),
+            "SensitivityCheck": "Compare at least one tighter and one wider sigma_theta_prior_scale while keeping the same data, seed, chains, and sampler controls.",
+            "ReportingNote": "Report the scale, the posterior sigma_theta summary, and whether person/facet conclusions changed under sensitivity variants.",
+        },
+        {
+            "PriorTarget": "Facet severity or difficulty delta_*",
+            "TemplatePrior": "delta_*[k] ~ normal(0, facet_prior_scale)",
+            "JsonField": "facet_prior_scale",
+            "TemplateValue": float(facet_prior_scale),
+            "HowToSet": (
+                "Choose this from the expected spread of rater severity, task difficulty, or other non-person facets. "
+                "A value near 1 regularizes sparse facets; values around 2 allow several-logit differences before strong shrinkage."
+            ),
+            "SensitivityCheck": "Check whether facet rankings, intervals, and flagged severe/difficult elements are stable under tighter and wider scales.",
+            "ReportingNote": "Report the scale separately from any MML population_prior_sd; they control different model components.",
+        },
+        {
+            "PriorTarget": "RSM/PCM thresholds tau",
+            "TemplatePrior": "tau ~ normal(0, step_prior_scale)",
+            "JsonField": "step_prior_scale",
+            "TemplateValue": float(step_prior_scale),
+            "HowToSet": (
+                "Use a broad value when all categories are well represented. Tighten the scale when categories are sparse, "
+                "thresholds are weakly identified, or prior rubric design implies compact adjacent-category transitions."
+            ),
+            "SensitivityCheck": "Compare threshold order, category curves, posterior predictive category counts, and LOO/PPC summaries across step_prior_scale values.",
+            "ReportingNote": "For PCM, state which facet indexes the threshold matrix and archive the score/category map.",
+        },
+        {
+            "PriorTarget": "Facet centering constraint",
+            "TemplatePrior": "sum(delta_first_facet) ~ normal(0, 0.001 * K_first_facet)",
+            "JsonField": "not user-facing",
+            "TemplateValue": "tight identification constraint",
+            "HowToSet": (
+                "This is a computational identification constraint, not substantive prior information. "
+                "Change it only when you also change the sign/centering convention and document the new parameter map."
+            ),
+            "SensitivityCheck": "Do not compare centered and uncentered outputs without first aligning the location constant.",
+            "ReportingNote": "State the centering convention before comparing with FACETS, TAM, mirt, sirt, or Uto-family implementations.",
+        },
+        {
+            "PriorTarget": "Uto-family rater drift extensions",
+            "TemplatePrior": "drift increments require a documented scale such as normal(0, sigma_drift)",
+            "JsonField": "extension-specific",
+            "TemplateValue": "not fixed by generic RSM/PCM JSON",
+            "HowToSet": (
+                "Set drift priors from the scoring schedule and expected change per time block. "
+                "Arbitrary row order is not enough; time blocks must have substantive meaning."
+            ),
+            "SensitivityCheck": "Vary the drift scale and confirm that rater trajectories, predictive checks, and convergence diagnostics remain defensible.",
+            "ReportingNote": "Archive the time_block mapping and explain why drift is identifiable in the current design.",
+        },
+    ]).assign(TemplateValue=lambda frame: frame["TemplateValue"].map(str))
+
+
+def stan_prior_sensitivity_grid(
+    *,
+    sigma_theta_prior_scale: float = 2.5,
+    facet_prior_scale: float = 2.0,
+    step_prior_scale: float = 5.0,
+) -> pd.DataFrame:
+    """Return a small prior-sensitivity grid for the generic RSM/PCM Stan JSON."""
+    base_sigma = float(sigma_theta_prior_scale)
+    base_facet = float(facet_prior_scale)
+    base_step = float(step_prior_scale)
+    rows = [
+        {
+            "Variant": "current_template",
+            "sigma_theta_prior_scale": base_sigma,
+            "facet_prior_scale": base_facet,
+            "step_prior_scale": base_step,
+            "UseWhen": "Reference run generated by the app.",
+            "Compare": "Use as the baseline for posterior summaries, diagnostics, PPC, and LOO.",
+        },
+        {
+            "Variant": "regularizing",
+            "sigma_theta_prior_scale": max(0.5, base_sigma * 0.6),
+            "facet_prior_scale": max(0.5, base_facet * 0.5),
+            "step_prior_scale": max(1.0, base_step * 0.5),
+            "UseWhen": "Sparse facets, sparse categories, unstable thresholds, or implausibly wide posterior intervals.",
+            "Compare": "Check whether substantive conclusions depend on broad template scales.",
+        },
+        {
+            "Variant": "wide_scale",
+            "sigma_theta_prior_scale": base_sigma * 1.6,
+            "facet_prior_scale": base_facet * 1.5,
+            "step_prior_scale": base_step * 1.5,
+            "UseWhen": "Prior studies or pilot data suggest larger ability/facet/threshold spread.",
+            "Compare": "Check whether the prior is suppressing meaningful heterogeneity.",
+        },
+        {
+            "Variant": "threshold_regularized",
+            "sigma_theta_prior_scale": base_sigma,
+            "facet_prior_scale": base_facet,
+            "step_prior_scale": max(1.0, min(base_step, 2.5)),
+            "UseWhen": "Score categories are unevenly used or adjacent threshold estimates are weakly identified.",
+            "Compare": "Focus on category curves, posterior predictive category counts, and threshold interval stability.",
+        },
+    ]
+    return pd.DataFrame(rows)
+
+
+def stan_prior_decision_log_template(
+    *,
+    sigma_theta_prior_scale: float = 2.5,
+    facet_prior_scale: float = 2.0,
+    step_prior_scale: float = 5.0,
+) -> pd.DataFrame:
+    """Return a manuscript-facing template for documenting Stan prior choices."""
+    guidance = stan_prior_setting_guidance(
+        sigma_theta_prior_scale=sigma_theta_prior_scale,
+        facet_prior_scale=facet_prior_scale,
+        step_prior_scale=step_prior_scale,
+    )
+    sensitivity_variants = ", ".join(stan_prior_sensitivity_grid(
+        sigma_theta_prior_scale=sigma_theta_prior_scale,
+        facet_prior_scale=facet_prior_scale,
+        step_prior_scale=step_prior_scale,
+    )["Variant"].astype(str).tolist())
+    rows: list[dict[str, object]] = []
+    for order, row in enumerate(guidance.itertuples(index=False), start=1):
+        prior_target = str(getattr(row, "PriorTarget"))
+        json_field = str(getattr(row, "JsonField"))
+        rows.append({
+            "DecisionOrder": order,
+            "PriorTarget": prior_target,
+            "JsonField": json_field,
+            "TemplatePrior": str(getattr(row, "TemplatePrior")),
+            "TemplateValue": str(getattr(row, "TemplateValue")),
+            "EvidenceSourceToCite": (
+                "rubric/scale design; prior empirical studies; pilot data; expert review; "
+                "sensitivity results"
+            ),
+            "ChosenValue": "",
+            "PriorDecisionRationale": "",
+            "SensitivityVariantsToRun": (
+                sensitivity_variants
+                if json_field not in {"not user-facing", "not a JSON hyperparameter"}
+                else "parameterization review rather than numeric prior-scale sensitivity"
+            ),
+            "StabilityDecisionRule": (
+                "Keep the posterior claim only if key person/facet rankings, threshold order, "
+                "category predictive checks, and uncertainty intervals remain substantively stable."
+            ),
+            "DiagnosticsToAttach": (
+                "Rhat; bulk/tail ESS; divergent transitions; max treedepth; E-BFMI; "
+                "posterior predictive category counts; retained sensitivity manifests"
+            ),
+            "ManuscriptReportingPrompt": (
+                f"State the prior for {prior_target}, why the chosen value fits this study, "
+                "which sensitivity variants were run, and whether conclusions changed."
+            ),
+        })
+    return pd.DataFrame(rows)
+
+
+def stan_posterior_handoff_checklist() -> pd.DataFrame:
+    """Return the evidence needed to move CmdStan draws back into Posterior Viewer."""
+    return pd.DataFrame([
+        {
+            "Artifact": "stan_run_manifest.json or stan_run_manifest.csv",
+            "RequiredFor": "Every Stan posterior import used for reporting",
+            "ExpectedEvidence": "Schema version, runner runtime, Stan file hash, data JSON hash, prior scales, sampler controls, posterior CSV filenames, and posterior CSV SHA-256 hashes.",
+            "ReviewQuestion": "Can the uploaded posterior draws be connected to one exact Stan source and one exact data JSON?",
+            "PublicBoundary": "Manifest stores hashes and file basenames; it should not contain raw response rows or private label maps.",
+        },
+        {
+            "Artifact": "mfrm_model.stan or Uto-family Stan scaffold",
+            "RequiredFor": "Model-family and parameterization claims",
+            "ExpectedEvidence": "Same hash as the manifest, sensitivity notice retained, model family stated in the methods.",
+            "ReviewQuestion": "Does the reported model match the Stan file actually sampled?",
+            "PublicBoundary": "Usually shareable, but review comments for private labels before public release.",
+        },
+        {
+            "Artifact": "mfrm_stan_data.json",
+            "RequiredFor": "Exact CmdStan rerun",
+            "ExpectedEvidence": "Same hash as the manifest plus matching prior-scale fields.",
+            "ReviewQuestion": "Were row coding, score recoding, and prior scales changed after export?",
+            "PublicBoundary": "Row-level coded responses; keep private unless data sharing is approved.",
+        },
+        {
+            "Artifact": "Prior rationale and sensitivity variants",
+            "RequiredFor": "Posterior inference claims",
+            "ExpectedEvidence": "mfrm_stan_prior_guidance.csv, mfrm_stan_prior_decision_log_template.csv filled for the study, mfrm_stan_prior_sensitivity_grid.csv, and retained variant manifests.",
+            "ReviewQuestion": "Are conclusions stable across at least one tighter and one wider prior variant?",
+            "PublicBoundary": "Guidance tables are shareable; edited JSON variants may contain row-level data.",
+        },
+        {
+            "Artifact": "CmdStan CSV chains",
+            "RequiredFor": "Posterior Viewer diagnostics and figures",
+            "ExpectedEvidence": "Uploaded chain count, filenames, and file hashes match manifest chains/posterior_csv_count/posterior_csv_sha256; Rhat/ESS/divergence/E-BFMI reviewed.",
+            "ReviewQuestion": "Do diagnostics support using these draws for inference?",
+            "PublicBoundary": "Posterior draws can leak information in small or identifiable datasets; review before public release.",
+        },
+    ])
+
+
+def stan_run_manifest_template() -> pd.DataFrame:
+    """Document the manifest fields emitted by the Stan runner templates."""
+    return pd.DataFrame([
+        {"Field": "schema_version", "Required": True, "Meaning": "Manifest contract version, currently mfrm_stan_run_manifest_v1."},
+        {"Field": "producer", "Required": True, "Meaning": "Script family that wrote the manifest."},
+        {"Field": "runtime", "Required": True, "Meaning": "Python + CmdStanPy, R + CmdStanR, or Julia + CmdStan CLI."},
+        {"Field": "stan_file_name", "Required": True, "Meaning": "Basename of the Stan source file."},
+        {"Field": "stan_file_sha256", "Required": True, "Meaning": "SHA-256 digest of the Stan source when available."},
+        {"Field": "data_json_name", "Required": True, "Meaning": "Basename of the CmdStan-compatible JSON data file."},
+        {"Field": "data_json_sha256", "Required": True, "Meaning": "SHA-256 digest of the JSON data file when available."},
+        {"Field": "prior_scales.sigma_theta_prior_scale", "Required": True, "Meaning": "Person ability SD prior scale read from the JSON data file."},
+        {"Field": "prior_scales.facet_prior_scale", "Required": True, "Meaning": "Facet severity/difficulty prior scale read from the JSON data file."},
+        {"Field": "prior_scales.step_prior_scale", "Required": True, "Meaning": "RSM/PCM threshold prior scale read from the JSON data file."},
+        {"Field": "chains", "Required": True, "Meaning": "Number of chains requested."},
+        {"Field": "iter_warmup", "Required": True, "Meaning": "Warmup iterations per chain."},
+        {"Field": "iter_sampling", "Required": True, "Meaning": "Post-warmup sampling iterations per chain."},
+        {"Field": "seed", "Required": True, "Meaning": "Random seed used by the runner."},
+        {"Field": "adapt_delta", "Required": True, "Meaning": "NUTS target acceptance setting."},
+        {"Field": "max_treedepth", "Required": True, "Meaning": "NUTS maximum tree depth."},
+        {"Field": "posterior_csv_count", "Required": True, "Meaning": "Number of CmdStan CSV chains written."},
+        {"Field": "posterior_csv_files", "Required": False, "Meaning": "Basenames of output CSV files."},
+        {"Field": "posterior_csv_sha256", "Required": False, "Meaning": "Semicolon-delimited file=sha256 pairs for each CmdStan CSV chain."},
+        {"Field": "summary_file", "Required": False, "Meaning": "Posterior summary artifact archived with the run."},
+        {"Field": "diagnose_file", "Required": False, "Meaning": "CmdStan diagnose output archived with the run."},
+        {"Field": "cmdstan_version", "Required": False, "Meaning": "CmdStan version when the wrapper exposes it."},
+    ])
+
+
+def stan_posterior_reproducibility_handoff_markdown() -> str:
+    """Return a portable Markdown guide for Stan posterior reproducibility archives."""
+    route = guided_stan_posterior_reproducibility_help_table()
+    checklist = stan_posterior_handoff_checklist()
+    manifest = stan_run_manifest_template()
+    route_md = apa_table_to_markdown(
+        route,
+        caption="Stan posterior reproducibility route",
+        note=(
+            "Use this table before treating any CmdStan posterior draw set as reportable evidence. "
+            "The same route applies to the generic RSM/PCM export and any Uto-family scaffold run."
+        ),
+        table_number=1,
+    )
+    checklist_md = apa_table_to_markdown(
+        checklist,
+        caption="Posterior handoff checklist",
+        note=(
+            "Manifest files mostly store hashes, file basenames, settings, and diagnostic references. "
+            "The JSON data file, ID maps, and posterior draws can still be sensitive."
+        ),
+        table_number=2,
+    )
+    manifest_md = apa_table_to_markdown(
+        manifest,
+        caption="Run manifest field contract",
+        note=(
+            "Runner templates write these fields to stan_run_manifest.json and stan_run_manifest.csv. "
+            "Posterior Viewer uses the same field names when checking uploaded chains."
+        ),
+        table_number=3,
+    )
+    lines = [
+        "# Stan Posterior Reproducibility Handoff",
+        "",
+        "Use this file when a Stan posterior run supports interpretation, figures, or manuscript claims. It is a portable companion to the app Help page and the Downloads -> Scripts & Config section.",
+        "",
+        "## Minimal Run Route",
+        "",
+        "1. Download the exact `mfrm_model.stan` or Uto-family Stan scaffold, the matching `mfrm_stan_data.json`, the prior guidance, the prior decision log template, the prior sensitivity grid, and the Python/R/Julia runner bundle.",
+        "2. Run one wrapper first with fixed seed, chains, warmup, sampling iterations, `adapt_delta`, and `max_treedepth`; then repeat in another wrapper only if cross-language execution is part of the claim.",
+        "3. Archive `stan_run_manifest.json`, `stan_run_manifest.csv`, CmdStan CSV chains, `summary.csv`, `diagnose.txt`, sampler settings, and any wrapper logs.",
+        "4. Upload the CmdStan CSV chains plus the manifest into Posterior Viewer; inspect Rhat, bulk/tail ESS, divergences, treedepth, E-BFMI, trace/ridge/pair/forest plots, and posterior manifest checks.",
+        "5. Keep a separate manifest for each edited JSON or prior-sensitivity variant. Do not mix posterior draws across data exports, model files, recoding choices, or prior variants.",
+        "",
+        "## Prior Setting And Sensitivity",
+        "",
+        "- `sigma_theta_prior_scale` controls the person ability SD prior. Narrow designs or highly targeted rubrics usually need a tighter sensitivity variant.",
+        "- `facet_prior_scale` controls non-person facet severity/difficulty spread. Sparse raters, tasks, criteria, or stations should be checked with a more regularizing variant.",
+        "- `step_prior_scale` controls RSM/PCM threshold spread. Sparse categories and weakly identified thresholds should be checked with a threshold-regularized variant.",
+        "- Fill `mfrm_stan_prior_decision_log_template.csv` before reporting: record the chosen value, rationale source, sensitivity variants, and whether conclusions changed.",
+        "- Uto-family rater drift or multidimensional extensions need additional documented scales and defensible time/criterion mappings; the scaffold alone is not a validation claim.",
+        "",
+        "## Reporting Boundary",
+        "",
+        "- Report posterior summaries only with prior scales, sampler controls, diagnostics, and sensitivity decisions.",
+        "- Treat generated Stan files as templates until the parameterization has been reviewed against the study design and any Uto-family reference being claimed.",
+        "- Keep public archives free of row-level JSON, private ID maps, and posterior draws unless the data-governance decision explicitly permits sharing.",
+        "",
+        "## Tables",
+        "",
+        route_md,
+        "",
+        checklist_md,
+        "",
+        manifest_md,
+    ]
+    return "\n".join(lines) + "\n"
+
+
+def stan_reproducibility_archive_contract_table(*, public_export_mode: bool = True) -> pd.DataFrame:
+    """Document which Stan posterior reproducibility files must travel together."""
+    stan_data_expected = (
+        "stan_reproducibility_archive_contract.csv; "
+        "stan_posterior_reproducibility_handoff.md; stan_posterior_reproducibility_route.csv; "
+        "stan_posterior_handoff_checklist.csv; stan_run_manifest_template.csv; "
+        "mfrm_stan_data_dictionary.csv; mfrm_stan_data_manifest.csv; "
+        "mfrm_stan_prior_guidance.csv; mfrm_stan_prior_sensitivity_grid.csv; "
+        "mfrm_stan_prior_decision_log_template.csv; "
+        "mfrm_uto_bayesian_mfrm_data_dictionary.csv; mfrm_uto_bayesian_mfrm_mapping_manifest.csv; "
+        "mfrm_uto_bayesian_mfrm_design_audit.csv; mfrm_uto_bayesian_mfrm_claim_wording.csv"
+    )
+    if not public_export_mode:
+        stan_data_expected += (
+            "; mfrm_stan_data.json; mfrm_stan_id_index_map.csv; "
+            "mfrm_uto_bayesian_mfrm_data_template.json; mfrm_uto_bayesian_mfrm_id_index_map.csv"
+        )
+    rows = [
+        {
+            "PackageOrSurface": "MFRM_Bayesian_Stan_Runners.zip",
+            "ExpectedFiles": (
+                "README_bayesian_mfrm_stan_runners.md; "
+                "stan_posterior_reproducibility_handoff.md; "
+                "stan_posterior_reproducibility_route.csv; "
+                "stan_posterior_handoff_checklist.csv; "
+                "stan_run_manifest_template.csv; "
+                "run_bayesian_mfrm_cmdstanpy.py; run_bayesian_mfrm_cmdstanr.R; "
+                "run_bayesian_mfrm_cmdstan_cli.jl"
+            ),
+            "Role": "Runs the same downloaded Stan model and JSON data from Python, R, or Julia/CmdStan while writing the manifest contract.",
+            "CheckBeforeSharing": "Confirm the README and handoff identify the same seed, chains, warmup, sampling, adapt_delta, and max_treedepth expected for the study.",
+            "PrivacyBoundary": "Contains templates and guidance only; no row-level response data should be embedded.",
+        },
+        {
+            "PackageOrSurface": "MFRM_Stan_Data_Package.zip",
+            "ExpectedFiles": stan_data_expected,
+            "Role": "Carries the data dictionary, coding map contract, prior settings, sensitivity grid, and optional private CmdStan JSON needed for reruns.",
+            "CheckBeforeSharing": "In public mode, confirm row-level JSON and private ID maps are absent; in private mode, archive them with access controls.",
+            "PrivacyBoundary": (
+                "Public package omits row-level JSON and ID maps."
+                if public_export_mode else
+                "Private package may contain row-level coded responses and original-label maps."
+            ),
+        },
+        {
+            "PackageOrSurface": "MFRM_Complete_Stan_Reproducibility_Package.zip",
+            "ExpectedFiles": (
+                "README_complete_stan_reproducibility_package.md; "
+                "mfrm_model.stan when generic RSM/PCM is supported; "
+                "mfrm_uto_bayesian_mfrm.stan; mfrm_complete_stan_reproducibility_manifest.csv; "
+                "mfrm_stan_prior_decision_log_template.csv; mfrm_stan_prior_guidance.csv; "
+                "mfrm_stan_prior_sensitivity_grid.csv; Stan data dictionaries/manifests; "
+                "Python/R/Julia CmdStan runners; posterior handoff files"
+            ),
+            "Role": "Keeps the Stan source, data contract, prior rationale, sensitivity plan, runners, and posterior audit trail in one auditable archive.",
+            "CheckBeforeSharing": "Use the direct download for private reruns; use public OSF/binder mode when row-level JSON and private ID maps must be omitted.",
+            "PrivacyBoundary": (
+                "Public mode omits row-level JSON and private ID maps."
+                if public_export_mode else
+                "Private mode may include row-level JSON and original-label maps."
+            ),
+        },
+        {
+            "PackageOrSurface": "MFRM_OSF_Package.zip",
+            "ExpectedFiles": (
+                "export_privacy_manifest.csv; manuscript_handoff.md; mfrm_config.json; "
+                "stan_reproducibility_archive_contract.csv; "
+                "stan_posterior_reproducibility_handoff.md; "
+                "stan_posterior_reproducibility_route.csv; "
+                "stan_posterior_handoff_checklist.csv; stan_run_manifest_template.csv; "
+                "README_bayesian_mfrm_stan_runners.md; Python/R/Julia Stan runner templates"
+            ),
+            "Role": "Provides a single archive for reviewers, coauthors, or repository deposit decisions.",
+            "CheckBeforeSharing": "Open export_privacy_manifest.csv and verify every row-level or person-level table decision before distribution.",
+            "PrivacyBoundary": "Public mode reduces obvious row/person-level exports but is not a formal de-identification guarantee.",
+        },
+        {
+            "PackageOrSurface": "MFRM_Manuscript_Binder.zip",
+            "ExpectedFiles": (
+                "README_first.md; manuscript_handoff.md; claim_to_evidence_matrix.csv; "
+                "method_reference_audit.csv; stan_reproducibility_archive_contract.csv; "
+                "stan_posterior_reproducibility_handoff.md; "
+                "stan_posterior_reproducibility_route.csv; stan_posterior_handoff_checklist.csv"
+            ),
+            "Role": "Keeps manuscript wording, claim evidence, prior decisions, and posterior reporting boundaries together.",
+            "CheckBeforeSharing": "Use this as a writing/review packet; keep the full OSF or table bundle beside it for complete data evidence.",
+            "PrivacyBoundary": "Curated for review, but still inspect included tables before sharing outside the controlled workspace.",
+        },
+        {
+            "PackageOrSurface": "Posterior Viewer return path",
+            "ExpectedFiles": "CmdStan CSV chains; stan_run_manifest.json; stan_run_manifest.csv; posterior_manifest_check.csv; posterior diagnostics exports",
+            "Role": "Connects sampled posterior draws back to the app's posterior summaries, diagnostics, and figures.",
+            "CheckBeforeSharing": "Do not cite posterior means or intervals until manifest hashes, chain counts, Rhat, ESS, divergences, treedepth, and E-BFMI are reviewed.",
+            "PrivacyBoundary": "Posterior draws can be sensitive for small or identifiable datasets; review governance before public release.",
+        },
+    ]
+    return pd.DataFrame(rows)
+
+
+def _flatten_mapping_for_manifest(payload: dict, *, prefix: str = "") -> dict[str, object]:
+    """Flatten nested manifest data for CSV and status checks."""
+    out: dict[str, object] = {}
+    if not isinstance(payload, dict):
+        return out
+    for key, value in payload.items():
+        safe_key = f"{prefix}.{key}" if prefix else str(key)
+        if isinstance(value, dict):
+            out.update(_flatten_mapping_for_manifest(value, prefix=safe_key))
+        elif isinstance(value, list):
+            out[safe_key] = ";".join(str(v) for v in value)
+        else:
+            out[safe_key] = value
+    return out
+
+
+def _manifest_text_value(value: object) -> str:
+    """Normalize a manifest field value for presence checks."""
+    if value is None:
+        return ""
+    try:
+        if pd.isna(value):
+            return ""
+    except Exception:
+        pass
+    text = str(value).strip()
+    if text.lower() in {"", "nan", "none", "null", "not_recorded"}:
+        return ""
+    return text
+
+
+def _safe_manifest_basename(value: object) -> str:
+    """Return a portable basename for manifest/upload comparisons."""
+    text = _manifest_text_value(value).replace("\\", "/")
+    return Path(text).name if text else ""
+
+
+def _manifest_split_list(value: object) -> list[str]:
+    """Return semicolon/comma-delimited manifest values as cleaned basenames."""
+    text = _manifest_text_value(value)
+    if not text:
+        return []
+    pieces = re.split(r"[;,]", text)
+    out: list[str] = []
+    for piece in pieces:
+        cleaned = _safe_manifest_basename(str(piece).strip().strip("\"'"))
+        if cleaned:
+            out.append(cleaned)
+    return out
+
+
+def _manifest_parse_hash_pairs(value: object) -> dict[str, str]:
+    """Parse `file=sha256;file2=sha256` manifest fields."""
+    text = _manifest_text_value(value)
+    if not text:
+        return {}
+    out: dict[str, str] = {}
+    for piece in re.split(r"[;,]", text):
+        item = piece.strip().strip("\"'")
+        if not item:
+            continue
+        if "=" in item:
+            name, digest = item.split("=", 1)
+        elif ":" in item:
+            name, digest = item.split(":", 1)
+        else:
+            continue
+        safe_name = _safe_manifest_basename(name.strip().strip("\"'"))
+        safe_digest = digest.strip().strip("\"'").lower()
+        if safe_name and re.fullmatch(r"[0-9a-f]{64}", safe_digest):
+            out[safe_name] = safe_digest
+    return out
+
+
+def parse_stan_run_manifest_upload(file_obj) -> tuple[dict, list[str]]:
+    """Parse an uploaded Stan run manifest JSON/CSV into a flat dictionary."""
+    if file_obj is None:
+        return {}, ["No Stan run manifest was uploaded."]
+    name = str(getattr(file_obj, "name", "stan_run_manifest")).lower()
+    try:
+        raw = file_obj.getvalue() if hasattr(file_obj, "getvalue") else file_obj.read()
+    except Exception as exc:
+        return {}, [f"Could not read manifest upload: {type(exc).__name__}: {exc}"]
+    if isinstance(raw, str):
+        text = raw
+    else:
+        try:
+            text = bytes(raw).decode("utf-8")
+        except Exception as exc:
+            return {}, [f"Manifest must be UTF-8 text: {type(exc).__name__}: {exc}"]
+    try:
+        if name.endswith(".json"):
+            parsed = json.loads(text)
+            return _flatten_mapping_for_manifest(parsed), []
+        frame = pd.read_csv(io.StringIO(text))
+        lower_cols = {str(c).strip().lower(): c for c in frame.columns}
+        key_col = lower_cols.get("field") or lower_cols.get("key") or lower_cols.get("name")
+        value_col = lower_cols.get("value")
+        if key_col is None or value_col is None:
+            return {}, ["CSV manifest must contain Field/Value or Key/Value columns."]
+        flat = {
+            str(row[key_col]).strip(): row[value_col]
+            for _, row in frame.iterrows()
+            if str(row.get(key_col, "")).strip()
+        }
+        return flat, []
+    except Exception as exc:
+        return {}, [f"Could not parse Stan run manifest: {type(exc).__name__}: {exc}"]
+
+
+def stan_run_manifest_check_table(manifest: dict | None, payload: dict | None = None) -> pd.DataFrame:
+    """Return readiness checks for a Stan run manifest and loaded posterior payload."""
+    flat = dict(manifest or {})
+    payload = payload if isinstance(payload, dict) else {}
+
+    def pick(*keys: str) -> object:
+        for key in keys:
+            if key in flat and _manifest_text_value(flat.get(key)):
+                return flat[key]
+        return None
+
+    def has_sha(value: object) -> bool:
+        text = str(value or "").strip().lower()
+        return bool(re.fullmatch(r"[0-9a-f]{64}", text))
+
+    required_sampler = ["chains", "iter_warmup", "iter_sampling", "seed", "adapt_delta", "max_treedepth"]
+    missing_sampler = [field for field in required_sampler if pick(field) is None]
+    prior_fields = ["prior_scales.sigma_theta_prior_scale", "prior_scales.facet_prior_scale", "prior_scales.step_prior_scale"]
+    missing_prior = [field for field in prior_fields if pick(field) is None]
+    chains_manifest = pick("chains")
+    try:
+        chains_int = int(float(str(chains_manifest))) if chains_manifest is not None else None
+    except Exception:
+        chains_int = None
+    payload_chains = int(payload.get("n_chains", 0) or 0)
+    csv_count = pick("posterior_csv_count")
+    try:
+        csv_count_int = int(float(str(csv_count))) if csv_count is not None else None
+    except Exception:
+        csv_count_int = None
+    manifest_csv_names = _manifest_split_list(pick("posterior_csv_files"))
+    manifest_csv_name_set = set(manifest_csv_names)
+    uploaded_csv_names = [
+        _safe_manifest_basename(name)
+        for name in (payload.get("uploaded_file_names", []) or [])
+        if _manifest_text_value(name)
+    ]
+    uploaded_csv_name_set = set(uploaded_csv_names)
+    uploaded_file_count = int(payload.get("uploaded_file_count", len(uploaded_csv_names)) or 0)
+    manifest_csv_hashes = _manifest_parse_hash_pairs(pick("posterior_csv_sha256", "posterior_csv_hashes"))
+    uploaded_csv_hashes = {
+        _safe_manifest_basename(name): str(digest).strip().lower()
+        for name, digest in (payload.get("uploaded_file_sha256", {}) or {}).items()
+        if _manifest_text_value(name) and re.fullmatch(r"[0-9a-f]{64}", str(digest).strip().lower())
+    }
+    missing_from_upload = sorted(manifest_csv_name_set - uploaded_csv_name_set)
+    unexpected_uploads = sorted(uploaded_csv_name_set - manifest_csv_name_set)
+    compared_hash_names = sorted(set(manifest_csv_hashes) & set(uploaded_csv_hashes))
+    mismatched_hashes = [
+        name for name in compared_hash_names
+        if manifest_csv_hashes.get(name) != uploaded_csv_hashes.get(name)
+    ]
+    missing_manifest_hashes = sorted(uploaded_csv_name_set - set(manifest_csv_hashes))
+    diag = payload.get("diagnostics", {}) or {}
+    diagnostic_keys = ["divergent", "treedepth", "energy"]
+    missing_diagnostics = [
+        key for key in diagnostic_keys
+        if diag.get(key) is None
+    ]
+    diagnostic_reference_fields = ["summary_file", "diagnose_file"]
+    missing_diagnostic_refs = [
+        field for field in diagnostic_reference_fields
+        if pick(field) is None
+    ]
+
+    rows = [
+        {
+            "Check": "Manifest uploaded",
+            "Status": "Ready" if flat else "Missing",
+            "Evidence": "Manifest fields parsed." if flat else "No manifest was parsed.",
+            "Action": "Upload stan_run_manifest.json/csv from the same Stan runner used to create these draws." if not flat else "Keep this manifest with the posterior archive.",
+        },
+        {
+            "Check": "Schema version",
+            "Status": "Ready" if pick("schema_version") == "mfrm_stan_run_manifest_v1" else "Review",
+            "Evidence": str(pick("schema_version") or "not recorded"),
+            "Action": "Use the current runner templates if the schema is missing or older.",
+        },
+        {
+            "Check": "Stan source hash",
+            "Status": "Ready" if has_sha(pick("stan_file_sha256")) else "Review",
+            "Evidence": str(pick("stan_file_name") or "Stan file name missing") + "; sha256=" + str(pick("stan_file_sha256") or "missing"),
+            "Action": "Archive the exact .stan file and verify its SHA-256 before comparing posterior results.",
+        },
+        {
+            "Check": "Data JSON hash",
+            "Status": "Ready" if has_sha(pick("data_json_sha256")) else "Review",
+            "Evidence": str(pick("data_json_name") or "data JSON name missing") + "; sha256=" + str(pick("data_json_sha256") or "missing"),
+            "Action": "Archive the exact mfrm_stan_data.json used by CmdStan; edited prior variants need separate manifests.",
+        },
+        {
+            "Check": "Prior scales",
+            "Status": "Ready" if not missing_prior else "Review",
+            "Evidence": "; ".join(f"{field}={pick(field) or 'missing'}" for field in prior_fields),
+            "Action": "Report prior scales and attach mfrm_stan_prior_guidance.csv plus sensitivity-grid results.",
+        },
+        {
+            "Check": "Sampler controls",
+            "Status": "Ready" if not missing_sampler else "Review",
+            "Evidence": "; ".join(f"{field}={pick(field) or 'missing'}" for field in required_sampler),
+            "Action": "State seed, chains, warmup, sampling, adapt_delta, and max_treedepth with posterior summaries.",
+        },
+        {
+            "Check": "Posterior chain count",
+            "Status": (
+                "Ready"
+                if (
+                    (payload_chains > 0 or uploaded_file_count > 0)
+                    and chains_int is not None
+                    and csv_count_int is not None
+                    and (payload_chains or uploaded_file_count) == chains_int == csv_count_int
+                )
+                else "Review"
+            ),
+            "Evidence": (
+                f"uploaded chains={payload_chains or 'not loaded'}; "
+                f"uploaded files={uploaded_file_count or 'not recorded'}; "
+                f"manifest chains={chains_int or 'missing'}; "
+                f"manifest CSV count={csv_count_int or 'missing'}"
+            ),
+            "Action": "Upload all chain CSVs together and confirm the manifest was produced by the same run.",
+        },
+        {
+            "Check": "Posterior CSV filenames",
+            "Status": (
+                "Ready"
+                if manifest_csv_name_set and uploaded_csv_name_set and not missing_from_upload and not unexpected_uploads
+                else "Review"
+            ),
+            "Evidence": (
+                f"manifest={'; '.join(manifest_csv_names) or 'missing'}; "
+                f"uploaded={'; '.join(uploaded_csv_names) or 'not recorded'}"
+            ),
+            "Action": (
+                "Use the manifest produced by this exact run; "
+                f"missing={missing_from_upload or 'none'}, unexpected={unexpected_uploads or 'none'}."
+            ),
+        },
+        {
+            "Check": "Posterior CSV hashes",
+            "Status": (
+                "Ready"
+                if uploaded_csv_hashes and manifest_csv_hashes and not mismatched_hashes and not missing_manifest_hashes
+                else "Review"
+            ),
+            "Evidence": (
+                f"uploaded hashes={len(uploaded_csv_hashes)}; "
+                f"manifest hashes={len(manifest_csv_hashes)}; "
+                f"matched files={len(compared_hash_names)}"
+            ),
+            "Action": (
+                "Runner manifests should record posterior_csv_sha256 as file=sha256 pairs; "
+                f"mismatched={mismatched_hashes or 'none'}, missing_manifest_hashes={missing_manifest_hashes or 'none'}."
+            ),
+        },
+        {
+            "Check": "Runtime provenance",
+            "Status": "Ready" if pick("runtime") is not None else "Review",
+            "Evidence": f"runtime={pick('runtime') or 'missing'}; cmdstan_version={pick('cmdstan_version') or 'not recorded'}",
+            "Action": "Archive wrapper/runtime version details when making reproducibility claims.",
+        },
+        {
+            "Check": "External diagnostic artifacts",
+            "Status": "Ready" if not missing_diagnostic_refs else "Review",
+            "Evidence": "; ".join(f"{field}={pick(field) or 'missing'}" for field in diagnostic_reference_fields),
+            "Action": "Archive CmdStan summary and diagnose outputs beside posterior_manifest_check.csv before reporting posterior intervals.",
+        },
+        {
+            "Check": "Transition diagnostics loaded",
+            "Status": "Ready" if not missing_diagnostics else "Review",
+            "Evidence": "; ".join(f"{key}={'loaded' if diag.get(key) is not None else 'missing'}" for key in diagnostic_keys),
+            "Action": "Prefer CmdStan CSV or ArviZ NetCDF with sample_stats so divergences, treedepth, energy, and E-BFMI can be inspected.",
+        },
+        {
+            "Check": "Privacy boundary",
+            "Status": "Review",
+            "Evidence": "Manifest should contain hashes, settings, and basenames only; posterior draws and JSON may still be sensitive.",
+            "Action": "Do not public-share row-level JSON, ID maps, or posterior draws without a data-governance review.",
+        },
+    ]
+    return pd.DataFrame(rows)
+
+
 def stan_code_sensitivity_notice(model_label: str = "Stan model") -> str:
     """Header comment prepended to downloadable Stan templates."""
     safe_label = str(model_label).replace("\n", " ").strip() or "Stan model"
@@ -28791,6 +36928,889 @@ def stan_code_sensitivity_notice(model_label: str = "Stan model") -> str:
     )
 
 
+_STAN_RESERVED_WORDS = {
+    "array", "break", "cholesky_factor_corr", "cholesky_factor_cov", "complex",
+    "continue", "corr_matrix", "cov_matrix", "data", "else", "for",
+    "generated", "if", "in", "int", "matrix", "model", "ordered",
+    "parameters", "profile", "real", "return", "simplex", "target",
+    "transformed", "tuple", "unit_vector", "vector", "void", "while",
+}
+
+
+def _stan_variable_name(raw_name: object, *, prefix: str = "facet") -> str:
+    """Return a valid, readable Stan identifier."""
+    text = str(raw_name or "").strip().lower()
+    text = re.sub(r"[^a-z0-9_]+", "_", text)
+    text = re.sub(r"_+", "_", text).strip("_")
+    if not text:
+        text = prefix
+    if not text[0].isalpha():
+        text = f"{prefix}_{text}"
+    if text in _STAN_RESERVED_WORDS:
+        text = f"{text}_{prefix}"
+    return text[:60].rstrip("_") or prefix
+
+
+def stan_facet_variable_names(facet_names: list[str]) -> list[str]:
+    """Map facet labels to unique Stan variable names."""
+    used: dict[str, int] = {}
+    out: list[str] = []
+    for idx, name in enumerate(facet_names or [], start=1):
+        base = _stan_variable_name(name, prefix=f"facet_{idx}")
+        count = used.get(base, 0)
+        used[base] = count + 1
+        out.append(base if count == 0 else f"{base}_{count + 1}")
+    return out
+
+
+def _stan_level_codes(
+    series: pd.Series,
+    *,
+    levels: list | None = None,
+) -> tuple[list[int], list[str]]:
+    """Encode a categorical series as 1-based Stan integer codes."""
+    source = pd.Series(series).astype(str)
+    if levels is not None and len(levels) > 0:
+        labels = [str(level) for level in levels]
+    elif isinstance(series.dtype, pd.CategoricalDtype):
+        labels = [str(level) for level in series.cat.categories]
+    else:
+        labels = sorted(pd.unique(source).astype(str).tolist())
+    lookup = {label: i + 1 for i, label in enumerate(labels)}
+    codes = source.map(lookup)
+    if codes.isna().any():
+        missing = sorted(set(source.loc[codes.isna()].astype(str).tolist()))
+        raise ValueError("Stan coding failed because level(s) were not in the level map: " + ", ".join(missing[:8]))
+    return codes.astype(int).tolist(), labels
+
+
+def _stan_score_vector(data: pd.DataFrame, prep: dict, n_cat: int) -> list[int]:
+    """Return 1-based ordered category values for Stan."""
+    if "score_k" in data.columns:
+        score_k = pd.to_numeric(data["score_k"], errors="coerce")
+    else:
+        rating_min = int(prep.get("rating_min", data["Score"].min()))
+        score_k = pd.to_numeric(data["Score"], errors="coerce") - rating_min
+    y = score_k.astype("Int64") + 1
+    if y.isna().any():
+        raise ValueError("Stan data export requires non-missing integer scores.")
+    y_int = y.astype(int)
+    if int(y_int.min()) < 1 or int(y_int.max()) > int(n_cat):
+        raise ValueError("Stan score export produced categories outside 1..C.")
+    return y_int.tolist()
+
+
+def _stan_weight_status(data: pd.DataFrame) -> tuple[str, str]:
+    """Describe whether the current Stan template matches the fitted row weights."""
+    if "Weight" not in data.columns:
+        return "Ready", "No Weight column is present; every exported row contributes once."
+    weights = pd.to_numeric(data["Weight"], errors="coerce")
+    if weights.notna().all() and np.allclose(weights.to_numpy(dtype=float), 1.0):
+        return "Ready", "Weight column is present but all included weights are 1.0."
+    return (
+        "Review",
+        "The generic Stan template does not use frequency or sampling weights; the JSON exports one row per included response.",
+    )
+
+
+def build_generic_mfrm_stan_data_export(
+    result: dict,
+    *,
+    sigma_theta_prior_scale: float = 2.5,
+    facet_prior_scale: float = 2.0,
+    step_prior_scale: float = 5.0,
+) -> dict:
+    """Build CmdStan-compatible JSON data and documentation for the current RSM/PCM run."""
+    empty = {
+        "available": False,
+        "stan_data": {},
+        "json_text": "",
+        "id_map": pd.DataFrame(),
+        "data_dictionary": pd.DataFrame(),
+        "manifest": pd.DataFrame(),
+        "messages": [],
+    }
+    if not isinstance(result, dict):
+        return {**empty, "messages": ["No result object is available."]}
+    config = result.get("config", {}) if isinstance(result.get("config", {}), dict) else {}
+    prep = result.get("prep", {}) if isinstance(result.get("prep", {}), dict) else {}
+    data = prep.get("data", pd.DataFrame())
+    model_type = str(config.get("model", "RSM")).upper()
+    facet_names = [str(f) for f in config.get("facet_names", prep.get("facet_names", []))]
+    if model_type not in {"RSM", "PCM"}:
+        return {**empty, "messages": [f"Generic Stan JSON export currently supports RSM/PCM, not {model_type}."]}
+    if not isinstance(data, pd.DataFrame) or data.empty:
+        return {**empty, "messages": ["No prepared response data are available for Stan export."]}
+    required = ["Person", "Score", *facet_names]
+    missing_cols = [col for col in required if col not in data.columns]
+    if missing_cols:
+        return {**empty, "messages": ["Prepared data are missing required column(s): " + ", ".join(missing_cols)]}
+
+    n_cat = int(config.get("n_cat") or (int(prep.get("rating_max", data["Score"].max())) - int(prep.get("rating_min", data["Score"].min())) + 1))
+    facet_vars = stan_facet_variable_names(facet_names)
+    try:
+        person_codes, person_levels = _stan_level_codes(data["Person"], levels=prep.get("levels", {}).get("Person"))
+        y = _stan_score_vector(data, prep, n_cat)
+        stan_data = {
+            "N": int(len(data)),
+            "J": int(len(person_levels)),
+            "C": int(n_cat),
+            "person": person_codes,
+            "y": y,
+            "sigma_theta_prior_scale": float(sigma_theta_prior_scale),
+            "facet_prior_scale": float(facet_prior_scale),
+            "step_prior_scale": float(step_prior_scale),
+        }
+        id_rows = [
+            {
+                "Entity": "Person",
+                "OriginalLabel": label,
+                "StanIndex": idx,
+                "StanVariable": "person",
+                "StanCountVariable": "J",
+                "Role": "person ability",
+            }
+            for idx, label in enumerate(person_levels, start=1)
+        ]
+        for facet, var_name in zip(facet_names, facet_vars):
+            codes, levels = _stan_level_codes(data[facet], levels=prep.get("levels", {}).get(facet))
+            stan_data[f"K_{var_name}"] = int(len(levels))
+            stan_data[var_name] = codes
+            id_rows.extend([
+                {
+                    "Entity": facet,
+                    "OriginalLabel": label,
+                    "StanIndex": idx,
+                    "StanVariable": var_name,
+                    "StanCountVariable": f"K_{var_name}",
+                    "Role": "non-person facet severity",
+                }
+                for idx, label in enumerate(levels, start=1)
+            ])
+    except Exception as exc:
+        return {**empty, "messages": [f"Stan data export failed: {type(exc).__name__}: {exc}"]}
+
+    step_facet = str(config.get("step_facet") or facet_names[0]) if model_type == "PCM" and facet_names else ""
+    step_var = dict(zip(facet_names, facet_vars)).get(step_facet, facet_vars[0] if facet_vars else "")
+    weight_status, weight_note = _stan_weight_status(data)
+    status = "Ready" if weight_status == "Ready" else "Review"
+    stan_data_for_json = {key: stan_data[key] for key in sorted(stan_data) if key.startswith("K_")}
+    stan_data_for_json = {
+        "N": stan_data["N"],
+        "J": stan_data["J"],
+        **stan_data_for_json,
+        "C": stan_data["C"],
+        "person": stan_data["person"],
+        **{var: stan_data[var] for var in facet_vars},
+        "y": stan_data["y"],
+        "sigma_theta_prior_scale": stan_data["sigma_theta_prior_scale"],
+        "facet_prior_scale": stan_data["facet_prior_scale"],
+        "step_prior_scale": stan_data["step_prior_scale"],
+    }
+    json_text = json.dumps(stan_data_for_json, indent=2, ensure_ascii=False)
+    dictionary_rows = [
+        {"Variable": "N", "Type": "int<lower=1>", "Meaning": "Number of included response rows.", "Source": "prepared response data", "PrivacyBoundary": "Row count only."},
+        {"Variable": "J", "Type": "int<lower=1>", "Meaning": "Number of persons.", "Source": "Person level map", "PrivacyBoundary": "Count only; labels are stored separately in the private ID map."},
+        {"Variable": "C", "Type": "int<lower=2>", "Meaning": "Number of ordered rating categories.", "Source": "score support after app recoding", "PrivacyBoundary": "Scale size only."},
+        {"Variable": "person", "Type": "array[N] int<lower=1, upper=J>", "Meaning": "1-based person index for each response row.", "Source": "Person column", "PrivacyBoundary": "Row-level coded data; share only after privacy review."},
+        {"Variable": "y", "Type": "array[N] int<lower=1, upper=C>", "Meaning": "1-based score category for each response row.", "Source": "Score/score_k after app recoding", "PrivacyBoundary": "Row-level score data; share only after privacy review."},
+        {"Variable": "sigma_theta_prior_scale", "Type": "real<lower=0>", "Meaning": "Scale for the half-Cauchy prior on person ability SD.", "Source": "download template default; edit with prior-setting guidance and sensitivity grid", "PrivacyBoundary": "No raw data."},
+        {"Variable": "facet_prior_scale", "Type": "real<lower=0>", "Meaning": "Normal prior SD for non-person facet severities/difficulties.", "Source": "download template default; edit with prior-setting guidance and sensitivity grid", "PrivacyBoundary": "No raw data."},
+        {"Variable": "step_prior_scale", "Type": "real<lower=0>", "Meaning": "Normal prior SD for RSM/PCM thresholds.", "Source": "download template default; edit with prior-setting guidance and sensitivity grid", "PrivacyBoundary": "No raw data."},
+    ]
+    for facet, var_name in zip(facet_names, facet_vars):
+        dictionary_rows.extend([
+            {
+                "Variable": f"K_{var_name}",
+                "Type": "int<lower=1>",
+                "Meaning": f"Number of levels for facet `{facet}`.",
+                "Source": f"{facet} level map",
+                "PrivacyBoundary": "Count only.",
+            },
+            {
+                "Variable": var_name,
+                "Type": f"array[N] int<lower=1, upper=K_{var_name}>",
+                "Meaning": f"1-based `{facet}` level index for each response row.",
+                "Source": f"{facet} column",
+                "PrivacyBoundary": "Row-level coded data; labels are stored separately in the private ID map.",
+            },
+        ])
+    manifest = pd.DataFrame([
+        {
+            "Check": "Generic Stan JSON",
+            "Status": status,
+            "Value": f"{model_type}; N={stan_data['N']}; J={stan_data['J']}; C={stan_data['C']}; facets={len(facet_names)}",
+            "Action": "Use with the downloaded mfrm_model.stan and the Python/R/Julia runners.",
+        },
+        {
+            "Check": "Score recoding",
+            "Status": "Ready",
+            "Value": "Stan y is 1-based; app score_k is converted to y = score_k + 1.",
+            "Action": "Archive score_map.csv when original score labels differ from internal categories.",
+        },
+        {
+            "Check": "PCM step facet",
+            "Status": "Ready" if model_type == "RSM" or bool(step_var) else "Review",
+            "Value": "RSM uses shared thresholds." if model_type == "RSM" else f"PCM threshold matrix is indexed by `{step_facet}` / `{step_var}`.",
+            "Action": "Confirm the Stan model and JSON use the same step facet before sampling.",
+        },
+        {
+            "Check": "Weight handling",
+            "Status": weight_status,
+            "Value": weight_note,
+            "Action": "If non-unit weights matter, extend the Stan likelihood before making posterior claims.",
+        },
+        {
+            "Check": "Prior settings",
+            "Status": "Review",
+            "Value": (
+                f"sigma_theta_prior_scale={stan_data['sigma_theta_prior_scale']}; "
+                f"facet_prior_scale={stan_data['facet_prior_scale']}; "
+                f"step_prior_scale={stan_data['step_prior_scale']}"
+            ),
+            "Action": "Use mfrm_stan_prior_guidance.csv and mfrm_stan_prior_sensitivity_grid.csv before reporting posterior claims.",
+        },
+        {
+            "Check": "Privacy boundary",
+            "Status": "Review",
+            "Value": "The JSON contains row-level coded responses; the ID map contains original labels.",
+            "Action": "Keep JSON and ID maps in private archives unless a formal sharing decision permits release.",
+        },
+    ])
+    return {
+        "available": True,
+        "stan_data": stan_data_for_json,
+        "json_text": json_text,
+        "id_map": pd.DataFrame(id_rows),
+        "data_dictionary": pd.DataFrame(dictionary_rows),
+        "manifest": manifest,
+        "prior_guidance": stan_prior_setting_guidance(
+            sigma_theta_prior_scale=sigma_theta_prior_scale,
+            facet_prior_scale=facet_prior_scale,
+            step_prior_scale=step_prior_scale,
+        ),
+        "prior_sensitivity_grid": stan_prior_sensitivity_grid(
+            sigma_theta_prior_scale=sigma_theta_prior_scale,
+            facet_prior_scale=facet_prior_scale,
+            step_prior_scale=step_prior_scale,
+        ),
+        "messages": [],
+        "facet_variable_map": pd.DataFrame([
+            {"Facet": facet, "StanVariable": var_name, "StanCountVariable": f"K_{var_name}"}
+            for facet, var_name in zip(facet_names, facet_vars)
+        ]),
+    }
+
+
+def _find_facet_by_keywords(facet_names: list[str], keywords: tuple[str, ...], *, exclude: set[str] | None = None) -> str | None:
+    exclude = set(exclude or set())
+    for facet in facet_names:
+        if facet in exclude:
+            continue
+        lower = str(facet).strip().lower()
+        if any(key in lower for key in keywords):
+            return facet
+    return None
+
+
+def _uto_bayesian_mfrm_design_audit_table(
+    *,
+    rater_facet: str | None,
+    task_facet: str | None,
+    criterion_facet: str | None,
+    time_facet: str | None,
+    rater_inferred: bool,
+    stan_data: dict,
+) -> pd.DataFrame:
+    """Describe which Uto-family scaffold claims are supported by the mapped design."""
+    r_count = int(stan_data.get("R", 0) or 0)
+    i_count = int(stan_data.get("I", 0) or 0)
+    c_count = int(stan_data.get("C_dim", 0) or 0)
+    s_count = int(stan_data.get("S", 0) or 0)
+    k_count = int(stan_data.get("K", 0) or 0)
+    n_count = int(stan_data.get("N", 0) or 0)
+
+    y_values = stan_data.get("y", [])
+    score_support_ready = (
+        k_count >= 2
+        and isinstance(y_values, list)
+        and len(y_values) == n_count
+        and all(isinstance(v, int) and 1 <= v <= k_count for v in y_values)
+    )
+
+    role_reuse = {
+        name
+        for name in (rater_facet, task_facet, criterion_facet, time_facet)
+        if name and [rater_facet, task_facet, criterion_facet, time_facet].count(name) > 1
+    }
+
+    rater_ready = bool(rater_facet) and not rater_inferred and r_count >= 2 and rater_facet not in role_reuse
+    task_ready = bool(task_facet) and i_count >= 2 and task_facet not in role_reuse
+    criterion_ready = bool(criterion_facet) and c_count >= 2 and criterion_facet not in role_reuse
+    time_ready = bool(time_facet) and s_count >= 2 and time_facet not in role_reuse
+
+    rows = [
+        {
+            "DesignRole": "Rater severity facet",
+            "MappedFacet": rater_facet or "not mapped",
+            "StanVariable": "rater; R; beta_rater",
+            "Status": "Ready" if rater_ready else "Review",
+            "Evidence": (
+                f"R={r_count}; mapping was inferred from the first facet."
+                if rater_inferred else
+                f"R={r_count}; mapped by rater/scorer/judge/evaluator keyword."
+            ),
+            "ClaimReadiness": (
+                "Rater severity parameters can be interpreted if the study design defines these levels as raters or severity-bearing agents."
+                if rater_ready else
+                "Treat rater severity parameters as a scaffold placeholder until this facet is confirmed and has at least two defensible levels."
+            ),
+            "RequiredReview": "Confirm the facet represents raters, scorers, judges, evaluators, or another severity-bearing agent.",
+            "AllowedClaimBoundary": "Severity differences among mapped rater levels only; no rater-quality or fairness claim without diagnostics and design review.",
+            "UtoReferenceLayer": "Generalized Bayesian MFRM rater-severity layer.",
+        },
+        {
+            "DesignRole": "Task/item difficulty facet",
+            "MappedFacet": task_facet or "constant single task",
+            "StanVariable": "task; I; beta_task",
+            "Status": "Ready" if task_ready else "Review",
+            "Evidence": f"I={i_count}; {'mapped by task/item keyword' if task_facet else 'no task/item facet was detected'}." ,
+            "ClaimReadiness": (
+                "Task/item difficulty can be interpreted for the mapped task facet."
+                if task_ready else
+                "Do not report task/item difficulty differences as empirical design evidence until a task/item facet is mapped."
+            ),
+            "RequiredReview": "Confirm that the mapped facet is the intended task, item, prompt, station, essay, case, or comparable assessment unit.",
+            "AllowedClaimBoundary": "Difficulty differences among mapped tasks/items only; no content-domain claim unless the task taxonomy is documented.",
+            "UtoReferenceLayer": "Generalized MFRM task/item difficulty layer.",
+        },
+        {
+            "DesignRole": "Rubric criterion / latent dimension",
+            "MappedFacet": criterion_facet or "constant single criterion",
+            "StanVariable": "criterion; C_dim; beta_criterion; rho_criterion",
+            "Status": "Ready" if criterion_ready else "Review",
+            "Evidence": f"C_dim={c_count}; {'criterion/rubric/dimension facet detected' if criterion_facet else 'no criterion facet was detected'}." ,
+            "ClaimReadiness": (
+                "Multidimensional rubric-criterion interpretation is structurally available after posterior diagnostics and identifiability review."
+                if criterion_ready else
+                "Do not make multidimensional rubric claims; the scaffold collapses criterion to one placeholder dimension."
+            ),
+            "RequiredReview": "Check whether criterion labels correspond to defensible rubric dimensions and whether the posterior correlation layer is identifiable.",
+            "AllowedClaimBoundary": "Criterion/dimension differences and correlations only for mapped rubric dimensions; no multidimensional claim when C_dim=1.",
+            "UtoReferenceLayer": "Uto-family multidimensional rubric criterion layer.",
+        },
+        {
+            "DesignRole": "Time/order block for rater drift",
+            "MappedFacet": time_facet or "constant single time block",
+            "StanVariable": "time_block; S; gamma_drift",
+            "Status": "Ready" if time_ready else "Review",
+            "Evidence": f"S={s_count}; {'time/session/order facet detected' if time_facet else 'no time/order facet was detected'}." ,
+            "ClaimReadiness": (
+                "Rater severity drift can be estimated as a time-block effect after confirming block order and posterior diagnostics."
+                if time_ready else
+                "Do not make rater drift claims; arbitrary row order is not a time design."
+            ),
+            "RequiredReview": "Document the block ordering, administration/session meaning, and whether raters are observed across enough blocks.",
+            "AllowedClaimBoundary": "Drift over mapped time/order blocks only; no longitudinal drift claim when S=1 or block order is arbitrary.",
+            "UtoReferenceLayer": "Uto-family rater severity drift layer.",
+        },
+        {
+            "DesignRole": "Ordered score support",
+            "MappedFacet": "Score",
+            "StanVariable": "y; K; tau",
+            "Status": "Ready" if score_support_ready else "Review",
+            "Evidence": f"N={n_count}; K={k_count}; all exported y values are within 1..K: {bool(score_support_ready)}.",
+            "ClaimReadiness": (
+                "Ordinal-category likelihood is structurally consistent with the exported coded data."
+                if score_support_ready else
+                "Check score recoding, missing categories, and category bounds before fitting the Stan template."
+            ),
+            "RequiredReview": "Inspect sparse or unobserved categories and document any score recoding from the original rubric.",
+            "AllowedClaimBoundary": "Ordinal category model for the exported score support; no claim that all categories are well estimated without counts and diagnostics.",
+            "UtoReferenceLayer": "Ordered response threshold layer.",
+        },
+        {
+            "DesignRole": "Privacy and archive boundary",
+            "MappedFacet": "All exported row-level indices and ID maps",
+            "StanVariable": "JSON arrays; ID index map",
+            "Status": "Review",
+            "Evidence": "The Uto JSON contains row-level coded responses; the ID map can expose original person/facet labels.",
+            "ClaimReadiness": "Private archive ready only after governance review; public release should use dictionaries, manifests, and design-audit tables unless sharing is approved.",
+            "RequiredReview": "Decide whether row-level coded JSON, original labels, or posterior draws may be shared.",
+            "AllowedClaimBoundary": "Public reproducibility claims should cite hashes/manifests unless the raw coded data can be released.",
+            "UtoReferenceLayer": "Reproducibility and data-governance layer.",
+        },
+    ]
+    return pd.DataFrame(rows)
+
+
+def uto_design_audit_claim_notice(design_audit: pd.DataFrame) -> dict[str, str]:
+    """Summarize Uto-family design-audit rows for UI warning/info messages."""
+    if not isinstance(design_audit, pd.DataFrame) or design_audit.empty:
+        return {
+            "level": "info",
+            "message": "Uto-family design-audit rows are unavailable. Treat the scaffold as a template until the mapping is reviewed.",
+        }
+    if "Status" not in design_audit.columns or "DesignRole" not in design_audit.columns:
+        return {
+            "level": "info",
+            "message": "Uto-family design-audit status columns are unavailable. Review the mapping table before reporting Uto-family claims.",
+        }
+
+    review_rows = design_audit[design_audit["Status"].astype(str).str.lower().eq("review")]
+    if review_rows.empty:
+        return {
+            "level": "success",
+            "message": "All Uto-family design-audit rows are Ready. Still report priors, diagnostics, sensitivity variants, and the exact Stan/data hashes.",
+        }
+
+    substantive = review_rows[
+        ~review_rows["DesignRole"].astype(str).str.contains("privacy|archive", case=False, regex=True, na=False)
+    ]
+    if substantive.empty:
+        return {
+            "level": "info",
+            "message": "Substantive Uto-family mapping rows are Ready. Complete the privacy/archive review before sharing JSON, ID maps, or posterior draws.",
+        }
+
+    roles = substantive["DesignRole"].astype(str).tolist()
+    role_text = "; ".join(roles[:4]) + ("; ..." if len(roles) > 4 else "")
+    return {
+        "level": "warning",
+        "message": (
+            "Review before Uto-family interpretation: "
+            f"{role_text}. Do not report rater drift, multidimensional rubric criteria, or other Uto-family extensions "
+            "for rows marked Review."
+        ),
+    }
+
+
+def uto_design_audit_claim_wording_table(design_audit: pd.DataFrame) -> pd.DataFrame:
+    """Translate Uto-family design-audit rows into report-writing guardrails."""
+    columns = [
+        "DesignRole",
+        "Status",
+        "SafeReportWording",
+        "DoNotWrite",
+        "EvidenceToAttach",
+        "NextAction",
+        "ArchiveFile",
+    ]
+    if not isinstance(design_audit, pd.DataFrame) or design_audit.empty:
+        return pd.DataFrame(columns=columns)
+
+    templates = {
+        "Rater severity facet": {
+            "ready": "The Uto-family scaffold includes a mapped rater-severity term for the current rater facet; interpret posterior severity only with fit, agreement, bias, posterior diagnostics, and sensitivity evidence attached.",
+            "review": "The Uto-family scaffold contains a rater-severity placeholder, but the rater role still needs design confirmation before severity differences are reported.",
+            "do_not": "Do not write that rater severity, rater fairness, or rater quality has been established from the scaffold alone.",
+            "evidence": "mfrm_uto_bayesian_mfrm_design_audit.csv; private ID map; rater measures; rater dashboard; posterior diagnostics; prior sensitivity summary.",
+            "next": "Confirm the mapped facet is a severity-bearing rater/scorer/judge/evaluator facet and attach diagnostics before manuscript wording.",
+        },
+        "Task/item difficulty facet": {
+            "ready": "The Uto-family scaffold includes a mapped task/item difficulty term for the current task facet; report only task-level difficulty patterns that match the documented task taxonomy.",
+            "review": "The Uto-family scaffold uses a task placeholder or an unconfirmed task mapping; task/item difficulty claims should remain out of the report.",
+            "do_not": "Do not write that task or item difficulty has been separated when no defensible task/item facet is mapped.",
+            "evidence": "mfrm_uto_bayesian_mfrm_design_audit.csv; task map; data dictionary; task/facet measures; task taxonomy notes.",
+            "next": "Confirm task labels, task taxonomy, and task coverage before interpreting beta_task or related summaries.",
+        },
+        "Rubric criterion / latent dimension": {
+            "ready": "The Uto-family scaffold structurally supports criterion/dimension terms for the mapped rubric facet; multidimensional wording still requires posterior correlation, identifiability, diagnostics, and sensitivity evidence.",
+            "review": "The current export does not support a multidimensional rubric claim; describe the Stan file as a scaffold and keep criterion/dimension wording out of substantive claims.",
+            "do_not": "Do not write that the model is multidimensional, that rubric dimensions are empirically separated, or that criterion correlations are interpretable when C_dim=1 or the criterion facet is not defensible.",
+            "evidence": "mfrm_uto_bayesian_mfrm_design_audit.csv; criterion map; rubric documentation; posterior correlation summaries; diagnostics; sensitivity variants.",
+            "next": "Confirm rubric dimensions and posterior identifiability before reporting criterion effects or criterion correlations.",
+        },
+        "Time/order block for rater drift": {
+            "ready": "The Uto-family scaffold structurally supports rater drift over mapped time/order blocks; drift wording still requires documented block order, repeated rater coverage, diagnostics, and sensitivity evidence.",
+            "review": "The current export does not support a rater drift claim; time_block is a placeholder or lacks meaningful ordered blocks.",
+            "do_not": "Do not write that rater severity drift, longitudinal change, fatigue, learning, or temporal instability has been estimated when S=1 or block order is arbitrary.",
+            "evidence": "mfrm_uto_bayesian_mfrm_design_audit.csv; time_block map; session/order documentation; rater-by-block coverage; posterior drift summaries; diagnostics.",
+            "next": "Document the administration order and rater coverage before interpreting gamma_drift or drift plots.",
+        },
+        "Ordered score support": {
+            "ready": "The exported score vector is structurally compatible with the ordered response likelihood; threshold and category claims still require category counts, step/threshold diagnostics, and posterior diagnostics.",
+            "review": "The score export needs recoding/category review before the Stan likelihood can support score-category claims.",
+            "do_not": "Do not write that all score categories or thresholds are well estimated without observed counts, sparse-category review, and diagnostic evidence.",
+            "evidence": "score map; category counts; threshold/step table; category probability curves; Stan data dictionary; posterior diagnostics.",
+            "next": "Inspect sparse/unobserved categories and threshold behavior before reporting threshold or category probability summaries.",
+        },
+        "Privacy and archive boundary": {
+            "ready": "The public report can cite shareable dictionaries, manifests, hashes, and audit tables while private row-level JSON and ID maps remain governed by the project sharing decision.",
+            "review": "Treat row-level JSON, private ID maps, and posterior draws as private until a formal sharing decision permits release.",
+            "do_not": "Do not publish row-level coded JSON, private ID maps, original labels, or posterior draws unless the data-governance decision explicitly permits it.",
+            "evidence": "export_privacy_manifest.csv; mfrm_complete_stan_reproducibility_manifest.csv; project sharing decision; reviewer/OSF package contents.",
+            "next": "Separate public dictionaries/manifests from private rerun files and document the release decision.",
+        },
+    }
+
+    rows: list[dict[str, str]] = []
+    for _, row in design_audit.iterrows():
+        role = str(row.get("DesignRole", "")).strip()
+        status = str(row.get("Status", "Review")).strip() or "Review"
+        template = templates.get(role, {})
+        is_ready = status.lower() == "ready"
+        safe = template.get("ready" if is_ready else "review", str(row.get("ClaimReadiness", "")))
+        boundary = str(row.get("AllowedClaimBoundary", "")).strip()
+        required_review = str(row.get("RequiredReview", "")).strip()
+        if boundary:
+            safe = f"{safe} Boundary: {boundary}"
+        rows.append({
+            "DesignRole": role or "Unspecified Uto-family row",
+            "Status": status,
+            "SafeReportWording": safe,
+            "DoNotWrite": template.get("do_not", "Do not turn scaffold fields into substantive claims without design evidence and posterior diagnostics."),
+            "EvidenceToAttach": template.get("evidence", "mfrm_uto_bayesian_mfrm_design_audit.csv; posterior diagnostics; prior sensitivity summary."),
+            "NextAction": required_review or template.get("next", "Review the mapped facet and archive the evidence before reporting."),
+            "ArchiveFile": "mfrm_uto_bayesian_mfrm_claim_wording.csv",
+        })
+    return pd.DataFrame(rows, columns=columns)
+
+
+def build_uto_bayesian_mfrm_stan_data_export(result: dict) -> dict:
+    """Build a current-data JSON template for the Uto-family Bayesian MFRM scaffold."""
+    empty = {
+        "available": False,
+        "stan_data": {},
+        "json_text": "",
+        "id_map": pd.DataFrame(),
+        "data_dictionary": pd.DataFrame(),
+        "design_audit": pd.DataFrame(),
+        "claim_wording": pd.DataFrame(),
+        "manifest": pd.DataFrame(),
+        "messages": [],
+    }
+    generic = build_generic_mfrm_stan_data_export(result)
+    if not generic.get("available"):
+        return {**empty, "messages": generic.get("messages", ["Generic Stan data are unavailable."])}
+    config = result.get("config", {}) if isinstance(result.get("config", {}), dict) else {}
+    prep = result.get("prep", {}) if isinstance(result.get("prep", {}), dict) else {}
+    data = prep.get("data", pd.DataFrame())
+    facet_names = [str(f) for f in config.get("facet_names", prep.get("facet_names", []))]
+    if not facet_names:
+        return {**empty, "messages": ["The Uto-family scaffold needs at least one non-person facet to represent rater severity."]}
+
+    rater_facet = _find_facet_by_keywords(facet_names, ("rater", "scorer", "judge", "evaluator", "marker"))
+    rater_inferred = False
+    if rater_facet is None:
+        rater_facet = facet_names[0]
+        rater_inferred = True
+    task_facet = _find_facet_by_keywords(
+        facet_names,
+        ("task", "item", "prompt", "station", "piece", "text", "essay", "case"),
+        exclude={rater_facet},
+    )
+    criterion_facet = _find_facet_by_keywords(
+        facet_names,
+        ("criterion", "criteria", "rubric", "dimension", "domain", "competency", "item"),
+        exclude={rater_facet, task_facet} if task_facet else {rater_facet},
+    )
+    time_facet = _find_facet_by_keywords(
+        facet_names,
+        ("time", "block", "session", "occasion", "round", "wave", "order"),
+        exclude=set(),
+    )
+
+    try:
+        person_codes, person_levels = _stan_level_codes(data["Person"], levels=prep.get("levels", {}).get("Person"))
+        rater_codes, rater_levels = _stan_level_codes(data[rater_facet], levels=prep.get("levels", {}).get(rater_facet))
+        if task_facet:
+            task_codes, task_levels = _stan_level_codes(data[task_facet], levels=prep.get("levels", {}).get(task_facet))
+        else:
+            task_codes, task_levels = [1] * len(data), ["__single_task__"]
+        if criterion_facet:
+            criterion_codes, criterion_levels = _stan_level_codes(data[criterion_facet], levels=prep.get("levels", {}).get(criterion_facet))
+        else:
+            criterion_codes, criterion_levels = [1] * len(data), ["__single_criterion__"]
+        if time_facet:
+            time_codes, time_levels = _stan_level_codes(data[time_facet], levels=prep.get("levels", {}).get(time_facet))
+        else:
+            time_codes, time_levels = [1] * len(data), ["__single_time_block__"]
+        n_cat = int(config.get("n_cat") or (int(prep.get("rating_max", data["Score"].max())) - int(prep.get("rating_min", data["Score"].min())) + 1))
+        y = _stan_score_vector(data, prep, n_cat)
+    except Exception as exc:
+        return {**empty, "messages": [f"Uto-family Stan data export failed: {type(exc).__name__}: {exc}"]}
+
+    stan_data = {
+        "N": int(len(data)),
+        "J": int(len(person_levels)),
+        "R": int(len(rater_levels)),
+        "I": int(len(task_levels)),
+        "C_dim": int(len(criterion_levels)),
+        "S": int(len(time_levels)),
+        "K": int(n_cat),
+        "person": person_codes,
+        "rater": rater_codes,
+        "task": task_codes,
+        "criterion": criterion_codes,
+        "time_block": time_codes,
+        "y": y,
+    }
+    id_rows: list[dict] = []
+    for entity, variable, count_var, role, labels in (
+        ("Person", "person", "J", "person ability", person_levels),
+        (rater_facet, "rater", "R", "rater severity", rater_levels),
+        (task_facet or "__single_task__", "task", "I", "task/item difficulty", task_levels),
+        (criterion_facet or "__single_criterion__", "criterion", "C_dim", "criterion/dimension", criterion_levels),
+        (time_facet or "__single_time_block__", "time_block", "S", "rater severity drift block", time_levels),
+    ):
+        id_rows.extend([
+            {
+                "Entity": entity,
+                "OriginalLabel": label,
+                "StanIndex": idx,
+                "StanVariable": variable,
+                "StanCountVariable": count_var,
+                "Role": role,
+            }
+            for idx, label in enumerate(labels, start=1)
+        ])
+    dictionary_rows = [
+        {"Variable": "N", "Type": "int<lower=1>", "Meaning": "Number of response rows.", "Source": "prepared response data", "PrivacyBoundary": "Row count only."},
+        {"Variable": "J", "Type": "int<lower=1>", "Meaning": "Number of persons.", "Source": "Person level map", "PrivacyBoundary": "Count only."},
+        {"Variable": "R", "Type": "int<lower=1>", "Meaning": "Number of raters or severity-bearing facet levels.", "Source": rater_facet, "PrivacyBoundary": "Count only."},
+        {"Variable": "I", "Type": "int<lower=1>", "Meaning": "Number of tasks/items.", "Source": task_facet or "constant single task", "PrivacyBoundary": "Count only."},
+        {"Variable": "C_dim", "Type": "int<lower=1>", "Meaning": "Number of rubric criteria / latent dimensions.", "Source": criterion_facet or "constant single criterion", "PrivacyBoundary": "Count only."},
+        {"Variable": "S", "Type": "int<lower=1>", "Meaning": "Number of ordered time blocks for rater drift.", "Source": time_facet or "constant single time block", "PrivacyBoundary": "Count only."},
+        {"Variable": "K", "Type": "int<lower=2>", "Meaning": "Number of ordered rating categories.", "Source": "score support after app recoding", "PrivacyBoundary": "Scale size only."},
+        {"Variable": "person", "Type": "array[N] int<lower=1, upper=J>", "Meaning": "1-based person index per response row.", "Source": "Person", "PrivacyBoundary": "Row-level coded data."},
+        {"Variable": "rater", "Type": "array[N] int<lower=1, upper=R>", "Meaning": "1-based rater/severity index per response row.", "Source": rater_facet, "PrivacyBoundary": "Row-level coded data."},
+        {"Variable": "task", "Type": "array[N] int<lower=1, upper=I>", "Meaning": "1-based task/item index per response row.", "Source": task_facet or "constant 1", "PrivacyBoundary": "Row-level coded data."},
+        {"Variable": "criterion", "Type": "array[N] int<lower=1, upper=C_dim>", "Meaning": "1-based criterion/dimension index per response row.", "Source": criterion_facet or "constant 1", "PrivacyBoundary": "Row-level coded data."},
+        {"Variable": "time_block", "Type": "array[N] int<lower=1, upper=S>", "Meaning": "1-based ordered time block index per response row.", "Source": time_facet or "constant 1", "PrivacyBoundary": "Row-level coded data."},
+        {"Variable": "y", "Type": "array[N] int<lower=1, upper=K>", "Meaning": "1-based score category per response row.", "Source": "Score/score_k after app recoding", "PrivacyBoundary": "Row-level score data."},
+    ]
+    design_audit = _uto_bayesian_mfrm_design_audit_table(
+        rater_facet=rater_facet,
+        task_facet=task_facet,
+        criterion_facet=criterion_facet,
+        time_facet=time_facet,
+        rater_inferred=rater_inferred,
+        stan_data=stan_data,
+    )
+    claim_wording = uto_design_audit_claim_wording_table(design_audit)
+    review_count = int((design_audit["Status"].astype(str) == "Review").sum()) if not design_audit.empty else 0
+    manifest_rows = [
+        {
+            "Check": "Uto-family data template",
+            "Status": "Review" if rater_inferred or not criterion_facet or not time_facet else "Ready",
+            "Value": f"N={stan_data['N']}; J={stan_data['J']}; R={stan_data['R']}; I={stan_data['I']}; C_dim={stan_data['C_dim']}; S={stan_data['S']}; K={stan_data['K']}",
+            "Action": "Use with mfrm_uto_bayesian_mfrm.stan only after checking that the facet mapping matches the study design.",
+        },
+        {
+            "Check": "Uto design claim audit",
+            "Status": "Review" if review_count else "Ready",
+            "Value": f"{review_count} design/claim rows require review before using Uto-family interpretations.",
+            "Action": "Read mfrm_uto_bayesian_mfrm_design_audit.csv before reporting rater severity, criterion-dimension, or drift claims.",
+        },
+        {
+            "Check": "Uto claim wording guardrails",
+            "Status": "Ready" if isinstance(claim_wording, pd.DataFrame) and not claim_wording.empty else "Review",
+            "Value": "Safe wording, do-not-write boundaries, evidence to attach, and next actions are generated for each Uto design-audit row.",
+            "Action": "Read mfrm_uto_bayesian_mfrm_claim_wording.csv before copying any Uto-family wording into a report.",
+        },
+        {
+            "Check": "Rater mapping",
+            "Status": "Review" if rater_inferred else "Ready",
+            "Value": f"`{rater_facet}` mapped to Stan `rater`." + (" This was inferred from the first facet." if rater_inferred else ""),
+            "Action": "Confirm this facet genuinely represents raters or severity-bearing agents.",
+        },
+        {
+            "Check": "Criterion mapping",
+            "Status": "Ready" if criterion_facet else "Review",
+            "Value": f"`{criterion_facet}` mapped to Stan `criterion`." if criterion_facet else "No criterion facet found; all rows use one criterion.",
+            "Action": "Multidimensional claims require a defensible criterion/dimension mapping.",
+        },
+        {
+            "Check": "Time-block mapping",
+            "Status": "Ready" if time_facet else "Review",
+            "Value": f"`{time_facet}` mapped to Stan `time_block`." if time_facet else "No time/order facet found; S=1 and drift is not empirically separated.",
+            "Action": "Rater drift claims require meaningful time/order blocks, not arbitrary row order.",
+        },
+        {
+            "Check": "Privacy boundary",
+            "Status": "Review",
+            "Value": "The JSON contains row-level coded responses; the ID map contains original labels.",
+            "Action": "Keep JSON and ID maps in private archives unless a formal sharing decision permits release.",
+        },
+    ]
+    return {
+        "available": True,
+        "stan_data": stan_data,
+        "json_text": json.dumps(stan_data, indent=2, ensure_ascii=False),
+        "id_map": pd.DataFrame(id_rows),
+        "data_dictionary": pd.DataFrame(dictionary_rows),
+        "design_audit": design_audit,
+        "claim_wording": claim_wording,
+        "manifest": pd.DataFrame(manifest_rows),
+        "messages": [],
+        "mapping": {
+            "rater_facet": rater_facet,
+            "task_facet": task_facet,
+            "criterion_facet": criterion_facet,
+            "time_facet": time_facet,
+            "rater_inferred": rater_inferred,
+        },
+    }
+
+
+def stan_data_export_assets(result: dict, *, include_row_level: bool = True) -> dict[str, str]:
+    """Return named Stan data export assets for ZIP/OSF packaging."""
+    assets: dict[str, str] = {
+        "stan_reproducibility_archive_contract.csv": stan_reproducibility_archive_contract_table(
+            public_export_mode=not include_row_level,
+        ).to_csv(index=False),
+        "stan_posterior_reproducibility_handoff.md": stan_posterior_reproducibility_handoff_markdown(),
+        "stan_posterior_reproducibility_route.csv": guided_stan_posterior_reproducibility_help_table().to_csv(index=False),
+        "stan_posterior_handoff_checklist.csv": stan_posterior_handoff_checklist().to_csv(index=False),
+        "stan_run_manifest_template.csv": stan_run_manifest_template().to_csv(index=False),
+        "mfrm_stan_prior_decision_log_template.csv": stan_prior_decision_log_template().to_csv(index=False),
+    }
+    generic = build_generic_mfrm_stan_data_export(result)
+    if generic.get("available"):
+        if include_row_level:
+            assets["mfrm_stan_data.json"] = generic["json_text"]
+            assets["mfrm_stan_id_index_map.csv"] = generic["id_map"].to_csv(index=False)
+        assets["mfrm_stan_data_dictionary.csv"] = generic["data_dictionary"].to_csv(index=False)
+        assets["mfrm_stan_data_manifest.csv"] = generic["manifest"].to_csv(index=False)
+        assets["mfrm_stan_prior_guidance.csv"] = generic["prior_guidance"].to_csv(index=False)
+        assets["mfrm_stan_prior_sensitivity_grid.csv"] = generic["prior_sensitivity_grid"].to_csv(index=False)
+        assets["mfrm_stan_prior_decision_log_template.csv"] = stan_prior_decision_log_template(
+            sigma_theta_prior_scale=float(generic["stan_data"].get("sigma_theta_prior_scale", 2.5)),
+            facet_prior_scale=float(generic["stan_data"].get("facet_prior_scale", 2.0)),
+            step_prior_scale=float(generic["stan_data"].get("step_prior_scale", 5.0)),
+        ).to_csv(index=False)
+    uto = build_uto_bayesian_mfrm_stan_data_export(result)
+    if uto.get("available"):
+        if include_row_level:
+            assets["mfrm_uto_bayesian_mfrm_data_template.json"] = uto["json_text"]
+            assets["mfrm_uto_bayesian_mfrm_id_index_map.csv"] = uto["id_map"].to_csv(index=False)
+        assets["mfrm_uto_bayesian_mfrm_data_dictionary.csv"] = uto["data_dictionary"].to_csv(index=False)
+        assets["mfrm_uto_bayesian_mfrm_mapping_manifest.csv"] = uto["manifest"].to_csv(index=False)
+        assets["mfrm_uto_bayesian_mfrm_design_audit.csv"] = uto["design_audit"].to_csv(index=False)
+        assets["mfrm_uto_bayesian_mfrm_claim_wording.csv"] = uto["claim_wording"].to_csv(index=False)
+    return assets
+
+
+def stan_reproducibility_package_assets(result: dict, *, include_row_level: bool = True) -> dict[str, str]:
+    """Return a complete Stan source/data/runner reproducibility package."""
+    config = result.get("config", {}) if isinstance(result, dict) and isinstance(result.get("config", {}), dict) else {}
+    prep = result.get("prep", {}) if isinstance(result, dict) and isinstance(result.get("prep", {}), dict) else {}
+    try:
+        n_cat = int(config.get("n_cat") or (int(prep.get("rating_max", 5)) - int(prep.get("rating_min", 1)) + 1))
+    except Exception:
+        n_cat = 5
+    n_cat = max(2, n_cat)
+    generic_code = build_generic_mfrm_stan_code(result)
+    runner_assets = bayesian_stan_runner_templates()
+    data_assets = stan_data_export_assets(result, include_row_level=include_row_level)
+
+    assets: dict[str, str] = {
+        **runner_assets,
+        **data_assets,
+        "mfrm_uto_bayesian_mfrm.stan": generate_advanced_model_stan_code(
+            "UTO_BAYESIAN_MFRM",
+            n_categories=n_cat,
+        ),
+    }
+    if generic_code.get("available"):
+        assets["mfrm_model.stan"] = str(generic_code["stan_code"])
+
+    data_scope = (
+        "This private package includes row-level Stan JSON and private ID maps."
+        if include_row_level else
+        "This public package omits row-level Stan JSON and private ID maps."
+    )
+    readme = f"""# Complete Stan Reproducibility Package
+
+This package keeps the Stan source, app-generated data contract, prior-setting
+documentation, and Python/R/Julia runners together. Use it when a Bayesian
+Stan analysis supports interpretation, figures, or manuscript claims.
+
+Package privacy mode:
+- {data_scope}
+
+Model files:
+- `mfrm_model.stan`: generic Bayesian RSM/PCM model for the current app design, when the current model is supported.
+- `mfrm_uto_bayesian_mfrm.stan`: Uto-family scaffold with criterion dimensions and rater severity drift fields.
+
+Data and maps:
+- `mfrm_stan_data.json`: CmdStan-compatible 1-based coded data, included only in private mode.
+- `mfrm_stan_id_index_map.csv`: private original-label to Stan-index map, included only in private mode.
+- `mfrm_stan_data_dictionary.csv` and `mfrm_stan_data_manifest.csv`: shareable documentation for the generic data export.
+- `mfrm_uto_bayesian_mfrm_data_template.json` and private ID map: included only in private mode when the current design can be mapped to the Uto scaffold.
+- `mfrm_uto_bayesian_mfrm_data_dictionary.csv` and `mfrm_uto_bayesian_mfrm_mapping_manifest.csv`: mapping review tables.
+- `mfrm_uto_bayesian_mfrm_design_audit.csv`: claim-readiness boundaries for rater severity, task difficulty, rubric dimensions, drift blocks, score support, and privacy.
+- `mfrm_uto_bayesian_mfrm_claim_wording.csv`: safe wording, do-not-write boundaries, evidence to attach, and next actions for each Uto design-audit row.
+
+Prior-setting workflow:
+1. Read `mfrm_stan_prior_guidance.csv`.
+2. Fill `mfrm_stan_prior_decision_log_template.csv` with the chosen value, study-specific rationale, and evidence source for each prior.
+3. Run the variants listed in `mfrm_stan_prior_sensitivity_grid.csv` without changing the Stan source, row coding, seed, chains, or sampler controls except where the variant requires a prior-scale edit.
+4. Retain posterior claims only when substantive conclusions are stable across diagnostics and sensitivity variants.
+
+Execution workflow:
+1. Choose the Stan file that matches the claim: generic RSM/PCM for Bayesian sensitivity around the app model, or Uto-family scaffold for generalized/multidimensional/drift extensions.
+2. Use one of `run_bayesian_mfrm_cmdstanpy.py`, `run_bayesian_mfrm_cmdstanr.R`, or `run_bayesian_mfrm_cmdstan_cli.jl`.
+3. Keep `MFRM_STAN_FILE`, `MFRM_STAN_DATA_JSON`, `MFRM_SEED`, `MFRM_CHAINS`, `MFRM_WARMUP`, `MFRM_SAMPLING`, `MFRM_ADAPT_DELTA`, and `MFRM_MAX_TREEDEPTH` visible in the archive.
+4. Upload CmdStan CSV chains plus `stan_run_manifest.json` or `stan_run_manifest.csv` in Posterior Viewer before reporting posterior summaries.
+
+Reporting boundary:
+- The generated Stan files are transparent research templates. They are not an automatic claim that the Uto-family papers have been exactly replicated.
+- Archive the Stan file hash, data JSON hash, prior decision log, sampler controls, Rhat, ESS, divergences, treedepth warnings, E-BFMI, posterior predictive checks, and sensitivity decisions.
+- Do not publish row-level JSON, private ID maps, or posterior draws unless the data-sharing decision explicitly permits it.
+"""
+    assets["README_complete_stan_reproducibility_package.md"] = readme
+
+    private_names = {
+        "mfrm_stan_data.json",
+        "mfrm_stan_id_index_map.csv",
+        "mfrm_uto_bayesian_mfrm_data_template.json",
+        "mfrm_uto_bayesian_mfrm_id_index_map.csv",
+    }
+    model_names = {"mfrm_model.stan", "mfrm_uto_bayesian_mfrm.stan"}
+    runner_names = {
+        "run_bayesian_mfrm_cmdstanpy.py",
+        "run_bayesian_mfrm_cmdstanr.R",
+        "run_bayesian_mfrm_cmdstan_cli.jl",
+    }
+    manifest_rows = []
+    for name in sorted(assets):
+        text = assets[name]
+        contains_private = name in private_names
+        if name in model_names:
+            role = "Stan source"
+        elif name in runner_names:
+            role = "Runner"
+        elif name.endswith("_guidance.csv") or "prior" in name:
+            role = "Prior documentation"
+        elif name.endswith(".json") or "data" in name or "map" in name:
+            role = "Data contract"
+        elif "manifest" in name or "handoff" in name or "checklist" in name or "route" in name:
+            role = "Reproducibility audit"
+        else:
+            role = "Documentation"
+        manifest_rows.append({
+            "PackageFile": name,
+            "Role": role,
+            "ContainsRowLevelOrPrivateMap": bool(contains_private),
+            "PublicSharingBoundary": (
+                "Private archive only unless data sharing is approved."
+                if contains_private else
+                "Shareable after reviewing manuscript-specific wording and project policy."
+            ),
+            "SHA256": hashlib.sha256(str(text).encode("utf-8")).hexdigest(),
+            "RequiredBeforeReporting": (
+                "Required for exact rerun or private posterior archive."
+                if contains_private else
+                "Archive with the Stan analysis record."
+            ),
+        })
+    manifest = pd.DataFrame(manifest_rows)
+    assets["mfrm_complete_stan_reproducibility_manifest.csv"] = manifest.to_csv(index=False)
+    return assets
+
+
 def _render_stan_code(result: dict) -> None:
     """Generate Stan model code for Bayesian MFRM based on data structure."""
     st.subheader("Stan Code for Bayesian MFRM")
@@ -28802,6 +37822,12 @@ def _render_stan_code(result: dict) -> None:
     st.warning(STAN_SENSITIVITY_WARNING)
     with st.expander("Stan settings to review before sampling", expanded=False):
         st.markdown(STAN_SENSITIVITY_CHECKLIST_MD)
+    st.markdown("**Bayesian MFRM refinement path**")
+    st.caption(
+        "This links the generic Stan export, Uto-family Bayesian MFRM extensions, "
+        "and posterior reporting boundaries to concrete artifacts."
+    )
+    st.dataframe(bayesian_mfrm_stan_refinement_plan(), width="stretch", hide_index=True)
 
     config = result.get("config", {})
     prep = result.get("prep", {})
@@ -28821,119 +37847,88 @@ def _render_stan_code(result: dict) -> None:
         )
         return
 
-    # Build Stan model
-    n_facets = len(facet_names)
-    facet_vars = [fn.lower().replace(" ", "_") for fn in facet_names]
-
-    # --- Data block ---
-    data_lines = [
-        "data {",
-        "  int<lower=1> N;           // number of observations",
-        "  int<lower=1> J;           // number of persons",
-    ]
-    for i, (fn, fv) in enumerate(zip(facet_names, facet_vars)):
-        data_lines.append(f"  int<lower=1> K_{fv};       // number of {fn} levels")
-    data_lines.append(f"  int<lower=2> C;           // number of categories")
-    data_lines.append("  array[N] int<lower=1, upper=J> person;  // person index")
-    for fv in facet_vars:
-        data_lines.append(f"  array[N] int<lower=1, upper=K_{fv}> {fv};  // {fv} index")
-    data_lines.append("  array[N] int<lower=1, upper=C> y;      // observed rating, 1-indexed for Stan")
-    data_lines.append("  real<lower=0> sigma_theta_prior_scale; // scale for ability SD prior")
-    data_lines.append("  real<lower=0> facet_prior_scale;       // severity prior SD")
-    data_lines.append("  real<lower=0> step_prior_scale;        // threshold prior SD")
-    data_lines.append("}")
-
-    # --- Parameters block ---
-    param_lines = [
-        "parameters {",
-        "  vector[J] theta;          // person ability",
-    ]
-    for fn, fv in zip(facet_names, facet_vars):
-        param_lines.append(f"  vector[K_{fv}] delta_{fv};  // {fn} severity")
-    if model_type == "RSM":
-        param_lines.append("  ordered[C-1] tau;         // Rasch-Andrich thresholds (RSM)")
-    else:
-        # PCM: element-specific thresholds for first facet
-        param_lines.append(f"  matrix[K_{facet_vars[0]}, C-1] tau; // thresholds (PCM, per {facet_names[0]})")
-    param_lines.append("  real<lower=0> sigma_theta; // person ability SD")
-    param_lines.append("}")
-
-    # --- Model block ---
-    model_lines = [
-        "model {",
-        "  // Priors: set scales in the data block from substantive knowledge",
-        "  theta ~ normal(0, sigma_theta);",
-        "  sigma_theta ~ cauchy(0, sigma_theta_prior_scale);",
-    ]
-    for fv in facet_vars:
-        model_lines.append(f"  delta_{fv} ~ normal(0, facet_prior_scale);")
-    if model_type == "RSM":
-        model_lines.append("  tau ~ normal(0, step_prior_scale);")
-    else:
-        model_lines.append(f"  to_vector(tau) ~ normal(0, step_prior_scale);")
-
-    # Centering constraint
-    model_lines.append(f"  // Centering: sum-to-zero on first facet")
-    model_lines.append(f"  sum(delta_{facet_vars[0]}) ~ normal(0, 0.001 * K_{facet_vars[0]});")
-
-    model_lines.append("")
-    model_lines.append("  // Likelihood (Rating Scale Model)")
-    model_lines.append("  for (n in 1:N) {")
-    # Build eta
-    eta_parts = ["theta[person[n]]"]
-    for fv in facet_vars:
-        eta_parts.append(f"delta_{fv}[{fv}[n]]")
-    eta_expr = " - ".join(eta_parts)
-    model_lines.append(f"    real eta = {eta_expr};")
-    model_lines.append("    vector[C] log_prob;")
-    model_lines.append("    log_prob[1] = 0;")
-    if model_type == "RSM":
-        model_lines.append("    for (c in 2:C)")
-        model_lines.append("      log_prob[c] = log_prob[c-1] + eta - tau[c-1];")
-    else:
-        model_lines.append("    for (c in 2:C)")
-        model_lines.append(f"      log_prob[c] = log_prob[c-1] + eta - tau[{facet_vars[0]}[n], c-1];")
-    model_lines.append("    y[n] ~ categorical_logit(log_prob);")
-    model_lines.append("  }")
-    model_lines.append("}")
-
-    # --- Generated quantities ---
-    gq_lines = [
-        "generated quantities {",
-        "  vector[N] log_lik;  // for LOO cross-validation",
-        "  array[N] int y_rep; // posterior predictive",
-        "  for (n in 1:N) {",
-        f"    real eta = {eta_expr};",
-        "    vector[C] log_prob;",
-        "    log_prob[1] = 0;",
-    ]
-    if model_type == "RSM":
-        gq_lines.append("    for (c in 2:C)")
-        gq_lines.append("      log_prob[c] = log_prob[c-1] + eta - tau[c-1];")
-    else:
-        gq_lines.append("    for (c in 2:C)")
-        gq_lines.append(f"      log_prob[c] = log_prob[c-1] + eta - tau[{facet_vars[0]}[n], c-1];")
-    gq_lines.extend([
-        "    log_lik[n] = categorical_logit_lpmf(y[n] | log_prob);",
-        "    y_rep[n] = categorical_logit_rng(log_prob);",
-        "  }",
-        "}",
-    ])
-
-    stan_code = "\n".join(data_lines + [""] + param_lines + [""] + model_lines + [""] + gq_lines)
-    stan_code = stan_code_sensitivity_notice("Bayesian MFRM RSM/PCM") + "\n" + stan_code
-
+    stan_code_export = build_generic_mfrm_stan_code(result)
+    if not stan_code_export.get("available"):
+        st.info("Stan code is unavailable: " + "; ".join(stan_code_export.get("messages", [])))
+        return
+    stan_code = stan_code_export["stan_code"]
     st.code(stan_code, language="stan")
+    stan_data_export = build_generic_mfrm_stan_data_export(result)
+    uto_data_export = build_uto_bayesian_mfrm_stan_data_export(result)
+    prior_guidance = (
+        stan_data_export["prior_guidance"]
+        if stan_data_export.get("available") else stan_prior_setting_guidance()
+    )
+    prior_grid = (
+        stan_data_export["prior_sensitivity_grid"]
+        if stan_data_export.get("available") else stan_prior_sensitivity_grid()
+    )
+    st.markdown("**Prior-setting guide for the generated Stan model**")
+    st.caption(
+        "The JSON contains prior scale fields. Treat them as documented choices to review, "
+        "not hidden defaults. Run at least one tighter and one wider sensitivity variant for manuscript claims."
+    )
+    with st.expander("View prior-setting guide and sensitivity grid", expanded=False):
+        st.dataframe(prior_guidance, width="stretch", hide_index=True)
+        st.markdown("**Suggested prior-sensitivity grid**")
+        st.dataframe(prior_grid, width="stretch", hide_index=True)
+        pcol1, pcol2 = st.columns(2)
+        with pcol1:
+            st.download_button(
+                "Download Stan prior guidance",
+                to_csv_bytes(prior_guidance),
+                file_name="mfrm_stan_prior_guidance.csv",
+                mime="text/csv",
+                key="dl_stan_prior_guidance",
+            )
+        with pcol2:
+            st.download_button(
+                "Download prior sensitivity grid",
+                to_csv_bytes(prior_grid),
+                file_name="mfrm_stan_prior_sensitivity_grid.csv",
+                mime="text/csv",
+                key="dl_stan_prior_sensitivity_grid",
+            )
+    st.markdown("**Stan data JSON and coding maps**")
+    st.caption(
+        "Download the exact 1-based integer-coded JSON that matches the generated Stan data block. "
+        "The ID map is a private crosswalk from original labels to Stan indices."
+    )
+    if stan_data_export.get("available"):
+        st.dataframe(stan_data_export["manifest"], width="stretch", hide_index=True)
+        with st.expander("View Stan data dictionary and private ID map", expanded=False):
+            st.dataframe(stan_data_export["data_dictionary"], width="stretch", hide_index=True)
+            st.warning(
+                "The ID map contains original person/facet labels. Keep it in a private reproducibility archive "
+                "unless a formal sharing decision permits release."
+            )
+            st.dataframe(stan_data_export["id_map"], width="stretch", hide_index=True)
+    else:
+        st.info("Stan data JSON is unavailable: " + "; ".join(stan_data_export.get("messages", [])))
+
+    if uto_data_export.get("available"):
+        with st.expander("Uto-family Bayesian MFRM data template", expanded=False):
+            st.caption(
+                "This maps the current data to the Uto-family scaffold fields. Review the rater, criterion, "
+                "task, and time-block mapping before interpreting multidimensional or drift parameters."
+            )
+            uto_notice = uto_design_audit_claim_notice(uto_data_export["design_audit"])
+            if uto_notice["level"] == "warning":
+                st.warning(uto_notice["message"])
+            elif uto_notice["level"] == "success":
+                st.success(uto_notice["message"])
+            else:
+                st.info(uto_notice["message"])
+            st.markdown("**Claim wording guardrails**")
+            st.dataframe(uto_data_export["claim_wording"], width="stretch", hide_index=True)
+            st.markdown("**Design-audit rows**")
+            st.dataframe(uto_data_export["design_audit"], width="stretch", hide_index=True)
+            st.dataframe(uto_data_export["manifest"], width="stretch", hide_index=True)
+            st.dataframe(uto_data_export["data_dictionary"], width="stretch", hide_index=True)
+    elif uto_data_export.get("messages"):
+        st.caption("Uto-family data template unavailable: " + "; ".join(uto_data_export.get("messages", [])))
 
     # --- Python runner script ---
-    facet_n_lines = []
-    facet_data_lines = []
-    for fn, fv in zip(facet_names, facet_vars):
-        facet_n_lines.append(f'    "K_{fv}": int(data["{fn}"].nunique()),')
-        facet_data_lines.append(
-            f'    "{fv}": data["{fn}"].astype("category").cat.codes.values + 1,  # 1-indexed'
-        )
-
     runner_code = f'''"""Run Bayesian MFRM with CmdStanPy.
 
 Edit prior hyperparameters and sampler controls before reporting results.
@@ -28941,14 +37936,11 @@ Template values are starting points; justify final values from prior studies,
 rubric/scale design, pilot data, and sensitivity analyses.
 """
 import cmdstanpy
-import pandas as pd
-import numpy as np
+from pathlib import Path
 
-# Prior hyperparameters passed to the Stan data block.
-SIGMA_THETA_PRIOR_SCALE = 2.5
-FACET_PRIOR_SCALE = 2.0
-STEP_PRIOR_SCALE = 5.0
-N_CATEGORIES = {n_cat}
+STAN_FILE = Path("mfrm_model.stan")
+DATA_JSON = Path("mfrm_stan_data.json")
+OUTPUT_DIR = Path("stan_outputs/python")
 
 # Sampler controls. Increase ADAPT_DELTA / MAX_TREEDEPTH if diagnostics require it.
 CHAINS = 4
@@ -28958,34 +37950,19 @@ SEED = 42
 ADAPT_DELTA = 0.95
 MAX_TREEDEPTH = 12
 
-# Load your data (long format: one row per observation)
-data = pd.read_csv("your_data.csv")
-score = pd.to_numeric(data["Score"], errors="raise").astype(int)
-if score.min() == 0:
-    score = score + 1
-if score.min() < 1 or score.max() > N_CATEGORIES:
-    raise ValueError("Score must be 0..C-1 or 1..C before Stan recoding.")
+OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+if not STAN_FILE.exists():
+    raise FileNotFoundError(f"Stan file not found: {{STAN_FILE}}")
+if not DATA_JSON.exists():
+    raise FileNotFoundError(f"Stan data JSON not found: {{DATA_JSON}}")
 
 # Compile the Stan model
-model = cmdstanpy.CmdStanModel(stan_file="mfrm_model.stan")
-
-# Prepare data dictionary
-stan_data = {{
-    "N": len(data),
-    "J": int(data["Person"].nunique()),
-{chr(10).join(facet_n_lines)}
-    "C": N_CATEGORIES,
-    "person": data["Person"].astype("category").cat.codes.values + 1,
-{chr(10).join(facet_data_lines)}
-    "y": score.values,  # 1-indexed categories for Stan categorical_logit
-    "sigma_theta_prior_scale": SIGMA_THETA_PRIOR_SCALE,
-    "facet_prior_scale": FACET_PRIOR_SCALE,
-    "step_prior_scale": STEP_PRIOR_SCALE,
-}}
+model = cmdstanpy.CmdStanModel(stan_file=str(STAN_FILE))
 
 # Sample from posterior
 fit = model.sample(
-    data=stan_data,
+    data=str(DATA_JSON),
+    output_dir=str(OUTPUT_DIR),
     chains=CHAINS,
     iter_warmup=ITER_WARMUP,
     iter_sampling=ITER_SAMPLING,
@@ -29009,20 +37986,16 @@ print(loo)
     with st.expander("Python runner script (CmdStanPy)"):
         st.code(runner_code, language="python")
 
-    # R runner script
-    r_facet_n = ", ".join(f'K_{fv} = length(unique(data${fn}))' for fn, fv in zip(facet_names, facet_vars))
-    r_facet_data = ", ".join(f'{fv} = as.integer(factor(data${fn}))' for fn, fv in zip(facet_names, facet_vars))
+# R runner script
     r_runner = f'''# Run Bayesian MFRM with CmdStanR
 # Edit prior hyperparameters and sampler controls before reporting results.
 # Template values are starting points; justify final values from prior studies,
 # rubric/scale design, pilot data, and sensitivity analyses.
 library(cmdstanr)
 
-SIGMA_THETA_PRIOR_SCALE <- 2.5
-FACET_PRIOR_SCALE <- 2.0
-STEP_PRIOR_SCALE <- 5.0
-N_CATEGORIES <- {n_cat}L
-
+stan_file <- "mfrm_model.stan"
+data_json <- "mfrm_stan_data.json"
+output_dir <- "stan_outputs/r"
 CHAINS <- 4L
 ITER_WARMUP <- 1000L
 ITER_SAMPLING <- 2000L
@@ -29030,31 +38003,14 @@ SEED <- 42L
 ADAPT_DELTA <- 0.95
 MAX_TREEDEPTH <- 12L
 
-data <- read.csv("your_data.csv")
-score <- as.integer(data$Score)
-if (min(score, na.rm = TRUE) == 0L) {{
-  score <- score + 1L
-}}
-if (min(score, na.rm = TRUE) < 1L || max(score, na.rm = TRUE) > N_CATEGORIES) {{
-  stop("Score must be 0..C-1 or 1..C before Stan recoding.")
-}}
-mod <- cmdstan_model("mfrm_model.stan")
-
-stan_data <- list(
-  N = nrow(data),
-  J = length(unique(data$Person)),
-  {r_facet_n},
-  C = N_CATEGORIES,
-  person = as.integer(factor(data$Person)),
-  {r_facet_data},
-  y = score,
-  sigma_theta_prior_scale = SIGMA_THETA_PRIOR_SCALE,
-  facet_prior_scale = FACET_PRIOR_SCALE,
-  step_prior_scale = STEP_PRIOR_SCALE
-)
+if (!file.exists(stan_file)) stop(paste("Stan file not found:", stan_file))
+if (!file.exists(data_json)) stop(paste("Stan data JSON not found:", data_json))
+dir.create(output_dir, recursive = TRUE, showWarnings = FALSE)
+mod <- cmdstan_model(stan_file)
 
 fit <- mod$sample(
-  data = stan_data,
+  data = data_json,
+  output_dir = output_dir,
   chains = CHAINS,
   iter_warmup = ITER_WARMUP,
   iter_sampling = ITER_SAMPLING,
@@ -29072,13 +38028,46 @@ library(loo)
 log_lik <- fit$draws("log_lik", format = "matrix")
 loo_result <- loo(log_lik)
 print(loo_result)
-'''
+	'''
 
     with st.expander("R runner script (CmdStanR)"):
         st.code(r_runner, language="r")
 
+    julia_runner = f'''# Run Bayesian MFRM with CmdStan CLI from Julia
+# Uses the downloaded Stan file and mfrm_stan_data.json.
+
+STAN_FILE = get(ENV, "MFRM_STAN_FILE", "mfrm_model.stan")
+CMDSTAN_BIN = get(ENV, "MFRM_CMDSTAN_BIN", "cmdstan")
+OUTPUT_DIR = get(ENV, "MFRM_STAN_OUTPUT_DIR", "stan_outputs/julia")
+DATA_JSON = get(ENV, "MFRM_STAN_DATA_JSON", "mfrm_stan_data.json")
+CHAINS = parse(Int, get(ENV, "MFRM_CHAINS", "4"))
+ITER_WARMUP = get(ENV, "MFRM_WARMUP", "1000")
+ITER_SAMPLING = get(ENV, "MFRM_SAMPLING", "2000")
+SEED = get(ENV, "MFRM_SEED", "42")
+ADAPT_DELTA = get(ENV, "MFRM_ADAPT_DELTA", "0.95")
+MAX_TREEDEPTH = get(ENV, "MFRM_MAX_TREEDEPTH", "12")
+
+mkpath(OUTPUT_DIR)
+isfile(STAN_FILE) || error("Stan file not found: $(STAN_FILE)")
+isfile(DATA_JSON) || error("Stan data JSON not found: $(DATA_JSON)")
+
+for chain in 1:CHAINS
+    output_csv = joinpath(OUTPUT_DIR, "chain_$(chain).csv")
+    log_file = joinpath(OUTPUT_DIR, "cmdstan_chain_$(chain).log")
+    cmd = `$(CMDSTAN_BIN) sample num_warmup=$(ITER_WARMUP) num_samples=$(ITER_SAMPLING) random seed=$(SEED) id=$(chain) adapt delta=$(ADAPT_DELTA) algorithm=hmc engine=nuts max_depth=$(MAX_TREEDEPTH) data file=$(DATA_JSON) output file=$(output_csv)`
+    open(log_file, "w") do io
+        run(pipeline(cmd, stdout=io, stderr=io))
+    end
+end
+
+println("Saved CmdStan CLI outputs to $(OUTPUT_DIR)")
+'''
+
+    with st.expander("Julia runner script (CmdStan CLI)"):
+        st.code(julia_runner, language="julia")
+
     # Download buttons
-    dc1, dc2, dc3 = st.columns(3)
+    dc1, dc2, dc3, dc4 = st.columns(4)
     with dc1:
         st.download_button("Download Stan code", stan_code,
                            file_name="mfrm_model.stan", mime="application/x-stan", key="dl_stan_code")
@@ -29088,6 +38077,52 @@ print(loo_result)
     with dc3:
         st.download_button("Download R script", r_runner,
                            file_name="run_mfrm_stan.R", mime="text/plain", key="dl_stan_r")
+    with dc4:
+        st.download_button("Download Julia script", julia_runner,
+                           file_name="run_mfrm_stan.jl", mime="text/plain", key="dl_stan_julia")
+    if stan_data_export.get("available"):
+        json_col, map_col, dict_col, zip_col = st.columns(4)
+        with json_col:
+            st.download_button(
+                "Download Stan data JSON",
+                stan_data_export["json_text"],
+                file_name="mfrm_stan_data.json",
+                mime="application/json",
+                key="dl_stan_data_json",
+            )
+        with map_col:
+            st.download_button(
+                "Download private ID map",
+                to_csv_bytes(stan_data_export["id_map"]),
+                file_name="mfrm_stan_id_index_map.csv",
+                mime="text/csv",
+                key="dl_stan_id_map",
+            )
+        with dict_col:
+            st.download_button(
+                "Download Stan data dictionary",
+                to_csv_bytes(stan_data_export["data_dictionary"]),
+                file_name="mfrm_stan_data_dictionary.csv",
+                mime="text/csv",
+                key="dl_stan_data_dictionary",
+            )
+        with zip_col:
+            stan_assets = stan_data_export_assets(result, include_row_level=True)
+            st.download_button(
+                "Download Stan data package",
+                data=cached_mixed_asset_zip(stan_assets, bytes_mapping_fingerprint(stan_assets)),
+                file_name="MFRM_Stan_Data_Package.zip",
+                mime="application/zip",
+                key="dl_stan_data_package",
+            )
+    if uto_data_export.get("available"):
+        st.download_button(
+            "Download Uto-family data template JSON",
+            uto_data_export["json_text"],
+            file_name="mfrm_uto_bayesian_mfrm_data_template.json",
+            mime="application/json",
+            key="dl_uto_stan_data_template_json",
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -29321,6 +38356,154 @@ def render_facets_fit_table_comparison(
         )
 
 
+def show_mml_prior_sd_sensitivity_section(result: dict | None) -> None:
+    """On-demand MML fixed population-prior-SD sensitivity screen."""
+    if not isinstance(result, dict):
+        return
+    config = result.get("config", {}) if isinstance(result.get("config"), dict) else {}
+    if config.get("method") != "MML":
+        return
+    st.subheader("MML fixed population prior SD sensitivity")
+    st.caption(
+        "Refit the current normalized data under alternative fixed population prior SD values. "
+        "Use this before population-scale, latent-regression, or interval-calibration claims."
+    )
+    plan = build_mml_prior_sensitivity_plan(result)
+    if isinstance(plan, pd.DataFrame) and not plan.empty:
+        plan_display = plan.copy()
+        for col in ("PopulationPriorSD", "Multiplier"):
+            if col in plan_display.columns:
+                plan_display[col] = pd.to_numeric(plan_display[col], errors="coerce").round(4)
+        _render_compact_dataframe(
+            plan_display,
+            [
+                "PopulationPriorSD", "Multiplier", "Role", "RunStatus",
+                "RequiredBeforeClaim", "DecisionRule",
+            ],
+            details_label="Show full MML prior-SD sensitivity plan",
+            hide_index=True,
+            wrap_text=True,
+        )
+    options = list(MML_PRIOR_SENSITIVITY_DEFAULT_MULTIPLIERS)
+    selected = st.multiselect(
+        "Prior SD multipliers to refit",
+        options=options,
+        default=[0.75, 1.0, 1.25],
+        format_func=lambda x: f"{x:g}x",
+        key=f"mml_prior_sensitivity_multipliers::{id(result)}",
+        help="The 1.0x condition reuses the current fitted result; other values refit the model.",
+    )
+    col_maxit, col_reltol = st.columns(2)
+    with col_maxit:
+        sens_maxit = int(st.number_input(
+            "Sensitivity maxit",
+            min_value=5,
+            max_value=max(50, int(config.get("maxit") or 1000)),
+            value=min(100, int(config.get("maxit") or 100)),
+            step=5,
+            key=f"mml_prior_sensitivity_maxit::{id(result)}",
+        ))
+    with col_reltol:
+        sens_reltol = float(st.selectbox(
+            "Sensitivity reltol",
+            options=[1e-3, 1e-4, 1e-5, 1e-6],
+            index=1,
+            format_func=lambda x: f"{x:.0e}",
+            key=f"mml_prior_sensitivity_reltol::{id(result)}",
+        ))
+    cache_key = stable_json_fingerprint({
+        "run": id(result),
+        "multipliers": selected,
+        "maxit": sens_maxit,
+        "reltol": sens_reltol,
+        "base_sd": config.get("population_prior_sd"),
+    })
+    state_key = f"mml_prior_sd_sensitivity::{cache_key}"
+    if st.button(
+        "Run MML prior-SD sensitivity",
+        key=f"run_mml_prior_sd_sensitivity::{cache_key}",
+        disabled=not selected,
+    ):
+        with st.spinner("Running MML prior-SD sensitivity refits..."):
+            st.session_state[state_key] = evaluate_mml_prior_sd_sensitivity(
+                result,
+                multipliers=selected,
+                maxit=sens_maxit,
+                reltol=sens_reltol,
+            )
+    bundle = st.session_state.get(state_key)
+    if not isinstance(bundle, dict):
+        return
+    if not bundle.get("available"):
+        st.info(bundle.get("reason", "MML prior-SD sensitivity is unavailable."))
+        return
+    report = bundle.get("report", pd.DataFrame())
+    summary = bundle.get("summary", pd.DataFrame())
+    measure_deltas = bundle.get("measure_deltas", pd.DataFrame())
+    population_deltas = bundle.get("population_deltas", pd.DataFrame())
+    if isinstance(report, pd.DataFrame) and not report.empty:
+        status = str(report.iloc[0].get("Status", "Review"))
+        if status == "Stable screen":
+            st.success(str(report.iloc[0].get("Evidence", "")))
+        else:
+            st.warning(str(report.iloc[0].get("Evidence", "")))
+        _render_compact_dataframe(
+            report,
+            ["Area", "Status", "Evidence", "RecommendedAction"],
+            details_label="Show full MML prior-SD sensitivity interpretation",
+            hide_index=True,
+            wrap_text=True,
+        )
+    if isinstance(summary, pd.DataFrame) and not summary.empty:
+        st.caption("Fit-level comparison across fixed prior SD values.")
+        summary_display = summary.copy()
+        for col in [
+            "PopulationPriorSD", "Multiplier", "LogLik", "AIC", "BIC",
+            "GradientNorm", "ElapsedSeconds", "PersonEstimateSD",
+            "NonPersonEstimateSD", "PopulationCoefficientMaxAbs",
+        ]:
+            if col in summary_display.columns:
+                summary_display[col] = pd.to_numeric(summary_display[col], errors="coerce").round(4)
+        st.dataframe(summary_display, width="stretch", hide_index=True)
+    if isinstance(measure_deltas, pd.DataFrame) and not measure_deltas.empty:
+        st.caption("Measure stability relative to the current fitted prior SD.")
+        delta_display = measure_deltas.copy()
+        for col in [
+            "PopulationPriorSD", "Multiplier", "MeanDifference", "MedianDifference",
+            "MaxAbsDifference", "RMSE", "Correlation", "RankCorrelation",
+        ]:
+            if col in delta_display.columns:
+                delta_display[col] = pd.to_numeric(delta_display[col], errors="coerce").round(4)
+        st.dataframe(delta_display, width="stretch", hide_index=True)
+    if isinstance(population_deltas, pd.DataFrame) and not population_deltas.empty:
+        with st.expander("Latent-regression coefficient sensitivity", expanded=False):
+            st.dataframe(population_deltas, width="stretch", hide_index=True)
+
+    assets: dict[str, bytes | str] = {}
+    for name, frame in {
+        "mml_prior_sd_sensitivity_report.csv": report,
+        "mml_prior_sd_sensitivity_summary.csv": summary,
+        "mml_prior_sd_sensitivity_measure_deltas.csv": measure_deltas,
+        "mml_prior_sd_sensitivity_population_deltas.csv": population_deltas,
+        "mml_prior_sd_sensitivity_plan.csv": plan,
+    }.items():
+        if isinstance(frame, pd.DataFrame) and not frame.empty:
+            assets[name] = to_csv_bytes(frame)
+    settings = bundle.get("settings", {})
+    if isinstance(settings, dict):
+        assets["mml_prior_sd_sensitivity_settings.json"] = json.dumps(
+            settings, indent=2, ensure_ascii=False, default=str
+        )
+    if assets:
+        st.download_button(
+            "Download MML prior-SD sensitivity bundle (.zip)",
+            data=cached_mixed_asset_zip(assets, bytes_mapping_fingerprint(assets)),
+            file_name="MFRM_MML_Prior_SD_Sensitivity.zip",
+            mime="application/zip",
+            key=f"dl_mml_prior_sd_sensitivity::{cache_key}",
+        )
+
+
 def show_fit_details_section(
     diagnostics: dict,
     result: dict | None = None,
@@ -29385,6 +38568,7 @@ def show_fit_details_section(
                 key="dl_misfit_casebook_fit_tab",
             )
     show_marginal_fit_section(diagnostics)
+    show_mml_prior_sd_sensitivity_section(result)
 
 
 def _marginal_scope_label(row: pd.Series) -> str:
@@ -29712,6 +38896,7 @@ def _figure_use_note(name: str) -> str:
 def _figure_export_manifest(figure_html: dict[str, str], figure_bytes: dict[str, bytes]) -> pd.DataFrame:
     rows = []
     all_names = sorted(set(figure_html) | set(figure_bytes))
+    prefs = get_visualization_preferences()
     for name in all_names:
         formats = []
         if name in figure_bytes:
@@ -29721,8 +38906,16 @@ def _figure_export_manifest(figure_html: dict[str, str], figure_bytes: dict[str,
         rows.append({
             "FigureName": name,
             "FormatsAvailable": ", ".join(formats),
-            "StaticProfile": f"{PUBLICATION_FIGURE_DPI} DPI PNG target; white background; manuscript font; compact margins",
-            "StaticWidthPx": PUBLICATION_FIGURE_WIDTH,
+            "StaticProfile": (
+                f"{PUBLICATION_FIGURE_DPI} DPI PNG target; "
+                f"{prefs.get('theme', VISUAL_THEME_DEFAULT)} theme; manuscript font; compact margins"
+            ),
+            "StaticWidthPx": int(prefs.get("figure_width", VISUAL_FIGURE_WIDTH_DEFAULT)),
+            "Theme": str(prefs.get("theme", VISUAL_THEME_DEFAULT)),
+            "BaseFontSize": int(prefs.get("base_font_size", VISUAL_BASE_FONT_SIZE_DEFAULT)),
+            "LabelPolicy": str(prefs.get("label_policy", VISUAL_LABEL_POLICY_DEFAULT)),
+            "LabelMaxChars": int(prefs.get("label_max_chars", VISUAL_LABEL_MAX_CHARS_DEFAULT)),
+            "CaptionDetail": str(prefs.get("caption_detail", VISUAL_CAPTION_DETAIL_DEFAULT)),
             "ManuscriptUse": _figure_use_note(name),
             "ReportingCaution": "Use as supporting diagnostic evidence; report model settings and relevant table values with the figure.",
         })
@@ -29741,6 +38934,376 @@ def _figure_bundle_assets(
         assets[f"png/{name}.png"] = png
     for name, html in figure_html.items():
         assets[f"html/{name}.html"] = html
+    return assets
+
+
+def _visual_evidence_profile(figure_name: str) -> dict[str, str]:
+    name = str(figure_name)
+    if name == "wright_map":
+        return {
+            "LinkedManuscriptArea": "Wright map targeting and measure interpretation",
+            "ManuscriptSection": "Results",
+            "EvidenceTables": "measures.csv; person_measures.csv; facet_element_measures.csv; steps.csv",
+            "CaptionDraft": "Wright map showing person locations and facet/rubric locations on the fitted logit scale. Use with measure and threshold tables when discussing targeting, gaps, or ceiling/floor patterns.",
+            "ReviewerQuestion": "Does the map support the targeting or scale-overlap claim, and are extreme or sparse regions acknowledged?",
+            "RecommendedUse": "Use as the main targeting and scale-overlap figure when labels remain readable.",
+        }
+    if name.startswith("category_probability_curve"):
+        return {
+            "LinkedManuscriptArea": "Rating-scale functioning",
+            "ManuscriptSection": "Results",
+            "EvidenceTables": "steps.csv; score_map.csv; category_diagnostics.csv; category_probability_curves.csv",
+            "CaptionDraft": "Model-implied category probability curves for the fitted rating scale. Use with threshold order, category counts, and average-measure evidence before claiming distinct category functioning.",
+            "ReviewerQuestion": "Do category peaks and thresholds support the way the rating scale is described?",
+            "RecommendedUse": "Use when explaining observed or level-specific category functioning.",
+        }
+    if name.startswith("expected_score_curve"):
+        return {
+            "LinkedManuscriptArea": "Rating-scale functioning",
+            "ManuscriptSection": "Results",
+            "EvidenceTables": "steps.csv; category_probability_curves.csv",
+            "CaptionDraft": "Expected-score curve for the fitted rating scale. Use as a compact display of how expected ratings change across the latent scale.",
+            "ReviewerQuestion": "Does the expected-score pattern support the substantive interpretation of score transitions?",
+            "RecommendedUse": "Use as a companion to category probability curves when space is limited.",
+        }
+    if name == "fit_scatter":
+        return {
+            "LinkedManuscriptArea": "Fit and dimensionality",
+            "ManuscriptSection": "Results; Limitations",
+            "EvidenceTables": "fit_statistics.csv; residuals.csv; final_report_readiness.csv",
+            "CaptionDraft": "Element fit scatterplot comparing infit and outfit evidence. Treat points outside review bands as prompts for substantive inspection, not automatic deletion.",
+            "ReviewerQuestion": "Which elements drove fit concerns, and how were they handled in interpretation?",
+            "RecommendedUse": "Use when model-data fit is central to the manuscript argument.",
+        }
+    if name == "facet_distribution":
+        return {
+            "LinkedManuscriptArea": "Reliability and separation",
+            "ManuscriptSection": "Results",
+            "EvidenceTables": "measures.csv; reliability.csv; facet_sample_size_adequacy.csv",
+            "CaptionDraft": "Distribution of fitted facet measures by facet. Use to summarize severity or difficulty spread, with reliability and sample-size evidence.",
+            "ReviewerQuestion": "Are facet spreads precise enough to support ordering claims?",
+            "RecommendedUse": "Use for severity/difficulty distribution summaries.",
+        }
+    if name.startswith("information_curve"):
+        return {
+            "LinkedManuscriptArea": "Reliability and separation",
+            "ManuscriptSection": "Results; Design implications",
+            "EvidenceTables": "information_curves.csv; reliability.csv; design_evaluation.csv",
+            "CaptionDraft": "Model-based information curve showing where the design provides relatively more or less measurement information.",
+            "ReviewerQuestion": "Where is the scale most informative, and does that match the intended measurement range?",
+            "RecommendedUse": "Use when discussing local precision, targeting, or future design planning.",
+        }
+    if name.startswith("eb_shrinkage"):
+        return {
+            "LinkedManuscriptArea": "Reliability and separation",
+            "ManuscriptSection": "Supplement; Limitations",
+            "EvidenceTables": "eb_shrinkage_report.csv; eb_shrinkage_measures.csv; measures.csv",
+            "CaptionDraft": "Empirical-Bayes shrinkage advisory for small-N facet estimates. Raw fitted estimates remain the primary reported measures.",
+            "ReviewerQuestion": "Are small-facet estimates being interpreted with appropriate uncertainty?",
+            "RecommendedUse": "Use as a supplement or sensitivity figure for sparse facet levels.",
+        }
+    if name.startswith("strict_marginal"):
+        return {
+            "LinkedManuscriptArea": "Fit and dimensionality",
+            "ManuscriptSection": "Supplement; Limitations",
+            "EvidenceTables": "marginal_fit_summary.csv; marginal_fit_counts.csv; marginal_pairwise_summary.csv; marginal_pairwise_counts.csv",
+            "CaptionDraft": "Strict marginal residual diagnostic for the fitted MML model. Use as model-internal evidence of marginal distribution deviations.",
+            "ReviewerQuestion": "Do marginal residual deviations suggest local dependence or underfit that should qualify conclusions?",
+            "RecommendedUse": "Use for final MML diagnostic review when labels are readable.",
+        }
+    return {
+        "LinkedManuscriptArea": "Diagnostic evidence",
+        "ManuscriptSection": "Results; Supplement",
+        "EvidenceTables": "MFRM_Tables.zip",
+        "CaptionDraft": "Diagnostic figure from the fitted MFRM analysis. Interpret together with the corresponding exported tables and manuscript guidance.",
+        "ReviewerQuestion": "Which table values and diagnostics support this visual claim?",
+        "RecommendedUse": "Use only with the corresponding table evidence.",
+    }
+
+
+def build_visual_evidence_map(
+    figure_manifest: pd.DataFrame,
+    claim_evidence: pd.DataFrame | None = None,
+) -> pd.DataFrame:
+    """Map exported figures to manuscript claims, captions, caveats, and evidence files."""
+    if not isinstance(figure_manifest, pd.DataFrame) or figure_manifest.empty:
+        return pd.DataFrame()
+    rows: list[dict[str, object]] = []
+    for idx, row in figure_manifest.reset_index(drop=True).iterrows():
+        figure_name = _handoff_text(row.get("FigureName"), f"figure_{idx + 1}")
+        profile = _visual_evidence_profile(figure_name)
+        guardrail = _visual_guardrail_row_for_figure(figure_name)
+        area = profile["LinkedManuscriptArea"]
+        claim_row = _table_row_by_value(claim_evidence, "ManuscriptArea", area) if isinstance(claim_evidence, pd.DataFrame) else None
+        rows.append({
+            "Priority": int(idx) + 1,
+            "FigureName": figure_name,
+            "VisualGuardrailID": _handoff_text(
+                guardrail.get("GuardrailID") if guardrail is not None else "",
+                "general_visual_review",
+            ),
+            "LinkedManuscriptArea": area,
+            "ManuscriptSection": profile["ManuscriptSection"],
+            "FormatsAvailable": _handoff_text(row.get("FormatsAvailable"), "HTML"),
+            "Theme": _handoff_text(row.get("Theme"), str(get_visualization_preferences().get("theme", VISUAL_THEME_DEFAULT))),
+            "BaseFontSize": _handoff_text(row.get("BaseFontSize"), str(get_visualization_preferences().get("base_font_size", VISUAL_BASE_FONT_SIZE_DEFAULT))),
+            "LabelPolicy": _handoff_text(row.get("LabelPolicy"), str(get_visualization_preferences().get("label_policy", VISUAL_LABEL_POLICY_DEFAULT))),
+            "CaptionDetail": _handoff_text(row.get("CaptionDetail"), str(get_visualization_preferences().get("caption_detail", VISUAL_CAPTION_DETAIL_DEFAULT))),
+            "ManuscriptUse": _handoff_text(row.get("ManuscriptUse"), _figure_use_note(figure_name)),
+            "CaptionDraft": profile["CaptionDraft"],
+            "EvidenceTables": _handoff_text(
+                claim_row.get("PrimaryTables") if claim_row is not None else profile["EvidenceTables"],
+                profile["EvidenceTables"],
+            ),
+            "EvidenceFigures": figure_name,
+            "WhatCanBeRead": _handoff_text(
+                guardrail.get("WhatCanBeRead") if guardrail is not None else "",
+                "Read the figure only with its corresponding exported table evidence.",
+            ),
+            "SafeReportWording": _handoff_text(
+                guardrail.get("SafeReportWording") if guardrail is not None else "",
+                "The figure was used as supporting diagnostic evidence and interpreted with its exported tables.",
+            ),
+            "DoNotWrite": _handoff_text(
+                guardrail.get("DoNotWrite") if guardrail is not None else "",
+                "Do not make unsupported substantive claims from this figure alone.",
+            ),
+            "RequiredEvidence": _handoff_text(
+                guardrail.get("RequiredEvidence") if guardrail is not None else "",
+                profile["EvidenceTables"],
+            ),
+            "VisualReviewTrigger": _handoff_text(
+                guardrail.get("ReviewTrigger") if guardrail is not None else "",
+                "Any unclear label, missing table, or claim that goes beyond the fitted diagnostic.",
+            ),
+            "VisualNextAction": _handoff_text(
+                guardrail.get("NextAction") if guardrail is not None else "",
+                "Open the related table and claim-to-evidence row before using the figure in a report.",
+            ),
+            "ClaimStatus": _handoff_text(claim_row.get("ClaimStatus") if claim_row is not None else "", "Review"),
+            "GateStatus": _handoff_text(claim_row.get("GateStatus") if claim_row is not None else "", "Review"),
+            "ReviewerQuestion": _handoff_text(
+                claim_row.get("ReviewerQuestion") if claim_row is not None else profile["ReviewerQuestion"],
+                profile["ReviewerQuestion"],
+            ),
+            "ReportingCaution": _handoff_text(
+                row.get("ReportingCaution"),
+                "Use as supporting diagnostic evidence; report model settings and table values with the figure.",
+            ),
+            "RecommendedUse": profile["RecommendedUse"],
+            "ArchiveFiles": _handoff_text(
+                claim_row.get("ArchiveFiles") if claim_row is not None else "",
+                "MFRM_Publication_Figures.zip; figure_manifest.csv",
+            ),
+            "VisualGuardrailArchive": _handoff_text(
+                guardrail.get("ArchiveFile") if guardrail is not None else "",
+                "visual_claim_guardrails.csv",
+            ),
+        })
+    return pd.DataFrame(rows)
+
+
+def build_visual_qa_preflight(
+    figure_manifest: pd.DataFrame,
+    visual_evidence_map: pd.DataFrame | None = None,
+) -> pd.DataFrame:
+    """Figure-readiness checks driven by visual preferences and available exports."""
+    prefs = get_visualization_preferences()
+    rows: list[dict[str, object]] = []
+
+    def add(check: str, status: str, evidence: str, action: str) -> None:
+        rows.append({
+            "Check": check,
+            "Status": status,
+            "Evidence": evidence,
+            "Action": action,
+        })
+
+    n_figures = len(figure_manifest) if isinstance(figure_manifest, pd.DataFrame) else 0
+    add(
+        "Figure exports available",
+        "Ready" if n_figures else "Review",
+        f"{n_figures} figure(s) indexed in figure_manifest.csv.",
+        "Generate figure exports before final manuscript packaging." if not n_figures else "Open the figure bundle and inspect each candidate figure.",
+    )
+    if isinstance(figure_manifest, pd.DataFrame) and not figure_manifest.empty and "FormatsAvailable" in figure_manifest.columns:
+        formats = figure_manifest["FormatsAvailable"].astype(str)
+        missing_png = int((~formats.str.contains("PNG", case=False, na=False)).sum())
+        missing_html = int((~formats.str.contains("HTML", case=False, na=False)).sum())
+        add(
+            "PNG availability",
+            "Ready" if missing_png == 0 else "Review",
+            f"{missing_png} figure(s) lack PNG export.",
+            "Use HTML for inspection and configure kaleido/Chrome for static PNG export if the journal requires raster figures.",
+        )
+        add(
+            "HTML inspection copy",
+            "Ready" if missing_html == 0 else "Review",
+            f"{missing_html} figure(s) lack interactive HTML export.",
+            "Keep HTML copies for hover/label inspection and coauthor review.",
+        )
+    base_font = int(prefs.get("base_font_size", VISUAL_BASE_FONT_SIZE_DEFAULT))
+    add(
+        "Font size",
+        "Ready" if base_font >= 11 else "Review",
+        f"Base font size = {base_font}px.",
+        "Use at least 11px for manuscript figures; consider 14-16px for slides.",
+    )
+    label_policy = str(prefs.get("label_policy", VISUAL_LABEL_POLICY_DEFAULT))
+    label_max = int(prefs.get("label_max_chars", VISUAL_LABEL_MAX_CHARS_DEFAULT))
+    label_status = "Review" if label_policy == "Show all" and label_max > 50 else "Ready"
+    add(
+        "Label policy",
+        label_status,
+        f"Label policy = {label_policy}; max label chars = {label_max}.",
+        "If labels overlap, switch to Auto, Important labels, or Hover only, then keep HTML for full labels.",
+    )
+    theme = str(prefs.get("theme", VISUAL_THEME_DEFAULT))
+    add(
+        "Theme",
+        "Review" if theme == "Dark inspection" else "Ready",
+        f"Theme = {theme}.",
+        "Use Manuscript white, Grayscale print, or Colorblind-safe for submission unless the venue accepts dark figures.",
+    )
+    caption_detail = str(prefs.get("caption_detail", VISUAL_CAPTION_DETAIL_DEFAULT))
+    caption_rows = len(visual_evidence_map) if isinstance(visual_evidence_map, pd.DataFrame) else 0
+    add(
+        "Caption draft coverage",
+        "Ready" if caption_rows == n_figures and n_figures > 0 else "Review",
+        f"{caption_rows} caption/evidence row(s) for {n_figures} figure(s); detail = {caption_detail}.",
+        "Review visual_caption_drafts.md and edit captions for the study, rubric, and journal style.",
+    )
+    if isinstance(visual_evidence_map, pd.DataFrame) and not visual_evidence_map.empty and "VisualGuardrailID" in visual_evidence_map.columns:
+        generic_count = int(visual_evidence_map["VisualGuardrailID"].astype(str).eq("general_visual_review").sum())
+        add(
+            "Visual claim guardrail coverage",
+            "Ready" if generic_count == 0 else "Review",
+            f"{generic_count} figure(s) use only the general visual-review guardrail.",
+            "Open visual_claim_guardrails.csv and add study-specific caution for any figure without a specific guardrail.",
+        )
+    return pd.DataFrame(rows)
+
+
+def generate_visual_caption_drafts(visual_evidence_map: pd.DataFrame) -> str:
+    if not isinstance(visual_evidence_map, pd.DataFrame) or visual_evidence_map.empty:
+        return "# MFRM Visual Caption Drafts\n\nNo figure evidence map was available.\n"
+    detail = str(get_visualization_preferences().get("caption_detail", VISUAL_CAPTION_DETAIL_DEFAULT))
+    lines = [
+        "# MFRM Visual Caption Drafts",
+        "",
+        f"Caption detail: {detail}. Edit these captions for the study design, construct, rubric, and journal style before submission.",
+        "",
+    ]
+    for idx, row in visual_evidence_map.iterrows():
+        figure_title = f"## Figure {idx + 1}: {_handoff_text(row.get('FigureName'), 'figure')}"
+        caption = _handoff_text(row.get("CaptionDraft"), "Draft caption unavailable.")
+        if detail == "Short":
+            lines.extend([figure_title, "", caption, ""])
+        elif detail == "Detailed":
+            lines.extend([
+                figure_title,
+                "",
+                caption,
+                "",
+                f"- Linked claim area: {_handoff_text(row.get('LinkedManuscriptArea'), 'not recorded')}.",
+                f"- Manuscript section: {_handoff_text(row.get('ManuscriptSection'), 'not recorded')}.",
+                f"- Evidence tables: {_handoff_text(row.get('EvidenceTables'), 'not recorded')}.",
+                f"- Theme / label policy: {_handoff_text(row.get('Theme'), 'not recorded')} / {_handoff_text(row.get('LabelPolicy'), 'not recorded')}.",
+                f"- Claim status: {_handoff_text(row.get('ClaimStatus'), 'Review')}; gate status: {_handoff_text(row.get('GateStatus'), 'Review')}.",
+                f"- Safe wording: {_handoff_text(row.get('SafeReportWording'), 'Use as supporting visual evidence only.')}",
+                f"- Do not write: {_handoff_text(row.get('DoNotWrite'), 'Do not make unsupported claims from the figure alone.')}",
+                f"- Required evidence: {_handoff_text(row.get('RequiredEvidence'), 'not recorded')}.",
+                f"- Reporting caution: {_handoff_text(row.get('ReportingCaution'), 'Review before reporting')}.",
+                f"- Reviewer question: {_handoff_text(row.get('ReviewerQuestion'), 'Which evidence supports this figure?')}",
+                f"- Archive files: {_handoff_text(row.get('ArchiveFiles'), 'not recorded')}.",
+                f"- Visual guardrail archive: {_handoff_text(row.get('VisualGuardrailArchive'), 'visual_claim_guardrails.csv')}.",
+                "",
+            ])
+        else:
+            lines.extend([
+                figure_title,
+                "",
+                caption,
+                "",
+                f"- Linked claim area: {_handoff_text(row.get('LinkedManuscriptArea'), 'not recorded')}.",
+                f"- Evidence tables: {_handoff_text(row.get('EvidenceTables'), 'not recorded')}.",
+                f"- Safe wording: {_handoff_text(row.get('SafeReportWording'), 'Use as supporting visual evidence only.')}",
+                f"- Do not write: {_handoff_text(row.get('DoNotWrite'), 'Do not make unsupported claims from the figure alone.')}",
+                f"- Reporting caution: {_handoff_text(row.get('ReportingCaution'), 'Review before reporting')}.",
+                f"- Reviewer question: {_handoff_text(row.get('ReviewerQuestion'), 'Which evidence supports this figure?')}",
+                "",
+            ])
+    return "\n".join(lines) + "\n"
+
+
+def generate_visual_evidence_readme(
+    visual_evidence_map: pd.DataFrame,
+    *,
+    public_export_mode: bool = True,
+) -> str:
+    n_figures = len(visual_evidence_map) if isinstance(visual_evidence_map, pd.DataFrame) else 0
+    lines = [
+        "# MFRM Visual Evidence Binder",
+        "",
+        "This bundle connects exported figures to manuscript claims, evidence tables, draft captions, caveats, and reviewer questions.",
+        "",
+        f"- Figures indexed: {n_figures}.",
+        f"- Export privacy mode at creation: {'public/anonymized bundle mode' if public_export_mode else 'complete/private bundle mode'}.",
+        "- Public mode is not a formal de-identification guarantee; review all figure labels and hover text before sharing.",
+        "",
+        "## Suggested Use",
+        "",
+        "1. Open `visual_evidence_map.csv` to see which claim each figure supports.",
+        "2. Open `visual_claim_guardrails.csv` before copying visual interpretations into a report.",
+        "3. Open `visual_caption_drafts.md` and edit captions for the study, rubric, and journal style.",
+        "4. Use PNG files for static manuscript insertion when available.",
+        "5. Keep HTML files for inspection, coauthor review, and label/hover checks.",
+        "6. Cross-check every figure against `claim_to_evidence_matrix.csv` and the corresponding evidence tables.",
+    ]
+    return "\n".join(lines) + "\n"
+
+
+def build_visual_evidence_binder_assets(
+    figure_html: dict[str, str],
+    figure_bytes: dict[str, bytes],
+    figure_manifest: pd.DataFrame,
+    visual_evidence_map: pd.DataFrame,
+    claim_evidence: pd.DataFrame | None = None,
+    *,
+    public_export_mode: bool = True,
+) -> dict[str, bytes | str]:
+    """Bundle actual figures with caption drafts and manuscript-use evidence maps."""
+    assets: dict[str, bytes | str] = {
+        "README_visual_evidence.md": generate_visual_evidence_readme(
+            visual_evidence_map,
+            public_export_mode=public_export_mode,
+        ),
+        "visual_caption_drafts.md": generate_visual_caption_drafts(visual_evidence_map),
+        "visualization_settings.json": _visualization_preferences_json(),
+        "visualization_settings.csv": to_csv_bytes(build_visualization_preferences_table()),
+    }
+    if isinstance(visual_evidence_map, pd.DataFrame) and not visual_evidence_map.empty:
+        assets["visual_evidence_map.csv"] = to_csv_bytes(visual_evidence_map)
+        visual_qa = build_visual_qa_preflight(figure_manifest, visual_evidence_map)
+        if isinstance(visual_qa, pd.DataFrame) and not visual_qa.empty:
+            assets["visual_qa_preflight.csv"] = to_csv_bytes(visual_qa)
+    if isinstance(figure_manifest, pd.DataFrame) and not figure_manifest.empty:
+        assets["figure_manifest.csv"] = to_csv_bytes(figure_manifest)
+    if isinstance(claim_evidence, pd.DataFrame) and not claim_evidence.empty:
+        assets["claim_to_evidence_matrix.csv"] = to_csv_bytes(claim_evidence)
+    visual_checklist = visual_interpretation_checklist()
+    if isinstance(visual_checklist, pd.DataFrame) and not visual_checklist.empty:
+        assets["visual_interpretation_checklist.csv"] = to_csv_bytes(visual_checklist)
+    visual_guardrails = visual_claim_guardrail_table()
+    if isinstance(visual_guardrails, pd.DataFrame) and not visual_guardrails.empty:
+        assets["visual_claim_guardrails.csv"] = to_csv_bytes(visual_guardrails)
+    visual_methods = visual_method_evidence_table()
+    if isinstance(visual_methods, pd.DataFrame) and not visual_methods.empty:
+        assets["visual_method_evidence.csv"] = to_csv_bytes(visual_methods)
+    for name, png in (figure_bytes or {}).items():
+        assets[f"figures_png_{name}.png"] = png
+    for name, html in (figure_html or {}).items():
+        assets[f"figures_html_{name}.html"] = html
     return assets
 
 
@@ -30038,7 +39601,7 @@ def _draw_misfit_ranking(fit_df: pd.DataFrame) -> None:
 # Visuals tab (Category Probability Curves, Pathway Map, Observed vs Expected)
 # ---------------------------------------------------------------------------
 
-def show_visuals_section(result: dict, diagnostics: dict) -> None:
+def show_visuals_section(result: dict, diagnostics: dict, *, force_full: bool = False) -> None:
     """Comprehensive visualization suite."""
     st.caption(t("visuals_top.intro_caption"))
     with st.expander(t("visuals_top.roadmap_expander"), expanded=False):
@@ -30064,9 +39627,9 @@ def show_visuals_section(result: dict, diagnostics: dict) -> None:
             key="dl_visual_method_evidence",
         )
     # View-density aware sub-tab inventory. Essential hides Forest / Q-Q /
-    # ECDF so beginner runs see only the four core diagnostic plots.
+    # ECDF so Essential-view runs see only the four core diagnostic plots.
     # Switch to Full (sidebar top) before publication-depth analysis.
-    essential_mode = st.session_state.get("app_view_density", "Essential") == "Essential"
+    essential_mode = (not force_full) and st.session_state.get("app_view_density", "Essential") == "Essential"
     if essential_mode:
         vtab_labels = [
             t("visuals_top.tab_category_probability_curves"),
@@ -30144,9 +39707,1220 @@ def _category_curve_export_frame(curve: dict, label: str | None = None) -> pd.Da
     if isinstance(meta, dict):
         for key, value in meta.items():
             out[key] = value
+    diagnostic = category_probability_curve_diagnostic_table(curve)
+    if isinstance(diagnostic, pd.DataFrame) and not diagnostic.empty:
+        diag_cols = [
+            "Category",
+            "CategoryValue",
+            "PeakTheta",
+            "PeakProbability",
+            "IsEverMostProbable",
+            "DominantThetaMin",
+            "DominantThetaMax",
+            "DominantWidth",
+            "ReviewFlag",
+        ]
+        available_cols = [col for col in diag_cols if col in diagnostic.columns]
+        out = out.merge(diagnostic.loc[:, available_cols], on=["Category", "CategoryValue"], how="left")
     if label is not None:
         out["CurveLabel"] = str(label)
     return out
+
+
+def _category_curve_threshold_frame(curve: dict) -> pd.DataFrame:
+    """Normalize threshold rows for FACETS-style category curve overlays."""
+    if not isinstance(curve, dict) or not curve.get("available"):
+        return pd.DataFrame(columns=["Step", "DisplayLabel", "Estimate"])
+    thresholds = curve.get("thresholds", pd.DataFrame())
+    if not isinstance(thresholds, pd.DataFrame) or thresholds.empty or "Estimate" not in thresholds.columns:
+        return pd.DataFrame(columns=["Step", "DisplayLabel", "Estimate"])
+    out = thresholds.copy()
+    out["Estimate"] = pd.to_numeric(out["Estimate"], errors="coerce")
+    out = out.dropna(subset=["Estimate"])
+    if out.empty:
+        return pd.DataFrame(columns=["Step", "DisplayLabel", "Estimate"])
+    if "Step" not in out.columns:
+        out["Step"] = [f"Step_{idx + 1}" for idx in range(len(out))]
+    if "DisplayLabel" not in out.columns:
+        meta = curve.get("metadata", {})
+        rating_min = meta.get("RatingMin", None) if isinstance(meta, dict) else None
+        boundary = [
+            _yardstick_step_boundary(label, rating_min=rating_min)
+            for label in out["Step"].astype(str).tolist()
+        ]
+        out["DisplayLabel"] = [item[0] for item in boundary]
+        out["BoundaryLower"] = [item[1] for item in boundary]
+        out["BoundaryUpper"] = [item[2] for item in boundary]
+    return out.reset_index(drop=True)
+
+
+def category_probability_curve_diagnostic_table(curve: dict) -> pd.DataFrame:
+    """Summarize FACETS-style category curve functioning checks."""
+    if not isinstance(curve, dict) or not curve.get("available"):
+        return pd.DataFrame(columns=[
+            "Category", "CategoryValue", "PeakTheta", "PeakProbability",
+            "IsEverMostProbable", "DominantThetaMin", "DominantThetaMax",
+            "DominantWidth", "DominantGridPoints", "ReviewFlag",
+        ])
+    prob = curve.get("probability", pd.DataFrame())
+    if not isinstance(prob, pd.DataFrame) or prob.empty:
+        return pd.DataFrame()
+    required = {"Theta", "Category", "CategoryValue", "Probability"}
+    if not required.issubset(prob.columns):
+        return pd.DataFrame()
+    work = prob.loc[:, ["Theta", "Category", "CategoryValue", "Probability"]].copy()
+    work["Theta"] = pd.to_numeric(work["Theta"], errors="coerce")
+    work["CategoryValue"] = pd.to_numeric(work["CategoryValue"], errors="coerce")
+    work["Probability"] = pd.to_numeric(work["Probability"], errors="coerce")
+    work = work.dropna(subset=["Theta", "CategoryValue", "Probability"])
+    if work.empty:
+        return pd.DataFrame()
+    max_by_theta = work.groupby("Theta", observed=False)["Probability"].transform("max")
+    work["IsMostProbable"] = np.isclose(work["Probability"], max_by_theta, rtol=1e-9, atol=1e-12)
+    rows: list[dict[str, object]] = []
+    for (category, category_value), sub in work.groupby(["Category", "CategoryValue"], observed=False, sort=False):
+        sub = sub.sort_values("Theta")
+        peak_idx = int(sub["Probability"].idxmax())
+        peak_theta = float(sub.loc[peak_idx, "Theta"])
+        peak_prob = float(sub.loc[peak_idx, "Probability"])
+        dominant = sub[sub["IsMostProbable"]]
+        if dominant.empty:
+            dom_min = np.nan
+            dom_max = np.nan
+            dom_width = 0.0
+            dom_points = 0
+            flag = "Review: category never has the highest modeled probability."
+        else:
+            dom_min = float(dominant["Theta"].min())
+            dom_max = float(dominant["Theta"].max())
+            dom_width = float(dom_max - dom_min)
+            dom_points = int(len(dominant))
+            flag = "OK: category has a modeled dominance region."
+        if peak_prob < 0.35:
+            flag = "Review: peak probability is weak; inspect counts and threshold order."
+        rows.append({
+            "Category": str(category),
+            "CategoryValue": float(category_value),
+            "PeakTheta": peak_theta,
+            "PeakProbability": peak_prob,
+            "IsEverMostProbable": bool(not dominant.empty),
+            "DominantThetaMin": dom_min,
+            "DominantThetaMax": dom_max,
+            "DominantWidth": dom_width,
+            "DominantGridPoints": dom_points,
+            "ReviewFlag": flag,
+        })
+    return pd.DataFrame(rows)
+
+
+def category_curve_diagnostic_scope_table(result: dict) -> pd.DataFrame:
+    """Return category-curve diagnostics for every available curve scope."""
+    options = category_probability_curve_options(result)
+    if not isinstance(options, pd.DataFrame) or options.empty:
+        return pd.DataFrame()
+    frames: list[pd.DataFrame] = []
+    for row in options.itertuples(index=False):
+        try:
+            is_average = bool(getattr(row, "IsAverage"))
+            level_index = None if is_average else int(getattr(row, "LevelIndex"))
+            curve = build_category_probability_curve_data(result, step_level_index=level_index)
+            diagnostic = category_probability_curve_diagnostic_table(curve)
+            if not isinstance(diagnostic, pd.DataFrame) or diagnostic.empty:
+                continue
+            diagnostic = diagnostic.copy()
+            meta = curve.get("metadata", {}) if isinstance(curve, dict) else {}
+            diagnostic.insert(0, "CurveLabel", str(getattr(row, "Label")))
+            diagnostic.insert(1, "Scope", str(meta.get("Scope", getattr(row, "Label"))))
+            diagnostic["IsAverage"] = bool(meta.get("IsAverage", is_average))
+            diagnostic["StepFacet"] = str(meta.get("StepFacet", getattr(row, "StepFacet", "")) or "")
+            diagnostic["Level"] = str(meta.get("Level", getattr(row, "Level", "")) or "")
+            diagnostic["LevelIndex"] = meta.get("LevelIndex", getattr(row, "LevelIndex", np.nan))
+            diagnostic["Slope"] = float(meta.get("Slope", getattr(row, "Slope", 1.0)) or 1.0)
+            frames.append(diagnostic)
+        except Exception:
+            continue
+    return pd.concat(frames, ignore_index=True) if frames else pd.DataFrame()
+
+
+def _compact_value_list(values: Iterable[object], *, max_items: int = 8) -> str:
+    """Render a compact, deterministic list for diagnostic evidence text."""
+    cleaned: list[str] = []
+    for value in values:
+        if pd.isna(value):
+            continue
+        text = str(value)
+        if text not in cleaned:
+            cleaned.append(text)
+    if not cleaned:
+        return "none"
+    shown = cleaned[:max_items]
+    suffix = f", +{len(cleaned) - max_items} more" if len(cleaned) > max_items else ""
+    return ", ".join(shown) + suffix
+
+
+def _rating_scale_status_from_flags(*, review: bool = False, missing: bool = False) -> str:
+    if review:
+        return "Review"
+    if missing:
+        return "Missing"
+    return "OK"
+
+
+def _rating_scale_dashboard_row(
+    check: str,
+    status: str,
+    evidence: str,
+    implication: str,
+    next_action: str,
+    source: str,
+) -> dict[str, str]:
+    return {
+        "Check": check,
+        "Status": status,
+        "Evidence": evidence,
+        "InterpretationBoundary": implication,
+        "NextAction": next_action,
+        "EvidenceSource": source,
+    }
+
+
+def _rating_scale_decision_row(
+    area: str,
+    status: str,
+    affected: str,
+    evidence: str,
+    action: str,
+    rerun: str,
+    safe_wording: str,
+    do_not_claim: str,
+) -> dict[str, str]:
+    return {
+        "DecisionArea": area,
+        "DecisionStatus": status,
+        "AffectedCategories": affected,
+        "PrimaryEvidence": evidence,
+        "RecommendedAction": action,
+        "RerunComparison": rerun,
+        "SafeReportWording": safe_wording,
+        "DoNotClaim": do_not_claim,
+    }
+
+
+def rating_scale_category_evidence_table(result: dict, diagnostics: dict) -> pd.DataFrame:
+    """Merge observed category evidence with FACETS-style curve diagnostics."""
+    obs_df = diagnostics.get("obs", pd.DataFrame()) if isinstance(diagnostics, dict) else pd.DataFrame()
+    if not isinstance(obs_df, pd.DataFrame) or obs_df.empty:
+        return pd.DataFrame()
+    try:
+        cat_tbl = calc_category_stats(obs_df, result)
+    except Exception:
+        try:
+            cat_tbl = calc_category_stats(obs_df, None)
+        except Exception:
+            return pd.DataFrame()
+    if not isinstance(cat_tbl, pd.DataFrame) or cat_tbl.empty:
+        return pd.DataFrame()
+    out = cat_tbl.copy()
+    out["CategoryValue"] = pd.to_numeric(out.get("Category"), errors="coerce")
+
+    curve_diag = category_curve_diagnostic_scope_table(result)
+    if isinstance(curve_diag, pd.DataFrame) and not curve_diag.empty:
+        avg_curve = curve_diag[curve_diag.get("IsAverage", pd.Series(dtype=bool)) == True].copy()
+        if avg_curve.empty:
+            avg_curve = curve_diag.copy()
+        avg_curve["CategoryValue"] = pd.to_numeric(avg_curve["CategoryValue"], errors="coerce")
+        keep_cols = [
+            "CategoryValue",
+            "PeakTheta",
+            "PeakProbability",
+            "IsEverMostProbable",
+            "DominantThetaMin",
+            "DominantThetaMax",
+            "DominantWidth",
+            "ReviewFlag",
+        ]
+        avg_curve = avg_curve.loc[:, [col for col in keep_cols if col in avg_curve.columns]]
+        avg_curve = avg_curve.drop_duplicates(subset=["CategoryValue"], keep="first")
+        out = out.merge(avg_curve, on="CategoryValue", how="left", suffixes=("", "_Curve"))
+        rename = {
+            "PeakTheta": "CurvePeakTheta",
+            "PeakProbability": "CurvePeakProbability",
+            "IsEverMostProbable": "CurveEverMostProbable",
+            "DominantThetaMin": "CurveDominantThetaMin",
+            "DominantThetaMax": "CurveDominantThetaMax",
+            "DominantWidth": "CurveDominantWidth",
+            "ReviewFlag": "CurveReviewFlag",
+        }
+        out = out.rename(columns={old: new for old, new in rename.items() if old in out.columns})
+
+    statuses: list[str] = []
+    summaries: list[str] = []
+    for _, row in out.iterrows():
+        signals: list[str] = []
+        count = pd.to_numeric(pd.Series([row.get("Count")]), errors="coerce").iloc[0]
+        if np.isfinite(count):
+            if count == 0:
+                signals.append("unused observed category")
+            elif count < 10:
+                signals.append("count below 10")
+        if bool(row.get("InfitFlag")) if pd.notna(row.get("InfitFlag")) else False:
+            signals.append("category Infit outside 0.5-1.5")
+        if bool(row.get("OutfitFlag")) if pd.notna(row.get("OutfitFlag")) else False:
+            signals.append("category Outfit outside 0.5-1.5")
+        if bool(row.get("ZSTDFlag")) if pd.notna(row.get("ZSTDFlag")) else False:
+            signals.append("category |ZSTD| >= 2")
+        ever = row.get("CurveEverMostProbable")
+        if pd.notna(ever) and not bool(ever):
+            signals.append("no modeled dominance region")
+        peak = pd.to_numeric(pd.Series([row.get("CurvePeakProbability")]), errors="coerce").iloc[0]
+        if np.isfinite(peak) and peak < 0.35:
+            signals.append("weak category-curve peak")
+        statuses.append("Review" if signals else "OK")
+        summaries.append("; ".join(signals) if signals else "Counts, fit, and averaged curve evidence do not flag this category.")
+    out["CategoryEvidenceStatus"] = statuses
+    out["EvidenceSummary"] = summaries
+
+    preferred = [
+        "Category",
+        "CategoryEvidenceStatus",
+        "EvidenceSummary",
+        "Count",
+        "Percent",
+        "AvgPersonMeasure",
+        "ExpectedAverage",
+        "Infit",
+        "Outfit",
+        "InfitZSTD",
+        "OutfitZSTD",
+        "CurvePeakTheta",
+        "CurvePeakProbability",
+        "CurveEverMostProbable",
+        "CurveDominantThetaMin",
+        "CurveDominantThetaMax",
+        "CurveDominantWidth",
+        "CurveReviewFlag",
+    ]
+    return out.loc[:, [col for col in preferred if col in out.columns]]
+
+
+def rating_scale_functioning_dashboard(result: dict, diagnostics: dict) -> pd.DataFrame:
+    """Integrate category counts, thresholds, and curves into one review table."""
+    rows: list[dict[str, str]] = []
+    obs_df = diagnostics.get("obs", pd.DataFrame()) if isinstance(diagnostics, dict) else pd.DataFrame()
+    cat_tbl = pd.DataFrame()
+    cat_error = ""
+    if isinstance(obs_df, pd.DataFrame) and not obs_df.empty:
+        try:
+            cat_tbl = calc_category_stats(obs_df, result)
+        except Exception as exc:
+            cat_error = str(exc)
+            try:
+                cat_tbl = calc_category_stats(obs_df, None)
+                cat_error = ""
+            except Exception:
+                pass
+
+    if isinstance(cat_tbl, pd.DataFrame) and not cat_tbl.empty:
+        counts = pd.to_numeric(cat_tbl.get("Count", pd.Series(dtype=float)), errors="coerce")
+        min_count = float(counts.min()) if counts.notna().any() else np.nan
+        unused = cat_tbl.loc[counts.fillna(0) == 0, "Category"] if "Category" in cat_tbl.columns else pd.Series(dtype=object)
+        low = cat_tbl.loc[(counts < 10) & (counts > 0), "Category"] if "Category" in cat_tbl.columns else pd.Series(dtype=object)
+        review = bool((counts < 10).fillna(False).any())
+        rows.append(_rating_scale_dashboard_row(
+            "Observed category support",
+            _rating_scale_status_from_flags(review=review),
+            (
+                f"minimum count = {min_count:.0f}; "
+                f"unused = {_compact_value_list(unused)}; low nonzero count = {_compact_value_list(low)}"
+                if np.isfinite(min_count) else
+                "category counts unavailable"
+            ),
+            "Sparse or unused categories are weak evidence for stable thresholds and distinct category functioning.",
+            "Inspect raw category use; collapse only with rubric justification and rerun the model.",
+            "Categories/Steps: category diagnostics",
+        ))
+
+        avg_tbl = cat_tbl.dropna(subset=["AvgPersonMeasure"]).sort_values("Category") if "AvgPersonMeasure" in cat_tbl.columns else pd.DataFrame()
+        if len(avg_tbl) >= 2:
+            avg_ok = bool(avg_tbl["AvgPersonMeasure"].is_monotonic_increasing)
+            rows.append(_rating_scale_dashboard_row(
+                "Average measures by category",
+                _rating_scale_status_from_flags(review=not avg_ok),
+                "average person measures increase with category" if avg_ok else "average person measures are not monotonic",
+                "Non-monotonic average measures mean observed categories do not follow the intended ordinal ordering.",
+                "Review the adjacent categories where ordering fails before reporting the rating scale as ordered.",
+                "Categories/Steps: average person measures",
+            ))
+        else:
+            rows.append(_rating_scale_dashboard_row(
+                "Average measures by category",
+                "Missing",
+                "fewer than two non-missing average-measure rows",
+                "Average-measure ordering cannot be checked from the current diagnostic table.",
+                "Confirm category support and rerun diagnostics if this was unexpected.",
+                "Categories/Steps: average person measures",
+            ))
+
+        if "DiffPercent" in cat_tbl.columns:
+            diff = pd.to_numeric(cat_tbl["DiffPercent"], errors="coerce")
+            diff_bad = cat_tbl.loc[diff.abs() >= 5, "Category"] if "Category" in cat_tbl.columns else pd.Series(dtype=object)
+            rows.append(_rating_scale_dashboard_row(
+                "Observed vs expected category use",
+                _rating_scale_status_from_flags(review=not diff_bad.empty),
+                f"categories with absolute observed-expected difference >= 5 percentage points: {_compact_value_list(diff_bad)}",
+                "Large marginal differences are corroborating evidence, not an automatic recoding rule.",
+                "Read with residual fit and category curves before changing category labels.",
+                "Categories/Steps: expected category counts",
+            ))
+
+        fit_flags = pd.Series(False, index=cat_tbl.index)
+        for flag_col in ("InfitFlag", "OutfitFlag", "ZSTDFlag"):
+            if flag_col in cat_tbl.columns:
+                fit_flags = fit_flags | cat_tbl[flag_col].fillna(False).astype(bool)
+        fit_bad = cat_tbl.loc[fit_flags, "Category"] if "Category" in cat_tbl.columns else pd.Series(dtype=object)
+        rows.append(_rating_scale_dashboard_row(
+            "Category fit residuals",
+            _rating_scale_status_from_flags(review=not fit_bad.empty),
+            f"categories with category-level fit flags: {_compact_value_list(fit_bad)}",
+            "Category fit flags show noisy or overly predictable response patterns within a score category.",
+            "Inspect category rows and response patterns; do not collapse categories from fit alone.",
+            "Categories/Steps: Infit, Outfit, ZSTD",
+        ))
+    else:
+        rows.append(_rating_scale_dashboard_row(
+            "Observed category support",
+            "Missing",
+            f"category table unavailable. {cat_error}".strip(),
+            "The rating-scale evidence chain cannot be completed without category diagnostics.",
+            "Rerun diagnostics and confirm the response-data audit.",
+            "Categories/Steps: category diagnostics",
+        ))
+
+    step_order = pd.DataFrame()
+    try:
+        step_order = calc_step_order(result.get("steps", pd.DataFrame()))
+    except Exception:
+        step_order = pd.DataFrame()
+    if isinstance(step_order, pd.DataFrame) and not step_order.empty:
+        ordered_col = step_order.get("Ordered", pd.Series(dtype=object))
+        disordered = step_order.loc[ordered_col == False]
+        spacing = pd.to_numeric(step_order.get("Spacing", pd.Series(dtype=float)), errors="coerce").dropna()
+        spacing_text = (
+            f"spacing range = {float(spacing.min()):.2f} to {float(spacing.max()):.2f} logits"
+            if not spacing.empty else
+            "single threshold or no adjacent spacing"
+        )
+        disordered_labels = (
+            disordered.apply(lambda r: f"{r.get('StepFacet', 'Common')}:{r.get('Step', '')}", axis=1)
+            if not disordered.empty else []
+        )
+        rows.append(_rating_scale_dashboard_row(
+            "Threshold / step ordering",
+            _rating_scale_status_from_flags(review=not disordered.empty),
+            f"{spacing_text}; disordered = {_compact_value_list(disordered_labels)}",
+            "Disordered thresholds weaken claims that adjacent categories are functioning as separate ordered levels.",
+            "Use the FACETS-style threshold lines and Categories/Steps order table before collapsing categories.",
+            "Categories/Steps: step order; Visuals: threshold lines",
+        ))
+    else:
+        rows.append(_rating_scale_dashboard_row(
+            "Threshold / step ordering",
+            "Missing",
+            "step threshold table unavailable",
+            "Threshold order cannot be checked without fitted step parameters.",
+            "Confirm model estimation and step-facet settings.",
+            "Categories/Steps: step order",
+        ))
+
+    curve_diag = category_curve_diagnostic_scope_table(result)
+    if isinstance(curve_diag, pd.DataFrame) and not curve_diag.empty:
+        review_flags = curve_diag["ReviewFlag"].astype(str).str.startswith("Review") if "ReviewFlag" in curve_diag.columns else pd.Series(False, index=curve_diag.index)
+        no_dom = curve_diag.loc[curve_diag.get("IsEverMostProbable", pd.Series(dtype=bool)) == False]
+        weak = curve_diag.loc[review_flags]
+        no_dom_labels = (
+            no_dom["CurveLabel"].astype(str) + " / " + no_dom["Category"].astype(str)
+            if not no_dom.empty and {"CurveLabel", "Category"}.issubset(no_dom.columns) else []
+        )
+        weak_labels = (
+            weak["CurveLabel"].astype(str) + " / " + weak["Category"].astype(str)
+            if not weak.empty and {"CurveLabel", "Category"}.issubset(weak.columns) else []
+        )
+        rows.append(_rating_scale_dashboard_row(
+            "Category characteristic curves",
+            _rating_scale_status_from_flags(review=not no_dom.empty or not weak.empty),
+            (
+                f"scopes scanned = {curve_diag['CurveLabel'].nunique() if 'CurveLabel' in curve_diag.columns else 1}; "
+                f"no dominance = {_compact_value_list(no_dom_labels)}; weak peaks = {_compact_value_list(weak_labels)}"
+            ),
+            "A category without a modeled dominance region should not be reported as clearly distinct without corroborating evidence.",
+            "Compare curve flags with counts, average measures, and threshold order before recommending recoding.",
+            "Visuals: Category Probability Curves",
+        ))
+    else:
+        rows.append(_rating_scale_dashboard_row(
+            "Category characteristic curves",
+            "Missing",
+            "category characteristic curve diagnostics unavailable",
+            "Curve-based peak/dominance evidence is absent from the current run.",
+            "Open Visuals or verify that fitted thresholds are available.",
+            "Visuals: Category Probability Curves",
+        ))
+
+    slopes = result.get("slopes", pd.DataFrame()) if isinstance(result, dict) else pd.DataFrame()
+    if isinstance(slopes, pd.DataFrame) and not slopes.empty and "Slope" in slopes.columns:
+        slope_vals = pd.to_numeric(slopes["Slope"], errors="coerce").dropna()
+        if len(slope_vals):
+            min_slope = float(slope_vals.min())
+            max_slope = float(slope_vals.max())
+            ratio = max_slope / min_slope if min_slope > 0 else np.inf
+            review = bool(min_slope < 0.25 or max_slope > 4.0 or ratio > 4.0)
+            rows.append(_rating_scale_dashboard_row(
+                "GPCM slope spread",
+                _rating_scale_status_from_flags(review=review),
+                f"slope range = {min_slope:.3f} to {max_slope:.3f}; max/min ratio = {ratio:.2f}",
+                "Slope changes curve steepness and local information; it is not ordinary facet severity.",
+                "Report slope differences separately from measure differences and check level-specific curves.",
+                "Categories/Steps: slopes; Visuals: level-specific curves",
+            ))
+
+    out = pd.DataFrame(rows)
+    if out.empty:
+        return out
+    review_count = int((out["Status"] == "Review").sum())
+    missing_count = int((out["Status"] == "Missing").sum())
+    overall_status = "Review" if review_count else ("Missing" if missing_count == len(out) else "OK")
+    overall = _rating_scale_dashboard_row(
+        "Overall rating-scale decision",
+        overall_status,
+        f"{review_count} review row(s); {missing_count} missing row(s); {len(out)} evidence row(s)",
+        "This is a triage summary. It preserves details but does not replace substantive rubric review.",
+        (
+            "Resolve review rows before claiming that all categories function distinctly."
+            if review_count else
+            "Report the supporting evidence and keep the diagnostic thresholds visible."
+        ),
+        "Integrated dashboard",
+    )
+    return pd.concat([pd.DataFrame([overall]), out], ignore_index=True)
+
+
+def rating_scale_decision_support_table(result: dict, diagnostics: dict) -> pd.DataFrame:
+    """Translate rating-scale diagnostics into conservative reporting decisions."""
+    dashboard = rating_scale_functioning_dashboard(result, diagnostics)
+    if not isinstance(dashboard, pd.DataFrame) or dashboard.empty:
+        return pd.DataFrame([_rating_scale_decision_row(
+            "Overall reportability",
+            "Missing evidence",
+            "not available",
+            "Rating-scale dashboard could not be generated.",
+            "Rerun diagnostics and confirm that observed responses, fitted thresholds, and curve data are available.",
+            "Do not compare recoding candidates until the original rating-scale diagnostics are available.",
+            "Rating-scale functioning was not evaluated in this run.",
+            "Do not claim that the rating scale functions as intended without category, threshold, and curve evidence.",
+        )])
+
+    category_evidence = rating_scale_category_evidence_table(result, diagnostics)
+    review_rows = dashboard.loc[dashboard["Status"].astype(str) == "Review"].copy()
+    missing_rows = dashboard.loc[dashboard["Status"].astype(str) == "Missing"].copy()
+    review_checks = _compact_value_list(review_rows["Check"].tolist()) if not review_rows.empty else "none"
+    missing_checks = _compact_value_list(missing_rows["Check"].tolist()) if not missing_rows.empty else "none"
+
+    affected_categories = "none"
+    category_summaries = "none"
+    if isinstance(category_evidence, pd.DataFrame) and not category_evidence.empty:
+        cat_review = category_evidence.loc[
+            category_evidence["CategoryEvidenceStatus"].astype(str) == "Review"
+        ].copy()
+        if not cat_review.empty:
+            affected_categories = _compact_value_list(cat_review.get("Category", pd.Series(dtype=object)).tolist())
+            category_summaries = _compact_value_list(cat_review.get("EvidenceSummary", pd.Series(dtype=object)).tolist(), max_items=5)
+
+    step_order = pd.DataFrame()
+    try:
+        step_order = calc_step_order(result.get("steps", pd.DataFrame()))
+    except Exception:
+        step_order = pd.DataFrame()
+    disordered_labels = "none"
+    if isinstance(step_order, pd.DataFrame) and not step_order.empty:
+        disordered = step_order.loc[step_order.get("Ordered", pd.Series(dtype=object)) == False]
+        if not disordered.empty:
+            labels = disordered.apply(lambda r: f"{r.get('StepFacet', 'Common')}:{r.get('Step', '')}", axis=1)
+            disordered_labels = _compact_value_list(labels.tolist())
+
+    curve_diag = category_curve_diagnostic_scope_table(result)
+    curve_labels = "none"
+    if isinstance(curve_diag, pd.DataFrame) and not curve_diag.empty:
+        review_flags = (
+            curve_diag["ReviewFlag"].astype(str).str.startswith("Review")
+            if "ReviewFlag" in curve_diag.columns else
+            pd.Series(False, index=curve_diag.index)
+        )
+        curve_review = curve_diag.loc[
+            review_flags | (curve_diag.get("IsEverMostProbable", pd.Series(dtype=bool)) == False)
+        ]
+        if not curve_review.empty and {"CurveLabel", "Category"}.issubset(curve_review.columns):
+            curve_labels = _compact_value_list(
+                (curve_review["CurveLabel"].astype(str) + " / " + curve_review["Category"].astype(str)).tolist(),
+                max_items=10,
+            )
+
+    has_review = not review_rows.empty
+    has_missing = not missing_rows.empty
+    overall_status = "Do not claim yet" if has_review else ("Missing evidence" if has_missing else "Ready")
+    safe_overall = (
+        "The rating-scale diagnostics flagged review evidence; report the affected categories and withhold any claim that all categories function distinctly."
+        if has_review else
+        "Some rating-scale diagnostics were missing; report only the evidence that is available."
+        if has_missing else
+        "The rating-scale dashboard did not flag category counts, threshold order, category curves, fit, or slope evidence."
+    )
+    rerun_review = (
+        "Fit the original scoring and each substantively justified adjacent-category recode; compare convergence, global fit, reliability, "
+        "category dashboard, threshold order, category curves, and key facet measures before choosing a scoring rule."
+    )
+    rows = [
+        _rating_scale_decision_row(
+            "Overall reportability",
+            overall_status,
+            affected_categories,
+            f"review checks: {review_checks}; missing checks: {missing_checks}; category issues: {category_summaries}",
+            (
+                "Resolve review rows before making final rating-scale claims."
+                if has_review else
+                "Document missing evidence before final reporting."
+                if has_missing else
+                "Report the dashboard evidence and keep thresholds and category curves visible."
+            ),
+            rerun_review if has_review else "No recoding comparison is indicated by the current dashboard.",
+            safe_overall,
+            "Do not state that all categories function distinctly unless counts, average measures, thresholds, and category curves support that claim.",
+        )
+    ]
+
+    rows.append(_rating_scale_decision_row(
+        "Potential recoding scope",
+        "Review before reporting" if affected_categories != "none" or disordered_labels != "none" or curve_labels != "none" else "Ready",
+        affected_categories,
+        f"category evidence: {category_summaries}; disordered thresholds: {disordered_labels}; curve flags: {curve_labels}",
+        (
+            "Treat adjacent collapse as a candidate sensitivity analysis only when it is defensible from the rubric and response process."
+            if affected_categories != "none" or disordered_labels != "none" or curve_labels != "none" else
+            "No category collapse candidate is suggested by the current integrated diagnostics."
+        ),
+        rerun_review if affected_categories != "none" or disordered_labels != "none" or curve_labels != "none" else "Keep the original scoring as the primary run unless theory suggests a planned sensitivity analysis.",
+        (
+            "A recoded scale, if evaluated, was treated as a sensitivity comparison rather than an automatic correction."
+            if affected_categories != "none" or disordered_labels != "none" or curve_labels != "none" else
+            "The original category structure was retained because no integrated diagnostic row required recoding review."
+        ),
+        "Do not collapse categories solely because one diagnostic is flagged; require rubric logic plus better reproduced diagnostics.",
+    ))
+
+    rows.append(_rating_scale_decision_row(
+        "Threshold and step-order claim",
+        "Review before reporting" if disordered_labels != "none" else ("Missing evidence" if "Threshold / step ordering" in missing_checks else "Ready"),
+        disordered_labels,
+        f"step order review labels: {disordered_labels}",
+        (
+            "Use the step-order table and FACETS-style threshold lines to identify the affected boundary before reporting ordered thresholds."
+            if disordered_labels != "none" else
+            "Report threshold order together with step spacing and the plotted threshold lines."
+        ),
+        rerun_review if disordered_labels != "none" else "No step-order driven recoding comparison is indicated.",
+        (
+            "Threshold ordering was not fully supported for the affected boundaries."
+            if disordered_labels != "none" else
+            "Thresholds were checked in the fitted step-order table and visualized as step boundary lines."
+        ),
+        "Do not state that thresholds advance in the intended order when any fitted step boundary is disordered or unavailable.",
+    ))
+
+    rows.append(_rating_scale_decision_row(
+        "Category-curve distinctness claim",
+        "Review before reporting" if curve_labels != "none" else ("Missing evidence" if "Category characteristic curves" in missing_checks else "Ready"),
+        curve_labels,
+        f"category-curve review labels: {curve_labels}",
+        (
+            "Inspect the category probability curves for peak height and dominance region, then cross-check the same category in counts and fit."
+            if curve_labels != "none" else
+            "Report curve peak and dominance evidence as a visual diagnostic, not as standalone proof."
+        ),
+        rerun_review if curve_labels != "none" else "No curve-driven recoding comparison is indicated.",
+        (
+            "Distinct category functioning was not established for every category-curve scope."
+            if curve_labels != "none" else
+            "Each available category-curve diagnostic had a modeled dominance region and no weak-peak review flag."
+        ),
+        "Do not claim that a category is distinct when its curve never dominates or has a weak peak without corroborating evidence.",
+    ))
+
+    return pd.DataFrame(rows)
+
+
+def _rating_scale_category_values(result: dict, category_evidence: pd.DataFrame | None = None) -> list[float]:
+    prep = result.get("prep", {}) if isinstance(result, dict) else {}
+    config = result.get("config", {}) if isinstance(result, dict) else {}
+    rating_min = pd.to_numeric(pd.Series([prep.get("rating_min")]), errors="coerce").iloc[0]
+    rating_max = pd.to_numeric(pd.Series([prep.get("rating_max")]), errors="coerce").iloc[0]
+    if not np.isfinite(rating_max):
+        n_cat = pd.to_numeric(pd.Series([config.get("n_cat")]), errors="coerce").iloc[0]
+        if np.isfinite(rating_min) and np.isfinite(n_cat):
+            rating_max = rating_min + int(n_cat) - 1
+    if np.isfinite(rating_min) and np.isfinite(rating_max) and rating_max >= rating_min:
+        return [float(v) for v in np.arange(int(rating_min), int(rating_max) + 1)]
+    if isinstance(category_evidence, pd.DataFrame) and not category_evidence.empty and "Category" in category_evidence.columns:
+        vals = pd.to_numeric(category_evidence["Category"], errors="coerce").dropna().unique()
+        return sorted(float(v) for v in vals)
+    return []
+
+
+def _format_rating_category_value(value: object) -> str:
+    val = pd.to_numeric(pd.Series([value]), errors="coerce").iloc[0]
+    if np.isfinite(val):
+        return str(int(val)) if float(val).is_integer() else f"{float(val):.3g}"
+    return str(value)
+
+
+def _rating_scale_recode_mapping(
+    categories: list[float],
+    lower: float | None = None,
+    upper: float | None = None,
+) -> list[tuple[float, float]]:
+    if not categories:
+        return []
+    if lower is None or upper is None:
+        return [(cat, cat) for cat in categories]
+    try:
+        upper_index = categories.index(upper)
+    except ValueError:
+        return []
+    mapping: list[tuple[float, float]] = []
+    for idx, cat in enumerate(categories):
+        if cat == upper:
+            new_cat = lower
+        elif idx > upper_index:
+            new_cat = categories[idx - 1]
+        else:
+            new_cat = cat
+        mapping.append((cat, new_cat))
+    return mapping
+
+
+def _rating_scale_recode_map_text(categories: list[float], lower: float | None = None, upper: float | None = None) -> str:
+    mapping = _rating_scale_recode_mapping(categories, lower, upper)
+    if not mapping:
+        return "not available"
+    return "; ".join(
+        f"{_format_rating_category_value(old)} -> {_format_rating_category_value(new)}"
+        for old, new in mapping
+    )
+
+
+def _rating_scale_pair_key(lower: float, upper: float) -> str:
+    return f"{_format_rating_category_value(lower)}|{_format_rating_category_value(upper)}"
+
+
+def rating_scale_recode_candidate_table(result: dict, diagnostics: dict) -> pd.DataFrame:
+    """Build adjacent-category recoding candidates for sensitivity comparisons."""
+    category_evidence = rating_scale_category_evidence_table(result, diagnostics)
+    categories = _rating_scale_category_values(result, category_evidence)
+    comparison_metrics = (
+        "convergence, log likelihood/AIC when comparable, global residual fit, person reliability, "
+        "category dashboard, threshold order, category curves, and key facet-measure shifts"
+    )
+    if len(categories) < 2:
+        return pd.DataFrame([{
+            "CandidateID": "BASE",
+            "AnalysisRole": "Original scoring baseline",
+            "AdjacentBoundary": "not available",
+            "CollapsedOriginalCategories": "none",
+            "OriginalToCandidateScoreMap": _rating_scale_recode_map_text(categories),
+            "Priority": "Missing evidence",
+            "TriggerEvidence": "Fewer than two rating categories were available for adjacent-category planning.",
+            "RequiredSubstantiveJustification": "Confirm the score scale and category diagnostics before considering recoding.",
+            "RerunComparisonPlan": "Do not run recoding comparisons until the original scale is identified.",
+            "ReportingBoundary": "Do not report category-collapse sensitivity analysis without a valid original scoring baseline.",
+        }])
+
+    category_issue_map: dict[float, list[str]] = {}
+    if isinstance(category_evidence, pd.DataFrame) and not category_evidence.empty:
+        for _, row in category_evidence.iterrows():
+            status = str(row.get("CategoryEvidenceStatus", ""))
+            cat = pd.to_numeric(pd.Series([row.get("Category")]), errors="coerce").iloc[0]
+            if status == "Review" and np.isfinite(cat):
+                category_issue_map.setdefault(float(cat), []).append(str(row.get("EvidenceSummary", "category review flag")))
+
+    curve_issue_map: dict[float, list[str]] = {}
+    curve_diag = category_curve_diagnostic_scope_table(result)
+    if isinstance(curve_diag, pd.DataFrame) and not curve_diag.empty:
+        review_flags = (
+            curve_diag["ReviewFlag"].astype(str).str.startswith("Review")
+            if "ReviewFlag" in curve_diag.columns else
+            pd.Series(False, index=curve_diag.index)
+        )
+        curve_review = curve_diag.loc[
+            review_flags | (curve_diag.get("IsEverMostProbable", pd.Series(dtype=bool)) == False)
+        ]
+        for _, row in curve_review.iterrows():
+            cat = pd.to_numeric(pd.Series([row.get("CategoryValue", row.get("Category"))]), errors="coerce").iloc[0]
+            if not np.isfinite(cat):
+                continue
+            label = str(row.get("CurveLabel", "category curve"))
+            flag = str(row.get("ReviewFlag", "curve review flag"))
+            curve_issue_map.setdefault(float(cat), []).append(f"{label}: {flag}")
+
+    boundary_issue_map: dict[str, list[str]] = {}
+    try:
+        step_order = calc_step_order(result.get("steps", pd.DataFrame()))
+    except Exception:
+        step_order = pd.DataFrame()
+    rating_min = categories[0]
+    if isinstance(step_order, pd.DataFrame) and not step_order.empty:
+        disordered = step_order.loc[step_order.get("Ordered", pd.Series(dtype=object)) == False]
+        for _, row in disordered.iterrows():
+            step_index = pd.to_numeric(pd.Series([row.get("StepIndex")]), errors="coerce").iloc[0]
+            if not np.isfinite(step_index):
+                continue
+            lower = float(rating_min + int(step_index) - 1)
+            upper = float(lower + 1)
+            key = _rating_scale_pair_key(lower, upper)
+            if lower in categories and upper in categories:
+                boundary_issue_map.setdefault(key, []).append(
+                    f"{row.get('StepFacet', 'Common')}:{row.get('Step', '')} disordered"
+                )
+
+    candidate_pairs: set[tuple[float, float]] = set()
+    for idx in range(len(categories) - 1):
+        lower = categories[idx]
+        upper = categories[idx + 1]
+        key = _rating_scale_pair_key(lower, upper)
+        if lower in category_issue_map or upper in category_issue_map or lower in curve_issue_map or upper in curve_issue_map or key in boundary_issue_map:
+            candidate_pairs.add((lower, upper))
+
+    rows: list[dict[str, str]] = [{
+        "CandidateID": "BASE",
+        "AnalysisRole": "Original scoring baseline",
+        "AdjacentBoundary": "none",
+        "CollapsedOriginalCategories": "none",
+        "OriginalToCandidateScoreMap": _rating_scale_recode_map_text(categories),
+        "Priority": "Required baseline",
+        "TriggerEvidence": "Keep this run as the primary reference for every recoding sensitivity comparison.",
+        "RequiredSubstantiveJustification": "The original rubric and score labels remain the default unless diagnostics and substantive review justify a candidate recode.",
+        "RerunComparisonPlan": f"Compare every candidate against this baseline using {comparison_metrics}.",
+        "ReportingBoundary": "Do not replace the original scoring rule without documenting why the candidate improves reproducibility and interpretability.",
+    }]
+
+    if not candidate_pairs:
+        rows.append({
+            "CandidateID": "NO_CANDIDATE",
+            "AnalysisRole": "No recoding candidate suggested",
+            "AdjacentBoundary": "none",
+            "CollapsedOriginalCategories": "none",
+            "OriginalToCandidateScoreMap": _rating_scale_recode_map_text(categories),
+            "Priority": "No dashboard trigger",
+            "TriggerEvidence": "Integrated category, threshold, and curve diagnostics did not identify an adjacent-category recoding candidate.",
+            "RequiredSubstantiveJustification": "Do not recode only to simplify the scale; preserve the original scoring unless the rubric or response process requires a planned sensitivity run.",
+            "RerunComparisonPlan": "No recoding comparison is indicated by the current diagnostic evidence.",
+            "ReportingBoundary": "Report the original category diagnostics and retain the original scoring.",
+        })
+        return pd.DataFrame(rows)
+
+    for idx, (lower, upper) in enumerate(sorted(candidate_pairs), start=1):
+        key = _rating_scale_pair_key(lower, upper)
+        trigger_parts: list[str] = []
+        for cat in (lower, upper):
+            if cat in category_issue_map:
+                trigger_parts.append(f"category {_format_rating_category_value(cat)}: {_compact_value_list(category_issue_map[cat], max_items=3)}")
+            if cat in curve_issue_map:
+                trigger_parts.append(f"curve {_format_rating_category_value(cat)}: {_compact_value_list(curve_issue_map[cat], max_items=3)}")
+        if key in boundary_issue_map:
+            trigger_parts.append(f"boundary {key}: {_compact_value_list(boundary_issue_map[key], max_items=3)}")
+        trigger_text = "; ".join(trigger_parts) if trigger_parts else "adjacent category review"
+        score = 0
+        score += 3 if key in boundary_issue_map else 0
+        score += sum(1 for cat in (lower, upper) if cat in category_issue_map)
+        score += sum(1 for cat in (lower, upper) if cat in curve_issue_map)
+        priority = "High" if score >= 4 else ("Medium" if score >= 2 else "Low")
+        rows.append({
+            "CandidateID": f"C{idx:02d}",
+            "AnalysisRole": "Sensitivity comparison candidate",
+            "AdjacentBoundary": key,
+            "CollapsedOriginalCategories": f"{_format_rating_category_value(lower)} + {_format_rating_category_value(upper)}",
+            "OriginalToCandidateScoreMap": _rating_scale_recode_map_text(categories, lower, upper),
+            "Priority": priority,
+            "TriggerEvidence": trigger_text,
+            "RequiredSubstantiveJustification": (
+                "Document why these adjacent rubric levels are not empirically or substantively separable; "
+                "do not use the candidate if the two score labels represent distinct construct evidence."
+            ),
+            "RerunComparisonPlan": (
+                "Create a recoded score column from the map, keep all persons/facets/rows/settings unchanged, "
+                f"refit the model, and compare {comparison_metrics}."
+            ),
+            "ReportingBoundary": (
+                "Report as a sensitivity analysis unless the recoded model is substantively justified and "
+                "diagnostically stronger without distorting key facet measures."
+            ),
+        })
+    return pd.DataFrame(rows)
+
+
+def rating_scale_recode_map_long_table(result: dict, diagnostics: dict) -> pd.DataFrame:
+    """Return long-form score maps for each rating-scale recode candidate."""
+    candidates = rating_scale_recode_candidate_table(result, diagnostics)
+    category_evidence = rating_scale_category_evidence_table(result, diagnostics)
+    categories = _rating_scale_category_values(result, category_evidence)
+    if not isinstance(candidates, pd.DataFrame) or candidates.empty or not categories:
+        return pd.DataFrame()
+    rows: list[dict[str, object]] = []
+    for _, cand in candidates.iterrows():
+        candidate_id = str(cand.get("CandidateID", ""))
+        if candidate_id == "NO_CANDIDATE" or not candidate_id:
+            continue
+        lower = upper = None
+        boundary = str(cand.get("AdjacentBoundary", ""))
+        if candidate_id != "BASE" and "|" in boundary:
+            left, right = boundary.split("|", 1)
+            lower_val = pd.to_numeric(pd.Series([left]), errors="coerce").iloc[0]
+            upper_val = pd.to_numeric(pd.Series([right]), errors="coerce").iloc[0]
+            if np.isfinite(lower_val) and np.isfinite(upper_val):
+                lower, upper = float(lower_val), float(upper_val)
+        mapping = _rating_scale_recode_mapping(categories, lower, upper)
+        if not mapping:
+            continue
+        map_payload = [
+            {
+                "OriginalScore": _format_rating_category_value(old),
+                "CandidateScore": _format_rating_category_value(new),
+            }
+            for old, new in mapping
+        ]
+        fingerprint = stable_json_fingerprint({
+            "CandidateID": candidate_id,
+            "AdjacentBoundary": boundary,
+            "Mapping": map_payload,
+        })
+        candidate_col = "Score_original" if candidate_id == "BASE" else f"Score_recode_{candidate_id}"
+        for old, new in mapping:
+            rows.append({
+                "CandidateID": candidate_id,
+                "AnalysisRole": str(cand.get("AnalysisRole", "")),
+                "Priority": str(cand.get("Priority", "")),
+                "AdjacentBoundary": boundary,
+                "CandidateScoreColumn": candidate_col,
+                "OriginalScore": old,
+                "CandidateScore": new,
+                "CandidateFingerprint": fingerprint,
+                "TriggerEvidence": str(cand.get("TriggerEvidence", "")),
+                "ReportingBoundary": str(cand.get("ReportingBoundary", "")),
+            })
+    return pd.DataFrame(rows)
+
+
+def rating_scale_recode_script_assets(result: dict, diagnostics: dict) -> dict[str, str]:
+    """Return Python/R/Julia scripts for applying recode candidate score maps."""
+    candidates = rating_scale_recode_candidate_table(result, diagnostics)
+    map_long = rating_scale_recode_map_long_table(result, diagnostics)
+    config = result.get("config", {}) if isinstance(result, dict) else {}
+    prep = result.get("prep", {}) if isinstance(result, dict) else {}
+    default_score_col = str(config.get("score_col") or prep.get("score_col") or "Score")
+    candidate_count = (
+        int(candidates["AnalysisRole"].astype(str).eq("Sensitivity comparison candidate").sum())
+        if isinstance(candidates, pd.DataFrame) and not candidates.empty and "AnalysisRole" in candidates.columns else
+        0
+    )
+    readme = f"""# Rating-Scale Recode Candidate Scripts
+
+These files reproduce the score-column transformations implied by the
+rating-scale recode candidate table. They do not refit the MFRM by themselves.
+Use the generated recoded CSV as input for the Python app-engine runner, R
+script, Julia script, or Stan data builder.
+
+Files:
+- `mfrm_rating_scale_recode_candidates.csv`: candidate-level decision table.
+- `mfrm_rating_scale_recode_map_long.csv`: long score map used by all scripts.
+- `apply_rating_scale_recodes.py`: Python/pandas implementation.
+- `apply_rating_scale_recodes.R`: base R implementation.
+- `apply_rating_scale_recodes.jl`: Julia CSV/DataFrames implementation.
+
+Default score column: `{default_score_col}`
+Candidate sensitivity runs listed: {candidate_count}
+
+Important boundaries:
+- The original score column is never overwritten.
+- `Score_original` is copied from the original score column.
+- Candidate columns are named `Score_recode_C01`, `Score_recode_C02`, and so on.
+- A candidate is a sensitivity-analysis input, not an automatic scoring rule.
+- After creating recoded columns, refit the model separately and compare
+  convergence, fit, reliability, threshold order, category curves, and key
+  facet-measure shifts against the `BASE` run.
+
+Example:
+
+```bash
+MFRM_INPUT_CSV=your_long_data.csv \\
+MFRM_SCORE_COL={default_score_col} \\
+MFRM_RECODE_MAP_CSV=mfrm_rating_scale_recode_map_long.csv \\
+python apply_rating_scale_recodes.py
+```
+"""
+
+    python_script = r'''#!/usr/bin/env python3
+"""Apply MFRM rating-scale recode candidate maps without overwriting scores."""
+
+from __future__ import annotations
+
+import os
+from pathlib import Path
+
+import pandas as pd
+
+
+INPUT_CSV = Path(os.environ.get("MFRM_INPUT_CSV", "input_long.csv")).expanduser()
+OUTPUT_CSV = Path(os.environ.get("MFRM_OUTPUT_CSV", "mfrm_recode_candidates_long.csv")).expanduser()
+MAP_CSV = Path(os.environ.get("MFRM_RECODE_MAP_CSV", "mfrm_rating_scale_recode_map_long.csv")).expanduser()
+SCORE_COL = os.environ.get("MFRM_SCORE_COL", "Score")
+
+
+def _as_score_column(values: pd.Series) -> pd.Series:
+    clean = pd.to_numeric(values, errors="coerce")
+    non_missing = clean.dropna()
+    if len(non_missing) and (non_missing - non_missing.round()).abs().max() < 1e-9:
+        return clean.round().astype("Int64")
+    return clean
+
+
+def main() -> int:
+    if not INPUT_CSV.exists():
+        raise FileNotFoundError(f"Input CSV not found: {INPUT_CSV}")
+    if not MAP_CSV.exists():
+        raise FileNotFoundError(f"Recode map CSV not found: {MAP_CSV}")
+    data = pd.read_csv(INPUT_CSV)
+    recode_map = pd.read_csv(MAP_CSV)
+    if SCORE_COL not in data.columns:
+        raise KeyError(f"Score column '{SCORE_COL}' was not found in {INPUT_CSV}")
+    required = {"CandidateID", "CandidateScoreColumn", "OriginalScore", "CandidateScore", "CandidateFingerprint"}
+    missing = sorted(required.difference(recode_map.columns))
+    if missing:
+        raise KeyError(f"Recode map is missing required columns: {missing}")
+
+    out = data.copy()
+    out["Score_original"] = out[SCORE_COL]
+    score_numeric = pd.to_numeric(out[SCORE_COL], errors="coerce")
+    if score_numeric.isna().any() and out[SCORE_COL].notna().any():
+        bad = out.loc[score_numeric.isna() & out[SCORE_COL].notna(), SCORE_COL].head(10).tolist()
+        raise ValueError(f"Score column contains non-numeric values, examples: {bad}")
+
+    status_rows = []
+    candidate_ids = [
+        cid for cid in recode_map["CandidateID"].astype(str).drop_duplicates().tolist()
+        if cid not in {"BASE", "NO_CANDIDATE"}
+    ]
+    for candidate_id in candidate_ids:
+        sub = recode_map.loc[recode_map["CandidateID"].astype(str) == candidate_id].copy()
+        candidate_col = str(sub["CandidateScoreColumn"].iloc[0])
+        mapping = {
+            float(row.OriginalScore): float(row.CandidateScore)
+            for row in sub.itertuples(index=False)
+        }
+        mapped = score_numeric.map(mapping)
+        unmapped = sorted(score_numeric.loc[score_numeric.notna() & mapped.isna()].drop_duplicates().tolist())
+        if unmapped:
+            raise ValueError(f"{candidate_id} does not map observed score value(s): {unmapped}")
+        out[candidate_col] = _as_score_column(mapped)
+        status_rows.append({
+            "CandidateID": candidate_id,
+            "CandidateScoreColumn": candidate_col,
+            "CandidateFingerprint": str(sub["CandidateFingerprint"].iloc[0]),
+            "RowsWritten": len(out),
+            "SourceScoreColumn": SCORE_COL,
+            "OutputCSV": str(OUTPUT_CSV),
+            "Status": "applied",
+        })
+
+    OUTPUT_CSV.parent.mkdir(parents=True, exist_ok=True)
+    out.to_csv(OUTPUT_CSV, index=False)
+    pd.DataFrame(status_rows or [{
+        "CandidateID": "none",
+        "CandidateScoreColumn": "",
+        "CandidateFingerprint": "",
+        "RowsWritten": len(out),
+        "SourceScoreColumn": SCORE_COL,
+        "OutputCSV": str(OUTPUT_CSV),
+        "Status": "no sensitivity candidate; wrote Score_original only",
+    }]).to_csv(OUTPUT_CSV.with_name("mfrm_recode_application_manifest.csv"), index=False)
+    print(f"Wrote {OUTPUT_CSV}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
+'''
+
+    r_script = r'''#!/usr/bin/env Rscript
+# Apply MFRM rating-scale recode candidate maps without overwriting scores.
+
+input_csv <- Sys.getenv("MFRM_INPUT_CSV", "input_long.csv")
+output_csv <- Sys.getenv("MFRM_OUTPUT_CSV", "mfrm_recode_candidates_long.csv")
+map_csv <- Sys.getenv("MFRM_RECODE_MAP_CSV", "mfrm_rating_scale_recode_map_long.csv")
+score_col <- Sys.getenv("MFRM_SCORE_COL", "Score")
+
+if (!file.exists(input_csv)) stop(paste("Input CSV not found:", input_csv))
+if (!file.exists(map_csv)) stop(paste("Recode map CSV not found:", map_csv))
+
+dat <- read.csv(input_csv, stringsAsFactors = FALSE, check.names = FALSE)
+recode_map <- read.csv(map_csv, stringsAsFactors = FALSE, check.names = FALSE)
+if (!(score_col %in% names(dat))) stop(paste("Score column not found:", score_col))
+required <- c("CandidateID", "CandidateScoreColumn", "OriginalScore", "CandidateScore", "CandidateFingerprint")
+missing <- setdiff(required, names(recode_map))
+if (length(missing) > 0) stop(paste("Recode map missing columns:", paste(missing, collapse = ", ")))
+
+dat[["Score_original"]] <- dat[[score_col]]
+score_numeric <- suppressWarnings(as.numeric(dat[[score_col]]))
+if (any(is.na(score_numeric) & !is.na(dat[[score_col]]))) {
+  stop("Score column contains non-numeric values.")
+}
+
+candidate_ids <- unique(as.character(recode_map$CandidateID))
+candidate_ids <- candidate_ids[!(candidate_ids %in% c("BASE", "NO_CANDIDATE"))]
+status <- data.frame()
+
+for (candidate_id in candidate_ids) {
+  sub <- recode_map[as.character(recode_map$CandidateID) == candidate_id, , drop = FALSE]
+  candidate_col <- as.character(sub$CandidateScoreColumn[1])
+  mapping <- setNames(as.numeric(sub$CandidateScore), as.character(as.numeric(sub$OriginalScore)))
+  mapped <- mapping[as.character(score_numeric)]
+  bad <- unique(score_numeric[!is.na(score_numeric) & is.na(mapped)])
+  if (length(bad) > 0) {
+    stop(paste(candidate_id, "does not map observed score value(s):", paste(bad, collapse = ", ")))
+  }
+  dat[[candidate_col]] <- as.numeric(mapped)
+  if (all(is.na(dat[[candidate_col]]) | abs(dat[[candidate_col]] - round(dat[[candidate_col]])) < 1e-9)) {
+    dat[[candidate_col]] <- as.integer(round(dat[[candidate_col]]))
+  }
+  status <- rbind(status, data.frame(
+    CandidateID = candidate_id,
+    CandidateScoreColumn = candidate_col,
+    CandidateFingerprint = as.character(sub$CandidateFingerprint[1]),
+    RowsWritten = nrow(dat),
+    SourceScoreColumn = score_col,
+    OutputCSV = output_csv,
+    Status = "applied",
+    stringsAsFactors = FALSE
+  ))
+}
+
+if (nrow(status) == 0) {
+  status <- data.frame(
+    CandidateID = "none",
+    CandidateScoreColumn = "",
+    CandidateFingerprint = "",
+    RowsWritten = nrow(dat),
+    SourceScoreColumn = score_col,
+    OutputCSV = output_csv,
+    Status = "no sensitivity candidate; wrote Score_original only",
+    stringsAsFactors = FALSE
+  )
+}
+
+write.csv(dat, output_csv, row.names = FALSE, na = "")
+write.csv(status, file.path(dirname(output_csv), "mfrm_recode_application_manifest.csv"), row.names = FALSE)
+cat("Wrote", output_csv, "\n")
+'''
+
+    julia_script = r'''#!/usr/bin/env julia
+# Apply MFRM rating-scale recode candidate maps without overwriting scores.
+
+using CSV
+using DataFrames
+
+input_csv = get(ENV, "MFRM_INPUT_CSV", "input_long.csv")
+output_csv = get(ENV, "MFRM_OUTPUT_CSV", "mfrm_recode_candidates_long.csv")
+map_csv = get(ENV, "MFRM_RECODE_MAP_CSV", "mfrm_rating_scale_recode_map_long.csv")
+score_col = Symbol(get(ENV, "MFRM_SCORE_COL", "Score"))
+
+isfile(input_csv) || error("Input CSV not found: $(input_csv)")
+isfile(map_csv) || error("Recode map CSV not found: $(map_csv)")
+
+dat = CSV.read(input_csv, DataFrame)
+recode_map = CSV.read(map_csv, DataFrame)
+String(score_col) in names(dat) || error("Score column not found: $(String(score_col))")
+
+required = ["CandidateID", "CandidateScoreColumn", "OriginalScore", "CandidateScore", "CandidateFingerprint"]
+missing_cols = [col for col in required if !(col in names(recode_map))]
+isempty(missing_cols) || error("Recode map missing columns: $(join(missing_cols, \", \"))")
+
+dat[!, :Score_original] = dat[!, score_col]
+score_numeric = Vector{Union{Missing, Float64}}(undef, nrow(dat))
+for i in 1:nrow(dat)
+    raw = dat[i, score_col]
+    if ismissing(raw) || raw === nothing || string(raw) == ""
+        score_numeric[i] = missing
+    else
+        parsed = tryparse(Float64, string(raw))
+        isnothing(parsed) && error("Score column contains non-numeric value: $(raw)")
+        score_numeric[i] = parsed
+    end
+end
+
+candidate_ids = unique(string.(recode_map.CandidateID))
+candidate_ids = [cid for cid in candidate_ids if !(cid in ["BASE", "NO_CANDIDATE"])]
+status = DataFrame(
+    CandidateID = String[],
+    CandidateScoreColumn = String[],
+    CandidateFingerprint = String[],
+    RowsWritten = Int[],
+    SourceScoreColumn = String[],
+    OutputCSV = String[],
+    Status = String[],
+)
+
+for candidate_id in candidate_ids
+    sub = recode_map[string.(recode_map.CandidateID) .== candidate_id, :]
+    candidate_col = Symbol(string(sub.CandidateScoreColumn[1]))
+    mapping = Dict(Float64(row.OriginalScore) => Float64(row.CandidateScore) for row in eachrow(sub))
+    mapped = Vector{Union{Missing, Float64}}(missing, nrow(dat))
+    bad = Float64[]
+    for i in 1:nrow(dat)
+        if ismissing(score_numeric[i])
+            mapped[i] = missing
+        elseif haskey(mapping, score_numeric[i])
+            mapped[i] = mapping[score_numeric[i]]
+        else
+            push!(bad, score_numeric[i])
+        end
+    end
+    isempty(bad) || error("$(candidate_id) does not map observed score value(s): $(join(unique(bad), \", \"))")
+    dat[!, candidate_col] = mapped
+    push!(status, (
+        candidate_id,
+        String(candidate_col),
+        string(sub.CandidateFingerprint[1]),
+        nrow(dat),
+        String(score_col),
+        output_csv,
+        "applied",
+    ))
+end
+
+if nrow(status) == 0
+    push!(status, ("none", "", "", nrow(dat), String(score_col), output_csv, "no sensitivity candidate; wrote Score_original only"))
+end
+
+mkpath(dirname(output_csv) == "" ? "." : dirname(output_csv))
+CSV.write(output_csv, dat)
+CSV.write(joinpath(dirname(output_csv) == "" ? "." : dirname(output_csv), "mfrm_recode_application_manifest.csv"), status)
+println("Wrote $(output_csv)")
+'''
+
+    return {
+        "README_rating_scale_recode_scripts.md": readme,
+        "mfrm_rating_scale_recode_candidates.csv": candidates.to_csv(index=False) if isinstance(candidates, pd.DataFrame) else "",
+        "mfrm_rating_scale_recode_map_long.csv": map_long.to_csv(index=False) if isinstance(map_long, pd.DataFrame) else "",
+        "apply_rating_scale_recodes.py": python_script,
+        "apply_rating_scale_recodes.R": r_script,
+        "apply_rating_scale_recodes.jl": julia_script,
+    }
 
 
 def category_probability_curve_export_table(result: dict) -> pd.DataFrame:
@@ -30489,7 +41263,7 @@ def _make_category_probability_curve_figures(curve: dict) -> tuple[go.Figure | N
         return None, None
     prob_long = curve.get("probability", pd.DataFrame())
     expected_df = curve.get("expected", pd.DataFrame())
-    thresholds = curve.get("thresholds", pd.DataFrame())
+    thresholds = _category_curve_threshold_frame(curve)
     meta = curve.get("metadata", {})
     if not isinstance(prob_long, pd.DataFrame) or prob_long.empty or not isinstance(meta, dict):
         return None, None
@@ -30503,20 +41277,73 @@ def _make_category_probability_curve_figures(curve: dict) -> tuple[go.Figure | N
 
     colors = px.colors.qualitative.Set2
     fig = go.Figure()
+    threshold_est = pd.to_numeric(thresholds.get("Estimate", pd.Series(dtype=float)), errors="coerce").dropna()
+    if not threshold_est.empty:
+        line_x: list[float | None] = []
+        line_y: list[float | None] = []
+        line_custom: list[list[object]] = []
+        threshold_labels = thresholds.loc[threshold_est.index, "DisplayLabel"].astype(str).tolist() if "DisplayLabel" in thresholds.columns else ["" for _ in threshold_est]
+        for tau, label in zip(threshold_est.tolist(), threshold_labels):
+            line_x.extend([float(tau), float(tau), None])
+            line_y.extend([0.0, 1.0, None])
+            line_custom.extend([[label, float(tau)], [label, float(tau)], [None, np.nan]])
+        fig.add_trace(go.Scatter(
+            x=line_x,
+            y=line_y,
+            mode="lines",
+            name="Step threshold lines",
+            line=dict(color="#555555", width=1, dash="dot"),
+            customdata=line_custom,
+            hovertemplate="Step threshold %{customdata[0]}<br>Logit=%{customdata[1]:.2f}<extra></extra>",
+            showlegend=False,
+        ))
+        for tau, label in zip(threshold_est.tolist(), threshold_labels):
+            fig.add_annotation(
+                x=float(tau),
+                y=1.03,
+                xref="x",
+                yref="paper",
+                text=str(label),
+                showarrow=False,
+                font=dict(size=10, color="#555555"),
+                bgcolor="rgba(255,255,255,0.78)",
+                bordercolor="rgba(85,85,85,0.35)",
+                borderwidth=0.5,
+            )
     for idx, (category, group) in enumerate(prob_long.groupby("Category", sort=False)):
         fig.add_trace(go.Scatter(
             x=group["Theta"], y=group["Probability"], mode="lines",
             name=str(category),
             line=dict(color=colors[idx % len(colors)], width=2),
+            hovertemplate=f"{category}<br>Theta=%{{x:.2f}}<br>Probability=%{{y:.3f}}<extra></extra>",
         ))
-    for tau in pd.to_numeric(thresholds.get("Estimate", pd.Series(dtype=float)), errors="coerce").dropna():
-        fig.add_vline(x=float(tau), line_dash="dot", line_color="gray", line_width=0.6)
+    diagnostic = category_probability_curve_diagnostic_table(curve)
+    if isinstance(diagnostic, pd.DataFrame) and not diagnostic.empty:
+        for idx, row in diagnostic.iterrows():
+            peak_theta = pd.to_numeric(pd.Series([row.get("PeakTheta")]), errors="coerce").iloc[0]
+            peak_prob = pd.to_numeric(pd.Series([row.get("PeakProbability")]), errors="coerce").iloc[0]
+            if not (np.isfinite(float(peak_theta)) and np.isfinite(float(peak_prob))):
+                continue
+            label = str(row.get("Category", "Category"))
+            fig.add_trace(go.Scatter(
+                x=[float(peak_theta)],
+                y=[float(peak_prob)],
+                mode="markers+text",
+                marker=dict(size=6, color=colors[idx % len(colors)], line=dict(color="#333333", width=0.5)),
+                text=[label.replace("Cat ", "")],
+                textposition="top center" if idx % 2 == 0 else "bottom center",
+                textfont=dict(size=10, color="#333333"),
+                name=f"{label} peak",
+                hovertemplate=f"{label} peak<br>Theta=%{{x:.2f}}<br>Probability=%{{y:.3f}}<extra></extra>",
+                showlegend=False,
+            ))
     fig.update_layout(
         xaxis_title="Person Measure - Item Measure (logits)",
         yaxis_title="Probability",
-        title=f"Category Probability Curves ({model}: {scope})",
+        title=f"FACETS-style Category Characteristic Curves ({model}: {scope})",
         yaxis=dict(range=[0, 1]), xaxis=dict(range=[theta_lo, theta_hi]),
-        hovermode="x unified", height=450, template="plotly_white",
+        hovermode="x unified", height=470, template="plotly_white",
+        legend_title_text="Category",
     )
 
     fig_expected = None
@@ -30526,12 +41353,39 @@ def _make_category_probability_curve_figures(curve: dict) -> tuple[go.Figure | N
             x=expected_df["Theta"], y=expected_df["ExpectedScore"], mode="lines",
             line=dict(color="#1b9e77", width=2), name="Expected Score",
         ))
-        for tau in pd.to_numeric(thresholds.get("Estimate", pd.Series(dtype=float)), errors="coerce").dropna():
-            fig_expected.add_vline(x=float(tau), line_dash="dot", line_color="gray", line_width=0.6)
+        if not threshold_est.empty:
+            line_x = []
+            line_y = []
+            for tau in threshold_est.tolist():
+                line_x.extend([float(tau), float(tau), None])
+                line_y.extend([rating_min, rating_max, None])
+            fig_expected.add_trace(go.Scatter(
+                x=line_x,
+                y=line_y,
+                mode="lines",
+                name="Step threshold lines",
+                line=dict(color="#555555", width=1, dash="dot"),
+                hoverinfo="skip",
+                showlegend=False,
+            ))
+            threshold_labels = thresholds.loc[threshold_est.index, "DisplayLabel"].astype(str).tolist() if "DisplayLabel" in thresholds.columns else ["" for _ in threshold_est]
+            for tau, label in zip(threshold_est.tolist(), threshold_labels):
+                fig_expected.add_annotation(
+                    x=float(tau),
+                    y=1.03,
+                    xref="x",
+                    yref="paper",
+                    text=str(label),
+                    showarrow=False,
+                    font=dict(size=10, color="#555555"),
+                    bgcolor="rgba(255,255,255,0.78)",
+                    bordercolor="rgba(85,85,85,0.35)",
+                    borderwidth=0.5,
+                )
         fig_expected.update_layout(
             xaxis_title="Person Measure - Item Measure (logits)",
             yaxis_title="Expected Score",
-            title=f"Expected Score (Model ICC: {scope})",
+            title=f"Expected Score with Step Boundaries ({scope})",
             yaxis=dict(range=[rating_min, rating_max]),
             hovermode="x unified", height=350, template="plotly_white",
         )
@@ -30548,7 +41402,9 @@ def _draw_category_probability_curves_plotly(result: dict) -> None:
     st.caption(
         "These curves show the probability of responding in each category as a "
         "function of the latent measure (theta). Hover to read exact P(k) at any theta. "
-        "For PCM/GPCM, inspect both the averaged curve and each step-facet level."
+        "The FACETS-style overlay labels the category peaks and draws vertical step "
+        "threshold lines such as 0|1 or 4|5. For PCM/GPCM, inspect both the averaged "
+        "curve and each step-facet level."
     )
 
     config = result.get("config", {})
@@ -30587,6 +41443,8 @@ def _draw_category_probability_curves_plotly(result: dict) -> None:
         st.markdown(
             """
 - Each colored line is the model-predicted probability of a rating category.
+- FACETS-style threshold lines mark adjacent category boundaries such as 0|1 or 4|5.
+- Direct peak labels identify where each category is most likely.
 - A well-functioning category usually has a visible peak where it is more probable than neighboring categories.
 - If a category never becomes most probable, inspect sparse counts and threshold ordering before reporting the scale as fully ordered.
 - For PCM/GPCM, the averaged curve can hide level-specific disorder. Use the scope selector to inspect each step-facet level.
@@ -30603,6 +41461,30 @@ def _draw_category_probability_curves_plotly(result: dict) -> None:
     if fig_expected is not None:
         st.plotly_chart(fig_expected, width="stretch")
         _offer_fig_download(fig_expected, f"expected_score_curve_{model}_{scope_key}", "Download displayed expected score curve (PNG 300 DPI)")
+
+    curve_diagnostic = category_probability_curve_diagnostic_table(curve)
+    if isinstance(curve_diagnostic, pd.DataFrame) and not curve_diagnostic.empty:
+        with st.expander("FACETS-style category curve diagnostics", expanded=False):
+            st.caption(
+                "Use this table to check whether every category has a modeled peak and a theta region "
+                "where it is the most probable category. A missing dominance region should be read "
+                "with category counts, average measures, and threshold order before collapsing categories."
+            )
+            display_cols = [
+                col for col in [
+                    "Category", "CategoryValue", "PeakTheta", "PeakProbability",
+                    "IsEverMostProbable", "DominantThetaMin", "DominantThetaMax",
+                    "DominantWidth", "ReviewFlag"
+                ] if col in curve_diagnostic.columns
+            ]
+            st.dataframe(curve_diagnostic.loc[:, display_cols], width="stretch", hide_index=True)
+            st.download_button(
+                "Download category curve diagnostics (CSV)",
+                data=to_csv_bytes(curve_diagnostic),
+                file_name="mfrm_category_curve_facets_diagnostics.csv",
+                mime="text/csv",
+                key=f"dl_category_curve_diagnostics_{model}_{meta['Scope']}",
+            )
 
     curve_export = _category_curve_export_frame(curve)
     st.download_button(
@@ -31548,13 +42430,477 @@ def _draw_observed_vs_expected(diagnostics: dict) -> None:
 # Help / Glossary tab
 # ---------------------------------------------------------------------------
 
-def show_help_section() -> None:
+def input_readiness_before_run_help_table() -> pd.DataFrame:
+    """Explain the pre-run input checks in the Help workflow."""
+    columns = [
+        t("help.input_readiness_col_check"),
+        t("help.input_readiness_col_why"),
+        t("help.input_readiness_col_fix"),
+        t("help.input_readiness_col_blocking"),
+    ]
+    rows = []
+    for check_id in (
+        "data_loaded",
+        "column_roles",
+        "facet_count",
+        "score_column",
+        "likelihood_rows",
+        "coverage",
+    ):
+        rows.append({
+            columns[0]: t(f"help.input_readiness_{check_id}_check"),
+            columns[1]: t(f"help.input_readiness_{check_id}_why"),
+            columns[2]: t(f"help.input_readiness_{check_id}_fix"),
+            columns[3]: t(f"help.input_readiness_{check_id}_blocking"),
+        })
+    return pd.DataFrame(rows, columns=columns)
+
+
+def input_readiness_check_reference_help_table() -> pd.DataFrame:
+    """Detailed Help reference for the readiness checks shown before Run."""
+    columns = [
+        t("help.input_readiness_reference_col_check"),
+        t("input_readiness.col_meaning"),
+        t("input_readiness.col_impact"),
+        t("input_readiness.col_next_action"),
+        t("input_readiness.col_open"),
+    ]
+    check_names = (
+        "data",
+        "column_overlap",
+        "n_observations",
+        "n_persons",
+        "score",
+        "likelihood_rows",
+        "n_facets",
+        "coverage",
+        "facet:Rater",
+        "scores_negative",
+        "scores_below_range",
+        "zero_variance_persons",
+        "zero_variance_Rater",
+        "person_over_observed",
+        "ceiling_saturation",
+        "custom_quality_gate",
+    )
+    rows = []
+    for check_name in check_names:
+        guidance_key = _input_readiness_guidance_key(check_name)
+        action_key = _input_readiness_action_key(check_name, "warning")
+        open_key = _input_readiness_open_key(action_key)
+        rows.append({
+            columns[0]: t(f"help.input_readiness_reference_{guidance_key}_check"),
+            columns[1]: t(f"input_readiness.guidance_{guidance_key}_meaning"),
+            columns[2]: t(f"input_readiness.guidance_{guidance_key}_impact"),
+            columns[3]: t(f"input_readiness.action_{action_key}"),
+            columns[4]: t(f"input_readiness.open_{open_key}"),
+        })
+    return pd.DataFrame(rows, columns=columns)
+
+
+def input_readiness_ok_boundary_help_table() -> pd.DataFrame:
+    """Explain the boundary between pre-run OK and post-run interpretation."""
+    columns = [
+        t("help.input_readiness_ok_col_stage"),
+        t("help.input_readiness_ok_col_means"),
+        t("help.input_readiness_ok_col_not_guaranteed"),
+        t("help.input_readiness_ok_col_next_check"),
+    ]
+    rows = []
+    for row_id in ("pre_run_ok", "run", "first_read", "diagnostics", "report"):
+        rows.append({
+            columns[0]: t(f"help.input_readiness_ok_{row_id}_stage"),
+            columns[1]: t(f"help.input_readiness_ok_{row_id}_means"),
+            columns[2]: t(f"help.input_readiness_ok_{row_id}_not_guaranteed"),
+            columns[3]: t(f"help.input_readiness_ok_{row_id}_next_check"),
+        })
+    return pd.DataFrame(rows, columns=columns)
+
+
+def guided_goal_choice_help_table() -> pd.DataFrame:
+    """Help users choose the closest guided goal before reading diagnostics."""
+    columns = [
+        t("help.guided_choice_col_question"),
+        t("help.guided_choice_col_choose_goal"),
+        t("help.guided_choice_col_first_open"),
+        t("help.guided_choice_col_hold_off"),
+        t("help.guided_choice_col_ready_when"),
+    ]
+    rows = []
+    for goal_id in GUIDED_GOAL_IDS:
+        rows.append({
+            columns[0]: t(f"help.guided_choice_{goal_id}_question"),
+            columns[1]: t(f"guided.goal_{goal_id}"),
+            columns[2]: t(f"help.guided_choice_{goal_id}_first_open"),
+            columns[3]: t(f"help.guided_choice_{goal_id}_hold_off"),
+            columns[4]: t(f"help.guided_choice_{goal_id}_ready_when"),
+        })
+    return pd.DataFrame(rows, columns=columns)
+
+
+def guided_interpretation_readiness_help_table() -> pd.DataFrame:
+    """Document the First Read interpretation-readiness summary states."""
+    columns = [
+        t("help.guided_interpret_col_status"),
+        t("help.guided_interpret_col_when"),
+        t("guided.interpret_col_do_not_conclude"),
+        t("guided.interpret_col_safe_output"),
+    ]
+    rows = []
+    for status_id in ("run_first", "pause", "caution", "review", "ok"):
+        rows.append({
+            columns[0]: t(f"guided.interpret_status_{status_id}"),
+            columns[1]: t(f"help.guided_interpret_{status_id}_when"),
+            columns[2]: t(f"guided.interpret_{status_id}_do_not"),
+            columns[3]: t(f"guided.interpret_{status_id}_output"),
+        })
+    return pd.DataFrame(rows, columns=columns)
+
+
+def guided_reader_profile_help_table() -> pd.DataFrame:
+    """Map common reader profiles to the amount of detail they should keep."""
+    columns = [
+        t("help.guided_reader_col_profile"),
+        t("help.guided_reader_col_read_first"),
+        t("help.guided_reader_col_keep_detail"),
+        t("help.guided_reader_col_stop_condition"),
+        t("help.guided_reader_col_output"),
+    ]
+    rows = []
+    for profile_id in (
+        "first_pass",
+        "applied_user",
+        "analyst",
+        "manuscript_author",
+        "reviewer_auditor",
+    ):
+        rows.append({
+            columns[0]: t(f"help.guided_reader_{profile_id}_profile"),
+            columns[1]: t(f"help.guided_reader_{profile_id}_read_first"),
+            columns[2]: t(f"help.guided_reader_{profile_id}_keep_detail"),
+            columns[3]: t(f"help.guided_reader_{profile_id}_stop_condition"),
+            columns[4]: t(f"help.guided_reader_{profile_id}_output"),
+        })
+    return pd.DataFrame(rows, columns=columns)
+
+
+def guided_focus_class_help_table() -> pd.DataFrame:
+    """Explain how First Read rows are routed into the current-focus guide."""
+    columns = [
+        t("help.guided_focus_class_col_class"),
+        t("help.guided_focus_class_col_when"),
+        t("help.guided_focus_class_col_user_action"),
+        t("help.guided_focus_class_col_examples"),
+    ]
+    rows = []
+    for class_id in ("hard", "claim_caveat", "goal_review", "clean"):
+        rows.append({
+            columns[0]: t(f"help.guided_focus_class_{class_id}_label"),
+            columns[1]: t(f"help.guided_focus_class_{class_id}_when"),
+            columns[2]: t(f"help.guided_focus_class_{class_id}_action"),
+            columns[3]: t(f"help.guided_focus_class_{class_id}_examples"),
+        })
+    return pd.DataFrame(rows, columns=columns)
+
+
+def guided_next_click_help_table() -> pd.DataFrame:
+    """Explain the one-row next-click summary shown in the guided workflow."""
+    columns = [
+        t("help.guided_next_click_col_label"),
+        t("help.guided_next_click_col_when"),
+        t("help.guided_next_click_col_open"),
+        t("help.guided_next_click_col_keep_detail"),
+    ]
+    rows = []
+    for case_id in (
+        "run_first",
+        "hard_stop",
+        "selected_goal",
+        "claim_caveat",
+        "goal_route",
+        "review",
+    ):
+        rows.append({
+            columns[0]: t(f"guided.next_click_{case_id}"),
+            columns[1]: t(f"help.guided_next_click_{case_id}_when"),
+            columns[2]: t(f"help.guided_next_click_{case_id}_open"),
+            columns[3]: t(f"help.guided_next_click_{case_id}_keep_detail"),
+        })
+    return pd.DataFrame(rows, columns=columns)
+
+
+def guided_screen_reading_order_help_table() -> pd.DataFrame:
+    """Explain the intended reading order for the guided screen."""
+    columns = [
+        t("help.guided_screen_order_col_order"),
+        t("help.guided_screen_order_col_surface"),
+        t("help.guided_screen_order_col_use"),
+        t("help.guided_screen_order_col_detail_policy"),
+    ]
+    rows = []
+    for step_id in (
+        "current_focus",
+        "next_click",
+        "goal_locator",
+        "guardrail",
+        "supporting_detail",
+        "claim_boundary",
+    ):
+        rows.append({
+            columns[0]: t(f"help.guided_screen_order_{step_id}_order"),
+            columns[1]: t(f"help.guided_screen_order_{step_id}_surface"),
+            columns[2]: t(f"help.guided_screen_order_{step_id}_use"),
+            columns[3]: t(f"help.guided_screen_order_{step_id}_detail_policy"),
+        })
+    return pd.DataFrame(rows, columns=columns)
+
+
+def guided_goal_locator_help_table() -> pd.DataFrame:
+    """Return all goal-specific detail locators as a help reference table."""
+    goal_col = t("help.guided_goal_locator_col_goal")
+    locator_columns = [
+        t("guided.goal_locator_col_open"),
+        t("guided.goal_locator_col_place"),
+        t("guided.goal_locator_col_check"),
+        t("guided.goal_locator_col_use"),
+    ]
+    columns = [goal_col, *locator_columns]
+    rows: list[dict[str, str]] = []
+    for goal_id in GUIDED_GOAL_IDS:
+        locator = guided_goal_detail_locator_table(goal_id)
+        for _, row in locator.iterrows():
+            rows.append({
+                goal_col: t(f"guided.goal_{goal_id}"),
+                **{column: str(row.get(column, "")) for column in locator_columns},
+            })
+    return pd.DataFrame(rows, columns=columns)
+
+
+def guided_goal_behavior_help_table() -> pd.DataFrame:
+    """Explain how the selected goal changes current-focus behavior."""
+    columns = [
+        t("help.guided_goal_behavior_col_goal"),
+        t("help.guided_goal_behavior_col_if_caveat"),
+        t("help.guided_goal_behavior_col_why"),
+    ]
+    rows = []
+    for goal_id in GUIDED_GOAL_IDS:
+        behavior_key = (
+            "continue_with_caveat"
+            if goal_id in GUIDED_GOALS_THAT_CAN_CONTINUE_WITH_CAVEATS
+            else "main_focus"
+        )
+        rows.append({
+            columns[0]: t(f"guided.goal_{goal_id}"),
+            columns[1]: t(f"help.guided_goal_behavior_{behavior_key}"),
+            columns[2]: t(f"help.guided_goal_behavior_{goal_id}_why"),
+        })
+    return pd.DataFrame(rows, columns=columns)
+
+
+def guided_claim_boundary_help_table() -> pd.DataFrame:
+    """State what each current-focus class allows users to claim."""
+    columns = [
+        t("help.guided_claim_boundary_col_focus_type"),
+        t("help.guided_claim_boundary_col_safe_now"),
+        t("help.guided_claim_boundary_col_not_yet"),
+        t("help.guided_claim_boundary_col_confirm"),
+    ]
+    rows = []
+    for class_id in ("hard", "claim_caveat", "goal_review", "clean"):
+        rows.append({
+            columns[0]: t(f"help.guided_focus_class_{class_id}_label"),
+            columns[1]: t(f"help.guided_claim_boundary_{class_id}_safe"),
+            columns[2]: t(f"help.guided_claim_boundary_{class_id}_not_yet"),
+            columns[3]: t(f"help.guided_claim_boundary_{class_id}_confirm"),
+        })
+    return pd.DataFrame(rows, columns=columns)
+
+
+def guided_situation_walkthrough_help_table() -> pd.DataFrame:
+    """Provide scenario-level walkthroughs for common analysis situations."""
+    columns = [
+        t("help.guided_situation_col_situation"),
+        t("help.guided_situation_col_first_open"),
+        t("help.guided_situation_col_inspect"),
+        t("help.guided_situation_col_record"),
+        t("help.guided_situation_col_avoid"),
+    ]
+    rows = []
+    for situation_id in (
+        "clean_run",
+        "nonconvergence",
+        "linking",
+        "fit_pca",
+        "rating_scale",
+        "rater_spread",
+        "bias_warning",
+        "manuscript_export",
+    ):
+        rows.append({
+            columns[0]: t(f"help.guided_situation_{situation_id}_situation"),
+            columns[1]: t(f"help.guided_situation_{situation_id}_first_open"),
+            columns[2]: t(f"help.guided_situation_{situation_id}_inspect"),
+            columns[3]: t(f"help.guided_situation_{situation_id}_record"),
+            columns[4]: t(f"help.guided_situation_{situation_id}_avoid"),
+        })
+    return pd.DataFrame(rows, columns=columns)
+
+
+def app_refinement_scorecard_table() -> pd.DataFrame:
+    """Score the current app from product, UI, statistical, and technical angles."""
+    columns = [
+        t("help.refinement_score_col_perspective"),
+        t("help.refinement_score_col_score"),
+        t("help.refinement_score_col_sufficient"),
+        t("help.refinement_score_col_insufficient"),
+        t("help.refinement_score_col_fix"),
+        t("help.refinement_score_col_priority"),
+    ]
+    rows = []
+    scores = {
+        "global_strategy": 88,
+        "guided_ui": 85,
+        "local_controls": 79,
+        "statistical_rigor": 88,
+        "claim_safety": 92,
+        "performance": 82,
+        "documentation": 91,
+        "exports": 88,
+        "governance": 87,
+        "maintainability": 76,
+        "overall": 86,
+    }
+    for area_id, score in scores.items():
+        rows.append({
+            columns[0]: t(f"help.refinement_score_{area_id}_perspective"),
+            columns[1]: score,
+            columns[2]: t(f"help.refinement_score_{area_id}_sufficient"),
+            columns[3]: t(f"help.refinement_score_{area_id}_insufficient"),
+            columns[4]: t(f"help.refinement_score_{area_id}_fix"),
+            columns[5]: t(f"help.refinement_score_{area_id}_priority"),
+        })
+    return pd.DataFrame(rows, columns=columns)
+
+
+def app_refinement_roadmap_table() -> pd.DataFrame:
+    """Return a prioritized roadmap for moving the app closer to a polished release."""
+    columns = [
+        t("help.refinement_roadmap_col_horizon"),
+        t("help.refinement_roadmap_col_target"),
+        t("help.refinement_roadmap_col_work"),
+        t("help.refinement_roadmap_col_acceptance"),
+        t("help.refinement_roadmap_col_verification"),
+    ]
+    rows = []
+    for phase_id in (
+        "p0_scorecard",
+        "p1_navigation",
+        "p1_local_polish",
+        "p2_result_finder",
+        "p2_validation_library",
+        "p2_accessibility",
+        "p3_modularization",
+        "p3_observability",
+    ):
+        rows.append({
+            columns[0]: t(f"help.refinement_roadmap_{phase_id}_horizon"),
+            columns[1]: t(f"help.refinement_roadmap_{phase_id}_target"),
+            columns[2]: t(f"help.refinement_roadmap_{phase_id}_work"),
+            columns[3]: t(f"help.refinement_roadmap_{phase_id}_acceptance"),
+            columns[4]: t(f"help.refinement_roadmap_{phase_id}_verification"),
+        })
+    return pd.DataFrame(rows, columns=columns)
+
+
+def guided_simulation_help_table() -> pd.DataFrame:
+    """Document the simulation cases used to check guided workflow behavior."""
+    columns = [
+        t("help.guided_sim_col_situation"),
+        t("help.guided_sim_col_expected_focus"),
+        t("help.guided_sim_col_test_reason"),
+    ]
+    rows = []
+    for case_id in (
+        "nonconvergence",
+        "linking",
+        "claim_caveat",
+        "goal_plus_caveat",
+        "goal_review",
+        "clean",
+    ):
+        rows.append({
+            columns[0]: t(f"help.guided_sim_{case_id}_situation"),
+            columns[1]: t(f"help.guided_sim_{case_id}_expected_focus"),
+            columns[2]: t(f"help.guided_sim_{case_id}_reason"),
+        })
+    return pd.DataFrame(rows, columns=columns)
+
+
+def rating_scale_evidence_help_table() -> pd.DataFrame:
+    """Explain how rating-scale evidence sources should be read together."""
+    rows = [
+        {
+            "EvidenceSurface": "Observed category support",
+            "Where": "Categories/Steps -> Rating-scale functioning dashboard",
+            "WhatItAnswers": "Whether each response category has enough empirical support to estimate thresholds stably.",
+            "ReviewTrigger": "Unused category or count below 10.",
+            "NextAction": "Inspect raw category use; collapse adjacent categories only with a substantive rubric reason.",
+        },
+        {
+            "EvidenceSurface": "Average measures by category",
+            "Where": "Categories/Steps -> category diagnostics",
+            "WhatItAnswers": "Whether higher observed categories correspond to higher average person measures.",
+            "ReviewTrigger": "Average person measures are not monotonic.",
+            "NextAction": "Identify adjacent categories that break ordering before reporting the scale as ordered.",
+        },
+        {
+            "EvidenceSurface": "Threshold / step ordering",
+            "Where": "Categories/Steps -> step order; Visuals -> threshold lines",
+            "WhatItAnswers": "Whether adjacent step thresholds advance in the expected order on the logit scale.",
+            "ReviewTrigger": "A later threshold is lower than an earlier threshold.",
+            "NextAction": "Use the FACETS-style boundary labels such as 0|1 and 4|5 to locate the affected adjacent categories.",
+        },
+        {
+            "EvidenceSurface": "Category characteristic curves",
+            "Where": "Visuals -> Category Probability Curves",
+            "WhatItAnswers": "Whether each category has a modeled peak and a theta region where it is most probable.",
+            "ReviewTrigger": "No dominance region or weak peak probability.",
+            "NextAction": "Compare the curve flag with counts, average measures, and thresholds before recommending recoding.",
+        },
+        {
+            "EvidenceSurface": "Expected score curve",
+            "Where": "Visuals -> Category Probability Curves",
+            "WhatItAnswers": "Whether the model-implied expected score increases smoothly across theta.",
+            "ReviewTrigger": "Flat or abrupt regions that align with sparse or disordered categories.",
+            "NextAction": "Treat this as corroborating evidence; do not infer category collapse from the expected curve alone.",
+        },
+        {
+            "EvidenceSurface": "Category-level fit residuals",
+            "Where": "Categories/Steps -> Infit, Outfit, ZSTD",
+            "WhatItAnswers": "Whether responses within a category are unusually noisy or overly predictable.",
+            "ReviewTrigger": "Infit/Outfit outside practical bands or category |ZSTD| >= 2.",
+            "NextAction": "Inspect response rows and scoring context; fit flags alone are not a collapse rule.",
+        },
+        {
+            "EvidenceSurface": "GPCM slope spread",
+            "Where": "Categories/Steps -> slopes; Visuals -> level-specific curves",
+            "WhatItAnswers": "Whether step-facet levels differ in curve steepness and local information.",
+            "ReviewTrigger": "Very small, very large, or highly uneven slopes.",
+            "NextAction": "Report slopes separately from severity and verify level-specific category curves.",
+        },
+    ]
+    return pd.DataFrame(rows)
+
+
+def show_help_section(*, force_full: bool = False) -> None:
     """Comprehensive help section with literature-backed guidance for MFRM analysis."""
+    st.info(t("help.interpretation_caution"))
     # v0.2.6-beta: Essential mode hides advanced help sub-tabs (Rating
-    # Scale Guide, Model Capability, Public Beta) so beginners see a
+    # Scale Guide, Model Capability, Public Beta) so Essential-view users see a
     # focused 7-tab section. Full view restores all 10. Users can switch
     # from the sidebar's View density toggle (top of sidebar).
-    essential_mode = (
+    essential_mode = (not force_full) and (
         st.session_state.get("app_view_density", "Essential") == "Essential"
     )
     ADVANCED_HELP_TABS = {
@@ -31607,12 +42953,111 @@ def show_help_section() -> None:
     # ------------------------------------------------------------------
     with help_tab["Analysis Workflow"]:
         st.markdown(t("help.analysis_workflow_body"))
+        st.markdown(t("guided.first_run_route_heading"))
+        st.caption(t("guided.first_run_route_caption"))
+        st.dataframe(guided_first_run_route_table(), width="stretch", hide_index=True)
+        st.markdown(t("help.input_readiness_heading"))
+        st.caption(t("help.input_readiness_caption"))
+        st.dataframe(input_readiness_before_run_help_table(), width="stretch", hide_index=True)
+        with st.expander(t("help.input_readiness_ok_expander"), expanded=False):
+            st.caption(t("help.input_readiness_ok_caption"))
+            st.dataframe(input_readiness_ok_boundary_help_table(), width="stretch", hide_index=True)
+        with st.expander(t("help.guided_interpret_expander"), expanded=False):
+            st.caption(t("help.guided_interpret_caption"))
+            st.dataframe(guided_interpretation_readiness_help_table(), width="stretch", hide_index=True)
+        with st.expander(t("help.measures_reading_expander"), expanded=False):
+            st.caption(t("help.measures_reading_caption"))
+            render_guided_measures_reading_guide_tables()
+        with st.expander(t("help.rating_scale_evidence_expander"), expanded=False):
+            st.caption(t("help.rating_scale_evidence_caption"))
+            st.dataframe(rating_scale_evidence_help_table(), width="stretch", hide_index=True)
+        with st.expander("Visual claim guardrails", expanded=False):
+            st.caption(
+                "Use this before interpreting Wright Maps, FACETS-style yardsticks, threshold lines, or category characteristic curves in a report."
+            )
+            st.dataframe(visual_claim_guardrail_table(), width="stretch", hide_index=True)
+        with st.expander(t("help.input_readiness_reference_expander"), expanded=False):
+            st.caption(t("help.input_readiness_reference_caption"))
+            st.dataframe(input_readiness_check_reference_help_table(), width="stretch", hide_index=True)
+        st.markdown(t("help.guided_choice_heading"))
+        st.caption(t("help.guided_choice_caption"))
+        st.dataframe(guided_goal_choice_help_table(), width="stretch", hide_index=True)
+        with st.expander(t("help.guided_playbooks_expander"), expanded=False):
+            st.caption(t("help.guided_playbooks_caption"))
+            st.markdown(t("help.guided_reader_heading"))
+            st.dataframe(guided_reader_profile_help_table(), width="stretch", hide_index=True)
+            st.markdown(t("help.guided_situation_heading"))
+            st.dataframe(guided_situation_walkthrough_help_table(), width="stretch", hide_index=True)
+        with st.expander(t("help.refinement_expander"), expanded=False):
+            st.caption(t("help.refinement_caption"))
+            st.markdown(t("help.refinement_score_heading"))
+            st.dataframe(app_refinement_scorecard_table(), width="stretch", hide_index=True)
+            st.markdown(t("help.refinement_roadmap_heading"))
+            st.dataframe(app_refinement_roadmap_table(), width="stretch", hide_index=True)
+        st.markdown(t("help.guided_focus_help_heading"))
+        st.caption(t("help.guided_focus_help_caption"))
+        st.dataframe(guided_focus_class_help_table(), width="stretch", hide_index=True)
+        st.markdown(t("help.guided_screen_order_heading"))
+        st.caption(t("help.guided_screen_order_caption"))
+        st.dataframe(guided_screen_reading_order_help_table(), width="stretch", hide_index=True)
+        st.markdown(t("help.guided_next_click_heading"))
+        st.caption(t("help.guided_next_click_caption"))
+        st.dataframe(guided_next_click_help_table(), width="stretch", hide_index=True)
+        st.markdown(t("help.guided_goal_locator_heading"))
+        st.caption(t("help.guided_goal_locator_caption"))
+        st.dataframe(guided_goal_locator_help_table(), width="stretch", hide_index=True)
+        st.markdown(t("help.guided_goal_behavior_heading"))
+        st.caption(t("help.guided_goal_behavior_caption"))
+        st.dataframe(guided_goal_behavior_help_table(), width="stretch", hide_index=True)
+        st.markdown(t("help.guided_claim_boundary_heading"))
+        st.caption(t("help.guided_claim_boundary_caption"))
+        st.dataframe(guided_claim_boundary_help_table(), width="stretch", hide_index=True)
+        with st.expander(t("help.repro_guardrail_expander"), expanded=False):
+            st.caption(t("help.repro_guardrail_caption"))
+            st.dataframe(guided_reproducibility_guardrail_table(), width="stretch", hide_index=True)
+            st.markdown(t("help.stan_repro_heading"))
+            st.caption(t("help.stan_repro_caption"))
+            st.dataframe(guided_stan_posterior_reproducibility_help_table(), width="stretch", hide_index=True)
+            st.markdown(t("help.uto_audit_heading"))
+            st.caption(t("help.uto_audit_caption"))
+            st.dataframe(guided_uto_claim_boundary_help_table(), width="stretch", hide_index=True)
+            with st.expander(t("help.uto_audit_field_expander"), expanded=False):
+                st.caption(t("help.uto_audit_field_caption"))
+                st.dataframe(guided_uto_design_audit_field_help_table(), width="stretch", hide_index=True)
+            st.markdown(t("help.stan_prior_heading"))
+            st.caption(t("help.stan_prior_caption"))
+            st.dataframe(stan_prior_setting_guidance(), width="stretch", hide_index=True)
+            st.markdown(t("help.stan_prior_sensitivity_heading"))
+            st.caption(t("help.stan_prior_sensitivity_caption"))
+            st.dataframe(stan_prior_sensitivity_grid(), width="stretch", hide_index=True)
+            with st.expander(t("help.stan_manifest_detail_expander"), expanded=False):
+                st.caption(t("help.stan_manifest_detail_caption"))
+                st.dataframe(stan_posterior_handoff_checklist(), width="stretch", hide_index=True)
+                st.markdown(t("help.stan_manifest_template_heading"))
+                st.dataframe(stan_run_manifest_template(), width="stretch", hide_index=True)
+            with st.expander(t("help.stan_repro_handoff_expander"), expanded=False):
+                st.caption(t("help.stan_repro_handoff_caption"))
+                st.markdown(stan_posterior_reproducibility_handoff_markdown())
+        with st.expander(t("help.claim_trace_expander"), expanded=False):
+            st.caption(t("help.claim_trace_caption"))
+            st.dataframe(guided_report_claim_trace_help_table(), width="stretch", hide_index=True)
+        with st.expander(t("help.export_preflight_expander"), expanded=False):
+            st.caption(t("help.export_preflight_caption"))
+            st.dataframe(guided_export_share_preflight_help_table(), width="stretch", hide_index=True)
+        with st.expander(t("help.guided_simulation_expander"), expanded=False):
+            st.caption(t("help.guided_simulation_caption"))
+            st.dataframe(guided_simulation_help_table(), width="stretch", hide_index=True)
 
     # ------------------------------------------------------------------
     # Tab 3: Interpretation Guide (expanded)
     # ------------------------------------------------------------------
     with help_tab["Interpretation Guide"]:
         st.markdown(t("help.interpretation_guide_body"))
+        st.markdown("### Visual claim guardrails")
+        st.caption(
+            "This table keeps figure interpretation detailed but bounded: it separates what the visual shows from what the manuscript may safely claim."
+        )
+        st.dataframe(visual_claim_guardrail_table(), width="stretch", hide_index=True)
 
     # ------------------------------------------------------------------
     # Tab 4: Rater Effects (NEW)
@@ -31626,6 +43071,9 @@ def show_help_section() -> None:
     if "Rating Scale Guide" in help_tab:
         with help_tab["Rating Scale Guide"]:
             st.markdown(t("help.rating_scale_guide_body"))
+            st.markdown(t("help.rating_scale_evidence_heading"))
+            st.caption(t("help.rating_scale_evidence_caption"))
+            st.dataframe(rating_scale_evidence_help_table(), width="stretch", hide_index=True)
 
     # ------------------------------------------------------------------
     # Tab 6: Glossary (expanded from 33 to 50+ terms)
@@ -31968,6 +43416,8 @@ def show_bias_section(
     bias_results: dict | None,
     core: dict,
     all_bias_results: dict[str, dict] | None = None,
+    result: dict | None = None,
+    diagnostics: dict | None = None,
 ) -> None:
     """Render Bias/Interaction analysis (FACETS Table 7 style)."""
     st.subheader(t("bias_interaction.heading"))
@@ -32002,22 +43452,10 @@ def show_bias_section(
         return
     tbl = bias_results["table"].copy()
 
-    # Result-aware bias summary
-    if "t" in tbl.columns:
-        _t_vals = pd.to_numeric(tbl["t"], errors="coerce").dropna()
-        _n_sig = int((_t_vals.abs() >= 2.0).sum())
-        _n_pairs = len(_t_vals)
-        if _n_pairs > 0:
-            if _n_sig == 0:
-                st.success(t("bias_interaction.no_significant_success_template", n_pairs=_n_pairs))
-            else:
-                st.warning(
-                    t(
-                        "bias_interaction.has_significant_warning_template",
-                        n_sig=_n_sig,
-                        n_pairs=_n_pairs,
-                    )
-                )
+    st.caption(
+        "Bias estimates are conditional screening statistics. Use the DFF table "
+        "and inference audit below for multiplicity, sparse-cell, and common-scale caveats."
+    )
 
     facet_a = bias_results.get("facet_a", selected_pair.split(" x ")[0])
     facet_b = bias_results.get("facet_b", selected_pair.split(" x ")[-1])
@@ -32067,6 +43505,14 @@ def show_bias_section(
         practical_logit=dff_practical,
     )
     dff_summary = summarize_dff_bias_screening(dff_tbl)
+    selected_bias_audit = build_bias_inference_audit(
+        {selected_pair: bias_results},
+        result,
+        diagnostics,
+        alpha=dff_alpha,
+        min_n=dff_min_n,
+        practical_logit=dff_practical,
+    )
     if dff_tbl.empty:
         st.info(t("bias_interaction.dff_no_table_info"))
     else:
@@ -32077,7 +43523,28 @@ def show_bias_section(
         metric_cols[2].metric(t("bias_interaction.dff_metric_strong"), int(summary_values.get("Strong review", 0)))
         max_abs_bias = summary_values.get("Max |bias|", np.nan)
         metric_cols[3].metric(t("bias_interaction.dff_metric_max_abs_bias"), f"{float(max_abs_bias):.2f}" if np.isfinite(max_abs_bias) else "n/a")
-        st.dataframe(dff_summary, width="stretch", hide_index=True)
+        dff_summary_display = dff_summary.copy()
+        if "Value" in dff_summary_display.columns:
+            dff_summary_display["Value"] = dff_summary_display["Value"].map(
+                lambda value: "" if pd.isna(value) else str(value)
+            )
+        st.dataframe(dff_summary_display, width="stretch", hide_index=True)
+        if isinstance(selected_bias_audit, pd.DataFrame) and not selected_bias_audit.empty:
+            audit_status = str(selected_bias_audit.iloc[0].get("Status", "Review"))
+            audit_claim = str(selected_bias_audit.iloc[0].get("ClaimStatus", "Report with caveat"))
+            if audit_status == "Ready":
+                st.success(f"Bias inference audit: {audit_claim}.")
+            else:
+                st.warning(f"Bias inference audit: {audit_claim}.")
+            with st.expander("Bias inference audit", expanded=audit_status != "Ready"):
+                st.dataframe(selected_bias_audit, width="stretch", hide_index=True)
+                st.download_button(
+                    "Download bias inference audit CSV",
+                    data=to_csv_bytes(selected_bias_audit),
+                    file_name=f"mfrm_bias_inference_audit_{safe_pair_key}.csv",
+                    mime="text/csv",
+                    key=f"dl_bias_inference_audit_{safe_pair_key}",
+                )
         flagged_dff = dff_tbl[dff_tbl["Flag"].astype(bool)] if "Flag" in dff_tbl.columns else pd.DataFrame()
         with st.expander(t("bias_interaction.dff_flagged_expander"), expanded=not flagged_dff.empty):
             if flagged_dff.empty:
@@ -32086,7 +43553,8 @@ def show_bias_section(
                 show_cols = [
                     "FacetA", "FacetA_Level", "FacetB", "FacetB_Level", "ObsN",
                     "BiasSize", "SE", "t", "p", "p_holm", "p_bh",
-                    "EvidenceLevel", "Direction", "NextAction",
+                    "EvidenceLevel", "ClaimStatus", "ProfileCIStatus",
+                    "Direction", "ReportingCaution", "NextAction",
                 ]
                 st.dataframe(flagged_dff[[c for c in show_cols if c in flagged_dff.columns]], width="stretch")
         st.download_button(
@@ -32268,6 +43736,78 @@ def show_categories_section(result: dict, diagnostics: dict, core: dict) -> None
     calc_step_fn = core.get("calc_step_order")
     cat_warn_fn = core.get("category_warnings_text")
     obs_df = diagnostics.get("obs")
+
+    dashboard = rating_scale_functioning_dashboard(result, diagnostics)
+    if isinstance(dashboard, pd.DataFrame) and not dashboard.empty:
+        st.markdown("##### Rating-scale functioning dashboard")
+        st.caption(
+            "Integrated FACETS-style evidence: category counts, average measures, "
+            "threshold order, category characteristic curves, residual fit, and GPCM slopes when present."
+        )
+        st.dataframe(dashboard, width="stretch", hide_index=True)
+        st.download_button(
+            "Download rating-scale functioning dashboard (CSV)",
+            data=to_csv_bytes(dashboard),
+            file_name="mfrm_rating_scale_functioning_dashboard.csv",
+            mime="text/csv",
+            key="dl_rating_scale_functioning_dashboard",
+        )
+
+        decision_support = rating_scale_decision_support_table(result, diagnostics)
+        if isinstance(decision_support, pd.DataFrame) and not decision_support.empty:
+            st.markdown("##### Rating-scale decision support")
+            st.caption(
+                "Conservative reporting guidance derived from the dashboard. This is not an automatic "
+                "category-collapse rule; recoding still requires rubric justification and rerun comparison."
+            )
+            st.dataframe(decision_support, width="stretch", hide_index=True)
+            st.download_button(
+                "Download rating-scale decision support (CSV)",
+                data=to_csv_bytes(decision_support),
+                file_name="mfrm_rating_scale_decision_support.csv",
+                mime="text/csv",
+                key="dl_rating_scale_decision_support",
+            )
+
+        recode_candidates = rating_scale_recode_candidate_table(result, diagnostics)
+        if isinstance(recode_candidates, pd.DataFrame) and not recode_candidates.empty:
+            st.markdown("##### Adjacent-category recoding candidates")
+            st.caption(
+                "Sensitivity-analysis planning table. The original scoring baseline is retained, and each "
+                "candidate must be refitted before any reporting decision is changed."
+            )
+            st.dataframe(recode_candidates, width="stretch", hide_index=True)
+            st.download_button(
+                "Download adjacent-category recoding candidates (CSV)",
+                data=to_csv_bytes(recode_candidates),
+                file_name="mfrm_rating_scale_recode_candidates.csv",
+                mime="text/csv",
+                key="dl_rating_scale_recode_candidates",
+            )
+            recode_assets = rating_scale_recode_script_assets(result, diagnostics)
+            st.download_button(
+                "Download recode scripts (Python/R/Julia ZIP)",
+                data=cached_mixed_asset_zip(recode_assets, bytes_mapping_fingerprint(recode_assets)),
+                file_name="MFRM_Rating_Scale_Recode_Scripts.zip",
+                mime="application/zip",
+                key="dl_rating_scale_recode_scripts_zip",
+            )
+
+        category_evidence = rating_scale_category_evidence_table(result, diagnostics)
+        if isinstance(category_evidence, pd.DataFrame) and not category_evidence.empty:
+            with st.expander("Category-level evidence: counts + curves + fit", expanded=False):
+                st.caption(
+                    "This table joins observed category support with the averaged category-curve "
+                    "peak/dominance diagnostics. Use it to see which exact category drives a review row."
+                )
+                st.dataframe(category_evidence, width="stretch", hide_index=True)
+                st.download_button(
+                    "Download category-level evidence (CSV)",
+                    data=to_csv_bytes(category_evidence),
+                    file_name="mfrm_rating_scale_category_evidence.csv",
+                    mime="text/csv",
+                    key="dl_rating_scale_category_evidence",
+                )
 
     if calc_cat_fn and obs_df is not None and not obs_df.empty:
         cat_tbl = calc_cat_fn(obs_df, result)
@@ -34338,6 +45878,866 @@ def external_simulation_template_inventory() -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
+def reproducibility_script_export_matrix() -> pd.DataFrame:
+    """Map reproducibility scripts to runtime, purpose, artifacts, and limits."""
+    rows = [
+        {
+            "Artifact": "mfrm_app_engine_runner.py",
+            "Runtime": "Python",
+            "Purpose": "Reproduce the current app-engine path, including MML, PCM/GPCM, diagnostics, and app-specific report tables.",
+            "Inputs": "Original long-format CSV; mfrm_config.json; requirements.txt; streamlit_app.py or installed app package.",
+            "OutputsToArchive": "python_summary.csv; measures/steps/reliability; diagnostics; exported config; package versions.",
+            "Boundary": "This is the closest reproduction of the app run; it is not an independent external-engine validation.",
+        },
+        {
+            "Artifact": "mfrm_jmle_self_contained.py",
+            "Runtime": "Python",
+            "Purpose": "Portable fixed-effect JMLE check when the run is within the self-contained script's supported model surface.",
+            "Inputs": "Anonymized long-format CSV; Person/Score/facet column names; score range.",
+            "OutputsToArchive": "measures.csv; steps.csv; reliability.csv; residuals.csv; optional bias tables.",
+            "Boundary": "Use as a portability check, not as exact reproduction for MML, posterior scoring, or app-only diagnostics.",
+        },
+        {
+            "Artifact": "mfrm_analysis.R",
+            "Runtime": "R",
+            "Purpose": "Base-R fixed-effect JMLE check for simple RSM/PCM-style designs.",
+            "Inputs": "Anonymized long-format CSV; mapped columns; supported category structure.",
+            "OutputsToArchive": "R measures, steps, reliability, residuals, and status notes.",
+            "Boundary": "Portable R check only; cross-package claims require a separate parameterization and tolerance report.",
+        },
+        {
+            "Artifact": "mfrm_yardstick_geom_text.R",
+            "Runtime": "R + ggplot2",
+            "Purpose": "Reproduce the FACETS-style yardstick from mfrm_yardstick_map.csv using geom_text.",
+            "Inputs": "mfrm_yardstick_map.csv exported from the Wright Map -> Yardstick panel.",
+            "OutputsToArchive": "mfrm_yardstick_geom_text.png; mfrm_yardstick_geom_text.pdf; the source CSV and script.",
+            "Boundary": "Figure reproduction only; it does not refit the MFRM model or validate estimator equivalence.",
+        },
+        {
+            "Artifact": "mfrm_yardstick_plotly.py",
+            "Runtime": "Python",
+            "Purpose": "Reproduce the FACETS-style text yardstick from the exported map CSV.",
+            "Inputs": "mfrm_yardstick_map.csv; pandas; plotly.",
+            "OutputsToArchive": "mfrm_yardstick_plotly.html; optional static export if local Plotly image dependencies are configured.",
+            "Boundary": "Figure reproduction only; uses exported estimates and labels.",
+        },
+        {
+            "Artifact": "mfrm_yardstick_makie.jl",
+            "Runtime": "Julia",
+            "Purpose": "Reproduce the exported yardstick map in a Julia plotting workflow.",
+            "Inputs": "mfrm_yardstick_map.csv; CSV.jl; DataFrames.jl; CairoMakie.jl.",
+            "OutputsToArchive": "mfrm_yardstick_makie.png plus the CSV and Julia script.",
+            "Boundary": "Optional visualization handoff; statistical equivalence still belongs to the model-fitting scripts.",
+        },
+        {
+            "Artifact": "simulation_validation_julia_template.jl",
+            "Runtime": "Julia",
+            "Purpose": "Audit the same long-format data and optionally call a supplied Julia MFRM engine.",
+            "Inputs": "MFRM_INPUT_CSV; MFRM_OUTPUT_DIR; MFRM_PERSON_COL; MFRM_SCORE_COL; MFRM_FACET_COLS; optional engine path.",
+            "OutputsToArchive": "julia_data_audit.csv; julia_category_counts.csv; julia_facet_counts.csv; optional Julia refit tables.",
+            "Boundary": "Audit-only until a local Julia engine is supplied and its parameterization is documented.",
+        },
+        {
+            "Artifact": "run_bayesian_mfrm_cmdstanpy.py",
+            "Runtime": "Python + CmdStanPy",
+            "Purpose": "Run the downloaded Stan model locally and archive posterior draws for Posterior Viewer.",
+            "Inputs": "mfrm_model.stan or Uto-family Stan scaffold; app-generated Stan data JSON; sampler controls; seed.",
+            "OutputsToArchive": "mfrm_stan_data.json; mfrm_stan_data_dictionary.csv; mfrm_stan_prior_guidance.csv; mfrm_stan_prior_sensitivity_grid.csv; stan_run_manifest.json; stan_run_manifest.csv; CmdStan CSV chains; summary.csv; diagnose.txt; sampler settings; posterior viewer import notes.",
+            "Boundary": "Posterior claims require prior sensitivity, Rhat/ESS/divergence/E-BFMI review, and model-family justification.",
+        },
+        {
+            "Artifact": "run_bayesian_mfrm_cmdstanr.R",
+            "Runtime": "R + CmdStanR",
+            "Purpose": "Run the same Stan file from R and produce diagnostics for cross-language reproducibility.",
+            "Inputs": "Same Stan file and app-generated data JSON used by Python; cmdstanr installation; identical seed/control values.",
+            "OutputsToArchive": "stan_run_manifest.json; stan_run_manifest.csv; CmdStan CSV chains; cmdstan_diagnose output; posterior summary; loo output when used.",
+            "Boundary": "Agreement across wrappers is a reproducibility check, not proof that the Stan model matches every external package.",
+        },
+        {
+            "Artifact": "run_bayesian_mfrm_cmdstan_cli.jl",
+            "Runtime": "Julia + CmdStan CLI",
+            "Purpose": "Launch the same Stan model from Julia while keeping sampling in CmdStan.",
+            "Inputs": "CmdStan executable; app-generated Stan data JSON; same seed/chains/warmup/sampling controls.",
+            "OutputsToArchive": "stan_run_manifest.json; stan_run_manifest.csv; CmdStan CSV chains; command log; Julia environment manifest if packages are used.",
+            "Boundary": "Julia runner controls execution; the statistical model remains the Stan file and must share the same data JSON.",
+        },
+        {
+            "Artifact": "MFRM_Complete_Stan_Reproducibility_Package.zip",
+            "Runtime": "Stan + Python/R/Julia",
+            "Purpose": "Keep Stan source files, JSON/data dictionaries, prior rationale, sensitivity grid, runners, and posterior handoff files in one auditable package.",
+            "Inputs": "Generated mfrm_model.stan or Uto-family scaffold; mfrm_stan_data.json when privately archived; prior decision log; sampler controls.",
+            "OutputsToArchive": "complete package manifest; Stan/data hashes; prior decision log; sensitivity manifests; CmdStan CSV chains; posterior diagnostics; Posterior Viewer manifest checks.",
+            "Boundary": "Direct downloads may include row-level JSON and private ID maps; public OSF/binder packages omit those when public export mode is enabled.",
+        },
+    ]
+    return pd.DataFrame(rows)
+
+
+def yardstick_reproducibility_scripts() -> dict[str, str]:
+    """Return cross-language scripts that redraw the exported yardstick map."""
+    readme = """# FACETS-style Yardstick Reproduction
+
+This bundle redraws the Streamlit FACETS-style yardstick from
+`mfrm_yardstick_map.csv`. It does not refit the model. The CSV is the contract:
+each row contains the role, facet, display label, logit estimate, and plot
+column used by the app. `Estimate` is the exact logit value; `PlotY` and
+`TextLane` are deterministic label-dodge fields for dense direct-text maps.
+For thresholds, `LineXStart` and `LineXEnd` draw a short horizontal boundary
+line at the exact `Estimate`.
+
+Recommended manuscript workflow:
+1. Archive `mfrm_yardstick_map.csv` with the run tables and config.
+2. Use the R script when you want a FACETS-like `ggplot2::geom_text()` figure.
+3. Use the Python or Julia script when those runtimes are part of your
+   reproducibility package.
+4. Do not mix a yardstick CSV from one run with estimates, thresholds, or
+   report wording from another run.
+"""
+    r_script = r'''#!/usr/bin/env Rscript
+# Reproduce the FACETS-style yardstick with ggplot2::geom_text().
+# Required input: mfrm_yardstick_map.csv from the Streamlit Yardstick panel.
+
+input <- Sys.getenv("MFRM_YARDSTICK_CSV", "mfrm_yardstick_map.csv")
+out_png <- Sys.getenv("MFRM_YARDSTICK_PNG", "mfrm_yardstick_geom_text.png")
+out_pdf <- Sys.getenv("MFRM_YARDSTICK_PDF", "mfrm_yardstick_geom_text.pdf")
+
+if (!file.exists(input)) stop(paste("Missing yardstick CSV:", input))
+if (!requireNamespace("ggplot2", quietly = TRUE)) {
+  stop("Install ggplot2 to draw this yardstick: install.packages('ggplot2')")
+}
+
+yard <- read.csv(input, check.names = FALSE, stringsAsFactors = FALSE)
+required <- c("Role", "DisplayLabel", "Estimate", "PlotColumn")
+missing <- setdiff(required, names(yard))
+if (length(missing) > 0) stop(paste("Missing columns:", paste(missing, collapse = ", ")))
+
+yard$Estimate <- as.numeric(yard$Estimate)
+yard <- yard[is.finite(yard$Estimate), , drop = FALSE]
+if (!"PlotY" %in% names(yard)) yard$PlotY <- yard$Estimate
+if (!"TextLane" %in% names(yard)) yard$TextLane <- 0
+if (!"LineXStart" %in% names(yard)) yard$LineXStart <- NA_real_
+if (!"LineXEnd" %in% names(yard)) yard$LineXEnd <- NA_real_
+yard$PlotY <- as.numeric(yard$PlotY)
+yard$TextLane <- as.numeric(yard$TextLane)
+yard$LineXStart <- as.numeric(yard$LineXStart)
+yard$LineXEnd <- as.numeric(yard$LineXEnd)
+plot_rows <- yard[yard$Role != "Person" & nzchar(yard$DisplayLabel), , drop = FALSE]
+columns <- unique(c("Measr / Persons", plot_rows$PlotColumn))
+plot_rows$PlotIndex <- match(plot_rows$PlotColumn, columns)
+is_threshold <- plot_rows$Role == "Threshold"
+plot_rows$LineXStart[is_threshold & !is.finite(plot_rows$LineXStart)] <- 0.08
+plot_rows$LineXEnd[is_threshold & !is.finite(plot_rows$LineXEnd)] <- 0.20
+plot_rows$TextX <- plot_rows$PlotIndex + ifelse(is_threshold, 0.24, 0.06) + 0.10 * plot_rows$TextLane
+threshold_lines <- plot_rows[
+  is_threshold & is.finite(plot_rows$LineXStart) & is.finite(plot_rows$LineXEnd),
+  ,
+  drop = FALSE
+]
+plot_rows$Role <- factor(plot_rows$Role, levels = c("FacetElement", "Threshold"))
+
+p <- ggplot2::ggplot(plot_rows, ggplot2::aes(x = TextX, y = PlotY, label = DisplayLabel)) +
+  ggplot2::geom_vline(
+    xintercept = seq_along(columns),
+    linewidth = 0.25,
+    colour = "grey35"
+  ) +
+  ggplot2::geom_hline(yintercept = 0, linewidth = 0.25, colour = "grey55") +
+  ggplot2::geom_segment(
+    data = threshold_lines,
+    ggplot2::aes(
+      x = PlotIndex + LineXStart,
+      xend = PlotIndex + LineXEnd,
+      y = Estimate,
+      yend = Estimate
+    ),
+    inherit.aes = FALSE,
+    linewidth = 0.35,
+    colour = "#8c4a14"
+  ) +
+  ggplot2::geom_text(
+    ggplot2::aes(colour = Role),
+    hjust = 0,
+    size = 3
+  ) +
+  ggplot2::scale_colour_manual(values = c(FacetElement = "#1b9e77", Threshold = "#d95f02")) +
+  ggplot2::scale_x_continuous(
+    breaks = seq_along(columns),
+    labels = columns,
+    limits = c(0.5, length(columns) + 0.9),
+    position = "top"
+  ) +
+  ggplot2::labs(
+    title = "Yardstick (FACETS-style text map)",
+    x = NULL,
+    y = "Logit scale",
+    caption = "Redrawn from mfrm_yardstick_map.csv; threshold segments use exact Estimate, while PlotY only dodges labels."
+  ) +
+  ggplot2::theme_minimal(base_size = 11) +
+  ggplot2::theme(
+    legend.position = "bottom",
+    panel.grid.major.x = ggplot2::element_blank(),
+    panel.grid.minor = ggplot2::element_blank(),
+    axis.text.x = ggplot2::element_text(face = "bold")
+  )
+
+ggplot2::ggsave(out_png, p, width = 9, height = 6.5, dpi = 300)
+ggplot2::ggsave(out_pdf, p, width = 9, height = 6.5)
+message("Wrote ", out_png, " and ", out_pdf)
+'''
+    python_script = r'''#!/usr/bin/env python3
+"""Reproduce the FACETS-style yardstick from mfrm_yardstick_map.csv."""
+
+from __future__ import annotations
+
+import os
+from pathlib import Path
+
+import pandas as pd
+import plotly.graph_objects as go
+from plotly.subplots import make_subplots
+
+
+INPUT = Path(os.environ.get("MFRM_YARDSTICK_CSV", "mfrm_yardstick_map.csv"))
+OUTPUT_HTML = Path(os.environ.get("MFRM_YARDSTICK_HTML", "mfrm_yardstick_plotly.html"))
+
+if not INPUT.exists():
+    raise FileNotFoundError(f"Missing yardstick CSV: {INPUT}")
+
+yard = pd.read_csv(INPUT)
+required = {"Role", "DisplayLabel", "Estimate", "PlotColumn"}
+missing = required - set(yard.columns)
+if missing:
+    raise ValueError(f"Missing columns: {sorted(missing)}")
+
+yard["Estimate"] = pd.to_numeric(yard["Estimate"], errors="coerce")
+yard = yard.dropna(subset=["Estimate"])
+if "PlotY" not in yard.columns:
+    yard["PlotY"] = yard["Estimate"]
+if "TextLane" not in yard.columns:
+    yard["TextLane"] = 0
+if "LineXStart" not in yard.columns:
+    yard["LineXStart"] = pd.NA
+if "LineXEnd" not in yard.columns:
+    yard["LineXEnd"] = pd.NA
+yard["PlotY"] = pd.to_numeric(yard["PlotY"], errors="coerce").fillna(yard["Estimate"])
+yard["TextLane"] = pd.to_numeric(yard["TextLane"], errors="coerce").fillna(0)
+yard["LineXStart"] = pd.to_numeric(yard["LineXStart"], errors="coerce")
+yard["LineXEnd"] = pd.to_numeric(yard["LineXEnd"], errors="coerce")
+threshold_mask = yard["Role"].astype(str).eq("Threshold")
+yard.loc[threshold_mask & yard["LineXStart"].isna(), "LineXStart"] = 0.08
+yard.loc[threshold_mask & yard["LineXEnd"].isna(), "LineXEnd"] = 0.20
+plot_rows = yard[(yard["Role"] != "Person") & yard["DisplayLabel"].fillna("").astype(str).str.len().gt(0)].copy()
+columns = ["Measr / Persons"] + [c for c in plot_rows["PlotColumn"].drop_duplicates().astype(str).tolist() if c != "Measr / Persons"]
+
+fig = make_subplots(rows=1, cols=len(columns), shared_yaxes=True, subplot_titles=columns, horizontal_spacing=0.015)
+y_lo = float(yard["Estimate"].min()) - 0.5
+y_hi = float(yard["Estimate"].max()) + 0.5
+
+persons = yard[yard["Role"] == "Person"]["Estimate"]
+if not persons.empty:
+    fig.add_trace(go.Histogram(y=persons, orientation="h", marker_color="#b0b0b0", showlegend=False), row=1, col=1)
+    fig.update_xaxes(autorange="reversed", row=1, col=1)
+
+for col_idx, col_name in enumerate(columns[1:], start=2):
+    sub = plot_rows[plot_rows["PlotColumn"].astype(str) == col_name]
+    fig.add_trace(go.Scatter(x=[0.08, 0.08], y=[y_lo, y_hi], mode="lines", line=dict(color="#333333", width=0.8), showlegend=False), row=1, col=col_idx)
+    threshold_lines = sub[sub["Role"].astype(str).eq("Threshold")]
+    if not threshold_lines.empty:
+        line_x = []
+        line_y = []
+        for _, row in threshold_lines.iterrows():
+            line_x.extend([float(row["LineXStart"]), float(row["LineXEnd"]), None])
+            line_y.extend([float(row["Estimate"]), float(row["Estimate"]), None])
+        fig.add_trace(go.Scatter(
+            x=line_x,
+            y=line_y,
+            mode="lines",
+            line=dict(color="#8c4a14", width=1.4),
+            name="Threshold boundary lines",
+            showlegend=False,
+        ), row=1, col=col_idx)
+    label_base = 0.24 if col_name == "Thresholds" else 0.12
+    fig.add_trace(go.Scatter(
+        x=label_base + 0.14 * sub["TextLane"],
+        y=sub["PlotY"],
+        mode="text",
+        text=sub["DisplayLabel"],
+        textposition="middle right",
+        textfont=dict(size=10, color="#d95f02" if col_name == "Thresholds" else "#1b9e77"),
+        customdata=sub[["Estimate"]].to_numpy(),
+        hovertemplate="%{text}<br>Exact logit=%{customdata[0]:.2f}<extra></extra>",
+        showlegend=False,
+    ), row=1, col=col_idx)
+    fig.update_xaxes(range=[0, 1], showticklabels=False, row=1, col=col_idx)
+
+fig.update_yaxes(range=[y_lo, y_hi], dtick=1, title_text="Logit scale", row=1, col=1)
+fig.update_layout(title="Yardstick (FACETS-style text map)", template="plotly_white", height=650, showlegend=False)
+fig.write_html(str(OUTPUT_HTML), include_plotlyjs="cdn")
+print(f"Wrote {OUTPUT_HTML}")
+'''
+    julia_script = r'''#!/usr/bin/env julia
+# Reproduce the exported FACETS-style yardstick in Julia / CairoMakie.
+
+using CSV
+using DataFrames
+
+input = get(ENV, "MFRM_YARDSTICK_CSV", "mfrm_yardstick_map.csv")
+output = get(ENV, "MFRM_YARDSTICK_PNG", "mfrm_yardstick_makie.png")
+isfile(input) || error("Missing yardstick CSV: $(input)")
+
+yard = CSV.read(input, DataFrame)
+required = ["Role", "DisplayLabel", "Estimate", "PlotColumn"]
+missing = setdiff(required, names(yard))
+isempty(missing) || error("Missing columns: $(join(missing, ", "))")
+
+try
+    @eval using CairoMakie
+catch
+    error("Install CairoMakie to draw this figure: import Pkg; Pkg.add(\"CairoMakie\")")
+end
+
+yard.Estimate = Float64.(yard.Estimate)
+if !("PlotY" in names(yard))
+    yard.PlotY = yard.Estimate
+end
+if !("TextLane" in names(yard))
+    yard.TextLane = zeros(Int, nrow(yard))
+end
+if !("LineXStart" in names(yard))
+    yard.LineXStart = fill(NaN, nrow(yard))
+end
+if !("LineXEnd" in names(yard))
+    yard.LineXEnd = fill(NaN, nrow(yard))
+end
+yard.PlotY = Float64.(yard.PlotY)
+yard.TextLane = Float64.(yard.TextLane)
+yard.LineXStart = [ismissing(v) ? NaN : Float64(v) for v in yard.LineXStart]
+yard.LineXEnd = [ismissing(v) ? NaN : Float64(v) for v in yard.LineXEnd]
+threshold_mask = string.(yard.Role) .== "Threshold"
+yard.LineXStart[threshold_mask .& (.!isfinite.(yard.LineXStart))] .= 0.08
+yard.LineXEnd[threshold_mask .& (.!isfinite.(yard.LineXEnd))] .= 0.20
+plot_rows = yard[(yard.Role .!= "Person") .& (length.(string.(yard.DisplayLabel)) .> 0), :]
+columns = unique(vcat(["Measr / Persons"], string.(plot_rows.PlotColumn)))
+ymin = minimum(yard.Estimate) - 0.5
+ymax = maximum(yard.Estimate) + 0.5
+
+fig = Figure(size = (1000, 700))
+ax = Axis(fig[1, 1], yticks = floor(Int, ymin):ceil(Int, ymax), ylabel = "Logit scale", xticks = (1:length(columns), columns), xticklabelrotation = 0)
+ylims!(ax, ymin, ymax)
+for (i, col) in enumerate(columns)
+    lines!(ax, [i, i], [ymin, ymax], color = :gray40, linewidth = 1)
+end
+hlines!(ax, [0.0], color = :gray60, linewidth = 1)
+for row in eachrow(plot_rows)
+    x = findfirst(==(string(row.PlotColumn)), columns)
+    if string(row.Role) == "Threshold" && isfinite(row.LineXStart) && isfinite(row.LineXEnd)
+        lines!(ax, [x + row.LineXStart, x + row.LineXEnd], [row.Estimate, row.Estimate], color = :saddlebrown, linewidth = 1.5)
+    end
+end
+for row in eachrow(plot_rows)
+    x = findfirst(==(string(row.PlotColumn)), columns)
+    color = string(row.Role) == "Threshold" ? :darkorange3 : :seagreen4
+    offset = string(row.Role) == "Threshold" ? 0.24 : 0.08
+    text!(ax, string(row.DisplayLabel), position = (x + offset + 0.08 * row.TextLane, row.PlotY), align = (:left, :center), fontsize = 10, color = color)
+end
+ax.title = "Yardstick (FACETS-style text map)"
+save(output, fig)
+println("Wrote $(output)")
+'''
+    return {
+        "README_facets_yardstick_reproduction.md": readme,
+        "mfrm_yardstick_geom_text.R": r_script,
+        "mfrm_yardstick_plotly.py": python_script,
+        "mfrm_yardstick_makie.jl": julia_script,
+    }
+
+
+def bayesian_mfrm_stan_refinement_plan() -> pd.DataFrame:
+    """Return the Uto-family Bayesian MFRM refinement path for Stan exports."""
+    rows = [
+        {
+            "Layer": "Current generic RSM/PCM Stan export",
+            "ReferenceBasis": "Rasch_1980; Andrich_1978; Masters_1982",
+            "StanImplementation": "One latent person dimension, fixed non-person facet severities, RSM/PCM thresholds, log_lik, and y_rep.",
+            "ExportArtifact": "mfrm_model.stan; mfrm_stan_data.json; mfrm_stan_data_dictionary.csv; mfrm_stan_prior_guidance.csv; mfrm_stan_prior_sensitivity_grid.csv; mfrm_stan_id_index_map.csv; run_mfrm_stan.py; run_mfrm_stan.R; run_mfrm_stan.jl",
+            "Boundary": "Use for Bayesian sensitivity around the current app model, not for rater drift or multidimensional rubric claims.",
+        },
+        {
+            "Layer": "Generalized Bayesian MFRM",
+            "ReferenceBasis": "Uto_Ueno_2020",
+            "StanImplementation": "Uto-family scaffold with HMC sampling, hierarchical prior scales, non-person facet severity, posterior predictive checks, and log-likelihood output.",
+            "ExportArtifact": "mfrm_uto_bayesian_mfrm.stan; mfrm_uto_bayesian_mfrm_data_template.json; CmdStanPy/CmdStanR/Julia runner templates.",
+            "Boundary": "Template implementation must be validated against the paper's parameterization before making equivalence claims.",
+        },
+        {
+            "Layer": "Multidimensional rubric criteria",
+            "ReferenceBasis": "Uto_2021",
+            "StanImplementation": "Criterion-indexed latent traits with correlated dimensions and criterion-level difficulty offsets.",
+            "ExportArtifact": "Uto-family Stan scaffold; mfrm_uto_bayesian_mfrm_data_dictionary.csv; criterion map; posterior correlation summaries.",
+            "Boundary": "Requires a defensible criterion-to-dimension design; do not infer multidimensionality solely from the exported scaffold.",
+        },
+        {
+            "Layer": "Rater severity drift",
+            "ReferenceBasis": "Uto_2023",
+            "StanImplementation": "Rater severity state indexed by time/order block with a Markov-style random-walk prior.",
+            "ExportArtifact": "Uto-family Stan scaffold; mfrm_uto_bayesian_mfrm_mapping_manifest.csv; time_block mapping; rater severity trajectory posterior draws.",
+            "Boundary": "Time/order labels and scoring schedule must be meaningful; drift is not identifiable from arbitrary row order.",
+        },
+        {
+            "Layer": "Posterior audit and reporting",
+            "ReferenceBasis": "Patz_Junker_Johnson_Mariano_2002; Buerkner_2021; Uto_Ueno_2020; Uto_2023",
+            "StanImplementation": "Archive priors, sampler controls, posterior draws, Rhat/ESS/divergence/E-BFMI, posterior predictive checks, LOO, and sensitivity variants.",
+            "ExportArtifact": "stan_reproducibility_archive_contract.csv; stan_posterior_reproducibility_route.csv; mfrm_stan_prior_guidance.csv; mfrm_stan_prior_sensitivity_grid.csv; stan_run_manifest.json; stan_run_manifest.csv; stan_posterior_handoff_checklist.csv; CmdStan CSV chains; posterior diagnostics; Posterior Viewer screenshots/exports; method_reference_audit.csv.",
+            "Boundary": "Bayesian results should enter manuscripts only after diagnostics and sensitivity checks are attached to the claim evidence matrix.",
+        },
+    ]
+    return pd.DataFrame(rows)
+
+
+def bayesian_stan_runner_templates() -> dict[str, str]:
+    """Return cross-language CmdStan runner templates for downloaded Stan files."""
+    readme = """# Bayesian MFRM Stan Runner Templates
+
+These templates run a downloaded Stan file outside Streamlit. They are intended
+for reproducibility and posterior diagnostics, not for hiding model choices.
+
+Use the same Stan file, Stan data JSON, seed, chains, warmup, sampling
+iterations, `adapt_delta`, and `max_treedepth` across Python, R, and Julia when
+you want a cross-language wrapper check.
+
+Prior scales are embedded in `mfrm_stan_data.json`. Review
+`mfrm_stan_prior_guidance.csv`, fill
+`mfrm_stan_prior_decision_log_template.csv`, and run sensitivity variants from
+`mfrm_stan_prior_sensitivity_grid.csv` before reporting posterior claims.
+Each runner writes `stan_run_manifest.json` and `stan_run_manifest.csv` with
+the Stan/data hashes, prior scales, sampler controls, runtime, and posterior
+CSV filenames plus per-chain CSV SHA-256 hashes. Upload that manifest with the
+CmdStan CSV files in Posterior Viewer to verify that the posterior draws match
+the archived run.
+Open `stan_posterior_reproducibility_handoff.md` before reporting results; it
+summarizes the run route, prior-sensitivity decisions, diagnostic checks, and
+privacy boundary expected for the posterior archive.
+For a one-file handoff, download
+`MFRM_Complete_Stan_Reproducibility_Package.zip`, which keeps the Stan source,
+data contract, prior decision log, runners, and posterior handoff files together.
+
+Required environment variables:
+- `MFRM_STAN_FILE`: path to the `.stan` model.
+- `MFRM_STAN_DATA_JSON`: path to a CmdStan-compatible JSON data file.
+- `MFRM_STAN_OUTPUT_DIR`: folder for CmdStan outputs.
+
+Optional environment variables:
+- `MFRM_SEED`, `MFRM_CHAINS`, `MFRM_WARMUP`, `MFRM_SAMPLING`,
+  `MFRM_ADAPT_DELTA`, `MFRM_MAX_TREEDEPTH`, `MFRM_CMDSTAN_BIN`.
+
+Before reporting posterior results, archive priors, the edited JSON data,
+data construction code, `stan_run_manifest.json`, `stan_run_manifest.csv`,
+sampler controls, Rhat, ESS, divergences, treedepth warnings, E-BFMI,
+posterior predictive checks, and sensitivity variants.
+"""
+
+    python_runner = r'''#!/usr/bin/env python3
+"""Run a downloaded Bayesian MFRM Stan file with CmdStanPy."""
+
+from __future__ import annotations
+
+import os
+import csv
+import hashlib
+import importlib.metadata
+import json
+from pathlib import Path
+
+from cmdstanpy import CmdStanModel
+
+try:
+    from cmdstanpy import cmdstan_version
+except Exception:
+    cmdstan_version = None
+
+
+STAN_FILE = Path(os.environ.get("MFRM_STAN_FILE", "mfrm_model.stan")).expanduser()
+DATA_JSON = Path(os.environ.get("MFRM_STAN_DATA_JSON", "mfrm_stan_data.json")).expanduser()
+OUTPUT_DIR = Path(os.environ.get("MFRM_STAN_OUTPUT_DIR", "stan_outputs/python")).expanduser()
+SEED = int(os.environ.get("MFRM_SEED", "42"))
+CHAINS = int(os.environ.get("MFRM_CHAINS", "4"))
+WARMUP = int(os.environ.get("MFRM_WARMUP", "1000"))
+SAMPLING = int(os.environ.get("MFRM_SAMPLING", "2000"))
+ADAPT_DELTA = float(os.environ.get("MFRM_ADAPT_DELTA", "0.95"))
+MAX_TREEDEPTH = int(os.environ.get("MFRM_MAX_TREEDEPTH", "12"))
+
+
+def sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def package_version(name: str) -> str:
+    try:
+        return importlib.metadata.version(name)
+    except Exception:
+        return "not_recorded"
+
+
+def read_prior_scales(path: Path) -> dict[str, object]:
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        data = {}
+    return {
+        "sigma_theta_prior_scale": data.get("sigma_theta_prior_scale", "not_recorded"),
+        "facet_prior_scale": data.get("facet_prior_scale", "not_recorded"),
+        "step_prior_scale": data.get("step_prior_scale", "not_recorded"),
+    }
+
+
+def flatten_manifest(payload: dict[str, object], prefix: str = "") -> dict[str, object]:
+    flat: dict[str, object] = {}
+    for key, value in payload.items():
+        field = f"{prefix}.{key}" if prefix else str(key)
+        if isinstance(value, dict):
+            flat.update(flatten_manifest(value, field))
+        elif isinstance(value, list):
+            flat[field] = ";".join(str(item) for item in value)
+        else:
+            flat[field] = value
+    return flat
+
+
+def write_run_manifest(fit) -> None:
+    try:
+        posterior_csv_paths = [Path(path) for path in fit.runset.csv_files]
+        posterior_csv_files = [path.name for path in posterior_csv_paths]
+        posterior_csv_sha256 = ";".join(
+            f"{path.name}={sha256_file(path)}" for path in posterior_csv_paths
+        )
+    except Exception:
+        posterior_csv_files = []
+        posterior_csv_sha256 = ""
+    try:
+        cmdstan_ver = str(cmdstan_version()) if cmdstan_version is not None else "not_recorded"
+    except Exception:
+        cmdstan_ver = "not_recorded"
+    manifest = {
+        "schema_version": "mfrm_stan_run_manifest_v1",
+        "producer": "MFRM Streamlit Bayesian Stan runner",
+        "runtime": "Python + CmdStanPy",
+        "stan_file_name": STAN_FILE.name,
+        "stan_file_sha256": sha256_file(STAN_FILE),
+        "data_json_name": DATA_JSON.name,
+        "data_json_sha256": sha256_file(DATA_JSON),
+        "prior_scales": read_prior_scales(DATA_JSON),
+        "seed": SEED,
+        "chains": CHAINS,
+        "iter_warmup": WARMUP,
+        "iter_sampling": SAMPLING,
+        "adapt_delta": ADAPT_DELTA,
+        "max_treedepth": MAX_TREEDEPTH,
+        "cmdstanpy_version": package_version("cmdstanpy"),
+        "cmdstan_version": cmdstan_ver,
+        "posterior_csv_files": posterior_csv_files,
+        "posterior_csv_count": len(posterior_csv_files),
+        "posterior_csv_sha256": posterior_csv_sha256,
+        "summary_file": "summary.csv",
+        "diagnose_file": "diagnose.txt",
+        "privacy_note": "Hashes/settings only; data JSON and posterior draws may still be sensitive.",
+    }
+    (OUTPUT_DIR / "stan_run_manifest.json").write_text(
+        json.dumps(manifest, indent=2, ensure_ascii=False),
+        encoding="utf-8",
+    )
+    flat = flatten_manifest(manifest)
+    with (OUTPUT_DIR / "stan_run_manifest.csv").open("w", newline="", encoding="utf-8") as handle:
+        writer = csv.DictWriter(handle, fieldnames=["Field", "Value"])
+        writer.writeheader()
+        for field, value in flat.items():
+            writer.writerow({"Field": field, "Value": value})
+
+
+def main() -> int:
+    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+    if not STAN_FILE.exists():
+        raise FileNotFoundError(f"Stan file not found: {STAN_FILE}")
+    if not DATA_JSON.exists():
+        raise FileNotFoundError(f"Stan data JSON not found: {DATA_JSON}")
+    model = CmdStanModel(stan_file=str(STAN_FILE))
+    fit = model.sample(
+        data=str(DATA_JSON),
+        output_dir=str(OUTPUT_DIR),
+        chains=CHAINS,
+        iter_warmup=WARMUP,
+        iter_sampling=SAMPLING,
+        seed=SEED,
+        adapt_delta=ADAPT_DELTA,
+        max_treedepth=MAX_TREEDEPTH,
+        show_console=True,
+    )
+    (OUTPUT_DIR / "diagnose.txt").write_text(fit.diagnose(), encoding="utf-8")
+    fit.summary().to_csv(OUTPUT_DIR / "summary.csv")
+    write_run_manifest(fit)
+    print(f"Saved CmdStanPy outputs to {OUTPUT_DIR}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
+'''
+
+    r_runner = r'''#!/usr/bin/env Rscript
+# Run a downloaded Bayesian MFRM Stan file with CmdStanR.
+
+library(cmdstanr)
+
+stan_file <- Sys.getenv("MFRM_STAN_FILE", "mfrm_model.stan")
+data_json <- Sys.getenv("MFRM_STAN_DATA_JSON", "mfrm_stan_data.json")
+output_dir <- Sys.getenv("MFRM_STAN_OUTPUT_DIR", "stan_outputs/r")
+seed <- as.integer(Sys.getenv("MFRM_SEED", "42"))
+chains <- as.integer(Sys.getenv("MFRM_CHAINS", "4"))
+warmup <- as.integer(Sys.getenv("MFRM_WARMUP", "1000"))
+sampling <- as.integer(Sys.getenv("MFRM_SAMPLING", "2000"))
+adapt_delta <- as.numeric(Sys.getenv("MFRM_ADAPT_DELTA", "0.95"))
+max_treedepth <- as.integer(Sys.getenv("MFRM_MAX_TREEDEPTH", "12"))
+
+sha256_file <- function(path) {
+  out <- tryCatch(system2("shasum", c("-a", "256", path), stdout = TRUE, stderr = FALSE), error = function(e) character())
+  if (length(out) == 0) {
+    out <- tryCatch(system2("sha256sum", path, stdout = TRUE, stderr = FALSE), error = function(e) character())
+  }
+  if (length(out) == 0) return("")
+  strsplit(out[[1]], "\\s+")[[1]][[1]]
+}
+
+read_json_number <- function(path, key) {
+  text <- paste(readLines(path, warn = FALSE), collapse = "\n")
+  pattern <- paste0('"', key, '"\\s*:\\s*([-+0-9.eE]+)')
+  hit <- regmatches(text, regexec(pattern, text, perl = TRUE))[[1]]
+  if (length(hit) >= 2) hit[[2]] else ""
+}
+
+json_escape <- function(x) {
+  x <- as.character(x)
+  x <- gsub("\\", "\\\\", x, fixed = TRUE)
+  x <- gsub('"', '\\"', x, fixed = TRUE)
+  x <- gsub("\n", "\\n", x, fixed = TRUE)
+  x
+}
+
+write_manifest <- function(fit) {
+  posterior_paths <- tryCatch(fit$output_files(), error = function(e) character())
+  posterior_files <- basename(posterior_paths)
+  posterior_sha <- if (length(posterior_paths)) {
+    paste(sprintf("%s=%s", basename(posterior_paths), vapply(posterior_paths, sha256_file, character(1))), collapse = ";")
+  } else {
+    ""
+  }
+  cmdstan_ver <- tryCatch(as.character(cmdstan_version()), error = function(e) "")
+  manifest_rows <- data.frame(
+    Field = c(
+      "schema_version",
+      "producer",
+      "runtime",
+      "stan_file_name",
+      "stan_file_sha256",
+      "data_json_name",
+      "data_json_sha256",
+      "prior_scales.sigma_theta_prior_scale",
+      "prior_scales.facet_prior_scale",
+      "prior_scales.step_prior_scale",
+      "seed",
+      "chains",
+      "iter_warmup",
+      "iter_sampling",
+      "adapt_delta",
+      "max_treedepth",
+      "cmdstanr_version",
+      "cmdstan_version",
+      "posterior_csv_files",
+      "posterior_csv_count",
+      "posterior_csv_sha256",
+      "summary_file",
+      "diagnose_file",
+      "privacy_note"
+    ),
+    Value = c(
+      "mfrm_stan_run_manifest_v1",
+      "MFRM Streamlit Bayesian Stan runner",
+      "R + CmdStanR",
+      basename(stan_file),
+      sha256_file(stan_file),
+      basename(data_json),
+      sha256_file(data_json),
+      read_json_number(data_json, "sigma_theta_prior_scale"),
+      read_json_number(data_json, "facet_prior_scale"),
+      read_json_number(data_json, "step_prior_scale"),
+      seed,
+      chains,
+      warmup,
+      sampling,
+      adapt_delta,
+      max_treedepth,
+      as.character(utils::packageVersion("cmdstanr")),
+      cmdstan_ver,
+      paste(posterior_files, collapse = ";"),
+      length(posterior_files),
+      posterior_sha,
+      "summary.csv",
+      "diagnose.txt",
+      "Hashes/settings only; data JSON and posterior draws may still be sensitive."
+    ),
+    stringsAsFactors = FALSE
+  )
+  write.csv(manifest_rows, file.path(output_dir, "stan_run_manifest.csv"), row.names = FALSE)
+  json_pairs <- sprintf('  "%s": "%s"', vapply(manifest_rows$Field, json_escape, character(1)), vapply(manifest_rows$Value, json_escape, character(1)))
+  writeLines(c("{", paste(json_pairs, collapse = ",\n"), "}"), file.path(output_dir, "stan_run_manifest.json"))
+}
+
+dir.create(output_dir, recursive = TRUE, showWarnings = FALSE)
+if (!file.exists(stan_file)) stop(paste("Stan file not found:", stan_file))
+if (!file.exists(data_json)) stop(paste("Stan data JSON not found:", data_json))
+
+model <- cmdstan_model(stan_file)
+fit <- model$sample(
+  data = data_json,
+  output_dir = output_dir,
+  chains = chains,
+  parallel_chains = chains,
+  iter_warmup = warmup,
+  iter_sampling = sampling,
+  seed = seed,
+  adapt_delta = adapt_delta,
+  max_treedepth = max_treedepth
+)
+
+writeLines(capture.output(fit$cmdstan_diagnose()), file.path(output_dir, "diagnose.txt"))
+write.csv(fit$summary(), file.path(output_dir, "summary.csv"), row.names = FALSE)
+write_manifest(fit)
+cat("Saved CmdStanR outputs to", output_dir, "\n")
+'''
+
+    julia_runner = r'''#!/usr/bin/env julia
+# Run a downloaded Bayesian MFRM Stan file from Julia via the CmdStan CLI.
+
+using SHA
+
+stan_file = get(ENV, "MFRM_STAN_FILE", "mfrm_model.stan")
+data_json = get(ENV, "MFRM_STAN_DATA_JSON", "mfrm_stan_data.json")
+output_dir = get(ENV, "MFRM_STAN_OUTPUT_DIR", "stan_outputs/julia")
+cmdstan_bin = get(ENV, "MFRM_CMDSTAN_BIN", "cmdstan")
+seed = get(ENV, "MFRM_SEED", "42")
+chains = parse(Int, get(ENV, "MFRM_CHAINS", "4"))
+warmup = get(ENV, "MFRM_WARMUP", "1000")
+sampling = get(ENV, "MFRM_SAMPLING", "2000")
+adapt_delta = get(ENV, "MFRM_ADAPT_DELTA", "0.95")
+max_treedepth = get(ENV, "MFRM_MAX_TREEDEPTH", "12")
+
+mkpath(output_dir)
+isfile(stan_file) || error("Stan file not found: $(stan_file)")
+isfile(data_json) || error("Stan data JSON not found: $(data_json)")
+
+function sha256_file(path::AbstractString)
+    open(path, "r") do io
+        return bytes2hex(sha256(io))
+    end
+end
+
+function read_json_number(path::AbstractString, key::AbstractString)
+    text = read(path, String)
+    hit = match(Regex("\"$(key)\"\\s*:\\s*([-+0-9.eE]+)"), text)
+    return isnothing(hit) ? "" : hit.captures[1]
+end
+
+function csv_escape(value)
+    text = replace(string(value), "\"" => "\"\"")
+    return "\"" * text * "\""
+end
+
+function json_escape(value)
+    text = replace(string(value), "\\" => "\\\\")
+    text = replace(text, "\"" => "\\\"")
+    text = replace(text, "\n" => "\\n")
+    return text
+end
+
+function write_run_manifest(csv_files)
+    cmdstan_version = try
+        readchomp(`$(cmdstan_bin) --version`)
+    catch
+        ""
+    end
+    manifest = [
+        ("schema_version", "mfrm_stan_run_manifest_v1"),
+        ("producer", "MFRM Streamlit Bayesian Stan runner"),
+        ("runtime", "Julia + CmdStan CLI"),
+        ("stan_file_name", basename(stan_file)),
+        ("stan_file_sha256", sha256_file(stan_file)),
+        ("data_json_name", basename(data_json)),
+        ("data_json_sha256", sha256_file(data_json)),
+        ("prior_scales.sigma_theta_prior_scale", read_json_number(data_json, "sigma_theta_prior_scale")),
+        ("prior_scales.facet_prior_scale", read_json_number(data_json, "facet_prior_scale")),
+        ("prior_scales.step_prior_scale", read_json_number(data_json, "step_prior_scale")),
+        ("seed", seed),
+        ("chains", chains),
+        ("iter_warmup", warmup),
+        ("iter_sampling", sampling),
+        ("adapt_delta", adapt_delta),
+        ("max_treedepth", max_treedepth),
+        ("cmdstan_version", cmdstan_version),
+        ("posterior_csv_files", join(basename.(csv_files), ";")),
+        ("posterior_csv_count", length(csv_files)),
+        ("posterior_csv_sha256", join([basename(path) * "=" * sha256_file(path) for path in csv_files], ";")),
+        ("summary_file", ""),
+        ("diagnose_file", ""),
+        ("privacy_note", "Hashes/settings only; data JSON and posterior draws may still be sensitive."),
+    ]
+    open(joinpath(output_dir, "stan_run_manifest.csv"), "w") do io
+        println(io, "Field,Value")
+        for (field, value) in manifest
+            println(io, csv_escape(field) * "," * csv_escape(value))
+        end
+    end
+    open(joinpath(output_dir, "stan_run_manifest.json"), "w") do io
+        println(io, "{")
+        for (idx, (field, value)) in enumerate(manifest)
+            comma = idx == length(manifest) ? "" : ","
+            println(io, "  \"$(json_escape(field))\": \"$(json_escape(value))\"$(comma)")
+        end
+        println(io, "}")
+    end
+end
+
+posterior_csv_files = String[]
+for chain in 1:chains
+    output_csv = joinpath(output_dir, "chain_$(chain).csv")
+    push!(posterior_csv_files, output_csv)
+    cmd = `$(cmdstan_bin) sample num_warmup=$(warmup) num_samples=$(sampling) random seed=$(seed) id=$(chain) adapt delta=$(adapt_delta) algorithm=hmc engine=nuts max_depth=$(max_treedepth) data file=$(data_json) output file=$(output_csv)`
+    open(joinpath(output_dir, "cmdstan_chain_$(chain).log"), "w") do io
+        run(pipeline(cmd, stdout=io, stderr=io))
+    end
+end
+
+write_run_manifest(posterior_csv_files)
+println("Saved CmdStan CLI outputs to $(output_dir)")
+println("Run CmdStan diagnose on the CSV files and archive diagnostics before reporting posterior results.")
+'''
+
+    return {
+        "README_bayesian_mfrm_stan_runners.md": readme,
+        "stan_reproducibility_archive_contract.csv": stan_reproducibility_archive_contract_table(
+            public_export_mode=True,
+        ).to_csv(index=False),
+        "stan_posterior_reproducibility_handoff.md": stan_posterior_reproducibility_handoff_markdown(),
+        "stan_posterior_reproducibility_route.csv": guided_stan_posterior_reproducibility_help_table().to_csv(index=False),
+        "stan_posterior_handoff_checklist.csv": stan_posterior_handoff_checklist().to_csv(index=False),
+        "stan_run_manifest_template.csv": stan_run_manifest_template().to_csv(index=False),
+        "run_bayesian_mfrm_cmdstanpy.py": python_runner,
+        "run_bayesian_mfrm_cmdstanr.R": r_runner,
+        "run_bayesian_mfrm_cmdstan_cli.jl": julia_runner,
+    }
+
+
 def external_simulation_template_scripts() -> dict[str, str]:
     """Return sanitized Python/R/Julia templates for external validation handoff."""
     readme = """# External Simulation Validation Templates
@@ -34801,6 +47201,9 @@ def _render_downloads(
         fit_dl = pd.DataFrame()
 
     all_frames: dict[str, pd.DataFrame] = {}
+    visual_preferences_dl = build_visualization_preferences_table()
+    if isinstance(visual_preferences_dl, pd.DataFrame) and not visual_preferences_dl.empty:
+        all_frames["visualization_settings"] = visual_preferences_dl
     if not summary.empty:
         all_frames["summary"] = summary
     likelihood_info_dl = result.get("likelihood_information", pd.DataFrame())
@@ -34837,6 +47240,48 @@ def _render_downloads(
         all_frames["response_data_excluded_rows"] = excluded_rows
     if not measures_dl.empty:
         all_frames["measures"] = measures_dl
+    uncertainty_dl = diagnostics.get("uncertainty", {})
+    if isinstance(uncertainty_dl, dict):
+        unc_summary_dl = uncertainty_dl.get("summary", pd.DataFrame())
+        cov_audit_dl = uncertainty_dl.get("covariance_audit", pd.DataFrame())
+        structural_se_dl = uncertainty_dl.get("structural_se", pd.DataFrame())
+        if isinstance(unc_summary_dl, pd.DataFrame) and not unc_summary_dl.empty:
+            all_frames["statistical_uncertainty_summary"] = unc_summary_dl
+        if isinstance(cov_audit_dl, pd.DataFrame) and not cov_audit_dl.empty:
+            all_frames["mml_covariance_audit"] = cov_audit_dl
+        if isinstance(structural_se_dl, pd.DataFrame) and not structural_se_dl.empty:
+            all_frames["mml_structural_measure_se"] = structural_se_dl
+    prior_plan_dl = build_mml_prior_sensitivity_plan(result)
+    if isinstance(prior_plan_dl, pd.DataFrame) and not prior_plan_dl.empty:
+        all_frames["mml_prior_sd_sensitivity_plan"] = prior_plan_dl
+    bias_inference_audit_dl = build_bias_inference_audit(all_bias_results or bias_results or {}, result, diagnostics)
+    if isinstance(bias_inference_audit_dl, pd.DataFrame) and not bias_inference_audit_dl.empty:
+        all_frames["bias_inference_audit"] = bias_inference_audit_dl
+    assumption_audit_dl = build_statistical_assumption_audit(result, diagnostics, all_bias_results or bias_results or {})
+    if isinstance(assumption_audit_dl, pd.DataFrame) and not assumption_audit_dl.empty:
+        all_frames["statistical_assumption_audit"] = assumption_audit_dl
+    method_ref_audit_dl = build_method_reference_audit()
+    if isinstance(method_ref_audit_dl, pd.DataFrame) and not method_ref_audit_dl.empty:
+        all_frames["method_reference_audit"] = method_ref_audit_dl
+    try:
+        apa_sentence_audit_dl = build_apa_report_sentence_audit(
+            result,
+            diagnostics,
+            bias_results=bias_results,
+            all_bias_results=all_bias_results,
+        )
+        if isinstance(apa_sentence_audit_dl, pd.DataFrame) and not apa_sentence_audit_dl.empty:
+            all_frames["apa_report_sentence_audit"] = apa_sentence_audit_dl
+    except Exception:
+        apa_sentence_audit_dl = pd.DataFrame()
+    pca_dl = diagnostics.get("pca")
+    if isinstance(pca_dl, dict):
+        stability_dl = pca_dl.get("stability_table")
+        if isinstance(stability_dl, pd.DataFrame) and not stability_dl.empty:
+            all_frames["pca_stability_audit"] = stability_dl
+        stability_all_dl = collect_pca_stability_tables(diagnostics)
+        if isinstance(stability_all_dl, pd.DataFrame) and not stability_all_dl.empty:
+            all_frames["pca_stability_all_scopes"] = stability_all_dl
     shrinkage_dl = diagnostics.get("eb_shrinkage", {})
     if isinstance(shrinkage_dl, dict) and shrinkage_dl.get("available"):
         shr_report_dl = shrinkage_dl.get("report", pd.DataFrame())
@@ -34866,11 +47311,11 @@ def _render_downloads(
     except Exception:
         action_plan_dl = pd.DataFrame()
     try:
-        beginner_case_dl = build_beginner_case_guidance(result, diagnostics, all_bias_results)
-        if isinstance(beginner_case_dl, pd.DataFrame) and not beginner_case_dl.empty:
-            all_frames["beginner_case_guidance"] = beginner_case_dl
+        case_guidance_dl = build_case_interpretation_guidance(result, diagnostics, all_bias_results)
+        if isinstance(case_guidance_dl, pd.DataFrame) and not case_guidance_dl.empty:
+            all_frames["case_interpretation_guidance"] = case_guidance_dl
     except Exception:
-        beginner_case_dl = pd.DataFrame()
+        case_guidance_dl = pd.DataFrame()
     try:
         misfit_casebook_dl = build_misfit_casebook(result, diagnostics, all_bias_results)
         if isinstance(misfit_casebook_dl, pd.DataFrame) and not misfit_casebook_dl.empty:
@@ -34889,9 +47334,18 @@ def _render_downloads(
             all_frames["manuscript_claim_guide"] = claim_guide_dl
     except Exception:
         claim_guide_dl = pd.DataFrame()
+    try:
+        claim_evidence_dl = build_claim_to_evidence_matrix(result, diagnostics, all_bias_results)
+        if isinstance(claim_evidence_dl, pd.DataFrame) and not claim_evidence_dl.empty:
+            all_frames["claim_to_evidence_matrix"] = claim_evidence_dl
+    except Exception:
+        claim_evidence_dl = pd.DataFrame()
     visual_checklist_dl = visual_interpretation_checklist()
     if isinstance(visual_checklist_dl, pd.DataFrame) and not visual_checklist_dl.empty:
         all_frames["visual_interpretation_checklist"] = visual_checklist_dl
+    visual_guardrails_dl = visual_claim_guardrail_table()
+    if isinstance(visual_guardrails_dl, pd.DataFrame) and not visual_guardrails_dl.empty:
+        all_frames["visual_claim_guardrails"] = visual_guardrails_dl
     visual_evidence_dl = visual_method_evidence_table()
     if isinstance(visual_evidence_dl, pd.DataFrame) and not visual_evidence_dl.empty:
         all_frames["visual_method_evidence"] = visual_evidence_dl
@@ -34904,6 +47358,51 @@ def _render_downloads(
     simulation_templates_dl = external_simulation_template_inventory()
     if isinstance(simulation_templates_dl, pd.DataFrame) and not simulation_templates_dl.empty:
         all_frames["external_simulation_template_inventory"] = simulation_templates_dl
+    script_matrix_dl = reproducibility_script_export_matrix()
+    if isinstance(script_matrix_dl, pd.DataFrame) and not script_matrix_dl.empty:
+        all_frames["reproducibility_script_matrix"] = script_matrix_dl
+    bayesian_stan_plan_dl = bayesian_mfrm_stan_refinement_plan()
+    if isinstance(bayesian_stan_plan_dl, pd.DataFrame) and not bayesian_stan_plan_dl.empty:
+        all_frames["bayesian_mfrm_stan_refinement_plan"] = bayesian_stan_plan_dl
+    stan_repro_route_dl = guided_stan_posterior_reproducibility_help_table()
+    if isinstance(stan_repro_route_dl, pd.DataFrame) and not stan_repro_route_dl.empty:
+        all_frames["stan_posterior_reproducibility_route"] = stan_repro_route_dl
+    stan_handoff_dl = stan_posterior_handoff_checklist()
+    if isinstance(stan_handoff_dl, pd.DataFrame) and not stan_handoff_dl.empty:
+        all_frames["stan_posterior_handoff_checklist"] = stan_handoff_dl
+    stan_manifest_template_dl = stan_run_manifest_template()
+    if isinstance(stan_manifest_template_dl, pd.DataFrame) and not stan_manifest_template_dl.empty:
+        all_frames["stan_run_manifest_template"] = stan_manifest_template_dl
+    generic_stan_data_dl = build_generic_mfrm_stan_data_export(result)
+    if generic_stan_data_dl.get("available"):
+        all_frames["mfrm_stan_data_manifest"] = generic_stan_data_dl["manifest"]
+        all_frames["mfrm_stan_data_dictionary"] = generic_stan_data_dl["data_dictionary"]
+        all_frames["mfrm_stan_id_index_map"] = generic_stan_data_dl["id_map"]
+        all_frames["mfrm_stan_prior_guidance"] = generic_stan_data_dl["prior_guidance"]
+        all_frames["mfrm_stan_prior_sensitivity_grid"] = generic_stan_data_dl["prior_sensitivity_grid"]
+        all_frames["mfrm_stan_prior_decision_log_template"] = stan_prior_decision_log_template(
+            sigma_theta_prior_scale=float(generic_stan_data_dl["stan_data"].get("sigma_theta_prior_scale", 2.5)),
+            facet_prior_scale=float(generic_stan_data_dl["stan_data"].get("facet_prior_scale", 2.0)),
+            step_prior_scale=float(generic_stan_data_dl["stan_data"].get("step_prior_scale", 5.0)),
+        )
+    try:
+        stan_complete_manifest_dl = pd.read_csv(io.StringIO(
+            stan_reproducibility_package_assets(
+                result,
+                include_row_level=not bool(public_export_mode),
+            ).get("mfrm_complete_stan_reproducibility_manifest.csv", "")
+        ))
+        if isinstance(stan_complete_manifest_dl, pd.DataFrame) and not stan_complete_manifest_dl.empty:
+            all_frames["mfrm_complete_stan_reproducibility_manifest"] = stan_complete_manifest_dl
+    except Exception:
+        stan_complete_manifest_dl = pd.DataFrame()
+    uto_stan_data_dl = build_uto_bayesian_mfrm_stan_data_export(result)
+    if uto_stan_data_dl.get("available"):
+        all_frames["mfrm_uto_bayesian_mfrm_design_audit"] = uto_stan_data_dl["design_audit"]
+        all_frames["mfrm_uto_bayesian_mfrm_claim_wording"] = uto_stan_data_dl["claim_wording"]
+        all_frames["mfrm_uto_bayesian_mfrm_mapping_manifest"] = uto_stan_data_dl["manifest"]
+        all_frames["mfrm_uto_bayesian_mfrm_data_dictionary"] = uto_stan_data_dl["data_dictionary"]
+        all_frames["mfrm_uto_bayesian_mfrm_id_index_map"] = uto_stan_data_dl["id_map"]
     mfrmr_coverage_dl = mfrmr_015_migration_coverage_table()
     if isinstance(mfrmr_coverage_dl, pd.DataFrame) and not mfrmr_coverage_dl.empty:
         all_frames["mfrmr_015_migration_coverage"] = mfrmr_coverage_dl
@@ -34916,6 +47415,18 @@ def _render_downloads(
         all_frames["public_release_readiness"] = public_readiness_dl
     if not steps_dl.empty:
         all_frames["steps"] = steps_dl
+    try:
+        facets_dl = result.get("facets", {}) if isinstance(result, dict) else {}
+        yardstick_map_dl = make_yardstick_export_table(
+            facets_dl.get("person", pd.DataFrame()) if isinstance(facets_dl, dict) else pd.DataFrame(),
+            facets_dl.get("others", pd.DataFrame()) if isinstance(facets_dl, dict) else pd.DataFrame(),
+            steps_dl,
+            rating_min=prep.get("rating_min") if isinstance(prep, dict) else None,
+        )
+        if isinstance(yardstick_map_dl, pd.DataFrame) and not yardstick_map_dl.empty:
+            all_frames["yardstick_map"] = yardstick_map_dl
+    except Exception:
+        yardstick_map_dl = pd.DataFrame()
     if not slopes_dl.empty:
         all_frames["gpcm_slopes"] = slopes_dl
     try:
@@ -35097,19 +47608,47 @@ def _render_downloads(
             })
     if anchor_parts:
         all_frames["anchors"] = pd.DataFrame(anchor_parts)
-    all_frames_key = frames_fingerprint(all_frames)
+    public_export_mode = st.checkbox(
+        t("downloads.public_export_mode_label"),
+        value=True,
+        key="downloads_public_export_mode",
+        help=t("downloads.public_export_mode_help"),
+    )
+    stan_archive_contract_dl = stan_reproducibility_archive_contract_table(public_export_mode=bool(public_export_mode))
+    if isinstance(stan_archive_contract_dl, pd.DataFrame) and not stan_archive_contract_dl.empty:
+        all_frames["stan_reproducibility_archive_contract"] = stan_archive_contract_dl
+    try:
+        handoff_checklist_dl = build_manuscript_handoff_checklist(
+            result,
+            diagnostics,
+            all_bias_results,
+            public_export_mode=bool(public_export_mode),
+        )
+        if isinstance(handoff_checklist_dl, pd.DataFrame) and not handoff_checklist_dl.empty:
+            all_frames["manuscript_handoff_checklist"] = handoff_checklist_dl
+    except Exception:
+        handoff_checklist_dl = pd.DataFrame()
+    download_frames = prepare_download_frames_for_privacy(
+        all_frames,
+        public_export_mode=bool(public_export_mode),
+    )
+    download_frames_key = frames_fingerprint(download_frames)
 
     # ================================================================
     # Sub-tab 0: Data Tables
     # ================================================================
     with dl_tabs[0]:
-        st.markdown(t("downloads.tables_count_markdown_template", n=len(all_frames)))
+        if public_export_mode:
+            st.info(t("downloads.public_export_mode_info"))
+        else:
+            st.warning(t("downloads.private_export_mode_warning"))
+        st.markdown(t("downloads.tables_count_markdown_template", n=len(download_frames)))
 
         z_col1, z_col2, z_col3 = st.columns(3)
         with z_col1:
             st.download_button(
                 t("downloads.tables_zip_button"),
-                data=cached_tables_zip(all_frames, all_frames_key),
+                data=cached_tables_zip(download_frames, download_frames_key),
                 file_name="MFRM_Tables.zip",
                 mime="application/zip",
                 key="dl_tables_zip",
@@ -35118,7 +47657,7 @@ def _render_downloads(
             try:
                 st.download_button(
                     t("downloads.tables_excel_button"),
-                    data=cached_excel_bytes(all_frames, all_frames_key),
+                    data=cached_excel_bytes(download_frames, download_frames_key),
                     file_name="MFRM_Report.xlsx",
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                     key="dl_tables_xlsx",
@@ -35128,16 +47667,16 @@ def _render_downloads(
         with z_col3:
             st.download_button(
                 t("downloads.tables_html_button"),
-                data=cached_html_report(all_frames, all_frames_key),
+                data=cached_html_report(download_frames, download_frames_key),
                 file_name="MFRM_Report.html",
                 mime="text/html",
                 key="dl_tables_html",
             )
 
         # --- Individual CSVs in expander ---
-        with st.expander(t("downloads.tables_individual_expander_template", n=len(all_frames))):
+        with st.expander(t("downloads.tables_individual_expander_template", n=len(download_frames))):
             cols = st.columns(3)
-            for idx, (name, df) in enumerate(all_frames.items()):
+            for idx, (name, df) in enumerate(download_frames.items()):
                 with cols[idx % 3]:
                     st.download_button(
                         f"{name}.csv ({len(df)} rows)",
@@ -35179,6 +47718,17 @@ def _render_downloads(
                 _kaleido_ok = _add_figure_export(fig_wm, "wright_map", figure_bytes, figure_html) and _kaleido_ok
             except Exception as e:
                 _fig_errors.append(f"Wright Map: {e}")
+            try:
+                fig_yd = _make_yardstick_figure(
+                    person_tbl,
+                    facet_tbl,
+                    step_tbl,
+                    show_direct_labels=True,
+                    rating_min=prep.get("rating_min") if isinstance(prep, dict) else None,
+                )
+                _kaleido_ok = _add_figure_export(fig_yd, "facets_yardstick_text_map", figure_bytes, figure_html) and _kaleido_ok
+            except Exception as e:
+                _fig_errors.append(f"FACETS-style Yardstick: {e}")
 
         # Fit Scatter
         if not figure_measures.empty and "Infit" in figure_measures.columns and "Outfit" in figure_measures.columns:
@@ -35322,7 +47872,37 @@ def _render_downloads(
                 for err in _fig_errors:
                     st.caption(err)
 
+        if generate_figures:
+            visual_preferences_table = build_visualization_preferences_table()
+            st.subheader(t("downloads.visual_settings_subheader"))
+            st.caption(t("downloads.visual_settings_caption"))
+            _render_compact_dataframe(
+                visual_preferences_table,
+                ["Setting", "Value", "Affects"],
+                details_label=t("downloads.visual_settings_details_label"),
+                hide_index=True,
+                wrap_text=True,
+            )
+            cols_visual_settings = st.columns(2)
+            with cols_visual_settings[0]:
+                st.download_button(
+                    t("downloads.visual_settings_json_button"),
+                    data=_visualization_preferences_json().encode("utf-8"),
+                    file_name="visualization_settings.json",
+                    mime="application/json",
+                    key="dl_visualization_settings_json",
+                )
+            with cols_visual_settings[1]:
+                st.download_button(
+                    t("downloads.visual_settings_csv_button"),
+                    data=to_csv_bytes(visual_preferences_table),
+                    file_name="visualization_settings.csv",
+                    mime="text/csv",
+                    key="dl_visualization_settings_csv",
+                )
+
         figure_manifest = _figure_export_manifest(figure_html, figure_bytes)
+        visual_evidence_map = build_visual_evidence_map(figure_manifest, claim_evidence_dl)
         if generate_figures and not figure_manifest.empty:
             st.markdown(t("downloads.figures_manifest_markdown"))
             _render_compact_dataframe(
@@ -35340,6 +47920,64 @@ def _render_downloads(
                 key="dl_figure_manifest",
             )
 
+        if generate_figures and isinstance(visual_evidence_map, pd.DataFrame) and not visual_evidence_map.empty:
+            st.subheader("Visual evidence map")
+            st.caption(
+                "Connects each exported figure to manuscript claims, evidence tables, caption drafts, "
+                "caveats, reviewer questions, and archive files."
+            )
+            _render_compact_dataframe(
+                visual_evidence_map,
+                ["FigureName", "LinkedManuscriptArea", "ManuscriptSection", "FormatsAvailable", "EvidenceTables", "ReviewerQuestion"],
+                details_label="Show full visual evidence map",
+                hide_index=True,
+                wrap_text=True,
+            )
+            st.download_button(
+                "Download visual evidence map (CSV)",
+                data=to_csv_bytes(visual_evidence_map),
+                file_name="visual_evidence_map.csv",
+                mime="text/csv",
+                key="dl_visual_evidence_map_csv",
+            )
+            visual_qa_preflight = build_visual_qa_preflight(figure_manifest, visual_evidence_map)
+            if isinstance(visual_qa_preflight, pd.DataFrame) and not visual_qa_preflight.empty:
+                _render_compact_dataframe(
+                    visual_qa_preflight,
+                    ["Check", "Status", "Evidence", "Action"],
+                    details_label="Show visual QA preflight",
+                    hide_index=True,
+                    wrap_text=True,
+                )
+                st.download_button(
+                    "Download visual QA preflight (CSV)",
+                    data=to_csv_bytes(visual_qa_preflight),
+                    file_name="visual_qa_preflight.csv",
+                    mime="text/csv",
+                    key="dl_visual_qa_preflight_csv",
+                )
+            visual_guardrails = visual_claim_guardrail_table()
+            if isinstance(visual_guardrails, pd.DataFrame) and not visual_guardrails.empty:
+                st.subheader("Visual claim guardrails")
+                st.caption(
+                    "Defines what each high-impact figure can support, what not to write from that figure alone, "
+                    "and which evidence files must be checked before reporting."
+                )
+                _render_compact_dataframe(
+                    visual_guardrails,
+                    ["Visualization", "SafeReportWording", "DoNotWrite", "RequiredEvidence"],
+                    details_label="Show full visual claim guardrails",
+                    hide_index=True,
+                    wrap_text=True,
+                )
+                st.download_button(
+                    "Download visual claim guardrails (CSV)",
+                    data=to_csv_bytes(visual_guardrails),
+                    file_name="visual_claim_guardrails.csv",
+                    mime="text/csv",
+                    key="dl_visual_claim_guardrails_csv",
+                )
+
         if figure_html or figure_bytes:
             figure_assets = _figure_bundle_assets(figure_html, figure_bytes, figure_manifest)
             figure_assets_key = bytes_mapping_fingerprint(figure_assets)
@@ -35349,6 +47987,24 @@ def _render_downloads(
                 file_name="MFRM_Publication_Figures.zip",
                 mime="application/zip",
                 key="dl_figs_zip",
+            )
+            visual_binder_assets = build_visual_evidence_binder_assets(
+                figure_html,
+                figure_bytes,
+                figure_manifest,
+                visual_evidence_map,
+                claim_evidence_dl,
+                public_export_mode=bool(public_export_mode),
+            )
+            st.download_button(
+                "Download visual evidence binder (.zip)",
+                data=cached_mixed_asset_zip(
+                    visual_binder_assets,
+                    bytes_mapping_fingerprint(visual_binder_assets),
+                ),
+                file_name="MFRM_Visual_Evidence_Binder.zip",
+                mime="application/zip",
+                key="dl_visual_evidence_binder_zip",
             )
 
             with st.expander(t("downloads.figures_individual_expander_template", n=len(set(figure_html) | set(figure_bytes)))):
@@ -35544,12 +48200,30 @@ def _render_downloads(
             "selected_bias_pair": config.get("selected_bias_pair"),
             "render_interactive_plots": config.get("render_interactive_plots"),
             "generate_figure_exports": config.get("generate_figure_exports"),
+            "visualization_preferences": config.get("visualization_preferences", get_visualization_preferences()),
             "converged": bool(getattr(result.get("opt"), "success", False)),
             "convergence_message": str(getattr(result.get("opt"), "message", "")),
             "gradient_norm": float(grad_export) if np.isfinite(grad_export) else None,
             "elapsed_seconds": float(elapsed_export) if np.isfinite(elapsed_export) else None,
             "software": software_label,
         }
+        if public_export_mode:
+            for _fp_key in [
+                "run_fingerprint",
+                "analysis_config_fingerprint",
+                "input_data_fingerprint",
+                "anchor_data_fingerprint",
+                "anchor_source_fingerprint",
+                "group_anchor_data_fingerprint",
+                "group_anchor_source_fingerprint",
+                "population_data_fingerprint",
+                "population_source_fingerprint",
+            ]:
+                config_export[_fp_key] = None
+            config_export["fingerprint_scope"] = (
+                "Raw-data-derived fingerprints omitted because public/anonymized export mode is enabled."
+            )
+        config_export["public_export_mode"] = bool(public_export_mode)
         config_export["config_export_fingerprint"] = stable_json_fingerprint(config_export)
         config_json = json.dumps(config_export, indent=2, ensure_ascii=False, default=str)
         with st.expander("View config JSON"):
@@ -35614,15 +48288,119 @@ def _render_downloads(
 
         method_appendix = generate_method_appendix_text(result, diagnostics, all_bias_results)
         manuscript_template = generate_manuscript_reporting_template(result, diagnostics, all_bias_results)
+        manuscript_handoff = generate_manuscript_handoff_markdown(
+            result,
+            diagnostics,
+            all_bias_results,
+            public_export_mode=bool(public_export_mode),
+        )
+        if not isinstance(handoff_checklist_dl, pd.DataFrame) or handoff_checklist_dl.empty:
+            handoff_checklist_dl = build_manuscript_handoff_checklist(
+                result,
+                diagnostics,
+                all_bias_results,
+                public_export_mode=bool(public_export_mode),
+        )
         external_template_assets = external_simulation_template_scripts()
+        stan_runner_assets = bayesian_stan_runner_templates()
+        yardstick_script_assets = yardstick_reproducibility_scripts()
+        recode_script_assets = rating_scale_recode_script_assets(result, diagnostics)
+        stan_data_assets = stan_data_export_assets(result, include_row_level=not bool(public_export_mode))
+        stan_complete_assets = stan_reproducibility_package_assets(result, include_row_level=not bool(public_export_mode))
         local_batch_readme = generate_local_batch_readme()
         text_assets = {
+            "manuscript_handoff.md": manuscript_handoff,
             "method_appendix.md": method_appendix,
             "manuscript_template.md": manuscript_template,
             "local_batch_workflow.md": local_batch_readme,
+            "mfrm_config.json": config_json,
+            "visualization_settings.json": _visualization_preferences_json(),
             **external_template_assets,
+            **stan_runner_assets,
+            **yardstick_script_assets,
+            **recode_script_assets,
+            **stan_data_assets,
+            **stan_complete_assets,
         }
         text_assets_key = bytes_mapping_fingerprint(text_assets)
+        st.subheader("Final results and manuscript handoff")
+        st.caption(
+            "A one-page guide for downloading the final result bundle, reading files in order, "
+            "and turning the outputs into manuscript evidence."
+        )
+        if isinstance(handoff_checklist_dl, pd.DataFrame) and not handoff_checklist_dl.empty:
+            _render_compact_dataframe(
+                handoff_checklist_dl,
+                ["Step", "Phase", "Status", "Task", "DownloadFile", "Action"],
+                details_label="Show full manuscript handoff checklist",
+                hide_index=True,
+                wrap_text=True,
+            )
+            st.download_button(
+                "Download manuscript handoff checklist (CSV)",
+                data=to_csv_bytes(handoff_checklist_dl),
+                file_name="mfrm_manuscript_handoff_checklist.csv",
+                mime="text/csv",
+                key="dl_manuscript_handoff_checklist_csv",
+            )
+        with st.expander("View final results and manuscript handoff"):
+            st.code(manuscript_handoff, language="markdown")
+        st.download_button(
+            "Download manuscript handoff (Markdown)",
+            data=manuscript_handoff.encode("utf-8"),
+            file_name="mfrm_manuscript_handoff.md",
+            mime="text/markdown",
+            key="dl_manuscript_handoff_md",
+        )
+        if not isinstance(claim_evidence_dl, pd.DataFrame) or claim_evidence_dl.empty:
+            claim_evidence_dl = build_claim_to_evidence_matrix(result, diagnostics, all_bias_results)
+        st.subheader("Claim-to-evidence matrix")
+        st.caption(
+            "Maps each manuscript claim to the exported tables, figures, diagnostics, caveats, "
+            "reviewer questions, and archive files that support it."
+        )
+        if isinstance(claim_evidence_dl, pd.DataFrame) and not claim_evidence_dl.empty:
+            _render_compact_dataframe(
+                claim_evidence_dl,
+                ["Priority", "ManuscriptArea", "ClaimStatus", "GateStatus", "PrimaryTables", "PrimaryFigures", "NextAction"],
+                details_label="Show full claim-to-evidence matrix",
+                hide_index=True,
+                wrap_text=True,
+            )
+            st.download_button(
+                "Download claim-to-evidence matrix (CSV)",
+                data=to_csv_bytes(claim_evidence_dl),
+                file_name="claim_to_evidence_matrix.csv",
+                mime="text/csv",
+                key="dl_claim_to_evidence_matrix_csv",
+            )
+        if not isinstance(apa_sentence_audit_dl, pd.DataFrame) or apa_sentence_audit_dl.empty:
+            apa_sentence_audit_dl = build_apa_report_sentence_audit(
+                result,
+                diagnostics,
+                bias_results=bias_results,
+                all_bias_results=all_bias_results,
+            )
+        st.subheader("APA sentence evidence audit")
+        st.caption(
+            "Maps generated APA-style report sentences to claim status, evidence files, citations, "
+            "and wording boundaries before manuscript copy-editing."
+        )
+        if isinstance(apa_sentence_audit_dl, pd.DataFrame) and not apa_sentence_audit_dl.empty:
+            _render_compact_dataframe(
+                apa_sentence_audit_dl,
+                ["SentenceOrder", "APASection", "SentenceRole", "LinkedManuscriptArea", "CopyDecision"],
+                details_label="Show full APA sentence evidence audit",
+                hide_index=True,
+                wrap_text=True,
+            )
+            st.download_button(
+                "Download APA sentence evidence audit (CSV)",
+                data=to_csv_bytes(apa_sentence_audit_dl),
+                file_name="apa_report_sentence_audit.csv",
+                mime="text/csv",
+                key="dl_apa_report_sentence_audit_csv",
+            )
         st.subheader("Compact method appendix")
         with st.expander("View method appendix"):
             st.code(method_appendix, language="markdown")
@@ -35757,6 +48535,295 @@ def _render_downloads(
                 key="dl_repro_r",
             )
 
+        st.subheader("Reproducibility script matrix")
+        st.caption(
+            "Use this table to choose whether the next reproducibility artifact should be "
+            "the current Python app runner, a portable Python/R/Julia check, or a Stan posterior runner."
+        )
+        script_matrix = reproducibility_script_export_matrix()
+        st.dataframe(script_matrix, width="stretch", hide_index=True)
+        st.download_button(
+            "Download reproducibility script matrix (CSV)",
+            data=to_csv_bytes(script_matrix),
+            file_name="mfrm_reproducibility_script_matrix.csv",
+            mime="text/csv",
+            key="dl_reproducibility_script_matrix",
+        )
+
+        st.subheader("Visual claim guardrails")
+        st.caption(
+            "Use this before interpreting Wright Maps, FACETS-style yardsticks, threshold lines, "
+            "category characteristic curves, or figure captions in a report."
+        )
+        visual_guardrails_scripts = visual_claim_guardrail_table()
+        _render_compact_dataframe(
+            visual_guardrails_scripts,
+            ["Visualization", "SafeReportWording", "DoNotWrite", "RequiredEvidence"],
+            details_label="Show full visual claim guardrails",
+            hide_index=True,
+            wrap_text=True,
+        )
+        st.download_button(
+            "Download visual claim guardrails (CSV)",
+            data=to_csv_bytes(visual_guardrails_scripts),
+            file_name="visual_claim_guardrails.csv",
+            mime="text/csv",
+            key="dl_scripts_visual_claim_guardrails_csv",
+        )
+
+        st.subheader("FACETS-style yardstick reproduction")
+        st.caption(
+            "Download the exact yardstick map CSV plus Python/R/Julia scripts. "
+            "The R script uses ggplot2::geom_text(), matching the FACETS-style direct text layout."
+        )
+        if isinstance(yardstick_map_dl, pd.DataFrame) and not yardstick_map_dl.empty:
+            yardstick_assets: dict[str, bytes | str] = {
+                "mfrm_yardstick_map.csv": yardstick_map_dl.to_csv(index=False),
+                **yardstick_script_assets,
+            }
+            st.download_button(
+                "Download FACETS-style yardstick reproduction ZIP",
+                data=cached_mixed_asset_zip(yardstick_assets, bytes_mapping_fingerprint(yardstick_assets)),
+                file_name="MFRM_FACETS_Yardstick_Reproduction.zip",
+                mime="application/zip",
+                key="dl_yardstick_reproduction_downloads_zip",
+            )
+        else:
+            st.caption("Yardstick reproduction assets are available after person, facet, and step estimates exist.")
+
+        st.subheader("Rating-scale recode reproduction")
+        st.caption(
+            "Download the candidate score-map CSV plus Python/R/Julia scripts that create recoded score columns "
+            "without overwriting the original score column."
+        )
+        recode_map_long_dl = rating_scale_recode_map_long_table(result, diagnostics)
+        if isinstance(recode_map_long_dl, pd.DataFrame) and not recode_map_long_dl.empty:
+            st.dataframe(recode_map_long_dl, width="stretch", hide_index=True)
+            st.download_button(
+                "Download rating-scale recode scripts ZIP",
+                data=cached_mixed_asset_zip(recode_script_assets, bytes_mapping_fingerprint(recode_script_assets)),
+                file_name="MFRM_Rating_Scale_Recode_Scripts.zip",
+                mime="application/zip",
+                key="dl_downloads_rating_scale_recode_scripts_zip",
+            )
+        else:
+            st.caption("Recode script assets are available after rating-scale category diagnostics exist.")
+
+        st.subheader("Uto-family Bayesian MFRM Stan refinement")
+        st.caption(
+            "A roadmap from the current generic RSM/PCM Stan export to generalized, "
+            "multidimensional, and rater-drift Bayesian MFRM scaffolds."
+        )
+        stan_refinement = bayesian_mfrm_stan_refinement_plan()
+        st.dataframe(stan_refinement, width="stretch", hide_index=True)
+        st.download_button(
+            "Download Bayesian MFRM Stan refinement plan (CSV)",
+            data=to_csv_bytes(stan_refinement),
+            file_name="bayesian_mfrm_stan_refinement_plan.csv",
+            mime="text/csv",
+            key="dl_bayesian_mfrm_stan_refinement_plan",
+        )
+
+        st.subheader("Complete Stan reproducibility package")
+        st.caption(
+            "One ZIP containing the generated Stan source files, Stan data contract, prior-setting rationale template, "
+            "sensitivity grid, Python/R/Julia runners, posterior handoff files, and package manifest."
+        )
+        stan_complete_direct_assets = stan_reproducibility_package_assets(result, include_row_level=True)
+        stan_complete_manifest_text = stan_complete_direct_assets.get("mfrm_complete_stan_reproducibility_manifest.csv", "")
+        try:
+            stan_complete_manifest_table = pd.read_csv(io.StringIO(stan_complete_manifest_text))
+        except Exception:
+            stan_complete_manifest_table = pd.DataFrame()
+        if isinstance(stan_complete_manifest_table, pd.DataFrame) and not stan_complete_manifest_table.empty:
+            st.dataframe(stan_complete_manifest_table, width="stretch", hide_index=True)
+        st.download_button(
+            "Download complete Stan reproducibility package ZIP",
+            data=cached_mixed_asset_zip(
+                stan_complete_direct_assets,
+                bytes_mapping_fingerprint(stan_complete_direct_assets),
+            ),
+            file_name="MFRM_Complete_Stan_Reproducibility_Package.zip",
+            mime="application/zip",
+            key="dl_complete_stan_reproducibility_package_zip",
+        )
+        st.warning(
+            "This direct package includes row-level coded Stan JSON and private ID maps when available. "
+            "Use the OSF or manuscript binder export in public mode when those files should be omitted."
+        )
+
+        st.subheader("Cross-language Stan runners")
+        st.caption(
+            "These templates run the same downloaded Stan file and JSON data through "
+            "Python/CmdStanPy, R/CmdStanR, or Julia/CmdStan CLI."
+        )
+        st.download_button(
+            "Download Bayesian Stan runners (Python/R/Julia ZIP)",
+            data=cached_mixed_asset_zip(stan_runner_assets, bytes_mapping_fingerprint(stan_runner_assets)),
+            file_name="MFRM_Bayesian_Stan_Runners.zip",
+            mime="application/zip",
+            key="dl_bayesian_stan_runner_zip",
+        )
+
+        st.subheader("Stan posterior handoff manifest")
+        st.caption(
+            "The runner templates write stan_run_manifest.json/csv so posterior CSV chains "
+            "can be checked against the exact Stan file, data JSON, prior scales, seed, and sampler controls."
+        )
+        stan_repro_route_table = guided_stan_posterior_reproducibility_help_table()
+        stan_handoff_table = stan_posterior_handoff_checklist()
+        stan_manifest_template = stan_run_manifest_template()
+        stan_repro_handoff_md = stan_posterior_reproducibility_handoff_markdown()
+        posterior_example_assets = posterior_viewer_example_package_assets()
+        st.markdown("**Stan posterior reproducibility route**")
+        st.dataframe(stan_repro_route_table, width="stretch", hide_index=True)
+        st.markdown("**Stan reproducibility archive contract**")
+        st.dataframe(
+            stan_reproducibility_archive_contract_table(public_export_mode=bool(public_export_mode)),
+            width="stretch",
+            hide_index=True,
+        )
+        st.markdown("**Stan posterior handoff checklist**")
+        st.dataframe(stan_handoff_table, width="stretch", hide_index=True)
+        with st.expander("Run manifest field template", expanded=False):
+            st.dataframe(stan_manifest_template, width="stretch", hide_index=True)
+        with st.expander("Stan posterior reproducibility handoff preview", expanded=False):
+            st.markdown(stan_repro_handoff_md)
+        st.download_button(
+            "Download Stan posterior reproducibility handoff (Markdown)",
+            data=stan_repro_handoff_md.encode("utf-8"),
+            file_name="stan_posterior_reproducibility_handoff.md",
+            mime="text/markdown",
+            key="dl_stan_posterior_reproducibility_handoff_md",
+        )
+        route_col, handoff_col, manifest_col, example_col = st.columns(4)
+        with route_col:
+            st.download_button(
+                "Download Stan posterior reproducibility route",
+                data=to_csv_bytes(stan_repro_route_table),
+                file_name="stan_posterior_reproducibility_route.csv",
+                mime="text/csv",
+                key="dl_stan_posterior_reproducibility_route",
+            )
+        with handoff_col:
+            st.download_button(
+                "Download Stan posterior handoff checklist",
+                data=to_csv_bytes(stan_handoff_table),
+                file_name="stan_posterior_handoff_checklist.csv",
+                mime="text/csv",
+                key="dl_stan_posterior_handoff_checklist",
+            )
+        with manifest_col:
+            st.download_button(
+                "Download Stan run manifest template",
+                data=to_csv_bytes(stan_manifest_template),
+                file_name="stan_run_manifest_template.csv",
+                mime="text/csv",
+                key="dl_stan_run_manifest_template",
+            )
+        with example_col:
+            st.download_button(
+                "Download Posterior Viewer example package",
+                data=cached_mixed_asset_zip(posterior_example_assets, bytes_mapping_fingerprint(posterior_example_assets)),
+                file_name="MFRM_Posterior_Viewer_Example.zip",
+                mime="application/zip",
+                key="dl_downloads_posterior_viewer_example_package",
+            )
+
+        st.subheader("Stan data JSON and coding maps")
+        st.caption(
+            "Exports the exact 1-based integer-coded JSON used by CmdStan plus data dictionaries and private ID maps. "
+            "Public export mode includes dictionaries/manifests only in OSF/binder packages; direct JSON downloads remain a private-archive decision."
+        )
+        stan_data_direct_assets = stan_data_export_assets(result, include_row_level=True)
+        if generic_stan_data_dl.get("available"):
+            st.dataframe(generic_stan_data_dl["manifest"], width="stretch", hide_index=True)
+            with st.expander("Prior-setting guide and sensitivity grid", expanded=False):
+                st.caption(
+                    "These tables explain the prior scale fields embedded in mfrm_stan_data.json "
+                    "and define defensible sensitivity variants for posterior reporting."
+                )
+                st.dataframe(generic_stan_data_dl["prior_guidance"], width="stretch", hide_index=True)
+                st.dataframe(generic_stan_data_dl["prior_sensitivity_grid"], width="stretch", hide_index=True)
+            stan_json_col, stan_map_col, stan_dict_col = st.columns(3)
+            with stan_json_col:
+                st.download_button(
+                    "Download generic Stan data JSON",
+                    data=generic_stan_data_dl["json_text"],
+                    file_name="mfrm_stan_data.json",
+                    mime="application/json",
+                    key="dl_downloads_generic_stan_data_json",
+                )
+            with stan_map_col:
+                st.download_button(
+                    "Download private generic ID map",
+                    data=to_csv_bytes(generic_stan_data_dl["id_map"]),
+                    file_name="mfrm_stan_id_index_map.csv",
+                    mime="text/csv",
+                    key="dl_downloads_generic_stan_id_map",
+                )
+            with stan_dict_col:
+                st.download_button(
+                    "Download generic Stan data dictionary",
+                    data=to_csv_bytes(generic_stan_data_dl["data_dictionary"]),
+                    file_name="mfrm_stan_data_dictionary.csv",
+                    mime="text/csv",
+                    key="dl_downloads_generic_stan_data_dictionary",
+                )
+            prior_dl_col, grid_dl_col = st.columns(2)
+            with prior_dl_col:
+                st.download_button(
+                    "Download Stan prior guidance",
+                    data=to_csv_bytes(generic_stan_data_dl["prior_guidance"]),
+                    file_name="mfrm_stan_prior_guidance.csv",
+                    mime="text/csv",
+                    key="dl_downloads_stan_prior_guidance",
+                )
+            with grid_dl_col:
+                st.download_button(
+                    "Download Stan prior sensitivity grid",
+                    data=to_csv_bytes(generic_stan_data_dl["prior_sensitivity_grid"]),
+                    file_name="mfrm_stan_prior_sensitivity_grid.csv",
+                    mime="text/csv",
+                    key="dl_downloads_stan_prior_sensitivity_grid",
+                )
+        else:
+            st.info("Generic Stan data JSON is unavailable: " + "; ".join(generic_stan_data_dl.get("messages", [])))
+        if uto_stan_data_dl.get("available"):
+            with st.expander("Uto-family data template mapping", expanded=False):
+                uto_notice = uto_design_audit_claim_notice(uto_stan_data_dl["design_audit"])
+                if uto_notice["level"] == "warning":
+                    st.warning(uto_notice["message"])
+                elif uto_notice["level"] == "success":
+                    st.success(uto_notice["message"])
+                else:
+                    st.info(uto_notice["message"])
+                st.markdown("**Claim wording guardrails**")
+                st.dataframe(uto_stan_data_dl["claim_wording"], width="stretch", hide_index=True)
+                st.markdown("**Design-audit rows**")
+                st.dataframe(uto_stan_data_dl["design_audit"], width="stretch", hide_index=True)
+                st.dataframe(uto_stan_data_dl["manifest"], width="stretch", hide_index=True)
+                st.dataframe(uto_stan_data_dl["data_dictionary"], width="stretch", hide_index=True)
+            st.download_button(
+                "Download Uto-family data template JSON",
+                data=uto_stan_data_dl["json_text"],
+                file_name="mfrm_uto_bayesian_mfrm_data_template.json",
+                mime="application/json",
+                key="dl_downloads_uto_stan_data_template_json",
+            )
+        if stan_data_direct_assets:
+            st.download_button(
+                "Download Stan data package (JSON/maps/dictionaries ZIP)",
+                data=cached_mixed_asset_zip(stan_data_direct_assets, bytes_mapping_fingerprint(stan_data_direct_assets)),
+                file_name="MFRM_Stan_Data_Package.zip",
+                mime="application/zip",
+                key="dl_downloads_stan_data_package_zip",
+            )
+            st.warning(
+                "The Stan data package contains row-level coded responses and private label maps. "
+                "Use it for private reproducibility archives unless sharing has been explicitly approved."
+            )
+
         # --- External Simulation validation templates ---
         st.subheader("External Simulation validation templates")
         st.caption(
@@ -35796,19 +48863,48 @@ def _render_downloads(
         st.info(
             "Stan code is auto-generated in the **Report → Exports → Stan Code** sub-tab based on "
             "your data structure. Navigate there to preview and download the Stan model, "
-            "Python runner (CmdStanPy), and R runner (CmdStanR) scripts."
+            "app-generated data JSON, coding maps, Python runner (CmdStanPy), R runner (CmdStanR), "
+            "and Julia runner (CmdStan CLI) scripts. "
+            "Use the Advanced models sidebar for the Uto-family Bayesian MFRM scaffold."
         )
         st.warning(STAN_SENSITIVITY_WARNING)
 
+        # --- Manuscript binder ---
+        st.subheader("Manuscript binder")
+        st.caption(
+            "A curated writing packet with the handoff, claim-to-evidence matrix, gate/action tables, "
+            "method appendix, manuscript template, config, and figure manifest."
+        )
+        try:
+            binder_assets = build_manuscript_binder_assets(
+                download_frames,
+                text_assets,
+                figure_manifest=figure_manifest,
+                visual_evidence_map=visual_evidence_map,
+                public_export_mode=bool(public_export_mode),
+            )
+            st.download_button(
+                "Download manuscript binder (.zip)",
+                data=cached_mixed_asset_zip(binder_assets, bytes_mapping_fingerprint(binder_assets)),
+                file_name="MFRM_Manuscript_Binder.zip",
+                mime="application/zip",
+                key="dl_manuscript_binder_zip",
+            )
+        except Exception as binder_exc:
+            st.caption(f"Manuscript binder packaging failed: {binder_exc}")
+
         # --- OSF-ready package ---
         st.subheader("OSF-ready package")
-        st.caption("Complete package with all tables + config for open science repositories.")
+        st.caption(
+            "Open-science package using the current export privacy mode. Public mode omits "
+            "row-level/person-level tables and includes an export privacy manifest."
+        )
         try:
             st.download_button(
                 "Download OSF package (.zip)",
                 data=cached_osf_zip(
-                    all_frames,
-                    all_frames_key,
+                    download_frames,
+                    download_frames_key,
                     _text_assets=text_assets,
                     text_assets_key=text_assets_key,
                 ),
@@ -36556,22 +49652,22 @@ def _self_test_report_readiness_and_method_appendix() -> None:
         "Overall manuscript gate" in publication_gate["GateArea"].astype(str).tolist(),
         "publication gate summary missing overall row",
     )
-    beginner_cases = build_beginner_case_guidance(res, diagnostics, all_bias_results={})
-    _self_test_assert(not beginner_cases.empty, "beginner case guidance is empty")
+    case_guidance = build_case_interpretation_guidance(res, diagnostics, all_bias_results={})
+    _self_test_assert(not case_guidance.empty, "case interpretation guidance is empty")
     _self_test_assert(
         {
             "Priority",
             "Case",
             "Status",
             "Evidence",
-            "BeginnerInterpretation",
+            "InterpretationNote",
             "ManuscriptGuardrail",
             "NextAction",
             "WhereToInspect",
             "AvoidWording",
             "SaferWording",
-        }.issubset(beginner_cases.columns),
-        "beginner case guidance is missing required columns",
+        }.issubset(case_guidance.columns),
+        "case interpretation guidance is missing required columns",
     )
     template_with_cases = generate_manuscript_reporting_template(res, diagnostics, all_bias_results={})
     _self_test_assert(
@@ -36601,6 +49697,192 @@ def _self_test_report_readiness_and_method_appendix() -> None:
         "Overall manuscript gate" in action_plan["Topic"].astype(str).tolist(),
         "submission action plan missing overall gate row",
     )
+    claim_evidence = build_claim_to_evidence_matrix(res, diagnostics, all_bias_results={})
+    _self_test_assert(not claim_evidence.empty, "claim-to-evidence matrix is empty")
+    _self_test_assert(
+        {
+            "Priority",
+            "ManuscriptArea",
+            "ManuscriptSection",
+            "PrimaryClaim",
+            "ClaimStatus",
+            "GateStatus",
+            "EvidenceToReport",
+            "PrimaryTables",
+            "PrimaryFigures",
+            "ReadinessChecks",
+            "ReferenceAuditAreas",
+            "SuggestedCitations",
+            "CitationBoundary",
+            "CitationEvidenceFile",
+            "ReviewerQuestion",
+            "ArchiveFiles",
+            "AppLocation",
+        }.issubset(claim_evidence.columns),
+        "claim-to-evidence matrix is missing required columns",
+    )
+    _self_test_assert(
+        "Bias / local interaction" in claim_evidence["ManuscriptArea"].astype(str).tolist(),
+        "claim-to-evidence matrix missing bias/local interaction row",
+    )
+    sentence_audit = build_apa_report_sentence_audit(res, diagnostics, all_bias_results={})
+    _self_test_assert(not sentence_audit.empty, "APA sentence evidence audit is empty")
+    _self_test_assert(
+        {
+            "SentenceOrder",
+            "APASection",
+            "SentenceRole",
+            "LinkedManuscriptArea",
+            "DraftSentence",
+            "EvidenceFiles",
+            "SuggestedCitations",
+            "CitationBoundary",
+            "DoNotClaim",
+            "CopyDecision",
+            "CitationEvidenceFile",
+        }.issubset(sentence_audit.columns),
+        "APA sentence evidence audit is missing required columns",
+    )
+    method_refs = build_method_reference_audit()
+    _self_test_assert(not method_refs.empty, "method reference audit is empty")
+    _self_test_assert(
+        {
+            "MethodArea",
+            "PrimaryReferenceKeys",
+            "CitationTokens",
+            "ReferenceCoverageStatus",
+            "BibExportStatus",
+            "ZoteroAlignment",
+            "ManuscriptUse",
+            "ClaimBoundary",
+        }.issubset(method_refs.columns),
+        "method reference audit is missing required columns",
+    )
+    _self_test_assert(
+        method_refs["ReferenceCoverageStatus"].astype(str).eq("Ready").all(),
+        "method reference audit has non-ready reference coverage",
+    )
+    handoff_checklist = build_manuscript_handoff_checklist(
+        res,
+        diagnostics,
+        all_bias_results={},
+        public_export_mode=True,
+    )
+    _self_test_assert(not handoff_checklist.empty, "manuscript handoff checklist is empty")
+    _self_test_assert(
+        {
+            "Step",
+            "Phase",
+            "Status",
+            "Task",
+            "AppLocation",
+            "DownloadFile",
+            "Action",
+            "WhyItMatters",
+        }.issubset(handoff_checklist.columns),
+        "manuscript handoff checklist is missing required columns",
+    )
+    handoff_md = generate_manuscript_handoff_markdown(
+        res,
+        diagnostics,
+        all_bias_results={},
+        public_export_mode=True,
+    )
+    _self_test_assert(
+        "Final Results and Manuscript Handoff" in handoff_md
+        and "## Download Package" in handoff_md
+        and "claim_to_evidence_matrix.csv" in handoff_md
+        and "## Before Manuscript Submission" in handoff_md,
+        "manuscript handoff markdown missing required sections",
+    )
+    binder_assets = build_manuscript_binder_assets(
+        {
+            "claim_to_evidence_matrix": claim_evidence,
+            "apa_report_sentence_audit": sentence_audit,
+            "method_reference_audit": method_refs,
+            "submission_action_plan": action_plan,
+            "manuscript_handoff_checklist": handoff_checklist,
+            "visual_claim_guardrails": visual_claim_guardrail_table(),
+        },
+        {"manuscript_handoff.md": handoff_md, "method_appendix.md": "method", "manuscript_template.md": "template"},
+        public_export_mode=True,
+    )
+    _self_test_assert("README_first.md" in binder_assets, "manuscript binder missing README")
+    _self_test_assert("claim_to_evidence_matrix.csv" in binder_assets, "manuscript binder missing evidence matrix")
+    _self_test_assert("apa_report_sentence_audit.csv" in binder_assets, "manuscript binder missing APA sentence evidence audit")
+    _self_test_assert("method_reference_audit.csv" in binder_assets, "manuscript binder missing method reference audit")
+    _self_test_assert("visualization_settings.json" in binder_assets, "manuscript binder missing visualization settings")
+    _self_test_assert("visualization_settings.csv" in binder_assets, "manuscript binder missing visualization settings table")
+    _self_test_assert("visual_claim_guardrails.csv" in binder_assets, "manuscript binder missing visual claim guardrails")
+    figure_manifest_test = _figure_export_manifest(
+        {"wright_map": "<html></html>", "category_probability_curve_average": "<html></html>"},
+        {"wright_map": b"png"},
+    )
+    _self_test_assert(
+        {"Theme", "BaseFontSize", "LabelPolicy", "LabelMaxChars", "CaptionDetail"}.issubset(figure_manifest_test.columns),
+        "figure manifest missing visualization preference columns",
+    )
+    visual_evidence = build_visual_evidence_map(figure_manifest_test, claim_evidence)
+    _self_test_assert(not visual_evidence.empty, "visual evidence map is empty")
+    _self_test_assert(
+        {
+            "FigureName",
+            "LinkedManuscriptArea",
+            "ManuscriptSection",
+            "CaptionDraft",
+            "EvidenceTables",
+            "ReviewerQuestion",
+            "ReportingCaution",
+            "ArchiveFiles",
+            "Theme",
+            "BaseFontSize",
+            "LabelPolicy",
+            "CaptionDetail",
+            "VisualGuardrailID",
+            "SafeReportWording",
+            "DoNotWrite",
+            "RequiredEvidence",
+            "VisualGuardrailArchive",
+        }.issubset(visual_evidence.columns),
+        "visual evidence map missing required columns",
+    )
+    _self_test_assert(
+        "Wright map targeting and measure interpretation" in visual_evidence["LinkedManuscriptArea"].astype(str).tolist(),
+        "visual evidence map did not link Wright map to targeting claims",
+    )
+    caption_drafts = generate_visual_caption_drafts(visual_evidence)
+    _self_test_assert("Figure 1" in caption_drafts and "Reviewer question" in caption_drafts, "visual caption drafts missing content")
+    visual_qa = build_visual_qa_preflight(figure_manifest_test, visual_evidence)
+    _self_test_assert(not visual_qa.empty, "visual QA preflight is empty")
+    _self_test_assert(
+        {"Check", "Status", "Evidence", "Action"}.issubset(visual_qa.columns),
+        "visual QA preflight missing required columns",
+    )
+    visual_assets = build_visual_evidence_binder_assets(
+        {"wright_map": "<html></html>"},
+        {"wright_map": b"png"},
+        figure_manifest_test,
+        visual_evidence,
+        claim_evidence,
+        public_export_mode=True,
+    )
+    _self_test_assert("README_visual_evidence.md" in visual_assets, "visual evidence binder missing README")
+    _self_test_assert("visual_evidence_map.csv" in visual_assets, "visual evidence binder missing evidence map")
+    _self_test_assert("visual_caption_drafts.md" in visual_assets, "visual evidence binder missing caption drafts")
+    _self_test_assert("visualization_settings.json" in visual_assets, "visual evidence binder missing visualization settings")
+    _self_test_assert("visualization_settings.csv" in visual_assets, "visual evidence binder missing visualization settings table")
+    _self_test_assert("visual_claim_guardrails.csv" in visual_assets, "visual evidence binder missing visual claim guardrails")
+    _self_test_assert("visual_qa_preflight.csv" in visual_assets, "visual evidence binder missing visual QA preflight")
+    _self_test_assert("figures_png_wright_map.png" in visual_assets, "visual evidence binder missing PNG figure")
+    binder_with_visual_assets = build_manuscript_binder_assets(
+        {"claim_to_evidence_matrix": claim_evidence},
+        {"manuscript_handoff.md": handoff_md},
+        figure_manifest=figure_manifest_test,
+        visual_evidence_map=visual_evidence,
+        public_export_mode=True,
+    )
+    _self_test_assert("visual_evidence_map.csv" in binder_with_visual_assets, "manuscript binder missing visual evidence map")
+    _self_test_assert("visual_qa_preflight.csv" in binder_with_visual_assets, "manuscript binder missing visual QA preflight")
     threshold_result = {
         "opt": type("Opt", (), {"success": True, "message": "ok"})(),
         "config": {},
@@ -36636,14 +49918,33 @@ def _self_test_report_readiness_and_method_appendix() -> None:
         "sample_data",
         "publication_gate_summary",
         "submission_action_plan",
-        "beginner_case_guidance",
+        "case_interpretation_guidance",
         "final_report_readiness",
         "manuscript_claim_guide",
+        "claim_to_evidence_matrix",
+        "apa_report_sentence_audit",
+        "method_reference_audit",
+        "manuscript_handoff_checklist",
         "visual_interpretation_checklist",
+        "visual_claim_guardrails",
         "visual_method_evidence",
         "public_beta_limitations",
         "external_simulation_reference_inventory",
         "external_simulation_template_inventory",
+        "reproducibility_script_matrix",
+        "bayesian_mfrm_stan_refinement_plan",
+        "stan_reproducibility_archive_contract",
+        "stan_posterior_reproducibility_route",
+        "stan_posterior_handoff_checklist",
+        "stan_run_manifest_template",
+        "mfrm_stan_data_manifest",
+        "mfrm_stan_data_dictionary",
+        "mfrm_stan_prior_guidance",
+        "mfrm_stan_prior_sensitivity_grid",
+        "mfrm_uto_bayesian_mfrm_design_audit",
+        "mfrm_uto_bayesian_mfrm_claim_wording",
+        "mfrm_uto_bayesian_mfrm_mapping_manifest",
+        "mfrm_uto_bayesian_mfrm_data_dictionary",
         "mfrmr_015_migration_coverage",
         "mfrmr_016_migration_coverage",
         "public_release_readiness",
@@ -36665,7 +49966,7 @@ def _self_test_visual_interpretation_checklist() -> None:
         "PrimaryQuestion",
         "ReadFirst",
         "ReviewTrigger",
-        "BeginnerAction",
+        "SuggestedAction",
         "Caveat",
     }
     _self_test_assert(not checklist.empty, "visual interpretation checklist is empty")
@@ -36683,6 +49984,26 @@ def _self_test_visual_interpretation_checklist() -> None:
     evidence_joined = " ".join(evidence["Visualization"].astype(str))
     for expected in ["Wright map", "Category probability", "Bias heatmap"]:
         _self_test_assert(expected in evidence_joined, f"visual method evidence missing {expected}")
+    guardrails = visual_claim_guardrail_table()
+    _self_test_assert(not guardrails.empty, "visual claim guardrail table is empty")
+    _self_test_assert(
+        {
+            "GuardrailID",
+            "Visualization",
+            "SafeReportWording",
+            "DoNotWrite",
+            "RequiredEvidence",
+            "ArchiveFile",
+        }.issubset(guardrails.columns),
+        "visual claim guardrail table missing required columns",
+    )
+    guardrail_joined = " ".join(guardrails["Visualization"].astype(str).tolist() + guardrails["DoNotWrite"].astype(str).tolist())
+    for expected in ["Wright Map", "FACETS-style yardstick", "Category characteristic curves"]:
+        _self_test_assert(expected in guardrail_joined, f"visual claim guardrail missing {expected}")
+    _self_test_assert(
+        guardrails["DoNotWrite"].astype(str).str.contains("alone|solely", case=False, regex=True).any(),
+        "visual claim guardrails do not block figure-only claims",
+    )
 
 
 def _self_test_category_probability_curve_data() -> None:
@@ -36702,11 +50023,90 @@ def _self_test_category_probability_curve_data() -> None:
     _self_test_assert(avg.get("available") and lvl.get("available"), "GPCM curve data unavailable")
     _self_test_assert(lvl["metadata"]["Level"] == "T2", "level-specific curve metadata is wrong")
     _self_test_assert(abs(lvl["metadata"]["Slope"] - 1.25) < 1e-12, "level-specific GPCM slope is wrong")
+    _self_test_assert(lvl["metadata"]["RatingMin"] == 1, "category curve rating minimum missing")
+    _self_test_assert(lvl["thresholds"]["DisplayLabel"].tolist() == ["1|2", "2|3"], "category curve threshold labels wrong")
+    diagnostic_tbl = category_probability_curve_diagnostic_table(lvl)
+    _self_test_assert(not diagnostic_tbl.empty, "category curve diagnostic table is empty")
+    _self_test_assert(
+        {"PeakTheta", "PeakProbability", "IsEverMostProbable"}.issubset(diagnostic_tbl.columns),
+        "category curve diagnostic table missing peak/dominance columns",
+    )
     fig, fig_expected = _make_category_probability_curve_figures(lvl)
     _self_test_assert(fig is not None and fig_expected is not None, "GPCM curve figures were not created")
+    trace_names = [str(getattr(trace, "name", "")) for trace in fig.data]
+    _self_test_assert("Step threshold lines" in trace_names, "FACETS-style threshold lines missing from category curve")
+    annotation_text = " ".join(str(item.text) for item in fig.layout.annotations)
+    _self_test_assert("1|2" in annotation_text and "2|3" in annotation_text, "FACETS-style threshold annotations missing")
     export_tbl = category_probability_curve_export_table(result)
     _self_test_assert(not export_tbl.empty, "category curve export table is empty")
-    _self_test_assert({"CurveLabel", "Scope", "Slope", "ExpectedScore"}.issubset(export_tbl.columns), "category curve export table missing metadata")
+    _self_test_assert(
+        {"CurveLabel", "Scope", "Slope", "ExpectedScore", "PeakTheta", "PeakProbability"}.issubset(export_tbl.columns),
+        "category curve export table missing metadata",
+    )
+    result_with_tables = {
+        **result,
+        "steps": pd.DataFrame({
+            "StepFacet": ["T1", "T1", "T2", "T2"],
+            "Step": ["Step_1", "Step_2", "Step_1", "Step_2"],
+            "Estimate": [-1.2, 0.3, -0.4, 1.1],
+        }),
+        "slopes": pd.DataFrame({
+            "StepFacet": ["Task", "Task"],
+            "Level": ["T1", "T2"],
+            "Slope": [0.8, 1.25],
+        }),
+    }
+    observed = np.array([1, 1, 1, 1, 2, 2, 3, 3], dtype=float)
+    diagnostics = {
+        "obs": pd.DataFrame({
+            "Observed": observed,
+            "Score": observed,
+            "Var": np.ones(len(observed)),
+            "StdSq": np.ones(len(observed)),
+            "PersonMeasure": [-1.8, -1.5, -1.1, -0.8, 0.1, 0.4, 1.0, 1.3],
+            "Expected": observed,
+            "Residual": np.zeros(len(observed)),
+        })
+    }
+    scope_diag = category_curve_diagnostic_scope_table(result_with_tables)
+    _self_test_assert(set(scope_diag["CurveLabel"]) == {"Average across Task levels", "Task = T1", "Task = T2"}, "curve scope diagnostics missing levels")
+    rating_dashboard = rating_scale_functioning_dashboard(result_with_tables, diagnostics)
+    _self_test_assert(not rating_dashboard.empty, "rating-scale dashboard is empty")
+    _self_test_assert("Category characteristic curves" in rating_dashboard["Check"].tolist(), "rating-scale dashboard missing curve row")
+    category_evidence = rating_scale_category_evidence_table(result_with_tables, diagnostics)
+    _self_test_assert(not category_evidence.empty, "rating-scale category evidence table is empty")
+    _self_test_assert("CurvePeakProbability" in category_evidence.columns, "category evidence missing curve peak probability")
+    decision_support = rating_scale_decision_support_table(result_with_tables, diagnostics)
+    _self_test_assert(not decision_support.empty, "rating-scale decision support table is empty")
+    _self_test_assert(
+        {"DecisionArea", "DecisionStatus", "SafeReportWording", "RerunComparison"}.issubset(decision_support.columns),
+        "rating-scale decision support table missing reporting columns",
+    )
+    _self_test_assert(
+        "Overall reportability" in decision_support["DecisionArea"].tolist(),
+        "rating-scale decision support missing overall row",
+    )
+    recode_candidates = rating_scale_recode_candidate_table(result_with_tables, diagnostics)
+    _self_test_assert(not recode_candidates.empty, "rating-scale recode candidate table is empty")
+    _self_test_assert(
+        {"CandidateID", "AdjacentBoundary", "OriginalToCandidateScoreMap", "RerunComparisonPlan"}.issubset(recode_candidates.columns),
+        "rating-scale recode candidate table missing comparison-planning columns",
+    )
+    _self_test_assert(
+        "BASE" in recode_candidates["CandidateID"].tolist(),
+        "rating-scale recode candidate table missing original scoring baseline",
+    )
+    recode_map_long = rating_scale_recode_map_long_table(result_with_tables, diagnostics)
+    _self_test_assert(not recode_map_long.empty, "rating-scale recode map long table is empty")
+    _self_test_assert(
+        {"CandidateID", "CandidateScoreColumn", "OriginalScore", "CandidateScore", "CandidateFingerprint"}.issubset(recode_map_long.columns),
+        "rating-scale recode map long table missing script columns",
+    )
+    recode_assets = rating_scale_recode_script_assets(result_with_tables, diagnostics)
+    _self_test_assert(
+        {"apply_rating_scale_recodes.py", "apply_rating_scale_recodes.R", "apply_rating_scale_recodes.jl", "mfrm_rating_scale_recode_map_long.csv"}.issubset(recode_assets),
+        "rating-scale recode script asset bundle missing language scripts",
+    )
     _self_test_assert(
         not np.allclose(
             avg["probability_wide"].drop(columns=["Theta"]).to_numpy(),
@@ -36934,7 +50334,8 @@ def _self_test_cached_static_assets_and_exports() -> None:
     mixed_bundle = {"manifest.csv": "name\nfigure\n", "html/figure.html": b"<html></html>"}
     mixed_key = bytes_mapping_fingerprint(mixed_bundle)
     with zipfile.ZipFile(io.BytesIO(cached_mixed_asset_zip(mixed_bundle, mixed_key)), "r") as zf:
-        _self_test_assert(set(zf.namelist()) == set(mixed_bundle), "cached mixed asset ZIP contents changed")
+        expected_names = {_safe_zip_entry_name(name) for name in mixed_bundle}
+        _self_test_assert(set(zf.namelist()) == expected_names, "cached mixed asset ZIP contents changed")
     fig = go.Figure(go.Scatter(x=[0, 1], y=[0, 1], mode="lines", name="line"))
     html = fig_to_html_bytes(fig)
     _self_test_assert(b"plotly" in html.lower(), "publication figure HTML export missing Plotly payload")
@@ -37120,6 +50521,42 @@ def cross_package_validation_plan() -> pd.DataFrame:
                 "Treat the .stan file as a scaffold. Document the exact "
                 "Stan source, sampler version, and compilation flags "
                 "you used alongside your results."
+            ),
+        },
+        {
+            "Area": "Uto-family Bayesian MFRM scaffold",
+            "PythonScenario": (
+                "sidebar emits a Uto-family Bayesian MFRM .stan scaffold "
+                "with multidimensional rubric criteria and Markov-style rater "
+                "severity drift; users run it locally through CmdStan"
+            ),
+            "ExternalReference": (
+                "Uto & Ueno (2020); Uto (2021); Uto (2023); cmdstan / "
+                "cmdstanpy / cmdstanr documentation"
+            ),
+            "OfficialHook": (
+                "generated Stan file plus Python/CmdStanPy, R/CmdStanR, "
+                "and Julia/CmdStan CLI runner templates"
+            ),
+            "ComparableEvidence": (
+                "Stan source, criterion/time-block mapping, prior settings, "
+                "posterior diagnostics, posterior predictive checks, and "
+                "sensitivity variants"
+            ),
+            "ReviewThreshold": (
+                "review any mismatch with the Uto paper parameterization, "
+                "prior scale, time-block definition, or criterion structure "
+                "before manuscript use"
+            ),
+            "ExpectedNonEquivalence": (
+                "the scaffold is not an exact paper replication until the "
+                "model equation, constraints, priors, and validation fixture "
+                "are explicitly matched"
+            ),
+            "Action": (
+                "Use the scaffold as a transparent Bayesian extension path; "
+                "archive the same JSON data and sampler controls across "
+                "Python/R/Julia wrappers."
             ),
         },
     ]
@@ -37390,6 +50827,42 @@ def external_validation_artifact_checklist() -> pd.DataFrame:
             "ReviewQuestion": "Do the scripts avoid hard-coded local paths and require users to provide anonymized input data explicitly?",
         },
         {
+            "Artifact": "Cross-language reproducibility script matrix",
+            "RequiredForClaim": "Any claim that the analysis can be rerun across Python/R/Julia/Stan surfaces",
+            "ExpectedFileOrEvidence": "reproducibility_script_matrix.csv plus the exact script bundle used for the claim",
+            "ReviewQuestion": "Is the chosen script appropriate for current-engine reproduction, portable checking, or posterior sampling?",
+        },
+        {
+            "Artifact": "Bayesian Stan runner templates",
+            "RequiredForClaim": "Any Python/R/Julia wrapper reproducibility claim for a Stan fit",
+            "ExpectedFileOrEvidence": "README_bayesian_mfrm_stan_runners.md; stan_reproducibility_archive_contract.csv; stan_posterior_reproducibility_handoff.md; stan_posterior_reproducibility_route.csv; stan_posterior_handoff_checklist.csv; stan_run_manifest_template.csv; run_bayesian_mfrm_cmdstanpy.py / run_bayesian_mfrm_cmdstanr.R / run_bayesian_mfrm_cmdstan_cli.jl",
+            "ReviewQuestion": "Do all wrappers use the same Stan file, JSON data, seed, chains, warmup, sampling iterations, and sampler controls?",
+        },
+        {
+            "Artifact": "Stan data JSON and coding maps",
+            "RequiredForClaim": "Any Bayesian Stan fit or Uto-family scaffold claim",
+            "ExpectedFileOrEvidence": "mfrm_stan_data.json; mfrm_model.stan; mfrm_uto_bayesian_mfrm.stan when used; mfrm_stan_data_dictionary.csv; mfrm_stan_data_manifest.csv; private mfrm_stan_id_index_map.csv; mfrm_stan_prior_guidance.csv; mfrm_stan_prior_decision_log_template.csv; mfrm_stan_prior_sensitivity_grid.csv; optional mfrm_uto_bayesian_mfrm_data_template.json; mfrm_uto_bayesian_mfrm_design_audit.csv; mfrm_uto_bayesian_mfrm_claim_wording.csv; mfrm_complete_stan_reproducibility_manifest.csv",
+            "ReviewQuestion": "Can every Stan integer code and prior-scale choice be traced back to the app's prepared data and documented analysis decisions without exposing private labels in public exports?",
+        },
+        {
+            "Artifact": "Bayesian prior-setting rationale",
+            "RequiredForClaim": "Any manuscript statement based on Stan posterior summaries",
+            "ExpectedFileOrEvidence": "mfrm_stan_prior_guidance.csv; filled mfrm_stan_prior_decision_log_template.csv; mfrm_stan_prior_sensitivity_grid.csv; edited mfrm_stan_data.json for each sensitivity variant; posterior diagnostics for each retained variant",
+            "ReviewQuestion": "Are the chosen prior scales justified from study design, prior studies, pilot data, or sensitivity results rather than accepted as hidden defaults?",
+        },
+        {
+            "Artifact": "Stan posterior handoff manifest",
+            "RequiredForClaim": "Any posterior imported into Posterior Viewer or manuscript Bayesian claim",
+            "ExpectedFileOrEvidence": "stan_run_manifest.json; stan_run_manifest.csv with posterior_csv_sha256; stan_reproducibility_archive_contract.csv; stan_posterior_reproducibility_handoff.md; stan_posterior_reproducibility_route.csv; stan_posterior_handoff_checklist.csv; posterior_manifest_check.csv",
+            "ReviewQuestion": "Can each uploaded posterior chain set be traced to one exact Stan file, one exact data JSON, prior scales, seed, chains, sampler controls, chain filenames, and chain hashes?",
+        },
+        {
+            "Artifact": "Uto-family Bayesian MFRM refinement plan",
+            "RequiredForClaim": "Any claim involving generalized Bayesian MFRM, multidimensional rubric criteria, or rater severity drift",
+            "ExpectedFileOrEvidence": "bayesian_mfrm_stan_refinement_plan.csv plus mfrm_uto_bayesian_mfrm_mapping_manifest.csv, mfrm_uto_bayesian_mfrm_design_audit.csv, mfrm_uto_bayesian_mfrm_claim_wording.csv, and method_reference_audit.csv",
+            "ReviewQuestion": "Is the Uto-family reference being used as context, a scaffold, or a validated fitted model for the current study?",
+        },
+        {
             "Artifact": "R cross-check status",
             "RequiredForClaim": "Any R package fit claim",
             "ExpectedFileOrEvidence": "r_crosscheck_status.csv and r_crosscheck_report.md",
@@ -37509,6 +50982,19 @@ def external_validation_report_template() -> pd.DataFrame:
             ),
             "ReviewerNotes": "",
         },
+        {
+            "ClaimArea": "Uto-family Bayesian MFRM Stan extension",
+            "PythonScenario": "UTO_BAYESIAN_MFRM scaffold run outside Streamlit",
+            "ExternalPackage": "CmdStan via Python/R/Julia wrappers",
+            "EvidenceFile": "bayesian_mfrm_stan_refinement_plan.csv; mfrm_stan_data.json; mfrm_stan_prior_guidance.csv; mfrm_stan_prior_sensitivity_grid.csv; stan_run_manifest.json; stan_run_manifest.csv; posterior_manifest_check.csv; mfrm_uto_bayesian_mfrm_data_template.json; method_reference_audit.csv; CmdStan CSV chains; posterior diagnostics",
+            "ObservedResult": "",
+            "Status": "Not run",
+            "AcceptablePublicWording": (
+                "A Uto-family Bayesian MFRM extension was run as a separate Stan analysis "
+                "with archived priors, sampler settings, diagnostics, and sensitivity checks."
+            ),
+            "ReviewerNotes": "",
+        },
     ]
     return pd.DataFrame(rows)
 
@@ -37541,11 +51027,70 @@ def _self_test_cross_package_validation_plan() -> None:
         {"Python", "R", "Julia"}.issubset(set(sim_templates["Runtime"])),
         "Simulation template inventory missing Python/R/Julia rows",
     )
+    script_matrix = reproducibility_script_export_matrix()
+    _self_test_assert(
+        {"Python", "R", "Julia", "Python + CmdStanPy", "R + CmdStanR", "Julia + CmdStan CLI"}.issubset(set(script_matrix["Runtime"])),
+        "reproducibility script matrix missing cross-language rows",
+    )
+    stan_plan = bayesian_mfrm_stan_refinement_plan()
+    _self_test_assert(
+        {"Uto_Ueno_2020", "Uto_2021", "Uto_2023"}.issubset(set("; ".join(stan_plan["ReferenceBasis"].astype(str)).replace(";", " ").split())),
+        "Bayesian Stan refinement plan missing Uto-family reference keys",
+    )
+    stan_runners = bayesian_stan_runner_templates()
+    _self_test_assert(
+        {"run_bayesian_mfrm_cmdstanpy.py", "run_bayesian_mfrm_cmdstanr.R", "run_bayesian_mfrm_cmdstan_cli.jl"}.issubset(set(stan_runners)),
+        "Bayesian Stan runner bundle missing Python/R/Julia scripts",
+    )
+    stan_runner_text = "\n".join(stan_runners.values())
+    _self_test_assert(
+        "stan_run_manifest.json" in stan_runner_text and "stan_run_manifest.csv" in stan_runner_text,
+        "Bayesian Stan runner bundle missing run manifest outputs",
+    )
+    _self_test_assert(
+        {"stan_reproducibility_archive_contract.csv", "stan_posterior_reproducibility_handoff.md", "stan_posterior_reproducibility_route.csv", "stan_posterior_handoff_checklist.csv", "stan_run_manifest_template.csv"}.issubset(set(stan_runners)),
+        "Bayesian Stan runner bundle missing posterior handoff assets",
+    )
+    prior_log_template = stan_prior_decision_log_template()
+    _self_test_assert(
+        {"PriorTarget", "PriorDecisionRationale", "SensitivityVariantsToRun", "DiagnosticsToAttach"}.issubset(prior_log_template.columns),
+        "Stan prior decision log template missing required columns",
+    )
+    _self_test_assert(
+        "stan_file_sha256" in stan_runner_text and "data_json_sha256" in stan_runner_text,
+        "Bayesian Stan runner bundle missing source/data hash fields",
+    )
+    stan_repro_handoff = stan_posterior_reproducibility_handoff_markdown()
+    _self_test_assert(
+        "Prior Setting And Sensitivity" in stan_repro_handoff and "Posterior Viewer" in stan_repro_handoff,
+        "Stan posterior reproducibility handoff missing prior or Posterior Viewer guidance",
+    )
+    stan_archive_contract = stan_reproducibility_archive_contract_table(public_export_mode=True)
+    _self_test_assert(
+        {"MFRM_Bayesian_Stan_Runners.zip", "MFRM_Stan_Data_Package.zip", "MFRM_Complete_Stan_Reproducibility_Package.zip", "MFRM_OSF_Package.zip", "MFRM_Manuscript_Binder.zip"}.issubset(
+            set(stan_archive_contract["PackageOrSurface"].astype(str))
+        ),
+        "Stan reproducibility archive contract missing required package rows",
+    )
+    handoff = stan_posterior_handoff_checklist()
+    _self_test_assert(
+        "stan_run_manifest.json or stan_run_manifest.csv" in handoff["Artifact"].astype(str).tolist(),
+        "Stan posterior handoff checklist missing manifest row",
+    )
+    manifest_template = stan_run_manifest_template()
+    _self_test_assert(
+        {"stan_file_sha256", "data_json_sha256", "posterior_csv_count", "posterior_csv_sha256"}.issubset(set(manifest_template["Field"].astype(str))),
+        "Stan run manifest template missing required hash/count fields",
+    )
     checklist = external_validation_artifact_checklist()
     _self_test_assert("External package versions" in checklist["Artifact"].tolist(), "artifact checklist missing package versions")
+    _self_test_assert("Stan data JSON and coding maps" in checklist["Artifact"].tolist(), "artifact checklist missing Stan data JSON row")
+    _self_test_assert("Bayesian prior-setting rationale" in checklist["Artifact"].tolist(), "artifact checklist missing Bayesian prior rationale row")
+    _self_test_assert("Stan posterior handoff manifest" in checklist["Artifact"].tolist(), "artifact checklist missing Stan handoff manifest row")
     template = external_validation_report_template()
     _self_test_assert("mfrmr 0.1.6 migration" in template["ClaimArea"].tolist(), "validation report template missing mfrmr 0.1.6 migration row")
     _self_test_assert("mfrmr 0.2.0 migration" in template["ClaimArea"].tolist(), "validation report template missing mfrmr 0.2.0 migration row")
+    _self_test_assert("Uto-family Bayesian MFRM Stan extension" in template["ClaimArea"].tolist(), "validation report template missing Uto-family Bayesian MFRM row")
     coverage = mfrmr_015_migration_coverage_table()
     _self_test_assert("Bounded GPCM" in coverage["mfrmr015Area"].tolist(), "mfrmr 0.1.5 coverage missing GPCM row")
     coverage_020 = mfrmr_020_migration_coverage_table()
@@ -37711,7 +51256,7 @@ def _self_test_advanced_model_generators() -> None:
 def _self_test_chart_guide_library() -> None:
     """Pin the unified chart-guide library shape so renderers behave consistently."""
     expected_keys = {
-        "wright_map", "pathway_map", "category_probability", "threshold_map",
+        "wright_map", "facets_yardstick", "pathway_map", "category_probability", "threshold_map",
         "icc", "scree", "facet_distribution", "reliability",
         "rater_agreement", "posterior_trace", "posterior_ridge",
     }
@@ -38412,10 +51957,51 @@ def _self_test_posterior_load_cmdstan_csvs() -> None:
         any(p in param_names for p in ("alpha", "beta", "sigma")),
         f"none of the scalar parameter names made it through: {param_names}",
     )
+    _self_test_assert(
+        {"chain_1.csv", "chain_2.csv"}.issubset(set(payload.get("uploaded_file_names", []))),
+        "CmdStan CSV upload metadata did not preserve uploaded basenames",
+    )
+    _self_test_assert(
+        len(payload.get("uploaded_file_sha256", {})) == 2,
+        "CmdStan CSV upload metadata did not record per-file SHA-256 hashes",
+    )
+
+    example_assets = posterior_viewer_example_package_assets()
+    manifest_upload = _FakeUpload(
+        example_assets["stan_run_manifest.json"].encode("utf-8"),
+        "stan_run_manifest.json",
+    )
+    manifest_flat, manifest_errors = parse_stan_run_manifest_upload(manifest_upload)
+    _self_test_assert(not manifest_errors, f"example manifest parse errors: {manifest_errors}")
+    example_files = [
+        _FakeUpload(example_assets["example_chain_1.csv"].encode("utf-8"), "example_chain_1.csv"),
+        _FakeUpload(example_assets["example_chain_2.csv"].encode("utf-8"), "example_chain_2.csv"),
+    ]
+    try:
+        example_payload = _posterior_load_cmdstan_csvs(example_files)
+    except Exception:
+        example_payload = None
+    if example_payload is not None:
+        example_checks = stan_run_manifest_check_table(manifest_flat, example_payload)
+        chain_status = example_checks.loc[
+            example_checks["Check"] == "Posterior chain count", "Status"
+        ]
+        _self_test_assert(
+            chain_status.empty or chain_status.iloc[0] in {"Ready", "Review"},
+            "example manifest chain-count check returned an invalid status",
+        )
+    fallback_checks = stan_run_manifest_check_table(manifest_flat, {"n_chains": 2})
+    fallback_status = fallback_checks.loc[
+        fallback_checks["Check"] == "Posterior chain count", "Status"
+    ].iloc[0]
+    _self_test_assert(
+        fallback_status == "Ready",
+        f"example manifest should match two synthetic chains, got {fallback_status}",
+    )
 
 
 def _self_test_config_json_import_whitelist() -> None:
-    """Pin the 25-key config-import whitelist and its behaviour under import.
+    """Pin the 26-key config-import whitelist and its behaviour under import.
 
     The `_CONFIG_JSON_IMPORT_WHITELIST` set is the contract between
     `Download config (JSON)` (writer) and `Import config JSON` (reader).
@@ -38426,8 +52012,8 @@ def _self_test_config_json_import_whitelist() -> None:
     """
     # Size contract — bumping this number requires an entry in CHANGELOG.
     _self_test_assert(
-        len(_CONFIG_JSON_IMPORT_WHITELIST) == 25,
-        f"config-import whitelist size drifted: {len(_CONFIG_JSON_IMPORT_WHITELIST)} != 25",
+        len(_CONFIG_JSON_IMPORT_WHITELIST) == 26,
+        f"config-import whitelist size drifted: {len(_CONFIG_JSON_IMPORT_WHITELIST)} != 26",
     )
     # Keys the sidebar MUST round-trip.
     critical_keys = {
@@ -38435,6 +52021,7 @@ def _self_test_config_json_import_whitelist() -> None:
         "rating_min", "rating_max",
         "maxit", "reltol", "anchor_policy",
         "facet_regularization_ui_mode", "facet_regularization_specs",
+        "visualization_preferences",
     }
     missing = critical_keys - _CONFIG_JSON_IMPORT_WHITELIST
     _self_test_assert(
@@ -38864,12 +52451,29 @@ def export_reference_parity_fixture(output_dir: str) -> int:
     external_reference_documentation_table().to_csv(out_dir / "external_reference_documentation.csv", index=False)
     external_simulation_reference_inventory().to_csv(out_dir / "external_simulation_reference_inventory.csv", index=False)
     external_simulation_template_inventory().to_csv(out_dir / "external_simulation_template_inventory.csv", index=False)
+    reproducibility_script_export_matrix().to_csv(out_dir / "reproducibility_script_matrix.csv", index=False)
+    bayesian_mfrm_stan_refinement_plan().to_csv(out_dir / "bayesian_mfrm_stan_refinement_plan.csv", index=False)
+    stan_reproducibility_archive_contract_table(public_export_mode=True).to_csv(
+        out_dir / "stan_reproducibility_archive_contract.csv",
+        index=False,
+    )
+    (out_dir / "stan_posterior_reproducibility_handoff.md").write_text(
+        stan_posterior_reproducibility_handoff_markdown(),
+        encoding="utf-8",
+    )
+    guided_stan_posterior_reproducibility_help_table().to_csv(out_dir / "stan_posterior_reproducibility_route.csv", index=False)
+    stan_prior_setting_guidance().to_csv(out_dir / "mfrm_stan_prior_guidance.csv", index=False)
+    stan_prior_sensitivity_grid().to_csv(out_dir / "mfrm_stan_prior_sensitivity_grid.csv", index=False)
+    stan_posterior_handoff_checklist().to_csv(out_dir / "stan_posterior_handoff_checklist.csv", index=False)
+    stan_run_manifest_template().to_csv(out_dir / "stan_run_manifest_template.csv", index=False)
     external_validation_artifact_checklist().to_csv(out_dir / "external_validation_artifact_checklist.csv", index=False)
     external_validation_report_template().to_csv(out_dir / "external_validation_report_template.csv", index=False)
     mfrmr_015_migration_coverage_table().to_csv(out_dir / "mfrmr_015_migration_coverage.csv", index=False)
     mfrmr_016_migration_coverage_table().to_csv(out_dir / "mfrmr_016_migration_coverage.csv", index=False)
     mfrmr_020_migration_coverage_table().to_csv(out_dir / "mfrmr_020_migration_coverage.csv", index=False)
     for name, script_text in external_simulation_template_scripts().items():
+        (out_dir / name).write_text(script_text, encoding="utf-8")
+    for name, script_text in bayesian_stan_runner_templates().items():
         (out_dir / name).write_text(script_text, encoding="utf-8")
 
     readme = """# MFRM Python Parity Fixture
@@ -39145,7 +52749,7 @@ def build_demo_report_frames(
     data: pd.DataFrame,
     all_bias_results: dict | None = None,
 ) -> OrderedDict[str, pd.DataFrame]:
-    """Assemble beginner-facing demo report tables for CLI export."""
+    """Assemble guided demo report tables for CLI export."""
     frames: OrderedDict[str, pd.DataFrame] = OrderedDict()
     frames["demo_manifest"] = pd.DataFrame([
         {
@@ -39156,7 +52760,7 @@ def build_demo_report_frames(
             "Method": result.get("config", {}).get("method"),
             "RuntimeBoundary": "standalone Python; no mfrmr/rpy2/Rscript/FACETS/TAM/sirt/mirt runtime call",
             "PrivacyNote": "The demo uses synthetic built-in data only.",
-            "ReadFirst": "Open publication_gate_summary, then submission_action_plan, then beginner_case_guidance, then final_report_readiness, then manuscript_claim_guide, then manuscript_template.md, then visual_interpretation_checklist, then measures and category_probability_curves.",
+            "ReadFirst": "Open manuscript_handoff.md, then manuscript_handoff_checklist, publication_gate_summary, submission_action_plan, case_interpretation_guidance, final_report_readiness, manuscript_claim_guide, apa_report_sentence_audit, manuscript_template.md, visual_interpretation_checklist, visual_claim_guardrails, measures, and category_probability_curves.",
         }
     ])
     frames["sample_data"] = data.copy()
@@ -39176,20 +52780,102 @@ def build_demo_report_frames(
     action_plan = build_submission_action_plan(result, diagnostics, all_bias_results or {})
     if isinstance(action_plan, pd.DataFrame) and not action_plan.empty:
         frames["submission_action_plan"] = action_plan
-    beginner_cases = build_beginner_case_guidance(result, diagnostics, all_bias_results or {})
-    if isinstance(beginner_cases, pd.DataFrame) and not beginner_cases.empty:
-        frames["beginner_case_guidance"] = beginner_cases
+    case_guidance = build_case_interpretation_guidance(result, diagnostics, all_bias_results or {})
+    if isinstance(case_guidance, pd.DataFrame) and not case_guidance.empty:
+        frames["case_interpretation_guidance"] = case_guidance
     readiness = build_final_report_readiness(result, diagnostics, all_bias_results or {})
     if isinstance(readiness, pd.DataFrame) and not readiness.empty:
         frames["final_report_readiness"] = readiness
     claim_guide = build_manuscript_claim_guide(result, diagnostics, all_bias_results or {})
     if isinstance(claim_guide, pd.DataFrame) and not claim_guide.empty:
         frames["manuscript_claim_guide"] = claim_guide
+    claim_evidence = build_claim_to_evidence_matrix(result, diagnostics, all_bias_results or {})
+    if isinstance(claim_evidence, pd.DataFrame) and not claim_evidence.empty:
+        frames["claim_to_evidence_matrix"] = claim_evidence
+    apa_sentence_audit = build_apa_report_sentence_audit(result, diagnostics, all_bias_results=all_bias_results or {})
+    if isinstance(apa_sentence_audit, pd.DataFrame) and not apa_sentence_audit.empty:
+        frames["apa_report_sentence_audit"] = apa_sentence_audit
+    assumption_audit = build_statistical_assumption_audit(result, diagnostics, all_bias_results or {})
+    if isinstance(assumption_audit, pd.DataFrame) and not assumption_audit.empty:
+        frames["statistical_assumption_audit"] = assumption_audit
+    method_ref_audit = build_method_reference_audit()
+    if isinstance(method_ref_audit, pd.DataFrame) and not method_ref_audit.empty:
+        frames["method_reference_audit"] = method_ref_audit
+    bias_inference_audit = build_bias_inference_audit(all_bias_results or {}, result, diagnostics)
+    if isinstance(bias_inference_audit, pd.DataFrame) and not bias_inference_audit.empty:
+        frames["bias_inference_audit"] = bias_inference_audit
+    prior_plan = build_mml_prior_sensitivity_plan(result)
+    if isinstance(prior_plan, pd.DataFrame) and not prior_plan.empty:
+        frames["mml_prior_sd_sensitivity_plan"] = prior_plan
+    uncertainty = diagnostics.get("uncertainty", {})
+    if isinstance(uncertainty, dict):
+        unc_summary = uncertainty.get("summary", pd.DataFrame())
+        cov_audit = uncertainty.get("covariance_audit", pd.DataFrame())
+        structural_se = uncertainty.get("structural_se", pd.DataFrame())
+        if isinstance(unc_summary, pd.DataFrame) and not unc_summary.empty:
+            frames["statistical_uncertainty_summary"] = unc_summary
+        if isinstance(cov_audit, pd.DataFrame) and not cov_audit.empty:
+            frames["mml_covariance_audit"] = cov_audit
+        if isinstance(structural_se, pd.DataFrame) and not structural_se.empty:
+            frames["mml_structural_measure_se"] = structural_se
+    pca = diagnostics.get("pca")
+    if isinstance(pca, dict):
+        stability = pca.get("stability_table")
+        if isinstance(stability, pd.DataFrame) and not stability.empty:
+            frames["pca_stability_audit"] = stability
+        stability_all = collect_pca_stability_tables(diagnostics)
+        if isinstance(stability_all, pd.DataFrame) and not stability_all.empty:
+            frames["pca_stability_all_scopes"] = stability_all
+    handoff_checklist = build_manuscript_handoff_checklist(
+        result,
+        diagnostics,
+        all_bias_results or {},
+        public_export_mode=True,
+    )
+    if isinstance(handoff_checklist, pd.DataFrame) and not handoff_checklist.empty:
+        frames["manuscript_handoff_checklist"] = handoff_checklist
     frames["visual_interpretation_checklist"] = visual_interpretation_checklist()
+    frames["visual_claim_guardrails"] = visual_claim_guardrail_table()
     frames["visual_method_evidence"] = visual_method_evidence_table()
     frames["public_beta_limitations"] = public_beta_limitations_table()
     frames["external_simulation_reference_inventory"] = external_simulation_reference_inventory()
     frames["external_simulation_template_inventory"] = external_simulation_template_inventory()
+    frames["reproducibility_script_matrix"] = reproducibility_script_export_matrix()
+    frames["bayesian_mfrm_stan_refinement_plan"] = bayesian_mfrm_stan_refinement_plan()
+    frames["stan_reproducibility_archive_contract"] = stan_reproducibility_archive_contract_table(public_export_mode=True)
+    frames["stan_posterior_reproducibility_route"] = guided_stan_posterior_reproducibility_help_table()
+    frames["stan_posterior_handoff_checklist"] = stan_posterior_handoff_checklist()
+    frames["stan_run_manifest_template"] = stan_run_manifest_template()
+    generic_stan_export = build_generic_mfrm_stan_data_export(result)
+    if generic_stan_export.get("available"):
+        frames["mfrm_stan_data_manifest"] = generic_stan_export["manifest"]
+        frames["mfrm_stan_data_dictionary"] = generic_stan_export["data_dictionary"]
+        frames["mfrm_stan_id_index_map"] = generic_stan_export["id_map"]
+        frames["mfrm_stan_prior_guidance"] = generic_stan_export["prior_guidance"]
+        frames["mfrm_stan_prior_sensitivity_grid"] = generic_stan_export["prior_sensitivity_grid"]
+        frames["mfrm_stan_prior_decision_log_template"] = stan_prior_decision_log_template(
+            sigma_theta_prior_scale=float(generic_stan_export["stan_data"].get("sigma_theta_prior_scale", 2.5)),
+            facet_prior_scale=float(generic_stan_export["stan_data"].get("facet_prior_scale", 2.0)),
+            step_prior_scale=float(generic_stan_export["stan_data"].get("step_prior_scale", 5.0)),
+        )
+    try:
+        stan_complete_manifest = pd.read_csv(io.StringIO(
+            stan_reproducibility_package_assets(
+                result,
+                include_row_level=False,
+            ).get("mfrm_complete_stan_reproducibility_manifest.csv", "")
+        ))
+        if isinstance(stan_complete_manifest, pd.DataFrame) and not stan_complete_manifest.empty:
+            frames["mfrm_complete_stan_reproducibility_manifest"] = stan_complete_manifest
+    except Exception:
+        pass
+    uto_stan_export = build_uto_bayesian_mfrm_stan_data_export(result)
+    if uto_stan_export.get("available"):
+        frames["mfrm_uto_bayesian_mfrm_design_audit"] = uto_stan_export["design_audit"]
+        frames["mfrm_uto_bayesian_mfrm_claim_wording"] = uto_stan_export["claim_wording"]
+        frames["mfrm_uto_bayesian_mfrm_mapping_manifest"] = uto_stan_export["manifest"]
+        frames["mfrm_uto_bayesian_mfrm_data_dictionary"] = uto_stan_export["data_dictionary"]
+        frames["mfrm_uto_bayesian_mfrm_id_index_map"] = uto_stan_export["id_map"]
     frames["mfrmr_015_migration_coverage"] = mfrmr_015_migration_coverage_table()
     frames["mfrmr_016_migration_coverage"] = mfrmr_016_migration_coverage_table()
     frames["mfrmr_020_migration_coverage"] = mfrmr_020_migration_coverage_table()
@@ -39203,9 +52889,25 @@ def build_demo_report_frames(
     steps = result.get("steps", pd.DataFrame())
     if isinstance(steps, pd.DataFrame) and not steps.empty:
         frames["steps"] = steps
+    try:
+        facets_for_yardstick = result.get("facets", {}) if isinstance(result, dict) else {}
+        prep_for_yardstick = result.get("prep", {}) if isinstance(result, dict) else {}
+        yardstick_map = make_yardstick_export_table(
+            facets_for_yardstick.get("person", pd.DataFrame()) if isinstance(facets_for_yardstick, dict) else pd.DataFrame(),
+            facets_for_yardstick.get("others", pd.DataFrame()) if isinstance(facets_for_yardstick, dict) else pd.DataFrame(),
+            steps,
+            rating_min=prep_for_yardstick.get("rating_min") if isinstance(prep_for_yardstick, dict) else None,
+        )
+        if isinstance(yardstick_map, pd.DataFrame) and not yardstick_map.empty:
+            frames["yardstick_map"] = yardstick_map
+    except Exception:
+        pass
     slopes = result.get("slopes", pd.DataFrame())
     if isinstance(slopes, pd.DataFrame) and not slopes.empty:
         frames["gpcm_slopes"] = slopes
+    measures = diagnostics.get("measures", pd.DataFrame())
+    if isinstance(measures, pd.DataFrame) and not measures.empty:
+        frames["measures"] = measures
     reliability = diagnostics.get("reliability", pd.DataFrame())
     if isinstance(reliability, pd.DataFrame) and not reliability.empty:
         frames["reliability"] = reliability
@@ -39221,12 +52923,33 @@ def build_demo_report_frames(
                 frames["category_diagnostics"] = cat_stats
         except Exception:
             pass
+        try:
+            rating_dashboard = rating_scale_functioning_dashboard(result, diagnostics)
+            if isinstance(rating_dashboard, pd.DataFrame) and not rating_dashboard.empty:
+                frames["rating_scale_functioning_dashboard"] = rating_dashboard
+            decision_support = rating_scale_decision_support_table(result, diagnostics)
+            if isinstance(decision_support, pd.DataFrame) and not decision_support.empty:
+                frames["rating_scale_decision_support"] = decision_support
+            recode_candidates = rating_scale_recode_candidate_table(result, diagnostics)
+            if isinstance(recode_candidates, pd.DataFrame) and not recode_candidates.empty:
+                frames["rating_scale_recode_candidates"] = recode_candidates
+            recode_map_long = rating_scale_recode_map_long_table(result, diagnostics)
+            if isinstance(recode_map_long, pd.DataFrame) and not recode_map_long.empty:
+                frames["rating_scale_recode_map_long"] = recode_map_long
+            category_evidence = rating_scale_category_evidence_table(result, diagnostics)
+            if isinstance(category_evidence, pd.DataFrame) and not category_evidence.empty:
+                frames["rating_scale_category_evidence"] = category_evidence
+        except Exception:
+            pass
     try:
         step_order = calc_step_order(result.get("steps", pd.DataFrame()))
         if isinstance(step_order, pd.DataFrame) and not step_order.empty:
             frames["step_order"] = step_order
     except Exception:
         pass
+    curve_diagnostics = category_curve_diagnostic_scope_table(result)
+    if isinstance(curve_diagnostics, pd.DataFrame) and not curve_diagnostics.empty:
+        frames["category_curve_diagnostics"] = curve_diagnostics
     curve_export = category_probability_curve_export_table(result)
     if isinstance(curve_export, pd.DataFrame) and not curve_export.empty:
         frames["category_probability_curves"] = curve_export
@@ -39251,7 +52974,7 @@ def build_demo_report_frames(
 
 
 def export_demo_report(output_dir: str) -> int:
-    """Export a deterministic beginner-facing demo report from built-in sample data."""
+    """Export a deterministic guided demo report from built-in sample data."""
     out_dir = Path(output_dir).expanduser().resolve()
     out_dir.mkdir(parents=True, exist_ok=True)
     data = sample_mfrm_data(seed=20260411)
@@ -39285,8 +53008,26 @@ def export_demo_report(output_dir: str) -> int:
         all_bias_results = {}
 
     frames = build_demo_report_frames(result, diagnostics, data, all_bias_results=all_bias_results)
+    frames["visualization_settings"] = build_visualization_preferences_table()
     method_appendix = generate_method_appendix_text(result, diagnostics, all_bias_results=all_bias_results)
     manuscript_template = generate_manuscript_reporting_template(result, diagnostics, all_bias_results=all_bias_results)
+    manuscript_handoff = generate_manuscript_handoff_markdown(
+        result,
+        diagnostics,
+        all_bias_results=all_bias_results,
+        public_export_mode=True,
+    )
+    demo_text_assets = {
+        "manuscript_handoff.md": manuscript_handoff,
+        "method_appendix.md": method_appendix,
+        "manuscript_template.md": manuscript_template,
+        "visualization_settings.json": _visualization_preferences_json(),
+        **external_simulation_template_scripts(),
+        **bayesian_stan_runner_templates(),
+        **yardstick_reproducibility_scripts(),
+        **stan_data_export_assets(result, include_row_level=True),
+        **stan_reproducibility_package_assets(result, include_row_level=True),
+    }
     for name, frame in frames.items():
         frame.to_csv(out_dir / f"{name}.csv", index=False)
     (out_dir / "MFRM_Demo_Report.xlsx").write_bytes(to_excel_bytes(frames))
@@ -39294,16 +53035,21 @@ def export_demo_report(output_dir: str) -> int:
     (out_dir / "MFRM_Demo_Report.zip").write_bytes(build_osf_zip(
         frames,
         title="MFRM_Demo_Report",
-        text_assets={
-            "method_appendix.md": method_appendix,
-            "manuscript_template.md": manuscript_template,
-            **external_simulation_template_scripts(),
-        },
+        text_assets=demo_text_assets,
     ))
+    (out_dir / "manuscript_handoff.md").write_text(manuscript_handoff, encoding="utf-8")
     (out_dir / "method_appendix.md").write_text(method_appendix, encoding="utf-8")
     (out_dir / "manuscript_template.md").write_text(manuscript_template, encoding="utf-8")
     for name, script_text in external_simulation_template_scripts().items():
         (out_dir / name).write_text(script_text, encoding="utf-8")
+    for name, script_text in bayesian_stan_runner_templates().items():
+        (out_dir / name).write_text(script_text, encoding="utf-8")
+    for name, script_text in yardstick_reproducibility_scripts().items():
+        (out_dir / name).write_text(script_text, encoding="utf-8")
+    for name, asset_text in stan_data_export_assets(result, include_row_level=True).items():
+        (out_dir / name).write_text(asset_text, encoding="utf-8")
+    for name, asset_text in stan_reproducibility_package_assets(result, include_row_level=True).items():
+        (out_dir / name).write_text(asset_text, encoding="utf-8")
 
     figure_html: dict[str, str] = {}
     figure_png: dict[str, bytes] = {}
@@ -39316,6 +53062,18 @@ def export_demo_report(output_dir: str) -> int:
             result.get("steps", pd.DataFrame()),
         ),
         "wright_map",
+        figure_png,
+        figure_html,
+    )
+    _add_figure_export(
+        _make_yardstick_figure(
+            facets_data.get("person", pd.DataFrame()),
+            facets_data.get("others", pd.DataFrame()),
+            result.get("steps", pd.DataFrame()),
+            show_direct_labels=True,
+            rating_min=result.get("prep", {}).get("rating_min") if isinstance(result.get("prep", {}), dict) else None,
+        ),
+        "facets_yardstick_text_map",
         figure_png,
         figure_html,
     )
@@ -39353,12 +53111,61 @@ def export_demo_report(output_dir: str) -> int:
                 figure_html,
             )
     figure_manifest = _figure_export_manifest(figure_html, figure_png)
+    claim_evidence = frames.get("claim_to_evidence_matrix", pd.DataFrame())
+    visual_evidence_map = build_visual_evidence_map(figure_manifest, claim_evidence)
+    visual_qa_preflight = build_visual_qa_preflight(figure_manifest, visual_evidence_map)
+    (out_dir / "visualization_settings.json").write_text(
+        _visualization_preferences_json(),
+        encoding="utf-8",
+    )
     if not figure_manifest.empty:
         figure_manifest.to_csv(out_dir / "figure_manifest.csv", index=False)
         figure_assets = _figure_bundle_assets(figure_html, figure_png, figure_manifest)
         (out_dir / "MFRM_Demo_Publication_Figures.zip").write_bytes(
             cached_mixed_asset_zip(figure_assets, bytes_mapping_fingerprint(figure_assets))
         )
+    if isinstance(visual_evidence_map, pd.DataFrame) and not visual_evidence_map.empty:
+        frames["visual_evidence_map"] = visual_evidence_map
+        visual_evidence_map.to_csv(out_dir / "visual_evidence_map.csv", index=False)
+        if isinstance(visual_qa_preflight, pd.DataFrame) and not visual_qa_preflight.empty:
+            frames["visual_qa_preflight"] = visual_qa_preflight
+            visual_qa_preflight.to_csv(out_dir / "visual_qa_preflight.csv", index=False)
+        (out_dir / "visual_caption_drafts.md").write_text(
+            generate_visual_caption_drafts(visual_evidence_map),
+            encoding="utf-8",
+        )
+        (out_dir / "MFRM_Demo_Report.xlsx").write_bytes(to_excel_bytes(frames))
+        (out_dir / "MFRM_Demo_Report.html").write_bytes(to_html_report(frames, title="MFRM Demo Report"))
+        (out_dir / "MFRM_Demo_Report.zip").write_bytes(build_osf_zip(
+            frames,
+            title="MFRM_Demo_Report",
+            text_assets={
+                **demo_text_assets,
+                "visual_caption_drafts.md": generate_visual_caption_drafts(visual_evidence_map),
+                "visualization_settings.json": _visualization_preferences_json(),
+            },
+        ))
+    visual_binder_assets = build_visual_evidence_binder_assets(
+        figure_html,
+        figure_png,
+        figure_manifest,
+        visual_evidence_map,
+        claim_evidence,
+        public_export_mode=True,
+    )
+    (out_dir / "MFRM_Demo_Visual_Evidence_Binder.zip").write_bytes(
+        cached_mixed_asset_zip(visual_binder_assets, bytes_mapping_fingerprint(visual_binder_assets))
+    )
+    binder_assets = build_manuscript_binder_assets(
+        frames,
+        demo_text_assets,
+        figure_manifest=figure_manifest,
+        visual_evidence_map=visual_evidence_map,
+        public_export_mode=True,
+    )
+    (out_dir / "MFRM_Demo_Manuscript_Binder.zip").write_bytes(
+        cached_mixed_asset_zip(binder_assets, bytes_mapping_fingerprint(binder_assets))
+    )
     if figure_html:
         fig_dir = out_dir / "figures_html"
         fig_dir.mkdir(exist_ok=True)
@@ -39380,30 +53187,41 @@ It demonstrates the standalone Python workflow without calling `mfrmr`,
 
 ## Files to open first
 
-1. `MFRM_Demo_Report.html`: browser-readable table report.
-2. `publication_gate_summary.csv`: whether APA-style conclusions are ready, caveated, or blocked.
-3. `submission_action_plan.csv`: prioritized blockers, caveats, boundaries, and wording repairs before manuscript use.
-4. `beginner_case_guidance.csv`: case-specific cautions for common beginner interpretation traps.
-5. `final_report_readiness.csv`: what to resolve before final reporting.
-6. `manuscript_claim_guide.csv`: what is safe to claim in a manuscript.
-7. `manuscript_template.md`: Methods, Results, limitations, and reviewer preflight scaffold.
-8. `visual_interpretation_checklist.csv`: how to read each plot.
-9. `visual_method_evidence.csv`: methodological basis and readability rules for plots.
-10. `public_beta_limitations.csv`: what this beta release supports and does not claim.
-11. `external_simulation_reference_inventory.csv`: archived validation artifacts
+1. `manuscript_handoff.md`: download order, manuscript-use steps, and archive notes.
+2. `manuscript_handoff_checklist.csv`: same handoff as a sortable checklist.
+3. `claim_to_evidence_matrix.csv`: claim-to-table/figure/diagnostic map for manuscript and reviewer response use.
+4. `apa_report_sentence_audit.csv`: sentence-to-evidence/citation/boundary map for generated APA prose.
+5. `method_reference_audit.csv`: Zotero/BibTeX-aligned reference map for method claims and citation boundaries.
+6. `visual_evidence_map.csv`: figure-to-claim/caption/evidence map.
+7. `visual_qa_preflight.csv`: export, label, font, theme, and caption-readiness checks.
+8. `visualization_settings.json` / `visualization_settings.csv`: figure theme, label, font-size, dimension, and caption settings.
+9. `MFRM_Demo_Visual_Evidence_Binder.zip`: figures plus captions, figure map, and visual evidence tables.
+10. `MFRM_Demo_Manuscript_Binder.zip`: curated writing packet with the main manuscript-facing files.
+11. `MFRM_Demo_Report.html`: browser-readable table report.
+12. `publication_gate_summary.csv`: whether APA-style conclusions are ready, caveated, or blocked.
+13. `submission_action_plan.csv`: prioritized blockers, caveats, boundaries, and wording repairs before manuscript use.
+14. `case_interpretation_guidance.csv`: case-specific cautions for common interpretation traps.
+15. `final_report_readiness.csv`: what to resolve before final reporting.
+16. `manuscript_claim_guide.csv`: what is safe to claim in a manuscript.
+17. `manuscript_template.md`: Methods, Results, limitations, and reviewer preflight scaffold.
+18. `visual_interpretation_checklist.csv`: how to read each plot.
+19. `visual_claim_guardrails.csv`: safe wording, do-not-write boundaries, and required evidence for visual interpretations.
+20. `visual_method_evidence.csv`: methodological basis and readability rules for plots.
+21. `public_beta_limitations.csv`: what this beta release supports and does not claim.
+22. `external_simulation_reference_inventory.csv`: archived validation artifacts
    to consult without bundling private data.
-12. `external_simulation_template_inventory.csv`: index of sanitized Python/R/Julia
+23. `external_simulation_template_inventory.csv`: index of sanitized Python/R/Julia
    external validation templates.
-13. `README_external_simulation_templates.md` and `simulation_validation_*`:
+23. `README_external_simulation_templates.md` and `simulation_validation_*`:
    sanitized handoff scripts for optional external validation.
-14. `mfrmr_015_migration_coverage.csv` and `mfrmr_016_migration_coverage.csv`: how the mfrmr package feature surface through 0.1.6 maps to this Python app.
-15. `public_release_readiness.csv`: repository-level public release checklist.
-16. `category_probability_curves.csv`: long-form PCM curve data for the
+24. `mfrmr_015_migration_coverage.csv` and `mfrmr_016_migration_coverage.csv`: how the mfrmr package feature surface through 0.1.6 maps to this Python app.
+25. `public_release_readiness.csv`: repository-level public release checklist.
+26. `category_probability_curves.csv`: long-form PCM curve data for the
    averaged view and each Task level.
-17. `figure_manifest.csv`: manuscript-use notes and available formats for exported figures.
-18. `MFRM_Demo_Publication_Figures.zip`: publication-styled PNG/HTML figure bundle.
-19. `figures_html/`: interactive publication-styled diagnostic figures.
-20. `method_appendix.md`: reproducible method notes for this demo run.
+27. `figure_manifest.csv`: manuscript-use notes and available formats for exported figures.
+28. `MFRM_Demo_Publication_Figures.zip`: publication-styled PNG/HTML figure bundle.
+29. `figures_html/`: interactive publication-styled diagnostic figures.
+30. `method_appendix.md`: reproducible method notes for this demo run.
 
 ## Demo model
 
@@ -39419,7 +53237,7 @@ identifiers before upload or paste.
 """
     (out_dir / "README.md").write_text(readme, encoding="utf-8")
     print(f"Wrote demo report to: {out_dir}")
-    print("Key files: MFRM_Demo_Report.html, MFRM_Demo_Report.xlsx, publication_gate_summary.csv, submission_action_plan.csv, beginner_case_guidance.csv, final_report_readiness.csv, manuscript_claim_guide.csv, manuscript_template.md, figure_manifest.csv, MFRM_Demo_Publication_Figures.zip, figures_html/")
+    print("Key files: manuscript_handoff.md, manuscript_handoff_checklist.csv, claim_to_evidence_matrix.csv, apa_report_sentence_audit.csv, method_reference_audit.csv, visual_evidence_map.csv, visual_claim_guardrails.csv, visual_qa_preflight.csv, visualization_settings.json, visualization_settings.csv, MFRM_Demo_Visual_Evidence_Binder.zip, MFRM_Demo_Manuscript_Binder.zip, MFRM_Demo_Report.html, MFRM_Demo_Report.xlsx, publication_gate_summary.csv, submission_action_plan.csv, case_interpretation_guidance.csv, final_report_readiness.csv, manuscript_claim_guide.csv, manuscript_template.md, figure_manifest.csv, MFRM_Demo_Publication_Figures.zip, figures_html/")
     return 0
 
 
@@ -40415,6 +54233,22 @@ _CHART_GUIDE_LIBRARY: dict[str, dict[str, str]] = {
             "Linacre (2024) call this the primary visual check."
         ),
     },
+    "facets_yardstick": {
+        "headline": "FACETS-style Yardstick — direct text labels on a shared logit ruler.",
+        "body": (
+            "**How to read:** this is intentionally closer to FACETS Table 6.0 "
+            "than to a ggplot point map. The primary marks are text labels "
+            "placed at their logit estimates. Use it to read which rater, task, "
+            "criterion, or threshold sits above or below another on the same "
+            "scale. The general Wright Map is better for distribution shape, "
+            "uncertainty, and hover exploration; the FACETS-style yardstick is "
+            "better for printed inspection and reviewer-facing label lookup. "
+            "Threshold labels such as 0|1 or 4|5 mark adjacent category "
+            "boundaries, not facet elements. The short horizontal threshold "
+            "segments are drawn at the exact threshold estimates; nearby text "
+            "may be slightly dodged only to preserve readability."
+        ),
+    },
     "pathway_map": {
         "headline": "Pathway Map — measure on x-axis, Infit MnSq on y-axis, with element labels.",
         "body": (
@@ -40424,13 +54258,15 @@ _CHART_GUIDE_LIBRARY: dict[str, dict[str, str]] = {
         ),
     },
     "category_probability": {
-        "headline": "Category Probability Curves — probability of each response category vs latent trait.",
+        "headline": "FACETS-style Category Characteristic Curves — category probabilities, peaks, and step boundaries.",
         "body": (
-            "**How to read:** each curve should peak exclusively at some "
-            "trait range, and all categories should be the most probable "
-            "choice over some interval. Overlapping / dominated curves "
-            "suggest an unused or redundant category (Linacre, 2004; "
-            "Andrich, 1978)."
+            "**How to read:** each curve should peak over some trait range, "
+            "and each category should become the most probable response over "
+            "some interval. FACETS-style vertical step lines label adjacent "
+            "category boundaries such as 0|1 or 4|5. If a category never has "
+            "a visible peak or dominance region, inspect counts, average "
+            "measures, and threshold order before reporting the category as "
+            "functioning distinctly (Linacre, 2004; Andrich, 1978)."
         ),
     },
     "threshold_map": {
@@ -40571,6 +54407,14 @@ _ADVANCED_RESPONSE_MODELS: dict[str, dict[str, str]] = {
         "needs_testlet_column": "false",
         "needs_class_count": "false",
     },
+    "UTO_BAYESIAN_MFRM": {
+        "label": "Uto-family Bayesian MFRM scaffold (Uto & Ueno 2020; Uto 2021; Uto 2023)",
+        "family": "Bayesian MFRM",
+        "binary": "false",
+        "needs_q_matrix": "false",
+        "needs_testlet_column": "false",
+        "needs_class_count": "false",
+    },
 }
 
 
@@ -40651,6 +54495,20 @@ def advanced_model_data_template(model_name: str) -> dict:
         })
         note = "Pairwise-comparison outcomes. wins_a is 1 when object_a is preferred to object_b."
         file_name = "mfrm_pairwise_btl_template.csv"
+    elif name == "UTO_BAYESIAN_MFRM":
+        df = pd.DataFrame({
+            "person": ["P1", "P1", "P2", "P2"],
+            "rater": ["R1", "R2", "R1", "R2"],
+            "task": ["Essay1", "Essay1", "Essay1", "Essay2"],
+            "criterion": ["Content", "Content", "Organization", "Organization"],
+            "time_block": [1, 1, 2, 2],
+            "score": [4, 3, 2, 4],
+        })
+        note = (
+            "Long ordinal ratings for a Uto-family Bayesian MFRM scaffold. "
+            "Criterion indexes multidimensional rubric traits; time_block supports rater severity drift."
+        )
+        file_name = "mfrm_uto_bayesian_mfrm_long_template.csv"
     else:
         df = pd.DataFrame()
         note = "No template is registered for this model."
@@ -40659,7 +54517,7 @@ def advanced_model_data_template(model_name: str) -> dict:
 
 
 def advanced_model_scope_notes(model_name: str) -> str:
-    """Beginner-safe wording for advanced Stan model boundaries."""
+    """Boundary-safe wording for advanced Stan model boundaries."""
     name = str(model_name or "").upper()
     if name in {"TESTLET_RI", "TESTLET_BIFACTOR"}:
         return (
@@ -40683,6 +54541,13 @@ def advanced_model_scope_notes(model_name: str) -> str:
         return (
             "DINA is for binary cognitive-diagnostic data with a Q-matrix. It is not a many-facet rating-scale "
             "replacement unless the assessment design is explicitly attribute based."
+        )
+    if name == "UTO_BAYESIAN_MFRM":
+        return (
+            "This scaffold is aligned with the Uto-family Bayesian MFRM references in the method audit: "
+            "generalized Bayesian MFRM (Uto & Ueno, 2020), multidimensional rubric criteria (Uto, 2021), "
+            "and Markov-style rater severity drift (Uto, 2023). It is a research template, not a claim "
+            "that the current app has already validated those extensions for the uploaded run."
         )
     return (
         "The generated Stan model is a local-analysis template. Check priors, constraints, and data indexing "
@@ -41003,6 +54868,116 @@ generated quantities {
 """
 
 
+def generate_uto_bayesian_mfrm_stan_code(n_categories: int) -> str:
+    """Uto-family Bayesian MFRM scaffold with multidimensional criteria and drift."""
+    return f"""// Uto-family Bayesian MFRM scaffold.
+// Reference basis in this app's method audit:
+// - Uto & Ueno (2020): generalized MFRM and Bayesian HMC estimation.
+// - Uto (2021): multidimensional generalized MFRM for rubric criteria.
+// - Uto (2023): Bayesian MFRM with Markov modeling for rater severity drift.
+// This is a transparent research scaffold, not a validated exact reproduction
+// of any one paper's full parameterization.
+
+data {{
+  int<lower=1> N;                         // observations
+  int<lower=1> J;                         // persons
+  int<lower=1> R;                         // raters
+  int<lower=1> I;                         // tasks/items
+  int<lower=1> C_dim;                     // rubric criteria / dimensions
+  int<lower=1> S;                         // ordered time blocks for drift
+  int<lower=2> K;                         // rating categories ({n_categories} expected)
+  array[N] int<lower=1, upper=J> person;
+  array[N] int<lower=1, upper=R> rater;
+  array[N] int<lower=1, upper=I> task;
+  array[N] int<lower=1, upper=C_dim> criterion;
+  array[N] int<lower=1, upper=S> time_block;
+  array[N] int<lower=1, upper=K> y;
+}}
+
+parameters {{
+  vector[C_dim] theta_mu;
+  vector<lower=0>[C_dim] theta_sigma;
+  cholesky_factor_corr[C_dim] L_theta_corr;
+  matrix[J, C_dim] theta_raw;
+  vector[I] task_raw;
+  vector[C_dim] criterion_raw;
+  vector[R] rater_base_raw;
+  matrix[R, S] rater_drift_raw;
+  real<lower=0> sigma_task;
+  real<lower=0> sigma_criterion;
+  real<lower=0> sigma_rater;
+  real<lower=0> sigma_drift;
+  ordered[K - 1] kappa;
+}}
+
+transformed parameters {{
+  matrix[C_dim, J] theta_latent;
+  vector[I] task_difficulty;
+  vector[C_dim] criterion_difficulty;
+  vector[R] rater_base;
+  matrix[R, S] rater_severity;
+
+  theta_latent = diag_pre_multiply(theta_sigma, L_theta_corr) * theta_raw';
+  task_difficulty = (task_raw - mean(task_raw)) * sigma_task;
+  criterion_difficulty = (criterion_raw - mean(criterion_raw)) * sigma_criterion;
+  rater_base = (rater_base_raw - mean(rater_base_raw)) * sigma_rater;
+
+  for (r in 1:R) {{
+    rater_severity[r, 1] = rater_base[r] + sigma_drift * rater_drift_raw[r, 1];
+    if (S > 1) {{
+      for (s in 2:S) {{
+        rater_severity[r, s] = rater_severity[r, s - 1] + sigma_drift * rater_drift_raw[r, s];
+      }}
+    }}
+  }}
+}}
+
+model {{
+  theta_mu ~ normal(0, 1);
+  theta_sigma ~ normal(0, 1);
+  L_theta_corr ~ lkj_corr_cholesky(2);
+  to_vector(theta_raw) ~ std_normal();
+
+  task_raw ~ std_normal();
+  criterion_raw ~ std_normal();
+  rater_base_raw ~ std_normal();
+  to_vector(rater_drift_raw) ~ std_normal();
+
+  sigma_task ~ normal(0, 1);
+  sigma_criterion ~ normal(0, 1);
+  sigma_rater ~ normal(0, 1);
+  sigma_drift ~ normal(0, 0.5);
+  kappa ~ normal(0, 2);
+
+  for (n in 1:N) {{
+    real eta = theta_mu[criterion[n]]
+      + theta_latent[criterion[n], person[n]]
+      - task_difficulty[task[n]]
+      - criterion_difficulty[criterion[n]]
+      - rater_severity[rater[n], time_block[n]];
+    y[n] ~ ordered_logistic(eta, kappa);
+  }}
+}}
+
+generated quantities {{
+  corr_matrix[C_dim] theta_corr;
+  vector[N] log_lik;
+  array[N] int<lower=1, upper=K> y_rep;
+
+  theta_corr = multiply_lower_tri_self_transpose(L_theta_corr);
+  for (n in 1:N) {{
+    real eta = theta_mu[criterion[n]]
+      + theta_latent[criterion[n], person[n]]
+      - task_difficulty[task[n]]
+      - criterion_difficulty[criterion[n]]
+      - rater_severity[rater[n], time_block[n]];
+    log_lik[n] = ordered_logistic_lpmf(y[n] | eta, kappa);
+    y_rep[n] = ordered_logistic_rng(eta, kappa);
+  }}
+}}
+"""
+
+
 def generate_advanced_model_stan_code(
     model_name: str,
     *,
@@ -41027,6 +55002,8 @@ def generate_advanced_model_stan_code(
         code = generate_2pl_binary_stan_code()
     elif name == "PAIRWISE_BTL":
         code = generate_pairwise_btl_stan_code()
+    elif name == "UTO_BAYESIAN_MFRM":
+        code = generate_uto_bayesian_mfrm_stan_code(n_categories)
     else:
         raise ValueError(f"Unknown advanced model: {model_name}")
     label = advanced_model_metadata(name).get("label", name)
@@ -41505,6 +55482,8 @@ def render_onboarding_banner() -> None:
                     scenario_summary=scenario_summary,
                 )
             )
+            st.caption(t("guided.first_run_route_caption"))
+            st.dataframe(guided_first_run_route_table(), width="stretch", hide_index=True)
         cols = st.columns([3, 1])
         if cols[0].button(
             t("onboarding.quickstart_button"),
@@ -41542,12 +55521,222 @@ _POSTERIOR_UPLOAD_FORMATS = {
 }
 
 
+def _example_cmdstan_csv_text(chain_id: int, *, n_draws: int = 80) -> str:
+    """Return a small deterministic CmdStan-style CSV for Posterior Viewer practice."""
+    rng = np.random.default_rng(20260517 + int(chain_id))
+    lines = [
+        "# stan_version_major = 2",
+        "# stan_version_minor = 35",
+        "# stan_version_patch = 0",
+        f"# id = {int(chain_id)}",
+        "# method = sample (Default)",
+        "# algorithm = hmc (Default)",
+        "# engine = nuts (Default)",
+        "# max_depth = 12",
+        "lp__,accept_stat__,stepsize__,treedepth__,n_leapfrog__,divergent__,energy__,theta_1,theta_2,delta_rater_1,tau_1,sigma_theta",
+    ]
+    for draw_idx in range(int(n_draws)):
+        chain_shift = (int(chain_id) - 1) * 0.03
+        theta_1 = float(rng.normal(0.20 + chain_shift, 0.18))
+        theta_2 = float(rng.normal(-0.15 + chain_shift, 0.20))
+        delta_rater_1 = float(rng.normal(0.35, 0.12))
+        tau_1 = float(rng.normal(-0.40, 0.15))
+        sigma_theta = float(abs(rng.normal(0.85, 0.08)))
+        lp = float(rng.normal(-120.0, 0.7))
+        accept = float(rng.uniform(0.88, 0.99))
+        step = float(rng.uniform(0.20, 0.34))
+        treedepth = int(rng.integers(3, 6))
+        n_leapfrog = int(2 ** treedepth)
+        divergent = 0
+        energy = float(-lp + rng.normal(0.0, 0.8))
+        lines.append(
+            f"{lp:.6f},{accept:.6f},{step:.6f},{treedepth},{n_leapfrog},{divergent},"
+            f"{energy:.6f},{theta_1:.6f},{theta_2:.6f},{delta_rater_1:.6f},"
+            f"{tau_1:.6f},{sigma_theta:.6f}"
+        )
+    return "\n".join(lines) + "\n"
+
+
+def posterior_viewer_example_package_assets() -> dict[str, str]:
+    """Return a synthetic CmdStan posterior package for testing the manifest flow."""
+    model_text = """// Synthetic Posterior Viewer example model.
+// This file documents the manifest hash target only; it is not a fitted study model.
+data {
+  int<lower=1> N;
+}
+parameters {
+  real theta_1;
+  real theta_2;
+  real delta_rater_1;
+  real tau_1;
+  real<lower=0> sigma_theta;
+}
+model {
+  theta_1 ~ normal(0, 1);
+  theta_2 ~ normal(0, 1);
+  delta_rater_1 ~ normal(0, 1);
+  tau_1 ~ normal(0, 2);
+  sigma_theta ~ normal(0, 1);
+}
+"""
+    data_payload = {
+        "N": 12,
+        "sigma_theta_prior_scale": 2.5,
+        "facet_prior_scale": 2.0,
+        "step_prior_scale": 5.0,
+        "note": "Synthetic Posterior Viewer example; not row-level study data.",
+    }
+    data_text = json.dumps(data_payload, indent=2, ensure_ascii=False, sort_keys=True) + "\n"
+    chain_assets = {
+        "example_chain_1.csv": _example_cmdstan_csv_text(1),
+        "example_chain_2.csv": _example_cmdstan_csv_text(2),
+    }
+    chain_hash_pairs = ";".join(
+        f"{name}={hashlib.sha256(text.encode('utf-8')).hexdigest()}"
+        for name, text in chain_assets.items()
+    )
+    manifest = {
+        "schema_version": "mfrm_stan_run_manifest_v1",
+        "producer": "MFRM Streamlit Posterior Viewer synthetic example",
+        "runtime": "Synthetic CmdStan CSV fixture",
+        "stan_file_name": "example_mfrm_model.stan",
+        "stan_file_sha256": hashlib.sha256(model_text.encode("utf-8")).hexdigest(),
+        "data_json_name": "example_mfrm_stan_data.json",
+        "data_json_sha256": hashlib.sha256(data_text.encode("utf-8")).hexdigest(),
+        "prior_scales": {
+            "sigma_theta_prior_scale": data_payload["sigma_theta_prior_scale"],
+            "facet_prior_scale": data_payload["facet_prior_scale"],
+            "step_prior_scale": data_payload["step_prior_scale"],
+        },
+        "seed": 20260517,
+        "chains": 2,
+        "iter_warmup": 0,
+        "iter_sampling": 80,
+        "adapt_delta": 0.95,
+        "max_treedepth": 12,
+        "cmdstan_version": "synthetic_fixture",
+        "posterior_csv_files": list(chain_assets),
+        "posterior_csv_count": len(chain_assets),
+        "posterior_csv_sha256": chain_hash_pairs,
+        "summary_file": "synthetic_summary_not_required.csv",
+        "diagnose_file": "synthetic_diagnose_not_required.txt",
+        "privacy_note": "Synthetic fixture only; contains no private response rows or ID maps.",
+    }
+    flat_manifest = _flatten_mapping_for_manifest(manifest)
+    manifest_csv = pd.DataFrame(
+        [{"Field": key, "Value": value} for key, value in flat_manifest.items()]
+    ).to_csv(index=False)
+    readme = """# Posterior Viewer Synthetic CmdStan Example
+
+This package is a small deterministic fixture for checking the Posterior Viewer
+upload and Stan run manifest workflow. It is not a fitted empirical study model
+and should not be used for substantive reporting.
+
+Files:
+- `example_chain_1.csv` and `example_chain_2.csv`: synthetic CmdStan-style
+  posterior CSV chains.
+- `stan_run_manifest.json` / `stan_run_manifest.csv`: run identity fields,
+  hashes, prior scales, sampler controls, posterior CSV count, and per-chain
+  CSV SHA-256 hashes.
+- `example_mfrm_model.stan` and `example_mfrm_stan_data.json`: hash targets
+  referenced by the manifest.
+
+How to use:
+1. Open Posterior Viewer.
+2. Upload both `example_chain_*.csv` files in the posterior-file uploader.
+3. Upload `stan_run_manifest.json` in the optional manifest uploader.
+4. Confirm that the handoff manifest table links the posterior to the recorded
+   hashes, prior scales, chain count, chain filenames, chain hashes, and
+   sampler controls.
+"""
+    return {
+        "README_posterior_viewer_example.md": readme,
+        "example_mfrm_model.stan": model_text,
+        "example_mfrm_stan_data.json": data_text,
+        **chain_assets,
+        "stan_run_manifest.json": json.dumps(manifest, indent=2, ensure_ascii=False) + "\n",
+        "stan_run_manifest.csv": manifest_csv,
+    }
+
+
 def _posterior_detect_format(filename: str) -> str | None:
     name = (filename or "").lower()
     for suffix, (_, key) in _POSTERIOR_UPLOAD_FORMATS.items():
         if name.endswith(suffix):
             return key
     return None
+
+
+def _posterior_as_file_list(files) -> list:
+    if files is None:
+        return []
+    if isinstance(files, list):
+        return [f for f in files if f is not None]
+    return [files]
+
+
+def posterior_upload_preflight(files) -> tuple[list[str], list[str]]:
+    """Validate posterior upload counts/sizes before reading contents."""
+    upload_files = _posterior_as_file_list(files)
+    errors: list[str] = []
+    warnings: list[str] = []
+    if len(upload_files) > POSTERIOR_MAX_FILES:
+        errors.append(
+            f"Upload at most {POSTERIOR_MAX_FILES} posterior files at once; got {len(upload_files)}."
+        )
+    total_size = 0
+    for f in upload_files:
+        size = _uploaded_file_size_bytes(f)
+        if size is None:
+            continue
+        total_size += int(size)
+        if size > POSTERIOR_MAX_FILE_BYTES:
+            errors.append(
+                f"{getattr(f, 'name', 'posterior file')} is {size / (1024 * 1024):.0f} MB; "
+                f"per-file limit is {POSTERIOR_MAX_FILE_MB} MB."
+            )
+    if total_size > POSTERIOR_MAX_TOTAL_BYTES:
+        errors.append(
+            f"Posterior upload total is {total_size / (1024 * 1024):.0f} MB; "
+            f"combined limit is {POSTERIOR_MAX_TOTAL_MB} MB."
+        )
+    elif total_size > 0.5 * POSTERIOR_MAX_TOTAL_BYTES:
+        warnings.append(
+            f"Posterior upload total is {total_size / (1024 * 1024):.0f} MB; loading may be slow."
+        )
+    return errors, warnings
+
+
+def posterior_payload_preflight(payload: dict) -> tuple[list[str], list[str]]:
+    """Validate loaded posterior dimensions before rendering heavy plots."""
+    if not isinstance(payload, dict):
+        return ["Posterior payload is not a dictionary."], []
+    n_chains = int(payload.get("n_chains", 0) or 0)
+    n_draws = int(payload.get("n_draws", 0) or 0)
+    n_params = len(payload.get("parameter_names", []) or [])
+    draw_cells = n_chains * n_draws * n_params
+    errors: list[str] = []
+    warnings: list[str] = []
+    if n_params > POSTERIOR_MAX_PARAMETERS:
+        errors.append(
+            f"Posterior has {n_params:,} parameters; limit is {POSTERIOR_MAX_PARAMETERS:,}. "
+            "Subset parameters before upload."
+        )
+    if n_draws > POSTERIOR_MAX_DRAWS_PER_CHAIN:
+        errors.append(
+            f"Posterior has {n_draws:,} draws per chain; limit is {POSTERIOR_MAX_DRAWS_PER_CHAIN:,}. "
+            "Thin or subset draws before upload."
+        )
+    if draw_cells > POSTERIOR_MAX_DRAW_CELLS:
+        errors.append(
+            f"Posterior has {draw_cells:,} chain-draw-parameter cells; "
+            f"limit is {POSTERIOR_MAX_DRAW_CELLS:,}."
+        )
+    elif draw_cells > 0.5 * POSTERIOR_MAX_DRAW_CELLS:
+        warnings.append(
+            f"Posterior has {draw_cells:,} chain-draw-parameter cells; plot rendering may be slow."
+        )
+    return errors, warnings
 
 
 def _posterior_load_cmdstan_csvs(files: list) -> "dict | None":
@@ -41569,11 +55758,22 @@ def _posterior_load_cmdstan_csvs(files: list) -> "dict | None":
         )
 
     temp_paths: list[str] = []
+    uploaded_file_names: list[str] = []
+    uploaded_file_sizes: dict[str, int] = {}
+    uploaded_file_hashes: dict[str, str] = {}
     try:
         for f in files:
             suffix = ".csv"
+            file_name = _safe_manifest_basename(getattr(f, "name", "cmdstan_chain.csv")) or "cmdstan_chain.csv"
+            raw_bytes = f.getvalue() if hasattr(f, "getvalue") else f.read()
+            if isinstance(raw_bytes, str):
+                raw_bytes = raw_bytes.encode("utf-8")
+            raw_bytes = bytes(raw_bytes)
+            uploaded_file_names.append(file_name)
+            uploaded_file_sizes[file_name] = len(raw_bytes)
+            uploaded_file_hashes[file_name] = hashlib.sha256(raw_bytes).hexdigest()
             buf = tempfile.NamedTemporaryFile(suffix=suffix, delete=False)
-            buf.write(f.getvalue() if hasattr(f, "getvalue") else f.read())
+            buf.write(raw_bytes)
             buf.close()
             temp_paths.append(buf.name)
         idata = _az.from_cmdstan(posterior=temp_paths)
@@ -41584,7 +55784,14 @@ def _posterior_load_cmdstan_csvs(files: list) -> "dict | None":
             except OSError:
                 pass
 
-    return _posterior_summarise_inference_data(idata, source="cmdstan_csv")
+    payload = _posterior_summarise_inference_data(idata, source="cmdstan_csv")
+    payload.update({
+        "uploaded_file_count": len(uploaded_file_names),
+        "uploaded_file_names": uploaded_file_names,
+        "uploaded_file_sizes_bytes": uploaded_file_sizes,
+        "uploaded_file_sha256": uploaded_file_hashes,
+    })
+    return payload
 
 
 def _posterior_load_parquet(file) -> "dict | None":
@@ -42077,7 +56284,28 @@ def render_posterior_viewer_mode() -> None:
             "defaults to 1 if missing.\n"
             "- **ArviZ NetCDF**: serialise an `InferenceData` via "
             "`idata.to_netcdf('draws.nc')`; the posterior + `sample_stats` "
-            "groups are read automatically."
+            "groups are read automatically.\n"
+            "- **Stan run manifest**: upload `stan_run_manifest.json` or "
+            "`stan_run_manifest.csv` from the Python/R/Julia runner with the "
+            "same posterior CSV chains. The manifest check links draws to the "
+            "exact Stan file, JSON data, prior scales, seed, sampler controls, "
+            "chain filenames, and per-chain CSV hashes."
+        )
+
+    with st.expander("Synthetic Posterior Viewer example package", expanded=False):
+        st.markdown(
+            "Download a small synthetic CmdStan-style package to verify the upload workflow. "
+            "Upload both `example_chain_*.csv` files as posterior draws, then upload "
+            "`stan_run_manifest.json` in the manifest field. The files contain no private "
+            "response rows and are not suitable for substantive reporting."
+        )
+        example_assets = posterior_viewer_example_package_assets()
+        st.download_button(
+            "Download synthetic Posterior Viewer example (ZIP)",
+            data=cached_mixed_asset_zip(example_assets, bytes_mapping_fingerprint(example_assets)),
+            file_name="MFRM_Posterior_Viewer_Example.zip",
+            mime="application/zip",
+            key="dl_posterior_viewer_example_zip",
         )
 
     st.subheader("Upload")
@@ -42111,9 +56339,26 @@ def render_posterior_viewer_mode() -> None:
             accept_multiple_files=True,
             key="posterior_viewer_auto",
         )
+    manifest_file = st.file_uploader(
+        "Optional Stan run manifest (JSON/CSV)",
+        type=["json", "csv"],
+        key="posterior_viewer_stan_manifest",
+        help=(
+            "Upload stan_run_manifest.json or stan_run_manifest.csv produced by "
+            "the same Stan runner. It is optional for exploratory plots, but "
+            "recommended for reproducible posterior reporting."
+        ),
+    )
 
     if not files:
         st.info("Upload posterior files above to continue.")
+        return
+    upload_errors, upload_warnings = posterior_upload_preflight(files)
+    for warning in upload_warnings:
+        st.warning(warning)
+    if upload_errors:
+        for error in upload_errors:
+            st.error(error)
         return
 
     # Load. Accept a list of files (CmdStan CSVs) OR a single file.
@@ -42151,6 +56396,13 @@ def render_posterior_viewer_mode() -> None:
     if not payload:
         st.error("Loader returned no data.")
         return
+    payload_errors, payload_warnings = posterior_payload_preflight(payload)
+    for warning in payload_warnings:
+        st.warning(warning)
+    if payload_errors:
+        for error in payload_errors:
+            st.error(error)
+        return
 
     n_chains = payload.get("n_chains", 0)
     n_draws = payload.get("n_draws", 0)
@@ -42158,6 +56410,40 @@ def render_posterior_viewer_mode() -> None:
     st.success(
         f"Loaded **{n_params}** parameters × **{n_chains}** chains × "
         f"**{n_draws}** draws ({payload.get('source', 'unknown')} format)."
+    )
+
+    st.subheader("Stan run handoff manifest")
+    manifest_flat: dict[str, object] = {}
+    manifest_errors: list[str] = []
+    if manifest_file is not None:
+        manifest_flat, manifest_errors = parse_stan_run_manifest_upload(manifest_file)
+    else:
+        st.info(
+            "For manuscript-ready Stan results, upload `stan_run_manifest.json` "
+            "or `stan_run_manifest.csv` from the same runner that produced the "
+            "posterior CSV chains."
+        )
+    for error in manifest_errors:
+        st.warning(error)
+    manifest_checks = stan_run_manifest_check_table(manifest_flat, payload)
+    claim_manifest_checks = manifest_checks[
+        manifest_checks["Check"].astype(str).ne("Privacy boundary")
+    ]
+    nonready_manifest = claim_manifest_checks[claim_manifest_checks["Status"].astype(str).isin(["Missing", "Review"])]
+    if len(nonready_manifest):
+        st.warning(
+            "Manifest checks are not all ready. Treat posterior summaries as exploratory "
+            "until the listed run identity, chain-file, diagnostic, and privacy checks are resolved."
+        )
+    else:
+        st.success("Manifest identity, chain-file, and diagnostic checks are ready for reproducibility review.")
+    st.dataframe(manifest_checks, width="stretch", hide_index=True)
+    st.download_button(
+        "Download posterior manifest check (CSV)",
+        data=to_csv_bytes(manifest_checks),
+        file_name="posterior_manifest_check.csv",
+        mime="text/csv",
+        key="dl_posterior_manifest_check_csv",
     )
 
     # HMC diagnostics banner
@@ -42343,7 +56629,7 @@ def main() -> None:
 
     # View density toggle (v0.2.5+) — Essential hides advanced diagnostic
     # sub-tabs and secondary expanders to reduce cognitive load for
-    # beginners and quick runs. Full restores every v0.2.x feature for
+    # users in guided workflows and quick runs. Full restores every v0.2.x feature for
     # researchers and publication-ready analyses. Defaults to Essential
     # so first-time users do not face the full 7-sub-tab Visuals section
     # and 10-sub-tab Help section on landing.

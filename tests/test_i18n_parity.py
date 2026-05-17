@@ -109,3 +109,89 @@ def test_locale_no_empty_strings(locales):
     for lang, data in locales.items():
         for key, text in _flatten_leaves(data).items():
             assert text.strip(), f"Empty translation at {lang}:{key}"
+
+
+def test_japanese_safety_and_guidance_copy_uses_task_centered_terms(locales):
+    ja = _flatten_leaves(locales["ja"])
+    checked_keys = {
+        "sidebar.view_density_essential",
+        "sidebar.view_density_full",
+        "sidebar.view_density_help",
+        "onboarding.banner_steps_label",
+        "dimensionality.warning_pca_failed_template",
+        "dimensionality.dimtest_caption",
+        "dimensionality.dimtest_reject_warning",
+        "data_source.upload_size_blocked_template",
+        "data_source.paste_parse_error",
+        "fit_details.guide_expander",
+        "downloads.public_export_mode_label",
+        "downloads.public_export_mode_help",
+        "downloads.public_export_mode_info",
+        "downloads.private_export_mode_warning",
+        "resource_preflight.blocked_error",
+        "resource_preflight.review_warning",
+        "resource_preflight.ok_caption",
+        "resource_preflight.details_expander",
+        "visuals_top.roadmap_caption",
+        "visuals_top.essential_mode_caption",
+        "report_top.reports_essential_caption",
+        "report_top.checks_essential_caption",
+        "report_top.exports_essential_caption",
+    }
+    missing = checked_keys - set(ja)
+    assert not missing, f"Missing Japanese copy keys: {sorted(missing)}"
+
+    joined = "\n".join(ja[key] for key in sorted(checked_keys))
+    awkward_fragments = [
+        "初めての方へ",
+        "\u521d\u5fc3\u8005",
+        "簡易",
+        "完全/ private",
+        "hosted Streamlit UI",
+        "View density",
+        "再実行すること",
+        "指定すること",
+        "判断すること",
+        "貼り付けてみる",
+        "利用できる。",
+        "使用すること",
+    ]
+    for fragment in awkward_fragments:
+        assert fragment not in joined, f"Awkward Japanese UI fragment remains: {fragment}"
+
+    assert "公開・共有用エクスポートモード" in ja["downloads.public_export_mode_label"]
+    assert "正式な非識別化保証ではありません" in ja["downloads.public_export_mode_help"]
+    assert "解釈ガイド" in ja["fit_details.guide_expander"]
+
+
+def test_help_copy_frames_thresholds_as_diagnostic_guidance(locales):
+    en = _flatten_leaves(locales["en"])
+    ja = _flatten_leaves(locales["ja"])
+
+    assert "not as an automatic decision rule" in en["help.interpretation_caution"]
+    assert "screening heuristics" in en["help.interpretation_caution"]
+    assert "自動判定ルールではありません" in ja["help.interpretation_caution"]
+    assert "スクリーニング用の目安" in ja["help.interpretation_caution"]
+
+    old_overclaims = [
+        "The default and\n  recommended method",
+        "Missing data is below **20%**",
+        "Low is *desirable*",
+        "No significant bias | None needed",
+        "Report and interpret substantively",
+        "デフォルトかつ推奨される推定法",
+        "欠測が **20%** 未満",
+        "低いことが *望ましい*",
+        "有意な bias なし | 不要",
+        "レポートに記載し、実質的に解釈する",
+    ]
+    help_text = "\n".join(
+        value for key, value in {**en, **ja}.items() if key.startswith("help.")
+    )
+    for phrase in old_overclaims:
+        assert phrase not in help_text
+
+    assert "MFRM_Visual_Evidence_Binder.zip" in en["help.quick_start_body"]
+    assert "visual_qa_preflight.csv" in ja["help.quick_start_body"]
+    assert "Holm/BH" in en["help.analysis_workflow_body"]
+    assert "Holm / BH" in ja["help.analysis_workflow_body"]

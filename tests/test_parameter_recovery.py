@@ -21,6 +21,9 @@ The math contract pinned here covers:
 * Coverage95 is the fraction of finite-SE rows whose truth lies in
   ``estimate +/- 1.96 * SE``; the rate must equal the closed-form
   fraction from the recovery rows.
+* SE/CI method/status metadata are preserved in the long table, and
+  the explicit SE/CI coverage report carries nominal coverage,
+  coverage error, interpretation, and recommended action fields.
 * Reproducibility: same seed produces the same recovery row for the
   same (rep, ParameterType, Level) triple.
 * ADEMP bundle: Aims / DataGenerating / Estimands / Methods /
@@ -186,6 +189,103 @@ def test_recovery_summary_coverage95_matches_closed_form(
         # The summary value may be NaN if the helper found no rows;
         # we already filtered to ok.any() so it must be finite here.
         assert float(srow["Coverage95"]) == pytest.approx(expected_coverage, abs=1e-12)
+
+
+def test_recovery_long_table_carries_se_ci_metadata(small_rsm_recovery_bundle):
+    recovery = small_rsm_recovery_bundle["recovery"]
+    expected_cols = {
+        "NominalCILevel",
+        "CoverageMethod",
+        "SE_Method",
+        "SE_Status",
+        "CI_Method",
+        "CI_Status",
+        "UncertaintyCaution",
+    }
+    assert expected_cols.issubset(recovery.columns)
+    assert set(recovery["NominalCILevel"].dropna().unique()) == {0.95}
+    assert recovery["CoverageMethod"].astype(str).str.contains("mean-aligned Wald").all()
+    assert recovery["SE_Status"].astype(str).str.len().gt(0).all()
+    assert recovery["CI_Status"].astype(str).str.len().gt(0).all()
+
+
+def test_recovery_summary_carries_explicit_coverage_diagnostic(
+    small_rsm_recovery_bundle,
+):
+    summary = small_rsm_recovery_bundle["recovery_summary"]
+    expected_cols = {
+        "CoverageN",
+        "NominalCoverage",
+        "CoverageErrorFromNominal",
+        "PrimarySEStatus",
+        "SEStatusSummary",
+        "CIStatusSummary",
+        "SEBasisRisk",
+        "CoverageClaimStatus",
+        "CoverageInterpretation",
+        "RecommendedAction",
+    }
+    assert expected_cols.issubset(summary.columns)
+    for _, row in summary.iterrows():
+        if np.isfinite(float(row["Coverage95"])):
+            assert float(row["CoverageErrorFromNominal"]) == pytest.approx(
+                float(row["Coverage95"]) - 0.95, abs=1e-12
+            )
+        assert isinstance(row["CoverageInterpretation"], str)
+        assert isinstance(row["RecommendedAction"], str)
+        assert isinstance(row["SEBasisRisk"], str)
+        assert row["CoverageClaimStatus"] in {
+            "Ready",
+            "Report with caveat",
+            "Screening only",
+            "Do not claim",
+        }
+        assert len(row["RecommendedAction"]) > 0
+
+
+def test_build_se_ci_coverage_report_matches_recovery_summary(
+    small_rsm_recovery_bundle,
+):
+    report = app.build_se_ci_coverage_report(small_rsm_recovery_bundle)
+    summary = small_rsm_recovery_bundle["recovery_summary"]
+    assert not report.empty
+    assert {
+        "CoverageN",
+        "NominalCoverage",
+        "Coverage95",
+        "CoverageError",
+        "CoverageAbsError",
+        "PrimarySEStatus",
+        "SEBasisRisk",
+        "CoverageClaimStatus",
+        "Interpretation",
+        "RecommendedAction",
+    }.issubset(report.columns)
+    for _, row in report.iterrows():
+        match = summary[
+            (summary["ParameterType"] == row["ParameterType"])
+            & (summary["Facet"] == row["Facet"])
+            & (summary["ComparisonScale"] == row["ComparisonScale"])
+        ]
+        assert len(match) == 1
+        srow = match.iloc[0]
+        assert int(row["CoverageN"]) == int(srow["CoverageN"])
+        assert float(row["Coverage95"]) == pytest.approx(float(srow["Coverage95"]), abs=1e-12)
+        assert float(row["CoverageError"]) == pytest.approx(
+            float(srow["Coverage95"]) - 0.95, abs=1e-12
+        )
+
+
+def test_evaluate_se_ci_coverage_wrapper_attaches_report():
+    out = app.evaluate_se_ci_coverage(
+        n_person=12, n_rater=2, n_criterion=2, n_cat=3,
+        reps=2, model="RSM", fit_method="JMLE",
+        seed=20260607, maxit=15, reltol=1e-3,
+    )
+    assert out["available"] is True
+    assert "coverage_report" in out
+    assert isinstance(out["coverage_report"], pd.DataFrame)
+    assert not out["coverage_report"].empty
 
 
 # -----------------------------------------------------------------------------

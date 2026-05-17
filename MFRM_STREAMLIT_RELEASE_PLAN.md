@@ -58,7 +58,7 @@
   - [x] simulation and design evaluation
   - [x] anchor audit / linking review
   - [x] strict marginal diagnostics
-- [x] Add "What beginners should inspect first" with a short report workflow.
+- [x] Add "What to inspect first" with a short report workflow.
 - [x] Add "Known limitations" with statistical caveats:
   - [x] fixed user-set population prior SD unless variance estimation is explicitly implemented
   - [x] bounded GPCM scope and identification conventions

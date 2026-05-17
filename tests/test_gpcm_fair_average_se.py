@@ -77,6 +77,34 @@ def test_invert_information_matrix_flags_near_singular_spectrum():
     assert rank == 3
 
 
+def test_build_mml_covariance_audit_reports_spectrum_and_claim_status():
+    """The covariance audit must expose why regularized SEs need caveated reporting."""
+    eigvals = np.array([10.0, 5.0, 1.0, 1e-16])
+    Q, _ = np.linalg.qr(np.random.default_rng(20260513).standard_normal((4, 4)))
+    hess = Q @ np.diag(eigvals) @ Q.T
+    cov, regularized, rank = app._invert_information_matrix(hess)
+    audit = app.build_mml_covariance_audit(
+        {
+            "cov": cov,
+            "hessian": hess,
+            "status": "regularized",
+            "detail": "regularized test covariance",
+            "regularized": regularized,
+            "rank": rank,
+        },
+        {"config": {"method": "MML", "model": "GPCM"}},
+    )
+
+    row = audit.iloc[0]
+    assert row["Status"] == "regularized"
+    assert row["ClaimStatus"] == "Report with caveat"
+    assert row["ParamCount"] == 4
+    assert row["RankDeficiency"] == 1
+    assert row["RegularizedEigenvalues"] >= 1
+    assert np.isfinite(float(row["EigFloorTolerance"]))
+    assert "condition" in row["RecommendedAction"] or "regularized" in row["RecommendedAction"]
+
+
 def test_invert_information_matrix_rejects_non_finite():
     info = np.array([[1.0, np.nan], [np.nan, 1.0]])
     cov, regularized, rank = app._invert_information_matrix(info)
@@ -257,6 +285,62 @@ def test_compute_mml_parameter_covariance_returns_ok_for_small_gpcm_mml_fit(
     assert hess is not None
     product = hess @ cov
     assert np.allclose(product, np.eye(par.size), atol=1e-6) or cov_info["regularized"]
+
+
+def test_mml_diagnostics_measure_table_reports_structural_uncertainty(
+    small_gpcm_mml_fit,
+    small_gpcm_mml_diagnostics,
+):
+    """MML diagnostics must not leave non-person facet SEs as anonymous
+    conditional approximations when observed-information covariance is
+    available."""
+    measures = small_gpcm_mml_diagnostics["measures"]
+    for col in (
+        "SE_Method",
+        "SE_Status",
+        "SE_Detail",
+        "CI_Method",
+        "CI_Status",
+        "UncertaintyCaution",
+    ):
+        assert col in measures.columns
+
+    non_person = measures[measures["Facet"].astype(str) != "Person"]
+    assert non_person["SE_Status"].isin({"ok", "regularized"}).any()
+    structural = non_person[non_person["SE_Status"].isin({"ok", "regularized"})]
+    assert structural["SE"].notna().all()
+    assert (structural["SE"] > 0).all()
+    assert structural["SE_Method"].str.contains("observed-information", case=False, regex=False).all()
+    assert structural["CI_Method"].str.contains("observed-information", case=False, regex=False).all()
+
+    person = measures[measures["Facet"].astype(str) == "Person"]
+    assert not person.empty
+    assert (person["SE_Status"] == "posterior_eap_sd").all()
+
+    uncertainty = small_gpcm_mml_diagnostics["uncertainty"]
+    assert uncertainty["covariance"]["status"] in {"ok", "regularized"}
+    assert "audit" in uncertainty["covariance"]
+    assert "covariance_audit" in uncertainty
+    assert not uncertainty["covariance_audit"].empty
+    for col in (
+        "SE_CovarianceStatus",
+        "SE_CovarianceClaimStatus",
+        "SE_CovarianceConditionNumber",
+        "SE_CovarianceRank",
+    ):
+        assert col in measures.columns
+    assert not uncertainty["summary"].empty
+    assert "Measure SE/CI" in set(uncertainty["summary"]["Area"])
+    assert "MML observed-information covariance" in set(uncertainty["summary"]["Area"])
+
+
+def test_result_bundle_exports_mml_covariance_audit(
+    small_gpcm_mml_fit,
+    small_gpcm_mml_diagnostics,
+):
+    frames = app.build_result_bundle_frames(small_gpcm_mml_fit, small_gpcm_mml_diagnostics)
+    assert "mml_covariance_audit" in frames
+    assert not frames["mml_covariance_audit"].empty
 
 
 # -----------------------------------------------------------------------------

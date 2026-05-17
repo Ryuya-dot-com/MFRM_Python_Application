@@ -6,6 +6,105 @@ All notable changes to this standalone Streamlit distribution should be recorded
 
 ### Added
 
+- **Zotero-informed method reference audit**. A safe read-only audit of
+  the local Zotero/BibTeX library was used to expand the in-app APA
+  reference library with Rasch, fit, local-dependence, external-package,
+  and recent MFRM extension anchors. New `build_method_reference_audit()`
+  exports `method_reference_audit.csv`, mapping model, estimation,
+  fit/person-fit, residual PCA, bias/local interaction, simulation,
+  and external-validation surfaces to citation tokens, BibTeX/RIS export
+  status, manuscript use, and claim boundaries. Current-run reference
+  rows now feed the APA report, manuscript template, and
+  `claim_to_evidence_matrix.csv`, so citations and statistical claim
+  boundaries stay aligned with the analyses actually computed. Quick,
+  download, demo bundles, and the manuscript binder include these tables.
+- **APA sentence evidence audit**. Generated APA-style prose now has an
+  exportable `apa_report_sentence_audit.csv` that maps each draft
+  Method/Results sentence to the manuscript claim area, output evidence,
+  evidence files, suggested citations, citation boundaries, and copy
+  decision. The audit is visible in the APA Report and Claim Guide areas
+  and is included in quick/download/demo/manuscript-binder exports.
+- **Final-result manuscript handoff export**. Downloads now include
+  `mfrm_manuscript_handoff.md` and
+  `manuscript_handoff_checklist.csv`, a concise file-opening,
+  download, submission-preflight, privacy, and archiving guide that
+  links the Publication Document, table bundle, figure bundle, method
+  appendix, manuscript template, config JSON, app-engine runner, and
+  OSF package. The same assets are included in the OSF ZIP and
+  synthetic demo report export.
+- **Claim-to-evidence matrix and manuscript binder**. The Downloads
+  tab and demo export now include `claim_to_evidence_matrix.csv`,
+  which maps each manuscript area to claim status, gate status,
+  exported tables, figures, readiness checks, reviewer questions,
+  caveats, and archive files. A curated
+  `MFRM_Manuscript_Binder.zip` / `MFRM_Demo_Manuscript_Binder.zip`
+  collects the handoff, evidence matrix, action/gate tables, method
+  appendix, manuscript template, config, and figure manifest for
+  coauthor review and submission preparation.
+- **Visual evidence binder**. Figure downloads now include
+  `MFRM_Visual_Evidence_Binder.zip`, with the actual PNG/HTML figure
+  files, `visual_evidence_map.csv`, `visual_caption_drafts.md`,
+  `figure_manifest.csv`, visual interpretation and method-evidence
+  tables, and the claim-to-evidence matrix. The demo report exports
+  `MFRM_Demo_Visual_Evidence_Binder.zip` and
+  `visual_evidence_map.csv` as well.
+- **SE/CI coverage diagnostic for ADEMP recovery**.
+  `evaluate_parameter_recovery(...)` now preserves `SE_Method`,
+  `SE_Status`, `CI_Method`, `CI_Status`, and `UncertaintyCaution` in the
+  recovery long table, and attaches a separate `coverage_report`.
+  `build_se_ci_coverage_report(...)` and `evaluate_se_ci_coverage(...)`
+  expose nominal coverage, empirical Coverage95, coverage error,
+  SE/CI status summaries, interpretation, and recommended action for
+  manuscript caveats. The Report tab displays this diagnostic under the
+  parameter-recovery panel and offers `mfrm_se_ci_coverage_report.csv`.
+- **Executable MML fixed-prior-SD sensitivity**.
+  `evaluate_mml_prior_sd_sensitivity(...)` now refits the current MML
+  result across selected `population_prior_sd` values, reusing the
+  current result for the base SD and returning `summary`,
+  `measure_deltas`, optional `population_deltas`, and an interpretation
+  `report`. The Fit Details tab exposes this as an on-demand screen with
+  a ZIP download so final reports can document whether person EAPs,
+  non-person facet measures, ranks, and latent-regression coefficients
+  are stable to the fixed population variance setting.
+- **Conditional bias-inference audit**.
+  `build_bias_inference_audit(...)` now summarizes every exported
+  bias/local-interaction facet pair with cells screened, DFF flags,
+  strong-review cells, sparse cells, Holm/BH counts, practical-logit
+  counts, profile-CI status summaries, inference-tier summaries, and
+  connected-scale status. DFF tables now preserve the conditional
+  likelihood/SE/multiplicity basis from `estimate_bias_interaction(...)`
+  and add cell-level claim status plus reporting cautions. The
+  first-read guide, final-readiness gate, manuscript claim guide,
+  APA-style narrative, quick result bundle, Downloads ZIP, and demo
+  exports now use this audit instead of raw `|t| >= 2` counts.
+- **Residual PCA stability sensitivity audit**.
+  `compute_pca_bundle(...)` now augments the basic residual-matrix
+  checks with leave-one-column-out EV1/share/loading stability and a
+  deterministic row-bootstrap audit of EV1, EV1 CV, 5th/95th percentile
+  EV1, loading correlations, and EV=2/3 threshold crossings.
+  `collect_pca_stability_tables(...)` exports overall and per-facet
+  stability rows together as `pca_stability_all_scopes.csv`; the
+  Dimensionality panel now displays and downloads the stability audit
+  alongside the scree plot and loadings.
+- **MML covariance and SE/CI claim audit**.
+  `compute_mml_parameter_covariance(...)` now attaches an `audit` table
+  with Hessian rank, rank deficiency, eigenvalue floor tolerance,
+  regularized eigenvalue count, condition number, covariance diagonal
+  range, claim status, and recommended action. Normal diagnostics export
+  the same table as `mml_covariance_audit.csv`, and measure rows now
+  carry covariance status, claim status, condition number, rank, rank
+  deficiency, and regularized-eigenvalue metadata. ADEMP SE/CI coverage
+  reports now add `SEBasisRisk` and `CoverageClaimStatus` so coverage is
+  not cited without the matching SE basis and covariance caveat.
+- **Visualization preferences and visual QA preflight**. The sidebar now
+  lets users choose figure theme, label-density policy, base font size,
+  label truncation length, static export width, minimum figure height,
+  and caption-detail level. These settings are saved in
+  `visualization_settings.json` and `visualization_settings.csv`,
+  included in config JSON inspection via `visualization_preferences`,
+  propagated into `figure_manifest.csv`, `visual_evidence_map.csv`,
+  and caption drafts, and checked in
+  `visual_qa_preflight.csv` before manuscript use.
 - **BibTeX and RIS export of the cited reference library**. The Report
   tab's APA-style report now includes a "Bibliography downloads"
   expander with two buttons that emit a `.bib` (LaTeX / Zotero /
@@ -700,8 +799,9 @@ All notable changes to this standalone Streamlit distribution should be recorded
   ``mfrm_diagnostics`` pass to populate SE on the measures table,
   mean-aligns the location-indeterminate blocks (Person, Rater,
   Criterion) against the truth, and computes per-row error +
-  coverage95. The bundle carries five fields: ``recovery``
+  coverage95. The bundle carries six fields: ``recovery``
   (long table), ``recovery_summary`` (per-parameter-type aggregates),
+  ``coverage_report`` (SE/CI coverage diagnostic),
   ``rep_overview`` (per-rep convergence and timing), ``ademp``
   (Aims / Data-generating mechanism / Estimands / Methods /
   Performance measures narrative), and ``settings`` (round-trip of
@@ -710,10 +810,11 @@ All notable changes to this standalone Streamlit distribution should be recorded
   replicates, seed, n_person, n_rater, n_criterion, n_cat) and
   caches the bundle in session_state keyed on the input settings.
   Math contract pinned in ``tests/test_parameter_recovery.py``
-  (14 tests covering refusal on bad inputs, three location-block
+  (18 tests covering refusal on bad inputs, three location-block
   ParameterType values, long-table row counts, the mean-alignment
   identity at machine precision, Bias = mean(ErrorAligned), RMSE /
-  MAE closed forms, Coverage95 closed form, fixed-seed determinism,
+  MAE closed forms, Coverage95 closed form, SE/CI status propagation,
+  explicit coverage-report construction, fixed-seed determinism,
   ADEMP narrative completeness, and correlation positivity on a
   clean RSM fit). One new APA reference (Morris, White, & Crowther,
   2019) is added to the library and citation map. The
@@ -850,7 +951,7 @@ All notable changes to this standalone Streamlit distribution should be recorded
   success, `icon="❌"` for failure) instead of celebratory or alarm-
   bell glyphs.
 - Design evaluation and report/download bundles now include the new
-  0.1.6-oriented audit tables so beginners see warnings in the UI and
+  0.1.6-oriented audit tables so Essential-view users see warnings in the UI and
   expert users can export full CSV/Excel evidence.
 - Config JSON import contract is pinned at 25 replayable settings so restored
   runs preserve the current analysis-depth and diagnostic controls.
@@ -908,8 +1009,8 @@ gate caught two real bugs in CI before users would have hit them.
     of 14,400 possible. (Myford & Wolfe, 2004; Linacre, 2007)
 - **`render_quick_results_download()`** — FACETS-style one-click
   results bundle surfaced right below the Run history panel.
-  Offers ZIP (CSVs) and Excel (multi-sheet) variants. Beginners
-  can leave with their full results without discovering the
+  Offers ZIP (CSVs) and Excel (multi-sheet) variants. Users
+  can download the full results bundle without discovering the
   Downloads sub-tab. Built via new helper
   `build_result_bundle_frames()`.
 - **`_generate_mfrm_peer_rating_data()`** — sparse cyclic
@@ -1916,10 +2017,10 @@ No unreleased changes yet.
 
 ### Added
 
-- Beginner-facing visual interpretation checklist in the app and downloadable report bundle.
+- Guided visual interpretation checklist in the app and downloadable report bundle.
 - PCM/GPCM category probability curves can now be inspected by selected step-facet level, not only as averaged curves.
 - Category probability curve exports now use the same curve builder as the Visuals tab and include long-form data for all curve scopes.
-- Synthetic beginner-facing demo report export through `--export-demo-report`, including report tables, method appendix, and interactive category curves.
+- Synthetic guided demo report export through `--export-demo-report`, including report tables, method appendix, and interactive category curves.
 - Visual method evidence table plus readability safeguards for dense Wright maps, yardsticks, marginal heatmaps, and bias heatmaps.
 - Latent-regression covariate type preview and export table for numeric, categorical, and integer-code review decisions.
 - Public-beta limitation and release-readiness tables in the app, demo report export, and CLI release check.
@@ -1929,8 +2030,8 @@ No unreleased changes yet.
 - Result-aware manuscript claim guide in the Report tab, table downloads, and demo report export.
 - Result-aware Markdown manuscript template for Methods, Results, limitations, reviewer preflight checks, and OSF/demo report exports.
 - Publication gate summary that aligns APA Report conclusions with readiness checks and manuscript claim guardrails.
-- Case-specific beginner guidance for sparse categories, dimensionality, bias screens, MML marginal checks, rater reliability, and linking claims.
-- Result-specific avoid/safer wording repairs in APA Report guidance, manuscript templates, and beginner case-guide exports.
+- Case-specific interpretation guidance for sparse categories, dimensionality, bias screens, MML marginal checks, rater reliability, and linking claims.
+- Result-specific avoid/safer wording repairs in APA Report guidance, manuscript templates, and case-interpretation guidance exports.
 - Submission action plan that combines publication gates, readiness checks, claim guardrails, and wording repairs into a prioritized first-read table.
 - Desktop readability refinements for result-tab wrapping, wrapped guide tables, and dense or tightly spaced Wright map / yardstick labels.
 - Publication-styled figure export bundle with 300 DPI PNG target, matching HTML figures, and a figure-use manifest.

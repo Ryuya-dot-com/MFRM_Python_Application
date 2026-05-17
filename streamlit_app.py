@@ -22796,33 +22796,33 @@ def _render_guided_diagnostics_section(
 ) -> None:
     st.subheader(t("guided.diagnostics_subheader"))
     st.caption(t("guided.diagnostics_caption"))
-    diag_tabs = st.tabs([
-        t("main_tabs.fit_details"),
-        t("main_tabs.dimensionality"),
-        t("main_tabs.wright_map"),
-        t("main_tabs.visuals"),
-        t("main_tabs.bias_interaction"),
-        t("main_tabs.categories_steps"),
-        t("main_tabs.agreement"),
-        t("main_tabs.facet_dashboard"),
-        t("main_tabs.prediction_simulation"),
-    ])
+    selected_diagnostic = st.segmented_control(
+        t("guided.diagnostics_select_label"),
+        options=list(GUIDED_DIAGNOSTIC_PANEL_IDS),
+        default="fit_details",
+        format_func=_guided_diagnostic_panel_label,
+        key="guided_diagnostics_panel",
+        help=t("guided.diagnostics_select_help"),
+        width="stretch",
+    )
+    selected_diagnostic = selected_diagnostic or "fit_details"
+    st.caption(t("guided.diagnostics_select_caption"))
 
-    with diag_tabs[0]:
+    if selected_diagnostic == "fit_details":
         show_fit_details_section(diagnostics, result=result, all_bias_results=all_bias_results or {})
-    with diag_tabs[1]:
+    elif selected_diagnostic == "dimensionality":
         if result_compute_pca:
             dim_core = dict(core) if isinstance(core, dict) else {}
             dim_core["result"] = result
             show_dimensionality_section(diagnostics, est_facet_cols, core=dim_core)
         else:
             st.info(t("result_tabs.dimensionality_skipped_info"))
-    with diag_tabs[2]:
+    elif selected_diagnostic == "wright_map":
         if result_render_plots:
             show_wright_map_section(result, diagnostics)
         else:
             st.info(t("result_tabs.wright_map_skipped_info"))
-    with diag_tabs[3]:
+    elif selected_diagnostic == "visuals":
         if result_render_plots:
             force_full_visuals = st.checkbox(
                 t("guided.show_full_visuals"),
@@ -22833,7 +22833,7 @@ def _render_guided_diagnostics_section(
             show_visuals_section(result, diagnostics, force_full=force_full_visuals)
         else:
             st.info(t("guided.plots_skipped_info"))
-    with diag_tabs[4]:
+    elif selected_diagnostic == "bias_interaction":
         show_bias_section(
             bias_results,
             core,
@@ -22841,14 +22841,16 @@ def _render_guided_diagnostics_section(
             result=result,
             diagnostics=diagnostics,
         )
-    with diag_tabs[5]:
+    elif selected_diagnostic == "categories_steps":
         show_categories_section(result, diagnostics, core)
-    with diag_tabs[6]:
+    elif selected_diagnostic == "agreement":
         show_agreement_section(result, diagnostics, est_facet_cols, core)
-    with diag_tabs[7]:
+    elif selected_diagnostic == "facet_dashboard":
         show_facet_dashboard(result, diagnostics, est_facet_cols, all_bias_results=all_bias_results or {})
-    with diag_tabs[8]:
+    elif selected_diagnostic == "prediction_simulation":
         show_prediction_simulation_section(result, diagnostics, core=core)
+    else:
+        show_fit_details_section(diagnostics, result=result, all_bias_results=all_bias_results or {})
 
 
 def _render_guided_figures_section(
@@ -22982,11 +22984,35 @@ GUIDED_SECTION_I18N_KEYS = {
 GUIDED_SECTION_IDS = tuple(GUIDED_SECTION_I18N_KEYS.keys())
 
 
+GUIDED_DIAGNOSTIC_PANEL_I18N_KEYS = {
+    "fit_details": "main_tabs.fit_details",
+    "dimensionality": "main_tabs.dimensionality",
+    "wright_map": "main_tabs.wright_map",
+    "visuals": "main_tabs.visuals",
+    "bias_interaction": "main_tabs.bias_interaction",
+    "categories_steps": "main_tabs.categories_steps",
+    "agreement": "main_tabs.agreement",
+    "facet_dashboard": "main_tabs.facet_dashboard",
+    "prediction_simulation": "main_tabs.prediction_simulation",
+}
+
+
+GUIDED_DIAGNOSTIC_PANEL_IDS = tuple(GUIDED_DIAGNOSTIC_PANEL_I18N_KEYS.keys())
+
+
 def _guided_section_label(section_id: str) -> str:
     safe_section = str(section_id)
     return t(
         GUIDED_SECTION_I18N_KEYS.get(safe_section, "guided.tab_start"),
         default=safe_section,
+    )
+
+
+def _guided_diagnostic_panel_label(panel_id: str) -> str:
+    safe_panel = str(panel_id)
+    return t(
+        GUIDED_DIAGNOSTIC_PANEL_I18N_KEYS.get(safe_panel, "main_tabs.fit_details"),
+        default=safe_panel,
     )
 
 
@@ -22998,6 +23024,17 @@ def guided_section_selector_options() -> pd.DataFrame:
             t("guided.section_col_section"): _guided_section_label(section_id),
         }
         for section_id in GUIDED_SECTION_IDS
+    ])
+
+
+def guided_diagnostic_panel_options() -> pd.DataFrame:
+    """Return the lazy-rendered Essential Diagnostics panels in display order."""
+    return pd.DataFrame([
+        {
+            "PanelId": panel_id,
+            t("guided.diagnostics_panel_col_panel"): _guided_diagnostic_panel_label(panel_id),
+        }
+        for panel_id in GUIDED_DIAGNOSTIC_PANEL_IDS
     ])
 
 

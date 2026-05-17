@@ -15,7 +15,7 @@
     "view_density_label": "View density",
     "view_density_essential": "Essential",
     "view_density_full": "Full",
-    "view_density_help": "Essential hides advanced diagnostic sub-tabs (Forest / Q-Q / ECDF in Visuals, plus advanced Help sections). Full shows every v0.2.x feature. Switch to Full before writing manuscript methods or running a publication-depth analysis."
+    "view_density_help": "Essential keeps the screen shorter. Full shows all UI panels. This is a display setting only; downloadable figure bundles and publication-depth computations are controlled by Analysis depth before you run estimation."
   },
   "app": {
     "title": "MFRM FACETS-mode",
@@ -42,6 +42,10 @@
     "section_select_help": "Use the horizontal section switcher to move between results, figures, diagnostics, reports, and help. Only the selected section is rendered so large runs remain responsive.",
     "section_select_caption": "Figures is its own section for viewing plots. Use Report & Export / Downloads / Figures only when you need figure files, manifests, or evidence bundles.",
     "section_col_section": "Section",
+    "diagnostics_select_label": "Diagnostic panel",
+    "diagnostics_select_help": "Choose one diagnostic panel to render. This keeps facet and figure controls responsive because hidden diagnostics are not redrawn on every selection change.",
+    "diagnostics_select_caption": "Changing a facet in the Facet Quality Dashboard reuses the current fitted result; it does not re-estimate the model.",
+    "diagnostics_panel_col_panel": "Diagnostic panel",
     "first_run_route_heading": "### First-run Route",
     "first_run_route_expander": "First-run route: sample/run to one next diagnostic",
     "first_run_route_caption": "Use this as the shortest guided path. It keeps details available, but asks you to make only one decision at a time.",
@@ -2268,7 +2272,7 @@
     "tables_html_button": "Download HTML report",
     "tables_individual_expander_template": "Individual CSV downloads ({n} files)",
     "figures_caption": "Download key diagnostic plots using the app's manuscript export profile and current visualization preferences. Static PNG uses 300 DPI when available, and matching interactive HTML is kept for review.",
-    "figures_skipped_info": "Figure export bundle generation was skipped for this run. Re-run with Analysis depth = Full publication or Custom > Prepare figure export bundle to build downloadable plot files.",
+    "figures_skipped_info": "Downloadable figure files were not generated for this run. View density = Full only changes which panels are visible after estimation; it does not retroactively build PNG/HTML files. To create the figure export bundle, re-run with Analysis depth = Full publication or Custom > Prepare figure export bundle.",
     "figures_count_markdown_template": "**{n} figure(s)** available ({fmt} format).",
     "figures_kaleido_info": "PNG export is unavailable (kaleido not configured on this server). Interactive HTML figures are offered instead. To enable PNG with kaleido >= 1.0, install Chrome or Chromium in the runtime.",
     "figures_errors_expander_template": "⚠ {n} figure(s) could not be generated",

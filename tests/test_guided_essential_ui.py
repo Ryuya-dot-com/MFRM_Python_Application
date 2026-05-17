@@ -124,6 +124,31 @@ def test_guided_section_selector_keeps_all_detail_sections_in_order():
     ]
 
 
+def test_guided_diagnostics_selector_lazy_renders_one_panel():
+    options = app.guided_diagnostic_panel_options()
+
+    assert list(options["PanelId"]) == [
+        "fit_details",
+        "dimensionality",
+        "wright_map",
+        "visuals",
+        "bias_interaction",
+        "categories_steps",
+        "agreement",
+        "facet_dashboard",
+        "prediction_simulation",
+    ]
+    assert list(options.columns) == [
+        "PanelId",
+        app.t("guided.diagnostics_panel_col_panel"),
+    ]
+
+    source = inspect.getsource(app._render_guided_diagnostics_section)
+    assert "st.segmented_control" in source
+    assert "guided_diagnostics_panel" in source
+    assert "st.tabs" not in source
+
+
 def test_guided_first_run_route_table_links_sample_run_to_current_focus():
     table = app.guided_first_run_route_table()
 

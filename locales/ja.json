@@ -15,7 +15,7 @@
     "view_density_label": "画面密度",
     "view_density_essential": "Essential (要点)",
     "view_density_full": "Full (全機能)",
-    "view_density_help": "Essential では、高度な診断サブタブ (Visuals 内の Forest / Q-Q / ECDF、および詳細な Help セクション) を非表示にします。Full では v0.2.x の全機能を表示します。原稿の Methods 節を作成する前や、公表水準の分析では Full に切り替えてください。"
+    "view_density_help": "Essential は画面を短く保ちます。Full は全 UI パネルを表示します。これは表示設定のみです。ダウンロード用の図バンドルや公表水準の計算は、推定実行前の Analysis depth で制御します。"
   },
   "app": {
     "title": "多相ラッシュモデル (MFRM) FACETS-mode",
@@ -42,6 +42,10 @@
     "section_select_help": "横並びのセクション切替で Results、Figures、Diagnostics、Report、Help を移動します。大きい run でも重くなりすぎないよう、選択中のセクションだけを描画します。",
     "section_select_caption": "図を見る場所として Figures を独立させています。図ファイル、manifest、evidence bundle が必要な場合だけ Report & Export / Downloads / Figures を使います。",
     "section_col_section": "セクション",
+    "diagnostics_select_label": "診断パネル",
+    "diagnostics_select_help": "描画する診断パネルを 1 つ選びます。非表示の診断を毎回描き直さないため、facet や図の操作が軽くなります。",
+    "diagnostics_select_caption": "Facet Quality Dashboard で facet を切り替えても、現在の推定結果を再利用します。モデルを再推定しているわけではありません。",
+    "diagnostics_panel_col_panel": "診断パネル",
     "first_run_route_heading": "### 初回ルート",
     "first_run_route_expander": "初回ルート: sample / run から次の診断へ",
     "first_run_route_caption": "最短の guided path として使います。詳細は残しつつ、一度に判断することを 1 つに絞ります。",
@@ -2268,7 +2272,7 @@
     "tables_html_button": "HTML レポートをダウンロード",
     "tables_individual_expander_template": "個別 CSV ダウンロード ({n} ファイル)",
     "figures_caption": "本アプリの manuscript エクスポートプロファイルと現在の可視化設定で主要な診断プロットをダウンロードする。static エクスポート可能な場合は 300 DPI PNG を作成し、レビュー用の interactive HTML も保持する。",
-    "figures_skipped_info": "この実行では図エクスポートバンドルの生成をスキップした。Analysis depth = Full publication、または Custom > Prepare figure export bundle で再実行してダウンロード可能なプロットファイルを構築する。",
+    "figures_skipped_info": "この実行ではダウンロード用の図ファイルを生成していません。View density = Full は推定後に表示するパネルを増やすだけで、PNG / HTML ファイルを後から生成する設定ではありません。図エクスポートバンドルを作成するには、Analysis depth = Full publication、または Custom > Prepare figure export bundle で再実行してください。",
     "figures_count_markdown_template": "**{n} 件の図** が利用可能 ({fmt} 形式)。",
     "figures_kaleido_info": "PNG エクスポートは利用不可 (このサーバーで kaleido が未設定)。代わりに interactive HTML の図を提供する。kaleido >= 1.0 で PNG を有効化するには、ランタイムに Chrome または Chromium をインストールする。",
     "figures_errors_expander_template": "⚠ {n} 件の図を生成できなかった",

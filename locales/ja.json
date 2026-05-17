@@ -1798,6 +1798,7 @@
   "data_source": {
     "header": "データソース",
     "radio_prompt_template": "1 つ選択 — {n_scenarios} 種の組込みサンプルと手元のデータがここに一覧表示される。各サンプルは合成データで、公開済みの MFRM 研究に基づくパラメータを使用している。",
+    "option_simulate": "合成データを生成",
     "option_paste": "CSV/TSV テキストを貼り付け",
     "option_upload": "ファイルをアップロード",
     "scenario_info_template": "**読込済み:** {label}\n\n**設計:** {persons} × {raters} × {tasks} × {criteria} = **{n_obs} observations**、{n_cat} 段階尺度。\n\n{short}",

@@ -25023,6 +25023,8 @@ def render_comparison_selector() -> None:
 # Readiness status prefixes avoid colour-only signalling and keep the UI
 # legible in plain-text exports, screenshots, and assistive technologies.
 _READINESS_PREFIX: dict[str, str] = {"ok": "[OK] ", "warning": "[CAUTION] ", "issue": "[ISSUE] "}
+_READINESS_ICON: dict[str, str] = {"ok": "🟢", "warning": "🟡", "issue": "🔴"}
+_READINESS_TEXT_LABEL: dict[str, str] = {"ok": "OK", "warning": "CAUTION", "issue": "ISSUE"}
 
 
 def _readiness_severity_max(*severities: str) -> str:
@@ -52471,8 +52473,8 @@ def _self_test_sample_data_scenarios() -> None:
         f"data-source radio labels must be unique, got duplicates in {labels}",
     )
     _self_test_assert(
-        labels[-2:] == ["Paste CSV/TSV text", "Upload your own file"],
-        f"data-source radio should end with Paste/Upload, got {labels[-2:]}",
+        labels[-3:] == ["Generate synthetic data", "Paste CSV/TSV text", "Upload your own file"],
+        f"data-source radio should end with Simulation/Paste/Upload, got {labels[-3:]}",
     )
 
     for key, scenario in SAMPLE_DATA_SCENARIOS.items():

@@ -23,6 +23,9 @@ SKIP_DIRS = {
     ".pytest_cache",
     "__pycache__",
     ".ruff_cache",
+    ".venv",
+    "venv",
+    "node_modules",
     "validation/generated",
 }
 

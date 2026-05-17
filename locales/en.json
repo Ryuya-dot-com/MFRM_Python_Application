@@ -1798,6 +1798,7 @@
   "data_source": {
     "header": "Data source",
     "radio_prompt_template": "Choose one — all {n_scenarios} built-in samples plus your own data are listed here. Each sample is synthetic with parameters grounded in published MFRM studies.",
+    "option_simulate": "Generate synthetic data",
     "option_paste": "Paste CSV/TSV text",
     "option_upload": "Upload your own file",
     "scenario_info_template": "**Loaded:** {label}\n\n**Design:** {persons} × {raters} × {tasks} × {criteria} = **{n_obs} observations**, {n_cat}-point scale.\n\n{short}",

@@ -4,8 +4,20 @@ All notable changes to this standalone Streamlit distribution should be recorded
 
 ## Unreleased
 
+- No pending changes after v0.2.15-beta.
+
+## 0.2.15-beta - 2026-06-17
+
 ### Added
 
+- **README and version alignment for public distribution**. The app version is
+  bumped to `0.2.15-beta`, and the README now documents the current beta label,
+  release-readiness commands, standalone runtime boundary, demo/parity export
+  smoke checks, and the new `mfrm_app/` helper package.
+- **Guided UX and export-readiness documentation surface**. The README now
+  reflects the Essential-view reading-order guidance, localized help popover
+  overlays, modular helper boundaries, privacy/cache expectations, and
+  reproducibility/export contracts added in the current public beta line.
 - **Zotero-informed method reference audit**. A safe read-only audit of
   the local Zotero/BibTeX library was used to expand the in-app APA
   reference library with Rasch, fit, local-dependence, external-package,

@@ -6,7 +6,7 @@ This app is designed to run without `mfrmr`, `rpy2`, `Rscript`, FACETS, TAM, sir
 
 ## Status
 
-- Release status: public beta / research preview (**v0.2.14-beta**; current branch also includes the Unreleased items in `CHANGELOG.md`)
+- Release status: public beta / research preview (**v0.2.15-beta**)
 - Runtime engine: standalone Python
 - Primary entrypoint: `streamlit_app.py`
 - Intended use: exploratory analysis, teaching, reporting support, and research workflow prototyping
@@ -41,12 +41,22 @@ commit after a push or reboot.
 
 ## What's new in the current beta line
 
-The current app label is v0.2.14-beta. This branch also includes Unreleased
-refinements documented in `CHANGELOG.md`, including mfrmr 0.1.6 migration
-coverage, EB shrinkage advisory outputs, SE/CI coverage diagnostics for ADEMP
-parameter recovery, conditional bias-inference audits, facet sample-size /
-nesting / design effect audits, information curves, and public-facing wording
-cleanup.
+The current app label is v0.2.15-beta. This beta line adds the v0.2.14
+sample-scenario and quick-results-bundle work, then layers on the
+release-readiness and UX/documentation pass documented in `CHANGELOG.md`.
+Key current-line improvements include:
+
+- Modular helper boundaries under `mfrm_app/` for CLI/doctor checks,
+  export-frame collection, distribution metadata, privacy text, preflight
+  contracts, and table IO.
+- Guided Essential-view reading order and localized Japanese help popover
+  overlays, so first-time users have clearer local guidance without hiding
+  advanced evidence from full-view users.
+- README-visible public verification commands: `--doctor`, `--release-check`,
+  `--self-test`, demo report export, and parity-fixture export.
+- Stronger reproducibility and publication-export contracts for download
+  frames, public-release readiness, runtime dependency boundaries, and
+  privacy/caching expectations.
 
 Earlier v0.2.0-beta (2026-04-17) shipped four major feature tracks; v0.2.1 and
 v0.2.2 were post-release hotfixes landing the findings from a parallel UX audit.
@@ -218,6 +228,14 @@ python streamlit_app.py --benchmark-quick --benchmark-csv validation/generated/b
 python streamlit_app.py --export-demo-report validation/generated/demo_report
 python streamlit_app.py --export-parity-fixture validation/generated/parity_fixture
 ```
+
+For public distribution, run at least `--doctor`, `--release-check`, and
+`--self-test` from a fresh checkout before tagging or deploying. `--doctor`
+confirms Python/package floors, bundled assets, the standalone runtime boundary,
+and the privacy/cache boundary. `--self-test` exercises the app's built-in
+statistical and export contracts. The two export commands above generate a
+sanitized demo-report package and external-validation parity fixture for
+release review without uploading private data.
 
 Optional Make shortcuts:
 
@@ -527,6 +545,8 @@ MFRM_STREAMLIT_RELEASE_PLAN.md
 RELEASE_CHECKLIST.md
 anchor_templates_and_guideline/
 locales/
+mfrm_app/
+tests/
 .streamlit/config.toml
 .github/workflows/python-streamlit.yml
 .github/ISSUE_TEMPLATE/

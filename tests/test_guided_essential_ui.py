@@ -6,6 +6,7 @@ from types import SimpleNamespace
 import pandas as pd
 
 import streamlit_app as app
+from mfrm_app import help_popovers
 
 
 def test_guided_action_plan_preserves_detail_and_routes_priority():
@@ -100,6 +101,33 @@ def test_help_section_renders_measures_reading_guide_reference():
     assert "help.measures_reading_expander" in source
 
 
+def test_help_popover_japanese_overlay_covers_every_topic():
+    missing = help_popovers.missing_translation_fields(
+        app._HELP_POPOVER_LIBRARY.keys(),
+        lang="ja",
+    )
+
+    assert missing == []
+    fallback = app._HELP_POPOVER_LIBRARY["category_usage"]
+    localized = help_popovers.localized_help_popover_topic(
+        "category_usage",
+        lang="ja",
+        fallback=fallback,
+    )
+    assert localized["title"] != fallback["title"]
+    assert "カテゴリ" in localized["title"]
+    assert localized["what"]
+    assert localized["how"]
+    assert localized["watch"]
+
+
+def test_render_help_popover_uses_localized_topic_overlay():
+    source = inspect.getsource(app.render_help_popover)
+
+    assert "_help_popovers.localized_help_popover_topic" in source
+    assert "st.session_state.get(\"lang\", DEFAULT_LANG)" in source
+
+
 def test_guided_section_selector_keeps_all_detail_sections_in_order():
     options = app.guided_section_selector_options()
 
@@ -122,6 +150,36 @@ def test_guided_section_selector_keeps_all_detail_sections_in_order():
         app.t("guided.tab_report_export"),
         app.t("guided.tab_learn"),
     ]
+
+
+def test_guided_section_reading_order_covers_every_essential_section():
+    expected_columns = [
+        app.t("guided.section_col_section"),
+        app.t("guided.goal_focus_col_open"),
+        app.t("guided.next_click_col_do"),
+        app.t("guided.interpret_col_do_not_conclude"),
+    ]
+    for section_id in app.GUIDED_SECTION_IDS:
+        cue = app.guided_section_reading_order_table(section_id)
+
+        assert cue.shape == (1, 4)
+        assert list(cue.columns) == expected_columns
+        assert cue.iloc[0][expected_columns[0]] == app._guided_section_label(section_id)
+        assert cue.astype(str).apply(lambda column: column.str.len().gt(0).all()).all()
+        assert "Do not" in cue.iloc[0][expected_columns[3]]
+
+    fallback = app.guided_section_reading_order_table("not_a_section")
+    start = app.guided_section_reading_order_table("start")
+    assert fallback.equals(start)
+
+
+def test_guided_essential_tabs_show_reading_order_before_section_body():
+    source = inspect.getsource(app._render_guided_essential_tabs)
+
+    cue_call = "render_guided_section_reading_order(selected_section)"
+    section_body = "if selected_section == \"start\":"
+    assert cue_call in source
+    assert source.index(cue_call) < source.index(section_body)
 
 
 def test_guided_diagnostics_selector_lazy_renders_one_panel():
@@ -745,6 +803,51 @@ def test_guided_export_share_preflight_help_table_documents_share_boundaries():
 def test_guided_report_export_renders_reproducibility_guardrail():
     source = inspect.getsource(app._render_guided_report_export_section)
 
+    assert "build_report_ready_summary_panel(" in source
+    assert "guided.report_ready_summary_heading" in source
+    assert "report_ready_summary_panel.csv" in source
+    assert "generate_report_ready_decision_brief(" in source
+    assert "generate_report_ready_apa_results_draft(" in source
+    apa_draft_source = inspect.getsource(app.generate_report_ready_apa_results_draft)
+    assert "build_apa_bridge_revision_plan(" in apa_draft_source
+    assert "Bridge-Constrained Use Conditions" in apa_draft_source
+    assert "Bridge Revision Plan" in apa_draft_source
+    assert "build_role_based_action_memos(" in source
+    assert "generate_role_based_action_memos_markdown(" in source
+    assert "build_role_based_action_checklist(" in source
+    assert "apply_role_based_action_checklist_done_state(" in source
+    assert "role_based_action_checklist_progress_summary(" in source
+    assert "generate_role_based_action_checklist_markdown(" in source
+    assert "build_report_ready_reanalysis_checklist(" in source
+    assert "generate_report_ready_reanalysis_checklist_markdown(" in source
+    assert "report_ready_decision_brief.md" in source
+    assert "apa_results_paragraph_draft.md" in source
+    assert "role_based_action_memos.csv" in source
+    assert "role_based_action_memos.md" in source
+    assert "role_based_action_checklist.csv" in source
+    assert "role_based_action_checklist.md" in source
+    assert "report_ready_reanalysis_checklist.csv" in source
+    assert "report_ready_reanalysis_checklist.md" in source
+    assert "build_critical_final_review_panel(" in source
+    assert "generate_critical_final_review_markdown(" in source
+    assert "critical_final_review_panel.csv" in source
+    assert "critical_final_review.md" in source
+    assert "guided.critical_review_heading" in source
+    assert "build_status_rationale_drilldown(" in source
+    assert "build_result_reading_path(" in source
+    assert "build_operational_decision_board(" in source
+    assert "build_reporting_action_bridge(" in source
+    assert "generate_reporting_action_bridge_markdown(" in source
+    assert "status_rationale_drilldown.csv" in source
+    assert "result_reading_path.csv" in source
+    assert "operational_decision_board.csv" in source
+    assert "reporting_action_bridge.csv" in source
+    assert "reporting_action_bridge.md" in source
+    assert "guided.audience_boards_heading" in source
+    assert "guided.reporting_bridge_heading" in source
+    assert "st.data_editor(" in source
+    assert "st.progress(" in source
+    assert "guided.role_checklist_open_only_label" in source
     assert "guided_reproducibility_guardrail_table()" in source
     assert "guided.repro_heading" in source
     assert "guided_report_claim_trace_table(" in source
@@ -868,45 +971,6 @@ def test_guided_situation_walkthrough_help_table_covers_common_run_states():
     assert app.t("help.guided_situation_nonconvergence_situation") in set(table[situation_col])
     assert app.t("help.guided_situation_fit_pca_situation") in set(table[situation_col])
     assert app.t("help.guided_situation_manuscript_export_situation") in set(table[situation_col])
-    assert table.astype(str).apply(lambda column: column.str.len().gt(0).all()).all()
-
-
-def test_app_refinement_scorecard_scores_current_quality_dimensions():
-    table = app.app_refinement_scorecard_table()
-    perspective_col = app.t("help.refinement_score_col_perspective")
-    score_col = app.t("help.refinement_score_col_score")
-
-    assert list(table.columns) == [
-        app.t("help.refinement_score_col_perspective"),
-        app.t("help.refinement_score_col_score"),
-        app.t("help.refinement_score_col_sufficient"),
-        app.t("help.refinement_score_col_insufficient"),
-        app.t("help.refinement_score_col_fix"),
-        app.t("help.refinement_score_col_priority"),
-    ]
-    assert len(table) == 11
-    assert table[score_col].between(0, 100).all()
-    assert app.t("help.refinement_score_overall_perspective") in set(table[perspective_col])
-    overall = table.loc[table[perspective_col].eq(app.t("help.refinement_score_overall_perspective"))].iloc[0]
-    assert int(overall[score_col]) == 86
-    assert table.astype(str).apply(lambda column: column.str.len().gt(0).all()).all()
-
-
-def test_app_refinement_roadmap_table_has_fixable_phases():
-    table = app.app_refinement_roadmap_table()
-    target_col = app.t("help.refinement_roadmap_col_target")
-
-    assert list(table.columns) == [
-        app.t("help.refinement_roadmap_col_horizon"),
-        app.t("help.refinement_roadmap_col_target"),
-        app.t("help.refinement_roadmap_col_work"),
-        app.t("help.refinement_roadmap_col_acceptance"),
-        app.t("help.refinement_roadmap_col_verification"),
-    ]
-    assert len(table) == 8
-    assert app.t("help.refinement_roadmap_p1_navigation_target") in set(table[target_col])
-    assert app.t("help.refinement_roadmap_p2_validation_library_target") in set(table[target_col])
-    assert app.t("help.refinement_roadmap_p3_modularization_target") in set(table[target_col])
     assert table.astype(str).apply(lambda column: column.str.len().gt(0).all()).all()
 
 
@@ -1216,6 +1280,140 @@ def test_guided_goal_guardrail_summary_falls_back_to_readiness_goal():
     readiness = app.guided_goal_guardrail_summary_table("check_readiness", pd.DataFrame())
 
     assert fallback.equals(readiness)
+
+
+def test_guided_section_id_for_target_maps_common_detail_labels():
+    assert app.guided_section_id_for_target(app.t("guided.tab_results")) == "results"
+    assert app.guided_section_id_for_target("Fit Details / Dimensionality") == "diagnostics"
+    assert app.guided_section_id_for_target("Downloads and manuscript binder") == "report_export"
+    assert app.guided_section_id_for_target("Glossary and interpretation guide") == "learn"
+
+
+def test_guided_action_hub_cards_keep_primary_detail_and_boundary_actions():
+    plan = pd.DataFrame([{
+        "Priority": "P1",
+        "SourceOrder": 1,
+        "Area": "Fit",
+        "Check": "Global residual screen",
+        "Status": "Caution",
+        "WhatItSays": "Residual evidence needs review.",
+        "NextAction": "Open fit details before interpreting measures.",
+        "DetailLocation": "Fit Details",
+    }])
+
+    cards = app.guided_action_hub_cards("inspect_measures", plan)
+
+    assert len(cards) == 3
+    assert set(cards["ActionId"]) == {"primary", "detail", "boundary"}
+    assert {
+        app.t("guided.action_hub_col_role"),
+        app.t("guided.action_hub_col_open"),
+        app.t("guided.action_hub_col_action"),
+        app.t("guided.action_hub_col_detail"),
+        "SectionId",
+        app.t("guided.action_hub_col_button"),
+    }.issubset(cards.columns)
+    assert cards.loc[cards["ActionId"].eq("primary"), "SectionId"].iloc[0] == "results"
+    assert cards.loc[cards["ActionId"].eq("detail"), "SectionId"].iloc[0] == "results"
+    assert cards.loc[cards["ActionId"].eq("boundary"), "SectionId"].iloc[0] == "report_export"
+    joined = " ".join(cards.astype(str).to_numpy().ravel())
+    assert app.t("guided.action_hub_primary_role") in joined
+    assert app.t("guided.action_hub_detail_role") in joined
+    assert app.t("guided.action_hub_boundary_role") in joined
+
+
+def test_guided_goal_router_renders_action_hub_with_section_buttons():
+    source = inspect.getsource(app._render_guided_goal_router)
+
+    assert "guided_action_hub_cards" in source
+    assert "guided_essential_section" in source
+    assert "st.button" in source
+    assert "st.rerun()" in source
+    assert "action_hub_detail_expander" in source
+
+
+def test_guided_progress_checklist_is_checkbox_ready_and_caveat_sensitive():
+    plan = pd.DataFrame([{
+        "Priority": "P1",
+        "SourceOrder": 1,
+        "Area": "Fit",
+        "Check": "Global residual screen",
+        "Status": "Caution",
+        "WhatItSays": "Residual evidence needs review.",
+        "NextAction": "Open fit details before interpreting measures.",
+        "DetailLocation": "Fit Details",
+    }])
+
+    checklist = app.guided_progress_checklist("inspect_measures", plan)
+    done_col = app.t("guided.progress_col_done")
+    checkpoint_col = app.t("guided.progress_col_checkpoint")
+    state_col = app.t("guided.progress_col_state")
+
+    assert list(checklist.columns) == [
+        done_col,
+        app.t("guided.progress_col_checkpoint"),
+        app.t("guided.progress_col_state"),
+        app.t("guided.progress_col_open"),
+        app.t("guided.progress_col_action"),
+        app.t("guided.progress_col_completion"),
+        app.t("guided.progress_col_boundary"),
+    ]
+    assert len(checklist) == 6
+    assert checklist[done_col].map(type).eq(bool).all()
+    assert app.t("guided.progress_state_user_check") in checklist[state_col].tolist()
+    assert bool(
+        checklist.loc[
+            checklist[checkpoint_col].eq(app.t("guided.progress_goal_checkpoint")),
+            done_col,
+        ].iloc[0]
+    )
+    assert not bool(
+        checklist.loc[
+            checklist[checkpoint_col].eq(app.t("guided.progress_claim_checkpoint")),
+            done_col,
+        ].iloc[0]
+    )
+    joined = " ".join(checklist.astype(str).to_numpy().ravel())
+    assert app.t("guided.progress_claim_boundary") in joined
+    assert "presumed ability" not in joined.lower()
+
+
+def test_guided_progress_checklist_marks_clean_claim_boundary_ready():
+    plan = pd.DataFrame([{
+        "Priority": "P1",
+        "SourceOrder": 1,
+        "Area": "Reporting",
+        "Check": "Report readiness",
+        "Status": "OK",
+        "WhatItSays": "No high-priority blocker was detected.",
+        "NextAction": "Continue to report guidance.",
+        "DetailLocation": "Report",
+    }])
+
+    checklist = app.guided_progress_checklist("prepare_report", plan)
+    done_col = app.t("guided.progress_col_done")
+    checkpoint_col = app.t("guided.progress_col_checkpoint")
+    state_col = app.t("guided.progress_col_state")
+
+    claim_row = checklist.loc[
+        checklist[checkpoint_col].eq(app.t("guided.progress_claim_checkpoint"))
+    ].iloc[0]
+    focus_row = checklist.loc[
+        checklist[checkpoint_col].eq(app.t("guided.progress_focus_checkpoint"))
+    ].iloc[0]
+
+    assert bool(claim_row[done_col])
+    assert bool(focus_row[done_col])
+    assert claim_row[state_col] == app.t("guided.progress_state_ready")
+
+
+def test_guided_goal_router_renders_progress_checklist_with_checkbox_column():
+    source = inspect.getsource(app._render_guided_goal_router)
+
+    assert "guided_progress_checklist" in source
+    assert "st.data_editor" in source
+    assert "CheckboxColumn" in source
+    assert "mfrm_guided_progress_checklist.csv" in source
 
 
 def test_guided_goal_decision_brief_has_prompt_scope_output_and_caveat():

@@ -167,6 +167,115 @@ def test_build_result_bundle_frames_empty_input():
     assert frames == {}
 
 
+def test_public_release_readiness_runtime_dependencies_match_doctor_contract():
+    readiness = app.public_release_readiness_table()
+    runtime_row = readiness.loc[readiness["Check"].eq("Runtime dependencies")].iloc[0]
+
+    assert runtime_row["Status"] == "Ready"
+    assert "doctor runtime floors" in runtime_row["Evidence"]
+
+
+def test_collect_download_frames_returns_context_for_download_ui():
+    """The full Downloads tab should separate frame collection from UI rendering."""
+    res = {
+        "config": {"model": "RSM", "method": "JMLE", "facet_names": ["Rater"], "n_cat": 5},
+        "prep": {
+            "n_obs": 12,
+            "n_person": 4,
+            "rating_min": 0,
+            "rating_max": 4,
+            "score_map": pd.DataFrame({"RawScore": [0, 1], "MappedScore": [0, 1]}),
+            "audit_summary": pd.DataFrame({"Check": ["rows"], "Status": ["ok"]}),
+        },
+        "summary": pd.DataFrame([{"Model": "RSM", "Method": "JMLE", "Converged": True}]),
+        "steps": pd.DataFrame({"Step": [1, 2], "Estimate": [-0.5, 0.5]}),
+        "facets": {
+            "others": pd.DataFrame({
+                "Facet": ["Rater"],
+                "Level": ["R1"],
+                "Estimate": [0.0],
+            }),
+        },
+    }
+    diag = {
+        "measures": pd.DataFrame({
+            "Facet": ["Rater"],
+            "Level": ["R1"],
+            "Estimate": [0.0],
+            "SE": [0.1],
+        }),
+        "reliability": pd.DataFrame({"Facet": ["Rater"], "Reliability": [0.8]}),
+        "fit": pd.DataFrame({"Facet": ["Rater"], "Level": ["R1"], "Infit": [1.0], "Outfit": [1.0]}),
+    }
+    report_tables = {
+        "Rater Summary": pd.DataFrame({"Level": ["R1"], "Estimate": [0.0]}),
+    }
+    scorefile = pd.DataFrame({"Person": ["P1"], "Observed": [3]})
+    residuals = pd.DataFrame({"Person": ["P1"], "Residual": [0.2]})
+    bias_table = pd.DataFrame({
+        "FacetA": ["Rater"],
+        "FacetA_Level": ["R1"],
+        "FacetB": ["Task"],
+        "FacetB_Level": ["T1"],
+        "Bias Size": [0.6],
+        "S.E.": [0.2],
+        "t": [3.0],
+        "Prob.": [0.01],
+        "Observd Count": [12],
+    })
+    bias_bundle = {
+        "table": bias_table,
+        "summary": pd.DataFrame({"Metric": ["Cells"], "Value": [1]}),
+    }
+
+    frames, context = app.collect_download_frames(
+        res,
+        diag,
+        report_tables,
+        scorefile,
+        residuals,
+        public_export_mode=True,
+        bias_results=bias_bundle,
+        all_bias_results={"Rater x Task": bias_bundle},
+    )
+
+    expected_frames = {
+        "visualization_settings",
+        "summary",
+        "likelihood_information_criteria",
+        "score_map",
+        "response_data_audit_summary",
+        "measures",
+        "reliability",
+        "fit_statistics",
+        "scorefile",
+        "residuals",
+        "facets_Rater_Summary",
+        "bias_table",
+        "bias_Rater_x_Task",
+        "dff_bias_screening",
+        "dff_bias_Rater_x_Task",
+        "public_beta_limitations",
+        "stan_reproducibility_archive_contract",
+    }
+    assert expected_frames.issubset(frames), expected_frames - set(frames)
+    assert {"p_holm", "p_bh", "EvidenceLevel"}.issubset(frames["dff_bias_Rater_x_Task"].columns)
+    assert isinstance(context["measures_dl"], pd.DataFrame)
+    assert isinstance(context["steps_dl"], pd.DataFrame)
+    assert isinstance(context["generic_stan_data_dl"], dict)
+
+    public_frames = app.prepare_download_frames_for_privacy(frames, public_export_mode=True)
+    private_frames = app.prepare_download_frames_for_privacy(frames, public_export_mode=False)
+    assert "scorefile" not in public_frames
+    assert "residuals" not in public_frames
+    assert "scorefile" in private_frames
+    assert "residuals" in private_frames
+    public_manifest = public_frames["export_privacy_manifest"]
+    excluded = public_manifest.loc[public_manifest["Status"] == "excluded_public_mode", "Frame"].tolist()
+    assert "scorefile" in excluded
+    assert "residuals" in excluded
+
+
 # ---------------------------------------------------------------------------
 # Singleton-facet handling
 # ---------------------------------------------------------------------------

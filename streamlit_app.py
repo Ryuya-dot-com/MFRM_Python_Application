@@ -28,7 +28,14 @@ from plotly.subplots import make_subplots
 from scipy.optimize import minimize, root_scalar, minimize_scalar
 from scipy.special import logsumexp
 from scipy.stats import chi2, norm as _norm, t as t_dist
-import streamlit as st
+
+from mfrm_app import distribution as _distribution
+from mfrm_app import exports as _exports
+from mfrm_app import frame_bundle as _frame_bundle
+from mfrm_app import help_popovers as _help_popovers
+from mfrm_app import io_tables as _io_tables
+from mfrm_app import preflight as _preflight
+from mfrm_app import privacy as _privacy
 
 
 CLI_CHECK_FLAGS = {
@@ -43,6 +50,13 @@ CLI_CHECK_FLAGS = {
 if any(flag in sys.argv for flag in CLI_CHECK_FLAGS):
     logging.getLogger("streamlit.runtime.caching.cache_data_api").setLevel(logging.ERROR)
     logging.getLogger("streamlit.runtime.caching.cache_resource_api").setLevel(logging.ERROR)
+
+if "--doctor" in sys.argv and importlib.util.find_spec("streamlit") is None:
+    from mfrm_app.cli import run_lightweight_doctor
+
+    raise SystemExit(run_lightweight_doctor(json_output="--json" in sys.argv))
+
+import streamlit as st
 
 
 APP_VERSION = "0.2.14-beta"
@@ -83,19 +97,19 @@ PUBLICATION_FIGURE_WIDTH = 900
 PUBLICATION_FIGURE_MIN_HEIGHT = 420
 PUBLICATION_FIGURE_MAX_HEIGHT = 1400
 PUBLICATION_FIGURE_FONT = "Arial, Helvetica, sans-serif"
-TABLE_FILE_SOFT_WARNING_MB = 50
-TABLE_FILE_HARD_LIMIT_MB = 100
-TABLE_TEXT_HARD_LIMIT_MB = 10
-TABLE_MAX_ROWS = 250_000
-TABLE_MAX_COLUMNS = 250
-TABLE_MAX_CELLS = 2_500_000
-TABLE_FILE_SOFT_WARNING_BYTES = TABLE_FILE_SOFT_WARNING_MB * 1024 * 1024
-TABLE_FILE_HARD_LIMIT_BYTES = TABLE_FILE_HARD_LIMIT_MB * 1024 * 1024
-TABLE_TEXT_HARD_LIMIT_BYTES = TABLE_TEXT_HARD_LIMIT_MB * 1024 * 1024
-ESTIMATION_HOSTED_MAX_OBS = 100_000
-ESTIMATION_HOSTED_MAX_PARAMETERS = 30_000
-ESTIMATION_HOSTED_MAX_MML_EVALS = 5_000_000
-ESTIMATION_HOSTED_MAX_BIAS_CELLS = 250_000
+TABLE_FILE_SOFT_WARNING_MB = _io_tables.TABLE_FILE_SOFT_WARNING_MB
+TABLE_FILE_HARD_LIMIT_MB = _io_tables.TABLE_FILE_HARD_LIMIT_MB
+TABLE_TEXT_HARD_LIMIT_MB = _io_tables.TABLE_TEXT_HARD_LIMIT_MB
+TABLE_MAX_ROWS = _io_tables.TABLE_MAX_ROWS
+TABLE_MAX_COLUMNS = _io_tables.TABLE_MAX_COLUMNS
+TABLE_MAX_CELLS = _io_tables.TABLE_MAX_CELLS
+TABLE_FILE_SOFT_WARNING_BYTES = _io_tables.TABLE_FILE_SOFT_WARNING_BYTES
+TABLE_FILE_HARD_LIMIT_BYTES = _io_tables.TABLE_FILE_HARD_LIMIT_BYTES
+TABLE_TEXT_HARD_LIMIT_BYTES = _io_tables.TABLE_TEXT_HARD_LIMIT_BYTES
+ESTIMATION_HOSTED_MAX_OBS = _preflight.ESTIMATION_HOSTED_MAX_OBS
+ESTIMATION_HOSTED_MAX_PARAMETERS = _preflight.ESTIMATION_HOSTED_MAX_PARAMETERS
+ESTIMATION_HOSTED_MAX_MML_EVALS = _preflight.ESTIMATION_HOSTED_MAX_MML_EVALS
+ESTIMATION_HOSTED_MAX_BIAS_CELLS = _preflight.ESTIMATION_HOSTED_MAX_BIAS_CELLS
 MML_COVARIANCE_AUTO_MAX_PARAMS = 180
 PCA_STABILITY_MIN_PERSONS = 30
 PCA_STABILITY_MIN_COLUMNS = 3
@@ -723,6 +737,53 @@ def build_method_reference_audit() -> pd.DataFrame:
             "ClaimBoundary": "Fit flags are diagnostic prompts; do not remove elements or claim invalidity without substantive review and design context.",
         },
         {
+            "MethodArea": "Agreement and scoring-quality quality control",
+            "AppSurface": "Agreement tab; Krippendorff alpha panel; scoring consistency decision; QC to-do checklist; APA scoring-quality draft",
+            "ReferenceKeys": [
+                "Krippendorff_2004",
+                "Hayes_Krippendorff_2007",
+                "Engelhard_1994",
+                "Myford_Wolfe_2003",
+                "Myford_Wolfe_2004",
+            ],
+            "ZoteroAlignment": (
+                "Web-confirmed DOI metadata for Krippendorff and Hayes/Krippendorff; "
+                "Myford/Wolfe items are present in Zotero with metadata-date cleanup needed; "
+                "Engelhard is an app-library article anchor and should be checked in Zotero before final bibliography export."
+            ),
+            "ManuscriptUse": (
+                "Cite when describing shared-context agreement, alpha as an agreement supplement, "
+                "and the combined rater-training/rubric-review quality-control gate."
+            ),
+            "ClaimBoundary": (
+                "Agreement evidence supports scoring-consistency review; it does not replace MFRM fit, severity, "
+                "bias, category-functioning evidence, or substantive moderation records."
+            ),
+        },
+        {
+            "MethodArea": "Rating-scale category functioning and category-collapse sensitivity",
+            "AppSurface": "Categories/Steps tab; rating-scale evidence help; category probability curves; category-collapse QC row",
+            "ReferenceKeys": [
+                "Andrich_1978",
+                "Masters_1982",
+                "Muraki_1992",
+                "Linacre_RatingScale_2002",
+                "Wind_2023",
+            ],
+            "ZoteroAlignment": (
+                "Andrich, Masters, Muraki, and Wind entries were confirmed in local Zotero; "
+                "Linacre rating-scale category-effectiveness article was web/PubMed-confirmed and is a Zotero add candidate."
+            ),
+            "ManuscriptUse": (
+                "Cite when reporting ordered-category model foundations, category-functioning checks, "
+                "and category-collapse sensitivity analyses."
+            ),
+            "ClaimBoundary": (
+                "Do not claim that categories function distinctly or that collapse is warranted from one statistic alone; "
+                "use counts, average measures, thresholds, curves, fit, and rubric meaning together."
+            ),
+        },
+        {
             "MethodArea": "Local dependence, DIF, and bias/local-interaction screening",
             "AppSurface": "Bias/local interaction tab; DFF tables; conditional bias-inference audit",
             "ReferenceKeys": [
@@ -821,6 +882,92 @@ def build_method_reference_audit() -> pd.DataFrame:
             "ZoteroAlignment": spec["ZoteroAlignment"],
             "ManuscriptUse": spec["ManuscriptUse"],
             "ClaimBoundary": spec["ClaimBoundary"],
+        })
+    return pd.DataFrame(rows)
+
+
+def build_help_reference_coverage() -> pd.DataFrame:
+    """Static evidence map for first-read Help and QC claims.
+
+    This table records what the app can safely say, which shipped APA keys
+    support it, and where Zotero/web follow-up is still needed. It is static on
+    purpose: the app does not read a user's Zotero library at runtime.
+    """
+    rows_spec = [
+        {
+            "HelpArea": "Krippendorff alpha agreement panel",
+            "ReaderQuestion": "Do the selected facet elements give similar scores in the same shared contexts?",
+            "SafeClaim": "Krippendorff alpha is an experimental agreement supplement for ordered rating categories.",
+            "PrimaryReferenceKeys": ["Krippendorff_2004", "Hayes_Krippendorff_2007"],
+            "ZoteroEvidence": "Not found in the current Zotero search; web-confirmed by DOI/publisher metadata.",
+            "ZoteroAction": "Add both article records by DOI before relying on Zotero-only bibliography checks.",
+            "AppEvidenceFiles": "krippendorff_alpha_experimental.csv; krippendorff_alpha_interpretation.csv; agreement_summary.csv",
+            "DoNotClaim": "Do not treat alpha as FACETS reliability or as proof that all raters are interchangeable.",
+            "Audience": "Paper author; scoring manager",
+        },
+        {
+            "HelpArea": "Rater training trigger",
+            "ReaderQuestion": "Which rater-facing action should be considered first?",
+            "SafeClaim": "Training or moderation is prioritized only when agreement, fit/severity, or bias evidence converges.",
+            "PrimaryReferenceKeys": ["Engelhard_1994", "Myford_Wolfe_2003", "Myford_Wolfe_2004"],
+            "ZoteroEvidence": "Myford/Wolfe Part I and II were found in Zotero; date metadata should be cleaned. Engelhard should be verified or added.",
+            "ZoteroAction": "Fix Myford/Wolfe dates and confirm/add Engelhard 1994 before final manuscript export.",
+            "AppEvidenceFiles": "quality_control_recommendations.csv; quality_control_todo_checklist.csv; fit_statistics.csv; bias.csv",
+            "DoNotClaim": "Do not label individual raters as bad from one misfit or agreement statistic.",
+            "Audience": "Scoring manager; measurement practitioner",
+        },
+        {
+            "HelpArea": "Rubric revision trigger",
+            "ReaderQuestion": "Is the rubric wording or scoring process unclear?",
+            "SafeClaim": "Rubric revision is a follow-up when disagreement or misfit patterns cluster by criterion, task, or category.",
+            "PrimaryReferenceKeys": ["Engelhard_1994", "Myford_Wolfe_2003", "Myford_Wolfe_2004", "Aryadoust_Ng_Sayama_2021"],
+            "ZoteroEvidence": "Aryadoust/Ng/Sayama and Myford/Wolfe were found in Zotero; Engelhard needs final Zotero verification.",
+            "ZoteroAction": "Verify Engelhard 1994 and keep rubric-revision claims tied to exported run evidence.",
+            "AppEvidenceFiles": "quality_control_recommendations.csv; scoring_consistency_decision.csv; agreement_pairs.csv",
+            "DoNotClaim": "Do not revise a rubric solely to improve fit without content-domain justification.",
+            "Audience": "Paper author; scoring manager",
+        },
+        {
+            "HelpArea": "Category-collapse sensitivity",
+            "ReaderQuestion": "Should adjacent score categories be combined?",
+            "SafeClaim": "Category collapse is a sensitivity analysis when category evidence and rubric logic both support it.",
+            "PrimaryReferenceKeys": ["Linacre_RatingScale_2002", "Wind_2023", "Andrich_1978", "Masters_1982"],
+            "ZoteroEvidence": "Wind, Andrich, and Masters were found in Zotero; Linacre rating-scale article was web/PubMed-confirmed but not found in Zotero.",
+            "ZoteroAction": "Add Linacre 2002 rating-scale category-effectiveness article by PMID/metadata if Zotero-backed exports are required.",
+            "AppEvidenceFiles": "rating_scale_recode_candidates.csv; rating_scale_decision_support.csv; category_diagnostics.csv; steps.csv",
+            "DoNotClaim": "Do not collapse categories automatically from sparse counts, disordered thresholds, or alpha alone.",
+            "Audience": "Paper author; measurement practitioner",
+        },
+        {
+            "HelpArea": "FACETS-style translation for users",
+            "ReaderQuestion": "How should FACETS users map app outputs to familiar evidence?",
+            "SafeClaim": "Agreement rows resemble a Table 8-style shared-context screen; rater evidence resembles measure/fit output; category evidence resembles Categories/Steps output.",
+            "PrimaryReferenceKeys": ["Linacre_2007", "Linacre_2024", "Myford_Wolfe_2003", "Myford_Wolfe_2004"],
+            "ZoteroEvidence": "FACETS/Winsteps manuals are book/manual references and are not expected to be complete Zotero article records; Myford/Wolfe items were found in Zotero.",
+            "ZoteroAction": "Do not count manuals as Zotero gaps; keep article gaps separate from book/manual gaps.",
+            "AppEvidenceFiles": "method_reference_audit.csv; scoring_consistency_decision.csv; visual_claim_guardrails.csv",
+            "DoNotClaim": "Do not state exact numerical equivalence with FACETS unless an external validation table is archived.",
+            "Audience": "FACETS-experienced reviewer; paper author",
+        },
+    ]
+    rows: list[dict[str, str]] = []
+    for spec in rows_spec:
+        keys = [str(k) for k in spec["PrimaryReferenceKeys"]]
+        missing = [key for key in keys if key not in _APA_REFERENCE_LIBRARY]
+        status = "Ready" if not missing else "Missing reference"
+        rows.append({
+            "HelpArea": spec["HelpArea"],
+            "ReaderQuestion": spec["ReaderQuestion"],
+            "SafeClaim": spec["SafeClaim"],
+            "PrimaryReferenceKeys": "; ".join(keys),
+            "CitationTokens": "; ".join(_citation_tokens_for_reference_keys(keys)),
+            "ReferenceCoverageStatus": status,
+            "MissingReferenceKeys": "; ".join(missing),
+            "ZoteroEvidence": spec["ZoteroEvidence"],
+            "ZoteroAction": spec["ZoteroAction"],
+            "AppEvidenceFiles": spec["AppEvidenceFiles"],
+            "DoNotClaim": spec["DoNotClaim"],
+            "Audience": spec["Audience"],
         })
     return pd.DataFrame(rows)
 
@@ -925,6 +1072,33 @@ def build_current_run_method_reference_audit(
             "fit/SE/residual diagnostics are available for manuscript reporting",
         )
 
+    n_cat = config.get("n_cat", prep.get("n_cat"))
+    try:
+        n_cat_int = int(n_cat)
+    except Exception:
+        n_cat_int = 0
+    category_artifacts = [
+        result.get("steps") if isinstance(result, dict) else None,
+        diagnostics.get("category_diagnostics") if isinstance(diagnostics, dict) else None,
+        diagnostics.get("rating_scale_decision_support") if isinstance(diagnostics, dict) else None,
+    ]
+    if n_cat_int >= 3 or any(_nonempty_run_artifact(value) for value in category_artifacts):
+        activate(
+            "Rating-scale category functioning and category-collapse sensitivity",
+            f"rating-scale/category evidence is relevant for {n_cat_int or 'unknown'} score categories",
+        )
+
+    agreement_artifacts = [
+        diagnostics.get("agreement") if isinstance(diagnostics, dict) else None,
+        diagnostics.get("agreement_summary") if isinstance(diagnostics, dict) else None,
+        diagnostics.get("krippendorff_alpha") if isinstance(diagnostics, dict) else None,
+    ]
+    if any(_nonempty_run_artifact(value) for value in agreement_artifacts):
+        activate(
+            "Agreement and scoring-quality quality control",
+            "shared-context agreement or Krippendorff alpha diagnostics are available",
+        )
+
     all_bias = all_bias_results or {}
     if _nonempty_run_artifact(all_bias):
         activate(
@@ -1018,6 +1192,7 @@ _CLAIM_AREA_TO_METHOD_REFERENCE_AREAS: dict[str, list[str]] = {
     ],
     "Rating-scale functioning": [
         "Rasch and rating-scale model foundation",
+        "Rating-scale category functioning and category-collapse sensitivity",
         "Fit, person-fit, and conditional estimation cautions",
     ],
     "Reliability and separation": [
@@ -1137,8 +1312,8 @@ def public_beta_limitations_table() -> pd.DataFrame:
         {
             "Area": "Latent regression",
             "PublicBetaStatus": "Ready with review",
-            "SupportedNow": "MML population_formula main effects, fixed user-set population prior SD, covariate type preview, and EAP/PV outputs.",
-            "Boundary": "Population variance is fixed, not estimated; interactions and transformations are not enabled.",
+            "SupportedNow": "MML population_formula main effects; population prior SD fixed by default or freely estimated (opt-in, EM engine) with a profile SE/CI; covariate type preview; and EAP/PV outputs.",
+            "Boundary": "Free population-SD estimation is EM-only and reports a conditional (profile) SE; interactions and transformations are not enabled.",
             "UserAction": "Inspect covariate type preview, especially integer-like codes that may need categorical coding.",
         },
         {
@@ -1173,7 +1348,7 @@ def public_beta_limitations_table() -> pd.DataFrame:
             "Area": "Portable scripts",
             "PublicBetaStatus": "Partial",
             "SupportedNow": "Current-engine runner supports the app path; portable self-contained scripts support ordinary JMLE/R workflows.",
-            "Boundary": "Portable self-contained GPCM and latent-regression scripts are intentionally blocked with explicit stubs.",
+            "Boundary": "Portable self-contained GPCM and latent-regression scripts are not provided; those models are reproduced through the in-app engine runner.",
             "UserAction": "Use the app-engine runner for GPCM, MML engine variants, latent regression, PV, and strict marginal reproduction.",
         },
         {
@@ -1285,7 +1460,7 @@ def mfrmr_015_migration_coverage_table() -> pd.DataFrame:
             "mfrmr015Area": "Latent regression / population_formula",
             "PythonStatus": "Ready with review",
             "PythonEvidence": "MML population_formula, person_data merge, covariate type preview, fixed prior SD, EAP, plausible values, and prediction exports.",
-            "Boundary": "Population variance is fixed; interactions, arbitrary transformations, and multidimensional latent regression are not enabled.",
+            "Boundary": "Population variance is fixed by default or freely estimated (opt-in, EM engine); interactions, arbitrary transformations, and multidimensional latent regression are not enabled.",
             "NextValidation": "Compare covariate coding, coefficient direction, EAP group shifts, and complete-case handling against the reference workflow.",
         },
         {
@@ -1766,30 +1941,34 @@ def mfrmr_020_migration_coverage_table() -> pd.DataFrame:
             "PythonEvidence": (
                 "compute_person_fit_indices() reports the Drasgow, Levine, "
                 "and Williams (1985) standardised polytomous lz and the "
-                "Snijders (2001, Eq. 16) lz* correction for JML person "
-                "estimates. The math contract (closed-form lz, lz*, c_n, "
-                "and corrected variance on hand-built obs frames) is "
-                "pinned in tests/test_person_fit_indices.py; the Measures "
-                "tab surfaces the chosen ReportIndex (lz* under JMLE, lz "
-                "otherwise) with explicit caveats and exposes the full "
-                "table plus a CSV download. MML / EAP estimates report "
-                "lz_star_status = 'not_applicable_eap' so the unadjusted "
-                "lz is never silently treated as Snijders-corrected."
+                "Snijders (2001, Eq. 16) lz* correction for BOTH JML person "
+                "estimates (conditional calibration) and MML / EAP / MAP "
+                "estimates (the population-prior-corrected extension, "
+                "c_n = Cov/(I+1/sigma^2) and corrected variance "
+                "Var[l] - Cov^2 (I+2/sigma^2)/(I+1/sigma^2)^2, following "
+                "Sinharay, 2016). The math contract (closed-form lz, lz*, "
+                "c_n, corrected variance on hand-built obs frames, plus the "
+                "p->0 reduction to JML and clean-data N(0,1) calibration) "
+                "is pinned in tests/test_person_fit_indices.py; the Measures "
+                "tab surfaces the chosen ReportIndex (lz* under both JMLE "
+                "and MML) with method-specific caveats and exposes the full "
+                "table plus a CSV download."
             ),
             "Boundary": (
                 "lz* under JML is conditional on the fitted non-person "
-                "calibration; non-person parameter uncertainty is not "
-                "propagated. Treat lz* as a screening tool rather than a "
-                "definitive misfit test, and read flagged rows alongside "
+                "calibration. The MML/EAP extension is exact for the MAP "
+                "estimator and accurate to O(1/I) for the EAP posterior "
+                "mean; non-person parameter and posterior uncertainty are "
+                "not propagated. Treat lz* as a screening tool rather than "
+                "a definitive misfit test, and read flagged rows alongside "
                 "Infit / Outfit."
             ),
             "NextValidation": (
-                "MML lz* (with the additional population-prior correction) "
-                "remains future work; the current pipeline reports the "
-                "unadjusted lz on the MML path with an explicit caveat. "
-                "An R parity test against mfrmr 0.2.0 "
-                "compute_person_fit_indices() is the next high-value "
-                "addition for manuscript-citation confidence."
+                "The JML path matches mfrmr 0.2.x compute_person_fit_indices(); "
+                "the MML/EAP population-prior correction extends beyond mfrmr "
+                "(which returns NA for EAP). Simulation-based Type-I "
+                "calibration for short tests / tight priors is the next "
+                "validation to bound the EAP-vs-MAP higher-order error."
             ),
         },
         {
@@ -1927,6 +2106,18 @@ def public_release_readiness_table() -> pd.DataFrame:
     def exists(rel_path: str) -> bool:
         return (root / rel_path).exists()
 
+    dependency_contract = _distribution.requirements_floor_contract_from_file(
+        root / "requirements.txt",
+        RUNTIME_PACKAGE_FLOORS,
+    )
+    dependency_total = len(dependency_contract)
+    dependency_ready_count = int(dependency_contract["Status"].eq("Ready").sum()) if dependency_total else 0
+    dependency_issues = dependency_contract.loc[
+        dependency_contract["Status"].ne("Ready"),
+        "Package",
+    ].astype(str).tolist() if dependency_total else []
+    dependency_ready = exists("requirements.txt") and dependency_total > 0 and not dependency_issues
+
     rows = [
         {
             "Check": "License",
@@ -1944,9 +2135,13 @@ def public_release_readiness_table() -> pd.DataFrame:
         },
         {
             "Check": "Runtime dependencies",
-            "Status": "Ready" if exists("requirements.txt") else "Blocker",
-            "Evidence": "requirements.txt is present." if exists("requirements.txt") else "requirements.txt is missing.",
-            "Action": "Run `python streamlit_app.py --doctor` after dependency changes.",
+            "Status": "Ready" if dependency_ready else "Blocker",
+            "Evidence": (
+                f"requirements.txt matches {dependency_ready_count}/{dependency_total} doctor runtime floors."
+                if dependency_ready else
+                f"{dependency_ready_count}/{dependency_total} dependency floor rows are ready; review: {', '.join(dependency_issues[:5]) or 'requirements.txt missing'}."
+            ),
+            "Action": "Keep requirements.txt and `python streamlit_app.py --doctor` runtime floors in lockstep.",
         },
         {
             "Check": "Development verification",
@@ -2042,6 +2237,162 @@ def _compact_label_list(values, max_chars: int = 34) -> list[str]:
     pref_max = int(prefs.get("label_max_chars", max_chars))
     effective_max = pref_max if policy == "Show all" else min(int(max_chars), pref_max)
     return [_compact_label(value, max_chars=effective_max) for value in values]
+
+
+def _normalize_plot_label_mode(value: object) -> str:
+    mode = str(value or PLOT_LABEL_MODE_DEFAULT).strip()
+    aliases = {
+        "numbers": "Number",
+        "number": "Number",
+        "plotnumber": "Number",
+        "plot number": "Number",
+        "short": "Short label",
+        "short label": "Short label",
+        "full": "Full label",
+        "full label": "Full label",
+        "hide": "None",
+        "hidden": "None",
+        "none": "None",
+        "auto": "Auto",
+    }
+    if mode in PLOT_LABEL_MODE_OPTIONS:
+        return mode
+    return aliases.get(mode.lower(), PLOT_LABEL_MODE_DEFAULT)
+
+
+def _plot_label_group_name(row: pd.Series) -> str:
+    role = str(row.get("Role", "")).strip()
+    if role == "Person":
+        return "Person"
+    if role == "Threshold":
+        return "Thresholds"
+    facet = str(row.get("Facet", "")).strip()
+    plot_column = str(row.get("PlotColumn", "")).strip()
+    return facet or plot_column or role or "Element"
+
+
+def _plot_label_prefix_map(group_names: list[str]) -> dict[str, str]:
+    known_prefixes = {
+        "person": "P",
+        "persons": "P",
+        "rater": "R",
+        "raters": "R",
+        "criterion": "C",
+        "criteria": "C",
+        "task": "T",
+        "tasks": "T",
+        "item": "I",
+        "items": "I",
+        "region": "REG",
+        "regions": "REG",
+        "threshold": "TH",
+        "thresholds": "TH",
+    }
+    used: set[str] = set()
+    prefixes: dict[str, str] = {}
+    for group in group_names:
+        key = str(group)
+        if key in prefixes:
+            continue
+        normalized = re.sub(r"\s+", " ", key.strip()).lower()
+        alnum = re.sub(r"[^A-Za-z0-9]", "", key).upper()
+        words = re.findall(r"[A-Za-z0-9]+", key)
+        candidates: list[str] = []
+        if normalized in known_prefixes:
+            candidates.append(known_prefixes[normalized])
+        if words:
+            candidates.append("".join(word[0].upper() for word in words[:3]))
+        if alnum:
+            candidates.extend([alnum[:1], alnum[:2], alnum[:3]])
+        candidates.append("X")
+        chosen = ""
+        for candidate in candidates:
+            candidate = candidate[:3] or "X"
+            if candidate not in used:
+                chosen = candidate
+                break
+        if not chosen:
+            base = (alnum[:1] or "X")
+            suffix = 2
+            while f"{base}{suffix}" in used:
+                suffix += 1
+            chosen = f"{base}{suffix}"
+        used.add(chosen)
+        prefixes[key] = chosen
+    return prefixes
+
+
+def build_plot_label_lookup(
+    plot_rows: pd.DataFrame,
+    *,
+    label_mode: str | None = None,
+    max_chars: int | None = None,
+) -> pd.DataFrame:
+    """Attach PLOTNUMBER-style label IDs and selected display labels.
+
+    The helper keeps the full label, compact label, and generated ID in
+    separate columns so exported figures can be reproduced even when the
+    visible plot chooses short labels, numeric IDs, or no text.
+    """
+    if not isinstance(plot_rows, pd.DataFrame) or plot_rows.empty:
+        cols = list(getattr(plot_rows, "columns", [])) + [
+            "PlotLabelID",
+            "PlotLabelShort",
+            "PlotLabelFull",
+            "PlotLabelMode",
+            "PlotLabelGroup",
+        ]
+        return pd.DataFrame(columns=list(dict.fromkeys(cols)))
+
+    prefs = get_visualization_preferences()
+    mode = _normalize_plot_label_mode(label_mode if label_mode is not None else prefs.get("plot_label_mode"))
+    policy = str(prefs.get("label_policy", VISUAL_LABEL_POLICY_DEFAULT))
+    effective_max = int(max_chars if max_chars is not None else prefs.get("label_max_chars", VISUAL_LABEL_MAX_CHARS_DEFAULT))
+    effective_max = _clamp_int(effective_max, VISUAL_LABEL_MAX_CHARS_DEFAULT, 4, 160)
+
+    out = plot_rows.copy()
+    groups = [_plot_label_group_name(row) for _, row in out.iterrows()]
+    ordered_groups = list(dict.fromkeys(groups))
+    prefixes = _plot_label_prefix_map(ordered_groups)
+    counters: dict[str, int] = {}
+    ids: list[str] = []
+    for group in groups:
+        counters[group] = counters.get(group, 0) + 1
+        ids.append(f"{prefixes[group]}{counters[group]:03d}")
+
+    full_labels: list[str] = []
+    for _, row in out.iterrows():
+        role = str(row.get("Role", "")).strip()
+        raw = str(row.get("RawLabel", "")).strip()
+        display = str(row.get("DisplayLabel", "")).strip()
+        if role == "Threshold":
+            full_labels.append(display or raw)
+        else:
+            full_labels.append(raw or display)
+
+    short_labels = [_compact_label(label, max_chars=effective_max) for label in full_labels]
+    if mode == "Number":
+        display_labels = ids
+    elif mode == "Full label":
+        display_labels = full_labels
+    elif mode == "Short label":
+        display_labels = short_labels
+    elif mode == "None":
+        display_labels = ["" for _ in full_labels]
+    elif policy == "Hover only":
+        display_labels = ["" for _ in full_labels]
+    elif policy == "Show all":
+        display_labels = full_labels
+    else:
+        display_labels = short_labels
+
+    out["PlotLabelID"] = ids
+    out["PlotLabelShort"] = short_labels
+    out["PlotLabelFull"] = full_labels
+    out["PlotLabelMode"] = mode
+    out["PlotLabelGroup"] = groups
+    out["DisplayLabel"] = display_labels
+    return out
 
 
 def _readable_plot_margins(
@@ -2324,7 +2675,9 @@ _MFRM_GLOSSARY: dict[str, str] = {
     "sesoi": "smallest effect size of interest; used in equivalence / bias claim tests.",
     "se": "standard error of a measure, in logits.",
     "ci": "confidence interval (default 95% = estimate ± 1.96 × SE).",
-    "population prior sd": "user-set person ability SD used by MML quadrature; separate from facet regularization.",
+    "dif": "differential item functioning: an item is scored differently by an external person group (e.g. L1, gender) after matching on overall ability. Screening evidence, not a fairness verdict.",
+    "uniform dif": "DIF that is constant across the ability range (a group-level shift); detected by the ordinal-logistic M1-vs-M0 likelihood-ratio test. Non-uniform DIF instead varies with ability (M2-vs-M1).",
+    "population prior sd": "the person ability SD used by MML quadrature — set by the user (fixed, the default) or estimated from the data by EM (free, the opt-in 'Estimate person SD'). When estimated it makes the person metric data-determined and comparable to engines that estimate the variance; separate from facet regularization.",
     "facet regularization": "optional Gaussian MAP-style penalty on selected free non-person facet effects.",
     "penalized objective": "negative log-likelihood plus regularization penalty; not itself an ordinary likelihood.",
     "rhat": "potential scale reduction factor (Gelman & Rubin 1992); > 1.01 flags non-mixing.",
@@ -4136,13 +4489,21 @@ def _generate_mfrm_rsm_from_params(params: dict, seed: int) -> pd.DataFrame:
     assert n_cat >= 2, "tau must contain at least one threshold"
 
     theta = rng.normal(0.0, theta_sd, len(persons))
+    # Optional planted DIF: shift a (criterion, group) cell's difficulty so an
+    # item functions differently for one group. Backward-compatible — absent
+    # keys leave the generated data byte-identical (no extra RNG draws).
+    group_assignment = params.get("group_assignment")
+    dif_shift = params.get("dif_shift")
 
     rows: list[tuple] = []
     for pi, p in enumerate(persons):
+        p_group = group_assignment.get(p) if isinstance(group_assignment, dict) else None
         for ri, r in enumerate(raters):
             for ti, t in enumerate(tasks):
                 for ci, c in enumerate(criteria):
                     eta = theta[pi] - rater_sev[ri] - task_diff[ti] - crit_diff[ci]
+                    if dif_shift and p_group is not None:
+                        eta -= float(dif_shift.get((c, p_group), 0.0))
                     # RSM category probabilities
                     cum = np.zeros(n_cat)
                     for k in range(1, n_cat):
@@ -4849,6 +5210,88 @@ def default_custom_simulation_thresholds(
     return np.linspace(-span, span, n_categories - 1, dtype=float)
 
 
+CUSTOM_SIMULATION_DESIGN_PRESET_KEYS = (
+    "balanced",
+    "sparse_coverage",
+    "planned_missingness",
+    "zero_category",
+)
+
+CUSTOM_SIMULATION_DESIGN_PRESETS: dict[str, dict[str, object]] = {
+    "balanced": {
+        "n_person": 60,
+        "n_facets": 3,
+        "n_categories": 5,
+        "facet_names": ["Rater", "Task", "Criterion"],
+        "facet_level_counts": [2, 3, 3],
+        "facet_sds": [0.35, 0.25, 0.25],
+        "first_facet_levels_per_person": 2,
+        "theta_sd": 1.0,
+        "noise_sd": 0.0,
+        "missing_rate": 0.0,
+        "zero_count_score": None,
+        "step_span": 2.0,
+    },
+    "sparse_coverage": {
+        "n_person": 36,
+        "n_facets": 3,
+        "n_categories": 5,
+        "facet_names": ["Rater", "Task", "Criterion"],
+        "facet_level_counts": [6, 3, 3],
+        "facet_sds": [0.45, 0.25, 0.25],
+        "first_facet_levels_per_person": 1,
+        "theta_sd": 1.0,
+        "noise_sd": 0.0,
+        "missing_rate": 0.10,
+        "zero_count_score": None,
+        "step_span": 2.0,
+    },
+    "planned_missingness": {
+        "n_person": 60,
+        "n_facets": 3,
+        "n_categories": 5,
+        "facet_names": ["Rater", "Task", "Criterion"],
+        "facet_level_counts": [2, 3, 3],
+        "facet_sds": [0.35, 0.25, 0.25],
+        "first_facet_levels_per_person": 2,
+        "theta_sd": 1.0,
+        "noise_sd": 0.0,
+        "missing_rate": 0.30,
+        "zero_count_score": None,
+        "step_span": 2.0,
+    },
+    "zero_category": {
+        "n_person": 60,
+        "n_facets": 3,
+        "n_categories": 5,
+        "facet_names": ["Rater", "Task", "Criterion"],
+        "facet_level_counts": [2, 3, 3],
+        "facet_sds": [0.35, 0.25, 0.25],
+        "first_facet_levels_per_person": 2,
+        "theta_sd": 1.0,
+        "noise_sd": 0.0,
+        "missing_rate": 0.0,
+        "zero_count_score": 4,
+        "step_span": 2.0,
+    },
+}
+
+
+def get_custom_simulation_design_preset_settings(preset_key: str) -> dict[str, object]:
+    """Return a copy of a custom-simulation design preset."""
+    selected = str(preset_key or "balanced")
+    settings = CUSTOM_SIMULATION_DESIGN_PRESETS.get(
+        selected,
+        CUSTOM_SIMULATION_DESIGN_PRESETS["balanced"],
+    )
+    return {
+        **settings,
+        "facet_names": list(settings["facet_names"]),
+        "facet_level_counts": list(settings["facet_level_counts"]),
+        "facet_sds": list(settings["facet_sds"]),
+    }
+
+
 def parse_custom_simulation_thresholds(
     text: str,
     n_categories: int,
@@ -5131,8 +5574,7 @@ def generate_custom_mfrm_simulation_bundle(
     category_counts["Percent"] = (
         category_counts["Count"] / max(int(category_counts["Count"].sum()), 1)
     )
-
-    return {
+    bundle = {
         "data": df,
         "person_truth": person_truth,
         "facet_truth": facet_truth,
@@ -5145,6 +5587,10 @@ def generate_custom_mfrm_simulation_bundle(
             "facet_sds": facet_sds,
             "first_facet_levels_per_person": first_facet_levels_per_person,
             "n_categories": n_categories,
+            "theta_sd": float(theta_sd),
+            "thresholds": [float(x) for x in tau],
+            "step_span": float(step_span),
+            "noise_sd": noise_sd,
             "n_obs": int(len(df)),
             "full_rows": full_rows,
             "missing_rate": missing_rate,
@@ -5152,6 +5598,397 @@ def generate_custom_mfrm_simulation_bundle(
             "seed": int(seed),
         },
     }
+    sparse_audit = build_custom_simulation_sparse_design_audit(bundle)
+    sparse_pair_cells = build_custom_simulation_sparse_pair_cells(bundle)
+    bundle["sparse_design_audit"] = sparse_audit
+    bundle["sparse_pair_cells"] = sparse_pair_cells
+    return bundle
+
+
+def build_custom_simulation_sparse_pair_cells(
+    bundle: dict,
+    *,
+    min_cell_count: int = 5,
+) -> pd.DataFrame:
+    """Summarize observed density for every simulated facet-pair cell."""
+    if not isinstance(bundle, dict):
+        return pd.DataFrame()
+    data = bundle.get("data")
+    meta = bundle.get("meta", {})
+    if not isinstance(data, pd.DataFrame) or data.empty or not isinstance(meta, dict):
+        return pd.DataFrame()
+    facet_names = [str(x) for x in meta.get("facet_names", []) if str(x) in data.columns]
+    if len(facet_names) < 2:
+        return pd.DataFrame()
+    expected_counts = {
+        str(name): int(count)
+        for name, count in zip(meta.get("facet_names", []), meta.get("facet_level_counts", []))
+    }
+    rows: list[dict[str, object]] = []
+    for facet_a, facet_b in combinations(facet_names, 2):
+        observed = (
+            data.groupby([facet_a, facet_b], dropna=False)
+            .size()
+            .reset_index(name="Count")
+        )
+        possible_cells = int(
+            max(expected_counts.get(facet_a, data[facet_a].nunique(dropna=True)), 0)
+            * max(expected_counts.get(facet_b, data[facet_b].nunique(dropna=True)), 0)
+        )
+        observed_cells = int(len(observed))
+        zero_cells = max(possible_cells - observed_cells, 0)
+        low_cells = int((observed["Count"] < int(min_cell_count)).sum()) if not observed.empty else 0
+        min_count = int(observed["Count"].min()) if not observed.empty else 0
+        median_count = float(observed["Count"].median()) if not observed.empty else 0.0
+        density = observed_cells / max(possible_cells, 1)
+        if zero_cells > 0 or low_cells > 0:
+            status = "Review"
+            action = "Inspect sparse cells before making bias/local-interaction or subgroup-comparison claims."
+        else:
+            status = "Ready"
+            action = "Cell density meets the current simulation screening rule."
+        rows.append({
+            "FacetPair": f"{facet_a} x {facet_b}",
+            "FacetA": facet_a,
+            "FacetB": facet_b,
+            "Status": status,
+            "PossibleCells": possible_cells,
+            "ObservedCells": observed_cells,
+            "ZeroCells": zero_cells,
+            "LowCountCells": low_cells,
+            "MinCellCount": min_count,
+            "MedianCellCount": median_count,
+            "CellDensity": density,
+            "ScreeningRule": f"Review if any possible cell is empty or any observed cell has < {int(min_cell_count)} observations.",
+            "Action": action,
+        })
+    return pd.DataFrame(rows)
+
+
+def build_custom_simulation_sparse_design_audit(
+    bundle: dict,
+    *,
+    min_category_count: int = 10,
+    min_level_count: int = 10,
+    min_person_rows: int = 2,
+    min_pair_cell_count: int = 5,
+) -> pd.DataFrame:
+    """Pre-fit sparse-design audit for generated synthetic MFRM data."""
+    if not isinstance(bundle, dict):
+        return pd.DataFrame()
+    data = bundle.get("data")
+    meta = bundle.get("meta", {})
+    category_counts = bundle.get("category_counts")
+    if not isinstance(data, pd.DataFrame) or not isinstance(meta, dict):
+        return pd.DataFrame()
+    facet_names = [str(x) for x in meta.get("facet_names", []) if str(x) in data.columns]
+    n_obs = int(len(data))
+    full_rows = int(meta.get("full_rows", n_obs) or n_obs)
+    actual_missing_rate = 1.0 - (n_obs / max(full_rows, 1))
+    rows: list[dict[str, object]] = []
+
+    def add_row(
+        check: str,
+        status: str,
+        value: object,
+        threshold: str,
+        evidence: str,
+        action: str,
+    ) -> None:
+        rows.append({
+            "Priority": len(rows) + 1,
+            "Check": str(check),
+            "Status": str(status),
+            "Value": str(value),
+            "Threshold": str(threshold),
+            "Evidence": str(evidence),
+            "Action": str(action),
+            "DownloadFile": "mfrm_custom_simulation.csv; custom_simulation_sparse_design_audit.csv",
+        })
+
+    if isinstance(category_counts, pd.DataFrame) and not category_counts.empty:
+        counts = pd.to_numeric(category_counts.get("Count", pd.Series(dtype=float)), errors="coerce").fillna(0)
+        zero_scores = category_counts.loc[counts.eq(0), "Score"].astype(str).tolist() if "Score" in category_counts.columns else []
+        sparse_scores = category_counts.loc[(counts.gt(0)) & (counts.lt(min_category_count)), "Score"].astype(str).tolist() if "Score" in category_counts.columns else []
+        if zero_scores:
+            status = "Hold before reporting"
+            action = "Keep the explicit score range if fitting this simulation and treat unused categories as a planned stress case."
+        elif sparse_scores:
+            status = "Review"
+            action = "Inspect category curves and category-collapse sensitivity before reporting threshold or category-functioning claims."
+        else:
+            status = "Ready"
+            action = "Category counts meet the current screening rule."
+        add_row(
+            "Score category support",
+            status,
+            f"min={int(counts.min()) if len(counts) else 0}; zero={', '.join(zero_scores) or 'none'}; sparse={', '.join(sparse_scores) or 'none'}",
+            f"Each category >= {int(min_category_count)} observations; zero-count categories are a stress case.",
+            "category_counts; generated score support",
+            action,
+        )
+    else:
+        add_row(
+            "Score category support",
+            "Review",
+            "category counts unavailable",
+            f"Each category >= {int(min_category_count)} observations.",
+            "category_counts missing",
+            "Regenerate the simulation bundle before interpreting score-category behavior.",
+        )
+
+    missing_status = "Review" if actual_missing_rate >= 0.20 else "Ready"
+    add_row(
+        "Generated missingness",
+        missing_status,
+        f"{actual_missing_rate:.1%} removed; {n_obs:,}/{full_rows:,} rows retained",
+        "Review planned missingness >= 20%.",
+        f"meta.missing_rate={float(meta.get('missing_rate', 0.0) or 0.0):.1%}",
+        "Use planned missingness as a sensitivity condition, not as evidence that the observed study design is adequate.",
+    )
+
+    if "Person" in data.columns and not data.empty:
+        person_rows = data.groupby("Person", dropna=False).size()
+        low_persons = int((person_rows < int(min_person_rows)).sum())
+        add_row(
+            "Person row support",
+            "Review" if low_persons else "Ready",
+            f"min={int(person_rows.min())}; median={float(person_rows.median()):.1f}; low_persons={low_persons}",
+            f"Each generated person should have >= {int(min_person_rows)} retained observations.",
+            "Person x retained row counts",
+            "Increase persons, reduce missingness, or increase first-facet coverage if many persons have minimal retained data.",
+        )
+
+    expected_counts = {
+        str(name): int(count)
+        for name, count in zip(meta.get("facet_names", []), meta.get("facet_level_counts", []))
+    }
+    for facet in facet_names:
+        counts = data[facet].value_counts(dropna=False)
+        expected_levels = int(expected_counts.get(facet, len(counts)))
+        observed_levels = int(data[facet].nunique(dropna=True))
+        zero_levels = max(expected_levels - observed_levels, 0)
+        sparse_levels = int((counts < int(min_level_count)).sum())
+        status = "Hold before reporting" if zero_levels else "Review" if sparse_levels else "Ready"
+        add_row(
+            f"{facet} level support",
+            status,
+            f"observed={observed_levels}/{expected_levels}; zero_levels={zero_levels}; sparse_levels={sparse_levels}; min={int(counts.min()) if len(counts) else 0}",
+            f"All generated levels observed; each retained level >= {int(min_level_count)} rows.",
+            f"{facet} marginal counts",
+            "Do not interpret facet-element measures as stable when levels are absent or retained rows are very sparse.",
+        )
+
+    pair_cells = build_custom_simulation_sparse_pair_cells(
+        bundle,
+        min_cell_count=min_pair_cell_count,
+    )
+    if isinstance(pair_cells, pd.DataFrame) and not pair_cells.empty:
+        zero_pairs = int((pair_cells["ZeroCells"] > 0).sum())
+        low_pairs = int((pair_cells["LowCountCells"] > 0).sum())
+        worst_min = int(pair_cells["MinCellCount"].min())
+        pair_status = "Review" if (zero_pairs or low_pairs) else "Ready"
+        add_row(
+            "Facet-pair cell density",
+            pair_status,
+            f"pairs={len(pair_cells)}; pairs_with_zero_cells={zero_pairs}; pairs_with_low_cells={low_pairs}; worst_min={worst_min}",
+            f"No possible pair cells empty; observed pair cells >= {int(min_pair_cell_count)} observations.",
+            "custom_simulation_sparse_pair_cells.csv",
+            "Use this before interpreting bias/local interaction, subgroup comparisons, or sparse-cell warnings.",
+        )
+
+    out = pd.DataFrame(rows)
+    if not out.empty:
+        rank = {"Hold before reporting": 0, "Review": 1, "Ready": 2}
+        out["_Rank"] = out["Status"].map(rank).fillna(1)
+        out = out.sort_values(["_Rank", "Priority"]).drop(columns=["_Rank"]).reset_index(drop=True)
+        out["Priority"] = np.arange(1, len(out) + 1, dtype=int)
+    return out
+
+
+def build_custom_simulation_sparse_reporting_context(
+    bundle: dict | None = None,
+    *,
+    sparse_audit: pd.DataFrame | None = None,
+    sparse_pair_cells: pd.DataFrame | None = None,
+) -> pd.DataFrame:
+    """Translate custom-simulation sparse checks into manuscript-use guidance."""
+    if isinstance(bundle, dict):
+        if sparse_audit is None:
+            sparse_audit = bundle.get("sparse_design_audit")
+        if sparse_pair_cells is None:
+            sparse_pair_cells = bundle.get("sparse_pair_cells")
+    if not isinstance(sparse_audit, pd.DataFrame) or sparse_audit.empty:
+        return pd.DataFrame()
+
+    status_order = {"Hold before reporting": 0, "Review": 1, "Ready": 2}
+    audit = sparse_audit.copy()
+    audit["_StatusRank"] = audit.get("Status", pd.Series("Review", index=audit.index)).astype(str).map(status_order).fillna(1)
+    worst_status = str(audit.sort_values("_StatusRank").iloc[0].get("Status", "Review"))
+    if worst_status == "Hold before reporting":
+        overall_report_status = "Do not report yet"
+        overall_action = (
+            "Use the generated data as a documented stress case or revise the simulation design "
+            "before treating estimates as report-style evidence."
+        )
+        overall_caveat = (
+            "The generated design contains at least one sparse-design condition that blocks "
+            "straight report-style interpretation."
+        )
+        overall_do_not = "Do not present the simulation as a stable empirical scoring result without naming the sparse-design condition."
+    elif worst_status == "Review":
+        overall_report_status = "Needs caveat"
+        overall_action = "Keep sparse-design caveats visible and inspect the detailed audit before writing Results prose."
+        overall_caveat = "Some generated cells or categories need review before using the run as report-ready evidence."
+        overall_do_not = "Do not make bias, local-interaction, category, or subgroup claims from sparse cells without caveats."
+    else:
+        overall_report_status = "Ready"
+        overall_action = "Use the generated design as a rehearsal case, while still verifying fitted diagnostics."
+        overall_caveat = "The sparse-design screening rules did not identify a generated-design blocker."
+        overall_do_not = "Do not treat a simulation audit as validation of an external scoring program."
+
+    pair_summary = "facet-pair table unavailable"
+    if isinstance(sparse_pair_cells, pd.DataFrame) and not sparse_pair_cells.empty:
+        zero_pairs = int((pd.to_numeric(sparse_pair_cells.get("ZeroCells", 0), errors="coerce").fillna(0) > 0).sum())
+        low_pairs = int((pd.to_numeric(sparse_pair_cells.get("LowCountCells", 0), errors="coerce").fillna(0) > 0).sum())
+        pair_summary = f"{len(sparse_pair_cells)} pair(s); zero-cell pairs={zero_pairs}; low-cell pairs={low_pairs}"
+
+    rows: list[dict[str, object]] = [{
+        "Priority": 1,
+        "SimulationCheck": "Overall generated-design use",
+        "AuditStatus": worst_status,
+        "ReportStatus": overall_report_status,
+        "APAUse": "Write as simulation/stress-test evidence only, not as a claim about an observed scoring program.",
+        "EvidenceSummary": pair_summary,
+        "ActionBeforeReporting": overall_action,
+        "CaveatToCarry": overall_caveat,
+        "DoNotClaim": overall_do_not,
+        "EvidenceFiles": "custom_simulation_settings.csv; custom_simulation_sparse_design_audit.csv; custom_simulation_sparse_pair_cells.csv; mfrm_custom_simulation.csv",
+        "DownloadFile": "custom_simulation_sparse_reporting_context.csv",
+    }]
+
+    for _, row in audit.drop(columns=["_StatusRank"], errors="ignore").sort_values("Priority").iterrows():
+        audit_status = str(row.get("Status", "Review"))
+        if audit_status == "Hold before reporting":
+            report_status = "Do not report yet"
+            apa_use = "Use as a documented stress condition or revise before report-style interpretation."
+            caveat = "This generated check blocks uncaveated reporting."
+            do_not = "Do not omit this sparse-design condition from Results or limitations."
+        elif audit_status == "Review":
+            report_status = "Needs caveat"
+            apa_use = "Use with a visible design caveat and a linked evidence file."
+            caveat = "This generated check needs review before strong claims."
+            do_not = "Do not use this check to support strong stability, category, or interaction claims by itself."
+        else:
+            report_status = "Ready"
+            apa_use = "No sparse-design caveat is required for this generated check under the current screening rule."
+            caveat = "No additional caveat from this check."
+            do_not = "Do not generalize simulation readiness beyond the generated design."
+        rows.append({
+            "Priority": len(rows) + 1,
+            "SimulationCheck": row.get("Check", "Sparse-design check"),
+            "AuditStatus": audit_status,
+            "ReportStatus": report_status,
+            "APAUse": apa_use,
+            "EvidenceSummary": f"{row.get('Value', '')}; threshold: {row.get('Threshold', '')}",
+            "ActionBeforeReporting": row.get("Action", "Open the sparse-design audit before reporting."),
+            "CaveatToCarry": caveat,
+            "DoNotClaim": do_not,
+            "EvidenceFiles": row.get("Evidence", "custom_simulation_sparse_design_audit.csv"),
+            "DownloadFile": row.get("DownloadFile", "custom_simulation_sparse_design_audit.csv"),
+        })
+    return pd.DataFrame(rows)
+
+
+def build_custom_simulation_settings_table(
+    bundle: dict | None = None,
+    *,
+    ui_meta: dict | None = None,
+) -> pd.DataFrame:
+    """Export the custom synthetic-data settings used for a generated run."""
+    if not isinstance(bundle, dict):
+        return pd.DataFrame()
+    meta = bundle.get("meta", {})
+    if not isinstance(meta, dict) or not meta:
+        return pd.DataFrame()
+    ui_meta = ui_meta if isinstance(ui_meta, dict) else {}
+    threshold_truth = bundle.get("threshold_truth")
+    thresholds = meta.get("thresholds", [])
+    if (not thresholds) and isinstance(threshold_truth, pd.DataFrame) and "Threshold" in threshold_truth.columns:
+        thresholds = pd.to_numeric(threshold_truth["Threshold"], errors="coerce").dropna().astype(float).tolist()
+
+    facet_names = [str(x) for x in meta.get("facet_names", [])]
+    facet_counts = [int(x) for x in meta.get("facet_level_counts", [])]
+    facet_sds = [float(x) for x in meta.get("facet_sds", [])]
+
+    rows: list[dict[str, object]] = []
+
+    def add_row(section: str, setting: str, value: object, source: str, report_note: str) -> None:
+        rows.append({
+            "Section": str(section),
+            "Setting": str(setting),
+            "Value": "" if value is None else str(value),
+            "Source": str(source),
+            "ReportNote": str(report_note),
+            "EvidenceFile": "custom_simulation_settings.csv",
+        })
+
+    preset_key = str(ui_meta.get("design_preset", "") or ui_meta.get("preset", "") or "")
+    if preset_key:
+        add_row(
+            "Preset",
+            "Simulation preset",
+            preset_key,
+            "sidebar session state",
+            "Preset is a starting point; manuscript wording should report the realized settings below.",
+        )
+    add_row("Design", "Persons", meta.get("n_person"), "bundle meta", "Number of generated persons.")
+    add_row("Design", "Facets", ", ".join(facet_names), "bundle meta", "Generated facet columns.")
+    add_row("Design", "Facet level counts", ", ".join(f"{name}={count}" for name, count in zip(facet_names, facet_counts)), "bundle meta", "Generated levels per facet.")
+    add_row("Design", "Facet SDs", ", ".join(f"{name}={sd:g}" for name, sd in zip(facet_names, facet_sds)), "bundle meta", "Standard deviations used for generated facet effects.")
+    add_row("Design", "First-facet levels per person", meta.get("first_facet_levels_per_person"), "bundle meta", "Coverage of the first facet for each person.")
+    add_row("Scoring", "Score categories", meta.get("n_categories"), "bundle meta", "Number of generated score categories.")
+    add_row("Scoring", "Zero-count score requested", meta.get("zero_count_score"), "bundle meta", "Intentional unused category, if any.")
+    add_row("Latent generation", "Person theta SD", meta.get("theta_sd"), "bundle meta", "Standard deviation used for generated person locations before centering.")
+    add_row("Latent generation", "Noise SD", meta.get("noise_sd"), "bundle meta", "Optional random noise added to the generated response location.")
+    add_row("Thresholds", "Threshold mode", ui_meta.get("threshold_mode", "custom/even not recorded"), "sidebar session state", "How threshold controls were set in the UI, when available.")
+    add_row("Thresholds", "Step span", meta.get("step_span"), "bundle meta", "Even-threshold span used when thresholds were generated by the preset/even mode.")
+    add_row("Thresholds", "Adjacent thresholds", ", ".join(f"{float(x):.6g}" for x in thresholds), "threshold truth", "Adjacent-category thresholds used by the synthetic generator.")
+    add_row("Missingness", "Requested missing rate", meta.get("missing_rate"), "bundle meta", "Planned row removal rate for generated rating events.")
+    add_row("Missingness", "Full rows before missingness", meta.get("full_rows"), "bundle meta", "Generated row count before planned row removal.")
+    add_row("Missingness", "Retained rows", meta.get("n_obs"), "bundle meta", "Generated row count after planned row removal.")
+    add_row("Reproducibility", "Seed", meta.get("seed"), "bundle meta", "Random seed for regenerating this synthetic data.")
+    out = pd.DataFrame(rows)
+    if not out.empty:
+        out.insert(0, "Priority", np.arange(1, len(out) + 1, dtype=int))
+    return out
+
+
+def current_custom_simulation_sparse_export_frames() -> dict[str, pd.DataFrame]:
+    """Return sparse-design export frames for the currently loaded custom simulation."""
+    bundle = st.session_state.get("_custom_simulation_preview_bundle", {})
+    if not isinstance(bundle, dict):
+        return {}
+    ui_meta = st.session_state.get("_loaded_custom_simulation_meta", {})
+    settings = build_custom_simulation_settings_table(
+        bundle,
+        ui_meta=ui_meta if isinstance(ui_meta, dict) else None,
+    )
+    sparse_audit = bundle.get("sparse_design_audit")
+    sparse_pair_cells = bundle.get("sparse_pair_cells")
+    frames: dict[str, pd.DataFrame] = {}
+    _frame_bundle.add_frames(frames, (
+        ("custom_simulation_settings", settings),
+        ("custom_simulation_sparse_design_audit", sparse_audit),
+        ("custom_simulation_sparse_pair_cells", sparse_pair_cells),
+    ))
+    sparse_context = build_custom_simulation_sparse_reporting_context(
+        bundle,
+        sparse_audit=sparse_audit if isinstance(sparse_audit, pd.DataFrame) else None,
+        sparse_pair_cells=sparse_pair_cells if isinstance(sparse_pair_cells, pd.DataFrame) else None,
+    )
+    _frame_bundle.add_frame(frames, "custom_simulation_sparse_reporting_context", sparse_context)
+    return frames
 
 
 def generate_custom_mfrm_simulation_data(
@@ -5314,10 +6151,11 @@ def render_custom_simulation_preview_panel() -> None:
         return
     st.markdown(f"##### {t('data_source.sim_preview_header')}")
     st.caption(t("data_source.sim_preview_caption"))
-    tab_hist, tab_wright, tab_pathway = st.tabs([
+    tab_hist, tab_wright, tab_pathway, tab_sparse = st.tabs([
         t("data_source.sim_preview_tab_histogram"),
         t("data_source.sim_preview_tab_wright"),
         t("data_source.sim_preview_tab_pathway"),
+        t("data_source.sim_preview_tab_sparse"),
     ])
     with tab_hist:
         fig = build_custom_simulation_score_histogram_figure(bundle)
@@ -5331,6 +6169,50 @@ def render_custom_simulation_preview_panel() -> None:
         fig = build_custom_simulation_pathway_preview_figure(bundle)
         if fig is not None:
             st.plotly_chart(fig, width="stretch")
+    with tab_sparse:
+        sparse_audit = bundle.get("sparse_design_audit", pd.DataFrame())
+        sparse_pair_cells = bundle.get("sparse_pair_cells", pd.DataFrame())
+        st.caption(t("data_source.sim_sparse_caption"))
+        if isinstance(sparse_audit, pd.DataFrame) and not sparse_audit.empty:
+            status_values = sparse_audit.get("Status", pd.Series(dtype=object)).astype(str).tolist()
+            if "Hold before reporting" in status_values:
+                st.warning(t("data_source.sim_sparse_hold_warning"))
+            elif "Review" in status_values:
+                st.info(t("data_source.sim_sparse_review_info"))
+            else:
+                st.success(t("data_source.sim_sparse_ready_success"))
+            _render_compact_dataframe(
+                sparse_audit,
+                ["Priority", "Check", "Status", "Value", "Action"],
+                details_label=t("data_source.sim_sparse_details_label"),
+                hide_index=True,
+                wrap_text=True,
+            )
+            st.download_button(
+                t("data_source.sim_sparse_audit_download_button"),
+                data=to_csv_bytes(sparse_audit),
+                file_name="custom_simulation_sparse_design_audit.csv",
+                mime="text/csv",
+                key="custom_simulation_sparse_design_audit_download",
+                use_container_width=True,
+            )
+        if isinstance(sparse_pair_cells, pd.DataFrame) and not sparse_pair_cells.empty:
+            with st.expander(t("data_source.sim_sparse_pair_expander"), expanded=False):
+                _render_compact_dataframe(
+                    sparse_pair_cells,
+                    ["FacetPair", "Status", "PossibleCells", "ObservedCells", "ZeroCells", "LowCountCells", "MinCellCount"],
+                    details_label=t("data_source.sim_sparse_pair_details_label"),
+                    hide_index=True,
+                    wrap_text=True,
+                )
+                st.download_button(
+                    t("data_source.sim_sparse_pair_download_button"),
+                    data=to_csv_bytes(sparse_pair_cells),
+                    file_name="custom_simulation_sparse_pair_cells.csv",
+                    mime="text/csv",
+                    key="custom_simulation_sparse_pair_cells_download",
+                    use_container_width=True,
+                )
 
 
 def render_loaded_data_banner() -> None:
@@ -5724,9 +6606,17 @@ VISUAL_LABEL_POLICY_OPTIONS: tuple[str, ...] = (
     "Important labels",
     "Hover only",
 )
+PLOT_LABEL_MODE_OPTIONS: tuple[str, ...] = (
+    "Auto",
+    "Number",
+    "Short label",
+    "Full label",
+    "None",
+)
 VISUAL_CAPTION_DETAIL_OPTIONS: tuple[str, ...] = ("Short", "Standard", "Detailed")
 VISUAL_THEME_DEFAULT = "Manuscript white"
 VISUAL_LABEL_POLICY_DEFAULT = "Auto"
+PLOT_LABEL_MODE_DEFAULT = "Full label"
 VISUAL_CAPTION_DETAIL_DEFAULT = "Standard"
 VISUAL_BASE_FONT_SIZE_DEFAULT = 13
 VISUAL_LABEL_MAX_CHARS_DEFAULT = 34
@@ -5772,12 +6662,16 @@ def get_visualization_preferences() -> dict[str, object]:
     label_policy = str(_session_value("visual_label_policy", VISUAL_LABEL_POLICY_DEFAULT))
     if label_policy not in VISUAL_LABEL_POLICY_OPTIONS:
         label_policy = VISUAL_LABEL_POLICY_DEFAULT
+    plot_label_mode = str(_session_value("plot_label_mode", PLOT_LABEL_MODE_DEFAULT))
+    if plot_label_mode not in PLOT_LABEL_MODE_OPTIONS:
+        plot_label_mode = PLOT_LABEL_MODE_DEFAULT
     caption_detail = str(_session_value("visual_caption_detail", VISUAL_CAPTION_DETAIL_DEFAULT))
     if caption_detail not in VISUAL_CAPTION_DETAIL_OPTIONS:
         caption_detail = VISUAL_CAPTION_DETAIL_DEFAULT
     return {
         "theme": theme,
         "label_policy": label_policy,
+        "plot_label_mode": plot_label_mode,
         "caption_detail": caption_detail,
         "base_font_size": _clamp_int(
             _session_value("visual_base_font_size", VISUAL_BASE_FONT_SIZE_DEFAULT),
@@ -5823,6 +6717,11 @@ def build_visualization_preferences_table() -> pd.DataFrame:
             "Setting": "Label policy",
             "Value": str(prefs.get("label_policy", VISUAL_LABEL_POLICY_DEFAULT)),
             "Affects": "Axis tick labels and dense categorical displays.",
+        },
+        {
+            "Setting": "Plot label mode",
+            "Value": str(prefs.get("plot_label_mode", PLOT_LABEL_MODE_DEFAULT)),
+            "Affects": "FACETS-style yardstick labels and the plot-number lookup columns in yardstick exports.",
         },
         {
             "Setting": "Base font size",
@@ -7789,6 +8688,19 @@ def mfrm_em_mml(start, idx, config, sizes, quad, maxit=200, reltol=1e-6):
     par = np.array(start, dtype=float, copy=True)
     params = expand_params(par, sizes, config)
 
+    # Optional free latent-population-SD estimation (Bock-Aitkin variance
+    # M-step). Opt-in via config['estimate_population_sd']; when off, the quad
+    # below stays the caller's fixed-SD object and this engine is unchanged.
+    estimate_sd = bool(config.get("estimate_population_sd", False))
+    if estimate_sd:
+        quad = dict(quad)  # local mutable copy; never mutate the caller's quad
+        n_quad_points = len(quad["nodes"])
+        sd_lo, sd_hi = config.get("population_sd_bounds", (0.05, 10.0))
+        sigma = float(quad.get("sd", get_population_prior_sd(config)))
+        persons_with_obs = np.unique(np.asarray(idx["person"]))
+        n_eff = max(int(persons_with_obs.size), 1)
+        sigma_trace = [sigma]
+
     prev_ll = -np.inf
     converged = False
     ll_trace = []
@@ -7821,6 +8733,18 @@ def mfrm_em_mml(start, idx, config, sizes, quad, maxit=200, reltol=1e-6):
         total_nfev += opt.nfev
         params = expand_params(par, sizes, config)
 
+        # ── Population-variance M-step (Bock-Aitkin) ───────────
+        # sigma^2 = (1/n_eff) Σ_j Σ_q post[j,q] · node_q^2, where node_q is the
+        # quadrature deviation (theta_jq − mu_j). Rebuild the grid at the new
+        # sigma so the next E-step integrates over N(mu_j, sigma^2). ML/EM
+        # divide-by-N keeps EM monotone. Empty-person rows are excluded.
+        if estimate_sd:
+            nodes_sq = (quad["nodes"] ** 2)[None, :]
+            sigma2_new = float(np.sum(post_weights[persons_with_obs] * nodes_sq) / n_eff)
+            sigma = float(np.clip(np.sqrt(max(sigma2_new, sd_lo ** 2)), sd_lo, sd_hi))
+            quad = gauss_hermite_normal(n_quad_points, sd=sigma)
+            sigma_trace.append(sigma)
+
     # Final E-step to get the converged marginal LL
     _, final_ll = _e_step_posteriors(idx, config, params, quad)
     ll_trace.append(final_ll)
@@ -7839,6 +8763,9 @@ def mfrm_em_mml(start, idx, config, sizes, quad, maxit=200, reltol=1e-6):
     result.nit = len(ll_trace) - 1
     result.nfev = total_nfev
     result.ll_trace = ll_trace
+    result.estimated_population_sd = float(sigma) if estimate_sd else None
+    result.sigma_trace = sigma_trace if estimate_sd else None
+    result.final_quad_sd = float(quad.get("sd")) if estimate_sd else None
     result.message = "EM relative log-likelihood convergence reached." if converged else "EM reached max iterations before relative log-likelihood convergence."
     return result
 
@@ -8753,6 +9680,7 @@ def mfrm_estimate(
     positive_facets=None,
     quad_points=15,
     population_prior_sd=1.0,
+    estimate_population_sd=False,
     facet_regularization=None,
     maxit=400,
     reltol=1e-6,
@@ -8963,6 +9891,20 @@ def mfrm_estimate(
         mml_engine_resolved = "direct"
     else:
         mml_engine_resolved = "em"
+    # Free latent-population-SD estimation is opt-in and EM-only. Force the EM
+    # engine (recording an override notice) and give EM more iterations to fit
+    # the extra variance coordinate. Default (fixed SD) leaves all of this off.
+    config["estimate_population_sd"] = bool(estimate_population_sd) if method == "MML" else False
+    config["population_sd_bounds"] = (0.05, 10.0)
+    if config["estimate_population_sd"]:
+        maxit = max(int(maxit), 300)
+        if mml_engine_resolved != "em":
+            config["mml_engine_requested_before_sd_override"] = mml_engine_resolved
+            config["population_sd_engine_notice"] = (
+                "Population-SD estimation requires the EM engine; overrode "
+                f"requested '{mml_engine_resolved}' to 'em'."
+            )
+            mml_engine_resolved = "em"
     config["mml_engine"] = mml_engine_resolved if method == "MML" else None
     if method == "JMLE":
         config["optimizer"] = "L-BFGS-B"
@@ -8973,7 +9915,11 @@ def mfrm_estimate(
     elif mml_engine_resolved == "auto":
         config["optimizer"] = "Auto MML: hybrid first, EM fallback if needed"
     else:
-        config["optimizer"] = "EM with analytical-gradient L-BFGS-B M-step"
+        config["optimizer"] = (
+            "EM with analytical-gradient M-step and free population SD"
+            if config.get("estimate_population_sd")
+            else "EM with analytical-gradient L-BFGS-B M-step"
+        )
 
     constraint_specs = prepare_constraint_specs(
         prep=prep,
@@ -9043,9 +9989,60 @@ def mfrm_estimate(
                 config["optimizer"] = "Auto MML selected EM after hybrid fallback"
             elif config["mml_engine"] == "hybrid":
                 config["optimizer"] = "Auto MML selected hybrid"
+        # Thread the estimated population SD back into config so the final
+        # marginal-NLL, EAP, and plausible-value quadratures (all built via
+        # make_mml_quadrature, which reads population_prior_sd) use the fitted
+        # scale. The user's original input is preserved separately.
+        if config.get("estimate_population_sd"):
+            est_sd = getattr(opt, "estimated_population_sd", None)
+            if est_sd is not None and np.isfinite(est_sd) and est_sd > 0:
+                config["estimated_population_sd"] = float(est_sd)
+                config["population_prior_sd_input"] = float(population_prior_sd)
+                config["population_prior_sd"] = float(est_sd)
+                config["sigma_trace"] = list(getattr(opt, "sigma_trace", []) or [])
     elapsed_seconds = time.perf_counter() - fit_start_time
 
     params = expand_params(opt.x, sizes, config)
+
+    # Profile SE / CI for a freely-estimated population SD: numerically
+    # differentiate the marginal log-likelihood twice wrt sigma, holding the
+    # other parameters at their converged values (3 extra E-steps). This is a
+    # conditional (profile) SE; it ignores curvature coupling with the item /
+    # facet block and is therefore slightly optimistic.
+    if config.get("estimate_population_sd") and config.get("estimated_population_sd"):
+        sigma_hat = float(config["estimated_population_sd"])
+        sd_lo = float(config.get("population_sd_bounds", (0.05, 10.0))[0])
+        n_quad = int(quad_points or config.get("quad_points") or 15)
+        h = max(1e-3, 0.01 * sigma_hat)
+        se_sigma = float("nan")
+        ci_lo = ci_hi = float("nan")
+        if sigma_hat - h > sd_lo:
+            try:
+                def _mll_at_sigma(s):
+                    _, ll = _e_step_posteriors(
+                        idx, config, params, gauss_hermite_normal(n_quad, sd=s)
+                    )
+                    return float(ll)
+
+                d2 = (
+                    _mll_at_sigma(sigma_hat + h)
+                    - 2.0 * _mll_at_sigma(sigma_hat)
+                    + _mll_at_sigma(sigma_hat - h)
+                ) / (h * h)
+                obs_info = -d2
+                if np.isfinite(obs_info) and obs_info > 0:
+                    se_sigma = float(np.sqrt(1.0 / obs_info))
+                    ci_lo = float(max(sigma_hat - 1.96 * se_sigma, sd_lo))
+                    ci_hi = float(sigma_hat + 1.96 * se_sigma)
+            except Exception:
+                pass
+        config["population_sd_se"] = se_sigma
+        config["population_sd_ci"] = [ci_lo, ci_hi]
+        config["population_sd_se_basis"] = (
+            "Profile SE (other parameters held at converged values); slightly "
+            "optimistic. NaN means sigma is at a bound or the likelihood is "
+            "locally flat."
+        )
 
     if method == "MML":
         quad = make_mml_quadrature(config, quad_points)
@@ -9132,7 +10129,7 @@ def mfrm_estimate(
         columns=["Term", "Center", "Scale", "Standardized"],
     )
 
-    k_params = int(sum(sizes.values()))
+    k_params = int(sum(sizes.values())) + (1 if config.get("estimate_population_sd") else 0)
     config["parameter_count"] = k_params
     if method == "MML":
         final_quad_for_ll = make_mml_quadrature(config, quad_points)
@@ -9182,6 +10179,11 @@ def mfrm_estimate(
         "Facets": [len(config["facet_names"])],
         "Categories": [n_cat],
         "KParams": [k_params],
+        "PopulationSDMode": [
+            "estimated" if config.get("estimate_population_sd")
+            else ("fixed" if config.get("method") == "MML" else "n/a")
+        ],
+        "EstimatedPopulationSD": [config.get("estimated_population_sd")],
         "LogLik": [loglik],
         "Deviance": [deviance],
         "RegularizationPenalty": [penalty_value],
@@ -9378,13 +10380,27 @@ def compute_obs_table(res):
 # we get
 #     lz*_n         = (l_n - E[l_n] - c_n * S_n) / sqrt(corrected_var)
 #
-# The correction is JML-specific because S_n is exactly zero at the JML
-# estimate of theta_n, so the centring term c_n * S_n vanishes in
-# expectation but its variance contribution is what restores the N(0, 1)
-# null. For MML (EAP / MAP) estimates the population prior contributes a
-# separate shrinkage term that Snijders (2001) does not address, so we
-# refuse to ship a half-correct lz* there and surface unadjusted lz with
-# an explicit caveat instead.
+# Under JML, S_n is ~zero at the per-person MLE, so the centring term
+# c_n * S_n vanishes in expectation but its variance contribution is what
+# restores the N(0, 1) null.
+#
+# For MML (EAP / MAP) estimates a Gaussian population prior N(mu, sigma^2)
+# shrinks theta_n toward the mean. The prior score -(theta - mu)/sigma^2 is
+# deterministic given theta, so it leaves the score variance unchanged
+# (Var[S] = I) but augments the estimating-equation sensitivity to I + p,
+# where p = 1/sigma^2. Sinharay (2001 -> 2016) extends Snijders to this
+# Bayes-modal setting:
+#     c_n           = Cov[l, S] / (I + p)
+#     corrected_var = Var[l] - Cov[l, S]^2 * (I + 2p) / (I + p)^2
+# which reduces EXACTLY to the JML formula at p -> 0. EAP (the posterior
+# mean) is not itself an M-estimator, but it agrees with the MAP estimator
+# to O(1/I), so the same correction applies to leading order. We therefore
+# ship the population-prior-corrected lz* on the MML path (status
+# 'computed_eap_population_corrected') and only fall back to unadjusted lz
+# when the prior SD is unavailable or the method is unrecognised.
+#
+# References: Snijders (2001, Psychometrika 66, Eq. 16); Sinharay (2016,
+# Brit. J. Math. Stat. Psychol. 69, 175-193); Magis, Raiche & Beland (2012).
 
 _PERSON_FIT_Z_5PCT = float(_norm.ppf(0.975))
 _PERSON_FIT_Z_1PCT = float(_norm.ppf(0.995))
@@ -9399,6 +10415,14 @@ _PERSON_FIT_OBS_REQUIRED_COLUMNS = (
 _PERSON_FIT_LZ_STAR_REQUIRED_COLUMNS = (
     "ItemLogPScoreCov",
     "ScoreInformation",
+)
+
+# Statuses for which lz* was actually computed and may be reported as the
+# ReportIndex: the JML conditional calibration and the MML/EAP/MAP
+# population-prior-corrected extension (Sinharay, 2016).
+_PERSON_FIT_LZ_STAR_COMPUTED_STATUSES = (
+    "computed_jml_conditional_calibration",
+    "computed_eap_population_corrected",
 )
 
 
@@ -9418,10 +10442,12 @@ def _compute_snijders_lz_star(obs, persons, res=None):
         The roster of person identifiers to report on (one row per person
         in the returned frame, in the supplied order).
     res : dict | None
-        The fit result dictionary; used only to read ``config['method']``.
-        If ``None`` or non-JMLE the function reports a status reason
-        without raising — the public ``compute_person_fit_indices``
-        wrapper handles fallback to unadjusted lz.
+        The fit result dictionary; reads ``config['method']`` and, on the
+        MML/EAP/MAP path, ``config['population_prior_sd']`` (the prior SD the
+        estimate was shrunk toward — the freely-estimated sigma when MML
+        freed it). If ``None`` or a method/SD the correction cannot cover,
+        the function reports a status reason without raising — the public
+        ``compute_person_fit_indices`` wrapper handles fallback to lz.
 
     Returns
     -------
@@ -9431,14 +10457,19 @@ def _compute_snijders_lz_star(obs, persons, res=None):
 
         - ``"fit_required"`` — ``res`` was ``None``.
         - ``"invalid_fit"`` — ``res`` lacks a recognisable config block.
-        - ``"not_applicable_eap"`` — fit method is MML/EAP/MAP; the
-          correction does not apply.
+        - ``"eap_population_sd_unavailable"`` — fit is MML/EAP/MAP but the
+          population SD (prior precision) needed for the correction is
+          missing or non-positive.
+        - ``"not_applicable_method"`` — the person-estimation method is
+          neither JML nor an MML/EAP/MAP variant the correction covers.
         - ``"diagnostics_missing_snijders_terms"`` — obs lacks the lz*
           covariance / information columns.
         - ``"insufficient_information"`` — per-person numeric guard rails
           tripped (no usable rows, zero information, non-positive
           corrected variance).
-        - ``"computed_jml_conditional_calibration"`` — value reported.
+        - ``"computed_jml_conditional_calibration"`` — JML value reported.
+        - ``"computed_eap_population_corrected"`` — MML/EAP/MAP value
+          reported, using the population-prior precision (Sinharay, 2016).
     """
     persons_arr = np.asarray([str(p) for p in persons], dtype=object)
     empty = pd.DataFrame(
@@ -9461,8 +10492,39 @@ def _compute_snijders_lz_star(obs, persons, res=None):
     method = str(config.get("method", "")).upper()
     if method == "JMLE":
         method = "JML"
-    if method != "JML":
-        empty["lz_star_status"] = "not_applicable_eap"
+    # Determine the person-estimator regime and the prior precision p = 1/sigma^2.
+    #   JML / ML  -> no population prior (p = 0); Snijders (2001) conditional
+    #               calibration, where S_n is ~0 at the per-person MLE.
+    #   MML / EAP / MAP -> a Gaussian population prior shrinks the estimate, so
+    #               the estimating-equation *sensitivity* becomes I + p while the
+    #               score variance stays I (the prior score is deterministic).
+    #               Following Sinharay (2016), c_n = Cov/(I + p) and the corrected
+    #               variance is Var[l] - Cov^2 (I + 2p)/(I + p)^2. This reduces
+    #               EXACTLY to the JML formula at p -> 0. EAP is handled via its
+    #               leading-order equivalence to the MAP estimator (exact for MAP,
+    #               accurate to O(1/I) for the EAP posterior mean).
+    _EAP_METHODS = {"MML", "EAP", "MAP", "BAYES"}
+    if method == "JML":
+        prior_precision = 0.0
+        computed_status = "computed_jml_conditional_calibration"
+    elif method in _EAP_METHODS:
+        # Use the SAME prior SD the EAP/MAP estimate was shrunk toward — i.e.
+        # what make_mml_quadrature consumed (the freely-estimated sigma when
+        # MML freed it, since the free-SD path writes it back here).
+        try:
+            sigma = get_population_prior_sd(config)
+        except (TypeError, ValueError):
+            sigma = np.nan
+        if not (np.isfinite(sigma) and sigma > 0):
+            # The prior SD the EAP/MAP estimate was shrunk toward is unknown
+            # (or non-positive), so the population-prior correction cannot be
+            # formed; the wrapper falls back to unadjusted lz.
+            empty["lz_star_status"] = "eap_population_sd_unavailable"
+            return empty
+        prior_precision = 1.0 / (sigma * sigma)
+        computed_status = "computed_eap_population_corrected"
+    else:
+        empty["lz_star_status"] = "not_applicable_method"
         return empty
 
     missing_cols = [c for c in _PERSON_FIT_LZ_STAR_REQUIRED_COLUMNS if c not in obs.columns]
@@ -9521,8 +10583,18 @@ def _compute_snijders_lz_star(obs, persons, res=None):
             continue
         if not (np.isfinite(var_logp_total) and var_logp_total > 0):
             continue
-        c_n = cov_total / info_total
-        corrected_var = var_logp_total - (cov_total ** 2) / info_total
+        if prior_precision == 0.0:
+            # JML / ML: literal original arithmetic, kept byte-identical.
+            c_n = cov_total / info_total
+            corrected_var = var_logp_total - (cov_total ** 2) / info_total
+        else:
+            # MML / EAP / MAP: prior precision augments the sensitivity (I + p)
+            # in c_n; Var[S] stays I, giving the (I + 2p)/(I + p)^2 factor.
+            denom = info_total + prior_precision
+            c_n = cov_total / denom
+            corrected_var = var_logp_total - (cov_total ** 2) * (
+                info_total + 2.0 * prior_precision
+            ) / (denom ** 2)
         if not np.isfinite(corrected_var) or corrected_var <= sqrt_eps:
             out.at[i, "lz_star_c"] = c_n
             out.at[i, "lz_star_variance"] = corrected_var
@@ -9530,7 +10602,7 @@ def _compute_snijders_lz_star(obs, persons, res=None):
         centered_loglik = float(np.sum(w_centered[ok]))
         score_sum = float(np.sum(score_deriv[ok]))
         out.at[i, "lz_star"] = (centered_loglik - c_n * score_sum) / float(np.sqrt(corrected_var))
-        out.at[i, "lz_star_status"] = "computed_jml_conditional_calibration"
+        out.at[i, "lz_star_status"] = computed_status
         out.at[i, "lz_star_c"] = c_n
         out.at[i, "lz_star_variance"] = corrected_var
     return out
@@ -9559,7 +10631,7 @@ def _add_person_fit_reporting_columns(out: pd.DataFrame) -> pd.DataFrame:
     out["lz_star_flag_5pct"] = lz_star.abs().gt(z5).fillna(False)
     out["lz_star_flag_1pct"] = lz_star.abs().gt(z1).fillna(False)
 
-    snijders_ready = lz_star.notna() & status.eq("computed_jml_conditional_calibration")
+    snijders_ready = lz_star.notna() & status.isin(_PERSON_FIT_LZ_STAR_COMPUTED_STATUSES)
     lz_ready = (~snijders_ready) & lz.notna()
 
     out["ReportIndex"] = np.where(snijders_ready, "lz_star",
@@ -9598,10 +10670,21 @@ def _add_person_fit_reporting_columns(out: pd.DataFrame) -> pd.DataFrame:
     out["ReviewReason"] = review_reason
 
     status_arr = status.to_numpy()
-    snijders_caveat = (
+    jml_caveat = (
         "lz_star applies the Snijders correction conditional on fitted "
         "non-person calibration; non-person parameter uncertainty is not "
         "propagated."
+    )
+    eap_caveat = (
+        "lz_star applies the Snijders correction extended to the MML/EAP "
+        "population prior (precision 1/sigma^2; Sinharay, 2016): exact for "
+        "MAP, accurate to O(1/I) for the EAP posterior mean. Non-person "
+        "parameter and posterior uncertainty are not propagated."
+    )
+    snijders_caveat = np.where(
+        status.eq("computed_eap_population_corrected").to_numpy(),
+        eap_caveat,
+        jml_caveat,
     )
     out["ReportCaveat"] = np.where(
         snijders_ready.to_numpy(),
@@ -9624,13 +10707,13 @@ def _add_person_fit_reporting_columns(out: pd.DataFrame) -> pd.DataFrame:
 def compute_person_fit_indices(res, obs=None):
     """Return per-person Drasgow lz and Snijders lz* statistics.
 
-    Mirrors mfrmr ``compute_person_fit_indices`` (R/api-person-fit.R).
-    The function consumes the per-observation diagnostics frame produced
-    by ``compute_obs_table`` and reports both the uncorrected lz and
-    Snijders lz*; lz* is only populated for JML/fixed-effect person
-    estimates because the Snijders (2001) correction assumes a JML
-    likelihood (the MML / EAP correction requires a different
-    derivation that this codebase does not yet ship).
+    Mirrors mfrmr ``compute_person_fit_indices`` (R/api-person-fit.R) for
+    the JML path, and extends it: the function consumes the per-observation
+    diagnostics frame from ``compute_obs_table`` and reports the uncorrected
+    lz and Snijders lz* for BOTH JML/fixed-effect estimates (conditional
+    calibration) and MML/EAP/MAP estimates (the population-prior-corrected
+    extension; Sinharay, 2016). lz* falls back to lz only when the prior SD
+    is unavailable or the method is unrecognised.
 
     Returned columns
     ----------------
@@ -11019,6 +12102,7 @@ def evaluate_parameter_recovery(
     quad_points: int = 7,
     include_person: bool = True,
     slopes: np.ndarray | None = None,
+    estimate_population_sd: bool = False,
 ) -> dict:
     """Run a parameter-recovery simulation and return an ADEMP bundle.
 
@@ -11131,6 +12215,7 @@ def evaluate_parameter_recovery(
             "RunOK": False,
             "Converged": False,
             "RecoveryRows": 0,
+            "EstimatedPopulationSD": np.nan,
             "Error": "",
         }
         try:
@@ -11145,6 +12230,8 @@ def evaluate_parameter_recovery(
                 fit_kwargs["slope_facet"] = "Criterion"
             if fit_method == "MML":
                 fit_kwargs["quad_points"] = int(quad_points)
+                if estimate_population_sd:
+                    fit_kwargs["estimate_population_sd"] = True
             refit_res = mfrm_estimate(**fit_kwargs)
         except Exception as exc:
             row["Error"] = str(exc)[:500]
@@ -11156,6 +12243,9 @@ def evaluate_parameter_recovery(
         summary = refit_res.get("summary", pd.DataFrame())
         if isinstance(summary, pd.DataFrame) and not summary.empty:
             row["Converged"] = bool(summary.iloc[0].get("Converged", False))
+        est_sd_rep = refit_res.get("config", {}).get("estimated_population_sd")
+        if est_sd_rep is not None and np.isfinite(est_sd_rep):
+            row["EstimatedPopulationSD"] = float(est_sd_rep)
         # Pull SEs from a lightweight diagnostics pass so coverage95 is
         # populated. PCA / marginal-fit are disabled to keep the per-rep
         # cost in the ~70 ms range; the rest of the recovery summary is
@@ -11181,12 +12271,31 @@ def evaluate_parameter_recovery(
         if recovery_chunks
         else pd.DataFrame()
     )
-    recovery_summary = _recovery_summarize(recovery)
+    rep_overview = pd.DataFrame(rep_rows)
+    # Aggregate recovery metrics over converged replicates only. A replicate
+    # that ran but did not converge can land far from the optimum and would
+    # inflate bias / RMSE and distort coverage if folded into the summary.
+    # Fall back to all completed replicates only when none converged, so the
+    # summary is never silently empty.
+    n_reps_total = int(len(rep_overview))
+    converged_mask = (
+        rep_overview["Converged"].astype(bool)
+        if "Converged" in rep_overview.columns
+        else pd.Series([False] * n_reps_total, dtype=bool)
+    )
+    n_reps_converged = int(converged_mask.sum())
+    if not recovery.empty and "rep" in recovery.columns and n_reps_converged > 0:
+        converged_reps = set(rep_overview.loc[converged_mask, "rep"].tolist())
+        recovery_for_summary = recovery[recovery["rep"].isin(converged_reps)]
+        summary_basis = "converged"
+    else:
+        recovery_for_summary = recovery
+        summary_basis = "all_completed" if n_reps_converged == 0 else "converged"
+    recovery_summary = _recovery_summarize(recovery_for_summary)
     coverage_report = build_se_ci_coverage_report({
-        "recovery": recovery,
+        "recovery": recovery_for_summary,
         "recovery_summary": recovery_summary,
     })
-    rep_overview = pd.DataFrame(rep_rows)
 
     ademp = {
         "Aims": (
@@ -11247,6 +12356,9 @@ def evaluate_parameter_recovery(
         "recovery_summary": recovery_summary,
         "coverage_report": coverage_report,
         "rep_overview": rep_overview,
+        "n_reps_total": n_reps_total,
+        "n_reps_converged": n_reps_converged,
+        "summary_basis": summary_basis,
         "ademp": ademp,
         "settings": settings,
     }
@@ -15510,6 +16622,926 @@ def build_bias_inference_audit(
     return pd.DataFrame(rows, columns=columns)
 
 
+# ============================================================================
+# Classical polytomous DIF (Differential Item Functioning) — screening
+# ============================================================================
+# Observed-score DIF for an EXTERNAL person group (e.g. L1, gender) — a
+# complement to the model-based facet bias/interaction screen above. Two
+# standard polytomous methods on the rater-averaged person x item scores:
+#   * polytomous Mantel (1963) chi-square + ETS standardized mean difference;
+#   * Zumbo (1999) ordinal (cumulative-logit) logistic-regression DIF, fit by
+#     maximum likelihood with scipy (no statsmodels), giving nested uniform /
+#     non-uniform / total likelihood-ratio tests and a Nagelkerke Delta-R^2.
+# This is SCREENING evidence, not a fairness / invariance / operational claim.
+
+_DIF_SMD_B = 0.17   # ETS standardized-SMD A/B boundary
+_DIF_SMD_C = 0.25   # ETS standardized-SMD B/C boundary
+_DIF_R2_B = 0.035   # Jodoin-Gierl Nagelkerke Delta-R^2 A/B boundary
+_DIF_R2_C = 0.070   # Jodoin-Gierl Nagelkerke Delta-R^2 B/C boundary
+_DIF_SIBTEST_B = 0.059   # Roussos-Stout SIBTEST beta (unit-metric) A/B boundary
+_DIF_SIBTEST_C = 0.088   # Roussos-Stout SIBTEST beta (unit-metric) B/C boundary
+
+
+def _dif_smd_class(smd_std) -> str:
+    a = abs(float(smd_std)) if smd_std is not None and np.isfinite(smd_std) else np.nan
+    if not np.isfinite(a):
+        return "n/a"
+    if a < _DIF_SMD_B:
+        return "negligible (A)"
+    if a < _DIF_SMD_C:
+        return "moderate (B)"
+    return "large (C)"
+
+
+def _dif_r2_class(dr2) -> str:
+    v = float(dr2) if dr2 is not None and np.isfinite(dr2) else np.nan
+    if not np.isfinite(v):
+        return "n/a"
+    if v < _DIF_R2_B:
+        return "negligible (A)"
+    if v < _DIF_R2_C:
+        return "moderate (B)"
+    return "large (C)"
+
+
+def _sibtest_eff_class(beta, score_range) -> str:
+    # ETS/Roussos-Stout beta bands are defined on a 0-1 (proportion) metric;
+    # divide the polytomous beta by the score range so the band is invariant to
+    # the item's number of categories.
+    rw = float(score_range) if score_range else 1.0
+    b = abs(float(beta)) / rw if (beta is not None and np.isfinite(beta) and rw > 0) else np.nan
+    if not np.isfinite(b):
+        return "n/a"
+    if b < _DIF_SIBTEST_B:
+        return "negligible (A)"
+    if b < _DIF_SIBTEST_C:
+        return "moderate (B)"
+    return "large (C)"
+
+
+def _dif_strata(matching, n_strata: int) -> np.ndarray:
+    """Stratify the matching score: integer-rounded levels if few, else quantile bins."""
+    m = np.asarray(matching, dtype=float)
+    rounded = np.round(m)
+    distinct = np.unique(rounded[np.isfinite(rounded)])
+    if distinct.size <= max(int(n_strata), 8):
+        return rounded
+    try:
+        return pd.qcut(m, int(n_strata), labels=False, duplicates="drop").to_numpy(dtype=float)
+    except Exception:
+        return rounded
+
+
+def _mantel_polytomous(y, focal_mask, strata, min_stratum_n: int = 2):
+    """Polytomous Mantel (1963) chi-square + ETS standardized mean difference.
+
+    Operates on ordered (here continuous rater-mean) item scores directly.
+    Returns (chi2, p, smd, smd_std, smd_class, direction, n_strata_used).
+    """
+    y = np.asarray(y, dtype=float)
+    focal = np.asarray(focal_mask, dtype=bool)
+    strata = np.asarray(strata)
+    num = den = smd_num = smd_den = 0.0
+    n_used = 0
+    for s in pd.unique(strata):
+        if not (np.isscalar(s) and np.isfinite(s)):
+            continue
+        idx = (strata == s) & np.isfinite(y)
+        n_k = int(idx.sum())
+        if n_k <= 1:
+            continue
+        f_k = idx & focal
+        n_fk = int(f_k.sum())
+        n_rk = n_k - n_fk
+        if n_fk == 0 or n_rk == 0 or n_k < int(min_stratum_n):
+            continue
+        s_k = float(y[idx].sum())
+        s2_k = float((y[idx] ** 2).sum())
+        F_k = float(y[f_k].sum())
+        e_fk = n_fk * s_k / n_k
+        var_fk = (n_fk * n_rk) * (n_k * s2_k - s_k ** 2) / (n_k ** 2 * (n_k - 1))
+        num += (F_k - e_fk)
+        den += var_fk
+        smd_num += n_k * (F_k / n_fk - (s_k - F_k) / n_rk)
+        smd_den += n_k
+        n_used += 1
+    if n_used == 0 or den <= 0:
+        return (np.nan, np.nan, np.nan, np.nan, "n/a", "n/a", n_used)
+    chi2_stat = (num ** 2) / den
+    p = float(chi2.sf(chi2_stat, 1))
+    smd = smd_num / smd_den if smd_den > 0 else np.nan
+    y_ok = y[np.isfinite(y)]
+    sd_y = float(np.std(y_ok, ddof=1)) if y_ok.size > 1 else np.nan
+    smd_std = smd / sd_y if (np.isfinite(smd) and np.isfinite(sd_y) and sd_y > 0) else np.nan
+    direction = (
+        "favors focal" if (np.isfinite(smd) and smd > 0)
+        else "favors reference" if (np.isfinite(smd) and smd < 0)
+        else "no signed difference"
+    )
+    return (float(chi2_stat), p, float(smd) if np.isfinite(smd) else np.nan,
+            float(smd_std) if np.isfinite(smd_std) else np.nan,
+            _dif_smd_class(smd_std), direction, n_used)
+
+
+def _poly_sibtest(y, M, g, strata, *, score_range, min_stratum_n: int = 2):
+    """Polytomous uniform SIBTEST (Shealy-Stout 1993; Chang-Mazzeo-Roussos 1996).
+
+    Regression-corrected DIF on ordered (rater-mean) item scores y, continuous
+    matching M, focal mask g (1=focal, 0=reference), and the same strata MH uses.
+    Each group's mean studied score is projected to the stratum's common matching
+    location (the Shealy-Stout correction). No rounding of y is needed. Returns
+    (beta, se, z, p, eff_class, direction); beta is reference-minus-focal so a
+    positive value (like the Mantel direction) favors the reference group. v1 is
+    uniform SIBTEST; non-uniform DIF is covered by the ordinal-logistic test.
+    """
+    y = np.asarray(y, dtype=float)
+    M = np.asarray(M, dtype=float)
+    focal = np.asarray(g, dtype=float) >= 0.5
+    strata = np.asarray(strata)
+    fin = np.isfinite(y) & np.isfinite(M)
+    used = []
+    n_total = 0
+    for s in pd.unique(strata):
+        if not (np.isscalar(s) and np.isfinite(s)):
+            continue
+        idx = (strata == s) & fin
+        n_k = int(idx.sum())
+        if n_k < int(min_stratum_n):
+            continue
+        f_k = idx & focal
+        r_k = idx & (~focal)
+        n_fk = int(f_k.sum())
+        n_rk = int(r_k.sum())
+        if n_fk == 0 or n_rk == 0:
+            continue
+        yf, yr = y[f_k], y[r_k]
+        mf, mr = M[f_k], M[r_k]
+        mbar_f, mbar_r = float(mf.mean()), float(mr.mean())
+        mbar_k = float(M[idx].mean())
+        ybar_f, ybar_r = float(yf.mean()), float(yr.mean())
+        sxx = float(((mf - mbar_f) ** 2).sum() + ((mr - mbar_r) ** 2).sum())
+        sxy = float(((mf - mbar_f) * (yf - ybar_f)).sum() + ((mr - mbar_r) * (yr - ybar_r)).sum())
+        b_k = (sxy / sxx) if sxx > 1e-12 else 0.0
+        ystar_f = ybar_f + b_k * (mbar_k - mbar_f)
+        ystar_r = ybar_r + b_k * (mbar_k - mbar_r)
+        d_k = ystar_r - ystar_f
+        s2_f = float(yf.var(ddof=1)) if n_fk > 1 else 0.0
+        s2_r = float(yr.var(ddof=1)) if n_rk > 1 else 0.0
+        used.append((n_k, d_k, s2_f / n_fk + s2_r / n_rk))
+        n_total += n_k
+    if not used or n_total == 0:
+        return (np.nan, np.nan, np.nan, np.nan, "n/a", "n/a")
+    beta = sum((n_k / n_total) * d_k for n_k, d_k, _ in used)
+    var_acc = sum((n_k / n_total) ** 2 * var_dk for n_k, _, var_dk in used)
+    beta = float(beta)
+    se = float(np.sqrt(var_acc)) if var_acc > 0 else np.nan
+    z = beta / se if (np.isfinite(se) and se > 0) else np.nan
+    p = float(2.0 * _norm.sf(abs(z))) if np.isfinite(z) else np.nan
+    direction = ("favors reference" if beta > 0 else "favors focal" if beta < 0 else "no signed difference")
+    return (beta, se, z, p, _sibtest_eff_class(beta, score_range), direction)
+
+
+def _po_cutpoints(p):
+    """Map free params (len C-1) to strictly increasing cutpoints."""
+    alpha = np.empty_like(np.asarray(p, dtype=float))
+    alpha[0] = p[0]
+    if alpha.size > 1:
+        alpha[1:] = p[0] + np.cumsum(np.exp(p[1:]))
+    return alpha
+
+
+def _po_nll(theta, M, g, ycat, n_cat, include_match, include_group, include_interaction):
+    from scipy.special import expit
+    n_cut = n_cat - 1
+    alpha = _po_cutpoints(theta[:n_cut])
+    pos = n_cut
+    beta = theta[pos] if include_match else 0.0
+    pos += 1 if include_match else 0
+    gamma = theta[pos] if include_group else 0.0
+    pos += 1 if include_group else 0
+    delta = theta[pos] if include_interaction else 0.0
+    eta = beta * M + gamma * g + delta * M * g
+    N = ycat.size
+    cdf = np.empty((N, n_cat + 1))
+    cdf[:, 0] = 0.0
+    cdf[:, n_cat] = 1.0
+    for c in range(1, n_cat):
+        cdf[:, c] = expit(alpha[c - 1] - eta)
+    probs = cdf[np.arange(N), ycat + 1] - cdf[np.arange(N), ycat]
+    probs = np.clip(probs, 1e-12, 1.0)
+    return -float(np.sum(np.log(probs)))
+
+
+def _fit_proportional_odds(M, g, ycat, n_cat, include_match, include_group, include_interaction):
+    """ML fit of a proportional-odds model with scipy. Returns (ll, n_params, status)."""
+    n_cut = n_cat - 1
+    if n_cut < 1:
+        return (np.nan, 0, "degenerate")
+    counts = np.bincount(ycat, minlength=n_cat).astype(float)
+    props = np.clip(counts / max(counts.sum(), 1.0), 1e-3, 1.0)
+    cum = np.clip(np.cumsum(props)[:-1], 1e-3, 1 - 1e-3)
+    alpha0 = np.log(cum / (1 - cum))
+    p0 = np.empty(n_cut)
+    p0[0] = alpha0[0]
+    if n_cut > 1:
+        p0[1:] = np.log(np.clip(np.diff(alpha0), 1e-2, None))
+    x0 = list(p0)
+    if include_match:
+        x0.append(0.5)
+    if include_group:
+        x0.append(0.0)
+    if include_interaction:
+        x0.append(0.0)
+    x0 = np.asarray(x0, dtype=float)
+    args = (M, g, ycat, n_cat, include_match, include_group, include_interaction)
+    try:
+        opt = minimize(_po_nll, x0, args=args, method="BFGS", options={"maxiter": 200, "gtol": 1e-5})
+        if not opt.success or not np.isfinite(opt.fun):
+            opt = minimize(_po_nll, x0, args=args, method="Nelder-Mead",
+                           options={"maxiter": 3000, "xatol": 1e-4, "fatol": 1e-4})
+        ll = -float(opt.fun)
+        extra = np.asarray(opt.x[n_cut:], dtype=float)
+        if not np.isfinite(ll) or (extra.size and np.max(np.abs(extra)) > 50.0):
+            return (np.nan, x0.size, "separation")
+        return (ll, x0.size, "ok")
+    except Exception:
+        return (np.nan, x0.size, "error")
+
+
+def _ordinal_logistic_dif(M, g, ycat, n_cat):
+    """Zumbo ordinal-logistic DIF: nested LR tests (uniform/non-uniform/total) + Nagelkerke Delta-R^2."""
+    out = {"uniform_p": np.nan, "nonuniform_p": np.nan, "total_p": np.nan,
+           "dr2_nag": np.nan, "dr2_mcf": np.nan, "r2_class": "n/a", "status": "ok"}
+    M = np.asarray(M, dtype=float)
+    g = np.asarray(g, dtype=float)
+    ycat = np.asarray(ycat, dtype=int)
+    N = ycat.size
+    if N < (n_cat + 4) or np.unique(ycat).size < 2:
+        out["status"] = "insufficient"
+        return out
+    msd = float(np.std(M))
+    Mz = (M - float(np.mean(M))) / msd if msd > 0 else (M - float(np.mean(M)))
+    ll_int, _, s_int = _fit_proportional_odds(Mz, g, ycat, n_cat, False, False, False)
+    ll0, _, s0 = _fit_proportional_odds(Mz, g, ycat, n_cat, True, False, False)
+    ll1, _, s1 = _fit_proportional_odds(Mz, g, ycat, n_cat, True, True, False)
+    ll2, _, s2 = _fit_proportional_odds(Mz, g, ycat, n_cat, True, True, True)
+    if not all(s == "ok" for s in (s0, s1, s2)) or not all(np.isfinite(x) for x in (ll0, ll1, ll2)):
+        out["status"] = next((s for s in (s2, s1, s0) if s != "ok"), "nonconvergence")
+        return out
+    out["uniform_p"] = float(chi2.sf(max(2.0 * (ll1 - ll0), 0.0), 1))
+    out["nonuniform_p"] = float(chi2.sf(max(2.0 * (ll2 - ll1), 0.0), 1))
+    out["total_p"] = float(chi2.sf(max(2.0 * (ll2 - ll0), 0.0), 2))
+    if np.isfinite(ll_int) and ll_int < 0:
+        denom = 1.0 - np.exp(ll_int * 2.0 / N)
+
+        def _nag(ll_m):
+            cox = 1.0 - np.exp((ll_int - ll_m) * 2.0 / N)
+            return cox / denom if denom > 0 else np.nan
+
+        r2_0, r2_2 = _nag(ll0), _nag(ll2)
+        if np.isfinite(r2_0) and np.isfinite(r2_2):
+            out["dr2_nag"] = float(r2_2 - r2_0)
+            out["r2_class"] = _dif_r2_class(out["dr2_nag"])
+        out["dr2_mcf"] = float((1.0 - ll2 / ll_int) - (1.0 - ll0 / ll_int))
+    return out
+
+
+def build_dif_screening_table(raw, *, alpha: float = 0.05, min_group_n: int = 10,
+                              practical_smd: float = 0.17, delta_r2_b: float = 0.035) -> pd.DataFrame:
+    """Add multiplicity (Holm/BH) and evidence-level flags to raw per-item DIF rows."""
+    cols = ["Item", "GroupContrast", "FocalLevel", "RefLevel", "N_focal", "N_ref", "ObsN",
+            "NStrataUsed", "MH_ChiSq", "MH_p", "SMD", "SMD_std", "SMD_class",
+            "Logit_Uniform_p", "Logit_NonUniform_p", "Logit_Total_p",
+            "DeltaR2_Nagelkerke", "DeltaR2_McFadden", "R2_class", "LogisticStatus",
+            "SIBTEST_Beta", "SIBTEST_SE", "SIBTEST_Z", "SIBTEST_p", "SIBTEST_class",
+            "SIBTEST_Direction", "SIBTEST_Agreement",
+            "PrimaryP", "p_holm", "p_bh", "EvidenceLevel", "Flag", "Direction",
+            "ClaimStatus", "ReportingCaution", "MultiplicityFamily", "NextAction"]
+    if not isinstance(raw, pd.DataFrame) or raw.empty:
+        return pd.DataFrame(columns=cols)
+    out = raw.copy().reset_index(drop=True)
+    logit_ok = out.get("LogisticStatus", pd.Series(["not_fitted"] * len(out))).astype(str).eq("ok").to_numpy()
+    primary = np.where(logit_ok,
+                       pd.to_numeric(out.get("Logit_Total_p"), errors="coerce").to_numpy(dtype=float),
+                       pd.to_numeric(out.get("MH_p"), errors="coerce").to_numpy(dtype=float))
+    out["PrimaryP"] = primary
+    out["p_holm"] = adjust_p_values(primary, "holm")
+    out["p_bh"] = adjust_p_values(primary, "bh")
+    n_focal = pd.to_numeric(out["N_focal"], errors="coerce").fillna(0)
+    n_ref = pd.to_numeric(out["N_ref"], errors="coerce").fillna(0)
+    n_strata = pd.to_numeric(out["NStrataUsed"], errors="coerce").fillna(0)
+    sparse = (n_focal < int(min_group_n)) | (n_ref < int(min_group_n)) | (n_strata == 0)
+    stat_holm = pd.to_numeric(out["p_holm"], errors="coerce") < float(alpha)
+    stat_bh = pd.to_numeric(out["p_bh"], errors="coerce") < float(alpha)
+    smd_std_abs = pd.to_numeric(out["SMD_std"], errors="coerce").abs()
+    dr2 = pd.to_numeric(out["DeltaR2_Nagelkerke"], errors="coerce")
+    sib_practical = out.get("SIBTEST_class", pd.Series(["n/a"] * len(out))).astype(str).isin(["moderate (B)", "large (C)"])
+    practical = ((smd_std_abs >= float(practical_smd)) | (dr2 >= float(delta_r2_b)) | sib_practical).fillna(False)
+    # SIBTEST corroboration: does the regression-corrected estimator agree on the
+    # direction of the difference with the Mantel SMD?
+    sib_dir = out.get("SIBTEST_Direction", pd.Series(["n/a"] * len(out))).astype(str)
+    mh_dir = out.get("Direction", pd.Series(["n/a"] * len(out))).astype(str)
+    out["SIBTEST_Agreement"] = np.select(
+        [sib_dir.isin(["n/a", "no signed difference"]) | mh_dir.isin(["n/a", "no signed difference"]),
+         sib_dir == mh_dir],
+        ["n/a", "agrees"],
+        default="disagrees")
+    out["EvidenceLevel"] = np.select(
+        [sparse, stat_holm & practical, stat_holm | stat_bh, practical],
+        ["Sparse data", "Strong review", "Statistical review", "Effect-size note"],
+        default="No flag")
+    # A DIF flag requires statistical significance AFTER multiplicity control, so
+    # the false-positive rate stays near alpha. A large effect size that is not
+    # significant is surfaced as an "Effect-size note" (visible, but not a flag);
+    # sparse cells are a data-quality note, not a DIF flag.
+    out["Flag"] = out["EvidenceLevel"].isin(["Strong review", "Statistical review"])
+    out["ClaimStatus"] = np.select(
+        [out["EvidenceLevel"].eq("Sparse data"),
+         out["Flag"].astype(bool),
+         out["EvidenceLevel"].eq("Effect-size note")],
+        ["Do not claim from this item alone",
+         "Report with caveat",
+         "Effect-size note only; not statistically flagged"],
+        default="No computed DIF flag")
+    out["ReportingCaution"] = np.select(
+        [out["EvidenceLevel"].eq("Sparse data"),
+         out["Flag"].astype(bool),
+         out["EvidenceLevel"].eq("Effect-size note")],
+        ["Too few persons per group for a stable DIF estimate.",
+         "Screening evidence only — corroborate with content review, fit, and rater-allocation before any fairness or item-removal claim.",
+         "Effect size reaches the practical band but is not significant after multiplicity control; treat as a watch item, not a flag."],
+        default="No flag under this screen; not evidence that DIF is absent outside the tested items.")
+    out["NextAction"] = np.select(
+        [out["EvidenceLevel"].eq("Sparse data"),
+         out["EvidenceLevel"].eq("Strong review"),
+         out["EvidenceLevel"].eq("Statistical review"),
+         out["EvidenceLevel"].eq("Effect-size note")],
+        ["Collect more responses per group before interpreting.",
+         "Review item content/translation and scoring for the flagged group; corroborate before any action.",
+         "Inspect the item and corroborate with content and fit evidence.",
+         "Watch the item; the effect size is notable but not statistically reliable here."],
+        default="No special action beyond routine review.")
+    out["MultiplicityFamily"] = (out["GroupContrast"].astype(str)
+                                 + f"; alpha={float(alpha):.3g}, min_group_n={int(min_group_n)}")
+    for c in cols:
+        if c not in out.columns:
+            out[c] = np.nan
+    return out[cols].sort_values(["Flag", "PrimaryP"], ascending=[False, True]).reset_index(drop=True)
+
+
+def summarize_dif_screening(table) -> pd.DataFrame:
+    """One-row-per-metric summary of a DIF screening table."""
+    cols = ["Metric", "Value"]
+    if not isinstance(table, pd.DataFrame) or table.empty:
+        return pd.DataFrame(columns=cols)
+    flag = table["Flag"].astype(bool)
+    ev = table["EvidenceLevel"].astype(str)
+    smd_abs = pd.to_numeric(table["SMD_std"], errors="coerce").abs()
+    dr2 = pd.to_numeric(table["DeltaR2_Nagelkerke"], errors="coerce")
+    rows = [
+        ("Items x contrasts screened", int(len(table))),
+        ("Flagged", int(flag.sum())),
+        ("Strong review", int(ev.eq("Strong review").sum())),
+        ("Statistical review", int(ev.eq("Statistical review").sum())),
+        ("Sparse data", int(ev.eq("Sparse data").sum())),
+        ("Holm-significant", int((pd.to_numeric(table["p_holm"], errors="coerce") < 0.05).sum())),
+        ("BH-significant", int((pd.to_numeric(table["p_bh"], errors="coerce") < 0.05).sum())),
+        ("Logistic failures", int(table["LogisticStatus"].astype(str).ne("ok").sum())),
+        ("Max |SMD_std|", float(smd_abs.max()) if smd_abs.notna().any() else np.nan),
+        ("Max Delta-R^2", float(dr2.max()) if dr2.notna().any() else np.nan),
+        ("Max |SIBTEST_Beta|", float(pd.to_numeric(table.get("SIBTEST_Beta"), errors="coerce").abs().max())
+         if "SIBTEST_Beta" in table.columns and pd.to_numeric(table.get("SIBTEST_Beta"), errors="coerce").notna().any() else np.nan),
+        ("SIBTEST agrees with MH", int(table.get("SIBTEST_Agreement", pd.Series(dtype=str)).astype(str).eq("agrees").sum())),
+    ]
+    return pd.DataFrame(rows, columns=cols)
+
+
+def build_dif_inference_audit(table, settings=None) -> pd.DataFrame:
+    """Per-contrast claim-safety audit for the DIF screen (mirrors the bias audit)."""
+    cols = ["GroupContrast", "Status", "ClaimStatus", "ItemsScreened", "FlaggedItems",
+            "StrongReviewItems", "SparseItems", "HolmSignificant", "BHSignificant",
+            "InferenceScope", "MultiplicityScope", "EvidenceSummary", "RecommendedAction"]
+    if not isinstance(table, pd.DataFrame) or table.empty:
+        return pd.DataFrame(columns=cols)
+    rows = []
+    for contrast, grp in table.groupby("GroupContrast"):
+        flag = grp["Flag"].astype(bool)
+        ev = grp["EvidenceLevel"].astype(str)
+        flagged = int(flag.sum())
+        strong = int(ev.eq("Strong review").sum())
+        sparse = int(ev.eq("Sparse data").sum())
+        holm = int((pd.to_numeric(grp["p_holm"], errors="coerce") < 0.05).sum())
+        bh = int((pd.to_numeric(grp["p_bh"], errors="coerce") < 0.05).sum())
+        claim = "Do not claim" if (flagged and strong) else ("Report with caveat" if flagged else "Ready")
+        action = ("Corroborate flagged items with content and fit evidence before any fairness claim."
+                  if flagged else "No flag; do not extend a no-DIF claim beyond the screened items.")
+        rows.append({
+            "GroupContrast": str(contrast),
+            "Status": "Review" if flagged else "Ready",
+            "ClaimStatus": claim,
+            "ItemsScreened": int(len(grp)), "FlaggedItems": flagged,
+            "StrongReviewItems": strong, "SparseItems": sparse,
+            "HolmSignificant": holm, "BHSignificant": bh,
+            "InferenceScope": "Screening on rater-mean aggregates; rater severity averaged out, group allocation assumed balanced; global model uncertainty not propagated.",
+            "MultiplicityScope": "Holm and BH adjustments computed within this contrast's item family; flags are review prompts, not confirmatory proof.",
+            "EvidenceSummary": f"{flagged} flagged of {len(grp)}; {strong} strong-review, {sparse} sparse, {holm} Holm-significant, {bh} BH-significant.",
+            "RecommendedAction": action,
+        })
+    return pd.DataFrame(rows, columns=cols)
+
+
+def analyze_classical_dif(prep_or_data, item_facet, group_labels, *, matching="rest",
+                          contrast="pairwise", reference_group=None, n_strata=10,
+                          alpha=0.05, practical_smd=0.17, delta_r2_b=0.035,
+                          min_group_n=10, min_stratum_n=2, fit_logistic=True,
+                          purify=True, max_purify_iter=3) -> dict:
+    """Classical polytomous DIF screening for an external person group.
+
+    Returns {"table", "summary", "audit", "settings", "caveats"} or
+    {"_skip_reason": "..."} when the input cannot support a screen.
+    """
+    if isinstance(prep_or_data, dict):
+        data = prep_or_data.get("data")
+        rating_min = int(prep_or_data.get("rating_min", 0) or 0)
+        rating_max = int(prep_or_data.get("rating_max", 0) or 0)
+    else:
+        data = prep_or_data
+        sc = pd.to_numeric(data["Score"], errors="coerce") if isinstance(data, pd.DataFrame) and "Score" in data.columns else pd.Series(dtype=float)
+        rating_min = int(np.nanmin(sc)) if sc.notna().any() else 0
+        rating_max = int(np.nanmax(sc)) if sc.notna().any() else 0
+    if not isinstance(data, pd.DataFrame) or data.empty:
+        return {"_skip_reason": "No response data available for DIF."}
+    if item_facet not in data.columns:
+        return {"_skip_reason": f"Item facet '{item_facet}' is not in the data."}
+    n_cat = rating_max - rating_min + 1
+    if n_cat < 2:
+        return {"_skip_reason": "Need at least 2 score categories for DIF."}
+
+    df = data[["Person", item_facet, "Score"]].copy()
+    df["Score"] = pd.to_numeric(df["Score"], errors="coerce")
+    df["Weight"] = pd.to_numeric(data["Weight"], errors="coerce").fillna(1.0) if "Weight" in data.columns else 1.0
+    df = df.dropna(subset=["Score"])
+    # Weighted rater-mean per person x item, vectorized (avoids a groupby.apply
+    # over grouping columns and works across pandas versions).
+    df["_ScoreW"] = df["Score"] * df["Weight"]
+    gsum = df.groupby(["Person", item_facet], observed=True).agg(
+        _sw=("_ScoreW", "sum"), _w=("Weight", "sum"), _n=("Score", "size"))
+    rater_aggregated = bool((gsum["_n"] > 1).any())
+    agg = gsum["_sw"] / gsum["_w"].replace(0, np.nan)
+    wide = agg.unstack(item_facet)
+    items = [str(c) for c in wide.columns]
+    if len(items) < 2:
+        return {"_skip_reason": "Need at least 2 items for DIF matching."}
+
+    grp_series = pd.Series(group_labels)
+    grp_series.index = grp_series.index.astype(str)
+    wide.index = wide.index.astype(str)
+    g_aligned = grp_series.reindex(wide.index)
+    valid = g_aligned.notna()
+    n_dropped_group = int((~valid).sum())
+    wide = wide.loc[valid]
+    g_aligned = g_aligned.loc[valid].astype(str)
+    group_counts = g_aligned.value_counts()
+    if group_counts.size < 2:
+        return {"_skip_reason": "Need at least 2 groups for DIF (only one group label found)."}
+    eligible = [gn for gn, cnt in group_counts.items() if cnt >= int(min_group_n)]
+    if len(eligible) < 2:
+        return {"_skip_reason": f"Need at least 2 groups each with >= {min_group_n} persons."}
+
+    ref = str(reference_group) if (reference_group is not None and str(reference_group) in eligible) else str(group_counts.index[0])
+    if str(contrast) == "rest":
+        contrasts = [(gn, "rest") for gn in eligible]
+    else:
+        contrasts = [(gn, ref) for gn in eligible if gn != ref]
+
+    g_arr = g_aligned.to_numpy()
+    item_scores = wide.to_numpy(dtype=float)
+    item_index = {it: j for j, it in enumerate(items)}
+    def _matching_for_item(j_item, anchor_cols):
+        # Sum of anchor item scores (matching criterion), minus the studied item
+        # itself when using rest-score and it is an anchor (purification: DIF
+        # items are dropped from the anchor pool so they do not contaminate the
+        # matching variable for the remaining items).
+        if anchor_cols:
+            anchor_sum = np.nansum(item_scores[:, anchor_cols], axis=1)
+        else:
+            anchor_sum = np.zeros(item_scores.shape[0])
+        if matching == "rest" and j_item in anchor_cols:
+            return anchor_sum - np.nan_to_num(item_scores[:, j_item], nan=0.0)
+        return anchor_sum
+
+    def _compute_rows(exclude_set):
+        anchor_cols = [item_index[it] for it in items if it not in exclude_set]
+        rows = []
+        for focal, ref_label in contrasts:
+            is_focal = (g_arr == focal)
+            is_ref = (g_arr != focal) if ref_label == "rest" else (g_arr == ref_label)
+            for it in items:
+                j = item_index[it]
+                y = item_scores[:, j]
+                fin = np.isfinite(y)
+                foc_sel = is_focal & fin
+                ref_sel = is_ref & fin & (~is_focal)
+                sel = foc_sel | ref_sel
+                n_focal_i = int(foc_sel.sum())
+                n_ref_i = int(ref_sel.sum())
+                row = {
+                    "Item": it, "GroupContrast": f"{focal} vs {ref_label}",
+                    "FocalLevel": focal, "RefLevel": ref_label,
+                    "N_focal": n_focal_i, "N_ref": n_ref_i, "ObsN": int(sel.sum()),
+                    "NStrataUsed": 0, "MH_ChiSq": np.nan, "MH_p": np.nan,
+                    "SMD": np.nan, "SMD_std": np.nan, "SMD_class": "n/a",
+                    "Logit_Uniform_p": np.nan, "Logit_NonUniform_p": np.nan,
+                    "Logit_Total_p": np.nan, "DeltaR2_Nagelkerke": np.nan,
+                    "DeltaR2_McFadden": np.nan, "R2_class": "n/a",
+                    "LogisticStatus": "not_fitted", "Direction": "n/a",
+                    "SIBTEST_Beta": np.nan, "SIBTEST_SE": np.nan, "SIBTEST_Z": np.nan,
+                    "SIBTEST_p": np.nan, "SIBTEST_class": "n/a", "SIBTEST_Direction": "n/a",
+                }
+                if n_focal_i < int(min_group_n) or n_ref_i < int(min_group_n):
+                    rows.append(row)
+                    continue
+                M = _matching_for_item(j, anchor_cols)
+                yk = y[sel]
+                Mk = M[sel]
+                gk = is_focal[sel].astype(float)
+                strata = _dif_strata(Mk, n_strata)
+                chi2v, pv, smd, smd_std, smd_cls, direction, n_used = _mantel_polytomous(
+                    yk, gk.astype(bool), strata, min_stratum_n)
+                row.update({"MH_ChiSq": chi2v, "MH_p": pv, "SMD": smd, "SMD_std": smd_std,
+                            "SMD_class": smd_cls, "Direction": direction, "NStrataUsed": n_used})
+                sb, sb_se, sb_z, sb_p, sb_cls, sb_dir = _poly_sibtest(
+                    yk, Mk, gk, strata, score_range=(rating_max - rating_min), min_stratum_n=min_stratum_n)
+                row.update({"SIBTEST_Beta": sb, "SIBTEST_SE": sb_se, "SIBTEST_Z": sb_z,
+                            "SIBTEST_p": sb_p, "SIBTEST_class": sb_cls, "SIBTEST_Direction": sb_dir})
+                if fit_logistic:
+                    ycat = np.clip(np.round(yk).astype(int) - rating_min, 0, n_cat - 1)
+                    log = _ordinal_logistic_dif(Mk, gk, ycat, n_cat)
+                    row.update({"Logit_Uniform_p": log["uniform_p"],
+                                "Logit_NonUniform_p": log["nonuniform_p"],
+                                "Logit_Total_p": log["total_p"],
+                                "DeltaR2_Nagelkerke": log["dr2_nag"],
+                                "DeltaR2_McFadden": log["dr2_mcf"],
+                                "R2_class": log["r2_class"],
+                                "LogisticStatus": log["status"]})
+                rows.append(row)
+        return pd.DataFrame(rows)
+
+    # Iterative purification (Holland & Thayer): items strongly flagged in one
+    # pass are removed from the matching anchor for the next pass, so a strong-DIF
+    # item does not induce spurious DIF on the others through the matching score.
+    exclude_set: set = set()
+    table = build_dif_screening_table(_compute_rows(exclude_set), alpha=alpha, min_group_n=min_group_n,
+                                      practical_smd=practical_smd, delta_r2_b=delta_r2_b)
+    n_iter = int(max_purify_iter) if purify else 1
+    for _ in range(max(n_iter - 1, 0)):
+        new_strong = set(table.loc[table["EvidenceLevel"].eq("Strong review"), "Item"].astype(str))
+        if new_strong == exclude_set or (len(items) - len(new_strong)) < 2:
+            break
+        exclude_set = new_strong
+        table = build_dif_screening_table(_compute_rows(exclude_set), alpha=alpha, min_group_n=min_group_n,
+                                          practical_smd=practical_smd, delta_r2_b=delta_r2_b)
+    purified_items = sorted(exclude_set)
+
+    summary = summarize_dif_screening(table)
+    settings = {"item_facet": str(item_facet), "matching": str(matching), "contrast": str(contrast),
+                "reference_group": ref, "n_strata": int(n_strata), "alpha": float(alpha),
+                "practical_smd": float(practical_smd), "delta_r2_b": float(delta_r2_b),
+                "min_group_n": int(min_group_n), "fit_logistic": bool(fit_logistic),
+                "purify": bool(purify), "purified_items": purified_items,
+                "groups": [str(x) for x in group_counts.index.tolist()], "n_items": len(items)}
+    caveats = []
+    if rater_aggregated:
+        caveats.append("Item scores are rater-mean aggregates per person x item; rater severity is averaged out (not modeled), and rater allocation is assumed balanced across groups.")
+    if fit_logistic:
+        caveats.append("The ordinal-logistic response rounds the rater-mean to the nearest category; borderline persons are assigned to the nearest integer.")
+    if purify and purified_items:
+        caveats.append("Purified matching: " + ", ".join(purified_items) + " were removed from the matching anchor after being strongly flagged, so they do not contaminate the other items' matching score.")
+    if n_dropped_group:
+        caveats.append(f"{n_dropped_group} person(s) dropped for a missing group label.")
+    audit = build_dif_inference_audit(table, settings)
+    frame = wide.reset_index()
+    if "Person" not in frame.columns:
+        frame = frame.rename(columns={frame.columns[0]: "Person"})
+    frame.insert(1, "group", g_aligned.to_numpy())
+    return {"table": table, "summary": summary, "audit": audit,
+            "settings": settings, "caveats": caveats,
+            "analysis_frame": {"frame": frame, "rating_min": int(rating_min), "rating_max": int(rating_max)}}
+
+
+_DIF_R_CROSSCHECK_SCRIPT = r'''# run_difR_crosscheck.R
+# External cross-check of the MFRM app's classical DIF screen, using the R
+# packages difR and lordif on the EXACT analysis frame the app screened.
+# This is a reproducibility artifact: exact numbers will differ from the app
+# (see README_difR_crosscheck.md) — directional and A/B/C agreement is the bar.
+#   install.packages(c("difR", "lordif"))
+suppressMessages({library(difR); library(lordif)})
+
+frame    <- read.csv("dif_analysis_frame.csv",    stringsAsFactors = FALSE, check.names = FALSE)
+settings <- read.csv("dif_analysis_settings.csv", stringsAsFactors = FALSE)
+
+reference <- as.character(settings$reference_group)
+item_cols <- setdiff(colnames(frame), c("Person", "group"))
+Data  <- as.matrix(frame[, item_cols, drop = FALSE])   # rater-mean (float) item scores
+group <- as.character(frame$group)
+
+cat("Reference group:", reference, " items:", paste(item_cols, collapse=", "), "\n\n")
+
+# 1. Generalized Mantel-Haenszel (polytomous MH) -- vs the app's _mantel_polytomous
+gmh <- tryCatch(difGMH(Data = Data, group = group, focal.name = reference,
+                       alpha = settings$alpha), error = function(e) {message(e); NULL})
+if (!is.null(gmh)) print(gmh)
+
+# 2. SIBTEST (uniform) -- vs the app's _poly_sibtest
+sib <- tryCatch(difSIBTEST(Data = Data, group = group, focal.name = reference,
+                           type = "udif", alpha = settings$alpha), error = function(e) {message(e); NULL})
+if (!is.null(sib)) print(sib)
+
+# 3. Ordinal logistic DIF via lordif (cumulative-logit GRM) -- vs the app's
+#    _ordinal_logistic_dif. lordif needs integer scores, so round (as the app
+#    does for its ordinal-logistic model).
+resp <- as.data.frame(round(Data))
+grp_bin <- as.integer(group != reference)              # focal = not reference
+lo <- tryCatch(lordif(resp.data = resp, group = grp_bin, criterion = "Chisqr",
+                      alpha = settings$alpha, model = "GRM"),
+               error = function(e) {message("lordif: ", conditionMessage(e)); NULL})
+if (!is.null(lo)) print(lo$stats)
+
+# 4. difR generalized logistic (ordinal-logistic alternative, no lordif needed)
+glog <- tryCatch(difGenLogistic(Data = round(Data), group = group, focal.name = reference,
+                                type = "udif", alpha = settings$alpha), error = function(e) {message(e); NULL})
+if (!is.null(glog)) print(glog)
+
+# 5. Side-by-side with the app's own result table
+app_res <- tryCatch(read.csv("dif_app_results.csv"), error = function(e) NULL)
+if (!is.null(app_res)) {
+  cat("\n--- App result (compare flags / direction / effect class per item) ---\n")
+  keep <- intersect(c("Item","GroupContrast","MH_p","SMD_class","SIBTEST_Beta","SIBTEST_p",
+                      "Logit_Total_p","EvidenceLevel","Flag","Direction"), colnames(app_res))
+  print(app_res[, keep])
+}
+'''
+
+_DIF_R_CROSSCHECK_README = '''# difR / lordif cross-check of the MFRM classical DIF screen
+
+This bundle lets you reproduce the app's classical DIF screen in R (difR /
+lordif) for external validation. **Exact numeric parity is NOT expected** — the
+bar is directional and A/B/C-classification agreement, not matching p-values.
+
+## Files
+- `dif_analysis_frame.csv` — the exact person x item frame the app screened:
+  one row per person, `Person`, `group`, and one column per item holding the
+  **rater-mean** score (float).
+- `dif_analysis_settings.csv` — reference group, matching, strata, alpha,
+  min_group_n, purified items, score range.
+- `dif_app_results.csv` — the app's own per-item DIF table for side-by-side.
+- `run_difR_crosscheck.R` — runs `difR::difGMH`, `difR::difSIBTEST`,
+  `lordif::lordif`, and `difR::difGenLogistic`.
+
+## Run
+```
+install.packages(c("difR", "lordif"))
+Rscript run_difR_crosscheck.R
+```
+
+## Why the numbers differ (expected sources)
+1. **Rater-mean aggregation.** The app screens rater-mean per person x item
+   scores; difR/lordif expect one score per cell. The CSV ships the app's exact
+   rater means, so MH/SIBTEST see identical inputs — but lordif / difGenLogistic
+   need integers and the script `round()`s them (as the app does only for its
+   ordinal-logistic model). App-MH/SIBTEST vs difR should be close; lordif vs
+   the app's logistic differs by that rounding.
+2. **Matching & rest-score.** The app defaults to rest-score matching with
+   iterative purification; difGMH/difSIBTEST default to total score with their
+   own purification loop. The anchor item set will not match item-for-item.
+3. **Stratification.** The app bins the matching score (integer levels if few,
+   else quantiles); difR uses score-level matching, so chi-squares differ in
+   magnitude.
+4. **Variance / correction details.** The app's polytomous SIBTEST variance uses
+   empirical within-stratum group variances; difR uses the Shealy-Stout form.
+   Point estimates of beta agree closely; SE/Z can differ in the second decimal.
+5. **Group coding.** difR codes the focal group via `focal.name`; here
+   `focal.name = reference_group` and a positive SIBTEST beta favors the
+   reference group (the same sign convention as the app's Direction column).
+
+## What to compare
+Per item: (a) the same items flagged at alpha, (b) the same Direction
+(favors focal / reference), (c) the same A/B/C effect band. A row-by-row
+p-value diff is the wrong test; a flag/direction agreement table is the right
+one. Disagreement on a borderline item is expected; disagreement on a strongly
+flagged item warrants inspecting the matching / stratification choices.
+'''
+
+
+def build_dif_validation_bundle(res: dict) -> dict:
+    """Build a difR/lordif R cross-check bundle from an analyze_classical_dif result.
+
+    Returns {filename: bytes-or-text} for cached_mixed_asset_zip. Reproducibility
+    artifact only — difR / lordif are NOT app dependencies.
+    """
+    if not isinstance(res, dict):
+        return {}
+    af = res.get("analysis_frame")
+    settings = res.get("settings", {})
+    table = res.get("table", pd.DataFrame())
+    out: dict = {}
+    if isinstance(af, dict) and isinstance(af.get("frame"), pd.DataFrame):
+        out["dif_analysis_frame.csv"] = to_csv_bytes(af["frame"])
+    settings_row = {
+        "reference_group": settings.get("reference_group", ""),
+        "matching": settings.get("matching", "rest"),
+        "n_strata": settings.get("n_strata", 10),
+        "alpha": settings.get("alpha", 0.05),
+        "min_group_n": settings.get("min_group_n", 10),
+        "purify_flag": str(bool(settings.get("purify", True))).upper(),
+        "purified_items": ";".join(settings.get("purified_items", []) or []),
+        "rating_min": af.get("rating_min", 0) if isinstance(af, dict) else 0,
+        "rating_max": af.get("rating_max", 0) if isinstance(af, dict) else 0,
+    }
+    out["dif_analysis_settings.csv"] = to_csv_bytes(pd.DataFrame([settings_row]))
+    if isinstance(table, pd.DataFrame) and not table.empty:
+        out["dif_app_results.csv"] = to_csv_bytes(table)
+    out["run_difR_crosscheck.R"] = _DIF_R_CROSSCHECK_SCRIPT
+    out["README_difR_crosscheck.md"] = _DIF_R_CROSSCHECK_README
+    return out
+
+
+_CROSS_ENGINE_R_SCRIPT = r'''# run_tam_mirt_crosscheck.R
+# Cross-engine validation of the MFRM app's MML/GPCM main estimates, using the R
+# packages TAM, sirt, and mirt on the EXACT data the app fitted. This is a
+# reproducibility artifact: exact numbers WILL differ (see README) — rank-order
+# and directional agreement is the bar, not matching logits.
+#   install.packages(c("TAM", "sirt", "mirt"))
+suppressMessages({library(TAM); library(sirt)})
+
+dat      <- read.csv("data.csv",     stringsAsFactors = FALSE, check.names = FALSE)
+settings <- read.csv("settings.csv", stringsAsFactors = FALSE)
+
+model      <- as.character(settings$model[1])      # RSM / PCM / GPCM
+method     <- as.character(settings$method[1])     # MML / JMLE
+item_facet <- as.character(settings$step_facet[1])
+facet_all  <- strsplit(as.character(settings$facet_names[1]), ";")[[1]]
+if (is.na(item_facet) || item_facet == "") item_facet <- tail(facet_all, 1)  # RSM: last facet as item
+other_facets <- setdiff(facet_all, item_facet)
+cat("Model:", model, " method:", method, " item facet:", item_facet,
+    " other facets:", paste(other_facets, collapse = ", "), "\n\n")
+
+# --- Reshape long -> wide on the item facet (TAM facets format) -------------
+#   Each row = (Person + other-facet) combination; columns = item-facet levels;
+#   pid = Person; facets = the other facets per row. ADAPT to your design.
+id_cols <- c("Person", other_facets)
+wide <- reshape(dat[, c(id_cols, item_facet, "Score")],
+                idvar = id_cols, timevar = item_facet, direction = "wide")
+item_cols <- grep("^Score\\.", colnames(wide), value = TRUE)
+resp   <- wide[, item_cols, drop = FALSE]
+colnames(resp) <- sub("^Score\\.", "", item_cols)
+pid    <- wide$Person
+facets <- wide[, other_facets, drop = FALSE]
+
+# --- 1. TAM many-facet Rasch (tam.mml.mfr) ---------------------------------
+formA <- as.formula(paste("~ item +", paste(other_facets, collapse = " + "), "+ item:step"))
+tam_mod <- tryCatch(
+  TAM::tam.mml.mfr(resp = resp, facets = facets, formulaA = formA, pid = pid),
+  error = function(e) { message("TAM: ", conditionMessage(e)); NULL })
+if (!is.null(tam_mod)) {
+  cat("\n--- TAM facet/item parameters (xsi) ---\n"); print(tam_mod$xsi)
+  cat("\n--- TAM person EAP/WLE (head) ---\n"); print(head(TAM::tam.wle(tam_mod)))
+}
+
+# --- 2. sirt rater-facet model (rm.facets) — closest to a rater-mediated MFRM
+if (length(other_facets) >= 1) {
+  rater <- as.factor(facets[[other_facets[1]]])     # ADAPT: which facet is the rater
+  rm_mod <- tryCatch(sirt::rm.facets(dat = resp, pid = pid, rater = rater),
+                     error = function(e) { message("sirt rm.facets: ", conditionMessage(e)); NULL })
+  if (!is.null(rm_mod)) { cat("\n--- sirt rm.facets item/rater parameters ---\n"); print(rm_mod$item) }
+}
+
+# --- 3. mirt item-level (collapse raters: mean score per person x item) -----
+dat$.item <- dat[[item_facet]]
+agg <- aggregate(Score ~ Person + .item, data = dat, FUN = mean)
+colnames(agg)[colnames(agg) == ".item"] <- "item"
+mwide <- reshape(agg, idvar = "Person", timevar = "item", direction = "wide")
+mresp <- round(mwide[, grep("^Score", colnames(mwide)), drop = FALSE])
+itemtype <- if (model == "GPCM") "gpcm" else "Rasch"   # GPCM ~ gpcm; RSM/PCM ~ Rasch-family
+m_mod <- tryCatch(mirt::mirt(mresp, 1, itemtype = itemtype, verbose = FALSE),
+                  error = function(e) { message("mirt: ", conditionMessage(e)); NULL })
+if (!is.null(m_mod)) { cat("\n--- mirt item coefficients ---\n"); print(mirt::coef(m_mod, simplify = TRUE)$items) }
+
+# --- 4. side-by-side with the app's own estimates ---------------------------
+for (f in c("app_facets.csv", "app_person.csv", "app_steps.csv", "app_slopes.csv")) {
+  if (file.exists(f)) { cat("\n---", f, "(head) ---\n"); print(head(read.csv(f))) }
+}
+cat("\nCompare RANK ORDER and DIRECTION, not exact logits (see README_cross_engine.md).\n")
+'''
+
+_CROSS_ENGINE_README = '''# Cross-engine validation of the MFRM app's main estimates (TAM / sirt / mirt)
+
+This bundle lets you refit the app's MML/GPCM analysis in R (TAM, sirt, mirt) and
+cross-check the estimates. **Exact numerical equality is NOT claimed** (the app
+runs standalone Python; it never calls these packages at runtime). The bar is
+rank-order, sign, and effect-ordering agreement — not matching logits or
+log-likelihoods.
+
+## Files
+- `data.csv` — the exact long response frame the app fitted: `Person`, each facet,
+  `Score`, `Weight`.
+- `settings.csv` — the fitted model: model (RSM/PCM/GPCM), method (MML/JMLE),
+  step/slope facet, facet names, identification (noncenter facet), population SD
+  setting, quadrature points, score range.
+- `app_person.csv` / `app_facets.csv` / `app_steps.csv` / `app_slopes.csv` — the
+  app's own person, facet, step, and (GPCM) slope estimates for side-by-side.
+- `run_tam_mirt_crosscheck.R` — refits with `TAM::tam.mml.mfr`, `sirt::rm.facets`,
+  and `mirt`, then prints estimates for comparison. It is a **template** —
+  adapt the facets design (`formulaA`, which facet is the rater) to your study.
+
+## Run
+```
+install.packages(c("TAM", "sirt", "mirt"))
+Rscript run_tam_mirt_crosscheck.R
+```
+
+## Why the numbers differ (expected sources)
+1. **Population variance.** The app's MML fixes the person SD by default, or
+   estimates it (the opt-in free-SD mode — see `estimate_population_sd` /
+   `estimated_population_sd` in settings.csv). TAM estimates the latent variance
+   by default. Person measures are on different metric scales unless the variance
+   handling is aligned; compare rank order, not raw logits.
+2. **Identification / centering.** The app uses sum-to-zero centering on the
+   facets (non-centered facet recorded in settings); TAM/sirt use their own
+   defaults (often a fixed first level). Expect a constant shift / rotation, not
+   item-for-item equality.
+3. **GPCM slopes.** The app uses a bounded GPCM slope facet with a geometric-mean
+   slope identification; mirt's `gpcm` is item-level with free slopes. Treat mirt
+   as item-level corroboration, not a facet-level match.
+4. **Rater mediation.** sirt's `rm.facets` is the closest analog (a rater-facet
+   model). mirt is item-level, so the R script collapses raters to a mean score
+   per person x item and rounds — that aggregation/rounding alone shifts results.
+5. **Estimator / quadrature.** MML EM vs the package optimizer, quadrature point
+   counts, and scoring conventions differ.
+
+## What to compare
+Per facet/item: (a) the same sign and ordering of difficulties/severities,
+(b) rank correlation of person measures > ~0.95, (c) the same fit outliers.
+A logit-by-logit diff is the wrong test; report a cross-check only when the
+model, constraints, quadrature, and scoring conventions are aligned (see the
+app's "Cross-package equivalence" boundary). Disagreement beyond ~0.05 logits or
+a rank correlation below ~0.95 warrants inspecting the identification and
+variance-handling alignment first.
+'''
+
+
+def build_cross_engine_validation_bundle(result: dict) -> dict:
+    """Build a TAM/sirt/mirt R cross-engine validation bundle from a fitted result.
+
+    Ships the exact data, the fitted settings, and the app's own estimates so the
+    researcher can refit in R and cross-check. Reproducibility artifact only —
+    TAM/sirt/mirt are NOT app dependencies; exact numerical parity is not claimed.
+    Returns {filename: bytes-or-text} for cached_mixed_asset_zip, or {} when there
+    is no usable fitted result.
+    """
+    if not isinstance(result, dict):
+        return {}
+    prep = result.get("prep", {})
+    config = result.get("config", {})
+    data = prep.get("data") if isinstance(prep, dict) else None
+    if not isinstance(data, pd.DataFrame) or data.empty:
+        return {}
+    facet_names = [str(f) for f in (config.get("facet_names") or [])]
+    keep_cols = (["Person"]
+                 + [c for c in facet_names if c in data.columns]
+                 + [c for c in ("Score", "Weight") if c in data.columns])
+    out: dict = {"data.csv": to_csv_bytes(data[keep_cols].copy())}
+    settings_row = {
+        "model": config.get("model"),
+        "method": config.get("method"),
+        "step_facet": config.get("step_facet"),
+        "slope_facet": config.get("slope_facet"),
+        "facet_names": ";".join(facet_names),
+        "noncenter_facet": config.get("noncenter_facet"),
+        "dummy_facets": ";".join(str(x) for x in (config.get("dummy_facets") or [])),
+        "population_prior_sd": config.get("population_prior_sd"),
+        "estimate_population_sd": bool(config.get("estimate_population_sd")),
+        "estimated_population_sd": config.get("estimated_population_sd"),
+        "quad_points": config.get("quad_points"),
+        "rating_min": prep.get("rating_min") if isinstance(prep, dict) else None,
+        "rating_max": prep.get("rating_max") if isinstance(prep, dict) else None,
+    }
+    out["settings.csv"] = to_csv_bytes(pd.DataFrame([settings_row]))
+    facets = result.get("facets", {})
+    if isinstance(facets, dict):
+        for fname, key in (("person", "app_person.csv"), ("others", "app_facets.csv")):
+            tbl = facets.get(fname)
+            if isinstance(tbl, pd.DataFrame) and not tbl.empty:
+                out[key] = to_csv_bytes(tbl)
+    for rkey, fname in (("steps", "app_steps.csv"), ("slopes", "app_slopes.csv")):
+        tbl = result.get(rkey)
+        if isinstance(tbl, pd.DataFrame) and not tbl.empty:
+            out[fname] = to_csv_bytes(tbl)
+    out["run_tam_mirt_crosscheck.R"] = _CROSS_ENGINE_R_SCRIPT
+    out["README_cross_engine.md"] = _CROSS_ENGINE_README
+    return out
+
+
 def safe_cor(x, y, w=None):
     ok = np.isfinite(x) & np.isfinite(y)
     if w is None:
@@ -15698,6 +17730,1342 @@ def calc_interrater_agreement(obs_df, facet_cols, rater_facet, res=None):
     })
 
     return {"summary": summary_tbl, "pairs": pair_tbl}
+
+
+KRIPPENDORFF_ALPHA_METRICS: tuple[str, ...] = ("ordinal", "nominal", "interval")
+
+
+def _agreement_score_wide(
+    obs_df: pd.DataFrame,
+    facet_cols: list[str],
+    target_facet: str,
+) -> tuple[pd.DataFrame, dict[str, object]]:
+    """Return unit-by-element score matrix for agreement-style diagnostics."""
+    meta: dict[str, object] = {
+        "TargetFacet": target_facet,
+        "ContextColumns": "",
+        "Aggregation": "mean",
+        "RowsUsed": 0,
+    }
+    if obs_df is None or obs_df.empty or target_facet not in obs_df.columns:
+        return pd.DataFrame(), meta
+    available_facets = [c for c in facet_cols if c in obs_df.columns]
+    context_cols = [c for c in available_facets if c != target_facet]
+    if not context_cols:
+        return pd.DataFrame(), meta
+
+    df = obs_df.copy()
+    if "Observed" not in df.columns:
+        return pd.DataFrame(), meta
+    df["_context"] = df[context_cols].astype(str).agg("|".join, axis=1)
+    df["_score_for_agreement"] = pd.to_numeric(df["Observed"], errors="coerce")
+    base_cols = ["_context", target_facet, "_score_for_agreement"]
+    if "Weight" in df.columns:
+        base_cols.append("Weight")
+    df = df[base_cols].dropna(subset=["_score_for_agreement", target_facet]).copy()
+    if df.empty:
+        return pd.DataFrame(), meta
+
+    if "Weight" in df.columns:
+        df["Weight"] = pd.to_numeric(df["Weight"], errors="coerce")
+        df = df.dropna(subset=["Weight"])
+        df = df[df["Weight"] > 0].copy()
+        if df.empty:
+            return pd.DataFrame(), meta
+        df["_weighted_score_for_agreement"] = df["_score_for_agreement"] * df["Weight"]
+        df_obs = (
+            df.groupby(["_context", target_facet], observed=True, as_index=False)
+            .agg(WeightedObserved=("_weighted_score_for_agreement", "sum"), Weight=("Weight", "sum"))
+        )
+        df_obs["Score"] = np.where(
+            df_obs["Weight"].to_numpy(dtype=float) > 0,
+            df_obs["WeightedObserved"].to_numpy(dtype=float) / df_obs["Weight"].to_numpy(dtype=float),
+            np.nan,
+        )
+        meta["Aggregation"] = "weighted_mean"
+    else:
+        df_obs = (
+            df.groupby(["_context", target_facet], observed=True, as_index=False)
+            .agg(Score=("_score_for_agreement", "mean"))
+        )
+        meta["Aggregation"] = "mean"
+
+    wide = df_obs.pivot(index="_context", columns=target_facet, values="Score")
+    wide = wide.apply(pd.to_numeric, errors="coerce")
+    meta["ContextColumns"] = "; ".join(context_cols)
+    meta["RowsUsed"] = int(len(df))
+    return wide, meta
+
+
+def _krippendorff_alpha_status(alpha_value: float) -> tuple[str, str]:
+    if not np.isfinite(alpha_value):
+        return (
+            "Unavailable",
+            "Alpha could not be estimated from the shared contexts in this run.",
+        )
+    if alpha_value >= 0.80:
+        return (
+            "Ready",
+            "High agreement for this selected facet under the chosen distance metric.",
+        )
+    if alpha_value >= 0.67:
+        return (
+            "Caution",
+            "Moderate agreement; usable for some summaries, but inspect pairwise patterns and MFRM fit.",
+        )
+    return (
+        "Review",
+        "Low agreement; inspect scoring design, facet fit, category functioning, and possible rater or task drift.",
+    )
+
+
+def _krippendorff_ordinal_distance_matrix(values: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    categories, counts = np.unique(values, return_counts=True)
+    order = np.argsort(categories)
+    categories = categories[order]
+    counts = counts[order].astype(float)
+    n_cat = len(categories)
+    dist = np.zeros((n_cat, n_cat), dtype=float)
+    if n_cat <= 1:
+        return categories, dist
+    for i in range(n_cat):
+        for j in range(i + 1, n_cat):
+            span = float(np.sum(counts[i:j + 1]) - 0.5 * (counts[i] + counts[j]))
+            dist[i, j] = span ** 2
+            dist[j, i] = dist[i, j]
+    return categories, dist
+
+
+def calc_krippendorff_alpha(
+    obs_df: pd.DataFrame,
+    facet_cols: list[str],
+    target_facet: str,
+    *,
+    metric: str = "ordinal",
+) -> dict[str, pd.DataFrame]:
+    """Compute an experimental Krippendorff alpha table for one selected facet."""
+    metric = str(metric or "ordinal").lower()
+    if metric not in KRIPPENDORFF_ALPHA_METRICS:
+        metric = "ordinal"
+    wide, meta = _agreement_score_wide(obs_df, facet_cols, target_facet)
+    empty_summary = pd.DataFrame(columns=[
+        "Facet", "DistanceMetric", "KrippendorffAlpha", "Status", "PlainLanguage",
+        "Units", "Elements", "PairableUnits", "RatingsUsed", "MissingCells",
+        "UnitsWithSingleRating", "ObservedDisagreement", "ExpectedDisagreement", "ContextColumns",
+        "Aggregation", "Caveat",
+    ])
+    if wide.empty or wide.shape[1] < 2:
+        return {"summary": empty_summary, "coverage": pd.DataFrame()}
+
+    pairable_values: list[float] = []
+    observed_num = 0.0
+    pairable_units = 0
+    units_with_single_rating = 0
+
+    for _, row in wide.iterrows():
+        vals = pd.to_numeric(row, errors="coerce").dropna().to_numpy(dtype=float)
+        m = len(vals)
+        if m < 2:
+            if m == 1:
+                units_with_single_rating += 1
+            continue
+        pairable_units += 1
+        pairable_values.extend(float(v) for v in vals)
+        if metric == "nominal":
+            diff = vals[:, None] != vals[None, :]
+            observed_num += float(diff.sum()) / float(m - 1)
+        elif metric == "interval":
+            delta = (vals[:, None] - vals[None, :]) ** 2
+            observed_num += float(delta.sum()) / float(m - 1)
+        else:
+            # Ordinal distances are data-dependent, so compute after the
+            # pairable marginal categories are known. Store raw values here.
+            continue
+
+    values = np.asarray(pairable_values, dtype=float)
+    ratings_used = int(len(values))
+    units = int(wide.shape[0])
+    elements = int(wide.shape[1])
+    missing_cells = int(wide.isna().sum().sum())
+    caveat = (
+        "Experimental agreement screen. It complements MFRM fit/reliability; "
+        "it does not replace model-based severity, bias, or category diagnostics."
+    )
+    if ratings_used < 2 or pairable_units < 1:
+        status, plain = _krippendorff_alpha_status(np.nan)
+        summary = pd.DataFrame([{
+            "Facet": target_facet,
+            "DistanceMetric": metric,
+            "KrippendorffAlpha": np.nan,
+            "Status": status,
+            "PlainLanguage": plain,
+            "Units": units,
+            "Elements": elements,
+            "PairableUnits": pairable_units,
+            "UnitsWithSingleRating": units_with_single_rating,
+            "RatingsUsed": ratings_used,
+            "MissingCells": missing_cells,
+            "ObservedDisagreement": np.nan,
+            "ExpectedDisagreement": np.nan,
+            "ContextColumns": meta.get("ContextColumns", ""),
+            "Aggregation": meta.get("Aggregation", "mean"),
+            "Caveat": caveat,
+        }])
+        return {"summary": summary, "coverage": pd.DataFrame()}
+
+    if metric == "ordinal":
+        categories, dist = _krippendorff_ordinal_distance_matrix(values)
+        cat_index = {float(cat): idx for idx, cat in enumerate(categories)}
+        observed_num = 0.0
+        for _, row in wide.iterrows():
+            vals = pd.to_numeric(row, errors="coerce").dropna().to_numpy(dtype=float)
+            m = len(vals)
+            if m < 2:
+                continue
+            idx = [cat_index[float(v)] for v in vals]
+            observed_num += float(dist[np.ix_(idx, idx)].sum()) / float(m - 1)
+        counts = np.array([np.sum(values == cat) for cat in categories], dtype=float)
+        expected_num = float((counts[:, None] * counts[None, :] * dist).sum())
+    elif metric == "nominal":
+        _, counts = np.unique(values, return_counts=True)
+        counts = counts.astype(float)
+        expected_num = float(values.size ** 2 - np.sum(counts ** 2))
+    else:
+        mean_value = float(np.mean(values))
+        expected_num = float(2.0 * values.size * np.sum((values - mean_value) ** 2))
+
+    observed_disagreement = float(observed_num / ratings_used) if ratings_used else np.nan
+    expected_disagreement = (
+        float(expected_num / (ratings_used * (ratings_used - 1)))
+        if ratings_used > 1 else np.nan
+    )
+    alpha_value = (
+        float(1.0 - observed_disagreement / expected_disagreement)
+        if np.isfinite(observed_disagreement)
+        and np.isfinite(expected_disagreement)
+        and expected_disagreement > 0
+        else np.nan
+    )
+    status, plain = _krippendorff_alpha_status(alpha_value)
+
+    coverage_rows = []
+    for col in wide.columns:
+        vals = pd.to_numeric(wide[col], errors="coerce").dropna()
+        coverage_rows.append({
+            "Facet": target_facet,
+            "Element": col,
+            "Ratings": int(len(vals)),
+            "MeanScore": float(vals.mean()) if len(vals) else np.nan,
+            "MissingUnits": int(wide[col].isna().sum()),
+        })
+
+    summary = pd.DataFrame([{
+        "Facet": target_facet,
+        "DistanceMetric": metric,
+        "KrippendorffAlpha": alpha_value,
+        "Status": status,
+        "PlainLanguage": plain,
+        "Units": units,
+        "Elements": elements,
+        "PairableUnits": pairable_units,
+        "UnitsWithSingleRating": units_with_single_rating,
+        "RatingsUsed": ratings_used,
+        "MissingCells": missing_cells,
+        "ObservedDisagreement": observed_disagreement,
+        "ExpectedDisagreement": expected_disagreement,
+        "ContextColumns": meta.get("ContextColumns", ""),
+        "Aggregation": meta.get("Aggregation", "mean"),
+        "Caveat": caveat,
+    }])
+    return {"summary": summary, "coverage": pd.DataFrame(coverage_rows)}
+
+
+def calc_krippendorff_alpha_by_facet(
+    obs_df: pd.DataFrame,
+    facet_cols: list[str],
+    *,
+    metrics: tuple[str, ...] = KRIPPENDORFF_ALPHA_METRICS,
+) -> pd.DataFrame:
+    """Compute experimental Krippendorff alpha summaries for each non-person facet."""
+    rows: list[pd.DataFrame] = []
+    target_facets = [facet for facet in facet_cols if facet != "Person"]
+    for facet in target_facets:
+        for metric in metrics:
+            result = calc_krippendorff_alpha(obs_df, facet_cols, facet, metric=metric)
+            summary = result.get("summary", pd.DataFrame())
+            if isinstance(summary, pd.DataFrame) and not summary.empty:
+                rows.append(summary)
+    if not rows:
+        return pd.DataFrame()
+    return pd.concat(rows, ignore_index=True)
+
+
+QC_DECISION_STATUS_ORDER: dict[str, int] = {
+    "Ready": 0,
+    "OK": 0,
+    "Caution": 1,
+    "Missing evidence": 2,
+    "Missing": 2,
+    "Unavailable": 2,
+    "Review": 3,
+    "Review before reporting": 3,
+    "Do not claim yet": 4,
+}
+
+
+def _qc_status_rank(status: object) -> int:
+    text = str(status or "").strip()
+    if text in QC_DECISION_STATUS_ORDER:
+        return QC_DECISION_STATUS_ORDER[text]
+    low = text.lower()
+    if "do not" in low:
+        return 4
+    if "review" in low:
+        return 3
+    if "missing" in low or "unavailable" in low:
+        return 2
+    if "caution" in low:
+        return 1
+    return 0
+
+
+def _qc_worst_status(statuses: Iterable[object]) -> str:
+    normalized = [str(s or "Ready") for s in statuses]
+    if not normalized:
+        return "Missing evidence"
+    return max(normalized, key=_qc_status_rank)
+
+
+def _format_qc_pct(value: object) -> str:
+    val = pd.to_numeric(pd.Series([value]), errors="coerce").iloc[0]
+    if np.isfinite(val):
+        return f"{float(val) * 100:.1f}%"
+    return "not available"
+
+
+def _format_qc_number(value: object, digits: int = 3) -> str:
+    val = pd.to_numeric(pd.Series([value]), errors="coerce").iloc[0]
+    if np.isfinite(val):
+        return f"{float(val):.{digits}f}"
+    return "not available"
+
+
+def _qc_report_blocking(status: object) -> str:
+    rank = _qc_status_rank(status)
+    if rank >= 2:
+        return "Yes"
+    if rank == 1:
+        return "Caveat"
+    return "No"
+
+
+def _qc_priority_from_status(status: object) -> str:
+    rank = _qc_status_rank(status)
+    if rank >= 3:
+        return "High"
+    if rank == 2:
+        return "Medium"
+    if rank == 1:
+        return "Low"
+    return "Routine"
+
+
+def _result_facet_names(result: dict, diagnostics: dict | None = None, facet_cols: list[str] | None = None) -> list[str]:
+    candidates: list[object] = []
+    if facet_cols:
+        candidates.extend(facet_cols)
+    if isinstance(result, dict):
+        candidates.extend(result.get("config", {}).get("facet_names", []) or [])
+    obs_df = diagnostics.get("obs") if isinstance(diagnostics, dict) else pd.DataFrame()
+    if isinstance(obs_df, pd.DataFrame) and not obs_df.empty:
+        candidates.extend([c for c in obs_df.columns if c not in {"Observed", "Score", "Weight"}])
+    out: list[str] = []
+    for value in candidates:
+        name = str(value)
+        if not name or name == "Person" or name in out:
+            continue
+        out.append(name)
+    return out
+
+
+def _infer_facet_by_role(
+    result: dict,
+    diagnostics: dict,
+    facet_cols: list[str] | None,
+    role: str,
+) -> str | None:
+    facets = _result_facet_names(result, diagnostics, facet_cols)
+    if not facets:
+        return None
+    role = str(role or "").lower()
+    patterns = list(_COLUMN_ROLE_PATTERNS.get(role, ()))
+    if role == "criterion":
+        patterns.extend(["domain", "trait", "scale", "aspect", "基準"])
+    if role == "rater":
+        patterns.extend(["reader", "assessor"])
+    lowered = {facet: str(facet).lower() for facet in facets}
+    for pattern in patterns:
+        p = str(pattern).lower()
+        for facet, low in lowered.items():
+            if low == p:
+                return facet
+    for pattern in patterns:
+        p = str(pattern).lower()
+        for facet, low in lowered.items():
+            if p and p in low:
+                return facet
+    return facets[0]
+
+
+def _agreement_summary_for_facet(result: dict, diagnostics: dict, facet_cols: list[str], target_facet: str | None) -> pd.DataFrame:
+    obs_df = diagnostics.get("obs", pd.DataFrame()) if isinstance(diagnostics, dict) else pd.DataFrame()
+    if not isinstance(obs_df, pd.DataFrame) or obs_df.empty or not target_facet:
+        return pd.DataFrame()
+    all_facet_cols = ["Person"] + [facet for facet in facet_cols if facet != "Person"]
+    try:
+        agreement = calc_interrater_agreement(obs_df, all_facet_cols, target_facet, res=result)
+    except Exception:
+        return pd.DataFrame()
+    summary = agreement.get("summary", pd.DataFrame()) if isinstance(agreement, dict) else pd.DataFrame()
+    return summary if isinstance(summary, pd.DataFrame) else pd.DataFrame()
+
+
+def _ordinal_alpha_summary_for_facet(result: dict, diagnostics: dict, facet_cols: list[str], target_facet: str | None) -> pd.DataFrame:
+    if not target_facet:
+        return pd.DataFrame()
+    alpha_tbl = diagnostics.get("krippendorff_alpha", pd.DataFrame()) if isinstance(diagnostics, dict) else pd.DataFrame()
+    if isinstance(alpha_tbl, pd.DataFrame) and not alpha_tbl.empty:
+        sub = alpha_tbl.loc[
+            (alpha_tbl.get("Facet", pd.Series(dtype=object)).astype(str) == str(target_facet))
+            & (alpha_tbl.get("DistanceMetric", pd.Series(dtype=object)).astype(str).str.lower() == "ordinal")
+        ].copy()
+        if not sub.empty:
+            return sub.head(1)
+    obs_df = diagnostics.get("obs", pd.DataFrame()) if isinstance(diagnostics, dict) else pd.DataFrame()
+    if not isinstance(obs_df, pd.DataFrame) or obs_df.empty:
+        return pd.DataFrame()
+    try:
+        out = calc_krippendorff_alpha(obs_df, ["Person"] + [f for f in facet_cols if f != "Person"], target_facet, metric="ordinal")
+    except Exception:
+        return pd.DataFrame()
+    summary = out.get("summary", pd.DataFrame()) if isinstance(out, dict) else pd.DataFrame()
+    return summary if isinstance(summary, pd.DataFrame) else pd.DataFrame()
+
+
+def _facet_fit_review_summary(diagnostics: dict, target_facet: str | None) -> tuple[str, str, str]:
+    if not target_facet or not isinstance(diagnostics, dict):
+        return "Missing evidence", "rater facet not identified", "Confirm the rater facet before interpreting rater fit."
+    fit_tbl = diagnostics.get("fit", pd.DataFrame())
+    if not isinstance(fit_tbl, pd.DataFrame) or fit_tbl.empty:
+        fit_tbl = diagnostics.get("measures", pd.DataFrame())
+    if not isinstance(fit_tbl, pd.DataFrame) or fit_tbl.empty:
+        return "Missing evidence", "fit table unavailable", "Run element fit diagnostics before final scoring-quality claims."
+    if "Facet" in fit_tbl.columns:
+        sub = fit_tbl.loc[fit_tbl["Facet"].astype(str) == str(target_facet)].copy()
+    else:
+        sub = fit_tbl.copy()
+    if sub.empty:
+        return "Missing evidence", f"no fit rows for {target_facet}", "Check whether the selected facet is represented in the fit table."
+
+    flags = pd.Series(False, index=sub.index)
+    evidence: list[str] = []
+    for col in ("Infit", "Outfit"):
+        if col in sub.columns:
+            vals = pd.to_numeric(sub[col], errors="coerce")
+            bad = vals.notna() & ((vals < 0.5) | (vals > 1.5))
+            flags = flags | bad
+            if bool(bad.any()):
+                evidence.append(f"{col} outside 0.5-1.5 for {int(bad.sum())} element(s)")
+    for col in ("InfitZSTD", "OutfitZSTD", "InfitZStd", "OutfitZStd"):
+        if col in sub.columns:
+            vals = pd.to_numeric(sub[col], errors="coerce")
+            bad = vals.abs() >= 2.0
+            flags = flags | bad.fillna(False)
+            if bool(bad.any()):
+                evidence.append(f"|{col}| >= 2 for {int(bad.sum())} element(s)")
+    flagged_levels = "none"
+    if bool(flags.any()):
+        level_col = "Level" if "Level" in sub.columns else sub.columns[0]
+        flagged_levels = _compact_value_list(sub.loc[flags, level_col].tolist(), max_items=8)
+        return (
+            "Review",
+            f"{'; '.join(evidence)}; flagged elements: {flagged_levels}",
+            "Use this to target rater training or moderation, then rerun the model after documented remediation.",
+        )
+    return (
+        "Ready",
+        f"{len(sub)} {target_facet} element(s) checked; no Infit/Outfit or ZSTD review flags under conservative bands",
+        "Report rater fit together with agreement evidence; keep the fit bands visible for auditability.",
+    )
+
+
+def _scoring_decision_rule(area: object) -> str:
+    rules = {
+        "Overall scoring consistency": "Worst status across agreement, alpha, rater fit, and category-functioning rows.",
+        "Exact/adjacent agreement": "Ready if exact agreement >= 70% and adjacent agreement >= 85%; Caution if adjacent agreement >= 75%; Review otherwise.",
+        "Krippendorff alpha": "Ready if ordinal alpha >= .80; Caution if .67 <= alpha < .80; Review if alpha < .67; Missing evidence if not estimable.",
+        "Rater fit/severity": "Ready when no selected-facet elements are outside Infit/Outfit 0.5-1.5 and no |ZSTD| >= 2 flags are present.",
+        "Rubric/category functioning": "Uses the integrated rating-scale decision table: category counts, average measures, thresholds, curves, and fit.",
+        "Category collapse readiness": "Review means adjacent-category sensitivity analysis is justified only if rubric logic also supports it.",
+    }
+    return rules.get(str(area), "Conservative evidence rule; inspect the listed evidence file before reporting.")
+
+
+def _scoring_plain_language(area: object, status: object) -> str:
+    area = str(area)
+    status = str(status)
+    if area == "Overall scoring consistency":
+        if _qc_status_rank(status) <= 1:
+            return "The scoring-quality claim can be drafted, with caveats matched to the evidence rows."
+        return "The report should pause here until the blocking evidence rows are resolved or explicitly caveated."
+    if area == "Exact/adjacent agreement":
+        return "This is the easiest agreement evidence for scoring managers to audit."
+    if area == "Krippendorff alpha":
+        return "This summarizes shared-context agreement across raters/elements, but it is not MFRM reliability."
+    if area == "Rater fit/severity":
+        return "This is the FACETS-familiar check for whether rater behavior is model-consistent."
+    if area == "Rubric/category functioning":
+        return "This checks whether the score categories can support the intended rubric interpretation."
+    if area == "Category collapse readiness":
+        return "This keeps recoding as a documented sensitivity analysis rather than a hidden repair."
+    return "Use this row to decide whether the related manuscript claim is ready."
+
+
+def _scoring_next_checkpoint(area: object, status: object) -> str:
+    area = str(area)
+    status = str(status)
+    if _qc_status_rank(status) <= 1:
+        if area == "Overall scoring consistency":
+            return "Copy only claims whose supporting rows are Ready or Caution."
+        return "Archive the evidence file and keep the safe wording visible in the manuscript notes."
+    if area == "Exact/adjacent agreement":
+        return "Open agreement_pairs.csv, identify the worst pair(s), and check whether the disagreement is localized."
+    if area == "Krippendorff alpha":
+        return "Check pairable-unit coverage and compare ordinal alpha with exact/adjacent agreement."
+    if area == "Rater fit/severity":
+        return "Inspect flagged rater rows, conduct training/moderation if needed, and rerun diagnostics."
+    if area == "Rubric/category functioning":
+        return "Open rating-scale decision support and category curves before revising rubric wording."
+    if area == "Category collapse readiness":
+        return "Plan original-vs-collapsed sensitivity runs only for adjacent categories with substantive justification."
+    return "Resolve this evidence row before final manuscript wording."
+
+
+def _scoring_facets_crosswalk(area: object) -> str:
+    crosswalk = {
+        "Overall scoring consistency": "FACETS-style synthesis of agreement, fit, and category evidence.",
+        "Exact/adjacent agreement": "FACETS Table 8-style agreement screen.",
+        "Krippendorff alpha": "Agreement supplement to Table 8; not a FACETS replacement statistic.",
+        "Rater fit/severity": "FACETS measurement report: rater measures, Infit/Outfit, ZSTD.",
+        "Rubric/category functioning": "FACETS Categories/Steps: category counts, averages, thresholds, and curves.",
+        "Category collapse readiness": "FACETS-style recoding review after category/step evidence.",
+    }
+    return crosswalk.get(str(area), "FACETS-style diagnostic evidence.")
+
+
+def _scoring_primary_audience(area: object) -> str:
+    audiences = {
+        "Overall scoring consistency": "Paper author; scoring manager",
+        "Exact/adjacent agreement": "Scoring manager; non-specialist reviewer",
+        "Krippendorff alpha": "Paper author; measurement practitioner",
+        "Rater fit/severity": "Measurement practitioner; scoring manager",
+        "Rubric/category functioning": "Rubric owner; measurement practitioner",
+        "Category collapse readiness": "Rubric owner; paper author",
+    }
+    return audiences.get(str(area), "Paper author")
+
+
+def _refine_scoring_decision_table(table: pd.DataFrame) -> pd.DataFrame:
+    if not isinstance(table, pd.DataFrame) or table.empty:
+        return pd.DataFrame()
+    out = table.copy()
+    out["SeverityRank"] = out["Status"].apply(_qc_status_rank)
+    out["ReportBlocking"] = out["Status"].apply(_qc_report_blocking)
+    out["Priority"] = out["Status"].apply(_qc_priority_from_status)
+    out["DecisionRule"] = out["DecisionArea"].apply(_scoring_decision_rule)
+    out["PlainLanguageSummary"] = [
+        _scoring_plain_language(area, status)
+        for area, status in zip(out["DecisionArea"], out["Status"])
+    ]
+    out["NextCheckpoint"] = [
+        _scoring_next_checkpoint(area, status)
+        for area, status in zip(out["DecisionArea"], out["Status"])
+    ]
+    out["FACETSCrosswalk"] = out["DecisionArea"].apply(_scoring_facets_crosswalk)
+    out["PrimaryAudience"] = out["DecisionArea"].apply(_scoring_primary_audience)
+    preferred = [
+        "DecisionArea", "Status", "ReportBlocking", "Priority", "SeverityRank",
+        "PlainLanguageSummary", "PrimaryEvidence", "DecisionRule", "Interpretation",
+        "RecommendedAction", "NextCheckpoint", "APAReporting", "FACETSCrosswalk",
+        "PrimaryAudience", "EvidenceFile", "DoNotClaim",
+    ]
+    return out.loc[:, [col for col in preferred if col in out.columns]]
+
+
+def build_krippendorff_alpha_interpretation(
+    result: dict,
+    diagnostics: dict,
+    facet_cols: list[str] | None = None,
+) -> pd.DataFrame:
+    """Add reporting guidance to the experimental Krippendorff alpha table."""
+    facets = _result_facet_names(result, diagnostics, facet_cols)
+    alpha_tbl = diagnostics.get("krippendorff_alpha", pd.DataFrame()) if isinstance(diagnostics, dict) else pd.DataFrame()
+    if (not isinstance(alpha_tbl, pd.DataFrame) or alpha_tbl.empty) and isinstance(diagnostics, dict):
+        obs_df = diagnostics.get("obs", pd.DataFrame())
+        if isinstance(obs_df, pd.DataFrame) and not obs_df.empty and facets:
+            alpha_tbl = calc_krippendorff_alpha_by_facet(obs_df, ["Person"] + facets)
+    if not isinstance(alpha_tbl, pd.DataFrame) or alpha_tbl.empty:
+        return pd.DataFrame([{
+            "Facet": "",
+            "DistanceMetric": "ordinal",
+            "KrippendorffAlpha": np.nan,
+            "Status": "Missing evidence",
+            "PlainLanguage": "Krippendorff alpha was not available from the current shared-context design.",
+            "RecommendedAction": "Confirm that at least two elements score the same persons/items/criteria before using alpha.",
+            "ReportWording": "Krippendorff's alpha was not estimated because the shared-context requirement was not met.",
+            "DoNotClaim": "Do not report alpha or general inter-element consistency without shared-context evidence.",
+            "EvidenceFile": "krippendorff_alpha_experimental.csv",
+        }])
+
+    rows = []
+    for _, row in alpha_tbl.iterrows():
+        status = str(row.get("Status", "Missing evidence"))
+        alpha = pd.to_numeric(pd.Series([row.get("KrippendorffAlpha")]), errors="coerce").iloc[0]
+        metric = str(row.get("DistanceMetric", "ordinal"))
+        facet = str(row.get("Facet", ""))
+        if status == "Ready":
+            action = "Use as supporting agreement evidence; still report MFRM rater fit and category diagnostics."
+            wording = f"For {facet}, Krippendorff's alpha ({metric}) was {_format_qc_number(alpha)}, indicating high shared-context agreement."
+            do_not = "Do not present alpha as a replacement for MFRM reliability, severity, bias, or category diagnostics."
+        elif status == "Caution":
+            action = "Inspect pairwise agreement, rater fit, and category functioning before making strong scoring-quality claims."
+            wording = f"For {facet}, Krippendorff's alpha ({metric}) was {_format_qc_number(alpha)}, suggesting moderate agreement that should be interpreted with other diagnostics."
+            do_not = "Do not claim uniformly high agreement from alpha alone."
+        elif status == "Review":
+            action = "Prioritize scoring-design review, rater training, rubric clarification, or category sensitivity analysis before final reporting."
+            wording = f"For {facet}, Krippendorff's alpha ({metric}) was {_format_qc_number(alpha)}, indicating that agreement evidence requires review."
+            do_not = "Do not claim acceptable agreement until the source of disagreement is investigated and rerun evidence is documented."
+        else:
+            action = "Confirm shared scoring contexts and rerun the agreement panel."
+            wording = f"For {facet}, Krippendorff's alpha ({metric}) was not available."
+            do_not = "Do not report alpha when the design does not provide pairable shared contexts."
+        rows.append({
+            "Facet": facet,
+            "DistanceMetric": metric,
+            "KrippendorffAlpha": alpha,
+            "Status": status,
+            "PlainLanguage": str(row.get("PlainLanguage", "")),
+            "RecommendedAction": action,
+            "ReportWording": wording,
+            "DoNotClaim": do_not,
+            "EvidenceFile": "krippendorff_alpha_experimental.csv",
+        })
+    return pd.DataFrame(rows)
+
+
+def build_scoring_consistency_decision(
+    result: dict,
+    diagnostics: dict,
+    facet_cols: list[str] | None = None,
+    *,
+    rater_facet: str | None = None,
+    criterion_facet: str | None = None,
+) -> pd.DataFrame:
+    """Create a conservative QC decision table for scoring consistency."""
+    facets = _result_facet_names(result, diagnostics, facet_cols)
+    rater_facet = rater_facet or _infer_facet_by_role(result, diagnostics, facets, "rater")
+    criterion_facet = criterion_facet or _infer_facet_by_role(result, diagnostics, facets, "criterion")
+    rows: list[dict[str, str]] = []
+
+    agreement_summary = _agreement_summary_for_facet(result, diagnostics, facets, rater_facet)
+    if isinstance(agreement_summary, pd.DataFrame) and not agreement_summary.empty:
+        row = agreement_summary.iloc[0]
+        exact = pd.to_numeric(pd.Series([row.get("ExactAgreement")]), errors="coerce").iloc[0]
+        adjacent = pd.to_numeric(pd.Series([row.get("AdjacentAgreement")]), errors="coerce").iloc[0]
+        contexts = row.get("Contexts", "not available")
+        if np.isfinite(exact) and np.isfinite(adjacent):
+            status = "Ready" if exact >= 0.70 and adjacent >= 0.85 else ("Caution" if adjacent >= 0.75 else "Review")
+            evidence = f"exact = {_format_qc_pct(exact)}; adjacent = {_format_qc_pct(adjacent)}; shared contexts = {contexts}"
+        else:
+            status = "Missing evidence"
+            evidence = f"exact/adjacent agreement unavailable; shared contexts = {contexts}"
+    else:
+        status = "Missing evidence"
+        evidence = f"agreement summary unavailable for {rater_facet or 'selected facet'}"
+    rows.append({
+        "DecisionArea": "Exact/adjacent agreement",
+        "Status": status,
+        "PrimaryEvidence": evidence,
+        "Interpretation": "Shared-context agreement is the most intuitive check for scoring consistency.",
+        "RecommendedAction": (
+            "Use as report-ready supporting evidence."
+            if status == "Ready" else
+            "Inspect pairwise rows and scoring design before making strong agreement claims."
+        ),
+        "APAReporting": (
+            "Report exact and adjacent agreement percentages for the rater facet."
+            if status != "Missing evidence" else
+            "State that exact/adjacent agreement was not estimable from the current shared-context design."
+        ),
+        "EvidenceFile": "agreement_summary.csv; agreement_pairs.csv",
+        "DoNotClaim": "Do not infer agreement for raters who did not score common persons/items/criteria.",
+    })
+
+    alpha_summary = _ordinal_alpha_summary_for_facet(result, diagnostics, facets, rater_facet)
+    if isinstance(alpha_summary, pd.DataFrame) and not alpha_summary.empty:
+        alpha_row = alpha_summary.iloc[0]
+        alpha_status = str(alpha_row.get("Status", "Missing evidence"))
+        alpha_value = alpha_row.get("KrippendorffAlpha", np.nan)
+        alpha_evidence = (
+            f"ordinal alpha = {_format_qc_number(alpha_value)}; pairable units = "
+            f"{alpha_row.get('PairableUnits', 'not available')}; elements = {alpha_row.get('Elements', 'not available')}"
+        )
+        alpha_action = str(alpha_row.get("PlainLanguage", "Read with pairwise agreement and MFRM diagnostics."))
+    else:
+        alpha_status = "Missing evidence"
+        alpha_evidence = "ordinal Krippendorff alpha unavailable"
+        alpha_action = "Confirm at least two raters scored the same shared contexts."
+    rows.append({
+        "DecisionArea": "Krippendorff alpha",
+        "Status": alpha_status if alpha_status in {"Ready", "Caution", "Review"} else "Missing evidence",
+        "PrimaryEvidence": alpha_evidence,
+        "Interpretation": "Alpha summarizes agreement across all pairable scoring contexts while respecting ordered categories.",
+        "RecommendedAction": alpha_action,
+        "APAReporting": "Report ordinal alpha as an agreement check, not as MFRM reliability.",
+        "EvidenceFile": "krippendorff_alpha_experimental.csv; krippendorff_alpha_interpretation.csv",
+        "DoNotClaim": "Do not use alpha alone to identify a specific problematic rater or rubric category.",
+    })
+
+    fit_status, fit_evidence, fit_action = _facet_fit_review_summary(diagnostics, rater_facet)
+    rows.append({
+        "DecisionArea": "Rater fit/severity",
+        "Status": fit_status,
+        "PrimaryEvidence": fit_evidence,
+        "Interpretation": "MFRM fit and severity locate whether scoring behavior is model-consistent after accounting for other facets.",
+        "RecommendedAction": fit_action,
+        "APAReporting": "Report rater fit/severity evidence together with agreement so FACETS users can audit the scoring-quality claim.",
+        "EvidenceFile": "fit_statistics.csv; measures.csv",
+        "DoNotClaim": "Do not treat high agreement as sufficient when rater fit or severity evidence is flagged.",
+    })
+
+    try:
+        category_decisions = rating_scale_decision_support_table(result, diagnostics)
+    except Exception:
+        category_decisions = pd.DataFrame()
+    if isinstance(category_decisions, pd.DataFrame) and not category_decisions.empty:
+        category_overall = category_decisions.iloc[0]
+        cat_status_raw = str(category_overall.get(
+            "DecisionStatus",
+            category_overall.get("Decision", category_overall.get("Status", "Missing evidence")),
+        ))
+        cat_status = "Review" if "Do not" in cat_status_raw or "Review" in cat_status_raw else ("Missing evidence" if "Missing" in cat_status_raw else "Ready")
+        cat_evidence = str(category_overall.get(
+            "PrimaryEvidence",
+            category_overall.get("Evidence", category_overall.get("TriggerEvidence", "")),
+        ))
+        cat_action = str(category_overall.get(
+            "RecommendedAction",
+            category_overall.get("Action", ""),
+        ))
+    else:
+        cat_status = "Missing evidence"
+        cat_evidence = "rating-scale decision support unavailable"
+        cat_action = "Run category counts, threshold order, and category curve diagnostics."
+    rows.append({
+        "DecisionArea": "Rubric/category functioning",
+        "Status": cat_status,
+        "PrimaryEvidence": cat_evidence,
+        "Interpretation": "Scoring consistency is only useful if the rubric categories themselves function as ordered, distinct score levels.",
+        "RecommendedAction": cat_action,
+        "APAReporting": "Report category support, threshold order, and curve evidence before claiming that the rubric categories function distinctly.",
+        "EvidenceFile": "rating_scale_decision_support.csv; category_evidence.csv",
+        "DoNotClaim": "Do not report category distinctness or collapse categories from one diagnostic alone.",
+    })
+
+    collapse_status = "Review" if cat_status == "Review" else ("Missing evidence" if cat_status == "Missing evidence" else "Ready")
+    rows.append({
+        "DecisionArea": "Category collapse readiness",
+        "Status": collapse_status,
+        "PrimaryEvidence": (
+            "category diagnostics flagged review evidence"
+            if collapse_status == "Review" else
+            "category-collapse evidence incomplete"
+            if collapse_status == "Missing evidence" else
+            "no integrated category-collapse trigger in the current diagnostics"
+        ),
+        "Interpretation": "Category collapse should be treated as a planned sensitivity analysis, not an automatic repair.",
+        "RecommendedAction": (
+            "Compare original scoring against substantively justified adjacent-category recodes and rerun all diagnostics."
+            if collapse_status == "Review" else
+            "Retain original categories unless theory or response-process evidence justifies a sensitivity run."
+        ),
+        "APAReporting": "If recoding is evaluated, describe it as sensitivity analysis and report why the final scoring rule was selected.",
+        "EvidenceFile": "rating_scale_recode_candidates.csv; rating_scale_decision_support.csv",
+        "DoNotClaim": "Do not collapse categories solely to improve fit or agreement statistics.",
+    })
+
+    overall_status = _qc_worst_status([row["Status"] for row in rows])
+    overall_action = (
+        "Proceed with report-ready scoring-quality language while retaining diagnostic caveats."
+        if overall_status == "Ready" else
+        "Resolve review/missing evidence rows before making strong claims about scoring quality."
+    )
+    overall = {
+        "DecisionArea": "Overall scoring consistency",
+        "Status": overall_status,
+        "PrimaryEvidence": (
+            f"rater facet = {rater_facet or 'not identified'}; criterion facet = {criterion_facet or 'not identified'}; "
+            f"worst evidence status = {overall_status}"
+        ),
+        "Interpretation": "This row integrates agreement, MFRM rater evidence, and category-functioning evidence for scoring-quality decisions.",
+        "RecommendedAction": overall_action,
+        "APAReporting": "Use the APA draft only after matching each claim to the evidence files listed in this table.",
+        "EvidenceFile": "scoring_consistency_decision.csv",
+        "DoNotClaim": "Do not state that scoring is publication-ready if any key evidence row is Review or Missing evidence.",
+    }
+    decision_table = pd.concat([pd.DataFrame([overall]), pd.DataFrame(rows)], ignore_index=True)
+    return _refine_scoring_decision_table(decision_table)
+
+
+def build_quality_control_recommendations(
+    result: dict,
+    diagnostics: dict,
+    facet_cols: list[str] | None = None,
+    *,
+    rater_facet: str | None = None,
+    criterion_facet: str | None = None,
+) -> pd.DataFrame:
+    """Turn scoring-consistency evidence into action-oriented QC recommendations."""
+    decision = build_scoring_consistency_decision(
+        result,
+        diagnostics,
+        facet_cols,
+        rater_facet=rater_facet,
+        criterion_facet=criterion_facet,
+    )
+    if decision.empty:
+        return pd.DataFrame()
+
+    def _area_status(area: str) -> str:
+        sub = decision.loc[decision["DecisionArea"] == area, "Status"]
+        return str(sub.iloc[0]) if not sub.empty else "Missing evidence"
+
+    def _area_evidence(area: str) -> str:
+        sub = decision.loc[decision["DecisionArea"] == area, "PrimaryEvidence"]
+        return str(sub.iloc[0]) if not sub.empty else "not available"
+
+    agreement_status = _qc_worst_status([_area_status("Exact/adjacent agreement"), _area_status("Krippendorff alpha")])
+    rater_status = _area_status("Rater fit/severity")
+    category_status = _area_status("Rubric/category functioning")
+    collapse_status = _area_status("Category collapse readiness")
+    overall_status = _area_status("Overall scoring consistency")
+
+    rows = [
+        {
+            "QCDecision": "Rater training",
+            "Recommendation": "Prioritize" if _qc_status_rank(_qc_worst_status([agreement_status, rater_status])) >= 3 else "Monitor",
+            "Priority": "High" if _qc_status_rank(_qc_worst_status([agreement_status, rater_status])) >= 3 else "Routine",
+            "TriggerEvidence": f"agreement: {_area_evidence('Exact/adjacent agreement')}; alpha: {_area_evidence('Krippendorff alpha')}; fit: {_area_evidence('Rater fit/severity')}",
+            "Action": (
+                "Review anchor papers, conduct adjudication/moderation, document training changes, and rerun agreement plus MFRM fit."
+                if _qc_status_rank(_qc_worst_status([agreement_status, rater_status])) >= 3 else
+                "Keep standard calibration records and monitor pairwise agreement in future scoring cycles."
+            ),
+            "ReportableWording": "Rater training was evaluated using agreement and MFRM rater diagnostics.",
+            "DoNotClaim": "Do not attribute disagreement to rater behavior without checking rubric/category evidence.",
+            "EvidenceFile": "scoring_consistency_decision.csv; agreement_pairs.csv; fit_statistics.csv",
+        },
+        {
+            "QCDecision": "Rubric revision",
+            "Recommendation": "Prioritize" if _qc_status_rank(category_status) >= 3 else "Monitor",
+            "Priority": "High" if _qc_status_rank(category_status) >= 3 else "Routine",
+            "TriggerEvidence": _area_evidence("Rubric/category functioning"),
+            "Action": (
+                "Inspect category labels, descriptors, anchor examples, and response-process notes before altering the scoring rule."
+                if _qc_status_rank(category_status) >= 3 else
+                "Retain rubric wording while keeping category evidence in the audit trail."
+            ),
+            "ReportableWording": "Rubric/category functioning was reviewed with category support, thresholds, and category-curve evidence.",
+            "DoNotClaim": "Do not revise the rubric only because one statistic was unfavorable.",
+            "EvidenceFile": "rating_scale_decision_support.csv; category_evidence.csv",
+        },
+        {
+            "QCDecision": "Category collapse",
+            "Recommendation": "Sensitivity analysis" if _qc_status_rank(collapse_status) >= 3 else "Not indicated",
+            "Priority": "Medium" if _qc_status_rank(collapse_status) >= 3 else "Routine",
+            "TriggerEvidence": _area_evidence("Category collapse readiness"),
+            "Action": (
+                "Fit original and adjacent-category recode candidates, compare diagnostics, then justify the final scoring rule substantively."
+                if _qc_status_rank(collapse_status) >= 3 else
+                "Use the original category structure as the primary analysis unless planned rubric evidence suggests otherwise."
+            ),
+            "ReportableWording": "Category collapse, if used, should be reported as a sensitivity comparison with retained original-scale evidence.",
+            "DoNotClaim": "Do not present collapsed categories as an automatic correction.",
+            "EvidenceFile": "rating_scale_recode_candidates.csv; rating_scale_decision_support.csv",
+        },
+        {
+            "QCDecision": "Agreement claim",
+            "Recommendation": "Report with caveat" if _qc_status_rank(overall_status) <= 1 else "Withhold strong claim",
+            "Priority": "Manuscript" if _qc_status_rank(overall_status) <= 1 else "High",
+            "TriggerEvidence": _area_evidence("Overall scoring consistency"),
+            "Action": (
+                "Use exact/adjacent agreement, ordinal alpha, rater fit, and category diagnostics in one paragraph."
+                if _qc_status_rank(overall_status) <= 1 else
+                "First resolve rows marked Review or Missing evidence; then regenerate the APA draft."
+            ),
+            "ReportableWording": "Scoring consistency was interpreted as a converging evidence claim, not a single-index claim.",
+            "DoNotClaim": "Do not say the scoring system is reliable solely from exact agreement or alpha.",
+            "EvidenceFile": "apa_scoring_quality_draft.md; scoring_consistency_decision.csv",
+        },
+    ]
+    out = pd.DataFrame(rows)
+    linked_area = {
+        "Rater training": "Rater fit/severity",
+        "Rubric revision": "Rubric/category functioning",
+        "Category collapse": "Category collapse readiness",
+        "Agreement claim": "Overall scoring consistency",
+    }
+    owner = {
+        "Rater training": "Scoring manager",
+        "Rubric revision": "Rubric owner",
+        "Category collapse": "Measurement practitioner; paper author",
+        "Agreement claim": "Paper author",
+    }
+    completion = {
+        "Rater training": "Training/moderation decision is documented and agreement plus rater-fit evidence has been rerun or explicitly caveated.",
+        "Rubric revision": "Rubric wording, anchor examples, and category evidence are aligned before final scoring claims.",
+        "Category collapse": "Original and candidate recode runs are compared, or a written decision explains why no recode is used.",
+        "Agreement claim": "Every manuscript sentence is linked to an evidence file and no Review/Missing row is ignored.",
+    }
+    risk = {
+        "Rater training": "Unresolved rater evidence can make score decisions appear more stable than the scoring process supports.",
+        "Rubric revision": "Weak category evidence can make rubric interpretations overstate what the score scale distinguishes.",
+        "Category collapse": "Unplanned recoding can look like data-driven score repair and weaken reproducibility.",
+        "Agreement claim": "A single-index claim can overstate reliability and confuse agreement with MFRM measurement evidence.",
+    }
+    stop_rule = {
+        "Rater training": "Stop when flagged rater evidence is resolved, documented, or transparently reported as a limitation.",
+        "Rubric revision": "Stop when category-functioning evidence and rubric language point to the same interpretation.",
+        "Category collapse": "Stop when the original scoring rule is retained or the selected recode has both statistical and rubric justification.",
+        "Agreement claim": "Stop when the APA draft contains only claims supported by the exported tables.",
+    }
+    out["LinkedDecisionArea"] = out["QCDecision"].map(linked_area).fillna("")
+    out["OwnerRole"] = out["QCDecision"].map(owner).fillna("Paper author")
+    out["CompletionCriterion"] = out["QCDecision"].map(completion).fillna("Decision is documented and evidence files are archived.")
+    out["RiskIfSkipped"] = out["QCDecision"].map(risk).fillna("The report may overstate the available evidence.")
+    out["WhenToStop"] = out["QCDecision"].map(stop_rule).fillna("Stop when the claim has explicit evidence support.")
+    preferred = [
+        "QCDecision", "Recommendation", "Priority", "OwnerRole", "LinkedDecisionArea",
+        "TriggerEvidence", "Action", "CompletionCriterion", "WhenToStop",
+        "ReportableWording", "RiskIfSkipped", "DoNotClaim", "EvidenceFile",
+    ]
+    return out.loc[:, [col for col in preferred if col in out.columns]]
+
+
+def build_quality_control_todo_checklist(
+    result: dict,
+    diagnostics: dict,
+    facet_cols: list[str] | None = None,
+    *,
+    rater_facet: str | None = None,
+    criterion_facet: str | None = None,
+) -> pd.DataFrame:
+    """Build a checkbox-ready QC checklist for non-specialist workflows."""
+    decision = build_scoring_consistency_decision(
+        result,
+        diagnostics,
+        facet_cols,
+        rater_facet=rater_facet,
+        criterion_facet=criterion_facet,
+    )
+    qc = build_quality_control_recommendations(
+        result,
+        diagnostics,
+        facet_cols,
+        rater_facet=rater_facet,
+        criterion_facet=criterion_facet,
+    )
+    if decision.empty and qc.empty:
+        return pd.DataFrame()
+
+    def _decision_status(area: str) -> str:
+        sub = decision.loc[decision["DecisionArea"] == area] if not decision.empty else pd.DataFrame()
+        return str(sub.iloc[0].get("Status", "Missing evidence")) if not sub.empty else "Missing evidence"
+
+    def _decision_evidence(area: str) -> str:
+        sub = decision.loc[decision["DecisionArea"] == area] if not decision.empty else pd.DataFrame()
+        return str(sub.iloc[0].get("PrimaryEvidence", "not available")) if not sub.empty else "not available"
+
+    def _qc_row(name: str) -> pd.Series:
+        sub = qc.loc[qc["QCDecision"] == name] if not qc.empty else pd.DataFrame()
+        return sub.iloc[0] if not sub.empty else pd.Series(dtype=object)
+
+    todo_specs = [
+        (
+            1,
+            "Confirm shared-context design",
+            "Overall scoring consistency",
+            "Paper author",
+            "Open the data audit and confirm that at least two raters/elements score common persons/items/criteria.",
+            "Agreement metrics are interpretable because shared contexts are present.",
+            "Prevents treating disconnected ratings as agreement evidence.",
+            "agreement_summary.csv; response_data_audit_summary.csv",
+            "Agreement claim",
+        ),
+        (
+            2,
+            "Inspect agreement and alpha together",
+            "Krippendorff alpha",
+            "Measurement practitioner",
+            "Read exact/adjacent agreement, pairwise rows, ordinal alpha, and alpha coverage before summarizing agreement.",
+            "Worst pair(s), pairable units, and alpha status are documented.",
+            "Prevents one-index agreement claims.",
+            "agreement_pairs.csv; krippendorff_alpha_interpretation.csv",
+            "Agreement claim",
+        ),
+        (
+            3,
+            "Decide whether rater training is needed",
+            "Rater fit/severity",
+            "Scoring manager",
+            str(_qc_row("Rater training").get("Action", "Review rater evidence and document the training decision.")),
+            str(_qc_row("Rater training").get("CompletionCriterion", "Rater-training decision is documented.")),
+            str(_qc_row("Rater training").get("RiskIfSkipped", "Rater evidence may remain unresolved.")),
+            "fit_statistics.csv; measures.csv; agreement_pairs.csv",
+            "Rater training",
+        ),
+        (
+            4,
+            "Decide whether rubric revision is needed",
+            "Rubric/category functioning",
+            "Rubric owner",
+            str(_qc_row("Rubric revision").get("Action", "Review category evidence and rubric wording.")),
+            str(_qc_row("Rubric revision").get("CompletionCriterion", "Rubric decision is documented.")),
+            str(_qc_row("Rubric revision").get("RiskIfSkipped", "Rubric interpretation may overstate category evidence.")),
+            "rating_scale_decision_support.csv; category_evidence.csv",
+            "Rubric revision",
+        ),
+        (
+            5,
+            "Decide whether category collapse sensitivity is needed",
+            "Category collapse readiness",
+            "Measurement practitioner",
+            str(_qc_row("Category collapse").get("Action", "Plan or reject adjacent-category sensitivity analysis with justification.")),
+            str(_qc_row("Category collapse").get("CompletionCriterion", "Category-collapse decision is documented.")),
+            str(_qc_row("Category collapse").get("RiskIfSkipped", "Recoding may appear data-driven or unjustified.")),
+            "rating_scale_recode_candidates.csv; rating_scale_decision_support.csv",
+            "Category collapse",
+        ),
+        (
+            6,
+            "Finalize APA scoring-quality wording",
+            "Overall scoring consistency",
+            "Paper author",
+            str(_qc_row("Agreement claim").get("Action", "Regenerate the APA draft and link every claim to evidence files.")),
+            str(_qc_row("Agreement claim").get("CompletionCriterion", "APA wording is evidence-linked and caveated.")),
+            str(_qc_row("Agreement claim").get("RiskIfSkipped", "The manuscript may overclaim scoring quality.")),
+            "apa_scoring_quality_draft.md; scoring_consistency_decision.csv",
+            "Agreement claim",
+        ),
+    ]
+
+    rows = []
+    for order, item, area, owner, action, completion, why, evidence_file, qc_decision in todo_specs:
+        status = _decision_status(area)
+        rows.append({
+            "Done": False,
+            "Step": order,
+            "ToDoItem": item,
+            "BlockingForReport": _qc_report_blocking(status) == "Yes",
+            "NeedsCaveat": _qc_report_blocking(status) == "Caveat",
+            "Priority": _qc_priority_from_status(status),
+            "StatusSource": status,
+            "OwnerRole": owner,
+            "WhyItMatters": why,
+            "Action": action,
+            "CompletionCriterion": completion,
+            "EvidenceToOpen": evidence_file,
+            "ClaimUnlocked": qc_decision,
+            "LinkedDecisionArea": area,
+            "EvidenceSnapshot": _decision_evidence(area),
+            "FACETSCrosswalk": _scoring_facets_crosswalk(area),
+        })
+    return pd.DataFrame(rows)
+
+
+def build_scoring_quality_first_read_summary(
+    result: dict,
+    diagnostics: dict,
+    facet_cols: list[str] | None = None,
+    *,
+    rater_facet: str | None = None,
+    criterion_facet: str | None = None,
+) -> pd.DataFrame:
+    """Return a one-row plain-language summary for the scoring-quality gate."""
+    decision = build_scoring_consistency_decision(
+        result,
+        diagnostics,
+        facet_cols,
+        rater_facet=rater_facet,
+        criterion_facet=criterion_facet,
+    )
+    todo = build_quality_control_todo_checklist(
+        result,
+        diagnostics,
+        facet_cols,
+        rater_facet=rater_facet,
+        criterion_facet=criterion_facet,
+    )
+    if decision.empty and todo.empty:
+        return pd.DataFrame()
+
+    overall = decision.loc[decision["DecisionArea"] == "Overall scoring consistency"] if not decision.empty else pd.DataFrame()
+    overall_row = overall.iloc[0] if not overall.empty else pd.Series(dtype=object)
+    overall_status = str(overall_row.get("Status", "Missing evidence"))
+    blocker_count = int(todo.get("BlockingForReport", pd.Series(dtype=bool)).fillna(False).astype(bool).sum()) if not todo.empty else 0
+    caveat_count = int(todo.get("NeedsCaveat", pd.Series(dtype=bool)).fillna(False).astype(bool).sum()) if not todo.empty else 0
+
+    if blocker_count > 0:
+        readiness = "Do not report yet"
+        can_use_draft = "No"
+        safe_claim = "Use the APA draft only as an internal planning note until blocking QC items are resolved."
+    elif caveat_count > 0 or _qc_status_rank(overall_status) == 1:
+        readiness = "Report with caveats"
+        can_use_draft = "Yes, after caveats are added"
+        safe_claim = "Report scoring quality as converging evidence with explicit caveats."
+    else:
+        readiness = "Report-ready"
+        can_use_draft = "Yes"
+        safe_claim = "Draft the scoring-quality paragraph and link each claim to its evidence file."
+
+    next_rows = pd.DataFrame()
+    if not todo.empty:
+        blockers = todo.loc[todo.get("BlockingForReport", pd.Series(False, index=todo.index)).fillna(False).astype(bool)]
+        caveats = todo.loc[todo.get("NeedsCaveat", pd.Series(False, index=todo.index)).fillna(False).astype(bool)]
+        if not blockers.empty:
+            next_rows = blockers
+        elif not caveats.empty:
+            next_rows = caveats
+        else:
+            next_rows = todo.sort_values("Step").head(1)
+    next_row = next_rows.sort_values("Step").iloc[0] if not next_rows.empty else pd.Series(dtype=object)
+
+    return pd.DataFrame([{
+        "ReadinessLabel": readiness,
+        "OverallStatus": overall_status,
+        "CanUseApaDraft": can_use_draft,
+        "BlockingItems": blocker_count,
+        "CaveatItems": caveat_count,
+        "NextAction": str(next_row.get("Action", overall_row.get("NextCheckpoint", "Review the scoring consistency decision table."))),
+        "NextOwner": str(next_row.get("OwnerRole", overall_row.get("PrimaryAudience", "Paper author"))),
+        "WhyThisMatters": str(next_row.get("WhyItMatters", overall_row.get("PlainLanguageSummary", "Keeps the scoring-quality claim tied to evidence."))),
+        "FirstEvidenceToOpen": str(next_row.get("EvidenceToOpen", overall_row.get("EvidenceFile", "scoring_consistency_decision.csv"))),
+        "SafeClaim": safe_claim,
+        "DoNotClaim": str(overall_row.get("DoNotClaim", "Do not state that scoring is report-ready before QC evidence supports it.")),
+        "EvidenceFile": "scoring_quality_first_read_summary.csv; quality_control_todo_checklist.csv",
+    }])
+
+
+def scoring_quality_term_guide() -> pd.DataFrame:
+    """Short QC-specific term guide for the agreement and scoring-quality panel."""
+    rows = [
+        {
+            "Term": "Exact agreement",
+            "PlainMeaning": "How often two elements gave the same score in the same shared context.",
+            "WhyItMatters": "It is the easiest agreement number for scoring managers and reviewers to audit.",
+            "LookAt": "agreement_summary.csv; agreement_pairs.csv",
+            "DoNotConfuseWith": "MFRM reliability or rater severity.",
+        },
+        {
+            "Term": "Adjacent agreement",
+            "PlainMeaning": "How often scores were the same or only one category apart.",
+            "WhyItMatters": "A one-category difference may be tolerable in some rubrics, but it still needs documentation.",
+            "LookAt": "agreement_summary.csv; agreement_pairs.csv",
+            "DoNotConfuseWith": "A guarantee that scoring is accurate.",
+        },
+        {
+            "Term": "Krippendorff alpha",
+            "PlainMeaning": "A shared-context agreement index that can account for ordered rating categories.",
+            "WhyItMatters": "It summarizes agreement beyond one rater pair, but it does not explain why disagreement happened.",
+            "LookAt": "krippendorff_alpha_interpretation.csv",
+            "DoNotConfuseWith": "FACETS reliability, separation, severity, or bias diagnostics.",
+        },
+        {
+            "Term": "Rater fit/severity",
+            "PlainMeaning": "MFRM evidence about whether rater behavior is model-consistent and how severe or lenient raters are.",
+            "WhyItMatters": "High agreement is not enough if rater fit or severity evidence is flagged.",
+            "LookAt": "fit_statistics.csv; measures.csv",
+            "DoNotConfuseWith": "A personal evaluation of a rater.",
+        },
+        {
+            "Term": "Infit/Outfit",
+            "PlainMeaning": "Mean-square fit statistics that flag unexpected or overly predictable scoring patterns.",
+            "WhyItMatters": "They help locate scoring patterns that need moderation, training, or closer review.",
+            "LookAt": "fit_statistics.csv",
+            "DoNotConfuseWith": "Agreement percentages.",
+        },
+        {
+            "Term": "ZSTD",
+            "PlainMeaning": "A standardized fit signal; large absolute values are review flags, especially with fit mean-squares.",
+            "WhyItMatters": "It helps prioritize which fit rows need attention, but large samples can make it sensitive.",
+            "LookAt": "fit_statistics.csv",
+            "DoNotConfuseWith": "A standalone removal rule.",
+        },
+        {
+            "Term": "Category collapse",
+            "PlainMeaning": "Combining adjacent score categories and rerunning the analysis as a sensitivity check.",
+            "WhyItMatters": "It can be justified when categories do not function distinctly, but only with rubric logic.",
+            "LookAt": "rating_scale_recode_candidates.csv; rating_scale_decision_support.csv",
+            "DoNotConfuseWith": "An automatic way to improve model fit.",
+        },
+        {
+            "Term": "Report blocking",
+            "PlainMeaning": "A QC item that should be resolved before strong manuscript claims are made.",
+            "WhyItMatters": "It prevents report-ready language from getting ahead of the evidence.",
+            "LookAt": "quality_control_todo_checklist.csv",
+            "DoNotConfuseWith": "A permanent failure of the scoring design.",
+        },
+        {
+            "Term": "Needs caveat",
+            "PlainMeaning": "A claim may be reported, but the limitation must be stated clearly.",
+            "WhyItMatters": "It lets users report conservatively without hiding uncertainty.",
+            "LookAt": "scoring_consistency_decision.csv; apa_scoring_quality_draft.md",
+            "DoNotConfuseWith": "Full report readiness.",
+        },
+    ]
+    return pd.DataFrame(rows)
+
+
+def generate_apa_scoring_quality_draft(
+    result: dict,
+    diagnostics: dict,
+    decision_table: pd.DataFrame | None = None,
+    qc_table: pd.DataFrame | None = None,
+) -> str:
+    """Generate conservative APA-style manuscript text for scoring quality."""
+    if decision_table is None or not isinstance(decision_table, pd.DataFrame) or decision_table.empty:
+        decision_table = build_scoring_consistency_decision(result, diagnostics)
+    if qc_table is None or not isinstance(qc_table, pd.DataFrame) or qc_table.empty:
+        qc_table = build_quality_control_recommendations(result, diagnostics)
+
+    config = result.get("config", {}) if isinstance(result, dict) else {}
+    prep = result.get("prep", {}) if isinstance(result, dict) else {}
+    obs_df = diagnostics.get("obs", pd.DataFrame()) if isinstance(diagnostics, dict) else pd.DataFrame()
+    model_name = str(config.get("model", "MFRM"))
+    method_name = str(config.get("method", "estimation"))
+    facet_names = [str(f) for f in config.get("facet_names", []) or []]
+    n_obs = prep.get("n_obs")
+    if n_obs is None and isinstance(obs_df, pd.DataFrame):
+        n_obs = len(obs_df)
+    n_person = prep.get("n_person")
+    if n_person is None and isinstance(obs_df, pd.DataFrame) and "Person" in obs_df.columns:
+        n_person = obs_df["Person"].nunique(dropna=True)
+    context_text = (
+        f"The analysis used a {model_name} many-facet Rasch specification estimated with {method_name}. "
+        f"The scoring file included {n_obs if n_obs is not None else '[N]'} observations"
+        + (f" from {n_person} persons" if n_person is not None else "")
+        + (f" across the facets {', '.join(facet_names)}." if facet_names else ".")
+    )
+
+    def _decision(area: str, col: str, default: str = "not available") -> str:
+        if not isinstance(decision_table, pd.DataFrame) or decision_table.empty:
+            return default
+        sub = decision_table.loc[decision_table["DecisionArea"] == area]
+        if sub.empty or col not in sub.columns:
+            return default
+        return str(sub.iloc[0].get(col, default))
+
+    overall_status = _decision("Overall scoring consistency", "Status", "Missing evidence")
+    exact_evidence = _decision("Exact/adjacent agreement", "PrimaryEvidence")
+    alpha_evidence = _decision("Krippendorff alpha", "PrimaryEvidence")
+    rater_evidence = _decision("Rater fit/severity", "PrimaryEvidence")
+    category_evidence = _decision("Rubric/category functioning", "PrimaryEvidence")
+    collapse_action = _decision("Category collapse readiness", "RecommendedAction")
+    qc_priorities = "not available"
+    if isinstance(qc_table, pd.DataFrame) and not qc_table.empty and {"QCDecision", "Recommendation"}.issubset(qc_table.columns):
+        qc_priorities = "; ".join(
+            f"{row.get('QCDecision')}: {row.get('Recommendation')}"
+            for _, row in qc_table.iterrows()
+        )
+    todo_table = build_quality_control_todo_checklist(result, diagnostics)
+    first_read = build_scoring_quality_first_read_summary(result, diagnostics)
+    blocking_count = 0
+    caveat_count = 0
+    if isinstance(todo_table, pd.DataFrame) and not todo_table.empty:
+        blocking_count = int(todo_table.get("BlockingForReport", pd.Series(dtype=bool)).fillna(False).astype(bool).sum())
+        caveat_count = int(todo_table.get("NeedsCaveat", pd.Series(dtype=bool)).fillna(False).astype(bool).sum())
+    first_read_text = "First-read summary was not available."
+    if isinstance(first_read, pd.DataFrame) and not first_read.empty:
+        row = first_read.iloc[0]
+        first_read_text = (
+            f"First-read summary: {row.get('ReadinessLabel', 'not available')}. "
+            f"Next action: {row.get('NextAction', 'not available')} "
+            f"Responsible role: {row.get('NextOwner', 'not available')}. "
+            f"First evidence file to open: {row.get('FirstEvidenceToOpen', 'not available')}."
+        )
+
+    caveat = (
+        "The following text is a draft. Replace bracketed study details, verify numerical values against the exported tables, "
+        "and align the wording with the journal's reporting requirements."
+    )
+    strength = (
+        "supported publication-oriented interpretation"
+        if _qc_status_rank(overall_status) <= 1 else
+        "preliminary interpretation requiring follow-up before strong claims"
+    )
+    return "\n\n".join([
+        "# APA Scoring Quality Draft",
+        caveat,
+        context_text,
+        (
+            f"Quality-control gate: {blocking_count} checklist item(s) were blocking final report-ready claims, "
+            f"and {caveat_count} item(s) required explicit caveats. Treat this gate as a manuscript-preparation aid, "
+            "not as a substitute for substantive scoring review."
+        ),
+        first_read_text,
+        (
+            f"Scoring quality was evaluated as a converging-evidence claim across shared-context agreement, "
+            f"Krippendorff's alpha, many-facet Rasch rater diagnostics, and rating-scale/category functioning. "
+            f"The integrated decision status was **{overall_status}**, indicating a {strength}."
+        ),
+        (
+            f"For inter-element agreement, the primary shared-context evidence was: {exact_evidence}. "
+            f"Krippendorff's alpha was used as an additional agreement check for ordered score categories: {alpha_evidence}. "
+            "These agreement indices were interpreted as descriptive scoring-consistency evidence and were not treated as replacements "
+            "for MFRM reliability, severity, fit, or bias diagnostics."
+        ),
+        (
+            f"Rater evidence was reviewed using MFRM fit/severity diagnostics: {rater_evidence}. "
+            "When rater evidence was flagged, the recommended interpretation was to use the result for rater training or moderation "
+            "rather than to remove or relabel raters without documented scoring-process evidence."
+        ),
+        (
+            f"Rubric and rating-category functioning were reviewed before making scoring-quality claims: {category_evidence}. "
+            f"For category collapse decisions, the planned action was: {collapse_action} "
+            "Category collapse should therefore be reported only as a substantively justified sensitivity analysis, not as an automatic statistical repair."
+        ),
+        (
+            f"Quality-control priorities generated from the app were: {qc_priorities}. "
+            "In the manuscript, each claim should be matched to the exported evidence files rather than reported from a single statistic."
+        ),
+        (
+            "Suggested method citations for this scoring-quality paragraph: agreement and alpha "
+            "(Krippendorff, 2004; Hayes & Krippendorff, 2007), rater-effect interpretation "
+            "(Engelhard, 1994; Myford & Wolfe, 2003; Myford & Wolfe, 2004), and rating-scale/category review "
+            "(Linacre, 2002b; Wind, 2023). Confirm the final reference list against `method_reference_audit.csv` "
+            "and `help_reference_coverage.csv` before submission."
+        ),
+        (
+            "For readers familiar with FACETS, the agreement evidence corresponds to a Table 8-style shared-context screen; "
+            "rater evidence corresponds to rater measure/fit output; and rating-scale evidence corresponds to Categories/Steps "
+            "counts, average measures, thresholds, and category curves."
+        ),
+        (
+            "**Do not overclaim:** Do not state that scoring was fully reliable, that all categories functioned distinctly, "
+            "or that category collapse was warranted unless the corresponding rows in `scoring_consistency_decision.csv` and "
+            "`quality_control_todo_checklist.csv` support that statement."
+        ),
+    ])
 
 
 def calc_ptmea(obs_df, facet_cols):
@@ -17032,6 +20400,133 @@ def compute_mml_structural_measure_se_table(res, covariance=None, ci_level=0.95)
     return pd.DataFrame(rows)
 
 
+def _compute_step_value_from_par(res, par, step_facet_level, step_index):
+    """Return a reported step / threshold estimate as a scalar function of ``par``.
+
+    Mirrors :func:`_compute_measure_value_from_par` for the rating-scale step
+    thresholds. The reported step is the centred value (``center_sum_zero``)
+    that the fit surfaces, so differentiating it through ``par`` carries the
+    sum-to-zero identification automatically -- no explicit Jacobian is needed.
+    """
+    config = (res or {}).get("config", {}) or {}
+    if config.get("method") != "MML":
+        return float("nan")
+    n_cat = int(config.get("n_cat", 0) or 0)
+    n_steps = max(n_cat - 1, 0)
+    step_index = int(step_index)
+    if step_index < 0 or step_index >= n_steps:
+        return float("nan")
+    try:
+        sizes = build_param_sizes(config)
+        params = expand_params(np.asarray(par, dtype=float), sizes, config)
+    except Exception:
+        return float("nan")
+    if config.get("model") == "RSM":
+        steps = np.asarray(params.get("steps"), dtype=float)
+        if steps.ndim != 1 or step_index >= steps.size:
+            return float("nan")
+        value = float(steps[step_index])
+    else:
+        prep = (res or {}).get("prep", {}) or {}
+        step_facet = config.get("step_facet")
+        levels = [str(x) for x in (prep.get("levels", {}).get(step_facet) or [])]
+        sf = str(step_facet_level)
+        steps_mat = params.get("steps_mat")
+        if sf not in levels or steps_mat is None:
+            return float("nan")
+        steps_mat = np.asarray(steps_mat, dtype=float)
+        level_idx = levels.index(sf)
+        if steps_mat.ndim != 2 or level_idx >= steps_mat.shape[0] or step_index >= steps_mat.shape[1]:
+            return float("nan")
+        value = float(steps_mat[level_idx, step_index])
+    return value if np.isfinite(value) else float("nan")
+
+
+def compute_mml_step_se_table(res, covariance=None, ci_level=0.95):
+    """Delta-method SEs for MML rating-scale step / threshold estimates.
+
+    Uses the same MML observed-information delta method as
+    :func:`compute_mml_structural_measure_se_table`, applied to the step
+    thresholds. Returns a table keyed by ``Step`` (RSM) or ``StepFacet`` /
+    ``Step`` (PCM / GPCM) so it can be merged onto the fitted steps table.
+    Empty for non-MML fits; SE columns are ``NaN`` with a status when the
+    marginal-likelihood covariance is unavailable.
+    """
+    config = (res or {}).get("config", {}) or {}
+    if config.get("method") != "MML":
+        return pd.DataFrame()
+    n_cat = int(config.get("n_cat", 0) or 0)
+    n_steps = max(n_cat - 1, 0)
+    if n_steps <= 0:
+        return pd.DataFrame()
+    model = config.get("model")
+    prep = (res or {}).get("prep", {}) or {}
+    if covariance is None:
+        covariance = _mml_covariance_for_diagnostics(res)
+    par = _get_opt_par(res)
+    status = str((covariance or {}).get("status", "fallback"))
+    detail = str((covariance or {}).get("detail", "MML covariance unavailable."))
+    cov = (covariance or {}).get("cov")
+    z = float(_norm.ppf((1.0 + float(ci_level)) / 2.0)) if 0.0 < float(ci_level) < 1.0 else 1.959963984540054
+
+    targets: list[tuple[object, int, dict[str, object]]] = []
+    if model == "RSM":
+        for i in range(n_steps):
+            targets.append((None, i, {"Step": f"Step_{i + 1}"}))
+    else:
+        step_facet = config.get("step_facet")
+        for sf in [str(x) for x in (prep.get("levels", {}).get(step_facet) or [])]:
+            for i in range(n_steps):
+                targets.append((sf, i, {"StepFacet": sf, "Step": f"Step_{i + 1}"}))
+
+    cov_arr = np.asarray(cov, dtype=float) if cov is not None else None
+    par_arr = np.asarray(par, dtype=float) if par is not None else None
+    usable = (
+        status in {"ok", "regularized"}
+        and cov_arr is not None
+        and par_arr is not None
+        and cov_arr.ndim == 2
+        and cov_arr.shape[0] == cov_arr.shape[1] == par_arr.size
+    )
+
+    rows: list[dict[str, object]] = []
+    for sf, i, key in targets:
+        row = dict(key)
+        row.update({
+            "SE": np.nan,
+            "CI_Lower": np.nan,
+            "CI_Upper": np.nan,
+            "CI_Level": float(ci_level),
+            "SE_Method": "MML observed-information delta method",
+            "SE_Status": status,
+            "SE_Detail": detail,
+        })
+        if usable:
+            fn = lambda p, _sf=sf, _i=i: _compute_step_value_from_par(res, p, _sf, _i)
+            grad = _finite_difference_gradient(fn, par_arr)
+            if grad.size == cov_arr.shape[0] and np.any(np.isfinite(grad)):
+                grad = np.where(np.isfinite(grad), grad, 0.0)
+                var = float(grad @ cov_arr @ grad)
+                if -1e-10 < var < 0:
+                    var = 0.0
+                estimate = _compute_step_value_from_par(res, par_arr, sf, i)
+                if np.isfinite(var) and var >= 0 and np.isfinite(estimate):
+                    se = float(np.sqrt(var))
+                    row.update({
+                        "SE": se,
+                        "CI_Lower": estimate - z * se,
+                        "CI_Upper": estimate + z * se,
+                    })
+                else:
+                    row["SE_Status"] = "not_available"
+                    row["SE_Detail"] = "Delta-method variance was not finite and non-negative."
+            else:
+                row["SE_Status"] = "not_available"
+                row["SE_Detail"] = "Finite-difference gradient was not available."
+        rows.append(row)
+    return pd.DataFrame(rows)
+
+
 def annotate_measure_uncertainty(measures, res, obs_df=None, *, ci_level=0.95):
     """Attach SE/CI provenance columns to the measure table."""
     if not isinstance(measures, pd.DataFrame) or measures.empty:
@@ -17243,14 +20738,28 @@ def calc_reliability(measure_df):
         mv = float(np.nanvar(finite_est, ddof=1)) if len(finite_est) >= 2 else np.nan
         ev = np.nanmean(df["SE"] ** 2)
         rmse = np.sqrt(ev) if np.isfinite(ev) else np.nan
+        eap_basis = (
+            "SE_Status" in df.columns
+            and df["SE_Status"].astype(str).eq("posterior_eap_sd").any()
+        )
         note = ""
         if np.isfinite(mv) and np.isfinite(ev) and mv > 0 and ev > 0:
-            tv = max(mv - ev, 0.0)
-            separation = np.sqrt(tv / ev) if tv > 0 else 0.0
-            reliability = tv / mv if mv > 0 else np.nan
-            strata = (4 * separation + 1) / 3
-            if tv == 0:
-                note = "measurement variance ≤ error variance; separation = 0"
+            if eap_basis:
+                # EAP measures (e.g. MML person rows): use the IRT empirical
+                # reliability Var(EAP) / (Var(EAP) + mean posterior SD^2). The
+                # posterior SD already carries shrinkage, so the JMLE-style
+                # (ObsVar - ErrVar) / ObsVar form understates person reliability
+                # and is not FACETS-comparable.
+                reliability = mv / (mv + ev)
+                separation = np.sqrt(mv / ev)
+                strata = (4 * separation + 1) / 3
+            else:
+                tv = max(mv - ev, 0.0)
+                separation = np.sqrt(tv / ev) if tv > 0 else 0.0
+                reliability = tv / mv if mv > 0 else np.nan
+                strata = (4 * separation + 1) / 3
+                if tv == 0:
+                    note = "measurement variance ≤ error variance; separation = 0"
         else:
             separation = np.nan
             reliability = np.nan
@@ -17272,10 +20781,17 @@ def calc_reliability(measure_df):
                 note = f"{note}; SE status: {se_status_counts}"
             else:
                 note = f"SE status: {se_status_counts}"
-        reliability_basis = (
-            "Reliability is computed from observed estimate variance minus mean squared SE. "
-            "Its evidential strength follows the SE_Status values for this facet."
-        )
+        if eap_basis:
+            reliability_basis = (
+                "Empirical reliability for EAP measures: Var(EAP) / (Var(EAP) + mean "
+                "posterior SD^2). Posterior SDs already include shrinkage, so this is "
+                "not directly comparable to a JMLE-style separation reliability."
+            )
+        else:
+            reliability_basis = (
+                "Reliability is computed from observed estimate variance minus mean squared SE. "
+                "Its evidential strength follows the SE_Status values for this facet."
+            )
         rows.append({
             "Facet": facet,
             "Levels": len(df),
@@ -18272,7 +21788,35 @@ def mfrm_diagnostics(
         ci_level=0.95,
     )
 
+    # Attach MML observed-information delta-method SEs / CIs to the fitted step
+    # thresholds, reusing the covariance already computed for the facet
+    # measures. MML only; a no-op for JMLE fits and when the steps table
+    # already carries an SE column.
+    try:
+        steps_tbl = res.get("steps") if isinstance(res, dict) else None
+        if (
+            isinstance(steps_tbl, pd.DataFrame)
+            and not steps_tbl.empty
+            and "Estimate" in steps_tbl.columns
+            and "SE" not in steps_tbl.columns
+        ):
+            step_se_tbl = compute_mml_step_se_table(
+                res,
+                covariance=uncertainty_bundle.get("covariance") if isinstance(uncertainty_bundle, dict) else None,
+                ci_level=0.95,
+            )
+            if isinstance(step_se_tbl, pd.DataFrame) and not step_se_tbl.empty:
+                key_cols = [c for c in ("StepFacet", "Step") if c in steps_tbl.columns and c in step_se_tbl.columns]
+                if key_cols:
+                    res["steps"] = steps_tbl.merge(step_se_tbl, on=key_cols, how="left")
+    except Exception:
+        pass
+
     reliability_tbl = calc_reliability(measures)
+    krippendorff_alpha_tbl = calc_krippendorff_alpha_by_facet(
+        obs_df,
+        ["Person"] + list(res["config"]["facet_names"]),
+    )
 
     # PCA of standardised residuals
     facet_names = res["config"]["facet_names"]
@@ -18357,6 +21901,7 @@ def mfrm_diagnostics(
         "measures": measures,
         "fit": fit_tbl,
         "reliability": reliability_tbl,
+        "krippendorff_alpha": krippendorff_alpha_tbl,
         "bias": bias_tbl,
         "interactions": interaction_tbl,
         "pca": pca_overall,
@@ -18380,21 +21925,14 @@ def mfrm_diagnostics(
 
 
 def normalize_csv_newlines(value):
-    """Normalize CRLF and old-Mac CR line endings before CSV/TSV parsing."""
-    if isinstance(value, bytes):
-        return value.replace(b"\r\n", b"\n").replace(b"\r", b"\n")
-    return str(value).replace("\r\n", "\n").replace("\r", "\n")
+    """Compatibility wrapper for CSV/TSV newline normalization."""
+    return _io_tables.normalize_csv_newlines(value)
 
 
-TABLE_DELIMITER_OPTIONS = {
-    "Auto": None,
-    "Comma (,)": ",",
-    "Tab": "\t",
-    "Semicolon (;)": ";",
-}
+TABLE_DELIMITER_OPTIONS = _io_tables.TABLE_DELIMITER_OPTIONS
 
-TABLE_FILE_UPLOAD_TYPES = ["csv", "tsv", "txt", "xlsx", "xlsm", "parquet", "json"]
-TABLE_FILE_UPLOAD_LABEL = "CSV, TSV, TXT, Excel (.xlsx/.xlsm), Parquet, or JSON"
+TABLE_FILE_UPLOAD_TYPES = _io_tables.TABLE_FILE_UPLOAD_TYPES
+TABLE_FILE_UPLOAD_LABEL = _io_tables.TABLE_FILE_UPLOAD_LABEL
 
 
 TEACHER_PASTE_EXAMPLE_CSV = """Student,Rater,Assignment,Criterion,Score
@@ -18409,175 +21947,53 @@ TEACHER_PASTE_EXAMPLE_TSV = TEACHER_PASTE_EXAMPLE_CSV.replace(",", "\t")
 
 
 def infer_table_delimiter(text_value: str | bytes | None, file_name: str | None = None) -> str:
-    """Infer a simple CSV/TSV delimiter from text content and file name."""
-    if text_value is None:
-        return "\t" if str(file_name or "").lower().endswith((".tsv", ".txt")) else ","
-    if isinstance(text_value, bytes):
-        try:
-            text = text_value[:8192].decode("utf-8-sig", errors="ignore")
-        except Exception:
-            text = ""
-    else:
-        text = str(text_value)[:8192]
-    text = normalize_csv_newlines(text)
-    lines = [ln for ln in text.split("\n") if ln.strip()][:10]
-    if not lines:
-        return "\t" if str(file_name or "").lower().endswith((".tsv", ".txt")) else ","
-    counts = {
-        "\t": sum(ln.count("\t") for ln in lines),
-        ";": sum(ln.count(";") for ln in lines),
-        ",": sum(ln.count(",") for ln in lines),
-    }
-    best, n_best = max(counts.items(), key=lambda kv: kv[1])
-    if n_best > 0:
-        return best
-    return "\t" if str(file_name or "").lower().endswith((".tsv", ".txt")) else ","
+    """Compatibility wrapper for delimiter inference."""
+    return _io_tables.infer_table_delimiter(text_value, file_name=file_name)
 
 
 def resolve_table_delimiter(delimiter: str | None, text_value=None, file_name: str | None = None) -> str:
-    """Resolve UI/API delimiter labels to an actual pandas separator."""
-    if delimiter in TABLE_DELIMITER_OPTIONS:
-        explicit = TABLE_DELIMITER_OPTIONS[delimiter]
-        if explicit is not None:
-            return explicit
-    if delimiter in {",", "\t", ";"}:
-        return delimiter
-    return infer_table_delimiter(text_value, file_name=file_name)
+    """Compatibility wrapper for delimiter resolution."""
+    return _io_tables.resolve_table_delimiter(delimiter, text_value, file_name=file_name)
 
 
 def _normalize_loaded_table(df: pd.DataFrame) -> pd.DataFrame:
-    """Return a DataFrame with stable string column names after file parsing."""
-    if df is None:
-        return pd.DataFrame()
-    out = df.copy()
-    out.columns = [str(c) for c in out.columns]
-    return out
+    """Compatibility wrapper for parsed-table normalization."""
+    return _io_tables.normalize_loaded_table(df)
 
 
 def _uploaded_file_size_bytes(file_input) -> int | None:
-    """Return declared uploaded-file size without reading file contents."""
-    if file_input is None:
-        return None
-    size = getattr(file_input, "size", None)
-    try:
-        return int(size) if size is not None else None
-    except (TypeError, ValueError):
-        return None
+    """Compatibility wrapper for upload-size inspection."""
+    return _io_tables.uploaded_file_size_bytes(file_input)
 
 
 def _enforce_table_file_size(size_bytes: int | None, *, source_label: str) -> None:
-    if size_bytes is None:
-        return
-    if int(size_bytes) >= TABLE_FILE_HARD_LIMIT_BYTES:
-        size_mb = int(round(float(size_bytes) / (1024 * 1024)))
-        raise ValueError(
-            f"{source_label} is {size_mb} MB; files >= {TABLE_FILE_HARD_LIMIT_MB} MB "
-            "are not parsed in the Streamlit UI. Sample rows locally or run the app on a larger local machine."
-        )
+    return _io_tables.enforce_table_file_size(
+        size_bytes,
+        source_label=source_label,
+        hard_limit_bytes=TABLE_FILE_HARD_LIMIT_BYTES,
+        hard_limit_mb=TABLE_FILE_HARD_LIMIT_MB,
+    )
 
 
 def _normalize_and_validate_loaded_table(df: pd.DataFrame, *, source_label: str) -> pd.DataFrame:
-    """Normalize parsed data and reject tables that exceed hosted-app budgets."""
-    out = _normalize_loaded_table(df)
-    n_rows, n_cols = out.shape
-    n_cells = int(n_rows) * int(n_cols)
-    if n_rows > TABLE_MAX_ROWS:
-        raise ValueError(
-            f"{source_label} has {n_rows:,} rows; the Streamlit UI limit is {TABLE_MAX_ROWS:,} rows."
-        )
-    if n_cols > TABLE_MAX_COLUMNS:
-        raise ValueError(
-            f"{source_label} has {n_cols:,} columns; the Streamlit UI limit is {TABLE_MAX_COLUMNS:,} columns."
-        )
-    if n_cells > TABLE_MAX_CELLS:
-        raise ValueError(
-            f"{source_label} has {n_cells:,} cells; the Streamlit UI limit is {TABLE_MAX_CELLS:,} cells."
-        )
-    return out
+    """Compatibility wrapper for parsed-table validation."""
+    return _io_tables.normalize_and_validate_loaded_table(
+        df,
+        source_label=source_label,
+        max_rows=TABLE_MAX_ROWS,
+        max_columns=TABLE_MAX_COLUMNS,
+        max_cells=TABLE_MAX_CELLS,
+    )
 
 
 def _read_json_table_bytes(raw: bytes) -> pd.DataFrame:
-    """Read ordinary JSON records or JSON-lines as a tabular input file."""
-    text = normalize_csv_newlines(raw).decode("utf-8-sig", errors="replace").strip()
-    if not text:
-        return pd.DataFrame()
-    try:
-        return pd.read_json(io.StringIO(text))
-    except ValueError:
-        return pd.read_json(io.StringIO(text), lines=True)
+    """Compatibility wrapper for JSON table parsing."""
+    return _io_tables.read_json_table_bytes(raw)
 
 
 def detect_wide_format_columns(df: pd.DataFrame) -> dict:
-    """Heuristic detection of whether an uploaded table is in wide format.
-
-    A wide-format rating table typically has one row per (Person, Rater)
-    combination and three or more numeric "score" columns whose headers
-    name the items being scored (e.g. C1, C2, C3 for criteria, or
-    Question1, Question2, ...). This helper returns:
-
-    * ``looks_wide`` (bool) — best guess that the table is wide
-    * ``probable_id_cols`` (list[str]) — non-score candidate id columns
-    * ``probable_score_cols`` (list[str]) — numeric columns the helper
-      thinks are score columns
-    * ``reason`` (str) — one-line rationale
-
-    The detection is conservative: if any single column looks like a
-    plausible long-format score column (e.g. it's the *only* numeric
-    column and there are non-numeric facet columns), the table is
-    classified as long.
-    """
-    if not isinstance(df, pd.DataFrame) or df.empty:
-        return {
-            "looks_wide": False,
-            "probable_id_cols": [],
-            "probable_score_cols": [],
-            "reason": "empty table",
-        }
-    numeric_mask: dict[str, bool] = {}
-    for c in df.columns:
-        coerced = pd.to_numeric(df[c], errors="coerce")
-        # A column is "numeric" if at least 70 % of non-blank values
-        # parse to a finite number. This guards against partial
-        # contamination from spreadsheet stray characters.
-        non_blank = df[c].astype(str).str.strip().replace({"": pd.NA}).dropna()
-        if non_blank.empty:
-            numeric_mask[c] = False
-            continue
-        valid = coerced.dropna()
-        numeric_mask[c] = (
-            len(valid) >= max(1, int(0.7 * len(non_blank)))
-        )
-    score_candidates = [c for c, is_num in numeric_mask.items() if is_num]
-    id_candidates = [c for c, is_num in numeric_mask.items() if not is_num]
-
-    # A typical long-format rating table has columns like
-    # (Person, Rater, Criterion, Score) — exactly one numeric score
-    # column and two-plus id columns. If we see >= 3 numeric columns
-    # AND >= 1 id column, the table is likely wide.
-    looks_wide = len(score_candidates) >= 3 and len(id_candidates) >= 1
-    if looks_wide:
-        reason = (
-            f"{len(score_candidates)} numeric columns + {len(id_candidates)} "
-            "non-numeric columns suggests one row per id with several score "
-            "columns (wide-format Excel layout)."
-        )
-    elif len(score_candidates) <= 1:
-        reason = (
-            "<=1 numeric column; data is already in long format "
-            "(one row per observation)."
-        )
-    else:
-        reason = (
-            f"{len(score_candidates)} numeric columns but no non-numeric "
-            "id columns; treating as long format."
-        )
-    return {
-        "looks_wide": looks_wide,
-        "probable_id_cols": id_candidates,
-        "probable_score_cols": score_candidates,
-        "reason": reason,
-    }
-
+    """Compatibility wrapper for wide-format detection."""
+    return _io_tables.detect_wide_format_columns(df)
 
 def apply_wide_to_long_pivot(
     df: pd.DataFrame,
@@ -18587,117 +22003,29 @@ def apply_wide_to_long_pivot(
     new_facet_name: str = "Item",
     score_col_name: str = "Score",
 ) -> pd.DataFrame:
-    """Melt a wide-format rating table into the canonical long format.
-
-    ``id_cols`` columns are repeated for every (id_row, score_col) pair;
-    ``score_cols`` headers become the levels of the new facet
-    ``new_facet_name``; the corresponding cell value goes into
-    ``score_col_name``. Empty / missing cells are dropped so the
-    likelihood pipeline does not attempt to estimate on blanks.
-
-    Raises ``ValueError`` for inconsistent inputs (overlapping id /
-    score columns, missing columns, empty score_cols list).
-    """
-    if not isinstance(df, pd.DataFrame) or df.empty:
-        return pd.DataFrame()
-    id_cols = list(id_cols or [])
-    score_cols = list(score_cols or [])
-    if not score_cols:
-        raise ValueError("apply_wide_to_long_pivot: score_cols is empty.")
-    overlap = set(id_cols) & set(score_cols)
-    if overlap:
-        raise ValueError(
-            f"apply_wide_to_long_pivot: id and score columns overlap: {sorted(overlap)}."
-        )
-    missing = [c for c in (id_cols + score_cols) if c not in df.columns]
-    if missing:
-        raise ValueError(
-            f"apply_wide_to_long_pivot: columns not in input: {missing}."
-        )
-    if new_facet_name in id_cols:
-        raise ValueError(
-            f"apply_wide_to_long_pivot: new_facet_name {new_facet_name!r} collides with an id column."
-        )
-    if score_col_name in id_cols:
-        raise ValueError(
-            f"apply_wide_to_long_pivot: score_col_name {score_col_name!r} collides with an id column."
-        )
-
-    melted = df.melt(
-        id_vars=id_cols,
-        value_vars=score_cols,
-        var_name=new_facet_name,
-        value_name=score_col_name,
+    """Compatibility wrapper for wide-to-long pivoting."""
+    return _io_tables.apply_wide_to_long_pivot(
+        df,
+        id_cols=id_cols,
+        score_cols=score_cols,
+        new_facet_name=new_facet_name,
+        score_col_name=score_col_name,
     )
-    # Drop rows with blank / non-numeric scores so they don't enter the
-    # likelihood as zeros. The downstream pipeline already does its own
-    # NA handling, but the melt produces a long table that's roughly
-    # n_id_rows * n_score_cols rows, and the bulk of "missing" cells
-    # in wide layouts are genuinely missing observations (not zeros).
-    melted[score_col_name] = pd.to_numeric(melted[score_col_name], errors="coerce")
-    melted = melted.dropna(subset=[score_col_name])
-    return melted.reset_index(drop=True)
 
 
 def read_flexible_table(text_value, file_input, header=True, delimiter: str | None = None):
-    if file_input is not None:
-        name = file_input.name.lower()
-        _enforce_table_file_size(_uploaded_file_size_bytes(file_input), source_label=name or "uploaded file")
-        try:
-            raw = file_input.getvalue()
-        except Exception:
-            raw = file_input.read()
-            try:
-                file_input.seek(0)
-            except Exception:
-                pass
-        raw_bytes = raw.encode("utf-8") if isinstance(raw, str) else bytes(raw)
-        _enforce_table_file_size(len(raw_bytes), source_label=name or "uploaded file")
-        suffix = Path(name).suffix.lower()
-        if suffix in {".xlsx", ".xlsm"}:
-            return _normalize_and_validate_loaded_table(pd.read_excel(
-                io.BytesIO(raw_bytes),
-                sheet_name=0,
-                header=0 if header else None,
-                dtype=str,
-                engine="openpyxl",
-            ), source_label=name or "uploaded file")
-        if suffix == ".parquet":
-            return _normalize_and_validate_loaded_table(
-                pd.read_parquet(io.BytesIO(raw_bytes)),
-                source_label=name or "uploaded file",
-            )
-        if suffix == ".json":
-            return _normalize_and_validate_loaded_table(
-                _read_json_table_bytes(raw_bytes),
-                source_label=name or "uploaded file",
-            )
-        raw_norm = normalize_csv_newlines(raw if isinstance(raw, str) else raw_bytes)
-        if isinstance(raw_norm, str):
-            sep = resolve_table_delimiter(delimiter, raw_norm, file_name=name)
-            return _normalize_and_validate_loaded_table(
-                pd.read_csv(io.StringIO(raw_norm), sep=sep, header=0 if header else None, dtype=str),
-                source_label=name or "uploaded file",
-            )
-        sep = resolve_table_delimiter(delimiter, raw_norm, file_name=name)
-        return _normalize_and_validate_loaded_table(
-            pd.read_csv(io.BytesIO(raw_norm), sep=sep, header=0 if header else None, dtype=str),
-            source_label=name or "uploaded file",
-        )
-    if text_value is None or not str(text_value).strip():
-        return pd.DataFrame()
-    text_value = normalize_csv_newlines(str(text_value)).strip()
-    text_size = len(text_value.encode("utf-8"))
-    if text_size >= TABLE_TEXT_HARD_LIMIT_BYTES:
-        size_mb = int(round(float(text_size) / (1024 * 1024)))
-        raise ValueError(
-            f"Pasted text is {size_mb} MB; pasted tables are limited to "
-            f"{TABLE_TEXT_HARD_LIMIT_MB} MB in the Streamlit UI."
-        )
-    sep = resolve_table_delimiter(delimiter, text_value)
-    return _normalize_and_validate_loaded_table(
-        pd.read_csv(io.StringIO(text_value), sep=sep, header=0 if header else None, dtype=str),
-        source_label="pasted text",
+    return _io_tables.read_flexible_table(
+        text_value,
+        file_input,
+        header=header,
+        delimiter=delimiter,
+        file_hard_limit_bytes=TABLE_FILE_HARD_LIMIT_BYTES,
+        file_hard_limit_mb=TABLE_FILE_HARD_LIMIT_MB,
+        text_hard_limit_bytes=TABLE_TEXT_HARD_LIMIT_BYTES,
+        text_hard_limit_mb=TABLE_TEXT_HARD_LIMIT_MB,
+        max_rows=TABLE_MAX_ROWS,
+        max_columns=TABLE_MAX_COLUMNS,
+        max_cells=TABLE_MAX_CELLS,
     )
 
 
@@ -18850,6 +22178,8 @@ def load_core_namespace() -> dict:
         "calc_step_order",
         "category_warnings_text",
         "calc_interrater_agreement",
+        "calc_krippendorff_alpha",
+        "calc_krippendorff_alpha_by_facet",
     ]
     for name in optional:
         ns[name] = g.get(name)
@@ -19010,7 +22340,7 @@ software does and how this app relates.
 | **Response model** | Adjacent-category (RSM/PCM) | Adjacent-category (RSM/PCM) | Adjacent-category (RSM/PCM) | Adjacent-category | Adjacent-category | **Cumulative** logit |
 | **Multi-facet** | Yes; arbitrary facets | Yes; arbitrary facets | Yes; arbitrary facets | Yes; via design matrix | Yes; via design matrix | Yes; as fixed/random effects |
 | **Sufficient statistics** | Yes; implicit via full likelihood | No | Yes; directly exploited | No | No | No |
-| **Prior for persons** | None | N(Xβ, fixed user-set σ²) | None | N(0, σ²) estimated | N(0, σ²) estimated | N(0, σ²) estimated |
+| **Prior for persons** | None | N(Xβ, σ²): σ fixed or estimated (opt-in) | None | N(0, σ²) estimated | N(0, σ²) estimated | N(0, σ²) estimated |
 | **Person variance** | — | Fixed by `population_prior_sd` | — | Estimated | Estimated | Estimated |
 
 **GPCM note:** This app also includes a bounded GPCM path in which
@@ -19044,14 +22374,15 @@ and numerical precision.
 
 **ConQuest / TAM vs. this app (MML):**
 All three use the EM algorithm with Gauss-Hermite quadrature.
-The key difference is that ConQuest and TAM **estimate the
-person variance σ²** as an additional parameter, while this
-app uses a user-configurable fixed prior SD. This means:
-- ConQuest/TAM adapt the prior to the data → more flexible
-- This app's prior SD is fixed for a run → simpler, but may be slightly
-  less efficient if the chosen SD differs from the true variance
-- Facet parameter estimates are generally robust to this
-  choice; person EAP estimates may differ slightly
+ConQuest and TAM **estimate the person variance σ²** as an
+additional parameter. This app can do the same — enable
+"Estimate person SD" (MML/EM) — or keep a fixed prior SD. This means:
+- ConQuest/TAM, and this app with free-SD on, adapt the prior to the
+  data → a data-determined person metric
+- This app's fixed prior SD is simpler, but may be slightly less
+  efficient if the chosen SD differs from the true variance
+- Facet parameter estimates are generally robust to this choice;
+  person EAP estimates and the metric scale may differ
 
 **ordinal::clmm vs. this app:**
 `clmm` uses a fundamentally different response model:
@@ -19528,6 +22859,55 @@ def render_custom_simulation_source() -> pd.DataFrame:
     """Render sidebar controls for a user-configurable synthetic dataset."""
     st.sidebar.info(t("data_source.sim_info"))
     st.sidebar.caption(t("data_source.sim_method_caption"))
+    selected_design_preset = str(st.sidebar.selectbox(
+        t("data_source.sim_design_preset_label"),
+        options=list(CUSTOM_SIMULATION_DESIGN_PRESET_KEYS),
+        index=0,
+        format_func=lambda key: t(f"data_source.sim_design_preset_{key}"),
+        key="sim_design_preset",
+        help=t("data_source.sim_design_preset_help"),
+    ))
+    st.sidebar.caption(t(f"data_source.sim_design_preset_{selected_design_preset}_caption"))
+    if st.sidebar.button(
+        t("data_source.sim_design_preset_apply_button"),
+        key="sim_design_preset_apply",
+        use_container_width=True,
+    ):
+        preset = get_custom_simulation_design_preset_settings(selected_design_preset)
+        st.session_state["sim_n_person"] = int(preset["n_person"])
+        st.session_state["sim_n_facets"] = int(preset["n_facets"])
+        st.session_state["sim_n_categories"] = int(preset["n_categories"])
+        st.session_state["sim_theta_sd"] = float(preset["theta_sd"])
+        st.session_state["sim_noise_sd"] = float(preset["noise_sd"])
+        st.session_state["sim_missing_rate"] = float(preset["missing_rate"])
+        st.session_state["sim_threshold_mode"] = "even"
+        st.session_state["sim_step_span"] = float(preset["step_span"])
+        facet_names = list(preset["facet_names"])
+        facet_level_counts = [int(x) for x in preset["facet_level_counts"]]
+        facet_sds = [float(x) for x in preset["facet_sds"]]
+        for idx, facet in enumerate(facet_names):
+            st.session_state[f"sim_facet_name_{idx}"] = str(facet)
+        for idx, level_count in enumerate(facet_level_counts):
+            st.session_state[f"sim_facet_levels_{idx}"] = int(level_count)
+        for idx, facet_sd in enumerate(facet_sds):
+            st.session_state[f"sim_facet_sd_{idx}"] = float(facet_sd)
+        first_level_count = int(facet_level_counts[0])
+        st.session_state[f"sim_first_facet_levels_per_person_{first_level_count}"] = int(
+            preset["first_facet_levels_per_person"]
+        )
+        zero_count_score = preset["zero_count_score"]
+        st.session_state["sim_zero_count_enabled"] = zero_count_score is not None
+        if zero_count_score is not None:
+            st.session_state[f"sim_zero_count_score_{int(preset['n_categories'])}"] = int(zero_count_score)
+        for cache_key in (
+            "_loaded_custom_simulation_meta",
+            "_custom_simulation_preview_bundle",
+            "_custom_simulation_facet_names",
+            "_custom_simulation_score_support",
+        ):
+            st.session_state.pop(cache_key, None)
+        st.sidebar.info(t("data_source.sim_design_preset_applied_template", preset=t(f"data_source.sim_design_preset_{selected_design_preset}")))
+        st.rerun()
 
     with st.sidebar.expander(t("data_source.sim_design_expander"), expanded=True):
         n_person = int(st.number_input(
@@ -19731,6 +23111,7 @@ def render_custom_simulation_source() -> pd.DataFrame:
         "zero_count_score": zero_count_score,
     }
     st.session_state["_loaded_custom_simulation_meta"] = {
+        "design_preset": selected_design_preset,
         "n_person": n_person,
         "n_facets": n_facets,
         "facet_names": facet_names,
@@ -19738,6 +23119,12 @@ def render_custom_simulation_source() -> pd.DataFrame:
         "facet_sds": facet_sds,
         "first_facet_levels_per_person": first_facet_levels_per_person,
         "n_categories": n_categories,
+        "theta_sd": theta_sd,
+        "threshold_mode": threshold_mode,
+        "thresholds": [float(x) for x in thresholds],
+        "step_span": step_span,
+        "noise_sd": noise_sd,
+        "missing_rate": missing_rate,
         "n_obs": int(len(sim_df)),
         "zero_count_score": zero_count_score,
         "seed": seed,
@@ -19973,7 +23360,7 @@ def pick_default_facets(columns: list[str]) -> list[str]:
 
 
 def to_csv_bytes(df: pd.DataFrame) -> bytes:
-    return df.to_csv(index=False).encode("utf-8")
+    return _exports.to_csv_bytes(df)
 
 
 def _render_compact_dataframe(
@@ -20103,77 +23490,25 @@ textarea:focus-visible,
 
 def _safe_export_name(name: object, *, default: str = "table", max_len: int = 96) -> str:
     """Sanitize a filename/sheet-name stem for generated export bundles."""
-    text = str(name or "").strip()
-    text = text.replace("\\", "_").replace("/", "_")
-    text = re.sub(r"[^A-Za-z0-9._ -]+", "_", text)
-    text = re.sub(r"\s+", "_", text).strip("._- ")
-    if not text:
-        text = default
-    # Avoid hidden files and Windows device-name oddities in downloaded ZIPs.
-    if text.startswith("."):
-        text = text.lstrip(".") or default
-    return text[:max_len].rstrip("._- ") or default
+    return _exports.safe_export_name(name, default=default, max_len=max_len)
 
 
 def _safe_zip_entry_name(name: object, *, extension: str | None = None) -> str:
-    stem = _safe_export_name(name, default="asset")
-    ext = ""
-    if extension:
-        ext = str(extension).strip()
-        ext = ext if ext.startswith(".") else f".{ext}"
-        ext = re.sub(r"[^A-Za-z0-9.]+", "", ext)
-    if ext and not stem.lower().endswith(ext.lower()):
-        return f"{stem}{ext}"
-    return stem
+    return _exports.safe_zip_entry_name(name, extension=extension)
 
 
 def _unique_excel_sheet_name(name: object, used: set[str]) -> str:
-    base = _safe_export_name(name, default="Sheet", max_len=31)
-    # Excel forbids these even when pandas would eventually error.
-    base = re.sub(r"[\[\]:*?/\\]", "_", base).strip("'") or "Sheet"
-    candidate = base[:31]
-    i = 2
-    while candidate in used:
-        suffix = f"_{i}"
-        candidate = f"{base[:31 - len(suffix)]}{suffix}"
-        i += 1
-    used.add(candidate)
-    return candidate
+    return _exports.unique_excel_sheet_name(name, used)
 
 
 def to_excel_bytes(frames: dict[str, pd.DataFrame]) -> bytes:
     """Write multiple DataFrames to an in-memory Excel workbook, one sheet per key."""
-    buf = io.BytesIO()
-    used_sheets: set[str] = set()
-    with pd.ExcelWriter(buf, engine="openpyxl") as writer:
-        for name, df in frames.items():
-            sheet = _unique_excel_sheet_name(name, used_sheets)
-            df.to_excel(writer, sheet_name=sheet, index=False)
-    return buf.getvalue()
+    return _exports.to_excel_bytes(frames)
 
 
 def to_html_report(frames: dict[str, pd.DataFrame], title: str = "MFRM Report") -> bytes:
     """Build a self-contained HTML report from multiple DataFrames."""
-    parts = [
-        "<!DOCTYPE html><html><head>",
-        f"<title>{title}</title>",
-        "<meta charset='utf-8'>",
-        "<style>",
-        "body{font-family:system-ui,sans-serif;margin:2em;color:#222}",
-        "h1{border-bottom:2px solid #333}",
-        "h2{margin-top:1.5em;color:#444}",
-        "table{border-collapse:collapse;margin:1em 0;width:100%}",
-        "th,td{border:1px solid #ccc;padding:4px 8px;text-align:left;font-size:0.85em}",
-        "th{background:#f5f5f5}",
-        "tr:nth-child(even){background:#fafafa}",
-        "</style></head><body>",
-        f"<h1>{title}</h1>",
-    ]
-    for name, df in frames.items():
-        parts.append(f"<h2>{name}</h2>")
-        parts.append(df.to_html(index=False, border=0, na_rep=""))
-    parts.append("</body></html>")
-    return "\n".join(parts).encode("utf-8")
+    return _exports.to_html_report(frames, title=title)
 
 
 def frames_fingerprint(frames: dict[str, pd.DataFrame], length: int = 16) -> str:
@@ -20195,11 +23530,7 @@ def frames_fingerprint(frames: dict[str, pd.DataFrame], length: int = 16) -> str
 def cached_tables_zip(_frames: dict[str, pd.DataFrame], frames_key: str) -> bytes:
     """Cache table ZIP bytes by explicit fingerprint, not by DataFrame hash."""
     _ = frames_key
-    zip_buf = io.BytesIO()
-    with zipfile.ZipFile(zip_buf, "w", zipfile.ZIP_DEFLATED) as zf:
-        for name, df in _frames.items():
-            zf.writestr(_safe_zip_entry_name(name, extension="csv"), df.to_csv(index=False))
-    return zip_buf.getvalue()
+    return _exports.build_tables_zip(_frames)
 
 
 def build_result_bundle_frames(
@@ -20225,54 +23556,46 @@ def build_result_bundle_frames(
     if not isinstance(result, dict):
         return frames
     summary = result.get("summary")
-    if isinstance(summary, pd.DataFrame) and not summary.empty:
-        frames["summary"] = summary
+    _frame_bundle.add_frame(frames, "summary", summary)
     likelihood_info = result.get("likelihood_information")
     if not isinstance(likelihood_info, pd.DataFrame) or likelihood_info.empty:
         likelihood_info = build_likelihood_information_criteria(result)
-    if isinstance(likelihood_info, pd.DataFrame) and not likelihood_info.empty:
-        frames["likelihood_information_criteria"] = likelihood_info
+    _frame_bundle.add_frame(frames, "likelihood_information_criteria", likelihood_info)
     regularization = result.get("regularization", {})
     if isinstance(regularization, dict):
         reg_settings = regularization.get("settings", pd.DataFrame())
         reg_audit = regularization.get("audit", pd.DataFrame())
         reg_penalty = regularization.get("penalty_summary", pd.DataFrame())
-        if isinstance(reg_settings, pd.DataFrame) and not reg_settings.empty:
-            frames["facet_regularization_settings"] = reg_settings
-        if isinstance(reg_audit, pd.DataFrame) and not reg_audit.empty:
-            frames["facet_regularization_audit"] = reg_audit
-        if isinstance(reg_penalty, pd.DataFrame) and not reg_penalty.empty:
-            frames["regularization_penalty_summary"] = reg_penalty
+        _frame_bundle.add_frames(frames, (
+            ("facet_regularization_settings", reg_settings),
+            ("facet_regularization_audit", reg_audit),
+            ("regularization_penalty_summary", reg_penalty),
+        ))
     convergence = result.get("convergence")
-    if isinstance(convergence, pd.DataFrame) and not convergence.empty:
-        frames["convergence"] = convergence
+    _frame_bundle.add_frame(frames, "convergence", convergence)
     if isinstance(diagnostics, dict):
         measures = diagnostics.get("measures")
-        if isinstance(measures, pd.DataFrame) and not measures.empty:
-            frames["measures"] = measures
+        _frame_bundle.add_frame(frames, "measures", measures)
         uncertainty = diagnostics.get("uncertainty", {})
         if isinstance(uncertainty, dict):
             unc_summary = uncertainty.get("summary", pd.DataFrame())
             cov_audit = uncertainty.get("covariance_audit", pd.DataFrame())
             structural_se = uncertainty.get("structural_se", pd.DataFrame())
-            if isinstance(unc_summary, pd.DataFrame) and not unc_summary.empty:
-                frames["statistical_uncertainty_summary"] = unc_summary
-            if isinstance(cov_audit, pd.DataFrame) and not cov_audit.empty:
-                frames["mml_covariance_audit"] = cov_audit
-            if isinstance(structural_se, pd.DataFrame) and not structural_se.empty:
-                frames["mml_structural_measure_se"] = structural_se
+            _frame_bundle.add_frames(frames, (
+                ("statistical_uncertainty_summary", unc_summary),
+                ("mml_covariance_audit", cov_audit),
+                ("mml_structural_measure_se", structural_se),
+            ))
         prior_plan = build_mml_prior_sensitivity_plan(result)
-        if isinstance(prior_plan, pd.DataFrame) and not prior_plan.empty:
-            frames["mml_prior_sd_sensitivity_plan"] = prior_plan
+        _frame_bundle.add_frame(frames, "mml_prior_sd_sensitivity_plan", prior_plan)
         bias_audit = build_bias_inference_audit(all_bias_results or bias_results or {}, result, diagnostics)
-        if isinstance(bias_audit, pd.DataFrame) and not bias_audit.empty:
-            frames["bias_inference_audit"] = bias_audit
+        _frame_bundle.add_frame(frames, "bias_inference_audit", bias_audit)
         assumption_audit = build_statistical_assumption_audit(result, diagnostics, all_bias_results or bias_results or {})
-        if isinstance(assumption_audit, pd.DataFrame) and not assumption_audit.empty:
-            frames["statistical_assumption_audit"] = assumption_audit
+        _frame_bundle.add_frame(frames, "statistical_assumption_audit", assumption_audit)
         method_ref_audit = build_method_reference_audit() if frames else pd.DataFrame()
-        if isinstance(method_ref_audit, pd.DataFrame) and not method_ref_audit.empty:
-            frames["method_reference_audit"] = method_ref_audit
+        _frame_bundle.add_frame(frames, "method_reference_audit", method_ref_audit)
+        help_ref_coverage = build_help_reference_coverage() if frames else pd.DataFrame()
+        _frame_bundle.add_frame(frames, "help_reference_coverage", help_ref_coverage)
         if frames:
             try:
                 sentence_audit = build_apa_report_sentence_audit(
@@ -20285,45 +23608,159 @@ def build_result_bundle_frames(
                 sentence_audit = pd.DataFrame()
         else:
             sentence_audit = pd.DataFrame()
-        if isinstance(sentence_audit, pd.DataFrame) and not sentence_audit.empty:
-            frames["apa_report_sentence_audit"] = sentence_audit
+        _frame_bundle.add_frame(frames, "apa_report_sentence_audit", sentence_audit)
         reliability = diagnostics.get("reliability")
-        if isinstance(reliability, pd.DataFrame) and not reliability.empty:
-            frames["reliability"] = reliability
+        _frame_bundle.add_frame(frames, "reliability", reliability)
+        krippendorff_alpha = diagnostics.get("krippendorff_alpha")
+        _frame_bundle.add_frame(frames, "krippendorff_alpha_experimental", krippendorff_alpha)
+        if frames:
+            try:
+                krippendorff_interpretation = build_krippendorff_alpha_interpretation(result, diagnostics)
+                _frame_bundle.add_frame(frames, "krippendorff_alpha_interpretation", krippendorff_interpretation)
+            except Exception:
+                pass
+            qc_recommendations = pd.DataFrame()
+            try:
+                scoring_decision = build_scoring_consistency_decision(result, diagnostics)
+                _frame_bundle.add_frame(frames, "scoring_consistency_decision", scoring_decision)
+                qc_recommendations = build_quality_control_recommendations(result, diagnostics)
+                _frame_bundle.add_frame(frames, "quality_control_recommendations", qc_recommendations)
+                qc_todo = build_quality_control_todo_checklist(result, diagnostics)
+                _frame_bundle.add_frame(frames, "quality_control_todo_checklist", qc_todo)
+                first_read_summary = build_scoring_quality_first_read_summary(result, diagnostics)
+                _frame_bundle.add_frame(frames, "scoring_quality_first_read_summary", first_read_summary)
+                term_guide = scoring_quality_term_guide()
+                _frame_bundle.add_frame(frames, "scoring_quality_term_guide", term_guide)
+            except Exception:
+                pass
+            try:
+                report_ready_summary = build_report_ready_summary_panel(
+                    result,
+                    diagnostics,
+                    all_bias_results=all_bias_results or bias_results or {},
+                    bias_results=bias_results,
+                )
+                _frame_bundle.add_frame(frames, "report_ready_summary_panel", report_ready_summary)
+                role_memos = build_role_based_action_memos(
+                    result,
+                    diagnostics,
+                    all_bias_results=all_bias_results or bias_results or {},
+                    bias_results=bias_results,
+                )
+                _frame_bundle.add_frame(frames, "role_based_action_memos", role_memos)
+                role_checklist = build_role_based_action_checklist(
+                    result,
+                    diagnostics,
+                    all_bias_results=all_bias_results or bias_results or {},
+                    bias_results=bias_results,
+                )
+                _frame_bundle.add_frame(frames, "role_based_action_checklist", role_checklist)
+                bundle_readiness = build_final_report_readiness(
+                    result,
+                    diagnostics,
+                    all_bias_results or bias_results or {},
+                )
+                bundle_action_plan = build_submission_action_plan(
+                    result,
+                    diagnostics,
+                    all_bias_results or bias_results or {},
+                )
+                critical_review = build_critical_final_review_panel(
+                    result,
+                    diagnostics,
+                    all_bias_results=all_bias_results or bias_results or {},
+                    bias_results=bias_results,
+                    role_action_checklist=role_checklist,
+                    report_ready_summary=report_ready_summary,
+                    final_report_readiness=bundle_readiness,
+                    submission_action_plan=bundle_action_plan,
+                )
+                _frame_bundle.add_frame(frames, "critical_final_review_panel", critical_review)
+                status_rationale = build_status_rationale_drilldown(
+                    result,
+                    diagnostics,
+                    all_bias_results=all_bias_results or bias_results or {},
+                    bias_results=bias_results,
+                    role_action_checklist=role_checklist,
+                    critical_final_review=critical_review,
+                    report_ready_summary=report_ready_summary,
+                    final_report_readiness=bundle_readiness,
+                    submission_action_plan=bundle_action_plan,
+                )
+                _frame_bundle.add_frame(frames, "status_rationale_drilldown", status_rationale)
+                bundle_claim_guide = build_manuscript_claim_guide(
+                    result,
+                    diagnostics,
+                    all_bias_results or bias_results or {},
+                )
+                reading_path = build_result_reading_path(
+                    result,
+                    diagnostics,
+                    all_bias_results=all_bias_results or bias_results or {},
+                    bias_results=bias_results,
+                    report_ready_summary=report_ready_summary,
+                    final_report_readiness=bundle_readiness,
+                    manuscript_claim_guide=bundle_claim_guide,
+                )
+                _frame_bundle.add_frame(frames, "result_reading_path", reading_path)
+                bundle_category_action = category_collapse_action_center_table(result, diagnostics)
+                operational_board = build_operational_decision_board(
+                    result,
+                    diagnostics,
+                    all_bias_results=all_bias_results or bias_results or {},
+                    bias_results=bias_results,
+                    quality_control_recommendations=qc_recommendations,
+                    category_action_center=bundle_category_action,
+                    critical_final_review=critical_review,
+                    report_ready_summary=report_ready_summary,
+                    final_report_readiness=bundle_readiness,
+                    submission_action_plan=bundle_action_plan,
+                )
+                _frame_bundle.add_frame(frames, "operational_decision_board", operational_board)
+                reporting_bridge = build_reporting_action_bridge(
+                    result,
+                    diagnostics,
+                    all_bias_results=all_bias_results or bias_results or {},
+                    bias_results=bias_results,
+                    role_action_checklist=role_checklist,
+                    report_ready_summary=report_ready_summary,
+                    final_report_readiness=bundle_readiness,
+                    manuscript_claim_guide=bundle_claim_guide,
+                    critical_final_review=critical_review,
+                    status_rationale=status_rationale,
+                    result_reading_path=reading_path,
+                    operational_decision_board=operational_board,
+                    quality_control_recommendations=qc_recommendations,
+                    category_action_center=bundle_category_action,
+                    submission_action_plan=bundle_action_plan,
+                )
+                _frame_bundle.add_frame(frames, "reporting_action_bridge", reporting_bridge)
+            except Exception:
+                pass
         fit = diagnostics.get("fit")
-        if isinstance(fit, pd.DataFrame) and not fit.empty:
-            frames["fit"] = fit
+        _frame_bundle.add_frame(frames, "fit", fit)
         shrinkage = diagnostics.get("eb_shrinkage")
         if isinstance(shrinkage, dict) and shrinkage.get("available"):
             shr_report = shrinkage.get("report", pd.DataFrame())
             shr_measures = shrinkage.get("measures", pd.DataFrame())
-            if isinstance(shr_report, pd.DataFrame) and not shr_report.empty:
-                frames["eb_shrinkage_report"] = shr_report
-            if isinstance(shr_measures, pd.DataFrame) and not shr_measures.empty:
-                frames["eb_shrinkage_measures"] = shr_measures
+            _frame_bundle.add_frames(frames, (
+                ("eb_shrinkage_report", shr_report),
+                ("eb_shrinkage_measures", shr_measures),
+            ))
         pca = diagnostics.get("pca")
         if isinstance(pca, dict):
             eigen = pca.get("eigenvalues")
-            if isinstance(eigen, pd.DataFrame) and not eigen.empty:
-                frames["pca_eigenvalues"] = eigen
-            elif hasattr(eigen, "__iter__"):
-                try:
-                    frames["pca_eigenvalues"] = pd.DataFrame({"Eigenvalue": list(eigen)})
-                except Exception:
-                    pass
+            _frame_bundle.add_iterable_frame(frames, "pca_eigenvalues", eigen, column_name="Eigenvalue")
             stability = pca.get("stability_table")
-            if isinstance(stability, pd.DataFrame) and not stability.empty:
-                frames["pca_stability_audit"] = stability
+            _frame_bundle.add_frame(frames, "pca_stability_audit", stability)
             stability_all = collect_pca_stability_tables(diagnostics)
-            if isinstance(stability_all, pd.DataFrame) and not stability_all.empty:
-                frames["pca_stability_all_scopes"] = stability_all
+            _frame_bundle.add_frame(frames, "pca_stability_all_scopes", stability_all)
     # Person / facet measures split (nice to have separately, matches
     # the way FACETS groups its output facet-tables).
     facets = result.get("facets", {}) if isinstance(result, dict) else {}
     if isinstance(facets, dict):
         person_df = facets.get("person")
-        if isinstance(person_df, pd.DataFrame) and not person_df.empty:
-            frames["person_measures"] = person_df
+        if _frame_bundle.add_frame(frames, "person_measures", person_df):
             try:
                 person_fit_idx = compute_person_fit_indices(
                     result,
@@ -20331,14 +23768,36 @@ def build_result_bundle_frames(
                 )
             except Exception:
                 person_fit_idx = pd.DataFrame()
-            if isinstance(person_fit_idx, pd.DataFrame) and not person_fit_idx.empty:
-                frames["person_fit_indices"] = person_fit_idx
+            _frame_bundle.add_frame(frames, "person_fit_indices", person_fit_idx)
         others_df = facets.get("others")
-        if isinstance(others_df, pd.DataFrame) and not others_df.empty:
-            frames["facet_element_measures"] = others_df
+        _frame_bundle.add_frame(frames, "facet_element_measures", others_df)
     steps_df = result.get("steps")
-    if isinstance(steps_df, pd.DataFrame) and not steps_df.empty:
-        frames["step_thresholds"] = steps_df
+    _frame_bundle.add_frame(frames, "step_thresholds", steps_df)
+    category_export_context = bool(frames)
+    prep_ctx = result.get("prep") if isinstance(result, dict) else {}
+    config_ctx = result.get("config") if isinstance(result, dict) else {}
+    obs_ctx = diagnostics.get("obs") if isinstance(diagnostics, dict) else None
+    category_export_context = category_export_context or bool(prep_ctx if isinstance(prep_ctx, dict) else False)
+    category_export_context = category_export_context or bool(config_ctx if isinstance(config_ctx, dict) else False)
+    category_export_context = category_export_context or (
+        isinstance(obs_ctx, pd.DataFrame) and not obs_ctx.empty
+    )
+    if category_export_context:
+        try:
+            rating_dashboard = rating_scale_functioning_dashboard(result, diagnostics)
+            _frame_bundle.add_frame(frames, "rating_scale_functioning_dashboard", rating_dashboard)
+            decision_support = rating_scale_decision_support_table(result, diagnostics)
+            _frame_bundle.add_frame(frames, "rating_scale_decision_support", decision_support)
+            category_action = category_collapse_action_center_table(result, diagnostics)
+            _frame_bundle.add_frame(frames, "category_collapse_action_center", category_action)
+            recode_candidates = rating_scale_recode_candidate_table(result, diagnostics)
+            _frame_bundle.add_frame(frames, "rating_scale_recode_candidates", recode_candidates)
+            recode_map_long = rating_scale_recode_map_long_table(result, diagnostics)
+            _frame_bundle.add_frame(frames, "rating_scale_recode_map_long", recode_map_long)
+            category_evidence = rating_scale_category_evidence_table(result, diagnostics)
+            _frame_bundle.add_frame(frames, "rating_scale_category_evidence", category_evidence)
+        except Exception:
+            pass
     try:
         facets_for_yardstick = result.get("facets", {}) if isinstance(result, dict) else {}
         prep_for_yardstick = result.get("prep", {}) if isinstance(result, dict) else {}
@@ -20348,13 +23807,11 @@ def build_result_bundle_frames(
             steps_df if isinstance(steps_df, pd.DataFrame) else pd.DataFrame(),
             rating_min=prep_for_yardstick.get("rating_min") if isinstance(prep_for_yardstick, dict) else None,
         )
-        if isinstance(yardstick_map, pd.DataFrame) and not yardstick_map.empty:
-            frames["yardstick_map"] = yardstick_map
+        _frame_bundle.add_frame(frames, "yardstick_map", yardstick_map)
     except Exception:
         pass
     weight_audit = build_weighting_policy_audit(result)
-    if isinstance(weight_audit, pd.DataFrame) and not weight_audit.empty:
-        frames["weighting_policy_audit"] = weight_audit
+    _frame_bundle.add_frame(frames, "weighting_policy_audit", weight_audit)
     try:
         design_bundle = evaluate_design_from_fitted(result, diagnostics, forecast_multipliers=(2.0,))
         if isinstance(design_bundle, dict) and design_bundle.get("available"):
@@ -20365,21 +23822,18 @@ def build_result_bundle_frames(
                 ("design_effect", "intraclass_icc_design_effect"),
             ):
                 frame = design_bundle.get(key, pd.DataFrame())
-                if isinstance(frame, pd.DataFrame) and not frame.empty:
-                    frames[frame_name] = frame
+                _frame_bundle.add_frame(frames, frame_name, frame)
     except Exception:
         pass
     try:
         casebook = build_misfit_casebook(result, diagnostics, all_bias_results or {})
-        if isinstance(casebook, pd.DataFrame) and not casebook.empty:
-            frames["misfit_casebook"] = casebook
+        _frame_bundle.add_frame(frames, "misfit_casebook", casebook)
     except Exception:
         pass
     # Bias tables — prefer the all-pair dict when available.
     if isinstance(all_bias_results, dict) and all_bias_results:
         bias_audit = build_bias_inference_audit(all_bias_results, result, diagnostics)
-        if isinstance(bias_audit, pd.DataFrame) and not bias_audit.empty:
-            frames["bias_inference_audit"] = bias_audit
+        _frame_bundle.add_frame(frames, "bias_inference_audit", bias_audit)
         for pair_label, pair_res in all_bias_results.items():
             if not isinstance(pair_res, dict):
                 continue
@@ -20387,23 +23841,26 @@ def build_result_bundle_frames(
             if not isinstance(tbl, pd.DataFrame) or tbl.empty:
                 tbl = pair_res.get("bias_tbl")
             if isinstance(tbl, pd.DataFrame) and not tbl.empty:
-                safe_pair = re.sub(r"[^A-Za-z0-9]+", "_", str(pair_label)).strip("_")
-                frames[f"bias_{safe_pair}"] = tbl
+                bias_frame_name = _frame_bundle.safe_frame_key("bias", pair_label)
+                _frame_bundle.add_frame(frames, bias_frame_name, tbl)
                 dff_tbl = build_dff_bias_screening_table(pair_res)
-                if isinstance(dff_tbl, pd.DataFrame) and not dff_tbl.empty:
-                    frames[f"dff_bias_{safe_pair}"] = dff_tbl
+                dff_frame_name = _frame_bundle.safe_frame_key("dff_bias", pair_label)
+                _frame_bundle.add_frame(frames, dff_frame_name, dff_tbl)
     elif isinstance(bias_results, dict) and bias_results:
         bias_audit = build_bias_inference_audit(bias_results, result, diagnostics)
-        if isinstance(bias_audit, pd.DataFrame) and not bias_audit.empty:
-            frames["bias_inference_audit"] = bias_audit
+        _frame_bundle.add_frame(frames, "bias_inference_audit", bias_audit)
         tbl = bias_results.get("table")
         if not isinstance(tbl, pd.DataFrame) or tbl.empty:
             tbl = bias_results.get("bias_tbl")
         if isinstance(tbl, pd.DataFrame) and not tbl.empty:
-            frames["bias"] = tbl
+            _frame_bundle.add_frame(frames, "bias", tbl)
             dff_tbl = build_dff_bias_screening_table(bias_results)
-            if isinstance(dff_tbl, pd.DataFrame) and not dff_tbl.empty:
-                frames["dff_bias_screening"] = dff_tbl
+            _frame_bundle.add_frame(frames, "dff_bias_screening", dff_tbl)
+    if frames:
+        method_ref_audit = build_method_reference_audit()
+        _frame_bundle.add_frame(frames, "method_reference_audit", method_ref_audit, overwrite=False)
+        help_ref_coverage = build_help_reference_coverage()
+        _frame_bundle.add_frame(frames, "help_reference_coverage", help_ref_coverage, overwrite=False)
     return frames
 
 
@@ -20693,28 +24150,7 @@ def build_osf_zip(
     text_assets: dict[str, str] | None = None,
 ) -> bytes:
     """Create a ZIP archive with CSV + Excel + HTML plus optional text assets."""
-    buf = io.BytesIO()
-    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
-        written: set[str] = set()
-        for name, df in frames.items():
-            entry = _safe_zip_entry_name(name, extension="csv")
-            if entry not in written:
-                zf.writestr(entry, df.to_csv(index=False))
-                written.add(entry)
-        xlsx_entry = _safe_zip_entry_name(title, extension="xlsx")
-        if xlsx_entry not in written:
-            zf.writestr(xlsx_entry, to_excel_bytes(frames))
-            written.add(xlsx_entry)
-        html_entry = _safe_zip_entry_name(title, extension="html")
-        if html_entry not in written:
-            zf.writestr(html_entry, to_html_report(frames, title))
-            written.add(html_entry)
-        for name, text in (text_assets or {}).items():
-            entry = _safe_zip_entry_name(name)
-            if entry not in written:
-                zf.writestr(entry, str(text))
-                written.add(entry)
-    return buf.getvalue()
+    return _exports.build_osf_zip(frames, title=title, text_assets=text_assets)
 
 
 @st.cache_data(show_spinner=False, max_entries=4, ttl=1800)
@@ -20731,54 +24167,17 @@ def cached_osf_zip(
     return build_osf_zip(_frames, title=title, text_assets=_text_assets)
 
 
-_PUBLIC_EXPORT_SENSITIVE_FRAME_NAMES: frozenset[str] = frozenset({
-    "response_data_row_audit",
-    "response_data_excluded_rows",
-    "scorefile",
-    "fitted_predictions",
-    "new_design_predictions",
-    "population_person_data",
-    "posterior_scores",
-    "plausible_values",
-    "residuals",
-    "person_measures",
-    "person_fit_indices",
-    "mfrm_stan_id_index_map",
-    "mfrm_uto_bayesian_mfrm_id_index_map",
-})
+_PUBLIC_EXPORT_SENSITIVE_FRAME_NAMES = _privacy.PUBLIC_EXPORT_SENSITIVE_FRAME_NAMES
 
 
 def _drop_person_level_rows_for_public_export(df: pd.DataFrame) -> tuple[pd.DataFrame, int]:
-    """Remove person-level measure rows from aggregate tables in public exports."""
-    if not isinstance(df, pd.DataFrame) or df.empty or "Facet" not in df.columns:
-        return df, 0
-    facet_values = df["Facet"].astype(str).str.strip().str.lower()
-    mask_person = facet_values.isin({"person", "persons", "student", "students", "learner", "learners"})
-    n_removed = int(mask_person.sum())
-    if n_removed == 0:
-        return df, 0
-    return df.loc[~mask_person].reset_index(drop=True), n_removed
+    """Compatibility wrapper for public-export row filtering."""
+    return _privacy.drop_person_level_rows_for_public_export(df)
 
 
 def _frame_contains_public_identifier_risk(df: pd.DataFrame) -> bool:
-    """Heuristic for frames that should not appear in default public exports."""
-    if not isinstance(df, pd.DataFrame) or df.empty:
-        return False
-    identifier_cols = {"person", "student", "learner", "examinee", "candidate", "subject"}
-    if any(str(col).strip().lower() in identifier_cols for col in df.columns):
-        return True
-    facet_cols = {
-        "facet1", "facet2", "sourcefacet", "targetfacet",
-        "primaryfacet", "secondaryfacet",
-    }
-    person_tokens = {"person", "persons", "student", "students", "learner", "learners"}
-    for col in df.columns:
-        if str(col).strip().replace("_", "").lower() not in facet_cols:
-            continue
-        values = df[col].astype(str).str.strip().str.lower()
-        if values.isin(person_tokens).any():
-            return True
-    return False
+    """Compatibility wrapper for public-export identifier-risk checks."""
+    return _privacy.frame_contains_public_identifier_risk(df)
 
 
 def prepare_download_frames_for_privacy(
@@ -20786,106 +24185,30 @@ def prepare_download_frames_for_privacy(
     *,
     public_export_mode: bool,
 ) -> dict[str, pd.DataFrame]:
-    """Return export frames with a manifest and public-mode privacy filtering."""
-    prepared: OrderedDict[str, pd.DataFrame] = OrderedDict()
-    manifest_rows: list[dict] = []
-    for name, df in (frames or {}).items():
-        frame_name = str(name)
-        if not isinstance(df, pd.DataFrame):
-            continue
-        name_lower = frame_name.lower()
-        reason = ""
-        if public_export_mode and (
-            frame_name in _PUBLIC_EXPORT_SENSITIVE_FRAME_NAMES
-            or "person" in name_lower
-            or name_lower.startswith("facets_person")
-            or _frame_contains_public_identifier_risk(df)
-        ):
-            reason = "Excluded from public export: row-level or person-level identifiers may be present."
-            manifest_rows.append({
-                "Frame": frame_name,
-                "Rows": int(len(df)),
-                "Columns": int(df.shape[1]),
-                "Status": "excluded_public_mode",
-                "Reason": reason,
-            })
-            continue
-
-        export_df = df.copy()
-        removed_person_rows = 0
-        if public_export_mode:
-            export_df, removed_person_rows = _drop_person_level_rows_for_public_export(export_df)
-            if export_df.empty and removed_person_rows:
-                reason = "Excluded from public export: all rows were person-level rows."
-                manifest_rows.append({
-                    "Frame": frame_name,
-                    "Rows": int(len(df)),
-                    "Columns": int(df.shape[1]),
-                    "Status": "excluded_public_mode",
-                    "Reason": reason,
-                })
-                continue
-        prepared[frame_name] = export_df
-        manifest_rows.append({
-            "Frame": frame_name,
-            "Rows": int(len(export_df)),
-            "Columns": int(export_df.shape[1]),
-            "Status": "included_public_mode" if public_export_mode else "included_private_mode",
-            "Reason": (
-                f"Included after removing {removed_person_rows} person-level row(s)."
-                if removed_person_rows else
-                ("Included in public export." if public_export_mode else "Included in complete/private export.")
-            ),
-        })
-
-    manifest_rows.append({
-        "Frame": "export_privacy_manifest",
-        "Rows": len(manifest_rows) + 1,
-        "Columns": 5,
-        "Status": "included",
-        "Reason": (
-            "Documents public-export filtering decisions. Public mode is not a formal de-identification guarantee."
-            if public_export_mode else
-            "Complete/private export selected; row-level tables may contain identifiers."
-        ),
-    })
-    prepared["export_privacy_manifest"] = pd.DataFrame(manifest_rows)
-    return dict(prepared)
+    """Compatibility wrapper for export privacy filtering."""
+    return _privacy.prepare_download_frames_for_privacy(
+        frames,
+        public_export_mode=public_export_mode,
+    )
 
 
 def bytes_mapping_fingerprint(assets: dict[str, bytes | str], length: int = 16) -> str:
     """Fingerprint a named bytes/string asset bundle for ZIP export caching."""
-    digest = hashlib.sha256()
-    for name, value in sorted((assets or {}).items(), key=lambda item: str(item[0])):
-        raw = value.encode("utf-8") if isinstance(value, str) else bytes(value)
-        digest.update(str(name).encode("utf-8"))
-        digest.update(np.asarray([len(raw)], dtype=np.int64).tobytes())
-        digest.update(hashlib.sha256(raw).digest())
-    return digest.hexdigest()[: int(length)]
+    return _exports.bytes_mapping_fingerprint(assets, length=length)
 
 
 @st.cache_data(show_spinner=False, max_entries=4, ttl=1800)
 def cached_named_asset_zip(_assets: dict[str, bytes | str], assets_key: str, extension: str) -> bytes:
     """Cache ZIP bytes for generated figure bundles by explicit asset fingerprint."""
     _ = assets_key
-    zip_buf = io.BytesIO()
-    with zipfile.ZipFile(zip_buf, "w", zipfile.ZIP_DEFLATED) as zf:
-        for name, value in _assets.items():
-            raw = value.encode("utf-8") if isinstance(value, str) else bytes(value)
-            zf.writestr(_safe_zip_entry_name(name, extension=extension), raw)
-    return zip_buf.getvalue()
+    return _exports.build_named_asset_zip(_assets, extension=extension)
 
 
 @st.cache_data(show_spinner=False, max_entries=4, ttl=1800)
 def cached_mixed_asset_zip(_assets: dict[str, bytes | str], assets_key: str) -> bytes:
     """Cache ZIP bytes for named assets that already include paths/extensions."""
     _ = assets_key
-    zip_buf = io.BytesIO()
-    with zipfile.ZipFile(zip_buf, "w", zipfile.ZIP_DEFLATED) as zf:
-        for name, value in _assets.items():
-            raw = value.encode("utf-8") if isinstance(value, str) else bytes(value)
-            zf.writestr(_safe_zip_entry_name(name), raw)
-    return zip_buf.getvalue()
+    return _exports.build_mixed_asset_zip(_assets)
 
 
 # ---------------------------------------------------------------------------
@@ -22550,6 +25873,226 @@ def guided_goal_guardrail_summary_table(goal_id: str, action_plan: pd.DataFrame 
     }])
 
 
+def guided_section_id_for_target(target: object) -> str:
+    """Map a visible target label to the Essential section id."""
+    text = str(target or "").strip()
+    if not text:
+        return "start"
+    direct_labels = {
+        t("guided.tab_start"): "start",
+        t("guided.tab_first_read"): "first_read",
+        t("guided.tab_results"): "results",
+        t("guided.tab_diagnostics"): "diagnostics",
+        t("guided.tab_figures"): "figures",
+        t("guided.tab_report_export"): "report_export",
+        t("guided.tab_learn"): "learn",
+    }
+    for label, section_id in direct_labels.items():
+        if str(label) and str(label) in text:
+            return section_id
+    lowered = text.lower()
+    keyword_map = {
+        "first_read": ("first read", "first-read", "first_read", "初期確認", "最初に確認"),
+        "results": ("results", "measure", "facets-style", "結果", "測定値"),
+        "diagnostics": ("diagnostic", "fit", "dimensionality", "categories", "bias", "診断", "適合", "次元", "カテゴリ", "バイアス"),
+        "figures": ("figures", "figure", "wright", "yardstick", "visual", "図", "視覚"),
+        "report_export": ("report", "export", "download", "publication", "readiness", "レポート", "出力", "ダウンロード", "準備"),
+        "learn": ("learn", "help", "glossary", "guide", "学ぶ", "ヘルプ", "用語", "ガイド"),
+        "start": ("start", "sample", "data", "run", "開始", "サンプル", "データ", "実行"),
+    }
+    for section_id, keywords in keyword_map.items():
+        if any(keyword in lowered for keyword in keywords):
+            return section_id
+    return "start"
+
+
+def guided_action_hub_cards(goal_id: str, action_plan: pd.DataFrame | None) -> pd.DataFrame:
+    """Return a compact action hub with one primary action and detail links."""
+    safe_goal = _safe_guided_goal_id(goal_id)
+    next_click = guided_next_click_summary_table(safe_goal, action_plan)
+    locator = guided_goal_detail_locator_table(safe_goal)
+    guardrail = guided_goal_guardrail_summary_table(safe_goal, action_plan)
+    route = _guided_goal_route_row(safe_goal)
+
+    next_row = next_click.iloc[0] if isinstance(next_click, pd.DataFrame) and not next_click.empty else pd.Series(dtype=object)
+    locator_row = locator.iloc[0] if isinstance(locator, pd.DataFrame) and not locator.empty else pd.Series(dtype=object)
+    guardrail_row = guardrail.iloc[0] if isinstance(guardrail, pd.DataFrame) and not guardrail.empty else pd.Series(dtype=object)
+
+    next_open = str(next_row.get(t("guided.next_click_col_open"), route[t("guided.goal_col_start")]))
+    detail_open = str(locator_row.get(t("guided.goal_locator_col_open"), route[t("guided.goal_col_start")]))
+    detail_place = str(locator_row.get(t("guided.goal_locator_col_place"), route[t("guided.goal_col_detail")]))
+    report_open = t("guided.tab_report_export")
+
+    columns = [
+        "ActionId",
+        t("guided.action_hub_col_role"),
+        t("guided.action_hub_col_open"),
+        t("guided.action_hub_col_action"),
+        t("guided.action_hub_col_detail"),
+        "SectionId",
+        t("guided.action_hub_col_button"),
+    ]
+    rows = [
+        {
+            "ActionId": "primary",
+            columns[1]: t("guided.action_hub_primary_role"),
+            columns[2]: next_open,
+            columns[3]: str(next_row.get(t("guided.next_click_col_do"), route[t("guided.goal_col_next")])),
+            columns[4]: str(next_row.get(t("guided.next_click_col_keep_visible"), t("guided.next_click_keep_evidence"))),
+            "SectionId": guided_section_id_for_target(next_open),
+            columns[6]: t("guided.action_hub_primary_button"),
+        },
+        {
+            "ActionId": "detail",
+            columns[1]: t("guided.action_hub_detail_role"),
+            columns[2]: detail_open,
+            columns[3]: str(locator_row.get(t("guided.goal_locator_col_check"), "")),
+            columns[4]: detail_place,
+            "SectionId": guided_section_id_for_target(f"{detail_open} {detail_place}"),
+            columns[6]: t("guided.action_hub_detail_button"),
+        },
+        {
+            "ActionId": "boundary",
+            columns[1]: t("guided.action_hub_boundary_role"),
+            columns[2]: report_open,
+            columns[3]: str(guardrail_row.get(t("guided.goal_guardrail_col_do_not_decide"), "")),
+            columns[4]: str(guardrail_row.get(t("guided.goal_guardrail_col_expected_output"), "")),
+            "SectionId": "report_export",
+            columns[6]: t("guided.action_hub_boundary_button"),
+        },
+    ]
+    return pd.DataFrame(rows, columns=columns)
+
+
+def guided_progress_checklist(goal_id: str, action_plan: pd.DataFrame | None) -> pd.DataFrame:
+    """Return a checkbox-ready guided progress checklist for the selected goal."""
+    safe_goal = _safe_guided_goal_id(goal_id)
+    route = _guided_goal_route_row(safe_goal)
+    focus = guided_goal_current_focus_table(safe_goal, action_plan)
+    next_click = guided_next_click_summary_table(safe_goal, action_plan)
+    locator = guided_goal_detail_locator_table(safe_goal)
+
+    has_plan = isinstance(action_plan, pd.DataFrame) and not action_plan.empty
+    hard_flags = _guided_focus_rows_by_class(action_plan, "hard_stop")
+    claim_caveats = _guided_focus_rows_by_class(action_plan, "claim_caveat")
+    if isinstance(action_plan, pd.DataFrame) and not action_plan.empty and "Status" in action_plan.columns:
+        review_flags = action_plan.loc[
+            action_plan["Status"].astype(str).isin(GUIDED_GOAL_REVIEW_STATUSES)
+        ]
+    else:
+        review_flags = pd.DataFrame()
+    unresolved_flags = bool(not hard_flags.empty or not review_flags.empty)
+
+    focus_row = focus.iloc[0] if isinstance(focus, pd.DataFrame) and not focus.empty else pd.Series(dtype=object)
+    next_row = next_click.iloc[0] if isinstance(next_click, pd.DataFrame) and not next_click.empty else pd.Series(dtype=object)
+    locator_row = locator.iloc[0] if isinstance(locator, pd.DataFrame) and not locator.empty else pd.Series(dtype=object)
+    route_start = str(route[t("guided.goal_col_start")])
+    route_next = str(route[t("guided.goal_col_next")])
+    locator_open = str(locator_row.get(t("guided.goal_locator_col_open"), route_start))
+    locator_place = str(locator_row.get(t("guided.goal_locator_col_place"), route_start))
+    locator_check = str(locator_row.get(t("guided.goal_locator_col_check"), ""))
+    locator_use = str(locator_row.get(t("guided.goal_locator_col_use"), ""))
+
+    columns = [
+        t("guided.progress_col_done"),
+        t("guided.progress_col_checkpoint"),
+        t("guided.progress_col_state"),
+        t("guided.progress_col_open"),
+        t("guided.progress_col_action"),
+        t("guided.progress_col_completion"),
+        t("guided.progress_col_boundary"),
+    ]
+    rows: list[dict[str, object]] = []
+
+    def add_row(
+        *,
+        done: bool,
+        checkpoint_key: str,
+        state: str,
+        open_value: str,
+        action: str,
+        completion_key: str,
+        boundary_key: str,
+    ) -> None:
+        rows.append({
+            columns[0]: bool(done),
+            columns[1]: t(f"guided.progress_{checkpoint_key}_checkpoint"),
+            columns[2]: state,
+            columns[3]: open_value,
+            columns[4]: action,
+            columns[5]: t(f"guided.progress_{completion_key}_completion"),
+            columns[6]: t(f"guided.progress_{boundary_key}_boundary"),
+        })
+
+    add_row(
+        done=has_plan,
+        checkpoint_key="run",
+        state=t("guided.progress_state_ready") if has_plan else t("guided.progress_state_blocked"),
+        open_value=t("guided.tab_start"),
+        action=t("guided.next_click_run_first") if not has_plan else t("guided.progress_run_action_ready"),
+        completion_key="run",
+        boundary_key="run",
+    )
+    add_row(
+        done=True,
+        checkpoint_key="goal",
+        state=t("guided.progress_state_available"),
+        open_value=route_start,
+        action=route_next,
+        completion_key="goal",
+        boundary_key="goal",
+    )
+    add_row(
+        done=has_plan and not unresolved_flags,
+        checkpoint_key="focus",
+        state=(
+            t("guided.progress_state_blocked")
+            if not hard_flags.empty else
+            t("guided.progress_state_review")
+            if unresolved_flags else
+            t("guided.progress_state_ready")
+        ),
+        open_value=str(focus_row.get(t("guided.goal_focus_col_open"), route_start)),
+        action=str(focus_row.get(t("guided.goal_focus_col_action"), route_next)),
+        completion_key="focus",
+        boundary_key="focus",
+    )
+    add_row(
+        done=False,
+        checkpoint_key="evidence",
+        state=t("guided.progress_state_user_check"),
+        open_value=f"{locator_open}: {locator_place}",
+        action=" ".join(part for part in [locator_check, locator_use] if part).strip(),
+        completion_key="evidence",
+        boundary_key="evidence",
+    )
+    claim_ready = bool(
+        has_plan
+        and hard_flags.empty
+        and claim_caveats.empty
+        and review_flags.empty
+    )
+    add_row(
+        done=claim_ready,
+        checkpoint_key="claim",
+        state=t("guided.progress_state_ready") if claim_ready else t("guided.progress_state_review"),
+        open_value=str(next_row.get(t("guided.next_click_col_open"), t("guided.tab_report_export"))),
+        action=str(next_row.get(t("guided.next_click_col_keep_visible"), t("guided.next_click_keep_evidence"))),
+        completion_key="claim",
+        boundary_key="claim",
+    )
+    add_row(
+        done=False,
+        checkpoint_key="archive",
+        state=t("guided.progress_state_user_check"),
+        open_value=t("guided.tab_report_export"),
+        action=t("guided.progress_archive_action"),
+        completion_key="archive",
+        boundary_key="archive",
+    )
+    return pd.DataFrame(rows, columns=columns)
+
+
 def _render_guided_goal_router(
     *,
     action_plan: pd.DataFrame | None = None,
@@ -22594,6 +26137,73 @@ def _render_guided_goal_router(
         width="stretch",
         hide_index=True,
     )
+    action_hub = guided_action_hub_cards(str(selected_goal), action_plan)
+    if isinstance(action_hub, pd.DataFrame) and not action_hub.empty:
+        st.markdown(f"**{t('guided.action_hub_heading')}**")
+        st.caption(t("guided.action_hub_caption"))
+        role_col = t("guided.action_hub_col_role")
+        open_col = t("guided.action_hub_col_open")
+        action_col = t("guided.action_hub_col_action")
+        detail_col = t("guided.action_hub_col_detail")
+        button_col = t("guided.action_hub_col_button")
+        card_cols = st.columns(len(action_hub))
+        for idx, (_, hub_row) in enumerate(action_hub.iterrows()):
+            with card_cols[idx]:
+                with st.container(border=True):
+                    st.markdown(f"**{hub_row.get(role_col, '')}**")
+                    st.caption(str(hub_row.get(open_col, "")))
+                    st.write(str(hub_row.get(action_col, "")))
+                    detail_text = str(hub_row.get(detail_col, "")).strip()
+                    if detail_text:
+                        st.caption(detail_text)
+                    if st.button(
+                        str(hub_row.get(button_col, t("guided.action_hub_primary_button"))),
+                        key=f"guided_action_hub_{key_suffix}_{hub_row.get('ActionId', idx)}",
+                        use_container_width=True,
+                    ):
+                        st.session_state["guided_essential_section"] = str(hub_row.get("SectionId", "start"))
+                        st.rerun()
+        with st.expander(t("guided.action_hub_detail_expander"), expanded=False):
+            st.dataframe(
+                action_hub.drop(columns=["ActionId", "SectionId"], errors="ignore"),
+                width="stretch",
+                hide_index=True,
+            )
+    progress_table = guided_progress_checklist(str(selected_goal), action_plan)
+    if isinstance(progress_table, pd.DataFrame) and not progress_table.empty:
+        st.markdown(f"**{t('guided.progress_heading')}**")
+        done_col = t("guided.progress_col_done")
+        done_count = int(progress_table[done_col].fillna(False).astype(bool).sum()) if done_col in progress_table.columns else 0
+        total_count = int(len(progress_table))
+        st.caption(t("guided.progress_caption", done=done_count, total=total_count))
+        try:
+            st.progress(done_count / max(total_count, 1))
+        except Exception:
+            pass
+        disabled_cols = [col for col in progress_table.columns if col != done_col]
+        try:
+            st.data_editor(
+                progress_table,
+                width="stretch",
+                hide_index=True,
+                disabled=disabled_cols,
+                column_config={
+                    done_col: st.column_config.CheckboxColumn(
+                        done_col,
+                        help=t("guided.progress_done_help"),
+                    ),
+                },
+                key=f"guided_progress_checklist_{key_suffix}",
+            )
+        except Exception:
+            st.dataframe(progress_table, width="stretch", hide_index=True)
+        st.download_button(
+            t("guided.progress_download_button"),
+            data=to_csv_bytes(progress_table),
+            file_name="mfrm_guided_progress_checklist.csv",
+            mime="text/csv",
+            key=f"dl_guided_progress_checklist_{key_suffix}",
+        )
     st.markdown(f"**{t('guided.goal_locator_heading')}**")
     st.caption(t("guided.goal_locator_caption"))
     st.dataframe(guided_goal_detail_locator_table(str(selected_goal)), width="stretch", hide_index=True)
@@ -22924,6 +26534,592 @@ def _render_guided_report_export_section(
 ) -> None:
     st.subheader(t("guided.report_export_subheader"))
     st.caption(t("guided.report_export_caption"))
+    report_ready_summary = build_report_ready_summary_panel(
+        result,
+        diagnostics,
+        all_bias_results=all_bias_results or {},
+        bias_results=bias_results,
+    )
+    st.markdown(f"**{t('guided.report_ready_summary_heading')}**")
+    st.caption(t("guided.report_ready_summary_caption"))
+    if isinstance(report_ready_summary, pd.DataFrame) and not report_ready_summary.empty:
+        _render_compact_dataframe(
+            report_ready_summary,
+            [
+                "Priority",
+                "ReportArea",
+                "ReportStatus",
+                "PrimaryUsers",
+                "UseNow",
+                "OpenFirst",
+                "ActionBeforeWriting",
+            ],
+            details_label=t("guided.report_ready_summary_details_label"),
+            hide_index=True,
+            wrap_text=True,
+        )
+        st.download_button(
+            t("guided.report_ready_summary_download"),
+            data=to_csv_bytes(report_ready_summary),
+            file_name="report_ready_summary_panel.csv",
+            mime="text/csv",
+            key="dl_guided_report_ready_summary_panel",
+            use_container_width=True,
+        )
+    else:
+        st.info(t("guided.report_ready_summary_empty"))
+    decision_brief = generate_report_ready_decision_brief(
+        result,
+        diagnostics,
+        all_bias_results=all_bias_results or {},
+        bias_results=bias_results,
+    )
+    custom_simulation_frames = current_custom_simulation_sparse_export_frames()
+    simulation_sparse_context = custom_simulation_frames.get(
+        "custom_simulation_sparse_reporting_context",
+        pd.DataFrame(),
+    )
+    simulation_settings = custom_simulation_frames.get("custom_simulation_settings", pd.DataFrame())
+    apa_results_draft = generate_report_ready_apa_results_draft(
+        result,
+        diagnostics,
+        all_bias_results=all_bias_results or {},
+        bias_results=bias_results,
+        simulation_sparse_context=simulation_sparse_context,
+        simulation_settings=simulation_settings,
+    )
+    role_action_memos = build_role_based_action_memos(
+        result,
+        diagnostics,
+        all_bias_results=all_bias_results or {},
+        bias_results=bias_results,
+    )
+    role_action_memos_md = generate_role_based_action_memos_markdown(
+        result,
+        diagnostics,
+        all_bias_results=all_bias_results or {},
+        bias_results=bias_results,
+    )
+    role_action_checklist = build_role_based_action_checklist(
+        result,
+        diagnostics,
+        all_bias_results=all_bias_results or {},
+        bias_results=bias_results,
+    )
+    reanalysis_checklist = build_report_ready_reanalysis_checklist(
+        result,
+        diagnostics,
+        all_bias_results=all_bias_results or {},
+        bias_results=bias_results,
+        report_ready_summary=report_ready_summary,
+        role_action_checklist=role_action_checklist,
+        simulation_settings=simulation_settings,
+        simulation_sparse_context=simulation_sparse_context,
+    )
+    reanalysis_checklist_md = generate_report_ready_reanalysis_checklist_markdown(reanalysis_checklist)
+    role_action_checklist_state_key = "guided_role_based_action_checklist_done"
+    if isinstance(role_action_checklist, pd.DataFrame) and not role_action_checklist.empty:
+        role_action_checklist_run_key = dataframe_fingerprint(
+            role_action_checklist.drop(columns=["Done"], errors="ignore"),
+            length=16,
+        )
+        role_action_checklist_state_key = (
+            f"guided_role_based_action_checklist_done_{role_action_checklist_run_key}"
+        )
+        role_action_checklist = apply_role_based_action_checklist_done_state(
+            role_action_checklist,
+            st.session_state.get(role_action_checklist_state_key, {}),
+        )
+    role_action_checklist_md = generate_role_based_action_checklist_markdown(
+        result,
+        diagnostics,
+        all_bias_results=all_bias_results or {},
+        bias_results=bias_results,
+        checklist=role_action_checklist,
+    )
+    st.markdown(f"**{t('guided.report_ready_brief_heading')}**")
+    st.caption(t("guided.report_ready_brief_caption"))
+    brief_col, apa_col = st.columns(2)
+    with brief_col:
+        with st.expander(t("guided.report_ready_brief_expander"), expanded=False):
+            st.code(decision_brief, language="markdown")
+        st.download_button(
+            t("guided.report_ready_brief_download"),
+            data=decision_brief.encode("utf-8"),
+            file_name="report_ready_decision_brief.md",
+            mime="text/markdown",
+            key="dl_guided_report_ready_decision_brief_md",
+            use_container_width=True,
+        )
+    with apa_col:
+        with st.expander(t("guided.apa_results_draft_expander"), expanded=False):
+            st.code(apa_results_draft, language="markdown")
+        st.download_button(
+            t("guided.apa_results_draft_download"),
+            data=apa_results_draft.encode("utf-8"),
+            file_name="apa_results_paragraph_draft.md",
+            mime="text/markdown",
+            key="dl_guided_apa_results_paragraph_draft_md",
+            use_container_width=True,
+        )
+    st.markdown(f"**{t('guided.role_action_memos_heading')}**")
+    st.caption(t("guided.role_action_memos_caption"))
+    if isinstance(role_action_memos, pd.DataFrame) and not role_action_memos.empty:
+        _render_compact_dataframe(
+            role_action_memos,
+            ["Role", "Priority", "DecisionFocus", "ReportStatus", "ImmediateAction", "EvidenceToOpen"],
+            details_label=t("guided.role_action_memos_details_label"),
+            hide_index=True,
+            wrap_text=True,
+        )
+        memo_col, memo_md_col = st.columns(2)
+        with memo_col:
+            st.download_button(
+                t("guided.role_action_memos_download_csv"),
+                data=to_csv_bytes(role_action_memos),
+                file_name="role_based_action_memos.csv",
+                mime="text/csv",
+                key="dl_guided_role_based_action_memos_csv",
+                use_container_width=True,
+            )
+        with memo_md_col:
+            with st.expander(t("guided.role_action_memos_expander"), expanded=False):
+                st.code(role_action_memos_md, language="markdown")
+            st.download_button(
+                t("guided.role_action_memos_download_md"),
+                data=role_action_memos_md.encode("utf-8"),
+                file_name="role_based_action_memos.md",
+                mime="text/markdown",
+                key="dl_guided_role_based_action_memos_md",
+                use_container_width=True,
+            )
+    else:
+        st.info(t("guided.role_action_memos_empty"))
+    st.markdown(f"**{t('guided.role_checklist_heading')}**")
+    st.caption(t("guided.role_checklist_caption"))
+    if isinstance(role_action_checklist, pd.DataFrame) and not role_action_checklist.empty:
+        checklist_progress = role_based_action_checklist_progress_summary(role_action_checklist)
+        total_items = int(len(role_action_checklist))
+        done_items = int(role_action_checklist["Done"].fillna(False).astype(bool).sum())
+        remaining_items = int(total_items - done_items)
+        remaining_blockers = int(
+            role_action_checklist.loc[~role_action_checklist["Done"].fillna(False).astype(bool)]
+            .get("BlockingForFinalOutput", pd.Series(dtype=bool))
+            .fillna(False)
+            .astype(bool)
+            .sum()
+        )
+        remaining_caveats = int(
+            role_action_checklist.loc[~role_action_checklist["Done"].fillna(False).astype(bool)]
+            .get("NeedsCaveat", pd.Series(dtype=bool))
+            .fillna(False)
+            .astype(bool)
+            .sum()
+        )
+        st.caption(
+            t(
+                "guided.role_checklist_progress_template",
+                done=done_items,
+                total=total_items,
+                remaining=remaining_items,
+                blockers=remaining_blockers,
+                caveats=remaining_caveats,
+            )
+        )
+        try:
+            st.progress(done_items / max(total_items, 1))
+        except Exception:
+            pass
+        if isinstance(checklist_progress, pd.DataFrame) and not checklist_progress.empty:
+            _render_compact_dataframe(
+                checklist_progress,
+                [
+                    "Role",
+                    "DoneItems",
+                    "TotalItems",
+                    "RemainingBlockingItems",
+                    "RemainingCaveatItems",
+                    "State",
+                    "NextAction",
+                ],
+                details_label=t("guided.role_checklist_summary_details_label"),
+                hide_index=True,
+                wrap_text=True,
+            )
+        roles = role_action_checklist["Role"].astype(str).drop_duplicates().tolist()
+        selected_role = st.selectbox(
+            t("guided.role_checklist_role_select_label"),
+            [t("guided.role_checklist_all_roles"), *roles],
+            key="guided_role_action_checklist_role",
+        )
+        show_open_only = st.checkbox(
+            t("guided.role_checklist_open_only_label"),
+            value=False,
+            key="guided_role_action_checklist_open_only",
+            help=t("guided.role_checklist_open_only_help"),
+        )
+        checklist_display = role_action_checklist
+        if selected_role != t("guided.role_checklist_all_roles"):
+            checklist_display = role_action_checklist.loc[
+                role_action_checklist["Role"].astype(str).eq(str(selected_role))
+            ].copy()
+        if show_open_only:
+            checklist_display = checklist_display.loc[
+                ~checklist_display["Done"].fillna(False).astype(bool)
+            ].copy()
+        if checklist_display.empty:
+            st.info(t("guided.role_checklist_filter_empty"))
+        else:
+            edited_checklist = st.data_editor(
+                checklist_display,
+                column_config={
+                    "Done": st.column_config.CheckboxColumn(
+                        t("guided.role_checklist_done_col"),
+                        help=t("guided.role_checklist_done_help"),
+                    ),
+                    "ChecklistId": None,
+                },
+                disabled=[col for col in checklist_display.columns if col != "Done"],
+                width="stretch",
+                hide_index=True,
+                key="guided_role_based_action_checklist_editor",
+            )
+            if isinstance(edited_checklist, pd.DataFrame) and "Done" in edited_checklist.columns:
+                if "ChecklistId" not in edited_checklist.columns and "ChecklistId" in checklist_display.columns:
+                    edited_checklist = edited_checklist.copy()
+                    edited_checklist["ChecklistId"] = [
+                        checklist_display.loc[idx, "ChecklistId"] if idx in checklist_display.index else ""
+                        for idx in edited_checklist.index
+                    ]
+                updated_done_state = dict(st.session_state.get(role_action_checklist_state_key, {}))
+                for _, edited_row in edited_checklist.iterrows():
+                    updated_done_state[str(edited_row.get("ChecklistId", ""))] = bool(
+                        edited_row.get("Done", False)
+                    )
+                if updated_done_state != st.session_state.get(role_action_checklist_state_key, {}):
+                    st.session_state[role_action_checklist_state_key] = updated_done_state
+                    role_action_checklist = apply_role_based_action_checklist_done_state(
+                        role_action_checklist,
+                        updated_done_state,
+                    )
+                    role_action_checklist_md = generate_role_based_action_checklist_markdown(
+                        result,
+                        diagnostics,
+                        all_bias_results=all_bias_results or {},
+                        bias_results=bias_results,
+                        checklist=role_action_checklist,
+                    )
+        check_col, check_md_col = st.columns(2)
+        with check_col:
+            st.download_button(
+                t("guided.role_checklist_download_csv"),
+                data=to_csv_bytes(role_action_checklist),
+                file_name="role_based_action_checklist.csv",
+                mime="text/csv",
+                key="dl_guided_role_based_action_checklist_csv",
+                use_container_width=True,
+            )
+        with check_md_col:
+            with st.expander(t("guided.role_checklist_expander"), expanded=False):
+                st.code(role_action_checklist_md, language="markdown")
+            st.download_button(
+                t("guided.role_checklist_download_md"),
+                data=role_action_checklist_md.encode("utf-8"),
+                file_name="role_based_action_checklist.md",
+                mime="text/markdown",
+                key="dl_guided_role_based_action_checklist_md",
+                use_container_width=True,
+            )
+    else:
+        st.info(t("guided.role_checklist_empty"))
+    st.markdown("**Report-ready simulation / reanalysis checklist**")
+    st.caption(
+        "A shared checklist for generated data, reruns, sensitivity checks, and final report exports."
+    )
+    if isinstance(reanalysis_checklist, pd.DataFrame) and not reanalysis_checklist.empty:
+        _render_compact_dataframe(
+            reanalysis_checklist,
+            ["Priority", "Phase", "Audience", "ReportStatus", "Task", "Action", "EvidenceToOpen"],
+            details_label="Show full simulation / reanalysis checklist",
+            hide_index=True,
+            wrap_text=True,
+        )
+        re_col, re_md_col = st.columns(2)
+        with re_col:
+            st.download_button(
+                "Download simulation / reanalysis checklist (CSV)",
+                data=to_csv_bytes(reanalysis_checklist),
+                file_name="report_ready_reanalysis_checklist.csv",
+                mime="text/csv",
+                key="dl_guided_report_ready_reanalysis_checklist_csv",
+                use_container_width=True,
+            )
+        with re_md_col:
+            with st.expander("View simulation / reanalysis checklist"):
+                st.code(reanalysis_checklist_md, language="markdown")
+            st.download_button(
+                "Download simulation / reanalysis checklist (Markdown)",
+                data=reanalysis_checklist_md.encode("utf-8"),
+                file_name="report_ready_reanalysis_checklist.md",
+                mime="text/markdown",
+                key="dl_guided_report_ready_reanalysis_checklist_md",
+                use_container_width=True,
+            )
+    else:
+        st.info("No simulation / reanalysis checklist rows were generated for this run.")
+    guided_final_report_readiness = build_final_report_readiness(
+        result,
+        diagnostics,
+        all_bias_results or {},
+    )
+    guided_submission_action_plan = build_submission_action_plan(
+        result,
+        diagnostics,
+        all_bias_results or {},
+    )
+    critical_final_review = build_critical_final_review_panel(
+        result,
+        diagnostics,
+        all_bias_results=all_bias_results or {},
+        bias_results=bias_results,
+        role_action_checklist=role_action_checklist,
+        report_ready_summary=report_ready_summary,
+        final_report_readiness=guided_final_report_readiness,
+        submission_action_plan=guided_submission_action_plan,
+    )
+    critical_final_review_md = generate_critical_final_review_markdown(
+        result,
+        diagnostics,
+        all_bias_results=all_bias_results or {},
+        bias_results=bias_results,
+        role_action_checklist=role_action_checklist,
+        critical_final_review=critical_final_review,
+        report_ready_summary=report_ready_summary,
+        final_report_readiness=guided_final_report_readiness,
+        submission_action_plan=guided_submission_action_plan,
+    )
+    st.markdown(f"**{t('guided.critical_review_heading')}**")
+    st.caption(t("guided.critical_review_caption"))
+    if isinstance(critical_final_review, pd.DataFrame) and not critical_final_review.empty:
+        stop_count = int(
+            critical_final_review.get("StopBeforeFinalOutput", pd.Series(dtype=bool))
+            .fillna(False)
+            .astype(bool)
+            .sum()
+        )
+        caveat_count = int(
+            critical_final_review.get("NeedsCaveat", pd.Series(dtype=bool))
+            .fillna(False)
+            .astype(bool)
+            .sum()
+        )
+        status_text = t(
+            "guided.critical_review_status_template",
+            stop=stop_count,
+            caveat=caveat_count,
+        )
+        if stop_count:
+            st.warning(status_text)
+        else:
+            st.info(status_text)
+        _render_compact_dataframe(
+            critical_final_review,
+            [
+                "Priority",
+                "Lens",
+                "Decision",
+                "StopBeforeFinalOutput",
+                "NeedsCaveat",
+                "ActionBeforeContinuing",
+                "EvidenceToOpen",
+            ],
+            details_label=t("guided.critical_review_details_label"),
+            hide_index=True,
+            wrap_text=True,
+        )
+        critical_col, critical_md_col = st.columns(2)
+        with critical_col:
+            st.download_button(
+                t("guided.critical_review_download_csv"),
+                data=to_csv_bytes(critical_final_review),
+                file_name="critical_final_review_panel.csv",
+                mime="text/csv",
+                key="dl_guided_critical_final_review_panel_csv",
+                use_container_width=True,
+            )
+        with critical_md_col:
+            with st.expander(t("guided.critical_review_expander"), expanded=False):
+                st.code(critical_final_review_md, language="markdown")
+            st.download_button(
+                t("guided.critical_review_download_md"),
+                data=critical_final_review_md.encode("utf-8"),
+                file_name="critical_final_review.md",
+                mime="text/markdown",
+                key="dl_guided_critical_final_review_md",
+                use_container_width=True,
+            )
+    else:
+        st.info(t("guided.critical_review_empty"))
+    status_rationale = build_status_rationale_drilldown(
+        result,
+        diagnostics,
+        all_bias_results=all_bias_results or {},
+        bias_results=bias_results,
+        role_action_checklist=role_action_checklist,
+        critical_final_review=critical_final_review,
+        report_ready_summary=report_ready_summary,
+        final_report_readiness=guided_final_report_readiness,
+        submission_action_plan=guided_submission_action_plan,
+    )
+    guided_claim_guide = build_manuscript_claim_guide(
+        result,
+        diagnostics,
+        all_bias_results or {},
+    )
+    reading_path = build_result_reading_path(
+        result,
+        diagnostics,
+        all_bias_results=all_bias_results or {},
+        bias_results=bias_results,
+        report_ready_summary=report_ready_summary,
+        final_report_readiness=guided_final_report_readiness,
+        manuscript_claim_guide=guided_claim_guide,
+    )
+    guided_qc_recommendations = build_quality_control_recommendations(result, diagnostics)
+    guided_category_action_center = category_collapse_action_center_table(result, diagnostics)
+    operational_board = build_operational_decision_board(
+        result,
+        diagnostics,
+        all_bias_results=all_bias_results or {},
+        bias_results=bias_results,
+        quality_control_recommendations=guided_qc_recommendations,
+        category_action_center=guided_category_action_center,
+        critical_final_review=critical_final_review,
+        report_ready_summary=report_ready_summary,
+        final_report_readiness=guided_final_report_readiness,
+        submission_action_plan=guided_submission_action_plan,
+    )
+    reporting_bridge = build_reporting_action_bridge(
+        result,
+        diagnostics,
+        all_bias_results=all_bias_results or {},
+        bias_results=bias_results,
+        role_action_checklist=role_action_checklist,
+        report_ready_summary=report_ready_summary,
+        final_report_readiness=guided_final_report_readiness,
+        manuscript_claim_guide=guided_claim_guide,
+        critical_final_review=critical_final_review,
+        status_rationale=status_rationale,
+        result_reading_path=reading_path,
+        operational_decision_board=operational_board,
+        quality_control_recommendations=guided_qc_recommendations,
+        category_action_center=guided_category_action_center,
+        submission_action_plan=guided_submission_action_plan,
+    )
+    reporting_bridge_md = generate_reporting_action_bridge_markdown(
+        result,
+        diagnostics,
+        all_bias_results=all_bias_results or {},
+        bias_results=bias_results,
+        bridge=reporting_bridge,
+    )
+    st.markdown(f"**{t('guided.audience_boards_heading')}**")
+    st.caption(t("guided.audience_boards_caption"))
+    rationale_tab, reading_tab, operation_tab = st.tabs([
+        t("guided.audience_status_tab"),
+        t("guided.audience_reading_tab"),
+        t("guided.audience_operation_tab"),
+    ])
+    with rationale_tab:
+        if isinstance(status_rationale, pd.DataFrame) and not status_rationale.empty:
+            _render_compact_dataframe(
+                status_rationale,
+                ["Priority", "StatusSource", "CurrentStatus", "Decision", "DecisionLogic", "MinimumEvidenceNeeded"],
+                details_label=t("guided.audience_status_details_label"),
+                hide_index=True,
+                wrap_text=True,
+            )
+            st.download_button(
+                t("guided.audience_status_download"),
+                data=to_csv_bytes(status_rationale),
+                file_name="status_rationale_drilldown.csv",
+                mime="text/csv",
+                key="dl_guided_status_rationale_drilldown_csv",
+                use_container_width=True,
+            )
+        else:
+            st.info(t("guided.audience_status_empty"))
+    with reading_tab:
+        if isinstance(reading_path, pd.DataFrame) and not reading_path.empty:
+            _render_compact_dataframe(
+                reading_path,
+                ["Step", "ReadingGoal", "GuidingQuestion", "CurrentStatus", "OpenFirst", "NextMove"],
+                details_label=t("guided.audience_reading_details_label"),
+                hide_index=True,
+                wrap_text=True,
+            )
+            st.download_button(
+                t("guided.audience_reading_download"),
+                data=to_csv_bytes(reading_path),
+                file_name="result_reading_path.csv",
+                mime="text/csv",
+                key="dl_guided_result_reading_path_csv",
+                use_container_width=True,
+            )
+        else:
+            st.info(t("guided.audience_reading_empty"))
+    with operation_tab:
+        if isinstance(operational_board, pd.DataFrame) and not operational_board.empty:
+            _render_compact_dataframe(
+                operational_board,
+                ["Priority", "Decision", "OwnerRole", "CurrentSignal", "RecommendedAction", "BeforeNextAdministration"],
+                details_label=t("guided.audience_operation_details_label"),
+                hide_index=True,
+                wrap_text=True,
+            )
+            st.download_button(
+                t("guided.audience_operation_download"),
+                data=to_csv_bytes(operational_board),
+                file_name="operational_decision_board.csv",
+                mime="text/csv",
+                key="dl_guided_operational_decision_board_csv",
+                use_container_width=True,
+            )
+        else:
+            st.info(t("guided.audience_operation_empty"))
+    st.markdown(f"**{t('guided.reporting_bridge_heading')}**")
+    st.caption(t("guided.reporting_bridge_caption"))
+    if isinstance(reporting_bridge, pd.DataFrame) and not reporting_bridge.empty:
+        _render_compact_dataframe(
+            reporting_bridge,
+            ["Priority", "BridgeTrack", "PrimaryAudience", "CurrentStatus", "OutputToProduce", "DraftOrDecisionMove"],
+            details_label=t("guided.reporting_bridge_details_label"),
+            hide_index=True,
+            wrap_text=True,
+        )
+        bridge_csv_col, bridge_md_col = st.columns(2)
+        with bridge_csv_col:
+            st.download_button(
+                t("guided.reporting_bridge_download_csv"),
+                data=to_csv_bytes(reporting_bridge),
+                file_name="reporting_action_bridge.csv",
+                mime="text/csv",
+                key="dl_guided_reporting_action_bridge_csv",
+                use_container_width=True,
+            )
+        with bridge_md_col:
+            with st.expander(t("guided.reporting_bridge_expander"), expanded=False):
+                st.code(reporting_bridge_md, language="markdown")
+            st.download_button(
+                t("guided.reporting_bridge_download_md"),
+                data=reporting_bridge_md.encode("utf-8"),
+                file_name="reporting_action_bridge.md",
+                mime="text/markdown",
+                key="dl_guided_reporting_action_bridge_md",
+                use_container_width=True,
+            )
+    else:
+        st.info(t("guided.reporting_bridge_empty"))
     st.markdown(f"**{t('guided.repro_heading')}**")
     st.caption(t("guided.repro_caption"))
     st.dataframe(guided_reproducibility_guardrail_table(), width="stretch", hide_index=True)
@@ -22993,6 +27189,45 @@ GUIDED_SECTION_I18N_KEYS = {
 GUIDED_SECTION_IDS = tuple(GUIDED_SECTION_I18N_KEYS.keys())
 
 
+GUIDED_SECTION_READING_ORDER_KEYS = {
+    "start": (
+        "guided.first_run_route_expander",
+        "guided.start_caption",
+        "guided.interpret_run_first_do_not",
+    ),
+    "first_read": (
+        "guided.goal_focus_heading",
+        "guided.first_read_caption",
+        "guided.interpret_review_do_not",
+    ),
+    "results": (
+        "guided.measures_reading_heading",
+        "guided.measures_reading_caption",
+        "guided.goal_brief_inspect_measures_do_not_decide",
+    ),
+    "diagnostics": (
+        "guided.diagnostics_select_label",
+        "guided.diagnostics_select_caption",
+        "guided.goal_brief_diagnose_problem_do_not_decide",
+    ),
+    "figures": (
+        "guided.figures_panel_select_label",
+        "guided.figures_panel_select_caption",
+        "guided.interpret_ok_do_not",
+    ),
+    "report_export": (
+        "guided.report_export_subheader",
+        "guided.report_export_caption",
+        "guided.goal_brief_prepare_report_do_not_decide",
+    ),
+    "learn": (
+        "guided.learn_subheader",
+        "guided.learn_caption",
+        "guided.goal_brief_learn_terms_do_not_decide",
+    ),
+}
+
+
 GUIDED_DIAGNOSTIC_PANEL_I18N_KEYS = {
     "fit_details": "main_tabs.fit_details",
     "dimensionality": "main_tabs.dimensionality",
@@ -23054,6 +27289,41 @@ def guided_section_selector_options() -> pd.DataFrame:
     ])
 
 
+def guided_section_reading_order_table(section_id: str) -> pd.DataFrame:
+    """Return the compact read/do/hold-off cue for one Essential section."""
+    safe_section = str(section_id)
+    if safe_section not in GUIDED_SECTION_IDS:
+        safe_section = "start"
+    open_key, action_key, hold_key = GUIDED_SECTION_READING_ORDER_KEYS[safe_section]
+    columns = [
+        t("guided.section_col_section"),
+        t("guided.goal_focus_col_open"),
+        t("guided.next_click_col_do"),
+        t("guided.interpret_col_do_not_conclude"),
+    ]
+    return pd.DataFrame([{
+        columns[0]: _guided_section_label(safe_section),
+        columns[1]: t(open_key),
+        columns[2]: t(action_key),
+        columns[3]: t(hold_key),
+    }], columns=columns)
+
+
+def render_guided_section_reading_order(section_id: str) -> None:
+    """Render a short orientation cue before the selected Essential section."""
+    cue = guided_section_reading_order_table(section_id)
+    if cue.empty:
+        return
+    row = cue.iloc[0]
+    section_col, open_col, action_col, hold_col = cue.columns.tolist()
+    st.markdown(
+        f"**{section_col}:** {row[section_col]}  \n"
+        f"**{open_col}:** {row[open_col]}  \n"
+        f"**{action_col}:** {row[action_col]}  \n"
+        f"**{hold_col}:** {row[hold_col]}"
+    )
+
+
 def guided_diagnostic_panel_options() -> pd.DataFrame:
     """Return the lazy-rendered Essential Diagnostics panels in display order."""
     return pd.DataFrame([
@@ -23106,6 +27376,7 @@ def _render_guided_essential_tabs(
     )
     selected_section = selected_section or "start"
     st.caption(t("guided.section_select_caption"))
+    render_guided_section_reading_order(selected_section)
 
     if selected_section == "start":
         _render_guided_start_section(
@@ -24076,6 +28347,7 @@ def make_yardstick_export_table(
     step_tbl: pd.DataFrame | None = None,
     *,
     rating_min: int | float | None = None,
+    plot_label_mode: str | None = None,
 ) -> pd.DataFrame:
     """Create the portable data contract behind the FACETS-style yardstick."""
     rows: list[dict[str, object]] = []
@@ -24151,6 +28423,7 @@ def make_yardstick_export_table(
         return pd.DataFrame(columns=[
             "Role", "Facet", "RawLabel", "DisplayLabel", "Estimate", "PlotY", "TextLane",
             "LineXStart", "LineXEnd", "PlotColumn", "PlotKind", "BoundaryLower", "BoundaryUpper",
+            "PlotLabelID", "PlotLabelShort", "PlotLabelFull", "PlotLabelMode", "PlotLabelGroup",
         ])
     out = pd.DataFrame(rows)
     out["Estimate"] = pd.to_numeric(out["Estimate"], errors="coerce")
@@ -24169,6 +28442,11 @@ def make_yardstick_export_table(
         )
         out.loc[idx_list, "PlotY"] = plot_y
         out.loc[idx_list, "TextLane"] = lanes
+    out = build_plot_label_lookup(
+        out,
+        label_mode=plot_label_mode,
+        max_chars=int(get_visualization_preferences().get("label_max_chars", VISUAL_LABEL_MAX_CHARS_DEFAULT)),
+    )
     return out.sort_values(["Role", "PlotColumn", "Estimate", "DisplayLabel"]).reset_index(drop=True)
 
 
@@ -24179,6 +28457,7 @@ def _make_yardstick_figure(
     *,
     show_direct_labels: bool = True,
     rating_min: int | float | None = None,
+    plot_label_mode: str | None = None,
 ):
     """Build a FACETS-like text-first yardstick figure.
 
@@ -24203,6 +28482,13 @@ def _make_yardstick_figure(
     max_elements_per_facet = int(facet_est.groupby("Facet").size().max()) if facet_names else 0
     threshold_frame = _yardstick_threshold_frame(step_tbl, rating_min=rating_min)
     include_thresholds = not threshold_frame.empty
+    yardstick_map = make_yardstick_export_table(
+        person_tbl,
+        facet_est,
+        step_tbl,
+        rating_min=rating_min,
+        plot_label_mode=plot_label_mode,
+    )
 
     y_all = list(person_est)
     if not facet_est.empty:
@@ -24280,31 +28566,32 @@ def _make_yardstick_figure(
     # Facet columns
     for i, fname in enumerate(facet_names):
         col_idx = i + 2
-        sub = facet_est[facet_est["Facet"] == fname]
+        sub_map = yardstick_map[
+            (yardstick_map["Role"] == "FacetElement")
+            & (yardstick_map["Facet"].astype(str) == str(fname))
+        ].copy() if not yardstick_map.empty else pd.DataFrame()
         _add_yardstick_ruler(col_idx)
-        if not sub.empty:
-            full_labels = [str(lbl) for lbl in sub.get("Level", sub.index)]
-            text_x, text_y, _ = _yardstick_label_layout(
-                sub["Estimate"].reset_index(drop=True),
-                base=0.14,
-                lane_width=0.14,
-                min_gap=0.30,
-                max_lanes=5,
-            )
+        if not sub_map.empty:
+            full_labels = sub_map["PlotLabelFull"].astype(str).tolist()
+            display_labels = sub_map["DisplayLabel"].astype(str).tolist()
+            text_x = (0.14 + pd.to_numeric(sub_map["TextLane"], errors="coerce").fillna(0).astype(float) * 0.14).tolist()
+            text_y = pd.to_numeric(sub_map["PlotY"], errors="coerce").tolist()
+            visible_text = show_direct_labels and any(label.strip() for label in display_labels)
             fig.add_trace(go.Scatter(
                 x=text_x, y=text_y,
-                mode="text" if show_direct_labels else "markers",
+                mode="text" if visible_text else "markers",
                 marker=dict(size=8, color="#111827", symbol="line-ns"),
-                text=_compact_label_list(full_labels, max_chars=24) if show_direct_labels else None,
+                text=display_labels if visible_text else None,
                 textposition="middle right", textfont=dict(size=text_font_size, color="#111827"),
                 cliponaxis=False,
                 showlegend=False,
                 customdata=np.column_stack([
                     full_labels,
-                    np.repeat(fname, len(sub)),
-                    sub["Estimate"].to_numpy(dtype=float),
+                    np.repeat(fname, len(sub_map)),
+                    pd.to_numeric(sub_map["Estimate"], errors="coerce").to_numpy(dtype=float),
+                    sub_map["PlotLabelID"].astype(str).to_numpy(),
                 ]),
-                hovertemplate="%{customdata[1]}: %{customdata[0]}<br>Logit=%{customdata[2]:.2f}<extra></extra>",
+                hovertemplate="%{customdata[1]} %{customdata[3]}: %{customdata[0]}<br>Logit=%{customdata[2]:.2f}<extra></extra>",
             ), row=1, col=col_idx)
         fig.update_xaxes(range=[0, 1], showticklabels=False, showline=True, linecolor="#d1d5db", mirror=True, row=1, col=col_idx)
         fig.update_yaxes(range=[y_lo, y_hi], dtick=1, showgrid=True, gridcolor="#ececec", zeroline=True, zerolinecolor="#666666", row=1, col=col_idx)
@@ -24312,25 +28599,19 @@ def _make_yardstick_figure(
     if include_thresholds:
         col_idx = n_cols
         _add_yardstick_ruler(col_idx)
-        threshold_labels = []
-        for _, row in threshold_frame.iterrows():
-            label = str(row.get("DisplayLabel", row.get("Label", "")))
-            step_facet = str(row.get("StepFacet", "Common"))
-            threshold_labels.append(f"{step_facet}: {label}" if step_facet != "Common" else label)
-        threshold_x, threshold_y, _ = _yardstick_label_layout(
-            threshold_frame["Estimate"].reset_index(drop=True),
-            base=0.24,
-            lane_width=0.14,
-            min_gap=0.30,
-            max_lanes=5,
-        )
+        threshold_map = yardstick_map[yardstick_map["Role"] == "Threshold"].copy()
+        threshold_labels = threshold_map["DisplayLabel"].astype(str).tolist() if not threshold_map.empty else []
+        threshold_full_labels = threshold_map["PlotLabelFull"].astype(str).tolist() if not threshold_map.empty else []
+        threshold_ids = threshold_map["PlotLabelID"].astype(str).tolist() if not threshold_map.empty else []
+        threshold_x = (0.24 + pd.to_numeric(threshold_map["TextLane"], errors="coerce").fillna(0).astype(float) * 0.14).tolist() if not threshold_map.empty else []
+        threshold_y = pd.to_numeric(threshold_map["PlotY"], errors="coerce").tolist() if not threshold_map.empty else []
         line_x: list[float | None] = []
         line_y: list[float | None] = []
         line_custom: list[list[object] | None] = []
-        for label, estimate in zip(threshold_labels, threshold_frame["Estimate"].tolist()):
+        for label, label_id, estimate in zip(threshold_full_labels, threshold_ids, threshold_map["Estimate"].tolist() if not threshold_map.empty else []):
             line_x.extend([0.08, 0.20, None])
             line_y.extend([float(estimate), float(estimate), None])
-            line_custom.extend([[label, float(estimate)], [label, float(estimate)], [None, np.nan]])
+            line_custom.extend([[label, label_id, float(estimate)], [label, label_id, float(estimate)], [None, None, np.nan]])
         fig.add_trace(
             go.Scatter(
                 x=line_x,
@@ -24339,28 +28620,30 @@ def _make_yardstick_figure(
                 line=dict(color="#8c4a14", width=1.4),
                 name="Threshold boundary lines",
                 customdata=line_custom,
-                hovertemplate="Threshold: %{customdata[0]}<br>Exact logit=%{customdata[1]:.2f}<extra></extra>",
+                hovertemplate="Threshold %{customdata[1]}: %{customdata[0]}<br>Exact logit=%{customdata[2]:.2f}<extra></extra>",
                 showlegend=False,
             ),
             row=1,
             col=col_idx,
         )
+        visible_threshold_text = show_direct_labels and any(label.strip() for label in threshold_labels)
         fig.add_trace(
             go.Scatter(
                 x=threshold_x,
                 y=threshold_y,
-                mode="text" if show_direct_labels else "markers",
+                mode="text" if visible_threshold_text else "markers",
                 marker=dict(size=8, color="#d95f02", symbol="line-ew"),
-                text=_compact_label_list(threshold_labels, max_chars=22) if show_direct_labels else None,
+                text=threshold_labels if visible_threshold_text else None,
                 textposition="middle right",
                 textfont=dict(size=text_font_size, color="#6b2d00"),
                 cliponaxis=False,
                 customdata=np.column_stack([
-                    threshold_labels,
-                    np.repeat("Threshold", len(threshold_frame)),
-                    threshold_frame["Estimate"].to_numpy(dtype=float),
+                    threshold_full_labels,
+                    np.repeat("Threshold", len(threshold_map)),
+                    pd.to_numeric(threshold_map["Estimate"], errors="coerce").to_numpy(dtype=float) if not threshold_map.empty else np.array([], dtype=float),
+                    np.array(threshold_ids, dtype=object),
                 ]),
-                hovertemplate="%{customdata[1]}: %{customdata[0]}<br>Logit=%{customdata[2]:.2f}<extra></extra>",
+                hovertemplate="%{customdata[1]} %{customdata[3]}: %{customdata[0]}<br>Logit=%{customdata[2]:.2f}<extra></extra>",
                 showlegend=False,
             ),
             row=1,
@@ -24503,9 +28786,7 @@ def analysis_depth_sidebar_summary(settings: dict) -> str:
 
 
 def _allow_large_hosted_run_override() -> bool:
-    return str(os.environ.get("MFRM_ALLOW_LARGE_HOSTED_RUNS", "")).strip().lower() in {
-        "1", "true", "yes", "on"
-    }
+    return _preflight.allow_large_hosted_run_override()
 
 
 def build_estimation_resource_preflight(
@@ -24526,142 +28807,37 @@ def build_estimation_resource_preflight(
     strict_marginal_max_pair_cells: int,
     generate_figure_exports: bool,
 ) -> dict:
-    """Estimate hosted-runtime cost before the user starts a fit."""
-    if not isinstance(data, pd.DataFrame) or data.empty:
-        return {"block": False, "rows": []}
-
-    n_obs = int(len(data))
-    n_persons = int(data[person_col].nunique(dropna=True)) if person_col in data.columns else 0
-    facet_level_counts = {
-        str(facet): int(data[facet].nunique(dropna=True))
-        for facet in facet_cols
-        if facet in data.columns
-    }
-    score_unique = (
-        int(pd.to_numeric(data[score_col], errors="coerce").dropna().nunique())
-        if score_col in data.columns else 0
+    """Compatibility wrapper for hosted-runtime resource preflight."""
+    return _preflight.build_estimation_resource_preflight(
+        data=data,
+        person_col=person_col,
+        score_col=score_col,
+        facet_cols=facet_cols,
+        model_type=model_type,
+        est_method=est_method,
+        maxit=maxit,
+        quad_points=quad_points,
+        bias_mode=bias_mode,
+        bias_pairs_available=bias_pairs_available,
+        selected_bias_pair=selected_bias_pair,
+        compute_strict_marginal=compute_strict_marginal,
+        strict_marginal_pairwise=strict_marginal_pairwise,
+        strict_marginal_max_pair_cells=strict_marginal_max_pair_cells,
+        generate_figure_exports=generate_figure_exports,
+        hosted_max_obs=ESTIMATION_HOSTED_MAX_OBS,
+        hosted_max_parameters=ESTIMATION_HOSTED_MAX_PARAMETERS,
+        hosted_max_mml_evals=ESTIMATION_HOSTED_MAX_MML_EVALS,
+        hosted_max_bias_cells=ESTIMATION_HOSTED_MAX_BIAS_CELLS,
     )
-    n_steps = 0
-    if score_unique >= 2:
-        if model_type in {"PCM", "GPCM"}:
-            step_levels = max(facet_level_counts.values(), default=1)
-            n_steps = max(0, score_unique - 1) * step_levels
-            if model_type == "GPCM":
-                n_steps += step_levels
-        else:
-            n_steps = max(0, score_unique - 1)
-    approx_params = (
-        (n_persons if est_method == "JMLE" else 0)
-        + sum(facet_level_counts.values())
-        + int(n_steps)
-    )
-    mml_evals = int(n_obs) * int(quad_points or 0) if est_method == "MML" else 0
-
-    pair_counts = {"Person": n_persons, **facet_level_counts}
-    if bias_mode == "All facet pairs":
-        bias_pairs = list(bias_pairs_available or [])
-    elif bias_mode == "Selected pair" and selected_bias_pair is not None:
-        bias_pairs = [selected_bias_pair]
-    else:
-        bias_pairs = []
-    bias_cells = int(sum(
-        max(0, pair_counts.get(str(a), 0)) * max(0, pair_counts.get(str(b), 0))
-        for a, b in bias_pairs
-    ))
-
-    rows: list[dict] = []
-
-    def add(metric: str, value: object, limit: object, status: str, action: str) -> None:
-        rows.append({
-            "Metric": metric,
-            "Value": value,
-            "HostedLimit": limit,
-            "Status": status,
-            "Action": action,
-        })
-
-    add(
-        "Observations",
-        f"{n_obs:,}",
-        f"{ESTIMATION_HOSTED_MAX_OBS:,}",
-        "Block" if n_obs > ESTIMATION_HOSTED_MAX_OBS else ("Review" if n_obs > 50_000 else "OK"),
-        "Sample rows, run Fast preview first, or run locally for large datasets.",
-    )
-    add(
-        "Approx. free parameters",
-        f"{approx_params:,}",
-        f"{ESTIMATION_HOSTED_MAX_PARAMETERS:,}",
-        "Block" if approx_params > ESTIMATION_HOSTED_MAX_PARAMETERS else ("Review" if approx_params > 12_000 else "OK"),
-        "Drop high-cardinality facets or avoid treating row IDs as facets.",
-    )
-    if est_method == "MML":
-        add(
-            "MML quadrature evaluations",
-            f"{mml_evals:,}",
-            f"{ESTIMATION_HOSTED_MAX_MML_EVALS:,}",
-            "Block" if mml_evals > ESTIMATION_HOSTED_MAX_MML_EVALS else ("Review" if mml_evals > 2_000_000 else "OK"),
-            "Reduce quadrature points, use JMLE preview, or run MML locally.",
-        )
-    if bias_pairs:
-        add(
-            "Bias/interaction candidate cells",
-            f"{bias_cells:,}",
-            f"{ESTIMATION_HOSTED_MAX_BIAS_CELLS:,}",
-            "Block" if bias_cells > ESTIMATION_HOSTED_MAX_BIAS_CELLS else ("Review" if bias_cells > 75_000 else "OK"),
-            "Use Selected pair or Skip for the first run; avoid all-pair Person interactions on large data.",
-        )
-    if compute_strict_marginal and strict_marginal_pairwise:
-        add(
-            "Strict marginal pairwise cap",
-            f"{strict_marginal_max_pair_cells:,}",
-            "800 recommended",
-            "Review" if strict_marginal_max_pair_cells > 2_000 else "OK",
-            "Keep pairwise marginal diagnostics capped for hosted use.",
-        )
-    if maxit > 3_000 and n_obs > 25_000:
-        add(
-            "Max iterations",
-            f"{maxit:,}",
-            "3,000 with large data",
-            "Review",
-            "Use a smaller preview first; high maxit on large designs can pin the hosted worker.",
-        )
-    if generate_figure_exports and n_obs > 50_000:
-        add(
-            "Figure export bundle",
-            "enabled",
-            "large-data caution",
-            "Review",
-            "Disable figure export for preview runs; generate publication figures after a stable fit.",
-        )
-
-    hard_block = any(row["Status"] == "Block" for row in rows)
-    override = _allow_large_hosted_run_override()
-    return {
-        "block": bool(hard_block and not override),
-        "override": override,
-        "rows": rows,
-        "approx_params": approx_params,
-        "mml_evals": mml_evals,
-        "bias_cells": bias_cells,
-    }
 
 
 def estimation_resource_preflight_status(preflight: dict) -> str:
-    rows = preflight.get("rows", []) if isinstance(preflight, dict) else []
-    if not rows:
-        return "OK"
-    statuses = {str(row.get("Status", "OK")) for row in rows if isinstance(row, dict)}
-    if "Block" in statuses and not preflight.get("override"):
-        return "Block"
-    if "Review" in statuses or preflight.get("override"):
-        return "Review"
-    return "OK"
+    return _preflight.estimation_resource_preflight_status(preflight)
 
 
 def should_render_estimation_resource_preflight(preflight: dict) -> bool:
     """Avoid alert fatigue: only surface resource budget details when action is needed."""
-    return estimation_resource_preflight_status(preflight) != "OK"
+    return _preflight.should_render_estimation_resource_preflight(preflight)
 
 
 def render_estimation_resource_preflight(preflight: dict) -> None:
@@ -25033,6 +29209,38 @@ def _comparison_reliability_diff(snap_a: dict, snap_b: dict) -> pd.DataFrame | N
     return la.merge(lb, on="Facet", how="outer")
 
 
+def _comparison_data_alignment(snap_a: dict, snap_b: dict) -> tuple[bool, list[str]]:
+    """Flag whether two run snapshots are a like-for-like comparison.
+
+    Element measures and likelihood / information-criteria values are only
+    comparable when both runs scored the same response rows with the same
+    column mapping. Returns ``(aligned, reasons)`` where ``reasons`` lists the
+    differing inputs that make a raw agreement number misleading.
+    """
+    def _get(key):
+        a = snap_a.get(key) if isinstance(snap_a, dict) else None
+        b = snap_b.get(key) if isinstance(snap_b, dict) else None
+        return a, b
+
+    reasons: list[str] = []
+    fa, fb = _get("_input_data_fingerprint")
+    if fa is not None and fb is not None and fa != fb:
+        reasons.append("different input data")
+    pa, pb = _get("person_col")
+    if pa != pb:
+        reasons.append("different person column")
+    sa, sb = _get("score_col")
+    if sa != sb:
+        reasons.append("different score column")
+    ca, cb = _get("facet_cols")
+    if sorted(map(str, ca or [])) != sorted(map(str, cb or [])):
+        reasons.append("different facet set")
+    aa, ab = _get("_anchor_source_fingerprint")
+    if aa is not None and ab is not None and aa != ab:
+        reasons.append("different anchor inputs")
+    return (len(reasons) == 0, reasons)
+
+
 def render_comparison_panel(snap_a: dict, snap_b: dict) -> None:
     """Render a side-by-side comparison between two run snapshots."""
     label_a = _comparison_extract_label(snap_a)
@@ -25042,6 +29250,17 @@ def render_comparison_panel(snap_a: dict, snap_b: dict) -> None:
 
     with st.container(border=True):
         st.markdown(f"### Comparison: `{label_a}` vs `{label_b}`")
+
+        data_aligned, mismatch_reasons = _comparison_data_alignment(snap_a, snap_b)
+        if not data_aligned:
+            st.warning(
+                "These runs are not a like-for-like comparison ("
+                + ", ".join(mismatch_reasons)
+                + "). The element-measure and likelihood / information-criteria "
+                "differences below partly reflect those input differences, not just "
+                "the estimation settings — read them as descriptive, not as a "
+                "method-agreement check."
+            )
 
         cols = st.columns(2)
         cols[0].metric(
@@ -25133,7 +29352,13 @@ def render_comparison_panel(snap_a: dict, snap_b: dict) -> None:
                 # Interpretation
                 corr = measures["correlation"]
                 if pd.notna(corr):
-                    if corr >= 0.98:
+                    if not data_aligned:
+                        st.caption(
+                            f"Observed Pearson r = {corr:.3f}. Because the two runs differ in "
+                            "input data or column mapping, this is not a method-agreement "
+                            "statistic — interpret it only alongside the mismatch warning above."
+                        )
+                    elif corr >= 0.98:
                         st.success(f"Near-perfect agreement (r = {corr:.3f}). Methods produce effectively identical measures.")
                     elif corr >= 0.90:
                         st.info(f"Strong agreement (r = {corr:.3f}). Differences are minor; either method is defensible.")
@@ -25868,7 +30093,8 @@ def render_readiness_panel(report: dict) -> None:
     """
     overall = report.get("overall", "ok")
     checks = report.get("checks", [])
-    prefix = _READINESS_PREFIX.get(overall, "")
+    icon = _READINESS_ICON.get(overall, "⚪")
+    text = _READINESS_TEXT_LABEL.get(overall, overall.upper())
 
     if overall == "ok":
         st.success(
@@ -26032,6 +30258,17 @@ _APA_REFERENCE_LIBRARY: dict[str, str] = {
         "using multiple sequences. Statistical Science, 7(4), 457–472. "
         "https://doi.org/10.1214/ss/1177011136"
     ),
+    "Hayes_Krippendorff_2007": (
+        "Hayes, A. F., & Krippendorff, K. (2007). Answering the call for "
+        "a standard reliability measure for coding data. Communication "
+        "Methods and Measures, 1(1), 77–89. "
+        "https://doi.org/10.1080/19312450709336664"
+    ),
+    "Krippendorff_2004": (
+        "Krippendorff, K. (2004). Reliability in content analysis: Some common "
+        "misconceptions and recommendations. Human Communication Research, "
+        "30(3), 411–433. https://doi.org/10.1111/j.1468-2958.2004.tb00738.x"
+    ),
     "Kruschke_2018": (
         "Kruschke, J. K. (2018). Rejecting or accepting parameter values in "
         "Bayesian estimation. Advances in Methods and Practices in Psychological "
@@ -26065,6 +30302,10 @@ _APA_REFERENCE_LIBRARY: dict[str, str] = {
     "Linacre_2002": (
         "Linacre, J. M. (2002). What do infit and outfit, mean-square and "
         "standardized mean? Rasch Measurement Transactions, 16(2), 878."
+    ),
+    "Linacre_RatingScale_2002": (
+        "Linacre, J. M. (2002). Optimizing rating scale category effectiveness. "
+        "Journal of Applied Measurement, 3(1), 85–106."
     ),
     "Linacre_2004": (
         "Linacre, J. M. (2004). Test validity and Rasch measurement: Construct, "
@@ -26305,6 +30546,12 @@ _APA_REFERENCE_LIBRARY: dict[str, str] = {
         "detecting rater centrality. Journal of Applied Measurement, 16(3), "
         "228–241."
     ),
+    "Wind_2023": (
+        "Wind, S. A. (2023). Detecting rating scale malfunctioning with the "
+        "partial credit model and generalized partial credit model. Educational "
+        "and Psychological Measurement, 83(5), 953–983. "
+        "https://doi.org/10.1177/00131644221116292"
+    ),
     "Warm_1989": (
         "Warm, T. A. (1989). Weighted likelihood estimation of ability in item "
         "response theory. Psychometrika, 54(3), 427–450. "
@@ -26371,13 +30618,16 @@ _CITATION_TO_KEY: dict[str, str] = {
     "(Engelhard, 1994)": "Engelhard_1994",
     "(Engelhard, 2013)": "Engelhard_2013",
     "(Gelman & Rubin, 1992)": "Gelman_Rubin_1992",
+    "(Hayes & Krippendorff, 2007)": "Hayes_Krippendorff_2007",
     "(Kruschke, 2018)": "Kruschke_2018",
+    "(Krippendorff, 2004)": "Krippendorff_2004",
     "(Lai, Wolfe & Vickers, 2015)": "Lai_Wolfe_Vickers_2015",
     "(Lamprianou, 2025)": "Lamprianou_2025",
     "(Lakens, 2017)": "Lakens_2017",
     "(Linacre, 1989)": "Linacre_1989",
     "(Linacre, 1994)": "Linacre_1994",
     "(Linacre, 2002)": "Linacre_2002",
+    "(Linacre, 2002b)": "Linacre_RatingScale_2002",
     "(Linacre, 2004)": "Linacre_2004",
     "(Linacre, 2007)": "Linacre_2007",
     "(Linacre, 2024)": "Linacre_2024",
@@ -26421,6 +30671,7 @@ _CITATION_TO_KEY: dict[str, str] = {
     "(Wilks, 1938)": "Wilks_1938",
     "(Wang, Bradlow & Wainer, 2002)": "Wang_Bradlow_Wainer_2002",
     "(Wolfe & Song, 2015)": "Wolfe_Song_2015",
+    "(Wind, 2023)": "Wind_2023",
     "(Warm, 1989)": "Warm_1989",
     "(Wright & Linacre, 1994)": "Wright_Linacre_1994",
     "(Wright & Masters, 1982)": "Wright_Masters_1982",
@@ -27602,6 +31853,7 @@ def _add_dataframe_to_docx(document, df: "pd.DataFrame", caption: str | None = N
         run.italic = True
     # Cap very wide / long tables so the Word file stays reasonable
     display = df.copy()
+    n_cols_full, n_rows_full = len(display.columns), len(display)
     if len(display.columns) > 12:
         display = display.iloc[:, :12]
     if len(display) > 60:
@@ -27617,6 +31869,13 @@ def _add_dataframe_to_docx(document, df: "pd.DataFrame", caption: str | None = N
                 tbl.cell(i_row, j).text = f"{value:.3f}"
             else:
                 tbl.cell(i_row, j).text = str(value)
+    if len(display.columns) < n_cols_full or len(display) < n_rows_full:
+        note_p = document.add_paragraph()
+        note_p.add_run(
+            f"Table truncated to the first {len(display)} of {n_rows_full} rows "
+            f"and {len(display.columns)} of {n_cols_full} columns; the full table "
+            "is in the Downloads bundle."
+        ).italic = True
 
 
 def build_publication_word_bytes(
@@ -27714,7 +31973,12 @@ def build_publication_word_bytes(
             buf = _io.BytesIO(png)
             try:
                 document.add_picture(buf, width=Inches(6))
-            except Exception:
+            except Exception as exc:
+                note = document.add_paragraph()
+                note.add_run(
+                    f"Figure {idx}. {caption} — could not be embedded "
+                    f"({type(exc).__name__}); regenerate it from the Visuals tab."
+                ).italic = True
                 continue
             p = document.add_paragraph()
             p.add_run(f"Figure {idx}. {caption}").italic = True
@@ -27798,6 +32062,7 @@ def _pdf_dataframe_flowable(df: "pd.DataFrame", caption: str | None = None):
         return []
     styles = getSampleStyleSheet()
     display = df.copy()
+    n_cols_full, n_rows_full = len(display.columns), len(display)
     if len(display.columns) > 10:
         display = display.iloc[:, :10]
     if len(display) > 50:
@@ -27825,6 +32090,14 @@ def _pdf_dataframe_flowable(df: "pd.DataFrame", caption: str | None = None):
         out.append(Spacer(1, 4))
     out.append(tbl)
     out.append(Spacer(1, 10))
+    if len(display.columns) < n_cols_full or len(display) < n_rows_full:
+        out.append(Paragraph(
+            f"<i>Table truncated to the first {len(display)} of {n_rows_full} rows "
+            f"and {len(display.columns)} of {n_cols_full} columns; the full table is "
+            f"in the Downloads bundle.</i>",
+            styles["BodyText"],
+        ))
+        out.append(Spacer(1, 6))
     return out
 
 
@@ -27835,8 +32108,9 @@ def build_publication_pdf_bytes(
 ) -> bytes:
     """Build a manuscript-ready PDF document as bytes.
 
-    Raises RuntimeError if reportlab is unavailable. Figure / table embeds
-    that fail are silently skipped so the document always assembles.
+    Raises RuntimeError if reportlab is unavailable. Figure embeds that fail
+    leave a visible note (rather than being silently dropped), and oversized
+    tables are capped with a truncation note, so the document always assembles.
     """
     try:
         from reportlab.lib.pagesizes import LETTER
@@ -27952,7 +32226,12 @@ def build_publication_pdf_bytes(
             try:
                 img_buf = _io.BytesIO(png)
                 story.append(Image(img_buf, width=6.0 * inch, height=4.0 * inch, kind="proportional"))
-            except Exception:
+            except Exception as exc:
+                story.append(Paragraph(
+                    f"<i>Figure {idx}. {caption} — could not be embedded "
+                    f"({type(exc).__name__}); regenerate it from the Visuals tab.</i>",
+                    styles["BodyText"],
+                ))
                 continue
             story.append(Paragraph(f"<i>Figure {idx}. {caption}</i>", styles["BodyText"]))
             story.append(Spacer(1, 10))
@@ -28672,6 +32951,13 @@ def run_facets_mode(core: dict, data: pd.DataFrame) -> None:
             key="visual_label_policy",
             help=t("sidebar_estimation.visual_label_policy_help"),
         )
+        st.selectbox(
+            t("sidebar_estimation.visual_plot_label_mode_label"),
+            list(PLOT_LABEL_MODE_OPTIONS),
+            index=list(PLOT_LABEL_MODE_OPTIONS).index(PLOT_LABEL_MODE_DEFAULT),
+            key="plot_label_mode",
+            help=t("sidebar_estimation.visual_plot_label_mode_help"),
+        )
         st.slider(
             t("sidebar_estimation.visual_base_font_size_label"),
             min_value=9,
@@ -28872,6 +33158,7 @@ def run_facets_mode(core: dict, data: pd.DataFrame) -> None:
     mml_engine = "EM"
     quad_points = 15
     population_prior_sd = 1.0
+    estimate_population_sd = False
     if est_method == "MML":
         if advanced_controls:
             # Stable internal IDs route the MML branches; only the "Auto
@@ -28892,7 +33179,7 @@ def run_facets_mode(core: dict, data: pd.DataFrame) -> None:
             quad_points = int(st.sidebar.number_input(
                 t("sidebar_estimation.quad_points_label"),
                 min_value=5,
-                max_value=41,
+                max_value=61,
                 value=15,
                 step=2,
                 help=t("sidebar_estimation.quad_points_help"),
@@ -28906,6 +33193,11 @@ def run_facets_mode(core: dict, data: pd.DataFrame) -> None:
                 format="%.2f",
                 help=t("sidebar_estimation.population_prior_sd_help"),
             ))
+            estimate_population_sd = bool(st.sidebar.checkbox(
+                t("sidebar_estimation.estimate_population_sd_label"),
+                value=False,
+                help=t("sidebar_estimation.estimate_population_sd_help"),
+            ))
         else:
             mml_engine = "Auto (recommended)"
         st.sidebar.info(t(
@@ -28914,6 +33206,8 @@ def run_facets_mode(core: dict, data: pd.DataFrame) -> None:
             quad_points=quad_points,
             prior_sd=f"{population_prior_sd:.2f}",
         ))
+        if estimate_population_sd:
+            st.sidebar.caption(t("sidebar_estimation.estimate_population_sd_active_note"))
     facet_regularization_specs: list[dict] = []
     facet_regularization_mode = "Off: unpenalized JMLE/MML"
     facet_regularization_fingerprint = stable_json_fingerprint({"mode": "off"})
@@ -29624,6 +33918,7 @@ def run_facets_mode(core: dict, data: pd.DataFrame) -> None:
                     positive_facets=positive_facets,
                     quad_points=quad_points,
                     population_prior_sd=population_prior_sd,
+                    estimate_population_sd=estimate_population_sd,
                     facet_regularization=(
                         {
                             "enabled": True,
@@ -29762,6 +34057,7 @@ def run_facets_mode(core: dict, data: pd.DataFrame) -> None:
                 "_mml_engine": mml_engine if est_method == "MML" else None,
                 "_quad_points": quad_points if est_method == "MML" else None,
                 "_population_prior_sd": population_prior_sd if est_method == "MML" else None,
+                "_estimate_population_sd": bool(estimate_population_sd) if est_method == "MML" else None,
                 "_facet_regularization_mode": facet_regularization_mode,
                 "_facet_regularization_fingerprint": facet_regularization_fingerprint,
                 "_population_enabled": bool(population_enabled),
@@ -29926,12 +34222,15 @@ def run_facets_mode(core: dict, data: pd.DataFrame) -> None:
     current_mml_engine = mml_engine if est_method == "MML" else None
     current_quad_points = quad_points if est_method == "MML" else None
     current_population_prior_sd = population_prior_sd if est_method == "MML" else None
+    current_estimate_population_sd = bool(estimate_population_sd) if est_method == "MML" else None
     if out.get("_mml_engine") != current_mml_engine:
         stale_reasons.append("MML engine")
     if out.get("_quad_points") != current_quad_points:
         stale_reasons.append("quadrature points")
     if out.get("_population_prior_sd") != current_population_prior_sd:
         stale_reasons.append("population prior SD")
+    if out.get("_estimate_population_sd") is not None and out.get("_estimate_population_sd") != current_estimate_population_sd:
+        stale_reasons.append("population SD estimation mode")
     if out.get("_facet_regularization_mode") is not None and out["_facet_regularization_mode"] != facet_regularization_mode:
         stale_reasons.append("facet regularization mode")
     if (
@@ -30181,6 +34480,7 @@ def run_facets_mode(core: dict, data: pd.DataFrame) -> None:
         "wright_map": t("main_tabs.wright_map"),
         "visuals": t("main_tabs.visuals"),
         "bias_interaction": t("main_tabs.bias_interaction"),
+        "classical_dif": t("main_tabs.classical_dif"),
         "categories_steps": t("main_tabs.categories_steps"),
         "agreement": t("main_tabs.agreement"),
         "facets_style_tables": t("main_tabs.facets_style_tables"),
@@ -30534,6 +34834,10 @@ def run_facets_mode(core: dict, data: pd.DataFrame) -> None:
             result=result,
             diagnostics=diagnostics,
         )
+
+    # --- Classical DIF tab ---
+    if selected_main_panel == "classical_dif":
+        show_classical_dif_section(result, core)
 
     # --- Categories/Steps tab ---
     if selected_main_panel == "categories_steps":
@@ -31744,8 +36048,13 @@ def build_manuscript_claim_guide(
                 "Report with caveat" if method == "MML" else "Ready"
             ),
             "SafeManuscriptWording": (
-                f"The MML run used a fixed population prior SD of {config.get('population_prior_sd', 'not recorded')}; "
-                "population-scale conclusions are conditional on that setting."
+                (
+                    f"The MML run estimated the person population SD at {config.get('estimated_population_sd', 'not recorded')}; "
+                    "population-scale conclusions reflect the freely estimated metric (report the SD with its profile SE/CI)."
+                    if config.get("estimate_population_sd") else
+                    f"The MML run used a fixed population prior SD of {config.get('population_prior_sd', 'not recorded')}; "
+                    "population-scale conclusions are conditional on that setting."
+                )
                 if method == "MML" else
                 "No MML population prior SD was used because this run was not MML."
             ),
@@ -31949,6 +36258,2840 @@ def build_publication_gate_summary(
     detail["_sort"] = detail["GateStatus"].map(status_order).fillna(3)
     detail = detail.sort_values(["_sort", "GateArea"]).drop(columns=["_sort"]).reset_index(drop=True)
     return pd.concat([overall, detail], ignore_index=True)
+
+
+REPORT_READY_SUMMARY_STATUS_ORDER: dict[str, int] = {
+    "Do not report yet": 0,
+    "Needs rerun": 1,
+    "Needs caveat": 2,
+    "Ready": 3,
+}
+
+
+def _report_ready_summary_status(status: object) -> str:
+    """Map detailed gate/QC statuses into a four-state report decision."""
+    text = str(status or "").strip()
+    low = text.lower()
+    if not text:
+        return "Needs caveat"
+    if text in {"Ready", "OK", "Keep original scale", "Report-ready"}:
+        return "Ready"
+    if text in {"Not ready", "Do not claim", "Do not report yet"}:
+        return "Do not report yet"
+    if text in {"Missing", "Missing evidence", "Unavailable"}:
+        return "Needs rerun"
+    if "do not copy" in low or "do not claim" in low or "not ready" in low:
+        return "Do not report yet"
+    if "missing" in low or "unavailable" in low:
+        return "Needs rerun"
+    if any(token in low for token in ("caveat", "boundary", "review", "caution", "sensitivity")):
+        return "Needs caveat"
+    return "Ready"
+
+
+def _worst_report_ready_summary_status(statuses: Iterable[object]) -> str:
+    normalized = [_report_ready_summary_status(status) for status in statuses]
+    if not normalized:
+        return "Needs caveat"
+    return min(
+        normalized,
+        key=lambda status: REPORT_READY_SUMMARY_STATUS_ORDER.get(status, 2),
+    )
+
+
+def _report_ready_summary_counts(frame: pd.DataFrame, column: str) -> str:
+    if not isinstance(frame, pd.DataFrame) or frame.empty or column not in frame.columns:
+        return "no rows"
+    counts = frame[column].astype(str).value_counts(dropna=False).to_dict()
+    return "; ".join(f"{key}: {int(value)}" for key, value in sorted(counts.items()))
+
+
+def _report_ready_use_now(status: object) -> str:
+    status = _report_ready_summary_status(status)
+    if status == "Ready":
+        return "Use as draft reporting evidence after study-specific editing."
+    if status == "Needs caveat":
+        return "Use only bounded claims; keep caveats visible in Results, notes, or limitations."
+    if status == "Needs rerun":
+        return "Use for troubleshooting and planning; regenerate report text after the missing evidence is computed."
+    return "Use only as an internal diagnostic record; do not write final conclusions from this run."
+
+
+def build_report_ready_summary_panel(
+    result: dict,
+    diagnostics: dict,
+    all_bias_results: dict | None = None,
+    *,
+    bias_results: dict | None = None,
+) -> pd.DataFrame:
+    """One-screen report-writing decision panel for the current run.
+
+    The panel compresses readiness, publication-gate, APA sentence,
+    claim-evidence, scoring-quality, and category-collapse outputs into
+    action rows. It is intentionally conservative and points back to the
+    detailed evidence files instead of replacing them.
+    """
+    if not isinstance(result, dict):
+        return pd.DataFrame()
+    diagnostics = diagnostics if isinstance(diagnostics, dict) else {}
+    all_bias = all_bias_results or {}
+    if not all_bias and isinstance(bias_results, dict) and bias_results:
+        pair_label = f"{bias_results.get('facet_a', 'A')} x {bias_results.get('facet_b', 'B')}"
+        all_bias = {pair_label: bias_results}
+
+    readiness = _safe_guided_evidence_frame(build_final_report_readiness, result, diagnostics, all_bias)
+    gate = _safe_guided_evidence_frame(build_publication_gate_summary, result, diagnostics, all_bias)
+    claim_matrix = _safe_guided_evidence_frame(build_claim_to_evidence_matrix, result, diagnostics, all_bias)
+    apa_audit = _safe_guided_evidence_frame(
+        build_apa_report_sentence_audit,
+        result,
+        diagnostics,
+        all_bias_results=all_bias,
+    )
+    scoring_first = _safe_guided_evidence_frame(build_scoring_quality_first_read_summary, result, diagnostics)
+    scoring_decision = _safe_guided_evidence_frame(build_scoring_consistency_decision, result, diagnostics)
+    category_action = _safe_guided_evidence_frame(category_collapse_action_center_table, result, diagnostics)
+
+    rows: list[dict[str, object]] = []
+
+    def add_row(
+        priority: int,
+        area: str,
+        status: object,
+        users: str,
+        open_first: str,
+        evidence_files: str,
+        action: str,
+        safe_wording: str,
+        do_not_write: str,
+        details: str,
+    ) -> None:
+        report_status = _report_ready_summary_status(status)
+        rows.append({
+            "_Sort": REPORT_READY_SUMMARY_STATUS_ORDER.get(report_status, 2) * 100 + int(priority),
+            "Priority": int(priority),
+            "ReportArea": str(area),
+            "ReportStatus": report_status,
+            "PrimaryUsers": str(users),
+            "UseNow": _report_ready_use_now(report_status),
+            "OpenFirst": str(open_first),
+            "EvidenceFiles": str(evidence_files),
+            "ActionBeforeWriting": str(action),
+            "SafeWording": str(safe_wording),
+            "DoNotWrite": str(do_not_write),
+            "Details": str(details),
+        })
+
+    overall_gate = _table_row_by_value(gate, "GateArea", "Overall manuscript gate")
+    gate_status = _handoff_text(
+        overall_gate.get("GateStatus") if overall_gate is not None else "",
+        "Needs caveat",
+    )
+    required_statuses: list[object] = []
+    if isinstance(readiness, pd.DataFrame) and not readiness.empty and {"Required", "Status"}.issubset(readiness.columns):
+        required_rows = readiness.loc[readiness["Required"].astype(str).eq("Yes")]
+        required_statuses = required_rows["Status"].astype(str).tolist()
+    overall_status = _worst_report_ready_summary_status([gate_status, *required_statuses])
+    add_row(
+        1,
+        "Overall manuscript conclusion",
+        overall_status,
+        "Paper author; measurement practitioner; scoring manager",
+        "Report -> APA Report; Report -> Readiness",
+        "publication_gate_summary.csv; final_report_readiness.csv; submission_action_plan.csv",
+        _handoff_text(
+            overall_gate.get("ManuscriptAction") if overall_gate is not None else "",
+            "Review the publication gate and readiness rows before using generated report text.",
+        ),
+        (
+            "The fitted MFRM results were interpreted within the stated diagnostics, caveats, and study design."
+            if overall_status == "Ready" else
+            "The fitted MFRM results were interpreted only within the evidence-supported and caveated scope."
+        ),
+        "Do not turn generated text into final conclusions when blocker, missing, or caveat rows remain unresolved.",
+        _handoff_text(
+            overall_gate.get("Evidence") if overall_gate is not None else "",
+            f"required readiness statuses: {_report_ready_summary_counts(readiness, 'Status')}",
+        ),
+    )
+
+    apa_status = (
+        _worst_report_ready_summary_status(apa_audit["CopyDecision"].tolist())
+        if isinstance(apa_audit, pd.DataFrame) and not apa_audit.empty and "CopyDecision" in apa_audit.columns
+        else "Needs rerun"
+    )
+    add_row(
+        2,
+        "APA sentence draft",
+        apa_status,
+        "Paper author",
+        "Report -> APA Report",
+        "apa_report_sentence_audit.csv; claim_to_evidence_matrix.csv; method_reference_audit.csv",
+        "Filter generated sentences by CopyDecision; edit every sentence for study design, rubric labels, and citations.",
+        "Use generated APA text as a draft only when each sentence has an evidence row and any caveat remains visible.",
+        "Do not copy a generated sentence whose CopyDecision blocks or caveats it without revising the claim.",
+        (
+            f"{len(apa_audit)} sentence row(s); "
+            f"copy decisions: {_report_ready_summary_counts(apa_audit, 'CopyDecision')}"
+            if isinstance(apa_audit, pd.DataFrame) and not apa_audit.empty else
+            "APA sentence audit was not generated."
+        ),
+    )
+
+    claim_statuses: list[object] = []
+    if isinstance(claim_matrix, pd.DataFrame) and not claim_matrix.empty:
+        for col in ("ClaimStatus", "GateStatus"):
+            if col in claim_matrix.columns:
+                claim_statuses.extend(claim_matrix[col].astype(str).tolist())
+    claim_panel_status = _worst_report_ready_summary_status(claim_statuses) if claim_statuses else "Needs rerun"
+    add_row(
+        3,
+        "Claim boundary and evidence",
+        claim_panel_status,
+        "Paper author; reviewer response lead",
+        "Report -> Claim Guide; Downloads -> Data Tables",
+        "claim_to_evidence_matrix.csv; manuscript_claim_guide.csv; publication_gate_summary.csv",
+        "Match each planned manuscript claim to a table, figure, diagnostic row, caveat, and archive file.",
+        "State claims only for the computed facet structure, screened pairs, and diagnostics that were actually produced.",
+        "Do not make broad validity, fairness, category, or equivalence claims without a traceable evidence row.",
+        (
+            f"{len(claim_matrix)} claim area(s); "
+            f"ClaimStatus: {_report_ready_summary_counts(claim_matrix, 'ClaimStatus')}; "
+            f"GateStatus: {_report_ready_summary_counts(claim_matrix, 'GateStatus')}"
+            if isinstance(claim_matrix, pd.DataFrame) and not claim_matrix.empty else
+            "Claim-to-evidence matrix was not generated."
+        ),
+    )
+
+    if isinstance(scoring_first, pd.DataFrame) and not scoring_first.empty:
+        sf = scoring_first.iloc[0]
+        scoring_status = str(sf.get("ReadinessLabel", "Needs caveat"))
+        scoring_action = str(sf.get("NextAction", "Review scoring consistency decision rows."))
+        scoring_safe = str(sf.get("SafeClaim", "Report scoring quality as converging evidence with caveats."))
+        scoring_do_not = str(sf.get("DoNotClaim", "Do not state that scoring is report-ready before QC evidence supports it."))
+        scoring_details = (
+            f"overall status: {sf.get('OverallStatus', 'not available')}; "
+            f"blocking items: {sf.get('BlockingItems', 'not available')}; "
+            f"caveat items: {sf.get('CaveatItems', 'not available')}"
+        )
+    else:
+        scoring_status = (
+            _worst_report_ready_summary_status(scoring_decision["Status"].tolist())
+            if isinstance(scoring_decision, pd.DataFrame) and not scoring_decision.empty and "Status" in scoring_decision.columns
+            else "Needs rerun"
+        )
+        scoring_action = "Open scoring consistency and QC checklist rows before writing scoring-quality claims."
+        scoring_safe = "Report scoring quality only as converging evidence from agreement, alpha, rater fit, and category diagnostics."
+        scoring_do_not = "Do not state that scoring quality is established from one agreement or fit statistic alone."
+        scoring_details = _report_ready_summary_counts(scoring_decision, "Status")
+    add_row(
+        4,
+        "Scoring quality and QC decision",
+        scoring_status,
+        "Scoring manager; paper author; measurement practitioner",
+        "Agreement / QC; Report -> APA Report",
+        "scoring_quality_first_read_summary.csv; scoring_consistency_decision.csv; quality_control_todo_checklist.csv",
+        scoring_action,
+        scoring_safe,
+        scoring_do_not,
+        scoring_details,
+    )
+
+    if isinstance(category_action, pd.DataFrame) and not category_action.empty:
+        cat = category_action.iloc[0]
+        cat_status = str(cat.get("Status", "Needs caveat"))
+        cat_action = str(cat.get("RecommendedAction", "Review category-collapse action center rows."))
+        cat_safe = str(cat.get("ReportReadyWording", "Report category functioning only with the available evidence."))
+        cat_do_not = str(cat.get("DoNotClaim", "Do not collapse categories solely from one diagnostic."))
+        cat_details = str(cat.get("EvidenceSummary", _report_ready_summary_counts(category_action, "Status")))
+    else:
+        cat_status = "Needs rerun"
+        cat_action = "Run or inspect category counts, threshold order, and category-curve diagnostics."
+        cat_safe = "Report only the category-functioning evidence that was computed."
+        cat_do_not = "Do not claim category distinctness or collapse readiness without category diagnostics."
+        cat_details = "Category-collapse action center was not generated."
+    add_row(
+        5,
+        "Rubric categories and collapse sensitivity",
+        cat_status,
+        "Rubric owner; scoring manager; paper author",
+        "Categories / Steps; Visuals -> category curves",
+        "category_collapse_action_center.csv; rating_scale_decision_support.csv; rating_scale_recode_candidates.csv",
+        cat_action,
+        cat_safe,
+        cat_do_not,
+        cat_details,
+    )
+
+    if not rows:
+        return pd.DataFrame()
+    out = pd.DataFrame(rows)
+    out = out.sort_values(["_Sort", "Priority", "ReportArea"]).drop(columns=["_Sort"]).reset_index(drop=True)
+    out["Priority"] = np.arange(1, len(out) + 1, dtype=int)
+    return out
+
+
+def _report_ready_summary_overall_status(panel: pd.DataFrame) -> str:
+    if not isinstance(panel, pd.DataFrame) or panel.empty or "ReportStatus" not in panel.columns:
+        return "Needs caveat"
+    return _worst_report_ready_summary_status(panel["ReportStatus"].astype(str).tolist())
+
+
+def _unique_evidence_files_from_text(values: Iterable[object]) -> list[str]:
+    files: list[str] = []
+    seen: set[str] = set()
+    for value in values:
+        for part in re.split(r"[;,|]", str(value or "")):
+            clean = part.strip()
+            if not clean or "." not in clean:
+                continue
+            if clean not in seen:
+                seen.add(clean)
+                files.append(clean)
+    return files
+
+
+def _markdown_bullets(values: Iterable[object], *, default: str = "- Not available.") -> str:
+    clean = [str(value).strip() for value in values if str(value).strip()]
+    if not clean:
+        return default
+    return "\n".join(f"- {value}" for value in clean)
+
+
+def generate_report_ready_decision_brief(
+    result: dict,
+    diagnostics: dict,
+    all_bias_results: dict | None = None,
+    *,
+    bias_results: dict | None = None,
+) -> str:
+    """Generate a short decision memo from the report-ready summary panel."""
+    panel = build_report_ready_summary_panel(
+        result,
+        diagnostics,
+        all_bias_results=all_bias_results,
+        bias_results=bias_results,
+    )
+    if not isinstance(panel, pd.DataFrame) or panel.empty:
+        return "\n".join([
+            "# Report-Ready Decision Brief",
+            "",
+            "No report-ready summary rows were generated for this run.",
+            "Regenerate the run or inspect exported diagnostics before writing conclusions.",
+            "",
+        ])
+
+    overall_status = _report_ready_summary_overall_status(panel)
+    status_counts = panel["ReportStatus"].astype(str).value_counts().to_dict()
+    status_summary = "; ".join(
+        f"{status}: {int(status_counts.get(status, 0))}"
+        for status in REPORT_READY_SUMMARY_STATUS_ORDER
+        if int(status_counts.get(status, 0))
+    ) or "no status rows"
+    config = result.get("config", {}) if isinstance(result, dict) else {}
+    prep = result.get("prep", {}) if isinstance(result, dict) else {}
+    facet_names = ", ".join(map(str, config.get("facet_names", []) or [])) if isinstance(config, dict) else ""
+
+    def row_lines(statuses: set[str], template: str) -> list[str]:
+        rows = panel.loc[panel["ReportStatus"].astype(str).isin(statuses)]
+        out: list[str] = []
+        for _, row in rows.iterrows():
+            out.append(template.format(
+                area=row.get("ReportArea", "Report area"),
+                status=row.get("ReportStatus", "Needs caveat"),
+                users=row.get("PrimaryUsers", "Paper author"),
+                use_now=row.get("UseNow", ""),
+                open_first=row.get("OpenFirst", ""),
+                action=row.get("ActionBeforeWriting", ""),
+                safe=row.get("SafeWording", ""),
+                do_not=row.get("DoNotWrite", ""),
+            ))
+        return out
+
+    writeable_rows = row_lines(
+        {"Ready", "Needs caveat"},
+        "**{area}** ({status}; {users}): {use_now} Open first: {open_first}.",
+    )
+    hold_rows = row_lines(
+        {"Needs rerun", "Do not report yet"},
+        "**{area}** ({status}): {action} Open first: {open_first}.",
+    )
+    safe_wording = row_lines(
+        {"Ready", "Needs caveat"},
+        "**{area}**: {safe}",
+    )
+    do_not = [
+        f"**{row.get('ReportArea', 'Report area')}**: {row.get('DoNotWrite', '')}"
+        for _, row in panel.iterrows()
+        if str(row.get("DoNotWrite", "")).strip()
+    ]
+    evidence_files = _unique_evidence_files_from_text(panel.get("EvidenceFiles", pd.Series(dtype=object)).tolist())
+
+    lines = [
+        "# Report-Ready Decision Brief",
+        "",
+        "## Overall Decision",
+        "",
+        f"- Overall status: **{overall_status}**.",
+        f"- Status counts: {status_summary}.",
+        f"- Model/method: {config.get('model', 'unknown') if isinstance(config, dict) else 'unknown'} / {config.get('method', 'unknown') if isinstance(config, dict) else 'unknown'}.",
+        f"- Observations/persons: {prep.get('n_obs', 'unknown') if isinstance(prep, dict) else 'unknown'} observations; {prep.get('n_person', 'unknown') if isinstance(prep, dict) else 'unknown'} persons.",
+        f"- Facets: {facet_names or 'not recorded'}.",
+        "",
+        "## Can Be Used Now",
+        "",
+        _markdown_bullets(writeable_rows, default="- No row is ready for manuscript wording without follow-up."),
+        "",
+        "## Resolve Before Final Wording",
+        "",
+        _markdown_bullets(hold_rows, default="- No blocking or rerun row was generated."),
+        "",
+        "## Conservative Wording To Carry Forward",
+        "",
+        _markdown_bullets(safe_wording, default="- No conservative wording row was generated."),
+        "",
+        "## Do Not Write",
+        "",
+        _markdown_bullets(do_not, default="- No do-not-write boundary was generated."),
+        "",
+        "## Evidence Files To Keep With The Draft",
+        "",
+        _markdown_bullets(evidence_files, default="- report_ready_summary_panel.csv"),
+        "",
+        "## Use Note",
+        "",
+        "This brief is a manuscript and decision-support aid. It does not replace study-specific interpretation, rubric documentation, privacy review, or journal reporting requirements.",
+        "",
+    ]
+    return "\n".join(lines)
+
+
+def _apa_results_copy_allowed(copy_decision: object) -> bool:
+    text = str(copy_decision or "").strip().lower()
+    return bool(text) and not text.startswith("do not copy")
+
+
+def _apa_critical_review_lines(
+    critical_review: pd.DataFrame,
+    *,
+    stop_only: bool,
+) -> list[str]:
+    """Convert critical-review rows into APA draft guardrail bullets."""
+    if not isinstance(critical_review, pd.DataFrame) or critical_review.empty:
+        return []
+    work = critical_review.copy()
+    if stop_only:
+        flag = work.get("StopBeforeFinalOutput", pd.Series(False, index=work.index))
+        work = work.loc[flag.fillna(False).astype(bool)].copy()
+    else:
+        stop_flag = work.get("StopBeforeFinalOutput", pd.Series(False, index=work.index))
+        caveat_flag = work.get("NeedsCaveat", pd.Series(False, index=work.index))
+        work = work.loc[(~stop_flag.fillna(False).astype(bool)) & caveat_flag.fillna(False).astype(bool)].copy()
+    if work.empty:
+        return []
+    lines: list[str] = []
+    for _, row in work.sort_values("Priority").iterrows():
+        lines.append(
+            f"**{row.get('Lens', 'Critical review')}**: {row.get('Decision', 'Review')}. "
+            f"Action: {row.get('ActionBeforeContinuing', 'open the listed evidence')}. "
+            f"Evidence: {row.get('EvidenceToOpen', 'critical_final_review_panel.csv')}. "
+            f"Do not claim: {row.get('DoNotClaim', 'keep claims within the available evidence')}."
+        )
+    return lines
+
+
+def build_apa_bridge_revision_plan(
+    result: dict,
+    diagnostics: dict,
+    all_bias_results: dict | None = None,
+    *,
+    bias_results: dict | None = None,
+    critical_review: pd.DataFrame | None = None,
+    reporting_action_bridge: pd.DataFrame | None = None,
+) -> pd.DataFrame:
+    """Build APA-specific revision instructions from bridge and critical-review rows."""
+    all_bias = all_bias_results or {}
+    if not all_bias and isinstance(bias_results, dict) and bias_results:
+        all_bias = {f"{bias_results.get('facet_a', 'A')} x {bias_results.get('facet_b', 'B')}": bias_results}
+    rows: list[dict[str, object]] = []
+
+    def add_row(
+        *,
+        placement: str,
+        track: str,
+        status: object,
+        blocks_final_copy: bool,
+        revision: str,
+        required_check: str,
+        caveat: str,
+        stop_rule: str,
+        evidence: str,
+        download_file: str,
+    ) -> None:
+        rows.append({
+            "Priority": len(rows) + 1,
+            "APAPlacement": str(placement),
+            "SourceTrack": str(track),
+            "CurrentStatus": _report_ready_summary_status(status),
+            "BlocksFinalCopy": bool(blocks_final_copy),
+            "RevisionInstruction": str(revision),
+            "RequiredCheck": str(required_check),
+            "CaveatToCarry": str(caveat),
+            "StopRule": str(stop_rule),
+            "EvidenceFiles": str(evidence),
+            "DownloadFile": str(download_file),
+        })
+
+    if isinstance(reporting_action_bridge, pd.DataFrame) and not reporting_action_bridge.empty:
+        track = reporting_action_bridge.get(
+            "BridgeTrack",
+            pd.Series("", index=reporting_action_bridge.index, dtype=object),
+        ).astype(str)
+        bridge_rows = reporting_action_bridge.loc[
+            track.str.contains("APA|Claim-to-evidence|Guided result-reading", case=False, regex=True, na=False)
+        ].copy()
+        for _, row in bridge_rows.sort_values("Priority").iterrows():
+            status = _report_ready_summary_status(row.get("CurrentStatus", "Needs caveat"))
+            add_row(
+                placement=(
+                    "Before paragraph"
+                    if str(row.get("BridgeTrack", "")).startswith("APA")
+                    else "After paragraph"
+                ),
+                track=row.get("BridgeTrack", "Reporting action bridge"),
+                status=status,
+                blocks_final_copy=status in {"Do not report yet", "Needs rerun"},
+                revision=row.get("DraftOrDecisionMove", "Keep the bridge instruction visible while editing the APA draft."),
+                required_check=row.get("RequiredCheck", "Open the listed evidence files before copying generated wording."),
+                caveat=row.get("CaveatToCarry", "Keep caveats visible in the Results text."),
+                stop_rule=row.get("StopRule", "Do not treat the draft as final until this bridge row is resolved."),
+                evidence=row.get("EvidenceFiles", "reporting_action_bridge.csv; apa_report_sentence_audit.csv"),
+                download_file=row.get("DownloadFile", "reporting_action_bridge.csv; apa_results_paragraph_draft.md"),
+            )
+
+    if not rows:
+        if not isinstance(critical_review, pd.DataFrame) or critical_review.empty:
+            critical_review = build_critical_final_review_panel(
+                result,
+                diagnostics,
+                all_bias_results=all_bias,
+                bias_results=bias_results,
+            )
+        if isinstance(critical_review, pd.DataFrame) and not critical_review.empty:
+            lens = critical_review.get(
+                "Lens",
+                pd.Series("", index=critical_review.index, dtype=object),
+            ).astype(str)
+            critical_rows = critical_review.loc[
+                lens.str.contains("APA|Claim|Manuscript", case=False, regex=True, na=False)
+            ].copy()
+            for _, row in critical_rows.sort_values("Priority").iterrows():
+                stop = bool(row.get("StopBeforeFinalOutput", False))
+                add_row(
+                    placement="Before paragraph" if "APA" in str(row.get("Lens", "")) else "After paragraph",
+                    track=row.get("Lens", "Critical final review"),
+                    status=row.get("CurrentStatus", "Needs caveat"),
+                    blocks_final_copy=stop,
+                    revision=(
+                        "Use this Results paragraph as an editing worksheet only until this blocker is resolved."
+                        if stop else
+                        "Use the Results paragraph only with this caveat visible during editing."
+                    ),
+                    required_check=row.get("EvidenceToOpen", "critical_final_review_panel.csv"),
+                    caveat=row.get("DoNotClaim", "Keep claims within the computed evidence."),
+                    stop_rule=row.get("ActionBeforeContinuing", "Open the critical final review before copying generated wording."),
+                    evidence=row.get("EvidenceToOpen", "critical_final_review_panel.csv"),
+                    download_file="critical_final_review_panel.csv; reporting_action_bridge.csv; apa_results_paragraph_draft.md",
+                )
+
+    if not rows:
+        add_row(
+            placement="Before paragraph",
+            track="APA draft guardrail",
+            status="Needs caveat",
+            blocks_final_copy=False,
+            revision="Use generated APA text as an editable draft, not as final Results wording.",
+            required_check="Open the APA sentence audit and report-ready summary before copying.",
+            caveat="Carry any caveat listed in the sentence audit or report-ready summary.",
+            stop_rule="Do not treat missing bridge rows as evidence that no review is needed.",
+            evidence="apa_report_sentence_audit.csv; report_ready_summary_panel.csv; reporting_action_bridge.csv",
+            download_file="apa_results_paragraph_draft.md; reporting_action_bridge.csv",
+        )
+
+    return pd.DataFrame(rows).reset_index(drop=True)
+
+
+def _apa_bridge_revision_lines(plan: pd.DataFrame, *, blockers_only: bool = False) -> list[str]:
+    if not isinstance(plan, pd.DataFrame) or plan.empty:
+        return []
+    work = plan.copy()
+    if blockers_only and "BlocksFinalCopy" in work.columns:
+        work = work.loc[work["BlocksFinalCopy"].fillna(False).astype(bool)].copy()
+    if work.empty:
+        return []
+    lines: list[str] = []
+    for _, row in work.sort_values("Priority").iterrows():
+        lines.append(
+            f"**{row.get('SourceTrack', 'Bridge row')}** ({row.get('CurrentStatus', 'Needs caveat')}): "
+            f"{row.get('RevisionInstruction', 'review before copying')}. "
+            f"Check: {row.get('RequiredCheck', 'open the listed evidence')}. "
+            f"Caveat: {row.get('CaveatToCarry', 'keep caveats visible')}. "
+            f"Evidence: {row.get('EvidenceFiles', 'reporting_action_bridge.csv')}."
+        )
+    return lines
+
+
+def _simulation_sparse_context_lines(context: pd.DataFrame, *, blockers_only: bool = False) -> list[str]:
+    if not isinstance(context, pd.DataFrame) or context.empty:
+        return []
+    work = context.copy()
+    if blockers_only and "ReportStatus" in work.columns:
+        work = work.loc[work["ReportStatus"].astype(str).isin(["Do not report yet", "Needs rerun"])].copy()
+    if work.empty:
+        return []
+    lines: list[str] = []
+    for _, row in work.sort_values("Priority").iterrows():
+        lines.append(
+            f"**{row.get('SimulationCheck', 'Simulation design')}** ({row.get('ReportStatus', 'Needs caveat')}): "
+            f"{row.get('ActionBeforeReporting', 'review the sparse-design audit')}. "
+            f"Caveat: {row.get('CaveatToCarry', 'keep simulation design caveats visible')}. "
+            f"Evidence: {row.get('EvidenceFiles', 'custom_simulation_sparse_design_audit.csv')}."
+        )
+    return lines
+
+
+def _simulation_settings_lines(settings: pd.DataFrame) -> list[str]:
+    if not isinstance(settings, pd.DataFrame) or settings.empty:
+        return []
+    wanted = {
+        "Simulation preset",
+        "Persons",
+        "Facets",
+        "Facet level counts",
+        "First-facet levels per person",
+        "Score categories",
+        "Requested missing rate",
+        "Adjacent thresholds",
+        "Seed",
+    }
+    work = settings.loc[settings["Setting"].astype(str).isin(wanted)].copy() if "Setting" in settings.columns else settings.copy()
+    if work.empty:
+        return []
+    lines: list[str] = []
+    for _, row in work.sort_values("Priority" if "Priority" in work.columns else "Setting").iterrows():
+        lines.append(
+            f"**{row.get('Setting', 'Simulation setting')}**: {row.get('Value', '')}. "
+            f"Note: {row.get('ReportNote', 'Archive this setting with generated-data results')}."
+        )
+    return lines
+
+
+def generate_report_ready_apa_results_draft(
+    result: dict,
+    diagnostics: dict,
+    all_bias_results: dict | None = None,
+    *,
+    bias_results: dict | None = None,
+    critical_review: pd.DataFrame | None = None,
+    reporting_action_bridge: pd.DataFrame | None = None,
+    apa_bridge_revision_plan: pd.DataFrame | None = None,
+    simulation_sparse_context: pd.DataFrame | None = None,
+    simulation_settings: pd.DataFrame | None = None,
+) -> str:
+    """Compose an APA-style Results draft from allowed sentence-audit rows."""
+    all_bias = all_bias_results or {}
+    if not all_bias and isinstance(bias_results, dict) and bias_results:
+        all_bias = {f"{bias_results.get('facet_a', 'A')} x {bias_results.get('facet_b', 'B')}": bias_results}
+    panel = build_report_ready_summary_panel(
+        result,
+        diagnostics,
+        all_bias_results=all_bias,
+        bias_results=bias_results,
+    )
+    apa_audit = build_apa_report_sentence_audit(
+        result,
+        diagnostics,
+        bias_results=bias_results,
+        all_bias_results=all_bias,
+    )
+    overall_status = _report_ready_summary_overall_status(panel)
+    if not isinstance(critical_review, pd.DataFrame) or critical_review.empty:
+        critical_review = build_critical_final_review_panel(
+            result,
+            diagnostics,
+            all_bias_results=all_bias,
+            bias_results=bias_results,
+        )
+    final_blocker_lines = _apa_critical_review_lines(critical_review, stop_only=True)
+    critical_caveat_lines = _apa_critical_review_lines(critical_review, stop_only=False)
+    if not isinstance(apa_bridge_revision_plan, pd.DataFrame) or apa_bridge_revision_plan.empty:
+        apa_bridge_revision_plan = build_apa_bridge_revision_plan(
+            result,
+            diagnostics,
+            all_bias_results=all_bias,
+            bias_results=bias_results,
+            critical_review=critical_review,
+            reporting_action_bridge=reporting_action_bridge,
+        )
+    bridge_blocker_lines = _apa_bridge_revision_lines(apa_bridge_revision_plan, blockers_only=True)
+    bridge_revision_lines = _apa_bridge_revision_lines(apa_bridge_revision_plan, blockers_only=False)
+    simulation_blocker_lines = _simulation_sparse_context_lines(simulation_sparse_context, blockers_only=True)
+    simulation_context_lines = _simulation_sparse_context_lines(simulation_sparse_context, blockers_only=False)
+    simulation_setting_lines = _simulation_settings_lines(simulation_settings)
+    if not isinstance(apa_audit, pd.DataFrame) or apa_audit.empty:
+        return "\n".join([
+            "# APA Results Paragraph Draft",
+            "",
+            f"Overall report-ready status: **{overall_status}**.",
+            "",
+            "## Final-Output Blockers",
+            "",
+            _markdown_bullets(final_blocker_lines, default="- No critical final-review row currently stops final output."),
+            "",
+            "## Bridge-Constrained Use Conditions",
+            "",
+            _markdown_bullets(bridge_revision_lines, default="- Open `reporting_action_bridge.csv` before treating generated wording as final."),
+            "",
+            "## Simulation Design Use Conditions",
+            "",
+            _markdown_bullets(simulation_context_lines, default="- No custom-simulation sparse-design context was attached to this draft."),
+            "",
+            "## Simulation Settings To Archive",
+            "",
+            _markdown_bullets(simulation_setting_lines, default="- No custom-simulation settings table was attached to this draft."),
+            "",
+            "No APA sentence audit rows were generated. Regenerate diagnostics before drafting Results prose.",
+            "",
+            "Evidence file to open first: `critical_final_review_panel.csv`; `reporting_action_bridge.csv`; `custom_simulation_settings.csv` and `custom_simulation_sparse_reporting_context.csv` if generated data were used.",
+            "",
+        ])
+
+    copy_allowed = apa_audit["CopyDecision"].apply(_apa_results_copy_allowed) if "CopyDecision" in apa_audit.columns else pd.Series(False, index=apa_audit.index)
+    is_results = apa_audit["APASection"].astype(str).eq("Results") if "APASection" in apa_audit.columns else pd.Series(False, index=apa_audit.index)
+    allowed_results = apa_audit.loc[copy_allowed & is_results].copy()
+    blocked_results = apa_audit.loc[(~copy_allowed) & is_results].copy()
+    allowed_copy_decision = allowed_results.get(
+        "CopyDecision",
+        pd.Series("", index=allowed_results.index, dtype=object),
+    ).astype(str)
+    allowed_claim_status = allowed_results.get(
+        "ClaimStatus",
+        pd.Series("", index=allowed_results.index, dtype=object),
+    ).astype(str)
+    allowed_gate_status = allowed_results.get(
+        "GateStatus",
+        pd.Series("", index=allowed_results.index, dtype=object),
+    ).astype(str)
+    caveated_results = allowed_results.loc[
+        allowed_copy_decision.str.contains("caveat", case=False, na=False)
+        | allowed_claim_status.isin(["Report with caveat", "Review", "Boundary"])
+        | allowed_gate_status.isin(["Report with caveat", "Boundary"])
+    ].copy()
+
+    draft_sentences = allowed_results.get("DraftSentence", pd.Series(dtype=object)).astype(str).str.strip().tolist()
+    draft_paragraph = " ".join(sentence for sentence in draft_sentences if sentence)
+    if not draft_paragraph:
+        draft_paragraph = "No Results sentence is currently copyable from the APA sentence audit."
+    elif simulation_blocker_lines:
+        draft_paragraph = (
+            "Simulation design worksheet only; do not paste as final Results text until generated-design stop rules are resolved or explicitly documented as stress-test conditions. "
+            f"{draft_paragraph}"
+        )
+    elif bridge_blocker_lines:
+        draft_paragraph = (
+            "Editing worksheet only; do not paste as final Results text until the bridge stop rules are resolved. "
+            f"{draft_paragraph}"
+        )
+    elif simulation_context_lines or bridge_revision_lines:
+        draft_paragraph = (
+            "Caveat-carrying draft; keep the bridge and simulation design conditions visible while editing. "
+            f"{draft_paragraph}"
+        )
+
+    caveat_lines = []
+    for _, row in caveated_results.iterrows():
+        caveat_lines.append(
+            f"{row.get('SentenceRole', 'Results sentence')}: keep caveat visible; "
+            f"evidence files: {row.get('EvidenceFiles', 'not recorded')}; "
+            f"boundary: {row.get('DoNotClaim', 'keep within computed evidence')}."
+        )
+    blocked_lines = []
+    for _, row in blocked_results.iterrows():
+        blocked_lines.append(
+            f"{row.get('SentenceRole', 'Results sentence')}: {row.get('CopyDecision', 'Do not copy')}; "
+            f"needed evidence: {row.get('BeforeSubmissionCheck', 'review evidence first')}."
+        )
+    evidence_files = _unique_evidence_files_from_text(
+        allowed_results.get("EvidenceFiles", pd.Series(dtype=object)).tolist()
+        + panel.get("EvidenceFiles", pd.Series(dtype=object)).tolist()
+        + ["critical_final_review_panel.csv"]
+    )
+    simulation_evidence_files = _unique_evidence_files_from_text(
+        simulation_sparse_context.get("EvidenceFiles", pd.Series(dtype=object)).tolist()
+        if isinstance(simulation_sparse_context, pd.DataFrame) and not simulation_sparse_context.empty
+        else []
+    )
+    simulation_settings_files = ["custom_simulation_settings.csv"] if simulation_setting_lines else []
+
+    lines = [
+        "# APA Results Paragraph Draft",
+        "",
+        f"Overall report-ready status: **{overall_status}**.",
+        "",
+        "## Final-Output Blockers",
+        "",
+        _markdown_bullets(final_blocker_lines, default="- No critical final-review row currently stops final output."),
+        "",
+        "## Critical Review Caveats",
+        "",
+        _markdown_bullets(critical_caveat_lines, default="- No additional critical-review caveat row was generated."),
+        "",
+        "## Bridge-Constrained Use Conditions",
+        "",
+        _markdown_bullets(bridge_revision_lines, default="- Open `reporting_action_bridge.csv` before treating generated wording as final."),
+        "",
+        "## Simulation Design Use Conditions",
+        "",
+        _markdown_bullets(simulation_context_lines, default="- No custom-simulation sparse-design context was attached to this draft."),
+        "",
+        "## Simulation Settings To Archive",
+        "",
+        _markdown_bullets(simulation_setting_lines, default="- No custom-simulation settings table was attached to this draft."),
+        "",
+        "## Draft Paragraph",
+        "",
+        draft_paragraph,
+        "",
+        "## Bridge Revision Plan",
+        "",
+        _markdown_bullets(bridge_revision_lines, default="- No bridge revision row was generated."),
+        "",
+        "## Caveats To Keep Visible",
+        "",
+        _markdown_bullets(caveat_lines, default="- No caveated Results sentence was selected."),
+        "",
+        "## Do Not Use Yet",
+        "",
+        _markdown_bullets(blocked_lines, default="- No blocked Results sentence was selected."),
+        "",
+        "## Evidence Files",
+        "",
+        _markdown_bullets(evidence_files + simulation_evidence_files + simulation_settings_files + ["reporting_action_bridge.csv"], default="- apa_report_sentence_audit.csv"),
+        "",
+        "## Editing Note",
+        "",
+        "Treat this paragraph as a draft. Verify numbers against exported tables, add study-specific labels, and preserve any caveat required by the sentence audit or report-ready summary.",
+        "",
+    ]
+    return "\n".join(lines)
+
+
+def _role_memo_row_by_area(panel: pd.DataFrame, area: str) -> pd.Series | None:
+    if not isinstance(panel, pd.DataFrame) or panel.empty or "ReportArea" not in panel.columns:
+        return None
+    hit = panel.loc[panel["ReportArea"].astype(str) == str(area)]
+    return hit.iloc[0] if not hit.empty else None
+
+
+def _role_memo_qc_row(qc: pd.DataFrame, decision: str) -> pd.Series:
+    if isinstance(qc, pd.DataFrame) and not qc.empty and "QCDecision" in qc.columns:
+        hit = qc.loc[qc["QCDecision"].astype(str) == str(decision)]
+        if not hit.empty:
+            return hit.iloc[0]
+    return pd.Series(dtype=object)
+
+
+def _role_memo_decision_status(decision: pd.DataFrame, areas: Iterable[str]) -> str:
+    if not isinstance(decision, pd.DataFrame) or decision.empty or "DecisionArea" not in decision.columns:
+        return "Needs rerun"
+    statuses = []
+    for area in areas:
+        hit = decision.loc[decision["DecisionArea"].astype(str) == str(area)]
+        if not hit.empty and "Status" in hit.columns:
+            statuses.append(str(hit.iloc[0].get("Status", "Review")))
+    return _worst_report_ready_summary_status(statuses) if statuses else "Needs rerun"
+
+
+def _role_memo_readiness_status(readiness: pd.DataFrame, checks: Iterable[str]) -> str:
+    if not isinstance(readiness, pd.DataFrame) or readiness.empty or "Check" not in readiness.columns:
+        return "Needs rerun"
+    statuses = []
+    for check in checks:
+        hit = readiness.loc[readiness["Check"].astype(str) == str(check)]
+        if not hit.empty and "Status" in hit.columns:
+            statuses.append(str(hit.iloc[0].get("Status", "Review")))
+    return _worst_report_ready_summary_status(statuses) if statuses else "Needs caveat"
+
+
+def build_role_based_action_memos(
+    result: dict,
+    diagnostics: dict,
+    all_bias_results: dict | None = None,
+    *,
+    bias_results: dict | None = None,
+) -> pd.DataFrame:
+    """Build role-specific action rows from report, QC, and diagnostic evidence."""
+    if not isinstance(result, dict):
+        return pd.DataFrame()
+    diagnostics = diagnostics if isinstance(diagnostics, dict) else {}
+    all_bias = all_bias_results or {}
+    if not all_bias and isinstance(bias_results, dict) and bias_results:
+        all_bias = {f"{bias_results.get('facet_a', 'A')} x {bias_results.get('facet_b', 'B')}": bias_results}
+
+    panel = build_report_ready_summary_panel(
+        result,
+        diagnostics,
+        all_bias_results=all_bias,
+        bias_results=bias_results,
+    )
+    readiness = _safe_guided_evidence_frame(build_final_report_readiness, result, diagnostics, all_bias)
+    claim_matrix = _safe_guided_evidence_frame(build_claim_to_evidence_matrix, result, diagnostics, all_bias)
+    apa_audit = _safe_guided_evidence_frame(
+        build_apa_report_sentence_audit,
+        result,
+        diagnostics,
+        bias_results=bias_results,
+        all_bias_results=all_bias,
+    )
+    scoring_decision = _safe_guided_evidence_frame(build_scoring_consistency_decision, result, diagnostics)
+    qc_recommendations = _safe_guided_evidence_frame(build_quality_control_recommendations, result, diagnostics)
+    category_action = _safe_guided_evidence_frame(category_collapse_action_center_table, result, diagnostics)
+    bias_audit = _safe_guided_evidence_frame(build_bias_inference_audit, all_bias, result, diagnostics) if all_bias else pd.DataFrame()
+
+    overall = _role_memo_row_by_area(panel, "Overall manuscript conclusion")
+    apa = _role_memo_row_by_area(panel, "APA sentence draft")
+    claim = _role_memo_row_by_area(panel, "Claim boundary and evidence")
+    scoring = _role_memo_row_by_area(panel, "Scoring quality and QC decision")
+    category = _role_memo_row_by_area(panel, "Rubric categories and collapse sensitivity")
+    role_order = {
+        "Paper author": 1,
+        "Scoring manager": 2,
+        "Measurement practitioner": 3,
+    }
+    rows: list[dict[str, object]] = []
+
+    def panel_value(row: pd.Series | None, column: str, default: str = "") -> str:
+        if row is None or row.empty:
+            return default
+        return _handoff_text(row.get(column), default)
+
+    def add_row(
+        *,
+        role: str,
+        priority: int,
+        focus: str,
+        status: object,
+        why: str,
+        action: str,
+        evidence: str,
+        safe: str,
+        do_not: str,
+        question: str,
+        app_location: str,
+        download_file: str,
+        details: str,
+    ) -> None:
+        rows.append({
+            "_RoleOrder": role_order.get(role, 99),
+            "Role": role,
+            "Priority": int(priority),
+            "DecisionFocus": focus,
+            "ReportStatus": _report_ready_summary_status(status),
+            "DecisionQuestion": question,
+            "WhyThisMatters": why,
+            "ImmediateAction": action,
+            "EvidenceToOpen": evidence,
+            "SafeOutput": safe,
+            "DoNotDo": do_not,
+            "AppLocation": app_location,
+            "DownloadFile": download_file,
+            "Details": details,
+        })
+
+    add_row(
+        role="Paper author",
+        priority=1,
+        focus="Results wording",
+        status=_worst_report_ready_summary_status([
+            panel_value(overall, "ReportStatus", "Needs caveat"),
+            panel_value(apa, "ReportStatus", "Needs caveat"),
+        ]),
+        why="This controls which generated Results sentences can move into the manuscript.",
+        action="Open the APA Results paragraph draft, then verify each sentence against the sentence audit before copying.",
+        evidence="apa_results_paragraph_draft.md; apa_report_sentence_audit.csv; report_ready_summary_panel.csv",
+        safe=panel_value(apa, "SafeWording", "Use generated APA text only as an editable draft with evidence-linked caveats."),
+        do_not=panel_value(apa, "DoNotWrite", "Do not copy blocked or unsupported generated APA sentences."),
+        question="Which Results sentences can be used now, and which need caveats or rerun evidence?",
+        app_location="Report -> APA Report; Report & Export -> Decision brief",
+        download_file="apa_results_paragraph_draft.md; apa_report_sentence_audit.csv",
+        details=(
+            f"APA sentence rows: {len(apa_audit) if isinstance(apa_audit, pd.DataFrame) else 0}; "
+            f"copy decisions: {_report_ready_summary_counts(apa_audit, 'CopyDecision')}"
+        ),
+    )
+
+    add_row(
+        role="Paper author",
+        priority=2,
+        focus="Claim boundary and reviewer evidence",
+        status=panel_value(claim, "ReportStatus", "Needs caveat"),
+        why="This keeps each manuscript claim tied to tables, figures, diagnostics, caveats, and reviewer questions.",
+        action="Use the claim-to-evidence matrix before writing Discussion, limitations, or reviewer-response text.",
+        evidence="claim_to_evidence_matrix.csv; manuscript_claim_guide.csv; publication_gate_summary.csv",
+        safe=panel_value(claim, "SafeWording", "Keep claims inside the computed facet structure and diagnostic scope."),
+        do_not=panel_value(claim, "DoNotWrite", "Do not make broad validity, fairness, or equivalence claims without traceable evidence."),
+        question="What evidence file supports each manuscript claim?",
+        app_location="Report -> Claim Guide; Downloads -> Data Tables",
+        download_file="claim_to_evidence_matrix.csv; manuscript_claim_guide.csv",
+        details=(
+            f"claim areas: {len(claim_matrix) if isinstance(claim_matrix, pd.DataFrame) else 0}; "
+            f"claim statuses: {_report_ready_summary_counts(claim_matrix, 'ClaimStatus')}"
+        ),
+    )
+
+    rater_training = _role_memo_qc_row(qc_recommendations, "Rater training")
+    add_row(
+        role="Scoring manager",
+        priority=1,
+        focus="Rater training decision",
+        status=_role_memo_decision_status(scoring_decision, ["Exact/adjacent agreement", "Krippendorff alpha", "Rater fit/severity"]),
+        why="Rater training decisions should combine agreement, alpha, rater fit, and severity evidence rather than one statistic.",
+        action=_handoff_text(rater_training.get("Action"), "Review agreement, alpha, rater fit, and severity evidence; document the training decision."),
+        evidence="quality_control_todo_checklist.csv; scoring_consistency_decision.csv; agreement_pairs.csv; fit_statistics.csv",
+        safe=_handoff_text(rater_training.get("ReportableWording"), "Rater training was evaluated using agreement and MFRM rater diagnostics."),
+        do_not=_handoff_text(rater_training.get("DoNotClaim"), "Do not attribute disagreement to rater behavior without checking rubric/category evidence."),
+        question="Should scoring operations prioritize rater training, moderation, or routine monitoring?",
+        app_location="Agreement / QC; Fit Details; Measures",
+        download_file="quality_control_todo_checklist.csv; scoring_consistency_decision.csv",
+        details=_handoff_text(rater_training.get("TriggerEvidence"), panel_value(scoring, "Details", "QC evidence not available.")),
+    )
+
+    rubric_revision = _role_memo_qc_row(qc_recommendations, "Rubric revision")
+    add_row(
+        role="Scoring manager",
+        priority=2,
+        focus="Rubric revision decision",
+        status=_role_memo_decision_status(scoring_decision, ["Rubric/category functioning"]),
+        why="Rubric wording and category evidence must point to the same interpretation before operational changes are made.",
+        action=_handoff_text(rubric_revision.get("Action"), "Review category evidence and rubric descriptors before changing scoring guidance."),
+        evidence="rating_scale_decision_support.csv; rating_scale_category_evidence.csv; category_probability_curves.csv",
+        safe=_handoff_text(rubric_revision.get("ReportableWording"), "Rubric/category functioning was reviewed with category support and curve evidence."),
+        do_not=_handoff_text(rubric_revision.get("DoNotClaim"), "Do not revise the rubric only because one statistic was unfavorable."),
+        question="Does the evidence point to rubric clarification, or only to cautious reporting?",
+        app_location="Categories / Steps; Visuals -> category curves",
+        download_file="rating_scale_decision_support.csv; rating_scale_category_evidence.csv",
+        details=_handoff_text(rubric_revision.get("TriggerEvidence"), panel_value(category, "Details", "Category evidence not available.")),
+    )
+
+    collapse = _role_memo_qc_row(qc_recommendations, "Category collapse")
+    add_row(
+        role="Scoring manager",
+        priority=3,
+        focus="Category collapse sensitivity",
+        status=panel_value(category, "ReportStatus", "Needs caveat"),
+        why="Category collapse should be a planned sensitivity comparison, not an automatic repair.",
+        action=_handoff_text(collapse.get("Action"), panel_value(category, "ActionBeforeWriting", "Open category-collapse action rows before deciding on recoding.")),
+        evidence="category_collapse_action_center.csv; rating_scale_recode_candidates.csv; rating_scale_decision_support.csv",
+        safe=panel_value(category, "SafeWording", "Report category collapse only as a sensitivity comparison with rubric justification."),
+        do_not=panel_value(category, "DoNotWrite", "Do not collapse categories solely because one diagnostic is flagged."),
+        question="Should the original scoring be retained, or should a justified adjacent-category sensitivity run be added?",
+        app_location="Categories / Steps; Report -> Readiness",
+        download_file="category_collapse_action_center.csv; rating_scale_recode_candidates.csv",
+        details=(
+            _handoff_text(collapse.get("TriggerEvidence"), "")
+            or (str(category_action.iloc[0].get("EvidenceSummary", "")) if isinstance(category_action, pd.DataFrame) and not category_action.empty else "")
+            or panel_value(category, "Details", "Category-collapse evidence not available.")
+        ),
+    )
+
+    add_row(
+        role="Measurement practitioner",
+        priority=1,
+        focus="Model fit and dimensionality",
+        status=_role_memo_readiness_status(readiness, ["Convergence", "Global residual fit", "Dimensionality screen", "Reliability / separation"]),
+        why="Fit, dimensionality, and reliability determine how far substantive interpretation can go.",
+        action="Review convergence, residual fit, PCA/stability, reliability, and fit rows before approving report wording.",
+        evidence="final_report_readiness.csv; fit_statistics.csv; residuals.csv; pca_stability_audit.csv; reliability.csv",
+        safe="Describe fit and dimensionality as screened diagnostics, with any instability or missing evidence stated explicitly.",
+        do_not="Do not treat convergence, global fit, reliability, or residual PCA as a single standalone proof of model adequacy.",
+        question="Do the diagnostics support the planned interpretation, or should the claim be narrowed?",
+        app_location="Fit Details; Dimensionality; Reliability",
+        download_file="final_report_readiness.csv; pca_stability_audit.csv; reliability.csv",
+        details=_report_ready_summary_counts(readiness, "Status"),
+    )
+
+    add_row(
+        role="Measurement practitioner",
+        priority=2,
+        focus="Bias/local interaction scope",
+        status=(
+            _worst_report_ready_summary_status(bias_audit["Status"].tolist())
+            if isinstance(bias_audit, pd.DataFrame) and not bias_audit.empty and "Status" in bias_audit.columns
+            else "Needs caveat"
+        ),
+        why="Bias/local interaction claims are conditional screens and must remain within computed pairs and cells.",
+        action="Check screened facet pairs, sparse cells, multiplicity adjustments, common-scale status, and flagged-cell substance.",
+        evidence="bias_inference_audit.csv; bias_*.csv; dff_bias_*.csv; claim_to_evidence_matrix.csv",
+        safe="Report only the computed conditional bias/local interaction screen and its caveats.",
+        do_not="Do not claim absence of bias outside the screened facet pairs, cells, and connected design.",
+        question="Which pairs and cells were actually screened, and which flags require substantive review?",
+        app_location="Bias / Interaction; Downloads -> Data Tables",
+        download_file="bias_inference_audit.csv; dff_bias_*.csv",
+        details=(
+            f"bias pair outputs: {len(all_bias)}; "
+            f"bias audit statuses: {_report_ready_summary_counts(bias_audit, 'Status') if isinstance(bias_audit, pd.DataFrame) else 'no audit'}"
+        ),
+    )
+
+    add_row(
+        role="Measurement practitioner",
+        priority=3,
+        focus="Reproducibility and archive route",
+        status=panel_value(overall, "ReportStatus", "Needs caveat"),
+        why="Reviewers and collaborators need exact settings, method references, evidence files, and privacy boundaries.",
+        action="Archive the decision brief, role memos, config, method appendix, claim matrix, scripts, and export privacy manifest together.",
+        evidence="role_based_action_memos.csv; report_ready_decision_brief.md; method_reference_audit.csv; mfrm_config.json; export_privacy_manifest.csv",
+        safe="Describe the app output as a standalone Python run with archived settings and evidence files.",
+        do_not="Do not claim cross-package equivalence, calibration evidence, or prospective validation without separate archived validation artifacts.",
+        question="Can another reviewer trace the claim, setting, script, and evidence file without reopening the app?",
+        app_location="Downloads -> Scripts & Config; Manuscript Binder",
+        download_file="role_based_action_memos.md; MFRM_OSF_Package.zip; mfrm_config.json",
+        details=panel_value(overall, "Details", "Overall report-ready evidence not available."),
+    )
+
+    out = pd.DataFrame(rows)
+    if out.empty:
+        return out
+    out = out.sort_values(["_RoleOrder", "Priority", "DecisionFocus"]).drop(columns=["_RoleOrder"]).reset_index(drop=True)
+    return out
+
+
+def generate_role_based_action_memos_markdown(
+    result: dict,
+    diagnostics: dict,
+    all_bias_results: dict | None = None,
+    *,
+    bias_results: dict | None = None,
+) -> str:
+    """Render role-specific action memo rows as a compact Markdown handoff."""
+    memos = build_role_based_action_memos(
+        result,
+        diagnostics,
+        all_bias_results=all_bias_results,
+        bias_results=bias_results,
+    )
+    if not isinstance(memos, pd.DataFrame) or memos.empty:
+        return "\n".join([
+            "# Role-Based Action Memos",
+            "",
+            "No role-based action memo rows were generated for this run.",
+            "",
+        ])
+    panel = build_report_ready_summary_panel(
+        result,
+        diagnostics,
+        all_bias_results=all_bias_results,
+        bias_results=bias_results,
+    )
+    overall_status = _report_ready_summary_overall_status(panel)
+    lines = [
+        "# Role-Based Action Memos",
+        "",
+        f"Overall report-ready status: **{overall_status}**.",
+        "",
+        "Use the section for your role first, then open the shared evidence files listed in each row.",
+        "",
+    ]
+    for role in ["Paper author", "Scoring manager", "Measurement practitioner"]:
+        role_rows = memos.loc[memos["Role"].astype(str) == role].sort_values("Priority")
+        if role_rows.empty:
+            continue
+        lines.extend([f"## {role}", ""])
+        for _, row in role_rows.iterrows():
+            lines.extend([
+                f"### P{row.get('Priority')} - {row.get('DecisionFocus')} ({row.get('ReportStatus')})",
+                "",
+                f"- Decision question: {row.get('DecisionQuestion')}",
+                f"- Immediate action: {row.get('ImmediateAction')}",
+                f"- Evidence to open: {row.get('EvidenceToOpen')}",
+                f"- Safe output: {row.get('SafeOutput')}",
+                f"- Do not do: {row.get('DoNotDo')}",
+                f"- App location: {row.get('AppLocation')}",
+                f"- Download file: {row.get('DownloadFile')}",
+                "",
+            ])
+    lines.extend([
+        "## Shared Evidence",
+        "",
+        "- `report_ready_summary_panel.csv`",
+        "- `report_ready_decision_brief.md`",
+        "- `apa_results_paragraph_draft.md`",
+        "- `claim_to_evidence_matrix.csv`",
+        "- `quality_control_todo_checklist.csv`",
+        "- `method_reference_audit.csv`",
+        "",
+    ])
+    return "\n".join(lines)
+
+
+def _role_checklist_completion_criterion(status: object, role: object) -> str:
+    report_status = _report_ready_summary_status(status)
+    role_text = str(role or "")
+    if report_status == "Ready":
+        return "Evidence files were opened, the action was documented, and the safe output was used only within the stated scope."
+    if report_status == "Needs caveat":
+        return "The caveat was added to the manuscript, scoring decision note, or diagnostic memo before the output was used."
+    if report_status == "Needs rerun":
+        return "The missing evidence was regenerated, or the report explicitly states that the claim was not made from this run."
+    if role_text == "Scoring manager":
+        return "The operational decision is held until blocker evidence is resolved or documented as a limitation."
+    return "Final wording or decision use is held until blocker evidence is resolved."
+
+
+def _role_checklist_output_artifact(role: object) -> str:
+    role_text = str(role or "")
+    if role_text == "Paper author":
+        return "APA Results draft; manuscript claim notes; reviewer-response plan"
+    if role_text == "Scoring manager":
+        return "Rater-training log; rubric-decision note; category-sensitivity decision"
+    if role_text == "Measurement practitioner":
+        return "Diagnostic review note; reproducibility archive; sensitivity-analysis plan"
+    return "Project decision log"
+
+
+ROLE_BASED_ACTION_CHECKLIST_ROLES = ("Paper author", "Scoring manager", "Measurement practitioner")
+
+
+def _role_action_checklist_item_id(row: dict[str, object] | pd.Series) -> str:
+    """Stable row key used to preserve Done state across Streamlit reruns."""
+    get_value = row.get if hasattr(row, "get") else lambda key, default=None: default
+    return stable_json_fingerprint(
+        {
+            "role": str(get_value("Role", "")),
+            "step": str(get_value("Step", "")),
+            "todo": str(get_value("ToDoItem", "")),
+            "status": str(get_value("ReportStatus", "")),
+            "evidence": str(get_value("EvidenceToOpen", "")),
+        },
+        length=12,
+    )
+
+
+def build_role_based_action_checklist(
+    result: dict,
+    diagnostics: dict,
+    all_bias_results: dict | None = None,
+    *,
+    bias_results: dict | None = None,
+) -> pd.DataFrame:
+    """Convert role-based memos into checkbox-ready action rows."""
+    memos = build_role_based_action_memos(
+        result,
+        diagnostics,
+        all_bias_results=all_bias_results,
+        bias_results=bias_results,
+    )
+    if not isinstance(memos, pd.DataFrame) or memos.empty:
+        return pd.DataFrame()
+    rows: list[dict[str, object]] = []
+    for _, row in memos.iterrows():
+        status = _report_ready_summary_status(row.get("ReportStatus"))
+        role = str(row.get("Role", ""))
+        decision_focus = str(row.get("DecisionFocus", "Decision focus"))
+        decision_question = str(row.get("DecisionQuestion", ""))
+        item = {
+            "Done": False,
+            "ChecklistId": "",
+            "Role": role,
+            "Step": int(row.get("Priority", len(rows) + 1)),
+            "ToDoItem": f"{decision_focus}: {decision_question}".strip(": "),
+            "ReportStatus": status,
+            "BlockingForFinalOutput": status in {"Do not report yet", "Needs rerun"},
+            "NeedsCaveat": status == "Needs caveat",
+            "Action": str(row.get("ImmediateAction", "")),
+            "EvidenceToOpen": str(row.get("EvidenceToOpen", "")),
+            "CompletionCriterion": _role_checklist_completion_criterion(status, role),
+            "OutputArtifact": _role_checklist_output_artifact(role),
+            "SafeOutput": str(row.get("SafeOutput", "")),
+            "DoNotDo": str(row.get("DoNotDo", "")),
+            "AppLocation": str(row.get("AppLocation", "")),
+            "DownloadFile": str(row.get("DownloadFile", "")),
+            "Details": str(row.get("Details", "")),
+        }
+        item["ChecklistId"] = _role_action_checklist_item_id(item)
+        rows.append(item)
+    out = pd.DataFrame(rows)
+    role_order = {"Paper author": 1, "Scoring manager": 2, "Measurement practitioner": 3}
+    status_order = {status: rank for rank, status in enumerate(REPORT_READY_SUMMARY_STATUS_ORDER)}
+    out["_RoleOrder"] = out["Role"].map(role_order).fillna(99)
+    out["_StatusOrder"] = out["ReportStatus"].map(status_order).fillna(2)
+    out = out.sort_values(["_RoleOrder", "_StatusOrder", "Step", "ToDoItem"])
+    return out.drop(columns=["_RoleOrder", "_StatusOrder"]).reset_index(drop=True)
+
+
+def apply_role_based_action_checklist_done_state(
+    checklist: pd.DataFrame,
+    done_state: dict[str, bool] | None = None,
+) -> pd.DataFrame:
+    """Apply persisted Done values to a role-based checklist copy."""
+    if not isinstance(checklist, pd.DataFrame) or checklist.empty:
+        return pd.DataFrame()
+    out = checklist.copy()
+    if "ChecklistId" not in out.columns:
+        out["ChecklistId"] = out.apply(_role_action_checklist_item_id, axis=1)
+    if "Done" not in out.columns:
+        out["Done"] = False
+    state = {str(key): bool(value) for key, value in (done_state or {}).items()}
+    out["Done"] = [
+        bool(state.get(str(row.get("ChecklistId", "")), row.get("Done", False)))
+        for _, row in out.iterrows()
+    ]
+    return out
+
+
+def role_based_action_checklist_progress_summary(checklist: pd.DataFrame) -> pd.DataFrame:
+    """Summarize completed and remaining role-specific review tasks."""
+    if not isinstance(checklist, pd.DataFrame) or checklist.empty:
+        return pd.DataFrame()
+    work = apply_role_based_action_checklist_done_state(checklist)
+    roles = list(ROLE_BASED_ACTION_CHECKLIST_ROLES)
+    extra_roles = [
+        role for role in work.get("Role", pd.Series(dtype=str)).astype(str).drop_duplicates().tolist()
+        if role not in roles
+    ]
+    rows: list[dict[str, object]] = []
+    for role in [*roles, *extra_roles]:
+        role_rows = work.loc[work["Role"].astype(str).eq(role)].copy()
+        if role_rows.empty:
+            continue
+        done = role_rows["Done"].fillna(False).astype(bool)
+        remaining_rows = role_rows.loc[~done].copy()
+        remaining_blockers = int(
+            remaining_rows.get("BlockingForFinalOutput", pd.Series(False, index=remaining_rows.index))
+            .fillna(False)
+            .astype(bool)
+            .sum()
+        )
+        remaining_caveats = int(
+            remaining_rows.get("NeedsCaveat", pd.Series(False, index=remaining_rows.index))
+            .fillna(False)
+            .astype(bool)
+            .sum()
+        )
+        next_action = ""
+        next_evidence = ""
+        if not remaining_rows.empty:
+            status_order = {status: rank for rank, status in enumerate(REPORT_READY_SUMMARY_STATUS_ORDER)}
+            remaining_rows["_StatusOrder"] = remaining_rows["ReportStatus"].map(status_order).fillna(2)
+            remaining_rows = remaining_rows.sort_values(["_StatusOrder", "Step", "ToDoItem"])
+            next_row = remaining_rows.iloc[0]
+            next_action = str(next_row.get("Action", ""))
+            next_evidence = str(next_row.get("EvidenceToOpen", ""))
+        if remaining_rows.empty:
+            state = "Complete"
+        elif remaining_blockers:
+            state = "Blocking evidence remains"
+        elif remaining_caveats:
+            state = "Caveat review remains"
+        else:
+            state = "Open review tasks remain"
+        rows.append({
+            "Role": role,
+            "DoneItems": int(done.sum()),
+            "TotalItems": int(len(role_rows)),
+            "RemainingItems": int((~done).sum()),
+            "RemainingBlockingItems": remaining_blockers,
+            "RemainingCaveatItems": remaining_caveats,
+            "CompletionPercent": round(100.0 * float(done.sum()) / max(float(len(role_rows)), 1.0), 1),
+            "State": state,
+            "NextAction": next_action,
+            "NextEvidenceToOpen": next_evidence,
+        })
+    return pd.DataFrame(rows)
+
+
+def generate_role_based_action_checklist_markdown(
+    result: dict,
+    diagnostics: dict,
+    all_bias_results: dict | None = None,
+    *,
+    bias_results: dict | None = None,
+    checklist: pd.DataFrame | None = None,
+) -> str:
+    """Render the role checklist as Markdown with checkbox syntax."""
+    if checklist is None:
+        checklist = build_role_based_action_checklist(
+            result,
+            diagnostics,
+            all_bias_results=all_bias_results,
+            bias_results=bias_results,
+        )
+    else:
+        checklist = apply_role_based_action_checklist_done_state(checklist)
+    if not isinstance(checklist, pd.DataFrame) or checklist.empty:
+        return "\n".join([
+            "# Role-Based Action Checklist",
+            "",
+            "No role-based checklist rows were generated for this run.",
+            "",
+        ])
+    lines = [
+        "# Role-Based Action Checklist",
+        "",
+        "Use this checklist after reading `report_ready_decision_brief.md`. Keep completed rows with the manuscript or scoring decision archive.",
+        "",
+    ]
+    progress = role_based_action_checklist_progress_summary(checklist)
+    if isinstance(progress, pd.DataFrame) and not progress.empty:
+        total_done = int(progress["DoneItems"].sum())
+        total_items = int(progress["TotalItems"].sum())
+        remaining_blockers = int(progress["RemainingBlockingItems"].sum())
+        remaining_caveats = int(progress["RemainingCaveatItems"].sum())
+        lines.extend([
+            "## Progress Snapshot",
+            "",
+            f"- Completed items: {total_done}/{total_items}",
+            f"- Remaining blocking items: {remaining_blockers}",
+            f"- Remaining caveat items: {remaining_caveats}",
+            "",
+        ])
+    role_sequence = [*ROLE_BASED_ACTION_CHECKLIST_ROLES]
+    role_sequence.extend(
+        role for role in checklist["Role"].astype(str).drop_duplicates().tolist()
+        if role not in role_sequence
+    )
+    for role in role_sequence:
+        role_rows = checklist.loc[checklist["Role"].astype(str) == role].sort_values("Step")
+        if role_rows.empty:
+            continue
+        lines.extend([f"## {role}", ""])
+        for _, row in role_rows.iterrows():
+            checkmark = "x" if bool(row.get("Done", False)) else " "
+            lines.extend([
+                f"- [{checkmark}] P{row.get('Step')} - {row.get('ToDoItem')} ({row.get('ReportStatus')})",
+                f"  - Action: {row.get('Action')}",
+                f"  - Evidence: {row.get('EvidenceToOpen')}",
+                f"  - Done when: {row.get('CompletionCriterion')}",
+                f"  - Do not do: {row.get('DoNotDo')}",
+                "",
+            ])
+    lines.extend([
+        "## Export Files",
+        "",
+        "- `role_based_action_checklist.csv`",
+        "- `role_based_action_memos.csv`",
+        "- `report_ready_summary_panel.csv`",
+        "",
+    ])
+    return "\n".join(lines)
+
+
+def _reanalysis_checklist_item_id(row: dict[str, object] | pd.Series) -> str:
+    get_value = row.get if hasattr(row, "get") else lambda key, default=None: default
+    return stable_json_fingerprint(
+        {
+            "phase": str(get_value("Phase", "")),
+            "task": str(get_value("Task", "")),
+            "audience": str(get_value("Audience", "")),
+            "evidence": str(get_value("EvidenceToOpen", "")),
+        },
+        length=12,
+    )
+
+
+def _reanalysis_completion_criterion(status: object, phase: object) -> str:
+    report_status = _report_ready_summary_status(status)
+    phase_text = str(phase or "")
+    if report_status == "Ready":
+        return "Evidence was opened, settings were archived, and the output was used only within the listed scope."
+    if report_status == "Needs caveat":
+        return "The caveat was carried into the manuscript, scoring note, simulation note, or reanalysis log."
+    if report_status == "Needs rerun":
+        return "The missing analysis was rerun, or the claim was removed from report-ready wording."
+    if "Simulation" in phase_text:
+        return "Generated-design blockers were resolved or explicitly documented as stress-test conditions."
+    return "Report-ready use is held until blocker evidence is resolved."
+
+
+def build_report_ready_reanalysis_checklist(
+    result: dict,
+    diagnostics: dict,
+    all_bias_results: dict | None = None,
+    *,
+    bias_results: dict | None = None,
+    report_ready_summary: pd.DataFrame | None = None,
+    role_action_checklist: pd.DataFrame | None = None,
+    quality_control_todo: pd.DataFrame | None = None,
+    category_action_center: pd.DataFrame | None = None,
+    simulation_settings: pd.DataFrame | None = None,
+    simulation_sparse_context: pd.DataFrame | None = None,
+) -> pd.DataFrame:
+    """Checkbox-ready checklist for report-ready simulation or reanalysis use."""
+    if not isinstance(result, dict):
+        return pd.DataFrame()
+    diagnostics = diagnostics if isinstance(diagnostics, dict) else {}
+    all_bias = all_bias_results or {}
+    if not all_bias and isinstance(bias_results, dict) and bias_results:
+        all_bias = {f"{bias_results.get('facet_a', 'A')} x {bias_results.get('facet_b', 'B')}": bias_results}
+    if not isinstance(report_ready_summary, pd.DataFrame) or report_ready_summary.empty:
+        report_ready_summary = build_report_ready_summary_panel(
+            result,
+            diagnostics,
+            all_bias_results=all_bias,
+            bias_results=bias_results,
+        )
+    if not isinstance(role_action_checklist, pd.DataFrame) or role_action_checklist.empty:
+        role_action_checklist = build_role_based_action_checklist(
+            result,
+            diagnostics,
+            all_bias_results=all_bias,
+            bias_results=bias_results,
+        )
+    if not isinstance(quality_control_todo, pd.DataFrame) or quality_control_todo.empty:
+        try:
+            quality_control_todo = build_quality_control_todo_checklist(result, diagnostics)
+        except Exception:
+            quality_control_todo = pd.DataFrame()
+    if not isinstance(category_action_center, pd.DataFrame) or category_action_center.empty:
+        try:
+            category_action_center = category_collapse_action_center_table(result, diagnostics)
+        except Exception:
+            category_action_center = pd.DataFrame()
+
+    def panel_status(area: str, default: str = "Needs caveat") -> str:
+        if isinstance(report_ready_summary, pd.DataFrame) and not report_ready_summary.empty and "ReportArea" in report_ready_summary.columns:
+            hit = report_ready_summary.loc[report_ready_summary["ReportArea"].astype(str).eq(area)]
+            if not hit.empty:
+                return _report_ready_summary_status(hit.iloc[0].get("ReportStatus", default))
+        return _report_ready_summary_status(default)
+
+    def panel_value(area: str, column: str, default: str = "") -> str:
+        if isinstance(report_ready_summary, pd.DataFrame) and not report_ready_summary.empty and {"ReportArea", column}.issubset(report_ready_summary.columns):
+            hit = report_ready_summary.loc[report_ready_summary["ReportArea"].astype(str).eq(area)]
+            if not hit.empty:
+                return str(hit.iloc[0].get(column, default))
+        return str(default)
+
+    role_blockers = 0
+    role_caveats = 0
+    if isinstance(role_action_checklist, pd.DataFrame) and not role_action_checklist.empty:
+        open_rows = role_action_checklist.loc[
+            ~role_action_checklist.get("Done", pd.Series(False, index=role_action_checklist.index)).fillna(False).astype(bool)
+        ]
+        role_blockers = int(open_rows.get("BlockingForFinalOutput", pd.Series(False, index=open_rows.index)).fillna(False).astype(bool).sum())
+        role_caveats = int(open_rows.get("NeedsCaveat", pd.Series(False, index=open_rows.index)).fillna(False).astype(bool).sum())
+
+    qc_blockers = 0
+    qc_caveats = 0
+    if isinstance(quality_control_todo, pd.DataFrame) and not quality_control_todo.empty:
+        status_text = quality_control_todo.astype(str).agg(" ".join, axis=1)
+        qc_blockers = int(status_text.str.contains("Do not|Stop|Hold|block", case=False, regex=True, na=False).sum())
+        qc_caveats = int(status_text.str.contains("Review|Caveat|training|rubric|category", case=False, regex=True, na=False).sum())
+
+    category_status = "Needs caveat"
+    if isinstance(category_action_center, pd.DataFrame) and not category_action_center.empty:
+        category_status = _worst_report_ready_summary_status(
+            category_action_center.get("Status", pd.Series("Needs caveat", index=category_action_center.index)).astype(str).tolist()
+        )
+
+    sim_status = None
+    if isinstance(simulation_sparse_context, pd.DataFrame) and not simulation_sparse_context.empty:
+        sim_status = _worst_report_ready_summary_status(
+            simulation_sparse_context.get("ReportStatus", pd.Series("Needs caveat", index=simulation_sparse_context.index)).astype(str).tolist()
+        )
+
+    has_simulation_settings = isinstance(simulation_settings, pd.DataFrame) and not simulation_settings.empty
+    rows: list[dict[str, object]] = []
+
+    def add_row(
+        *,
+        phase: str,
+        audience: str,
+        task: str,
+        status: str,
+        action: str,
+        evidence: str,
+        output: str,
+        caveat: str,
+        do_not: str,
+        app_location: str,
+        details: str = "",
+    ) -> None:
+        report_status = _report_ready_summary_status(status)
+        row = {
+            "Done": False,
+            "ChecklistId": "",
+            "Priority": len(rows) + 1,
+            "Phase": str(phase),
+            "Audience": str(audience),
+            "Task": str(task),
+            "ReportStatus": report_status,
+            "BlocksReportReady": report_status in {"Do not report yet", "Needs rerun"},
+            "NeedsCaveat": report_status == "Needs caveat",
+            "Action": str(action),
+            "EvidenceToOpen": str(evidence),
+            "CompletionCriterion": _reanalysis_completion_criterion(report_status, phase),
+            "OutputArtifact": str(output),
+            "CaveatToCarry": str(caveat),
+            "DoNotDo": str(do_not),
+            "AppLocation": str(app_location),
+            "DownloadFile": str(evidence),
+            "Details": str(details),
+        }
+        row["ChecklistId"] = _reanalysis_checklist_item_id(row)
+        rows.append(row)
+
+    overall_status = panel_status("Overall manuscript conclusion")
+    add_row(
+        phase="Study result handoff",
+        audience="Paper author; measurement practitioner; scoring manager",
+        task="Confirm whether this run is ready for manuscript or operational use.",
+        status=overall_status,
+        action=panel_value("Overall manuscript conclusion", "ActionBeforeWriting", "Open the report-ready summary and publication gate before using generated wording."),
+        evidence="report_ready_summary_panel.csv; publication_gate_summary.csv; final_report_readiness.csv",
+        output="Report-ready decision note",
+        caveat=panel_value("Overall manuscript conclusion", "SafeWording", "Keep claims within computed evidence."),
+        do_not=panel_value("Overall manuscript conclusion", "DoNotWrite", "Do not turn generated wording into final conclusions while blockers remain."),
+        app_location="Guided Report -> Report-ready summary; Downloads -> Scripts & Config",
+        details=f"open role checklist blockers={role_blockers}; open role caveats={role_caveats}",
+    )
+    add_row(
+        phase="Reanalysis reproducibility",
+        audience="Measurement practitioner; paper author",
+        task="Archive the exact data tables, config, method appendix, and manuscript binder before rerunning or sharing.",
+        status="Needs caveat",
+        action="Download the table bundle, config JSON, method appendix, and manuscript binder; record whether public or private export mode was used.",
+        evidence="MFRM_Tables.zip; mfrm_config.json; mfrm_method_appendix.md; MFRM_Manuscript_Binder.zip; export_privacy_manifest.csv",
+        output="Reanalysis archive log",
+        caveat="Public export mode reduces sharing risk but is not formal de-identification.",
+        do_not="Do not compare reruns, external packages, or reviewer responses without archiving settings and exported evidence.",
+        app_location="Downloads -> Data Tables; Downloads -> Scripts & Config",
+    )
+    add_row(
+        phase="Model diagnostic rerun",
+        audience="Measurement practitioner",
+        task="Check whether required diagnostics were computed before repeating or extending the analysis.",
+        status=panel_status("Claim boundary and evidence"),
+        action=panel_value("Claim boundary and evidence", "ActionBeforeWriting", "Open claim-to-evidence rows and final-readiness rows before rerun decisions."),
+        evidence="claim_to_evidence_matrix.csv; final_report_readiness.csv; status_rationale_drilldown.csv",
+        output="Diagnostic rerun plan",
+        caveat="Reruns should preserve row inclusion, score map, model, method, and facet mapping unless the change is documented.",
+        do_not="Do not interpret changed estimates across reruns without documenting what changed.",
+        app_location="Report -> Claim Guide; Downloads -> Data Tables",
+    )
+    add_row(
+        phase="Scoring quality control",
+        audience="Scoring manager",
+        task="Decide whether rater training, rubric revision, or category-collapse review is needed before the next scoring cycle.",
+        status=panel_status("Scoring quality and QC decision"),
+        action=panel_value("Scoring quality and QC decision", "ActionBeforeWriting", "Open scoring QC and checklist rows before acting."),
+        evidence="scoring_quality_first_read_summary.csv; scoring_consistency_decision.csv; quality_control_todo_checklist.csv",
+        output="Rater training or scoring QC memo",
+        caveat="Treat QC outputs as structured review evidence, not automatic personnel or rubric decisions.",
+        do_not="Do not make rater-training or rubric decisions from one fit, alpha, or agreement statistic alone.",
+        app_location="Agreement / QC; Report -> APA Report",
+        details=f"qc_blockers={qc_blockers}; qc_review_rows={qc_caveats}",
+    )
+    add_row(
+        phase="Rubric/category sensitivity",
+        audience="Scoring manager; test developer",
+        task="Check whether category-collapse or rubric revision is only exploratory or ready for a documented sensitivity decision.",
+        status=category_status,
+        action="Open category-collapse action rows, rating-scale decision support, and recode candidates before revising scoring categories.",
+        evidence="category_collapse_action_center.csv; rating_scale_decision_support.csv; rating_scale_recode_candidates.csv",
+        output="Rubric/category sensitivity note",
+        caveat="Category changes need statistical evidence and substantive rubric justification.",
+        do_not="Do not collapse categories solely because it improves one diagnostic or makes output simpler.",
+        app_location="Categories / Steps; Downloads -> Data Tables",
+    )
+    add_row(
+        phase="APA/manuscript wording",
+        audience="Paper author",
+        task="Confirm generated APA wording carries every caveat, blocker, and evidence file needed for the claim.",
+        status=panel_status("APA sentence draft"),
+        action=panel_value("APA sentence draft", "ActionBeforeWriting", "Filter generated sentences by CopyDecision and revise every caveated sentence."),
+        evidence="apa_results_paragraph_draft.md; apa_report_sentence_audit.csv; reporting_action_bridge.csv",
+        output="APA Results paragraph revision note",
+        caveat="Generated prose is an editing scaffold; numbers and claims still need study-specific checking.",
+        do_not="Do not copy blocked or caveated sentences without revision.",
+        app_location="Report -> APA Report; Guided Report -> Report export",
+    )
+    if has_simulation_settings:
+        add_row(
+            phase="Simulation settings archive",
+            audience="Paper author; measurement practitioner",
+            task="Confirm the generated-data preset, seed, thresholds, missingness, and facet design are archived.",
+            status="Ready",
+            action="Open custom_simulation_settings.csv and confirm it matches the generated data used in the analysis.",
+            evidence="custom_simulation_settings.csv; mfrm_custom_simulation.csv",
+            output="Simulation settings note",
+            caveat="Settings document the synthetic design; they do not validate an observed scoring program.",
+            do_not="Do not cite generated results without the seed and settings that reproduce them.",
+            app_location="Data source -> Generate synthetic data; Downloads -> Data Tables",
+        )
+    if sim_status is not None:
+        add_row(
+            phase="Simulation design reportability",
+            audience="Paper author; measurement practitioner; test developer",
+            task="Decide whether generated sparse-design conditions are stress-test features or reportability blockers.",
+            status=sim_status,
+            action="Open sparse-design context, design audit, and facet-pair cell table before interpreting simulated estimates.",
+            evidence="custom_simulation_sparse_reporting_context.csv; custom_simulation_sparse_design_audit.csv; custom_simulation_sparse_pair_cells.csv",
+            output="Simulation/stress-test interpretation note",
+            caveat="Sparse generated designs can be useful stress tests but must be named before report-style interpretation.",
+            do_not="Do not present a sparse simulation as stable empirical evidence without documenting the sparse condition.",
+            app_location="Data source preview -> Sparse design; Report -> APA Report",
+        )
+
+    out = pd.DataFrame(rows)
+    if out.empty:
+        return out
+    status_order = {"Do not report yet": 0, "Needs rerun": 1, "Needs caveat": 2, "Ready": 3}
+    out["_StatusOrder"] = out["ReportStatus"].map(status_order).fillna(2)
+    out = out.sort_values(["_StatusOrder", "Priority"]).drop(columns=["_StatusOrder"]).reset_index(drop=True)
+    out["Priority"] = np.arange(1, len(out) + 1, dtype=int)
+    return out
+
+
+def generate_report_ready_reanalysis_checklist_markdown(checklist: pd.DataFrame) -> str:
+    """Render the report-ready simulation/reanalysis checklist as Markdown."""
+    if not isinstance(checklist, pd.DataFrame) or checklist.empty:
+        return "\n".join([
+            "# Report-Ready Simulation / Reanalysis Checklist",
+            "",
+            "No checklist rows were generated for this run.",
+            "",
+        ])
+    lines = [
+        "# Report-Ready Simulation / Reanalysis Checklist",
+        "",
+        "Use this checklist before treating generated data, reruns, sensitivity checks, or final exports as report-ready evidence.",
+        "",
+    ]
+    for _, row in checklist.sort_values("Priority").iterrows():
+        checkmark = "x" if bool(row.get("Done", False)) else " "
+        lines.extend([
+            f"- [{checkmark}] P{row.get('Priority')} - {row.get('Phase')}: {row.get('Task')} ({row.get('ReportStatus')})",
+            f"  - Audience: {row.get('Audience')}",
+            f"  - Action: {row.get('Action')}",
+            f"  - Evidence: {row.get('EvidenceToOpen')}",
+            f"  - Done when: {row.get('CompletionCriterion')}",
+            f"  - Do not do: {row.get('DoNotDo')}",
+            "",
+        ])
+    lines.extend([
+        "## Export Files",
+        "",
+        "- `report_ready_reanalysis_checklist.csv`",
+        "- `report_ready_reanalysis_checklist.md`",
+        "",
+    ])
+    return "\n".join(lines)
+
+
+def _critical_review_decision(status: object) -> str:
+    report_status = _report_ready_summary_status(status)
+    if report_status in {"Do not report yet", "Needs rerun"}:
+        return "Stop before final output"
+    if report_status == "Needs caveat":
+        return "Proceed only with caveat"
+    return "Ready for draft use"
+
+
+def _critical_review_row_from_report_area(panel: pd.DataFrame, area: str) -> pd.Series:
+    row = _table_row_by_value(panel, "ReportArea", area)
+    return row if row is not None else pd.Series(dtype=object)
+
+
+def build_critical_final_review_panel(
+    result: dict,
+    diagnostics: dict,
+    all_bias_results: dict | None = None,
+    *,
+    bias_results: dict | None = None,
+    role_action_checklist: pd.DataFrame | None = None,
+    report_ready_summary: pd.DataFrame | None = None,
+    final_report_readiness: pd.DataFrame | None = None,
+    submission_action_plan: pd.DataFrame | None = None,
+) -> pd.DataFrame:
+    """Cross-lens critical review gate before manuscript or decision use."""
+    if not isinstance(result, dict):
+        return pd.DataFrame()
+    diagnostics = diagnostics if isinstance(diagnostics, dict) else {}
+    all_bias = all_bias_results or {}
+    if not all_bias and isinstance(bias_results, dict) and bias_results:
+        all_bias = {f"{bias_results.get('facet_a', 'A')} x {bias_results.get('facet_b', 'B')}": bias_results}
+
+    if isinstance(report_ready_summary, pd.DataFrame) and not report_ready_summary.empty:
+        report_panel = report_ready_summary.copy()
+    else:
+        report_panel = build_report_ready_summary_panel(
+            result,
+            diagnostics,
+            all_bias_results=all_bias,
+            bias_results=bias_results,
+        )
+    if role_action_checklist is None:
+        role_action_checklist = build_role_based_action_checklist(
+            result,
+            diagnostics,
+            all_bias_results=all_bias,
+            bias_results=bias_results,
+        )
+    role_action_checklist = apply_role_based_action_checklist_done_state(role_action_checklist)
+    role_progress = role_based_action_checklist_progress_summary(role_action_checklist)
+    if isinstance(submission_action_plan, pd.DataFrame) and not submission_action_plan.empty:
+        action_plan = submission_action_plan.copy()
+    else:
+        action_plan = build_submission_action_plan(result, diagnostics, all_bias)
+    if isinstance(final_report_readiness, pd.DataFrame) and not final_report_readiness.empty:
+        readiness = final_report_readiness.copy()
+    else:
+        readiness = build_final_report_readiness(result, diagnostics, all_bias)
+
+    rows: list[dict[str, object]] = []
+
+    def checklist_counts(role: str) -> tuple[int, int, int]:
+        if not isinstance(role_progress, pd.DataFrame) or role_progress.empty:
+            return 0, 0, 0
+        hit = role_progress.loc[role_progress["Role"].astype(str).eq(role)]
+        if hit.empty:
+            return 0, 0, 0
+        row = hit.iloc[0]
+        return (
+            int(row.get("RemainingItems", 0) or 0),
+            int(row.get("RemainingBlockingItems", 0) or 0),
+            int(row.get("RemainingCaveatItems", 0) or 0),
+        )
+
+    def add_row(
+        lens: str,
+        source_area: str,
+        status: object,
+        owner: str,
+        question: str,
+        risk: str,
+        action: str,
+        evidence: str,
+        do_not: str,
+        safe_output: str,
+        *,
+        unresolved_workflow_items: int = 0,
+        unresolved_workflow_blockers: int = 0,
+        unresolved_workflow_caveats: int = 0,
+    ) -> None:
+        report_status = _report_ready_summary_status(status)
+        evidence_blocks = report_status in {"Do not report yet", "Needs rerun"}
+        caveat_needed = report_status == "Needs caveat" or unresolved_workflow_caveats > 0
+        stop = bool(evidence_blocks or unresolved_workflow_blockers > 0)
+        rows.append({
+            "Priority": 0,
+            "Lens": str(lens),
+            "OwnerRole": str(owner),
+            "CriticalQuestion": str(question),
+            "CurrentStatus": report_status,
+            "Decision": _critical_review_decision(report_status),
+            "StopBeforeFinalOutput": stop,
+            "EvidenceBlocksDirectClaim": evidence_blocks,
+            "UnresolvedWorkflowItems": int(unresolved_workflow_items),
+            "UnresolvedWorkflowBlockers": int(unresolved_workflow_blockers),
+            "NeedsCaveat": bool(caveat_needed),
+            "WhatCouldGoWrong": str(risk),
+            "ActionBeforeContinuing": str(action),
+            "EvidenceToOpen": str(evidence),
+            "DoNotClaim": str(do_not),
+            "SafeNextOutput": str(safe_output),
+            "SourceArea": str(source_area),
+            "DownloadFile": str(evidence),
+        })
+
+    if not isinstance(report_panel, pd.DataFrame) or report_panel.empty:
+        add_row(
+            "Run availability",
+            "Report-ready summary",
+            "Needs rerun",
+            "Paper author; measurement practitioner",
+            "Is there enough generated evidence to write or decide from this run?",
+            "The app could not assemble the report-ready panel, so downstream claims lack a common gate.",
+            "Regenerate the run and open the readiness, claim, and APA audit tables before writing.",
+            "report_ready_summary_panel.csv; publication_gate_summary.csv; final_report_readiness.csv",
+            "Do not write final conclusions when the report-ready panel is unavailable.",
+            "Internal troubleshooting note only.",
+        )
+        out = pd.DataFrame(rows)
+        out["Priority"] = np.arange(1, len(out) + 1, dtype=int)
+        return out
+
+    overall = _critical_review_row_from_report_area(report_panel, "Overall manuscript conclusion")
+    paper_remaining, paper_blockers, paper_caveats = checklist_counts("Paper author")
+    add_row(
+        "Manuscript conclusion",
+        "Overall manuscript conclusion",
+        overall.get("ReportStatus", "Needs caveat"),
+        "Paper author",
+        "Can the Results and Discussion conclusions be treated as final?",
+        "Generated prose may outrun the publication gate, especially when a blocker or caveat remains.",
+        overall.get("ActionBeforeWriting", "Open the publication gate and readiness rows before using final wording."),
+        overall.get("EvidenceFiles", "publication_gate_summary.csv; final_report_readiness.csv"),
+        overall.get("DoNotWrite", "Do not turn generated text into final conclusions while blocker or caveat rows remain."),
+        overall.get("SafeWording", "Use only bounded wording supported by the current run."),
+        unresolved_workflow_items=paper_remaining,
+        unresolved_workflow_blockers=paper_blockers,
+        unresolved_workflow_caveats=paper_caveats,
+    )
+
+    apa = _critical_review_row_from_report_area(report_panel, "APA sentence draft")
+    add_row(
+        "APA wording",
+        "APA sentence draft",
+        apa.get("ReportStatus", "Needs caveat"),
+        "Paper author",
+        "Which generated sentences can be copied only after editing?",
+        "A polished sentence can hide a caveat, unsupported claim, or missing evidence row.",
+        apa.get("ActionBeforeWriting", "Use the APA sentence audit before copying generated sentences."),
+        apa.get("EvidenceFiles", "apa_report_sentence_audit.csv; method_reference_audit.csv"),
+        apa.get("DoNotWrite", "Do not copy blocked or caveated sentences without revision."),
+        apa.get("SafeWording", "Use generated APA text as evidence-linked draft wording."),
+        unresolved_workflow_items=paper_remaining,
+        unresolved_workflow_blockers=paper_blockers,
+        unresolved_workflow_caveats=paper_caveats,
+    )
+
+    claim = _critical_review_row_from_report_area(report_panel, "Claim boundary and evidence")
+    add_row(
+        "Claim scope",
+        "Claim boundary and evidence",
+        claim.get("ReportStatus", "Needs caveat"),
+        "Paper author; reviewer response lead",
+        "Are each Results claim, limitation, and reviewer answer tied to actual evidence?",
+        "Broad claims about validity, fairness, no bias, category functioning, or equivalence may exceed computed evidence.",
+        claim.get("ActionBeforeWriting", "Map every planned claim to claim-to-evidence rows."),
+        claim.get("EvidenceFiles", "claim_to_evidence_matrix.csv; manuscript_claim_guide.csv"),
+        claim.get("DoNotWrite", "Do not make claims that lack a traceable evidence row."),
+        claim.get("SafeWording", "State claims only for the fitted design and diagnostics actually produced."),
+        unresolved_workflow_items=paper_remaining,
+        unresolved_workflow_blockers=paper_blockers,
+        unresolved_workflow_caveats=paper_caveats,
+    )
+
+    scoring = _critical_review_row_from_report_area(report_panel, "Scoring quality and QC decision")
+    scoring_remaining, scoring_blockers, scoring_caveats = checklist_counts("Scoring manager")
+    add_row(
+        "Scoring operations",
+        "Scoring quality and QC decision",
+        scoring.get("ReportStatus", "Needs caveat"),
+        "Scoring manager",
+        "Can rater training, rubric revision, or category-collapse decisions be made from the current evidence?",
+        "Agreement, alpha, fit, and category evidence can be over-read as a personnel judgement or automatic rubric rule.",
+        scoring.get("ActionBeforeWriting", "Open scoring consistency and QC checklist rows before operational decisions."),
+        scoring.get("EvidenceFiles", "scoring_consistency_decision.csv; quality_control_todo_checklist.csv"),
+        scoring.get("DoNotWrite", "Do not diagnose raters, revise rubrics, or collapse categories from one statistic alone."),
+        scoring.get("SafeWording", "Use scoring QC as a structured review prompt, not an automatic action."),
+        unresolved_workflow_items=scoring_remaining,
+        unresolved_workflow_blockers=scoring_blockers,
+        unresolved_workflow_caveats=scoring_caveats,
+    )
+
+    category = _critical_review_row_from_report_area(report_panel, "Rubric categories and collapse sensitivity")
+    add_row(
+        "Rubric/category decision",
+        "Rubric categories and collapse sensitivity",
+        category.get("ReportStatus", "Needs caveat"),
+        "Scoring manager; rubric owner",
+        "Does the evidence justify keeping, revising, or collapsing rating categories?",
+        "Category collapse can appear statistically convenient while weakening the rubric construct.",
+        category.get("ActionBeforeWriting", "Review counts, thresholds, category curves, and sensitivity candidates."),
+        category.get("EvidenceFiles", "category_collapse_action_center.csv; rating_scale_decision_support.csv"),
+        category.get("DoNotWrite", "Do not collapse categories solely to improve fit or agreement statistics."),
+        category.get("SafeWording", "Treat category decisions as sensitivity work requiring substantive rubric justification."),
+        unresolved_workflow_items=scoring_remaining,
+        unresolved_workflow_blockers=scoring_blockers,
+        unresolved_workflow_caveats=scoring_caveats,
+    )
+
+    practitioner_remaining, practitioner_blockers, practitioner_caveats = checklist_counts("Measurement practitioner")
+    readiness_statuses: list[str] = []
+    if isinstance(readiness, pd.DataFrame) and not readiness.empty and {"Required", "Status"}.issubset(readiness.columns):
+        required = readiness.loc[readiness["Required"].astype(str).eq("Yes")]
+        readiness_statuses = required["Status"].astype(str).tolist()
+    diagnostic_status = _worst_report_ready_summary_status(readiness_statuses) if readiness_statuses else "Needs caveat"
+    add_row(
+        "Measurement diagnostics",
+        "Final-report readiness",
+        diagnostic_status,
+        "Measurement practitioner",
+        "Do fit, dimensionality, reliability, targeting, linking, and bias screens support the intended interpretation?",
+        "A single good-looking table or figure can hide a skipped diagnostic, weak connectedness, or unsupported linking claim.",
+        "Open final_report_readiness and submission_action_plan; resolve required rows before final interpretation.",
+        "final_report_readiness.csv; submission_action_plan.csv; case_interpretation_guidance.csv",
+        "Do not describe the model as broadly valid, unidimensional, unbiased, or linked without the corresponding diagnostic evidence.",
+        "Use diagnostics as converging evidence with explicit boundaries and limitations.",
+        unresolved_workflow_items=practitioner_remaining,
+        unresolved_workflow_blockers=practitioner_blockers,
+        unresolved_workflow_caveats=practitioner_caveats,
+    )
+
+    action_statuses = (
+        action_plan["Status"].astype(str).tolist()
+        if isinstance(action_plan, pd.DataFrame) and not action_plan.empty and "Status" in action_plan.columns
+        else []
+    )
+    action_report_status = _worst_report_ready_summary_status(action_statuses) if action_statuses else "Needs caveat"
+    add_row(
+        "Reproducibility and archive",
+        "Submission action plan",
+        action_report_status,
+        "Paper author; measurement practitioner",
+        "Could another reviewer reconstruct the evidence behind each claim?",
+        "Without config, method appendix, table bundle, and action plan, a claim may be impossible to audit.",
+        "Archive the table bundle, config JSON, method appendix, manuscript binder, and any external validation artifacts used.",
+        "MFRM_Tables.zip; mfrm_config.json; mfrm_method_appendix.md; MFRM_Manuscript_Binder.zip",
+        "Do not cite numerical equivalence, posterior extensions, or external package checks unless their artifacts are archived.",
+        "Use the exported archive as a reproducibility record, not as proof of cross-package parity.",
+    )
+
+    add_row(
+        "Sharing and privacy",
+        "Export/share preflight",
+        "Needs caveat",
+        "Paper author; project lead",
+        "Which files can leave the controlled research workspace?",
+        "Direct exports may include row-level or person-level information; public bundle mode is not formal de-identification.",
+        "Choose public/private export mode intentionally and review each shared file before distribution.",
+        "export_privacy_manifest.csv; MFRM_OSF_Package.zip; MFRM_Manuscript_Binder.zip",
+        "Do not share private row-level exports, IDs, scripts, or fingerprints without an approved sharing plan.",
+        "Share only the minimum bundle needed for the audience, with privacy limits documented.",
+    )
+
+    out = pd.DataFrame(rows)
+    if out.empty:
+        return out
+    decision_order = {
+        "Stop before final output": 0,
+        "Proceed only with caveat": 1,
+        "Ready for draft use": 2,
+    }
+    out["_DecisionOrder"] = out["Decision"].map(decision_order).fillna(1)
+    out["_StopOrder"] = (~out["StopBeforeFinalOutput"].astype(bool)).astype(int)
+    out = out.sort_values(["_StopOrder", "_DecisionOrder", "Lens"]).drop(columns=["_DecisionOrder", "_StopOrder"])
+    out["Priority"] = np.arange(1, len(out) + 1, dtype=int)
+    return out.reset_index(drop=True)
+
+
+def generate_critical_final_review_markdown(
+    result: dict,
+    diagnostics: dict,
+    all_bias_results: dict | None = None,
+    *,
+    bias_results: dict | None = None,
+    role_action_checklist: pd.DataFrame | None = None,
+    critical_final_review: pd.DataFrame | None = None,
+    report_ready_summary: pd.DataFrame | None = None,
+    final_report_readiness: pd.DataFrame | None = None,
+    submission_action_plan: pd.DataFrame | None = None,
+) -> str:
+    """Render the cross-lens critical review gate as Markdown."""
+    if isinstance(critical_final_review, pd.DataFrame) and not critical_final_review.empty:
+        panel = critical_final_review.copy()
+    else:
+        panel = build_critical_final_review_panel(
+            result,
+            diagnostics,
+            all_bias_results=all_bias_results,
+            bias_results=bias_results,
+            role_action_checklist=role_action_checklist,
+            report_ready_summary=report_ready_summary,
+            final_report_readiness=final_report_readiness,
+            submission_action_plan=submission_action_plan,
+        )
+    if not isinstance(panel, pd.DataFrame) or panel.empty:
+        return "\n".join([
+            "# Critical Final Review",
+            "",
+            "No critical review rows were generated for this run.",
+            "",
+        ])
+    stop_count = int(panel["StopBeforeFinalOutput"].fillna(False).astype(bool).sum())
+    evidence_block_count = int(panel["EvidenceBlocksDirectClaim"].fillna(False).astype(bool).sum())
+    caveat_count = int(panel["NeedsCaveat"].fillna(False).astype(bool).sum())
+    lines = [
+        "# Critical Final Review",
+        "",
+        "Use this after the report-ready decision brief and before copying final manuscript or decision wording.",
+        "",
+        "## Snapshot",
+        "",
+        f"- Stop-before-final-output rows: {stop_count}",
+        f"- Evidence blocks direct claims: {evidence_block_count}",
+        f"- Caveat-needed rows: {caveat_count}",
+        "",
+    ]
+    for _, row in panel.iterrows():
+        stop_text = "yes" if bool(row.get("StopBeforeFinalOutput", False)) else "no"
+        caveat_text = "yes" if bool(row.get("NeedsCaveat", False)) else "no"
+        lines.extend([
+            f"## P{row.get('Priority')} - {row.get('Lens')}",
+            "",
+            f"- Owner: {row.get('OwnerRole')}",
+            f"- Critical question: {row.get('CriticalQuestion')}",
+            f"- Decision: {row.get('Decision')} ({row.get('CurrentStatus')})",
+            f"- Stop before final output: {stop_text}",
+            f"- Needs caveat: {caveat_text}",
+            f"- What could go wrong: {row.get('WhatCouldGoWrong')}",
+            f"- Action before continuing: {row.get('ActionBeforeContinuing')}",
+            f"- Evidence to open: {row.get('EvidenceToOpen')}",
+            f"- Do not claim: {row.get('DoNotClaim')}",
+            f"- Safe next output: {row.get('SafeNextOutput')}",
+            "",
+        ])
+    lines.extend([
+        "## Export Files",
+        "",
+        "- `critical_final_review_panel.csv`",
+        "- `critical_final_review.md`",
+        "- `report_ready_summary_panel.csv`",
+        "- `role_based_action_checklist.csv`",
+        "",
+    ])
+    return "\n".join(lines)
+
+
+def build_status_rationale_drilldown(
+    result: dict,
+    diagnostics: dict,
+    all_bias_results: dict | None = None,
+    *,
+    bias_results: dict | None = None,
+    role_action_checklist: pd.DataFrame | None = None,
+    critical_final_review: pd.DataFrame | None = None,
+    report_ready_summary: pd.DataFrame | None = None,
+    final_report_readiness: pd.DataFrame | None = None,
+    submission_action_plan: pd.DataFrame | None = None,
+) -> pd.DataFrame:
+    """Explain why each high-level reporting status was assigned."""
+    if isinstance(critical_final_review, pd.DataFrame) and not critical_final_review.empty:
+        critical = critical_final_review.copy()
+    else:
+        critical = build_critical_final_review_panel(
+            result,
+            diagnostics,
+            all_bias_results=all_bias_results,
+            bias_results=bias_results,
+            role_action_checklist=role_action_checklist,
+            report_ready_summary=report_ready_summary,
+            final_report_readiness=final_report_readiness,
+            submission_action_plan=submission_action_plan,
+        )
+    if not isinstance(critical, pd.DataFrame) or critical.empty:
+        return pd.DataFrame()
+
+    rows: list[dict[str, object]] = []
+    for _, row in critical.iterrows():
+        stop = bool(row.get("StopBeforeFinalOutput", False))
+        evidence_blocks = bool(row.get("EvidenceBlocksDirectClaim", False))
+        needs_caveat = bool(row.get("NeedsCaveat", False))
+        unresolved_blockers = int(row.get("UnresolvedWorkflowBlockers", 0) or 0)
+        unresolved_items = int(row.get("UnresolvedWorkflowItems", 0) or 0)
+        if evidence_blocks:
+            minimum = "Regenerate or resolve the listed evidence before making a direct claim."
+        elif stop:
+            minimum = "Complete or document the blocking workflow items before final wording."
+        elif needs_caveat:
+            minimum = "Carry the caveat into the Results, limitations, scoring note, or decision memo."
+        else:
+            minimum = "Archive the evidence file and keep the claim within the listed scope."
+        rows.append({
+            "Priority": int(row.get("Priority", len(rows) + 1)),
+            "Audience": "Psychometric reviewer",
+            "StatusSource": str(row.get("Lens", "Critical review")),
+            "CurrentStatus": str(row.get("CurrentStatus", "Needs caveat")),
+            "Decision": str(row.get("Decision", "Proceed only with caveat")),
+            "DecisionLogic": (
+                f"stop_before_final_output={stop}; evidence_blocks_direct_claim={evidence_blocks}; "
+                f"needs_caveat={needs_caveat}; unresolved_workflow_blockers={unresolved_blockers}; "
+                f"unresolved_workflow_items={unresolved_items}."
+            ),
+            "TriggerDiagnostics": str(row.get("EvidenceToOpen", "")),
+            "MinimumEvidenceNeeded": minimum,
+            "WhatCouldGoWrong": str(row.get("WhatCouldGoWrong", "")),
+            "ClaimBoundary": str(row.get("DoNotClaim", "")),
+            "NextInspection": str(row.get("ActionBeforeContinuing", "")),
+            "SafeUse": str(row.get("SafeNextOutput", "")),
+            "DownloadFile": str(row.get("DownloadFile", row.get("EvidenceToOpen", ""))),
+        })
+    out = pd.DataFrame(rows)
+    if not out.empty:
+        out = out.sort_values(["Priority", "StatusSource"]).reset_index(drop=True)
+    return out
+
+
+def _reading_path_status_from_readiness(readiness: pd.DataFrame, checks: Iterable[str]) -> tuple[str, str, str]:
+    statuses: list[str] = []
+    evidence: list[str] = []
+    actions: list[str] = []
+    if isinstance(readiness, pd.DataFrame) and not readiness.empty and "Check" in readiness.columns:
+        for check in checks:
+            hit = readiness.loc[readiness["Check"].astype(str).eq(str(check))]
+            if hit.empty:
+                continue
+            row = hit.iloc[0]
+            statuses.append(str(row.get("Status", "")))
+            evidence.append(str(row.get("Evidence", "")))
+            actions.append(str(row.get("ActionBeforeFinalReport", "")))
+    status = _worst_report_ready_summary_status(statuses) if statuses else "Needs caveat"
+    return status, " ".join(part for part in evidence if part), " ".join(part for part in actions if part)
+
+
+def build_result_reading_path(
+    result: dict,
+    diagnostics: dict,
+    all_bias_results: dict | None = None,
+    *,
+    bias_results: dict | None = None,
+    report_ready_summary: pd.DataFrame | None = None,
+    final_report_readiness: pd.DataFrame | None = None,
+    manuscript_claim_guide: pd.DataFrame | None = None,
+) -> pd.DataFrame:
+    """Order the main outputs for a graduate researcher learning the MFRM workflow."""
+    if isinstance(report_ready_summary, pd.DataFrame) and not report_ready_summary.empty:
+        report_panel = report_ready_summary.copy()
+    else:
+        report_panel = build_report_ready_summary_panel(
+            result,
+            diagnostics,
+            all_bias_results=all_bias_results,
+            bias_results=bias_results,
+        )
+    if isinstance(final_report_readiness, pd.DataFrame) and not final_report_readiness.empty:
+        readiness = final_report_readiness.copy()
+    else:
+        readiness = build_final_report_readiness(result, diagnostics, all_bias_results or {})
+    if isinstance(manuscript_claim_guide, pd.DataFrame) and not manuscript_claim_guide.empty:
+        claim_guide = manuscript_claim_guide.copy()
+    else:
+        claim_guide = build_manuscript_claim_guide(result, diagnostics, all_bias_results or {})
+
+    def panel_row(area: str) -> pd.Series:
+        row = _table_row_by_value(report_panel, "ReportArea", area)
+        return row if row is not None else pd.Series(dtype=object)
+
+    def add_row(
+        rows: list[dict[str, object]],
+        goal: str,
+        question: str,
+        status: object,
+        open_first: str,
+        evidence_file: str,
+        how_to_read: str,
+        can_write: str,
+        avoid: str,
+        next_move: str,
+    ) -> None:
+        rows.append({
+            "Step": len(rows) + 1,
+            "Audience": "Graduate researcher learning MFRM",
+            "ReadingGoal": str(goal),
+            "GuidingQuestion": str(question),
+            "CurrentStatus": _report_ready_summary_status(status),
+            "OpenFirst": str(open_first),
+            "EvidenceFile": str(evidence_file),
+            "HowToRead": str(how_to_read),
+            "WhatCanBeWritten": str(can_write),
+            "DoNotWriteYet": str(avoid),
+            "NextMove": str(next_move),
+        })
+
+    rows: list[dict[str, object]] = []
+    overall = panel_row("Overall manuscript conclusion")
+    add_row(
+        rows,
+        "Start with the run gate",
+        "Can this run support any final Results wording?",
+        overall.get("ReportStatus", "Needs caveat"),
+        overall.get("OpenFirst", "Report -> APA Report; Report -> Readiness"),
+        overall.get("EvidenceFiles", "publication_gate_summary.csv; final_report_readiness.csv"),
+        "Read the gate before individual estimates; it tells you whether the rest is draft evidence, caveated evidence, or troubleshooting evidence.",
+        overall.get("SafeWording", "Use only bounded wording supported by the current run."),
+        overall.get("DoNotWrite", "Do not treat generated text as final before the gate is checked."),
+        overall.get("ActionBeforeWriting", "Open the publication gate and readiness rows."),
+    )
+
+    category = panel_row("Rubric categories and collapse sensitivity")
+    add_row(
+        rows,
+        "Read the score scale",
+        "Do the observed categories support the intended rubric interpretation?",
+        category.get("ReportStatus", "Needs caveat"),
+        category.get("OpenFirst", "Categories / Steps; Visuals -> category curves"),
+        category.get("EvidenceFiles", "category_collapse_action_center.csv; rating_scale_decision_support.csv"),
+        "Read counts, threshold order, and category curves before interpreting measures or category-collapse suggestions.",
+        category.get("SafeWording", "Report only the category-functioning evidence that was computed."),
+        category.get("DoNotWrite", "Do not collapse categories solely because one diagnostic is flagged."),
+        category.get("ActionBeforeWriting", "Review category diagnostics and sensitivity candidates."),
+    )
+
+    scoring = panel_row("Scoring quality and QC decision")
+    add_row(
+        rows,
+        "Read scoring consistency",
+        "Do agreement, alpha, rater fit, and category evidence point to the same scoring-quality story?",
+        scoring.get("ReportStatus", "Needs caveat"),
+        scoring.get("OpenFirst", "Agreement / QC; Report -> APA Report"),
+        scoring.get("EvidenceFiles", "scoring_consistency_decision.csv; quality_control_todo_checklist.csv"),
+        "Read agreement and MFRM rater evidence together; one statistic is not the whole scoring-quality argument.",
+        scoring.get("SafeWording", "Use scoring QC as converging evidence with clear boundaries."),
+        scoring.get("DoNotWrite", "Do not claim scoring quality from one agreement or fit statistic alone."),
+        scoring.get("ActionBeforeWriting", "Open scoring consistency and QC checklist rows."),
+    )
+
+    fit_status, fit_evidence, fit_action = _reading_path_status_from_readiness(
+        readiness,
+        ["Global residual fit", "Dimensionality screen", "Wright Map targeting"],
+    )
+    add_row(
+        rows,
+        "Read model diagnostics",
+        "Do fit, dimensionality, and targeting support the intended interpretation?",
+        fit_status,
+        "Fit Details; Dimensionality; Wright Map",
+        "fit_statistics.csv; residuals.csv; pca_stability_audit.csv; final_report_readiness.csv",
+        "Read residual fit, PCA, and targeting as converging diagnostics, not as a single pass/fail score.",
+        "Describe fit and targeting only within the diagnostics that were computed.",
+        "Do not state that unidimensionality, targeting, or validity was established from fit alone.",
+        fit_action or "Open Fit Details, Dimensionality, and Wright Map before drafting fit claims.",
+    )
+
+    bias_row = _table_row_by_value(claim_guide, "ManuscriptArea", "Bias / local interaction")
+    bias_status = bias_row.get("ClaimStatus", "Needs caveat") if bias_row is not None else "Needs caveat"
+    add_row(
+        rows,
+        "Read bias and local interaction",
+        "Were the intended facet pairs and cells screened, and what is outside the screen?",
+        bias_status,
+        "Bias/Interaction; Claim Guide",
+        "bias_inference_audit.csv; claim_to_evidence_matrix.csv; manuscript_claim_guide.csv",
+        "Read the screened pairs, sparse cells, and flagged interactions before making fairness or no-bias claims.",
+        bias_row.get("SafeManuscriptWording", "Limit bias statements to the screened facet pairs and cells.") if bias_row is not None else "Limit bias statements to the screened facet pairs and cells.",
+        bias_row.get("DoNotClaim", "Do not make no-bias claims outside screened evidence.") if bias_row is not None else "Do not make no-bias claims outside screened evidence.",
+        bias_row.get("NextAction", "Open bias and claim evidence files.") if bias_row is not None else "Open bias and claim evidence files.",
+    )
+
+    apa = panel_row("APA sentence draft")
+    claim = panel_row("Claim boundary and evidence")
+    add_row(
+        rows,
+        "Draft only after evidence mapping",
+        "Which sentences can be copied as drafts, and which claims must wait?",
+        _worst_report_ready_summary_status([apa.get("ReportStatus", "Needs caveat"), claim.get("ReportStatus", "Needs caveat")]),
+        "Report -> APA Report; Claim Guide",
+        "apa_results_paragraph_draft.md; apa_report_sentence_audit.csv; critical_final_review_panel.csv",
+        "Read Final-Output Blockers before the draft paragraph; then match each sentence to evidence and caveats.",
+        "Use generated APA text as evidence-linked draft wording.",
+        "Do not copy polished text that hides a blocker, caveat, or missing evidence row.",
+        "Edit the draft after opening the critical final review and APA sentence audit.",
+    )
+
+    add_row(
+        rows,
+        "Archive before sharing",
+        "Can a reader reconstruct why each claim was allowed, caveated, or withheld?",
+        "Needs caveat",
+        "Downloads -> Scripts & Config; Manuscript Binder",
+        "MFRM_Tables.zip; mfrm_config.json; MFRM_Manuscript_Binder.zip; export_privacy_manifest.csv",
+        "Keep tables, config, method appendix, and privacy manifest together with the manuscript draft.",
+        "Use the archive as a reproducibility record for the current run.",
+        "Do not share row-level or person-level material without an approved sharing plan.",
+        "Download the intended public or private bundle before manuscript circulation.",
+    )
+    return pd.DataFrame(rows)
+
+
+def build_operational_decision_board(
+    result: dict,
+    diagnostics: dict,
+    all_bias_results: dict | None = None,
+    *,
+    bias_results: dict | None = None,
+    quality_control_recommendations: pd.DataFrame | None = None,
+    category_action_center: pd.DataFrame | None = None,
+    critical_final_review: pd.DataFrame | None = None,
+    report_ready_summary: pd.DataFrame | None = None,
+    final_report_readiness: pd.DataFrame | None = None,
+    submission_action_plan: pd.DataFrame | None = None,
+) -> pd.DataFrame:
+    """Translate scoring and category evidence into test-development actions."""
+    if isinstance(quality_control_recommendations, pd.DataFrame) and not quality_control_recommendations.empty:
+        qc = quality_control_recommendations.copy()
+    else:
+        qc = build_quality_control_recommendations(result, diagnostics)
+    if isinstance(category_action_center, pd.DataFrame) and not category_action_center.empty:
+        category = category_action_center.copy()
+    else:
+        category = category_collapse_action_center_table(result, diagnostics)
+    if isinstance(critical_final_review, pd.DataFrame) and not critical_final_review.empty:
+        critical = critical_final_review.copy()
+    else:
+        critical = build_critical_final_review_panel(
+            result,
+            diagnostics,
+            all_bias_results=all_bias_results,
+            bias_results=bias_results,
+            report_ready_summary=report_ready_summary,
+            final_report_readiness=final_report_readiness,
+            submission_action_plan=submission_action_plan,
+        )
+    rows: list[dict[str, object]] = []
+
+    def add_decision(
+        decision: str,
+        signal: str,
+        evidence: str,
+        action: str,
+        risk: str,
+        owner: str,
+        before_next: str,
+        do_not: str,
+    ) -> None:
+        rows.append({
+            "Priority": 0,
+            "Audience": "Test developer",
+            "Decision": str(decision),
+            "OwnerRole": str(owner),
+            "CurrentSignal": str(signal),
+            "EvidenceToOpen": str(evidence),
+            "RecommendedAction": str(action),
+            "RiskIfIgnored": str(risk),
+            "BeforeNextAdministration": str(before_next),
+            "DoNotDo": str(do_not),
+        })
+
+    if isinstance(qc, pd.DataFrame) and not qc.empty:
+        for _, row in qc.iterrows():
+            add_decision(
+                row.get("QCDecision", "Scoring quality decision"),
+                f"{row.get('Recommendation', 'Review')} / {row.get('Priority', 'Routine')}",
+                row.get("EvidenceFile", row.get("TriggerEvidence", "")),
+                row.get("Action", "Review scoring evidence and document the decision."),
+                row.get("RiskIfSkipped", "The scoring-quality claim may outrun the evidence."),
+                row.get("OwnerRole", "Scoring manager"),
+                row.get("CompletionCriterion", "Document the decision and archive the evidence."),
+                row.get("DoNotClaim", "Do not make operational changes from one statistic alone."),
+            )
+
+    if isinstance(category, pd.DataFrame) and not category.empty:
+        cat = category.iloc[0]
+        add_decision(
+            "Rating-category policy",
+            cat.get("Status", "Review"),
+            "category_collapse_action_center.csv; rating_scale_decision_support.csv; rating_scale_recode_candidates.csv",
+            cat.get("RecommendedAction", "Review category evidence before deciding on category policy."),
+            cat.get("DoNotClaim", "Category policy can be distorted by automatic collapse decisions."),
+            "Rubric owner; scoring manager",
+            "Choose to retain the original categories or document a sensitivity plan with substantive rubric justification.",
+            "Do not collapse categories solely to improve fit, alpha, or visual smoothness.",
+        )
+
+    if isinstance(critical, pd.DataFrame) and not critical.empty:
+        stop_rows = critical.loc[critical["StopBeforeFinalOutput"].fillna(False).astype(bool)]
+        if not stop_rows.empty:
+            first_stop = stop_rows.sort_values("Priority").iloc[0]
+            add_decision(
+                "Hold final operational decision",
+                first_stop.get("Decision", "Stop before final output"),
+                first_stop.get("EvidenceToOpen", "critical_final_review_panel.csv"),
+                first_stop.get("ActionBeforeContinuing", "Resolve the critical final-review blocker before operational use."),
+                first_stop.get("WhatCouldGoWrong", "Operational decisions may outrun the evidence."),
+                first_stop.get("OwnerRole", "Project lead"),
+                "Document whether the issue was resolved, caveated, or carried into the next administration plan.",
+                first_stop.get("DoNotClaim", "Do not treat the current run as operationally final while a blocker remains."),
+            )
+
+    if not rows:
+        add_decision(
+            "Operational review",
+            "No scoring or category decision row was generated",
+            "scoring_consistency_decision.csv; critical_final_review_panel.csv",
+            "Regenerate diagnostics or open the report-ready summary before operational use.",
+            "A missing operational board can hide skipped scoring and category checks.",
+            "Project lead",
+            "Confirm scoring, rubric, category, and sharing decisions before the next administration.",
+            "Do not use an absent decision board as evidence that no action is needed.",
+        )
+
+    out = pd.DataFrame(rows)
+    priority_order = {"High": 0, "Medium": 1, "Manuscript": 1, "Routine": 2}
+    out["_PriorityRank"] = out["CurrentSignal"].astype(str).map(
+        lambda text: min([rank for label, rank in priority_order.items() if label in text] or [2])
+    )
+    out = out.sort_values(["_PriorityRank", "Decision"]).drop(columns=["_PriorityRank"]).reset_index(drop=True)
+    out["Priority"] = np.arange(1, len(out) + 1, dtype=int)
+    return out
+
+
+def _first_text_match_row(frame: pd.DataFrame, column: str, pattern: str) -> pd.Series:
+    """Return the first row whose text column contains the requested pattern."""
+    if not isinstance(frame, pd.DataFrame) or frame.empty or column not in frame.columns:
+        return pd.Series(dtype=object)
+    hit = frame.loc[frame[column].astype(str).str.contains(pattern, case=False, regex=True, na=False)]
+    return hit.iloc[0] if not hit.empty else pd.Series(dtype=object)
+
+
+def build_reporting_action_bridge(
+    result: dict,
+    diagnostics: dict,
+    all_bias_results: dict | None = None,
+    *,
+    bias_results: dict | None = None,
+    role_action_checklist: pd.DataFrame | None = None,
+    report_ready_summary: pd.DataFrame | None = None,
+    final_report_readiness: pd.DataFrame | None = None,
+    manuscript_claim_guide: pd.DataFrame | None = None,
+    critical_final_review: pd.DataFrame | None = None,
+    status_rationale: pd.DataFrame | None = None,
+    result_reading_path: pd.DataFrame | None = None,
+    operational_decision_board: pd.DataFrame | None = None,
+    quality_control_recommendations: pd.DataFrame | None = None,
+    category_action_center: pd.DataFrame | None = None,
+    submission_action_plan: pd.DataFrame | None = None,
+) -> pd.DataFrame:
+    """Bridge review boards to APA wording and operational action artifacts."""
+    if not isinstance(result, dict):
+        return pd.DataFrame()
+    diagnostics = diagnostics if isinstance(diagnostics, dict) else {}
+    all_bias = all_bias_results or {}
+    if not all_bias and isinstance(bias_results, dict) and bias_results:
+        all_bias = {f"{bias_results.get('facet_a', 'A')} x {bias_results.get('facet_b', 'B')}": bias_results}
+
+    if not isinstance(report_ready_summary, pd.DataFrame) or report_ready_summary.empty:
+        report_ready_summary = build_report_ready_summary_panel(
+            result,
+            diagnostics,
+            all_bias_results=all_bias,
+            bias_results=bias_results,
+        )
+    if not isinstance(final_report_readiness, pd.DataFrame) or final_report_readiness.empty:
+        final_report_readiness = build_final_report_readiness(result, diagnostics, all_bias)
+    if not isinstance(submission_action_plan, pd.DataFrame) or submission_action_plan.empty:
+        submission_action_plan = build_submission_action_plan(result, diagnostics, all_bias)
+    if not isinstance(manuscript_claim_guide, pd.DataFrame) or manuscript_claim_guide.empty:
+        manuscript_claim_guide = build_manuscript_claim_guide(result, diagnostics, all_bias)
+    if not isinstance(critical_final_review, pd.DataFrame) or critical_final_review.empty:
+        critical_final_review = build_critical_final_review_panel(
+            result,
+            diagnostics,
+            all_bias_results=all_bias,
+            bias_results=bias_results,
+            role_action_checklist=role_action_checklist,
+            report_ready_summary=report_ready_summary,
+            final_report_readiness=final_report_readiness,
+            submission_action_plan=submission_action_plan,
+        )
+    if not isinstance(status_rationale, pd.DataFrame) or status_rationale.empty:
+        status_rationale = build_status_rationale_drilldown(
+            result,
+            diagnostics,
+            all_bias_results=all_bias,
+            bias_results=bias_results,
+            role_action_checklist=role_action_checklist,
+            critical_final_review=critical_final_review,
+            report_ready_summary=report_ready_summary,
+            final_report_readiness=final_report_readiness,
+            submission_action_plan=submission_action_plan,
+        )
+    if not isinstance(result_reading_path, pd.DataFrame) or result_reading_path.empty:
+        result_reading_path = build_result_reading_path(
+            result,
+            diagnostics,
+            all_bias_results=all_bias,
+            bias_results=bias_results,
+            report_ready_summary=report_ready_summary,
+            final_report_readiness=final_report_readiness,
+            manuscript_claim_guide=manuscript_claim_guide,
+        )
+    if not isinstance(quality_control_recommendations, pd.DataFrame) or quality_control_recommendations.empty:
+        quality_control_recommendations = build_quality_control_recommendations(result, diagnostics)
+    if not isinstance(category_action_center, pd.DataFrame) or category_action_center.empty:
+        category_action_center = category_collapse_action_center_table(result, diagnostics)
+    if not isinstance(operational_decision_board, pd.DataFrame) or operational_decision_board.empty:
+        operational_decision_board = build_operational_decision_board(
+            result,
+            diagnostics,
+            all_bias_results=all_bias,
+            bias_results=bias_results,
+            quality_control_recommendations=quality_control_recommendations,
+            category_action_center=category_action_center,
+            critical_final_review=critical_final_review,
+            report_ready_summary=report_ready_summary,
+            final_report_readiness=final_report_readiness,
+            submission_action_plan=submission_action_plan,
+        )
+
+    def critical_row(pattern: str) -> pd.Series:
+        return _first_text_match_row(critical_final_review, "Lens", pattern)
+
+    def operation_row(pattern: str) -> pd.Series:
+        return _first_text_match_row(operational_decision_board, "Decision", pattern)
+
+    def reading_row(pattern: str) -> pd.Series:
+        return _first_text_match_row(result_reading_path, "ReadingGoal", pattern)
+
+    def status_from_rows(rows: Iterable[pd.Series], fallback: object = "Needs caveat") -> str:
+        statuses = [
+            str(row.get("CurrentStatus", row.get("ReportStatus", row.get("Status", ""))))
+            for row in rows
+            if isinstance(row, pd.Series) and not row.empty
+        ]
+        return _worst_report_ready_summary_status(statuses) if statuses else _report_ready_summary_status(fallback)
+
+    def yes_no(value: object) -> str:
+        return "Yes" if bool(value) else "No"
+
+    rows: list[dict[str, object]] = []
+
+    def add_row(
+        *,
+        track: str,
+        audience: str,
+        source_board: str,
+        source_status: object,
+        output: str,
+        move: str,
+        check: str,
+        caveat: str,
+        stop: str,
+        evidence: str,
+        app_location: str,
+        download_file: str,
+    ) -> None:
+        rows.append({
+            "Priority": len(rows) + 1,
+            "BridgeTrack": str(track),
+            "PrimaryAudience": str(audience),
+            "SourceBoard": str(source_board),
+            "CurrentStatus": _report_ready_summary_status(source_status),
+            "OutputToProduce": str(output),
+            "DraftOrDecisionMove": str(move),
+            "RequiredCheck": str(check),
+            "CaveatToCarry": str(caveat),
+            "StopRule": str(stop),
+            "EvidenceFiles": str(evidence),
+            "AppLocation": str(app_location),
+            "DownloadFile": str(download_file),
+        })
+
+    apa_row = critical_row("APA")
+    claim_row = critical_row("Claim")
+    manuscript_row = critical_row("Manuscript")
+    scoring_row = critical_row("Scoring")
+    category_row = critical_row("Rubric|category")
+    diagnostic_row = critical_row("Measurement")
+    archive_row = critical_row("Reproducibility")
+    reading_draft = reading_row("Draft")
+    reading_bias = reading_row("bias|local")
+    rater_training = operation_row("Rater training")
+    rubric_revision = operation_row("Rubric revision")
+    category_policy = operation_row("Category|Rating-category")
+
+    add_row(
+        track="APA final wording gate",
+        audience="Paper author; psychometric reviewer",
+        source_board="Critical final review; APA sentence audit",
+        source_status=status_from_rows([apa_row, manuscript_row]),
+        output="Revised APA Results paragraph",
+        move="Use the APA paragraph draft only after the final-output blockers and caveat rows have been resolved or carried into the text.",
+        check=(
+            f"APA stop={yes_no(apa_row.get('StopBeforeFinalOutput', False))}; "
+            f"manuscript stop={yes_no(manuscript_row.get('StopBeforeFinalOutput', False))}; "
+            "each copied sentence must match the sentence audit."
+        ),
+        caveat=str(apa_row.get("DoNotClaim", "Carry every caveat listed in the APA sentence audit and critical review.")),
+        stop=str(apa_row.get("ActionBeforeContinuing", "Do not treat APA wording as final until the critical review has been opened.")),
+        evidence="apa_results_paragraph_draft.md; apa_report_sentence_audit.csv; critical_final_review_panel.csv; reporting_action_bridge.csv",
+        app_location="Report -> APA Report; Report & Export -> Critical final review",
+        download_file="apa_results_paragraph_draft.md; apa_report_sentence_audit.csv; reporting_action_bridge.csv",
+    )
+
+    add_row(
+        track="Claim-to-evidence revision",
+        audience="Paper author; psychometric reviewer",
+        source_board="Status rationale; manuscript claim guide",
+        source_status=status_from_rows([claim_row, reading_draft]),
+        output="Evidence-linked Results, limitations, and reviewer-response notes",
+        move="Map every planned claim to a table, figure, diagnostic, caveat, and reviewer-facing boundary before writing final prose.",
+        check=str(reading_draft.get("NextMove", "Open the claim guide and critical review before drafting claim language.")),
+        caveat=str(claim_row.get("DoNotClaim", "Do not write claims that exceed the computed facet structure or diagnostics.")),
+        stop=str(claim_row.get("ActionBeforeContinuing", "Hold broad claims until evidence rows are available.")),
+        evidence="claim_to_evidence_matrix.csv; manuscript_claim_guide.csv; status_rationale_drilldown.csv; result_reading_path.csv",
+        app_location="Report -> Claim Guide; Downloads -> Data Tables",
+        download_file="claim_to_evidence_matrix.csv; manuscript_claim_guide.csv; status_rationale_drilldown.csv",
+    )
+
+    add_row(
+        track="Guided result-reading notes",
+        audience="Graduate researcher using MFRM",
+        source_board="Result reading path",
+        source_status=status_from_rows([reading_draft, reading_bias]),
+        output="Ordered analysis notes before manuscript or operational use",
+        move="Read the run gate, scale/category evidence, scoring consistency, model diagnostics, and bias/local interaction rows before drafting conclusions.",
+        check="Each note should name the opened file, the supported claim, and one boundary that remains.",
+        caveat=str(reading_bias.get("DoNotWriteYet", "Do not make no-bias or broad validity claims outside screened evidence.")),
+        stop=str(reading_draft.get("NextMove", "Open the critical final review and APA sentence audit before copying generated wording.")),
+        evidence="result_reading_path.csv; critical_final_review_panel.csv; bias_inference_audit.csv; final_report_readiness.csv",
+        app_location="Report & Export -> Audience-specific review boards; Bias / Interaction; Fit Details",
+        download_file="result_reading_path.csv; critical_final_review_panel.csv",
+    )
+
+    add_row(
+        track="Rater training action memo",
+        audience="Scoring manager; test developer",
+        source_board="Operational decision board; QC recommendations",
+        source_status=rater_training.get("CurrentSignal", scoring_row.get("CurrentStatus", "Needs caveat")),
+        output="Rater training or moderation note",
+        move=str(rater_training.get("RecommendedAction", "Review agreement, alpha, rater fit, and severity evidence before deciding on rater training.")),
+        check=str(rater_training.get("BeforeNextAdministration", "Document the training decision and archive scoring-quality evidence before the next administration.")),
+        caveat=str(rater_training.get("DoNotDo", "Do not diagnose rater performance from one statistic alone.")),
+        stop=str(scoring_row.get("ActionBeforeContinuing", "Hold operational conclusions if scoring evidence is blocked.")),
+        evidence="operational_decision_board.csv; quality_control_recommendations.csv; scoring_consistency_decision.csv; quality_control_todo_checklist.csv",
+        app_location="Agreement / QC; Fit Details; Report & Export -> Decision board",
+        download_file="operational_decision_board.csv; quality_control_recommendations.csv",
+    )
+
+    add_row(
+        track="Rubric revision action memo",
+        audience="Scoring manager; test developer",
+        source_board="Operational decision board; category evidence",
+        source_status=rubric_revision.get("CurrentSignal", category_row.get("CurrentStatus", "Needs caveat")),
+        output="Rubric revision or clarification note",
+        move=str(rubric_revision.get("RecommendedAction", "Review rubric descriptors with category evidence before revising scoring guidance.")),
+        check="Use observed category support, threshold/curve evidence, scoring consistency, and substantive rubric rationale together.",
+        caveat=str(rubric_revision.get("DoNotDo", "Do not revise rubric wording solely because one model diagnostic is unfavorable.")),
+        stop=str(category_row.get("ActionBeforeContinuing", "Do not finalize rubric decisions before category evidence has been opened.")),
+        evidence="operational_decision_board.csv; rating_scale_decision_support.csv; rating_scale_category_evidence.csv; category_probability_curves.csv",
+        app_location="Categories / Steps; Visuals -> category curves",
+        download_file="operational_decision_board.csv; rating_scale_decision_support.csv",
+    )
+
+    add_row(
+        track="Category collapse sensitivity memo",
+        audience="Scoring manager; test developer; psychometric reviewer",
+        source_board="Operational decision board; category-collapse action center",
+        source_status=category_policy.get("CurrentSignal", category_row.get("CurrentStatus", "Needs caveat")),
+        output="Category-retain/collapse sensitivity decision",
+        move=str(category_policy.get("RecommendedAction", "Treat category collapse as a documented sensitivity comparison with rubric justification.")),
+        check=str(category_policy.get("BeforeNextAdministration", "Choose to retain the original categories or document a sensitivity plan before the next administration.")),
+        caveat=str(category_policy.get("DoNotDo", "Do not collapse categories solely to improve fit, alpha, or visual smoothness.")),
+        stop=str(category_row.get("ActionBeforeContinuing", "Hold category-policy conclusions until counts, thresholds, curves, and sensitivity candidates are reviewed.")),
+        evidence="category_collapse_action_center.csv; rating_scale_recode_candidates.csv; rating_scale_decision_support.csv; operational_decision_board.csv",
+        app_location="Categories / Steps; Downloads -> Scripts & Config",
+        download_file="category_collapse_action_center.csv; rating_scale_recode_candidates.csv; reporting_action_bridge.csv",
+    )
+
+    add_row(
+        track="Archive and handoff check",
+        audience="Paper author; measurement practitioner; test developer",
+        source_board="Critical final review; submission action plan",
+        source_status=status_from_rows([diagnostic_row, archive_row]),
+        output="Manuscript binder and operational decision log",
+        move="Archive the evidence files, method notes, config, privacy manifest, and action bridge before circulating final wording or operational decisions.",
+        check="A reviewer or project lead should be able to trace each claim or action to an exported evidence file.",
+        caveat=str(diagnostic_row.get("DoNotClaim", "Do not claim broad model adequacy, fairness, or reproducibility beyond archived evidence.")),
+        stop=str(archive_row.get("ActionBeforeContinuing", "Do not share final bundles until privacy and archive choices have been documented.")),
+        evidence="MFRM_Manuscript_Binder.zip; MFRM_OSF_Package.zip; reporting_action_bridge.csv; export_privacy_manifest.csv",
+        app_location="Downloads -> Scripts & Config; Manuscript Binder",
+        download_file="MFRM_Manuscript_Binder.zip; reporting_action_bridge.csv; reporting_action_bridge.md",
+    )
+
+    out = pd.DataFrame(rows)
+    return out.reset_index(drop=True)
+
+
+def generate_reporting_action_bridge_markdown(
+    result: dict,
+    diagnostics: dict,
+    all_bias_results: dict | None = None,
+    *,
+    bias_results: dict | None = None,
+    bridge: pd.DataFrame | None = None,
+    role_action_checklist: pd.DataFrame | None = None,
+    report_ready_summary: pd.DataFrame | None = None,
+    final_report_readiness: pd.DataFrame | None = None,
+    manuscript_claim_guide: pd.DataFrame | None = None,
+    critical_final_review: pd.DataFrame | None = None,
+    status_rationale: pd.DataFrame | None = None,
+    result_reading_path: pd.DataFrame | None = None,
+    operational_decision_board: pd.DataFrame | None = None,
+    quality_control_recommendations: pd.DataFrame | None = None,
+    category_action_center: pd.DataFrame | None = None,
+    submission_action_plan: pd.DataFrame | None = None,
+) -> str:
+    """Render the action bridge as a Markdown handoff."""
+    if not isinstance(bridge, pd.DataFrame) or bridge.empty:
+        bridge = build_reporting_action_bridge(
+            result,
+            diagnostics,
+            all_bias_results=all_bias_results,
+            bias_results=bias_results,
+            role_action_checklist=role_action_checklist,
+            report_ready_summary=report_ready_summary,
+            final_report_readiness=final_report_readiness,
+            manuscript_claim_guide=manuscript_claim_guide,
+            critical_final_review=critical_final_review,
+            status_rationale=status_rationale,
+            result_reading_path=result_reading_path,
+            operational_decision_board=operational_decision_board,
+            quality_control_recommendations=quality_control_recommendations,
+            category_action_center=category_action_center,
+            submission_action_plan=submission_action_plan,
+        )
+    if not isinstance(bridge, pd.DataFrame) or bridge.empty:
+        return "\n".join([
+            "# Reporting Action Bridge",
+            "",
+            "No reporting-action bridge rows were generated for this run.",
+            "",
+        ])
+
+    status_counts = bridge["CurrentStatus"].astype(str).value_counts().to_dict()
+    status_summary = "; ".join(
+        f"{status}: {int(status_counts.get(status, 0))}"
+        for status in REPORT_READY_SUMMARY_STATUS_ORDER
+        if int(status_counts.get(status, 0))
+    ) or "no status rows"
+    lines = [
+        "# Reporting Action Bridge",
+        "",
+        "Use this after the audience-specific review boards. It translates the same evidence into APA wording, reviewer-facing claims, scoring actions, rubric decisions, category-collapse sensitivity notes, and archive steps.",
+        "",
+        f"Status summary: {status_summary}.",
+        "",
+    ]
+    for _, row in bridge.sort_values("Priority").iterrows():
+        lines.extend([
+            f"## P{row.get('Priority')} - {row.get('BridgeTrack')} ({row.get('CurrentStatus')})",
+            "",
+            f"- Primary audience: {row.get('PrimaryAudience')}",
+            f"- Source board: {row.get('SourceBoard')}",
+            f"- Output to produce: {row.get('OutputToProduce')}",
+            f"- Draft or decision move: {row.get('DraftOrDecisionMove')}",
+            f"- Required check: {row.get('RequiredCheck')}",
+            f"- Caveat to carry: {row.get('CaveatToCarry')}",
+            f"- Stop rule: {row.get('StopRule')}",
+            f"- Evidence files: {row.get('EvidenceFiles')}",
+            f"- App location: {row.get('AppLocation')}",
+            f"- Download file: {row.get('DownloadFile')}",
+            "",
+        ])
+    lines.extend([
+        "## Export Files",
+        "",
+        "- `reporting_action_bridge.csv`",
+        "- `reporting_action_bridge.md`",
+        "- `apa_results_paragraph_draft.md`",
+        "- `operational_decision_board.csv`",
+        "- `critical_final_review_panel.csv`",
+        "",
+    ])
+    return "\n".join(lines)
 
 
 def build_weighting_policy_audit(result: dict) -> pd.DataFrame:
@@ -32829,6 +39972,9 @@ def build_apa_report_sentence_audit(
         (
             "Reported intervals are conditional approximations and should be read with the exported SE/CI basis metadata."
             if method.upper() != "MML" else
+            f"The MML run estimated the person population SD at {config.get('estimated_population_sd', 'not recorded')}; "
+            "population-scale and EAP claims reflect the freely estimated metric."
+            if config.get("estimate_population_sd") else
             f"The MML run used a fixed population prior SD of {config.get('population_prior_sd', 'not recorded')}; "
             "population-scale and EAP claims are conditional on that setting."
         ),
@@ -33041,6 +40187,16 @@ def build_manuscript_handoff_checklist(
         {
             "Step": 2,
             "Phase": "Pre-download review",
+            "Status": gate_status,
+            "Task": "Open the report-ready decision brief and summary panel before drafting Results text.",
+            "AppLocation": "Report -> APA Report / Downloads -> Scripts & Config",
+            "DownloadFile": "report_ready_decision_brief.md; report_ready_summary_panel.csv; role_based_action_memos.md; role_based_action_checklist.csv; critical_final_review_panel.csv; critical_final_review.md; status_rationale_drilldown.csv; result_reading_path.csv; operational_decision_board.csv; reporting_action_bridge.csv; reporting_action_bridge.md; apa_results_paragraph_draft.md",
+            "Action": "Use the brief, role memos, role checklist, critical final review, audience-specific boards, and reporting action bridge to decide what can be written now, what needs caveats, and what must wait for rerun evidence.",
+            "WhyItMatters": "This keeps APA wording, scoring QC, rubric decisions, category decisions, and claim evidence aligned before manuscript drafting.",
+        },
+        {
+            "Step": 3,
+            "Phase": "Pre-download review",
             "Status": action_status,
             "Task": "Resolve prioritized blockers, caveats, boundaries, and wording repairs.",
             "AppLocation": "Report -> Reports / Downloads -> Data Tables",
@@ -33052,7 +40208,7 @@ def build_manuscript_handoff_checklist(
             "WhyItMatters": "This prevents generated text from outrunning the computed evidence.",
         },
         {
-            "Step": 3,
+            "Step": 4,
             "Phase": "Privacy and sharing",
             "Status": privacy_status,
             "Task": "Choose the export privacy mode intentionally.",
@@ -33062,7 +40218,7 @@ def build_manuscript_handoff_checklist(
             "WhyItMatters": "Public mode removes likely row-level or person-level tables, but it is not a formal de-identification guarantee.",
         },
         {
-            "Step": 4,
+            "Step": 5,
             "Phase": "Core result archive",
             "Status": "Ready",
             "Task": "Download the complete table bundle for analysis records.",
@@ -33072,7 +40228,7 @@ def build_manuscript_handoff_checklist(
             "WhyItMatters": f"This preserves the fitted {model}/{method} run with {n_obs} observations and {n_person} persons.",
         },
         {
-            "Step": 5,
+            "Step": 6,
             "Phase": "Manuscript draft",
             "Status": gate_status,
             "Task": "Export the publication document and use it as a drafted report, not final prose.",
@@ -33082,7 +40238,7 @@ def build_manuscript_handoff_checklist(
             "WhyItMatters": "The app can assemble evidence, but the paper still needs study-specific framing and scholarly judgment.",
         },
         {
-            "Step": 6,
+            "Step": 7,
             "Phase": "Claim wording",
             "Status": action_status,
             "Task": "Match every Results and Discussion claim to evidence, caveats, and safer wording.",
@@ -33092,7 +40248,7 @@ def build_manuscript_handoff_checklist(
             "WhyItMatters": "This keeps reliability, fit, dimensionality, bias, linking, and citation language tied to the evidence actually computed.",
         },
         {
-            "Step": 7,
+            "Step": 8,
             "Phase": "Methods and reproducibility",
             "Status": "Ready" if converged else "Review",
             "Task": "Save the method appendix, manuscript template, config JSON, and reproduction scripts.",
@@ -33102,7 +40258,7 @@ def build_manuscript_handoff_checklist(
             "WhyItMatters": f"Convergence is {'recorded as successful' if converged else 'not recorded as successful'}; reproducibility files document the analysis path.",
         },
         {
-            "Step": 8,
+            "Step": 9,
             "Phase": "Figures",
             "Status": "Ready",
             "Task": "Download figure assets and inspect readability before placing them in the paper.",
@@ -33112,7 +40268,7 @@ def build_manuscript_handoff_checklist(
             "WhyItMatters": "The figure manifest records manuscript use and cautions for each exported figure.",
         },
         {
-            "Step": 9,
+            "Step": 10,
             "Phase": "External validation",
             "Status": "Boundary",
             "Task": "Separate optional external package validation from the main app findings.",
@@ -33122,7 +40278,7 @@ def build_manuscript_handoff_checklist(
             "WhyItMatters": "Do not claim equality with FACETS, TAM, sirt, mirt, or mfrmr without a specific validation artifact.",
         },
         {
-            "Step": 10,
+            "Step": 11,
             "Phase": "Final archive",
             "Status": "Ready",
             "Task": "Package final evidence for coauthors, reviewers, or OSF-style archiving.",
@@ -33196,6 +40352,7 @@ def generate_manuscript_handoff_markdown(
         "",
         "## Download Package",
         "",
+        "- Decision brief and role memos: Report -> APA Report or Downloads -> Scripts & Config; download `report_ready_decision_brief.md`, `report_ready_summary_panel.csv`, `role_based_action_memos.md`, `role_based_action_memos.csv`, `role_based_action_checklist.csv`, `critical_final_review_panel.csv`, `critical_final_review.md`, `status_rationale_drilldown.csv`, `result_reading_path.csv`, `operational_decision_board.csv`, `reporting_action_bridge.csv`, `reporting_action_bridge.md`, and `apa_results_paragraph_draft.md` before writing Results prose.",
         "- Publication Document: Report -> Exports -> Publication Document; download Word, PDF, or HTML for a draft report.",
         "- Tables: Downloads -> Data Tables; download `MFRM_Tables.zip`, `MFRM_Report.xlsx`, and `MFRM_Report.html`.",
         "- Figures: Downloads -> Figures; download `MFRM_Publication_Figures.zip` and `figure_manifest.csv`.",
@@ -33242,14 +40399,23 @@ def generate_manuscript_binder_readme(
         "## Suggested Use",
         "",
         "1. Open `manuscript_handoff.md` first.",
-        "2. Use `claim_to_evidence_matrix.csv` to map each manuscript claim to tables, figures, diagnostics, caveats, and reviewer questions.",
-        "3. Use `apa_report_sentence_audit.csv` to check each generated APA sentence against evidence files, citations, and wording boundaries.",
-        "4. Use `visual_claim_guardrails.csv` before copying interpretation from Wright Maps, yardsticks, thresholds, or category curves.",
-        "5. Use `method_reference_audit.csv` to check which methodological references support each analysis surface.",
-        "6. If Stan posterior results are used, open `stan_posterior_reproducibility_handoff.md` and `stan_reproducibility_archive_contract.csv` before citing posterior intervals.",
-        "7. Use `submission_action_plan.csv` to resolve blockers and caveats before copying generated prose.",
-        "8. Use `method_appendix.md` and `manuscript_template.md` as draft scaffolds, not final manuscript text.",
-        "9. Keep the full `MFRM_OSF_Package.zip` or table bundle with this binder when archiving.",
+        "2. Open `report_ready_decision_brief.md` and `report_ready_summary_panel.csv` before writing Results text.",
+        "3. Open `critical_final_review.md` or `critical_final_review_panel.csv` before treating any generated wording as final.",
+        "4. Use `status_rationale_drilldown.csv`, `result_reading_path.csv`, and `operational_decision_board.csv` to translate the same evidence for psychometric review, MFRM reading, and test-development decisions.",
+        "5. Use `reporting_action_bridge.md` or `reporting_action_bridge.csv` to turn review rows into APA wording, scoring-action, rubric-decision, category-sensitivity, and archive tasks.",
+        "6. Open `role_based_action_memos.md` or `role_based_action_memos.csv` and start with the section for your role.",
+        "7. Use `role_based_action_checklist.md` or `role_based_action_checklist.csv` to track which review tasks are complete.",
+        "8. Use `report_ready_reanalysis_checklist.md` or `report_ready_reanalysis_checklist.csv` before treating generated data, reruns, sensitivity checks, or final exports as report-ready evidence.",
+        "9. Use `apa_results_paragraph_draft.md` only with the caveats and blocked-sentence list it carries.",
+        "10. Use `claim_to_evidence_matrix.csv` to map each manuscript claim to tables, figures, diagnostics, caveats, and reviewer questions.",
+        "11. Use `apa_report_sentence_audit.csv` to check each generated APA sentence against evidence files, citations, and wording boundaries.",
+        "12. Use `visual_claim_guardrails.csv` before copying interpretation from Wright Maps, yardsticks, thresholds, or category curves.",
+        "13. If generated custom simulation data were used, open `custom_simulation_settings.csv`, `custom_simulation_sparse_reporting_context.csv`, `custom_simulation_sparse_design_audit.csv`, and `custom_simulation_sparse_pair_cells.csv` before treating the APA draft as report-ready.",
+        "14. Use `method_reference_audit.csv` to check which methodological references support each analysis surface.",
+        "15. If Stan posterior results are used, open `stan_posterior_reproducibility_handoff.md` and `stan_reproducibility_archive_contract.csv` before citing posterior intervals.",
+        "16. Use `submission_action_plan.csv` to resolve blockers and caveats before copying generated prose.",
+        "17. Use `method_appendix.md` and `manuscript_template.md` as draft scaffolds, not final manuscript text.",
+        "18. Keep the full `MFRM_OSF_Package.zip` or table bundle with this binder when archiving.",
         "",
         "## Included Files",
         "",
@@ -33273,6 +40439,13 @@ def build_manuscript_binder_assets(
     for name, text in (text_assets or {}).items():
         if name in {
             "manuscript_handoff.md",
+            "report_ready_decision_brief.md",
+            "apa_results_paragraph_draft.md",
+            "role_based_action_memos.md",
+            "role_based_action_checklist.md",
+            "report_ready_reanalysis_checklist.md",
+            "critical_final_review.md",
+            "reporting_action_bridge.md",
             "method_appendix.md",
             "manuscript_template.md",
             "local_batch_workflow.md",
@@ -33282,6 +40455,15 @@ def build_manuscript_binder_assets(
         }:
             assets[str(name)] = str(text)
     selected_frames = [
+        "report_ready_summary_panel",
+        "role_based_action_memos",
+        "role_based_action_checklist",
+        "report_ready_reanalysis_checklist",
+        "critical_final_review_panel",
+        "status_rationale_drilldown",
+        "result_reading_path",
+        "operational_decision_board",
+        "reporting_action_bridge",
         "manuscript_handoff_checklist",
         "claim_to_evidence_matrix",
         "apa_report_sentence_audit",
@@ -33294,6 +40476,10 @@ def build_manuscript_binder_assets(
         "visual_interpretation_checklist",
         "visual_claim_guardrails",
         "visual_method_evidence",
+        "custom_simulation_settings",
+        "custom_simulation_sparse_reporting_context",
+        "custom_simulation_sparse_design_audit",
+        "custom_simulation_sparse_pair_cells",
         "export_privacy_manifest",
         "summary",
         "convergence",
@@ -33614,7 +40800,11 @@ def generate_method_appendix_text(
             f"- Numeric covariates standardized before fitting: {bool(pop.get('standardize_numeric', False))}.",
             f"- Covariate type overrides: categorical={pop.get('categorical_terms', [])}; numeric={pop.get('numeric_terms', [])}.",
             f"- Covariate type review flags: {review_terms or 'none'}.",
-            f"- Fixed population prior SD: {float(config.get('population_prior_sd') or 1.0):.3f}; the variance is not estimated.",
+            (
+                f"- Estimated population SD: {float(config.get('estimated_population_sd') or 0.0):.3f} (free, EM); EM starting value {float(config.get('population_prior_sd_input') or 1.0):.3f}."
+                if config.get("estimate_population_sd") else
+                f"- Fixed population prior SD: {float(config.get('population_prior_sd') or 1.0):.3f}; the variance is not estimated."
+            ),
         ])
     if config.get("method") == "MML":
         prior_plan = build_mml_prior_sensitivity_plan(result)
@@ -33627,7 +40817,11 @@ def generate_method_appendix_text(
             f"- Resolved MML engine: {config.get('mml_engine', 'unknown')}.",
             f"- Quadrature points: {config.get('quad_points', 'unknown')}.",
             f"- Population prior SD: {config.get('population_prior_sd', 'unknown')}.",
-            "- Population prior SD treatment: fixed user-set scale; the latent variance is not estimated as a free parameter.",
+            (
+                f"- Population prior SD treatment: freely estimated by EM (profile SE {config.get('population_sd_se', 'not computed')}); EM starting value {config.get('population_prior_sd_input', 'unknown')}."
+                if config.get("estimate_population_sd") else
+                "- Population prior SD treatment: fixed user-set scale; the latent variance is not estimated as a free parameter."
+            ),
             f"- Recommended prior-SD sensitivity values: {prior_plan['PopulationPriorSD'].round(4).tolist() if isinstance(prior_plan, pd.DataFrame) and not prior_plan.empty else 'not generated'}.",
             f"- MML structural covariance status for measure SEs: {covariance.get('status', 'not recorded')}; {covariance.get('detail', '')}",
             f"- Posterior scoring available: {result.get('posterior', {}).get('available') if isinstance(result.get('posterior'), dict) else False}.",
@@ -33752,6 +40946,32 @@ def _render_final_readiness_section(
         "A compact gate check before writing final conclusions. "
         "`Review` does not always mean the model is unusable, but it must be inspected or justified."
     )
+    report_ready_summary = build_report_ready_summary_panel(result, diagnostics, all_bias_results)
+    if isinstance(report_ready_summary, pd.DataFrame) and not report_ready_summary.empty:
+        st.markdown(f"**{t('guided.report_ready_summary_heading')}**")
+        st.caption(t("guided.report_ready_summary_caption"))
+        _render_compact_dataframe(
+            report_ready_summary,
+            [
+                "Priority",
+                "ReportArea",
+                "ReportStatus",
+                "PrimaryUsers",
+                "UseNow",
+                "OpenFirst",
+                "ActionBeforeWriting",
+            ],
+            details_label=t("guided.report_ready_summary_details_label"),
+            hide_index=True,
+            wrap_text=True,
+        )
+        st.download_button(
+            t("guided.report_ready_summary_download"),
+            data=to_csv_bytes(report_ready_summary),
+            file_name="report_ready_summary_panel.csv",
+            mime="text/csv",
+            key="dl_final_report_ready_summary_panel",
+        )
     readiness = build_final_report_readiness(result, diagnostics, all_bias_results)
     if readiness.empty:
         st.info("No readiness checks were generated.")
@@ -33924,6 +41144,27 @@ def _render_manuscript_claim_guide_section(
             file_name="mfrm_method_reference_audit.csv",
             mime="text/csv",
             key="dl_method_reference_audit_report_tab",
+        )
+    help_refs = build_help_reference_coverage()
+    if isinstance(help_refs, pd.DataFrame) and not help_refs.empty:
+        st.subheader("Help Reference Coverage")
+        st.caption(
+            "A first-read evidence map for Help, Agreement, and category-collapse claims, "
+            "including Zotero gaps that should be cleaned before manuscript submission."
+        )
+        _render_compact_dataframe(
+            help_refs,
+            ["HelpArea", "ReferenceCoverageStatus", "SafeClaim"],
+            details_label="Show full help reference coverage",
+            hide_index=True,
+            wrap_text=True,
+        )
+        st.download_button(
+            "Download help reference coverage (CSV)",
+            data=to_csv_bytes(help_refs),
+            file_name="mfrm_help_reference_coverage.csv",
+            mime="text/csv",
+            key="dl_help_reference_coverage_report_tab",
         )
     apa_sentence_audit = build_apa_report_sentence_audit(result, diagnostics, all_bias_results=all_bias_results)
     if isinstance(apa_sentence_audit, pd.DataFrame) and not apa_sentence_audit.empty:
@@ -34103,6 +41344,53 @@ def show_report_section(
             _render_publication_document_section(result, diagnostics, all_bias_results)
 
 
+def _render_population_sd_summary(result: dict) -> None:
+    """Surface the MML person population SD (fixed, or freely estimated with SE/CI).
+
+    When free-SD estimation is on, the fitted sigma is the person metric scale —
+    so it gets a prominent metric row plus its profile SE/CI, an interpretation
+    pop-over, and the engine-override notice. When the SD is fixed, a quiet
+    caption states the value. Non-MML runs show nothing.
+    """
+    config = result.get("config", {}) if isinstance(result, dict) else {}
+    if config.get("method") != "MML":
+        return
+    if config.get("estimate_population_sd"):
+        est = config.get("estimated_population_sd")
+        if est is None or not np.isfinite(est):
+            return
+        se = config.get("population_sd_se")
+        ci = config.get("population_sd_ci") or [np.nan, np.nan]
+        se_txt = (
+            f"{float(se):.3f}"
+            if se is not None and np.isfinite(se)
+            else t("estimation_subsections.popsd_se_unavailable")
+        )
+        ci_txt = (
+            f"[{float(ci[0]):.2f}, {float(ci[1]):.2f}]"
+            if len(ci) == 2 and np.isfinite(ci[0]) and np.isfinite(ci[1])
+            else "—"
+        )
+        cols = st.columns(3)
+        cols[0].metric(t("estimation_subsections.popsd_metric_label"), f"{float(est):.2f}")
+        cols[1].metric(t("estimation_subsections.popsd_se_label"), se_txt)
+        cols[2].metric(t("estimation_subsections.popsd_ci_label"), ci_txt)
+        st.caption(t("estimation_subsections.popsd_estimated_caption"))
+        notice = config.get("population_sd_engine_notice")
+        if notice:
+            st.info(notice)
+        render_help_popover("mml_person_sd")
+    else:
+        prior = config.get("population_prior_sd")
+        if prior is not None and np.isfinite(prior):
+            st.caption(
+                t(
+                    "estimation_subsections.popsd_fixed_caption_template",
+                    value=f"{float(prior):.2f}",
+                )
+            )
+
+
 def show_convergence_section(result: dict) -> None:
     """Render optimizer convergence diagnostics with guided interpretation."""
     convergence = result.get("convergence", pd.DataFrame())
@@ -34116,6 +41404,8 @@ def show_convergence_section(result: dict) -> None:
         if col in display.columns:
             display[col] = pd.to_numeric(display[col], errors="coerce").round(6)
     st.dataframe(display, width="stretch")
+
+    _render_population_sd_summary(result)
 
     row = convergence.iloc[0]
     converged = bool(row.get("Converged", False))
@@ -34162,10 +41452,10 @@ def show_person_fit_section(result: dict, diagnostics: dict) -> None:
     """Render Drasgow (1985) lz and Snijders (2001) lz* person-fit indices.
 
     The math layer ``compute_person_fit_indices`` always reports lz; lz*
-    is only populated under JMLE because the Snijders correction
-    assumes a JML likelihood. The UI surfaces the chosen ReportIndex
-    (lz* when available, lz otherwise), highlights flagged persons,
-    and exposes the full table behind an expander so the default
+    is populated under JMLE (conditional calibration) and under MML/EAP/MAP
+    (the population-prior-corrected extension). The UI surfaces the chosen
+    ReportIndex (lz* when available, lz otherwise), highlights flagged
+    persons, and exposes the full table behind an expander so the default
     Measures-tab reading stays compact.
     """
     st.subheader(t("result_tabs.person_fit_subheader"))
@@ -34194,12 +41484,16 @@ def show_person_fit_section(result: dict, diagnostics: dict) -> None:
         st.info(t("result_tabs.person_fit_no_persons"))
         return
 
-    success_mask = fit_idx["lz_star_status"].eq("computed_jml_conditional_calibration")
-    has_lz_star = bool(success_mask.any())
-    if has_lz_star:
+    status_col = fit_idx["lz_star_status"].astype(str)
+    jml_ready = bool(status_col.eq("computed_jml_conditional_calibration").any())
+    eap_ready = bool(status_col.eq("computed_eap_population_corrected").any())
+    has_lz_star = jml_ready or eap_ready
+    if jml_ready:
         st.caption(t("result_tabs.person_fit_caption_jmle"))
-    else:
+    elif eap_ready:
         st.caption(t("result_tabs.person_fit_caption_mml"))
+    else:
+        st.caption(t("result_tabs.person_fit_caption_unavailable"))
 
     n_persons = len(fit_idx)
     flag_levels = fit_idx["ReportFlagLevel"].astype(str)
@@ -34258,8 +41552,10 @@ def show_person_fit_section(result: dict, diagnostics: dict) -> None:
             key="dl_person_fit_indices_tab",
         )
 
-    if has_lz_star:
+    if jml_ready:
         st.caption(t("result_tabs.person_fit_lz_star_caveat"))
+    elif eap_ready:
+        st.caption(t("result_tabs.person_fit_lz_star_eap_caveat"))
     else:
         st.caption(t("result_tabs.person_fit_lz_only_caveat"))
 
@@ -35700,6 +42996,22 @@ def render_parameter_recovery_simulation() -> None:
         )
         return
 
+    n_reps_total = int(bundle.get("n_reps_total", 0) or 0)
+    n_reps_converged = int(bundle.get("n_reps_converged", 0) or 0)
+    if n_reps_total:
+        if bundle.get("summary_basis") == "all_completed":
+            st.warning(
+                t("report_tables.parameter_recovery_no_convergence_note", n_total=n_reps_total)
+            )
+        else:
+            st.caption(
+                t(
+                    "report_tables.parameter_recovery_convergence_note",
+                    n_converged=n_reps_converged,
+                    n_total=n_reps_total,
+                )
+            )
+
     summary: pd.DataFrame = bundle["recovery_summary"]
     if isinstance(summary, pd.DataFrame) and not summary.empty:
         display = summary.copy()
@@ -36040,6 +43352,216 @@ of a research paper that uses MFRM.
         bias_results=bias_results,
         all_bias_results=current_bias_results,
     )
+    decision_brief = generate_report_ready_decision_brief(
+        result,
+        diagnostics,
+        all_bias_results=current_bias_results,
+        bias_results=bias_results,
+    )
+    custom_simulation_frames = current_custom_simulation_sparse_export_frames()
+    simulation_sparse_context = custom_simulation_frames.get(
+        "custom_simulation_sparse_reporting_context",
+        pd.DataFrame(),
+    )
+    simulation_settings = custom_simulation_frames.get("custom_simulation_settings", pd.DataFrame())
+    apa_results_draft = generate_report_ready_apa_results_draft(
+        result,
+        diagnostics,
+        all_bias_results=current_bias_results,
+        bias_results=bias_results,
+        simulation_sparse_context=simulation_sparse_context,
+        simulation_settings=simulation_settings,
+    )
+    role_action_memos = build_role_based_action_memos(
+        result,
+        diagnostics,
+        all_bias_results=current_bias_results,
+        bias_results=bias_results,
+    )
+    role_action_memos_md = generate_role_based_action_memos_markdown(
+        result,
+        diagnostics,
+        all_bias_results=current_bias_results,
+        bias_results=bias_results,
+    )
+    role_action_checklist = build_role_based_action_checklist(
+        result,
+        diagnostics,
+        all_bias_results=current_bias_results,
+        bias_results=bias_results,
+    )
+    role_action_checklist_md = generate_role_based_action_checklist_markdown(
+        result,
+        diagnostics,
+        all_bias_results=current_bias_results,
+        bias_results=bias_results,
+    )
+    critical_final_review = build_critical_final_review_panel(
+        result,
+        diagnostics,
+        all_bias_results=current_bias_results,
+        bias_results=bias_results,
+        role_action_checklist=role_action_checklist,
+    )
+    critical_final_review_md = generate_critical_final_review_markdown(
+        result,
+        diagnostics,
+        all_bias_results=current_bias_results,
+        bias_results=bias_results,
+        role_action_checklist=role_action_checklist,
+        critical_final_review=critical_final_review,
+    )
+    reporting_action_bridge = build_reporting_action_bridge(
+        result,
+        diagnostics,
+        all_bias_results=current_bias_results,
+        bias_results=bias_results,
+        role_action_checklist=role_action_checklist,
+        critical_final_review=critical_final_review,
+        submission_action_plan=action_plan,
+    )
+    reporting_action_bridge_md = generate_reporting_action_bridge_markdown(
+        result,
+        diagnostics,
+        all_bias_results=current_bias_results,
+        bias_results=bias_results,
+        bridge=reporting_action_bridge,
+        role_action_checklist=role_action_checklist,
+        critical_final_review=critical_final_review,
+        submission_action_plan=action_plan,
+    )
+    with st.expander("Report-ready decision brief", expanded=False):
+        st.code(decision_brief, language="markdown")
+    st.download_button(
+        "Download report-ready decision brief (Markdown)",
+        data=decision_brief.encode("utf-8"),
+        file_name="report_ready_decision_brief.md",
+        mime="text/markdown",
+        key="dl_apa_report_ready_decision_brief_md",
+    )
+    with st.expander("APA Results paragraph draft", expanded=True):
+        st.code(apa_results_draft, language="markdown")
+    st.download_button(
+        "Download APA Results paragraph draft (Markdown)",
+        data=apa_results_draft.encode("utf-8"),
+        file_name="apa_results_paragraph_draft.md",
+        mime="text/markdown",
+        key="dl_apa_results_paragraph_draft_md",
+    )
+    if isinstance(role_action_memos, pd.DataFrame) and not role_action_memos.empty:
+        with st.expander("Role-based action memos", expanded=False):
+            _render_compact_dataframe(
+                role_action_memos,
+                ["Role", "Priority", "DecisionFocus", "ReportStatus", "ImmediateAction", "EvidenceToOpen"],
+                details_label="Show full role-based action memos",
+                hide_index=True,
+                wrap_text=True,
+            )
+            st.code(role_action_memos_md, language="markdown")
+        st.download_button(
+            "Download role-based action memos (Markdown)",
+            data=role_action_memos_md.encode("utf-8"),
+            file_name="role_based_action_memos.md",
+            mime="text/markdown",
+            key="dl_apa_role_based_action_memos_md",
+        )
+    if isinstance(role_action_checklist, pd.DataFrame) and not role_action_checklist.empty:
+        with st.expander("Role-based action checklist", expanded=False):
+            st.dataframe(role_action_checklist, width="stretch", hide_index=True)
+            st.code(role_action_checklist_md, language="markdown")
+        st.download_button(
+            "Download role-based action checklist (CSV)",
+            data=to_csv_bytes(role_action_checklist),
+            file_name="role_based_action_checklist.csv",
+            mime="text/csv",
+            key="dl_apa_role_based_action_checklist_csv",
+        )
+    if isinstance(critical_final_review, pd.DataFrame) and not critical_final_review.empty:
+        with st.expander("Critical final review", expanded=False):
+            _render_compact_dataframe(
+                critical_final_review,
+                ["Priority", "Lens", "Decision", "StopBeforeFinalOutput", "NeedsCaveat", "ActionBeforeContinuing"],
+                details_label="Show full critical final review",
+                hide_index=True,
+                wrap_text=True,
+            )
+            st.code(critical_final_review_md, language="markdown")
+        crit_col, crit_md_col = st.columns(2)
+        with crit_col:
+            st.download_button(
+                "Download critical final review (CSV)",
+                data=to_csv_bytes(critical_final_review),
+                file_name="critical_final_review_panel.csv",
+                mime="text/csv",
+                key="dl_apa_critical_final_review_panel_csv",
+            )
+        with crit_md_col:
+            st.download_button(
+                "Download critical final review (Markdown)",
+                data=critical_final_review_md.encode("utf-8"),
+                file_name="critical_final_review.md",
+                mime="text/markdown",
+                key="dl_apa_critical_final_review_md",
+            )
+    if isinstance(reporting_action_bridge, pd.DataFrame) and not reporting_action_bridge.empty:
+        with st.expander("Reporting action bridge", expanded=False):
+            _render_compact_dataframe(
+                reporting_action_bridge,
+                ["Priority", "BridgeTrack", "PrimaryAudience", "CurrentStatus", "OutputToProduce", "DraftOrDecisionMove"],
+                details_label="Show full reporting action bridge",
+                hide_index=True,
+                wrap_text=True,
+            )
+            st.code(reporting_action_bridge_md, language="markdown")
+        bridge_col, bridge_md_col = st.columns(2)
+        with bridge_col:
+            st.download_button(
+                "Download reporting action bridge (CSV)",
+                data=to_csv_bytes(reporting_action_bridge),
+                file_name="reporting_action_bridge.csv",
+                mime="text/csv",
+                key="dl_apa_reporting_action_bridge_csv",
+            )
+        with bridge_md_col:
+            st.download_button(
+                "Download reporting action bridge (Markdown)",
+                data=reporting_action_bridge_md.encode("utf-8"),
+                file_name="reporting_action_bridge.md",
+                mime="text/markdown",
+                key="dl_apa_reporting_action_bridge_md",
+            )
+    if isinstance(simulation_sparse_context, pd.DataFrame) and not simulation_sparse_context.empty:
+        with st.expander("Simulation sparse-design context", expanded=False):
+            _render_compact_dataframe(
+                simulation_sparse_context,
+                ["Priority", "SimulationCheck", "ReportStatus", "ActionBeforeReporting", "CaveatToCarry"],
+                details_label="Show full simulation sparse-design context",
+                hide_index=True,
+                wrap_text=True,
+            )
+        st.download_button(
+            "Download simulation sparse-design context (CSV)",
+            data=to_csv_bytes(simulation_sparse_context),
+            file_name="custom_simulation_sparse_reporting_context.csv",
+            mime="text/csv",
+            key="dl_apa_custom_simulation_sparse_reporting_context_csv",
+        )
+    if isinstance(simulation_settings, pd.DataFrame) and not simulation_settings.empty:
+        with st.expander("Simulation settings", expanded=False):
+            _render_compact_dataframe(
+                simulation_settings,
+                ["Priority", "Section", "Setting", "Value", "ReportNote"],
+                details_label="Show full simulation settings",
+                hide_index=True,
+                wrap_text=True,
+            )
+        st.download_button(
+            "Download simulation settings (CSV)",
+            data=to_csv_bytes(simulation_settings),
+            file_name="custom_simulation_settings.csv",
+            mime="text/csv",
+            key="dl_apa_custom_simulation_settings_csv",
+        )
     overall_gate = pd.Series(dtype=object)
     if isinstance(gate_summary, pd.DataFrame) and not gate_summary.empty:
         overall_hit = gate_summary.loc[
@@ -39966,6 +47488,7 @@ def _figure_export_manifest(figure_html: dict[str, str], figure_bytes: dict[str,
             "Theme": str(prefs.get("theme", VISUAL_THEME_DEFAULT)),
             "BaseFontSize": int(prefs.get("base_font_size", VISUAL_BASE_FONT_SIZE_DEFAULT)),
             "LabelPolicy": str(prefs.get("label_policy", VISUAL_LABEL_POLICY_DEFAULT)),
+            "PlotLabelMode": str(prefs.get("plot_label_mode", PLOT_LABEL_MODE_DEFAULT)),
             "LabelMaxChars": int(prefs.get("label_max_chars", VISUAL_LABEL_MAX_CHARS_DEFAULT)),
             "CaptionDetail": str(prefs.get("caption_detail", VISUAL_CAPTION_DETAIL_DEFAULT)),
             "ManuscriptUse": _figure_use_note(name),
@@ -40100,6 +47623,7 @@ def build_visual_evidence_map(
             "Theme": _handoff_text(row.get("Theme"), str(get_visualization_preferences().get("theme", VISUAL_THEME_DEFAULT))),
             "BaseFontSize": _handoff_text(row.get("BaseFontSize"), str(get_visualization_preferences().get("base_font_size", VISUAL_BASE_FONT_SIZE_DEFAULT))),
             "LabelPolicy": _handoff_text(row.get("LabelPolicy"), str(get_visualization_preferences().get("label_policy", VISUAL_LABEL_POLICY_DEFAULT))),
+            "PlotLabelMode": _handoff_text(row.get("PlotLabelMode"), str(get_visualization_preferences().get("plot_label_mode", PLOT_LABEL_MODE_DEFAULT))),
             "CaptionDetail": _handoff_text(row.get("CaptionDetail"), str(get_visualization_preferences().get("caption_detail", VISUAL_CAPTION_DETAIL_DEFAULT))),
             "ManuscriptUse": _handoff_text(row.get("ManuscriptUse"), _figure_use_note(figure_name)),
             "CaptionDraft": profile["CaptionDraft"],
@@ -40202,13 +47726,14 @@ def build_visual_qa_preflight(
         "Use at least 11px for manuscript figures; consider 14-16px for slides.",
     )
     label_policy = str(prefs.get("label_policy", VISUAL_LABEL_POLICY_DEFAULT))
+    plot_label_mode = str(prefs.get("plot_label_mode", PLOT_LABEL_MODE_DEFAULT))
     label_max = int(prefs.get("label_max_chars", VISUAL_LABEL_MAX_CHARS_DEFAULT))
     label_status = "Review" if label_policy == "Show all" and label_max > 50 else "Ready"
     add(
         "Label policy",
         label_status,
-        f"Label policy = {label_policy}; max label chars = {label_max}.",
-        "If labels overlap, switch to Auto, Important labels, or Hover only, then keep HTML for full labels.",
+        f"Label policy = {label_policy}; plot label mode = {plot_label_mode}; max label chars = {label_max}.",
+        "If labels overlap, switch plot label mode to Number or use Auto, Important labels, or Hover only, then keep HTML for full labels.",
     )
     theme = str(prefs.get("theme", VISUAL_THEME_DEFAULT))
     add(
@@ -40260,7 +47785,7 @@ def generate_visual_caption_drafts(visual_evidence_map: pd.DataFrame) -> str:
                 f"- Linked claim area: {_handoff_text(row.get('LinkedManuscriptArea'), 'not recorded')}.",
                 f"- Manuscript section: {_handoff_text(row.get('ManuscriptSection'), 'not recorded')}.",
                 f"- Evidence tables: {_handoff_text(row.get('EvidenceTables'), 'not recorded')}.",
-                f"- Theme / label policy: {_handoff_text(row.get('Theme'), 'not recorded')} / {_handoff_text(row.get('LabelPolicy'), 'not recorded')}.",
+                f"- Theme / label policy / plot label mode: {_handoff_text(row.get('Theme'), 'not recorded')} / {_handoff_text(row.get('LabelPolicy'), 'not recorded')} / {_handoff_text(row.get('PlotLabelMode'), 'not recorded')}.",
                 f"- Claim status: {_handoff_text(row.get('ClaimStatus'), 'Review')}; gate status: {_handoff_text(row.get('GateStatus'), 'Review')}.",
                 f"- Safe wording: {_handoff_text(row.get('SafeReportWording'), 'Use as supporting visual evidence only.')}",
                 f"- Do not write: {_handoff_text(row.get('DoNotWrite'), 'Do not make unsupported claims from the figure alone.')}",
@@ -41616,6 +49141,304 @@ def rating_scale_recode_candidate_table(result: dict, diagnostics: dict) -> pd.D
             ),
         })
     return pd.DataFrame(rows)
+
+
+def category_collapse_action_center_table(result: dict, diagnostics: dict) -> pd.DataFrame:
+    """First-read action plan for category-collapse sensitivity decisions."""
+    candidates = rating_scale_recode_candidate_table(result, diagnostics)
+    decision_support = rating_scale_decision_support_table(result, diagnostics)
+    dashboard = rating_scale_functioning_dashboard(result, diagnostics)
+    category_evidence = rating_scale_category_evidence_table(result, diagnostics)
+
+    def _decision_value(area: str, col: str, default: str = "not available") -> str:
+        if not isinstance(decision_support, pd.DataFrame) or decision_support.empty:
+            return default
+        if "DecisionArea" not in decision_support.columns:
+            return default
+        hit = decision_support.loc[decision_support["DecisionArea"].astype(str) == area]
+        if hit.empty or col not in hit.columns:
+            return default
+        return str(hit.iloc[0].get(col, default))
+
+    review_checks = "none"
+    missing_checks = "none"
+    if isinstance(dashboard, pd.DataFrame) and not dashboard.empty and {"Status", "Check"}.issubset(dashboard.columns):
+        review_checks = _compact_value_list(
+            dashboard.loc[dashboard["Status"].astype(str) == "Review", "Check"].tolist()
+        )
+        missing_checks = _compact_value_list(
+            dashboard.loc[dashboard["Status"].astype(str) == "Missing", "Check"].tolist()
+        )
+
+    candidate_rows = pd.DataFrame()
+    no_candidate = False
+    if isinstance(candidates, pd.DataFrame) and not candidates.empty:
+        candidate_rows = candidates.loc[
+            candidates.get("AnalysisRole", pd.Series(dtype=object)).astype(str) == "Sensitivity comparison candidate"
+        ].copy()
+        no_candidate = bool(
+            candidates.get("CandidateID", pd.Series(dtype=object)).astype(str).eq("NO_CANDIDATE").any()
+        )
+
+    affected_categories = _decision_value("Potential recoding scope", "AffectedCategories", "not available")
+    overall_status = _decision_value("Overall reportability", "DecisionStatus", "Missing evidence")
+    candidate_count = int(len(candidate_rows)) if isinstance(candidate_rows, pd.DataFrame) else 0
+    high_count = 0
+    if candidate_count and "Priority" in candidate_rows.columns:
+        high_count = int(candidate_rows["Priority"].astype(str).eq("High").sum())
+    can_report_original = candidate_count == 0 and overall_status == "Ready"
+
+    if candidate_count:
+        first_read_status = "Run sensitivity before strong claims"
+        first_read_decision = "Candidate recoding requires follow-up"
+        first_action = "Review the candidate rows, confirm rubric logic, then refit only defensible adjacent-category maps."
+        safe_wording = (
+            "Rating-scale diagnostics identified adjacent-category recoding candidates; any collapse was treated as "
+            "a sensitivity analysis rather than an automatic correction."
+        )
+    elif no_candidate and can_report_original:
+        first_read_status = "Keep original scale"
+        first_read_decision = "No collapse sensitivity indicated"
+        first_action = "Retain the original scoring and report the dashboard evidence with ordinary category-functioning caveats."
+        safe_wording = (
+            "The original category structure was retained because the integrated diagnostics did not identify an "
+            "adjacent-category collapse candidate."
+        )
+    else:
+        first_read_status = "Review evidence before reporting"
+        first_read_decision = "Collapse decision not ready"
+        first_action = "Open the dashboard and category evidence tables before deciding whether any recoding comparison is needed."
+        safe_wording = "Rating-scale functioning was reviewed, but category-collapse readiness was not established from the available evidence."
+
+    rows: list[dict[str, object]] = []
+
+    def add_row(
+        *,
+        step: int,
+        area: str,
+        candidate_id: str,
+        status: str,
+        priority: str,
+        question: str,
+        evidence: str,
+        summary: str,
+        action: str,
+        criterion: str,
+        wording: str,
+        do_not_claim: str,
+        crosswalk: str,
+    ) -> None:
+        rows.append({
+            "Done": False,
+            "ActionStep": step,
+            "ActionArea": area,
+            "CandidateID": candidate_id,
+            "Status": status,
+            "Priority": priority,
+            "PrimaryQuestion": question,
+            "EvidenceToOpen": evidence,
+            "EvidenceSummary": summary,
+            "RecommendedAction": action,
+            "CompletionCriterion": criterion,
+            "ReportReadyWording": wording,
+            "DoNotClaim": do_not_claim,
+            "SuggestedCitations": "(Linacre, 2002b; Wind, 2023)",
+            "FACETSCrosswalk": crosswalk,
+        })
+
+    add_row(
+        step=1,
+        area="First-read category-collapse gate",
+        candidate_id="ALL",
+        status=first_read_status,
+        priority="High" if candidate_count or overall_status == "Do not claim yet" else "Normal",
+        question="Can the original rating categories be reported as functioning distinctly?",
+        evidence="rating_scale_functioning_dashboard.csv; rating_scale_decision_support.csv; rating_scale_category_evidence.csv",
+        summary=(
+            f"overall status: {overall_status}; review checks: {review_checks}; "
+            f"missing checks: {missing_checks}; candidate count: {candidate_count}; high-priority candidates: {high_count}"
+        ),
+        action=first_action,
+        criterion=(
+            "A report-ready category claim is allowed only when review rows are resolved or explicitly caveated, "
+            "and any recoding candidate has a documented baseline comparison."
+        ),
+        wording=safe_wording,
+        do_not_claim="Do not state that category collapse is warranted before the recoded model has been refit and compared with the original scoring.",
+        crosswalk="FACETS Categories/Steps; Table 6 threshold map; category probability curves",
+    )
+
+    add_row(
+        step=2,
+        area="Original scoring baseline",
+        candidate_id="BASE",
+        status="Required baseline",
+        priority="High",
+        question="What is the primary scoring rule before sensitivity comparisons?",
+        evidence="rating_scale_recode_candidates.csv; rating_scale_recode_map_long.csv",
+        summary="The original score scale is the reference run for every candidate comparison.",
+        action="Archive the original run tables before creating any recoded score column.",
+        criterion="Original scoring output is retained and can be compared against every candidate refit.",
+        wording="The original scoring rule was retained as the baseline for category-collapse sensitivity checks.",
+        do_not_claim="Do not overwrite the original score column or treat a recoded scale as primary without an archived baseline.",
+        crosswalk="FACETS original scorefile and Categories/Steps output",
+    )
+
+    if candidate_count:
+        for idx, (_, cand) in enumerate(candidate_rows.iterrows(), start=3):
+            candidate_id = str(cand.get("CandidateID", f"C{idx - 2:02d}"))
+            priority = str(cand.get("Priority", "Medium"))
+            collapsed = str(cand.get("CollapsedOriginalCategories", "adjacent categories"))
+            add_row(
+                step=idx,
+                area=f"Candidate {candidate_id}: collapse {collapsed}",
+                candidate_id=candidate_id,
+                status="Sensitivity run needed",
+                priority=priority,
+                question="Do these adjacent rubric levels represent empirically and substantively separable performance?",
+                evidence="rating_scale_recode_candidates.csv; rating_scale_recode_map_long.csv; category_diagnostics.csv; steps.csv",
+                summary=str(cand.get("TriggerEvidence", "adjacent category review")),
+                action=(
+                    "Create the candidate score column, refit the same model/design, and compare convergence, "
+                    "fit, reliability, threshold order, category curves, and key facet-measure shifts."
+                ),
+                criterion=(
+                    "Candidate is reported only if rubric documentation supports the collapse and the refit improves "
+                    "or clarifies diagnostics without distorting substantively important measures."
+                ),
+                wording=(
+                    f"If evaluated, adjacent categories {collapsed} were collapsed only for a sensitivity comparison; "
+                    "the original scoring remained the reference analysis."
+                ),
+                do_not_claim="Do not present this candidate as a correction from trigger evidence alone.",
+                crosswalk="FACETS recoded scorefile rerun; Categories/Steps comparison",
+            )
+    else:
+        add_row(
+            step=3,
+            area="Candidate sensitivity queue",
+            candidate_id="NO_CANDIDATE",
+            status="No candidate queued" if no_candidate else "Missing candidate evidence",
+            priority="Normal" if no_candidate else "Review",
+            question="Is an adjacent-category recode queued for refitting?",
+            evidence="rating_scale_recode_candidates.csv",
+            summary=(
+                "No adjacent-category recoding candidate was suggested by the integrated diagnostics."
+                if no_candidate else
+                "Candidate evidence was unavailable or could not be generated."
+            ),
+            action=(
+                "Keep the original scoring unless the rubric or response process motivates a planned sensitivity run."
+                if no_candidate else
+                "Review score support, category diagnostics, and step thresholds before planning recodes."
+            ),
+            criterion="No recoding comparison is needed unless a substantive rubric review raises a planned candidate.",
+            wording=(
+                "No adjacent-category collapse sensitivity run was indicated by the current integrated diagnostics."
+                if no_candidate else
+                "Category-collapse sensitivity evidence was not available from this run."
+            ),
+            do_not_claim="Do not simplify categories only to reduce the number of score levels.",
+            crosswalk="FACETS Categories/Steps",
+        )
+
+    unresolved = "none"
+    if isinstance(category_evidence, pd.DataFrame) and not category_evidence.empty:
+        unresolved = _compact_value_list(
+            category_evidence.loc[
+                category_evidence["CategoryEvidenceStatus"].astype(str) == "Review",
+                "Category",
+            ].tolist()
+        )
+    add_row(
+        step=100,
+        area="Manuscript wording boundary",
+        candidate_id="ALL",
+        status="Caveat required" if candidate_count or unresolved != "none" else "Ready",
+        priority="High" if candidate_count else "Normal",
+        question="What can be written in APA-style reporting?",
+        evidence="category_collapse_action_center.csv; apa_category_collapse_sensitivity_draft.md; help_reference_coverage.csv",
+        summary=f"affected categories: {affected_categories}; unresolved category rows: {unresolved}",
+        action="Use conservative wording and cite the category-functioning references only for the method, not as proof of this dataset.",
+        criterion="Every category-collapse statement names the evidence files and avoids treating recoding as automatic.",
+        wording=(
+            "Category-collapse decisions were treated as sensitivity checks and interpreted with category counts, "
+            "average measures, thresholds, curves, fit, and rubric meaning."
+        ),
+        do_not_claim="Do not claim the original or collapsed scale is valid from category diagnostics alone.",
+        crosswalk="FACETS report narrative plus Categories/Steps appendix",
+    )
+
+    return pd.DataFrame(rows)
+
+
+def generate_category_collapse_sensitivity_draft(
+    result: dict,
+    diagnostics: dict,
+    action_center: pd.DataFrame | None = None,
+) -> str:
+    """Generate conservative manuscript-ready text for category-collapse review."""
+    if action_center is None or not isinstance(action_center, pd.DataFrame) or action_center.empty:
+        action_center = category_collapse_action_center_table(result, diagnostics)
+    candidates = rating_scale_recode_candidate_table(result, diagnostics)
+    candidate_rows = pd.DataFrame()
+    if isinstance(candidates, pd.DataFrame) and not candidates.empty:
+        candidate_rows = candidates.loc[
+            candidates.get("AnalysisRole", pd.Series(dtype=object)).astype(str) == "Sensitivity comparison candidate"
+        ].copy()
+    candidate_count = int(len(candidate_rows)) if isinstance(candidate_rows, pd.DataFrame) else 0
+    if candidate_count:
+        candidate_text = "; ".join(
+            f"{row.get('CandidateID')}: {row.get('CollapsedOriginalCategories')} ({row.get('Priority')})"
+            for _, row in candidate_rows.iterrows()
+        )
+        status_text = (
+            f"The app identified {candidate_count} adjacent-category recoding candidate(s): {candidate_text}. "
+            "These candidates should be refit as sensitivity analyses only after rubric and response-process review."
+        )
+    else:
+        status_text = (
+            "The integrated diagnostics did not queue an adjacent-category recoding candidate, or candidate evidence "
+            "was unavailable. The original scoring rule should remain the default unless substantive rubric review "
+            "motivates a planned sensitivity analysis."
+        )
+
+    first_row = action_center.iloc[0] if isinstance(action_center, pd.DataFrame) and not action_center.empty else pd.Series(dtype=object)
+    boundary_row = (
+        action_center.loc[action_center["ActionArea"].astype(str) == "Manuscript wording boundary"].iloc[0]
+        if isinstance(action_center, pd.DataFrame)
+        and not action_center.empty
+        and "ActionArea" in action_center.columns
+        and action_center["ActionArea"].astype(str).eq("Manuscript wording boundary").any()
+        else pd.Series(dtype=object)
+    )
+    return "\n\n".join([
+        "# APA Category-Collapse Sensitivity Draft",
+        (
+            "This draft is conservative. Replace bracketed study details, verify values against exported tables, "
+            "and do not describe a recoded scale as final unless the recoded model was actually fitted and compared."
+        ),
+        (
+            f"First-read decision: {first_row.get('Status', 'not available')}. "
+            f"Recommended next action: {first_row.get('RecommendedAction', 'not available')}"
+        ),
+        status_text,
+        (
+            "Rating-category functioning was interpreted as converging evidence across observed category counts, "
+            "average measures, threshold order, category characteristic curves, category-level fit, and rubric meaning "
+            "(Linacre, 2002b; Wind, 2023). These diagnostics were used to decide whether category-collapse sensitivity "
+            "analyses were needed; they were not treated as automatic recoding rules."
+        ),
+        (
+            f"Report-ready wording boundary: {boundary_row.get('ReportReadyWording', 'Use caveated wording tied to exported evidence files.')} "
+            f"Do not overclaim: {boundary_row.get('DoNotClaim', 'Do not claim category collapse from one diagnostic alone.')}"
+        ),
+        (
+            "For readers familiar with FACETS, use this paragraph alongside the Categories/Steps output, the step-order table, "
+            "and any recoded-score refit tables. Archive `category_collapse_action_center.csv`, "
+            "`rating_scale_recode_candidates.csv`, `rating_scale_recode_map_long.csv`, and the original run tables."
+        ),
+    ])
 
 
 def rating_scale_recode_map_long_table(result: dict, diagnostics: dict) -> pd.DataFrame:
@@ -43802,72 +51625,6 @@ def guided_situation_walkthrough_help_table() -> pd.DataFrame:
     return pd.DataFrame(rows, columns=columns)
 
 
-def app_refinement_scorecard_table() -> pd.DataFrame:
-    """Score the current app from product, UI, statistical, and technical angles."""
-    columns = [
-        t("help.refinement_score_col_perspective"),
-        t("help.refinement_score_col_score"),
-        t("help.refinement_score_col_sufficient"),
-        t("help.refinement_score_col_insufficient"),
-        t("help.refinement_score_col_fix"),
-        t("help.refinement_score_col_priority"),
-    ]
-    rows = []
-    scores = {
-        "global_strategy": 88,
-        "guided_ui": 85,
-        "local_controls": 79,
-        "statistical_rigor": 88,
-        "claim_safety": 92,
-        "performance": 82,
-        "documentation": 91,
-        "exports": 88,
-        "governance": 87,
-        "maintainability": 76,
-        "overall": 86,
-    }
-    for area_id, score in scores.items():
-        rows.append({
-            columns[0]: t(f"help.refinement_score_{area_id}_perspective"),
-            columns[1]: score,
-            columns[2]: t(f"help.refinement_score_{area_id}_sufficient"),
-            columns[3]: t(f"help.refinement_score_{area_id}_insufficient"),
-            columns[4]: t(f"help.refinement_score_{area_id}_fix"),
-            columns[5]: t(f"help.refinement_score_{area_id}_priority"),
-        })
-    return pd.DataFrame(rows, columns=columns)
-
-
-def app_refinement_roadmap_table() -> pd.DataFrame:
-    """Return a prioritized roadmap for moving the app closer to a polished release."""
-    columns = [
-        t("help.refinement_roadmap_col_horizon"),
-        t("help.refinement_roadmap_col_target"),
-        t("help.refinement_roadmap_col_work"),
-        t("help.refinement_roadmap_col_acceptance"),
-        t("help.refinement_roadmap_col_verification"),
-    ]
-    rows = []
-    for phase_id in (
-        "p0_scorecard",
-        "p1_navigation",
-        "p1_local_polish",
-        "p2_result_finder",
-        "p2_validation_library",
-        "p2_accessibility",
-        "p3_modularization",
-        "p3_observability",
-    ):
-        rows.append({
-            columns[0]: t(f"help.refinement_roadmap_{phase_id}_horizon"),
-            columns[1]: t(f"help.refinement_roadmap_{phase_id}_target"),
-            columns[2]: t(f"help.refinement_roadmap_{phase_id}_work"),
-            columns[3]: t(f"help.refinement_roadmap_{phase_id}_acceptance"),
-            columns[4]: t(f"help.refinement_roadmap_{phase_id}_verification"),
-        })
-    return pd.DataFrame(rows, columns=columns)
-
-
 def guided_simulation_help_table() -> pd.DataFrame:
     """Document the simulation cases used to check guided workflow behavior."""
     columns = [
@@ -43946,6 +51703,31 @@ def rating_scale_evidence_help_table() -> pd.DataFrame:
         },
     ]
     return pd.DataFrame(rows)
+
+
+def mml_population_sd_help_table() -> pd.DataFrame:
+    """Explain the MML person population SD choice: fixed prior vs freely estimated."""
+    columns = [
+        t("help.mml_popsd_col_setting"),
+        t("help.mml_popsd_col_what"),
+        t("help.mml_popsd_col_when"),
+        t("help.mml_popsd_col_how"),
+    ]
+    rows = [
+        {
+            columns[0]: t("help.mml_popsd_fixed_setting"),
+            columns[1]: t("help.mml_popsd_fixed_what"),
+            columns[2]: t("help.mml_popsd_fixed_when"),
+            columns[3]: t("help.mml_popsd_fixed_how"),
+        },
+        {
+            columns[0]: t("help.mml_popsd_free_setting"),
+            columns[1]: t("help.mml_popsd_free_what"),
+            columns[2]: t("help.mml_popsd_free_when"),
+            columns[3]: t("help.mml_popsd_free_how"),
+        },
+    ]
+    return pd.DataFrame(rows, columns=columns)
 
 
 def show_help_section(*, force_full: bool = False) -> None:
@@ -44046,12 +51828,6 @@ def show_help_section(*, force_full: bool = False) -> None:
             st.dataframe(guided_reader_profile_help_table(), width="stretch", hide_index=True)
             st.markdown(t("help.guided_situation_heading"))
             st.dataframe(guided_situation_walkthrough_help_table(), width="stretch", hide_index=True)
-        with st.expander(t("help.refinement_expander"), expanded=False):
-            st.caption(t("help.refinement_caption"))
-            st.markdown(t("help.refinement_score_heading"))
-            st.dataframe(app_refinement_scorecard_table(), width="stretch", hide_index=True)
-            st.markdown(t("help.refinement_roadmap_heading"))
-            st.dataframe(app_refinement_roadmap_table(), width="stretch", hide_index=True)
         st.markdown(t("help.guided_focus_help_heading"))
         st.caption(t("help.guided_focus_help_caption"))
         st.dataframe(guided_focus_class_help_table(), width="stretch", hide_index=True)
@@ -44099,6 +51875,17 @@ def show_help_section(*, force_full: bool = False) -> None:
         with st.expander(t("help.claim_trace_expander"), expanded=False):
             st.caption(t("help.claim_trace_caption"))
             st.dataframe(guided_report_claim_trace_help_table(), width="stretch", hide_index=True)
+        with st.expander(t("help.reference_coverage_expander"), expanded=False):
+            help_refs = build_help_reference_coverage()
+            st.caption(t("help.reference_coverage_caption"))
+            st.dataframe(help_refs, width="stretch", hide_index=True)
+            st.download_button(
+                t("help.reference_coverage_download"),
+                data=to_csv_bytes(help_refs),
+                file_name="mfrm_help_reference_coverage.csv",
+                mime="text/csv",
+                key="dl_help_reference_coverage_help",
+            )
         with st.expander(t("help.export_preflight_expander"), expanded=False):
             st.caption(t("help.export_preflight_caption"))
             st.dataframe(guided_export_share_preflight_help_table(), width="stretch", hide_index=True)
@@ -44111,6 +51898,9 @@ def show_help_section(*, force_full: bool = False) -> None:
     # ------------------------------------------------------------------
     with help_tab["Interpretation Guide"]:
         st.markdown(t("help.interpretation_guide_body"))
+        st.markdown(t("help.mml_popsd_heading"))
+        st.caption(t("help.mml_popsd_caption"))
+        st.dataframe(mml_population_sd_help_table(), width="stretch", hide_index=True)
         st.markdown("### Visual claim guardrails")
         st.caption(
             "This table keeps figure interpretation detailed but bounded: it separates what the visual shows from what the manuscript may safely claim."
@@ -44246,6 +52036,9 @@ def show_help_section(*, force_full: bool = False) -> None:
     with help_tab["Reporting Guide"]:
         st.info(t("help.reporting_info_banner"))
         st.markdown(t("help.reporting_body"))
+        with st.expander(t("help.reference_coverage_expander"), expanded=False):
+            st.caption(t("help.reference_coverage_caption"))
+            st.dataframe(build_help_reference_coverage(), width="stretch", hide_index=True)
         st.markdown(t("help.reporting_references"))
 
     # ------------------------------------------------------------------
@@ -44294,16 +52087,6 @@ def show_help_section(*, force_full: bool = False) -> None:
                 file_name="mfrm_mfrmr_020_migration_coverage.csv",
                 mime="text/csv",
                 key="dl_mfrmr_020_migration_coverage_help",
-            )
-            st.markdown(t("help.public_beta_release_readiness_header"))
-            st.caption(t("help.public_beta_release_readiness_caption"))
-            st.dataframe(public_release_readiness_table(), width="stretch", hide_index=True)
-            st.download_button(
-                t("help.public_beta_download_release_readiness"),
-                data=to_csv_bytes(public_release_readiness_table()),
-                file_name="mfrm_public_release_readiness.csv",
-                mime="text/csv",
-                key="dl_public_release_readiness_help",
             )
 
 
@@ -44471,6 +52254,142 @@ def _draw_bias_heatmap(tbl: pd.DataFrame, facet_a: str, facet_b: str) -> None:
         st.caption(t("bias_interaction.heatmap_significance_caption"))
     else:
         st.caption(t("bias_interaction.heatmap_dense_caption"))
+
+
+def classical_dif_help_table() -> pd.DataFrame:
+    """How to read the classical DIF screening table."""
+    columns = [
+        t("help.classical_dif_col_signal"),
+        t("help.classical_dif_col_answers"),
+        t("help.classical_dif_col_trigger"),
+        t("help.classical_dif_col_action"),
+    ]
+    rows = []
+    for rid in ("mh", "logistic", "sibtest", "effect", "purify"):
+        rows.append({
+            columns[0]: t(f"help.classical_dif_{rid}_signal"),
+            columns[1]: t(f"help.classical_dif_{rid}_answers"),
+            columns[2]: t(f"help.classical_dif_{rid}_trigger"),
+            columns[3]: t(f"help.classical_dif_{rid}_action"),
+        })
+    return pd.DataFrame(rows, columns=columns)
+
+
+def show_classical_dif_section(result: dict | None, core: dict) -> None:
+    """Classical polytomous DIF (Differential Item Functioning) screening.
+
+    Observed-score DIF for an external person group (e.g. L1, gender) — distinct
+    from the model-based facet bias/interaction screen. Screening evidence only.
+    """
+    st.subheader(t("dif_screening.heading"))
+    st.caption(t("dif_screening.intro_caption"))
+    st.caption(t("dif_screening.boundary_caption"))
+
+    prep = result.get("prep") if isinstance(result, dict) else None
+    if not isinstance(prep, dict) or not isinstance(prep.get("data"), pd.DataFrame) or prep["data"].empty:
+        st.info(t("dif_screening.no_data_info"))
+        return
+    config = result.get("config", {}) if isinstance(result, dict) else {}
+    facet_names = [str(f) for f in (config.get("facet_names") or prep.get("facet_names") or [])]
+    if not facet_names:
+        st.info(t("dif_screening.no_facets_info"))
+        return
+
+    fit_pd = pd.DataFrame()
+    pop = result.get("population", {}) if isinstance(result, dict) else {}
+    if isinstance(pop, dict):
+        fit_pd = pop.get("person_data", pd.DataFrame())
+
+    with st.expander(t("dif_screening.group_expander"), expanded=True):
+        st.caption(t("dif_screening.group_caption"))
+        uploaded = st.file_uploader(
+            t("dif_screening.group_upload_label"), type=["csv", "xlsx"], key="dif_group_upload")
+        person_data = pd.DataFrame()
+        if uploaded is not None:
+            try:
+                person_data = (pd.read_excel(uploaded) if str(uploaded.name).endswith("xlsx")
+                               else pd.read_csv(uploaded))
+            except Exception as exc:
+                st.error(t("dif_screening.group_upload_error_template", error=str(exc)))
+        elif isinstance(fit_pd, pd.DataFrame) and fit_pd.shape[1] > 1:
+            person_data = fit_pd.copy()
+            st.caption(t("dif_screening.group_reuse_caption"))
+        person_data.columns = [str(c) for c in person_data.columns]
+        if person_data.empty or "Person" not in person_data.columns:
+            st.info(t("dif_screening.group_need_info"))
+            return
+        candidate_cols = [c for c in person_data.columns if c != "Person"]
+        if not candidate_cols:
+            st.info(t("dif_screening.group_need_info"))
+            return
+        group_col = st.selectbox(t("dif_screening.group_col_label"), candidate_cols, key="dif_group_col")
+        item_facet = st.selectbox(
+            t("dif_screening.item_facet_label"), facet_names, index=len(facet_names) - 1,
+            key="dif_item_facet", help=t("dif_screening.item_facet_help"))
+
+    with st.expander(t("dif_screening.settings_expander"), expanded=False):
+        c1, c2, c3 = st.columns(3)
+        matching = c1.selectbox(t("dif_screening.matching_label"), ["rest", "total"], index=0, key="dif_matching")
+        alpha = float(c2.number_input(t("dif_screening.alpha_label"), 0.001, 0.5, 0.05, 0.005, format="%.3f", key="dif_alpha"))
+        min_group_n = int(c3.number_input(t("dif_screening.min_n_label"), 5, 500, 30, 5, key="dif_min_n"))
+        c4, c5 = st.columns(2)
+        practical_smd = float(c4.number_input(t("dif_screening.practical_label"), 0.0, 2.0, 0.17, 0.01, format="%.2f", key="dif_practical"))
+        purify = bool(c5.checkbox(t("dif_screening.purify_label"), value=True, key="dif_purify", help=t("dif_screening.purify_help")))
+
+    if not st.button(t("dif_screening.run_button"), key="dif_run", type="primary"):
+        st.caption(t("dif_screening.run_hint"))
+        return
+
+    group_labels = pd.Series(person_data.set_index("Person")[group_col].astype(str).to_dict())
+    with st.spinner(t("dif_screening.running_spinner")):
+        res = analyze_classical_dif(prep, item_facet, group_labels, matching=matching,
+                                    alpha=alpha, min_group_n=min_group_n,
+                                    practical_smd=practical_smd, purify=purify)
+    if "_skip_reason" in res:
+        st.warning(res["_skip_reason"])
+        return
+
+    for cav in res.get("caveats", []):
+        st.caption("⚠ " + str(cav))
+
+    summary = res.get("summary")
+    if isinstance(summary, pd.DataFrame) and not summary.empty:
+        sv = dict(zip(summary["Metric"], summary["Value"]))
+        m = st.columns(4)
+        m[0].metric(t("dif_screening.metric_screened"), int(sv.get("Items x contrasts screened", 0)))
+        m[1].metric(t("dif_screening.metric_flagged"), int(sv.get("Flagged", 0)))
+        m[2].metric(t("dif_screening.metric_strong"), int(sv.get("Strong review", 0)))
+        max_smd = sv.get("Max |SMD_std|", float("nan"))
+        m[3].metric(t("dif_screening.metric_max_smd"), f"{float(max_smd):.2f}" if np.isfinite(max_smd) else "n/a")
+
+    render_help_popover("classical_dif")
+    table = res.get("table", pd.DataFrame())
+    flagged = table[table["Flag"].astype(bool)] if "Flag" in table.columns else pd.DataFrame()
+    with st.expander(t("dif_screening.flagged_expander"), expanded=not flagged.empty):
+        if flagged.empty:
+            st.success(t("dif_screening.no_flags_success"))
+        else:
+            st.dataframe(flagged, width="stretch", hide_index=True)
+    st.dataframe(table, width="stretch", hide_index=True)
+    st.download_button(t("dif_screening.download_button"), data=to_csv_bytes(table),
+                       file_name="mfrm_classical_dif_screening.csv", mime="text/csv", key="dl_dif_screen")
+    audit = res.get("audit")
+    if isinstance(audit, pd.DataFrame) and not audit.empty:
+        with st.expander(t("dif_screening.audit_expander"), expanded=False):
+            st.dataframe(audit, width="stretch", hide_index=True)
+            st.download_button(t("dif_screening.audit_download"), data=to_csv_bytes(audit),
+                               file_name="mfrm_classical_dif_audit.csv", mime="text/csv", key="dl_dif_audit")
+    with st.expander(t("dif_screening.interpret_expander"), expanded=False):
+        st.dataframe(classical_dif_help_table(), width="stretch", hide_index=True)
+    with st.expander(t("dif_screening.crosscheck_expander"), expanded=False):
+        st.caption(t("dif_screening.crosscheck_caption"))
+        bundle = build_dif_validation_bundle(res)
+        xc_key = f"dif_xc_{len(table)}_{res.get('settings', {}).get('reference_group', '')}_{'-'.join(res.get('settings', {}).get('purified_items', []) or [])}"
+        st.download_button(
+            t("dif_screening.crosscheck_download"),
+            data=cached_mixed_asset_zip(bundle, xc_key),
+            file_name="mfrm_difR_crosscheck_bundle.zip",
+            mime="application/zip", key="dl_dif_crosscheck")
 
 
 def show_bias_section(
@@ -44828,6 +52747,53 @@ def show_categories_section(result: dict, diagnostics: dict, core: dict) -> None
                 file_name="mfrm_rating_scale_decision_support.csv",
                 mime="text/csv",
                 key="dl_rating_scale_decision_support",
+            )
+
+        action_center = category_collapse_action_center_table(result, diagnostics)
+        if isinstance(action_center, pd.DataFrame) and not action_center.empty:
+            st.markdown("##### Category-collapse action center")
+            st.caption(
+                "Step-by-step review checklist for category-collapse sensitivity work. "
+                "Only the Done checkbox is editable; evidence and reporting boundaries stay fixed."
+            )
+            disabled_cols = [col for col in action_center.columns if col != "Done"]
+            try:
+                st.data_editor(
+                    action_center,
+                    width="stretch",
+                    hide_index=True,
+                    disabled=disabled_cols,
+                    column_config={
+                        "Done": st.column_config.CheckboxColumn(
+                            "Done",
+                            help="Tick after the evidence has been checked and the completion criterion has been met.",
+                        ),
+                    },
+                    key="category_collapse_action_center_editor",
+                )
+            except Exception:
+                st.dataframe(action_center, width="stretch", hide_index=True)
+            st.download_button(
+                "Download category-collapse action center (CSV)",
+                data=to_csv_bytes(action_center),
+                file_name="mfrm_category_collapse_action_center.csv",
+                mime="text/csv",
+                key="dl_category_collapse_action_center",
+            )
+
+            category_collapse_draft = generate_category_collapse_sensitivity_draft(
+                result,
+                diagnostics,
+                action_center,
+            )
+            with st.expander("APA category-collapse sensitivity draft", expanded=False):
+                st.markdown(category_collapse_draft)
+            st.download_button(
+                "Download APA category-collapse sensitivity draft (Markdown)",
+                data=category_collapse_draft.encode("utf-8"),
+                file_name="apa_category_collapse_sensitivity_draft.md",
+                mime="text/markdown",
+                key="dl_apa_category_collapse_sensitivity_draft",
             )
 
         recode_candidates = rating_scale_recode_candidate_table(result, diagnostics)
@@ -45234,10 +53200,17 @@ def show_agreement_section(
         st.info(t("agreement.no_facet_cols_info"))
         return
 
+    facet_options = list(config_facet_names)
+    default_agreement_facet = _infer_facet_by_role(result, diagnostics, facet_options, "rater")
+    default_facet_index = (
+        facet_options.index(default_agreement_facet)
+        if default_agreement_facet in facet_options else
+        0
+    )
     agreement_facet = st.selectbox(
         t("agreement.facet_select_label"),
-        list(config_facet_names),
-        index=0,
+        facet_options,
+        index=default_facet_index,
         key="agreement_facet",
         help=t("agreement.facet_select_help"),
     )
@@ -45265,6 +53238,202 @@ def show_agreement_section(
                 st.info(t("agreement.exact_moderate_template", pct=pct_str, facet=agreement_facet))
             else:
                 st.warning(t("agreement.exact_low_template", pct=pct_str, facet=agreement_facet))
+
+    calc_alpha_fn = core.get("calc_krippendorff_alpha")
+    if calc_alpha_fn:
+        with st.expander(t("agreement.krippendorff_expander"), expanded=False):
+            st.caption(t("agreement.krippendorff_caption"))
+            alpha_metric = st.selectbox(
+                t("agreement.krippendorff_metric_label"),
+                list(KRIPPENDORFF_ALPHA_METRICS),
+                index=0,
+                format_func=lambda value: t(f"agreement.krippendorff_metric_{value}"),
+                key=f"krippendorff_metric_{agreement_facet}",
+                help=t("agreement.krippendorff_metric_help"),
+            )
+            alpha_result = calc_alpha_fn(
+                obs_df,
+                all_facet_cols,
+                agreement_facet,
+                metric=str(alpha_metric),
+            )
+            alpha_summary = alpha_result.get("summary", pd.DataFrame())
+            alpha_coverage = alpha_result.get("coverage", pd.DataFrame())
+            if isinstance(alpha_summary, pd.DataFrame) and not alpha_summary.empty:
+                row = alpha_summary.iloc[0]
+                status = str(row.get("Status", "Unavailable"))
+                plain = str(row.get("PlainLanguage", ""))
+                if status == "Ready":
+                    st.success(t("agreement.krippendorff_status_template", status=status, message=plain))
+                elif status == "Caution":
+                    st.info(t("agreement.krippendorff_status_template", status=status, message=plain))
+                elif status == "Review":
+                    st.warning(t("agreement.krippendorff_status_template", status=status, message=plain))
+                else:
+                    st.info(t("agreement.krippendorff_status_template", status=status, message=plain))
+                st.dataframe(alpha_summary, width="stretch", hide_index=True)
+                st.caption(t("agreement.krippendorff_interpretation_caption"))
+                if isinstance(alpha_coverage, pd.DataFrame) and not alpha_coverage.empty:
+                    with st.expander(t("agreement.krippendorff_coverage_expander"), expanded=False):
+                        st.dataframe(alpha_coverage, width="stretch", hide_index=True)
+                st.download_button(
+                    t("agreement.krippendorff_download_button"),
+                    data=to_csv_bytes(alpha_summary),
+                    file_name="mfrm_krippendorff_alpha_experimental.csv",
+                    mime="text/csv",
+                    key=f"dl_krippendorff_alpha_{agreement_facet}_{alpha_metric}",
+                )
+            else:
+                st.info(t("agreement.krippendorff_unavailable_info"))
+
+    try:
+        scoring_decision = build_scoring_consistency_decision(
+            result,
+            diagnostics,
+            all_facet_cols,
+            rater_facet=agreement_facet,
+        )
+    except Exception:
+        scoring_decision = pd.DataFrame()
+    if isinstance(scoring_decision, pd.DataFrame) and not scoring_decision.empty:
+        try:
+            first_read_summary = build_scoring_quality_first_read_summary(
+                result,
+                diagnostics,
+                all_facet_cols,
+                rater_facet=agreement_facet,
+            )
+        except Exception:
+            first_read_summary = pd.DataFrame()
+        if isinstance(first_read_summary, pd.DataFrame) and not first_read_summary.empty:
+            first_row = first_read_summary.iloc[0]
+            with st.container(border=True):
+                st.markdown(f"#### {t('agreement.first_read_subheader')}")
+                st.caption(t("agreement.first_read_caption"))
+                c1, c2, c3 = st.columns(3)
+                c1.metric(t("agreement.first_read_readiness_label"), str(first_row.get("ReadinessLabel", "")))
+                c2.metric(t("agreement.first_read_blockers_label"), str(first_row.get("BlockingItems", "")))
+                c3.metric(t("agreement.first_read_caveats_label"), str(first_row.get("CaveatItems", "")))
+                st.markdown(f"**{t('agreement.first_read_next_action_label')}:** {first_row.get('NextAction', '')}")
+                st.markdown(f"**{t('agreement.first_read_owner_label')}:** {first_row.get('NextOwner', '')}")
+                st.markdown(f"**{t('agreement.first_read_evidence_label')}:** `{first_row.get('FirstEvidenceToOpen', '')}`")
+                st.caption(str(first_row.get("SafeClaim", "")))
+                st.download_button(
+                    t("agreement.first_read_download_button"),
+                    data=to_csv_bytes(first_read_summary),
+                    file_name="mfrm_scoring_quality_first_read_summary.csv",
+                    mime="text/csv",
+                    key=f"dl_scoring_quality_first_read_summary_{agreement_facet}",
+                )
+
+        st.subheader(t("agreement.scoring_consistency_subheader"))
+        st.caption(t("agreement.scoring_consistency_caption"))
+        st.dataframe(scoring_decision, width="stretch", hide_index=True)
+        dl_cols = st.columns(2)
+        with dl_cols[0]:
+            st.download_button(
+                t("agreement.scoring_consistency_download_button"),
+                data=to_csv_bytes(scoring_decision),
+                file_name="mfrm_scoring_consistency_decision.csv",
+                mime="text/csv",
+                key=f"dl_scoring_consistency_decision_{agreement_facet}",
+            )
+        try:
+            qc_recommendations = build_quality_control_recommendations(
+                result,
+                diagnostics,
+                all_facet_cols,
+                rater_facet=agreement_facet,
+            )
+        except Exception:
+            qc_recommendations = pd.DataFrame()
+        if isinstance(qc_recommendations, pd.DataFrame) and not qc_recommendations.empty:
+            st.subheader(t("agreement.qc_recommendations_subheader"))
+            st.caption(t("agreement.qc_recommendations_caption"))
+            st.dataframe(qc_recommendations, width="stretch", hide_index=True)
+            with dl_cols[1]:
+                st.download_button(
+                    t("agreement.qc_recommendations_download_button"),
+                    data=to_csv_bytes(qc_recommendations),
+                    file_name="mfrm_quality_control_recommendations.csv",
+                    mime="text/csv",
+                    key=f"dl_quality_control_recommendations_{agreement_facet}",
+                )
+        else:
+            qc_recommendations = pd.DataFrame()
+
+        try:
+            qc_todo = build_quality_control_todo_checklist(
+                result,
+                diagnostics,
+                all_facet_cols,
+                rater_facet=agreement_facet,
+            )
+        except Exception:
+            qc_todo = pd.DataFrame()
+        if isinstance(qc_todo, pd.DataFrame) and not qc_todo.empty:
+            st.subheader(t("agreement.qc_todo_subheader"))
+            st.caption(t("agreement.qc_todo_caption"))
+            disabled_cols = [col for col in qc_todo.columns if col != "Done"]
+            try:
+                st.data_editor(
+                    qc_todo,
+                    width="stretch",
+                    hide_index=True,
+                    disabled=disabled_cols,
+                    column_config={
+                        "Done": st.column_config.CheckboxColumn(
+                            t("agreement.qc_todo_done_column"),
+                            help=t("agreement.qc_todo_done_help"),
+                        ),
+                        "BlockingForReport": st.column_config.CheckboxColumn(
+                            t("agreement.qc_todo_blocking_column"),
+                            disabled=True,
+                        ),
+                        "NeedsCaveat": st.column_config.CheckboxColumn(
+                            t("agreement.qc_todo_caveat_column"),
+                            disabled=True,
+                        ),
+                    },
+                    key=f"qc_todo_editor_{agreement_facet}",
+                )
+            except Exception:
+                st.dataframe(qc_todo, width="stretch", hide_index=True)
+            st.download_button(
+                t("agreement.qc_todo_download_button"),
+                data=to_csv_bytes(qc_todo),
+                file_name="mfrm_quality_control_todo_checklist.csv",
+                mime="text/csv",
+                key=f"dl_quality_control_todo_checklist_{agreement_facet}",
+            )
+
+        with st.expander(t("agreement.term_guide_expander"), expanded=False):
+            term_guide = scoring_quality_term_guide()
+            st.caption(t("agreement.term_guide_caption"))
+            st.dataframe(term_guide, width="stretch", hide_index=True)
+            st.download_button(
+                t("agreement.term_guide_download_button"),
+                data=to_csv_bytes(term_guide),
+                file_name="mfrm_scoring_quality_term_guide.csv",
+                mime="text/csv",
+                key=f"dl_scoring_quality_term_guide_{agreement_facet}",
+            )
+
+        with st.expander(t("agreement.apa_draft_expander"), expanded=False):
+            apa_draft = generate_apa_scoring_quality_draft(
+                result,
+                diagnostics,
+                decision_table=scoring_decision,
+                qc_table=qc_recommendations,
+            )
+            st.markdown(apa_draft)
+            st.download_button(
+                t("agreement.apa_draft_download_button"),
+                data=apa_draft.encode("utf-8"),
+                file_name="apa_scoring_quality_draft.md",
+                mime="text/markdown",
+                key=f"dl_apa_scoring_quality_draft_{agreement_facet}",
+            )
 
     st.subheader(t("agreement.pairwise_subheader"))
     pairs_tbl = agreement.get("pairs", pd.DataFrame())
@@ -45630,6 +53799,45 @@ def main() -> None:
     write_csv("diagnostic_measures", diagnostics.get("measures"))
     write_csv("fit_statistics", diagnostics.get("fit"))
     write_csv("reliability", diagnostics.get("reliability"))
+    write_csv("krippendorff_alpha_experimental", diagnostics.get("krippendorff_alpha"))
+    if hasattr(app, "build_krippendorff_alpha_interpretation"):
+        write_csv("krippendorff_alpha_interpretation", app.build_krippendorff_alpha_interpretation(result, diagnostics))
+    if hasattr(app, "build_scoring_consistency_decision"):
+        write_csv("scoring_consistency_decision", app.build_scoring_consistency_decision(result, diagnostics))
+    if hasattr(app, "build_help_reference_coverage"):
+        write_csv("help_reference_coverage", app.build_help_reference_coverage())
+    if hasattr(app, "build_quality_control_recommendations"):
+        write_csv("quality_control_recommendations", app.build_quality_control_recommendations(result, diagnostics))
+    if hasattr(app, "build_quality_control_todo_checklist"):
+        write_csv("quality_control_todo_checklist", app.build_quality_control_todo_checklist(result, diagnostics))
+    if hasattr(app, "build_scoring_quality_first_read_summary"):
+        write_csv("scoring_quality_first_read_summary", app.build_scoring_quality_first_read_summary(result, diagnostics))
+    if hasattr(app, "scoring_quality_term_guide"):
+        write_csv("scoring_quality_term_guide", app.scoring_quality_term_guide())
+    if hasattr(app, "generate_apa_scoring_quality_draft"):
+        draft = app.generate_apa_scoring_quality_draft(result, diagnostics)
+        OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+        draft_path = OUTPUT_DIR / "apa_scoring_quality_draft.md"
+        draft_path.write_text(draft, encoding="utf-8")
+        print(f"  wrote {{draft_path}}")
+    if hasattr(app, "rating_scale_functioning_dashboard"):
+        write_csv("rating_scale_functioning_dashboard", app.rating_scale_functioning_dashboard(result, diagnostics))
+    if hasattr(app, "rating_scale_decision_support_table"):
+        write_csv("rating_scale_decision_support", app.rating_scale_decision_support_table(result, diagnostics))
+    if hasattr(app, "category_collapse_action_center_table"):
+        write_csv("category_collapse_action_center", app.category_collapse_action_center_table(result, diagnostics))
+    if hasattr(app, "rating_scale_recode_candidate_table"):
+        write_csv("rating_scale_recode_candidates", app.rating_scale_recode_candidate_table(result, diagnostics))
+    if hasattr(app, "rating_scale_recode_map_long_table"):
+        write_csv("rating_scale_recode_map_long", app.rating_scale_recode_map_long_table(result, diagnostics))
+    if hasattr(app, "rating_scale_category_evidence_table"):
+        write_csv("rating_scale_category_evidence", app.rating_scale_category_evidence_table(result, diagnostics))
+    if hasattr(app, "generate_category_collapse_sensitivity_draft"):
+        draft = app.generate_category_collapse_sensitivity_draft(result, diagnostics)
+        OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+        draft_path = OUTPUT_DIR / "apa_category_collapse_sensitivity_draft.md"
+        draft_path.write_text(draft, encoding="utf-8")
+        print(f"  wrote {{draft_path}}")
     write_csv("bias", diagnostics.get("bias"))
     write_csv("interactions", diagnostics.get("interactions"))
     write_csv("scorefile", app.compute_scorefile(result))
@@ -47030,6 +55238,14 @@ def reproducibility_script_export_matrix() -> pd.DataFrame:
             "OutputsToArchive": "complete package manifest; Stan/data hashes; prior decision log; sensitivity manifests; CmdStan CSV chains; posterior diagnostics; Posterior Viewer manifest checks.",
             "Boundary": "Direct downloads may include row-level JSON and private ID maps; public OSF/binder packages omit those when public export mode is enabled.",
         },
+        {
+            "Artifact": "MFRM_Cross_Engine_Validation_Bundle.zip",
+            "Runtime": "R (TAM / sirt / mirt)",
+            "Purpose": "Refit the exact analysis in TAM, sirt, and mirt and cross-check the main MML/GPCM person, facet, step, and slope estimates against the app's own output.",
+            "Inputs": "data.csv (the fitted long frame); settings.csv (model/method/facets/identification/population SD/quadrature/score range); app_person/facets/steps/slopes.csv; run_tam_mirt_crosscheck.R.",
+            "OutputsToArchive": "TAM tam.mml.mfr xsi and person measures; sirt rm.facets item/rater parameters; mirt item coefficients; side-by-side with the app's app_*.csv estimates.",
+            "Boundary": "Reproducibility artifact only; TAM/sirt/mirt are not app dependencies. Exact numerical equality is not claimed (population variance, identification/centering, and GPCM slope conventions differ) — rank-order and directional agreement is the bar.",
+        },
     ]
     return pd.DataFrame(rows)
 
@@ -48223,6 +56439,582 @@ end
 # Multi-format downloads
 # ---------------------------------------------------------------------------
 
+def collect_download_frames(
+    result: dict,
+    diagnostics: dict,
+    report_tables: dict,
+    scorefile: pd.DataFrame,
+    residuals: pd.DataFrame,
+    *,
+    public_export_mode: bool,
+    bias_results: dict | None = None,
+    all_bias_results: dict | None = None,
+) -> tuple[dict[str, pd.DataFrame], dict[str, object]]:
+    """Collect DataFrames and intermediate tables used by the downloads UI."""
+    # ---- Collect all data frames ----
+    summary = result.get("summary", pd.DataFrame())
+    measures_dl = diagnostics.get("measures", pd.DataFrame())
+    reliability_dl = diagnostics.get("reliability", pd.DataFrame())
+    steps_dl = result.get("steps", pd.DataFrame())
+    if not isinstance(steps_dl, pd.DataFrame):
+        steps_dl = pd.DataFrame()
+    slopes_dl = result.get("slopes", pd.DataFrame())
+    if not isinstance(slopes_dl, pd.DataFrame):
+        slopes_dl = pd.DataFrame()
+    fit_dl = diagnostics.get("fit", pd.DataFrame())
+    if not isinstance(fit_dl, pd.DataFrame):
+        fit_dl = pd.DataFrame()
+
+    all_frames: dict[str, pd.DataFrame] = {}
+    visual_preferences_dl = build_visualization_preferences_table()
+    _frame_bundle.add_frame(all_frames, "visualization_settings", visual_preferences_dl)
+    _frame_bundle.add_frame(all_frames, "summary", summary)
+    likelihood_info_dl = result.get("likelihood_information", pd.DataFrame())
+    if not isinstance(likelihood_info_dl, pd.DataFrame) or likelihood_info_dl.empty:
+        likelihood_info_dl = build_likelihood_information_criteria(result)
+    _frame_bundle.add_frame(all_frames, "likelihood_information_criteria", likelihood_info_dl)
+    regularization_dl = result.get("regularization", {})
+    if isinstance(regularization_dl, dict):
+        reg_settings_dl = regularization_dl.get("settings", pd.DataFrame())
+        reg_audit_dl = regularization_dl.get("audit", pd.DataFrame())
+        reg_penalty_dl = regularization_dl.get("penalty_summary", pd.DataFrame())
+        _frame_bundle.add_frames(all_frames, (
+            ("facet_regularization_settings", reg_settings_dl),
+            ("facet_regularization_audit", reg_audit_dl),
+            ("regularization_penalty_summary", reg_penalty_dl),
+        ))
+    convergence_dl = result.get("convergence", pd.DataFrame())
+    _frame_bundle.add_frame(all_frames, "convergence", convergence_dl)
+    prep = result.get("prep", {})
+    score_map = prep.get("score_map", pd.DataFrame())
+    _frame_bundle.add_frame(all_frames, "score_map", score_map)
+    audit_summary = prep.get("audit_summary", pd.DataFrame())
+    _frame_bundle.add_frame(all_frames, "response_data_audit_summary", audit_summary)
+    row_audit = prep.get("row_audit", pd.DataFrame())
+    _frame_bundle.add_frame(all_frames, "response_data_row_audit", row_audit)
+    excluded_rows = prep.get("excluded_rows", pd.DataFrame())
+    _frame_bundle.add_frame(all_frames, "response_data_excluded_rows", excluded_rows)
+    _frame_bundle.add_frame(all_frames, "measures", measures_dl)
+    uncertainty_dl = diagnostics.get("uncertainty", {})
+    if isinstance(uncertainty_dl, dict):
+        unc_summary_dl = uncertainty_dl.get("summary", pd.DataFrame())
+        cov_audit_dl = uncertainty_dl.get("covariance_audit", pd.DataFrame())
+        structural_se_dl = uncertainty_dl.get("structural_se", pd.DataFrame())
+        _frame_bundle.add_frames(all_frames, (
+            ("statistical_uncertainty_summary", unc_summary_dl),
+            ("mml_covariance_audit", cov_audit_dl),
+            ("mml_structural_measure_se", structural_se_dl),
+        ))
+    prior_plan_dl = build_mml_prior_sensitivity_plan(result)
+    _frame_bundle.add_frame(all_frames, "mml_prior_sd_sensitivity_plan", prior_plan_dl)
+    bias_inference_audit_dl = build_bias_inference_audit(all_bias_results or bias_results or {}, result, diagnostics)
+    _frame_bundle.add_frame(all_frames, "bias_inference_audit", bias_inference_audit_dl)
+    assumption_audit_dl = build_statistical_assumption_audit(result, diagnostics, all_bias_results or bias_results or {})
+    _frame_bundle.add_frame(all_frames, "statistical_assumption_audit", assumption_audit_dl)
+    method_ref_audit_dl = build_method_reference_audit()
+    _frame_bundle.add_frame(all_frames, "method_reference_audit", method_ref_audit_dl)
+    help_ref_coverage_dl = build_help_reference_coverage()
+    _frame_bundle.add_frame(all_frames, "help_reference_coverage", help_ref_coverage_dl)
+    try:
+        apa_sentence_audit_dl = build_apa_report_sentence_audit(
+            result,
+            diagnostics,
+            bias_results=bias_results,
+            all_bias_results=all_bias_results,
+        )
+        _frame_bundle.add_frame(all_frames, "apa_report_sentence_audit", apa_sentence_audit_dl)
+    except Exception:
+        apa_sentence_audit_dl = pd.DataFrame()
+    pca_dl = diagnostics.get("pca")
+    if isinstance(pca_dl, dict):
+        stability_dl = pca_dl.get("stability_table")
+        _frame_bundle.add_frame(all_frames, "pca_stability_audit", stability_dl)
+        stability_all_dl = collect_pca_stability_tables(diagnostics)
+        _frame_bundle.add_frame(all_frames, "pca_stability_all_scopes", stability_all_dl)
+    shrinkage_dl = diagnostics.get("eb_shrinkage", {})
+    if isinstance(shrinkage_dl, dict) and shrinkage_dl.get("available"):
+        shr_report_dl = shrinkage_dl.get("report", pd.DataFrame())
+        shr_measures_dl = shrinkage_dl.get("measures", pd.DataFrame())
+        _frame_bundle.add_frames(all_frames, (
+            ("eb_shrinkage_report", shr_report_dl),
+            ("eb_shrinkage_measures", shr_measures_dl),
+        ))
+    _frame_bundle.add_frame(all_frames, "reliability", reliability_dl)
+    krippendorff_alpha_dl = diagnostics.get("krippendorff_alpha", pd.DataFrame())
+    _frame_bundle.add_frame(all_frames, "krippendorff_alpha_experimental", krippendorff_alpha_dl)
+    try:
+        krippendorff_interpretation_dl = build_krippendorff_alpha_interpretation(result, diagnostics)
+        _frame_bundle.add_frame(all_frames, "krippendorff_alpha_interpretation", krippendorff_interpretation_dl)
+    except Exception:
+        krippendorff_interpretation_dl = pd.DataFrame()
+    try:
+        scoring_decision_dl = build_scoring_consistency_decision(result, diagnostics)
+        _frame_bundle.add_frame(all_frames, "scoring_consistency_decision", scoring_decision_dl)
+        qc_recommendations_dl = build_quality_control_recommendations(result, diagnostics)
+        _frame_bundle.add_frame(all_frames, "quality_control_recommendations", qc_recommendations_dl)
+        qc_todo_dl = build_quality_control_todo_checklist(result, diagnostics)
+        _frame_bundle.add_frame(all_frames, "quality_control_todo_checklist", qc_todo_dl)
+        first_read_summary_dl = build_scoring_quality_first_read_summary(result, diagnostics)
+        _frame_bundle.add_frame(all_frames, "scoring_quality_first_read_summary", first_read_summary_dl)
+        term_guide_dl = scoring_quality_term_guide()
+        _frame_bundle.add_frame(all_frames, "scoring_quality_term_guide", term_guide_dl)
+    except Exception:
+        scoring_decision_dl = pd.DataFrame()
+        qc_recommendations_dl = pd.DataFrame()
+        qc_todo_dl = pd.DataFrame()
+        first_read_summary_dl = pd.DataFrame()
+        term_guide_dl = pd.DataFrame()
+    try:
+        weight_audit_dl = build_weighting_policy_audit(result)
+        _frame_bundle.add_frame(all_frames, "weighting_policy_audit", weight_audit_dl)
+    except Exception:
+        weight_audit_dl = pd.DataFrame()
+    try:
+        publication_gate_dl = build_publication_gate_summary(result, diagnostics, all_bias_results)
+        _frame_bundle.add_frame(all_frames, "publication_gate_summary", publication_gate_dl)
+    except Exception:
+        publication_gate_dl = pd.DataFrame()
+    try:
+        action_plan_dl = build_submission_action_plan(result, diagnostics, all_bias_results)
+        _frame_bundle.add_frame(all_frames, "submission_action_plan", action_plan_dl)
+    except Exception:
+        action_plan_dl = pd.DataFrame()
+    try:
+        readiness_dl = build_final_report_readiness(result, diagnostics, all_bias_results)
+        _frame_bundle.add_frame(all_frames, "final_report_readiness", readiness_dl)
+    except Exception:
+        readiness_dl = pd.DataFrame()
+    try:
+        claim_guide_dl = build_manuscript_claim_guide(result, diagnostics, all_bias_results)
+        _frame_bundle.add_frame(all_frames, "manuscript_claim_guide", claim_guide_dl)
+    except Exception:
+        claim_guide_dl = pd.DataFrame()
+    try:
+        report_ready_summary_dl = build_report_ready_summary_panel(
+            result,
+            diagnostics,
+            all_bias_results=all_bias_results,
+            bias_results=bias_results,
+        )
+        _frame_bundle.add_frame(all_frames, "report_ready_summary_panel", report_ready_summary_dl)
+        role_action_memos_dl = build_role_based_action_memos(
+            result,
+            diagnostics,
+            all_bias_results=all_bias_results,
+            bias_results=bias_results,
+        )
+        _frame_bundle.add_frame(all_frames, "role_based_action_memos", role_action_memos_dl)
+        role_action_checklist_dl = build_role_based_action_checklist(
+            result,
+            diagnostics,
+            all_bias_results=all_bias_results,
+            bias_results=bias_results,
+        )
+        _frame_bundle.add_frame(all_frames, "role_based_action_checklist", role_action_checklist_dl)
+        critical_final_review_dl = build_critical_final_review_panel(
+            result,
+            diagnostics,
+            all_bias_results=all_bias_results,
+            bias_results=bias_results,
+            role_action_checklist=role_action_checklist_dl,
+            report_ready_summary=report_ready_summary_dl,
+            final_report_readiness=readiness_dl,
+            submission_action_plan=action_plan_dl,
+        )
+        _frame_bundle.add_frame(all_frames, "critical_final_review_panel", critical_final_review_dl)
+        status_rationale_dl = build_status_rationale_drilldown(
+            result,
+            diagnostics,
+            all_bias_results=all_bias_results,
+            bias_results=bias_results,
+            role_action_checklist=role_action_checklist_dl,
+            critical_final_review=critical_final_review_dl,
+            report_ready_summary=report_ready_summary_dl,
+            final_report_readiness=readiness_dl,
+            submission_action_plan=action_plan_dl,
+        )
+        _frame_bundle.add_frame(all_frames, "status_rationale_drilldown", status_rationale_dl)
+        result_reading_path_dl = build_result_reading_path(
+            result,
+            diagnostics,
+            all_bias_results=all_bias_results,
+            bias_results=bias_results,
+            report_ready_summary=report_ready_summary_dl,
+            final_report_readiness=readiness_dl,
+            manuscript_claim_guide=claim_guide_dl,
+        )
+        _frame_bundle.add_frame(all_frames, "result_reading_path", result_reading_path_dl)
+        category_action_center_dl = category_collapse_action_center_table(result, diagnostics)
+        operational_decision_board_dl = build_operational_decision_board(
+            result,
+            diagnostics,
+            all_bias_results=all_bias_results,
+            bias_results=bias_results,
+            quality_control_recommendations=qc_recommendations_dl,
+            category_action_center=category_action_center_dl,
+            critical_final_review=critical_final_review_dl,
+            report_ready_summary=report_ready_summary_dl,
+            final_report_readiness=readiness_dl,
+            submission_action_plan=action_plan_dl,
+        )
+        _frame_bundle.add_frame(all_frames, "operational_decision_board", operational_decision_board_dl)
+        reporting_action_bridge_dl = build_reporting_action_bridge(
+            result,
+            diagnostics,
+            all_bias_results=all_bias_results,
+            bias_results=bias_results,
+            role_action_checklist=role_action_checklist_dl,
+            report_ready_summary=report_ready_summary_dl,
+            final_report_readiness=readiness_dl,
+            manuscript_claim_guide=claim_guide_dl,
+            critical_final_review=critical_final_review_dl,
+            status_rationale=status_rationale_dl,
+            result_reading_path=result_reading_path_dl,
+            operational_decision_board=operational_decision_board_dl,
+            quality_control_recommendations=qc_recommendations_dl,
+            category_action_center=category_action_center_dl,
+            submission_action_plan=action_plan_dl,
+        )
+        _frame_bundle.add_frame(all_frames, "reporting_action_bridge", reporting_action_bridge_dl)
+    except Exception:
+        report_ready_summary_dl = pd.DataFrame()
+        role_action_memos_dl = pd.DataFrame()
+        role_action_checklist_dl = pd.DataFrame()
+        critical_final_review_dl = pd.DataFrame()
+        status_rationale_dl = pd.DataFrame()
+        result_reading_path_dl = pd.DataFrame()
+        operational_decision_board_dl = pd.DataFrame()
+        reporting_action_bridge_dl = pd.DataFrame()
+    try:
+        case_guidance_dl = build_case_interpretation_guidance(result, diagnostics, all_bias_results)
+        _frame_bundle.add_frame(all_frames, "case_interpretation_guidance", case_guidance_dl)
+    except Exception:
+        case_guidance_dl = pd.DataFrame()
+    try:
+        misfit_casebook_dl = build_misfit_casebook(result, diagnostics, all_bias_results)
+        _frame_bundle.add_frame(all_frames, "misfit_casebook", misfit_casebook_dl)
+    except Exception:
+        misfit_casebook_dl = pd.DataFrame()
+    try:
+        claim_evidence_dl = build_claim_to_evidence_matrix(result, diagnostics, all_bias_results)
+        _frame_bundle.add_frame(all_frames, "claim_to_evidence_matrix", claim_evidence_dl)
+    except Exception:
+        claim_evidence_dl = pd.DataFrame()
+    visual_checklist_dl = visual_interpretation_checklist()
+    _frame_bundle.add_frame(all_frames, "visual_interpretation_checklist", visual_checklist_dl)
+    visual_guardrails_dl = visual_claim_guardrail_table()
+    _frame_bundle.add_frame(all_frames, "visual_claim_guardrails", visual_guardrails_dl)
+    visual_evidence_dl = visual_method_evidence_table()
+    _frame_bundle.add_frame(all_frames, "visual_method_evidence", visual_evidence_dl)
+    public_beta_dl = public_beta_limitations_table()
+    _frame_bundle.add_frame(all_frames, "public_beta_limitations", public_beta_dl)
+    simulation_inventory_dl = external_simulation_reference_inventory()
+    _frame_bundle.add_frame(all_frames, "external_simulation_reference_inventory", simulation_inventory_dl)
+    simulation_templates_dl = external_simulation_template_inventory()
+    _frame_bundle.add_frame(all_frames, "external_simulation_template_inventory", simulation_templates_dl)
+    script_matrix_dl = reproducibility_script_export_matrix()
+    _frame_bundle.add_frame(all_frames, "reproducibility_script_matrix", script_matrix_dl)
+    bayesian_stan_plan_dl = bayesian_mfrm_stan_refinement_plan()
+    _frame_bundle.add_frame(all_frames, "bayesian_mfrm_stan_refinement_plan", bayesian_stan_plan_dl)
+    stan_repro_route_dl = guided_stan_posterior_reproducibility_help_table()
+    _frame_bundle.add_frame(all_frames, "stan_posterior_reproducibility_route", stan_repro_route_dl)
+    stan_handoff_dl = stan_posterior_handoff_checklist()
+    _frame_bundle.add_frame(all_frames, "stan_posterior_handoff_checklist", stan_handoff_dl)
+    stan_manifest_template_dl = stan_run_manifest_template()
+    _frame_bundle.add_frame(all_frames, "stan_run_manifest_template", stan_manifest_template_dl)
+    generic_stan_data_dl = build_generic_mfrm_stan_data_export(result)
+    if generic_stan_data_dl.get("available"):
+        _frame_bundle.add_frames(all_frames, (
+            ("mfrm_stan_data_manifest", generic_stan_data_dl["manifest"]),
+            ("mfrm_stan_data_dictionary", generic_stan_data_dl["data_dictionary"]),
+            ("mfrm_stan_id_index_map", generic_stan_data_dl["id_map"]),
+            ("mfrm_stan_prior_guidance", generic_stan_data_dl["prior_guidance"]),
+            ("mfrm_stan_prior_sensitivity_grid", generic_stan_data_dl["prior_sensitivity_grid"]),
+            ("mfrm_stan_prior_decision_log_template", stan_prior_decision_log_template(
+                sigma_theta_prior_scale=float(generic_stan_data_dl["stan_data"].get("sigma_theta_prior_scale", 2.5)),
+                facet_prior_scale=float(generic_stan_data_dl["stan_data"].get("facet_prior_scale", 2.0)),
+                step_prior_scale=float(generic_stan_data_dl["stan_data"].get("step_prior_scale", 5.0)),
+            )),
+        ), allow_empty=True)
+    try:
+        stan_complete_manifest_dl = pd.read_csv(io.StringIO(
+            stan_reproducibility_package_assets(
+                result,
+                include_row_level=not bool(public_export_mode),
+            ).get("mfrm_complete_stan_reproducibility_manifest.csv", "")
+        ))
+        _frame_bundle.add_frame(
+            all_frames,
+            "mfrm_complete_stan_reproducibility_manifest",
+            stan_complete_manifest_dl,
+        )
+    except Exception:
+        stan_complete_manifest_dl = pd.DataFrame()
+    uto_stan_data_dl = build_uto_bayesian_mfrm_stan_data_export(result)
+    if uto_stan_data_dl.get("available"):
+        _frame_bundle.add_frames(all_frames, (
+            ("mfrm_uto_bayesian_mfrm_design_audit", uto_stan_data_dl["design_audit"]),
+            ("mfrm_uto_bayesian_mfrm_claim_wording", uto_stan_data_dl["claim_wording"]),
+            ("mfrm_uto_bayesian_mfrm_mapping_manifest", uto_stan_data_dl["manifest"]),
+            ("mfrm_uto_bayesian_mfrm_data_dictionary", uto_stan_data_dl["data_dictionary"]),
+            ("mfrm_uto_bayesian_mfrm_id_index_map", uto_stan_data_dl["id_map"]),
+        ), allow_empty=True)
+    mfrmr_coverage_dl = mfrmr_015_migration_coverage_table()
+    _frame_bundle.add_frame(all_frames, "mfrmr_015_migration_coverage", mfrmr_coverage_dl)
+    mfrmr_016_coverage_dl = mfrmr_016_migration_coverage_table()
+    if _frame_bundle.add_frame(all_frames, "mfrmr_016_migration_coverage", mfrmr_016_coverage_dl):
+        _frame_bundle.add_frame(
+            all_frames,
+            "mfrmr_020_migration_coverage",
+            mfrmr_020_migration_coverage_table(),
+            allow_empty=True,
+        )
+    public_readiness_dl = public_release_readiness_table()
+    _frame_bundle.add_frame(all_frames, "public_release_readiness", public_readiness_dl)
+    _frame_bundle.add_frame(all_frames, "steps", steps_dl)
+    try:
+        facets_dl = result.get("facets", {}) if isinstance(result, dict) else {}
+        yardstick_map_dl = make_yardstick_export_table(
+            facets_dl.get("person", pd.DataFrame()) if isinstance(facets_dl, dict) else pd.DataFrame(),
+            facets_dl.get("others", pd.DataFrame()) if isinstance(facets_dl, dict) else pd.DataFrame(),
+            steps_dl,
+            rating_min=prep.get("rating_min") if isinstance(prep, dict) else None,
+        )
+        _frame_bundle.add_frame(all_frames, "yardstick_map", yardstick_map_dl)
+    except Exception:
+        yardstick_map_dl = pd.DataFrame()
+    _frame_bundle.add_frame(all_frames, "gpcm_slopes", slopes_dl)
+    try:
+        rating_dashboard_dl = rating_scale_functioning_dashboard(result, diagnostics)
+        _frame_bundle.add_frame(all_frames, "rating_scale_functioning_dashboard", rating_dashboard_dl)
+        rating_decision_dl = rating_scale_decision_support_table(result, diagnostics)
+        _frame_bundle.add_frame(all_frames, "rating_scale_decision_support", rating_decision_dl)
+        category_action_dl = category_collapse_action_center_table(result, diagnostics)
+        _frame_bundle.add_frame(all_frames, "category_collapse_action_center", category_action_dl)
+        recode_candidates_dl = rating_scale_recode_candidate_table(result, diagnostics)
+        _frame_bundle.add_frame(all_frames, "rating_scale_recode_candidates", recode_candidates_dl)
+        recode_map_long_for_tables_dl = rating_scale_recode_map_long_table(result, diagnostics)
+        _frame_bundle.add_frame(all_frames, "rating_scale_recode_map_long", recode_map_long_for_tables_dl)
+        category_evidence_dl = rating_scale_category_evidence_table(result, diagnostics)
+        _frame_bundle.add_frame(all_frames, "rating_scale_category_evidence", category_evidence_dl)
+    except Exception:
+        category_action_dl = pd.DataFrame()
+        recode_candidates_dl = pd.DataFrame()
+        recode_map_long_for_tables_dl = pd.DataFrame()
+        category_evidence_dl = pd.DataFrame()
+    try:
+        category_curve_dl = category_probability_curve_export_table(result)
+        _frame_bundle.add_frame(all_frames, "category_probability_curves", category_curve_dl)
+    except Exception:
+        category_curve_dl = pd.DataFrame()
+    try:
+        information_curve_dl = information_curve_export_table(result)
+        _frame_bundle.add_frame(all_frames, "information_curves", information_curve_dl)
+    except Exception:
+        information_curve_dl = pd.DataFrame()
+    population_dl = result.get("population", {})
+    if isinstance(population_dl, dict):
+        pop_coef = population_dl.get("coefficients", pd.DataFrame())
+        pop_person = population_dl.get("person_data", pd.DataFrame())
+        pop_transforms = population_dl.get("numeric_transforms", pd.DataFrame())
+        pop_type_summary = population_dl.get("type_summary", pd.DataFrame())
+        pop_term_types = pd.DataFrame(
+            [
+                {"Term": term, "Type": term_type}
+                for term, term_type in dict(population_dl.get("term_types", {})).items()
+            ]
+        )
+        _frame_bundle.add_frame(all_frames, "population_coefficients", pop_coef)
+        if bool(population_dl.get("enabled", False)):
+            _frame_bundle.add_frame(all_frames, "population_person_data", pop_person)
+        _frame_bundle.add_frame(all_frames, "population_numeric_transforms", pop_transforms)
+        _frame_bundle.add_frame(all_frames, "population_covariate_type_summary", pop_type_summary)
+        _frame_bundle.add_frame(all_frames, "population_term_types", pop_term_types)
+    _frame_bundle.add_frame(all_frames, "scorefile", scorefile)
+    try:
+        prediction_dl = compute_fitted_prediction_table(result)
+        _frame_bundle.add_frame(all_frames, "fitted_predictions", prediction_dl)
+    except Exception:
+        prediction_dl = pd.DataFrame()
+    session_new_pred = st.session_state.get("mfrm_new_design_prediction_bundle", {})
+    if isinstance(session_new_pred, dict):
+        new_pred_tbl = session_new_pred.get("table", pd.DataFrame())
+        _frame_bundle.add_frame(all_frames, "new_design_predictions", new_pred_tbl)
+    session_refit_sim = st.session_state.get("mfrm_refit_simulation_bundle", {})
+    if isinstance(session_refit_sim, dict):
+        refit_summary = session_refit_sim.get("summary", pd.DataFrame())
+        refit_counts = session_refit_sim.get("category_counts", pd.DataFrame())
+        _frame_bundle.add_frames(all_frames, (
+            ("refit_simulation_summary", refit_summary),
+            ("refit_simulation_category_counts", refit_counts),
+        ))
+    for frame_name, frame in current_custom_simulation_sparse_export_frames().items():
+        _frame_bundle.add_frame(all_frames, frame_name, frame)
+    try:
+        reanalysis_checklist_dl = build_report_ready_reanalysis_checklist(
+            result,
+            diagnostics,
+            all_bias_results=all_bias_results,
+            bias_results=bias_results,
+            report_ready_summary=report_ready_summary_dl,
+            role_action_checklist=role_action_checklist_dl,
+            quality_control_todo=qc_todo_dl,
+            category_action_center=category_action_dl,
+            simulation_settings=all_frames.get("custom_simulation_settings", pd.DataFrame()),
+            simulation_sparse_context=all_frames.get("custom_simulation_sparse_reporting_context", pd.DataFrame()),
+        )
+        _frame_bundle.add_frame(all_frames, "report_ready_reanalysis_checklist", reanalysis_checklist_dl)
+    except Exception:
+        reanalysis_checklist_dl = pd.DataFrame()
+    try:
+        design_dl = evaluate_design_from_fitted(result, diagnostics, forecast_multipliers=(2.0,))
+        if isinstance(design_dl, dict) and design_dl.get("available"):
+            design_overview = design_dl.get("overview", pd.DataFrame())
+            design_summary = design_dl.get("summary", pd.DataFrame())
+            design_forecast = design_dl.get("forecast", pd.DataFrame())
+            design_counts = design_dl.get("facet_counts", pd.DataFrame())
+            design_sample_summary = design_dl.get("sample_size_summary", pd.DataFrame())
+            design_sample_audit = design_dl.get("sample_size_adequacy", pd.DataFrame())
+            design_nesting = design_dl.get("nesting_audit", pd.DataFrame())
+            design_effect = design_dl.get("design_effect", pd.DataFrame())
+            _frame_bundle.add_frames(all_frames, (
+                ("design_overview", design_overview),
+                ("design_evaluation", design_summary),
+                ("design_reliability_forecast", design_forecast),
+                ("design_facet_counts", design_counts),
+                ("facet_sample_size_summary", design_sample_summary),
+                ("facet_sample_size_adequacy", design_sample_audit),
+                ("facet_nesting_audit", design_nesting),
+                ("intraclass_icc_design_effect", design_effect),
+            ))
+    except Exception:
+        design_dl = {}
+    _frame_bundle.add_frame(all_frames, "residuals", residuals)
+    posterior_dl = result.get("posterior", {})
+    if isinstance(posterior_dl, dict):
+        posterior_scores = posterior_dl.get("scores", pd.DataFrame())
+        plausible_values = posterior_dl.get("plausible_values", pd.DataFrame())
+        _frame_bundle.add_frames(all_frames, (
+            ("posterior_scores", posterior_scores),
+            ("plausible_values", plausible_values),
+        ))
+    _frame_bundle.add_frame(all_frames, "fit_statistics", fit_dl)
+    for facet_name, tbl in (report_tables or {}).items():
+        safe_name = facet_name.replace(" ", "_")[:31]
+        _frame_bundle.add_frame(all_frames, f"facets_{safe_name}", tbl, allow_empty=True)
+    if bias_results and bias_results.get("table") is not None and not bias_results["table"].empty:
+        _frame_bundle.add_frame(all_frames, "bias_table", bias_results["table"])
+        dff_tbl = build_dff_bias_screening_table(bias_results)
+        _frame_bundle.add_frame(all_frames, "dff_bias_screening", dff_tbl)
+        if bias_results.get("summary") is not None:
+            _frame_bundle.add_frame(all_frames, "bias_summary", bias_results["summary"], allow_empty=True)
+    if all_bias_results:
+        for pair_key, pair_bundle in all_bias_results.items():
+            pair_table = pair_bundle.get("table") if isinstance(pair_bundle, dict) else None
+            if isinstance(pair_table, pd.DataFrame) and not pair_table.empty:
+                bias_frame_name = _frame_bundle.safe_frame_key("bias", pair_key, max_label_length=40)
+                _frame_bundle.add_frame(all_frames, bias_frame_name, pair_table)
+                dff_pair = build_dff_bias_screening_table(pair_bundle)
+                dff_frame_name = _frame_bundle.safe_frame_key("dff_bias", pair_key, max_label_length=40)
+                _frame_bundle.add_frame(all_frames, dff_frame_name, dff_pair)
+    marginal_fit = diagnostics.get("marginal_fit", {})
+    if isinstance(marginal_fit, dict):
+        marginal_summary = marginal_fit.get("summary", pd.DataFrame())
+        marginal_counts = marginal_fit.get("counts", pd.DataFrame())
+        marginal_pairwise = marginal_fit.get("pairwise", {}) if isinstance(marginal_fit.get("pairwise", {}), dict) else {}
+        pair_summary = marginal_pairwise.get("summary", pd.DataFrame())
+        pair_counts = marginal_pairwise.get("counts", pd.DataFrame())
+        _frame_bundle.add_frames(all_frames, (
+            ("marginal_fit_summary", marginal_summary),
+            ("marginal_fit_counts", marginal_counts),
+            ("marginal_pairwise_summary", pair_summary),
+            ("marginal_pairwise_counts", pair_counts),
+        ))
+    anchor_audit = result.get("config", {}).get("anchor_audit", {})
+    if isinstance(anchor_audit, dict):
+        audit_summary = anchor_audit.get("summary", pd.DataFrame())
+        audit_issues = anchor_audit.get("issues", pd.DataFrame())
+        valid_anchors = anchor_audit.get("valid_anchors", pd.DataFrame())
+        valid_group_anchors = anchor_audit.get("valid_group_anchors", pd.DataFrame())
+        _frame_bundle.add_frames(all_frames, (
+            ("anchor_audit_summary", audit_summary),
+            ("anchor_audit_issues", audit_issues),
+            ("valid_anchor_inputs", valid_anchors),
+            ("valid_group_anchor_inputs", valid_group_anchors),
+        ))
+    drift_review = result.get("anchor_drift", {})
+    if isinstance(drift_review, dict):
+        drift_summary = drift_review.get("summary", pd.DataFrame())
+        anchor_drift_tbl = drift_review.get("anchor_drift", pd.DataFrame())
+        group_drift_tbl = drift_review.get("group_drift", pd.DataFrame())
+        _frame_bundle.add_frames(all_frames, (
+            ("anchor_drift_summary", drift_summary),
+            ("anchor_drift", anchor_drift_tbl),
+            ("group_anchor_drift", group_drift_tbl),
+        ))
+    chain_review = result.get("equating_chain", {})
+    if isinstance(chain_review, dict):
+        chain_summary = chain_review.get("summary", pd.DataFrame())
+        chain_edges = chain_review.get("edges", pd.DataFrame())
+        _frame_bundle.add_frames(all_frames, (
+            ("equating_chain_summary", chain_summary),
+            ("equating_chain_edges", chain_edges),
+        ))
+    workflow_plan = result.get("anchor_equating_workflow", pd.DataFrame())
+    _frame_bundle.add_frame(all_frames, "anchor_equating_workflow", workflow_plan)
+
+    # Anchor data
+    anchor_parts = []
+    others_df = result.get("facets", {}).get("others", pd.DataFrame())
+    if not others_df.empty and "Facet" in others_df.columns and "Level" in others_df.columns and "Estimate" in others_df.columns:
+        for _, row in others_df.iterrows():
+            anchor_parts.append({
+                "Facet": row["Facet"],
+                "Level": row["Level"],
+                "Anchor": round(float(row["Estimate"]), 4),
+            })
+    if anchor_parts:
+        _frame_bundle.add_frame(all_frames, "anchors", pd.DataFrame(anchor_parts))
+    stan_archive_contract_dl = stan_reproducibility_archive_contract_table(public_export_mode=bool(public_export_mode))
+    _frame_bundle.add_frame(all_frames, "stan_reproducibility_archive_contract", stan_archive_contract_dl)
+    try:
+        handoff_checklist_dl = build_manuscript_handoff_checklist(
+            result,
+            diagnostics,
+            all_bias_results,
+            public_export_mode=bool(public_export_mode),
+        )
+        _frame_bundle.add_frame(all_frames, "manuscript_handoff_checklist", handoff_checklist_dl)
+    except Exception:
+        handoff_checklist_dl = pd.DataFrame()
+    context: dict[str, object] = {
+        "measures_dl": measures_dl,
+        "steps_dl": steps_dl,
+        "prep": prep,
+        "action_plan_dl": action_plan_dl,
+        "apa_sentence_audit_dl": apa_sentence_audit_dl,
+        "category_action_center_dl": locals().get("category_action_center_dl", pd.DataFrame()),
+        "category_action_dl": locals().get("category_action_dl", pd.DataFrame()),
+        "claim_evidence_dl": claim_evidence_dl,
+        "claim_guide_dl": claim_guide_dl,
+        "critical_final_review_dl": locals().get("critical_final_review_dl", pd.DataFrame()),
+        "generic_stan_data_dl": generic_stan_data_dl,
+        "handoff_checklist_dl": handoff_checklist_dl,
+        "operational_decision_board_dl": locals().get("operational_decision_board_dl", pd.DataFrame()),
+        "qc_recommendations_dl": qc_recommendations_dl,
+        "readiness_dl": readiness_dl,
+        "report_ready_summary_dl": locals().get("report_ready_summary_dl", pd.DataFrame()),
+        "reporting_action_bridge_dl": locals().get("reporting_action_bridge_dl", pd.DataFrame()),
+        "result_reading_path_dl": locals().get("result_reading_path_dl", pd.DataFrame()),
+        "role_action_checklist_dl": locals().get("role_action_checklist_dl", pd.DataFrame()),
+        "role_action_memos_dl": locals().get("role_action_memos_dl", pd.DataFrame()),
+        "status_rationale_dl": locals().get("status_rationale_dl", pd.DataFrame()),
+        "uto_stan_data_dl": uto_stan_data_dl,
+        "yardstick_map_dl": locals().get("yardstick_map_dl", pd.DataFrame()),
+    }
+    return all_frames, context
+
+
 def _render_downloads(
     result: dict,
     diagnostics: dict,
@@ -48267,442 +57059,39 @@ def _render_downloads(
         help=t("downloads.public_export_mode_help"),
     )
 
-    # ---- Collect all data frames ----
-    summary = result.get("summary", pd.DataFrame())
-    measures_dl = diagnostics.get("measures", pd.DataFrame())
-    reliability_dl = diagnostics.get("reliability", pd.DataFrame())
-    steps_dl = result.get("steps", pd.DataFrame())
-    if not isinstance(steps_dl, pd.DataFrame):
-        steps_dl = pd.DataFrame()
-    slopes_dl = result.get("slopes", pd.DataFrame())
-    if not isinstance(slopes_dl, pd.DataFrame):
-        slopes_dl = pd.DataFrame()
-    fit_dl = diagnostics.get("fit", pd.DataFrame())
-    if not isinstance(fit_dl, pd.DataFrame):
-        fit_dl = pd.DataFrame()
-
-    all_frames: dict[str, pd.DataFrame] = {}
-    visual_preferences_dl = build_visualization_preferences_table()
-    if isinstance(visual_preferences_dl, pd.DataFrame) and not visual_preferences_dl.empty:
-        all_frames["visualization_settings"] = visual_preferences_dl
-    if not summary.empty:
-        all_frames["summary"] = summary
-    likelihood_info_dl = result.get("likelihood_information", pd.DataFrame())
-    if not isinstance(likelihood_info_dl, pd.DataFrame) or likelihood_info_dl.empty:
-        likelihood_info_dl = build_likelihood_information_criteria(result)
-    if isinstance(likelihood_info_dl, pd.DataFrame) and not likelihood_info_dl.empty:
-        all_frames["likelihood_information_criteria"] = likelihood_info_dl
-    regularization_dl = result.get("regularization", {})
-    if isinstance(regularization_dl, dict):
-        reg_settings_dl = regularization_dl.get("settings", pd.DataFrame())
-        reg_audit_dl = regularization_dl.get("audit", pd.DataFrame())
-        reg_penalty_dl = regularization_dl.get("penalty_summary", pd.DataFrame())
-        if isinstance(reg_settings_dl, pd.DataFrame) and not reg_settings_dl.empty:
-            all_frames["facet_regularization_settings"] = reg_settings_dl
-        if isinstance(reg_audit_dl, pd.DataFrame) and not reg_audit_dl.empty:
-            all_frames["facet_regularization_audit"] = reg_audit_dl
-        if isinstance(reg_penalty_dl, pd.DataFrame) and not reg_penalty_dl.empty:
-            all_frames["regularization_penalty_summary"] = reg_penalty_dl
-    convergence_dl = result.get("convergence", pd.DataFrame())
-    if isinstance(convergence_dl, pd.DataFrame) and not convergence_dl.empty:
-        all_frames["convergence"] = convergence_dl
-    prep = result.get("prep", {})
-    score_map = prep.get("score_map", pd.DataFrame())
-    if isinstance(score_map, pd.DataFrame) and not score_map.empty:
-        all_frames["score_map"] = score_map
-    audit_summary = prep.get("audit_summary", pd.DataFrame())
-    if isinstance(audit_summary, pd.DataFrame) and not audit_summary.empty:
-        all_frames["response_data_audit_summary"] = audit_summary
-    row_audit = prep.get("row_audit", pd.DataFrame())
-    if isinstance(row_audit, pd.DataFrame) and not row_audit.empty:
-        all_frames["response_data_row_audit"] = row_audit
-    excluded_rows = prep.get("excluded_rows", pd.DataFrame())
-    if isinstance(excluded_rows, pd.DataFrame) and not excluded_rows.empty:
-        all_frames["response_data_excluded_rows"] = excluded_rows
-    if not measures_dl.empty:
-        all_frames["measures"] = measures_dl
-    uncertainty_dl = diagnostics.get("uncertainty", {})
-    if isinstance(uncertainty_dl, dict):
-        unc_summary_dl = uncertainty_dl.get("summary", pd.DataFrame())
-        cov_audit_dl = uncertainty_dl.get("covariance_audit", pd.DataFrame())
-        structural_se_dl = uncertainty_dl.get("structural_se", pd.DataFrame())
-        if isinstance(unc_summary_dl, pd.DataFrame) and not unc_summary_dl.empty:
-            all_frames["statistical_uncertainty_summary"] = unc_summary_dl
-        if isinstance(cov_audit_dl, pd.DataFrame) and not cov_audit_dl.empty:
-            all_frames["mml_covariance_audit"] = cov_audit_dl
-        if isinstance(structural_se_dl, pd.DataFrame) and not structural_se_dl.empty:
-            all_frames["mml_structural_measure_se"] = structural_se_dl
-    prior_plan_dl = build_mml_prior_sensitivity_plan(result)
-    if isinstance(prior_plan_dl, pd.DataFrame) and not prior_plan_dl.empty:
-        all_frames["mml_prior_sd_sensitivity_plan"] = prior_plan_dl
-    bias_inference_audit_dl = build_bias_inference_audit(all_bias_results or bias_results or {}, result, diagnostics)
-    if isinstance(bias_inference_audit_dl, pd.DataFrame) and not bias_inference_audit_dl.empty:
-        all_frames["bias_inference_audit"] = bias_inference_audit_dl
-    assumption_audit_dl = build_statistical_assumption_audit(result, diagnostics, all_bias_results or bias_results or {})
-    if isinstance(assumption_audit_dl, pd.DataFrame) and not assumption_audit_dl.empty:
-        all_frames["statistical_assumption_audit"] = assumption_audit_dl
-    method_ref_audit_dl = build_method_reference_audit()
-    if isinstance(method_ref_audit_dl, pd.DataFrame) and not method_ref_audit_dl.empty:
-        all_frames["method_reference_audit"] = method_ref_audit_dl
-    try:
-        apa_sentence_audit_dl = build_apa_report_sentence_audit(
-            result,
-            diagnostics,
-            bias_results=bias_results,
-            all_bias_results=all_bias_results,
-        )
-        if isinstance(apa_sentence_audit_dl, pd.DataFrame) and not apa_sentence_audit_dl.empty:
-            all_frames["apa_report_sentence_audit"] = apa_sentence_audit_dl
-    except Exception:
-        apa_sentence_audit_dl = pd.DataFrame()
-    pca_dl = diagnostics.get("pca")
-    if isinstance(pca_dl, dict):
-        stability_dl = pca_dl.get("stability_table")
-        if isinstance(stability_dl, pd.DataFrame) and not stability_dl.empty:
-            all_frames["pca_stability_audit"] = stability_dl
-        stability_all_dl = collect_pca_stability_tables(diagnostics)
-        if isinstance(stability_all_dl, pd.DataFrame) and not stability_all_dl.empty:
-            all_frames["pca_stability_all_scopes"] = stability_all_dl
-    shrinkage_dl = diagnostics.get("eb_shrinkage", {})
-    if isinstance(shrinkage_dl, dict) and shrinkage_dl.get("available"):
-        shr_report_dl = shrinkage_dl.get("report", pd.DataFrame())
-        shr_measures_dl = shrinkage_dl.get("measures", pd.DataFrame())
-        if isinstance(shr_report_dl, pd.DataFrame) and not shr_report_dl.empty:
-            all_frames["eb_shrinkage_report"] = shr_report_dl
-        if isinstance(shr_measures_dl, pd.DataFrame) and not shr_measures_dl.empty:
-            all_frames["eb_shrinkage_measures"] = shr_measures_dl
-    if not reliability_dl.empty:
-        all_frames["reliability"] = reliability_dl
-    try:
-        weight_audit_dl = build_weighting_policy_audit(result)
-        if isinstance(weight_audit_dl, pd.DataFrame) and not weight_audit_dl.empty:
-            all_frames["weighting_policy_audit"] = weight_audit_dl
-    except Exception:
-        weight_audit_dl = pd.DataFrame()
-    try:
-        publication_gate_dl = build_publication_gate_summary(result, diagnostics, all_bias_results)
-        if isinstance(publication_gate_dl, pd.DataFrame) and not publication_gate_dl.empty:
-            all_frames["publication_gate_summary"] = publication_gate_dl
-    except Exception:
-        publication_gate_dl = pd.DataFrame()
-    try:
-        action_plan_dl = build_submission_action_plan(result, diagnostics, all_bias_results)
-        if isinstance(action_plan_dl, pd.DataFrame) and not action_plan_dl.empty:
-            all_frames["submission_action_plan"] = action_plan_dl
-    except Exception:
-        action_plan_dl = pd.DataFrame()
-    try:
-        case_guidance_dl = build_case_interpretation_guidance(result, diagnostics, all_bias_results)
-        if isinstance(case_guidance_dl, pd.DataFrame) and not case_guidance_dl.empty:
-            all_frames["case_interpretation_guidance"] = case_guidance_dl
-    except Exception:
-        case_guidance_dl = pd.DataFrame()
-    try:
-        misfit_casebook_dl = build_misfit_casebook(result, diagnostics, all_bias_results)
-        if isinstance(misfit_casebook_dl, pd.DataFrame) and not misfit_casebook_dl.empty:
-            all_frames["misfit_casebook"] = misfit_casebook_dl
-    except Exception:
-        misfit_casebook_dl = pd.DataFrame()
-    try:
-        readiness_dl = build_final_report_readiness(result, diagnostics, all_bias_results)
-        if isinstance(readiness_dl, pd.DataFrame) and not readiness_dl.empty:
-            all_frames["final_report_readiness"] = readiness_dl
-    except Exception:
-        readiness_dl = pd.DataFrame()
-    try:
-        claim_guide_dl = build_manuscript_claim_guide(result, diagnostics, all_bias_results)
-        if isinstance(claim_guide_dl, pd.DataFrame) and not claim_guide_dl.empty:
-            all_frames["manuscript_claim_guide"] = claim_guide_dl
-    except Exception:
-        claim_guide_dl = pd.DataFrame()
-    try:
-        claim_evidence_dl = build_claim_to_evidence_matrix(result, diagnostics, all_bias_results)
-        if isinstance(claim_evidence_dl, pd.DataFrame) and not claim_evidence_dl.empty:
-            all_frames["claim_to_evidence_matrix"] = claim_evidence_dl
-    except Exception:
-        claim_evidence_dl = pd.DataFrame()
-    visual_checklist_dl = visual_interpretation_checklist()
-    if isinstance(visual_checklist_dl, pd.DataFrame) and not visual_checklist_dl.empty:
-        all_frames["visual_interpretation_checklist"] = visual_checklist_dl
-    visual_guardrails_dl = visual_claim_guardrail_table()
-    if isinstance(visual_guardrails_dl, pd.DataFrame) and not visual_guardrails_dl.empty:
-        all_frames["visual_claim_guardrails"] = visual_guardrails_dl
-    visual_evidence_dl = visual_method_evidence_table()
-    if isinstance(visual_evidence_dl, pd.DataFrame) and not visual_evidence_dl.empty:
-        all_frames["visual_method_evidence"] = visual_evidence_dl
-    public_beta_dl = public_beta_limitations_table()
-    if isinstance(public_beta_dl, pd.DataFrame) and not public_beta_dl.empty:
-        all_frames["public_beta_limitations"] = public_beta_dl
-    simulation_inventory_dl = external_simulation_reference_inventory()
-    if isinstance(simulation_inventory_dl, pd.DataFrame) and not simulation_inventory_dl.empty:
-        all_frames["external_simulation_reference_inventory"] = simulation_inventory_dl
-    simulation_templates_dl = external_simulation_template_inventory()
-    if isinstance(simulation_templates_dl, pd.DataFrame) and not simulation_templates_dl.empty:
-        all_frames["external_simulation_template_inventory"] = simulation_templates_dl
-    script_matrix_dl = reproducibility_script_export_matrix()
-    if isinstance(script_matrix_dl, pd.DataFrame) and not script_matrix_dl.empty:
-        all_frames["reproducibility_script_matrix"] = script_matrix_dl
-    bayesian_stan_plan_dl = bayesian_mfrm_stan_refinement_plan()
-    if isinstance(bayesian_stan_plan_dl, pd.DataFrame) and not bayesian_stan_plan_dl.empty:
-        all_frames["bayesian_mfrm_stan_refinement_plan"] = bayesian_stan_plan_dl
-    stan_repro_route_dl = guided_stan_posterior_reproducibility_help_table()
-    if isinstance(stan_repro_route_dl, pd.DataFrame) and not stan_repro_route_dl.empty:
-        all_frames["stan_posterior_reproducibility_route"] = stan_repro_route_dl
-    stan_handoff_dl = stan_posterior_handoff_checklist()
-    if isinstance(stan_handoff_dl, pd.DataFrame) and not stan_handoff_dl.empty:
-        all_frames["stan_posterior_handoff_checklist"] = stan_handoff_dl
-    stan_manifest_template_dl = stan_run_manifest_template()
-    if isinstance(stan_manifest_template_dl, pd.DataFrame) and not stan_manifest_template_dl.empty:
-        all_frames["stan_run_manifest_template"] = stan_manifest_template_dl
-    generic_stan_data_dl = build_generic_mfrm_stan_data_export(result)
-    if generic_stan_data_dl.get("available"):
-        all_frames["mfrm_stan_data_manifest"] = generic_stan_data_dl["manifest"]
-        all_frames["mfrm_stan_data_dictionary"] = generic_stan_data_dl["data_dictionary"]
-        all_frames["mfrm_stan_id_index_map"] = generic_stan_data_dl["id_map"]
-        all_frames["mfrm_stan_prior_guidance"] = generic_stan_data_dl["prior_guidance"]
-        all_frames["mfrm_stan_prior_sensitivity_grid"] = generic_stan_data_dl["prior_sensitivity_grid"]
-        all_frames["mfrm_stan_prior_decision_log_template"] = stan_prior_decision_log_template(
-            sigma_theta_prior_scale=float(generic_stan_data_dl["stan_data"].get("sigma_theta_prior_scale", 2.5)),
-            facet_prior_scale=float(generic_stan_data_dl["stan_data"].get("facet_prior_scale", 2.0)),
-            step_prior_scale=float(generic_stan_data_dl["stan_data"].get("step_prior_scale", 5.0)),
-        )
-    try:
-        stan_complete_manifest_dl = pd.read_csv(io.StringIO(
-            stan_reproducibility_package_assets(
-                result,
-                include_row_level=not bool(public_export_mode),
-            ).get("mfrm_complete_stan_reproducibility_manifest.csv", "")
-        ))
-        if isinstance(stan_complete_manifest_dl, pd.DataFrame) and not stan_complete_manifest_dl.empty:
-            all_frames["mfrm_complete_stan_reproducibility_manifest"] = stan_complete_manifest_dl
-    except Exception:
-        stan_complete_manifest_dl = pd.DataFrame()
-    uto_stan_data_dl = build_uto_bayesian_mfrm_stan_data_export(result)
-    if uto_stan_data_dl.get("available"):
-        all_frames["mfrm_uto_bayesian_mfrm_design_audit"] = uto_stan_data_dl["design_audit"]
-        all_frames["mfrm_uto_bayesian_mfrm_claim_wording"] = uto_stan_data_dl["claim_wording"]
-        all_frames["mfrm_uto_bayesian_mfrm_mapping_manifest"] = uto_stan_data_dl["manifest"]
-        all_frames["mfrm_uto_bayesian_mfrm_data_dictionary"] = uto_stan_data_dl["data_dictionary"]
-        all_frames["mfrm_uto_bayesian_mfrm_id_index_map"] = uto_stan_data_dl["id_map"]
-    mfrmr_coverage_dl = mfrmr_015_migration_coverage_table()
-    if isinstance(mfrmr_coverage_dl, pd.DataFrame) and not mfrmr_coverage_dl.empty:
-        all_frames["mfrmr_015_migration_coverage"] = mfrmr_coverage_dl
-    mfrmr_016_coverage_dl = mfrmr_016_migration_coverage_table()
-    if isinstance(mfrmr_016_coverage_dl, pd.DataFrame) and not mfrmr_016_coverage_dl.empty:
-        all_frames["mfrmr_016_migration_coverage"] = mfrmr_016_coverage_dl
-        all_frames["mfrmr_020_migration_coverage"] = mfrmr_020_migration_coverage_table()
-    public_readiness_dl = public_release_readiness_table()
-    if isinstance(public_readiness_dl, pd.DataFrame) and not public_readiness_dl.empty:
-        all_frames["public_release_readiness"] = public_readiness_dl
-    if not steps_dl.empty:
-        all_frames["steps"] = steps_dl
-    try:
-        facets_dl = result.get("facets", {}) if isinstance(result, dict) else {}
-        yardstick_map_dl = make_yardstick_export_table(
-            facets_dl.get("person", pd.DataFrame()) if isinstance(facets_dl, dict) else pd.DataFrame(),
-            facets_dl.get("others", pd.DataFrame()) if isinstance(facets_dl, dict) else pd.DataFrame(),
-            steps_dl,
-            rating_min=prep.get("rating_min") if isinstance(prep, dict) else None,
-        )
-        if isinstance(yardstick_map_dl, pd.DataFrame) and not yardstick_map_dl.empty:
-            all_frames["yardstick_map"] = yardstick_map_dl
-    except Exception:
-        yardstick_map_dl = pd.DataFrame()
-    if not slopes_dl.empty:
-        all_frames["gpcm_slopes"] = slopes_dl
-    try:
-        category_curve_dl = category_probability_curve_export_table(result)
-        if isinstance(category_curve_dl, pd.DataFrame) and not category_curve_dl.empty:
-            all_frames["category_probability_curves"] = category_curve_dl
-    except Exception:
-        category_curve_dl = pd.DataFrame()
-    try:
-        information_curve_dl = information_curve_export_table(result)
-        if isinstance(information_curve_dl, pd.DataFrame) and not information_curve_dl.empty:
-            all_frames["information_curves"] = information_curve_dl
-    except Exception:
-        information_curve_dl = pd.DataFrame()
-    population_dl = result.get("population", {})
-    if isinstance(population_dl, dict):
-        pop_coef = population_dl.get("coefficients", pd.DataFrame())
-        pop_person = population_dl.get("person_data", pd.DataFrame())
-        pop_transforms = population_dl.get("numeric_transforms", pd.DataFrame())
-        pop_type_summary = population_dl.get("type_summary", pd.DataFrame())
-        pop_term_types = pd.DataFrame(
-            [
-                {"Term": term, "Type": term_type}
-                for term, term_type in dict(population_dl.get("term_types", {})).items()
-            ]
-        )
-        if isinstance(pop_coef, pd.DataFrame) and not pop_coef.empty:
-            all_frames["population_coefficients"] = pop_coef
-        if isinstance(pop_person, pd.DataFrame) and not pop_person.empty and bool(population_dl.get("enabled", False)):
-            all_frames["population_person_data"] = pop_person
-        if isinstance(pop_transforms, pd.DataFrame) and not pop_transforms.empty:
-            all_frames["population_numeric_transforms"] = pop_transforms
-        if isinstance(pop_type_summary, pd.DataFrame) and not pop_type_summary.empty:
-            all_frames["population_covariate_type_summary"] = pop_type_summary
-        if not pop_term_types.empty:
-            all_frames["population_term_types"] = pop_term_types
-    if isinstance(scorefile, pd.DataFrame) and not scorefile.empty:
-        all_frames["scorefile"] = scorefile
-    try:
-        prediction_dl = compute_fitted_prediction_table(result)
-        if isinstance(prediction_dl, pd.DataFrame) and not prediction_dl.empty:
-            all_frames["fitted_predictions"] = prediction_dl
-    except Exception:
-        prediction_dl = pd.DataFrame()
-    session_new_pred = st.session_state.get("mfrm_new_design_prediction_bundle", {})
-    if isinstance(session_new_pred, dict):
-        new_pred_tbl = session_new_pred.get("table", pd.DataFrame())
-        if isinstance(new_pred_tbl, pd.DataFrame) and not new_pred_tbl.empty:
-            all_frames["new_design_predictions"] = new_pred_tbl
-    session_refit_sim = st.session_state.get("mfrm_refit_simulation_bundle", {})
-    if isinstance(session_refit_sim, dict):
-        refit_summary = session_refit_sim.get("summary", pd.DataFrame())
-        refit_counts = session_refit_sim.get("category_counts", pd.DataFrame())
-        if isinstance(refit_summary, pd.DataFrame) and not refit_summary.empty:
-            all_frames["refit_simulation_summary"] = refit_summary
-        if isinstance(refit_counts, pd.DataFrame) and not refit_counts.empty:
-            all_frames["refit_simulation_category_counts"] = refit_counts
-    try:
-        design_dl = evaluate_design_from_fitted(result, diagnostics, forecast_multipliers=(2.0,))
-        if isinstance(design_dl, dict) and design_dl.get("available"):
-            design_overview = design_dl.get("overview", pd.DataFrame())
-            design_summary = design_dl.get("summary", pd.DataFrame())
-            design_forecast = design_dl.get("forecast", pd.DataFrame())
-            design_counts = design_dl.get("facet_counts", pd.DataFrame())
-            design_sample_summary = design_dl.get("sample_size_summary", pd.DataFrame())
-            design_sample_audit = design_dl.get("sample_size_adequacy", pd.DataFrame())
-            design_nesting = design_dl.get("nesting_audit", pd.DataFrame())
-            design_effect = design_dl.get("design_effect", pd.DataFrame())
-            if isinstance(design_overview, pd.DataFrame) and not design_overview.empty:
-                all_frames["design_overview"] = design_overview
-            if isinstance(design_summary, pd.DataFrame) and not design_summary.empty:
-                all_frames["design_evaluation"] = design_summary
-            if isinstance(design_forecast, pd.DataFrame) and not design_forecast.empty:
-                all_frames["design_reliability_forecast"] = design_forecast
-            if isinstance(design_counts, pd.DataFrame) and not design_counts.empty:
-                all_frames["design_facet_counts"] = design_counts
-            if isinstance(design_sample_summary, pd.DataFrame) and not design_sample_summary.empty:
-                all_frames["facet_sample_size_summary"] = design_sample_summary
-            if isinstance(design_sample_audit, pd.DataFrame) and not design_sample_audit.empty:
-                all_frames["facet_sample_size_adequacy"] = design_sample_audit
-            if isinstance(design_nesting, pd.DataFrame) and not design_nesting.empty:
-                all_frames["facet_nesting_audit"] = design_nesting
-            if isinstance(design_effect, pd.DataFrame) and not design_effect.empty:
-                all_frames["intraclass_icc_design_effect"] = design_effect
-    except Exception:
-        design_dl = {}
-    if isinstance(residuals, pd.DataFrame) and not residuals.empty:
-        all_frames["residuals"] = residuals
-    posterior_dl = result.get("posterior", {})
-    if isinstance(posterior_dl, dict):
-        posterior_scores = posterior_dl.get("scores", pd.DataFrame())
-        plausible_values = posterior_dl.get("plausible_values", pd.DataFrame())
-        if isinstance(posterior_scores, pd.DataFrame) and not posterior_scores.empty:
-            all_frames["posterior_scores"] = posterior_scores
-        if isinstance(plausible_values, pd.DataFrame) and not plausible_values.empty:
-            all_frames["plausible_values"] = plausible_values
-    if not fit_dl.empty:
-        all_frames["fit_statistics"] = fit_dl
-    for facet_name, tbl in (report_tables or {}).items():
-        safe_name = facet_name.replace(" ", "_")[:31]
-        all_frames[f"facets_{safe_name}"] = tbl
-    if bias_results and bias_results.get("table") is not None and not bias_results["table"].empty:
-        all_frames["bias_table"] = bias_results["table"]
-        dff_tbl = build_dff_bias_screening_table(bias_results)
-        if isinstance(dff_tbl, pd.DataFrame) and not dff_tbl.empty:
-            all_frames["dff_bias_screening"] = dff_tbl
-        if bias_results.get("summary") is not None:
-            all_frames["bias_summary"] = bias_results["summary"]
-    if all_bias_results:
-        for pair_key, pair_bundle in all_bias_results.items():
-            pair_table = pair_bundle.get("table") if isinstance(pair_bundle, dict) else None
-            if isinstance(pair_table, pd.DataFrame) and not pair_table.empty:
-                safe_pair = re.sub(r"[^A-Za-z0-9]+", "_", str(pair_key)).strip("_")[:40]
-                all_frames[f"bias_{safe_pair}"] = pair_table
-                dff_pair = build_dff_bias_screening_table(pair_bundle)
-                if isinstance(dff_pair, pd.DataFrame) and not dff_pair.empty:
-                    all_frames[f"dff_bias_{safe_pair}"] = dff_pair
-    marginal_fit = diagnostics.get("marginal_fit", {})
-    if isinstance(marginal_fit, dict):
-        marginal_summary = marginal_fit.get("summary", pd.DataFrame())
-        marginal_counts = marginal_fit.get("counts", pd.DataFrame())
-        marginal_pairwise = marginal_fit.get("pairwise", {}) if isinstance(marginal_fit.get("pairwise", {}), dict) else {}
-        pair_summary = marginal_pairwise.get("summary", pd.DataFrame())
-        pair_counts = marginal_pairwise.get("counts", pd.DataFrame())
-        if isinstance(marginal_summary, pd.DataFrame) and not marginal_summary.empty:
-            all_frames["marginal_fit_summary"] = marginal_summary
-        if isinstance(marginal_counts, pd.DataFrame) and not marginal_counts.empty:
-            all_frames["marginal_fit_counts"] = marginal_counts
-        if isinstance(pair_summary, pd.DataFrame) and not pair_summary.empty:
-            all_frames["marginal_pairwise_summary"] = pair_summary
-        if isinstance(pair_counts, pd.DataFrame) and not pair_counts.empty:
-            all_frames["marginal_pairwise_counts"] = pair_counts
-    anchor_audit = result.get("config", {}).get("anchor_audit", {})
-    if isinstance(anchor_audit, dict):
-        audit_summary = anchor_audit.get("summary", pd.DataFrame())
-        audit_issues = anchor_audit.get("issues", pd.DataFrame())
-        valid_anchors = anchor_audit.get("valid_anchors", pd.DataFrame())
-        valid_group_anchors = anchor_audit.get("valid_group_anchors", pd.DataFrame())
-        if isinstance(audit_summary, pd.DataFrame) and not audit_summary.empty:
-            all_frames["anchor_audit_summary"] = audit_summary
-        if isinstance(audit_issues, pd.DataFrame) and not audit_issues.empty:
-            all_frames["anchor_audit_issues"] = audit_issues
-        if isinstance(valid_anchors, pd.DataFrame) and not valid_anchors.empty:
-            all_frames["valid_anchor_inputs"] = valid_anchors
-        if isinstance(valid_group_anchors, pd.DataFrame) and not valid_group_anchors.empty:
-            all_frames["valid_group_anchor_inputs"] = valid_group_anchors
-    drift_review = result.get("anchor_drift", {})
-    if isinstance(drift_review, dict):
-        drift_summary = drift_review.get("summary", pd.DataFrame())
-        anchor_drift_tbl = drift_review.get("anchor_drift", pd.DataFrame())
-        group_drift_tbl = drift_review.get("group_drift", pd.DataFrame())
-        if isinstance(drift_summary, pd.DataFrame) and not drift_summary.empty:
-            all_frames["anchor_drift_summary"] = drift_summary
-        if isinstance(anchor_drift_tbl, pd.DataFrame) and not anchor_drift_tbl.empty:
-            all_frames["anchor_drift"] = anchor_drift_tbl
-        if isinstance(group_drift_tbl, pd.DataFrame) and not group_drift_tbl.empty:
-            all_frames["group_anchor_drift"] = group_drift_tbl
-    chain_review = result.get("equating_chain", {})
-    if isinstance(chain_review, dict):
-        chain_summary = chain_review.get("summary", pd.DataFrame())
-        chain_edges = chain_review.get("edges", pd.DataFrame())
-        if isinstance(chain_summary, pd.DataFrame) and not chain_summary.empty:
-            all_frames["equating_chain_summary"] = chain_summary
-        if isinstance(chain_edges, pd.DataFrame) and not chain_edges.empty:
-            all_frames["equating_chain_edges"] = chain_edges
-    workflow_plan = result.get("anchor_equating_workflow", pd.DataFrame())
-    if isinstance(workflow_plan, pd.DataFrame) and not workflow_plan.empty:
-        all_frames["anchor_equating_workflow"] = workflow_plan
-
-    # Anchor data
-    anchor_parts = []
-    others_df = result.get("facets", {}).get("others", pd.DataFrame())
-    if not others_df.empty and "Facet" in others_df.columns and "Level" in others_df.columns and "Estimate" in others_df.columns:
-        for _, row in others_df.iterrows():
-            anchor_parts.append({
-                "Facet": row["Facet"],
-                "Level": row["Level"],
-                "Anchor": round(float(row["Estimate"]), 4),
-            })
-    if anchor_parts:
-        all_frames["anchors"] = pd.DataFrame(anchor_parts)
-    stan_archive_contract_dl = stan_reproducibility_archive_contract_table(public_export_mode=bool(public_export_mode))
-    if isinstance(stan_archive_contract_dl, pd.DataFrame) and not stan_archive_contract_dl.empty:
-        all_frames["stan_reproducibility_archive_contract"] = stan_archive_contract_dl
-    try:
-        handoff_checklist_dl = build_manuscript_handoff_checklist(
-            result,
-            diagnostics,
-            all_bias_results,
-            public_export_mode=bool(public_export_mode),
-        )
-        if isinstance(handoff_checklist_dl, pd.DataFrame) and not handoff_checklist_dl.empty:
-            all_frames["manuscript_handoff_checklist"] = handoff_checklist_dl
-    except Exception:
-        handoff_checklist_dl = pd.DataFrame()
+    all_frames, download_context = collect_download_frames(
+        result,
+        diagnostics,
+        report_tables,
+        scorefile,
+        residuals,
+        public_export_mode=bool(public_export_mode),
+        bias_results=bias_results,
+        all_bias_results=all_bias_results,
+    )
+    measures_dl = download_context["measures_dl"]
+    steps_dl = download_context["steps_dl"]
+    prep = download_context["prep"]
+    action_plan_dl = download_context["action_plan_dl"]
+    apa_sentence_audit_dl = download_context["apa_sentence_audit_dl"]
+    category_action_center_dl = download_context["category_action_center_dl"]
+    category_action_dl = download_context["category_action_dl"]
+    claim_evidence_dl = download_context["claim_evidence_dl"]
+    claim_guide_dl = download_context["claim_guide_dl"]
+    critical_final_review_dl = download_context["critical_final_review_dl"]
+    generic_stan_data_dl = download_context["generic_stan_data_dl"]
+    handoff_checklist_dl = download_context["handoff_checklist_dl"]
+    operational_decision_board_dl = download_context["operational_decision_board_dl"]
+    qc_recommendations_dl = download_context["qc_recommendations_dl"]
+    readiness_dl = download_context["readiness_dl"]
+    report_ready_summary_dl = download_context["report_ready_summary_dl"]
+    reporting_action_bridge_dl = download_context["reporting_action_bridge_dl"]
+    result_reading_path_dl = download_context["result_reading_path_dl"]
+    role_action_checklist_dl = download_context["role_action_checklist_dl"]
+    role_action_memos_dl = download_context["role_action_memos_dl"]
+    status_rationale_dl = download_context["status_rationale_dl"]
+    uto_stan_data_dl = download_context["uto_stan_data_dl"]
+    yardstick_map_dl = download_context["yardstick_map_dl"]
     download_frames = prepare_download_frames_for_privacy(
         all_frames,
         public_export_mode=bool(public_export_mode),
@@ -49369,6 +57758,69 @@ def _render_downloads(
             all_bias_results,
             public_export_mode=bool(public_export_mode),
         )
+        report_ready_decision_brief = generate_report_ready_decision_brief(
+            result,
+            diagnostics,
+            all_bias_results=all_bias_results,
+            bias_results=bias_results,
+        )
+        simulation_sparse_context_dl = all_frames.get(
+            "custom_simulation_sparse_reporting_context",
+            pd.DataFrame(),
+        )
+        simulation_settings_dl = all_frames.get("custom_simulation_settings", pd.DataFrame())
+        apa_results_paragraph_draft = generate_report_ready_apa_results_draft(
+            result,
+            diagnostics,
+            all_bias_results=all_bias_results,
+            bias_results=bias_results,
+            simulation_sparse_context=simulation_sparse_context_dl,
+            simulation_settings=simulation_settings_dl,
+        )
+        role_based_action_memos_md = generate_role_based_action_memos_markdown(
+            result,
+            diagnostics,
+            all_bias_results=all_bias_results,
+            bias_results=bias_results,
+        )
+        role_based_action_checklist_md = generate_role_based_action_checklist_markdown(
+            result,
+            diagnostics,
+            all_bias_results=all_bias_results,
+            bias_results=bias_results,
+        )
+        reanalysis_checklist_md = generate_report_ready_reanalysis_checklist_markdown(
+            all_frames.get("report_ready_reanalysis_checklist", pd.DataFrame())
+        )
+        critical_final_review_md = generate_critical_final_review_markdown(
+            result,
+            diagnostics,
+            all_bias_results=all_bias_results,
+            bias_results=bias_results,
+            role_action_checklist=role_action_checklist_dl,
+            critical_final_review=critical_final_review_dl,
+            report_ready_summary=report_ready_summary_dl,
+            final_report_readiness=readiness_dl,
+            submission_action_plan=action_plan_dl,
+        )
+        reporting_action_bridge_md = generate_reporting_action_bridge_markdown(
+            result,
+            diagnostics,
+            all_bias_results=all_bias_results,
+            bias_results=bias_results,
+            bridge=reporting_action_bridge_dl,
+            role_action_checklist=role_action_checklist_dl,
+            report_ready_summary=report_ready_summary_dl,
+            final_report_readiness=readiness_dl,
+            manuscript_claim_guide=claim_guide_dl,
+            critical_final_review=critical_final_review_dl,
+            status_rationale=status_rationale_dl,
+            result_reading_path=result_reading_path_dl,
+            operational_decision_board=operational_decision_board_dl,
+            quality_control_recommendations=qc_recommendations_dl,
+            category_action_center=category_action_center_dl,
+            submission_action_plan=action_plan_dl,
+        )
         if not isinstance(handoff_checklist_dl, pd.DataFrame) or handoff_checklist_dl.empty:
             handoff_checklist_dl = build_manuscript_handoff_checklist(
                 result,
@@ -49383,10 +57835,19 @@ def _render_downloads(
         stan_data_assets = stan_data_export_assets(result, include_row_level=not bool(public_export_mode))
         stan_complete_assets = stan_reproducibility_package_assets(result, include_row_level=not bool(public_export_mode))
         local_batch_readme = generate_local_batch_readme()
+        category_collapse_draft = generate_category_collapse_sensitivity_draft(result, diagnostics)
         text_assets = {
             "manuscript_handoff.md": manuscript_handoff,
+            "report_ready_decision_brief.md": report_ready_decision_brief,
+            "apa_results_paragraph_draft.md": apa_results_paragraph_draft,
+            "role_based_action_memos.md": role_based_action_memos_md,
+            "role_based_action_checklist.md": role_based_action_checklist_md,
+            "report_ready_reanalysis_checklist.md": reanalysis_checklist_md,
+            "critical_final_review.md": critical_final_review_md,
+            "reporting_action_bridge.md": reporting_action_bridge_md,
             "method_appendix.md": method_appendix,
             "manuscript_template.md": manuscript_template,
+            "apa_category_collapse_sensitivity_draft.md": category_collapse_draft,
             "local_batch_workflow.md": local_batch_readme,
             "mfrm_config.json": config_json,
             "visualization_settings.json": _visualization_preferences_json(),
@@ -49427,6 +57888,193 @@ def _render_downloads(
             mime="text/markdown",
             key="dl_manuscript_handoff_md",
         )
+        st.subheader("Report-ready decision brief")
+        st.caption(
+            "One-page writing and decision memo generated from the report-ready summary panel."
+        )
+        with st.expander("View report-ready decision brief"):
+            st.code(report_ready_decision_brief, language="markdown")
+        st.download_button(
+            "Download report-ready decision brief (Markdown)",
+            data=report_ready_decision_brief.encode("utf-8"),
+            file_name="report_ready_decision_brief.md",
+            mime="text/markdown",
+            key="dl_report_ready_decision_brief_md",
+        )
+        st.subheader("APA Results paragraph draft")
+        st.caption(
+            "A conservative Results draft built only from APA sentence-audit rows that are not blocked."
+        )
+        with st.expander("View APA Results paragraph draft"):
+            st.code(apa_results_paragraph_draft, language="markdown")
+        st.download_button(
+            "Download APA Results paragraph draft (Markdown)",
+            data=apa_results_paragraph_draft.encode("utf-8"),
+            file_name="apa_results_paragraph_draft.md",
+            mime="text/markdown",
+            key="dl_apa_results_paragraph_draft_downloads_md",
+        )
+        st.subheader("Role-based action memos")
+        st.caption(
+            "Separate first actions for paper authors, scoring managers, and measurement practitioners."
+        )
+        if isinstance(role_action_memos_dl, pd.DataFrame) and not role_action_memos_dl.empty:
+            _render_compact_dataframe(
+                role_action_memos_dl,
+                ["Role", "Priority", "DecisionFocus", "ReportStatus", "ImmediateAction", "EvidenceToOpen"],
+                details_label="Show full role-based action memos",
+                hide_index=True,
+                wrap_text=True,
+            )
+            st.download_button(
+                "Download role-based action memos (CSV)",
+                data=to_csv_bytes(role_action_memos_dl),
+                file_name="role_based_action_memos.csv",
+                mime="text/csv",
+                key="dl_role_based_action_memos_csv",
+            )
+        with st.expander("View role-based action memos"):
+            st.code(role_based_action_memos_md, language="markdown")
+        st.download_button(
+            "Download role-based action memos (Markdown)",
+            data=role_based_action_memos_md.encode("utf-8"),
+            file_name="role_based_action_memos.md",
+            mime="text/markdown",
+            key="dl_role_based_action_memos_md",
+        )
+        st.subheader("Role-based action checklist")
+        st.caption(
+            "Checkbox-ready tasks derived from the role memos. Use this for coauthor, scoring, or diagnostic review handoff."
+        )
+        if isinstance(role_action_checklist_dl, pd.DataFrame) and not role_action_checklist_dl.empty:
+            _render_compact_dataframe(
+                role_action_checklist_dl,
+                ["Done", "Role", "Step", "ToDoItem", "ReportStatus", "Action", "EvidenceToOpen"],
+                details_label="Show full role-based action checklist",
+                hide_index=True,
+                wrap_text=True,
+            )
+            st.download_button(
+                "Download role-based action checklist (CSV)",
+                data=to_csv_bytes(role_action_checklist_dl),
+                file_name="role_based_action_checklist.csv",
+                mime="text/csv",
+                key="dl_role_based_action_checklist_csv",
+            )
+        with st.expander("View role-based action checklist"):
+            st.code(role_based_action_checklist_md, language="markdown")
+        st.download_button(
+            "Download role-based action checklist (Markdown)",
+            data=role_based_action_checklist_md.encode("utf-8"),
+            file_name="role_based_action_checklist.md",
+            mime="text/markdown",
+            key="dl_role_based_action_checklist_md",
+        )
+        st.subheader("Critical final review")
+        st.caption(
+            "Cross-lens review of what still stops final output, what needs caveats, "
+            "and which evidence files must be opened before manuscript or decision use."
+        )
+        if isinstance(critical_final_review_dl, pd.DataFrame) and not critical_final_review_dl.empty:
+            _render_compact_dataframe(
+                critical_final_review_dl,
+                ["Priority", "Lens", "Decision", "StopBeforeFinalOutput", "NeedsCaveat", "ActionBeforeContinuing"],
+                details_label="Show full critical final review",
+                hide_index=True,
+                wrap_text=True,
+            )
+            st.download_button(
+                "Download critical final review (CSV)",
+                data=to_csv_bytes(critical_final_review_dl),
+                file_name="critical_final_review_panel.csv",
+                mime="text/csv",
+                key="dl_critical_final_review_panel_csv",
+            )
+        with st.expander("View critical final review"):
+            st.code(critical_final_review_md, language="markdown")
+        st.download_button(
+            "Download critical final review (Markdown)",
+            data=critical_final_review_md.encode("utf-8"),
+            file_name="critical_final_review.md",
+            mime="text/markdown",
+            key="dl_critical_final_review_md",
+        )
+        st.subheader("Audience-specific review boards")
+        st.caption(
+            "Three CSV views of the same evidence: status rationale, result reading path, "
+            "and operational decisions for scoring and test development."
+        )
+        audience_export_specs = [
+            (
+                status_rationale_dl,
+                "Status rationale",
+                ["Priority", "StatusSource", "CurrentStatus", "Decision", "MinimumEvidenceNeeded"],
+                "status_rationale_drilldown.csv",
+                "dl_status_rationale_drilldown_csv",
+            ),
+            (
+                result_reading_path_dl,
+                "Result reading path",
+                ["Step", "ReadingGoal", "GuidingQuestion", "CurrentStatus", "OpenFirst"],
+                "result_reading_path.csv",
+                "dl_result_reading_path_csv",
+            ),
+            (
+                operational_decision_board_dl,
+                "Operational decision board",
+                ["Priority", "Decision", "OwnerRole", "CurrentSignal", "RecommendedAction"],
+                "operational_decision_board.csv",
+                "dl_operational_decision_board_csv",
+            ),
+        ]
+        for frame, label, cols, file_name, key in audience_export_specs:
+            if isinstance(frame, pd.DataFrame) and not frame.empty:
+                _render_compact_dataframe(
+                    frame,
+                    cols,
+                    details_label=f"Show full {label.lower()}",
+                    hide_index=True,
+                    wrap_text=True,
+                )
+                st.download_button(
+                    f"Download {label.lower()} (CSV)",
+                    data=to_csv_bytes(frame),
+                    file_name=file_name,
+                    mime="text/csv",
+                    key=key,
+                )
+        st.subheader("Reporting action bridge")
+        st.caption(
+            "Connects review-board evidence to APA wording, claim revision, scoring actions, rubric decisions, "
+            "category-collapse sensitivity notes, and archive steps."
+        )
+        if isinstance(reporting_action_bridge_dl, pd.DataFrame) and not reporting_action_bridge_dl.empty:
+            _render_compact_dataframe(
+                reporting_action_bridge_dl,
+                ["Priority", "BridgeTrack", "PrimaryAudience", "CurrentStatus", "OutputToProduce", "DraftOrDecisionMove"],
+                details_label="Show full reporting action bridge",
+                hide_index=True,
+                wrap_text=True,
+            )
+            bridge_csv_col, bridge_md_col = st.columns(2)
+            with bridge_csv_col:
+                st.download_button(
+                    "Download reporting action bridge (CSV)",
+                    data=to_csv_bytes(reporting_action_bridge_dl),
+                    file_name="reporting_action_bridge.csv",
+                    mime="text/csv",
+                    key="dl_reporting_action_bridge_csv",
+                )
+            with bridge_md_col:
+                with st.expander("View reporting action bridge"):
+                    st.code(reporting_action_bridge_md, language="markdown")
+                st.download_button(
+                    "Download reporting action bridge (Markdown)",
+                    data=reporting_action_bridge_md.encode("utf-8"),
+                    file_name="reporting_action_bridge.md",
+                    mime="text/markdown",
+                    key="dl_reporting_action_bridge_md",
+                )
         if not isinstance(claim_evidence_dl, pd.DataFrame) or claim_evidence_dl.empty:
             claim_evidence_dl = build_claim_to_evidence_matrix(result, diagnostics, all_bias_results)
         st.subheader("Claim-to-evidence matrix")
@@ -49668,9 +58316,35 @@ def _render_downloads(
 
         st.subheader("Rating-scale recode reproduction")
         st.caption(
-            "Download the candidate score-map CSV plus Python/R/Julia scripts that create recoded score columns "
-            "without overwriting the original score column."
+            "Download the action checklist, APA sensitivity draft, candidate score-map CSV, and Python/R/Julia "
+            "scripts that create recoded score columns without overwriting the original score column."
         )
+        if not isinstance(category_action_dl, pd.DataFrame) or category_action_dl.empty:
+            category_action_dl = category_collapse_action_center_table(result, diagnostics)
+        if isinstance(category_action_dl, pd.DataFrame) and not category_action_dl.empty:
+            _render_compact_dataframe(
+                category_action_dl,
+                ["ActionStep", "ActionArea", "Status", "Priority", "RecommendedAction", "CompletionCriterion"],
+                details_label="Show full category-collapse action center",
+                hide_index=True,
+                wrap_text=True,
+            )
+            st.download_button(
+                "Download category-collapse action center (CSV)",
+                data=to_csv_bytes(category_action_dl),
+                file_name="mfrm_category_collapse_action_center.csv",
+                mime="text/csv",
+                key="dl_downloads_category_collapse_action_center",
+            )
+            with st.expander("View APA category-collapse sensitivity draft", expanded=False):
+                st.markdown(category_collapse_draft)
+            st.download_button(
+                "Download APA category-collapse sensitivity draft (Markdown)",
+                data=category_collapse_draft.encode("utf-8"),
+                file_name="apa_category_collapse_sensitivity_draft.md",
+                mime="text/markdown",
+                key="dl_downloads_category_collapse_sensitivity_draft",
+            )
         recode_map_long_dl = rating_scale_recode_map_long_table(result, diagnostics)
         if isinstance(recode_map_long_dl, pd.DataFrame) and not recode_map_long_dl.empty:
             st.dataframe(recode_map_long_dl, width="stretch", hide_index=True)
@@ -49683,6 +58357,26 @@ def _render_downloads(
             )
         else:
             st.caption("Recode script assets are available after rating-scale category diagnostics exist.")
+
+        st.subheader("Cross-engine validation (TAM / sirt / mirt)")
+        st.caption(
+            "Refit this exact analysis in R (TAM, sirt, mirt) and cross-check the main "
+            "MML/GPCM estimates. The ZIP ships the data, the fitted settings, the app's own "
+            "person/facet/step/slope estimates, an R script, and a README of expected "
+            "differences. This is a reproducibility artifact — exact numerical equality with "
+            "those packages is not claimed; rank-order and directional agreement is the bar."
+        )
+        cross_engine_assets = build_cross_engine_validation_bundle(result)
+        if cross_engine_assets:
+            st.download_button(
+                "Download cross-engine validation bundle (TAM/sirt/mirt ZIP)",
+                data=cached_mixed_asset_zip(cross_engine_assets, bytes_mapping_fingerprint(cross_engine_assets)),
+                file_name="MFRM_Cross_Engine_Validation_Bundle.zip",
+                mime="application/zip",
+                key="dl_cross_engine_validation_bundle_zip",
+            )
+        else:
+            st.caption("Cross-engine validation assets are available after a fitted result with data and estimates exists.")
 
         st.subheader("Uto-family Bayesian MFRM Stan refinement")
         st.caption(
@@ -50894,7 +59588,7 @@ def _self_test_report_readiness_and_method_appendix() -> None:
         {"wright_map": b"png"},
     )
     _self_test_assert(
-        {"Theme", "BaseFontSize", "LabelPolicy", "LabelMaxChars", "CaptionDetail"}.issubset(figure_manifest_test.columns),
+        {"Theme", "BaseFontSize", "LabelPolicy", "PlotLabelMode", "LabelMaxChars", "CaptionDetail"}.issubset(figure_manifest_test.columns),
         "figure manifest missing visualization preference columns",
     )
     visual_evidence = build_visual_evidence_map(figure_manifest_test, claim_evidence)
@@ -50912,6 +59606,7 @@ def _self_test_report_readiness_and_method_appendix() -> None:
             "Theme",
             "BaseFontSize",
             "LabelPolicy",
+            "PlotLabelMode",
             "CaptionDetail",
             "VisualGuardrailID",
             "SafeReportWording",
@@ -53498,6 +62193,7 @@ def export_reference_parity_fixture(output_dir: str) -> int:
             "posterior_scores": res.get("posterior", {}).get("scores", pd.DataFrame()),
             "fit_statistics": diagnostics.get("fit", pd.DataFrame()),
             "reliability": diagnostics.get("reliability", pd.DataFrame()),
+            "krippendorff_alpha_experimental": diagnostics.get("krippendorff_alpha", pd.DataFrame()),
             "score_map": res.get("prep", {}).get("score_map", pd.DataFrame()),
         }
         written = []
@@ -53826,7 +62522,7 @@ def build_demo_report_frames(
 ) -> OrderedDict[str, pd.DataFrame]:
     """Assemble guided demo report tables for CLI export."""
     frames: OrderedDict[str, pd.DataFrame] = OrderedDict()
-    frames["demo_manifest"] = pd.DataFrame([
+    _frame_bundle.add_frame(frames, "demo_manifest", pd.DataFrame([
         {
             "AppVersion": APP_VERSION,
             "ReleaseLabel": APP_RELEASE_LABEL,
@@ -53835,104 +62531,132 @@ def build_demo_report_frames(
             "Method": result.get("config", {}).get("method"),
             "RuntimeBoundary": "standalone Python; no mfrmr/rpy2/Rscript/FACETS/TAM/sirt/mirt runtime call",
             "PrivacyNote": "The demo uses synthetic built-in data only.",
-            "ReadFirst": "Open manuscript_handoff.md, then manuscript_handoff_checklist, publication_gate_summary, submission_action_plan, case_interpretation_guidance, final_report_readiness, manuscript_claim_guide, apa_report_sentence_audit, manuscript_template.md, visual_interpretation_checklist, visual_claim_guardrails, measures, and category_probability_curves.",
+            "ReadFirst": "Open manuscript_handoff.md, then report_ready_summary_panel, critical_final_review_panel, status_rationale_drilldown, result_reading_path, operational_decision_board, reporting_action_bridge, manuscript_handoff_checklist, publication_gate_summary, submission_action_plan, case_interpretation_guidance, final_report_readiness, manuscript_claim_guide, apa_report_sentence_audit, manuscript_template.md, visual_interpretation_checklist, visual_claim_guardrails, measures, and category_probability_curves.",
         }
-    ])
-    frames["sample_data"] = data.copy()
+    ]), allow_empty=True)
+    _frame_bundle.add_frame(frames, "sample_data", data.copy(), allow_empty=True)
     summary = result.get("summary", pd.DataFrame())
-    if isinstance(summary, pd.DataFrame) and not summary.empty:
-        frames["summary"] = summary
     convergence = result.get("convergence", pd.DataFrame())
-    if isinstance(convergence, pd.DataFrame) and not convergence.empty:
-        frames["convergence"] = convergence
     prep = result.get("prep", {})
     score_map = prep.get("score_map", pd.DataFrame())
-    if isinstance(score_map, pd.DataFrame) and not score_map.empty:
-        frames["score_map"] = score_map
+    _frame_bundle.add_frames(frames, (
+        ("summary", summary),
+        ("convergence", convergence),
+        ("score_map", score_map),
+    ))
     publication_gate = build_publication_gate_summary(result, diagnostics, all_bias_results or {})
-    if isinstance(publication_gate, pd.DataFrame) and not publication_gate.empty:
-        frames["publication_gate_summary"] = publication_gate
+    report_ready_summary = build_report_ready_summary_panel(result, diagnostics, all_bias_results or {})
+    role_action_memos = build_role_based_action_memos(result, diagnostics, all_bias_results or {})
+    role_action_checklist = build_role_based_action_checklist(result, diagnostics, all_bias_results or {})
+    critical_final_review = build_critical_final_review_panel(
+        result,
+        diagnostics,
+        all_bias_results or {},
+        role_action_checklist=role_action_checklist,
+    )
+    status_rationale = build_status_rationale_drilldown(
+        result,
+        diagnostics,
+        all_bias_results or {},
+        role_action_checklist=role_action_checklist,
+    )
+    reading_path = build_result_reading_path(result, diagnostics, all_bias_results or {})
+    operational_board = build_operational_decision_board(result, diagnostics, all_bias_results or {})
+    reporting_bridge = build_reporting_action_bridge(
+        result,
+        diagnostics,
+        all_bias_results or {},
+        role_action_checklist=role_action_checklist,
+        report_ready_summary=report_ready_summary,
+        critical_final_review=critical_final_review,
+        status_rationale=status_rationale,
+        result_reading_path=reading_path,
+        operational_decision_board=operational_board,
+    )
     action_plan = build_submission_action_plan(result, diagnostics, all_bias_results or {})
-    if isinstance(action_plan, pd.DataFrame) and not action_plan.empty:
-        frames["submission_action_plan"] = action_plan
     case_guidance = build_case_interpretation_guidance(result, diagnostics, all_bias_results or {})
-    if isinstance(case_guidance, pd.DataFrame) and not case_guidance.empty:
-        frames["case_interpretation_guidance"] = case_guidance
     readiness = build_final_report_readiness(result, diagnostics, all_bias_results or {})
-    if isinstance(readiness, pd.DataFrame) and not readiness.empty:
-        frames["final_report_readiness"] = readiness
     claim_guide = build_manuscript_claim_guide(result, diagnostics, all_bias_results or {})
-    if isinstance(claim_guide, pd.DataFrame) and not claim_guide.empty:
-        frames["manuscript_claim_guide"] = claim_guide
     claim_evidence = build_claim_to_evidence_matrix(result, diagnostics, all_bias_results or {})
-    if isinstance(claim_evidence, pd.DataFrame) and not claim_evidence.empty:
-        frames["claim_to_evidence_matrix"] = claim_evidence
     apa_sentence_audit = build_apa_report_sentence_audit(result, diagnostics, all_bias_results=all_bias_results or {})
-    if isinstance(apa_sentence_audit, pd.DataFrame) and not apa_sentence_audit.empty:
-        frames["apa_report_sentence_audit"] = apa_sentence_audit
     assumption_audit = build_statistical_assumption_audit(result, diagnostics, all_bias_results or {})
-    if isinstance(assumption_audit, pd.DataFrame) and not assumption_audit.empty:
-        frames["statistical_assumption_audit"] = assumption_audit
     method_ref_audit = build_method_reference_audit()
-    if isinstance(method_ref_audit, pd.DataFrame) and not method_ref_audit.empty:
-        frames["method_reference_audit"] = method_ref_audit
     bias_inference_audit = build_bias_inference_audit(all_bias_results or {}, result, diagnostics)
-    if isinstance(bias_inference_audit, pd.DataFrame) and not bias_inference_audit.empty:
-        frames["bias_inference_audit"] = bias_inference_audit
     prior_plan = build_mml_prior_sensitivity_plan(result)
-    if isinstance(prior_plan, pd.DataFrame) and not prior_plan.empty:
-        frames["mml_prior_sd_sensitivity_plan"] = prior_plan
+    _frame_bundle.add_frames(frames, (
+        ("publication_gate_summary", publication_gate),
+        ("report_ready_summary_panel", report_ready_summary),
+        ("role_based_action_memos", role_action_memos),
+        ("role_based_action_checklist", role_action_checklist),
+        ("critical_final_review_panel", critical_final_review),
+        ("status_rationale_drilldown", status_rationale),
+        ("result_reading_path", reading_path),
+        ("operational_decision_board", operational_board),
+        ("reporting_action_bridge", reporting_bridge),
+        ("submission_action_plan", action_plan),
+        ("case_interpretation_guidance", case_guidance),
+        ("final_report_readiness", readiness),
+        ("manuscript_claim_guide", claim_guide),
+        ("claim_to_evidence_matrix", claim_evidence),
+        ("apa_report_sentence_audit", apa_sentence_audit),
+        ("statistical_assumption_audit", assumption_audit),
+        ("method_reference_audit", method_ref_audit),
+        ("bias_inference_audit", bias_inference_audit),
+        ("mml_prior_sd_sensitivity_plan", prior_plan),
+    ))
     uncertainty = diagnostics.get("uncertainty", {})
     if isinstance(uncertainty, dict):
         unc_summary = uncertainty.get("summary", pd.DataFrame())
         cov_audit = uncertainty.get("covariance_audit", pd.DataFrame())
         structural_se = uncertainty.get("structural_se", pd.DataFrame())
-        if isinstance(unc_summary, pd.DataFrame) and not unc_summary.empty:
-            frames["statistical_uncertainty_summary"] = unc_summary
-        if isinstance(cov_audit, pd.DataFrame) and not cov_audit.empty:
-            frames["mml_covariance_audit"] = cov_audit
-        if isinstance(structural_se, pd.DataFrame) and not structural_se.empty:
-            frames["mml_structural_measure_se"] = structural_se
+        _frame_bundle.add_frames(frames, (
+            ("statistical_uncertainty_summary", unc_summary),
+            ("mml_covariance_audit", cov_audit),
+            ("mml_structural_measure_se", structural_se),
+        ))
     pca = diagnostics.get("pca")
     if isinstance(pca, dict):
         stability = pca.get("stability_table")
-        if isinstance(stability, pd.DataFrame) and not stability.empty:
-            frames["pca_stability_audit"] = stability
         stability_all = collect_pca_stability_tables(diagnostics)
-        if isinstance(stability_all, pd.DataFrame) and not stability_all.empty:
-            frames["pca_stability_all_scopes"] = stability_all
+        _frame_bundle.add_frames(frames, (
+            ("pca_stability_audit", stability),
+            ("pca_stability_all_scopes", stability_all),
+        ))
     handoff_checklist = build_manuscript_handoff_checklist(
         result,
         diagnostics,
         all_bias_results or {},
         public_export_mode=True,
     )
-    if isinstance(handoff_checklist, pd.DataFrame) and not handoff_checklist.empty:
-        frames["manuscript_handoff_checklist"] = handoff_checklist
-    frames["visual_interpretation_checklist"] = visual_interpretation_checklist()
-    frames["visual_claim_guardrails"] = visual_claim_guardrail_table()
-    frames["visual_method_evidence"] = visual_method_evidence_table()
-    frames["public_beta_limitations"] = public_beta_limitations_table()
-    frames["external_simulation_reference_inventory"] = external_simulation_reference_inventory()
-    frames["external_simulation_template_inventory"] = external_simulation_template_inventory()
-    frames["reproducibility_script_matrix"] = reproducibility_script_export_matrix()
-    frames["bayesian_mfrm_stan_refinement_plan"] = bayesian_mfrm_stan_refinement_plan()
-    frames["stan_reproducibility_archive_contract"] = stan_reproducibility_archive_contract_table(public_export_mode=True)
-    frames["stan_posterior_reproducibility_route"] = guided_stan_posterior_reproducibility_help_table()
-    frames["stan_posterior_handoff_checklist"] = stan_posterior_handoff_checklist()
-    frames["stan_run_manifest_template"] = stan_run_manifest_template()
+    _frame_bundle.add_frame(frames, "manuscript_handoff_checklist", handoff_checklist)
+    _frame_bundle.add_frames(frames, (
+        ("visual_interpretation_checklist", visual_interpretation_checklist()),
+        ("visual_claim_guardrails", visual_claim_guardrail_table()),
+        ("visual_method_evidence", visual_method_evidence_table()),
+        ("public_beta_limitations", public_beta_limitations_table()),
+        ("external_simulation_reference_inventory", external_simulation_reference_inventory()),
+        ("external_simulation_template_inventory", external_simulation_template_inventory()),
+        ("reproducibility_script_matrix", reproducibility_script_export_matrix()),
+        ("bayesian_mfrm_stan_refinement_plan", bayesian_mfrm_stan_refinement_plan()),
+        ("stan_reproducibility_archive_contract", stan_reproducibility_archive_contract_table(public_export_mode=True)),
+        ("stan_posterior_reproducibility_route", guided_stan_posterior_reproducibility_help_table()),
+        ("stan_posterior_handoff_checklist", stan_posterior_handoff_checklist()),
+        ("stan_run_manifest_template", stan_run_manifest_template()),
+    ), allow_empty=True)
     generic_stan_export = build_generic_mfrm_stan_data_export(result)
     if generic_stan_export.get("available"):
-        frames["mfrm_stan_data_manifest"] = generic_stan_export["manifest"]
-        frames["mfrm_stan_data_dictionary"] = generic_stan_export["data_dictionary"]
-        frames["mfrm_stan_id_index_map"] = generic_stan_export["id_map"]
-        frames["mfrm_stan_prior_guidance"] = generic_stan_export["prior_guidance"]
-        frames["mfrm_stan_prior_sensitivity_grid"] = generic_stan_export["prior_sensitivity_grid"]
-        frames["mfrm_stan_prior_decision_log_template"] = stan_prior_decision_log_template(
-            sigma_theta_prior_scale=float(generic_stan_export["stan_data"].get("sigma_theta_prior_scale", 2.5)),
-            facet_prior_scale=float(generic_stan_export["stan_data"].get("facet_prior_scale", 2.0)),
-            step_prior_scale=float(generic_stan_export["stan_data"].get("step_prior_scale", 5.0)),
-        )
+        _frame_bundle.add_frames(frames, (
+            ("mfrm_stan_data_manifest", generic_stan_export["manifest"]),
+            ("mfrm_stan_data_dictionary", generic_stan_export["data_dictionary"]),
+            ("mfrm_stan_id_index_map", generic_stan_export["id_map"]),
+            ("mfrm_stan_prior_guidance", generic_stan_export["prior_guidance"]),
+            ("mfrm_stan_prior_sensitivity_grid", generic_stan_export["prior_sensitivity_grid"]),
+            ("mfrm_stan_prior_decision_log_template", stan_prior_decision_log_template(
+                sigma_theta_prior_scale=float(generic_stan_export["stan_data"].get("sigma_theta_prior_scale", 2.5)),
+                facet_prior_scale=float(generic_stan_export["stan_data"].get("facet_prior_scale", 2.0)),
+                step_prior_scale=float(generic_stan_export["stan_data"].get("step_prior_scale", 5.0)),
+            )),
+        ), allow_empty=True)
     try:
         stan_complete_manifest = pd.read_csv(io.StringIO(
             stan_reproducibility_package_assets(
@@ -53940,30 +62664,32 @@ def build_demo_report_frames(
                 include_row_level=False,
             ).get("mfrm_complete_stan_reproducibility_manifest.csv", "")
         ))
-        if isinstance(stan_complete_manifest, pd.DataFrame) and not stan_complete_manifest.empty:
-            frames["mfrm_complete_stan_reproducibility_manifest"] = stan_complete_manifest
+        _frame_bundle.add_frame(frames, "mfrm_complete_stan_reproducibility_manifest", stan_complete_manifest)
     except Exception:
         pass
     uto_stan_export = build_uto_bayesian_mfrm_stan_data_export(result)
     if uto_stan_export.get("available"):
-        frames["mfrm_uto_bayesian_mfrm_design_audit"] = uto_stan_export["design_audit"]
-        frames["mfrm_uto_bayesian_mfrm_claim_wording"] = uto_stan_export["claim_wording"]
-        frames["mfrm_uto_bayesian_mfrm_mapping_manifest"] = uto_stan_export["manifest"]
-        frames["mfrm_uto_bayesian_mfrm_data_dictionary"] = uto_stan_export["data_dictionary"]
-        frames["mfrm_uto_bayesian_mfrm_id_index_map"] = uto_stan_export["id_map"]
-    frames["mfrmr_015_migration_coverage"] = mfrmr_015_migration_coverage_table()
-    frames["mfrmr_016_migration_coverage"] = mfrmr_016_migration_coverage_table()
-    frames["mfrmr_020_migration_coverage"] = mfrmr_020_migration_coverage_table()
-    frames["public_release_readiness"] = public_release_readiness_table()
+        _frame_bundle.add_frames(frames, (
+            ("mfrm_uto_bayesian_mfrm_design_audit", uto_stan_export["design_audit"]),
+            ("mfrm_uto_bayesian_mfrm_claim_wording", uto_stan_export["claim_wording"]),
+            ("mfrm_uto_bayesian_mfrm_mapping_manifest", uto_stan_export["manifest"]),
+            ("mfrm_uto_bayesian_mfrm_data_dictionary", uto_stan_export["data_dictionary"]),
+            ("mfrm_uto_bayesian_mfrm_id_index_map", uto_stan_export["id_map"]),
+        ), allow_empty=True)
+    _frame_bundle.add_frames(frames, (
+        ("mfrmr_015_migration_coverage", mfrmr_015_migration_coverage_table()),
+        ("mfrmr_016_migration_coverage", mfrmr_016_migration_coverage_table()),
+        ("mfrmr_020_migration_coverage", mfrmr_020_migration_coverage_table()),
+        ("public_release_readiness", public_release_readiness_table()),
+    ), allow_empty=True)
     person = result.get("facets", {}).get("person", pd.DataFrame())
-    if isinstance(person, pd.DataFrame) and not person.empty:
-        frames["person_measures"] = person
     others = result.get("facets", {}).get("others", pd.DataFrame())
-    if isinstance(others, pd.DataFrame) and not others.empty:
-        frames["facet_measures"] = others
     steps = result.get("steps", pd.DataFrame())
-    if isinstance(steps, pd.DataFrame) and not steps.empty:
-        frames["steps"] = steps
+    _frame_bundle.add_frames(frames, (
+        ("person_measures", person),
+        ("facet_measures", others),
+        ("steps", steps),
+    ))
     try:
         facets_for_yardstick = result.get("facets", {}) if isinstance(result, dict) else {}
         prep_for_yardstick = result.get("prep", {}) if isinstance(result, dict) else {}
@@ -53973,78 +62699,90 @@ def build_demo_report_frames(
             steps,
             rating_min=prep_for_yardstick.get("rating_min") if isinstance(prep_for_yardstick, dict) else None,
         )
-        if isinstance(yardstick_map, pd.DataFrame) and not yardstick_map.empty:
-            frames["yardstick_map"] = yardstick_map
+        _frame_bundle.add_frame(frames, "yardstick_map", yardstick_map)
     except Exception:
         pass
     slopes = result.get("slopes", pd.DataFrame())
-    if isinstance(slopes, pd.DataFrame) and not slopes.empty:
-        frames["gpcm_slopes"] = slopes
     measures = diagnostics.get("measures", pd.DataFrame())
-    if isinstance(measures, pd.DataFrame) and not measures.empty:
-        frames["measures"] = measures
     reliability = diagnostics.get("reliability", pd.DataFrame())
-    if isinstance(reliability, pd.DataFrame) and not reliability.empty:
-        frames["reliability"] = reliability
+    krippendorff_alpha = diagnostics.get("krippendorff_alpha", pd.DataFrame())
+    _frame_bundle.add_frames(frames, (
+        ("gpcm_slopes", slopes),
+        ("measures", measures),
+        ("reliability", reliability),
+        ("krippendorff_alpha_experimental", krippendorff_alpha),
+    ))
+    try:
+        krippendorff_interpretation = build_krippendorff_alpha_interpretation(result, diagnostics)
+        scoring_decision = build_scoring_consistency_decision(result, diagnostics)
+        qc_recommendations = build_quality_control_recommendations(result, diagnostics)
+        qc_todo = build_quality_control_todo_checklist(result, diagnostics)
+        first_read_summary = build_scoring_quality_first_read_summary(result, diagnostics)
+        term_guide = scoring_quality_term_guide()
+        _frame_bundle.add_frames(frames, (
+            ("krippendorff_alpha_interpretation", krippendorff_interpretation),
+            ("scoring_consistency_decision", scoring_decision),
+            ("quality_control_recommendations", qc_recommendations),
+            ("quality_control_todo_checklist", qc_todo),
+            ("scoring_quality_first_read_summary", first_read_summary),
+            ("scoring_quality_term_guide", term_guide),
+        ))
+    except Exception:
+        pass
     fit = diagnostics.get("fit", pd.DataFrame())
-    if isinstance(fit, pd.DataFrame) and not fit.empty:
-        frames["fit_statistics"] = fit
+    _frame_bundle.add_frame(frames, "fit_statistics", fit)
     obs = diagnostics.get("obs", pd.DataFrame())
     if isinstance(obs, pd.DataFrame) and not obs.empty:
-        frames["residuals"] = obs
+        _frame_bundle.add_frame(frames, "residuals", obs)
         try:
             cat_stats = calc_category_stats(obs, result)
-            if isinstance(cat_stats, pd.DataFrame) and not cat_stats.empty:
-                frames["category_diagnostics"] = cat_stats
+            _frame_bundle.add_frame(frames, "category_diagnostics", cat_stats)
         except Exception:
             pass
         try:
             rating_dashboard = rating_scale_functioning_dashboard(result, diagnostics)
-            if isinstance(rating_dashboard, pd.DataFrame) and not rating_dashboard.empty:
-                frames["rating_scale_functioning_dashboard"] = rating_dashboard
             decision_support = rating_scale_decision_support_table(result, diagnostics)
-            if isinstance(decision_support, pd.DataFrame) and not decision_support.empty:
-                frames["rating_scale_decision_support"] = decision_support
+            category_action = category_collapse_action_center_table(result, diagnostics)
             recode_candidates = rating_scale_recode_candidate_table(result, diagnostics)
-            if isinstance(recode_candidates, pd.DataFrame) and not recode_candidates.empty:
-                frames["rating_scale_recode_candidates"] = recode_candidates
             recode_map_long = rating_scale_recode_map_long_table(result, diagnostics)
-            if isinstance(recode_map_long, pd.DataFrame) and not recode_map_long.empty:
-                frames["rating_scale_recode_map_long"] = recode_map_long
             category_evidence = rating_scale_category_evidence_table(result, diagnostics)
-            if isinstance(category_evidence, pd.DataFrame) and not category_evidence.empty:
-                frames["rating_scale_category_evidence"] = category_evidence
+            _frame_bundle.add_frames(frames, (
+                ("rating_scale_functioning_dashboard", rating_dashboard),
+                ("rating_scale_decision_support", decision_support),
+                ("category_collapse_action_center", category_action),
+                ("rating_scale_recode_candidates", recode_candidates),
+                ("rating_scale_recode_map_long", recode_map_long),
+                ("rating_scale_category_evidence", category_evidence),
+            ))
         except Exception:
             pass
     try:
         step_order = calc_step_order(result.get("steps", pd.DataFrame()))
-        if isinstance(step_order, pd.DataFrame) and not step_order.empty:
-            frames["step_order"] = step_order
+        _frame_bundle.add_frame(frames, "step_order", step_order)
     except Exception:
         pass
     curve_diagnostics = category_curve_diagnostic_scope_table(result)
-    if isinstance(curve_diagnostics, pd.DataFrame) and not curve_diagnostics.empty:
-        frames["category_curve_diagnostics"] = curve_diagnostics
     curve_export = category_probability_curve_export_table(result)
-    if isinstance(curve_export, pd.DataFrame) and not curve_export.empty:
-        frames["category_probability_curves"] = curve_export
+    _frame_bundle.add_frames(frames, (
+        ("category_curve_diagnostics", curve_diagnostics),
+        ("category_probability_curves", curve_export),
+    ))
     try:
         predictions = compute_fitted_prediction_table(result)
-        if isinstance(predictions, pd.DataFrame) and not predictions.empty:
-            frames["fitted_predictions"] = predictions
+        _frame_bundle.add_frame(frames, "fitted_predictions", predictions)
     except Exception:
         pass
     for pair_key, bundle in (all_bias_results or {}).items():
         table = bundle.get("table") if isinstance(bundle, dict) else None
         summary_tbl = bundle.get("summary") if isinstance(bundle, dict) else None
-        safe_pair = re.sub(r"[^A-Za-z0-9]+", "_", str(pair_key)).strip("_")[:40]
         if isinstance(table, pd.DataFrame) and not table.empty:
-            frames[f"bias_{safe_pair}"] = table
+            bias_frame_name = _frame_bundle.safe_frame_key("bias", pair_key, max_label_length=40)
+            _frame_bundle.add_frame(frames, bias_frame_name, table)
             dff_tbl = build_dff_bias_screening_table(bundle)
-            if isinstance(dff_tbl, pd.DataFrame) and not dff_tbl.empty:
-                frames[f"dff_bias_{safe_pair}"] = dff_tbl
-        if isinstance(summary_tbl, pd.DataFrame) and not summary_tbl.empty:
-            frames[f"bias_{safe_pair}_summary"] = summary_tbl
+            dff_frame_name = _frame_bundle.safe_frame_key("dff_bias", pair_key, max_label_length=40)
+            _frame_bundle.add_frame(frames, dff_frame_name, dff_tbl)
+        summary_frame_name = _frame_bundle.safe_frame_key("bias", pair_key, max_label_length=40) + "_summary"
+        _frame_bundle.add_frame(frames, summary_frame_name, summary_tbl)
     return frames
 
 
@@ -54083,7 +62821,7 @@ def export_demo_report(output_dir: str) -> int:
         all_bias_results = {}
 
     frames = build_demo_report_frames(result, diagnostics, data, all_bias_results=all_bias_results)
-    frames["visualization_settings"] = build_visualization_preferences_table()
+    _frame_bundle.add_frame(frames, "visualization_settings", build_visualization_preferences_table())
     method_appendix = generate_method_appendix_text(result, diagnostics, all_bias_results=all_bias_results)
     manuscript_template = generate_manuscript_reporting_template(result, diagnostics, all_bias_results=all_bias_results)
     manuscript_handoff = generate_manuscript_handoff_markdown(
@@ -54092,10 +62830,60 @@ def export_demo_report(output_dir: str) -> int:
         all_bias_results=all_bias_results,
         public_export_mode=True,
     )
+    report_ready_decision_brief = generate_report_ready_decision_brief(
+        result,
+        diagnostics,
+        all_bias_results=all_bias_results,
+    )
+    apa_results_paragraph_draft = generate_report_ready_apa_results_draft(
+        result,
+        diagnostics,
+        all_bias_results=all_bias_results,
+    )
+    role_based_action_memos_md = generate_role_based_action_memos_markdown(
+        result,
+        diagnostics,
+        all_bias_results=all_bias_results,
+    )
+    role_based_action_checklist_md = generate_role_based_action_checklist_markdown(
+        result,
+        diagnostics,
+        all_bias_results=all_bias_results,
+    )
+    role_based_action_checklist = frames.get("role_based_action_checklist", pd.DataFrame())
+    critical_final_review_md = generate_critical_final_review_markdown(
+        result,
+        diagnostics,
+        all_bias_results=all_bias_results,
+        role_action_checklist=role_based_action_checklist,
+    )
+    reporting_action_bridge_md = generate_reporting_action_bridge_markdown(
+        result,
+        diagnostics,
+        all_bias_results=all_bias_results,
+        bridge=frames.get("reporting_action_bridge", pd.DataFrame()),
+        role_action_checklist=role_based_action_checklist,
+        report_ready_summary=frames.get("report_ready_summary_panel", pd.DataFrame()),
+        critical_final_review=frames.get("critical_final_review_panel", pd.DataFrame()),
+        status_rationale=frames.get("status_rationale_drilldown", pd.DataFrame()),
+        result_reading_path=frames.get("result_reading_path", pd.DataFrame()),
+        operational_decision_board=frames.get("operational_decision_board", pd.DataFrame()),
+        submission_action_plan=frames.get("submission_action_plan", pd.DataFrame()),
+        final_report_readiness=frames.get("final_report_readiness", pd.DataFrame()),
+        manuscript_claim_guide=frames.get("manuscript_claim_guide", pd.DataFrame()),
+    )
+    category_collapse_draft = generate_category_collapse_sensitivity_draft(result, diagnostics)
     demo_text_assets = {
         "manuscript_handoff.md": manuscript_handoff,
+        "report_ready_decision_brief.md": report_ready_decision_brief,
+        "apa_results_paragraph_draft.md": apa_results_paragraph_draft,
+        "role_based_action_memos.md": role_based_action_memos_md,
+        "role_based_action_checklist.md": role_based_action_checklist_md,
+        "critical_final_review.md": critical_final_review_md,
+        "reporting_action_bridge.md": reporting_action_bridge_md,
         "method_appendix.md": method_appendix,
         "manuscript_template.md": manuscript_template,
+        "apa_category_collapse_sensitivity_draft.md": category_collapse_draft,
         "visualization_settings.json": _visualization_preferences_json(),
         **external_simulation_template_scripts(),
         **bayesian_stan_runner_templates(),
@@ -54113,8 +62901,14 @@ def export_demo_report(output_dir: str) -> int:
         text_assets=demo_text_assets,
     ))
     (out_dir / "manuscript_handoff.md").write_text(manuscript_handoff, encoding="utf-8")
+    (out_dir / "report_ready_decision_brief.md").write_text(report_ready_decision_brief, encoding="utf-8")
+    (out_dir / "apa_results_paragraph_draft.md").write_text(apa_results_paragraph_draft, encoding="utf-8")
+    (out_dir / "role_based_action_memos.md").write_text(role_based_action_memos_md, encoding="utf-8")
+    (out_dir / "role_based_action_checklist.md").write_text(role_based_action_checklist_md, encoding="utf-8")
+    (out_dir / "critical_final_review.md").write_text(critical_final_review_md, encoding="utf-8")
     (out_dir / "method_appendix.md").write_text(method_appendix, encoding="utf-8")
     (out_dir / "manuscript_template.md").write_text(manuscript_template, encoding="utf-8")
+    (out_dir / "apa_category_collapse_sensitivity_draft.md").write_text(category_collapse_draft, encoding="utf-8")
     for name, script_text in external_simulation_template_scripts().items():
         (out_dir / name).write_text(script_text, encoding="utf-8")
     for name, script_text in bayesian_stan_runner_templates().items():
@@ -54200,10 +62994,10 @@ def export_demo_report(output_dir: str) -> int:
             cached_mixed_asset_zip(figure_assets, bytes_mapping_fingerprint(figure_assets))
         )
     if isinstance(visual_evidence_map, pd.DataFrame) and not visual_evidence_map.empty:
-        frames["visual_evidence_map"] = visual_evidence_map
+        _frame_bundle.add_frame(frames, "visual_evidence_map", visual_evidence_map)
         visual_evidence_map.to_csv(out_dir / "visual_evidence_map.csv", index=False)
         if isinstance(visual_qa_preflight, pd.DataFrame) and not visual_qa_preflight.empty:
-            frames["visual_qa_preflight"] = visual_qa_preflight
+            _frame_bundle.add_frame(frames, "visual_qa_preflight", visual_qa_preflight)
             visual_qa_preflight.to_csv(out_dir / "visual_qa_preflight.csv", index=False)
         (out_dir / "visual_caption_drafts.md").write_text(
             generate_visual_caption_drafts(visual_evidence_map),
@@ -54274,14 +63068,18 @@ It demonstrates the standalone Python workflow without calling `mfrmr`,
 10. `MFRM_Demo_Manuscript_Binder.zip`: curated writing packet with the main manuscript-facing files.
 11. `MFRM_Demo_Report.html`: browser-readable table report.
 12. `publication_gate_summary.csv`: whether APA-style conclusions are ready, caveated, or blocked.
-13. `submission_action_plan.csv`: prioritized blockers, caveats, boundaries, and wording repairs before manuscript use.
-14. `case_interpretation_guidance.csv`: case-specific cautions for common interpretation traps.
-15. `final_report_readiness.csv`: what to resolve before final reporting.
-16. `manuscript_claim_guide.csv`: what is safe to claim in a manuscript.
-17. `manuscript_template.md`: Methods, Results, limitations, and reviewer preflight scaffold.
-18. `visual_interpretation_checklist.csv`: how to read each plot.
-19. `visual_claim_guardrails.csv`: safe wording, do-not-write boundaries, and required evidence for visual interpretations.
-20. `visual_method_evidence.csv`: methodological basis and readability rules for plots.
+13. `status_rationale_drilldown.csv`: why each high-level status was assigned.
+14. `result_reading_path.csv`: ordered result-reading path for MFRM interpretation.
+15. `operational_decision_board.csv`: scoring, rubric, and test-development action board.
+16. `reporting_action_bridge.csv` / `reporting_action_bridge.md`: bridge from review-board evidence to APA wording, claim revision, scoring actions, rubric decisions, category-sensitivity notes, and archive steps.
+17. `submission_action_plan.csv`: prioritized blockers, caveats, boundaries, and wording repairs before manuscript use.
+18. `case_interpretation_guidance.csv`: case-specific cautions for common interpretation traps.
+19. `final_report_readiness.csv`: what to resolve before final reporting.
+20. `manuscript_claim_guide.csv`: what is safe to claim in a manuscript.
+21. `manuscript_template.md`: Methods, Results, limitations, and reviewer preflight scaffold.
+22. `visual_interpretation_checklist.csv`: how to read each plot.
+23. `visual_claim_guardrails.csv`: safe wording, do-not-write boundaries, and required evidence for visual interpretations.
+24. `visual_method_evidence.csv`: methodological basis and readability rules for plots.
 21. `public_beta_limitations.csv`: what this beta release supports and does not claim.
 22. `external_simulation_reference_inventory.csv`: archived validation artifacts
    to consult without bundling private data.
@@ -54312,7 +63110,7 @@ identifiers before upload or paste.
 """
     (out_dir / "README.md").write_text(readme, encoding="utf-8")
     print(f"Wrote demo report to: {out_dir}")
-    print("Key files: manuscript_handoff.md, manuscript_handoff_checklist.csv, claim_to_evidence_matrix.csv, apa_report_sentence_audit.csv, method_reference_audit.csv, visual_evidence_map.csv, visual_claim_guardrails.csv, visual_qa_preflight.csv, visualization_settings.json, visualization_settings.csv, MFRM_Demo_Visual_Evidence_Binder.zip, MFRM_Demo_Manuscript_Binder.zip, MFRM_Demo_Report.html, MFRM_Demo_Report.xlsx, publication_gate_summary.csv, submission_action_plan.csv, case_interpretation_guidance.csv, final_report_readiness.csv, manuscript_claim_guide.csv, manuscript_template.md, figure_manifest.csv, MFRM_Demo_Publication_Figures.zip, figures_html/")
+    print("Key files: manuscript_handoff.md, report_ready_decision_brief.md, role_based_action_memos.md, role_based_action_checklist.md, critical_final_review.md, reporting_action_bridge.md, apa_results_paragraph_draft.md, manuscript_handoff_checklist.csv, role_based_action_memos.csv, role_based_action_checklist.csv, critical_final_review_panel.csv, status_rationale_drilldown.csv, result_reading_path.csv, operational_decision_board.csv, reporting_action_bridge.csv, claim_to_evidence_matrix.csv, apa_report_sentence_audit.csv, method_reference_audit.csv, visual_evidence_map.csv, visual_claim_guardrails.csv, visual_qa_preflight.csv, visualization_settings.json, visualization_settings.csv, MFRM_Demo_Visual_Evidence_Binder.zip, MFRM_Demo_Manuscript_Binder.zip, MFRM_Demo_Report.html, MFRM_Demo_Report.xlsx, publication_gate_summary.csv, submission_action_plan.csv, case_interpretation_guidance.csv, final_report_readiness.csv, manuscript_claim_guide.csv, manuscript_template.md, figure_manifest.csv, MFRM_Demo_Publication_Figures.zip, figures_html/")
     return 0
 
 
@@ -55216,6 +64014,396 @@ def _self_test_dimtest_runs_on_smoke_fixture() -> None:
     )
 
 
+def _self_test_mml_free_population_sd_recovery() -> None:
+    """Free-sigma MML recovers a known person SD and leaves the fixed path off.
+
+    Simulates RSM data with person theta_sd = 1.5, fits MML with
+    estimate_population_sd=True, and checks the estimated population SD lands
+    near the truth, exceeds the fixed-SD baseline of 1.0, adds one free
+    parameter, runs on the EM engine, and returns a finite profile SE — while
+    the fixed-SD fit on the same data reports no estimated SD.
+    """
+    params = {
+        "persons": [f"P{i:03d}" for i in range(140)],
+        "raters": ["R1", "R2", "R3"],
+        "tasks": ["T1", "T2"],
+        "criteria": ["C1", "C2"],
+        "theta_sd": 1.5,
+        "rater_severities": np.array([-0.3, 0.0, 0.3]),
+        "task_difficulties": np.array([-0.2, 0.2]),
+        "criterion_difficulties": np.array([-0.1, 0.1]),
+        "tau": np.array([-1.0, 0.0, 1.0]),
+    }
+    df = _generate_mfrm_rsm_from_params(params, seed=4242)
+    common = dict(
+        data=df, person_col="Person", facet_cols=["Rater", "Task", "Criterion"],
+        score_col="Score", model="RSM", method="MML", mml_engine="EM",
+        maxit=300, reltol=1e-6, quad_points=19, population_prior_sd=1.0,
+    )
+    free = mfrm_estimate(estimate_population_sd=True, **common)
+    fixed = mfrm_estimate(estimate_population_sd=False, **common)
+    cfg = free["config"]
+    est = cfg.get("estimated_population_sd")
+    _self_test_assert(est is not None and np.isfinite(est), "estimated population SD is missing")
+    _self_test_assert(1.25 < est < 1.75, f"estimated population SD {est} not near truth 1.5")
+    _self_test_assert(est > 1.05, "estimated population SD did not move above the fixed baseline 1.0")
+    _self_test_assert(cfg.get("mml_engine") == "em", "free-SD run did not use the EM engine")
+    _self_test_assert(
+        int(cfg.get("parameter_count")) == int(fixed["config"].get("parameter_count")) + 1,
+        "free-SD run did not add one free parameter to k_params",
+    )
+    se = cfg.get("population_sd_se")
+    _self_test_assert(se is not None and np.isfinite(se) and se > 0, "profile SE for sigma is not finite")
+    _self_test_assert(
+        fixed["config"].get("estimated_population_sd") is None,
+        "fixed-SD run unexpectedly reported an estimated population SD",
+    )
+
+
+def _self_test_classical_dif_screening() -> None:
+    """Classical DIF flags a planted-DIF item, leaves null items unflagged, and skips bad input."""
+    persons = [f"P{i:03d}" for i in range(240)]
+    groups = {p: ("B" if i % 2 else "A") for i, p in enumerate(persons)}
+    base = dict(persons=persons, raters=["R1", "R2", "R3"], tasks=["T1"],
+                criteria=["C1", "C2", "C3", "C4", "C5"], theta_sd=1.2,
+                rater_severities=np.array([-0.3, 0.0, 0.3]), task_difficulties=np.array([0.0]),
+                criterion_difficulties=np.array([-0.4, -0.2, 0.0, 0.2, 0.4]),
+                tau=np.array([-1.5, -0.5, 0.5, 1.5]), group_assignment=groups)
+    gl = pd.Series(groups)
+    df = _generate_mfrm_rsm_from_params({**base, "dif_shift": {("C3", "B"): 0.9}}, seed=2024)
+    res = analyze_classical_dif(df, "Criterion", gl, alpha=0.05, min_group_n=20)
+    _self_test_assert("table" in res, "classical DIF returned no table")
+    tbl = res["table"]
+    _self_test_assert({"Item", "MH_p", "SMD_std", "Logit_Total_p", "EvidenceLevel", "Flag", "Direction"}.issubset(tbl.columns),
+                      "classical DIF table missing required columns")
+    c3 = tbl[tbl["Item"] == "C3"].iloc[0]
+    _self_test_assert(bool(c3["Flag"]), "planted-DIF item C3 was not flagged")
+    _self_test_assert(str(c3["Direction"]) == "favors reference", "planted-DIF direction is wrong")
+    _self_test_assert(np.isfinite(c3["SIBTEST_Beta"]) and float(c3["SIBTEST_Beta"]) > 0,
+                      "SIBTEST beta on the planted item is not positive and finite")
+    _self_test_assert(str(c3["SIBTEST_Agreement"]) == "agrees", "SIBTEST did not corroborate the Mantel direction")
+    others = int(tbl[tbl["Item"] != "C3"]["Flag"].astype(bool).sum())
+    _self_test_assert(others == 0, f"{others} non-DIF item(s) spuriously flagged (purification failed)")
+    df0 = _generate_mfrm_rsm_from_params(base, seed=2024)
+    res0 = analyze_classical_dif(df0, "Criterion", gl, alpha=0.05, min_group_n=20)
+    _self_test_assert(int(res0["table"]["Flag"].astype(bool).sum()) == 0, "null data produced DIF flags")
+    one_group = pd.Series({p: "A" for p in persons})
+    _self_test_assert("_skip_reason" in analyze_classical_dif(df, "Criterion", one_group, min_group_n=20),
+                      "single-group input should return a skip reason")
+
+
+def _self_test_mml_population_sd_help_surfaces() -> None:
+    """Help and results surfaces for the MML person-SD metric are present.
+
+    Checks the Interpretation-Guide help table, the help-popover topic, the
+    glossary entry, and that the convergence-panel SD summary renders the
+    estimated sigma for a free-SD run, a quiet caption for a fixed run, and
+    nothing for a non-MML run.
+    """
+    tbl = mml_population_sd_help_table()
+    _self_test_assert(not tbl.empty and len(tbl) == 2, "MML population-SD help table is empty or wrong size")
+    _self_test_assert("mml_person_sd" in _HELP_POPOVER_LIBRARY, "mml_person_sd help-popover topic missing")
+    _self_test_assert(
+        {"title", "what", "how", "watch"}.issubset(_HELP_POPOVER_LIBRARY["mml_person_sd"]),
+        "mml_person_sd popover is missing required fields",
+    )
+    _self_test_assert(
+        "estimat" in _MFRM_GLOSSARY.get("population prior sd", ""),
+        "glossary entry for population prior sd was not updated for estimation",
+    )
+
+    class _UIRecorder:
+        def __init__(self, real):
+            self._real = real
+            self.messages: list[str] = []
+
+        def __getattr__(self, name):
+            return getattr(self._real, name)
+
+        def metric(self, label="", value="", *a, **k):
+            self.messages.append(f"{label}={value}")
+
+        def caption(self, msg="", *a, **k):
+            self.messages.append(str(msg))
+
+        def info(self, msg="", *a, **k):
+            self.messages.append(str(msg))
+
+        def markdown(self, msg="", *a, **k):
+            self.messages.append(str(msg))
+
+        def dataframe(self, *a, **k):
+            return None
+
+        def columns(self, spec, *a, **k):
+            n = spec if isinstance(spec, int) else len(spec)
+            return [self for _ in range(n)]
+
+        def _ctx(self):
+            rec = self
+
+            class _Ctx:
+                def __enter__(self_inner):
+                    return rec
+
+                def __exit__(self_inner, *exc):
+                    return False
+
+            return _Ctx()
+
+        def popover(self, *a, **k):
+            return self._ctx()
+
+        def expander(self, *a, **k):
+            return self._ctx()
+
+    global st
+    saved_st = st
+    rec = _UIRecorder(saved_st)
+    st = rec
+    try:
+        rec.messages.clear()
+        _render_population_sd_summary({"config": {
+            "method": "MML", "estimate_population_sd": True,
+            "estimated_population_sd": 1.49, "population_sd_se": 0.09,
+            "population_sd_ci": [1.32, 1.66],
+        }})
+        _self_test_assert(any("1.49" in m for m in rec.messages), "free-SD summary did not render the estimated sigma")
+        rec.messages.clear()
+        _render_population_sd_summary({"config": {
+            "method": "MML", "estimate_population_sd": False, "population_prior_sd": 1.0,
+        }})
+        _self_test_assert(any("1.00" in m for m in rec.messages), "fixed-SD summary did not render the prior value")
+        rec.messages.clear()
+        _render_population_sd_summary({"config": {"method": "JMLE"}})
+        _self_test_assert(rec.messages == [], "non-MML run unexpectedly rendered an SD summary")
+    finally:
+        st = saved_st
+
+
+def _self_test_readiness_panel_renders() -> None:
+    """The pre-run readiness panel must render its banner for every severity.
+
+    Regression guard: ``render_readiness_panel`` previously interpolated
+    undefined ``icon`` and ``status`` names, and its only caller swallowed the
+    resulting error, so the banner silently never appeared. This test swaps the
+    module-level ``st`` for a recorder (delegating session state to the real
+    ``st`` so ``t()`` still resolves) and asserts each severity banner renders
+    with its status label.
+    """
+    class _ReadinessRenderRecorder:
+        def __init__(self, real):
+            self._real = real
+            self.messages: list[str] = []
+
+        def __getattr__(self, name):
+            return getattr(self._real, name)
+
+        def success(self, msg: str = "", *a, **k):
+            self.messages.append(str(msg))
+
+        def warning(self, msg: str = "", *a, **k):
+            self.messages.append(str(msg))
+
+        def error(self, msg: str = "", *a, **k):
+            self.messages.append(str(msg))
+
+        def caption(self, *a, **k):
+            return None
+
+        def markdown(self, *a, **k):
+            return None
+
+        def dataframe(self, *a, **k):
+            return None
+
+        def expander(self, *a, **k):
+            class _NullCtx:
+                def __enter__(self_inner):
+                    return None
+
+                def __exit__(self_inner, *exc):
+                    return False
+
+            return _NullCtx()
+
+    global st
+    saved_st = st
+    recorder = _ReadinessRenderRecorder(saved_st)
+    st = recorder
+    try:
+        for overall, label in (("ok", "OK"), ("warning", "CAUTION"), ("issue", "ISSUE")):
+            recorder.messages.clear()
+            report = {
+                "overall": overall,
+                "checks": [{
+                    "name": "n_obs",
+                    "severity": overall,
+                    "headline": "readiness self-test",
+                    "detail": "synthetic check",
+                }],
+                "n_warnings": 1,
+                "n_issues": 1,
+            }
+            render_readiness_panel(report)
+            _self_test_assert(
+                any(f"[{label}]" in message for message in recorder.messages),
+                f"readiness panel did not render the '{overall}' banner",
+            )
+    finally:
+        st = saved_st
+
+
+def _self_test_cross_engine_bundle() -> None:
+    """Cross-engine bundle ships data, settings, app estimates, R script, and README."""
+    params = {
+        "persons": [f"P{i:03d}" for i in range(60)],
+        "raters": ["R1", "R2"], "tasks": ["T1"], "criteria": ["C1", "C2"],
+        "theta_sd": 1.2, "rater_severities": np.array([-0.2, 0.2]),
+        "task_difficulties": np.array([0.0]),
+        "criterion_difficulties": np.array([-0.1, 0.1]),
+        "tau": np.array([-1.0, 0.0, 1.0]),
+    }
+    df = _generate_mfrm_rsm_from_params(params, seed=99)
+    res = mfrm_estimate(
+        data=df, person_col="Person", facet_cols=["Rater", "Task", "Criterion"],
+        score_col="Score", model="RSM", method="MML", mml_engine="EM",
+        maxit=120, reltol=1e-6, quad_points=11, population_prior_sd=1.0,
+    )
+    bundle = build_cross_engine_validation_bundle(res)
+    for key in ("data.csv", "settings.csv", "app_person.csv", "app_facets.csv",
+                "app_steps.csv", "run_tam_mirt_crosscheck.R", "README_cross_engine.md"):
+        _self_test_assert(key in bundle, f"cross-engine bundle missing {key}")
+    data_txt = bundle["data.csv"].decode("utf-8")
+    _self_test_assert("Person" in data_txt and "Score" in data_txt, "data.csv lacks Person/Score")
+    _self_test_assert("score_k" not in data_txt, "data.csv leaked internal score_k column")
+    settings_txt = bundle["settings.csv"].decode("utf-8")
+    _self_test_assert("model" in settings_txt and "RSM" in settings_txt, "settings.csv lacks model row")
+    r_txt = bundle["run_tam_mirt_crosscheck.R"]
+    for tok in ("tam.mml.mfr", "rm.facets", "mirt"):
+        _self_test_assert(tok in r_txt, f"R script missing {tok}")
+    readme = bundle["README_cross_engine.md"]
+    _self_test_assert("not claimed" in readme.lower() and "rank" in readme.lower(),
+                      "README missing equivalence boundary wording")
+    _self_test_assert(build_cross_engine_validation_bundle({}) == {},
+                      "empty result must yield empty bundle")
+    # ZIP round-trip must succeed.
+    zbytes = cached_mixed_asset_zip(bundle, "selftest_cross_engine")
+    _self_test_assert(isinstance(zbytes, (bytes, bytearray)) and len(zbytes) > 0,
+                      "cross-engine bundle ZIP did not encode")
+
+
+def _self_test_person_fit_eap_correction() -> None:
+    """lz* covers JML and the MML/EAP population-prior extension (Sinharay, 2016)."""
+    obs = pd.DataFrame({
+        "Person": ["P1", "P1", "P1"],
+        "PrObserved": [0.55, 0.62, 0.48],
+        "ItemEntropy": [-0.95, -0.80, -1.02],
+        "ItemVarLogP": [0.18, 0.22, 0.27],
+        "ItemLogPScoreCov": [0.05, -0.04, 0.08],
+        "ScoreInformation": [0.40, 0.55, 0.45],
+        "ObservedScoreDerivative": [0.10, -0.08, 0.12],
+    })
+    ll = float(np.sum(np.log(obs["PrObserved"].to_numpy())))
+    e_ll = float(np.sum(obs["ItemEntropy"]))
+    var_ll = float(np.sum(obs["ItemVarLogP"]))
+    info = float(np.sum(obs["ScoreInformation"]))
+    cov = float(np.sum(obs["ItemLogPScoreCov"]))
+    s = float(np.sum(obs["ObservedScoreDerivative"]))
+    levels = {"prep": {"levels": {"Person": ["P1"]}}}
+
+    # JML branch (p = 0).
+    jml = compute_person_fit_indices({"config": {"method": "JMLE"}, **levels}, obs=obs).iloc[0]
+    _self_test_assert(jml["lz_star_status"] == "computed_jml_conditional_calibration",
+                      "JML lz* status wrong")
+    exp_jml = (ll - e_ll - (cov / info) * s) / np.sqrt(var_ll - cov ** 2 / info)
+    _self_test_assert(abs(float(jml["lz_star"]) - exp_jml) < 1e-12, "JML lz* value off contract")
+
+    # EAP branch (p = 1/sigma^2), formula B.
+    sigma = 1.3
+    p = 1.0 / sigma ** 2
+    denom = info + p
+    exp_eap = (ll - e_ll - (cov / denom) * s) / np.sqrt(var_ll - cov ** 2 * (info + 2 * p) / denom ** 2)
+    eap = compute_person_fit_indices(
+        {"config": {"method": "MML", "population_prior_sd": sigma}, **levels}, obs=obs).iloc[0]
+    _self_test_assert(eap["lz_star_status"] == "computed_eap_population_corrected",
+                      "EAP lz* status wrong")
+    _self_test_assert(abs(float(eap["lz_star"]) - exp_eap) < 1e-12, "EAP lz* value off formula B")
+    _self_test_assert(str(eap["ReportIndex"]) == "lz_star", "EAP ReportIndex should be lz_star")
+
+    # p -> 0: EAP collapses onto JML.
+    eap_big = compute_person_fit_indices(
+        {"config": {"method": "MML", "population_prior_sd": 1.0e6}, **levels}, obs=obs).iloc[0]
+    _self_test_assert(abs(float(eap_big["lz_star"]) - exp_jml) < 1e-6,
+                      "EAP lz* did not reduce to JML as sigma -> inf")
+
+    # Missing/invalid sigma falls back to unadjusted lz.
+    bad = compute_person_fit_indices(
+        {"config": {"method": "MML", "population_prior_sd": 0.0}, **levels}, obs=obs).iloc[0]
+    _self_test_assert(bad["lz_star_status"] == "eap_population_sd_unavailable",
+                      "invalid sigma should report eap_population_sd_unavailable")
+    _self_test_assert(str(bad["ReportIndex"]) == "lz", "fallback ReportIndex should be lz")
+
+
+def _self_test_mml_step_se() -> None:
+    """MML step/threshold SE: the finite-difference delta method matches the
+    analytic centring Jacobian, and the SEs surface on the fitted steps table."""
+    sample = sample_mfrm_data(seed=20260411)
+    keep_persons = sample["Person"].drop_duplicates().head(8)
+    sample = sample[sample["Person"].isin(keep_persons)].copy()
+    res = mfrm_estimate(
+        sample,
+        person_col="Person",
+        facet_cols=["Rater", "Task", "Criterion"],
+        score_col="Score",
+        model="RSM",
+        method="MML",
+        mml_engine="EM",
+        quad_points=7,
+        maxit=12,
+        reltol=1e-3,
+    )
+    cov = compute_mml_parameter_covariance(res)
+    _self_test_assert(
+        cov.get("status") in {"ok", "regularized"},
+        f"MML covariance unavailable for step-SE self-test ({cov.get('status')})",
+    )
+    se_tbl = compute_mml_step_se_table(res, covariance=cov)
+    _self_test_assert(not se_tbl.empty, "step SE table is empty")
+    se_vals = pd.to_numeric(se_tbl["SE"], errors="coerce").to_numpy()
+    _self_test_assert(
+        bool(np.all(np.isfinite(se_vals)) and np.all(se_vals > 0)),
+        "step SEs are not all finite and positive",
+    )
+    # Independent check: for RSM the reported steps are center_sum_zero of the
+    # free step block, so the delta-method SE must equal sqrt(diag(C cov C^T))
+    # with C the n x n centring matrix. This route does not touch the
+    # finite-difference path, so agreement confirms the implementation.
+    par = _get_opt_par(res)
+    sizes = build_param_sizes(res["config"])
+    step_slice = _build_param_slices(sizes)["steps"]
+    cov_block = np.asarray(cov["cov"], dtype=float)[step_slice, step_slice]
+    n = cov_block.shape[0]
+    centring = np.eye(n) - np.ones((n, n)) / n
+    se_analytic = np.sqrt(np.clip(np.diag(centring @ cov_block @ centring.T), 0.0, None))
+    _self_test_assert(
+        bool(np.allclose(se_vals, se_analytic, atol=1e-6, rtol=1e-4)),
+        f"finite-difference step SE disagrees with analytic centring Jacobian SE: {se_vals} vs {se_analytic}",
+    )
+    # End-to-end: diagnostics attaches SE / CI columns onto res['steps'].
+    mfrm_diagnostics(res, compute_pca=False, compute_marginal=False)
+    steps_out = res.get("steps")
+    _self_test_assert(
+        isinstance(steps_out, pd.DataFrame) and "SE" in steps_out.columns,
+        "diagnostics did not attach a step SE column to res['steps']",
+    )
+    attached = pd.to_numeric(steps_out["SE"], errors="coerce").to_numpy()
+    _self_test_assert(
+        bool(np.all(np.isfinite(attached)) and np.all(attached > 0)),
+        "attached step SEs are not all finite and positive",
+    )
+
+
 def run_self_tests() -> int:
     tests = [
         ("zero-count intermediate category support", _self_test_zero_count_category_support),
@@ -55273,6 +64461,13 @@ def run_self_tests() -> int:
         ("Posterior CmdStan CSV loader", _self_test_posterior_load_cmdstan_csvs),
         ("Config-JSON import whitelist", _self_test_config_json_import_whitelist),
         ("Run-history clear confirmation", _self_test_run_history_clear_confirmation),
+        ("Readiness panel renders each severity", _self_test_readiness_panel_renders),
+        ("MML free population-SD recovery", _self_test_mml_free_population_sd_recovery),
+        ("MML population-SD help surfaces", _self_test_mml_population_sd_help_surfaces),
+        ("Classical polytomous DIF screening", _self_test_classical_dif_screening),
+        ("Cross-engine validation bundle", _self_test_cross_engine_bundle),
+        ("Person-fit lz* EAP population correction", _self_test_person_fit_eap_correction),
+        ("MML step/threshold SE delta method", _self_test_mml_step_se),
     ]
     failures = []
     for name, test_func in tests:
@@ -56155,6 +65350,54 @@ def render_keyboard_shortcuts_help() -> None:
 # The popover footer links users to Help → Interpretation Guide for depth.
 
 _HELP_POPOVER_LIBRARY: dict[str, dict[str, str]] = {
+    "classical_dif": {
+        "title": "Classical DIF (screening)",
+        "what": (
+            "Whether an item is scored differently by an external person group "
+            "(e.g. L1, gender) after matching on overall performance — distinct "
+            "from the model-based facet bias screen."
+        ),
+        "how": (
+            "• Mantel chi-square + ETS standardized mean difference compare focal "
+            "vs reference item scores within matched strata.\n"
+            "• Ordinal logistic likelihood-ratio tests detect uniform (M1-M0) and "
+            "non-uniform (M2-M1) DIF.\n"
+            "• Effect-size classes: ETS A/B/C on |SMD| and Jodoin-Gierl A/B/C on "
+            "Delta-R^2.\n"
+            "• Holm/BH correct for many items; purification removes strongly-flagged "
+            "items from the matching anchor."
+        ),
+        "watch": (
+            "Screening only — a flag warrants content/translation review, not an "
+            "automatic item-removal or fairness verdict. On rater-mediated data the "
+            "item scores are rater-mean aggregates (rater severity averaged out); "
+            "rater allocation is assumed balanced across groups."
+        ),
+    },
+    "mml_person_sd": {
+        "title": "MML person population SD",
+        "what": (
+            "The standard deviation of the person ability distribution that MML "
+            "integrates over. It sets the scale (metric) of the person measures."
+        ),
+        "how": (
+            "• Fixed prior (default): you set the SD; measures are on that fixed "
+            "scale and are not directly comparable to engines that estimate it.\n"
+            "• Estimate person SD (free, EM): the EM engine fits the SD from the "
+            "data; the value you set becomes only the starting point.\n"
+            "• When free, read the fitted SD with its profile SE and 95% CI shown "
+            "in the convergence panel.\n"
+            "• Use free estimation for cross-engine comparison — TAM, ConQuest, "
+            "and mirt all estimate the variance."
+        ),
+        "watch": (
+            "The profile SE holds the other parameters fixed, so it is slightly "
+            "optimistic. Free-SD estimation forces the EM engine and adds one "
+            "parameter to AIC / BIC. MML assumes a normal person distribution; if "
+            "it is bimodal or skewed, the fitted SD can still be misleading — "
+            "check the residual distribution and reliability."
+        ),
+    },
     "wright_map": {
         "title": "Wright Map",
         "what": (
@@ -56479,6 +65722,11 @@ def render_help_popover(topic_key: str, *, button_label: str | None = None) -> N
     topic = _HELP_POPOVER_LIBRARY.get(topic_key)
     if topic is None:
         return
+    topic = _help_popovers.localized_help_popover_topic(
+        topic_key,
+        lang=st.session_state.get("lang", DEFAULT_LANG),
+        fallback=topic,
+    )
     label = button_label if button_label is not None else t("help.popover_button_label")
     what_label = t("help.popover_what_label")
     how_label = t("help.popover_how_label")

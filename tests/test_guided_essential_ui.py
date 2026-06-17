@@ -251,6 +251,26 @@ def test_guided_figures_selector_lazy_renders_one_panel():
     assert "st.tabs" not in source
 
 
+def test_dimensionality_section_lazy_renders_one_pca_panel():
+    source = inspect.getsource(app.show_dimensionality_section)
+
+    assert "dimensionality_panel" in source
+    assert "st.selectbox" in source
+    assert "dim_tabs = st.tabs" not in source
+    assert 'if selected_dimensionality_panel == "overall"' in source
+    assert "render_dimtest_panel(result, diagnostics, facet_cols)" in source
+
+
+def test_wright_map_section_lazy_renders_one_map_panel():
+    source = inspect.getsource(app.show_wright_map_section)
+
+    assert "wright_map_panel" in source
+    assert "st.selectbox" in source
+    assert "wm_tabs = st.tabs" not in source
+    assert 'if selected_map_panel == "wright_map"' in source
+    assert 'if selected_map_panel == "yardstick"' in source
+
+
 def test_guided_first_run_route_table_links_sample_run_to_current_focus():
     table = app.guided_first_run_route_table()
 

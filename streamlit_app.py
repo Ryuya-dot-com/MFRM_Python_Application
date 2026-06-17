@@ -27633,11 +27633,11 @@ def show_dimensionality_section(diagnostics: dict, facet_cols: list[str], core: 
 
     st.markdown(t("dimensionality.interpretation_main"))
 
-    # Determine default tab -- prefer first rater facet if available.
+    # Determine default panel -- prefer first rater facet if available.
     # ``tab_keys`` are stable identifiers used for routing (the "overall"
     # key drives the mode='overall' branch). ``tab_display`` are the
-    # translated labels shown in the Streamlit tab strip; the two arrays
-    # stay aligned by index so tab_keys[i] always describes tab_display[i].
+    # translated labels shown in the selector; the two arrays stay aligned
+    # by index so tab_keys[i] always describes tab_display[i].
     rater_facets = [f for f in facet_cols if "rater" in f.lower() or "judge" in f.lower()]
     tab_keys = ["overall"] + facet_cols
     tab_display = [t("dimensionality.tab_label_overall")] + facet_cols
@@ -27649,15 +27649,30 @@ def show_dimensionality_section(diagnostics: dict, facet_cols: list[str], core: 
     else:
         order = list(range(len(tab_keys)))
     reordered_keys = [tab_keys[i] for i in order]
-    reordered_display = [tab_display[i] for i in order]
-    dim_tabs = st.tabs(reordered_display)
-
-    for i, key in enumerate(reordered_keys):
-        with dim_tabs[i]:
-            if key == "overall":
-                _show_pca_panel(pca, mode="overall", core=core, diagnostics=diagnostics, facet_cols=facet_cols)
-            else:
-                _show_pca_panel(pca, mode="facet", facet_name=key, core=core, diagnostics=diagnostics, facet_cols=facet_cols)
+    label_by_key = {tab_keys[i]: tab_display[i] for i in range(len(tab_keys))}
+    if st.session_state.get("dimensionality_panel") not in reordered_keys:
+        st.session_state.pop("dimensionality_panel", None)
+    selected_dimensionality_panel = st.selectbox(
+        t("dimensionality.panel_select_label"),
+        options=reordered_keys,
+        index=0,
+        format_func=lambda key: label_by_key.get(str(key), str(key)),
+        key="dimensionality_panel",
+        help=t("dimensionality.panel_select_help"),
+    )
+    selected_dimensionality_panel = selected_dimensionality_panel or reordered_keys[0]
+    st.caption(t("dimensionality.panel_select_caption"))
+    if selected_dimensionality_panel == "overall":
+        _show_pca_panel(pca, mode="overall", core=core, diagnostics=diagnostics, facet_cols=facet_cols)
+    else:
+        _show_pca_panel(
+            pca,
+            mode="facet",
+            facet_name=str(selected_dimensionality_panel),
+            core=core,
+            diagnostics=diagnostics,
+            facet_cols=facet_cols,
+        )
 
     # Nonparametric DIMTEST (Stout 1987; Nandakumar & Yu 1996),
     # complementary to the residual PCA above.
@@ -28139,17 +28154,25 @@ def show_wright_map_section(result: dict, diagnostics: dict) -> None:
                 gap=f"{-overlap:.2f}",
             ))
 
-    # Tabs are accessed by index (wm_tabs[0]/[1]) below, so the labels can be
-    # safely translated without breaking routing.
-    wm_tabs = st.tabs([
-        t("visuals.tab_label_wright_map"),
-        t("visuals.tab_label_yardstick"),
-    ])
+    map_panel_labels = {
+        "wright_map": t("visuals.tab_label_wright_map"),
+        "yardstick": t("visuals.tab_label_yardstick"),
+    }
+    selected_map_panel = st.selectbox(
+        t("visuals.map_panel_select_label"),
+        options=list(map_panel_labels),
+        index=0,
+        format_func=lambda panel_id: map_panel_labels.get(str(panel_id), str(panel_id)),
+        key="wright_map_panel",
+        help=t("visuals.map_panel_select_help"),
+    )
+    selected_map_panel = selected_map_panel or "wright_map"
+    st.caption(t("visuals.map_panel_select_caption"))
 
-    with wm_tabs[0]:
+    if selected_map_panel == "wright_map":
         _draw_wright_map_plotly(person_tbl, facet_tbl, step_tbl)
 
-    with wm_tabs[1]:
+    if selected_map_panel == "yardstick":
         prep = result.get("prep", {}) if isinstance(result, dict) else {}
         rating_min = prep.get("rating_min")
         _draw_yardstick(person_tbl, facet_tbl, step_tbl, rating_min=rating_min)

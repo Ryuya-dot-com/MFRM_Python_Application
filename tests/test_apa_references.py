@@ -46,7 +46,7 @@ def test_citation_parens_use_correct_form():
       (Wright & Masters, 1982)
       (Bradlow, Wainer & Wang, 1999)
     """
-    pattern = re.compile(r"^\([A-Z][^)]+, \d{4}\)$")
+    pattern = re.compile(r"^\([A-Z][^)]+, \d{4}[a-z]?\)$")
     bad = [c for c in app._CITATION_TO_KEY if not pattern.match(c)]
     assert not bad, f"malformed citation strings: {bad}"
 

@@ -163,21 +163,95 @@ def test_lz_star_matches_closed_form_on_hand_built_obs():
     assert row["lz_star_variance"] == pytest.approx(corrected_var, abs=1e-12)
 
 
-def test_lz_star_status_not_applicable_for_mml():
-    """MML fits must surface ``not_applicable_eap`` for lz*; lz is still computed."""
+def test_lz_star_eap_population_corrected_closed_form_for_mml():
+    """MML/EAP lz* uses the population-prior correction when terms exist."""
+    pr_observed = (0.55, 0.62, 0.48)
+    item_entropy = (-0.95, -0.80, -1.02)
+    item_var_logp = (0.18, 0.22, 0.27)
+    item_cov = (0.05, -0.04, 0.08)
+    score_info = (0.40, 0.55, 0.45)
+    obs_score_deriv = (0.10, -0.08, 0.12)
+    sigma = 1.25
     obs = _build_synthetic_obs(
+        pr_observed=pr_observed,
+        item_entropy=item_entropy,
+        item_var_logp=item_var_logp,
         extra_cols={
-            "ItemLogPScoreCov": [0.05, -0.04, 0.08],
-            "ScoreInformation": [0.40, 0.55, 0.45],
-            "ObservedScoreDerivative": [0.10, -0.08, 0.12],
-        }
+            "ItemLogPScoreCov": item_cov,
+            "ScoreInformation": score_info,
+            "ObservedScoreDerivative": obs_score_deriv,
+        },
     )
-    res = {"config": {"method": "MML"}, "prep": {"levels": {"Person": ["P1"]}}}
+
+    log_p = np.log(np.array(pr_observed))
+    ll = float(np.sum(log_p))
+    e_ll = float(np.sum(item_entropy))
+    var_ll = float(np.sum(item_var_logp))
+    info_total = float(np.sum(score_info))
+    cov_total = float(np.sum(item_cov))
+    score_sum = float(np.sum(obs_score_deriv))
+    p = 1.0 / (sigma ** 2)
+    denom = info_total + p
+    c_n = cov_total / denom
+    corrected_var = var_ll - (cov_total ** 2) * (info_total + 2.0 * p) / (denom ** 2)
+    expected_lz_star = (ll - e_ll - c_n * score_sum) / np.sqrt(corrected_var)
+
+    res = {
+        "config": {"method": "MML", "population_prior_sd": sigma},
+        "prep": {"levels": {"Person": ["P1"]}},
+    }
     out = app.compute_person_fit_indices(res, obs=obs)
     row = out.iloc[0]
-    assert row["lz_star_status"] == "not_applicable_eap"
+    assert row["lz_star_status"] == "computed_eap_population_corrected"
+    assert row["lz_star"] == pytest.approx(expected_lz_star, abs=1e-12)
+    assert row["lz_star_c"] == pytest.approx(c_n, abs=1e-12)
+    assert row["lz_star_variance"] == pytest.approx(corrected_var, abs=1e-12)
+    assert row["ReportIndex"] == "lz_star"
+    assert row["ReportValue"] == pytest.approx(expected_lz_star, abs=1e-12)
+    assert "Sinharay" in row["ReportCaveat"]
+
+
+def test_lz_star_eap_reduces_to_jml_as_sigma_grows():
+    """As sigma -> inf (p -> 0) the EAP correction collapses onto the JML formula."""
+    extra = {
+        "ItemLogPScoreCov": (0.05, -0.04, 0.08),
+        "ScoreInformation": (0.40, 0.55, 0.45),
+        "ObservedScoreDerivative": (0.10, -0.08, 0.12),
+    }
+    obs = _build_synthetic_obs(
+        pr_observed=(0.55, 0.62, 0.48),
+        item_entropy=(-0.95, -0.80, -1.02),
+        item_var_logp=(0.18, 0.22, 0.27),
+        extra_cols=extra,
+    )
+    jml = app.compute_person_fit_indices(
+        {"config": {"method": "JMLE"}, "prep": {"levels": {"Person": ["P1"]}}}, obs=obs
+    ).iloc[0]
+    eap = app.compute_person_fit_indices(
+        {"config": {"method": "MML", "population_prior_sd": 1.0e6},
+         "prep": {"levels": {"Person": ["P1"]}}}, obs=obs
+    ).iloc[0]
+    assert eap["lz_star_status"] == "computed_eap_population_corrected"
+    assert jml["lz_star_status"] == "computed_jml_conditional_calibration"
+    assert eap["lz_star"] == pytest.approx(jml["lz_star"], abs=1e-6)
+    assert eap["lz_star_c"] == pytest.approx(jml["lz_star_c"], abs=1e-6)
+    assert eap["lz_star_variance"] == pytest.approx(jml["lz_star_variance"], abs=1e-6)
+
+
+def test_lz_star_eap_unavailable_when_population_sd_missing():
+    """MML without a usable population SD falls back to unadjusted lz."""
+    obs = _build_synthetic_obs(
+        extra_cols={
+            "ItemLogPScoreCov": (0.05, -0.04, 0.08),
+            "ScoreInformation": (0.40, 0.55, 0.45),
+            "ObservedScoreDerivative": (0.10, -0.08, 0.12),
+        }
+    )
+    res = {"config": {"method": "MML", "population_prior_sd": 0.0},
+           "prep": {"levels": {"Person": ["P1"]}}}
+    row = app.compute_person_fit_indices(res, obs=obs).iloc[0]
+    assert row["lz_star_status"] == "eap_population_sd_unavailable"
     assert pd.isna(row["lz_star"])
-    # lz is still finite and reported in the fallback ReportIndex.
     assert np.isfinite(row["lz"])
     assert row["ReportIndex"] == "lz"
     assert row["ReportValue"] == pytest.approx(row["lz"])

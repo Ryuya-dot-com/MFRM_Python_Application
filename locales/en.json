@@ -2266,6 +2266,9 @@
     "tab_forest_plot": "Forest plot",
     "tab_qq_plot": "Q-Q plot",
     "tab_ecdf": "ECDF",
+    "panel_select_label": "Visual panel",
+    "panel_select_help": "Only the selected visualization is rendered. This avoids rebuilding every Plotly figure when switching language, display mode, or nearby controls.",
+    "panel_select_caption": "Switch panels to inspect another figure. The fitted model is reused; panel switching does not re-estimate.",
     "essential_mode_caption": "Four additional diagnostic plot panels (Information, Forest, Q-Q, ECDF) are shown in **All panels** display mode. To compute publication-ready outputs, choose Analysis depth = Full publication before running estimation.",
     "category_info_expander": "Category-specific information decomposition",
     "category_info_caption": "Decompose the total information curve into per-category contributions I_k(theta) = a^2 * P_k(theta) * (k - E[X | theta])^2 (Muraki, 1993, Eq. 16). The sum of per-category contributions equals the total information curve above; the dashed line on the plot overlays the total for a side-by-side identity check. Useful for identifying which response categories drive test precision at each theta, especially when a rubric has many categories that are not uniformly informative."

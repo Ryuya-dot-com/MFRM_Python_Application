@@ -48262,51 +48262,63 @@ def show_visuals_section(result: dict, diagnostics: dict, *, force_full: bool = 
     # ECDF so Essential-view runs see only the four core diagnostic plots.
     # Switch to Full (sidebar top) before publication-depth analysis.
     essential_mode = (not force_full) and st.session_state.get("app_view_density", "Essential") == "Essential"
+    panel_label_keys = {
+        "category_probability": "visuals_top.tab_category_probability_curves",
+        "information_curves": "visuals_top.tab_information_curves",
+        "pathway_map": "visuals_top.tab_pathway_map",
+        "facet_distribution": "visuals_top.tab_facet_distribution",
+        "observed_vs_expected": "visuals_top.tab_observed_vs_expected",
+        "forest_plot": "visuals_top.tab_forest_plot",
+        "qq_plot": "visuals_top.tab_qq_plot",
+        "ecdf": "visuals_top.tab_ecdf",
+    }
     if essential_mode:
-        vtab_labels = [
-            t("visuals_top.tab_category_probability_curves"),
-            t("visuals_top.tab_pathway_map"),
-            t("visuals_top.tab_facet_distribution"),
-            t("visuals_top.tab_observed_vs_expected"),
+        panel_ids = [
+            "category_probability",
+            "pathway_map",
+            "facet_distribution",
+            "observed_vs_expected",
         ]
     else:
-        vtab_labels = [
-            t("visuals_top.tab_category_probability_curves"),
-            t("visuals_top.tab_information_curves"),
-            t("visuals_top.tab_pathway_map"),
-            t("visuals_top.tab_facet_distribution"),
-            t("visuals_top.tab_observed_vs_expected"),
-            t("visuals_top.tab_forest_plot"),
-            t("visuals_top.tab_qq_plot"),
-            t("visuals_top.tab_ecdf"),
+        panel_ids = [
+            "category_probability",
+            "information_curves",
+            "pathway_map",
+            "facet_distribution",
+            "observed_vs_expected",
+            "forest_plot",
+            "qq_plot",
+            "ecdf",
         ]
-    vtabs = st.tabs(vtab_labels)
+    if st.session_state.get("visuals_panel") not in panel_ids:
+        st.session_state.pop("visuals_panel", None)
+    selected_visual_panel = st.selectbox(
+        t("visuals_top.panel_select_label"),
+        options=panel_ids,
+        index=0,
+        format_func=lambda panel_id: t(panel_label_keys.get(str(panel_id), str(panel_id))),
+        key="visuals_panel",
+        help=t("visuals_top.panel_select_help"),
+    )
+    selected_visual_panel = selected_visual_panel or panel_ids[0]
+    st.caption(t("visuals_top.panel_select_caption"))
 
-    with vtabs[0]:
+    if selected_visual_panel == "category_probability":
         _draw_category_probability_curves_plotly(result)
-
-    if essential_mode:
-        with vtabs[1]:
-            _draw_pathway_map_plotly(diagnostics)
-        with vtabs[2]:
-            _draw_facet_distribution_plotly(diagnostics)
-        with vtabs[3]:
-            _draw_observed_vs_expected(diagnostics)
-    else:
-        with vtabs[1]:
-            _draw_information_curves_plotly(result)
-        with vtabs[2]:
-            _draw_pathway_map_plotly(diagnostics)
-        with vtabs[3]:
-            _draw_facet_distribution_plotly(diagnostics)
-        with vtabs[4]:
-            _draw_observed_vs_expected(diagnostics)
-        with vtabs[5]:
-            _draw_measures_forest_plotly(diagnostics)
-        with vtabs[6]:
-            _draw_residual_qq_plotly(diagnostics)
-        with vtabs[7]:
-            _draw_measure_ecdf_plotly(result, diagnostics)
+    if selected_visual_panel == "information_curves":
+        _draw_information_curves_plotly(result)
+    if selected_visual_panel == "pathway_map":
+        _draw_pathway_map_plotly(diagnostics)
+    if selected_visual_panel == "facet_distribution":
+        _draw_facet_distribution_plotly(diagnostics)
+    if selected_visual_panel == "observed_vs_expected":
+        _draw_observed_vs_expected(diagnostics)
+    if selected_visual_panel == "forest_plot":
+        _draw_measures_forest_plotly(diagnostics)
+    if selected_visual_panel == "qq_plot":
+        _draw_residual_qq_plotly(diagnostics)
+    if selected_visual_panel == "ecdf":
+        _draw_measure_ecdf_plotly(result, diagnostics)
     if essential_mode:
         st.caption(t("visuals_top.essential_mode_caption"))
 

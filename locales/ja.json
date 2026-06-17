@@ -2266,6 +2266,9 @@
     "tab_forest_plot": "Forest plot",
     "tab_qq_plot": "Q-Q plot",
     "tab_ecdf": "ECDF",
+    "panel_select_label": "可視化パネル",
+    "panel_select_help": "選択した可視化だけを描画します。言語、表示モード、周辺のコントロールを切り替えるたびに、すべての Plotly 図を作り直すことを避けます。",
+    "panel_select_caption": "別の図を見るにはパネルを切り替えてください。推定済みモデルを再利用しており、パネル切り替えでは再推定しません。",
     "essential_mode_caption": "4 つの追加診断プロット (Information、Forest、Q-Q、ECDF) は **全パネル表示** で表示されます。公表用の出力を作るには、推定前に Analysis depth = Full publication を選んでください。",
     "category_info_expander": "カテゴリ別 information の分解",
     "category_info_caption": "総 information 曲線をカテゴリ別寄与 I_k(theta) = a^2 * P_k(theta) * (k - E[X | theta])^2 に分解する (Muraki, 1993, Eq. 16)。カテゴリ別の和は上の総 information 曲線と一致する。プロット上の破線は同一性確認のために総和を重ねたもの。各 theta でどのカテゴリが測定精度を駆動しているかを把握するのに有用。"

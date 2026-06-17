@@ -426,6 +426,16 @@ def test_guided_figures_section_is_a_direct_visual_surface():
     assert "guided.figures_panel_select_caption" in source
 
 
+def test_visuals_section_lazy_renders_one_plot_panel():
+    source = inspect.getsource(app.show_visuals_section)
+
+    assert "visuals_panel" in source
+    assert "st.selectbox" in source
+    assert "st.tabs" not in source
+    assert 'if selected_visual_panel == "category_probability"' in source
+    assert 'if selected_visual_panel == "ecdf"' in source
+
+
 def test_downloads_privacy_mode_is_defined_before_export_builders():
     source = inspect.getsource(app._render_downloads)
 

@@ -66951,12 +66951,28 @@ def render_posterior_viewer_mode() -> None:
             mime="text/csv",
         )
 
-    # Plot suite (tabs)
+    # Plot suite: render only the selected plot. Pair/ridge plots can be
+    # expensive on larger posterior draws, so avoid rebuilding the full suite
+    # on every Streamlit rerun.
     st.subheader("Plots")
-    plot_tabs = st.tabs([
-        "Trace", "Ridge", "Pair", "Forest", "Rhat / ESS",
-    ])
-    with plot_tabs[0]:
+    plot_panel_labels = {
+        "trace": "Trace",
+        "ridge": "Ridge",
+        "pair": "Pair",
+        "forest": "Forest",
+        "rhat_ess": "Rhat / ESS",
+    }
+    selected_plot_panel = st.selectbox(
+        "Plot panel",
+        options=list(plot_panel_labels),
+        index=0,
+        format_func=lambda panel_id: plot_panel_labels.get(str(panel_id), str(panel_id)),
+        key="posterior_plot_panel",
+        help="Only the selected posterior plot is rendered on each rerun.",
+    )
+    selected_plot_panel = selected_plot_panel or "trace"
+
+    if selected_plot_panel == "trace":
         fig = _posterior_trace_figure(payload, selected)
         if fig is not None:
             header_cols = st.columns([5, 1])
@@ -66968,26 +66984,26 @@ def render_posterior_viewer_mode() -> None:
             render_chart_guide("posterior_trace")
         else:
             st.info("Trace plot unavailable for the current selection.")
-    with plot_tabs[1]:
+    if selected_plot_panel == "ridge":
         fig = _posterior_ridge_figure(payload, selected)
         if fig is not None:
             st.plotly_chart(fig, width="stretch")
             render_chart_guide("posterior_ridge")
         else:
             st.info("Ridge plot unavailable (need ≥10 draws per parameter).")
-    with plot_tabs[2]:
+    if selected_plot_panel == "pair":
         fig = _posterior_pair_figure(payload, selected)
         if fig is not None:
             st.plotly_chart(fig, width="stretch")
         else:
             st.info("Pair plot needs at least 2 parameters.")
-    with plot_tabs[3]:
+    if selected_plot_panel == "forest":
         fig = _posterior_forest_figure(payload, selected)
         if fig is not None:
             st.plotly_chart(fig, width="stretch")
         else:
             st.info("Forest plot unavailable.")
-    with plot_tabs[4]:
+    if selected_plot_panel == "rhat_ess":
         fig = _posterior_rhat_ess_figure(payload, selected)
         if fig is not None:
             header_cols = st.columns([5, 1])

@@ -271,6 +271,19 @@ def test_wright_map_section_lazy_renders_one_map_panel():
     assert 'if selected_map_panel == "yardstick"' in source
 
 
+def test_posterior_viewer_lazy_renders_one_plot_panel():
+    source = inspect.getsource(app.render_posterior_viewer_mode)
+
+    assert "posterior_plot_panel" in source
+    assert "st.selectbox" in source
+    assert "plot_tabs = st.tabs" not in source
+    assert 'if selected_plot_panel == "trace"' in source
+    assert 'if selected_plot_panel == "ridge"' in source
+    assert 'if selected_plot_panel == "pair"' in source
+    assert 'if selected_plot_panel == "forest"' in source
+    assert 'if selected_plot_panel == "rhat_ess"' in source
+
+
 def test_guided_first_run_route_table_links_sample_run_to_current_focus():
     table = app.guided_first_run_route_table()
 

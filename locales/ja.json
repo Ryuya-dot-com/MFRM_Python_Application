@@ -21,7 +21,10 @@
     "title": "多相ラッシュモデル (MFRM) FACETS-mode",
     "subtitle_template": "MFRM を推定する Streamlit 製の単一ファイルアプリケーション — {release_label} {version}",
     "input_preview_header": "入力データのプレビュー",
-    "no_input_info": "サイドバーから入力データを指定して開始してください。"
+    "no_input_info": "サイドバーから入力データを指定して開始してください。",
+    "language_switch_success_template": "言語を {from_lang} から {to_lang} に切り替えました。",
+    "language_switch_caption": "現在の推定結果は保持されています。切り替えを軽くするため、この再実行では重い結果・レポート・ダウンロード・ヘルプのパネルを再描画していません。",
+    "language_switch_resume_button": "現在の画面を描画"
   },
   "onboarding": {
     "banner_steps_label": "最初の分析を 3 ステップで実行",

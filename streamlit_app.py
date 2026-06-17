@@ -184,6 +184,60 @@ def t(key: str, default: str | None = None, **fmt) -> str:
     return text
 
 
+def _language_display_name(code: str | None) -> str:
+    """Return the localized display name for a supported language code."""
+    return t("sidebar.japanese") if code == "ja" else t("sidebar.english")
+
+
+def _ensure_language_state() -> None:
+    """Initialize language tracking without treating first render as a switch."""
+    lang = st.session_state.get("lang", DEFAULT_LANG)
+    if lang not in SUPPORTED_LANGS:
+        lang = DEFAULT_LANG
+        st.session_state["lang"] = lang
+    st.session_state.setdefault("_active_lang", lang)
+
+
+def _mark_language_switch() -> None:
+    """Mark a language-only rerun so heavy result panels can defer rendering once."""
+    new_lang = st.session_state.get("lang", DEFAULT_LANG)
+    if new_lang not in SUPPORTED_LANGS:
+        new_lang = DEFAULT_LANG
+        st.session_state["lang"] = new_lang
+    old_lang = st.session_state.get("_active_lang", new_lang)
+    if old_lang != new_lang:
+        st.session_state["_language_switch_from"] = old_lang
+        st.session_state["_language_switch_pending"] = True
+    st.session_state["_active_lang"] = new_lang
+
+
+def _consume_language_switch_fast_path(app_mode: str) -> bool:
+    """Return True once when a language switch should avoid heavy re-rendering."""
+    if not st.session_state.get("_language_switch_pending", False):
+        return False
+    has_facets_results = (
+        app_mode == "FACETS-mode estimation"
+        and isinstance(st.session_state.get("facets_mode_output"), dict)
+    )
+    st.session_state["_language_switch_pending"] = False
+    return has_facets_results
+
+
+def render_language_switch_fast_path() -> None:
+    """Show a lightweight acknowledgement after changing the UI language."""
+    from_lang = _language_display_name(st.session_state.get("_language_switch_from"))
+    to_lang = _language_display_name(st.session_state.get("lang", DEFAULT_LANG))
+    st.title(t("app.title"))
+    st.success(t("app.language_switch_success_template", from_lang=from_lang, to_lang=to_lang))
+    st.caption(t("app.language_switch_caption"))
+    if st.button(
+        t("app.language_switch_resume_button"),
+        key="language_switch_resume",
+        type="primary",
+    ):
+        st.rerun()
+
+
 def _show_technical_error_details() -> bool:
     """Return whether UI exception panels should expose stack traces."""
     return str(os.environ.get("MFRM_SHOW_TECHNICAL_ERRORS", "")).strip().lower() in {
@@ -66917,6 +66971,7 @@ def render_posterior_viewer_mode() -> None:
 def main() -> None:
     st.set_page_config(page_title="MFRM FACETS-mode", layout="wide")
     _inject_desktop_readability_css()
+    _ensure_language_state()
 
     # Language selector at the top of the sidebar. The widget's ``key="lang"``
     # writes directly to ``st.session_state["lang"]``, which the ``t()`` helper
@@ -66929,6 +66984,7 @@ def main() -> None:
             if st.session_state.get("lang", DEFAULT_LANG) in SUPPORTED_LANGS else 0,
         key="lang",
         horizontal=True,
+        on_change=_mark_language_switch,
     )
 
     # Top-level app mode selector. Defaults to the estimation pipeline.
@@ -66978,6 +67034,10 @@ def main() -> None:
         render_keyboard_shortcuts_help()
     except Exception:
         pass
+
+    if _consume_language_switch_fast_path(app_mode):
+        render_language_switch_fast_path()
+        return
 
     if app_mode == "Posterior Viewer (upload)":
         render_posterior_viewer_mode()

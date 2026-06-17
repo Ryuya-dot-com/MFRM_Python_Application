@@ -21,7 +21,10 @@
     "title": "MFRM FACETS-mode",
     "subtitle_template": "A single-file Streamlit application for estimating Many-Facet Rasch Models (MFRM) — {release_label} {version}",
     "input_preview_header": "Input preview",
-    "no_input_info": "Provide input data from the sidebar to begin."
+    "no_input_info": "Provide input data from the sidebar to begin.",
+    "language_switch_success_template": "Language changed from {from_lang} to {to_lang}.",
+    "language_switch_caption": "The current run is preserved. To keep the switch responsive, heavy result, report, download, and help panels were not redrawn on this rerun.",
+    "language_switch_resume_button": "Render current view"
   },
   "onboarding": {
     "banner_steps_label": "First time? Three steps to run your first analysis",

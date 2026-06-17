@@ -34546,7 +34546,7 @@ def run_facets_mode(core: dict, data: pd.DataFrame) -> None:
     selected_main_panel = st.selectbox(
         t("main_tabs.panel_select_label"),
         options=list(main_panel_labels),
-        default="data",
+        index=0,
         format_func=lambda panel_id: main_panel_labels.get(str(panel_id), str(panel_id)),
         key="main_results_panel",
         help=t("main_tabs.panel_select_help"),
@@ -51830,19 +51830,27 @@ def show_help_section(*, force_full: bool = False) -> None:
     else:
         visible_labels = all_help_labels
     visible_displays = [t(_HELP_TAB_KEY_BY_ID[label]) for label in visible_labels]
-    help_tabs = st.tabs(visible_displays)
-    help_tab = {label: help_tabs[i] for i, label in enumerate(visible_labels)}
+    selected_help_label = st.selectbox(
+        t("help.panel_select_label"),
+        options=visible_labels,
+        index=0,
+        format_func=lambda label: t(_HELP_TAB_KEY_BY_ID.get(str(label), str(label))),
+        key="help_panel",
+        help=t("help.panel_select_help"),
+    )
+    selected_help_label = selected_help_label or visible_labels[0]
+    st.caption(t("help.panel_select_caption"))
 
     # ------------------------------------------------------------------
-    # Tab 1: Quick Start
+    # Panel 1: Quick Start
     # ------------------------------------------------------------------
-    with help_tab["Quick Start"]:
+    if selected_help_label == "Quick Start":
         st.markdown(t("help.quick_start_body"))
 
     # ------------------------------------------------------------------
-    # Tab 2: Analysis Workflow (NEW)
+    # Panel 2: Analysis Workflow (NEW)
     # ------------------------------------------------------------------
-    with help_tab["Analysis Workflow"]:
+    if selected_help_label == "Analysis Workflow":
         st.markdown(t("help.analysis_workflow_body"))
         st.markdown(t("guided.first_run_route_heading"))
         st.caption(t("guided.first_run_route_caption"))
@@ -51948,9 +51956,9 @@ def show_help_section(*, force_full: bool = False) -> None:
             st.dataframe(guided_simulation_help_table(), width="stretch", hide_index=True)
 
     # ------------------------------------------------------------------
-    # Tab 3: Interpretation Guide (expanded)
+    # Panel 3: Interpretation Guide (expanded)
     # ------------------------------------------------------------------
-    with help_tab["Interpretation Guide"]:
+    if selected_help_label == "Interpretation Guide":
         st.markdown(t("help.interpretation_guide_body"))
         st.markdown(t("help.mml_popsd_heading"))
         st.caption(t("help.mml_popsd_caption"))
@@ -51965,25 +51973,24 @@ def show_help_section(*, force_full: bool = False) -> None:
         st.dataframe(facets_yardstick_help_table(), width="stretch", hide_index=True)
 
     # ------------------------------------------------------------------
-    # Tab 4: Rater Effects (NEW)
+    # Panel 4: Rater Effects (NEW)
     # ------------------------------------------------------------------
-    with help_tab["Rater Effects"]:
+    if selected_help_label == "Rater Effects":
         st.markdown(t("help.rater_effects_body"))
 
     # ------------------------------------------------------------------
-    # Tab 5: Rating Scale Guide (hidden in Essential mode)
+    # Panel 5: Rating Scale Guide (hidden in Essential mode)
     # ------------------------------------------------------------------
-    if "Rating Scale Guide" in help_tab:
-        with help_tab["Rating Scale Guide"]:
-            st.markdown(t("help.rating_scale_guide_body"))
-            st.markdown(t("help.rating_scale_evidence_heading"))
-            st.caption(t("help.rating_scale_evidence_caption"))
-            st.dataframe(rating_scale_evidence_help_table(), width="stretch", hide_index=True)
+    if selected_help_label == "Rating Scale Guide":
+        st.markdown(t("help.rating_scale_guide_body"))
+        st.markdown(t("help.rating_scale_evidence_heading"))
+        st.caption(t("help.rating_scale_evidence_caption"))
+        st.dataframe(rating_scale_evidence_help_table(), width="stretch", hide_index=True)
 
     # ------------------------------------------------------------------
-    # Tab 6: Glossary (expanded from 33 to 50+ terms)
+    # Panel 6: Glossary (expanded from 33 to 50+ terms)
     # ------------------------------------------------------------------
-    with help_tab["Glossary"]:
+    if selected_help_label == "Glossary":
         st.markdown(t("help.glossary_heading"))
         # Quick-reference glossary at the top (same data source used by
         # render_glossary_expander) so column headers and tooltips stay
@@ -52085,9 +52092,9 @@ def show_help_section(*, force_full: bool = False) -> None:
             st.caption(t("help.glossary_no_match"))
 
     # ------------------------------------------------------------------
-    # Tab 7: Reporting Guide (NEW)
+    # Panel 7: Reporting Guide (NEW)
     # ------------------------------------------------------------------
-    with help_tab["Reporting Guide"]:
+    if selected_help_label == "Reporting Guide":
         st.info(t("help.reporting_info_banner"))
         st.markdown(t("help.reporting_body"))
         with st.expander(t("help.reference_coverage_expander"), expanded=False):
@@ -52096,52 +52103,50 @@ def show_help_section(*, force_full: bool = False) -> None:
         st.markdown(t("help.reporting_references"))
 
     # ------------------------------------------------------------------
-    # Tab 8: Troubleshooting (expanded)
+    # Panel 8: Troubleshooting (expanded)
     # ------------------------------------------------------------------
-    with help_tab["Troubleshooting"]:
+    if selected_help_label == "Troubleshooting":
         st.markdown(t("help.troubleshooting_body"))
 
     # ------------------------------------------------------------------
-    # Tab 9: Model Capability (hidden in Essential mode)
+    # Panel 9: Model Capability (hidden in Essential mode)
     # ------------------------------------------------------------------
-    if "Model Capability" in help_tab:
-        with help_tab["Model Capability"]:
-            st.markdown(t("help.model_capability_body"))
+    if selected_help_label == "Model Capability":
+        st.markdown(t("help.model_capability_body"))
 
     # ------------------------------------------------------------------
-    # Tab 10: Public Beta (hidden in Essential mode)
+    # Panel 10: Public Beta (hidden in Essential mode)
     # ------------------------------------------------------------------
-    if "Public Beta" in help_tab:
-        with help_tab["Public Beta"]:
-            st.markdown(t("help.public_beta_intro"))
-            st.dataframe(public_beta_limitations_table(), width="stretch", hide_index=True)
-            st.download_button(
-                t("help.public_beta_download_limitations"),
-                data=to_csv_bytes(public_beta_limitations_table()),
-                file_name="mfrm_public_beta_limitations.csv",
-                mime="text/csv",
-                key="dl_public_beta_limitations_help",
-            )
-            st.markdown(t("help.public_beta_validation_inventory_header"))
-            st.caption(t("help.public_beta_validation_inventory_caption"))
-            st.dataframe(external_simulation_reference_inventory(), width="stretch", hide_index=True)
-            st.download_button(
-                t("help.public_beta_download_validation_inventory"),
-                data=to_csv_bytes(external_simulation_reference_inventory()),
-                file_name="mfrm_external_simulation_reference_inventory.csv",
-                mime="text/csv",
-                key="dl_external_simulation_reference_inventory_help",
-            )
-            st.markdown(t("help.public_beta_migration_header"))
-            st.caption(t("help.public_beta_migration_caption"))
-            st.dataframe(mfrmr_020_migration_coverage_table(), width="stretch", hide_index=True)
-            st.download_button(
-                t("help.public_beta_download_migration"),
-                data=to_csv_bytes(mfrmr_020_migration_coverage_table()),
-                file_name="mfrm_mfrmr_020_migration_coverage.csv",
-                mime="text/csv",
-                key="dl_mfrmr_020_migration_coverage_help",
-            )
+    if selected_help_label == "Public Beta":
+        st.markdown(t("help.public_beta_intro"))
+        st.dataframe(public_beta_limitations_table(), width="stretch", hide_index=True)
+        st.download_button(
+            t("help.public_beta_download_limitations"),
+            data=to_csv_bytes(public_beta_limitations_table()),
+            file_name="mfrm_public_beta_limitations.csv",
+            mime="text/csv",
+            key="dl_public_beta_limitations_help",
+        )
+        st.markdown(t("help.public_beta_validation_inventory_header"))
+        st.caption(t("help.public_beta_validation_inventory_caption"))
+        st.dataframe(external_simulation_reference_inventory(), width="stretch", hide_index=True)
+        st.download_button(
+            t("help.public_beta_download_validation_inventory"),
+            data=to_csv_bytes(external_simulation_reference_inventory()),
+            file_name="mfrm_external_simulation_reference_inventory.csv",
+            mime="text/csv",
+            key="dl_external_simulation_reference_inventory_help",
+        )
+        st.markdown(t("help.public_beta_migration_header"))
+        st.caption(t("help.public_beta_migration_caption"))
+        st.dataframe(mfrmr_020_migration_coverage_table(), width="stretch", hide_index=True)
+        st.download_button(
+            t("help.public_beta_download_migration"),
+            data=to_csv_bytes(mfrmr_020_migration_coverage_table()),
+            file_name="mfrm_mfrmr_020_migration_coverage.csv",
+            mime="text/csv",
+            key="dl_mfrmr_020_migration_coverage_help",
+        )
 
 
 # ---------------------------------------------------------------------------

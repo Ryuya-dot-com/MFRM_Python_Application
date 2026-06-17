@@ -444,7 +444,19 @@ def test_full_mode_main_results_panel_is_lazy_rendered():
     assert "st.selectbox" in source
     assert "main_tabs.panel_select_caption" in source
     assert "tabs = st.tabs([" not in source
+    assert 'default="data"' not in source
     assert 'if selected_main_panel == "downloads"' in source
+
+
+def test_help_section_is_lazy_rendered_by_topic_selector():
+    source = inspect.getsource(app.show_help_section)
+
+    assert "help_panel" in source
+    assert "st.selectbox" in source
+    assert "st.tabs" not in source
+    assert "default=visible_labels[0]" not in source
+    assert 'if selected_help_label == "Analysis Workflow"' in source
+    assert 'if selected_help_label == "Public Beta"' in source
 
 
 def test_publication_figure_payloads_use_plotly_helpers_with_expected_inputs():

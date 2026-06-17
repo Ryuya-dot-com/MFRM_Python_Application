@@ -160,6 +160,9 @@ def test_japanese_safety_and_guidance_copy_uses_task_centered_terms(locales):
         "sidebar_estimation.column_mapping_caption",
         "help.tab_quick_start",
         "help.tab_analysis_workflow",
+        "help.panel_select_label",
+        "help.panel_select_help",
+        "help.panel_select_caption",
         "help.quick_start_body",
         "help.troubleshooting_body",
     }

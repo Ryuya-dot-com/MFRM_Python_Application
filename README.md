@@ -6,7 +6,7 @@ This app is designed to run without `mfrmr`, `rpy2`, `Rscript`, FACETS, TAM, sir
 
 ## Status
 
-- Release status: public beta / research preview (**v0.2.15-beta**)
+- Release status: public beta / research preview (**v0.2.16-beta**)
 - Runtime engine: standalone Python
 - Primary entrypoint: `streamlit_app.py`
 - Intended use: exploratory analysis, teaching, reporting support, and research workflow prototyping
@@ -41,11 +41,20 @@ commit after a push or reboot.
 
 ## What's new in the current beta line
 
-The current app label is v0.2.15-beta. This beta line adds the v0.2.14
-sample-scenario and quick-results-bundle work, then layers on the
-release-readiness and UX/documentation pass documented in `CHANGELOG.md`.
+The current app label is v0.2.16-beta. This beta line keeps the v0.2.15
+release-readiness and UX/documentation pass, then adds a performance pass for
+faster first paint and lighter Standard runs.
 Key current-line improvements include:
 
+- Lazy runtime imports and post-paint prewarm for heavy Plotly/SciPy modules,
+  while preserving the lightweight `--doctor` path when Streamlit is absent.
+- Standard analysis now defers residual-PCA stability bootstraps and
+  bias/interaction scans; Full publication still runs the full audit bundle,
+  and Custom can opt back into the heavier checks.
+- Quick result ZIP/Excel exports and Visuals guidance tables are built only
+  when explicitly requested, reducing automatic rerun work after estimation.
+- Config JSON import/export and benchmark output include the new
+  `compute_pca_stability` and `auto_bias_interactions` controls.
 - Modular helper boundaries under `mfrm_app/` for CLI/doctor checks,
   export-frame collection, distribution metadata, privacy text, preflight
   contracts, and table IO.

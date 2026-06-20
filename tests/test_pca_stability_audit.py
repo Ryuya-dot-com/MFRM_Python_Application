@@ -53,6 +53,18 @@ def test_pca_stability_audit_includes_loo_and_bootstrap_diagnostics():
     assert row["SensitivityFlagSummary"] == "none"
 
 
+def test_pca_bundle_can_defer_expensive_stability_audit():
+    bundle = app.compute_pca_bundle(_stable_residual_matrix(), compute_stability=False)
+
+    assert bundle is not None
+    row = bundle["stability_table"].iloc[0]
+    assert row["PCAStabilityStatus"] == "Not computed"
+    assert row["SensitivityFlagSummary"] == "not computed"
+    assert "skipped for speed" in str(row["Caution"])
+    assert int(row["LOOColumnsEvaluated"]) == 0
+    assert int(row["BootstrapReplicates"]) == 0
+
+
 def test_pca_stability_audit_flags_bootstrap_threshold_crossing():
     rng = np.random.default_rng(20260514)
     weak = pd.DataFrame(

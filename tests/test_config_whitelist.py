@@ -17,7 +17,7 @@ def test_whitelist_is_frozenset():
 
 def test_whitelist_size_is_pinned():
     # Bumping this number requires an entry in CHANGELOG.md.
-    assert len(app._CONFIG_JSON_IMPORT_WHITELIST) == 26
+    assert len(app._CONFIG_JSON_IMPORT_WHITELIST) == 28
 
 
 def test_critical_sidebar_settings_are_whitelisted():
@@ -25,6 +25,8 @@ def test_critical_sidebar_settings_are_whitelisted():
         "model_type", "method", "analysis_depth",
         "rating_min", "rating_max",
         "maxit", "reltol", "anchor_policy",
+        "compute_residual_pca", "compute_pca_stability",
+        "auto_bias_interactions",
         "visualization_preferences",
     }
     missing = critical - app._CONFIG_JSON_IMPORT_WHITELIST

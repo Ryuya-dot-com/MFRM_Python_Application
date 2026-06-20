@@ -4,7 +4,28 @@ All notable changes to this standalone Streamlit distribution should be recorded
 
 ## Unreleased
 
-- No pending changes after v0.2.15-beta.
+- No pending changes after v0.2.16-beta.
+
+## 0.2.16-beta - 2026-06-20
+
+### Changed
+
+- **Performance-focused Standard analysis path**. Standard runs now compute the
+  residual-PCA eigenvalues/loadings but defer the leave-one-column and
+  bootstrap stability audit until Full publication or an explicit Custom
+  opt-in. Bias/interaction estimation is also deferred in Standard and can be
+  launched from the Bias/Interaction tab without refitting the model.
+- **Lazy heavy imports and post-paint prewarm**. Plotly and SciPy runtime
+  imports are loaded on first use, with an optional background prewarm after the
+  initial Streamlit UI starts. This keeps the modular `mfrm_app/` helper package
+  and the lightweight `--doctor` fallback intact.
+- **On-demand export and visual guidance work**. The quick ZIP/Excel result
+  bundle and Visuals guidance/evidence tables are no longer built
+  automatically on every result rerun; users prepare them only when needed.
+- **Config and benchmark parity for performance controls**.
+  `compute_pca_stability` and `auto_bias_interactions` now round-trip through
+  config JSON import/export, are covered by contract tests, and appear in
+  benchmark snapshots.
 
 ## 0.2.15-beta - 2026-06-17
 

@@ -4,6 +4,9 @@ gatherUsageStats = false
 [client]
 showErrorDetails = "none"
 
+[runner]
+magicEnabled = false
+
 [server]
 enableXsrfProtection = true
 enableCORS = true

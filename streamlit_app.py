@@ -2,32 +2,30 @@ from __future__ import annotations
 
 import io
 import hashlib
+import importlib
 import importlib.metadata as importlib_metadata
 import importlib.util
 import json
 import logging
+import math
 import os
 import re
 import shutil
 import subprocess
 import sys
+import threading
 import time
 import zipfile
 from collections import OrderedDict
 from functools import lru_cache
 from itertools import combinations, product
 from pathlib import Path
+from statistics import NormalDist
 from typing import Iterable
 
 import numpy as np
 import pandas as pd
-import plotly.express as px
-import plotly.graph_objects as go
 from numpy.polynomial.hermite import hermgauss
-from plotly.subplots import make_subplots
-from scipy.optimize import minimize, root_scalar, minimize_scalar
-from scipy.special import logsumexp
-from scipy.stats import chi2, norm as _norm, t as t_dist
 
 from mfrm_app import distribution as _distribution
 from mfrm_app import exports as _exports
@@ -59,7 +57,109 @@ if "--doctor" in sys.argv and importlib.util.find_spec("streamlit") is None:
 import streamlit as st
 
 
-APP_VERSION = "0.2.15-beta"
+class _LazyModule:
+    """Small proxy that imports optional-heavy modules on first use."""
+
+    def __init__(self, module_name: str):
+        self._module_name = module_name
+        self._module = None
+
+    def _load(self):
+        if self._module is None:
+            self._module = importlib.import_module(self._module_name)
+        return self._module
+
+    def __getattr__(self, name: str):
+        return getattr(self._load(), name)
+
+
+class _LazyImportAttr:
+    """Lazy proxy for functions or distribution objects imported from a module."""
+
+    def __init__(self, module_name: str, attr_name: str):
+        self._module_name = module_name
+        self._attr_name = attr_name
+        self._attr = None
+
+    def _load(self):
+        if self._attr is None:
+            module = importlib.import_module(self._module_name)
+            self._attr = getattr(module, self._attr_name)
+        return self._attr
+
+    def __call__(self, *args, **kwargs):
+        return self._load()(*args, **kwargs)
+
+    def __getattr__(self, name: str):
+        return getattr(self._load(), name)
+
+
+px = _LazyModule("plotly.express")
+go = _LazyModule("plotly.graph_objects")
+make_subplots = _LazyImportAttr("plotly.subplots", "make_subplots")
+minimize = _LazyImportAttr("scipy.optimize", "minimize")
+root_scalar = _LazyImportAttr("scipy.optimize", "root_scalar")
+minimize_scalar = _LazyImportAttr("scipy.optimize", "minimize_scalar")
+logsumexp = _LazyImportAttr("scipy.special", "logsumexp")
+chi2 = _LazyImportAttr("scipy.stats", "chi2")
+t_dist = _LazyImportAttr("scipy.stats", "t")
+_STANDARD_NORMAL = NormalDist()
+
+
+def _normal_ppf(q: float) -> float:
+    return float(_STANDARD_NORMAL.inv_cdf(float(q)))
+
+
+def _normal_cdf(x: float, *, loc: float = 0.0, scale: float = 1.0) -> float:
+    scale_f = float(scale)
+    if not np.isfinite(scale_f) or scale_f <= 0:
+        return float("nan")
+    z = (float(x) - float(loc)) / scale_f
+    return float(_STANDARD_NORMAL.cdf(z))
+
+
+def _normal_sf(x: float, *, loc: float = 0.0, scale: float = 1.0) -> float:
+    scale_f = float(scale)
+    if not np.isfinite(scale_f) or scale_f <= 0:
+        return float("nan")
+    z = (float(x) - float(loc)) / scale_f
+    return float(0.5 * math.erfc(z / math.sqrt(2.0)))
+
+
+_HEAVY_RUNTIME_IMPORT_PREWARM_STARTED = False
+
+
+def start_heavy_runtime_import_prewarm() -> None:
+    """Warm optional-heavy runtime imports after the first UI paint starts."""
+    global _HEAVY_RUNTIME_IMPORT_PREWARM_STARTED
+    if _HEAVY_RUNTIME_IMPORT_PREWARM_STARTED:
+        return
+    if str(os.environ.get("MFRM_DISABLE_IMPORT_PREWARM", "")).strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }:
+        return
+    _HEAVY_RUNTIME_IMPORT_PREWARM_STARTED = True
+
+    def _worker() -> None:
+        for module_name in (
+            "scipy.special",
+            "scipy.optimize",
+            "scipy.stats",
+            "plotly.express",
+            "plotly.subplots",
+        ):
+            try:
+                importlib.import_module(module_name)
+            except Exception:  # pragma: no cover - opportunistic UX prewarm
+                LOGGER.debug("Skipped runtime import prewarm for %s", module_name, exc_info=True)
+
+    threading.Thread(target=_worker, name="mfrm-import-prewarm", daemon=True).start()
+
+
+APP_VERSION = "0.2.16-beta"
 APP_RELEASE_LABEL = "standalone Python beta"
 APP_BUILD_ENV_KEYS = (
     "STREAMLIT_GIT_COMMIT_HASH",
@@ -159,6 +259,22 @@ def _resolve_locale_key(data: dict, key: str):
     return node if isinstance(node, str) else None
 
 
+@lru_cache(maxsize=16_384)
+def _cached_locale_text(lang: str, key: str) -> str | None:
+    """Return a translated text template with fallback lookup cached per key."""
+    lang = lang if lang in SUPPORTED_LANGS else DEFAULT_LANG
+    text = _resolve_locale_key(_load_locale(lang), str(key))
+    if text is None and lang != DEFAULT_LANG:
+        text = _resolve_locale_key(_load_locale(DEFAULT_LANG), str(key))
+    return text
+
+
+def active_locale() -> str:
+    """Return the active supported locale for cache keys and UI text."""
+    lang = st.session_state.get("lang", DEFAULT_LANG)
+    return str(lang) if lang in SUPPORTED_LANGS else DEFAULT_LANG
+
+
 def t(key: str, default: str | None = None, **fmt) -> str:
     """Translate a dotted i18n key for the active session language.
 
@@ -168,12 +284,8 @@ def t(key: str, default: str | None = None, **fmt) -> str:
     itself) if both locales lack it. Optional ``**fmt`` substitutes
     ``str.format`` placeholders inside the resolved string.
     """
-    lang = st.session_state.get("lang", DEFAULT_LANG)
-    if lang not in SUPPORTED_LANGS:
-        lang = DEFAULT_LANG
-    text = _resolve_locale_key(_load_locale(lang), key)
-    if text is None and lang != DEFAULT_LANG:
-        text = _resolve_locale_key(_load_locale(DEFAULT_LANG), key)
+    lang = active_locale()
+    text = _cached_locale_text(str(lang), str(key))
     if text is None:
         text = default if default is not None else key
     if fmt:
@@ -6875,10 +6987,10 @@ def _ci_z(level: float) -> float:
     try:
         lvl = float(level)
     except (TypeError, ValueError):
-        return float(_norm.ppf(0.975))
+        return float(_normal_ppf(0.975))
     if not np.isfinite(lvl) or not (0.0 < lvl < 1.0):
-        return float(_norm.ppf(0.975))
-    return float(_norm.ppf((1.0 + lvl) / 2.0))
+        return float(_normal_ppf(0.975))
+    return float(_normal_ppf((1.0 + lvl) / 2.0))
 
 
 def _ci_level_pct_label(level: float) -> str:
@@ -10456,8 +10568,8 @@ def compute_obs_table(res):
 # References: Snijders (2001, Psychometrika 66, Eq. 16); Sinharay (2016,
 # Brit. J. Math. Stat. Psychol. 69, 175-193); Magis, Raiche & Beland (2012).
 
-_PERSON_FIT_Z_5PCT = float(_norm.ppf(0.975))
-_PERSON_FIT_Z_1PCT = float(_norm.ppf(0.995))
+_PERSON_FIT_Z_5PCT = float(_normal_ppf(0.975))
+_PERSON_FIT_Z_1PCT = float(_normal_ppf(0.995))
 
 _PERSON_FIT_OBS_REQUIRED_COLUMNS = (
     "Person",
@@ -11688,7 +11800,7 @@ def _recovery_rows_from_fit(
     """
     facets = res.get("facets", {}) if isinstance(res, dict) else {}
     rows = []
-    z95 = float(_norm.ppf(0.975))
+    z95 = float(_normal_ppf(0.975))
 
     # Build (Facet, Level) lookups from the optional measures table.
     se_lookup: dict[tuple[str, str], float] = {}
@@ -12724,7 +12836,7 @@ def compute_dimtest_nonparametric(
         return empty
     se = float(np.std(rep_arr, ddof=1))
     z_stat = float(t_l_observed / se) if (np.isfinite(se) and se > 0) else float("nan")
-    p_value = float(2.0 * (1.0 - _norm.cdf(abs(z_stat)))) if np.isfinite(z_stat) else float("nan")
+    p_value = float(2.0 * _normal_sf(abs(z_stat))) if np.isfinite(z_stat) else float("nan")
     alpha_lo = (1.0 - float(confidence)) / 2.0
     ci_lo = float(np.quantile(rep_arr, alpha_lo))
     ci_hi = float(np.quantile(rep_arr, 1.0 - alpha_lo))
@@ -16850,7 +16962,7 @@ def _poly_sibtest(y, M, g, strata, *, score_range, min_stratum_n: int = 2):
     beta = float(beta)
     se = float(np.sqrt(var_acc)) if var_acc > 0 else np.nan
     z = beta / se if (np.isfinite(se) and se > 0) else np.nan
-    p = float(2.0 * _norm.sf(abs(z))) if np.isfinite(z) else np.nan
+    p = float(2.0 * _normal_sf(abs(z))) if np.isfinite(z) else np.nan
     direction = ("favors reference" if beta > 0 else "favors focal" if beta < 0 else "no signed difference")
     return (beta, se, z, p, _sibtest_eff_class(beta, score_range), direction)
 
@@ -20196,8 +20308,7 @@ def add_gpcm_fair_average_delta_se(raw_tbls, res, covariance=None, ci_level=0.95
             for facet, tbl in raw_tbls.items()
         }
 
-    from scipy.stats import norm  # local import keeps module-level import surface stable
-    z = float(norm.ppf((1.0 + ci_level) / 2.0))
+    z = float(_normal_ppf((1.0 + ci_level) / 2.0))
     rating_min = res.get("prep", {}).get("rating_min", -np.inf)
     rating_max = res.get("prep", {}).get("rating_max", np.inf)
 
@@ -20408,7 +20519,7 @@ def compute_mml_structural_measure_se_table(res, covariance=None, ci_level=0.95)
     detail = str((covariance or {}).get("detail", "MML covariance unavailable."))
     cov = (covariance or {}).get("cov")
     rows: list[dict[str, object]] = []
-    z = float(_norm.ppf((1.0 + float(ci_level)) / 2.0)) if 0.0 < float(ci_level) < 1.0 else 1.959963984540054
+    z = float(_normal_ppf((1.0 + float(ci_level)) / 2.0)) if 0.0 < float(ci_level) < 1.0 else 1.959963984540054
 
     for facet in list(config.get("facet_names", [])):
         levels = [str(x) for x in (prep.get("levels", {}).get(facet) or [])]
@@ -20521,7 +20632,7 @@ def compute_mml_step_se_table(res, covariance=None, ci_level=0.95):
     status = str((covariance or {}).get("status", "fallback"))
     detail = str((covariance or {}).get("detail", "MML covariance unavailable."))
     cov = (covariance or {}).get("cov")
-    z = float(_norm.ppf((1.0 + float(ci_level)) / 2.0)) if 0.0 < float(ci_level) < 1.0 else 1.959963984540054
+    z = float(_normal_ppf((1.0 + float(ci_level)) / 2.0)) if 0.0 < float(ci_level) < 1.0 else 1.959963984540054
 
     targets: list[tuple[object, int, dict[str, object]]] = []
     if model == "RSM":
@@ -20592,7 +20703,7 @@ def annotate_measure_uncertainty(measures, res, obs_df=None, *, ci_level=0.95):
     out = measures.copy()
     config = (res or {}).get("config", {}) or {}
     method = str(config.get("method", ""))
-    z = float(_norm.ppf((1.0 + float(ci_level)) / 2.0)) if 0.0 < float(ci_level) < 1.0 else 1.959963984540054
+    z = float(_normal_ppf((1.0 + float(ci_level)) / 2.0)) if 0.0 < float(ci_level) < 1.0 else 1.959963984540054
 
     out["SE_Method"] = "conditional information approximation: 1/sqrt(sum Var*w), other fitted parameters held fixed"
     out["SE_Status"] = "conditional_approximation"
@@ -21291,7 +21402,7 @@ def _pca_row_bootstrap_stability(
     }
 
 
-def compute_pca_bundle(residual_matrix_wide):
+def compute_pca_bundle(residual_matrix_wide, *, compute_stability: bool = True):
     if residual_matrix_wide is None:
         return None
     if residual_matrix_wide.shape[0] < 2 or residual_matrix_wide.shape[1] < 2:
@@ -21331,32 +21442,44 @@ def compute_pca_bundle(residual_matrix_wide):
     loadings_df = core["loadings"]
     cor_pd_df = core["cor_matrix"]
 
-    loo = _pca_leave_one_column_stability(residual_matrix_clean, eigvals, loadings_df)
-    boot = _pca_row_bootstrap_stability(residual_matrix_clean, eigvals, loadings_df)
     sensitivity_flags: list[str] = []
-    loo_delta = float(loo.get("LOOEV1MaxAbsDelta", np.nan))
-    loo_share_delta = float(loo.get("LOOEV1ShareMaxAbsDelta", np.nan))
-    loo_corr = float(loo.get("LOOPC1MinAbsLoadingCorrelation", np.nan))
-    boot_cv = float(boot.get("BootstrapEV1CV", np.nan))
-    boot_corr = float(boot.get("BootstrapPC1MinAbsLoadingCorrelation", np.nan))
-    if np.isfinite(loo_share_delta) and loo_share_delta > PCA_STABILITY_MAX_LOO_EV1_SHARE_DELTA:
-        sensitivity_flags.append(f"leave-one-column EV1 share shift {loo_share_delta:.2f}")
-    if np.isfinite(loo_corr) and loo_corr < PCA_STABILITY_MIN_LOADING_CORR:
-        sensitivity_flags.append(f"leave-one-column loading correlation {loo_corr:.2f}")
-    if np.isfinite(boot_cv) and boot_cv > PCA_STABILITY_MAX_BOOTSTRAP_EV1_CV:
-        sensitivity_flags.append(f"bootstrap EV1 CV {boot_cv:.2f}")
-    if np.isfinite(boot_corr) and boot_corr < PCA_STABILITY_MIN_LOADING_CORR:
-        sensitivity_flags.append(f"bootstrap loading correlation {boot_corr:.2f}")
-    if bool(boot.get("BootstrapEV1ThresholdCrossing", False)):
-        sensitivity_flags.append("bootstrap EV1 interval crosses an interpretation threshold")
-    stability_flags.extend(sensitivity_flags)
-    stability_status = "Review" if stability_flags else "Stable screen"
-    stability_caution = (
-        "Residual PCA may be unstable because " + "; ".join(stability_flags) + ". "
-        "Use loadings as exploratory prompts and corroborate with fit, content, and marginal diagnostics."
-        if stability_flags else
-        "Residual matrix has adequate basic overlap for a screening PCA; still interpret as a diagnostic, not proof."
-    )
+    if compute_stability:
+        loo = _pca_leave_one_column_stability(residual_matrix_clean, eigvals, loadings_df)
+        boot = _pca_row_bootstrap_stability(residual_matrix_clean, eigvals, loadings_df)
+        loo_share_delta = float(loo.get("LOOEV1ShareMaxAbsDelta", np.nan))
+        loo_corr = float(loo.get("LOOPC1MinAbsLoadingCorrelation", np.nan))
+        boot_cv = float(boot.get("BootstrapEV1CV", np.nan))
+        boot_corr = float(boot.get("BootstrapPC1MinAbsLoadingCorrelation", np.nan))
+        if np.isfinite(loo_share_delta) and loo_share_delta > PCA_STABILITY_MAX_LOO_EV1_SHARE_DELTA:
+            sensitivity_flags.append(f"leave-one-column EV1 share shift {loo_share_delta:.2f}")
+        if np.isfinite(loo_corr) and loo_corr < PCA_STABILITY_MIN_LOADING_CORR:
+            sensitivity_flags.append(f"leave-one-column loading correlation {loo_corr:.2f}")
+        if np.isfinite(boot_cv) and boot_cv > PCA_STABILITY_MAX_BOOTSTRAP_EV1_CV:
+            sensitivity_flags.append(f"bootstrap EV1 CV {boot_cv:.2f}")
+        if np.isfinite(boot_corr) and boot_corr < PCA_STABILITY_MIN_LOADING_CORR:
+            sensitivity_flags.append(f"bootstrap loading correlation {boot_corr:.2f}")
+        if bool(boot.get("BootstrapEV1ThresholdCrossing", False)):
+            sensitivity_flags.append("bootstrap EV1 interval crosses an interpretation threshold")
+        stability_flags.extend(sensitivity_flags)
+        stability_status = "Review" if stability_flags else "Stable screen"
+        stability_caution = (
+            "Residual PCA may be unstable because " + "; ".join(stability_flags) + ". "
+            "Use loadings as exploratory prompts and corroborate with fit, content, and marginal diagnostics."
+            if stability_flags else
+            "Residual matrix has adequate basic overlap for a screening PCA; still interpret as a diagnostic, not proof."
+        )
+        sensitivity_summary = "; ".join(sensitivity_flags) if sensitivity_flags else "none"
+    else:
+        loo = _pca_leave_one_column_stability(None, None, None)
+        boot = _pca_row_bootstrap_stability(None, None, None)
+        stability_status = "Not computed"
+        basic_summary = "; ".join(stability_flags) if stability_flags else "none"
+        stability_caution = (
+            "PCA eigenvalues and loadings were computed, but leave-one-column and bootstrap "
+            "stability checks were skipped for speed. Use Full publication before final "
+            f"dimensionality claims. Basic matrix flags: {basic_summary}."
+        )
+        sensitivity_summary = "not computed"
     stability_row = {
         "PCAStabilityStatus": stability_status,
         "Persons": int(n_persons),
@@ -21367,7 +21490,7 @@ def compute_pca_bundle(residual_matrix_wide):
         "FullEV1": float(eigvals[0]) if eigvals.size else np.nan,
         "FullEV2": float(eigvals[1]) if eigvals.size > 1 else np.nan,
         "FullPC1VariancePct": float(var_pct[0]) if var_pct.size else np.nan,
-        "SensitivityFlagSummary": "; ".join(sensitivity_flags) if sensitivity_flags else "none",
+        "SensitivityFlagSummary": sensitivity_summary,
         "Rule": (
             f"Review if persons < {PCA_STABILITY_MIN_PERSONS}, columns < "
             f"{PCA_STABILITY_MIN_COLUMNS}, missing share > "
@@ -21394,7 +21517,7 @@ def compute_pca_bundle(residual_matrix_wide):
     }
 
 
-def compute_pca_overall(obs_df, facet_names):
+def compute_pca_overall(obs_df, facet_names, *, compute_stability: bool = True):
     if obs_df is None or obs_df.empty or not facet_names:
         return None
     df_aug = obs_df.copy()
@@ -21408,10 +21531,10 @@ def compute_pca_overall(obs_df, facet_names):
     residual_matrix_wide = residual_matrix_prep.pivot(
         index="Person", columns="item_combination", values="StdResidual"
     )
-    return compute_pca_bundle(residual_matrix_wide)
+    return compute_pca_bundle(residual_matrix_wide, compute_stability=compute_stability)
 
 
-def compute_pca_by_facet(obs_df, facet_names):
+def compute_pca_by_facet(obs_df, facet_names, *, compute_stability: bool = True):
     out = {}
     if obs_df is None or obs_df.empty:
         return out
@@ -21427,7 +21550,7 @@ def compute_pca_by_facet(obs_df, facet_names):
         residual_matrix_wide = residual_matrix_prep.pivot(
             index="Person", columns="Level", values="StdResidual"
         )
-        out[facet] = compute_pca_bundle(residual_matrix_wide)
+        out[facet] = compute_pca_bundle(residual_matrix_wide, compute_stability=compute_stability)
     return out
 
 
@@ -21778,7 +21901,9 @@ def mfrm_diagnostics(
     interaction_pairs=None,
     top_n_interactions=20,
     whexact=False,
+    compute_interactions=True,
     compute_pca=True,
+    compute_pca_stability=True,
     compute_marginal=False,
     marginal_pairwise=False,
     marginal_max_pair_cells=400,
@@ -21804,7 +21929,11 @@ def mfrm_diagnostics(
     )
     se_tbl = calc_facet_se(obs_df, facet_cols)
     bias_tbl = calc_bias_facet(obs_df, facet_cols)
-    interaction_tbl = calc_bias_interactions(obs_df, facet_cols, pairs=interaction_pairs, top_n=top_n_interactions)
+    interaction_tbl = (
+        calc_bias_interactions(obs_df, facet_cols, pairs=interaction_pairs, top_n=top_n_interactions)
+        if compute_interactions
+        else pd.DataFrame()
+    )
     ptmea_tbl = calc_ptmea(obs_df, facet_cols)
 
     person_tbl = res["facets"]["person"].copy()
@@ -21832,7 +21961,7 @@ def mfrm_diagnostics(
     measures = measures.merge(fit_tbl, on=["Facet", "Level"], how="left")
     measures = measures.merge(bias_tbl, on=["Facet", "Level"], how="left")
     measures = measures.merge(ptmea_tbl, on=["Facet", "Level"], how="left")
-    ci_z = float(_norm.ppf(0.975))
+    ci_z = float(_normal_ppf(0.975))
     measures["CI_Lower"] = measures["Estimate"] - ci_z * measures["SE"]
     measures["CI_Upper"] = measures["Estimate"] + ci_z * measures["SE"]
     measures, uncertainty_bundle = annotate_measure_uncertainty(
@@ -21883,7 +22012,11 @@ def mfrm_diagnostics(
     pca_by_facet_reasons: dict[str, dict] = {}
     if compute_pca:
         try:
-            pca_overall = compute_pca_overall(obs_df, facet_names)
+            pca_overall = compute_pca_overall(
+                obs_df,
+                facet_names,
+                compute_stability=bool(compute_pca_stability),
+            )
             if pca_overall is None:
                 pca_reason = diagnose_pca_skip_reason(obs_df, facet_names, mode="overall")
         except Exception as exc:
@@ -21894,7 +22027,11 @@ def mfrm_diagnostics(
                 error=str(exc),
             )
         try:
-            pca_by_facet = compute_pca_by_facet(obs_df, facet_names)
+            pca_by_facet = compute_pca_by_facet(
+                obs_df,
+                facet_names,
+                compute_stability=bool(compute_pca_stability),
+            )
             # Record a per-facet skip reason so each Dimensionality sub-tab
             # can show *why* its panel is empty even when overall PCA succeeded.
             for facet in facet_names or []:
@@ -21958,11 +22095,13 @@ def mfrm_diagnostics(
         "krippendorff_alpha": krippendorff_alpha_tbl,
         "bias": bias_tbl,
         "interactions": interaction_tbl,
+        "interactions_enabled": bool(compute_interactions),
         "pca": pca_overall,
         "pca_by_facet": pca_by_facet,
         "pca_reason": pca_reason,
         "pca_by_facet_reasons": pca_by_facet_reasons,
         "pca_enabled": bool(compute_pca),
+        "pca_stability_enabled": bool(compute_pca and compute_pca_stability),
         "marginal_fit": marginal_fit,
         "marginal_fit_enabled": bool(compute_marginal),
         "eb_shrinkage": shrinkage,
@@ -23932,27 +24071,58 @@ def render_quick_results_download(
     do not have to hunt through the Downloads sub-tab first. Also
     offers an Excel (multi-sheet) variant for users who prefer that.
     """
-    frames = build_result_bundle_frames(
-        result, diagnostics,
-        bias_results=bias_results, all_bias_results=all_bias_results,
-    )
-    if not frames:
-        return
-    try:
-        frames_key = frames_fingerprint(frames)
-    except Exception:
-        frames_key = f"quick_dl_{id(result)}"
-
     with st.container(border=True):
-        st.markdown(
-            f"##### Quick download — all {len(frames)} result tables in one click"
-        )
+        st.markdown("##### Quick download")
         st.caption(
             "FACETS-style bundle: Summary, Measures, Reliability, Fit, "
             "PCA, and Bias tables in a single ZIP. For publication Word/PDF/HTML "
             "and Stan code, use **Report → Exports**. For every CSV, figure, "
             "script, and config file, use the **Downloads** tab."
         )
+        prepare_bundle = st.checkbox(
+            "Prepare quick result downloads",
+            value=False,
+            key="quick_results_download_prepare",
+            help=(
+                "Build the ZIP/Excel table bundle only when you need it. "
+                "Leaving this off keeps result reruns lighter."
+            ),
+        )
+        if not prepare_bundle:
+            return
+
+        config = result.get("config", {}) if isinstance(result, dict) else {}
+        quick_bundle_key = stable_json_fingerprint({
+            "run": config.get("run_fingerprint", config.get("analysis_config_fingerprint")),
+            "app_version": config.get("app_version", APP_VERSION),
+            "bias_keys": sorted((all_bias_results or {}).keys()) if isinstance(all_bias_results, dict) else [],
+            "has_primary_bias": bool(bias_results),
+        })
+        cached_bundle = st.session_state.get("_quick_results_download_bundle")
+        frames = None
+        if isinstance(cached_bundle, dict) and cached_bundle.get("key") == quick_bundle_key:
+            cached_frames = cached_bundle.get("frames")
+            if isinstance(cached_frames, dict):
+                frames = cached_frames
+        if frames is None:
+            with st.spinner("Preparing quick result download bundle..."):
+                frames = build_result_bundle_frames(
+                    result, diagnostics,
+                    bias_results=bias_results, all_bias_results=all_bias_results,
+                )
+            st.session_state["_quick_results_download_bundle"] = {
+                "key": quick_bundle_key,
+                "frames": frames,
+            }
+        if not frames:
+            st.caption("No result tables are available for the quick download bundle.")
+            return
+        try:
+            frames_key = frames_fingerprint(frames)
+        except Exception:
+            frames_key = f"quick_dl_{id(result)}"
+
+        st.caption(f"{len(frames)} result table(s) are ready.")
         c1, c2 = st.columns([1, 1])
         with c1:
             try:
@@ -26504,6 +26674,9 @@ def _render_guided_diagnostics_section(
             all_bias_results=all_bias_results or {},
             result=result,
             diagnostics=diagnostics,
+            bias_mode=(result.get("config", {}) if isinstance(result, dict) else {}).get("bias_mode"),
+            selected_bias_pair=(result.get("config", {}) if isinstance(result, dict) else {}).get("selected_bias_pair"),
+            facet_cols=est_facet_cols,
         )
     elif selected_diagnostic == "categories_steps":
         show_categories_section(result, diagnostics, core)
@@ -28756,6 +28929,7 @@ def resolve_analysis_depth_settings(
     if analysis_depth == "Fast preview":
         settings = {
             "compute_residual_pca": False,
+            "compute_pca_stability": False,
             "compute_strict_marginal": False,
             "strict_marginal_pairwise": False,
             "strict_marginal_max_pair_cells": 400,
@@ -28763,6 +28937,7 @@ def resolve_analysis_depth_settings(
             "n_plausible_values": 0,
             "plausible_seed": 20260411,
             "bias_mode": "Skip",
+            "auto_bias_interactions": False,
             "render_interactive_plots": False,
             "generate_figure_exports": False,
             "compute_eb_shrinkage": False,
@@ -28770,6 +28945,7 @@ def resolve_analysis_depth_settings(
     elif analysis_depth == "Full publication":
         settings = {
             "compute_residual_pca": True,
+            "compute_pca_stability": True,
             "compute_strict_marginal": is_mml,
             "strict_marginal_pairwise": is_mml,
             "strict_marginal_max_pair_cells": 800,
@@ -28777,6 +28953,7 @@ def resolve_analysis_depth_settings(
             "n_plausible_values": 10 if is_mml else 0,
             "plausible_seed": 20260411,
             "bias_mode": "All facet pairs",
+            "auto_bias_interactions": True,
             "render_interactive_plots": True,
             "generate_figure_exports": True,
             "compute_eb_shrinkage": True,
@@ -28784,6 +28961,7 @@ def resolve_analysis_depth_settings(
     elif analysis_depth == "Custom":
         settings = {
             "compute_residual_pca": True,
+            "compute_pca_stability": False,
             "compute_strict_marginal": is_mml,
             "strict_marginal_pairwise": False,
             "strict_marginal_max_pair_cells": 400,
@@ -28791,6 +28969,7 @@ def resolve_analysis_depth_settings(
             "n_plausible_values": 5 if is_mml else 0,
             "plausible_seed": 20260411,
             "bias_mode": "Selected pair",
+            "auto_bias_interactions": False,
             "render_interactive_plots": True,
             "generate_figure_exports": False,
             "compute_eb_shrinkage": True,
@@ -28800,6 +28979,7 @@ def resolve_analysis_depth_settings(
     else:
         settings = {
             "compute_residual_pca": True,
+            "compute_pca_stability": False,
             "compute_strict_marginal": False,
             "strict_marginal_pairwise": False,
             "strict_marginal_max_pair_cells": 400,
@@ -28807,12 +28987,14 @@ def resolve_analysis_depth_settings(
             "n_plausible_values": 0,
             "plausible_seed": 20260411,
             "bias_mode": "Selected pair",
+            "auto_bias_interactions": False,
             "render_interactive_plots": True,
             "generate_figure_exports": False,
             "compute_eb_shrinkage": False,
         }
 
     settings["compute_residual_pca"] = bool(settings.get("compute_residual_pca", True))
+    settings["compute_pca_stability"] = bool(settings.get("compute_pca_stability", False))
     settings["compute_strict_marginal"] = bool(settings.get("compute_strict_marginal", False))
     settings["strict_marginal_pairwise"] = bool(settings.get("strict_marginal_pairwise", False))
     settings["strict_marginal_max_pair_cells"] = int(settings.get("strict_marginal_max_pair_cells", 400))
@@ -28820,6 +29002,7 @@ def resolve_analysis_depth_settings(
     settings["n_plausible_values"] = int(settings.get("n_plausible_values", 0) or 0)
     settings["plausible_seed"] = int(settings.get("plausible_seed", 20260411) or 20260411)
     settings["bias_mode"] = str(settings.get("bias_mode", "Selected pair"))
+    settings["auto_bias_interactions"] = bool(settings.get("auto_bias_interactions", False))
     settings["render_interactive_plots"] = bool(settings.get("render_interactive_plots", True))
     settings["generate_figure_exports"] = bool(settings.get("generate_figure_exports", False))
     settings["compute_eb_shrinkage"] = bool(settings.get("compute_eb_shrinkage", False))
@@ -28831,6 +29014,10 @@ def resolve_analysis_depth_settings(
         settings["n_plausible_values"] = 0
     if not settings["compute_strict_marginal"]:
         settings["strict_marginal_pairwise"] = False
+    if not settings["compute_residual_pca"]:
+        settings["compute_pca_stability"] = False
+    if settings["bias_mode"] == "Skip":
+        settings["auto_bias_interactions"] = False
     if not settings["compute_plausible_values"]:
         settings["n_plausible_values"] = 0
     return settings
@@ -28842,6 +29029,7 @@ def analysis_depth_sidebar_summary(settings: dict) -> str:
     skipped: list[str] = []
     feature_map = [
         ("compute_residual_pca", "residual PCA"),
+        ("compute_pca_stability", "PCA stability audit"),
         ("compute_strict_marginal", "strict marginal"),
         ("strict_marginal_pairwise", "pairwise marginal"),
         ("compute_plausible_values", "plausible values"),
@@ -28853,13 +29041,72 @@ def analysis_depth_sidebar_summary(settings: dict) -> str:
         (enabled if bool(settings.get(key)) else skipped).append(label)
     bias_mode = str(settings.get("bias_mode", "Skip"))
     if bias_mode != "Skip":
-        enabled.append(f"bias scan: {bias_mode}")
+        bias_label = f"bias scan: {bias_mode}"
+        if not bool(settings.get("auto_bias_interactions", False)):
+            bias_label += " (on demand)"
+        enabled.append(bias_label)
     else:
         skipped.append("bias scan")
     return (
         f"Runs: {', '.join(enabled) if enabled else 'core estimation only'}. "
         f"Skips: {', '.join(skipped) if skipped else 'none'}."
     )
+
+
+def resolve_bias_pairs_for_mode(
+    bias_mode: str,
+    facet_cols: list[str] | tuple[str, ...] | None,
+    *,
+    selected_bias_pair: tuple[str, str] | list[str] | None = None,
+) -> list[tuple[str, str]]:
+    """Return the facet pairs implied by the current bias-scan setting."""
+    facets = list(facet_cols or [])
+    if len(facets) < 2:
+        return []
+    available = list(combinations(["Person"] + facets, 2))
+    if bias_mode == "All facet pairs":
+        return [(str(a), str(b)) for a, b in available]
+    if bias_mode == "Selected pair" and selected_bias_pair is not None:
+        if len(selected_bias_pair) != 2:
+            return []
+        pair = (str(selected_bias_pair[0]), str(selected_bias_pair[1]))
+        return [pair] if pair in available else []
+    return []
+
+
+def compute_bias_interaction_bundles(
+    core: dict,
+    result: dict,
+    diagnostics: dict,
+    pairs: list[tuple[str, str]] | tuple[tuple[str, str], ...],
+    *,
+    max_abs: float = 10.0,
+    omit_extreme: bool = True,
+) -> tuple[dict[str, dict], list[str]]:
+    """Compute bias/local-interaction bundles for the requested facet pairs."""
+    estimator = core.get("estimate_bias_interaction") if isinstance(core, dict) else None
+    if estimator is None:
+        return {}, ["Bias estimation is unavailable in this runtime."]
+    out: dict[str, dict] = {}
+    errors: list[str] = []
+    for fa, fb in pairs or []:
+        try:
+            br = estimator(
+                result,
+                diagnostics,
+                str(fa),
+                str(fb),
+                max_abs=float(max_abs),
+                omit_extreme=bool(omit_extreme),
+            )
+            if not isinstance(br, dict):
+                continue
+            tbl = br.get("table")
+            if "_skip_reason" in br or (isinstance(tbl, pd.DataFrame) and not tbl.empty):
+                out[f"{fa} x {fb}"] = br
+        except Exception as bias_err:
+            errors.append(f"Bias estimation for {fa} x {fb} skipped: {bias_err}")
+    return out, errors
 
 
 def _allow_large_hosted_run_override() -> bool:
@@ -28953,14 +29200,14 @@ _RUN_HISTORY_MAX = 5
 # setting here without updating the exporter or docs).
 _CONFIG_JSON_IMPORT_WHITELIST: frozenset[str] = frozenset({
     "model_type", "method", "analysis_depth", "workflow_mode",
-    "bias_mode", "selected_bias_pair",
+    "bias_mode", "selected_bias_pair", "auto_bias_interactions",
     "render_interactive_plots", "generate_figure_exports",
     "rating_min", "rating_max", "keep_original",
     "noncenter_facet", "dummy_facets", "positive_facets",
     "maxit", "reltol", "anchor_policy",
     "population_enabled", "population_formula",
     "facet_regularization_ui_mode", "facet_regularization_specs",
-    "compute_residual_pca", "compute_strict_marginal",
+    "compute_residual_pca", "compute_pca_stability", "compute_strict_marginal",
     "compute_plausible_values", "n_plausible_values",
     "visualization_preferences",
 })
@@ -33707,6 +33954,13 @@ def run_facets_mode(core: dict, data: pd.DataFrame) -> None:
             value=bool(preset_settings["compute_residual_pca"]),
             help=t("sidebar_perf.compute_residual_pca_help"),
         )
+        compute_pca_stability = False
+        if compute_residual_pca:
+            compute_pca_stability = st.sidebar.checkbox(
+                t("sidebar_perf.compute_pca_stability_checkbox"),
+                value=bool(preset_settings["compute_pca_stability"]),
+                help=t("sidebar_perf.compute_pca_stability_help"),
+            )
         compute_strict_marginal = st.sidebar.checkbox(
             t("sidebar_perf.compute_strict_marginal_checkbox"),
             value=bool(preset_settings["compute_strict_marginal"]),
@@ -33775,6 +34029,13 @@ def run_facets_mode(core: dict, data: pd.DataFrame) -> None:
             }.get(v, v),
             help=t("sidebar_perf.bias_mode_help"),
         )
+        auto_bias_interactions = False
+        if bias_mode != "Skip":
+            auto_bias_interactions = st.sidebar.checkbox(
+                t("sidebar_perf.auto_bias_interactions_checkbox"),
+                value=bool(preset_settings["auto_bias_interactions"]),
+                help=t("sidebar_perf.auto_bias_interactions_help"),
+            )
         render_interactive_plots = st.sidebar.checkbox(
             t("sidebar_perf.render_interactive_plots_checkbox"),
             value=bool(preset_settings["render_interactive_plots"]),
@@ -33790,6 +34051,7 @@ def run_facets_mode(core: dict, data: pd.DataFrame) -> None:
             est_method,
             custom={
                 "compute_residual_pca": compute_residual_pca,
+                "compute_pca_stability": compute_pca_stability,
                 "compute_strict_marginal": compute_strict_marginal,
                 "strict_marginal_pairwise": strict_marginal_pairwise,
                 "strict_marginal_max_pair_cells": strict_marginal_max_pair_cells,
@@ -33798,6 +34060,7 @@ def run_facets_mode(core: dict, data: pd.DataFrame) -> None:
                 "plausible_seed": plausible_seed,
                 "compute_eb_shrinkage": compute_eb_shrinkage,
                 "bias_mode": bias_mode,
+                "auto_bias_interactions": auto_bias_interactions,
                 "render_interactive_plots": render_interactive_plots,
                 "generate_figure_exports": generate_figure_exports,
             },
@@ -33814,6 +34077,7 @@ def run_facets_mode(core: dict, data: pd.DataFrame) -> None:
             st.sidebar.caption(t("sidebar_perf.full_publication_eb_caption"))
 
     compute_residual_pca = bool(preset_settings["compute_residual_pca"])
+    compute_pca_stability = bool(preset_settings["compute_pca_stability"])
     compute_strict_marginal = bool(preset_settings["compute_strict_marginal"])
     strict_marginal_pairwise = bool(preset_settings["strict_marginal_pairwise"])
     strict_marginal_max_pair_cells = int(preset_settings["strict_marginal_max_pair_cells"])
@@ -33822,6 +34086,7 @@ def run_facets_mode(core: dict, data: pd.DataFrame) -> None:
     plausible_seed = int(preset_settings["plausible_seed"])
     compute_eb_shrinkage = bool(preset_settings["compute_eb_shrinkage"])
     bias_mode = preset_settings["bias_mode"]
+    auto_bias_interactions = bool(preset_settings["auto_bias_interactions"])
     render_interactive_plots = bool(preset_settings["render_interactive_plots"])
     generate_figure_exports = bool(preset_settings["generate_figure_exports"])
 
@@ -34020,7 +34285,9 @@ def run_facets_mode(core: dict, data: pd.DataFrame) -> None:
                     "advanced_controls": bool(advanced_controls),
                     "analysis_depth": analysis_depth,
                     "compute_residual_pca": bool(compute_residual_pca),
+                    "compute_pca_stability": bool(compute_pca_stability),
                     "bias_mode": bias_mode,
+                    "auto_bias_interactions": bool(auto_bias_interactions),
                     "selected_bias_pair": list(selected_bias_pair) if selected_bias_pair is not None else None,
                     "render_interactive_plots": bool(render_interactive_plots),
                     "generate_figure_exports": bool(generate_figure_exports),
@@ -34060,7 +34327,9 @@ def run_facets_mode(core: dict, data: pd.DataFrame) -> None:
                 diagnostics = core["mfrm_diagnostics"](
                     result,
                     whexact=False,
+                    compute_interactions=bool(auto_bias_interactions),
                     compute_pca=bool(compute_residual_pca),
+                    compute_pca_stability=bool(compute_pca_stability),
                     compute_marginal=bool(compute_strict_marginal),
                     marginal_pairwise=bool(strict_marginal_pairwise),
                     marginal_max_pair_cells=int(strict_marginal_max_pair_cells),
@@ -34080,28 +34349,33 @@ def run_facets_mode(core: dict, data: pd.DataFrame) -> None:
             scorefile = core["compute_scorefile"](result)
             residuals = core["compute_residual_file"](result)
 
-            # Auto-compute bias/interaction for all facet pairs
+            # Auto-compute bias/interaction only for final/publication-style runs.
+            # Standard keeps the selected pair available for on-demand computation
+            # from the Bias/Interaction tab so the first result appears faster.
             all_bias_results: dict[str, dict] = {}
-            if core.get("estimate_bias_interaction") and len(facet_cols) >= 2 and bias_mode != "Skip":
-                if bias_mode == "All facet pairs":
-                    pairs = bias_pairs_available
-                elif bias_mode == "Selected pair" and selected_bias_pair is not None:
-                    pairs = [selected_bias_pair]
-                else:
-                    pairs = []
+            if (
+                bool(auto_bias_interactions)
+                and core.get("estimate_bias_interaction")
+                and len(facet_cols) >= 2
+                and bias_mode != "Skip"
+            ):
+                pairs = resolve_bias_pairs_for_mode(
+                    bias_mode,
+                    facet_cols,
+                    selected_bias_pair=selected_bias_pair,
+                )
                 run_status.write(f"Estimating bias interactions for {len(pairs)} facet pair(s)...")
                 with st.spinner(f"Estimating bias/interaction for {len(pairs)} pair(s)..."):
-                    for fa, fb in pairs:
-                        try:
-                            br = core["estimate_bias_interaction"](
-                                result, diagnostics, fa, fb,
-                                max_abs=float(bias_max_abs),
-                                omit_extreme=bool(bias_omit_extreme),
-                            )
-                            if br and br.get("table") is not None and not br["table"].empty:
-                                all_bias_results[f"{fa} x {fb}"] = br
-                        except Exception as bias_err:
-                            st.caption(f"Bias estimation for {fa}×{fb} skipped: {bias_err}")
+                    all_bias_results, bias_errors = compute_bias_interaction_bundles(
+                        core,
+                        result,
+                        diagnostics,
+                        pairs,
+                        max_abs=float(bias_max_abs),
+                        omit_extreme=bool(bias_omit_extreme),
+                    )
+                    for bias_err in bias_errors:
+                        st.caption(bias_err)
             # Primary bias_results = first available pair for APA/download
             bias_results = next(iter(all_bias_results.values()), None)
 
@@ -34149,6 +34423,7 @@ def run_facets_mode(core: dict, data: pd.DataFrame) -> None:
                 "_min_obs_per_category": min_obs_per_category,
                 "_analysis_depth": analysis_depth,
                 "_compute_residual_pca": bool(compute_residual_pca),
+                "_compute_pca_stability": bool(compute_pca_stability),
                 "_compute_strict_marginal": bool(compute_strict_marginal),
                 "_strict_marginal_pairwise": bool(strict_marginal_pairwise),
                 "_strict_marginal_max_pair_cells": int(strict_marginal_max_pair_cells),
@@ -34157,7 +34432,10 @@ def run_facets_mode(core: dict, data: pd.DataFrame) -> None:
                 "_n_plausible_values": int(n_plausible_values),
                 "_plausible_seed": int(plausible_seed),
                 "_bias_mode": bias_mode,
+                "_auto_bias_interactions": bool(auto_bias_interactions),
                 "_selected_bias_pair": selected_bias_pair,
+                "_bias_max_abs": float(bias_max_abs),
+                "_bias_omit_extreme": bool(bias_omit_extreme),
                 "_totalscore": bool(totalscore),
                 "_omit_unobserved": bool(omit_unobserved),
                 "_xtreme": float(xtreme),
@@ -34353,6 +34631,11 @@ def run_facets_mode(core: dict, data: pd.DataFrame) -> None:
         stale_reasons.append("analysis depth")
     if out.get("_compute_residual_pca") is not None and out["_compute_residual_pca"] != bool(compute_residual_pca):
         stale_reasons.append("residual PCA option")
+    if (
+        out.get("_compute_pca_stability") is not None
+        and out["_compute_pca_stability"] != bool(compute_pca_stability)
+    ):
+        stale_reasons.append("PCA stability audit option")
     if out.get("_compute_strict_marginal") is not None and out["_compute_strict_marginal"] != bool(compute_strict_marginal):
         stale_reasons.append("strict marginal diagnostics option")
     if out.get("_strict_marginal_pairwise") is not None and out["_strict_marginal_pairwise"] != bool(strict_marginal_pairwise):
@@ -34369,6 +34652,11 @@ def run_facets_mode(core: dict, data: pd.DataFrame) -> None:
         stale_reasons.append("plausible value seed")
     if out.get("_bias_mode") is not None and out["_bias_mode"] != bias_mode:
         stale_reasons.append("bias estimation option")
+    if (
+        out.get("_auto_bias_interactions") is not None
+        and out["_auto_bias_interactions"] != bool(auto_bias_interactions)
+    ):
+        stale_reasons.append("automatic bias scan option")
     if out.get("_selected_bias_pair") != selected_bias_pair:
         stale_reasons.append("selected bias pair")
     if out.get("_totalscore") is not None and out["_totalscore"] != bool(totalscore):
@@ -34910,6 +35198,11 @@ def run_facets_mode(core: dict, data: pd.DataFrame) -> None:
             all_bias_results=all_bias,
             result=result,
             diagnostics=diagnostics,
+            bias_mode=out.get("_bias_mode"),
+            selected_bias_pair=out.get("_selected_bias_pair"),
+            facet_cols=out.get("facet_cols"),
+            bias_max_abs=float(out.get("_bias_max_abs", bias_max_abs)),
+            bias_omit_extreme=bool(out.get("_bias_omit_extreme", bias_omit_extreme)),
         )
 
     # --- Classical DIF tab ---
@@ -44517,8 +44810,8 @@ def _render_facet_equivalence(result: dict, diagnostics: dict) -> None:
             continue
         z_lower = (diff - (-eq_bound)) / se_diff
         z_upper = (diff - eq_bound) / se_diff
-        p_lower = float(_norm.sf(z_lower))
-        p_upper = float(_norm.cdf(z_upper))
+        p_lower = float(_normal_sf(z_lower))
+        p_upper = float(_normal_cdf(z_upper))
         p_tost = max(p_lower, p_upper)
         equivalent = p_tost < 0.05
         tost_rows.append({
@@ -44591,8 +44884,8 @@ def _render_facet_equivalence(result: dict, diagnostics: dict) -> None:
     for i in range(n_elem):
         deviation = float(est[i] - grand_mean)
         p_in_rope = float(
-            _norm.cdf(eq_bound, loc=deviation, scale=se[i])
-            - _norm.cdf(-eq_bound, loc=deviation, scale=se[i])
+            _normal_cdf(eq_bound, loc=deviation, scale=se[i])
+            - _normal_cdf(-eq_bound, loc=deviation, scale=se[i])
         )
         rope_rows.append({
             "Element": elem_labels[i],
@@ -48259,28 +48552,37 @@ def _draw_misfit_ranking(fit_df: pd.DataFrame) -> None:
 def show_visuals_section(result: dict, diagnostics: dict, *, force_full: bool = False) -> None:
     """Comprehensive visualization suite."""
     st.caption(t("visuals_top.intro_caption"))
-    with st.expander(t("visuals_top.roadmap_expander"), expanded=False):
-        st.caption(t("visuals_top.roadmap_caption"))
-        checklist = visual_interpretation_checklist()
-        st.dataframe(checklist, width="stretch", hide_index=True)
-        st.download_button(
-            t("visuals_top.roadmap_download_button"),
-            data=to_csv_bytes(checklist),
-            file_name="mfrm_visual_interpretation_checklist.csv",
-            mime="text/csv",
-            key="dl_visual_interpretation_checklist",
-        )
-    with st.expander(t("visuals_top.evidence_expander"), expanded=False):
-        st.caption(t("visuals_top.evidence_caption"))
-        evidence = visual_method_evidence_table()
-        st.dataframe(evidence, width="stretch", hide_index=True)
-        st.download_button(
-            t("visuals_top.evidence_download_button"),
-            data=to_csv_bytes(evidence),
-            file_name="mfrm_visual_method_evidence.csv",
-            mime="text/csv",
-            key="dl_visual_method_evidence",
-        )
+    show_guidance_tables = st.checkbox(
+        t("visuals_top.show_guidance_tables_checkbox"),
+        value=False,
+        key="show_visual_guidance_tables",
+        help=t("visuals_top.show_guidance_tables_help"),
+    )
+    if show_guidance_tables:
+        with st.expander(t("visuals_top.roadmap_expander"), expanded=False):
+            st.caption(t("visuals_top.roadmap_caption"))
+            checklist = visual_interpretation_checklist()
+            st.dataframe(checklist, width="stretch", hide_index=True)
+            st.download_button(
+                t("visuals_top.roadmap_download_button"),
+                data=to_csv_bytes(checklist),
+                file_name="mfrm_visual_interpretation_checklist.csv",
+                mime="text/csv",
+                key="dl_visual_interpretation_checklist",
+            )
+        with st.expander(t("visuals_top.evidence_expander"), expanded=False):
+            st.caption(t("visuals_top.evidence_caption"))
+            evidence = visual_method_evidence_table()
+            st.dataframe(evidence, width="stretch", hide_index=True)
+            st.download_button(
+                t("visuals_top.evidence_download_button"),
+                data=to_csv_bytes(evidence),
+                file_name="mfrm_visual_method_evidence.csv",
+                mime="text/csv",
+                key="dl_visual_method_evidence",
+            )
+    else:
+        st.caption(t("visuals_top.guidance_tables_deferred_caption"))
     # View-density aware sub-tab inventory. Essential hides Forest / Q-Q /
     # ECDF so Essential-view runs see only the four core diagnostic plots.
     # Switch to Full (sidebar top) before publication-depth analysis.
@@ -52492,6 +52794,11 @@ def show_bias_section(
     all_bias_results: dict[str, dict] | None = None,
     result: dict | None = None,
     diagnostics: dict | None = None,
+    bias_mode: str | None = None,
+    selected_bias_pair: tuple[str, str] | list[str] | None = None,
+    facet_cols: list[str] | None = None,
+    bias_max_abs: float = 10.0,
+    bias_omit_extreme: bool = True,
 ) -> None:
     """Render Bias/Interaction analysis (FACETS Table 7 style)."""
     st.subheader(t("bias_interaction.heading"))
@@ -52504,7 +52811,48 @@ def show_bias_section(
         all_bias = {pair_key: bias_results}
 
     if not all_bias:
-        st.info(t("bias_interaction.no_results_info"))
+        pending_pairs = resolve_bias_pairs_for_mode(
+            str(bias_mode or "Skip"),
+            facet_cols or [],
+            selected_bias_pair=selected_bias_pair,
+        )
+        can_compute = bool(
+            pending_pairs
+            and isinstance(result, dict)
+            and isinstance(diagnostics, dict)
+            and isinstance(core, dict)
+            and core.get("estimate_bias_interaction")
+        )
+        if can_compute:
+            st.info(t("bias_interaction.deferred_info_template", n=len(pending_pairs)))
+            if st.button(
+                t("bias_interaction.compute_now_button_template", n=len(pending_pairs)),
+                key="compute_bias_interactions_on_demand",
+                type="primary",
+            ):
+                with st.spinner(t("bias_interaction.compute_now_spinner_template", n=len(pending_pairs))):
+                    computed, errors = compute_bias_interaction_bundles(
+                        core,
+                        result,
+                        diagnostics,
+                        pending_pairs,
+                        max_abs=float(bias_max_abs),
+                        omit_extreme=bool(bias_omit_extreme),
+                    )
+                for err in errors:
+                    st.caption(err)
+                if computed:
+                    output = st.session_state.get("facets_mode_output")
+                    if isinstance(output, dict):
+                        merged = dict(output.get("all_bias_results") or {})
+                        merged.update(computed)
+                        output["all_bias_results"] = merged
+                        output["bias_results"] = next(iter(merged.values()), None)
+                        st.session_state["facets_mode_output"] = output
+                    st.rerun()
+                st.warning(t("bias_interaction.compute_now_empty_warning"))
+        else:
+            st.info(t("bias_interaction.no_results_info"))
         return
 
     pair_keys = list(all_bias.keys())
@@ -61865,7 +62213,7 @@ def _self_test_posterior_load_cmdstan_csvs() -> None:
 
 
 def _self_test_config_json_import_whitelist() -> None:
-    """Pin the 26-key config-import whitelist and its behaviour under import.
+    """Pin the 28-key config-import whitelist and its behaviour under import.
 
     The `_CONFIG_JSON_IMPORT_WHITELIST` set is the contract between
     `Download config (JSON)` (writer) and `Import config JSON` (reader).
@@ -61876,8 +62224,8 @@ def _self_test_config_json_import_whitelist() -> None:
     """
     # Size contract — bumping this number requires an entry in CHANGELOG.
     _self_test_assert(
-        len(_CONFIG_JSON_IMPORT_WHITELIST) == 26,
-        f"config-import whitelist size drifted: {len(_CONFIG_JSON_IMPORT_WHITELIST)} != 26",
+        len(_CONFIG_JSON_IMPORT_WHITELIST) == 28,
+        f"config-import whitelist size drifted: {len(_CONFIG_JSON_IMPORT_WHITELIST)} != 28",
     )
     # Keys the sidebar MUST round-trip.
     critical_keys = {
@@ -61885,6 +62233,8 @@ def _self_test_config_json_import_whitelist() -> None:
         "rating_min", "rating_max",
         "maxit", "reltol", "anchor_policy",
         "facet_regularization_ui_mode", "facet_regularization_specs",
+        "compute_residual_pca", "compute_pca_stability",
+        "auto_bias_interactions",
         "visualization_preferences",
     }
     missing = critical_keys - _CONFIG_JSON_IMPORT_WHITELIST
@@ -63491,18 +63841,23 @@ def run_benchmarks(csv_path: str | None = None, quick: bool = False) -> int:
         diagnostics = mfrm_diagnostics(
             result,
             compute_pca=bool(settings["compute_residual_pca"]),
+            compute_pca_stability=bool(settings["compute_pca_stability"]),
             compute_marginal=bool(settings["compute_strict_marginal"]),
             marginal_pairwise=bool(settings["strict_marginal_pairwise"]),
             marginal_max_pair_cells=int(settings["strict_marginal_max_pair_cells"]),
             compute_eb_shrinkage=bool(settings["compute_eb_shrinkage"]),
+            compute_interactions=bool(settings["auto_bias_interactions"]),
         )
         diagnostics_seconds = float(time.perf_counter() - diag_start)
-        bias_seconds, bias_tables = _benchmark_bias_scan(
-            result,
-            diagnostics,
-            facet_cols,
-            settings["bias_mode"],
-        )
+        if bool(settings["auto_bias_interactions"]):
+            bias_seconds, bias_tables = _benchmark_bias_scan(
+                result,
+                diagnostics,
+                facet_cols,
+                settings["bias_mode"],
+            )
+        else:
+            bias_seconds, bias_tables = 0.0, 0
 
         summary = result["summary"].iloc[0]
         rows.append({
@@ -63520,11 +63875,13 @@ def run_benchmarks(csv_path: str | None = None, quick: bool = False) -> int:
             "PopulationFormula": scenario.get("PopulationFormula", ""),
             "MmlEngine": result["config"].get("mml_engine"),
             "ComputePCA": bool(settings["compute_residual_pca"]),
+            "ComputePCAStability": bool(settings["compute_pca_stability"]),
             "ComputeStrictMarginal": bool(settings["compute_strict_marginal"]),
             "StrictMarginalPairwise": bool(settings["strict_marginal_pairwise"]),
             "ComputePlausibleValues": bool(settings["compute_plausible_values"]),
             "PlausibleValues": int(settings["n_plausible_values"]),
             "BiasMode": settings["bias_mode"],
+            "AutoBiasInteractions": bool(settings["auto_bias_interactions"]),
             "BiasTables": int(bias_tables),
             "EstimateSeconds": estimate_seconds,
             "DiagnosticsSeconds": diagnostics_seconds,
@@ -67027,6 +67384,7 @@ def render_posterior_viewer_mode() -> None:
 def main() -> None:
     st.set_page_config(page_title="MFRM FACETS-mode", layout="wide")
     _inject_desktop_readability_css()
+    start_heavy_runtime_import_prewarm()
     _ensure_language_state()
 
     # Language selector at the top of the sidebar. The widget's ``key="lang"``

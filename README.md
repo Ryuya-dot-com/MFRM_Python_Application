@@ -10,9 +10,14 @@ This app is designed to run without `mfrmr`, `rpy2`, `Rscript`, FACETS, TAM, sir
 - Runtime engine: standalone Python
 - Primary entrypoint: `streamlit_app.py`
 - Intended use: exploratory analysis, teaching, reporting support, and research workflow prototyping
-- Not intended as: a validated drop-in replacement for FACETS, TAM, sirt, mirt, or `mfrmr`
+- Not intended as: standalone operational validation evidence or a guarantee of
+  numerical equivalence with FACETS, TAM, sirt, mirt, or `mfrmr`
 
 Before using results for high-stakes scoring, placement, certification, employment, or institutional decisions, cross-check the analysis with an established workflow and document the model assumptions.
+
+For the current FACETS comparison stance, immediate implementation steps, and
+FACETS output-crosswalk backlog, see
+[`docs/facets_comparison_roadmap.md`](docs/facets_comparison_roadmap.md).
 
 ## Active Checkout
 
@@ -75,7 +80,7 @@ full per-version breakdown.
 ### New in v0.2.0
 
 - **Publication Document downloads** — one click to produce a
-  manuscript-ready Word (.docx), PDF, or HTML file with auto-generated
+  manuscript draft Word (.docx), PDF, or HTML file with auto-generated
   abstract, exhaustive Methods, results tables, embedded figures, and an
   APA 7 reference list. Accessible from **Report → Exports**.
 - **Posterior Viewer mode** — upload posterior draws produced offline
@@ -197,7 +202,7 @@ streamlit run streamlit_app.py
 
 For a first local smoke check, keep **Sample data (built-in)** selected (the
 default Writing essay scenario is loaded automatically), leave the
-guided defaults unchanged, click **Run FACETS-mode estimation**, then open the
+guided defaults unchanged, click **Run MFRM estimation**, then open the
 **What should I look at first?**, **Data**, **Visuals**, and **Help** tabs.
 Other built-in scenarios switchable from the **Data source** radio:
 *Large-scale writing* (PCA-ready), *L2 speaking* (analytic-rubric /
@@ -476,6 +481,10 @@ to interactive HTML figures instead of blocking the analysis.
 
 ## External Reference Roles
 
+- FACETS: fixed-effect MFRM workflow, familiar output organization,
+  anchoring/linking conventions, and scenario-specific external comparison.
+  FACETS comparison claims require archived FACETS control/output files and a
+  parameterization/tolerance note; the app does not run FACETS.
 - TAM: faceted MML design, latent regression, EAP, and multifacet reference checks.
 - mirt: GPCM, EAP/factor scores, plausible values, and broader IRT diagnostics.
 - sirt: rater-facet and hierarchical rater model reference checks.

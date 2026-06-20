@@ -45,6 +45,12 @@ The generated folder includes:
   template scripts for optional Simulation-style handoff checks.
 - notes explaining why exact equality is not expected.
 
+FACETS-specific comparison artifacts are planned but are not archived by this
+fixture export yet. Do not cite the generated fixture alone as evidence that the
+app reproduces FACETS output. A FACETS comparison claim requires the Python
+output, FACETS control file, FACETS output, version metadata, parameterization
+map, tolerance table, and interpretation note for the specific scenario.
+
 Generated files are intentionally ignored by Git under `validation/generated/`.
 
 ## Cross-Package Validation Matrix
@@ -100,6 +106,9 @@ used in public parity claims.
 
 ## External Reference Roles
 
+- FACETS: fixed-effect MFRM workflow, output organization, anchoring/linking
+  conventions, bias/DIF review, and scenario-specific external comparison when
+  FACETS control/output files are archived.
 - TAM: faceted MML design, latent regression, EAP, and multifacet reference checks.
 - mirt: GPCM, EAP/factor-score, plausible-value, and broader IRT diagnostic reference checks.
 - sirt: rater-facet, hierarchical rater-model, and plausible-value reference checks.
@@ -144,6 +153,8 @@ used throughout this validation directory.
 See `SIMULATION_REFERENCE_STATUS.md` for the archived validation-artifact
 inventory that should guide external-data numerical validation without bundling
 private or large datasets into this public app repository.
+No archived FACETS run is included in the current R smoke status; treat FACETS
+comparison as planned until a scenario-specific FACETS report is archived.
 
 The generated parity fixture and the app's Downloads tab also expose sanitized
 Python/R/Julia template scripts. They require users to pass `MFRM_INPUT_CSV` and

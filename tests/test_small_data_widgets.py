@@ -90,7 +90,7 @@ def test_apptest_with_clinical_osce_runs_visuals_without_crash():
                 pass
             break
     at.run(timeout=60)
-    # We deliberately do NOT click "Run FACETS-mode estimation" —
+    # We deliberately do NOT click "Run MFRM estimation" —
     # the initial-render path alone exercises the widget math that
     # blew up. A clean run here is the pass condition.
     assert not at.exception, f"AppTest raised: {at.exception}"

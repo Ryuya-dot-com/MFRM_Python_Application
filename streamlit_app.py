@@ -5034,8 +5034,8 @@ SAMPLE_DATA_SCENARIOS: dict[str, dict] = {
             "- *Fit Details* flags any element with infit / outfit "
             "outside the Wright & Linacre (1994) productive-for-measurement "
             "bands.\n"
-            "- *FACETS-style tables* is the publication-ready report "
-            "layout familiar to FACETS users; this is also where the "
+            "- *FACETS-style tables* provides a FACETS-inspired review "
+            "layout generated from the app's Python estimates; this is also where the "
             "fair-average S.E. / CI annotation lives.\n\n"
             "**Learning points specific to this data set.** The four raters "
             "have a deliberately modest severity spread (~0.5 logits), so "
@@ -5114,7 +5114,7 @@ SAMPLE_DATA_SCENARIOS: dict[str, dict] = {
             "- *Categories/Steps* exposes how step thresholds differ "
             "across criteria; switch the sidebar to PCM or GPCM with "
             "step facet = Criterion and rerun to compare.\n"
-            "- *FACETS-style tables* gives the publication-ready "
+            "- *FACETS-style tables* gives a FACETS-inspired "
             "Criterion table; once GPCM is fit, this is where the slope-"
             "aware fair-average S.E. / CI annotation appears.\n\n"
             "**Learning points specific to this data set.** A narrow "
@@ -22389,6 +22389,7 @@ def show_tutorial() -> None:
         st.markdown(t("tutorial.section_glossary"))
         st.markdown(t("tutorial.section_scores"))
         st.markdown(t("tutorial.section_weight"))
+        st.markdown(t("tutorial.section_output_routes"))
         st.markdown(t("tutorial.section_estimation_method"))
         # Likelihood functions and cross-validation guidance stay in English
         # by design — LaTeX equations and R code blocks are universally
@@ -22557,13 +22558,12 @@ bias diagnostics where it is narrower than these packages.
 **Key differences to note:**
 
 **FACETS vs. this app (JMLE):**
-Both use JMLE with all parameters as fixed effects. FACETS
-uses PROX for initial values and directly exploits sufficient
-statistics (total scores) in Newton-Raphson updates. This app
-uses analytical-gradient L-BFGS-B on the full log-likelihood, which is mathematically
-equivalent but computationally different. Results should be
-very close; small differences arise from convergence criteria
-and numerical precision.
+Both use fixed-effect JMLE-style estimation, but FACETS and
+this app can differ in initialization, sufficient-statistic use,
+optimization, constraints, centering, extreme-score handling,
+category coding, and convergence rules. Comparable JMLE runs may
+be close when those choices are aligned, but closeness should be
+verified with an archived comparison report before it is claimed.
 
 **ConQuest / TAM vs. this app (MML):**
 All three use the EM algorithm with Gauss-Hermite quadrature.
@@ -32809,7 +32809,7 @@ def _render_publication_document_section(
     """Render the download buttons for the Word / PDF / HTML publication docs."""
     st.subheader("Publication Document")
     st.caption(
-        "Download a manuscript-ready document combining the auto-generated "
+        "Download an editable manuscript draft combining the auto-generated "
         "abstract, an exhaustive Methods section, results tables, embedded "
         "figures, and an APA 7 reference list. Choose the format that fits "
         "your workflow: Word for further editing, PDF for sharing, HTML for web."
@@ -32930,7 +32930,7 @@ _ESTIMATION_ERROR_PATTERNS: list[tuple[str, tuple[str, str, str]]] = [
         (
             "The information matrix is singular, meaning the model cannot separate "
             "one facet effect from another (identifiability problem).",
-            "Set a non-centered facet in **FACETS-mode settings → Non-centered facet**, "
+            "Set a non-centered facet in **MFRM estimation settings → Non-centered facet**, "
             "or declare one facet dummy (e.g., Rater) under **Dummy facets** to break the degeneracy.",
             "noncenter_facet",
         ),
@@ -34531,7 +34531,7 @@ def run_facets_mode(core: dict, data: pd.DataFrame) -> None:
     if not out:
         st.info(
             "Ready for estimation. Review the data-quality panel above, then run "
-            "FACETS-mode estimation from the sidebar."
+            "MFRM estimation from the sidebar."
         )
         return
 
@@ -35220,9 +35220,10 @@ def run_facets_mode(core: dict, data: pd.DataFrame) -> None:
     # --- FACETS-style tables tab ---
     if selected_main_panel == "facets_style_tables":
         st.caption(
-            "Traditional FACETS measurement report format (Linacre, 2024). "
-            "Each table shows element measures, model SE, and fit statistics "
-            "in the layout familiar to FACETS software users."
+            "FACETS-inspired table layout generated from this app's Python "
+            "estimates. Use it for review and appendix drafting; do not "
+            "describe it as FACETS output or numerical parity unless an "
+            "archived comparison report supports that claim."
         )
 
         # Fair-average standard error / confidence interval controls. The
@@ -50607,7 +50608,7 @@ def _make_category_probability_curve_figures(curve: dict) -> tuple[go.Figure | N
     fig.update_layout(
         xaxis_title="Person Measure - Item Measure (logits)",
         yaxis_title="Probability",
-        title=f"FACETS-style Category Characteristic Curves ({model}: {scope})",
+        title=f"App-generated Category Probability Curves ({model}: {scope})",
         yaxis=dict(range=[0, 1]), xaxis=dict(range=[theta_lo, theta_hi]),
         hovermode="x unified", height=470, template="plotly_white",
         legend_title_text="Category",
@@ -50663,16 +50664,10 @@ def _draw_category_probability_curves_plotly(result: dict) -> None:
     """Interactive Plotly category probability curves."""
     header_cols = st.columns([5, 1])
     with header_cols[0]:
-        st.subheader("Category Probability Curves")
+        st.subheader(t("visuals_top.category_probability_heading"))
     with header_cols[1]:
         render_help_popover("category_probability")
-    st.caption(
-        "These curves show the probability of responding in each category as a "
-        "function of the latent measure (theta). Hover to read exact P(k) at any theta. "
-        "The FACETS-style overlay labels the category peaks and draws vertical step "
-        "threshold lines such as 0|1 or 4|5. For PCM/GPCM, inspect both the averaged "
-        "curve and each step-facet level."
-    )
+    st.caption(t("visuals_top.category_probability_caption"))
 
     config = result.get("config", {})
     model = config.get("model", "RSM")
@@ -50680,14 +50675,11 @@ def _draw_category_probability_curves_plotly(result: dict) -> None:
     selected_level_index: int | None = None
     if model in {"PCM", "GPCM"} and not options.empty and len(options) > 1:
         selected_option = st.selectbox(
-            "Curve scope",
+            t("visuals_top.category_probability_scope_label"),
             options["OptionIndex"].astype(int).tolist(),
             format_func=lambda idx: str(options.loc[options["OptionIndex"] == idx, "Label"].iloc[0]),
             key=f"category_curve_scope_{model}_{config.get('step_facet')}",
-            help=(
-                "Average gives a compact overview. Level-specific curves use the thresholds "
-                "and, for GPCM, the slope for the selected step-facet level."
-            ),
+            help=t("visuals_top.category_probability_scope_help"),
         )
         selected_row = options.loc[options["OptionIndex"] == selected_option].iloc[0]
         if not bool(selected_row["IsAverage"]):
@@ -50706,7 +50698,7 @@ def _draw_category_probability_curves_plotly(result: dict) -> None:
             "Use level-specific curves when category functioning may differ across tasks, raters, or criteria."
         )
 
-    with st.expander("How to read category curves", expanded=False):
+    with st.expander(t("visuals_top.category_probability_how_expander"), expanded=False):
         st.markdown(
             """
 - Each colored line is the model-predicted probability of a rating category.
@@ -50724,10 +50716,18 @@ def _draw_category_probability_curves_plotly(result: dict) -> None:
     if fig is not None:
         st.plotly_chart(fig, width="stretch")
         render_chart_guide("category_probability")
-        _offer_fig_download(fig, f"category_probability_curve_{model}_{scope_key}", "Download displayed category curve (PNG 300 DPI)")
+        _offer_fig_download(
+            fig,
+            f"category_probability_curve_{model}_{scope_key}",
+            t("visuals_top.category_probability_download_curve"),
+        )
     if fig_expected is not None:
         st.plotly_chart(fig_expected, width="stretch")
-        _offer_fig_download(fig_expected, f"expected_score_curve_{model}_{scope_key}", "Download displayed expected score curve (PNG 300 DPI)")
+        _offer_fig_download(
+            fig_expected,
+            f"expected_score_curve_{model}_{scope_key}",
+            t("visuals_top.category_probability_download_expected"),
+        )
 
     curve_diagnostic = category_probability_curve_diagnostic_table(curve)
     if isinstance(curve_diagnostic, pd.DataFrame) and not curve_diagnostic.empty:
@@ -52121,13 +52121,153 @@ def mml_population_sd_help_table() -> pd.DataFrame:
     return pd.DataFrame(rows, columns=columns)
 
 
+_FACETS_CROSSWALK_FIELD_IDS = [
+    "facets_output",
+    "user_question",
+    "app_location",
+    "download_file",
+    "status",
+    "validation_evidence",
+    "caveat",
+    "next_action",
+]
+
+_FACETS_CROSSWALK_ROWS = [
+    ("measure_table", "available"),
+    ("fit_statistics", "available"),
+    ("wright_map", "available"),
+    ("ccc", "available"),
+    ("expected_score", "partial"),
+    ("graph_numbers", "partial"),
+    ("residual_review", "available"),
+    ("bias_interaction", "available"),
+    ("anchor_linking", "partial"),
+    ("facets_comparison", "external"),
+]
+
+
+def facets_crosswalk_status_options() -> list[str]:
+    """Filter values for the FACETS output crosswalk table."""
+    ordered = ["all"]
+    for _, status_id in _FACETS_CROSSWALK_ROWS:
+        if status_id not in ordered:
+            ordered.append(status_id)
+    return ordered
+
+
+def facets_output_crosswalk_table(
+    *,
+    status_filter: str = "all",
+    query: str = "",
+) -> pd.DataFrame:
+    """Structured map from familiar FACETS outputs to app routes and evidence."""
+    status_filter = str(status_filter or "all")
+    query_norm = str(query or "").strip().lower()
+    columns = [
+        t(f"help.facets_crosswalk_col_{field_id}")
+        for field_id in _FACETS_CROSSWALK_FIELD_IDS
+    ]
+    rows: list[dict[str, str]] = []
+    for row_id, status_id in _FACETS_CROSSWALK_ROWS:
+        if status_filter != "all" and status_id != status_filter:
+            continue
+        row = {
+            columns[idx]: (
+                t(f"help.facets_crosswalk_status_{status_id}")
+                if field_id == "status"
+                else t(f"help.facets_crosswalk_row_{row_id}_{field_id}")
+            )
+            for idx, field_id in enumerate(_FACETS_CROSSWALK_FIELD_IDS)
+        }
+        if query_norm:
+            haystack = " ".join(str(value) for value in row.values()).lower()
+            if query_norm not in haystack:
+                continue
+        rows.append(row)
+    return pd.DataFrame(rows, columns=columns)
+
+
+def facets_output_crosswalk_markdown(table: pd.DataFrame | None = None) -> str:
+    """Render the FACETS crosswalk as dependency-free GitHub Markdown."""
+    if table is None:
+        table = facets_output_crosswalk_table()
+    if not isinstance(table, pd.DataFrame) or table.empty:
+        return ""
+
+    def _md_cell(value: object) -> str:
+        return (
+            str(value)
+            .replace("\n", "<br>")
+            .replace("|", "\\|")
+        )
+
+    header = "| " + " | ".join(_md_cell(col) for col in table.columns) + " |"
+    sep = "| " + " | ".join("---" for _ in table.columns) + " |"
+    body = [
+        "| " + " | ".join(_md_cell(row[col]) for col in table.columns) + " |"
+        for _, row in table.iterrows()
+    ]
+    return "\n".join([header, sep, *body])
+
+
+def render_facets_crosswalk_panel() -> None:
+    """Render a filterable/downloadable FACETS-output navigation crosswalk."""
+    st.markdown(t("help.facets_crosswalk_body"))
+    st.caption(t("help.facets_crosswalk_table_caption"))
+
+    col_status, col_query = st.columns([1, 2])
+    with col_status:
+        selected_status = st.selectbox(
+            t("help.facets_crosswalk_filter_label"),
+            options=facets_crosswalk_status_options(),
+            index=0,
+            format_func=lambda status_id: t(f"help.facets_crosswalk_status_{status_id}"),
+            help=t("help.facets_crosswalk_filter_help"),
+            key="facets_crosswalk_status_filter",
+        )
+    with col_query:
+        query = st.text_input(
+            t("help.facets_crosswalk_search_label"),
+            value="",
+            help=t("help.facets_crosswalk_search_help"),
+            key="facets_crosswalk_search",
+        )
+
+    crosswalk = facets_output_crosswalk_table(
+        status_filter=str(selected_status or "all"),
+        query=str(query or ""),
+    )
+    if crosswalk.empty:
+        st.info(t("help.facets_crosswalk_empty_info"))
+        return
+
+    st.dataframe(crosswalk, width="stretch", hide_index=True)
+    col_csv, col_md = st.columns(2)
+    with col_csv:
+        st.download_button(
+            t("help.facets_crosswalk_download_csv"),
+            data=to_csv_bytes(crosswalk),
+            file_name="facets_output_crosswalk.csv",
+            mime="text/csv",
+            key="dl_facets_output_crosswalk_csv",
+        )
+    with col_md:
+        st.download_button(
+            t("help.facets_crosswalk_download_md"),
+            data=facets_output_crosswalk_markdown(crosswalk).encode("utf-8"),
+            file_name="facets_output_crosswalk.md",
+            mime="text/markdown",
+            key="dl_facets_output_crosswalk_md",
+        )
+
+
 def show_help_section(*, force_full: bool = False) -> None:
     """Comprehensive help section with literature-backed guidance for MFRM analysis."""
     st.info(t("help.interpretation_caution"))
-    # v0.2.6-beta: Essential mode hides advanced help sub-tabs (Rating
-    # Scale Guide, Model Capability, Public Beta) so Essential-view users see a
-    # focused 7-tab section. Full view restores all 10. Users can switch
-    # from the sidebar's display-mode toggle (top of sidebar).
+    # Essential mode hides advanced help sub-tabs (Rating Scale Guide,
+    # Model Capability, Public Beta) so Essential-view users see a focused
+    # 8-panel Help section. Full view restores all 11 panels. Users can switch
+    # from the sidebar's display-mode toggle.
     essential_mode = (not force_full) and (
         st.session_state.get("app_view_density", "Essential") == "Essential"
     )
@@ -52139,6 +52279,7 @@ def show_help_section(*, force_full: bool = False) -> None:
     # Internal IDs (English) drive routing; display labels resolve via t().
     all_help_labels = [
         "Quick Start",
+        "FACETS Crosswalk",
         "Analysis Workflow",
         "Interpretation Guide",
         "Rater Effects",
@@ -52151,6 +52292,7 @@ def show_help_section(*, force_full: bool = False) -> None:
     ]
     _HELP_TAB_KEY_BY_ID = {
         "Quick Start": "help.tab_quick_start",
+        "FACETS Crosswalk": "help.tab_facets_crosswalk",
         "Analysis Workflow": "help.tab_analysis_workflow",
         "Interpretation Guide": "help.tab_interpretation_guide",
         "Rater Effects": "help.tab_rater_effects",
@@ -52185,7 +52327,13 @@ def show_help_section(*, force_full: bool = False) -> None:
         st.markdown(t("help.quick_start_body"))
 
     # ------------------------------------------------------------------
-    # Panel 2: Analysis Workflow (NEW)
+    # Panel 2: FACETS Crosswalk
+    # ------------------------------------------------------------------
+    if selected_help_label == "FACETS Crosswalk":
+        render_facets_crosswalk_panel()
+
+    # ------------------------------------------------------------------
+    # Panel 3: Analysis Workflow
     # ------------------------------------------------------------------
     if selected_help_label == "Analysis Workflow":
         st.markdown(t("help.analysis_workflow_body"))
@@ -54504,7 +54652,7 @@ for fa, fb in bias_pairs:
 """
 Portable self-contained MFRM JMLE script.
 
-Generated by MFRM FACETS-mode app.
+Generated by MFRM standalone Python app.
 Original app method: {config.get("method", "JMLE")} | Original optimizer: {config.get("optimizer")}
 Portable script path: fixed-effect JMLE (BFGS) | Model: {model} | maxit: {maxit} | reltol: {reltol}
 
@@ -55084,7 +55232,7 @@ stop("GPCM portable R script is not available yet. Use mfrm_app_engine_runner.py
 #!/usr/bin/env Rscript
 # Self-contained MFRM (Many-Facet Rasch Model) analysis script.
 #
-# Generated by MFRM FACETS-mode app.
+# Generated by MFRM standalone Python app.
 # Model: {model} | Method: JMLE (BFGS) | maxit: {maxit} | reltol: {reltol}
 #
 # Requirements: R >= 4.0 (no external packages needed — base R only).
@@ -57960,7 +58108,7 @@ def _render_downloads(
         ).iloc[0]
         script_support = build_script_support_status(result)
         optimizer_label = config.get("optimizer") or config.get("mml_engine") or "unknown optimizer"
-        software_label = f"MFRM FACETS-mode (standalone Python; {optimizer_label}; no mfrmr/R engine)"
+        software_label = f"MFRM estimation app (standalone Python; {optimizer_label}; no FACETS/mfrmr/R engine)"
         config_export = {
             "app_version": config.get("app_version", APP_VERSION),
             "release_label": config.get("release_label", APP_RELEASE_LABEL),
@@ -61672,22 +61820,22 @@ def _self_test_essential_mode_tab_filters() -> None:
     someone renames or reorders a label, CI catches the drift before
     Essential mode silently drops a user-visible tab.
     """
-    # Help tab: 10 labels total; 3 hidden in Essential, 7 visible.
+    # Help tab: 11 labels total; 3 hidden in Essential, 8 visible.
     help_all_labels = [
-        "Quick Start", "Analysis Workflow", "Interpretation Guide",
-        "Rater Effects", "Rating Scale Guide", "Glossary",
-        "Reporting Guide", "Troubleshooting", "Model Capability",
-        "Public Beta",
+        "Quick Start", "FACETS Crosswalk", "Analysis Workflow",
+        "Interpretation Guide", "Rater Effects", "Rating Scale Guide",
+        "Glossary", "Reporting Guide", "Troubleshooting",
+        "Model Capability", "Public Beta",
     ]
     help_advanced = {"Rating Scale Guide", "Model Capability", "Public Beta"}
     help_essential = [l for l in help_all_labels if l not in help_advanced]
     _self_test_assert(
-        len(help_all_labels) == 10,
-        f"Help tab label count drifted: {len(help_all_labels)} != 10",
+        len(help_all_labels) == 11,
+        f"Help tab label count drifted: {len(help_all_labels)} != 11",
     )
     _self_test_assert(
-        len(help_essential) == 7,
-        f"Help tab Essential-visible count wrong: {len(help_essential)} != 7",
+        len(help_essential) == 8,
+        f"Help tab Essential-visible count wrong: {len(help_essential)} != 8",
     )
     _self_test_assert(
         help_advanced.issubset(set(help_all_labels)),
@@ -64980,7 +65128,7 @@ _CHART_GUIDE_LIBRARY: dict[str, dict[str, str]] = {
         ),
     },
     "category_probability": {
-        "headline": "FACETS-style Category Characteristic Curves — category probabilities, peaks, and step boundaries.",
+        "headline": "App-generated Category Probability Curves — category probabilities, peaks, and step boundaries.",
         "body": (
             "**How to read:** each curve should peak over some trait range, "
             "and each category should become the most probable response over "
@@ -65246,7 +65394,7 @@ def advanced_model_scope_notes(model_name: str) -> str:
             "Local dependence here means residual association among items that share a passage, station, "
             "or testlet after the main trait is accounted for. The generated Stan code models that dependence "
             "with testlet random effects. It is separate from the fixed non-person facet interactions in the "
-            "FACETS-mode bias table."
+            "MFRM bias table."
         )
     if name == "MIXTURE_RASCH":
         return (
@@ -65786,7 +65934,7 @@ def render_keyboard_shortcuts_help() -> None:
             "| `Space` / `Enter` | Toggle checkboxes / activate buttons |\n"
             "| `Ctrl/Cmd + F` | Browser page search (works across tabs) |\n"
             "\n"
-            "The **Run FACETS-mode estimation** button is the primary "
+            "The **Run MFRM estimation** button is the primary "
             "Streamlit button on the sidebar — `Tab` to reach it, `Enter` to fire."
         )
 
@@ -65945,7 +66093,7 @@ _HELP_POPOVER_LIBRARY: dict[str, dict[str, str]] = {
         ),
         "how": (
             "• Near 0 → the pair follows additive expectation.\n"
-            "• |t| ≥ 2 → statistically significant bias for that cell.\n"
+            "• |t| ≥ 2 → screening flag for review; not proof of bias.\n"
             "• Check adjusted counts: sparse cells inflate |t|.\n"
             "• Apply multiplicity correction for many cells."
         ),
@@ -66250,10 +66398,30 @@ def render_onboarding_banner() -> None:
     scenario_summary = " · ".join(scen_lines)
 
     with st.container(border=True):
-        with st.expander(
-            t("onboarding.banner_steps_label"),
-            expanded=not st.session_state.get("_onboarding_steps_collapsed", False),
-        ):
+        st.markdown(f"### {t('onboarding.primary_heading')}")
+        st.caption(t("onboarding.primary_caption"))
+
+        sample_col, own_data_col = st.columns([1.05, 1.0])
+        with sample_col:
+            st.markdown(f"**{t('onboarding.sample_route_heading')}**")
+            st.caption(t("onboarding.sample_route_caption"))
+            quickstart_clicked = st.button(
+                t("onboarding.quickstart_button"),
+                key="onboarding_quickstart",
+                use_container_width=True,
+                help=t("onboarding.quickstart_help"),
+                type="primary",
+            )
+        with own_data_col:
+            st.markdown(f"**{t('onboarding.own_data_route_heading')}**")
+            st.caption(
+                t(
+                    "onboarding.own_data_route_caption",
+                    run_button=t("sidebar_perf.run_button"),
+                )
+            )
+
+        with st.expander(t("onboarding.banner_steps_label"), expanded=False):
             st.markdown(
                 t(
                     "onboarding.banner_steps_body",
@@ -66263,17 +66431,13 @@ def render_onboarding_banner() -> None:
             )
             st.caption(t("guided.first_run_route_caption"))
             st.dataframe(guided_first_run_route_table(), width="stretch", hide_index=True)
-        cols = st.columns([3, 1])
-        if cols[0].button(
-            t("onboarding.quickstart_button"),
-            key="onboarding_quickstart",
-            use_container_width=True,
-            help=t("onboarding.quickstart_help"),
-        ):
+
+        if quickstart_clicked:
             st.session_state["_onboarding_dismissed"] = True
             st.session_state["_onboarding_quickstart_fired"] = True
             st.rerun()
-        if cols[1].button(
+        dismiss_cols = st.columns([5, 1])
+        if dismiss_cols[1].button(
             t("onboarding.dismiss_button"),
             key="onboarding_dismiss",
             use_container_width=True,
@@ -67049,7 +67213,7 @@ def render_posterior_viewer_mode() -> None:
         "Parquet, or ArviZ NetCDF) to inspect trace, ridge, pair, and "
         "forest plots and summary diagnostics — without leaving the browser. "
         "Estimation itself is not performed here; use the runner scripts "
-        "emitted from the FACETS-mode *Report → Exports → Stan Code* sub-tab to sample "
+        "emitted from the MFRM estimation *Report → Exports → Stan Code* sub-tab to sample "
         "locally, then upload the output files."
     )
 
@@ -67198,7 +67362,7 @@ def render_posterior_viewer_mode() -> None:
         manifest_flat, manifest_errors = parse_stan_run_manifest_upload(manifest_file)
     else:
         st.info(
-            "For manuscript-ready Stan results, upload `stan_run_manifest.json` "
+            "For reproducible Stan reporting, upload `stan_run_manifest.json` "
             "or `stan_run_manifest.csv` from the same runner that produced the "
             "posterior CSV chains."
         )
@@ -67382,7 +67546,7 @@ def render_posterior_viewer_mode() -> None:
 
 
 def main() -> None:
-    st.set_page_config(page_title="MFRM FACETS-mode", layout="wide")
+    st.set_page_config(page_title="MFRM estimation", layout="wide")
     _inject_desktop_readability_css()
     start_heavy_runtime_import_prewarm()
     _ensure_language_state()

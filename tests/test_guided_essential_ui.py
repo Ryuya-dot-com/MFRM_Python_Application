@@ -153,6 +153,23 @@ def test_language_fast_path_consumes_pending_state_only_for_results(monkeypatch)
     assert state["_language_switch_pending"] is False
 
 
+def test_onboarding_banner_surfaces_primary_result_cta():
+    source = inspect.getsource(app.render_onboarding_banner)
+
+    assert "onboarding.primary_heading" in source
+    assert "onboarding.sample_route_heading" in source
+    assert "onboarding.own_data_route_caption" in source
+    assert 'type="primary"' in source
+    assert "_onboarding_quickstart_fired" in source
+
+
+def test_tutorial_includes_output_routes_before_method_detail():
+    source = inspect.getsource(app.show_tutorial)
+
+    assert "tutorial.section_output_routes" in source
+    assert source.index("tutorial.section_output_routes") < source.index("tutorial.section_estimation_method")
+
+
 def test_guided_section_selector_keeps_all_detail_sections_in_order():
     options = app.guided_section_selector_options()
 
@@ -459,6 +476,61 @@ def test_guided_figures_section_is_a_direct_visual_surface():
     assert "guided.figures_panel_select_caption" in source
 
 
+def test_help_section_exposes_facets_crosswalk_panel():
+    source = inspect.getsource(app.show_help_section)
+
+    assert '"FACETS Crosswalk"' in source
+    assert "help.tab_facets_crosswalk" in source
+    assert "render_facets_crosswalk_panel()" in source
+
+
+def test_facets_crosswalk_table_has_status_filter_search_and_download_shape():
+    table = app.facets_output_crosswalk_table()
+    expected_columns = [
+        app.t("help.facets_crosswalk_col_facets_output"),
+        app.t("help.facets_crosswalk_col_user_question"),
+        app.t("help.facets_crosswalk_col_app_location"),
+        app.t("help.facets_crosswalk_col_download_file"),
+        app.t("help.facets_crosswalk_col_status"),
+        app.t("help.facets_crosswalk_col_validation_evidence"),
+        app.t("help.facets_crosswalk_col_caveat"),
+        app.t("help.facets_crosswalk_col_next_action"),
+    ]
+
+    assert list(table.columns) == expected_columns
+    assert len(table) >= 10
+    assert table.astype(str).apply(lambda column: column.str.len().gt(0).all()).all()
+    joined = " ".join(table.astype(str).to_numpy().ravel().tolist())
+    assert "Category Probability Curves (CCC)" in joined
+    assert "validation/README.md" in joined
+    assert "FACETS control file" in joined
+
+    status_col = app.t("help.facets_crosswalk_col_status")
+    external = app.facets_output_crosswalk_table(status_filter="external")
+    assert not external.empty
+    assert set(external[status_col]) == {app.t("help.facets_crosswalk_status_external")}
+
+    ccc = app.facets_output_crosswalk_table(query="CCC")
+    assert not ccc.empty
+    assert "Category Probability Curves" in " ".join(ccc.astype(str).to_numpy().ravel().tolist())
+
+    markdown = app.facets_output_crosswalk_markdown(table.head(1))
+    assert "| " in markdown
+    assert app.t("help.facets_crosswalk_col_facets_output") in markdown
+    assert "---" in markdown
+
+
+def test_facets_crosswalk_panel_renders_structured_table_and_downloads():
+    source = inspect.getsource(app.render_facets_crosswalk_panel)
+
+    assert "facets_output_crosswalk_table(" in source
+    assert "facets_crosswalk_status_filter" in source
+    assert "facets_crosswalk_search" in source
+    assert "dl_facets_output_crosswalk_csv" in source
+    assert "dl_facets_output_crosswalk_md" in source
+    assert "facets_output_crosswalk_markdown" in source
+
+
 def test_visuals_section_lazy_renders_one_plot_panel():
     source = inspect.getsource(app.show_visuals_section)
 
@@ -467,6 +539,14 @@ def test_visuals_section_lazy_renders_one_plot_panel():
     assert "st.tabs" not in source
     assert 'if selected_visual_panel == "category_probability"' in source
     assert 'if selected_visual_panel == "ecdf"' in source
+
+
+def test_category_probability_panel_uses_ccc_locale_labels():
+    source = inspect.getsource(app._draw_category_probability_curves_plotly)
+
+    assert "visuals_top.category_probability_heading" in source
+    assert "visuals_top.category_probability_caption" in source
+    assert "visuals_top.category_probability_download_curve" in source
 
 
 def test_downloads_privacy_mode_is_defined_before_export_builders():

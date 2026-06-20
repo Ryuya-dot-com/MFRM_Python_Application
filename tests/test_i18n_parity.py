@@ -117,7 +117,17 @@ def test_japanese_safety_and_guidance_copy_uses_task_centered_terms(locales):
         "sidebar.view_density_essential",
         "sidebar.view_density_full",
         "sidebar.view_density_help",
+        "onboarding.primary_heading",
+        "onboarding.primary_caption",
+        "onboarding.sample_route_heading",
+        "onboarding.sample_route_caption",
+        "onboarding.own_data_route_heading",
+        "onboarding.own_data_route_caption",
         "onboarding.banner_steps_label",
+        "tutorial.section_output_routes",
+        "visuals_top.tab_category_probability_curves",
+        "visuals_top.category_probability_heading",
+        "visuals_top.category_probability_caption",
         "dimensionality.warning_pca_failed_template",
         "dimensionality.panel_select_label",
         "dimensionality.panel_select_help",
@@ -168,10 +178,17 @@ def test_japanese_safety_and_guidance_copy_uses_task_centered_terms(locales):
         "sidebar_estimation.column_mapping_subheader",
         "sidebar_estimation.column_mapping_caption",
         "help.tab_quick_start",
+        "help.tab_facets_crosswalk",
         "help.tab_analysis_workflow",
         "help.panel_select_label",
         "help.panel_select_help",
         "help.panel_select_caption",
+        "help.facets_crosswalk_body",
+        "help.facets_crosswalk_table_caption",
+        "help.facets_crosswalk_col_facets_output",
+        "help.facets_crosswalk_col_validation_evidence",
+        "help.facets_crosswalk_status_external",
+        "help.facets_crosswalk_download_csv",
         "help.quick_start_body",
         "help.troubleshooting_body",
     }
@@ -193,7 +210,7 @@ def test_japanese_safety_and_guidance_copy_uses_task_centered_terms(locales):
         "Scripts & Config",
         "Data source",
         "Column mapping",
-        "Run FACETS-mode estimation",
+        "Run MFRM estimation",
         "Caveat 付き",
         "readiness",
         "Current focus",
@@ -232,6 +249,14 @@ def test_display_mode_and_analysis_depth_copy_are_not_conflated(locales):
     assert "does not compute extra diagnostics" in en["sidebar.view_density_help"]
     assert "Analysis depth" in en["sidebar.view_density_help"]
     assert "Full publication" in en["sidebar_perf.analysis_depth_help"]
+    assert en["help.tab_facets_crosswalk"] == "FACETS Crosswalk"
+    assert "not a numerical-parity claim" in en["help.facets_crosswalk_body"]
+    assert "Category Probability Curves (CCC)" in en["help.facets_crosswalk_body"]
+    assert en["help.facets_crosswalk_col_validation_evidence"] == "Validation evidence"
+    assert en["help.facets_crosswalk_status_external"] == "External comparison required"
+    assert en["help.facets_crosswalk_download_csv"] == "Download FACETS crosswalk (CSV)"
+    assert "CCC" in en["visuals_top.tab_category_probability_curves"]
+    assert "Figures → Visuals" in en["tutorial.section_output_routes"]
     assert "All panels display mode" in en["downloads.figures_skipped_info"]
     assert "PNG/HTML" in en["downloads.figures_skipped_info"]
     assert "does not re-estimate" in en["main_tabs.panel_select_caption"]
@@ -239,7 +264,15 @@ def test_display_mode_and_analysis_depth_copy_are_not_conflated(locales):
 
     assert ja["sidebar.view_density_label"] == "表示モード"
     assert ja["sidebar.view_density_full"] == "全パネル表示"
+    assert ja["help.tab_facets_crosswalk"] == "FACETS出力対応表"
+    assert "数値一致を主張するものではありません" in ja["help.facets_crosswalk_body"]
+    assert "Category Probability Curves (CCC)" in ja["help.facets_crosswalk_body"]
+    assert ja["help.facets_crosswalk_col_validation_evidence"] == "検証根拠"
+    assert ja["help.facets_crosswalk_status_external"] == "外部比較根拠が必要"
+    assert ja["help.facets_crosswalk_download_csv"] == "FACETS対応表をダウンロード (CSV)"
     assert "追加診断や図ファイルは生成しません" in ja["sidebar.view_density_help"]
+    assert "CCC" in ja["visuals_top.tab_category_probability_curves"]
+    assert "図 → 図表" in ja["tutorial.section_output_routes"]
     assert "全パネル表示" in ja["downloads.figures_skipped_info"]
     assert "PNG / HTML" in ja["downloads.figures_skipped_info"]
     assert "再推定しません" in ja["main_tabs.panel_select_caption"]
@@ -286,3 +319,6 @@ def test_help_copy_frames_thresholds_as_diagnostic_guidance(locales):
     assert "visual_qa_preflight.csv" in ja["help.quick_start_body"]
     assert "Holm/BH" in en["help.analysis_workflow_body"]
     assert "Holm / BH" in ja["help.analysis_workflow_body"]
+    assert "significant bias" not in en["bias_interaction.intro_caption"].lower()
+    assert "proof of bias" in en["bias_interaction.heatmap_significance_caption"]
+    assert "bias の証明ではありません" in ja["bias_interaction.heatmap_significance_caption"]

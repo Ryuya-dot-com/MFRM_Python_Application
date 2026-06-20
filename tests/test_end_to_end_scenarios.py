@@ -84,12 +84,12 @@ def test_representative_scenarios_render_without_streamlit_exception(scenario_ke
 
     run_button = None
     for button in at.sidebar.button:
-        if button.label and "Run FACETS-mode" in button.label:
+        if button.label and "Run MFRM estimation" in button.label:
             run_button = button
             break
     if run_button is None:
         pytest.skip(
-            "Run FACETS-mode estimation button not found; skipping to avoid false positive"
+            "Run MFRM estimation button not found; skipping to avoid false positive"
         )
 
     run_button.click()

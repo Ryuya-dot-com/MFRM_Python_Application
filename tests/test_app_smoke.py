@@ -13,8 +13,9 @@ def test_app_initial_render():
 
 def test_user_data_source_promotes_privacy_warning():
     at = AppTest.from_file("streamlit_app.py").run(timeout=30)
-    at.radio(key="data_source_flat").set_value("paste")
+    at.button(key="onboarding_dismiss").click()
     at.run(timeout=30)
 
     assert not at.exception
+    assert at.session_state["data_source_flat"] == "paste"
     assert any("pasted and uploaded rating files" in warning.value for warning in at.warning)

@@ -1,7 +1,7 @@
 # Study context, guidance, and identity contract
 
-- Status: P0 pre-implementation contract
-- Last updated: 2026-07-24
+- Status: P0 contract; initial G1/G2 guidance slice implemented
+- Last updated: 2026-08-04
 - Product boundary: standalone Python
 - Governing roadmap: [`../ROADMAP.md`](../ROADMAP.md)
 - Copy-risk gate: [`interpretation_copy_audit.md`](interpretation_copy_audit.md)
@@ -26,6 +26,15 @@ The contract has four goals:
 `MUST`, `MUST NOT`, `SHOULD`, and `MAY` are normative terms in this document.
 Examples illustrate the contract but do not expand the supported statistical
 scope.
+
+Implementation note (2026-08-04): `mfrm_app/guidance.py` now owns the pure
+five-node catalog, session lifecycle, skip/exit/resume/restart transitions,
+fit binding, formative learning evidence, invalidation, and learning-only
+completion. The bilingual Streamlit adapter exposes the complete basic sample
+journey. This does not mark G1/G2 complete: canonical `AnalysisSpec`, the
+remaining research-context records, exact Help return at every guide node,
+`HOLD`/stale/failure journeys, a complete existing-real-fit sample roundtrip,
+and browser accessibility acceptance remain gated work.
 
 ## Non-negotiable invariants
 

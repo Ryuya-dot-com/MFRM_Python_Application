@@ -81,6 +81,22 @@ it weakened hierarchy.
 Required rule: each phase owns one primary orientation surface. Setup owns
 readiness. Results own first-read priority. Detail sections own evidence.
 
+### P0 — First-run explanation without learning state
+
+The earlier landing combined two actions, an optional three-step explanation,
+a separate terminology tutorial, and a static five-row route shown only after
+fitting. None of those surfaces knew which task had been reviewed, whether the
+user had exited, or whether a sample answer confused a completed fit with a
+valid claim.
+
+Current remediation: a new session stops at one three-route landing. The
+optional sample path uses five stable nodes and one primary action per node;
+the ordinary workspace remains directly available. A pure reducer stores
+learning progress separately from AnalysisID and evidence, and the formative
+question cannot promote scientific readiness. The old tutorial renderer is no
+longer part of `main()`; it remains dormant only as a compatibility surface
+until replacement evidence is complete.
+
 ### P1 — Data-source selection will not scale
 
 All sample scenarios, generation, paste, and upload share one flat radio group.
@@ -143,8 +159,12 @@ not only by JSON key equality.
 - Added a pure `mfrm_app.ux` contract for data-origin classification and
   phase-aware presentation policy.
 - Made privacy severity contextual and fail-closed for unknown future sources.
-- Replaced explanation-first onboarding with two explicit starting choices;
-  the three-step detail is now optional.
+- Replaced the overlapping onboarding, three-step explanation, and visible
+  terminology tutorial with one optional five-step sample route and a direct
+  ordinary-workspace escape.
+- Added a pure `mfrm_app.guidance` catalog and reducer for skip, exit, resume,
+  restart, invalidation, fit binding, formative review, and completion without
+  a claim-readiness field or estimator dependency.
 - Moved raw input rows behind a collapsed disclosure.
 - Consolidated input preview, sample identity, readiness, and response-row
   audit into one setup workspace.
@@ -155,7 +175,8 @@ not only by JSON key equality.
 
 ## Long-term implementation sequence
 
-1. Stabilize one workflow-shell contract with a single primary next action.
+1. Complete browser keyboard/focus acceptance and exact contextual Help return
+   for every sample-guide node.
 2. Replace the flat data-source list with a scalable two-level chooser while
    preserving stable IDs and old session state.
 3. Collapse the goal router, action hub, and section navigator into one route
@@ -169,7 +190,8 @@ not only by JSON key equality.
 
 ## Acceptance measures
 
-- A first-time user can run the sample from the landing page with one action.
+- A first-time user can finish the five-step sample route without encountering
+  unrelated source, model, or export controls before they are needed.
 - A user with their own data can identify the next required setup action without
   opening a tutorial.
 - No raw response row is visible by default.

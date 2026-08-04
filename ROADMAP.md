@@ -108,13 +108,31 @@ Navigation refinement on 2026-08-04:
 - kept the narrow layout compact with a touch-scrollable one-line section
   switcher instead of a multi-row fixed overlay.
 
+First-run route refinement on 2026-08-04:
+
+- added the pure `mfrm_app.guidance` five-node catalog and exhaustive reducer;
+  it imports neither Streamlit nor pandas and has no claim-readiness field or
+  estimator callback;
+- replaced the initial configuration-heavy page with one optional three-route
+  decision: learn with a sample, start with user data, or continue without the
+  guide;
+- connected data-role review, production-path estimation, a bounded formative
+  interpretation, and a non-scientific learning checkpoint into one
+  skippable/resumable/restartable sample route; and
+- kept guide completion independent from AnalysisID and preserved the fitted
+  identity across formative answers and completion.
+
 The browser accessibility matrix remains the next M1 acceptance item; native
 AppTest topology is the required fallback gate until that browser connection
 is available.
 
 Increment verification:
 
-- `make apptest`: 1,090 passed, 62 compatibility tests deselected;
+- `make apptest`: 1,117 passed, 62 compatibility tests deselected;
+- complete five-step sample AppTest: production fit, overclaim retry,
+  learning-only completion, and stable AnalysisID passed;
+- guide state/isolation AppTests: focused landing, own-data route, Japanese
+  rerender, exit/resume, and existing-workspace restoration passed;
 - representative initial/post-run AppTests: two scenarios passed;
 - All-panels Help return: panel state and AnalysisID preserved without refit;
 - `--self-test`: 56 passed;
@@ -1297,6 +1315,16 @@ meaning are acceptance criteria for every visible slice, not a final polish.
 Statistical changes, state-model extraction, visible UI changes, and legacy
 code removal remain separate review units. Old routes are not removed until
 new end-to-end gates pass.
+
+The first G1/G2 vertical slice shipped on 2026-08-04: the pure guide catalog
+and reducer, focused bilingual five-step sample journey, direct skip/exit,
+resume/restart, production-estimator fit binding, formative overclaim guard,
+and learning-only completion are implemented and AppTest-covered. G1 is not
+complete: canonical `AnalysisSpec` and the remaining study/design/scoring
+records still precede a full claim of canonical state. G2 is also not complete
+until every node has exact contextual Help return, `HOLD`/stale/failure paths,
+a complete existing-real-fit sample roundtrip, and browser keyboard/focus
+acceptance.
 
 #### Validation and evaluation
 

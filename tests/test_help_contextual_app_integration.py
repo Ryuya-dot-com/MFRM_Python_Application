@@ -1070,6 +1070,8 @@ def test_real_fit_scatter_help_return_preserves_fit_and_pending_triggers(
         default_timeout=120,
     ).run()
     assert not at.exception
+    at.button(key="onboarding_skip_guide").click()
+    at.run()
     at.radio(key="app_view_density").set_value("Full")
     at.run()
     next(

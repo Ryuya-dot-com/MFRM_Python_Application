@@ -115,7 +115,7 @@ def test_no_data_help_locale_and_return_preserve_source_without_refit(
 
     at = _app_test().run()
     assert not at.exception
-    at.radio(key="data_source_flat").set_value("paste")
+    at.button(key="onboarding_dismiss").click()
     at.run()
     at.selectbox(key="paste_data_delimiter").select_index(3)
     at.run()
@@ -181,6 +181,8 @@ def test_help_locale_and_return_preserve_nondefault_analysis_settings(
     calls = _instrument_analysis_calls(monkeypatch)
     at = _app_test().run()
     assert not at.exception
+    at.button(key="onboarding_skip_guide").click()
+    at.run()
 
     at.radio(key="facets_mode_workflow_mode").set_value("Advanced controls")
     at.radio(key="facets_mode_model_type").set_value("GPCM")
@@ -247,6 +249,8 @@ def test_simulation_threshold_failure_uses_bounded_problem_notice(monkeypatch):
     secret = "PRIVATE_THRESHOLD /Users/researcher/ratings.csv participant=P-31"
     at = _app_test().run()
     assert not at.exception
+    at.button(key="onboarding_skip_guide").click()
+    at.run()
 
     at.radio(key="data_source_flat").set_value("simulate")
     at.run()

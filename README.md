@@ -144,10 +144,11 @@ See `CHANGELOG.md` for the per-commit breakdown and
 
 ![MFRM Streamlit sample-data result overview](docs/images/app-data-overview.png)
 
-The screenshot uses the built-in synthetic sample data. It highlights the
-default guided sidebar, contextual data-origin notice, input overview,
-post-estimation success status, and guided result sections. Raw response rows
-are available from a collapsed preview instead of being exposed by default.
+The screenshot uses the built-in synthetic sample data and shows the
+post-estimation workspace after the optional sample guide. On a new session,
+the application first offers three routes: learn with the sample, start with
+your own data, or continue without the guide. Raw response rows remain behind
+a collapsed preview instead of being exposed by default.
 
 The current cross-cutting UX baseline and the planned workflow-shell work are
 documented in [`docs/ux_adversarial_audit.md`](docs/ux_adversarial_audit.md).
@@ -409,6 +410,12 @@ On long result pages, the authoritative Essential or All-panels selector stays
 at the top of the viewport while content scrolls. Narrow screens keep the
 Essential selector on one touch-scrollable line so the navigation does not
 turn into a tall overlay. The app does not add custom keyboard shortcuts.
+For a new session, the optional sample guide uses five focused steps: choose a
+route, check the sample's Person/Score/facet roles, run the production
+estimator, distinguish a bounded interpretation from an overclaim, and review
+a supported/limited/next-action checkpoint. It is skippable, resumable, and
+restartable within the session. Guide completion records learning progress
+only; it does not validate a data set, design, claim, or intended use.
 Default table, manuscript, and demo archives now contain only Python-native
 analysis, diagnostics, evidence contracts, figures, and reproduction assets.
 Legacy cross-package inventories, R/Julia scripts, Stan/Posterior handoff

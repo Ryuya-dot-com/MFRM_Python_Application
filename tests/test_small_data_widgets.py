@@ -80,6 +80,8 @@ def test_apptest_with_clinical_osce_runs_visuals_without_crash():
     regression reported by the user.
     """
     at = AppTest.from_file("streamlit_app.py").run(timeout=40)
+    at.button(key="onboarding_skip_guide").click()
+    at.run(timeout=40)
     # Switch the sample scenario selector to Clinical OSCE
     for radio in at.radio:
         if radio.key == "data_source_flat":

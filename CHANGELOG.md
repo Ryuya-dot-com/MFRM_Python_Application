@@ -4,6 +4,16 @@ All notable changes to this standalone Streamlit distribution should be recorded
 
 ## Unreleased
 
+- **Optional five-step sample guide.** Replaced the overlapping first-run
+  banner, static three-step explanation, and always-rendered tutorial with one
+  focused landing decision and a session-scoped five-node guide. The guide
+  checks sample data roles before running the production estimator, requires a
+  bounded interpretation answer, and ends with a non-scientific learning
+  checkpoint. Skip, exit, resume, restart, locale, view, and Help events are
+  governed by a pure `mfrm_app.guidance` reducer that cannot change scientific
+  readiness. The ordinary workspace remains directly available, and starting
+  with user data opens the privacy-aware paste preflight rather than forcing a
+  sample tour.
 - **Persistent result navigation without shortcut overhead.** Removed the
   sidebar keyboard-shortcut cheat sheet and its Streamlit maintenance commands.
   Essential and All-panels result selectors now live in a sticky navigation

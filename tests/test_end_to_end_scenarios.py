@@ -109,6 +109,8 @@ def test_representative_scenarios_render_without_streamlit_exception(scenario_ke
         f"initial render already raised for {scenario_key!r}: "
         f"{[e.value for e in at.exception]}"
     )
+    at.button(key="onboarding_skip_guide").click()
+    at.run(timeout=APPTEST_TIMEOUT)
 
     matched = False
     for radio in at.radio:

@@ -35,6 +35,7 @@ from mfrm_app import distribution as _distribution
 from mfrm_app import evidence as _evidence
 from mfrm_app import exports as _exports
 from mfrm_app import frame_bundle as _frame_bundle
+from mfrm_app import guidance as _guidance
 from mfrm_app import help_contract as _help_contract
 from mfrm_app import help_navigation as _help_navigation
 from mfrm_app import help_popovers as _help_popovers
@@ -201,6 +202,111 @@ def _language_display_name(code: str | None) -> str:
 def _standalone_ui_text(*, en: str, ja: str) -> str:
     """Return short product-boundary copy without adding legacy locale keys."""
     return ja if st.session_state.get("lang", DEFAULT_LANG) == "ja" else en
+
+
+_GUIDANCE_STATE_KEY = "_mfrm_guidance_state"
+_GUIDE_RUN_REQUESTED_KEY = "_mfrm_guide_run_requested"
+_GUIDE_COMPLETION_NOTICE_KEY = "_mfrm_guide_completion_notice"
+_GUIDE_SAVED_WORKSPACE_KEY = "_mfrm_guide_saved_workspace"
+_GUIDE_RESTORE_PENDING_KEY = "_mfrm_guide_restore_pending"
+
+
+def _is_guide_workspace_state_key(key: object) -> bool:
+    """Return whether a session key belongs to the real/sample analysis workspace."""
+
+    name = str(key)
+    if name in {
+        "data_source_flat",
+        "facets_mode_output",
+        "viz_ci_level",
+        "plot_label_mode",
+        "show_anchor_guideline_preview",
+    }:
+        return True
+    return name.startswith(
+        (
+            "facets_mode_",
+            "_facets_mode_",
+            "_loaded_",
+            "_custom_",
+            "paste_data_",
+            "sim_",
+            "visual_",
+        )
+    )
+
+
+def _snapshot_workspace_for_sample_guide() -> None:
+    """Keep an existing real-data workspace isolated from the sample route."""
+
+    if _GUIDE_SAVED_WORKSPACE_KEY in st.session_state:
+        return
+    values = {
+        str(key): st.session_state[key]
+        for key in tuple(st.session_state)
+        if _is_guide_workspace_state_key(key)
+    }
+    st.session_state[_GUIDE_SAVED_WORKSPACE_KEY] = {
+        "restore_required": bool(values),
+        "values": values,
+    }
+
+
+def _request_sample_workspace_restore() -> None:
+    snapshot = st.session_state.get(_GUIDE_SAVED_WORKSPACE_KEY)
+    if isinstance(snapshot, dict) and snapshot.get("restore_required"):
+        st.session_state[_GUIDE_RESTORE_PENDING_KEY] = True
+    else:
+        st.session_state.pop(_GUIDE_SAVED_WORKSPACE_KEY, None)
+
+
+def _apply_pending_guide_workspace_restore() -> None:
+    """Restore isolated real-data state before its widgets are recreated."""
+
+    if not st.session_state.pop(_GUIDE_RESTORE_PENDING_KEY, False):
+        return
+    snapshot = st.session_state.pop(_GUIDE_SAVED_WORKSPACE_KEY, None)
+    values = snapshot.get("values", {}) if isinstance(snapshot, dict) else {}
+    if not isinstance(values, dict):
+        values = {}
+    for key in tuple(st.session_state):
+        if _is_guide_workspace_state_key(key):
+            del st.session_state[key]
+    for key, value in values.items():
+        st.session_state[key] = value
+
+
+def _get_guidance_state() -> _guidance.GuidanceState:
+    """Return the canonical session guide state, repairing legacy values."""
+
+    state = st.session_state.get(_GUIDANCE_STATE_KEY)
+    if not isinstance(state, _guidance.GuidanceState):
+        state = _guidance.GuidanceState.initial()
+        # Do not interrupt an upgraded session that already dismissed the old
+        # onboarding or contains a fit. The optional guide remains resumable.
+        if st.session_state.get("_onboarding_dismissed") or isinstance(
+            st.session_state.get("facets_mode_output"), dict
+        ):
+            state = _guidance.reduce_guidance(
+                state,
+                _guidance.GuidanceEvent(_guidance.GuidanceEventType.SKIP),
+            )
+        st.session_state[_GUIDANCE_STATE_KEY] = state
+    return state
+
+
+def _dispatch_guidance_event(
+    event_type: _guidance.GuidanceEventType,
+    **kwargs,
+) -> _guidance.GuidanceState:
+    """Apply a pure guide event and store only its returned state."""
+
+    state = _guidance.reduce_guidance(
+        _get_guidance_state(),
+        _guidance.GuidanceEvent(event_type=event_type, **kwargs),
+    )
+    st.session_state[_GUIDANCE_STATE_KEY] = state
+    return state
 
 
 def _ensure_language_state() -> None:
@@ -24397,7 +24503,29 @@ def render_custom_simulation_source() -> pd.DataFrame:
     return sim_df
 
 
-def read_input_data(core: dict) -> pd.DataFrame:
+def read_input_data(
+    core: dict,
+    *,
+    guide_sample_only: bool = False,
+) -> pd.DataFrame:
+    """Render the ordinary source picker or load the isolated guide sample.
+
+    The guide route deliberately bypasses the ten-choice source control.  It
+    still uses the same deterministic sample generator and, from estimation
+    onward, the same production pipeline as the ordinary workspace.
+    """
+    if guide_sample_only:
+        sample_df = cached_sample_mfrm_data_by_key(
+            DEFAULT_SAMPLE_SCENARIO_KEY,
+            seed=20240101,
+        ).copy()
+        st.session_state["_loaded_sample_scenario_key"] = DEFAULT_SAMPLE_SCENARIO_KEY
+        st.session_state.pop("_loaded_custom_simulation_meta", None)
+        st.session_state.pop("_custom_simulation_preview_bundle", None)
+        st.session_state.pop("_custom_simulation_facet_names", None)
+        st.session_state.pop("_custom_simulation_score_support", None)
+        return sample_df
+
     # v0.2.8-beta: Flat single-radio data-source picker. Previously the
     # user faced a two-step flow (Sample data radio → Sample scenario
     # selectbox) where the scenario switch was easy to miss. Now all
@@ -24718,6 +24846,19 @@ table.mfrm-wrapped-table th {
   font-weight: 700;
   background: rgba(49, 51, 63, 0.04);
   white-space: nowrap;
+}
+/* The guide focuses attention by limiting content and strengthening one real
+   card. It does not dim the page, trap focus, or depend on brittle coach-mark
+   selectors. */
+.st-key-sample_guide_welcome_card,
+.st-key-sample_guide_data_check_card,
+.st-key-sample_guide_estimate_card,
+.st-key-sample_guide_evidence_review_card,
+.st-key-sample_guide_archive_card {
+  border-inline-start: 0.35rem solid var(--primary-color, #0066cc) !important;
+  padding: 1rem 1.1rem 1.15rem;
+  margin: 0.4rem 0 1rem;
+  background: color-mix(in srgb, var(--primary-color, #0066cc) 4%, var(--background-color, Canvas));
 }
 /* Result navigation is the one persistent orientation surface. It becomes a
    compact dock only after the user scrolls to it, so it does not cover the run
@@ -35688,6 +35829,7 @@ def run_facets_mode(
                     )
             except Exception:  # pragma: no cover - toast is a UX nicety
                 pass
+            _advance_sample_guide_after_fit(result)
         except Exception as exc:
             # Mark the status accordion as failed so users see it at a glance
             try:
@@ -35725,6 +35867,7 @@ def run_facets_mode(
                     exc,
                     phase=_user_problems.UserProblemPhase.ESTIMATION,
                 )
+            _record_sample_guide_fit_failure()
             return
 
     out = st.session_state.get("facets_mode_output")
@@ -35939,6 +36082,8 @@ def run_facets_mode(
                              est_facet_cols,
                              out.get("score_col", score_col),
                              core)
+
+    render_sample_guide_result_step(result)
 
     essential_mode = st.session_state.get("app_view_density", "Essential") == "Essential"
 
@@ -68751,42 +68896,348 @@ def render_chart_guide(chart_name: str, *, expanded: bool = False) -> None:
             st.markdown(body)
 
 
-def render_onboarding_banner() -> None:
-    """Action-first quickstart with an optional three-step explanation.
+def _render_guide_step_heading(node_id: _guidance.GuideNode) -> None:
+    definition = _guidance.guide_node_definition(node_id)
+    st.caption(
+        t(
+            "guide.step_counter_template",
+            step=definition.ordinal,
+            total=len(_guidance.GUIDE_NODES),
+        )
+    )
+    st.progress(
+        definition.ordinal / len(_guidance.GUIDE_NODES),
+        text=t(
+            "guide.progress_template",
+            step=definition.ordinal,
+            total=len(_guidance.GUIDE_NODES),
+        ),
+    )
+    st.markdown(f"### {t(definition.title_key)}")
+    st.write(t(definition.body_key))
 
-    The two actual starting choices remain visible while supporting copy is
-    collapsed. The ``Run with sample data`` button sets
-    ``_onboarding_quickstart_fired`` so the estimation pipeline fires
-    automatically without touching the sidebar. The banner disappears
-    after either button is clicked and does not reappear for the rest of
-    the session.
+
+def _exit_active_sample_guide(node_id: _guidance.GuideNode) -> None:
+    if st.button(
+        t("guide.exit_button"),
+        key=f"sample_guide_exit_{node_id.value}",
+        use_container_width=True,
+    ):
+        _request_sample_workspace_restore()
+        _dispatch_guidance_event(_guidance.GuidanceEventType.EXIT)
+        st.rerun()
+
+
+def _enter_sample_guide_workspace() -> None:
+    """Snapshot the current workspace and expose clean sample defaults."""
+
+    _snapshot_workspace_for_sample_guide()
+    # Enter a clean tutorial context so an expert setting from a real-data
+    # draft cannot silently replace the documented guided defaults. The saved
+    # values are restored on exit/completion before their widgets are rebuilt.
+    for key in tuple(st.session_state):
+        if _is_guide_workspace_state_key(key):
+            del st.session_state[key]
+    st.session_state["data_source_flat"] = (
+        f"scenario:{DEFAULT_SAMPLE_SCENARIO_KEY}"
+    )
+
+
+def _start_sample_guide() -> None:
+    _enter_sample_guide_workspace()
+    st.session_state["_onboarding_dismissed"] = True
+    state = _get_guidance_state()
+    if (
+        state.route_id is _guidance.GuideRoute.SAMPLE
+        and state.lifecycle
+        in {_guidance.GuideLifecycle.SKIPPED, _guidance.GuideLifecycle.COMPLETED}
+    ):
+        _dispatch_guidance_event(_guidance.GuidanceEventType.RESTART)
+    else:
+        _dispatch_guidance_event(_guidance.GuidanceEventType.START_SAMPLE)
+
+
+def render_onboarding_banner() -> bool:
+    """Render the optional guide entry and return whether it owns the page.
+
+    The landing node is intentionally terminal for the current rerun: ordinary
+    source and estimator controls are not rendered underneath it. Existing
+    sessions that already contain work bypass the landing and receive a quiet
+    resume/restart control in the sidebar.
     """
-    if st.session_state.get("_onboarding_dismissed", False):
+    state = _get_guidance_state()
+
+    if st.session_state.pop(_GUIDE_COMPLETION_NOTICE_KEY, False):
+        st.success(t("guide.completed_success"))
+        st.caption(t("guide.completed_boundary"))
+
+    if state.lifecycle is _guidance.GuideLifecycle.NOT_STARTED:
+        with st.container(key="sample_guide_welcome_card", border=True):
+            _render_guide_step_heading(_guidance.GuideNode.WELCOME)
+            st.caption(t("guide.optional_caption"))
+            if st.button(
+                t("guide.start_sample_button"),
+                key="onboarding_quickstart",
+                help=t("guide.start_sample_help"),
+                type="primary",
+                use_container_width=True,
+            ):
+                _start_sample_guide()
+                st.rerun()
+            if st.button(
+                t("guide.start_own_data_button"),
+                key="onboarding_dismiss",
+                use_container_width=True,
+            ):
+                _dispatch_guidance_event(_guidance.GuidanceEventType.START_OWN_DATA)
+                _dispatch_guidance_event(_guidance.GuidanceEventType.EXIT)
+                st.session_state["data_source_flat"] = "paste"
+                st.session_state["_onboarding_dismissed"] = True
+                st.rerun()
+            if st.button(
+                t("guide.continue_without_button"),
+                key="onboarding_skip_guide",
+                use_container_width=True,
+            ):
+                _dispatch_guidance_event(_guidance.GuidanceEventType.SKIP)
+                st.session_state["_onboarding_dismissed"] = True
+                st.rerun()
+        return True
+
+    if state.lifecycle is _guidance.GuideLifecycle.SKIPPED:
+        with st.sidebar.expander(t("guide.resume_heading"), expanded=False):
+            st.caption(t("guide.resume_caption"))
+            if state.route_id is _guidance.GuideRoute.SAMPLE:
+                if st.button(
+                    t("guide.resume_button"),
+                    key="sample_guide_resume",
+                    use_container_width=True,
+                ):
+                    _enter_sample_guide_workspace()
+                    _dispatch_guidance_event(_guidance.GuidanceEventType.RESUME)
+                    st.rerun()
+            if st.button(
+                t("guide.restart_button"),
+                key="sample_guide_restart",
+                use_container_width=True,
+            ):
+                _start_sample_guide()
+                st.rerun()
+    elif state.lifecycle is _guidance.GuideLifecycle.COMPLETED:
+        with st.sidebar.expander(t("guide.completed_heading"), expanded=False):
+            st.caption(t("guide.completed_boundary"))
+            if st.button(
+                t("guide.restart_button"),
+                key="sample_guide_restart_completed",
+                use_container_width=True,
+            ):
+                _start_sample_guide()
+                st.rerun()
+    return False
+
+
+def render_sample_guide_pre_analysis(data: pd.DataFrame) -> bool:
+    """Render focused sample nodes before the production estimator runs."""
+
+    state = _get_guidance_state()
+    if (
+        state.lifecycle is not _guidance.GuideLifecycle.ACTIVE
+        or state.route_id is not _guidance.GuideRoute.SAMPLE
+    ):
+        return False
+
+    if state.active_node_id is _guidance.GuideNode.DATA_CHECK:
+        with st.container(key="sample_guide_data_check_card", border=True):
+            _render_guide_step_heading(_guidance.GuideNode.DATA_CHECK)
+            facet_cols = [
+                column
+                for column in data.columns
+                if column not in {"Person", "Score"}
+            ]
+            metric_cols = st.columns(3)
+            metric_cols[0].metric(t("guide.metric_ratings"), f"{len(data):,}")
+            metric_cols[1].metric(
+                t("guide.metric_people"),
+                f"{data['Person'].nunique(dropna=True):,}" if "Person" in data else "—",
+            )
+            metric_cols[2].metric(t("guide.metric_facets"), f"{len(facet_cols):,}")
+            st.markdown(f"**{t('guide.mapping_heading')}**")
+            mapping = pd.DataFrame(
+                [
+                    {
+                        t("guide.mapping_role_column"): t("guide.mapping_person_role"),
+                        t("guide.mapping_selection_column"): "Person",
+                    },
+                    {
+                        t("guide.mapping_role_column"): t("guide.mapping_score_role"),
+                        t("guide.mapping_selection_column"): "Score",
+                    },
+                    {
+                        t("guide.mapping_role_column"): t("guide.mapping_facets_role"),
+                        t("guide.mapping_selection_column"): ", ".join(facet_cols),
+                    },
+                ]
+            )
+            st.dataframe(mapping, width="stretch", hide_index=True)
+            st.info(t("guide.data_check_boundary"))
+            if st.button(
+                t("guide.data_check_continue_button"),
+                key="sample_guide_data_check_continue",
+                type="primary",
+                use_container_width=True,
+            ):
+                _dispatch_guidance_event(
+                    _guidance.GuidanceEventType.NODE_REVIEWED,
+                    data_fingerprint=dataframe_fingerprint(data),
+                    learning_evidence_id="learning.data_roles_reviewed",
+                )
+                st.rerun()
+            _exit_active_sample_guide(_guidance.GuideNode.DATA_CHECK)
+        return True
+
+    if state.active_node_id is _guidance.GuideNode.ESTIMATE:
+        if st.session_state.pop(_GUIDE_RUN_REQUESTED_KEY, False):
+            return False
+        with st.container(key="sample_guide_estimate_card", border=True):
+            _render_guide_step_heading(_guidance.GuideNode.ESTIMATE)
+            st.info(t("guide.estimate_defaults_info"))
+            if st.button(
+                t("guide.estimate_run_button"),
+                key="sample_guide_estimate_run",
+                type="primary",
+                use_container_width=True,
+            ):
+                st.session_state[_GUIDE_RUN_REQUESTED_KEY] = True
+                st.session_state["_onboarding_quickstart_fired"] = True
+                st.rerun()
+            _exit_active_sample_guide(_guidance.GuideNode.ESTIMATE)
+        return True
+    return False
+
+
+def _advance_sample_guide_after_fit(result: dict) -> bool:
+    """Bind a successful production fit to the active sample guide."""
+
+    state = _get_guidance_state()
+    if not (
+        state.lifecycle is _guidance.GuideLifecycle.ACTIVE
+        and state.route_id is _guidance.GuideRoute.SAMPLE
+        and state.active_node_id is _guidance.GuideNode.ESTIMATE
+    ):
+        return False
+    summary = result.get("summary") if isinstance(result, dict) else None
+    convergence_value = (
+        summary.iloc[0].get("Converged", False)
+        if isinstance(summary, pd.DataFrame) and not summary.empty
+        else False
+    )
+    converged = False if pd.isna(convergence_value) else bool(convergence_value)
+    if not converged:
+        _dispatch_guidance_event(
+            _guidance.GuidanceEventType.FIT_FAILED,
+            learning_evidence_id="learning.fit_nonconvergence_reviewed",
+        )
+        return False
+    identity = build_result_analysis_identity(result)
+    config = result.get("config", {}) if isinstance(result, dict) else {}
+    _dispatch_guidance_event(
+        _guidance.GuidanceEventType.FIT_SUCCEEDED,
+        analysis_id=identity.analysis_id,
+        data_fingerprint=(
+            str(config.get("input_data_fingerprint"))
+            if config.get("input_data_fingerprint")
+            else state.bound_data_fingerprint
+        ),
+    )
+    return True
+
+
+def _record_sample_guide_fit_failure() -> None:
+    """Keep an exception path at Estimate without changing fitted evidence."""
+
+    state = _get_guidance_state()
+    if (
+        state.lifecycle is _guidance.GuideLifecycle.ACTIVE
+        and state.route_id is _guidance.GuideRoute.SAMPLE
+        and state.active_node_id is _guidance.GuideNode.ESTIMATE
+    ):
+        _dispatch_guidance_event(
+            _guidance.GuidanceEventType.FIT_FAILED,
+            learning_evidence_id="learning.fit_failure_reviewed",
+        )
+
+
+def render_sample_guide_result_step(result: dict) -> None:
+    """Render the formative evidence and bounded-record sample nodes."""
+
+    state = _get_guidance_state()
+    if not (
+        state.lifecycle is _guidance.GuideLifecycle.ACTIVE
+        and state.route_id is _guidance.GuideRoute.SAMPLE
+    ):
         return
 
-    with st.container(border=True):
-        st.markdown(f"### {t('onboarding.title')}")
-        st.caption(t("onboarding.choice_caption"))
-        cols = st.columns([3, 1])
-        if cols[0].button(
-            t("onboarding.quickstart_button"),
-            key="onboarding_quickstart",
-            use_container_width=True,
-            help=t("onboarding.quickstart_help"),
-            type="primary",
-        ):
-            st.session_state["_onboarding_dismissed"] = True
-            st.session_state["_onboarding_quickstart_fired"] = True
-            st.rerun()
-        if cols[1].button(
-            t("onboarding.dismiss_button"),
-            key="onboarding_dismiss",
-            use_container_width=True,
-        ):
-            st.session_state["_onboarding_dismissed"] = True
-            st.rerun()
-        with st.expander(t("onboarding.banner_steps_label"), expanded=False):
-            st.markdown(t("onboarding.banner_steps_body"))
+    if state.active_node_id is _guidance.GuideNode.EVIDENCE_REVIEW:
+        with st.container(key="sample_guide_evidence_review_card", border=True):
+            _render_guide_step_heading(_guidance.GuideNode.EVIDENCE_REVIEW)
+            st.caption(t("guide.evidence_router_caption"))
+            answer = st.radio(
+                t("guide.formative_question"),
+                options=("bounded", "overclaim"),
+                format_func=lambda answer_id: t(f"guide.formative_{answer_id}"),
+                index=None,
+                key="sample_guide_formative_answer",
+            )
+            if st.button(
+                t("guide.formative_check_button"),
+                key="sample_guide_formative_check",
+                type="primary",
+                use_container_width=True,
+                disabled=answer is None,
+            ):
+                if answer == "bounded":
+                    _dispatch_guidance_event(
+                        _guidance.GuidanceEventType.FORMATIVE_ANSWERED,
+                        learning_evidence_id="learning.answer.bounded_claim",
+                    )
+                    st.rerun()
+                else:
+                    st.error(t("guide.formative_retry"))
+            _exit_active_sample_guide(_guidance.GuideNode.EVIDENCE_REVIEW)
+        return
+
+    if state.active_node_id is _guidance.GuideNode.ARCHIVE:
+        with st.container(key="sample_guide_archive_card", border=True):
+            _render_guide_step_heading(_guidance.GuideNode.ARCHIVE)
+            checkpoint = pd.DataFrame(
+                [
+                    {
+                        t("guide.archive_record_column"): t("guide.archive_supported_label"),
+                        t("guide.archive_value_column"): t("guide.archive_supported_value"),
+                    },
+                    {
+                        t("guide.archive_record_column"): t("guide.archive_limit_label"),
+                        t("guide.archive_value_column"): t("guide.archive_limit_value"),
+                    },
+                    {
+                        t("guide.archive_record_column"): t("guide.archive_next_label"),
+                        t("guide.archive_value_column"): t("guide.archive_next_value"),
+                    },
+                ]
+            )
+            st.dataframe(checkpoint, width="stretch", hide_index=True)
+            st.caption(t("guide.archive_checkpoint_boundary"))
+            if st.button(
+                t("guide.finish_button"),
+                key="sample_guide_finish",
+                type="primary",
+                use_container_width=True,
+            ):
+                _dispatch_guidance_event(_guidance.GuidanceEventType.ARCHIVE_CREATED)
+                _request_sample_workspace_restore()
+                st.session_state[_GUIDE_COMPLETION_NOTICE_KEY] = True
+                st.rerun()
+            _exit_active_sample_guide(_guidance.GuideNode.ARCHIVE)
 
 
 # ---------------------------------------------------------------------------
@@ -69897,6 +70348,7 @@ def main() -> None:
     )
     _inject_desktop_readability_css()
     _ensure_language_state()
+    _apply_pending_guide_workspace_restore()
 
     # Language selector at the top of the sidebar. The widget's ``key="lang"``
     # writes directly to ``st.session_state["lang"]``, which the ``t()`` helper
@@ -69969,20 +70421,28 @@ def main() -> None:
     help_surface_active = render_persistent_help_surface(help_state)
 
     if not help_surface_active:
-        # Dismissible onboarding banner with one-click "Run with sample data" button.
-        render_onboarding_banner()
-
-        # Tutorial before analysis
-        show_tutorial()
+        # The optional guide landing owns the first page so source and
+        # estimator controls do not compete with the initial route decision.
+        if render_onboarding_banner():
+            return
 
     core = load_core_namespace()
-    data = read_input_data(core)
+    guidance_state = _get_guidance_state()
+    guide_sample_only = bool(
+        guidance_state.lifecycle is _guidance.GuideLifecycle.ACTIVE
+        and guidance_state.route_id is _guidance.GuideRoute.SAMPLE
+        and guidance_state.active_node_id
+        in {_guidance.GuideNode.DATA_CHECK, _guidance.GuideNode.ESTIMATE}
+    )
+    data = read_input_data(core, guide_sample_only=guide_sample_only)
     if data.empty:
         if not help_surface_active:
             st.info(t("app.no_input_info"))
         return
 
     if not help_surface_active:
+        if render_sample_guide_pre_analysis(data):
+            return
         render_custom_simulation_preview_panel()
     run_facets_mode(core, data, help_surface_active=help_surface_active)
 

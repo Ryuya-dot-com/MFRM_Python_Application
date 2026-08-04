@@ -23,13 +23,30 @@ def test_successful_run_clears_setup_surface_before_results() -> None:
     assert "setup_surface.empty()" in source
 
 
-def test_onboarding_is_action_first_and_supporting_steps_are_collapsed() -> None:
+def test_onboarding_is_a_focused_optional_three_route_landing() -> None:
     source = inspect.getsource(app.render_onboarding_banner)
 
-    assert "onboarding.title" in source
+    assert "guide.start_sample_button" in source
+    assert "guide.start_own_data_button" in source
+    assert "guide.continue_without_button" in source
     assert 'type="primary"' in source
-    assert 'expanded=False' in source
+    assert "return True" in source
+    assert "onboarding.banner_steps" not in source
     assert "guided_first_run_route_table" not in source
+
+    main_source = inspect.getsource(app.main)
+    assert "if render_onboarding_banner():" in main_source
+    assert "show_tutorial()" not in main_source
+
+
+def test_guide_focus_uses_real_cards_without_overlay_or_selector_tour() -> None:
+    source = inspect.getsource(app._inject_desktop_readability_css)
+
+    assert ".st-key-sample_guide_welcome_card" in source
+    assert ".st-key-sample_guide_data_check_card" in source
+    assert "border-inline-start" in source
+    assert "coach-mark" in source
+    assert "position: fixed" not in source
 
 
 def test_result_router_keeps_only_one_primary_action_above_supporting_detail() -> None:

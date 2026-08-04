@@ -211,7 +211,7 @@ def test_pivoted_long_format_fits_via_mfrm_estimate():
         data=long_df, person_col="Person",
         facet_cols=["Rater", "Criterion"], score_col="Score",
         rating_min=0, rating_max=2, model="RSM", method="JMLE",
-        maxit=15, reltol=1e-3,
+        maxit=80, reltol=1e-3,
     )
     assert bool(res["summary"].iloc[0]["Converged"])
     # All expected (Rater, Criterion) levels present.

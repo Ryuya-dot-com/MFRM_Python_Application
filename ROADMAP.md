@@ -23,6 +23,16 @@ The intended workflow is:
 Plan -> Check -> Estimate -> Diagnose -> Stress -> Decide -> Archive
 ```
 
+The active statistical-engine remediation lane is governed separately by the
+self-contained
+[`docs/statistical_engine_remediation_roadmap.html`](docs/statistical_engine_remediation_roadmap.html).
+As of 2026-08-04, G0 output protection and G1 exact identified
+parameterization are complete; S2 inference reconstruction is active.
+Until its release-qualification gate is complete, identification, inference,
+bias-screening, and validation work follows that document's dependency order
+and temporary output-safety boundaries. New estimator scope must not bypass
+those gates.
+
 Every step must remain executable in Python. The Streamlit interface is the
 guided research surface; the statistical and evidence contracts belong in
 testable modules under `mfrm_app/`.

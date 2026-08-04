@@ -27,7 +27,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 from numpy.polynomial.hermite import hermgauss
 from plotly.subplots import make_subplots
-from scipy.optimize import minimize, root_scalar, minimize_scalar
+from scipy.optimize import LinearConstraint, minimize, root_scalar, minimize_scalar
 from scipy.special import logsumexp
 from scipy.stats import chi2, norm as _norm, t as t_dist
 
@@ -42,6 +42,7 @@ from mfrm_app import help_popovers as _help_popovers
 from mfrm_app import help_topics as _help_topics
 from mfrm_app import io_tables as _io_tables
 from mfrm_app import mml_prior_sensitivity as _mml_prior_contract
+from mfrm_app import output_qualification as _output_qualification
 from mfrm_app import preflight as _preflight
 from mfrm_app import privacy as _privacy
 from mfrm_app import readiness as _readiness
@@ -2460,6 +2461,13 @@ def public_beta_limitations_table() -> pd.DataFrame:
             "UserAction": "Report it as bounded GPCM and interpret slopes separately from Rasch severity/difficulty.",
         },
         {
+            "Area": "Statistical output qualification",
+            "PublicBetaStatus": "Remediation hold",
+            "SupportedNow": "Versioned output-qualification matrix with stable reason codes and technical-value retention.",
+            "Boundary": "AIC/AICc/BIC model ranking, automatic recommendations, model-choice LR decisions, and structural covariance claims have not cleared their remediation gates.",
+            "UserAction": "Open output_qualification.csv first; never use a row with PublicConclusionAllowed = False for a public conclusion.",
+        },
+        {
             "Area": "Latent regression",
             "PublicBetaStatus": "Ready with review",
             "SupportedNow": "MML population_formula main effects; population prior SD fixed by default or freely estimated (opt-in, EM engine) with a profile SE/CI; covariate type preview; and EAP/PV outputs.",
@@ -2470,8 +2478,8 @@ def public_beta_limitations_table() -> pd.DataFrame:
             "Area": "Bias / local interaction",
             "PublicBetaStatus": "Ready as screening",
             "SupportedNow": "Selected-pair and all-pair bias tables, heatmaps, summaries, and exports.",
-            "Boundary": "Sparse cells and multiple testing make confirmatory claims risky without design and content evidence.",
-            "UserAction": "Treat flags as review prompts; apply multiplicity and substantive review before strong bias claims.",
+            "Boundary": "Cell outputs are conditional screens; pairwise local measures are withheld until direction and contrast-SE defects clear G3.",
+            "UserAction": "Treat cell flags as review prompts and do not interpret pairwise local-measure output.",
         },
         {
             "Area": "Strict marginal diagnostics",
@@ -2852,14 +2860,14 @@ def mfrmr_020_migration_coverage_table() -> pd.DataFrame:
                 "Hessian; non-GPCM fits return status 'not_applicable'."
             ),
             "NextValidation": (
-                "Read the Fair(M) / Fair(Z) point estimates together with the "
-                "delta-method CIs; if the CI status is 'regularized', cite the "
-                "near-singular Hessian regularization in the manuscript."
+                "Retain Fair(M) / Fair(Z) delta-method values for technical "
+                "audit. Do not report a regularized structural interval as a "
+                "confirmatory CI; wait for full-rank and coverage gates."
             ),
         },
         {
             "mfrmr020Area": "MML observed-information covariance",
-            "PythonStatus": "Ready",
+            "PythonStatus": "Technical only (G1 identified coordinates complete)",
             "PythonEvidence": (
                 "compute_mml_parameter_covariance() evaluates the observed "
                 "Fisher information as the numerical Jacobian of the "
@@ -2868,18 +2876,24 @@ def mfrmr_020_migration_coverage_table() -> pd.DataFrame:
                 "evaluations) and inverts it via eigendecomposition with "
                 "max|lambda| * sqrt(eps) regularization. Status field "
                 "propagates 'ok' / 'regularized' / 'not_applicable' / "
-                "'fallback' to downstream consumers."
+                "'fallback' to downstream consumers, and the S0 qualification "
+                "contract adds rank/coverage reason codes. The optimizer now uses "
+                "exact n-1 step/log-slope coordinates, and parameterization_audit "
+                "records zero artificial coordinate null directions."
             ),
             "Boundary": (
                 "Only computed for MML fits; not available under JMLE because "
                 "the marginal likelihood is not the optimised objective there. "
                 "Person estimates are not in the parameter vector and "
-                "therefore not in the covariance shape."
+                "therefore not in the covariance shape. Rank-deficient or "
+                "regularized covariance is WITHHELD; full numerical rank is "
+                "TECHNICAL_ONLY until interval coverage clears G2."
             ),
             "NextValidation": (
-                "Cite the observed-information identity (Louis, 1982) when "
-                "reporting structural standard errors derived from this "
-                "covariance."
+                "G1 removed the redundant optimization directions and verified "
+                "full fixture rank. Validate conditioning and interval coverage "
+                "at G2 before "
+                "restoring structural SE/CI claims."
             ),
         },
         {
@@ -3191,19 +3205,22 @@ def mfrmr_020_migration_coverage_table() -> pd.DataFrame:
         },
         {
             "mfrmr020Area": "Model-choice guidance (RSM / PCM / GPCM)",
-            "PythonStatus": "Ready",
+            "PythonStatus": "Remediation hold",
             "PythonEvidence": (
                 "compute_model_choice_comparison() refits the two non-current "
-                "models on the same data and returns a comparison bundle: "
+                "models on the same data and retains a technical comparison bundle: "
                 "per-model AIC (Akaike, 1974), BIC (Schwarz, 1978), DeltaIC, "
                 "and Akaike / Schwarz evidence ratios (Burnham & Anderson, "
                 "2002, Eq. 2.10); nested likelihood-ratio chi-square tests "
-                "for RSM in PCM in GPCM (Wilks, 1938); and a tiered "
-                "recommendation (strong / moderate / weak / tie) keyed on "
-                "the BIC gap to the second-best candidate. The Report tab "
-                "exposes the comparison behind a Run-on-demand button (the "
+                "for RSM in PCM in GPCM (Wilks, 1938); and the former tiered "
+                "ranking as technical_recommendation for regression auditing. "
+                "The public recommendation is fail-closed and LR p/decision "
+                "columns are hidden from the Report tab. The Report tab "
+                "runs the technical comparison behind an on-demand button (the "
                 "refit cost is paid once per result and cached in "
-                "session_state). The math contract is pinned in "
+                "session_state), then reapplies the active qualification contract "
+                "at render time so stale cache entries cannot restore guidance. "
+                "The numerical regression contract is pinned in "
                 "tests/test_model_choice_guidance.py (DeltaIC = 0 at the "
                 "minimum, evidence ratio closed form, LR chi-square = "
                 "2 * (LL_alt - LL_null), scipy parity on p-values, and "
@@ -3211,23 +3228,20 @@ def mfrmr_020_migration_coverage_table() -> pd.DataFrame:
                 "data)."
             ),
             "Boundary": (
-                "AIC / BIC and the LR test are evaluated on the same data, "
-                "same method, and the same identification constraints. Runs "
+                "G1 now supplies identified parameter counts, but MODEL-001 and "
+                "MODEL-002 comparison-scope gates remain open. AIC/AICc/BIC, "
+                "deltas, weights, and LR quantities are technical-only; no "
+                "preferred-model or retain/reject conclusion is permitted. Runs "
                 "with anchors, latent-regression / population-formula "
                 "terms, or facet regularization are refused with an "
                 "explanatory reason because their likelihoods are not "
-                "directly comparable on a common scale; rerun the comparison "
-                "on the unanchored / unregularized data set when needed. "
-                "BIC favours parsimony more strongly than AIC; when the two "
-                "criteria disagree, the recommendation reads on BIC first "
-                "and downgrades the tier to weak / tie when the gap is "
-                "small."
+                "directly comparable on a common scale. Raw values remain in "
+                "the qualified technical CSV only for audit and migration."
             ),
             "NextValidation": (
-                "Re-run with anchors / regularization disabled before using "
-                "the recommendation in a manuscript; cross-check the "
-                "DeltaAIC / DeltaBIC against a stand-alone refit pair if "
-                "the two criteria disagree."
+                "Use the G1 identified K, then validate comparison eligibility "
+                "at G2. Calibrate any GPCM-involving LR route "
+                "separately before restoring public p-values or recommendations."
             ),
         },
         {
@@ -4146,6 +4160,62 @@ def center_sum_zero(x: np.ndarray):
     return x - np.mean(x)
 
 
+def expand_sum_zero_free(free: np.ndarray, full_size: int) -> np.ndarray:
+    """Expand ``full_size - 1`` coordinates to an exact sum-zero vector.
+
+    The final coordinate is derived as the negative sum of the free block.  In
+    contrast to centring a redundant ``full_size`` block, this parameterization
+    has no artificial null direction in the optimizer or observed information.
+    """
+    full_size = int(full_size)
+    if full_size < 0:
+        raise ValueError("full_size must be non-negative.")
+    free = np.asarray(free, dtype=float).reshape(-1)
+    expected = max(full_size - 1, 0)
+    if free.size != expected:
+        raise ValueError(
+            f"Expected {expected} free sum-zero coordinate(s) for full_size={full_size}, "
+            f"got {free.size}."
+        )
+    if full_size == 0:
+        return np.array([], dtype=float)
+    if full_size == 1:
+        return np.array([0.0], dtype=float)
+    return np.concatenate([free, [-float(np.sum(free))]])
+
+
+def sum_zero_free_from_expanded(expanded: np.ndarray) -> np.ndarray:
+    """Return free coordinates for an arbitrary vector after sum-zero centring."""
+    expanded = np.asarray(expanded, dtype=float).reshape(-1)
+    if expanded.size <= 1:
+        return np.array([], dtype=float)
+    return center_sum_zero(expanded)[:-1]
+
+
+def sum_zero_expansion_matrix(full_size: int) -> np.ndarray:
+    """Jacobian mapping free coordinates to an expanded sum-zero vector."""
+    full_size = int(full_size)
+    if full_size < 0:
+        raise ValueError("full_size must be non-negative.")
+    free_size = max(full_size - 1, 0)
+    if full_size == 0:
+        return np.zeros((0, 0), dtype=float)
+    if free_size == 0:
+        return np.zeros((full_size, 0), dtype=float)
+    out = np.zeros((full_size, free_size), dtype=float)
+    out[:free_size, :] = np.eye(free_size)
+    out[-1, :] = -1.0
+    return out
+
+
+def collapse_sum_zero_gradient(full_grad: np.ndarray) -> np.ndarray:
+    """Apply the exact sum-zero expansion Jacobian transpose to a gradient."""
+    full_grad = np.asarray(full_grad, dtype=float).reshape(-1)
+    if full_grad.size <= 1:
+        return np.array([], dtype=float)
+    return full_grad[:-1] - full_grad[-1]
+
+
 def build_facet_constraint(levels, anchors=None, groups=None, group_values=None, centered=True):
     lvl = [str(x) for x in levels]
     anchors_vec = np.full(len(lvl), np.nan, dtype=float)
@@ -4716,6 +4786,7 @@ def compute_population_mu(params, config):
 
 def build_param_sizes(config):
     n_steps = max(config["n_cat"] - 1, 0)
+    n_step_free = max(n_steps - 1, 0)
     sizes = OrderedDict()
     sizes["theta"] = config["theta_spec"]["n_params"] if config["method"] == "JMLE" else 0
     pop = config.get("population_model", {})
@@ -4723,17 +4794,20 @@ def build_param_sizes(config):
     for facet in config["facet_names"]:
         sizes[facet] = config["facet_specs"][facet]["n_params"]
     if config["model"] == "RSM":
-        sizes["steps"] = n_steps
+        sizes["steps"] = n_step_free
     elif config["model"] in {"PCM", "GPCM"}:
         if not config.get("step_facet") or config["step_facet"] not in config["facet_names"]:
             raise ValueError(f"{config['model']} requires a valid step facet.")
-        sizes["steps"] = len(config["facet_levels"][config["step_facet"]]) * n_steps
+        sizes["steps"] = len(config["facet_levels"][config["step_facet"]]) * n_step_free
         if config["model"] == "GPCM":
             if not config.get("slope_facet") or config["slope_facet"] not in config["facet_names"]:
                 raise ValueError("GPCM requires a valid slope facet.")
             if config["slope_facet"] != config["step_facet"]:
                 raise ValueError("This bounded GPCM implementation requires slope_facet == step_facet.")
-            sizes["log_slopes"] = len(config["facet_levels"][config["slope_facet"]])
+            sizes["log_slopes"] = max(
+                len(config["facet_levels"][config["slope_facet"]]) - 1,
+                0,
+            )
     else:
         raise ValueError("Model must be one of: RSM, PCM, GPCM.")
     return sizes
@@ -4764,22 +4838,30 @@ def expand_params(par, sizes, config):
         facets[facet] = expand_facet_with_constraints(parts[facet], config["facet_specs"][facet])
 
     if config["model"] == "RSM":
-        steps = center_sum_zero(parts["steps"])
+        steps = expand_sum_zero_free(parts["steps"], max(config["n_cat"] - 1, 0))
         steps_mat = None
     else:
         n_levels = len(config["facet_levels"][config["step_facet"]])
         n_steps = max(config["n_cat"] - 1, 0)
+        n_step_free = max(n_steps - 1, 0)
         if n_levels == 0 or n_steps == 0:
             steps_mat = np.zeros((n_levels, n_steps))
         else:
-            steps_mat = np.array(parts["steps"], dtype=float).reshape((n_levels, n_steps))
-            steps_mat = np.vstack([center_sum_zero(row) for row in steps_mat])
+            free_mat = np.array(parts["steps"], dtype=float).reshape((n_levels, n_step_free))
+            steps_mat = np.vstack([
+                expand_sum_zero_free(row, n_steps)
+                for row in free_mat
+            ])
         steps = None
 
     log_slopes = np.array([], dtype=float)
     slopes = np.array([], dtype=float)
     if config["model"] == "GPCM":
-        log_slopes = center_sum_zero(np.asarray(parts.get("log_slopes", []), dtype=float))
+        n_slope_levels = len(config["facet_levels"][config["slope_facet"]])
+        log_slopes = expand_sum_zero_free(
+            np.asarray(parts.get("log_slopes", []), dtype=float),
+            n_slope_levels,
+        )
         slopes = np.exp(log_slopes)
 
     return {
@@ -4794,7 +4876,7 @@ def expand_params(par, sizes, config):
 
 
 def build_optimizer_bounds(sizes, config):
-    """Bounds used by slope-aware GPCM optimization."""
+    """Box bounds for free optimizer coordinates."""
     bounds = []
     log_slope_bounds = tuple(config.get("gpcm_log_slope_bounds", (-3.0, 3.0)))
     for name, k in sizes.items():
@@ -4803,6 +4885,103 @@ def build_optimizer_bounds(sizes, config):
         else:
             bounds.extend([(None, None)] * int(k))
     return bounds if bounds else None
+
+
+def build_optimizer_constraints(sizes, config):
+    """Linear constraints that keep every expanded GPCM log-slope bounded.
+
+    The first ``L - 1`` log-slopes are free and box-bounded.  The last is
+    ``-sum(free)``; this constraint applies the same configured bounds to that
+    derived coordinate without shrinking the feasible identified parameter
+    space.
+    """
+    if config.get("model") != "GPCM" or int(sizes.get("log_slopes", 0)) <= 0:
+        return []
+    lower, upper = tuple(config.get("gpcm_log_slope_bounds", (-3.0, 3.0)))
+    if not (np.isfinite(lower) and np.isfinite(upper) and float(lower) < float(upper)):
+        raise ValueError("gpcm_log_slope_bounds must be finite and strictly increasing.")
+    slices = _build_param_slices(sizes)
+    row = np.zeros(int(sum(sizes.values())), dtype=float)
+    row[slices["log_slopes"]] = 1.0
+    return [LinearConstraint(row, -float(upper), -float(lower))]
+
+
+def optimizer_method_and_options(sizes, config, maxiter, gtol, ftol):
+    """Select an optimizer compatible with the identified bounded space."""
+    # The exact n-1 coordinates remove flat directions, so a loose relative
+    # objective stop can otherwise fire while the transformed gradient still
+    # has visible movement.  Keep the user's gradient tolerance but cap the
+    # objective tolerance at a numerically modest 1e-9.
+    effective_ftol = min(float(ftol), 1e-9)
+    if build_optimizer_constraints(sizes, config):
+        return "SLSQP", {"maxiter": int(maxiter), "ftol": effective_ftol}
+    return "L-BFGS-B", {
+        "maxiter": int(maxiter),
+        "gtol": float(gtol),
+        "ftol": effective_ftol,
+    }
+
+
+def build_parameterization_audit(config, sizes, params) -> pd.DataFrame:
+    """Describe identified optimizer blocks and verify expanded constraints."""
+    model = str(config.get("model", ""))
+    n_steps = max(int(config.get("n_cat", 0)) - 1, 0)
+    n_step_levels = (
+        1
+        if model == "RSM"
+        else len(config.get("facet_levels", {}).get(config.get("step_facet"), []))
+    )
+    if model == "RSM":
+        step_matrix = np.asarray(params.get("steps", []), dtype=float).reshape(1, -1)
+    else:
+        step_matrix = np.asarray(
+            params.get("steps_mat", np.zeros((n_step_levels, n_steps))),
+            dtype=float,
+        ).reshape(n_step_levels, n_steps)
+    step_constraint = (
+        float(np.max(np.abs(np.sum(step_matrix, axis=1))))
+        if step_matrix.size
+        else 0.0
+    )
+    step_expanded = int(n_step_levels * n_steps)
+    step_free = int(sizes.get("steps", 0))
+    rows = [{
+        "SchemaVersion": "mfrm_exact_identified_v1",
+        "Block": "step_thresholds",
+        "ExpandedCoordinates": step_expanded,
+        "FreeCoordinates": step_free,
+        "ExpansionRank": step_free,
+        "ArtificialCoordinateNullDirections": 0,
+        "Constraint": "sum(step) = 0 within each step-facet level",
+        "ConstraintMaxAbsResidual": step_constraint,
+        "ExpandedBoundsSatisfied": True,
+        "Status": "PASS" if step_constraint <= 1e-10 else "FAIL",
+        "RoadmapIssueID": "STAT-001",
+    }]
+
+    if model == "GPCM":
+        log_slopes = np.asarray(params.get("log_slopes", []), dtype=float)
+        lower, upper = tuple(config.get("gpcm_log_slope_bounds", (-3.0, 3.0)))
+        slope_constraint = abs(float(np.sum(log_slopes))) if log_slopes.size else 0.0
+        bounds_ok = bool(
+            np.all(log_slopes >= float(lower) - 1e-10)
+            and np.all(log_slopes <= float(upper) + 1e-10)
+        )
+        slope_free = int(sizes.get("log_slopes", 0))
+        rows.append({
+            "SchemaVersion": "mfrm_exact_identified_v1",
+            "Block": "gpcm_log_slopes",
+            "ExpandedCoordinates": int(log_slopes.size),
+            "FreeCoordinates": slope_free,
+            "ExpansionRank": slope_free,
+            "ArtificialCoordinateNullDirections": 0,
+            "Constraint": "sum(log_slope) = 0; every expanded log_slope within configured bounds",
+            "ConstraintMaxAbsResidual": slope_constraint,
+            "ExpandedBoundsSatisfied": bounds_ok,
+            "Status": "PASS" if slope_constraint <= 1e-10 and bounds_ok else "FAIL",
+            "RoadmapIssueID": "STAT-001; STAT-003",
+        })
+    return pd.DataFrame(rows)
 
 
 FACET_REGULARIZATION_PRESET_SDS = {
@@ -8511,7 +8690,7 @@ def mfrm_loglik_jmle_value_grad(par, idx, config, sizes):
             observed_gt = score_k[:, None] > thresholds[None, :]
             prob_gt = np.flip(np.cumsum(np.flip(probs[:, 1:], axis=1), axis=1), axis=1)
             step_full_grad = np.sum(weight[:, None] * (observed_gt - prob_gt), axis=0)
-            grad_parts.append(collapse_centered_gradient(step_full_grad))
+            grad_parts.append(collapse_sum_zero_gradient(step_full_grad))
         elif config["model"] == "PCM":
             step_facet_n = len(config["facet_levels"][config["step_facet"]])
             step_mat_grad = np.zeros((step_facet_n, n_steps), dtype=float)
@@ -8522,7 +8701,10 @@ def mfrm_loglik_jmle_value_grad(par, idx, config, sizes):
                 observed_gt = score_k[rows, None] > thresholds[None, :]
                 prob_gt = np.flip(np.cumsum(np.flip(probs[rows, 1:], axis=1), axis=1), axis=1)
                 step_mat_grad[c_idx, :] = np.sum(weight[rows, None] * (observed_gt - prob_gt), axis=0)
-            grad_parts.append(np.vstack([collapse_centered_gradient(row) for row in step_mat_grad]).reshape(-1))
+            grad_parts.append(np.vstack([
+                collapse_sum_zero_gradient(row)
+                for row in step_mat_grad
+            ]).reshape(-1))
         else:
             step_facet_n = len(config["facet_levels"][config["step_facet"]])
             step_mat_grad = np.zeros((step_facet_n, n_steps), dtype=float)
@@ -8536,7 +8718,10 @@ def mfrm_loglik_jmle_value_grad(par, idx, config, sizes):
                     weight[rows, None] * slope_obs[rows, None] * (observed_gt - prob_gt),
                     axis=0,
                 )
-            grad_parts.append(np.vstack([collapse_centered_gradient(row) for row in step_mat_grad]).reshape(-1))
+            grad_parts.append(np.vstack([
+                collapse_sum_zero_gradient(row)
+                for row in step_mat_grad
+            ]).reshape(-1))
 
     if config["model"] == "GPCM" and sizes.get("log_slopes", 0) > 0:
         slope_idx = idx.get("slope_idx")
@@ -8550,7 +8735,7 @@ def mfrm_loglik_jmle_value_grad(par, idx, config, sizes):
             weights=-weight * slope_obs * (obs_linear - expected_linear),
             minlength=slope_levels,
         )
-        grad_parts.append(collapse_centered_gradient(slope_full_grad))
+        grad_parts.append(collapse_sum_zero_gradient(slope_full_grad))
 
     grad = np.concatenate([g for g in grad_parts if g.size]) if grad_parts else np.array([], dtype=float)
     if grad.size != len(par):
@@ -8645,14 +8830,22 @@ def mfrm_loglik_mml_value_grad(par, idx, config, sizes, quad):
 
 def mfrm_direct_mml(start, idx, config, sizes, quad, maxit=400, reltol=1e-6):
     """Direct analytical-gradient MML optimization."""
+    method, options = optimizer_method_and_options(
+        sizes,
+        config,
+        maxiter=maxit,
+        gtol=reltol,
+        ftol=reltol,
+    )
     opt = minimize(
         mfrm_loglik_mml_value_grad,
         np.array(start, dtype=float, copy=True),
         args=(idx, config, sizes, quad),
         jac=True,
-        method="L-BFGS-B",
+        method=method,
         bounds=build_optimizer_bounds(sizes, config),
-        options={"maxiter": maxit, "gtol": reltol, "ftol": reltol},
+        constraints=build_optimizer_constraints(sizes, config),
+        options=options,
     )
     opt.mml_engine = "direct"
     raw_nll = mfrm_loglik_mml(opt.x, idx, config, sizes, quad)
@@ -9191,13 +9384,15 @@ def compute_model_choice_comparison(res: dict) -> dict:
 
     The bundle keys are:
 
-    * ``available`` (bool) — comparison is reportable
+    * ``available`` (bool) — technical comparison values were computed
     * ``reason`` (str) — only populated when ``available`` is False
     * ``comparison`` (DataFrame) — one row per model with
       ``Model, N, KParams, LogLik, AIC, BIC, DeltaAIC, DeltaBIC,
       AICEvidenceRatio, BICEvidenceRatio, FitStatus``
     * ``lr_tests`` (DataFrame) — nested-pair likelihood-ratio tests
-    * ``recommendation`` (dict) — ``model``, ``tier``, ``rationale``
+    * ``technical_recommendation`` (dict) — retained pre-gate ranking for audit
+    * ``recommendation`` (dict) — fail-closed public recommendation contract
+    * ``qualification`` (DataFrame) — output-level status and stable reason codes
     * ``caveat`` (str) — manuscript-ready caveat about scope
     * ``fit_times`` (dict) — elapsed seconds per refit
 
@@ -9215,6 +9410,8 @@ def compute_model_choice_comparison(res: dict) -> dict:
             "comparison": pd.DataFrame(),
             "lr_tests": pd.DataFrame(),
             "recommendation": {"model": "", "tier": "not_available", "rationale": ""},
+            "technical_recommendation": {"model": "", "tier": "not_available", "rationale": ""},
+            "qualification": pd.DataFrame(),
             "caveat": "",
             "fit_times": {},
         }
@@ -9338,37 +9535,63 @@ def compute_model_choice_comparison(res: dict) -> dict:
     ]]
 
     method_label = str(config.get("method", "")).upper()
+    qualification_items = _output_qualification.model_choice_qualifications(method_label)
+    qualification = pd.DataFrame(_output_qualification.records(qualification_items))
+    qualification_by_id = {
+        item.output_id: item for item in qualification_items
+    }
     lr_tests = _model_choice_lr_tests(model_results)
     if isinstance(lr_tests, pd.DataFrame) and not lr_tests.empty:
-        lr_tests["InferenceScope"] = (
-            "exploratory_screening_jmle"
-            if method_label == "JMLE" else
-            "large_sample_mml_if_quadrature_prior_constraints_aligned"
-        )
-    recommendation = _model_choice_recommend(comparison)
+        lr_output_ids = [
+            f"model_choice.lrt.{str(null).lower()}_{str(alt).lower()}"
+            for null, alt in zip(lr_tests["Null"], lr_tests["Alternative"])
+        ]
+        lr_qualifications = [qualification_by_id[output_id] for output_id in lr_output_ids]
+        lr_tests["OutputID"] = lr_output_ids
+        lr_tests["QualificationStatus"] = [item.status.value for item in lr_qualifications]
+        lr_tests["ReasonCode"] = [item.reason_code.value for item in lr_qualifications]
+        lr_tests["RoadmapIssueID"] = [item.roadmap_issue_id for item in lr_qualifications]
+        lr_tests["PublicConclusionAllowed"] = [
+            item.public_conclusion_allowed for item in lr_qualifications
+        ]
+        lr_tests["InferenceScope"] = "technical_audit_only"
+    technical_recommendation = _model_choice_recommend(comparison)
+    recommendation_qualification = qualification_by_id[
+        "model_choice.automatic_recommendation"
+    ]
+    recommendation = {
+        "model": "",
+        "tier": "withheld",
+        "rationale": recommendation_qualification.user_action,
+        "qualification_status": recommendation_qualification.status.value,
+        "reason_code": recommendation_qualification.reason_code.value,
+        "roadmap_issue_id": recommendation_qualification.roadmap_issue_id,
+        "next_gate": recommendation_qualification.next_gate,
+    }
 
     if method_label == "JMLE":
         lr_scope = (
-            "For JMLE, LR-test p-values are exploratory screening indices because "
-            "person parameters are estimated jointly and GPCM slopes may be on "
-            "bounds; do not report them as confirmatory Wilks tests without "
-            "bootstrap or cross-validation evidence."
+            "For JMLE, automatic model selection and LR decisions are withheld "
+            "because person parameters are estimated jointly and the comparison "
+            "scope has not cleared G2, even though K is now identified."
         )
     else:
         lr_scope = (
-            "For MML, LR-test p-values are large-sample checks only when the "
-            "candidate fits use comparable marginal likelihoods with aligned "
-            "quadrature, prior SD, constraints, and no active boundary solutions."
+            "For MML, LR decisions remain withheld until likelihood comparability, "
+            "regularity, and boundary conditions clear "
+            "the G2 gate; GPCM pairs require separate calibration."
         )
     caveat = (
-        "AIC, AICc, and BIC are evaluated on the same data and method; all "
-        "three penalise model complexity, with BIC favouring parsimony most "
-        "strongly. AICc (Hurvich & Tsai, 1989) is the finite-sample "
-        "correction recommended over AIC when N / K < ~40 (Burnham & "
-        "Anderson, 2002, p. 66); see the AICcRecommended flag in the "
-        f"comparison table. {lr_scope} Refits inherit the original method, "
-        "step facet, and slope facet; differences across runs reflect the "
-        "model term itself, not the optimizer or the data."
+        "AIC, AICc, BIC, their deltas/weights, and LR quantities are retained "
+        "for technical audit only while the G2 comparison-scope gate is open. "
+        "Parameter counts now use identified coordinates, but no preferred-model or "
+        "retain/reject conclusion is permitted. The retained formulas trace "
+        "AICc to Hurvich and Tsai (1989), the delta/weight diagnostics to "
+        "Burnham and Anderson (2002), and the ordinary LR reference to Wilks "
+        "(1938); those citations describe provenance, not output qualification. "
+        f"{lr_scope} Refits inherit "
+        "the original method, step facet, and slope facet. See the "
+        "qualification table and stable reason codes before using any value."
     )
 
     return {
@@ -9377,6 +9600,8 @@ def compute_model_choice_comparison(res: dict) -> dict:
         "comparison": comparison,
         "lr_tests": lr_tests,
         "recommendation": recommendation,
+        "technical_recommendation": technical_recommendation,
+        "qualification": qualification,
         "caveat": caveat,
         "fit_times": fit_times,
     }
@@ -9838,11 +10063,14 @@ def _m_step_expected_ll_value_grad(par, idx, config, sizes, quad, post_weights):
             grad_parts.append(collapse_facet_gradient(facet_full_grads[facet], config["facet_specs"][facet]))
     if n_steps > 0:
         if config["model"] == "RSM":
-            grad_parts.append(collapse_centered_gradient(step_grad_full))
+            grad_parts.append(collapse_sum_zero_gradient(step_grad_full))
         else:
-            grad_parts.append(np.vstack([collapse_centered_gradient(row) for row in step_grad_full]).reshape(-1))
+            grad_parts.append(np.vstack([
+                collapse_sum_zero_gradient(row)
+                for row in step_grad_full
+            ]).reshape(-1))
     if config["model"] == "GPCM" and sizes.get("log_slopes", 0) > 0:
-        grad_parts.append(collapse_centered_gradient(log_slope_grad_full))
+        grad_parts.append(collapse_sum_zero_gradient(log_slope_grad_full))
 
     grad = np.concatenate([g for g in grad_parts if g.size]) if grad_parts else np.array([], dtype=float)
     if grad.size != len(par):
@@ -9935,15 +10163,23 @@ def mfrm_em_mml(start, idx, config, sizes, quad, maxit=200, reltol=1e-6):
                 break
         prev_ll = marginal_ll
 
-        # ── M-step (analytical-gradient L-BFGS-B) ──────────────
+        # ── M-step (analytical gradient; constrained for GPCM) ─
+        method, options = optimizer_method_and_options(
+            sizes,
+            config,
+            maxiter=50,
+            gtol=1e-5,
+            ftol=1e-7,
+        )
         opt = minimize(
             _m_step_expected_ll_value_grad,
             par,
             args=(idx, config, sizes, quad, post_weights),
             jac=True,
-            method="L-BFGS-B",
+            method=method,
             bounds=build_optimizer_bounds(sizes, config),
-            options={"maxiter": 50, "gtol": 1e-5, "ftol": 1e-7},
+            constraints=build_optimizer_constraints(sizes, config),
+            options=options,
         )
         par = opt.x
         total_nfev += opt.nfev
@@ -11057,7 +11293,10 @@ def mfrm_estimate(
             "scope": "bounded",
             "step_facet": step_facet,
             "slope_facet": slope_facet,
-            "slope_identification": "positive slopes; centered log slopes; geometric mean slope fixed to 1",
+            "slope_identification": (
+                "positive slopes; L-1 free log slopes with the final coordinate "
+                "derived by exact sum-to-zero; geometric mean slope fixed to 1"
+            ),
             "log_slope_bounds": [-3.0, 3.0],
         }
         config["gpcm_log_slope_bounds"] = (-3.0, 3.0)
@@ -11086,19 +11325,24 @@ def mfrm_estimate(
             )
             mml_engine_resolved = "em"
     config["mml_engine"] = mml_engine_resolved if method == "MML" else None
+    exact_optimizer = "SLSQP" if model == "GPCM" else "L-BFGS-B"
     if method == "JMLE":
-        config["optimizer"] = "L-BFGS-B"
+        config["optimizer"] = (
+            "SLSQP with exact identified coordinates and bounded log slopes"
+            if model == "GPCM"
+            else "L-BFGS-B with exact identified step coordinates"
+        )
     elif mml_engine_resolved == "direct":
-        config["optimizer"] = "Direct MML with analytical-gradient L-BFGS-B"
+        config["optimizer"] = f"Direct MML with analytical-gradient {exact_optimizer}"
     elif mml_engine_resolved == "hybrid":
-        config["optimizer"] = "Hybrid MML: EM warm start + analytical-gradient L-BFGS-B"
+        config["optimizer"] = f"Hybrid MML: EM warm start + analytical-gradient {exact_optimizer}"
     elif mml_engine_resolved == "auto":
         config["optimizer"] = "Auto MML: hybrid first, EM fallback if needed"
     else:
         config["optimizer"] = (
-            "EM with analytical-gradient M-step and free population SD"
+            f"EM with analytical-gradient {exact_optimizer} M-step and free population SD"
             if config.get("estimate_population_sd")
-            else "EM with analytical-gradient L-BFGS-B M-step"
+            else f"EM with analytical-gradient {exact_optimizer} M-step"
         )
 
     constraint_specs = prepare_constraint_specs(
@@ -11116,6 +11360,24 @@ def mfrm_estimate(
     config["anchor_audit"] = anchor_audit
 
     sizes = build_param_sizes(config)
+    n_steps = max(n_cat - 1, 0)
+    n_step_levels = 1 if model == "RSM" else len(facet_levels[step_facet])
+    n_slope_levels = len(facet_levels[slope_facet]) if model == "GPCM" else 0
+    config["parameterization"] = {
+        "schema_version": "mfrm_exact_identified_v1",
+        "step_coordinate": "last_derived_negative_sum",
+        "step_expanded_count": int(n_step_levels * n_steps),
+        "step_free_count": int(sizes.get("steps", 0)),
+        "log_slope_coordinate": (
+            "last_derived_negative_sum_with_expanded_bounds"
+            if model == "GPCM"
+            else "not_applicable"
+        ),
+        "log_slope_expanded_count": int(n_slope_levels),
+        "log_slope_free_count": int(sizes.get("log_slopes", 0)),
+        "optimizer_dimension": int(sum(sizes.values())),
+        "roadmap_issue_ids": ["STAT-001", "STAT-003"],
+    }
     regularization_bundle = prepare_facet_regularization(facet_regularization, config, sizes)
     config["facet_regularization"] = regularization_bundle["runtime"]
     config["facet_regularization_scope"] = regularization_bundle["scope"]
@@ -11124,7 +11386,12 @@ def mfrm_estimate(
     config["facet_regularization_enabled"] = bool(regularization_bundle["enabled"])
     config["facet_regularization_fingerprint"] = regularization_bundle["runtime"].get("fingerprint")
 
-    step_init = np.linspace(-1, 1, max(n_cat - 1, 0)) if n_cat > 1 else np.array([], dtype=float)
+    step_init_expanded = (
+        np.linspace(-1, 1, n_steps)
+        if n_steps > 0
+        else np.array([], dtype=float)
+    )
+    step_init = sum_zero_free_from_expanded(step_init_expanded)
     facet_starts = np.concatenate([np.zeros(sizes[f]) for f in config["facet_names"]]) if config["facet_names"] else np.array([], dtype=float)
     start = np.concatenate([
         np.zeros(sizes["theta"]),
@@ -11136,14 +11403,22 @@ def mfrm_estimate(
 
     fit_start_time = time.perf_counter()
     if method == "JMLE":
+        optimizer_method, optimizer_options = optimizer_method_and_options(
+            sizes,
+            config,
+            maxiter=maxit,
+            gtol=reltol,
+            ftol=reltol,
+        )
         opt = minimize(
             mfrm_loglik_jmle_value_grad,
             start,
             args=(idx, config, sizes),
             jac=True,
-            method="L-BFGS-B",
+            method=optimizer_method,
             bounds=build_optimizer_bounds(sizes, config),
-            options={"maxiter": maxit, "gtol": reltol, "ftol": reltol},
+            constraints=build_optimizer_constraints(sizes, config),
+            options=optimizer_options,
         )
     else:
         quad = make_mml_quadrature(config, quad_points)
@@ -11383,6 +11658,7 @@ def mfrm_estimate(
         "GradientNorm": [getattr(opt, "gradient_norm", np.nan)],
         "ElapsedSeconds": [elapsed_seconds],
     })
+    parameterization_audit = build_parameterization_audit(config, sizes, params)
 
     result = {
         "summary": summary_tbl,
@@ -11408,6 +11684,7 @@ def mfrm_estimate(
         "prep": prep,
         "opt": opt,
         "params": params,
+        "parameterization_audit": parameterization_audit,
         "convergence": convergence_tbl,
         "posterior": posterior_outputs,
         "regularization": {
@@ -13466,9 +13743,14 @@ def evaluate_parameter_recovery(
     n_reps_converged = int(converged_mask.sum())
     if not recovery.empty and "rep" in recovery.columns and n_reps_converged > 0:
         converged_reps = set(rep_overview.loc[converged_mask, "rep"].tolist())
+        recovery["IncludedInSummary"] = recovery["rep"].isin(converged_reps)
+        recovery["SummaryBasis"] = "converged_replicates_only"
         recovery_for_summary = recovery[recovery["rep"].isin(converged_reps)]
         summary_basis = "converged"
     else:
+        if not recovery.empty:
+            recovery["IncludedInSummary"] = True
+            recovery["SummaryBasis"] = "all_completed_no_converged_replicates"
         recovery_for_summary = recovery
         summary_basis = "all_completed" if n_reps_converged == 0 else "converged"
     recovery_summary = _recovery_summarize(recovery_for_summary)
@@ -20925,6 +21207,12 @@ def build_mml_covariance_audit(covariance: dict | None, result: dict | None = No
     condition = float(spectrum.get("ConditionNumber", np.nan))
     rank_def = spectrum.get("RankDeficiency", np.nan)
     regularized_eigs = spectrum.get("RegularizedEigenvalues", np.nan)
+    resolved_rank = int(cov_info.get("rank", spectrum.get("Rank", 0)) or 0)
+    output_qualification = _output_qualification.covariance_qualification(
+        status=status,
+        rank=resolved_rank,
+        param_count=param_count,
+    )
 
     if status == "ok":
         claim_status = "Ready"
@@ -20954,6 +21242,22 @@ def build_mml_covariance_audit(covariance: dict | None, result: dict | None = No
     if np.isfinite(rank_def) and float(rank_def) > 0 and claim_status == "Ready":
         claim_status = "Report with caveat"
 
+    # S0 fail-closed boundary: numerical covariance values remain available
+    # for technical audit, but neither eigenvalue flooring nor full numerical
+    # rank is sufficient evidence for confirmatory SE/CI claims. Coverage is a
+    # separate G2 requirement.
+    if output_qualification.status == _output_qualification.OutputUse.WITHHELD:
+        claim_status = "Do not claim"
+        interpretation += " Public inferential use is withheld by the S0 output-qualification gate."
+        action = output_qualification.user_action
+    elif output_qualification.status == _output_qualification.OutputUse.TECHNICAL_ONLY:
+        claim_status = "Technical only"
+        interpretation += " Numerical full rank does not yet establish interval coverage."
+        action = output_qualification.user_action
+    elif output_qualification.status == _output_qualification.OutputUse.NOT_APPLICABLE:
+        claim_status = "Not applicable"
+        action = output_qualification.user_action
+
     row = {
         "Area": "MML observed-information covariance",
         "Status": status,
@@ -20963,7 +21267,7 @@ def build_mml_covariance_audit(covariance: dict | None, result: dict | None = No
         "FitMethod": str(config.get("method", "")),
         "ParamCount": param_count,
         "AutoParamLimit": int(MML_COVARIANCE_AUTO_MAX_PARAMS),
-        "Rank": int(cov_info.get("rank", spectrum.get("Rank", 0)) or 0),
+        "Rank": resolved_rank,
         "RankDeficiency": rank_def,
         "HessianFinite": bool(spectrum.get("HessianFinite", False)),
         "MinEigenvalue": spectrum.get("MinEigenvalue", np.nan),
@@ -20979,6 +21283,13 @@ def build_mml_covariance_audit(covariance: dict | None, result: dict | None = No
         "Detail": detail,
         "Interpretation": interpretation,
         "RecommendedAction": action,
+        "QualificationSchemaVersion": output_qualification.schema_version,
+        "QualificationStatus": output_qualification.status.value,
+        "ReasonCode": output_qualification.reason_code.value,
+        "RoadmapIssueID": output_qualification.roadmap_issue_id,
+        "NextGate": output_qualification.next_gate,
+        "RawTechnicalExportAllowed": output_qualification.raw_technical_export_allowed,
+        "PublicConclusionAllowed": output_qualification.public_conclusion_allowed,
     }
     return pd.DataFrame([row])
 
@@ -21866,6 +22177,21 @@ def annotate_measure_uncertainty(measures, res, obs_df=None, *, ci_level=0.95):
                 covariance_audit.iloc[0].get("ConditionNumber", np.nan)
                 if isinstance(covariance_audit, pd.DataFrame) and not covariance_audit.empty
                 else np.nan
+            ),
+            "QualificationStatus": (
+                str(covariance_audit.iloc[0].get("QualificationStatus", "WITHHELD"))
+                if isinstance(covariance_audit, pd.DataFrame) and not covariance_audit.empty
+                else "WITHHELD"
+            ),
+            "ReasonCode": (
+                str(covariance_audit.iloc[0].get("ReasonCode", "stat.stat_003.covariance_unavailable"))
+                if isinstance(covariance_audit, pd.DataFrame) and not covariance_audit.empty
+                else "stat.stat_003.covariance_unavailable"
+            ),
+            "PublicConclusionAllowed": (
+                bool(covariance_audit.iloc[0].get("PublicConclusionAllowed", False))
+                if isinstance(covariance_audit, pd.DataFrame) and not covariance_audit.empty
+                else False
             ),
         })
     return out, {
@@ -23567,8 +23893,9 @@ $\\log \\sum \\exp(a_m) = \\max(\\mathbf{a}) + \\log \\sum \\exp(a_m - \\max(\\m
 
 $$\\ell_{\\text{JMLE}}(\\theta, \\beta, \\tau) = \\sum_i \\ell_i$$
 
-All person and facet parameters are estimated simultaneously
-by maximising $\\ell_{\\text{JMLE}}$ via analytical-gradient L-BFGS-B.
+All person and facet parameters are estimated simultaneously using analytical
+gradients. RSM/PCM use L-BFGS-B; bounded GPCM uses SLSQP because the final
+identified log-slope is subject to an explicit linear bound constraint.
 
 **Marginal log-likelihood (MML):**
 
@@ -23602,8 +23929,9 @@ $$r_{jq} = \\frac{w_q \\cdot L(\\mathbf{x}_j \\mid \\theta_q,\\, \\delta^{(t)})}
 
 $$Q(\\delta \\mid \\delta^{(t)}) = \\sum_j \\sum_q r_{jq} \\cdot \\log L(\\mathbf{x}_j \\mid \\theta_q,\\, \\delta)$$
 
-w.r.t. $\\delta = (\\beta, \\tau)$ using analytical-gradient L-BFGS-B. This separates the
-person parameters from the optimisation, reducing the
+w.r.t. $\\delta = (\\beta, \\tau)$ using the same analytical-gradient optimizer
+contract (L-BFGS-B for RSM/PCM; constrained SLSQP for bounded GPCM). This
+separates the person parameters from the optimisation, reducing the
 dimensionality.
 
 **Convergence** — The marginal log-likelihood $\\ell_{\\text{MML}}$
@@ -23631,8 +23959,13 @@ deviation for each person.
 - **Sum-to-zero**: For each facet,
   $\\sum_l \\beta_{f,l} = 0$ (one parameter is determined by the
   rest).
-- **Step centering**: $\\sum_j \\tau_j = 0$ (RSM) or
-  $\\sum_j \\tau_{c,j} = 0$ per level (PCM).
+- **Exact step coordinates**: optimise only $K-2$ free step coordinates and
+  derive the final coordinate as their negative sum, so
+  $\\sum_j \\tau_j = 0$ (RSM) or $\\sum_j \\tau_{c,j} = 0$ per level (PCM/GPCM)
+  without a redundant optimizer direction.
+- **GPCM slope coordinates**: optimise $L-1$ log-slopes, derive the final
+  log-slope as their negative sum, and constrain every expanded log-slope to
+  the configured bounds. Thus the geometric mean discrimination is exactly 1.
 - **Anchoring**: Specific levels can be fixed to known values,
   reducing the free parameter count.
 - **Grouping**: Subsets of levels can be constrained to a
@@ -23657,7 +23990,7 @@ software does and how this app relates.
 |---|---|---|---|---|---|---|
 | **Estimation** | JMLE | EM (Bock & Aitkin, 1981) | JMLE | EM (MML) | EM (MML) | Laplace / adaptive GHQ |
 | **Person params** | Fixed effects | Random (integrated out) | Fixed effects | Random | Random | Random |
-| **Optimizer** | Analytical-gradient L-BFGS-B | Analytical-gradient L-BFGS-B within M-step | Newton-Raphson | Newton-Raphson | Newton-Raphson | L-BFGS |
+| **Optimizer** | Analytical-gradient L-BFGS-B (RSM/PCM) or constrained SLSQP (GPCM) | Same contract within M-step | Newton-Raphson | Newton-Raphson | Newton-Raphson | L-BFGS |
 | **Response model** | Adjacent-category (RSM/PCM) | Adjacent-category (RSM/PCM) | Adjacent-category (RSM/PCM) | Adjacent-category | Adjacent-category | **Cumulative** logit |
 | **Multi-facet** | Yes; arbitrary facets | Yes; arbitrary facets | Yes; arbitrary facets | Yes; via design matrix | Yes; via design matrix | Yes; as fixed/random effects |
 | **Sufficient statistics** | Yes; implicit via full likelihood | No | Yes; directly exploited | No | No | No |
@@ -23688,8 +24021,8 @@ bias diagnostics where it is narrower than these packages.
 Both use JMLE with all parameters as fixed effects. FACETS
 uses PROX for initial values and directly exploits sufficient
 statistics (total scores) in Newton-Raphson updates. This app
-uses analytical-gradient L-BFGS-B on the full log-likelihood, which is mathematically
-equivalent but computationally different. Results should be
+uses analytical-gradient L-BFGS-B on the RSM/PCM full log-likelihood, which is
+mathematically equivalent but computationally different. Results should be
 very close; small differences arise from convergence criteria
 and numerical precision.
 
@@ -25114,6 +25447,75 @@ def build_evidence_contract_text_assets(
     return assets
 
 
+def build_output_qualification_table(
+    result: dict | None,
+    diagnostics: dict | None = None,
+    *,
+    bias_present: bool = False,
+) -> pd.DataFrame:
+    """Build the active fail-closed output matrix for UI and every export path."""
+    result_dict = result if isinstance(result, dict) else {}
+    config = result_dict.get("config", {})
+    if not isinstance(config, dict):
+        config = {}
+    items = list(
+        _output_qualification.model_choice_qualifications(config.get("method"))
+    )
+
+    covariance_status = (
+        "not_applicable"
+        if str(config.get("method", "")).upper() != "MML"
+        else "not_available"
+    )
+    covariance_rank = 0
+    covariance_param_count = 0
+    diagnostics_dict = diagnostics if isinstance(diagnostics, dict) else {}
+    uncertainty = diagnostics_dict.get("uncertainty", {})
+    if isinstance(uncertainty, dict):
+        covariance_audit = uncertainty.get("covariance_audit", pd.DataFrame())
+        if isinstance(covariance_audit, pd.DataFrame) and not covariance_audit.empty:
+            covariance_row = covariance_audit.iloc[0]
+            covariance_status = covariance_row.get("Status", covariance_status)
+            covariance_rank = covariance_row.get("Rank", 0)
+            covariance_param_count = covariance_row.get("ParamCount", 0)
+    items.append(
+        _output_qualification.covariance_qualification(
+            status=covariance_status,
+            rank=covariance_rank,
+            param_count=covariance_param_count,
+        )
+    )
+    if bias_present:
+        items.append(_output_qualification.bias_pairwise_qualification())
+    return pd.DataFrame(_output_qualification.records(items))
+
+
+def qualify_likelihood_information_table(
+    frame: pd.DataFrame | None,
+    qualification_table: pd.DataFrame,
+) -> pd.DataFrame:
+    """Attach the IC qualification directly to retained technical values."""
+    if not isinstance(frame, pd.DataFrame) or frame.empty:
+        return pd.DataFrame()
+    out = frame.copy()
+    if not isinstance(qualification_table, pd.DataFrame) or qualification_table.empty:
+        return out
+    rows = qualification_table.loc[
+        qualification_table["OutputID"].eq("model_choice.information_criteria")
+    ]
+    if rows.empty:
+        return out
+    row = rows.iloc[0]
+    for column in (
+        "QualificationStatus",
+        "ReasonCode",
+        "RoadmapIssueID",
+        "PublicConclusionAllowed",
+    ):
+        out[column] = row[column]
+    return out
+
+
 def build_result_bundle_frames(
     result: dict,
     diagnostics: dict,
@@ -25134,13 +25536,31 @@ def build_result_bundle_frames(
     helper can serialise directly.
     """
     frames: dict[str, pd.DataFrame] = {}
-    if not isinstance(result, dict):
+    if not isinstance(result, dict) or not result:
         return frames
+    bias_present = (
+        (isinstance(all_bias_results, dict) and bool(all_bias_results))
+        or (isinstance(bias_results, dict) and bool(bias_results))
+    )
+    qualification_table = build_output_qualification_table(
+        result,
+        diagnostics,
+        bias_present=bias_present,
+    )
     summary = result.get("summary")
     _frame_bundle.add_frame(frames, "summary", summary)
+    _frame_bundle.add_frame(
+        frames,
+        "parameterization_audit",
+        result.get("parameterization_audit"),
+    )
     likelihood_info = result.get("likelihood_information")
     if not isinstance(likelihood_info, pd.DataFrame) or likelihood_info.empty:
         likelihood_info = build_likelihood_information_criteria(result)
+    likelihood_info = qualify_likelihood_information_table(
+        likelihood_info,
+        qualification_table,
+    )
     _frame_bundle.add_frame(frames, "likelihood_information_criteria", likelihood_info)
     regularization = result.get("regularization", {})
     if isinstance(regularization, dict):
@@ -25490,6 +25910,11 @@ def build_result_bundle_frames(
             _frame_bundle.add_frame(frames, "bias", tbl)
             dff_tbl = build_dff_bias_screening_table(bias_results)
             _frame_bundle.add_frame(frames, "dff_bias_screening", dff_tbl)
+    _frame_bundle.add_frame(
+        frames,
+        "output_qualification",
+        qualification_table,
+    )
     if frames:
         method_ref_audit = _standalone_export_rows(
             build_method_reference_audit(),
@@ -30699,6 +31124,13 @@ def render_run_history_panel() -> None:
     if not history:
         return
 
+    history_qualification = build_output_qualification_table(
+        {"config": {"method": "JMLE"}},
+    )
+    history_ic_row = history_qualification.loc[
+        history_qualification["OutputID"].eq("model_choice.information_criteria")
+    ].iloc[0]
+
     with st.expander(
         f"Run history ({len(history)} run{'s' if len(history) > 1 else ''})",
         expanded=False,
@@ -30740,15 +31172,24 @@ def render_run_history_panel() -> None:
             for col in ["LogLik", "AIC", "BIC"]:
                 if col in compact_history.columns:
                     compact_history[col] = pd.to_numeric(compact_history[col], errors="coerce").round(3)
+            compact_history["QualificationStatus"] = str(
+                history_ic_row["QualificationStatus"]
+            )
+            compact_history["ReasonCode"] = str(history_ic_row["ReasonCode"])
         st.dataframe(compact_history, width="stretch", hide_index=True)
 
         likelihood_history = build_run_history_likelihood_table(history)
         if isinstance(likelihood_history, pd.DataFrame) and not likelihood_history.empty:
+            likelihood_history = qualify_likelihood_information_table(
+                likelihood_history,
+                history_qualification,
+            )
             with st.expander("Maximized likelihood / information criteria across run history", expanded=False):
                 st.caption(
-                    "Use these descriptively unless runs share the same response rows, score map, "
-                    "missing-data rule, likelihood definition, and identification constraints. "
-                    "AIC/BIC are lower-is-better; LogLik is higher-is-better."
+                    "Technical audit only while the G2 comparison-scope gate is open. "
+                    "K uses identified coordinates; AIC/BIC values and their "
+                    "deltas must not be used to rank runs or select a model; keep the exported "
+                    "qualification status and reason code attached."
                 )
                 display_cols = [
                     c for c in [
@@ -30757,6 +31198,7 @@ def render_run_history_panel() -> None:
                         "PenalizedObjective", "AIC", "BIC",
                         "DeltaAIC", "DeltaBIC", "DeltaDeviance",
                         "LogLikPerObs", "AICPerObs", "BICPerObs", "ComparableIC",
+                        "QualificationStatus", "ReasonCode", "PublicConclusionAllowed",
                     ] if c in likelihood_history.columns
                 ]
                 st.dataframe(likelihood_history[display_cols].round(4), width="stretch", hide_index=True)
@@ -30973,6 +31415,13 @@ def render_comparison_panel(snap_a: dict, snap_b: dict) -> None:
             {"timestamp": "Run B", "output_snapshot": snap_b},
         ])
         if isinstance(likelihood_cmp, pd.DataFrame) and not likelihood_cmp.empty:
+            comparison_qualification = build_output_qualification_table(
+                {"config": {"method": "JMLE"}},
+            )
+            likelihood_cmp = qualify_likelihood_information_table(
+                likelihood_cmp,
+                comparison_qualification,
+            )
             metric_cols = [
                 c for c in [
                         "Timestamp", "Model", "Method", "N", "KParams",
@@ -30980,15 +31429,16 @@ def render_comparison_panel(snap_a: dict, snap_b: dict) -> None:
                         "PenalizedObjective", "AIC", "BIC",
                         "DeltaAIC", "DeltaBIC", "DeltaDeviance",
                         "LogLikPerObs", "AICPerObs", "BICPerObs", "ComparableIC",
+                        "QualificationStatus", "ReasonCode", "PublicConclusionAllowed",
                     ] if c in likelihood_cmp.columns
                 ]
             if any(pd.to_numeric(likelihood_cmp.get(c, pd.Series(dtype=float)), errors="coerce").notna().any()
                    for c in ["LogLik", "AIC", "BIC"]):
                 st.markdown("#### Maximized likelihood / information criteria")
                 st.caption(
-                    "Compare AIC/BIC/LRT-style likelihood quantities only when both runs use the same "
-                    "response rows, score map, missing-data rule, likelihood definition, constraints, "
-                    "and regularization settings."
+                    "Technical audit only while the G2 comparison-scope gate is open. "
+                    "K uses identified coordinates; do not use AIC/BIC, their "
+                    "deltas, or LRT-style quantities to rank these runs or select a model."
                 )
                 st.dataframe(likelihood_cmp[metric_cols].round(4), width="stretch", hide_index=True)
 
@@ -38276,13 +38726,16 @@ def build_statistical_assumption_audit(
                     evidence += f"; condition number={float(condition):.3g}"
                 if str(claim):
                     evidence += f"; claim status={claim}"
+                reason_code = str(row.get("ReasonCode", ""))
+                if reason_code:
+                    evidence += f"; reason code={reason_code}"
             rows.append({
                 "Area": area,
                 "Status": row.get("Status", "unknown"),
                 "Evidence": evidence,
                 "Implication": row.get("Caution", ""),
                 "RecommendedAction": (
-                    "Report covariance audit condition number, rank, regularization, and fallback status with MML structural SE/CI."
+                    "Do not use structural SE/CI for a public conclusion while the covariance qualification is withheld or technical-only; retain the audit status, rank, condition number, and reason code."
                     if str(area) == "MML observed-information covariance"
                     else "Report SE_Method, SE_Status, CI_Method, and CI_Status with exported measures."
                 ),
@@ -44329,6 +44782,15 @@ def show_convergence_section(result: dict) -> None:
             display[col] = pd.to_numeric(display[col], errors="coerce").round(6)
     st.dataframe(display, width="stretch")
 
+    parameterization_audit = result.get("parameterization_audit", pd.DataFrame())
+    if isinstance(parameterization_audit, pd.DataFrame) and not parameterization_audit.empty:
+        with st.expander(
+            t("estimation_subsections.parameterization_audit_expander"),
+            expanded=False,
+        ):
+            st.caption(t("estimation_subsections.parameterization_audit_caption"))
+            st.dataframe(parameterization_audit, width="stretch", hide_index=True)
+
     _render_population_sd_summary(result)
 
     row = convergence.iloc[0]
@@ -45139,8 +45601,82 @@ def render_model_choice_guidance(result: dict) -> None:
     comparison: pd.DataFrame = bundle["comparison"]
     lr_tests: pd.DataFrame = bundle["lr_tests"]
     recommendation: dict = bundle["recommendation"]
+    qualification = bundle.get("qualification", pd.DataFrame())
+
+    # Session state can hold a bundle computed by an older app revision.
+    # Reapply the active S0 contract at render time so stale cached guidance
+    # cannot revive a public recommendation or unqualified LR decision.
+    render_config = result.get("config", {})
+    if not isinstance(render_config, dict):
+        render_config = {}
+    active_qualification_items = _output_qualification.model_choice_qualifications(
+        render_config.get("method")
+    )
+    active_qualification_by_id = {
+        item.output_id: item for item in active_qualification_items
+    }
+    if not isinstance(qualification, pd.DataFrame) or qualification.empty:
+        qualification = pd.DataFrame(
+            _output_qualification.records(active_qualification_items)
+        )
+    recommendation_item = active_qualification_by_id[
+        "model_choice.automatic_recommendation"
+    ]
+    recommendation = {
+        "model": "",
+        "tier": "withheld",
+        "rationale": recommendation_item.user_action,
+        "qualification_status": recommendation_item.status.value,
+        "reason_code": recommendation_item.reason_code.value,
+        "roadmap_issue_id": recommendation_item.roadmap_issue_id,
+        "next_gate": recommendation_item.next_gate,
+    }
+    if isinstance(lr_tests, pd.DataFrame) and not lr_tests.empty:
+        lr_tests = lr_tests.copy()
+        if "OutputID" not in lr_tests.columns:
+            lr_tests["OutputID"] = [
+                f"model_choice.lrt.{str(null).lower()}_{str(alt).lower()}"
+                for null, alt in zip(lr_tests["Null"], lr_tests["Alternative"])
+            ]
+        lr_items = [
+            active_qualification_by_id[str(output_id)]
+            for output_id in lr_tests["OutputID"]
+        ]
+        lr_tests["QualificationStatus"] = [item.status.value for item in lr_items]
+        lr_tests["ReasonCode"] = [item.reason_code.value for item in lr_items]
+        lr_tests["RoadmapIssueID"] = [item.roadmap_issue_id for item in lr_items]
+        lr_tests["PublicConclusionAllowed"] = [
+            item.public_conclusion_allowed for item in lr_items
+        ]
+
+    reason_codes = (
+        sorted(set(qualification["ReasonCode"].astype(str)))
+        if isinstance(qualification, pd.DataFrame)
+        and not qualification.empty
+        and "ReasonCode" in qualification.columns
+        else []
+    )
+    st.warning(
+        t(
+            "report_tables.model_choice_qualification_warning_template",
+            codes=", ".join(reason_codes),
+        )
+    )
 
     display = comparison.copy()
+    ic_qualification = None
+    if isinstance(qualification, pd.DataFrame) and not qualification.empty:
+        ic_rows = qualification.loc[
+            qualification["OutputID"].eq("model_choice.information_criteria")
+        ]
+        if not ic_rows.empty:
+            ic_qualification = ic_rows.iloc[0]
+    if ic_qualification is not None:
+        display["QualificationStatus"] = str(ic_qualification["QualificationStatus"])
+        display["ReasonCode"] = str(ic_qualification["ReasonCode"])
+        display["PublicConclusionAllowed"] = bool(
+            ic_qualification["PublicConclusionAllowed"]
+        )
     for col in ["LogLik", "AIC", "AICc", "BIC", "N_over_K",
                 "DeltaAIC", "DeltaAICc", "DeltaBIC",
                 "AICEvidenceRatio", "AICcEvidenceRatio", "BICEvidenceRatio",
@@ -45153,10 +45689,13 @@ def render_model_choice_guidance(result: dict) -> None:
     st.markdown("**" + t("report_tables.model_choice_lr_subheader") + "**")
     st.caption(t("report_tables.model_choice_lr_caption"))
     if isinstance(lr_tests, pd.DataFrame) and not lr_tests.empty:
-        lr_display = lr_tests.copy()
-        for col in ["ChiSq", "p"]:
-            if col in lr_display.columns:
-                lr_display[col] = pd.to_numeric(lr_display[col], errors="coerce").round(4)
+        lr_public_columns = [
+            "Null", "Alternative", "QualificationStatus", "ReasonCode",
+            "RoadmapIssueID", "PublicConclusionAllowed",
+        ]
+        lr_display = lr_tests[
+            [column for column in lr_public_columns if column in lr_tests.columns]
+        ].copy()
         st.dataframe(lr_display, width="stretch", hide_index=True)
     else:
         st.info(t("report_tables.model_choice_lr_no_pairs_info"))
@@ -45171,6 +45710,14 @@ def render_model_choice_guidance(result: dict) -> None:
                 rationale=str(recommendation.get("rationale", "")),
             )
         )
+    elif tier == "withheld":
+        st.warning(
+            t(
+                "report_tables.model_choice_recommendation_withheld_template",
+                code=str(recommendation.get("reason_code", "")),
+                gate=str(recommendation.get("next_gate", "G2")),
+            )
+        )
 
     caveat = bundle.get("caveat", "")
     if caveat:
@@ -45179,11 +45726,22 @@ def render_model_choice_guidance(result: dict) -> None:
         )
 
     combined = comparison.copy()
-    combined["_section"] = "model_choice_comparison"
+    if ic_qualification is not None:
+        combined["QualificationStatus"] = str(ic_qualification["QualificationStatus"])
+        combined["ReasonCode"] = str(ic_qualification["ReasonCode"])
+        combined["RoadmapIssueID"] = str(ic_qualification["RoadmapIssueID"])
+        combined["PublicConclusionAllowed"] = bool(
+            ic_qualification["PublicConclusionAllowed"]
+        )
+    combined["_section"] = "technical_model_choice_comparison"
     if isinstance(lr_tests, pd.DataFrame) and not lr_tests.empty:
         lr_combined = lr_tests.copy()
-        lr_combined["_section"] = "model_choice_lr_tests"
+        lr_combined["_section"] = "technical_model_choice_lr_tests"
         combined = pd.concat([combined, lr_combined], ignore_index=True)
+    if isinstance(qualification, pd.DataFrame) and not qualification.empty:
+        qualification_export = qualification.copy()
+        qualification_export["_section"] = "output_qualification"
+        combined = pd.concat([combined, qualification_export], ignore_index=True)
     st.download_button(
         t("report_tables.model_choice_download_button"),
         data=to_csv_bytes(combined),
@@ -45492,13 +46050,27 @@ def _collect_apa_exportable_tables(
     typically emits.
     """
     candidates: dict[str, pd.DataFrame] = {}
+    publication_qualification = build_output_qualification_table(result, diagnostics)
+    if not publication_qualification.empty:
+        candidates["Output qualification"] = publication_qualification
     if isinstance(result, dict):
+        parameterization_audit = result.get("parameterization_audit")
+        if isinstance(parameterization_audit, pd.DataFrame) and not parameterization_audit.empty:
+            candidates["Parameterization audit"] = parameterization_audit
         summary = result.get("summary")
         if isinstance(summary, pd.DataFrame) and not summary.empty:
-            candidates["Estimation summary"] = summary
+            candidates["Estimation summary"] = qualify_likelihood_information_table(
+                summary,
+                publication_qualification,
+            )
         lik_info = result.get("likelihood_information")
         if isinstance(lik_info, pd.DataFrame) and not lik_info.empty:
-            candidates["Likelihood / information criteria"] = lik_info
+            candidates["Likelihood / information criteria"] = (
+                qualify_likelihood_information_table(
+                    lik_info,
+                    publication_qualification,
+                )
+            )
         facets = result.get("facets", {}) if isinstance(result.get("facets"), dict) else {}
         person_tbl = facets.get("person")
         if isinstance(person_tbl, pd.DataFrame) and not person_tbl.empty:
@@ -46044,6 +46616,11 @@ def _render_report_tables(result: dict, diagnostics: dict) -> None:
     likelihood_info = result.get("likelihood_information", pd.DataFrame())
     if not isinstance(likelihood_info, pd.DataFrame) or likelihood_info.empty:
         likelihood_info = build_likelihood_information_criteria(result)
+    report_qualification = build_output_qualification_table(result, diagnostics)
+    likelihood_info = qualify_likelihood_information_table(
+        likelihood_info,
+        report_qualification,
+    )
     if isinstance(likelihood_info, pd.DataFrame) and not likelihood_info.empty:
         st.subheader(t("report_tables.likelihood_info_subheader"))
         st.caption(t("report_tables.likelihood_info_caption"))
@@ -55913,17 +56490,20 @@ def show_bias_section(
     calc_bias_pairwise_fn = core.get("calc_bias_pairwise")
     if calc_bias_pairwise_fn:
         st.subheader(t("bias_interaction.pairwise_subheader"))
-        target_facet = st.selectbox(
-            t("bias_interaction.pairwise_target_label"),
-            [facet_a, facet_b], index=0, key="bias_target_facet",
-            help=t("bias_interaction.pairwise_target_help"),
+        pairwise_qualification = _output_qualification.bias_pairwise_qualification()
+        st.warning(
+            t(
+                "bias_interaction.pairwise_withheld_warning_template",
+                code=pairwise_qualification.reason_code.value,
+                gate=pairwise_qualification.next_gate,
+            )
         )
-        context_facet = facet_b if target_facet == facet_a else facet_a
-        pairwise_tbl = calc_bias_pairwise_fn(bias_results["table"], target_facet, context_facet)
-        if pairwise_tbl.empty:
-            st.info(t("bias_interaction.pairwise_no_results_info"))
-        else:
-            st.dataframe(pairwise_tbl, width="stretch")
+        with st.expander(t("bias_interaction.pairwise_qualification_expander")):
+            st.dataframe(
+                pd.DataFrame(_output_qualification.records([pairwise_qualification])),
+                width="stretch",
+                hide_index=True,
+            )
 
     # Download
     st.download_button(
@@ -57016,6 +57596,7 @@ def main() -> None:
     print("\\nWriting CSV outputs:")
     write_csv("summary", result.get("summary"))
     write_csv("convergence", result.get("convergence"))
+    write_csv("parameterization_audit", result.get("parameterization_audit"))
     write_csv("score_map", result.get("prep", {{}}).get("score_map"))
     write_csv("person_measures", result.get("facets", {{}}).get("person"))
     write_csv("facet_measures", result.get("facets", {{}}).get("others"))
@@ -57328,6 +57909,18 @@ def center_sum_zero(x: np.ndarray) -> np.ndarray:
     return x - np.mean(x) if x.size else x
 
 
+def expand_sum_zero_free(free: np.ndarray, full_size: int) -> np.ndarray:
+    """Expand n-1 free coordinates; derive the final value as -sum(free)."""
+    free = np.asarray(free, dtype=float)
+    if full_size <= 0:
+        return np.array([], dtype=float)
+    if full_size == 1:
+        return np.array([0.0], dtype=float)
+    if free.size != full_size - 1:
+        raise ValueError("sum-zero free-coordinate size mismatch")
+    return np.concatenate([free, [-np.sum(free)]])
+
+
 # ---- Likelihood functions ----
 
 def loglik_rsm(eta, score_k, step_cum, weight=None):
@@ -57388,7 +57981,8 @@ def build_sizes(n_person, facet_level_counts, n_cat, model, step_facet_n,
             m = facet_level_counts[fn]
             sizes[fn] = m if noncenter_facet == fn else max(m - 1, 0)
     n_steps = max(n_cat - 1, 0)
-    sizes["steps"] = n_steps if model == "RSM" else step_facet_n * n_steps
+    n_step_free = max(n_steps - 1, 0)
+    sizes["steps"] = n_step_free if model == "RSM" else step_facet_n * n_step_free
     return sizes
 
 
@@ -57431,12 +58025,13 @@ def unpack(par, sizes, facet_names, noncenter_facet, n_cat, model, step_facet_n,
 
     # Steps
     n_steps = max(n_cat - 1, 0)
+    n_step_free = max(n_steps - 1, 0)
     if model == "RSM":
-        result["steps"] = center_sum_zero(blocks["steps"])
+        result["steps"] = expand_sum_zero_free(blocks["steps"], n_steps)
         result["steps_mat"] = None
     else:
-        mat = blocks["steps"].reshape((step_facet_n, n_steps)) if step_facet_n and n_steps else np.zeros((step_facet_n, n_steps))
-        result["steps_mat"] = np.vstack([center_sum_zero(row) for row in mat])
+        mat = blocks["steps"].reshape((step_facet_n, n_step_free)) if step_facet_n and n_step_free else np.zeros((step_facet_n, n_step_free))
+        result["steps_mat"] = np.vstack([expand_sum_zero_free(row, n_steps) for row in mat]) if step_facet_n else np.zeros((0, n_steps))
         result["steps"] = None
     return result
 
@@ -57709,7 +58304,8 @@ if __name__ == "__main__":
     if DUMMY_FACETS:
         print(f"  Dummy facets (fixed at 0): {{DUMMY_FACETS}}")
 
-    step_init = np.linspace(-1, 1, max(n_cat - 1, 0)) if n_cat > 1 else np.array([])
+    step_init_expanded = np.linspace(-1, 1, max(n_cat - 1, 0)) if n_cat > 1 else np.array([])
+    step_init = step_init_expanded[:-1] if step_init_expanded.size > 1 else np.array([])
     start = np.concatenate([
         np.zeros(sizes["Person"]),
         *[np.zeros(sizes[fc]) for fc in FACET_COLS],
@@ -57977,6 +58573,13 @@ center_sum_zero <- function(x) {{
   x - mean(x)
 }}
 
+expand_sum_zero_free <- function(free, full_size) {{
+  if (full_size <= 0L) return(numeric(0))
+  if (full_size == 1L) return(0)
+  if (length(free) != full_size - 1L) stop("sum-zero free-coordinate size mismatch")
+  c(free, -sum(free))
+}}
+
 expand_block <- function(seg, total, centered) {{
   if (total == 0) return(numeric(0))
   if (!centered) return(seg[1:total])
@@ -58087,7 +58690,8 @@ build_sizes <- function() {{
     }}
   }}
   n_steps <- max(n_cat - 1L, 0L)
-  sizes[["steps"]] <- if (MODEL == "RSM") n_steps else step_facet_n * n_steps
+  n_step_free <- max(n_steps - 1L, 0L)
+  sizes[["steps"]] <- if (MODEL == "RSM") n_step_free else step_facet_n * n_step_free
   sizes
 }}
 
@@ -58117,12 +58721,19 @@ unpack_params <- function(par) {{
     result[[nm]] <- expand_block(blocks[[nm]], total, centered)
   }}
   n_steps <- max(n_cat - 1L, 0L)
+  n_step_free <- max(n_steps - 1L, 0L)
   if (MODEL == "RSM") {{
-    result$steps <- center_sum_zero(blocks$steps)
+    result$steps <- expand_sum_zero_free(blocks$steps, n_steps)
     result$steps_mat <- NULL
   }} else {{
-    mat <- matrix(blocks$steps, nrow = step_facet_n, ncol = n_steps, byrow = TRUE)
-    result$steps_mat <- t(apply(mat, 1, center_sum_zero))
+    if (step_facet_n == 0L) {{
+      result$steps_mat <- matrix(numeric(0), nrow = 0L, ncol = n_steps)
+    }} else if (n_step_free == 0L) {{
+      result$steps_mat <- matrix(0, nrow = step_facet_n, ncol = n_steps)
+    }} else {{
+      mat <- matrix(blocks$steps, nrow = step_facet_n, ncol = n_step_free, byrow = TRUE)
+      result$steps_mat <- t(apply(mat, 1, expand_sum_zero_free, full_size = n_steps))
+    }}
     result$steps <- NULL
   }}
   result
@@ -58146,7 +58757,8 @@ neg_loglik_fn <- function(par) {{
 
 # ── 3. Optimise ─────────────────────────────────────────────────────────────
 n_steps <- max(n_cat - 1L, 0L)
-step_init <- if (n_steps > 0) seq(-1, 1, length.out = n_steps) else numeric(0)
+step_init_expanded <- if (n_steps > 0) seq(-1, 1, length.out = n_steps) else numeric(0)
+step_init <- if (n_steps > 1L) step_init_expanded[1:(n_steps - 1L)] else numeric(0)
 start <- c(
   rep(0, sizes$Person),
   unlist(lapply(FACET_COLS, function(fc) rep(0, sizes[[fc]]))),
@@ -59503,6 +60115,10 @@ def main() -> int:
             summary["TemplateEngine"] = "Python"
         write_frame("python_summary.csv", summary)
         write_frame("python_convergence.csv", result.get("convergence", pd.DataFrame()))
+        write_frame(
+            "python_parameterization_audit.csv",
+            result.get("parameterization_audit", pd.DataFrame()),
+        )
         facets = result.get("facets", {}) if isinstance(result, dict) else {}
         write_frame("python_person_measures.csv", facets.get("person", pd.DataFrame()) if isinstance(facets, dict) else pd.DataFrame())
         write_frame("python_facet_measures.csv", facets.get("others", pd.DataFrame()) if isinstance(facets, dict) else pd.DataFrame())
@@ -59867,13 +60483,31 @@ def collect_download_frames(
         fit_dl = pd.DataFrame()
 
     all_frames: dict[str, pd.DataFrame] = {}
+    download_qualification = build_output_qualification_table(
+        result,
+        diagnostics,
+        bias_present=(
+            (isinstance(all_bias_results, dict) and bool(all_bias_results))
+            or (isinstance(bias_results, dict) and bool(bias_results))
+        ),
+    )
     visual_preferences_dl = build_visualization_preferences_table()
     _frame_bundle.add_frame(all_frames, "visualization_settings", visual_preferences_dl)
     _frame_bundle.add_frame(all_frames, "summary", summary)
+    _frame_bundle.add_frame(
+        all_frames,
+        "parameterization_audit",
+        result.get("parameterization_audit"),
+    )
     likelihood_info_dl = result.get("likelihood_information", pd.DataFrame())
     if not isinstance(likelihood_info_dl, pd.DataFrame) or likelihood_info_dl.empty:
         likelihood_info_dl = build_likelihood_information_criteria(result)
+    likelihood_info_dl = qualify_likelihood_information_table(
+        likelihood_info_dl,
+        download_qualification,
+    )
     _frame_bundle.add_frame(all_frames, "likelihood_information_criteria", likelihood_info_dl)
+    _frame_bundle.add_frame(all_frames, "output_qualification", download_qualification)
     regularization_dl = result.get("regularization", {})
     if isinstance(regularization_dl, dict):
         reg_settings_dl = regularization_dl.get("settings", pd.DataFrame())
@@ -65706,6 +66340,7 @@ def build_demo_report_frames(
     _frame_bundle.add_frames(frames, (
         ("summary", summary),
         ("convergence", convergence),
+        ("parameterization_audit", result.get("parameterization_audit")),
         ("score_map", score_map),
     ))
     publication_gate = _standalone_export_rows(
@@ -67514,17 +68149,19 @@ def _self_test_mml_step_se() -> None:
         bool(np.all(np.isfinite(se_vals)) and np.all(se_vals > 0)),
         "step SEs are not all finite and positive",
     )
-    # Independent check: for RSM the reported steps are center_sum_zero of the
-    # free step block, so the delta-method SE must equal sqrt(diag(C cov C^T))
-    # with C the n x n centring matrix. This route does not touch the
-    # finite-difference path, so agreement confirms the implementation.
+    # Independent check: for RSM the final reported step is derived as the
+    # negative sum of the n-1 optimizer coordinates.  The delta-method SE must
+    # therefore equal sqrt(diag(A cov A^T)), where A is the exact expansion
+    # Jacobian.  This route does not touch the finite-difference path.
     par = _get_opt_par(res)
     sizes = build_param_sizes(res["config"])
     step_slice = _build_param_slices(sizes)["steps"]
     cov_block = np.asarray(cov["cov"], dtype=float)[step_slice, step_slice]
-    n = cov_block.shape[0]
-    centring = np.eye(n) - np.ones((n, n)) / n
-    se_analytic = np.sqrt(np.clip(np.diag(centring @ cov_block @ centring.T), 0.0, None))
+    n_expanded = int(res["config"]["n_cat"]) - 1
+    expansion = sum_zero_expansion_matrix(n_expanded)
+    se_analytic = np.sqrt(
+        np.clip(np.diag(expansion @ cov_block @ expansion.T), 0.0, None)
+    )
     _self_test_assert(
         bool(np.allclose(se_vals, se_analytic, atol=1e-6, rtol=1e-4)),
         f"finite-difference step SE disagrees with analytic centring Jacobian SE: {se_vals} vs {se_analytic}",

@@ -4,6 +4,23 @@ All notable changes to this standalone Streamlit distribution should be recorded
 
 ## Unreleased
 
+- **S1 exact identified parameterization.** Replaced redundant centered step
+  and GPCM log-slope optimizer blocks with `n-1` free coordinates whose final
+  value is derived as the negative sum. RSM, PCM, and bounded GPCM now count
+  identified optimizer dimensions in `KParams`; analytical gradients apply the
+  exact expansion Jacobian. Bounded GPCM uses a linear SLSQP constraint so the
+  derived final log-slope obeys the same configured bounds without narrowing
+  the feasible sum-zero space. Expanded result tables remain compatible, and
+  quick/full/APA/reproduction exports include `parameterization_audit.csv`.
+  Parameter-recovery rows now also record `IncludedInSummary` and
+  `SummaryBasis`, making convergence-based replicate inclusion auditable.
+- **S0 statistical output protection.** Added a versioned, fail-closed output
+  qualification contract with stable remediation reason codes. AIC/AICc/BIC
+  and derived weights remain technical-only; automatic model recommendations,
+  model-choice LR decisions, rank-deficient structural covariance claims, and
+  pairwise bias local measures are withheld. Raw diagnostic values remain in
+  explicitly qualified audit exports, while Report, run-history, comparison,
+  quick-download, full-download, and APA export surfaces carry the same status.
 - **Optional five-step sample guide.** Replaced the overlapping first-run
   banner, static three-step explanation, and always-rendered tutorial with one
   focused landing decision and a session-scoped five-node guide. The guide

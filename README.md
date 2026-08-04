@@ -318,7 +318,8 @@ Implemented in the standalone Python engine:
 - MML observed-information covariance for non-person facet SE/CI when the
   fitted parameter vector is small enough for routine diagnostics
 - MML covariance audit exports with Hessian rank, condition number,
-  eigenvalue regularization, fallback/skip status, and claim status
+  eigenvalue regularization, fallback/skip status, claim status, and the S0
+  output-qualification reason code
 - EAP posterior scoring
 - plausible values
 - strict marginal diagnostics
@@ -330,6 +331,14 @@ Implemented in the standalone Python engine:
   and practical-logit review flags
 - bias-inference audit exports that label conditionality, multiplicity family,
   sparse cells, profile-CI status, and connected-scale caveats
+- versioned `output_qualification.csv` gates that keep unqualified information
+  criteria, automatic model recommendations, LR decisions, structural
+  covariance claims, and pairwise bias measures out of public conclusions while
+  retaining explicitly marked technical values for audit
+- exact identified step and GPCM log-slope optimizer coordinates, with a
+  `parameterization_audit.csv` that preserves expanded public estimates while
+  recording free dimensions, constraint residuals, coordinate rank, and slope
+  bounds
 - anchor audit and linking review
 - anchor drift and equating-chain summaries
 - anchor/equating workflow checklist for current-run linking evidence
@@ -351,29 +360,34 @@ Implemented in the standalone Python engine:
 
 After fitting a model, inspect results in this order:
 
-1. Convergence: do not interpret final measures until the optimizer converges.
-2. SE/CI basis: review `SE_Method`, `SE_Status`, `CI_Method`, and
+1. Output qualification: open `output_qualification.csv`; a
+   `PublicConclusionAllowed = False` row overrides any raw numeric value shown
+   elsewhere in the bundle.
+2. Parameterization: open `parameterization_audit.csv`; require `PASS`, zero
+   artificial coordinate null directions, and satisfied expanded GPCM bounds.
+3. Convergence: do not interpret final measures until the optimizer converges.
+4. SE/CI basis: review `SE_Method`, `SE_Status`, `CI_Method`, and
    `CI_Status`; for MML also review `mml_covariance_audit.csv` before
    using observed-information intervals in prose.
-3. Category functioning: check sparse categories, monotonic average measures, and threshold order.
-4. Reliability / separation: confirm whether the design supports stable person and facet ordering.
-5. Wright map targeting: check whether person locations and facet difficulty/severity ranges overlap.
-6. Fit diagnostics: review large standardized residuals and misfitting elements.
-7. Bias / local interaction: use `bias_inference_audit.csv` with the DFF tables; treat flags as review prompts, not automatic proof of bias.
-8. PCA / dimensionality: check both the residual PCA result and `pca_stability_audit.csv`, including missingness, pairwise overlap, leave-one-column-out, and bootstrap stability.
-9. MML prior SD: for MML reports, state the fixed population prior SD and use the Fit Details prior-SD sensitivity screen, or justify why the fixed scale is part of the design, when population-scale claims matter.
-10. Anchor / linking review: check connectedness and anchor stability before comparing runs or groups.
-11. Strict marginal diagnostics: use for final MML reports when feasible.
-12. Publication gate: check whether APA-style conclusions are ready, caveated, or blocked.
-13. Submission action plan: fix prioritized blockers, caveats, boundaries, and wording repairs before manuscript use.
-14. Case interpretation guidance: review common interpretation traps and safer wording repairs detected in the current run.
-15. Final-report readiness: use the generated checklist before writing conclusions.
-16. Manuscript claim guide: check what is safe to claim, what requires a caveat, and what should not be claimed yet.
-17. Claim-to-evidence matrix: map each manuscript claim to exported tables, figures, diagnostics, caveats, reviewer questions, and archive files.
-18. Method-reference audit: check which APA/Zotero-aligned references support each method surface before writing the literature-backed Methods and Limitations.
-19. Manuscript template: adapt the generated Methods, Results, limitations, and reviewer preflight scaffold after resolving claim-guide cautions.
-20. Visual evidence binder: review figure files, figure-to-claim links, caption drafts, and visual reviewer questions.
-21. Manuscript handoff and binder: download the final-result guide, checklist, and curated writing packet for coauthor review or submission prep.
+5. Category functioning: check sparse categories, monotonic average measures, and threshold order.
+6. Reliability / separation: confirm whether the design supports stable person and facet ordering.
+7. Wright map targeting: check whether person locations and facet difficulty/severity ranges overlap.
+8. Fit diagnostics: review large standardized residuals and misfitting elements.
+9. Bias / local interaction: use `bias_inference_audit.csv` with the DFF tables; treat flags as review prompts, not automatic proof of bias.
+10. PCA / dimensionality: check both the residual PCA result and `pca_stability_audit.csv`, including missingness, pairwise overlap, leave-one-column-out, and bootstrap stability.
+11. MML prior SD: for MML reports, state the fixed population prior SD and use the Fit Details prior-SD sensitivity screen, or justify why the fixed scale is part of the design, when population-scale claims matter.
+12. Anchor / linking review: check connectedness and anchor stability before comparing runs or groups.
+13. Strict marginal diagnostics: use for final MML reports when feasible.
+14. Publication gate: check whether APA-style conclusions are ready, caveated, or blocked.
+15. Submission action plan: fix prioritized blockers, caveats, boundaries, and wording repairs before manuscript use.
+16. Case interpretation guidance: review common interpretation traps and safer wording repairs detected in the current run.
+17. Final-report readiness: use the generated checklist before writing conclusions.
+18. Manuscript claim guide: check what is safe to claim, what requires a caveat, and what should not be claimed yet.
+19. Claim-to-evidence matrix: map each manuscript claim to exported tables, figures, diagnostics, caveats, reviewer questions, and archive files.
+20. Method-reference audit: check which APA/Zotero-aligned references support each method surface before writing the literature-backed Methods and Limitations.
+21. Manuscript template: adapt the generated Methods, Results, limitations, and reviewer preflight scaffold after resolving claim-guide cautions.
+22. Visual evidence binder: review figure files, figure-to-claim links, caption drafts, and visual reviewer questions.
+23. Manuscript handoff and binder: download the final-result guide, checklist, and curated writing packet for coauthor review or submission prep.
 
 The final-report readiness checklist, publication gate, submission action plan,
 first-read guide, manuscript template, and generated report text use the same main thresholds:
@@ -479,10 +493,11 @@ Open `validation/generated/demo_report/manuscript_handoff.md` first, then read
 
 - GPCM is not a strict Rasch model. Its slope parameters change the interpretation of invariance and should be reported explicitly.
 - For RSM/PCM, primary Infit/Outfit ZSTD now uses the FACETS/Wright-Masters fourth-moment d.f., Wilson-Hilferty transform, and an absolute cap of 9. The `DF_*_ENGINE` and `*ZSTD_ENGINE` sidecars preserve the prior homogeneous-variance convention for sensitivity checks. For GPCM, FACETS-primary columns are labelled `facets_style_approximation_for_gpcm`; do not claim exact FACETS equivalence.
-- Measure SE/CI columns now carry method/status metadata. Non-person MML facet SEs use observed-information delta-method covariance when available; otherwise conditional information approximations are labelled as such. MML person SEs are EAP posterior SDs, not structural fixed-effect ML SEs. For MML, archive `mml_covariance_audit.csv` with condition number, rank deficiency, and regularization status.
+- `KParams` now counts exact identified optimizer coordinates, and `parameterization_audit.csv` records the expanded/free dimensions, sum-zero residuals, coordinate rank, and bounded GPCM log-slope check. AIC/AICc/BIC and model-choice LR quantities nevertheless remain technical audit values until the G2 comparison-scope and calibration gates clear. Automatic recommendations remain withheld; GPCM-involving LR pairs must not use an ordinary chi-square decision.
+- Measure SE/CI columns now carry method/status metadata. Non-person MML facet SEs use observed-information delta-method covariance when available; otherwise conditional information approximations are labelled as such. MML person SEs are EAP posterior SDs, not structural fixed-effect ML SEs. Rank-deficient or regularized MML covariance is `WITHHELD`, and even full numerical rank remains `TECHNICAL_ONLY` until interval coverage is validated. Archive `mml_covariance_audit.csv` with its reason code.
 - ADEMP parameter-recovery exports include an explicit SE/CI coverage diagnostic table with `SEBasisRisk` and `CoverageClaimStatus`. Treat it as design-specific Monte Carlo evidence: cite the generator, fit method, replicate count, seed, and SE/CI status before making interval-calibration claims.
 - The current latent regression path uses the app's documented fixed population prior SD behavior. Use the versioned MML prior-SD sensitivity decision before treating population-scale or latent-regression coefficients as robust; do not generalize beyond the implemented quadrature, variance treatment, constraints, and tested SD grid.
-- Bias and differential functioning outputs are conditional screening tools. Report the exported bias-inference audit with DFF tables; do not make no-bias or confirmatory bias claims unless linking, common-scale evidence, sample size, multiplicity review, and precision support that scope.
+- Bias and differential functioning outputs are conditional screening tools. Report the exported bias-inference audit with DFF tables; do not make no-bias or confirmatory bias claims unless linking, common-scale evidence, sample size, multiplicity review, and precision support that scope. Pairwise local-measure output is withheld until its direction and contrast-SE defects clear G3.
 - Residual PCA is a sparse-matrix diagnostic. Use the exported PCA stability audit before making dimensionality claims from eigenvalues or loadings; review leave-one-column-out and bootstrap sensitivity when the first residual component is near EV = 2 or EV = 3.
 - Cross-package equality is not expected by default because FACETS, TAM, sirt, mirt, and this app can use different parameterizations, constraints, latent variance handling, and optimization details.
 - Treat external R cross-check outputs as validation evidence, not as a runtime dependency.

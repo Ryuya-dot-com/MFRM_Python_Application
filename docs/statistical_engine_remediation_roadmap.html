@@ -1,0 +1,895 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>MFRM Python 統計エンジン修正ロードマップ</title>
+  <style>
+    :root {
+      --ink: #18211d;
+      --muted: #5d6862;
+      --paper: #f5f2e9;
+      --surface: #fffdf7;
+      --surface-strong: #ffffff;
+      --line: #d8d3c7;
+      --green: #0f6249;
+      --green-soft: #dcebe3;
+      --navy: #173d52;
+      --navy-soft: #dde8ee;
+      --amber: #9a5b10;
+      --amber-soft: #f6e7c9;
+      --red: #9c332d;
+      --red-soft: #f5deda;
+      --grey-soft: #eceae3;
+      --shadow: 0 18px 55px rgba(35, 45, 39, 0.09);
+      --radius: 22px;
+      --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    }
+
+    * { box-sizing: border-box; }
+
+    html {
+      scroll-behavior: smooth;
+      background: var(--paper);
+    }
+
+    body {
+      margin: 0;
+      overflow-x: hidden;
+      color: var(--ink);
+      background:
+        radial-gradient(circle at 8% 2%, rgba(15, 98, 73, 0.10), transparent 31rem),
+        radial-gradient(circle at 95% 13%, rgba(154, 91, 16, 0.10), transparent 27rem),
+        var(--paper);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Hiragino Sans",
+        "Yu Gothic UI", "Yu Gothic", Meiryo, sans-serif;
+      line-height: 1.72;
+    }
+
+    a { color: var(--green); text-underline-offset: 0.18em; }
+    a:hover { text-decoration-thickness: 2px; }
+    a:focus-visible, summary:focus-visible {
+      outline: 3px solid #e0a33c;
+      outline-offset: 4px;
+      border-radius: 4px;
+    }
+
+    .skip-link {
+      position: fixed;
+      z-index: 100;
+      left: 1rem;
+      top: -6rem;
+      padding: 0.75rem 1rem;
+      background: var(--ink);
+      color: white;
+      border-radius: 8px;
+    }
+    .skip-link:focus { top: 1rem; }
+
+    .shell {
+      width: min(1180px, calc(100% - 32px));
+      margin: 0 auto;
+    }
+
+    header {
+      padding: 72px 0 34px;
+    }
+
+    .eyebrow {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin: 0 0 16px;
+      color: var(--green);
+      font: 700 0.78rem/1.2 var(--mono);
+      letter-spacing: 0.13em;
+      text-transform: uppercase;
+    }
+    .eyebrow::before {
+      content: "";
+      width: 34px;
+      height: 3px;
+      background: var(--green);
+      border-radius: 999px;
+    }
+
+    h1, h2, h3 { line-height: 1.25; letter-spacing: -0.025em; }
+    h1 {
+      max-width: 900px;
+      margin: 0;
+      font-size: clamp(2.35rem, 5vw, 5rem);
+      font-weight: 760;
+    }
+    h2 {
+      margin: 0 0 12px;
+      font-size: clamp(1.65rem, 3vw, 2.5rem);
+    }
+    h3 { margin: 0 0 8px; font-size: 1.16rem; }
+
+    .lede {
+      max-width: 820px;
+      margin: 24px 0 0;
+      color: #34413a;
+      font-size: clamp(1.03rem, 1.8vw, 1.25rem);
+    }
+
+    .meta-strip {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-top: 30px;
+    }
+    .chip, .status {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      min-height: 30px;
+      padding: 5px 10px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      background: rgba(255,255,255,0.62);
+      font: 650 0.75rem/1.15 var(--mono);
+      letter-spacing: 0.025em;
+    }
+    .status::before {
+      content: "";
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: currentColor;
+    }
+    .open { color: var(--red); background: var(--red-soft); border-color: #e6bcb6; }
+    .active { color: var(--amber); background: var(--amber-soft); border-color: #e5c99b; }
+    .verified { color: var(--green); background: var(--green-soft); border-color: #b9d4c7; }
+    .blocked { color: #606762; background: var(--grey-soft); }
+
+    .north-star {
+      position: relative;
+      overflow: hidden;
+      margin: 22px 0 34px;
+      padding: 30px;
+      border: 1px solid rgba(255,255,255,0.25);
+      border-radius: var(--radius);
+      color: white;
+      background: linear-gradient(125deg, #113e31 0%, #154b4a 50%, #173d52 100%);
+      box-shadow: var(--shadow);
+    }
+    .north-star::after {
+      content: "∑";
+      position: absolute;
+      right: 28px;
+      top: -33px;
+      color: rgba(255,255,255,0.08);
+      font: 700 13rem/1 Georgia, serif;
+    }
+    .north-star small {
+      display: block;
+      margin-bottom: 7px;
+      color: #b9ddd0;
+      font: 700 0.72rem/1.2 var(--mono);
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+    }
+    .north-star p {
+      position: relative;
+      z-index: 1;
+      max-width: 830px;
+      margin: 0;
+      font-size: clamp(1.18rem, 2.2vw, 1.7rem);
+      line-height: 1.5;
+    }
+
+    .nav-wrap {
+      position: sticky;
+      z-index: 20;
+      top: 0;
+      border-block: 1px solid rgba(216,211,199,0.9);
+      background: rgba(245,242,233,0.92);
+      backdrop-filter: blur(14px);
+      -webkit-backdrop-filter: blur(14px);
+    }
+    nav {
+      display: flex;
+      gap: 7px;
+      overflow-x: auto;
+      padding: 10px 0;
+      scrollbar-width: thin;
+    }
+    nav a {
+      flex: 0 0 auto;
+      padding: 7px 11px;
+      color: #34413a;
+      border-radius: 999px;
+      text-decoration: none;
+      font-size: 0.83rem;
+      font-weight: 680;
+    }
+    nav a:hover { color: var(--green); background: white; }
+
+    main { padding: 34px 0 90px; }
+    section { scroll-margin-top: 78px; margin-top: 70px; }
+    .section-head {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(220px, 420px);
+      gap: 30px;
+      align-items: end;
+      margin-bottom: 25px;
+    }
+    .section-head p { margin: 0; color: var(--muted); }
+
+    .grid { display: grid; gap: 16px; }
+    .grid-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .grid-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+
+    .card {
+      padding: 22px;
+      border: 1px solid var(--line);
+      border-radius: 17px;
+      background: rgba(255,253,247,0.92);
+      box-shadow: 0 8px 25px rgba(35,45,39,0.045);
+    }
+    .card p { margin: 7px 0 0; color: var(--muted); }
+    .card ul { margin-bottom: 0; padding-left: 1.15rem; }
+    .card li + li { margin-top: 7px; }
+
+    .principle { border-top: 5px solid var(--green); }
+    .principle .number {
+      color: var(--green);
+      font: 700 0.72rem/1 var(--mono);
+      letter-spacing: 0.08em;
+    }
+
+    .safety-table, .ledger-table, .score-table {
+      width: 100%;
+      border-collapse: separate;
+      border-spacing: 0;
+      overflow: hidden;
+      border: 1px solid var(--line);
+      border-radius: 17px;
+      background: var(--surface);
+    }
+    th, td {
+      padding: 13px 15px;
+      border-bottom: 1px solid var(--line);
+      text-align: left;
+      vertical-align: top;
+    }
+    th {
+      color: #425049;
+      background: #eeeae0;
+      font: 700 0.75rem/1.35 var(--mono);
+      letter-spacing: 0.02em;
+    }
+    tr:last-child td { border-bottom: 0; }
+    tbody tr:hover { background: #faf7ef; }
+    code {
+      padding: 0.12em 0.35em;
+      border-radius: 5px;
+      background: #ece9df;
+      font-family: var(--mono);
+      font-size: 0.88em;
+    }
+    .allow { color: var(--green); font-weight: 750; }
+    .hold { color: var(--red); font-weight: 750; }
+    .caveat { color: var(--amber); font-weight: 750; }
+
+    .flow {
+      display: grid;
+      grid-template-columns: repeat(7, minmax(120px, 1fr));
+      gap: 8px;
+      margin-top: 24px;
+    }
+    .flow a {
+      position: relative;
+      min-height: 108px;
+      padding: 15px 13px;
+      border: 1px solid var(--line);
+      border-radius: 13px;
+      background: var(--surface);
+      color: var(--ink);
+      text-decoration: none;
+    }
+    .flow a:not(:last-child)::after {
+      content: "→";
+      position: absolute;
+      z-index: 2;
+      right: -12px;
+      top: 38px;
+      color: var(--green);
+      font-weight: 800;
+    }
+    .flow .phase-id {
+      display: block;
+      margin-bottom: 9px;
+      color: var(--green);
+      font: 800 0.7rem/1 var(--mono);
+    }
+    .flow strong { display: block; font-size: 0.91rem; line-height: 1.35; }
+    .flow small { display: block; margin-top: 7px; color: var(--muted); line-height: 1.35; }
+    .flow .current { border: 2px solid var(--amber); background: #fff9ea; }
+
+    .phase-list { display: grid; gap: 20px; }
+    .phase {
+      display: grid;
+      grid-template-columns: 118px minmax(0, 1fr);
+      overflow: hidden;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: var(--surface);
+      box-shadow: 0 8px 25px rgba(35,45,39,0.045);
+    }
+    .phase-marker {
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      padding: 22px 18px;
+      color: white;
+      background: var(--navy);
+    }
+    .phase.current .phase-marker { background: var(--amber); }
+    .phase-marker b { font: 800 1.65rem/1 var(--mono); }
+    .phase-marker span { font: 650 0.72rem/1.35 var(--mono); }
+    .phase-body { padding: 25px; }
+    .phase-title-row {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: space-between;
+      gap: 12px;
+      align-items: start;
+      margin-bottom: 16px;
+    }
+    .phase-title-row p { margin: 6px 0 0; color: var(--muted); }
+    .phase-columns {
+      display: grid;
+      grid-template-columns: 1.25fr 1fr 1fr;
+      gap: 18px;
+    }
+    .phase-columns h4 {
+      margin: 0 0 7px;
+      color: var(--green);
+      font: 800 0.72rem/1.3 var(--mono);
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+    }
+    .phase-columns ul { margin: 0; padding-left: 1.1rem; }
+    .phase-columns li + li { margin-top: 5px; }
+    .gate {
+      padding: 13px 14px;
+      border-left: 4px solid var(--green);
+      background: var(--green-soft);
+      color: #24483b;
+    }
+    .gate strong { display: block; margin-bottom: 4px; }
+    .do-not {
+      margin-top: 18px;
+      padding-top: 13px;
+      border-top: 1px dashed var(--line);
+      color: var(--red);
+      font-size: 0.9rem;
+      font-weight: 670;
+    }
+
+    .priority {
+      width: 34px;
+      height: 34px;
+      display: inline-grid;
+      place-items: center;
+      border-radius: 9px;
+      font: 800 0.76rem/1 var(--mono);
+    }
+    .p0 { color: var(--red); background: var(--red-soft); }
+    .p1 { color: var(--amber); background: var(--amber-soft); }
+    .p2 { color: var(--navy); background: var(--navy-soft); }
+    .issue-id { font: 750 0.78rem/1.3 var(--mono); white-space: nowrap; }
+
+    .decision {
+      display: grid;
+      grid-template-columns: 46px 1fr;
+      gap: 13px;
+      align-items: start;
+    }
+    .decision b:first-child {
+      display: grid;
+      width: 42px;
+      height: 42px;
+      place-items: center;
+      color: white;
+      border-radius: 12px;
+      background: var(--green);
+      font: 800 0.75rem/1 var(--mono);
+    }
+    .decision p { margin: 4px 0 0; }
+
+    details {
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      background: var(--surface);
+    }
+    details + details { margin-top: 10px; }
+    summary {
+      cursor: pointer;
+      padding: 15px 18px;
+      font-weight: 750;
+    }
+    details > div { padding: 0 18px 18px; color: var(--muted); }
+
+    .callout {
+      display: grid;
+      grid-template-columns: 12px 1fr;
+      gap: 15px;
+      padding: 21px;
+      border: 1px solid #e1c187;
+      border-radius: 16px;
+      background: var(--amber-soft);
+    }
+    .callout::before {
+      content: "";
+      border-radius: 999px;
+      background: var(--amber);
+    }
+    .callout p { margin: 5px 0 0; }
+
+    footer {
+      padding: 30px 0 55px;
+      border-top: 1px solid var(--line);
+      color: var(--muted);
+      font-size: 0.88rem;
+    }
+    footer p { margin: 4px 0; }
+
+    @media (max-width: 960px) {
+      .grid-3 { grid-template-columns: 1fr; }
+      .flow { grid-template-columns: repeat(2, 1fr); }
+      .flow a::after { display: none; }
+      .phase-columns { grid-template-columns: 1fr; }
+    }
+
+    @media (max-width: 700px) {
+      header { padding-top: 45px; }
+      .shell { width: min(calc(100% - 22px), 1180px); }
+      .eyebrow { overflow-wrap: anywhere; }
+      .lede, .north-star p { overflow-wrap: anywhere; }
+      .section-head, .grid-2 { grid-template-columns: 1fr; }
+      .section-head { gap: 8px; }
+      .phase { grid-template-columns: 1fr; }
+      .phase-marker { min-height: 82px; flex-direction: row; align-items: center; }
+      .table-scroll { overflow-x: auto; border-radius: 17px; }
+      .table-scroll table { min-width: 760px; }
+      .north-star { padding: 24px; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      html { scroll-behavior: auto; }
+    }
+
+    @media print {
+      :root { --paper: #fff; --surface: #fff; }
+      body { background: #fff; font-size: 10pt; }
+      .nav-wrap, .skip-link { display: none; }
+      header { padding-top: 15px; }
+      section { break-inside: avoid; margin-top: 34px; }
+      .phase { break-inside: avoid; box-shadow: none; }
+      a { color: inherit; text-decoration: none; }
+      .north-star { box-shadow: none; }
+    }
+  </style>
+</head>
+<body>
+  <a class="skip-link" href="#main">本文へ移動</a>
+
+  <header class="shell">
+    <p class="eyebrow">Statistical engine remediation / v1.2</p>
+    <h1>正しい出力を、<br>新しい機能より先に。</h1>
+    <p class="lede">
+      MFRM Python Applicationの統計エンジン修正ロードマップ。
+      同定・推論・バイアス・検証を依存関係順に直し、局所的な機能追加によって
+      科学的な信頼性が置き去りになることを防ぐ。
+    </p>
+    <div class="meta-strip" aria-label="文書メタデータ">
+      <span class="status active">ACTIVE</span>
+      <span class="chip">基準日 2026-08-04</span>
+      <span class="chip">現在地 S2: 推論再構築</span>
+      <span class="chip">製品境界 Standalone Python</span>
+    </div>
+  </header>
+
+  <div class="shell">
+    <aside class="north-star" aria-label="ノーススター">
+      <small>North star</small>
+      <p>
+        アプリの価値は機能数ではなく、同じデータと仕様から再現可能で、
+        同定され、校正範囲が明示された結論を返せることにある。
+      </p>
+    </aside>
+  </div>
+
+  <div class="nav-wrap">
+    <nav class="shell" aria-label="ページ内ナビゲーション">
+      <a href="#principles">原則</a>
+      <a href="#safety">現在の出力境界</a>
+      <a href="#sequence">依存順序</a>
+      <a href="#phases">実行フェーズ</a>
+      <a href="#ledger">課題台帳</a>
+      <a href="#decisions">固定判断</a>
+      <a href="#scorecard">スコアカード</a>
+      <a href="#governance">変更管理</a>
+    </nav>
+  </div>
+
+  <main id="main" class="shell">
+    <section id="principles">
+      <div class="section-head">
+        <div>
+          <p class="eyebrow">01 / Governing principles</p>
+          <h2>修正中も変えない4原則</h2>
+        </div>
+        <p>個別の実装判断が迷ったときは、納期や見栄えではなく、この順序で優先する。</p>
+      </div>
+      <div class="grid grid-2">
+        <article class="card principle">
+          <span class="number">P-01</span>
+          <h3>同定を先に、数値安定化を後に</h3>
+          <p>冗長座標を正則化で隠さない。最初から自由パラメータだけを最適化する。</p>
+        </article>
+        <article class="card principle">
+          <span class="number">P-02</span>
+          <h3>点推定と推論を分離する</h3>
+          <p>確率式が正しくても、SE・IC・LRTが正しいとは限らない。別々の完了条件を持たせる。</p>
+        </article>
+        <article class="card principle">
+          <span class="number">P-03</span>
+          <h3>screeningを証明へ昇格させない</h3>
+          <p>条件付きバイアス、DIF/DFF、残差診断は追跡の入口であり、公平性や無バイアスの証明ではない。</p>
+        </article>
+        <article class="card principle">
+          <span class="number">P-04</span>
+          <h3>検証できない機能は増やさない</h3>
+          <p>次のモデルや診断を追加する前に、既存RSM・PCM・bounded GPCMの回復と校正を固定する。</p>
+        </article>
+      </div>
+    </section>
+
+    <section id="safety">
+      <div class="section-head">
+        <div>
+          <p class="eyebrow">02 / Temporary safety boundary</p>
+          <h2>修正完了までの出力境界</h2>
+        </div>
+        <p>UIで表示できることと、研究上の判断に使えることを分ける。S0でこの境界をコードと文言に反映する。</p>
+      </div>
+      <div class="table-scroll">
+        <table class="safety-table">
+          <thead>
+            <tr><th>出力</th><th>暫定状態</th><th>許容する用途</th><th>解除条件</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>GPCMカテゴリ確率・曲線</td>
+              <td><span class="allow">利用可</span></td>
+              <td>bounded GPCMとしての記述・感度確認</td>
+              <td>独立fixtureとPCM縮約テスト</td>
+            </tr>
+            <tr>
+              <td>RSM/PCM/GPCM点推定</td>
+              <td><span class="caveat">条件付き</span></td>
+              <td>収束・境界・設計状態を併記した探索</td>
+              <td>S1の同定座標と回復試験</td>
+            </tr>
+            <tr>
+              <td>MML構造共分散・delta SE</td>
+              <td><span class="hold">判断保留</span></td>
+              <td>監査用表示のみ。確証的CIに使わない</td>
+              <td><code>rank == KParams</code>とcoverage gate</td>
+            </tr>
+            <tr>
+              <td>AIC / AICc / BIC・モデル推奨</td>
+              <td><span class="hold">判断保留</span></td>
+              <td>raw値の技術確認のみ</td>
+              <td>正しいK、MML比較資格、同一尤度契約</td>
+            </tr>
+            <tr>
+              <td>RSM→PCM LRT</td>
+              <td><span class="hold">判断保留</span></td>
+              <td>表示しない、または明示的に未検証</td>
+              <td>S2の自由度・regularity gate</td>
+            </tr>
+            <tr>
+              <td>PCM↔GPCM / RSM↔GPCM LRT</td>
+              <td><span class="hold">非対応</span></td>
+              <td>通常のχ²検定として報告しない</td>
+              <td>別途の理論・bootstrap校正を承認</td>
+            </tr>
+            <tr>
+              <td>セル別bias size</td>
+              <td><span class="caveat">screeningのみ</span></td>
+              <td>条件付き局所逸脱の追跡</td>
+              <td>向き・境界・多重性・設計校正</td>
+            </tr>
+            <tr>
+              <td>bias pairwise local measure / contrast</td>
+              <td><span class="hold">判断保留</span></td>
+              <td>現行値を解釈しない</td>
+              <td>target signとcontrast SE修正</td>
+            </tr>
+            <tr>
+              <td>Parameter recovery の集約Bias</td>
+              <td><span class="hold">判断保留</span></td>
+              <td>不偏性の証拠として使わない</td>
+              <td>レベル別・真値分位別のbiasへ変更</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section id="sequence">
+      <div class="section-head">
+        <div>
+          <p class="eyebrow">03 / Dependency chain</p>
+          <h2>作業はこの順序を崩さない</h2>
+        </div>
+        <p>後続フェーズは前段のexit gateを利用する。並行化は、同じ数値契約を変更しない作業に限る。</p>
+      </div>
+      <div class="flow" aria-label="フェーズ依存関係">
+        <a href="#s0"><span class="phase-id">S0</span><strong>出力保護</strong><small>G0完了</small></a>
+        <a href="#s1"><span class="phase-id">S1</span><strong>同定座標</strong><small>G1完了</small></a>
+        <a class="current" href="#s2"><span class="phase-id">S2</span><strong>推論再構築</strong><small>SE・IC・LRT</small></a>
+        <a href="#s3"><span class="phase-id">S3</span><strong>Bias修正</strong><small>向き・比較・校正</small></a>
+        <a href="#s4"><span class="phase-id">S4</span><strong>回復と照合</strong><small>独立した反証</small></a>
+        <a href="#s5"><span class="phase-id">S5</span><strong>構造拡張</strong><small>交互作用</small></a>
+        <a href="#s6"><span class="phase-id">S6</span><strong>公開資格</strong><small>証拠で解除</small></a>
+      </div>
+    </section>
+
+    <section id="phases">
+      <div class="section-head">
+        <div>
+          <p class="eyebrow">04 / Execution phases</p>
+          <h2>フェーズ別の成果物と完了条件</h2>
+        </div>
+        <p>期間ではなくexit gateで進捗を判定する。各PRは課題IDとgate証拠を明記する。</p>
+      </div>
+
+      <div class="phase-list">
+        <article id="s0" class="phase">
+          <div class="phase-marker"><b>S0</b><span>COMPLETE<br>G0 passed</span></div>
+          <div class="phase-body">
+            <div class="phase-title-row">
+              <div><h3>危険な推論出力を保護する</h3><p>根本修正前の誤用を防ぎ、既存結果を削除せずに資格をfail-closedへ変更する。</p></div>
+              <span class="status verified">G0 PASSED</span>
+            </div>
+            <div class="phase-columns">
+              <div><h4>Deliverables</h4><ul><li><code>mfrm_output_qualification_v1</code>と安定reason code</li><li>JMLE自動推奨とGPCM LRT判断を保留</li><li>rank欠損共分散を<code>Do not claim</code>へ変更</li><li>bias pairwise UIをG3まで保留</li></ul></div>
+              <div><h4>Evidence</h4><ul><li>UIはLR数値・p値・判断を非表示</li><li>raw値は資格付き技術exportに保持</li><li>quick/full/APA/run-historyで同じ状態</li><li>pytest 1197件・self-test 56件成功</li></ul></div>
+              <div class="gate"><strong>Exit G0 — PASSED</strong>既知の不正確なK、LRT、pairwise推論から、利用者向けの確証的結論を生成しない。release checkも成功。</div>
+            </div>
+            <div class="do-not">この段階では数式・パラメータ配列・保存形式を変更しない。</div>
+          </div>
+        </article>
+
+        <article id="s1" class="phase">
+          <div class="phase-marker"><b>S1</b><span>COMPLETE<br>G1 passed</span></div>
+          <div class="phase-body">
+            <div class="phase-title-row">
+              <div><h3>exact identified parameterizationへ移行する</h3><p>中心化で冗長性を隠す方式から、自由座標を展開する方式へ置き換える。</p></div>
+              <span class="status verified">G1 PASSED</span>
+            </div>
+            <div class="phase-columns">
+              <div><h4>Deliverables</h4><ul><li>RSM step: <code>n_steps − 1</code></li><li>PCM/GPCM step: <code>L × (n_steps − 1)</code></li><li>GPCM log-slope: <code>L − 1</code></li><li>GPCM展開後boundを線形制約で厳密保持</li><li>expanded出力スキーマは互換維持</li></ul></div>
+              <div><h4>Evidence</h4><ul><li>旧中心化表現との尤度一致</li><li>全6方式の解析勾配対有限差分</li><li>sum-zero / geometric-mean-one / bound監査</li><li>fixture Hessian rank: 6 / 6合格</li><li><code>parameterization_audit.csv</code></li></ul></div>
+              <div class="gate"><strong>Exit G1 — PASSED</strong>全RSM/PCM/GPCM × JMLE/MML fixtureで人工的なnull directionが0。Kが理論式と一致し、公開expanded表を維持。</div>
+            </div>
+            <div class="do-not">正則化閾値の調整だけでrank欠損を「修正」しない。</div>
+          </div>
+        </article>
+
+        <article id="s2" class="phase current">
+          <div class="phase-marker"><b>S2</b><span>CURRENT<br>G2</span></div>
+          <div class="phase-body">
+            <div class="phase-title-row">
+              <div><h3>不確実性とモデル比較を再構築する</h3><p>同定済み座標を前提に、K・Hessian・IC・比較資格を一つの契約にする。</p></div>
+              <span class="status active">IN PROGRESS</span>
+            </div>
+            <div class="phase-columns">
+              <div><h4>Deliverables</h4><ul><li>AIC/AICc/BICのK修正</li><li>MML observed-information再計算</li><li>JMLE ICはdescriptiveのみ</li><li>LRTはMML RSM→PCMの適格条件から再開</li><li>GPCM LRTは別gateまで保留</li></ul></div>
+              <div><h4>Tests</h4><ul><li>閉形式dfテスト</li><li>rank・condition・SE status</li><li>同一データ・尤度・制約監査</li><li>小標本coverageと失敗率</li></ul></div>
+              <div class="gate"><strong>Exit G2</strong>適格MML比較だけが推奨・weight・LRTを返し、不適格比較は安定reason codeで保留される。</div>
+            </div>
+            <div class="do-not">「caveatを書いた」ことを推論資格の代用にしない。</div>
+          </div>
+        </article>
+
+        <article id="s3" class="phase">
+          <div class="phase-marker"><b>S3</b><span>BIAS<br>1–2 weeks</span></div>
+          <div class="phase-body">
+            <div class="phase-title-row">
+              <div><h3>bias / local interactionの意味と計算を揃える</h3><p>セル内のeta shift、ファセット尺度、pairwise contrastを混同しない。</p></div>
+              <span class="status blocked">BLOCKED BY G2</span>
+            </div>
+            <div class="phase-columns">
+              <div><h4>Deliverables</h4><ul><li><code>bias / target_sign</code>による尺度変換</li><li>contrast SEから共有target SEを除外</li><li>最適化失敗・境界・重み付き支持数</li><li>GPCM一次p値の方針固定</li><li>見かけの反復を単回screenへ整理</li></ul></div>
+              <div><h4>Tests</h4><ul><li>Person(+1)・severity(−1)向き</li><li>同一target項の相殺</li><li>LR/profile/SEの独立再計算</li><li>null false-positive・power・coverage</li></ul></div>
+              <div class="gate"><strong>Exit G3</strong>方向、contrast、境界、multiplicity familyが機械可読で、simulation上の誤検出率を併記できる。</div>
+            </div>
+            <div class="do-not">条件付きscreenを、共同再推定した交互作用や公平性検定と呼ばない。</div>
+          </div>
+        </article>
+
+        <article id="s4" class="phase">
+          <div class="phase-marker"><b>S4</b><span>VALIDATION<br>2–4 weeks</span></div>
+          <div class="phase-body">
+            <div class="phase-title-row">
+              <div><h3>反証可能な回復・外部照合を固定する</h3><p>自分たちの実装同士の一致ではなく、真値と独立oracleから間違いを見つけられる状態にする。</p></div>
+              <span class="status blocked">BLOCKED BY G3</span>
+            </div>
+            <div class="phase-columns">
+              <div><h4>Deliverables</h4><ul><li>level別・真値分位別bias</li><li>step・log-slope・slope回復</li><li>RMSE・coverage・failure・MCSE</li><li>独立GPCM確率fixture</li><li>mirt/TAM等の版固定した外部照合</li></ul></div>
+              <div><h4>Tests</h4><ul><li>PCM reduction when slopes=1</li><li>極端・疎・不均衡design</li><li>傾き分散とカテゴリ数grid</li><li>JMLE付随パラメータ可視化</li></ul></div>
+              <div class="gate"><strong>Exit G4</strong>広告する推定・SE・screenごとに、条件、rep数、seed、MCSE、失敗分母を持つ凍結証拠がある。</div>
+            </div>
+            <div class="do-not">mean alignmentで自動的に0になる集約Biasを、不偏性の証拠にしない。</div>
+          </div>
+        </article>
+
+        <article id="s5" class="phase">
+          <div class="phase-marker"><b>S5</b><span>EXTENSION<br>2–4 weeks</span></div>
+          <div class="phase-body">
+            <div class="phase-title-row">
+              <div><h3>構造的な非Person交互作用を追加する</h3><p>プラグインscreenとは別に、事前指定した固定交互作用をモデル尤度内で推定する。</p></div>
+              <span class="status blocked">BLOCKED BY G4</span>
+            </div>
+            <div class="phase-columns">
+              <div><h4>Deliverables</h4><ul><li>RSM/PCMの二要因固定交互作用</li><li>階層原則とsum-zero同定</li><li>additive対interactionのMML比較</li><li>疎セル・connectedness gate</li></ul></div>
+              <div><h4>Tests</h4><ul><li>null/known-effect recovery</li><li>向き・自由度・縮約</li><li>additive fitの不変性</li><li>不適格designのfail-closed</li></ul></div>
+              <div class="gate"><strong>Exit G5</strong>構造的交互作用と条件付きbias screenが、API・UI・reportで明確に別物として扱われる。</div>
+            </div>
+            <div class="do-not">GPCM交互作用やPersonランダム交互作用へ同時に拡張しない。</div>
+          </div>
+        </article>
+
+        <article id="s6" class="phase">
+          <div class="phase-marker"><b>S6</b><span>RELEASE<br>evidence-led</span></div>
+          <div class="phase-body">
+            <div class="phase-title-row">
+              <div><h3>証拠に基づき出力資格を解除する</h3><p>S0の保護を一括解除せず、出力単位で検証状態を昇格する。</p></div>
+              <span class="status blocked">BLOCKED BY G5</span>
+            </div>
+            <div class="phase-columns">
+              <div><h4>Deliverables</h4><ul><li>validation manifest</li><li>出力別claim boundary</li><li>旧snapshot移行試験</li><li>性能・メモリ基準</li><li>public beta継続/解除判断</li></ul></div>
+              <div><h4>Tests</h4><ul><li>clean checkout matrix</li><li>再現可能な凍結artifact</li><li>日英UIとexportの状態一致</li><li>既知不具合fixtureの回帰</li></ul></div>
+              <div class="gate"><strong>Exit G6</strong>各公開claimがEvidence ID、適用条件、境界、再現手順へ到達できる。</div>
+            </div>
+            <div class="do-not">日程やテスト件数だけを理由にbetaを解除しない。</div>
+          </div>
+        </article>
+      </div>
+    </section>
+
+    <section id="ledger">
+      <div class="section-head">
+        <div>
+          <p class="eyebrow">05 / Evidence ledger</p>
+          <h2>課題台帳</h2>
+        </div>
+        <p>課題IDはPR、テスト、変更履歴で共通利用する。完了はコード変更ではなく、対応するgate証拠で判定する。</p>
+      </div>
+      <div class="table-scroll">
+        <table class="ledger-table">
+          <thead><tr><th>優先度</th><th>ID</th><th>問題</th><th>影響</th><th>解決フェーズ</th><th>状態</th></tr></thead>
+          <tbody>
+            <tr><td><span class="priority p0">P0</span></td><td class="issue-id">STAT-001</td><td>step / log-slopeの冗長最適化座標</td><td>Hessian特異、K過大、境界の意味不整合</td><td>S1</td><td><span class="status verified">CLOSED / G1</span></td></tr>
+            <tr><td><span class="priority p0">P0</span></td><td class="issue-id">STAT-002</td><td>誤ったKを使うAIC/AICc/BIC/LRT</td><td>モデル順位・weight・p値</td><td>S0–S2</td><td><span class="status active">K FIXED / G2 GUARDED</span></td></tr>
+            <tr><td><span class="priority p0">P0</span></td><td class="issue-id">STAT-003</td><td>人工null方向を固有値floorで反転</td><td>MML構造SE/CIとrank監査</td><td>S1–S2</td><td><span class="status active">COORD FIXED / G2 COVERAGE</span></td></tr>
+            <tr><td><span class="priority p0">P0</span></td><td class="issue-id">BIAS-001</td><td>pairwise local measureがtarget signを無視</td><td>既定のseverity尺度で方向逆転</td><td>S3</td><td><span class="status active">OPEN / GUARDED</span></td></tr>
+            <tr><td><span class="priority p0">P0</span></td><td class="issue-id">BIAS-002</td><td>contrast SEに共有target SEを二重加算</td><td>pairwise t・tail area</td><td>S3</td><td><span class="status active">OPEN / GUARDED</span></td></tr>
+            <tr><td><span class="priority p0">P0</span></td><td class="issue-id">VAL-001</td><td>集約Biasがmean alignmentで必ず0</td><td>不偏性を評価できない</td><td>S4</td><td><span class="status open">OPEN</span></td></tr>
+            <tr><td><span class="priority p1">P1</span></td><td class="issue-id">MODEL-001</td><td>JMLEでも自動モデル推奨を返す</td><td>付随パラメータ問題の過小評価</td><td>S0–S2</td><td><span class="status active">OPEN / GUARDED</span></td></tr>
+            <tr><td><span class="priority p1">P1</span></td><td class="issue-id">MODEL-002</td><td>全RSM/PCM/GPCM組合せを通常LRT扱い</td><td>未校正のχ²参照分布</td><td>S0–S2</td><td><span class="status active">OPEN / GUARDED</span></td></tr>
+            <tr><td><span class="priority p1">P1</span></td><td class="issue-id">VAL-002</td><td>GPCM step / slope回復がない</td><td>GPCM固有パラメータの検証空白</td><td>S4</td><td><span class="status open">OPEN</span></td></tr>
+            <tr><td><span class="priority p1">P1</span></td><td class="issue-id">VAL-003</td><td>外部照合が0.2.0 legacy / archived smoke</td><td>現行実装の独立証拠がない</td><td>S4</td><td><span class="status open">OPEN</span></td></tr>
+            <tr><td><span class="priority p1">P1</span></td><td class="issue-id">BIAS-003</td><td>GPCM LR p値とmultiplicity一次p値が不一致</td><td>flagの統計的意味が曖昧</td><td>S3</td><td><span class="status open">OPEN</span></td></tr>
+            <tr><td><span class="priority p1">P1</span></td><td class="issue-id">INT-001</td><td>非Person固定交互作用が未実装</td><td>screenと共同推定を比較できない</td><td>S5</td><td><span class="status open">OPEN</span></td></tr>
+            <tr><td><span class="priority p2">P2</span></td><td class="issue-id">BIAS-004</td><td>bias iterationが同じ固定問題を再計算</td><td>反復表が実処理を誤認させる</td><td>S3</td><td><span class="status open">OPEN</span></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section id="decisions">
+      <div class="section-head">
+        <div>
+          <p class="eyebrow">06 / Decision log</p>
+          <h2>スコープを守る固定判断</h2>
+        </div>
+        <p>新しい根拠で変更する場合は、このHTMLと年次ロードマップを同じPRで更新する。</p>
+      </div>
+      <div class="grid grid-2">
+        <article class="card decision"><b>D-01</b><div><h3>bounded GPCMを維持</h3><p>当面は<code>slope_facet == step_facet</code>、正の傾き、幾何平均1。unrestricted GPCMを先行させない。</p></div></article>
+        <article class="card decision"><b>D-02</b><div><h3>JMLEは自動モデル選択に使わない</h3><p>raw fit値は記述用に保持できるが、delta、weight、preferred、confirmatory LRTへ昇格させない。</p></div></article>
+        <article class="card decision"><b>D-03</b><div><h3>biasは条件付きscreening</h3><p>main effect、theta/EAP、step、slopeを固定した局所shift。公平性や因果的評定者biasの証明ではない。</p></div></article>
+        <article class="card decision"><b>D-04</b><div><h3>外部ソフトは検証oracle</h3><p>mfrmr、TAM、mirt等はruntime依存にせず、版・制約・parameterization mapを固定した反証材料として使う。</p></div></article>
+        <article class="card decision"><b>D-05</b><div><h3>出力互換と推論互換を分ける</h3><p>expanded step/slope表の形は維持してもよいが、古いKやSEの数値互換は守る対象にしない。</p></div></article>
+        <article class="card decision"><b>D-06</b><div><h3>機能追加はG4以降</h3><p>新モデル、MCMC/PPC、自由傾き構造、高次交互作用は、現行三モデルの検証を遅らせない場合だけ検討する。</p></div></article>
+      </div>
+    </section>
+
+    <section id="scorecard">
+      <div class="section-head">
+        <div>
+          <p class="eyebrow">07 / Operating scorecard</p>
+          <h2>毎回確認する数値</h2>
+        </div>
+        <p>テスト件数ではなく、誤りを検出する能力と推論資格を追う。</p>
+      </div>
+      <div class="table-scroll">
+        <table class="score-table">
+          <thead><tr><th>指標</th><th>現在値</th><th>目標</th><th>gate</th></tr></thead>
+          <tbody>
+            <tr><td>小規模GPCM MML: optimizer dimension / identified K</td><td class="allow">8 / 8</td><td>8 / 8</td><td>G1 ✓</td></tr>
+            <tr><td>同fixture Hessian rank deficiency</td><td class="allow">0</td><td>0</td><td>G1 ✓</td></tr>
+            <tr><td>不適格JMLE比較が返す公開自動推奨</td><td class="allow">0（技術rankingのみ保持）</td><td>0</td><td>G0 ✓</td></tr>
+            <tr><td>公開χ²判断を返すGPCM LRT組合せ</td><td class="allow">0（raw技術値は2対）</td><td>0</td><td>G0 ✓</td></tr>
+            <tr><td>安定reason codeで保護した高リスク出力</td><td class="allow">7</td><td>7</td><td>G0 ✓</td></tr>
+            <tr><td>GPCM回復対象: step / log-slope</td><td class="hold">0 / 0</td><td>全真値</td><td>G4</td></tr>
+            <tr><td>bias screen operating-characteristic grid</td><td class="hold">なし</td><td>null/effect/sparse/weighted</td><td>G4</td></tr>
+            <tr><td>公開claimに結びつく現行validation evidence</td><td class="hold">未整備</td><td>100%</td><td>G6</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section id="governance">
+      <div class="section-head">
+        <div>
+          <p class="eyebrow">08 / Change governance</p>
+          <h2>ロードマップを形骸化させない</h2>
+        </div>
+        <p>この文書は説明資料ではなく、修正PRの受け入れ契約として運用する。</p>
+      </div>
+
+      <div class="callout">
+        <div>
+          <h3>次の着手点</h3>
+          <p><strong>S2 / STAT-002・STAT-003・MODEL-001・MODEL-002</strong>：同定済み座標上でobserved informationのcondition・SE coverageを検証し、モデル比較の適格性、LRT自由度・正則条件・GPCM校正を明示的に判定する。</p>
+        </div>
+      </div>
+
+      <div style="margin-top: 18px">
+        <details open>
+          <summary>G0完了証拠 — 2026-08-04</summary>
+          <div><code>mfrm_app/output_qualification.py</code>、<code>tests/test_output_qualification.py</code>、pytest 1197 passed、アプリself-test 56 passed、standalone release check成功。公開結論はfail-closed、raw値は資格付き技術監査として保持。</div>
+        </details>
+        <details open>
+          <summary>G1完了証拠 — 2026-08-04</summary>
+          <div><code>mfrm_exact_identified_v1</code>、<code>tests/test_identified_parameterization.py</code>、全6モデル・推定法fixtureのHessian full rank、解析勾配対有限差分、expanded bound監査、<code>parameterization_audit.csv</code>、pytest 1219 passed、アプリself-test 56 passed、standalone release check成功。Kは同定済み自由座標数へ一致し、モデル比較の公開判断はG2までfail-closedを維持。</div>
+        </details>
+        <details open>
+          <summary>PR開始時</summary>
+          <div>課題ID、対象フェーズ、変更する数値契約、変更しない公開契約、失敗させるべき既知fixtureをPR本文へ記載する。</div>
+        </details>
+        <details>
+          <summary>PR完了時</summary>
+          <div>exit gateの証拠、実行コマンド、テスト分母、非収束・skip・失敗数、数値差の理由を記録する。単に「全テスト成功」では完了としない。</div>
+        </details>
+        <details>
+          <summary>フェーズ昇格時</summary>
+          <div>対応する課題台帳を更新し、暫定出力境界を出力単位で解除する。次フェーズの開始は、前gateの証拠がリポジトリから再現できる場合に限る。</div>
+        </details>
+        <details>
+          <summary>スコープ変更時</summary>
+          <div>理論上の必要性、利用者価値、同定、推論、回復、外部照合、UI境界を一組として提示する。実装だけ先行する変更は受け入れない。</div>
+        </details>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <div class="shell">
+      <p><strong>MFRM Python Application — Statistical Engine Remediation Roadmap</strong></p>
+      <p>Owner: standalone Python product line · Baseline audit: 2026-08-04 · Document version: 1.2</p>
+      <p>年次の製品ロードマップは <a href="../ROADMAP.md">ROADMAP.md</a> を参照。この文書は統計エンジン修正の依存順序と受け入れ条件を規定する。</p>
+    </div>
+  </footer>
+</body>
+</html>

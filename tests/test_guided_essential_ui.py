@@ -202,10 +202,14 @@ def test_guided_section_reading_order_covers_every_essential_section():
 def test_guided_essential_tabs_show_reading_order_before_section_body():
     source = inspect.getsource(app._render_guided_essential_tabs)
 
+    dock = 'with st.container(key="guided_result_navigation_dock", border=True):'
+    selector = "st.segmented_control("
     cue_call = "render_guided_section_reading_order(selected_section)"
     section_body = "if selected_section == \"start\":"
+    assert dock in source
+    assert source.index(dock) < source.index(selector)
     assert cue_call in source
-    assert source.index(cue_call) < source.index(section_body)
+    assert source.index(selector) < source.index(cue_call) < source.index(section_body)
 
 
 def test_guided_diagnostics_selector_lazy_renders_one_panel():
@@ -486,6 +490,7 @@ def test_downloads_privacy_mode_is_defined_before_export_builders():
 def test_full_mode_main_results_panel_is_lazy_rendered():
     source = inspect.getsource(app.run_facets_mode)
 
+    assert 'with st.container(key="full_result_navigation_dock", border=True):' in source
     assert "main_results_panel" in source
     assert "st.selectbox" in source
     assert "main_tabs.panel_select_caption" in source

@@ -235,6 +235,8 @@ def test_display_mode_and_analysis_depth_copy_are_not_conflated(locales):
     assert "All panels display mode" in en["downloads.figures_skipped_info"]
     assert "PNG/HTML" in en["downloads.figures_skipped_info"]
     assert "does not re-estimate" in en["main_tabs.panel_select_caption"]
+    assert "stays visible while you scroll" in en["main_tabs.panel_select_caption"].casefold()
+    assert "stays visible while you scroll" in en["guided.section_select_caption"].casefold()
     assert "does not re-estimate" in en["downloads.panel_select_help"]
 
     assert ja["sidebar.view_density_label"] == "表示モード"
@@ -243,6 +245,8 @@ def test_display_mode_and_analysis_depth_copy_are_not_conflated(locales):
     assert "全パネル表示" in ja["downloads.figures_skipped_info"]
     assert "PNG / HTML" in ja["downloads.figures_skipped_info"]
     assert "再推定しません" in ja["main_tabs.panel_select_caption"]
+    assert "スクロール中も" in ja["main_tabs.panel_select_caption"]
+    assert "スクロール中も" in ja["guided.section_select_caption"]
     assert "再推定するわけではありません" in ja["downloads.panel_select_help"]
 
 

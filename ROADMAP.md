@@ -69,8 +69,9 @@ Deliverables:
   first-read, evidence detail, and archive phases;
 - remove remaining duplicate orientation surfaces from the default result
   route while keeping stable Help targets and compatibility projections;
-- complete browser acceptance for keyboard focus, Help return, 200% zoom,
-  reduced motion, and narrow viewport behavior;
+- keep the authoritative result navigation visible during long-page scrolling,
+  with keyboard focus, Help return, reduced motion, and narrow-viewport browser
+  acceptance;
 - measure initial and post-run render topology so new visible controls require
   an explicit information-architecture decision; and
 - add a clean-checkout CI job that runs compile, doctor, release-check,
@@ -79,6 +80,8 @@ Deliverables:
 Exit gate:
 
 - one primary action is visually exposed in every default phase;
+- the authoritative result selector remains operable while a long selected
+  section scrolls, without covering required content on a narrow viewport;
 - the sample journey and real-data setup are keyboard-completable without a
   hidden required control;
 - view/language/help transitions trigger no estimation and preserve
@@ -96,14 +99,24 @@ Progress on 2026-08-04:
 - converted the Python workflow into an explicit clean-checkout matrix with
   named workflow/privacy/localization contracts and a final worktree check.
 
+Navigation refinement on 2026-08-04:
+
+- removed the sidebar keyboard-shortcut cheat sheet and its maintenance/cache
+  commands; the app defines no custom hotkeys;
+- placed Essential and All-panels result selectors in one sticky navigation
+  dock that remains available during long-page scrolling; and
+- kept the narrow layout compact with a touch-scrollable one-line section
+  switcher instead of a multi-row fixed overlay.
+
 The browser accessibility matrix remains the next M1 acceptance item; native
 AppTest topology is the required fallback gate until that browser connection
 is available.
 
 Increment verification:
 
-- `make apptest`: 1,073 passed, 62 compatibility tests deselected;
+- `make apptest`: 1,090 passed, 62 compatibility tests deselected;
 - representative initial/post-run AppTests: two scenarios passed;
+- All-panels Help return: panel state and AnalysisID preserved without refit;
 - `--self-test`: 56 passed;
 - `--doctor` and `--release-check`: passed; and
 - benchmark and demo-report generation smokes: passed.

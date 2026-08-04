@@ -103,6 +103,13 @@ next action. Goal selection may change the recommendation, but should not add a
 second navigation system. Deep evidence remains addressable by stable section
 and focus IDs.
 
+Current remediation: the duplicate first-read overview was removed, and the
+single Essential/All-panels result selector now becomes a sticky navigation
+dock during long-page scrolling. The separate keyboard-shortcut cheat sheet
+was removed rather than introducing another interaction system. Narrow layouts
+keep the Essential selector on one touch-scrollable line instead of a tall
+fixed overlay.
+
 ### P1 — Monolithic UI ownership
 
 `streamlit_app.py` is approximately 70,000 lines. Pure contracts are already
@@ -114,12 +121,14 @@ Long-term direction: keep scientific computation and evidence records pure;
 add small presentation-policy modules; move source, setup, result-shell, and
 export adapters behind tested boundaries without rewriting the estimator.
 
-### P2 — Accessibility needs task-level acceptance tests
+### P2 — Accessibility and persistent navigation need task-level acceptance tests
 
-CSS-level focus and motion safeguards are useful but insufficient. The next
-gate should cover keyboard completion of the sample run, focus after rerun,
-200% zoom, narrow viewport hierarchy, non-color status text, and accessible
-names for every primary action.
+CSS-level focus, motion, and sticky-position safeguards are useful but
+insufficient. The next gate should cover keyboard completion of the sample
+run, focus after rerun, navigation-dock position after long scrolling, narrow
+viewport hierarchy, non-color status text, and accessible names for every
+primary action. Browser zoom remains a reflow compatibility check; it is not a
+separate application feature.
 
 ### P2 — Mixed-language technical surfaces
 
@@ -168,5 +177,6 @@ not only by JSON key equality.
 - After fitting, exactly one surface names the highest-priority next check.
 - Changing display density never changes the fitted analysis identity.
 - Every blocked route provides one reversible action and one stable Help target.
-- The sample-run journey is completable by keyboard at 200% zoom and a narrow
-  viewport without losing the current phase or primary action.
+- The sample-run journey is completable by keyboard on a narrow viewport, and
+  long-page scrolling never hides the current result selector or primary
+  action. Browser zoom is checked only as reflow compatibility.

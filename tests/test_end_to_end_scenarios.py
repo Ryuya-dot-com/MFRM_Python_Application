@@ -153,6 +153,10 @@ def test_representative_scenarios_render_without_streamlit_exception(scenario_ke
     subheaders = [str(item.value) for item in at.subheader]
     assert subheaders.count("Choose what you want to do now") == 1
     assert "First-read overview" not in subheaders
+    assert any(
+        "Stays visible while you scroll" in str(item.value)
+        for item in at.caption
+    )
     assert_control_topology_within_budget(at, RESULT_CONTROL_BUDGET)
 
 

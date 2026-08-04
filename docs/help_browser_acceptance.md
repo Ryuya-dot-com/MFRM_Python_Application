@@ -142,6 +142,39 @@ sequential target in the rendered DOM (the heading permalink if it is
 tabbable, otherwise the reading-guide control). The heading must not enter the
 ordinary Tab sequence, return to the old Help button, or create a focus trap.
 
+## Persistent result-navigation dock
+
+This gate has priority over adding any application-level zoom or keyboard
+shortcut feature. Run it in both Essential and All-panels views after fitting
+the built-in sample.
+
+### `NAV-01` — long result section
+
+Open a result section that is at least three visual viewports tall, scroll
+until the original selector position is no longer visible, and capture the
+authoritative result-navigation dock rectangle. Pass only when:
+
+- exactly one dock is rendered for the active view;
+- computed `position` is `sticky`, its top edge clears the Streamlit toolbar,
+  and the entire selector remains inside the visual viewport;
+- the current selection and localized caption remain visible;
+- selecting another section works with pointer and ordinary keyboard
+  interaction, preserves AnalysisID, and does not estimate/refit; and
+- the dock does not cover an alert, focused element, required field, or the
+  first heading of the selected section.
+
+### `NAV-02` — narrow result navigation
+
+Repeat at `390 x 844` and 320 CSS-pixel widths. In Essential view, the section
+choices must remain on one horizontally touch-scrollable line rather than
+wrapping into a tall overlay. The selected choice, horizontal overflow, and
+focus ring must be discoverable without page-level horizontal panning. In
+All-panels view, the compact select control must remain fully visible.
+
+Record dock, toolbar, selector, and first-section-heading rectangles before
+and after the section change, plus the before/after AnalysisID and estimator
+call count.
+
 ## Required adversarial and compatibility cases
 
 ### `REPEAT-01` — two legitimate returns
@@ -185,12 +218,14 @@ result. Core conditions must still pass, computed scroll behaviour must remain
 `auto`, no multi-frame smooth animation may occur, and the focus outline must
 remain visible.
 
-### `REFLOW-01/02` — zoom and narrow layouts
+### `REFLOW-01/02` — browser reflow compatibility
 
-Run at desktop 200% zoom, then at `390 x 844` and 320 CSS-pixel widths. The
-guide and return controls must work without hover, required content and the
-focus ring must be reachable without horizontal panning, the toolbar must not
-obscure the heading, and the same focus/state/caption conditions must pass.
+After `NAV-01/02` pass, run the same journey at desktop 200% browser zoom. This
+is a reflow compatibility check, not an application zoom feature. The guide
+and return controls must work without hover, required content and the focus
+ring must be reachable without page-level horizontal panning, the toolbar and
+navigation dock must not obscure the heading, and the same focus/state/caption
+conditions must pass.
 
 The exact-source return scroll in this runbook is an accessibility restoration
 after an explicit Help journey. It is not a tutorial coach mark or automatic
@@ -222,7 +257,8 @@ Create one reviewed record per case with:
 - locale, view, viewport, visual viewport, DPR, zoom, and reduced-motion state;
 - stable Help link/target/focus IDs and the return probe JSON;
 - before/after presentation-state comparison using sample-safe values;
-- heading/toolbar rectangles, scroll-call log, console log, and CSP headers;
+- heading/toolbar/navigation-dock rectangles, scroll-call log, console log,
+  and CSP headers;
 - screenshots before return, immediately after return, and with the focus ring;
 - short recordings for scroll, abort, reduced-motion, and screen-reader cases;
   and

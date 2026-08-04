@@ -405,6 +405,10 @@ In the app UI, wide reporting tables show the most important columns first,
 wrap short guide tables for reading, and place full-detail tables in expanders;
 downloads still contain the complete columns. On desktop screens, long result-tab
 bars wrap instead of forcing users to rely on horizontal scrolling.
+On long result pages, the authoritative Essential or All-panels selector stays
+at the top of the viewport while content scrolls. Narrow screens keep the
+Essential selector on one touch-scrollable line so the navigation does not
+turn into a tall overlay. The app does not add custom keyboard shortcuts.
 Default table, manuscript, and demo archives now contain only Python-native
 analysis, diagnostics, evidence contracts, figures, and reproduction assets.
 Legacy cross-package inventories, R/Julia scripts, Stan/Posterior handoff

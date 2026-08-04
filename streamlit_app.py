@@ -24680,7 +24680,7 @@ def _render_compact_dataframe(
 
 
 def _inject_desktop_readability_css() -> None:
-    """Reduce desktop tab-bar horizontal scrolling without changing app structure."""
+    """Inject readability, accessibility, and result-navigation styles."""
     st.markdown(
         """
 <style>
@@ -24718,6 +24718,27 @@ table.mfrm-wrapped-table th {
   font-weight: 700;
   background: rgba(49, 51, 63, 0.04);
   white-space: nowrap;
+}
+/* Result navigation is the one persistent orientation surface. It becomes a
+   compact dock only after the user scrolls to it, so it does not cover the run
+   summary or warnings above it. */
+.st-key-guided_result_navigation_dock,
+.st-key-full_result_navigation_dock {
+  position: sticky !important;
+  top: calc(3.75rem + env(safe-area-inset-top, 0px));
+  z-index: 990;
+  padding: 0.55rem 0.75rem 0.35rem;
+  margin: 0.25rem 0 0.9rem;
+  border: 1px solid rgba(128, 128, 128, 0.35);
+  border-radius: 0.75rem;
+  background: var(--background-color, Canvas);
+  color: var(--text-color, CanvasText);
+  box-shadow: 0 0.35rem 1rem rgba(0, 0, 0, 0.12);
+  isolation: isolate;
+}
+.st-key-guided_result_navigation_dock [data-testid="stCaptionContainer"],
+.st-key-full_result_navigation_dock [data-testid="stCaptionContainer"] {
+  margin-bottom: 0;
 }
 /* Accessibility — keyboard focus indicator.
    Streamlit's default focus ring is faint; boost it for keyboard users
@@ -24761,6 +24782,29 @@ textarea:focus-visible,
   .main .block-container {
     padding-left: 0.75rem;
     padding-right: 0.75rem;
+  }
+}
+/* Keep the dock compact on phones. The primary section switcher stays on one
+   touch-scrollable line instead of consuming most of the viewport by wrapping
+   into several rows. */
+@media (max-width: 699px) {
+  .st-key-guided_result_navigation_dock,
+  .st-key-full_result_navigation_dock {
+    top: calc(3.25rem + env(safe-area-inset-top, 0px));
+    padding: 0.4rem 0.5rem 0.25rem;
+    border-radius: 0.55rem;
+  }
+  .st-key-guided_result_navigation_dock
+  div[data-testid="stButtonGroup"] {
+    overflow-x: auto;
+    overscroll-behavior-inline: contain;
+    scrollbar-width: thin;
+  }
+  .st-key-guided_result_navigation_dock
+  div[data-testid="stButtonGroup"]
+  div[data-baseweb="button-group"] {
+    flex-wrap: nowrap !important;
+    min-width: max-content;
   }
 }
 </style>
@@ -28849,17 +28893,18 @@ def _render_guided_essential_tabs(
     result_generate_figures: bool,
 ) -> None:
     """Render the selected Essential section without drawing every heavy panel."""
-    selected_section = st.segmented_control(
-        t("guided.section_select_label"),
-        options=list(GUIDED_SECTION_IDS),
-        default="start",
-        format_func=_guided_section_label,
-        key="guided_essential_section",
-        help=t("guided.section_select_help"),
-        width="stretch",
-    )
-    selected_section = selected_section or "start"
-    st.caption(t("guided.section_select_caption"))
+    with st.container(key="guided_result_navigation_dock", border=True):
+        selected_section = st.segmented_control(
+            t("guided.section_select_label"),
+            options=list(GUIDED_SECTION_IDS),
+            default="start",
+            format_func=_guided_section_label,
+            key="guided_essential_section",
+            help=t("guided.section_select_help"),
+            width="stretch",
+        )
+        selected_section = selected_section or "start"
+        st.caption(t("guided.section_select_caption"))
     render_guided_section_reading_order(selected_section)
 
     if selected_section == "start":
@@ -35999,16 +36044,17 @@ def run_facets_mode(
         "downloads": t("main_tabs.downloads"),
         "help": t("main_tabs.help"),
     }
-    selected_main_panel = st.selectbox(
-        t("main_tabs.panel_select_label"),
-        options=list(main_panel_labels),
-        index=0,
-        format_func=lambda panel_id: main_panel_labels.get(str(panel_id), str(panel_id)),
-        key="main_results_panel",
-        help=t("main_tabs.panel_select_help"),
-    )
-    selected_main_panel = selected_main_panel or "data"
-    st.caption(t("main_tabs.panel_select_caption"))
+    with st.container(key="full_result_navigation_dock", border=True):
+        selected_main_panel = st.selectbox(
+            t("main_tabs.panel_select_label"),
+            options=list(main_panel_labels),
+            index=0,
+            format_func=lambda panel_id: main_panel_labels.get(str(panel_id), str(panel_id)),
+            key="main_results_panel",
+            help=t("main_tabs.panel_select_help"),
+        )
+        selected_main_panel = selected_main_panel or "data"
+        st.caption(t("main_tabs.panel_select_caption"))
 
     # --- Data tab ---
     if selected_main_panel == "data":
@@ -68257,31 +68303,6 @@ def validate_q_matrix(q_df: pd.DataFrame) -> dict:
     }
 
 
-def render_keyboard_shortcuts_help() -> None:
-    """Collapsed sidebar expander summarising keyboard shortcuts.
-
-    Streamlit itself ships with several built-in shortcuts; the app adds
-    none of its own because the hotkey surface is shared with every
-    widget. This section just documents what already works so users
-    don't have to guess.
-    """
-    with st.sidebar.expander("Keyboard shortcuts", expanded=False):
-        st.markdown(
-            "| Key | Action |\n"
-            "|---|---|\n"
-            "| `R` | Re-run the app (also: top-right ⋮ menu → Rerun) |\n"
-            "| `C` | Clear the app cache (⋮ menu → Clear cache) |\n"
-            "| `Esc` | Close modals / dialogs |\n"
-            "| `?` | Keyboard shortcuts cheat sheet (this list) |\n"
-            "| `Tab` / `Shift+Tab` | Move focus across widgets |\n"
-            "| `Space` / `Enter` | Toggle checkboxes / activate buttons |\n"
-            "| `Ctrl/Cmd + F` | Browser page search (works across tabs) |\n"
-            "\n"
-            "The **Run FACETS-mode estimation** button is the primary "
-            "Streamlit button on the sidebar — `Tab` to reach it, `Enter` to fire."
-        )
-
-
 # ---------------------------------------------------------------------------
 # Just-in-time contextual help (v0.2.5+)
 # ---------------------------------------------------------------------------
@@ -69919,13 +69940,6 @@ def main() -> None:
     )
 
     help_state = render_persistent_help_launcher()
-
-    # Keyboard shortcuts cheat sheet (collapsed) — always rendered so it
-    # is one click away regardless of app mode.
-    try:
-        render_keyboard_shortcuts_help()
-    except Exception:
-        pass
 
     language_fast_path = _consume_language_switch_fast_path(app_mode)
     if language_fast_path and help_state.is_open:

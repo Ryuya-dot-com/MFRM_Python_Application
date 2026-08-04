@@ -51,8 +51,8 @@
     "tab_report_export": "Report & Export",
     "tab_learn": "Learn",
     "section_select_label": "Section",
-    "section_select_help": "Use the horizontal section switcher to move between results, figures, diagnostics, reports, and help. Only the selected section is rendered so large runs remain responsive.",
-    "section_select_caption": "Figures is its own section for viewing plots. Use Report & Export / Downloads / Figures only when you need figure files, manifests, or evidence bundles.",
+    "section_select_help": "Use this result navigation dock to move between results, figures, diagnostics, reports, and help. It stays available while you scroll, and only the selected section is rendered so large runs remain responsive.",
+    "section_select_caption": "Stays visible while you scroll. Switching sections reuses this fit; open Report & Export only when you need files.",
     "section_col_section": "Section",
     "diagnostics_select_label": "Diagnostic panel",
     "diagnostics_select_help": "Choose one diagnostic panel to render. This keeps facet and figure controls responsive because hidden diagnostics are not redrawn on every selection change.",
@@ -2575,8 +2575,8 @@
     "downloads": "Downloads",
     "help": "Help",
     "panel_select_label": "Results panel",
-    "panel_select_help": "Only the selected panel is rendered. This keeps All panels display mode from preparing every diagnostics, figure, and download section on each rerun.",
-    "panel_select_caption": "Switch panels to view deeper diagnostics. The fitted model is reused; panel switching does not re-estimate.",
+    "panel_select_help": "Use this persistent result navigation to switch panels. Only the selected panel is rendered, so All panels display mode does not prepare every diagnostic, figure, and download section on each rerun.",
+    "panel_select_caption": "This navigation stays visible while you scroll. The fitted model is reused; panel switching does not re-estimate.",
     "classical_dif": "Classical DIF"
   },
   "facets_tables": {

@@ -168,7 +168,7 @@ partial or planned unless the implementation-status section says otherwise.
 | `COPY-06` | Active Help sends users to external engines or Posterior Viewer | Native Python settings, diagnostics, sensitivity, and archives are the only core actions | Remove active calls to action; retain bounded citations only |
 | `COPY-07` | “Full table” mixes substantive results with contract columns | Substantive detailed table and technical audit table/export are separate | Column exposure registry |
 | `COPY-08` | Glossary definitions live in parallel Python and locale structures | Inline definition, Help glossary, search aliases, and export derive from one term registry | Canonical concept/term source |
-| `COPY-09` | Keyboard Help teaches Streamlit rerun/cache mechanics and a FACETS-mode button name | Keyboard Help teaches app controls, Help access, focus movement, and safe return; platform maintenance shortcuts are omitted | Localized accessibility topic plus concise sidebar projection |
+| `COPY-09` | Keyboard Help teaches Streamlit rerun/cache mechanics and a FACETS-mode button name | No dedicated shortcut surface; native control labels, visible focus, and persistent navigation carry the interaction contract | Remove the sidebar projection and retain browser acceptance for ordinary Tab/Enter operation |
 
 ## Target architecture
 
@@ -230,7 +230,7 @@ inserted into AnalysisSpec or EvidenceRecords.
 | `streamlit_app.py` errors | Replace `render_exception_details()` on public paths with `render_user_problem()`. Raw exceptions remain in confidential logs only; no environment variable enables a public exception panel. |
 | `streamlit_app.py` PCA reasons | Store stable reason/problem codes instead of exception names/messages in locale arguments. Completed results remain available when a diagnostic fails. |
 | `streamlit_app.py` tables/reports | Project user labels and substantive columns for Standard/Detailed; retain exact contract columns in technical audit CSV/JSON. |
-| `streamlit_app.py` tutorial/keyboard Help | Replace independent internal-language prose with short projections from the repeat-analysis and accessibility topics. |
+| `streamlit_app.py` tutorial/navigation | Keep repeat-analysis guidance task-focused; remove shortcut instructions and keep result navigation visible during scrolling. |
 | `locales/en.json`, `locales/ja.json` | Add matched `terms`, `help_nav`, `help_topics`, and `problems` keys. Remove an old key only after no production/test reference remains. |
 | `tests/` | Add contract, route, lifecycle, copy exposure, privacy, and AppTest coverage described below. |
 
@@ -253,7 +253,7 @@ inserted into AnalysisSpec or EvidenceRecords.
 | [`streamlit_app.py`](../streamlit_app.py#L26209), `guided_section_id_for_target()` | Stop using it on new paths; replace substring inference with registered target IDs. A temporary adapter accepts only enumerated exact legacy aliases | Locale/title-renaming tests do not change the resolved section |
 | [`streamlit_app.py`](../streamlit_app.py#L53343), `show_help_section()` | Turn into a compatibility wrapper over registered topic/category projections; remove English-title `if` identity and developer inventory from the default path | Topic graph is zero-orphan and Help selection works after display-title changes |
 | [`streamlit_app.py`](../streamlit_app.py#L67147), `render_help_popover()` | Resolve an explicit HelpLink; render shows/reads/limits inline; add detailed-Help button; unknown IDs render safe fallback | Every active caller has one valid link and one return/focus target |
-| [`streamlit_app.py`](../streamlit_app.py#L66754), `render_keyboard_shortcuts_help()` | Localize and limit it to app operation, Help access, keyboard movement, and return; remove cache/rerun maintenance guidance and the FACETS-mode label | Keyboard instructions describe controls that exist in both view projections |
+| [`streamlit_app.py`](../streamlit_app.py), removed `render_keyboard_shortcuts_help()` | Remove the shortcut surface and its cache/rerun guidance; do not replace it with custom hotkeys | Initial AppTest has no shortcut expander and both result projections retain native focusable navigation |
 | [`streamlit_app.py`](../streamlit_app.py#L58713), `_render_downloads()` | Replace implementation-mechanics captions, give privacy manifest a user-purpose label, and keep filenames/renderers in technical details | Sharing-mode AppTest names included/excluded content without raw manifest vocabulary |
 | [`mfrm_app/help_popovers.py`](../mfrm_app/help_popovers.py#L1) | During migration, generate legacy inline fields from registered topic sections; then remove the independent translation mapping | One canonical content source supplies both locales and every projection |
 | [`locales/en.json`](../locales/en.json#L798) and [`locales/ja.json`](../locales/ja.json#L798) | Remove function/NumPy/exception placeholders from visible dimensionality reasons | Placeholder parity passes and no raw exception placeholder remains in a public key |

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import inspect
+from pathlib import Path
 
 import streamlit_app as app
 
@@ -57,3 +58,29 @@ def test_default_result_route_has_no_duplicate_first_read_overview() -> None:
 
 def test_result_section_labels_cover_the_workflow_shell_registry() -> None:
     assert tuple(app.GUIDED_SECTION_I18N_KEYS) == app.GUIDED_SECTION_IDS
+
+
+def test_result_navigation_docks_are_sticky_compact_and_not_fixed() -> None:
+    source = inspect.getsource(app._inject_desktop_readability_css)
+
+    assert ".st-key-guided_result_navigation_dock" in source
+    assert ".st-key-full_result_navigation_dock" in source
+    assert "position: sticky" in source
+    assert "position: fixed" not in source
+    assert "safe-area-inset-top" in source
+    assert "@media (max-width: 699px)" in source
+    assert 'data-testid="stButtonGroup"' in source
+    assert "overflow-x: auto" in source
+    assert "min-width: max-content" in source
+
+
+def test_app_has_no_keyboard_shortcut_help_surface() -> None:
+    main_source = inspect.getsource(app.main)
+    app_source = Path(app.__file__).read_text(encoding="utf-8")
+
+    assert not hasattr(app, "render_keyboard_shortcuts_help")
+    assert "Keyboard shortcuts" not in main_source
+    assert "shortcut" not in main_source.casefold()
+    assert "keydown" not in app_source.casefold()
+    assert "keyup" not in app_source.casefold()
+    assert "accesskey=" not in app_source.casefold()

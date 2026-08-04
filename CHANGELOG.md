@@ -4,6 +4,12 @@ All notable changes to this standalone Streamlit distribution should be recorded
 
 ## Unreleased
 
+- **Persistent result navigation without shortcut overhead.** Removed the
+  sidebar keyboard-shortcut cheat sheet and its Streamlit maintenance commands.
+  Essential and All-panels result selectors now live in a sticky navigation
+  dock that remains available while long result sections scroll. On narrow
+  screens, the Essential switcher stays on a compact touch-scrollable line
+  instead of expanding into a tall fixed overlay.
 - **Phase-aware UX hierarchy.** Added a pure presentation policy for data
   origin and workflow phase, contextual privacy severity, action-first
   onboarding, collapsed raw-row previews, and a unified pre-run workspace.
@@ -1917,7 +1923,9 @@ architecture, microcopy, onboarding, accessibility, performance).
 - Keyboard shortcut cheat sheet (`render_keyboard_shortcuts_help`) lives
   in a collapsed sidebar expander so the shortcut surface is documented
   once and kept up to date (R rerun, C clear cache, Esc close, ? cheat
-  sheet, Tab focus, Enter activate, Ctrl/Cmd+F search).
+  sheet, Tab focus, Enter activate, Ctrl/Cmd+F search). This historical
+  surface was removed in the current Unreleased work in favor of persistent
+  result navigation and native control behavior.
 - Cache-stale detection banner now exposes a one-click **Rerun now**
   button that sets `_facets_mode_force_rerun` and triggers
   `st.rerun()`, so users don't have to scroll back to the sidebar.

@@ -23,6 +23,57 @@ import streamlit_app as app
 
 APPTEST_TIMEOUT = 180
 APPTEST_SCENARIOS = ("writing_essay", "writing_with_missing")
+WORKFLOW_CONTROL_KINDS = (
+    "button",
+    "checkbox",
+    "radio",
+    "selectbox",
+    "slider",
+    "text_area",
+    "text_input",
+    "number_input",
+    "multiselect",
+)
+INITIAL_CONTROL_BUDGET = {
+    "button": 4,
+    "checkbox": 7,
+    "radio": 7,
+    "selectbox": 12,
+    "slider": 4,
+    "text_area": 2,
+    "text_input": 1,
+    "number_input": 9,
+    "multiselect": 4,
+}
+RESULT_CONTROL_BUDGET = {
+    "button": 9,
+    "checkbox": 8,
+    "radio": 7,
+    "selectbox": 14,
+    "slider": 4,
+    "text_area": 2,
+    "text_input": 1,
+    "number_input": 9,
+    "multiselect": 4,
+}
+
+
+def assert_control_topology_within_budget(
+    app_test: AppTest,
+    budget: dict[str, int],
+) -> None:
+    """Require an explicit IA budget change before adding rendered controls."""
+
+    counts = {
+        kind: len(getattr(app_test, kind))
+        for kind in WORKFLOW_CONTROL_KINDS
+    }
+    excess = {
+        kind: (counts[kind], maximum)
+        for kind, maximum in budget.items()
+        if counts[kind] > maximum
+    }
+    assert not excess, f"rendered workflow control budget exceeded: {excess}"
 
 
 @pytest.mark.parametrize("scenario_key", list(app.SAMPLE_DATA_SCENARIOS.keys()))
@@ -81,6 +132,7 @@ def test_representative_scenarios_render_without_streamlit_exception(scenario_ke
         f"after scenario switch for {scenario_key!r}: "
         f"{[e.value for e in at.exception]}"
     )
+    assert_control_topology_within_budget(at, INITIAL_CONTROL_BUDGET)
 
     run_button = None
     for button in at.sidebar.button:
@@ -98,6 +150,10 @@ def test_representative_scenarios_render_without_streamlit_exception(scenario_ke
         f"{scenario_key!r} crashed during or after Run: "
         f"{[e.value for e in at.exception]}"
     )
+    subheaders = [str(item.value) for item in at.subheader]
+    assert subheaders.count("Choose what you want to do now") == 1
+    assert "First-read overview" not in subheaders
+    assert_control_topology_within_budget(at, RESULT_CONTROL_BUDGET)
 
 
 def test_scenario_names_match_registry():

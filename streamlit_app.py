@@ -7308,13 +7308,14 @@ def render_analysis_setup_workspace(
     fit completed in the same Streamlit rerun.
     """
 
-    policy = _ux.workspace_presentation(
+    shell = _ux.resolve_workflow_shell(
         has_data=isinstance(data, pd.DataFrame) and not data.empty,
         has_result=isinstance(st.session_state.get("facets_mode_output"), dict),
+        selected_result_section=st.session_state.get("guided_essential_section"),
     )
     surface = st.empty()
     with surface.container():
-        if policy.collapse_input:
+        if shell.collapse_setup:
             with st.expander(t("app.setup_after_run_expander"), expanded=False):
                 render_loaded_data_banner()
                 render_input_overview(data)
@@ -7333,7 +7334,7 @@ def render_analysis_setup_workspace(
         ):
             st.dataframe(data.head(20), width="stretch")
 
-        if policy.show_pre_run_checks:
+        if shell.show_pre_run_checks:
             try:
                 readiness_report = build_readiness_report(
                     data=data,
@@ -28669,7 +28670,7 @@ GUIDED_SECTION_I18N_KEYS = {
 }
 
 
-GUIDED_SECTION_IDS = tuple(GUIDED_SECTION_I18N_KEYS.keys())
+GUIDED_SECTION_IDS = tuple(_ux.RESULT_SECTION_IDS)
 
 
 GUIDED_SECTION_READING_ORDER_KEYS = {
@@ -35896,8 +35897,9 @@ def run_facets_mode(
 
     essential_mode = st.session_state.get("app_view_density", "Essential") == "Essential"
 
-    # --- First-read guide: Essential shows a compact action plan above the tabs;
-    # Full keeps the established collapsible first-read checklist.
+    # --- One authoritative result orientation surface. Essential delegates the
+    # primary next action to the goal router; first-read detail lives only in
+    # its selected section. Full keeps the established collapsible checklist.
     try:
         first_read_rows = build_first_read_guide_rows(
             result, diagnostics, out.get("all_bias_results", {})
@@ -35912,18 +35914,17 @@ def run_facets_mode(
             )
         except Exception:  # pragma: no cover - UX helper must not break results
             guided_action_plan = pd.DataFrame()
+    workflow_shell = _ux.resolve_workflow_shell(
+        has_data=True,
+        has_result=True,
+        selected_result_section=st.session_state.get("guided_essential_section"),
+    )
     if essential_mode:
-        _render_guided_goal_router(action_plan=guided_action_plan, key_suffix="overview")
-        st.subheader(t("guided.overview_subheader"))
-        st.caption(t("guided.overview_caption"))
-        _render_guided_action_plan(
-            result,
-            diagnostics,
-            out.get("all_bias_results", {}),
-            expanded_details=False,
-            key_suffix="overview",
-            plan=guided_action_plan,
-        )
+        if workflow_shell.show_result_router:
+            _render_guided_goal_router(
+                action_plan=guided_action_plan,
+                key_suffix="overview",
+            )
     else:
         with st.expander(
             "Where to look first — first-read guide",

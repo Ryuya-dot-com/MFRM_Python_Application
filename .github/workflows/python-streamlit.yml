@@ -49,6 +49,8 @@ permissions:
   contents: read
 
 jobs:
+  # Keep the established job id so branch-protection check names stay stable.
+  # The final step turns this existing matrix into a clean-checkout contract.
   smoke-test:
     runs-on: ubuntu-latest
     strategy:
@@ -82,6 +84,9 @@ jobs:
       - name: Run engine self-tests
         run: python streamlit_app.py --self-test
 
+      - name: Run privacy, localization, and workflow UX contracts
+        run: make ux-contracts PYTHON=python
+
       - name: Run standalone Python test suite
         run: make apptest PYTHON=python
 
@@ -90,3 +95,10 @@ jobs:
 
       - name: Export demo report smoke
         run: python streamlit_app.py --export-demo-report validation/generated/demo_report
+
+      - name: Verify tracked checkout stayed clean
+        run: |
+          git diff --check
+          git diff --exit-code
+          git diff --cached --exit-code
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"

@@ -8,11 +8,11 @@ import streamlit_app as app
 def test_setup_workspace_collapses_raw_rows_and_pre_run_checks_after_results() -> None:
     source = inspect.getsource(app.render_analysis_setup_workspace)
 
-    assert "workspace_presentation" in source
-    assert "policy.collapse_input" in source
+    assert "resolve_workflow_shell" in source
+    assert "shell.collapse_setup" in source
     assert "app.setup_after_run_expander" in source
     assert "app.input_preview_rows_expander_template" in source
-    assert "policy.show_pre_run_checks" in source
+    assert "shell.show_pre_run_checks" in source
 
 
 def test_successful_run_clears_setup_surface_before_results() -> None:
@@ -41,3 +41,19 @@ def test_result_router_keeps_only_one_primary_action_above_supporting_detail() -
     assert supporting in source
     assert secondary in source
     assert source.index(primary) < source.index(supporting) < source.index(secondary)
+
+
+def test_default_result_route_has_no_duplicate_first_read_overview() -> None:
+    source = inspect.getsource(app.run_facets_mode)
+
+    assert source.count("_render_guided_goal_router(") == 1
+    assert "workflow_shell.show_result_router" in source
+    assert 'st.subheader(t("guided.overview_subheader"))' not in source
+    assert "_render_guided_action_plan(" not in source
+
+    section_source = inspect.getsource(app._render_guided_essential_tabs)
+    assert "_render_guided_action_plan(" in section_source
+
+
+def test_result_section_labels_cover_the_workflow_shell_registry() -> None:
+    assert tuple(app.GUIDED_SECTION_I18N_KEYS) == app.GUIDED_SECTION_IDS

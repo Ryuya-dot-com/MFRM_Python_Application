@@ -85,6 +85,29 @@ Exit gate:
   AnalysisID; and
 - no raw response row is visible by default.
 
+Progress on 2026-08-04:
+
+- introduced a widget-independent six-phase workflow-shell contract with one
+  named primary-action owner per phase;
+- removed the duplicate top-level first-read overview from the default result
+  route while retaining its full detail in the First read section;
+- captured initial and post-run AppTest control budgets so additions to the
+  rendered topology require an explicit information-architecture change; and
+- converted the Python workflow into an explicit clean-checkout matrix with
+  named workflow/privacy/localization contracts and a final worktree check.
+
+The browser accessibility matrix remains the next M1 acceptance item; native
+AppTest topology is the required fallback gate until that browser connection
+is available.
+
+Increment verification:
+
+- `make apptest`: 1,073 passed, 62 compatibility tests deselected;
+- representative initial/post-run AppTests: two scenarios passed;
+- `--self-test`: 56 passed;
+- `--doctor` and `--release-check`: passed; and
+- benchmark and demo-report generation smokes: passed.
+
 ### M2 — scalable input and modular presentation (31-90 days)
 
 Outcome: data entry and result navigation can grow without extending the

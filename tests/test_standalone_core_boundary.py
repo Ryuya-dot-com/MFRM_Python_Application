@@ -476,6 +476,10 @@ def test_standalone_make_and_workflows_do_not_expose_parity_exporter():
     assert not re.search(r"\b(?:make|gmake)\s+parity\b", workflows)
     assert 'NATIVE_PYTEST_ARGS ?= -m "not legacy_compat"' in makefile
     assert "make apptest" in workflows
+    assert "make ux-contracts" in workflows
+    assert "Verify tracked checkout stayed clean" in workflows
+    assert "git diff --exit-code" in workflows
+    assert "git status --porcelain=v1 --untracked-files=all" in workflows
     assert not re.search(r"python\s+-m\s+pytest\s+tests", workflows)
 
 

@@ -88,6 +88,9 @@ import pytest
 import streamlit_app as app
 
 
+pytestmark = pytest.mark.legacy_compat
+
+
 R_HELPER_PARITY_INPUT = (
     Path(__file__).resolve().parent / "data" / "r_bias_parity_input.csv"
 )

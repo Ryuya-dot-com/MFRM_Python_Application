@@ -256,13 +256,13 @@ def test_collect_download_frames_returns_context_for_download_ui():
         "dff_bias_screening",
         "dff_bias_Rater_x_Task",
         "public_beta_limitations",
-        "stan_reproducibility_archive_contract",
     }
     assert expected_frames.issubset(frames), expected_frames - set(frames)
     assert {"p_holm", "p_bh", "EvidenceLevel"}.issubset(frames["dff_bias_Rater_x_Task"].columns)
     assert isinstance(context["measures_dl"], pd.DataFrame)
     assert isinstance(context["steps_dl"], pd.DataFrame)
-    assert isinstance(context["generic_stan_data_dl"], dict)
+    assert "generic_stan_data_dl" not in context
+    assert "uto_stan_data_dl" not in context
 
     public_frames = app.prepare_download_frames_for_privacy(frames, public_export_mode=True)
     private_frames = app.prepare_download_frames_for_privacy(frames, public_export_mode=False)

@@ -4,8 +4,54 @@ All notable changes to this standalone Streamlit distribution should be recorded
 
 ## Unreleased
 
+- **Phase-aware UX hierarchy.** Added a pure presentation policy for data
+  origin and workflow phase, contextual privacy severity, action-first
+  onboarding, collapsed raw-row previews, and a unified pre-run workspace.
+  Successful fits now clear repeated setup content, retain one response-row
+  audit, and foreground one recommended result action while keeping alternate
+  routes, progress, and claim boundaries in supporting detail. The adversarial
+  baseline and long-term acceptance measures are recorded in
+  `docs/ux_adversarial_audit.md`.
+- **Standalone Python evidence and release boundary.** Added deterministic
+  AnalysisIdentity/EvidenceRecord contracts, canonical readiness states, and a
+  fail-closed MML prior-SD sensitivity decision. Default downloads, demo
+  archives, `--release-check`, `--self-test`, `make verify`, and GitHub CI now
+  use only Python-native evidence and reproduction assets.
+- **Legacy compatibility isolation.** Removed Posterior Viewer and Stan
+  generation from public sidebar, Report, Help, and tutorial routes; removed
+  the parity-fixture CLI/Make/CI route; and placed dormant compatibility tests
+  behind the non-release `legacy_compat` marker. Public Yardstick and
+  rating-scale recode bundles now take Python-only generator branches directly.
+- **Demo handoff accuracy.** Demo checklists and manuscript handoff prose now
+  name the actual `MFRM_Demo_*`, `method_appendix.md`, and
+  `manuscript_template.md` artifacts produced by the deterministic exporter.
+  The same demo-only artifact profile now covers generated tables, Markdown,
+  HTML, visual evidence, and binder README files. The exporter also writes an
+  `export_privacy_manifest.csv` that explicitly identifies the built-in data
+  as synthetic and does not transfer that status to user-supplied data.
+- **FACETS-primary fit standardisation.** RSM and PCM diagnostics now default
+  to Wright-Masters fourth-moment d.f., Wilson-Hilferty ZSTD, and the FACETS
+  absolute cap of 9. Primary `DF_Infit` / `DF_Outfit` and ZSTD columns follow
+  FACETS while the previous engine convention is retained in `*_ENGINE`
+  sidecars. Category diagnostics, FACETS-style report exports, and generated
+  Python/R reproducibility scripts use the same profile. The Fit Details UI
+  starts on FACETS-primary but retains explicit engine and engine-primary
+  comparison choices. Bounded GPCM outputs are marked
+  `facets_style_approximation_for_gpcm` and display a warning that exact
+  FACETS equivalence is not claimed.
+
+## 0.2.15-beta - 2026-06-17
+
 ### Added
 
+- **README and version alignment for public distribution**. The app version is
+  bumped to `0.2.15-beta`, and the README now documents the current beta label,
+  release-readiness commands, standalone runtime boundary, demo/parity export
+  smoke checks, and the new `mfrm_app/` helper package.
+- **Guided UX and export-readiness documentation surface**. The README now
+  reflects the Essential-view reading-order guidance, localized help popover
+  overlays, modular helper boundaries, privacy/cache expectations, and
+  reproducibility/export contracts added in the current public beta line.
 - **Zotero-informed method reference audit**. A safe read-only audit of
   the local Zotero/BibTeX library was used to expand the in-app APA
   reference library with Rasch, fit, local-dependence, external-package,
@@ -855,7 +901,8 @@ All notable changes to this standalone Streamlit distribution should be recorded
   to Ready.
 - **FACETS d.f. / ZSTD reporting alignment.** Two d.f. conventions for
   the standardised Infit / Outfit fit statistic now ship side-by-side.
-  The engine convention (default, backwards compatible) uses
+  The engine convention (the default when this alignment first shipped;
+  superseded by the Unreleased FACETS-primary change above) uses
   ``DF_Infit = sum(Var * w)`` and ``DF_Outfit = sum(w)`` and reports
   the Wilson-Hilferty (1931) standardised value through
   ``zstd_from_mnsq``. The new FACETS / Wright-Masters convention

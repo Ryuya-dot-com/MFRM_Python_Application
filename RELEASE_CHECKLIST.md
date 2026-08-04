@@ -7,7 +7,11 @@ Use this checklist before tagging or pushing a public beta release.
 - [ ] Confirm this repository is being used as an independent repo, not accidentally committed as ordinary files inside a private parent workspace.
 - [ ] If the parent repo should reference this project, decide between a Git submodule and a parent-level ignore rule.
 - [ ] Confirm the release label remains `standalone Python beta` unless the validation scope has changed.
-- [ ] Confirm the README still states that the app is not an exact replacement for FACETS, TAM, sirt, mirt, or `mfrmr`.
+- [ ] Confirm `ROADMAP.md` remains the active product boundary and that no core
+      feature invokes or requires an external estimation engine.
+- [x] Confirm the repository-external Simulation engine loader and dead dispatch
+      have been removed from `streamlit_app.py` and are covered by the
+      entrypoint boundary test.
 
 ## Privacy
 
@@ -22,15 +26,26 @@ Use this checklist before tagging or pushing a public beta release.
 - [ ] Review `DEPLOYMENT.md` before hosted deployment.
 - [ ] Confirm hosted demos use synthetic, built-in, or fully de-identified data.
 - [ ] Record the Streamlit Community Cloud Python version selected in Advanced settings.
+- [ ] If a contextual Help adapter is marked `BROWSER_ACCEPTED`, confirm its
+      stable evidence reference resolves to a reviewed record that passed
+      `docs/help_browser_acceptance.md` against this exact deployed commit.
 
 ## Statistical Validation
 
 - [ ] Run `make verify` or the equivalent commands below.
-- [ ] Review `validation/README.md` before claiming cross-package parity.
-- [ ] If external R checks are reported, archive the generated `r_crosscheck_status.csv` and note package versions.
-- [ ] Do not claim exact numerical parity unless the fixture, tolerances, and parameterization map are included.
+- [ ] Confirm `tests/test_standalone_core_boundary.py` passes.
+- [ ] Confirm every new unavailable/held computation exposes a stable ReasonCode.
+- [ ] Confirm saved decisions reproduce from their exact AnalysisID, evidence
+      fingerprints, prespecified sensitivity plan, and source records.
+- [ ] Confirm native deterministic fixtures cover the supported model and design conditions changed in this release.
 - [ ] Confirm the README preview image still matches the current public-beta UI after material layout changes.
-- [ ] Update `validation/R_CROSSCHECK_STATUS.md` after rerunning the optional R scaffold in a materially different R/package environment.
+
+The release-check payload, default Downloads archives, deterministic demo
+archives, CLI, Make targets, built-in self-test registry, and normal pytest
+selection are Python-native. Dormant compatibility tests carry the
+`legacy_compat` marker and are excluded from `make apptest`, `make verify`, and
+GitHub CI. They must be explicitly retained, deprecated, or retired before the
+product-boundary roadmap item is complete; they are not release evidence.
 
 ## Commands
 
@@ -40,9 +55,8 @@ python -m py_compile streamlit_app.py
 python streamlit_app.py --doctor
 python streamlit_app.py --release-check
 python streamlit_app.py --self-test
-python -m pytest tests
+make apptest
 python streamlit_app.py --benchmark-quick --benchmark-csv validation/generated/benchmark_smoke.csv
-python streamlit_app.py --export-parity-fixture validation/generated/parity_fixture
 rm -rf .pytest_cache validation/generated
 find . -type d -name __pycache__ -prune -exec rm -rf {} +
 ```

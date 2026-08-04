@@ -2,11 +2,13 @@
 
 Standalone Python beta application for Many-Facet Rasch Model estimation in Streamlit.
 
-This app is designed to run without `mfrmr`, `rpy2`, `Rscript`, FACETS, TAM, sirt, or mirt at runtime. Those tools are used only as external methodological references for validation and interpretation.
+This app estimates, diagnoses, stress-tests, and reports MFRM analyses in
+Python. Other software may be cited as methodological history, but it is not
+called, imported, handed a job, or used as a public release gate.
 
 ## Status
 
-- Release status: public beta / research preview (**v0.2.14-beta**; current branch also includes the Unreleased items in `CHANGELOG.md`)
+- Release status: public beta / research preview (**v0.2.15-beta**)
 - Runtime engine: standalone Python
 - Primary entrypoint: `streamlit_app.py`
 - Intended use: exploratory analysis, teaching, reporting support, and research workflow prototyping
@@ -41,12 +43,28 @@ commit after a push or reboot.
 
 ## What's new in the current beta line
 
-The current app label is v0.2.14-beta. This branch also includes Unreleased
-refinements documented in `CHANGELOG.md`, including mfrmr 0.1.6 migration
-coverage, EB shrinkage advisory outputs, SE/CI coverage diagnostics for ADEMP
-parameter recovery, conditional bias-inference audits, facet sample-size /
-nesting / design effect audits, information curves, and public-facing wording
-cleanup.
+The current app label is v0.2.15-beta. This beta line adds the v0.2.14
+sample-scenario and quick-results-bundle work, then layers on the
+release-readiness and UX/documentation pass documented in `CHANGELOG.md`.
+Key current-line improvements include:
+
+- FACETS-primary fit standardisation for RSM/PCM: Wright-Masters
+  fourth-moment d.f., Wilson-Hilferty ZSTD, and the FACETS +/-9 cap are the
+  default. Historical engine d.f./ZSTD remain in `*_ENGINE` sidecar columns.
+  GPCM uses the same calculation only as an explicitly labelled
+  FACETS-style approximation. See
+  [`docs/fit_df_zstd_conventions.md`](docs/fit_df_zstd_conventions.md).
+- Modular helper boundaries under `mfrm_app/` for CLI/doctor checks,
+  export-frame collection, distribution metadata, privacy text, preflight
+  contracts, and table IO.
+- Guided Essential-view reading order and localized Japanese help popover
+  overlays, so first-time users have clearer local guidance without hiding
+  advanced evidence from full-view users.
+- README-visible public verification commands: `--doctor`, `--release-check`,
+  `--self-test`, and the Python-native demo report export.
+- Stronger reproducibility and publication-export contracts for download
+  frames, public-release readiness, runtime dependency boundaries, and
+  privacy/caching expectations.
 
 Earlier v0.2.0-beta (2026-04-17) shipped four major feature tracks; v0.2.1 and
 v0.2.2 were post-release hotfixes landing the findings from a parallel UX audit.
@@ -59,15 +77,11 @@ full per-version breakdown.
   manuscript-ready Word (.docx), PDF, or HTML file with auto-generated
   abstract, exhaustive Methods, results tables, embedded figures, and an
   APA 7 reference list. Accessible from **Report → Exports**.
-- **Posterior Viewer mode** — upload posterior draws produced offline
-  (CmdStan CSV, Apache Parquet, or ArviZ NetCDF) and get trace / ridge
-  / pair / forest plots plus HMC diagnostics (Rhat, ESS, divergences,
-  E-BFMI) without leaving the browser. Select the mode from the sidebar top.
-- **Advanced model Stan generators** (download-only) — DINA, HRM,
-  Testlet (Random Intercept + Bifactor), Mixture Rasch, 2PL Binary,
-  and Pairwise BTL. The app emits a `.stan` file + data bundle; you
-  compile and sample locally with cmdstan / cmdstanpy / rstan, then
-  bring the draws back to the Posterior Viewer.
+- Historical Posterior Viewer and Stan-generator code remains a legacy
+  compatibility surface while its deprecation/removal decision is completed.
+  It is outside the standalone product boundary and is not included in default
+  downloads, demo archives, release evidence, the sidebar, Help, or Report
+  routes.
 - **Pattern-matched estimation errors** — instead of a generic "common
   causes" checklist, failures now surface a specific diagnosis + action
   (singular matrix → non-centered facet, maxit reached → raise to 1000,
@@ -120,8 +134,6 @@ full per-version breakdown.
 - **Scree plot EV = 3 reference line** — previously only EV = 1 and
   EV = 2 were drawn; the "EV > 3 = strong secondary residual signal"
   threshold is now visible on the plot itself.
-- **Stan `application/x-stan` MIME** — browsers save .stan files
-  correctly and Stan-aware editors pick up syntax highlighting.
 - **Help tab refresh** — Quick Start documents all v0.2.x features;
   Troubleshooting cites the new diagnostic helpers.
 
@@ -133,8 +145,12 @@ See `CHANGELOG.md` for the per-commit breakdown and
 ![MFRM Streamlit sample-data result overview](docs/images/app-data-overview.png)
 
 The screenshot uses the built-in synthetic sample data. It highlights the
-default guided sidebar, the visible data-privacy warning, the input preview,
-the post-estimation success status, and the guided result tabs.
+default guided sidebar, contextual data-origin notice, input overview,
+post-estimation success status, and guided result sections. Raw response rows
+are available from a collapsed preview instead of being exposed by default.
+
+The current cross-cutting UX baseline and the planned workflow-shell work are
+documented in [`docs/ux_adversarial_audit.md`](docs/ux_adversarial_audit.md).
 
 ## Data Privacy
 
@@ -213,11 +229,22 @@ python -m py_compile streamlit_app.py
 python streamlit_app.py --doctor
 python streamlit_app.py --release-check
 python streamlit_app.py --self-test
-python -m pytest tests
+make apptest
 python streamlit_app.py --benchmark-quick --benchmark-csv validation/generated/benchmark_smoke.csv
 python streamlit_app.py --export-demo-report validation/generated/demo_report
-python streamlit_app.py --export-parity-fixture validation/generated/parity_fixture
 ```
+
+For public distribution, run at least `--doctor`, `--release-check`, and
+`--self-test` from a fresh checkout before tagging or deploying. `--doctor`
+confirms Python/package floors, bundled assets, the standalone runtime boundary,
+and the privacy/cache boundary. `--self-test` exercises the app's built-in
+statistical and export contracts. The export command above generates a
+sanitized, Python-native demo-report package without uploading private data.
+The legacy parity-fixture generator and frozen fixtures are compatibility-only
+maintenance code. They have no CLI or Make target, are not called by
+`--self-test`, and tests marked `legacy_compat` are excluded from `make
+apptest`, `make verify`, and GitHub CI. They are outside the standalone release
+gate.
 
 Optional Make shortcuts:
 
@@ -285,7 +312,8 @@ Implemented in the standalone Python engine:
 - latent regression via constrained `population_formula`
 - fixed user-set population prior SD for the current MML population model path
 - on-demand MML prior-SD sensitivity refits with fit, measure-shift, rank, and
-  latent-regression coefficient diagnostics
+  latent-regression coefficient diagnostics, plus prespecified AnalysisID,
+  SensitivityPlan, variant-record, and SensitivityDecision lineage
 - MML observed-information covariance for non-person facet SE/CI when the
   fitted parameter vector is small enough for routine diagnostics
 - MML covariance audit exports with Hessian rank, condition number,
@@ -306,7 +334,9 @@ Implemented in the standalone Python engine:
 - anchor/equating workflow checklist for current-run linking evidence
 - prediction for fitted, held-out, and scenario rows
 - simulation and design evaluation
-- final-report readiness checklist
+- final-report readiness checklist with legacy display columns and a canonical
+  EvidenceRecord ledger that separates computation state from conclusion
+  stability
 - visual interpretation checklist for guided figure reading
 - visual evidence binder with figure files, caption drafts, and figure-to-claim mapping
 - visualization preferences for theme, label density, font size, dimensions, and caption detail
@@ -352,6 +382,15 @@ below 2.0 for a clean residual-structure screen. Residual PCA is not a
 standalone proof of unidimensionality and is not a DIMTEST/UNIDIM
 implementation; report it with fit and local-dependence evidence.
 
+The complete readiness download adds deterministic `AnalysisID`, `EvidenceID`,
+`ComputationState`, `StabilityState`, `ReasonCode`, scope, and source-artifact
+fields without changing the original five readiness columns. A displayed
+`Review` therefore no longer conflates an executed caution, a failed fit, and
+an analysis that was not assessable. Standard ZIPs also include reconstructable
+AnalysisIdentity, EvidenceRecord, MML sensitivity decision, and settings JSON
+sidecars; public mode uses non-identifying aggregate residual/linking evidence
+instead of restoring excluded row-level tables.
+
 For MML latent regression, inspect the covariate type preview before fitting.
 Integer-like columns such as `GradeCode = 1, 2, 3` are flagged so you can decide
 whether they are continuous predictors or category labels that should be forced
@@ -366,12 +405,11 @@ In the app UI, wide reporting tables show the most important columns first,
 wrap short guide tables for reading, and place full-detail tables in expanders;
 downloads still contain the complete columns. On desktop screens, long result-tab
 bars wrap instead of forcing users to rely on horizontal scrolling.
-The same public-beta bundle includes `mfrmr_015_migration_coverage.csv` and
-`mfrmr_016_migration_coverage.csv`, which map the mfrmr package feature surface
-through 0.1.6 to Python support, boundaries, and next validation actions.
-The 0.1.6 map covers the new post-hoc EB shrinkage advisory, facet sample-size
-adequacy, nesting/crossing screens, intraclass-cluster-ICC design effect,
-information curves, and misfit/weighting audit support.
+Default table, manuscript, and demo archives now contain only Python-native
+analysis, diagnostics, evidence contracts, figures, and reproduction assets.
+Legacy cross-package inventories, R/Julia scripts, Stan/Posterior handoff
+packages, and mfrmr migration maps remain compatibility-maintenance surfaces;
+they are not included in default downloads.
 
 The Visuals tab also includes a downloadable visual interpretation checklist.
 It maps each figure to the first signal to read, the review trigger, and the
@@ -410,14 +448,18 @@ Open `validation/generated/demo_report/manuscript_handoff.md` first, then read
 `visualization_settings.json`, `visualization_settings.csv`,
 `MFRM_Demo_Visual_Evidence_Binder.zip`,
 `MFRM_Demo_Manuscript_Binder.zip`, `MFRM_Demo_Report.html`,
+`export_privacy_manifest.csv`,
+`final_report_readiness_analysis_identity.json`,
+`final_report_readiness_evidence_contract.json`,
 `publication_gate_summary.csv`, `submission_action_plan.csv`,
 `case_interpretation_guidance.csv`,
 `final_report_readiness.csv`,
 `manuscript_claim_guide.csv`,
 `manuscript_template.md`,
 `visual_interpretation_checklist.csv`, `visual_method_evidence.csv`,
-`public_beta_limitations.csv`, `mfrmr_015_migration_coverage.csv`,
-`mfrmr_016_migration_coverage.csv`, `public_release_readiness.csv`,
+`public_beta_limitations.csv`, `public_release_readiness.csv`,
+`mfrm_app_engine_runner.py`, `mfrm_local_batch_workflow.md`,
+`mfrm_jmle_self_contained.py`,
 `visual_caption_drafts.md`, `figure_manifest.csv`,
 `MFRM_Demo_Publication_Figures.zip`, and the interactive diagnostic figures in
 `figures_html/`.
@@ -425,9 +467,10 @@ Open `validation/generated/demo_report/manuscript_handoff.md` first, then read
 ## Statistical Caveats
 
 - GPCM is not a strict Rasch model. Its slope parameters change the interpretation of invariance and should be reported explicitly.
+- For RSM/PCM, primary Infit/Outfit ZSTD now uses the FACETS/Wright-Masters fourth-moment d.f., Wilson-Hilferty transform, and an absolute cap of 9. The `DF_*_ENGINE` and `*ZSTD_ENGINE` sidecars preserve the prior homogeneous-variance convention for sensitivity checks. For GPCM, FACETS-primary columns are labelled `facets_style_approximation_for_gpcm`; do not claim exact FACETS equivalence.
 - Measure SE/CI columns now carry method/status metadata. Non-person MML facet SEs use observed-information delta-method covariance when available; otherwise conditional information approximations are labelled as such. MML person SEs are EAP posterior SDs, not structural fixed-effect ML SEs. For MML, archive `mml_covariance_audit.csv` with condition number, rank deficiency, and regularization status.
 - ADEMP parameter-recovery exports include an explicit SE/CI coverage diagnostic table with `SEBasisRisk` and `CoverageClaimStatus`. Treat it as design-specific Monte Carlo evidence: cite the generator, fit method, replicate count, seed, and SE/CI status before making interval-calibration claims.
-- The current latent regression path uses the app's documented fixed population prior SD behavior. Use the MML prior-SD sensitivity export before treating population-scale or latent-regression coefficients as robust; do not describe it as identical to TAM unless the model, quadrature, variance treatment, and constraints have been checked.
+- The current latent regression path uses the app's documented fixed population prior SD behavior. Use the versioned MML prior-SD sensitivity decision before treating population-scale or latent-regression coefficients as robust; do not generalize beyond the implemented quadrature, variance treatment, constraints, and tested SD grid.
 - Bias and differential functioning outputs are conditional screening tools. Report the exported bias-inference audit with DFF tables; do not make no-bias or confirmatory bias claims unless linking, common-scale evidence, sample size, multiplicity review, and precision support that scope.
 - Residual PCA is a sparse-matrix diagnostic. Use the exported PCA stability audit before making dimensionality claims from eigenvalues or loadings; review leave-one-column-out and bootstrap sensitivity when the first residual component is near EV = 2 or EV = 3.
 - Cross-package equality is not expected by default because FACETS, TAM, sirt, mirt, and this app can use different parameterizations, constraints, latent variance handling, and optimization details.
@@ -447,24 +490,21 @@ Plotly/Kaleido and require Chrome or Chromium in the runtime when using
 `kaleido >= 1.0`; if that browser dependency is unavailable, the app falls back
 to interactive HTML figures instead of blocking the analysis.
 
-## External Reference Roles
+## Methodological Reference Roles (Not Integrations)
 
 - TAM: faceted MML design, latent regression, EAP, and multifacet reference checks.
 - mirt: GPCM, EAP/factor scores, plausible values, and broader IRT diagnostics.
 - sirt: rater-facet and hierarchical rater model reference checks.
-- mfrmr: functional capability reference for the Python migration target.
+- mfrmr: historical functional-capability reference.
 
-For the cross-package validation matrix and tolerance policy, see `validation/README.md`.
-For the archived optional R smoke status, see
+For the frozen historical comparison matrix, see `validation/README.md`; it is
+not a current app workflow or release gate. For the archived optional R smoke status, see
 `validation/R_CROSSCHECK_STATUS.md`.
 For the archived external numerical-validation inventory, see
 `validation/SIMULATION_REFERENCE_STATUS.md`.
-The parity fixture also includes official documentation touchpoints, an
-artifact checklist, an archived validation-artifact inventory, an external
-validation report template, sanitized Python/R/Julia Simulation validation
-templates, and the mfrmr 0.1.5 / 0.1.6 migration coverage tables so external
-checks can be archived without making R packages or private validation artifacts
-runtime dependencies.
+These archived compatibility materials are not default downloads, demo
+artifacts, release-check inputs, or release evidence for the standalone Python
+application.
 
 ## Continuous Integration
 
@@ -484,7 +524,6 @@ It runs:
 - `python streamlit_app.py --benchmark-quick --benchmark-csv validation/generated/benchmark_smoke.csv`
 - Streamlit AppTest smoke check
 - demo report export smoke check
-- parity fixture export smoke check
 
 If this directory is used as a standalone GitHub repository, the workflow will be discovered normally. If it remains a subdirectory inside a larger repository, copy or mirror the workflow into the repository root `.github/workflows/` directory.
 
@@ -527,6 +566,8 @@ MFRM_STREAMLIT_RELEASE_PLAN.md
 RELEASE_CHECKLIST.md
 anchor_templates_and_guideline/
 locales/
+mfrm_app/
+tests/
 .streamlit/config.toml
 .github/workflows/python-streamlit.yml
 .github/ISSUE_TEMPLATE/

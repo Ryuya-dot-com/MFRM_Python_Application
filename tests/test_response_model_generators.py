@@ -14,6 +14,9 @@ import pytest
 import streamlit_app as app
 
 
+pytestmark = pytest.mark.legacy_compat
+
+
 def _braces_balanced(code: str) -> bool:
     depth = 0
     for ch in code:

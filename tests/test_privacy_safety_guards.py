@@ -178,6 +178,7 @@ def test_estimation_resource_preflight_suppresses_ok_noise_but_surfaces_review()
     assert app.should_render_estimation_resource_preflight(review_preflight) is True
 
 
+@pytest.mark.legacy_compat
 def test_posterior_upload_and_payload_preflights_block_oversize_inputs():
     upload_errors, _ = app.posterior_upload_preflight([
         SizedUpload("too_large.nc", app.POSTERIOR_MAX_FILE_BYTES + 1)

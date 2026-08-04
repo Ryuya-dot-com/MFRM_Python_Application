@@ -2,18 +2,15 @@
 
 Last local smoke run: 2026-04-12
 
-This file records a local external-reference smoke check for the generated
-parity fixture. It is validation evidence for fixture portability and package
-handoff, not a claim of exact numerical parity with TAM, sirt, mirt, FACETS, or
-`mfrmr`.
+This file is a frozen record of a local compatibility smoke check performed in
+2026. It is not current release evidence and does not define a supported app
+handoff or integration.
 
-## Command
+## Historical Command Status
 
-```bash
-python streamlit_app.py --export-parity-fixture validation/generated/parity_fixture
-cd validation/generated/parity_fixture
-Rscript r_crosscheck_scaffold.R
-```
+The former `--export-parity-fixture` CLI route has been removed. The command
+used for this archived run is intentionally not presented as a current workflow.
+Any retained files are compatibility-only and are excluded from normal CI.
 
 ## Environment
 

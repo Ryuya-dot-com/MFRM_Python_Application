@@ -4,6 +4,7 @@ import inspect
 from types import SimpleNamespace
 
 import pandas as pd
+import pytest
 
 import streamlit_app as app
 from mfrm_app import help_popovers
@@ -128,6 +129,31 @@ def test_render_help_popover_uses_localized_topic_overlay():
     assert "st.session_state.get(\"lang\", DEFAULT_LANG)" in source
 
 
+def test_language_switch_uses_lightweight_result_fast_path():
+    source = inspect.getsource(app.main)
+
+    assert "on_change=_mark_language_switch" in source
+    assert "_consume_language_switch_fast_path(app_mode)" in source
+    assert "render_language_switch_fast_path()" in source
+
+
+def test_language_fast_path_consumes_pending_state_only_for_results(monkeypatch):
+    state = {}
+
+    class _FakeSt:
+        session_state = state
+
+    monkeypatch.setattr(app, "st", _FakeSt())
+    state["_language_switch_pending"] = True
+    assert app._consume_language_switch_fast_path("FACETS-mode estimation") is False
+    assert state["_language_switch_pending"] is False
+
+    state["_language_switch_pending"] = True
+    state["facets_mode_output"] = {"result": {}}
+    assert app._consume_language_switch_fast_path("FACETS-mode estimation") is True
+    assert state["_language_switch_pending"] is False
+
+
 def test_guided_section_selector_keeps_all_detail_sections_in_order():
     options = app.guided_section_selector_options()
 
@@ -224,6 +250,40 @@ def test_guided_figures_selector_lazy_renders_one_panel():
     assert "st.segmented_control" in source
     assert "guided_figures_panel" in source
     assert "st.tabs" not in source
+
+
+def test_dimensionality_section_lazy_renders_one_pca_panel():
+    source = inspect.getsource(app.show_dimensionality_section)
+
+    assert "dimensionality_panel" in source
+    assert "st.selectbox" in source
+    assert "dim_tabs = st.tabs" not in source
+    assert 'if selected_dimensionality_panel == "overall"' in source
+    assert "render_dimtest_panel(result, diagnostics, facet_cols)" in source
+
+
+def test_wright_map_section_lazy_renders_one_map_panel():
+    source = inspect.getsource(app.show_wright_map_section)
+
+    assert "wright_map_panel" in source
+    assert "st.selectbox" in source
+    assert "wm_tabs = st.tabs" not in source
+    assert 'if selected_map_panel == "wright_map"' in source
+    assert 'if selected_map_panel == "yardstick"' in source
+
+
+@pytest.mark.legacy_compat
+def test_posterior_viewer_lazy_renders_one_plot_panel():
+    source = inspect.getsource(app.render_posterior_viewer_mode)
+
+    assert "posterior_plot_panel" in source
+    assert "st.selectbox" in source
+    assert "plot_tabs = st.tabs" not in source
+    assert 'if selected_plot_panel == "trace"' in source
+    assert 'if selected_plot_panel == "ridge"' in source
+    assert 'if selected_plot_panel == "pair"' in source
+    assert 'if selected_plot_panel == "forest"' in source
+    assert 'if selected_plot_panel == "rhat_ess"' in source
 
 
 def test_guided_first_run_route_table_links_sample_run_to_current_focus():
@@ -401,6 +461,16 @@ def test_guided_figures_section_is_a_direct_visual_surface():
     assert "guided.figures_panel_select_caption" in source
 
 
+def test_visuals_section_lazy_renders_one_plot_panel():
+    source = inspect.getsource(app.show_visuals_section)
+
+    assert "visuals_panel" in source
+    assert "st.selectbox" in source
+    assert "st.tabs" not in source
+    assert 'if selected_visual_panel == "category_probability"' in source
+    assert 'if selected_visual_panel == "ecdf"' in source
+
+
 def test_downloads_privacy_mode_is_defined_before_export_builders():
     source = inspect.getsource(app._render_downloads)
 
@@ -408,8 +478,9 @@ def test_downloads_privacy_mode_is_defined_before_export_builders():
     assert "downloads_panel" in source
     assert "st.tabs" not in source
     checkbox_idx = source.index("public_export_mode = st.checkbox")
-    stan_manifest_idx = source.index("stan_reproducibility_package_assets(")
-    assert checkbox_idx < stan_manifest_idx
+    frame_collection_idx = source.index("collect_download_frames(")
+    assert checkbox_idx < frame_collection_idx
+    assert "stan_reproducibility_package_assets(" not in source
 
 
 def test_full_mode_main_results_panel_is_lazy_rendered():
@@ -419,7 +490,22 @@ def test_full_mode_main_results_panel_is_lazy_rendered():
     assert "st.selectbox" in source
     assert "main_tabs.panel_select_caption" in source
     assert "tabs = st.tabs([" not in source
+    assert 'default="data"' not in source
     assert 'if selected_main_panel == "downloads"' in source
+
+
+def test_help_section_is_lazy_rendered_by_topic_selector():
+    source = inspect.getsource(app.show_help_section)
+
+    assert "help_panel" in source
+    assert "st.selectbox" in source
+    assert "st.tabs" not in source
+    assert "default=visible_labels[0]" not in source
+    assert 'if selected_help_label == "Analysis Workflow"' in source
+    assert 'if selected_help_label == "Public Beta"' not in source
+    assert 'if selected_help_label == "Model Capability"' not in source
+    assert "guided_stan_posterior_reproducibility_help_table" not in source
+    assert "_standalone_quick_start_markdown()" in source
 
 
 def test_publication_figure_payloads_use_plotly_helpers_with_expected_inputs():
@@ -650,7 +736,7 @@ def test_guided_reproducibility_guardrail_preserves_professional_checks():
     assert app.t("guided.repro_claim_trace_check") in set(table[check_col])
     assert app.t("guided.repro_rerun_check") in set(table[check_col])
     assert "Claim-to-evidence" in joined
-    assert "external" in joined
+    assert "external" not in joined.lower()
     assert table.astype(str).apply(lambda column: column.str.len().gt(0).all()).all()
 
 
@@ -767,14 +853,14 @@ def test_guided_export_share_preflight_table_maps_share_targets_to_artifacts():
         app.t("guided.export_preflight_col_keep"),
         app.t("guided.export_preflight_col_stop"),
     ]
-    assert len(table) == 6
+    assert len(table) == 5
     assert app.t("guided.export_preflight_public_package_audience") in set(table[audience_col])
     assert app.t("guided.export_preflight_manuscript_review_audience") in set(table[audience_col])
-    assert app.t("guided.export_preflight_external_validation_audience") in set(table[audience_col])
+    assert app.t("guided.export_preflight_external_validation_audience") not in set(table[audience_col])
     assert "export_privacy_manifest.csv" in joined
     assert "claim_to_evidence_matrix.csv" in joined
     assert "figure_manifest.csv" in joined
-    assert "external_simulation_reference_inventory.csv" in joined
+    assert "external_simulation_reference_inventory.csv" not in joined
     assert "Current gate:" in joined
     assert table.astype(str).apply(lambda column: column.str.len().gt(0).all()).all()
 
@@ -790,13 +876,13 @@ def test_guided_export_share_preflight_help_table_documents_share_boundaries():
         app.t("help.export_preflight_col_checks"),
         app.t("help.export_preflight_col_boundary"),
     ]
-    assert len(table) == 6
+    assert len(table) == 5
     assert app.t("help.export_preflight_public_package_audience") in set(table[audience_col])
     assert app.t("help.export_preflight_reviewer_repo_audience") in set(table[audience_col])
     assert "export_privacy_manifest.csv" in joined
     assert "visual_qa_preflight.csv" in joined
     assert "formal de-identification" in joined
-    assert "prospective-validity" in joined
+    assert app.t("help.export_preflight_external_validation_audience") not in set(table[audience_col])
     assert table.astype(str).apply(lambda column: column.str.len().gt(0).all()).all()
 
 
@@ -862,20 +948,21 @@ def test_help_section_renders_reproducibility_guardrail_reference():
 
     assert "guided_reproducibility_guardrail_table()" in source
     assert "help.repro_guardrail_expander" in source
-    assert "guided_stan_posterior_reproducibility_help_table()" in source
-    assert "help.stan_repro_heading" in source
-    assert "guided_uto_claim_boundary_help_table()" in source
-    assert "guided_uto_design_audit_field_help_table()" in source
-    assert "help.uto_audit_heading" in source
-    assert "stan_posterior_handoff_checklist()" in source
-    assert "stan_run_manifest_template()" in source
-    assert "stan_posterior_reproducibility_handoff_markdown()" in source
+    assert "guided_stan_posterior_reproducibility_help_table()" not in source
+    assert "help.stan_repro_heading" not in source
+    assert "guided_uto_claim_boundary_help_table()" not in source
+    assert "guided_uto_design_audit_field_help_table()" not in source
+    assert "help.uto_audit_heading" not in source
+    assert "stan_posterior_handoff_checklist()" not in source
+    assert "stan_run_manifest_template()" not in source
+    assert "stan_posterior_reproducibility_handoff_markdown()" not in source
     assert "guided_report_claim_trace_help_table()" in source
     assert "help.claim_trace_expander" in source
     assert "guided_export_share_preflight_help_table()" in source
     assert "help.export_preflight_expander" in source
 
 
+@pytest.mark.legacy_compat
 def test_guided_stan_posterior_reproducibility_help_table_keeps_manifest_detail():
     table = app.guided_stan_posterior_reproducibility_help_table()
     checkpoint_col = app.t("help.stan_repro_col_checkpoint")
@@ -902,6 +989,7 @@ def test_guided_stan_posterior_reproducibility_help_table_keeps_manifest_detail(
     assert table.astype(str).apply(lambda column: column.str.len().gt(0).all()).all()
 
 
+@pytest.mark.legacy_compat
 def test_guided_uto_design_audit_help_tables_define_claim_boundaries():
     claim_table = app.guided_uto_claim_boundary_help_table()
     field_table = app.guided_uto_design_audit_field_help_table()
@@ -938,6 +1026,7 @@ def test_guided_uto_design_audit_help_tables_define_claim_boundaries():
     assert field_table.astype(str).apply(lambda column: column.str.len().gt(0).all()).all()
 
 
+@pytest.mark.legacy_compat
 def test_stan_posterior_reproducibility_handoff_markdown_is_portable():
     handoff = app.stan_posterior_reproducibility_handoff_markdown()
 
@@ -1322,14 +1411,18 @@ def test_guided_action_hub_cards_keep_primary_detail_and_boundary_actions():
     assert app.t("guided.action_hub_boundary_role") in joined
 
 
-def test_guided_goal_router_renders_action_hub_with_section_buttons():
+def test_guided_goal_router_renders_one_primary_action_with_supporting_routes():
     source = inspect.getsource(app._render_guided_goal_router)
 
     assert "guided_action_hub_cards" in source
     assert "guided_essential_section" in source
     assert "st.button" in source
     assert "st.rerun()" in source
-    assert "action_hub_detail_expander" in source
+    assert 'type="primary" if primary else "secondary"' in source
+    assert "goal_supporting_detail_expander" in source
+    assert source.index("_render_action_card(primary_row, primary=True)") < source.index(
+        'with st.expander(t("guided.goal_supporting_detail_expander")'
+    )
 
 
 def test_guided_progress_checklist_is_checkbox_ready_and_caveat_sensitive():

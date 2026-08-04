@@ -14,6 +14,8 @@ import sys
 import time
 import zipfile
 from collections import OrderedDict
+from dataclasses import dataclass
+from enum import Enum
 from functools import lru_cache
 from itertools import combinations, product
 from pathlib import Path
@@ -30,12 +32,20 @@ from scipy.special import logsumexp
 from scipy.stats import chi2, norm as _norm, t as t_dist
 
 from mfrm_app import distribution as _distribution
+from mfrm_app import evidence as _evidence
 from mfrm_app import exports as _exports
 from mfrm_app import frame_bundle as _frame_bundle
+from mfrm_app import help_contract as _help_contract
+from mfrm_app import help_navigation as _help_navigation
 from mfrm_app import help_popovers as _help_popovers
+from mfrm_app import help_topics as _help_topics
 from mfrm_app import io_tables as _io_tables
+from mfrm_app import mml_prior_sensitivity as _mml_prior_contract
 from mfrm_app import preflight as _preflight
 from mfrm_app import privacy as _privacy
+from mfrm_app import readiness as _readiness
+from mfrm_app import user_problems as _user_problems
+from mfrm_app import ux as _ux
 
 
 CLI_CHECK_FLAGS = {
@@ -45,7 +55,6 @@ CLI_CHECK_FLAGS = {
     "--benchmark",
     "--benchmark-quick",
     "--export-demo-report",
-    "--export-parity-fixture",
 }
 if any(flag in sys.argv for flag in CLI_CHECK_FLAGS):
     logging.getLogger("streamlit.runtime.caching.cache_data_api").setLevel(logging.ERROR)
@@ -59,7 +68,7 @@ if "--doctor" in sys.argv and importlib.util.find_spec("streamlit") is None:
 import streamlit as st
 
 
-APP_VERSION = "0.2.14-beta"
+APP_VERSION = "0.2.15-beta"
 APP_RELEASE_LABEL = "standalone Python beta"
 APP_BUILD_ENV_KEYS = (
     "STREAMLIT_GIT_COMMIT_HASH",
@@ -184,28 +193,1081 @@ def t(key: str, default: str | None = None, **fmt) -> str:
     return text
 
 
-def _show_technical_error_details() -> bool:
-    """Return whether UI exception panels should expose stack traces."""
-    return str(os.environ.get("MFRM_SHOW_TECHNICAL_ERRORS", "")).strip().lower() in {
-        "1",
-        "true",
-        "yes",
-        "on",
-        "debug",
+def _language_display_name(code: str | None) -> str:
+    """Return the localized display name for a supported language code."""
+    return t("sidebar.japanese") if code == "ja" else t("sidebar.english")
+
+
+def _standalone_ui_text(*, en: str, ja: str) -> str:
+    """Return short product-boundary copy without adding legacy locale keys."""
+    return ja if st.session_state.get("lang", DEFAULT_LANG) == "ja" else en
+
+
+def _ensure_language_state() -> None:
+    """Initialize language tracking without treating first render as a switch."""
+    lang = st.session_state.get("lang", DEFAULT_LANG)
+    if lang not in SUPPORTED_LANGS:
+        lang = DEFAULT_LANG
+        st.session_state["lang"] = lang
+    st.session_state.setdefault("_active_lang", lang)
+
+
+def _mark_language_switch() -> None:
+    """Mark a language-only rerun so heavy result panels can defer rendering once."""
+    new_lang = st.session_state.get("lang", DEFAULT_LANG)
+    if new_lang not in SUPPORTED_LANGS:
+        new_lang = DEFAULT_LANG
+        st.session_state["lang"] = new_lang
+    old_lang = st.session_state.get("_active_lang", new_lang)
+    if old_lang != new_lang:
+        st.session_state["_language_switch_from"] = old_lang
+        st.session_state["_language_switch_pending"] = True
+    st.session_state["_active_lang"] = new_lang
+
+
+def _consume_language_switch_fast_path(app_mode: str) -> bool:
+    """Return True once when a language switch should avoid heavy re-rendering."""
+    if not st.session_state.get("_language_switch_pending", False):
+        return False
+    has_facets_results = (
+        app_mode == "FACETS-mode estimation"
+        and isinstance(st.session_state.get("facets_mode_output"), dict)
+    )
+    st.session_state["_language_switch_pending"] = False
+    return has_facets_results
+
+
+def render_language_switch_fast_path() -> None:
+    """Show a lightweight acknowledgement after changing the UI language."""
+    from_lang = _language_display_name(st.session_state.get("_language_switch_from"))
+    to_lang = _language_display_name(st.session_state.get("lang", DEFAULT_LANG))
+    st.title(t("app.title"))
+    st.success(t("app.language_switch_success_template", from_lang=from_lang, to_lang=to_lang))
+    st.caption(t("app.language_switch_caption"))
+    if st.button(
+        t("app.language_switch_resume_button"),
+        key="language_switch_resume",
+        type="primary",
+    ):
+        st.rerun()
+
+
+_HELP_ROUTE_STATE_KEY = "_mfrm_help_route_state"
+_HELP_TOPIC_PICKER_KEY = "_mfrm_help_topic_picker"
+_HELP_RETURNED_STATUS_KEY = "_mfrm_help_returned_status"
+_HELP_RETURN_INTENT_KEY = "_mfrm_help_return_intent"
+_HELP_SUPPRESS_ANALYSIS_TRIGGERS_ONCE_KEY = (
+    "_mfrm_help_suppress_analysis_triggers_once"
+)
+_GLOBAL_HELP_LINK_ID = "link.context.get_started.overview"
+_HELP_RETURN_INTENT_SCHEMA_VERSION = "mfrm_help_return_intent_v2"
+
+
+@dataclass(frozen=True, slots=True)
+class _HelpReturnIntent:
+    """Presentation-only request to restore one registered Help source."""
+
+    schema_version: str
+    help_link_id: str
+    target_id: str
+    focus_id: str
+    projection_id: str
+    analysis_id: str
+    data_context: str
+    source_view_state: tuple[tuple[str, str | float], ...]
+    phase: str
+
+
+class _ContextualHelpAcceptance(str, Enum):
+    """Internal verification stage for one concrete Streamlit Help adapter."""
+
+    APPTEST_ONLY = "apptest_only"
+    BROWSER_ACCEPTED = "browser_accepted"
+
+
+@dataclass(frozen=True, slots=True)
+class _ContextualHelpAdapterBinding:
+    """Exact registry-to-Streamlit binding for one activated source."""
+
+    topic_key: str
+    help_link_id: str
+    help_topic_id: str
+    section_id: str
+    target_id: str
+    focus_id: str
+    surface_id: str
+    panel_id: str
+    context_policy: _help_contract.HelpContextPolicy
+    acceptance: _ContextualHelpAcceptance
+    browser_evidence_id: str | None
+
+
+_CONTEXTUAL_HELP_APPTEST_ONLY_PILOT_KEYS = frozenset({"fit_scatter"})
+_CONTEXTUAL_HELP_BROWSER_EVIDENCE_ID_RE = re.compile(
+    r"^browser\.help\.[a-z][a-z0-9_]*\."
+    r"[a-z0-9](?:[a-z0-9._:-]*[a-z0-9])?$"
+)
+
+
+def _contextual_help_adapter_passes_acceptance_gate(
+    topic_key: str,
+    binding: object,
+) -> bool:
+    """Allow one AppTest-only pilot; all other adapters need browser evidence."""
+
+    pilot_keys = _CONTEXTUAL_HELP_APPTEST_ONLY_PILOT_KEYS
+    if (
+        not isinstance(binding, _ContextualHelpAdapterBinding)
+        or binding.topic_key != topic_key
+        or not isinstance(pilot_keys, frozenset)
+        or len(pilot_keys) > 1
+    ):
+        return False
+    if binding.acceptance is _ContextualHelpAcceptance.APPTEST_ONLY:
+        return (
+            topic_key in pilot_keys
+            and binding.browser_evidence_id is None
+        )
+    if binding.acceptance is _ContextualHelpAcceptance.BROWSER_ACCEPTED:
+        evidence_id = binding.browser_evidence_id
+        return (
+            isinstance(evidence_id, str)
+            and evidence_id == evidence_id.strip()
+            and evidence_id.startswith(f"browser.help.{topic_key}.")
+            and _CONTEXTUAL_HELP_BROWSER_EVIDENCE_ID_RE.fullmatch(evidence_id)
+            is not None
+        )
+    return False
+
+
+_ACTIVE_CONTEXTUAL_HELP_ADAPTER_BINDINGS = {
+    "fit_scatter": _ContextualHelpAdapterBinding(
+        topic_key="fit_scatter",
+        help_link_id="link.popover.fit_scatter",
+        help_topic_id="help.results.fit",
+        section_id="fit-scatter",
+        target_id="target.results.figure.fit_scatter",
+        focus_id="focus.results.figure.fit_scatter",
+        surface_id="surface.results",
+        panel_id="panel.results.figure.fit_scatter",
+        context_policy=_help_contract.HelpContextPolicy.REQUIRED_CURRENT,
+        acceptance=_ContextualHelpAcceptance.APPTEST_ONLY,
+        browser_evidence_id=None,
+    ),
+}
+_HELP_RETURN_PROJECTIONS: dict[tuple[str, str], tuple[tuple[str, str], ...]] = {
+    (
+        "target.results.figure.fit_scatter",
+        "essential.fit_details",
+    ): (
+        ("app_view_density", "Essential"),
+        ("guided_essential_section", "diagnostics"),
+        ("guided_diagnostics_panel", "fit_details"),
+    ),
+    (
+        "target.results.figure.fit_scatter",
+        "full.fit_details",
+    ): (
+        ("app_view_density", "Full"),
+        ("main_results_panel", "fit_details"),
+    ),
+}
+_CONTEXTUAL_HELP_RETURN_PROJECTION_IDS = {
+    "fit_scatter": frozenset(
+        {"essential.fit_details", "full.fit_details"}
+    ),
+}
+_HELP_RETURN_PRESENTATION_VALUE_ALLOWLIST = {
+    "app_view_density": frozenset({"Essential", "Full"}),
+    "main_results_panel": frozenset({"fit_details"}),
+    "guided_essential_section": frozenset({"diagnostics"}),
+    "guided_diagnostics_panel": frozenset({"fit_details"}),
+}
+_HELP_RETURN_PRESENTATION_KEYS = frozenset(
+    _HELP_RETURN_PRESENTATION_VALUE_ALLOWLIST
+)
+_HELP_RETURN_SOURCE_VIEW_KEYS = {
+    "target.results.figure.fit_scatter": (
+        "fit_df_method_method",
+        "fit_df_method_cap",
+    ),
+}
+_HELP_RETURN_SOURCE_VIEW_REQUIRED_KEYS = {
+    "target.results.figure.fit_scatter": frozenset({"fit_df_method_method"}),
+}
+_HELP_FIT_DF_METHOD_VALUES = frozenset({"facets", "engine", "both"})
+_HELP_FOCUS_MARKER_IDS = {
+    "focus.results.figure.fit_scatter": "mfrm-focus-results-figure-fit-scatter",
+}
+
+
+def _help_data_context_for_output(output: dict) -> str | None:
+    """Return sample/real provenance for a fitted output without inspecting data."""
+
+    stored = output.get("_help_data_context") if isinstance(output, dict) else None
+    if stored is not None:
+        try:
+            return _help_contract.HelpDataContext(str(stored)).value
+        except ValueError:
+            return None
+    # Legacy outputs predate fitted-source provenance. The current sidebar
+    # source is not evidence of the retained fit's origin, so never infer it.
+    return None
+
+
+def _current_fitted_help_context() -> _help_contract.HelpContextBinding | None:
+    """Build the identity-only Help binding for the retained fitted result."""
+
+    output = st.session_state.get("facets_mode_output")
+    if not isinstance(output, dict):
+        return None
+    result = output.get("result")
+    if not isinstance(result, dict):
+        return None
+    data_context = _help_data_context_for_output(output)
+    if data_context is None:
+        return None
+    try:
+        identity = build_result_analysis_identity(result)
+        return _help_contract.HelpContextBinding(
+            data_context=data_context,
+            analysis_id=identity.analysis_id,
+            analysis_phase=_help_contract.HelpAnalysisPhase.FITTED,
+        )
+    except Exception as exc:
+        LOGGER.warning(
+            "Current Help context could not be constructed",
+            extra={"event": "mfrm.help_context_unavailable"},
+            exc_info=(type(exc), exc, exc.__traceback__),
+        )
+        return None
+
+
+def _registered_popover_help_link_id(topic_key: str) -> str | None:
+    """Return an explicitly activated popover link; never infer an ID."""
+
+    normalized = str(topic_key)
+    binding = _ACTIVE_CONTEXTUAL_HELP_ADAPTER_BINDINGS.get(normalized)
+    if binding is None or not _contextual_help_adapter_passes_acceptance_gate(
+        normalized,
+        binding,
+    ):
+        return None
+    registered_link_id = _help_topics.HELP_POPOVER_LINK_IDS.get(normalized)
+    link = _help_topics.HELP_REGISTRY.link(binding.help_link_id)
+    target = _help_topics.HELP_REGISTRY.target(binding.target_id)
+    projection_ids = _CONTEXTUAL_HELP_RETURN_PROJECTION_IDS.get(normalized)
+    if (
+        registered_link_id != binding.help_link_id
+        or link is None
+        or target is None
+        or not isinstance(projection_ids, frozenset)
+        or not projection_ids
+        or any(
+            (binding.target_id, projection_id) not in _HELP_RETURN_PROJECTIONS
+            for projection_id in projection_ids
+        )
+        or link.source_target_id != binding.target_id
+        or link.help_topic_id != binding.help_topic_id
+        or link.section_id != binding.section_id
+        or link.return_target_id != binding.target_id
+        or link.return_focus_id != binding.focus_id
+        or link.context_policy is not binding.context_policy
+        or target.surface_id != binding.surface_id
+        or binding.focus_id not in target.focus_ids
+        or target.presentation_state.get("panel_id") != binding.panel_id
+        or target.presentation_state.get("surface_id") != binding.surface_id
+    ):
+        return None
+    return binding.help_link_id
+
+
+def _contextual_help_adapter_binding_for_link(
+    help_link_id: str,
+) -> _ContextualHelpAdapterBinding | None:
+    return next(
+        (
+            binding
+            for binding in _ACTIVE_CONTEXTUAL_HELP_ADAPTER_BINDINGS.values()
+            if binding.help_link_id == help_link_id
+            and _registered_popover_help_link_id(binding.topic_key)
+            == help_link_id
+        ),
+        None,
+    )
+
+
+def _popover_return_projection_id(topic_key: str) -> str | None:
+    normalized = str(topic_key)
+    projection_ids = _CONTEXTUAL_HELP_RETURN_PROJECTION_IDS.get(normalized)
+    if not projection_ids:
+        return None
+    projection_id = (
+        "full.fit_details"
+        if st.session_state.get("app_view_density", "Essential") == "Full"
+        else "essential.fit_details"
+    )
+    return projection_id if projection_id in projection_ids else None
+
+
+def _active_contextual_help_popover_keys() -> frozenset[str]:
+    """Derive active keys only from the complete registry and acceptance gate."""
+
+    return frozenset(
+        topic_key
+        for topic_key in _ACTIVE_CONTEXTUAL_HELP_ADAPTER_BINDINGS
+        if _registered_popover_help_link_id(topic_key) is not None
+    )
+
+
+_ACTIVE_CONTEXTUAL_HELP_POPOVER_KEYS = _active_contextual_help_popover_keys()
+_ACTIVE_CONTEXTUAL_HELP_RETURN_DESTINATIONS = frozenset(
+    (
+        _ACTIVE_CONTEXTUAL_HELP_ADAPTER_BINDINGS[topic_key].target_id,
+        _ACTIVE_CONTEXTUAL_HELP_ADAPTER_BINDINGS[topic_key].focus_id,
+    )
+    for topic_key in _ACTIVE_CONTEXTUAL_HELP_POPOVER_KEYS
+)
+
+
+def _normalize_help_source_view_value(key: str, value: object) -> str | float | None:
+    """Normalize one explicitly allowlisted source-view value."""
+
+    if key == "fit_df_method_method":
+        return value if isinstance(value, str) and value in _HELP_FIT_DF_METHOD_VALUES else None
+    if key == "fit_df_method_cap":
+        if isinstance(value, bool) or not isinstance(
+            value,
+            (int, float, np.integer, np.floating),
+        ):
+            return None
+        numeric = float(value)
+        return numeric if np.isfinite(numeric) and 0.0 <= numeric <= 50.0 else None
+    return None
+
+
+def _capture_help_return_source_view_state(
+    target_id: str,
+) -> tuple[tuple[str, str | float], ...] | None:
+    """Capture only the scientific view controls owned by one return target."""
+
+    allowed_keys = _HELP_RETURN_SOURCE_VIEW_KEYS.get(target_id)
+    if allowed_keys is None:
+        return ()
+    captured: list[tuple[str, str | float]] = []
+    for key in allowed_keys:
+        if key not in st.session_state:
+            continue
+        normalized = _normalize_help_source_view_value(
+            key,
+            st.session_state.get(key),
+        )
+        if normalized is None:
+            return None
+        captured.append((key, normalized))
+    captured_map = dict(captured)
+    if not _HELP_RETURN_SOURCE_VIEW_REQUIRED_KEYS[target_id].issubset(captured_map):
+        return None
+    if (
+        captured_map.get("fit_df_method_method") != "engine"
+        and "fit_df_method_cap" not in captured_map
+    ):
+        return None
+    return tuple(captured)
+
+
+def _valid_help_return_source_view_state(intent: _HelpReturnIntent) -> bool:
+    """Validate source-view state independently from projection definitions."""
+
+    if not isinstance(intent.source_view_state, tuple):
+        return False
+    allowed_keys = _HELP_RETURN_SOURCE_VIEW_KEYS.get(intent.target_id)
+    required_keys = _HELP_RETURN_SOURCE_VIEW_REQUIRED_KEYS.get(intent.target_id)
+    if allowed_keys is None or required_keys is None:
+        return intent.source_view_state == ()
+    seen: set[str] = set()
+    source_values: dict[str, str | float] = {}
+    for item in intent.source_view_state:
+        if not isinstance(item, tuple) or len(item) != 2:
+            return False
+        key, value = item
+        if not isinstance(key, str) or key not in allowed_keys or key in seen:
+            return False
+        if key == "fit_df_method_cap" and type(value) is not float:
+            return False
+        normalized = _normalize_help_source_view_value(key, value)
+        if normalized is None or normalized != value:
+            return False
+        seen.add(key)
+        source_values[key] = normalized
+    if not required_keys.issubset(seen):
+        return False
+    return not (
+        source_values.get("fit_df_method_method") != "engine"
+        and "fit_df_method_cap" not in source_values
+    )
+
+
+def _validated_help_return_intent(
+    value: object,
+    *,
+    required_phase: str | None = None,
+) -> _HelpReturnIntent | None:
+    """Fail closed unless an intent matches the registry and active adapter."""
+
+    if not isinstance(value, _HelpReturnIntent):
+        return None
+    if value.schema_version != _HELP_RETURN_INTENT_SCHEMA_VERSION:
+        return None
+    if value.phase not in {"source_open", "awaiting_render"}:
+        return None
+    if required_phase is not None and value.phase != required_phase:
+        return None
+    binding = _contextual_help_adapter_binding_for_link(value.help_link_id)
+    if binding is None:
+        return None
+    link = _help_topics.HELP_REGISTRY.link(value.help_link_id)
+    target = _help_topics.HELP_REGISTRY.target(value.target_id)
+    projection = _HELP_RETURN_PROJECTIONS.get(
+        (value.target_id, value.projection_id)
+    )
+    if (
+        link is None
+        or target is None
+        or projection is None
+        or link.source_target_id != binding.target_id
+        or link.help_topic_id != binding.help_topic_id
+        or link.section_id != binding.section_id
+        or link.return_target_id != value.target_id
+        or link.return_focus_id != value.focus_id
+        or value.target_id != binding.target_id
+        or value.focus_id != binding.focus_id
+        or target.surface_id != binding.surface_id
+        or target.presentation_state.get("panel_id") != binding.panel_id
+        or target.presentation_state.get("surface_id") != binding.surface_id
+        or value.focus_id not in target.focus_ids
+        or value.focus_id not in _HELP_FOCUS_MARKER_IDS
+        or not value.analysis_id
+        or not _valid_help_return_source_view_state(value)
+    ):
+        return None
+    if any(
+        key not in _HELP_RETURN_PRESENTATION_VALUE_ALLOWLIST
+        or value not in _HELP_RETURN_PRESENTATION_VALUE_ALLOWLIST[key]
+        for key, value in projection
+    ):
+        return None
+    try:
+        _help_contract.HelpContextBinding(
+            data_context=value.data_context,
+            analysis_id=value.analysis_id,
+            analysis_phase=_help_contract.HelpAnalysisPhase.FITTED,
+        )
+    except Exception:
+        return None
+    return value
+
+
+def _new_help_return_intent(
+    *,
+    help_link_id: str,
+    projection_id: str,
+    context: _help_contract.HelpContextBinding | None,
+) -> _HelpReturnIntent | None:
+    link = _help_topics.HELP_REGISTRY.link(help_link_id)
+    if link is None or context is None or context.analysis_id is None:
+        return None
+    source_view_state = _capture_help_return_source_view_state(
+        link.return_target_id
+    )
+    if source_view_state is None:
+        return None
+    candidate = _HelpReturnIntent(
+        schema_version=_HELP_RETURN_INTENT_SCHEMA_VERSION,
+        help_link_id=link.help_link_id,
+        target_id=link.return_target_id,
+        focus_id=link.return_focus_id,
+        projection_id=projection_id,
+        analysis_id=context.analysis_id,
+        data_context=context.data_context.value,
+        source_view_state=source_view_state,
+        phase="source_open",
+    )
+    return _validated_help_return_intent(candidate, required_phase="source_open")
+
+
+def _activate_help_return_intent(intent: _HelpReturnIntent) -> bool:
+    """Restore allowlisted presentation state before source widgets render."""
+
+    validated = _validated_help_return_intent(
+        intent,
+        required_phase="source_open",
+    )
+    if validated is None:
+        return False
+    projection = _HELP_RETURN_PROJECTIONS[
+        (validated.target_id, validated.projection_id)
+    ]
+    restored_state = (*projection, *validated.source_view_state)
+    previous = {key: st.session_state.get(key) for key, _ in restored_state}
+    missing = {
+        key for key, _ in restored_state if key not in st.session_state
     }
+    try:
+        for key, value in restored_state:
+            st.session_state[key] = value
+        st.session_state[_HELP_RETURN_INTENT_KEY] = _HelpReturnIntent(
+            schema_version=validated.schema_version,
+            help_link_id=validated.help_link_id,
+            target_id=validated.target_id,
+            focus_id=validated.focus_id,
+            projection_id=validated.projection_id,
+            analysis_id=validated.analysis_id,
+            data_context=validated.data_context,
+            source_view_state=validated.source_view_state,
+            phase="awaiting_render",
+        )
+    except Exception:
+        for key, old_value in previous.items():
+            if key in missing:
+                st.session_state.pop(key, None)
+            else:
+                st.session_state[key] = old_value
+        st.session_state.pop(_HELP_RETURN_INTENT_KEY, None)
+        return False
+    return True
+
+
+def _fail_closed_help_return() -> None:
+    st.session_state.pop(_HELP_RETURN_INTENT_KEY, None)
+    _set_help_route_state(
+        _help_navigation.safe_fallback_route(
+            _help_navigation.HelpRouteState.closed(),
+            _help_navigation.HelpFallbackReason.RETURN_TARGET_UNAVAILABLE,
+            registry=_help_topics.HELP_REGISTRY,
+        )
+    )
+
+
+_HELP_RETURN_FOCUS_HTML = {
+    "focus.results.figure.fit_scatter": """
+<style>
+#mfrm-focus-results-figure-fit-scatter {
+  scroll-margin-top: 1rem;
+}
+#mfrm-focus-results-figure-fit-scatter:focus {
+  outline: 3px solid currentColor;
+  outline-offset: 0.25rem;
+  border-radius: 0.125rem;
+}
+</style>
+<script>
+(() => {
+  "use strict";
+  const activeAtMount = document.activeElement;
+  const scheduleFrame = typeof window.requestAnimationFrame === "function"
+    ? window.requestAnimationFrame.bind(window)
+    : (callback) => window.setTimeout(callback, 0);
+  const restoreFocus = () => {
+    const target = document.getElementById("mfrm-focus-results-figure-fit-scatter");
+    if (
+      !(target instanceof HTMLElement) ||
+      !target.isConnected ||
+      target.id !== "mfrm-focus-results-figure-fit-scatter" ||
+      target.tagName !== "H3"
+    ) return;
+    if (target.dataset.mfrmFocusHandled === "true") return;
+    target.dataset.mfrmFocusHandled = "true";
+    const mountWasPassive =
+      activeAtMount === null ||
+      activeAtMount === document.body ||
+      activeAtMount === document.documentElement;
+    const mountWasTarget = activeAtMount === target;
+    const mountWasDetachedButton =
+      activeAtMount instanceof HTMLButtonElement &&
+      !activeAtMount.isConnected;
+    const activeNow = document.activeElement;
+    const focusStayedSafe =
+      activeNow === activeAtMount ||
+      activeNow === document.body ||
+      activeNow === document.documentElement ||
+      activeNow === target;
+    if (
+      !(mountWasPassive || mountWasTarget || mountWasDetachedButton) ||
+      !focusStayedSafe
+    ) {
+      target.dataset.mfrmFocusStatus = "aborted-user-focus";
+      return;
+    }
+    target.setAttribute("tabindex", "-1");
+    target.dataset.mfrmFocusId = "focus.results.figure.fit_scatter";
+    target.dataset.mfrmFocusRequest = "return-from-help";
+    target.dataset.mfrmFocusStatus = "attempting";
+    try {
+      target.focus({preventScroll: true});
+    } catch (_error) {
+      try {
+        target.focus();
+      } catch (_fallbackError) {
+        target.dataset.mfrmFocusStatus = "focus-error";
+        return;
+      }
+    }
+    const focused = document.activeElement === target;
+    target.dataset.mfrmFocusStatus = focused ? "focused" : "focus-failed";
+    if (!focused) return;
+    try {
+      target.scrollIntoView({behavior: "auto", block: "center", inline: "nearest"});
+    } catch (_error) {
+      try {
+        target.scrollIntoView();
+      } catch (_fallbackError) {
+        target.dataset.mfrmFocusStatus = "scroll-error";
+      }
+    }
+  };
+  scheduleFrame(() => scheduleFrame(restoreFocus));
+})();
+</script>
+""".strip(),
+}
+
+
+def _help_return_focus_html(focus_id: str) -> str:
+    """Return a static focus request for a registry-owned real heading."""
+
+    if focus_id not in _HELP_FOCUS_MARKER_IDS:
+        raise ValueError("focus_id is not registered for Help return")
+    try:
+        return _HELP_RETURN_FOCUS_HTML[focus_id]
+    except KeyError as exc:
+        raise ValueError("focus_id has no static Help return focus request") from exc
+
+
+def render_help_return_marker(target_id: str, focus_id: str) -> bool:
+    """Consume a return intent only where its real source target is rendered."""
+
+    intent = _validated_help_return_intent(
+        st.session_state.get(_HELP_RETURN_INTENT_KEY),
+        required_phase="awaiting_render",
+    )
+    if intent is None:
+        if _HELP_RETURN_INTENT_KEY in st.session_state:
+            st.session_state.pop(_HELP_RETURN_INTENT_KEY, None)
+        return False
+    if intent.target_id != target_id or intent.focus_id != focus_id:
+        return False
+    current_context = _current_fitted_help_context()
+    if (
+        current_context is None
+        or current_context.analysis_id != intent.analysis_id
+        or current_context.data_context.value != intent.data_context
+    ):
+        st.session_state.pop(_HELP_RETURN_INTENT_KEY, None)
+        _set_help_route_state(_help_navigation.HelpRouteState.closed())
+        st.warning(t("help_nav.stale_context_notice"))
+        return False
+    try:
+        focus_html = _help_return_focus_html(focus_id)
+    except ValueError:
+        st.session_state.pop(_HELP_RETURN_INTENT_KEY, None)
+        return False
+    returned_status = t("help_nav.returned_status")
+    st.html(
+        focus_html,
+        width="stretch",
+        unsafe_allow_javascript=True,
+    )
+    st.caption(returned_status)
+    st.session_state.pop(_HELP_RETURN_INTENT_KEY, None)
+    _set_help_route_state(_help_navigation.HelpRouteState.closed())
+    return True
+
+
+def _get_help_route_state() -> _help_navigation.HelpRouteState:
+    """Return the reducer-owned Help state, resetting incompatible old state."""
+
+    state = st.session_state.get(_HELP_ROUTE_STATE_KEY)
+    if not isinstance(state, _help_navigation.HelpRouteState):
+        state = _help_navigation.HelpRouteState.closed()
+        st.session_state[_HELP_ROUTE_STATE_KEY] = state
+    elif state.is_open:
+        current_context = (
+            None
+            if state.context_policy is _help_contract.HelpContextPolicy.STATIC_ONLY
+            else _current_fitted_help_context()
+        )
+        state = _help_navigation.invalidate_help_route(
+            state,
+            _help_topics.HELP_REGISTRY,
+            current_context=current_context,
+        )
+        st.session_state[_HELP_ROUTE_STATE_KEY] = state
+    return state
+
+
+def _set_help_route_state(state: _help_navigation.HelpRouteState) -> None:
+    if not isinstance(state, _help_navigation.HelpRouteState):
+        raise TypeError("state must be a HelpRouteState")
+    st.session_state[_HELP_ROUTE_STATE_KEY] = state
+
+
+def _current_help_lifecycle() -> str:
+    """Return the bounded lifecycle used only for topic applicability."""
+
+    return (
+        "fitted"
+        if isinstance(st.session_state.get("facets_mode_output"), dict)
+        else "no_data"
+    )
+
+
+def _begin_help_journey() -> None:
+    """Discard transient state owned by an earlier Help journey.
+
+    An ``awaiting_render`` intent is useful only during the immediate return
+    rerun that owns it.  If its registered target was not rendered, opening a
+    new Help journey is the explicit acknowledgement boundary: the abandoned
+    intent, its one-shot analysis suppression, and any older success notice
+    must not leak into the new route.
+    """
+
+    st.session_state.pop(_HELP_RETURN_INTENT_KEY, None)
+    st.session_state.pop(_HELP_SUPPRESS_ANALYSIS_TRIGGERS_ONCE_KEY, None)
+    st.session_state.pop(_HELP_RETURNED_STATUS_KEY, None)
+
+
+def _open_global_help() -> None:
+    _begin_help_journey()
+    state = _help_navigation.open_help_link(
+        _get_help_route_state(),
+        _help_topics.HELP_REGISTRY,
+        _GLOBAL_HELP_LINK_ID,
+    )
+    _set_help_route_state(state)
+
+
+def _open_registered_help_link(
+    help_link_id: str,
+    return_projection_id: str | None = None,
+) -> None:
+    _begin_help_journey()
+    link = _help_topics.HELP_REGISTRY.link(help_link_id)
+    current_context = (
+        _current_fitted_help_context()
+        if link is not None
+        and link.context_policy is not _help_contract.HelpContextPolicy.STATIC_ONLY
+        else None
+    )
+    state = _help_navigation.open_help_link(
+        _get_help_route_state(),
+        _help_topics.HELP_REGISTRY,
+        help_link_id,
+        context_binding=current_context,
+        current_context=current_context,
+    )
+    _set_help_route_state(state)
+    if return_projection_id is not None and not state.is_fallback:
+        intent = _new_help_return_intent(
+            help_link_id=help_link_id,
+            projection_id=return_projection_id,
+            context=current_context,
+        )
+        if intent is not None:
+            st.session_state[_HELP_RETURN_INTENT_KEY] = intent
+
+
+def _close_persistent_help() -> None:
+    state = _get_help_route_state()
+    if not state.is_open:
+        return
+    raw_intent = st.session_state.get(_HELP_RETURN_INTENT_KEY)
+    if raw_intent is not None:
+        intent = _validated_help_return_intent(
+            raw_intent,
+            required_phase="source_open",
+        )
+        current_context = _current_fitted_help_context()
+        context_matches_intent = (
+            intent is not None
+            and current_context is not None
+            and not state.is_fallback
+            and current_context.analysis_phase
+            is _help_contract.HelpAnalysisPhase.FITTED
+            and current_context.analysis_id == intent.analysis_id
+            and current_context.data_context.value == intent.data_context
+        )
+        if (
+            intent is None
+            or not context_matches_intent
+            or state.return_target_id != intent.target_id
+            or state.return_focus_id != intent.focus_id
+            or not _activate_help_return_intent(intent)
+        ):
+            _fail_closed_help_return()
+            return
+        _set_help_route_state(_help_navigation.return_from_help(state))
+        st.session_state[_HELP_SUPPRESS_ANALYSIS_TRIGGERS_ONCE_KEY] = True
+        st.session_state.pop(_HELP_RETURNED_STATUS_KEY, None)
+        return
+    active_contextual_links = {
+        link_id
+        for key in _ACTIVE_CONTEXTUAL_HELP_POPOVER_KEYS
+        if (link_id := _registered_popover_help_link_id(key)) is not None
+    }
+    if (
+        state.help_link_id in active_contextual_links
+        or state.return_destination in _ACTIVE_CONTEXTUAL_HELP_RETURN_DESTINATIONS
+    ):
+        _fail_closed_help_return()
+        return
+    _set_help_route_state(_help_navigation.return_from_help(state))
+    st.session_state[_HELP_SUPPRESS_ANALYSIS_TRIGGERS_ONCE_KEY] = True
+    if state.return_destination is not None:
+        st.session_state[_HELP_RETURNED_STATUS_KEY] = True
+    else:
+        st.session_state.pop(_HELP_RETURNED_STATUS_KEY, None)
+
+
+def _return_to_help_home() -> None:
+    state = _get_help_route_state()
+    if not state.is_open:
+        return
+    _set_help_route_state(
+        _help_navigation.change_help_topic(
+            state,
+            _help_topics.HELP_REGISTRY,
+            "help.get_started.overview",
+        )
+    )
+
+
+def _select_persistent_help_topic() -> None:
+    selected = st.session_state.get(_HELP_TOPIC_PICKER_KEY)
+    if selected not in _help_topics.HELP_ENTRY_TOPIC_IDS:
+        return
+    state = _get_help_route_state()
+    if not state.is_open:
+        return
+    topic = _help_topics.HELP_REGISTRY.topic(str(selected))
+    if topic is None or not topic.supports_lifecycle(_current_help_lifecycle()):
+        _set_help_route_state(
+            _help_navigation.safe_fallback_route(
+                state,
+                _help_navigation.HelpFallbackReason.TOPIC_UNAVAILABLE,
+                registry=_help_topics.HELP_REGISTRY,
+            )
+        )
+        return
+    _set_help_route_state(
+        _help_navigation.change_help_topic(
+            state,
+            _help_topics.HELP_REGISTRY,
+            str(selected),
+        )
+    )
+
+
+def render_persistent_help_launcher() -> _help_navigation.HelpRouteState:
+    """Render the app-level Help entry without loading data or estimators."""
+
+    state = _get_help_route_state()
+    st.sidebar.button(
+        t("help_nav.open_help"),
+        key="mfrm_help_open_global",
+        on_click=_open_global_help,
+        disabled=state.is_open,
+        use_container_width=True,
+    )
+    return _get_help_route_state()
+
+
+def _render_help_context_notice(state: _help_navigation.HelpRouteState) -> None:
+    if state.context_status is _help_navigation.HelpContextStatus.STALE:
+        st.warning(t("help_nav.stale_context_notice"))
+    elif state.context_status is _help_navigation.HelpContextStatus.MISSING_REQUIRED:
+        st.warning(t("help_nav.missing_context_notice"))
+    elif state.context_status is _help_navigation.HelpContextStatus.STATIC_ONLY:
+        st.caption(t("help_nav.static_only_notice"))
+
+
+def render_persistent_help_surface(
+    state: _help_navigation.HelpRouteState | None = None,
+) -> bool:
+    """Render one task-centered Standard Help topic and stop the app journey."""
+
+    state = _get_help_route_state() if state is None else state
+    if not state.is_open:
+        return False
+
+    topic = _help_topics.HELP_REGISTRY.topic(state.help_topic_id or "")
+    if topic is None or not topic.supports_lifecycle(_current_help_lifecycle()):
+        state = _help_navigation.safe_fallback_route(
+            state,
+            _help_navigation.HelpFallbackReason.TOPIC_UNAVAILABLE,
+            registry=_help_topics.HELP_REGISTRY,
+        )
+        _set_help_route_state(state)
+        topic = _help_topics.HELP_REGISTRY.topic(state.help_topic_id or "")
+    if topic is None:  # validated registry and reducer make this unreachable
+        return False
+
+    heading_col, return_col = st.columns([5, 1])
+    with heading_col:
+        st.header(t("help_nav.help_home"))
+    with return_col:
+        st.button(
+            t("help_nav.back_to_source"),
+            key="mfrm_help_return_to_source",
+            on_click=_close_persistent_help,
+            use_container_width=True,
+        )
+
+    if state.is_fallback:
+        st.error(t("help_nav.unavailable_title"))
+        st.write(t("help_nav.unavailable_body"))
+        st.button(
+            t("help_nav.unavailable_home_action"),
+            key="mfrm_help_return_home",
+            on_click=_return_to_help_home,
+        )
+    else:
+        topic_ids = _help_topics.HELP_ENTRY_TOPIC_IDS
+        topic_labels: dict[str, str] = {}
+        for topic_id in topic_ids:
+            candidate_topic = _help_topics.HELP_REGISTRY.topic(topic_id)
+            if candidate_topic is not None:
+                topic_labels[topic_id] = t(candidate_topic.title_key)
+        selected_topic_id = (
+            state.help_topic_id
+            if state.help_topic_id in topic_ids
+            else topic_ids[0]
+        )
+        if st.session_state.get(_HELP_TOPIC_PICKER_KEY) != selected_topic_id:
+            st.session_state[_HELP_TOPIC_PICKER_KEY] = selected_topic_id
+        st.selectbox(
+            t("help_nav.topic_label"),
+            options=topic_ids,
+            key=_HELP_TOPIC_PICKER_KEY,
+            format_func=topic_labels.__getitem__,
+            on_change=_select_persistent_help_topic,
+        )
+
+    st.subheader(t(topic.title_key))
+    st.write(t(topic.summary_key))
+    _render_help_context_notice(state)
+
+    active_section = next(
+        (
+            section
+            for section in topic.sections
+            if section.section_id == state.section_id
+            and "standard" in section.audience_layers
+        ),
+        None,
+    )
+    if active_section is not None and active_section.section_id != "overview":
+        st.markdown(f"#### {t(active_section.title_key)}")
+        for key in active_section.content_keys:
+            st.write(t(key))
+
+    st.markdown(f"#### {t('help_nav.prerequisites_heading')}")
+    for key in topic.prerequisite_keys:
+        st.write(t(key))
+
+    if topic.can_show_key is not None:
+        st.markdown(f"#### {t('help_nav.can_show_heading')}")
+        st.info(t(topic.can_show_key))
+    if topic.cannot_show_key is not None:
+        st.markdown(f"#### {t('help_nav.cannot_show_heading')}")
+        st.warning(t(topic.cannot_show_key))
+
+    if topic.next_check_key is not None:
+        st.markdown(f"#### {t('help_nav.next_check_heading')}")
+        st.write(t(topic.next_check_key))
+    if topic.next_action_key is not None:
+        st.markdown(f"#### {t('help_nav.next_action_heading')}")
+        st.write(t(topic.next_action_key))
+
+    with st.expander(t("help_nav.details_heading"), expanded=False):
+        if topic.computed_key is not None:
+            st.markdown(f"#### {t('help_nav.computed_heading')}")
+            st.write(t(topic.computed_key))
+        for section in topic.sections:
+            if "standard" not in section.audience_layers:
+                continue
+            if active_section is not None and section.section_id == active_section.section_id:
+                continue
+            st.markdown(f"#### {t(section.title_key)}")
+            for key in section.content_keys:
+                st.write(t(key))
+
+    if topic.safe_report_key is not None:
+        st.markdown(f"#### {t('help_nav.reporting_example_heading')}")
+        if topic.safe_report_guard_key is not None:
+            st.warning(t(topic.safe_report_guard_key))
+        st.write(t(topic.safe_report_key))
+    if topic.avoid_report_key is not None:
+        st.markdown(f"#### {t('help_nav.avoid_report_heading')}")
+        st.write(t(topic.avoid_report_key))
+    return True
+
+
+def render_user_problem(
+    exc: BaseException,
+    *,
+    phase: _user_problems.UserProblemPhase | str,
+    surface_id: str | None = None,
+) -> _user_problems.UserProblemNotice | None:
+    """Render a classified public problem without retaining exception text.
+
+    ``surface_id`` is a developer-owned stable suffix used only to prevent
+    duplicate action-widget keys when more than one bounded notice is visible.
+    It must never be derived from an exception, input value, filename, path, or
+    analysis identifier.
+    """
+
+    try:
+        notice = _user_problems.notice_from_exception(exc, phase=phase)
+    except Exception:
+        LOGGER.exception("Failed to create a bounded user-problem notice")
+        st.error(t("problems.problem.unexpected.title"))
+        st.write(t("problems.problem.unexpected.body"))
+        return None
+
+    LOGGER.error(
+        "MFRM user problem",
+        extra=dict(_user_problems.safe_log_context(notice)),
+        exc_info=(type(exc), exc, exc.__traceback__),
+    )
+    st.error(t(notice.title_key))
+    st.write(t(notice.body_key))
+    st.caption(t(_user_problems.USER_PROBLEM_SUPPORT_REFERENCE_LABEL_KEY))
+    st.code(notice.support_reference, language=None)
+
+    for index, (action_key, _target_id) in enumerate(
+        zip(notice.action_keys, notice.action_target_ids),
+        start=1,
+    ):
+        help_link_id = f"link.problem.{notice.problem_code}.{index}"
+        action_widget_key = (
+            f"mfrm_problem_action_{notice.problem_code.replace('.', '_')}_{index}"
+        )
+        if surface_id:
+            action_widget_key = f"{action_widget_key}_{surface_id}"
+        st.button(
+            t(action_key),
+            key=action_widget_key,
+            on_click=_open_registered_help_link,
+            args=(help_link_id,),
+        )
+    return notice
 
 
 def render_exception_details(exc: BaseException) -> None:
-    """Render exception details without leaking stack traces in hosted mode."""
-    if _show_technical_error_details():
-        st.exception(exc)
-        return
-    LOGGER.exception("Suppressed technical exception details in the Streamlit UI", exc_info=True)
-    st.caption(f"{type(exc).__name__}: {exc}")
-    st.caption(
-        "Stack trace hidden. Set MFRM_SHOW_TECHNICAL_ERRORS=1 in a local/dev runtime "
-        "to show full technical details."
-    )
+    """Compatibility wrapper for generic application-phase failures."""
+
+    render_user_problem(exc, phase=_user_problems.UserProblemPhase.APPLICATION)
 
 
 def _make_reason(key: str, **kwargs) -> dict:
@@ -418,25 +1480,7 @@ def visual_method_evidence_table() -> pd.DataFrame:
             "Purpose": "Check whether MML predictions reproduce marginal score-category distributions.",
             "MethodBasis": "Observed-expected residual and marginal fit diagnostics.",
             "AppReadabilityRule": "Limit heatmaps to top residual rows and keep exact values in hover/table export.",
-            "PrimaryReference": "TAM/mirt-style marginal and residual diagnostic practice",
-        },
-        {
-            "Visualization": "Posterior trace / ridge / pair / forest (Posterior Viewer)",
-            "Purpose": (
-                "Confirm Bayesian sampler mixing, compare posterior shapes "
-                "across parameters, identify divergent transitions, and "
-                "communicate posterior mean + 50% / 95% credible intervals."
-            ),
-            "MethodBasis": (
-                "arviz HMC diagnostics (Rhat, ESS, divergences, E-BFMI); "
-                "ShinyStan-style trace/ridge/pair convention."
-            ),
-            "AppReadabilityRule": (
-                "Trace colour-codes chains; ridge normalises density height "
-                "per parameter so shape reads over absolute scale; pair "
-                "highlights divergences; forest uses thick 50% + thin 95% CIs."
-            ),
-            "PrimaryReference": "Gelman & Rubin (1992); Vehtari et al. (2021); ArviZ / Stan convention",
+            "PrimaryReference": "Ordinal marginal and residual diagnostic practice",
         },
     ]
     return pd.DataFrame(rows)
@@ -489,7 +1533,7 @@ def visual_claim_guardrail_table() -> pd.DataFrame:
             "RequiredEvidence": "yardstick_map.csv; mfrm_yardstick_map.csv; measures.csv; steps.csv; anchor_audit_summary.csv when linking is claimed",
             "ReviewTrigger": "Crowded labels, overlapping estimates, long labels, or any cross-run comparison claim.",
             "NextAction": "Use the yardstick for reviewer-facing label lookup and keep the full measures/steps tables beside it.",
-            "EvidenceFiles": "MFRM_FACETS_Yardstick_Reproduction.zip; mfrm_yardstick_geom_text.R; mfrm_yardstick_plotly.py; mfrm_yardstick_makie.jl",
+            "EvidenceFiles": "MFRM_Python_Yardstick_Reproduction.zip; mfrm_yardstick_map.csv; mfrm_yardstick_plotly.py",
             "ArchiveFile": "visual_claim_guardrails.csv",
         },
         {
@@ -834,7 +1878,7 @@ def build_method_reference_audit() -> pd.DataFrame:
             ],
             "ZoteroAlignment": "mirt, eRm, ltm, and brms/Stan references were confirmed in the exported Rasch BibTeX bibliography.",
             "ManuscriptUse": "Cite only when a study explicitly discusses external package comparison, independent validation, or related Bayesian/IRT software ecosystems.",
-            "ClaimBoundary": "External packages are methodological references and validation targets; the Streamlit app does not call them at runtime.",
+            "ClaimBoundary": "Historical software references are contextual only; the public app's evidence and reporting contract is standalone Python.",
         },
         {
             "MethodArea": "Recent MFRM extensions and Bayesian/rater drift context",
@@ -946,7 +1990,7 @@ def build_help_reference_coverage() -> pd.DataFrame:
             "ZoteroEvidence": "FACETS/Winsteps manuals are book/manual references and are not expected to be complete Zotero article records; Myford/Wolfe items were found in Zotero.",
             "ZoteroAction": "Do not count manuals as Zotero gaps; keep article gaps separate from book/manual gaps.",
             "AppEvidenceFiles": "method_reference_audit.csv; scoring_consistency_decision.csv; visual_claim_guardrails.csv",
-            "DoNotClaim": "Do not state exact numerical equivalence with FACETS unless an external validation table is archived.",
+            "DoNotClaim": "Do not claim numerical identity beyond the archived Python analysis and its stated evidence scope.",
             "Audience": "FACETS-experienced reviewer; paper author",
         },
     ]
@@ -1291,9 +2335,9 @@ def public_beta_limitations_table() -> pd.DataFrame:
         {
             "Area": "Runtime independence",
             "PublicBetaStatus": "Ready",
-            "SupportedNow": "Standalone Python estimation and diagnostics without mfrmr, rpy2, Rscript, FACETS, TAM, sirt, or mirt at runtime.",
-            "Boundary": "External packages are methodological references and validation targets, not runtime engines.",
-            "UserAction": "Do not describe the app as calling or wrapping external MFRM packages.",
+            "SupportedNow": "Standalone Python estimation, diagnostics, evidence, and reporting.",
+            "Boundary": "No external estimation-engine call; the saved configuration, AnalysisID, and EvidenceRecords define scope.",
+            "UserAction": "Report the Python app version, model, and method; do not attribute its results to another engine.",
         },
         {
             "Area": "Cross-package equivalence",
@@ -1421,6 +2465,35 @@ def public_beta_limitations_table() -> pd.DataFrame:
         },
     ]
     return pd.DataFrame(rows)
+
+
+def standalone_release_limitations_table() -> pd.DataFrame:
+    """Return the Python-native limitation surface used by release checks."""
+    excluded_areas = {
+        "Cross-package equivalence",
+        "Advanced models (Stan, download-only)",
+        "Posterior Viewer (upload)",
+    }
+    limitations = public_beta_limitations_table()
+    release_limitations = limitations.loc[
+        ~limitations["Area"].astype(str).isin(excluded_areas)
+    ].copy()
+
+    portable_mask = release_limitations["Area"].astype(str).eq("Portable scripts")
+    release_limitations.loc[portable_mask, "SupportedNow"] = (
+        "The Python app-engine runner reproduces supported JMLE and MML workflows "
+        "from a saved configuration."
+    )
+    release_limitations.loc[portable_mask, "Boundary"] = (
+        "Standalone scripts are not promised for every model path; Python-native "
+        "reproduction is defined by the saved configuration, data fingerprint, "
+        "engine metadata, and exported evidence."
+    )
+    release_limitations.loc[portable_mask, "UserAction"] = (
+        "Use the Python app-engine runner and archive the exact configuration, "
+        "data fingerprint, app version, and evidence bundle."
+    )
+    return release_limitations.reset_index(drop=True)
 
 
 def mfrmr_015_migration_coverage_table() -> pd.DataFrame:
@@ -1756,7 +2829,12 @@ def mfrmr_020_migration_coverage_table() -> pd.DataFrame:
                 "Wright-Masters Welch-Satterthwaite d.f. used by FACETS "
                 "(Wright & Masters, 1982, Eqs. 4.20 / 4.27), and "
                 "zstd_from_mnsq_facets() applies the FACETS +/- 9 cap on "
-                "extreme standardised values. The Fit Details tab has a "
+                "extreme standardised values. RSM/PCM runs now default to "
+                "FACETS-primary reporting while retaining engine d.f./ZSTD "
+                "sidecars. GPCM uses the same calculation with an explicit "
+                "FACETS-style approximation warning. Category diagnostics "
+                "and generated Python/R scripts follow the same convention. "
+                "The Fit Details tab has a "
                 "three-way radio (engine / FACETS / both) that recomputes "
                 "the on-screen fit table without re-fitting, plus an "
                 "Import-FACETS-fit-table comparison widget that joins on "
@@ -2117,6 +3195,7 @@ def public_release_readiness_table() -> pd.DataFrame:
         "Package",
     ].astype(str).tolist() if dependency_total else []
     dependency_ready = exists("requirements.txt") and dependency_total > 0 and not dependency_issues
+    release_limitations = standalone_release_limitations_table()
 
     rows = [
         {
@@ -2163,51 +3242,9 @@ def public_release_readiness_table() -> pd.DataFrame:
         },
         {
             "Check": "Public beta limitations",
-            "Status": "Ready" if not public_beta_limitations_table().empty else "Blocker",
-            "Evidence": f"{len(public_beta_limitations_table())} limitation rows documented.",
+            "Status": "Ready" if not release_limitations.empty else "Blocker",
+            "Evidence": f"{len(release_limitations)} Python-native limitation rows documented.",
             "Action": "Do not publish claims that exceed these boundaries.",
-        },
-        {
-            "Check": "External validation stance",
-            "Status": "Documented",
-            "Evidence": "Cross-package validation plan and tolerance policy are available.",
-            "Action": "Treat TAM/sirt/mirt/FACETS/mfrmr equality as validation evidence only after explicit cross-checks.",
-        },
-        {
-            "Check": "Archived validation artifact inventory",
-            "Status": "Documented",
-            "Evidence": f"{len(external_simulation_reference_inventory())} archived validation-artifact rows are documented.",
-            "Action": "Use the inventory for numerical validation planning; do not bundle private or large validation data in the public app.",
-        },
-        {
-            "Check": "Simulation validation templates",
-            # The Status predicate and the Evidence string both now read from
-            # external_simulation_template_inventory (3 rows: Python / R / Julia),
-            # so the "X template rows are documented" sentence and the
-            # Ready / Review flag cannot drift apart as they did in v0.2.2-beta
-            # where Status consulted the 4-key scripts dict while Evidence
-            # quoted the 3-row inventory.
-            "Status": "Ready" if len(external_simulation_template_inventory()) >= 3 else "Review",
-            "Evidence": f"{len(external_simulation_template_inventory())} Python/R/Julia template rows are documented.",
-            "Action": "Use sanitized templates for external validation handoff; keep machine-specific paths and sensitive data out of the public repo.",
-        },
-        {
-            "Check": "Cross-language reproducibility scripts",
-            "Status": "Ready" if len(reproducibility_script_export_matrix()) >= 7 else "Review",
-            "Evidence": f"{len(reproducibility_script_export_matrix())} Python/R/Julia/Stan reproducibility rows are documented.",
-            "Action": "Archive the exact script, config, data fingerprint, package versions, and sampler settings used for each reproducibility claim.",
-        },
-        {
-            "Check": "Uto-family Bayesian MFRM Stan roadmap",
-            "Status": "Documented" if not bayesian_mfrm_stan_refinement_plan().empty else "Review",
-            "Evidence": "Uto & Ueno (2020), Uto (2021), and Uto (2023) are mapped to Stan implementation layers and claim boundaries.",
-            "Action": "Treat Uto-family Stan output as a Bayesian extension until model parameterization, priors, and diagnostics are validated.",
-        },
-        {
-            "Check": "mfrmr 0.2.0 migration coverage",
-            "Status": "Ready" if not mfrmr_020_migration_coverage_table().empty else "Review",
-            "Evidence": f"{len(mfrmr_020_migration_coverage_table())} migration-scope rows documented through mfrmr 0.2.0 (inherits the 0.1.5 / 0.1.6 surface).",
-            "Action": "Use this table to avoid overstating one-to-one coverage of the R package surface.",
         },
         {
             "Check": "Release checklist",
@@ -2956,40 +3993,6 @@ def config_fingerprint(config: dict | None, length: int = 16) -> str:
     payload = {str(k): v for k, v in config.items() if str(k) not in excluded}
     return stable_json_fingerprint(payload, length=length)
 
-
-def _load_shared_simulation_engine():
-    """Load the improved Simulation Python engine when available.
-
-    The app keeps its embedded legacy engine as a fallback, but for the default
-    JMLE route we prefer the shared engine so the Streamlit app benefits from
-    the same analytical-gradient and optimizer improvements used in the
-    simulation study.
-    """
-    engine_path = (
-        Path(__file__).resolve().parents[2]
-        / "Simulation"
-        / "engines"
-        / "mfrm_python.py"
-    )
-    if not engine_path.exists():
-        return None
-    spec = importlib.util.spec_from_file_location("simulation_mfrm_python", engine_path)
-    if spec is None or spec.loader is None:
-        return None
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
-
-
-try:
-    SHARED_SIM_ENGINE = _load_shared_simulation_engine()
-    SHARED_SIM_ENGINE_LOAD_ERROR = None
-except Exception as exc:
-    SHARED_SIM_ENGINE = None
-    SHARED_SIM_ENGINE_LOAD_ERROR = str(exc)
-
-
-USE_EMBEDDED_ENGINE_ONLY = True
 
 FINAL_RESIDUAL_PCT_GE2_READY = 5.0
 FINAL_RESIDUAL_PCT_GE2_REVIEW = 10.0
@@ -6289,6 +7292,74 @@ def render_input_overview(data: pd.DataFrame) -> None:
         st.caption("No blank cells were detected in the raw table preview.")
 
 
+def render_analysis_setup_workspace(
+    data: pd.DataFrame,
+    *,
+    person_col: str,
+    score_col: str,
+    facet_cols: list[str],
+    weight_col: str | None,
+):
+    """Render phase-aware setup content and return its clearable placeholder.
+
+    Raw rows are never expanded by default. Once a result exists, the whole
+    setup surface collapses so the result—not repeated pre-run content—becomes
+    the page's reading start. The placeholder is cleared after a successful
+    fit completed in the same Streamlit rerun.
+    """
+
+    policy = _ux.workspace_presentation(
+        has_data=isinstance(data, pd.DataFrame) and not data.empty,
+        has_result=isinstance(st.session_state.get("facets_mode_output"), dict),
+    )
+    surface = st.empty()
+    with surface.container():
+        if policy.collapse_input:
+            with st.expander(t("app.setup_after_run_expander"), expanded=False):
+                render_loaded_data_banner()
+                render_input_overview(data)
+                st.dataframe(data.head(20), width="stretch")
+            return surface
+
+        st.subheader(t("app.prepare_analysis_header"))
+        render_loaded_data_banner()
+        render_input_overview(data)
+        with st.expander(
+            t(
+                "app.input_preview_rows_expander_template",
+                n_rows=min(20, len(data)),
+            ),
+            expanded=False,
+        ):
+            st.dataframe(data.head(20), width="stretch")
+
+        if policy.show_pre_run_checks:
+            try:
+                readiness_report = build_readiness_report(
+                    data=data,
+                    person_col=person_col,
+                    score_col=score_col,
+                    facet_cols=facet_cols,
+                    weight_col=weight_col,
+                )
+                render_readiness_panel(readiness_report)
+                response_data_audit = build_response_data_audit(
+                    data,
+                    person_col=person_col,
+                    facet_cols=facet_cols,
+                    score_col=score_col,
+                    weight_col=weight_col,
+                )
+                render_response_data_audit_panel(
+                    response_data_audit,
+                    expanded=False,
+                    context="pre",
+                )
+            except Exception:  # pragma: no cover - setup UX must not block fitting
+                pass
+    return surface
+
+
 def _short_value_list(values: list[str] | tuple[str, ...], max_items: int = 4) -> str:
     labels = [str(v) for v in values]
     if not labels:
@@ -6986,22 +8057,60 @@ def zstd_from_mnsq(mnsq, df, whexact=False):
 # convention; cells with extreme imbalance can produce d.f. << 1, which
 # in turn produces extreme ZSTDs that FACETS caps at +/- 9 by default.
 # The dispatch helper ``_apply_fit_df_method`` lets callers choose
-# ``"engine"`` (default, backwards compatible), ``"facets"`` (primary
-# ZSTD columns use the FACETS values), or ``"both"`` (both conventions
-# carried side-by-side under *_ENGINE / *_FACETS suffix columns).
+# ``"facets"`` (default: FACETS-primary with engine sidecars), ``"engine"``
+# (explicit legacy convention), or ``"both"`` (engine-primary comparison
+# view with both conventions under *_ENGINE / *_FACETS suffix columns).
 
 _FIT_DF_METHOD_CHOICES = ("engine", "facets", "both")
+DEFAULT_FIT_DF_METHOD = "facets"
+DEFAULT_FACETS_ZSTD_CAP = 9.0
 
 
 def _resolve_fit_df_method(fit_df_method) -> str:
-    """Coerce ``fit_df_method`` to a known token, defaulting to ``"engine"``."""
-    token = str(fit_df_method or "engine").strip().lower()
+    """Coerce ``fit_df_method`` to a known token, defaulting to FACETS."""
+    token = str(fit_df_method or DEFAULT_FIT_DF_METHOD).strip().lower()
     if token in _FIT_DF_METHOD_CHOICES:
         return token
-    return "engine"
+    return DEFAULT_FIT_DF_METHOD
 
 
-def zstd_from_mnsq_facets(mnsq, df, whexact: bool = False, cap: float = 9.0):
+def fit_df_model_metadata(model: str | None, fit_df_method: str | None = None) -> dict[str, str]:
+    """Describe the model scope of the selected fit-d.f. convention.
+
+    FACETS/Wright-Masters d.f. is the primary reporting convention for RSM
+    and PCM. The same fourth-moment calculation is available for bounded
+    GPCM fits, but is explicitly labelled as a FACETS-style approximation
+    because free discrimination parameters fall outside the strict FACETS
+    Rasch-family parameterisation.
+    """
+    model_token = str(model or "RSM").strip().upper()
+    method = _resolve_fit_df_method(fit_df_method)
+    if method == "engine":
+        return {
+            "applicability": "engine_homogeneous_variance_approximation",
+            "warning": "",
+        }
+    if model_token == "GPCM":
+        return {
+            "applicability": "facets_style_approximation_for_gpcm",
+            "warning": (
+                "GPCM uses free discrimination parameters, so its FACETS/Wright-Masters "
+                "d.f. and ZSTD are a FACETS-style approximation. Interpret the FACETS-primary "
+                "columns with the engine sidecars and do not claim exact FACETS equivalence."
+            ),
+        }
+    return {
+        "applicability": "facets_wright_masters_rasch_family",
+        "warning": "",
+    }
+
+
+def zstd_from_mnsq_facets(
+    mnsq,
+    df,
+    whexact: bool = False,
+    cap: float = DEFAULT_FACETS_ZSTD_CAP,
+):
     """FACETS-style ZSTD with explicit cap on extreme values.
 
     Implements the same Wilson-Hilferty cube-root transformation as
@@ -7092,9 +8201,9 @@ def fit_zstd_transform_label(whexact: bool = False) -> str:
 
 def _apply_fit_df_method(
     tbl: pd.DataFrame,
-    fit_df_method: str = "engine",
+    fit_df_method: str = DEFAULT_FIT_DF_METHOD,
     whexact: bool = False,
-    facets_zstd_cap: float = 9.0,
+    facets_zstd_cap: float = DEFAULT_FACETS_ZSTD_CAP,
 ) -> pd.DataFrame:
     """Dispatch a fit table between engine, FACETS, or both d.f. conventions.
 
@@ -7103,9 +8212,9 @@ def _apply_fit_df_method(
     ``DF_Outfit_FACETS``. Returns a frame whose primary columns reflect
     the requested method:
 
-    * ``"engine"`` (default, backwards compatible): drops every FACETS
+    * ``"engine"`` (explicit legacy convention): drops every FACETS
       column and the status fields, leaving the engine values as-is.
-    * ``"facets"``: primary ``InfitZSTD`` / ``OutfitZSTD`` / ``DF_*``
+    * ``"facets"`` (default): primary ``InfitZSTD`` / ``OutfitZSTD`` / ``DF_*``
       become the FACETS values; original engine values are preserved
       under ``*_ENGINE`` suffix columns; FACETS values also under
       ``*_FACETS`` for symmetry.
@@ -9707,45 +10816,6 @@ def mfrm_estimate(
         score_col=score_col,
         weight_col=weight_col,
     )
-    facet_regularization_rows_for_dispatch = normalize_facet_regularization_rows(facet_regularization)
-    facet_regularization_requested = not facet_regularization_rows_for_dispatch.empty
-
-    if (
-        method == "JMLE"
-        and SHARED_SIM_ENGINE is not None
-        and not USE_EMBEDDED_ENGINE_ONLY
-        and not facet_regularization_requested
-    ):
-        shared_result = SHARED_SIM_ENGINE.mfrm_estimate(
-            data=data_for_fit,
-            person_col=person_col,
-            facet_cols=facet_cols,
-            score_col=score_col,
-            rating_min=rating_min,
-            rating_max=rating_max,
-            weight_col=weight_col,
-            keep_original=keep_original,
-            model=model,
-            method=method,
-            step_facet=step_facet,
-            anchor_df=anchor_df,
-            group_anchor_df=group_anchor_df,
-            noncenter_facet=noncenter_facet,
-            dummy_facets=dummy_facets,
-            positive_facets=positive_facets,
-            quad_points=quad_points,
-            maxit=maxit,
-            reltol=reltol,
-            jmle_optimizer="AUTO",
-        )
-        if isinstance(shared_result, dict):
-            shared_prep = shared_result.setdefault("prep", {})
-            shared_prep["response_data_audit"] = response_data_audit
-            shared_prep["row_audit"] = response_data_audit.get("rows", pd.DataFrame())
-            shared_prep["excluded_rows"] = response_data_audit.get("excluded_rows", pd.DataFrame())
-            shared_prep["audit_summary"] = response_data_audit.get("summary", pd.DataFrame())
-        return shared_result
-
     prep = prepare_mfrm_data(
         data_for_fit,
         person_col=person_col,
@@ -9841,6 +10911,9 @@ def mfrm_estimate(
         "app_version": APP_VERSION,
         "release_label": APP_RELEASE_LABEL,
         "runtime_scope": "standalone Python; no external MFRM engine called",
+        "fit_df_method": DEFAULT_FIT_DF_METHOD,
+        "fit_zstd_transform": fit_zstd_transform_label(False),
+        "facets_zstd_cap": DEFAULT_FACETS_ZSTD_CAP,
         "n_person": n_person,
         "n_cat": n_cat,
         "facet_names": prep["facet_names"],
@@ -14921,16 +15994,16 @@ def get_weights(df):
 def calc_overall_fit(
     obs_df,
     whexact: bool = False,
-    fit_df_method: str = "engine",
-    facets_zstd_cap: float = 9.0,
+    fit_df_method: str = DEFAULT_FIT_DF_METHOD,
+    facets_zstd_cap: float = DEFAULT_FACETS_ZSTD_CAP,
 ):
     """Overall Infit / Outfit mean-square with optional FACETS d.f.
 
-    The primary ``InfitZSTD`` / ``OutfitZSTD`` columns use the engine
-    d.f. convention by default (``sum(Var * w)`` for Infit, ``sum(w)``
-    for Outfit). Pass ``fit_df_method="facets"`` to swap them for the
-    Wright-Masters Welch-Satterthwaite d.f., or ``"both"`` to keep
-    side-by-side ``*_ENGINE`` / ``*_FACETS`` suffix columns. The
+    The primary ``InfitZSTD`` / ``OutfitZSTD`` columns use the FACETS /
+    Wright-Masters Welch-Satterthwaite d.f. by default and retain the
+    historical engine values under ``*_ENGINE`` sidecar columns. Pass
+    ``fit_df_method="engine"`` for the explicit legacy convention, or
+    ``"both"`` for an engine-primary comparison view. The
     ``facets_zstd_cap`` argument (default 9.0) bounds the FACETS ZSTD
     on extreme cells to match the FACETS software convention.
     """
@@ -14969,8 +16042,8 @@ def calc_facet_fit(
     obs_df,
     facet_cols,
     whexact: bool = False,
-    fit_df_method: str = "engine",
-    facets_zstd_cap: float = 9.0,
+    fit_df_method: str = DEFAULT_FIT_DF_METHOD,
+    facets_zstd_cap: float = DEFAULT_FACETS_ZSTD_CAP,
 ):
     """Per-facet/-level Infit / Outfit mean-square with optional FACETS d.f."""
     rows = []
@@ -19409,10 +20482,22 @@ def calc_facets_report_tbls(
         meas_tbl = measures[measures["Facet"] == facet].copy()
         if not meas_tbl.empty:
             meas_tbl["Level"] = meas_tbl["Level"].astype(str)
+            fit_sidecars = [
+                "DF_Infit", "DF_Outfit",
+                "DF_Infit_ENGINE", "DF_Outfit_ENGINE",
+                "DF_Infit_FACETS", "DF_Outfit_FACETS",
+                "InfitZSTD_ENGINE", "OutfitZSTD_ENGINE",
+                "InfitZSTD_FACETS", "OutfitZSTD_FACETS",
+                "FitDfMethod", "FitDfFormula", "FitZSTDTransform",
+                "FitZSTDCap", "FitDfApplicability", "FitDfWarning",
+            ]
+            measure_cols = [
+                "Level", "Estimate", "SE", "Infit", "Outfit",
+                "InfitZSTD", "OutfitZSTD", "PTMEA",
+                *[col for col in fit_sidecars if col in meas_tbl.columns],
+            ]
             tbl = tbl.merge(
-                meas_tbl[
-                    ["Level", "Estimate", "SE", "Infit", "Outfit", "InfitZSTD", "OutfitZSTD", "PTMEA"]
-                ],
+                meas_tbl[measure_cols],
                 on="Level",
                 how="left",
             )
@@ -19534,7 +20619,15 @@ def calc_facets_report_tbls(
         )
 
         extreme_mask = tbl["Status"].isin(["Minimum", "Maximum"])
-        tbl.loc[extreme_mask, ["Infit", "Outfit", "InfitZSTD", "OutfitZSTD"]] = np.nan
+        extreme_fit_cols = [
+            col for col in (
+                "Infit", "Outfit", "InfitZSTD", "OutfitZSTD",
+                "InfitZSTD_ENGINE", "OutfitZSTD_ENGINE",
+                "InfitZSTD_FACETS", "OutfitZSTD_FACETS",
+            )
+            if col in tbl.columns
+        ]
+        tbl.loc[extreme_mask, extreme_fit_cols] = np.nan
         if facet == "Person":
             tbl["PTMEA"] = np.nan
 
@@ -19546,7 +20639,7 @@ def calc_facets_report_tbls(
             "PTMEA": "PtMeaCorr",
         })
 
-        tbl = tbl[[
+        display_cols = [
             "TotalScore",
             "TotalCount",
             "WeightdScore",
@@ -19562,11 +20655,24 @@ def calc_facets_report_tbls(
             "OutfitMnSq",
             "OutfitZStd",
             "PtMeaCorr",
+            *[
+                col for col in (
+                    "DF_Infit", "DF_Outfit",
+                    "DF_Infit_ENGINE", "DF_Outfit_ENGINE",
+                    "DF_Infit_FACETS", "DF_Outfit_FACETS",
+                    "InfitZSTD_ENGINE", "OutfitZSTD_ENGINE",
+                    "InfitZSTD_FACETS", "OutfitZSTD_FACETS",
+                    "FitDfMethod", "FitDfFormula", "FitZSTDTransform",
+                    "FitZSTDCap", "FitDfApplicability", "FitDfWarning",
+                )
+                if col in tbl.columns
+            ],
             "Anchor",
             "Status",
             "Level",
             "TotalCountAll",
-        ]]
+        ]
+        tbl = tbl[display_cols]
 
         if omit_unobserved:
             tbl = tbl[tbl["TotalCountAll"] > 0]
@@ -20301,8 +21407,10 @@ def _mml_covariance_for_diagnostics(res, max_params=MML_COVARIANCE_AUTO_MAX_PARA
                 f"MML observed-information covariance was skipped for routine "
                 f"diagnostics because the parameter vector has {int(par.size)} "
                 f"parameters (auto limit {int(max_params)}). The measure table "
-                "keeps conditional information SEs; run a smaller or targeted "
-                "external validation when structural SEs are required."
+                "keeps conditional information SEs. Reduce the supported design "
+                "or rerun within the covariance limit when structural SEs are "
+                "required; otherwise report the conditional-SE scope and mark "
+                "structural covariance as not assessable."
             ),
         )
     return compute_mml_parameter_covariance(res)
@@ -21562,10 +22670,19 @@ def calc_expected_category_counts(res):
     })
 
 
-def calc_category_stats(obs_df, res=None, whexact=False):
+def calc_category_stats(
+    obs_df,
+    res=None,
+    whexact: bool = False,
+    fit_df_method: str = DEFAULT_FIT_DF_METHOD,
+    facets_zstd_cap: float = DEFAULT_FACETS_ZSTD_CAP,
+):
+    """Category fit with FACETS-primary d.f./ZSTD and engine sidecars."""
     if obs_df.empty:
         return pd.DataFrame()
+    fit_df_method = _resolve_fit_df_method(fit_df_method)
     total_n = np.nansum(get_weights(obs_df))
+    has_fourth = "FourthCentralMoment" in obs_df.columns
     rows = []
     for category, df_cat in obs_df.groupby("Observed"):
         w = get_weights(df_cat)
@@ -21573,6 +22690,16 @@ def calc_category_stats(obs_df, res=None, whexact=False):
         var_w = np.nansum(df_cat["Var"] * w)
         infit = np.nansum(df_cat["StdSq"] * df_cat["Var"] * w) / var_w if var_w > 0 else np.nan
         outfit = np.nansum(df_cat["StdSq"] * w) / count if count > 0 else np.nan
+        var = pd.to_numeric(df_cat["Var"], errors="coerce").to_numpy(dtype=float)
+        fourth = (
+            pd.to_numeric(df_cat["FourthCentralMoment"], errors="coerce").to_numpy(dtype=float)
+            if has_fourth
+            else np.full(len(df_cat), np.nan)
+        )
+        denom_infit, denom_outfit = _facets_fit_df_terms(var, fourth, w)
+        df_infit_facets, df_outfit_facets = _facets_fit_df(
+            float(var_w), float(count), denom_infit, denom_outfit
+        )
         rows.append({
             "Category": category,
             "Count": count,
@@ -21583,6 +22710,8 @@ def calc_category_stats(obs_df, res=None, whexact=False):
             "MeanResidual": weighted_mean(df_cat["Residual"].to_numpy(), w),
             "DF_Infit": var_w,
             "DF_Outfit": count,
+            "DF_Infit_FACETS": df_infit_facets,
+            "DF_Outfit_FACETS": df_outfit_facets,
         })
     summary = pd.DataFrame(rows)
 
@@ -21600,6 +22729,22 @@ def calc_category_stats(obs_df, res=None, whexact=False):
     cat_tbl["OutfitZSTD"] = [
         zstd_from_mnsq(m, d, whexact=whexact) for m, d in zip(cat_tbl["Outfit"], cat_tbl["DF_Outfit"])
     ]
+    cat_tbl = _apply_fit_df_method(
+        cat_tbl,
+        fit_df_method=fit_df_method,
+        whexact=whexact,
+        facets_zstd_cap=facets_zstd_cap,
+    )
+    if fit_df_method != "engine":
+        model_family = (
+            str(res.get("config", {}).get("model", "RSM")).upper()
+            if isinstance(res, dict)
+            else "RSM"
+        )
+        metadata = fit_df_model_metadata(model_family, fit_df_method)
+        cat_tbl["FitDfApplicability"] = metadata["applicability"]
+        if metadata["warning"]:
+            cat_tbl["FitDfWarning"] = metadata["warning"]
 
     exp_tbl = calc_expected_category_counts(res) if res is not None else pd.DataFrame()
     if not exp_tbl.empty:
@@ -21729,10 +22874,12 @@ def mfrm_diagnostics(
     marginal_pairwise=False,
     marginal_max_pair_cells=400,
     compute_eb_shrinkage=False,
-    fit_df_method: str = "engine",
-    facets_zstd_cap: float = 9.0,
+    fit_df_method: str = DEFAULT_FIT_DF_METHOD,
+    facets_zstd_cap: float = DEFAULT_FACETS_ZSTD_CAP,
 ):
     fit_df_method = _resolve_fit_df_method(fit_df_method)
+    model_family = str(res.get("config", {}).get("model", "RSM")).upper()
+    fit_df_metadata = fit_df_model_metadata(model_family, fit_df_method)
     obs_df = compute_obs_table(res)
     facet_cols = ["Person"] + res["config"]["facet_names"]
     overall_fit = calc_overall_fit(
@@ -21748,6 +22895,12 @@ def mfrm_diagnostics(
         fit_df_method=fit_df_method,
         facets_zstd_cap=facets_zstd_cap,
     )
+    if fit_df_method != "engine":
+        overall_fit["FitDfApplicability"] = fit_df_metadata["applicability"]
+        fit_tbl["FitDfApplicability"] = fit_df_metadata["applicability"]
+        if fit_df_metadata["warning"]:
+            overall_fit["FitDfWarning"] = fit_df_metadata["warning"]
+            fit_tbl["FitDfWarning"] = fit_df_metadata["warning"]
     se_tbl = calc_facet_se(obs_df, facet_cols)
     bias_tbl = calc_bias_facet(obs_df, facet_cols)
     interaction_tbl = calc_bias_interactions(obs_df, facet_cols, pairs=interaction_pairs, top_n=top_n_interactions)
@@ -21915,6 +23068,9 @@ def mfrm_diagnostics(
         "eb_shrinkage_enabled": bool(compute_eb_shrinkage),
         "uncertainty": uncertainty_bundle,
         "fit_df_method": fit_df_method,
+        "fit_df_applicability": fit_df_metadata["applicability"],
+        "fit_df_warning": fit_df_metadata["warning"],
+        "fit_df_model": model_family,
         "fit_zstd_transform": fit_zstd_transform_label(whexact),
         "facets_zstd_cap": (
             float(facets_zstd_cap)
@@ -22110,8 +23266,10 @@ def maybe_apply_wide_to_long_sidebar(parsed: pd.DataFrame, *, key_prefix: str) -
                 source_label="wide-to-long pivoted table",
             )
         except ValueError as exc:
-            st.error(
-                t("data_source.layout_pivot_error_template", error=str(exc))
+            render_user_problem(
+                exc,
+                phase=_user_problems.UserProblemPhase.PARSE,
+                surface_id=f"{key_prefix}_wide_to_long",
             )
             return parsed
         if pivoted.empty:
@@ -22190,13 +23348,69 @@ def load_core_namespace() -> dict:
 # Terminology tutorial
 # ---------------------------------------------------------------------------
 
-def show_tutorial() -> None:
-    """Collapsible tutorial section shown before analysis."""
+def _standalone_estimation_tutorial_markdown() -> str:
+    """Explain only the estimation choices implemented by this Python app."""
+    return _standalone_ui_text(
+        en="""
+### Standalone Python estimation choices
+
+This app estimates RSM, PCM, and bounded GPCM models directly in Python.
+
+- **JMLE** estimates persons and facet elements jointly. It is useful for a
+  fast fixed-effect analysis and for inspecting the observed design.
+- **MML** integrates over the person distribution with Gauss-Hermite
+  quadrature and returns EAP person scores. Use it when population modeling,
+  latent regression, or plausible values are part of the question.
+- The MML person SD is either fixed at the prespecified value or estimated by
+  the supported EM path. If it is fixed, run the built-in prior-SD sensitivity
+  analysis before treating population-scale or regression conclusions as
+  stable.
+- **PCM** uses step-facet-specific thresholds. **Bounded GPCM** additionally
+  estimates positive slopes for that same step facet; slopes are transition
+  steepness, not severity.
+
+For a final result, archive the exact configuration, AnalysisID, convergence
+table, readiness EvidenceRecords, and any sensitivity decision. The app's
+Python engine and exported evidence define reproducibility; no external
+estimation engine is required.
+""",
+        ja="""
+### スタンドアロンPythonでの推定選択
+
+本アプリは、RSM・PCM・bounded GPCMをPython内で直接推定します。
+
+- **JMLE** はpersonとfacet elementを同時に推定します。固定効果として
+  観測デザインを素早く確認する初回分析に向いています。
+- **MML** はGauss-Hermite求積によりperson分布を積分し、EAP person scoreを
+  返します。母集団モデル、latent regression、plausible valueが分析課題に
+  含まれる場合に用います。
+- MMLのperson SDは、事前に指定した値へ固定するか、対応するEM経路で推定
+  します。固定した場合は、母集団尺度や回帰係数を安定した結論として扱う前に、
+  組込みのprior-SD感度分析を実行してください。
+- **PCM** はstep facetごとのthresholdを使います。**Bounded GPCM** は同じ
+  step facetに正のslopeも推定します。slopeは遷移の急峻さであり、severity
+  ではありません。
+
+最終結果では、正確な設定、AnalysisID、収束表、readiness EvidenceRecord、
+感度Decisionを保存してください。本アプリのPythonエンジンと証拠台帳が
+再現性の契約であり、外部推定エンジンは必要ありません。
+""",
+    )
+
+def _legacy_cross_software_tutorial_source() -> None:
+    """Dormant compatibility copy retained pending explicit source retirement."""
     with st.expander(t("tutorial.expander_label"), expanded=False):
         st.markdown(t("tutorial.section_glossary"))
         st.markdown(t("tutorial.section_scores"))
         st.markdown(t("tutorial.section_weight"))
         st.markdown(t("tutorial.section_estimation_method"))
+        st.markdown(_standalone_estimation_tutorial_markdown())
+        st.markdown(t("tutorial.section_estimation_time"))
+        st.markdown(t("tutorial.section_missing_values"))
+        return
+
+        # Legacy cross-software tutorial text is retained below only as dormant
+        # compatibility source while its final removal decision is recorded.
         # Likelihood functions and cross-validation guidance stay in English
         # by design — LaTeX equations and R code blocks are universally
         # readable, and translating the surrounding prose would multiply
@@ -22686,6 +23900,18 @@ is required.
         st.markdown(t("tutorial.section_missing_values"))
 
 
+def show_tutorial() -> None:
+    """Render the standalone Python tutorial shown before analysis."""
+    with st.expander(t("tutorial.expander_label"), expanded=False):
+        st.markdown(t("tutorial.section_glossary"))
+        st.markdown(t("tutorial.section_scores"))
+        st.markdown(t("tutorial.section_weight"))
+        st.markdown(t("tutorial.section_estimation_method"))
+        st.markdown(_standalone_estimation_tutorial_markdown())
+        st.markdown(t("tutorial.section_estimation_time"))
+        st.markdown(t("tutorial.section_missing_values"))
+
+
 # ---------------------------------------------------------------------------
 # Missing value recoding
 # ---------------------------------------------------------------------------
@@ -22812,7 +24038,7 @@ def render_app_scope_badges(where: str = "main") -> None:
     text = (
         f"{APP_RELEASE_LABEL} {APP_VERSION} | standalone Python runtime | "
         f"source commit: {build_id} | "
-        "no mfrmr/rpy2/Rscript/FACETS/TAM/sirt/mirt engine call"
+        "no external estimation-engine call"
     )
     if where == "sidebar":
         st.sidebar.caption(text)
@@ -22823,14 +24049,43 @@ def render_app_scope_badges(where: str = "main") -> None:
                 "These boundaries are part of the app's public-beta claim. "
                 "They prevent over-claiming cross-package equivalence or confirmatory statistical evidence."
             )
-            st.dataframe(public_beta_limitations_table(), width="stretch", hide_index=True)
+            st.dataframe(standalone_release_limitations_table(), width="stretch", hide_index=True)
 
 
-def render_data_privacy_notice(where: str = "main") -> None:
+def render_data_privacy_notice(
+    where: str = "main",
+    *,
+    source_kind: _ux.DataSourceKind | str | None = None,
+) -> None:
+    """Render privacy guidance at a severity matched to the data origin.
+
+    Synthetic examples should not train users to ignore a warning that only
+    becomes consequential for pasted or uploaded records. Unknown future
+    sources fail closed and receive the stronger warning.
+    """
+
+    if source_kind is None:
+        source_kind = _ux.classify_data_source(
+            st.session_state.get(
+                "data_source_flat",
+                f"scenario:{DEFAULT_SAMPLE_SCENARIO_KEY}",
+            )
+        )
+    contains_user_data = _ux.data_source_may_contain_user_data(source_kind)
+    message = t(
+        "privacy.user_data_warning"
+        if contains_user_data
+        else "privacy.synthetic_notice"
+    )
     if where == "sidebar":
-        st.sidebar.warning(DATA_PRIVACY_NOTICE)
+        if contains_user_data:
+            st.sidebar.warning(message)
+        else:
+            st.sidebar.caption(message)
+    elif contains_user_data:
+        st.warning(message)
     else:
-        st.warning(DATA_PRIVACY_NOTICE)
+        st.caption(message)
 
 
 def build_data_source_options() -> list[dict]:
@@ -22845,13 +24100,14 @@ def build_data_source_options() -> list[dict]:
     options: list[dict] = []
     for key, meta in SAMPLE_DATA_SCENARIOS.items():
         options.append({
+            "option_id": f"scenario:{key}",
             "label": meta["label"],
             "kind": "scenario",
             "scenario_key": key,
         })
-    options.append({"label": t("data_source.option_simulate"), "kind": "simulate", "scenario_key": None})
-    options.append({"label": t("data_source.option_paste"), "kind": "paste", "scenario_key": None})
-    options.append({"label": t("data_source.option_upload"), "kind": "upload", "scenario_key": None})
+    options.append({"option_id": "simulate", "label": t("data_source.option_simulate"), "kind": "simulate", "scenario_key": None})
+    options.append({"option_id": "paste", "label": t("data_source.option_paste"), "kind": "paste", "scenario_key": None})
+    options.append({"option_id": "upload", "label": t("data_source.option_upload"), "kind": "upload", "scenario_key": None})
     return options
 
 
@@ -22859,11 +24115,15 @@ def render_custom_simulation_source() -> pd.DataFrame:
     """Render sidebar controls for a user-configurable synthetic dataset."""
     st.sidebar.info(t("data_source.sim_info"))
     st.sidebar.caption(t("data_source.sim_method_caption"))
+    design_preset_labels = {
+        key: t(f"data_source.sim_design_preset_{key}")
+        for key in CUSTOM_SIMULATION_DESIGN_PRESET_KEYS
+    }
     selected_design_preset = str(st.sidebar.selectbox(
         t("data_source.sim_design_preset_label"),
         options=list(CUSTOM_SIMULATION_DESIGN_PRESET_KEYS),
         index=0,
-        format_func=lambda key: t(f"data_source.sim_design_preset_{key}"),
+        format_func=design_preset_labels.__getitem__,
         key="sim_design_preset",
         help=t("data_source.sim_design_preset_help"),
     ))
@@ -23008,14 +24268,14 @@ def render_custom_simulation_source() -> pd.DataFrame:
     step_span = 2.0
     thresholds = default_custom_simulation_thresholds(n_categories, step_span=step_span)
     with st.sidebar.expander(t("data_source.sim_thresholds_expander"), expanded=False):
+        threshold_mode_labels = {
+            "even": t("data_source.sim_threshold_mode_even"),
+            "custom": t("data_source.sim_threshold_mode_custom"),
+        }
         threshold_mode = st.radio(
             t("data_source.sim_threshold_mode_label"),
             options=["even", "custom"],
-            format_func=lambda v: (
-                t("data_source.sim_threshold_mode_even")
-                if v == "even"
-                else t("data_source.sim_threshold_mode_custom")
-            ),
+            format_func=threshold_mode_labels.__getitem__,
             horizontal=True,
             key="sim_threshold_mode",
         )
@@ -23032,7 +24292,11 @@ def render_custom_simulation_source() -> pd.DataFrame:
                     threshold_text, n_categories,
                 )
             except ValueError as exc:
-                st.sidebar.error(t("data_source.sim_threshold_error_template", error=str(exc)))
+                render_user_problem(
+                    exc,
+                    phase=_user_problems.UserProblemPhase.PARSE,
+                    surface_id="simulation_thresholds",
+                )
                 st.session_state.pop("_loaded_custom_simulation_meta", None)
                 st.session_state.pop("_custom_simulation_preview_bundle", None)
                 st.session_state.pop("_custom_simulation_facet_names", None)
@@ -23144,7 +24408,8 @@ def read_input_data(core: dict) -> pd.DataFrame:
     # simulation / paste / upload. Each entry records its kind so we can
     # dispatch without string-matching the label.
     _options = build_data_source_options()
-    _option_labels = [opt["label"] for opt in _options]
+    _option_by_id = {str(opt["option_id"]): opt for opt in _options}
+    _option_ids = tuple(_option_by_id)
 
     # Default to the writing-essay scenario so existing onboarding
     # tours and screenshots still match without user action.
@@ -23155,13 +24420,14 @@ def read_input_data(core: dict) -> pd.DataFrame:
             break
 
     _n_scenarios = len(SAMPLE_DATA_SCENARIOS)
-    chosen_label = st.sidebar.radio(
+    chosen_id = st.sidebar.radio(
         t("data_source.radio_prompt_template", n_scenarios=_n_scenarios),
-        options=_option_labels,
+        options=_option_ids,
         index=default_idx,
         key="data_source_flat",
+        format_func=lambda option_id: _option_by_id[str(option_id)]["label"],
     )
-    chosen = _options[_option_labels.index(chosen_label)]
+    chosen = _option_by_id[str(chosen_id)]
 
     if chosen["kind"] == "scenario":
         scenario_key = chosen["scenario_key"]
@@ -23251,6 +24517,7 @@ def read_input_data(core: dict) -> pd.DataFrame:
             height=180,
             placeholder=TEACHER_PASTE_EXAMPLE_CSV,
             help=t("data_source.paste_textarea_help"),
+            key="paste_data_text",
         )
         with st.sidebar.expander(
             t("data_source.teacher_paste_guide_expander"),
@@ -23272,8 +24539,14 @@ def read_input_data(core: dict) -> pd.DataFrame:
             parsed = core["read_flexible_table"](text_value, None, header=True, delimiter=paste_delimiter)
         except Exception as exc:
             st.sidebar.error(t("data_source.paste_parse_error"))
-            with st.sidebar.expander(t("data_source.technical_parse_details_expander"), expanded=False):
-                render_exception_details(exc)
+            with st.sidebar.expander(
+                t("data_source.technical_parse_details_expander"),
+                expanded=True,
+            ):
+                render_user_problem(
+                    exc,
+                    phase=_user_problems.UserProblemPhase.PARSE,
+                )
             return pd.DataFrame()
         if parsed.shape[1] < 2:
             st.sidebar.warning(t("data_source.single_column_warning_paste"))
@@ -23298,6 +24571,7 @@ def read_input_data(core: dict) -> pd.DataFrame:
     upload = st.sidebar.file_uploader(
         t("data_source.upload_file_label"),
         type=TABLE_FILE_UPLOAD_TYPES,
+        key="upload_data_file",
         help=t("data_source.upload_file_help_template", file_label=TABLE_FILE_UPLOAD_LABEL),
     )
     if upload is None:
@@ -23326,8 +24600,14 @@ def read_input_data(core: dict) -> pd.DataFrame:
         parsed = core["read_flexible_table"]("", upload, header=True, delimiter=upload_delimiter)
     except Exception as exc:
         st.sidebar.error(t("data_source.upload_parse_error"))
-        with st.sidebar.expander(t("data_source.technical_parse_details_expander"), expanded=False):
-            render_exception_details(exc)
+        with st.sidebar.expander(
+            t("data_source.technical_parse_details_expander"),
+            expanded=True,
+        ):
+            render_user_problem(
+                exc,
+                phase=_user_problems.UserProblemPhase.PARSE,
+            )
         return pd.DataFrame()
     if parsed.shape[1] < 2:
         st.sidebar.warning(t("data_source.single_column_warning_upload"))
@@ -23527,10 +24807,125 @@ def frames_fingerprint(frames: dict[str, pd.DataFrame], length: int = 16) -> str
 
 
 @st.cache_data(show_spinner=False, max_entries=4, ttl=1800)
-def cached_tables_zip(_frames: dict[str, pd.DataFrame], frames_key: str) -> bytes:
-    """Cache table ZIP bytes by explicit fingerprint, not by DataFrame hash."""
+def cached_tables_zip(
+    _frames: dict[str, pd.DataFrame],
+    frames_key: str,
+    _text_assets: dict[str, str] | None = None,
+    text_assets_key: str = "",
+) -> bytes:
+    """Cache table ZIP bytes by explicit table and sidecar fingerprints."""
     _ = frames_key
-    return _exports.build_tables_zip(_frames)
+    _ = text_assets_key
+    return _exports.build_tables_zip(_frames, text_assets=_text_assets)
+
+
+def _add_mml_prior_sensitivity_export_frames(
+    frames: dict[str, pd.DataFrame],
+    result: dict,
+) -> None:
+    bundles = result.get("evidence_bundles", {}) if isinstance(result, dict) else {}
+    bundle = bundles.get("mml_prior_sd") if isinstance(bundles, dict) else None
+    if not isinstance(bundle, dict) or not bundle.get("available"):
+        return
+    contract = bundle.get("evidence_contract")
+    if not isinstance(contract, dict):
+        return
+    try:
+        _mml_prior_contract.validate_contract_bundle(contract)
+    except _evidence.ContractValidationError:
+        return
+    for frame_name, key in (
+        ("mml_prior_sd_sensitivity_plan", "plan"),
+        ("mml_prior_sd_sensitivity_report", "report"),
+        ("mml_prior_sd_sensitivity_summary", "summary"),
+        ("mml_prior_sd_sensitivity_measure_deltas", "measure_deltas"),
+        ("mml_prior_sd_sensitivity_population_deltas", "population_deltas"),
+    ):
+        _frame_bundle.add_frame(frames, frame_name, bundle.get(key))
+
+
+def _add_final_readiness_contract_frames(
+    frames: dict[str, pd.DataFrame],
+    readiness: pd.DataFrame,
+) -> None:
+    if not isinstance(readiness, pd.DataFrame) or readiness.empty:
+        return
+    identity_payload = readiness.attrs.get("analysis_identity")
+    record_payloads = readiness.attrs.get("evidence_records")
+    if not isinstance(identity_payload, dict) or not isinstance(record_payloads, list):
+        return
+    identity = _evidence.AnalysisIdentity.from_payload(identity_payload)
+    records = tuple(
+        _evidence.EvidenceRecord.from_payload(payload)
+        for payload in record_payloads
+    )
+    _evidence.validate_evidence_records(records, identity=identity)
+    _frame_bundle.add_frame(
+        frames,
+        "final_report_readiness_analysis_identity",
+        pd.DataFrame([identity.to_row()]),
+    )
+    _frame_bundle.add_frame(
+        frames,
+        "final_report_readiness_evidence_records",
+        _evidence.evidence_records_to_frame(records, identity=identity),
+    )
+
+
+def build_evidence_contract_text_assets(
+    result: dict,
+    readiness: pd.DataFrame | None,
+) -> dict[str, str]:
+    """Return reconstructable native JSON sidecars for standard ZIP exports."""
+    assets: dict[str, str] = {}
+    if isinstance(readiness, pd.DataFrame) and not readiness.empty:
+        identity_payload = readiness.attrs.get("analysis_identity")
+        record_payloads = readiness.attrs.get("evidence_records")
+        if isinstance(identity_payload, dict) and isinstance(record_payloads, list):
+            identity = _evidence.AnalysisIdentity.from_payload(identity_payload)
+            records = tuple(
+                _evidence.EvidenceRecord.from_payload(payload)
+                for payload in record_payloads
+            )
+            _evidence.validate_evidence_records(records, identity=identity)
+            assets["final_report_readiness_analysis_identity.json"] = json.dumps(
+                identity.to_payload(),
+                indent=2,
+                ensure_ascii=False,
+            )
+            assets["final_report_readiness_evidence_contract.json"] = json.dumps(
+                {
+                    "schema_version": "mfrm_final_readiness_evidence_bundle_v1",
+                    "analysis_identity": identity.to_payload(),
+                    "evidence_records": [record.to_payload() for record in records],
+                },
+                indent=2,
+                ensure_ascii=False,
+            )
+    bundles = result.get("evidence_bundles", {}) if isinstance(result, dict) else {}
+    mml_bundle = bundles.get("mml_prior_sd") if isinstance(bundles, dict) else None
+    contract = (
+        mml_bundle.get("evidence_contract")
+        if isinstance(mml_bundle, dict) else None
+    )
+    if isinstance(contract, dict):
+        try:
+            _mml_prior_contract.validate_contract_bundle(contract)
+        except _evidence.ContractValidationError:
+            return assets
+        assets["mml_prior_sd_sensitivity_evidence_contract.json"] = json.dumps(
+            contract,
+            indent=2,
+            ensure_ascii=False,
+        )
+        settings = mml_bundle.get("settings", {})
+        if isinstance(settings, dict):
+            assets["mml_prior_sd_sensitivity_settings.json"] = json.dumps(
+                settings,
+                indent=2,
+                ensure_ascii=False,
+            )
+    return assets
 
 
 def build_result_bundle_frames(
@@ -23576,6 +24971,12 @@ def build_result_bundle_frames(
     if isinstance(diagnostics, dict):
         measures = diagnostics.get("measures")
         _frame_bundle.add_frame(frames, "measures", measures)
+        _frame_bundle.add_frame(frames, "residuals", diagnostics.get("obs"))
+        _frame_bundle.add_frame(
+            frames,
+            "global_residual_fit_summary",
+            build_global_residual_fit_summary(diagnostics),
+        )
         uncertainty = diagnostics.get("uncertainty", {})
         if isinstance(uncertainty, dict):
             unc_summary = uncertainty.get("summary", pd.DataFrame())
@@ -23588,11 +24989,19 @@ def build_result_bundle_frames(
             ))
         prior_plan = build_mml_prior_sensitivity_plan(result)
         _frame_bundle.add_frame(frames, "mml_prior_sd_sensitivity_plan", prior_plan)
+        _add_mml_prior_sensitivity_export_frames(frames, result)
         bias_audit = build_bias_inference_audit(all_bias_results or bias_results or {}, result, diagnostics)
         _frame_bundle.add_frame(frames, "bias_inference_audit", bias_audit)
         assumption_audit = build_statistical_assumption_audit(result, diagnostics, all_bias_results or bias_results or {})
         _frame_bundle.add_frame(frames, "statistical_assumption_audit", assumption_audit)
-        method_ref_audit = build_method_reference_audit() if frames else pd.DataFrame()
+        method_ref_audit = (
+            _standalone_export_rows(
+                build_method_reference_audit(),
+                column="MethodArea",
+                excluded_values=_STANDALONE_EXPORT_EXCLUDED_METHOD_AREAS,
+            )
+            if frames else pd.DataFrame()
+        )
         _frame_bundle.add_frame(frames, "method_reference_audit", method_ref_audit)
         help_ref_coverage = build_help_reference_coverage() if frames else pd.DataFrame()
         _frame_bundle.add_frame(frames, "help_reference_coverage", help_ref_coverage)
@@ -23660,6 +25069,12 @@ def build_result_bundle_frames(
                     diagnostics,
                     all_bias_results or bias_results or {},
                 )
+                _frame_bundle.add_frame(
+                    frames,
+                    "final_report_readiness",
+                    bundle_readiness,
+                )
+                _add_final_readiness_contract_frames(frames, bundle_readiness)
                 bundle_action_plan = build_submission_action_plan(
                     result,
                     diagnostics,
@@ -23755,6 +25170,13 @@ def build_result_bundle_frames(
             _frame_bundle.add_frame(frames, "pca_stability_audit", stability)
             stability_all = collect_pca_stability_tables(diagnostics)
             _frame_bundle.add_frame(frames, "pca_stability_all_scopes", stability_all)
+        marginal_fit = diagnostics.get("marginal_fit", {})
+        if isinstance(marginal_fit, dict):
+            _frame_bundle.add_frame(
+                frames,
+                "marginal_fit_summary",
+                marginal_fit.get("summary"),
+            )
     # Person / facet measures split (nice to have separately, matches
     # the way FACETS groups its output facet-tables).
     facets = result.get("facets", {}) if isinstance(result, dict) else {}
@@ -23812,6 +25234,32 @@ def build_result_bundle_frames(
         pass
     weight_audit = build_weighting_policy_audit(result)
     _frame_bundle.add_frame(frames, "weighting_policy_audit", weight_audit)
+    anchor_audit = result.get("config", {}).get("anchor_audit", {})
+    if isinstance(anchor_audit, dict):
+        _frame_bundle.add_frame(
+            frames,
+            "anchor_audit_summary",
+            anchor_audit.get("summary"),
+        )
+    anchor_drift = result.get("anchor_drift", {})
+    if isinstance(anchor_drift, dict):
+        _frame_bundle.add_frame(
+            frames,
+            "anchor_drift_summary",
+            anchor_drift.get("summary"),
+        )
+    equating_chain = result.get("equating_chain", {})
+    if isinstance(equating_chain, dict):
+        _frame_bundle.add_frame(
+            frames,
+            "equating_chain_readiness_summary",
+            build_equating_chain_readiness_summary(result),
+        )
+        _frame_bundle.add_frame(
+            frames,
+            "equating_chain_edges",
+            equating_chain.get("edges"),
+        )
     try:
         design_bundle = evaluate_design_from_fitted(result, diagnostics, forecast_multipliers=(2.0,))
         if isinstance(design_bundle, dict) and design_bundle.get("available"):
@@ -23857,7 +25305,11 @@ def build_result_bundle_frames(
             dff_tbl = build_dff_bias_screening_table(bias_results)
             _frame_bundle.add_frame(frames, "dff_bias_screening", dff_tbl)
     if frames:
-        method_ref_audit = build_method_reference_audit()
+        method_ref_audit = _standalone_export_rows(
+            build_method_reference_audit(),
+            column="MethodArea",
+            excluded_values=_STANDALONE_EXPORT_EXCLUDED_METHOD_AREAS,
+        )
         _frame_bundle.add_frame(frames, "method_reference_audit", method_ref_audit, overwrite=False)
         help_ref_coverage = build_help_reference_coverage()
         _frame_bundle.add_frame(frames, "help_reference_coverage", help_ref_coverage, overwrite=False)
@@ -23888,6 +25340,9 @@ def render_quick_results_download(
         frames_key = frames_fingerprint(frames)
     except Exception:
         frames_key = f"quick_dl_{id(result)}"
+    quick_readiness = frames.get("final_report_readiness", pd.DataFrame())
+    evidence_assets = build_evidence_contract_text_assets(result, quick_readiness)
+    evidence_assets_key = bytes_mapping_fingerprint(evidence_assets)
 
     with st.container(border=True):
         st.markdown(
@@ -23895,16 +25350,21 @@ def render_quick_results_download(
         )
         st.caption(
             "FACETS-style bundle: Summary, Measures, Reliability, Fit, "
-            "PCA, and Bias tables in a single ZIP. For publication Word/PDF/HTML "
-            "and Stan code, use **Report → Exports**. For every CSV, figure, "
-            "script, and config file, use the **Downloads** tab."
+            "PCA, and Bias tables in a single ZIP. For a publication document, "
+            "use **Report → Exports**. For every CSV, figure, Python script, and "
+            "config file, use the **Downloads** tab."
         )
         c1, c2 = st.columns([1, 1])
         with c1:
             try:
                 st.download_button(
                     "Download all results (ZIP)",
-                    data=cached_tables_zip(frames, frames_key),
+                    data=cached_tables_zip(
+                        frames,
+                        frames_key,
+                        _text_assets=evidence_assets,
+                        text_assets_key=evidence_assets_key,
+                    ),
                     file_name="mfrm_results_bundle.zip",
                     mime="application/zip",
                     key="dl_quick_bundle_zip",
@@ -25233,7 +26693,6 @@ def guided_export_share_preflight_table(
         "manuscript_review",
         "figure_bundle",
         "reviewer_repo",
-        "external_validation",
     ):
         required_checks = t(f"guided.export_preflight_{row_id}_required_checks")
         stop = t(f"guided.export_preflight_{row_id}_stop")
@@ -25293,7 +26752,6 @@ def guided_export_share_preflight_help_table() -> pd.DataFrame:
         "manuscript_review",
         "figure_bundle",
         "reviewer_repo",
-        "external_validation",
     ):
         rows.append({
             columns[0]: t(f"help.export_preflight_{row_id}_audience"),
@@ -26098,7 +27556,7 @@ def _render_guided_goal_router(
     action_plan: pd.DataFrame | None = None,
     key_suffix: str = "main",
 ) -> None:
-    """Render a goal selector that routes to the appropriate guided section."""
+    """Render one primary next action with supporting routes disclosed below."""
     routes = guided_goal_route_table()
     if routes.empty:
         return
@@ -26116,13 +27574,6 @@ def _render_guided_goal_router(
         help=t("guided.goal_select_help"),
     )
     selected = routes.loc[routes["GoalId"].eq(selected_goal)].iloc[0]
-    with st.container(border=True):
-        st.markdown(
-            f"**{t('guided.goal_card_start')}**: {selected[t('guided.goal_col_start')]}  \n"
-            f"**{t('guided.goal_card_next')}**: {selected[t('guided.goal_col_next')]}  \n"
-            f"**{t('guided.goal_card_detail')}**: {selected[t('guided.goal_col_detail')]}"
-        )
-        st.caption(str(selected[t("guided.goal_col_when")]))
     st.markdown(f"**{t('guided.goal_focus_heading')}**")
     st.caption(t("guided.goal_focus_caption"))
     st.dataframe(
@@ -26130,92 +27581,124 @@ def _render_guided_goal_router(
         width="stretch",
         hide_index=True,
     )
-    st.markdown(f"**{t('guided.next_click_heading')}**")
-    st.caption(t("guided.next_click_caption"))
-    st.dataframe(
-        guided_next_click_summary_table(str(selected_goal), action_plan),
-        width="stretch",
-        hide_index=True,
-    )
+
     action_hub = guided_action_hub_cards(str(selected_goal), action_plan)
+    role_col = t("guided.action_hub_col_role")
+    open_col = t("guided.action_hub_col_open")
+    action_col = t("guided.action_hub_col_action")
+    detail_col = t("guided.action_hub_col_detail")
+    button_col = t("guided.action_hub_col_button")
+
+    def _render_action_card(hub_row: pd.Series, *, primary: bool) -> None:
+        with st.container(border=True):
+            st.markdown(f"**{hub_row.get(role_col, '')}**")
+            st.caption(str(hub_row.get(open_col, "")))
+            st.write(str(hub_row.get(action_col, "")))
+            detail_text = str(hub_row.get(detail_col, "")).strip()
+            if detail_text:
+                st.caption(detail_text)
+            action_id = str(hub_row.get("ActionId", "primary"))
+            if st.button(
+                str(hub_row.get(button_col, t("guided.action_hub_primary_button"))),
+                key=f"guided_action_hub_{key_suffix}_{action_id}",
+                use_container_width=True,
+                type="primary" if primary else "secondary",
+            ):
+                st.session_state["guided_essential_section"] = str(
+                    hub_row.get("SectionId", "start")
+                )
+                st.rerun()
+
     if isinstance(action_hub, pd.DataFrame) and not action_hub.empty:
         st.markdown(f"**{t('guided.action_hub_heading')}**")
         st.caption(t("guided.action_hub_caption"))
-        role_col = t("guided.action_hub_col_role")
-        open_col = t("guided.action_hub_col_open")
-        action_col = t("guided.action_hub_col_action")
-        detail_col = t("guided.action_hub_col_detail")
-        button_col = t("guided.action_hub_col_button")
-        card_cols = st.columns(len(action_hub))
-        for idx, (_, hub_row) in enumerate(action_hub.iterrows()):
-            with card_cols[idx]:
-                with st.container(border=True):
-                    st.markdown(f"**{hub_row.get(role_col, '')}**")
-                    st.caption(str(hub_row.get(open_col, "")))
-                    st.write(str(hub_row.get(action_col, "")))
-                    detail_text = str(hub_row.get(detail_col, "")).strip()
-                    if detail_text:
-                        st.caption(detail_text)
-                    if st.button(
-                        str(hub_row.get(button_col, t("guided.action_hub_primary_button"))),
-                        key=f"guided_action_hub_{key_suffix}_{hub_row.get('ActionId', idx)}",
-                        use_container_width=True,
-                    ):
-                        st.session_state["guided_essential_section"] = str(hub_row.get("SectionId", "start"))
-                        st.rerun()
-        with st.expander(t("guided.action_hub_detail_expander"), expanded=False):
+        primary_rows = action_hub.loc[action_hub["ActionId"].astype(str).eq("primary")]
+        primary_row = (
+            primary_rows.iloc[0]
+            if not primary_rows.empty
+            else action_hub.iloc[0]
+        )
+        _render_action_card(primary_row, primary=True)
+
+    with st.expander(t("guided.goal_supporting_detail_expander"), expanded=False):
+        st.caption(t("guided.goal_supporting_detail_caption"))
+        with st.container(border=True):
+            st.markdown(
+                f"**{t('guided.goal_card_start')}**: {selected[t('guided.goal_col_start')]}  \n"
+                f"**{t('guided.goal_card_next')}**: {selected[t('guided.goal_col_next')]}  \n"
+                f"**{t('guided.goal_card_detail')}**: {selected[t('guided.goal_col_detail')]}"
+            )
+            st.caption(str(selected[t("guided.goal_col_when")]))
+
+        st.markdown(f"**{t('guided.next_click_heading')}**")
+        st.caption(t("guided.next_click_caption"))
+        st.dataframe(
+            guided_next_click_summary_table(str(selected_goal), action_plan),
+            width="stretch",
+            hide_index=True,
+        )
+
+        if isinstance(action_hub, pd.DataFrame) and not action_hub.empty:
+            secondary_actions = action_hub.loc[
+                ~action_hub["ActionId"].astype(str).eq("primary")
+            ]
+            if not secondary_actions.empty:
+                card_cols = st.columns(len(secondary_actions))
+                for idx, (_, hub_row) in enumerate(secondary_actions.iterrows()):
+                    with card_cols[idx]:
+                        _render_action_card(hub_row, primary=False)
             st.dataframe(
                 action_hub.drop(columns=["ActionId", "SectionId"], errors="ignore"),
                 width="stretch",
                 hide_index=True,
             )
-    progress_table = guided_progress_checklist(str(selected_goal), action_plan)
-    if isinstance(progress_table, pd.DataFrame) and not progress_table.empty:
-        st.markdown(f"**{t('guided.progress_heading')}**")
-        done_col = t("guided.progress_col_done")
-        done_count = int(progress_table[done_col].fillna(False).astype(bool).sum()) if done_col in progress_table.columns else 0
-        total_count = int(len(progress_table))
-        st.caption(t("guided.progress_caption", done=done_count, total=total_count))
-        try:
-            st.progress(done_count / max(total_count, 1))
-        except Exception:
-            pass
-        disabled_cols = [col for col in progress_table.columns if col != done_col]
-        try:
-            st.data_editor(
-                progress_table,
-                width="stretch",
-                hide_index=True,
-                disabled=disabled_cols,
-                column_config={
-                    done_col: st.column_config.CheckboxColumn(
-                        done_col,
-                        help=t("guided.progress_done_help"),
-                    ),
-                },
-                key=f"guided_progress_checklist_{key_suffix}",
+
+        progress_table = guided_progress_checklist(str(selected_goal), action_plan)
+        if isinstance(progress_table, pd.DataFrame) and not progress_table.empty:
+            st.markdown(f"**{t('guided.progress_heading')}**")
+            done_col = t("guided.progress_col_done")
+            done_count = int(progress_table[done_col].fillna(False).astype(bool).sum()) if done_col in progress_table.columns else 0
+            total_count = int(len(progress_table))
+            st.caption(t("guided.progress_caption", done=done_count, total=total_count))
+            try:
+                st.progress(done_count / max(total_count, 1))
+            except Exception:
+                pass
+            disabled_cols = [col for col in progress_table.columns if col != done_col]
+            try:
+                st.data_editor(
+                    progress_table,
+                    width="stretch",
+                    hide_index=True,
+                    disabled=disabled_cols,
+                    column_config={
+                        done_col: st.column_config.CheckboxColumn(
+                            done_col,
+                            help=t("guided.progress_done_help"),
+                        ),
+                    },
+                    key=f"guided_progress_checklist_{key_suffix}",
+                )
+            except Exception:
+                st.dataframe(progress_table, width="stretch", hide_index=True)
+            st.download_button(
+                t("guided.progress_download_button"),
+                data=to_csv_bytes(progress_table),
+                file_name="mfrm_guided_progress_checklist.csv",
+                mime="text/csv",
+                key=f"dl_guided_progress_checklist_{key_suffix}",
             )
-        except Exception:
-            st.dataframe(progress_table, width="stretch", hide_index=True)
-        st.download_button(
-            t("guided.progress_download_button"),
-            data=to_csv_bytes(progress_table),
-            file_name="mfrm_guided_progress_checklist.csv",
-            mime="text/csv",
-            key=f"dl_guided_progress_checklist_{key_suffix}",
+
+        st.markdown(f"**{t('guided.goal_locator_heading')}**")
+        st.caption(t("guided.goal_locator_caption"))
+        st.dataframe(guided_goal_detail_locator_table(str(selected_goal)), width="stretch", hide_index=True)
+        st.markdown(f"**{t('guided.goal_guardrail_heading')}**")
+        st.caption(t("guided.goal_guardrail_caption"))
+        st.dataframe(
+            guided_goal_guardrail_summary_table(str(selected_goal), action_plan),
+            width="stretch",
+            hide_index=True,
         )
-    st.markdown(f"**{t('guided.goal_locator_heading')}**")
-    st.caption(t("guided.goal_locator_caption"))
-    st.dataframe(guided_goal_detail_locator_table(str(selected_goal)), width="stretch", hide_index=True)
-    st.markdown(f"**{t('guided.goal_guardrail_heading')}**")
-    st.caption(t("guided.goal_guardrail_caption"))
-    st.dataframe(
-        guided_goal_guardrail_summary_table(str(selected_goal), action_plan),
-        width="stretch",
-        hide_index=True,
-    )
-    with st.expander(t("guided.goal_supporting_detail_expander"), expanded=False):
-        st.caption(t("guided.goal_supporting_detail_caption"))
         st.markdown(f"**{t('guided.goal_brief_heading')}**")
         st.dataframe(guided_goal_decision_brief_table(str(selected_goal)), width="stretch", hide_index=True)
         st.markdown(f"**{t('guided.goal_evidence_heading')}**")
@@ -27579,11 +29062,11 @@ def show_dimensionality_section(diagnostics: dict, facet_cols: list[str], core: 
 
     st.markdown(t("dimensionality.interpretation_main"))
 
-    # Determine default tab -- prefer first rater facet if available.
+    # Determine default panel -- prefer first rater facet if available.
     # ``tab_keys`` are stable identifiers used for routing (the "overall"
     # key drives the mode='overall' branch). ``tab_display`` are the
-    # translated labels shown in the Streamlit tab strip; the two arrays
-    # stay aligned by index so tab_keys[i] always describes tab_display[i].
+    # translated labels shown in the selector; the two arrays stay aligned
+    # by index so tab_keys[i] always describes tab_display[i].
     rater_facets = [f for f in facet_cols if "rater" in f.lower() or "judge" in f.lower()]
     tab_keys = ["overall"] + facet_cols
     tab_display = [t("dimensionality.tab_label_overall")] + facet_cols
@@ -27595,15 +29078,30 @@ def show_dimensionality_section(diagnostics: dict, facet_cols: list[str], core: 
     else:
         order = list(range(len(tab_keys)))
     reordered_keys = [tab_keys[i] for i in order]
-    reordered_display = [tab_display[i] for i in order]
-    dim_tabs = st.tabs(reordered_display)
-
-    for i, key in enumerate(reordered_keys):
-        with dim_tabs[i]:
-            if key == "overall":
-                _show_pca_panel(pca, mode="overall", core=core, diagnostics=diagnostics, facet_cols=facet_cols)
-            else:
-                _show_pca_panel(pca, mode="facet", facet_name=key, core=core, diagnostics=diagnostics, facet_cols=facet_cols)
+    label_by_key = {tab_keys[i]: tab_display[i] for i in range(len(tab_keys))}
+    if st.session_state.get("dimensionality_panel") not in reordered_keys:
+        st.session_state.pop("dimensionality_panel", None)
+    selected_dimensionality_panel = st.selectbox(
+        t("dimensionality.panel_select_label"),
+        options=reordered_keys,
+        index=0,
+        format_func=lambda key: label_by_key.get(str(key), str(key)),
+        key="dimensionality_panel",
+        help=t("dimensionality.panel_select_help"),
+    )
+    selected_dimensionality_panel = selected_dimensionality_panel or reordered_keys[0]
+    st.caption(t("dimensionality.panel_select_caption"))
+    if selected_dimensionality_panel == "overall":
+        _show_pca_panel(pca, mode="overall", core=core, diagnostics=diagnostics, facet_cols=facet_cols)
+    else:
+        _show_pca_panel(
+            pca,
+            mode="facet",
+            facet_name=str(selected_dimensionality_panel),
+            core=core,
+            diagnostics=diagnostics,
+            facet_cols=facet_cols,
+        )
 
     # Nonparametric DIMTEST (Stout 1987; Nandakumar & Yu 1996),
     # complementary to the residual PCA above.
@@ -28085,17 +29583,25 @@ def show_wright_map_section(result: dict, diagnostics: dict) -> None:
                 gap=f"{-overlap:.2f}",
             ))
 
-    # Tabs are accessed by index (wm_tabs[0]/[1]) below, so the labels can be
-    # safely translated without breaking routing.
-    wm_tabs = st.tabs([
-        t("visuals.tab_label_wright_map"),
-        t("visuals.tab_label_yardstick"),
-    ])
+    map_panel_labels = {
+        "wright_map": t("visuals.tab_label_wright_map"),
+        "yardstick": t("visuals.tab_label_yardstick"),
+    }
+    selected_map_panel = st.selectbox(
+        t("visuals.map_panel_select_label"),
+        options=list(map_panel_labels),
+        index=0,
+        format_func=lambda panel_id: map_panel_labels.get(str(panel_id), str(panel_id)),
+        key="wright_map_panel",
+        help=t("visuals.map_panel_select_help"),
+    )
+    selected_map_panel = selected_map_panel or "wright_map"
+    st.caption(t("visuals.map_panel_select_caption"))
 
-    with wm_tabs[0]:
+    if selected_map_panel == "wright_map":
         _draw_wright_map_plotly(person_tbl, facet_tbl, step_tbl)
 
-    with wm_tabs[1]:
+    if selected_map_panel == "yardstick":
         prep = result.get("prep", {}) if isinstance(result, dict) else {}
         rating_min = prep.get("rating_min")
         _draw_yardstick(person_tbl, facet_tbl, step_tbl, rating_min=rating_min)
@@ -28161,16 +29667,16 @@ def _draw_yardstick(
         rating_min=rating_min,
     )
     if not yardstick_map.empty:
-        script_assets = yardstick_reproducibility_scripts()
+        script_assets = python_yardstick_reproducibility_assets()
         bundle_assets: dict[str, bytes | str] = {
             "mfrm_yardstick_map.csv": yardstick_map.to_csv(index=False),
             **script_assets,
         }
-        with st.expander("Download / reproduce this FACETS-style yardstick", expanded=False):
+        with st.expander("Download / reproduce this yardstick in Python", expanded=False):
             st.caption(
                 "The CSV contains the exact logit positions and display labels used by the figure. "
                 "Threshold rows also include line positions for the short boundary segments. "
-                "The R script uses ggplot2::geom_text() and geom_segment(); Python and Julia templates are included for cross-language reproduction."
+                "The included Plotly script redraws the same map without refitting the model."
             )
             st.dataframe(
                 yardstick_map.loc[:, [
@@ -28193,9 +29699,9 @@ def _draw_yardstick(
                 )
             with ycol2:
                 st.download_button(
-                    "Download yardstick reproduction bundle",
+                    "Download Python yardstick reproduction bundle",
                     data=cached_mixed_asset_zip(bundle_assets, bytes_mapping_fingerprint(bundle_assets)),
-                    file_name="MFRM_FACETS_Yardstick_Reproduction.zip",
+                    file_name="MFRM_Python_Yardstick_Reproduction.zip",
                     mime="application/zip",
                     key="dl_yardstick_reproduction_zip",
                 )
@@ -32753,7 +34259,12 @@ def build_input_stale_reasons(
     return reasons
 
 
-def run_facets_mode(core: dict, data: pd.DataFrame) -> None:
+def run_facets_mode(
+    core: dict,
+    data: pd.DataFrame,
+    *,
+    help_surface_active: bool = False,
+) -> None:
     cols = list(data.columns)
     if len(cols) < 4:
         st.warning("At least 4 columns are required (Person, Score, and 2+ facets).")
@@ -32792,8 +34303,10 @@ def run_facets_mode(core: dict, data: pd.DataFrame) -> None:
 
     st.sidebar.subheader(t("sidebar_estimation.column_mapping_subheader"))
     st.sidebar.caption(t("sidebar_estimation.column_mapping_caption"))
+    mapping_key_suffix = stable_json_fingerprint({"columns": cols})
     person_col = st.sidebar.selectbox(
         t("sidebar_estimation.person_column_label"), cols, index=cols.index(person_default),
+        key=f"facets_mode_person_col_{mapping_key_suffix}",
         help=t("sidebar_estimation.person_column_help"),
     )
     _cap = _auto_caption("person", person_col)
@@ -32801,6 +34314,7 @@ def run_facets_mode(core: dict, data: pd.DataFrame) -> None:
         st.sidebar.caption(_cap)
     score_col = st.sidebar.selectbox(
         t("sidebar_estimation.score_column_label"), cols, index=cols.index(score_default),
+        key=f"facets_mode_score_col_{mapping_key_suffix}",
         help=t("sidebar_estimation.score_column_help"),
     )
     _cap = _auto_caption("score", score_col)
@@ -32811,11 +34325,20 @@ def run_facets_mode(core: dict, data: pd.DataFrame) -> None:
     # the comparison ``weight_col_raw == "(None)"``.
     weight_opts = ["(None)"] + cols
     weight_idx = weight_opts.index(weight_default) if weight_default in weight_opts else 0
+    weight_labels = {
+        value: (
+            t("sidebar_estimation.weight_column_none_display")
+            if value == "(None)"
+            else value
+        )
+        for value in weight_opts
+    }
     weight_col_raw = st.sidebar.selectbox(
         t("sidebar_estimation.weight_column_label"),
         weight_opts,
         index=weight_idx,
-        format_func=lambda v: t("sidebar_estimation.weight_column_none_display") if v == "(None)" else v,
+        format_func=weight_labels.__getitem__,
+        key=f"facets_mode_weight_col_{mapping_key_suffix}",
         help=t("sidebar_estimation.weight_column_help"),
     )
     weight_col = None if weight_col_raw == "(None)" else weight_col_raw
@@ -32892,16 +34415,19 @@ def run_facets_mode(core: dict, data: pd.DataFrame) -> None:
         st.sidebar.caption(" / ".join(_autodetected_facet_lines))
     # Stable internal IDs drive the ``workflow_mode == "Advanced controls"``
     # check below; format_func handles the localized display.
+    workflow_mode_labels = {
+        "Guided defaults": t("sidebar_estimation.workflow_mode_guided_display"),
+        "Advanced controls": t(
+            "sidebar_estimation.workflow_mode_advanced_display"
+        ),
+    }
     workflow_mode = st.sidebar.radio(
         t("sidebar_estimation.workflow_mode_label"),
         ["Guided defaults", "Advanced controls"],
         index=0,
         horizontal=True,
-        format_func=lambda v: (
-            t("sidebar_estimation.workflow_mode_guided_display")
-            if v == "Guided defaults"
-            else t("sidebar_estimation.workflow_mode_advanced_display")
-        ),
+        format_func=workflow_mode_labels.__getitem__,
+        key="facets_mode_workflow_mode",
         help=t("sidebar_estimation.workflow_mode_help"),
     )
     advanced_controls = workflow_mode == "Advanced controls"
@@ -32918,14 +34444,18 @@ def run_facets_mode(core: dict, data: pd.DataFrame) -> None:
         VIZ_CI_LEVEL_OPTIONS.index(VIZ_CI_LEVEL_DEFAULT)
         if VIZ_CI_LEVEL_DEFAULT in VIZ_CI_LEVEL_OPTIONS else 5
     )
+    viz_ci_labels = {
+        value: t(
+            "sidebar_estimation.viz_ci_level_option_template",
+            pct=_ci_level_pct_label(value),
+        )
+        for value in VIZ_CI_LEVEL_OPTIONS
+    }
     _viz_ci_level = st.sidebar.selectbox(
         t("sidebar_estimation.viz_ci_level_label"),
         options=list(VIZ_CI_LEVEL_OPTIONS),
         index=_viz_ci_default_idx,
-        format_func=lambda v: t(
-            "sidebar_estimation.viz_ci_level_option_template",
-            pct=_ci_level_pct_label(v),
-        ),
+        format_func=viz_ci_labels.__getitem__,
         help=t("sidebar_estimation.viz_ci_level_help"),
         key="viz_ci_level",
     )
@@ -33014,118 +34544,10 @@ def run_facets_mode(core: dict, data: pd.DataFrame) -> None:
         ["RSM", "PCM", "GPCM"],
         index=0,
         horizontal=True,
+        key="facets_mode_model_type",
         help=t("sidebar_estimation.model_help"),
     )
 
-    # Advanced response-model picker (Stan-first, download-only). The core
-    # estimator never runs these locally; this widget just makes the Stan
-    # code available as a download from the Report tab. Collapsed by
-    # default so it doesn't clutter the sidebar for RSM/PCM/GPCM users.
-    with st.sidebar.expander(t("sidebar_estimation.advanced_models_expander"), expanded=False):
-        st.caption(t("sidebar_estimation.advanced_models_caption"))
-        st.warning(STAN_SENSITIVITY_WARNING)
-        _advanced_enabled = st.checkbox(
-            t("sidebar_estimation.advanced_enable_checkbox"),
-            value=False,
-            key="facets_mode_advanced_enabled",
-            help=t("sidebar_estimation.advanced_enable_help"),
-        )
-        _advanced_model_key = None
-        if _advanced_enabled:
-            opts = advanced_model_options()
-            labels = [label for _, label in opts]
-            picked_label = st.selectbox(
-                t("sidebar_estimation.advanced_model_family_label"),
-                options=labels,
-                index=0,
-                key="facets_mode_advanced_model_label",
-                help=t("sidebar_estimation.advanced_model_family_help"),
-            )
-            _advanced_model_key = next((k for k, lbl in opts if lbl == picked_label), None)
-
-            meta = advanced_model_metadata(_advanced_model_key or "")
-            template_info = advanced_model_data_template(_advanced_model_key or "")
-            if template_info.get("note"):
-                st.info(template_info["note"])
-            scope_note = advanced_model_scope_notes(_advanced_model_key or "")
-            with st.expander(t("sidebar_estimation.model_scope_data_shape_expander"), expanded=False):
-                st.markdown(scope_note)
-                st.caption(t("sidebar_estimation.advanced_template_caption"))
-            template_df = template_info.get("data")
-            if isinstance(template_df, pd.DataFrame) and not template_df.empty:
-                st.download_button(
-                    t("sidebar_estimation.download_advanced_template_button"),
-                    data=to_csv_bytes(template_df),
-                    file_name=template_info.get("file_name", "mfrm_advanced_model_template.csv"),
-                    mime="text/csv",
-                    key=f"facets_mode_advanced_template_{_advanced_model_key}",
-                    use_container_width=True,
-                )
-            _advanced_q_matrix_df: pd.DataFrame | None = None
-            _advanced_n_classes = 2
-            if meta.get("needs_q_matrix") == "true":
-                q_file = st.file_uploader(
-                    t("sidebar_estimation.q_matrix_uploader_label"),
-                    type=["csv"],
-                    key="facets_mode_advanced_q_matrix",
-                    help=t("sidebar_estimation.q_matrix_uploader_help"),
-                )
-                if q_file is not None:
-                    try:
-                        _advanced_q_matrix_df = pd.read_csv(q_file, index_col=0)
-                    except Exception:
-                        q_file.seek(0)
-                        _advanced_q_matrix_df = pd.read_csv(q_file)
-                    _valid = validate_q_matrix(_advanced_q_matrix_df)
-                    if _valid["valid"]:
-                        st.success(t(
-                            "sidebar_estimation.q_matrix_ok_template",
-                            n_items=_valid["n_items"],
-                            n_attributes=_valid["n_attributes"],
-                            coverage=f"{_valid['coverage']:.0%}",
-                        ))
-                    else:
-                        for msg in _valid["messages"]:
-                            st.warning(msg)
-            if meta.get("needs_class_count") == "true":
-                _advanced_n_classes = int(st.number_input(
-                    t("sidebar_estimation.n_classes_label"),
-                    min_value=2, max_value=10, value=2, step=1,
-                    key="facets_mode_advanced_n_classes",
-                    help=t("sidebar_estimation.n_classes_help"),
-                ))
-
-            # Download button: build the Stan code on click
-            if st.button(
-                t("sidebar_estimation.generate_stan_button"),
-                key="facets_mode_advanced_generate",
-                use_container_width=True,
-                type="primary",
-            ):
-                try:
-                    stan_src = generate_advanced_model_stan_code(
-                        _advanced_model_key or "",
-                        n_items=(_advanced_q_matrix_df.shape[0]
-                                 if isinstance(_advanced_q_matrix_df, pd.DataFrame) else 10),
-                        n_attributes=(_advanced_q_matrix_df.shape[1]
-                                      if isinstance(_advanced_q_matrix_df, pd.DataFrame) else 3),
-                        n_categories=5,
-                        n_classes=_advanced_n_classes,
-                    )
-                    st.session_state["_advanced_model_stan_code"] = stan_src
-                    st.session_state["_advanced_model_stan_name"] = _advanced_model_key
-                except Exception as exc:
-                    st.error(t("sidebar_estimation.stan_generation_error_template", error=str(exc)))
-            if "_advanced_model_stan_code" in st.session_state:
-                st.download_button(
-                    t("sidebar_estimation.download_stan_button"),
-                    data=st.session_state["_advanced_model_stan_code"].encode("utf-8"),
-                    file_name=f"mfrm_{str(st.session_state.get('_advanced_model_stan_name', 'advanced')).lower()}.stan",
-                    mime="application/x-stan",
-                    key="facets_mode_advanced_dl",
-                    use_container_width=True,
-                )
-                st.caption(t("sidebar_estimation.compile_stan_locally_caption"))
     step_facet = None
     if model_type in {"PCM", "GPCM"}:
         # ``"(select facets first)"`` is a sentinel placeholder shown only
@@ -33133,15 +34555,20 @@ def run_facets_mode(core: dict, data: pd.DataFrame) -> None:
         # surfaces the localized form while the underlying option list
         # is left untouched (no routing depends on it).
         step_facet_options = facet_cols if facet_cols else ["(select facets first)"]
+        step_facet_labels = {
+            value: (
+                t("sidebar_estimation.step_facet_select_first_display")
+                if value == "(select facets first)"
+                else value
+            )
+            for value in step_facet_options
+        }
         step_facet = st.sidebar.selectbox(
             t("sidebar_estimation.step_facet_label_template", model_type=model_type),
             step_facet_options,
             index=0,
-            format_func=lambda v: (
-                t("sidebar_estimation.step_facet_select_first_display")
-                if v == "(select facets first)"
-                else v
-            ),
+            format_func=step_facet_labels.__getitem__,
+            key=f"facets_mode_step_facet_{facet_key_suffix}",
             help=t("sidebar_estimation.step_facet_help"),
         )
         if model_type == "GPCM":
@@ -33153,6 +34580,7 @@ def run_facets_mode(core: dict, data: pd.DataFrame) -> None:
         ["JMLE", "MML"],
         index=0,
         horizontal=True,
+        key="facets_mode_estimation_method",
         help=t("sidebar_estimation.estimation_method_help"),
     )
     mml_engine = "EM"
@@ -33165,15 +34593,20 @@ def run_facets_mode(core: dict, data: pd.DataFrame) -> None:
             # (recommended)" variant gets a localized display because the
             # other engine names ("Hybrid", "Direct", "EM") are technical
             # terms kept in English.
+            mml_engine_labels = {
+                "Auto (recommended)": t(
+                    "sidebar_estimation.mml_engine_auto_display"
+                ),
+                "Hybrid": "Hybrid",
+                "Direct": "Direct",
+                "EM": "EM",
+            }
             mml_engine = st.sidebar.selectbox(
                 t("sidebar_estimation.mml_engine_label"),
                 ["Auto (recommended)", "Hybrid", "Direct", "EM"],
                 index=0,
-                format_func=lambda v: (
-                    t("sidebar_estimation.mml_engine_auto_display")
-                    if v == "Auto (recommended)"
-                    else v
-                ),
+                format_func=mml_engine_labels.__getitem__,
+                key="facets_mode_mml_engine",
                 help=t("sidebar_estimation.mml_engine_help"),
             )
             quad_points = int(st.sidebar.number_input(
@@ -33182,6 +34615,7 @@ def run_facets_mode(core: dict, data: pd.DataFrame) -> None:
                 max_value=61,
                 value=15,
                 step=2,
+                key="facets_mode_quad_points",
                 help=t("sidebar_estimation.quad_points_help"),
             ))
             population_prior_sd = float(st.sidebar.number_input(
@@ -33191,11 +34625,13 @@ def run_facets_mode(core: dict, data: pd.DataFrame) -> None:
                 value=1.0,
                 step=0.10,
                 format="%.2f",
+                key="facets_mode_population_prior_sd",
                 help=t("sidebar_estimation.population_prior_sd_help"),
             ))
             estimate_population_sd = bool(st.sidebar.checkbox(
                 t("sidebar_estimation.estimate_population_sd_label"),
                 value=False,
+                key="facets_mode_estimate_population_sd",
                 help=t("sidebar_estimation.estimate_population_sd_help"),
             ))
         else:
@@ -33215,6 +34651,17 @@ def run_facets_mode(core: dict, data: pd.DataFrame) -> None:
         st.caption(t("sidebar_advanced.facet_reg_caption"))
         # Routing-sensitive internal IDs drive the comparisons below;
         # format_func handles the localized display.
+        facet_regularization_labels = {
+            "Off: unpenalized JMLE/MML": t(
+                "sidebar_advanced.facet_reg_mode_off_display"
+            ),
+            "Light shrinkage on all selected facets": t(
+                "sidebar_advanced.facet_reg_mode_light_display"
+            ),
+            "Custom by facet": t(
+                "sidebar_advanced.facet_reg_mode_custom_display"
+            ),
+        }
         facet_regularization_mode = st.selectbox(
             t("sidebar_advanced.facet_reg_mode_label"),
             [
@@ -33224,11 +34671,7 @@ def run_facets_mode(core: dict, data: pd.DataFrame) -> None:
             ],
             index=0,
             key="facet_regularization_mode",
-            format_func=lambda v: {
-                "Off: unpenalized JMLE/MML": t("sidebar_advanced.facet_reg_mode_off_display"),
-                "Light shrinkage on all selected facets": t("sidebar_advanced.facet_reg_mode_light_display"),
-                "Custom by facet": t("sidebar_advanced.facet_reg_mode_custom_display"),
-            }.get(v, v),
+            format_func=facet_regularization_labels.__getitem__,
             help=t("sidebar_advanced.facet_reg_mode_help"),
         )
         if not facet_cols:
@@ -33292,34 +34735,41 @@ def run_facets_mode(core: dict, data: pd.DataFrame) -> None:
             t("sidebar_advanced.enable_population_formula_checkbox"),
             value=False,
             disabled=(est_method != "MML"),
+            key="facets_mode_population_enabled",
             help=t("sidebar_advanced.enable_population_formula_help"),
         )
+        population_enabled = bool(population_enabled and est_method == "MML")
         if est_method != "MML":
             st.caption(t("sidebar_advanced.switch_to_mml_caption"))
         if population_enabled:
             population_formula = st.text_input(
                 t("sidebar_advanced.population_formula_label"),
                 value="~ 1",
+                key=f"facets_mode_population_formula_{mapping_key_suffix}",
                 help=t("sidebar_advanced.population_formula_help"),
             )
             population_person_id_col = st.text_input(
                 t("sidebar_advanced.person_id_col_label"),
                 value=person_col,
+                key=f"facets_mode_population_person_id_{mapping_key_suffix}",
                 help=t("sidebar_advanced.person_id_col_help"),
             )
             population_standardize_numeric = st.checkbox(
                 t("sidebar_advanced.standardize_numeric_checkbox"),
                 value=False,
+                key=f"facets_mode_population_standardize_{mapping_key_suffix}",
                 help=t("sidebar_advanced.standardize_numeric_help"),
             )
             population_categorical_terms = st.text_input(
                 t("sidebar_advanced.force_categorical_label"),
                 value="",
+                key=f"facets_mode_population_categorical_{mapping_key_suffix}",
                 help=t("sidebar_advanced.force_categorical_help"),
             )
             population_numeric_terms = st.text_input(
                 t("sidebar_advanced.force_numeric_label"),
                 value="",
+                key=f"facets_mode_population_numeric_{mapping_key_suffix}",
                 help=t("sidebar_advanced.force_numeric_help"),
             )
             population_file = st.file_uploader(
@@ -33365,7 +34815,11 @@ def run_facets_mode(core: dict, data: pd.DataFrame) -> None:
                 else:
                     st.caption(t("sidebar_advanced.intercept_only_caption"))
             except Exception as preview_exc:
-                st.warning(t("sidebar_advanced.covariate_preview_error_template", error=str(preview_exc)))
+                render_user_problem(
+                    preview_exc,
+                    phase=_user_problems.UserProblemPhase.PARSE,
+                    surface_id="covariate_preview",
+                )
     score_num_for_range = pd.to_numeric(data[score_col], errors="coerce") if score_col in data.columns else pd.Series(dtype=float)
     score_num_for_range = score_num_for_range.dropna()
     if not score_num_for_range.empty:
@@ -33438,18 +34892,21 @@ def run_facets_mode(core: dict, data: pd.DataFrame) -> None:
             t("sidebar_advanced.noncenter_facet_label"),
             ["Person"] + facet_cols,
             index=0,
+            key=f"facets_mode_noncenter_facet_{facet_key_suffix}",
             help=t("sidebar_advanced.noncenter_facet_help"),
         )
         dummy_facets = st.multiselect(
             t("sidebar_advanced.dummy_facets_label"),
             ["Person"] + facet_cols,
             default=[],
+            key=f"facets_mode_dummy_facets_{facet_key_suffix}",
             help=t("sidebar_advanced.dummy_facets_help"),
         )
         positive_facets = st.multiselect(
             t("sidebar_advanced.positive_facets_label"),
             facet_cols,
             default=[],
+            key=f"facets_mode_positive_facets_{facet_key_suffix}",
             help=t("sidebar_advanced.positive_facets_help"),
         )
         maxit = int(st.number_input(
@@ -33458,6 +34915,7 @@ def run_facets_mode(core: dict, data: pd.DataFrame) -> None:
             max_value=10000,
             value=400,
             step=50,
+            key="facets_mode_maxit",
             help=t("sidebar_advanced.maxit_help"),
         ))
         reltol = float(st.number_input(
@@ -33466,6 +34924,7 @@ def run_facets_mode(core: dict, data: pd.DataFrame) -> None:
             max_value=1.0,
             value=1e-6,
             format="%.1e",
+            key="facets_mode_reltol",
             help=t("sidebar_advanced.reltol_help"),
         ))
 
@@ -33515,10 +34974,13 @@ def run_facets_mode(core: dict, data: pd.DataFrame) -> None:
                     key=f"dl_static_{asset_name}",
                 )
             except Exception as asset_exc:
+                LOGGER.warning(
+                    "Bundled template unavailable",
+                    extra={"event": "mfrm.bundled_template_unavailable"},
+                    exc_info=(type(asset_exc), asset_exc, asset_exc.__traceback__),
+                )
                 st.caption(t(
                     "sidebar_advanced.asset_unavailable_caption_template",
-                    asset_name=asset_name,
-                    error=str(asset_exc),
                 ))
         show_anchor_guideline = st.checkbox(
             t("sidebar_advanced.show_anchor_guideline_checkbox"),
@@ -33529,9 +34991,13 @@ def run_facets_mode(core: dict, data: pd.DataFrame) -> None:
             try:
                 st.markdown(get_bundled_asset_text("anchor_user_guidelines.md"))
             except Exception as guide_exc:
+                LOGGER.warning(
+                    "Bundled anchor guideline unavailable",
+                    extra={"event": "mfrm.anchor_guideline_unavailable"},
+                    exc_info=(type(guide_exc), guide_exc, guide_exc.__traceback__),
+                )
                 st.caption(t(
                     "sidebar_advanced.anchor_guideline_unavailable_caption_template",
-                    error=str(guide_exc),
                 ))
     with st.sidebar.expander(t("sidebar_advanced.anchor_audit_expander"), expanded=False):
         # The radio values warn/error/silent are stable internal IDs used
@@ -33542,6 +35008,7 @@ def run_facets_mode(core: dict, data: pd.DataFrame) -> None:
             ["warn", "error", "silent"],
             index=0,
             horizontal=True,
+            key="facets_mode_anchor_policy",
             help=t("sidebar_advanced.anchor_policy_help"),
         )
         min_common_anchors = int(st.number_input(
@@ -33550,6 +35017,7 @@ def run_facets_mode(core: dict, data: pd.DataFrame) -> None:
             max_value=50,
             value=2,
             step=1,
+            key="facets_mode_min_common_anchors",
             help=t("sidebar_advanced.min_common_anchors_help"),
         ))
         min_obs_per_element = int(st.number_input(
@@ -33558,6 +35026,7 @@ def run_facets_mode(core: dict, data: pd.DataFrame) -> None:
             max_value=100,
             value=2,
             step=1,
+            key="facets_mode_min_obs_per_element",
             help=t("sidebar_advanced.min_obs_per_element_help"),
         ))
         min_obs_per_category = int(st.number_input(
@@ -33566,6 +35035,7 @@ def run_facets_mode(core: dict, data: pd.DataFrame) -> None:
             max_value=100,
             value=1,
             step=1,
+            key="facets_mode_min_obs_per_category",
             help=t("sidebar_advanced.min_obs_per_category_help"),
         ))
 
@@ -33573,27 +35043,32 @@ def run_facets_mode(core: dict, data: pd.DataFrame) -> None:
         totalscore = st.checkbox(
             t("sidebar_advanced.totalscore_checkbox"),
             value=True,
+            key="facets_mode_totalscore",
             help=t("sidebar_advanced.totalscore_help"),
         )
         omit_unobserved = st.checkbox(
             t("sidebar_advanced.omit_unobserved_checkbox"),
             value=False,
+            key="facets_mode_omit_unobserved",
             help=t("sidebar_advanced.omit_unobserved_help"),
         )
         xtreme = float(st.number_input(
             t("sidebar_advanced.xtreme_label"),
             value=0.0,
             step=0.1,
+            key="facets_mode_xtreme",
             help=t("sidebar_advanced.xtreme_help"),
         ))
         umean = float(st.number_input(
             t("sidebar_advanced.umean_label"),
             value=0.0,
+            key="facets_mode_umean",
             help=t("sidebar_advanced.umean_help"),
         ))
         uscale = float(st.number_input(
             t("sidebar_advanced.uscale_label"),
             value=1.0,
+            key="facets_mode_uscale",
             help=t("sidebar_advanced.uscale_help"),
         ))
         udecimals = int(st.number_input(
@@ -33602,6 +35077,7 @@ def run_facets_mode(core: dict, data: pd.DataFrame) -> None:
             max_value=6,
             value=2,
             step=1,
+            key="facets_mode_udecimals",
             help=t("sidebar_advanced.udecimals_help"),
         ))
 
@@ -33611,16 +35087,20 @@ def run_facets_mode(core: dict, data: pd.DataFrame) -> None:
     st.sidebar.subheader(t("sidebar_perf.performance_options_subheader"))
     # Analysis depth IDs are routing-sensitive; format_func translates the
     # display while ``analysis_depth == "Custom"`` etc. drives the branches.
+    analysis_depth_labels = {
+        "Fast preview": t("sidebar_perf.analysis_depth_fast_display"),
+        "Standard (recommended)": t(
+            "sidebar_perf.analysis_depth_standard_display"
+        ),
+        "Full publication": t("sidebar_perf.analysis_depth_full_display"),
+        "Custom": t("sidebar_perf.analysis_depth_custom_display"),
+    }
     analysis_depth = st.sidebar.selectbox(
         t("sidebar_perf.analysis_depth_label"),
         ["Fast preview", "Standard (recommended)", "Full publication", "Custom"],
         index=1,
-        format_func=lambda v: {
-            "Fast preview": t("sidebar_perf.analysis_depth_fast_display"),
-            "Standard (recommended)": t("sidebar_perf.analysis_depth_standard_display"),
-            "Full publication": t("sidebar_perf.analysis_depth_full_display"),
-            "Custom": t("sidebar_perf.analysis_depth_custom_display"),
-        }.get(v, v),
+        format_func=analysis_depth_labels.__getitem__,
+        key="facets_mode_analysis_depth",
         help=t("sidebar_perf.analysis_depth_help"),
     )
     preset_settings = resolve_analysis_depth_settings(analysis_depth, est_method)
@@ -33628,13 +35108,18 @@ def run_facets_mode(core: dict, data: pd.DataFrame) -> None:
         compute_residual_pca = st.sidebar.checkbox(
             t("sidebar_perf.compute_residual_pca_checkbox"),
             value=bool(preset_settings["compute_residual_pca"]),
+            key="facets_mode_compute_residual_pca",
             help=t("sidebar_perf.compute_residual_pca_help"),
         )
         compute_strict_marginal = st.sidebar.checkbox(
             t("sidebar_perf.compute_strict_marginal_checkbox"),
             value=bool(preset_settings["compute_strict_marginal"]),
             disabled=(est_method != "MML"),
+            key="facets_mode_compute_strict_marginal",
             help=t("sidebar_perf.compute_strict_marginal_help"),
+        )
+        compute_strict_marginal = bool(
+            compute_strict_marginal and est_method == "MML"
         )
         strict_marginal_pairwise = bool(preset_settings["strict_marginal_pairwise"])
         strict_marginal_max_pair_cells = int(preset_settings["strict_marginal_max_pair_cells"])
@@ -33642,6 +35127,7 @@ def run_facets_mode(core: dict, data: pd.DataFrame) -> None:
             strict_marginal_pairwise = st.sidebar.checkbox(
                 t("sidebar_perf.include_pairwise_marginal_checkbox"),
                 value=bool(preset_settings["strict_marginal_pairwise"]),
+                key="facets_mode_strict_marginal_pairwise",
                 help=t("sidebar_perf.include_pairwise_marginal_help"),
             )
             if strict_marginal_pairwise:
@@ -33651,13 +35137,18 @@ def run_facets_mode(core: dict, data: pd.DataFrame) -> None:
                     max_value=10000,
                     value=int(preset_settings["strict_marginal_max_pair_cells"]),
                     step=100,
+                    key="facets_mode_strict_marginal_max_pair_cells",
                     help=t("sidebar_perf.max_pairwise_cells_help"),
                 ))
         compute_plausible_values = st.sidebar.checkbox(
             t("sidebar_perf.export_plausible_values_checkbox"),
             value=bool(preset_settings["compute_plausible_values"]),
             disabled=(est_method != "MML"),
+            key="facets_mode_compute_plausible_values",
             help=t("sidebar_perf.export_plausible_values_help"),
+        )
+        compute_plausible_values = bool(
+            compute_plausible_values and est_method == "MML"
         )
         if compute_plausible_values:
             n_plausible_values = int(st.sidebar.number_input(
@@ -33666,6 +35157,7 @@ def run_facets_mode(core: dict, data: pd.DataFrame) -> None:
                 max_value=50,
                 value=int(max(1, preset_settings["n_plausible_values"])),
                 step=1,
+                key="facets_mode_n_plausible_values",
                 help=t("sidebar_perf.n_plausible_values_help"),
             ))
             plausible_seed = int(st.sidebar.number_input(
@@ -33674,6 +35166,7 @@ def run_facets_mode(core: dict, data: pd.DataFrame) -> None:
                 max_value=2_147_483_647,
                 value=int(preset_settings["plausible_seed"]),
                 step=1,
+                key="facets_mode_plausible_seed",
                 help=t("sidebar_perf.plausible_seed_help"),
             ))
         else:
@@ -33682,30 +35175,35 @@ def run_facets_mode(core: dict, data: pd.DataFrame) -> None:
         compute_eb_shrinkage = st.sidebar.checkbox(
             t("sidebar_perf.compute_eb_shrinkage_checkbox"),
             value=bool(preset_settings["compute_eb_shrinkage"]),
+            key="facets_mode_compute_eb_shrinkage",
             help=t("sidebar_perf.compute_eb_shrinkage_custom_help"),
         )
         # Bias mode IDs ("Skip", "Selected pair", "All facet pairs") are
         # routing-sensitive (used in ``bias_mode == "..."`` checks below).
+        bias_mode_labels = {
+            "Skip": t("sidebar_perf.bias_mode_skip_display"),
+            "Selected pair": t("sidebar_perf.bias_mode_selected_pair_display"),
+            "All facet pairs": t("sidebar_perf.bias_mode_all_pairs_display"),
+        }
         bias_mode = st.sidebar.radio(
             t("sidebar_perf.bias_mode_label"),
             ["Skip", "Selected pair", "All facet pairs"],
             index=["Skip", "Selected pair", "All facet pairs"].index(preset_settings["bias_mode"])
             if preset_settings["bias_mode"] in {"Skip", "Selected pair", "All facet pairs"} else 1,
-            format_func=lambda v: {
-                "Skip": t("sidebar_perf.bias_mode_skip_display"),
-                "Selected pair": t("sidebar_perf.bias_mode_selected_pair_display"),
-                "All facet pairs": t("sidebar_perf.bias_mode_all_pairs_display"),
-            }.get(v, v),
+            format_func=bias_mode_labels.__getitem__,
+            key="facets_mode_bias_mode",
             help=t("sidebar_perf.bias_mode_help"),
         )
         render_interactive_plots = st.sidebar.checkbox(
             t("sidebar_perf.render_interactive_plots_checkbox"),
             value=bool(preset_settings["render_interactive_plots"]),
+            key="facets_mode_render_interactive_plots",
             help=t("sidebar_perf.render_interactive_plots_help"),
         )
         generate_figure_exports = st.sidebar.checkbox(
             t("sidebar_perf.generate_figure_exports_checkbox"),
             value=bool(preset_settings["generate_figure_exports"]),
+            key="facets_mode_generate_figure_exports",
             help=t("sidebar_perf.generate_figure_exports_help"),
         )
         preset_settings = resolve_analysis_depth_settings(
@@ -33731,6 +35229,7 @@ def run_facets_mode(core: dict, data: pd.DataFrame) -> None:
             preset_settings["compute_eb_shrinkage"] = st.sidebar.checkbox(
                 t("sidebar_perf.compute_eb_shrinkage_checkbox"),
                 value=False,
+                key="facets_mode_compute_eb_shrinkage",
                 help=t("sidebar_perf.compute_eb_shrinkage_standard_help"),
             )
         elif analysis_depth == "Full publication":
@@ -33756,6 +35255,7 @@ def run_facets_mode(core: dict, data: pd.DataFrame) -> None:
             t("sidebar_perf.bias_pair_label"),
             bias_pair_labels,
             index=0,
+            key=f"facets_mode_bias_pair_{facet_key_suffix}",
             help=t("sidebar_perf.bias_pair_help"),
         )
         selected_bias_pair = bias_pairs_available[bias_pair_labels.index(selected_bias_label)]
@@ -33794,6 +35294,12 @@ def run_facets_mode(core: dict, data: pd.DataFrame) -> None:
         generate_figure_exports=generate_figure_exports,
     )
 
+    # A full-page Help route keeps the source sidebar alive so Streamlit does
+    # not discard data, uploads, or analysis settings. Stop before any source
+    # main-content rendering, run trigger, estimator, or refit is reached.
+    if help_surface_active:
+        return
+
     current_input_data_fingerprint = dataframe_fingerprint(data)
     current_anchor_source_fingerprint = table_source_fingerprint(
         text_value=anchor_text,
@@ -33811,49 +35317,33 @@ def run_facets_mode(core: dict, data: pd.DataFrame) -> None:
         if population_enabled else None
     )
 
-    # v0.2.8-beta: main-area data banner. When the sidebar loads one of
-    # the built-in scenarios, surface the scenario name + design
-    # dimensions at the top of the main area so users always know which
-    # dataset is about to run — not just when they scroll the sidebar.
-    try:
-        render_loaded_data_banner()
-    except Exception:  # pragma: no cover - banner is a UX helper
-        pass
-
-    # Pre-estimation data quality readiness panel — always visible so users
-    # see potential problems BEFORE clicking Run rather than after failure.
-    # Rendered in the main area just above the Input preview; overall status
-    # ([OK] Ready / [CAUTION] Warnings / [ISSUE] Issues) + collapsible detail.
-    try:
-        _readiness_report = build_readiness_report(
-            data=data,
-            person_col=person_col,
-            score_col=score_col,
-            facet_cols=facet_cols,
-            weight_col=weight_col,
-        )
-        render_readiness_panel(_readiness_report)
-        _response_data_audit = build_response_data_audit(
-            data,
-            person_col=person_col,
-            facet_cols=facet_cols,
-            score_col=score_col,
-            weight_col=weight_col,
-        )
-        render_response_data_audit_panel(_response_data_audit, expanded=False, context="pre")
-    except Exception:  # pragma: no cover - readiness is a UX helper
-        pass
+    setup_surface = render_analysis_setup_workspace(
+        data,
+        person_col=person_col,
+        score_col=score_col,
+        facet_cols=list(facet_cols),
+        weight_col=weight_col,
+    )
     if should_render_estimation_resource_preflight(resource_preflight):
         render_estimation_resource_preflight(resource_preflight)
 
     # Estimation time warning
-    run_clicked = st.sidebar.button(t("sidebar_perf.run_button"), type="primary")
-    if st.session_state.pop("_facets_mode_force_rerun", False):
-        run_clicked = True
-    # One-click quickstart: consume the onboarding flag so the pipeline
-    # fires on the next rerender without the user touching the sidebar.
-    if st.session_state.pop("_onboarding_quickstart_fired", False):
-        run_clicked = True
+    help_overlay_open = _get_help_route_state().is_open
+    suppress_help_return_triggers = bool(
+        st.session_state.pop(_HELP_SUPPRESS_ANALYSIS_TRIGGERS_ONCE_KEY, False)
+    )
+    run_clicked = st.sidebar.button(
+        t("sidebar_perf.run_button"),
+        type="primary",
+        disabled=help_overlay_open,
+    )
+    if not help_overlay_open and not suppress_help_return_triggers:
+        if st.session_state.pop("_facets_mode_force_rerun", False):
+            run_clicked = True
+        # One-click quickstart: consume the onboarding flag so the pipeline
+        # fires on the next rerender without the user touching the sidebar.
+        if st.session_state.pop("_onboarding_quickstart_fired", False):
+            run_clicked = True
     if run_clicked:
         st.session_state.pop("_facets_mode_restored_snapshot", None)
         if len(facet_cols) < 2:
@@ -33942,6 +35432,9 @@ def run_facets_mode(core: dict, data: pd.DataFrame) -> None:
                     "workflow_mode": workflow_mode,
                     "advanced_controls": bool(advanced_controls),
                     "analysis_depth": analysis_depth,
+                    "fit_df_method": DEFAULT_FIT_DF_METHOD,
+                    "fit_zstd_transform": fit_zstd_transform_label(False),
+                    "facets_zstd_cap": DEFAULT_FACETS_ZSTD_CAP,
                     "compute_residual_pca": bool(compute_residual_pca),
                     "bias_mode": bias_mode,
                     "selected_bias_pair": list(selected_bias_pair) if selected_bias_pair is not None else None,
@@ -34090,6 +35583,15 @@ def run_facets_mode(core: dict, data: pd.DataFrame) -> None:
                 "_render_interactive_plots": bool(render_interactive_plots),
                 "_generate_figure_exports": bool(generate_figure_exports),
                 "_visualization_preferences": get_visualization_preferences(),
+                "_help_data_context": (
+                    _help_contract.HelpDataContext.SAMPLE.value
+                    if st.session_state.get("_loaded_sample_scenario_key")
+                    or isinstance(
+                        st.session_state.get("_loaded_custom_simulation_meta"),
+                        dict,
+                    )
+                    else _help_contract.HelpDataContext.REAL.value
+                ),
                 "_input_data_fingerprint": current_input_data_fingerprint,
                 "_anchor_source_fingerprint": current_anchor_source_fingerprint,
                 "_group_anchor_source_fingerprint": current_group_anchor_source_fingerprint,
@@ -34112,6 +35614,10 @@ def run_facets_mode(core: dict, data: pd.DataFrame) -> None:
                 )
             except Exception:  # pragma: no cover - history is a UX helper
                 pass
+            # Do not leave the raw input and pre-run checks above a result that
+            # just completed. They remain available in a collapsed setup panel
+            # on the next rerun and in the guided Start section.
+            setup_surface.empty()
             run_status.update(
                 label=f"Analysis complete in {_elapsed_sec:.1f}s",
                 state="complete",
@@ -34168,8 +35674,11 @@ def run_facets_mode(core: dict, data: pd.DataFrame) -> None:
                     "or relaxing `reltol` (e.g., 1e-5).\n"
                     "- **Data format**: Verify that score and facet columns contain the expected values."
                 )
-            with st.expander("Technical details"):
-                render_exception_details(exc)
+            with st.expander(t("help_nav.next_action_heading"), expanded=True):
+                render_user_problem(
+                    exc,
+                    phase=_user_problems.UserProblemPhase.ESTIMATION,
+                )
             return
 
     out = st.session_state.get("facets_mode_output")
@@ -34492,7 +36001,7 @@ def run_facets_mode(core: dict, data: pd.DataFrame) -> None:
     selected_main_panel = st.selectbox(
         t("main_tabs.panel_select_label"),
         options=list(main_panel_labels),
-        default="data",
+        index=0,
         format_func=lambda panel_id: main_panel_labels.get(str(panel_id), str(panel_id)),
         key="main_results_panel",
         help=t("main_tabs.panel_select_help"),
@@ -34968,14 +36477,327 @@ def _status_from_bool(ok: bool, *, missing: bool = False) -> str:
     return "Ready" if ok else "Review"
 
 
-def _readiness_row(check, status, evidence, action, required=True):
+_FINAL_READINESS_EVIDENCE_META = {
+    "Convergence": (
+        "final_readiness.convergence",
+        "estimation",
+        "Did the Python estimator converge for this analysis?",
+        "convergence.csv",
+    ),
+    "Global residual fit": (
+        "final_readiness.global_residual_fit",
+        "model_fit",
+        "Was the observation-level residual screen available and within its reporting benchmark?",
+        "global_residual_fit_summary.csv",
+    ),
+    "Category functioning": (
+        "final_readiness.category_functioning",
+        "rating_scale",
+        "Was category functioning assessable for final reporting?",
+        "rating_scale_functioning_dashboard.csv",
+    ),
+    "Reliability / separation": (
+        "final_readiness.reliability_separation",
+        "measurement_precision",
+        "Was person reliability or its facet-specific boundary assessable?",
+        "reliability.csv",
+    ),
+    "Dimensionality screen": (
+        "final_readiness.dimensionality_screen",
+        "dimensionality",
+        "Was the residual-PCA dimensionality screen computed and interpretable?",
+        "pca_stability_audit.csv",
+    ),
+    "Wright Map targeting": (
+        "final_readiness.wright_map_targeting",
+        "targeting",
+        "Was person-to-facet targeting assessable on the fitted scale?",
+        "measures.csv",
+    ),
+    "Bias / local interaction": (
+        "final_readiness.bias_local_interaction",
+        "local_dependence",
+        "Was the requested bias or local-interaction screen computed?",
+        "bias_inference_audit.csv",
+    ),
+    "Anchor / linking audit": (
+        "final_readiness.anchor_linking_audit",
+        "linking",
+        "Was the anchor and linking specification audited?",
+        "anchor_audit_summary.csv",
+    ),
+    "Anchor drift / constraint consistency": (
+        "final_readiness.anchor_drift",
+        "linking",
+        "Was fixed-anchor and constraint drift assessed?",
+        "anchor_drift_summary.csv",
+    ),
+    "Equating-chain summary": (
+        "final_readiness.equating_chain",
+        "linking",
+        "Was the equating-chain strength assessed?",
+        "equating_chain_readiness_summary.csv",
+    ),
+    "Strict marginal diagnostics": (
+        "final_readiness.strict_marginal",
+        "model_fit",
+        "Were strict marginal diagnostics computed for the MML fit?",
+        "marginal_fit_summary.csv",
+    ),
+    "MML fixed population prior SD": (
+        "final_readiness.mml_fixed_prior_sd",
+        "sensitivity",
+        "Was the fixed-population-prior-SD conclusion tested for sensitivity?",
+        "mml_prior_sd_sensitivity_report.csv",
+    ),
+}
+
+_FINAL_READINESS_INTERPRETATION_BOUNDARY = (
+    "This is a reporting-readiness screen. It does not by itself establish "
+    "model validity or justify a substantive claim."
+)
+
+
+def build_global_residual_fit_summary(diagnostics: dict) -> pd.DataFrame:
+    """Return a non-identifying aggregate for the final residual-fit screen."""
+    obs = diagnostics.get("obs", pd.DataFrame()) if isinstance(diagnostics, dict) else pd.DataFrame()
+    if not isinstance(obs, pd.DataFrame) or obs.empty or "StdResidual" not in obs.columns:
+        return pd.DataFrame()
+    residuals = pd.to_numeric(obs["StdResidual"], errors="coerce")
+    residuals = residuals[np.isfinite(residuals)]
+    if residuals.empty:
+        return pd.DataFrame()
+    n_flagged = int(residuals.abs().ge(2.0).sum())
+    percent_flagged = float(n_flagged / len(residuals) * 100.0)
+    return pd.DataFrame([{
+        "FiniteResiduals": int(len(residuals)),
+        "AbsZGE2": n_flagged,
+        "PercentAbsZGE2": percent_flagged,
+        "ReadyThresholdPercent": float(FINAL_RESIDUAL_PCT_GE2_READY),
+        "Status": (
+            "Ready"
+            if percent_flagged <= FINAL_RESIDUAL_PCT_GE2_READY else "Review"
+        ),
+        "Boundary": (
+            "Aggregate screen only; row-level residuals remain excluded from "
+            "the default public export."
+        ),
+    }])
+
+
+def build_equating_chain_readiness_summary(result: dict) -> pd.DataFrame:
+    """Return a non-identifying aggregate of the current anchor-chain screen."""
+    chain = result.get("equating_chain", {}) if isinstance(result, dict) else {}
+    if not isinstance(chain, dict) or not chain.get("available"):
+        return pd.DataFrame()
+    edges = chain.get("edges", pd.DataFrame())
+    if not isinstance(edges, pd.DataFrame) or edges.empty:
+        return pd.DataFrame()
+    strengths = edges.get("Strength", pd.Series("", index=edges.index)).astype(str)
+    weak = int(strengths.eq("Weak link").sum())
+    common = pd.to_numeric(
+        edges.get("CommonLinkedLevels", pd.Series(dtype=float)),
+        errors="coerce",
+    )
+    return pd.DataFrame([{
+        "AnchorChainEdges": int(len(edges)),
+        "WeakLinks": weak,
+        "LinkedEdges": int(strengths.eq("Linked").sum()),
+        "MinimumCommonLinkedLevels": (
+            float(common.min()) if common.notna().any() else np.nan
+        ),
+        "Status": "Ready" if weak == 0 else "Review",
+        "Boundary": (
+            "Aggregate single-run anchor-chain screen; facet and level labels "
+            "are omitted from the default public artifact."
+        ),
+    }])
+
+
+def _default_readiness_state(status: str):
+    if status in {"Ready", "OK"}:
+        return _evidence.ComputationState.AVAILABLE, None
+    if status == "Review":
+        return _evidence.ComputationState.CAUTION, _evidence.ReasonCode.LIMITED_EVIDENCE
+    if status == "Missing":
+        return (
+            _evidence.ComputationState.NOT_ASSESSABLE,
+            _evidence.ReasonCode.PREREQUISITE_MISSING,
+        )
+    if status == "Not ready":
+        return _evidence.ComputationState.HOLD, _evidence.ReasonCode.PREREQUISITE_MISSING
+    raise _evidence.ContractValidationError(
+        f"Unknown final-readiness status {status!r}"
+    )
+
+
+def _readiness_row(
+    check,
+    status,
+    evidence,
+    action,
+    required=True,
+    *,
+    computation_state=None,
+    reason_code=None,
+    stability_state=_evidence.StabilityState.NOT_ASSESSED,
+    sensitivity_ids=(),
+    source_artifacts=None,
+    observed=None,
+):
+    if check not in _FINAL_READINESS_EVIDENCE_META:
+        raise _evidence.ContractValidationError(
+            f"No evidence specification exists for readiness check {check!r}"
+        )
+    evidence_key, domain, question, default_artifact = _FINAL_READINESS_EVIDENCE_META[check]
+    default_state, default_reason = _default_readiness_state(str(status))
+    state = computation_state or default_state
+    state = _evidence.ComputationState(state)
+    reason = reason_code if reason_code is not None else default_reason
+    if state is _evidence.ComputationState.AVAILABLE:
+        reason = None
+    elif reason is None:
+        reason = _evidence.ReasonCode.LIMITED_EVIDENCE
+    if source_artifacts is None:
+        source_artifacts = (
+            (default_artifact,)
+            if state in {
+                _evidence.ComputationState.AVAILABLE,
+                _evidence.ComputationState.CAUTION,
+            }
+            else ()
+        )
+    spec = _readiness.ReadinessEvidenceSpec(
+        evidence_key=evidence_key,
+        domain=domain,
+        question=question,
+        computation_state=state,
+        stability_state=stability_state,
+        reason_code=reason,
+        interpretation_boundary=_FINAL_READINESS_INTERPRETATION_BOUNDARY,
+        observed=observed or {},
+        source_artifacts=tuple(source_artifacts),
+        sensitivity_ids=tuple(sensitivity_ids),
+    )
     return {
         "Check": check,
         "Status": status,
         "Evidence": evidence,
         "ActionBeforeFinalReport": action,
         "Required": "Yes" if required else "No",
+        "_EvidenceSpec": spec,
     }
+
+
+def _result_identity_settings(result: dict) -> dict[str, object]:
+    config = result.get("config", {}) if isinstance(result, dict) else {}
+    config = config if isinstance(config, dict) else {}
+    config_fp = config.get("analysis_config_fingerprint") or config.get("run_fingerprint")
+    if not config_fp:
+        config_fp = config_fingerprint(config, length=64)
+
+    def finite_number(value):
+        try:
+            number = float(value)
+        except (TypeError, ValueError):
+            return None
+        return number if np.isfinite(number) else None
+
+    return {
+        "schema_version": "mfrm_result_identity_settings_v1",
+        "base_config_fingerprint": str(config_fp),
+        "model": str(config.get("model", "unknown")),
+        "method": str(config.get("method", "unknown")),
+        "facet_names": [str(value) for value in config.get("facet_names", [])],
+        "rating_min": finite_number(config.get("rating_min")),
+        "rating_max": finite_number(config.get("rating_max")),
+        "step_facet": None if config.get("step_facet") is None else str(config.get("step_facet")),
+        "slope_facet": None if config.get("slope_facet") is None else str(config.get("slope_facet")),
+        "mml_engine": None if config.get("mml_engine") is None else str(config.get("mml_engine")),
+        "quad_points": finite_number(config.get("quad_points")),
+        "population_prior_sd": finite_number(config.get("population_prior_sd")),
+        "estimate_population_sd": bool(config.get("estimate_population_sd", False)),
+        "facet_regularization_fingerprint": (
+            None
+            if config.get("facet_regularization_fingerprint") is None
+            else str(config.get("facet_regularization_fingerprint"))
+        ),
+    }
+
+
+def _result_input_data_fingerprint(result: dict) -> str:
+    config = result.get("config", {}) if isinstance(result, dict) else {}
+    config = config if isinstance(config, dict) else {}
+    recorded = str(config.get("input_data_fingerprint") or "").strip()
+    if recorded:
+        return recorded
+    prep = result.get("prep", {}) if isinstance(result, dict) else {}
+    prep = prep if isinstance(prep, dict) else {}
+    data = prep.get("data")
+    if isinstance(data, pd.DataFrame):
+        return f"dataframe_sha256:{dataframe_fingerprint(data, length=64)}"
+    metadata = {
+        "n_obs": prep.get("n_obs"),
+        "n_person": prep.get("n_person"),
+        "facet_names": prep.get("facet_names", config.get("facet_names", [])),
+    }
+    return f"metadata_only_sha256:{stable_json_fingerprint(metadata, length=64)}"
+
+
+def _result_normalized_response_fingerprint(result: dict) -> str | None:
+    """Fingerprint the normalized likelihood input, independent of upload columns."""
+    prep = result.get("prep", {}) if isinstance(result, dict) else {}
+    prep = prep if isinstance(prep, dict) else {}
+    data = prep.get("data")
+    if not isinstance(data, pd.DataFrame) or data.empty:
+        return None
+    fingerprint = dataframe_fingerprint(data, length=64)
+    return f"normalized_dataframe_sha256:{fingerprint}" if fingerprint else None
+
+
+def build_result_analysis_identity(
+    result: dict,
+    *,
+    analysis_type: str = "mfrm.fit",
+    settings_overrides: dict[str, object] | None = None,
+    variant_id: str = "baseline",
+    baseline: _evidence.AnalysisIdentity | None = None,
+) -> _evidence.AnalysisIdentity:
+    """Build the deterministic identity used by readiness and sensitivity ledgers."""
+    settings = _result_identity_settings(result)
+    if settings_overrides:
+        settings.update(settings_overrides)
+    config = result.get("config", {}) if isinstance(result, dict) else {}
+    config = config if isinstance(config, dict) else {}
+    return _evidence.build_analysis_identity(
+        input_data_fingerprint=_result_input_data_fingerprint(result),
+        resolved_settings=settings,
+        analysis_type=analysis_type,
+        engine_version=str(config.get("app_version") or APP_VERSION),
+        variant_id=variant_id,
+        baseline=baseline,
+        seed=None,
+    )
+
+
+def _attach_final_readiness_evidence(readiness: pd.DataFrame, result: dict) -> pd.DataFrame:
+    if not isinstance(readiness, pd.DataFrame):
+        raise _evidence.ContractValidationError("readiness must be a DataFrame")
+    if "_EvidenceSpec" not in readiness.columns:
+        raise _evidence.ContractValidationError(
+            "Final-readiness rows are missing explicit evidence specifications"
+        )
+    row_specs = {
+        str(row["Check"]): row["_EvidenceSpec"]
+        for _, row in readiness.iterrows()
+    }
+    legacy = readiness.drop(columns=["_EvidenceSpec"])
+    identity = build_result_analysis_identity(result)
+    return _readiness.attach_final_readiness_evidence(
+        legacy,
+        identity=identity,
+        row_specs=row_specs,
+    ).frame
 
 
 MML_PRIOR_SENSITIVITY_DEFAULT_MULTIPLIERS = (0.5, 0.75, 1.0, 1.25, 1.5, 2.0)
@@ -34987,23 +36809,136 @@ MML_PRIOR_SENSITIVITY_STABILITY_RULES = {
 }
 
 
+def _mml_prior_variant_id(population_prior_sd: float) -> str:
+    digest = _evidence.payload_fingerprint(
+        {"population_prior_sd": float(population_prior_sd)},
+        length=12,
+    )
+    return f"mml.prior_sd.{digest}"
+
+
+def _normalize_mml_engine_contract(value: object) -> str:
+    label = str(value or "EM").strip().lower()
+    if "auto" in label:
+        return "auto"
+    if "hybrid" in label:
+        return "hybrid"
+    if "direct" in label:
+        return "direct"
+    return "em"
+
+
+def _mml_prior_resolved_refit_controls(
+    result: dict,
+    *,
+    maxit: int | None = None,
+    reltol: float | None = None,
+    mml_engine: str | None = None,
+    quad_points: int | None = None,
+) -> dict[str, object]:
+    """Resolve once the execution controls fingerprinted by every variant."""
+    config = (result or {}).get("config", {}) or {}
+    return {
+        "maxit": int(maxit if maxit is not None else config.get("maxit") or 100),
+        "reltol": float(
+            reltol if reltol is not None else config.get("reltol") or 1e-5
+        ),
+        "mml_engine": _normalize_mml_engine_contract(
+            mml_engine
+            if mml_engine is not None
+            else config.get("mml_engine_requested") or config.get("mml_engine") or "EM"
+        ),
+        "quad_points": int(
+            quad_points
+            if quad_points is not None
+            else config.get("quad_points") or 7
+        ),
+        "compute_plausible_values": False,
+    }
+
+
+def _mml_prior_contract_identities(
+    result: dict,
+    population_prior_sds: Iterable[float],
+    *,
+    maxit: int | None = None,
+    reltol: float | None = None,
+    mml_engine: str | None = None,
+    quad_points: int | None = None,
+):
+    config = (result or {}).get("config", {}) or {}
+    base_sd = float(config["population_prior_sd"])
+    baseline = build_result_analysis_identity(result)
+    refit_controls = _mml_prior_resolved_refit_controls(
+        result,
+        maxit=maxit,
+        reltol=reltol,
+        mml_engine=mml_engine,
+        quad_points=quad_points,
+    )
+    variants: dict[str, _evidence.AnalysisIdentity] = {}
+    sd_to_variant: dict[float, str] = {}
+    for raw_sd in sorted(float(value) for value in population_prior_sds):
+        if abs(raw_sd - base_sd) < 1e-10:
+            continue
+        variant_id = _mml_prior_variant_id(raw_sd)
+        settings_overrides = {
+            "population_prior_sd": raw_sd,
+            "estimate_population_sd": False,
+            "maxit": refit_controls["maxit"],
+            "reltol": refit_controls["reltol"],
+            "mml_engine": refit_controls["mml_engine"],
+            "quad_points": refit_controls["quad_points"],
+            "sensitivity_refit": refit_controls,
+        }
+        variants[variant_id] = build_result_analysis_identity(
+            result,
+            analysis_type=baseline.analysis_type,
+            settings_overrides=settings_overrides,
+            variant_id=variant_id,
+            baseline=baseline,
+        )
+        sd_to_variant[round(raw_sd, 12)] = variant_id
+    return baseline, variants, sd_to_variant
+
+
 def build_mml_prior_sensitivity_plan(
     result: dict,
     multipliers=MML_PRIOR_SENSITIVITY_DEFAULT_MULTIPLIERS,
+    *,
+    maxit: int | None = None,
+    reltol: float | None = None,
+    mml_engine: str | None = None,
+    quad_points: int | None = None,
 ) -> pd.DataFrame:
     """Recommended fixed-prior-SD sensitivity reruns for MML reports."""
     config = (result or {}).get("config", {}) or {}
     if config.get("method") != "MML":
         return pd.DataFrame()
+    if bool(config.get("estimate_population_sd", False)):
+        frame = pd.DataFrame()
+        frame.attrs["contract_reason"] = (
+            "Fixed-prior-SD sensitivity is not applicable when population SD "
+            "was estimated as a free parameter."
+        )
+        return frame
     try:
-        base_sd = float(config.get("population_prior_sd") or 1.0)
-    except Exception:
-        base_sd = 1.0
+        base_sd = float(config["population_prior_sd"])
+    except (KeyError, TypeError, ValueError):
+        frame = pd.DataFrame()
+        frame.attrs["contract_reason"] = (
+            "The fitted MML result has no valid fixed population_prior_sd."
+        )
+        return frame
     if not np.isfinite(base_sd) or base_sd <= 0:
-        base_sd = 1.0
+        frame = pd.DataFrame()
+        frame.attrs["contract_reason"] = (
+            "The fitted MML population_prior_sd must be positive and finite."
+        )
+        return frame
     pop = config.get("population_model", {})
     latent_regression = bool(isinstance(pop, dict) and pop.get("enabled"))
-    rows = []
+    rows: list[dict[str, object]] = []
     seen: set[float] = set()
     for mult in multipliers:
         try:
@@ -35016,11 +36951,17 @@ def build_mml_prior_sensitivity_plan(
         if sd_key in seen:
             continue
         seen.add(sd_key)
+        is_baseline = abs(sd - base_sd) < 1e-10
+        population_rule = (
+            ", or population coefficient shift > "
+            f"{MML_PRIOR_SENSITIVITY_STABILITY_RULES['population_coefficient_shift']:.2f}"
+            if latent_regression else ""
+        )
         rows.append({
             "PopulationPriorSD": sd,
             "Multiplier": float(mult),
-            "Role": "current fitted value" if abs(float(mult) - 1.0) < 1e-12 else "sensitivity rerun",
-            "RunStatus": "Already fit" if abs(float(mult) - 1.0) < 1e-12 else "Not run",
+            "Role": "current fitted value" if is_baseline else "sensitivity rerun",
+            "RunStatus": "Already fit" if is_baseline else "Not run",
             "RequiredBeforeClaim": (
                 "Yes for population-scale or latent-regression claims"
                 if latent_regression else
@@ -35028,8 +36969,8 @@ def build_mml_prior_sensitivity_plan(
             ),
             "PrimaryComparisons": (
                 "Compare log-likelihood/AIC/BIC, person EAP shifts, non-person "
-                "facet shifts, rank correlations, strict marginal diagnostics, "
-                "and latent-regression coefficients when present."
+                "facet shifts, rank correlations, and latent-regression "
+                "coefficients when present."
             ),
             "DecisionRule": (
                 "Review if max |measure shift| > "
@@ -35037,25 +36978,75 @@ def build_mml_prior_sensitivity_plan(
                 "measure RMSE > "
                 f"{MML_PRIOR_SENSITIVITY_STABILITY_RULES['measure_rmse']:.2f}, "
                 "rank correlation < "
-                f"{MML_PRIOR_SENSITIVITY_STABILITY_RULES['rank_correlation']:.2f}, "
-                "or population coefficient shift > "
-                f"{MML_PRIOR_SENSITIVITY_STABILITY_RULES['population_coefficient_shift']:.2f}."
+                f"{MML_PRIOR_SENSITIVITY_STABILITY_RULES['rank_correlation']:.2f}"
+                f"{population_rule}."
             ),
             "Purpose": (
                 "Check whether facet ordering, person EAP distribution, "
-                "latent-regression coefficients, and marginal diagnostics are "
-                "stable to the fixed population prior SD."
+                "and latent-regression coefficients are stable to the fixed "
+                "population prior SD."
             ),
             "Boundary": (
                 "This app fixes population_prior_sd during MML quadrature; the "
                 "latent variance is not estimated as a free model parameter."
             ),
         })
-    return pd.DataFrame(rows)
+    frame = pd.DataFrame(rows)
+    if frame.empty:
+        return frame
+    try:
+        baseline, variants, sd_to_variant = _mml_prior_contract_identities(
+            result,
+            frame["PopulationPriorSD"].tolist(),
+            maxit=maxit,
+            reltol=reltol,
+            mml_engine=mml_engine,
+            quad_points=quad_points,
+        )
+    except (KeyError, TypeError, ValueError, _evidence.ContractValidationError) as exc:
+        frame.attrs["contract_reason"] = str(exc)
+        return frame
+
+    contract_plan = None
+    if variants:
+        contract_plan = _mml_prior_contract.build_sensitivity_plan(
+            baseline,
+            variants,
+            thresholds=MML_PRIOR_SENSITIVITY_STABILITY_RULES,
+            latent_regression=latent_regression,
+        )
+    analysis_ids: list[str] = []
+    variant_ids: list[str] = []
+    for sd in pd.to_numeric(frame["PopulationPriorSD"], errors="coerce"):
+        variant_id = sd_to_variant.get(round(float(sd), 12), "baseline")
+        variant_ids.append(variant_id)
+        analysis_ids.append(
+            baseline.analysis_id
+            if variant_id == "baseline" else variants[variant_id].analysis_id
+        )
+    frame["VariantID"] = variant_ids
+    frame["AnalysisID"] = analysis_ids
+    frame["BaselineAnalysisID"] = baseline.analysis_id
+    frame["SensitivityPlanID"] = contract_plan.plan_id if contract_plan else ""
+    frame["DecisionRuleJSON"] = (
+        _evidence.canonical_json(contract_plan.decision_rule)
+        if contract_plan else ""
+    )
+    frame["ContractSchemaVersion"] = (
+        _evidence.SENSITIVITY_PLAN_SCHEMA_VERSION if contract_plan else ""
+    )
+    frame.attrs["analysis_identity"] = baseline.to_payload()
+    frame.attrs["variant_identities"] = {
+        key: variants[key].to_payload() for key in sorted(variants)
+    }
+    frame.attrs["sensitivity_plan"] = (
+        contract_plan.to_payload() if contract_plan else None
+    )
+    return frame
 
 
-def _mml_prior_sensitivity_measure_long(result: dict) -> pd.DataFrame:
-    """Return Person + non-person estimates in one comparable long table."""
+def _mml_prior_sensitivity_measure_inventory(result: dict) -> pd.DataFrame:
+    """Return all measure keys, retaining non-finite values for coverage checks."""
     if not isinstance(result, dict):
         return pd.DataFrame()
     frames: list[pd.DataFrame] = []
@@ -35075,11 +37066,19 @@ def _mml_prior_sensitivity_measure_long(result: dict) -> pd.DataFrame:
         }))
     if not frames:
         return pd.DataFrame(columns=["Facet", "Level", "Estimate"])
-    out = pd.concat(frames, ignore_index=True)
-    return out.dropna(subset=["Estimate"]).reset_index(drop=True)
+    return pd.concat(frames, ignore_index=True)
 
 
-def _mml_prior_sensitivity_population_long(result: dict) -> pd.DataFrame:
+def _mml_prior_sensitivity_measure_long(result: dict) -> pd.DataFrame:
+    """Return finite Person + non-person estimates in one comparable table."""
+    out = _mml_prior_sensitivity_measure_inventory(result)
+    if out.empty:
+        return out
+    finite = np.isfinite(pd.to_numeric(out["Estimate"], errors="coerce"))
+    return out.loc[finite].reset_index(drop=True)
+
+
+def _mml_prior_sensitivity_population_inventory(result: dict) -> pd.DataFrame:
     pop = (result or {}).get("population", {}) if isinstance(result, dict) else {}
     coef = pop.get("coefficients", pd.DataFrame()) if isinstance(pop, dict) else pd.DataFrame()
     if not isinstance(coef, pd.DataFrame) or coef.empty or not {"Term", "Estimate"}.issubset(coef.columns):
@@ -35087,7 +37086,310 @@ def _mml_prior_sensitivity_population_long(result: dict) -> pd.DataFrame:
     return pd.DataFrame({
         "Term": coef["Term"].astype(str),
         "Estimate": pd.to_numeric(coef["Estimate"], errors="coerce"),
-    }).dropna(subset=["Estimate"]).reset_index(drop=True)
+    })
+
+
+def _mml_prior_sensitivity_population_long(result: dict) -> pd.DataFrame:
+    out = _mml_prior_sensitivity_population_inventory(result)
+    if out.empty:
+        return out
+    finite = np.isfinite(pd.to_numeric(out["Estimate"], errors="coerce"))
+    return out.loc[finite].reset_index(drop=True)
+
+
+def _mml_prior_comparison_coverage(
+    base_result: dict,
+    run: dict,
+    *,
+    latent_regression: bool,
+) -> dict[str, object]:
+    """Audit exact key and finite-value coverage before comparing estimates."""
+    problems: list[str] = []
+    metrics: dict[str, int | bool] = {}
+
+    def audit_keys(
+        baseline: pd.DataFrame,
+        variant: pd.DataFrame,
+        *,
+        key_columns: list[str],
+        label: str,
+    ) -> tuple[set[tuple[str, ...]], set[tuple[str, ...]]]:
+        base = baseline.copy()
+        other = variant.copy()
+        for column in key_columns:
+            base[column] = base[column].astype(str)
+            other[column] = other[column].astype(str)
+        base_duplicates = int(base.duplicated(key_columns, keep=False).sum())
+        variant_duplicates = int(other.duplicated(key_columns, keep=False).sum())
+        metrics[f"baseline_{label}_rows"] = int(len(base))
+        metrics[f"variant_{label}_rows"] = int(len(other))
+        metrics[f"baseline_{label}_duplicate_rows"] = base_duplicates
+        metrics[f"variant_{label}_duplicate_rows"] = variant_duplicates
+        if base_duplicates:
+            problems.append(f"baseline {label} keys contain duplicates")
+        if variant_duplicates:
+            problems.append(f"variant {label} keys contain duplicates")
+
+        base_keys = {
+            tuple(str(row[column]) for column in key_columns)
+            for _, row in base.iterrows()
+        }
+        variant_keys = {
+            tuple(str(row[column]) for column in key_columns)
+            for _, row in other.iterrows()
+        }
+        base_finite = np.isfinite(pd.to_numeric(base.get("Estimate"), errors="coerce"))
+        variant_finite = np.isfinite(
+            pd.to_numeric(other.get("Estimate"), errors="coerce")
+        )
+        base_finite_keys = {
+            tuple(str(row[column]) for column in key_columns)
+            for _, row in base.loc[base_finite].iterrows()
+        }
+        variant_finite_keys = {
+            tuple(str(row[column]) for column in key_columns)
+            for _, row in other.loc[variant_finite].iterrows()
+        }
+        missing = base_keys.difference(variant_keys)
+        extra = variant_keys.difference(base_keys)
+        metrics[f"matched_{label}_keys"] = int(len(base_keys.intersection(variant_keys)))
+        metrics[f"missing_{label}_keys"] = int(len(missing))
+        metrics[f"extra_{label}_keys"] = int(len(extra))
+        metrics[f"baseline_nonfinite_{label}_keys"] = int(
+            len(base_keys.difference(base_finite_keys))
+        )
+        metrics[f"variant_nonfinite_{label}_keys"] = int(
+            len(variant_keys.difference(variant_finite_keys))
+        )
+        if not base_keys or not variant_keys:
+            problems.append(f"{label} keys are unavailable")
+        if missing or extra:
+            problems.append(
+                f"{label} key sets differ (missing={len(missing)}, extra={len(extra)})"
+            )
+        if base_finite_keys != base_keys or variant_finite_keys != variant_keys:
+            problems.append(f"{label} estimates contain non-finite values")
+        if base_finite_keys != variant_finite_keys:
+            problems.append(f"finite {label} key sets differ")
+        return base_finite_keys, variant_finite_keys
+
+    baseline_measures = _mml_prior_sensitivity_measure_inventory(base_result)
+    variant_measures = _mml_prior_sensitivity_measure_inventory(run)
+    base_measure_keys, variant_measure_keys = audit_keys(
+        baseline_measures,
+        variant_measures,
+        key_columns=["Facet", "Level"],
+        label="measure",
+    )
+    required_rank_facets = sorted(
+        facet
+        for facet in {key[0] for key in base_measure_keys}
+        if sum(key[0] == facet for key in base_measure_keys) >= 2
+    )
+    metrics["required_rank_facets"] = int(len(required_rank_facets))
+    if not required_rank_facets:
+        problems.append("no facet has at least two finite levels for rank correlation")
+
+    if latent_regression:
+        baseline_population = _mml_prior_sensitivity_population_inventory(base_result)
+        variant_population = _mml_prior_sensitivity_population_inventory(run)
+        audit_keys(
+            baseline_population,
+            variant_population,
+            key_columns=["Term"],
+            label="population_term",
+        )
+
+    metrics["coverage_complete"] = not problems
+    return {
+        "complete": not problems and base_measure_keys == variant_measure_keys,
+        "problems": tuple(problems),
+        "metrics": metrics,
+        "required_rank_facets": tuple(required_rank_facets),
+    }
+
+
+def _strict_recorded_bool(value: object) -> bool:
+    return bool(value) if isinstance(value, (bool, np.bool_)) else False
+
+
+def _mml_refit_semantic_invariant_fingerprint(result: dict) -> str:
+    """Fingerprint settings/data that a prior-SD intervention must not change."""
+    config = result.get("config", {}) if isinstance(result, dict) else {}
+    config = config if isinstance(config, dict) else {}
+    population = result.get("population", {}) if isinstance(result, dict) else {}
+    population = population if isinstance(population, dict) else {}
+    person_data = population.get("person_data", pd.DataFrame())
+    if isinstance(person_data, pd.DataFrame):
+        person_data = person_data.drop(
+            columns=["PopulationMean"],
+            errors="ignore",
+        )
+    else:
+        person_data = pd.DataFrame()
+    transforms = population.get("numeric_transforms", pd.DataFrame())
+    if not isinstance(transforms, pd.DataFrame):
+        transforms = pd.DataFrame()
+    anchor_audit = config.get("anchor_audit", {})
+    anchor_audit = anchor_audit if isinstance(anchor_audit, dict) else {}
+
+    def frame_fingerprint(frame: object) -> str | None:
+        if not isinstance(frame, pd.DataFrame) or frame.empty:
+            return None
+        return dataframe_fingerprint(frame, length=64)
+
+    payload = {
+        "population": {
+            "enabled": population.get("enabled"),
+            "formula": str(population.get("formula", config.get("population_formula", ""))),
+            "categorical_terms": sorted(
+                str(value)
+                for value in population.get(
+                    "categorical_terms",
+                    config.get("population_categorical_terms", []),
+                )
+            ),
+            "numeric_terms": sorted(
+                str(value)
+                for value in population.get(
+                    "numeric_terms",
+                    config.get("population_numeric_terms", []),
+                )
+            ),
+            "term_types": dict(population.get("term_types", {})),
+            "standardize_numeric": config.get("population_standardize_numeric"),
+            "person_data_fingerprint": frame_fingerprint(person_data),
+            "numeric_transforms_fingerprint": frame_fingerprint(transforms),
+        },
+        "constraints": {
+            "noncenter_facet": config.get("noncenter_facet"),
+            "dummy_facets": sorted(str(value) for value in config.get("dummy_facets", [])),
+            "positive_facets": sorted(
+                str(value) for value in config.get("positive_facets", [])
+            ),
+            "anchor_policy": config.get("anchor_policy"),
+            "anchor_settings": dict(anchor_audit.get("settings", {})),
+            "valid_anchors_fingerprint": frame_fingerprint(
+                anchor_audit.get("valid_anchors")
+            ),
+            "valid_group_anchors_fingerprint": frame_fingerprint(
+                anchor_audit.get("valid_group_anchors")
+            ),
+        },
+    }
+    return stable_json_fingerprint(payload, length=64)
+
+
+def _mml_prior_refit_attestation(
+    base_result: dict,
+    run: dict,
+    *,
+    population_prior_sd: float,
+    refit_controls: dict[str, object],
+) -> dict[str, object]:
+    """Verify that a returned refit executed the prespecified intervention."""
+    problems: list[str] = []
+    config = run.get("config", {}) if isinstance(run, dict) else {}
+    if not isinstance(config, dict):
+        config = {}
+        problems.append("refit config is unavailable")
+
+    if str(config.get("method", "")).upper() != "MML":
+        problems.append("refit method is not MML")
+    estimate_population_sd = config.get("estimate_population_sd")
+    if not isinstance(estimate_population_sd, (bool, np.bool_)):
+        problems.append("refit estimate_population_sd is not a boolean")
+    elif bool(estimate_population_sd):
+        problems.append("refit estimated population SD instead of fixing it")
+    compute_plausible_values = config.get("compute_plausible_values")
+    if not isinstance(compute_plausible_values, (bool, np.bool_)):
+        problems.append("refit compute_plausible_values is not a boolean")
+    elif bool(compute_plausible_values):
+        problems.append("refit computed plausible values contrary to the plan")
+    try:
+        actual_sd = float(config.get("population_prior_sd"))
+    except (TypeError, ValueError):
+        actual_sd = np.nan
+    if not np.isfinite(actual_sd) or not np.isclose(
+        actual_sd,
+        float(population_prior_sd),
+        rtol=0.0,
+        atol=1e-12,
+    ):
+        problems.append("refit population_prior_sd does not match the plan")
+
+    for key in ("maxit", "quad_points"):
+        try:
+            actual = int(config.get(key))
+            expected = int(refit_controls[key])
+        except (KeyError, TypeError, ValueError):
+            problems.append(f"refit {key} is unavailable")
+        else:
+            if actual != expected:
+                problems.append(f"refit {key} does not match the plan")
+    try:
+        actual_reltol = float(config.get("reltol"))
+        expected_reltol = float(refit_controls["reltol"])
+    except (KeyError, TypeError, ValueError):
+        problems.append("refit reltol is unavailable")
+    else:
+        if not np.isfinite(actual_reltol) or not np.isclose(
+            actual_reltol,
+            expected_reltol,
+            rtol=1e-12,
+            atol=0.0,
+        ):
+            problems.append("refit reltol does not match the plan")
+
+    expected_engine = _normalize_mml_engine_contract(refit_controls.get("mml_engine"))
+    actual_engine = _normalize_mml_engine_contract(
+        config.get("mml_engine_requested") or config.get("mml_engine")
+    )
+    if actual_engine != expected_engine:
+        problems.append("refit MML engine request does not match the plan")
+
+    base_config = base_result.get("config", {}) if isinstance(base_result, dict) else {}
+    base_config = base_config if isinstance(base_config, dict) else {}
+    for key in (
+        "model",
+        "facet_names",
+        "rating_min",
+        "rating_max",
+        "step_facet",
+        "slope_facet",
+        "facet_regularization_fingerprint",
+    ):
+        if config.get(key) != base_config.get(key):
+            problems.append(f"refit {key} differs from the baseline fit")
+    baseline_response_fingerprint = _result_normalized_response_fingerprint(base_result)
+    refit_response_fingerprint = _result_normalized_response_fingerprint(run)
+    if not baseline_response_fingerprint or not refit_response_fingerprint:
+        problems.append("normalized refit response fingerprint is unavailable")
+    elif refit_response_fingerprint != baseline_response_fingerprint:
+        problems.append(
+            "refit normalized response fingerprint differs from the baseline"
+        )
+    baseline_semantic_fingerprint = _mml_refit_semantic_invariant_fingerprint(
+        base_result
+    )
+    refit_semantic_fingerprint = _mml_refit_semantic_invariant_fingerprint(run)
+    semantic_invariants_match = (
+        refit_semantic_fingerprint == baseline_semantic_fingerprint
+    )
+    if not semantic_invariants_match:
+        problems.append(
+            "refit population/constraint semantics differ from the baseline"
+        )
+
+    return {
+        "complete": not problems,
+        "problems": tuple(problems),
+        "metrics": {
+            "execution_attested": not problems,
+            "execution_attestation_problem_count": int(len(problems)),
+            "semantic_invariants_match": semantic_invariants_match,
+        },
+    }
 
 
 def _mml_prior_sensitivity_summary_row(
@@ -35106,9 +37408,9 @@ def _mml_prior_sensitivity_summary_row(
     non_person = measures[measures["Facet"] != "Person"] if not measures.empty else pd.DataFrame()
     pop = _mml_prior_sensitivity_population_long(run or {})
     opt = run.get("opt") if isinstance(run, dict) else None
-    converged = bool(getattr(opt, "success", False))
+    converged = _strict_recorded_bool(getattr(opt, "success", False))
     if isinstance(srow, pd.Series) and "Converged" in srow.index:
-        converged = bool(srow.get("Converged"))
+        converged = _strict_recorded_bool(srow.get("Converged"))
     return {
         "PopulationPriorSD": float(population_prior_sd),
         "BasePopulationPriorSD": float(base_sd),
@@ -35226,6 +37528,8 @@ def build_mml_prior_sensitivity_report(
     summary: pd.DataFrame,
     measure_deltas: pd.DataFrame,
     population_deltas: pd.DataFrame | None = None,
+    *,
+    sensitivity_decision: dict | None = None,
 ) -> pd.DataFrame:
     """One-row interpretation layer for fixed-prior-SD sensitivity output."""
     if not isinstance(summary, pd.DataFrame) or summary.empty:
@@ -35264,6 +37568,17 @@ def build_mml_prior_sensitivity_report(
             f"max |measure shift|={max_abs:.3g}; max RMSE={max_rmse:.3g}; "
             f"min rank correlation={min_rank:.3g}; max population-coefficient shift={max_pop:.3g}."
         )
+    decision = sensitivity_decision if isinstance(sensitivity_decision, dict) else {}
+    stability_state = str(decision.get("stability_state", ""))
+    if stability_state:
+        status = (
+            "Stable screen"
+            if stability_state == _evidence.StabilityState.STABLE.value
+            else "Review"
+        )
+        decision_summary = str(decision.get("summary", "")).strip()
+        if decision_summary:
+            evidence = f"{evidence} Contract decision: {decision_summary}"
     interpretation = (
         "This is a fixed-population-prior-SD sensitivity screen for the current "
         "MML parameterization. It does not estimate the latent variance; it asks "
@@ -35271,10 +37586,18 @@ def build_mml_prior_sensitivity_report(
     )
     action = (
         "If Status is Review, report the sensitivity range and avoid population-scale "
-        "or latent-regression claims until a larger grid or external MML/Bayesian "
-        "check supports the conclusion."
+        "or latent-regression claims until a larger Python-native grid, convergence "
+        "review, or revised model specification supports the conclusion."
         if status == "Review" else
         "Report the tested prior-SD values, comparison metrics, and the fixed-variance boundary."
+    )
+    has_population_comparison = (
+        isinstance(population_deltas, pd.DataFrame) and not population_deltas.empty
+    )
+    population_rule = (
+        ", or population coefficient shift > "
+        f"{MML_PRIOR_SENSITIVITY_STABILITY_RULES['population_coefficient_shift']:.2f}"
+        if has_population_comparison else ""
     )
     return pd.DataFrame([{
         "Area": "MML fixed population prior SD sensitivity",
@@ -35288,11 +37611,31 @@ def build_mml_prior_sensitivity_report(
             "measure RMSE > "
             f"{MML_PRIOR_SENSITIVITY_STABILITY_RULES['measure_rmse']:.2f}, "
             "rank correlation < "
-            f"{MML_PRIOR_SENSITIVITY_STABILITY_RULES['rank_correlation']:.2f}, "
-            "or population coefficient shift > "
-            f"{MML_PRIOR_SENSITIVITY_STABILITY_RULES['population_coefficient_shift']:.2f}."
+            f"{MML_PRIOR_SENSITIVITY_STABILITY_RULES['rank_correlation']:.2f}"
+            f"{population_rule}."
         ),
+        "StabilityState": stability_state or _evidence.StabilityState.NOT_ASSESSED.value,
+        "SensitivityDecisionID": str(decision.get("decision_id", "")),
+        "ReasonCode": str(decision.get("reason_code", "")),
     }])
+
+
+def _empty_mml_prior_sensitivity_bundle(
+    reason: str,
+    *,
+    plan: pd.DataFrame | None = None,
+) -> dict:
+    return {
+        "available": False,
+        "reason": str(reason),
+        "summary": pd.DataFrame(),
+        "measure_deltas": pd.DataFrame(),
+        "population_deltas": pd.DataFrame(),
+        "report": pd.DataFrame(),
+        "plan": plan if isinstance(plan, pd.DataFrame) else pd.DataFrame(),
+        "settings": {},
+        "evidence_contract": None,
+    }
 
 
 def evaluate_mml_prior_sd_sensitivity(
@@ -35313,59 +37656,68 @@ def evaluate_mml_prior_sd_sensitivity(
     """
     config = (result or {}).get("config", {}) if isinstance(result, dict) else {}
     if config.get("method") != "MML":
-        return {
-            "available": False,
-            "reason": "MML prior-SD sensitivity is only available for MML runs.",
-            "summary": pd.DataFrame(),
-            "measure_deltas": pd.DataFrame(),
-            "population_deltas": pd.DataFrame(),
-            "report": pd.DataFrame(),
-            "plan": pd.DataFrame(),
-        }
+        return _empty_mml_prior_sensitivity_bundle(
+            "MML prior-SD sensitivity is only available for MML runs."
+        )
+    if bool(config.get("estimate_population_sd", False)):
+        return _empty_mml_prior_sensitivity_bundle(
+            "Fixed-prior-SD sensitivity is not applicable when population SD "
+            "was estimated as a free parameter."
+        )
     prep = result.get("prep", {}) if isinstance(result, dict) else {}
     data = prep.get("data", pd.DataFrame()) if isinstance(prep, dict) else pd.DataFrame()
     facet_names = list(config.get("facet_names", []))
     if not isinstance(data, pd.DataFrame) or data.empty or not facet_names:
-        return {
-            "available": False,
-            "reason": "The fitted result does not carry a reusable normalized response table.",
-            "summary": pd.DataFrame(),
-            "measure_deltas": pd.DataFrame(),
-            "population_deltas": pd.DataFrame(),
-            "report": pd.DataFrame(),
-            "plan": build_mml_prior_sensitivity_plan(result, multipliers=multipliers),
-        }
+        return _empty_mml_prior_sensitivity_bundle(
+            "The fitted result does not carry a reusable normalized response table.",
+            plan=build_mml_prior_sensitivity_plan(result, multipliers=multipliers),
+        )
     try:
-        base_sd = float(config.get("population_prior_sd") or 1.0)
-    except Exception:
-        base_sd = 1.0
+        base_sd = float(config.get("population_prior_sd"))
+    except (TypeError, ValueError):
+        return _empty_mml_prior_sensitivity_bundle(
+            "The fitted MML result has no valid fixed population_prior_sd."
+        )
     if not np.isfinite(base_sd) or base_sd <= 0:
-        base_sd = 1.0
+        return _empty_mml_prior_sensitivity_bundle(
+            "The fitted MML population_prior_sd must be positive and finite."
+        )
+
+    candidate_sds: list[float] = []
     if prior_sds is None:
-        plan = build_mml_prior_sensitivity_plan(result, multipliers=multipliers)
-        candidate_sds = pd.to_numeric(plan.get("PopulationPriorSD"), errors="coerce").dropna().tolist()
+        for multiplier in multipliers:
+            try:
+                candidate_sds.append(base_sd * float(multiplier))
+            except (TypeError, ValueError):
+                continue
     else:
-        candidate_sds = []
         for val in prior_sds:
             try:
                 candidate_sds.append(float(val))
-            except Exception:
+            except (TypeError, ValueError):
                 continue
-        plan = build_mml_prior_sensitivity_plan(
-            result,
-            multipliers=[sd / base_sd for sd in candidate_sds if base_sd > 0],
-        )
     candidate_sds.append(base_sd)
     cleaned: list[float] = []
     for sd in candidate_sds:
         if np.isfinite(sd) and sd > 0 and not any(abs(sd - prev) < 1e-10 for prev in cleaned):
             cleaned.append(float(sd))
     cleaned = sorted(cleaned)
-    if max_values is not None and len(cleaned) > int(max_values):
+    if max_values is not None:
+        try:
+            max_values = int(max_values)
+        except (TypeError, ValueError):
+            return _empty_mml_prior_sensitivity_bundle(
+                "max_values must be a positive integer when supplied."
+            )
+        if max_values < 1:
+            return _empty_mml_prior_sensitivity_bundle(
+                "max_values must be a positive integer when supplied."
+            )
+    if max_values is not None and len(cleaned) > max_values:
         keep = {base_sd}
         for sd in sorted(cleaned, key=lambda x: abs(x - base_sd)):
             keep.add(sd)
-            if len(keep) >= int(max_values):
+            if len(keep) >= max_values:
                 break
         cleaned = sorted(keep)
 
@@ -35373,6 +37725,18 @@ def evaluate_mml_prior_sd_sensitivity(
     population_model = config.get("population_model", {}) if isinstance(config.get("population_model"), dict) else {}
     regularization = result.get("regularization", {}) if isinstance(result, dict) else {}
     facet_regularization = regularization.get("settings") if isinstance(regularization, dict) else None
+    try:
+        refit_controls = _mml_prior_resolved_refit_controls(
+            result,
+            maxit=maxit,
+            reltol=reltol,
+            mml_engine=mml_engine,
+            quad_points=quad_points,
+        )
+    except (TypeError, ValueError) as exc:
+        return _empty_mml_prior_sensitivity_bundle(
+            f"Invalid MML sensitivity refit controls: {exc}"
+        )
     fit_kwargs_base = dict(
         data=data.copy(),
         person_col="Person",
@@ -35397,16 +37761,60 @@ def evaluate_mml_prior_sd_sensitivity(
         noncenter_facet=config.get("noncenter_facet", "Person"),
         dummy_facets=config.get("dummy_facets", []),
         positive_facets=config.get("positive_facets", []),
-        quad_points=int(quad_points or config.get("quad_points") or 7),
+        quad_points=int(refit_controls["quad_points"]),
         facet_regularization=facet_regularization,
-        maxit=int(maxit or config.get("maxit") or 100),
-        reltol=float(reltol or config.get("reltol") or 1e-5),
-        mml_engine=mml_engine or config.get("mml_engine_requested") or config.get("mml_engine") or "EM",
+        maxit=int(refit_controls["maxit"]),
+        reltol=float(refit_controls["reltol"]),
+        mml_engine=str(refit_controls["mml_engine"]),
         anchor_policy=config.get("anchor_policy", "warn"),
         compute_plausible_values=False,
     )
 
+    exact_multipliers = [sd / base_sd for sd in cleaned]
+    plan = build_mml_prior_sensitivity_plan(
+        result,
+        multipliers=exact_multipliers,
+        maxit=fit_kwargs_base["maxit"],
+        reltol=fit_kwargs_base["reltol"],
+        mml_engine=fit_kwargs_base["mml_engine"],
+        quad_points=fit_kwargs_base["quad_points"],
+    )
+    if not any(abs(sd - base_sd) >= 1e-10 for sd in cleaned):
+        return _empty_mml_prior_sensitivity_bundle(
+            "At least one non-baseline prior SD is required for a sensitivity comparison.",
+            plan=plan,
+        )
+    try:
+        baseline_identity, variant_identities, sd_to_variant = _mml_prior_contract_identities(
+            result,
+            cleaned,
+            maxit=fit_kwargs_base["maxit"],
+            reltol=fit_kwargs_base["reltol"],
+            mml_engine=fit_kwargs_base["mml_engine"],
+            quad_points=fit_kwargs_base["quad_points"],
+        )
+        latent_regression = bool(population_model.get("enabled", False))
+        sensitivity_plan = _mml_prior_contract.build_sensitivity_plan(
+            baseline_identity,
+            variant_identities,
+            thresholds=MML_PRIOR_SENSITIVITY_STABILITY_RULES,
+            latent_regression=latent_regression,
+        )
+        planned_payload = plan.attrs.get("sensitivity_plan")
+        if isinstance(planned_payload, dict):
+            planned = _evidence.SensitivityPlan.from_payload(planned_payload)
+            if planned.plan_id != sensitivity_plan.plan_id:
+                raise _evidence.ContractValidationError(
+                    "Displayed and executable MML sensitivity plans do not match"
+                )
+    except (KeyError, TypeError, ValueError, _evidence.ContractValidationError) as exc:
+        return _empty_mml_prior_sensitivity_bundle(
+            f"Could not prespecify the MML sensitivity contract: {exc}",
+            plan=plan,
+        )
+
     runs: dict[float, dict] = {}
+    run_metadata: dict[float, dict[str, object]] = {}
     summary_rows: list[dict] = []
     delta_frames: list[pd.DataFrame] = []
     pop_delta_frames: list[pd.DataFrame] = []
@@ -35446,28 +37854,213 @@ def evaluate_mml_prior_sd_sensitivity(
             run_ok=run_ok,
             error=err,
         ))
+        run_metadata[round(float(sd), 12)] = {
+            "run_ok": bool(run_ok),
+            "error": err,
+        }
 
     summary = pd.DataFrame(summary_rows)
     measure_deltas = pd.concat(delta_frames, ignore_index=True) if delta_frames else pd.DataFrame()
     population_deltas = pd.concat(pop_delta_frames, ignore_index=True) if pop_delta_frames else pd.DataFrame()
-    report = build_mml_prior_sensitivity_report(summary, measure_deltas, population_deltas)
-    return {
-        "available": bool(len(runs) >= 1 and not summary.empty),
-        "reason": "MML fixed-prior-SD sensitivity refits completed.",
+
+    def aggregate_metric(frame: pd.DataFrame, sd: float, column: str, mode: str):
+        if not isinstance(frame, pd.DataFrame) or frame.empty or column not in frame.columns:
+            return None
+        sd_values = pd.to_numeric(frame.get("PopulationPriorSD"), errors="coerce")
+        subset = pd.to_numeric(
+            frame.loc[np.isclose(sd_values, sd, rtol=0.0, atol=1e-10), column],
+            errors="coerce",
+        )
+        subset = subset[np.isfinite(subset)]
+        if subset.empty:
+            return None
+        return float(subset.min() if mode == "min" else subset.max())
+
+    outcomes: dict[str, dict[str, object]] = {}
+    for sd in cleaned:
+        if abs(sd - base_sd) < 1e-10:
+            continue
+        variant_id = sd_to_variant[round(float(sd), 12)]
+        metadata = run_metadata.get(round(float(sd), 12), {})
+        summary_hit = summary.loc[
+            np.isclose(
+                pd.to_numeric(summary.get("PopulationPriorSD"), errors="coerce"),
+                sd,
+                rtol=0.0,
+                atol=1e-10,
+            )
+        ]
+        converged = (
+            _strict_recorded_bool(summary_hit.iloc[0].get("Converged", False))
+            if not summary_hit.empty else False
+        )
+        metrics: dict[str, object] = {}
+        for metric_name, column, mode in (
+            ("max_abs_measure_shift", "MaxAbsDifference", "max"),
+            ("measure_rmse", "RMSE", "max"),
+            ("rank_correlation", "RankCorrelation", "min"),
+        ):
+            value = aggregate_metric(measure_deltas, sd, column, mode)
+            if value is not None:
+                metrics[metric_name] = value
+        if latent_regression:
+            value = aggregate_metric(population_deltas, sd, "AbsDifference", "max")
+            if value is not None:
+                metrics["population_coefficient_shift"] = value
+        run_for_comparison = runs.get(sd)
+        if isinstance(run_for_comparison, dict):
+            coverage = _mml_prior_comparison_coverage(
+                result,
+                run_for_comparison,
+                latent_regression=latent_regression,
+            )
+            attestation = _mml_prior_refit_attestation(
+                result,
+                run_for_comparison,
+                population_prior_sd=sd,
+                refit_controls=refit_controls,
+            )
+        else:
+            coverage = {
+                "complete": False,
+                "problems": ("refit result is unavailable",),
+                "metrics": {"coverage_complete": False},
+                "required_rank_facets": (),
+            }
+            attestation = {
+                "complete": False,
+                "problems": ("refit result is unavailable",),
+                "metrics": {
+                    "execution_attested": False,
+                    "execution_attestation_problem_count": 1,
+                },
+            }
+        sd_values = pd.to_numeric(
+            measure_deltas.get("PopulationPriorSD"),
+            errors="coerce",
+        ) if isinstance(measure_deltas, pd.DataFrame) else pd.Series(dtype=float)
+        variant_delta_rows = (
+            measure_deltas.loc[
+                np.isclose(sd_values, sd, rtol=0.0, atol=1e-10)
+            ]
+            if isinstance(measure_deltas, pd.DataFrame)
+            and not measure_deltas.empty
+            and len(sd_values) == len(measure_deltas)
+            else pd.DataFrame()
+        )
+        rank_by_facet = {
+            str(row.get("Facet")): row.get("RankCorrelation")
+            for _, row in variant_delta_rows.iterrows()
+        }
+        required_rank_facets = tuple(coverage.get("required_rank_facets", ()))
+        rank_complete = bool(required_rank_facets) and all(
+            facet in rank_by_facet
+            and np.isfinite(
+                pd.to_numeric(
+                    pd.Series([rank_by_facet[facet]]),
+                    errors="coerce",
+                ).iloc[0]
+            )
+            for facet in required_rank_facets
+        )
+        required_metric_names = {
+            "max_abs_measure_shift",
+            "measure_rmse",
+            "rank_correlation",
+        }
+        if latent_regression:
+            required_metric_names.add("population_coefficient_shift")
+        metrics_complete = required_metric_names.issubset(metrics)
+        metrics.update(dict(coverage.get("metrics", {})))
+        metrics.update(dict(attestation.get("metrics", {})))
+        metrics["rank_metrics_complete"] = rank_complete
+        metrics["required_rule_metrics_complete"] = metrics_complete
+        comparison_problems = tuple(coverage.get("problems", ())) + tuple(
+            attestation.get("problems", ())
+        )
+        if not rank_complete:
+            comparison_problems += ("rank correlation is not finite for every eligible facet",)
+        if not metrics_complete:
+            comparison_problems += ("one or more decision-rule metrics are unavailable",)
+        comparable = bool(
+            coverage.get("complete", False)
+            and attestation.get("complete", False)
+            and rank_complete
+            and metrics_complete
+        )
+        outcomes[variant_id] = {
+            "run_ok": _strict_recorded_bool(metadata.get("run_ok", False)),
+            "converged": converged,
+            "comparable": comparable,
+            "metrics": metrics,
+            "summary": (
+                f"Prior SD {sd:g} versus baseline {base_sd:g}; "
+                f"run_ok={_strict_recorded_bool(metadata.get('run_ok', False))}; "
+                f"converged={converged}; comparable={comparable}; "
+                f"coverage/attestation issues={'; '.join(comparison_problems) or 'none'}."
+            ),
+        }
+
+    base_summary = summary.loc[
+        np.isclose(
+            pd.to_numeric(summary.get("PopulationPriorSD"), errors="coerce"),
+            base_sd,
+            rtol=0.0,
+            atol=1e-10,
+        )
+    ]
+    baseline_converged = (
+        _strict_recorded_bool(base_summary.iloc[0].get("Converged", False))
+        if not base_summary.empty else False
+    )
+    evidence_contract = _mml_prior_contract.build_contract_bundle(
+        baseline=baseline_identity,
+        variants=variant_identities,
+        plan=sensitivity_plan,
+        outcomes=outcomes,
+        baseline_converged=baseline_converged,
+        latent_regression=latent_regression,
+    )
+    decision_payload = evidence_contract["sensitivity_decision"]
+    report = build_mml_prior_sensitivity_report(
+        summary,
+        measure_deltas,
+        population_deltas,
+        sensitivity_decision=decision_payload,
+    )
+    settings = {
+        "base_population_prior_sd": base_sd,
+        "tested_population_prior_sds": cleaned,
+        "maxit": fit_kwargs_base["maxit"],
+        "reltol": fit_kwargs_base["reltol"],
+        "quad_points": fit_kwargs_base["quad_points"],
+        "mml_engine": fit_kwargs_base["mml_engine"],
+        "baseline_analysis_id": baseline_identity.analysis_id,
+        "sensitivity_plan_id": sensitivity_plan.plan_id,
+        "sensitivity_decision_id": decision_payload["decision_id"],
+        "variant_analysis_ids": dict(sensitivity_plan.required_variant_analysis_ids),
+    }
+    bundle = {
+        "available": True,
+        "reason": (
+            "MML fixed-prior-SD sensitivity refits completed; "
+            f"stability={decision_payload['stability_state']}."
+        ),
         "summary": summary,
         "measure_deltas": measure_deltas,
         "population_deltas": population_deltas,
         "report": report,
         "plan": plan,
-        "settings": {
-            "base_population_prior_sd": base_sd,
-            "tested_population_prior_sds": cleaned,
-            "maxit": fit_kwargs_base["maxit"],
-            "reltol": fit_kwargs_base["reltol"],
-            "quad_points": fit_kwargs_base["quad_points"],
-            "mml_engine": fit_kwargs_base["mml_engine"],
-        },
+        "settings": settings,
+        "evidence_contract": evidence_contract,
     }
+    if isinstance(result, dict):
+        evidence_bundles = result.setdefault("evidence_bundles", {})
+        if not isinstance(evidence_bundles, dict):
+            evidence_bundles = {}
+            result["evidence_bundles"] = evidence_bundles
+        evidence_bundles["mml_prior_sd"] = bundle
+    return bundle
 
 
 def build_statistical_assumption_audit(
@@ -35608,12 +38201,16 @@ def build_final_report_readiness(
         _status_from_bool(converged),
         str(getattr(opt, "message", "not available")),
         "Do not write final interpretations until the optimizer converges." if not converged else "No action needed.",
+        computation_state=(
+            _evidence.ComputationState.AVAILABLE
+            if converged else _evidence.ComputationState.HOLD
+        ),
+        reason_code=None if converged else _evidence.ReasonCode.RUN_FAILED,
     ))
 
-    obs_df = diagnostics.get("obs", pd.DataFrame())
-    if isinstance(obs_df, pd.DataFrame) and not obs_df.empty and "StdResidual" in obs_df.columns:
-        z = pd.to_numeric(obs_df["StdResidual"], errors="coerce").dropna()
-        pct_ge2 = float((z.abs() >= 2).mean() * 100) if len(z) else np.nan
+    residual_fit_summary = build_global_residual_fit_summary(diagnostics)
+    if not residual_fit_summary.empty:
+        pct_ge2 = float(residual_fit_summary.iloc[0]["PercentAbsZGE2"])
         fit_ok = np.isfinite(pct_ge2) and pct_ge2 <= FINAL_RESIDUAL_PCT_GE2_READY
         rows.append(_readiness_row(
             "Global residual fit",
@@ -35758,6 +38355,8 @@ def build_final_report_readiness(
             "Review",
             evidence,
             "Enable residual PCA for final reports unless the analysis is explicitly exploratory.",
+            computation_state=_evidence.ComputationState.NOT_ASSESSABLE,
+            reason_code=_evidence.ReasonCode.PREREQUISITE_MISSING,
         ))
 
     person_tbl = result.get("facets", {}).get("person", pd.DataFrame())
@@ -35814,10 +38413,16 @@ def build_final_report_readiness(
             "No bias/interaction scan was computed.",
             "Use Selected pair or Full publication before making no-bias claims.",
             required=False,
+            computation_state=_evidence.ComputationState.NOT_ASSESSABLE,
+            reason_code=_evidence.ReasonCode.PREREQUISITE_MISSING,
         ))
 
-    anchor_audit = config.get("anchor_audit", {})
-    if isinstance(anchor_audit, dict):
+    anchor_audit = config.get("anchor_audit")
+    if isinstance(anchor_audit, dict) and (
+        "overall_status" in anchor_audit
+        or isinstance(anchor_audit.get("summary"), pd.DataFrame)
+        and not anchor_audit.get("summary").empty
+    ):
         status = anchor_audit.get("overall_status", "ok")
         issue_tbl = anchor_audit.get("issues", pd.DataFrame())
         n_issues = len(issue_tbl) if isinstance(issue_tbl, pd.DataFrame) else 0
@@ -35827,6 +38432,17 @@ def build_final_report_readiness(
             anchor_audit.get("message", f"{n_issues} issue(s)."),
             "Fix or explicitly justify anchor/linking issues before linking across runs." if status != "ok" else "No action needed for a single-run report.",
             required=False,
+        ))
+    else:
+        rows.append(_readiness_row(
+            "Anchor / linking audit",
+            "Review",
+            "No anchor/linking audit was recorded for this fitted result.",
+            "Treat linking claims as not assessable until an anchor audit is recorded.",
+            required=False,
+            computation_state=_evidence.ComputationState.NOT_ASSESSABLE,
+            reason_code=_evidence.ReasonCode.PREREQUISITE_MISSING,
+            source_artifacts=(),
         ))
     drift = result.get("anchor_drift", {})
     if isinstance(drift, dict) and drift.get("available"):
@@ -35872,31 +38488,140 @@ def build_final_report_readiness(
             marginal.get("reason", "Strict marginal diagnostics were skipped."),
             "Enable strict marginal diagnostics for final MML reports when feasible.",
             required=False,
+            computation_state=_evidence.ComputationState.NOT_ASSESSABLE,
+            reason_code=_evidence.ReasonCode.PREREQUISITE_MISSING,
         ))
 
     if config.get("method") == "MML":
-        prior_plan = build_mml_prior_sensitivity_plan(result)
-        rows.append(_readiness_row(
-            "MML fixed population prior SD",
-            "Review",
-            (
-                f"population_prior_sd = {config.get('population_prior_sd', 'unknown')}; "
-                f"{len(prior_plan)} recommended sensitivity value(s)."
-            ),
-            (
-                "Report that latent variance is fixed by the app setting, and "
-                "run or justify prior-SD sensitivity before population-scale or "
-                "latent-regression claims."
-            ),
-            required=False,
-        ))
+        evidence_bundles = result.get("evidence_bundles", {})
+        sensitivity_bundle = (
+            evidence_bundles.get("mml_prior_sd")
+            if isinstance(evidence_bundles, dict) else None
+        )
+        contract = (
+            sensitivity_bundle.get("evidence_contract")
+            if isinstance(sensitivity_bundle, dict) else None
+        )
+        decision = (
+            contract.get("sensitivity_decision")
+            if isinstance(contract, dict) else None
+        )
+        contract_issue = ""
+        expected_identity = build_result_analysis_identity(result)
+        if isinstance(contract, dict):
+            try:
+                validated_contract = _mml_prior_contract.validate_contract_bundle(
+                    contract
+                )
+                decision = validated_contract["sensitivity_decision"].to_payload()
+            except _evidence.ContractValidationError as exc:
+                contract_issue = (
+                    "Stored sensitivity evidence failed contract validation and "
+                    f"was ignored ({exc})."
+                )
+                decision = None
+        if isinstance(decision, dict) and (
+            str(decision.get("baseline_analysis_id", ""))
+            != expected_identity.analysis_id
+        ):
+            contract_issue = (
+                "Stored sensitivity evidence does not match this fitted result's "
+                "AnalysisID and was ignored."
+            )
+            decision = None
+        if isinstance(decision, dict):
+            stability_state = _evidence.StabilityState(decision["stability_state"])
+            sensitivity_ids = tuple(decision.get("sensitivity_ids", []))
+            report = sensitivity_bundle.get("report", pd.DataFrame())
+            report_row = (
+                report.iloc[0]
+                if isinstance(report, pd.DataFrame) and not report.empty else {}
+            )
+            if stability_state in {
+                _evidence.StabilityState.STABLE,
+                _evidence.StabilityState.SENSITIVE,
+            }:
+                computation_state = _evidence.ComputationState.AVAILABLE
+                reason_code = None
+                source_artifacts = (
+                    "mml_prior_sd_sensitivity_report.csv",
+                    "mml_prior_sd_sensitivity_summary.csv",
+                    "mml_prior_sd_sensitivity_measure_deltas.csv",
+                    "mml_prior_sd_sensitivity_evidence_contract.json",
+                )
+            elif stability_state is _evidence.StabilityState.CONDITIONALLY_STABLE:
+                computation_state = _evidence.ComputationState.CAUTION
+                reason_code = str(decision["reason_code"])
+                source_artifacts = (
+                    "mml_prior_sd_sensitivity_report.csv",
+                    "mml_prior_sd_sensitivity_summary.csv",
+                    "mml_prior_sd_sensitivity_measure_deltas.csv",
+                    "mml_prior_sd_sensitivity_evidence_contract.json",
+                )
+            else:
+                computation_state = _evidence.ComputationState.NOT_ASSESSABLE
+                reason_code = str(decision["reason_code"])
+                source_artifacts = ()
+            rows.append(_readiness_row(
+                "MML fixed population prior SD",
+                "Ready" if stability_state is _evidence.StabilityState.STABLE else "Review",
+                str(report_row.get("Evidence", decision.get("summary", ""))),
+                str(
+                    report_row.get(
+                        "RecommendedAction",
+                        "Review the sensitivity ledger before population-scale claims.",
+                    )
+                ),
+                required=False,
+                computation_state=computation_state,
+                reason_code=reason_code,
+                stability_state=stability_state,
+                sensitivity_ids=sensitivity_ids,
+                source_artifacts=source_artifacts,
+                observed={
+                    "sensitivity_decision_id": decision.get("decision_id", ""),
+                    "sensitivity_baseline_analysis_id": decision.get(
+                        "baseline_analysis_id", ""
+                    ),
+                },
+            ))
+        elif bool(config.get("estimate_population_sd", False)):
+            rows.append(_readiness_row(
+                "MML fixed population prior SD",
+                "Review",
+                "Population SD was estimated; a fixed-prior-SD sensitivity grid is not applicable.",
+                "Report the estimated population-SD method and its uncertainty boundary.",
+                required=False,
+                computation_state=_evidence.ComputationState.NOT_ASSESSABLE,
+                reason_code=_evidence.ReasonCode.NOT_APPLICABLE,
+            ))
+        else:
+            prior_plan = build_mml_prior_sensitivity_plan(result)
+            rows.append(_readiness_row(
+                "MML fixed population prior SD",
+                "Review",
+                (
+                    f"{contract_issue + ' ' if contract_issue else ''}"
+                    f"population_prior_sd = {config.get('population_prior_sd', 'unknown')}; "
+                    f"{len(prior_plan)} recommended sensitivity value(s)."
+                ),
+                (
+                    "Report that latent variance is fixed by the app setting, and "
+                    "run or justify prior-SD sensitivity before population-scale or "
+                    "latent-regression claims."
+                ),
+                required=False,
+                computation_state=_evidence.ComputationState.CAUTION,
+                reason_code=_evidence.ReasonCode.SENSITIVITY_NOT_RUN,
+                source_artifacts=("mml_prior_sd_sensitivity_plan.csv",),
+            ))
 
     readiness = pd.DataFrame(rows)
-    status_order = {"Not ready": 0, "Review": 1, "Missing": 2, "Ready": 3}
+    status_order = {"Not ready": 0, "Review": 1, "Missing": 2, "Ready": 3, "OK": 3}
     if "Status" in readiness.columns:
         readiness["_sort"] = readiness["Status"].map(status_order).fillna(2)
         readiness = readiness.sort_values(["_sort", "Check"]).drop(columns=["_sort"]).reset_index(drop=True)
-    return readiness
+    return _attach_final_readiness_evidence(readiness, result)
 
 
 def build_manuscript_claim_guide(
@@ -36023,7 +38748,7 @@ def build_manuscript_claim_guide(
                 f"{n_obs} observations, {n_person} persons, score range {rating_min}-{rating_max}; "
                 f"app version {config.get('app_version', APP_VERSION)}."
             ),
-            "DoNotClaim": "Do not describe the run as FACETS/TAM/sirt/mirt/mfrmr output or as exact cross-package parity.",
+            "DoNotClaim": "Do not describe the run as output from another engine or as evidence beyond the implemented Python model and diagnostics.",
             "NextAction": "Report the app version, model, estimation method, facets, and runtime boundary.",
         },
         {
@@ -36060,7 +38785,7 @@ def build_manuscript_claim_guide(
             ),
             "EvidenceToReport": readiness_evidence("MML fixed population prior SD", "Not an MML run."),
             "DoNotClaim": (
-                "Do not state that the latent variance was estimated by the app or that the result is identical to TAM/ConQuest variance handling."
+                "Do not state that the latent variance was estimated unless free-SD was enabled and supported; report the fixed/free setting exactly."
             ),
             "NextAction": (
                 "Run or justify prior-SD sensitivity before latent-regression or population-scale claims."
@@ -36149,28 +38874,6 @@ def build_manuscript_claim_guide(
             ),
             "DoNotClaim": "Do not present model-based simulations as a prospective validation study or causal evidence.",
             "NextAction": "State assumptions, seeds/replicates, and whether unknown persons were handled through the MML population distribution.",
-        },
-        {
-            "ManuscriptArea": "External package comparison",
-            "ClaimStatus": "Boundary",
-            "SafeManuscriptWording": (
-                "External TAM/sirt/mirt/mfrmr checks may be cited only as optional validation evidence when the exact artifact set is archived."
-            ),
-            "EvidenceToReport": "See validation/README.md and validation/R_CROSSCHECK_STATUS.md when external checks are used.",
-            "DoNotClaim": "Do not force or display R-vs-Python numerical equality claims unless the fixture, parameterization map, and tolerance report justify them.",
-            "NextAction": "Keep the main manuscript focused on the Python app outputs unless the study explicitly includes cross-package validation.",
-        },
-        {
-            "ManuscriptArea": "Bayesian / Uto-family extension",
-            "ClaimStatus": "Boundary",
-            "SafeManuscriptWording": (
-                "Uto-family Bayesian MFRM references can motivate an extension analysis when a separate Stan model, priors, data map, diagnostics, and sensitivity checks are archived."
-            ),
-            "EvidenceToReport": "See bayesian_mfrm_stan_refinement_plan.csv, stan_reproducibility_archive_contract.csv, stan_posterior_reproducibility_route.csv, mfrm_stan_data_manifest.csv, mfrm_stan_data_dictionary.csv, mfrm_stan_prior_guidance.csv, mfrm_stan_prior_sensitivity_grid.csv, stan_posterior_handoff_checklist.csv, stan_run_manifest_template.csv, method_reference_audit.csv, and the exported Stan runner templates.",
-            "DoNotClaim": (
-                "Do not state that generalized Bayesian MFRM, multidimensional rubric traits, or rater severity drift were fitted unless the corresponding Stan scaffold was run and validated."
-            ),
-            "NextAction": "Use the Uto-family Stan scaffold as a separate reproducibility artifact; archive JSON data, priors, sampler settings, posterior diagnostics, and sensitivity variants.",
         },
     ]
     return pd.DataFrame(rows)
@@ -37349,10 +40052,10 @@ def build_role_based_action_memos(
         focus="Reproducibility and archive route",
         status=panel_value(overall, "ReportStatus", "Needs caveat"),
         why="Reviewers and collaborators need exact settings, method references, evidence files, and privacy boundaries.",
-        action="Archive the decision brief, role memos, config, method appendix, claim matrix, scripts, and export privacy manifest together.",
-        evidence="role_based_action_memos.csv; report_ready_decision_brief.md; method_reference_audit.csv; mfrm_config.json; export_privacy_manifest.csv",
+        action="Archive the decision brief, role memos, config, AnalysisIdentity, EvidenceRecords, method appendix, claim matrix, Python scripts, and export privacy manifest together.",
+        evidence="role_based_action_memos.csv; report_ready_decision_brief.md; analysis_identity.json; evidence_records.json; mfrm_config.json; export_privacy_manifest.csv",
         safe="Describe the app output as a standalone Python run with archived settings and evidence files.",
-        do_not="Do not claim cross-package equivalence, calibration evidence, or prospective validation without separate archived validation artifacts.",
+        do_not="Do not combine files from different AnalysisIDs or extend claims beyond the archived diagnostics and sensitivity decisions.",
         question="Can another reviewer trace the claim, setting, script, and evidence file without reopening the app?",
         app_location="Downloads -> Scripts & Config; Manuscript Binder",
         download_file="role_based_action_memos.md; MFRM_OSF_Package.zip; mfrm_config.json",
@@ -37864,7 +40567,7 @@ def build_report_ready_reanalysis_checklist(
         evidence="MFRM_Tables.zip; mfrm_config.json; mfrm_method_appendix.md; MFRM_Manuscript_Binder.zip; export_privacy_manifest.csv",
         output="Reanalysis archive log",
         caveat="Public export mode reduces sharing risk but is not formal de-identification.",
-        do_not="Do not compare reruns, external packages, or reviewer responses without archiving settings and exported evidence.",
+        do_not="Do not compare or combine reruns unless their AnalysisIDs, settings, and evidence bundles are kept distinct and traceable.",
         app_location="Downloads -> Data Tables; Downloads -> Scripts & Config",
     )
     add_row(
@@ -38244,10 +40947,10 @@ def build_critical_final_review_panel(
         "Paper author; measurement practitioner",
         "Could another reviewer reconstruct the evidence behind each claim?",
         "Without config, method appendix, table bundle, and action plan, a claim may be impossible to audit.",
-        "Archive the table bundle, config JSON, method appendix, manuscript binder, and any external validation artifacts used.",
-        "MFRM_Tables.zip; mfrm_config.json; mfrm_method_appendix.md; MFRM_Manuscript_Binder.zip",
-        "Do not cite numerical equivalence, posterior extensions, or external package checks unless their artifacts are archived.",
-        "Use the exported archive as a reproducibility record, not as proof of cross-package parity.",
+        "Archive the table bundle, config JSON, AnalysisIdentity, EvidenceRecords, method appendix, and manuscript binder.",
+        "MFRM_Tables.zip; mfrm_config.json; analysis_identity.json; evidence_records.json; mfrm_method_appendix.md; MFRM_Manuscript_Binder.zip",
+        "Do not combine conclusions, sensitivity variants, or files from different AnalysisIDs.",
+        "Use the exported archive to reconstruct the Python analysis and its evidence boundary.",
     )
 
     add_row(
@@ -39754,24 +42457,6 @@ def build_claim_to_evidence_matrix(
             "ReviewerQuestion": "Are model-based predictions or simulations described as sensitivity/planning evidence rather than validation or causal evidence?",
             "ArchiveFiles": "MFRM_Tables.zip; mfrm_config.json; mfrm_app_engine_runner.py",
         },
-        "External package comparison": {
-            "ManuscriptSection": "Supplement; Validation appendix",
-            "PrimaryTables": "external_simulation_reference_inventory.csv; external_simulation_template_inventory.csv; method_reference_audit.csv; mfrmr_020_migration_coverage.csv",
-            "PrimaryFigures": "",
-            "ReadinessChecks": "",
-            "AppLocation": "Downloads -> Scripts & Config; validation artifacts",
-            "ReviewerQuestion": "If cross-package equality is claimed, where is the exact fixture, parameterization map, tolerance report, and output artifact?",
-            "ArchiveFiles": "MFRM_External_Simulation_Validation_Templates.zip; archived external validation outputs",
-        },
-        "Bayesian / Uto-family extension": {
-            "ManuscriptSection": "Methods; Supplement; Limitations",
-            "PrimaryTables": "bayesian_mfrm_stan_refinement_plan.csv; reproducibility_script_matrix.csv; stan_reproducibility_archive_contract.csv; stan_posterior_reproducibility_route.csv; mfrm_stan_data_manifest.csv; mfrm_stan_data_dictionary.csv; mfrm_stan_prior_guidance.csv; mfrm_stan_prior_sensitivity_grid.csv; mfrm_uto_bayesian_mfrm_design_audit.csv; mfrm_uto_bayesian_mfrm_claim_wording.csv; stan_posterior_handoff_checklist.csv; stan_run_manifest_template.csv; method_reference_audit.csv",
-            "PrimaryFigures": "posterior viewer exports when available",
-            "ReadinessChecks": "",
-            "AppLocation": "Report -> Exports -> Stan Code; Downloads -> Scripts & Config; Posterior Viewer",
-            "ReviewerQuestion": "Was the Uto-family Bayesian MFRM scaffold actually run, with priors, data JSON, sampler diagnostics, and sensitivity variants archived?",
-            "ArchiveFiles": "mfrm_uto_bayesian_mfrm.stan; mfrm_stan_data.json; mfrm_stan_prior_guidance.csv; mfrm_stan_prior_sensitivity_grid.csv; stan_run_manifest.json; stan_run_manifest.csv; posterior_manifest_check.csv; mfrm_uto_bayesian_mfrm_data_template.json; mfrm_uto_bayesian_mfrm_design_audit.csv; mfrm_uto_bayesian_mfrm_claim_wording.csv; MFRM_Bayesian_Stan_Runners.zip; CmdStan CSV chains; posterior diagnostics",
-        },
     }
 
     rows: list[dict[str, object]] = []
@@ -40140,6 +42825,7 @@ def build_manuscript_handoff_checklist(
     all_bias_results: dict | None = None,
     *,
     public_export_mode: bool = True,
+    artifact_profile: str = "app",
 ) -> pd.DataFrame:
     """Ordered handoff checklist for moving final app outputs into a manuscript."""
     all_bias = all_bias_results or {}
@@ -40163,6 +42849,32 @@ def build_manuscript_handoff_checklist(
         "Keep public export mode enabled for files that may leave the controlled research workspace."
         if public_export_mode else
         "Complete/private export is selected; share only inside an approved confidential workflow."
+    )
+    demo_profile = str(artifact_profile).strip().lower() == "demo"
+    table_files = (
+        "MFRM_Demo_Report.zip; MFRM_Demo_Report.xlsx; MFRM_Demo_Report.html"
+        if demo_profile else
+        "MFRM_Tables.zip; MFRM_Report.xlsx; MFRM_Report.html"
+    )
+    publication_files = (
+        "MFRM_Demo_Report.html; MFRM_Demo_Report.xlsx"
+        if demo_profile else
+        "Publication Document (.docx/.pdf/.html)"
+    )
+    method_files = (
+        "method_appendix.md; manuscript_template.md; mfrm_config.json; mfrm_app_engine_runner.py; requirements.txt"
+        if demo_profile else
+        "mfrm_method_appendix.md; mfrm_manuscript_template.md; mfrm_config.json; mfrm_app_engine_runner.py; requirements.txt"
+    )
+    figure_files = (
+        "MFRM_Demo_Publication_Figures.zip; figure_manifest.csv"
+        if demo_profile else
+        "MFRM_Publication_Figures.zip; figure_manifest.csv"
+    )
+    archive_files = (
+        "MFRM_Demo_Report.zip; MFRM_Demo_Manuscript_Binder.zip; manuscript_handoff.md"
+        if demo_profile else
+        "MFRM_OSF_Package.zip; mfrm_manuscript_handoff.md"
     )
     config = result.get("config", {}) if isinstance(result, dict) else {}
     prep = result.get("prep", {}) if isinstance(result, dict) else {}
@@ -40223,7 +42935,7 @@ def build_manuscript_handoff_checklist(
             "Status": "Ready",
             "Task": "Download the complete table bundle for analysis records.",
             "AppLocation": "Downloads -> Data Tables",
-            "DownloadFile": "MFRM_Tables.zip; MFRM_Report.xlsx; MFRM_Report.html",
+            "DownloadFile": table_files,
             "Action": "Archive the exact exported bundle with the manuscript draft.",
             "WhyItMatters": f"This preserves the fitted {model}/{method} run with {n_obs} observations and {n_person} persons.",
         },
@@ -40233,7 +42945,7 @@ def build_manuscript_handoff_checklist(
             "Status": gate_status,
             "Task": "Export the publication document and use it as a drafted report, not final prose.",
             "AppLocation": "Report -> Exports -> Publication Document",
-            "DownloadFile": "Publication Document (.docx/.pdf/.html)",
+            "DownloadFile": publication_files,
             "Action": "Edit all generated text for the study design, rubric, research questions, and journal style.",
             "WhyItMatters": "The app can assemble evidence, but the paper still needs study-specific framing and scholarly judgment.",
         },
@@ -40253,7 +42965,7 @@ def build_manuscript_handoff_checklist(
             "Status": "Ready" if converged else "Review",
             "Task": "Save the method appendix, manuscript template, config JSON, and reproduction scripts.",
             "AppLocation": "Downloads -> Scripts & Config",
-            "DownloadFile": "mfrm_method_appendix.md; mfrm_manuscript_template.md; mfrm_config.json; mfrm_app_engine_runner.py; requirements.txt",
+            "DownloadFile": method_files,
             "Action": "Use the appendix for methods details and the app-engine runner for exact current-path reproduction.",
             "WhyItMatters": f"Convergence is {'recorded as successful' if converged else 'not recorded as successful'}; reproducibility files document the analysis path.",
         },
@@ -40263,27 +42975,17 @@ def build_manuscript_handoff_checklist(
             "Status": "Ready",
             "Task": "Download figure assets and inspect readability before placing them in the paper.",
             "AppLocation": "Downloads -> Figures",
-            "DownloadFile": "MFRM_Publication_Figures.zip; figure_manifest.csv",
+            "DownloadFile": figure_files,
             "Action": "Prefer publication-styled PNG when available; keep HTML files for interactive inspection.",
             "WhyItMatters": "The figure manifest records manuscript use and cautions for each exported figure.",
         },
         {
             "Step": 10,
-            "Phase": "External validation",
-            "Status": "Boundary",
-            "Task": "Separate optional external package validation from the main app findings.",
-            "AppLocation": "Downloads -> Scripts & Config",
-            "DownloadFile": "MFRM_External_Simulation_Validation_Templates.zip",
-            "Action": "Run external validation only as a separate archived artifact when the paper needs that claim.",
-            "WhyItMatters": "Do not claim equality with FACETS, TAM, sirt, mirt, or mfrmr without a specific validation artifact.",
-        },
-        {
-            "Step": 11,
             "Phase": "Final archive",
             "Status": "Ready",
             "Task": "Package final evidence for coauthors, reviewers, or OSF-style archiving.",
             "AppLocation": "Downloads -> Scripts & Config",
-            "DownloadFile": "MFRM_OSF_Package.zip; mfrm_manuscript_handoff.md",
+            "DownloadFile": archive_files,
             "Action": "Archive the OSF package, this handoff, and the exact manuscript version that used the outputs.",
             "WhyItMatters": "A complete archive makes later revisions traceable without reopening the app session.",
         },
@@ -40297,6 +42999,7 @@ def generate_manuscript_handoff_markdown(
     all_bias_results: dict | None = None,
     *,
     public_export_mode: bool = True,
+    artifact_profile: str = "app",
 ) -> str:
     """Markdown guide for downloading final results and converting them into a paper."""
     all_bias = all_bias_results or {}
@@ -40310,6 +43013,7 @@ def generate_manuscript_handoff_markdown(
         diagnostics,
         all_bias,
         public_export_mode=public_export_mode,
+        artifact_profile=artifact_profile,
     )
 
     top_actions: list[str] = []
@@ -40331,6 +43035,27 @@ def generate_manuscript_handoff_markdown(
         for row in checklist.itertuples(index=False)
     ]
     facet_names = ", ".join(map(str, config.get("facet_names", []))) if isinstance(config, dict) else ""
+    demo_profile = str(artifact_profile).strip().lower() == "demo"
+    table_files = (
+        "`MFRM_Demo_Report.zip`, `MFRM_Demo_Report.xlsx`, and `MFRM_Demo_Report.html`"
+        if demo_profile else
+        "`MFRM_Tables.zip`, `MFRM_Report.xlsx`, and `MFRM_Report.html`"
+    )
+    figure_files = (
+        "`MFRM_Demo_Publication_Figures.zip` and `figure_manifest.csv`"
+        if demo_profile else
+        "`MFRM_Publication_Figures.zip` and `figure_manifest.csv`"
+    )
+    method_files = (
+        "`mfrm_config.json`, `method_appendix.md`, `manuscript_template.md`, `mfrm_app_engine_runner.py`, and `requirements.txt`"
+        if demo_profile else
+        "`mfrm_config.json`, `mfrm_method_appendix.md`, `mfrm_manuscript_template.md`, `mfrm_app_engine_runner.py`, and `requirements.txt`"
+    )
+    archive_files = (
+        "`MFRM_Demo_Report.zip` and `MFRM_Demo_Manuscript_Binder.zip`"
+        if demo_profile else
+        "`MFRM_OSF_Package.zip`"
+    )
     lines = [
         "# MFRM Final Results and Manuscript Handoff",
         "",
@@ -40354,11 +43079,11 @@ def generate_manuscript_handoff_markdown(
         "",
         "- Decision brief and role memos: Report -> APA Report or Downloads -> Scripts & Config; download `report_ready_decision_brief.md`, `report_ready_summary_panel.csv`, `role_based_action_memos.md`, `role_based_action_memos.csv`, `role_based_action_checklist.csv`, `critical_final_review_panel.csv`, `critical_final_review.md`, `status_rationale_drilldown.csv`, `result_reading_path.csv`, `operational_decision_board.csv`, `reporting_action_bridge.csv`, `reporting_action_bridge.md`, and `apa_results_paragraph_draft.md` before writing Results prose.",
         "- Publication Document: Report -> Exports -> Publication Document; download Word, PDF, or HTML for a draft report.",
-        "- Tables: Downloads -> Data Tables; download `MFRM_Tables.zip`, `MFRM_Report.xlsx`, and `MFRM_Report.html`.",
-        "- Figures: Downloads -> Figures; download `MFRM_Publication_Figures.zip` and `figure_manifest.csv`.",
+        f"- Tables: archive {table_files}.",
+        f"- Figures: archive {figure_files}.",
         "- Claim evidence: Downloads -> Data Tables or Scripts & Config; download `claim_to_evidence_matrix.csv`, `apa_report_sentence_audit.csv`, and `method_reference_audit.csv` before drafting Results and Discussion claims.",
-        "- Methods and scripts: Downloads -> Scripts & Config; download `mfrm_config.json`, `mfrm_method_appendix.md`, `mfrm_manuscript_template.md`, `mfrm_app_engine_runner.py`, and `requirements.txt`.",
-        "- Archive package: Downloads -> Scripts & Config; download `MFRM_OSF_Package.zip` using the intended privacy mode.",
+        f"- Methods and scripts: archive {method_files}.",
+        f"- Archive package: keep {archive_files} using the intended privacy mode.",
         "",
         "## Before Manuscript Submission",
         "",
@@ -40376,7 +43101,7 @@ def generate_manuscript_handoff_markdown(
         "",
         "Public export mode removes likely row-level or person-level tables from the standard bundle and writes `export_privacy_manifest.csv`. It is not a formal de-identification guarantee. For confidential studies, review institutional policy before sharing any exported data, report, figure, or reproduction script.",
         "",
-        "Archive the final manuscript version together with `MFRM_OSF_Package.zip`, this handoff, and any external validation artifacts used to support cross-package or cross-run claims.",
+        f"Archive the final manuscript version together with {archive_files} and this handoff.",
     ]
     return "\n".join(lines) + "\n"
 
@@ -40412,10 +43137,9 @@ def generate_manuscript_binder_readme(
         "12. Use `visual_claim_guardrails.csv` before copying interpretation from Wright Maps, yardsticks, thresholds, or category curves.",
         "13. If generated custom simulation data were used, open `custom_simulation_settings.csv`, `custom_simulation_sparse_reporting_context.csv`, `custom_simulation_sparse_design_audit.csv`, and `custom_simulation_sparse_pair_cells.csv` before treating the APA draft as report-ready.",
         "14. Use `method_reference_audit.csv` to check which methodological references support each analysis surface.",
-        "15. If Stan posterior results are used, open `stan_posterior_reproducibility_handoff.md` and `stan_reproducibility_archive_contract.csv` before citing posterior intervals.",
-        "16. Use `submission_action_plan.csv` to resolve blockers and caveats before copying generated prose.",
-        "17. Use `method_appendix.md` and `manuscript_template.md` as draft scaffolds, not final manuscript text.",
-        "18. Keep the full `MFRM_OSF_Package.zip` or table bundle with this binder when archiving.",
+        "15. Use `submission_action_plan.csv` to resolve blockers and caveats before copying generated prose.",
+        "16. Use `method_appendix.md` and `manuscript_template.md` as draft scaffolds, not final manuscript text.",
+        "17. Keep the full `MFRM_OSF_Package.zip` or table bundle with this binder when archiving.",
         "",
         "## Included Files",
         "",
@@ -40449,9 +43173,11 @@ def build_manuscript_binder_assets(
             "method_appendix.md",
             "manuscript_template.md",
             "local_batch_workflow.md",
+            "mfrm_local_batch_workflow.md",
             "mfrm_config.json",
-            "README_bayesian_mfrm_stan_runners.md",
-            "stan_posterior_reproducibility_handoff.md",
+            "mfrm_app_engine_runner.py",
+            "requirements.txt",
+            "mfrm_jmle_self_contained.py",
         }:
             assets[str(name)] = str(text)
     selected_frames = [
@@ -40486,13 +43212,6 @@ def build_manuscript_binder_assets(
         "reliability",
         "fit_statistics",
         "category_probability_curves",
-        "bayesian_mfrm_stan_refinement_plan",
-        "stan_reproducibility_archive_contract",
-        "stan_posterior_reproducibility_route",
-        "stan_posterior_handoff_checklist",
-        "stan_run_manifest_template",
-        "mfrm_stan_prior_guidance",
-        "mfrm_stan_prior_sensitivity_grid",
     ]
     for frame_name in selected_frames:
         frame = (frames or {}).get(frame_name)
@@ -40681,8 +43400,8 @@ def generate_manuscript_reporting_template(
         ),
         "",
         (
-            "The app did not call `mfrmr`, `rpy2`, `Rscript`, FACETS, TAM, sirt, or mirt at runtime. "
-            "External package equality should not be reported unless a separate validation artifact is archived."
+            "The analysis used the standalone Python engine. Report the app version, AnalysisID, model, "
+            "estimation method, settings, and evidence scope, and do not generalize beyond the exported diagnostics."
         ),
         "",
         "Report estimation settings here: optimizer/engine, maximum iterations, convergence tolerance, quadrature points for MML, latent-regression formula if used, anchor policy if used, and whether optional PCA, strict marginal diagnostics, bias screening, plausible values, prediction, simulation, or design evaluation were enabled.",
@@ -40707,7 +43426,7 @@ def generate_manuscript_reporting_template(
         "- Figure 1: Wright map for targeting and scale overlap.",
         "- Figure 2: category probability and expected-score curves for PCM/GPCM rating-scale interpretation.",
         "- Figure 3: residual, PCA, marginal, or bias plots only when the corresponding option was computed and labels remain readable.",
-        "- Do not include an R-vs-Python comparison table unless the paper is explicitly a validation study.",
+        "- Keep every table and figure tied to the same AnalysisID and exported evidence bundle.",
         "",
         "## Limitations Draft",
         "",
@@ -40756,14 +43475,14 @@ def generate_method_appendix_text(
         "",
         "## Analysis Scope",
         "",
-        "- Software: standalone Python Streamlit app; no `mfrmr`, `rpy2`, `Rscript`, or external MFRM engine is called.",
+        "- Software: standalone Python Streamlit app; no external estimation engine is called.",
         f"- Release label: {config.get('release_label', APP_RELEASE_LABEL)}; app version: {config.get('app_version', APP_VERSION)}.",
-        "- Validation stance: functional parity target; exact numerical equality with FACETS/TAM/sirt/mirt/mfrmr is not claimed unless a specific external cross-check is reported.",
+        "- Validation stance: native numerical consistency, deterministic fixtures, simulation calibration, and explicitly bounded claims.",
         f"- Run fingerprint: {config.get('run_fingerprint', config.get('analysis_config_fingerprint', 'not recorded'))}.",
         f"- Model: {config.get('model', 'unknown')}.",
         f"- Estimation method: {config.get('method', 'unknown')}.",
         f"- Optimizer / engine: {config.get('optimizer', config.get('mml_engine', 'unknown'))}.",
-        "- Method reference audit: `method_reference_audit.csv` maps model, estimation, fit, dimensionality, bias, simulation, and external-validation claims to APA-library references confirmed from the Zotero/BibTeX audit.",
+        "- Method reference audit: `method_reference_audit.csv` maps model, estimation, fit, dimensionality, bias, and simulation claims to the supporting literature.",
         f"- Observations: {prep.get('n_obs', 'unknown')}; persons: {prep.get('n_person', 'unknown')}; categories: {config.get('n_cat', 'unknown')} ({prep.get('rating_min', '?')} to {prep.get('rating_max', '?')}).",
         f"- Facets: {', '.join(map(str, config.get('facet_names', []))) or 'none recorded'}.",
         "",
@@ -40878,7 +43597,7 @@ def generate_method_appendix_text(
         "## Reproducibility Scripts",
         "",
         "- Python app-engine runner: exact current app path.",
-        f"- Portable self-contained JMLE/R available for this run: {bool(script_support.get('portable_available', False))}.",
+        f"- Portable self-contained Python JMLE available for this run: {bool(script_support.get('portable_available', False))}.",
     ])
     if script_support.get("portable_blockers"):
         lines.append(
@@ -40985,7 +43704,23 @@ def _render_final_readiness_section(
         st.warning("Resolve or explicitly justify rows marked Review/Missing before final reporting.")
     else:
         st.success("No required readiness issues were detected.")
-    st.dataframe(readiness, width="stretch", hide_index=True)
+    readiness_display_columns = [
+        "Check",
+        "Status",
+        "ComputationState",
+        "StabilityState",
+        "Evidence",
+        "ActionBeforeFinalReport",
+        "Required",
+        "ReasonCode",
+    ]
+    st.dataframe(
+        readiness[
+            [column for column in readiness_display_columns if column in readiness.columns]
+        ],
+        width="stretch",
+        hide_index=True,
+    )
     st.download_button(
         "Download readiness checklist (CSV)",
         data=to_csv_bytes(readiness),
@@ -41124,7 +43859,11 @@ def _render_manuscript_claim_guide_section(
             mime="text/csv",
             key="dl_case_interpretation_guidance_report_tab",
         )
-    method_refs = build_method_reference_audit()
+    method_refs = _standalone_export_rows(
+        build_method_reference_audit(),
+        column="MethodArea",
+        excluded_values=_STANDALONE_EXPORT_EXCLUDED_METHOD_AREAS,
+    )
     if isinstance(method_refs, pd.DataFrame) and not method_refs.empty:
         st.subheader("Method Reference Audit")
         st.caption(
@@ -41227,14 +43966,12 @@ def show_report_section(
     all_bias_results: dict | None = None,
     force_full: bool = False,
 ) -> None:
-    """Publication-quality report with APA text, tables, checklist, equivalence, Stan."""
+    """Publication-quality report with APA text, tables, checks, and documents."""
     st.subheader(t("report_top.subheader"))
     st.caption(t("report_top.intro_caption"))
 
-    # v0.2.6-beta: Essential mode hides advanced Report sub-tabs
-    # (Manuscript Template, Method Appendix, Facet Equivalence, Stan
-    # Code) so Essential-view users see a focused 6-sub-tab Report section. Full
-    # view restores all 10. The always-visible set (APA Report, Claim
+    # Essential mode hides advanced Report sub-tabs (Manuscript Template,
+    # Method Appendix, and Facet Equivalence). The always-visible set (APA Report, Claim
     # Guide, Tables, Reporting Checklist, Readiness, Publication
     # Document) covers typical first-pass reporting needs.
     essential_mode = (not force_full) and (
@@ -41242,7 +43979,7 @@ def show_report_section(
     )
 
     # Grouped into 3 meta-categories (Reports / Tables & checks /
-    # Exports) so the 10 sub-tabs are easier to scan. Each meta-tab
+    # Exports) so the sub-tabs are easier to scan. Each meta-tab
     # holds its own nested st.tabs with the related sub-sections; the
     # individual renderers are unchanged.
     report_meta_tabs = st.tabs([
@@ -41265,7 +44002,6 @@ def show_report_section(
         "Readiness": t("report_top.tab_readiness"),
     }
     _EXPORT_DISPLAY = {
-        "Stan Code": t("report_top.tab_stan_code"),
         "Publication Document": t("report_top.tab_publication_document"),
     }
 
@@ -41330,16 +44066,12 @@ def show_report_section(
     with report_meta_tabs[2]:
         if essential_mode:
             st.caption(t("report_top.exports_essential_caption"))
-            export_labels = ["Publication Document"]
         else:
             st.caption(t("report_top.exports_full_caption"))
-            export_labels = ["Stan Code", "Publication Document"]
+        export_labels = ["Publication Document"]
         export_displays = [_EXPORT_DISPLAY[label] for label in export_labels]
         export_tabs = st.tabs(export_displays)
         export_tab = {label: export_tabs[i] for i, label in enumerate(export_labels)}
-        if "Stan Code" in export_tab:
-            with export_tab["Stan Code"]:
-                _render_stan_code(result)
         with export_tab["Publication Document"]:
             _render_publication_document_section(result, diagnostics, all_bias_results)
 
@@ -44353,7 +47085,7 @@ def _render_facet_equivalence(result: dict, diagnostics: dict) -> None:
     st.caption(
         "Tests whether elements within a facet have statistically equivalent measures. "
         "Combines frequentist (TOST), Bayesian (BIC Bayes Factor), and ROPE approaches. "
-        "For full Bayesian posterior inference, use the Stan Code tab."
+        "Treat agreement across methods and equivalence-bound sensitivity as the evidence boundary."
     )
 
     measures = diagnostics.get("measures", pd.DataFrame())
@@ -44617,7 +47349,7 @@ def _render_facet_equivalence(result: dict, diagnostics: dict) -> None:
             f"Mixed evidence regarding {eq_facet} equivalence "
             f"(Fixed χ² p = {p_chi:.3f}, BF₀₁ = {bf01_display:.2f}, "
             f"mean ROPE = {mean_rope:.1f}%). "
-            "Consider full Bayesian analysis (Stan Code tab) for definitive inference."
+            "Report the disagreement and repeat the analysis across substantively justified equivalence bounds."
         )
 
 
@@ -46715,7 +49447,7 @@ def _recompute_fit_with_method(
     method: str,
     *,
     whexact: bool = False,
-    facets_zstd_cap: float = 9.0,
+    facets_zstd_cap: float = DEFAULT_FACETS_ZSTD_CAP,
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
     """Rebuild the overall and per-facet fit tables under a different
     d.f. convention without refitting the model.
@@ -46760,6 +49492,13 @@ def _recompute_fit_with_method(
             fit_df_method=method,
             facets_zstd_cap=facets_zstd_cap,
         )
+        if method != "engine":
+            metadata = fit_df_model_metadata(diagnostics.get("fit_df_model"), method)
+            overall["FitDfApplicability"] = metadata["applicability"]
+            per_facet["FitDfApplicability"] = metadata["applicability"]
+            if metadata["warning"]:
+                overall["FitDfWarning"] = metadata["warning"]
+                per_facet["FitDfWarning"] = metadata["warning"]
     except Exception:
         return (
             diagnostics.get("overall_fit", pd.DataFrame()),
@@ -46768,8 +49507,61 @@ def _recompute_fit_with_method(
     return overall, per_facet
 
 
+_FIT_DETAILS_VIEW_STATE_PREFIX = "_mfrm_fit_details_view"
+_FIT_DETAILS_ACTIVE_VIEW_TOKEN_KEY = "_mfrm_fit_details_active_analysis"
+_FIT_DETAILS_WIDGET_KEYS = (
+    "fit_df_method_method",
+    "fit_df_method_cap",
+    "misfit_top_n",
+    "misfit_threshold",
+)
+
+
+def _fit_details_view_state_token(result: dict | None) -> str | None:
+    """Return the fitted AnalysisID used to scope durable view state."""
+
+    if not isinstance(result, dict):
+        return None
+    try:
+        return build_result_analysis_identity(result).analysis_id
+    except Exception:
+        return None
+
+
+def _fit_details_scoped_state_key(name: str, token: str | None) -> str:
+    base = f"{_FIT_DETAILS_VIEW_STATE_PREFIX}.{name}"
+    return f"{base}::{token}" if token else base
+
+
+def _prepare_fit_details_view_state(view_state_token: str | None) -> None:
+    """Prevent widget values from crossing fitted AnalysisID boundaries."""
+
+    if view_state_token is None:
+        return
+    if st.session_state.get(_FIT_DETAILS_ACTIVE_VIEW_TOKEN_KEY) == view_state_token:
+        return
+    for key in _FIT_DETAILS_WIDGET_KEYS:
+        st.session_state.pop(key, None)
+    st.session_state[_FIT_DETAILS_ACTIVE_VIEW_TOKEN_KEY] = view_state_token
+
+
+def _validated_fit_df_view_draft(value: object) -> dict[str, str | float] | None:
+    if not isinstance(value, dict) or set(value) != {"method", "cap"}:
+        return None
+    method = value.get("method")
+    if not isinstance(method, str) or method not in _HELP_FIT_DF_METHOD_VALUES:
+        return None
+    cap = _normalize_help_source_view_value("fit_df_method_cap", value.get("cap"))
+    if not isinstance(cap, float):
+        return None
+    return {"method": method, "cap": cap}
+
+
 def render_fit_df_method_controls(
-    diagnostics: dict, *, key_prefix: str = "fit_df_method"
+    diagnostics: dict,
+    *,
+    key_prefix: str = "fit_df_method",
+    view_state_token: str | None = None,
 ) -> dict:
     """Render the ZSTD reporting-convention controls and return the chosen
     settings.
@@ -46782,10 +49574,29 @@ def render_fit_df_method_controls(
     st.markdown("**" + t("fit_details.fit_df_method_subheader") + "**")
     st.caption(t("fit_details.fit_df_method_caption"))
 
-    current_method = _resolve_fit_df_method(
-        st.session_state.get(f"{key_prefix}_method", diagnostics.get("fit_df_method", "engine"))
+    _prepare_fit_details_view_state(view_state_token)
+    durable_key = (
+        _fit_details_scoped_state_key(
+            "fit_df_convention",
+            view_state_token,
+        )
+        if view_state_token is not None
+        else None
     )
-    options = list(_FIT_DF_METHOD_CHOICES)
+    retained = _validated_fit_df_view_draft(
+        st.session_state.get(durable_key) if durable_key is not None else None
+    )
+    current_method = _resolve_fit_df_method(
+        st.session_state.get(
+            f"{key_prefix}_method",
+            (
+                retained["method"]
+                if retained is not None
+                else diagnostics.get("fit_df_method", DEFAULT_FIT_DF_METHOD)
+            ),
+        )
+    )
+    options = ["facets", "engine", "both"]
     option_labels = {opt: t(_FIT_DF_METHOD_RADIO_KEYS[opt]) for opt in options}
     chosen = st.radio(
         t("fit_details.fit_df_method_radio_label"),
@@ -46796,7 +49607,11 @@ def render_fit_df_method_controls(
         key=f"{key_prefix}_method",
     )
     if chosen != "engine":
-        default_cap = float(diagnostics.get("facets_zstd_cap") or 9.0)
+        default_cap = (
+            float(retained["cap"])
+            if retained is not None
+            else float(diagnostics.get("facets_zstd_cap") or 9.0)
+        )
         cap = float(
             st.number_input(
                 t("fit_details.fit_df_method_cap_label"),
@@ -46810,6 +49625,8 @@ def render_fit_df_method_controls(
         )
     else:
         cap = 9.0
+    if durable_key is not None:
+        st.session_state[durable_key] = {"method": chosen, "cap": cap}
 
     overall_fit, per_facet_fit = _recompute_fit_with_method(
         diagnostics, chosen, facets_zstd_cap=cap
@@ -46825,6 +49642,8 @@ def render_fit_df_method_controls(
             cap=cap_label,
         )
     )
+    if chosen != "engine" and diagnostics.get("fit_df_applicability") == "facets_style_approximation_for_gpcm":
+        st.warning(t("fit_details.fit_df_method_gpcm_warning"))
     return {
         "method": chosen,
         "cap": cap,
@@ -46930,6 +49749,80 @@ def render_facets_fit_table_comparison(
         )
 
 
+_MML_PRIOR_SENSITIVITY_DRAFT_PREFIX = "_mfrm_mml_prior_sensitivity_draft::"
+_MML_PRIOR_SENSITIVITY_RELTOL_OPTIONS = (1e-3, 1e-4, 1e-5, 1e-6)
+
+
+def _mml_prior_sensitivity_draft_key(result: dict) -> str:
+    """Return a session-only key bound to the retained fitted analysis."""
+
+    token = _fit_details_view_state_token(result)
+    suffix = token if token is not None else f"object-{id(result)}"
+    return f"{_MML_PRIOR_SENSITIVITY_DRAFT_PREFIX}{suffix}"
+
+
+def _default_mml_prior_sensitivity_draft(config: dict) -> dict[str, object]:
+    upper_maxit = max(50, int(config.get("maxit") or 1000))
+    return {
+        "multipliers": (0.75, 1.0, 1.25),
+        "maxit": max(5, min(100, upper_maxit)),
+        "reltol": 1e-4,
+    }
+
+
+def _validated_mml_prior_sensitivity_draft(
+    value: object,
+    *,
+    config: dict,
+) -> dict[str, object] | None:
+    """Return a canonical native-sensitivity draft or fail closed."""
+
+    if not isinstance(value, dict) or set(value) != {
+        "multipliers",
+        "maxit",
+        "reltol",
+    }:
+        return None
+    raw_multipliers = value.get("multipliers")
+    if not isinstance(raw_multipliers, (list, tuple)):
+        return None
+    allowed_multipliers = set(MML_PRIOR_SENSITIVITY_DEFAULT_MULTIPLIERS)
+    multipliers: list[float] = []
+    for raw in raw_multipliers:
+        if isinstance(raw, bool) or not isinstance(
+            raw,
+            (int, float, np.integer, np.floating),
+        ):
+            return None
+        multiplier = float(raw)
+        if multiplier not in allowed_multipliers or multiplier in multipliers:
+            return None
+        multipliers.append(multiplier)
+
+    raw_maxit = value.get("maxit")
+    if isinstance(raw_maxit, bool) or not isinstance(raw_maxit, (int, np.integer)):
+        return None
+    maxit = int(raw_maxit)
+    upper_maxit = max(50, int(config.get("maxit") or 1000))
+    if not 5 <= maxit <= upper_maxit:
+        return None
+
+    raw_reltol = value.get("reltol")
+    if isinstance(raw_reltol, bool) or not isinstance(
+        raw_reltol,
+        (int, float, np.integer, np.floating),
+    ):
+        return None
+    reltol = float(raw_reltol)
+    if reltol not in _MML_PRIOR_SENSITIVITY_RELTOL_OPTIONS:
+        return None
+    return {
+        "multipliers": tuple(multipliers),
+        "maxit": maxit,
+        "reltol": reltol,
+    }
+
+
 def show_mml_prior_sd_sensitivity_section(result: dict | None) -> None:
     """On-demand MML fixed population-prior-SD sensitivity screen."""
     if not isinstance(result, dict):
@@ -46938,6 +49831,13 @@ def show_mml_prior_sd_sensitivity_section(result: dict | None) -> None:
     if config.get("method") != "MML":
         return
     st.subheader("MML fixed population prior SD sensitivity")
+    if bool(config.get("estimate_population_sd", False)):
+        st.info(
+            "Population SD was estimated in this fit, so the fixed-prior-SD "
+            "sensitivity grid is not applicable. Report the population-SD "
+            "estimation and uncertainty boundary instead."
+        )
+        return
     st.caption(
         "Refit the current normalized data under alternative fixed population prior SD values. "
         "Use this before population-scale, latent-regression, or interval-calibration claims."
@@ -46958,11 +49858,19 @@ def show_mml_prior_sd_sensitivity_section(result: dict | None) -> None:
             hide_index=True,
             wrap_text=True,
         )
+    draft_key = _mml_prior_sensitivity_draft_key(result)
+    draft = _validated_mml_prior_sensitivity_draft(
+        st.session_state.get(draft_key),
+        config=config,
+    )
+    if draft is None:
+        draft = _default_mml_prior_sensitivity_draft(config)
+
     options = list(MML_PRIOR_SENSITIVITY_DEFAULT_MULTIPLIERS)
     selected = st.multiselect(
         "Prior SD multipliers to refit",
         options=options,
-        default=[0.75, 1.0, 1.25],
+        default=list(draft["multipliers"]),
         format_func=lambda x: f"{x:g}x",
         key=f"mml_prior_sensitivity_multipliers::{id(result)}",
         help="The 1.0x condition reuses the current fitted result; other values refit the model.",
@@ -46973,18 +49881,24 @@ def show_mml_prior_sd_sensitivity_section(result: dict | None) -> None:
             "Sensitivity maxit",
             min_value=5,
             max_value=max(50, int(config.get("maxit") or 1000)),
-            value=min(100, int(config.get("maxit") or 100)),
+            value=int(draft["maxit"]),
             step=5,
             key=f"mml_prior_sensitivity_maxit::{id(result)}",
         ))
     with col_reltol:
+        reltol_options = list(_MML_PRIOR_SENSITIVITY_RELTOL_OPTIONS)
         sens_reltol = float(st.selectbox(
             "Sensitivity reltol",
-            options=[1e-3, 1e-4, 1e-5, 1e-6],
-            index=1,
+            options=reltol_options,
+            index=reltol_options.index(float(draft["reltol"])),
             format_func=lambda x: f"{x:.0e}",
             key=f"mml_prior_sensitivity_reltol::{id(result)}",
         ))
+    st.session_state[draft_key] = {
+        "multipliers": tuple(float(value) for value in selected),
+        "maxit": sens_maxit,
+        "reltol": sens_reltol,
+    }
     cache_key = stable_json_fingerprint({
         "run": id(result),
         "multipliers": selected,
@@ -47015,6 +49929,7 @@ def show_mml_prior_sd_sensitivity_section(result: dict | None) -> None:
     summary = bundle.get("summary", pd.DataFrame())
     measure_deltas = bundle.get("measure_deltas", pd.DataFrame())
     population_deltas = bundle.get("population_deltas", pd.DataFrame())
+    executed_plan = bundle.get("plan", plan)
     if isinstance(report, pd.DataFrame) and not report.empty:
         status = str(report.iloc[0].get("Status", "Review"))
         if status == "Stable screen":
@@ -47059,7 +49974,7 @@ def show_mml_prior_sd_sensitivity_section(result: dict | None) -> None:
         "mml_prior_sd_sensitivity_summary.csv": summary,
         "mml_prior_sd_sensitivity_measure_deltas.csv": measure_deltas,
         "mml_prior_sd_sensitivity_population_deltas.csv": population_deltas,
-        "mml_prior_sd_sensitivity_plan.csv": plan,
+        "mml_prior_sd_sensitivity_plan.csv": executed_plan,
     }.items():
         if isinstance(frame, pd.DataFrame) and not frame.empty:
             assets[name] = to_csv_bytes(frame)
@@ -47067,6 +49982,11 @@ def show_mml_prior_sd_sensitivity_section(result: dict | None) -> None:
     if isinstance(settings, dict):
         assets["mml_prior_sd_sensitivity_settings.json"] = json.dumps(
             settings, indent=2, ensure_ascii=False, default=str
+        )
+    evidence_contract = bundle.get("evidence_contract")
+    if isinstance(evidence_contract, dict):
+        assets["mml_prior_sd_sensitivity_evidence_contract.json"] = (
+            _evidence.canonical_json(evidence_contract)
         )
     if assets:
         st.download_button(
@@ -47098,7 +50018,11 @@ def show_fit_details_section(
     # FACETS d.f. / ZSTD reporting convention controls. Recomputes the
     # fit table on-the-fly without re-fitting; the selected method
     # propagates to every downstream display in this section.
-    fit_df_controls = render_fit_df_method_controls(diagnostics)
+    view_state_token = _fit_details_view_state_token(result)
+    fit_df_controls = render_fit_df_method_controls(
+        diagnostics,
+        view_state_token=view_state_token,
+    )
 
     # Result-aware fit summary
     _fit_summary_callout(diagnostics.get("measures", pd.DataFrame()))
@@ -47115,7 +50039,9 @@ def show_fit_details_section(
             return
 
     st.dataframe(fit_df, width="stretch")
-    render_facets_fit_table_comparison(fit_df)
+    # The imported FACETS-table comparator is a legacy external-comparison
+    # surface.  It is intentionally not rendered in the standalone core
+    # journey; native fit conventions and diagnostics remain available here.
 
     # Misfit flagging
     _show_misfit_flags(fit_df)
@@ -47128,7 +50054,7 @@ def show_fit_details_section(
     _draw_zstd_distribution(fit_df)
 
     # Top misfit elements
-    _draw_misfit_ranking(fit_df)
+    _draw_misfit_ranking(fit_df, view_state_token=view_state_token)
     if isinstance(result, dict):
         st.subheader(t("fit_details.misfit_casebook_subheader"))
         casebook = build_misfit_casebook(result, diagnostics, all_bias_results or {})
@@ -48015,12 +50941,19 @@ def _show_misfit_flags(fit_df: pd.DataFrame) -> None:
 def _draw_fit_scatter(fit_df: pd.DataFrame) -> None:
     """Infit vs Outfit scatter plot with reference zones."""
 
-
+    focus_id = "focus.results.figure.fit_scatter"
     header_cols = st.columns([5, 1])
     with header_cols[0]:
-        st.subheader(t("fit_details.scatter_subheader"))
+        st.subheader(
+            t("fit_details.scatter_subheader"),
+            anchor=_HELP_FOCUS_MARKER_IDS[focus_id],
+        )
     with header_cols[1]:
         render_help_popover("fit_scatter")
+    render_help_return_marker(
+        "target.results.figure.fit_scatter",
+        focus_id,
+    )
     infit = pd.to_numeric(fit_df["Infit"], errors="coerce")
     outfit = pd.to_numeric(fit_df["Outfit"], errors="coerce")
     mask = infit.notna() & outfit.notna()
@@ -48090,7 +51023,36 @@ def _draw_zstd_distribution(fit_df: pd.DataFrame) -> None:
     st.plotly_chart(fig, width="stretch")
 
 
-def _draw_misfit_ranking(fit_df: pd.DataFrame) -> None:
+_MISFIT_TOP_N_VIEW_STATE_KEY = "misfit_top_n"
+_MISFIT_THRESHOLD_VIEW_STATE_KEY = "misfit_threshold"
+
+
+def _validated_misfit_top_n_view_state(value: object, *, maximum: int) -> int | None:
+    if isinstance(value, bool) or not isinstance(value, (int, np.integer)):
+        return None
+    normalized = int(value)
+    return normalized if 5 <= normalized <= maximum else None
+
+
+def _validated_misfit_threshold_view_state(value: object) -> float | None:
+    if isinstance(value, bool) or not isinstance(
+        value,
+        (int, float, np.integer, np.floating),
+    ):
+        return None
+    normalized = float(value)
+    if not np.isfinite(normalized) or not 0.0 <= normalized <= 5.0:
+        return None
+    if not np.isclose(normalized * 2.0, round(normalized * 2.0)):
+        return None
+    return normalized
+
+
+def _draw_misfit_ranking(
+    fit_df: pd.DataFrame,
+    *,
+    view_state_token: str | None = None,
+) -> None:
     """Top misfit elements ranked by max |ZSTD|."""
 
 
@@ -48113,23 +51075,64 @@ def _draw_misfit_ranking(fit_df: pd.DataFrame) -> None:
     # max<min → StreamlitAPIException. Skip the widget for tiny
     # tables and plot everything.
     n_total = len(df)
+    _prepare_fit_details_view_state(view_state_token)
+    durable_top_n_key = (
+        _fit_details_scoped_state_key(
+            _MISFIT_TOP_N_VIEW_STATE_KEY,
+            view_state_token,
+        )
+        if view_state_token is not None
+        else None
+    )
+    durable_threshold_key = (
+        _fit_details_scoped_state_key(
+            _MISFIT_THRESHOLD_VIEW_STATE_KEY,
+            view_state_token,
+        )
+        if view_state_token is not None
+        else None
+    )
     if n_total < 6:
         n_show = n_total
     else:
         slider_max = max(6, min(100, n_total))
         slider_val = max(5, min(20, n_total))
+        retained_n_show = _validated_misfit_top_n_view_state(
+            (
+                st.session_state.get(durable_top_n_key)
+                if durable_top_n_key is not None
+                else None
+            ),
+            maximum=slider_max,
+        )
         n_show = st.slider(
             t("fit_details.ranking_n_show_label"),
             min_value=5,
             max_value=slider_max,
-            value=slider_val,
+            value=retained_n_show if retained_n_show is not None else slider_val,
             key="misfit_top_n",
             help=t("fit_details.ranking_n_show_help"),
         )
+        if durable_top_n_key is not None:
+            st.session_state[durable_top_n_key] = int(n_show)
+    retained_threshold = _validated_misfit_threshold_view_state(
+        (
+            st.session_state.get(durable_threshold_key)
+            if durable_threshold_key is not None
+            else None
+        )
+    )
     threshold = st.slider(
-        t("fit_details.ranking_threshold_label"), 0.0, 5.0, 2.0, 0.5, key="misfit_threshold",
+        t("fit_details.ranking_threshold_label"),
+        0.0,
+        5.0,
+        retained_threshold if retained_threshold is not None else 2.0,
+        0.5,
+        key="misfit_threshold",
         help=t("fit_details.ranking_threshold_help"),
     )
+    if durable_threshold_key is not None:
+        st.session_state[durable_threshold_key] = float(threshold)
 
     top = df.nlargest(n_show, "MaxAbsZSTD")
     top = top[top["MaxAbsZSTD"] >= threshold]
@@ -48208,51 +51211,63 @@ def show_visuals_section(result: dict, diagnostics: dict, *, force_full: bool = 
     # ECDF so Essential-view runs see only the four core diagnostic plots.
     # Switch to Full (sidebar top) before publication-depth analysis.
     essential_mode = (not force_full) and st.session_state.get("app_view_density", "Essential") == "Essential"
+    panel_label_keys = {
+        "category_probability": "visuals_top.tab_category_probability_curves",
+        "information_curves": "visuals_top.tab_information_curves",
+        "pathway_map": "visuals_top.tab_pathway_map",
+        "facet_distribution": "visuals_top.tab_facet_distribution",
+        "observed_vs_expected": "visuals_top.tab_observed_vs_expected",
+        "forest_plot": "visuals_top.tab_forest_plot",
+        "qq_plot": "visuals_top.tab_qq_plot",
+        "ecdf": "visuals_top.tab_ecdf",
+    }
     if essential_mode:
-        vtab_labels = [
-            t("visuals_top.tab_category_probability_curves"),
-            t("visuals_top.tab_pathway_map"),
-            t("visuals_top.tab_facet_distribution"),
-            t("visuals_top.tab_observed_vs_expected"),
+        panel_ids = [
+            "category_probability",
+            "pathway_map",
+            "facet_distribution",
+            "observed_vs_expected",
         ]
     else:
-        vtab_labels = [
-            t("visuals_top.tab_category_probability_curves"),
-            t("visuals_top.tab_information_curves"),
-            t("visuals_top.tab_pathway_map"),
-            t("visuals_top.tab_facet_distribution"),
-            t("visuals_top.tab_observed_vs_expected"),
-            t("visuals_top.tab_forest_plot"),
-            t("visuals_top.tab_qq_plot"),
-            t("visuals_top.tab_ecdf"),
+        panel_ids = [
+            "category_probability",
+            "information_curves",
+            "pathway_map",
+            "facet_distribution",
+            "observed_vs_expected",
+            "forest_plot",
+            "qq_plot",
+            "ecdf",
         ]
-    vtabs = st.tabs(vtab_labels)
+    if st.session_state.get("visuals_panel") not in panel_ids:
+        st.session_state.pop("visuals_panel", None)
+    selected_visual_panel = st.selectbox(
+        t("visuals_top.panel_select_label"),
+        options=panel_ids,
+        index=0,
+        format_func=lambda panel_id: t(panel_label_keys.get(str(panel_id), str(panel_id))),
+        key="visuals_panel",
+        help=t("visuals_top.panel_select_help"),
+    )
+    selected_visual_panel = selected_visual_panel or panel_ids[0]
+    st.caption(t("visuals_top.panel_select_caption"))
 
-    with vtabs[0]:
+    if selected_visual_panel == "category_probability":
         _draw_category_probability_curves_plotly(result)
-
-    if essential_mode:
-        with vtabs[1]:
-            _draw_pathway_map_plotly(diagnostics)
-        with vtabs[2]:
-            _draw_facet_distribution_plotly(diagnostics)
-        with vtabs[3]:
-            _draw_observed_vs_expected(diagnostics)
-    else:
-        with vtabs[1]:
-            _draw_information_curves_plotly(result)
-        with vtabs[2]:
-            _draw_pathway_map_plotly(diagnostics)
-        with vtabs[3]:
-            _draw_facet_distribution_plotly(diagnostics)
-        with vtabs[4]:
-            _draw_observed_vs_expected(diagnostics)
-        with vtabs[5]:
-            _draw_measures_forest_plotly(diagnostics)
-        with vtabs[6]:
-            _draw_residual_qq_plotly(diagnostics)
-        with vtabs[7]:
-            _draw_measure_ecdf_plotly(result, diagnostics)
+    if selected_visual_panel == "information_curves":
+        _draw_information_curves_plotly(result)
+    if selected_visual_panel == "pathway_map":
+        _draw_pathway_map_plotly(diagnostics)
+    if selected_visual_panel == "facet_distribution":
+        _draw_facet_distribution_plotly(diagnostics)
+    if selected_visual_panel == "observed_vs_expected":
+        _draw_observed_vs_expected(diagnostics)
+    if selected_visual_panel == "forest_plot":
+        _draw_measures_forest_plotly(diagnostics)
+    if selected_visual_panel == "qq_plot":
+        _draw_residual_qq_plotly(diagnostics)
+    if selected_visual_panel == "ecdf":
+        _draw_measure_ecdf_plotly(result, diagnostics)
     if essential_mode:
         st.caption(t("visuals_top.essential_mode_caption"))
 
@@ -49493,8 +52508,13 @@ def rating_scale_recode_map_long_table(result: dict, diagnostics: dict) -> pd.Da
     return pd.DataFrame(rows)
 
 
-def rating_scale_recode_script_assets(result: dict, diagnostics: dict) -> dict[str, str]:
-    """Return Python/R/Julia scripts for applying recode candidate score maps."""
+def rating_scale_recode_script_assets(
+    result: dict,
+    diagnostics: dict,
+    *,
+    python_only: bool = False,
+) -> dict[str, str]:
+    """Return recode scripts, optionally without constructing legacy assets."""
     candidates = rating_scale_recode_candidate_table(result, diagnostics)
     map_long = rating_scale_recode_map_long_table(result, diagnostics)
     config = result.get("config", {}) if isinstance(result, dict) else {}
@@ -49632,6 +52652,33 @@ def main() -> int:
 if __name__ == "__main__":
     raise SystemExit(main())
 '''
+
+    if python_only:
+        native_readme = f"""# Rating-Scale Recode Candidate Scripts
+
+These files reproduce the score-column transformations implied by the
+rating-scale recode candidate table. They do not refit the MFRM by themselves.
+Use the generated recoded CSV as input to a separate Python app run.
+
+Files:
+- `mfrm_rating_scale_recode_candidates.csv`: candidate-level decision table.
+- `mfrm_rating_scale_recode_map_long.csv`: long score map used by the script.
+- `apply_rating_scale_recodes.py`: Python/pandas implementation.
+
+Default score column: `{default_score_col}`
+Candidate sensitivity runs listed: {candidate_count}
+
+The original score column is never overwritten; `Score_original` preserves it
+in the generated data. Treat every recode as a prespecified sensitivity run,
+archive its AnalysisID and EvidenceRecords, and compare it with the BASE run
+before changing the scoring rule.
+"""
+        return {
+            "README_rating_scale_recode_scripts.md": native_readme,
+            "mfrm_rating_scale_recode_candidates.csv": candidates.to_csv(index=False) if isinstance(candidates, pd.DataFrame) else "",
+            "mfrm_rating_scale_recode_map_long.csv": map_long.to_csv(index=False) if isinstance(map_long, pd.DataFrame) else "",
+            "apply_rating_scale_recodes.py": python_script,
+        }
 
     r_script = r'''#!/usr/bin/env Rscript
 # Apply MFRM rating-scale recode candidate maps without overwriting scores.
@@ -51044,8 +54091,9 @@ The Pathway Map plots each facet element's **measure** (Y-axis, in logits) again
 - **Y-axis (Measure)**: The estimated severity/difficulty of each element.
   Higher values = more severe raters or harder items.
 - **X-axis (Infit ZSTD)**: How much the element's response pattern deviates from model
-  expectations. This is an app-side Wilson-Hilferty approximation; FACETS uses
-  specialized degrees-of-freedom handling, so exact FACETS parity is not guaranteed.
+  expectations. RSM/PCM defaults use the FACETS/Wright-Masters d.f. with the
+  Wilson-Hilferty transform and +/-9 cap; engine values remain in sidecar columns.
+  GPCM values are explicitly a FACETS-style approximation, not exact FACETS parity.
   A z-score where 0 means perfect fit.
 - **Green zone (|ZSTD| < 2)**: Elements in this zone fit the model well. Their response
   patterns are consistent with the Rasch model expectations.
@@ -51730,20 +54778,83 @@ def mml_population_sd_help_table() -> pd.DataFrame:
     return pd.DataFrame(rows, columns=columns)
 
 
+def _standalone_quick_start_markdown() -> str:
+    """Return a concise first-run route for the Python-only product surface."""
+    return _standalone_ui_text(
+        en="""
+### Quick Start
+
+1. Load a built-in sample, paste a table, or upload long-format data.
+2. Map the Person, Score, and at least two facet columns.
+3. Review the pre-estimation readiness panel and fix blocking rows.
+4. Choose RSM, PCM, or bounded GPCM, then JMLE or MML.
+5. Run estimation and read convergence before interpreting measures.
+6. Follow Guided Review through fit, categories, reliability, residual
+   structure, bias screens, and linking evidence.
+7. Before reporting, resolve the Readiness ledger and, for fixed-SD MML,
+   run the prespecified prior-SD sensitivity plan.
+8. Download the Python-native tables, EvidenceRecords, exact configuration,
+   and app-engine runner under Downloads.
+
+For confidential data, run locally and remove unnecessary identifiers. The
+standalone workflow does not require an external estimation engine.
+""",
+        ja="""
+### クイックスタート
+
+1. 組込みsample、貼り付け、またはlong形式ファイルからデータを読み込みます。
+2. Person、Score、2列以上のfacetを割り当てます。
+3. 推定前readiness panelを確認し、停止項目を修正します。
+4. RSM・PCM・bounded GPCMと、JMLE・MMLのいずれかを選びます。
+5. 推定を実行し、measureを解釈する前に収束を確認します。
+6. Guided Reviewでfit、category、reliability、残差構造、bias screen、
+   linking evidenceを順に確認します。
+7. 報告前にReadiness ledgerを解決し、固定SDのMMLでは事前指定した
+   prior-SD感度planを実行します。
+8. DownloadsからPythonネイティブな表、EvidenceRecord、正確な設定、
+   app-engine runnerを保存します。
+
+機密データはローカルで扱い、不要な識別子を除いてください。この
+スタンドアロンworkflowは外部推定エンジンを必要としません。
+""",
+    )
+
+
+def _standalone_analysis_workflow_markdown() -> str:
+    """Return the product-native analysis order shown in Help."""
+    return _standalone_ui_text(
+        en="""
+### Analysis Workflow
+
+The workflow is evidence-first: establish run identity and convergence, then
+inspect model fit and category functioning, then precision, residual structure,
+local interaction, and linking. A result is not report-ready merely because a
+table was computed. Use `ComputationState`, `StabilityState`, and `ReasonCode`
+to distinguish available evidence, cautions, holds, and analyses that were not
+assessable. Keep every conclusion tied to one AnalysisID.
+""",
+        ja="""
+### 分析workflow
+
+本アプリはevidence-firstで進みます。run identityと収束を確立し、model fitと
+category functioning、precision、残差構造、local interaction、linkingの順に
+確認します。表が計算されたことだけでreport-readyにはなりません。
+`ComputationState`、`StabilityState`、`ReasonCode`を用いて、利用可能な証拠、
+注意、停止、評価不能を区別し、すべての結論を1つのAnalysisIDへ結び付けます。
+""",
+    )
+
+
 def show_help_section(*, force_full: bool = False) -> None:
     """Comprehensive help section with literature-backed guidance for MFRM analysis."""
     st.info(t("help.interpretation_caution"))
-    # v0.2.6-beta: Essential mode hides advanced help sub-tabs (Rating
-    # Scale Guide, Model Capability, Public Beta) so Essential-view users see a
-    # focused 7-tab section. Full view restores all 10. Users can switch
-    # from the sidebar's display-mode toggle (top of sidebar).
+    # Compact mode hides the specialist rating-scale panel; all other Help
+    # panels remain on the standalone Python route.
     essential_mode = (not force_full) and (
         st.session_state.get("app_view_density", "Essential") == "Essential"
     )
     ADVANCED_HELP_TABS = {
         "Rating Scale Guide",
-        "Model Capability",
-        "Public Beta",
     }
     # Internal IDs (English) drive routing; display labels resolve via t().
     all_help_labels = [
@@ -51755,8 +54866,6 @@ def show_help_section(*, force_full: bool = False) -> None:
         "Glossary",
         "Reporting Guide",
         "Troubleshooting",
-        "Model Capability",
-        "Public Beta",
     ]
     _HELP_TAB_KEY_BY_ID = {
         "Quick Start": "help.tab_quick_start",
@@ -51767,8 +54876,6 @@ def show_help_section(*, force_full: bool = False) -> None:
         "Glossary": "help.tab_glossary",
         "Reporting Guide": "help.tab_reporting_guide",
         "Troubleshooting": "help.tab_troubleshooting",
-        "Model Capability": "help.tab_model_capability",
-        "Public Beta": "help.tab_public_beta",
     }
     if essential_mode:
         visible_labels = [l for l in all_help_labels if l not in ADVANCED_HELP_TABS]
@@ -51776,20 +54883,28 @@ def show_help_section(*, force_full: bool = False) -> None:
     else:
         visible_labels = all_help_labels
     visible_displays = [t(_HELP_TAB_KEY_BY_ID[label]) for label in visible_labels]
-    help_tabs = st.tabs(visible_displays)
-    help_tab = {label: help_tabs[i] for i, label in enumerate(visible_labels)}
+    selected_help_label = st.selectbox(
+        t("help.panel_select_label"),
+        options=visible_labels,
+        index=0,
+        format_func=lambda label: t(_HELP_TAB_KEY_BY_ID.get(str(label), str(label))),
+        key="help_panel",
+        help=t("help.panel_select_help"),
+    )
+    selected_help_label = selected_help_label or visible_labels[0]
+    st.caption(t("help.panel_select_caption"))
 
     # ------------------------------------------------------------------
-    # Tab 1: Quick Start
+    # Panel 1: Quick Start
     # ------------------------------------------------------------------
-    with help_tab["Quick Start"]:
-        st.markdown(t("help.quick_start_body"))
+    if selected_help_label == "Quick Start":
+        st.markdown(_standalone_quick_start_markdown())
 
     # ------------------------------------------------------------------
-    # Tab 2: Analysis Workflow (NEW)
+    # Panel 2: Analysis Workflow (NEW)
     # ------------------------------------------------------------------
-    with help_tab["Analysis Workflow"]:
-        st.markdown(t("help.analysis_workflow_body"))
+    if selected_help_label == "Analysis Workflow":
+        st.markdown(_standalone_analysis_workflow_markdown())
         st.markdown(t("guided.first_run_route_heading"))
         st.caption(t("guided.first_run_route_caption"))
         st.dataframe(guided_first_run_route_table(), width="stretch", hide_index=True)
@@ -51849,29 +54964,6 @@ def show_help_section(*, force_full: bool = False) -> None:
         with st.expander(t("help.repro_guardrail_expander"), expanded=False):
             st.caption(t("help.repro_guardrail_caption"))
             st.dataframe(guided_reproducibility_guardrail_table(), width="stretch", hide_index=True)
-            st.markdown(t("help.stan_repro_heading"))
-            st.caption(t("help.stan_repro_caption"))
-            st.dataframe(guided_stan_posterior_reproducibility_help_table(), width="stretch", hide_index=True)
-            st.markdown(t("help.uto_audit_heading"))
-            st.caption(t("help.uto_audit_caption"))
-            st.dataframe(guided_uto_claim_boundary_help_table(), width="stretch", hide_index=True)
-            with st.expander(t("help.uto_audit_field_expander"), expanded=False):
-                st.caption(t("help.uto_audit_field_caption"))
-                st.dataframe(guided_uto_design_audit_field_help_table(), width="stretch", hide_index=True)
-            st.markdown(t("help.stan_prior_heading"))
-            st.caption(t("help.stan_prior_caption"))
-            st.dataframe(stan_prior_setting_guidance(), width="stretch", hide_index=True)
-            st.markdown(t("help.stan_prior_sensitivity_heading"))
-            st.caption(t("help.stan_prior_sensitivity_caption"))
-            st.dataframe(stan_prior_sensitivity_grid(), width="stretch", hide_index=True)
-            with st.expander(t("help.stan_manifest_detail_expander"), expanded=False):
-                st.caption(t("help.stan_manifest_detail_caption"))
-                st.dataframe(stan_posterior_handoff_checklist(), width="stretch", hide_index=True)
-                st.markdown(t("help.stan_manifest_template_heading"))
-                st.dataframe(stan_run_manifest_template(), width="stretch", hide_index=True)
-            with st.expander(t("help.stan_repro_handoff_expander"), expanded=False):
-                st.caption(t("help.stan_repro_handoff_caption"))
-                st.markdown(stan_posterior_reproducibility_handoff_markdown())
         with st.expander(t("help.claim_trace_expander"), expanded=False):
             st.caption(t("help.claim_trace_caption"))
             st.dataframe(guided_report_claim_trace_help_table(), width="stretch", hide_index=True)
@@ -51894,9 +54986,9 @@ def show_help_section(*, force_full: bool = False) -> None:
             st.dataframe(guided_simulation_help_table(), width="stretch", hide_index=True)
 
     # ------------------------------------------------------------------
-    # Tab 3: Interpretation Guide (expanded)
+    # Panel 3: Interpretation Guide (expanded)
     # ------------------------------------------------------------------
-    with help_tab["Interpretation Guide"]:
+    if selected_help_label == "Interpretation Guide":
         st.markdown(t("help.interpretation_guide_body"))
         st.markdown(t("help.mml_popsd_heading"))
         st.caption(t("help.mml_popsd_caption"))
@@ -51911,25 +55003,24 @@ def show_help_section(*, force_full: bool = False) -> None:
         st.dataframe(facets_yardstick_help_table(), width="stretch", hide_index=True)
 
     # ------------------------------------------------------------------
-    # Tab 4: Rater Effects (NEW)
+    # Panel 4: Rater Effects (NEW)
     # ------------------------------------------------------------------
-    with help_tab["Rater Effects"]:
+    if selected_help_label == "Rater Effects":
         st.markdown(t("help.rater_effects_body"))
 
     # ------------------------------------------------------------------
-    # Tab 5: Rating Scale Guide (hidden in Essential mode)
+    # Panel 5: Rating Scale Guide (hidden in Essential mode)
     # ------------------------------------------------------------------
-    if "Rating Scale Guide" in help_tab:
-        with help_tab["Rating Scale Guide"]:
-            st.markdown(t("help.rating_scale_guide_body"))
-            st.markdown(t("help.rating_scale_evidence_heading"))
-            st.caption(t("help.rating_scale_evidence_caption"))
-            st.dataframe(rating_scale_evidence_help_table(), width="stretch", hide_index=True)
+    if selected_help_label == "Rating Scale Guide":
+        st.markdown(t("help.rating_scale_guide_body"))
+        st.markdown(t("help.rating_scale_evidence_heading"))
+        st.caption(t("help.rating_scale_evidence_caption"))
+        st.dataframe(rating_scale_evidence_help_table(), width="stretch", hide_index=True)
 
     # ------------------------------------------------------------------
-    # Tab 6: Glossary (expanded from 33 to 50+ terms)
+    # Panel 6: Glossary (expanded from 33 to 50+ terms)
     # ------------------------------------------------------------------
-    with help_tab["Glossary"]:
+    if selected_help_label == "Glossary":
         st.markdown(t("help.glossary_heading"))
         # Quick-reference glossary at the top (same data source used by
         # render_glossary_expander) so column headers and tooltips stay
@@ -52031,9 +55122,9 @@ def show_help_section(*, force_full: bool = False) -> None:
             st.caption(t("help.glossary_no_match"))
 
     # ------------------------------------------------------------------
-    # Tab 7: Reporting Guide (NEW)
+    # Panel 7: Reporting Guide (NEW)
     # ------------------------------------------------------------------
-    with help_tab["Reporting Guide"]:
+    if selected_help_label == "Reporting Guide":
         st.info(t("help.reporting_info_banner"))
         st.markdown(t("help.reporting_body"))
         with st.expander(t("help.reference_coverage_expander"), expanded=False):
@@ -52042,53 +55133,10 @@ def show_help_section(*, force_full: bool = False) -> None:
         st.markdown(t("help.reporting_references"))
 
     # ------------------------------------------------------------------
-    # Tab 8: Troubleshooting (expanded)
+    # Panel 8: Troubleshooting (expanded)
     # ------------------------------------------------------------------
-    with help_tab["Troubleshooting"]:
+    if selected_help_label == "Troubleshooting":
         st.markdown(t("help.troubleshooting_body"))
-
-    # ------------------------------------------------------------------
-    # Tab 9: Model Capability (hidden in Essential mode)
-    # ------------------------------------------------------------------
-    if "Model Capability" in help_tab:
-        with help_tab["Model Capability"]:
-            st.markdown(t("help.model_capability_body"))
-
-    # ------------------------------------------------------------------
-    # Tab 10: Public Beta (hidden in Essential mode)
-    # ------------------------------------------------------------------
-    if "Public Beta" in help_tab:
-        with help_tab["Public Beta"]:
-            st.markdown(t("help.public_beta_intro"))
-            st.dataframe(public_beta_limitations_table(), width="stretch", hide_index=True)
-            st.download_button(
-                t("help.public_beta_download_limitations"),
-                data=to_csv_bytes(public_beta_limitations_table()),
-                file_name="mfrm_public_beta_limitations.csv",
-                mime="text/csv",
-                key="dl_public_beta_limitations_help",
-            )
-            st.markdown(t("help.public_beta_validation_inventory_header"))
-            st.caption(t("help.public_beta_validation_inventory_caption"))
-            st.dataframe(external_simulation_reference_inventory(), width="stretch", hide_index=True)
-            st.download_button(
-                t("help.public_beta_download_validation_inventory"),
-                data=to_csv_bytes(external_simulation_reference_inventory()),
-                file_name="mfrm_external_simulation_reference_inventory.csv",
-                mime="text/csv",
-                key="dl_external_simulation_reference_inventory_help",
-            )
-            st.markdown(t("help.public_beta_migration_header"))
-            st.caption(t("help.public_beta_migration_caption"))
-            st.dataframe(mfrmr_020_migration_coverage_table(), width="stretch", hide_index=True)
-            st.download_button(
-                t("help.public_beta_download_migration"),
-                data=to_csv_bytes(mfrmr_020_migration_coverage_table()),
-                file_name="mfrm_mfrmr_020_migration_coverage.csv",
-                mime="text/csv",
-                key="dl_mfrmr_020_migration_coverage_help",
-            )
-
 
 # ---------------------------------------------------------------------------
 # Bias/Interaction tab
@@ -52381,15 +55429,6 @@ def show_classical_dif_section(result: dict | None, core: dict) -> None:
                                file_name="mfrm_classical_dif_audit.csv", mime="text/csv", key="dl_dif_audit")
     with st.expander(t("dif_screening.interpret_expander"), expanded=False):
         st.dataframe(classical_dif_help_table(), width="stretch", hide_index=True)
-    with st.expander(t("dif_screening.crosscheck_expander"), expanded=False):
-        st.caption(t("dif_screening.crosscheck_caption"))
-        bundle = build_dif_validation_bundle(res)
-        xc_key = f"dif_xc_{len(table)}_{res.get('settings', {}).get('reference_group', '')}_{'-'.join(res.get('settings', {}).get('purified_items', []) or [])}"
-        st.download_button(
-            t("dif_screening.crosscheck_download"),
-            data=cached_mixed_asset_zip(bundle, xc_key),
-            file_name="mfrm_difR_crosscheck_bundle.zip",
-            mime="application/zip", key="dl_dif_crosscheck")
 
 
 def show_bias_section(
@@ -52811,11 +55850,11 @@ def show_categories_section(result: dict, diagnostics: dict, core: dict) -> None
                 mime="text/csv",
                 key="dl_rating_scale_recode_candidates",
             )
-            recode_assets = rating_scale_recode_script_assets(result, diagnostics)
+            recode_assets = python_rating_scale_recode_assets(result, diagnostics)
             st.download_button(
-                "Download recode scripts (Python/R/Julia ZIP)",
+                "Download Python recode script bundle",
                 data=cached_mixed_asset_zip(recode_assets, bytes_mapping_fingerprint(recode_assets)),
-                file_name="MFRM_Rating_Scale_Recode_Scripts.zip",
+                file_name="MFRM_Python_Rating_Scale_Recode.zip",
                 mime="application/zip",
                 key="dl_rating_scale_recode_scripts_zip",
             )
@@ -53666,6 +56705,8 @@ COMPUTE_STRICT_MARGINAL = {repr(compute_marginal)}
 STRICT_MARGINAL_PAIRWISE = {repr(strict_pairwise)}
 STRICT_MARGINAL_MAX_PAIR_CELLS = {strict_max_pair_cells}
 COMPUTE_EB_SHRINKAGE = {repr(bool(config.get("compute_eb_shrinkage", diagnostics.get("eb_shrinkage_enabled", False))))}
+FIT_DF_METHOD = "facets"  # FACETS-primary; *_ENGINE sidecars are retained.
+FACETS_ZSTD_CAP = 9.0
 COMPUTE_PLAUSIBLE_VALUES = {repr(compute_pv)}
 N_PLAUSIBLE_VALUES = {n_pv}
 PLAUSIBLE_SEED = {int(pv_seed)}
@@ -53775,6 +56816,8 @@ def main() -> None:
         marginal_pairwise=STRICT_MARGINAL_PAIRWISE,
         marginal_max_pair_cells=STRICT_MARGINAL_MAX_PAIR_CELLS,
         compute_eb_shrinkage=COMPUTE_EB_SHRINKAGE,
+        fit_df_method=FIT_DF_METHOD,
+        facets_zstd_cap=FACETS_ZSTD_CAP,
     )
 
     print(result["summary"].to_string(index=False))
@@ -54229,11 +57272,32 @@ def neg_loglik(par, person_idx, facet_idx_dict, score_k, weight,
 
 # ---- Diagnostics ----
 
-def zstd_from_mnsq(mnsq, df):
-    """Wilson-Hilferty cube-root transformation."""
-    if not np.isfinite(mnsq) or not np.isfinite(df) or df <= 0:
+def zstd_from_mnsq_engine(mnsq, df):
+    """Legacy engine Wilson-Hilferty value (explicit sidecar only)."""
+    if not np.isfinite(mnsq) or not np.isfinite(df) or df < 1:
         return np.nan
     return (mnsq ** (1 / 3) - (1 - 2 / (9 * df))) / np.sqrt(2 / (9 * df))
+
+
+def zstd_from_mnsq_facets(mnsq, df, cap=9.0):
+    """FACETS-primary Wilson-Hilferty value with the +/-9 cap."""
+    if not np.isfinite(mnsq) or mnsq <= 0 or not np.isfinite(df) or df <= 0:
+        return np.nan
+    z = (mnsq ** (1 / 3) - (1 - 2 / (9 * df))) / np.sqrt(2 / (9 * df))
+    return float(np.clip(z, -cap, cap)) if cap and cap > 0 else float(z)
+
+
+def facets_fit_df(var, fourth, weight):
+    """Wright-Masters fourth-moment d.f. used by FACETS."""
+    valid_weight = np.isfinite(weight) & (weight > 0)
+    valid = np.isfinite(var) & (var > 1e-12) & np.isfinite(fourth) & np.isfinite(weight) & (weight > 0)
+    info = float(np.nansum(var[valid_weight] * weight[valid_weight]))
+    w_sum = float(np.nansum(weight[valid_weight]))
+    denom_infit = float(np.nansum(weight[valid] * (fourth[valid] - var[valid] ** 2)))
+    denom_outfit = float(np.nansum(weight[valid] * (fourth[valid] / var[valid] ** 2 - 1)))
+    df_infit = 2 * info ** 2 / denom_infit if denom_infit > 1e-12 and info > 0 else np.nan
+    df_outfit = 2 * w_sum ** 2 / denom_outfit if denom_outfit > 1e-12 and w_sum > 0 else np.nan
+    return df_infit, df_outfit
 
 
 def compute_diagnostics(eta, score_k, weight, step_cum, person_idx, facet_idx_dict,
@@ -54254,6 +57318,7 @@ def compute_diagnostics(eta, score_k, weight, step_cum, person_idx, facet_idx_di
     k_vals = np.arange(probs.shape[1])
     expected = probs.dot(k_vals)
     var_k = probs.dot(k_vals ** 2) - expected ** 2
+    fourth_k = np.sum(probs * (k_vals[None, :] - expected[:, None]) ** 4, axis=1)
     var_k = np.where(var_k <= 1e-10, np.nan, var_k)
     resid = score_k - expected
     std_sq = resid ** 2 / var_k
@@ -54267,18 +57332,31 @@ def compute_diagnostics(eta, score_k, weight, step_cum, person_idx, facet_idx_di
             mask = idx_arr == lev_i
             w = weight[mask]
             v = var_k[mask]
+            fourth = fourth_k[mask]
             sq = std_sq[mask]
             w_sum = np.nansum(w)
             info = np.nansum(v * w)
             infit = np.nansum(sq * v * w) / info if info > 0 else np.nan
             outfit = np.nansum(sq * w) / w_sum if w_sum > 0 else np.nan
             se = 1.0 / np.sqrt(info) if info > 0 else np.nan
+            df_infit_facets, df_outfit_facets = facets_fit_df(v, fourth, w)
             rows_out.append({{
                 "Facet": facet, "Level": lev_name,
                 "N": w_sum, "SE": se,
                 "Infit": infit, "Outfit": outfit,
-                "InfitZSTD": zstd_from_mnsq(infit, info),
-                "OutfitZSTD": zstd_from_mnsq(outfit, w_sum),
+                "DF_Infit": df_infit_facets, "DF_Outfit": df_outfit_facets,
+                "InfitZSTD": zstd_from_mnsq_facets(infit, df_infit_facets),
+                "OutfitZSTD": zstd_from_mnsq_facets(outfit, df_outfit_facets),
+                "DF_Infit_FACETS": df_infit_facets, "DF_Outfit_FACETS": df_outfit_facets,
+                "InfitZSTD_FACETS": zstd_from_mnsq_facets(infit, df_infit_facets),
+                "OutfitZSTD_FACETS": zstd_from_mnsq_facets(outfit, df_outfit_facets),
+                "DF_Infit_ENGINE": info, "DF_Outfit_ENGINE": w_sum,
+                "InfitZSTD_ENGINE": zstd_from_mnsq_engine(infit, info),
+                "OutfitZSTD_ENGINE": zstd_from_mnsq_engine(outfit, w_sum),
+                "FitDfMethod": "facets_wright_masters",
+                "FitDfFormula": "linear_w_wright_masters_eq_4_27",
+                "FitDfApplicability": "facets_wright_masters_rasch_family",
+                "FitZSTDTransform": "Wilson-Hilferty", "FitZSTDCap": 9.0,
             }})
     diag_df = pd.DataFrame(rows_out)
 
@@ -54288,7 +57366,7 @@ def compute_diagnostics(eta, score_k, weight, step_cum, person_idx, facet_idx_di
     infit_all = np.nansum(std_sq * var_k * w_all) / info_all if info_all > 0 else np.nan
     outfit_all = np.nansum(std_sq * w_all) / np.nansum(w_all) if np.nansum(w_all) > 0 else np.nan
 
-    return diag_df, infit_all, outfit_all, expected, var_k, resid
+    return diag_df, infit_all, outfit_all, expected, var_k, resid, fourth_k
 
 
 def calc_reliability(measures_df):
@@ -54478,7 +57556,7 @@ if __name__ == "__main__":
         step_cum_mat_val = np.vstack([np.concatenate([[0.0], np.cumsum(row)]) for row in params["steps_mat"]])
         step_cum = None
 
-    diag_df, infit_all, outfit_all, expected, var_k, resid = compute_diagnostics(
+    diag_df, infit_all, outfit_all, expected, var_k, resid, fourth_k = compute_diagnostics(
         eta, score_k, weight,
         step_cum if step_cum is not None else step_cum_mat_val[0],
         person_idx, facet_idx_dict, FACET_COLS,
@@ -54543,6 +57621,7 @@ if __name__ == "__main__":
     obs_out["Observed"] = df["Score"]
     obs_out["Residual"] = obs_out["Observed"] - obs_out["Expected"]
     obs_out["Var"] = var_k
+    obs_out["FourthCentralMoment"] = fourth_k
     obs_out["StdResidual"] = resid / np.sqrt(np.where(var_k > 1e-10, var_k, np.nan))
     obs_out.to_csv("residuals.csv", index=False)
     print(f"\\nSaved: measures.csv, steps.csv, reliability.csv, residuals.csv")
@@ -54919,13 +57998,36 @@ if (MODEL == "RSM") {{
 k_vals <- 0:(n_cat - 1L)
 expected <- probs %*% k_vals
 var_k <- probs %*% (k_vals^2) - expected^2
+expected_vec <- as.numeric(expected)
+k_matrix <- matrix(rep(k_vals, each = nrow(probs)), nrow = nrow(probs))
+fourth_k <- rowSums(probs * sweep(k_matrix, 1, expected_vec, "-")^4)
 var_k[var_k <= 1e-10] <- NA
 resid <- score_k - expected
 std_sq <- resid^2 / var_k
 
-zstd_from_mnsq <- function(mnsq, df_val) {{
-  if (!is.finite(mnsq) || !is.finite(df_val) || df_val <= 0) return(NA)
+zstd_from_mnsq_engine <- function(mnsq, df_val) {{
+  if (!is.finite(mnsq) || !is.finite(df_val) || df_val < 1) return(NA)
   (mnsq^(1/3) - (1 - 2/(9*df_val))) / sqrt(2/(9*df_val))
+}}
+
+zstd_from_mnsq_facets <- function(mnsq, df_val, cap = 9) {{
+  if (!is.finite(mnsq) || mnsq <= 0 || !is.finite(df_val) || df_val <= 0) return(NA)
+  z <- (mnsq^(1/3) - (1 - 2/(9*df_val))) / sqrt(2/(9*df_val))
+  if (is.finite(cap) && cap > 0) z <- max(-cap, min(cap, z))
+  z
+}}
+
+facets_fit_df <- function(var, fourth, weight) {{
+  valid_weight <- is.finite(weight) & weight > 0
+  valid <- is.finite(var) & var > 1e-12 & is.finite(fourth) & is.finite(weight) & weight > 0
+  info <- sum(var[valid_weight] * weight[valid_weight], na.rm = TRUE)
+  w_sum <- sum(weight[valid_weight], na.rm = TRUE)
+  denom_infit <- sum(weight[valid] * (fourth[valid] - var[valid]^2), na.rm = TRUE)
+  denom_outfit <- sum(weight[valid] * (fourth[valid] / var[valid]^2 - 1), na.rm = TRUE)
+  c(
+    infit = if (denom_infit > 1e-12 && info > 0) 2 * info^2 / denom_infit else NA,
+    outfit = if (denom_outfit > 1e-12 && w_sum > 0) 2 * w_sum^2 / denom_outfit else NA
+  )
 }}
 
 # Element-level fit
@@ -54936,17 +58038,31 @@ for (facet in c("Person", FACET_COLS)) {{
   ests <- params[[facet]]
   for (li in seq_along(lvls)) {{
     mask <- idx_arr == (li - 1L)
-    w <- weight[mask]; v <- var_k[mask]; sq <- std_sq[mask]
+    w <- weight[mask]; v <- var_k[mask]; fourth <- fourth_k[mask]; sq <- std_sq[mask]
     w_sum <- sum(w, na.rm = TRUE)
     info <- sum(v * w, na.rm = TRUE)
     infit <- if (info > 0) sum(sq * v * w, na.rm = TRUE) / info else NA
     outfit <- if (w_sum > 0) sum(sq * w, na.rm = TRUE) / w_sum else NA
     se <- if (info > 0) 1 / sqrt(info) else NA
+    facets_df <- facets_fit_df(v, fourth, w)
+    df_infit_facets <- unname(facets_df["infit"])
+    df_outfit_facets <- unname(facets_df["outfit"])
     measures_rows[[length(measures_rows) + 1]] <- data.frame(
       Facet = facet, Level = lvls[li], Estimate = ests[li],
       N = w_sum, SE = se, Infit = infit, Outfit = outfit,
-      InfitZSTD = zstd_from_mnsq(infit, info),
-      OutfitZSTD = zstd_from_mnsq(outfit, w_sum),
+      DF_Infit = df_infit_facets, DF_Outfit = df_outfit_facets,
+      InfitZSTD = zstd_from_mnsq_facets(infit, df_infit_facets),
+      OutfitZSTD = zstd_from_mnsq_facets(outfit, df_outfit_facets),
+      DF_Infit_FACETS = df_infit_facets, DF_Outfit_FACETS = df_outfit_facets,
+      InfitZSTD_FACETS = zstd_from_mnsq_facets(infit, df_infit_facets),
+      OutfitZSTD_FACETS = zstd_from_mnsq_facets(outfit, df_outfit_facets),
+      DF_Infit_ENGINE = info, DF_Outfit_ENGINE = w_sum,
+      InfitZSTD_ENGINE = zstd_from_mnsq_engine(infit, info),
+      OutfitZSTD_ENGINE = zstd_from_mnsq_engine(outfit, w_sum),
+      FitDfMethod = "facets_wright_masters",
+      FitDfFormula = "linear_w_wright_masters_eq_4_27",
+      FitDfApplicability = "facets_wright_masters_rasch_family",
+      FitZSTDTransform = "Wilson-Hilferty", FitZSTDCap = 9,
       stringsAsFactors = FALSE
     )
   }}
@@ -55045,6 +58161,7 @@ obs_df <- df
 obs_df$Observed <- df$Score
 obs_df$Expected <- rating_min + as.numeric(expected)
 obs_df$Var <- as.numeric(var_k)
+obs_df$FourthCentralMoment <- as.numeric(fourth_k)
 obs_df$Residual <- obs_df$Observed - obs_df$Expected
 
 # Save outputs
@@ -55250,8 +58367,8 @@ def reproducibility_script_export_matrix() -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
-def yardstick_reproducibility_scripts() -> dict[str, str]:
-    """Return cross-language scripts that redraw the exported yardstick map."""
+def yardstick_reproducibility_scripts(*, python_only: bool = False) -> dict[str, str]:
+    """Return yardstick scripts, optionally without constructing legacy assets."""
     readme = """# FACETS-style Yardstick Reproduction
 
 This bundle redraws the Streamlit FACETS-style yardstick from
@@ -55273,7 +58390,8 @@ Recommended manuscript workflow:
 4. Do not mix a yardstick CSV from one run with estimates, thresholds, or
    report wording from another run.
 """
-    r_script = r'''#!/usr/bin/env Rscript
+    if not python_only:
+        r_script = r'''#!/usr/bin/env Rscript
 # Reproduce the FACETS-style yardstick with ggplot2::geom_text().
 # Required input: mfrm_yardstick_map.csv from the Streamlit Yardstick panel.
 
@@ -55455,6 +58573,19 @@ fig.update_layout(title="Yardstick (FACETS-style text map)", template="plotly_wh
 fig.write_html(str(OUTPUT_HTML), include_plotlyjs="cdn")
 print(f"Wrote {OUTPUT_HTML}")
 '''
+    if python_only:
+        native_readme = """# Python Yardstick Reproduction
+
+This bundle redraws the Streamlit yardstick from `mfrm_yardstick_map.csv`
+without refitting the model. The CSV is the run-specific contract; keep it
+with the app version, AnalysisID, configuration, and EvidenceRecords. Run
+`mfrm_yardstick_plotly.py` in Python to create the interactive HTML figure.
+Do not mix a yardstick CSV from one analysis with results from another.
+"""
+        return {
+            "README_facets_yardstick_reproduction.md": native_readme,
+            "mfrm_yardstick_plotly.py": python_script,
+        }
     julia_script = r'''#!/usr/bin/env julia
 # Reproduce the exported FACETS-style yardstick in Julia / CairoMakie.
 
@@ -56439,6 +59570,84 @@ end
 # Multi-format downloads
 # ---------------------------------------------------------------------------
 
+_STANDALONE_EXPORT_EXCLUDED_MANUSCRIPT_AREAS = frozenset({
+    "External package comparison",
+    "Bayesian / Uto-family extension",
+})
+
+_STANDALONE_EXPORT_EXCLUDED_METHOD_AREAS = frozenset({
+    "External R ecosystem and cross-package reference checks",
+    "Recent MFRM extensions and Bayesian/rater drift context",
+})
+
+
+def _standalone_export_rows(
+    frame: pd.DataFrame,
+    *,
+    column: str,
+    excluded_values: Iterable[str],
+) -> pd.DataFrame:
+    """Return a default-export view without legacy compatibility rows."""
+    if not isinstance(frame, pd.DataFrame) or frame.empty or column not in frame.columns:
+        return frame
+    excluded = {str(value) for value in excluded_values}
+    return frame.loc[~frame[column].astype(str).isin(excluded)].reset_index(drop=True)
+
+
+def _python_native_script_assets(assets: dict[str, str]) -> dict[str, str]:
+    """Keep Python scripts and data contracts from mixed-language generators."""
+    allowed_suffixes = {".py", ".csv", ".json"}
+    return {
+        str(name): str(payload)
+        for name, payload in (assets or {}).items()
+        if Path(str(name)).suffix.lower() in allowed_suffixes
+    }
+
+
+def python_yardstick_reproducibility_assets() -> dict[str, str]:
+    """Build the public yardstick bundle without entering legacy branches."""
+    return yardstick_reproducibility_scripts(python_only=True)
+
+
+def python_rating_scale_recode_assets(
+    result: dict,
+    diagnostics: dict,
+) -> dict[str, str]:
+    """Build the public recode bundle without entering legacy branches."""
+    return rating_scale_recode_script_assets(
+        result,
+        diagnostics,
+        python_only=True,
+    )
+
+
+def python_native_reproducibility_assets(
+    result: dict,
+    diagnostics: dict,
+    all_bias_results: dict | None = None,
+) -> dict[str, str]:
+    """Build the Python-only reproduction assets used by default archives."""
+    bias_pairs: list[tuple[str, str]] = []
+    for pair_key in (all_bias_results or {}):
+        parts = str(pair_key).split(" x ", 1)
+        if len(parts) == 2:
+            bias_pairs.append((parts[0], parts[1]))
+    return {
+        "mfrm_app_engine_runner.py": _generate_app_engine_runner_script(
+            result,
+            diagnostics,
+            bias_pairs=bias_pairs,
+        ),
+        "requirements.txt": _generate_requirements_txt(),
+        "mfrm_local_batch_workflow.md": generate_local_batch_readme(),
+        "mfrm_jmle_self_contained.py": _generate_repro_python_script(
+            result,
+            bias_pairs=bias_pairs,
+        ),
+        **python_yardstick_reproducibility_assets(),
+        **python_rating_scale_recode_assets(result, diagnostics),
+    }
+
 def collect_download_frames(
     result: dict,
     diagnostics: dict,
@@ -56495,6 +59704,11 @@ def collect_download_frames(
     excluded_rows = prep.get("excluded_rows", pd.DataFrame())
     _frame_bundle.add_frame(all_frames, "response_data_excluded_rows", excluded_rows)
     _frame_bundle.add_frame(all_frames, "measures", measures_dl)
+    _frame_bundle.add_frame(
+        all_frames,
+        "global_residual_fit_summary",
+        build_global_residual_fit_summary(diagnostics),
+    )
     uncertainty_dl = diagnostics.get("uncertainty", {})
     if isinstance(uncertainty_dl, dict):
         unc_summary_dl = uncertainty_dl.get("summary", pd.DataFrame())
@@ -56507,20 +59721,29 @@ def collect_download_frames(
         ))
     prior_plan_dl = build_mml_prior_sensitivity_plan(result)
     _frame_bundle.add_frame(all_frames, "mml_prior_sd_sensitivity_plan", prior_plan_dl)
+    _add_mml_prior_sensitivity_export_frames(all_frames, result)
     bias_inference_audit_dl = build_bias_inference_audit(all_bias_results or bias_results or {}, result, diagnostics)
     _frame_bundle.add_frame(all_frames, "bias_inference_audit", bias_inference_audit_dl)
     assumption_audit_dl = build_statistical_assumption_audit(result, diagnostics, all_bias_results or bias_results or {})
     _frame_bundle.add_frame(all_frames, "statistical_assumption_audit", assumption_audit_dl)
-    method_ref_audit_dl = build_method_reference_audit()
+    method_ref_audit_dl = _standalone_export_rows(
+        build_method_reference_audit(),
+        column="MethodArea",
+        excluded_values=_STANDALONE_EXPORT_EXCLUDED_METHOD_AREAS,
+    )
     _frame_bundle.add_frame(all_frames, "method_reference_audit", method_ref_audit_dl)
     help_ref_coverage_dl = build_help_reference_coverage()
     _frame_bundle.add_frame(all_frames, "help_reference_coverage", help_ref_coverage_dl)
     try:
-        apa_sentence_audit_dl = build_apa_report_sentence_audit(
-            result,
-            diagnostics,
-            bias_results=bias_results,
-            all_bias_results=all_bias_results,
+        apa_sentence_audit_dl = _standalone_export_rows(
+            build_apa_report_sentence_audit(
+                result,
+                diagnostics,
+                bias_results=bias_results,
+                all_bias_results=all_bias_results,
+            ),
+            column="LinkedManuscriptArea",
+            excluded_values=_STANDALONE_EXPORT_EXCLUDED_MANUSCRIPT_AREAS,
         )
         _frame_bundle.add_frame(all_frames, "apa_report_sentence_audit", apa_sentence_audit_dl)
     except Exception:
@@ -56570,22 +59793,35 @@ def collect_download_frames(
     except Exception:
         weight_audit_dl = pd.DataFrame()
     try:
-        publication_gate_dl = build_publication_gate_summary(result, diagnostics, all_bias_results)
+        publication_gate_dl = _standalone_export_rows(
+            build_publication_gate_summary(result, diagnostics, all_bias_results),
+            column="GateArea",
+            excluded_values=_STANDALONE_EXPORT_EXCLUDED_MANUSCRIPT_AREAS,
+        )
         _frame_bundle.add_frame(all_frames, "publication_gate_summary", publication_gate_dl)
     except Exception:
         publication_gate_dl = pd.DataFrame()
     try:
-        action_plan_dl = build_submission_action_plan(result, diagnostics, all_bias_results)
+        action_plan_dl = _standalone_export_rows(
+            build_submission_action_plan(result, diagnostics, all_bias_results),
+            column="Topic",
+            excluded_values=_STANDALONE_EXPORT_EXCLUDED_MANUSCRIPT_AREAS,
+        )
         _frame_bundle.add_frame(all_frames, "submission_action_plan", action_plan_dl)
     except Exception:
         action_plan_dl = pd.DataFrame()
     try:
         readiness_dl = build_final_report_readiness(result, diagnostics, all_bias_results)
         _frame_bundle.add_frame(all_frames, "final_report_readiness", readiness_dl)
+        _add_final_readiness_contract_frames(all_frames, readiness_dl)
     except Exception:
         readiness_dl = pd.DataFrame()
     try:
-        claim_guide_dl = build_manuscript_claim_guide(result, diagnostics, all_bias_results)
+        claim_guide_dl = _standalone_export_rows(
+            build_manuscript_claim_guide(result, diagnostics, all_bias_results),
+            column="ManuscriptArea",
+            excluded_values=_STANDALONE_EXPORT_EXCLUDED_MANUSCRIPT_AREAS,
+        )
         _frame_bundle.add_frame(all_frames, "manuscript_claim_guide", claim_guide_dl)
     except Exception:
         claim_guide_dl = pd.DataFrame()
@@ -56696,7 +59932,11 @@ def collect_download_frames(
     except Exception:
         misfit_casebook_dl = pd.DataFrame()
     try:
-        claim_evidence_dl = build_claim_to_evidence_matrix(result, diagnostics, all_bias_results)
+        claim_evidence_dl = _standalone_export_rows(
+            build_claim_to_evidence_matrix(result, diagnostics, all_bias_results),
+            column="ManuscriptArea",
+            excluded_values=_STANDALONE_EXPORT_EXCLUDED_MANUSCRIPT_AREAS,
+        )
         _frame_bundle.add_frame(all_frames, "claim_to_evidence_matrix", claim_evidence_dl)
     except Exception:
         claim_evidence_dl = pd.DataFrame()
@@ -56706,69 +59946,8 @@ def collect_download_frames(
     _frame_bundle.add_frame(all_frames, "visual_claim_guardrails", visual_guardrails_dl)
     visual_evidence_dl = visual_method_evidence_table()
     _frame_bundle.add_frame(all_frames, "visual_method_evidence", visual_evidence_dl)
-    public_beta_dl = public_beta_limitations_table()
+    public_beta_dl = standalone_release_limitations_table()
     _frame_bundle.add_frame(all_frames, "public_beta_limitations", public_beta_dl)
-    simulation_inventory_dl = external_simulation_reference_inventory()
-    _frame_bundle.add_frame(all_frames, "external_simulation_reference_inventory", simulation_inventory_dl)
-    simulation_templates_dl = external_simulation_template_inventory()
-    _frame_bundle.add_frame(all_frames, "external_simulation_template_inventory", simulation_templates_dl)
-    script_matrix_dl = reproducibility_script_export_matrix()
-    _frame_bundle.add_frame(all_frames, "reproducibility_script_matrix", script_matrix_dl)
-    bayesian_stan_plan_dl = bayesian_mfrm_stan_refinement_plan()
-    _frame_bundle.add_frame(all_frames, "bayesian_mfrm_stan_refinement_plan", bayesian_stan_plan_dl)
-    stan_repro_route_dl = guided_stan_posterior_reproducibility_help_table()
-    _frame_bundle.add_frame(all_frames, "stan_posterior_reproducibility_route", stan_repro_route_dl)
-    stan_handoff_dl = stan_posterior_handoff_checklist()
-    _frame_bundle.add_frame(all_frames, "stan_posterior_handoff_checklist", stan_handoff_dl)
-    stan_manifest_template_dl = stan_run_manifest_template()
-    _frame_bundle.add_frame(all_frames, "stan_run_manifest_template", stan_manifest_template_dl)
-    generic_stan_data_dl = build_generic_mfrm_stan_data_export(result)
-    if generic_stan_data_dl.get("available"):
-        _frame_bundle.add_frames(all_frames, (
-            ("mfrm_stan_data_manifest", generic_stan_data_dl["manifest"]),
-            ("mfrm_stan_data_dictionary", generic_stan_data_dl["data_dictionary"]),
-            ("mfrm_stan_id_index_map", generic_stan_data_dl["id_map"]),
-            ("mfrm_stan_prior_guidance", generic_stan_data_dl["prior_guidance"]),
-            ("mfrm_stan_prior_sensitivity_grid", generic_stan_data_dl["prior_sensitivity_grid"]),
-            ("mfrm_stan_prior_decision_log_template", stan_prior_decision_log_template(
-                sigma_theta_prior_scale=float(generic_stan_data_dl["stan_data"].get("sigma_theta_prior_scale", 2.5)),
-                facet_prior_scale=float(generic_stan_data_dl["stan_data"].get("facet_prior_scale", 2.0)),
-                step_prior_scale=float(generic_stan_data_dl["stan_data"].get("step_prior_scale", 5.0)),
-            )),
-        ), allow_empty=True)
-    try:
-        stan_complete_manifest_dl = pd.read_csv(io.StringIO(
-            stan_reproducibility_package_assets(
-                result,
-                include_row_level=not bool(public_export_mode),
-            ).get("mfrm_complete_stan_reproducibility_manifest.csv", "")
-        ))
-        _frame_bundle.add_frame(
-            all_frames,
-            "mfrm_complete_stan_reproducibility_manifest",
-            stan_complete_manifest_dl,
-        )
-    except Exception:
-        stan_complete_manifest_dl = pd.DataFrame()
-    uto_stan_data_dl = build_uto_bayesian_mfrm_stan_data_export(result)
-    if uto_stan_data_dl.get("available"):
-        _frame_bundle.add_frames(all_frames, (
-            ("mfrm_uto_bayesian_mfrm_design_audit", uto_stan_data_dl["design_audit"]),
-            ("mfrm_uto_bayesian_mfrm_claim_wording", uto_stan_data_dl["claim_wording"]),
-            ("mfrm_uto_bayesian_mfrm_mapping_manifest", uto_stan_data_dl["manifest"]),
-            ("mfrm_uto_bayesian_mfrm_data_dictionary", uto_stan_data_dl["data_dictionary"]),
-            ("mfrm_uto_bayesian_mfrm_id_index_map", uto_stan_data_dl["id_map"]),
-        ), allow_empty=True)
-    mfrmr_coverage_dl = mfrmr_015_migration_coverage_table()
-    _frame_bundle.add_frame(all_frames, "mfrmr_015_migration_coverage", mfrmr_coverage_dl)
-    mfrmr_016_coverage_dl = mfrmr_016_migration_coverage_table()
-    if _frame_bundle.add_frame(all_frames, "mfrmr_016_migration_coverage", mfrmr_016_coverage_dl):
-        _frame_bundle.add_frame(
-            all_frames,
-            "mfrmr_020_migration_coverage",
-            mfrmr_020_migration_coverage_table(),
-            allow_empty=True,
-        )
     public_readiness_dl = public_release_readiness_table()
     _frame_bundle.add_frame(all_frames, "public_release_readiness", public_readiness_dl)
     _frame_bundle.add_frame(all_frames, "steps", steps_dl)
@@ -56957,6 +60136,10 @@ def collect_download_frames(
         chain_summary = chain_review.get("summary", pd.DataFrame())
         chain_edges = chain_review.get("edges", pd.DataFrame())
         _frame_bundle.add_frames(all_frames, (
+            (
+                "equating_chain_readiness_summary",
+                build_equating_chain_readiness_summary(result),
+            ),
             ("equating_chain_summary", chain_summary),
             ("equating_chain_edges", chain_edges),
         ))
@@ -56975,8 +60158,6 @@ def collect_download_frames(
             })
     if anchor_parts:
         _frame_bundle.add_frame(all_frames, "anchors", pd.DataFrame(anchor_parts))
-    stan_archive_contract_dl = stan_reproducibility_archive_contract_table(public_export_mode=bool(public_export_mode))
-    _frame_bundle.add_frame(all_frames, "stan_reproducibility_archive_contract", stan_archive_contract_dl)
     try:
         handoff_checklist_dl = build_manuscript_handoff_checklist(
             result,
@@ -56998,7 +60179,6 @@ def collect_download_frames(
         "claim_evidence_dl": claim_evidence_dl,
         "claim_guide_dl": claim_guide_dl,
         "critical_final_review_dl": locals().get("critical_final_review_dl", pd.DataFrame()),
-        "generic_stan_data_dl": generic_stan_data_dl,
         "handoff_checklist_dl": handoff_checklist_dl,
         "operational_decision_board_dl": locals().get("operational_decision_board_dl", pd.DataFrame()),
         "qc_recommendations_dl": qc_recommendations_dl,
@@ -57009,7 +60189,6 @@ def collect_download_frames(
         "role_action_checklist_dl": locals().get("role_action_checklist_dl", pd.DataFrame()),
         "role_action_memos_dl": locals().get("role_action_memos_dl", pd.DataFrame()),
         "status_rationale_dl": locals().get("status_rationale_dl", pd.DataFrame()),
-        "uto_stan_data_dl": uto_stan_data_dl,
         "yardstick_map_dl": locals().get("yardstick_map_dl", pd.DataFrame()),
     }
     return all_frames, context
@@ -57079,7 +60258,6 @@ def _render_downloads(
     claim_evidence_dl = download_context["claim_evidence_dl"]
     claim_guide_dl = download_context["claim_guide_dl"]
     critical_final_review_dl = download_context["critical_final_review_dl"]
-    generic_stan_data_dl = download_context["generic_stan_data_dl"]
     handoff_checklist_dl = download_context["handoff_checklist_dl"]
     operational_decision_board_dl = download_context["operational_decision_board_dl"]
     qc_recommendations_dl = download_context["qc_recommendations_dl"]
@@ -57090,8 +60268,14 @@ def _render_downloads(
     role_action_checklist_dl = download_context["role_action_checklist_dl"]
     role_action_memos_dl = download_context["role_action_memos_dl"]
     status_rationale_dl = download_context["status_rationale_dl"]
-    uto_stan_data_dl = download_context["uto_stan_data_dl"]
     yardstick_map_dl = download_context["yardstick_map_dl"]
+    evidence_contract_assets = build_evidence_contract_text_assets(
+        result,
+        readiness_dl,
+    )
+    evidence_contract_assets_key = bytes_mapping_fingerprint(
+        evidence_contract_assets
+    )
     download_frames = prepare_download_frames_for_privacy(
         all_frames,
         public_export_mode=bool(public_export_mode),
@@ -57112,7 +60296,12 @@ def _render_downloads(
         with z_col1:
             st.download_button(
                 t("downloads.tables_zip_button"),
-                data=cached_tables_zip(download_frames, download_frames_key),
+                data=cached_tables_zip(
+                    download_frames,
+                    download_frames_key,
+                    _text_assets=evidence_contract_assets,
+                    text_assets_key=evidence_contract_assets_key,
+                ),
                 file_name="MFRM_Tables.zip",
                 mime="application/zip",
                 key="dl_tables_zip",
@@ -57518,12 +60707,12 @@ def _render_downloads(
         ).iloc[0]
         script_support = build_script_support_status(result)
         optimizer_label = config.get("optimizer") or config.get("mml_engine") or "unknown optimizer"
-        software_label = f"MFRM FACETS-mode (standalone Python; {optimizer_label}; no mfrmr/R engine)"
+        software_label = f"MFRM standalone Python ({optimizer_label})"
         config_export = {
             "app_version": config.get("app_version", APP_VERSION),
             "release_label": config.get("release_label", APP_RELEASE_LABEL),
             "runtime_scope": config.get("runtime_scope", "standalone Python; no external MFRM engine called"),
-            "validation_stance": "Functional parity target; exact cross-package numerical equality is not claimed without a specific parity report.",
+            "validation_stance": "Python-native evidence only; no external-engine parity claim is part of this export.",
             "run_fingerprint": config.get("run_fingerprint"),
             "analysis_config_fingerprint": config.get("analysis_config_fingerprint"),
             "input_data_fingerprint": config.get("input_data_fingerprint"),
@@ -57827,14 +61016,27 @@ def _render_downloads(
                 diagnostics,
                 all_bias_results,
                 public_export_mode=bool(public_export_mode),
+            )
+        python_repro_assets = python_native_reproducibility_assets(
+            result,
+            diagnostics,
+            all_bias_results,
         )
-        external_template_assets = external_simulation_template_scripts()
-        stan_runner_assets = bayesian_stan_runner_templates()
-        yardstick_script_assets = yardstick_reproducibility_scripts()
-        recode_script_assets = rating_scale_recode_script_assets(result, diagnostics)
-        stan_data_assets = stan_data_export_assets(result, include_row_level=not bool(public_export_mode))
-        stan_complete_assets = stan_reproducibility_package_assets(result, include_row_level=not bool(public_export_mode))
-        local_batch_readme = generate_local_batch_readme()
+        runner_script = python_repro_assets["mfrm_app_engine_runner.py"]
+        req_txt = python_repro_assets["requirements.txt"]
+        py_script = python_repro_assets["mfrm_jmle_self_contained.py"]
+        local_batch_readme = python_repro_assets["mfrm_local_batch_workflow.md"]
+        yardstick_script_assets = {
+            name: payload
+            for name, payload in python_repro_assets.items()
+            if name == "mfrm_yardstick_plotly.py"
+        }
+        recode_script_assets = {
+            name: payload
+            for name, payload in python_repro_assets.items()
+            if name.startswith("mfrm_rating_scale_recode_")
+            or name == "apply_rating_scale_recodes.py"
+        }
         category_collapse_draft = generate_category_collapse_sensitivity_draft(result, diagnostics)
         text_assets = {
             "manuscript_handoff.md": manuscript_handoff,
@@ -57848,15 +61050,12 @@ def _render_downloads(
             "method_appendix.md": method_appendix,
             "manuscript_template.md": manuscript_template,
             "apa_category_collapse_sensitivity_draft.md": category_collapse_draft,
-            "local_batch_workflow.md": local_batch_readme,
+            "mfrm_local_batch_workflow.md": local_batch_readme,
             "mfrm_config.json": config_json,
             "visualization_settings.json": _visualization_preferences_json(),
-            **external_template_assets,
-            **stan_runner_assets,
+            **evidence_contract_assets,
             **yardstick_script_assets,
             **recode_script_assets,
-            **stan_data_assets,
-            **stan_complete_assets,
         }
         text_assets_key = bytes_mapping_fingerprint(text_assets)
         st.subheader("Final results and manuscript handoff")
@@ -58170,13 +61369,23 @@ def _render_downloads(
             "A portable self-contained JMLE script is also available for fixed-effect checks."
         )
         script_support = build_script_support_status(result)
-        support_table = script_support.get("table", pd.DataFrame())
+        support_table = _standalone_export_rows(
+            script_support.get("table", pd.DataFrame()),
+            column="Script",
+            excluded_values={"R portable self-contained JMLE"},
+        )
+        if isinstance(support_table, pd.DataFrame) and "Action" in support_table.columns:
+            support_table["Action"] = support_table["Action"].astype(str).str.replace(
+                "portable self-contained JMLE/R scripts",
+                "the portable self-contained Python JMLE script",
+                regex=False,
+            )
         if isinstance(support_table, pd.DataFrame) and not support_table.empty:
             st.dataframe(support_table, width="stretch")
         if not script_support.get("portable_available", False):
             blockers = ", ".join(script_support.get("portable_blockers", []))
             st.warning(
-                "Portable self-contained JMLE/R scripts are unsupported for this run "
+                "The portable self-contained Python JMLE script is unsupported for this run "
                 f"({blockers}). Download the Python app-engine runner for reproducibility."
             )
         elif result.get("config", {}).get("method") == "MML":
@@ -58185,92 +61394,42 @@ def _render_downloads(
                 "Use the Python app-engine runner to reproduce MML posterior, plausible-value, and marginal diagnostics exactly."
             )
 
-        # Determine bias pairs that were computed
-        _bias_pairs: list[tuple[str, str]] = []
-        if all_bias_results:
-            for pair_key in all_bias_results:
-                parts = pair_key.split(" x ", 1)
-                if len(parts) == 2:
-                    _bias_pairs.append((parts[0], parts[1]))
-
-        col_py, col_r = st.columns(2)
-
-        with col_py:
-            st.markdown("**Python current-engine runner** (`pip install -r requirements.txt`)")
-            runner_script = _generate_app_engine_runner_script(
-                result,
-                diagnostics,
-                bias_pairs=_bias_pairs,
-            )
-            with st.expander("View Python app-engine runner"):
-                st.code(runner_script, language="python")
-            st.download_button(
-                "Download Python app-engine runner (.py)",
-                data=runner_script.encode("utf-8"),
-                file_name="mfrm_app_engine_runner.py",
-                mime="text/x-python",
-                key="dl_app_engine_runner_py",
-            )
-            req_txt = _generate_requirements_txt()
-            st.download_button(
-                "Download requirements.txt",
-                data=req_txt.encode("utf-8"),
-                file_name="requirements.txt",
-                mime="text/plain",
-                key="dl_requirements_txt",
-            )
-            st.download_button(
-                "Download local batch workflow (Markdown)",
-                data=local_batch_readme.encode("utf-8"),
-                file_name="mfrm_local_batch_workflow.md",
-                mime="text/markdown",
-                key="dl_local_batch_workflow_md",
-            )
-            py_script = _generate_repro_python_script(result, bias_pairs=_bias_pairs)
-            with st.expander("View portable self-contained JMLE script"):
-                st.code(py_script, language="python")
-            st.download_button(
-                (
-                    "Download unsupported JMLE stub (.py)"
-                    if not script_support.get("portable_available", False)
-                    else "Download self-contained JMLE script (.py)"
-                ),
-                data=py_script.encode("utf-8"),
-                file_name="mfrm_jmle_self_contained.py",
-                mime="text/x-python",
-                key="dl_repro_py_jmle",
-            )
-
-        with col_r:
-            st.markdown("**R portable JMLE** (base R only — no packages needed)")
-            r_script = _generate_repro_r_script(result, bias_pairs=_bias_pairs)
-            with st.expander("View R script"):
-                st.code(r_script, language="r")
-            st.download_button(
-                (
-                    "Download unsupported R stub (.R)"
-                    if not script_support.get("portable_available", False)
-                    else "Download R script (.R)"
-                ),
-                data=r_script.encode("utf-8"),
-                file_name="mfrm_analysis.R",
-                mime="text/plain",
-                key="dl_repro_r",
-            )
-
-        st.subheader("Reproducibility script matrix")
-        st.caption(
-            "Use this table to choose whether the next reproducibility artifact should be "
-            "the current Python app runner, a portable Python/R/Julia check, or a Stan posterior runner."
-        )
-        script_matrix = reproducibility_script_export_matrix()
-        st.dataframe(script_matrix, width="stretch", hide_index=True)
+        st.markdown("**Python current-engine runner** (`pip install -r requirements.txt`)")
+        with st.expander("View Python app-engine runner"):
+            st.code(runner_script, language="python")
         st.download_button(
-            "Download reproducibility script matrix (CSV)",
-            data=to_csv_bytes(script_matrix),
-            file_name="mfrm_reproducibility_script_matrix.csv",
-            mime="text/csv",
-            key="dl_reproducibility_script_matrix",
+            "Download Python app-engine runner (.py)",
+            data=runner_script.encode("utf-8"),
+            file_name="mfrm_app_engine_runner.py",
+            mime="text/x-python",
+            key="dl_app_engine_runner_py",
+        )
+        st.download_button(
+            "Download requirements.txt",
+            data=req_txt.encode("utf-8"),
+            file_name="requirements.txt",
+            mime="text/plain",
+            key="dl_requirements_txt",
+        )
+        st.download_button(
+            "Download local batch workflow (Markdown)",
+            data=local_batch_readme.encode("utf-8"),
+            file_name="mfrm_local_batch_workflow.md",
+            mime="text/markdown",
+            key="dl_local_batch_workflow_md",
+        )
+        with st.expander("View portable self-contained JMLE script"):
+            st.code(py_script, language="python")
+        st.download_button(
+            (
+                "Download unsupported JMLE stub (.py)"
+                if not script_support.get("portable_available", False)
+                else "Download self-contained JMLE script (.py)"
+            ),
+            data=py_script.encode("utf-8"),
+            file_name="mfrm_jmle_self_contained.py",
+            mime="text/x-python",
+            key="dl_repro_py_jmle",
         )
 
         st.subheader("Visual claim guardrails")
@@ -58294,10 +61453,9 @@ def _render_downloads(
             key="dl_scripts_visual_claim_guardrails_csv",
         )
 
-        st.subheader("FACETS-style yardstick reproduction")
+        st.subheader("Python yardstick reproduction")
         st.caption(
-            "Download the exact yardstick map CSV plus Python/R/Julia scripts. "
-            "The R script uses ggplot2::geom_text(), matching the FACETS-style direct text layout."
+            "Download the exact yardstick map CSV plus the Python Plotly reproduction script."
         )
         if isinstance(yardstick_map_dl, pd.DataFrame) and not yardstick_map_dl.empty:
             yardstick_assets: dict[str, bytes | str] = {
@@ -58305,9 +61463,9 @@ def _render_downloads(
                 **yardstick_script_assets,
             }
             st.download_button(
-                "Download FACETS-style yardstick reproduction ZIP",
+                "Download Python yardstick reproduction ZIP",
                 data=cached_mixed_asset_zip(yardstick_assets, bytes_mapping_fingerprint(yardstick_assets)),
-                file_name="MFRM_FACETS_Yardstick_Reproduction.zip",
+                file_name="MFRM_Python_Yardstick_Reproduction.zip",
                 mime="application/zip",
                 key="dl_yardstick_reproduction_downloads_zip",
             )
@@ -58316,8 +61474,8 @@ def _render_downloads(
 
         st.subheader("Rating-scale recode reproduction")
         st.caption(
-            "Download the action checklist, APA sensitivity draft, candidate score-map CSV, and Python/R/Julia "
-            "scripts that create recoded score columns without overwriting the original score column."
+            "Download the action checklist, APA sensitivity draft, candidate score-map CSV, and Python "
+            "script that creates recoded score columns without overwriting the original score column."
         )
         if not isinstance(category_action_dl, pd.DataFrame) or category_action_dl.empty:
             category_action_dl = category_collapse_action_center_table(result, diagnostics)
@@ -58357,286 +61515,6 @@ def _render_downloads(
             )
         else:
             st.caption("Recode script assets are available after rating-scale category diagnostics exist.")
-
-        st.subheader("Cross-engine validation (TAM / sirt / mirt)")
-        st.caption(
-            "Refit this exact analysis in R (TAM, sirt, mirt) and cross-check the main "
-            "MML/GPCM estimates. The ZIP ships the data, the fitted settings, the app's own "
-            "person/facet/step/slope estimates, an R script, and a README of expected "
-            "differences. This is a reproducibility artifact — exact numerical equality with "
-            "those packages is not claimed; rank-order and directional agreement is the bar."
-        )
-        cross_engine_assets = build_cross_engine_validation_bundle(result)
-        if cross_engine_assets:
-            st.download_button(
-                "Download cross-engine validation bundle (TAM/sirt/mirt ZIP)",
-                data=cached_mixed_asset_zip(cross_engine_assets, bytes_mapping_fingerprint(cross_engine_assets)),
-                file_name="MFRM_Cross_Engine_Validation_Bundle.zip",
-                mime="application/zip",
-                key="dl_cross_engine_validation_bundle_zip",
-            )
-        else:
-            st.caption("Cross-engine validation assets are available after a fitted result with data and estimates exists.")
-
-        st.subheader("Uto-family Bayesian MFRM Stan refinement")
-        st.caption(
-            "A roadmap from the current generic RSM/PCM Stan export to generalized, "
-            "multidimensional, and rater-drift Bayesian MFRM scaffolds."
-        )
-        stan_refinement = bayesian_mfrm_stan_refinement_plan()
-        st.dataframe(stan_refinement, width="stretch", hide_index=True)
-        st.download_button(
-            "Download Bayesian MFRM Stan refinement plan (CSV)",
-            data=to_csv_bytes(stan_refinement),
-            file_name="bayesian_mfrm_stan_refinement_plan.csv",
-            mime="text/csv",
-            key="dl_bayesian_mfrm_stan_refinement_plan",
-        )
-
-        st.subheader("Complete Stan reproducibility package")
-        st.caption(
-            "One ZIP containing the generated Stan source files, Stan data contract, prior-setting rationale template, "
-            "sensitivity grid, Python/R/Julia runners, posterior handoff files, and package manifest."
-        )
-        stan_complete_direct_assets = stan_reproducibility_package_assets(result, include_row_level=True)
-        stan_complete_manifest_text = stan_complete_direct_assets.get("mfrm_complete_stan_reproducibility_manifest.csv", "")
-        try:
-            stan_complete_manifest_table = pd.read_csv(io.StringIO(stan_complete_manifest_text))
-        except Exception:
-            stan_complete_manifest_table = pd.DataFrame()
-        if isinstance(stan_complete_manifest_table, pd.DataFrame) and not stan_complete_manifest_table.empty:
-            st.dataframe(stan_complete_manifest_table, width="stretch", hide_index=True)
-        st.download_button(
-            "Download complete Stan reproducibility package ZIP",
-            data=cached_mixed_asset_zip(
-                stan_complete_direct_assets,
-                bytes_mapping_fingerprint(stan_complete_direct_assets),
-            ),
-            file_name="MFRM_Complete_Stan_Reproducibility_Package.zip",
-            mime="application/zip",
-            key="dl_complete_stan_reproducibility_package_zip",
-        )
-        st.warning(
-            "This direct package includes row-level coded Stan JSON and private ID maps when available. "
-            "Use the OSF or manuscript binder export in public mode when those files should be omitted."
-        )
-
-        st.subheader("Cross-language Stan runners")
-        st.caption(
-            "These templates run the same downloaded Stan file and JSON data through "
-            "Python/CmdStanPy, R/CmdStanR, or Julia/CmdStan CLI."
-        )
-        st.download_button(
-            "Download Bayesian Stan runners (Python/R/Julia ZIP)",
-            data=cached_mixed_asset_zip(stan_runner_assets, bytes_mapping_fingerprint(stan_runner_assets)),
-            file_name="MFRM_Bayesian_Stan_Runners.zip",
-            mime="application/zip",
-            key="dl_bayesian_stan_runner_zip",
-        )
-
-        st.subheader("Stan posterior handoff manifest")
-        st.caption(
-            "The runner templates write stan_run_manifest.json/csv so posterior CSV chains "
-            "can be checked against the exact Stan file, data JSON, prior scales, seed, and sampler controls."
-        )
-        stan_repro_route_table = guided_stan_posterior_reproducibility_help_table()
-        stan_handoff_table = stan_posterior_handoff_checklist()
-        stan_manifest_template = stan_run_manifest_template()
-        stan_repro_handoff_md = stan_posterior_reproducibility_handoff_markdown()
-        posterior_example_assets = posterior_viewer_example_package_assets()
-        st.markdown("**Stan posterior reproducibility route**")
-        st.dataframe(stan_repro_route_table, width="stretch", hide_index=True)
-        st.markdown("**Stan reproducibility archive contract**")
-        st.dataframe(
-            stan_reproducibility_archive_contract_table(public_export_mode=bool(public_export_mode)),
-            width="stretch",
-            hide_index=True,
-        )
-        st.markdown("**Stan posterior handoff checklist**")
-        st.dataframe(stan_handoff_table, width="stretch", hide_index=True)
-        with st.expander("Run manifest field template", expanded=False):
-            st.dataframe(stan_manifest_template, width="stretch", hide_index=True)
-        with st.expander("Stan posterior reproducibility handoff preview", expanded=False):
-            st.markdown(stan_repro_handoff_md)
-        st.download_button(
-            "Download Stan posterior reproducibility handoff (Markdown)",
-            data=stan_repro_handoff_md.encode("utf-8"),
-            file_name="stan_posterior_reproducibility_handoff.md",
-            mime="text/markdown",
-            key="dl_stan_posterior_reproducibility_handoff_md",
-        )
-        route_col, handoff_col, manifest_col, example_col = st.columns(4)
-        with route_col:
-            st.download_button(
-                "Download Stan posterior reproducibility route",
-                data=to_csv_bytes(stan_repro_route_table),
-                file_name="stan_posterior_reproducibility_route.csv",
-                mime="text/csv",
-                key="dl_stan_posterior_reproducibility_route",
-            )
-        with handoff_col:
-            st.download_button(
-                "Download Stan posterior handoff checklist",
-                data=to_csv_bytes(stan_handoff_table),
-                file_name="stan_posterior_handoff_checklist.csv",
-                mime="text/csv",
-                key="dl_stan_posterior_handoff_checklist",
-            )
-        with manifest_col:
-            st.download_button(
-                "Download Stan run manifest template",
-                data=to_csv_bytes(stan_manifest_template),
-                file_name="stan_run_manifest_template.csv",
-                mime="text/csv",
-                key="dl_stan_run_manifest_template",
-            )
-        with example_col:
-            st.download_button(
-                "Download Posterior Viewer example package",
-                data=cached_mixed_asset_zip(posterior_example_assets, bytes_mapping_fingerprint(posterior_example_assets)),
-                file_name="MFRM_Posterior_Viewer_Example.zip",
-                mime="application/zip",
-                key="dl_downloads_posterior_viewer_example_package",
-            )
-
-        st.subheader("Stan data JSON and coding maps")
-        st.caption(
-            "Exports the exact 1-based integer-coded JSON used by CmdStan plus data dictionaries and private ID maps. "
-            "Public export mode includes dictionaries/manifests only in OSF/binder packages; direct JSON downloads remain a private-archive decision."
-        )
-        stan_data_direct_assets = stan_data_export_assets(result, include_row_level=True)
-        if generic_stan_data_dl.get("available"):
-            st.dataframe(generic_stan_data_dl["manifest"], width="stretch", hide_index=True)
-            with st.expander("Prior-setting guide and sensitivity grid", expanded=False):
-                st.caption(
-                    "These tables explain the prior scale fields embedded in mfrm_stan_data.json "
-                    "and define defensible sensitivity variants for posterior reporting."
-                )
-                st.dataframe(generic_stan_data_dl["prior_guidance"], width="stretch", hide_index=True)
-                st.dataframe(generic_stan_data_dl["prior_sensitivity_grid"], width="stretch", hide_index=True)
-            stan_json_col, stan_map_col, stan_dict_col = st.columns(3)
-            with stan_json_col:
-                st.download_button(
-                    "Download generic Stan data JSON",
-                    data=generic_stan_data_dl["json_text"],
-                    file_name="mfrm_stan_data.json",
-                    mime="application/json",
-                    key="dl_downloads_generic_stan_data_json",
-                )
-            with stan_map_col:
-                st.download_button(
-                    "Download private generic ID map",
-                    data=to_csv_bytes(generic_stan_data_dl["id_map"]),
-                    file_name="mfrm_stan_id_index_map.csv",
-                    mime="text/csv",
-                    key="dl_downloads_generic_stan_id_map",
-                )
-            with stan_dict_col:
-                st.download_button(
-                    "Download generic Stan data dictionary",
-                    data=to_csv_bytes(generic_stan_data_dl["data_dictionary"]),
-                    file_name="mfrm_stan_data_dictionary.csv",
-                    mime="text/csv",
-                    key="dl_downloads_generic_stan_data_dictionary",
-                )
-            prior_dl_col, grid_dl_col = st.columns(2)
-            with prior_dl_col:
-                st.download_button(
-                    "Download Stan prior guidance",
-                    data=to_csv_bytes(generic_stan_data_dl["prior_guidance"]),
-                    file_name="mfrm_stan_prior_guidance.csv",
-                    mime="text/csv",
-                    key="dl_downloads_stan_prior_guidance",
-                )
-            with grid_dl_col:
-                st.download_button(
-                    "Download Stan prior sensitivity grid",
-                    data=to_csv_bytes(generic_stan_data_dl["prior_sensitivity_grid"]),
-                    file_name="mfrm_stan_prior_sensitivity_grid.csv",
-                    mime="text/csv",
-                    key="dl_downloads_stan_prior_sensitivity_grid",
-                )
-        else:
-            st.info("Generic Stan data JSON is unavailable: " + "; ".join(generic_stan_data_dl.get("messages", [])))
-        if uto_stan_data_dl.get("available"):
-            with st.expander("Uto-family data template mapping", expanded=False):
-                uto_notice = uto_design_audit_claim_notice(uto_stan_data_dl["design_audit"])
-                if uto_notice["level"] == "warning":
-                    st.warning(uto_notice["message"])
-                elif uto_notice["level"] == "success":
-                    st.success(uto_notice["message"])
-                else:
-                    st.info(uto_notice["message"])
-                st.markdown("**Claim wording guardrails**")
-                st.dataframe(uto_stan_data_dl["claim_wording"], width="stretch", hide_index=True)
-                st.markdown("**Design-audit rows**")
-                st.dataframe(uto_stan_data_dl["design_audit"], width="stretch", hide_index=True)
-                st.dataframe(uto_stan_data_dl["manifest"], width="stretch", hide_index=True)
-                st.dataframe(uto_stan_data_dl["data_dictionary"], width="stretch", hide_index=True)
-            st.download_button(
-                "Download Uto-family data template JSON",
-                data=uto_stan_data_dl["json_text"],
-                file_name="mfrm_uto_bayesian_mfrm_data_template.json",
-                mime="application/json",
-                key="dl_downloads_uto_stan_data_template_json",
-            )
-        if stan_data_direct_assets:
-            st.download_button(
-                "Download Stan data package (JSON/maps/dictionaries ZIP)",
-                data=cached_mixed_asset_zip(stan_data_direct_assets, bytes_mapping_fingerprint(stan_data_direct_assets)),
-                file_name="MFRM_Stan_Data_Package.zip",
-                mime="application/zip",
-                key="dl_downloads_stan_data_package_zip",
-            )
-            st.warning(
-                "The Stan data package contains row-level coded responses and private label maps. "
-                "Use it for private reproducibility archives unless sharing has been explicitly approved."
-            )
-
-        # --- External Simulation validation templates ---
-        st.subheader("External Simulation validation templates")
-        st.caption(
-            "Sanitized Python/R/Julia templates for external numerical validation. "
-            "They use environment variables for input/output paths and do not embed "
-            "machine-specific paths or raw data."
-        )
-        template_inventory = external_simulation_template_inventory()
-        st.dataframe(template_inventory, width="stretch", hide_index=True)
-        template_assets = external_simulation_template_scripts()
-        template_assets_key = bytes_mapping_fingerprint(template_assets)
-        st.download_button(
-            "Download Python/R/Julia validation templates (ZIP)",
-            data=cached_mixed_asset_zip(template_assets, template_assets_key),
-            file_name="MFRM_External_Simulation_Validation_Templates.zip",
-            mime="application/zip",
-            key="dl_external_simulation_template_zip",
-        )
-        with st.expander("Individual external validation template downloads"):
-            template_cols = st.columns(2)
-            for idx, (file_name, script_text) in enumerate(template_assets.items()):
-                with template_cols[idx % len(template_cols)]:
-                    suffix = Path(file_name).suffix.lower()
-                    mime = "text/markdown" if suffix == ".md" else "text/plain"
-                    if suffix == ".py":
-                        mime = "text/x-python"
-                    st.download_button(
-                        file_name,
-                        data=script_text.encode("utf-8"),
-                        file_name=file_name,
-                        mime=mime,
-                        key=f"dl_external_simulation_template_{idx}",
-                    )
-
-        # --- Stan code reference ---
-        st.subheader("Stan code for Bayesian MFRM")
-        st.info(
-            "Stan code is auto-generated in the **Report → Exports → Stan Code** sub-tab based on "
-            "your data structure. Navigate there to preview and download the Stan model, "
-            "app-generated data JSON, coding maps, Python runner (CmdStanPy), R runner (CmdStanR), "
-            "and Julia runner (CmdStan CLI) scripts. "
-            "Use the Advanced models sidebar for the Uto-family Bayesian MFRM scaffold."
-        )
-        st.warning(STAN_SENSITIVITY_WARNING)
 
         # --- Manuscript binder ---
         st.subheader("Manuscript binder")
@@ -59408,8 +62286,11 @@ def _self_test_report_readiness_and_method_appendix() -> None:
         "manuscript claim guide is missing required columns",
     )
     _self_test_assert(
-        "External package comparison" in claim_guide["ManuscriptArea"].tolist(),
-        "manuscript claim guide missing external comparison boundary",
+        {
+            "External package comparison",
+            "Bayesian / Uto-family extension",
+        }.isdisjoint(set(claim_guide["ManuscriptArea"].astype(str))),
+        "manuscript claim guide exposed a legacy compatibility area",
     )
     publication_gate = build_publication_gate_summary(res, diagnostics, all_bias_results={})
     _self_test_assert(not publication_gate.empty, "publication gate summary is empty")
@@ -59676,7 +62557,10 @@ def _self_test_report_readiness_and_method_appendix() -> None:
     appendix = generate_method_appendix_text(res, diagnostics, all_bias_results={})
     _self_test_assert("standalone Python" in appendix, "method appendix does not state standalone Python scope")
     _self_test_assert("- Model: RSM." in appendix, "method appendix missing model line")
-    _self_test_assert("no `mfrmr`" in appendix, "method appendix does not document no-mfrmr boundary")
+    _self_test_assert(
+        "no external estimation engine" in appendix,
+        "method appendix does not document the standalone engine boundary",
+    )
     manuscript_template = generate_manuscript_reporting_template(res, diagnostics, all_bias_results={})
     _self_test_assert("## Methods Draft" in manuscript_template, "manuscript template missing methods draft")
     _self_test_assert("## Results Draft" in manuscript_template, "manuscript template missing results draft")
@@ -59699,30 +62583,13 @@ def _self_test_report_readiness_and_method_appendix() -> None:
         "visual_claim_guardrails",
         "visual_method_evidence",
         "public_beta_limitations",
-        "external_simulation_reference_inventory",
-        "external_simulation_template_inventory",
-        "reproducibility_script_matrix",
-        "bayesian_mfrm_stan_refinement_plan",
-        "stan_reproducibility_archive_contract",
-        "stan_posterior_reproducibility_route",
-        "stan_posterior_handoff_checklist",
-        "stan_run_manifest_template",
-        "mfrm_stan_data_manifest",
-        "mfrm_stan_data_dictionary",
-        "mfrm_stan_prior_guidance",
-        "mfrm_stan_prior_sensitivity_grid",
-        "mfrm_uto_bayesian_mfrm_design_audit",
-        "mfrm_uto_bayesian_mfrm_claim_wording",
-        "mfrm_uto_bayesian_mfrm_mapping_manifest",
-        "mfrm_uto_bayesian_mfrm_data_dictionary",
-        "mfrmr_015_migration_coverage",
-        "mfrmr_016_migration_coverage",
         "public_release_readiness",
         "category_probability_curves",
     ]:
         _self_test_assert(required in demo_frames, f"demo report frames missing {required}")
     _self_test_assert(
-        "no mfrmr" in str(demo_frames["demo_manifest"]["RuntimeBoundary"].iloc[0]),
+        str(demo_frames["demo_manifest"]["RuntimeBoundary"].iloc[0])
+        == "standalone Python engine only",
         "demo manifest does not document standalone runtime boundary",
     )
 
@@ -59872,10 +62739,18 @@ def _self_test_category_probability_curve_data() -> None:
         {"CandidateID", "CandidateScoreColumn", "OriginalScore", "CandidateScore", "CandidateFingerprint"}.issubset(recode_map_long.columns),
         "rating-scale recode map long table missing script columns",
     )
-    recode_assets = rating_scale_recode_script_assets(result_with_tables, diagnostics)
+    recode_assets = rating_scale_recode_script_assets(
+        result_with_tables,
+        diagnostics,
+        python_only=True,
+    )
     _self_test_assert(
-        {"apply_rating_scale_recodes.py", "apply_rating_scale_recodes.R", "apply_rating_scale_recodes.jl", "mfrm_rating_scale_recode_map_long.csv"}.issubset(recode_assets),
-        "rating-scale recode script asset bundle missing language scripts",
+        {"apply_rating_scale_recodes.py", "mfrm_rating_scale_recode_map_long.csv"}.issubset(recode_assets),
+        "rating-scale recode script asset bundle missing Python assets",
+    )
+    _self_test_assert(
+        not any(Path(name).suffix.lower() in {".r", ".jl"} for name in recode_assets),
+        "rating-scale recode script bundle exposed a legacy runtime asset",
     )
     _self_test_assert(
         not np.allclose(
@@ -59990,9 +62865,7 @@ def _self_test_script_support_boundaries() -> None:
     _self_test_assert(not gpcm_support["portable_available"], "GPCM portable script should be marked unavailable")
     _self_test_assert("bounded GPCM" in gpcm_support["portable_blockers"], "GPCM blocker is missing")
     gpcm_py = _generate_repro_python_script(gpcm_result)
-    gpcm_r = _generate_repro_r_script(gpcm_result)
     _self_test_assert("GPCM portable self-contained script is not available yet" in gpcm_py, "GPCM Python stub changed")
-    _self_test_assert("GPCM portable R script is not available yet" in gpcm_r, "GPCM R stub changed")
 
     latent_result = {
         "config": {
@@ -60006,33 +62879,30 @@ def _self_test_script_support_boundaries() -> None:
     _self_test_assert(not latent_support["portable_available"], "latent-regression portable script should be unavailable")
     _self_test_assert("latent-regression population_formula" in latent_support["portable_blockers"], "latent blocker is missing")
     latent_py = _generate_repro_python_script(latent_result)
-    latent_r = _generate_repro_r_script(latent_result)
     _self_test_assert(
         "Latent-regression portable self-contained script is not available yet" in latent_py,
         "latent-regression Python stub changed",
-    )
-    _self_test_assert(
-        "Latent-regression portable R script is not available yet" in latent_r,
-        "latent-regression R stub changed",
     )
 
     ordinary_result = {"config": {"model": "PCM", "method": "JMLE", "population_model": {}}}
     ordinary_support = build_script_support_status(ordinary_result)
     _self_test_assert(ordinary_support["portable_available"], "ordinary PCM JMLE portable script should be available")
-    external_templates = external_simulation_template_scripts()
+    app_runner = _generate_app_engine_runner_script(ordinary_result, {})
     _self_test_assert(
-        {
-            "simulation_validation_python_template.py",
-            "simulation_validation_r_template.R",
-            "simulation_validation_julia_template.jl",
-        }.issubset(set(external_templates)),
-        "external Simulation template script bundle missing a language template",
+        "Current-engine MFRM runner." in app_runner and "app.mfrm_estimate(" in app_runner,
+        "Python app-engine runner no longer exercises the current estimator",
     )
-    joined_templates = "\n".join(external_templates.values())
-    _self_test_assert("MFRM_INPUT_CSV" in joined_templates, "external Simulation templates missing env-var input path")
+    local_batch = generate_local_batch_readme()
     _self_test_assert(
-        "/Users/" not in joined_templates and "C:/Users/" not in joined_templates,
-        "external Simulation templates contain machine-specific absolute paths",
+        "mfrm_app_engine_runner.py" in local_batch and "## Batch pattern" in local_batch,
+        "Python local-batch workflow no longer points to the app-engine runner",
+    )
+    ordinary_py = _generate_repro_python_script(ordinary_result)
+    _self_test_assert(
+        "Portable self-contained MFRM JMLE script." in ordinary_py
+        and "def unpack(" in ordinary_py
+        and 'measures_df.to_csv("measures.csv"' in ordinary_py,
+        "ordinary PCM JMLE self-contained Python script changed",
     )
 
 
@@ -60879,15 +63749,17 @@ def _self_test_cross_package_validation_plan() -> None:
 
 
 def _self_test_public_beta_release_contract() -> None:
-    limitations = public_beta_limitations_table()
-    _self_test_assert(not limitations.empty, "public beta limitations table is empty")
+    limitations = standalone_release_limitations_table()
+    _self_test_assert(not limitations.empty, "standalone release limitations table is empty")
     _self_test_assert(
         {"Area", "PublicBetaStatus", "SupportedNow", "Boundary", "UserAction"}.issubset(limitations.columns),
-        "public beta limitations table missing required columns",
+        "standalone release limitations table missing required columns",
     )
     joined = " ".join(limitations["Area"].astype(str).tolist() + limitations["Boundary"].astype(str).tolist())
-    for expected in ["GPCM", "Latent regression", "Cross-package", "privacy"]:
-        _self_test_assert(expected in joined, f"public beta limitations missing {expected}")
+    for expected in ["GPCM", "Latent regression", "privacy"]:
+        _self_test_assert(expected in joined, f"standalone release limitations missing {expected}")
+    for excluded in ["Cross-package equivalence", "Advanced models (Stan, download-only)", "Posterior Viewer (upload)"]:
+        _self_test_assert(excluded not in limitations["Area"].astype(str).tolist(), f"standalone release limitations include {excluded}")
 
     readiness = public_release_readiness_table()
     _self_test_assert(not readiness.empty, "public release readiness table is empty")
@@ -61230,18 +64102,17 @@ def _self_test_essential_mode_tab_filters() -> None:
     someone renames or reorders a label, CI catches the drift before
     Essential mode silently drops a user-visible tab.
     """
-    # Help tab: 10 labels total; 3 hidden in Essential, 7 visible.
+    # Help tab: 8 standalone labels total; 1 hidden in Essential, 7 visible.
     help_all_labels = [
         "Quick Start", "Analysis Workflow", "Interpretation Guide",
         "Rater Effects", "Rating Scale Guide", "Glossary",
-        "Reporting Guide", "Troubleshooting", "Model Capability",
-        "Public Beta",
+        "Reporting Guide", "Troubleshooting",
     ]
-    help_advanced = {"Rating Scale Guide", "Model Capability", "Public Beta"}
+    help_advanced = {"Rating Scale Guide"}
     help_essential = [l for l in help_all_labels if l not in help_advanced]
     _self_test_assert(
-        len(help_all_labels) == 10,
-        f"Help tab label count drifted: {len(help_all_labels)} != 10",
+        len(help_all_labels) == 8,
+        f"Help tab label count drifted: {len(help_all_labels)} != 8",
     )
     _self_test_assert(
         len(help_essential) == 7,
@@ -61270,8 +64141,8 @@ def _self_test_essential_mode_tab_filters() -> None:
         "Report checks Essential-visible set drifted from master list",
     )
 
-    # Report tab exports-group: 2 labels total, 1 in Essential.
-    report_exports_all = ["Stan Code", "Publication Document"]
+    # Report exports are Python-native in both display densities.
+    report_exports_all = ["Publication Document"]
     report_exports_essential = ["Publication Document"]
     _self_test_assert(
         set(report_exports_essential).issubset(set(report_exports_all)),
@@ -62514,6 +65385,107 @@ message("Wrote r_crosscheck_status.csv, r_crosscheck_package_versions.csv, and r
     return 0
 
 
+_DEMO_ARTIFACT_REFERENCE_REPLACEMENTS: dict[str, str] = {
+    "MFRM_Tables.zip": "MFRM_Demo_Report.zip",
+    "MFRM_Report.xlsx": "MFRM_Demo_Report.xlsx",
+    "MFRM_Report.html": "MFRM_Demo_Report.html",
+    "MFRM_Publication_Figures.zip": "MFRM_Demo_Publication_Figures.zip",
+    "MFRM_Manuscript_Binder.zip": "MFRM_Demo_Manuscript_Binder.zip",
+    "MFRM_OSF_Package.zip": "MFRM_Demo_Report.zip",
+    "mfrm_method_appendix.md": "method_appendix.md",
+    "mfrm_manuscript_template.md": "manuscript_template.md",
+    "mfrm_manuscript_handoff.md": "manuscript_handoff.md",
+    "analysis_identity.json": "final_report_readiness_analysis_identity.json",
+    "evidence_records.json": "final_report_readiness_evidence_contract.json",
+}
+_DEMO_ARTIFACT_REFERENCE_PATTERN = re.compile(
+    r"(?<![A-Za-z0-9_.-])(?:"
+    + "|".join(
+        re.escape(name)
+        for name in sorted(
+            _DEMO_ARTIFACT_REFERENCE_REPLACEMENTS,
+            key=len,
+            reverse=True,
+        )
+    )
+    + r")(?![A-Za-z0-9_.-])"
+)
+
+
+def _demo_artifact_reference_text(value: object) -> object:
+    """Map app download names to files that the deterministic demo creates."""
+    if not isinstance(value, str) or not value:
+        return value
+    return _DEMO_ARTIFACT_REFERENCE_PATTERN.sub(
+        lambda match: _DEMO_ARTIFACT_REFERENCE_REPLACEMENTS[match.group(0)],
+        value,
+    )
+
+
+def _demo_artifact_reference_frame(frame: pd.DataFrame) -> pd.DataFrame:
+    """Return a copy whose user-facing artifact references use the demo profile."""
+    if not isinstance(frame, pd.DataFrame):
+        return frame
+    profiled = frame.copy()
+    profiled.attrs = dict(frame.attrs)
+    for column in profiled.columns:
+        profiled[column] = profiled[column].map(_demo_artifact_reference_text)
+    return profiled
+
+
+def _demo_artifact_reference_frames(
+    frames: dict[str, pd.DataFrame],
+) -> OrderedDict[str, pd.DataFrame]:
+    """Apply the demo artifact profile without changing normal app exports."""
+    return OrderedDict(
+        (str(name), _demo_artifact_reference_frame(frame))
+        for name, frame in (frames or {}).items()
+        if isinstance(frame, pd.DataFrame)
+    )
+
+
+def _demo_artifact_reference_assets(
+    assets: dict[str, object],
+) -> dict[str, object]:
+    """Profile string assets while leaving binary figure assets untouched."""
+    return {
+        str(name): _demo_artifact_reference_text(value)
+        for name, value in (assets or {}).items()
+    }
+
+
+def _refresh_demo_export_privacy_manifest(
+    frames: dict[str, pd.DataFrame],
+) -> None:
+    """Document every table in the synthetic demo export, including itself."""
+    frames.pop("export_privacy_manifest", None)
+    rows = [
+        {
+            "Frame": str(name),
+            "Rows": int(len(frame)),
+            "Columns": int(frame.shape[1]),
+            "Status": "included_synthetic_demo",
+            "Reason": (
+                "Included in the deterministic demo export; the demo uses "
+                "built-in synthetic data only."
+            ),
+        }
+        for name, frame in frames.items()
+        if isinstance(frame, pd.DataFrame)
+    ]
+    rows.append({
+        "Frame": "export_privacy_manifest",
+        "Rows": len(rows) + 1,
+        "Columns": 5,
+        "Status": "included",
+        "Reason": (
+            "Documents the synthetic demo export. This status does not apply "
+            "to user-supplied or confidential data."
+        ),
+    })
+    frames["export_privacy_manifest"] = pd.DataFrame(rows)
+
+
 def build_demo_report_frames(
     result: dict,
     diagnostics: dict,
@@ -62529,7 +65501,7 @@ def build_demo_report_frames(
             "Dataset": "built-in synthetic sample",
             "Model": result.get("config", {}).get("model"),
             "Method": result.get("config", {}).get("method"),
-            "RuntimeBoundary": "standalone Python; no mfrmr/rpy2/Rscript/FACETS/TAM/sirt/mirt runtime call",
+            "RuntimeBoundary": "standalone Python engine only",
             "PrivacyNote": "The demo uses synthetic built-in data only.",
             "ReadFirst": "Open manuscript_handoff.md, then report_ready_summary_panel, critical_final_review_panel, status_rationale_drilldown, result_reading_path, operational_decision_board, reporting_action_bridge, manuscript_handoff_checklist, publication_gate_summary, submission_action_plan, case_interpretation_guidance, final_report_readiness, manuscript_claim_guide, apa_report_sentence_audit, manuscript_template.md, visual_interpretation_checklist, visual_claim_guardrails, measures, and category_probability_curves.",
         }
@@ -62544,7 +65516,11 @@ def build_demo_report_frames(
         ("convergence", convergence),
         ("score_map", score_map),
     ))
-    publication_gate = build_publication_gate_summary(result, diagnostics, all_bias_results or {})
+    publication_gate = _standalone_export_rows(
+        build_publication_gate_summary(result, diagnostics, all_bias_results or {}),
+        column="GateArea",
+        excluded_values=_STANDALONE_EXPORT_EXCLUDED_MANUSCRIPT_AREAS,
+    )
     report_ready_summary = build_report_ready_summary_panel(result, diagnostics, all_bias_results or {})
     role_action_memos = build_role_based_action_memos(result, diagnostics, all_bias_results or {})
     role_action_checklist = build_role_based_action_checklist(result, diagnostics, all_bias_results or {})
@@ -62573,14 +65549,38 @@ def build_demo_report_frames(
         result_reading_path=reading_path,
         operational_decision_board=operational_board,
     )
-    action_plan = build_submission_action_plan(result, diagnostics, all_bias_results or {})
+    action_plan = _standalone_export_rows(
+        build_submission_action_plan(result, diagnostics, all_bias_results or {}),
+        column="Topic",
+        excluded_values=_STANDALONE_EXPORT_EXCLUDED_MANUSCRIPT_AREAS,
+    )
     case_guidance = build_case_interpretation_guidance(result, diagnostics, all_bias_results or {})
     readiness = build_final_report_readiness(result, diagnostics, all_bias_results or {})
-    claim_guide = build_manuscript_claim_guide(result, diagnostics, all_bias_results or {})
-    claim_evidence = build_claim_to_evidence_matrix(result, diagnostics, all_bias_results or {})
-    apa_sentence_audit = build_apa_report_sentence_audit(result, diagnostics, all_bias_results=all_bias_results or {})
+    claim_guide = _standalone_export_rows(
+        build_manuscript_claim_guide(result, diagnostics, all_bias_results or {}),
+        column="ManuscriptArea",
+        excluded_values=_STANDALONE_EXPORT_EXCLUDED_MANUSCRIPT_AREAS,
+    )
+    claim_evidence = _standalone_export_rows(
+        build_claim_to_evidence_matrix(result, diagnostics, all_bias_results or {}),
+        column="ManuscriptArea",
+        excluded_values=_STANDALONE_EXPORT_EXCLUDED_MANUSCRIPT_AREAS,
+    )
+    apa_sentence_audit = _standalone_export_rows(
+        build_apa_report_sentence_audit(
+            result,
+            diagnostics,
+            all_bias_results=all_bias_results or {},
+        ),
+        column="LinkedManuscriptArea",
+        excluded_values=_STANDALONE_EXPORT_EXCLUDED_MANUSCRIPT_AREAS,
+    )
     assumption_audit = build_statistical_assumption_audit(result, diagnostics, all_bias_results or {})
-    method_ref_audit = build_method_reference_audit()
+    method_ref_audit = _standalone_export_rows(
+        build_method_reference_audit(),
+        column="MethodArea",
+        excluded_values=_STANDALONE_EXPORT_EXCLUDED_METHOD_AREAS,
+    )
     bias_inference_audit = build_bias_inference_audit(all_bias_results or {}, result, diagnostics)
     prior_plan = build_mml_prior_sensitivity_plan(result)
     _frame_bundle.add_frames(frames, (
@@ -62604,6 +65604,8 @@ def build_demo_report_frames(
         ("bias_inference_audit", bias_inference_audit),
         ("mml_prior_sd_sensitivity_plan", prior_plan),
     ))
+    _add_mml_prior_sensitivity_export_frames(frames, result)
+    _add_final_readiness_contract_frames(frames, readiness)
     uncertainty = diagnostics.get("uncertainty", {})
     if isinstance(uncertainty, dict):
         unc_summary = uncertainty.get("summary", pd.DataFrame())
@@ -62627,59 +65629,16 @@ def build_demo_report_frames(
         diagnostics,
         all_bias_results or {},
         public_export_mode=True,
+        artifact_profile="demo",
     )
     _frame_bundle.add_frame(frames, "manuscript_handoff_checklist", handoff_checklist)
     _frame_bundle.add_frames(frames, (
         ("visual_interpretation_checklist", visual_interpretation_checklist()),
         ("visual_claim_guardrails", visual_claim_guardrail_table()),
         ("visual_method_evidence", visual_method_evidence_table()),
-        ("public_beta_limitations", public_beta_limitations_table()),
-        ("external_simulation_reference_inventory", external_simulation_reference_inventory()),
-        ("external_simulation_template_inventory", external_simulation_template_inventory()),
-        ("reproducibility_script_matrix", reproducibility_script_export_matrix()),
-        ("bayesian_mfrm_stan_refinement_plan", bayesian_mfrm_stan_refinement_plan()),
-        ("stan_reproducibility_archive_contract", stan_reproducibility_archive_contract_table(public_export_mode=True)),
-        ("stan_posterior_reproducibility_route", guided_stan_posterior_reproducibility_help_table()),
-        ("stan_posterior_handoff_checklist", stan_posterior_handoff_checklist()),
-        ("stan_run_manifest_template", stan_run_manifest_template()),
+        ("public_beta_limitations", standalone_release_limitations_table()),
     ), allow_empty=True)
-    generic_stan_export = build_generic_mfrm_stan_data_export(result)
-    if generic_stan_export.get("available"):
-        _frame_bundle.add_frames(frames, (
-            ("mfrm_stan_data_manifest", generic_stan_export["manifest"]),
-            ("mfrm_stan_data_dictionary", generic_stan_export["data_dictionary"]),
-            ("mfrm_stan_id_index_map", generic_stan_export["id_map"]),
-            ("mfrm_stan_prior_guidance", generic_stan_export["prior_guidance"]),
-            ("mfrm_stan_prior_sensitivity_grid", generic_stan_export["prior_sensitivity_grid"]),
-            ("mfrm_stan_prior_decision_log_template", stan_prior_decision_log_template(
-                sigma_theta_prior_scale=float(generic_stan_export["stan_data"].get("sigma_theta_prior_scale", 2.5)),
-                facet_prior_scale=float(generic_stan_export["stan_data"].get("facet_prior_scale", 2.0)),
-                step_prior_scale=float(generic_stan_export["stan_data"].get("step_prior_scale", 5.0)),
-            )),
-        ), allow_empty=True)
-    try:
-        stan_complete_manifest = pd.read_csv(io.StringIO(
-            stan_reproducibility_package_assets(
-                result,
-                include_row_level=False,
-            ).get("mfrm_complete_stan_reproducibility_manifest.csv", "")
-        ))
-        _frame_bundle.add_frame(frames, "mfrm_complete_stan_reproducibility_manifest", stan_complete_manifest)
-    except Exception:
-        pass
-    uto_stan_export = build_uto_bayesian_mfrm_stan_data_export(result)
-    if uto_stan_export.get("available"):
-        _frame_bundle.add_frames(frames, (
-            ("mfrm_uto_bayesian_mfrm_design_audit", uto_stan_export["design_audit"]),
-            ("mfrm_uto_bayesian_mfrm_claim_wording", uto_stan_export["claim_wording"]),
-            ("mfrm_uto_bayesian_mfrm_mapping_manifest", uto_stan_export["manifest"]),
-            ("mfrm_uto_bayesian_mfrm_data_dictionary", uto_stan_export["data_dictionary"]),
-            ("mfrm_uto_bayesian_mfrm_id_index_map", uto_stan_export["id_map"]),
-        ), allow_empty=True)
     _frame_bundle.add_frames(frames, (
-        ("mfrmr_015_migration_coverage", mfrmr_015_migration_coverage_table()),
-        ("mfrmr_016_migration_coverage", mfrmr_016_migration_coverage_table()),
-        ("mfrmr_020_migration_coverage", mfrmr_020_migration_coverage_table()),
         ("public_release_readiness", public_release_readiness_table()),
     ), allow_empty=True)
     person = result.get("facets", {}).get("person", pd.DataFrame())
@@ -62783,7 +65742,9 @@ def build_demo_report_frames(
             _frame_bundle.add_frame(frames, dff_frame_name, dff_tbl)
         summary_frame_name = _frame_bundle.safe_frame_key("bias", pair_key, max_label_length=40) + "_summary"
         _frame_bundle.add_frame(frames, summary_frame_name, summary_tbl)
-    return frames
+    demo_frames = _demo_artifact_reference_frames(frames)
+    _refresh_demo_export_privacy_manifest(demo_frames)
+    return demo_frames
 
 
 def export_demo_report(output_dir: str) -> int:
@@ -62822,6 +65783,7 @@ def export_demo_report(output_dir: str) -> int:
 
     frames = build_demo_report_frames(result, diagnostics, data, all_bias_results=all_bias_results)
     _frame_bundle.add_frame(frames, "visualization_settings", build_visualization_preferences_table())
+    _refresh_demo_export_privacy_manifest(frames)
     method_appendix = generate_method_appendix_text(result, diagnostics, all_bias_results=all_bias_results)
     manuscript_template = generate_manuscript_reporting_template(result, diagnostics, all_bias_results=all_bias_results)
     manuscript_handoff = generate_manuscript_handoff_markdown(
@@ -62829,6 +65791,7 @@ def export_demo_report(output_dir: str) -> int:
         diagnostics,
         all_bias_results=all_bias_results,
         public_export_mode=True,
+        artifact_profile="demo",
     )
     report_ready_decision_brief = generate_report_ready_decision_brief(
         result,
@@ -62873,7 +65836,14 @@ def export_demo_report(output_dir: str) -> int:
         manuscript_claim_guide=frames.get("manuscript_claim_guide", pd.DataFrame()),
     )
     category_collapse_draft = generate_category_collapse_sensitivity_draft(result, diagnostics)
-    demo_text_assets = {
+    demo_readiness = frames.get("final_report_readiness", pd.DataFrame())
+    demo_evidence_assets = build_evidence_contract_text_assets(result, demo_readiness)
+    demo_python_repro_assets = python_native_reproducibility_assets(
+        result,
+        diagnostics,
+        all_bias_results,
+    )
+    demo_text_assets = _demo_artifact_reference_assets({
         "manuscript_handoff.md": manuscript_handoff,
         "report_ready_decision_brief.md": report_ready_decision_brief,
         "apa_results_paragraph_draft.md": apa_results_paragraph_draft,
@@ -62885,12 +65855,9 @@ def export_demo_report(output_dir: str) -> int:
         "manuscript_template.md": manuscript_template,
         "apa_category_collapse_sensitivity_draft.md": category_collapse_draft,
         "visualization_settings.json": _visualization_preferences_json(),
-        **external_simulation_template_scripts(),
-        **bayesian_stan_runner_templates(),
-        **yardstick_reproducibility_scripts(),
-        **stan_data_export_assets(result, include_row_level=True),
-        **stan_reproducibility_package_assets(result, include_row_level=True),
-    }
+        **demo_evidence_assets,
+        **demo_python_repro_assets,
+    })
     for name, frame in frames.items():
         frame.to_csv(out_dir / f"{name}.csv", index=False)
     (out_dir / "MFRM_Demo_Report.xlsx").write_bytes(to_excel_bytes(frames))
@@ -62900,25 +65867,8 @@ def export_demo_report(output_dir: str) -> int:
         title="MFRM_Demo_Report",
         text_assets=demo_text_assets,
     ))
-    (out_dir / "manuscript_handoff.md").write_text(manuscript_handoff, encoding="utf-8")
-    (out_dir / "report_ready_decision_brief.md").write_text(report_ready_decision_brief, encoding="utf-8")
-    (out_dir / "apa_results_paragraph_draft.md").write_text(apa_results_paragraph_draft, encoding="utf-8")
-    (out_dir / "role_based_action_memos.md").write_text(role_based_action_memos_md, encoding="utf-8")
-    (out_dir / "role_based_action_checklist.md").write_text(role_based_action_checklist_md, encoding="utf-8")
-    (out_dir / "critical_final_review.md").write_text(critical_final_review_md, encoding="utf-8")
-    (out_dir / "method_appendix.md").write_text(method_appendix, encoding="utf-8")
-    (out_dir / "manuscript_template.md").write_text(manuscript_template, encoding="utf-8")
-    (out_dir / "apa_category_collapse_sensitivity_draft.md").write_text(category_collapse_draft, encoding="utf-8")
-    for name, script_text in external_simulation_template_scripts().items():
-        (out_dir / name).write_text(script_text, encoding="utf-8")
-    for name, script_text in bayesian_stan_runner_templates().items():
-        (out_dir / name).write_text(script_text, encoding="utf-8")
-    for name, script_text in yardstick_reproducibility_scripts().items():
-        (out_dir / name).write_text(script_text, encoding="utf-8")
-    for name, asset_text in stan_data_export_assets(result, include_row_level=True).items():
-        (out_dir / name).write_text(asset_text, encoding="utf-8")
-    for name, asset_text in stan_reproducibility_package_assets(result, include_row_level=True).items():
-        (out_dir / name).write_text(asset_text, encoding="utf-8")
+    for name, asset_text in demo_text_assets.items():
+        (out_dir / name).write_text(str(asset_text), encoding="utf-8")
 
     figure_html: dict[str, str] = {}
     figure_png: dict[str, bytes] = {}
@@ -62981,8 +65931,12 @@ def export_demo_report(output_dir: str) -> int:
             )
     figure_manifest = _figure_export_manifest(figure_html, figure_png)
     claim_evidence = frames.get("claim_to_evidence_matrix", pd.DataFrame())
-    visual_evidence_map = build_visual_evidence_map(figure_manifest, claim_evidence)
-    visual_qa_preflight = build_visual_qa_preflight(figure_manifest, visual_evidence_map)
+    visual_evidence_map = _demo_artifact_reference_frame(
+        build_visual_evidence_map(figure_manifest, claim_evidence)
+    )
+    visual_qa_preflight = _demo_artifact_reference_frame(
+        build_visual_qa_preflight(figure_manifest, visual_evidence_map)
+    )
     (out_dir / "visualization_settings.json").write_text(
         _visualization_preferences_json(),
         encoding="utf-8",
@@ -62995,12 +65949,23 @@ def export_demo_report(output_dir: str) -> int:
         )
     if isinstance(visual_evidence_map, pd.DataFrame) and not visual_evidence_map.empty:
         _frame_bundle.add_frame(frames, "visual_evidence_map", visual_evidence_map)
-        visual_evidence_map.to_csv(out_dir / "visual_evidence_map.csv", index=False)
         if isinstance(visual_qa_preflight, pd.DataFrame) and not visual_qa_preflight.empty:
             _frame_bundle.add_frame(frames, "visual_qa_preflight", visual_qa_preflight)
+        _refresh_demo_export_privacy_manifest(frames)
+        visual_evidence_map.to_csv(out_dir / "visual_evidence_map.csv", index=False)
+        if isinstance(visual_qa_preflight, pd.DataFrame) and not visual_qa_preflight.empty:
             visual_qa_preflight.to_csv(out_dir / "visual_qa_preflight.csv", index=False)
+        frames["export_privacy_manifest"].to_csv(
+            out_dir / "export_privacy_manifest.csv",
+            index=False,
+        )
+        visual_caption_drafts = str(
+            _demo_artifact_reference_text(
+                generate_visual_caption_drafts(visual_evidence_map)
+            )
+        )
         (out_dir / "visual_caption_drafts.md").write_text(
-            generate_visual_caption_drafts(visual_evidence_map),
+            visual_caption_drafts,
             encoding="utf-8",
         )
         (out_dir / "MFRM_Demo_Report.xlsx").write_bytes(to_excel_bytes(frames))
@@ -63010,28 +65975,28 @@ def export_demo_report(output_dir: str) -> int:
             title="MFRM_Demo_Report",
             text_assets={
                 **demo_text_assets,
-                "visual_caption_drafts.md": generate_visual_caption_drafts(visual_evidence_map),
+                "visual_caption_drafts.md": visual_caption_drafts,
                 "visualization_settings.json": _visualization_preferences_json(),
             },
         ))
-    visual_binder_assets = build_visual_evidence_binder_assets(
+    visual_binder_assets = _demo_artifact_reference_assets(build_visual_evidence_binder_assets(
         figure_html,
         figure_png,
         figure_manifest,
         visual_evidence_map,
         claim_evidence,
         public_export_mode=True,
-    )
+    ))
     (out_dir / "MFRM_Demo_Visual_Evidence_Binder.zip").write_bytes(
         cached_mixed_asset_zip(visual_binder_assets, bytes_mapping_fingerprint(visual_binder_assets))
     )
-    binder_assets = build_manuscript_binder_assets(
+    binder_assets = _demo_artifact_reference_assets(build_manuscript_binder_assets(
         frames,
         demo_text_assets,
         figure_manifest=figure_manifest,
         visual_evidence_map=visual_evidence_map,
         public_export_mode=True,
-    )
+    ))
     (out_dir / "MFRM_Demo_Manuscript_Binder.zip").write_bytes(
         cached_mixed_asset_zip(binder_assets, bytes_mapping_fingerprint(binder_assets))
     )
@@ -63051,8 +66016,8 @@ def export_demo_report(output_dir: str) -> int:
     readme = f"""# MFRM Demo Report
 
 This folder was generated from the app's built-in synthetic sample data.
-It demonstrates the standalone Python workflow without calling `mfrmr`,
-`rpy2`, `Rscript`, FACETS, TAM, sirt, or mirt at runtime.
+It demonstrates the standalone Python workflow without calling an external
+estimation engine.
 
 ## Files to open first
 
@@ -63080,21 +66045,17 @@ It demonstrates the standalone Python workflow without calling `mfrmr`,
 22. `visual_interpretation_checklist.csv`: how to read each plot.
 23. `visual_claim_guardrails.csv`: safe wording, do-not-write boundaries, and required evidence for visual interpretations.
 24. `visual_method_evidence.csv`: methodological basis and readability rules for plots.
-21. `public_beta_limitations.csv`: what this beta release supports and does not claim.
-22. `external_simulation_reference_inventory.csv`: archived validation artifacts
-   to consult without bundling private data.
-23. `external_simulation_template_inventory.csv`: index of sanitized Python/R/Julia
-   external validation templates.
-23. `README_external_simulation_templates.md` and `simulation_validation_*`:
-   sanitized handoff scripts for optional external validation.
-24. `mfrmr_015_migration_coverage.csv` and `mfrmr_016_migration_coverage.csv`: how the mfrmr package feature surface through 0.1.6 maps to this Python app.
-25. `public_release_readiness.csv`: repository-level public release checklist.
-26. `category_probability_curves.csv`: long-form PCM curve data for the
+25. `public_beta_limitations.csv`: what this beta release supports and does not claim.
+26. `public_release_readiness.csv`: repository-level public release checklist.
+27. `mfrm_app_engine_runner.py`, `requirements.txt`, and
+   `mfrm_local_batch_workflow.md`: Python-native current-engine reproduction.
+28. `mfrm_jmle_self_contained.py`: portable Python JMLE check for this fitted design.
+29. `category_probability_curves.csv`: long-form PCM curve data for the
    averaged view and each Task level.
-27. `figure_manifest.csv`: manuscript-use notes and available formats for exported figures.
-28. `MFRM_Demo_Publication_Figures.zip`: publication-styled PNG/HTML figure bundle.
-29. `figures_html/`: interactive publication-styled diagnostic figures.
-30. `method_appendix.md`: reproducible method notes for this demo run.
+30. `figure_manifest.csv`: manuscript-use notes and available formats for exported figures.
+31. `MFRM_Demo_Publication_Figures.zip`: publication-styled PNG/HTML figure bundle.
+32. `figures_html/`: interactive publication-styled diagnostic figures.
+33. `method_appendix.md`: reproducible method notes for this demo run.
 
 ## Demo model
 
@@ -63236,22 +66197,13 @@ def run_doctor(json_output: bool = False) -> int:
 def run_release_check(json_output: bool = False) -> int:
     """Run static public-beta release readiness checks."""
     readiness = public_release_readiness_table()
-    limitations = public_beta_limitations_table()
-    migration = mfrmr_015_migration_coverage_table()
-    migration_016 = mfrmr_016_migration_coverage_table()
-    migration_020 = mfrmr_020_migration_coverage_table()
-    simulation_inventory = external_simulation_reference_inventory()
-    simulation_templates = external_simulation_template_inventory()
+    limitations = standalone_release_limitations_table()
     payload = {
         "release_status": "public beta / research preview",
         "app_version": APP_VERSION,
         "release_label": APP_RELEASE_LABEL,
         "readiness": readiness.to_dict(orient="records"),
         "limitations": limitations.to_dict(orient="records"),
-        "external_simulation_reference_inventory": simulation_inventory.to_dict(orient="records"),
-        "external_simulation_template_inventory": simulation_templates.to_dict(orient="records"),
-        "mfrmr_015_migration_coverage": migration.to_dict(orient="records"),
-        "mfrmr_016_migration_coverage": migration_016.to_dict(orient="records"),
     }
     if json_output:
         print(json.dumps(payload, indent=2, ensure_ascii=False))
@@ -63265,11 +66217,6 @@ def run_release_check(json_output: bool = False) -> int:
         print("\nPublic beta limitations:")
         for _, row in limitations.iterrows():
             print(f"- {row['Area']}: {row['PublicBetaStatus']} - {row['Boundary']}")
-        print(f"\nArchived validation artifact inventory rows: {len(simulation_inventory)}")
-        print(f"\nExternal validation template rows: {len(simulation_templates)}")
-        print(f"\nmfrmr 0.1.5 migration coverage rows: {len(migration)}")
-        print(f"mfrmr 0.1.6 migration coverage rows: {len(migration_016)}")
-        print(f"mfrmr 0.2.0 migration coverage rows: {len(migration_020)}")
     blocker_count = int((readiness["Status"].astype(str) == "Blocker").sum()) if "Status" in readiness.columns else 1
     return 1 if blocker_count else 0
 
@@ -63720,7 +66667,7 @@ def _self_test_facet_regularization() -> None:
             raise AssertionError(f"invalid regularization spec was accepted: {bad_spec}")
 
 
-def _self_test_mfrmr_016_audits_and_shrinkage() -> None:
+def _self_test_native_design_audits_and_shrinkage() -> None:
     data = pd.DataFrame({
         "Person": ["P1", "P1", "P2", "P2", "P3", "P3", "P4", "P4"],
         "Rater": ["R1", "R1", "R2", "R2", "R3", "R3", "R4", "R4"],
@@ -64425,14 +67372,11 @@ def run_self_tests() -> int:
         ("script support boundaries", _self_test_script_support_boundaries),
         ("reproducibility fingerprints", _self_test_reproducibility_fingerprints),
         ("cached static assets and exports", _self_test_cached_static_assets_and_exports),
-        ("cross-package validation plan", _self_test_cross_package_validation_plan),
         ("public beta release contract", _self_test_public_beta_release_contract),
         ("APA 7 reference list generator", _self_test_apa_reference_list),
         ("Word publication document builder", _self_test_publication_document_word),
         ("PDF publication document builder", _self_test_publication_document_pdf),
-        ("Posterior Viewer loaders / plots", _self_test_posterior_viewer_loaders),
         ("Unified chart guide library", _self_test_chart_guide_library),
-        ("Advanced-model Stan generators", _self_test_advanced_model_generators),
         ("Measure table rounding helper", _self_test_format_measure_table),
         ("Fit-column conditional styling", _self_test_style_fit_columns),
         ("MFRM quick-reference glossary", _self_test_mfrm_glossary),
@@ -64447,7 +67391,7 @@ def run_self_tests() -> int:
         ("Likelihood information criteria", _self_test_likelihood_information_criteria),
         ("DFF bias screening", _self_test_dff_bias_screening),
         ("Facet regularization", _self_test_facet_regularization),
-        ("mfrmr 0.1.6 audits and EB shrinkage", _self_test_mfrmr_016_audits_and_shrinkage),
+        ("native design audits and EB shrinkage", _self_test_native_design_audits_and_shrinkage),
         ("information curve contract", _self_test_information_curve_contract),
         ("FACETS d.f. / ZSTD alignment", _self_test_facets_df_zstd_alignment),
         ("model-choice AICc and Akaike weights", _self_test_model_choice_aicc_and_weights),
@@ -64457,15 +67401,12 @@ def run_self_tests() -> int:
         ("APA preset Markdown / HTML round-trip", _self_test_apa_presets_round_trip),
         ("DIMTEST nonparametric smoke", _self_test_dimtest_runs_on_smoke_fixture),
         ("Data-outlier detection", _self_test_data_outlier_detection),
-        ("Posterior NetCDF round-trip", _self_test_posterior_load_netcdf),
-        ("Posterior CmdStan CSV loader", _self_test_posterior_load_cmdstan_csvs),
         ("Config-JSON import whitelist", _self_test_config_json_import_whitelist),
         ("Run-history clear confirmation", _self_test_run_history_clear_confirmation),
         ("Readiness panel renders each severity", _self_test_readiness_panel_renders),
         ("MML free population-SD recovery", _self_test_mml_free_population_sd_recovery),
         ("MML population-SD help surfaces", _self_test_mml_population_sd_help_surfaces),
         ("Classical polytomous DIF screening", _self_test_classical_dif_screening),
-        ("Cross-engine validation bundle", _self_test_cross_engine_bundle),
         ("Person-fit lz* EAP population correction", _self_test_person_fit_eap_correction),
         ("MML step/threshold SE delta method", _self_test_mml_step_se),
     ]
@@ -65444,7 +68385,7 @@ _HELP_POPOVER_LIBRARY: dict[str, dict[str, str]] = {
             "• ZSTD > +2 → noisy (unpredictable).\n"
             "• ZSTD < −2 → over-fit (too predictable).\n"
             "• Cluster of misfit at similar measures → systematic issue.\n"
-            "• ZSTD is an app-side Wilson-Hilferty approximation; FACETS-specific df handling is not reproduced exactly."
+            "• RSM/PCM use FACETS/Wright-Masters d.f. by default; GPCM is labelled as a FACETS-style approximation."
         ),
         "watch": (
             "Zoom the hover tooltip on outliers to identify the specific "
@@ -65631,7 +68572,7 @@ _HELP_POPOVER_LIBRARY: dict[str, dict[str, str]] = {
         "watch": (
             "Pair with Pathway Map to see misfit in the measure × fit plane. "
             "Rows with few observations get unstable ZSTD regardless of fit. "
-            "FACETS-specific df handling is not reproduced exactly."
+            "RSM/PCM use FACETS/Wright-Masters d.f. by default; GPCM is a labelled FACETS-style approximation."
         ),
     },
     "facet_distribution": {
@@ -65708,6 +68649,23 @@ _HELP_POPOVER_LIBRARY: dict[str, dict[str, str]] = {
 }
 
 
+def _render_registered_popover_help_action(topic_key: str) -> bool:
+    """Render one activated exact popover-to-Help edge without ID guessing."""
+
+    help_link_id = _registered_popover_help_link_id(topic_key)
+    projection_id = _popover_return_projection_id(topic_key)
+    if help_link_id is None or projection_id is None:
+        return False
+    st.button(
+        t("help_nav.open_full_guide"),
+        key=f"mfrm_popover_open_full_guide_{topic_key}",
+        on_click=_open_registered_help_link,
+        args=(help_link_id, projection_id),
+        use_container_width=True,
+    )
+    return True
+
+
 def render_help_popover(topic_key: str, *, button_label: str | None = None) -> None:
     """Render a just-in-time contextual help popover next to a chart.
 
@@ -65743,6 +68701,7 @@ def render_help_popover(topic_key: str, *, button_label: str | None = None) -> N
             if topic.get("watch"):
                 st.markdown(f"**{watch_label}:** {topic['watch']}")
             st.caption(t("help.popover_more_caption_fallback"))
+            _render_registered_popover_help_action(topic_key)
         return
     with popover:
         st.markdown(f"### {topic.get('title', topic_key)}")
@@ -65751,6 +68710,7 @@ def render_help_popover(topic_key: str, *, button_label: str | None = None) -> N
         if topic.get("watch"):
             st.markdown(f"**{watch_label}.** {topic['watch']}")
         st.caption(t("help.popover_more_caption"))
+        _render_registered_popover_help_action(topic_key)
 
 
 def render_chart_guide(chart_name: str, *, expanded: bool = False) -> None:
@@ -65770,14 +68730,10 @@ def render_chart_guide(chart_name: str, *, expanded: bool = False) -> None:
 
 
 def render_onboarding_banner() -> None:
-    """Dismissible quickstart banner with a collapsible three-step guide.
+    """Action-first quickstart with an optional three-step explanation.
 
-    Shown above the tutorial for first-time users. The 3-step explanation
-    lives inside a Streamlit expander (default expanded, so first-time
-    visitors see the guide immediately, but the user can fold it after a
-    first read without dismissing the whole banner). The Run / Dismiss
-    buttons stay visible regardless of the expander state. The
-    ``Run with sample data`` button sets
+    The two actual starting choices remain visible while supporting copy is
+    collapsed. The ``Run with sample data`` button sets
     ``_onboarding_quickstart_fired`` so the estimation pipeline fires
     automatically without touching the sidebar. The banner disappears
     after either button is clicked and does not reappear for the rest of
@@ -65786,38 +68742,16 @@ def render_onboarding_banner() -> None:
     if st.session_state.get("_onboarding_dismissed", False):
         return
 
-    # Build the scenario summary dynamically so the banner stays in sync
-    # with SAMPLE_DATA_SCENARIOS -- adding a new scenario does not require
-    # editing the onboarding text.
-    n_scen = len(SAMPLE_DATA_SCENARIOS)
-    scen_lines: list[str] = []
-    for key, meta in SAMPLE_DATA_SCENARIOS.items():
-        name = meta["label"].split(" (")[0]  # strip the "(NxNxN)" parenthetical
-        n_obs_str = f"{meta['n_obs']:,} obs"
-        suffix = " (default)" if key == DEFAULT_SAMPLE_SCENARIO_KEY else ""
-        scen_lines.append(f"{name} ({n_obs_str}){suffix}")
-    scenario_summary = " · ".join(scen_lines)
-
     with st.container(border=True):
-        with st.expander(
-            t("onboarding.banner_steps_label"),
-            expanded=not st.session_state.get("_onboarding_steps_collapsed", False),
-        ):
-            st.markdown(
-                t(
-                    "onboarding.banner_steps_body",
-                    n_scen=n_scen,
-                    scenario_summary=scenario_summary,
-                )
-            )
-            st.caption(t("guided.first_run_route_caption"))
-            st.dataframe(guided_first_run_route_table(), width="stretch", hide_index=True)
+        st.markdown(f"### {t('onboarding.title')}")
+        st.caption(t("onboarding.choice_caption"))
         cols = st.columns([3, 1])
         if cols[0].button(
             t("onboarding.quickstart_button"),
             key="onboarding_quickstart",
             use_container_width=True,
             help=t("onboarding.quickstart_help"),
+            type="primary",
         ):
             st.session_state["_onboarding_dismissed"] = True
             st.session_state["_onboarding_quickstart_fired"] = True
@@ -65829,6 +68763,8 @@ def render_onboarding_banner() -> None:
         ):
             st.session_state["_onboarding_dismissed"] = True
             st.rerun()
+        with st.expander(t("onboarding.banner_steps_label"), expanded=False):
+            st.markdown(t("onboarding.banner_steps_body"))
 
 
 # ---------------------------------------------------------------------------
@@ -66857,12 +69793,28 @@ def render_posterior_viewer_mode() -> None:
             mime="text/csv",
         )
 
-    # Plot suite (tabs)
+    # Plot suite: render only the selected plot. Pair/ridge plots can be
+    # expensive on larger posterior draws, so avoid rebuilding the full suite
+    # on every Streamlit rerun.
     st.subheader("Plots")
-    plot_tabs = st.tabs([
-        "Trace", "Ridge", "Pair", "Forest", "Rhat / ESS",
-    ])
-    with plot_tabs[0]:
+    plot_panel_labels = {
+        "trace": "Trace",
+        "ridge": "Ridge",
+        "pair": "Pair",
+        "forest": "Forest",
+        "rhat_ess": "Rhat / ESS",
+    }
+    selected_plot_panel = st.selectbox(
+        "Plot panel",
+        options=list(plot_panel_labels),
+        index=0,
+        format_func=lambda panel_id: plot_panel_labels.get(str(panel_id), str(panel_id)),
+        key="posterior_plot_panel",
+        help="Only the selected posterior plot is rendered on each rerun.",
+    )
+    selected_plot_panel = selected_plot_panel or "trace"
+
+    if selected_plot_panel == "trace":
         fig = _posterior_trace_figure(payload, selected)
         if fig is not None:
             header_cols = st.columns([5, 1])
@@ -66874,26 +69826,26 @@ def render_posterior_viewer_mode() -> None:
             render_chart_guide("posterior_trace")
         else:
             st.info("Trace plot unavailable for the current selection.")
-    with plot_tabs[1]:
+    if selected_plot_panel == "ridge":
         fig = _posterior_ridge_figure(payload, selected)
         if fig is not None:
             st.plotly_chart(fig, width="stretch")
             render_chart_guide("posterior_ridge")
         else:
             st.info("Ridge plot unavailable (need ≥10 draws per parameter).")
-    with plot_tabs[2]:
+    if selected_plot_panel == "pair":
         fig = _posterior_pair_figure(payload, selected)
         if fig is not None:
             st.plotly_chart(fig, width="stretch")
         else:
             st.info("Pair plot needs at least 2 parameters.")
-    with plot_tabs[3]:
+    if selected_plot_panel == "forest":
         fig = _posterior_forest_figure(payload, selected)
         if fig is not None:
             st.plotly_chart(fig, width="stretch")
         else:
             st.info("Forest plot unavailable.")
-    with plot_tabs[4]:
+    if selected_plot_panel == "rhat_ess":
         fig = _posterior_rhat_ess_figure(payload, selected)
         if fig is not None:
             header_cols = st.columns([5, 1])
@@ -66915,45 +69867,34 @@ def render_posterior_viewer_mode() -> None:
 
 
 def main() -> None:
-    st.set_page_config(page_title="MFRM FACETS-mode", layout="wide")
+    st.set_page_config(
+        page_title="MFRM FACETS-mode",
+        page_icon="📐",
+        layout="wide",
+        initial_sidebar_state="expanded",
+    )
     _inject_desktop_readability_css()
+    _ensure_language_state()
 
     # Language selector at the top of the sidebar. The widget's ``key="lang"``
     # writes directly to ``st.session_state["lang"]``, which the ``t()`` helper
     # reads on every rerun, so the choice persists for the whole session.
+    language_labels = {
+        "en": t("sidebar.english"),
+        "ja": t("sidebar.japanese"),
+    }
     st.sidebar.radio(
         t("sidebar.language_label"),
         options=SUPPORTED_LANGS,
-        format_func=lambda code: t("sidebar.english") if code == "en" else t("sidebar.japanese"),
+        format_func=language_labels.__getitem__,
         index=SUPPORTED_LANGS.index(st.session_state.get("lang", DEFAULT_LANG))
             if st.session_state.get("lang", DEFAULT_LANG) in SUPPORTED_LANGS else 0,
         key="lang",
         horizontal=True,
+        on_change=_mark_language_switch,
     )
 
-    # Top-level app mode selector. Defaults to the estimation pipeline.
-    # The Posterior Viewer is an alternative "upload-and-inspect" mode
-    # for users who have already run Stan locally with the runner script
-    # this app provides, and want ShinyStan-like diagnostics and plots.
-    app_mode_options = ["FACETS-mode estimation", "Posterior Viewer (upload)"]
-    app_mode = st.sidebar.radio(
-        t("sidebar.app_mode_label"),
-        options=app_mode_options,
-        format_func=lambda v: t("sidebar.app_mode_facets") if v == "FACETS-mode estimation" else t("sidebar.app_mode_posterior"),
-        index=0,
-        key="app_top_level_mode",
-        help=t("sidebar.app_mode_help"),
-    )
-
-    # Mode-switch awareness: if the user jumps to Posterior Viewer while
-    # FACETS-mode results are in session_state, show a gentle caption so
-    # they know the results are preserved and will still be there when
-    # they switch back. Prevents the "did I lose my run?" panic.
-    if (
-        app_mode == "Posterior Viewer (upload)"
-        and "facets_mode_output" in st.session_state
-    ):
-        st.sidebar.caption(t("sidebar.posterior_preserved_note"))
+    app_mode = "FACETS-mode estimation"
 
     # Display-mode toggle (v0.2.5+) — Essential hides advanced diagnostic
     # sub-tabs and secondary expanders to reduce cognitive load for
@@ -66962,15 +69903,21 @@ def main() -> None:
     # so first-time users do not face the full 7-sub-tab Visuals section
     # and 10-sub-tab Help section on landing.
     view_density_options = ["Essential", "Full"]
+    view_density_labels = {
+        "Essential": t("sidebar.view_density_essential"),
+        "Full": t("sidebar.view_density_full"),
+    }
     st.sidebar.radio(
         t("sidebar.view_density_label"),
         options=view_density_options,
-        format_func=lambda v: t("sidebar.view_density_essential") if v == "Essential" else t("sidebar.view_density_full"),
+        format_func=view_density_labels.__getitem__,
         index=0,
         key="app_view_density",
         help=t("sidebar.view_density_help"),
         horizontal=True,
     )
+
+    help_state = render_persistent_help_launcher()
 
     # Keyboard shortcuts cheat sheet (collapsed) — always rendered so it
     # is one click away regardless of app mode.
@@ -66979,33 +69926,50 @@ def main() -> None:
     except Exception:
         pass
 
-    if app_mode == "Posterior Viewer (upload)":
-        render_posterior_viewer_mode()
+    language_fast_path = _consume_language_switch_fast_path(app_mode)
+    if language_fast_path and help_state.is_open:
+        help_state = _help_navigation.retain_route_for_locale_change(
+            help_state,
+            locale=st.session_state.get("lang", DEFAULT_LANG),
+        )
+        _set_help_route_state(help_state)
+    elif language_fast_path:
+        render_language_switch_fast_path()
         return
 
     st.title(t("app.title"))
     st.caption(t("app.subtitle_template", release_label=APP_RELEASE_LABEL, version=APP_VERSION))
     render_app_scope_badges(where="main")
-    render_data_privacy_notice(where="main")
+    active_source_id = st.session_state.get(
+        "data_source_flat",
+        f"scenario:{DEFAULT_SAMPLE_SCENARIO_KEY}",
+    )
+    render_data_privacy_notice(
+        where="main",
+        source_kind=_ux.classify_data_source(active_source_id),
+    )
 
-    # Dismissible onboarding banner with one-click "Run with sample data" button.
-    render_onboarding_banner()
+    if st.session_state.pop(_HELP_RETURNED_STATUS_KEY, False):
+        st.success(t("help_nav.returned_status"))
+    help_surface_active = render_persistent_help_surface(help_state)
 
-    # Tutorial before analysis
-    show_tutorial()
+    if not help_surface_active:
+        # Dismissible onboarding banner with one-click "Run with sample data" button.
+        render_onboarding_banner()
+
+        # Tutorial before analysis
+        show_tutorial()
 
     core = load_core_namespace()
     data = read_input_data(core)
     if data.empty:
-        st.info(t("app.no_input_info"))
+        if not help_surface_active:
+            st.info(t("app.no_input_info"))
         return
 
-    render_custom_simulation_preview_panel()
-
-    st.subheader(t("app.input_preview_header"))
-    render_input_overview(data)
-    st.dataframe(data.head(20), width="stretch")
-    run_facets_mode(core, data)
+    if not help_surface_active:
+        render_custom_simulation_preview_panel()
+    run_facets_mode(core, data, help_surface_active=help_surface_active)
 
 
 if __name__ == "__main__":
@@ -67028,9 +69992,4 @@ if __name__ == "__main__":
         if out_arg_idx >= len(sys.argv):
             raise SystemExit("--export-demo-report requires an output directory")
         raise SystemExit(export_demo_report(sys.argv[out_arg_idx]))
-    if "--export-parity-fixture" in sys.argv:
-        out_arg_idx = sys.argv.index("--export-parity-fixture") + 1
-        if out_arg_idx >= len(sys.argv):
-            raise SystemExit("--export-parity-fixture requires an output directory")
-        raise SystemExit(export_reference_parity_fixture(sys.argv[out_arg_idx]))
     main()

@@ -4,10 +4,12 @@ import json
 import zipfile
 
 import pandas as pd
+import pytest
 
 import streamlit_app as app
 
 
+@pytest.mark.legacy_compat
 def test_cross_package_validation_plan_contract():
     plan = app.cross_package_validation_plan()
     assert not plan.empty
@@ -173,7 +175,7 @@ def test_cross_package_validation_plan_contract():
     assert "slope-aware" in gpcm_row.iloc[0]["PythonStatus"].lower()
 
 
-def test_uto_bayesian_extension_is_traceable_in_claim_surfaces():
+def test_legacy_extensions_are_excluded_from_native_claim_surfaces():
     result = {
         "config": {"model": "RSM", "method": "JMLE", "facet_names": ["Rater", "Task"], "n_cat": 5},
         "prep": {"n_obs": 10, "n_person": 3, "rating_min": 0, "rating_max": 4},
@@ -181,21 +183,17 @@ def test_uto_bayesian_extension_is_traceable_in_claim_surfaces():
     diagnostics = {"obs": app.pd.DataFrame({"StdResidual": [0.0, 0.5]})}
 
     guide = app.build_manuscript_claim_guide(result, diagnostics, {})
-    assert "Bayesian / Uto-family extension" in guide["ManuscriptArea"].tolist()
-    uto_row = guide.loc[guide["ManuscriptArea"] == "Bayesian / Uto-family extension"].iloc[0]
-    assert uto_row["ClaimStatus"] == "Boundary"
-    assert "bayesian_mfrm_stan_refinement_plan.csv" in uto_row["EvidenceToReport"]
-    assert "stan_reproducibility_archive_contract.csv" in uto_row["EvidenceToReport"]
-    assert "stan_posterior_reproducibility_route.csv" in uto_row["EvidenceToReport"]
+    areas = set(guide["ManuscriptArea"].astype(str))
+    assert "Bayesian / Uto-family extension" not in areas
+    assert "External package comparison" not in areas
 
     matrix = app.build_claim_to_evidence_matrix(result, diagnostics, {})
-    matrix_row = matrix.loc[matrix["ManuscriptArea"] == "Bayesian / Uto-family extension"].iloc[0]
-    assert "bayesian_mfrm_stan_refinement_plan.csv" in matrix_row["PrimaryTables"]
-    assert "stan_reproducibility_archive_contract.csv" in matrix_row["PrimaryTables"]
-    assert "stan_posterior_reproducibility_route.csv" in matrix_row["PrimaryTables"]
-    assert "MFRM_Bayesian_Stan_Runners.zip" in matrix_row["ArchiveFiles"]
+    matrix_areas = set(matrix["ManuscriptArea"].astype(str))
+    assert "Bayesian / Uto-family extension" not in matrix_areas
+    assert "External package comparison" not in matrix_areas
 
 
+@pytest.mark.legacy_compat
 def test_stan_reproducibility_archive_contract_tracks_package_boundaries():
     public_contract = app.stan_reproducibility_archive_contract_table(public_export_mode=True)
     private_contract = app.stan_reproducibility_archive_contract_table(public_export_mode=False)
@@ -259,6 +257,7 @@ def _stan_export_fixture_result(model: str = "RSM", *, step_facet: str | None = 
     }
 
 
+@pytest.mark.legacy_compat
 def test_generic_stan_data_export_is_cmdstan_json_with_private_maps():
     result = _stan_export_fixture_result(model="PCM", step_facet="Task")
 
@@ -295,6 +294,7 @@ def test_generic_stan_data_export_is_cmdstan_json_with_private_maps():
     assert "sigma_theta_prior_scale" in export["prior_sensitivity_grid"].columns
 
 
+@pytest.mark.legacy_compat
 def test_stan_data_assets_respect_public_row_level_boundary():
     result = _stan_export_fixture_result()
 
@@ -335,6 +335,7 @@ def test_stan_data_assets_respect_public_row_level_boundary():
     assert "mfrm_stan_id_index_map.csv" not in public_zip_names
 
 
+@pytest.mark.legacy_compat
 def test_complete_stan_reproducibility_package_includes_models_priors_and_privacy_manifest():
     result = _stan_export_fixture_result(model="PCM", step_facet="Task")
 
@@ -379,6 +380,7 @@ def test_complete_stan_reproducibility_package_includes_models_priors_and_privac
     assert "mfrm_stan_data.json" not in public_zip_names
 
 
+@pytest.mark.legacy_compat
 def test_stan_prior_guidance_connects_defaults_to_sensitivity_variants():
     guidance = app.stan_prior_setting_guidance(
         sigma_theta_prior_scale=2.5,
@@ -411,6 +413,7 @@ def test_stan_prior_guidance_connects_defaults_to_sensitivity_variants():
     assert wide["sigma_theta_prior_scale"] > 2.5
 
 
+@pytest.mark.legacy_compat
 def test_stan_manifest_handoff_tables_and_parser_validate_run_identity():
     checklist = app.stan_posterior_handoff_checklist()
     template = app.stan_run_manifest_template()
@@ -488,6 +491,7 @@ def test_stan_manifest_handoff_tables_and_parser_validate_run_identity():
     assert mismatch_checks.loc["Posterior CSV hashes", "Status"] == "Review"
 
 
+@pytest.mark.legacy_compat
 def test_stan_manifest_csv_upload_accepts_field_value_rows():
     csv_upload = io.BytesIO(
         "\n".join([
@@ -506,6 +510,7 @@ def test_stan_manifest_csv_upload_accepts_field_value_rows():
     assert int(flat["chains"]) == 4
 
 
+@pytest.mark.legacy_compat
 def test_posterior_viewer_example_package_matches_manifest_contract():
     assets = app.posterior_viewer_example_package_assets()
 
@@ -603,11 +608,285 @@ def test_facets_yardstick_uses_text_first_columns_and_thresholds():
     assert tick_traces
 
 
+def test_plot_label_lookup_supports_plotnumber_style_ids():
+    plot_rows = pd.DataFrame({
+        "Role": ["FacetElement", "FacetElement", "FacetElement", "Threshold"],
+        "Facet": ["Rater", "Rater", "Criterion", "Common"],
+        "RawLabel": ["Rater with a very long display name", "R2", "Grammar", "Step_1"],
+        "DisplayLabel": ["Rater with a very long display name", "R2", "Grammar", "0|1"],
+        "PlotColumn": ["Rater", "Rater", "Criterion", "Thresholds"],
+    })
+
+    lookup = app.build_plot_label_lookup(plot_rows, label_mode="Number", max_chars=12)
+
+    assert lookup["PlotLabelID"].tolist() == ["R001", "R002", "C001", "TH001"]
+    assert lookup["DisplayLabel"].tolist() == ["R001", "R002", "C001", "TH001"]
+    assert lookup.loc[0, "PlotLabelShort"].endswith("...")
+    assert lookup.loc[3, "PlotLabelFull"] == "0|1"
+
+
+def test_krippendorff_alpha_is_one_for_perfect_shared_scores():
+    obs = pd.DataFrame({
+        "Person": ["P1", "P1", "P2", "P2", "P3", "P3"],
+        "Task": ["T1", "T1", "T1", "T1", "T1", "T1"],
+        "Rater": ["A", "B", "A", "B", "A", "B"],
+        "Observed": [1, 1, 2, 2, 3, 3],
+    })
+
+    out = app.calc_krippendorff_alpha(
+        obs,
+        ["Person", "Task", "Rater"],
+        "Rater",
+        metric="nominal",
+    )
+    summary = out["summary"].iloc[0]
+
+    assert abs(summary["KrippendorffAlpha"] - 1.0) < 1e-12
+    assert summary["Status"] == "Ready"
+    assert summary["PairableUnits"] == 3
+    assert not out["coverage"].empty
+
+
+def test_krippendorff_alpha_flags_systematic_disagreement():
+    obs = pd.DataFrame({
+        "Person": ["P1", "P1", "P2", "P2", "P3", "P3", "P4", "P4"],
+        "Task": ["T1"] * 8,
+        "Rater": ["A", "B", "A", "B", "A", "B", "A", "B"],
+        "Observed": [1, 3, 3, 1, 1, 3, 3, 1],
+    })
+
+    out = app.calc_krippendorff_alpha(
+        obs,
+        ["Person", "Task", "Rater"],
+        "Rater",
+        metric="interval",
+    )
+    alpha = float(out["summary"].iloc[0]["KrippendorffAlpha"])
+
+    assert alpha < 0.0
+    assert out["summary"].iloc[0]["Status"] == "Review"
+
+
+def test_krippendorff_alpha_handles_missing_and_by_facet_exports():
+    obs = pd.DataFrame({
+        "Person": ["P1", "P1", "P2", "P3", "P3"],
+        "Task": ["T1", "T1", "T1", "T1", "T1"],
+        "Rater": ["A", "B", "A", "A", "B"],
+        "Observed": [1, 1, 2, 1, 2],
+    })
+
+    out = app.calc_krippendorff_alpha(
+        obs,
+        ["Person", "Task", "Rater"],
+        "Rater",
+        metric="ordinal",
+    )
+    summary = out["summary"].iloc[0]
+    assert summary["PairableUnits"] == 2
+    assert summary["UnitsWithSingleRating"] == 1
+    assert "Caveat" in out["summary"].columns
+
+    all_facets = app.calc_krippendorff_alpha_by_facet(obs, ["Person", "Task", "Rater"])
+    assert not all_facets.empty
+    assert {"ordinal", "nominal", "interval"}.issubset(set(all_facets["DistanceMetric"]))
+
+
+def _scoring_qc_fixture(*, low_agreement: bool = False):
+    if low_agreement:
+        observed = [1, 3, 3, 1, 1, 3, 3, 1]
+    else:
+        observed = [1, 1, 2, 2, 3, 3, 2, 2]
+    obs = pd.DataFrame({
+        "Person": ["P1", "P1", "P2", "P2", "P3", "P3", "P4", "P4"],
+        "Rater": ["A", "B", "A", "B", "A", "B", "A", "B"],
+        "Criterion": ["C1"] * 8,
+        "Observed": observed,
+    })
+    result = {
+        "config": {
+            "facet_names": ["Rater", "Criterion"],
+            "model": "RSM",
+            "method": "JMLE",
+        },
+        "prep": {
+            "rating_min": 1,
+            "rating_max": 3,
+        },
+    }
+    diagnostics = {
+        "obs": obs,
+        "fit": pd.DataFrame({
+            "Facet": ["Rater", "Rater"],
+            "Level": ["A", "B"],
+            "Infit": [1.0, 1.0],
+            "Outfit": [1.0, 1.0],
+            "InfitZSTD": [0.0, 0.0],
+            "OutfitZSTD": [0.0, 0.0],
+        }),
+    }
+    diagnostics["krippendorff_alpha"] = app.calc_krippendorff_alpha_by_facet(
+        obs,
+        ["Person", "Rater", "Criterion"],
+    )
+    return result, diagnostics
+
+
+def test_scoring_consistency_decision_contract_and_bundle_exports():
+    result, diagnostics = _scoring_qc_fixture()
+
+    decision = app.build_scoring_consistency_decision(
+        result,
+        diagnostics,
+        ["Rater", "Criterion"],
+        rater_facet="Rater",
+    )
+
+    assert not decision.empty
+    assert {
+        "DecisionArea",
+        "Status",
+        "PrimaryEvidence",
+        "RecommendedAction",
+        "APAReporting",
+        "EvidenceFile",
+        "DoNotClaim",
+        "ReportBlocking",
+        "DecisionRule",
+        "PlainLanguageSummary",
+        "NextCheckpoint",
+        "FACETSCrosswalk",
+        "PrimaryAudience",
+    }.issubset(decision.columns)
+    assert "Overall scoring consistency" in decision["DecisionArea"].tolist()
+    assert "Krippendorff alpha" in decision["DecisionArea"].tolist()
+
+    bundle = app.build_result_bundle_frames(result, diagnostics)
+    assert "scoring_consistency_decision" in bundle
+    assert "quality_control_recommendations" in bundle
+    assert "quality_control_todo_checklist" in bundle
+    assert "scoring_quality_first_read_summary" in bundle
+    assert "scoring_quality_term_guide" in bundle
+    assert "help_reference_coverage" in bundle
+    assert "krippendorff_alpha_interpretation" in bundle
+    assert "report_ready_summary_panel" in bundle
+    assert "role_based_action_memos" in bundle
+    assert "role_based_action_checklist" in bundle
+    assert "critical_final_review_panel" in bundle
+    assert "status_rationale_drilldown" in bundle
+    assert "result_reading_path" in bundle
+    assert "operational_decision_board" in bundle
+    assert "reporting_action_bridge" in bundle
+    assert "category_collapse_action_center" in bundle
+    assert "rating_scale_recode_candidates" in bundle
+    assert "rating_scale_decision_support" in bundle
+
+
+def test_quality_control_recommendations_prioritize_rater_training_on_low_alpha():
+    result, diagnostics = _scoring_qc_fixture(low_agreement=True)
+
+    qc = app.build_quality_control_recommendations(
+        result,
+        diagnostics,
+        ["Rater", "Criterion"],
+        rater_facet="Rater",
+    )
+    rater_training = qc.loc[qc["QCDecision"] == "Rater training"].iloc[0]
+
+    assert rater_training["Recommendation"] == "Prioritize"
+    assert rater_training["Priority"] == "High"
+    assert rater_training["OwnerRole"] == "Scoring manager"
+    assert "CompletionCriterion" in qc.columns
+    assert "Krippendorff" in " ".join(
+        app.build_krippendorff_alpha_interpretation(result, diagnostics)["ReportWording"].astype(str)
+    )
+
+
+def test_quality_control_todo_checklist_is_checkbox_ready_and_blocks_low_evidence():
+    result, diagnostics = _scoring_qc_fixture(low_agreement=True)
+
+    todo = app.build_quality_control_todo_checklist(
+        result,
+        diagnostics,
+        ["Rater", "Criterion"],
+        rater_facet="Rater",
+    )
+
+    assert not todo.empty
+    assert {
+        "Done",
+        "Step",
+        "ToDoItem",
+        "BlockingForReport",
+        "NeedsCaveat",
+        "CompletionCriterion",
+        "EvidenceToOpen",
+        "ClaimUnlocked",
+        "FACETSCrosswalk",
+    }.issubset(todo.columns)
+    assert todo["Done"].eq(False).all()
+    assert todo["BlockingForReport"].astype(bool).any()
+    assert "Finalize APA scoring-quality wording" in todo["ToDoItem"].tolist()
+
+
+def test_scoring_quality_first_read_summary_points_to_next_action():
+    result, diagnostics = _scoring_qc_fixture(low_agreement=True)
+
+    summary = app.build_scoring_quality_first_read_summary(
+        result,
+        diagnostics,
+        ["Rater", "Criterion"],
+        rater_facet="Rater",
+    )
+
+    assert not summary.empty
+    row = summary.iloc[0]
+    assert row["ReadinessLabel"] == "Do not report yet"
+    assert row["CanUseApaDraft"] == "No"
+    assert int(row["BlockingItems"]) > 0
+    assert row["NextAction"]
+    assert row["FirstEvidenceToOpen"]
+
+
+def test_scoring_quality_term_guide_covers_agreement_fit_and_category_terms():
+    guide = app.scoring_quality_term_guide()
+
+    assert not guide.empty
+    terms = set(guide["Term"])
+    assert {"Exact agreement", "Krippendorff alpha", "Rater fit/severity", "Category collapse"}.issubset(terms)
+    assert {"PlainMeaning", "WhyItMatters", "LookAt", "DoNotConfuseWith"}.issubset(guide.columns)
+
+
+def test_apa_scoring_quality_draft_is_conservative_and_report_ready():
+    result, diagnostics = _scoring_qc_fixture()
+    decision = app.build_scoring_consistency_decision(result, diagnostics, ["Rater", "Criterion"], rater_facet="Rater")
+    qc = app.build_quality_control_recommendations(result, diagnostics, ["Rater", "Criterion"], rater_facet="Rater")
+
+    draft = app.generate_apa_scoring_quality_draft(result, diagnostics, decision, qc)
+
+    assert "# APA Scoring Quality Draft" in draft
+    assert "Krippendorff" in draft
+    assert "MFRM" in draft
+    assert "Category collapse" in draft
+    assert "Quality-control gate" in draft
+    assert "First-read summary" in draft
+    assert "FACETS" in draft
+    assert "help_reference_coverage.csv" in draft
+    assert "Krippendorff, 2004" in draft
+    assert "Do not overclaim" in draft
+
+
 def test_yardstick_panel_keeps_direct_text_labels_by_default():
     source = inspect.getsource(app._draw_yardstick)
     assert "st.checkbox" not in source
     assert "show_direct_labels = True" in source
     assert "dense_yardstick_caption" in source
+
+
+def test_plot_label_mode_defaults_to_full_label():
+    assert app.PLOT_LABEL_MODE_DEFAULT == "Full label"
+    assert app._normalize_plot_label_mode(None) == "Full label"
+    prefs = app.get_visualization_preferences()
+    assert prefs["plot_label_mode"] == "Full label"
 
 
 def test_facets_yardstick_help_table_matches_current_renderer_contract():
@@ -664,6 +943,10 @@ def test_yardstick_export_and_reproduction_scripts_contract():
         "Role",
         "Facet",
         "DisplayLabel",
+        "PlotLabelID",
+        "PlotLabelShort",
+        "PlotLabelFull",
+        "PlotLabelMode",
         "Estimate",
         "PlotY",
         "TextLane",
@@ -682,29 +965,36 @@ def test_yardstick_export_and_reproduction_scripts_contract():
     assert threshold_rows["LineXEnd"].notna().all()
     assert (threshold_rows["LineXStart"] < threshold_rows["LineXEnd"]).all()
 
-    scripts = app.yardstick_reproducibility_scripts()
+    numbered_yardstick = app.make_yardstick_export_table(
+        person_tbl,
+        facet_tbl,
+        step_tbl,
+        rating_min=0,
+        plot_label_mode="Number",
+    )
+    assert {"R001", "R002", "C001", "TH001", "TH002"}.issubset(
+        set(numbered_yardstick["DisplayLabel"].astype(str))
+    )
+    assert "Step_1" in numbered_yardstick["RawLabel"].astype(str).tolist()
+    assert numbered_yardstick["PlotLabelFull"].astype(str).str.len().gt(0).all()
+
+    scripts = app.python_yardstick_reproducibility_assets()
     assert {
         "README_facets_yardstick_reproduction.md",
-        "mfrm_yardstick_geom_text.R",
         "mfrm_yardstick_plotly.py",
-        "mfrm_yardstick_makie.jl",
     }.issubset(set(scripts))
+    assert not any(name.endswith((".R", ".jl")) for name in scripts)
     joined = "\n".join(scripts.values())
-    assert "geom_text" in joined
     assert "mfrm_yardstick_map.csv" in joined
     assert "PlotY" in joined
     assert "TextLane" in joined
     assert "LineXStart" in joined
     assert "LineXEnd" in joined
-    assert "geom_segment" in joined
     assert "/Users/" not in joined
     assert "C:/Users/" not in joined
 
-    script_matrix = app.reproducibility_script_export_matrix()
-    assert "mfrm_yardstick_geom_text.R" in script_matrix["Artifact"].tolist()
-    assert "R + ggplot2" in script_matrix["Runtime"].tolist()
 
-
+@pytest.mark.legacy_compat
 def test_uto_family_stan_data_template_maps_current_design_fields():
     result = _stan_export_fixture_result()
 
@@ -774,6 +1064,7 @@ def test_uto_family_stan_data_template_maps_current_design_fields():
     assert "mfrm_uto_bayesian_mfrm_claim_wording.csv" in set(wording["ArchiveFile"])
 
 
+@pytest.mark.legacy_compat
 def test_uto_family_design_audit_blocks_unmapped_drift_and_multidimensional_claims():
     result = _stan_export_fixture_result()
     data = result["prep"]["data"][["Person", "Rater", "Task", "Score"]].copy()
@@ -823,6 +1114,7 @@ def test_uto_family_design_audit_blocks_unmapped_drift_and_multidimensional_clai
     assert "rater severity drift" in time_wording["DoNotWrite"].lower()
 
 
+@pytest.mark.legacy_compat
 def test_stan_facet_variable_names_are_valid_and_unique():
     names = app.stan_facet_variable_names(["Task Type", "Task-Type", "123", "data"])
 
@@ -956,10 +1248,8 @@ def test_manuscript_claim_guide_contract():
         "DoNotClaim",
         "NextAction",
     }.issubset(guide.columns)
-    assert "External package comparison" in guide["ManuscriptArea"].tolist()
-    boundary = guide.loc[guide["ManuscriptArea"] == "External package comparison"].iloc[0]
-    assert boundary["ClaimStatus"] == "Boundary"
-    assert "Do not force" in boundary["DoNotClaim"]
+    assert "External package comparison" not in guide["ManuscriptArea"].tolist()
+    assert "Bayesian / Uto-family extension" not in guide["ManuscriptArea"].tolist()
     bias = guide.loc[guide["ManuscriptArea"] == "Bias / local interaction"].iloc[0]
     assert bias["ClaimStatus"] == "Do not claim"
     fit = guide.loc[guide["ManuscriptArea"] == "Fit and dimensionality"].iloc[0]
@@ -970,7 +1260,7 @@ def test_manuscript_claim_guide_contract():
     assert "## Results Draft" in template
     assert "standalone Python" in template
     assert "Claims Requiring Caution" in template
-    assert "Do not include an R-vs-Python comparison table" in template
+    assert "Keep every table and figure tied to the same AnalysisID" in template
 
     gate = app.build_publication_gate_summary(result, diagnostics, all_bias_results={})
     assert not gate.empty
@@ -1037,6 +1327,396 @@ def test_manuscript_claim_guide_contract():
     assert "Bias / local interaction" in claim_evidence["ManuscriptArea"].astype(str).tolist()
     assert claim_evidence["ArchiveFiles"].astype(str).str.len().gt(0).all()
 
+    report_ready = app.build_report_ready_summary_panel(result, diagnostics, all_bias_results={})
+    assert not report_ready.empty
+    assert {
+        "Priority",
+        "ReportArea",
+        "ReportStatus",
+        "PrimaryUsers",
+        "UseNow",
+        "OpenFirst",
+        "EvidenceFiles",
+        "ActionBeforeWriting",
+        "SafeWording",
+        "DoNotWrite",
+        "Details",
+    }.issubset(report_ready.columns)
+    assert {
+        "Overall manuscript conclusion",
+        "APA sentence draft",
+        "Claim boundary and evidence",
+        "Scoring quality and QC decision",
+        "Rubric categories and collapse sensitivity",
+    }.issubset(set(report_ready["ReportArea"].astype(str)))
+    assert set(report_ready["ReportStatus"].astype(str)).issubset(
+        {"Ready", "Needs caveat", "Needs rerun", "Do not report yet"}
+    )
+    joined_report_ready = " ".join(report_ready.astype(str).to_numpy().ravel().tolist())
+    assert "publication_gate_summary.csv" in joined_report_ready
+    assert "apa_report_sentence_audit.csv" in joined_report_ready
+    assert "claim_to_evidence_matrix.csv" in joined_report_ready
+    assert "category_collapse_action_center.csv" in joined_report_ready
+
+    decision_brief = app.generate_report_ready_decision_brief(result, diagnostics, all_bias_results={})
+    assert "# Report-Ready Decision Brief" in decision_brief
+    assert "Overall status:" in decision_brief
+    assert "publication_gate_summary.csv" in decision_brief
+    assert "report_ready_summary_panel.csv" in decision_brief or "apa_report_sentence_audit.csv" in decision_brief
+
+    apa_results_draft = app.generate_report_ready_apa_results_draft(result, diagnostics, all_bias_results={})
+    assert "# APA Results Paragraph Draft" in apa_results_draft
+    assert "Overall report-ready status:" in apa_results_draft
+    assert "## Final-Output Blockers" in apa_results_draft
+    assert "## Critical Review Caveats" in apa_results_draft
+    assert "## Bridge-Constrained Use Conditions" in apa_results_draft
+    assert "## Draft Paragraph" in apa_results_draft
+    assert "## Bridge Revision Plan" in apa_results_draft
+    assert "## Do Not Use Yet" in apa_results_draft
+    assert "apa_report_sentence_audit.csv" in apa_results_draft or "claim_to_evidence_matrix.csv" in apa_results_draft
+    assert "critical_final_review_panel.csv" in apa_results_draft
+    assert "reporting_action_bridge.csv" in apa_results_draft
+
+    role_memos = app.build_role_based_action_memos(result, diagnostics, all_bias_results={})
+    assert not role_memos.empty
+    assert {
+        "Role",
+        "Priority",
+        "DecisionFocus",
+        "ReportStatus",
+        "DecisionQuestion",
+        "WhyThisMatters",
+        "ImmediateAction",
+        "EvidenceToOpen",
+        "SafeOutput",
+        "DoNotDo",
+        "AppLocation",
+        "DownloadFile",
+        "Details",
+    }.issubset(role_memos.columns)
+    assert {
+        "Paper author",
+        "Scoring manager",
+        "Measurement practitioner",
+    }.issubset(set(role_memos["Role"].astype(str)))
+    assert set(role_memos["ReportStatus"].astype(str)).issubset(
+        {"Ready", "Needs caveat", "Needs rerun", "Do not report yet"}
+    )
+    joined_role_memos = " ".join(role_memos.astype(str).to_numpy().ravel().tolist())
+    assert "apa_results_paragraph_draft.md" in joined_role_memos
+    assert "quality_control_todo_checklist.csv" in joined_role_memos
+    assert "final_report_readiness.csv" in joined_role_memos
+
+    role_memos_md = app.generate_role_based_action_memos_markdown(result, diagnostics, all_bias_results={})
+    assert "# Role-Based Action Memos" in role_memos_md
+    assert "## Paper author" in role_memos_md
+    assert "## Scoring manager" in role_memos_md
+    assert "## Measurement practitioner" in role_memos_md
+    assert "role_based_action_memos.csv" in role_memos_md or "report_ready_summary_panel.csv" in role_memos_md
+
+    role_checklist = app.build_role_based_action_checklist(result, diagnostics, all_bias_results={})
+    assert not role_checklist.empty
+    assert {
+        "Done",
+        "ChecklistId",
+        "Role",
+        "Step",
+        "ToDoItem",
+        "ReportStatus",
+        "BlockingForFinalOutput",
+        "NeedsCaveat",
+        "Action",
+        "EvidenceToOpen",
+        "CompletionCriterion",
+        "OutputArtifact",
+        "SafeOutput",
+        "DoNotDo",
+        "AppLocation",
+        "DownloadFile",
+    }.issubset(role_checklist.columns)
+    assert role_checklist["Done"].eq(False).all()
+    assert {
+        "Paper author",
+        "Scoring manager",
+        "Measurement practitioner",
+    }.issubset(set(role_checklist["Role"].astype(str)))
+    assert role_checklist["CompletionCriterion"].astype(str).str.len().gt(0).all()
+    joined_role_checklist = " ".join(role_checklist.astype(str).to_numpy().ravel().tolist())
+    assert "apa_results_paragraph_draft.md" in joined_role_checklist
+    assert "quality_control_todo_checklist.csv" in joined_role_checklist
+
+    role_checklist_md = app.generate_role_based_action_checklist_markdown(result, diagnostics, all_bias_results={})
+    assert "# Role-Based Action Checklist" in role_checklist_md
+    assert "- [ ]" in role_checklist_md
+    assert "role_based_action_checklist.csv" in role_checklist_md
+
+    reanalysis_checklist = app.build_report_ready_reanalysis_checklist(
+        result,
+        diagnostics,
+        all_bias_results={},
+        report_ready_summary=report_ready,
+        role_action_checklist=role_checklist,
+    )
+    assert not reanalysis_checklist.empty
+    assert {
+        "Done",
+        "ChecklistId",
+        "Priority",
+        "Phase",
+        "Audience",
+        "Task",
+        "ReportStatus",
+        "BlocksReportReady",
+        "NeedsCaveat",
+        "Action",
+        "EvidenceToOpen",
+        "CompletionCriterion",
+        "OutputArtifact",
+        "CaveatToCarry",
+        "DoNotDo",
+        "AppLocation",
+        "DownloadFile",
+    }.issubset(reanalysis_checklist.columns)
+    assert reanalysis_checklist["Done"].eq(False).all()
+    assert reanalysis_checklist["ChecklistId"].astype(str).str.len().gt(0).all()
+    assert {
+        "Study result handoff",
+        "Reanalysis reproducibility",
+        "Model diagnostic rerun",
+        "Scoring quality control",
+        "Rubric/category sensitivity",
+        "APA/manuscript wording",
+    }.issubset(set(reanalysis_checklist["Phase"].astype(str)))
+    joined_reanalysis = " ".join(reanalysis_checklist.astype(str).to_numpy().ravel().tolist())
+    assert "report_ready_summary_panel.csv" in joined_reanalysis
+    assert "MFRM_Manuscript_Binder.zip" in joined_reanalysis
+
+    reanalysis_md = app.generate_report_ready_reanalysis_checklist_markdown(reanalysis_checklist)
+    assert "# Report-Ready Simulation / Reanalysis Checklist" in reanalysis_md
+    assert "- [ ]" in reanalysis_md
+    assert "report_ready_reanalysis_checklist.csv" in reanalysis_md
+
+    first_checklist_id = str(role_checklist.iloc[0]["ChecklistId"])
+    persisted_role_checklist = app.apply_role_based_action_checklist_done_state(
+        role_checklist,
+        {first_checklist_id: True},
+    )
+    assert persisted_role_checklist.loc[
+        persisted_role_checklist["ChecklistId"].astype(str).eq(first_checklist_id),
+        "Done",
+    ].eq(True).all()
+    role_checklist_progress = app.role_based_action_checklist_progress_summary(persisted_role_checklist)
+    assert not role_checklist_progress.empty
+    assert {
+        "Role",
+        "DoneItems",
+        "TotalItems",
+        "RemainingItems",
+        "RemainingBlockingItems",
+        "RemainingCaveatItems",
+        "CompletionPercent",
+        "State",
+        "NextAction",
+        "NextEvidenceToOpen",
+    }.issubset(role_checklist_progress.columns)
+    assert role_checklist_progress["TotalItems"].sum() == len(role_checklist)
+    assert role_checklist_progress["DoneItems"].sum() == 1
+    role_checklist_done_md = app.generate_role_based_action_checklist_markdown(
+        result,
+        diagnostics,
+        all_bias_results={},
+        checklist=persisted_role_checklist,
+    )
+    assert "- [x]" in role_checklist_done_md
+    assert "Progress Snapshot" in role_checklist_done_md
+
+    critical_review = app.build_critical_final_review_panel(
+        result,
+        diagnostics,
+        all_bias_results={},
+        role_action_checklist=persisted_role_checklist,
+    )
+    assert not critical_review.empty
+    assert {
+        "Priority",
+        "Lens",
+        "OwnerRole",
+        "CriticalQuestion",
+        "CurrentStatus",
+        "Decision",
+        "StopBeforeFinalOutput",
+        "EvidenceBlocksDirectClaim",
+        "UnresolvedWorkflowItems",
+        "UnresolvedWorkflowBlockers",
+        "NeedsCaveat",
+        "WhatCouldGoWrong",
+        "ActionBeforeContinuing",
+        "EvidenceToOpen",
+        "DoNotClaim",
+        "SafeNextOutput",
+        "DownloadFile",
+    }.issubset(critical_review.columns)
+    assert {
+        "Manuscript conclusion",
+        "APA wording",
+        "Claim scope",
+        "Scoring operations",
+        "Rubric/category decision",
+        "Measurement diagnostics",
+        "Reproducibility and archive",
+        "Sharing and privacy",
+    }.issubset(set(critical_review["Lens"].astype(str)))
+    assert critical_review["WhatCouldGoWrong"].astype(str).str.len().gt(0).all()
+    assert critical_review["EvidenceToOpen"].astype(str).str.contains(".csv|.zip|.json|.md", regex=True).any()
+    critical_review_md = app.generate_critical_final_review_markdown(
+        result,
+        diagnostics,
+        all_bias_results={},
+        role_action_checklist=persisted_role_checklist,
+    )
+    assert "# Critical Final Review" in critical_review_md
+    assert "Stop-before-final-output rows" in critical_review_md
+    assert "critical_final_review_panel.csv" in critical_review_md
+
+    status_rationale = app.build_status_rationale_drilldown(
+        result,
+        diagnostics,
+        all_bias_results={},
+        role_action_checklist=persisted_role_checklist,
+    )
+    assert not status_rationale.empty
+    assert {
+        "Priority",
+        "Audience",
+        "StatusSource",
+        "CurrentStatus",
+        "Decision",
+        "DecisionLogic",
+        "TriggerDiagnostics",
+        "MinimumEvidenceNeeded",
+        "ClaimBoundary",
+        "NextInspection",
+        "SafeUse",
+        "DownloadFile",
+    }.issubset(status_rationale.columns)
+    assert status_rationale["Audience"].astype(str).str.contains("Psychometric").any()
+    assert status_rationale["DecisionLogic"].astype(str).str.contains("stop_before_final_output").all()
+
+    reading_path = app.build_result_reading_path(result, diagnostics, all_bias_results={})
+    assert not reading_path.empty
+    assert {
+        "Step",
+        "Audience",
+        "ReadingGoal",
+        "GuidingQuestion",
+        "CurrentStatus",
+        "OpenFirst",
+        "EvidenceFile",
+        "HowToRead",
+        "WhatCanBeWritten",
+        "DoNotWriteYet",
+        "NextMove",
+    }.issubset(reading_path.columns)
+    assert reading_path["Step"].tolist() == sorted(reading_path["Step"].tolist())
+    assert "Draft only after evidence mapping" in reading_path["ReadingGoal"].astype(str).tolist()
+    assert reading_path["EvidenceFile"].astype(str).str.contains("critical_final_review_panel.csv").any()
+
+    operational_board = app.build_operational_decision_board(result, diagnostics, all_bias_results={})
+    assert not operational_board.empty
+    assert {
+        "Priority",
+        "Audience",
+        "Decision",
+        "OwnerRole",
+        "CurrentSignal",
+        "EvidenceToOpen",
+        "RecommendedAction",
+        "RiskIfIgnored",
+        "BeforeNextAdministration",
+        "DoNotDo",
+    }.issubset(operational_board.columns)
+    assert operational_board["Decision"].astype(str).str.contains("Rater training|Rubric revision|Category", regex=True).any()
+    assert operational_board["EvidenceToOpen"].astype(str).str.contains(".csv", regex=False).any()
+
+    reporting_bridge = app.build_reporting_action_bridge(
+        result,
+        diagnostics,
+        all_bias_results={},
+        role_action_checklist=persisted_role_checklist,
+        critical_final_review=critical_review,
+        status_rationale=status_rationale,
+        result_reading_path=reading_path,
+        operational_decision_board=operational_board,
+    )
+    assert not reporting_bridge.empty
+    assert {
+        "Priority",
+        "BridgeTrack",
+        "PrimaryAudience",
+        "SourceBoard",
+        "CurrentStatus",
+        "OutputToProduce",
+        "DraftOrDecisionMove",
+        "RequiredCheck",
+        "CaveatToCarry",
+        "StopRule",
+        "EvidenceFiles",
+        "AppLocation",
+        "DownloadFile",
+    }.issubset(reporting_bridge.columns)
+    joined_bridge = " ".join(reporting_bridge.astype(str).to_numpy().ravel().tolist())
+    assert "APA final wording gate" in joined_bridge
+    assert "Rater training action memo" in joined_bridge
+    assert "Rubric revision action memo" in joined_bridge
+    assert "Category collapse sensitivity memo" in joined_bridge
+    assert "reporting_action_bridge.csv" in joined_bridge
+    assert "apa_results_paragraph_draft.md" in joined_bridge
+    reporting_bridge_md = app.generate_reporting_action_bridge_markdown(
+        result,
+        diagnostics,
+        all_bias_results={},
+        bridge=reporting_bridge,
+    )
+    assert "# Reporting Action Bridge" in reporting_bridge_md
+    assert "APA wording" in reporting_bridge_md
+    assert "operational_decision_board.csv" in reporting_bridge_md
+
+    apa_bridge_plan = app.build_apa_bridge_revision_plan(
+        result,
+        diagnostics,
+        all_bias_results={},
+        critical_review=critical_review,
+        reporting_action_bridge=reporting_bridge,
+    )
+    assert not apa_bridge_plan.empty
+    assert {
+        "Priority",
+        "APAPlacement",
+        "SourceTrack",
+        "CurrentStatus",
+        "BlocksFinalCopy",
+        "RevisionInstruction",
+        "RequiredCheck",
+        "CaveatToCarry",
+        "StopRule",
+        "EvidenceFiles",
+        "DownloadFile",
+    }.issubset(apa_bridge_plan.columns)
+    assert apa_bridge_plan["SourceTrack"].astype(str).str.contains("APA|Claim|Guided", regex=True).any()
+    assert apa_bridge_plan["DownloadFile"].astype(str).str.contains("reporting_action_bridge.csv").any()
+
+    apa_results_draft_with_bridge = app.generate_report_ready_apa_results_draft(
+        result,
+        diagnostics,
+        all_bias_results={},
+        critical_review=critical_review,
+        reporting_action_bridge=reporting_bridge,
+        apa_bridge_revision_plan=apa_bridge_plan,
+    )
+    assert "Bridge-Constrained Use Conditions" in apa_results_draft_with_bridge
+    assert "Bridge Revision Plan" in apa_results_draft_with_bridge
+    assert "Caveat-carrying draft" in apa_results_draft_with_bridge or "Editing worksheet only" in apa_results_draft_with_bridge
+
     handoff = app.build_manuscript_handoff_checklist(
         result,
         diagnostics,
@@ -1056,6 +1736,15 @@ def test_manuscript_claim_guide_contract():
     }.issubset(handoff.columns)
     assert handoff["Step"].tolist() == sorted(handoff["Step"].tolist())
     assert "MFRM_OSF_Package.zip; mfrm_manuscript_handoff.md" in handoff["DownloadFile"].astype(str).tolist()
+    assert handoff["DownloadFile"].astype(str).str.contains("report_ready_decision_brief.md").any()
+    assert handoff["DownloadFile"].astype(str).str.contains("role_based_action_memos.md").any()
+    assert handoff["DownloadFile"].astype(str).str.contains("role_based_action_checklist.csv").any()
+    assert handoff["DownloadFile"].astype(str).str.contains("critical_final_review_panel.csv").any()
+    assert handoff["DownloadFile"].astype(str).str.contains("status_rationale_drilldown.csv").any()
+    assert handoff["DownloadFile"].astype(str).str.contains("result_reading_path.csv").any()
+    assert handoff["DownloadFile"].astype(str).str.contains("operational_decision_board.csv").any()
+    assert handoff["DownloadFile"].astype(str).str.contains("reporting_action_bridge.csv").any()
+    assert handoff["DownloadFile"].astype(str).str.contains("reporting_action_bridge.md").any()
 
     handoff_md = app.generate_manuscript_handoff_markdown(
         result,
@@ -1067,41 +1756,78 @@ def test_manuscript_claim_guide_contract():
     assert "## Download Package" in handoff_md
     assert "## Before Manuscript Submission" in handoff_md
     assert "claim_to_evidence_matrix.csv" in handoff_md
+    assert "report_ready_decision_brief.md" in handoff_md
+    assert "role_based_action_memos.md" in handoff_md
+    assert "role_based_action_checklist.csv" in handoff_md
+    assert "critical_final_review_panel.csv" in handoff_md
+    assert "status_rationale_drilldown.csv" in handoff_md
+    assert "result_reading_path.csv" in handoff_md
+    assert "operational_decision_board.csv" in handoff_md
+    assert "reporting_action_bridge.csv" in handoff_md
+    assert "reporting_action_bridge.md" in handoff_md
+    assert "apa_results_paragraph_draft.md" in handoff_md
     assert "MFRM_OSF_Package.zip" in handoff_md
-
-    stan_contract = app.stan_reproducibility_archive_contract_table(public_export_mode=True)
-    stan_route = app.guided_stan_posterior_reproducibility_help_table()
-    stan_checklist = app.stan_posterior_handoff_checklist()
-    stan_manifest_template = app.stan_run_manifest_template()
-    stan_handoff_md = app.stan_posterior_reproducibility_handoff_markdown()
 
     binder_assets = app.build_manuscript_binder_assets(
         {
+            "report_ready_summary_panel": report_ready,
+            "role_based_action_memos": role_memos,
+            "role_based_action_checklist": role_checklist,
+            "report_ready_reanalysis_checklist": reanalysis_checklist,
+            "critical_final_review_panel": critical_review,
+            "status_rationale_drilldown": status_rationale,
+            "result_reading_path": reading_path,
+            "operational_decision_board": operational_board,
+            "reporting_action_bridge": reporting_bridge,
             "claim_to_evidence_matrix": claim_evidence,
             "submission_action_plan": action_plan,
             "manuscript_handoff_checklist": handoff,
-            "stan_reproducibility_archive_contract": stan_contract,
-            "stan_posterior_reproducibility_route": stan_route,
-            "stan_posterior_handoff_checklist": stan_checklist,
-            "stan_run_manifest_template": stan_manifest_template,
-            "mfrm_stan_prior_guidance": app.stan_prior_setting_guidance(),
-            "mfrm_stan_prior_sensitivity_grid": app.stan_prior_sensitivity_grid(),
         },
         {
             "manuscript_handoff.md": handoff_md,
+            "report_ready_decision_brief.md": decision_brief,
+            "apa_results_paragraph_draft.md": apa_results_draft,
+            "role_based_action_memos.md": role_memos_md,
+            "role_based_action_checklist.md": role_checklist_md,
+            "report_ready_reanalysis_checklist.md": reanalysis_md,
+            "critical_final_review.md": critical_review_md,
+            "reporting_action_bridge.md": reporting_bridge_md,
             "method_appendix.md": "method",
             "manuscript_template.md": template,
-            "stan_posterior_reproducibility_handoff.md": stan_handoff_md,
+            "mfrm_app_engine_runner.py": "print('runner')",
+            "requirements.txt": "pandas\n",
+            "mfrm_local_batch_workflow.md": "# Local batch",
+            "mfrm_jmle_self_contained.py": "print('jmle')",
         },
         public_export_mode=True,
     )
     assert "README_first.md" in binder_assets
+    assert "report_ready_summary_panel.csv" in binder_assets
+    assert "report_ready_decision_brief.md" in binder_assets
+    assert "apa_results_paragraph_draft.md" in binder_assets
+    assert "role_based_action_memos.csv" in binder_assets
+    assert "role_based_action_memos.md" in binder_assets
+    assert "role_based_action_checklist.csv" in binder_assets
+    assert "role_based_action_checklist.md" in binder_assets
+    assert "report_ready_reanalysis_checklist.csv" in binder_assets
+    assert "report_ready_reanalysis_checklist.md" in binder_assets
+    assert "critical_final_review_panel.csv" in binder_assets
+    assert "critical_final_review.md" in binder_assets
+    assert "status_rationale_drilldown.csv" in binder_assets
+    assert "result_reading_path.csv" in binder_assets
+    assert "operational_decision_board.csv" in binder_assets
+    assert "reporting_action_bridge.csv" in binder_assets
+    assert "reporting_action_bridge.md" in binder_assets
     assert "claim_to_evidence_matrix.csv" in binder_assets
     assert "manuscript_handoff.md" in binder_assets
-    assert "stan_reproducibility_archive_contract.csv" in binder_assets
-    assert "stan_posterior_reproducibility_handoff.md" in binder_assets
-    assert "stan_posterior_reproducibility_route.csv" in binder_assets
-    assert "stan_posterior_handoff_checklist.csv" in binder_assets
+    assert "mfrm_app_engine_runner.py" in binder_assets
+    assert "requirements.txt" in binder_assets
+    assert "mfrm_local_batch_workflow.md" in binder_assets
+    assert "mfrm_jmle_self_contained.py" in binder_assets
+    assert "stan_reproducibility_archive_contract.csv" not in binder_assets
+    assert "stan_posterior_reproducibility_handoff.md" not in binder_assets
+    assert "stan_posterior_reproducibility_route.csv" not in binder_assets
+    assert "stan_posterior_handoff_checklist.csv" not in binder_assets
     assert "visualization_settings.json" in binder_assets
     assert "visualization_settings.csv" in binder_assets
     binder_zip = app.cached_mixed_asset_zip(
@@ -1111,32 +1837,29 @@ def test_manuscript_claim_guide_contract():
     with zipfile.ZipFile(io.BytesIO(binder_zip), "r") as zf:
         binder_zip_names = set(zf.namelist())
     assert "README_first.md" in binder_zip_names
-    assert "stan_reproducibility_archive_contract.csv" in binder_zip_names
-    assert "stan_posterior_reproducibility_handoff.md" in binder_zip_names
+    assert "mfrm_app_engine_runner.py" in binder_zip_names
+    assert "mfrm_jmle_self_contained.py" in binder_zip_names
+    assert "stan_reproducibility_archive_contract.csv" not in binder_zip_names
+    assert "stan_posterior_reproducibility_handoff.md" not in binder_zip_names
 
     osf_zip = app.build_osf_zip(
-        {
-            "claim_to_evidence_matrix": claim_evidence,
-            "stan_reproducibility_archive_contract": stan_contract,
-            "stan_posterior_reproducibility_route": stan_route,
-            "export_privacy_manifest": app.pd.DataFrame([
-                {"Frame": "stan_reproducibility_archive_contract", "Status": "included_public_mode"}
-            ]),
-        },
+        {"claim_to_evidence_matrix": claim_evidence},
         text_assets={
             "manuscript_handoff.md": handoff_md,
-            "stan_posterior_reproducibility_handoff.md": stan_handoff_md,
-            **app.bayesian_stan_runner_templates(),
-            **app.stan_data_export_assets(result, include_row_level=False),
+            "mfrm_app_engine_runner.py": "print('runner')",
+            "requirements.txt": "pandas\n",
         },
     )
     with zipfile.ZipFile(io.BytesIO(osf_zip), "r") as zf:
         osf_namelist = zf.namelist()
         osf_zip_names = set(osf_namelist)
     assert len(osf_namelist) == len(osf_zip_names)
-    assert "stan_reproducibility_archive_contract.csv" in osf_zip_names
-    assert "stan_posterior_reproducibility_handoff.md" in osf_zip_names
-    assert "stan_posterior_reproducibility_route.csv" in osf_zip_names
+    assert "claim_to_evidence_matrix.csv" in osf_zip_names
+    assert "manuscript_handoff.md" in osf_zip_names
+    assert "mfrm_app_engine_runner.py" in osf_zip_names
+    assert "stan_reproducibility_archive_contract.csv" not in osf_zip_names
+    assert "stan_posterior_reproducibility_handoff.md" not in osf_zip_names
+    assert "stan_posterior_reproducibility_route.csv" not in osf_zip_names
     assert "mfrm_stan_data.json" not in osf_zip_names
     assert "mfrm_stan_id_index_map.csv" not in osf_zip_names
 
@@ -1151,6 +1874,7 @@ def test_manuscript_claim_guide_contract():
         "Theme",
         "BaseFontSize",
         "LabelPolicy",
+        "PlotLabelMode",
         "LabelMaxChars",
         "CaptionDetail",
     }.issubset(figure_manifest.columns)
@@ -1163,6 +1887,7 @@ def test_manuscript_claim_guide_contract():
         "Theme",
         "BaseFontSize",
         "LabelPolicy",
+        "PlotLabelMode",
         "CaptionDetail",
         "CaptionDraft",
         "EvidenceTables",
@@ -1249,15 +1974,16 @@ def test_population_covariate_type_summary_flags_integer_codes():
 
 
 def test_public_beta_release_contract_tables():
-    limitations = app.public_beta_limitations_table()
+    limitations = app.standalone_release_limitations_table()
     readiness = app.public_release_readiness_table()
 
     assert not limitations.empty
     assert {"Area", "PublicBetaStatus", "SupportedNow", "Boundary", "UserAction"}.issubset(limitations.columns)
     joined = " ".join(limitations["Area"].astype(str).tolist() + limitations["Boundary"].astype(str).tolist())
     assert "GPCM" in joined
-    assert "Cross-package" in joined
     assert "privacy" in joined
+    assert "Cross-package" not in joined
+    assert "external estimation-engine" in joined
 
     assert not readiness.empty
     assert {"Check", "Status", "Evidence", "Action"}.issubset(readiness.columns)

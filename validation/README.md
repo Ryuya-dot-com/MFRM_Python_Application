@@ -1,32 +1,27 @@
 # Validation Notes
 
-This directory is for optional validation artifacts. The Streamlit app does not
-call R packages or external MFRM engines at runtime.
+This directory preserves historical, optional compatibility records. It is not
+part of the standalone Python product journey, default downloads, CI release
+gate, or current reproducibility contract. The Streamlit app does not call an
+external estimation engine.
 
-## Validation Stance
+## Archived Validation Stance
 
 The goal is implementation credibility, not unconditional numerical identity
 with another package. FACETS, TAM, sirt, mirt, and this app can differ in
 constraints, parameterization, quadrature, optimizer details, latent-variance
 treatment, and omitted likelihood constants.
 
-Safe claim:
+These records can explain historical implementation checks. They do not support
+a current product claim of cross-package parity, and they are not required to
+run or release the Python application.
 
-- The app targets functional parity for key MFRM workflows.
+## Frozen Fixture Inventory
 
-Unsafe claim without an archived parity report:
-
-- The app is an exact replacement for FACETS, TAM, sirt, mirt, or `mfrmr`.
-
-## Generate the Fixture
-
-Use the built-in fixture exporter to generate deterministic comparison files:
-
-```bash
-python streamlit_app.py --export-parity-fixture validation/generated/parity_fixture
-```
-
-The generated folder includes:
+The historical fixture exporter has been removed from the CLI, Makefile, and
+GitHub workflow. Existing sanitized fixtures may be retained temporarily for
+compatibility maintenance, but no public command regenerates them and they are
+not release evidence. The former generated folder included:
 
 - Python outputs for JMLE RSM, JMLE PCM, MML RSM, MML latent regression, and MML GPCM scenarios.
 - sirt-specific person-rater response fixture files: `sirt_rater_facets_response.csv` and `sirt_rater_facets_items.csv`.
@@ -45,7 +40,8 @@ The generated folder includes:
   template scripts for optional Simulation-style handoff checks.
 - notes explaining why exact equality is not expected.
 
-Generated files are intentionally ignored by Git under `validation/generated/`.
+Generated files remain intentionally ignored by Git under
+`validation/generated/`.
 
 ## Cross-Package Validation Matrix
 
@@ -63,14 +59,14 @@ Generated files are intentionally ignored by Git under `validation/generated/`.
 | Archived simulation validation sweep | archived mfrmr/Python/Julia/FACETS artifacts | manifest status counts, full-reference summaries, runtime summaries, non-empty validation-input replicates | public runtime dependency on private validation artifacts or exact parity without parameterization notes |
 | mfrmr 0.1.5 / 0.1.6 migration coverage | mfrmr package source and package documentation | feature-level support, boundaries, next validation action | one-to-one helper parity or runtime wrapping |
 
-The exporter writes a machine-readable version of this plan to
+Historical fixtures may contain a machine-readable version of this plan in
 `cross_package_validation_plan.csv`.
 
 ## Optional External R Handoff
 
-The generated `r_crosscheck_scaffold.R` is an optional validation helper, not an
-app dependency. Run it from the generated fixture folder only when you want to
-archive external evidence:
+The frozen `r_crosscheck_scaffold.R` was an optional validation helper, not an
+app dependency. If a maintainer intentionally audits a retained historical
+fixture, the old scaffold can be run from that fixture folder:
 
 ```bash
 Rscript r_crosscheck_scaffold.R
@@ -145,7 +141,6 @@ See `SIMULATION_REFERENCE_STATUS.md` for the archived validation-artifact
 inventory that should guide external-data numerical validation without bundling
 private or large datasets into this public app repository.
 
-The generated parity fixture and the app's Downloads tab also expose sanitized
-Python/R/Julia template scripts. They require users to pass `MFRM_INPUT_CSV` and
-`MFRM_OUTPUT_DIR` through environment variables, so machine-specific absolute paths are not
-embedded in public artifacts.
+Historical fixtures may still contain sanitized Python/R/Julia templates.
+Current Downloads and demo archives do not expose them; Python-native
+reproduction assets are the supported route.

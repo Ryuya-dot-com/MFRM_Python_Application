@@ -46,7 +46,7 @@ def test_citation_parens_use_correct_form():
       (Wright & Masters, 1982)
       (Bradlow, Wainer & Wang, 1999)
     """
-    pattern = re.compile(r"^\([A-Z][^)]+, \d{4}\)$")
+    pattern = re.compile(r"^\([A-Z][^)]+, \d{4}[a-z]?\)$")
     bad = [c for c in app._CITATION_TO_KEY if not pattern.match(c)]
     assert not bad, f"malformed citation strings: {bad}"
 
@@ -90,6 +90,10 @@ def test_zotero_aligned_reference_additions_resolve():
         "(Mair & Hatzinger, 2007)": "Mair_Hatzinger_2007",
         "(Rizopoulos, 2006)": "Rizopoulos_2006",
         "(Bürkner, 2021)": "Buerkner_2021",
+        "(Krippendorff, 2004)": "Krippendorff_2004",
+        "(Hayes & Krippendorff, 2007)": "Hayes_Krippendorff_2007",
+        "(Linacre, 2002b)": "Linacre_RatingScale_2002",
+        "(Wind, 2023)": "Wind_2023",
     }
     for citation, key in expected.items():
         assert app._CITATION_TO_KEY.get(citation) == key
@@ -110,6 +114,16 @@ def test_collect_cited_references_returns_sorted():
     )
     refs = app.collect_cited_references(text)
     assert refs == sorted(refs)
+
+
+def test_collect_cited_references_supports_year_suffixes():
+    text = (
+        "Category review used rating-scale references "
+        "(Linacre, 2002b; Wind, 2023)."
+    )
+    refs = app.collect_cited_references(text)
+    assert any("Optimizing rating scale category effectiveness" in r for r in refs)
+    assert any("Detecting rating scale malfunctioning" in r for r in refs)
 
 
 def test_collect_cited_references_ignores_unknown_citations():

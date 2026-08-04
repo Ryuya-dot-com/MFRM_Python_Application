@@ -31,6 +31,8 @@ def test_method_reference_audit_covers_statistical_risk_surfaces():
     for expected in [
         "MML",
         "Fit",
+        "Agreement",
+        "Rating-scale category",
         "Local dependence",
         "Residual PCA",
         "Simulation",
@@ -51,6 +53,10 @@ def test_method_reference_audit_covers_statistical_risk_surfaces():
         "Uto_Ueno_2020",
         "Uto_2021",
         "Uto_2023",
+        "Krippendorff_2004",
+        "Hayes_Krippendorff_2007",
+        "Linacre_RatingScale_2002",
+        "Wind_2023",
     ]:
         assert key in joined_keys
 
@@ -70,6 +76,11 @@ def test_result_bundle_includes_method_reference_audit():
     frames = app.build_result_bundle_frames(result, diagnostics)
     assert "method_reference_audit" in frames
     assert not frames["method_reference_audit"].empty
+    exported_areas = set(frames["method_reference_audit"]["MethodArea"].astype(str))
+    assert "External R ecosystem and cross-package reference checks" not in exported_areas
+    assert "Recent MFRM extensions and Bayesian/rater drift context" not in exported_areas
+    assert "help_reference_coverage" in frames
+    assert not frames["help_reference_coverage"].empty
     assert "apa_report_sentence_audit" in frames
     assert not frames["apa_report_sentence_audit"].empty
 
@@ -79,6 +90,7 @@ def test_current_run_method_reference_audit_filters_to_active_surfaces():
         "config": {
             "model": "RSM",
             "method": "MML",
+            "n_cat": 5,
             "compute_plausible_values": True,
         },
         "prep": {"rating_min": 0, "rating_max": 4},
@@ -102,8 +114,33 @@ def test_current_run_method_reference_audit_filters_to_active_surfaces():
     assert "Local dependence" in areas
     assert "Residual PCA" in areas
     assert "Simulation" in areas
+    assert "Rating-scale category" in areas
     assert {"CurrentRunUse", "TriggerEvidence"}.issubset(audit.columns)
     assert audit["TriggerEvidence"].astype(str).str.len().gt(0).all()
+
+
+def test_help_reference_coverage_tracks_qc_claims_and_zotero_gaps():
+    coverage = app.build_help_reference_coverage()
+    assert not coverage.empty
+    required = {
+        "HelpArea",
+        "ReaderQuestion",
+        "SafeClaim",
+        "PrimaryReferenceKeys",
+        "CitationTokens",
+        "ReferenceCoverageStatus",
+        "ZoteroEvidence",
+        "ZoteroAction",
+        "AppEvidenceFiles",
+        "DoNotClaim",
+        "Audience",
+    }
+    assert required.issubset(coverage.columns)
+    assert coverage["ReferenceCoverageStatus"].eq("Ready").all()
+    joined = " ".join(coverage.astype(str).to_numpy().ravel())
+    assert "Krippendorff_2004" in joined
+    assert "Linacre_RatingScale_2002" in joined
+    assert "not found in Zotero" in joined or "Zotero add candidate" in joined
 
 
 def test_claim_matrix_and_template_surface_reference_boundaries():

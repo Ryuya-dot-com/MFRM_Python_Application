@@ -21,10 +21,19 @@ The Streamlit app ports the mfrmr 0.2.0 person-fit pipeline:
   Under JML the score S sums to zero by construction, but its
   variance contribution is what restores the N(0, 1) null.
 
-The tests below pin the math contract directly (hand-built obs
-frames with known closed-form lz/lz*), and then verify that the
-end-to-end pipeline emits the correct status fields on both JMLE
-and MML fits.
+* Sinharay (2016) extends the correction to MML/EAP/MAP estimates with
+  a Gaussian population prior. The prior precision p = 1/sigma^2 augments
+  the estimating-equation sensitivity to I + p (while Var[S] stays I):
+
+      c_n           = Cov[l, S] / (I + p)
+      corrected_var = Var[l] - Cov[l, S]^2 (I + 2p) / (I + p)^2
+
+  which reduces EXACTLY to the JML formula at p -> 0.
+
+The tests below pin the math contract directly (hand-built obs frames
+with known closed-form lz/lz* for both JML and EAP, the p -> 0 reduction),
+and then verify that the end-to-end pipeline emits the correct status
+fields and is well calibrated (~N(0,1)) on clean MML data.
 """
 
 from __future__ import annotations
@@ -163,21 +172,105 @@ def test_lz_star_matches_closed_form_on_hand_built_obs():
     assert row["lz_star_variance"] == pytest.approx(corrected_var, abs=1e-12)
 
 
-def test_lz_star_status_not_applicable_for_mml():
-    """MML fits must surface ``not_applicable_eap`` for lz*; lz is still computed."""
+def test_lz_star_eap_population_corrected_closed_form_for_mml():
+    """MML fits compute the population-prior-corrected lz* (Sinharay, 2016).
+
+    With p = 1/sigma^2 the correction is
+        c_n           = Cov / (I + p)
+        corrected_var = Var[l] - Cov^2 (I + 2p) / (I + p)^2
+        lz*           = (l - E[l] - c_n * S) / sqrt(corrected_var)
+    which reduces to the JML formula at p -> 0.
+    """
+    pr_observed = (0.55, 0.62, 0.48)
+    item_entropy = (-0.95, -0.80, -1.02)
+    item_var_logp = (0.18, 0.22, 0.27)
+    item_cov = (0.05, -0.04, 0.08)
+    score_info = (0.40, 0.55, 0.45)
+    obs_score_deriv = (0.10, -0.08, 0.12)
+    sigma = 1.3
+
     obs = _build_synthetic_obs(
+        pr_observed=pr_observed,
+        item_entropy=item_entropy,
+        item_var_logp=item_var_logp,
         extra_cols={
-            "ItemLogPScoreCov": [0.05, -0.04, 0.08],
-            "ScoreInformation": [0.40, 0.55, 0.45],
-            "ObservedScoreDerivative": [0.10, -0.08, 0.12],
-        }
+            "ItemLogPScoreCov": item_cov,
+            "ScoreInformation": score_info,
+            "ObservedScoreDerivative": obs_score_deriv,
+        },
     )
-    res = {"config": {"method": "MML"}, "prep": {"levels": {"Person": ["P1"]}}}
+
+    log_p = np.log(np.array(pr_observed))
+    ll = float(np.sum(log_p))
+    e_ll = float(np.sum(item_entropy))
+    var_ll = float(np.sum(item_var_logp))
+    info_total = float(np.sum(score_info))
+    cov_total = float(np.sum(item_cov))
+    score_sum = float(np.sum(obs_score_deriv))
+    p = 1.0 / (sigma ** 2)
+    denom = info_total + p
+    c_n = cov_total / denom
+    corrected_var = var_ll - (cov_total ** 2) * (info_total + 2.0 * p) / (denom ** 2)
+    expected_lz_star = (ll - e_ll - c_n * score_sum) / np.sqrt(corrected_var)
+
+    res = {
+        "config": {"method": "MML", "population_prior_sd": sigma},
+        "prep": {"levels": {"Person": ["P1"]}},
+    }
     out = app.compute_person_fit_indices(res, obs=obs)
     row = out.iloc[0]
-    assert row["lz_star_status"] == "not_applicable_eap"
+    assert row["lz_star_status"] == "computed_eap_population_corrected"
+    assert row["lz_star"] == pytest.approx(expected_lz_star, abs=1e-12)
+    assert row["lz_star_c"] == pytest.approx(c_n, abs=1e-12)
+    assert row["lz_star_variance"] == pytest.approx(corrected_var, abs=1e-12)
+    # The EAP-corrected lz* is the chosen ReportIndex with an EAP-specific caveat.
+    assert row["ReportIndex"] == "lz_star"
+    assert row["ReportValue"] == pytest.approx(expected_lz_star, abs=1e-12)
+    assert "Sinharay" in row["ReportCaveat"]
+
+
+def test_lz_star_eap_reduces_to_jml_as_sigma_grows():
+    """As sigma -> inf (p -> 0) the EAP correction collapses onto the JML formula."""
+    extra = {
+        "ItemLogPScoreCov": (0.05, -0.04, 0.08),
+        "ScoreInformation": (0.40, 0.55, 0.45),
+        "ObservedScoreDerivative": (0.10, -0.08, 0.12),
+    }
+    obs = _build_synthetic_obs(
+        pr_observed=(0.55, 0.62, 0.48),
+        item_entropy=(-0.95, -0.80, -1.02),
+        item_var_logp=(0.18, 0.22, 0.27),
+        extra_cols=extra,
+    )
+    jml = app.compute_person_fit_indices(
+        {"config": {"method": "JMLE"}, "prep": {"levels": {"Person": ["P1"]}}}, obs=obs
+    ).iloc[0]
+    eap = app.compute_person_fit_indices(
+        {"config": {"method": "MML", "population_prior_sd": 1.0e6},
+         "prep": {"levels": {"Person": ["P1"]}}}, obs=obs
+    ).iloc[0]
+    assert eap["lz_star_status"] == "computed_eap_population_corrected"
+    assert jml["lz_star_status"] == "computed_jml_conditional_calibration"
+    # p = 1e-12 here, so the EAP value matches the JML value to high precision.
+    assert eap["lz_star"] == pytest.approx(jml["lz_star"], abs=1e-6)
+    assert eap["lz_star_c"] == pytest.approx(jml["lz_star_c"], abs=1e-6)
+    assert eap["lz_star_variance"] == pytest.approx(jml["lz_star_variance"], abs=1e-6)
+
+
+def test_lz_star_eap_unavailable_when_population_sd_missing():
+    """MML without a usable population SD falls back to unadjusted lz."""
+    obs = _build_synthetic_obs(
+        extra_cols={
+            "ItemLogPScoreCov": (0.05, -0.04, 0.08),
+            "ScoreInformation": (0.40, 0.55, 0.45),
+            "ObservedScoreDerivative": (0.10, -0.08, 0.12),
+        }
+    )
+    res = {"config": {"method": "MML", "population_prior_sd": 0.0},
+           "prep": {"levels": {"Person": ["P1"]}}}
+    row = app.compute_person_fit_indices(res, obs=obs).iloc[0]
+    assert row["lz_star_status"] == "eap_population_sd_unavailable"
     assert pd.isna(row["lz_star"])
-    # lz is still finite and reported in the fallback ReportIndex.
     assert np.isfinite(row["lz"])
     assert row["ReportIndex"] == "lz"
     assert row["ReportValue"] == pytest.approx(row["lz"])
@@ -396,3 +489,60 @@ def test_compute_person_fit_indices_caveats_describe_pathway(small_gpcm_jmle_fit
     assert out.loc[success_mask, "ReportCaveat"].str.contains("Snijders").all()
     fallback_caveats = out.loc[~success_mask, "ReportCaveat"]
     assert fallback_caveats.str.contains("lz_star_status").all()
+
+
+# -----------------------------------------------------------------------------
+# End-to-end: the MML/EAP population-prior correction is well calibrated on
+# clean (model-conforming) data — lz*_eap ~ N(0,1), better than raw lz.
+# -----------------------------------------------------------------------------
+
+
+@pytest.fixture(scope="module")
+def clean_mml_rsm_fit():
+    """A large clean MML RSM fit whose data conform to the fitted model.
+
+    Generated FROM the model (theta_sd matches the prior), so a correctly
+    calibrated person-fit statistic must be ~N(0,1). 300 persons x
+    4 raters x 2 tasks x 3 criteria = 24 observations per person gives
+    enough test length for the asymptotic calibration to bite.
+    """
+    params = {
+        "persons": [f"P{i:04d}" for i in range(300)],
+        "raters": ["R1", "R2", "R3", "R4"],
+        "tasks": ["T1", "T2"],
+        "criteria": ["C1", "C2", "C3"],
+        "theta_sd": 1.0,
+        "rater_severities": np.array([-0.45, -0.15, 0.15, 0.45]),
+        "task_difficulties": np.array([-0.25, 0.25]),
+        "criterion_difficulties": np.array([-0.4, 0.0, 0.4]),
+        "tau": np.array([-1.5, -0.5, 0.5, 1.5]),
+    }
+    df = app._generate_mfrm_rsm_from_params(params, seed=24601)
+    return app.mfrm_estimate(
+        data=df, person_col="Person", facet_cols=["Rater", "Task", "Criterion"],
+        score_col="Score", model="RSM", method="MML", mml_engine="EM",
+        maxit=200, reltol=1e-6, quad_points=21, population_prior_sd=1.0,
+    )
+
+
+def test_mml_eap_correction_status_and_report_index(clean_mml_rsm_fit):
+    out = app.compute_person_fit_indices(clean_mml_rsm_fit)
+    assert (out["lz_star_status"] == "computed_eap_population_corrected").all()
+    assert out["lz_star"].notna().all()
+    assert (out["ReportIndex"] == "lz_star").all()
+    assert out["ReportCaveat"].str.contains("Sinharay").all()
+
+
+def test_mml_eap_correction_is_well_calibrated_on_clean_data(clean_mml_rsm_fit):
+    out = app.compute_person_fit_indices(clean_mml_rsm_fit)
+    lz = pd.to_numeric(out["lz"], errors="coerce").to_numpy()
+    lz_star = pd.to_numeric(out["lz_star"], errors="coerce").to_numpy()
+    lz = lz[np.isfinite(lz)]
+    lz_star = lz_star[np.isfinite(lz_star)]
+    sd_star = float(np.std(lz_star, ddof=1))
+    sd_raw = float(np.std(lz, ddof=1))
+    # The corrected statistic is ~N(0,1) on clean data.
+    assert abs(float(np.mean(lz_star))) < 0.2
+    assert 0.85 <= sd_star <= 1.15
+    # And it is better calibrated (sd closer to 1) than the raw under-dispersed lz.
+    assert abs(sd_star - 1.0) <= abs(sd_raw - 1.0) + 1e-9

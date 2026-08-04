@@ -1,8 +1,9 @@
 PYTHON ?= python3
 PYTEST ?= $(PYTHON) -m pytest
+NATIVE_PYTEST_ARGS ?= -m "not legacy_compat" --ignore=tests/test_cross_engine_bundle.py --deselect=tests/test_classical_dif.py::test_validation_bundle_contents
 PORT ?= 8501
 
-.PHONY: compile doctor release-check self-test apptest benchmark demo parity verify run clean
+.PHONY: compile doctor release-check self-test apptest benchmark demo verify run clean
 
 compile:
 	$(PYTHON) -m py_compile streamlit_app.py
@@ -17,7 +18,7 @@ self-test:
 	$(PYTHON) streamlit_app.py --self-test
 
 apptest:
-	$(PYTEST) tests
+	$(PYTEST) $(NATIVE_PYTEST_ARGS) tests
 
 benchmark:
 	$(PYTHON) streamlit_app.py --benchmark-quick --benchmark-csv validation/generated/benchmark_smoke.csv
@@ -25,10 +26,7 @@ benchmark:
 demo:
 	$(PYTHON) streamlit_app.py --export-demo-report validation/generated/demo_report
 
-parity:
-	$(PYTHON) streamlit_app.py --export-parity-fixture validation/generated/parity_fixture
-
-verify: compile doctor release-check self-test apptest benchmark demo parity
+verify: compile doctor release-check self-test apptest benchmark demo
 
 run:
 	$(PYTHON) -m streamlit run streamlit_app.py --server.port $(PORT)

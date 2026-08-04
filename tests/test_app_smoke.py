@@ -6,4 +6,14 @@ def test_app_initial_render():
     assert not at.exception
     assert any("MFRM FACETS-mode" in title.value for title in at.title)
     assert any("standalone Python runtime" in caption.value for caption in at.caption)
-    assert any("Data privacy" in warning.value for warning in at.warning)
+    assert any("selected built-in or generated dataset is synthetic" in caption.value for caption in at.caption)
+    assert not any("Data privacy" in warning.value for warning in at.warning)
+
+
+def test_user_data_source_promotes_privacy_warning():
+    at = AppTest.from_file("streamlit_app.py").run(timeout=30)
+    at.radio(key="data_source_flat").set_value("paste")
+    at.run(timeout=30)
+
+    assert not at.exception
+    assert any("pasted and uploaded rating files" in warning.value for warning in at.warning)

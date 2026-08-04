@@ -86,12 +86,24 @@ def to_html_report(frames: dict[str, pd.DataFrame], title: str = "MFRM Report") 
     return "\n".join(parts).encode("utf-8")
 
 
-def build_tables_zip(frames: dict[str, pd.DataFrame]) -> bytes:
-    """Create a ZIP archive containing one CSV per DataFrame."""
+def build_tables_zip(
+    frames: dict[str, pd.DataFrame],
+    text_assets: dict[str, str] | None = None,
+) -> bytes:
+    """Create a ZIP archive containing CSV tables and optional text sidecars."""
     zip_buf = io.BytesIO()
     with zipfile.ZipFile(zip_buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        written: set[str] = set()
         for name, df in frames.items():
-            zf.writestr(safe_zip_entry_name(name, extension="csv"), df.to_csv(index=False))
+            entry = safe_zip_entry_name(name, extension="csv")
+            if entry not in written:
+                zf.writestr(entry, df.to_csv(index=False))
+                written.add(entry)
+        for name, text in (text_assets or {}).items():
+            entry = safe_zip_entry_name(name)
+            if entry not in written:
+                zf.writestr(entry, str(text))
+                written.add(entry)
     return zip_buf.getvalue()
 
 

@@ -1,13 +1,18 @@
 # Contributing
 
-This repository is a standalone Python beta for MFRM analysis in Streamlit. Contributions should preserve the app's current scope: a single-file application that does not call `mfrmr`, `rpy2`, `Rscript`, FACETS, TAM, sirt, or mirt at runtime.
+This repository is a standalone Python beta for MFRM analysis in Streamlit.
+Reusable statistical, evidence, and export computation belongs under
+`mfrm_app/`; `streamlit_app.py` is the UI entrypoint and may retain thin
+compatibility wrappers. Core code must not call external estimation engines.
 
 ## Before Editing
 
 - Run `python streamlit_app.py --doctor` to confirm the local environment.
 - Do not commit generated files such as `__pycache__`, `.pytest_cache`, or `validation/generated/`.
 - Do not add confidential rating data, real person IDs, rater IDs, institution names, subgroup labels, or proprietary assessment data.
-- Keep privacy warnings and beta/parity caveats visible in user-facing documentation.
+- Keep privacy warnings and statistical claim boundaries visible in user-facing documentation.
+- Read `ROADMAP.md` before expanding product scope. EGA, external-engine
+  execution, result ingestion, and cross-engine interchange are not core work.
 
 ## Verification
 
@@ -26,26 +31,50 @@ python -m pip install -r requirements-dev.txt
 python -m py_compile streamlit_app.py
 python streamlit_app.py --doctor
 python streamlit_app.py --self-test
-python -m pytest tests
+make apptest
 python streamlit_app.py --benchmark-quick --benchmark-csv validation/generated/benchmark_smoke.csv
-python streamlit_app.py --export-parity-fixture validation/generated/parity_fixture
 rm -rf .pytest_cache validation/generated
 find . -type d -name __pycache__ -prune -exec rm -rf {} +
 ```
 
 ## Statistical Changes
 
-For changes affecting estimation, diagnostics, prediction, simulation, anchoring, or reporting:
+For changes affecting estimation, diagnostics, prediction, simulation,
+anchoring, or reporting:
 
 - Add or update a self-test where feasible.
-- Update `validation/README.md` if the external-comparison scope changes.
-- Keep external package comparisons directional unless the fixture, tolerance, and parameterization map are documented.
-- Document differences from FACETS, TAM, sirt, mirt, and `mfrmr` rather than presenting the app as an exact replacement.
+- Put reusable computation in a focused `mfrm_app/` module without importing
+  Streamlit.
+- Return a stable ReasonCode when a prerequisite fails or a result is not
+  assessable.
+- Add deterministic native-Python fixtures and document the interpretation
+  boundary of every automatic recommendation.
+- Keep computation state and conclusion-stability state separate; neither is a
+  pass/fail label for a person, rater, institution, or assessment.
+- Prespecify sensitivity variants by exact `AnalysisID`, not a display label;
+  use an executable versioned rule and restore decisions with their complete
+  evidence bundle so missing or altered references fail closed.
+
+## Legacy Compatibility
+
+External-engine code generators, posterior-result viewers, and handoff
+archives are frozen compatibility surfaces and are not the design basis for new
+features. The parity-fixture CLI and Make target have been removed. The normal
+`make apptest`, `make verify`, and GitHub workflow exclude tests marked
+`legacy_compat`; those tests preserve dormant code only while the explicit
+retain/deprecate/remove decision in `ROADMAP.md` remains open. They are not
+release evidence. Do not expand or reconnect these surfaces without a separate
+product-scope decision.
+
+For compatibility-maintenance work only, the isolated tests can be inspected
+with `python -m pytest -m legacy_compat tests`. This command is not part of the
+standalone release gate.
 
 ## Documentation Changes
 
 When changing the UI or supported workflow, update at least one of:
 
+- `ROADMAP.md`
 - `README.md`
 - `MFRM_STREAMLIT_RELEASE_PLAN.md`
 - `RELEASE_CHECKLIST.md`

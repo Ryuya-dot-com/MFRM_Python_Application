@@ -20,15 +20,27 @@
   "app": {
     "title": "多相ラッシュモデル (MFRM) FACETS-mode",
     "subtitle_template": "MFRM を推定する Streamlit 製の単一ファイルアプリケーション — {release_label} {version}",
+    "prepare_analysis_header": "分析を準備",
     "input_preview_header": "入力データのプレビュー",
-    "no_input_info": "サイドバーから入力データを指定して開始してください。"
+    "input_preview_rows_expander_template": "入力行を確認（先頭 {n_rows} 行）",
+    "setup_after_run_expander": "入力データと実行前チェック",
+    "no_input_info": "サイドバーから入力データを指定して開始してください。",
+    "language_switch_success_template": "言語を {from_lang} から {to_lang} に切り替えました。",
+    "language_switch_caption": "現在の推定結果は保持されています。切り替えを軽くするため、この再実行では重い結果・レポート・ダウンロード・ヘルプのパネルを再描画していません。",
+    "language_switch_resume_button": "現在の画面を描画"
   },
   "onboarding": {
+    "title": "開始方法を選択",
+    "choice_caption": "サンプル分析をすぐに試すか、設定画面を残して手元のデータを準備します。",
     "banner_steps_label": "最初の分析を 3 ステップで実行",
-    "banner_steps_body": "1. **データソースを選択** — サイドバーの *データソース* に {n_scen} 種の組込みサンプル、貼り付け入力、ファイルアップロードがあります。\n2. **列を対応づけ** — サイドバーの *列の対応づけ* で Person、Score、2 つ以上の facet 列を指定します。\n3. **サイドバー最下部の `FACETS-mode 推定を実行` をクリック** します。\n\n**組込みサンプル**: {scenario_summary}\n\n**自分のデータを使う場合**: 最速の経路は *データソース → CSV/TSV テキストを貼り付け* です。ファイルアップロードは CSV、TSV、TXT、Excel `.xlsx/.xlsm`、Parquet、JSON に対応します。subject 列を **Person** に、その他の非 score 列を facet に対応づけてください。実行前に、下の *Tutorial* を開くと MFRM の用語入門を確認できます。",
+    "banner_steps_body": "1. サイドバーで、組込みシナリオ・生成データ・テキスト貼り付け・ファイルから **データを選択** します。\n2. Person、Score、2 列以上の facet について **自動検出された対応づけを確認** します。\n3. **推定を実行** し、measure を解釈する前に結果の「最初に確認」を読みます。\n\n手元のデータでは CSV/TSV テキストの貼り付けが最短です。ファイルは CSV、TSV、TXT、Excel、Parquet、JSON に対応します。",
     "quickstart_button": "サンプルデータで実行",
     "quickstart_help": "ワンクリックのクイックスタート: 組込みの MFRM サンプルデータセットをデフォルトの列マッピングで使用し、推定パイプライン全体を実行します。手元のデータをアップロードする前に UI を試したい場合に最適です。",
-    "dismiss_button": "了解"
+    "dismiss_button": "手元のデータを使う"
+  },
+  "privacy": {
+    "synthetic_notice": "プライバシー: 選択中の組込みデータまたは生成データは合成データです。貼り付けまたはアップロードを選ぶと、より強いデータ取扱い警告を表示します。",
+    "user_data_warning": "データのプライバシー: 貼り付け・アップロードする評価データには、受験者ID、評価者ID、下位集団、所属機関などの情報が含まれる場合があります。機密データは管理されたローカル環境で実行してください。ホスト版では遠隔の基盤で処理される可能性があるため、続行前に所属機関の要件を確認してください。"
   },
   "guided": {
     "tab_start": "開始",
@@ -215,6 +227,56 @@
     "next_click_keep_hard_stop": "この項目が解決されるまで測定値を解釈しません。",
     "next_click_keep_claim_caveat": "この注意点はレポート、出力、共有文言に反映します。",
     "next_click_keep_evidence": "初期確認の全表と診断根拠を確認可能な状態に残します。",
+    "action_hub_heading": "アクションハブ",
+    "action_hub_caption": "ここでは推奨操作を 1 つだけ示します。代替経路、進捗、報告上の境界は「選択した目的の補足詳細」に残しています。",
+    "action_hub_col_role": "アクション",
+    "action_hub_col_open": "開く場所",
+    "action_hub_col_action": "行うこと",
+    "action_hub_col_detail": "詳細",
+    "action_hub_col_button": "ボタン表示",
+    "action_hub_primary_role": "推奨アクション",
+    "action_hub_detail_role": "詳細を開く",
+    "action_hub_boundary_role": "境界を確認",
+    "action_hub_primary_button": "推奨セクションを開く",
+    "action_hub_detail_button": "詳細セクションを開く",
+    "action_hub_boundary_button": "報告境界を開く",
+    "action_hub_detail_expander": "アクションハブ表を表示",
+    "progress_heading": "ガイド進捗",
+    "progress_caption": "{done}/{total} 個のチェックポイントが準備済み、または確認済みです。根拠を確認した項目は手動でチェックできます。",
+    "progress_done_help": "完了条件を満たした後にのみチェックしてください。",
+    "progress_download_button": "ガイド進捗チェックリスト CSV をダウンロード",
+    "progress_col_done": "完了",
+    "progress_col_checkpoint": "チェックポイント",
+    "progress_col_state": "状態",
+    "progress_col_open": "開く場所",
+    "progress_col_action": "行うこと",
+    "progress_col_completion": "完了条件",
+    "progress_col_boundary": "境界",
+    "progress_state_ready": "準備済み",
+    "progress_state_review": "確認",
+    "progress_state_user_check": "手動確認",
+    "progress_state_blocked": "停止",
+    "progress_state_available": "利用可能",
+    "progress_run_checkpoint": "実行結果の根拠がある",
+    "progress_goal_checkpoint": "現在の目的を選んだ",
+    "progress_focus_checkpoint": "現在の注目点を処理した",
+    "progress_evidence_checkpoint": "指定された根拠を確認した",
+    "progress_claim_checkpoint": "主張の境界を確認した",
+    "progress_archive_checkpoint": "レポート・出力パケットを保存した",
+    "progress_run_action_ready": "現在の推定結果を使い、初期確認を見える状態に保ちます。",
+    "progress_archive_action": "レビューに必要な表、manuscript binder、図、スクリプトのパッケージをダウンロードします。",
+    "progress_run_completion": "推定結果、診断、初期確認行が利用できます。",
+    "progress_goal_completion": "選択した目的が、いま行っている作業と一致しています。",
+    "progress_focus_completion": "先頭の注目項目を解決、記録、または注意点として明示的に持ち越しています。",
+    "progress_evidence_completion": "指定された根拠表またはパネルを少なくとも 1 つ開き、注意点と一緒に確認しています。",
+    "progress_claim_completion": "文言を作成する前に、支持される主張、限定付きの主張、まだ支持されない主張を分けています。",
+    "progress_archive_completion": "レビューに必要な根拠表、設定、文言の境界が出力に含まれています。",
+    "progress_run_boundary": "現在の推定実行なしに解釈しません。",
+    "progress_goal_boundary": "目的セレクタは案内だけを変えます。モデルは変更しません。",
+    "progress_focus_boundary": "停止条件が未解決のまま、選択した目的を完了扱いにしません。",
+    "progress_evidence_boundary": "案内だけに依存せず、指定された根拠を開きます。",
+    "progress_claim_boundary": "注意点付きの確認を、最終主張に変換しません。",
+    "progress_archive_boundary": "プライバシーモードと共有計画を明確にしないまま、行レベルの非公開出力を共有しません。",
     "goal_locator_heading": "具体的に確認する場所",
     "goal_locator_caption": "次に開く場所を確認した後で、具体的なタブ、表、パネル名が必要なときに使います。根拠を隠さず、案内だけを絞ります。",
     "goal_locator_col_open": "開く場所",
@@ -546,6 +608,68 @@
     "figures_panel_col_panel": "図パネル",
     "report_export_subheader": "レポートと出力",
     "report_export_caption": "報告文案、準備状況チェック、公表用文書、ダウンロード可能な表をまとめています。",
+    "report_ready_summary_heading": "Report-ready summary",
+    "report_ready_summary_caption": "結果を書く前、または共有する前にここから確認します。Publication gate、APA 文監査、主張の根拠、採点 QC、category collapse の判断を行動単位の rows に圧縮します。",
+    "report_ready_summary_details_label": "Report-ready evidence の詳細を表示",
+    "report_ready_summary_download": "Report-ready summary をダウンロード (CSV)",
+    "report_ready_summary_empty": "この run では report-ready summary rows は生成されませんでした。",
+    "report_ready_brief_heading": "Decision brief と APA Results draft",
+    "report_ready_brief_caption": "Report-ready summary を 1 ページの判断メモと保守的な Results 段落 draft に変換します。Caveat と evidence files を draft と一緒に残してください。",
+    "report_ready_brief_expander": "Report-ready decision brief を表示",
+    "report_ready_brief_download": "Decision brief をダウンロード (Markdown)",
+    "apa_results_draft_expander": "APA Results paragraph draft を表示",
+    "apa_results_draft_download": "APA Results draft をダウンロード (Markdown)",
+    "role_action_memos_heading": "役割別 Action Memo",
+    "role_action_memos_caption": "論文執筆者、採点責任者、測定実務者ごとに次の行動を分けます。すべての export を順番に読むのではなく、最初に開くべき evidence へ進むための rows です。",
+    "role_action_memos_details_label": "役割別 Action Memo の詳細を表示",
+    "role_action_memos_download_csv": "役割別 memo をダウンロード (CSV)",
+    "role_action_memos_expander": "役割別 memo を表示 (Markdown)",
+    "role_action_memos_download_md": "役割別 memo をダウンロード (Markdown)",
+    "role_action_memos_empty": "この run では役割別 action memo rows は生成されませんでした。",
+    "role_checklist_heading": "役割別 Action Checklist",
+    "role_checklist_caption": "役割ごとの確認タスクを完了管理します。共著者、採点責任者、測定レビュー担当へ作業を渡すときは、役割で絞り込んで使います。",
+    "role_checklist_progress_template": "{done}/{total} 件が完了しています。残り {remaining} 件のうち、{blockers} 件は最終出力を止め、{caveats} 件は注意書きが必要です。",
+    "role_checklist_summary_details_label": "役割別 checklist の進捗詳細を表示",
+    "role_checklist_role_select_label": "Checklist の役割",
+    "role_checklist_all_roles": "すべての役割",
+    "role_checklist_open_only_label": "未完了タスクだけ表示",
+    "role_checklist_open_only_help": "完了済みの行を画面上で隠します。CSV と Markdown には完了状態を含めて残ります。",
+    "role_checklist_done_col": "完了",
+    "role_checklist_done_help": "完了条件を満たし、根拠ファイルを保存した後にのみチェックします。",
+    "role_checklist_download_csv": "役割別 checklist をダウンロード (CSV)",
+    "role_checklist_expander": "役割別 checklist を表示 (Markdown)",
+    "role_checklist_download_md": "役割別 checklist をダウンロード (Markdown)",
+    "role_checklist_filter_empty": "現在の checklist フィルタに一致する行はありません。",
+    "role_checklist_empty": "この run では役割別 checklist rows は生成されませんでした。",
+    "critical_review_heading": "批判的 Final Review",
+    "critical_review_caption": "最終の原稿利用や意思決定に進む前の横断チェックです。現在の出力を最終扱いした場合に何が危ないかを確認します。",
+    "critical_review_status_template": "{stop} 個の観点が最終出力を止めています。{caveat} 個の観点は注意書きが必要です。",
+    "critical_review_details_label": "批判的 Final Review の詳細を表示",
+    "critical_review_download_csv": "批判的 Final Review をダウンロード (CSV)",
+    "critical_review_expander": "批判的 Final Review を表示 (Markdown)",
+    "critical_review_download_md": "批判的 Final Review をダウンロード (Markdown)",
+    "critical_review_empty": "この run では批判的 Final Review rows は生成されませんでした。",
+    "audience_boards_heading": "利用目的別 Review Board",
+    "audience_boards_caption": "同じ根拠を、心理測定レビュー用の判定根拠、大学院でのMFRM読解用の順路、テスト開発用の意思決定に分けて表示します。",
+    "audience_status_tab": "なぜこの判定か",
+    "audience_reading_tab": "読む順番",
+    "audience_operation_tab": "意思決定",
+    "audience_status_details_label": "判定根拠の詳細を表示",
+    "audience_status_download": "判定根拠をダウンロード (CSV)",
+    "audience_status_empty": "この run では判定根拠 rows は生成されませんでした。",
+    "audience_reading_details_label": "結果を読む順番の詳細を表示",
+    "audience_reading_download": "結果を読む順番をダウンロード (CSV)",
+    "audience_reading_empty": "この run では結果を読む順番の rows は生成されませんでした。",
+    "audience_operation_details_label": "運用上の意思決定 board の詳細を表示",
+    "audience_operation_download": "運用上の意思決定 board をダウンロード (CSV)",
+    "audience_operation_empty": "この run では運用上の意思決定 rows は生成されませんでした。",
+    "reporting_bridge_heading": "Reporting Action Bridge",
+    "reporting_bridge_caption": "Review Board の根拠を、APA文案、主張の修正、採点上の対応、ルーブリック判断、カテゴリ統合の感度分析メモ、保存手順へ橋渡しします。",
+    "reporting_bridge_details_label": "Reporting Action Bridge の詳細を表示",
+    "reporting_bridge_download_csv": "Reporting Action Bridge をダウンロード (CSV)",
+    "reporting_bridge_expander": "Reporting Action Bridge を表示 (Markdown)",
+    "reporting_bridge_download_md": "Reporting Action Bridge をダウンロード (Markdown)",
+    "reporting_bridge_empty": "この run では Reporting Action Bridge rows は生成されませんでした。",
     "repro_heading": "専門性と再現性のガードレール",
     "repro_caption": "生成文、表、出力バンドルを報告可能な成果物として扱う前に確認します。便利さが監査可能性を置き換えないようにするための表です。",
     "repro_col_check": "確認項目",
@@ -572,10 +696,10 @@
     "repro_export_package_verify": "プライバシーモード、含まれるファイル、図の設定、マニフェスト、行 / person レベルの開示範囲が共有文脈と一致している。",
     "repro_export_package_artifact": "Export privacy manifest、figure manifest、visualization settings、OSF-style bundle、manuscript binder。",
     "repro_export_package_do_not": "マニフェスト確認なしに、private な行レベル / person レベル出力を共有フォルダへ移動しない。",
-    "repro_rerun_check": "再実行と外部検証",
-    "repro_rerun_verify": "アプリ版、データ subset、設定、seed または生成スクリプト、外部エンジン比較が必要に応じてアーカイブされている。",
-    "repro_rerun_artifact": "実行履歴、方法付録、出力済み設定、検証テンプレート、Stan runner、使用時の外部比較表。",
-    "repro_rerun_do_not": "文書化された比較設計なしに、厳密なエンジン間同等性、将来的妥当性、calibration evidence を主張しない。",
+    "repro_rerun_check": "Pythonネイティブな再実行identity",
+    "repro_rerun_verify": "アプリ版、入力fingerprint、正確な設定、AnalysisID、seedまたは感度planが保存されている。",
+    "repro_rerun_artifact": "mfrm_config.json、analysis_identity.json、evidence_records.json、method appendix、Python app-engine runner。",
+    "repro_rerun_do_not": "異なるAnalysisIDの成果物を混在させず、入力identityまたは設定が欠ける状態で再現可能と主張しない。",
     "claim_trace_heading": "主張状態と根拠の追跡",
     "claim_trace_caption": "APA テキストをコピーする前、または出力を共有する前に確認します。自動生成された報告文を監査可能な主張状態の行に変換します。",
     "claim_trace_col_item": "レポート項目",
@@ -648,7 +772,7 @@
     "export_preflight_external_validation_keep": "external_simulation_reference_inventory.csv、validation README/status files、external templates、archived comparison outputs。",
     "export_preflight_external_validation_stop": "Separate validation design が支持しない限り、exact cross-engine equivalence や prospective validity を claim しない。",
     "show_full_report": "この表示内で Report の全サブセクションを表示",
-    "show_full_report_help": "アプリ全体を Full 表示に切り替えずに、manuscript template、method appendix、facet equivalence、Stan code を追加します。",
+    "show_full_report_help": "アプリ全体を全パネル表示に切り替えずに、manuscript template、method appendix、facet equivalence reviewを追加します。",
     "downloads_expander": "表、図、scripts、設定をダウンロード",
     "learn_subheader": "学習と解釈のサポート",
     "learn_caption": "参照ガイドはここに残ります。Methods を書く場合や診断上の問いを解く場合は、全ライブラリも開いて確認します。",
@@ -659,6 +783,9 @@
   "dimensionality": {
     "warning_pca_failed_template": "**残差の PCA を計算できませんでした。** 理由: {reason}\n\n一般的な対処: facet を 2 つ以上 (各 2 レベル以上) 選択する、各 person が複数の item-combination を観測する設計にする、データ範囲を広げる、など。理由が `residual PCA was disabled by the Analysis depth setting` の場合は、Analysis depth = Standard、Full publication、または Custom > Compute residual PCA で再実行してください。",
     "interpretation_main": "**標準化残差の PCA の読み方:**\n\nPCA は Rasch の主次元を抽出した後の *未説明* 分散 (残差) を分解します。データが unidimensional であれば残差はランダムなノイズとなり、いずれの主成分も突出しないはずです。\n\n| 基準 | ガイドライン | 文献 |\n|---|---|---|\n| 第1固有値 < 2.0 | unidimensionality を支持 | Linacre (2024) |\n| 第1固有値 2.0--3.0 | 副次元の可能性あり、内容を確認 | Smith (2002) |\n| 第1固有値 > 3.0 | 副次元の存在を強く示唆 | Linacre (2024) |\n| 第1主成分の未説明分散 < 5% | 許容範囲 | Smith (2002) |\n| 第1主成分の未説明分散 5--10% | 要調査 | Linacre (2024) |\n| 固有値比 (PC1/PC2) >= 3 | 単一の支配的次元を支持 | Reckase (1979) |\n\n下の scree plot を確認: 第1主成分の後に明確な \"elbow\" があり、後続の固有値が 1.0 付近であれば unidimensionality を支持します。",
+    "panel_select_label": "PCA パネル",
+    "panel_select_help": "選択した残差 PCA パネルだけを描画します。言語や周辺コントロールを切り替えるたびに、全 facet の PCA を描き直すことを避けます。",
+    "panel_select_caption": "別の残差 PCA 範囲を見るにはパネルを切り替えてください。推定済みモデルとキャッシュ済み診断を再利用します。",
     "label_overall": "全体の標準化残差",
     "label_facet_template": "facet 別の残差: {facet_name}",
     "computation_failed_caption_template": "PCA 計算に失敗 (pre-computed の結果を使用): {error}",
@@ -753,7 +880,7 @@
     "covariate_preview_info": "person_data をアップロードまたは貼り付けると、fit 前に数値 / カテゴリ covariate のコーディングをプレビューできる。",
     "covariate_type_preview_header": "**Covariate 型プレビュー**",
     "intercept_only_caption": "intercept のみの母集団モデル。person-level covariate のコーディングは不要。",
-    "covariate_preview_error_template": "Covariate 型プレビューを生成できなかった: {error}",
+    "covariate_preview_error_template": "共変量型のプレビューを生成できませんでした。式と受験者データの列を確認してください。",
     "score_scale_expander": "Score スケール設定",
     "keep_original_categories_checkbox": "元のカテゴリ値を保持",
     "keep_original_categories_help": "チェックするとカテゴリをそのまま使う (例: 1-5)。チェックしない場合、非連続カテゴリは内部で連続スケールに recode される。",
@@ -793,9 +920,9 @@
     "anchor_template_example_label": "Example fixed-anchor CSV",
     "group_anchor_template_blank_label": "Blank group-anchor CSV",
     "group_anchor_template_example_label": "Example group-anchor CSV",
-    "asset_unavailable_caption_template": "{asset_name} は利用できない: {error}",
+    "asset_unavailable_caption_template": "同梱のアンカーテンプレートを一時的に利用できません。",
     "show_anchor_guideline_checkbox": "Anchor ガイドラインのプレビューを表示",
-    "anchor_guideline_unavailable_caption_template": "Anchor ガイドラインは利用できない: {error}",
+    "anchor_guideline_unavailable_caption_template": "アンカーガイドラインのプレビューを一時的に利用できません。",
     "anchor_audit_expander": "Anchor audit 設定",
     "anchor_policy_label": "Anchor の問題発生時のポリシー",
     "anchor_policy_help": "`warn` は anchor / linking の問題を表示するが、有効行のみで推定を続ける。`error` は anchor audit で問題が見つかった時点で推定を停止する。`silent` はダウンロード / config にのみ問題を記録する。",
@@ -974,6 +1101,20 @@
     "tab_quick_start": "クイックスタート",
     "tab_analysis_workflow": "分析ワークフロー",
     "tab_interpretation_guide": "解釈ガイド",
+    "mml_popsd_heading": "### person メトリック: 固定 vs 推定 母集団 SD（MML）",
+    "mml_popsd_caption": "MML は person 能力分布 N(Xβ, σ²) で積分する。σ を固定（既定）するか、データから推定できる。これは全 person measure のスケールを決める。",
+    "mml_popsd_col_setting": "設定",
+    "mml_popsd_col_what": "何をするか",
+    "mml_popsd_col_when": "いつ使うか",
+    "mml_popsd_col_how": "読み方 / 注意",
+    "mml_popsd_fixed_setting": "固定 prior SD（既定）",
+    "mml_popsd_fixed_what": "person 能力 SD をあなたの値（既定 1.0）に固定し、quadrature がそれをメトリックとして使う。",
+    "mml_popsd_fixed_when": "既定。固定で再現可能なスケールが欲しいとき、または prior-SD 感度スクリーンで代替 SD を試すとき。",
+    "mml_popsd_fixed_how": "measures は固定 SD メトリック上にあり、分散を推定するエンジンと直接比較できない。prior-SD 感度スクリーンで選択へのロバスト性を確認する。",
+    "mml_popsd_free_setting": "person SD を推定（free, EM）",
+    "mml_popsd_free_what": "EM エンジンが σ をデータから推定する。設定した値は EM の初期値にすぎない。",
+    "mml_popsd_free_when": "personメトリックをデータから決め、対応するEM経路が分析デザインに適切な場合。",
+    "mml_popsd_free_how": "σ̂ を収束パネルの profile SE・95% CI とともに読む。profile SE は他パラメータ固定でやや楽観的。free-SD は EM エンジンを強制し、AIC / BIC に1パラメータ追加する。",
     "tab_rater_effects": "評価者効果",
     "tab_rating_scale_guide": "評定尺度ガイド",
     "tab_glossary": "用語集",
@@ -981,11 +1122,17 @@
     "tab_troubleshooting": "トラブルシューティング",
     "tab_model_capability": "モデル機能",
     "tab_public_beta": "公開ベータ",
-    "essential_mode_caption": "3 つの高度なヘルプ項目 (評定尺度ガイド、モデル機能、公開ベータ) は **コンパクト** 表示では非表示です。これらを読むには **全パネル表示** を選んでください。計算範囲は別途 Analysis depth で制御します。",
+    "panel_select_label": "ヘルプ項目",
+    "panel_select_help": "選択したヘルプ項目だけを描画します。言語切り替え時や大きな結果を確認しているときも、Help の表示を軽く保ちます。",
+    "panel_select_caption": "別の項目を選ぶと、その項目を読み込みます。非表示のヘルプ項目は毎回再描画されません。",
+    "essential_mode_caption": "専門的な評定尺度ガイドは **コンパクト** 表示では非表示です。読むには **全パネル表示** を選んでください。計算範囲は別途 Analysis depth で制御します。",
     "interpretation_caution": "Help タブは解釈ガイドであり、自動判定ルールではありません。fit、reliability、category、欠測、bias の threshold はスクリーニング用の目安です。manuscript 上の主張には、収束、connectedness、sample size、design context、内容的判断の確認が必要です。",
+    "reference_coverage_expander": "Help と QC 主張の文献根拠",
+    "reference_coverage_caption": "Help、Agreement、category collapse に関する主張を、アプリ内APA文献、Zotero 確認状況、安全な表現範囲に対応づけます。",
+    "reference_coverage_download": "文献根拠の対応表をダウンロード (CSV)",
     "yardstick_help_expander": "FACETS-style yardstick の描画仕様",
     "yardstick_help_heading": "### FACETS-style Yardstick の描画仕様",
-    "yardstick_help_caption": "Wright Map -> Yardstick パネルと、ダウンロード可能な R / Python / Julia 再現スクリプトに対応する現在の実装仕様です。",
+    "yardstick_help_caption": "Wright Map -> YardstickパネルとPython再現スクリプトに対応する現在の実装仕様です。",
     "yardstick_help_col_topic": "項目",
     "yardstick_help_col_current_behavior": "現在の挙動",
     "yardstick_help_col_why": "なぜ重要か",
@@ -1007,9 +1154,9 @@
     "yardstick_help_wright_why": "分布形状、不確実性、密度に関する主張は、yardstick 単独ではなく Wright Map と表に基づく必要があります。",
     "yardstick_help_wright_check": "Manuscript 上の主張では、measures.csv、reliability.csv、visual_claim_guardrails.csv、図を yardstick と並べて確認します。",
     "yardstick_help_repro_topic": "再現性",
-    "yardstick_help_repro_current": "アプリは mfrm_yardstick_map.csv と、同じテキストマップを再描画する ggplot2::geom_text()、Plotly、CairoMakie スクリプトを出力します。",
+    "yardstick_help_repro_current": "アプリはmfrm_yardstick_map.csvと、同じテキストマップを再描画するPython Plotlyスクリプトを出力します。",
     "yardstick_help_repro_why": "CSV が run 固有の契約です。スクリプトは map を再描画するもので、再推定したり推定値を暗黙に変更したりしてはいけません。",
-    "yardstick_help_repro_check": "MFRM_FACETS_Yardstick_Reproduction.zip を run 設定と表と一緒に保管します。",
+    "yardstick_help_repro_check": "MFRM_Python_Yardstick_Reproduction.zipをrun設定と表と一緒に保管します。",
     "input_readiness_heading": "### 推定前に確認すること",
     "input_readiness_caption": "実行ボタンをクリックする前に使うチェックリストです。推定前の準備状況パネルが何を確認し、どの所見を推定前に直すべきかを説明します。",
     "input_readiness_col_check": "確認項目",
@@ -1206,116 +1353,6 @@
     "guided_situation_manuscript_export_inspect": "Sentence evidence、figure captions、privacy mode、included files、unresolved caveats。",
     "guided_situation_manuscript_export_record": "支持される claim、conditional な claim、共有可能な artifacts。",
     "guided_situation_manuscript_export_avoid": "Evidence と privacy review なしに complete / private exports や generated prose を送ること。",
-    "refinement_expander": "現在の scorecard と refinement roadmap",
-    "refinement_caption": "これは現在のアプリに対する 100 点満点の明示的評価です。統計結果ではなく、詳細な根拠を保持しながら修正優先順位を決めるための product-quality judgment です。",
-    "refinement_score_heading": "#### 100 点 scorecard",
-    "refinement_score_col_perspective": "観点",
-    "refinement_score_col_score": "Score / 100",
-    "refinement_score_col_sufficient": "現時点で十分な点",
-    "refinement_score_col_insufficient": "まだ不十分な点",
-    "refinement_score_col_fix": "修正方法",
-    "refinement_score_col_priority": "優先度",
-    "refinement_score_global_strategy_perspective": "大局的な product strategy",
-    "refinement_score_global_strategy_sufficient": "Public-beta の立場、local-run privacy、guided interpretation、reporting workflow が明確です。",
-    "refinement_score_global_strategy_insufficient": "First screen に複数の entry point が競合して残り、全体の物語が散らばって見えることがあります。",
-    "refinement_score_global_strategy_fix": "最初の流れを、goal 選択、sample 実行、Current focus、1 つの detail section へ絞ります。",
-    "refinement_score_global_strategy_priority": "High",
-    "refinement_score_guided_ui_perspective": "Guided UI と orientation",
-    "refinement_score_guided_ui_sufficient": "Goal routing、Current focus、reader playbooks、situation walkthroughs により navigation の迷いはかなり減っています。",
-    "refinement_score_guided_ui_insufficient": "Guide は判断理由を説明しますが、ユーザーの選んだ問題に応じて完全に個別化された interactive guide ではありません。",
-    "refinement_score_guided_ui_fix": "Context-aware defaults、result-aware links、各主要診断の近くに compact next-click summary を追加します。",
-    "refinement_score_guided_ui_priority": "High",
-    "refinement_score_local_controls_perspective": "局所的な UI clarity と controls",
-    "refinement_score_local_controls_sufficient": "多くの dense section に caption、status meanings、tables、progressive disclosure が入りました。",
-    "refinement_score_local_controls_insufficient": "一部の controls はまだ技術的で、繰り返しがあり、影響する chart / table から離れています。",
-    "refinement_score_local_controls_fix": "各 section の label clarity、control placement、default values、empty states、mobile width を監査します。",
-    "refinement_score_local_controls_priority": "High",
-    "refinement_score_statistical_rigor_perspective": "Statistical rigor と validation posture",
-    "refinement_score_statistical_rigor_sufficient": "Core diagnostics、caveats、method references、simulation framing、cross-package caution が見える状態です。",
-    "refinement_score_statistical_rigor_insufficient": "より強い replacement claim には、scenario-based external validation と tolerance documentation がさらに必要です。",
-    "refinement_score_statistical_rigor_fix": "Model family ごとに deterministic scenario fixtures、cross-package reports、tolerance notes を拡張します。",
-    "refinement_score_statistical_rigor_priority": "High",
-    "refinement_score_claim_safety_perspective": "Claim safety と reporting boundaries",
-    "refinement_score_claim_safety_sufficient": "Readiness gates、claim boundaries、evidence matrix、caveat-preserving exports は強い状態です。",
-    "refinement_score_claim_safety_insufficient": "各 sentence を支える evidence row を読まずに generated prose を過信する余地が残っています。",
-    "refinement_score_claim_safety_fix": "Report preview に sentence-level claim badge と unresolved-caveat marker を直接付けます。",
-    "refinement_score_claim_safety_priority": "High",
-    "refinement_score_performance_perspective": "Performance と responsiveness",
-    "refinement_score_performance_sufficient": "Lazy rendering と selected-section display により AppTest timeout と heavy-page rendering は改善しています。",
-    "refinement_score_performance_insufficient": "Large result sets では table、plot、export generation がまだ遅く感じられる可能性があります。",
-    "refinement_score_performance_fix": "Table sampling preview、progressive export build steps、cached figure manifests、large-run warnings を追加します。",
-    "refinement_score_performance_priority": "Medium",
-    "refinement_score_documentation_perspective": "Documentation と Help depth",
-    "refinement_score_documentation_sufficient": "Help は workflow、interpretation、reader profiles、situation playbooks、claim boundaries、simulations を扱っています。",
-    "refinement_score_documentation_insufficient": "深さは十分ですが、Help content が多数の tabs / expanders に分散しており発見しにくい場合があります。",
-    "refinement_score_documentation_fix": "Help index / search surface と、warning row から該当 Help subsection への result-aware links を追加します。",
-    "refinement_score_documentation_priority": "Medium",
-    "refinement_score_exports_perspective": "Reporting、export、manuscript workflow",
-    "refinement_score_exports_sufficient": "Report documents、evidence binders、manifests、privacy notes、audit tables を生成できます。",
-    "refinement_score_exports_insufficient": "Export の選択肢が広く、どの audience にどの bundle が適切か分かりにくい場合があります。",
-    "refinement_score_exports_fix": "Audience と privacy level から正しい bundle と caveat を示す export chooser を追加します。",
-    "refinement_score_exports_priority": "Medium",
-    "refinement_score_governance_perspective": "Privacy、governance、responsible use",
-    "refinement_score_governance_sufficient": "Privacy warnings、public / private export の区別、responsible-use language は明示されています。",
-    "refinement_score_governance_insufficient": "Export や hosted upload の前に、guided data-risk questionnaire はまだありません。",
-    "refinement_score_governance_fix": "Uploads、exports、shared bundles 向けの短い privacy preflight checklist を追加します。",
-    "refinement_score_governance_priority": "Medium",
-    "refinement_score_maintainability_perspective": "Maintainability と extensibility",
-    "refinement_score_maintainability_sufficient": "多くの focused helpers と広い test suite により behavior は保護されています。",
-    "refinement_score_maintainability_insufficient": "Single-file architecture は、navigation、review、future feature work の長期的リスクになっています。",
-    "refinement_score_maintainability_fix": "明確な module boundaries と contracts を準備し、明示的な承認後にだけ分割します。",
-    "refinement_score_maintainability_priority": "High",
-    "refinement_score_overall_perspective": "現在のアプリ全体",
-    "refinement_score_overall_sufficient": "Guided public-beta use、teaching、exploration、documented reporting workflows には十分強い状態です。",
-    "refinement_score_overall_insufficient": "初回接触で単純に感じられるほどにはまだ磨き込まれておらず、強い parity / replacement claim には不足があります。",
-    "refinement_score_overall_fix": "First-run simplicity、result-aware guidance、validation depth、accessibility QA、maintainability を優先します。",
-    "refinement_score_overall_priority": "High",
-    "refinement_roadmap_heading": "#### Refinement roadmap",
-    "refinement_roadmap_col_horizon": "時期",
-    "refinement_roadmap_col_target": "目標",
-    "refinement_roadmap_col_work": "作業",
-    "refinement_roadmap_col_acceptance": "受け入れ条件",
-    "refinement_roadmap_col_verification": "検証",
-    "refinement_roadmap_p0_scorecard_horizon": "Now",
-    "refinement_roadmap_p0_scorecard_target": "評価を明示する。",
-    "refinement_roadmap_p0_scorecard_work": "100 点 scorecard、十分 / 不十分な点、roadmap を Help に残します。",
-    "refinement_roadmap_p0_scorecard_acceptance": "アプリの強み、弱み、次に修正する内容をユーザーが確認できます。",
-    "refinement_roadmap_p0_scorecard_verification": "Help-table unit tests と i18n parity。",
-    "refinement_roadmap_p1_navigation_horizon": "Next",
-    "refinement_roadmap_p1_navigation_target": "初回ルートを単純化する。",
-    "refinement_roadmap_p1_navigation_work": "Goal selector、sample-run entry point、Current focus、section selector を 1 本の guided path にまとめます。",
-    "refinement_roadmap_p1_navigation_acceptance": "Help 全体を読まなくても、sample data から正しい次の diagnostic へ進めます。",
-    "refinement_roadmap_p1_navigation_verification": "Sample、sparse data、warning routes の AppTest scenarios。",
-    "refinement_roadmap_p1_local_polish_horizon": "Next",
-    "refinement_roadmap_p1_local_polish_target": "局所 controls を磨く。",
-    "refinement_roadmap_p1_local_polish_work": "Labels、help text、empty states、chart controls、table defaults、mobile / table width を見直します。",
-    "refinement_roadmap_p1_local_polish_acceptance": "各 major section に明確な primary action があり、未説明の technical control がありません。",
-    "refinement_roadmap_p1_local_polish_verification": "Snapshot-style AppTest と targeted UI helper tests。",
-    "refinement_roadmap_p2_result_finder_horizon": "Near term",
-    "refinement_roadmap_p2_result_finder_target": "Result-aware finding を追加する。",
-    "refinement_roadmap_p2_result_finder_work": "Terms、warnings、claim types を result tabs と Help anchors に対応づける search / index surface を作ります。",
-    "refinement_roadmap_p2_result_finder_acceptance": "Statistic や warning を検索すると、対応する table、chart、explanation に到達できます。",
-    "refinement_roadmap_p2_result_finder_verification": "Search-index tests と locale coverage。",
-    "refinement_roadmap_p2_validation_library_horizon": "Near term",
-    "refinement_roadmap_p2_validation_library_target": "Validation evidence を強化する。",
-    "refinement_roadmap_p2_validation_library_work": "Missingness、disconnected designs、rater spread、sparse bias cells、GPCM slopes の scenario fixtures を追加します。",
-    "refinement_roadmap_p2_validation_library_acceptance": "各 scenario に expected warnings、claim boundaries、export evidence があります。",
-    "refinement_roadmap_p2_validation_library_verification": "End-to-end scenario tests と、比較可能な範囲での cross-package tolerance reports。",
-    "refinement_roadmap_p2_accessibility_horizon": "Near term",
-    "refinement_roadmap_p2_accessibility_target": "Accessibility と readability を改善する。",
-    "refinement_roadmap_p2_accessibility_work": "Contrast、keyboard flow、table overflow、captions、small screens、non-color status cues を監査します。",
-    "refinement_roadmap_p2_accessibility_acceptance": "重要な warning と action が、色だけや wide-screen 前提に依存せず使えます。",
-    "refinement_roadmap_p2_accessibility_verification": "Automated contrast checks と、可能な範囲の desktop / mobile AppTest screenshots。",
-    "refinement_roadmap_p3_modularization_horizon": "Later, after approval",
-    "refinement_roadmap_p3_modularization_target": "Single-file risk を下げる。",
-    "refinement_roadmap_p3_modularization_work": "i18n、diagnostics、report exports、visuals、guided UI、validation contracts の module boundaries を定義します。",
-    "refinement_roadmap_p3_modularization_acceptance": "Extraction 前後で同じ tests が通り、behavior が変わりません。",
-    "refinement_roadmap_p3_modularization_verification": "Golden-table tests、import contract tests、full AppTest suite。",
-    "refinement_roadmap_p3_observability_horizon": "Later",
-    "refinement_roadmap_p3_observability_target": "Performance problems をローカルで診断可能にする。",
-    "refinement_roadmap_p3_observability_work": "User data を収集せず、heavy tables、plots、export bundles の optional local timing summaries を追加します。",
-    "refinement_roadmap_p3_observability_acceptance": "ユーザーが遅い処理を特定し、軽量 preview を選べます。",
-    "refinement_roadmap_p3_observability_verification": "Timing summary tests と no-data-persistence checks。",
     "guided_focus_help_heading": "### Guided Current Focus の判断ロジック",
     "guided_focus_help_caption": "First Read は詳細な根拠を残しつつ、Current focus は次にどこを開くべきかを決めます。下の分類は、どの行が解釈を止め、どの行が主張の caveat として残るのかを説明します。",
     "guided_focus_class_col_class": "Current focus の種類",
@@ -1733,9 +1770,30 @@
     "public_beta_migration_header": "### mfrmr 0.1.6 移行カバレッジ",
     "public_beta_migration_caption": "本表は mfrmr 0.1.6 パッケージの機能表面を現在のスタンドアロン Python 実装と public-beta 境界にマッピングする。",
     "public_beta_download_migration": "mfrmr 0.1.6 移行カバレッジをダウンロード (CSV)",
-    "public_beta_release_readiness_header": "### Release Readiness",
-    "public_beta_release_readiness_caption": "本表はリポジトリレベルのチェックリストである。CI の成功実行を代替するものではないが、不足しているリリースファイルや過大主張のリスクを検出する。",
-    "public_beta_download_release_readiness": "Release readiness をダウンロード (CSV)"
+    "classical_dif_col_signal": "シグナル",
+    "classical_dif_col_answers": "何が分かるか",
+    "classical_dif_col_trigger": "フラグ条件",
+    "classical_dif_col_action": "次の行動",
+    "classical_dif_mh_signal": "Mantel カイ二乗 ＋ 標準化 SMD",
+    "classical_dif_mh_answers": "マッチング層内で focal と reference が item を異なって採点するか。",
+    "classical_dif_mh_trigger": "Mantel p（Holm/BH 後）が小さく、|SMD| が ETS の B/C 帯。",
+    "classical_dif_mh_action": "item を点検し、方向（focal/reference のどちらに有利か）を確認。",
+    "classical_dif_logistic_signal": "順序ロジスティック LR 検定",
+    "classical_dif_logistic_answers": "入れ子の累積ロジットモデルで uniform（一定）と non-uniform（能力依存）の DIF を判別。",
+    "classical_dif_logistic_trigger": "uniform (M1-M0) または non-uniform (M2-M1) 検定が有意、Delta-R^2 が B/C 帯。",
+    "classical_dif_logistic_action": "non-uniform が有意なら効果が能力で変わる — 得点域全体でレビュー。",
+    "classical_dif_effect_signal": "効果量クラス (A/B/C)",
+    "classical_dif_effect_answers": "有意性を超えた実用的大きさ（SMD は ETS、Delta-R^2 は Jodoin-Gierl）。",
+    "classical_dif_effect_trigger": "クラス B（中）または C（大）。",
+    "classical_dif_effect_action": "その大きさが用途にとって重要か判断。大標本では微小な効果も有意になる。",
+    "classical_dif_purify_signal": "純化されたマッチング",
+    "classical_dif_purify_answers": "強くフラグされた item がマッチング anchor から除外され汚染を回避したか。",
+    "classical_dif_purify_trigger": "実行時の注記の 'purified' に列挙。",
+    "classical_dif_purify_action": "純化されたスクリーンはより信頼できる。どの item が anchor になったか報告する。",
+    "classical_dif_sibtest_signal": "SIBTEST（回帰補正）",
+    "classical_dif_sibtest_answers": "マッチング得点分布の群差を補正した uniform DIF 効果（beta）。",
+    "classical_dif_sibtest_trigger": "beta が moderate/large 帯かつ有意、または Mantel と方向が不一致。",
+    "classical_dif_sibtest_action": "MH/logistic の裏付けとして使用。一致すれば flag は頑健、不一致なら matching と strata を点検。"
   },
   "sidebar_estimation": {
     "column_mapping_subheader": "列の対応づけ",
@@ -1767,6 +1825,8 @@
     "visual_theme_help": "公表用 PNG / HTML、図マニフェスト、視覚的根拠バインダーに適用するテーマ。",
     "visual_label_policy_label": "ラベル表示方針",
     "visual_label_policy_help": "Auto は現在の可読性ルールを使用。Show all は長いラベルを保持。Important labels は密集した tick label を間引く。Hover only は tick label を非表示にし、HTML の hover に完全ラベルを残す。",
+    "visual_plot_label_mode_label": "図中ラベルID",
+    "visual_plot_label_mode_help": "FACETS-style yardstick の直接ラベルを制御する。Auto はラベル表示方針に従い、Number は R001 のような短い plot ID、Short label は短縮名、Full label は完全名、None は図中ラベルを非表示にして hover / export の lookup 列に残す。",
     "visual_base_font_size_label": "基本フォントサイズ",
     "visual_base_font_size_help": "Publication 用エクスポート図の基本フォントサイズ。軸タイトル、tick、legend、annotation はこの値から調整される。",
     "visual_label_max_chars_label": "ラベル最大文字数",
@@ -1809,10 +1869,13 @@
     "mml_engine_auto_display": "Auto (推奨)",
     "mml_engine_help": "Auto はまず Hybrid を試し、収束しない場合は EM にフォールバックする。Hybrid は数回の EM 反復後に周辺尤度を直接最大化する L-BFGS-B に切り替える。Direct は良い初期値が得られた後に高速。EM は保守的な参照ルート。",
     "quad_points_label": "Quadrature 点数",
-    "quad_points_help": "点数を増やすと person ability 分布の近似精度が上がるが実行時間も延びる。素早い確認には 7-11、最終レビューには 15 以上を推奨。",
+    "quad_points_help": "点数を増やすほど MML の person ability 分布の近似が正確になるが遅くなる。15 と 61 で推定値が最大 0.5-1 logit ほど変わりうるため、7-15 は素早い探索用に留め、報告する結果には 31 以上を使う。",
     "population_prior_sd_label": "Person 母集団 SD (MML)",
     "population_prior_sd_help": "MML quadrature が仮定する person ability 分布を制御する: theta_j ~ N(X_j beta, SD^2)。facet 正則化や Bayesian Stan の prior とは別。",
-    "mml_assumptions_info_template": "**MML の仮定:** エンジン `{engine}`、quadrature `{quad_points}` 点、person 母集団 SD は `{prior_sd}` に固定。詳細制御に切り替えるとこれらを編集可能。"
+    "mml_assumptions_info_template": "**MML の仮定:** エンジン `{engine}`、quadrature `{quad_points}` 点、person 母集団 SD `{prior_sd}`。詳細制御に切り替えるとこれらを編集可能。",
+    "estimate_population_sd_label": "person SD を推定 (free, MML/EM)",
+    "estimate_population_sd_help": "ON にすると、person 母集団 SD を上の固定値ではなく EM エンジンがデータから推定する（上の値は初期値としてのみ使用）。person メトリックがデータ決定になり、分散を推定する TAM / ConQuest 等と比較可能になる。EM エンジンが必要で、他の MML エンジンは自動的に EM に切り替わる。",
+    "estimate_population_sd_active_note": "person SD は自由推定されます。上の SD は EM の初期値にすぎません。推定された SD と profile SE/CI は結果とともに報告されます。"
   },
   "data_source": {
     "header": "データソース",
@@ -1820,6 +1883,28 @@
     "option_simulate": "合成データを生成",
     "option_paste": "CSV/TSV テキストを貼り付け",
     "option_upload": "ファイルをアップロード",
+    "sim_design_preset_label": "Simulation preset",
+    "sim_design_preset_help": "開始点となる design を選択します。適用後、下の各 control で調整できます。",
+    "sim_design_preset_balanced": "標準的な 60-person design",
+    "sim_design_preset_sparse_coverage": "Sparse rater coverage",
+    "sim_design_preset_planned_missingness": "Planned missingness",
+    "sim_design_preset_zero_category": "Zero-count category",
+    "sim_design_preset_balanced_caption": "報告準備の rehearsal 用 design: 60 persons、2 raters、3 tasks、3 criteria、planned missingness なし。",
+    "sim_design_preset_sparse_coverage_caption": "rater 数を増やしつつ person あたり 1 rater に制限し、軽い planned missingness も入れるストレスケース。",
+    "sim_design_preset_planned_missingness_caption": "欠測 rating event が design readiness を変えるか確認する sensitivity case。",
+    "sim_design_preset_zero_category_caption": "最高 score category を意図的に未使用にする category-functioning のストレスケース。",
+    "sim_design_preset_apply_button": "Preset を適用",
+    "sim_design_preset_applied_template": "適用済み preset: {preset}",
+    "sim_preview_tab_sparse": "Sparse design",
+    "sim_sparse_caption": "推定前に、sparse category、欠測、facet level の支え、facet-pair cell の密度を確認する設計監査です。ストレスケースとして使う場合も、制約を見える状態にしておきます。",
+    "sim_sparse_hold_warning": "少なくとも 1 つの設計行は、報告風の解釈に進む前に、sparse-design 条件の対処または明記が必要です。",
+    "sim_sparse_review_info": "確認が必要な設計行があります。ストレステストとしては有用ですが、出力解釈では制約を明示してください。",
+    "sim_sparse_ready_success": "生成された設計は、現在の sparse-design スクリーニング基準を満たしています。",
+    "sim_sparse_details_label": "Sparse-design audit の全列を表示",
+    "sim_sparse_audit_download_button": "Sparse-design audit をダウンロード (CSV)",
+    "sim_sparse_pair_expander": "Facet-pair cell density",
+    "sim_sparse_pair_details_label": "Facet-pair cell 表の全列を表示",
+    "sim_sparse_pair_download_button": "Facet-pair cell 表をダウンロード (CSV)",
     "scenario_info_template": "**読込済み:** {label}\n\n**設計:** {persons} × {raters} × {tasks} × {criteria} = **{n_obs} 観測**、{n_cat} 段階尺度。\n\n{short}",
     "full_description_expander": "詳細な説明と参考文献",
     "parameter_values_grounded_label": "**パラメータ値の根拠:**",
@@ -1834,7 +1919,7 @@
     "teacher_paste_guide_body": "1. 表計算ソフトで 1 行 1 評価の形式にする。\n2. `Student`、`Rater`、`Assignment`、`Criterion`、`Score` などのヘッダー行を含める。\n3. 表を選択してコピーし、ここに貼り付ける。\n4. プレビューが表示されたら、`Student` を **Person** に、`Score` を **Score** に、その他の列を facet に対応づける。\n\nルーブリック観点ごとの評価が利用できる場合は、合計スコアだけを貼り付けないでください。空欄の score は欠測として扱われ、尤度から除外されます。",
     "download_teacher_template_button": "教員向け貼り付けテンプレート (CSV) をダウンロード",
     "paste_parse_error": "貼り付けたテキストを表として読み取れませんでした。上で区切り文字を選択するか、ヘッダー行が 1 行だけの CSV/TSV を貼り付けてください。",
-    "technical_parse_details_expander": "読み取りの技術詳細",
+    "technical_parse_details_expander": "次にできること",
     "single_column_warning_paste": "1 列のみ検出されました。データがカンマ区切りでない場合は Tab または Semicolon を選択してください。",
     "single_column_warning_upload": "1 列のみ検出されました。ファイルがカンマ区切りでない場合は Tab または Semicolon を選択してください。",
     "detected_columns_caption_template": "{n_cols} 列を検出: {preview_cols}{ellipsis}",
@@ -1854,7 +1939,7 @@
     "layout_score_col_label": "Score 列名",
     "layout_score_col_help": "melt されたセル値はこの列に入る (デフォルト Score)。",
     "layout_incomplete_warning": "ID 列と Score 列を最低 1 つずつ選択する必要がある。",
-    "layout_pivot_error_template": "Pivot 失敗: {error}",
+    "layout_pivot_error_template": "表を縦長形式へ変換できませんでした。ID列、得点列、出力列名を確認してください。",
     "layout_pivot_empty_warning": "Pivot 結果が空 (すべての score セルが空または非数値)。",
     "layout_pivot_success_template": "Wide {rows_wide} 行 -> Long {rows_long} 行に変換 ({facet} facet に {n_levels} レベル)。",
     "layout_pivot_preview": "Long format 変換後のプレビュー (先頭 20 行)",
@@ -1872,6 +1957,9 @@
     "targeting_overlap_warning_template": "Person 分布と facet 分布が重なっていない (ギャップ = {gap} logit) — 天井効果や床効果の可能性あり。",
     "tab_label_wright_map": "Wright Map",
     "tab_label_yardstick": "Yardstick (FACETS-style)",
+    "map_panel_select_label": "マップパネル",
+    "map_panel_select_help": "選択したマップだけを描画します。再実行のたびに Wright Map と FACETS-style yardstick を同時に作り直すことを避けます。",
+    "map_panel_select_caption": "別のマップを見るにはパネルを切り替えてください。推定済み measure を再利用しており、パネル切り替えでは再推定しません。",
     "yardstick_intro_markdown": "**Yardstick (FACETS Table 6.0 style)**\n\nこのテキスト中心の縦軸表示はすべての facet を共通の logit スケール上に配置し、element 名を失わずに相対的位置を比較できる。person は最左列に度数ヒストグラムとして表示され、続く各列は facet ごとのテキスト列になる。threshold が利用できる場合は、最右列に短い水平 step / threshold 線と adjacent-category ラベルを表示する。",
     "no_finite_person_estimates": "有限な person 推定値がない。",
     "not_enough_facets_yardstick": "Yardstick を描画するには facet 数が不足している。",
@@ -1922,6 +2010,8 @@
     "parameter_recovery_run_help": "各 replicate で完全 design を simulate し、モデルを refit し、location-indeterminate parameter block を真値に合わせる。コストは replicate 数に線形。最初は 10 で smoke check が推奨。",
     "parameter_recovery_running_spinner": "パラメータ復元シミュレーションを実行中...",
     "parameter_recovery_summary_caption": "Bias は平均整列誤差の平均 (構造上ゼロ近傍)。RMSE は二乗平均平方根。Coverage95 は estimate +/- 1.96 * SE に真値が入る行の割合。",
+    "parameter_recovery_convergence_note": "下の指標は、収束した {n_converged}/{n_total} 反復のみを集計しています。非収束の反復は bias・RMSE・coverage を歪めないよう除外しています。",
+    "parameter_recovery_no_convergence_note": "{n_total} 反復のいずれも収束しませんでした。下の指標は全完了反復を集計したものであり、慎重に解釈してください。",
     "parameter_recovery_coverage_caption": "SE/CI coverage 診断: empirical 95% coverage を nominal 0.95 target と比較し、論文で caveat として示せるよう SE/CI method status も保持する。",
     "parameter_recovery_coverage_details": "SE/CI coverage 診断の全列を表示",
     "parameter_recovery_coverage_download_button": "SE/CI coverage 診断を CSV で download",
@@ -2158,14 +2248,15 @@
     "marginal_pairwise_unavailable_default": "Pairwise marginal 診断は計算されなかった。",
     "marginal_pairwise_counts_expander": "Pairwise marginal 度数の詳細",
     "fit_df_method_subheader": "ZSTD reporting 規約",
-    "fit_df_method_caption": "標準化適合統計量の d.f. 規約は 2 つ用意されている。Engine d.f. は Infit に sum(Var * weight)、Outfit に sum(weight) を使う (分散一様性の近似)。FACETS d.f. は Wright-Masters (1982) の Welch-Satterthwaite 式により、4 次中心モーメントを通じて分散の不均一性を取り込む。下記で切り替え可能 - 表示の選択のみであり、再 fit は走らない。",
+    "fit_df_method_caption": "RSM と PCM では FACETS/Wright-Masters d.f. がデフォルトです。主 ZSTD は Wilson-Hilferty 変換と FACETS の +/-9 上限を用い、従来の engine d.f./ZSTD は *_ENGINE 副列に保持します。下の切替は表示だけを変え、再 fit は行いません。",
     "fit_df_method_radio_label": "d.f. 規約",
     "fit_df_method_option_engine": "Engine (分散・weight の総和)",
-    "fit_df_method_option_facets": "FACETS (Wright-Masters Satterthwaite)",
-    "fit_df_method_option_both": "両並列 (engine + FACETS の列)",
+    "fit_df_method_option_facets": "FACETS 主列 + engine 副列（デフォルト）",
+    "fit_df_method_option_both": "Engine 主列で比較 + FACETS 副列",
     "fit_df_method_cap_label": "FACETS ZSTD の絶対値上限",
     "fit_df_method_cap_help": "FACETS は極端なセルに対し標準化適合統計量をデフォルトで +/- 9 に clamp する。0 にすると cap を無効化。",
     "fit_df_method_metadata_caption_template": "規約: {method} - ZSTD 変換: {transform} - Cap: {cap}。",
+    "fit_df_method_gpcm_warning": "GPCM には自由な識別力パラメータがあります。そのため FACETS/Wright-Masters d.f. と ZSTD は FACETS-style approximation であり、FACETS との完全一致ではありません。FACETS 主列は *_ENGINE 副列と併せて解釈してください。",
     "facets_compare_expander": "Import した FACETS fit table と比較する",
     "facets_compare_intro_caption": "FACETS (またはその他エンジン) で export した CSV / TSV を upload する。最低限 Facet, Level, InfitZSTD, OutfitZSTD の列が必要。(Facet, Level) で結合し、行ごとに delta (Python 値 - upload 値) を表示する。",
     "facets_compare_upload_label": "FACETS fit table を upload (CSV / TSV)",
@@ -2191,6 +2282,9 @@
     "tab_forest_plot": "Forest plot",
     "tab_qq_plot": "Q-Q plot",
     "tab_ecdf": "ECDF",
+    "panel_select_label": "可視化パネル",
+    "panel_select_help": "選択した可視化だけを描画します。言語、表示モード、周辺のコントロールを切り替えるたびに、すべての Plotly 図を作り直すことを避けます。",
+    "panel_select_caption": "別の図を見るにはパネルを切り替えてください。推定済みモデルを再利用しており、パネル切り替えでは再推定しません。",
     "essential_mode_caption": "4 つの追加診断プロット (Information、Forest、Q-Q、ECDF) は **全パネル表示** で表示されます。公表用の出力を作るには、推定前に Analysis depth = Full publication を選んでください。",
     "category_info_expander": "カテゴリ別 information の分解",
     "category_info_caption": "総 information 曲線をカテゴリ別寄与 I_k(theta) = a^2 * P_k(theta) * (k - E[X | theta])^2 に分解する (Muraki, 1993, Eq. 16)。カテゴリ別の和は上の総 information 曲線と一致する。プロット上の破線は同一性確認のために総和を重ねたもの。各 theta でどのカテゴリが測定精度を駆動しているかを把握するのに有用。"
@@ -2213,8 +2307,8 @@
     "tab_reporting_checklist": "報告チェックリスト",
     "tab_facet_equivalence": "Facet equivalence",
     "tab_readiness": "準備状況",
-    "exports_essential_caption": "ダウンロード用成果物です。Publication Document は Abstract / Methods / Results / Figures / References を Word、PDF、HTML にまとめます。Bayesian 再現用の Stan Code export controls を表示するには **全パネル表示** を選んでください。",
-    "exports_full_caption": "ダウンロード用成果物。Stan Code は完全 Bayesian 再現用の runner。Publication Document は Abstract / Methods / Results / Figures / References を Word、PDF、HTML にまとめる。",
+    "exports_essential_caption": "ダウンロード用成果物です。Publication DocumentはAbstract / Methods / Results / Figures / ReferencesをWord、PDF、HTMLにまとめます。",
+    "exports_full_caption": "ダウンロード用成果物です。Publication DocumentはAbstract / Methods / Results / Figures / ReferencesをWord、PDF、HTMLにまとめます。",
     "tab_stan_code": "Stan code",
     "tab_publication_document": "Publication document"
   },
@@ -2230,7 +2324,8 @@
     "persons_show_first_500_caption_template": "{n_total} persons のうち先頭 500 件を表示。検索で絞り込むか、「ダウンロード」から全テーブルを取得する。",
     "person_fit_subheader": "Person fit (lz / lz*)",
     "person_fit_caption_jmle": "標準化されたポリトマス対数尤度 (Drasgow, Levine & Williams, 1985)。ReportIndex 列は JML 推定の場合 lz* (Snijders, 2001) を表示する。lz* は theta_n が推定値であることを補正した統計量。閾値は標準正規分布から: |z| > 1.96 (5%) と |z| > 2.58 (1%)。",
-    "person_fit_caption_mml": "標準化されたポリトマス対数尤度 (Drasgow, Levine & Williams, 1985)。Snijders (2001) lz* 補正は MML / EAP 推定には適用されないため、未補正の lz を但し書きと共に報告する。閾値は標準正規分布から: |z| > 1.96 (5%) と |z| > 2.58 (1%)。",
+    "person_fit_caption_mml": "標準化されたポリトマス対数尤度 (Drasgow, Levine & Williams, 1985)。ReportIndex 列は lz* を表示する: 母集団 prior 精度 1/sigma^2 を用いて MML / EAP 推定に拡張した Snijders (2001) 補正 (Sinharay, 2016)。閾値は標準正規分布から: |z| > 1.96 (5%) と |z| > 2.58 (1%)。",
+    "person_fit_caption_unavailable": "標準化されたポリトマス対数尤度 (Drasgow, Levine & Williams, 1985)。この fit では Snijders (2001) lz* 補正を計算できなかった (person 推定法が未対応、または母集団 SD が利用不可) ため、未補正の lz を報告する。閾値は標準正規分布から: |z| > 1.96 (5%) と |z| > 2.58 (1%)。",
     "person_fit_metric_persons": "測定された persons",
     "person_fit_metric_flag_5pct": "5% で flag",
     "person_fit_metric_flag_1pct": "1% で flag",
@@ -2241,6 +2336,7 @@
     "person_fit_full_table_expander_template": "全 {n} 件の person-fit 行 (full table + CSV download)",
     "person_fit_download_button": "Person-fit indices を CSV で download",
     "person_fit_lz_star_caveat": "lz* は fit された non-person calibration を条件とした Snijders (2001) 補正であり、non-person parameter の不確実性は伝播されていない。lz* は screening 用途として扱い、決定的な misfit 検定としては扱わないこと。",
+    "person_fit_lz_star_eap_caveat": "lz* は母集団 prior 精度 1/sigma^2 を用いて Snijders (2001) 補正を MML / EAP 推定に拡張したもの (Sinharay, 2016): MAP 推定では厳密、EAP 事後平均では O(1/I) の精度。non-person parameter と事後の不確実性は伝播されない。lz* は screening 用途として扱い、決定的な misfit 検定としては扱わないこと。",
     "person_fit_lz_only_caveat": "lz は未補正の標準化対数尤度。JML / MML どちらでも theta_n を推定値で置き換えると漸近 null 分布がずれるが、Snijders (2001) 補正はここでは適用されていないため、裾の z スコアは控えめに解釈すること。",
     "person_fit_unavailable_template": "Person-fit 指標を表示できません: {reason}",
     "person_fit_error_template": "Person-fit indices の計算に失敗: {error}",
@@ -2299,6 +2395,12 @@
   "estimation_subsections": {
     "convergence_no_data_info": "Optimizer の収束診断は利用できない。",
     "convergence_subheader": "収束診断",
+    "popsd_metric_label": "推定 person SD (σ)",
+    "popsd_se_label": "Profile SE",
+    "popsd_ci_label": "95% CI",
+    "popsd_se_unavailable": "n/a",
+    "popsd_estimated_caption": "person 母集団 SD を EM エンジンで自由推定 — person メトリックはデータ決定で、分散を推定するエンジンと比較可能。profile SE は他パラメータを固定するためやや楽観的。",
+    "popsd_fixed_caption_template": "person 母集団 SD: {value}（固定 prior）。measures はこの固定スケール。「person SD を推定」(詳細設定・MML) を ON にするとデータ決定メトリックになる。",
     "convergence_success": "Optimizer は収束を報告した。残りの診断は optimizer の失敗ではなく、モデル適合と rating scale 挙動のチェックとして扱う。",
     "convergence_error": "Optimizer は収束基準を満たさなかった。Sparse / 極端なデータを確認するか `maxit` を増やすまで、推定値を最終解釈に用いない。",
     "convergence_auto_info_template": "Auto MML は **{resolved}** を選択した。Auto はまず hybrid を試行し、hybrid が収束しない場合のみ EM にフォールバックする。",
@@ -2358,6 +2460,45 @@
     "exact_good_template": "Exact agreement: {pct}% — {facet} element 間で良好な一貫性。",
     "exact_moderate_template": "Exact agreement: {pct}% — {facet} element 間で中程度の一貫性。",
     "exact_low_template": "Exact agreement: {pct}% — {facet} element 間で一貫性が低い。",
+    "krippendorff_expander": "実験: Krippendorff alpha",
+    "krippendorff_caption": "FACETS 4.5.0 の Table 8 風の agreement スクリーン。選択した facet の element が、同じ共有文脈に対して似たスコアを付けているかを確認する。これは agreement の確認であり、MFRM reliability そのものではない。",
+    "krippendorff_metric_label": "距離指標",
+    "krippendorff_metric_help": "Ordinal は順序付き rating category のデフォルト。Nominal は完全一致だけを agreement とみなす。Interval はスコア差を二乗距離として扱う。",
+    "krippendorff_metric_ordinal": "Ordinal",
+    "krippendorff_metric_nominal": "Nominal",
+    "krippendorff_metric_interval": "Interval",
+    "krippendorff_status_template": "{status}: {message}",
+    "krippendorff_interpretation_caption": "Pairwise table、category functioning、rater/task fit、bias diagnostics と一緒に読む。低い値は scoring design の確認を促すが、それだけでどの element が誤っているかを示すものではない。",
+    "krippendorff_coverage_expander": "Alpha の element coverage",
+    "krippendorff_download_button": "Krippendorff alpha summary をダウンロード (CSV)",
+    "krippendorff_unavailable_info": "この選択では Krippendorff alpha を計算できません。少なくとも 2 つの element が同じ共有文脈を採点している必要があります。",
+    "first_read_subheader": "最初に読む採点品質の要約",
+    "first_read_caption": "詳細表の前にここを確認する。APA 草案を使えるか、最初にどの根拠ファイルを開くべきかを要約する。",
+    "first_read_readiness_label": "報告準備",
+    "first_read_blockers_label": "ブロッカー",
+    "first_read_caveats_label": "注記",
+    "first_read_next_action_label": "次のアクション",
+    "first_read_owner_label": "担当",
+    "first_read_evidence_label": "最初に開く根拠",
+    "first_read_download_button": "最初に読む要約をダウンロード (CSV)",
+    "scoring_consistency_subheader": "採点一貫性の判断",
+    "scoring_consistency_caption": "Agreement、Krippendorff alpha、MFRM の rater fit/severity、rating category functioning を合わせた保守的な Quality Control 表。Status 列を、論文で主張する前の to-do list として使う。",
+    "scoring_consistency_download_button": "採点一貫性の判断をダウンロード (CSV)",
+    "qc_recommendations_subheader": "Quality Control の推奨アクション",
+    "qc_recommendations_caption": "Rater training、rubric revision、category-collapse 感度分析、報告文の範囲を決めるための実務向けガイド。",
+    "qc_recommendations_download_button": "QC 推奨アクションをダウンロード (CSV)",
+    "qc_todo_subheader": "Quality Control to-do チェックリスト",
+    "qc_todo_caption": "Done だけをチェックして進捗を管理する。根拠、ブロッカー、完了条件の列は固定し、判断軸がぶれないようにする。",
+    "qc_todo_done_column": "Done",
+    "qc_todo_done_help": "完了条件を満たし、根拠ファイルを保存したあとにだけチェックする。",
+    "qc_todo_blocking_column": "報告ブロック",
+    "qc_todo_caveat_column": "注記が必要",
+    "qc_todo_download_button": "QC to-do チェックリストをダウンロード (CSV)",
+    "term_guide_expander": "平易な用語ガイド",
+    "term_guide_caption": "Agreement と採点品質パネルで使う用語の短い説明。報告書に専門用語を写す前に確認する。",
+    "term_guide_download_button": "用語ガイドをダウンロード (CSV)",
+    "apa_draft_expander": "APA 採点品質レポート草案",
+    "apa_draft_download_button": "APA 採点品質レポート草案をダウンロード (Markdown)",
     "pairwise_subheader": "Pairwise の詳細",
     "pairs_download_button": "Agreement ペアをダウンロード (CSV)",
     "no_pairs_caption": "Pairwise の詳細は利用できない。"
@@ -2435,7 +2576,8 @@
     "help": "ヘルプ",
     "panel_select_label": "結果パネル",
     "panel_select_help": "選択中のパネルだけを描画します。全パネル表示でも、毎回すべての診断、図、ダウンロード項目を準備しないための設定です。",
-    "panel_select_caption": "より詳しい診断を見るにはパネルを切り替えます。推定済みモデルを再利用するため、パネル切替では再推定しません。"
+    "panel_select_caption": "より詳しい診断を見るにはパネルを切り替えます。推定済みモデルを再利用するため、パネル切替では再推定しません。",
+    "classical_dif": "古典的 DIF"
   },
   "facets_tables": {
     "fair_se_toggle_label": "Fair-average の標準誤差と信頼区間を表示",
@@ -2448,5 +2590,1097 @@
     "fair_se_unavailable_method": "Structural delta-method 標準誤差は MML fit のみ利用可能。この run は {method} を使用。",
     "fair_se_unavailable_model": "Structural delta-method 標準誤差は現在 GPCM fit のみ実装。この run は {model} を使用。",
     "fair_se_compute_failed": "observed-information 共分散を計算できなかった: {detail}"
+  },
+  "dif_screening": {
+    "heading": "古典的 DIF（項目特異機能）スクリーニング",
+    "intro_caption": "全体成績でマッチングした上で、外部の person グループ（例: L1・性別）によって採点が異なる item を検出する。モデルベースの facet bias スクリーンを補完。",
+    "boundary_caption": "スクリーニング証拠のみ — フラグは内容/翻訳のレビューと裏付けを促すもので、自動的な公平性判断や item 除外ではない。",
+    "no_data_info": "準備済みの応答データがありません。先に推定を実行してください。",
+    "no_facets_info": "DIF の item に使える facet がありません。",
+    "group_expander": "グループ変数と DIF item",
+    "group_caption": "person レベルのグループ（focal/reference）を指定し、どの facet の水準を DIF item とするか選ぶ。",
+    "group_upload_label": "person データ（CSV/Excel）をアップロード（'Person' 列とグループ列を含む）",
+    "group_upload_error_template": "アップロードしたファイルを読めませんでした: {error}",
+    "group_reuse_caption": "この実行で既にアップロード済みの person データを使用しています。",
+    "group_need_info": "'Person' 列と1つ以上のグループ列を含む person データをアップロードすると DIF を実行できます。",
+    "group_col_label": "グループ変数（focal/reference）",
+    "item_facet_label": "DIF item の facet",
+    "item_facet_help": "水準を item として扱う facet（通常は criterion か task）。",
+    "settings_expander": "DIF スクリーニング設定",
+    "matching_label": "マッチング得点",
+    "alpha_label": "Alpha",
+    "min_n_label": "グループあたり最小 person 数",
+    "practical_label": "実用的 |SMD| 閾値",
+    "purify_label": "マッチングを純化",
+    "purify_help": "強くフラグされた item をマッチング anchor から反復的に除外し、DIF item が他に見かけの DIF を誘発しないようにする。",
+    "run_button": "DIF スクリーニングを実行",
+    "run_hint": "上でグループと設定を指定してから実行してください。",
+    "running_spinner": "項目の特異機能をスクリーニング中...",
+    "metric_screened": "Item × 対比",
+    "metric_flagged": "フラグ",
+    "metric_strong": "要精査",
+    "metric_max_smd": "最大 |SMD|",
+    "flagged_expander": "フラグされた item",
+    "no_flags_success": "現在の閾値ではフラグされた item はありません。",
+    "download_button": "DIF スクリーニングをダウンロード (CSV)",
+    "audit_expander": "DIF 推論監査",
+    "audit_download": "DIF 監査をダウンロード (CSV)",
+    "interpret_expander": "DIF 表の読み方",
+    "crosscheck_expander": "外部検証 (difR / lordif)",
+    "crosscheck_caption": "このスクリーンを R (difR / lordif) で再現してクロスチェックするバンドルをダウンロード。再現性アーティファクトでありランタイム依存ではない — 数値は完全一致しない。方向と効果量クラスの一致が基準。",
+    "crosscheck_download": "R クロスチェックバンドルをダウンロード (difR/lordif)"
+  },
+  "terms": {
+    "download_contents": {
+      "standard_label": "ダウンロード内容とプライバシー確認",
+      "definition": "共有用の出力に何が含まれ、何が除外されたかを確認するための一覧です。",
+      "alias": {
+        "contents_check": "収録内容の確認",
+        "manifest": "manifest"
+      },
+      "claim": {
+        "not_privacy_guarantee": "この一覧だけで、匿名性、機密性、安全な共有が保証されるわけではありません。共有前に実際の内容を確認してください。"
+      }
+    },
+    "jmle": {
+      "method_label": "同時最尤推定（JMLE）",
+      "definition": "受験者と各要因（ファセット）のパラメータを、指定したモデルと制約のもとで同時に推定する方法です。",
+      "alias": {
+        "acronym": "JMLE",
+        "full_name": "joint maximum likelihood estimation"
+      },
+      "claim": {
+        "not_automatically_unbiased": "JMLEを選ぶだけで、小標本での偏りがなくなったり、モデル適合が保証されたりするわけではありません。"
+      }
+    },
+    "mml": {
+      "method_label": "周辺最尤推定（MML）",
+      "definition": "指定した受験者の母集団分布について個人差を積分し、構造パラメータと要因（ファセット）のパラメータを推定する方法です。",
+      "alias": {
+        "acronym": "MML",
+        "full_name": "marginal maximum likelihood estimation"
+      },
+      "claim": {
+        "not_automatically_preferred": "MMLが常にJMLEより適切とは限りません。研究目的、標本、分布仮定、推定結果を合わせて検討します。"
+      }
+    },
+    "evidence_availability": {
+      "standard_label": "根拠の確認状況",
+      "definition": "ある結果を現在のデータと設定で計算でき、解釈に使える状態かを示します。",
+      "alias": {
+        "status": "確認状況",
+        "computation_state": "computation state"
+      },
+      "claim": {
+        "not_validity_proof": "利用可能という表示は、測定や解釈の妥当性を単独で証明するものではありません。"
+      }
+    },
+    "limit_reason": {
+      "standard_label": "制限される理由",
+      "definition": "結果を計算または解釈できない理由と、次に確認できることを示します。",
+      "alias": {
+        "reason": "理由",
+        "reason_code": "reason code"
+      },
+      "claim": {
+        "not_person_judgment": "この理由はデータ、設計、または処理条件についての説明であり、人の能力や価値を評価するものではありません。"
+      }
+    },
+    "planned_check_stability": {
+      "standard_label": "計画した確認での結論",
+      "definition": "この分析で指定した設定変更や感度確認の範囲で、結論が保たれたかを示します。",
+      "alias": {
+        "stability": "結論の安定性",
+        "stability_state": "stability state"
+      },
+      "claim": {
+        "not_general_robustness": "計画した確認で安定していても、未確認の条件すべてに対する一般的な頑健性が保証されるわけではありません。"
+      }
+    },
+    "evidence_summary": {
+      "standard_label": "根拠の要約",
+      "definition": "一つの研究上の問いについて、利用可能な結果、制限、次の確認をまとめた記録です。",
+      "alias": {
+        "summary": "根拠の概要",
+        "evidence_record": "evidence record"
+      },
+      "claim": {
+        "not_sufficient_by_itself": "一つの要約だけで研究上の結論を確定せず、設計、他の根拠、不確実性と合わせて読みます。"
+      }
+    },
+    "infit": {
+      "method_label": "Infit平均平方",
+      "definition": "モデルが比較的多くの情報を持つ応答に重みを置いて、観測と予測のずれを要約する適合度指標です。",
+      "alias": {
+        "information_weighted": "情報量で重みづけした適合度",
+        "mnsq": "Infit MNSQ"
+      },
+      "claim": {
+        "not_automatic_exclusion": "Infitの値だけで、項目、評価者、または受験者を自動的に除外すべきではありません。応答数とパターンを確認してください。"
+      }
+    },
+    "outfit": {
+      "method_label": "Outfit平均平方",
+      "definition": "予測から大きく外れた応答の影響を受けやすい、観測と予測のずれの要約です。",
+      "alias": {
+        "outlier_sensitive": "外れた応答に敏感な適合度",
+        "mnsq": "Outfit MNSQ"
+      },
+      "claim": {
+        "not_automatic_exclusion": "Outfitの値だけで、項目、評価者、または受験者を自動的に除外すべきではありません。個別の応答パターンを確認してください。"
+      }
+    },
+    "separation": {
+      "method_label": "分離度",
+      "definition": "推定誤差に対して、同じ分析対象群に属する要素の推定値がどの程度広がっているかを表す指標です。",
+      "alias": {
+        "index": "分離指標",
+        "reliability": "分離信頼性"
+      },
+      "claim": {
+        "not_validity_proof": "高い分離度は、意図した構成概念の妥当性や評価の質を単独で証明するものではありません。"
+      }
+    },
+    "gpcm": {
+      "method_label": "一般化部分採点モデル（GPCM）",
+      "definition": "選択したステップ要因（ファセット）の水準ごとに、順序カテゴリの境界位置と識別力が異なることを許すモデルです。",
+      "alias": {
+        "acronym": "GPCM",
+        "full_name": "generalized partial credit model"
+      },
+      "claim": {
+        "not_interchangeable": "GPCMの結果は、異なるカテゴリ制約を置くRSMやPCMの結果と自動的に置き換えられません。"
+      }
+    },
+    "mfrm": {
+      "method_label": "多相ラッシュ測定（MFRM）",
+      "definition": "受験者の能力と、項目、課題、基準、評定者などの要因（ファセット）による系統的な効果を、共通のロジット尺度上で分けて推定するラッシュ型モデルです。",
+      "alias": {
+        "acronym": "MFRM",
+        "full_name": "many-facet Rasch measurement"
+      },
+      "claim": {
+        "not_validity_proof": "MFRMを当てはめたことだけで、採点の公平性や解釈の妥当性が証明されるわけではありません。"
+      }
+    },
+    "pcm": {
+      "method_label": "部分採点モデル（PCM）",
+      "definition": "識別力を固定したまま、選択したステップ要因（ファセット）の水準ごとに順序カテゴリの境界位置が異なることを許すラッシュ型モデルです。",
+      "alias": {
+        "acronym": "PCM",
+        "full_name": "partial credit model"
+      },
+      "claim": {
+        "not_interchangeable": "PCMの結果は、共通ステップ構造を仮定するRSMや異なる識別力を許すGPCMと自動的に置き換えられません。"
+      }
+    },
+    "rsm": {
+      "method_label": "評定尺度モデル（RSM）",
+      "definition": "選択したステップ要因（ファセット）のすべての水準に、一つの共通した順序カテゴリのステップ構造を用いるラッシュ型モデルです。",
+      "alias": {
+        "acronym": "RSM",
+        "full_name": "rating scale model"
+      },
+      "claim": {
+        "not_interchangeable": "RSMの結果は、対象ごとに異なるステップ構造を許すPCMやGPCMと自動的に置き換えられません。"
+      }
+    },
+    "input_match": {
+      "standard_label": "入力照合値",
+      "definition": "保存した分析と現在の入力が同じ内容に基づくかを照合するための値です。",
+      "alias": {
+        "match_value": "入力の照合",
+        "fingerprint": "fingerprint"
+      },
+      "claim": {
+        "not_data_quality_evidence": "入力が一致していても、データの正確さ、完全性、研究目的への適合性が保証されるわけではありません。"
+      }
+    },
+    "reproducibility_script": {
+      "standard_label": "この分析をPythonで再実行",
+      "definition": "現在の設定を用いて、対応するPython環境で分析を再度実行するための手順です。",
+      "alias": {
+        "rerun": "分析の再実行",
+        "runner": "実行用スクリプト"
+      },
+      "claim": {
+        "not_result_validation": "同じ手順を再実行できることは重要ですが、それだけで結果の妥当性や研究判断が確認されたことにはなりません。"
+      }
+    },
+    "residual_pca": {
+      "method_label": "残差の主成分分析",
+      "definition": "モデルで説明した後の残差に、まとまった追加パターンが残っていないかを探索する診断です。",
+      "alias": {
+        "residual_pca": "残差PCA",
+        "pca_residuals": "PCA of residuals"
+      },
+      "claim": {
+        "not_unidimensionality_proof": "残差PCAだけで一次元性を証明したり、次元数を確定したりすることはできません。設計と他の根拠を合わせて検討します。"
+      }
+    },
+    "browser_retention": {
+      "standard_label": "このアプリセッション中に利用可能",
+      "definition": "現在のアプリセッションで利用できる情報です。接続やセッションの終了・再設定で失われることがあります。この表示は、情報がブラウザ内だけに保存されることを意味しません。",
+      "alias": {
+        "browser_session": "アプリセッション中の利用",
+        "session_storage": "セッション単位の状態"
+      },
+      "claim": {
+        "not_durable_backup": "セッション中に利用できることは、永続的な保存や研究用バックアップを意味せず、情報が利用者の端末だけに存在することも意味しません。"
+      }
+    },
+    "logit": {
+      "method_label": "ロジット",
+      "definition": "モデルが推定した対数オッズの単位で、受験者と各要因（ファセット）の測定値を共通尺度上に表します。",
+      "alias": {
+        "scale": "測定尺度",
+        "log_odds": "対数オッズ"
+      },
+      "claim": {
+        "not_raw_score_unit": "ロジットは生得点の単位ではありません。差や方向はモデル、基準設定、要因（ファセット）の符号規約と合わせて解釈します。"
+      }
+    },
+    "analysis_reference": {
+      "standard_label": "分析参照番号",
+      "definition": "保存した結果、設定、入力の組合せを取り違えずに参照するための識別子です。",
+      "alias": {
+        "reference": "分析の参照",
+        "analysis_id": "analysis ID"
+      },
+      "claim": {
+        "not_quality_marker": "参照番号は分析を識別するためのもので、結果の質、承認状態、研究上の結論を支持するものではありません。"
+      }
+    }
+  },
+  "problems": {
+    "support_reference_label": "サポート参照番号",
+    "actions": {
+      "open_problem_help": "問題解決ガイドを開く",
+      "reduce_analysis_scope": "分析範囲を見直す",
+      "review_anchor_settings": "アンカー設定を確認する",
+      "review_column_mapping": "列の対応づけを確認する",
+      "review_data_audit": "データ監査を確認する",
+      "review_design_constraints": "設計と制約を確認する",
+      "review_diagnostic_request": "診断の設定を確認する",
+      "review_estimation_settings": "推定設定を確認する",
+      "review_input_format": "入力形式を確認する",
+      "review_observation_coverage": "観測の範囲を確認する",
+      "review_score_categories": "得点カテゴリを確認する"
+    },
+    "input": {
+      "parse_failed": {
+        "title": "入力表を読み取れませんでした",
+        "body": "この案内自体は選択した入力元を変更しません。現在も表示されている内容を確認し、表の形式、区切り文字、見出し行を見直してから、もう一度読み込んでください。"
+      },
+      "mapping_invalid": {
+        "title": "分析に必要な列を対応づけできません",
+        "body": "現在も表示されている入力と選択を確認してください。受験者、得点、各要因（ファセット）に使う列を見直します。"
+      },
+      "no_usable_rows": {
+        "title": "分析に使える評定行がありません",
+        "body": "現在も表示されている入力元と列の対応づけを確認してください。欠測した応答、得点値、重み、除外規則をデータ監査で見直してから、元データまたは対応づけを修正します。"
+      }
+    },
+    "estimation": {
+      "identification_failed": {
+        "title": "現在の設計では推定を確定できません",
+        "body": "今回の試行では完了した結果が作成されていません。現在も表示されているデータと設定を確認し、比較対象のつながり、観測範囲、固定条件を見直してください。"
+      },
+      "nonconvergence": {
+        "title": "推定が停止基準に到達しませんでした",
+        "body": "今回の試行では完了した結果が作成されていません。現在も表示されている入力と設定を確認し、推定設定とデータ監査を見直してください。"
+      },
+      "rating_scale_invalid": {
+        "title": "得点カテゴリの構造を推定できません",
+        "body": "現在も表示されているデータと設定を確認してください。カテゴリの順序、観測による裏付け、選択した応答モデルとの整合を見直します。"
+      },
+      "anchor_invalid": {
+        "title": "アンカーが現在の分析と一致しません",
+        "body": "現在も表示されている入力と設定を確認してください。アンカーの対象、値、観測範囲との対応を見直してから設定を更新します。"
+      }
+    },
+    "resource": {
+      "hosted_limit": {
+        "title": "この分析は現在のセッションで処理できる規模を超えています",
+        "body": "現在も表示されている入力と設定を確認してください。データまたは任意の追加分析の範囲を小さくし、変更内容を見直してから再実行します。"
+      }
+    },
+    "diagnostic": {
+      "residual_pca_unavailable": {
+        "title": "残差構造の診断は現在利用できません",
+        "body": "この案内は残差PCAだけに関するものです。現在も表示されている他の結果、診断を依頼したか、比較可能な残差が十分にあるかを確認してください。"
+      },
+      "residual_pca_failed": {
+        "title": "残差構造の診断を安定して計算できませんでした",
+        "body": "この案内は残差PCAだけに関するものです。現在も表示されている他の結果を確認し、この診断を結論に使わず、観測範囲と比較可能な残差の数を見直してください。"
+      }
+    },
+    "problem": {
+      "unexpected": {
+        "title": "処理を完了できませんでした",
+        "body": "アプリは依頼した処理の状態を確認できませんでした。変更を加える前に現在も表示されている内容を確認し、問題解決ガイドで元に戻せる次の手順を選んでください。問題が続く場合は、表示されたサポート参照番号を問題報告に含めます。"
+      }
+    }
+  },
+  "help_nav": {
+    "open_help": "ヘルプを開く",
+    "open_full_guide": "詳しいガイドを開く",
+    "help_home": "ヘルプホーム",
+    "back_to_source": "元の画面に戻る",
+    "returned_status": "元の画面に戻りました",
+    "topic_label": "ヘルプ項目を選ぶ",
+    "prerequisites_heading": "始める前の確認",
+    "can_show_heading": "このガイドで確認できること",
+    "cannot_show_heading": "このガイドだけでは判断できないこと",
+    "next_check_heading": "次の確認",
+    "next_action_heading": "次に行う安全な操作",
+    "details_heading": "詳しい説明",
+    "computed_heading": "アプリが計算する内容",
+    "reporting_example_heading": "報告文の例",
+    "avoid_report_heading": "このようには報告しない",
+    "search_label": "ヘルプを検索",
+    "search_placeholder": "研究上の問いや方法名を入力",
+    "static_only_notice": "この項目では一般的な説明を表示しています。現在の分析結果には結び付けていません。",
+    "stale_context_notice": "このヘルプを開いた後に分析の文脈が変わりました。一般的な説明は利用できます。元の画面へ戻り、現在の詳細についてヘルプを開き直してください。",
+    "missing_context_notice": "現在の分析に関する詳細はここでは利用できません。一般的な説明は利用できます。元の画面へ戻り、現在も表示されている内容を確認してください。",
+    "unavailable_title": "このヘルプ項目を開けません",
+    "unavailable_body": "このヘルプ項目ではアプリの状態を確認できません。元の画面へ戻って現在も表示されている内容を確認するか、ヘルプホームで利用できる項目を選んでください。",
+    "unavailable_home_action": "ヘルプホームに戻る",
+    "safe_report_guard": "報告文の例です。現在の分析で、記載した条件を実際に確認した場合だけ使用してください。"
+  },
+  "help_topics": {
+    "get_started": {
+      "overview": {
+        "title": "根拠と限界を確認しながらMFRM分析を始める",
+        "summary": "研究上の問いから、確認済みのデータ、推定、範囲を限定した解釈、検討可能な報告へ進みます。",
+        "prerequisites": "研究上の問いと、1行、一つの得点、各要因（ファセット）が何を表すかを整理します。推定済みの結果がなくても利用できます。",
+        "computed": "依頼した段階に応じて、アプリは入力構造を確認し、選択したモデルを推定し、利用可能な根拠を限界と次の確認とともに整理します。",
+        "can_show": "必要な根拠を利用できるか、解釈を続けられるか、いったん保留すべきかを確認できます。",
+        "cannot_show": "手順を最後まで進めただけでは、測定の妥当性、公平性、意思決定への適切さ、報告可能性は決まりません。",
+        "next_check": "推定前は列の役割と設計カバレッジを確認し、推定後は「結果を読む最初の順序」から始めます。",
+        "next_action": "データ準備、設計確認、推定、根拠の解釈、報告準備のうち、次の未完了作業を選んでください。",
+        "safe_report": "本分析では、明記したモデル、設計確認、解釈上の限界に沿って結果を検討した、と報告できます。",
+        "avoid_report": "画面上の全手順を完了したため、結果は妥当である、とは記述しません。",
+        "search_alias": "はじめ方、最初の手順、分析の流れ、安全な進め方",
+        "sections": {
+          "overview": {
+            "title": "分析の進み方",
+            "body": "研究上の問いを定め、データと設計を準備・確認し、モデルを推定した後、利用できる根拠だけを解釈して報告する、という四段階で進みます。"
+          },
+          "shortest_path": {
+            "title": "安全に進む最短手順",
+            "body": "受験者、得点、要因の列を対応づけ、欠測と連結性を確認して推定します。最初の結果確認を読んだ後、研究上の問いに必要な詳細だけを開いてください。"
+          },
+          "claim_boundaries": {
+            "title": "主張を根拠の範囲に保つ",
+            "body": "分析の完了は作業上の出来事であり、妥当性の確認ではありません。結果を要約するときも、注意、利用できない確認、不確実性、設計上の限界を残してください。"
+          }
+        }
+      }
+    },
+    "design": {
+      "coverage": {
+        "title": "評定設計の観測範囲を確認する",
+        "summary": "比較したい受験者、評定者、課題、項目が、実際の観測を通じてつながっているか確認します。",
+        "prerequisites": "計画した評定割当てと、実際に得られた評定の組合せを用意します。",
+        "computed": "アプリは各組合せの観測数と、共通観測を通じた比較対象のつながりを要約します。",
+        "can_show": "観測が少ない組合せ、空白領域、比較経路が途切れた部分を見つけられます。",
+        "cannot_show": "観測範囲が広くつながっていても、標本の代表性、構成概念の網羅性、評定の公平性は保証されません。",
+        "next_check": "研究で比較したい対象どうしが、十分な共通条件を介してつながっているか確認します。",
+        "next_action": "不足する組合せを特定し、追加観測または比較範囲の見直しを検討してください。",
+        "safe_report": "観測範囲と連結性を実際に確認した場合は、連結した観測設計の範囲内だけで測定値を比較し、代表性、構成概念の網羅性、公平性に関する限界も報告します。",
+        "avoid_report": "観測網がつながっているため標本は代表的である、とは記述しません。",
+        "search_alias": "観測カバレッジ、連結性、評定割当て、共通評定、空白セル",
+        "sections": {
+          "overview": {
+            "title": "観測範囲を確認する目的",
+            "body": "MFRMの比較には、受験者や要因（ファセット）の水準が共通の評定条件を通じて結び付いていることが重要です。予定した設計だけでなく、実際に得られた観測で確認します。"
+          },
+          "observed_coverage": {
+            "title": "実際の観測カバレッジ",
+            "body": "行と列の組合せごとの観測量を見ます。空白が計画どおりか、特定の評定者・課題・得点帯に不足が集中していないかを確認してください。"
+          },
+          "connectedness": {
+            "title": "比較対象のつながり",
+            "body": "直接同じ対象を評定していなくても、共通の受験者や課題を介して比較できる場合があります。孤立したまとまりがある場合、その間の尺度比較は支えられません。"
+          },
+          "limits": {
+            "title": "カバレッジ確認の限界",
+            "body": "つながりがあることは比較の前提の一つですが、十分な観測精度、内容の代表性、因果的な説明を意味しません。観測数と研究設計を合わせて確認します。"
+          }
+        }
+      }
+    },
+    "run": {
+      "large_analysis": {
+        "title": "大きな分析の範囲を調整する",
+        "summary": "現在の実行環境で安全に扱えるよう、研究上の問いを保ちながら分析範囲を見直します。",
+        "prerequisites": "必須の比較、必要な要因（ファセット）、追加診断の優先順位を研究計画と照合します。",
+        "computed": "アプリはデータ量と選択した分析内容から、安全に実行できる範囲かを事前確認します。",
+        "can_show": "どの選択が処理量を増やし、どこを見直せるかを確認できます。",
+        "cannot_show": "実行可能な規模かどうかは、統計結果の良否や研究上の重要性を示しません。",
+        "next_check": "研究上必須の比較と、後から追加できる診断を分けてください。",
+        "next_action": "データまたは追加分析の範囲を小さくし、事前確認をやり直してください。",
+        "safe_report": "処理規模による停止を実際に確認した場合は、依頼した分析がこのセッションでは完了しなかったと報告します。後で範囲を変更した場合は変更内容と理由を記録し、停止した試行の結果は報告しません。",
+        "avoid_report": "実行できなかったため仮説が支持されなかった、とは記述しません。",
+        "search_alias": "分析が大きい、処理量、実行制限、範囲を減らす、事前確認",
+        "sections": {
+          "overview": {
+            "title": "なぜ実行前に止まるのか",
+            "body": "大きな処理を始める前に、現在のセッションで扱える範囲かを確認します。この停止はデータや研究仮説に対する判定ではありません。"
+          },
+          "retained_state": {
+            "title": "変更前に表示内容を確認する",
+            "body": "範囲を変更する前に、入力、列の対応づけ、選択した設定が現在も表示されているか確認してください。変更を元の分析依頼と取り違えないよう、すべて記録します。"
+          },
+          "safe_scope": {
+            "title": "安全に範囲を小さくする",
+            "body": "まず任意の追加診断を減らし、次に研究課題に不要な期間や対象を外します。比較に必要な共通観測を壊さないよう、変更後にカバレッジを再確認してください。"
+          }
+        }
+      },
+      "estimation_failed": {
+        "title": "推定を完了できない場合",
+        "summary": "結果を作成できなかったときに、現在も表示されている入力と設定を確認し、元に戻せる手順から再開します。",
+        "prerequisites": "表示された問題の種類と、直前に選択したデータ・モデル・制約を確認します。",
+        "computed": "アプリは推定が完了して利用可能な結果が作成されたかを確認します。",
+        "can_show": "今回の結果が作成されていないことと、次に確認する設定やデータ項目を示せます。",
+        "cannot_show": "推定の失敗から、効果の有無、モデルの適切さ、仮説の支持を判断することはできません。",
+        "next_check": "列の対応づけ、得点カテゴリ、観測範囲、制約、推定設定の順に確認します。",
+        "next_action": "問題に対応する設定へ戻り、一度に一つずつ修正してから再実行してください。",
+        "safe_report": "推定を完了できず結果を利用しなかった場合は、その事実と確認した条件を記録します。",
+        "avoid_report": "推定に失敗したため研究上の関係は存在しない、とは記述しません。",
+        "search_alias": "推定失敗、結果が出ない、実行できない、設定に戻る、問い合わせ用番号",
+        "sections": {
+          "overview": {
+            "title": "最初に確認すること",
+            "body": "今回の実行では完成した推定結果が作成されていません。未完成の値を解釈せず、表示された対処と問い合わせ用番号を確認してください。"
+          },
+          "preserved_state": {
+            "title": "表示されている状態を確認する",
+            "body": "現在も表示されている入力、列の対応づけ、設定、以前の結果を確認してください。この案内だけでは、アプリの状態が保持されたことを確認できません。"
+          },
+          "next_check": {
+            "title": "安全な確認順序",
+            "body": "まず入力と列の対応づけ、次に得点カテゴリと観測範囲、その後にモデル、制約、推定設定を確認します。原因を切り分けるため、変更は一度に一つにします。"
+          }
+        }
+      },
+      "nonconvergence": {
+        "title": "推定が収束しない場合",
+        "summary": "設定した停止基準に推定が到達しなかったときの意味、限界、確認手順を説明します。",
+        "prerequisites": "使用したモデル、推定法、反復の上限、停止基準、データ監査を確認します。",
+        "computed": "アプリは推定の更新が停止基準を満たしたかと、完了までの反復状況を確認します。",
+        "can_show": "推定が所定の基準で安定して終了したか、追加確認が必要かを示せます。",
+        "cannot_show": "未収束だけでモデルが誤り、データが無効、効果がないとは判断できません。",
+        "next_check": "極端または疎な応答、観測のつながり、モデルの複雑さ、停止設定を順に確認します。",
+        "next_action": "データ監査を確認し、必要なら設定またはモデルを一つずつ見直して再実行してください。",
+        "safe_report": "推定が設定した停止基準に到達せず、結果を解釈対象から外した、と報告できます。",
+        "avoid_report": "収束しなかったためモデルは棄却された、とは記述しません。",
+        "search_alias": "未収束、収束しない、反復停止、推定が終わらない、停止基準",
+        "sections": {
+          "overview": {
+            "title": "収束確認の位置づけ",
+            "body": "収束は、推定手順が設定した基準で安定して終了したかを示す計算上の前提です。収束してから、適合や不確実性などの実質的な根拠を読みます。"
+          },
+          "meaning": {
+            "title": "未収束が意味すること",
+            "body": "推定値の更新が停止基準に達しなかったため、今回の値を完成した結果として扱えない状態です。疎な設計、極端な応答、複雑な指定、設定不足など複数の原因が考えられます。"
+          },
+          "does_not_mean": {
+            "title": "未収束だけでは言えないこと",
+            "body": "未収束は、研究仮説への反証、得点の無効性、特定の評定者や受験者の問題を意味しません。原因を確認する前に実質的な結論を出さないでください。"
+          },
+          "next_check": {
+            "title": "再実行前の確認",
+            "body": "データ監査とカバレッジを確認し、得点カテゴリ、制約、モデルの複雑さ、反復上限と停止基準を見直します。変更内容と理由を記録してください。"
+          }
+        }
+      }
+    },
+    "problem": {
+      "unexpected": {
+        "title": "予期しないアプリの問題から安全に再開する",
+        "summary": "解釈をいったん止め、元に戻せる確認を行い、同じ問題が続く場合に備えてサポート参照番号を残します。",
+        "prerequisites": "直前に行った操作、表示中の画面、サポート参照番号を記録します。入力、設定、結果が保持されたとは推測しません。",
+        "computed": "この案内から分析上の主張は得られません。アプリは問題解決用に一般的な問題区分とサポート参照番号を割り当てます。",
+        "can_show": "元に戻せる確認手順と、問題報告に含めるサポート参照番号を示せます。",
+        "cannot_show": "原因やアプリの状態を確定したり、分析結果が妥当または不当であると判断したりはできません。",
+        "next_check": "現在も表示されている内容と直前の操作を記録し、影響が明確で元に戻せる場合に限って、その操作を一度だけ再試行します。",
+        "next_action": "同じ問題が再び起きたら再試行を止め、直前の操作とサポート参照番号を問題報告に記載してください。",
+        "safe_report": "記録がある場合は、該当する処理が完了せず、その試行から得た結果を解釈しなかったと報告します。",
+        "avoid_report": "アプリの問題が起きたため、モデルまたはデータが不適切である、とは記述しません。",
+        "search_alias": "予期しない問題、アプリのエラー、サポート参照番号、元に戻せる確認、問題報告",
+        "sections": {
+          "overview": {
+            "title": "この案内が意味すること",
+            "body": "アプリの処理が予期せず終了しました。これは問題解決の対象であり、モデル、データ、研究上の問いについての統計的な根拠ではありません。"
+          },
+          "first_check": {
+            "title": "最初に行う元に戻せる確認",
+            "body": "データや設定を変更する前に元の画面を確認し、この案内の直前に行った操作を正確に記録します。現在の状態が明確で、その操作を元に戻せる場合だけ一度再試行してください。"
+          },
+          "get_support": {
+            "title": "サポート参照番号を使う",
+            "body": "問題報告には、表示されたサポート参照番号、直前の操作、画面、発生時刻の目安を含めます。開示が許可されていない生データや個人を特定できる研究データは含めないでください。"
+          }
+        }
+      }
+    },
+    "results": {
+      "first_read": {
+        "title": "結果を読む最初の順序",
+        "summary": "計算できた範囲と制限を確認してから、測定値、適合、カテゴリ、残差構造へ進みます。",
+        "prerequisites": "推定が完了し、現在表示している結果が意図したデータと設定に対応することを確認します。",
+        "computed": "アプリは利用できる結果、注意が必要な結果、確認できない結果と、その理由をまとめます。",
+        "can_show": "どの根拠を利用でき、どこで解釈を保留し、次に何を確認すべきかを整理できます。",
+        "cannot_show": "最初の要約だけで、モデル適合、測定の妥当性、報告の可否を確定することはできません。",
+        "next_check": "収束とデータ範囲を確認し、研究上の問いに必要な結果が利用できるかを見ます。",
+        "next_action": "要約から該当する詳細へ進み、関連する限界を同じ画面で確認してください。",
+        "safe_report": "利用できた根拠と利用できなかった根拠を区別し、確認順序と判断根拠を報告します。",
+        "avoid_report": "要約が利用可能と示したため結論は確定した、とは記述しません。",
+        "search_alias": "結果の読み方、最初に見るもの、確認順序、結果要約、解釈保留",
+        "sections": {
+          "overview": {
+            "title": "最初に全体像を確認する",
+            "body": "まず推定が完了したか、必要な根拠が計算できたか、注意や制限があるかを確認します。詳細な数値は、その後に研究上の問いと結び付けて読みます。"
+          },
+          "reading_order": {
+            "title": "推奨する読み順",
+            "body": "収束と観測範囲、測定値と不確実性、適合、カテゴリ機能、残差構造、条件別の交互作用、計画した感度確認の順に進みます。必要な前提を満たさないところで解釈を止めてください。"
+          },
+          "claim_boundaries": {
+            "title": "一つの結果で決めない",
+            "body": "各画面は異なる問いに答えます。一つの状態、指標、図だけで、受験者、評定者、得点、研究仮説について最終判断を出さないでください。"
+          }
+        }
+      },
+      "measures_targeting": {
+        "title": "測定値とターゲティングを読む",
+        "summary": "共通のロジット尺度上で、受験者と各要因（ファセット）の位置、広がり、不確実性、重なりを確認します。",
+        "prerequisites": "推定の完了と観測設計の連結性を確認し、モデル、尺度の方向、基準とした水準、推定の不確実性を確認します。",
+        "computed": "アプリは受験者と要因（ファセット）の各水準の測定値、不確実性、分布、尺度上の重なりを要約します。",
+        "can_show": "尺度上の相対的位置、分布の広がり、測定対象と課題の対応範囲を確認できます。",
+        "cannot_show": "測定値は人物の価値や固定的特性を表さず、観測していない場面へ自動的に一般化できません。",
+        "next_check": "尺度の向き、信頼区間、極端な位置、データが薄い範囲を確認します。",
+        "next_action": "分布図と不確実性を合わせて読み、対象外への一般化を避けてください。",
+        "safe_report": "指定したモデルと評定条件のもとでの相対的な測定位置と不確実性を報告できます。",
+        "avoid_report": "高い測定値を、人物の総合的な能力や価値が高いことと同一視しません。",
+        "search_alias": "測定値、ロジット、ターゲティング、ライトマップ、Wright map、分布、信頼区間",
+        "sections": {
+          "overview": {
+            "title": "測定値の基本的な読み方",
+            "body": "ロジットはモデル上の対数オッズの単位です。値の方向と基準はモデル指定に依存するため、要因（ファセット）ごとの符号と参照点を確認してから差を読みます。"
+          },
+          "wright_map": {
+            "title": "ライトマップ（Wright map）",
+            "body": "受験者と課題・項目などの位置を同じロジット尺度上に並べます。重なりは測定対象を捉える範囲の手がかりですが、空白や端の領域では不確実性も確認してください。"
+          },
+          "ecdf_measures": {
+            "title": "測定値の累積分布",
+            "body": "各位置以下にどの程度の測定値が含まれるかを示します。群間の形や位置を比較するときは、標本構成と不確実性を合わせて確認します。"
+          },
+          "forest_measures": {
+            "title": "測定値と区間",
+            "body": "点推定と不確実性の区間を並べます。区間の重なりだけで差の有無を二分せず、比較目的、推定精度、多重な確認を考慮してください。"
+          },
+          "facet_distribution": {
+            "title": "要因（ファセット）の水準分布",
+            "body": "評定者、課題、項目など、同じ要因（ファセット）内の水準の位置と広がりを示します。広がりは設計上の差の手がかりであり、内容の良否を直接判定するものではありません。"
+          },
+          "limits": {
+            "title": "測定値解釈の限界",
+            "body": "位置は現在のモデル、データ、制約、評定条件に依存します。異なる実施や分析の値を比べるには、共通尺度を支える設計上の根拠が必要です。"
+          }
+        }
+      },
+      "fit": {
+        "title": "適合度を根拠として読む",
+        "summary": "観測とモデル予測のずれを、応答数、位置、内容、不確実性と合わせて検討します。",
+        "prerequisites": "推定が完了し、観測設計が連結していることを確認したうえで、各要素の観測数、測定位置、不確実性を確認します。",
+        "computed": "アプリはInfit、Outfit、標準化した適合指標、残差パターンを複数の図表で要約します。",
+        "can_show": "モデル予測から外れやすい要素や応答パターンを、追加確認の候補として見つけられます。",
+        "cannot_show": "適合値だけで項目、評定者、受験者、応答を自動的に除外したり、原因を特定したりできません。",
+        "next_check": "観測数、極端な応答、内容、測定位置、複数の適合指標が同じ懸念を示すか確認します。",
+        "next_action": "値の大きい順だけで決めず、該当する応答と設計上の文脈を確認してください。",
+        "safe_report": "観測による裏付けと内容上の根拠を実際に確認した場合は、適合フラグを自動除外の判断ではなく、追加確認の信号として報告します。",
+        "avoid_report": "基準値を超えた要素を不適切として自動除外した、とは記述しません。",
+        "search_alias": "適合度、Infit、Outfit、MNSQ、ZSTD、残差、ミスフィット",
+        "sections": {
+          "overview": {
+            "title": "適合度が示すもの",
+            "body": "Infitは情報量の多い応答に重みを置き、Outfitは予測から遠い応答の影響を受けやすい指標です。どちらも観測とモデル予測のずれを要約し、原因そのものは示しません。"
+          },
+          "fit_scatter": {
+            "title": "InfitとOutfitの散布図",
+            "body": "各要素のInfitとOutfitを同時に見て、片方だけが大きい場合と両方が大きい場合を区別します。観測数が少ない点は不安定になりやすいため、個別に確認します。"
+          },
+          "pathway_map": {
+            "title": "測定位置と適合度の図",
+            "body": "尺度上の位置と適合指標を結び付け、端の位置や観測の薄い領域に懸念が集中していないか見ます。位置による見かけの差を内容上の問題と混同しないでください。"
+          },
+          "misfit_ranking": {
+            "title": "追加確認候補の順位",
+            "body": "適合のずれが大きい候補を確認しやすい順に並べます。順位は調査の入口であり、除外順位や処分順位ではありません。元の応答と内容を確認します。"
+          },
+          "zstd_distribution": {
+            "title": "標準化適合指標の分布",
+            "body": "標準化した適合指標は、ずれの大きさを標準誤差との関係で示します。標本が大きいと小さなずれにも反応するため、平均平方と実質的な大きさを合わせて読みます。"
+          },
+          "qq_residuals": {
+            "title": "残差の分位点図",
+            "body": "残差分布が期待する形からどこで外れるかを探索します。端のずれは外れた応答や分布形の手がかりですが、単独でモデル不適合を確定しません。"
+          },
+          "limits": {
+            "title": "適合指標の限界",
+            "body": "基準値は文脈に依存する確認目安です。応答数、測定位置、内容、複数の診断、感度確認を合わせ、値だけによる自動除外を避けます。"
+          }
+        }
+      },
+      "categories": {
+        "title": "得点カテゴリの働きを確認する",
+        "summary": "カテゴリの使用数、選択確率、隣接カテゴリの境界を合わせて、評定尺度の働きを検討します。",
+        "prerequisites": "選択した応答モデルを確認し、得点カテゴリの順序と意味、評定者への指示、採点基準、各カテゴリを支える十分な観測があるかを確認します。",
+        "computed": "アプリはカテゴリ別の観測数、モデル上の選択確率、隣接カテゴリの境界を要約します。",
+        "can_show": "ほとんど使われないカテゴリ、区別が不明瞭な領域、境界順序の懸念を見つけられます。",
+        "cannot_show": "カテゴリの使用パターンだけで、採点基準の質やカテゴリ統合の必要性を確定できません。",
+        "next_check": "実際の応答例、カテゴリ定義、評定者間の使い方、感度確認を照合します。",
+        "next_action": "統合や再符号化を決める前に、内容上の意味と別設定で結論が変わるかを確認してください。",
+        "safe_report": "カテゴリの使用状況、確率曲線、境界順序を別々の根拠として報告できます。",
+        "avoid_report": "境界が乱れているためカテゴリを自動的に統合すべきだ、とは記述しません。",
+        "search_alias": "得点カテゴリ、カテゴリ確率、カテゴリ使用、閾値、境界、評定尺度",
+        "sections": {
+          "overview": {
+            "title": "三つの根拠を合わせる",
+            "body": "カテゴリ機能は、実際の使用数、モデル上の選択確率、隣接カテゴリの境界を合わせて確認します。一つの表だけで尺度変更を決めないでください。"
+          },
+          "category_probability": {
+            "title": "カテゴリ確率曲線",
+            "body": "尺度上の位置ごとに各カテゴリが選ばれるモデル上の確率を示します。各カテゴリが最も選ばれやすい領域を持つかを見ますが、曲線だけで採点基準の内容妥当性は判断できません。"
+          },
+          "category_usage": {
+            "title": "カテゴリの使用状況",
+            "body": "各カテゴリの観測数と分布を確認します。少数カテゴリは推定が不安定になりやすい一方、頻度が低いことだけで不要とは判断できません。"
+          },
+          "threshold_map": {
+            "title": "隣接カテゴリの境界",
+            "body": "隣接するカテゴリが同程度に選ばれる尺度位置を示します。順序の乱れは確認信号ですが、標本構成や評定基準を調べずに自動統合しません。"
+          },
+          "limits": {
+            "title": "カテゴリ診断の限界",
+            "body": "カテゴリの統合や再定義は得点の意味を変えます。統計的なパターン、応答例、採点基準、研究目的、再分析結果を合わせて判断してください。"
+          }
+        }
+      },
+      "residual_structure": {
+        "title": "残差構造を探索する",
+        "summary": "モデルで説明した後の残差に、まとまった追加パターンが残っていないかを探索します。",
+        "prerequisites": "推定が完了し、比較可能な残差を持つ受験者と観測が十分にあることを確認します。",
+        "computed": "アプリは残差間の関係を要約し、残差PCAによる主要なコントラストと安定性の手がかりを示します。",
+        "can_show": "モデルで捉えきれていない可能性のある残差パターンと、追加確認する内容領域を見つけられます。",
+        "cannot_show": "残差PCAだけで一次元性を証明したり、真の次元数を確定したりすることはできません。",
+        "next_check": "コントラストに寄与する項目や課題の内容と、標本変更に対するパターンの安定性を確認します。",
+        "next_action": "強いパターンがあれば内容上の共通点と感度確認を調べ、他の次元性根拠と比較してください。",
+        "safe_report": "内容と安定性の根拠を実際に確認した場合は、残差PCAを探索的なスクリーニングとして報告し、一次元性を確認するものではないという境界を残します。",
+        "avoid_report": "残差PCAで強いコントラストがなかったため一次元性が証明された、とは記述しません。",
+        "search_alias": "残差PCA、残差構造、次元性、固有値、残差コントラスト",
+        "sections": {
+          "overview": {
+            "title": "残差構造を見る目的",
+            "body": "MFRMが説明した主な尺度と要因（ファセット）の効果を除いた後に、応答のまとまりが残るかを探索します。残差のまとまりは追加検討の手がかりであり、直ちに別次元を意味しません。"
+          },
+          "residual_pca": {
+            "title": "残差PCAの読み方",
+            "body": "残差PCAは、相関する残差をコントラストとして要約する探索的診断です。固有値、寄与する項目、符号のまとまり、標本を変えたときの安定性を合わせて読みます。"
+          },
+          "limits": {
+            "title": "次元性についての限界",
+            "body": "弱いコントラストは一次元性の証明ではなく、強いコントラストも次元数の確定ではありません。項目内容、設計、理論、別の診断と合わせて検討します。"
+          },
+          "next_check": {
+            "title": "次に確認する根拠",
+            "body": "寄与の大きい項目や課題に内容上の共通点があるかを確認します。観測の疎さ、局所依存、評定条件、感度確認による変化も調べてください。"
+          }
+        }
+      },
+      "rater_evidence": {
+        "title": "評定者に関する根拠を分けて読む",
+        "summary": "一致、モデル上の評定の厳しさ・甘さ（severity）、評定者間の区別可能性を別々の問いとして確認します。",
+        "prerequisites": "同じ受験者や課題を複数の評定者が評価した重なりと、各評定者の観測数を確認します。",
+        "computed": "アプリは評定者間の一致、モデル上の厳しさ・甘さ、測定誤差を考慮した評定者差を要約します。",
+        "can_show": "同じ得点を与える程度、系統的な厳しさ・甘さ、評定者差を区別できる精度を別々に確認できます。",
+        "cannot_show": "これらの指標だけで評定者の正確性、意図、適格性、再訓練の必要性は判定できません。",
+        "next_check": "観測の重なり、得点カテゴリの使い方、課題別のパターン、信頼区間を確認します。",
+        "next_action": "一つの指標で評定者を判断せず、該当する応答と実施条件を確認してください。",
+      "safe_report": "一致、モデル上の厳しさ・甘さ、評定者差の推定精度を区別し、観測された条件の範囲で報告できます。",
+        "avoid_report": "モデル上で相対的に厳しい評定者を、不正確または不公平な評定者とみなしません。",
+        "search_alias": "評定者一致、severity、厳しさ、甘さ、評定者差、分離度",
+        "sections": {
+          "overview": {
+            "title": "異なる問いを混同しない",
+            "body": "一致は同じ得点を与えた程度、厳しさ・甘さはモデル上の系統的な位置、区別可能性は評定者差を誤差から見分けられる程度です。同じ概念ではありません。"
+          },
+          "agreement": {
+            "title": "評定者間の一致",
+          "body": "同じ対象に同じ、または近い得点を与えた程度を示します。高い一致でも共通の偏りは検出できず、低い一致でも厳しさ・甘さの差をモデルが説明する場合があります。"
+          },
+          "severity": {
+            "title": "モデル上の評定の厳しさ・甘さ",
+            "body": "同じ受験者や課題を比べたときに、相対的に高いまたは低い得点を与える系統的傾向をロジット尺度上で示します。人柄や評定能力の評価ではありません。"
+          },
+          "differentiation": {
+            "title": "評定者差の区別可能性",
+            "body": "推定された評定者差が測定誤差に比べてどの程度区別できるかを見ます。差を区別できても、その原因や教育的な重要性が判明するわけではありません。"
+          },
+          "limits": {
+            "title": "評定者指標の限界",
+            "body": "観測が少ない評定者や重なりの乏しい設計では推定が不安定です。内容、課題割当て、実施記録、必要に応じた追加調査と合わせて判断します。"
+          }
+        }
+      },
+      "differential_interaction": {
+        "title": "条件別の交互作用を確認する",
+        "summary": "当てはめたMFRMにおける局所的な要因ペアの交互作用と、群を条件とする古典的DIFを別々に確認します。どちらも公平性の判定ではなく、相互に置き換えられません。",
+        "prerequisites": "比較群の定義、各組合せの観測数、研究上予定した比較、関連する背景要因を確認します。",
+        "computed": "局所的な要因ペアでは、アプリはMFRMの加法的効果からのずれを推定します。これとは別に、古典的DIFでは選択した得点で対応づけた後の群別の項目差を要約します。",
+      "can_show": "全体的な厳しさ・甘さや難度だけでは説明しにくい、条件に特有の差の候補を見つけられます。",
+        "cannot_show": "交互作用やDIFの信号だけで、原因、差別、偏り、公平性を判定することはできません。",
+        "next_check": "観測数、効果の大きさ、不確実性、内容上の説明、別設定での安定性を確認します。",
+        "next_action": "候補を事前計画と照合し、該当する内容と実施条件を調べてください。",
+        "safe_report": "指定したスクリーニング、不確実性、設計、内容上の根拠を実際に確認した場合は、局所的な要因ペアの交互作用と古典的DIFを分け、各フラグをどちらで得たか明記します。",
+        "avoid_report": "交互作用が検出されたため評定は不公平である、とは記述しません。",
+        "search_alias": "交互作用、条件差、DIF、群別差、評定者と課題の組合せ",
+        "sections": {
+          "overview": {
+            "title": "交互作用が答える問い",
+            "body": "ある要素の全体的な位置を調整した後でも、特定の組合せに追加の差が残るかを調べます。差は文脈依存の信号であり、原因の説明ではありません。"
+          },
+          "bias_heatmap": {
+            "title": "交互作用ヒートマップ",
+            "body": "組合せごとの差の方向と大きさを色で示します。色の強さだけで判断せず、観測数、不確実性、比較の多さ、内容上の意味を確認してください。"
+          },
+          "classical_dif": {
+            "title": "古典的DIFスクリーニング",
+            "body": "得点水準を考慮しながら群間で項目反応が異なる候補を探索します。多相モデルの調整をすべて含むわけではないため、補助的な確認として扱います。"
+          },
+          "fairness_boundary": {
+            "title": "公平性判断との境界",
+            "body": "統計的な差は公平性検討の出発点です。項目内容、機会、実施条件、群の定義、影響を調べる前に、公平または不公平という結論を出さないでください。"
+          }
+        }
+      }
+    },
+    "report": {
+      "claim_limits": {
+        "title": "根拠に合う範囲で報告する",
+        "summary": "利用できる根拠、制限付きの根拠、確認できない問いを区別して、主張の強さを調整します。",
+        "prerequisites": "研究上の問いごとに、必要な結果、診断、感度確認、設計上の前提を定めます。",
+        "computed": "アプリは各問いについて、利用できる結果、注意点、確認できない理由、次の確認を整理します。",
+        "can_show": "現在の分析で支えられる記述、条件を付ける記述、差し控える記述を分けられます。",
+        "cannot_show": "報告ガイドだけで、研究全体の妥当性、倫理性、利用判断を承認することはできません。",
+        "next_check": "本文の各主張が、同じデータと設定から得た根拠および限界に対応するか確認します。",
+        "next_action": "主張ごとに根拠、対象範囲、不確実性、例外条件を添えてください。",
+        "safe_report": "観測した対象と条件の範囲で、推定値、不確実性、診断、制限を対応づけて報告します。",
+        "avoid_report": "確認できなかった問いを、問題がなかったまたは効果がなかった、と置き換えません。",
+        "search_alias": "報告の限界、主張できること、注意書き、結果がない、報告文",
+        "sections": {
+          "overview": {
+            "title": "主張を根拠に合わせる",
+            "body": "研究上の各主張に、どの結果が対応し、どの制限が残るかを確認します。利用可能という表示だけでなく、設計、不確実性、診断、感度確認を合わせて読みます。"
+          },
+          "supported": {
+            "title": "現在の根拠で支えられる記述",
+            "body": "計算できた結果が研究上の問いに直接対応し、必要な前提と確認が満たされている場合でも、対象、条件、尺度、不確実性を明記して報告します。"
+          },
+          "limited": {
+            "title": "条件を付けて報告する記述",
+            "body": "観測範囲が狭い、推定精度が低い、診断が不安定、感度確認で変化する場合は、その条件を主張と同じ位置に示し、一般化の範囲を狭めます。"
+          },
+          "unavailable": {
+            "title": "確認できない問い",
+            "body": "必要なデータ、設計、推定、診断がない問いは、支持も不支持も判断できません。確認できなかった理由と、追加で必要な根拠を記録します。"
+          },
+          "wording": {
+            "title": "安全な報告文を作る",
+            "body": "「このデータと指定したモデルの範囲では」のように対象を限定し、推定値と不確実性を併記します。「証明した」「問題がない」のような過度に強い表現を避けます。"
+          }
+        }
+      }
+    },
+    "downloads": {
+      "privacy": {
+        "title": "共有前にダウンロード内容を確認する",
+        "summary": "保存する資料に何が含まれ、何が除かれるかを確認し、共有範囲を判断します。",
+        "prerequisites": "所属機関のデータ管理規則、同意範囲、共有相手、必要最小限の情報を確認します。",
+        "computed": "アプリは選択したダウンロードに含まれる結果の種類と、個別情報を含む可能性を案内します。",
+        "can_show": "共有用の選択で除かれる内容と、保存前に確認すべき結果の単位を把握できます。",
+        "cannot_show": "内容確認や共有用の選択だけで、匿名性、安全な共有、再識別不能を保証することはできません。",
+        "next_check": "列名だけでなく、少数群、自由記述、極端な組合せから個人を推測できないか確認します。",
+        "next_action": "共有目的に不要な個別情報を外し、保存後の資料を開いて内容を再確認してください。",
+        "safe_report": "準備した資料とデータ管理要件を実際に確認した場合は、共有した資料、除外した情報、完了した開示リスク確認を報告します。",
+        "avoid_report": "共有用の設定を選んだため完全に匿名である、とは記述しません。",
+        "search_alias": "ダウンロード、共有、個人情報、匿名化、含まれる内容、除外される内容",
+        "sections": {
+          "overview": {
+            "title": "保存と共有は別の判断",
+            "body": "分析に必要な詳細を保存することと、他者へ安全に共有できることは同じではありません。共有先と目的に合わせ、必要最小限の内容を選びます。"
+          },
+          "included": {
+            "title": "含まれる内容を確認する",
+            "body": "結果表、図、設定、方法上の注意など、選択した資料の内容を確認します。要素別や応答別の結果は、名前がなくても組合せから個人を推測できる場合があります。"
+          },
+          "excluded": {
+            "title": "共有用の選択で除かれる内容",
+            "body": "個別応答や受験者単位の詳細など、共有に不要な情報を除外します。ただし、一つの資料から除外しても別の場所にある複製は消えません。残った少数セルや識別的な属性も別途確認が必要です。"
+          },
+          "sharing_check": {
+            "title": "共有直前の確認",
+            "body": "保存した資料を実際に開き、個人や小集団を推測できる値、不要な列、自由記述がないか確認します。共有先の権限と保存期間も確かめてください。"
+          }
+        }
+      },
+      "repeat_analysis": {
+        "title": "同じ分析を再実行できるようにする",
+        "summary": "入力、設定、分析範囲、利用した版、解釈上の制限を対応づけて保存します。",
+        "prerequisites": "再実行を認められた入力の保管場所、必要な設定、乱数を用いる処理の条件を確認します。",
+        "computed": "アプリは現在の分析設定と、結果を再作成するために必要な手順をまとめます。",
+        "can_show": "同じ入力と設定を用いて同じ分析手順をたどるために必要な情報を整理できます。",
+        "cannot_show": "同じ結果を再作成できても、その結果の妥当性や別データでの再現性は保証されません。",
+        "next_check": "保存した入力、設定、版、分析範囲が互いに対応し、制限事項も残っているか確認します。",
+        "next_action": "入力を安全に保管し、設定、必要な結果、制限事項を一組として保存してください。",
+        "safe_report": "入力の来歴、設定、ソフトウェアの版、手順、保存した根拠を実際に照合した場合は、それらによって明記した分析を再実行できると報告します。独立した検証とは記述しません。",
+        "avoid_report": "同じ手順で同じ結果が得られたため、結果は独立に検証された、とは記述しません。",
+        "search_alias": "再実行、再現可能性、設定を保存、分析を繰り返す、手順を残す",
+        "sections": {
+          "overview": {
+            "title": "何を一組として残すか",
+            "body": "入力だけ、または結果だけを保存せず、研究上の問い、データの準備方法、モデル、推定設定、分析範囲、診断、制限を対応づけて残します。"
+          },
+          "settings": {
+            "title": "分析設定を残す",
+            "body": "モデルと推定法、カテゴリの扱い、要因（ファセット）の指定、制約、任意の診断、乱数を用いる条件、利用したアプリの版を記録します。"
+          },
+          "evidence": {
+            "title": "結果と判断根拠を残す",
+            "body": "最終的な表だけでなく、収束、データ範囲、不確実性、適合、カテゴリ、残差構造、感度確認と、採用しなかった結論の理由も保存します。"
+          },
+          "limitations": {
+            "title": "再実行できることの限界",
+            "body": "同じ処理を再現することは透明性を高めますが、入力の正確さ、モデル選択、解釈の妥当性を独立に検証するものではありません。"
+          }
+        }
+      }
+    },
+    "methods": {
+      "rsm_pcm_gpcm": {
+        "title": "RSM・PCM・GPCMを選ぶ",
+        "summary": "採点設計、カテゴリ構造、識別力の仮定、研究目的に応じて応答モデルを選びます。",
+        "prerequisites": "ステップ要因（ファセット）として選ぶ要因を定め、その水準間でカテゴリの意味と境界位置を共有するか、水準ごとの識別力の違いを仮定する根拠があるかを確認します。",
+        "computed": "アプリは選択した応答モデルを、範囲を限定して指定したステップ要因（ファセット）の構造に当てはめ、モデルに応じたカテゴリ結果を示します。",
+        "can_show": "各モデルのもとでの測定値、適合、カテゴリ機能、比較に必要な根拠を確認できます。",
+        "cannot_show": "適合度だけで正しいモデルを決定したり、意味の異なるカテゴリ構造を同一視したりできません。",
+        "next_check": "モデルの制約を採点基準、カテゴリ使用、推定の安定性、意図する解釈と照合します。",
+        "next_action": "結果を解釈する前にモデル選択の理由を明記し、代替モデルは目的を定めた感度確認として扱ってください。",
+        "safe_report": "採点設計、選択したステップ要因（ファセット）、モデルの仮定、完了した診断を実際に確認した場合は、選択した応答モデルと、その選択を支えるために用いた確認を報告します。",
+        "avoid_report": "最も柔軟なモデル、または適合度が最良のモデルを自動的に正しいモデルとしません。",
+        "search_alias": "RSM、PCM、GPCM、応答モデル、評定尺度モデル、部分採点モデル",
+        "sections": {
+          "overview": {
+            "title": "モデル選択は採点の仮定を表す",
+            "body": "MFRMは受験者と要因（ファセット）の効果を分け、応答モデルは順序カテゴリがどう働くかを定めます。採点基準と得点の意味に合う制約を選んでください。"
+          },
+          "rsm": {
+            "title": "評定尺度モデル（RSM）",
+            "body": "RSMは、選択したステップ要因（ファセット）のすべての水準に一つの共通したカテゴリ・ステップ構造を用います。水準間でカテゴリの意味と境界位置を共有するよう設計された評定尺度に適します。"
+          },
+          "pcm": {
+            "title": "部分採点モデル（PCM）",
+            "body": "PCMは識別力を固定したまま、選択したステップ要因（ファセット）の水準ごとにカテゴリ境界の位置が異なることを許します。ラッシュ型の識別力制約のもとで、水準固有のカテゴリ遷移を持つ設計に対応します。"
+          },
+          "gpcm": {
+            "title": "一般化部分採点モデル（GPCM）",
+            "body": "このアプリの範囲を限定したGPCMでは、選択したステップ要因（ファセット）の水準ごとに、カテゴリ境界の位置と識別力を変えられます。識別力パラメータは、その要因内で幾何平均を1とする制約のもとでの相対値であり、絶対的な品質得点ではありません。この柔軟性には十分な観測が必要です。"
+          },
+          "choice_boundary": {
+            "title": "比較結果だけで目的は決まらない",
+            "body": "適合度と感度確認を根拠の一部として使い、採点設計、識別可能性、簡潔さ、解釈しやすさも考慮します。各モデルは異なる制約のもとで異なる問いに答えます。"
+          }
+        }
+      },
+      "jmle_mml": {
+        "title": "JMLEとMMLを選ぶ",
+        "summary": "推定したいパラメータ、受験者分布の仮定、標本と設計、報告目的に応じて推定法を選びます。",
+        "prerequisites": "応答モデル、パラメータ制約、受験者についての推論目的、母集団分布を分析に含めるかを定めます。",
+        "computed": "JMLEは受験者と要因（ファセット）のパラメータを同時に推定し、MMLは指定した受験者分布について積分しながら構造パラメータを推定します。",
+        "can_show": "対応する設定の範囲で、推定法ごとのパラメータ、収束、不確実性、感度確認を比較できます。",
+        "cannot_show": "どちらか一方が常に優れているわけではなく、両者の一致も妥当性の証明にはなりません。",
+        "next_check": "収束、推定対象、標本と設計の情報量、受験者分布の仮定、妥当な設定変更への感度を確認します。",
+        "next_action": "研究目的から主たる推定法を説明し、必要に応じてもう一方を計画した感度確認として用いてください。",
+        "safe_report": "推定対象、仮定、収束、計画した感度確認を実際に検討した場合は、選択した推定法と完了した確認を報告します。",
+        "avoid_report": "一方の推定法が常に他方より正確である、とは記述しません。",
+        "search_alias": "JMLE、MML、推定法、同時最尤法、周辺最尤法、受験者分布",
+        "sections": {
+          "overview": {
+            "title": "受験者パラメータの扱いが異なる",
+            "body": "JMLEとMMLでは受験者パラメータの扱いが異なります。推定値、不確実性、小標本での性質を、その選択と結び付けて解釈してください。"
+          },
+          "jmle": {
+            "title": "同時最尤推定（JMLE）",
+            "body": "JMLEは選択した制約のもとで、受験者と要因（ファセット）のパラメータを同時に推定します。受験者が増えると推定する受験者パラメータも増えるため、小標本では偏りが残ることがあり、疎な評定設計では不安定さも加わります。JMLEを選ぶだけで偏りがなくなるとはみなさず、標本と設計による裏付けを確認します。"
+          },
+          "mml": {
+            "title": "周辺最尤推定（MML）",
+            "body": "MMLは指定した受験者分布について積分しながら構造パラメータを推定します。結論は分布の仮定と数値積分の設定に依存します。"
+          },
+          "person_distribution_sd": {
+            "title": "受験者分布の標準偏差",
+            "body": "MMLでは、標準偏差が潜在尺度上の母集団の広がりを設定または推定します。固定か推定か、不確実性、分布形を変えたときの感度を確認してください。"
+          },
+          "choice_boundary": {
+            "title": "推定法は目的に応じて選ぶ",
+            "body": "収束、偏りに関する考慮、不確実性、分布の仮定、意図するパラメータ解釈を比較します。一つの適合値だけで推定法を選ばないでください。"
+          }
+        }
+      }
+    },
+    "glossary": {
+      "title": "測定と分析手順の用語集",
+      "summary": "確認済みの定義、検索語、各用語に伴う解釈上の境界を調べます。",
+      "prerequisites": "推定済みの結果は不要です。研究と画面の文脈から、確認したい意味を選びます。",
+      "computed": "用語集は用語と別名を確認済みの概念へ対応づけますが、分析を計算し直したり再解釈したりしません。",
+      "can_show": "研究タスクに沿った平易な表現と正式な測定用語を結び付け、関連ガイドへ案内できます。",
+      "cannot_show": "用語の定義だけで、その状態が現在の分析に当てはまることを示すことはできません。",
+      "next_check": "関連するヘルプを開き、現在のモデル、設計、画面に定義がどう当てはまるか確認します。",
+      "next_action": "確認済みの用語を記録に使い、報告時にも定義と限界を一緒に残してください。",
+      "safe_report": "用語を確認済みの定義に沿って使い、現在の分析で成立する条件を明記します。",
+      "avoid_report": "出力に用語が表示されたことを、その用語に対応する結論の証明とはしません。",
+      "search_alias": "用語集、定義、測定用語、分析手順の用語、ことばの意味",
+      "sections": {
+        "overview": {
+          "title": "同じ概念を読み手に合う言葉で示す",
+          "body": "用語集は、研究タスクに沿った平易な表現と正式な測定用語を同じ概念へ結び付けます。実装上の表示名を利用者向けの説明として露出させず、読み手に応じた言い換えによって科学的な意味を変えません。"
+        },
+        "search": {
+          "title": "用語または研究タスクで検索する",
+          "body": "略称、正式名称、知りたい作業を入力できます。定義が応答モデル、推定法、設計、診断に依存する場合は、関連するヘルプも開いてください。"
+        },
+        "concept_boundaries": {
+          "title": "定義は分析結果ではない",
+          "body": "各概念には、その用語から推論してはいけない内容も示します。用語名を根拠として使わず、その境界を解釈と報告にも引き継いでください。"
+        }
+      }
+    },
+    "fallback": {
+      "unavailable": {
+        "title": "指定したヘルプ項目を開けません",
+        "summary": "開けない項目を分析根拠として扱わず、利用できる項目を選ぶためヘルプホームへ戻ります。",
+        "prerequisites": "追加の入力や分析は必要ありません。",
+        "computed": "この案内を表示しても、分析や診断は実行されません。",
+        "can_show": "ヘルプホームへ安全に戻る経路と、元の画面を確認する必要性を示せます。",
+        "cannot_show": "開けない内容を復元したり、現在の分析について新しい判断を示したりすることはできません。",
+        "next_check": "確認したかった研究タスクまたは方法を整理し、利用できる中で最も近い項目を選びます。",
+        "next_action": "ヘルプホームへ戻り、分析を続ける前に元の画面で現在も表示されている内容を確認してください。",
+        "safe_report": "この案内を分析根拠には使わず、報告前に元の画面と利用可能な根拠へ戻ります。",
+        "avoid_report": "ヘルプ項目を開けないことを、分析の失敗や結果が利用できない証拠とはしません。",
+        "search_alias": "ヘルプを開けない、項目がない、ヘルプホームへ戻る、画面を確認、復帰",
+        "sections": {
+          "overview": {
+            "title": "戻って作業内容を確認する",
+            "body": "この項目は開けませんでした。ヘルプホームへ戻って利用できる項目を選び、分析を続ける前に元の画面で現在も表示されている内容を確認してください。"
+          }
+        }
+      }
+    },
+    "data": {
+      "long_format": {
+        "title": "長形式データを準備する",
+        "summary": "1行を一つの評定として、受験者、得点、評定に関わる要因（ファセット）を列で表す方法を説明します。",
+        "prerequisites": "元データで一つの評定がどの行に対応し、誰が何をどの基準で評定したかを確認します。",
+        "computed": "アプリは表を行と列として読み取り、分析に使う列の候補と形式上の不足を確認します。",
+        "can_show": "表が読み取れるか、必要な役割を列に対応づけられるかを確認できます。",
+        "cannot_show": "表の形が正しくても、観測の正確さ、評定設計の質、欠測理由までは保証されません。",
+        "next_check": "同じ評定が重複していないか、予定された欠測と予期しない欠測を区別できるか確認します。",
+        "next_action": "各列を受験者、得点、評定者、課題、項目などの役割に対応づけてください。",
+        "safe_report": "分析には、一つの評定を一行とする長形式データを用いた、と記述できます。",
+        "avoid_report": "長形式に変換したためデータ品質が確保された、とは記述しません。",
+        "search_alias": "長形式、long形式、1行1評定、入力表、区切り文字",
+        "sections": {
+          "overview": {
+            "title": "長形式とは",
+            "body": "一つの行に一つの評定を置き、その評定に対応する受験者、得点、評定者、課題、項目などを別々の列に記録します。同じ受験者に複数の評定があれば、複数行になります。"
+          },
+          "row_meaning": {
+            "title": "一行が表すもの",
+            "body": "一行は、特定の受験者に対して、特定の評定条件のもとで与えられた一つの得点を表します。集計済みの平均点を一行に置くと、元の評定関係を復元できない場合があります。"
+          },
+          "required_columns": {
+            "title": "分析に必要な列",
+            "body": "少なくとも受験者を識別する列、順序カテゴリの得点列、分析する要因（ファセット）の列が必要です。列名そのものより、各列が研究設計のどの役割を表すかが重要です。"
+          },
+          "missingness": {
+            "title": "空欄と欠測値",
+            "body": "空欄、欠測記号、評定尺度外の符号を区別します。欠測を通常の得点として読み込まず、予定された未評定か、予期しない欠測かを記録してください。"
+          }
+        }
+      },
+      "mapping": {
+        "title": "列を分析上の役割に対応づける",
+        "summary": "入力表の各列を、受験者、得点、評定者、課題、項目などの役割へ対応づけます。",
+        "prerequisites": "各列の定義、値の単位、識別子と得点の違いを元データの説明と照合します。",
+        "computed": "アプリは選択された列を用いて、分析に必要な役割がそろっているか確認します。",
+        "can_show": "どの列が各要因（ファセット）と得点に使われるか、未対応の必須役割があるかを確認できます。",
+        "cannot_show": "列を対応づけただけでは、評定割当ての妥当性や比較の十分性は確認できません。",
+        "next_check": "識別子を得点列にしていないか、同じ列を矛盾する役割へ割り当てていないか確認します。",
+        "next_action": "列の説明と値の例を照合し、対応づけを確定してください。",
+        "safe_report": "受験者、得点、各要因（ファセット）に用いた列の定義を報告できます。",
+        "avoid_report": "列を対応づけられたため評定設計は適切である、とは記述しません。",
+        "search_alias": "列の対応づけ、列の役割、受験者列、得点列、ファセット列",
+        "sections": {
+          "overview": {
+            "title": "対応づけの目的",
+            "body": "列の対応づけは、表の値をMFRMのどの要素として扱うかを明示する操作です。元データの意味を変更するものではありません。"
+          },
+          "roles": {
+            "title": "主な列の役割",
+            "body": "受験者列は評定対象、得点列は順序カテゴリ、要因（ファセット）の列は評定者・課題・項目・基準などを表します。研究上区別すべき要因を一つの列へ混在させないでください。"
+          },
+          "check_mapping": {
+            "title": "実行前の照合",
+            "body": "選択した列名だけでなく、値の範囲と数例を確認します。得点が想定カテゴリ内にあり、各要因（ファセット）の値が意図した水準を表すことを確かめてください。"
+          }
+        }
+      },
+      "missingness": {
+        "title": "欠測と未評定を確認する",
+        "summary": "評定がない理由を、設計上予定された未評定と予期しない欠測に分けて検討します。",
+        "prerequisites": "評定割当て表、実施記録、欠測記号の定義、除外規則を確認します。",
+        "computed": "アプリは読み込めた行、欠測として扱う行、分析に使える観測範囲を要約します。",
+        "can_show": "どの組合せに観測があり、どこに欠測が集中しているかを確認できます。",
+        "cannot_show": "欠測表だけでは、欠測の理由や、結果への影響が無視できるかは判断できません。",
+        "next_check": "特定の受験者、評定者、課題、得点帯に欠測が偏っていないか確認します。",
+        "next_action": "実施記録と照合し、予定された未評定と予期しない欠測を区別してください。",
+        "safe_report": "欠測の量、分布、扱い、分析対象から外れた行の規則を報告できます。",
+        "avoid_report": "欠測率が低いため結果への影響はない、とは追加確認なしに記述しません。",
+        "search_alias": "欠測、未評定、空欄、除外行、観測不足",
+        "sections": {
+          "overview": {
+            "title": "欠測を区別する理由",
+            "body": "MFRMでは全員を全条件で評定しない設計もあります。設計上の未評定と、実施上の問題で生じた欠測を同じものとして扱うと、観測範囲を誤解するおそれがあります。"
+          },
+          "planned_missing": {
+            "title": "予定された未評定",
+            "body": "評定計画で最初から割り当てられていない組合せです。計画どおりでも、比較対象がつながるだけの共通観測があるかは別に確認します。"
+          },
+          "unexpected_missing": {
+            "title": "予期しない欠測",
+            "body": "未提出、記録漏れ、処理上の除外など、計画外に失われた評定です。原因と偏りを確認し、分析対象と報告範囲への影響を記録します。"
+          },
+          "limits": {
+            "title": "欠測要約の限界",
+            "body": "観測数だけでは欠測の仕組みを特定できません。実施記録、割当て設計、必要に応じた感度確認と合わせて解釈してください。"
+          }
+        }
+      }
+    }
   }
 }

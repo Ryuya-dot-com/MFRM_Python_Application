@@ -1,5 +1,10 @@
 # MFRM Python Application Roadmap
 
+Development-line consolidation, 2026-09-11: use
+[`docs/development_integration.md`](docs/development_integration.md) for the active
+checkout, preserved public baseline, and staged integration status. The original
+scientific and product exit gates below remain in force.
+
 - Status: active
 - Last updated: 2026-08-11
 - Product boundary: standalone Python

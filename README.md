@@ -1,5 +1,10 @@
 # MFRM Streamlit
 
+Development checkout: `integration/unified-app`. The public `main` baseline is
+`d8558fc` (`0.2.16-beta`); the inherited version label below is not a release-order
+indicator. See the [development integration ledger](docs/development_integration.md)
+for preserved branches, completed transfers, and pending release gates.
+
 Standalone Python beta application for Many-Facet Rasch Model estimation in Streamlit.
 
 This app estimates, diagnoses, stress-tests, and reports MFRM analyses in

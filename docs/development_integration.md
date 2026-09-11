@@ -124,6 +124,9 @@ JAXは同じモデル・推定対象を保つ任意の計算基盤として評�
 - 自由分散MMLの旧「Profile SE」は他パラメータ固定の曲率だったため、
   SE・信頼区間の生成と推論用表示を保留した。古い保存結果にも出力保護を適用。
   [数学的根拠と修正範囲](mml_population_sd_uncertainty_audit.md)を参照。
+- 続くRSM／PCMのQ31・Q61開発確認で、EMの停止と共同停留性の差を再現した。
+  EMの成功だけで自由分散MMLに `InferenceReady=True` を付ける経路を修正し、
+  結果案内・出力・感度分析の開始にも保留を適用。独立した資格検証と被覆率は未完了。
 - 実ブラウザのアクセシビリティ受入は未完了。
 
 詳細は [MML v2](../validation/MML_FREE_SD_STATIONARITY_V2_ROADMAP_20260811.md)、

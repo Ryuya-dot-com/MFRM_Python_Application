@@ -5,6 +5,7 @@ import json
 import zipfile
 
 import pandas as pd
+import pytest
 
 import streamlit_app as app
 from mfrm_app import evidence
@@ -102,6 +103,32 @@ def test_final_readiness_separates_hold_caution_and_not_assessable_reviews():
     assert frame.loc["Bias / local interaction", "ComputationState"] == "NOT_ASSESSABLE"
     assert frame.loc["Anchor / linking audit", "ComputationState"] == "NOT_ASSESSABLE"
     assert frame.loc["Anchor / linking audit", "SourceArtifactsJSON"] == "[]"
+
+
+@pytest.mark.parametrize("converged", [True, False])
+def test_free_sd_em_termination_does_not_qualify_final_interpretation(converged):
+    result = _result(converged=converged)
+    result["config"].update(method="MML", estimate_population_sd=True,
+                            estimated_population_sd=1.3, population_prior_sd=1.3)
+    diagnostics = _diagnostics(review_residuals=False)
+    row = app.build_final_report_readiness(result, diagnostics).set_index("Check").loc["Convergence"]
+    assert row["Status"] == "Review"
+    assert row["ComputationState"] == "HOLD"
+    assert row["Required"] == "Yes"
+    assert row["ReasonCode"] == (
+        app.FREE_SD_MML_INFERENCE_HOLD_REASON if converged else "evidence.run_failed"
+    )
+    first_read = app.build_first_read_guide_rows(result, diagnostics)
+    assert first_read[0]["Status"] == "Do not interpret yet"
+    assert app.first_read_guide_should_expand(first_read)
+    action = app.build_guided_action_plan(result, diagnostics).iloc[0]
+    assert action["Check"] == "1. Convergence"
+    assert action["Status"] == "Do not interpret yet"
+    guide = app.build_manuscript_claim_guide(result, diagnostics).set_index("ManuscriptArea")
+    assert guide.loc["Convergence and final interpretability", "ClaimStatus"] == "Do not claim"
+    audit = app.build_statistical_assumption_audit(result, diagnostics).set_index("Area")
+    assert "MML fixed population prior SD" not in audit.index
+    assert audit.loc["MML freely estimated population SD", "Status"] == "WITHHELD"
 
 
 def test_final_readiness_contract_survives_standard_zip_as_frames_and_json():

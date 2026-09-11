@@ -62,7 +62,8 @@ def test_free_sigma_threads_metric_and_preserves_user_input():
 
 def test_free_sigma_adds_one_parameter_but_withholds_inference():
     df = _sim_rsm(theta_sd=1.5)
-    free = _fit(df, free=True)["config"]
+    free_result = _fit(df, free=True)
+    free = free_result["config"]
     fixed = _fit(df, free=False)["config"]
     assert int(free["parameter_count"]) == int(fixed["parameter_count"]) + 1
     scale = free["population_sd_conditional_curvature_scale"]
@@ -70,6 +71,8 @@ def test_free_sigma_adds_one_parameter_but_withholds_inference():
     assert free["population_sd_se"] is None
     assert free["population_sd_ci"] is None
     assert free["population_sd_inference_ready"] is False
+    assert bool(free_result["summary"].iloc[0]["InferenceReady"]) is False
+    assert "population SD excluded" in free_result["convergence"].iloc[0]["GradientScope"]
 
 
 def test_fixed_path_unchanged_and_reports_no_estimate():

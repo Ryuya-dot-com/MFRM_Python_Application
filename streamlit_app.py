@@ -9444,6 +9444,29 @@ def mfrm_auto_mml(start, idx, config, sizes, quad, maxit=400, reltol=1e-6):
     return hybrid
 
 
+FREE_SD_MML_INFERENCE_HOLD_REASON = "stat.mml_free_sd.numerical_qualification_pending"
+
+
+def _free_sd_mml_inference_withheld(config) -> bool:
+    return bool(
+        isinstance(config, dict)
+        and str(config.get("method", "")).upper() == "MML"
+        and config.get("estimate_population_sd", False)
+    )
+
+
+def qualified_estimation_summary(result) -> pd.DataFrame:
+    """Apply the current inference hold without changing saved optimizer evidence."""
+    summary = result.get("summary") if isinstance(result, dict) else None
+    if not isinstance(summary, pd.DataFrame):
+        return pd.DataFrame()
+    out = summary.copy()
+    if not out.empty and _free_sd_mml_inference_withheld(result.get("config")):
+        out["InferenceReady"] = False
+        out["InferenceReadinessReason"] = FREE_SD_MML_INFERENCE_HOLD_REASON
+    return out
+
+
 def build_convergence_summary(opt, config: dict, loglik: float, elapsed_seconds: float | None = None) -> pd.DataFrame:
     """One-row optimizer convergence table for reporting and downloads."""
     if opt is None:
@@ -9480,6 +9503,10 @@ def build_convergence_summary(opt, config: dict, loglik: float, elapsed_seconds:
             if np.isfinite(ll_final) and np.isfinite(getattr(opt, "penalty_value", 0.0)) else np.nan
         ),
         "GradientNorm": float(grad_norm) if np.isfinite(grad_norm) else np.nan,
+        "GradientScope": (
+            "structural coordinates only; population SD excluded"
+            if _free_sd_mml_inference_withheld(config) else "optimizer coordinates"
+        ),
         "ElapsedSeconds": float(elapsed_seconds) if elapsed_seconds is not None and np.isfinite(elapsed_seconds) else np.nan,
         "AutoAttempted": ", ".join(getattr(opt, "auto_attempted", []) or []),
         "AutoSelected": getattr(opt, "auto_selected", ""),
@@ -12362,6 +12389,7 @@ def mfrm_estimate(
         "GradientNorm": [getattr(opt, "gradient_norm", np.nan)],
         "ElapsedSeconds": [elapsed_seconds],
     })
+    summary_tbl = qualified_estimation_summary({"summary": summary_tbl, "config": config})
     parameterization_audit = build_parameterization_audit(config, sizes, params)
 
     result = {
@@ -26682,7 +26710,7 @@ def build_assignment_sensitivity_preflight(
 
     method = str(config.get("method", "")).upper()
     model = str(config.get("model", "")).upper()
-    source_summary = result.get("summary", pd.DataFrame())
+    source_summary = qualified_estimation_summary(result)
     source_inference_ready = False
     if (
         isinstance(source_summary, pd.DataFrame)
@@ -26696,7 +26724,8 @@ def build_assignment_sensitivity_preflight(
     gate(
         "Source fit inference readiness",
         source_inference_ready,
-        f"InferenceReady={source_inference_ready}",
+        f"InferenceReady={source_inference_ready}; "
+        f"{source_summary.iloc[0].get('InferenceReadinessReason', '') if not source_summary.empty else 'no summary'}",
         "Resolve convergence/identifiability/curvature blockers before using fitted coordinates as a generator.",
     )
     gate(
@@ -27305,7 +27334,7 @@ def simulate_fixed_density_assignment_sensitivity(
                     maxit=effective_maxit,
                     reltol=float(refit_reltol),
                 )
-                fit_summary = fitted.get("summary", pd.DataFrame())
+                fit_summary = qualified_estimation_summary(fitted)
                 row["FitReturned"] = True
                 row["Completed"] = True
                 if isinstance(fit_summary, pd.DataFrame) and not fit_summary.empty:
@@ -27688,7 +27717,7 @@ def build_result_bundle_frames(
         diagnostics,
         bias_present=bias_present,
     )
-    summary = result.get("summary")
+    summary = qualified_estimation_summary(result)
     _frame_bundle.add_frame(frames, "summary", summary)
     _frame_bundle.add_frame(
         frames,
@@ -28614,15 +28643,20 @@ def build_first_read_guide_rows(
     opt = result.get("opt")
     converged = bool(getattr(opt, "success", False))
     opt_msg = str(getattr(opt, "message", "") or "")
+    free_sd_hold = _free_sd_mml_inference_withheld(result.get("config"))
     rows.append({
         "Check": "1. Convergence",
-        "Status": "OK" if converged else "Do not interpret yet",
+        "Status": "OK" if converged and not free_sd_hold else "Do not interpret yet",
         "What it means": (
+            "The EM stopping rule was met, but free-SD joint stationarity and quadrature stability remain unqualified."
+            if converged and free_sd_hold else
             "Optimizer reached its stopping rule."
             if converged else
             f"Optimizer did not converge. {opt_msg[:120]}"
         ),
         "Next action": (
+            "Keep final interpretation on hold; qualify joint stationarity and quadrature stability."
+            if free_sd_hold else
             "Continue to reliability and fit."
             if converged else
             "Increase maxit, relax reltol slightly, simplify the model, or inspect sparse/extreme data."
@@ -41147,7 +41181,15 @@ def build_statistical_assumption_audit(
                     else "Report SE_Method, SE_Status, CI_Method, and CI_Status with exported measures."
                 ),
             })
-    if config.get("method") == "MML":
+    if _free_sd_mml_inference_withheld(config):
+        rows.append({
+            "Area": "MML freely estimated population SD",
+            "Status": "WITHHELD",
+            "Evidence": f"estimated_population_sd = {config.get('estimated_population_sd', 'unknown')}; {FREE_SD_MML_INFERENCE_HOLD_REASON}",
+            "Implication": "EM termination does not establish joint stationarity; free-SD SE/CI remain unqualified.",
+            "RecommendedAction": "Qualify joint stationarity, quadrature stability, and nuisance-adjusted uncertainty before inference.",
+        })
+    elif config.get("method") == "MML":
         prior_sd = config.get("population_prior_sd", "unknown")
         plan = build_mml_prior_sensitivity_plan(result)
         rows.append({
@@ -41248,16 +41290,29 @@ def build_final_report_readiness(
 
     opt = result.get("opt")
     converged = bool(getattr(opt, "success", False))
+    free_sd_hold = _free_sd_mml_inference_withheld(config)
+    convergence_ready = converged and not free_sd_hold
     rows.append(_readiness_row(
         "Convergence",
-        _status_from_bool(converged),
-        str(getattr(opt, "message", "not available")),
-        "Do not write final interpretations until the optimizer converges." if not converged else "No action needed.",
+        _status_from_bool(convergence_ready),
+        str(getattr(opt, "message", "not available")) + (
+            "; free-SD EM termination does not establish joint stationarity or quadrature stability."
+            if free_sd_hold else ""
+        ),
+        (
+            "Qualify joint stationarity and quadrature stability before final interpretation."
+            if free_sd_hold else
+            "Do not write final interpretations until the optimizer converges." if not converged else "No action needed."
+        ),
         computation_state=(
             _evidence.ComputationState.AVAILABLE
-            if converged else _evidence.ComputationState.HOLD
+            if convergence_ready else _evidence.ComputationState.HOLD
         ),
-        reason_code=None if converged else _evidence.ReasonCode.RUN_FAILED,
+        reason_code=(
+            _evidence.ReasonCode.RUN_FAILED if not converged else
+            FREE_SD_MML_INFERENCE_HOLD_REASON if free_sd_hold else None
+        ),
+        observed={"optimizer_terminated": converged, "free_sd_numerical_qualification_pending": free_sd_hold},
     ))
 
     residual_fit_summary = build_global_residual_fit_summary(diagnostics)
@@ -41805,15 +41860,19 @@ def build_manuscript_claim_guide(
         },
         {
             "ManuscriptArea": "Convergence and final interpretability",
-            "ClaimStatus": "Ready" if converged else "Do not claim",
+            "ClaimStatus": "Ready" if converged and not _free_sd_mml_inference_withheld(config) else "Do not claim",
             "SafeManuscriptWording": (
-                "The optimizer reported convergence, so substantive diagnostics can be read."
+                "Free-SD MML numerical qualification is pending; optimizer termination alone does not establish joint stationarity or final interpretability."
+                if _free_sd_mml_inference_withheld(config) else
+                "The optimizer reported convergence; inspect the remaining qualification and model-fit diagnostics before interpretation."
                 if converged else
                 "The optimizer did not report convergence; final parameter interpretation should be withheld."
             ),
             "EvidenceToReport": str(getattr(opt, "message", "not available")),
             "DoNotClaim": "Do not interpret person ability, rater severity, or task difficulty as final if convergence failed.",
             "NextAction": (
+                "Qualify joint stationarity and quadrature stability before final interpretation."
+                if _free_sd_mml_inference_withheld(config) else
                 "Continue through category, fit, reliability, and dimensionality diagnostics."
                 if converged else
                 "Increase iterations, simplify the model, inspect sparse/extreme data, or adjust category structure."
@@ -47350,7 +47409,13 @@ def show_convergence_section(result: dict) -> None:
     resolved = str(row.get("ResolvedMmlEngine", "") or "")
     grad = pd.to_numeric(pd.Series([row.get("GradientNorm", np.nan)]), errors="coerce").iloc[0]
     elapsed = pd.to_numeric(pd.Series([row.get("ElapsedSeconds", np.nan)]), errors="coerce").iloc[0]
-    if converged:
+    free_sd_hold = _free_sd_mml_inference_withheld(result.get("config"))
+    if converged and free_sd_hold:
+        st.warning(_standalone_ui_text(
+            en="The EM stopping rule was met. Free-SD MML joint stationarity and quadrature stability remain unqualified; final interpretation is withheld.",
+            ja="EMの停止条件を満たしました。自由分散MMLの全パラメータの停留性と積分点数への安定性は未検証のため、最終的な解釈は保留します。",
+        ))
+    elif converged:
         st.success(t("estimation_subsections.convergence_success"))
     else:
         st.error(t("estimation_subsections.convergence_error"))
@@ -47362,7 +47427,12 @@ def show_convergence_section(result: dict) -> None:
             )
         )
     if np.isfinite(grad):
-        if grad <= 1e-3:
+        if free_sd_hold:
+            st.caption(_standalone_ui_text(
+                en=f"Structural-coordinate gradient norm: {grad:.2e}. This excludes the population SD and is not a joint convergence check.",
+                ja=f"構造パラメータの勾配ノルム：{grad:.2e}。母集団SDの微分を含まないため、全パラメータの収束確認には使えません。",
+            ))
+        elif grad <= 1e-3:
             st.caption(
                 t(
                     "estimation_subsections.convergence_grad_small_caption_template",
@@ -48928,7 +48998,7 @@ def _collect_apa_exportable_tables(
                 frame = person_boundary.get(key)
                 if isinstance(frame, pd.DataFrame) and not frame.empty:
                     candidates[label] = frame
-        summary = result.get("summary")
+        summary = qualified_estimation_summary(result)
         if isinstance(summary, pd.DataFrame) and not summary.empty:
             candidates["Estimation summary"] = qualify_likelihood_information_table(
                 summary,
@@ -49479,7 +49549,7 @@ def _render_report_tables(result: dict, diagnostics: dict) -> None:
     """Estimation summary tables for the Report tab."""
     render_estimand_contract_panel(result)
     st.subheader(t("report_tables.estimation_summary_subheader"))
-    summary_df = result.get("summary", pd.DataFrame())
+    summary_df = qualified_estimation_summary(result)
     if isinstance(summary_df, pd.DataFrame) and not summary_df.empty:
         st.dataframe(summary_df, width="stretch")
     else:
@@ -63495,7 +63565,7 @@ def collect_download_frames(
 ) -> tuple[dict[str, pd.DataFrame], dict[str, object]]:
     """Collect DataFrames and intermediate tables used by the downloads UI."""
     # ---- Collect all data frames ----
-    summary = result.get("summary", pd.DataFrame())
+    summary = qualified_estimation_summary(result)
     measures_dl = diagnostics.get("measures", pd.DataFrame())
     reliability_dl = diagnostics.get("reliability", pd.DataFrame())
     steps_dl = result.get("steps", pd.DataFrame())

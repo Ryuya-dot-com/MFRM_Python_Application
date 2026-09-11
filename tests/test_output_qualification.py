@@ -172,6 +172,7 @@ def test_free_sd_legacy_uncertainty_is_withheld_in_every_export():
             "population_sd_inference_ready": True,
         },
         "prep": {"n_obs": 100, "n_person": 20},
+        "summary": pd.DataFrame([{"Converged": True, "InferenceReady": True}]),
     }
     frames, _ = app.collect_download_frames(
         result, {}, {}, pd.DataFrame(), pd.DataFrame(), public_export_mode=True,
@@ -188,6 +189,16 @@ def test_free_sd_legacy_uncertainty_is_withheld_in_every_export():
         assert row["ReasonCode"] == "stat.stat_003.population_sd_uncertainty_unqualified"
         assert not bool(row["PublicConclusionAllowed"])
         assert bool(row["RawTechnicalExportAllowed"])
+
+    for summary in (
+        app.build_result_bundle_frames(result, {})["summary"],
+        frames["summary"],
+        app._collect_apa_exportable_tables(result, {})["Estimation summary"],
+    ):
+        assert bool(summary.iloc[0]["Converged"]) is True
+        assert bool(summary.iloc[0]["InferenceReady"]) is False
+        assert summary.iloc[0]["InferenceReadinessReason"] == app.FREE_SD_MML_INFERENCE_HOLD_REASON
+    assert bool(result["summary"].iloc[0]["InferenceReady"]) is True  # saved evidence unchanged
 
     appendix = app.generate_method_appendix_text(result, {})
     assert "SE/CI withheld" in appendix

@@ -324,34 +324,27 @@ def test_fixed_sd_mml_runner_locks_marginal_method_and_sd_contract():
     assert not bundle["contrasts"]["LikelihoodComparisonPerformed"].any()
 
 
-def test_free_sd_mml_runner_refits_population_sd_within_mml_only():
+def test_free_sd_mml_runner_withholds_even_a_legacy_inference_ready_flag(monkeypatch):
     fitted = _fitted_mml(free_sd=True)
-    bundle = app.simulate_fixed_density_assignment_sensitivity(
-        fitted,
-        n_replicates=1,
-        seed=260813,
-        refit_maxit=100,
-        refit_reltol=1e-4,
-        person_generation_mode="mml_population_rank_preserving",
-    )
+    assert not bool(fitted["summary"].iloc[0]["InferenceReady"])
+    fitted["summary"]["InferenceReady"] = True  # simulate a pre-audit saved result
+    calls = []
 
-    assert bundle["available"] is True
-    assert bundle["summary"]["Method"].eq("MML").all()
-    assert bundle["summary"]["GeneratedPersonTruthKnownWithinReplicate"].all()
-    assert bundle["person_generation_summary"].iloc[0]["RankPreservedExactly"]
-    assert np.isclose(
-        bundle["person_generation_summary"].iloc[0]["GeneratorPopulationSD"],
-        fitted["config"]["population_prior_sd"],
+    def forbidden_refit(*args, **kwargs):
+        calls.append(True)
+        raise AssertionError("Unqualified source must not launch sensitivity refits")
+
+    monkeypatch.setattr(app, "_refit_assignment_sensitivity_dataset", forbidden_refit)
+    bundle = app.simulate_fixed_density_assignment_sensitivity(
+        fitted, n_replicates=1, seed=260813, refit_maxit=100,
+        refit_reltol=1e-4, person_generation_mode="mml_population_rank_preserving",
     )
-    assert bundle["summary"]["PopulationSDFreeEstimated"].all()
-    assert np.isfinite(bundle["summary"]["PopulationSDUsed"]).all()
-    assert bundle["completion"].iloc[0]["RefitMaxitRequested"] == 100
-    assert bundle["completion"].iloc[0]["RefitMaxitEffective"] == 300
-    pop_contrast = bundle["contrast_summary"].loc[
-        bundle["contrast_summary"]["Metric"].eq("PopulationSDUsed")
-    ].iloc[0]
-    assert pop_contrast["FiniteDifferences"] == 1
-    assert not bundle["contrasts"]["LikelihoodComparisonPerformed"].any()
+    assert bundle["available"] is False
+    assert bundle["summary"].empty
+    gate = bundle["gates"].set_index("Gate").loc["Source fit inference readiness"]
+    assert not bool(gate["Passed"])
+    assert app.FREE_SD_MML_INFERENCE_HOLD_REASON in gate["Evidence"]
+    assert not calls
 
 
 def test_fixed_sd_mml_rank_preserving_population_generator_uses_one_draw_per_pair():

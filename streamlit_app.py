@@ -2480,8 +2480,8 @@ def public_beta_limitations_table() -> pd.DataFrame:
         {
             "Area": "Latent regression",
             "PublicBetaStatus": "Ready with review",
-            "SupportedNow": "MML population_formula main effects; population prior SD fixed by default or freely estimated (opt-in, EM engine) with a profile SE/CI; covariate type preview; and EAP/PV outputs.",
-            "Boundary": "Free population-SD estimation is EM-only and reports a conditional (profile) SE; interactions and transformations are not enabled.",
+            "SupportedNow": "MML population_formula main effects; population prior SD fixed by default or freely estimated (opt-in, EM engine) with SE/CI withheld pending qualification; covariate type preview; and EAP/PV outputs.",
+            "Boundary": "Free population-SD estimation is EM-only; joint stationarity and nuisance-adjusted uncertainty remain unqualified. Interactions and transformations are not enabled.",
             "UserAction": "Inspect covariate type preview, especially integer-like codes that may need categorical coding.",
         },
         {
@@ -3844,7 +3844,7 @@ _MFRM_GLOSSARY: dict[str, str] = {
     "ci": "confidence interval (default 95% = estimate ± 1.96 × SE).",
     "dif": "differential item functioning: an item is scored differently by an external person group (e.g. L1, gender) after matching on overall ability. Screening evidence, not a fairness verdict.",
     "uniform dif": "DIF that is constant across the ability range (a group-level shift); detected by the ordinal-logistic M1-vs-M0 likelihood-ratio test. Non-uniform DIF instead varies with ability (M2-vs-M1).",
-    "population prior sd": "the person ability SD used by MML quadrature — set by the user (fixed, the default) or estimated from the data by EM (free, the opt-in 'Estimate person SD'). When estimated it makes the person metric data-determined and comparable to engines that estimate the variance; separate from facet regularization.",
+    "population prior sd": "the person ability SD used by MML quadrature — set by the user (fixed, the default) or estimated from the data by EM (free, the opt-in 'Estimate person SD'). For cross-engine comparisons, also match the model, identification constraints, and scale. Free-SD SE/CI are withheld pending qualification; separate from facet regularization.",
     "facet regularization": "optional Gaussian MAP-style penalty on selected free non-person facet effects.",
     "penalized objective": "negative log-likelihood plus regularization penalty; not itself an ordinary likelihood.",
     "rhat": "potential scale reduction factor (Gelman & Rubin 1992); > 1.01 flags non-mixing.",
@@ -10733,8 +10733,9 @@ def mfrm_em_mml(start, idx, config, sizes, quad, maxit=200, reltol=1e-6):
         # ── Population-variance M-step (Bock-Aitkin) ───────────
         # sigma^2 = (1/n_eff) Σ_j Σ_q post[j,q] · node_q^2, where node_q is the
         # quadrature deviation (theta_jq − mu_j). Rebuild the grid at the new
-        # sigma so the next E-step integrates over N(mu_j, sigma^2). ML/EM
-        # divide-by-N keeps EM monotone. Empty-person rows are excluded.
+        # sigma so the next E-step integrates over N(mu_j, sigma^2).
+        # Regridding does not guarantee monotonicity of the finite-Q objective.
+        # Empty-person rows are excluded.
         if estimate_sd:
             nodes_sq = (quad["nodes"] ** 2)[None, :]
             sigma2_new = float(np.sum(post_weights[persons_with_obs] * nodes_sq) / n_eff)
@@ -11725,6 +11726,30 @@ def build_anchor_equating_workflow_plan(result: dict) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
+def _population_sd_conditional_curvature_scale(loglik, sigma, bounds) -> float:
+    """Diagnostic 1/sqrt(-d²ell/dsigma²) with all nuisance parameters fixed.
+
+    This is not a profile standard error. A finite value does not establish
+    joint stationarity, nuisance-adjusted uncertainty, or interval coverage.
+    """
+    sigma = float(sigma)
+    lower, upper = map(float, bounds)
+    h = max(1e-3, 0.01 * sigma)
+    if not (
+        np.isfinite([sigma, lower, upper]).all()
+        and 0 < lower < sigma - h < sigma + h < upper
+    ):
+        return float("nan")
+    try:
+        values = [float(loglik(sigma + offset)) for offset in (h, 0.0, -h)]
+        information = -(values[0] - 2.0 * values[1] + values[2]) / (h * h)
+        if np.isfinite(values).all() and np.isfinite(information) and information > 0:
+            return float(1.0 / np.sqrt(information))
+    except (ArithmeticError, ValueError):
+        pass
+    return float("nan")
+
+
 def mfrm_estimate(
     data,
     person_col,
@@ -12096,44 +12121,30 @@ def mfrm_estimate(
 
     params = expand_params(opt.x, sizes, config)
 
-    # Profile SE / CI for a freely-estimated population SD: numerically
-    # differentiate the marginal log-likelihood twice wrt sigma, holding the
-    # other parameters at their converged values (3 extra E-steps). This is a
-    # conditional (profile) SE; it ignores curvature coupling with the item /
-    # facet block and is therefore slightly optimistic.
+    # Keep fixed-nuisance curvature as a technical diagnostic, never an SE/CI.
     if config.get("estimate_population_sd") and config.get("estimated_population_sd"):
         sigma_hat = float(config["estimated_population_sd"])
-        sd_lo = float(config.get("population_sd_bounds", (0.05, 10.0))[0])
         n_quad = int(quad_points or config.get("quad_points") or 15)
-        h = max(1e-3, 0.01 * sigma_hat)
-        se_sigma = float("nan")
-        ci_lo = ci_hi = float("nan")
-        if sigma_hat - h > sd_lo:
-            try:
-                def _mll_at_sigma(s):
-                    _, ll = _e_step_posteriors(
-                        idx, config, params, gauss_hermite_normal(n_quad, sd=s)
-                    )
-                    return float(ll)
 
-                d2 = (
-                    _mll_at_sigma(sigma_hat + h)
-                    - 2.0 * _mll_at_sigma(sigma_hat)
-                    + _mll_at_sigma(sigma_hat - h)
-                ) / (h * h)
-                obs_info = -d2
-                if np.isfinite(obs_info) and obs_info > 0:
-                    se_sigma = float(np.sqrt(1.0 / obs_info))
-                    ci_lo = float(max(sigma_hat - 1.96 * se_sigma, sd_lo))
-                    ci_hi = float(sigma_hat + 1.96 * se_sigma)
-            except Exception:
-                pass
-        config["population_sd_se"] = se_sigma
-        config["population_sd_ci"] = [ci_lo, ci_hi]
+        def _mll_at_sigma(s):
+            _, ll = _e_step_posteriors(
+                idx, config, params, gauss_hermite_normal(n_quad, sd=s)
+            )
+            return float(ll)
+
+        config["population_sd_conditional_curvature_scale"] = (
+            _population_sd_conditional_curvature_scale(
+                _mll_at_sigma, sigma_hat,
+                config.get("population_sd_bounds", (0.05, 10.0)),
+            )
+        )
+        config["population_sd_se"] = None
+        config["population_sd_ci"] = None
+        config["population_sd_inference_ready"] = False
         config["population_sd_se_basis"] = (
-            "Profile SE (other parameters held at converged values); slightly "
-            "optimistic. NaN means sigma is at a bound or the likelihood is "
-            "locally flat."
+            "SE/CI withheld: fixed-nuisance curvature is not profile information. "
+            "Joint stationarity, nuisance-adjusted uncertainty, and coverage "
+            "have not been qualified."
         )
 
     if method == "MML":
@@ -26452,6 +26463,8 @@ def build_output_qualification_table(
             param_count=covariance_param_count,
         )
     )
+    if str(config.get("method", "")).upper() == "MML" and config.get("estimate_population_sd"):
+        items.append(_output_qualification.population_sd_uncertainty_qualification())
     if bias_present:
         items.append(_output_qualification.bias_pairwise_qualification())
     return pd.DataFrame(_output_qualification.records(items))
@@ -41809,12 +41822,13 @@ def build_manuscript_claim_guide(
         {
             "ManuscriptArea": "MML population scale",
             "ClaimStatus": (
-                "Report with caveat" if method == "MML" else "Ready"
+                ("Do not claim" if config.get("estimate_population_sd") else "Report with caveat")
+                if method == "MML" else "Ready"
             ),
             "SafeManuscriptWording": (
                 (
                     f"The MML run estimated the person population SD at {config.get('estimated_population_sd', 'not recorded')}; "
-                    "population-scale conclusions reflect the freely estimated metric (report the SD with its profile SE/CI)."
+                    "this is a technical point estimate. Population-SD SE/CI are withheld because joint stationarity and nuisance-adjusted uncertainty have not been qualified."
                     if config.get("estimate_population_sd") else
                     f"The MML run used a fixed population prior SD of {config.get('population_prior_sd', 'not recorded')}; "
                     "population-scale conclusions are conditional on that setting."
@@ -41822,12 +41836,20 @@ def build_manuscript_claim_guide(
                 if method == "MML" else
                 "No MML population prior SD was used because this run was not MML."
             ),
-            "EvidenceToReport": readiness_evidence("MML fixed population prior SD", "Not an MML run."),
+            "EvidenceToReport": (
+                "Free-SD uncertainty qualification: WITHHELD (STAT-003, G2)."
+                if method == "MML" and config.get("estimate_population_sd") else
+                readiness_evidence("MML fixed population prior SD", "Not an MML run.")
+            ),
             "DoNotClaim": (
-                "Do not state that the latent variance was estimated unless free-SD was enabled and supported; report the fixed/free setting exactly."
+                "Report the fixed/free setting exactly. Do not claim validated free-SD uncertainty or report the former fixed-nuisance curvature as a profile SE/CI."
             ),
             "NextAction": (
-                "Run or justify prior-SD sensitivity before latent-regression or population-scale claims."
+                (
+                    "Qualify joint stationarity, quadrature stability, nuisance-adjusted uncertainty, and coverage before population-SD inference."
+                    if config.get("estimate_population_sd") else
+                    "Run or justify prior-SD sensitivity before latent-regression or population-scale claims."
+                )
                 if method == "MML" else
                 "No action for non-MML reports."
             ),
@@ -46595,7 +46617,7 @@ def generate_method_appendix_text(
             f"- Quadrature points: {config.get('quad_points', 'unknown')}.",
             f"- Population prior SD: {config.get('population_prior_sd', 'unknown')}.",
             (
-                f"- Population prior SD treatment: freely estimated by EM (profile SE {config.get('population_sd_se', 'not computed')}); EM starting value {config.get('population_prior_sd_input', 'unknown')}."
+                f"- Population prior SD treatment: freely estimated by EM; EM starting value {config.get('population_prior_sd_input', 'unknown')}. SE/CI withheld: joint stationarity and nuisance-adjusted uncertainty have not been qualified."
                 if config.get("estimate_population_sd") else
                 "- Population prior SD treatment: fixed user-set scale; the latent variance is not estimated as a free parameter."
             ),
@@ -47135,13 +47157,7 @@ def show_report_section(
 
 
 def _render_population_sd_summary(result: dict) -> None:
-    """Surface the MML person population SD (fixed, or freely estimated with SE/CI).
-
-    When free-SD estimation is on, the fitted sigma is the person metric scale —
-    so it gets a prominent metric row plus its profile SE/CI, an interpretation
-    pop-over, and the engine-override notice. When the SD is fixed, a quiet
-    caption states the value. Non-MML runs show nothing.
-    """
+    """Show the fitted SD and its inference hold, including for legacy results."""
     config = result.get("config", {}) if isinstance(result, dict) else {}
     if config.get("method") != "MML":
         return
@@ -47149,22 +47165,9 @@ def _render_population_sd_summary(result: dict) -> None:
         est = config.get("estimated_population_sd")
         if est is None or not np.isfinite(est):
             return
-        se = config.get("population_sd_se")
-        ci = config.get("population_sd_ci") or [np.nan, np.nan]
-        se_txt = (
-            f"{float(se):.3f}"
-            if se is not None and np.isfinite(se)
-            else t("estimation_subsections.popsd_se_unavailable")
-        )
-        ci_txt = (
-            f"[{float(ci[0]):.2f}, {float(ci[1]):.2f}]"
-            if len(ci) == 2 and np.isfinite(ci[0]) and np.isfinite(ci[1])
-            else "—"
-        )
-        cols = st.columns(3)
-        cols[0].metric(t("estimation_subsections.popsd_metric_label"), f"{float(est):.2f}")
-        cols[1].metric(t("estimation_subsections.popsd_se_label"), se_txt)
-        cols[2].metric(t("estimation_subsections.popsd_ci_label"), ci_txt)
+        # Saved results may contain the old, incorrectly labeled SE and CI.
+        # Do not promote those values back into an inferential display.
+        st.metric(t("estimation_subsections.popsd_metric_label"), f"{float(est):.2f}")
         st.caption(t("estimation_subsections.popsd_estimated_caption"))
         notice = config.get("population_sd_engine_notice")
         if notice:
@@ -70978,7 +70981,7 @@ def _self_test_mml_free_population_sd_recovery() -> None:
     Simulates RSM data with person theta_sd = 1.5, fits MML with
     estimate_population_sd=True, and checks the estimated population SD lands
     near the truth, exceeds the fixed-SD baseline of 1.0, adds one free
-    parameter, runs on the EM engine, and returns a finite profile SE — while
+    parameter, runs on the EM engine, and withholds unqualified SE/CI — while
     the fixed-SD fit on the same data reports no estimated SD.
     """
     params = {
@@ -71010,8 +71013,11 @@ def _self_test_mml_free_population_sd_recovery() -> None:
         int(cfg.get("parameter_count")) == int(fixed["config"].get("parameter_count")) + 1,
         "free-SD run did not add one free parameter to k_params",
     )
-    se = cfg.get("population_sd_se")
-    _self_test_assert(se is not None and np.isfinite(se) and se > 0, "profile SE for sigma is not finite")
+    scale = cfg.get("population_sd_conditional_curvature_scale")
+    _self_test_assert(scale is not None and np.isfinite(scale) and scale > 0, "conditional curvature scale is not finite")
+    _self_test_assert(cfg.get("population_sd_se") is None and cfg.get("population_sd_ci") is None,
+                      "unqualified population-SD SE/CI were exposed")
+    _self_test_assert(cfg.get("population_sd_inference_ready") is False, "free-SD inference was promoted")
     _self_test_assert(
         fixed["config"].get("estimated_population_sd") is None,
         "fixed-SD run unexpectedly reported an estimated population SD",
@@ -72310,21 +72316,21 @@ _HELP_POPOVER_LIBRARY: dict[str, dict[str, str]] = {
             "integrates over. It sets the scale (metric) of the person measures."
         ),
         "how": (
-            "• Fixed prior (default): you set the SD; measures are on that fixed "
-            "scale and are not directly comparable to engines that estimate it.\n"
+            "• Fixed prior (default): you set the SD of the person distribution.\n"
             "• Estimate person SD (free, EM): the EM engine fits the SD from the "
             "data; the value you set becomes only the starting point.\n"
-            "• When free, read the fitted SD with its profile SE and 95% CI shown "
-            "in the convergence panel.\n"
-            "• Use free estimation for cross-engine comparison — TAM, ConQuest, "
-            "and mirt all estimate the variance."
+            "• The convergence panel shows the fitted SD as a technical point "
+            "estimate. SE/CI are withheld pending qualification.\n"
+            "• Cross-engine comparisons also require matching the model, "
+            "identification constraints, and scale."
         ),
         "watch": (
-            "The profile SE holds the other parameters fixed, so it is slightly "
-            "optimistic. Free-SD estimation forces the EM engine and adds one "
-            "parameter to AIC / BIC. MML assumes a normal person distribution; if "
-            "it is bimodal or skewed, the fitted SD can still be misleading — "
-            "check the residual distribution and reliability."
+            "Fixed-nuisance curvature is not profile information and cannot "
+            "justify an ordinary SE/CI. Joint stationarity and nuisance-adjusted "
+            "uncertainty remain unqualified. Free-SD uses EM and adds one free "
+            "parameter; this does not qualify AIC/BIC model ranking. With "
+            "population covariates, sigma is the conditional residual SD under "
+            "the normal person-distribution assumption."
         ),
     },
     "wright_map": {

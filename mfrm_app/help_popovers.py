@@ -19,8 +19,8 @@ HELP_POPOVER_TRANSLATIONS: dict[str, dict[str, dict[str, str]]] = {
         "mml_person_sd": {
             "title": "MMLのPerson母集団SD",
             "what": "MMLが積分するPerson能力分布の標準偏差です。Person測定値の尺度を決めます。",
-            "how": "- 固定SDでは、指定したSDの尺度上で測定値を読みます。\n- Free SDでは、EMエンジンがデータからSDを推定します。\n- Free SDのときは、収束パネルの推定SD、profile SE、95% CIも確認します。",
-            "watch": "profile SEは他パラメータ固定の近似なのでやや楽観的です。Person分布が歪んだり二峰性の場合、SDだけでは解釈が不十分です。",
+            "how": "- 固定SDでは、Person分布のSDを指定します。\n- 自由SDでは、EMエンジンがデータからSDを推定します。\n- 推定SDは技術的な点推定値として確認します。SE・信頼区間は検証が完了するまで保留します。\n- 他のエンジンとの比較には、モデル・同定制約・尺度をそろえる必要があります。",
+            "watch": "他パラメータを固定した曲率は、プロファイル情報ではありません。全パラメータの停留性と、他の推定パラメータを考慮した不確実性評価が未検証です。母集団の共変量を指定した場合、σは正規分布を仮定した条件付き残差SDです。",
         },
         "wright_map": {
             "title": "Wright Map",

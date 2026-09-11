@@ -47,6 +47,9 @@ class QualificationReason(str, Enum):
     )
     COVARIANCE_UNAVAILABLE = "stat.stat_003.covariance_unavailable"
     COVARIANCE_NOT_APPLICABLE = "stat.stat_003.covariance_not_applicable"
+    POPULATION_SD_UNCERTAINTY_UNQUALIFIED = (
+        "stat.stat_003.population_sd_uncertainty_unqualified"
+    )
     BIAS_PAIRWISE_UNVERIFIED = "bias.bias_001_002.pairwise_unverified"
 
 
@@ -211,6 +214,20 @@ def covariance_qualification(
         "G2",
         "Do not claim structural covariance-based SE or CI.",
         raw_export=False,
+    )
+
+
+def population_sd_uncertainty_qualification() -> OutputQualification:
+    """Withhold free-SD inference, including legacy fixed-nuisance SE/CI."""
+    return _qualification(
+        "mml.population_sd_uncertainty",
+        OutputUse.WITHHELD,
+        QualificationReason.POPULATION_SD_UNCERTAINTY_UNQUALIFIED,
+        "STAT-003",
+        "G2",
+        "Do not report population-SD SE/CI until joint stationarity, "
+        "nuisance-adjusted uncertainty, and coverage are qualified. "
+        "Fixed-nuisance curvature is a technical diagnostic, not profile information.",
     )
 
 

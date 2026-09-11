@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import numpy as np
 import pandas as pd
+import pytest
 
 from mfrm_app import output_qualification as qualification
 import streamlit_app as app
@@ -158,3 +159,49 @@ def test_pairwise_bias_contract_is_withheld_until_g3():
     assert item.status is qualification.OutputUse.WITHHELD
     assert item.roadmap_issue_id == "BIAS-001;BIAS-002"
     assert item.next_gate == "G3"
+
+
+def test_free_sd_legacy_uncertainty_is_withheld_in_every_export():
+    result = {
+        "config": {
+            "model": "RSM", "method": "MML", "facet_names": ["Rater"],
+            "n_cat": 3, "estimate_population_sd": True,
+            "estimated_population_sd": 1.49, "population_prior_sd": 1.49,
+            "population_sd_se": 0.09, "population_sd_ci": [1.32, 1.66],
+            # A saved flag cannot substitute for the active qualification gate.
+            "population_sd_inference_ready": True,
+        },
+        "prep": {"n_obs": 100, "n_person": 20},
+    }
+    frames, _ = app.collect_download_frames(
+        result, {}, {}, pd.DataFrame(), pd.DataFrame(), public_export_mode=True,
+    )
+    tables = [
+        app.build_output_qualification_table(result),
+        app.build_result_bundle_frames(result, {})["output_qualification"],
+        frames["output_qualification"],
+        app._collect_apa_exportable_tables(result, {})["Output qualification"],
+    ]
+    for table in tables:
+        row = table.set_index("OutputID").loc["mml.population_sd_uncertainty"]
+        assert row["QualificationStatus"] == "WITHHELD"
+        assert row["ReasonCode"] == "stat.stat_003.population_sd_uncertainty_unqualified"
+        assert not bool(row["PublicConclusionAllowed"])
+        assert bool(row["RawTechnicalExportAllowed"])
+
+    appendix = app.generate_method_appendix_text(result, {})
+    assert "SE/CI withheld" in appendix
+    assert "profile SE 0.09" not in appendix
+    guide = app.build_manuscript_claim_guide(result, {})
+    population = guide.set_index("ManuscriptArea").loc["MML population scale"]
+    assert population["ClaimStatus"] == "Do not claim"
+    assert "SE/CI are withheld" in population["SafeManuscriptWording"]
+    assert "WITHHELD" in population["EvidenceToReport"]
+
+
+@pytest.mark.parametrize("method,free", [("MML", False), ("JMLE", True)])
+def test_free_sd_hold_applies_only_to_free_sd_mml(method, free):
+    table = app.build_output_qualification_table({
+        "config": {"method": method, "estimate_population_sd": free},
+    })
+    assert "mml.population_sd_uncertainty" not in set(table["OutputID"])

@@ -3,8 +3,8 @@
 The MML engine can estimate the person population SD (sigma) as a free
 parameter instead of fixing it to a user-set prior. These tests check that the
 estimator recovers a known sigma, sets the metric to the fitted scale, adds one
-free parameter, returns a profile SE, keeps GPCM slope identification intact,
-and — crucially — leaves the default fixed-SD path numerically unchanged.
+free parameter, withholds unqualified SE/CI, keeps GPCM slope identification intact,
+and keeps the default fixed-SD fits deterministic.
 """
 
 from __future__ import annotations
@@ -60,19 +60,20 @@ def test_free_sigma_threads_metric_and_preserves_user_input():
     assert len(cfg.get("sigma_trace", [])) >= 2
 
 
-def test_free_sigma_adds_one_parameter_and_profile_se():
+def test_free_sigma_adds_one_parameter_but_withholds_inference():
     df = _sim_rsm(theta_sd=1.5)
     free = _fit(df, free=True)["config"]
     fixed = _fit(df, free=False)["config"]
     assert int(free["parameter_count"]) == int(fixed["parameter_count"]) + 1
-    se = free.get("population_sd_se")
-    assert se is not None and np.isfinite(se) and se > 0
-    lo, hi = free["population_sd_ci"]
-    assert lo < free["estimated_population_sd"] < hi
+    scale = free["population_sd_conditional_curvature_scale"]
+    assert np.isfinite(scale) and scale > 0
+    assert free["population_sd_se"] is None
+    assert free["population_sd_ci"] is None
+    assert free["population_sd_inference_ready"] is False
 
 
 def test_fixed_path_unchanged_and_reports_no_estimate():
-    """Default (fixed-SD) fit is byte-identical with/without the new code path."""
+    """Repeated fixed-SD fits agree exactly and do not report an estimated SD."""
     df = _sim_rsm(theta_sd=1.5)
     fixed = _fit(df, free=False)
     assert fixed["config"].get("estimated_population_sd") is None
@@ -116,3 +117,44 @@ def test_recovery_harness_reports_estimated_population_sd():
     vals = overview["EstimatedPopulationSD"].dropna()
     assert len(vals) >= 1
     assert (vals > 1.0).all(), "free-sigma recovery did not exceed the fixed baseline"
+
+
+def test_conditional_curvature_is_not_nuisance_adjusted_information():
+    """Exact quadratic counterexample: the discrepancy need not be slight."""
+    rho, sigma_hat = 0.99, 1.5
+
+    def loglik(nuisance, sigma):
+        delta = sigma - sigma_hat
+        return -0.5 * (nuisance**2 + 2 * rho * nuisance * delta + delta**2)
+
+    conditional = app._population_sd_conditional_curvature_scale(
+        lambda sigma: loglik(0.0, sigma), sigma_hat, (0.05, 10.0),
+    )
+    profiled = app._population_sd_conditional_curvature_scale(
+        lambda sigma: loglik(-rho * (sigma - sigma_hat), sigma),
+        sigma_hat, (0.05, 10.0),
+    )
+    joint_covariance = np.linalg.inv(np.array([[1.0, rho], [rho, 1.0]]))
+    assert conditional == pytest.approx(1.0, abs=1e-9)
+    assert profiled == pytest.approx(np.sqrt(joint_covariance[1, 1]), abs=1e-9)
+    assert profiled / conditional > 7.0
+
+
+@pytest.mark.parametrize("sigma", [0.05, 0.0505, 9.95, 10.0, np.nan, np.inf])
+def test_conditional_curvature_does_not_evaluate_outside_bounds(sigma):
+    def forbidden(_):
+        pytest.fail("Curvature must not evaluate a stencil touching either bound")
+
+    assert np.isnan(app._population_sd_conditional_curvature_scale(
+        forbidden, sigma, (0.05, 10.0),
+    ))
+
+
+@pytest.mark.parametrize("loglik", [
+    lambda sigma: 1.0, lambda sigma: sigma**2,
+    lambda sigma: np.nan, lambda sigma: np.inf,
+])
+def test_conditional_curvature_rejects_nonpositive_or_nonfinite_information(loglik):
+    assert np.isnan(app._population_sd_conditional_curvature_scale(
+        loglik, 1.5, (0.05, 10.0),
+    ))

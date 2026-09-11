@@ -5,6 +5,7 @@ from types import SimpleNamespace
 
 import pandas as pd
 import pytest
+from streamlit.testing.v1 import AppTest
 
 import streamlit_app as app
 from mfrm_app import help_popovers
@@ -420,8 +421,46 @@ def test_guided_interpretation_readiness_help_table_documents_states():
 def test_guided_action_plan_renders_interpretation_readiness_summary():
     source = inspect.getsource(app._render_guided_action_plan)
 
-    assert "guided_interpretation_readiness_summary_table(plan)" in source
-    assert "guided.interpret_heading" in source
+    assert "_render_guided_run_snapshot(plan)" in source
+
+
+@pytest.mark.parametrize("lang", ["en", "ja"])
+@pytest.mark.parametrize("status", ["Do not interpret yet", "Caution", "Review", "Skipped", "OK"])
+def test_result_orientation_keeps_all_evidence_and_primary_navigation(lang, status):
+    def result_view(lang, status):
+        import pandas as pd
+        import streamlit as st
+        import streamlit_app as app
+
+        st.session_state["lang"] = lang
+        st.session_state.setdefault("facets_mode_output", {"analysis_id": "unchanged"})
+        plan = pd.DataFrame([{
+            "Priority": "P1", "SourceOrder": 1, "Area": "Estimation",
+            "Check": "Convergence", "Status": status,
+            "WhatItSays": "Run-specific evidence.", "NextAction": "Inspect the evidence.",
+            "DetailLocation": "Report",
+        }])
+        before = plan.copy(deep=True)
+        st.session_state["expected_summary"] = app.guided_interpretation_readiness_summary_table(plan).iloc[0].tolist()
+        st.session_state["support_label"] = app.t("guided.goal_supporting_detail_expander")
+        cards = app.guided_action_hub_cards("check_readiness", plan)
+        st.session_state["expected_section"] = cards.loc[cards.ActionId.eq("primary"), "SectionId"].iloc[0]
+        app._render_guided_goal_router(action_plan=plan)
+        pd.testing.assert_frame_equal(plan, before)
+
+    at = AppTest.from_function(result_view, args=(lang, status)).run(timeout=45)
+    assert not at.exception
+    rendered = "\n".join(item.value for item in [*at.markdown, *at.caption])
+    for value in at.session_state["expected_summary"]:
+        assert value in rendered
+    supporting = next(e for e in at.expander if e.label == at.session_state["support_label"])
+    assert not supporting.proto.expanded
+    assert supporting.dataframe
+    assert not at.metric
+    at.button(key="guided_action_hub_main_primary").click().run(timeout=45)
+    assert not at.exception
+    assert at.session_state["guided_essential_section"] == at.session_state["expected_section"]
+    assert at.session_state["facets_mode_output"] == {"analysis_id": "unchanged"}
 
 
 def test_guided_goal_routes_cover_common_user_intents():

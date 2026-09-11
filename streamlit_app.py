@@ -29219,18 +29219,23 @@ def _render_guided_status_metrics(action_plan: pd.DataFrame) -> None:
 
 
 def _render_guided_run_snapshot(action_plan: pd.DataFrame | None) -> None:
-    """Render the one-glance run state before asking the user's next goal."""
+    """Present existing interpretation evidence in reading order, without a wide table."""
 
     if not isinstance(action_plan, pd.DataFrame) or action_plan.empty:
         return
-    st.markdown(f"**{t('guided.interpret_heading')}**")
-    st.caption(t("guided.interpret_caption"))
-    st.dataframe(
-        guided_interpretation_readiness_summary_table(action_plan),
-        width="stretch",
-        hide_index=True,
-    )
-    _render_guided_status_metrics(action_plan)
+    summary = guided_interpretation_readiness_summary_table(action_plan).iloc[0]
+    with st.container(border=True):
+        st.markdown(f"**{t('guided.interpret_heading')}**")
+        st.write(summary[t("guided.interpret_col_status")])
+        st.write(summary[t("guided.interpret_col_main_item")])
+        for key in ("interpret_col_do_not_conclude", "interpret_col_safe_output"):
+            label = t(f"guided.{key}")
+            st.markdown(f"**{label}**")
+            st.write(summary[label])
+        st.caption(
+            f"{t('guided.interpret_col_open_next')}: "
+            f"{summary[t('guided.interpret_col_open_next')]}"
+        )
 
 
 def _render_guided_action_plan(
@@ -29251,14 +29256,7 @@ def _render_guided_action_plan(
         return
 
     if show_snapshot:
-        st.markdown(f"**{t('guided.interpret_heading')}**")
-        st.caption(t("guided.interpret_caption"))
-        st.dataframe(
-            guided_interpretation_readiness_summary_table(plan),
-            width="stretch",
-            hide_index=True,
-        )
-        _render_guided_status_metrics(plan)
+        _render_guided_run_snapshot(plan)
 
     priority_row = plan.iloc[0]
     priority_status = str(priority_row.get("Status", "Review"))
@@ -29276,6 +29274,7 @@ def _render_guided_action_plan(
         st.success(t("guided.clean_first_read_success"))
 
     with st.expander(t("guided.status_legend_expander"), expanded=False):
+        _render_guided_status_metrics(plan)
         st.dataframe(guided_status_legend_table(), width="stretch", hide_index=True)
 
     compact_display = guided_action_plan_display_frame(plan, include_detail=False)
@@ -30468,14 +30467,6 @@ def _render_guided_goal_router(
         help=t("guided.goal_select_help"),
     )
     selected = routes.loc[routes["GoalId"].eq(selected_goal)].iloc[0]
-    st.markdown(f"**{t('guided.goal_focus_heading')}**")
-    st.caption(t("guided.goal_focus_caption"))
-    st.dataframe(
-        guided_goal_current_focus_table(str(selected_goal), action_plan),
-        width="stretch",
-        hide_index=True,
-    )
-
     action_hub = guided_action_hub_cards(str(selected_goal), action_plan)
     role_col = t("guided.action_hub_col_role")
     open_col = t("guided.action_hub_col_open")
@@ -30516,6 +30507,13 @@ def _render_guided_goal_router(
 
     with st.expander(t("guided.goal_supporting_detail_expander"), expanded=False):
         st.caption(t("guided.goal_supporting_detail_caption"))
+        st.markdown(f"**{t('guided.goal_focus_heading')}**")
+        st.caption(t("guided.goal_focus_caption"))
+        st.dataframe(
+            guided_goal_current_focus_table(str(selected_goal), action_plan),
+            width="stretch",
+            hide_index=True,
+        )
         with st.container(border=True):
             st.markdown(
                 f"**{t('guided.goal_card_start')}**: {selected[t('guided.goal_col_start')]}  \n"

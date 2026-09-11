@@ -53,6 +53,14 @@ class AppFreeSdProblem:
         )
         return float(value), np.asarray(gradient, dtype=float)
 
+    def joint_value_gradient(self, joint: np.ndarray) -> tuple[float, np.ndarray]:
+        """Analytic finite-GH gradient in [structural, log(sigma)] coordinates."""
+        quad = app.gauss_hermite_normal(self.quadrature_points, sd=float(np.exp(joint[-1])))
+        value, gradient = app.mfrm_loglik_mml_value_grad(
+            joint[:-1], self.idx, self.config, self.sizes, quad, include_log_sigma=True,
+        )
+        return float(value), np.asarray(gradient, dtype=float)
+
     def constraint_residual(self, parameters: np.ndarray) -> float:
         """Reconstruct exact expanded-coordinate identification constraints."""
 
@@ -198,6 +206,7 @@ def run_app_free_sd_stationarity_v2(
         sigma_bounds=problem.sigma_bounds,
         options=options,
         constraint_residual_function=problem.constraint_residual,
+        joint_value_gradient=problem.joint_value_gradient,
     )
     return problem, run
 

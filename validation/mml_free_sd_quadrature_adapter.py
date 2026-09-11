@@ -335,6 +335,7 @@ def run_app_free_sd_quadrature_sensitivity(
         sigma_bounds=primary_problem.sigma_bounds,
         options=settings,
         constraint_residual_function=primary_problem.constraint_residual,
+        joint_value_gradient=primary_problem.joint_value_gradient,
     )
     sensitivity_base = prepare_app_free_sd_problem(
         result,
@@ -357,6 +358,7 @@ def run_app_free_sd_quadrature_sensitivity(
         sigma_bounds=sensitivity_problem.sigma_bounds,
         options=settings,
         constraint_residual_function=sensitivity_problem.constraint_residual,
+        joint_value_gradient=sensitivity_problem.joint_value_gradient,
     )
     if (
         app_free_sd_problem_digest(result, primary_problem) != digest

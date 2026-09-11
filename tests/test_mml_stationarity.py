@@ -54,6 +54,29 @@ def test_joint_polish_recovers_structural_and_population_scale_optimum() -> None
     assert result.objective_scale == "sum_negative_log_likelihood"
 
 
+def test_supplied_joint_gradient_avoids_scalar_differences_and_validates_output() -> None:
+    def unexpected(*_args):
+        raise AssertionError("analytic evaluation must not call finite-difference helpers")
+
+    point = np.array([0.2, 0.4, np.log(0.9)])
+    expected = point - np.r_[TARGET, LOG_SIGMA_TARGET]
+    _, gradient = stationarity.make_joint_free_sd_functions(
+        unexpected, unexpected,
+        joint_value_gradient=lambda x: (quadratic_value(x[:-1], np.exp(x[-1])), expected),
+    )
+    assert gradient(point)[1] == pytest.approx(expected, abs=1e-14)
+    for value, bad, error in (
+        (0.0, expected[:-1], ValueError),
+        (0.0, np.full(3, np.nan), ValueError),
+        (np.inf, expected, FloatingPointError),
+    ):
+        _, invalid = stationarity.make_joint_free_sd_functions(
+            unexpected, unexpected, joint_value_gradient=lambda _x: (value, bad),
+        )
+        with pytest.raises(error):
+            invalid(point)
+
+
 def test_projected_gradient_uses_kkt_direction_at_active_bounds() -> None:
     projected = stationarity.projected_gradient(
         coordinates=np.array([0.0, 1.0, 0.5]),

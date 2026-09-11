@@ -99,6 +99,7 @@ class JointPolishResult:
     gradient_evaluations: int
     objective_scale: str
     options: dict[str, object]
+    gradient_method: str = "structural_analytic_log_sigma_central_difference"
 
     def to_dict(self) -> dict[str, object]:
         return asdict(self)
@@ -178,8 +179,13 @@ def make_joint_free_sd_functions(
     structural_value_gradient: StructuralValueGradient,
     *,
     log_sigma_relative_step: float = 1e-5,
+    joint_value_gradient: JointValueGradient | None = None,
 ) -> tuple[Callable[[Array], float], JointValueGradient]:
-    """Adapt a structural MML likelihood to ``[parameters, log(sigma)]``."""
+    """Adapt to ``[parameters, log(sigma)]``, optionally using a joint gradient.
+
+    The supplied callback must differentiate the same finite-Q objective,
+    including movement of the nodes with sigma. Otherwise log-SD is differenced.
+    """
 
     _relative_step(0.0, log_sigma_relative_step)
 
@@ -194,6 +200,14 @@ def make_joint_free_sd_functions(
     def value_gradient(joint: Array) -> tuple[float, Array]:
         point = _vector(joint, "joint coordinates")
         sigma = _positive_sigma(float(np.exp(point[-1])))
+        if joint_value_gradient is not None:
+            value, gradient = joint_value_gradient(point)
+            gradient = _vector(gradient, "joint gradient")
+            if gradient.size != point.size:
+                raise ValueError("Joint gradient dimension differs from joint coordinates")
+            if not np.isfinite(float(value)):
+                raise FloatingPointError("Joint MML objective is nonfinite")
+            return float(value), gradient
         value, structural_gradient = structural_value_gradient(point[:-1], sigma)
         structural = _vector(structural_gradient, "structural gradient")
         if structural.size != point.size - 1:
@@ -324,6 +338,7 @@ def polish_joint_free_sd(
     sigma_bounds: tuple[float, float] = (0.05, 10.0),
     objective_scale: str = "sum_negative_log_likelihood",
     options: JointPolishOptions | None = None,
+    joint_value_gradient: JointValueGradient | None = None,
 ) -> JointPolishResult:
     """Jointly polish structural coordinates and ``log(sigma)`` once."""
 
@@ -351,6 +366,7 @@ def polish_joint_free_sd(
         value_function,
         structural_value_gradient,
         log_sigma_relative_step=settings.log_sigma_relative_step,
+        joint_value_gradient=joint_value_gradient,
     )
     initial_value, _ = value_gradient(start)
     initial_scalar_value = objective(start)
@@ -398,6 +414,10 @@ def polish_joint_free_sd(
         gradient_evaluations=int(getattr(fitted, "njev", 0) or 0),
         objective_scale=objective_scale,
         options=asdict(settings),
+        gradient_method=(
+            "provided_joint_gradient" if joint_value_gradient is not None
+            else "structural_analytic_log_sigma_central_difference"
+        ),
     )
 
 

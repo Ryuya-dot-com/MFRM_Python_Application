@@ -9358,17 +9358,25 @@ def mfrm_loglik_mml(par, idx, config, sizes, quad):
     return -float(np.sum(ll_person))
 
 
-def mfrm_loglik_mml_value_grad(par, idx, config, sizes, quad):
+def mfrm_loglik_mml_value_grad(par, idx, config, sizes, quad, *, include_log_sigma=False):
     """Direct MML negative marginal log-likelihood with analytical gradient.
 
     The gradient uses Fisher's identity: at the current parameter vector, the
     gradient of the marginal log-likelihood equals the posterior expectation of
     the complete-data score. This reuses the EM E-step posterior weights and the
     analytical M-step gradient.
+
+    Development RSM/PCM callers may append d(NLL)/d(log sigma). This assumes
+    quad["nodes"] = sigma * z with fixed standard-normal nodes and weights;
+    population means are separate and do not move with sigma.
     """
+    if include_log_sigma and config["model"] not in {"RSM", "PCM"}:
+        raise ValueError("Analytic log-SD gradient supports RSM and PCM only")
     params = expand_params(par, sizes, config)
     post_weights, marginal_ll = _e_step_posteriors(idx, config, params, quad)
-    _, grad = _m_step_expected_ll_value_grad(par, idx, config, sizes, quad, post_weights)
+    _, grad = _m_step_expected_ll_value_grad(
+        par, idx, config, sizes, quad, post_weights, include_log_sigma=include_log_sigma,
+    )
     penalty_value, _ = facet_regularization_value_grad(par, sizes, config)
     return -marginal_ll + penalty_value, grad
 
@@ -10502,7 +10510,9 @@ def _m_step_expected_ll(par, idx, config, sizes, quad, post_weights):
     return -total
 
 
-def _m_step_expected_ll_value_grad(par, idx, config, sizes, quad, post_weights):
+def _m_step_expected_ll_value_grad(
+    par, idx, config, sizes, quad, post_weights, *, include_log_sigma=False,
+):
     params = expand_params(par, sizes, config)
     base_eta = compute_base_eta(idx, params, config)
     score_k = idx["score_k"]
@@ -10549,6 +10559,7 @@ def _m_step_expected_ll_value_grad(par, idx, config, sizes, quad, post_weights):
         log_slope_grad_full = np.array([], dtype=float)
 
     nll = 0.0
+    log_sigma_grad = 0.0
     for q, theta_q in enumerate(quad["nodes"]):
         post_obs = post_weights[idx["person"], q]
         eff_weight = weight * post_obs
@@ -10612,6 +10623,9 @@ def _m_step_expected_ll_value_grad(par, idx, config, sizes, quad, post_weights):
 
         expected = probs @ k_vals
         eta_grad = -eff_weight * slope_obs * (score_k - expected)
+        if include_log_sigma:
+            # Differentiate moving nodes, not the normal-density moment score.
+            log_sigma_grad += theta_q * float(np.sum(eta_grad))
         for facet in config["facet_names"]:
             sign = facet_signs.get(facet, -1)
             facet_full_grads[facet] += np.bincount(
@@ -10651,6 +10665,8 @@ def _m_step_expected_ll_value_grad(par, idx, config, sizes, quad, post_weights):
     if config.get("facet_regularization", {}).get("enabled"):
         nll += penalty_value
         grad = grad + penalty_grad
+    if include_log_sigma:
+        grad = np.append(grad, log_sigma_grad)
     return nll, grad
 
 

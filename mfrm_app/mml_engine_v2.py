@@ -23,6 +23,7 @@ from mfrm_app.mml_stationarity import (
     InformationDiagnostics,
     JointPolishOptions,
     JointPolishResult,
+    JointValueGradient,
     StructuralValueGradient,
     ValueFunction,
     audit_joint_gradient,
@@ -184,6 +185,7 @@ def run_free_sd_stationarity_v2(
     sigma_bounds: tuple[float, float] = (0.05, 10.0),
     options: JointPolishOptions | None = None,
     constraint_residual_function: Callable[[np.ndarray], float] | None = None,
+    joint_value_gradient: JointValueGradient | None = None,
 ) -> FreeSdStationarityRun:
     """Polish once, restart once, and retain scale-explicit diagnostics."""
 
@@ -209,6 +211,7 @@ def run_free_sd_stationarity_v2(
         structural_bounds=structural_bounds,
         sigma_bounds=(lower, upper),
         options=settings,
+        joint_value_gradient=joint_value_gradient,
     )
     restart = polish_joint_free_sd(
         primary.structural_parameters,
@@ -218,6 +221,7 @@ def run_free_sd_stationarity_v2(
         structural_bounds=structural_bounds,
         sigma_bounds=(lower, upper),
         options=settings,
+        joint_value_gradient=joint_value_gradient,
     )
 
     final = np.asarray(restart.joint_coordinates, dtype=float)
@@ -225,12 +229,14 @@ def run_free_sd_stationarity_v2(
         value_function,
         structural_value_gradient,
         log_sigma_relative_step=settings.log_sigma_relative_step,
+        joint_value_gradient=joint_value_gradient,
     )
     half_step = settings.log_sigma_relative_step / 2.0
     _, value_gradient_half = make_joint_free_sd_functions(
         value_function,
         structural_value_gradient,
         log_sigma_relative_step=half_step,
+        joint_value_gradient=joint_value_gradient,
     )
     audit_h = audit_joint_gradient(
         objective_h,

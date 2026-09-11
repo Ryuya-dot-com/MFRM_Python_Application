@@ -1,0 +1,63 @@
+{
+  "schema_version": "mfrm-facets-resilient-pair-remediation-plan-v1",
+  "registered_on": "2026-08-11",
+  "registration_timing": "Registered after the fresh-100 confirmatory assessment and before resilient-pair implementation validation.",
+  "motivation": {
+    "observed_failure": "One of 800 confirmatory FACETS/Python JMLE attempt units returned FACETS exit 0 without a U6 report, although the Python JMLE had already completed inside the legacy pair function.",
+    "diagnostic": "Three isolated serial replays succeeded and passed direct agreement, supporting a transient report-I/O classification without proving concurrency as the cause.",
+    "identity_gap": "The v1 study identity bound the top-level execution script but did not bind imported estimation/parser modules or the FACETS executable binary."
+  },
+  "scope": "A versioned repository-only resilient FACETS/Python pair component and fault-injection pilot. The frozen confirmatory v1 runner and evidence are immutable.",
+  "contracts": {
+    "python_first": "Fit and completion-mark the Python JMLE artifact before any FACETS attempt.",
+    "evidence_separation": "Python statistical readiness is independent of FACETS calibration readiness. A FACETS failure cannot erase a completed Python artifact.",
+    "facets_retry": {
+      "maximum_retries": 2,
+      "maximum_total_tries": 3,
+      "eligible_only_when": "The legacy pair raises a FACETS primary/auxiliary failure with exit=0 and the corresponding report is absent.",
+      "ineligible": [
+        "nonzero FACETS exit",
+        "timeout",
+        "parse failure",
+        "count mismatch",
+        "convergence failure",
+        "numerical direct-agreement failure",
+        "Python failure"
+      ],
+      "retention": "Every try directory, stdout, stderr, specification, and outcome JSON is retained."
+    },
+    "serialization": "A cross-process file lock serializes the legacy pair call. Because the legacy function couples Python and FACETS, this v2 component conservatively locks the repeated pair call; a later low-level split may narrow the lock to FACETS only.",
+    "python_replay": "When FACETS succeeds, the Python estimates recomputed inside the legacy pair must match the independently persisted Python artifact within 1e-12.",
+    "full_qualification": "Requires both independent Python readiness and FACETS/Python direct-agreement readiness. StatisticalEvidenceReady and CalibrationReady remain separate fields.",
+    "dependency_identity": "Bind all repository mfrm_app Python modules, streamlit_app.py, direct validation dependencies, requirements files, the resilient component, and the FACETS executable SHA-256/version."
+  },
+  "validation_scenarios": [
+    {
+      "id": "FI01_RETRYABLE_FIRST_FAILURE",
+      "injection": "First pair call raises exit-0/missing-report; second call uses real FACETS 4.5.0.",
+      "expected": "Python completion exists before FACETS; two tries; final calibration pass; first failure retained."
+    },
+    {
+      "id": "FI02_RETRYABLE_EXHAUSTION",
+      "injection": "All three pair calls raise exit-0/missing-report.",
+      "expected": "Python statistical artifact remains ready; calibration false; full qualification false; three failures retained."
+    },
+    {
+      "id": "FI03_NONRETRYABLE_FAILURE",
+      "injection": "First pair call raises a nonzero-exit failure.",
+      "expected": "No retry; Python remains ready; calibration false."
+    },
+    {
+      "id": "FI04_LOCK_SERIALIZATION",
+      "injection": "Concurrent workers target the same lock.",
+      "expected": "At most one worker is inside the protected pair scope at a time."
+    }
+  ],
+  "prohibitions": [
+    "Do not modify validation/estimand_distribution_study.py or its confirmatory artifacts.",
+    "Do not use retry output to replace confirmatory attempt 01024 or raise H6 from 99 to 100 pairs.",
+    "Do not retry statistical/numerical failures until success.",
+    "Do not rank JMLE, MML, and CMLE or compare likelihoods across bases."
+  ],
+  "promotion_gate": "The component may inform a future H6-only runner only after all four validation scenarios pass, dependency identity is verified, and a separate fresh-replicate execution plan is registered."
+}

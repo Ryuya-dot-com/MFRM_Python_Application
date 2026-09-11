@@ -1,0 +1,61 @@
+{
+  "schema_version": "known_assignment_multivector_visible_join_plan_v1",
+  "status": "frozen_before_join_audit_or_endpoint_read",
+  "registered_date": "2026-08-11",
+  "purpose": "Non-destructively join the separately qualified visible-mode FACETS calibration layer to the frozen 48-attempt multi-vector preflight, then compute the four already-registered nonconfirmatory diagnostics from the original native-precision Python evidence.",
+  "source_study": "validation/known_assignment_multivector_preflight4_20260811",
+  "source_study_identity": "validation/known_assignment_multivector_preflight4_20260811/study_identity.json",
+  "source_study_identity_sha256": "a52e9684bfda89542de8e61c77216ca05442459967b48cf9a6b28189f0bf86c3",
+  "source_preendpoint_audit": "validation/known_assignment_multivector_preflight4_20260811/preendpoint_operational_audit.json",
+  "source_preendpoint_audit_sha256": "9950d301106c60dd8d41b3a7d94a2d269f02bd3b2f3bce8a1d334ca09d4acfd3",
+  "source_runner": "validation/known_assignment_multivector_preflight.py",
+  "source_runner_sha256": "5f792733bd0e18bff6e9d4f2edca2f027f8a2f215cbd1e0c1179caf47ed05ef0",
+  "supplement_assessment": "validation/known_assignment_multivector_preflight4_20260811/v/assessment.json",
+  "supplement_assessment_sha256": "74fc28fb789c00425a4a314cb3fa8ba59d725dd30072a28456f2cb29ce630983",
+  "supplement_registration": "validation/known_assignment_facets_visible_supplement_registration_v3_20260811.json",
+  "supplement_registration_sha256": "0e885f60596dd3957f9860e1cbc2dd09d50caca48e97d65508f65fa5273e5b9d",
+  "join_audit": {
+    "source_completion_markers": 48,
+    "supplement_markers": 12,
+    "mapping_key": ["AttemptId", "RunId", "RunInputSHA256"],
+    "required_mapping_cardinality": "one-to-one for the 12 RESILIENT_FACETS_PYTHON_JMLE_PCM attempts",
+    "original_python_replay_fields": {
+      "recovery_numeric": ["Truth", "EstimateAligned", "TruthAligned", "ErrorAligned"],
+      "threshold_numeric": ["Estimate", "ThresholdTruth", "TruthError"],
+      "maximum_absolute_tolerance": 1e-12
+    },
+    "required_supplement_flags": ["calibration_ready", "direct_agreement_pass"],
+    "scientific_endpoint_read": false
+  },
+  "join_contract": {
+    "original_source_markers_modified": false,
+    "original_source_artifacts_modified": false,
+    "supplement_artifacts_modified": false,
+    "original_python_scientific_rows_retained": true,
+    "supplement_facets_rows_role": "calibration-only separate tables with IncludedInStudy forced false",
+    "joined_outcome_change": "FACETSCalibrationReady is derived from the one-to-one supplemental marker; the original value and failure reason remain separately retained",
+    "cross_basis_likelihood_comparison": "prohibited",
+    "estimator_ranking": "prohibited"
+  },
+  "precision_contract": {
+    "scientific_diagnostics": "Use only the original native-precision Python recovery and free-SD rows.",
+    "facets_measure_and_threshold_calibration": "Use the qualified primary Umean=6 FACETS report and Scorefiles already parsed by the supplemental layer.",
+    "facets_fit_fields": "Treat ordinary FACETS fit display fields as two-decimal displayed evidence only. Do not reconstruct, impute, or use them as unrounded calculation inputs.",
+    "rounding_aware_agreement": "The registered FACETS/Python calibration gates tolerate display quantization and compare only like-for-like JMLE quantities."
+  },
+  "operational_gates": {
+    "completion_markers_48": true,
+    "all_native_estimator_evidence_ready": true,
+    "supplemental_facets_calibration_12_of_12": true,
+    "original_to_supplement_python_replay_within_1e_12": true,
+    "mml_24_of_24_ready": true,
+    "cmle_12_of_12_ready": true,
+    "constraints_36_of_36_pass": true,
+    "assignment_and_design_audits_pass": true,
+    "registered_statistics_16_finite": true,
+    "no_facets_rounded_fit_input": true
+  },
+  "endpoint_rule": "Only after the join audit passes may the runner read and compute PF1-PF4 exactly as registered in the source plan. No p-values, endpoint substitution, direction change, or pooling with screening data is allowed.",
+  "output": "validation/known_assignment_multivector_preflight4_20260811/aggregate_visible_join_20260811",
+  "claim_limit": "This is a four-vector nonconfirmatory preflight plus same-estimand FACETS calibration. It cannot rank estimators, establish universal bias, confirm an effect, or support a public product claim."
+}

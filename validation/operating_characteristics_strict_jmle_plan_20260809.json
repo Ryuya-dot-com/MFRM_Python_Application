@@ -1,0 +1,55 @@
+{
+  "schema_version": "mfrm-strict-jmle-qualification-plan-v1",
+  "registered_date": "2026-08-09",
+  "purpose": "Prospectively qualify a strict repository-only Python JMLE numerical mode before any study-depth expansion.",
+  "stage_a": {
+    "label": "STRICT_PYTHON_JMLE_STAGE_A_SMOKE",
+    "input_profile": "smoke",
+    "input_replicates_per_condition": 2,
+    "conditions": 8,
+    "attempted_fits": 16,
+    "input_manifest_frame_sha256": "7aa6f0d1dcebe2c28448614bb935a2bf6bf6ced74a8e1b4483d21362f79f76fe",
+    "input_manifest_file_sha256": "27dfa50695f3b0d612005945c0e140985103bfc26aa16f837ca23710d8dce0f0",
+    "generated_ratings_sha256": "4ed4ff15b713be96399a8040db8e0d3301507206f36b04311cac498908150fe0",
+    "generated_facet_truth_sha256": "5a6f41dff952ed80ab74994c5ebee4f5c4fa6d6e6a3b7af80871557c59fa5d99",
+    "generated_anchors_sha256": "1096114f16a76c9e395164e4ccdb939ec9848a873913e753653b5bd932f2412e"
+  },
+  "numerical_controls": {
+    "model": "RSM",
+    "method": "JMLE",
+    "optimizer": "identified-coordinate L-BFGS-B selected by the current Python core",
+    "maxit": 500,
+    "reltol": 1e-9,
+    "effective_gtol": 1e-9,
+    "effective_ftol": 1e-9,
+    "terminal_gradient_norm": "maximum absolute component in the exact identified free-coordinate vector",
+    "terminal_gradient_sup_norm_threshold": 0.0001,
+    "hard_anchor_tolerance": 1e-10,
+    "matched_loglik_degradation_tolerance": 1e-8
+  },
+  "gradient_verification": {
+    "optimizer_jac_recomputed_max_abs_tolerance": 1e-12,
+    "finite_difference_coordinates_per_fit": 8,
+    "coordinate_selection": "unique evenly spaced indices from zero through dimension minus one",
+    "finite_difference_method": "centered",
+    "finite_difference_step": "machine_epsilon^(1/3) * (1 + abs(parameter))",
+    "finite_difference_max_abs_error_tolerance": 1e-5
+  },
+  "stage_a_gates": {
+    "fit_returned_required": 16,
+    "optimizer_success_required": 16,
+    "finite_recomputed_gradient_required": 16,
+    "terminal_gradient_gate_required": 16,
+    "optimizer_jac_gate_required": 16,
+    "finite_difference_gate_required": 16,
+    "anchor_gate_required_for_anchor_runs": true,
+    "matched_loglik_non_degradation_required": true,
+    "all_gates_must_pass_for_stage_b": true
+  },
+  "scope_boundaries": {
+    "bias_cell_sparsity_part_of_numerical_qualification": false,
+    "pilot_or_smoke_outcomes_are_performance_evidence": false,
+    "stage_b_if_authorized": "Apply the unchanged strict controls to all 160 frozen pilot RunIds in a separate output directory.",
+    "public_surface_status": "Withheld"
+  }
+}

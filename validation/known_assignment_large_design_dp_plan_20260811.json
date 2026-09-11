@@ -1,0 +1,55 @@
+{
+  "schema_version": "known_assignment_large_design_dp_remediation_plan_v1",
+  "status": "frozen_before_execution",
+  "registered_date": "2026-08-11",
+  "trigger": {
+    "failed_heatbath_assessment": "validation/known_assignment_large_design_heatbath_20260811/assessment.json",
+    "failed_heatbath_assessment_sha256": "9016ef84e7889df36696f7a2e5e381395af575c8adfe1c60719f054335dead63",
+    "failure": "minimum Statistic ESS 33.3392 was below the unchanged registered minimum 300; no dose was selected",
+    "previous_failures_retained": true,
+    "thresholds_relaxed": false
+  },
+  "locked_inputs": {
+    "base_plan": "validation/known_assignment_large_design_plan_20260811.json",
+    "base_plan_sha256": "bad777ec292708b5fbf0773272c5f18a42d71febcd21f46a39e4cf9702539003",
+    "person_coordinates": "validation/known_assignment_large_design_20260811/person_coordinates.csv",
+    "candidate_gammas": [-0.8, -0.4, 0.0, 0.4, 0.8]
+  },
+  "exact_sampling": {
+    "method": "backward dynamic-programming partition function followed by exact sequential fixed-margin draws and rejection of disconnected graphs",
+    "batches_per_gamma": 4,
+    "independent_draws_per_batch": 1000,
+    "seed_base": 260860,
+    "max_dp_states": 2000000,
+    "max_total_connected_rejections": 100000,
+    "edge_signatures_retained": false
+  },
+  "qualification_gates": {
+    "all_runs_available": true,
+    "exact_independent_samples": true,
+    "degree_margins_preserved": true,
+    "final_overlap_components": 1,
+    "maximum_statistic_update_residual": 1e-10,
+    "dp_state_cap_not_reached": true,
+    "minimum_connected_acceptance_rate": 0.99,
+    "split_rhat_max": 1.02,
+    "minimum_batch_statistic_ess_diagnostic": 300,
+    "neutral_absolute_mean_assignment_correlation_max": 0.05,
+    "strict_monotone_mean_assignment_correlation": true,
+    "all_materialization_invariants_pass": true,
+    "score_column_absent": true
+  },
+  "dose_selection_rule": {
+    "eligible_absolute_gammas": [0.4, 0.8],
+    "minimum_absolute_mean_assignment_correlation": 0.20,
+    "maximum_absolute_mean_assignment_correlation": 0.60,
+    "positive_and_negative_symmetry_error_max": 0.08,
+    "rule": "Choose the largest eligible absolute gamma satisfying the unchanged outcome-blind correlation range and all exact-sampling qualification gates."
+  },
+  "claim_boundary": [
+    "This exact route is enabled by the small four-Rater margin state space and must fail closed beyond its DP cap.",
+    "The selected gamma is a simulation dose, not a real-data mechanism estimate.",
+    "No responses, estimator results, or FACETS output enter qualification or dose selection.",
+    "MCMC failures remain valid evidence that those finite-chain settings were inadequate."
+  ]
+}

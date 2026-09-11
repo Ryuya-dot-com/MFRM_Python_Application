@@ -1,0 +1,21 @@
+{
+  "schema_version": "known_assignment_response_analysis_registration_v2",
+  "registered_date": "2026-08-11",
+  "registered_after_structural_metadata_failure_before_numeric_endpoint_inspection": true,
+  "all_120_completion_markers_before_registration": true,
+  "completion_marker_set_sha256": "428ca8ffefaf3dad218a2d51757318465282bd5a4554276f698ad58f119b1850",
+  "plan_sha256": "3c070c6e737a3c0df93fa533c37b8a78b2293c89916ad12951a3ba465c996e76",
+  "execution_registration_v3_sha256": "5a7f2d449cfbb7696b3ee74afca236001785cbd8f527c195edf4b5bae9772786",
+  "analysis_metadata_amendment_sha256": "069d6a97bdec5a405ea4663b026d9e709d70bb2645a094f22abd657174d3a31c",
+  "failed_aggregate_assessment_sha256": "9ec0ba90cb1fe992280753221a4f45af80d01709f1b6bc4f5c4e229656124462",
+  "aggregator_sha256": "2c9e6968158e9bc31c05d9afb2598008b779e7f03303595c9aa263356d04f9f1",
+  "tests_passed_before_registration": true,
+  "test_command": ".venv-win\\Scripts\\python.exe -m pytest tests\\test_known_assignment_response_aggregate.py tests\\test_known_assignment_response.py tests\\test_known_assignment_response_v2.py tests\\test_assignment_mechanism.py tests\\test_facets_resilient_pair.py tests\\test_estimand_distribution_study.py -q",
+  "test_result": "31 passed in 22.87s",
+  "aggregate_test_file_sha256": "e2ddb1ec865187c606e0e73ed9c0e03da5889009067023cec97f37db2ffaad0e",
+  "endpoint_formulas_changed": false,
+  "gate_thresholds_changed": false,
+  "confirmatory_claims_allowed": false,
+  "estimator_ranking_prohibited": true,
+  "cross_basis_likelihood_comparison_prohibited": true
+}

@@ -1,0 +1,126 @@
+{
+  "schema_version": "mfrm-cmle-wle-person-fit-plan-v1",
+  "registered_date": "2026-08-10",
+  "registration_timing": "Before implementation of the CMLE-WLE Person MnSq kernel, cross-engine fixture generation, or inspection of its numerical results.",
+  "purpose": "Validate fixed-calibration Person Infit/Outfit MnSq for the exact-CMLE plus Warm-WLE fit sample before adding fit-zone transitions to bootstrap evidence or exposing output in Streamlit.",
+  "input_identity": {
+    "cmle_core_sha256": "74844d60d04b14cffc68e1de305c4b3ef34b594a3b47a4bdd680e21a6ba4e250",
+    "fixed_calibration_person_scoring_sha256": "18e0a24ade2de95cbb007045d36268a906bc7201a553a7e5a79fed32018af9f1",
+    "cmle_wle_bridge_sha256": "1238dbd87e4b603968ab0c74c3561e8d46fc11d8c90a91f36387e8bcea78573a",
+    "bootstrap_core_pre_fit_extension_sha256": "efe006b13e2627c871c5c35f6d64d5d28b56be09404cae53f1b43ae2ec97977f",
+    "decision_stability_sha256": "fac0d702590d3ba9f18124fc15403491d79b10649702dfbbc0dae5116c512d68",
+    "cmle_wle_bridge_decision_sha256": "ea58e5b786a39fa259b29b37ba797de74f2ea47d9f09a6b7e051466b793dcf70",
+    "fixed_calibration_wle_parity_decision_sha256": "5d9e98116d1772b011e192c125c9b6c5c14127a7de36051d4db2a75bdb64de0d",
+    "bootstrap_pilot_decision_sha256": "4af9d51ae7a5ec52b28405c68b2cf121883a17b904c744ce349ed6ab85511306",
+    "bootstrap_design_sha256": "dfeb5d1484ce8b0321397ff56991652b6d33d2e011a7dd9a5bc43e31b3cbbe34",
+    "bootstrap_plan_sha256": "d6f3e7c4b947a54a66f21e17dd20872bc24586ebd883acf528ca1953eddbd28a"
+  },
+  "reference_identity": {
+    "TAM_version": "4.3.25",
+    "sirt_version": "4.2.133",
+    "TAM_tam_personfit_deparsed_sha256": "ff360d19747f9201462cc771b5bba0b32a983f120984f52e23b1da35de897deb",
+    "TAM_tam_jml_fit_deparsed_sha256": "fd3ebb8272fba95aa3df62608a49f3599e1f499cc31354ecd95302b0f00fef13",
+    "sirt_pcm_fit_deparsed_sha256": "d829912071319147176060babce2f93580dc0f7fb9bf8e95cf82685b8cf8ed82"
+  },
+  "estimand_contract": {
+    "population": "Persons and administered rows retained in the inference-ready exact-CMLE fit sample.",
+    "calibration": "Exact-CMLE structural coefficients treated as fixed.",
+    "person_measure": "The validated fixed-calibration Warm WLE for each retained Person.",
+    "category_probability": "softmax(q_uk(beta_hat) + k * theta_hat_p) over declared categories k, with q from the fitted CMLE row design.",
+    "observation_residual": "observed internal category minus its fitted expected internal category.",
+    "observation_variance": "fitted variance of the internal category under the same probability kernel.",
+    "outfit_mnsq": "weighted mean of residual squared divided by observation variance.",
+    "infit_mnsq": "weighted sum of residual squared divided by weighted sum of observation variance.",
+    "fourth_central_moment": "retained for later transformation research but not used to publish ZSTD in this phase.",
+    "sirt_parameter_map": "For each virtual response unit and internal category k > 0, sirt pcm.fit cumulative category difficulty b_k equals -q_k; b_0 is implicit zero.",
+    "treatment_of_extremes": "Retain exact minimum/maximum response patterns because Warm WLE is finite; label their score-pattern status explicitly.",
+    "treatment_of_missingness": "Use only administered rows retained by CMLE; do not impute or convert missing rows to scores.",
+    "outlier_trimming": false,
+    "weights": "Require finite positive observation weights. Exact-CMLE Phase 0 currently admits only its validated unit-weight interpretation.",
+    "variance_failure": "Fail closed for a Person if any included fitted variance or derived ratio is non-finite or non-positive; never coerce the contribution to zero."
+  },
+  "reference_comparison_contract": {
+    "primary": "sirt::pcm.fit personfit computed from the identical wide virtual-unit response matrix, identical fixed WLE theta, and b_k=-q_k.",
+    "primary_reason": "sirt::pcm.fit directly implements untrimmed fixed-theta PCM Person Infit/Outfit with the same residual and variance definitions.",
+    "secondary": "TAM::tam.personfit / TAM::tam.jml.fit formula audit only.",
+    "secondary_non_equivalence": "TAM::tam.jml.fit trims unusually large observation squared-standardized residuals before Outfit aggregation using trim_val times the global SD. It is therefore not an unconditional row-for-row parity target for untrimmed Outfit.",
+    "wle_estimator_warning": "Passing TAM WLEs into TAM JML fit machinery or sirt pcm.fit evaluates fit at fixed WLE theta; it does not turn the CMLE structural calibration into JMLE or MML."
+  },
+  "validation_matrix": {
+    "models": [
+      "RSM",
+      "PCM"
+    ],
+    "include_missing_administered_patterns": true,
+    "include_exact_extreme_persons": true,
+    "include_row_order_permutation": true,
+    "include_coefficient_order_permutation": true,
+    "include_hand_calculated_probability_moments": true,
+    "python_sirt_max_abs_infit_difference": 1e-12,
+    "python_sirt_max_abs_outfit_difference": 1e-12,
+    "python_sirt_max_abs_expected_difference": 1e-12,
+    "python_sirt_max_abs_variance_difference": 1e-12,
+    "same_input_max_abs_numeric_difference": 0.0,
+    "person_identity_mismatches_allowed": 0,
+    "nonfinite_ready_person_statistics_allowed": 0
+  },
+  "decision_contract": {
+    "classification_input": "finite unrounded MnSq only",
+    "bands": {
+      "overfit": "value < 0.50",
+      "acceptable": "0.50 <= value <= 1.50",
+      "noisy": "1.50 < value <= 2.00",
+      "distorting": "value > 2.00"
+    },
+    "display_decimals": 3,
+    "exact_endpoint_tests": true,
+    "nextafter_boundary_tests": true,
+    "display_decision_mismatch_audit": true,
+    "display_rounding_never_drives_classification": true
+  },
+  "withheld_outputs": {
+    "ZSTD": "Withheld: finite-sample distribution, effective degrees of freedom, trimming, and extreme-pattern behavior have not been validated for this CMLE plus WLE estimand.",
+    "p_value": "Withheld: no validated null reference distribution in this phase.",
+    "confidence_interval": "Withheld: bootstrap coverage has not been qualified.",
+    "total_standard_error": "Withheld: conditional WLE information and CMLE/bootstrap calibration variation are not interchangeable variance components.",
+    "public_fit_zone_transitions": "Withheld until the parity gate passes and a new immutable bootstrap fit-extension run is completed.",
+    "streamlit_output": "Withheld until research evidence and first-read status contracts pass."
+  },
+  "bootstrap_extension_contract": {
+    "original_pilot_is_immutable": true,
+    "original_pilot_directory": "validation/cmle_wle_bootstrap_pilot_20260810",
+    "new_evidence_directory_required": true,
+    "baseline_and_every_inference_ready_refit": "Compute Person Infit/Outfit from that replicate's refitted exact-CMLE calibration and refitted Warm WLE.",
+    "required_person_outputs": [
+      "BaselineInfit",
+      "BaselineOutfit",
+      "BaselineInfitClass",
+      "BaselineOutfitClass",
+      "BootstrapInfit",
+      "BootstrapOutfit",
+      "InfitZoneTransition",
+      "OutfitZoneTransition",
+      "RawDisplayMismatch"
+    ],
+    "failed_or_unavailable_fit_is_not_a_zero": true,
+    "promotion_from_research_to_public_UI": false
+  },
+  "scope_boundaries": {
+    "models_beyond_RSM_PCM": false,
+    "new_person_or_unseen_virtual_unit": false,
+    "anchor_uncertainty": false,
+    "local_dependence_adjustment": false,
+    "TAM_trimmed_outfit_equivalence": false,
+    "ZSTD_or_p_value": false,
+    "coverage_qualified_interval": false,
+    "streamlit_integration": false,
+    "automatic_estimator_switch": false,
+    "public_performance_claim": false
+  },
+  "method_sources": [
+    "https://alexanderrobitzsch.github.io/TAM/reference/tam.personfit.html",
+    "https://alexanderrobitzsch.github.io/TAM/reference/tam.fit.html",
+    "https://alexanderrobitzsch.github.io/TAM/reference/tam.wle.html",
+    "https://alexanderrobitzsch.github.io/TAM/reference/msq.itemfit.html"
+  ]
+}

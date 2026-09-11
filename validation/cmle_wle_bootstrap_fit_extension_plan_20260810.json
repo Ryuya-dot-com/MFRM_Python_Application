@@ -1,0 +1,109 @@
+{
+  "schema_version": "mfrm-cmle-wle-bootstrap-fit-extension-plan-v1",
+  "registered_date": "2026-08-10",
+  "registration_timing": "After CMLE-WLE Person MnSq parity passed and before bootstrap-core fit integration or inspection of any bootstrap fit-transition results.",
+  "purpose": "Complete the previously registered but withheld Person fit-zone and raw/display transition outputs without overwriting or retroactively redefining the original 800-replicate implementation pilot.",
+  "input_identity": {
+    "bootstrap_core_pre_extension_sha256": "efe006b13e2627c871c5c35f6d64d5d28b56be09404cae53f1b43ae2ec97977f",
+    "person_fit_core_sha256": "b7637e902091de2373d408c16118ebfd251dc86589b96884dfbdd0a8b18d3be0",
+    "person_fit_registered_plan_sha256": "f045e99bfc24d6d92b07a76f740d0a60354838119431f2b51da1b2e38e4a4ec0",
+    "person_fit_parity_decision_sha256": "833af71cb991120a8d887a533700853f46087ef2320372671617762d8c538a97",
+    "original_bootstrap_plan_sha256": "d6f3e7c4b947a54a66f21e17dd20872bc24586ebd883acf528ca1953eddbd28a",
+    "original_bootstrap_pilot_decision_sha256": "4af9d51ae7a5ec52b28405c68b2cf121883a17b904c744ce349ed6ab85511306",
+    "original_bootstrap_fixture_sha256": "c062e02d8c1f2a0469054ef2199ef5d7ad81d265565abd025bdfe48bfee0513d",
+    "decision_stability_sha256": "fac0d702590d3ba9f18124fc15403491d79b10649702dfbbc0dae5116c512d68"
+  },
+  "immutability_contract": {
+    "original_evidence_directory": "validation/cmle_wle_bootstrap_pilot_20260810",
+    "original_evidence_must_not_be_modified": true,
+    "extension_evidence_directory": "validation/cmle_wle_bootstrap_fit_extension_20260810",
+    "extension_is_not_a_replacement_for_original_pilot": true,
+    "extension_result_must_record_original_and_extended_core_hashes": true
+  },
+  "run_matrix": {
+    "models": [
+      "RSM",
+      "PCM"
+    ],
+    "lanes": [
+      "fixed_score_conditional_pattern",
+      "joint_plugin_parametric"
+    ],
+    "replicates_per_model_lane": 200,
+    "primary_seed": 20260810,
+    "same_fixture_as_original_pilot": true,
+    "same_child_seed_generation_as_original_pilot": true,
+    "attempted_replicates": 800,
+    "retain_every_attempt": true
+  },
+  "integration_contract": {
+    "baseline": "Compute validated untrimmed CMLE-WLE Person Infit and Outfit from the original inference-ready fit.",
+    "replicate": "For every inference-ready CMLE refit with ready WLE scores, recompute Person Infit and Outfit from that replicate's fitted category kernels and WLE measures.",
+    "fit_available": "True only when every retained Person has finite positive-variance contributions and finite unrounded Infit/Outfit.",
+    "fit_unavailable": "Record WLEAvailable separately, set PersonFitAvailable false, preserve the failure stage/reason, and never substitute zero or a baseline statistic.",
+    "mnsq_trimming": false,
+    "classification_input": "finite unrounded replicate-specific MnSq",
+    "classification_bands": "<0.50 overfit; 0.50-1.50 acceptable; >1.50-2.00 noisy; >2.00 distorting",
+    "display_decimals": 3,
+    "display_values_never_drive_transition_counts": true,
+    "infit_and_outfit_transitions_reported_separately": true,
+    "any_transition_is_descriptive_union_not_a_new_fit_estimand": true
+  },
+  "required_outputs": {
+    "replicate_ledger_additions": [
+      "PersonFitAvailable",
+      "PersonsFitReady",
+      "PersonsFitTotal"
+    ],
+    "person_draw_additions": [
+      "Infit",
+      "Outfit",
+      "InfitClass",
+      "OutfitClass",
+      "InfitBoundaryStatus",
+      "OutfitBoundaryStatus",
+      "InfitDisplayDecisionConsistent",
+      "OutfitDisplayDecisionConsistent",
+      "BaselineInfit",
+      "BaselineOutfit",
+      "BaselineInfitClass",
+      "BaselineOutfitClass",
+      "InfitZoneTransition",
+      "OutfitZoneTransition",
+      "AnyFitZoneTransition",
+      "RawDisplayMismatch"
+    ],
+    "person_summary_additions": [
+      "SuccessfulFitReplicates",
+      "InfitZoneTransitions",
+      "OutfitZoneTransitions",
+      "AnyFitZoneTransitions",
+      "RawDisplayMismatches",
+      "InfitBootstrapMedian",
+      "OutfitBootstrapMedian"
+    ],
+    "transition_matrix": "Counts by Model, Lane, Statistic, BaselineClass, ReplicateClass using successful fit replicates only, with attempts and unavailable counts shown separately.",
+    "first_read_projection": "Separate generator/refit readiness, fit transitions, display stability, extremes, interval status, and UI status."
+  },
+  "frozen_gates": {
+    "attempted_replicates_must_equal": 800,
+    "fixed_score_person_total_mismatches_allowed": 0,
+    "person_identity_mismatches_allowed": 0,
+    "all_transition_counts_use_unrounded_classes": true,
+    "all_display_mismatches_retained": true,
+    "maximum_difference_from_original_wle_draws_for_same_seed": 0.0,
+    "original_pilot_files_changed_allowed": 0,
+    "minimum_person_fit_available_share_for_public_promotion": null,
+    "reason_no_public_promotion_threshold": "This is a post-parity descriptive extension of an implementation pilot, not a prospectively powered repeated-truth validation study."
+  },
+  "withheld_claims": {
+    "ZSTD_or_p_value": true,
+    "coverage_qualified_interval": true,
+    "total_inferential_standard_error": true,
+    "fit_threshold_optimality": true,
+    "robustness_to_model_misspecification_or_local_dependence": true,
+    "new_person_or_unseen_virtual_unit_fit": true,
+    "anchor_uncertainty": true,
+    "public_streamlit_integration": true
+  }
+}

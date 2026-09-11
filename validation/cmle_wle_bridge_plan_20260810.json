@@ -1,0 +1,48 @@
+{
+  "schema_version": "mfrm-cmle-wle-bridge-plan-v1",
+  "registered_date": "2026-08-10",
+  "registration_timing": "Before creation of the CMLE-to-WLE bridge module or its tests.",
+  "purpose": "Evaluate a repository-only two-stage exact-CMLE structural calibration plus fixed-calibration Warm-WLE Person scoring workflow.",
+  "input_identity": {
+    "cmle_core_sha256": "74844d60d04b14cffc68e1de305c4b3ef34b594a3b47a4bdd680e21a6ba4e250",
+    "fixed_calibration_person_scoring_sha256": "18e0a24ade2de95cbb007045d36268a906bc7201a553a7e5a79fed32018af9f1",
+    "wle_parity_decision_sha256": "5d9e98116d1772b011e192c125c9b6c5c14127a7de36051d4db2a75bdb64de0d",
+    "wle_downstream_decision_sha256": "e3cd9491a1193a6052f02a53d9e56d3856123ae4036525d2d4c400055afdcb53",
+    "cmle_phase0_results_sha256": "ca7ff524cb88f476908882bce43953e6e02b0a84cfcde83f05770fb8443d56e6",
+    "cmle_scaling_results_sha256": "f29bd29795572c9cfca140d78a9dbb2be511c5239fd9d8dec9fc30ea480837aa"
+  },
+  "bridge_contract": {
+    "supported_calibration_models": ["RSM", "PCM"],
+    "required_calibration_method": "CMLE",
+    "required_calibration_state": "InferenceReady=true",
+    "person_scoring_method": "WLE",
+    "scoring_scope": "fit-sample rows stored in the CMLE design",
+    "category_intercept": "CMLE row_design[r,k,:] dot fitted free coefficients",
+    "category_theta_coefficient": "internal category k under unit discrimination",
+    "combined_estimator_label": "CMLE_exact_structural_plus_WLE_fixed_calibration_person",
+    "extreme_person_rule": "Return a finite WLE adjusted-score root and retain exact all-minimum/all-maximum status; never label it a finite JMLE MLE.",
+    "calibration_uncertainty_propagated": false,
+    "person_standard_error_scope": "conditional information with fitted CMLE calibration treated as fixed",
+    "fail_closed_on_unready_calibration": true,
+    "fail_closed_on_parameter_identity_mismatch": true
+  },
+  "validation_contract": {
+    "generic_bridge_equivalence_max_abs": 1e-12,
+    "cmle_surface_intercept_max_abs": 1e-12,
+    "all_person_adjusted_score_residuals_max_abs": 1e-8,
+    "exact_extreme_persons_return_finite_wle": true,
+    "rsm_and_pcm_covered": true,
+    "coefficient_order_permutation_invariant": true,
+    "stale_or_missing_parameter_identity_rejected": true
+  },
+  "scope_boundaries": {
+    "new_person_or_unseen_virtual_unit_scoring": false,
+    "bootstrap_or_delta_calibration_uncertainty": false,
+    "hard_anchor_cmle": false,
+    "gpcm": false,
+    "downstream_diagnostics_qualified_for_cmle_wle": false,
+    "streamlit_estimator_option": false,
+    "automatic_fallback": false,
+    "public_performance_or_novelty_claim": false
+  }
+}

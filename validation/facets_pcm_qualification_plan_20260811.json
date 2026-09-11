@@ -1,0 +1,70 @@
+{
+  "schema_version": "mfrm-facets-pcm-qualification-plan-v1",
+  "registered_date": "2026-08-11",
+  "reference": "FACETS 4.5.0",
+  "purpose": "Qualify the application's JMLE PCM parameterization against FACETS before extending any additive-RSM compatibility claim to PCM or multiple scales.",
+  "model_contract": {
+    "application": "Adjacent-category PCM with one threshold vector per selected step-facet level; each vector is identified by an exact sum-to-zero constraint.",
+    "facets": "Models=?,?,?,#,R3 for Person, Rater, Task, Criterion, with Criterion as the partial-credit facet.",
+    "step_facet": "Criterion",
+    "categories": [0, 1, 2, 3],
+    "facet_signs": {
+      "Person": "positive ability",
+      "Rater": "severity",
+      "Task": "difficulty",
+      "Criterion": "difficulty"
+    },
+    "initial_scope": "One shared category support with criterion-specific threshold vectors; no named-scale recoding and no mixed category counts."
+  },
+  "stages": [
+    {
+      "name": "syntax_and_parser_probe",
+      "runs": 1,
+      "data": "One immutable balanced pilot run, fitted as PCM even though generated under RSM.",
+      "claim_limit": "FACETS syntax, Table 8 multi-table mapping, score parsing, and obvious sign/centering faults only."
+    },
+    {
+      "name": "known_truth_pcm_smoke",
+      "runs": 4,
+      "data": "Independent Python PCM generator with deliberately heterogeneous criterion threshold vectors and paired seeds.",
+      "claim_limit": "Implementation matching and truth-recovery direction only; not operating characteristics."
+    },
+    {
+      "name": "pcm_pipeline_pilot",
+      "replicates_per_condition": 20,
+      "claim_limit": "Runtime, convergence, missing/unmeasurable accounting, and tolerance stability; not confirmatory estimator performance."
+    }
+  ],
+  "direct_comparison_gates": {
+    "input_identity": "FACETS and Python consume the same retained rating rows and category support.",
+    "facets_return_and_parse": "Exit code zero, convergence criterion met, all expected Table 8 scale tables mapped one-to-one to step-facet levels.",
+    "structural_identifiability": "Direct comparison requires nullity zero for the expanded PCM eta/threshold design.",
+    "category_counts": "Every FACETS Table 8 scale/category Total count must equal an independently recomputed count for that step-facet level.",
+    "main_facet_tolerance": {
+      "weighted_mae_logits_max": 0.01,
+      "absolute_difference_max": 0.05,
+      "minimum_spearman_within_facet": 0.999
+    },
+    "threshold_tolerance": {
+      "weighted_mae_logits_max": 0.02,
+      "absolute_difference_max": 0.05,
+      "comparison_scale": "Within-step-facet sum-to-zero Rasch-Andrich threshold vectors."
+    }
+  },
+  "rounding_contract": {
+    "primary_pass": "Umean=0,1,6 remains authoritative for measures and thresholds.",
+    "auxiliary_pass": "Umean=0,1,2 supplies category Outfit only when the six-decimal fixed-width token is truncated.",
+    "raw_parity_prohibited": "Displayed category Outfit and fit values are not treated as raw FACETS statistics."
+  },
+  "negative_controls": [
+    "Fit the RSM-generated syntax probe as PCM; do not call its threshold heterogeneity known truth.",
+    "Retain nonconvergence, structural nonidentification, missing scale tables, and unmapped tables as explicit failures.",
+    "Include at least one deliberately near-RSM PCM threshold condition in the known-truth smoke."
+  ],
+  "prohibited_claims": [
+    "Do not label all application PCM workflows FACETS-matched from the syntax probe.",
+    "Do not generalize to named General/Specific scales, mixed category supports, recoding, anchored thresholds, or more than one # facet.",
+    "Do not infer estimator bias, coverage, false-positive rate, or power from the smoke stages.",
+    "Do not change tolerances after seeing FACETS-Python differences; disclose any failure and amend prospectively."
+  ]
+}

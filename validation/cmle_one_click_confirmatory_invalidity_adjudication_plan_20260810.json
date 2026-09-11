@@ -1,0 +1,62 @@
+{
+  "study_id": "cmle_one_click_confirmatory_invalidity_adjudication_v1",
+  "registered_at": "2026-08-10T00:00:00+09:00",
+  "status": "prospectively_registered_before_implementation",
+  "scope": "Private SCI-01/SCI-05 invalidity-code adjudication support without recommendation or selection",
+  "parent_evidence_sha256": {
+    "validation/cmle_one_click_confirmatory_protocol_preflight_20260810/invalidity_reason_codebook.csv": "7b589ead60542679561f1a95c92c616e69e66008e73ec5624c16fc4650560466",
+    "validation/cmle_one_click_confirmatory_sci01_estimand_memo_20260810/decision.json": "a22ba0701b6ad0a22266804cc8b6ad2a53d297e0849846937474073550deef2f",
+    "validation/cmle_one_click_confirmatory_sci01_estimand_memo_20260810/sci01_estimand_definitions.csv": "04fee136297ba73a2fa3802d0a6da4aa2b5221bbe2c00c969c25dda312ebbb15",
+    "validation/cmle_one_click_confirmatory_sci01_estimand_memo_plan_20260810.json": "a688ff914aa652ebb2e037f937de613553445d2ecee6b495be3192c335461532"
+  },
+  "registered_code_count": 15,
+  "fixed_codes": ["none"],
+  "unresolved_code_count": 14,
+  "repository_recommendation_allowed": false,
+  "repository_default_allowed": false,
+  "automatic_dangerous_classification_allowed": false,
+  "adjudication_dimensions": [
+    "TargetPopulationDisposition",
+    "CompositeEventDisposition",
+    "PrimaryAnalysisDisposition",
+    "SensitivitySetDisposition",
+    "DataUseAuthorityDisposition"
+  ],
+  "registered_sensitivity": {
+    "source_rows": 72,
+    "composite_fractions_of_invalid": [0.0, 0.25, 0.5, 0.75, 1.0],
+    "integer_allocation_rule": "floor(I * fraction + 0.5)",
+    "output_rows": 360,
+    "decision_threshold_raw": 0.1,
+    "threshold_operator": "strictly_less_than",
+    "displayed_rounding_drives_decisions": false,
+    "interpretation": "Diagnostic allocation sensitivity only; does not infer code frequencies or select a composite definition"
+  },
+  "hard_guardrails": {
+    "none_is_fixed_valid_observed": true,
+    "decline_or_withdrawal_requires_external_ethics_data_use_authority": true,
+    "withdrawal_is_never_automatically_a_dangerous_event": true,
+    "accessibility_barrier_requires_accessibility_owner_review": true,
+    "accessibility_barrier_cannot_be_silently_pooled": true,
+    "duplicate_record_is_never_automatically_a_dangerous_event": true,
+    "other_reason_requires_protocol_amendment": true,
+    "all_resolved_rows_require_blinded_preoutcome_attestation": true,
+    "completed_codebook_alone_can_authorize_recruitment": false
+  },
+  "required_artifacts": [
+    "invalidity_code_taxonomy.csv",
+    "invalidity_allowed_state_catalog.csv",
+    "invalidity_adjudication_template.csv",
+    "invalidity_owner_review_matrix.csv",
+    "invalidity_composite_fraction_sensitivity.csv",
+    "invalidity_adjudication_workbench.html",
+    "invalidity_composite_sensitivity.png",
+    "private_invalidity_adjudication_workbench.zip",
+    "INVALIDITY_ADJUDICATION_CRITICAL_REVIEW.md",
+    "decision.json"
+  ],
+  "human_participants": 0,
+  "confirmatory_outcomes_available": false,
+  "public_surface_enabled": false,
+  "stop_rule": "Fail closed on parent mismatch, missing/extra codes, consent or withdrawal auto-classification, silent accessibility pooling, post-outcome adjudication, recommendation/default language, rounded decisions, bundle tampering, regression failure, human data, or public exposure"
+}

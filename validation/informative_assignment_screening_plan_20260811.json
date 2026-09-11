@@ -1,0 +1,125 @@
+{
+  "schema_version": "mfrm-informative-assignment-screening-plan-v1",
+  "registered_on": "2026-08-11",
+  "registration_timing": "Registered after the independent H6R observation-density effect was replicated, but before generation or fitting of replicates 221 through 240.",
+  "purpose": "Separate response-density loss from latent ability-by-rater-severity assignment dependence while holding sparse-design row counts, rater exposure, category support, and structural connectivity fixed.",
+  "evidence_status": {
+    "phase": "screening",
+    "replicate_range": [221, 240],
+    "replicates": 20,
+    "fixed_sample_size": true,
+    "optional_stopping": false,
+    "pool_replicates_1_through_220": false,
+    "confirmatory_claims_allowed": false,
+    "future_confirmation_requires_fresh_replicates": true
+  },
+  "data_generating_process": {
+    "model": "correctly specified four-category heterogeneous-threshold PCM",
+    "persons": 80,
+    "person_distribution": "normal standardized within replicate to realized mean 0 and population SD 0.8",
+    "raters": {
+      "R01": -0.45,
+      "R02": -0.15,
+      "R03": 0.15,
+      "R04": 0.45
+    },
+    "tasks": 3,
+    "criteria": 2,
+    "categories": 4,
+    "base_seed": 2026081107,
+    "common_random_numbers": "All three observation designs are subsets of the same complete response matrix within replicate. Assignment masks use Theta and identifiers but never realized scores."
+  },
+  "observation_designs": {
+    "complete": {
+      "raters_per_person": 4,
+      "rows": 1920,
+      "role": "response-density context only"
+    },
+    "planned_connected": {
+      "raters_per_person": 2,
+      "rows": 960,
+      "rule": "Existing Person-index adjacent Rater ring: R01-R02, R02-R03, R03-R04, R04-R01 repeating independently of generated Theta.",
+      "role": "non-informative equal-density reference"
+    },
+    "ability_severity_aligned_connected": {
+      "raters_per_person": 2,
+      "rows": 960,
+      "ability_quartile_rule": "Stable sort by generated Theta, tie-break by Person identifier, exactly 20 Persons per quartile.",
+      "pair_by_ascending_ability_quartile": [
+        ["R01", "R02"],
+        ["R01", "R03"],
+        ["R02", "R04"],
+        ["R03", "R04"]
+      ],
+      "assigned_pair_mean_severity_by_quartile": [-0.30, -0.15, 0.15, 0.30],
+      "role": "latent ability-dependent assignment stressor; not an identified real-data missingness model"
+    }
+  },
+  "locked_design_invariants": {
+    "sparse_rows_per_run": 960,
+    "sparse_raters_per_person": 2,
+    "sparse_persons_per_rater": 40,
+    "sparse_rating_rows_per_rater": 240,
+    "tasks_and_criteria_complete_within_selected_rater": true,
+    "person_rater_components": 1,
+    "constrained_pcm_nullity": 0,
+    "same_complete_response_sha256_within_replicate": true,
+    "same_realized_person_vector_within_replicate": true,
+    "same_rater_exposure_between_sparse_designs": true
+  },
+  "estimation_layers": [
+    {
+      "mode": "FACETS_4_5_JMLE and independently persisted PYTHON_JMLE",
+      "estimand": "fixed-person joint likelihood",
+      "purpose": "same-estimand external calibration plus Python screening evidence"
+    },
+    {
+      "mode": "PYTHON_MML_FIXED_SD08_Q31",
+      "estimand": "normal-person marginal likelihood with SD fixed at 0.8"
+    },
+    {
+      "mode": "PYTHON_MML_FREE_SD_Q31",
+      "estimand": "normal-person marginal likelihood with SD estimated"
+    },
+    {
+      "mode": "PYTHON_EXACT_CMLE",
+      "estimand": "person-total conditional likelihood"
+    }
+  ],
+  "screening_outputs": {
+    "primary_descriptive_contrast": "ability_severity_aligned_connected minus planned_connected within replicate and estimator mode",
+    "recovery_metrics": ["facet RMSE", "facet MAE", "threshold RMSE", "threshold MAE"],
+    "facets": ["Rater", "Task", "Criterion"],
+    "additional": [
+      "level-specific Rater truth errors",
+      "free-MML estimated population SD",
+      "CMLE extreme-Person count",
+      "FACETS/Python direct-agreement maxima",
+      "failure and retry denominators"
+    ],
+    "interval": "two-sided Student t screening interval over 20 paired contrasts",
+    "multiplicity": "No inferential promotion. All intervals are descriptive screening signals.",
+    "method_comparison_rule": "Report within-estimator design contrasts. Do not rank estimators or compare likelihood/AIC across joint, marginal, and conditional bases."
+  },
+  "operational_contract": {
+    "attempt_units": 240,
+    "datasets": 60,
+    "resilient_facets_pairs": 60,
+    "python_mml_fits": 120,
+    "python_exact_cmle_fits": 60,
+    "python_evidence_independent_of_facets_report_success": true,
+    "facets_retry": "At most two retries only for exit-0/missing named report.",
+    "facets_serialization": "Shared cross-process lock and short retained work roots.",
+    "completion_marker_written_last": true,
+    "resume_requires_all_bound_hashes": true
+  },
+  "stop_rules": [
+    "Stop before fitting if row counts, rater exposure, connectivity, constrained PCM nullity, quartile sizes, or shared-response hashes fail.",
+    "Retain and report every estimator and FACETS failure in the planned denominator.",
+    "Do not impute, replace, or silently rerun a completed statistical attempt.",
+    "Do not interpret FACETS Subset connection O.K. as a substitute for the independent constrained-design rank audit.",
+    "Do not reconstruct raw fit statistics from FACETS two-decimal displays.",
+    "Do not select a confirmatory endpoint or direction until all 20 screening replicates are complete and reported."
+  ],
+  "claim_limit": "This screening can identify candidate sensitivity to one deliberately constructed latent ability-by-severity assignment mechanism under a correctly specified PCM. It cannot identify an empirical missingness mechanism, establish MAR/MNAR correction, prove universal bias, or rank JMLE, MML, and CMLE."
+}

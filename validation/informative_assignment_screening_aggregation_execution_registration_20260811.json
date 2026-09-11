@@ -1,0 +1,24 @@
+{
+  "schema_version": "mfrm-informative-assignment-screening-aggregation-execution-registration-v1",
+  "registered_on": "2026-08-11",
+  "registration_timing": "After the result-blind aggregation amendment, correction script, and tests were completed, and before aggregate_corrected was generated or any design contrasts were interpreted.",
+  "amendment_sha256": "44cdd9d6e2c20fda3c52917bd12f20515783d403c64f1778304d2746dd5242e9",
+  "aggregation_script_sha256": "32da67589e9b232899a8ec684a63de2c78cc08176da06fcb8354b805f94e6c30",
+  "test_sha256": "7727c1a310cbd4ddbd1a276fcd5f43bcd4a3074f8b0684933dc0a53c44c4b4de",
+  "study_identity_sha256": "02529fa26da95654616fdb88d6414a4e2e39f61315c7d4622a1cc237db5e4d60",
+  "original_aggregate_identity_sha256": "70fc1d49674f9ba801bcfa1de052caba29ec7e9dcec8f06734af992822218059",
+  "original_screening_metrics_sha256": "41e9d8d2b4d72a3bcdd7eafdaa8d1304e90fba42be4d9e099bed5541a3fb1b3c",
+  "completion_marker_set_sha256": "0be34fd82c423d3aeb051a79e1f322473485b37ae3c0b92b5a4567fdc9ec24cd",
+  "tests_passed_before_registration": true,
+  "test_command": ".venv-win\\Scripts\\python.exe -m pytest tests\\test_informative_assignment_screening_aggregate_corrected.py tests\\test_informative_assignment_screening.py tests\\test_informative_assignment_design.py -q",
+  "test_result": "11 passed in 3.20s",
+  "fixed_contract": {
+    "metadata_join_only": true,
+    "refits": 0,
+    "completion_marker_changes": 0,
+    "expected_screening_cells": 32,
+    "expected_pairs_per_cell": 20,
+    "confirmatory_claims_allowed": false,
+    "original_aggregate_preserved": true
+  }
+}

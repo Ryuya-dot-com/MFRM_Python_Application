@@ -1,0 +1,45 @@
+{
+  "schema_version": "known_assignment_confirmatory_strict_audit_publish_v2_plan_v1",
+  "registered_date": "2026-08-11",
+  "scope": "PUBLICATION_TRANSPORT_ONLY",
+  "scientific_or_audit_logic_change": false,
+  "reason": "Two registered v1 publication attempts completed audit and staged-bundle validation but Windows returned WinError 32 when atomically renaming a Dropbox reparse-point directory. Both final outputs remained absent and both empty partial directories were removed.",
+  "frozen_v1": {
+    "audit_plan_sha256": "9259568716abc4bd70f51ef3bac3b1b2fd4a98794c7d2ae684564afbfc9d88a9",
+    "auditor_sha256": "61b8a4aad2799d94cad0f8b6840a7a5ed70e5695cddfc73eb8831100e92e3c42",
+    "test_contract_sha256": "388e888c66988b6e4b8936d8edb625e1272c17e4c93b7164e83f6d271983a815",
+    "execution_registration_sha256": "ae54d3b8f28efaa693c4370030b8ea64a945531b8de351e292ed08fa921a8cd1"
+  },
+  "failed_v1_transport_attempts": [
+    {
+      "process_id": 26380,
+      "failure": "PermissionError WinError 32 at os.replace(partial_directory, final_directory)",
+      "final_output_created": false,
+      "partial_directory_removed": true
+    },
+    {
+      "process_id": 25168,
+      "failure": "PermissionError WinError 32 at os.replace(partial_directory, final_directory)",
+      "final_output_created": false,
+      "partial_directory_removed": true
+    }
+  ],
+  "output": "validation/kac200_posthoc_strict_audit_20260811",
+  "transport_contract": {
+    "output_must_not_exist": true,
+    "output_must_be_outside_frozen_study": true,
+    "staging": "write three uniquely named staging files inside the final output directory and fsync each file",
+    "precommit_validation": "recompute assessment, Markdown, identity, and hashes from staged bytes",
+    "commit_order": [
+      "assessment.json",
+      "AUDIT_ADDENDUM.md",
+      "audit_identity.json"
+    ],
+    "completion_marker": "audit_identity.json is installed last; absence means incomplete publication",
+    "atomic_unit": "each file is atomically replaced within one directory; no directory rename is attempted",
+    "postcommit_validation": "the frozen v1 validate_published_bundle must pass on the exact three-file final directory",
+    "overwrite_prohibited": true,
+    "failure_cleanup": "remove the completion marker first, then only transport-owned staging/final files and the newly created output directory; preserve the original exception"
+  },
+  "claim_boundary": "Transport v2 changes only how the already registered append-only audit bundle is published under Dropbox on Windows. It cannot change, recompute under different rules, or broaden any scientific result, stationarity qualification, FACETS boundary, R boundary, or v1 audit conclusion."
+}

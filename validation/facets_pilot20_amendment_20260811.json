@@ -1,0 +1,82 @@
+{
+  "schema_version": "mfrm-facets-pilot20-amendment-v1",
+  "amendment_date": "2026-08-11",
+  "parent_precision_plan": "validation/operating_characteristics_precision_plan_20260809.json",
+  "immutable_input_bundle": "validation/operating_characteristics_pilot20_20260809",
+  "current_python_refit": "validation/operating_characteristics_pilot20_anchor_fix_20260811",
+  "facets_result_bundle": "validation/facets_450_pilot20_table8_table13_v2_20260811",
+  "scope": "Twenty-replicate pipeline, parser, failure-accounting, and nondegenerate decision-mapping pilot; not confirmatory operating characteristics.",
+  "input_identity": {
+    "semantic_row_identity": {
+      "manifest": "160/160 rows equal",
+      "ratings": "185184/185184 rows equal",
+      "facet_truth": "1600/1600 rows equal",
+      "anchors": "160/160 rows equal",
+      "data_id": "160/160 equal",
+      "fit_input_id": "160/160 equal"
+    },
+    "byte_identity_note": "The Windows refit serialization differs in line endings/number formatting from the historical macOS bundle. FACETS and the Python Table 8 step adapter therefore consumed the original immutable bundle bytes; comparison-result hashes are recorded separately.",
+    "facets_input_sha256": {
+      "manifest.csv": "4df0476f9d8ec09b3bfc469e7eeb80dedb81c616b9e9c8d74b83a4f2b36f8f15",
+      "generated_ratings.csv": "0eaf6ec727107b5ed5af9ec7b99ccf3754c9af268eeeb4fd63d8e3900fc82232",
+      "generated_facet_truth.csv": "a881198bebd3e73b6d632fd6c08542b983425951242c326052d3a860d6db7262",
+      "generated_anchors.csv": "02d4c39e22ba6b5b6b975d9d39e8ecd347b47053397f76c1c458d037ce73fa72"
+    }
+  },
+  "python_refit": {
+    "attempted": 160,
+    "returned": 160,
+    "converged": 159,
+    "analysis_eligible": 119,
+    "recorded_fit_seconds": 337.88255,
+    "console_exit_incident": "All atomic artifacts and bridge checks were complete before a final CP932 console print raised UnicodeEncodeError. The CLI now replaces unencodable console characters without changing the retained UTF-8 report.",
+    "run_generator_sha256": "d32c067e41ad04a371cf9a898d280346012760c856d34ca06942716833cb42f1",
+    "post_incident_runner_sha256": "f3d3b7afc0eaa7a5c43520f5314a8008b9987b89dfccd35d99406d22767c0cc6",
+    "app_sha256": "5bc34d32a45a0ee9e8f7bb82c4fc50b6b6ceaf33261ac98b55a281f5ccb462c8"
+  },
+  "facets_450": {
+    "facets_executable_sha256": "dfb0afb0faa18f026d1b3b4175f22e42cc3764430eb83cbd368c7a572b3593a1",
+    "run_adapter_sha256": "f191ed30b03ac41daecb82a6397c4b87055d9a328d82bedd72ee253b61a0e2f4",
+    "postrun_summary_generator_sha256": "571841db25b022e3385bf51071510f208a2de09513ecebf972f08cd0c38bb637",
+    "postrun_summary_sha256": "ff69fdd46a070f0f4d5410ed9e857d9f6501c5706d2bfc498dc0bd9215124667",
+    "postrun_summary_change": "Replaced a smoke-specific degenerate-no-flag sentence with counts computed from the already-retained eligibility and agreement CSVs; no FACETS or Python numerical table was altered.",
+    "attempted": 160,
+    "returned": 160,
+    "converged": 158,
+    "direct_matched_runs": 118,
+    "structural_nonidentification_negative_controls": 40,
+    "nonconverged_exclusions": 2,
+    "direct_parameters": 1053,
+    "parameter_weighted_mae_logits": 0.001534660145895328,
+    "parameter_max_abs_difference_logits": 0.0120147571785591
+  },
+  "table8": {
+    "parsed_runs": 160,
+    "category_rows": 640,
+    "exact_total_count_matches": 640,
+    "category_outfit_pass": 633,
+    "category_outfit_boundary_uncertain": 5,
+    "category_outfit_flag": 2,
+    "direct_thresholds": 351,
+    "threshold_weighted_mae_logits": 0.004789266306199717,
+    "threshold_max_abs_difference_logits": 0.0204724776818128,
+    "claim_limit": "No equivalence tolerance was preregistered; descriptive numerical alignment only."
+  },
+  "table13": {
+    "parsed_runs": 160,
+    "expected_cells": 2400,
+    "reported_cells": 2292,
+    "unreported_sparse_extreme_cells": 108,
+    "matched_python_cells": 1440,
+    "comparison_eligible_cells": 1404,
+    "facets_strong_flags": 8,
+    "python_strong_flags": 8,
+    "strong_decision_agreements": 1404,
+    "strong_decision_disagreements": 0,
+    "mean_absolute_bias_size_difference_logits": 0.0014123209919131463,
+    "max_absolute_bias_size_difference_logits": 0.0091999844110148,
+    "claim_limit": "Nondegenerate decision mapping and parser qualification; not confirmatory false-positive rate or power."
+  },
+  "metacognitive_finding": "The corrected absolute-origin anchor semantics reduced focal strong flags in the 0.6-logit anchored conditions from 18 to 3 (anchor drift) and from 11 to 3 (clean anchors), while FACETS matched the corrected eligible decisions. This demonstrates why external comparison must precede estimator-performance interpretation.",
+  "next_gate": "Freeze a confirmatory design that separates full-depth FACETS/JMLE lanes from stratified MML sensitivity lanes, excludes this pilot from confirmatory performance estimates, and retains unavailable/nonconverged outcomes as such."
+}

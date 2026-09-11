@@ -1,0 +1,13 @@
+{
+  "schema_version": "known_assignment_large_design_dp_execution_amendment_v1",
+  "registered_date": "2026-08-11",
+  "parent_plan": "validation/known_assignment_large_design_dp_plan_20260811.json",
+  "reason": "Two monolithic executions reached the 300-second command ceiling before creating output. A diagnostic gamma=0.8, n=10 run showed 985681 DP states and 92.68 seconds, confirming gamma-specific partition construction as the bottleneck.",
+  "scientific_changes": false,
+  "threshold_changes": false,
+  "sample_changes": false,
+  "seed_changes": false,
+  "execution_change": "Run each of the five frozen gamma values as an immutable shard, then aggregate only after every shard exists and passes its structural audit.",
+  "partial_results_from_timed_out_runs_retained": false,
+  "reason_no_partial_results": "The frozen output directory is created only after all gamma loops; both timed-out runs stopped before that write boundary."
+}

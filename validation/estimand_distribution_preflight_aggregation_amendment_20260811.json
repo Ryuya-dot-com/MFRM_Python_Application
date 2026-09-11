@@ -1,0 +1,18 @@
+{
+  "schema_version": "mfrm-estimand-distribution-preflight-aggregation-amendment-v1",
+  "registered_date": "2026-08-11",
+  "parent_plan": "estimand_distribution_screening_plan_20260811.json",
+  "frozen_execution_amendment": "estimand_distribution_preflight_infrastructure_amendment2_20260811.json",
+  "frozen_study": "estimand_distribution_preflight_v3_20260811",
+  "timing": "Written after v3 fit completion, resume replay, and first aggregate inspection.",
+  "observed_problem": "MML recovery rows did not carry PersonDistribution, so the first aggregate collapsed four distributions within design even though RunId and every estimate remained intact.",
+  "scope_assessment": "No rating, truth, estimate, SE, likelihood, fit status, constraint, completion marker, or eligibility flag is changed. The defect is confined to aggregation metadata and summaries derived from that metadata.",
+  "remediation": {
+    "metadata_source": "Join ConditionId, Design, PersonDistribution, and Replicate from the byte-retained manifest.csv by unique RunId.",
+    "validation": "Any nonmissing artifact metadata that conflicts with the manifest fails closed before replacement.",
+    "new_gate": "All nonempty run, recovery, and threshold tables must have nonmissing PersonDistribution drawn from the registered four-level condition set.",
+    "output": "Write a new aggregate_corrected directory; retain the first aggregate directory unchanged as superseded diagnostic evidence.",
+    "provenance": "Validate completion markers against the frozen execution script/amendment hashes stored in study_identity.json, while recording the current aggregation script and this amendment hashes separately."
+  },
+  "claim_limit": "This is a deterministic metadata repair, not a result-dependent estimator, condition, denominator, or gate-threshold change. Preflight remains operational only."
+}

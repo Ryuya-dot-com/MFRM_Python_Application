@@ -1,0 +1,71 @@
+{
+  "registration_status": "prospective_before_structured_workflow_implementation_or_systematic_results",
+  "registered_date": "2026-08-10",
+  "study_id": "cmle_structured_preoptimization_workflow_v1",
+  "purpose": "Provide a button-ready, Streamlit-free orchestration result that stops before optimization for invalid, structurally unidentified, boundary, or unavailable finite-CMLE designs while retaining bilingual reasons, next actions, and machine-readable stage evidence.",
+  "parent_identity": {
+    "mfrm_app/cmle.py": "d5da4780932df7a3a6b3763efabe01c82747f445d8835a0c627c6d781e36e1a9",
+    "mfrm_app/cmle_existence.py": "6e65621a67751c25d9e870141ac04d9f61dc68096045f84ca212afdc34b435ac",
+    "tests/test_cmle.py": "0a3102b603563f8cd2469a4097db343518cf1a0df228254ae885d7db1809984f",
+    "validation/cmle_finite_mle_readiness_integration_20260810/integration_decision.json": "411a707df7b1a7b5adda456d30789842d192b45e4f11aaedea1b8addb0d4f962",
+    "validation/cmle_finite_mle_readiness_integration_20260810/integration_fit_ledger.csv": "aaa08551712b732bdc8870f01f8c691ec87974b5d668265719f3ce6c8d3022cb"
+  },
+  "workflow_contract": {
+    "entrypoint": "A new Streamlit-free run_cmle_calibration_workflow function accepts the same design/fit inputs as fit_cmle and returns one stable result schema for success and all blocked states.",
+    "stages": [
+      "input_and_design",
+      "finite_mle_existence",
+      "structural_optimization",
+      "downstream_person_scoring"
+    ],
+    "terminal_statuses": [
+      "input_invalid",
+      "design_not_identified",
+      "finite_mle_boundary",
+      "finite_mle_unavailable",
+      "optimization_not_ready",
+      "calibration_ready"
+    ],
+    "early_stop": "input_invalid and design_not_identified do not call the existence oracle or optimizer; finite_mle_boundary/unavailable do not call the optimizer; only an oracle-qualified interior reaches fit_cmle.",
+    "fit_safety": "The interior route calls the existing default-gated fit_cmle path. The workflow must not disable or replace the fit-level finite-MLE gate, even though this deliberately repeats the audit in v1.",
+    "technical_boundary_output": "No technical parameter table is created on an early-stopped boundary; the separate direct fit_cmle research path continues to retain technical values for audit comparability.",
+    "bilingual": "Every stage and terminal result includes stable Japanese and English headline, explanation, and next-action text; status codes remain language-neutral.",
+    "machine_readable": "Return terminal summary, ordered stages, design audit, existence audit when reached, fit only when attempted, output availability, and elapsed-time evidence.",
+    "no_fallback": "Never switch to JMLE, MML, a prior, penalty, correction, clamping, or reduced design."
+  },
+  "registered_checks": {
+    "fixtures": "Replay all 93 registered existence fixtures. Two structural controls stop at design, 43 boundary controls stop before optimization, and 48 interior controls reach optimization; terminal state agrees with the frozen oracle classification.",
+    "retained": "Replay all same-byte 350 topology-anchor cases. Expected: 63 design_not_identified, 13 finite_mle_boundary, 274 optimization attempts, and 274 calibration_ready under the frozen evidence.",
+    "optimizer_skip_probe": "Monkeypatch the optimizer entrypoint to raise if called and prove that boundary, unavailable, and structural cases return normally without invoking it.",
+    "oracle_skip_probe": "Monkeypatch the oracle to raise if called and prove that structurally blocked designs do not invoke it.",
+    "numeric_invariance": "For every retained calibration_ready case, structural estimates, SE, conditional likelihood, readiness, and anchor values match the readiness-integration evidence within the registered tolerances.",
+    "schema": "Every terminal status returns the same top-level keys and a four-row ordered stage table; unavailable downstream artifacts are represented explicitly, not omitted ambiguously.",
+    "language": "Japanese and English messages are nonempty and status codes are identical across language selection."
+  },
+  "success_gates": {
+    "fixture_terminal_matches": "93/93",
+    "retained_accounting": "350/350 with 63 design blocks, 13 boundary stops, 274 optimization attempts, and 274 ready results",
+    "forbidden_optimizer_calls": 0,
+    "numeric_invariance": {
+      "structural_estimate_absolute": 1e-12,
+      "structural_se_absolute": 1e-12,
+      "conditional_loglik_absolute": 1e-10,
+      "readiness_mismatches": 0,
+      "anchor_exact_mismatches": 0
+    },
+    "performance": {
+      "structural_block_p95_seconds": 0.2,
+      "boundary_stop_p95_seconds": 0.8,
+      "interior_workflow_p95_seconds": 1.5
+    },
+    "tests": "All selected CMLE, existence, anchor, and new structured-workflow tests pass.",
+    "public_ui": "withheld"
+  },
+  "interpretation_limits": {
+    "duplicate_audit": "The v1 interior path repeats the support audit inside fit_cmle for defense in depth; later deduplication requires a design-identity contract and separate prospective evidence.",
+    "person_scoring": "The v1 workflow reports downstream Person scoring as available/not-run but does not yet perform WLE or Person fit.",
+    "bilingual_review": "Programmatic nonempty messages are not a comprehension study.",
+    "cross_engine": "No equivalence with immer, TAM, sirt, or mfrmr is implied.",
+    "public_ui": "withheld pending cross-engine boundary replay and comprehension testing"
+  }
+}

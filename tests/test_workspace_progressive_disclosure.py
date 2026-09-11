@@ -19,8 +19,23 @@ def test_setup_workspace_collapses_raw_rows_and_pre_run_checks_after_results() -
 def test_successful_run_clears_setup_surface_before_results() -> None:
     source = inspect.getsource(app.run_facets_mode)
 
-    assert "setup_surface = render_analysis_setup_workspace" in source
+    assert "setup_surface, main_run_clicked = render_analysis_setup_workspace" in source
     assert "setup_surface.empty()" in source
+
+
+def test_guided_run_action_is_in_workspace_and_advanced_keeps_sidebar_route() -> None:
+    setup_source = inspect.getsource(app.render_analysis_setup_workspace)
+    run_source = inspect.getsource(app.run_facets_mode)
+
+    assert 'workflow_mode == "Guided defaults"' in setup_source
+    assert 'key="facets_mode_run_primary"' in setup_source
+    assert 't("app.run_primary_button")' in setup_source
+    assert setup_source.index("render_estimation_resource_preflight") < setup_source.index(
+        'key="facets_mode_run_primary"'
+    )
+    assert "if advanced_controls:" in run_source
+    assert 't("sidebar_perf.run_button")' in run_source
+    assert "run_clicked = bool(main_run_clicked)" in run_source
 
 
 def test_onboarding_is_a_focused_optional_three_route_landing() -> None:

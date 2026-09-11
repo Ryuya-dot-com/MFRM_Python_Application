@@ -1,0 +1,15 @@
+{
+  "amendment_status": "prospective_before_decision_workbench_implementation; structural_clarification_only; no_human_data; no_option_selected",
+  "registered_date": "2026-08-10",
+  "study_id": "cmle_one_click_confirmatory_decision_workbench_v1",
+  "amendment_id": "broad_stage_and_topological_order_clarification_v1",
+  "parent_plan_sha256": "ac3e67a200eeb2f9c7fb426050847863a36199f2f9ec474ffd5a104a668b44ed",
+  "trigger": "Implementation-preceding structural review found that OPS-01 depends on SCI-07 while both belong to the broad cluster/mechanism/operations/governance phase, making a literal prior-broad-stage requirement internally inconsistent.",
+  "clarification": {
+    "broad_stage": "Stage labels are presentation groups, not permission to resolve decisions in arbitrary order within a group.",
+    "topological_order": "Every prerequisite must have a strictly smaller TopologicalOrder than its dependent decision. Decisions may share a broad StageLabel when their TopologicalOrder still preserves the dependency.",
+    "acyclic_gate": "The dependency graph must remain acyclic and every registered edge must point from smaller to larger TopologicalOrder.",
+    "unchanged": "All 13 decision ids, 39 option ids, prerequisite edges, no-recommendation rule, blank default selections, external-evidence rules, human/public gates, and bundle membership remain unchanged."
+  },
+  "interpretation": "This amendment repairs presentation-stage wording before implementation; it does not use outcomes, choose an option, change a scientific dependency, select n, or authorize recruitment."
+}

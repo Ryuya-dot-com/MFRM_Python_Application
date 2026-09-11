@@ -1,0 +1,130 @@
+{
+  "registration_status": "prospective_after_implementation_tests_but_before_phase_b_smoke_execution_or_results",
+  "registered_date": "2026-08-10",
+  "study_id": "cmle_native_hard_anchor_phase_b_smoke_v1",
+  "parent_plan": {
+    "path": "validation/cmle_native_hard_anchor_plan_20260810.json",
+    "sha256": "e57ab494179d45957f559b00eeeb4337d4c58a8ee8d64e389eb04d3bcc94976d"
+  },
+  "reason_for_amendment": "The parent plan froze the scenario labels but did not freeze the exact retained runs, anchor levels, scale comparison, or row-level transition calculation. This amendment supplies those details before any smoke fit or result is computed.",
+  "implemented_input_identity": {
+    "mfrm_app/cmle.py": "499582112d71b3832e4f00608c0deaef33d0610fd754560fc900387db7a298eb",
+    "mfrm_app/cmle_person_scoring.py": "cb830ec0cbc6fbd1e7d38d333a17031977475a19e8de40f57514cf78e2dfa761",
+    "mfrm_app/cmle_wle_fit.py": "4517d5d6969339cb3e9d2a2b6335c756e45cde8eb686f185f2b6eb32b5faae9e",
+    "mfrm_app/cmle_wle_bootstrap.py": "7aee6d6692ba347d149f2b6f4dbf443a686488e35115a7cf32941f3324458cc8",
+    "mfrm_app/cmle_wle_uncertainty.py": "78958e8b6b484873eec4560bb68a969b14dcaca47e3ff3adaa22bccdc1bbafd3",
+    "tests/test_cmle_hard_anchors.py": "45dd27ba7a7d0f2f173fdf6476818d8c08dfad5cb7bf46793e7393a3cd9f9ba7",
+    "test_gate": "46 selected CMLE/CMLE-WLE tests passed before registration"
+  },
+  "retained_response_source": {
+    "path": "validation/cmle_wle_fit_known_truth_pilot_20260810/known_truth_responses.csv",
+    "sha256": "dcad2b39bd52e2542ed4d1ee3311d17d8828060197cee519e535539352cdf25d",
+    "generator_plan_path": "validation/cmle_wle_fit_known_truth_pilot_plan_20260810.json",
+    "generator_plan_sha256": "1a7be700e82ea32749b60cad0aad10d9aba0d1088a2cd9daba069ff0fc0b782e",
+    "selection": {
+      "condition_ids": [
+        "rsm4_clean_dense",
+        "rsm4_clean_sparse",
+        "rsm4_random_dense",
+        "rsm4_random_sparse"
+      ],
+      "replicates": [1, 2],
+      "run_count": 8,
+      "expected_response_rows": 24000
+    },
+    "retention_rule": "Select complete source rows without regenerating or modifying ObservedCategory; save the selected rows as the smoke input and record both source-row fingerprints and file SHA-256."
+  },
+  "truth": {
+    "rater_effects": {
+      "R01": -0.75,
+      "R02": -0.45,
+      "R03": -0.15,
+      "R04": 0.15,
+      "R05": 0.45,
+      "R06": 0.75
+    },
+    "criterion_effects": {
+      "C01": -0.45,
+      "C02": -0.15,
+      "C03": 0.15,
+      "C04": 0.45
+    },
+    "step_effects": {
+      "1": -0.9,
+      "2": 0.0,
+      "3": 0.9
+    },
+    "truth_scale": "All three structural truth blocks sum to zero and therefore match the unanchored CMLE expanded sum-to-zero scale. Correct hard anchors use the same absolute expanded scale."
+  },
+  "frozen_anchor_scenarios": [
+    {
+      "scenario": "unanchored_sum_zero",
+      "anchors": []
+    },
+    {
+      "scenario": "one_of_six_raters_correct",
+      "anchors": [
+        {"ParameterType": "Facet", "Facet": "Rater", "Level": "R01", "Value": -0.75}
+      ]
+    },
+    {
+      "scenario": "three_of_six_raters_correct",
+      "anchors": [
+        {"ParameterType": "Facet", "Facet": "Rater", "Level": "R01", "Value": -0.75},
+        {"ParameterType": "Facet", "Facet": "Rater", "Level": "R03", "Value": -0.15},
+        {"ParameterType": "Facet", "Facet": "Rater", "Level": "R05", "Value": 0.45}
+      ]
+    },
+    {
+      "scenario": "three_of_six_raters_contaminated_plus_0.25",
+      "anchors": [
+        {"ParameterType": "Facet", "Facet": "Rater", "Level": "R01", "Value": -0.5},
+        {"ParameterType": "Facet", "Facet": "Rater", "Level": "R03", "Value": 0.1},
+        {"ParameterType": "Facet", "Facet": "Rater", "Level": "R05", "Value": 0.7}
+      ]
+    }
+  ],
+  "fit_contract": {
+    "model": "RSM",
+    "rating_support": [0, 3],
+    "facet_cols": ["Rater", "Criterion"],
+    "score_col": "ObservedCategory",
+    "gtol": 1e-8,
+    "maxiter": 800,
+    "newton_polish_maxiter": 12,
+    "response_unit_col": null,
+    "same_byte_pairing": "Every scenario fit for a RunId receives the same selected Person-Rater-Criterion-ObservedCategory rows in the same order."
+  },
+  "frozen_outputs": {
+    "attempt_ledger": "one row per 8 runs x 4 scenarios = 32 attempts, including every failure stage",
+    "structural_recovery": "one row per expanded facet/step, retaining anchor state, truth, error, and SE",
+    "person_results": "one row per fit-sample Person with TrueTheta, WLE, WLE error, exact-extreme status, raw Infit/Outfit, raw either-upper flag, and affected group",
+    "scenario_summary": "descriptive aggregate by condition and scenario",
+    "same_byte_transitions": "anchored raw either-upper flag versus the unanchored flag for the same RunId-Person",
+    "decision": "contract/integrity checks only; no performance success gate"
+  },
+  "recovery_rules": {
+    "structural_error": "Estimate minus frozen truth on the labelled expanded scale; anchored rows are retained rather than excluded",
+    "wle_error": "fit-sample WLE Estimate minus retained TrueTheta",
+    "fit_flag": "either raw Infit > 1.5 or raw Outfit > 1.5; no rounded value is used",
+    "transition_denominator": "same RunId-Person pairs with ready fit in both the anchored scenario and unanchored baseline",
+    "affected_strata": "reported descriptively for random-replacement conditions; clean conditions contain only clean Persons"
+  },
+  "integrity_gates": [
+    "source selection has exactly 8 complete RunIds and 24000 rows",
+    "source row fingerprint is unchanged after selection/save/reload",
+    "all 32 attempts are ledgered",
+    "every returned fit preserves its supplied anchors exactly with SE zero",
+    "all returned fits use the expected free-parameter count",
+    "all scenario comparisons have identical input fingerprints within RunId",
+    "raw fit flags recompute exactly from retained Infit and Outfit",
+    "no rounded statistic is used for a decision"
+  ],
+  "interpretation": {
+    "performance_claims": "forbidden",
+    "cross_engine_claims": "forbidden",
+    "coverage_claims": "forbidden",
+    "ui_release": "forbidden",
+    "allowed": "debugging evidence about implementation return, rank, recovery direction, contamination transmission, sparsity, and same-byte raw fit transitions"
+  }
+}

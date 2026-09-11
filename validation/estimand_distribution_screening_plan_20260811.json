@@ -1,0 +1,98 @@
+{
+  "schema_version": "mfrm-estimand-distribution-screening-plan-v1",
+  "registered_date": "2026-08-11",
+  "timing": "Written after the two-replicate estimand bridge and before generating any data for this study.",
+  "purpose": "Isolate sensitivity to the Person population shape on identical MFRM structures while preserving FACETS/Python JMLE parity and keeping joint, marginal, and conditional likelihood claims separate.",
+  "study_phases": {
+    "preflight": {
+      "replicates_per_condition": 1,
+      "role": "Operational, identity, resume, parser, and direction checks only; no bias or estimator-ordering claim."
+    },
+    "screening": {
+      "replicates_per_condition": 20,
+      "role": "Hypothesis screening with Monte Carlo standard errors; still below the repository's 100-eligible-replicate study-depth threshold."
+    },
+    "confirmatory_minimum": {
+      "eligible_replicates_per_condition": 100,
+      "role": "Minimum depth before operating-characteristic language; requires a prospective amendment fixing selected contrasts and precision targets."
+    }
+  },
+  "data_generating_design": {
+    "persons": 80,
+    "raters": 4,
+    "tasks": 3,
+    "criteria": 2,
+    "categories": 4,
+    "response_model": "PCM",
+    "threshold_condition": "heterogeneous criterion-specific thresholds",
+    "person_mean": 0.0,
+    "person_sd": 0.8,
+    "person_standardization": "Each realized Person vector is centered and scaled to population SD 0.8 so population shape, not realized variance, is the manipulated axis.",
+    "person_distributions": {
+      "normal": "Gaussian baseline.",
+      "right_skew": "Centered and scaled log-normal draw.",
+      "symmetric_mixture": "Equal-probability two-component Gaussian mixture before centering and scaling.",
+      "heavy_tail_t3": "Student t with 3 degrees of freedom before centering and scaling."
+    },
+    "observation_designs": {
+      "complete": "All Person x Rater x Task x Criterion rows.",
+      "planned_connected": "Each Person is observed by two adjacent Raters in the registered ring; the full constrained PCM design must remain rank-full."
+    },
+    "pairing": "Within replicate, all distribution/design conditions reuse the same row-level uniforms. Complete and planned-connected conditions also share the retained complete responses before masking.",
+    "base_seed": 2026081107
+  },
+  "fit_contracts_per_dataset": [
+    {
+      "attempt_type": "FACETS_PYTHON_JMLE_PCM",
+      "estimands": ["FACETS 4.5.0 fixed-Person JMLE", "Python fixed-Person JMLE"],
+      "role": "Same-estimand engine parity; FACETS Umean=6 main output plus separate Umean=2 Table 8 auxiliary output."
+    },
+    {
+      "attempt_type": "PYTHON_MML_FIXED_SD08_Q31_PCM",
+      "estimand": "Normal Person population marginal likelihood with SD fixed to the registered 0.8.",
+      "role": "Distribution-shape misspecification sensitivity at matched first two moments."
+    },
+    {
+      "attempt_type": "PYTHON_MML_FREE_SD_Q31_PCM",
+      "estimand": "Normal Person population marginal likelihood with SD estimated.",
+      "role": "Distribution-shape and design sensitivity transmitted through estimated population dispersion."
+    },
+    {
+      "attempt_type": "PYTHON_EXACT_CMLE_PCM",
+      "estimand": "Exact conditional likelihood given Person totals.",
+      "role": "Distribution-free structural calibration conditional on informative totals; extreme-Person loss remains explicit."
+    }
+  ],
+  "execution_contract": {
+    "immutable_manifest": "Preparation writes retained inputs and SHA-256 hashes once; workers never regenerate data.",
+    "sharding": "Attempt rows are deterministically assigned by manifest row number modulo shard count.",
+    "resume": "Each attempt writes a completion marker last. Resume skips only markers whose plan, input, and attempt fingerprints match; mismatches fail closed.",
+    "aggregation": "Aggregation is read-only over attempt artifacts and reports missing, duplicate, failed, and included attempts without silently changing denominators.",
+    "cross_basis_likelihood_comparison": "prohibited"
+  },
+  "preflight_gates": {
+    "attempts": "32/32 attempt units complete for 8 datasets.",
+    "input_identity": "All retained bundle hashes and attempt input fingerprints match.",
+    "structural": "All complete and planned-connected PCM designs have nullity 0.",
+    "facets_python_parity": "8/8 contracts comparison-eligible and direct-agreement pass under the already qualified tolerances.",
+    "mml": "16/16 fits return, converge, are inference-ready, contain finite parameters, and satisfy registered constraints.",
+    "cmle": "8/8 audits are conditionally rank-full and fits pass convergence, finite-MLE, finite-parameter, and constraint gates.",
+    "resume_replay": "A second identical worker invocation skips every completed assigned attempt and changes no completed marker hash."
+  },
+  "screening_outputs": [
+    "Per-condition eligible denominator and failure taxonomy.",
+    "Main-facet and PCM-threshold signed error, MAE, and RMSE by estimator, distribution, and design.",
+    "Free-SD MML error relative to registered realized SD 0.8.",
+    "CMLE informative/extreme Person counts and their association with recovery, without treating excluded extremes as recovered parameters.",
+    "Paired replicate contrasts against the normal distribution with Monte Carlo mean, SD, SE, and an explicitly screening-only normal-approximation interval.",
+    "FACETS versus Python JMLE direct-agreement metrics kept separate from different-estimand sensitivity."
+  ],
+  "withheld_claims": [
+    "No estimator winner or automatic estimator recommendation from preflight or 20-replicate screening.",
+    "No cross-basis log-likelihood, AIC, or BIC comparison.",
+    "No coverage, power, false-positive, or model-selection error-rate claim in this correct-PCM shape study.",
+    "No assertion that CMLE is unaffected by Person distribution when the distribution changes the rate of extreme or weakly informative totals.",
+    "No claim that matching mean and SD makes the normal MML model correctly specified for non-normal conditions."
+  ],
+  "escalation_rule": "Proceed from preflight to 20-replicate screening only if every preflight gate passes. Proceed toward 100 eligible replicates only after a result-blind amendment selects contrasts and precision targets; a visually favorable preflight or screening estimate is not an escalation criterion."
+}

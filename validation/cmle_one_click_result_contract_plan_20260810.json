@@ -1,0 +1,116 @@
+{
+  "registration_status": "prospective_before_one_click_result_orchestrator_implementation_or_result_inspection",
+  "registered_date": "2026-08-10",
+  "study_id": "cmle_one_click_result_contract_v1",
+  "purpose": "Join the existing structured exact-CMLE calibration workflow, fixed-calibration WLE Person scoring, untrimmed Person MnSq, and raw-versus-display decision audit into a Streamlit-free six-card result contract without changing an estimator, numerical gate, or public capability claim.",
+  "parent_identity": {
+    "mfrm_app/cmle.py": "d5da4780932df7a3a6b3763efabe01c82747f445d8835a0c627c6d781e36e1a9",
+    "mfrm_app/cmle_existence.py": "6e65621a67751c25d9e870141ac04d9f61dc68096045f84ca212afdc34b435ac",
+    "mfrm_app/cmle_workflow.py": "304b4e23e628ff49aec2e00911e20e7c9ed2a9bd00d3568a3de8ced9778c6b84",
+    "mfrm_app/cmle_person_scoring.py": "cb830ec0cbc6fbd1e7d38d333a17031977475a19e8de40f57514cf78e2dfa761",
+    "mfrm_app/cmle_wle_fit.py": "4517d5d6969339cb3e9d2a2b6335c756e45cde8eb686f185f2b6eb32b5faae9e",
+    "mfrm_app/decision_stability.py": "fac0d702590d3ba9f18124fc15403491d79b10649702dfbbc0dae5116c512d68",
+    "validation/cmle_structured_workflow_20260810/workflow_decision.json": "bcb6e45621bb1f3d32aeeed0ab62df29f7314e7a9d4c00d3158f560fa6c60eba",
+    "validation/cmle_wle_person_fit_20260810/person_fit_parity_decision.json": "833af71cb991120a8d887a533700853f46087ef2320372671617762d8c538a97",
+    "validation/cmle_pcm_anchor_cross_engine_20260810/decision.json": "28c338f58618c8697734ec442a627f1738ce67c869041b2da6e57688ddab13d7"
+  },
+  "analytical_cases": [
+    {
+      "case_id": "rsm_interior_fit_sample_extremes",
+      "model": "RSM",
+      "mechanism": "finite_with_all_minimum_and_all_maximum_persons",
+      "anchors": [],
+      "expected_terminal_status": "analysis_ready_with_cautions",
+      "expected_person_scoring_attempted": true
+    },
+    {
+      "case_id": "pcm_interior_differential_hard_anchors",
+      "model": "PCM",
+      "mechanism": "finite",
+      "anchors": [
+        {"Facet": "Rater", "Level": "R1", "Value": 0.25},
+        {"Facet": "Criterion", "Level": "C1", "Value": -0.2}
+      ],
+      "expected_terminal_status": "analysis_ready_with_cautions",
+      "expected_person_scoring_attempted": true
+    },
+    {
+      "case_id": "binary_conditional_support_boundary",
+      "model": "RSM",
+      "mechanism": "complete_rater_separation",
+      "anchors": [],
+      "expected_terminal_status": "finite_mle_boundary",
+      "expected_person_scoring_attempted": false
+    },
+    {
+      "case_id": "rsm_structurally_disconnected",
+      "model": "RSM",
+      "mechanism": "person_rater_components_without_common_person",
+      "anchors": [],
+      "expected_terminal_status": "design_not_identified",
+      "expected_person_scoring_attempted": false
+    },
+    {
+      "case_id": "invalid_missing_score_column",
+      "model": "RSM",
+      "mechanism": "missing_required_column",
+      "anchors": [],
+      "expected_terminal_status": "input_invalid",
+      "expected_person_scoring_attempted": false
+    }
+  ],
+  "presentation_boundary_probe": {
+    "display_decimals": 3,
+    "raw_infit": 1.5004,
+    "display_infit": 1.5,
+    "expected_raw_class": "noisy",
+    "expected_display_class": "acceptable",
+    "expected_display_decision_consistent": false,
+    "rule": "All card counts and statuses use finite unrounded MnSq. Display values and their counterfactual labels are explanatory evidence only."
+  },
+  "card_contract": {
+    "ordered_cards": [
+      "input_and_design",
+      "finite_mle_existence",
+      "structural_calibration",
+      "person_scoring",
+      "person_fit_and_rounding",
+      "uncertainty_and_scope"
+    ],
+    "required_fields": [
+      "Order",
+      "Card",
+      "Status",
+      "HeadlineEn",
+      "HeadlineJa",
+      "DetailEn",
+      "DetailJa",
+      "NextActionEn",
+      "NextActionJa",
+      "EvidenceCode"
+    ],
+    "uncertainty": "The final card is always withheld in v1 because WLE SE treats fitted CMLE calibration as fixed and ZSTD, p-values, interval coverage, and total SE are not qualified.",
+    "anchors": "Show supplied anchored main-effect levels separately from free coordinates and warn that exact enforcement cannot validate anchor content.",
+    "extremes": "Show exact-extreme Person counts as caution, not as unavailable WLE, because Warm WLE is the explicit finite correction in this lane.",
+    "public_surface": "withheld"
+  },
+  "success_gates": {
+    "identity": "Every parent SHA-256 matches before a run.",
+    "status_accounting": "Five analytical cases are retained: two ready-with-cautions and one each input-invalid, design-not-identified, and finite-MLE-boundary.",
+    "no_forbidden_scoring": "Person scoring is attempted exactly twice and never after a blocked calibration workflow.",
+    "handoff_identity": "For both ready cases, WLE estimate, conditional WLE SE, Infit, and Outfit reproduce a direct call on the same fitted calibration within 1e-12 and Person identities match exactly.",
+    "anchors": "The ready PCM case reports both supplied anchors exactly with SE zero, anchored count two, and a persistent anchor-validity warning.",
+    "cards": "Every case returns the same six ordered bilingual cards and one summary row, including blocked/not-run downstream states.",
+    "rounding": "The presentation probe records one raw/display mismatch; the raw noisy class drives the card and is never replaced by the displayed acceptable class.",
+    "scope": "Calibration uncertainty, ZSTD, p-values, confidence intervals, total SE, new-Person scoring, automatic estimator fallback, and public Streamlit exposure remain withheld.",
+    "tests": "New one-click contract tests and the selected CMLE workflow/scoring/fit/anchor suites pass."
+  },
+  "interpretation_limits": {
+    "one_click": "One function call is an orchestration contract, not usability or comprehension evidence.",
+    "fit": "MnSq zones are descriptive threshold rules and do not establish model truth.",
+    "rounding": "Absence of a three-decimal mismatch in a finite fixture is not a general precision guarantee.",
+    "anchors": "Exact anchors can transmit bias and do not establish a common scale.",
+    "generalization": "The evidence does not cover high-dimensional sparse PCM, step/group anchors, GPCM, unseen Persons/units, independent calibration, or a clean released mfrmr comparison.",
+    "public_ui": "withheld"
+  }
+}

@@ -41,7 +41,16 @@ def frame_contains_public_identifier_risk(df: pd.DataFrame) -> bool:
     if not isinstance(df, pd.DataFrame) or df.empty:
         return False
     identifier_cols = {"person", "student", "learner", "examinee", "candidate", "subject"}
-    if any(str(col).strip().lower() in identifier_cols for col in df.columns):
+    explicit_identifier_cols = {
+        "persona", "personb", "sourceperson", "targetperson", "witnessperson"
+    }
+    normalized_columns = {
+        str(col).strip().replace("_", "").lower() for col in df.columns
+    }
+    if (
+        any(str(col).strip().lower() in identifier_cols for col in df.columns)
+        or bool(normalized_columns & explicit_identifier_cols)
+    ):
         return True
     facet_cols = {
         "facet1", "facet2", "sourcefacet", "targetfacet",
@@ -124,4 +133,3 @@ def prepare_download_frames_for_privacy(
     })
     prepared["export_privacy_manifest"] = pd.DataFrame(manifest_rows)
     return dict(prepared)
-

@@ -1,0 +1,23 @@
+{
+  "schema_version": "known_assignment_multivector_r_verification_registration_v1",
+  "status": "registered_after_python_endpoint_read_before_r_execution",
+  "registered_date": "2026-08-11",
+  "plan": "validation/known_assignment_multivector_r_verification_plan_20260811.json",
+  "plan_sha256": "0372b62544b621bd89134107ab2b733b5f80e236e7a43d63fceff369a1e335fe",
+  "runner": "validation/known_assignment_multivector_verify.R",
+  "runner_sha256": "086115c0edb86374591d3dcab52b751a765306999e1459da1456421c0381f919",
+  "r_executable": "C:/Program Files/R/R-4.5.1/bin/Rscript.exe",
+  "input_sha256": {
+    "recovery.csv": "8aa20380225422a8536d3838fac3e99aa0fb380711fab8c331d347ea545ce014",
+    "run_ledger.csv": "537ccc28ff0032100fe074e1af8cd47390c0bc716d43b510835d7533f4fdaa39",
+    "registered_preflight_diagnostics.csv": "e58e70785f4d834ed0ab97d33772a761f6dd1abce7c48ce4991af4b8db2cf4e7",
+    "registered_preflight_summary.csv": "5b87827de6e34d37726b7d44e86a175ac774ecdf91f9ff862bde3829838ed9a4"
+  },
+  "r_execution_before_registration": false,
+  "selection_after_python_result": false,
+  "diagnostics_required": ["PF1", "PF2", "PF3", "PF4"],
+  "vector_level_values_required": 16,
+  "tolerance": 1e-12,
+  "p_values_allowed": false,
+  "claim_boundary": "Transparent post-endpoint implementation verification, not independent confirmation."
+}

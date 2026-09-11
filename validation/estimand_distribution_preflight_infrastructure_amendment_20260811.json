@@ -1,0 +1,20 @@
+{
+  "schema_version": "mfrm-estimand-distribution-preflight-infrastructure-amendment-v1",
+  "registered_date": "2026-08-11",
+  "parent_plan": "estimand_distribution_screening_plan_20260811.json",
+  "trigger": "The first two parallel workers completed their first statistical fits but Windows/Dropbox rejected directory-level os.replace finalization with WinError 5/32.",
+  "result_inspection_at_amendment": "Only process warnings, exception class, paths, and finalization failure were inspected. No parameter estimate, recovery metric, likelihood, fit statistic, or estimator contrast from the two unadopted attempts was inspected or used.",
+  "unadopted_directory": "estimand_distribution_preflight_20260811",
+  "change": {
+    "before": "Build an attempt in a sibling _inflight directory and rename the complete directory into attempts/.",
+    "after": "Create a unique retained work generation inside the final attempt directory, copy the four declared tabular artifacts to stable top-level names, then atomically replace only the small completion marker file last.",
+    "incomplete_resume": "A final attempt directory without a valid completion marker is not counted. A new work generation may retry it without deleting prior diagnostic material.",
+    "provenance_hardening": "The execution script and this amendment hashes are added to the study identity, attempt fingerprint, and completion marker."
+  },
+  "unchanged": [
+    "Data-generating distributions, parameters, seeds, pairing, and missingness masks.",
+    "All estimators, quadrature, convergence controls, constraints, and FACETS precision contract.",
+    "Attempt denominator, preflight gates, screening outputs, claim limits, and escalation rule."
+  ],
+  "restart_rule": "Do not resume or aggregate the unadopted first directory. Prepare a new v2 preflight from the unchanged registered plan and seeds after the infrastructure patch."
+}

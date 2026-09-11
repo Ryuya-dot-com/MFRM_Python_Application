@@ -4,6 +4,612 @@ All notable changes to this standalone Streamlit distribution should be recorded
 
 ## Unreleased
 
+- **Known probabilistic assignment validation (repository-only).** Added a
+  fixed-margin exponential Person-Rater assignment family, a 90-state exact
+  oracle, score-free equal-context row materialization, finite-chain
+  diagnostics, and a four-Rater exact dynamic-programming sampler. Two
+  prospectively gated 80×4 MCMC settings were retained as failures because
+  Statistic ESS was below 300; exact-DP qualification passed and selected
+  `|gamma|=0.8` without responses. A separately frozen 10-replicate PCM
+  screening completed 120/120 attempts, including 30/30 FACETS 4.5/Python JMLE
+  calibration pairs. Only fixed/free normal-person MML Rater RMSE/MAE showed
+  non-zero screening intervals under both assignment directions; this remains
+  fixed-Person exploratory evidence, not a robustness or estimator-ranking
+  claim. Base R 4.5.1 independently reconstructed the Rater RMSE contrasts.
+  FACETS rounded fit display values were not used as raw recovery inputs.
+  A separately frozen dense-margin exact-DP implementation then matched the
+  90-state oracle and the retained recursive 80-by-4 partition functions
+  (`2.84e-14` maximum difference).  Its largest partition build was 0.202 s,
+  about 466 times faster than the retained same-machine +0.8 recursive
+  diagnostic, while preserving an explicit 6,000,000-cell fail-closed cap.
+  This qualifies only an execution route; a fresh multi-Person-vector
+  preflight remains required before confirmatory endpoint registration.
+  That four-vector preflight subsequently prepared 12 exact-assignment
+  datasets and completed 48/48 attempt units with all Python JMLE, fixed/free
+  MML, and exact-CMLE evidence ready.  The initial FACETS lane failed because
+  it used a hidden Windows launch state: direct CMD `BATCH=YES`, Python
+  `BATCH=YES`, and even `BATCH=NO` with a hidden `STARTUPINFO` window all
+  reproduced `0xC0000005`, while visible `BATCH=NO` completed normally.  A new
+  output-gated visible launcher waits for a nonempty stable report and all
+  expected Scorefiles, then posts `WM_CLOSE`; its official and historical
+  controls passed without forced termination.  A second operational defect
+  was then isolated: the supplemental auxiliary Scorefile reached the legacy
+  260-character Windows boundary and stalled after Table 5.  The shared helper
+  now fails before launch above a qualified 220-character budget, and the clean
+  short-path supplement passed 12/12 calibration pairs with zero retries.
+  Worst direct differences were 0.012604 logits for main effects and 0.009033
+  for PCM thresholds; minimum within-facet Spearman was 1.0.  A non-destructive
+  evidence join preserved every original failure and marker, replayed original
+  versus supplemental Python JMLE within `4.44e-16`, and created a separate
+  preflight aggregate.  All four registered n=4 sign-stability diagnostics met
+  their advancement directions; R 4.5.1 rebuilt all 16 vector values and four
+  summaries within `1.67e-16`.  The result remains nonconfirmatory and does not
+  rank estimators.  FACETS' ordinary two-decimal fit display was never treated
+  as unrounded input.  Earlier dump evidence is retained as diagnosis of the
+  hidden-window crash path, not evidence that interactive FACETS 4.5.0 is
+  generally unusable.
+
+- **Native exact-CMLE hard facet anchors.** Added prospectively specified
+  affine hard-anchor coordinates to the repository-only RSM/PCM conditional
+  likelihood and propagated fixed row/category offsets through structural
+  surfaces, fit-sample WLE, Person MnSq, bootstrap generation/refits, and
+  calibration-draw sensitivity. Invalid/duplicate/unknown/non-finite, Person,
+  and Step anchors fail closed; anchored estimates are exact with SE zero and
+  remaining free-coordinate rank is re-audited. Forty-six selected CMLE/WLE
+  tests pass. The retained 24,000-response Phase-B smoke completed 32/32
+  inference-ready same-byte fits and passed anchor, dimension, persistence,
+  and raw-fit gates. A transparently post-result diagnostic confirmed that a
+  common +0.25 Rater-anchor shift moves WLE by +0.25 but cancels from the
+  conditional likelihood and Person fit (maximum log-likelihood difference
+  `1.82e-12`; zero raw flag mismatches). This is an explicit warning, not an
+  anchor-robustness claim. Added a separately registered 320-fit differential-
+  anchor stress over 120,000 retained response rows. All fits were inference-
+  ready, but correct nested anchor sets did not improve WLE recovery
+  monotonically; anchor share remained confounded with anchor content. A zero-
+  mean differential error changed 2.4%--15.8% of paired raw either-upper fit
+  decisions by condition/group and moved individual WLEs by up to `0.287525`
+  logits. Three-decimal display-driven decisions disagreed with raw MnSq
+  decisions 12 times across 64,000 Person-scenario rows; six decimals had zero
+  disagreements in this dataset, without becoming a universal precision
+  guarantee. Added a prospective randomized-anchor connectivity stress with 70
+  unique datasets and 350 exact prefit audits. The realized informative-Person
+  graph rule matched exact eligibility in all 350 cases; two random anchors
+  covered a two-component design in 7/10 assignments, while partial anchors
+  never identified the fully disconnected design. Of 287 prefit-eligible
+  cases, 286 returned and 274 were inference-ready. Every shortfall occurred
+  in the one-Person-per-edge minimal chain, including one non-finite
+  conditional-normalizer trial and 12 final-information rank failures. The
+  remaining 200 weak/strong chain/hub fits were inference-ready. Thirteen of
+  82,200 Person decisions disagreed when 3-decimal display MnSq replaced raw
+  values; six decimals disagreed zero times in this dataset. Added a
+  prospectively registered finite-domain optimizer adapter that records and
+  rejects non-finite BFGS trials while retaining the exact public objective and
+  all readiness gates. Same-byte returnability rose from 286/287 to 287/287;
+  readiness remained 274/287. The target recorded 12 invalid trials and
+  returned at rank 8/10, nullity 2, with inference withheld. All baseline
+  readiness states and 82,200 shared Person flags were unchanged; maximum
+  structural and loglikelihood differences were `3.55e-15` and `2.27e-13`.
+  Added focused invalid-trial and best-finite-fallback tests; 65 selected tests
+  pass. Conditional separation/finite-MLE diagnosis, drift distributions,
+  cross-engine replay, group anchors, and public UI remain withheld.
+
+- **Finite-CMLE existence and scalable support oracle.** Added a separately
+  prospective convex-support boundary audit that keeps structural rank,
+  finite-maximizer existence, optimization, fit, and anchor validity as
+  distinct gates. The initial exhaustive implementation matched all 93
+  registered binary, multi-Rater, RSM, PCM, unused-category, and anchor
+  controls; its deliberately low retained-replay cap classified 63 structural,
+  13 boundary, and 47 interior cases while retaining 227 as unavailable. A
+  second prospective implementation now uses an exact fixed-score dynamic-
+  programming support oracle with fail-closed LP constraint generation. It
+  matched 1,184/1,184 exhaustive support maxima, 93/93 fixture statuses,
+  123/123 completed retained exhaustive statuses, and 6/6 high-cap sentinels.
+  The same-byte 350-case replay resolved 63 structural, 13 boundary, and 274
+  interior cases with zero unavailable/tolerance-unstable results and zero
+  boundary-direction trace failures. All 274 current inference-ready cases
+  were interior. Median theoretical configurations were 97,040 versus 163
+  generated cuts; the eligible-case P95/max were 0.521/0.568 seconds and the
+  350-case total was 109.216 seconds under the registered 120-second gate.
+  A third prospective integration now enables the oracle by default in the
+  repository-only `fit_cmle` readiness path. All 287 eligible same-byte fits
+  returned; 274 interior cases remained ready and 13 boundary cases were
+  non-ready with a typed reason. Oracle status/readiness matched 287/287,
+  82,200 Person rows retained every raw/rounded flag, and numerical differences
+  were at most `2.27e-13`. The selected integration suite passes 102/102 tests.
+  Structured pre-optimizer boundary stopping, matched R boundary behavior, and
+  public one-click UX remain withheld.
+
+- **Structured pre-optimization CMLE workflow.** Added a prospectively frozen,
+  Streamlit-free bilingual orchestration layer with stable terminal states and
+  four ordered stages for input/design, finite-MLE existence, structural
+  optimization, and downstream Person-scoring availability. All 93 registered
+  fixture states and all 350 retained states matched. The workflow stopped 63
+  structurally unidentified and 13 boundary cases before optimization and
+  optimized only 274 interior cases; forbidden early-stop optimizer calls were
+  zero. Ready structural estimates/SE differed from the direct integrated path
+  by at most `4.44e-16`, conditional log likelihood by `2.27e-13`, and anchor-
+  exact mismatches were zero. P95 times were 0.068/0.306/1.084 seconds for
+  design-block/boundary/ready states. The v1 workflow does not perform Person
+  scoring, and machine-checked bilingual text is not a comprehension study.
+  Cross-engine boundary replay and public UI remain withheld.
+
+- **Cross-engine finite-CMLE boundary semantics.** Added a prospectively
+  registered 13-case additive-RSM replay with five oracle-interior, seven
+  oracle-boundary, and one structurally unidentified control. Matched native
+  Python/`immer::immer_cml()` interior free coordinates agreed within
+  `1.78e-9`, and conditional log likelihoods within `5.33e-15`. On boundary
+  controls at `maxit=2000`, `immer` nevertheless returned optimizer code zero
+  in 3/7 and finite coefficient/SE vectors in 4/7; the exact support-oracle
+  gate kept readiness at 0/7. A content-frozen dirty mfrmr 0.2.3 JML snapshot
+  returned and labelled all 7/7 boundary fits converged, with category-support
+  warnings and maximum absolute estimates up to `103.75`. TAM and sirt MML
+  outcomes are retained as estimator-mismatched sensitivity ledgers only;
+  sirt runs are isolated by case so a native-code failure cannot erase other
+  engine evidence. Full-precision gradient classifications at `1e-4` through
+  `1e-8`, maxit sensitivity, typed support failures, package/function hashes,
+  and child-process logs are retained. PCM and hard-anchor mapping is handled
+  in the separately registered study below; comprehension testing and public
+  UI remain withheld.
+
+- **PCM hard-anchor cross-engine mapping.** Added a prospectively registered
+  12-case PCM study covering unanchored, Rater-anchor, Criterion-anchor,
+  contaminated-anchor, differential-anchor, separation, and unused-declared-
+  category conditions. For six exact-support-oracle interior cases, native
+  Python CMLE and matched `immer::immer_cml()` `W`/`b_const` coordinates agreed
+  within `2.45e-9`; conditional log likelihood agreed within `3.55e-14`, and
+  zero-point objective/gradient agreement was within `4.27e-14`. All six
+  boundary cases remained non-ready at three retained iteration caps. Exact
+  Python hard anchors returned their supplied values with SE zero, but this is
+  an implementation check rather than evidence that the anchors are unbiased.
+  mfrmr 0.2.3 JML and TAM/sirt MML remain explicitly different-estimand
+  sensitivity lanes; TAM/sirt anchor cases are typed unsupported. The first
+  replay exposed path-dependent R source attributes in the function identity;
+  a result-transparent remediation removed source references. A second failed
+  replay then exposed a registered per-function versus final-vector hash
+  mismatch; a frozen amendment corrected only that aggregation bookkeeping,
+  and the exact replay passed all gates plus 91 selected tests. High-dimensional
+  sparse PCM, clean released mfrmr 0.2.3 reproduction, step/group anchors,
+  and public UI remain withheld. Downstream scoring/rounding cards are handled
+  by the separate repository-only contract below; comprehension testing still
+  remains open.
+
+- **Repository-only one-click CMLE result contract.** Added a guarded single-
+  call orchestration layer that returns six stable bilingual cards for input
+  and design, finite-MLE existence, structural calibration, fixed-calibration
+  Person scoring, Person fit/rounding, and uncertainty/scope. Five registered
+  analytical states returned the same 30-card schema: two ready calibrations
+  alone reached WLE/MnSq, while input-invalid, structurally unidentified, and
+  finite-support-boundary cases made zero downstream attempts. Fourteen ready
+  Person handoffs reproduced direct WLE estimates, conditional SEs, Infit, and
+  Outfit with maximum absolute difference zero. The anchored PCM case retained
+  two supplied main-effect anchors exactly with SE zero and a persistent
+  validity warning. A registered `1.5004` raw Infit stayed `noisy` although
+  three-decimal display yielded `1.500` and the counterfactual `acceptable`
+  label. All card decisions use unrounded values. The final uncertainty card,
+  ZSTD/p-values/intervals/total SE, new-Person scoring, automatic fallback,
+  task-comprehension claims, and Streamlit exposure remain withheld; 35
+  selected tests pass.
+
+- **Deterministic private CMLE result archives.** Added a current-schema,
+  Streamlit-free private reproduction ZIP for one-click CMLE results. Ordered
+  input, semantic row-order input, canonical settings, result tables, archive
+  content, and deterministic ZIP transport receive distinct SHA-256
+  identities. Sorted entries use fixed timestamps, permissions, and compression;
+  elapsed timing is excluded from result identity, while numeric CSV uses 17
+  significant digits. Three registered ready/anchored/boundary archives were
+  byte-identical across repeated construction and passed 21/21 exact replay
+  checks. All 56 retained WLE/SE/Infit/Outfit values reloaded with identical
+  binary64 hex values. A row permutation preserved semantic input identity but
+  changed ordered identity and AnalysisID; reversing anchor-row order preserved
+  normalized anchor bytes and AnalysisID. Changed, deleted, undeclared, and
+  duplicate ZIP entries were rejected before loading. Public construction
+  fails closed because the archive contains raw rows and Person/facet IDs;
+  encryption, de-identification, public disclosure, cross-version migration,
+  cross-platform bitwise identity, and Streamlit upload/download remain
+  unqualified. Ninety-five selected tests pass.
+
+- **Non-public bilingual CMLE comprehension instrument readiness.** Added
+  standalone escaped English/Japanese six-card HTML previews for five retained
+  analytical states, a 100-row participant packet without answer fields, and
+  a separately retained 100-row researcher key. Six critical misconception
+  domains are non-compensatory, including raw `1.5004` versus displayed
+  `1.500` MnSq classification, false-green calibration, conditional-SE scope,
+  anchor validity, invented Person scores, and private/public sharing. Thirty
+  synthetic packets confirmed that perfect responses pass, all-wrong and
+  single false-green responses fail, and duplicate, missing, unknown-option,
+  or invalid-time packets are retained as invalid. All automated instrument-
+  readiness gates and 40 selected tests pass. No human responses were
+  collected; comprehension, language equivalence, real-browser/assistive-
+  technology accessibility, and public Streamlit exposure remain unqualified.
+
+- **Private CMLE cognitive-interview operations kit.** Added a deterministic
+  English/Japanese complete-pair schedule with 10 planned slots per language.
+  Each of five analytical states appears four times per language, twice in
+  each presentation position and twice in each novice/experienced target
+  stratum. Generated 20 answer-free participant packet files (400 assigned
+  tasks), a separate 100-row private moderator guide requiring response lock
+  before probing, and a 400-row blank record template. Exact-column and value
+  validation rejects direct/contact identifier fields, assignment drift,
+  missing/duplicate items, unknown response/issue codes, inconsistent issue
+  severity, unreviewed notes, premature probes, and invalid timing/confidence.
+  Fourteen synthetic validator cases and 47 selected tests pass. This is not
+  ethics approval or recruitment authorization; no human data were collected
+  and the public surface remains disabled.
+
+- **Versioned directional CMLE confirmatory-gate mechanics.** Added a composite
+  frozen-instrument identity over participant task bytes, private key bytes,
+  ten preview hashes, and directional dangerous-error rules; content aliases,
+  post-response freezes, and permission to pool differing content fail closed.
+  Distinguished any critical-item error from a registered unsafe response
+  direction: `display_acceptable` is dangerous for raw `1.5004`, while
+  `cannot_decide` remains incorrect but non-dangerous. Added a two-case-per-slot
+  template contributing at most one primary observation per danger domain,
+  per-language/item one-sided 95% Wilson gates, raw strict `< 0.10` decisions,
+  and a 12-cell Bonferroni sensitivity. Zero-error bounds are `0.101310` at
+  `n=24` and `0.097654` at `n=25`; the latter is not a sample-size
+  recommendation and its familywise sensitivity remains `0.217782`. Ten
+  synthetic gate scenarios and 55 selected tests pass. Human participants, a
+  registered confirmatory minimum n, language equivalence, and public UI remain
+  unavailable.
+
+- **No-human-data confirmatory sample-size sensitivity.** Added exact binomial
+  pass-probability surfaces over the frozen directional Wilson gate, with a
+  prospective amendment requiring both first crossing and sustained-through-
+  search reporting after preliminary arithmetic exposed discrete sawtooth
+  behavior. At true dangerous-error probability `0.05`, a single cell first
+  reaches 90% at `n=224` and remains there through `n=5000` from `n=260`; the
+  conservative 12-cell union-bound counterparts are `n=422` and `n=456`.
+  Added independent homogeneous-retention assurance, cluster design-effect
+  heuristics, and blocked-mechanism exposure sensitivities plus two visually
+  inspected figures. Sixty-three selected tests and all registered arithmetic
+  audits pass. No confirmatory n was selected, no participants were recruited,
+  and clustered inference, language equivalence, and public UI remain withheld.
+
+- **Synthetic confirmatory dependence and MNAR stress.** Added a prospectively
+  registered Gaussian-threshold generator that preserves cell marginal truth
+  while varying participant latent dependence, moderator/site-like clusters,
+  domain and blocked-mechanism heterogeneity, and outcome-dependent validity.
+  Across eight scenarios, four planned-slot values, and 2,000 replicates per
+  condition, 64,000 synthetic joint-gate replicates passed identity, marginal,
+  exact-binomial, retention, logic, mechanism-allocation, precision, and
+  determinism audits plus 75 selected tests. At n=500, dangerous-outcome
+  under-retention changed complete-data truth near 0.10 to an observed rate of
+  `0.060315` and a `0.4035` false-reassuring all-12 pass rate; a blocked-
+  mechanism hotspot gave `0.4955`, and the combined adversarial condition
+  `0.9675`. A floating-point endpoint guard now prevents a theoretical zero
+  Monte Carlo Wilson lower bound from becoming a tiny positive value through
+  cancellation. Results are constructed stress evidence, not human behavior,
+  language equivalence, a selected sample size, or permission to expose UI.
+
+- **Fail-closed private confirmatory protocol preflight.** Added an 18-row
+  decision register with five frozen parent decisions and 13 unresolved
+  scientific/external-authority blockers; a no-silent-drop, zero-row exact-
+  schema denominator ledger; a 15-code invalidity vocabulary; an external
+  ethics/governance evidence template bound to protocol content SHA-256; and a
+  72-row all-invalid-safe/all-invalid-dangerous partial-identification surface.
+  For valid n=500 and observed 5% danger errors, worst-case robustness remains
+  at the registered invalid/valid ratio 0.025 but fails at 0.05, where the raw
+  Wilson upper bound is `0.118434`. Added a deterministic nine-member private
+  ZIP with fixed metadata, internal hashes, bilingual blocked first read, and
+  tamper rejection. Eight synthetic ledger attacks and 91 selected tests pass.
+  Contract passage means fail-closed software behavior only: ethics approval,
+  recruitment authority, selected n, human data, confirmatory results, and
+  public Streamlit exposure remain false/absent.
+
+- **Private non-recommending protocol decision workbench.** Expanded the 13
+  unresolved blockers into 39 explicitly non-ranked, non-default, non-
+  recommended options with strengths, risks, required evidence, and qualitative
+  impacts. Added a 32-edge acyclic dependency graph and an implementation-
+  preceding amendment clarifying that broad display stages never permit
+  prerequisite skipping. Numeric sample-size decision SCI-02 is guarded by
+  seven scientific prerequisites. Added a blank 13-row selection template and
+  validators for hidden/unknown/cross-decision options, premature child
+  resolution, absent numeric assumptions, repository-generated external
+  evidence, and outcome-informed decisions. A fully populated synthetic sheet
+  may be selection-complete but never makes evidence verified or recruitment
+  ready. Added self-contained bilingual read-only HTML and a deterministic
+  seven-member private ZIP with tamper rejection. All gates and 105 selected
+  tests pass; options selected, n selected, human data, recruitment readiness,
+  and public UI remain zero/false.
+
+- **Private SCI-01 estimand comparison memo.** Added a prospectively registered,
+  non-recommending comparison of the observed-valid, scheduled-slot composite,
+  and dual-with-bounds alternatives. The same 72 exact integer-count scenarios
+  are projected into 216 rows using raw strict `< 0.10` decisions; 36 scenarios
+  show an observed-valid pass together with an all-invalid-dangerous proxy fail
+  and a non-robust dual result. The audit also identifies that the frozen
+  surface has neither the complete scheduled-slot denominator nor the
+  prospective invalidity-code map needed to calculate Option B. Its displayed
+  value is therefore typed as a diagnostic proxy, never as the final
+  scheduled-slot estimand. Added 36 unquantified downstream-impact rows, a
+  fail-closed external-owner selection template, a bilingual read-only HTML,
+  a deterministic seven-member private ZIP, a same-data figure, and tamper
+  checks. All gates and 118 selected tests pass. SCI-01 remains unselected;
+  evidence verification, sample size, recruitment, human data, and public UI
+  remain false/absent.
+
+- **Private SCI-01/SCI-05 invalidity adjudication.** Preserved the 15-code
+  vocabulary while fixing only `none` and leaving 14 codes externally
+  unresolved. Added mechanism families, owner-review responsibilities, five
+  unranked disposition dimensions, and guards against automatic danger
+  classification, withdrawal without ethics authority, dangerous duplicate
+  records, silent accessibility pooling, unregistered-reason resolution, and
+  post-outcome adjudication. A registered 72-by-5 diagnostic surface produces
+  360 raw-decision rows; 36 scenarios cross the strict 0.10 gate as the
+  fraction of invalid records treated as composite events changes. Added a
+  read-only bilingual workbench, figure, deterministic eight-member private
+  ZIP, and tamper validation. All gates and 128 selected tests pass; resolved
+  codes remain zero and recruitment/public UI remain blocked.
+
+- **Repeated-simulation operating-characteristics scaffold.** Added a
+  Streamlit-free deterministic manifest and aggregation contract that preserves
+  attempted, failed, unavailable, and eligible denominators; separates power
+  from false-positive rate; and reports Wilson intervals, Monte Carlo SE,
+  recovery, SE availability, conditional-Wald coverage, and raw/display
+  conclusion sensitivity. Added paired null/alternative, sparse/missing, and
+  correct/contaminated-anchor Python JMLE smoke conditions, retained tables and
+  figures, a UI-ready first-read summary, and an ADEMP-style protocol for the
+  subsequent Python CMLE and mfrmr/TAM/immer/sirt adapters. The smoke evidence and
+  public application surface remain explicitly pilot-only/withheld.
+  The runner also retains exact generated ratings, truth, and anchors through
+  atomic staging with per-run identities and byte-level SHA-256 hashes. A new R
+  bridge validates/imports the identical rows, invalidates stale bridge output
+  after Python regeneration, and records package versions, source identity,
+  and primary-function hashes before any R fit adapter is permitted to run.
+  Added the first mfrmr 0.2.3 JMLE fit adapter with separately retained
+  Python-control and strict-gradient modes, hard-anchor equality checks,
+  pre-fit rank failures, focal bias decisions, parameter recovery, and
+  code/bundle provenance. The paired smoke comparison exposes optimizer-code
+  versus inference-readiness differences, near numerical agreement among 108
+  jointly included facet estimates, complete focal strong-decision agreement,
+  and mfrmr's pre-optimization rejection of four rank-deficient sparse designs.
+  Added a separate matched unanchored native-Python-CMLE/`immer_cml` adapter.
+  It uses the same validated rating bytes, an explicit zero-weight declared-
+  support sentinel for immer, independently reproduced Python/R conditional-
+  information preflights with 16/16 rank/nullity agreement,
+  and source/function/script identities. All 12 structurally eligible RunIds
+  returned; 96 free coordinates and their SEs agreed within 0.0000000563 and
+  0.00000000641 logits respectively, and conditional log likelihoods agreed
+  within 0.00000000000477. Readiness remains threshold-sensitive despite every
+  immer optimizer code being zero: 12/12 pass at `1e-4`, 7/12 at the primary
+  `1e-5`, and 0/12 at `1e-6`. Sparse rank failures and unsupported anchor/local-
+  bias scopes remain explicit. A paired null/+0.60 leakage table shows how the
+  omitted local interaction perturbs additive CMLE coordinates without
+  relabelling that sensitivity as bias detection. No public CMLE option or
+  performance claim was enabled.
+  Added a separate `sirt::rm.facets()` MML sensitivity adapter with exact input
+  and source identities, Task x Criterion virtual PCM items, hard-Rater-anchor
+  checks, 30/61-point quadrature modes, convergence/tail-mass/uncertainty
+  gates, and Python normalization. All 32 fits returned and 30 were eligible;
+  the retained sparse cap failures are visibly excluded rather than converted
+  to negative evidence. Raw and mean-centered item-location sensitivity are
+  reported separately, as are Person EAP and population-distribution changes.
+  The paired contaminated-anchor condition shows near-exact transmission of
+  the injected +0.25 shift. Sparse sirt readiness is explicitly described as
+  assumption-based MML identification through a common Person distribution,
+  not observed connectivity or JMLE/CMLE parity. sirt 4.2-133 information
+  criteria and fixed-anchor SE interpretations are withheld. No public sirt
+  runtime or estimator-ranking claim was added. An ordered first-read CSV
+  provides a future one-click UI projection while keeping every public-surface
+  flag false and the final status `Withheld`.
+  Added a separate `TAM::tam.mml.mfr()` MML sensitivity adapter using the
+  registered additive Criterion-item + Rater + Task + common-step RSM surface.
+  It retains 21/61-point grids, hard-anchor preflights, loop and parsed terminal-
+  progress convergence evidence, posterior endpoint mass, free-xi uncertainty,
+  generalized response surfaces, Person EAPs, and TAM/progress-function hashes.
+  All 32 fits returned; 30 were eligible. Two q21 sparse fits stored variance as
+  `0.0010000001` at the configured `0.001` lower bound and are excluded by a
+  `1e-8` numerical band, exposing a decision that naive exact comparison would
+  miss. The comparison separates Python-JMLE/TAM-MML Person treatment, TAM/sirt
+  item-threshold and constraint mechanics, and all-returned versus eligible
+  quadrature scopes. Contaminated fixed anchors shift +0.25 while unanchored
+  Raters compensate by about -0.25 under TAM's sum-zero constraint. Derived
+  last-level SE coverage and cross-estimator IC comparison are withheld. Three
+  figures and an ordered disabled first-read projection were added; no public
+  TAM runtime or cross-engine performance claim was enabled.
+  Added a prospective machine-readable precision/stopping plan, exact
+  seed-preserving manifest-extension audit, code/plan identities, and a
+  separately retained 20-replicate Python pilot. The pilot completed 160/160
+  returned fits in 82.1 recorded fit-seconds, with 156 optimizer convergence
+  flags and 124 registered app-eligible focal decisions. It blocks further
+  expansion: all 160 reconstructed terminal-gradient sup norms exceeded the
+  post-pilot `1e-4` sensitivity, and both sparse conditions produced only 4/20
+  eligible decisions, implying 6,200 attempts under the registered Wilson-
+  lower-bound rule and therefore exceeding the 2,500 cap. Row-level auditing
+  retained 39,680 fit-statistic evaluations, 14 display-boundary rows, and five
+  raw/display label disagreements. Paired anchor contamination shifted fixed
+  Raters exactly +0.25 on average. Four review figures and an ordered disabled
+  first-read assessment were added. The frozen v1 continuous-outcome planning
+  conflict is documented rather than silently repaired; strict Python JMLE
+  qualification and sparse design/estimand revision remain required before a
+  confirmatory manifest or public surface.
+  Added prospective Stage A/A2/B2 strict-JMLE follow-ups without rewriting the
+  frozen pilot: the original 16-run baseline confirmed correct analytical
+  gradients but failed the raw terminal-gradient gate; the predeclared
+  L-BFGS-B precision candidate passed all 16 smoke runs and then all 160 frozen
+  numerical gates at `1e-4` (126 at `1e-5`, 43 at `1e-6`). A separate movement
+  audit exposed flat-direction changes up to 57.02 logits. Exact free-coordinate
+  eta-rank auditing then showed structural nullity 7 and eight Person-Rater
+  components in all 40 sparse runs, with null-space energy concentrated in
+  Person and Rater coordinates. Added a pre-optimizer JMLE guard that reports
+  rank/nullity/connectivity, separates optimizer convergence from inference
+  readiness, withholds conditional bias for rank-deficient fits, and exports
+  the audit. Its bridge check matched all 160 retained RunIds. Optimizer
+  controls and estimates remain unchanged, no automatic JMLE-to-MML switch was
+  introduced, and the eta-only audit does not authorize a public performance
+  claim or qualify threshold/slope identification.
+  Added a separately registered JMLE Person score-boundary guard. It classifies
+  all-minimum/all-maximum Persons from exact retained integer scores rather
+  than terminal-estimate magnitude or display rounding; retains the existing
+  optimizer/constraint value as technical `Estimate`; withholds
+  `ReportableEstimate`; and adds finite-MLE, direction, Person-readiness, and
+  value-role fields to results, diagnostics, bilingual UI warnings, quick/full
+  bundles, demo exports, and APA tables. The frozen integration check matched
+  8,320/8,320 Person rows. Among 120 structurally identified runs, four extreme
+  Persons accounted for every >=1-logit movement, while maximum non-theta
+  movement was 0.000293 logits. The 53 extreme rows in sparse runs remain
+  additionally blocked by structural nonidentification. No estimates,
+  optimizer controls, finite extreme-score correction, estimator switch, or
+  precision-polish core path changed.
+  Added a separately registered fixed-calibration Warm WLE research core with
+  stable generic category logits, positive row weights, Person-specific
+  missingness, analytical score/information/information-derivative moments,
+  bracketed Brent roots, exact-extreme handling, and explicit no-root states.
+  Python theta and conditional-information SEs matched `TAM::tam.mml.wle2` in
+  16/16 frozen RSM/PCM/GPCM Person fixtures within `1.68e-11` and `1.18e-11`.
+  The original unreproducible TAM function hash remains visible; a pre-result
+  amendment records two reproducible source identities without changing any
+  numerical gate. A downstream replay held polished facets and steps fixed for
+  120 rank-full runs and 7,600 Persons while withholding all 40 structurally
+  deficient sparse runs. Exact-extreme Person shifts reached 25.19 logits;
+  51 Person-fit-zone decisions changed, and `.3g` display rounding disagreed
+  with 54 raw fit decisions across the JMLE/WLE surfaces. Holm and combined
+  strong focal-bias decisions were stable, but one practical `|bias| >= 0.50`
+  decision moved from 0.500839 to 0.498068. Retained tables and two reviewed
+  figures expose these differences. No Streamlit WLE option, automatic JMLE
+  correction/fallback, or public parity claim was enabled.
+  Added a repository-only exact-CMLE-to-WLE fit-sample bridge with an explicit
+  combined-estimator label and fail-closed calibration/parameter-identity
+  checks. Frozen RSM/PCM evidence covered 14 Persons including two exact
+  extremes: bridge/direct WLE theta and SE differences and reconstructed
+  CMLE category-surface differences were all zero, with maximum adjusted-score
+  residual `6.18e-16`. Coefficient order was invariant and missing identity was
+  rejected. WLE uncertainty remains conditional on fixed fitted CMLE
+  calibration; new-Person scoring and UI integration remain withheld.
+  Added a prospectively frozen asymptotic exact-CMLE calibration-sensitivity
+  diagnostic for the WLE bridge. RSM and PCM each used 2,000 seeded
+  free-coordinate covariance draws; all 32,000 draw-Person scores returned,
+  exact extremes remained finite, and covariance scaling produced the required
+  monotone response. Model-median calibration-draw SD was `0.0616`--`0.0801`
+  logits, the maximum was `0.518`, and the largest ratio to conditional WLE SE
+  was `0.427`. Material covariance non-symmetry and non-PSD inputs now fail
+  closed. Draw quantiles remain explicitly non-confidence intervals, and a
+  quadrature sensitivity value is not labelled a total inferential SE because
+  same-sample CMLE/WLE dependence is omitted. A retained six-card first-read
+  projection separates research-ready, caution, and withheld states; it does
+  not enable the public UI.
+  Added a prospective CMLE-WLE bootstrap design and immutable input-identity
+  plan before sampler implementation. The plan separates fixed-score
+  conditional-pattern refits from joint plug-in response refits, requires all
+  failures and rank states to remain in the denominator, and prohibits calling
+  either lane a coverage-qualified interval or total SE. Its 200-replicate
+  RSM/PCM matrix is an implementation pilot with no success-rate promotion
+  threshold; a later repeated-truth ADEMP protocol must be registered before
+  interval claims.
+  Implemented the first repository-only bootstrap core after that plan was
+  frozen. It uses a scaled forward/backward coefficient recurrence for exact
+  fixed-Person-total RSM/PCM response-pattern draws, a separate fitted CMLE +
+  WLE joint category sampler, deterministic 64-bit child seeds without float
+  coercion, pre-refit rank/nullity capture, and complete failure ledgers with
+  work/output guards. Six tests pass, including brute-force conditional-
+  normalizer agreement, 20,000-draw distribution agreement, exact RSM/PCM
+  total preservation, joint total variation, seed reproducibility, and
+  resource failure. The frozen 200-replicate RSM/PCM pilot then completed all
+  800 attempted refits with full conditional rank, CMLE inference readiness,
+  and WLE availability; the Wilson 95% lower bound is `0.981` per cell.
+  Fixed-score totals had zero mismatches, same-seed replay was exact, and joint
+  category frequencies were within `1.57` Monte Carlo SD of expectation.
+  Median Person bootstrap SD was `0.0602` logits for fixed-score resampling and
+  `0.615` for joint plug-in resampling; maximum SD was `0.744`. The joint lane
+  produced 321 extreme-to-interior and 120 interior-to-extreme transitions;
+  maximum bootstrap-mean displacement was `0.370` logits. Sampler status
+  passed, but output-contract/public promotion remains withheld because
+  repeated-truth coverage is unavailable.
+  Added a separately registered fixed-theta CMLE-WLE Person-fit core and
+  Python/`sirt::pcm.fit` adapter. RSM/PCM evidence compared 32 Persons and 162
+  administered observations, including exact extremes and non-rectangular
+  missingness; maximum Infit and Outfit differences were `4.89e-15` and
+  `4.00e-15`, with row-level probability moments agreeing at binary64 noise.
+  Non-positive/non-finite fitted variance fails closed, unrounded MnSq drives
+  the existing 0.50/1.50/2.00 decision contract, and ZSTD/p-values remain
+  explicitly unavailable. TAM shares the Infit and pre-trim Outfit formulas
+  but its default JML path trims large Outfit contributions, so default Outfit
+  equivalence is not claimed.
+  Added a prospectively frozen 800-replicate bootstrap fit extension without
+  modifying the original pilot. Every replicate was Person-fit ready; 12,800
+  Person-replicates produced 2,372 Infit transitions, 2,454 Outfit transitions,
+  and 2,554 transitions in either statistic. The raw/display audit retained 24
+  display boundaries and nine classification mismatches; all transition
+  decisions used unrounded values. The first run remains visibly failed after
+  an asymmetric CSV-versus-memory identity comparison introduced a one-ULP
+  difference against the frozen exact-zero gate. A pre-correction amendment
+  kept the gate/tolerance unchanged and required a full rerun with symmetric
+  `%.17g` persisted readback. The corrected run passed with zero WLE difference,
+  zero fixed-score total mismatches, and unchanged original/failed inventories.
+  Added a boundary-focused reviewed figure so the 24 rare rows are not hidden
+  beneath 12,000+ stable rows. Threshold optimality, ZSTD, p-values, coverage,
+  total SE, sparse/anchor/misspecification stress, and Streamlit integration
+  remain withheld.
+
+- **CMLE-WLE MnSq rounding and threshold sensitivity.** Added a research-only
+  raw-value threshold classifier, complete 125-triplet post-result sensitivity
+  surface, one-through-six-decimal counterfactual display audit, threshold
+  proximity/concentration evidence, and reviewed figures. Canonical raw
+  classifications and transition counts reproduced exactly. At three display
+  decimals, nine replicate-statistic classes and five either-statistic
+  transition indicators disagreed with raw decisions; six decimals had no
+  disagreements. Aggregate transitions spanned 1,789--3,461 for Infit,
+  1,877--3,550 for Outfit, and 1,975--3,675 for either statistic across the
+  frozen grid. A pre-computation diagnostic amendment added complete 16-cell
+  baseline-by-replicate class matrices after a flat noisy-boundary profile was
+  observed. Moving that boundary from 1.90 to 2.10 preserved the binary totals
+  2,372/2,454/2,554 but relabelled 37 Infit and 51 Outfit replicate statistics
+  from `distorting` to `noisy`. Parent evidence remains immutable; threshold
+  validity, automatic selection, known-truth operating characteristics, and UI
+  integration remain withheld.
+
+- **Known-truth CMLE-WLE Person-fit design pilot.** Prospectively registered
+  and ran eight paired fixed-calibration conditions over 20 replicates each,
+  retaining all 160 attempts, 624,000 generated responses, and 32,000 Person
+  rows per WLE/generating-theta source. The canonical raw either-upper clean
+  rate was 3.4%--3.7% with 24 observations and 10.1%--10.8% with six;
+  affected detection ranged from 3.8% to 46.6% across threshold-heterogeneity,
+  local-copy, and random-response mechanisms. A post-result registered
+  addendum reports unrecentered WLE bias/MAE/RMSE, retains 163 exact-extreme
+  rows separately, and records 2,333/32,000 WLE-versus-generating-theta flag
+  disagreements. It also verifies that the nominal 125-grid has only 5/5/25/5
+  effective input configurations for the four rules. Same-seed replay, truth
+  identity, raw-class reproduction, support, and irrelevant-threshold
+  invariance passed with zero mismatches. This remains a 20-replicate
+  fixed-calibration design pilot; anchor/connectivity, estimated calibration,
+  confirmatory precision, repeated cross-engine fits, and public UI remain
+  withheld.
+
+- **Threshold-stable fit/bias decisions and design stress.** Added a pure
+  floating-point decision contract that classifies from unrounded values,
+  fixes exact MNSQ endpoint semantics, and exports numerical-boundary,
+  display-rounding-boundary, and raw/display mismatch evidence. Unified fit
+  table colours, summaries, casebooks, rater dashboards, report prose, and fit
+  scatter annotations on the same contract; conditional bias audits now
+  expose threshold-sensitive cells, while missing fit statistics can no longer
+  produce a `Ready` stability summary. Quick results and full table downloads
+  include detailed fit/bias decision-stability tables. Anchor audits report unique coverage counts,
+  unanchored counts, descriptive share, and a stacked chart without imposing a
+  universal percentage cutoff. Added a deterministic nine-design sparse-data,
+  anchor, fit-boundary, and bias-boundary stress matrix with retained CSV and
+  PNG evidence. Non-finite group-anchor values are rejected with an explicit
+  audit warning instead of being silently replaced by zero. Essential results now show a compact run-readiness snapshot
+  before the one-click goal route.
+- **Repository-only native exact CMLE structural calibration.** Added a Streamlit-free RSM/PCM
+  conditional maximum-likelihood core with explicit rating support, scaled
+  response-polynomial moment dynamic programming, an analytical gradient, exact
+  conditional information, typed extreme-Person states, and exact sum-to-zero
+  facet/threshold coordinates. The pre-fit audit blocks GPCM, non-unit row
+  weights, unlabelled duplicate response units, no-information designs, and
+  deficient conditional rank. Exact enumeration and matched
+  `immer::immer_cml()` RSM/PCM fixtures are covered in `tests/test_cmle.py`.
+  Rank and covariance now come directly from conditional sufficient-statistic
+  covariance rather than finite differences; the reused 20-dataset pilot kept
+  all readiness decisions while reducing recorded median fit time to 0.072 s.
+  Added a conservative 512 MiB analytical-information memory guard alongside
+  the work and parameter caps. A 16-case fresh-process scaling matrix covers
+  up to 5,000 Persons, 64 response units, 30 fitted parameters, and 100
+  missingness patterns, with explicit work/memory negative controls. Guarded
+  exact-Newton polishing resolves above-threshold BFGS precision-loss endings
+  without overwriting the raw optimizer status.
+  This research core is not yet exposed in the Streamlit estimator selector;
+  CMLE Person scoring, anchors, downstream diagnostics, scaling evidence, and
+  public reporting remain gated.
 - **S1 exact identified parameterization.** Replaced redundant centered step
   and GPCM log-slope optimizer blocks with `n-1` free coordinates whose final
   value is derived as the negative sum. RSM, PCM, and bounded GPCM now count
@@ -45,6 +651,51 @@ All notable changes to this standalone Streamlit distribution should be recorded
   routes, progress, and claim boundaries in supporting detail. The adversarial
   baseline and long-term acceptance measures are recorded in
   `docs/ux_adversarial_audit.md`.
+- **Workspace-first guided Run action.** Moved the Guided-defaults primary Run
+  control from the technical sidebar into the main setup workspace, after
+  column mapping and readiness evidence. Its bilingual user-facing label is
+  `Run this analysis / この設定で分析する`, with the selected model, method,
+  and analysis depth summarized immediately above it. Guided mode no longer
+  renders a duplicate `FACETS-mode` sidebar action; Advanced controls retain
+  the existing sidebar route. The estimator inputs, defaults, result identity,
+  stale-result rerun behavior, and downloads are unchanged. English/Japanese
+  placement checks, 27 focused localization/onboarding tests, and 17 full-fit,
+  Help-return, and small-data AppTests passed.
+- **Task-first two-level data source chooser.** Replaced the ten-choice flat
+  source radio with four user-task classes (built-in example, generate, paste,
+  upload) and an always-visible scenario selector when the example class is
+  active. The analysis-facing `scenario:*`, `simulate`, `paste`, and `upload`
+  IDs remain unchanged. Added migration from older `data_source_flat` session
+  state, immediate privacy-severity projection from the new class, and stable
+  restoration of the last selected sample after visiting another source.
+  Thirty focused state/localization/UI tests and 24 full-fit, Help, simulation,
+  and small-data AppTests pass.
+- **First-run decisions separated from technical controls.** Guided defaults
+  now shows only Person/Score/facet mapping, model, estimation method, and
+  analysis coverage before the main Run action. Weighting, visualization CI
+  and styling, facet regularization, latent regression, score-scale overrides,
+  identification/optimizer settings, anchors, anchor audit policy, and report
+  scaling are available in Advanced controls. Guided mode explicitly restores
+  documented standard values when returning from an advanced run, so hidden
+  custom settings cannot silently affect a new guided analysis. A detected
+  weight column is excluded from facet suggestions and explained rather than
+  being silently applied. Nine dedicated UI-contract AppTests and 47 broader
+  scenario-fit, guide, small-data, locale, and contextual-Help tests pass; an
+  additional end-to-end check confirms Guided and Advanced defaults reproduce
+  the same parameter estimates to `1e-12` absolute tolerance.
+- **Fail-closed browser accessibility acceptance contract.** Added a pure,
+  versioned catalog that expands eight user tasks across English/Japanese and
+  seven keyboard, narrow, touch, zoom, reduced-motion, and screen-reader
+  profiles into 52 browser cases and 482 required evidence rows. Blank or
+  incomplete evidence remains `NOT_ACCEPTED`; `PASS` requires every declared
+  portable evidence type plus browser-build, UTC, observation, and reviewer
+  metadata, and stale catalog fingerprints are rejected. Added export/evaluate
+  CLI commands and a browser runbook. Static preflight also broadens visible
+  focus styling to links, disclosures, and common ARIA roles, adds
+  forced-colors/coarse-pointer handling, and gives compact HTML tables an
+  accessible name with row/column header scopes. Eleven contract tests and 29
+  combined accessibility/UI regression tests pass. No browser or screen-reader
+  acceptance claim is made before the completed evidence gate passes.
 - **Standalone Python evidence and release boundary.** Added deterministic
   AnalysisIdentity/EvidenceRecord contracts, canonical readiness states, and a
   fail-closed MML prior-SD sensitivity decision. Default downloads, demo
@@ -1787,7 +2438,7 @@ from the pre-redeploy 8-agent UX audit.
   tab; callers can opt in one table at a time.
 - `style_fit_columns(df)` returns a pandas Styler that colour-codes
   Infit / Outfit mean-square cells by the Wright & Linacre (1994)
-  bands (0.5–1.5 acceptable · 1.5–2.0 noisy · ≥ 2.0
+  bands (0.5–1.5 inclusive acceptable · >1.5–2.0 noisy · >2.0
   distorting · < 0.5 over-fit). ZSTD columns are excluded (they
   use a different interpretation scale). Applied to the Combined
   measures + fit table.

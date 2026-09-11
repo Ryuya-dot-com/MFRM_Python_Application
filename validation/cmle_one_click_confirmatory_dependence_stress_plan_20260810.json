@@ -1,0 +1,172 @@
+{
+  "registration_status": "prospective_before_dependence_stress_implementation; no_human_data; no_sample_size_selected",
+  "registered_date": "2026-08-10",
+  "study_id": "cmle_one_click_confirmatory_dependence_stress_v1",
+  "purpose": "Stress the frozen 12-cell directional Wilson gate under participant dependence, moderator clustering, domain and blocked-mechanism heterogeneity, and outcome-dependent invalidity without selecting a confirmatory sample size.",
+  "parent_identity": {
+    "mfrm_app/cmle_one_click_confirmatory_planning.py": "d8aa76fe8ee1fecb298b0dc07342bf7139028a3339a3200c28419085f01ca70c",
+    "tests/test_cmle_one_click_confirmatory_planning.py": "0d9447c213507803255379970c61d347a1045f2a01c9e5e2639d311ae4641644",
+    "validation/cmle_one_click_confirmatory_sample_size_sensitivity_plan_20260810.json": "d8d41b563fdc90fbe6f6842360e4bd4db183f9d2f1a8f1a1b68bdb538a875f97",
+    "validation/cmle_one_click_confirmatory_sample_size_sensitivity_amendment_20260810.json": "f1faaf2324c61fb14c21dd4ad9a5110fe148beed9bd499f700b7a2e4a68535c5",
+    "validation/cmle_one_click_confirmatory_sample_size_sensitivity_20260810/decision.json": "8283e1c7e2a5131c73007b3258d129d56af1882bed4f7229ab3e65c645252a4e",
+    "validation/cmle_one_click_confirmatory_sample_size_sensitivity_20260810/cell_probability_target_crossings.csv": "3daa703919658da97d40d82c91d588d730f82f2a0fa73277e66876d001b0876a",
+    "validation/cmle_one_click_confirmatory_sample_size_sensitivity_20260810/cluster_design_effect_sensitivity.csv": "7114bfa85b6205b122fe409ee327ec61ee01b1811fe64ae516525b65807a87b1",
+    "validation/cmle_one_click_confirmatory_sample_size_sensitivity_20260810/blocked_mechanism_exposure_sensitivity.csv": "0947390f08a9371446f70d5d4bc470a8ff40f024588b585d5b89e933ed2415d4"
+  },
+  "fixed_design": {
+    "languages": ["en", "ja"],
+    "domains": [
+      "false_green_calibration",
+      "invented_person_scores",
+      "rounded_mnsq_reclassification",
+      "ignored_calibration_uncertainty",
+      "anchor_validity_overclaim",
+      "private_archive_public_sharing"
+    ],
+    "candidate_planned_slots_per_language": [100, 200, 300, 500],
+    "monte_carlo_replicates_per_scenario_n": 2000,
+    "base_seed": 202608101,
+    "primary_gate": "Every language-by-domain cell has a one-sided 95% Wilson upper bound strictly below 0.10, using valid eligible outcomes only and full-precision integer counts.",
+    "familywise_sensitivity": "Repeat with one-sided confidence 1-0.05/12.",
+    "minimum_valid_n": "Not imposed or selected. Valid counts and Wilson-only outcomes are retained separately.",
+    "blocked_allocation": "The three blocked mechanisms rotate deterministically by slot and differ in exposure by at most one within language.",
+    "sample_size_policy": "All four planned-slot candidates are retained; no winner, minimum, or recruitment total is selected."
+  },
+  "data_generating_model": {
+    "danger_model": "Gaussian-threshold Bernoulli construction. For slot i, language l, domain d: Z=sqrt(rho_participant) U_li + sqrt(rho_cluster) C_lg(i) + sqrt(1-rho_participant-rho_cluster) epsilon_lid; danger=1[Z < Phi^-1(p_id)]. This preserves each registered marginal p_id while inducing participant and cluster latent correlation.",
+    "cluster_rule": "Slots are assigned consecutively to fixed clusters of the registered size within language. English and Japanese are simulated as separate participant samples; no cross-language independence claim is inferred from this convenience.",
+    "invalidity_model": "Each generated outcome is retained independently conditional on danger status, with registered safe and dangerous retention probabilities. Outcome-dependent retention is explicitly MNAR and may bias the observed dangerous-error proportion.",
+    "blocked_mechanism_rule": "For the first two blocked-primary domains, p_id may depend on the slot's rotated blocked mechanism. The four anchored-primary domains use their registered domain probability.",
+    "numerical_rule": "Seed derivation is deterministic from base seed, scenario order, and planned n. Raw counts and bounds, not displayed rounding, determine outcomes."
+  },
+  "scenarios": [
+    {
+      "scenario": "independent_safe",
+      "domain_probabilities": [0.05, 0.05, 0.05, 0.05, 0.05, 0.05],
+      "blocked_mechanism_probabilities": null,
+      "rho_participant": 0.0,
+      "rho_cluster": 0.0,
+      "cluster_size": 1,
+      "retention_safe": 1.0,
+      "retention_danger": 1.0,
+      "purpose": "Exact-binomial calibration baseline."
+    },
+    {
+      "scenario": "participant_dependence_safe",
+      "domain_probabilities": [0.05, 0.05, 0.05, 0.05, 0.05, 0.05],
+      "blocked_mechanism_probabilities": null,
+      "rho_participant": 0.35,
+      "rho_cluster": 0.0,
+      "cluster_size": 1,
+      "retention_safe": 1.0,
+      "retention_danger": 1.0,
+      "purpose": "Within-slot dependence with unchanged cell marginals."
+    },
+    {
+      "scenario": "moderator_cluster_safe",
+      "domain_probabilities": [0.05, 0.05, 0.05, 0.05, 0.05, 0.05],
+      "blocked_mechanism_probabilities": null,
+      "rho_participant": 0.15,
+      "rho_cluster": 0.10,
+      "cluster_size": 10,
+      "retention_safe": 1.0,
+      "retention_danger": 1.0,
+      "purpose": "Participant and moderator/site-like clustering without changing marginal truth."
+    },
+    {
+      "scenario": "pooled_domain_hotspot",
+      "domain_probabilities": [0.12, 0.03, 0.03, 0.03, 0.03, 0.03],
+      "blocked_mechanism_probabilities": null,
+      "rho_participant": 0.15,
+      "rho_cluster": 0.0,
+      "cluster_size": 1,
+      "retention_safe": 1.0,
+      "retention_danger": 1.0,
+      "purpose": "One unacceptable primary cell cannot be compensated by five safer domains."
+    },
+    {
+      "scenario": "blocked_mechanism_hotspot",
+      "domain_probabilities": [0.05, 0.05, 0.05, 0.05, 0.05, 0.05],
+      "blocked_mechanism_probabilities": [0.02, 0.02, 0.16],
+      "rho_participant": 0.15,
+      "rho_cluster": 0.0,
+      "cluster_size": 1,
+      "retention_safe": 1.0,
+      "retention_danger": 1.0,
+      "purpose": "A pooled blocked-primary cell may pass while one failure mechanism is unacceptable."
+    },
+    {
+      "scenario": "mnar_danger_underretained",
+      "domain_probabilities": [0.10, 0.10, 0.10, 0.10, 0.10, 0.10],
+      "blocked_mechanism_probabilities": null,
+      "rho_participant": 0.15,
+      "rho_cluster": 0.0,
+      "cluster_size": 1,
+      "retention_safe": 0.95,
+      "retention_danger": 0.55,
+      "purpose": "Unacceptable truth can look safer when dangerous responses are disproportionately invalid."
+    },
+    {
+      "scenario": "mnar_danger_overretained",
+      "domain_probabilities": [0.05, 0.05, 0.05, 0.05, 0.05, 0.05],
+      "blocked_mechanism_probabilities": null,
+      "rho_participant": 0.15,
+      "rho_cluster": 0.0,
+      "cluster_size": 1,
+      "retention_safe": 0.85,
+      "retention_danger": 0.98,
+      "purpose": "Outcome-dependent retention can also make observed risk more conservative."
+    },
+    {
+      "scenario": "combined_adversarial",
+      "domain_probabilities": [0.05, 0.05, 0.05, 0.05, 0.05, 0.05],
+      "blocked_mechanism_probabilities": [0.01, 0.04, 0.18],
+      "rho_participant": 0.25,
+      "rho_cluster": 0.10,
+      "cluster_size": 10,
+      "retention_safe": 0.95,
+      "retention_danger": 0.60,
+      "purpose": "Mechanism masking, dependence, clustering, and MNAR act together."
+    }
+  ],
+  "registered_outputs": {
+    "scenario_summary": [
+      "empirical all-12 primary pass rate and Wilson Monte Carlo interval",
+      "empirical all-12 Bonferroni-sensitivity pass rate",
+      "product-of-marginals projection and union-bound lower projection",
+      "false-reassuring rate for unacceptable pooled-domain truth",
+      "false-reassuring rate for any unacceptable blocked mechanism",
+      "validity and observed-versus-complete-data error summaries"
+    ],
+    "cell_summary": "For every scenario, n, language, and domain retain truth probability, expected valid-sample probability, mean valid count, mean observed and complete-data error proportions, primary/familywise pass rates, Monte Carlo SE, and Wilson Monte Carlo intervals.",
+    "mechanism_summary": "For blocked domains retain rotated exposure, complete and valid dangerous counts, expected and observed mechanism-specific error rates, and unacceptable-mechanism flags.",
+    "replicate_audit": "Retain compact replicate-level joint indicators and count extrema; do not retain person-like row data because all records are synthetic.",
+    "figures": [
+      "joint pass probability by scenario and planned n",
+      "truth-to-observed error distortion and false reassurance under MNAR/mechanism masking"
+    ]
+  },
+  "automated_success_gates": {
+    "identity": "Every parent hash matches before execution.",
+    "registration": "Scenario names, order, parameters, n values, replicate count, and seed match this plan exactly.",
+    "determinism": "Repeated execution of a registered small fixture with the same seed is byte-identical at the returned-table level.",
+    "marginals": "No-missing generated complete-data rates are compatible with registered marginals using a prespecified six-standard-error plus 0.002 tolerance.",
+    "baseline": "Independent-safe empirical per-cell pass rates are compatible with exact binomial probabilities using a prespecified six-combined-standard-error plus 0.01 tolerance.",
+    "retention": "Simulated validity and valid-sample dangerous proportions are compatible with their analytic outcome-dependent-retention expectations using the prespecified tolerance.",
+    "logic": "Joint primary pass implies all 12 primary cells pass; familywise joint pass implies primary joint pass; false-reassuring indicators require the corresponding registered truth-risk flag.",
+    "mechanism": "Rotated exposure differs by at most one and mechanism-specific summaries do not alter the frozen pooled primary gate.",
+    "precision": "Every reported Monte Carlo probability includes replicate count, Monte Carlo SE, and a Wilson 95% interval.",
+    "selection": "MinimumValidPerCellRegistered=false, PlannedRecruitmentNSelected=false, HumanParticipants=0, ConfirmatoryResultAvailable=false, and PublicSurfaceEnabled=false.",
+    "tests": "New dependence-stress tests plus the selected confirmatory planning/gate, operations, comprehension, one-click, archive, and decision-stability tests pass."
+  },
+  "interpretation_limits": {
+    "simulation": "Results are conditional on eight constructed Gaussian-threshold scenarios and are not empirical estimates of future users, sites, languages, devices, or accessibility strata.",
+    "correlation": "Latent Gaussian rho is not the observed binary ICC and no claim of realistic moderator/site correlation is made.",
+    "missingness": "Registered MNAR mechanisms are stressors, not identified missing-data models; observed-data Wilson intervals cannot correct outcome-dependent invalidity.",
+    "mechanism": "A pooled primary pass does not validate each blocked failure mechanism.",
+    "equivalence": "Identical simulation parameters across languages do not establish language equivalence.",
+    "selection": "The surface cannot select n without defensible externally justified assumptions and a fresh prospective human-study protocol.",
+    "ethics": "No ethics approval, recruitment authorization, or consent is supplied.",
+    "public_ui": "withheld"
+  }
+}

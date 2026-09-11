@@ -1,0 +1,21 @@
+{
+  "schema_version": "known_assignment_confirmatory_strict_audit_publish_v2_registration_v1",
+  "registered_date": "2026-08-11",
+  "registered_before_v2_publication": true,
+  "registered_after_two_v1_transport_failures": true,
+  "scientific_or_audit_logic_change": false,
+  "tests_passed_before_v2_publication": true,
+  "test_command": ".venv-win\\Scripts\\python.exe -m pytest -q tests\\test_known_assignment_confirmatory_strict_audit_publish_v2.py",
+  "test_result": "3 passed, 1 skipped in 12.47s; the skip was registration-dependent. A separate Dropbox-path component preflight published and v1-verified the exact three-file bundle, then removed it without residue.",
+  "plan_sha256": "d94ad1f082aaa0590c6d0256f9fa717afe8766d5d6ad9b9f67f939e39748dbd4",
+  "publisher_sha256": "115436c9c458515dfb3646414759bab231dfabf0b8e13c59eca4ca1ad94b0910",
+  "test_sha256": "2a871a6e1766bbfc96e4af34ede9bcbb9a63efa35d716ca65d5706367e5ca3db",
+  "frozen_v1": {
+    "audit_plan_sha256": "9259568716abc4bd70f51ef3bac3b1b2fd4a98794c7d2ae684564afbfc9d88a9",
+    "auditor_sha256": "61b8a4aad2799d94cad0f8b6840a7a5ed70e5695cddfc73eb8831100e92e3c42",
+    "test_contract_sha256": "388e888c66988b6e4b8936d8edb625e1272c17e4c93b7164e83f6d271983a815",
+    "execution_registration_sha256": "ae54d3b8f28efaa693c4370030b8ea64a945531b8de351e292ed08fa921a8cd1"
+  },
+  "output": "validation/kac200_posthoc_strict_audit_20260811",
+  "claim_boundary": "Transport v2 changes only how the already registered append-only audit bundle is published under Dropbox on Windows. It cannot change, recompute under different rules, or broaden any scientific result, stationarity qualification, FACETS boundary, R boundary, or v1 audit conclusion."
+}

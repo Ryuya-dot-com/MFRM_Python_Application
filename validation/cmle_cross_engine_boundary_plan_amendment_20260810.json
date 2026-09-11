@@ -1,0 +1,38 @@
+{
+  "registration_status": "prospective_identity_only_amendment_before_any_fixture_generation_or_engine_fit",
+  "registered_date": "2026-08-10",
+  "study_id": "cmle_cross_engine_boundary_semantics_v1_identity_amendment_1",
+  "parent_plan": {
+    "path": "validation/cmle_cross_engine_boundary_plan_20260810.json",
+    "sha256": "5d7830b493b28b9693e05dba26caf5b7dfd62c148bd44c6ed1a37392dfd93285"
+  },
+  "reason": "The first temporary execution stopped at the initial mfrmr source-identity gate, before fixture generation, Python workflow execution, isolated package installation, or any R engine fit. The external actively developed source tree changed after the parent registration. This amendment freezes only its new identity.",
+  "first_attempt_observation_scope": {
+    "fixture_rows_generated": 0,
+    "python_fits_attempted": 0,
+    "r_fits_attempted": 0,
+    "result_diagnostics_observed": false,
+    "failure": "mfrmr source git-status and build-content hashes differed from the parent registration"
+  },
+  "unchanged_contract": [
+    "all 13 fixture IDs and 5/7/1 expected accounting",
+    "all estimator-role restrictions",
+    "all numerical tolerances and success gates",
+    "all maxit settings and output fields",
+    "all interpretation limits and public-UI withholding"
+  ],
+  "effective_mfrmr_source_identity": {
+    "source_path": "/Users/tohokusla/Dropbox/MFRM_Application/mfrmr/development",
+    "version": "0.2.3",
+    "git_head": "7ee1fd5cb9cb3ab6588811eb4b31f3337076c369",
+    "git_status_sha256": "e6661a719e0ab3fc1e5d7827233d730ee6f21b3a5029bc9093d7fbdfc643dbf3",
+    "build_relevant_content_inventory_sha256": "b636fd61928a2c3f3562a483772f4b13657e3674b88378d0ac649106e18d8dab",
+    "build_relevant_file_count": 546,
+    "snapshot_rule": "After this identity passes, copy the package source to a new /private/tmp snapshot and install from the snapshot. Recompute the build-content hash on the snapshot and require equality before installation."
+  },
+  "implementation_identity_at_amendment": {
+    "validation/cmle_cross_engine_boundary.py": "77fb42b40d8edba04895059bc78d71b7888dbf501a817e837ae0b23510cc75f6",
+    "validation/cmle_cross_engine_boundary.R": "da510ed7ee1946fc87aa6c92c31e07d4a528098a7069417434c68c9fd83ec1da",
+    "tests/test_cmle_cross_engine_boundary_contract.py": "8e1c70108215f5ccc4394bea3010423de5160192ea5573b27ff224831ba1ee4d"
+  }
+}

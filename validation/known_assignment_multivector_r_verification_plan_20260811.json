@@ -1,0 +1,27 @@
+{
+  "schema_version": "known_assignment_multivector_r_verification_plan_v1",
+  "status": "frozen_after_python_endpoint_read_but_before_r_execution",
+  "registered_date": "2026-08-11",
+  "timing_disclosure": "The Python PF1-PF4 aggregate was read before this R verification plan was written. This is an implementation verification, not an independent confirmatory analysis. The R verifier must recompute all four pre-registered diagnostics and all 16 vector-level values without endpoint selection.",
+  "python_aggregate": "validation/known_assignment_multivector_preflight4_20260811/aggregate_visible_join_20260811",
+  "python_aggregate_identity": "validation/known_assignment_multivector_preflight4_20260811/aggregate_visible_join_20260811/aggregate_identity.json",
+  "python_aggregate_identity_sha256": "5ea72154f8fb71c31245623ebe8636de00b7bfeef498aa0a078a07a65e0360cb4",
+  "engine": "C:/Program Files/R/R-4.5.1/bin/Rscript.exe",
+  "inputs": ["recovery.csv", "run_ledger.csv", "registered_preflight_diagnostics.csv", "registered_preflight_summary.csv"],
+  "recomputation": {
+    "PF1": "Free-SD MML: 0.5 * [RaterRMSE(-0.8) + RaterRMSE(+0.8)] - RaterRMSE(0)",
+    "PF2": "Fixed-SD MML: 0.5 * [RaterRMSE(-0.8) + RaterRMSE(+0.8)] - RaterRMSE(0)",
+    "PF3": "Free-SD MML: 0.5 * [EstimatedPopulationSD(-0.8) + EstimatedPopulationSD(+0.8)] - EstimatedPopulationSD(0)",
+    "PF4": "Free-SD MML: 0.5 * [Rater-error severity slope(-0.8) - slope(+0.8)]"
+  },
+  "required_checks": {
+    "diagnostic_rows": 16,
+    "summary_rows": 4,
+    "maximum_absolute_numeric_difference": 1e-12,
+    "direction_metadata_exact": true,
+    "advancement_flags_exact": true,
+    "p_values": false
+  },
+  "output": "validation/known_assignment_multivector_preflight4_20260811/r_verification_20260811",
+  "claim_boundary": "Post-endpoint cross-language implementation verification only; it does not strengthen the four-vector preflight into confirmation."
+}

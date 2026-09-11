@@ -1,0 +1,65 @@
+{
+  "schema_version": "mfrm-estimand-distribution-preflight-assessment-v1",
+  "assessment_date": "2026-08-11",
+  "timing": "Post-result assessment. No data-generating parameter, estimator, fit control, denominator, or numerical gate was changed after inspecting estimates.",
+  "registered_evidence": {
+    "plan_sha256": "6c3eda5d69a93c219e8349ec234c470ab9cb61cc209a31b1ba5d28b6709604ee",
+    "finalization_amendment_sha256": "4208e1680cf0ee4c462cdf05391a9728db10aa71dfe854660c0ae1c705f79b5c",
+    "path_length_amendment_sha256": "81d2ba18d4ac684112bb094fc830c83864e3c9a8f00f53b5f851ff1f74d0153c",
+    "aggregation_amendment_sha256": "22f0321e7295aa26ee5212a97e921812cf55a19f648acc9efe2246bb9d1066fa",
+    "v3_study_identity_sha256": "aee54aa237dd3fa3cfb75f0373e074c93cde32b04cb8dd3e971c4524917ac109",
+    "corrected_metrics_sha256": "fac1f7cd5c4ace9614a2d5addcae7910d0ba553a40c366b610b94429e2f5838f",
+    "corrected_aggregate_identity_sha256": "aff887fd22fd4bfe1e77437e5ba6ef99a682b9fa6f597c493e9cc7519dc2db9b",
+    "completion_marker_hashes_sha256": "7177daf0756b1ae8ea63423ec3fa7b66a467737db9ae8bcf9be01cc4d34d6771"
+  },
+  "execution_history": {
+    "unadopted_v1": "Two first attempts produced fit artifacts but directory-level os.replace failed under Windows/Dropbox. No statistical result was inspected before the finalization amendment.",
+    "unadopted_v2": "All 32 attempts finalized, but eight FACETS/JMLE attempts failed because the constructed path was 265 characters. No statistical result was inspected before the path-length amendment.",
+    "qualified_v3": "Prepared from the unchanged plan and seed after both infrastructure amendments; all 32 attempts completed successfully.",
+    "superseded_first_aggregate": "Detected missing PersonDistribution on MML recovery rows. It is retained as diagnostic evidence and not used.",
+    "qualified_aggregate": "aggregate_corrected joined registered metadata by unique RunId, rejected conflicts, and passed the added metadata-completeness gate without changing fit artifacts."
+  },
+  "result": {
+    "datasets": 8,
+    "attempts_completed": "32/32",
+    "attempts_successful": "32/32",
+    "facets_python_jmle_parity": "8/8 eligible and direct-agreement pass",
+    "mml_included": "16/16",
+    "exact_cmle_included": "8/8",
+    "constraints": "24/24 pass",
+    "resume_replay": "32/32 valid skips, zero refits, zero changed completion-marker hashes",
+    "metadata_complete": true,
+    "qualification_pass": true
+  },
+  "facets_python_parity": {
+    "maximum_main_weighted_mae": 0.0031144074505857,
+    "maximum_main_absolute_difference": 0.0103921994249226,
+    "maximum_threshold_weighted_mae": 0.0036339883795202,
+    "maximum_threshold_absolute_difference": 0.0061876491982773,
+    "minimum_within_facet_spearman": 0.9999999999999999,
+    "facets_precision_contract": "Umean=6 primary measure/threshold output and separate Umean=2 Table 8 category-fit output; displayed values are not treated as hidden raw precision."
+  },
+  "descriptive_hypotheses_only": {
+    "free_mml_population_sd_range": [0.6869013948806758, 0.8109596465167779],
+    "normal_complete_free_sd": 0.7950878050609053,
+    "normal_planned_connected_free_sd": 0.7604230683270071,
+    "right_skew_complete_free_sd": 0.7440554720811257,
+    "right_skew_planned_connected_free_sd": 0.698400894549506,
+    "symmetric_mixture_complete_free_sd": 0.8109596465167779,
+    "symmetric_mixture_planned_connected_free_sd": 0.7832581679005609,
+    "heavy_tail_complete_free_sd": 0.7535879837786388,
+    "heavy_tail_planned_connected_free_sd": 0.6869013948806758,
+    "cmle_extreme_person_range": [0, 1],
+    "interpretation": "The lower free-SD estimates under planned-connected data and non-normal shapes are hypotheses for paired screening. One replicate cannot distinguish systematic sensitivity from response realization."
+  },
+  "runtime": {
+    "observed_parallel_wall_seconds": 132.8,
+    "facets_python_jmle_pair_attempts_total_seconds": 20.1,
+    "fixed_sd_mml_8_fits_total_seconds": 98.7,
+    "free_sd_mml_8_fits_total_seconds": 109.2,
+    "exact_cmle_8_fits_total_seconds": 16.7,
+    "planning_note": "MML remains the dominant compute lane. Four shards are technically feasible, but the 20-replicate screening should first be prepared immutably and executed with restartable attempt-level checkpoints."
+  },
+  "withheld": "No estimator ranking, bias, coverage, power, false-positive, model-selection, universal distribution-robustness, or automatic recommendation claim.",
+  "decision": "Preflight is operationally qualified. A separate immutable 20-replicate screening bundle may now be prepared, but it remains hypothesis screening below the 100-eligible-replicate study-depth threshold."
+}

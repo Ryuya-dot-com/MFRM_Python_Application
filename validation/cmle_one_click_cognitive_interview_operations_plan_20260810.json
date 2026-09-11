@@ -1,0 +1,110 @@
+{
+  "registration_status": "prospective_before_cognitive_interview_operations_implementation; no_human_recruitment_or_responses",
+  "registered_date": "2026-08-10",
+  "study_id": "cmle_one_click_cognitive_interview_operations_v1",
+  "purpose": "Prepare a private, bilingual, non-promotable cognitive-interview operations kit for the frozen six-card CMLE comprehension instrument without collecting, simulating as human, or claiming any participant outcome.",
+  "parent_identity": {
+    "mfrm_app/cmle_one_click_comprehension.py": "2f36eed206a6682874f20c83b054bd4c7118f7ae3c76322a9abe9afe43a4e746",
+    "tests/test_cmle_one_click_comprehension.py": "93bf2f392df9174522db41ca751e8b5ab92f60c6d0e2094d2d11a8d981af9952",
+    "validation/cmle_one_click_comprehension_readiness_plan_20260810.json": "8f6c17781be8bb2161cfc18488be94281cd894bd3048498a0b38607bd9b13603",
+    "validation/cmle_one_click_comprehension_readiness_20260810/decision.json": "3cfb7c12a1b1dd56873870d70caeb8ae7ac6caee63a8b39163f6d5a7aba1d037",
+    "validation/cmle_one_click_comprehension_readiness_20260810/participant_task_packet.csv": "8d1148d15e18fcf7a90f6f01cb839d507d7b59fcf34ac1cd29eae282a77e8315",
+    "validation/cmle_one_click_comprehension_readiness_20260810/researcher_scoring_key.csv": "828b3c22a49c4529edfc5678c4cdcc585ea83d5c12b8a8d5b761522154a609ca"
+  },
+  "operations_scope": {
+    "languages": ["en", "ja"],
+    "planned_slots_per_language": 10,
+    "cases_per_slot": 2,
+    "items_per_case": 10,
+    "planned_session_task_rows": 400,
+    "status": "templates_only_no_human_data",
+    "public_surface": "withheld"
+  },
+  "assignment_contract": {
+    "design": "Within each language, use the complete set of ten unordered pairs among five analytical cases exactly once.",
+    "case_exposure": "Each case appears four times per language, twice first and twice second.",
+    "experience_strata": "Five novice-target and five experienced-target slots per language; a five-cycle and its complement give each case two exposures in each stratum.",
+    "language_parity": "English and Japanese use the same pair, order, stratum, and task-position codes.",
+    "interpretation": "This deterministic allocation balances the planned template; it does not randomize recruited people or guarantee sample comparability."
+  },
+  "session_contract": {
+    "duration": "Target 60-90 minutes including consent, two scenarios, retrospective probes, and debrief; stop for burden or withdrawal.",
+    "sequence": [
+      "Confirm applicable ethics/privacy/consent approval before recruitment.",
+      "Assign the next eligible private SessionSlotId without recording name or email in the analytical record.",
+      "Present the frozen preview and collect an unaided response before any probe or correction.",
+      "Use standardized retrospective probes only after the response is locked.",
+      "Record paraphrased, PII-reviewed observations and controlled issue codes; keep any contact roster outside this kit.",
+      "Honor withdrawal without deleting the attempted-session audit row; exclude withdrawn content from analysis under the approved protocol.",
+      "Do not calculate or publish a comprehension pass rate from formative interviews."
+    ],
+    "coaching_rule": "No clarification of CMLE, WLE, MnSq, anchor validity, calibration uncertainty, public sharing, or correct status is permitted before the participant locks the response.",
+    "revision_rule": "Every wording or layout change creates a new InstrumentVersion; never pool pre- and post-revision responses as one instrument."
+  },
+  "privacy_contract": {
+    "allowed_identity": "SessionSlotId only; it is a schedule slot, not a participant identifier.",
+    "forbidden_fields": ["name", "email", "phone", "address", "organization", "employee_id", "student_id", "ip_address", "device_id", "contact"],
+    "record_schema": "Exact allowlisted columns only; unexpected columns fail closed.",
+    "qualitative_notes": "Only paraphrased observations are allowed, and any non-empty note requires PIIReviewed=true before validation.",
+    "separation": "Recruitment/contact records, consent documents, raw recordings, and operational correspondence remain outside this analytical kit under separately approved access and retention controls.",
+    "withdrawal": "Withdrawal status is retained in the attempt ledger, while content handling follows the approved consent/protocol."
+  },
+  "issue_taxonomy": {
+    "controlled_codes": [
+      "wording",
+      "status_discrimination",
+      "numeracy_rounding",
+      "estimator_role",
+      "uncertainty_scope",
+      "anchor_interpretation",
+      "privacy_sharing",
+      "next_action",
+      "navigation",
+      "visual_access",
+      "assistive_technology",
+      "translation_cultural"
+    ],
+    "severity": ["none", "observation", "minor", "major", "critical"],
+    "critical_meaning": "A plausible path to one of the six registered dangerous misconceptions or an inability to distinguish blocked/not-run/withheld states.",
+    "analysis_policy": "Retain issue counts and disposition by item, case, language, stratum, and instrument version; do not convert formative codes into population rates."
+  },
+  "packet_separation": {
+    "participant_packet": "Contains only assigned previews/tasks, response option codes, and SessionSlotId; never correct options, rationales, criticality, misconception codes, or moderator probes.",
+    "moderator_guide": "Private file containing standardized post-response probes, rationale, criticality, and escalation reminders.",
+    "record_template": "Contains empty operational response/observation fields and no human values at generation time.",
+    "answer_leakage": "Any researcher-only field in a participant packet fails the contract."
+  },
+  "synthetic_validation": {
+    "meaning": "Synthetic records test validators only and are never labelled participants or used for comprehension claims.",
+    "accepted": ["complete_valid_synthetic_record", "empty_template_state"],
+    "rejected": [
+      "unexpected_pii_column",
+      "unregistered_session_or_case_assignment",
+      "duplicate_or_missing_item",
+      "unknown_response_option",
+      "unknown_issue_code",
+      "unreviewed_nonempty_note",
+      "probe_before_response",
+      "invalid_time_or_confidence",
+      "answer_key_field_in_participant_packet"
+    ]
+  },
+  "automated_success_gates": {
+    "identity": "All parent hashes match before execution.",
+    "schedule": "Forty assignment rows cover 20 slots with the registered pair, order, stratum, case-exposure, and language-parity balance.",
+    "participant_packets": "Twenty private session packets contain 400 assigned task rows, exactly 20 per slot, with no researcher-only fields.",
+    "moderator_guide": "The private guide covers all 100 case-language-item identities with post-response probes and controlled severity guidance.",
+    "record_template": "The blank 400-row record template matches schedule assignments and contains zero responses, notes, issue codes, timings, confidence values, or human identifiers.",
+    "privacy": "Exact-column validation rejects every registered forbidden or unexpected field and requires reviewed paraphrase status.",
+    "synthetic_validator": "Every registered accepted/rejected synthetic mutation reaches its expected typed state.",
+    "human_gate": "HumanStudyStatus remains not_started_no_human_data, HumanParticipants=0, and PublicSurfaceEnabled=false.",
+    "tests": "New operations tests plus the selected comprehension/one-click/archive suites pass."
+  },
+  "interpretation_limits": {
+    "balance": "Balanced schedule templates do not eliminate recruitment, language-proficiency, moderator, learning, order, or attrition bias.",
+    "formative": "Cognitive interviews diagnose instrument problems; they do not estimate comprehension prevalence or qualify the UI.",
+    "ethics": "This repository template is not ethics approval, consent language, legal advice, or institutional authorization.",
+    "accessibility": "Moderator coding cannot replace real-browser, keyboard, screen-reader, zoom, contrast, or other assistive-technology testing.",
+    "next_gate": "After approved recruitment and bilingual cognitive interviews, register every revision, freeze a new instrument, and only then run the separately registered pilot."
+  }
+}

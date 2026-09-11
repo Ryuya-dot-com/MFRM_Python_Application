@@ -1,0 +1,25 @@
+{
+  "schema_version": "known_assignment_facets_visible_supplement_input_key_amendment_v1",
+  "registered_date": "2026-08-11",
+  "original_registration": "validation/known_assignment_facets_visible_supplement_registration_20260811.json",
+  "original_registration_sha256": "ea67723520eb63f339a7bc51b34cc6f444b9bf07f5d091a855b1e522ad50dfa2",
+  "failure_stage": "First selected input identity check, before artifact-root creation, FACETS invocation, or estimator fitting.",
+  "run_id": "gamma_neg_0p8__vector-01",
+  "registered_pre_csv_run_input_sha256": "ff09287e8ae59d8ff4affa2fcda6c072cb1b7929b5041797a7f1908bb38266d5",
+  "post_csv_roundtrip_reconstruction_sha256": "d105b944d486a08db81fc2078b11dde952314c3561216beaa9259033fea04d30",
+  "cause": "RunInputSHA256 was created from in-memory pre-CSV DataFrames and is not reconstructible after CSV dtype round-trip.",
+  "retained_input_files_unchanged": {
+    "attempt_manifest.csv": "9fa767f4f74ec92e292b57bcbe6aec2157803e790a0b7defa3bc356f146d7cde",
+    "generated_ratings.csv": "f3ae2e5068945679461e79d935cd2a4e8f535949850e22485ee5c5d50a666a47",
+    "generated_facet_truth.csv": "f6d15d1986383b17cbdf3422b89b24f4e62e99de9f5eafd48dad68285a0637b4",
+    "generated_pcm_threshold_truth.csv": "78f23e0ef2d258891b048608d4a0ad58bb88ee9bf695b10434650baa3e5094f0"
+  },
+  "correction": "Use the immutable attempt_manifest RunInputSHA256 as the registered evidence key after independently verifying every retained input file against study_identity.json.",
+  "work_artifacts_created": 0,
+  "completion_markers_created": 0,
+  "facets_calls": 0,
+  "estimator_fits": 0,
+  "scientific_endpoint_read": false,
+  "decision_rules_changed": false,
+  "claim_boundary": "Result-blind evidence-key correction only."
+}

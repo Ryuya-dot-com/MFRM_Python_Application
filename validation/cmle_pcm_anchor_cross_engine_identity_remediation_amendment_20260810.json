@@ -1,0 +1,45 @@
+{
+  "registration_status": "prospective_before_corrected_identity_replay_with_statistical_results_already_known",
+  "registered_date": "2026-08-10",
+  "study_id": "cmle_pcm_hard_anchor_cross_engine_identity_remediation_amendment_v1",
+  "parent_remediation_plan": {
+    "path": "validation/cmle_pcm_anchor_cross_engine_identity_remediation_plan_20260810.json",
+    "sha256": "e050b0286b72b28798a8f981fbaa27ca01f69fc955d1d1646a24a536ab45b8dd"
+  },
+  "failed_corrected_algorithm_trial": {
+    "decision_path": "/private/tmp/cmle-pcm-anchor-trial3.0yWWgZ/evidence/decision.json",
+    "decision_sha256": "1c4a29c9a229b29389559285e42eca040819faaebcbad9934ff0d74fc8b95027",
+    "contract_passed": false,
+    "only_failed_gate": "identity_passed",
+    "statistical_gates_passed": [
+      "python_passed",
+      "immer_prefit_passed",
+      "immer_interior_passed",
+      "immer_numeric_passed",
+      "boundary_complete",
+      "secondary_complete",
+      "selected_tests"
+    ],
+    "observed_mfrmr_final_aggregate_sha256": "e200cb6b0677aa080cdff8dbb5c42dcfe4b121b46484f59b1919b10cffe9c7bc"
+  },
+  "bookkeeping_correction": {
+    "cause": "The parent remediation plan registered the SHA-256 of the single source-stripped fit_mfrm function, while the adapter correctly applied the declared final SHA-256 digest to the named vector of per-function hashes. This is a registration-layer mismatch, not function or numerical instability.",
+    "incorrect_per_function_sha256_retained_in_parent": "496b8ceaec17a32ecbb3c60a1f9ee8e661470f5bb36f7e4720c5a8bf5a5578ca",
+    "correct_final_named_vector_sha256": "e200cb6b0677aa080cdff8dbb5c42dcfe4b121b46484f59b1919b10cffe9c7bc",
+    "algorithm": "For each namespace function, call utils::removeSource(), then SHA-256 digest list(formals, body) with serialize=TRUE. Finally SHA-256 digest the named vector of per-function hashes, including when that vector has length one.",
+    "scope": "Only the expected final aggregate mfrmr function identity is corrected. The adapter algorithm is unchanged from the failed corrected-algorithm trial."
+  },
+  "frozen_inputs": {
+    "fixture_changes": false,
+    "tolerance_changes": false,
+    "maxit_changes": false,
+    "estimator_role_changes": false,
+    "numerical_output_changes": false,
+    "python_implementation_sha256_at_failed_trial": "45a5cd32a3cef32986fe314fe8363ce812a5b43830b2d62d572d1ddee8d57ad5",
+    "r_adapter_sha256_at_failed_trial": "5b18e1887077204c0d9ba87aa69e21be9ac96c3be52a371830fa7517b582b6a1",
+    "sirt_worker_sha256": "0610978660998c62c1cdc79d30bdafd77b95a835f9e93a47187bf521db513405",
+    "contract_test_sha256_at_failed_trial": "9c39cf9eb70d2a220c2084bb494417f9d1cdfcdf4d0294bbffb5708d1282c203"
+  },
+  "success_gate": "The exact replay must pass every unchanged statistical and test gate and must match the corrected final aggregate mfrmr hash plus all other previously registered identities.",
+  "public_ui": "withheld"
+}

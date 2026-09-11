@@ -14,6 +14,507 @@ called, imported, handed a job, or used as a public release gate.
 - Intended use: exploratory analysis, teaching, reporting support, and research workflow prototyping
 - Not intended as: a validated drop-in replacement for FACETS, TAM, sirt, mirt, or `mfrmr`
 
+The result workflow makes the FACETS-complementary boundary explicit.  Before
+technical tables it names the current estimator's estimand and likelihood
+basis; JMLE, MML, and exact CMLE are never ranked by cross-basis likelihood,
+AIC, or BIC.  The Data view also includes an outcome-blind Person-by-Rater
+assignment audit.  It describes density, exposure, co-rating, and overlap but
+does not diagnose MCAR/MAR/MNAR or informative assignment.  The associated
+assignment sensitivity workflow is now an on-demand, fail-closed paired
+parametric runner for eligible JMLE/MML RSM/PCM fits.  It preserves Person and
+Rater assignment degrees, Rater response-row exposure, and direct-overlap
+connectivity; changes no observed Score; generates new paired responses; and
+refits only the current estimator.  Exchangeable equal-context blocks use a
+connected degree-preserving 2-switch path: requested 0/25/50/75/100% alignment
+doses are mapped to achievable points, with one common row-level random draw
+shared across every dose in a replicate.  Unequal-context blocks fall back to
+a binary MILP endpoint that preserves every Rater-by-context row margin exactly
+and locks observed spanning-tree overlap witnesses.  The MILP first proves the
+observed assignment is feasible and exposes an endpoint only when HiGHS
+certifies a zero-gap optimum and all post-solve invariants pass.  Intermediate
+MILP doses are intentionally unavailable.  Dose/path labels are not estimated
+assignment propensities or unconstrained global worst-case scales.  It is a local fitted-model
+stress test, not an MNAR diagnosis, bias correction, causal estimate, fairness
+verdict, or cross-estimator ranking.  FACETS two-decimal display values are not
+treated as raw precision for fit recalculation or boundary adjudication.
+
+MML assignment refits now expose two non-interchangeable Person generators.
+The default holds source posterior/EAP measures fixed and remains a local
+conditional reference analysis.  The optional population mode draws fresh
+normal order statistics using the fitted fixed or free MML population SD and
+maps them to the strict source-EAP ordering.  Thus the same generated Person
+coordinates are shared across assignment scenarios and the rank-to-assignment
+relation is preserved, while population-scale realizations vary by replicate.
+This is a rank-preserving fitted-assignment stress—not an unconditional new
+sample, an empirical assignment model, or evidence that EAP values are truth.
+JMLE cannot select this MML population generator.
+
+Repository research note: a native exact RSM/PCM CMLE structural-calibration core
+is under deterministic validation in [`mfrm_app/cmle.py`](mfrm_app/cmle.py).
+It is not exposed in the Streamlit estimator selector and is not part of the
+current public beta capability claim. Its scope and promotion gate are
+documented in [`docs/cmle_phase0_design.md`](docs/cmle_phase0_design.md). The
+current research core obtains rank and covariance from exact conditional
+sufficient-statistic moments rather than a finite-difference Hessian. Its
+repository scaling envelope also enforces independent work and conservative
+512 MiB core-memory guards; these checks do not yet authorize public UI use.
+The repository-only repeated-simulation lane is separately specified in
+[`validation/OPERATING_CHARACTERISTICS_PROTOCOL_20260809.md`](validation/OPERATING_CHARACTERISTICS_PROTOCOL_20260809.md);
+its retained smoke profile verifies failure accounting and negative controls,
+not estimator performance or cross-package parity. Repository-only companion
+results now include strict mfrmr JMLE, matched unanchored
+Python/`immer_cml` numerical comparisons, and separately labelled TAM/sirt MML
+sensitivity adapters. TAM retains the additive RSM surface while integrating a
+normal Person population; sirt uses virtual-item PCM thresholds. Neither is
+described as JMLE/CMLE parity. All lanes retain optimizer/readiness,
+floating-boundary, constraint, and unsupported-scope differences rather than
+changing the public capability claim.
+
+The separately registered PCM hard-anchor mapping has also passed its
+repository-only contract. Across six oracle-interior unanchored, Rater-anchor,
+Criterion-anchor, contaminated-anchor, and differential-anchor cases, native
+Python and a matched `immer_cml` `W`/`b_const` parameterization differed by at
+most `2.45e-9` in free coordinates and `3.55e-14` in conditional log
+likelihood. Six separation or unused-declared-category cases remained blocked
+by the exact support oracle at all retained iteration caps. The mfrmr 0.2.3
+JML and TAM/sirt MML outputs are retained only as different-estimand
+sensitivity evidence; anchored TAM/sirt cases are explicitly unsupported.
+Exact anchor enforcement does not establish anchor validity, and this evidence
+does not enable the public CMLE UI. See the retained
+[`critical review`](validation/cmle_pcm_anchor_cross_engine_20260810/CMLE_PCM_ANCHOR_CROSS_ENGINE_CRITICAL_REVIEW.md).
+
+A Streamlit-free one-click result contract now joins the guarded calibration
+workflow to fixed-calibration Warm WLE and untrimmed Person MnSq without an
+automatic estimator fallback. Five registered states all returned the same six
+bilingual cards. Only the two ready calibrations reached Person scoring; the
+input, structural, and finite-existence stops did not call downstream scoring.
+The 14 ready Person handoffs reproduced direct WLE/SE/Infit/Outfit values
+exactly. A constructed raw Infit of `1.5004` remained `noisy` even though its
+three-decimal display was `1.500` (`acceptable` if misused). This is a
+presentation-data contract, not task-comprehension evidence, and the Streamlit
+surface remains disabled. See the
+[`one-click critical review`](validation/cmle_one_click_result_contract_20260810/CMLE_ONE_CLICK_RESULT_CONTRACT_CRITICAL_REVIEW.md).
+
+The same research result can now be saved as a deterministic **private
+reproduction** ZIP and reopened or replayed without Streamlit. Three registered
+ready/boundary archives passed 21/21 replay identity checks; 56 retained
+WLE/SE/Infit/Outfit values survived 17-significant-digit CSV round-trip with
+identical binary64 hexadecimal values. Input order, semantic row-order
+identity, configuration, results, archive content, and ZIP transport have
+separate hashes. Changed, missing, extra, or duplicate entries are rejected
+before loading. These ZIPs contain raw rows and identifiers: public-mode
+construction fails closed and no anonymization, encryption, or sharing approval
+is implied. See the
+[`private-archive critical review`](validation/cmle_one_click_archive_identity_20260810/CMLE_ONE_CLICK_PRIVATE_ARCHIVE_CRITICAL_REVIEW.md).
+
+A non-public bilingual comprehension instrument is now prepared around those
+same five analytical states. Ten standalone English/Japanese HTML previews
+retain six textual-status cards each; participant and separately held
+researcher-key packets contain 100 rows apiece. Six dangerous misconceptions
+are non-compensatory: false-green calibration, invented Person scores,
+display-rounded MnSq reclassification, ignored calibration uncertainty,
+anchor-validity overclaim, and treating a private archive as publicly
+shareable. Thirty synthetic packets verified fail-closed scoring, including
+duplicate, missing, unknown-option, and invalid-time responses; 40 selected
+tests passed. This is instrument-readiness evidence only. Human participants
+remain zero, comprehension and Japanese/English equivalence are not assessed,
+real-browser/assistive-technology QA was not completed in this run, and the
+public surface remains disabled. See the
+[`comprehension-readiness critical review`](validation/cmle_one_click_comprehension_readiness_20260810/HTML_PREVIEW_INSTRUMENT_CRITICAL_REVIEW.md).
+
+The subsequent private cognitive-interview operations kit is also prepared,
+without recruiting anyone. Within each language, 10 planned slots cover every
+pair of the five analytical states once; each state appears four times, twice
+in each presentation position and twice in each target experience stratum.
+Twenty answer-free session packets contain 400 assigned tasks in total. A
+separate private moderator guide requires response lock before probing, and an
+exact-column validator protects a 400-row blank record template against direct
+identifier columns, assignment drift, missing/duplicate items, unknown codes,
+unreviewed notes, early probes, and invalid timing/confidence values. Fourteen
+synthetic validator cases and 47 selected tests passed. The repository does
+not supply ethics approval or recruitment authorization; human participants
+remain zero. See the
+[`operations critical review`](validation/cmle_one_click_cognitive_interview_operations_20260810/COGNITIVE_INTERVIEW_OPERATIONS_CRITICAL_REVIEW.md).
+
+Instrument version identity and future confirmatory gate mechanics are now
+frozen separately, still with no human data. The composite identity covers the
+participant task bytes, private key bytes, 10 preview hashes, and directional
+dangerous-error rules; any mutation changes the identity and cross-content
+pooling is rejected. The safety numerator is narrower than any comprehension
+error: `display_acceptable` is dangerous for raw `1.5004` versus displayed
+`1.500`, while `cannot_decide` is incorrect but is not relabelled a dangerous
+display-driven reclassification. Six domains are evaluated separately in
+English and Japanese (12 cells). At zero errors, the one-sided 95% Wilson upper
+bound is `0.101310` for `n=24` and `0.097654` for `n=25`; the formative pilot
+therefore cannot promote the UI. The `n=25` arithmetic is not a sample-size
+recommendation: its 12-cell Bonferroni sensitivity bound is still `0.217782`.
+The future minimum valid n remains deliberately unregistered. See the
+[`versioned-gate critical review`](validation/cmle_one_click_versioned_confirmatory_gate_20260810/VERSIONED_CONFIRMATORY_GATE_CRITICAL_REVIEW.md).
+
+A prospective, no-human-data sample-size sensitivity surface now makes that
+non-selection explicit. Because the maximum Wilson-passing error count changes
+discretely, exact pass probability is sawtoothed rather than monotone. Under an
+assumed true dangerous-error probability of `0.05`, a single primary cell first
+reaches 90% pass probability at `n=224`, but does not remain at or above 90%
+through the registered `n=5000` search until `n=260`. The conservative 12-cell
+union-bound projection gives `n=422` and `n=456`, respectively. Separate
+sensitivities show that 200 valid observations require 231 planned slots under
+90% homogeneous retention with 95% assurance, while an effective `n=100`
+becomes a heuristic nominal `n=145` for mean cluster size 10 and ICC 0.05.
+Seventy-five slots per language expose each of the three blocked danger
+mechanisms only 25 times. These are planning diagnostics, not a chosen sample
+size, power claim, exact clustered correction, or authorization to recruit.
+Human participants and the public surface remain zero/withheld. See the
+[`sample-size sensitivity critical review`](validation/cmle_one_click_confirmatory_sample_size_sensitivity_20260810/CONFIRMATORY_SAMPLE_SIZE_SENSITIVITY_CRITICAL_REVIEW.md).
+
+The next registered synthetic stress replaces the cluster heuristic with an
+explicit, conditional Gaussian-threshold generator for participant dependence,
+fixed-size moderator/site-like clusters, domain and blocked-mechanism
+heterogeneity, and outcome-dependent invalidity. Eight scenarios by four
+planned-slot values and 2,000 replicates produced 64,000 synthetic joint-gate
+replicates. At 300 slots per language with marginal `p=0.05`, all-12 primary
+pass rates were `0.5480` when independent, `0.5660` with participant latent
+dependence, and `0.5125` with added clustering. More importantly, at `n=500`
+an MNAR stress with complete-data truth near `0.10` but lower retention of
+dangerous responses reduced the observed valid-record rate to `0.060315` and
+produced false reassurance in `0.4035` of replicates (Monte Carlo Wilson 95%
+`0.3822`–`0.4252`). A pooled blocked-mechanism hotspot gave `0.4955`, and the
+combined adversarial condition `0.9675`. These are constructed stress results,
+not estimated user behavior or chosen n; they show that larger samples do not
+repair informative invalidity or a misspecified pooled estimand. See the
+[`dependence/MNAR critical review`](validation/cmle_one_click_confirmatory_dependence_stress_20260810/CONFIRMATORY_DEPENDENCE_STRESS_CRITICAL_REVIEW.md).
+
+A deterministic private pre-recruitment bundle now turns those warnings into a
+fail-closed protocol workflow. Its 18-row decision register retains five fixed
+repository decisions and 13 unresolved scientific, ethical, governance,
+cluster, mechanism, language, and accessibility decisions. A zero-row exact-
+schema denominator ledger rejects direct identifier/free-text columns, frozen-
+slot gaps or duplicates, unknown invalidity reasons, post-outcome exclusions,
+and incomplete PII/audit attestations. A 72-row partial-identification surface
+retains all-invalid-safe and all-invalid-dangerous bounds instead of silently
+dropping invalid records. With valid `n=500` and observed dangerous-error rate
+5%, the registered grid is worst-case robust at invalid/valid ratio 2.5%, but
+not at 5%, where the all-invalid-dangerous Wilson upper bound is `0.118434`.
+The nine-member private ZIP is byte-deterministic and tamper checked. The
+software contract passed with 91 selected tests precisely because the first
+read remains `BLOCKED`: ethics approval, recruitment authorization, minimum n,
+human data, confirmatory results, and public UI are all absent. See the
+[`protocol-preflight critical review`](validation/cmle_one_click_confirmatory_protocol_preflight_20260810/CONFIRMATORY_PROTOCOL_PREFLIGHT_CRITICAL_REVIEW.md)
+and the
+[`private preflight ZIP`](validation/cmle_one_click_confirmatory_protocol_preflight_20260810/private_confirmatory_protocol_preflight.zip).
+
+The 13 blockers now have a private read-only decision workbench rather than an
+opaque checklist. Thirty-nine options expose strengths, primary risks,
+required evidence, and qualitative effects on n, estimand, participant burden,
+accessibility, and public claims. None is ranked, recommended, defaulted, or
+auto-selectable. Thirty-two prerequisite edges are acyclic; numeric sample-size
+decision `SCI-02` cannot resolve until seven scientific prerequisites do.
+Unknown or cross-decision options, premature child decisions, missing numeric
+assumptions, repository-generated external evidence, and decisions after
+outcome inspection fail closed. Even a fully completed synthetic worksheet
+remains `SubstantiveEvidenceVerified=false` and `RecruitmentReady=false`. The
+self-contained bilingual HTML has no forms, scripts, external resources, or
+writable controls; its deterministic seven-member ZIP passed tamper checks and
+105 selected tests. See the
+[`offline workbench`](validation/cmle_one_click_confirmatory_decision_workbench_20260810/protocol_decision_workbench.html),
+[`critical review`](validation/cmle_one_click_confirmatory_decision_workbench_20260810/CONFIRMATORY_DECISION_WORKBENCH_CRITICAL_REVIEW.md),
+and
+[`private workbench ZIP`](validation/cmle_one_click_confirmatory_decision_workbench_20260810/private_confirmatory_decision_workbench.zip).
+
+SCI-01 now has a separate private estimand-comparison memo. It maps the same
+72 exact-count sensitivity scenarios to all three registered alternatives,
+creating 216 projections without ranking or selecting an option. In 36
+scenarios, the observed-valid gate passes while the all-invalid-dangerous
+proxy fails and the dual analysis is explicitly non-robust; raw integer counts
+and unrounded Wilson bounds, never displayed rounding, drive those labels. A
+critical denominator gap is now machine-visible: the existing surface lacks a
+complete scheduled-slot count and a prospective invalidity-code-to-composite
+map, so Option B's `(D+I)/(V+I)` output is only a diagnostic proxy, not a
+calculated scheduled-slot estimand. The offline memo and deterministic ZIP
+remain private, read-only, and `BLOCKED`; no option, sample size, recruitment,
+or public button is enabled. See the
+[`SCI-01 offline memo`](validation/cmle_one_click_confirmatory_sci01_estimand_memo_20260810/sci01_estimand_comparison.html),
+[`critical review`](validation/cmle_one_click_confirmatory_sci01_estimand_memo_20260810/SCI01_ESTIMAND_MEMO_CRITICAL_REVIEW.md),
+and
+[`same-data figure`](validation/cmle_one_click_confirmatory_sci01_estimand_memo_20260810/sci01_estimand_projection.png).
+
+The shared SCI-01/SCI-05 invalidity bottleneck now has a separate private
+adjudication workbook. It preserves all 15 registered reason codes and fixes
+only `none`; the other 14 remain unresolved. Withdrawal requires external
+ethics/data-use authority, accessibility barriers require an accessibility
+owner and separate-stratum sensitivity, duplicate records cannot be dangerous
+composite events, and unregistered reasons require amendment. Crossing the 72
+count scenarios with five diagnostic fractions of invalid records classified
+as composite events gives 360 rows; 36 scenarios cross the raw `< 0.10` gate
+within that grid. This is evidence that post-outcome classification could
+change the conclusion, not a basis for choosing a fraction. The
+[`private invalidity workbench`](validation/cmle_one_click_confirmatory_invalidity_adjudication_20260810/invalidity_adjudication_workbench.html)
+remains unselected and recruitment-blocking.
+
+A prospective machine-readable precision plan and a separate 20-replicate
+Python pilot are now retained under `validation/`. The pilot completed 160/160
+fits in about 82 recorded fit-seconds, but it blocks rather than promotes the
+study: only 124/160 focal decisions met the registered app eligibility rule,
+the two sparse conditions each produced 4/20 eligible decisions, and 0/160
+fits passed the post-pilot `1e-4` terminal-gradient sup-norm sensitivity.
+Row-level floating-point auditing also found five fit classifications that
+would change if 3-decimal display values drove the decision. See
+[`PILOT20_ASSESSMENT.md`](validation/operating_characteristics_pilot20_20260809/PILOT20_ASSESSMENT.md).
+The finding requires a separately qualified strict Python JMLE mode and sparse
+design review before a fixed confirmatory manifest. The prospective strict
+lane subsequently passed its frozen `1e-4` numerical gate in 160/160 runs, but
+the accompanying movement and exact eta-design-rank audits found that all 40
+sparse runs were structurally nonidentified (nullity 7; eight Person-Rater
+components). The app now reports optimizer `Converged` separately from
+`InferenceReady`, fails JMLE inference readiness when this pre-fit rank audit
+fails, and withholds conditional bias output for the affected fit. A retained
+160/160 integration check verifies the guard without changing optimizer
+controls, estimates, or automatically switching JMLE to MML. This still does
+not enable a public evidence button or performance claim; the audit is limited
+to the Person/facet eta block and does not qualify thresholds or GPCM slopes.
+An additional exact-score boundary guard now distinguishes an optimizer or
+constraint value from a finite JMLE Person measure. In the frozen evidence it
+matched 8,320/8,320 Person rows; four boundary Persons occurred among the 120
+structurally identified runs. Their technical `Estimate` is retained for
+reproducibility, but `ReportableEstimate` is withheld. The rule uses exact
+all-minimum/all-maximum integer patterns, never an estimate-magnitude or display
+rounding cutoff, and does not silently select a finite correction.
+
+A repository-only fixed-calibration Warm WLE lane now provides the first
+explicit correction comparison without relabelling WLE as a finite JMLE MLE.
+The generic RSM/PCM/GPCM scorer matched `TAM::tam.mml.wle2` for all 16 frozen
+Person fixtures (maximum theta and SE differences `1.68e-11` and `1.18e-11`).
+On the 120 structurally identified Stage-B2 runs, 7,600 Person scores were
+rescored with facets and steps held fixed; the four exact-extreme patterns
+moved by about 24--25 logits, while the median absolute interior shift was
+`0.009` logits. Raw Person-fit zones changed in 51/17,360 comparisons, and
+three-significant-digit display values disagreed with raw fit zones 54 times
+across the two estimator surfaces. The focal Holm and combined strong-bias
+decisions did not change, but the practical `|bias| >= 0.50` rule changed once
+(`0.500839` to `0.498068`). All 40 structurally rank-deficient sparse runs
+remain withheld: finite WLE Person scores cannot identify their facet
+calibration. These findings do not enable a Streamlit WLE option, automatic
+fallback, or public equivalence claim; see
+[`FIXED_CALIBRATION_WLE_DOWNSTREAM_RESULTS.md`](validation/fixed_calibration_wle_downstream_20260809/FIXED_CALIBRATION_WLE_DOWNSTREAM_RESULTS.md).
+The first explicit exact-CMLE-to-WLE fit-sample bridge also passes its frozen
+RSM/PCM handoff checks with zero bridge/direct-score and category-surface
+differences; it remains repository-only and its WLE SE treats CMLE calibration
+as fixed. See
+[`CMLE_WLE_BRIDGE_RESULTS.md`](validation/cmle_wle_bridge_20260810/CMLE_WLE_BRIDGE_RESULTS.md).
+The first frozen calibration-sensitivity gate now perturbs the exact-CMLE free
+coordinates with 2,000 asymptotic covariance draws per RSM/PCM model. All
+32,000 draw-Person scores returned. Median Person calibration-draw SD was
+`0.0616`--`0.0801` logits by model, while the largest value was `0.518` logits
+and the largest ratio to conditional WLE SE was `0.427`; the largest effects
+occurred at exact-extreme patterns. These draw quantiles are not confidence or
+credible intervals, and the quadrature sum is not an inference-qualified total
+SE because the fit-sample CMLE and WLE stages reuse responses. A six-card
+machine-readable first-read projection therefore marks numerical research
+success separately from caution and withheld inference/UI states. See
+[`CMLE_WLE_CALIBRATION_SENSITIVITY_RESULTS.md`](validation/cmle_wle_calibration_sensitivity_20260810/CMLE_WLE_CALIBRATION_SENSITIVITY_RESULTS.md).
+The next bootstrap stage was designed and frozen before implementation. Its
+repository-only core separates a fixed-Person-total conditional-pattern lane
+from a joint plug-in response lane, retains refit rank/readiness failures, and
+applies seed/work/output guards; neither lane is pre-labelled a total SE or
+confidence interval. The frozen 200-replicate RSM/PCM matrix has now completed
+all 800 attempted refits with full rank/readiness and WLE availability (the
+per-cell Wilson 95% lower bound is `0.981`, not proof of a population rate of
+one). Fixed-score totals had zero mismatches. Median Person bootstrap SD was
+`0.0602` logits in the fixed-score lane and `0.615` in the joint lane; the
+joint lane produced 441 exact-extreme state transitions and the maximum
+bootstrap-mean displacement was `0.370` logits. The sampler contract passed,
+but these dispersions are not a variance decomposition and percentile columns
+are not confidence intervals. See
+[`docs/cmle_wle_bootstrap_design.md`](docs/cmle_wle_bootstrap_design.md) and
+[`CMLE_WLE_BOOTSTRAP_PILOT_RESULTS.md`](validation/cmle_wle_bootstrap_pilot_20260810/CMLE_WLE_BOOTSTRAP_PILOT_RESULTS.md).
+
+A separately registered downstream gate now validates untrimmed fixed-theta
+CMLE-WLE Person Infit/Outfit against `sirt::pcm.fit`. Across RSM and PCM, 32
+Person rows and 162 administered observations—including four exact-extreme
+Persons and non-rectangular missingness—matched within `4.89e-15` for Infit and
+`4.00e-15` for Outfit; expected categories and variances also matched at
+binary64 noise. TAM uses the same Infit and pre-trim residual contributions,
+but its default JML fit path trims unusually large Outfit contributions, so
+default TAM Outfit is not claimed identical. The corrected 800-replicate fit
+extension retained 12,800 successful Person-replicates, zero fixed-score total
+mismatches, and exact persisted WLE identity with the original pilot. It found
+2,372 Infit and 2,454 Outfit raw-class transitions (2,554 Person-replicates had
+at least one), plus 24 display-rounding boundary statistics and nine cases in
+which a three-decimal display implied a different class. All decisions used
+unrounded MnSq. The first extension run remains retained as failed because an
+asymmetric CSV-versus-memory comparison introduced a one-ULP identity
+difference; a registered amendment kept the exact-zero gate unchanged and the
+full corrected rerun passed under symmetric persisted comparison. ZSTD,
+p-values, threshold optimality, coverage intervals, total SE, and Streamlit
+integration remain withheld. See
+[`CMLE_WLE_PERSON_FIT_RESULTS.md`](validation/cmle_wle_person_fit_20260810/CMLE_WLE_PERSON_FIT_RESULTS.md)
+and
+[`CMLE_WLE_BOOTSTRAP_FIT_EXTENSION_RESULTS.md`](validation/cmle_wle_bootstrap_fit_extension_corrected_20260810/CMLE_WLE_BOOTSTRAP_FIT_EXTENSION_RESULTS.md).
+The accompanying
+[`critical decomposition`](validation/cmle_wle_bootstrap_fit_extension_corrected_20260810/CMLE_WLE_BOOTSTRAP_FIT_CRITICAL_REVIEW.md)
+shows why the aggregate transition count is not a misfit-prevalence estimate.
+
+A post-result sensitivity audit now separates display rounding from the
+substantive threshold convention. Recomputing from raw values reproduced every
+canonical class and transition. Counterfactually classifying rounded values
+produced nine replicate-statistic class mismatches and five either-statistic
+transition disagreements at three decimals, but none at six decimals. Across
+the frozen 125 threshold triplets, aggregate transition counts ranged from
+1,789--3,461 for Infit, 1,877--3,550 for Outfit, and 1,975--3,675 for either
+statistic. A registered diagnostic addendum also found that moving only the
+noisy/distorting boundary from 1.90 to 2.10 left the binary transition totals
+exactly unchanged while reallocating 37 Infit and 51 Outfit replicate labels
+from `distorting` to `noisy`. Thus neither rounded display nor a binary
+changed/not-changed projection is an adequate audit trail. These are
+descriptive post-result surfaces, not threshold validation. See the
+[`threshold surface`](validation/cmle_wle_fit_threshold_surface_20260810/CMLE_WLE_FIT_THRESHOLD_SURFACE_RESULTS.md)
+and
+[`class-decomposition addendum`](validation/cmle_wle_fit_threshold_surface_severity_20260810/CMLE_WLE_FIT_THRESHOLD_SEVERITY_ADDENDUM.md).
+
+The first prospectively registered known-truth design pilot now retains 160
+runs, 624,000 response rows, and 32,000 Persons for both fit-sample WLE and
+generating-theta sensitivity. Under the raw `Infit > 1.50 or Outfit > 1.50`
+rule, clean-Person mean replicate rates were 3.4%--3.7% with 24 observations
+but 10.1%--10.8% with six; affected-Person detection ranged from 3.8% for the
+frozen threshold-heterogeneity mechanism to 46.6% for dense random response.
+WLE and generating-theta fit flags disagreed for 2,333/32,000 Persons, and
+non-extreme WLE RMSE ranged from 0.263 to 0.720 logits. The nominal 125-triplet
+grid reduces to 5, 5, 25, and 5 effective input configurations for the four
+declared rules. These 20-replicate results debug the design; they do not
+validate a threshold or authorize a public traffic light. See the
+[`known-truth pilot`](validation/cmle_wle_fit_known_truth_pilot_20260810/CMLE_WLE_FIT_KNOWN_TRUTH_PILOT_RESULTS.md),
+[`bias/dimension addendum`](validation/cmle_wle_fit_known_truth_pilot_addendum_20260810/CMLE_WLE_FIT_KNOWN_TRUTH_PILOT_ADDENDUM.md),
+and
+[`critical review`](validation/cmle_wle_fit_known_truth_pilot_addendum_20260810/CMLE_WLE_FIT_KNOWN_TRUTH_CRITICAL_REVIEW.md).
+
+The next repository-only Phase-B increment now implements native hard facet
+anchors inside the exact CMLE likelihood rather than as a post-fit recentering.
+Its prospectively amended engineering smoke reused 24,000 retained response
+rows for 32 same-byte fits; all returned inference-ready, preserved supplied
+anchors exactly with SE zero, and passed rank, parameter-count, persistence,
+and raw-fit recomputation gates. Two replicates per condition do not establish
+an anchor percentage, robustness, or cross-engine performance. A separately
+labelled post-result diagnostic found a more fundamental warning: shifting all
+Rater anchors by the same +0.25 moved WLE by +0.25 but left conditional
+log-likelihood and Person fit invariant to numerical noise (zero raw flag
+mismatches). Fit indices therefore cannot validate the absolute anchor origin.
+See the [`Phase-B smoke`](validation/cmle_native_hard_anchor_smoke_20260810/CMLE_NATIVE_HARD_ANCHOR_SMOKE.md)
+and [`common-shift diagnostic`](validation/cmle_native_hard_anchor_common_shift_20260810/CMLE_HARD_ANCHOR_COMMON_SHIFT_DIAGNOSTIC.md).
+
+The subsequent prospectively frozen differential-anchor stress reused 120,000
+retained response rows for 320 exact-CMLE fits across four dense/sparse,
+clean/random-response conditions and eight anchor scenarios. All fits were
+inference-ready, but the substantive result is cautionary. Correct nested
+anchor sets did not improve WLE recovery monotonically; the anchor share was
+inseparable from which Rater levels were fixed. A zero-mean differential
+anchor error changed raw either-upper Person-fit decisions for 2.4%--15.8% of
+paired rows by condition/group, while a common +0.25 origin error changed none.
+Across 64,000 Person-scenario rows, using 3-decimal displayed MnSq instead of
+raw values would reverse 12 decisions; 6 decimals reproduced the raw decisions
+in this dataset. This is not a universal precision guarantee. The evidence
+therefore supports provenance, connectivity, raw-boundary, and contamination
+sensitivity reporting—not an anchor-percentage recommendation or public CMLE
+button. See the
+[`registered stress report`](validation/cmle_native_anchor_differential_stress_20260810/CMLE_NATIVE_ANCHOR_DIFFERENTIAL_STRESS.md)
+and its
+[`critical review`](validation/cmle_native_anchor_differential_stress_20260810/CMLE_NATIVE_ANCHOR_DIFFERENTIAL_CRITICAL_REVIEW.md).
+
+A second prospectively registered stress then varied the Rater bridge topology
+and randomized which correct levels were anchored. Its 350/350 comparisons
+matched a transparent realized-component prediction to the exact prefit rank:
+partial anchors did not identify isolated Raters, while two random anchors
+identified a two-component design only in the 7/10 replicates where both
+components were covered. Of 287 prefit-eligible cases, 286 returned and 274
+were inference-ready. All 13 shortfalls occurred in the one-Person-per-edge
+minimal chain: one non-finite conditional-normalizer failure and 12 returned
+fits with deficient final information rank. Thus graph connectedness and
+prefit rank are necessary but not sufficient when bridge support is extremely
+thin. Across 82,200 inference-ready Person rows, 3-decimal display-driven MnSq
+changed 13 raw decisions; 6 decimals changed none in this dataset. See the
+[`connectivity report`](validation/cmle_native_anchor_connectivity_20260810/CMLE_NATIVE_ANCHOR_CONNECTIVITY_STRESS.md)
+and
+[`critical review`](validation/cmle_native_anchor_connectivity_20260810/CMLE_NATIVE_ANCHOR_CONNECTIVITY_CRITICAL_REVIEW.md).
+
+The prospectively registered finite-domain remediation now rejects and counts
+non-finite BFGS trial points without clipping the exact likelihood or relaxing
+readiness. On the same retained bytes, all 287 prefit-eligible fits returned
+and the same 274 remained inference-ready. The former exception recorded 12
+invalid trials and returned fail-closed at rank 8/10, nullity 2, and gradient
+sup norm `0.00296`. The 286 previously returned fits retained identical ready
+states; 82,200 shared Person rows retained every raw/rounded fit flag. Maximum
+structural-estimate and conditional-loglikelihood differences were
+`3.55e-15` and `2.27e-13`. This fixes returnability, not finite-MLE existence:
+a separate adversarial binary separation check shows that full finite-point
+rank and a small gradient can still mask a likelihood maximum at infinity.
+See the
+[`remediation report`](validation/cmle_finite_domain_optimizer_remediation_20260810/CMLE_FINITE_DOMAIN_OPTIMIZER_REMEDIATION.md)
+and
+[`critical review`](validation/cmle_finite_domain_optimizer_remediation_20260810/CMLE_FINITE_DOMAIN_OPTIMIZER_REMEDIATION_CRITICAL_REVIEW.md).
+
+The finite-MLE existence gate has now passed a separately prospective research
+stress without entering the public estimator. An exhaustive convex-support
+audit first matched all 93 registered binary/RSM/PCM/anchor controls, but its
+50,000-configuration research cap left 227/350 retained cases unavailable. A
+subsequently registered fixed-score support oracle replaced materialization
+with exact dynamic-programming separation and LP constraint generation. It
+matched 1,184/1,184 exhaustive support maxima, 93/93 fixture statuses, 123/123
+completed retained exhaustive statuses, and all six high-cap sentinels. The
+same-byte 350-case replay classified 63 structural, 13 boundary, and 274
+interior cases with zero unavailable or tolerance-unstable results. All 274
+current inference-ready fits were interior; the 13 boundary cases were
+non-ready. Median theoretical configurations were 97,040 versus 163 generated
+constraints, and per-eligible-case time was 0.521 seconds at P95 (0.568 maximum)
+on the evidence machine. This certifies only conditional finite-existence
+geometry under the implemented coordinates and anchors: it does not validate
+fit, anchor bias, MnSq thresholds, or R-package equality. See the
+[`oracle stress report`](validation/cmle_finite_mle_oracle_20260810/CMLE_FINITE_MLE_SUPPORT_ORACLE_STRESS.md)
+and
+[`critical review`](validation/cmle_finite_mle_oracle_20260810/CMLE_FINITE_MLE_SUPPORT_ORACLE_CRITICAL_REVIEW.md).
+The oracle is now connected to the repository-only `fit_cmle` readiness path
+under a third prospective contract. All 287 same-byte eligible fits returned;
+274 oracle-interior fits remained ready and all 13 boundary fits remained
+non-ready with a dedicated reason. Independent oracle status matched 287/287,
+102 selected tests passed, and 82,200 Person rows retained every raw and
+rounded-counterfactual fit decision. Estimate, SE, likelihood, WLE, Infit, and
+Outfit changes were at most `2.27e-13`. The core still retains technical
+optimizer outputs on a boundary for research reproducibility; a future UI
+orchestrator should stop before optimization and explain the boundary. See the
+[`integration report`](validation/cmle_finite_mle_readiness_integration_20260810/CMLE_FINITE_MLE_READINESS_INTEGRATION.md)
+and
+[`integration critical review`](validation/cmle_finite_mle_readiness_integration_20260810/CMLE_FINITE_MLE_READINESS_INTEGRATION_CRITICAL_REVIEW.md).
+A fourth prospective layer now provides a structured, bilingual pre-
+optimization workflow in
+[`mfrm_app/cmle_workflow.py`](mfrm_app/cmle_workflow.py). It returns the same
+four-stage schema for invalid input, structural nonidentification, a finite-MLE
+boundary, an unavailable existence audit, numerical non-readiness, and a ready
+calibration. On the same 350 cases it stopped 63 structural and 13 boundary
+cases before optimization and optimized only the 274 interior cases; all
+terminal states matched the frozen evidence and no forbidden optimizer call
+occurred. P95 time was 0.068 seconds for a design block, 0.306 for a boundary
+stop, and 1.084 for a ready interior workflow. Japanese/English text is
+machine-checked but not comprehension-tested. Person scoring is only marked
+available and is not run in workflow v1. See the
+[`workflow report`](validation/cmle_structured_workflow_20260810/CMLE_STRUCTURED_WORKFLOW_STRESS.md)
+and
+[`workflow critical review`](validation/cmle_structured_workflow_20260810/CMLE_STRUCTURED_WORKFLOW_CRITICAL_REVIEW.md).
+
+A separately registered boundary-semantics replay now distinguishes matched
+CMLE parity from different-estimator sensitivity. On five oracle-interior
+additive-RSM controls, native Python and `immer::immer_cml()` free coordinates
+agreed within `1.78e-9` and conditional log likelihood within `5.33e-15`.
+On seven oracle-boundary controls, however, `immer` returned optimizer code
+zero in 3/7 cases and finite coefficient/SE vectors in 4/7 at `maxit=2000`;
+none became reportable after the finite-existence gate. The frozen dirty
+`mfrmr 0.2.3` JML snapshot returned and labelled all 7/7 boundary fits
+converged, with category-support warnings and a maximum absolute estimate of
+`103.75`. TAM and sirt were retained only as MML sensitivity lanes, not
+numerical parity targets. Thus neither finite output nor nominal convergence
+may override the support oracle, and no rounded value or MnSq was used to
+classify existence. See the
+[`cross-engine decision`](validation/cmle_cross_engine_boundary_20260810/decision.json)
+and
+[`critical review`](validation/cmle_cross_engine_boundary_20260810/CMLE_CROSS_ENGINE_BOUNDARY_CRITICAL_REVIEW.md).
+
 Before using results for high-stakes scoring, placement, certification, employment, or institutional decisions, cross-check the analysis with an established workflow and document the model assumptions.
 
 ## Active Checkout
@@ -48,6 +549,29 @@ sample-scenario and quick-results-bundle work, then layers on the
 release-readiness and UX/documentation pass documented in `CHANGELOG.md`.
 Key current-line improvements include:
 
+- JMLE results now distinguish numerical convergence from structural
+  inference readiness. Before optimization, an exact free-coordinate eta
+  design audit reports rank, column count, nullity, Person-facet connectivity,
+  and null-space concentration. Rank-deficient fits remain visible but cannot
+  produce a ready inference label or conditional bias table; downloadable
+  evidence preserves the reason. The app does not silently substitute MML.
+- JMLE Person tables now distinguish finite interior measures from
+  all-minimum/all-maximum score boundaries. Boundary rows carry an explicit
+  direction, readiness flag, reportable estimate, and value-role label; the
+  Japanese and English convergence views explain why a finite optimizer value
+  is not a finite Person MLE. The same audit is included in quick, full, demo,
+  and publication-oriented downloads.
+- A shared floating-point decision contract for fit and conditional bias
+  screens. Classifications use unrounded values; exact MNSQ endpoints are
+  explicit (`0.50` and `1.50` acceptable, `2.00` noisy), and numerical or
+  3-decimal display boundaries are labelled instead of silently changing the
+  decision. Fully unavailable fit statistics are not reported as stable. Both
+  the quick bundle and full table download include row-level and summary
+  stability audits.
+- Descriptive anchor coverage now reports unique anchored levels, unanchored
+  levels, and share without treating any percentage as a universal adequacy
+  cutoff. Sparse simulation previews, fit scatter, bias heatmaps, and anchor
+  coverage charts keep the relevant design caveats next to the visualization.
 - FACETS-primary fit standardisation for RSM/PCM: Wright-Masters
   fourth-moment d.f., Wilson-Hilferty ZSTD, and the FACETS +/-9 cap are the
   default. Historical engine d.f./ZSTD remain in `*_ENGINE` sidecar columns.
@@ -129,7 +653,7 @@ full per-version breakdown.
   move to the tail.
 - **Fit-cell colour highlighting** — Infit / Outfit mean-square cells
   colour-coded to the Wright & Linacre (1994) interpretation bands
-  (0.5–1.5 acceptable · 1.5–2.0 noisy · ≥ 2.0 distorting ·
+  (0.5–1.5 acceptable · >1.5–2.0 noisy · >2.0 distorting ·
   < 0.5 over-fit).
 - **Scree plot EV = 3 reference line** — previously only EV = 1 and
   EV = 2 were drawn; the "EV > 3 = strong secondary residual signal"
@@ -148,10 +672,28 @@ The screenshot uses the built-in synthetic sample data and shows the
 post-estimation workspace after the optional sample guide. On a new session,
 the application first offers three routes: learn with the sample, start with
 your own data, or continue without the guide. Raw response rows remain behind
-a collapsed preview instead of being exposed by default.
+a collapsed preview instead of being exposed by default. In Guided defaults,
+the primary **Run this analysis / この設定で分析する** action now follows the
+column mapping and readiness checks in the main workspace; the sidebar no
+longer duplicates a technical `FACETS-mode` Run action. Advanced controls keep
+the established sidebar route for expert workflows. The data source is also
+grouped into four user tasks—built-in example, generate, paste, or upload.
+Choosing an example keeps its scenario selector visible directly below, while
+the unchanged internal IDs preserve saved-state and analysis compatibility.
+Guided defaults also limits setup to first-run decisions: column roles, model,
+estimation method, and analysis coverage. Weighting, anchors, optimizer and
+identification controls, regularization, population models, score-scale
+overrides, report scaling, and visualization styling remain available after
+switching to Advanced controls. Returning to Guided restores documented
+standard values instead of retaining an invisible advanced customization.
 
 The current cross-cutting UX baseline and the planned workflow-shell work are
 documented in [`docs/ux_adversarial_audit.md`](docs/ux_adversarial_audit.md).
+The pre-browser accessibility gate is defined in
+[`docs/browser_accessibility_acceptance.md`](docs/browser_accessibility_acceptance.md).
+It generates 52 English/Japanese task cases and 482 required evidence rows;
+templates, CSS inspection, and AppTest correctly remain `NOT_ACCEPTED` until
+all version-matched browser records pass with retained evidence.
 
 ## Data Privacy
 
@@ -601,3 +1143,28 @@ docs/images/app-data-overview.png
 ```
 
 Generated files such as `__pycache__`, benchmark CSVs, local logs, and validation output directories are ignored.
+
+## Known assignment-mechanism validation
+
+Repository-only validation now includes an exact small-state oracle for a
+degree-conditioned informative Person-Rater assignment mechanism. The
+Metropolis 2-switch sampler and its score-free row materializer passed every
+frozen oracle, margin, connectivity, numerical, and outcome-blind gate for
+`gamma=-0.8, 0, +0.8`; see
+`validation/KNOWN_ASSIGNMENT_MECHANISM_PILOT_20260811.md`.
+
+This does not expose an inferred missingness model in Streamlit and does not
+qualify any estimator under informative assignment. It establishes a clean
+simulation layer for the next response-generation study. FACETS 4.5 remains a
+same-estimand external check for JMLE only; MML and exact CMLE remain explicitly
+different-estimand sensitivities. Rounded FACETS fit display values are never
+promoted to raw calculation inputs.
+
+The subsequent fixed-Person, 10-replicate response screening is now complete;
+see `validation/KNOWN_ASSIGNMENT_RESPONSE_SCREENING10_20260811.md`. All 30
+FACETS/Python JMLE pairs and all 90 MML/CMLE fits qualified. Under the frozen
+PCM, only the fixed/free normal-person MML Rater RMSE and MAE screening
+intervals excluded zero for both `gamma=-0.8` and `gamma=+0.8`; JMLE, exact
+CMLE, Task, Criterion, and threshold intervals did not. This is a candidate
+assignment-sensitivity pattern conditional on one fixed Person vector, not a
+confirmatory result or estimator ranking, and remains repository-only.

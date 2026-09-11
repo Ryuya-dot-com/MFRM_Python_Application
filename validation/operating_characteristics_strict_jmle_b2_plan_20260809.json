@@ -1,0 +1,83 @@
+{
+  "schema_version": "mfrm-strict-jmle-b2-numerical-plan-v1",
+  "registered_date": "2026-08-09",
+  "purpose": "Apply the prospectively selected precision L-BFGS-B pipeline to all 160 frozen pilot RunIds before considering application-core integration.",
+  "authorization_chain": {
+    "original_stage_b_status": "Unauthorized because Stage A failed.",
+    "stage_a2_selected_candidate": "lbfgsb_precision",
+    "stage_a2_revised_stage_b2_authorized": true,
+    "stage_b2_attempted_fits": 160,
+    "application_integration_status": "Withheld pending this Stage-B2 result and a separate implementation gate."
+  },
+  "input_identity": {
+    "streamlit_app_sha256": "b8c7c180f5326a769630b701cbceb43dfe27a0afb3717a4a48c97f7d03ca3a96",
+    "stage_a_plan_sha256": "e2345d9d5d5038cde50d48cd20f8e84fb9dc2b5d59b1fb91f1d2cee3bc269e0c",
+    "stage_a_adapter_sha256": "c92aa8f3731a54c64197c8bec576f7619ae1c9b4349d3ddff13d776e2513d01e",
+    "stage_a2_plan_sha256": "9678c59f4ce1fa8941d5cb9ea61ea8582c8a88f75bb0464a2ae01918687d1d02",
+    "stage_a2_adapter_sha256": "2bb08715973542a5910750a2bc58c995afc60bc504f18d34d09386e409a7c769",
+    "stage_a2_selection_sha256": "17817d5fc81ae5a3512145d662f2777bdb108623e8495d9230bb0139eed58eb5",
+    "stage_a2_identity_sha256": "95211fc3a4657257621e0d595760dd33e962a65eaa02713b7b59a0e46ff9e434",
+    "pilot_manifest_file_sha256": "4df0476f9d8ec09b3bfc469e7eeb80dedb81c616b9e9c8d74b83a4f2b36f8f15",
+    "pilot_generated_ratings_sha256": "0eaf6ec727107b5ed5af9ec7b99ccf3754c9af268eeeb4fd63d8e3900fc82232",
+    "pilot_generated_facet_truth_sha256": "a881198bebd3e73b6d632fd6c08542b983425951242c326052d3a860d6db7262",
+    "pilot_generated_anchors_sha256": "02d4c39e22ba6b5b6b975d9d39e8ecd347b47053397f76c1c458d037ce73fa72",
+    "pilot_runs_sha256": "f89c8bcdbd5bc857de062b37179082ce3d53991e6794a49131478cae2eee45ec",
+    "pilot_study_identity_sha256": "53950d0504493a38d5e92f18581c0fc43373f3c25e5f8b2667dff730f55e18a1"
+  },
+  "strict_baseline": {
+    "model": "RSM",
+    "method": "JMLE",
+    "maxit": 500,
+    "reltol": 1e-9,
+    "effective_gtol": 1e-9,
+    "effective_ftol": 1e-9,
+    "all_160_must_return_finite_objective_and_gradient": true,
+    "pilot_control_difference": "The retained pilot used maxit=160 and reltol=1e-6. Its likelihood and gradient are comparison fields, not exact-reproduction gates."
+  },
+  "selected_polish": {
+    "candidate_id": "lbfgsb_precision",
+    "method": "L-BFGS-B",
+    "start": "strict baseline terminal vector for the same RunId",
+    "options": {
+      "maxiter": 1500,
+      "gtol": 1e-7,
+      "ftol": 1e-15,
+      "maxls": 50,
+      "maxcor": 20
+    }
+  },
+  "qualification": {
+    "attempted_fits": 160,
+    "optimizer_success_required": 160,
+    "finite_objective_and_gradient_required": 160,
+    "terminal_gradient_norm": "maximum absolute component in the exact identified free-coordinate vector",
+    "terminal_gradient_sup_norm_threshold": 0.0001,
+    "optimizer_jac_recomputed_max_abs_tolerance": 1e-12,
+    "objective_degradation_tolerance_from_strict_baseline": 1e-8,
+    "finite_difference_coordinates_per_fit": 8,
+    "finite_difference_method": "centered",
+    "finite_difference_step": "machine_epsilon^(1/3) * (1 + abs(parameter))",
+    "finite_difference_max_abs_error_tolerance": 1e-5,
+    "anchor_run_count": 80,
+    "hard_anchor_tolerance": 1e-10,
+    "all_gates_must_pass_for_integration_experiment": true
+  },
+  "floating_point_audit": {
+    "decision_source": "unrounded raw terminal gradient sup norm",
+    "display_format": ".3g",
+    "display_roundtrip_decision_mismatches_are_descriptive": true,
+    "near_boundary_absolute_band": 5e-7,
+    "sensitivity_thresholds": [0.0001, 0.00001, 0.000001],
+    "per_observation_gradient_is_descriptive_only": true,
+    "parameter_movement_is_descriptive_only": true
+  },
+  "scope_boundaries": {
+    "bias_decisions_recomputed_after_polish": false,
+    "reason_bias_not_recomputed": "This validation-only pipeline qualifies the optimizer before changing the application result-construction path.",
+    "operating_characteristics_reestimated": false,
+    "r_package_equivalence_claim": false,
+    "package_superiority_claim": false,
+    "application_core_change_authorized_by_this_plan": false,
+    "public_surface_status": "Withheld"
+  }
+}

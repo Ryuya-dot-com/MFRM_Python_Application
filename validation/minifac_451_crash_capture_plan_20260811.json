@@ -1,0 +1,27 @@
+{
+  "schema_version": "minifac_451_crash_capture_plan_v1",
+  "status": "frozen_before_capture",
+  "registered_date": "2026-08-11",
+  "trigger_control": "validation/minifac_451_version_control_20260811/result.json",
+  "trigger_control_sha256": "0231a41b63971f6e92aa0636c6de5b377e8396ca8a7d8ea67d951b89b89348ce",
+  "purpose": "Determine whether MINIFAC 4.5.1 fails in the same shared Xojo module and at the same module offset as FACETS 4.5.0.",
+  "executable": "C:/Minifac/Minifac.exe",
+  "executable_sha256": "c9a679d00aba306cc88195027c502ccc1f9824a26050b0576d3a0b657766be3b",
+  "official_example": "C:/Minifac/examples/Kct.txt",
+  "official_example_sha256": "31e92a328fe4820ec19dc1b7103b1be0d02b7a205012b0c94ccfe55c5a35c4a6",
+  "shared_xojo_framework": "C:/Minifac/XojoGUIFramework64.dll",
+  "shared_xojo_framework_sha256": "ed3f6c931f2db4625dc2ac0860cd741663b6c4b5bb44b802296b7eef1a9f014b",
+  "capture_tool": "validation/tools/procdump/procdump64.exe",
+  "capture_tool_sha256": "d1fc99ae304bd1d2bf28abeb62531da959e2431916194981b88c958fd713a8e6",
+  "execution": {
+    "dump_type": "Mini (-mm)",
+    "process_environment_change": "TEMP and TMP point to a new empty child directory",
+    "timeout_seconds": 120,
+    "retained_output": "validation/minifac_451_crash_capture_20260811"
+  },
+  "decision_rule": {
+    "same_module_and_offset": "classify as a shared Xojo/Windows runtime failure across 4.5.0 and 4.5.1",
+    "different_location": "retain as a distinct version failure; no scientific use in either case"
+  },
+  "claim_boundary": "Native crash localization only; no scientific endpoint is read."
+}

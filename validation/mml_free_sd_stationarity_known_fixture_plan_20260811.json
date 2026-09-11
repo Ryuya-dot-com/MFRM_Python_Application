@@ -1,0 +1,25 @@
+{
+  "schema_version": "mml-free-sd-stationarity-known-fixture-plan-v1",
+  "classification": "POSTHOC_ENGINEERING_KNOWN_EXCLUDED_FROM_QUALIFICATION",
+  "qualification_eligible": false,
+  "expected_run_id": "gamma_pos_0p0__vector-05",
+  "expected_rows": 960,
+  "expected_input_sha256": {
+    "study_identity.json": "a75869852519ca4947c25efc599bdb3a7c4d84532eea5623160c0ae51ad1a806",
+    "retained_input/generated_ratings.csv": "6fb16fc5291a437062c8689e2cb098b4fc4ded30b765efbeffc9954642fec353",
+    "retained_input/manifest.csv": "c19d44fd3fea390f2bd0565ba8a7678ce3a4280a78314b37fd21be31780833c0",
+    "r_mml/crossfit_runs.csv": "a27f6c962812d844e1ddfad734e83033e9b5561d04961bf5cacec13974a6b009",
+    "r_mml/verification_identity.json": "4509aea77577f7b73f052362274bf4443da6b130dbaa4658f1631e777aa10070"
+  },
+  "expected_strict_audit_sha256": {
+    "audit_identity.json": "148ea5c5cbc72a2123f6f2007f4816c7a38faa5fe5035ad216cf88c974e1d116",
+    "assessment.json": "25f8d091ac45ad65e9f4bbcec4be5955e5aef41bb12bfe2b77db2647f5e8fef9"
+  },
+  "allowed_claim": "Posthoc regression evidence for the numerical pathway only.",
+  "forbidden_claims": [
+    "prospective qualification",
+    "scientific threshold selection",
+    "endpoint re-analysis",
+    "revision of frozen kac200 conclusions"
+  ]
+}

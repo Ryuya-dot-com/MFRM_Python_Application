@@ -1,0 +1,38 @@
+{
+  "schema_version": "mfrm-facets-pcm-pipeline-pilot-plan-v1",
+  "registered_date": "2026-08-11",
+  "parent_plan": "facets_pcm_qualification_plan_20260811.json",
+  "parent_smoke": "facets_pcm_known_truth_smoke_20260811",
+  "timing": "Written after the four-run known-truth smoke passed and before the 20-replicate extension was generated or fitted.",
+  "purpose": "Test convergence, parsing, identifiability, exact count mapping, and stability of the locked direct-agreement tolerances. This remains a pipeline pilot, not an estimator-performance study.",
+  "design": {
+    "replicates_per_condition": 20,
+    "conditions": ["shared", "heterogeneous"],
+    "attempted_runs": 40,
+    "seed_range_inclusive": [731101, 731120],
+    "persons_per_run": 80,
+    "rows_per_run": 1920,
+    "paired_randomness": "Within replicate, the two conditions share Person measures and one uniform per response row.",
+    "immutable_extension": "The first two replicates must exactly preserve all four parent manifest rows, ratings, and threshold truth rows."
+  },
+  "locked_direct_tolerances": {
+    "main_weighted_mae_logits_max": 0.01,
+    "main_absolute_difference_max": 0.05,
+    "minimum_within_facet_spearman": 0.999,
+    "threshold_weighted_mae_logits_max": 0.02,
+    "threshold_absolute_difference_max": 0.05
+  },
+  "pilot_gates": {
+    "input_and_counts": "All four parent runs preserved; every generated row belongs to exactly one run; every mapped FACETS scale/category count matches the retained rows.",
+    "identification": "Expanded constrained PCM design nullity equals zero for every directly compared run.",
+    "engine_accounting": "Every attempted run must be accounted for; at least 95% must return, converge, and be comparison eligible in both engines.",
+    "direct_agreement": "At least 95% of attempted runs must individually pass every locked direct tolerance, and aggregate metrics must pass the same tolerances.",
+    "paired_direction": "At least 90% of replicate-engine checks must estimate a larger between-Criterion threshold distance under the heterogeneous condition than under the shared condition."
+  },
+  "withheld_claims": [
+    "No estimator bias or RMSE ranking from this pilot.",
+    "No interval coverage, fit false-positive, local-bias false-positive, or power claim.",
+    "No generalization to named General/Specific scales, mixed category support, recoding, threshold anchors, or more than one # facet.",
+    "No automatic estimator recommendation in the Streamlit UI."
+  ]
+}

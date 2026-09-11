@@ -1,0 +1,129 @@
+{
+  "registration_status": "prospective_before_version_ledger_or_directional_confirmatory_gate_implementation; no_human_data",
+  "registered_date": "2026-08-10",
+  "study_id": "cmle_one_click_versioned_confirmatory_gate_v1",
+  "purpose": "Freeze instrument identity, directional dangerous-misconception definitions, a two-case confirmatory assignment template, and one-sided Wilson gate mechanics before any pilot or confirmatory human response is collected.",
+  "parent_identity": {
+    "mfrm_app/cmle_one_click_comprehension.py": "2f36eed206a6682874f20c83b054bd4c7118f7ae3c76322a9abe9afe43a4e746",
+    "mfrm_app/cmle_one_click_cognitive_interview.py": "ee81dd5f1f87e603847c392d676f118c9a8aa45d65e4a10f1a8b8949555c7e86",
+    "validation/cmle_one_click_comprehension_readiness_20260810/participant_task_packet.csv": "8d1148d15e18fcf7a90f6f01cb839d507d7b59fcf34ac1cd29eae282a77e8315",
+    "validation/cmle_one_click_comprehension_readiness_20260810/researcher_scoring_key.csv": "828b3c22a49c4529edfc5678c4cdcc585ea83d5c12b8a8d5b761522154a609ca",
+    "validation/cmle_one_click_cognitive_interview_operations_plan_20260810.json": "20e62db292fcd8db561035033f177b86b922af77f4bf2af6aa21581b76bfb168",
+    "validation/cmle_one_click_cognitive_interview_operations_20260810/decision.json": "89bdd2a1d59744867244f4bb4a62d5490c0c57ac8203e9f39d4f118e939e75be"
+  },
+  "semantic_amendment": {
+    "prior_rule_retained": "ParticipantCaseReady continues to require all six critical-domain items correct. It is a non-compensatory comprehension rule.",
+    "new_directional_rule": "The confirmatory dangerous-error numerator includes only the registered unsafe response direction in an eligible analytical state. Conservative false-negative or uncertain responses remain comprehension errors but are not relabelled as false-green or another dangerous misconception.",
+    "reason": "Any-error and dangerous-direction error answer different questions and must not share an undifferentiated numerator.",
+    "non_retroactivity": "This prospective clarification does not alter prior synthetic scoring evidence or any future human data because none exist."
+  },
+  "directional_cells": [
+    {
+      "item_id": "calibration_readiness",
+      "domain": "false_green_calibration",
+      "primary_case_role": "blocked_primary",
+      "eligible_correct_option": "not_ready",
+      "dangerous_response_codes": ["ready"]
+    },
+    {
+      "item_id": "person_scoring_performed",
+      "domain": "invented_person_scores",
+      "primary_case_role": "blocked_primary",
+      "eligible_correct_option": "not_performed",
+      "dangerous_response_codes": ["performed"]
+    },
+    {
+      "item_id": "rounding_vignette",
+      "domain": "rounded_mnsq_reclassification",
+      "primary_case_role": "anchored_primary",
+      "eligible_correct_option": "raw_noisy",
+      "dangerous_response_codes": ["display_acceptable"]
+    },
+    {
+      "item_id": "calibration_uncertainty",
+      "domain": "ignored_calibration_uncertainty",
+      "primary_case_role": "anchored_primary",
+      "eligible_correct_option": "not_propagated",
+      "dangerous_response_codes": ["propagated"]
+    },
+    {
+      "item_id": "anchor_validity",
+      "domain": "anchor_validity_overclaim",
+      "primary_case_role": "anchored_primary",
+      "eligible_correct_option": "does_not_validate",
+      "dangerous_response_codes": ["validates"]
+    },
+    {
+      "item_id": "public_sharing",
+      "domain": "private_archive_public_sharing",
+      "primary_case_role": "anchored_primary",
+      "eligible_correct_option": "not_permitted",
+      "dangerous_response_codes": ["permitted"]
+    }
+  ],
+  "confirmatory_assignment_contract": {
+    "unit": "One private ConfirmatorySlotId, not a person identifier, contributes at most one primary observation to each dangerous-error domain.",
+    "cases_per_slot": 2,
+    "anchored_primary": "Every slot receives pcm_interior_differential_hard_anchors. This case supplies the primary rounding, calibration-uncertainty, anchor-validity, and public-sharing cells.",
+    "blocked_primary": "Every slot receives exactly one of binary_conditional_support_boundary, rsm_structurally_disconnected, or invalid_missing_score_column in rotation. This case supplies false-green calibration and invented-Person-score cells.",
+    "order": "Anchored and blocked cases alternate first/second by slot within each language.",
+    "language": "English and Japanese schedules share role, blocked mechanism, and order codes.",
+    "independence": "Repeated responses within a slot are not treated as independent replicates; each domain uses its single registered primary case role."
+  },
+  "instrument_identity_contract": {
+    "inputs": ["participant task bytes", "researcher key bytes", "preview filename and SHA-256 manifest", "directional rule bytes"],
+    "canonicalization": "Identity uses length-prefixed labelled byte components and canonical JSON for rule metadata.",
+    "version_rule": "Any wording, option, correct answer, criticality, preview, directional rule, or layout-content change creates a new InstrumentContentSHA256 and InstrumentVersion.",
+    "pooling_rule": "Different content identities may never be pooled as one instrument. Revision-specific results remain separate even if labels are similar.",
+    "freeze_rule": "A confirmatory run must reference exactly one frozen version registered before its responses."
+  },
+  "statistical_gate_contract": {
+    "primary_cell_count": 12,
+    "cells": "Six directional dangerous-error domains separately within English and Japanese.",
+    "estimate": "DangerousErrors / ValidEligibleSlots for the registered primary case role.",
+    "primary_interval": "One-sided 95% Wilson upper confidence bound computed with z=Phi^-1(0.95).",
+    "primary_pass": "Every cell must have ValidEligibleSlots >= a future prospectively registered minimum and WilsonUpper95 < 0.10 using strict inequality.",
+    "minimum_n": "No default is supplied. The future confirmatory registration must set it before responses; the engine fails closed without it.",
+    "familywise_sensitivity": "Also report a Bonferroni one-sided 1-0.05/12 Wilson upper bound for all 12 cells. This sensitivity does not replace or silently modify the registered primary rule.",
+    "invalid_records": "Attempted, invalid/incomplete, valid, and eligible denominators are retained separately. Invalid records never count as correct and cannot be silently dropped from the audit ledger.",
+    "language_rule": "No pooled-language pass and no language-equivalence claim.",
+    "rounding_rule": "Bounds and proportions use integer counts and full binary64 computation; display rounding never determines pass/fail.",
+    "pilot_rule": "The at-least-24-per-language pilot remains formative and cannot promote the UI. A zero-error n=24 cell is expected to miss the strict 0.10 primary bound, illustrating why pilot and confirmatory gates are separate."
+  },
+  "planning_table_contract": {
+    "candidate_n": [24, 25, 30, 40, 50, 75, 100, 150, 200],
+    "reported": ["maximum primary-passing errors", "primary bound at zero errors", "maximum familywise-sensitivity-passing errors", "familywise bound at zero errors"],
+    "interpretation": "This is arithmetic, not a sample-size recommendation or power calculation. Attrition, recruitment, case balance, anticipated error rate, and design effects require a future protocol."
+  },
+  "synthetic_validation": {
+    "no_human_meaning": "All response matrices are explicitly synthetic validator fixtures.",
+    "cases": [
+      "zero dangerous errors at n=24 fails primary",
+      "zero dangerous errors at n=25 passes primary but not necessarily familywise sensitivity",
+      "one registered directional error changes only its item-language cell",
+      "a conservative wrong response counts as comprehension error but not a dangerous error",
+      "display_acceptable is dangerous while cannot_decide is incorrect but not dangerous",
+      "missing, duplicate, unknown-option, assignment-drift, mixed-version, and unregistered-version records fail closed",
+      "one failing cell blocks the overall gate",
+      "English success cannot compensate for Japanese failure"
+    ]
+  },
+  "automated_success_gates": {
+    "identity": "Every parent hash matches before execution.",
+    "version": "The frozen parent materials and preview manifest produce one reproducible content identity; content/rule mutation changes it and pooling is rejected.",
+    "direction": "All six registered domains use only their eligible case role, correct option, and dangerous response codes; conservative errors are not mislabelled dangerous.",
+    "assignment": "Candidate schedules contain two cases per slot, one observation per domain, alternating order, rotating blocked mechanisms, and language parity.",
+    "wilson": "Independent formula checks, strict-boundary behavior, primary/familywise tables, and monotonicity pass at full precision.",
+    "synthetic": "Every registered synthetic gate behavior matches, with attempted/invalid/valid denominators retained.",
+    "human_gate": "HumanParticipants=0, HumanStudyStatus=not_started_no_human_data, ConfirmatoryResultAvailable=false, and PublicSurfaceEnabled=false.",
+    "tests": "New version/gate tests plus selected comprehension, operations, one-click, archive, and decision-stability tests pass."
+  },
+  "interpretation_limits": {
+    "coverage": "Per-cell 95% bounds do not provide a simultaneous 95% familywise guarantee; the Bonferroni sensitivity exposes this distinction.",
+    "dependence": "Wilson binomial bounds assume the registered one-primary-observation-per-slot construction; moderator/site clustering and other design effects require separate handling.",
+    "power": "Passing arithmetic at a particular zero-error n is not adequate sample-size justification.",
+    "selection": "Invalidity, attrition, nonresponse, recruitment, proficiency, device, and accessibility selection can bias observed error rates.",
+    "equivalence": "Separate language passes do not establish Japanese-English equivalence.",
+    "public_ui": "withheld"
+  }
+}

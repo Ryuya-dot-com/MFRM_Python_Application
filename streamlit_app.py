@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import html as _html
 import io
 import hashlib
 import importlib.metadata as importlib_metadata
@@ -32,6 +33,11 @@ from scipy.special import logsumexp
 from scipy.stats import chi2, norm as _norm, t as t_dist
 
 from mfrm_app import distribution as _distribution
+from mfrm_app import decision_stability as _decision_stability
+from mfrm_app import design_assignment as _design_assignment
+from mfrm_app import assignment_sensitivity as _assignment_sensitivity
+from mfrm_app import assignment_context_milp as _assignment_context_milp
+from mfrm_app import assignment_generator as _assignment_generator
 from mfrm_app import evidence as _evidence
 from mfrm_app import exports as _exports
 from mfrm_app import frame_bundle as _frame_bundle
@@ -218,6 +224,10 @@ def _is_guide_workspace_state_key(key: object) -> bool:
     name = str(key)
     if name in {
         "data_source_flat",
+        "data_source_class",
+        "data_source_scenario",
+        "_data_source_projection",
+        "_data_source_last_sample",
         "facets_mode_output",
         "viz_ci_level",
         "plot_label_mode",
@@ -1486,7 +1496,7 @@ def visual_interpretation_checklist() -> pd.DataFrame:
             "Where": "Fit Details tab",
             "PrimaryQuestion": "Which elements show noisy, distorting, or overly predictable response patterns?",
             "ReadFirst": "Infit and Outfit zones, top |ZSTD| elements, and whether flags cluster by facet.",
-            "ReviewTrigger": "Infit or Outfit outside 0.5-1.5, Outfit above 2.0, or many |ZSTD| values above 2.",
+            "ReviewTrigger": "Raw Infit or Outfit below 0.50 or above 1.50 (above 2.00 is distorting), unavailable fit, or many |ZSTD| values at least 2.",
             "SuggestedAction": "Inspect the flagged element's raw rows before removing or recoding it.",
             "Caveat": "Large samples can make ZSTD overly sensitive; prioritize mean-square size for practical decisions.",
         },
@@ -2092,7 +2102,7 @@ def build_help_reference_coverage() -> pd.DataFrame:
         {
             "HelpArea": "FACETS-style translation for users",
             "ReaderQuestion": "How should FACETS users map app outputs to familiar evidence?",
-            "SafeClaim": "Agreement rows resemble a Table 8-style shared-context screen; rater evidence resembles measure/fit output; category evidence resembles Categories/Steps output.",
+            "SafeClaim": "Agreement rows resemble a Table 7-style shared-context screen; rater evidence resembles measure/fit output; category evidence resembles Table 8 Categories/Steps output.",
             "PrimaryReferenceKeys": ["Linacre_2007", "Linacre_2024", "Myford_Wolfe_2003", "Myford_Wolfe_2004"],
             "ZoteroEvidence": "FACETS/Winsteps manuals are book/manual references and are not expected to be complete Zotero article records; Myford/Wolfe items were found in Zotero.",
             "ZoteroAction": "Do not count manuals as Zotero gaps; keep article gaps separate from book/manual gaps.",
@@ -3816,8 +3826,8 @@ def _render_run_breadcrumb(result: dict, facet_cols: list[str]) -> None:
 
 _MFRM_GLOSSARY: dict[str, str] = {
     "logit": "log-odds scale; 1 logit ≈ one step on the linear trait axis.",
-    "infit": "inlier-sensitive information-weighted mean-square; 0.5–1.5 ≈ acceptable.",
-    "outfit": "outlier-sensitive unweighted mean-square; same 0.5–1.5 interpretation band.",
+    "infit": "inlier-sensitive information-weighted mean-square; raw 0.50–1.50 inclusive is the acceptable screen.",
+    "outfit": "outlier-sensitive unweighted mean-square; same inclusive 0.50–1.50 interpretation band.",
     "mnsq": "mean-square fit statistic (observed / expected variance ratio); 1.0 = perfect fit.",
     "zstd": "approximate standardised z-score of the mean-square; |z| > 2 ≈ statistically significant misfit. FACETS uses additional df handling, so exact parity is not guaranteed.",
     "jmle": "joint maximum likelihood estimation; estimates person and facet parameters together.",
@@ -3908,14 +3918,18 @@ def reorder_measure_columns(df: "pd.DataFrame") -> "pd.DataFrame":
     return df.reindex(columns=ordered)
 
 
-def style_fit_columns(df: "pd.DataFrame"):
+def style_fit_columns(df: "pd.DataFrame", decision_df: "pd.DataFrame | None" = None):
     """Return a Styler that highlights Infit / Outfit mean-square columns.
 
     Mean-square interpretation (Wright & Linacre 1994):
       * < 0.50          over-fit   (too predictable)        — yellow
       * 0.50 – 1.50     acceptable                          — green
-      * 1.50 – 2.00     noisy                               — orange
-      * ≥ 2.00          distorting (significant misfit)     — red
+      * > 1.50 – 2.00   noisy                               — orange
+      * > 2.00          distorting (significant misfit)     — red
+
+    Classification uses ``decision_df`` when supplied, so a rounded display
+    value can never become the input to the decision. Exact 0.50 and 1.50 are
+    acceptable and exact 2.00 is noisy under the application-wide contract.
 
     The helper returns a Styler if the DataFrame has Infit / Outfit-like
     columns, else the DataFrame untouched. Callers pass the result to
@@ -3925,13 +3939,14 @@ def style_fit_columns(df: "pd.DataFrame"):
         return df
 
     def _fit_color(value: float) -> str:
-        if value is None or pd.isna(value):
+        classification = _decision_stability.classify_fit_mnsq(value)
+        if classification == "unavailable":
             return ""
-        if value >= 2.0:
+        if classification == "distorting":
             return "background-color: #fde0dc"  # light red
-        if value >= 1.5:
+        if classification == "noisy":
             return "background-color: #ffe8cc"  # light orange
-        if value < 0.5:
+        if classification == "overfit":
             return "background-color: #fff4cc"  # light yellow
         return "background-color: #dff5e4"      # light green (acceptable)
 
@@ -3944,10 +3959,23 @@ def style_fit_columns(df: "pd.DataFrame"):
     ]
     if not fit_cols:
         return df
+    raw_source = decision_df if isinstance(decision_df, pd.DataFrame) else df
+
+    def _fit_color_column(display_series: pd.Series) -> list[str]:
+        column = display_series.name
+        if column not in raw_source.columns or len(raw_source) != len(df):
+            values = display_series
+        else:
+            # Styler supplies the full displayed column in row order. Use
+            # positional alignment so duplicate/non-monotone indices cannot
+            # force a fallback to rounded display values.
+            values = raw_source[column].reset_index(drop=True)
+        return [_fit_color(value) for value in values]
+
     try:
-        return df.style.map(_fit_color, subset=fit_cols)
+        return df.style.apply(_fit_color_column, axis=0, subset=fit_cols)
     except Exception:
-        # Older pandas Styler used .applymap(); fall back.
+        # Fall back for old pandas or non-aligned caller-provided indices.
         try:
             return df.style.applymap(_fit_color, subset=fit_cols)
         except Exception:
@@ -4236,12 +4264,38 @@ def build_facet_constraint(levels, anchors=None, groups=None, group_values=None,
             if pd.notna(k):
                 group_values_map[str(k)] = float(v)
 
+    requested_centered = bool(centered)
+    has_hard_anchor = bool(np.isfinite(anchors_vec).any())
+    has_group_anchor = any(
+        value not in (None, "") and not bool(pd.isna(value))
+        for value in groups_vec
+    )
+    # A hard element anchor or an absolute group-mean constraint already fixes
+    # this facet's origin.  Applying sum-to-zero again to only the remaining
+    # unanchored levels removes one estimable coordinate and produces a
+    # different, over-constrained likelihood (not FACETS element-anchor
+    # semantics).  Sum-to-zero remains the identification rule only when no
+    # absolute origin constraint is present.
+    absolute_origin_identified = has_hard_anchor or has_group_anchor
+    effective_centered = requested_centered and not absolute_origin_identified
+
     spec = {
         "levels": lvl,
         "anchors": anchors_vec,
         "groups": groups_vec,
         "group_values": group_values_map,
-        "centered": bool(centered),
+        "centered": effective_centered,
+        "requested_centered": requested_centered,
+        "absolute_origin_identified": absolute_origin_identified,
+        "origin_constraint": (
+            "absolute_anchor"
+            if has_hard_anchor else
+            "absolute_group_anchor"
+            if has_group_anchor else
+            "sum_to_zero"
+            if requested_centered else
+            "free"
+        ),
     }
     spec["n_params"] = count_facet_params(spec)
     return spec
@@ -4811,6 +4865,465 @@ def build_param_sizes(config):
     else:
         raise ValueError("Model must be one of: RSM, PCM, GPCM.")
     return sizes
+
+
+def _constraint_expansion_matrix_for_identifiability(spec):
+    """Exact affine-expansion Jacobian for one constrained facet block."""
+    n_params = int(spec.get("n_params", 0))
+    n_levels = len(spec.get("levels", []))
+    if n_params == 0:
+        return np.zeros((n_levels, 0), dtype=float)
+    origin = expand_facet_with_constraints(np.zeros(n_params, dtype=float), spec)
+    matrix = np.zeros((n_levels, n_params), dtype=float)
+    for coordinate in range(n_params):
+        basis = np.zeros(n_params, dtype=float)
+        basis[coordinate] = 1.0
+        matrix[:, coordinate] = expand_facet_with_constraints(basis, spec) - origin
+    return matrix
+
+
+def _constraint_free_labels_for_identifiability(spec):
+    """Label exact free coordinates and their constraint-derived counterparts."""
+    anchors = np.asarray(spec.get("anchors", []), dtype=float)
+    groups = list(spec.get("groups", []))
+    levels = [str(value) for value in spec.get("levels", [])]
+    free_idx = np.where(np.isnan(anchors))[0].tolist()
+    rows = []
+    grouped_free = set()
+
+    def has_group(value):
+        if value is None or value == "":
+            return False
+        try:
+            return not bool(pd.isna(value))
+        except (TypeError, ValueError):
+            return True
+
+    group_ids = sorted({
+        groups[index]
+        for index in free_idx
+        if has_group(groups[index])
+    })
+    for group_id in group_ids:
+        group_levels = [index for index, value in enumerate(groups) if value == group_id]
+        free_in_group = [index for index in group_levels if np.isnan(anchors[index])]
+        grouped_free.update(free_in_group)
+        if len(free_in_group) > 1:
+            derived = levels[free_in_group[-1]]
+            for index in free_in_group[:-1]:
+                rows.append({
+                    "Level": levels[index],
+                    "DerivedCounterpart": derived,
+                    "CoordinateMeaning": f"group {group_id}: final level derived",
+                })
+    ungrouped = [
+        index for index in free_idx
+        if index not in grouped_free and not has_group(groups[index])
+    ]
+    if bool(spec.get("centered", False)):
+        if len(ungrouped) > 1:
+            derived = levels[ungrouped[-1]]
+            for index in ungrouped[:-1]:
+                rows.append({
+                    "Level": levels[index],
+                    "DerivedCounterpart": derived,
+                    "CoordinateMeaning": "final unanchored level derived by centering constraint",
+                })
+    else:
+        for index in ungrouped:
+            rows.append({
+                "Level": levels[index],
+                "DerivedCounterpart": "",
+                "CoordinateMeaning": "direct unconstrained level",
+            })
+    return rows
+
+
+def _person_facet_connectivity_summary(prep):
+    """Connected-component summaries for each observed Person x facet graph."""
+    data = prep.get("data", pd.DataFrame())
+    rows = []
+    if not isinstance(data, pd.DataFrame) or data.empty:
+        return pd.DataFrame()
+    for facet in prep.get("facet_names", []):
+        adjacency = {}
+        pairs = data[["Person", facet]].drop_duplicates()
+        for pair in pairs.itertuples(index=False, name=None):
+            person_node = f"Person::{pair[0]}"
+            facet_node = f"{facet}::{pair[1]}"
+            adjacency.setdefault(person_node, set()).add(facet_node)
+            adjacency.setdefault(facet_node, set()).add(person_node)
+        seen = set()
+        component_sizes = []
+        for node in sorted(adjacency):
+            if node in seen:
+                continue
+            stack = [node]
+            component = set()
+            while stack:
+                current = stack.pop()
+                if current in component:
+                    continue
+                component.add(current)
+                seen.add(current)
+                stack.extend(adjacency[current] - component)
+            component_sizes.append(len(component))
+        per_person = data.groupby("Person", observed=True)[facet].nunique()
+        per_level = data.groupby(facet, observed=True)["Person"].nunique()
+        rows.append({
+            "Facet": str(facet),
+            "Components": int(len(component_sizes)),
+            "MinimumRatersOrLevelsPerPerson": int(per_person.min()) if len(per_person) else 0,
+            "MedianRatersOrLevelsPerPerson": float(per_person.median()) if len(per_person) else np.nan,
+            "MaximumRatersOrLevelsPerPerson": int(per_person.max()) if len(per_person) else 0,
+            "MinimumPersonsPerFacetLevel": int(per_level.min()) if len(per_level) else 0,
+            "MaximumPersonsPerFacetLevel": int(per_level.max()) if len(per_level) else 0,
+            "ComponentNodeSizes": "|".join(map(str, sorted(component_sizes, reverse=True))),
+        })
+    return pd.DataFrame(rows)
+
+
+def build_jmle_eta_identifiability_audit(
+    prep,
+    config,
+    sizes=None,
+    idx=None,
+    max_dense_cells=5_000_000,
+):
+    """Audit exact structural rank of JMLE person/facet eta coordinates.
+
+    This audit covers the additive coordinates entering the linear predictor
+    ``eta`` after anchors and centering constraints are expanded. RSM/PCM/GPCM
+    step and GPCM slope identification are intentionally outside this scope.
+    """
+    scope = "eta_person_facet_blocks_only"
+    empty_summary = pd.DataFrame([{
+        "Available": False,
+        "Scope": scope,
+        "Status": "not_applicable_mml",
+        "EtaDesignRows": 0,
+        "EtaDesignColumns": 0,
+        "EtaDesignRank": np.nan,
+        "EtaStructuralNullity": np.nan,
+        "EtaStructurallyIdentified": pd.NA,
+        "InferenceReady": pd.NA,
+        "Action": "Use the estimator-specific MML qualification path.",
+    }])
+    if str(config.get("method", "")).upper() != "JMLE":
+        return {
+            "available": False,
+            "scope": scope,
+            "status": "not_applicable_mml",
+            "eta_structurally_identified": None,
+            "inference_ready": None,
+            "summary": empty_summary,
+            "coordinate_null_weight": pd.DataFrame(),
+            "null_space_block_energy": pd.DataFrame(),
+            "connectivity": _person_facet_connectivity_summary(prep),
+        }
+    sizes = build_param_sizes(config) if sizes is None else sizes
+    idx = build_indices(
+        prep,
+        step_facet=config.get("step_facet"),
+        slope_facet=config.get("slope_facet"),
+    ) if idx is None else idx
+    pieces = []
+    metadata = []
+    global_coordinate = 0
+
+    def add_block(block, spec, observation_index, sign=1.0):
+        nonlocal global_coordinate
+        matrix = _constraint_expansion_matrix_for_identifiability(spec)
+        if matrix.shape[1] == 0:
+            return
+        pieces.append(float(sign) * matrix[np.asarray(observation_index, dtype=int)])
+        labels = _constraint_free_labels_for_identifiability(spec)
+        if len(labels) != matrix.shape[1]:
+            raise RuntimeError(
+                f"Identifiability labels for {block} have {len(labels)} rows; "
+                f"expected {matrix.shape[1]}."
+            )
+        for local_coordinate, label in enumerate(labels):
+            metadata.append({
+                "GlobalCoordinate": global_coordinate,
+                "Block": str(block),
+                "BlockCoordinate": int(local_coordinate),
+                **label,
+            })
+            global_coordinate += 1
+
+    add_block("theta", config["theta_spec"], idx["person"], 1.0)
+    facet_signs = config.get("facet_signs", {})
+    for facet in config.get("facet_names", []):
+        add_block(
+            facet,
+            config["facet_specs"][facet],
+            idx["facets"][facet],
+            facet_signs.get(facet, -1),
+        )
+    n_rows = len(idx.get("person", []))
+    n_columns = sum(piece.shape[1] for piece in pieces)
+    connectivity = _person_facet_connectivity_summary(prep)
+    if int(n_rows) * int(n_columns) > int(max_dense_cells):
+        summary = pd.DataFrame([{
+            "Available": False,
+            "Scope": scope,
+            "Status": "audit_size_limit",
+            "EtaDesignRows": int(n_rows),
+            "EtaDesignColumns": int(n_columns),
+            "EtaDesignRank": np.nan,
+            "EtaStructuralNullity": np.nan,
+            "EtaStructurallyIdentified": False,
+            "InferenceReady": False,
+            "Action": (
+                "The exact dense rank audit exceeded its technical size limit. "
+                "Do not interpret optimizer convergence as identification; use a "
+                "validated large-design audit before inference."
+            ),
+        }])
+        return {
+            "available": False,
+            "scope": scope,
+            "status": "audit_size_limit",
+            "eta_structurally_identified": False,
+            "inference_ready": False,
+            "summary": summary,
+            "coordinate_null_weight": pd.DataFrame(metadata),
+            "null_space_block_energy": pd.DataFrame(),
+            "connectivity": connectivity,
+        }
+    design = np.column_stack(pieces) if pieces else np.zeros((n_rows, 0), dtype=float)
+    # Economy SVD avoids allocating an n_columns x n_columns Vh for a wide
+    # design that still falls below the dense-cell guard. Rank remains exact
+    # under the registered tolerance. A complete right-null basis is available
+    # from the economy form only when rows >= columns.
+    _, singular_values, vh = np.linalg.svd(design, full_matrices=False)
+    largest = float(singular_values[0]) if len(singular_values) else 0.0
+    tolerance = max(design.shape, default=0) * np.finfo(float).eps * largest
+    rank = int(np.sum(singular_values > tolerance))
+    nullity = int(design.shape[1] - rank)
+    identified = nullity == 0
+    null_basis_complete = bool(design.shape[0] >= design.shape[1])
+    null_vectors = (
+        vh[rank:, :]
+        if nullity > 0 and null_basis_complete
+        else np.zeros((0, design.shape[1]))
+    )
+    null_weight = (
+        np.sum(null_vectors ** 2, axis=0)
+        if nullity > 0 and null_basis_complete
+        else (
+            np.zeros(design.shape[1])
+            if nullity == 0 else np.full(design.shape[1], np.nan)
+        )
+    )
+    coordinate_null = pd.DataFrame(metadata)
+    coordinate_null["NullProjectionWeight"] = null_weight
+    if nullity > 0 and not null_basis_complete:
+        coordinate_null["NullVulnerable"] = pd.Series(
+            pd.array([pd.NA] * len(coordinate_null), dtype="boolean"),
+            index=coordinate_null.index,
+        )
+    else:
+        coordinate_null["NullVulnerable"] = coordinate_null["NullProjectionWeight"].gt(1e-10)
+    energy_rows = []
+    for vector_index, vector in enumerate(null_vectors):
+        denominator = float(np.sum(vector ** 2))
+        for block, block_frame in coordinate_null.groupby("Block", sort=False):
+            coordinates = block_frame["GlobalCoordinate"].to_numpy(dtype=int)
+            energy_rows.append({
+                "NullVector": int(vector_index + 1),
+                "Block": str(block),
+                "SquaredEnergyShare": (
+                    float(np.sum(vector[coordinates] ** 2) / denominator)
+                    if denominator > 0 else np.nan
+                ),
+                "MaximumAbsLoading": float(np.max(np.abs(vector[coordinates]))),
+            })
+    status = "eta_identified" if identified else "eta_rank_deficient"
+    action = (
+        "No exact person/facet eta null direction was detected; retain the separate numerical and model-fit checks."
+        if identified else
+        "Do not use this JMLE fit for inference or bias decisions. Add cross-facet connectivity or anchors, redesign the model, or use an explicitly qualified alternative estimator."
+    )
+    summary = pd.DataFrame([{
+        "Available": True,
+        "Scope": scope,
+        "Status": status,
+        "EtaDesignRows": int(design.shape[0]),
+        "EtaDesignColumns": int(design.shape[1]),
+        "EtaDesignRank": rank,
+        "EtaStructuralNullity": nullity,
+        "EtaStructurallyIdentified": bool(identified),
+        "InferenceReady": bool(identified),
+        "NullSpaceBasisComplete": null_basis_complete,
+        "RankTolerance": tolerance,
+        "LargestSingularValue": largest,
+        "SmallestSingularValue": (
+            float(singular_values[-1]) if len(singular_values) else np.nan
+        ),
+        "Action": action,
+    }])
+    return {
+        "available": True,
+        "scope": scope,
+        "status": status,
+        "eta_structurally_identified": bool(identified),
+        "inference_ready": bool(identified),
+        "summary": summary,
+        "coordinate_null_weight": coordinate_null,
+        "null_space_block_energy": pd.DataFrame(energy_rows),
+        "connectivity": connectivity,
+    }
+
+
+def build_jmle_person_boundary_audit(
+    prep,
+    config,
+    estimates=None,
+    *,
+    fit_inference_ready=False,
+):
+    """Classify JMLE Person score boundaries without estimate cutoffs.
+
+    An all-minimum or all-maximum response pattern has no finite unbounded
+    JMLE Person MLE. The fitted optimizer/constraint value is retained for
+    reproducibility, while ``ReportableEstimate`` is withheld. Classification
+    uses retained integer scores only, never the magnitude or display rounding
+    of the terminal estimate.
+    """
+    scope = "jmle_person_score_boundary_only"
+    method = str(config.get("method", "")).upper()
+    if method != "JMLE":
+        summary = pd.DataFrame([{
+            "Available": False,
+            "Scope": scope,
+            "Status": "not_applicable_mml",
+            "Persons": int(config.get("n_person", 0)),
+            "ExtremePersons": 0,
+            "AllMinimumPersons": 0,
+            "AllMaximumPersons": 0,
+            "FiniteJMLEPersons": pd.NA,
+            "PersonMeasureInferenceReady": pd.NA,
+            "Action": "Use the estimator-specific MML/EAP person-score qualification path.",
+        }])
+        return {
+            "available": False,
+            "scope": scope,
+            "status": "not_applicable_mml",
+            "person_measure_inference_ready": None,
+            "summary": summary,
+            "persons": pd.DataFrame(),
+        }
+
+    data = prep.get("data", pd.DataFrame())
+    levels = [str(value) for value in prep.get("levels", {}).get("Person", [])]
+    rating_min = int(prep.get("rating_min", 0))
+    rating_max = int(prep.get("rating_max", max(int(config.get("n_cat", 1)) - 1, 0)))
+    estimate_values = np.asarray(
+        estimates if estimates is not None else np.full(len(levels), np.nan),
+        dtype=float,
+    ).reshape(-1)
+    if len(estimate_values) != len(levels):
+        raise ValueError(
+            "JMLE Person boundary audit estimate count does not match Person levels."
+        )
+    estimate_map = dict(zip(levels, estimate_values, strict=False))
+    score_source = pd.DataFrame({
+        "Person": data.get("Person", pd.Series(dtype=str)).astype(str),
+        "Score": pd.to_numeric(data.get("Score"), errors="coerce"),
+        "Weight": pd.to_numeric(
+            data.get("Weight", pd.Series(1.0, index=data.index)),
+            errors="coerce",
+        ),
+    })
+    score_source = score_source.loc[
+        score_source["Score"].notna()
+        & score_source["Weight"].notna()
+        & score_source["Weight"].gt(0)
+    ].copy()
+    score_source["WeightedScore"] = score_source["Score"] * score_source["Weight"]
+    score_stats = (
+        score_source.groupby("Person", observed=True)
+        .agg(
+            ObservedCount=("Score", "size"),
+            EffectiveWeight=("Weight", "sum"),
+            ObservedScoreMin=("Score", "min"),
+            ObservedScoreMax=("Score", "max"),
+            RawScoreTotal=("Score", "sum"),
+            WeightedScoreTotal=("WeightedScore", "sum"),
+        )
+        .reindex(levels)
+    )
+    rows = []
+    for person in levels:
+        score_row = score_stats.loc[person]
+        observed_count = int(score_row["ObservedCount"]) if pd.notna(score_row["ObservedCount"]) else 0
+        effective_weight = float(score_row["EffectiveWeight"]) if observed_count else 0.0
+        observed_min = float(score_row["ObservedScoreMin"]) if observed_count else np.nan
+        observed_max = float(score_row["ObservedScoreMax"]) if observed_count else np.nan
+        all_minimum = bool(observed_count > 0 and observed_min == rating_min and observed_max == rating_min)
+        all_maximum = bool(observed_count > 0 and observed_min == rating_max and observed_max == rating_max)
+        extreme = bool(all_minimum or all_maximum)
+        direction = "all_minimum" if all_minimum else "all_maximum" if all_maximum else "interior"
+        estimate = float(estimate_map.get(person, np.nan))
+        finite_jmle = bool(not extreme and np.isfinite(estimate))
+        person_ready = bool(finite_jmle and fit_inference_ready)
+        rows.append({
+            "Person": person,
+            "ObservedCount": observed_count,
+            "EffectiveWeight": effective_weight,
+            "ObservedScoreMin": observed_min,
+            "ObservedScoreMax": observed_max,
+            "RawScoreTotal": float(score_row["RawScoreTotal"]) if observed_count else np.nan,
+            "WeightedScoreTotal": float(score_row["WeightedScoreTotal"]) if observed_count else np.nan,
+            "MinimumPossibleWeightedTotal": rating_min * effective_weight,
+            "MaximumPossibleWeightedTotal": rating_max * effective_weight,
+            "ExtremeScorePattern": extreme,
+            "ExtremeScoreDirection": direction,
+            "FiniteJMLEEstimate": finite_jmle,
+            "PersonInferenceReady": person_ready,
+            "Estimate": estimate,
+            "ReportableEstimate": estimate if person_ready else np.nan,
+            "EstimateRole": (
+                "optimizer_or_constraint_value_not_finite_person_mle"
+                if extreme else
+                "finite_jmle_estimate" if person_ready else
+                "finite_boundary_status_but_fit_not_inference_ready"
+            ),
+        })
+    persons = pd.DataFrame(rows)
+    extreme_n = int(persons["ExtremeScorePattern"].sum()) if not persons.empty else 0
+    all_min_n = int(persons["ExtremeScoreDirection"].eq("all_minimum").sum()) if not persons.empty else 0
+    all_max_n = int(persons["ExtremeScoreDirection"].eq("all_maximum").sum()) if not persons.empty else 0
+    finite_n = int(persons["FiniteJMLEEstimate"].sum()) if not persons.empty else 0
+    person_ready = bool(not persons.empty and persons["PersonInferenceReady"].all())
+    status = "extreme_persons_present" if extreme_n else "no_extreme_persons"
+    summary = pd.DataFrame([{
+        "Available": True,
+        "Scope": scope,
+        "Status": status,
+        "Persons": int(len(persons)),
+        "ExtremePersons": extreme_n,
+        "AllMinimumPersons": all_min_n,
+        "AllMaximumPersons": all_max_n,
+        "FiniteJMLEPersons": finite_n,
+        "PersonMeasureInferenceReady": person_ready,
+        "Action": (
+            "Do not report finite JMLE Person measures for boundary-score Persons; "
+            "use ReportableEstimate and retain Estimate only as a technical terminal value."
+            if extreme_n else
+            "No score-boundary Person was detected; retain structural, numerical, and model-fit checks."
+        ),
+    }])
+    return {
+        "available": True,
+        "scope": scope,
+        "status": status,
+        "person_measure_inference_ready": person_ready,
+        "summary": summary,
+        "persons": persons,
+    }
 
 
 def split_params(par, sizes):
@@ -7584,8 +8097,14 @@ def render_analysis_setup_workspace(
     score_col: str,
     facet_cols: list[str],
     weight_col: str | None,
+    workflow_mode: str,
+    model_type: str,
+    est_method: str,
+    analysis_depth: str,
+    resource_preflight: dict | None = None,
+    run_disabled: bool = False,
 ):
-    """Render phase-aware setup content and return its clearable placeholder.
+    """Render setup content and return its placeholder plus main run trigger.
 
     Raw rows are never expanded by default. Once a result exists, the whole
     setup surface collapses so the result—not repeated pre-run content—becomes
@@ -7599,13 +8118,14 @@ def render_analysis_setup_workspace(
         selected_result_section=st.session_state.get("guided_essential_section"),
     )
     surface = st.empty()
+    main_run_clicked = False
     with surface.container():
         if shell.collapse_setup:
             with st.expander(t("app.setup_after_run_expander"), expanded=False):
                 render_loaded_data_banner()
                 render_input_overview(data)
                 st.dataframe(data.head(20), width="stretch")
-            return surface
+            return surface, main_run_clicked
 
         st.subheader(t("app.prepare_analysis_header"))
         render_loaded_data_banner()
@@ -7643,7 +8163,32 @@ def render_analysis_setup_workspace(
                 )
             except Exception:  # pragma: no cover - setup UX must not block fitting
                 pass
-    return surface
+
+        if (
+            isinstance(resource_preflight, dict)
+            and should_render_estimation_resource_preflight(resource_preflight)
+        ):
+            render_estimation_resource_preflight(resource_preflight)
+
+        if workflow_mode == "Guided defaults":
+            st.markdown(f"### {t('app.run_primary_heading')}")
+            st.caption(
+                t(
+                    "app.run_primary_summary_template",
+                    model=model_type,
+                    method=est_method,
+                    depth=analysis_depth,
+                )
+            )
+            main_run_clicked = st.button(
+                t("app.run_primary_button"),
+                key="facets_mode_run_primary",
+                type="primary",
+                use_container_width=True,
+                disabled=run_disabled,
+                help=t("app.run_primary_help"),
+            )
+    return surface, main_run_clicked
 
 
 def _short_value_list(values: list[str] | tuple[str, ...], max_items: int = 4) -> str:
@@ -10600,11 +11145,21 @@ def audit_mfrm_anchors(
                     "Action": "Check spelling or use a dataset containing this level.",
                 })
                 continue
+            if not np.isfinite(row.GroupValue):
+                issues.append({
+                    "Severity": "warning",
+                    "Type": "invalid_group_anchor_value",
+                    "Facet": facet,
+                    "Level": level,
+                    "Message": "Group-anchor value is missing or non-finite; it will be ignored.",
+                    "Action": "Provide a finite group-anchor logit value; do not rely on an implicit zero.",
+                })
+                continue
             valid_group_rows.append({
                 "Facet": facet,
                 "Level": level,
                 "Group": group,
-                "GroupValue": float(row.GroupValue) if np.isfinite(row.GroupValue) else 0.0,
+                "GroupValue": float(row.GroupValue),
             })
 
     valid_anchor_df = pd.DataFrame(valid_anchor_rows, columns=["Facet", "Level", "Anchor"])
@@ -10613,10 +11168,21 @@ def audit_mfrm_anchors(
     summary_rows = []
     for facet in all_facets:
         n_levels = len(levels_map[facet])
-        n_anch = int((valid_anchor_df["Facet"] == facet).sum()) if not valid_anchor_df.empty else 0
-        n_group_levels = int((valid_group_df["Facet"] == facet).sum()) if not valid_group_df.empty else 0
+        fixed_levels = (
+            set(valid_anchor_df.loc[valid_anchor_df["Facet"] == facet, "Level"].astype(str))
+            if not valid_anchor_df.empty else set()
+        )
+        group_levels = (
+            set(valid_group_df.loc[valid_group_df["Facet"] == facet, "Level"].astype(str))
+            if not valid_group_df.empty else set()
+        )
+        n_anch = len(fixed_levels)
+        n_group_levels = len(group_levels)
         n_groups = int(valid_group_df.loc[valid_group_df["Facet"] == facet, "Group"].nunique()) if not valid_group_df.empty else 0
-        anchored_total = n_anch + n_group_levels + (n_levels if facet in dummy_facets else 0)
+        anchored_levels = set(levels_map[facet]) if facet in dummy_facets else fixed_levels | group_levels
+        anchored_total = len(anchored_levels)
+        anchor_share = float(anchored_total / n_levels) if n_levels else np.nan
+        unanchored_levels = max(0, n_levels - anchored_total)
         if facet in dummy_facets:
             status = "Dummy"
             action = "Facet fixed at 0 by dummy-facet setting."
@@ -10642,10 +11208,17 @@ def audit_mfrm_anchors(
             "Levels": n_levels,
             "FixedAnchors": n_anch,
             "GroupAnchoredLevels": n_group_levels,
+            "AnchoredLevelsTotal": anchored_total,
+            "UnanchoredLevels": unanchored_levels,
+            "AnchorShare": anchor_share,
             "Groups": n_groups,
             "DummyFacet": facet in dummy_facets,
             "Status": status,
             "Action": action,
+            "CoverageInterpretation": (
+                "Descriptive coverage only: no universal anchor percentage is sufficient. "
+                "Review common-anchor count, content match, observations, drift, and connectedness together."
+            ),
         })
 
     for cat, cnt in sorted(cat_counts.items()):
@@ -10684,6 +11257,46 @@ def audit_mfrm_anchors(
         },
     }
     return linking_review
+
+
+def build_anchor_coverage_figure(summary_df: pd.DataFrame):
+    """Build a descriptive anchored/unanchored-level chart without a pass line."""
+
+    required = {"Facet", "Levels", "AnchoredLevelsTotal", "UnanchoredLevels"}
+    if not isinstance(summary_df, pd.DataFrame) or summary_df.empty or not required.issubset(summary_df.columns):
+        return None
+    plot_df = summary_df[["Facet", "Levels", "AnchoredLevelsTotal", "UnanchoredLevels"]].copy()
+    for column in ("Levels", "AnchoredLevelsTotal", "UnanchoredLevels"):
+        plot_df[column] = pd.to_numeric(plot_df[column], errors="coerce").fillna(0)
+    long_df = plot_df.melt(
+        id_vars=["Facet", "Levels"],
+        value_vars=["AnchoredLevelsTotal", "UnanchoredLevels"],
+        var_name="CoverageType",
+        value_name="LevelCount",
+    )
+    long_df["CoverageType"] = long_df["CoverageType"].map({
+        "AnchoredLevelsTotal": "Anchored",
+        "UnanchoredLevels": "Unanchored",
+    })
+    fig = px.bar(
+        long_df,
+        x="LevelCount",
+        y="Facet",
+        color="CoverageType",
+        orientation="h",
+        barmode="stack",
+        text="LevelCount",
+        color_discrete_map={"Anchored": "#2a9d8f", "Unanchored": "#d9d9d9"},
+        hover_data={"Levels": True, "LevelCount": True},
+        labels={"LevelCount": "Observed levels", "CoverageType": "Coverage"},
+    )
+    fig.update_layout(
+        title="Descriptive anchor coverage by facet",
+        template="plotly_white",
+        height=max(280, 75 * len(plot_df) + 100),
+        legend_title_text="",
+    )
+    return fig
 
 
 def prepare_constraint_specs(prep, anchor_df=None, group_anchor_df=None, noncenter_facet="Person", dummy_facets=None):
@@ -10943,7 +11556,13 @@ def build_equating_chain_summary(result: dict) -> dict:
         group_levels = int(getattr(row, "GroupAnchoredLevels", 0) or 0)
         groups = int(getattr(row, "Groups", 0) or 0)
         dummy = bool(getattr(row, "DummyFacet", False))
-        common = fixed + group_levels + (levels if dummy else 0)
+        common = int(
+            getattr(
+                row,
+                "AnchoredLevelsTotal",
+                fixed + group_levels + (levels if dummy else 0),
+            ) or 0
+        )
         coverage = (common / levels) if levels > 0 else np.nan
         if dummy:
             link_type = "Dummy facet"
@@ -11386,6 +12005,24 @@ def mfrm_estimate(
     config["facet_regularization_enabled"] = bool(regularization_bundle["enabled"])
     config["facet_regularization_fingerprint"] = regularization_bundle["runtime"].get("fingerprint")
 
+    identifiability_bundle = build_jmle_eta_identifiability_audit(
+        prep,
+        config,
+        sizes=sizes,
+        idx=idx,
+    )
+    config["identifiability_scope"] = identifiability_bundle.get("scope")
+    config["identifiability_status"] = identifiability_bundle.get("status")
+    config["eta_structurally_identified"] = identifiability_bundle.get(
+        "eta_structurally_identified"
+    )
+    identifiability_summary = identifiability_bundle.get("summary", pd.DataFrame())
+    if isinstance(identifiability_summary, pd.DataFrame) and not identifiability_summary.empty:
+        identifiability_row = identifiability_summary.iloc[0]
+        config["eta_design_rank"] = identifiability_row.get("EtaDesignRank")
+        config["eta_design_columns"] = identifiability_row.get("EtaDesignColumns")
+        config["eta_structural_nullity"] = identifiability_row.get("EtaStructuralNullity")
+
     step_init_expanded = (
         np.linspace(-1, 1, n_steps)
         if n_steps > 0
@@ -11526,6 +12163,37 @@ def mfrm_estimate(
             "plausible_values": pd.DataFrame(),
         }
 
+    fit_inference_ready_for_person = bool(getattr(opt, "success", False)) and (
+        bool(identifiability_bundle.get("inference_ready", False))
+        if method == "JMLE" else True
+    )
+    person_boundary_bundle = build_jmle_person_boundary_audit(
+        prep,
+        config,
+        estimates=params["theta"] if method == "JMLE" else None,
+        fit_inference_ready=fit_inference_ready_for_person,
+    )
+    config["person_boundary_scope"] = person_boundary_bundle.get("scope")
+    config["person_boundary_status"] = person_boundary_bundle.get("status")
+    if method == "JMLE":
+        person_boundary_rows = person_boundary_bundle.get("persons", pd.DataFrame())
+        if isinstance(person_boundary_rows, pd.DataFrame) and not person_boundary_rows.empty:
+            annotation_columns = [
+                "Person",
+                "ExtremeScorePattern",
+                "ExtremeScoreDirection",
+                "FiniteJMLEEstimate",
+                "PersonInferenceReady",
+                "ReportableEstimate",
+                "EstimateRole",
+            ]
+            person_tbl = person_tbl.merge(
+                person_boundary_rows[annotation_columns],
+                on="Person",
+                how="left",
+                validate="one_to_one",
+            )
+
     facet_tbls = []
     for facet in config["facet_names"]:
         facet_tbls.append(pd.DataFrame({
@@ -11621,6 +12289,11 @@ def mfrm_estimate(
     bic_per_obs = bic / n_obs if n_obs > 0 else np.nan
 
     n_iter = getattr(opt, "nit", opt.nfev)
+    eta_ready = (
+        bool(identifiability_bundle.get("inference_ready", False))
+        if method == "JMLE" else True
+    )
+    inference_ready = bool(opt.success) and eta_ready
     summary_tbl = pd.DataFrame({
         "Model": [model],
         "Method": [method],
@@ -11654,6 +12327,26 @@ def mfrm_estimate(
         "AICPerObs": [aic_per_obs],
         "BICPerObs": [bic_per_obs],
         "Converged": [bool(opt.success)],
+        "InferenceReady": [inference_ready],
+        "EtaStructurallyIdentified": [
+            identifiability_bundle.get("eta_structurally_identified")
+        ],
+        "EtaDesignRank": [config.get("eta_design_rank")],
+        "EtaDesignColumns": [config.get("eta_design_columns")],
+        "EtaStructuralNullity": [config.get("eta_structural_nullity")],
+        "IdentifiabilityStatus": [identifiability_bundle.get("status")],
+        "ExtremeJMLEPersons": [
+            int(person_boundary_bundle.get("summary", pd.DataFrame()).iloc[0]["ExtremePersons"])
+            if method == "JMLE" else pd.NA
+        ],
+        "FiniteJMLEPersonEstimates": [
+            int(person_boundary_bundle.get("summary", pd.DataFrame()).iloc[0]["FiniteJMLEPersons"])
+            if method == "JMLE" else pd.NA
+        ],
+        "PersonMeasureInferenceReady": [
+            person_boundary_bundle.get("person_measure_inference_ready")
+        ],
+        "PersonBoundaryStatus": [person_boundary_bundle.get("status")],
         "Iterations": [n_iter],
         "GradientNorm": [getattr(opt, "gradient_norm", np.nan)],
         "ElapsedSeconds": [elapsed_seconds],
@@ -11685,6 +12378,8 @@ def mfrm_estimate(
         "opt": opt,
         "params": params,
         "parameterization_audit": parameterization_audit,
+        "identifiability": identifiability_bundle,
+        "person_boundary": person_boundary_bundle,
         "convergence": convergence_tbl,
         "posterior": posterior_outputs,
         "regularization": {
@@ -12517,12 +13212,14 @@ def predict_mfrm_design(
     person_data=None,
     person_id_col=None,
     use_fitted_person=True,
+    person_measure_overrides=None,
 ):
     """Predict category probabilities for new or held-out design rows.
 
     Scope:
     - Facet levels must already exist in the fitted model.
-    - Known persons can be predicted conditionally on their fitted estimate.
+    - Known persons can be predicted conditionally on their fitted estimate or
+      an explicit finite Person-measure override.
     - Unknown persons require MML and are predicted marginally over the population
       distribution; latent-regression covariates are used when supplied.
     """
@@ -12585,7 +13282,32 @@ def predict_mfrm_design(
     person_map = {level: i for i, level in enumerate(person_levels)}
     person_idx = df[person_col].map(person_map)
     known_mask = person_idx.notna().to_numpy(dtype=bool)
+    override_lookup: dict[str, float] = {}
+    if person_measure_overrides is not None:
+        try:
+            override_lookup = {
+                str(key): float(value)
+                for key, value in dict(person_measure_overrides).items()
+            }
+        except Exception as exc:
+            raise ValueError("person_measure_overrides must be a Person-to-finite-value mapping.") from exc
+        unknown_override_people = sorted(set(override_lookup) - set(person_levels))
+        if unknown_override_people:
+            raise ValueError(
+                "person_measure_overrides contains Person IDs outside the fitted model: "
+                + ", ".join(unknown_override_people[:10])
+            )
+        invalid_override_people = [
+            person for person, value in override_lookup.items() if not np.isfinite(value)
+        ]
+        if invalid_override_people:
+            raise ValueError(
+                "person_measure_overrides contains non-finite values for: "
+                + ", ".join(invalid_override_people[:10])
+            )
+    override_mask = df[person_col].isin(override_lookup).to_numpy(dtype=bool)
     conditional_mask = known_mask & bool(use_fitted_person)
+    conditional_mask = conditional_mask | override_mask
     marginal_mask = ~conditional_mask
 
     if marginal_mask.any() and config.get("method") != "MML":
@@ -12605,10 +13327,22 @@ def predict_mfrm_design(
         person_tbl = res.get("facets", {}).get("person", pd.DataFrame())
         if isinstance(person_tbl, pd.DataFrame) and "Person" in person_tbl.columns and "Estimate" in person_tbl.columns:
             theta_lookup = person_tbl.set_index(person_tbl["Person"].astype(str))["Estimate"].astype(float).to_dict()
-            theta_known = df.loc[conditional_mask, person_col].map(theta_lookup).to_numpy(dtype=float)
+            theta_known = df.loc[conditional_mask, person_col].map(theta_lookup).to_numpy(
+                dtype=float, copy=True
+            )
         else:
             theta_arr = np.asarray(params.get("theta", np.array([], dtype=float)), dtype=float)
-            theta_known = theta_arr[person_idx[conditional_mask].astype(int).to_numpy()] if theta_arr.size else np.zeros(int(conditional_mask.sum()))
+            theta_known = (
+                theta_arr[person_idx[conditional_mask].astype(int).to_numpy()].copy()
+                if theta_arr.size else np.zeros(int(conditional_mask.sum()))
+            )
+        conditional_people = df.loc[conditional_mask, person_col].astype(str)
+        supplied = conditional_people.map(override_lookup)
+        supplied_mask = supplied.notna().to_numpy(dtype=bool)
+        if supplied_mask.any():
+            theta_known[supplied_mask] = supplied.loc[supplied.notna()].to_numpy(dtype=float)
+        if not np.isfinite(theta_known).all():
+            raise ValueError("Conditional Person measures contain non-finite values.")
         theta_used[conditional_mask] = theta_known
         eta_known = base_eta[conditional_mask] + theta_known
         step_known = index_info["step_idx"][conditional_mask] if index_info["step_idx"] is not None else None
@@ -12616,7 +13350,11 @@ def predict_mfrm_design(
         probs[conditional_mask, :] = _category_probs_from_eta_for_prediction(
             config, params, eta_known, step_idx=step_known, slope_idx=slope_known
         )
-        scope[conditional_mask] = "known_person_conditional_on_fitted_measure"
+        scope[conditional_mask] = np.where(
+            supplied_mask,
+            "known_person_conditional_on_supplied_measure",
+            "known_person_conditional_on_fitted_measure",
+        )
         pop_mu = compute_population_mu(params, config)
         if pop_mu.size:
             population_mean[conditional_mask] = pop_mu[person_idx[conditional_mask].astype(int).to_numpy()]
@@ -12692,7 +13430,7 @@ def predict_mfrm_design(
         "table": out[first_cols + tail_cols],
         "issues": pd.DataFrame(issue_rows),
         "interpretation": (
-            "Known persons are predicted conditionally on their fitted measure. "
+            "Known persons are predicted conditionally on their fitted or explicitly supplied measure. "
             "Unknown persons are supported only for MML and are predicted by integrating "
             "over the fitted population distribution; this is a population-scenario forecast, "
             "not a person-specific posterior score."
@@ -17168,6 +17906,27 @@ def estimate_bias_interaction(
     #     the cause instead of showing "not computed" silently.
     if res is None or diagnostics is None:
         return {"_skip_reason": "estimation result or diagnostics missing"}
+    identifiability = res.get("identifiability", {}) if isinstance(res, dict) else {}
+    identifiability_status = (
+        str(identifiability.get("status", ""))
+        if isinstance(identifiability, dict) else ""
+    )
+    if identifiability_status == "eta_rank_deficient":
+        return {
+            "_skip_reason": (
+                "JMLE person/facet eta coordinates are structurally rank deficient; "
+                "bias interaction analysis is withheld until the design is connected "
+                "or otherwise identified."
+            )
+        }
+    if identifiability_status == "audit_size_limit":
+        return {
+            "_skip_reason": (
+                "JMLE structural identifiability was not established because the exact "
+                "rank audit exceeded its technical size limit; bias interaction analysis "
+                "is withheld."
+            )
+        }
     obs_df = diagnostics.get("obs")
     if obs_df is None or obs_df.empty:
         return {"_skip_reason": "observation table is empty (no usable rows for bias analysis)"}
@@ -17923,6 +18682,41 @@ def _common_scale_bias_status(result: dict | None, diagnostics: dict | None) -> 
     )
 
 
+def build_bias_decision_stability_audit(
+    bias_results: dict | pd.DataFrame | None,
+    *,
+    alpha: float = 0.05,
+    min_n: int = 5,
+    practical_logit: float = 0.50,
+    display_decimals: int = _decision_stability.BIAS_DISPLAY_DECIMALS,
+) -> pd.DataFrame:
+    """Return cell-level floating/display boundary evidence for bias screens."""
+
+    audits: list[pd.DataFrame] = []
+    for pair_label, bundle in _iter_bias_result_bundles(bias_results):
+        if isinstance(bundle, dict) and "_skip_reason" in bundle and "table" not in bundle:
+            continue
+        dff_tbl = build_dff_bias_screening_table(
+            bundle,
+            alpha=alpha,
+            min_n=min_n,
+            practical_logit=practical_logit,
+        )
+        if dff_tbl.empty:
+            continue
+        audit = _decision_stability.audit_bias_decision_stability(
+            dff_tbl,
+            alpha=alpha,
+            practical_logit=practical_logit,
+            display_decimals=display_decimals,
+        )
+        if audit.empty:
+            continue
+        audit.insert(0, "FacetPairBundle", str(pair_label))
+        audits.append(audit)
+    return pd.concat(audits, ignore_index=True) if audits else pd.DataFrame()
+
+
 def build_bias_inference_audit(
     bias_results: dict | pd.DataFrame | None,
     result: dict | None = None,
@@ -17937,6 +18731,8 @@ def build_bias_inference_audit(
         "FacetPair", "Status", "ClaimStatus", "CellsScreened", "FlaggedCells",
         "StrongReviewCells", "SparseCells", "HolmSignificantCells",
         "BHSignificantCells", "PracticalCells", "MaxAbsBias",
+        "BoundarySensitiveCells", "BoundarySensitiveDecisions",
+        "BoundarySensitivitySummary",
         "CommonScaleSubsets", "CommonScaleStatus", "InferenceScope",
         "MultiplicityScope", "ProfileCIStatusSummary", "InferenceTierSummary",
         "EvidenceSummary", "RecommendedAction",
@@ -17971,6 +18767,9 @@ def build_bias_inference_audit(
                 "BHSignificantCells": 0,
                 "PracticalCells": 0,
                 "MaxAbsBias": np.nan,
+                "BoundarySensitiveCells": 0,
+                "BoundarySensitiveDecisions": 0,
+                "BoundarySensitivitySummary": "No bias decision statistics were available for a boundary audit.",
                 "CommonScaleSubsets": common_subsets,
                 "CommonScaleStatus": common_status,
                 "InferenceScope": inference_scope,
@@ -18001,6 +18800,9 @@ def build_bias_inference_audit(
                 "BHSignificantCells": 0,
                 "PracticalCells": 0,
                 "MaxAbsBias": np.nan,
+                "BoundarySensitiveCells": 0,
+                "BoundarySensitiveDecisions": 0,
+                "BoundarySensitivitySummary": "No bias decision statistics were available for a boundary audit.",
                 "CommonScaleSubsets": common_subsets,
                 "CommonScaleStatus": common_status,
                 "InferenceScope": inference_scope,
@@ -18032,13 +18834,36 @@ def build_bias_inference_audit(
         bh_n = int((p_bh < float(alpha)).sum())
         practical_n = int((abs_bias >= float(practical_logit)).sum())
         max_abs = float(abs_bias.max()) if len(abs_bias.dropna()) else np.nan
+        boundary_audit = _decision_stability.audit_bias_decision_stability(
+            dff_tbl,
+            alpha=alpha,
+            practical_logit=practical_logit,
+            display_decimals=_decision_stability.BIAS_DISPLAY_DECIMALS,
+        )
+        boundary_counts = _decision_stability.summarize_boundary_audit(boundary_audit)
+        if boundary_audit.empty:
+            boundary_sensitive_cells = 0
+        else:
+            boundary_mask = (
+                boundary_audit["BoundaryStatus"].astype(str).isin(
+                    {"numerical_boundary", "display_rounding_boundary"}
+                )
+                | ~boundary_audit["DisplayDecisionConsistent"].fillna(True).astype(bool)
+            )
+            boundary_sensitive_cells = int(
+                boundary_audit.loc[boundary_mask, "SourceRow"].nunique()
+            )
+        boundary_sensitive_decisions = int(
+            boundary_counts["numerical_boundary"]
+            + boundary_counts["display_rounding_boundary"]
+        )
         profile_summary = (
             dict(profile_status[profile_status.ne("")].value_counts())
             if len(profile_status) else {}
         )
         tier_summary = dict(tiers[tiers.ne("")].value_counts()) if len(tiers) else {}
 
-        if disconnected or sparse_n or flagged_n:
+        if disconnected or sparse_n or flagged_n or boundary_sensitive_cells:
             status = "Review"
             claim_status = "Report with caveat"
         else:
@@ -18049,6 +18874,11 @@ def build_bias_inference_audit(
             action = "Resolve linking/connectivity or restrict bias wording to each connected subset."
         elif sparse_n:
             action = "Treat sparse cells as design prompts; add observations or combine defensible levels before strong claims."
+        elif boundary_sensitive_cells:
+            action = (
+                "Inspect raw p-values and |bias| values near the configured thresholds; "
+                "report sensitivity and do not infer the decision from rounded output."
+            )
         elif strong_n:
             action = "Review scoring rubrics, rater notes, content match, fit, and sensitivity before reporting the flagged cells."
         elif flagged_n:
@@ -18068,6 +18898,13 @@ def build_bias_inference_audit(
             "BHSignificantCells": bh_n,
             "PracticalCells": practical_n,
             "MaxAbsBias": max_abs,
+            "BoundarySensitiveCells": boundary_sensitive_cells,
+            "BoundarySensitiveDecisions": boundary_sensitive_decisions,
+            "BoundarySensitivitySummary": (
+                f"{boundary_counts['numerical_boundary']} numerical-boundary, "
+                f"{boundary_counts['display_rounding_boundary']} display-rounding-boundary, "
+                f"{boundary_counts['display_decision_mismatch']} raw/display decision mismatch(es)."
+            ),
             "CommonScaleSubsets": common_subsets,
             "CommonScaleStatus": common_status,
             "InferenceScope": inference_scope,
@@ -18077,7 +18914,8 @@ def build_bias_inference_audit(
             "EvidenceSummary": (
                 f"{flagged_n} flagged of {len(dff_tbl)} screened cell(s); "
                 f"{strong_n} strong-review, {sparse_n} sparse, "
-                f"{holm_n} Holm-significant, {bh_n} BH-significant."
+                f"{holm_n} Holm-significant, {bh_n} BH-significant; "
+                f"{boundary_sensitive_cells} threshold-sensitive cell(s)."
             ),
             "RecommendedAction": action,
         })
@@ -19631,13 +20469,20 @@ def _facet_fit_review_summary(diagnostics: dict, target_facet: str | None) -> tu
 
     flags = pd.Series(False, index=sub.index)
     evidence: list[str] = []
+    mnsq_available = pd.Series(False, index=sub.index)
+    mnsq_unavailable = pd.Series(False, index=sub.index)
     for col in ("Infit", "Outfit"):
         if col in sub.columns:
             vals = pd.to_numeric(sub[col], errors="coerce")
-            bad = vals.notna() & ((vals < 0.5) | (vals > 1.5))
+            mnsq_available = mnsq_available | vals.notna()
+            mnsq_unavailable = mnsq_unavailable | vals.isna()
+            classifications = vals.map(_decision_stability.classify_fit_mnsq)
+            bad = classifications.isin({"overfit", "noisy", "distorting"})
             flags = flags | bad
             if bool(bad.any()):
                 evidence.append(f"{col} outside 0.5-1.5 for {int(bad.sum())} element(s)")
+        else:
+            mnsq_unavailable[:] = True
     for col in ("InfitZSTD", "OutfitZSTD", "InfitZStd", "OutfitZStd"):
         if col in sub.columns:
             vals = pd.to_numeric(sub[col], errors="coerce")
@@ -19646,6 +20491,12 @@ def _facet_fit_review_summary(diagnostics: dict, target_facet: str | None) -> tu
             if bool(bad.any()):
                 evidence.append(f"|{col}| >= 2 for {int(bad.sum())} element(s)")
     flagged_levels = "none"
+    if not bool(mnsq_available.any()):
+        return (
+            "Missing evidence",
+            "no finite Infit or Outfit statistics for the selected facet",
+            "Compute finite element fit before making a rater-fit claim; sparse/extreme rows may be the cause.",
+        )
     if bool(flags.any()):
         level_col = "Level" if "Level" in sub.columns else sub.columns[0]
         flagged_levels = _compact_value_list(sub.loc[flags, level_col].tolist(), max_items=8)
@@ -19654,9 +20505,21 @@ def _facet_fit_review_summary(diagnostics: dict, target_facet: str | None) -> tu
             f"{'; '.join(evidence)}; flagged elements: {flagged_levels}",
             "Use this to target rater training or moderation, then rerun the model after documented remediation.",
         )
+    if bool(mnsq_unavailable.any()):
+        unavailable_levels = _compact_value_list(
+            sub.loc[mnsq_unavailable, "Level"].tolist()
+            if "Level" in sub.columns else
+            sub.index[mnsq_unavailable].tolist(),
+            max_items=8,
+        )
+        return (
+            "Review",
+            f"finite fit values had no review flags, but fit was unavailable for: {unavailable_levels}",
+            "Inspect sparse/extreme response patterns and report that the fit screen was incomplete.",
+        )
     return (
         "Ready",
-        f"{len(sub)} {target_facet} element(s) checked; no Infit/Outfit or ZSTD review flags under conservative bands",
+            f"{len(sub)} {target_facet} element(s) checked; no Infit/Outfit or ZSTD review flags under explicit endpoint bands",
         "Report rater fit together with agreement evidence; keep the fit bands visible for auditability.",
     )
 
@@ -19666,7 +20529,7 @@ def _scoring_decision_rule(area: object) -> str:
         "Overall scoring consistency": "Worst status across agreement, alpha, rater fit, and category-functioning rows.",
         "Exact/adjacent agreement": "Ready if exact agreement >= 70% and adjacent agreement >= 85%; Caution if adjacent agreement >= 75%; Review otherwise.",
         "Krippendorff alpha": "Ready if ordinal alpha >= .80; Caution if .67 <= alpha < .80; Review if alpha < .67; Missing evidence if not estimable.",
-        "Rater fit/severity": "Ready when no selected-facet elements are outside Infit/Outfit 0.5-1.5 and no |ZSTD| >= 2 flags are present.",
+        "Rater fit/severity": "Ready only when finite selected-facet fit is available, no elements are outside the inclusive Infit/Outfit 0.50-1.50 band, and no |ZSTD| >= 2 flags are present.",
         "Rubric/category functioning": "Uses the integrated rating-scale decision table: category counts, average measures, thresholds, curves, and fit.",
         "Category collapse readiness": "Review means adjacent-category sensitivity analysis is justified only if rubric logic also supports it.",
     }
@@ -19716,8 +20579,8 @@ def _scoring_next_checkpoint(area: object, status: object) -> str:
 def _scoring_facets_crosswalk(area: object) -> str:
     crosswalk = {
         "Overall scoring consistency": "FACETS-style synthesis of agreement, fit, and category evidence.",
-        "Exact/adjacent agreement": "FACETS Table 8-style agreement screen.",
-        "Krippendorff alpha": "Agreement supplement to Table 8; not a FACETS replacement statistic.",
+        "Exact/adjacent agreement": "FACETS Table 7-style agreement screen.",
+        "Krippendorff alpha": "Agreement supplement to FACETS Table 7; not a FACETS replacement statistic.",
         "Rater fit/severity": "FACETS measurement report: rater measures, Infit/Outfit, ZSTD.",
         "Rubric/category functioning": "FACETS Categories/Steps: category counts, averages, thresholds, and curves.",
         "Category collapse readiness": "FACETS-style recoding review after category/step evidence.",
@@ -20518,7 +21381,7 @@ def generate_apa_scoring_quality_draft(
             "and `help_reference_coverage.csv` before submission."
         ),
         (
-            "For readers familiar with FACETS, the agreement evidence corresponds to a Table 8-style shared-context screen; "
+            "For readers familiar with FACETS, the agreement evidence corresponds to a Table 7-style shared-context screen; "
             "rater evidence corresponds to rater measure/fit output; and rating-scale evidence corresponds to Categories/Steps "
             "counts, average measures, thresholds, and category curves."
         ),
@@ -23186,11 +24049,11 @@ def calc_category_stats(
         cat_tbl["DiffPercent"] = cat_tbl["Percent"] - cat_tbl["ExpectedPercent"]
 
     cat_tbl["LowCount"] = cat_tbl["Count"] < 10
-    cat_tbl["InfitFlag"] = cat_tbl["Infit"].apply(
-        lambda v: np.nan if pd.isna(v) else (v < 0.5 or v > 1.5)
-    )
-    cat_tbl["OutfitFlag"] = cat_tbl["Outfit"].apply(
-        lambda v: np.nan if pd.isna(v) else (v < 0.5 or v > 1.5)
+    cat_tbl["InfitFlag"] = _decision_stability.fit_mnsq_review_mask(cat_tbl["Infit"])
+    cat_tbl["OutfitFlag"] = _decision_stability.fit_mnsq_review_mask(cat_tbl["Outfit"])
+    cat_tbl["FitUnavailable"] = (
+        pd.to_numeric(cat_tbl["Infit"], errors="coerce").isna()
+        | pd.to_numeric(cat_tbl["Outfit"], errors="coerce").isna()
     )
     cat_tbl["ZSTDFlag"] = (
         (cat_tbl["InfitZSTD"].abs() >= 2) | (cat_tbl["OutfitZSTD"].abs() >= 2)
@@ -23352,6 +24215,24 @@ def mfrm_diagnostics(
         person_tbl[["Facet", "Level", "Estimate", "SE"]],
         facet_tbl[["Facet", "Level", "Estimate", "SE"]],
     ], ignore_index=True)
+    person_boundary_columns = [
+        column for column in (
+            "ExtremeScorePattern",
+            "ExtremeScoreDirection",
+            "FiniteJMLEEstimate",
+            "PersonInferenceReady",
+            "ReportableEstimate",
+            "EstimateRole",
+        )
+        if column in person_tbl.columns
+    ]
+    if person_boundary_columns:
+        measures = measures.merge(
+            person_tbl[["Facet", "Level", *person_boundary_columns]],
+            on=["Facet", "Level"],
+            how="left",
+            validate="one_to_one",
+        )
 
     measures = measures.merge(se_tbl, on=["Facet", "Level"], how="left", suffixes=("", "_calc"))
     measures["SE"] = measures["SE"].fillna(measures["SE_calc"])
@@ -24859,36 +25740,70 @@ def read_input_data(
         st.session_state.pop("_custom_simulation_score_support", None)
         return sample_df
 
-    # v0.2.8-beta: Flat single-radio data-source picker. Previously the
-    # user faced a two-step flow (Sample data radio → Sample scenario
-    # selectbox) where the scenario switch was easy to miss. Now all
-    # sample scenarios are first-class options alongside Paste and
-    # Upload, so the scenario switcher is impossible to overlook.
+    # The source class and its detail are separate decisions. For samples the
+    # scenario selector stays visible directly below the class selector, so
+    # two-level grouping does not hide the active example. ``data_source_flat``
+    # remains the stable analysis-facing projection for saved state and Help.
     st.sidebar.markdown(f"### {t('data_source.header')}")
-
-    # Build the option list: scenarios first (in registry order), then
-    # simulation / paste / upload. Each entry records its kind so we can
-    # dispatch without string-matching the label.
     _options = build_data_source_options()
     _option_by_id = {str(opt["option_id"]): opt for opt in _options}
-    _option_ids = tuple(_option_by_id)
-
-    # Default to the writing-essay scenario so existing onboarding
-    # tours and screenshots still match without user action.
-    default_idx = 0
-    for i, opt in enumerate(_options):
-        if opt.get("scenario_key") == DEFAULT_SAMPLE_SCENARIO_KEY:
-            default_idx = i
-            break
-
-    _n_scenarios = len(SAMPLE_DATA_SCENARIOS)
-    chosen_id = st.sidebar.radio(
-        t("data_source.radio_prompt_template", n_scenarios=_n_scenarios),
-        options=_option_ids,
-        index=default_idx,
-        key="data_source_flat",
-        format_func=lambda option_id: _option_by_id[str(option_id)]["label"],
+    legacy_id = str(st.session_state.get(
+        "data_source_flat", f"scenario:{DEFAULT_SAMPLE_SCENARIO_KEY}"
+    ))
+    last_projection = str(st.session_state.get("_data_source_projection", ""))
+    legacy_class = _ux.data_source_class_id(legacy_id) or "sample"
+    visible_scenario_state = str(st.session_state.get("data_source_scenario", ""))
+    if visible_scenario_state in SAMPLE_DATA_SCENARIOS:
+        st.session_state["_data_source_last_sample"] = visible_scenario_state
+    last_sample = str(st.session_state.get(
+        "_data_source_last_sample", DEFAULT_SAMPLE_SCENARIO_KEY
+    ))
+    if last_sample not in SAMPLE_DATA_SCENARIOS:
+        last_sample = DEFAULT_SAMPLE_SCENARIO_KEY
+    legacy_scenario = (
+        legacy_id.split(":", 1)[1]
+        if legacy_id.startswith("scenario:")
+        and legacy_id.split(":", 1)[1] in SAMPLE_DATA_SCENARIOS
+        else last_sample
     )
+    # An older session, restored guide workspace, or compatibility caller may
+    # update only ``data_source_flat``. That external projection wins once.
+    if "data_source_class" not in st.session_state or (
+        last_projection and legacy_id != last_projection
+    ):
+        st.session_state["data_source_class"] = legacy_class
+        if legacy_class == "sample":
+            st.session_state["data_source_scenario"] = legacy_scenario
+    if "data_source_scenario" not in st.session_state:
+        st.session_state["data_source_scenario"] = legacy_scenario
+
+    class_labels = {
+        "sample": t("data_source.source_class_sample"),
+        "simulate": t("data_source.source_class_simulate"),
+        "paste": t("data_source.source_class_paste"),
+        "upload": t("data_source.source_class_upload"),
+    }
+    chosen_class = st.sidebar.radio(
+        t("data_source.source_class_label"),
+        options=list(_ux.DATA_SOURCE_CLASS_IDS),
+        format_func=class_labels.__getitem__,
+        key="data_source_class",
+        help=t("data_source.source_class_help"),
+    )
+    if chosen_class == "sample":
+        scenario_key = st.sidebar.selectbox(
+            t("data_source.scenario_select_label"),
+            options=list(SAMPLE_DATA_SCENARIOS),
+            format_func=lambda key: str(SAMPLE_DATA_SCENARIOS[str(key)]["label"]),
+            key="data_source_scenario",
+            help=t("data_source.scenario_select_help"),
+        )
+        chosen_id = f"scenario:{scenario_key}"
+        st.session_state["_data_source_last_sample"] = scenario_key
+    else:
+        chosen_id = str(chosen_class)
+    st.session_state["data_source_flat"] = chosen_id
+    st.session_state["_data_source_projection"] = chosen_id
     chosen = _option_by_id[str(chosen_id)]
 
     if chosen["kind"] == "scenario":
@@ -25105,6 +26020,30 @@ def to_csv_bytes(df: pd.DataFrame) -> bytes:
     return _exports.to_csv_bytes(df)
 
 
+def _accessible_dataframe_html(
+    df: pd.DataFrame,
+    *,
+    include_index: bool,
+    accessible_label: str,
+) -> str:
+    """Return escaped compact-table HTML with an accessible name and scopes."""
+
+    table_html = df.to_html(
+        index=include_index,
+        escape=True,
+        classes="mfrm-wrapped-table",
+    )
+    safe_label = _html.escape(str(accessible_label).strip() or "Data table", quote=True)
+    table_html = table_html.replace(
+        "<table ", f'<table aria-label="{safe_label}" ', 1
+    )
+    table_head, separator, table_body = table_html.partition("</thead>")
+    table_head = table_head.replace("<th>", '<th scope="col">')
+    if include_index:
+        table_body = table_body.replace("<th>", '<th scope="row">')
+    return table_head + separator + table_body
+
+
 def _render_compact_dataframe(
     df: pd.DataFrame,
     columns: list[str],
@@ -25129,7 +26068,11 @@ def _render_compact_dataframe(
     display_df = df.loc[:, display_cols].copy()
     if wrap_text and len(display_df) <= max_wrapped_rows:
         st.markdown(
-            display_df.to_html(index=not hide_index, escape=True, classes="mfrm-wrapped-table"),
+            _accessible_dataframe_html(
+                display_df,
+                include_index=not hide_index,
+                accessible_label=details_label,
+            ),
             unsafe_allow_html=True,
         )
     else:
@@ -25217,16 +26160,30 @@ table.mfrm-wrapped-table th {
 /* Accessibility — keyboard focus indicator.
    Streamlit's default focus ring is faint; boost it for keyboard users
    so button and tab focus is always visible at WCAG 2.4.7 level. */
+a:focus-visible,
 button:focus-visible,
-button[role="tab"]:focus-visible,
+summary:focus-visible,
 input:focus-visible,
 select:focus-visible,
 textarea:focus-visible,
+[role="button"]:focus-visible,
+[role="tab"]:focus-visible,
 [role="radio"]:focus-visible,
-[role="checkbox"]:focus-visible {
-  outline: 3px solid #0066cc;
-  outline-offset: 2px;
+[role="checkbox"]:focus-visible,
+[role="combobox"]:focus-visible,
+[role="option"]:focus-visible,
+[role="switch"]:focus-visible,
+[tabindex]:not([tabindex="-1"]):focus-visible {
+  outline: 3px solid var(--text-color, CanvasText) !important;
+  outline-offset: 3px !important;
+  box-shadow: 0 0 0 2px var(--background-color, Canvas) !important;
   border-radius: 2px;
+}
+@media (forced-colors: active) {
+  :focus-visible {
+    outline-color: Highlight !important;
+    forced-color-adjust: auto;
+  }
 }
 /* Accessibility — reduced-motion preference.
    Suppress Streamlit spinner / toast / transition animations for users
@@ -25256,6 +26213,13 @@ textarea:focus-visible,
   .main .block-container {
     padding-left: 0.75rem;
     padding-right: 0.75rem;
+  }
+}
+@media (pointer: coarse) {
+  button,
+  summary,
+  [role="button"] {
+    min-height: 2.75rem;
   }
 }
 /* Keep the dock compact on phones. The primary section switcher stays on one
@@ -25516,6 +26480,1167 @@ def qualify_likelihood_information_table(
     return out
 
 
+def build_design_assignment_audit_for_result(result: dict) -> dict:
+    """Build the outcome-blind assignment audit for fitted likelihood rows."""
+    if not isinstance(result, dict):
+        return _design_assignment.build_assignment_design_audit(pd.DataFrame())
+    config = result.get("config", {}) if isinstance(result.get("config"), dict) else {}
+    prep = result.get("prep", {}) if isinstance(result.get("prep"), dict) else {}
+    data = prep.get("data", pd.DataFrame())
+    facet_names = list(config.get("facet_names", prep.get("facet_names", [])) or [])
+    configured_rater = config.get("rater_facet")
+    facet_roles = config.get("facet_roles")
+    if not configured_rater and isinstance(facet_roles, dict):
+        configured_rater = facet_roles.get("rater")
+    mapping = _design_assignment.infer_rater_facet(
+        facet_names,
+        configured_rater_facet=configured_rater,
+    )
+    return _design_assignment.build_assignment_design_audit(
+        data,
+        person_col="Person",
+        facet_names=facet_names,
+        rater_facet=mapping.get("rater_facet"),
+        rater_mapping_basis=str(mapping.get("mapping_basis", "not_available")),
+        rater_mapping_confirmed=bool(mapping.get("mapping_confirmed", False)),
+    )
+
+
+def render_estimand_contract_panel(result: dict, *, compact: bool = False) -> None:
+    """Render the current estimator's target before likelihood/result tables."""
+    contract = _design_assignment.build_estimand_contract(result)
+    if contract.empty:
+        return
+    current = contract.loc[contract["CurrentRun"].astype(bool)]
+    row = current.iloc[0] if not current.empty else contract.iloc[0]
+    method_token = str(row["Method"]).lower()
+    localized_estimand = t(
+        f"design_assignment.{method_token}_estimand",
+        default=str(row["EstimandClass"]),
+    )
+    localized_likelihood = t(
+        f"design_assignment.{method_token}_likelihood",
+        default=str(row["LikelihoodBasis"]),
+    )
+    localized_facets_relation = t(
+        f"design_assignment.{method_token}_facets_relation",
+        default=str(row["FACETSRelation"]),
+    )
+    st.subheader(t("design_assignment.estimand_subheader"))
+    st.caption(t("design_assignment.estimand_caption"))
+    with st.container(border=True):
+        st.markdown(
+            t(
+                "design_assignment.current_estimand_template",
+                method=str(row["Method"]),
+                estimand=localized_estimand,
+            )
+        )
+        st.caption(localized_likelihood)
+        st.caption(localized_facets_relation)
+        st.warning(
+            t(
+                "design_assignment.cross_basis_boundary",
+                default=str(row["ClaimBoundary"]),
+            )
+        )
+    if not compact:
+        with st.expander(t("design_assignment.estimand_details_expander"), expanded=False):
+            st.caption(t("design_assignment.estimand_details_caption"))
+            st.dataframe(contract, width="stretch", hide_index=True)
+
+
+def render_assignment_design_audit_panel(result: dict, *, compact: bool = False) -> None:
+    """Render assignment topology without implying mechanism identification."""
+    bundle = build_design_assignment_audit_for_result(result)
+    summary = bundle.get("summary", pd.DataFrame()) if isinstance(bundle, dict) else pd.DataFrame()
+    if not isinstance(summary, pd.DataFrame) or summary.empty:
+        return
+    row = summary.iloc[0]
+    st.subheader(t("design_assignment.audit_subheader"))
+    st.caption(t("design_assignment.audit_caption"))
+    status = str(row.get("AuditStatus", "Not auditable"))
+    reason = str(row.get("Reason", ""))
+    if status == "Descriptive audit ready":
+        st.success(t("design_assignment.audit_ready_template", reason=reason))
+    elif status == "Not auditable":
+        st.info(t("design_assignment.audit_unavailable_template", reason=reason))
+    else:
+        st.warning(t("design_assignment.audit_review_template", reason=reason))
+
+    if bool(bundle.get("available", False)):
+        metric_cols = st.columns(5)
+        metric_cols[0].metric(
+            t("design_assignment.metric_rater_facet"),
+            str(row.get("RaterFacet", "not mapped")),
+        )
+        metric_cols[1].metric(
+            t("design_assignment.metric_assignments"),
+            f"{int(row.get('UniquePersonRaterAssignments', 0)):,}",
+        )
+        density = pd.to_numeric(pd.Series([row.get("AssignmentCellDensity")]), errors="coerce").iloc[0]
+        metric_cols[2].metric(
+            t("design_assignment.metric_density"),
+            f"{float(density) * 100:.1f}%" if np.isfinite(density) else "n/a",
+        )
+        corated = pd.to_numeric(pd.Series([row.get("CoRatedPersonShare")]), errors="coerce").iloc[0]
+        metric_cols[3].metric(
+            t("design_assignment.metric_corated"),
+            f"{float(corated) * 100:.1f}%" if np.isfinite(corated) else "n/a",
+        )
+        metric_cols[4].metric(
+            t("design_assignment.metric_components"),
+            f"{int(row.get('RaterOverlapComponents', 0)):,}",
+        )
+    st.info(t("design_assignment.mechanism_boundary"))
+
+    if compact:
+        return
+    with st.expander(t("design_assignment.audit_details_expander"), expanded=False):
+        st.dataframe(summary, width="stretch", hide_index=True)
+        exposure = bundle.get("rater_exposure", pd.DataFrame())
+        overlap = bundle.get("rater_overlap", pd.DataFrame())
+        if isinstance(exposure, pd.DataFrame) and not exposure.empty:
+            st.markdown("**" + t("design_assignment.exposure_heading") + "**")
+            st.dataframe(exposure, width="stretch", hide_index=True)
+        if isinstance(overlap, pd.DataFrame) and not overlap.empty:
+            st.markdown("**" + t("design_assignment.overlap_heading") + "**")
+            st.dataframe(overlap, width="stretch", hide_index=True)
+
+    with st.expander(t("design_assignment.sensitivity_expander"), expanded=False):
+        st.caption(t("design_assignment.sensitivity_caption"))
+        plan = bundle.get("sensitivity_plan", pd.DataFrame())
+        if isinstance(plan, pd.DataFrame) and not plan.empty:
+            st.dataframe(plan, width="stretch", hide_index=True)
+        evidence = _design_assignment.build_informative_assignment_evidence_register()
+        st.markdown("**" + t("design_assignment.validation_evidence_heading") + "**")
+        st.caption(t("design_assignment.validation_evidence_caption"))
+        st.dataframe(evidence, width="stretch", hide_index=True)
+
+
+def build_assignment_sensitivity_preflight(
+    result: dict,
+    *,
+    design_engine: str = "strict_2switch",
+) -> dict:
+    """Join estimator semantics to one fail-closed assignment-design gate."""
+    design_engine = str(design_engine).lower()
+    if design_engine not in {"strict_2switch", "context_margin_milp"}:
+        raise ValueError("design_engine must be 'strict_2switch' or 'context_margin_milp'.")
+    empty = {
+        "available": False,
+        "reason": "A fitted result is required.",
+        "gates": pd.DataFrame(),
+        "block_profiles": pd.DataFrame(),
+        "person_scores": {},
+        "rater_scores": {},
+        "rater_facet": None,
+        "context_facets": [],
+    }
+    if not isinstance(result, dict):
+        return empty
+    config = result.get("config", {}) if isinstance(result.get("config"), dict) else {}
+    prep = result.get("prep", {}) if isinstance(result.get("prep"), dict) else {}
+    data = prep.get("data", pd.DataFrame())
+    facet_names = [str(name) for name in config.get("facet_names", [])]
+    configured_rater = config.get("rater_facet")
+    facet_roles = config.get("facet_roles")
+    if not configured_rater and isinstance(facet_roles, dict):
+        configured_rater = facet_roles.get("rater")
+    mapping = _design_assignment.infer_rater_facet(
+        facet_names,
+        configured_rater_facet=configured_rater,
+    )
+    rater_facet = mapping.get("rater_facet")
+    context_facets = [name for name in facet_names if name != rater_facet]
+
+    application_gates: list[dict[str, object]] = []
+
+    def gate(name: str, passed: bool, evidence: str, action: str) -> None:
+        application_gates.append({
+            "Gate": name,
+            "Passed": bool(passed),
+            "Evidence": evidence,
+            "ActionIfFailed": action,
+        })
+
+    method = str(config.get("method", "")).upper()
+    model = str(config.get("model", "")).upper()
+    source_summary = result.get("summary", pd.DataFrame())
+    source_inference_ready = False
+    if (
+        isinstance(source_summary, pd.DataFrame)
+        and not source_summary.empty
+        and "InferenceReady" in source_summary.columns
+    ):
+        source_ready_value = source_summary.iloc[0].get("InferenceReady", False)
+        source_inference_ready = bool(
+            False if pd.isna(source_ready_value) else source_ready_value
+        )
+    gate(
+        "Source fit inference readiness",
+        source_inference_ready,
+        f"InferenceReady={source_inference_ready}",
+        "Resolve convergence/identifiability/curvature blockers before using fitted coordinates as a generator.",
+    )
+    gate(
+        "Current public estimator basis",
+        method in {"JMLE", "MML"},
+        f"method={method or 'not available'}",
+        "Run the public JMLE or MML estimator; exact CMLE remains repository-only.",
+    )
+    gate(
+        "Additive qualified model family",
+        model in {"RSM", "PCM"},
+        f"model={model or 'not available'}",
+        "The v1 assignment runner is limited to additive RSM/PCM; GPCM slope sensitivity is separate.",
+    )
+    regularized = bool(config.get("facet_regularization_enabled", False))
+    gate(
+        "Unregularized refit semantics",
+        not regularized,
+        f"facet_regularization_enabled={regularized}",
+        "Disable regularization or wait for a penalty-preserving refit contract.",
+    )
+    population_enabled = bool(
+        isinstance(config.get("population_model"), dict)
+        and config.get("population_model", {}).get("enabled")
+    )
+    gate(
+        "No latent-regression covariates",
+        not population_enabled,
+        f"population_model_enabled={population_enabled}",
+        "Use the future covariate-preserving assignment runner for latent regression.",
+    )
+    row_envelope = isinstance(data, pd.DataFrame) and len(data) <= 20_000
+    gate(
+        "Paired-refit row envelope",
+        row_envelope,
+        f"rows={len(data) if isinstance(data, pd.DataFrame) else 0}/20000",
+        "Use an offline sharded study for larger fitted designs.",
+    )
+
+    person_tbl = result.get("facets", {}).get("person", pd.DataFrame())
+    person_scores: dict[str, float] = {}
+    person_ready = isinstance(person_tbl, pd.DataFrame) and {
+        "Person", "Estimate"
+    }.issubset(person_tbl.columns)
+    if person_ready:
+        person_values = pd.to_numeric(person_tbl["Estimate"], errors="coerce")
+        person_ready = bool(person_values.notna().all() and np.isfinite(person_values).all())
+        if "ReportableEstimate" in person_tbl.columns:
+            person_ready = person_ready and bool(person_tbl["ReportableEstimate"].fillna(False).astype(bool).all())
+        if person_ready:
+            person_scores = dict(zip(person_tbl["Person"].astype(str), person_values.astype(float)))
+    gate(
+        "Finite reportable fitted Person coordinate",
+        person_ready,
+        f"person_coordinates={len(person_scores)}",
+        "Resolve JMLE boundary Persons or use a qualified MML posterior coordinate before alignment stress.",
+    )
+    person_order_ready = bool(
+        person_scores and pd.Series(person_scores, dtype=float).nunique(dropna=True) >= 2
+    )
+    gate(
+        "Nondegenerate fitted Person ordering",
+        person_order_ready,
+        f"distinct_person_coordinates={pd.Series(person_scores, dtype=float).nunique(dropna=True) if person_scores else 0}",
+        "An ability-alignment counterfactual requires at least two distinct fitted Person coordinates.",
+    )
+
+    facet_tbl = result.get("facets", {}).get("others", pd.DataFrame())
+    rater_scores: dict[str, float] = {}
+    rater_ready = (
+        isinstance(rater_facet, str)
+        and isinstance(facet_tbl, pd.DataFrame)
+        and {"Facet", "Level", "Estimate"}.issubset(facet_tbl.columns)
+    )
+    if rater_ready:
+        rater_rows = facet_tbl.loc[facet_tbl["Facet"].astype(str).eq(str(rater_facet))].copy()
+        estimates = pd.to_numeric(rater_rows["Estimate"], errors="coerce")
+        rater_ready = bool(
+            len(rater_rows) >= 2
+            and estimates.notna().all()
+            and np.isfinite(estimates).all()
+        )
+        if rater_ready:
+            sign = float(config.get("facet_signs", {}).get(str(rater_facet), -1))
+            severity = -sign * estimates.astype(float)
+            rater_scores = dict(zip(rater_rows["Level"].astype(str), severity))
+    gate(
+        "Finite fitted Rater-severity coordinate",
+        rater_ready,
+        f"rater_facet={rater_facet}; coordinates={len(rater_scores)}",
+        "Confirm the Rater facet and obtain finite fitted severity estimates.",
+    )
+    rater_order_ready = bool(
+        rater_scores and pd.Series(rater_scores, dtype=float).nunique(dropna=True) >= 2
+    )
+    gate(
+        "Nondegenerate fitted Rater-severity ordering",
+        rater_order_ready,
+        f"distinct_rater_coordinates={pd.Series(rater_scores, dtype=float).nunique(dropna=True) if rater_scores else 0}",
+        "A severity-alignment counterfactual requires at least two distinct fitted Rater coordinates.",
+    )
+
+    design_audit = (
+        _assignment_sensitivity.evaluate_fixed_density_perturbation_feasibility
+        if design_engine == "strict_2switch"
+        else _assignment_context_milp.evaluate_context_margin_milp_feasibility
+    )
+    design_preflight = design_audit(
+        data if isinstance(data, pd.DataFrame) else pd.DataFrame(),
+        person_col="Person",
+        rater_col=str(rater_facet or "Rater"),
+        context_cols=context_facets,
+        weight_col="Weight",
+        rater_mapping_confirmed=bool(mapping.get("mapping_confirmed", False)),
+    )
+    gates = pd.concat(
+        [pd.DataFrame(application_gates), design_preflight.get("gates", pd.DataFrame())],
+        ignore_index=True,
+    )
+    available = bool(not gates.empty and gates["Passed"].all())
+    failed = gates.loc[~gates["Passed"], "Gate"].astype(str).tolist() if not gates.empty else []
+    return {
+        "available": available,
+        "reason": (
+            (
+                "The fitted run is eligible for the strict paired fixed-density sensitivity runner."
+                if design_engine == "strict_2switch"
+                else "The fitted run is eligible for the exact context-margin MILP endpoint runner."
+            )
+            if available else "Blocked by: " + "; ".join(failed)
+        ),
+        "gates": gates,
+        "block_profiles": design_preflight.get("block_profiles", pd.DataFrame()),
+        "person_scores": person_scores,
+        "rater_scores": rater_scores,
+        "rater_facet": rater_facet,
+        "rater_mapping": mapping,
+        "context_facets": context_facets,
+        "facet_names": facet_names,
+        "method": method,
+        "model": model,
+        "witnesses": design_preflight.get("witnesses", pd.DataFrame()),
+        "design_engine": design_engine,
+        "schema_version": (
+            _assignment_sensitivity.SENSITIVITY_SCHEMA_VERSION
+            if design_engine == "strict_2switch"
+            else _assignment_context_milp.CONTEXT_MILP_SCHEMA_VERSION
+        ),
+    }
+
+
+def select_assignment_sensitivity_preflight(result: dict) -> dict:
+    """Prefer the qualified dose runner, then fall back to the MILP endpoint."""
+    strict = build_assignment_sensitivity_preflight(
+        result, design_engine="strict_2switch"
+    )
+    if strict.get("available"):
+        return {**strict, "strict_preflight": strict, "generalized_preflight": None}
+    generalized = build_assignment_sensitivity_preflight(
+        result, design_engine="context_margin_milp"
+    )
+    if generalized.get("available"):
+        return {
+            **generalized,
+            "strict_preflight": strict,
+            "generalized_preflight": generalized,
+            "fallback_reason": strict.get("reason", ""),
+        }
+    return {
+        **strict,
+        "reason": (
+            "Strict runner: " + strict.get("reason", "")
+            + " | Context-margin MILP: " + generalized.get("reason", "")
+        ),
+        "strict_preflight": strict,
+        "generalized_preflight": generalized,
+    }
+
+
+def _refit_assignment_sensitivity_dataset(
+    source_result: dict,
+    simulated_data: pd.DataFrame,
+    *,
+    maxit: int,
+    reltol: float,
+) -> dict:
+    """Refit one simulated design while retaining the current estimator basis."""
+    config = source_result.get("config", {})
+    prep = source_result.get("prep", {})
+    method = str(config.get("method", "JMLE")).upper()
+    anchor_audit = config.get("anchor_audit", {})
+    anchor_df = anchor_audit.get("valid_anchors", pd.DataFrame()) if isinstance(anchor_audit, dict) else pd.DataFrame()
+    group_anchor_df = anchor_audit.get("valid_group_anchors", pd.DataFrame()) if isinstance(anchor_audit, dict) else pd.DataFrame()
+    anchor_settings = anchor_audit.get("settings", {}) if isinstance(anchor_audit, dict) else {}
+    population_start_sd = (
+        config.get("population_prior_sd_input")
+        if config.get("estimate_population_sd")
+        else config.get("population_prior_sd")
+    )
+    return mfrm_estimate(
+        simulated_data,
+        person_col="Person",
+        facet_cols=list(config.get("facet_names", [])),
+        score_col="Score",
+        rating_min=prep.get("rating_min"),
+        rating_max=prep.get("rating_max"),
+        weight_col="Weight" if "Weight" in simulated_data.columns else None,
+        keep_original=True,
+        model=config.get("model", "RSM"),
+        method=method,
+        step_facet=config.get("step_facet"),
+        slope_facet=config.get("slope_facet"),
+        noncenter_facet=config.get("noncenter_facet", "Person"),
+        dummy_facets=config.get("dummy_facets", []),
+        positive_facets=config.get("positive_facets", []),
+        quad_points=int(config.get("quad_points") or 15),
+        population_prior_sd=float(population_start_sd or 1.0),
+        estimate_population_sd=bool(config.get("estimate_population_sd", False)),
+        facet_regularization=None,
+        maxit=int(maxit),
+        reltol=float(reltol),
+        mml_engine=str(config.get("mml_engine") or "EM"),
+        anchor_df=anchor_df,
+        group_anchor_df=group_anchor_df,
+        anchor_policy="warn",
+        min_common_anchors=int(anchor_settings.get("min_common_anchors", 2)),
+        min_obs_per_element=int(anchor_settings.get("min_obs_per_element", 2)),
+        min_obs_per_category=int(anchor_settings.get("min_obs_per_category", 1)),
+        compute_plausible_values=False,
+    )
+
+
+def _assignment_rater_recovery_metrics(
+    fitted: dict,
+    *,
+    rater_facet: str,
+    reference_severity: dict[str, float],
+) -> tuple[dict[str, float], pd.DataFrame]:
+    facet_tbl = fitted.get("facets", {}).get("others", pd.DataFrame())
+    if not isinstance(facet_tbl, pd.DataFrame) or facet_tbl.empty:
+        raise ValueError("Refit Rater estimates are unavailable.")
+    rows = facet_tbl.loc[facet_tbl["Facet"].astype(str).eq(str(rater_facet))].copy()
+    if rows.empty:
+        raise ValueError(f"Refit contains no rows for Rater facet {rater_facet!r}.")
+    sign = float(fitted.get("config", {}).get("facet_signs", {}).get(rater_facet, -1))
+    rows["EstimatedSeverity"] = -sign * pd.to_numeric(rows["Estimate"], errors="coerce")
+    rows["ReferenceSeverity"] = rows["Level"].astype(str).map(reference_severity)
+    if rows[["EstimatedSeverity", "ReferenceSeverity"]].isna().any().any():
+        raise ValueError("Non-finite or unmatched Rater severity rows in refit.")
+    rows["ReferenceCentered"] = rows["ReferenceSeverity"] - rows["ReferenceSeverity"].mean()
+    rows["EstimateCentered"] = rows["EstimatedSeverity"] - rows["EstimatedSeverity"].mean()
+    rows["CenteredDifference"] = rows["EstimateCentered"] - rows["ReferenceCentered"]
+    reference = rows["ReferenceCentered"].to_numpy(dtype=float)
+    estimate = rows["EstimateCentered"].to_numpy(dtype=float)
+    denom = float(np.dot(reference, reference))
+    slope = float(np.dot(reference, estimate) / denom) if denom > 0 else np.nan
+    metrics = {
+        "RaterReferenceCenteredRMSE": float(np.sqrt(np.mean(rows["CenteredDifference"] ** 2))),
+        "RaterReferenceCenteredMAE": float(np.mean(np.abs(rows["CenteredDifference"]))),
+        "RaterRecoverySlope": slope,
+        "RaterReferenceSpearman": float(rows["ReferenceSeverity"].corr(rows["EstimatedSeverity"], method="spearman")),
+    }
+    return metrics, rows[[
+        "Level", "ReferenceSeverity", "EstimatedSeverity", "ReferenceCentered",
+        "EstimateCentered", "CenteredDifference",
+    ]].rename(columns={"Level": "Rater"})
+
+
+def simulate_fixed_density_assignment_sensitivity(
+    result: dict,
+    *,
+    n_replicates: int = 2,
+    seed: int = 20260811,
+    refit_maxit: int = 100,
+    refit_reltol: float = 1e-4,
+    alignment_doses: Iterable[float] = (0.0, 1.0),
+    design_engine: str = "strict_2switch",
+    person_generation_mode: str = _assignment_generator.SOURCE_FITTED_MODE,
+) -> dict:
+    """Paired parametric refits along an assignment-alignment dose path.
+
+    The current estimator/method is locked. Common uniforms are used by source
+    row within each replicate, but each scenario has its own fitted probability
+    vector. Cross-method likelihood or AIC comparisons are never produced.
+    """
+    alignment_doses = tuple(alignment_doses)
+    design_engine = str(design_engine).lower()
+    preflight = build_assignment_sensitivity_preflight(
+        result, design_engine=design_engine
+    )
+    if not preflight.get("available"):
+        return {
+            **preflight,
+            "summary": pd.DataFrame(),
+            "contrasts": pd.DataFrame(),
+            "contrast_summary": pd.DataFrame(),
+            "dose_contrasts": pd.DataFrame(),
+            "dose_contrast_summary": pd.DataFrame(),
+            "dose_table": pd.DataFrame(),
+            "completion": pd.DataFrame(),
+            "rater_recovery": pd.DataFrame(),
+            "trajectory": pd.DataFrame(),
+            "switch_ledger": pd.DataFrame(),
+            "invariants": pd.DataFrame(),
+            "assignment_map": pd.DataFrame(),
+            "context_margin_audit": pd.DataFrame(),
+            "solver_audit": pd.DataFrame(),
+            "witnesses": preflight.get("witnesses", pd.DataFrame()),
+            "person_generation_mode": str(person_generation_mode),
+            "person_generator_gates": pd.DataFrame(),
+            "person_generator_contract": pd.DataFrame(),
+            "person_generation_summary": pd.DataFrame(),
+            "person_generation_draws": pd.DataFrame(),
+            "path_invariants": pd.DataFrame(),
+            "path_assignment_map": pd.DataFrame(),
+        }
+    config = result.get("config", {})
+    prep = result.get("prep", {})
+    population_enabled = bool(
+        isinstance(config.get("population_model"), dict)
+        and config.get("population_model", {}).get("enabled")
+    )
+    generator_plan = _assignment_generator.build_assignment_person_generation_plan(
+        method=preflight["method"],
+        person_scores=preflight["person_scores"],
+        mode=person_generation_mode,
+        population_sd=config.get("population_prior_sd"),
+        population_model_enabled=population_enabled,
+    )
+    if not generator_plan.get("available"):
+        return {
+            **preflight,
+            "available": False,
+            "reason": generator_plan.get("reason", "Person generator is unavailable."),
+            "person_generation_mode": str(person_generation_mode),
+            "person_generator_gates": generator_plan.get("gates", pd.DataFrame()),
+            "person_generator_contract": generator_plan.get("contract", pd.DataFrame()),
+            "person_generation_summary": pd.DataFrame(),
+            "person_generation_draws": pd.DataFrame(),
+            "summary": pd.DataFrame(),
+            "contrasts": pd.DataFrame(),
+            "contrast_summary": pd.DataFrame(),
+            "dose_contrasts": pd.DataFrame(),
+            "dose_contrast_summary": pd.DataFrame(),
+            "dose_table": pd.DataFrame(),
+            "completion": pd.DataFrame(),
+            "rater_recovery": pd.DataFrame(),
+            "trajectory": pd.DataFrame(),
+            "switch_ledger": pd.DataFrame(),
+            "invariants": pd.DataFrame(),
+            "assignment_map": pd.DataFrame(),
+            "context_margin_audit": pd.DataFrame(),
+            "solver_audit": pd.DataFrame(),
+            "witnesses": preflight.get("witnesses", pd.DataFrame()),
+            "path_invariants": pd.DataFrame(),
+            "path_assignment_map": pd.DataFrame(),
+        }
+    source_data = prep.get("data", pd.DataFrame())
+    rater_facet = str(preflight["rater_facet"])
+    facet_names = list(preflight["facet_names"])
+    if design_engine == "strict_2switch":
+        perturbation = _assignment_sensitivity.build_degree_preserving_assignment_perturbation(
+            source_data,
+            person_scores=preflight["person_scores"],
+            rater_scores=preflight["rater_scores"],
+            person_col="Person",
+            rater_col=rater_facet,
+            facet_cols=facet_names,
+            context_cols=preflight["context_facets"],
+            weight_col="Weight",
+            rater_mapping_confirmed=True,
+            direction="aligned",
+        )
+    else:
+        perturbation = _assignment_context_milp.build_context_margin_assignment_perturbation(
+            source_data,
+            person_scores=preflight["person_scores"],
+            rater_scores=preflight["rater_scores"],
+            person_col="Person",
+            rater_col=rater_facet,
+            facet_cols=facet_names,
+            context_cols=preflight["context_facets"],
+            weight_col="Weight",
+            rater_mapping_confirmed=True,
+            direction="aligned",
+        )
+    if not perturbation.get("available"):
+        return {
+            **preflight,
+            "available": False,
+            "reason": perturbation.get("reason", "Assignment perturbation failed."),
+            "summary": pd.DataFrame(),
+            "contrasts": pd.DataFrame(),
+            "contrast_summary": pd.DataFrame(),
+            "dose_contrasts": pd.DataFrame(),
+            "dose_contrast_summary": pd.DataFrame(),
+            "dose_table": pd.DataFrame(),
+            "completion": pd.DataFrame(),
+            "rater_recovery": pd.DataFrame(),
+            "trajectory": perturbation.get("trajectory", pd.DataFrame()),
+            "switch_ledger": perturbation.get("switch_ledger", pd.DataFrame()),
+            "invariants": perturbation.get("invariants", pd.DataFrame()),
+            "assignment_map": perturbation.get("assignment_map", pd.DataFrame()),
+            "context_margin_audit": perturbation.get("context_margin_audit", pd.DataFrame()),
+            "solver_audit": perturbation.get("solver_audit", pd.DataFrame()),
+            "witnesses": perturbation.get("witnesses", preflight.get("witnesses", pd.DataFrame())),
+            "person_generation_mode": str(generator_plan["mode"]),
+            "person_generator_gates": generator_plan["gates"],
+            "person_generator_contract": generator_plan["contract"],
+            "person_generation_summary": pd.DataFrame(),
+            "person_generation_draws": pd.DataFrame(),
+            "path_invariants": pd.DataFrame(),
+            "path_assignment_map": pd.DataFrame(),
+        }
+
+    if design_engine == "strict_2switch":
+        path = _assignment_sensitivity.build_perturbation_path_snapshots(
+            source_data,
+            perturbation,
+            requested_doses=alignment_doses,
+            person_col="Person",
+            rater_col=rater_facet,
+            facet_cols=facet_names,
+            context_cols=preflight["context_facets"],
+            weight_col="Weight",
+        )
+    else:
+        path = _assignment_context_milp.build_context_margin_endpoint_pair(
+            source_data,
+            perturbation,
+            person_col="Person",
+            rater_col=rater_facet,
+            facet_cols=facet_names,
+            context_cols=preflight["context_facets"],
+            weight_col="Weight",
+        )
+    if not path.get("available"):
+        return {
+            **preflight,
+            "available": False,
+            "reason": path.get("reason", "Assignment-dose path construction failed."),
+            "summary": pd.DataFrame(),
+            "contrasts": pd.DataFrame(),
+            "contrast_summary": pd.DataFrame(),
+            "dose_contrasts": pd.DataFrame(),
+            "dose_contrast_summary": pd.DataFrame(),
+            "dose_table": path.get("dose_table", pd.DataFrame()),
+            "completion": pd.DataFrame(),
+            "rater_recovery": pd.DataFrame(),
+            "trajectory": path.get("trajectory", pd.DataFrame()),
+            "switch_ledger": perturbation.get("switch_ledger", pd.DataFrame()),
+            "invariants": perturbation.get("invariants", pd.DataFrame()),
+            "assignment_map": perturbation.get("assignment_map", pd.DataFrame()),
+            "context_margin_audit": perturbation.get("context_margin_audit", pd.DataFrame()),
+            "solver_audit": perturbation.get("solver_audit", pd.DataFrame()),
+            "witnesses": perturbation.get("witnesses", preflight.get("witnesses", pd.DataFrame())),
+            "person_generation_mode": str(generator_plan["mode"]),
+            "person_generator_gates": generator_plan["gates"],
+            "person_generator_contract": generator_plan["contract"],
+            "person_generation_summary": pd.DataFrame(),
+            "person_generation_draws": pd.DataFrame(),
+            "path_invariants": path.get("path_invariants", pd.DataFrame()),
+            "path_assignment_map": path.get("path_assignment_map", pd.DataFrame()),
+        }
+    scenarios = path["designs"]
+    dose_table = path["dose_table"]
+    dose_lookup = dose_table.set_index("Scenario").to_dict(orient="index")
+    cat_vals = np.arange(int(prep["rating_min"]), int(prep["rating_max"]) + 1)
+    prob_cols = [f"P_{category}" for category in cat_vals]
+
+    def scenario_probabilities(
+        person_measure_overrides: dict[str, float] | None = None,
+    ) -> tuple[dict[str, np.ndarray], dict[str, str]]:
+        probabilities: dict[str, np.ndarray] = {}
+        scopes: dict[str, str] = {}
+        for scenario, design in scenarios.items():
+            prediction = predict_mfrm_design(
+                result,
+                design.sort_values("_SourceRow").reset_index(drop=True),
+                person_col="Person",
+                score_col=None,
+                use_fitted_person=True,
+                person_measure_overrides=person_measure_overrides,
+            )
+            if not prediction.get("available"):
+                raise RuntimeError(
+                    f"Prediction failed for {scenario}: {prediction.get('reason', 'unknown reason')}"
+                )
+            table = prediction["table"].sort_values("_SourceRow").reset_index(drop=True)
+            if not set(prob_cols).issubset(table.columns):
+                raise RuntimeError(f"Prediction probabilities are incomplete for {scenario}.")
+            probabilities[scenario] = _normalise_probability_rows(
+                table[prob_cols].to_numpy(dtype=float)
+            )
+            scope_values = table["PredictionScope"].astype(str).drop_duplicates().tolist()
+            scopes[scenario] = "|".join(scope_values)
+        return probabilities, scopes
+
+    population_generation = (
+        str(generator_plan["mode"])
+        == _assignment_generator.MML_RANK_PRESERVING_MODE
+    )
+    fixed_probability_by_scenario: dict[str, np.ndarray] = {}
+    fixed_scope_by_scenario: dict[str, str] = {}
+    if not population_generation:
+        fixed_probability_by_scenario, fixed_scope_by_scenario = scenario_probabilities()
+
+    n_replicates = min(max(1, int(n_replicates)), 10)
+    free_mml_sd = bool(
+        preflight["method"] == "MML" and config.get("estimate_population_sd", False)
+    )
+    requested_maxit = int(refit_maxit)
+    effective_maxit = max(requested_maxit, 300) if free_mml_sd else requested_maxit
+    if population_generation:
+        seed_sequence = np.random.SeedSequence(int(seed))
+        person_seed = seed_sequence.spawn(1)[0]
+        person_rng = np.random.default_rng(person_seed)
+        # Preserve the legacy response stream so separate source-fitted and
+        # population-generator runs with the same seed remain response-paired.
+        response_rng = np.random.default_rng(int(seed))
+        random_stream_contract = (
+            "spawned Person stream plus legacy response stream; response uniforms "
+            "remain paired across generator modes at the same seed"
+        )
+    else:
+        person_rng = np.random.default_rng(int(seed))
+        response_rng = person_rng
+        random_stream_contract = "legacy single response stream; Person coordinates fixed"
+    summary_rows: list[dict[str, object]] = []
+    recovery_parts: list[pd.DataFrame] = []
+    person_generation_summary_parts: list[pd.DataFrame] = []
+    person_generation_draw_parts: list[pd.DataFrame] = []
+    trajectory = path["trajectory"]
+    for replicate in range(1, n_replicates + 1):
+        generated_persons = _assignment_generator.draw_assignment_person_coordinates(
+            generator_plan,
+            rng=person_rng,
+            replicate=replicate,
+        )
+        person_generation_summary_parts.append(generated_persons["summary"])
+        person_generation_draw_parts.append(generated_persons["draws"])
+        generation_summary = generated_persons["summary"].iloc[0]
+        if population_generation:
+            probability_by_scenario, scope_by_scenario = scenario_probabilities(
+                generated_persons["coordinates"]
+            )
+        else:
+            probability_by_scenario = fixed_probability_by_scenario
+            scope_by_scenario = fixed_scope_by_scenario
+        common_u = response_rng.random(len(next(iter(scenarios.values()))))
+        for scenario, design in scenarios.items():
+            dose_info = dose_lookup[scenario]
+            probs = probability_by_scenario[scenario]
+            cdf = np.cumsum(probs, axis=1)
+            cdf[:, -1] = 1.0
+            draw_index = np.sum(common_u[:, None] > cdf, axis=1)
+            simulated = design.sort_values("_SourceRow").reset_index(drop=True).drop(
+                columns=["_SourceRow"], errors="ignore"
+            )
+            simulated["Score"] = cat_vals[draw_index]
+            row: dict[str, object] = {
+                "Replicate": replicate,
+                "Scenario": scenario,
+                "Method": preflight["method"],
+                "Model": preflight["model"],
+                "Rows": len(simulated),
+                "RequestedAlignmentDoses": dose_info["RequestedAlignmentDoses"],
+                "AchievedAlignmentDose": float(dose_info["AchievedAlignmentDose"]),
+                "SwitchesApplied": int(dose_info["SwitchesApplied"]),
+                "AssignmentRankCorrelation": float(dose_info["AssignmentRankCorrelation"]),
+                "FitReturned": False,
+                "Completed": False,
+                "Converged": False,
+                "InferenceReady": False,
+                "MetricsAvailable": False,
+                "RaterReferenceCenteredRMSE": np.nan,
+                "RaterReferenceCenteredMAE": np.nan,
+                "RaterRecoverySlope": np.nan,
+                "RaterReferenceSpearman": np.nan,
+                "EstimatedPopulationSD": np.nan,
+                "PopulationSDUsed": np.nan,
+                "PopulationSDFreeEstimated": False,
+                "ReferenceIsKnownTruth": False,
+                "PersonGenerationMode": str(generator_plan["mode"]),
+                "GeneratorCoordinateBasis": (
+                    "mml_normal_order_statistics_mapped_to_source_eap_rank"
+                    if population_generation
+                    else "source_fit_person_measure_and_rater_severity"
+                ),
+                "GeneratorPredictionScope": scope_by_scenario[scenario],
+                "GeneratedPersonTruthKnownWithinReplicate": population_generation,
+                "GeneratorPopulationSD": generation_summary["GeneratorPopulationSD"],
+                "GeneratedPersonMean": generation_summary["GeneratedMean"],
+                "GeneratedPersonSD": generation_summary["GeneratedSD"],
+                "SourceGeneratedRankSpearman": generation_summary["SourceGeneratedRankSpearman"],
+                "RefitMaxitRequested": requested_maxit,
+                "RefitMaxitEffective": effective_maxit,
+                "RefitRelTol": float(refit_reltol),
+                "ExclusionReason": "",
+                "Error": "",
+            }
+            try:
+                fitted = _refit_assignment_sensitivity_dataset(
+                    result,
+                    simulated,
+                    maxit=effective_maxit,
+                    reltol=float(refit_reltol),
+                )
+                fit_summary = fitted.get("summary", pd.DataFrame())
+                row["FitReturned"] = True
+                row["Completed"] = True
+                if isinstance(fit_summary, pd.DataFrame) and not fit_summary.empty:
+                    summary_row = fit_summary.iloc[0]
+                    row["Converged"] = bool(summary_row.get("Converged", False))
+                    row["InferenceReady"] = bool(summary_row.get("InferenceReady", False))
+                if row["InferenceReady"]:
+                    metrics, recovery = _assignment_rater_recovery_metrics(
+                        fitted,
+                        rater_facet=rater_facet,
+                        reference_severity=preflight["rater_scores"],
+                    )
+                    row.update(metrics)
+                    row["EstimatedPopulationSD"] = fitted.get("config", {}).get(
+                        "estimated_population_sd", np.nan
+                    )
+                    if preflight["method"] == "MML":
+                        row["PopulationSDUsed"] = fitted.get("config", {}).get(
+                            "population_prior_sd", np.nan
+                        )
+                        row["PopulationSDFreeEstimated"] = bool(
+                            fitted.get("config", {}).get("estimate_population_sd", False)
+                        )
+                    row["MetricsAvailable"] = True
+                    recovery.insert(0, "Scenario", scenario)
+                    recovery.insert(0, "Replicate", replicate)
+                    recovery_parts.append(recovery)
+                else:
+                    row["ExclusionReason"] = "Refit returned but was not inference-ready."
+            except Exception as exc:
+                row["Error"] = str(exc)[:500]
+                row["ExclusionReason"] = "Refit or metric extraction failed."
+            summary_rows.append(row)
+
+    summary = pd.DataFrame(summary_rows)
+    metrics = [
+        "RaterReferenceCenteredRMSE", "RaterReferenceCenteredMAE", "RaterRecoverySlope",
+        "RaterReferenceSpearman", "PopulationSDUsed",
+    ]
+    dose_contrast_rows: list[dict[str, object]] = []
+    for replicate, block in summary.groupby("Replicate", sort=True):
+        observed = block.loc[block["Scenario"].eq("observed_assignment")]
+        dose_rows = block.loc[~block["Scenario"].eq("observed_assignment")].sort_values(
+            "AchievedAlignmentDose"
+        )
+        for _, dose_row in dose_rows.iterrows():
+            pair_fits_completed = bool(
+                len(observed) == 1
+                and bool(observed.iloc[0]["Completed"])
+                and bool(dose_row["Completed"])
+            )
+            pair_inference_ready = bool(
+                pair_fits_completed
+                and bool(observed.iloc[0]["InferenceReady"])
+                and bool(dose_row["InferenceReady"])
+                and bool(observed.iloc[0]["MetricsAvailable"])
+                and bool(dose_row["MetricsAvailable"])
+            )
+            contrast: dict[str, object] = {
+                "Replicate": int(replicate),
+                "Scenario": str(dose_row["Scenario"]),
+                "AchievedAlignmentDose": float(dose_row["AchievedAlignmentDose"]),
+                "SwitchesApplied": int(dose_row["SwitchesApplied"]),
+                "AssignmentRankCorrelation": float(dose_row["AssignmentRankCorrelation"]),
+                "PairFitsCompleted": pair_fits_completed,
+                "PairInferenceReady": pair_inference_ready,
+                "PairComplete": pair_inference_ready,
+                "Method": preflight["method"],
+                "LikelihoodComparisonPerformed": False,
+            }
+            for metric in metrics:
+                if pair_inference_ready:
+                    left = pd.to_numeric(pd.Series([dose_row[metric]]), errors="coerce").iloc[0]
+                    right = pd.to_numeric(
+                        pd.Series([observed.iloc[0][metric]]), errors="coerce"
+                    ).iloc[0]
+                    contrast[f"DoseMinusObserved_{metric}"] = (
+                        float(left - right)
+                        if np.isfinite(left) and np.isfinite(right)
+                        else np.nan
+                    )
+                else:
+                    contrast[f"DoseMinusObserved_{metric}"] = np.nan
+            dose_contrast_rows.append(contrast)
+    dose_contrasts = pd.DataFrame(dose_contrast_rows)
+    endpoint = dose_contrasts.loc[
+        dose_contrasts["Scenario"].eq("aligned_counterfactual")
+    ].copy()
+    contrasts = endpoint.rename(columns={
+        f"DoseMinusObserved_{metric}": f"AlignedMinusObserved_{metric}"
+        for metric in metrics
+    }).reset_index(drop=True)
+    contrast_summary_rows: list[dict[str, object]] = []
+    for metric in metrics:
+        column = f"AlignedMinusObserved_{metric}"
+        values = pd.to_numeric(
+            contrasts.loc[contrasts["PairInferenceReady"], column], errors="coerce"
+        ).dropna()
+        contrast_summary_rows.append({
+            "Method": preflight["method"],
+            "Contrast": "aligned_counterfactual_minus_observed_assignment",
+            "Metric": metric,
+            "InferenceReadyPairs": int(contrasts["PairInferenceReady"].sum()),
+            "FiniteDifferences": int(len(values)),
+            "MeanDifference": float(values.mean()) if len(values) else np.nan,
+            "SDDifference": float(values.std(ddof=1)) if len(values) > 1 else np.nan,
+            "MinimumDifference": float(values.min()) if len(values) else np.nan,
+            "MaximumDifference": float(values.max()) if len(values) else np.nan,
+            "LikelihoodComparisonPerformed": False,
+        })
+    contrast_summary = pd.DataFrame(contrast_summary_rows)
+    dose_summary_rows: list[dict[str, object]] = []
+    for _, dose_info in dose_table.sort_values("AchievedAlignmentDose").iterrows():
+        scenario = str(dose_info["Scenario"])
+        if scenario == "observed_assignment":
+            source_rows = summary.loc[summary["Scenario"].eq(scenario)]
+            eligible = source_rows["InferenceReady"] & source_rows["MetricsAvailable"]
+        else:
+            source_rows = dose_contrasts.loc[dose_contrasts["Scenario"].eq(scenario)]
+            eligible = source_rows["PairInferenceReady"]
+        for metric in metrics:
+            if scenario == "observed_assignment":
+                finite_reference = pd.to_numeric(
+                    source_rows.loc[eligible, metric], errors="coerce"
+                ).dropna()
+                values = pd.Series(np.zeros(len(finite_reference)), dtype=float)
+            else:
+                values = pd.to_numeric(
+                    source_rows.loc[eligible, f"DoseMinusObserved_{metric}"],
+                    errors="coerce",
+                ).dropna()
+            dose_summary_rows.append({
+                "Method": preflight["method"],
+                "Scenario": scenario,
+                "AchievedAlignmentDose": float(dose_info["AchievedAlignmentDose"]),
+                "SwitchesApplied": int(dose_info["SwitchesApplied"]),
+                "AssignmentRankCorrelation": float(dose_info["AssignmentRankCorrelation"]),
+                "Contrast": (
+                    "observed_assignment_minus_itself"
+                    if scenario == "observed_assignment"
+                    else "assignment_dose_minus_observed_assignment"
+                ),
+                "Metric": metric,
+                "EligibleReplicates": int(eligible.sum()),
+                "ContrastPairsReady": (
+                    int(eligible.sum()) if scenario != "observed_assignment" else 0
+                ),
+                "ObservedReferenceFitsReady": (
+                    int(eligible.sum()) if scenario == "observed_assignment" else 0
+                ),
+                "FiniteDifferences": int(len(values)),
+                "MeanDifference": float(values.mean()) if len(values) else np.nan,
+                "SDDifference": float(values.std(ddof=1)) if len(values) > 1 else np.nan,
+                "MinimumDifference": float(values.min()) if len(values) else np.nan,
+                "MaximumDifference": float(values.max()) if len(values) else np.nan,
+                "LikelihoodComparisonPerformed": False,
+            })
+    dose_contrast_summary = pd.DataFrame(dose_summary_rows)
+    dose_pairs_expected = n_replicates * max(len(scenarios) - 1, 0)
+    completion = pd.DataFrame([
+        {
+            "DesignEngine": design_engine,
+            "PersonGenerationMode": str(generator_plan["mode"]),
+            "Method": preflight["method"],
+            "ReplicatesRequested": n_replicates,
+            "AssignmentDoseScenarios": len(scenarios),
+            "ScenarioFitsExpected": n_replicates * len(scenarios),
+            "ScenarioFitsCompleted": int(summary["Completed"].sum()),
+            "ScenarioFitsConverged": int(summary["Converged"].sum()),
+            "ScenarioFitsInferenceReady": int(summary["InferenceReady"].sum()),
+            "ScenarioFitsMetricsAvailable": int(summary["MetricsAvailable"].sum()),
+            "PairedFitsCompleted": int(contrasts["PairFitsCompleted"].sum()),
+            "PairedContrastsComplete": int(contrasts["PairComplete"].sum()),
+            "DoseContrastsExpected": dose_pairs_expected,
+            "DosePairFitsCompleted": int(dose_contrasts["PairFitsCompleted"].sum()),
+            "DoseContrastsComplete": int(dose_contrasts["PairComplete"].sum()),
+            "CrossBasisLikelihoodCompared": False,
+            "ReferenceIsKnownTruth": False,
+            "GeneratedPersonTruthKnownWithinReplicate": population_generation,
+            "PersonCoordinateDrawsExpected": n_replicates,
+            "PersonCoordinateDrawsCompleted": len(person_generation_summary_parts),
+            "RandomStreamContract": random_stream_contract,
+            "RefitMaxitRequested": requested_maxit,
+            "RefitMaxitEffective": effective_maxit,
+            "RefitRelTol": float(refit_reltol),
+            "Seed": int(seed),
+        }
+    ])
+    is_milp_endpoint = design_engine == "context_margin_milp"
+    reference_contract = pd.DataFrame([{
+        "SchemaVersion": preflight["schema_version"],
+        "DesignEngine": design_engine,
+        "PersonGeneratorSchemaVersion": generator_plan["schema_version"],
+        "PersonGenerationMode": str(generator_plan["mode"]),
+        "Method": preflight["method"],
+        "Model": preflight["model"],
+        "PersonCoordinate": "source fitted Person measure",
+        "PersonGenerationContract": str(
+            generator_plan["contract"].iloc[0]["ResponsePersonCoordinate"]
+        ),
+        "GeneratedPersonTruthKnownWithinReplicate": population_generation,
+        "SourceFittedPersonIsKnownTruth": False,
+        "RankRelationPreserved": bool(
+            generator_plan["contract"].iloc[0]["RankRelationPreserved"]
+        ),
+        "UnconditionalNewSample": False,
+        "RaterCoordinate": "source fitted Rater severity",
+        "ResponseGenerator": "source fitted conditional category probabilities",
+        "AssignmentContrast": (
+            "globally optimized constrained endpoint minus observed assignment"
+            if is_milp_endpoint
+            else "each achieved alignment dose minus observed assignment"
+        ),
+        "AlignmentDoseDefinition": (
+            "endpoint labels 0 and 1 only; no qualified intermediate dose path"
+            if is_milp_endpoint
+            else "normalized direction-adjusted objective progress along the retained switch path"
+        ),
+        "AlignmentDoseIsEstimatedPropensity": False,
+        "AssignmentOptimization": (
+            "global binary MILP optimum within exact Rater-by-context margins and locked overlap witnesses"
+            if is_milp_endpoint
+            else "deterministic greedy connected 2-switch path; no global optimum claim"
+        ),
+        "IntermediateDoseQualified": not is_milp_endpoint,
+        "ConnectivityGuarantee": (
+            "observed spanning-tree witness Persons locked to both incident Raters"
+            if is_milp_endpoint
+            else "direct overlap checked after every retained 2-switch"
+        ),
+        "ReferenceKnownTruth": False,
+        "RaterReferenceKnownTruth": False,
+        "AssignmentMechanismIdentified": False,
+        "CausalBiasIdentified": False,
+        "CrossBasisLikelihoodCompared": False,
+        "AllowedClaim": "local within-method fitted-model sensitivity only",
+    }])
+    endpoint_pairs_ready = int(contrasts["PairComplete"].sum())
+    dose_pairs_ready = int(dose_contrasts["PairComplete"].sum())
+    all_pairs_ready = dose_pairs_ready == dose_pairs_expected
+    return {
+        "available": True,
+        "evidence_ready": dose_pairs_ready > 0,
+        "endpoint_evidence_ready": endpoint_pairs_ready > 0,
+        "all_pairs_inference_ready": all_pairs_ready,
+        "reason": (
+            "All paired parametric refits are inference-ready."
+            if all_pairs_ready
+            else (
+                "The run completed with explicit partial/failed-pair denominators."
+                if dose_pairs_ready > 0
+                else "The run completed, but no paired contrast is inference-ready."
+            )
+        ),
+        "schema_version": preflight["schema_version"],
+        "design_engine": design_engine,
+        "person_generation_mode": str(generator_plan["mode"]),
+        "summary": summary,
+        "contrasts": contrasts,
+        "contrast_summary": contrast_summary,
+        "dose_contrasts": dose_contrasts,
+        "dose_contrast_summary": dose_contrast_summary,
+        "dose_table": dose_table,
+        "completion": completion,
+        "reference_contract": reference_contract,
+        "person_generator_contract": generator_plan["contract"],
+        "person_generator_gates": generator_plan["gates"],
+        "person_generation_summary": pd.concat(
+            person_generation_summary_parts, ignore_index=True
+        ) if person_generation_summary_parts else pd.DataFrame(),
+        "person_generation_draws": pd.concat(
+            person_generation_draw_parts, ignore_index=True
+        ) if person_generation_draw_parts else pd.DataFrame(),
+        "rater_recovery": pd.concat(recovery_parts, ignore_index=True) if recovery_parts else pd.DataFrame(),
+        "trajectory": trajectory,
+        "switch_ledger": perturbation.get("switch_ledger", pd.DataFrame()),
+        "invariants": perturbation["invariants"],
+        "assignment_map": perturbation["assignment_map"],
+        "context_margin_audit": perturbation.get("context_margin_audit", pd.DataFrame()),
+        "solver_audit": perturbation.get("solver_audit", pd.DataFrame()),
+        "witnesses": perturbation.get("witnesses", preflight.get("witnesses", pd.DataFrame())),
+        "path_invariants": path["path_invariants"],
+        "path_assignment_map": path["path_assignment_map"],
+        "gates": preflight["gates"],
+        "block_profiles": preflight["block_profiles"],
+        "n_replicates": n_replicates,
+        "seed": int(seed),
+        "requested_alignment_doses": (
+            [0.0, 1.0]
+            if is_milp_endpoint
+            else sorted({0.0, 1.0, *[float(value) for value in alignment_doses]})
+        ),
+        "achieved_alignment_doses": dose_table["AchievedAlignmentDose"].astype(float).tolist(),
+        "method": preflight["method"],
+        "model": preflight["model"],
+        "claim_boundary": (
+            "This is a fitted-model parametric sensitivity analysis, not an empirical MNAR diagnosis. "
+            + (
+                "The MILP endpoint is globally optimal only inside its declared exact-margin and witness-lock constraints; "
+                "no intermediate dose path or unconstrained global worst case is claimed. "
+                if is_milp_endpoint
+                else "The deterministic greedy switch path is not claimed to be a global worst case. "
+                "Dose is normalized progress on that path, not an estimated assignment propensity. "
+            )
+            + (
+                "Generated MML abilities are normal order statistics mapped to source EAP ranks; this conditions "
+                "on the fitted rank-to-assignment relation and is not an unconditional new-sample experiment. "
+                if population_generation else
+                "Source fitted Person measures are reference coordinates, not known truth. "
+            )
+            + "Only within-method parameter movement is reported; no cross-basis likelihood, deviance, AIC, BIC, "
+            "or estimator ranking is produced."
+        ),
+    }
+
+
+def assignment_sensitivity_bundle_frames(bundle: dict | None) -> dict[str, pd.DataFrame]:
+    """Return stable export names for one fixed-density sensitivity run."""
+    if not isinstance(bundle, dict):
+        return {}
+    frames: dict[str, pd.DataFrame] = {}
+    for name, key in (
+        ("fixed_density_assignment_refit_summary", "summary"),
+        ("fixed_density_assignment_paired_contrasts", "contrasts"),
+        ("fixed_density_assignment_contrast_summary", "contrast_summary"),
+        ("fixed_density_assignment_dose_contrasts", "dose_contrasts"),
+        ("fixed_density_assignment_dose_contrast_summary", "dose_contrast_summary"),
+        ("fixed_density_assignment_dose_table", "dose_table"),
+        ("fixed_density_assignment_completion", "completion"),
+        ("fixed_density_assignment_reference_contract", "reference_contract"),
+        ("assignment_generator_contract", "person_generator_contract"),
+        ("assignment_generator_gates", "person_generator_gates"),
+        ("assignment_generation_summary", "person_generation_summary"),
+        ("assignment_generation_draws", "person_generation_draws"),
+        ("fixed_density_assignment_rater_recovery", "rater_recovery"),
+        ("fixed_density_assignment_trajectory", "trajectory"),
+        ("fixed_density_assignment_switch_ledger", "switch_ledger"),
+        ("fixed_density_assignment_invariants", "invariants"),
+        ("fixed_density_assignment_map", "assignment_map"),
+        ("fixed_density_assignment_path_invariants", "path_invariants"),
+        ("fixed_density_assignment_path_map", "path_assignment_map"),
+        ("fixed_density_assignment_runner_gates", "gates"),
+        ("fixed_density_assignment_block_profiles", "block_profiles"),
+        ("assignment_context_margin_audit", "context_margin_audit"),
+        ("assignment_context_milp_solver_audit", "solver_audit"),
+        ("assignment_context_connectivity_witnesses", "witnesses"),
+    ):
+        _frame_bundle.add_frame(frames, name, bundle.get(key))
+    return frames
+
+
 def build_result_bundle_frames(
     result: dict,
     diagnostics: dict,
@@ -25551,9 +27676,55 @@ def build_result_bundle_frames(
     _frame_bundle.add_frame(frames, "summary", summary)
     _frame_bundle.add_frame(
         frames,
+        "estimator_estimand_contract",
+        _design_assignment.build_estimand_contract(result),
+    )
+    try:
+        assignment_bundle = build_design_assignment_audit_for_result(result)
+    except Exception:
+        assignment_bundle = {}
+    if isinstance(assignment_bundle, dict):
+        _frame_bundle.add_frames(frames, (
+            ("assignment_design_summary", assignment_bundle.get("summary")),
+            ("assignment_rater_exposure", assignment_bundle.get("rater_exposure")),
+            ("assignment_rater_overlap", assignment_bundle.get("rater_overlap")),
+            ("fixed_density_sensitivity_plan", assignment_bundle.get("sensitivity_plan")),
+        ))
+    _frame_bundle.add_frame(
+        frames,
+        "informative_assignment_validation_evidence",
+        _design_assignment.build_informative_assignment_evidence_register(),
+    )
+    try:
+        assignment_preflight = select_assignment_sensitivity_preflight(result)
+    except Exception:
+        assignment_preflight = {}
+    if isinstance(assignment_preflight, dict):
+        _frame_bundle.add_frames(frames, (
+            ("fixed_density_assignment_runner_gates", assignment_preflight.get("gates")),
+            ("fixed_density_assignment_block_profiles", assignment_preflight.get("block_profiles")),
+            ("assignment_context_connectivity_witnesses", assignment_preflight.get("witnesses")),
+        ))
+    _frame_bundle.add_frame(
+        frames,
         "parameterization_audit",
         result.get("parameterization_audit"),
     )
+    identifiability = result.get("identifiability", {})
+    if isinstance(identifiability, dict):
+        for name, key in (
+            ("identifiability_summary", "summary"),
+            ("identifiability_connectivity", "connectivity"),
+            ("identifiability_null_space_block_energy", "null_space_block_energy"),
+            ("identifiability_coordinate_null_weight", "coordinate_null_weight"),
+        ):
+            _frame_bundle.add_frame(frames, name, identifiability.get(key))
+    person_boundary = result.get("person_boundary", {})
+    if isinstance(person_boundary, dict):
+        _frame_bundle.add_frames(frames, (
+            ("jmle_person_boundary_summary", person_boundary.get("summary")),
+            ("jmle_person_boundary_persons", person_boundary.get("persons")),
+        ))
     likelihood_info = result.get("likelihood_information")
     if not isinstance(likelihood_info, pd.DataFrame) or likelihood_info.empty:
         likelihood_info = build_likelihood_information_criteria(result)
@@ -25577,6 +27748,23 @@ def build_result_bundle_frames(
     if isinstance(diagnostics, dict):
         measures = diagnostics.get("measures")
         _frame_bundle.add_frame(frames, "measures", measures)
+        fit_for_stability = diagnostics.get("fit", pd.DataFrame())
+        if not isinstance(fit_for_stability, pd.DataFrame) or fit_for_stability.empty:
+            fit_for_stability = measures
+        fit_stability_audit = _decision_stability.audit_fit_decision_stability(
+            fit_for_stability,
+            display_decimals=_decision_stability.FIT_DISPLAY_DECIMALS,
+        )
+        _frame_bundle.add_frame(
+            frames,
+            "fit_decision_stability_audit",
+            fit_stability_audit,
+        )
+        _frame_bundle.add_frame(
+            frames,
+            "fit_decision_stability_summary",
+            _decision_stability.summarize_fit_decision_stability(fit_stability_audit),
+        )
         _frame_bundle.add_frame(frames, "residuals", diagnostics.get("obs"))
         _frame_bundle.add_frame(
             frames,
@@ -25598,6 +27786,14 @@ def build_result_bundle_frames(
         _add_mml_prior_sensitivity_export_frames(frames, result)
         bias_audit = build_bias_inference_audit(all_bias_results or bias_results or {}, result, diagnostics)
         _frame_bundle.add_frame(frames, "bias_inference_audit", bias_audit)
+        bias_boundary_audit = build_bias_decision_stability_audit(
+            all_bias_results or bias_results or {}
+        )
+        _frame_bundle.add_frame(
+            frames,
+            "bias_decision_stability_audit",
+            bias_boundary_audit,
+        )
         assumption_audit = build_statistical_assumption_audit(result, diagnostics, all_bias_results or bias_results or {})
         _frame_bundle.add_frame(frames, "statistical_assumption_audit", assumption_audit)
         method_ref_audit = (
@@ -26468,6 +28664,43 @@ def build_first_read_guide_rows(
             ),
         })
 
+    fit_for_stability = diagnostics.get("fit", pd.DataFrame())
+    if not isinstance(fit_for_stability, pd.DataFrame) or fit_for_stability.empty:
+        fit_for_stability = diagnostics.get("measures", pd.DataFrame())
+    fit_boundary_audit = _decision_stability.audit_fit_decision_stability(
+        fit_for_stability,
+        display_decimals=_decision_stability.FIT_DISPLAY_DECIMALS,
+    )
+    if not fit_boundary_audit.empty:
+        fit_boundary_summary = _decision_stability.summarize_fit_decision_stability(
+            fit_boundary_audit
+        ).iloc[0]
+        boundary_n = int(fit_boundary_summary["NumericalBoundaryStatistics"])
+        display_n = int(fit_boundary_summary["DisplayBoundaryStatistics"])
+        mismatch_n = int(fit_boundary_summary["DisplayDecisionMismatches"])
+        unavailable_n = int(fit_boundary_summary["UnavailableStatistics"])
+        boundary_status = str(fit_boundary_summary["Status"])
+        rows.append({
+            "Check": "2b. Fit threshold / rounding stability",
+            "Status": (
+                "OK" if boundary_status == "Ready" else
+                "Review" if boundary_status == "Review" else
+                "Caution"
+            ),
+            "What it means": (
+                f"{boundary_n} numerical-boundary and {display_n} display-rounding-boundary "
+                f"fit statistic(s); {mismatch_n} raw/display classification mismatch(es); "
+                f"{unavailable_n} unavailable statistic(s)."
+            ),
+            "Next action": (
+                "Open Fit Details and report raw values plus the endpoint rule; rounded values are display only."
+                if boundary_status == "Review" else
+                "Compute finite element-fit statistics before applying threshold-based labels."
+                if boundary_status == "Missing" else
+                "Fit decisions are separated from display rounding; continue with substantive fit review."
+            ),
+        })
+
     rel_df = diagnostics.get("reliability", pd.DataFrame())
     if (
         isinstance(rel_df, pd.DataFrame)
@@ -26566,6 +28799,7 @@ def build_first_read_guide_rows(
         n_flagged = int(pd.to_numeric(bias_audit.get("FlaggedCells", pd.Series(dtype=float)), errors="coerce").fillna(0).sum()) if isinstance(bias_audit, pd.DataFrame) else 0
         n_strong = int(pd.to_numeric(bias_audit.get("StrongReviewCells", pd.Series(dtype=float)), errors="coerce").fillna(0).sum()) if isinstance(bias_audit, pd.DataFrame) else 0
         n_sparse = int(pd.to_numeric(bias_audit.get("SparseCells", pd.Series(dtype=float)), errors="coerce").fillna(0).sum()) if isinstance(bias_audit, pd.DataFrame) else 0
+        n_boundary = int(pd.to_numeric(bias_audit.get("BoundarySensitiveCells", pd.Series(dtype=float)), errors="coerce").fillna(0).sum()) if isinstance(bias_audit, pd.DataFrame) else 0
         has_disconnected = (
             isinstance(bias_audit, pd.DataFrame)
             and "CommonScaleStatus" in bias_audit.columns
@@ -26573,7 +28807,7 @@ def build_first_read_guide_rows(
         )
         if n_total == 0:
             status = "Review"
-        elif n_flagged == 0 and n_sparse == 0 and not has_disconnected:
+        elif n_flagged == 0 and n_sparse == 0 and n_boundary == 0 and not has_disconnected:
             status = "OK"
         elif n_strong or has_disconnected:
             status = "Caution"
@@ -26584,7 +28818,7 @@ def build_first_read_guide_rows(
             "Status": status,
             "What it means": (
                 f"{n_flagged} of {n_total} screened local interactions are DFF/bias review flags; "
-                f"{n_strong} strong-review and {n_sparse} sparse cell(s)."
+                f"{n_strong} strong-review, {n_sparse} sparse, and {n_boundary} threshold-sensitive cell(s)."
             ),
             "Next action": (
                 "No computed local-bias flag in the conditional screen; keep claims limited to screened pairs."
@@ -26596,8 +28830,27 @@ def build_first_read_guide_rows(
     anchor_audit = result.get("config", {}).get("anchor_audit", {})
     if isinstance(anchor_audit, dict):
         issues = anchor_audit.get("issues", pd.DataFrame())
+        anchor_summary = anchor_audit.get("summary", pd.DataFrame())
         n_issues = len(issues) if isinstance(issues, pd.DataFrame) else 0
         overall = anchor_audit.get("overall_status", "ok")
+        if isinstance(anchor_summary, pd.DataFrame) and not anchor_summary.empty:
+            anchored_counts = pd.to_numeric(
+                anchor_summary.get("AnchoredLevelsTotal", pd.Series(dtype=float)),
+                errors="coerce",
+            ).fillna(0)
+            covered_facets = anchor_summary.loc[anchored_counts.gt(0)].copy()
+            if not covered_facets.empty:
+                anchored_total = int(anchored_counts.loc[covered_facets.index].sum())
+                levels_total = int(pd.to_numeric(covered_facets.get("Levels", pd.Series(dtype=float)), errors="coerce").fillna(0).sum())
+                facet_text = ", ".join(covered_facets.get("Facet", pd.Series(dtype=str)).astype(str))
+                coverage_text = (
+                    f" Descriptive coverage among anchored facets ({facet_text}) is "
+                    f"{anchored_total}/{levels_total} observed levels; no universal sufficient percentage is assumed."
+                )
+            else:
+                coverage_text = " No anchors were supplied; coverage percentage is not used for this single-run interpretation."
+        else:
+            coverage_text = ""
         rows.append({
             "Check": "6. Anchor / linking audit",
             "Status": "OK" if overall == "ok" else ("Caution" if overall == "error" else "Review"),
@@ -26605,7 +28858,7 @@ def build_first_read_guide_rows(
                 "No obvious anchor-input issues were found."
                 if overall == "ok" else
                 f"{n_issues} anchor/linking issue(s) were found."
-            ),
+            ) + coverage_text,
             "Next action": (
                 "Proceed if this is a single-run analysis; use anchors only when linking across runs."
                 if overall == "ok" else
@@ -26649,7 +28902,7 @@ def _first_read_tab_hint(check: str) -> str:
         return "Report"
     if "GPCM" in check_text or "slope" in check_text:
         return "Categories/Steps"
-    if "Global residual" in check_text or "Strict marginal" in check_text:
+    if "Global residual" in check_text or "Strict marginal" in check_text or "Fit threshold" in check_text:
         return "Fit Details"
     if "Reliability" in check_text:
         return "Report"
@@ -26947,27 +29200,10 @@ def guided_interpretation_readiness_summary_table(action_plan: pd.DataFrame | No
     }], columns=columns)
 
 
-def _render_guided_action_plan(
-    result: dict,
-    diagnostics: dict,
-    all_bias_results: dict | None = None,
-    *,
-    expanded_details: bool = False,
-    key_suffix: str = "main",
-    plan: pd.DataFrame | None = None,
-) -> None:
-    """Render the first-read action plan with a compact summary and full detail."""
-    if plan is None:
-        plan = build_guided_action_plan(result, diagnostics, all_bias_results)
-    if plan.empty:
-        st.info(t("guided.no_rows_info"))
-        return
+def _render_guided_status_metrics(action_plan: pd.DataFrame) -> None:
+    """Render compact counts for the first-read decision states."""
 
-    st.markdown(f"**{t('guided.interpret_heading')}**")
-    st.caption(t("guided.interpret_caption"))
-    st.dataframe(guided_interpretation_readiness_summary_table(plan), width="stretch", hide_index=True)
-
-    status_counts = plan["Status"].astype(str).value_counts()
+    status_counts = action_plan["Status"].astype(str).value_counts()
     metric_defs = [
         (t("guided.metric_pause"), "Do not interpret yet"),
         (t("guided.metric_caution"), "Caution"),
@@ -26977,6 +29213,49 @@ def _render_guided_action_plan(
     metric_cols = st.columns(len(metric_defs))
     for col, (label, status) in zip(metric_cols, metric_defs, strict=False):
         col.metric(label, int(status_counts.get(status, 0)))
+
+
+def _render_guided_run_snapshot(action_plan: pd.DataFrame | None) -> None:
+    """Render the one-glance run state before asking the user's next goal."""
+
+    if not isinstance(action_plan, pd.DataFrame) or action_plan.empty:
+        return
+    st.markdown(f"**{t('guided.interpret_heading')}**")
+    st.caption(t("guided.interpret_caption"))
+    st.dataframe(
+        guided_interpretation_readiness_summary_table(action_plan),
+        width="stretch",
+        hide_index=True,
+    )
+    _render_guided_status_metrics(action_plan)
+
+
+def _render_guided_action_plan(
+    result: dict,
+    diagnostics: dict,
+    all_bias_results: dict | None = None,
+    *,
+    expanded_details: bool = False,
+    key_suffix: str = "main",
+    plan: pd.DataFrame | None = None,
+    show_snapshot: bool = True,
+) -> None:
+    """Render the first-read action plan with a compact summary and full detail."""
+    if plan is None:
+        plan = build_guided_action_plan(result, diagnostics, all_bias_results)
+    if plan.empty:
+        st.info(t("guided.no_rows_info"))
+        return
+
+    if show_snapshot:
+        st.markdown(f"**{t('guided.interpret_heading')}**")
+        st.caption(t("guided.interpret_caption"))
+        st.dataframe(
+            guided_interpretation_readiness_summary_table(plan),
+            width="stretch",
+            hide_index=True,
+        )
+        _render_guided_status_metrics(plan)
 
     priority_row = plan.iloc[0]
     priority_status = str(priority_row.get("Status", "Review"))
@@ -28171,6 +30450,7 @@ def _render_guided_goal_router(
     routes = guided_goal_route_table()
     if routes.empty:
         return
+    _render_guided_run_snapshot(action_plan)
     st.subheader(t("guided.goal_router_subheader"))
     st.caption(t("guided.goal_router_caption"))
     goal_col = t("guided.goal_col_goal")
@@ -28359,6 +30639,8 @@ def _render_guided_start_section(
             expanded=False,
             context="guided_run",
         )
+        render_estimand_contract_panel(result, compact=True)
+        render_assignment_design_audit_panel(result, compact=True)
         _show_data_tab_checks(data, score_col)
 
         score_messages = prep.get("score_messages", [])
@@ -28383,6 +30665,15 @@ def _render_guided_start_section(
             audit_issues = anchor_audit.get("issues", pd.DataFrame())
             with st.expander(t("data_quality.anchor_summary_expander"), expanded=status != "ok"):
                 if isinstance(audit_summary, pd.DataFrame) and not audit_summary.empty:
+                    coverage_fig = build_anchor_coverage_figure(audit_summary)
+                    if coverage_fig is not None:
+                        st.plotly_chart(coverage_fig, width="stretch")
+                        st.caption(
+                            _standalone_ui_text(
+                                en="Coverage is descriptive; there is no universal sufficient anchor percentage.",
+                                ja="カバレッジは記述指標です。普遍的に十分といえるアンカー割合はありません。",
+                            )
+                        )
                     st.dataframe(audit_summary, width="stretch")
                 else:
                     st.info(t("data_quality.anchor_no_summary_info"))
@@ -28468,7 +30759,10 @@ def _render_guided_results_section(result: dict, diagnostics: dict, report_table
                 )
             measures_display = reorder_measure_columns(measures_display)
             measures_display = format_measure_table(measures_display)
-            st.dataframe(style_fit_columns(measures_display), width="stretch")
+            st.dataframe(
+                style_fit_columns(measures_display, decision_df=measures_df),
+                width="stretch",
+            )
             if "CI_Lower" in measures_display.columns:
                 st.caption(t("result_tabs.combined_ci_caption"))
             render_eb_shrinkage_section(result, diagnostics, expanded=False)
@@ -29492,6 +31786,7 @@ def _render_guided_essential_tabs(
             all_bias_results,
             expanded_details=True,
             key_suffix="first_read",
+            show_snapshot=False,
         )
     elif selected_section == "results":
         _render_guided_results_section(result, diagnostics, report_tables)
@@ -29636,13 +31931,22 @@ def _fit_summary_callout(measures_df: pd.DataFrame, facet_filter: str | None = N
     else:
         df = measures_df[measures_df["Facet"] == facet_filter]
     infit = pd.to_numeric(df["Infit"], errors="coerce")
-    outfit = pd.to_numeric(df["Outfit"], errors="coerce") if "Outfit" in df.columns else pd.Series(dtype=float)
-    n_total = len(df)
+    outfit = (
+        pd.to_numeric(df["Outfit"], errors="coerce")
+        if "Outfit" in df.columns else pd.Series(np.nan, index=df.index)
+    )
+    classifications = pd.Series(
+        [
+            _decision_stability.worst_fit_classification(infit.iloc[pos], outfit.iloc[pos])
+            for pos in range(len(df))
+        ],
+        index=df.index,
+    )
+    valid = classifications.ne("unavailable")
+    n_total = int(valid.sum())
     if n_total == 0:
         return
-    misfit_mask = (infit > 1.5) | (infit < 0.5)
-    if len(outfit) > 0:
-        misfit_mask = misfit_mask | (outfit > 2.0)
+    misfit_mask = valid & classifications.ne("acceptable")
     n_misfit = int(misfit_mask.sum())
     pct = 100 * n_misfit / n_total
     label = f" ({facet_filter})" if facet_filter else ""
@@ -34957,6 +37261,29 @@ def run_facets_mode(
     _cap = _auto_caption("score", score_col)
     if _cap:
         st.sidebar.caption(_cap)
+    # Ask for the setup level before optional mappings so Guided defaults can
+    # present only the decisions needed for a defensible first analysis.
+    # Stable internal IDs drive the comparisons below; format_func handles the
+    # localized display.
+    workflow_mode_labels = {
+        "Guided defaults": t("sidebar_estimation.workflow_mode_guided_display"),
+        "Advanced controls": t(
+            "sidebar_estimation.workflow_mode_advanced_display"
+        ),
+    }
+    workflow_mode = st.sidebar.radio(
+        t("sidebar_estimation.workflow_mode_label"),
+        ["Guided defaults", "Advanced controls"],
+        index=0,
+        horizontal=True,
+        format_func=workflow_mode_labels.__getitem__,
+        key="facets_mode_workflow_mode",
+        help=t("sidebar_estimation.workflow_mode_help"),
+    )
+    advanced_controls = workflow_mode == "Advanced controls"
+    if not advanced_controls:
+        st.sidebar.caption(t("sidebar_estimation.guided_defaults_active_caption"))
+
     # Stable internal ID "(None)" drives the routing below; format_func
     # translates the displayed label so locale switching does not break
     # the comparison ``weight_col_raw == "(None)"``.
@@ -34970,19 +37297,30 @@ def run_facets_mode(
         )
         for value in weight_opts
     }
-    weight_col_raw = st.sidebar.selectbox(
-        t("sidebar_estimation.weight_column_label"),
-        weight_opts,
-        index=weight_idx,
-        format_func=weight_labels.__getitem__,
-        key=f"facets_mode_weight_col_{mapping_key_suffix}",
-        help=t("sidebar_estimation.weight_column_help"),
-    )
-    weight_col = None if weight_col_raw == "(None)" else weight_col_raw
+    weight_col = None
+    if advanced_controls:
+        weight_col_raw = st.sidebar.selectbox(
+            t("sidebar_estimation.weight_column_label"),
+            weight_opts,
+            index=weight_idx,
+            format_func=weight_labels.__getitem__,
+            key=f"facets_mode_weight_col_{mapping_key_suffix}",
+            help=t("sidebar_estimation.weight_column_help"),
+        )
+        weight_col = None if weight_col_raw == "(None)" else weight_col_raw
+    elif weight_default:
+        st.sidebar.caption(t(
+            "sidebar_estimation.guided_weight_excluded_caption",
+            column=str(weight_default),
+        ))
 
     blocked = {person_col, score_col}
     if weight_col:
         blocked.add(weight_col)
+    elif weight_default:
+        # A detected weight is not silently treated as a measurement facet
+        # when Guided defaults deliberately runs an unweighted analysis.
+        blocked.add(weight_default)
     facet_candidates = [c for c in cols if c not in blocked]
     # Prefer the smart detector's facet suggestions when they have
     # support in the candidate list. Fall back to the keyword-only
@@ -35050,125 +37388,117 @@ def run_facets_mode(
             )
     if _autodetected_facet_lines:
         st.sidebar.caption(" / ".join(_autodetected_facet_lines))
-    # Stable internal IDs drive the ``workflow_mode == "Advanced controls"``
-    # check below; format_func handles the localized display.
-    workflow_mode_labels = {
-        "Guided defaults": t("sidebar_estimation.workflow_mode_guided_display"),
-        "Advanced controls": t(
-            "sidebar_estimation.workflow_mode_advanced_display"
-        ),
+    # Output styling is not a first-run decision. Guided mode is deliberately
+    # deterministic, including after a user switches back from Advanced.
+    guided_visual_defaults = {
+        "viz_ci_level": VIZ_CI_LEVEL_DEFAULT,
+        "visual_theme": VISUAL_THEME_DEFAULT,
+        "visual_label_policy": VISUAL_LABEL_POLICY_DEFAULT,
+        "plot_label_mode": PLOT_LABEL_MODE_DEFAULT,
+        "visual_base_font_size": VISUAL_BASE_FONT_SIZE_DEFAULT,
+        "visual_label_max_chars": VISUAL_LABEL_MAX_CHARS_DEFAULT,
+        "visual_figure_width": VISUAL_FIGURE_WIDTH_DEFAULT,
+        "visual_figure_min_height": VISUAL_FIGURE_MIN_HEIGHT_DEFAULT,
+        "visual_caption_detail": VISUAL_CAPTION_DETAIL_DEFAULT,
     }
-    workflow_mode = st.sidebar.radio(
-        t("sidebar_estimation.workflow_mode_label"),
-        ["Guided defaults", "Advanced controls"],
-        index=0,
-        horizontal=True,
-        format_func=workflow_mode_labels.__getitem__,
-        key="facets_mode_workflow_mode",
-        help=t("sidebar_estimation.workflow_mode_help"),
-    )
-    advanced_controls = workflow_mode == "Advanced controls"
     if not advanced_controls:
-        st.sidebar.caption(t("sidebar_estimation.guided_defaults_active_caption"))
-
-    # Visualization CI level — controls the width of CI bars on forest
-    # plots, EB shrinkage error bars, and any other Wald-style CI band
-    # that is drawn for display. The core ``CI_Lower`` / ``CI_Upper``
-    # columns in exported measure tables stay at 95 % for backwards
-    # compatibility with downstream parsers; this control only affects
-    # the rendered visualizations and their caption labels.
-    _viz_ci_default_idx = (
-        VIZ_CI_LEVEL_OPTIONS.index(VIZ_CI_LEVEL_DEFAULT)
-        if VIZ_CI_LEVEL_DEFAULT in VIZ_CI_LEVEL_OPTIONS else 5
-    )
-    viz_ci_labels = {
-        value: t(
-            "sidebar_estimation.viz_ci_level_option_template",
-            pct=_ci_level_pct_label(value),
+        for setting_key, setting_value in guided_visual_defaults.items():
+            st.session_state[setting_key] = setting_value
+    else:
+        # Visualization CI level controls rendered intervals only. Exported
+        # core measure columns remain at 95% for parser compatibility.
+        _viz_ci_default_idx = (
+            VIZ_CI_LEVEL_OPTIONS.index(VIZ_CI_LEVEL_DEFAULT)
+            if VIZ_CI_LEVEL_DEFAULT in VIZ_CI_LEVEL_OPTIONS else 5
         )
-        for value in VIZ_CI_LEVEL_OPTIONS
-    }
-    _viz_ci_level = st.sidebar.selectbox(
-        t("sidebar_estimation.viz_ci_level_label"),
-        options=list(VIZ_CI_LEVEL_OPTIONS),
-        index=_viz_ci_default_idx,
-        format_func=viz_ci_labels.__getitem__,
-        help=t("sidebar_estimation.viz_ci_level_help"),
-        key="viz_ci_level",
-    )
-    if abs(float(_viz_ci_level) - VIZ_CI_LEVEL_DEFAULT) > 1e-9:
-        st.sidebar.caption(
-            t(
-                "sidebar_estimation.viz_ci_level_non_default_caption",
-                pct=_ci_level_pct_label(_viz_ci_level),
+        viz_ci_labels = {
+            value: t(
+                "sidebar_estimation.viz_ci_level_option_template",
+                pct=_ci_level_pct_label(value),
             )
+            for value in VIZ_CI_LEVEL_OPTIONS
+        }
+        _viz_ci_level = st.sidebar.selectbox(
+            t("sidebar_estimation.viz_ci_level_label"),
+            options=list(VIZ_CI_LEVEL_OPTIONS),
+            index=_viz_ci_default_idx,
+            format_func=viz_ci_labels.__getitem__,
+            help=t("sidebar_estimation.viz_ci_level_help"),
+            key="viz_ci_level",
         )
-    with st.sidebar.expander(t("sidebar_estimation.visual_preferences_expander"), expanded=False):
-        st.selectbox(
-            t("sidebar_estimation.visual_theme_label"),
-            list(VISUAL_THEME_OPTIONS),
-            index=list(VISUAL_THEME_OPTIONS).index(VISUAL_THEME_DEFAULT),
-            key="visual_theme",
-            help=t("sidebar_estimation.visual_theme_help"),
-        )
-        st.selectbox(
-            t("sidebar_estimation.visual_label_policy_label"),
-            list(VISUAL_LABEL_POLICY_OPTIONS),
-            index=list(VISUAL_LABEL_POLICY_OPTIONS).index(VISUAL_LABEL_POLICY_DEFAULT),
-            key="visual_label_policy",
-            help=t("sidebar_estimation.visual_label_policy_help"),
-        )
-        st.selectbox(
-            t("sidebar_estimation.visual_plot_label_mode_label"),
-            list(PLOT_LABEL_MODE_OPTIONS),
-            index=list(PLOT_LABEL_MODE_OPTIONS).index(PLOT_LABEL_MODE_DEFAULT),
-            key="plot_label_mode",
-            help=t("sidebar_estimation.visual_plot_label_mode_help"),
-        )
-        st.slider(
-            t("sidebar_estimation.visual_base_font_size_label"),
-            min_value=9,
-            max_value=22,
-            value=VISUAL_BASE_FONT_SIZE_DEFAULT,
-            step=1,
-            key="visual_base_font_size",
-            help=t("sidebar_estimation.visual_base_font_size_help"),
-        )
-        st.slider(
-            t("sidebar_estimation.visual_label_max_chars_label"),
-            min_value=8,
-            max_value=96,
-            value=VISUAL_LABEL_MAX_CHARS_DEFAULT,
-            step=2,
-            key="visual_label_max_chars",
-            help=t("sidebar_estimation.visual_label_max_chars_help"),
-        )
-        st.slider(
-            t("sidebar_estimation.visual_figure_width_label"),
-            min_value=640,
-            max_value=1600,
-            value=VISUAL_FIGURE_WIDTH_DEFAULT,
-            step=20,
-            key="visual_figure_width",
-            help=t("sidebar_estimation.visual_figure_width_help"),
-        )
-        st.slider(
-            t("sidebar_estimation.visual_figure_min_height_label"),
-            min_value=PUBLICATION_FIGURE_MIN_HEIGHT,
-            max_value=PUBLICATION_FIGURE_MAX_HEIGHT,
-            value=VISUAL_FIGURE_MIN_HEIGHT_DEFAULT,
-            step=20,
-            key="visual_figure_min_height",
-            help=t("sidebar_estimation.visual_figure_min_height_help"),
-        )
-        st.selectbox(
-            t("sidebar_estimation.visual_caption_detail_label"),
-            list(VISUAL_CAPTION_DETAIL_OPTIONS),
-            index=list(VISUAL_CAPTION_DETAIL_OPTIONS).index(VISUAL_CAPTION_DETAIL_DEFAULT),
-            key="visual_caption_detail",
-            help=t("sidebar_estimation.visual_caption_detail_help"),
-        )
-        st.caption(t("sidebar_estimation.visual_preferences_caption"))
+        if abs(float(_viz_ci_level) - VIZ_CI_LEVEL_DEFAULT) > 1e-9:
+            st.sidebar.caption(
+                t(
+                    "sidebar_estimation.viz_ci_level_non_default_caption",
+                    pct=_ci_level_pct_label(_viz_ci_level),
+                )
+            )
+        with st.sidebar.expander(t("sidebar_estimation.visual_preferences_expander"), expanded=False):
+            st.selectbox(
+                t("sidebar_estimation.visual_theme_label"),
+                list(VISUAL_THEME_OPTIONS),
+                index=list(VISUAL_THEME_OPTIONS).index(VISUAL_THEME_DEFAULT),
+                key="visual_theme",
+                help=t("sidebar_estimation.visual_theme_help"),
+            )
+            st.selectbox(
+                t("sidebar_estimation.visual_label_policy_label"),
+                list(VISUAL_LABEL_POLICY_OPTIONS),
+                index=list(VISUAL_LABEL_POLICY_OPTIONS).index(VISUAL_LABEL_POLICY_DEFAULT),
+                key="visual_label_policy",
+                help=t("sidebar_estimation.visual_label_policy_help"),
+            )
+            st.selectbox(
+                t("sidebar_estimation.visual_plot_label_mode_label"),
+                list(PLOT_LABEL_MODE_OPTIONS),
+                index=list(PLOT_LABEL_MODE_OPTIONS).index(PLOT_LABEL_MODE_DEFAULT),
+                key="plot_label_mode",
+                help=t("sidebar_estimation.visual_plot_label_mode_help"),
+            )
+            st.slider(
+                t("sidebar_estimation.visual_base_font_size_label"),
+                min_value=9,
+                max_value=22,
+                value=VISUAL_BASE_FONT_SIZE_DEFAULT,
+                step=1,
+                key="visual_base_font_size",
+                help=t("sidebar_estimation.visual_base_font_size_help"),
+            )
+            st.slider(
+                t("sidebar_estimation.visual_label_max_chars_label"),
+                min_value=8,
+                max_value=96,
+                value=VISUAL_LABEL_MAX_CHARS_DEFAULT,
+                step=2,
+                key="visual_label_max_chars",
+                help=t("sidebar_estimation.visual_label_max_chars_help"),
+            )
+            st.slider(
+                t("sidebar_estimation.visual_figure_width_label"),
+                min_value=640,
+                max_value=1600,
+                value=VISUAL_FIGURE_WIDTH_DEFAULT,
+                step=20,
+                key="visual_figure_width",
+                help=t("sidebar_estimation.visual_figure_width_help"),
+            )
+            st.slider(
+                t("sidebar_estimation.visual_figure_min_height_label"),
+                min_value=PUBLICATION_FIGURE_MIN_HEIGHT,
+                max_value=PUBLICATION_FIGURE_MAX_HEIGHT,
+                value=VISUAL_FIGURE_MIN_HEIGHT_DEFAULT,
+                step=20,
+                key="visual_figure_min_height",
+                help=t("sidebar_estimation.visual_figure_min_height_help"),
+            )
+            st.selectbox(
+                t("sidebar_estimation.visual_caption_detail_label"),
+                list(VISUAL_CAPTION_DETAIL_OPTIONS),
+                index=list(VISUAL_CAPTION_DETAIL_OPTIONS).index(VISUAL_CAPTION_DETAIL_DEFAULT),
+                key="visual_caption_detail",
+                help=t("sidebar_estimation.visual_caption_detail_help"),
+            )
+            st.caption(t("sidebar_estimation.visual_preferences_caption"))
 
     # Missing value recoding
     data = missing_value_recoding(data, score_col)
@@ -35273,92 +37603,96 @@ def run_facets_mode(
             ))
         else:
             mml_engine = "Auto (recommended)"
-        st.sidebar.info(t(
-            "sidebar_estimation.mml_assumptions_info_template",
-            engine=mml_engine,
-            quad_points=quad_points,
-            prior_sd=f"{population_prior_sd:.2f}",
-        ))
+        if advanced_controls:
+            st.sidebar.info(t(
+                "sidebar_estimation.mml_assumptions_info_template",
+                engine=mml_engine,
+                quad_points=quad_points,
+                prior_sd=f"{population_prior_sd:.2f}",
+            ))
+        else:
+            st.sidebar.caption(t("sidebar_estimation.mml_guided_defaults_caption"))
         if estimate_population_sd:
             st.sidebar.caption(t("sidebar_estimation.estimate_population_sd_active_note"))
     facet_regularization_specs: list[dict] = []
     facet_regularization_mode = "Off: unpenalized JMLE/MML"
     facet_regularization_fingerprint = stable_json_fingerprint({"mode": "off"})
-    with st.sidebar.expander(t("sidebar_advanced.facet_reg_expander"), expanded=False):
-        st.caption(t("sidebar_advanced.facet_reg_caption"))
-        # Routing-sensitive internal IDs drive the comparisons below;
-        # format_func handles the localized display.
-        facet_regularization_labels = {
-            "Off: unpenalized JMLE/MML": t(
-                "sidebar_advanced.facet_reg_mode_off_display"
-            ),
-            "Light shrinkage on all selected facets": t(
-                "sidebar_advanced.facet_reg_mode_light_display"
-            ),
-            "Custom by facet": t(
-                "sidebar_advanced.facet_reg_mode_custom_display"
-            ),
-        }
-        facet_regularization_mode = st.selectbox(
-            t("sidebar_advanced.facet_reg_mode_label"),
-            [
-                "Off: unpenalized JMLE/MML",
-                "Light shrinkage on all selected facets",
-                "Custom by facet",
-            ],
-            index=0,
-            key="facet_regularization_mode",
-            format_func=facet_regularization_labels.__getitem__,
-            help=t("sidebar_advanced.facet_reg_mode_help"),
-        )
-        if not facet_cols:
-            st.info(t("sidebar_advanced.facet_reg_no_facets_info"))
-        elif facet_regularization_mode == "Light shrinkage on all selected facets":
-            st.warning(t("sidebar_advanced.facet_reg_light_warning"))
-            for facet in facet_cols:
-                facet_regularization_specs.append({
-                    "Facet": facet,
-                    "Level": "*",
-                    "ParameterClass": "facet",
-                    "Mean": 0.0,
-                    "SD": FACET_REGULARIZATION_PRESET_SDS["light"],
-                    "Enabled": True,
-                    "Source": "ui_light",
-                })
-        elif facet_regularization_mode == "Custom by facet":
-            st.warning(t("sidebar_advanced.facet_reg_custom_warning"))
-            default_rows = pd.DataFrame([
-                {
-                    "Facet": facet,
-                    "Level": "*",
-                    "ParameterClass": "facet",
-                    "Mean": 0.0,
-                    "SD": FACET_REGULARIZATION_PRESET_SDS["light"],
-                    "Enabled": False,
-                    "Source": "ui_custom",
-                }
-                for facet in facet_cols
-            ])
-            edited_rows = st.data_editor(
-                default_rows,
-                key="facet_regularization_table",
-                hide_index=True,
-                num_rows="dynamic",
-                use_container_width=True,
-                column_config={
-                    "Facet": st.column_config.SelectboxColumn("Facet", options=list(facet_cols), required=True),
-                    "Level": st.column_config.TextColumn("Level", help=t("sidebar_advanced.facet_reg_level_help")),
-                    "Mean": st.column_config.NumberColumn("Mean", format="%.3f"),
-                    "SD": st.column_config.NumberColumn("SD", min_value=0.05, max_value=20.0, format="%.3f"),
-                    "Enabled": st.column_config.CheckboxColumn("Enabled"),
-                },
+    if advanced_controls:
+        with st.sidebar.expander(t("sidebar_advanced.facet_reg_expander"), expanded=False):
+            st.caption(t("sidebar_advanced.facet_reg_caption"))
+            # Routing-sensitive internal IDs drive the comparisons below;
+            # format_func handles the localized display.
+            facet_regularization_labels = {
+                "Off: unpenalized JMLE/MML": t(
+                    "sidebar_advanced.facet_reg_mode_off_display"
+                ),
+                "Light shrinkage on all selected facets": t(
+                    "sidebar_advanced.facet_reg_mode_light_display"
+                ),
+                "Custom by facet": t(
+                    "sidebar_advanced.facet_reg_mode_custom_display"
+                ),
+            }
+            facet_regularization_mode = st.selectbox(
+                t("sidebar_advanced.facet_reg_mode_label"),
+                [
+                    "Off: unpenalized JMLE/MML",
+                    "Light shrinkage on all selected facets",
+                    "Custom by facet",
+                ],
+                index=0,
+                key="facet_regularization_mode",
+                format_func=facet_regularization_labels.__getitem__,
+                help=t("sidebar_advanced.facet_reg_mode_help"),
             )
-            if isinstance(edited_rows, pd.DataFrame) and not edited_rows.empty:
-                facet_regularization_specs = edited_rows.to_dict(orient="records")
-        facet_regularization_fingerprint = stable_json_fingerprint({
-            "mode": facet_regularization_mode,
-            "specs": facet_regularization_specs,
-        })
+            if not facet_cols:
+                st.info(t("sidebar_advanced.facet_reg_no_facets_info"))
+            elif facet_regularization_mode == "Light shrinkage on all selected facets":
+                st.warning(t("sidebar_advanced.facet_reg_light_warning"))
+                for facet in facet_cols:
+                    facet_regularization_specs.append({
+                        "Facet": facet,
+                        "Level": "*",
+                        "ParameterClass": "facet",
+                        "Mean": 0.0,
+                        "SD": FACET_REGULARIZATION_PRESET_SDS["light"],
+                        "Enabled": True,
+                        "Source": "ui_light",
+                    })
+            elif facet_regularization_mode == "Custom by facet":
+                st.warning(t("sidebar_advanced.facet_reg_custom_warning"))
+                default_rows = pd.DataFrame([
+                    {
+                        "Facet": facet,
+                        "Level": "*",
+                        "ParameterClass": "facet",
+                        "Mean": 0.0,
+                        "SD": FACET_REGULARIZATION_PRESET_SDS["light"],
+                        "Enabled": False,
+                        "Source": "ui_custom",
+                    }
+                    for facet in facet_cols
+                ])
+                edited_rows = st.data_editor(
+                    default_rows,
+                    key="facet_regularization_table",
+                    hide_index=True,
+                    num_rows="dynamic",
+                    use_container_width=True,
+                    column_config={
+                        "Facet": st.column_config.SelectboxColumn("Facet", options=list(facet_cols), required=True),
+                        "Level": st.column_config.TextColumn("Level", help=t("sidebar_advanced.facet_reg_level_help")),
+                        "Mean": st.column_config.NumberColumn("Mean", format="%.3f"),
+                        "SD": st.column_config.NumberColumn("SD", min_value=0.05, max_value=20.0, format="%.3f"),
+                        "Enabled": st.column_config.CheckboxColumn("Enabled"),
+                    },
+                )
+                if isinstance(edited_rows, pd.DataFrame) and not edited_rows.empty:
+                    facet_regularization_specs = edited_rows.to_dict(orient="records")
+            facet_regularization_fingerprint = stable_json_fingerprint({
+                "mode": facet_regularization_mode,
+                "specs": facet_regularization_specs,
+            })
     population_enabled = False
     population_formula = ""
     population_person_id_col = "Person"
@@ -35367,96 +37701,97 @@ def run_facets_mode(
     population_numeric_terms = ""
     population_file = None
     population_text = ""
-    with st.sidebar.expander(t("sidebar_advanced.latent_regression_expander"), expanded=False):
-        population_enabled = st.checkbox(
-            t("sidebar_advanced.enable_population_formula_checkbox"),
-            value=False,
-            disabled=(est_method != "MML"),
-            key="facets_mode_population_enabled",
-            help=t("sidebar_advanced.enable_population_formula_help"),
-        )
-        population_enabled = bool(population_enabled and est_method == "MML")
-        if est_method != "MML":
-            st.caption(t("sidebar_advanced.switch_to_mml_caption"))
-        if population_enabled:
-            population_formula = st.text_input(
-                t("sidebar_advanced.population_formula_label"),
-                value="~ 1",
-                key=f"facets_mode_population_formula_{mapping_key_suffix}",
-                help=t("sidebar_advanced.population_formula_help"),
-            )
-            population_person_id_col = st.text_input(
-                t("sidebar_advanced.person_id_col_label"),
-                value=person_col,
-                key=f"facets_mode_population_person_id_{mapping_key_suffix}",
-                help=t("sidebar_advanced.person_id_col_help"),
-            )
-            population_standardize_numeric = st.checkbox(
-                t("sidebar_advanced.standardize_numeric_checkbox"),
+    if advanced_controls:
+        with st.sidebar.expander(t("sidebar_advanced.latent_regression_expander"), expanded=False):
+            population_enabled = st.checkbox(
+                t("sidebar_advanced.enable_population_formula_checkbox"),
                 value=False,
-                key=f"facets_mode_population_standardize_{mapping_key_suffix}",
-                help=t("sidebar_advanced.standardize_numeric_help"),
+                disabled=(est_method != "MML"),
+                key="facets_mode_population_enabled",
+                help=t("sidebar_advanced.enable_population_formula_help"),
             )
-            population_categorical_terms = st.text_input(
-                t("sidebar_advanced.force_categorical_label"),
-                value="",
-                key=f"facets_mode_population_categorical_{mapping_key_suffix}",
-                help=t("sidebar_advanced.force_categorical_help"),
-            )
-            population_numeric_terms = st.text_input(
-                t("sidebar_advanced.force_numeric_label"),
-                value="",
-                key=f"facets_mode_population_numeric_{mapping_key_suffix}",
-                help=t("sidebar_advanced.force_numeric_help"),
-            )
-            population_file = st.file_uploader(
-                t("sidebar_advanced.person_data_file_label"),
-                type=TABLE_FILE_UPLOAD_TYPES,
-                key="facets_mode_population_file",
-                help=t("sidebar_advanced.person_data_file_help_template", file_label=TABLE_FILE_UPLOAD_LABEL),
-            )
-            population_text = st.text_area(
-                t("sidebar_advanced.person_data_paste_label"),
-                key="facets_mode_population_text",
-                placeholder=f"{person_col},grade,ses\nP1,1,0.2\nP2,2,-0.1",
-            )
-            st.caption(t("sidebar_advanced.person_data_caption"))
-            try:
-                parsed_preview = parse_population_formula(population_formula)
-                if parsed_preview.get("terms"):
-                    preview_person_data = read_flexible_table(population_text, population_file, header=True)
-                    if preview_person_data.empty:
-                        st.info(t("sidebar_advanced.covariate_preview_info"))
-                    else:
-                        preview_person_levels = (
-                            data[person_col].dropna().astype(str).drop_duplicates().tolist()
-                            if person_col in data.columns else None
-                        )
-                        type_preview = summarize_population_covariate_types(
-                            preview_person_data,
-                            population_person_id_col,
-                            population_formula,
-                            categorical_terms=population_categorical_terms,
-                            numeric_terms=population_numeric_terms,
-                            person_levels=preview_person_levels,
-                        )
-                        st.markdown(t("sidebar_advanced.covariate_type_preview_header"))
-                        preview_cols = [
-                            "Term", "InferredType", "Override", "UniqueValues",
-                            "IntegerLike", "ReviewFlag", "ExampleValues",
-                        ]
-                        st.dataframe(type_preview[preview_cols], width="stretch", hide_index=True)
-                        flagged = type_preview[type_preview["ReviewFlag"] == True]
-                        for msg in flagged["Recommendation"].astype(str).head(3):
-                            st.warning(msg)
-                else:
-                    st.caption(t("sidebar_advanced.intercept_only_caption"))
-            except Exception as preview_exc:
-                render_user_problem(
-                    preview_exc,
-                    phase=_user_problems.UserProblemPhase.PARSE,
-                    surface_id="covariate_preview",
+            population_enabled = bool(population_enabled and est_method == "MML")
+            if est_method != "MML":
+                st.caption(t("sidebar_advanced.switch_to_mml_caption"))
+            if population_enabled:
+                population_formula = st.text_input(
+                    t("sidebar_advanced.population_formula_label"),
+                    value="~ 1",
+                    key=f"facets_mode_population_formula_{mapping_key_suffix}",
+                    help=t("sidebar_advanced.population_formula_help"),
                 )
+                population_person_id_col = st.text_input(
+                    t("sidebar_advanced.person_id_col_label"),
+                    value=person_col,
+                    key=f"facets_mode_population_person_id_{mapping_key_suffix}",
+                    help=t("sidebar_advanced.person_id_col_help"),
+                )
+                population_standardize_numeric = st.checkbox(
+                    t("sidebar_advanced.standardize_numeric_checkbox"),
+                    value=False,
+                    key=f"facets_mode_population_standardize_{mapping_key_suffix}",
+                    help=t("sidebar_advanced.standardize_numeric_help"),
+                )
+                population_categorical_terms = st.text_input(
+                    t("sidebar_advanced.force_categorical_label"),
+                    value="",
+                    key=f"facets_mode_population_categorical_{mapping_key_suffix}",
+                    help=t("sidebar_advanced.force_categorical_help"),
+                )
+                population_numeric_terms = st.text_input(
+                    t("sidebar_advanced.force_numeric_label"),
+                    value="",
+                    key=f"facets_mode_population_numeric_{mapping_key_suffix}",
+                    help=t("sidebar_advanced.force_numeric_help"),
+                )
+                population_file = st.file_uploader(
+                    t("sidebar_advanced.person_data_file_label"),
+                    type=TABLE_FILE_UPLOAD_TYPES,
+                    key="facets_mode_population_file",
+                    help=t("sidebar_advanced.person_data_file_help_template", file_label=TABLE_FILE_UPLOAD_LABEL),
+                )
+                population_text = st.text_area(
+                    t("sidebar_advanced.person_data_paste_label"),
+                    key="facets_mode_population_text",
+                    placeholder=f"{person_col},grade,ses\nP1,1,0.2\nP2,2,-0.1",
+                )
+                st.caption(t("sidebar_advanced.person_data_caption"))
+                try:
+                    parsed_preview = parse_population_formula(population_formula)
+                    if parsed_preview.get("terms"):
+                        preview_person_data = read_flexible_table(population_text, population_file, header=True)
+                        if preview_person_data.empty:
+                            st.info(t("sidebar_advanced.covariate_preview_info"))
+                        else:
+                            preview_person_levels = (
+                                data[person_col].dropna().astype(str).drop_duplicates().tolist()
+                                if person_col in data.columns else None
+                            )
+                            type_preview = summarize_population_covariate_types(
+                                preview_person_data,
+                                population_person_id_col,
+                                population_formula,
+                                categorical_terms=population_categorical_terms,
+                                numeric_terms=population_numeric_terms,
+                                person_levels=preview_person_levels,
+                            )
+                            st.markdown(t("sidebar_advanced.covariate_type_preview_header"))
+                            preview_cols = [
+                                "Term", "InferredType", "Override", "UniqueValues",
+                                "IntegerLike", "ReviewFlag", "ExampleValues",
+                            ]
+                            st.dataframe(type_preview[preview_cols], width="stretch", hide_index=True)
+                            flagged = type_preview[type_preview["ReviewFlag"] == True]
+                            for msg in flagged["Recommendation"].astype(str).head(3):
+                                st.warning(msg)
+                    else:
+                        st.caption(t("sidebar_advanced.intercept_only_caption"))
+                except Exception as preview_exc:
+                    render_user_problem(
+                        preview_exc,
+                        phase=_user_problems.UserProblemPhase.PARSE,
+                        surface_id="covariate_preview",
+                    )
     score_num_for_range = pd.to_numeric(data[score_col], errors="coerce") if score_col in data.columns else pd.Series(dtype=float)
     score_num_for_range = score_num_for_range.dropna()
     if not score_num_for_range.empty:
@@ -35480,243 +37815,272 @@ def run_facets_mode(
         "score_col": score_col,
         "support": custom_score_support if custom_zero_count_requested else None,
     })
-    with st.sidebar.expander(t("sidebar_advanced.score_scale_expander"), expanded=advanced_controls):
-        keep_original = st.checkbox(
-            t("sidebar_advanced.keep_original_categories_checkbox"),
-            value=default_keep_original,
-            key=f"score_scale_keep_original_{score_scale_key_suffix}",
-            help=t("sidebar_advanced.keep_original_categories_help"),
-        )
-        explicit_rating_range = st.checkbox(
-            t("sidebar_advanced.explicit_rating_range_checkbox"),
-            value=default_explicit_rating_range,
-            key=f"score_scale_explicit_range_{score_scale_key_suffix}",
-            help=t("sidebar_advanced.explicit_rating_range_help"),
-        )
-        st.caption(t(
-            "sidebar_advanced.detected_score_range_caption_template",
-            min=detected_rating_min,
-            max=detected_rating_max,
-        ))
-        if custom_score_support:
+    keep_original = default_keep_original
+    explicit_rating_range = default_explicit_rating_range
+    if explicit_rating_range:
+        rating_min = default_rating_min
+        rating_max = default_rating_max
+    noncenter_facet = "Person"
+    dummy_facets: list[str] = []
+    positive_facets: list[str] = []
+    maxit = 400
+    reltol = 1e-6
+    if advanced_controls:
+        with st.sidebar.expander(t("sidebar_advanced.score_scale_expander"), expanded=True):
+            keep_original = st.checkbox(
+                t("sidebar_advanced.keep_original_categories_checkbox"),
+                value=default_keep_original,
+                key=f"score_scale_keep_original_{score_scale_key_suffix}",
+                help=t("sidebar_advanced.keep_original_categories_help"),
+            )
+            explicit_rating_range = st.checkbox(
+                t("sidebar_advanced.explicit_rating_range_checkbox"),
+                value=default_explicit_rating_range,
+                key=f"score_scale_explicit_range_{score_scale_key_suffix}",
+                help=t("sidebar_advanced.explicit_rating_range_help"),
+            )
             st.caption(t(
-                "data_source.sim_score_support_caption_template",
-                min=default_rating_min,
-                max=default_rating_max,
+                "sidebar_advanced.detected_score_range_caption_template",
+                min=detected_rating_min,
+                max=detected_rating_max,
             ))
-        if explicit_rating_range:
-            c_min, c_max = st.columns(2)
-            with c_min:
-                rating_min = int(st.number_input(
-                    t("sidebar_advanced.min_category_label"),
-                    value=default_rating_min,
-                    step=1,
-                    key=f"score_scale_min_category_{score_scale_key_suffix}",
-                    help=t("sidebar_advanced.min_category_help"),
-                ))
-            with c_max:
-                rating_max = int(st.number_input(
-                    t("sidebar_advanced.max_category_label"),
-                    value=default_rating_max,
-                    step=1,
-                    key=f"score_scale_max_category_{score_scale_key_suffix}",
-                    help=t("sidebar_advanced.max_category_help"),
-                ))
-            if rating_max <= rating_min:
-                st.error(t("sidebar_advanced.category_range_error"))
-    with st.sidebar.expander(t("sidebar_advanced.advanced_id_expander"), expanded=advanced_controls):
-        noncenter_facet = st.selectbox(
-            t("sidebar_advanced.noncenter_facet_label"),
-            ["Person"] + facet_cols,
-            index=0,
-            key=f"facets_mode_noncenter_facet_{facet_key_suffix}",
-            help=t("sidebar_advanced.noncenter_facet_help"),
-        )
-        dummy_facets = st.multiselect(
-            t("sidebar_advanced.dummy_facets_label"),
-            ["Person"] + facet_cols,
-            default=[],
-            key=f"facets_mode_dummy_facets_{facet_key_suffix}",
-            help=t("sidebar_advanced.dummy_facets_help"),
-        )
-        positive_facets = st.multiselect(
-            t("sidebar_advanced.positive_facets_label"),
-            facet_cols,
-            default=[],
-            key=f"facets_mode_positive_facets_{facet_key_suffix}",
-            help=t("sidebar_advanced.positive_facets_help"),
-        )
-        maxit = int(st.number_input(
-            t("sidebar_advanced.maxit_label"),
-            min_value=50,
-            max_value=10000,
-            value=400,
-            step=50,
-            key="facets_mode_maxit",
-            help=t("sidebar_advanced.maxit_help"),
-        ))
-        reltol = float(st.number_input(
-            t("sidebar_advanced.reltol_label"),
-            min_value=1e-10,
-            max_value=1.0,
-            value=1e-6,
-            format="%.1e",
-            key="facets_mode_reltol",
-            help=t("sidebar_advanced.reltol_help"),
-        ))
-
-    st.sidebar.subheader(t("sidebar_advanced.anchor_constraints_subheader"))
-    with st.sidebar.expander(t("sidebar_advanced.anchors_expander"), expanded=False):
-        st.caption(t("sidebar_advanced.anchors_caption"))
-        anchor_file = st.file_uploader(
-            t("sidebar_advanced.anchor_file_label"),
-            type=TABLE_FILE_UPLOAD_TYPES,
-            key="facets_mode_anchor_file",
-            help=t("sidebar_advanced.anchor_file_help_template", file_label=TABLE_FILE_UPLOAD_LABEL),
-        )
-        anchor_text = st.text_area(
-            t("sidebar_advanced.anchor_paste_label"),
-            key="facets_mode_anchor_text",
-            placeholder="Facet,Level,Anchor\nRater,R1,0.0\nRater,R2,-0.5",
-        )
-
-    with st.sidebar.expander(t("sidebar_advanced.group_anchors_expander"), expanded=False):
-        st.caption(t("sidebar_advanced.group_anchors_caption"))
-        group_anchor_file = st.file_uploader(
-            t("sidebar_advanced.group_anchor_file_label"),
-            type=TABLE_FILE_UPLOAD_TYPES,
-            key="facets_mode_group_anchor_file",
-            help=t("sidebar_advanced.group_anchor_file_help_template", file_label=TABLE_FILE_UPLOAD_LABEL),
-        )
-        group_anchor_text = st.text_area(
-            t("sidebar_advanced.group_anchor_paste_label"),
-            key="facets_mode_group_anchor_text",
-            placeholder="Facet,Level,Group,GroupValue\nRater,R1,Expert,0.0\nRater,R2,Expert,0.0",
-        )
-    with st.sidebar.expander(t("sidebar_advanced.bundled_templates_expander"), expanded=False):
-        st.caption(t("sidebar_advanced.bundled_templates_caption"))
-        template_files = [
-            ("anchor_table_blank.csv", t("sidebar_advanced.anchor_template_blank_label")),
-            ("anchor_table_example.csv", t("sidebar_advanced.anchor_template_example_label")),
-            ("group_anchor_table_blank.csv", t("sidebar_advanced.group_anchor_template_blank_label")),
-            ("group_anchor_table_example.csv", t("sidebar_advanced.group_anchor_template_example_label")),
-        ]
-        for asset_name, label in template_files:
-            try:
-                st.download_button(
-                    label,
-                    data=get_bundled_asset_bytes(asset_name),
-                    file_name=asset_name,
-                    mime="text/csv",
-                    key=f"dl_static_{asset_name}",
-                )
-            except Exception as asset_exc:
-                LOGGER.warning(
-                    "Bundled template unavailable",
-                    extra={"event": "mfrm.bundled_template_unavailable"},
-                    exc_info=(type(asset_exc), asset_exc, asset_exc.__traceback__),
-                )
+            if custom_score_support:
                 st.caption(t(
-                    "sidebar_advanced.asset_unavailable_caption_template",
+                    "data_source.sim_score_support_caption_template",
+                    min=default_rating_min,
+                    max=default_rating_max,
                 ))
-        show_anchor_guideline = st.checkbox(
-            t("sidebar_advanced.show_anchor_guideline_checkbox"),
-            value=False,
-            key="show_anchor_guideline_preview",
-        )
-        if show_anchor_guideline:
-            try:
-                st.markdown(get_bundled_asset_text("anchor_user_guidelines.md"))
-            except Exception as guide_exc:
-                LOGGER.warning(
-                    "Bundled anchor guideline unavailable",
-                    extra={"event": "mfrm.anchor_guideline_unavailable"},
-                    exc_info=(type(guide_exc), guide_exc, guide_exc.__traceback__),
-                )
-                st.caption(t(
-                    "sidebar_advanced.anchor_guideline_unavailable_caption_template",
-                ))
-    with st.sidebar.expander(t("sidebar_advanced.anchor_audit_expander"), expanded=False):
-        # The radio values warn/error/silent are stable internal IDs used
-        # downstream; the help text describes them by name so we keep
-        # them as-is on display rather than translating each option.
-        anchor_policy = st.radio(
-            t("sidebar_advanced.anchor_policy_label"),
-            ["warn", "error", "silent"],
-            index=0,
-            horizontal=True,
-            key="facets_mode_anchor_policy",
-            help=t("sidebar_advanced.anchor_policy_help"),
-        )
-        min_common_anchors = int(st.number_input(
-            t("sidebar_advanced.min_common_anchors_label"),
-            min_value=1,
-            max_value=50,
-            value=2,
-            step=1,
-            key="facets_mode_min_common_anchors",
-            help=t("sidebar_advanced.min_common_anchors_help"),
-        ))
-        min_obs_per_element = int(st.number_input(
-            t("sidebar_advanced.min_obs_per_element_label"),
-            min_value=1,
-            max_value=100,
-            value=2,
-            step=1,
-            key="facets_mode_min_obs_per_element",
-            help=t("sidebar_advanced.min_obs_per_element_help"),
-        ))
-        min_obs_per_category = int(st.number_input(
-            t("sidebar_advanced.min_obs_per_category_label"),
-            min_value=1,
-            max_value=100,
-            value=1,
-            step=1,
-            key="facets_mode_min_obs_per_category",
-            help=t("sidebar_advanced.min_obs_per_category_help"),
-        ))
+            if explicit_rating_range:
+                c_min, c_max = st.columns(2)
+                with c_min:
+                    rating_min = int(st.number_input(
+                        t("sidebar_advanced.min_category_label"),
+                        value=default_rating_min,
+                        step=1,
+                        key=f"score_scale_min_category_{score_scale_key_suffix}",
+                        help=t("sidebar_advanced.min_category_help"),
+                    ))
+                with c_max:
+                    rating_max = int(st.number_input(
+                        t("sidebar_advanced.max_category_label"),
+                        value=default_rating_max,
+                        step=1,
+                        key=f"score_scale_max_category_{score_scale_key_suffix}",
+                        help=t("sidebar_advanced.max_category_help"),
+                    ))
+                if rating_max <= rating_min:
+                    st.error(t("sidebar_advanced.category_range_error"))
+            else:
+                rating_min = None
+                rating_max = None
+        with st.sidebar.expander(t("sidebar_advanced.advanced_id_expander"), expanded=False):
+            noncenter_facet = st.selectbox(
+                t("sidebar_advanced.noncenter_facet_label"),
+                ["Person"] + facet_cols,
+                index=0,
+                key=f"facets_mode_noncenter_facet_{facet_key_suffix}",
+                help=t("sidebar_advanced.noncenter_facet_help"),
+            )
+            dummy_facets = st.multiselect(
+                t("sidebar_advanced.dummy_facets_label"),
+                ["Person"] + facet_cols,
+                default=[],
+                key=f"facets_mode_dummy_facets_{facet_key_suffix}",
+                help=t("sidebar_advanced.dummy_facets_help"),
+            )
+            positive_facets = st.multiselect(
+                t("sidebar_advanced.positive_facets_label"),
+                facet_cols,
+                default=[],
+                key=f"facets_mode_positive_facets_{facet_key_suffix}",
+                help=t("sidebar_advanced.positive_facets_help"),
+            )
+            maxit = int(st.number_input(
+                t("sidebar_advanced.maxit_label"),
+                min_value=50,
+                max_value=10000,
+                value=400,
+                step=50,
+                key="facets_mode_maxit",
+                help=t("sidebar_advanced.maxit_help"),
+            ))
+            reltol = float(st.number_input(
+                t("sidebar_advanced.reltol_label"),
+                min_value=1e-10,
+                max_value=1.0,
+                value=1e-6,
+                format="%.1e",
+                key="facets_mode_reltol",
+                help=t("sidebar_advanced.reltol_help"),
+            ))
 
-    with st.sidebar.expander(t("sidebar_advanced.report_scaling_expander"), expanded=advanced_controls):
-        totalscore = st.checkbox(
-            t("sidebar_advanced.totalscore_checkbox"),
-            value=True,
-            key="facets_mode_totalscore",
-            help=t("sidebar_advanced.totalscore_help"),
-        )
-        omit_unobserved = st.checkbox(
-            t("sidebar_advanced.omit_unobserved_checkbox"),
-            value=False,
-            key="facets_mode_omit_unobserved",
-            help=t("sidebar_advanced.omit_unobserved_help"),
-        )
-        xtreme = float(st.number_input(
-            t("sidebar_advanced.xtreme_label"),
-            value=0.0,
-            step=0.1,
-            key="facets_mode_xtreme",
-            help=t("sidebar_advanced.xtreme_help"),
-        ))
-        umean = float(st.number_input(
-            t("sidebar_advanced.umean_label"),
-            value=0.0,
-            key="facets_mode_umean",
-            help=t("sidebar_advanced.umean_help"),
-        ))
-        uscale = float(st.number_input(
-            t("sidebar_advanced.uscale_label"),
-            value=1.0,
-            key="facets_mode_uscale",
-            help=t("sidebar_advanced.uscale_help"),
-        ))
-        udecimals = int(st.number_input(
-            t("sidebar_advanced.udecimals_label"),
-            min_value=0,
-            max_value=6,
-            value=2,
-            step=1,
-            key="facets_mode_udecimals",
-            help=t("sidebar_advanced.udecimals_help"),
-        ))
+    anchor_file = None
+    anchor_text = ""
+    group_anchor_file = None
+    group_anchor_text = ""
+    anchor_policy = "warn"
+    min_common_anchors = 2
+    min_obs_per_element = 2
+    min_obs_per_category = 1
+    totalscore = True
+    omit_unobserved = False
+    xtreme = 0.0
+    umean = 0.0
+    uscale = 1.0
+    udecimals = 2
+    if advanced_controls:
+        st.sidebar.subheader(t("sidebar_advanced.anchor_constraints_subheader"))
+        with st.sidebar.expander(t("sidebar_advanced.anchors_expander"), expanded=False):
+            st.caption(t("sidebar_advanced.anchors_caption"))
+            anchor_file = st.file_uploader(
+                t("sidebar_advanced.anchor_file_label"),
+                type=TABLE_FILE_UPLOAD_TYPES,
+                key="facets_mode_anchor_file",
+                help=t("sidebar_advanced.anchor_file_help_template", file_label=TABLE_FILE_UPLOAD_LABEL),
+            )
+            anchor_text = st.text_area(
+                t("sidebar_advanced.anchor_paste_label"),
+                key="facets_mode_anchor_text",
+                placeholder="Facet,Level,Anchor\nRater,R1,0.0\nRater,R2,-0.5",
+            )
+
+        with st.sidebar.expander(t("sidebar_advanced.group_anchors_expander"), expanded=False):
+            st.caption(t("sidebar_advanced.group_anchors_caption"))
+            group_anchor_file = st.file_uploader(
+                t("sidebar_advanced.group_anchor_file_label"),
+                type=TABLE_FILE_UPLOAD_TYPES,
+                key="facets_mode_group_anchor_file",
+                help=t("sidebar_advanced.group_anchor_file_help_template", file_label=TABLE_FILE_UPLOAD_LABEL),
+            )
+            group_anchor_text = st.text_area(
+                t("sidebar_advanced.group_anchor_paste_label"),
+                key="facets_mode_group_anchor_text",
+                placeholder="Facet,Level,Group,GroupValue\nRater,R1,Expert,0.0\nRater,R2,Expert,0.0",
+            )
+        with st.sidebar.expander(t("sidebar_advanced.bundled_templates_expander"), expanded=False):
+            st.caption(t("sidebar_advanced.bundled_templates_caption"))
+            template_files = [
+                ("anchor_table_blank.csv", t("sidebar_advanced.anchor_template_blank_label")),
+                ("anchor_table_example.csv", t("sidebar_advanced.anchor_template_example_label")),
+                ("group_anchor_table_blank.csv", t("sidebar_advanced.group_anchor_template_blank_label")),
+                ("group_anchor_table_example.csv", t("sidebar_advanced.group_anchor_template_example_label")),
+            ]
+            for asset_name, label in template_files:
+                try:
+                    st.download_button(
+                        label,
+                        data=get_bundled_asset_bytes(asset_name),
+                        file_name=asset_name,
+                        mime="text/csv",
+                        key=f"dl_static_{asset_name}",
+                    )
+                except Exception as asset_exc:
+                    LOGGER.warning(
+                        "Bundled template unavailable",
+                        extra={"event": "mfrm.bundled_template_unavailable"},
+                        exc_info=(type(asset_exc), asset_exc, asset_exc.__traceback__),
+                    )
+                    st.caption(t(
+                        "sidebar_advanced.asset_unavailable_caption_template",
+                    ))
+            show_anchor_guideline = st.checkbox(
+                t("sidebar_advanced.show_anchor_guideline_checkbox"),
+                value=False,
+                key="show_anchor_guideline_preview",
+            )
+            if show_anchor_guideline:
+                try:
+                    st.markdown(get_bundled_asset_text("anchor_user_guidelines.md"))
+                except Exception as guide_exc:
+                    LOGGER.warning(
+                        "Bundled anchor guideline unavailable",
+                        extra={"event": "mfrm.anchor_guideline_unavailable"},
+                        exc_info=(type(guide_exc), guide_exc, guide_exc.__traceback__),
+                    )
+                    st.caption(t(
+                        "sidebar_advanced.anchor_guideline_unavailable_caption_template",
+                    ))
+        with st.sidebar.expander(t("sidebar_advanced.anchor_audit_expander"), expanded=False):
+            # The radio values warn/error/silent are stable internal IDs used
+            # downstream; the help text describes them by name so we keep
+            # them as-is on display rather than translating each option.
+            anchor_policy = st.radio(
+                t("sidebar_advanced.anchor_policy_label"),
+                ["warn", "error", "silent"],
+                index=0,
+                horizontal=True,
+                key="facets_mode_anchor_policy",
+                help=t("sidebar_advanced.anchor_policy_help"),
+            )
+            min_common_anchors = int(st.number_input(
+                t("sidebar_advanced.min_common_anchors_label"),
+                min_value=1,
+                max_value=50,
+                value=2,
+                step=1,
+                key="facets_mode_min_common_anchors",
+                help=t("sidebar_advanced.min_common_anchors_help"),
+            ))
+            min_obs_per_element = int(st.number_input(
+                t("sidebar_advanced.min_obs_per_element_label"),
+                min_value=1,
+                max_value=100,
+                value=2,
+                step=1,
+                key="facets_mode_min_obs_per_element",
+                help=t("sidebar_advanced.min_obs_per_element_help"),
+            ))
+            min_obs_per_category = int(st.number_input(
+                t("sidebar_advanced.min_obs_per_category_label"),
+                min_value=1,
+                max_value=100,
+                value=1,
+                step=1,
+                key="facets_mode_min_obs_per_category",
+                help=t("sidebar_advanced.min_obs_per_category_help"),
+            ))
+
+        with st.sidebar.expander(t("sidebar_advanced.report_scaling_expander"), expanded=True):
+            totalscore = st.checkbox(
+                t("sidebar_advanced.totalscore_checkbox"),
+                value=True,
+                key="facets_mode_totalscore",
+                help=t("sidebar_advanced.totalscore_help"),
+            )
+            omit_unobserved = st.checkbox(
+                t("sidebar_advanced.omit_unobserved_checkbox"),
+                value=False,
+                key="facets_mode_omit_unobserved",
+                help=t("sidebar_advanced.omit_unobserved_help"),
+            )
+            xtreme = float(st.number_input(
+                t("sidebar_advanced.xtreme_label"),
+                value=0.0,
+                step=0.1,
+                key="facets_mode_xtreme",
+                help=t("sidebar_advanced.xtreme_help"),
+            ))
+            umean = float(st.number_input(
+                t("sidebar_advanced.umean_label"),
+                value=0.0,
+                key="facets_mode_umean",
+                help=t("sidebar_advanced.umean_help"),
+            ))
+            uscale = float(st.number_input(
+                t("sidebar_advanced.uscale_label"),
+                value=1.0,
+                key="facets_mode_uscale",
+                help=t("sidebar_advanced.uscale_help"),
+            ))
+            udecimals = int(st.number_input(
+                t("sidebar_advanced.udecimals_label"),
+                min_value=0,
+                max_value=6,
+                value=2,
+                step=1,
+                key="facets_mode_udecimals",
+                help=t("sidebar_advanced.udecimals_help"),
+            ))
 
     # Bias settings: use sensible defaults (adjustable in Bias/Interaction tab)
     bias_max_abs = 10.0
@@ -35732,9 +38096,20 @@ def run_facets_mode(
         "Full publication": t("sidebar_perf.analysis_depth_full_display"),
         "Custom": t("sidebar_perf.analysis_depth_custom_display"),
     }
+    analysis_depth_options = [
+        "Fast preview",
+        "Standard (recommended)",
+        "Full publication",
+    ]
+    if advanced_controls:
+        analysis_depth_options.append("Custom")
+    elif st.session_state.get("facets_mode_analysis_depth") == "Custom":
+        # Returning to Guided must not silently retain an invisible custom
+        # compute plan from a previous Advanced run.
+        st.session_state["facets_mode_analysis_depth"] = "Standard (recommended)"
     analysis_depth = st.sidebar.selectbox(
         t("sidebar_perf.analysis_depth_label"),
-        ["Fast preview", "Standard (recommended)", "Full publication", "Custom"],
+        analysis_depth_options,
         index=1,
         format_func=analysis_depth_labels.__getitem__,
         key="facets_mode_analysis_depth",
@@ -35862,14 +38237,14 @@ def run_facets_mode(
         )
     else:
         preset_settings = resolve_analysis_depth_settings(analysis_depth, est_method)
-        if analysis_depth == "Standard (recommended)":
+        if analysis_depth == "Standard (recommended)" and advanced_controls:
             preset_settings["compute_eb_shrinkage"] = st.sidebar.checkbox(
                 t("sidebar_perf.compute_eb_shrinkage_checkbox"),
                 value=False,
                 key="facets_mode_compute_eb_shrinkage",
                 help=t("sidebar_perf.compute_eb_shrinkage_standard_help"),
             )
-        elif analysis_depth == "Full publication":
+        elif analysis_depth == "Full publication" and advanced_controls:
             st.sidebar.caption(t("sidebar_perf.full_publication_eb_caption"))
 
     compute_residual_pca = bool(preset_settings["compute_residual_pca"])
@@ -35954,26 +38329,34 @@ def run_facets_mode(
         if population_enabled else None
     )
 
-    setup_surface = render_analysis_setup_workspace(
+    setup_surface, main_run_clicked = render_analysis_setup_workspace(
         data,
         person_col=person_col,
         score_col=score_col,
         facet_cols=list(facet_cols),
         weight_col=weight_col,
+        workflow_mode=workflow_mode,
+        model_type=model_type,
+        est_method=est_method,
+        analysis_depth=analysis_depth,
+        resource_preflight=resource_preflight,
+        run_disabled=bool(resource_preflight.get("block")),
     )
-    if should_render_estimation_resource_preflight(resource_preflight):
-        render_estimation_resource_preflight(resource_preflight)
 
     # Estimation time warning
     help_overlay_open = _get_help_route_state().is_open
     suppress_help_return_triggers = bool(
         st.session_state.pop(_HELP_SUPPRESS_ANALYSIS_TRIGGERS_ONCE_KEY, False)
     )
-    run_clicked = st.sidebar.button(
-        t("sidebar_perf.run_button"),
-        type="primary",
-        disabled=help_overlay_open,
-    )
+    if advanced_controls:
+        run_clicked = st.sidebar.button(
+            t("sidebar_perf.run_button"),
+            type="primary",
+            disabled=help_overlay_open,
+        )
+    else:
+        st.sidebar.caption(t("app.run_primary_sidebar_caption"))
+        run_clicked = bool(main_run_clicked)
     if not help_overlay_open and not suppress_help_return_triggers:
         if st.session_state.pop("_facets_mode_force_rerun", False):
             run_clicked = True
@@ -36667,6 +39050,8 @@ def run_facets_mode(
             expanded=False,
             context="run",
         )
+        render_estimand_contract_panel(result)
+        render_assignment_design_audit_panel(result)
         try:
             design_screen = evaluate_design_from_fitted(result, diagnostics, forecast_multipliers=(2.0,))
         except Exception:
@@ -36725,6 +39110,15 @@ def run_facets_mode(
             audit_issues = anchor_audit.get("issues", pd.DataFrame())
             with st.expander(t("data_quality.anchor_summary_expander"), expanded=status != "ok"):
                 if isinstance(audit_summary, pd.DataFrame) and not audit_summary.empty:
+                    coverage_fig = build_anchor_coverage_figure(audit_summary)
+                    if coverage_fig is not None:
+                        st.plotly_chart(coverage_fig, width="stretch")
+                        st.caption(
+                            _standalone_ui_text(
+                                en="Coverage is descriptive; there is no universal sufficient anchor percentage.",
+                                ja="カバレッジは記述指標です。普遍的に十分といえるアンカー割合はありません。",
+                            )
+                        )
                     st.dataframe(audit_summary, width="stretch")
                 else:
                     st.info(t("data_quality.anchor_no_summary_info"))
@@ -36928,7 +39322,10 @@ def run_facets_mode(
             # scroll horizontally past anchor / metadata columns.
             measures_display = reorder_measure_columns(measures_df)
             measures_display = format_measure_table(measures_display)
-            st.dataframe(style_fit_columns(measures_display), width="stretch")
+            st.dataframe(
+                style_fit_columns(measures_display, decision_df=measures_df),
+                width="stretch",
+            )
             if "CI_Lower" in measures_df.columns:
                 st.caption(t("result_tabs.combined_ci_caption"))
             render_eb_shrinkage_section(result, diagnostics, expanded=False)
@@ -42514,7 +44911,12 @@ def build_misfit_casebook(
         iz = pd.to_numeric(f.get("InfitZSTD", pd.Series(np.nan, index=f.index)), errors="coerce").abs()
         oz = pd.to_numeric(f.get("OutfitZSTD", pd.Series(np.nan, index=f.index)), errors="coerce").abs()
         f["_score"] = np.nanmax(np.column_stack([iz.fillna(0), oz.fillna(0)]), axis=1)
-        f["_mn_flag"] = (infit > 1.5) | (outfit > 1.5) | (infit < 0.5) | (outfit < 0.5)
+        infit_class = infit.map(_decision_stability.classify_fit_mnsq)
+        outfit_class = outfit.map(_decision_stability.classify_fit_mnsq)
+        f["_mn_flag"] = (
+            infit_class.isin({"overfit", "noisy", "distorting"})
+            | outfit_class.isin({"overfit", "noisy", "distorting"})
+        )
         f = f[(f["_score"] >= 2.0) | f["_mn_flag"]].sort_values("_score", ascending=False).head(top_n)
         for _, row in f.iterrows():
             add_case(
@@ -43381,16 +45783,30 @@ def build_apa_report_sentence_audit(
 
     measures = diagnostics.get("measures", pd.DataFrame())
     if isinstance(measures, pd.DataFrame) and "Infit" in measures.columns:
-        infit = pd.to_numeric(measures["Infit"], errors="coerce").dropna()
+        infit_all = pd.to_numeric(measures["Infit"], errors="coerce")
+        infit_missing_n = int(infit_all.isna().sum())
+        infit = infit_all.dropna()
         if len(infit):
-            n_misfit = int(((infit > 1.5) | (infit < 0.5)).sum())
+            n_misfit = int(_decision_stability.fit_mnsq_review_mask(infit).sum())
             add_row(
                 "Results",
                 "Element fit",
                 "Fit and dimensionality",
-                f"{n_misfit} of {len(infit)} elements showed Infit MnSq outside the 0.5-1.5 screening range.",
-                f"fit rows={len(infit)}; outside screening range={n_misfit}",
-                "Treat fit flags as diagnostic prompts; removal or invalidity claims require substantive review.",
+                (
+                    f"{n_misfit} of {len(infit)} elements with finite Infit showed MnSq outside "
+                    f"the inclusive 0.50-1.50 screening range; {infit_missing_n} were unavailable."
+                ),
+                f"finite fit rows={len(infit)}; unavailable={infit_missing_n}; outside screening range={n_misfit}",
+                "Treat fit flags and unavailable fit as diagnostic prompts; removal or invalidity claims require substantive review.",
+            )
+        else:
+            add_row(
+                "Results",
+                "Element fit",
+                "Fit and dimensionality",
+                "Element-fit classification was unavailable because no finite Infit statistics were produced.",
+                f"finite fit rows=0; unavailable={infit_missing_n}",
+                "Do not make an acceptable-fit claim; inspect sparse/extreme response patterns and rerun diagnostics.",
             )
 
     steps = result.get("steps", pd.DataFrame())
@@ -44791,6 +47207,141 @@ def show_convergence_section(result: dict) -> None:
             st.caption(t("estimation_subsections.parameterization_audit_caption"))
             st.dataframe(parameterization_audit, width="stretch", hide_index=True)
 
+    identifiability = result.get("identifiability", {})
+    if isinstance(identifiability, dict):
+        ident_summary = identifiability.get("summary", pd.DataFrame())
+        ident_status = str(identifiability.get("status", ""))
+        if ident_status == "eta_rank_deficient":
+            row_ident = ident_summary.iloc[0] if isinstance(ident_summary, pd.DataFrame) and not ident_summary.empty else pd.Series()
+            st.error(
+                _standalone_ui_text(
+                    en=(
+                        "Structural identifiability failed: the exact JMLE person/facet "
+                        f"linear-predictor design has nullity {row_ident.get('EtaStructuralNullity', 'unknown')}. "
+                        "Optimizer convergence does not make these estimates unique. Bias "
+                        "analysis is withheld; add cross-facet overlap or anchors, redesign "
+                        "the model, or choose an explicitly qualified alternative estimator."
+                    ),
+                    ja=(
+                        "構造的識別性を確認できませんでした。JMLEのPerson／ファセット線形予測子設計の "
+                        f"nullity は {row_ident.get('EtaStructuralNullity', '不明')} です。最適化が収束しても、"
+                        "推定値が一意になるとは限りません。バイアス分析は出力しません。ファセット間の重複評価や"
+                        "アンカーを追加する、設計・モデルを見直す、または別途妥当性を確認した推定法を使用してください。"
+                    ),
+                )
+            )
+        elif ident_status == "audit_size_limit":
+            st.warning(
+                _standalone_ui_text(
+                    en=(
+                        "Structural identifiability was not established because the exact "
+                        "rank audit exceeded its current technical size limit. Treat this "
+                        "fit as not inference-ready until a large-design audit is available."
+                    ),
+                    ja=(
+                        "厳密ランク監査が現在の技術的サイズ上限を超えたため、構造的識別性を確認できませんでした。"
+                        "大規模設計用の監査が利用可能になるまで、この適合結果を推論可能とは扱わないでください。"
+                    ),
+                )
+            )
+        elif ident_status == "eta_identified":
+            st.info(
+                _standalone_ui_text(
+                    en=(
+                        "Structural check: no exact null direction was detected in the JMLE "
+                        "person/facet linear-predictor blocks. This is necessary, but does "
+                        "not replace numerical convergence, model-fit, sparsity, or threshold audits."
+                    ),
+                    ja=(
+                        "構造チェック：JMLEのPerson／ファセット線形予測子ブロックに厳密な零方向は検出されませんでした。"
+                        "これは必要条件ですが、数値収束、モデル適合、スパース性、閾値の監査を代替しません。"
+                    ),
+                )
+            )
+        ident_tables = {
+            "Summary": ident_summary,
+            "Person/facet connectivity": identifiability.get("connectivity"),
+            "Null-space block energy": identifiability.get("null_space_block_energy"),
+            "Coordinate null weights": identifiability.get("coordinate_null_weight"),
+        }
+        if any(isinstance(frame, pd.DataFrame) and not frame.empty for frame in ident_tables.values()):
+            with st.expander(
+                _standalone_ui_text(
+                    en="Structural identifiability audit",
+                    ja="構造的識別性の監査",
+                ),
+                expanded=ident_status != "eta_identified",
+            ):
+                st.caption(
+                    _standalone_ui_text(
+                        en=(
+                            "Scope: exact JMLE person/facet eta coordinates after anchors and "
+                            "centering constraints. PCM/GPCM step and slope identification is separate."
+                        ),
+                        ja=(
+                            "範囲：アンカーおよび中心化制約を適用した後の、JMLEのPerson／ファセット eta 座標。"
+                            "PCM/GPCMのステップおよび傾きの識別性は別の監査対象です。"
+                        ),
+                    )
+                )
+                for label, frame in ident_tables.items():
+                    if isinstance(frame, pd.DataFrame) and not frame.empty:
+                        st.markdown(f"**{label}**")
+                        st.dataframe(frame, width="stretch", hide_index=True)
+
+    person_boundary = result.get("person_boundary", {})
+    if isinstance(person_boundary, dict):
+        boundary_status = str(person_boundary.get("status", ""))
+        boundary_summary = person_boundary.get("summary", pd.DataFrame())
+        boundary_persons = person_boundary.get("persons", pd.DataFrame())
+        if boundary_status == "extreme_persons_present":
+            boundary_row = (
+                boundary_summary.iloc[0]
+                if isinstance(boundary_summary, pd.DataFrame) and not boundary_summary.empty
+                else pd.Series()
+            )
+            extreme_n = boundary_row.get("ExtremePersons", "unknown")
+            st.warning(
+                _standalone_ui_text(
+                    en=(
+                        f"JMLE Person boundary: {extreme_n} Person(s) have all-minimum or "
+                        "all-maximum retained scores, so no finite unbounded JMLE Person MLE "
+                        "exists. ReportableEstimate is withheld. The existing Estimate is "
+                        "retained only as an optimizer/constraint value, not a finite Person measure."
+                    ),
+                    ja=(
+                        f"JMLEのPerson境界：{extreme_n}名が全行で最低得点または最高得点です。"
+                        "この場合、制約のない有限なJMLE Person最尤推定値は存在しません。"
+                        "ReportableEstimate は出力保留です。既存の Estimate は再現性のために最適化／制約値として"
+                        "保持しますが、有限のPerson測定値として解釈しないでください。"
+                    ),
+                )
+            )
+        if boundary_status in {"extreme_persons_present", "no_extreme_persons"}:
+            with st.expander(
+                _standalone_ui_text(
+                    en="JMLE Person score-boundary audit",
+                    ja="JMLE Person得点境界の監査",
+                ),
+                expanded=boundary_status == "extreme_persons_present",
+            ):
+                st.caption(
+                    _standalone_ui_text(
+                        en=(
+                            "Boundary status uses exact retained integer scores, not an estimate-magnitude "
+                            "or displayed-rounding cutoff. Fit/facet readiness is assessed separately."
+                        ),
+                        ja=(
+                            "境界判定には保持された整数得点を用い、推定値の大きさや表示丸めの閾値は使いません。"
+                            "適合全体・ファセットの準備状況は別に評価します。"
+                        ),
+                    )
+                )
+                if isinstance(boundary_summary, pd.DataFrame) and not boundary_summary.empty:
+                    st.dataframe(boundary_summary, width="stretch", hide_index=True)
+                if isinstance(boundary_persons, pd.DataFrame) and not boundary_persons.empty:
+                    st.dataframe(boundary_persons, width="stretch", hide_index=True)
+
     _render_population_sd_summary(result)
 
     row = convergence.iloc[0]
@@ -44994,6 +47545,303 @@ def show_posterior_scoring_section(result: dict) -> None:
             st.dataframe(pv, width="stretch")
     else:
         st.info(t("estimation_subsections.posterior_no_pv_info"))
+
+
+def render_fixed_density_assignment_sensitivity(result: dict) -> None:
+    """Render the fail-closed paired assignment counterfactual runner."""
+    with st.expander(t("design_assignment.runner_expander"), expanded=False):
+        st.caption(t("design_assignment.runner_caption"))
+        st.warning(t("design_assignment.runner_claim_boundary"))
+        try:
+            preflight = select_assignment_sensitivity_preflight(result)
+        except Exception as exc:
+            preflight = {
+                "available": False,
+                "reason": str(exc),
+                "gates": pd.DataFrame(),
+                "block_profiles": pd.DataFrame(),
+            }
+
+        gates = preflight.get("gates", pd.DataFrame())
+        if preflight.get("available"):
+            st.success(t("design_assignment.runner_ready"))
+            st.caption(
+                t(
+                    "design_assignment.runner_milp_mode"
+                    if preflight.get("design_engine") == "context_margin_milp"
+                    else "design_assignment.runner_strict_mode"
+                )
+            )
+        else:
+            st.info(
+                t(
+                    "design_assignment.runner_blocked_template",
+                    reason=preflight.get("reason", ""),
+                )
+            )
+        if isinstance(gates, pd.DataFrame) and not gates.empty:
+            with st.expander(t("design_assignment.runner_gates_expander"), expanded=not preflight.get("available")):
+                st.dataframe(gates, width="stretch", hide_index=True)
+
+        if not preflight.get("available"):
+            return
+
+        design_engine = str(preflight.get("design_engine", "strict_2switch"))
+        if design_engine == "strict_2switch":
+            dose_percentages = st.multiselect(
+                t("design_assignment.runner_doses"),
+                options=[0, 25, 50, 75, 100],
+                default=[0, 50, 100],
+                key="assignment_sensitivity_doses",
+                help=t("design_assignment.runner_doses_help"),
+            )
+            alignment_doses = tuple(
+                sorted({0.0, 1.0, *[float(value) / 100.0 for value in dose_percentages]})
+            )
+        else:
+            alignment_doses = (0.0, 1.0)
+            st.info(t("design_assignment.runner_milp_endpoint_only"))
+        person_generation_mode = _assignment_generator.SOURCE_FITTED_MODE
+        if str(preflight.get("method", "")).upper() == "MML":
+            person_generation_mode = st.selectbox(
+                t("design_assignment.runner_person_generator"),
+                options=[
+                    _assignment_generator.SOURCE_FITTED_MODE,
+                    _assignment_generator.MML_RANK_PRESERVING_MODE,
+                ],
+                format_func=lambda value: t(
+                    "design_assignment.runner_person_generator_population"
+                    if value == _assignment_generator.MML_RANK_PRESERVING_MODE
+                    else "design_assignment.runner_person_generator_source"
+                ),
+                key="assignment_sensitivity_person_generator",
+                help=t("design_assignment.runner_person_generator_help"),
+            )
+        result_config = result.get("config", {}) if isinstance(result, dict) else {}
+        generator_preview = _assignment_generator.build_assignment_person_generation_plan(
+            method=str(preflight.get("method", "")),
+            person_scores=preflight.get("person_scores", {}),
+            mode=person_generation_mode,
+            population_sd=result_config.get("population_prior_sd"),
+            population_model_enabled=bool(
+                isinstance(result_config.get("population_model"), dict)
+                and result_config.get("population_model", {}).get("enabled")
+            ),
+        )
+        generator_ready = bool(generator_preview.get("available"))
+        if not generator_ready:
+            st.warning(
+                t(
+                    "design_assignment.runner_generator_blocked_template",
+                    reason=generator_preview.get("reason", ""),
+                )
+            )
+            with st.expander(
+                t("design_assignment.runner_generator_gates_heading"), expanded=True
+            ):
+                st.dataframe(
+                    generator_preview.get("gates", pd.DataFrame()),
+                    width="stretch",
+                    hide_index=True,
+                )
+        free_mml_sd = bool(
+            result.get("config", {}).get("method") == "MML"
+            and result.get("config", {}).get("estimate_population_sd", False)
+        )
+        maxit_min = 300 if free_mml_sd else 20
+        maxit_max = 1000 if free_mml_sd else 300
+        maxit_default = 300 if free_mml_sd else 100
+        controls = st.columns(3)
+        with controls[0]:
+            replicates = int(st.number_input(
+                t("design_assignment.runner_replicates"),
+                min_value=1,
+                max_value=10,
+                value=2,
+                step=1,
+                key="assignment_sensitivity_replicates",
+            ))
+        with controls[1]:
+            maxit = int(st.number_input(
+                t("design_assignment.runner_maxit"),
+                min_value=maxit_min,
+                max_value=maxit_max,
+                value=maxit_default,
+                step=50 if free_mml_sd else 10,
+                key="assignment_sensitivity_maxit",
+            ))
+        with controls[2]:
+            seed = int(st.number_input(
+                t("design_assignment.runner_seed"),
+                min_value=1,
+                max_value=2_147_483_647,
+                value=20260811,
+                step=1,
+                key="assignment_sensitivity_seed",
+            ))
+
+        state_key = "mfrm_assignment_sensitivity_bundle"
+        meta_key = "mfrm_assignment_sensitivity_meta"
+        source_key = _model_choice_cache_key(result)
+        run_meta = (
+            source_key,
+            preflight.get("schema_version"),
+            design_engine,
+            replicates,
+            maxit,
+            seed,
+            alignment_doses,
+            person_generation_mode,
+        )
+        if st.session_state.get(meta_key) != run_meta:
+            st.session_state.pop(state_key, None)
+        if st.button(
+            t("design_assignment.runner_button"),
+            key="run_assignment_sensitivity",
+            type="primary",
+            disabled=not generator_ready,
+        ):
+            try:
+                with st.spinner(t("design_assignment.runner_spinner")):
+                    st.session_state[state_key] = simulate_fixed_density_assignment_sensitivity(
+                        result,
+                        n_replicates=replicates,
+                        seed=seed,
+                        refit_maxit=maxit,
+                        refit_reltol=1e-4,
+                        alignment_doses=alignment_doses,
+                        design_engine=design_engine,
+                        person_generation_mode=person_generation_mode,
+                    )
+            except Exception as exc:
+                st.session_state[state_key] = {
+                    "available": False,
+                    "reason": str(exc),
+                    "gates": gates,
+                    "block_profiles": preflight.get("block_profiles", pd.DataFrame()),
+                }
+            st.session_state[meta_key] = run_meta
+
+        bundle = st.session_state.get(state_key)
+        if not isinstance(bundle, dict):
+            return
+        if not bundle.get("available"):
+            st.error(
+                t(
+                    "design_assignment.runner_failed_template",
+                    reason=bundle.get("reason", ""),
+                )
+            )
+        elif not bundle.get("all_pairs_inference_ready", False):
+            st.warning(
+                t(
+                    "design_assignment.runner_partial_template",
+                    reason=bundle.get("reason", ""),
+                )
+            )
+
+        completion = bundle.get("completion", pd.DataFrame())
+        if isinstance(completion, pd.DataFrame) and not completion.empty:
+            row = completion.iloc[0]
+            metrics = st.columns(4)
+            metrics[0].metric(t("design_assignment.runner_metric_method"), str(row.get("Method", "")))
+            metrics[1].metric(
+                t("design_assignment.runner_metric_refits"),
+                f"{int(row.get('ScenarioFitsCompleted', 0))}/{int(row.get('ScenarioFitsExpected', 0))}",
+            )
+            metrics[2].metric(
+                t("design_assignment.runner_metric_ready"),
+                f"{int(row.get('ScenarioFitsInferenceReady', 0))}/{int(row.get('ScenarioFitsExpected', 0))}",
+            )
+            metrics[3].metric(
+                t("design_assignment.runner_metric_pairs"),
+                f"{int(row.get('DoseContrastsComplete', 0))}/{int(row.get('DoseContrastsExpected', 0))}",
+            )
+            st.dataframe(completion, width="stretch", hide_index=True)
+
+        trajectory = bundle.get("trajectory", pd.DataFrame())
+        if isinstance(trajectory, pd.DataFrame) and not trajectory.empty:
+            start = trajectory.iloc[0]
+            end = trajectory.iloc[-1]
+            trajectory_metrics = st.columns(3)
+            trajectory_metrics[0].metric(
+                t("design_assignment.runner_metric_observed_alignment"),
+                f"{float(start.get('AssignmentRankCorrelation', np.nan)):.3f}",
+            )
+            trajectory_metrics[1].metric(
+                t("design_assignment.runner_metric_counterfactual_alignment"),
+                f"{float(end.get('AssignmentRankCorrelation', np.nan)):.3f}",
+            )
+            trajectory_metrics[2].metric(
+                t("design_assignment.runner_metric_changed_blocks"),
+                f"{int(end.get('ChangedBlocks', 0))}",
+            )
+
+        dose_table = bundle.get("dose_table", pd.DataFrame())
+        if isinstance(dose_table, pd.DataFrame) and not dose_table.empty:
+            st.markdown("**" + t("design_assignment.runner_dose_table_heading") + "**")
+            st.dataframe(dose_table, width="stretch", hide_index=True)
+
+        contrast_summary = bundle.get("dose_contrast_summary", pd.DataFrame())
+        if not isinstance(contrast_summary, pd.DataFrame) or contrast_summary.empty:
+            contrast_summary = bundle.get("contrast_summary", pd.DataFrame())
+        if isinstance(contrast_summary, pd.DataFrame) and not contrast_summary.empty:
+            st.markdown("**" + t("design_assignment.runner_contrast_heading") + "**")
+            st.caption(t("design_assignment.runner_metric_direction_caption"))
+            st.dataframe(contrast_summary, width="stretch", hide_index=True)
+            if {"Metric", "AchievedAlignmentDose", "MeanDifference"}.issubset(contrast_summary.columns):
+                metric_options = contrast_summary["Metric"].astype(str).drop_duplicates().tolist()
+                selected_metric = st.selectbox(
+                    t("design_assignment.runner_curve_metric"),
+                    options=metric_options,
+                    key="assignment_sensitivity_curve_metric",
+                )
+                curve = contrast_summary.loc[
+                    contrast_summary["Metric"].astype(str).eq(selected_metric),
+                    ["AchievedAlignmentDose", "MeanDifference"],
+                ].copy()
+                curve["MeanDifference"] = pd.to_numeric(curve["MeanDifference"], errors="coerce")
+                curve = curve.dropna().sort_values("AchievedAlignmentDose")
+                if len(curve) >= 2:
+                    st.line_chart(
+                        curve.set_index("AchievedAlignmentDose")["MeanDifference"],
+                        x_label=t("design_assignment.runner_curve_x"),
+                        y_label=t("design_assignment.runner_curve_y"),
+                    )
+
+        with st.expander(t("design_assignment.runner_details_expander"), expanded=False):
+            for heading_key, frame_key in (
+                ("design_assignment.runner_summary_heading", "summary"),
+                ("design_assignment.runner_contrasts_heading", "contrasts"),
+                ("design_assignment.runner_dose_contrasts_heading", "dose_contrasts"),
+                ("design_assignment.runner_invariants_heading", "invariants"),
+                ("design_assignment.runner_path_invariants_heading", "path_invariants"),
+                ("design_assignment.runner_trajectory_heading", "trajectory"),
+                ("design_assignment.runner_generator_contract_heading", "person_generator_contract"),
+                ("design_assignment.runner_generator_summary_heading", "person_generation_summary"),
+                ("design_assignment.runner_solver_heading", "solver_audit"),
+                ("design_assignment.runner_context_margin_heading", "context_margin_audit"),
+                ("design_assignment.runner_witness_heading", "witnesses"),
+            ):
+                frame = bundle.get(frame_key, pd.DataFrame())
+                if isinstance(frame, pd.DataFrame) and not frame.empty:
+                    st.markdown("**" + t(heading_key) + "**")
+                    st.dataframe(frame, width="stretch", hide_index=True)
+
+        export_frames = prepare_download_frames_for_privacy(
+            assignment_sensitivity_bundle_frames(bundle),
+            public_export_mode=True,
+        )
+        if export_frames:
+            export_key = frames_fingerprint(export_frames)
+            st.download_button(
+                t("design_assignment.runner_download_button"),
+                data=cached_tables_zip(export_frames, export_key),
+                file_name="mfrm_fixed_density_assignment_sensitivity.zip",
+                mime="application/zip",
+                key="dl_assignment_sensitivity_bundle",
+            )
+            st.caption(t("design_assignment.runner_download_caption"))
 
 
 def show_prediction_simulation_section(result: dict, diagnostics: dict, core: dict | None = None) -> None:
@@ -45327,6 +48175,9 @@ def show_prediction_simulation_section(result: dict, diagnostics: dict, core: di
                         mime="text/csv",
                         key="dl_sim_rows_tab",
                     )
+
+    st.markdown("**Fixed-density informative-assignment sensitivity**")
+    render_fixed_density_assignment_sensitivity(result)
 
     st.markdown("**Prospective missingness + refit simulation**")
     with st.expander("Run small refit stress test", expanded=False):
@@ -46057,6 +48908,26 @@ def _collect_apa_exportable_tables(
         parameterization_audit = result.get("parameterization_audit")
         if isinstance(parameterization_audit, pd.DataFrame) and not parameterization_audit.empty:
             candidates["Parameterization audit"] = parameterization_audit
+        identifiability = result.get("identifiability", {})
+        if isinstance(identifiability, dict):
+            for label, key in (
+                ("Structural identifiability summary", "summary"),
+                ("Person/facet connectivity", "connectivity"),
+                ("Identifiability null-space block energy", "null_space_block_energy"),
+                ("Identifiability coordinate null weights", "coordinate_null_weight"),
+            ):
+                frame = identifiability.get(key)
+                if isinstance(frame, pd.DataFrame) and not frame.empty:
+                    candidates[label] = frame
+        person_boundary = result.get("person_boundary", {})
+        if isinstance(person_boundary, dict):
+            for label, key in (
+                ("JMLE Person score-boundary summary", "summary"),
+                ("JMLE Person score-boundary details", "persons"),
+            ):
+                frame = person_boundary.get(key)
+                if isinstance(frame, pd.DataFrame) and not frame.empty:
+                    candidates[label] = frame
         summary = result.get("summary")
         if isinstance(summary, pd.DataFrame) and not summary.empty:
             candidates["Estimation summary"] = qualify_likelihood_information_table(
@@ -46606,6 +49477,7 @@ def render_parameter_recovery_simulation() -> None:
 
 def _render_report_tables(result: dict, diagnostics: dict) -> None:
     """Estimation summary tables for the Report tab."""
+    render_estimand_contract_panel(result)
     st.subheader(t("report_tables.estimation_summary_subheader"))
     summary_df = result.get("summary", pd.DataFrame())
     if isinstance(summary_df, pd.DataFrame) and not summary_df.empty:
@@ -46741,11 +49613,15 @@ def _render_report_tables(result: dict, diagnostics: dict) -> None:
             strata = (4 * separation + 1) / 3 if np.isfinite(separation) else np.nan
             infit = pd.to_numeric(grp.get("Infit", pd.Series(dtype=float)), errors="coerce").dropna()
             outfit = pd.to_numeric(grp.get("Outfit", pd.Series(dtype=float)), errors="coerce").dropna()
-            n_misfit = 0
-            if len(infit) > 0:
-                n_misfit = int(((infit > 1.5) | (infit < 0.5)).sum())
-            if len(outfit) > 0:
-                n_misfit = max(n_misfit, int(((outfit > 1.5) | (outfit < 0.5)).sum()))
+            infit_by_row = pd.to_numeric(grp.get("Infit", pd.Series(np.nan, index=grp.index)), errors="coerce")
+            outfit_by_row = pd.to_numeric(grp.get("Outfit", pd.Series(np.nan, index=grp.index)), errors="coerce")
+            row_classes = [
+                _decision_stability.worst_fit_classification(
+                    infit_by_row.iloc[pos], outfit_by_row.iloc[pos]
+                )
+                for pos in range(len(grp))
+            ]
+            n_misfit = int(sum(value in {"overfit", "noisy", "distorting"} for value in row_classes))
             n_total = len(estimates)
             report_rows.append({
                 "Facet": facet_name,
@@ -46806,7 +49682,7 @@ of a research paper that uses MFRM.
 | **Method** | Describes *what* you did | Model type, sample size, software — readers need this to evaluate your study |
 | **Global fit** | Does the model fit the data? | % of residuals > |2| should be near 5%. Much higher = poor fit |
 | **Reliability & Separation** | Can the model distinguish between elements? | Higher is better for persons; for raters, *low* reliability means raters agree (good!) |
-| **Misfit** | Are there problematic elements? | Infit 0.5–1.5 is acceptable. Outside = erratic (>1.5) or too predictable (<0.5) |
+| **Misfit** | Are there problematic elements? | Raw Infit 0.50–1.50 inclusive is acceptable; >1.50–2.00 is noisy, >2.00 distorting, and <0.50 overly predictable. Missing fit is not evidence of acceptable fit. |
 | **Rating scale** | Is the rubric working? | Ordered thresholds = good. Disordered = categories are confusing raters |
 | **Bias** | Are there systematic interactions? | Use the DFF/bias audit: sparse cells, Holm/BH multiplicity checks, and conditional inference scope determine what can be claimed |
 
@@ -47293,19 +50169,26 @@ of a research paper that uses MFRM.
 
     # --- Misfit summary ---
     if not measures.empty and "Infit" in measures.columns:
-        infit = pd.to_numeric(measures["Infit"], errors="coerce").dropna()
+        infit_all = pd.to_numeric(measures["Infit"], errors="coerce")
+        infit_missing_n = int(infit_all.isna().sum())
+        infit = infit_all.dropna()
         outfit = pd.to_numeric(measures.get("Outfit", pd.Series(dtype=float)), errors="coerce").dropna()
         n_elements = len(infit)
-        n_infit_misfit = int(((infit > 1.5) | (infit < 0.5)).sum())
-        n_outfit_misfit = int((outfit > 2.0).sum()) if len(outfit) > 0 else 0
+        n_infit_misfit = int(_decision_stability.fit_mnsq_review_mask(infit).sum())
+        n_outfit_misfit = int(_decision_stability.fit_mnsq_review_mask(outfit).sum()) if len(outfit) > 0 else 0
         if n_elements > 0:
             results_parts.append(
                 f"{n_infit_misfit} of {n_elements} elements ({100*n_infit_misfit/n_elements:.0f}%) "
                 f"showed Infit *MnSq* outside the 0.5–1.5 range (Wright & Linacre, 1994)"
-                + (f", and {n_outfit_misfit} showed Outfit *MnSq* > 2.0" if n_outfit_misfit > 0 else "")
+                + (f", and {n_outfit_misfit} showed Outfit *MnSq* outside the same endpoint band" if n_outfit_misfit > 0 else "")
+                + (f"; Infit was unavailable for {infit_missing_n} additional element(s)" if infit_missing_n > 0 else "")
                 + "."
             )
             refs_used.add("Wright & Linacre, 1994")
+        else:
+            results_parts.append(
+                "Element fit could not be classified because no finite Infit statistics were available."
+            )
 
     # --- Rating scale analysis (Linacre's 5 criteria) ---
     steps_df = result.get("steps", pd.DataFrame())
@@ -47520,19 +50403,25 @@ of a research paper that uses MFRM.
 
     # Misfit interpretation
     if not measures.empty and "Infit" in measures.columns:
-        infit_interp = pd.to_numeric(measures["Infit"], errors="coerce").dropna()
+        infit_all = pd.to_numeric(measures["Infit"], errors="coerce")
+        infit_missing_n = int(infit_all.isna().sum())
+        infit_interp = infit_all.dropna()
         n_elements_interp = len(infit_interp)
-        n_misfit_interp = int(((infit_interp > 1.5) | (infit_interp < 0.5)).sum())
+        infit_review_mask = _decision_stability.fit_mnsq_review_mask(infit_interp)
+        n_misfit_interp = int(infit_review_mask.sum())
         if n_elements_interp > 0:
             pct_misfit = 100 * n_misfit_interp / n_elements_interp
-            if n_misfit_interp == 0:
+            if n_misfit_interp == 0 and infit_missing_n == 0:
                 st.success(
                     "**Element fit: All acceptable** — No elements outside the 0.5–1.5 Infit range."
                 )
+            elif n_misfit_interp == 0:
+                st.warning(
+                    f"**Element fit: finite values acceptable, but {infit_missing_n} unavailable** — "
+                    "The fit screen is incomplete; inspect sparse or extreme response patterns before reporting."
+                )
             elif pct_misfit <= 15:
-                misfit_elements = measures[
-                    (infit_interp > 1.5) | (infit_interp < 0.5)
-                ]
+                misfit_elements = measures.loc[infit_review_mask.reindex(measures.index, fill_value=False)]
                 names = ", ".join(
                     misfit_elements["Level"].astype(str).tolist()[:5]
                 ) if "Level" in misfit_elements.columns else f"{n_misfit_interp} elements"
@@ -47549,6 +50438,11 @@ of a research paper that uses MFRM.
                     "may not be appropriate for this data. Consider simplifying the model, "
                     "collapsing categories, or checking for data quality issues."
                 )
+        else:
+            st.warning(
+                "**Element fit unavailable** — No finite Infit statistics were produced. "
+                "Inspect sparse or extreme response patterns before reporting fit."
+            )
 
     # Rating scale interpretation
     steps_df_interp = result.get("steps", pd.DataFrame())
@@ -47618,8 +50512,10 @@ of a research paper that uses MFRM.
                     issues.append("low person reliability")
     if not measures.empty and "Infit" in measures.columns:
         inf = pd.to_numeric(measures["Infit"], errors="coerce").dropna()
-        if len(inf) > 0 and ((inf > 1.5) | (inf < 0.5)).mean() > 0.25:
+        if len(inf) > 0 and _decision_stability.fit_mnsq_review_mask(inf).mean() > 0.25:
             issues.append("widespread element misfit")
+        if int(pd.to_numeric(measures["Infit"], errors="coerce").isna().sum()) > 0:
+            issues.append("unavailable element fit statistics")
     if isinstance(steps_df_interp, pd.DataFrame) and not steps_df_interp.empty:
         sv2 = pd.to_numeric(
             steps_df_interp.get("Estimate", pd.Series(dtype=float)), errors="coerce"
@@ -51686,25 +54582,31 @@ def _show_misfit_flags(fit_df: pd.DataFrame) -> None:
 
     infit = pd.to_numeric(fit_df["Infit"], errors="coerce")
     outfit = pd.to_numeric(fit_df["Outfit"], errors="coerce")
-    n_total = len(fit_df)
-
-    # Mutually exclusive categories: worst classification takes priority
-    # (distorting > overfit > noisy > acceptable)
-    is_distort = (infit > 2.0) | (outfit > 2.0)
-    is_overfit = ~is_distort & ((infit < 0.5) | (outfit < 0.5))
-    is_noisy = ~is_distort & ~is_overfit & (
-        ((infit > 1.5) & (infit <= 2.0)) | ((outfit > 1.5) & (outfit <= 2.0))
-    )
-    distort = int(is_distort.sum())
-    overfit = int(is_overfit.sum())
-    noisy = int(is_noisy.sum())
-    acceptable = n_total - overfit - noisy - distort
+    classifications = pd.Series([
+        _decision_stability.worst_fit_classification(infit.iloc[idx], outfit.iloc[idx])
+        for idx in range(len(fit_df))
+    ])
+    n_total = int(classifications.ne("unavailable").sum())
+    if n_total == 0:
+        return
+    distort = int(classifications.eq("distorting").sum())
+    overfit = int(classifications.eq("overfit").sum())
+    noisy = int(classifications.eq("noisy").sum())
+    acceptable = int(classifications.eq("acceptable").sum())
+    unavailable = int(classifications.eq("unavailable").sum())
 
     cols = st.columns(4)
     cols[0].metric(t("fit_details.flag_metric_acceptable"), f"{acceptable}/{n_total}", delta=f"{100*acceptable/n_total:.0f}%")
     cols[1].metric(t("fit_details.flag_metric_overfit"), f"{overfit}", delta=f"{100*overfit/n_total:.0f}%" if overfit else "0%", delta_color="off")
     cols[2].metric(t("fit_details.flag_metric_noisy"), f"{noisy}", delta=f"{100*noisy/n_total:.0f}%" if noisy else "0%", delta_color="off")
     cols[3].metric(t("fit_details.flag_metric_distorting"), f"{distort}", delta=f"{100*distort/n_total:.0f}%" if distort else "0%", delta_color="inverse")
+    if unavailable:
+        st.caption(
+            _standalone_ui_text(
+                en=f"{unavailable} row(s) with unavailable Infit and Outfit were excluded from this denominator.",
+                ja=f"Infit・Outfitがともに利用不能な{unavailable}行は、この分母から除外しました。",
+            )
+        )
 
 
 def _draw_fit_scatter(fit_df: pd.DataFrame) -> None:
@@ -51727,15 +54629,39 @@ def _draw_fit_scatter(fit_df: pd.DataFrame) -> None:
     outfit = pd.to_numeric(fit_df["Outfit"], errors="coerce")
     mask = infit.notna() & outfit.notna()
 
-    pdf = fit_df.loc[mask].copy()
-    pdf["Infit"] = infit[mask]
-    pdf["Outfit"] = outfit[mask]
+    pdf = fit_df.loc[mask].copy().reset_index(drop=True)
+    pdf["Infit"] = infit[mask].to_numpy(dtype=float)
+    pdf["Outfit"] = outfit[mask].to_numpy(dtype=float)
     if pdf.empty:
         st.info(t("fit_details.scatter_no_data_info"))
         return
 
+    stability_audit = _decision_stability.audit_fit_decision_stability(
+        pdf,
+        display_decimals=_decision_stability.FIT_DISPLAY_DECIMALS,
+    )
+    if not stability_audit.empty:
+        boundary_mask = stability_audit["BoundaryStatus"].astype(str).isin(
+            {"numerical_boundary", "display_rounding_boundary"}
+        )
+        mismatch_mask = ~stability_audit["DisplayDecisionConsistent"].fillna(True).astype(bool)
+        review_rows = set(
+            stability_audit.loc[boundary_mask | mismatch_mask, "SourceRow"].astype(int)
+        )
+        mismatch_rows = set(stability_audit.loc[mismatch_mask, "SourceRow"].astype(int))
+        pdf["DecisionStability"] = [
+            "raw/display mismatch" if idx in mismatch_rows
+            else "threshold boundary review" if idx in review_rows
+            else "stable"
+            for idx in range(len(pdf))
+        ]
+    else:
+        review_rows = set()
+        mismatch_rows = set()
+        pdf["DecisionStability"] = "unavailable"
+
     color_col = "Facet" if "Facet" in pdf.columns else None
-    hover_data = [c for c in ["Facet", "Level"] if c in pdf.columns] or None
+    hover_data = [c for c in ["Facet", "Level", "DecisionStability"] if c in pdf.columns] or None
     fig = px.scatter(
         pdf, x="Infit", y="Outfit", color=color_col,
         hover_data=hover_data, opacity=0.7,
@@ -51746,11 +54672,46 @@ def _draw_fit_scatter(fit_df: pd.DataFrame) -> None:
     for v in [0.5, 1.5]:
         fig.add_hline(y=v, line_dash="dash", line_color="orange", line_width=0.7)
         fig.add_vline(x=v, line_dash="dash", line_color="orange", line_width=0.7)
+    fig.add_hline(y=2.0, line_dash="dash", line_color="red", line_width=0.7)
+    fig.add_vline(x=2.0, line_dash="dash", line_color="red", line_width=0.7)
     fig.add_hline(y=1.0, line_dash="dot", line_color="gray", line_width=0.5)
     fig.add_vline(x=1.0, line_dash="dot", line_color="gray", line_width=0.5)
     fig.update_layout(title="Fit Scatter Plot", xaxis_title="Infit MnSq",
                       yaxis_title="Outfit MnSq", template="plotly_white", height=480)
     st.plotly_chart(fig, width="stretch")
+    if review_rows:
+        st.warning(
+            _standalone_ui_text(
+                en=(
+                    f"{len(review_rows)} plotted element(s) are at a numerical/display threshold boundary; "
+                    f"{len(mismatch_rows)} would show a different class if the rounded label were used. "
+                    "The application always decides from the unrounded value."
+                ),
+                ja=(
+                    f"プロット中の{len(review_rows)}要素が数値・表示上の閾値近傍にあり、"
+                    f"{len(mismatch_rows)}要素は丸め表示を判定に使うと分類が変わります。"
+                    "本アプリは常に未丸め値で判定します。"
+                ),
+            )
+        )
+        with st.expander(
+            _standalone_ui_text(en="Inspect threshold-boundary rows", ja="閾値近傍の行を確認"),
+            expanded=False,
+        ):
+            st.dataframe(
+                stability_audit.loc[
+                    stability_audit["SourceRow"].astype(int).isin(review_rows)
+                ],
+                width="stretch",
+                hide_index=True,
+            )
+    else:
+        st.caption(
+            _standalone_ui_text(
+                en="Fit classes use unrounded values; no plotted value is hidden inside the 3-decimal threshold rounding band.",
+                ja="fit分類は未丸め値を使用しています。小数3桁表示で閾値近傍が隠れる点はありません。",
+            )
+        )
     _offer_fig_download(fig, "fit_scatter", "Download Fit Scatter (PNG 300 DPI)")
 
 
@@ -52329,6 +55290,8 @@ def rating_scale_category_evidence_table(result: dict, diagnostics: dict) -> pd.
             signals.append("category Infit outside 0.5-1.5")
         if bool(row.get("OutfitFlag")) if pd.notna(row.get("OutfitFlag")) else False:
             signals.append("category Outfit outside 0.5-1.5")
+        if bool(row.get("FitUnavailable")) if pd.notna(row.get("FitUnavailable")) else False:
+            signals.append("category fit unavailable")
         if bool(row.get("ZSTDFlag")) if pd.notna(row.get("ZSTDFlag")) else False:
             signals.append("category |ZSTD| >= 2")
         ever = row.get("CurveEverMostProbable")
@@ -52440,10 +55403,23 @@ def rating_scale_functioning_dashboard(result: dict, diagnostics: dict) -> pd.Da
             if flag_col in cat_tbl.columns:
                 fit_flags = fit_flags | cat_tbl[flag_col].fillna(False).astype(bool)
         fit_bad = cat_tbl.loc[fit_flags, "Category"] if "Category" in cat_tbl.columns else pd.Series(dtype=object)
+        fit_unavailable = (
+            cat_tbl.loc[cat_tbl["FitUnavailable"].fillna(True).astype(bool), "Category"]
+            if {"FitUnavailable", "Category"}.issubset(cat_tbl.columns) else
+            pd.Series(dtype=object)
+        )
+        fit_status = (
+            "Missing" if len(fit_unavailable) == len(cat_tbl) else
+            "Review" if not fit_bad.empty or not fit_unavailable.empty else
+            "OK"
+        )
         rows.append(_rating_scale_dashboard_row(
             "Category fit residuals",
-            _rating_scale_status_from_flags(review=not fit_bad.empty),
-            f"categories with category-level fit flags: {_compact_value_list(fit_bad)}",
+            fit_status,
+            (
+                f"categories with category-level fit flags: {_compact_value_list(fit_bad)}; "
+                f"fit unavailable: {_compact_value_list(fit_unavailable)}"
+            ),
             "Category fit flags show noisy or overly predictable response patterns within a score category.",
             "Inspect category rows and response patterns; do not collapse categories from fit alone.",
             "Categories/Steps: Infit, Outfit, ZSTD",
@@ -56301,6 +59277,12 @@ def show_bias_section(
         min_n=dff_min_n,
         practical_logit=dff_practical,
     )
+    selected_bias_boundary_audit = build_bias_decision_stability_audit(
+        {selected_pair: bias_results},
+        alpha=dff_alpha,
+        min_n=dff_min_n,
+        practical_logit=dff_practical,
+    )
     if dff_tbl.empty:
         st.info(t("bias_interaction.dff_no_table_info"))
     else:
@@ -56333,6 +59315,44 @@ def show_bias_section(
                     mime="text/csv",
                     key=f"dl_bias_inference_audit_{safe_pair_key}",
                 )
+        if isinstance(selected_bias_boundary_audit, pd.DataFrame) and not selected_bias_boundary_audit.empty:
+            boundary_mask = (
+                selected_bias_boundary_audit["BoundaryStatus"].astype(str).isin(
+                    {"numerical_boundary", "display_rounding_boundary"}
+                )
+                | ~selected_bias_boundary_audit["DisplayDecisionConsistent"].fillna(True).astype(bool)
+            )
+            selected_boundary_rows = selected_bias_boundary_audit.loc[boundary_mask].copy()
+            if selected_boundary_rows.empty:
+                st.caption(
+                    "Threshold audit: no p-value or practical-bias decision is hidden by the selected display precision."
+                )
+            else:
+                st.warning(
+                    f"Threshold audit: {selected_boundary_rows['SourceRow'].nunique()} cell(s) "
+                    "need raw-value review; rounded values are display only."
+                )
+                with st.expander("Bias threshold / rounding evidence", expanded=True):
+                    boundary_columns = [
+                        "FacetA_Level", "FacetB_Level", "Statistic", "RawValue",
+                        "DisplayValue", "NearestThreshold", "BoundaryStatus",
+                        "RawDecision", "DisplayDecision", "DisplayDecisionConsistent",
+                        "DecisionRule",
+                    ]
+                    st.dataframe(
+                        selected_boundary_rows[
+                            [column for column in boundary_columns if column in selected_boundary_rows.columns]
+                        ],
+                        width="stretch",
+                        hide_index=True,
+                    )
+                    st.download_button(
+                        "Download bias threshold audit CSV",
+                        data=to_csv_bytes(selected_bias_boundary_audit),
+                        file_name=f"mfrm_bias_decision_stability_{safe_pair_key}.csv",
+                        mime="text/csv",
+                        key=f"dl_bias_decision_stability_{safe_pair_key}",
+                    )
         flagged_dff = dff_tbl[dff_tbl["Flag"].astype(bool)] if "Flag" in dff_tbl.columns else pd.DataFrame()
         with st.expander(t("bias_interaction.dff_flagged_expander"), expanded=not flagged_dff.empty):
             if flagged_dff.empty:
@@ -56832,15 +59852,21 @@ def show_facet_dashboard(
         rater_df["Flag_Severity"] = False
     flags.append("Flag_Severity")
 
-    # 2) Misfit: Infit > 1.5 or Infit < 0.5 or Outfit > 2.0
+    # 2) MNSQ review flag under the shared explicit endpoint contract.
     rater_df["Flag_Misfit"] = False
+    rater_df["Flag_FitUnavailable"] = False
     if "Infit" in rater_df.columns:
-        rater_df["Flag_Misfit"] = (
-            (rater_df["Infit"] > 1.5) | (rater_df["Infit"] < 0.5)
-        )
+        rater_df["Flag_Misfit"] = _decision_stability.fit_mnsq_review_mask(rater_df["Infit"])
+        rater_df["Flag_FitUnavailable"] = rater_df["Flag_FitUnavailable"] | rater_df["Infit"].isna()
+    else:
+        rater_df["Flag_FitUnavailable"] = True
     if "Outfit" in rater_df.columns:
-        rater_df["Flag_Misfit"] = rater_df["Flag_Misfit"] | (rater_df["Outfit"] > 2.0)
+        rater_df["Flag_Misfit"] = rater_df["Flag_Misfit"] | _decision_stability.fit_mnsq_review_mask(rater_df["Outfit"])
+        rater_df["Flag_FitUnavailable"] = rater_df["Flag_FitUnavailable"] | rater_df["Outfit"].isna()
+    else:
+        rater_df["Flag_FitUnavailable"] = True
     flags.append("Flag_Misfit")
+    flags.append("Flag_FitUnavailable")
 
     # 3) Central tendency (Myford & Wolfe, 2003): Infit ≤ 1.40 may indicate
     #    restricted use of scale. We check Outfit_ZSTD < -2.0 as a proxy for
@@ -60496,9 +63522,55 @@ def collect_download_frames(
     _frame_bundle.add_frame(all_frames, "summary", summary)
     _frame_bundle.add_frame(
         all_frames,
+        "estimator_estimand_contract",
+        _design_assignment.build_estimand_contract(result),
+    )
+    try:
+        assignment_audit_dl = build_design_assignment_audit_for_result(result)
+    except Exception:
+        assignment_audit_dl = {}
+    if isinstance(assignment_audit_dl, dict):
+        _frame_bundle.add_frames(all_frames, (
+            ("assignment_design_summary", assignment_audit_dl.get("summary")),
+            ("assignment_rater_exposure", assignment_audit_dl.get("rater_exposure")),
+            ("assignment_rater_overlap", assignment_audit_dl.get("rater_overlap")),
+            ("fixed_density_sensitivity_plan", assignment_audit_dl.get("sensitivity_plan")),
+        ))
+    _frame_bundle.add_frame(
+        all_frames,
+        "informative_assignment_validation_evidence",
+        _design_assignment.build_informative_assignment_evidence_register(),
+    )
+    try:
+        assignment_preflight_dl = select_assignment_sensitivity_preflight(result)
+    except Exception:
+        assignment_preflight_dl = {}
+    if isinstance(assignment_preflight_dl, dict):
+        _frame_bundle.add_frames(all_frames, (
+            ("fixed_density_assignment_runner_gates", assignment_preflight_dl.get("gates")),
+            ("fixed_density_assignment_block_profiles", assignment_preflight_dl.get("block_profiles")),
+            ("assignment_context_connectivity_witnesses", assignment_preflight_dl.get("witnesses")),
+        ))
+    _frame_bundle.add_frame(
+        all_frames,
         "parameterization_audit",
         result.get("parameterization_audit"),
     )
+    identifiability_dl = result.get("identifiability", {})
+    if isinstance(identifiability_dl, dict):
+        for name, key in (
+            ("identifiability_summary", "summary"),
+            ("identifiability_connectivity", "connectivity"),
+            ("identifiability_null_space_block_energy", "null_space_block_energy"),
+            ("identifiability_coordinate_null_weight", "coordinate_null_weight"),
+        ):
+            _frame_bundle.add_frame(all_frames, name, identifiability_dl.get(key))
+    person_boundary_dl = result.get("person_boundary", {})
+    if isinstance(person_boundary_dl, dict):
+        _frame_bundle.add_frames(all_frames, (
+            ("jmle_person_boundary_summary", person_boundary_dl.get("summary")),
+            ("jmle_person_boundary_persons", person_boundary_dl.get("persons")),
+        ))
     likelihood_info_dl = result.get("likelihood_information", pd.DataFrame())
     if not isinstance(likelihood_info_dl, pd.DataFrame) or likelihood_info_dl.empty:
         likelihood_info_dl = build_likelihood_information_criteria(result)
@@ -60530,6 +63602,21 @@ def collect_download_frames(
     excluded_rows = prep.get("excluded_rows", pd.DataFrame())
     _frame_bundle.add_frame(all_frames, "response_data_excluded_rows", excluded_rows)
     _frame_bundle.add_frame(all_frames, "measures", measures_dl)
+    fit_stability_source = fit_dl if not fit_dl.empty else measures_dl
+    fit_stability_audit_dl = _decision_stability.audit_fit_decision_stability(
+        fit_stability_source,
+        display_decimals=_decision_stability.FIT_DISPLAY_DECIMALS,
+    )
+    _frame_bundle.add_frame(
+        all_frames,
+        "fit_decision_stability_audit",
+        fit_stability_audit_dl,
+    )
+    _frame_bundle.add_frame(
+        all_frames,
+        "fit_decision_stability_summary",
+        _decision_stability.summarize_fit_decision_stability(fit_stability_audit_dl),
+    )
     _frame_bundle.add_frame(
         all_frames,
         "global_residual_fit_summary",
@@ -60550,6 +63637,14 @@ def collect_download_frames(
     _add_mml_prior_sensitivity_export_frames(all_frames, result)
     bias_inference_audit_dl = build_bias_inference_audit(all_bias_results or bias_results or {}, result, diagnostics)
     _frame_bundle.add_frame(all_frames, "bias_inference_audit", bias_inference_audit_dl)
+    bias_decision_stability_audit_dl = build_bias_decision_stability_audit(
+        all_bias_results or bias_results or {}
+    )
+    _frame_bundle.add_frame(
+        all_frames,
+        "bias_decision_stability_audit",
+        bias_decision_stability_audit_dl,
+    )
     assumption_audit_dl = build_statistical_assumption_audit(result, diagnostics, all_bias_results or bias_results or {})
     _frame_bundle.add_frame(all_frames, "statistical_assumption_audit", assumption_audit_dl)
     method_ref_audit_dl = _standalone_export_rows(
@@ -60853,6 +63948,16 @@ def collect_download_frames(
             ("refit_simulation_summary", refit_summary),
             ("refit_simulation_category_counts", refit_counts),
         ))
+    session_assignment_meta = st.session_state.get("mfrm_assignment_sensitivity_meta")
+    session_assignment = st.session_state.get("mfrm_assignment_sensitivity_bundle", {})
+    assignment_session_matches = bool(
+        isinstance(session_assignment_meta, tuple)
+        and session_assignment_meta
+        and session_assignment_meta[0] == _model_choice_cache_key(result)
+    )
+    if assignment_session_matches and isinstance(session_assignment, dict):
+        for frame_name, frame in assignment_sensitivity_bundle_frames(session_assignment).items():
+            _frame_bundle.add_frame(all_frames, frame_name, frame)
     for frame_name, frame in current_custom_simulation_sparse_export_frames().items():
         _frame_bundle.add_frame(all_frames, frame_name, frame)
     try:
@@ -61534,6 +64639,37 @@ def _render_downloads(
         script_support = build_script_support_status(result)
         optimizer_label = config.get("optimizer") or config.get("mml_engine") or "unknown optimizer"
         software_label = f"MFRM standalone Python ({optimizer_label})"
+        assignment_export_bundle = st.session_state.get("mfrm_assignment_sensitivity_bundle", {})
+        assignment_export_meta = st.session_state.get("mfrm_assignment_sensitivity_meta")
+        assignment_export_matches = bool(
+            isinstance(assignment_export_meta, tuple)
+            and assignment_export_meta
+            and assignment_export_meta[0] == _model_choice_cache_key(result)
+        )
+        assignment_export_status = "not_run_for_current_fit"
+        if isinstance(assignment_export_bundle, dict) and assignment_export_bundle:
+            if not assignment_export_matches:
+                assignment_export_status = "stale_session_result_excluded"
+            elif not assignment_export_bundle.get("available"):
+                assignment_export_status = "blocked_or_failed"
+            else:
+                completion_export = assignment_export_bundle.get("completion", pd.DataFrame())
+                fully_ready = bool(
+                    isinstance(completion_export, pd.DataFrame)
+                    and not completion_export.empty
+                    and int(completion_export.iloc[0].get(
+                        "DoseContrastsComplete",
+                        completion_export.iloc[0].get("PairedContrastsComplete", 0),
+                    ))
+                    == int(completion_export.iloc[0].get(
+                        "DoseContrastsExpected",
+                        completion_export.iloc[0].get("ReplicatesRequested", -1),
+                    ))
+                )
+                assignment_export_status = (
+                    "completed_all_pairs_inference_ready"
+                    if fully_ready else "completed_with_explicit_partial_or_failed_pairs"
+                )
         config_export = {
             "app_version": config.get("app_version", APP_VERSION),
             "release_label": config.get("release_label", APP_RELEASE_LABEL),
@@ -61672,6 +64808,43 @@ def _render_downloads(
                 "method": st.session_state.get("refit_sim_method"),
             },
             "design_evaluation_scope": "observed_design_balance_reliability_forecast",
+            "assignment_design_audit_scope": "outcome_blind_unique_person_rater_pairs_on_likelihood_rows",
+            "assignment_mechanism_identification": "not_identified_from_observed_assignments",
+            "fixed_density_assignment_sensitivity_scope": (
+                "score_free_exact_context_margin_milp_endpoint_then_paired_parametric_response_generation_and_same_method_refit"
+                if assignment_export_bundle.get("design_engine") == "context_margin_milp"
+                else "score_free_connected_degree_preserving_2switch_path_then_paired_parametric_response_generation_and_same_method_refit"
+            ),
+            "fixed_density_assignment_sensitivity_status": assignment_export_status,
+            "fixed_density_assignment_sensitivity_schema": assignment_export_bundle.get(
+                "schema_version", _assignment_sensitivity.SENSITIVITY_SCHEMA_VERSION
+            ),
+            "fixed_density_assignment_sensitivity_settings": {
+                "design_engine": assignment_export_bundle.get("design_engine"),
+                "person_generation_mode": assignment_export_bundle.get("person_generation_mode"),
+                "person_generation_boundary": (
+                    "normal_order_statistics_mapped_to_source_eap_rank_not_unconditional_new_sample"
+                    if assignment_export_bundle.get("person_generation_mode")
+                    == _assignment_generator.MML_RANK_PRESERVING_MODE
+                    else "source_fitted_person_measures_not_known_truth"
+                ),
+                "replicates": st.session_state.get("assignment_sensitivity_replicates"),
+                "requested_alignment_doses_percent": (
+                    [100.0 * float(value) for value in assignment_export_bundle.get("requested_alignment_doses", [])]
+                    if assignment_export_bundle.get("requested_alignment_doses") is not None
+                    else st.session_state.get("assignment_sensitivity_doses")
+                ),
+                "alignment_dose_definition": (
+                    "endpoint_labels_0_and_1_only_no_qualified_intermediate_milp_path"
+                    if assignment_export_bundle.get("design_engine") == "context_margin_milp"
+                    else "normalized_direction_adjusted_objective_progress_on_discrete_greedy_switch_path"
+                ),
+                "maxit": st.session_state.get("assignment_sensitivity_maxit"),
+                "seed": st.session_state.get("assignment_sensitivity_seed"),
+                "method_locked_to_current_fit": True,
+                "cross_basis_likelihood_comparison": False,
+            },
+            "estimand_contract_scope": "JMLE_joint_vs_MML_marginal_vs_exact_CMLE_conditional_no_cross_basis_ranking",
             "script_support_scope": script_support.get("scope"),
             "portable_self_contained_jmle_available": script_support.get("portable_available"),
             "portable_self_contained_jmle_blockers": script_support.get("portable_blockers"),
@@ -66343,6 +69516,20 @@ def build_demo_report_frames(
         ("parameterization_audit", result.get("parameterization_audit")),
         ("score_map", score_map),
     ))
+    identifiability = result.get("identifiability", {})
+    if isinstance(identifiability, dict):
+        _frame_bundle.add_frames(frames, (
+            ("identifiability_summary", identifiability.get("summary")),
+            ("identifiability_connectivity", identifiability.get("connectivity")),
+            ("identifiability_null_space_block_energy", identifiability.get("null_space_block_energy")),
+            ("identifiability_coordinate_null_weight", identifiability.get("coordinate_null_weight")),
+        ))
+    person_boundary = result.get("person_boundary", {})
+    if isinstance(person_boundary, dict):
+        _frame_bundle.add_frames(frames, (
+            ("jmle_person_boundary_summary", person_boundary.get("summary")),
+            ("jmle_person_boundary_persons", person_boundary.get("persons")),
+        ))
     publication_gate = _standalone_export_rows(
         build_publication_gate_summary(result, diagnostics, all_bias_results or {}),
         column="GateArea",
@@ -69221,10 +72408,11 @@ _HELP_POPOVER_LIBRARY: dict[str, dict[str, str]] = {
             "outlier-sensitive Outfit mean-square (y)."
         ),
         "how": (
-            "• Both in 0.5–1.5 → acceptable.\n"
-            "• Outfit > 2.0 with acceptable Infit → a few outlier responses.\n"
+            "• Both in 0.50–1.50 inclusive → acceptable.\n"
+            "• Outfit > 1.50–2.00 → noisy; Outfit > 2.00 with acceptable Infit → potentially distorting outliers.\n"
             "• Both > 2.0 → widespread noise; revise item or rater training.\n"
-            "• Both < 0.5 → dependency between responses."
+            "• Both < 0.50 → dependency between responses.\n"
+            "• Missing fit is unavailable evidence, not acceptable fit."
         ),
         "watch": (
             "MnSq is on a multiplicative scale; 1.0 is the expected value, "
@@ -71044,9 +74232,11 @@ def main() -> None:
     st.title(t("app.title"))
     st.caption(t("app.subtitle_template", release_label=APP_RELEASE_LABEL, version=APP_VERSION))
     render_app_scope_badges(where="main")
-    active_source_id = st.session_state.get(
-        "data_source_flat",
-        f"scenario:{DEFAULT_SAMPLE_SCENARIO_KEY}",
+    active_source_id = _ux.data_source_option_id(
+        st.session_state.get("data_source_class"),
+        scenario_key=st.session_state.get("data_source_scenario"),
+    ) or st.session_state.get(
+        "data_source_flat", f"scenario:{DEFAULT_SAMPLE_SCENARIO_KEY}"
     )
     render_data_privacy_notice(
         where="main",

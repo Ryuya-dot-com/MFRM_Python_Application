@@ -1,0 +1,237 @@
+{
+  "schema_version": "mfrm-cmle-wle-fit-known-truth-pilot-plan-v1",
+  "registered_date": "2026-08-10",
+  "registration_timing": "Registered after the post-result rounding and threshold-surface audits, but before implementation, simulation, or inspection of any known-truth pilot outcome.",
+  "purpose": "Debug a known-truth operating-characteristic design for raw CMLE-WLE Person MnSq rules while separating Person-fit threshold behavior from structural-calibration estimation, anchor identification, and cross-engine estimand differences.",
+  "input_identity": {
+    "fixed_calibration_person_scoring_sha256": "18e0a24ade2de95cbb007045d36268a906bc7201a553a7e5a79fed32018af9f1",
+    "cmle_wle_person_fit_core_sha256": "b7637e902091de2373d408c16118ebfd251dc86589b96884dfbdd0a8b18d3be0",
+    "decision_stability_sha256": "fac0d702590d3ba9f18124fc15403491d79b10649702dfbbc0dae5116c512d68",
+    "threshold_sensitivity_core_sha256": "d5aae099b519e77981389d9fff3b3b23047fd8e6dfc8d328d94341460d9b732b",
+    "operating_characteristics_core_sha256": "648786aa0c0faa4d7f3f189931b69d32fc3c9d7c8ccc1c3304856bf8cbcb3bd6",
+    "cmle_core_sha256": "74844d60d04b14cffc68e1de305c4b3ef34b594a3b47a4bdd680e21a6ba4e250",
+    "operating_characteristics_protocol_sha256": "9c44d9578a058f5e386d0386c2e7ee9a927bb7b520f8cc73f23eaac5433ed1e3",
+    "threshold_surface_decision_sha256": "483f5f732fed9494306a7dd1ddbf36a9443943278f97d9970a66985d55eea71f",
+    "threshold_class_decomposition_decision_sha256": "2694540c07e02add420d5961656d6511ec40c223eec7038e38a2d4ae68b9a45e",
+    "python_sirt_person_fit_parity_decision_sha256": "833af71cb991120a8d887a533700853f46087ef2320372671617762d8c538a97"
+  },
+  "phase_a_estimand": {
+    "label": "oracle_structural_calibration_plus_fit_sample_WLE_person_fit",
+    "primary_person_measure": "Warm WLE estimated from the same retained responses with the working calibration fixed",
+    "secondary_person_measure": "generating theta, labelled oracle-theta sensitivity only",
+    "person_fit": "untrimmed Infit and Outfit MnSq",
+    "calibration_role": "fixed known working RSM calibration; no structural parameters are refitted",
+    "what_phase_a_isolates": "sampling and misspecification behavior of Person-fit rules conditional on fixed calibration",
+    "what_phase_a_does_not_estimate": [
+      "CMLE calibration uncertainty",
+      "anchor recovery or anchor contamination",
+      "graph-connectivity effects on calibration",
+      "cross-engine equality",
+      "public diagnostic validity"
+    ]
+  },
+  "simulation_constants": {
+    "replicates_per_condition": 20,
+    "persons_per_replicate": 200,
+    "base_seed": 2026081001,
+    "raters": 6,
+    "criteria": 4,
+    "available_units": 24,
+    "person_theta_distribution": "independent standard normal",
+    "rater_effects": [-0.75, -0.45, -0.15, 0.15, 0.45, 0.75],
+    "criterion_effects": [-0.45, -0.15, 0.15, 0.45],
+    "category_thresholds": {
+      "3": [-0.6, 0.6],
+      "4": [-0.9, 0.0, 0.9]
+    },
+    "working_model": "RSM with unit difficulty equal to rater plus criterion effect and common category thresholds",
+    "administration_selection": "For sparse conditions, sample the frozen number of distinct units without replacement independently by Person; retain sorted unit order for response generation.",
+    "common_random_numbers": "Conditions sharing SeedGroup use separate deterministic substreams for theta, administration, baseline response uniforms, affected-Person selection, and contamination so paired mechanisms reuse the same latent draws and baseline uniforms.",
+    "affected_person_selection": "A deterministic random 25% of Persons for non-clean conditions, shared within SeedGroup and replicate."
+  },
+  "conditions": [
+    {
+      "ConditionId": "rsm4_clean_dense",
+      "SeedGroup": "rsm4_dense",
+      "Categories": 4,
+      "ObservationsPerPerson": 24,
+      "Mechanism": "clean",
+      "AffectedShare": 0.0,
+      "MechanismProbability": 0.0
+    },
+    {
+      "ConditionId": "rsm4_clean_sparse",
+      "SeedGroup": "rsm4_sparse",
+      "Categories": 4,
+      "ObservationsPerPerson": 6,
+      "Mechanism": "clean",
+      "AffectedShare": 0.0,
+      "MechanismProbability": 0.0
+    },
+    {
+      "ConditionId": "rsm4_random_dense",
+      "SeedGroup": "rsm4_dense",
+      "Categories": 4,
+      "ObservationsPerPerson": 24,
+      "Mechanism": "uniform_random_replacement",
+      "AffectedShare": 0.25,
+      "MechanismProbability": 0.4
+    },
+    {
+      "ConditionId": "rsm4_random_sparse",
+      "SeedGroup": "rsm4_sparse",
+      "Categories": 4,
+      "ObservationsPerPerson": 6,
+      "Mechanism": "uniform_random_replacement",
+      "AffectedShare": 0.25,
+      "MechanismProbability": 0.4
+    },
+    {
+      "ConditionId": "rsm4_localcopy_dense",
+      "SeedGroup": "rsm4_dense",
+      "Categories": 4,
+      "ObservationsPerPerson": 24,
+      "Mechanism": "previous_response_copy",
+      "AffectedShare": 0.25,
+      "MechanismProbability": 0.6
+    },
+    {
+      "ConditionId": "rsm4_threshold_heterogeneity_dense",
+      "SeedGroup": "rsm4_dense",
+      "Categories": 4,
+      "ObservationsPerPerson": 24,
+      "Mechanism": "affected_person_pcm_threshold_heterogeneity",
+      "AffectedShare": 0.25,
+      "MechanismProbability": 1.0
+    },
+    {
+      "ConditionId": "rsm3_clean_dense",
+      "SeedGroup": "rsm3_dense",
+      "Categories": 3,
+      "ObservationsPerPerson": 24,
+      "Mechanism": "clean",
+      "AffectedShare": 0.0,
+      "MechanismProbability": 0.0
+    },
+    {
+      "ConditionId": "rsm3_random_dense",
+      "SeedGroup": "rsm3_dense",
+      "Categories": 3,
+      "ObservationsPerPerson": 24,
+      "Mechanism": "uniform_random_replacement",
+      "AffectedShare": 0.25,
+      "MechanismProbability": 0.4
+    }
+  ],
+  "threshold_heterogeneity_contract": {
+    "applies_only_to_affected_persons": true,
+    "criterion_step_deviations_for_four_categories": {
+      "C01": [-0.45, 0.0, 0.45],
+      "C02": [0.45, 0.0, -0.45],
+      "C03": [-0.3, 0.15, 0.15],
+      "C04": [0.3, -0.15, -0.15]
+    },
+    "working_analysis_still_uses_common_rsm_thresholds": true
+  },
+  "decision_contract": {
+    "canonical_thresholds": {
+      "overfit_upper": 0.5,
+      "acceptable_upper": 1.5,
+      "noisy_upper": 2.0
+    },
+    "endpoint_semantics": "MnSq below overfit_upper is overfit; exact overfit_upper through exact acceptable_upper are acceptable; above acceptable_upper through exact noisy_upper are noisy; above noisy_upper is distorting.",
+    "classification_input": "finite unrounded MnSq",
+    "rules": {
+      "either_upper": "Infit > acceptable_upper or Outfit > acceptable_upper",
+      "either_distorting": "Infit > noisy_upper or Outfit > noisy_upper",
+      "either_nonacceptable": "Infit < overfit_upper or Infit > acceptable_upper or Outfit < overfit_upper or Outfit > acceptable_upper",
+      "either_overfit": "Infit < overfit_upper or Outfit < overfit_upper"
+    },
+    "primary_debugging_rule": "either_upper",
+    "clean_person_rate_label": "false_positive_rate_pilot",
+    "affected_person_rate_label": "detection_rate_pilot_not_confirmatory_power"
+  },
+  "threshold_surface": {
+    "source": "Reuse exactly the already frozen 125-triplet grid; do not extend or select it after outcomes.",
+    "overfit_upper": [0.45, 0.475, 0.5, 0.525, 0.55],
+    "acceptable_upper": [1.4, 1.45, 1.5, 1.55, 1.6],
+    "noisy_upper": [1.9, 1.95, 2.0, 2.05, 2.1],
+    "triplets": 125,
+    "full_surface_person_measure": "WLE primary only",
+    "oracle_theta_surface": "canonical thresholds only"
+  },
+  "display_precision": {
+    "decimals": [1, 2, 3, 4, 5, 6],
+    "classification_of_rounded_values": "counterfactual audit only",
+    "raw_decision_remains_authoritative": true
+  },
+  "aggregation_contract": {
+    "independent_monte_carlo_unit": "replicate",
+    "person_rows_are_clustered_within_replicate": true,
+    "primary_summary": "mean replicate-specific rate with empirical between-replicate SD and SD/sqrt(number of available replicates)",
+    "pooled_person_rate": "descriptive only; never attach an independent-binomial Wilson interval",
+    "failed_or_unavailable_person_fit": "retain in attempted and unavailable denominators; never count as an unflagged decision",
+    "truth_groups": ["clean", "affected"],
+    "condition_pooling": false,
+    "mechanism_pooling": false
+  },
+  "required_outputs": {
+    "condition_table": true,
+    "replicate_manifest": true,
+    "attempt_ledger": true,
+    "person_truth_and_fit_rows": true,
+    "canonical_replicate_rates": true,
+    "canonical_operating_summary": true,
+    "full_threshold_replicate_surface": true,
+    "full_threshold_operating_summary": true,
+    "display_precision_disagreements": true,
+    "availability_and_extreme_pattern_summary": true,
+    "figures": [
+      "canonical false-positive and affected-person detection rates by condition",
+      "display-precision decision disagreements",
+      "threshold-surface range without automatic selection"
+    ],
+    "first_read_projection": true,
+    "machine_readable_decision": true
+  },
+  "frozen_pilot_gates": {
+    "manifest_rows_must_equal": 160,
+    "attempt_ledger_rows_must_equal": 160,
+    "generated_person_rows_per_measure_source_must_equal": 32000,
+    "threshold_triplets_must_equal": 125,
+    "same_seed_within_seed_group_and_replicate_required": true,
+    "same_seed_replay_runs": 2,
+    "same_seed_replay_exact_required": true,
+    "category_support_violations_allowed": 0,
+    "person_identity_or_truth_mismatches_allowed": 0,
+    "raw_canonical_recomputation_mismatches_allowed": 0,
+    "threshold_surface_row_order_invariance_required": true,
+    "automatic_threshold_selection": false,
+    "performance_value_success_gate": null
+  },
+  "anchor_and_connectivity_boundary": {
+    "phase_a_anchor_status": "not_applicable_under_fixed_known_calibration",
+    "python_cmle_hard_anchor_support_observed_at_registration": false,
+    "phase_b_requirement": "Add and independently validate a native CMLE anchor/offset contract before varying anchor proportion or contamination. Separately vary missingness graphs and reject conditional-rank failures before fitting.",
+    "must_not_substitute": "Do not emulate anchors by post-hoc recentering or by relabelling a fixed oracle calibration as estimated anchored CMLE."
+  },
+  "cross_engine_boundary": {
+    "phase_a_python_sirt_formula_identity_already_frozen": true,
+    "mfrmr_TAM_immer_sirt_repeated_fit_adapters_run_in_phase_a": false,
+    "next_registered_extension": "Fit the identical retained generated bytes with supported estimands only: Python/immer CMLE where unanchored and conditionally identified, mfrmr JMLE, TAM MML, and sirt MML. Preserve estimator labels and unsupported rows.",
+    "package_ranking_authorized": false
+  },
+  "interpretation_boundaries": {
+    "pilot_is_debugging_only": true,
+    "threshold_validated": false,
+    "confirmatory_false_positive_rate": false,
+    "confirmatory_power": false,
+    "sample_size_recommendation": false,
+    "anchor_adequacy_threshold": false,
+    "independent_binomial_person_interpretation": false,
+    "ZSTD_or_p_value": false,
+    "public_traffic_light": false,
+    "streamlit_integration": false,
+    "automatic_estimator_or_threshold_switch": false
+  }
+}

@@ -1,0 +1,30 @@
+{
+  "schema_version": "facets_visible_launcher_qualification_plan_v1",
+  "status": "frozen_before_execution",
+  "registered_date": "2026-08-11",
+  "trigger_control_report": "validation/kafp_cmd_batchno_20260811/report.txt",
+  "trigger_control_report_sha256": "b7d1b4af482a766ca719994627005e69b211944c1e41eae2d3e4be9faaa70db5",
+  "purpose": "Qualify automated output-gated graceful closure of the locally working FACETS BATCH=NO path before changing the shared Python invocation helper.",
+  "launcher": "validation/facets_visible_launcher.py",
+  "launcher_sha256": "0a31b76af8998e52b52de03731ea2bd822249c9f7424fe9faae4462362837f29",
+  "facets_executable": "C:/Facets/Facets.exe",
+  "facets_executable_sha256": "dfb0afb0faa18f026d1b3b4175f22e42cc3764430eb83cbd368c7a572b3593a1",
+  "official_example": "C:/Facets/examples/Kct.txt",
+  "official_example_sha256": "31e92a328fe4820ec19dc1b7103b1be0d02b7a205012b0c94ccfe55c5a35c4a6",
+  "execution": {
+    "batch_mode": "NO",
+    "window_start_state": "hidden by Windows STARTUPINFO, not FACETS BATCH=YES",
+    "readiness_paths": ["report.txt"],
+    "stable_seconds": 2.0,
+    "timeout_seconds": 120,
+    "close_method": "WM_CLOSE to FACETS-owned top-level window",
+    "force_termination_is_success": false,
+    "retained_output": "validation/facets_visible_launcher_qualification_20260811"
+  },
+  "decision_rule": {
+    "pass": "nonempty report with expected Kct tables, at least one window closed, no forced termination, and process exit code 0",
+    "fail": "do not patch the shared invocation helper or rerun scientific calibration"
+  },
+  "scientific_endpoint_read": false,
+  "claim_boundary": "Operational launcher qualification only; no project input or estimator endpoint is used."
+}

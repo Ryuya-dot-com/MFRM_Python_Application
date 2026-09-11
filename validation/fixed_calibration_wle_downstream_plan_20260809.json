@@ -1,0 +1,66 @@
+{
+  "schema_version": "mfrm-fixed-calibration-wle-downstream-plan-v1",
+  "registered_date": "2026-08-09",
+  "registration_timing": "After fixed-calibration Python-TAM parity passed and before any Stage-B2 downstream WLE sensitivity results were generated.",
+  "purpose": "Measure how replacing polished finite JMLE Person coordinates by fixed-calibration Warm WLE coordinates changes Person measures, fit flags, and the frozen focal Rater x Task bias screen without recalibrating facets.",
+  "input_identity": {
+    "stage_b2_identity_sha256": "0756280d4ffde9cc9913e7e8f950119e14241dc1d0027a0a244f9e1425d444e5",
+    "stage_b2_runs_sha256": "c236e89e63ab3c5043646289138f2ce8acb8f86872accf9a4fadb303f7ef8a60",
+    "identifiability_runs_sha256": "9004ba45090686899d5aaec0bcb34b5bb57097bd9396f68829d2783b45271b0e",
+    "wle_parity_decision_sha256": "5d9e98116d1772b011e192c125c9b6c5c14127a7de36051d4db2a75bdb64de0d",
+    "person_scoring_sha256": "18e0a24ade2de95cbb007045d36268a906bc7201a553a7e5a79fed32018af9f1",
+    "streamlit_app_sha256": "6389c8984ed9d6bb12623de32ca031489786b425cc2fe048cdf9851633bda6c5",
+    "stage_b2_adapter_sha256": "ab1383bd829fe2f7fc2fa64c66e16f00c0c7fb8eadfc9b9911d46b4d0bc6ae80",
+    "stage_b2_plan_sha256": "bf0096bcb60d9781042a5d95344597fb94c21ea69069571c0c51b05b0b142513"
+  },
+  "analysis_population": {
+    "frozen_runs": 160,
+    "included_rank_full_runs": 120,
+    "included_designs": ["balanced", "anchor"],
+    "withheld_rank_deficient_runs": 40,
+    "withheld_design": "sparse",
+    "withholding_reason": "The eta design has structural nullity 7 in every sparse run; WLE cannot repair unidentified fixed facet calibration."
+  },
+  "estimator_contrast": {
+    "reference": "Stage-B2 polished conditional JMLE Person coordinate",
+    "sensitivity": "Warm WLE Person coordinate with the same Stage-B2 polished facet and step calibration held fixed",
+    "facet_reestimation": false,
+    "step_reestimation": false,
+    "automatic_estimator_switch": false,
+    "calibration_uncertainty_propagated": false
+  },
+  "replay_controls": {
+    "strict_baseline_maxit": 500,
+    "strict_baseline_reltol": 1e-9,
+    "polish_method": "L-BFGS-B",
+    "polish_options": {"maxiter": 1500, "gtol": 1e-7, "ftol": 1e-15, "maxls": 50, "maxcor": 20},
+    "objective_max_abs_difference_from_retained_b2": 1e-8,
+    "gradient_sup_norm_max_abs_difference_from_retained_b2": 1e-8
+  },
+  "wle_gates": {
+    "all_included_person_scores_status_ok": true,
+    "adjusted_score_residual_max_abs": 1e-8,
+    "all_exact_extreme_patterns_return_finite_wle": true,
+    "facet_and_step_calibration_max_abs_change": 0.0
+  },
+  "decision_audit": {
+    "fit_raw_zones": [0.5, 1.5, 2.0],
+    "fit_display_format": ".3g",
+    "bias_alpha": 0.05,
+    "bias_practical_logit": 0.5,
+    "bias_min_cell_n": 5,
+    "bias_display_decimals": 4,
+    "decision_source": "unrounded retained values",
+    "report_every_raw_decision_switch": true,
+    "report_every_raw_display_mismatch": true,
+    "zero_switches_required": false
+  },
+  "authorized_outputs": {
+    "repository_only_sensitivity_tables": true,
+    "repository_only_visualizations": true,
+    "streamlit_integration": false,
+    "replace_jmle_person_estimates": false,
+    "fill_reportable_jmle_boundary_values": false,
+    "authorize_public_claim": false
+  }
+}

@@ -108,6 +108,13 @@ upload), then show an always-visible scenario selector for the example class.
 Preserve stable internal IDs and session migration so saved help routes and
 tests do not depend on display labels.
 
+Current remediation: the four source classes now own the first decision, and
+the example scenario selector is always visible immediately below its class.
+The old `scenario:*`, `simulate`, `paste`, and `upload` projection remains the
+analysis-facing contract. Restored old state migrates forward, privacy severity
+uses the new class on the same rerun, and the last selected sample survives a
+temporary move to paste, upload, or simulation.
+
 ### P1 — Navigation inside navigation
 
 The post-fit page asks for a current goal, offers three route buttons, presents
@@ -168,6 +175,25 @@ not only by JSON key equality.
 - Moved raw input rows behind a collapsed disclosure.
 - Consolidated input preview, sample identity, readiness, and response-row
   audit into one setup workspace.
+- Moved the Guided-defaults primary Run action from the technical sidebar into
+  that setup workspace after mapping and readiness. The main CTA uses
+  goal-oriented bilingual wording and a compact model/method/depth summary;
+  Advanced controls retain the expert sidebar route without duplicating both.
+- Reduced Guided setup to the decisions needed for a first defensible run:
+  Person/Score/facet roles, model, estimation method, and analysis coverage.
+  Weighting, output styling, regularization, population modeling, score-scale
+  overrides, identification/optimizer controls, anchors, and report scaling
+  now require Advanced controls. Switching back resets hidden technical values
+  to documented Guided defaults; a detected weight column is excluded from
+  facet suggestions and explained rather than silently used.
+- Added a versioned, fail-closed browser accessibility contract and runbook.
+  The catalog expands eight tasks across English/Japanese and seven targeted
+  profiles into 52 cases and 482 required evidence rows. Templates and AppTest
+  cannot create a passing decision; complete version-matched browser evidence
+  is required. Static preflight broadened focus styling, forced-colors and
+  coarse-pointer handling, and compact-table semantics, while leaving actual
+  keyboard, reflow, contrast, accessibility-tree, touch, and screen-reader
+  acceptance explicitly open.
 - Cleared setup content immediately after a successful fit; on later reruns it
   remains available in one collapsed panel.
 - Added regression tests for the policy, privacy severity, onboarding hierarchy,
@@ -175,10 +201,11 @@ not only by JSON key equality.
 
 ## Long-term implementation sequence
 
-1. Complete browser keyboard/focus acceptance and exact contextual Help return
-   for every sample-guide node.
-2. Replace the flat data-source list with a scalable two-level chooser while
-   preserving stable IDs and old session state.
+1. Execute the versioned browser matrix for keyboard/focus acceptance and
+   exact contextual Help return, retaining evidence for every required row.
+2. Complete browser and first-time-user acceptance for the implemented
+   two-level source chooser and compact Guided setup while preserving stable
+   IDs and old session state.
 3. Collapse the goal router, action hub, and section navigator into one route
    model backed by the existing Help target registry.
 4. Extract source/setup/result-shell renderers from the monolith, one tested

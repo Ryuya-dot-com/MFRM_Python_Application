@@ -1,0 +1,42 @@
+{
+  "schema_version": "mfrm-jmle-structural-identifiability-plan-v1",
+  "registered_date": "2026-08-09",
+  "purpose": "Test whether large Stage-B2 person/rater movement is explained by structural rank deficiency and person-rater graph disconnection.",
+  "input_identity": {
+    "streamlit_app_sha256": "b8c7c180f5326a769630b701cbceb43dfe27a0afb3717a4a48c97f7d03ca3a96",
+    "movement_plan_sha256": "a89650d8621c4b0489197c3adf59319636d2138411826341960a4953d774da6b",
+    "movement_adapter_sha256": "1e317711f51842a2691314417b6c17b5b5a337b445beffa956937ffce564c870",
+    "movement_run_summary_sha256": "c0890393cec1b7bc440c1d0940f896ff43c88cf7b461ea644dfadbc89d267861",
+    "movement_identity_sha256": "c451328372af71ad8d8816a12974d80c4bdc4957bacd04cc2bf0f20f5293e457",
+    "pilot_manifest_file_sha256": "4df0476f9d8ec09b3bfc469e7eeb80dedb81c616b9e9c8d74b83a4f2b36f8f15",
+    "pilot_generated_ratings_sha256": "0eaf6ec727107b5ed5af9ec7b99ccf3754c9af268eeeb4fd63d8e3900fc82232",
+    "pilot_generated_anchors_sha256": "02d4c39e22ba6b5b6b975d9d39e8ecd347b47053397f76c1c458d037ce73fa72"
+  },
+  "audit": {
+    "attempted_runids": 160,
+    "linear_predictor_blocks": ["theta", "Rater", "Task", "Criterion"],
+    "facet_signs": {
+      "Rater": -1,
+      "Task": -1,
+      "Criterion": -1
+    },
+    "coordinate_space": "exact free coordinates after hard anchors and centering constraints",
+    "rank_method": "singular value decomposition",
+    "rank_tolerance": "max(n_rows, n_columns) * machine_epsilon * largest_singular_value",
+    "graph": "undirected bipartite Person-Rater incidence graph on observed rows",
+    "record_null_space_block_energy": true,
+    "all_160_must_be_audited": true
+  },
+  "interpretation_rules": {
+    "full_rank": "No exact linear-predictor null direction was detected under the fitted identification constraints.",
+    "rank_deficient": "The JMLE likelihood is structurally invariant along at least one exact free-coordinate direction; optimizer convergence cannot make all affected parameters uniquely estimable.",
+    "person_rater_components_gt_1": "Person-rater disconnection or nesting can create separate location shifts unless anchors or cross-rater overlap remove them.",
+    "integration_rule": "Any retained design class with structural nullity greater than zero blocks unconditional JMLE integration for that class."
+  },
+  "scope_boundaries": {
+    "numerical_stage_b2_result_changed": false,
+    "application_core_change_authorized": false,
+    "bias_decisions_recomputed": false,
+    "public_surface_status": "Withheld"
+  }
+}

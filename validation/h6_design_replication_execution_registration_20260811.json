@@ -1,0 +1,56 @@
+{
+  "schema_version": "mfrm-h6-design-replication-execution-registration-v4",
+  "registered_on": "2026-08-11",
+  "registration_timing": "Supersedes v3 before fitting because its preexecution path-length display used the caller's relative study path. V4 resolves the study path before auditing and retains the short FACETS work root introduced in v3. No v3 attempt was executed.",
+  "execution_status": "frozen_for_fresh_fixed_n_replication",
+  "plan_sha256": "cef4cca78814a1f7fed8debbdda0ad0d32f2a755e55bf75541a97628d3bdcced",
+  "runner_sha256": "71bf8e8d87b9a4b126fd99a570191b3e0a4c4a94ee10249564cc3028a33c7c20",
+  "resilient_pair_component_sha256": "5fcb29ad7c6d719ef2997dec64901ed07bd3bb4098964fbae7da5f8af8d6b56e",
+  "resilient_pair_plan_sha256": "8286623656d469523963c6d59d751a17d8dfeb6af2135bdc5293276206dee98c",
+  "base_dependency_manifest_sha256": "d1e7e8a754b8288872873faf1a621a87f85881950f555fe3b1cfd67971f7dd67",
+  "base_dependency_file_count": 57,
+  "facets_executable_sha256": "dfb0afb0faa18f026d1b3b4175f22e42cc3764430eb83cbd368c7a572b3593a1",
+  "facets_executable_size_bytes": 16391680,
+  "test_file_sha256": "960216b6eb0e9ef4fcf0a517e0d460bef7c6e024a3a153b21f13e5b5327e3de6",
+  "tests_passed_before_registration": true,
+  "test_command": ".venv-win\\Scripts\\python.exe -m pytest tests\\test_h6_design_replication.py tests\\test_facets_resilient_pair.py -q",
+  "test_result": "15 passed in 4.77s",
+  "superseded_v3": {
+    "registration_sha256": "189b1c6464f16b7bf2616e18c7c3ecdcf03b5c9b8bad1ecb05de539bc96ede03",
+    "runner_sha256": "bd83a02f70547f2c42fce2e0fef3babf9832e2b87cd2b128906c1c652d4996ed",
+    "study_identity_sha256": "5f7fcf0b573d25f368b94e39ab1f65e2c04d366ca77f6b5630356e3f46baa84d",
+    "attempts_executed": 0,
+    "statistical_results_observed": false,
+    "preexecution_issue": "worst-case path display was calculated from a relative rather than resolved study path"
+  },
+  "superseded_v2": {
+    "registration_sha256": "11ca9773defdc52cdf9d852c1a00faac0ca9b56053e7206b708832925b550a89",
+    "runner_sha256": "6dd6d80b42bbd3cb84c9ba6858067719aad0410e2c703dce097268413df41042",
+    "study_identity_sha256": "8178fbf91a7c4b3b98deed298580dac453a4d28d39e74f412f9b63044cf139e8",
+    "attempts_executed": 1,
+    "attempt_run_id": "complete__normal::rep-00121",
+    "planned_minus_complete_pair_observed": false,
+    "primary_statistic_observed": false,
+    "python_statistical_evidence_ready": true,
+    "facets_calibration_ready": false,
+    "facets_tries": 3,
+    "operational_failure": "FACETS exit 0 without report_u6.txt at a 254-character work-directory base path",
+    "included_in_v3_primary": false
+  },
+  "superseded_v1": {
+    "registration_sha256": "92b1e48789bd737a7af594d013773cd49b4018b2ff44dd81f534c8556e612e6b",
+    "runner_sha256": "cbf2bafaa92f3411aa44f45cadf4265111287d5691827cca50a5acf73d7230b2",
+    "fitting_started": false,
+    "statistical_results_observed": false,
+    "preexecution_failure": "row_counts_match compared correct values in different RunId index order"
+  },
+  "fixed_execution_contract": {
+    "replicate_range": [121, 220],
+    "attempts": 200,
+    "primary_pairs_required": 100,
+    "facets_calibration_pairs_expected": 200,
+    "prior_replicates_pooled": false,
+    "optional_stopping": false,
+    "original_confirmatory_evidence_replaced": false
+  }
+}

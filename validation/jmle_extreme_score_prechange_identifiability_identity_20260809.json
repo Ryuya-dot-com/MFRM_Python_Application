@@ -1,0 +1,20 @@
+{
+  "artifacts": {
+    "JMLE_IDENTIFIABILITY_INTEGRATION.md": "24c033b29080f324087ee2d2d19a3534ff787ed50a54df0d31281d50b931028b",
+    "jmle_identifiability_integration_comparison.csv": "ae0ca238ef6b17c65bf2d6c63da95097f247e3fad9aaf19c024a5e44fb0b885b",
+    "jmle_identifiability_integration_conditions.csv": "510dabbf07fc7ed14e915b6a107ca9948393f96fa009741a4de73b11ba3e61e1",
+    "jmle_identifiability_integration_decision.csv": "6e35d67fca81522a24dcae66d04a2620be85353e9ebdeea2f632797432389fdc",
+    "jmle_identifiability_integration_gates.csv": "747a5ad989d411f49a3f9f26b50a9e2f27cfcdda682b693c99cac0a3a455fa44",
+    "jmle_identifiability_integration_input_checks.csv": "fec59691680632a2c7b76e7b3bc0faf26e0031edaca03ae010fb4d220341f896"
+  },
+  "automatic_estimator_switch": false,
+  "integration_adapter_sha256": "d1356fc2c5428c97856b7bdaf12cbc117248fb10a03f71381b8019643677b044",
+  "integration_plan_sha256": "78077f0d89dccf679ba5b65b30b5b782a61e5c88bfb6bc63e107957cd3cbe213",
+  "optimizer_changed": false,
+  "platform": "macOS-26.5.2-arm64-arm-64bit-Mach-O",
+  "post_change_streamlit_app_sha256": "a5a5b0edcdf23451251c36d1ce32828c1ea771956783537b64ae505072c767d7",
+  "public_performance_claim_authorized": false,
+  "python": "3.14.3",
+  "schema_version": "mfrm-jmle-identifiability-integration-plan-v1",
+  "verified": true
+}

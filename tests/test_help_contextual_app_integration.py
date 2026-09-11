@@ -1074,11 +1074,7 @@ def test_real_fit_scatter_help_return_preserves_fit_and_pending_triggers(
     at.run()
     at.radio(key="app_view_density").set_value("Full")
     at.run()
-    next(
-        button
-        for button in at.button
-        if button.label == _locale_value("en", "sidebar_perf.run_button")
-    ).click()
+    at.button(key="facets_mode_run_primary").click()
     at.run(timeout=120)
     assert not at.exception
     output_before = at.session_state["facets_mode_output"]

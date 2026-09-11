@@ -1,0 +1,126 @@
+{
+  "registration_status": "prospective_before_protocol_preflight_implementation; no_human_data; no_ethics_claim; no_recruitment_authority; no_sample_size_selected",
+  "registered_date": "2026-08-10",
+  "study_id": "cmle_one_click_confirmatory_protocol_preflight_v1",
+  "purpose": "Create a deterministic private one-click pre-recruitment audit bundle that retains every denominator, exposes invalid-outcome partial-identification risk, and fails closed until scientific, ethical, governance, clustering, mechanism, accessibility, and sample-size decisions have external evidence.",
+  "parent_identity": {
+    "mfrm_app/cmle_one_click_confirmatory_dependence.py": "9867b898fe94d14f608af2ed2f3da2f03cbd8bbe1701fd25274ebf196f048267",
+    "tests/test_cmle_one_click_confirmatory_dependence.py": "133fc06fef0f5bdf6cb0c02d6c412069899874dbe66c6172bfcb97c4a73e5343",
+    "validation/cmle_one_click_confirmatory_dependence_stress_plan_20260810.json": "70b6bb559094d89d19360b8327e139a8b74a0e7698e690a10e85517dca6a9240",
+    "validation/cmle_one_click_confirmatory_dependence_stress.py": "a3b223ca24c5cfeb982f972a38f034ebb30bcf598c9672f0453d7b3baf775854",
+    "validation/cmle_one_click_confirmatory_dependence_stress_20260810/decision.json": "53a410f754f76147a0ced64544d48d5611e7e43e2f591b0b41513493dc8769ce",
+    "validation/cmle_one_click_confirmatory_dependence_stress_20260810/scenario_joint_gate_summary.csv": "cd0b7f7baccfb196522172ed84fda3182707b1ff11f26401c5fbb7d088bd6f7f",
+    "validation/cmle_one_click_confirmatory_dependence_stress_20260810/human_gate_status.csv": "cda053dd018d0f686c252b5fc92174aa1cb911721f707af4b38ac343c27c64c7"
+  },
+  "decision_register_contract": {
+    "fixed_decisions": [
+      "instrument content identity and version separation",
+      "six directional dangerous-error domains separately in English and Japanese",
+      "integer-count and unrounded binary64 Wilson decisions",
+      "attempted, invalid, valid, and eligible denominators retained separately",
+      "public UI withheld until a separately governed release decision"
+    ],
+    "blocking_decisions_requiring_external_resolution": [
+      "target-population estimand under invalid or withdrawn outcomes",
+      "minimum valid eligible n per cell",
+      "planned recruitment and retention allowance",
+      "role of the 12-cell familywise sensitivity",
+      "cluster unit, allocation, and cluster-aware analysis",
+      "blocked-mechanism-specific protection or justified pooling",
+      "English/Japanese equivalence objective and method",
+      "accessibility, device, and proficiency strata and minima",
+      "stopping, deviation, and blinded exclusion rules",
+      "ethics review, consent, recruitment, data governance, retention, and incident response"
+    ],
+    "default_status": "blocked_unresolved",
+    "readiness_rule": "RecruitmentReady may be true only when every blocking row is resolved with a nonblank evidence reference, protocol content identity is frozen, ethics and recruitment scope match that identity, and all automated schema checks pass.",
+    "anti_self_approval": "Repository-generated files cannot constitute ethics approval, recruitment authorization, scientific owner approval, privacy review, or consent authorization."
+  },
+  "denominator_ledger_contract": {
+    "unit": "One non-identifying StudyRecordId per scheduled ConfirmatorySlotId; every scheduled slot remains represented regardless of consent, eligibility, start, withdrawal, completion, validity, or analysis disposition.",
+    "template_rows": 0,
+    "identifier_policy": "Only study-scoped pseudonymous codes are allowed. Direct names, email, phone, address, date of birth, IP address, contact fields, and unrestricted free text are rejected.",
+    "outcome_lock_policy": "Exclusion decisions must be preregistered automatic or documented blinded review. Post-outcome exclusion is forbidden.",
+    "reason_policy": "Every excluded, partial, withdrawn, invalid, or protocol-deviating record must use a registered categorical reason code; blank and free-text substitution fail closed.",
+    "coverage_policy": "When a frozen assignment manifest is supplied, missing, duplicate, or unexpected ConfirmatorySlotId values fail closed.",
+    "pii_review": "PIIReviewed and AuditReviewed are attestations, not automated de-identification or independent audit."
+  },
+  "invalidity_reason_contract": {
+    "registered_codes": [
+      "none",
+      "declined_before_start",
+      "withdrawn_before_response_lock",
+      "withdrawn_after_response_lock",
+      "ineligible_preregistered_rule",
+      "technical_failure_before_response_lock",
+      "technical_failure_after_response_lock",
+      "assignment_or_version_mismatch",
+      "duplicate_study_record",
+      "unknown_response_code",
+      "incomplete_primary_items",
+      "moderator_interruption",
+      "accessibility_barrier",
+      "protocol_deviation_blinded_review",
+      "other_requires_protocol_amendment"
+    ],
+    "no_silent_drop": "Invalid or withdrawn outcomes remain in denominator and reason-code audits even if absent from the valid-eligible Wilson denominator.",
+    "amendment_rule": "An unregistered reason cannot be recoded to other after inspecting outcomes; it requires a dated protocol amendment and separate reporting."
+  },
+  "partial_identification_sensitivity": {
+    "valid_eligible_n": [100, 200, 300, 500],
+    "observed_dangerous_error_rates": [0.0, 0.025, 0.05],
+    "invalid_to_valid_ratios": [0.0, 0.01, 0.025, 0.05, 0.1, 0.2],
+    "integer_mapping": "DangerousErrors=floor(valid_n*rate+0.5); InvalidEligibleN=ceil(valid_n*ratio).",
+    "lower_bound": "DangerousErrors/(ValidEligibleN+InvalidEligibleN), treating every invalid eligible outcome as safe.",
+    "upper_bound": "(DangerousErrors+InvalidEligibleN)/(ValidEligibleN+InvalidEligibleN), treating every invalid eligible outcome as dangerous.",
+    "wilson_reporting": "Retain the observed-valid one-sided 95% Wilson upper bound and the all-invalid-dangerous one-sided 95% Wilson upper bound. Both use raw binary64 values and strict <0.10 decisions.",
+    "robustness": "RobustToInvalidOutcomes is true only when the all-invalid-dangerous Wilson upper bound is strictly below 0.10. This is a worst-case sensitivity label, not a missing-data identification claim.",
+    "sample_size_policy": "All rows are retained and none selects n, an acceptable invalidity ratio, or an observed error target."
+  },
+  "private_bundle_contract": {
+    "members": [
+      "START_HERE.md",
+      "protocol_decision_register.csv",
+      "pre_recruitment_readiness_summary.csv",
+      "attempt_denominator_ledger_template.csv",
+      "attempt_denominator_data_dictionary.csv",
+      "invalidity_reason_codebook.csv",
+      "ethics_governance_evidence_template.csv",
+      "partial_identification_sensitivity.csv",
+      "BUNDLE_MANIFEST.csv"
+    ],
+    "archive": "Deterministic ZIP with lexicographic member order, fixed timestamps and permissions, no human rows, and SHA-256 manifest validation.",
+    "first_read": "START_HERE and the readiness summary must lead with Blocked, list unresolved blocking decisions, and state that the bundle is not ethics approval or recruitment authority.",
+    "surface": "Private downloadable artifact only; no Streamlit selector, evidence button, or public route is enabled by this work."
+  },
+  "synthetic_validation": {
+    "cases": [
+      "default decision register is blocked rather than falsely ready",
+      "repository-generated ethics evidence cannot self-authorize recruitment",
+      "direct identifier or unrestricted free-text columns fail ledger validation",
+      "missing, duplicate, and unexpected frozen slot ids fail coverage validation",
+      "unregistered invalidity reason and post-outcome exclusion fail closed",
+      "partial-identification bounds reproduce integer formulas and widen monotonically with invalid count",
+      "worst-case robustness implies observed-valid Wilson pass but not conversely",
+      "display rounding never changes the robustness flag",
+      "deterministic bundle bytes reproduce and member/hash tampering fails validation"
+    ]
+  },
+  "automated_success_gates": {
+    "identity": "Every parent hash matches before execution.",
+    "register": "Fixed and unresolved decisions match the plan; every unresolved blocking row has blank evidence and RecruitmentReady=false.",
+    "ledger": "The zero-row exact-schema template, data dictionary, banned-column audit, categorical codebook, and frozen-slot coverage validator pass synthetic fixtures.",
+    "partial_identification": "Every registered n x observed-rate x invalid-ratio row reproduces integer counts, proportions, Wilson bounds, strict decisions, and monotonic worst-case risk without selecting a row.",
+    "bundle": "The private ZIP has exactly the registered members, deterministic bytes, correct internal hashes, zero human rows, and a blocked first read.",
+    "human_gate": "HumanParticipants=0, EthicsApprovalAvailable=false, RecruitmentAuthorized=false, MinimumValidPerCellRegistered=false, PlannedRecruitmentNSelected=false, ConfirmatoryResultAvailable=false, and PublicSurfaceEnabled=false.",
+    "tests": "New protocol-preflight tests plus selected dependence, planning, gate, operations, comprehension, one-click, archive, and decision-stability tests pass."
+  },
+  "interpretation_limits": {
+    "readiness": "Passing this software contract means the package fails closed correctly; it does not mean the human study is ready.",
+    "bounds": "Worst-case invalid-outcome bounds may be conservative and do not identify MNAR; narrower assumptions require external justification and prospective registration.",
+    "privacy": "Banned-column checks and attestations cannot prove de-identification or regulatory compliance.",
+    "ethics": "Only an appropriate independent review body and authorized institutional roles can approve the study, consent, recruitment, and data governance.",
+    "statistics": "A future protocol still must select estimands, n, multiplicity, cluster-aware analysis, mechanism protection, and accessibility/language objectives before responses.",
+    "public_ui": "withheld"
+  }
+}

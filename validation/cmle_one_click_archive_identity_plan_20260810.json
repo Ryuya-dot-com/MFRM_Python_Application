@@ -1,0 +1,88 @@
+{
+  "registration_status": "prospective_before_cmle_one_click_archive_implementation_or_result_inspection",
+  "registered_date": "2026-08-10",
+  "study_id": "cmle_one_click_archive_identity_v1",
+  "purpose": "Create a deterministic private reproduction archive for the repository-only CMLE one-click result while keeping exact ordered-input identity, semantic row-order identity, configuration identity, first-read/result identity, privacy scope, and ZIP transport identity distinct.",
+  "parent_identity": {
+    "mfrm_app/cmle_one_click.py": "5cef56af65f2d062233a7dc9ea9da7e0d5cb49a875c2baa746428d120c6992af",
+    "mfrm_app/evidence.py": "e7e8cf021d9f7c6e4cc850987eda591f1abdce0dca4eb700fb0c257a9b8e866c",
+    "mfrm_app/exports.py": "15b140ebbae7dd07844e00fc64eaa1f5cdd2d75f8bad144f0dfc2b671e4efb21",
+    "mfrm_app/cmle_workflow.py": "304b4e23e628ff49aec2e00911e20e7c9ed2a9bd00d3568a3de8ced9778c6b84",
+    "mfrm_app/cmle_wle_fit.py": "4517d5d6969339cb3e9d2a2b6335c756e45cde8eb686f185f2b6eb32b5faae9e",
+    "validation/cmle_one_click_result_contract_20260810/decision.json": "f64cfd01ccc33a5430c52b6ae42a6cdf42dec274b20bd6677f95f966029f1266"
+  },
+  "archive_scope": {
+    "enabled_mode": "private_reproduction",
+    "public_mode": "fail_closed_until_a_separate_deidentification_and_disclosure_contract_is_registered",
+    "transport": "deterministic ZIP with sorted entry names, fixed 1980-01-01 timestamps, fixed permissions, and fixed compression settings",
+    "required_core_assets": [
+      "README_FIRST.md",
+      "analysis_config.json",
+      "analysis_identity.json",
+      "input_ratings.csv",
+      "input_schema.json",
+      "one_click_summary.csv",
+      "result_cards.csv",
+      "availability.csv",
+      "calibration_summary.csv",
+      "calibration_stages.csv",
+      "result_identity.json"
+    ],
+    "conditional_assets": {
+      "hard_anchors.csv": "included when hard anchors are supplied",
+      "structural_coefficients.csv": "included when a structural fit returned",
+      "facet_parameters.csv": "included when facet results returned",
+      "step_parameters.csv": "included when step results returned",
+      "person_results.csv": "included when fixed-calibration Person scoring returned",
+      "person_fit_decision_audit.csv": "included when Person fit returned"
+    },
+    "privacy_warning": "The archive contains raw response rows and Person/facet identifiers. It is a private controlled-access reproduction artifact, not a de-identified or public-sharing bundle."
+  },
+  "identity_contract": {
+    "ordered_input_sha256": "SHA-256 of the canonical full-precision input CSV in received row order; this drives AnalysisIdentity and changes under row permutation.",
+    "semantic_input_sha256": "SHA-256 of the same canonical rows sorted by every column; it is recorded for equivalence review but does not overwrite ordered identity.",
+    "config_sha256": "Existing mfrm_app.evidence canonical JSON fingerprint of resolved runner settings, including a normalized hard-anchor asset hash.",
+    "result_sha256": "SHA-256 over sorted names, lengths, and SHA-256 values of result assets only; elapsed time and transient optimizer timing are excluded.",
+    "archive_content_sha256": "SHA-256 over sorted names and bytes of every core asset before manifest insertion; the manifest records this non-circular value.",
+    "zip_sha256": "SHA-256 of deterministic ZIP bytes; it is returned outside the ZIP to avoid a self-referential manifest.",
+    "binary64": "CSV uses 17 significant digits; decision identity uses raw numeric results and never a displayed rounded value."
+  },
+  "registered_cases": [
+    {
+      "case_id": "rsm_ready_extremes_private_archive",
+      "expected_terminal_status": "analysis_ready_with_cautions",
+      "expected_conditional_assets": ["structural_coefficients.csv", "facet_parameters.csv", "step_parameters.csv", "person_results.csv", "person_fit_decision_audit.csv"],
+      "replay": true
+    },
+    {
+      "case_id": "pcm_differential_anchor_private_archive",
+      "expected_terminal_status": "analysis_ready_with_cautions",
+      "expected_conditional_assets": ["hard_anchors.csv", "structural_coefficients.csv", "facet_parameters.csv", "step_parameters.csv", "person_results.csv", "person_fit_decision_audit.csv"],
+      "replay": true
+    },
+    {
+      "case_id": "binary_boundary_private_archive",
+      "expected_terminal_status": "finite_mle_boundary",
+      "expected_conditional_assets": [],
+      "replay": true
+    }
+  ],
+  "success_gates": {
+    "identity": "Every parent SHA-256 matches before execution.",
+    "determinism": "Two builds from each retained result have identical asset hashes, ArchiveContentSHA256, and ZIP SHA-256.",
+    "round_trip": "Every archive verifies, reloads all six bilingual cards, and reconstructs registered terminal status without using Streamlit.",
+    "replay": "Private input/config replay reproduces AnalysisID, result identity, terminal status, card bytes, and every registered result-asset hash for all three cases.",
+    "row_order": "A deterministic input-row permutation preserves SemanticInputSHA256 but changes OrderedInputSHA256 and AnalysisID; the difference is never silently normalized away.",
+    "anchor_order": "Reversing hard-anchor row order preserves the normalized anchor bytes, configuration fingerprint, and AnalysisID.",
+    "tamper": "Changing a result card byte, deleting a declared asset, adding an undeclared asset, or duplicating a ZIP entry is rejected before content is returned.",
+    "privacy": "Any public-mode request fails with an explicit message; README_FIRST and manifest state that raw identifiers are private.",
+    "floating_point": "Raw 17-significant-digit values round-trip; no decision identity is computed from display columns.",
+    "tests": "New archive tests and selected one-click/evidence/export/CMLE tests pass."
+  },
+  "interpretation_limits": {
+    "reproducibility": "Deterministic replay on the current engine and platform is not cross-platform bitwise reproducibility.",
+    "privacy": "Private mode is not encryption, access control, anonymization, or institutional sharing approval.",
+    "semantics": "A matching archive hash establishes artifact identity, not model validity, anchor validity, or user comprehension.",
+    "public_ui": "withheld"
+  }
+}

@@ -1,0 +1,67 @@
+{
+  "registration_status": "post_result_diagnostic_registered_after_inspecting_phase_b_smoke_summaries_but_before_common_shift_diagnostic_computation",
+  "registered_date": "2026-08-10",
+  "study_id": "cmle_native_hard_anchor_common_shift_diagnostic_v1",
+  "parent_smoke": {
+    "decision_path": "validation/cmle_native_hard_anchor_smoke_20260810/hard_anchor_smoke_decision.json",
+    "decision_sha256": "86a4534a86a424fbec754ff4904371245ecdc9be755889e22ca2ad3ca7f1bfeb",
+    "retained_responses_path": "validation/cmle_native_hard_anchor_smoke_20260810/hard_anchor_smoke_retained_responses.csv",
+    "retained_responses_sha256": "d5a8bb51cb40ec45acd51096395e7a56843d7c0c008148935a14b9b8ed64ae02",
+    "person_results_sha256": "5b3bcce7d44d04f78668337dd080135665ed8f91132bd893c952431de69ae921",
+    "structural_recovery_sha256": "83ec7fb2ac12e875aacbd828b1a8bfc3f5b55ccdea49f11870981b6b07ffea36"
+  },
+  "why_post_result": "The smoke summaries showed that three correct anchors and the same three anchors each contaminated by +0.25 produced identical fit-flag transitions while WLE bias moved by approximately +0.25. This diagnostic was formulated after that inspection and cannot be treated as a prospectively specified smoke result.",
+  "mathematical_hypothesis": {
+    "anchor_shift": 0.25,
+    "facet": "Rater",
+    "statement": "Adding a common delta to every fixed and free expanded Rater effect subtracts delta times category from each response-unit log kernel. Conditional on a Person raw total, the resulting minus-delta-times-total term is constant across response patterns and cancels from the exact conditional likelihood.",
+    "person_scoring_implication": "Adding delta to every Rater difficulty and delta to the Person measure preserves all category probabilities because the structural kernel changes by minus-delta-times-category while the Person term changes by plus-delta-times-category.",
+    "fit_implication": "Expected scores, residuals, Infit, Outfit, and raw-value fit decisions cannot detect a pure common-mode anchor-origin shift.",
+    "scope_boundary": "This invariance does not apply to differential anchor contamination, where anchor errors vary by level."
+  },
+  "paired_data": {
+    "run_ids": 8,
+    "responses": 24000,
+    "correct_scenario": "three_of_six_raters_correct",
+    "shifted_scenario": "three_of_six_raters_contaminated_plus_0.25",
+    "same_response_bytes": true
+  },
+  "recomputation_contract": {
+    "refit_both_scenarios": true,
+    "fit_arguments": "identical to the parent smoke",
+    "retain_per_run": [
+      "conditional log-likelihood difference",
+      "information and covariance maximum absolute difference in matched free coordinates",
+      "free Rater estimate shift minus 0.25",
+      "Criterion and Step estimate maximum absolute difference",
+      "surface kernel difference minus the predicted negative-0.25-times-category shift",
+      "WLE estimate shift minus 0.25",
+      "WLE standard-error maximum absolute difference",
+      "expected-score, Infit, and Outfit maximum absolute difference",
+      "raw either-upper decision mismatches"
+    ]
+  },
+  "frozen_numerical_gates": {
+    "conditional_loglik_absolute_difference_max": 1e-6,
+    "information_max_absolute_difference": 1e-4,
+    "covariance_max_absolute_difference": 1e-4,
+    "free_rater_shift_error_max": 1e-4,
+    "criterion_step_estimate_difference_max": 1e-4,
+    "surface_shift_error_max": 1e-4,
+    "wle_shift_error_max": 1e-4,
+    "wle_standard_error_difference_max": 1e-5,
+    "expected_score_difference_max": 1e-5,
+    "infit_outfit_difference_max": 1e-5,
+    "raw_either_upper_mismatches": 0,
+    "all_fits_inference_ready": true
+  },
+  "decision_policy": {
+    "gate_type": "algebraic and numerical implementation diagnostic, not a performance gate",
+    "raw_fit_values_authoritative": true,
+    "rounded_values_used": false,
+    "performance_claims": false,
+    "cross_engine_claims": false,
+    "ui_release": false,
+    "required_user_warning_if_confirmed": "Fit indices cannot validate the absolute anchor origin; anchor provenance and external scale validation remain necessary even when fit is unchanged."
+  }
+}

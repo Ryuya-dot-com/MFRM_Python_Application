@@ -25,6 +25,9 @@ class DataSourceKind(str, Enum):
     UNKNOWN = "unknown"
 
 
+DATA_SOURCE_CLASS_IDS = ("sample", "simulate", "paste", "upload")
+
+
 class WorkspacePhase(str, Enum):
     """Legacy three-phase projection retained for compatibility."""
 
@@ -178,6 +181,37 @@ def classify_data_source(option_id: object) -> DataSourceKind:
     if value == "upload":
         return DataSourceKind.UPLOAD
     return DataSourceKind.UNKNOWN
+
+
+def data_source_class_id(option_id: object) -> str | None:
+    """Project a stable legacy source option onto the two-level chooser."""
+
+    kind = classify_data_source(option_id)
+    if kind is DataSourceKind.SAMPLE:
+        return "sample"
+    if kind is DataSourceKind.SIMULATION:
+        return "simulate"
+    if kind is DataSourceKind.PASTE:
+        return "paste"
+    if kind is DataSourceKind.UPLOAD:
+        return "upload"
+    return None
+
+
+def data_source_option_id(
+    source_class_id: object,
+    *,
+    scenario_key: object = None,
+) -> str | None:
+    """Compose the unchanged analysis-facing option ID from chooser state."""
+
+    source_class = str(source_class_id or "").strip()
+    if source_class == "sample":
+        scenario = str(scenario_key or "").strip()
+        return f"scenario:{scenario}" if scenario else None
+    if source_class in {"simulate", "paste", "upload"}:
+        return source_class
+    return None
 
 
 def data_source_may_contain_user_data(source: DataSourceKind | str) -> bool:

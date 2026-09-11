@@ -1,0 +1,191 @@
+{
+  "schema_version": "mfrm-estimand-distribution-confirmatory100-assessment-v1",
+  "assessed_on": "2026-08-11",
+  "study": {
+    "directory": "validation/estimand_distribution_confirmatory100_20260811",
+    "phase": "confirmatory",
+    "replicate_start": 21,
+    "replicate_end": 120,
+    "replicates": 100,
+    "datasets": 800,
+    "attempts": 3200,
+    "fresh_from_screening_1_20": true,
+    "realized_person_mean": 0.0,
+    "realized_person_sd": 0.8,
+    "all_structural_nullities_zero": true
+  },
+  "identity": {
+    "confirmatory_plan_sha256": "23f47a9a7aff1220e95653376d619261fe56dcceaebca6592e4affcf94f77a9c",
+    "execution_script_sha256": "200380e045e0e7adc69d8534e4dd450eea4f18c9df3aadd071d13963c1ffb5e6",
+    "analysis_script_sha256": "25e4a7ba7ed4b204425609efac440ea59458415ab44ecffe567bec5cc380ebeb",
+    "study_identity_sha256": "bc2aa39d06fc43ed22e670fc8dbb7cb55dd13f4460e69c45720c01372d11121b",
+    "aggregate_identity_sha256": "3960553c6c6a6173593213fb7c70888a6886d2414aa0ba0232a16b72b8698f23",
+    "study_metrics_sha256": "3e0a15744b7944e31bca13fad6aed32b23db7898c575782d233f6805ffb630bf",
+    "confirmatory_analysis_identity_sha256": "cd8214e84f02c697f14c76bafd3d3e9a5e795cd373dc48b31ca4895072698257",
+    "primary_results_sha256": "e1f59ad58c2564866a18c74d4c785c9295118685073edb1552b749a47ce2be53",
+    "completion_marker_combined_sha256": "725e6f98ec24a52812bbc6689009fcf2a1f18f441b9842aaa40bca7274e75dd4"
+  },
+  "execution": {
+    "shards": 8,
+    "wall_seconds": 8111.1,
+    "wall_minutes": 135.185,
+    "all_shard_exit_codes_zero": true,
+    "completed_attempts": 3200,
+    "successful_attempts": 3199,
+    "failed_attempts": 1,
+    "resume_assigned": 3200,
+    "resume_valid_skips": 3200,
+    "resume_refits": 0,
+    "resume_failures": 0,
+    "completion_marker_hash_unchanged_by_resume": true
+  },
+  "strict_workbench_qualification": {
+    "qualification_pass": false,
+    "attempts_complete": true,
+    "attempts_succeeded": false,
+    "facets_python_parity": false,
+    "mml_operational": true,
+    "cmle_operational": true,
+    "constraints": true,
+    "metadata_complete": true,
+    "reason": "One FACETS/Python JMLE attempt returned FACETS exit 0 without producing the registered U6 report, leaving 799 rather than 800 eligible calibration pairs.",
+    "scope_note": "This fails the strict confirmatory batch/workbench gate. It does not revoke the earlier bounded PCM/JMLE external-match qualification, and it is not a numerical disagreement among the 799 eligible pairs."
+  },
+  "facets_python_calibration": {
+    "eligible_pairs": 799,
+    "direct_agreement_pairs": 799,
+    "maximum_main_weighted_mae": 0.0049886222433165,
+    "maximum_main_absolute_difference": 0.0132720044234758,
+    "maximum_threshold_weighted_mae": 0.0093132105933725,
+    "maximum_threshold_absolute_difference": 0.0155460983817057,
+    "minimum_within_facet_spearman": 1.0,
+    "display_precision_contract": "Umean=0,1,6 for main estimates/thresholds and a separate Umean=0,1,2 Table 8 pass; no raw fit precision is inferred from displayed two-decimal values."
+  },
+  "primary_analysis": {
+    "familywise_alpha": 0.05,
+    "multiplicity_method": "Holm over six registered one-sided paired t tests",
+    "full_pair_endpoints": 5,
+    "direction_confirmed_endpoints": 2,
+    "precision_qualified_endpoints": 5,
+    "all_primary_pairs_complete": false,
+    "results": [
+      {
+        "id": "H1_FREE_SD_RIGHT_SKEW_PLANNED_LT_NORMAL",
+        "finite_pairs": 100,
+        "mean_contrast": -0.0898253685517363,
+        "lower95": -0.10380195318119358,
+        "upper95": -0.07584878392227902,
+        "half_width95": 0.013976584629457275,
+        "precision_target": 0.02,
+        "precision_pass": true,
+        "holm_adjusted_p": 3.242326423058164e-22,
+        "direction_confirmed": true,
+        "interpretation": "Fresh-data confirmation of lower free-SD MML estimates under right skew than under normal Persons in the planned-connected design."
+      },
+      {
+        "id": "H2_FREE_SD_HEAVY_TAIL_PLANNED_LT_NORMAL",
+        "finite_pairs": 100,
+        "mean_contrast": -0.06502384237965554,
+        "lower95": -0.08532435175458403,
+        "upper95": -0.04472333300472705,
+        "half_width95": 0.020300509374928492,
+        "precision_target": 0.02,
+        "precision_pass": false,
+        "holm_adjusted_p": 1.2794067691130389e-08,
+        "direction_confirmed": true,
+        "interpretation": "Direction confirmed, but the predeclared precision target was missed by 0.0003005 logits and remains a separately reported precision failure."
+      },
+      {
+        "id": "H3_JMLE_MIXTURE_PLANNED_C02_STEP2_LT_NORMAL",
+        "finite_pairs": 100,
+        "mean_contrast": 0.016003866428548664,
+        "lower95": -0.022062779926324532,
+        "upper95": 0.054070512783421856,
+        "half_width95": 0.038066646354873196,
+        "precision_target": 0.04,
+        "precision_pass": true,
+        "holm_adjusted_p": 1.0,
+        "direction_confirmed": false,
+        "interpretation": "The negative screening signal did not reproduce and the point estimate changed sign."
+      },
+      {
+        "id": "H4_FREE_MML_MIXTURE_PLANNED_C02_STEP2_LT_NORMAL",
+        "finite_pairs": 100,
+        "mean_contrast": 0.010439763417353918,
+        "lower95": -0.027942319845366964,
+        "upper95": 0.048821846680074804,
+        "half_width95": 0.038382083262720884,
+        "precision_target": 0.04,
+        "precision_pass": true,
+        "holm_adjusted_p": 1.0,
+        "direction_confirmed": false,
+        "interpretation": "The negative screening signal did not reproduce and the point estimate changed sign."
+      },
+      {
+        "id": "H5_EXACT_CMLE_MIXTURE_PLANNED_C02_STEP2_LT_NORMAL",
+        "finite_pairs": 100,
+        "mean_contrast": 0.015007929287045458,
+        "lower95": -0.022833806773995158,
+        "upper95": 0.05284966534808608,
+        "half_width95": 0.03784173606104062,
+        "precision_target": 0.04,
+        "precision_pass": true,
+        "holm_adjusted_p": 1.0,
+        "direction_confirmed": false,
+        "interpretation": "The negative screening signal did not reproduce and the point estimate changed sign."
+      },
+      {
+        "id": "H6_JMLE_NORMAL_THRESHOLD_RMSE_PLANNED_GT_COMPLETE",
+        "finite_pairs": 99,
+        "mean_contrast": 0.06594110162925694,
+        "lower95": 0.05772179058991703,
+        "upper95": 0.07416041266859685,
+        "half_width95": 0.00821931103933991,
+        "precision_target": 0.015,
+        "precision_pass": true,
+        "holm_adjusted_p_descriptive_only": 1.8754500773260921e-28,
+        "direction_confirmed": false,
+        "interpretation": "The positive effect is precise and consistent with screening, but the registered 100-pair gate failed; the endpoint is confirmatorily inconclusive."
+      }
+    ]
+  },
+  "r_verification": {
+    "r_version": "4.5.1",
+    "script_sha256": "ad02298e4aaeccab468a740366533e3a331f4218c93b9e8dc4780f9bcdc93740",
+    "result_sha256": "59e2db062470769bf5269d6e1d39aec8952a85593417413d507722e6f029969c",
+    "maximum_absolute_numeric_difference": 1.7763568394002505e-15,
+    "numeric_agreement_pass": true,
+    "logical_agreement_pass": true
+  },
+  "facets_io_diagnostic": {
+    "plan_sha256": "46fdd89ed7b4c0e09aff5ecd19ab0b58dea2a497ab1ec841af3a343f7741cf70",
+    "script_sha256": "c4903665b0fbc3f700ff87542cdd0687fa9c47dbf6505d4f62f12803424ec3e2",
+    "diagnostic_identity_sha256": "a88c1094542cbd5abe0c6937bd881ea160c7141c3f5edc865281b6815a8e493e",
+    "serial_repeats": 3,
+    "successful_repeats": 3,
+    "direct_agreement_repeats": 3,
+    "original_completion_marker_unchanged": true,
+    "confirmatory_evidence_replaced": false,
+    "classification": "Transient operational/report-I-O failure supported; concurrency is not proven."
+  },
+  "secondary_descriptive_context": {
+    "free_sd_planned_normal_mean": 0.7992469377543103,
+    "free_sd_planned_right_skew_mean": 0.7094215692025739,
+    "free_sd_planned_heavy_tail_t3_mean": 0.7342230953746547,
+    "cmle_extreme_persons": 113,
+    "cmle_person_runs": 64000,
+    "cmle_extreme_person_fraction": 0.001765625,
+    "cmle_runs_with_any_extreme_person": 111,
+    "cmle_runs": 800,
+    "cross_basis_likelihood_comparison": false,
+    "estimator_ranking": false
+  },
+  "metacognitive_conclusions": [
+    "The robust reproduced signal concerns the free-SD normal-population MML estimand under distributional misspecification, not a universal winner/loser ordering among JMLE, MML, and CMLE.",
+    "The all-mode local mixture-threshold pattern in screening was not stable under fresh data and must not be productized as a general warning or automatic rule.",
+    "Observation design remains an important sensitivity axis, but the registered H6 claim is inconclusive because operational coupling discarded one otherwise relevant Python/JMLE pair.",
+    "FACETS numerical calibration is strong conditional on report production, while batch report-I/O reliability is a distinct engineering gate.",
+    "Future runners should preserve Python JMLE evidence independently of external FACETS report success and prospectively register bounded retries or FACETS serialization for exit-0/missing-report failures. Such changes must not retroactively alter this study."
+  ],
+  "claim_limit": "Confirmatory language is limited to H1 and H2 in this registered DGM/design. H6 is inconclusive, H3-H5 did not reproduce, strict workbench qualification failed, and no cross-estimand ranking or likelihood comparison is authorized."
+}

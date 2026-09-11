@@ -1,0 +1,45 @@
+{
+  "schema_version": "mfrm-jmle-identifiability-integration-plan-v1",
+  "registered_date": "2026-08-09",
+  "purpose": "Integrate a guarded exact-free-coordinate eta-block identifiability audit without changing the optimizer or silently changing estimators.",
+  "evidence_identity": {
+    "pre_change_streamlit_app_sha256": "b8c7c180f5326a769630b701cbceb43dfe27a0afb3717a4a48c97f7d03ca3a96",
+    "identifiability_plan_sha256": "e3da06314229dbac4cb06abbd88578ef4c9c407c43dfadf1f2c45903f8f6394a",
+    "identifiability_adapter_sha256": "3df57d8f4cce3e59d31f06c0333b4fa114b9872d484f4557c87d964077a7cecf",
+    "identifiability_runs_sha256": "9004ba45090686899d5aaec0bcb34b5bb57097bd9396f68829d2783b45271b0e",
+    "identifiability_identity_sha256": "122307c061c177d845a9b82fcc5e935a312d2b6c66f259ca95e5b6b6d4b81253"
+  },
+  "authorized_changes": {
+    "add_pre_optimizer_eta_design_rank_audit": true,
+    "attach_machine_readable_audit_to_fit_result": true,
+    "add_summary_fields": [
+      "InferenceReady",
+      "EtaStructurallyIdentified",
+      "EtaDesignRank",
+      "EtaDesignColumns",
+      "EtaStructuralNullity",
+      "IdentifiabilityStatus"
+    ],
+    "withhold_jmle_bias_interaction_when_eta_rank_deficient": true,
+    "show_convergence_section_warning_and_downloadable_tables": true,
+    "change_optimizer_controls": false,
+    "automatically_switch_jmle_to_mml": false,
+    "change_parameter_estimates": false
+  },
+  "contracts": {
+    "balanced_four_raters_per_person_eta_nullity": 0,
+    "unanchored_one_rater_per_person_eta_nullity": 7,
+    "unanchored_one_rater_per_person_components": 8,
+    "mml_status": "not_applicable_mml",
+    "rank_deficient_jmle_inference_ready": false,
+    "rank_deficient_jmle_bias_skip_reason_contains": "structurally rank deficient",
+    "rank_full_existing_estimates_unchanged": true,
+    "scope_label": "eta_person_facet_blocks_only"
+  },
+  "scope_boundaries": {
+    "pcm_gpcm_step_or_slope_identifiability_fully_qualified": false,
+    "public_performance_claim": false,
+    "automatic_estimator_recommendation_is_equivalence_claim": false,
+    "public_surface_status": "Guarded technical warning only"
+  }
+}

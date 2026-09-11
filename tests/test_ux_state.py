@@ -11,6 +11,21 @@ def test_data_source_classification_uses_stable_widget_ids() -> None:
     assert ux.classify_data_source("future-source") is ux.DataSourceKind.UNKNOWN
 
 
+def test_two_level_source_projection_roundtrips_stable_option_ids() -> None:
+    assert ux.DATA_SOURCE_CLASS_IDS == ("sample", "simulate", "paste", "upload")
+    assert ux.data_source_class_id("scenario:clinical_osce") == "sample"
+    assert ux.data_source_class_id("simulate") == "simulate"
+    assert ux.data_source_class_id("paste") == "paste"
+    assert ux.data_source_class_id("upload") == "upload"
+    assert ux.data_source_class_id("future-source") is None
+    assert ux.data_source_option_id("sample", scenario_key="clinical_osce") == "scenario:clinical_osce"
+    assert ux.data_source_option_id("simulate") == "simulate"
+    assert ux.data_source_option_id("paste") == "paste"
+    assert ux.data_source_option_id("upload") == "upload"
+    assert ux.data_source_option_id("sample") is None
+    assert ux.data_source_option_id("future-source") is None
+
+
 def test_privacy_policy_fails_closed_for_unregistered_sources() -> None:
     assert not ux.data_source_may_contain_user_data(ux.DataSourceKind.SAMPLE)
     assert not ux.data_source_may_contain_user_data(ux.DataSourceKind.SIMULATION)

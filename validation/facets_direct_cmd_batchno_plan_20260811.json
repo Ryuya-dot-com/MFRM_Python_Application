@@ -1,0 +1,19 @@
+{
+  "schema_version": "facets_direct_cmd_batchno_plan_v1",
+  "status": "frozen_before_execution",
+  "registered_date": "2026-08-11",
+  "trigger": "Direct vendor-format CMD with BATCH=YES returned -1073741819 (0xC0000005) without a report and without Python launching FACETS.",
+  "purpose": "Change only BATCH=YES to visible BATCH=NO to test whether the hidden batch execution path causes the native crash.",
+  "facets_executable": "C:/Facets/Facets.exe",
+  "facets_executable_sha256": "dfb0afb0faa18f026d1b3b4175f22e42cc3764430eb83cbd368c7a572b3593a1",
+  "official_example": "C:/Facets/examples/Kct.txt",
+  "official_example_sha256": "31e92a328fe4820ec19dc1b7103b1be0d02b7a205012b0c94ccfe55c5a35c4a6",
+  "only_command_change": "BATCH=YES -> BATCH=NO",
+  "python_involved_in_facets_launch": false,
+  "decision_rule": {
+    "nonempty_report": "Localize the defect to FACETS hidden BATCH=YES mode and qualify visible BATCH=NO as a candidate operational workaround pending automation tests.",
+    "same_crash_no_report": "The fault is broader than hidden mode; inspect command-line versus interactive file-open execution."
+  },
+  "scientific_endpoint_read": false,
+  "claim_boundary": "Launch-mode diagnostic only; no project input or estimator endpoint is used."
+}

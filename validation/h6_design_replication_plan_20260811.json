@@ -1,0 +1,80 @@
+{
+  "schema_version": "mfrm-h6-design-replication-plan-v1",
+  "registered_on": "2026-08-11",
+  "registration_timing": "Registered after the original fresh-100 H6 result was classified inconclusive at 99 pairs and after the resilient-pair promotion gate passed, but before generation or fitting of replicates 121 through 220.",
+  "purpose": "Independently replicate the normal-Person JMLE threshold-RMSE effect of planned-connected versus complete observation design without replacing the missing original confirmatory row.",
+  "evidence_separation": {
+    "screening_replicates": [1, 20],
+    "original_confirmatory_replicates": [21, 120],
+    "replication_replicates": [121, 220],
+    "replication_count": 100,
+    "pool_previous_replicates_into_primary": false,
+    "replace_original_failed_attempt": false,
+    "fixed_sample_size": true,
+    "optional_stopping": false
+  },
+  "data_generating_process": {
+    "model": "correctly specified heterogeneous-threshold PCM",
+    "person_distribution": "normal",
+    "realized_person_mean": 0.0,
+    "realized_person_population_sd": 0.8,
+    "persons": 80,
+    "raters": 4,
+    "tasks": 3,
+    "criteria": 2,
+    "categories": 4,
+    "observation_designs": ["complete", "planned_connected"],
+    "paired_randomness": "Within replicate, planned-connected rows are a deterministic subset of the complete response matrix.",
+    "base_seed": 2026081107
+  },
+  "primary": {
+    "id": "H6R_JMLE_NORMAL_THRESHOLD_RMSE_PLANNED_GT_COMPLETE",
+    "estimator": "independently completion-marked unrounded PYTHON_JMLE",
+    "metric": "within-run RMSE of TruthError over all six registered PCM threshold elements",
+    "contrast": "planned_connected minus complete within replicate",
+    "alternative": "greater",
+    "test": "one-sample Student t test of 100 paired replicate contrasts against zero",
+    "alpha": 0.05,
+    "multiplicity": "single registered primary hypothesis; no adjustment required",
+    "required_finite_pairs": 100,
+    "confidence_interval": "two-sided 95% Student t interval",
+    "precision_target_two_sided_95_half_width": 0.015,
+    "decision_rule": "Replicated only if all 100 Python pairs are finite, the mean contrast is positive, and the one-sided p value is at most 0.05. Precision qualification is reported separately.",
+    "missing_rule": "No imputation, replacement, or diagnostic replay. Fewer than 100 finite Python pairs is inconclusive."
+  },
+  "planning_inputs_not_replication_evidence": {
+    "screening_mean_contrast_n20": 0.08091782523213069,
+    "original_confirmatory_mean_contrast_n99": 0.06594110162925694,
+    "original_confirmatory_half_width_n99": 0.00821931103933991
+  },
+  "facets_calibration_secondary_gate": {
+    "facets_version": "4.5.0",
+    "expected_pairs": 200,
+    "all_pairs_required_for_batch_qualification": true,
+    "retry_policy": "facets_resilient_pair_plan_20260811.json: maximum two retries only for exit-0/missing-report",
+    "serialization": "shared cross-process lock",
+    "python_evidence_independent_of_facets": true,
+    "display_precision": "FACETS U6 main/threshold pass and separate U2 Table 8 pass; no raw fit reconstructed from displayed two-decimal values."
+  },
+  "identity": {
+    "bind_repository_dependencies": true,
+    "bind_runner_and_plan": true,
+    "bind_facets_executable_sha256": true,
+    "bind_retained_inputs_and_attempt_fingerprints": true,
+    "completion_marker_written_last": true
+  },
+  "secondary_descriptive_outputs": [
+    "FACETS retry counts and failure denominators",
+    "FACETS/Python direct-agreement maxima",
+    "runtime by layer",
+    "threshold-element contrasts without inferential promotion"
+  ],
+  "prohibitions": [
+    "Do not pool replicates 1 through 120 into the primary replication test.",
+    "Do not use a FACETS diagnostic replay to replace a missing Python pair.",
+    "Do not change the original confirmatory H6 status or strict batch qualification.",
+    "Do not rank JMLE, MML, and CMLE or compare likelihoods across bases.",
+    "Do not promote secondary threshold elements after result inspection."
+  ],
+  "claim_limit": "A successful result independently replicates one observation-design sensitivity effect in this registered normal-Person heterogeneous-PCM DGM. It does not establish universal missing-data bias or FACETS-wide compatibility."
+}

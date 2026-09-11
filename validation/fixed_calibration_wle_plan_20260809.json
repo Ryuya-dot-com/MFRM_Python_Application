@@ -1,0 +1,75 @@
+{
+  "schema_version": "mfrm-fixed-calibration-wle-plan-v1",
+  "registered_date": "2026-08-09",
+  "registration_timing": "Before creation of the Python WLE scoring core and TAM parity fixtures.",
+  "purpose": "Evaluate Warm weighted-likelihood Person scoring as an explicitly separate fixed-calibration estimator for boundary and interior response patterns.",
+  "theory": {
+    "reference": "Warm, T. A. (1989). Weighted likelihood estimation of ability in item response theory. Psychometrika, 54, 427-450. https://doi.org/10.1007/BF02294627",
+    "polytomous_reference": "Magis, D. (2015). A note on weighted likelihood and Jeffreys modal estimation of proficiency levels in polytomous item response models. Psychometrika, 80, 200-204. https://doi.org/10.1007/s11336-013-9378-5",
+    "fixed_calibration_logit": "log P(Y_r=k | theta) = intercept[r,k] + slope[r,k] * theta - log_normalizer",
+    "likelihood_score": "U(theta) = sum_r weight_r * (observed_slope_r - E_theta[slope_r])",
+    "information": "I(theta) = sum_r weight_r * Var_theta(slope_r)",
+    "information_derivative": "I_prime(theta) = sum_r weight_r * E_theta[(slope_r - E_theta[slope_r])^3]",
+    "warm_adjusted_score": "U_W(theta) = U(theta) + 0.5 * I_prime(theta) / I(theta)",
+    "standard_error": "sqrt(1 / I(theta_WLE))"
+  },
+  "input_identity": {
+    "pre_change_streamlit_app_sha256": "6389c8984ed9d6bb12623de32ca031489786b425cc2fe048cdf9851633bda6c5",
+    "jmle_extreme_score_identity_sha256": "1f59b54560df5219e2ab9991e6666827081ff0bdf66021a0cf134d36ac99501b",
+    "jmle_identifiability_identity_sha256": "eda4b2309860b64fc38b74f74707993fd86e86eaee3edf6f2ce95af45a6d4cf3",
+    "tam_version": "4.3.25",
+    "tam_mml_wle2_deparse_sha256": "3f0aa86a1e6267636cfd7628f89aa1d69dcf2bb74103baa78d408101db08dc72",
+    "tam_documentation": "https://alexanderrobitzsch.github.io/TAM/reference/tam.wle.html"
+  },
+  "python_core_contract": {
+    "module": "mfrm_app/person_scoring.py",
+    "estimator_label": "WLE_fixed_calibration",
+    "supported_dimensions": 1,
+    "supported_models_through_generic_logits": ["RSM", "PCM", "GPCM"],
+    "missing_rows": "Omitted independently by Person through an observed-row mask.",
+    "row_weights": "Finite positive weights enter the score, information, and information derivative; non-positive or non-finite retained weights fail closed.",
+    "boundary_rule": "WLE may return a finite adjusted-score root for all-minimum/all-maximum patterns, but the result must never be labelled a finite JMLE MLE.",
+    "root_method": "Bracketed Brent root on the unrounded adjusted score with symmetric bracket expansion.",
+    "maximum_absolute_theta": 60.0,
+    "root_absolute_tolerance": 1e-10,
+    "root_relative_tolerance": 1e-12,
+    "score_residual_tolerance": 1e-8,
+    "information_minimum": 1e-12,
+    "no_root_action": "Return an explicit unavailable status; never clamp and report a boundary as converged."
+  },
+  "validation_matrix": {
+    "binary_closed_form": "For n equal Rasch items and raw score x, theta_WLE must equal logit((x+0.5)/(n+1)), including x=0 and x=n.",
+    "weighted_duplication": "Integer row weights must equal literal row duplication within 1e-10.",
+    "derivative_check": "The analytical I_prime must match a centered finite difference of I within 1e-6 and U_W must match the derivative of log-likelihood + 0.5 log I within 1e-6.",
+    "tam_cases": [
+      "binary_rasch_extremes",
+      "rsm_four_categories_missing",
+      "pcm_item_specific_intercepts_missing",
+      "gpcm_varying_discrimination_missing"
+    ],
+    "tam_theta_max_abs_difference": 5e-7,
+    "tam_se_max_abs_difference": 5e-7,
+    "all_python_adjusted_score_residuals_max_abs": 1e-8,
+    "tam_unit_row_weights_only": true
+  },
+  "authorized_changes": {
+    "add_repository_only_python_wle_core": true,
+    "add_python_unit_tests": true,
+    "add_tam_parity_fixture_and_adapter": true,
+    "add_retained_validation_report": true,
+    "change_streamlit_estimator_options": false,
+    "change_jmle_optimizer": false,
+    "replace_jmle_person_estimates": false,
+    "automatically_fill_reportable_estimate": false,
+    "automatically_switch_to_mml_or_wle": false,
+    "authorize_public_performance_claim": false
+  },
+  "scope_boundaries": {
+    "facet_calibration_uncertainty_included": false,
+    "joint_wle_facet_reestimation": false,
+    "multidimensional_wle": false,
+    "person_wle_reliability_qualified": false,
+    "downstream_fit_bias_or_visualization_rebuilt": false,
+    "application_core_integration_status": "Withheld"
+  }
+}

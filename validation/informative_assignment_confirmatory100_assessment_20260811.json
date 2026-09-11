@@ -1,0 +1,214 @@
+{
+  "schema_version": "mfrm-informative-assignment-confirmatory100-assessment-v1",
+  "assessment_date": "2026-08-11",
+  "timing": "Post-confirmatory assessment. The plan and execution hashes were frozen before replicates 241 through 340 were generated. Endpoint analysis was executed only after all 800 attempt units passed the operational qualification gates.",
+  "evidence_sha256": {
+    "registered_plan": "04b3923cc24367b0f3010b1bad9fe3f525572bfedc5b3bb69221cb0ded277350",
+    "execution_registration": "06df26163b333e2381c47bc0dbcc2b86d3c9a8020481e6ad93797169c842b724",
+    "study_identity": "8c665354b4aa5db47a7c6fa2061825954a63ba65c7c24e79097fd4c31ac9b8d2",
+    "aggregate_identity": "033ff1ff90e40e15f9a4a777bb5c426e7d3067aa6d23069a2ad0f294e9686c34",
+    "confirmatory_metrics": "a5fbd7e34fd33942428fbbb2ff758824d878998f38293517bc461464940ff1ad",
+    "completion_marker_set": "9e13ee900728bf950077f1018b7b08b987919c0074107dbcd7dab499673f3e99",
+    "r_verification_script": "9a046fc9ab423a5a2c40f66b9cdcb85232f529d83ffb09c37da600c99c8c54bf",
+    "r_verification_result": "37003450a86596631d07df446d65544b5a72bf24a2830b4625d0833fa7c654f3"
+  },
+  "operational_result": {
+    "datasets": 200,
+    "attempts": "800/800 completed and statistical-evidence ready",
+    "facets_python_jmle": "200/200 calibration-ready; 200 FACETS tries and zero retries",
+    "mml": "400/400 inference-ready",
+    "exact_cmle": "200/200 inference-ready and finite-MLE qualified",
+    "constraints": "600/600 pass",
+    "resume_replay": "800/800 skipped; zero refits; completion marker set unchanged",
+    "five_endpoints": "5/5 endpoints had all 100 registered pairs",
+    "qualification_pass": true,
+    "eight_shard_wall_seconds_including_wait_for_original_workers": 1480.8
+  },
+  "facets_python_parity": {
+    "maximum_main_weighted_mae": 0.0045511121551551,
+    "maximum_main_absolute_difference": 0.0139464476028451,
+    "maximum_threshold_weighted_mae": 0.0086559644945385,
+    "maximum_threshold_absolute_difference": 0.0146098287837219,
+    "minimum_within_facet_spearman": 1.0,
+    "precision_note": "FACETS 4.5.0 displayed measures were read under the registered Umean=6 path. FACETS' usual two-decimal display was not used to reconstruct fit, recovery, endpoint, or inferential statistics."
+  },
+  "independent_verification": {
+    "engine": "R 4.5.1 base R",
+    "endpoint_contrast_rows": "500/500",
+    "endpoints": "5/5",
+    "pairs_per_endpoint": 100,
+    "maximum_absolute_python_difference": 3.5527136788005009e-15,
+    "primary_logic_agreement": true,
+    "secondary_holm_logic_agreement": true,
+    "verification_pass": true
+  },
+  "primary_result": {
+    "id": "IA1_FREE_MML_RATER_RMSE_ALIGNED_GT_PLANNED",
+    "finite_pairs": 100,
+    "mean_aligned_minus_planned": 0.09863414655507183,
+    "monte_carlo_sd": 0.07213026218158891,
+    "monte_carlo_se": 0.007213026218158891,
+    "t_statistic": 13.6744472530488,
+    "one_sided_p": 7.7010635100273635e-25,
+    "ci95": [0.0843219376607637, 0.11294635544937996],
+    "ci95_half_width": 0.014312208894308136,
+    "registered_precision_target": 0.015,
+    "direction_confirmed": true,
+    "precision_pass": true
+  },
+  "secondary_holm_family": {
+    "familywise_alpha": 0.05,
+    "primary_gate_pass": true,
+    "confirmed": "4/4",
+    "results": [
+      {
+        "id": "IA2_FIXED_MML_RATER_RMSE_ALIGNED_GT_PLANNED",
+        "mean_aligned_minus_planned": 0.06850620166504019,
+        "ci95": [0.05656143016767359, 0.08045097316240679],
+        "raw_one_sided_p": 5.50545963406892e-20,
+        "holm_adjusted_p": 5.50545963406892e-20,
+        "direction_confirmed": true
+      },
+      {
+        "id": "IA3_FREE_MML_POPULATION_SD_ALIGNED_LT_PLANNED",
+        "mean_aligned_minus_planned": -0.11839387581077312,
+        "ci95": [-0.1339436174586849, -0.10284413416286134],
+        "raw_one_sided_p": 9.473038040908376e-28,
+        "holm_adjusted_p": 1.894607608181675e-27,
+        "direction_confirmed": true
+      },
+      {
+        "id": "IA4_FREE_MML_RATER_COMPRESSION_SLOPE_LT_ZERO",
+        "mean_slope": -0.48932000810870263,
+        "ci95": [-0.5303870617183142, -0.4482529544990911],
+        "raw_one_sided_p": 8.315035361323108e-43,
+        "holm_adjusted_p": 3.3260141445292434e-42,
+        "direction_confirmed": true
+      },
+      {
+        "id": "IA5_FIXED_MML_RATER_COMPRESSION_SLOPE_LT_ZERO",
+        "mean_slope": -0.38383509644697145,
+        "ci95": [-0.41824896631225433, -0.34942122658168856],
+        "raw_one_sided_p": 2.0530017980830864e-40,
+        "holm_adjusted_p": 6.159005394249259e-40,
+        "direction_confirmed": true
+      }
+    ]
+  },
+  "screening_to_confirmation_reproduction": {
+    "free_mml_rater_rmse": {
+      "screening": 0.07575455472454906,
+      "confirmation": 0.09863414655507183,
+      "same_direction": true
+    },
+    "fixed_mml_rater_rmse": {
+      "screening": 0.04109448944079778,
+      "confirmation": 0.06850620166504019,
+      "same_direction": true
+    },
+    "free_mml_population_sd": {
+      "screening": -0.12477980747643727,
+      "confirmation": -0.11839387581077312,
+      "same_direction": true
+    },
+    "free_mml_compression_slope": {
+      "screening": -0.5206040790787,
+      "confirmation": -0.48932000810870263,
+      "same_direction": true
+    },
+    "fixed_mml_compression_slope": {
+      "screening": -0.4059028765651,
+      "confirmation": -0.38383509644697145,
+      "same_direction": true
+    }
+  },
+  "magnitude_context": {
+    "rater_rmse_means": {
+      "python_mml_free_sd_q31": {
+        "planned": 0.07968551495553457,
+        "aligned": 0.17831966151060638
+      },
+      "python_mml_fixed_sd08_q31": {
+        "planned": 0.07853658304258783,
+        "aligned": 0.14704278470762802
+      },
+      "python_jmle": {
+        "planned": 0.09652509525354568,
+        "aligned": 0.10093451597904479,
+        "descriptive_contrast": 0.004409420725499135
+      },
+      "python_exact_cmle": {
+        "planned": 0.08355971491099537,
+        "aligned": 0.0872274996294714,
+        "descriptive_contrast": 0.0036677847184760455
+      }
+    },
+    "free_mml_population_sd_means": {
+      "planned": 0.806312342539574,
+      "aligned": 0.687918466728801
+    },
+    "rater_level_error_contrasts": {
+      "free_mml": {
+        "R01": 0.21002572367548492,
+        "R02": 0.10090505385788971,
+        "R03": -0.09790726657918039,
+        "R04": -0.21302351095419422
+      },
+      "fixed_mml": {
+        "R01": 0.16467355291017363,
+        "R02": 0.07848932907220238,
+        "R03": -0.07524667220446854,
+        "R04": -0.16791620977790747
+      }
+    }
+  },
+  "descriptive_context_not_registered_for_confirmation": {
+    "jmle_rater_rmse_contrast": {
+      "mean": 0.004409420725499135,
+      "ci95": [-0.0067250806134737245, 0.015543922064471995]
+    },
+    "exact_cmle_rater_rmse_contrast": {
+      "mean": 0.0036677847184760455,
+      "ci95": [-0.006303727090626927, 0.013639296527579017]
+    },
+    "jmle_threshold_rmse_contrast": {
+      "mean": -0.014132507348024617,
+      "ci95": [-0.027166637728379135, -0.0010983769676700984],
+      "interpretation": "A small descriptive reduction, not a registered confirmatory endpoint and not multiplicity-promoted."
+    },
+    "exact_cmle_extreme_persons": {
+      "planned": 4,
+      "aligned": 1
+    }
+  },
+  "metacognitive_interpretation": {
+    "supported": [
+      "Under this correctly specified PCM and deliberately constructed assignment mechanism, equal observation density, equal Rater exposure, shared responses, category support, and graph connectivity were not sufficient to protect normal-person MML Rater recovery.",
+      "Fixing the Person SD to its correct value reduced but did not remove the Rater RMSE effect, so the phenomenon is not solely free-SD estimation error.",
+      "The symmetric level pattern and pre-defined negative compression slopes show that the MML effect is Rater-severity compression, not a uniform location shift.",
+      "Free-SD MML also reallocated information toward a smaller estimated Person dispersion even though the realized generator SD remained 0.8."
+    ],
+    "mechanistic_inference": "The replicated pattern is consistent with aliasing between the assumed normal Person population distribution and Rater severity when assignment depends on latent ability. JMLE treats Persons as fixed and exact CMLE conditions on Person totals, so the three estimands use the assignment structure differently. This is a model-based explanation, not causal identification of a real missingness process.",
+    "not_supported": [
+      "The result does not establish that a real dataset is MAR or MNAR.",
+      "It does not validate inverse-probability weighting, selection models, imputation, or any other missing-data correction.",
+      "The small JMLE/CMLE descriptive Rater contrasts do not prove robustness or superiority.",
+      "FACETS is an external JMLE calibration target, not a gold standard for MML or CMLE.",
+      "Joint, marginal, and conditional likelihood, AIC, BIC, and rankings remain incomparable across likelihood bases.",
+      "The result is conditional on this PCM, sample size, four-Rater severity pattern, two-Rater assignment, and normal Person generator."
+    ]
+  },
+  "workbench_decision": {
+    "status": "confirmed design-sensitivity module candidate",
+    "recommended_product_order": [
+      "Audit observed design density, Rater exposure, connectivity, and assignment balance before estimator results.",
+      "Display each estimator's estimand and Person-distribution assumption explicitly.",
+      "Offer fixed-density assignment stress tests and report within-estimator changes, not a leaderboard.",
+      "Show Rater-level truth-error or perturbation profiles and population-SD movement alongside global RMSE.",
+      "Keep FACETS parity in a separate JMLE calibration panel with its display-precision contract.",
+      "Require external assignment variables or a stated selection model before offering any empirical MAR/MNAR interpretation or correction."
+    ],
+    "next_validation": "Vary assignment strength, number of Raters per Person, Rater severity spread, Person sample size/distribution, and PCM threshold heterogeneity in a registered factorial operating-characteristics study. Evaluate correction methods only in a separate phase with known assignment propensities and explicit positivity diagnostics."
+  },
+  "claim_limit": "This confirmation establishes reproducibility only under the registered constructed mechanism and model configuration. It is evidence for a sensitivity-analysis feature, not for automatic estimator selection or real-data missingness correction."
+}

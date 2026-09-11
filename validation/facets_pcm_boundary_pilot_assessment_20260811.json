@@ -1,0 +1,36 @@
+{
+  "schema_version": "mfrm-facets-pcm-boundary-pilot-assessment-v1",
+  "assessment_date": "2026-08-11",
+  "timing": "Post-result documentation only; no condition, tolerance, denominator, truth target, or gate was changed.",
+  "registered_plan_sha256": "ef09bc62926f80c12fb38117f5b9bfca65329063b7446dc5e8309ef987f9aa53",
+  "observed_artifacts": {
+    "facets_pcm_boundary_pilot_20260811/boundary_metrics.json": "28796a430a53c203bd3f4a05f01bb5f1135c66ea378a0fe4c72c490a5e36b1f7",
+    "facets_pcm_boundary_pilot_20260811/boundary_identity.json": "59d971b5c0e9fabff3bf086d29b90544bf2fab0a68991ff65577d87a0e0d7643"
+  },
+  "result": {
+    "generated_runs": 12,
+    "attempted_fit_contracts": 24,
+    "successful_fit_contracts": 24,
+    "rank_full_comparison_eligible": "16/16",
+    "rank_full_direct_agreement_passes": "16/16",
+    "table8_count_matches": "144/144",
+    "eligible_main_parameters": 144,
+    "main_weighted_mae_logits": 0.002036183150875684,
+    "main_max_abs_difference_logits": 0.011620971168762928,
+    "eligible_thresholds": 72,
+    "threshold_weighted_mae_logits": 0.0034723566589138,
+    "threshold_max_abs_difference_logits": 0.00926145296445302,
+    "misspecification_direction_passes": "4/4",
+    "disconnected_independent_nullity": "8/8",
+    "disconnected_python_inference_withheld": "8/8",
+    "facets_subset_connection_ok_in_disconnected": "8/8",
+    "qualification_pass": true
+  },
+  "interpretation": {
+    "engine_agreement": "FACETS and Python JMLE remained within the locked PCM and RSM tolerances under complete and ring-connected planned missingness.",
+    "misspecification": "The PCM-over-RSM log-likelihood gain per observation was larger under heterogeneous thresholds in every rank-full paired comparison.",
+    "identification": "FACETS convergence and the literal 'Subset connection O.K.' wording did not imply full constrained predictor-design rank in the deliberately disconnected Person-Rater design. Independent nullity and Python InferenceReady remain the claim gate.",
+    "truth_boundary": "No RSM threshold truth error is defined under heterogeneous PCM generation; model-selection and fit differences are descriptive at this depth."
+  },
+  "withheld": "No bias, coverage, false-positive, power, universal missingness, or estimator-ranking claim."
+}

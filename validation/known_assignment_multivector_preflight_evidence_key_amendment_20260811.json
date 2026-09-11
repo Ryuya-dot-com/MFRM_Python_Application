@@ -1,0 +1,23 @@
+{
+  "schema_version": "known_assignment_multivector_preflight_evidence_key_amendment_v1",
+  "registered_date": "2026-08-11",
+  "parent_execution_registration": "validation/known_assignment_multivector_preflight_execution_registration_20260811.json",
+  "parent_execution_registration_sha256": "97a2c66d39c4d6f58a9339c37d14494371402baff86ec8b96b821343685ce08b",
+  "failed_prepare_stage": "prior-evidence validation before Person, assignment, response, or estimator generation",
+  "failed_prepare_error": "ValueError: Fixed-Person screening qualification is not PASS.",
+  "failed_prepare_output_directory_created": false,
+  "new_person_vectors_generated": 0,
+  "assignment_draws_generated": 0,
+  "responses_generated": 0,
+  "estimator_attempts_started": 0,
+  "cause": "The authoritative fixed-Person assessment records decision='pass' and twelve true gates, but does not contain the qualification_pass key expected by the first preflight runner.",
+  "remediation": "Accept the authoritative assessment only when decision is exactly 'pass' and every recorded gate is true. Continue to require the already registered assessment SHA256.",
+  "scientific_plan_changes": false,
+  "person_seed_changes": false,
+  "assignment_seed_changes": false,
+  "response_seed_changes": false,
+  "endpoint_or_advancement_rule_changes": false,
+  "sample_size_changes": false,
+  "threshold_changes": false,
+  "failed_registration_and_runner_retained": true
+}

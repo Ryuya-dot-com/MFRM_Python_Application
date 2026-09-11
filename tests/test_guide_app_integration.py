@@ -25,6 +25,7 @@ def test_landing_owns_the_page_and_offers_three_optional_routes() -> None:
     ]
     assert {radio.key for radio in at.radio} == {"lang", "app_view_density"}
     assert not any(radio.key == "data_source_flat" for radio in at.radio)
+    assert not any(radio.key == "data_source_class" for radio in at.radio)
     assert not any(
         selectbox.key and str(selectbox.key).startswith("facets_mode_")
         for selectbox in at.selectbox

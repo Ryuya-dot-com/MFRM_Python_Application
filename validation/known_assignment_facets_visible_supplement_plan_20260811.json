@@ -1,0 +1,44 @@
+{
+  "schema_version": "known_assignment_facets_visible_supplement_plan_v1",
+  "status": "frozen_before_supplemental_execution",
+  "registered_date": "2026-08-11",
+  "purpose": "Add a separate 12-of-12 FACETS/Python JMLE calibration layer for the exact retained preflight inputs using the qualified visible BATCH=NO helper, without changing original failures, completion markers, or scientific endpoints.",
+  "source_study": "validation/known_assignment_multivector_preflight4_20260811",
+  "source_study_identity": "validation/known_assignment_multivector_preflight4_20260811/study_identity.json",
+  "source_study_identity_sha256": "a52e9684bfda89542de8e61c77216ca05442459967b48cf9a6b28189f0bf86c3",
+  "preendpoint_audit": "validation/known_assignment_multivector_preflight4_20260811/preendpoint_operational_audit.json",
+  "preendpoint_audit_sha256": "9950d301106c60dd8d41b3a7d94a2d269f02bd3b2f3bce8a1d334ca09d4acfd3",
+  "helper_qualification": "validation/facets_shared_helper_qualification_20260811/result.json",
+  "helper_qualification_sha256": "5b4eb685fc473e228a17f3475d3c1fad838a9756d2993c04f9795ccd6b0021c4",
+  "facets_executable": "C:/Facets/Facets.exe",
+  "facets_executable_sha256": "dfb0afb0faa18f026d1b3b4175f22e42cc3764430eb83cbd368c7a572b3593a1",
+  "execution": {
+    "selected_attempt_type": "RESILIENT_FACETS_PYTHON_JMLE_PCM",
+    "datasets": 12,
+    "maximum_retries_per_dataset": 0,
+    "batch_mode_forced_for_process": "NO",
+    "completion_contract": "visible output-gated WM_CLOSE, nonempty report and all four Scorefiles",
+    "timeout_seconds_per_facets_call": 120,
+    "retained_output": "validation/known_assignment_multivector_preflight4_20260811/supplemental_facets_visible_20260811"
+  },
+  "operational_gate": {
+    "completed_datasets": 12,
+    "calibration_ready_datasets": 12,
+    "direct_agreement_pass_datasets": 12,
+    "facets_retry_count_total": 0,
+    "python_replay_tolerance": 1e-12,
+    "all_retained_run_input_hashes_match": true
+  },
+  "preservation": {
+    "original_attempt_artifacts_modified": false,
+    "original_completion_markers_modified": false,
+    "original_facets_failures_replaced": false,
+    "scientific_endpoint_read": false,
+    "aggregate_created": false
+  },
+  "decision_rule": {
+    "pass": "authorize a separate, prospectively specified calibration-evidence join for the frozen aggregate; do not read endpoints in this runner",
+    "fail": "retain Python evidence but keep aggregate and registered endpoints closed"
+  },
+  "claim_boundary": "Supplemental operational calibration only; no PF1-PF4 statistic, estimator ranking, or scientific conclusion is computed."
+}

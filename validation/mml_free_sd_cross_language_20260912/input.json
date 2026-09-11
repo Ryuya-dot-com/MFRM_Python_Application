@@ -1,0 +1,2053 @@
+{
+  "classification": "OBSERVED_DEVELOPMENT_ONLY",
+  "limits": {
+    "nll": 1e-09,
+    "gradient": 1e-06,
+    "probability": 1e-12,
+    "eap": 1e-10,
+    "sd": 1e-10,
+    "node": 1e-12,
+    "relative_weight": 1e-10,
+    "moment": 1e-10,
+    "refit_coordinate": 0.0001,
+    "refit_nll": 1e-08,
+    "refit_score": 0.0001
+  },
+  "source_sha256": {
+    "streamlit_app.py": "747150dfcf1e2429bc6a95add53ed0d28d535691a4f03e24064e4b53e94d3c17",
+    "mfrm_app/mml_stationarity.py": "a4fa05f03196022503f81db69d821f406fdd4c760a13256210e7275b2c31d98f",
+    "mfrm_app/mml_engine_v2.py": "52cef49496535287c30b45e7f21f13dde4cad7649742cba3ab84da36ec92a415",
+    "mfrm_app/mml_quadrature_sensitivity.py": "640510f4a547947b3414829a6a7e48047d8d764c2782f6466a53660418857449",
+    "mfrm_app/mml_qualification_batch.py": "fb8a9738a26120cb492b43fc81e0c4f86c74d4b0cf2cf590c89b15ae6a212ff2",
+    "validation/mml_free_sd_stationarity_adapter.py": "4b63f83a2c61fc78b0703ca95d5e6da578c9310b9a9d8c15a7de3e19e584a108",
+    "validation/mml_free_sd_quadrature_adapter.py": "29995f59fbf555a5e0eb0200c9c12c9dc23b1d7ad3aa426348681e15d4fca47f",
+    "tests/test_mml_free_sd_quadrature_adapter.py": "56ba4350b89dddc0a13d1e60d4b1276d19bf67e9093992f22676579d9b893aa9",
+    "validation/mml_free_sd_development_probe.py": "8f00400fa4ff6e57ee9eaadcb56ce1dd99af1a03586f0a49431b0db90f61634c",
+    "validation/mml_free_sd_cross_language_probe.py": "94ce4ad81b771d52ba3b02c87b8eced332776ee1cd606c8e1a7fee963fa8b918",
+    "validation/mml_free_sd_cross_language_probe.R": "6d9eb2cbe24361ee3ef548a357fc0fe0a3bb39111547c5c36e16b629b6ead3ad",
+    "validation/mml_free_sd_development_probe_20260911.json": "01bed467166252f90c335648f9f04660e15a3483f2735ccd9bad73e3cfe066bd",
+    "validation/known_assignment_mml_crossfit.R": "cdb6d6c0708bc720af5e611c5855d812193ea28bb70d02c4bccd3181b87b84d6"
+  },
+  "data": [
+    {
+      "Person": "P000",
+      "Rater": "R1",
+      "Task": "T1",
+      "Criterion": "C1",
+      "Score": 3
+    },
+    {
+      "Person": "P000",
+      "Rater": "R1",
+      "Task": "T1",
+      "Criterion": "C2",
+      "Score": 2
+    },
+    {
+      "Person": "P000",
+      "Rater": "R1",
+      "Task": "T2",
+      "Criterion": "C1",
+      "Score": 3
+    },
+    {
+      "Person": "P000",
+      "Rater": "R1",
+      "Task": "T2",
+      "Criterion": "C2",
+      "Score": 1
+    },
+    {
+      "Person": "P000",
+      "Rater": "R2",
+      "Task": "T1",
+      "Criterion": "C1",
+      "Score": 0
+    },
+    {
+      "Person": "P000",
+      "Rater": "R2",
+      "Task": "T1",
+      "Criterion": "C2",
+      "Score": 0
+    },
+    {
+      "Person": "P000",
+      "Rater": "R2",
+      "Task": "T2",
+      "Criterion": "C1",
+      "Score": 1
+    },
+    {
+      "Person": "P000",
+      "Rater": "R2",
+      "Task": "T2",
+      "Criterion": "C2",
+      "Score": 3
+    },
+    {
+      "Person": "P001",
+      "Rater": "R1",
+      "Task": "T1",
+      "Criterion": "C1",
+      "Score": 2
+    },
+    {
+      "Person": "P001",
+      "Rater": "R1",
+      "Task": "T1",
+      "Criterion": "C2",
+      "Score": 3
+    },
+    {
+      "Person": "P001",
+      "Rater": "R1",
+      "Task": "T2",
+      "Criterion": "C1",
+      "Score": 2
+    },
+    {
+      "Person": "P001",
+      "Rater": "R1",
+      "Task": "T2",
+      "Criterion": "C2",
+      "Score": 2
+    },
+    {
+      "Person": "P001",
+      "Rater": "R2",
+      "Task": "T1",
+      "Criterion": "C1",
+      "Score": 2
+    },
+    {
+      "Person": "P001",
+      "Rater": "R2",
+      "Task": "T1",
+      "Criterion": "C2",
+      "Score": 3
+    },
+    {
+      "Person": "P001",
+      "Rater": "R2",
+      "Task": "T2",
+      "Criterion": "C1",
+      "Score": 1
+    },
+    {
+      "Person": "P001",
+      "Rater": "R2",
+      "Task": "T2",
+      "Criterion": "C2",
+      "Score": 1
+    },
+    {
+      "Person": "P002",
+      "Rater": "R1",
+      "Task": "T1",
+      "Criterion": "C1",
+      "Score": 3
+    },
+    {
+      "Person": "P002",
+      "Rater": "R1",
+      "Task": "T1",
+      "Criterion": "C2",
+      "Score": 2
+    },
+    {
+      "Person": "P002",
+      "Rater": "R1",
+      "Task": "T2",
+      "Criterion": "C1",
+      "Score": 3
+    },
+    {
+      "Person": "P002",
+      "Rater": "R1",
+      "Task": "T2",
+      "Criterion": "C2",
+      "Score": 1
+    },
+    {
+      "Person": "P002",
+      "Rater": "R2",
+      "Task": "T1",
+      "Criterion": "C1",
+      "Score": 2
+    },
+    {
+      "Person": "P002",
+      "Rater": "R2",
+      "Task": "T1",
+      "Criterion": "C2",
+      "Score": 2
+    },
+    {
+      "Person": "P002",
+      "Rater": "R2",
+      "Task": "T2",
+      "Criterion": "C1",
+      "Score": 1
+    },
+    {
+      "Person": "P002",
+      "Rater": "R2",
+      "Task": "T2",
+      "Criterion": "C2",
+      "Score": 3
+    },
+    {
+      "Person": "P003",
+      "Rater": "R1",
+      "Task": "T1",
+      "Criterion": "C1",
+      "Score": 1
+    },
+    {
+      "Person": "P003",
+      "Rater": "R1",
+      "Task": "T1",
+      "Criterion": "C2",
+      "Score": 0
+    },
+    {
+      "Person": "P003",
+      "Rater": "R1",
+      "Task": "T2",
+      "Criterion": "C1",
+      "Score": 1
+    },
+    {
+      "Person": "P003",
+      "Rater": "R1",
+      "Task": "T2",
+      "Criterion": "C2",
+      "Score": 1
+    },
+    {
+      "Person": "P003",
+      "Rater": "R2",
+      "Task": "T1",
+      "Criterion": "C1",
+      "Score": 0
+    },
+    {
+      "Person": "P003",
+      "Rater": "R2",
+      "Task": "T1",
+      "Criterion": "C2",
+      "Score": 0
+    },
+    {
+      "Person": "P003",
+      "Rater": "R2",
+      "Task": "T2",
+      "Criterion": "C1",
+      "Score": 1
+    },
+    {
+      "Person": "P003",
+      "Rater": "R2",
+      "Task": "T2",
+      "Criterion": "C2",
+      "Score": 0
+    },
+    {
+      "Person": "P004",
+      "Rater": "R1",
+      "Task": "T1",
+      "Criterion": "C1",
+      "Score": 2
+    },
+    {
+      "Person": "P004",
+      "Rater": "R1",
+      "Task": "T1",
+      "Criterion": "C2",
+      "Score": 1
+    },
+    {
+      "Person": "P004",
+      "Rater": "R1",
+      "Task": "T2",
+      "Criterion": "C1",
+      "Score": 0
+    },
+    {
+      "Person": "P004",
+      "Rater": "R1",
+      "Task": "T2",
+      "Criterion": "C2",
+      "Score": 0
+    },
+    {
+      "Person": "P004",
+      "Rater": "R2",
+      "Task": "T1",
+      "Criterion": "C1",
+      "Score": 2
+    },
+    {
+      "Person": "P004",
+      "Rater": "R2",
+      "Task": "T1",
+      "Criterion": "C2",
+      "Score": 2
+    },
+    {
+      "Person": "P004",
+      "Rater": "R2",
+      "Task": "T2",
+      "Criterion": "C1",
+      "Score": 0
+    },
+    {
+      "Person": "P004",
+      "Rater": "R2",
+      "Task": "T2",
+      "Criterion": "C2",
+      "Score": 2
+    },
+    {
+      "Person": "P005",
+      "Rater": "R1",
+      "Task": "T1",
+      "Criterion": "C1",
+      "Score": 1
+    },
+    {
+      "Person": "P005",
+      "Rater": "R1",
+      "Task": "T1",
+      "Criterion": "C2",
+      "Score": 0
+    },
+    {
+      "Person": "P005",
+      "Rater": "R1",
+      "Task": "T2",
+      "Criterion": "C1",
+      "Score": 0
+    },
+    {
+      "Person": "P005",
+      "Rater": "R1",
+      "Task": "T2",
+      "Criterion": "C2",
+      "Score": 0
+    },
+    {
+      "Person": "P005",
+      "Rater": "R2",
+      "Task": "T1",
+      "Criterion": "C1",
+      "Score": 0
+    },
+    {
+      "Person": "P005",
+      "Rater": "R2",
+      "Task": "T1",
+      "Criterion": "C2",
+      "Score": 0
+    },
+    {
+      "Person": "P005",
+      "Rater": "R2",
+      "Task": "T2",
+      "Criterion": "C1",
+      "Score": 1
+    },
+    {
+      "Person": "P005",
+      "Rater": "R2",
+      "Task": "T2",
+      "Criterion": "C2",
+      "Score": 0
+    },
+    {
+      "Person": "P006",
+      "Rater": "R1",
+      "Task": "T1",
+      "Criterion": "C1",
+      "Score": 2
+    },
+    {
+      "Person": "P006",
+      "Rater": "R1",
+      "Task": "T1",
+      "Criterion": "C2",
+      "Score": 0
+    },
+    {
+      "Person": "P006",
+      "Rater": "R1",
+      "Task": "T2",
+      "Criterion": "C1",
+      "Score": 1
+    },
+    {
+      "Person": "P006",
+      "Rater": "R1",
+      "Task": "T2",
+      "Criterion": "C2",
+      "Score": 0
+    },
+    {
+      "Person": "P006",
+      "Rater": "R2",
+      "Task": "T1",
+      "Criterion": "C1",
+      "Score": 0
+    },
+    {
+      "Person": "P006",
+      "Rater": "R2",
+      "Task": "T1",
+      "Criterion": "C2",
+      "Score": 0
+    },
+    {
+      "Person": "P006",
+      "Rater": "R2",
+      "Task": "T2",
+      "Criterion": "C1",
+      "Score": 0
+    },
+    {
+      "Person": "P006",
+      "Rater": "R2",
+      "Task": "T2",
+      "Criterion": "C2",
+      "Score": 1
+    },
+    {
+      "Person": "P007",
+      "Rater": "R1",
+      "Task": "T1",
+      "Criterion": "C1",
+      "Score": 2
+    },
+    {
+      "Person": "P007",
+      "Rater": "R1",
+      "Task": "T1",
+      "Criterion": "C2",
+      "Score": 1
+    },
+    {
+      "Person": "P007",
+      "Rater": "R1",
+      "Task": "T2",
+      "Criterion": "C1",
+      "Score": 1
+    },
+    {
+      "Person": "P007",
+      "Rater": "R1",
+      "Task": "T2",
+      "Criterion": "C2",
+      "Score": 0
+    },
+    {
+      "Person": "P007",
+      "Rater": "R2",
+      "Task": "T1",
+      "Criterion": "C1",
+      "Score": 2
+    },
+    {
+      "Person": "P007",
+      "Rater": "R2",
+      "Task": "T1",
+      "Criterion": "C2",
+      "Score": 0
+    },
+    {
+      "Person": "P007",
+      "Rater": "R2",
+      "Task": "T2",
+      "Criterion": "C1",
+      "Score": 0
+    },
+    {
+      "Person": "P007",
+      "Rater": "R2",
+      "Task": "T2",
+      "Criterion": "C2",
+      "Score": 2
+    },
+    {
+      "Person": "P008",
+      "Rater": "R1",
+      "Task": "T1",
+      "Criterion": "C1",
+      "Score": 2
+    },
+    {
+      "Person": "P008",
+      "Rater": "R1",
+      "Task": "T1",
+      "Criterion": "C2",
+      "Score": 1
+    },
+    {
+      "Person": "P008",
+      "Rater": "R1",
+      "Task": "T2",
+      "Criterion": "C1",
+      "Score": 3
+    },
+    {
+      "Person": "P008",
+      "Rater": "R1",
+      "Task": "T2",
+      "Criterion": "C2",
+      "Score": 0
+    },
+    {
+      "Person": "P008",
+      "Rater": "R2",
+      "Task": "T1",
+      "Criterion": "C1",
+      "Score": 2
+    },
+    {
+      "Person": "P008",
+      "Rater": "R2",
+      "Task": "T1",
+      "Criterion": "C2",
+      "Score": 1
+    },
+    {
+      "Person": "P008",
+      "Rater": "R2",
+      "Task": "T2",
+      "Criterion": "C1",
+      "Score": 1
+    },
+    {
+      "Person": "P008",
+      "Rater": "R2",
+      "Task": "T2",
+      "Criterion": "C2",
+      "Score": 0
+    },
+    {
+      "Person": "P009",
+      "Rater": "R1",
+      "Task": "T1",
+      "Criterion": "C1",
+      "Score": 3
+    },
+    {
+      "Person": "P009",
+      "Rater": "R1",
+      "Task": "T1",
+      "Criterion": "C2",
+      "Score": 3
+    },
+    {
+      "Person": "P009",
+      "Rater": "R1",
+      "Task": "T2",
+      "Criterion": "C1",
+      "Score": 2
+    },
+    {
+      "Person": "P009",
+      "Rater": "R1",
+      "Task": "T2",
+      "Criterion": "C2",
+      "Score": 2
+    },
+    {
+      "Person": "P009",
+      "Rater": "R2",
+      "Task": "T1",
+      "Criterion": "C1",
+      "Score": 3
+    },
+    {
+      "Person": "P009",
+      "Rater": "R2",
+      "Task": "T1",
+      "Criterion": "C2",
+      "Score": 3
+    },
+    {
+      "Person": "P009",
+      "Rater": "R2",
+      "Task": "T2",
+      "Criterion": "C1",
+      "Score": 2
+    },
+    {
+      "Person": "P009",
+      "Rater": "R2",
+      "Task": "T2",
+      "Criterion": "C2",
+      "Score": 1
+    },
+    {
+      "Person": "P010",
+      "Rater": "R1",
+      "Task": "T1",
+      "Criterion": "C1",
+      "Score": 3
+    },
+    {
+      "Person": "P010",
+      "Rater": "R1",
+      "Task": "T1",
+      "Criterion": "C2",
+      "Score": 2
+    },
+    {
+      "Person": "P010",
+      "Rater": "R1",
+      "Task": "T2",
+      "Criterion": "C1",
+      "Score": 2
+    },
+    {
+      "Person": "P010",
+      "Rater": "R1",
+      "Task": "T2",
+      "Criterion": "C2",
+      "Score": 2
+    },
+    {
+      "Person": "P010",
+      "Rater": "R2",
+      "Task": "T1",
+      "Criterion": "C1",
+      "Score": 1
+    },
+    {
+      "Person": "P010",
+      "Rater": "R2",
+      "Task": "T1",
+      "Criterion": "C2",
+      "Score": 3
+    },
+    {
+      "Person": "P010",
+      "Rater": "R2",
+      "Task": "T2",
+      "Criterion": "C1",
+      "Score": 1
+    },
+    {
+      "Person": "P010",
+      "Rater": "R2",
+      "Task": "T2",
+      "Criterion": "C2",
+      "Score": 3
+    },
+    {
+      "Person": "P011",
+      "Rater": "R1",
+      "Task": "T1",
+      "Criterion": "C1",
+      "Score": 2
+    },
+    {
+      "Person": "P011",
+      "Rater": "R1",
+      "Task": "T1",
+      "Criterion": "C2",
+      "Score": 2
+    },
+    {
+      "Person": "P011",
+      "Rater": "R1",
+      "Task": "T2",
+      "Criterion": "C1",
+      "Score": 0
+    },
+    {
+      "Person": "P011",
+      "Rater": "R1",
+      "Task": "T2",
+      "Criterion": "C2",
+      "Score": 2
+    },
+    {
+      "Person": "P011",
+      "Rater": "R2",
+      "Task": "T1",
+      "Criterion": "C1",
+      "Score": 1
+    },
+    {
+      "Person": "P011",
+      "Rater": "R2",
+      "Task": "T1",
+      "Criterion": "C2",
+      "Score": 2
+    },
+    {
+      "Person": "P011",
+      "Rater": "R2",
+      "Task": "T2",
+      "Criterion": "C1",
+      "Score": 1
+    },
+    {
+      "Person": "P011",
+      "Rater": "R2",
+      "Task": "T2",
+      "Criterion": "C2",
+      "Score": 1
+    },
+    {
+      "Person": "P012",
+      "Rater": "R1",
+      "Task": "T1",
+      "Criterion": "C1",
+      "Score": 1
+    },
+    {
+      "Person": "P012",
+      "Rater": "R1",
+      "Task": "T1",
+      "Criterion": "C2",
+      "Score": 3
+    },
+    {
+      "Person": "P012",
+      "Rater": "R1",
+      "Task": "T2",
+      "Criterion": "C1",
+      "Score": 3
+    },
+    {
+      "Person": "P012",
+      "Rater": "R1",
+      "Task": "T2",
+      "Criterion": "C2",
+      "Score": 3
+    },
+    {
+      "Person": "P012",
+      "Rater": "R2",
+      "Task": "T1",
+      "Criterion": "C1",
+      "Score": 3
+    },
+    {
+      "Person": "P012",
+      "Rater": "R2",
+      "Task": "T1",
+      "Criterion": "C2",
+      "Score": 3
+    },
+    {
+      "Person": "P012",
+      "Rater": "R2",
+      "Task": "T2",
+      "Criterion": "C1",
+      "Score": 2
+    },
+    {
+      "Person": "P012",
+      "Rater": "R2",
+      "Task": "T2",
+      "Criterion": "C2",
+      "Score": 1
+    },
+    {
+      "Person": "P013",
+      "Rater": "R1",
+      "Task": "T1",
+      "Criterion": "C1",
+      "Score": 3
+    },
+    {
+      "Person": "P013",
+      "Rater": "R1",
+      "Task": "T1",
+      "Criterion": "C2",
+      "Score": 2
+    },
+    {
+      "Person": "P013",
+      "Rater": "R1",
+      "Task": "T2",
+      "Criterion": "C1",
+      "Score": 2
+    },
+    {
+      "Person": "P013",
+      "Rater": "R1",
+      "Task": "T2",
+      "Criterion": "C2",
+      "Score": 3
+    },
+    {
+      "Person": "P013",
+      "Rater": "R2",
+      "Task": "T1",
+      "Criterion": "C1",
+      "Score": 2
+    },
+    {
+      "Person": "P013",
+      "Rater": "R2",
+      "Task": "T1",
+      "Criterion": "C2",
+      "Score": 2
+    },
+    {
+      "Person": "P013",
+      "Rater": "R2",
+      "Task": "T2",
+      "Criterion": "C1",
+      "Score": 1
+    },
+    {
+      "Person": "P013",
+      "Rater": "R2",
+      "Task": "T2",
+      "Criterion": "C2",
+      "Score": 3
+    },
+    {
+      "Person": "P014",
+      "Rater": "R1",
+      "Task": "T1",
+      "Criterion": "C1",
+      "Score": 3
+    },
+    {
+      "Person": "P014",
+      "Rater": "R1",
+      "Task": "T1",
+      "Criterion": "C2",
+      "Score": 3
+    },
+    {
+      "Person": "P014",
+      "Rater": "R1",
+      "Task": "T2",
+      "Criterion": "C1",
+      "Score": 3
+    },
+    {
+      "Person": "P014",
+      "Rater": "R1",
+      "Task": "T2",
+      "Criterion": "C2",
+      "Score": 3
+    },
+    {
+      "Person": "P014",
+      "Rater": "R2",
+      "Task": "T1",
+      "Criterion": "C1",
+      "Score": 3
+    },
+    {
+      "Person": "P014",
+      "Rater": "R2",
+      "Task": "T1",
+      "Criterion": "C2",
+      "Score": 3
+    },
+    {
+      "Person": "P014",
+      "Rater": "R2",
+      "Task": "T2",
+      "Criterion": "C1",
+      "Score": 2
+    },
+    {
+      "Person": "P014",
+      "Rater": "R2",
+      "Task": "T2",
+      "Criterion": "C2",
+      "Score": 2
+    },
+    {
+      "Person": "P015",
+      "Rater": "R1",
+      "Task": "T1",
+      "Criterion": "C1",
+      "Score": 3
+    },
+    {
+      "Person": "P015",
+      "Rater": "R1",
+      "Task": "T1",
+      "Criterion": "C2",
+      "Score": 3
+    },
+    {
+      "Person": "P015",
+      "Rater": "R1",
+      "Task": "T2",
+      "Criterion": "C1",
+      "Score": 3
+    },
+    {
+      "Person": "P015",
+      "Rater": "R1",
+      "Task": "T2",
+      "Criterion": "C2",
+      "Score": 3
+    },
+    {
+      "Person": "P015",
+      "Rater": "R2",
+      "Task": "T1",
+      "Criterion": "C1",
+      "Score": 3
+    },
+    {
+      "Person": "P015",
+      "Rater": "R2",
+      "Task": "T1",
+      "Criterion": "C2",
+      "Score": 3
+    },
+    {
+      "Person": "P015",
+      "Rater": "R2",
+      "Task": "T2",
+      "Criterion": "C1",
+      "Score": 3
+    },
+    {
+      "Person": "P015",
+      "Rater": "R2",
+      "Task": "T2",
+      "Criterion": "C2",
+      "Score": 3
+    },
+    {
+      "Person": "P016",
+      "Rater": "R1",
+      "Task": "T1",
+      "Criterion": "C1",
+      "Score": 1
+    },
+    {
+      "Person": "P016",
+      "Rater": "R1",
+      "Task": "T1",
+      "Criterion": "C2",
+      "Score": 1
+    },
+    {
+      "Person": "P016",
+      "Rater": "R1",
+      "Task": "T2",
+      "Criterion": "C1",
+      "Score": 2
+    },
+    {
+      "Person": "P016",
+      "Rater": "R1",
+      "Task": "T2",
+      "Criterion": "C2",
+      "Score": 2
+    },
+    {
+      "Person": "P016",
+      "Rater": "R2",
+      "Task": "T1",
+      "Criterion": "C1",
+      "Score": 2
+    },
+    {
+      "Person": "P016",
+      "Rater": "R2",
+      "Task": "T1",
+      "Criterion": "C2",
+      "Score": 2
+    },
+    {
+      "Person": "P016",
+      "Rater": "R2",
+      "Task": "T2",
+      "Criterion": "C1",
+      "Score": 0
+    },
+    {
+      "Person": "P016",
+      "Rater": "R2",
+      "Task": "T2",
+      "Criterion": "C2",
+      "Score": 1
+    },
+    {
+      "Person": "P017",
+      "Rater": "R1",
+      "Task": "T1",
+      "Criterion": "C1",
+      "Score": 2
+    },
+    {
+      "Person": "P017",
+      "Rater": "R1",
+      "Task": "T1",
+      "Criterion": "C2",
+      "Score": 1
+    },
+    {
+      "Person": "P017",
+      "Rater": "R1",
+      "Task": "T2",
+      "Criterion": "C1",
+      "Score": 2
+    },
+    {
+      "Person": "P017",
+      "Rater": "R1",
+      "Task": "T2",
+      "Criterion": "C2",
+      "Score": 2
+    },
+    {
+      "Person": "P017",
+      "Rater": "R2",
+      "Task": "T1",
+      "Criterion": "C1",
+      "Score": 1
+    },
+    {
+      "Person": "P017",
+      "Rater": "R2",
+      "Task": "T1",
+      "Criterion": "C2",
+      "Score": 1
+    },
+    {
+      "Person": "P017",
+      "Rater": "R2",
+      "Task": "T2",
+      "Criterion": "C1",
+      "Score": 0
+    },
+    {
+      "Person": "P017",
+      "Rater": "R2",
+      "Task": "T2",
+      "Criterion": "C2",
+      "Score": 1
+    },
+    {
+      "Person": "P018",
+      "Rater": "R1",
+      "Task": "T1",
+      "Criterion": "C1",
+      "Score": 0
+    },
+    {
+      "Person": "P018",
+      "Rater": "R1",
+      "Task": "T1",
+      "Criterion": "C2",
+      "Score": 1
+    },
+    {
+      "Person": "P018",
+      "Rater": "R1",
+      "Task": "T2",
+      "Criterion": "C1",
+      "Score": 0
+    },
+    {
+      "Person": "P018",
+      "Rater": "R1",
+      "Task": "T2",
+      "Criterion": "C2",
+      "Score": 0
+    },
+    {
+      "Person": "P018",
+      "Rater": "R2",
+      "Task": "T1",
+      "Criterion": "C1",
+      "Score": 1
+    },
+    {
+      "Person": "P018",
+      "Rater": "R2",
+      "Task": "T1",
+      "Criterion": "C2",
+      "Score": 0
+    },
+    {
+      "Person": "P018",
+      "Rater": "R2",
+      "Task": "T2",
+      "Criterion": "C1",
+      "Score": 0
+    },
+    {
+      "Person": "P018",
+      "Rater": "R2",
+      "Task": "T2",
+      "Criterion": "C2",
+      "Score": 0
+    },
+    {
+      "Person": "P019",
+      "Rater": "R1",
+      "Task": "T1",
+      "Criterion": "C1",
+      "Score": 2
+    },
+    {
+      "Person": "P019",
+      "Rater": "R1",
+      "Task": "T1",
+      "Criterion": "C2",
+      "Score": 0
+    },
+    {
+      "Person": "P019",
+      "Rater": "R1",
+      "Task": "T2",
+      "Criterion": "C1",
+      "Score": 1
+    },
+    {
+      "Person": "P019",
+      "Rater": "R1",
+      "Task": "T2",
+      "Criterion": "C2",
+      "Score": 0
+    },
+    {
+      "Person": "P019",
+      "Rater": "R2",
+      "Task": "T1",
+      "Criterion": "C1",
+      "Score": 1
+    },
+    {
+      "Person": "P019",
+      "Rater": "R2",
+      "Task": "T1",
+      "Criterion": "C2",
+      "Score": 0
+    },
+    {
+      "Person": "P019",
+      "Rater": "R2",
+      "Task": "T2",
+      "Criterion": "C1",
+      "Score": 2
+    },
+    {
+      "Person": "P019",
+      "Rater": "R2",
+      "Task": "T2",
+      "Criterion": "C2",
+      "Score": 0
+    },
+    {
+      "Person": "P020",
+      "Rater": "R1",
+      "Task": "T1",
+      "Criterion": "C1",
+      "Score": 2
+    },
+    {
+      "Person": "P020",
+      "Rater": "R1",
+      "Task": "T1",
+      "Criterion": "C2",
+      "Score": 1
+    },
+    {
+      "Person": "P020",
+      "Rater": "R1",
+      "Task": "T2",
+      "Criterion": "C1",
+      "Score": 1
+    },
+    {
+      "Person": "P020",
+      "Rater": "R1",
+      "Task": "T2",
+      "Criterion": "C2",
+      "Score": 1
+    },
+    {
+      "Person": "P020",
+      "Rater": "R2",
+      "Task": "T1",
+      "Criterion": "C1",
+      "Score": 1
+    },
+    {
+      "Person": "P020",
+      "Rater": "R2",
+      "Task": "T1",
+      "Criterion": "C2",
+      "Score": 0
+    },
+    {
+      "Person": "P020",
+      "Rater": "R2",
+      "Task": "T2",
+      "Criterion": "C1",
+      "Score": 2
+    },
+    {
+      "Person": "P020",
+      "Rater": "R2",
+      "Task": "T2",
+      "Criterion": "C2",
+      "Score": 1
+    },
+    {
+      "Person": "P021",
+      "Rater": "R1",
+      "Task": "T1",
+      "Criterion": "C1",
+      "Score": 3
+    },
+    {
+      "Person": "P021",
+      "Rater": "R1",
+      "Task": "T1",
+      "Criterion": "C2",
+      "Score": 2
+    },
+    {
+      "Person": "P021",
+      "Rater": "R1",
+      "Task": "T2",
+      "Criterion": "C1",
+      "Score": 1
+    },
+    {
+      "Person": "P021",
+      "Rater": "R1",
+      "Task": "T2",
+      "Criterion": "C2",
+      "Score": 3
+    },
+    {
+      "Person": "P021",
+      "Rater": "R2",
+      "Task": "T1",
+      "Criterion": "C1",
+      "Score": 1
+    },
+    {
+      "Person": "P021",
+      "Rater": "R2",
+      "Task": "T1",
+      "Criterion": "C2",
+      "Score": 3
+    },
+    {
+      "Person": "P021",
+      "Rater": "R2",
+      "Task": "T2",
+      "Criterion": "C1",
+      "Score": 1
+    },
+    {
+      "Person": "P021",
+      "Rater": "R2",
+      "Task": "T2",
+      "Criterion": "C2",
+      "Score": 2
+    },
+    {
+      "Person": "P022",
+      "Rater": "R1",
+      "Task": "T1",
+      "Criterion": "C1",
+      "Score": 2
+    },
+    {
+      "Person": "P022",
+      "Rater": "R1",
+      "Task": "T1",
+      "Criterion": "C2",
+      "Score": 3
+    },
+    {
+      "Person": "P022",
+      "Rater": "R1",
+      "Task": "T2",
+      "Criterion": "C1",
+      "Score": 3
+    },
+    {
+      "Person": "P022",
+      "Rater": "R1",
+      "Task": "T2",
+      "Criterion": "C2",
+      "Score": 3
+    },
+    {
+      "Person": "P022",
+      "Rater": "R2",
+      "Task": "T1",
+      "Criterion": "C1",
+      "Score": 3
+    },
+    {
+      "Person": "P022",
+      "Rater": "R2",
+      "Task": "T1",
+      "Criterion": "C2",
+      "Score": 2
+    },
+    {
+      "Person": "P022",
+      "Rater": "R2",
+      "Task": "T2",
+      "Criterion": "C1",
+      "Score": 1
+    },
+    {
+      "Person": "P022",
+      "Rater": "R2",
+      "Task": "T2",
+      "Criterion": "C2",
+      "Score": 2
+    },
+    {
+      "Person": "P023",
+      "Rater": "R1",
+      "Task": "T1",
+      "Criterion": "C1",
+      "Score": 1
+    },
+    {
+      "Person": "P023",
+      "Rater": "R1",
+      "Task": "T1",
+      "Criterion": "C2",
+      "Score": 3
+    },
+    {
+      "Person": "P023",
+      "Rater": "R1",
+      "Task": "T2",
+      "Criterion": "C1",
+      "Score": 1
+    },
+    {
+      "Person": "P023",
+      "Rater": "R1",
+      "Task": "T2",
+      "Criterion": "C2",
+      "Score": 2
+    },
+    {
+      "Person": "P023",
+      "Rater": "R2",
+      "Task": "T1",
+      "Criterion": "C1",
+      "Score": 2
+    },
+    {
+      "Person": "P023",
+      "Rater": "R2",
+      "Task": "T1",
+      "Criterion": "C2",
+      "Score": 2
+    },
+    {
+      "Person": "P023",
+      "Rater": "R2",
+      "Task": "T2",
+      "Criterion": "C1",
+      "Score": 2
+    },
+    {
+      "Person": "P023",
+      "Rater": "R2",
+      "Task": "T2",
+      "Criterion": "C2",
+      "Score": 1
+    }
+  ],
+  "cases": [
+    {
+      "id": "RSM:legacy:Q31",
+      "model": "RSM",
+      "q": 31,
+      "coordinates": [
+        -0.281757461402774,
+        -0.26318657266782297,
+        -0.16898311006200034,
+        -0.05560232014672713,
+        -1.1155975186795288,
+        -0.002028639673271345,
+        0.2686274663459491
+      ]
+    },
+    {
+      "id": "RSM:q31:Q31",
+      "model": "RSM",
+      "q": 31,
+      "coordinates": [
+        -0.2812834573803215,
+        -0.2627423687913915,
+        -0.18048103874149576,
+        -0.06729653939356778,
+        -1.1126856030357277,
+        -0.0023623342609178943,
+        0.2630958330320162
+      ]
+    },
+    {
+      "id": "RSM:q61:Q31",
+      "model": "RSM",
+      "q": 31,
+      "coordinates": [
+        -0.2813634957698011,
+        -0.26281782424456757,
+        -0.17645096214957326,
+        -0.06323237680912433,
+        -1.1131389123876383,
+        -0.0024225145842076646,
+        0.2672984529764897
+      ]
+    },
+    {
+      "id": "RSM:perturbed:Q31",
+      "model": "RSM",
+      "q": 31,
+      "coordinates": [
+        -0.43136349576980104,
+        -0.36281782424456754,
+        -0.22645096214957328,
+        -0.06323237680912433,
+        -1.0631389123876382,
+        0.09757748541579231,
+        0.4172984529764897
+      ]
+    },
+    {
+      "id": "RSM:legacy:Q61",
+      "model": "RSM",
+      "q": 61,
+      "coordinates": [
+        -0.281757461402774,
+        -0.26318657266782297,
+        -0.16898311006200034,
+        -0.05560232014672713,
+        -1.1155975186795288,
+        -0.002028639673271345,
+        0.2686274663459491
+      ]
+    },
+    {
+      "id": "RSM:q31:Q61",
+      "model": "RSM",
+      "q": 61,
+      "coordinates": [
+        -0.2812834573803215,
+        -0.2627423687913915,
+        -0.18048103874149576,
+        -0.06729653939356778,
+        -1.1126856030357277,
+        -0.0023623342609178943,
+        0.2630958330320162
+      ]
+    },
+    {
+      "id": "RSM:q61:Q61",
+      "model": "RSM",
+      "q": 61,
+      "coordinates": [
+        -0.2813634957698011,
+        -0.26281782424456757,
+        -0.17645096214957326,
+        -0.06323237680912433,
+        -1.1131389123876383,
+        -0.0024225145842076646,
+        0.2672984529764897
+      ]
+    },
+    {
+      "id": "RSM:perturbed:Q61",
+      "model": "RSM",
+      "q": 61,
+      "coordinates": [
+        -0.43136349576980104,
+        -0.36281782424456754,
+        -0.22645096214957328,
+        -0.06323237680912433,
+        -1.0631389123876382,
+        0.09757748541579231,
+        0.4172984529764897
+      ]
+    },
+    {
+      "id": "RSM:legacy:Q121",
+      "model": "RSM",
+      "q": 121,
+      "coordinates": [
+        -0.281757461402774,
+        -0.26318657266782297,
+        -0.16898311006200034,
+        -0.05560232014672713,
+        -1.1155975186795288,
+        -0.002028639673271345,
+        0.2686274663459491
+      ]
+    },
+    {
+      "id": "RSM:q31:Q121",
+      "model": "RSM",
+      "q": 121,
+      "coordinates": [
+        -0.2812834573803215,
+        -0.2627423687913915,
+        -0.18048103874149576,
+        -0.06729653939356778,
+        -1.1126856030357277,
+        -0.0023623342609178943,
+        0.2630958330320162
+      ]
+    },
+    {
+      "id": "RSM:q61:Q121",
+      "model": "RSM",
+      "q": 121,
+      "coordinates": [
+        -0.2813634957698011,
+        -0.26281782424456757,
+        -0.17645096214957326,
+        -0.06323237680912433,
+        -1.1131389123876383,
+        -0.0024225145842076646,
+        0.2672984529764897
+      ]
+    },
+    {
+      "id": "RSM:perturbed:Q121",
+      "model": "RSM",
+      "q": 121,
+      "coordinates": [
+        -0.43136349576980104,
+        -0.36281782424456754,
+        -0.22645096214957328,
+        -0.06323237680912433,
+        -1.0631389123876382,
+        0.09757748541579231,
+        0.4172984529764897
+      ]
+    },
+    {
+      "id": "RSM:legacy:Q181",
+      "model": "RSM",
+      "q": 181,
+      "coordinates": [
+        -0.281757461402774,
+        -0.26318657266782297,
+        -0.16898311006200034,
+        -0.05560232014672713,
+        -1.1155975186795288,
+        -0.002028639673271345,
+        0.2686274663459491
+      ]
+    },
+    {
+      "id": "RSM:q31:Q181",
+      "model": "RSM",
+      "q": 181,
+      "coordinates": [
+        -0.2812834573803215,
+        -0.2627423687913915,
+        -0.18048103874149576,
+        -0.06729653939356778,
+        -1.1126856030357277,
+        -0.0023623342609178943,
+        0.2630958330320162
+      ]
+    },
+    {
+      "id": "RSM:q61:Q181",
+      "model": "RSM",
+      "q": 181,
+      "coordinates": [
+        -0.2813634957698011,
+        -0.26281782424456757,
+        -0.17645096214957326,
+        -0.06323237680912433,
+        -1.1131389123876383,
+        -0.0024225145842076646,
+        0.2672984529764897
+      ]
+    },
+    {
+      "id": "RSM:perturbed:Q181",
+      "model": "RSM",
+      "q": 181,
+      "coordinates": [
+        -0.43136349576980104,
+        -0.36281782424456754,
+        -0.22645096214957328,
+        -0.06323237680912433,
+        -1.0631389123876382,
+        0.09757748541579231,
+        0.4172984529764897
+      ]
+    },
+    {
+      "id": "PCM:legacy:Q31",
+      "model": "PCM",
+      "q": 31,
+      "coordinates": [
+        -0.28489777731148214,
+        -0.2661149348783182,
+        -0.20107482206554106,
+        -0.0388773971340779,
+        -1.528321323617045,
+        0.11493959008022026,
+        -0.7523005622027954,
+        -0.11170908504305774,
+        0.28237265947530665
+      ]
+    },
+    {
+      "id": "PCM:q31:Q31",
+      "model": "PCM",
+      "q": 31,
+      "coordinates": [
+        -0.28434870582508126,
+        -0.2656083441924264,
+        -0.21257279972173787,
+        -0.05077583355344439,
+        -1.5246723948415208,
+        0.1146904835778662,
+        -0.7492786668989222,
+        -0.11196116512945074,
+        0.27592888210139305
+      ]
+    },
+    {
+      "id": "PCM:q61:Q31",
+      "model": "PCM",
+      "q": 31,
+      "coordinates": [
+        -0.2844450196063389,
+        -0.2657002457659279,
+        -0.2094173257859582,
+        -0.047505691816135065,
+        -1.5257395782887317,
+        0.11465229137085865,
+        -0.7495131404867016,
+        -0.1123163997766493,
+        0.28088881501772683
+      ]
+    },
+    {
+      "id": "PCM:perturbed:Q31",
+      "model": "PCM",
+      "q": 31,
+      "coordinates": [
+        -0.43444501960633886,
+        -0.37820024576592787,
+        -0.2844173257859582,
+        -0.08500569181613507,
+        -1.5257395782887317,
+        0.15215229137085867,
+        -0.6745131404867016,
+        0.0001836002233507189,
+        0.4308888150177268
+      ]
+    },
+    {
+      "id": "PCM:legacy:Q61",
+      "model": "PCM",
+      "q": 61,
+      "coordinates": [
+        -0.28489777731148214,
+        -0.2661149348783182,
+        -0.20107482206554106,
+        -0.0388773971340779,
+        -1.528321323617045,
+        0.11493959008022026,
+        -0.7523005622027954,
+        -0.11170908504305774,
+        0.28237265947530665
+      ]
+    },
+    {
+      "id": "PCM:q31:Q61",
+      "model": "PCM",
+      "q": 61,
+      "coordinates": [
+        -0.28434870582508126,
+        -0.2656083441924264,
+        -0.21257279972173787,
+        -0.05077583355344439,
+        -1.5246723948415208,
+        0.1146904835778662,
+        -0.7492786668989222,
+        -0.11196116512945074,
+        0.27592888210139305
+      ]
+    },
+    {
+      "id": "PCM:q61:Q61",
+      "model": "PCM",
+      "q": 61,
+      "coordinates": [
+        -0.2844450196063389,
+        -0.2657002457659279,
+        -0.2094173257859582,
+        -0.047505691816135065,
+        -1.5257395782887317,
+        0.11465229137085865,
+        -0.7495131404867016,
+        -0.1123163997766493,
+        0.28088881501772683
+      ]
+    },
+    {
+      "id": "PCM:perturbed:Q61",
+      "model": "PCM",
+      "q": 61,
+      "coordinates": [
+        -0.43444501960633886,
+        -0.37820024576592787,
+        -0.2844173257859582,
+        -0.08500569181613507,
+        -1.5257395782887317,
+        0.15215229137085867,
+        -0.6745131404867016,
+        0.0001836002233507189,
+        0.4308888150177268
+      ]
+    },
+    {
+      "id": "PCM:legacy:Q121",
+      "model": "PCM",
+      "q": 121,
+      "coordinates": [
+        -0.28489777731148214,
+        -0.2661149348783182,
+        -0.20107482206554106,
+        -0.0388773971340779,
+        -1.528321323617045,
+        0.11493959008022026,
+        -0.7523005622027954,
+        -0.11170908504305774,
+        0.28237265947530665
+      ]
+    },
+    {
+      "id": "PCM:q31:Q121",
+      "model": "PCM",
+      "q": 121,
+      "coordinates": [
+        -0.28434870582508126,
+        -0.2656083441924264,
+        -0.21257279972173787,
+        -0.05077583355344439,
+        -1.5246723948415208,
+        0.1146904835778662,
+        -0.7492786668989222,
+        -0.11196116512945074,
+        0.27592888210139305
+      ]
+    },
+    {
+      "id": "PCM:q61:Q121",
+      "model": "PCM",
+      "q": 121,
+      "coordinates": [
+        -0.2844450196063389,
+        -0.2657002457659279,
+        -0.2094173257859582,
+        -0.047505691816135065,
+        -1.5257395782887317,
+        0.11465229137085865,
+        -0.7495131404867016,
+        -0.1123163997766493,
+        0.28088881501772683
+      ]
+    },
+    {
+      "id": "PCM:perturbed:Q121",
+      "model": "PCM",
+      "q": 121,
+      "coordinates": [
+        -0.43444501960633886,
+        -0.37820024576592787,
+        -0.2844173257859582,
+        -0.08500569181613507,
+        -1.5257395782887317,
+        0.15215229137085867,
+        -0.6745131404867016,
+        0.0001836002233507189,
+        0.4308888150177268
+      ]
+    },
+    {
+      "id": "PCM:legacy:Q181",
+      "model": "PCM",
+      "q": 181,
+      "coordinates": [
+        -0.28489777731148214,
+        -0.2661149348783182,
+        -0.20107482206554106,
+        -0.0388773971340779,
+        -1.528321323617045,
+        0.11493959008022026,
+        -0.7523005622027954,
+        -0.11170908504305774,
+        0.28237265947530665
+      ]
+    },
+    {
+      "id": "PCM:q31:Q181",
+      "model": "PCM",
+      "q": 181,
+      "coordinates": [
+        -0.28434870582508126,
+        -0.2656083441924264,
+        -0.21257279972173787,
+        -0.05077583355344439,
+        -1.5246723948415208,
+        0.1146904835778662,
+        -0.7492786668989222,
+        -0.11196116512945074,
+        0.27592888210139305
+      ]
+    },
+    {
+      "id": "PCM:q61:Q181",
+      "model": "PCM",
+      "q": 181,
+      "coordinates": [
+        -0.2844450196063389,
+        -0.2657002457659279,
+        -0.2094173257859582,
+        -0.047505691816135065,
+        -1.5257395782887317,
+        0.11465229137085865,
+        -0.7495131404867016,
+        -0.1123163997766493,
+        0.28088881501772683
+      ]
+    },
+    {
+      "id": "PCM:perturbed:Q181",
+      "model": "PCM",
+      "q": 181,
+      "coordinates": [
+        -0.43444501960633886,
+        -0.37820024576592787,
+        -0.2844173257859582,
+        -0.08500569181613507,
+        -1.5257395782887317,
+        0.15215229137085867,
+        -0.6745131404867016,
+        0.0001836002233507189,
+        0.4308888150177268
+      ]
+    }
+  ],
+  "fits": [
+    {
+      "model": "RSM",
+      "q": 31,
+      "start": [
+        -0.281757461402774,
+        -0.26318657266782297,
+        -0.16898311006200034,
+        -0.05560232014672713,
+        -1.1155975186795288,
+        -0.002028639673271345,
+        0.2686274663459491
+      ],
+      "python_coordinates": [
+        -0.2812834573803215,
+        -0.2627423687913915,
+        -0.18048103874149576,
+        -0.06729653939356778,
+        -1.1126856030357277,
+        -0.0023623342609178943,
+        0.2630958330320162
+      ]
+    },
+    {
+      "model": "RSM",
+      "q": 61,
+      "start": [
+        -0.281757461402774,
+        -0.26318657266782297,
+        -0.16898311006200034,
+        -0.05560232014672713,
+        -1.1155975186795288,
+        -0.002028639673271345,
+        0.2686274663459491
+      ],
+      "python_coordinates": [
+        -0.2813634957698011,
+        -0.26281782424456757,
+        -0.17645096214957326,
+        -0.06323237680912433,
+        -1.1131389123876383,
+        -0.0024225145842076646,
+        0.2672984529764897
+      ]
+    },
+    {
+      "model": "RSM",
+      "q": 121,
+      "start": [
+        -0.281757461402774,
+        -0.26318657266782297,
+        -0.16898311006200034,
+        -0.05560232014672713,
+        -1.1155975186795288,
+        -0.002028639673271345,
+        0.2686274663459491
+      ],
+      "python_coordinates": [
+        -0.28136200192354666,
+        -0.26281643113187014,
+        -0.17638536315979242,
+        -0.0631673750882441,
+        -1.113135502941132,
+        -0.0024127045836492035,
+        0.2672801149862739
+      ]
+    },
+    {
+      "model": "RSM",
+      "q": 181,
+      "start": [
+        -0.281757461402774,
+        -0.26318657266782297,
+        -0.16898311006200034,
+        -0.05560232014672713,
+        -1.1155975186795288,
+        -0.002028639673271345,
+        0.2686274663459491
+      ],
+      "python_coordinates": [
+        -0.28136200278277673,
+        -0.26281643025137547,
+        -0.1763853512599871,
+        -0.06316735436003104,
+        -1.1131355021832448,
+        -0.002412700695385721,
+        0.2672801060177309
+      ]
+    },
+    {
+      "model": "PCM",
+      "q": 31,
+      "start": [
+        -0.28489777731148214,
+        -0.2661149348783182,
+        -0.20107482206554106,
+        -0.0388773971340779,
+        -1.528321323617045,
+        0.11493959008022026,
+        -0.7523005622027954,
+        -0.11170908504305774,
+        0.28237265947530665
+      ],
+      "python_coordinates": [
+        -0.28434870582508126,
+        -0.2656083441924264,
+        -0.21257279972173787,
+        -0.05077583355344439,
+        -1.5246723948415208,
+        0.1146904835778662,
+        -0.7492786668989222,
+        -0.11196116512945074,
+        0.27592888210139305
+      ]
+    },
+    {
+      "model": "PCM",
+      "q": 61,
+      "start": [
+        -0.28489777731148214,
+        -0.2661149348783182,
+        -0.20107482206554106,
+        -0.0388773971340779,
+        -1.528321323617045,
+        0.11493959008022026,
+        -0.7523005622027954,
+        -0.11170908504305774,
+        0.28237265947530665
+      ],
+      "python_coordinates": [
+        -0.2844450196063389,
+        -0.2657002457659279,
+        -0.2094173257859582,
+        -0.047505691816135065,
+        -1.5257395782887317,
+        0.11465229137085865,
+        -0.7495131404867016,
+        -0.1123163997766493,
+        0.28088881501772683
+      ]
+    },
+    {
+      "model": "PCM",
+      "q": 121,
+      "start": [
+        -0.28489777731148214,
+        -0.2661149348783182,
+        -0.20107482206554106,
+        -0.0388773971340779,
+        -1.528321323617045,
+        0.11493959008022026,
+        -0.7523005622027954,
+        -0.11170908504305774,
+        0.28237265947530665
+      ],
+      "python_coordinates": [
+        -0.284443393635294,
+        -0.2656987618417424,
+        -0.20933041786408413,
+        -0.04741507310076838,
+        -1.5257390577691599,
+        0.11466388847805864,
+        -0.749510121709744,
+        -0.11230449681469229,
+        0.28087957575489564
+      ]
+    },
+    {
+      "model": "PCM",
+      "q": 181,
+      "start": [
+        -0.28489777731148214,
+        -0.2661149348783182,
+        -0.20107482206554106,
+        -0.0388773971340779,
+        -1.528321323617045,
+        0.11493959008022026,
+        -0.7523005622027954,
+        -0.11170908504305774,
+        0.28237265947530665
+      ],
+      "python_coordinates": [
+        -0.28444339363059795,
+        -0.26569876117868557,
+        -0.209330384255705,
+        -0.04741503802364014,
+        -1.5257390581500574,
+        0.11466389378328513,
+        -0.749510123683742,
+        -0.11230449098324247,
+        0.2808795617765177
+      ]
+    }
+  ]
+}

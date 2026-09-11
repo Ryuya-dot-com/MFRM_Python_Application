@@ -24503,7 +24503,7 @@ def read_flexible_table(text_value, file_input, header=True, delimiter: str | No
 
 
 
-def maybe_apply_wide_to_long_sidebar(parsed: pd.DataFrame, *, key_prefix: str) -> pd.DataFrame:
+def maybe_apply_wide_to_long(parsed: pd.DataFrame, *, key_prefix: str) -> pd.DataFrame:
     """Offer the same wide-to-long pivot controls for pasted and uploaded tables."""
     if not isinstance(parsed, pd.DataFrame) or parsed.empty or parsed.shape[1] < 2:
         return parsed
@@ -24514,7 +24514,7 @@ def maybe_apply_wide_to_long_sidebar(parsed: pd.DataFrame, *, key_prefix: str) -
     layout_label_wide = t("data_source.layout_wide")
     layout_options = {layout_label_long: "long", layout_label_wide: "wide"}
     default_label = layout_label_wide if default_layout == "wide" else layout_label_long
-    with st.sidebar.expander(
+    with st.expander(
         t("data_source.layout_expander"),
         expanded=wide_detect["looks_wide"],
     ):
@@ -25364,12 +25364,9 @@ def render_app_scope_badges(where: str = "main") -> None:
     if where == "sidebar":
         st.sidebar.caption(text)
     else:
-        st.caption(text)
-        with st.expander("Public beta boundaries", expanded=False):
-            st.caption(
-                "These boundaries are part of the app's public-beta claim. "
-                "They prevent over-claiming cross-package equivalence or confirmatory statistical evidence."
-            )
+        with st.expander(t("app.about_expander"), expanded=False):
+            st.caption(t("app.beta_boundaries_caption"))
+            st.caption(text)
             st.dataframe(standalone_release_limitations_table(), width="stretch", hide_index=True)
 
 
@@ -25881,22 +25878,25 @@ def read_input_data(
     st.session_state.pop("_custom_simulation_score_support", None)
 
     if chosen["kind"] == "paste":
-        render_data_privacy_notice(where="sidebar")
-        paste_delimiter = st.sidebar.selectbox(
-            t("data_source.delimiter_label"),
-            list(TABLE_DELIMITER_OPTIONS.keys()),
-            index=0,
-            key="paste_data_delimiter",
-            help=t("data_source.paste_delimiter_help"),
-        )
-        text_value = st.sidebar.text_area(
-            t("data_source.paste_textarea_label"),
-            height=180,
-            placeholder=TEACHER_PASTE_EXAMPLE_CSV,
-            help=t("data_source.paste_textarea_help"),
-            key="paste_data_text",
-        )
-        with st.sidebar.expander(
+        with st.expander(
+            t("data_source.paste_workspace"),
+            expanded=not bool(st.session_state.get("facets_mode_output")),
+        ):
+            paste_delimiter = st.selectbox(
+                t("data_source.delimiter_label"),
+                list(TABLE_DELIMITER_OPTIONS.keys()),
+                index=0,
+                key="paste_data_delimiter",
+                help=t("data_source.paste_delimiter_help"),
+            )
+            text_value = st.text_area(
+                t("data_source.paste_textarea_label"),
+                height=180,
+                placeholder=TEACHER_PASTE_EXAMPLE_CSV,
+                help=t("data_source.paste_textarea_help"),
+                key="paste_data_text",
+            )
+        with st.expander(
             t("data_source.teacher_paste_guide_expander"),
             expanded=not bool(text_value.strip()),
         ):
@@ -25915,8 +25915,8 @@ def read_input_data(
         try:
             parsed = core["read_flexible_table"](text_value, None, header=True, delimiter=paste_delimiter)
         except Exception as exc:
-            st.sidebar.error(t("data_source.paste_parse_error"))
-            with st.sidebar.expander(
+            st.error(t("data_source.paste_parse_error"))
+            with st.expander(
                 t("data_source.technical_parse_details_expander"),
                 expanded=True,
             ):
@@ -25926,31 +25926,34 @@ def read_input_data(
                 )
             return pd.DataFrame()
         if parsed.shape[1] < 2:
-            st.sidebar.warning(t("data_source.single_column_warning_paste"))
+            st.warning(t("data_source.single_column_warning_paste"))
         else:
             preview_cols = ", ".join(map(str, parsed.columns[:5]))
-            st.sidebar.caption(t(
+            st.caption(t(
                 "data_source.detected_columns_caption_template",
                 n_cols=parsed.shape[1],
                 preview_cols=preview_cols,
                 ellipsis="..." if parsed.shape[1] > 5 else "",
             ))
-        return maybe_apply_wide_to_long_sidebar(parsed, key_prefix="paste")
+        return maybe_apply_wide_to_long(parsed, key_prefix="paste")
 
-    render_data_privacy_notice(where="sidebar")
-    upload_delimiter = st.sidebar.selectbox(
-        t("data_source.delimiter_label"),
-        list(TABLE_DELIMITER_OPTIONS.keys()),
-        index=0,
-        key="upload_data_delimiter",
-        help=t("data_source.upload_delimiter_help"),
-    )
-    upload = st.sidebar.file_uploader(
-        t("data_source.upload_file_label"),
-        type=TABLE_FILE_UPLOAD_TYPES,
-        key="upload_data_file",
-        help=t("data_source.upload_file_help_template", file_label=TABLE_FILE_UPLOAD_LABEL),
-    )
+    with st.expander(
+        t("data_source.upload_workspace"),
+        expanded=not bool(st.session_state.get("facets_mode_output")),
+    ):
+        upload_delimiter = st.selectbox(
+            t("data_source.delimiter_label"),
+            list(TABLE_DELIMITER_OPTIONS.keys()),
+            index=0,
+            key="upload_data_delimiter",
+            help=t("data_source.upload_delimiter_help"),
+        )
+        upload = st.file_uploader(
+            t("data_source.upload_file_label"),
+            type=TABLE_FILE_UPLOAD_TYPES,
+            key="upload_data_file",
+            help=t("data_source.upload_file_help_template", file_label=TABLE_FILE_UPLOAD_LABEL),
+        )
     if upload is None:
         return pd.DataFrame()
     # Preflight: warn before parsing if the file is so large that it may
@@ -25962,22 +25965,22 @@ def read_input_data(
     except (TypeError, ValueError):
         upload_size_mb = 0.0
     if upload_size_mb >= TABLE_FILE_HARD_LIMIT_MB:
-        st.sidebar.error(t(
+        st.error(t(
             "data_source.upload_size_blocked_template",
             size_mb=f"{upload_size_mb:.0f}",
             limit_mb=TABLE_FILE_HARD_LIMIT_MB,
         ))
         return pd.DataFrame()
     elif upload_size_mb >= TABLE_FILE_SOFT_WARNING_MB:
-        st.sidebar.warning(t(
+        st.warning(t(
             "data_source.upload_size_warning_template",
             size_mb=f"{upload_size_mb:.0f}",
         ))
     try:
         parsed = core["read_flexible_table"]("", upload, header=True, delimiter=upload_delimiter)
     except Exception as exc:
-        st.sidebar.error(t("data_source.upload_parse_error"))
-        with st.sidebar.expander(
+        st.error(t("data_source.upload_parse_error"))
+        with st.expander(
             t("data_source.technical_parse_details_expander"),
             expanded=True,
         ):
@@ -25987,17 +25990,17 @@ def read_input_data(
             )
         return pd.DataFrame()
     if parsed.shape[1] < 2:
-        st.sidebar.warning(t("data_source.single_column_warning_upload"))
+        st.warning(t("data_source.single_column_warning_upload"))
     else:
         preview_cols = ", ".join(map(str, parsed.columns[:5]))
-        st.sidebar.caption(t(
+        st.caption(t(
             "data_source.detected_columns_caption_template",
             n_cols=parsed.shape[1],
             preview_cols=preview_cols,
             ellipsis="..." if parsed.shape[1] > 5 else "",
         ))
 
-    return maybe_apply_wide_to_long_sidebar(parsed, key_prefix="upload")
+    return maybe_apply_wide_to_long(parsed, key_prefix="upload")
 
 
 # ---------------------------------------------------------------------------
@@ -38705,10 +38708,6 @@ def run_facets_mode(
 
     out = st.session_state.get("facets_mode_output")
     if not out:
-        st.info(
-            "Ready for estimation. Review the data-quality panel above, then run "
-            "FACETS-mode estimation from the sidebar."
-        )
         return
 
     # Invalidate stale results if settings or raw inputs changed.
@@ -72798,7 +72797,8 @@ def render_onboarding_banner() -> bool:
 
     if state.lifecycle is _guidance.GuideLifecycle.NOT_STARTED:
         with st.container(key="sample_guide_welcome_card", border=True):
-            _render_guide_step_heading(_guidance.GuideNode.WELCOME)
+            st.subheader(t("guide.welcome_title"))
+            st.write(t("guide.welcome_body"))
             st.caption(t("guide.optional_caption"))
             if st.button(
                 t("guide.start_sample_button"),
@@ -74232,6 +74232,16 @@ def main() -> None:
     st.title(t("app.title"))
     st.caption(t("app.subtitle_template", release_label=APP_RELEASE_LABEL, version=APP_VERSION))
     render_app_scope_badges(where="main")
+    if st.session_state.pop(_HELP_RETURNED_STATUS_KEY, False):
+        st.success(t("help_nav.returned_status"))
+    help_surface_active = render_persistent_help_surface(help_state)
+
+    if not help_surface_active:
+        # The optional guide landing owns the first page so source and
+        # estimator controls do not compete with the initial route decision.
+        if render_onboarding_banner():
+            return
+
     active_source_id = _ux.data_source_option_id(
         st.session_state.get("data_source_class"),
         scenario_key=st.session_state.get("data_source_scenario"),
@@ -74243,16 +74253,6 @@ def main() -> None:
         source_kind=_ux.classify_data_source(active_source_id),
     )
 
-    if st.session_state.pop(_HELP_RETURNED_STATUS_KEY, False):
-        st.success(t("help_nav.returned_status"))
-    help_surface_active = render_persistent_help_surface(help_state)
-
-    if not help_surface_active:
-        # The optional guide landing owns the first page so source and
-        # estimator controls do not compete with the initial route decision.
-        if render_onboarding_banner():
-            return
-
     core = load_core_namespace()
     guidance_state = _get_guidance_state()
     guide_sample_only = bool(
@@ -74261,7 +74261,8 @@ def main() -> None:
         and guidance_state.active_node_id
         in {_guidance.GuideNode.DATA_CHECK, _guidance.GuideNode.ESTIMATE}
     )
-    data = read_input_data(core, guide_sample_only=guide_sample_only)
+    with st.sidebar if help_surface_active else st.container():
+        data = read_input_data(core, guide_sample_only=guide_sample_only)
     if data.empty:
         if not help_surface_active:
             st.info(t("app.no_input_info"))

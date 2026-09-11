@@ -17,6 +17,7 @@ def test_landing_owns_the_page_and_offers_three_optional_routes() -> None:
     at = _new_app()
 
     assert not at.exception
+    assert not at.get("progress")
     assert [(button.key, button.label) for button in at.button] == [
         ("onboarding_quickstart", "Learn with a sample"),
         ("onboarding_dismiss", "Start with my data"),
@@ -46,7 +47,52 @@ def test_own_data_route_opens_paste_preflight_without_starting_sample() -> None:
     assert state.route_id is GuideRoute.OWN_DATA
     assert state.sample_context_id is None
     assert at.session_state["data_source_flat"] == "paste"
-    assert any("pasted and uploaded rating files" in item.value for item in at.warning)
+    assert sum("pasted and uploaded rating files" in item.value for item in at.warning) == 1
+    assert at.main.text_area(key="paste_data_text")
+    assert not at.sidebar.text_area
+    at.text_area(key="paste_data_text").set_value(app.TEACHER_PASTE_EXAMPLE_CSV).run(timeout=45)
+    assert not at.exception
+    assert "facets_mode_output" not in at.session_state
+    assert at.button(key="facets_mode_run_primary")
+    assert not any("Ready for estimation" in item.value for item in at.info)
+
+
+def test_input_workspace_preserves_parsing_and_folds_editors_after_a_result() -> None:
+    def input_workspace():
+        import streamlit as st
+        import streamlit_app as app
+
+        data = app.read_input_data(app.load_core_namespace())
+        st.write(f"Loaded {len(data)} rows")
+
+    at = AppTest.from_function(input_workspace).run(timeout=45)
+    at.radio(key="data_source_class").set_value("paste").run(timeout=45)
+    at.main.text_area(key="paste_data_text").set_value(app.TEACHER_PASTE_EXAMPLE_CSV).run(timeout=45)
+    assert not at.exception
+    assert any(item.value == "Loaded 5 rows" for item in at.markdown)
+    editor = next(e for e in at.main.expander if e.label == "Paste rating data")
+    assert editor.proto.expanded
+    assert at.main.radio(key="paste_layout_choice")
+    assert not at.sidebar.text_area
+
+    # Only the presence of an existing result controls disclosure in this input-only harness.
+    at.session_state["facets_mode_output"] = {"analysis_id": "existing-result"}
+    at.run(timeout=45)
+    editor = next(e for e in at.main.expander if e.label == "Paste rating data")
+    assert not editor.proto.expanded
+    assert at.text_area(key="paste_data_text").value == app.TEACHER_PASTE_EXAMPLE_CSV
+    assert any(item.value == "Loaded 5 rows" for item in at.markdown)
+
+    at.radio(key="data_source_class").set_value("upload").run(timeout=45)
+    assert not at.exception
+    assert len(at.main.get("file_uploader")) == 1
+    assert not at.sidebar.get("file_uploader")
+    editor = next(e for e in at.main.expander if e.label == "Upload a rating file")
+    assert not editor.proto.expanded
+    del at.session_state["facets_mode_output"]
+    at.run(timeout=45)
+    editor = next(e for e in at.main.expander if e.label == "Upload a rating file")
+    assert editor.proto.expanded
 
 
 def test_language_switch_preserves_the_active_sample_node_and_bindings() -> None:

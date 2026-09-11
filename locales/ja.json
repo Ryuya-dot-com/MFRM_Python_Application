@@ -18,8 +18,8 @@
     "view_density_help": "表示モードは画面に出すパネルだけを変えます。追加診断や図ファイルは生成しません。公表用の出力を作るには、推定前に Analysis depth を選んでください。"
   },
   "app": {
-    "title": "多相ラッシュモデル (MFRM) FACETS-mode",
-    "subtitle_template": "MFRM を推定する Streamlit 製の単一ファイルアプリケーション — {release_label} {version}",
+    "title": "MFRM｜評定データの分析",
+    "subtitle_template": "多相ラッシュモデルで、能力・課題の難しさ・評価者の厳しさを調べます — {release_label} {version}",
     "prepare_analysis_header": "分析を準備",
     "input_preview_header": "入力データのプレビュー",
     "input_preview_rows_expander_template": "入力行を確認（先頭 {n_rows} 行）",
@@ -29,10 +29,12 @@
     "run_primary_button": "この設定で分析する",
     "run_primary_help": "この作業領域に表示された設定で分析します。推定完了だけで、妥当性や意思決定への適合性が示されるわけではありません。",
     "run_primary_sidebar_caption": "主要な実行ボタンは、列対応と準備状況の後にある分析作業領域へ移動しました。",
-    "no_input_info": "サイドバーから入力データを指定して開始してください。",
+    "no_input_info": "評定データを読み込むと、列の対応づけと分析前の確認へ進めます。",
     "language_switch_success_template": "言語を {from_lang} から {to_lang} に切り替えました。",
     "language_switch_caption": "現在の推定結果は保持されています。切り替えを軽くするため、この再実行では重い結果・レポート・ダウンロード・ヘルプのパネルを再描画していません。",
-    "language_switch_resume_button": "現在の画面を描画"
+    "language_switch_resume_button": "現在の画面を描画",
+    "about_expander": "このベータ版について・利用上の限界",
+    "beta_boundaries_caption": "分析の完了だけでは、結果の妥当性や他のソフトウェアとの一致は保証されません。結果を報告する前に、以下の対応範囲と限界を確認してください。"
   },
   "onboarding": {
     "title": "開始方法を選択",
@@ -47,8 +49,8 @@
     "step_counter_template": "ステップ {step} / {total}",
     "progress_template": "ガイドの進行状況: {total} ステップ中 {step}",
     "welcome_title": "開始方法を選ぶ",
-    "welcome_body": "一定の結果を再現できるサンプルで操作を学ぶか、手元のデータへ進むか、ガイドを使わず通常画面を開きます。",
-    "optional_caption": "ガイドは任意です。終了しても、分析が妥当になったり、データや推定結果が削除・変更されたりすることはありません。",
+    "welcome_body": "初めての方は、サンプルを使ってデータの確認から分析、結果の読み方まで学べます。評定データをお持ちの方は、表の貼り付けやファイルの読み込みから始められます。",
+    "optional_caption": "ガイドは途中で終了し、あとから再開できます。",
     "start_sample_button": "サンプルで学ぶ",
     "start_sample_help": "合成した作文評価サンプルと実際の推定経路を使い、焦点を絞った5ステップを進みます。",
     "start_own_data_button": "手元のデータから始める",
@@ -2019,7 +2021,9 @@
     "upload_size_critical_template": "⚠️ アップロードされたファイルは **{size_mb} MB** — 推定中にホスト環境の 1 GB メモリ予算を超える可能性が極めて高い。事前にローカルで行をサンプリングするか、自分のマシンでアプリを実行することを推奨する。",
     "upload_size_blocked_template": "アップロードされたファイルは **{size_mb} MB** です。{limit_mb} MB 以上のファイルは、ホスト環境の Streamlit UI では解析しません。ローカルで行をサンプリングする、ファイルを分割する、またはより大きなローカル環境で実行してください。",
     "upload_size_warning_template": "アップロードされたファイルは **{size_mb} MB**。Streamlit Community Cloud では推定が遅延または失敗する可能性がある。大規模データはローカル Python 環境での実行を推奨する。",
-    "upload_parse_error": "ファイルを表として読み取れなかった。上で delimiter を選択するか、comma 区切り CSV として保存するか、ヘッダー行 1 行の .xlsx をアップロードしてみる。"
+    "upload_parse_error": "ファイルを表として読み取れなかった。上で delimiter を選択するか、comma 区切り CSV として保存するか、ヘッダー行 1 行の .xlsx をアップロードしてみる。",
+    "paste_workspace": "評定データを貼り付ける",
+    "upload_workspace": "評定ファイルを読み込む"
   },
   "visuals": {
     "wright_map_header": "Wright Map (variable map)",

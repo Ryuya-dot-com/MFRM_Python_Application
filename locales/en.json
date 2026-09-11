@@ -18,8 +18,8 @@
     "view_density_help": "Display mode only changes which panels are shown. It does not compute extra diagnostics or create downloadable figures. To compute publication outputs, choose Analysis depth before running estimation."
   },
   "app": {
-    "title": "MFRM FACETS-mode",
-    "subtitle_template": "A single-file Streamlit application for estimating Many-Facet Rasch Models (MFRM) — {release_label} {version}",
+    "title": "MFRM | Rating analysis",
+    "subtitle_template": "Explore differences in ability, task difficulty, and rater severity with a Many-Facet Rasch Model — {release_label} {version}",
     "prepare_analysis_header": "Prepare the analysis",
     "input_preview_header": "Input preview",
     "input_preview_rows_expander_template": "Preview input rows (first {n_rows})",
@@ -29,10 +29,12 @@
     "run_primary_button": "Run this analysis",
     "run_primary_help": "Runs the analysis shown in this workspace. The fitted result does not by itself establish validity or suitability for a decision.",
     "run_primary_sidebar_caption": "The primary Run button is in the analysis workspace after the mapping and readiness checks.",
-    "no_input_info": "Provide input data from the sidebar to begin.",
+    "no_input_info": "Add rating data to continue to column mapping and pre-run checks.",
     "language_switch_success_template": "Language changed from {from_lang} to {to_lang}.",
     "language_switch_caption": "The current run is preserved. To keep the switch responsive, heavy result, report, download, and help panels were not redrawn on this rerun.",
-    "language_switch_resume_button": "Render current view"
+    "language_switch_resume_button": "Render current view",
+    "about_expander": "About this beta and its limitations",
+    "beta_boundaries_caption": "A completed analysis alone does not establish validity or agreement with other software. Review the supported uses and limits below before reporting results."
   },
   "onboarding": {
     "title": "Choose your starting path",
@@ -47,8 +49,8 @@
     "step_counter_template": "Step {step} of {total}",
     "progress_template": "Guide progress: step {step} of {total}",
     "welcome_title": "Choose how you want to begin",
-    "welcome_body": "Learn the workflow with a deterministic sample, move directly to your own data, or use the ordinary workspace without the guide.",
-    "optional_caption": "The guide is optional. Leaving it never validates an analysis, deletes data, or changes a fitted result.",
+    "welcome_body": "New to MFRM? Use a sample to learn how to check data, run an analysis, and read the results. If you already have rating data, start with your own table or file.",
+    "optional_caption": "You can leave the guide and return to it later.",
     "start_sample_button": "Learn with a sample",
     "start_sample_help": "Follow five focused steps using a synthetic writing-rating sample and the production estimator.",
     "start_own_data_button": "Start with my data",
@@ -2019,7 +2021,9 @@
     "upload_size_critical_template": "⚠️ Uploaded file is **{size_mb} MB** — this is very likely to exceed the hosted instance's 1 GB memory budget during estimation. Consider sampling rows locally first, or run the app on your own machine.",
     "upload_size_blocked_template": "Uploaded file is **{size_mb} MB**. Files >= {limit_mb} MB are not parsed in the hosted Streamlit UI. Sample rows locally, split the file, or run the app on a larger local machine.",
     "upload_size_warning_template": "Uploaded file is **{size_mb} MB**. Estimation may be slow or fail on Streamlit Community Cloud. A local Python install is recommended for large datasets.",
-    "upload_parse_error": "We couldn't read this file as a table. Try choosing a delimiter above, saving as comma CSV, or uploading an .xlsx file with one header row."
+    "upload_parse_error": "We couldn't read this file as a table. Try choosing a delimiter above, saving as comma CSV, or uploading an .xlsx file with one header row.",
+    "paste_workspace": "Paste rating data",
+    "upload_workspace": "Upload a rating file"
   },
   "visuals": {
     "wright_map_header": "Wright Map (variable map)",

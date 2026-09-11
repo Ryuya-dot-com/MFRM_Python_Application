@@ -4,9 +4,10 @@ from streamlit.testing.v1 import AppTest
 def test_app_initial_render():
     at = AppTest.from_file("streamlit_app.py").run(timeout=30)
     assert not at.exception
-    assert any("MFRM FACETS-mode" in title.value for title in at.title)
-    assert any("standalone Python runtime" in caption.value for caption in at.caption)
-    assert any("selected built-in or generated dataset is synthetic" in caption.value for caption in at.caption)
+    assert any("MFRM | Rating analysis" in title.value for title in at.title)
+    about = next(e for e in at.expander if e.label == "About this beta and its limitations")
+    assert not about.proto.expanded
+    assert any("source commit:" in caption.value for caption in about.caption)
     assert not any("Data privacy" in warning.value for warning in at.warning)
     assert not any("Keyboard shortcuts" in str(expander.label) for expander in at.expander)
 

@@ -128,6 +128,11 @@ JAXは同じモデル・推定対象を保つ任意の計算基盤として評�
   EMの成功だけで自由分散MMLに `InferenceReady=True` を付ける経路を修正し、
   結果案内・出力・感度分析の開始にも保留を適用。独立した資格検証と被覆率は未完了。
 - 実ブラウザのアクセシビリティ受入は未完了。
+- mfrmr 0.2.4.9000・TAM・ConQuestのMML求積をソースと保存記録で照合した。
+  RSM/PCMの既存ストレス比較は、推定の終了と求積精度を分ける必要を裏付ける。
+  Python/mfrmrのGH関数を実行照合し、mfrmr高次数の微小重みゼロと保存校正の正重み要件の
+  不整合も記録した。[求積レビュー](mml_quadrature_cross_engine_review.md)を参照。
+  新しい外部モデル推定・mfrmrの変更・Pythonの資格昇格は行っていない。
 
 詳細は [MML v2](../validation/MML_FREE_SD_STATIONARITY_V2_ROADMAP_20260811.md)、
 [統計エンジンの修正計画](statistical_engine_remediation_roadmap.html)、

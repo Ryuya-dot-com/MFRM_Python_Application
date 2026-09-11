@@ -5,6 +5,12 @@ Development-line consolidation, 2026-09-11: use
 checkout, preserved public baseline, and staged integration status. The original
 scientific and product exit gates below remain in force.
 
+Extension decision, 2026-09-11: prioritize JAX acceleration of existing
+JMLE/MML, with NumPyro Bayesian estimation as a later research extension.
+ConQuest and TAM provide scoped offline validation/interchange routes.
+See [`docs/jax_numpyro_conquest_tam_plan.md`](docs/jax_numpyro_conquest_tam_plan.md)
+for the accepted plan; these capabilities are not newly enabled in the app.
+
 - Status: active
 - Last updated: 2026-08-11
 - Product boundary: standalone Python
@@ -822,6 +828,12 @@ exit gate and do not create another workflow, evidence, or state authority.
   identification and estimation limits.
 - Native JMLE and MML estimation, uncertainty audits, prediction, simulation,
   and parameter-recovery evaluation.
+- Planned optional JAX acceleration of the same JMLE/MML likelihoods, subject
+  to numerical equivalence and cold/warm end-to-end performance checks.
+- Planned NumPyro Bayesian RSM/PCM research after the acceleration evaluation,
+  governed by separate estimand, prior, diagnostic, and release gates.
+- Scoped offline ConQuest/TAM exports and verified return ingestion as planned
+  extensions; the standalone default runtime remains independent of them.
 - Repository-only native exact CMLE research for eligible RSM/PCM structures;
   public workflow exposure remains governed by its separate integration gate.
 - Prospective rating-design diagnostics and post-collection design audits.
@@ -841,25 +853,25 @@ exit gate and do not create another workflow, evidence, or state authority.
 ### Explicitly out of scope
 
 - EGA or automatic discovery of a confirmatory Q matrix.
-- Runtime calls to TAM, Shiny, FACETS, ConQuest, `mfrmr`, `Rscript`, `rpy2`, or
-  any other external estimation engine.
-- External-engine job submission, result ingestion, or cross-engine ZIP/schema
-  interoperability.
-- External-engine control/data-script generation or posterior-result ingestion
-  as part of the core product journey.
+- Automatic calls from the hosted/default product journey to TAM, Shiny,
+  FACETS, ConQuest, `mfrmr`, `Rscript`, `rpy2`, or other external estimators.
+- Automatic external-job submission or unvalidated external-result ingestion.
+  A separately scoped local execution helper remains a future design question.
+- Unqualified cross-engine parameter comparisons or posterior ingestion that
+  bypass identity, privacy, numerical, or estimator-specific validation.
 - A remote R worker or a hosted external-solver queue.
 - Confirmatory multidimensional MFRM unless it is later implemented and
   validated as a native Python model through a separate scope decision.
 - Claims that a single diagnostic proves model truth, unidimensionality,
   fairness, rater quality, or suitability for a high-stakes decision.
 
-Existing legacy export or comparison surfaces are not part of this roadmap and
-will not be expanded. They will be inventoried, isolated from the default user
-journey and release gates, and given an explicit retain/deprecate/remove
-decision before the standalone core leaves beta. They must not become
-dependencies of the core workflow.
-External publications and software may still be cited as methodological
-references, but they are not product integrations or release gates.
+The 2026-09-11 extension decision supersedes the blanket prohibition on
+ConQuest/TAM interchange. Selected archived export and comparison contracts
+will be reused through the extension plan, while other legacy surfaces retain
+their inventory and retain/deprecate/remove decision. External installations
+must not become dependencies of the core workflow. External comparison
+evidence may qualify its specific adapter or numerical scope, without making
+ConQuest or R/TAM availability a requirement for the standalone release checks.
 
 Python-native report archives may remain as application-specific download
 packaging. They are not cross-engine interchange formats, and the application
@@ -2209,8 +2221,8 @@ A feature is complete only when all applicable items below are satisfied:
 The following require explicit product decisions and are not silently assumed
 by this roadmap:
 
-- Whether legacy external-comparison and advanced-model handoff surfaces should
-  be deprecated or retained as clearly separated compatibility tools.
+- Which legacy external-comparison and advanced-model handoff surfaces beyond
+  the selected ConQuest/TAM plan should be deprecated or retained.
 - Whether the large Streamlit entrypoint should ultimately become a thin shell
   or retain some stable compatibility wrappers.
 - What native evidence would be required before considering a confirmatory

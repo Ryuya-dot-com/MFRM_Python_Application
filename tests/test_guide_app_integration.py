@@ -216,13 +216,13 @@ def test_complete_sample_guide_uses_real_fit_and_keeps_analysis_identity() -> No
         at.session_state["facets_mode_output"]["result"]
     ).analysis_id
 
-    at.radio(key="sample_guide_formative_answer").set_value("overclaim")
+    at.radio(key="sample_guide_formative_answer").set_value("overclaim").run(timeout=60)
     at.button(key="sample_guide_formative_check").click()
     at.run(timeout=60)
     assert at.session_state[app._GUIDANCE_STATE_KEY].active_node_id is GuideNode.EVIDENCE_REVIEW
     assert any("goes beyond the evidence" in item.value for item in at.error)
 
-    at.radio(key="sample_guide_formative_answer").set_value("bounded")
+    at.radio(key="sample_guide_formative_answer").set_value("bounded").run(timeout=60)
     at.button(key="sample_guide_formative_check").click()
     at.run(timeout=60)
     assert at.session_state[app._GUIDANCE_STATE_KEY].active_node_id is GuideNode.ARCHIVE

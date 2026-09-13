@@ -427,7 +427,20 @@ def test_conditional_rank_blocks_facet_constant_within_every_person():
         )
 
 
-def test_primary_optimizer_rejects_nonfinite_trials_and_returns_fail_closed():
+def test_primary_optimizer_rejects_nonfinite_trials_and_returns_fail_closed(monkeypatch):
+    from mfrm_app import cmle
+
+    minimize = cmle.minimize
+
+    def probe_invalid_trial(fun, x0, args=(), **kwargs):
+        # Exercise rejection explicitly; SciPy line searches need not try this point.
+        with np.errstate(over="ignore", invalid="ignore"):
+            value, gradient = fun(np.full_like(x0, np.finfo(float).max), *args)
+        assert np.isinf(value)
+        assert np.all(gradient == 0.0)
+        return minimize(fun, x0, args=args, **kwargs)
+
+    monkeypatch.setattr(cmle, "minimize", probe_invalid_trial)
     response_blocks = {
         "P057": {"R01": [2, 1, 1, 0], "R02": [1, 1, 0, 0]},
         "P114": {"R03": [3, 3, 3, 3], "R04": [2, 2, 2, 3]},

@@ -1083,19 +1083,19 @@ def test_real_fit_scatter_help_return_preserves_fit_and_pending_triggers(
     ).analysis_id
 
     at.selectbox(key="main_results_panel").set_value("fit_details")
-    at.run(timeout=60)
+    at.run()
     assert not at.exception
     at.radio(key="fit_df_method_method").set_value("both")
-    at.run(timeout=60)
+    at.run()
     assert not at.exception
     at.number_input(key="fit_df_method_cap").set_value(12.5)
-    at.run(timeout=60)
+    at.run()
     assert not at.exception
     at.slider(key="misfit_top_n").set_value(6)
-    at.run(timeout=60)
+    at.run()
     assert not at.exception
     at.slider(key="misfit_threshold").set_value(3.0)
-    at.run(timeout=60)
+    at.run()
     assert not at.exception
     assert any(
         button.key == "mfrm_popover_open_full_guide_fit_scatter"
@@ -1106,7 +1106,7 @@ def test_real_fit_scatter_help_return_preserves_fit_and_pending_triggers(
     at.session_state["_facets_mode_force_rerun"] = True
     at.session_state["_onboarding_quickstart_fired"] = True
     at.button(key="mfrm_popover_open_full_guide_fit_scatter").click()
-    at.run(timeout=60)
+    at.run()
     assert not at.exception
     assert calls == {"estimate": 0, "refit": 0}
     assert at.session_state[app._HELP_ROUTE_STATE_KEY].context_status is HelpContextStatus.CURRENT
@@ -1137,12 +1137,12 @@ def test_real_fit_scatter_help_return_preserves_fit_and_pending_triggers(
     ] == 3.0
 
     at.radio(key="lang").set_value("ja")
-    at.run(timeout=60)
+    at.run()
     assert not at.exception
     assert calls == {"estimate": 0, "refit": 0}
 
     at.button(key="mfrm_help_return_to_source").click()
-    at.run(timeout=60)
+    at.run()
     assert not at.exception
     assert calls == {"estimate": 0, "refit": 0}
     assert at.session_state["_facets_mode_force_rerun"] is True

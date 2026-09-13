@@ -2,6 +2,22 @@
 
 All notable changes to this standalone Streamlit distribution should be recorded here.
 
+## 0.2.17-beta — 2026-09-13
+
+- Publish the reviewed unified development application: simpler onboarding and
+  sidebar, focused result navigation, direct PCA/bias checks, and task-based
+  Report & Export with an English APA manuscript template.
+- Keep the display-density control label accessible inside its expander and
+  refresh the README preview with the built-in synthetic sample.
+- Preserve statistical output guards, identified optimizer coordinates, and
+  the distinction between optimizer termination and inference readiness.
+  Free-population-SD MML uncertainty and inference remain withheld pending
+  qualification. Development JAX/NumPyro plans and exact CMLE research do not
+  become public estimator capabilities.
+- Retain both development and prior public histories without a force push.
+  The reviewed unified tree is the release source; remaining public-branch
+  performance work is not represented as integrated or validated here.
+
 ## Unreleased
 
 - **Known probabilistic assignment validation (repository-only).** Added a

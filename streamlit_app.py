@@ -76,7 +76,7 @@ if "--doctor" in sys.argv and importlib.util.find_spec("streamlit") is None:
 import streamlit as st
 
 
-APP_VERSION = "0.2.15-beta"
+APP_VERSION = "0.2.17-beta"
 APP_RELEASE_LABEL = "standalone Python beta"
 APP_BUILD_ENV_KEYS = (
     "STREAMLIT_GIT_COMMIT_HASH",
@@ -74117,7 +74117,6 @@ def main() -> None:
             key="app_view_density",
             help=t("sidebar.view_density_help"),
             horizontal=True,
-            label_visibility="collapsed",
         )
 
     help_state = render_persistent_help_launcher()

@@ -6,6 +6,7 @@ on:
     paths:
       - "streamlit_app.py"
       - "mfrm_app/**"
+      - "locales/**"
       - "requirements.txt"
       - "requirements-dev.txt"
       - "Makefile"
@@ -27,6 +28,7 @@ on:
     paths:
       - "streamlit_app.py"
       - "mfrm_app/**"
+      - "locales/**"
       - "requirements.txt"
       - "requirements-dev.txt"
       - "Makefile"

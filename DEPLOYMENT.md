@@ -20,6 +20,7 @@ Before sharing results, remove direct identifiers where possible and keep only t
 
 Use these settings when deploying from GitHub:
 
+- App: https://mfrmpythonapplication-xodghmcghngx8cz5zmhfeg.streamlit.app
 - Repository: `Ryuya-dot-com/MFRM_Python_Application`
 - Branch: `main`
 - Main file path: `streamlit_app.py`

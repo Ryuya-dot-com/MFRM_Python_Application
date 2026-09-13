@@ -1,9 +1,10 @@
 # MFRM Streamlit
 
-Development checkout: `integration/unified-app`. The public `main` baseline is
-`d8558fc` (`0.2.16-beta`); the inherited version label below is not a release-order
-indicator. See the [development integration ledger](docs/development_integration.md)
-for preserved branches, completed transfers, and pending release gates.
+Release **0.2.17-beta** publishes the reviewed unified application. The previous
+public `0.2.16-beta` history is retained; its remaining performance changes are
+tracked separately in the [development integration ledger](docs/development_integration.md).
+
+Public app: https://mfrmpythonapplication-xodghmcghngx8cz5zmhfeg.streamlit.app
 
 Standalone Python beta application for Many-Facet Rasch Model estimation in Streamlit.
 
@@ -13,7 +14,7 @@ called, imported, handed a job, or used as a public release gate.
 
 ## Status
 
-- Release status: public beta / research preview (**v0.2.15-beta**)
+- Release status: public beta / research preview (**v0.2.17-beta**)
 - Runtime engine: standalone Python
 - Primary entrypoint: `streamlit_app.py`
 - Intended use: exploratory analysis, teaching, reporting support, and research workflow prototyping
@@ -549,7 +550,7 @@ commit after a push or reboot.
 
 ## What's new in the current beta line
 
-The current app label is v0.2.15-beta. This beta line adds the v0.2.14
+The current app label is v0.2.17-beta. This beta line adds the v0.2.14
 sample-scenario and quick-results-bundle work, then layers on the
 release-readiness and UX/documentation pass documented in `CHANGELOG.md`.
 Key current-line improvements include:

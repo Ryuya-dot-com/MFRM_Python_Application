@@ -66,7 +66,7 @@ def test_input_workspace_preserves_parsing_and_folds_editors_after_a_result() ->
         st.write(f"Loaded {len(data)} rows")
 
     at = AppTest.from_function(input_workspace).run(timeout=45)
-    at.radio(key="data_source_class").set_value("paste").run(timeout=45)
+    at.selectbox(key="data_source_class").set_value("paste").run(timeout=45)
     at.main.text_area(key="paste_data_text").set_value(app.TEACHER_PASTE_EXAMPLE_CSV).run(timeout=45)
     assert not at.exception
     assert any(item.value == "Loaded 5 rows" for item in at.markdown)
@@ -83,7 +83,7 @@ def test_input_workspace_preserves_parsing_and_folds_editors_after_a_result() ->
     assert at.text_area(key="paste_data_text").value == app.TEACHER_PASTE_EXAMPLE_CSV
     assert any(item.value == "Loaded 5 rows" for item in at.markdown)
 
-    at.radio(key="data_source_class").set_value("upload").run(timeout=45)
+    at.selectbox(key="data_source_class").set_value("upload").run(timeout=45)
     assert not at.exception
     assert len(at.main.get("file_uploader")) == 1
     assert not at.sidebar.get("file_uploader")

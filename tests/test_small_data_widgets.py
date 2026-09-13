@@ -83,7 +83,7 @@ def test_apptest_with_clinical_osce_runs_visuals_without_crash():
     at.button(key="onboarding_skip_guide").click()
     at.run(timeout=40)
     # Switch the always-visible sample scenario selector to Clinical OSCE.
-    assert at.radio(key="data_source_class").value == "sample"
+    assert at.selectbox(key="data_source_class").value == "sample"
     at.selectbox(key="data_source_scenario").set_value("clinical_osce")
     at.run(timeout=60)
     assert at.session_state["data_source_flat"] == "scenario:clinical_osce"

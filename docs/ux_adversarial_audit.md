@@ -360,6 +360,55 @@ many controls, and some run-specific diagnostic text is English in Japanese UI.
 Those are the next concrete simplification/localization targets; adding another
 onboarding layer would repeat the problem addressed here.
 
+## Sidebar: visible selections, optional editors — 2026-09-13
+
+The sidebar now uses one source selector plus the existing scenario selector.
+The sample name and a compact size/category summary stay visible; the long
+scenario explanation, references and CSV download share a closed disclosure.
+The sample CSV download does not rerun the app. Display density is also a closed
+disclosure, while language and Help remain directly available.
+
+Column mapping is shown as an always-visible summary of the actual Person,
+Score and facet selections. Its editor starts closed for registered built-in
+samples and open for other sources, including pasted and uploaded data. All
+mapping widgets are still instantiated with their existing keys; closing the
+editor does not remove them from Streamlit session state. An ignored weight
+column and the insufficient-facet warning remain outside the editor. Model,
+estimator, analysis depth and selected bias pair remain directly adjustable.
+
+Merged the explanatory compute-plan captions and detailed settings into the
+existing setup disclosure, and removed the repeated sidebar row-count banner
+and Run-location caption. The main sample banner now names the example in the
+selected UI language without repeating the full design. README's smoke-run
+instructions were updated to the current source, Run and result controls.
+
+Browser inspection found that Streamlit could retain an old selected-option
+label after a language change even when its dropdown options had translated.
+The source and depth selectors now resend their canonical selection, refreshing
+the label. Standard remains the initial analysis depth, and returning from an
+Advanced-only Custom plan to Guided retains the existing Standard fallback.
+The pre-run depth description is localized independently of its analysis ID.
+
+Validation: **59 tests passed**, covering source-state migration, source/scenario
+round trips, both mapping-disclosure states in both languages, manual mapping,
+visible facet warnings, weight handling, Advanced controls, locale label updates,
+Help/sample-guide state, small-data widgets and the config whitelist. The real
+Guided-versus-Advanced default run test compared person, facet and step estimates
+with zero relative tolerance and absolute tolerance 1e-12. The browser sample
+retained 960 ratings, RSM/JMLE, fingerprint `067a6d8d`, and PCA eigenvalue 3.74.
+A separate pasted synthetic dataset opened the mapping editor automatically.
+English and Japanese 400-CSS-pixel views had no horizontal page overflow; the
+mapping editor remained operable in the sidebar. After the localized sample
+banner and README update, the overlapping app-smoke/locale subset also passed
+all 22 tests.
+
+These changes concern presentation and state synchronization, not estimation
+algorithms or statistical thresholds. The sidebar still scrolls: detailed
+mapping for user data and necessary model choices remain available. This is
+focused verification, not completion of the full accessibility protocol or a
+first-time-user study; the previously recorded language fast-path/exact-return
+acceptance work remains separate.
+
 ## Long-term implementation sequence
 
 1. Execute the versioned browser matrix for keyboard/focus acceptance and
@@ -367,8 +416,8 @@ onboarding layer would repeat the problem addressed here.
 2. Complete browser and first-time-user acceptance for the implemented
    two-level source chooser and compact Guided setup while preserving stable
    IDs and old session state.
-3. Continue simplifying the setup sidebar using the focused result-shell pattern;
-   verify that contextual Help returns to the exact selected view.
+3. Verify the simplified sidebar with first-time users and confirm that
+   contextual Help and language switching return to the exact selected view.
 4. Extract source/setup/result-shell renderers from the monolith, one tested
    vertical slice at a time.
 5. Add task-level accessibility and rendered-locale acceptance tests.

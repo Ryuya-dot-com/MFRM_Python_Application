@@ -740,17 +740,20 @@ python -m pip install -r requirements-dev.txt
 streamlit run streamlit_app.py
 ```
 
-For a first local smoke check, keep **Sample data (built-in)** selected (the
-default Writing essay scenario is loaded automatically), leave the
-guided defaults unchanged, click **Run FACETS-mode estimation**, then open the
-**What should I look at first?**, **Data**, **Visuals**, and **Help** tabs.
-Other built-in scenarios switchable from the **Data source** radio:
-*Large-scale writing* (PCA-ready), *L2 speaking* (analytic-rubric /
-PCM), *Clinical OSCE* (station-dominant), *Reading testlet — binary*
-(0/1 scoring with item-text-person nesting). Each scenario's sidebar
-**About this dataset** expander lists its APA 7 references.
+For a first local smoke check, choose **Continue without the guide**, keep
+**Built-in example** and the **Writing essay** scenario, then click
+**Run this analysis** with the guided defaults. Results open in **First Read**;
+follow **Check next** to the recommended diagnostic. Use **Report & Export**
+when you need a report or result files.
 
-The same **Data source** radio also includes **Generate synthetic data**.
+Other built-in datasets are available under **Example scenario**, including
+*Large-scale writing*, *L2 speaking*, *Clinical OSCE*, and *Reading testlet —
+binary*. The sidebar's **Example details, references & CSV** disclosure holds
+the design description, references, and sample download. The actual column
+mapping remains visible as a short summary; open **Check or change columns**
+to edit it. For pasted or uploaded data, the mapping editor starts open.
+
+Choose **Generate synthetic data** from **How will you provide data?**.
 Use it to create public long-format MFRM simulation data by setting the number
 of facets, each facet's level count and spread, the score-category support,
 zero-count categories, threshold spacing, missingness, and seed values. The

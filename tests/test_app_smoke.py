@@ -1,3 +1,4 @@
+import pytest
 from streamlit.testing.v1 import AppTest
 
 
@@ -27,19 +28,19 @@ def test_two_level_source_picker_keeps_sample_detail_visible_and_stable() -> Non
     at.button(key="onboarding_skip_guide").click()
     at.run(timeout=30)
 
-    assert at.radio(key="data_source_class").value == "sample"
+    assert at.selectbox(key="data_source_class").value == "sample"
     assert at.selectbox(key="data_source_scenario").value == "writing_essay"
     at.selectbox(key="data_source_scenario").set_value("clinical_osce")
     at.run(timeout=30)
     assert at.session_state["data_source_flat"] == "scenario:clinical_osce"
 
-    at.radio(key="data_source_class").set_value("paste")
+    at.selectbox(key="data_source_class").set_value("paste")
     at.run(timeout=30)
     assert at.session_state["data_source_flat"] == "paste"
     assert not any(item.key == "data_source_scenario" for item in at.selectbox)
     assert any("pasted and uploaded rating files" in warning.value for warning in at.warning)
 
-    at.radio(key="data_source_class").set_value("sample")
+    at.selectbox(key="data_source_class").set_value("sample")
     at.run(timeout=30)
     assert at.selectbox(key="data_source_scenario").value == "clinical_osce"
     assert at.session_state["data_source_flat"] == "scenario:clinical_osce"
@@ -52,7 +53,7 @@ def test_legacy_flat_source_state_migrates_into_two_level_picker() -> None:
 
     at.session_state["data_source_flat"] = "upload"
     at.run(timeout=30)
-    assert at.radio(key="data_source_class").value == "upload"
+    assert at.selectbox(key="data_source_class").value == "upload"
     assert at.session_state["data_source_flat"] == "upload"
 
 
@@ -136,6 +137,8 @@ def test_compact_guided_setup_renders_in_japanese() -> None:
     at = AppTest.from_file("streamlit_app.py").run(timeout=30)
     at.button(key="onboarding_skip_guide").click()
     at.run(timeout=30)
+    at.selectbox(key="facets_mode_analysis_depth").set_value("Full publication")
+    at.run(timeout=30)
     at.radio(key="lang").set_value("ja")
     at.run(timeout=30)
 
@@ -147,6 +150,15 @@ def test_compact_guided_setup_renders_in_japanese() -> None:
         "技術設定には文書化された標準値" in str(item.value)
         for item in at.caption
     )
+
+    source = at.selectbox(key="data_source_class")
+    depth = at.selectbox(key="facets_mode_analysis_depth")
+    assert source.value == "sample"
+    assert depth.value == "Full publication"
+    assert source.proto.set_value and source.proto.raw_value == "組込みの例"
+    assert depth.proto.set_value and depth.proto.raw_value == "Full publication (出版水準)"
+    assert not any("Session State API" in warning.value for warning in at.warning)
+
 
 
 def test_detected_weight_is_explained_and_not_offered_as_a_guided_facet() -> None:
@@ -190,3 +202,42 @@ app.run_facets_mode(app.load_core_namespace(), data)
         if item.key and str(item.key).startswith("facets_mode_weight_col_")
     )
     assert weight_picker.value == "Weight"
+
+
+@pytest.mark.parametrize("lang", ["en", "ja"])
+@pytest.mark.parametrize("builtin", [True, False])
+def test_mapping_disclosure_keeps_actual_selections_and_warnings(lang, builtin):
+    def view(lang, builtin):
+        import pandas as pd
+        import streamlit as st
+        import streamlit_app as app
+        st.session_state["lang"] = lang
+        if builtin:
+            st.session_state["_loaded_sample_scenario_key"] = "writing_essay"
+        st.session_state.setdefault("facets_mode_output", {"analysis_id": "existing-fit"})
+        data = pd.DataFrame({
+            "Person": ["P1", "P1", "P2", "P2"], "Score": [1, 2, 2, 1],
+            "Rater": ["R1", "R2", "R1", "R2"], "Task": ["T1", "T2", "T1", "T2"],
+            "Alternate": [2, 1, 1, 2],
+        })
+        st.session_state["mapping_label"] = app.t("sidebar_estimation.column_mapping_subheader")
+        st.session_state["facet_warning"] = app.t("sidebar_run_setup.needs_two_facets_warning")
+        # Render the production setup, without a new estimation or the result body.
+        app.run_facets_mode(app.load_core_namespace(), data, help_surface_active=True)
+
+    at = AppTest.from_function(view, args=(lang, builtin)).run(timeout=45)
+    assert not at.exception
+    editor = next(e for e in at.sidebar.expander if e.label == at.session_state["mapping_label"])
+    assert editor.proto.expanded is (not builtin)
+    score = next(item for item in editor.selectbox if item.key.startswith("facets_mode_score_col_"))
+    score.select("Alternate").run(timeout=45)
+    assert not at.exception
+    direct_captions = "\n".join(item.value for item in at.sidebar.caption)
+    assert "Score" in direct_captions and "Alternate" in direct_captions
+    facets = next(item for item in at.multiselect if item.key.startswith("facets_mode_facet_cols_"))
+    facets.set_value(["Rater"]).run(timeout=45)
+    assert not at.exception
+    assert at.session_state["facet_warning"] in [w.value for w in at.sidebar.warning]
+    assert at.radio(key="facets_mode_model_type").value == "RSM"
+    assert at.radio(key="facets_mode_estimation_method").value == "JMLE"
+    assert at.session_state["facets_mode_output"] == {"analysis_id": "existing-fit"}

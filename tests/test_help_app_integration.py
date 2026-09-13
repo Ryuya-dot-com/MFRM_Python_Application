@@ -252,7 +252,7 @@ def test_simulation_threshold_failure_uses_bounded_problem_notice(monkeypatch):
     at.button(key="onboarding_skip_guide").click()
     at.run()
 
-    at.radio(key="data_source_class").set_value("simulate")
+    at.selectbox(key="data_source_class").set_value("simulate")
     at.run()
     assert at.session_state["data_source_flat"] == "simulate"
     at.radio(key="sim_threshold_mode").set_value("custom")

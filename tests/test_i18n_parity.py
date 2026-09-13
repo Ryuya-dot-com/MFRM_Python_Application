@@ -241,7 +241,7 @@ def test_japanese_safety_and_guidance_copy_uses_task_centered_terms(locales):
     assert ja["downloads.tab_data_tables"] == "データ表"
     assert ja["main_tabs.panel_select_label"] == "結果パネル"
     assert ja["guided.interpret_heading"] == "解釈の準備状況"
-    assert ja["sidebar_estimation.column_mapping_subheader"] == "列の対応づけ"
+    assert ja["sidebar_estimation.column_mapping_subheader"] == "列の対応を確認・変更"
     assert ja["data_source.delimiter_label"] == "区切り文字"
     assert ja["help.tab_quick_start"] == "クイックスタート"
 

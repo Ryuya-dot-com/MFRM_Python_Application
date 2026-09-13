@@ -112,7 +112,7 @@ def test_representative_scenarios_render_without_streamlit_exception(scenario_ke
     at.button(key="onboarding_skip_guide").click()
     at.run(timeout=APPTEST_TIMEOUT)
 
-    assert at.radio(key="data_source_class").value == "sample"
+    assert at.selectbox(key="data_source_class").value == "sample"
     at.selectbox(key="data_source_scenario").set_value(scenario_key)
 
     at.run(timeout=APPTEST_TIMEOUT)

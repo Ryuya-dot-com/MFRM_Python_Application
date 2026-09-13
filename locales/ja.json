@@ -1120,7 +1120,7 @@
     "subheader": "実行概要",
     "needs_two_facets_warning": "実行前に facet 列を 2 つ以上選択する。",
     "selection_info_template": "{n_rows} 行、{n_persons} Person、facet 列 {n_facets} 個を選択中。",
-    "review_setup_expander": "現在の設定を確認する",
+    "review_setup_expander": "設定と実行するチェックの詳細",
     "person_label": "Person",
     "score_label": "Score",
     "facets_label": "Facets",
@@ -1915,7 +1915,8 @@
     "classical_dif_sibtest_action": "MH/logistic の裏付けとして使用。一致すれば flag は頑健、不一致なら matching と strata を点検。"
   },
   "sidebar_estimation": {
-    "column_mapping_subheader": "列の対応づけ",
+    "mapping_summary_template": "Person：{person}・Score：{score}\n\nファセット：{facets}",
+    "column_mapping_subheader": "列の対応を確認・変更",
     "column_mapping_caption": "Person、Score、2 つ以上の facet に列を対応づける。",
     "auto_detected_caption": "自動検出 — 信頼度 {pct}%",
     "auto_detected_facet_caption": "自動検出 {role}: {column} ({pct}%)",
@@ -1999,6 +2000,8 @@
     "estimate_population_sd_active_note": "Person SDをEMで推定します。上のSDは初期値です。推定SDは技術的な点推定値として表示し、そのSE・信頼区間は検証が完了するまで保留します。"
   },
   "data_source": {
+    "loaded_sample_template": "サンプル：{label}",
+    "scenario_compact_template": "評定 {n_obs} 件・Person {persons} 人・得点カテゴリ {n_cat} 個",
     "header": "データソース",
     "source_class_label": "データの用意方法",
     "source_class_help": "最初にデータソースの種類を選びます。組込み例を選ぶと、その直下にシナリオ選択が常時表示されます。",
@@ -2035,7 +2038,7 @@
     "sim_sparse_pair_details_label": "Facet-pair cell 表の全列を表示",
     "sim_sparse_pair_download_button": "Facet-pair cell 表をダウンロード (CSV)",
     "scenario_info_template": "**読込済み:** {label}\n\n**設計:** {persons} × {raters} × {tasks} × {criteria} = **{n_obs} 観測**、{n_cat} 段階尺度。\n\n{short}",
-    "full_description_expander": "詳細な説明と参考文献",
+    "full_description_expander": "例の説明・参考文献・CSV",
     "parameter_values_grounded_label": "**パラメータ値の根拠:**",
     "references_pending_caption": "参考文献は登録待ち。",
     "download_scenario_button": "このシナリオの CSV をダウンロード",

@@ -8025,9 +8025,8 @@ def render_loaded_data_banner() -> None:
     marker and this helper no-ops — we do not want to imply that a
     user-provided file came from the literature.
 
-    Design: st.info-colored callout with the scenario label and obs
-    count. Scenario switching remains available from the Data source
-    radio in the sidebar.
+    The sample name stays visible; dimensions, references and source changes
+    are available in the sidebar.
     """
     custom_meta = st.session_state.get("_loaded_custom_simulation_meta")
     if isinstance(custom_meta, dict):
@@ -8056,14 +8055,7 @@ def render_loaded_data_banner() -> None:
     scenario = SAMPLE_DATA_SCENARIOS.get(key)
     if not scenario:
         return
-    dims = scenario["dimensions"]
-    st.info(
-        f"**Loaded sample data:** {scenario['label']} — "
-        f"{dims['persons']} × {dims['raters']} × {dims['tasks']} × "
-        f"{dims['criteria']} = **{scenario['n_obs']:,} observations**, "
-        f"{dims['n_cat']}-point scale. "
-        f"Switch scenario from the **Data source** radio in the sidebar."
-    )
+    st.caption(t("data_source.loaded_sample_template", label=scenario["label"]))
 
 
 def render_input_overview(data: pd.DataFrame) -> None:
@@ -8211,31 +8203,21 @@ def render_sidebar_run_setup_summary(
     est_method: str,
     analysis_depth: str,
     workflow_mode: str,
+    preset_settings: dict,
 ) -> None:
-    """Show the current estimation setup close to the Run button."""
-    st.sidebar.subheader(t("sidebar_run_setup.subheader"))
+    """Keep detailed settings and compute coverage in one optional disclosure."""
     try:
-        n_rows = int(len(data))
-        n_persons = int(data[person_col].nunique(dropna=True))
         n_score_missing = int(data[score_col].isna().sum())
     except Exception:  # pragma: no cover - summary must not block analysis
-        n_rows = 0
-        n_persons = 0
         n_score_missing = 0
 
     if len(facet_cols) < 2:
         st.sidebar.warning(t("sidebar_run_setup.needs_two_facets_warning"))
-    else:
-        st.sidebar.info(
-            t(
-                "sidebar_run_setup.selection_info_template",
-                n_rows=f"{n_rows:,}",
-                n_persons=f"{n_persons:,}",
-                n_facets=len(facet_cols),
-            )
-        )
-
     with st.sidebar.expander(t("sidebar_run_setup.review_setup_expander"), expanded=False):
+        if workflow_mode == "Guided defaults":
+            st.caption(t("sidebar_estimation.guided_defaults_active_caption"))
+        st.caption(t("sidebar_perf.first_runs_standard_caption"))
+        st.caption(analysis_depth_sidebar_summary(preset_settings))
         weight_display = weight_col or t("sidebar_run_setup.weight_none_value")
         st.markdown(
             "\n".join([
@@ -25776,7 +25758,7 @@ def read_input_data(
 ) -> pd.DataFrame:
     """Render the ordinary source picker or load the isolated guide sample.
 
-    The guide route deliberately bypasses the ten-choice source control.  It
+    The guide route deliberately bypasses the ordinary source controls.  It
     still uses the same deterministic sample generator and, from estimation
     onward, the same production pipeline as the ordinary workspace.
     """
@@ -25835,7 +25817,9 @@ def read_input_data(
         "paste": t("data_source.source_class_paste"),
         "upload": t("data_source.source_class_upload"),
     }
-    chosen_class = st.sidebar.radio(
+    # Resend the stable ID so Streamlit refreshes the selected label after a locale change.
+    st.session_state["data_source_class"] = st.session_state["data_source_class"]
+    chosen_class = st.sidebar.selectbox(
         t("data_source.source_class_label"),
         options=list(_ux.DATA_SOURCE_CLASS_IDS),
         format_func=class_labels.__getitem__,
@@ -25863,26 +25847,26 @@ def read_input_data(
         scenario = SAMPLE_DATA_SCENARIOS[scenario_key]
         dims = scenario["dimensions"]
 
-        # Inline info card (always visible — no expander gate). Users
-        # immediately see what they just selected: dimensions, obs
-        # count, and one-line diagnostic hint. Full description +
-        # references move to a secondary expander below.
-        st.sidebar.info(t(
-            "data_source.scenario_info_template",
-            label=scenario["label"],
-            persons=dims["persons"],
-            raters=dims["raters"],
-            tasks=dims["tasks"],
-            criteria=dims["criteria"],
-            n_obs=f"{scenario['n_obs']:,}",
-            n_cat=dims["n_cat"],
-            short=scenario["short"],
+        st.sidebar.caption(t(
+            "data_source.scenario_compact_template",
+            n_obs=f"{scenario['n_obs']:,}", persons=dims["persons"], n_cat=dims["n_cat"],
         ))
+        sample_df = cached_sample_mfrm_data_by_key(
+            scenario_key, seed=20240101,
+        ).copy()
+        with st.sidebar.expander(t("data_source.full_description_expander"), expanded=False):
+            st.info(t(
+                "data_source.scenario_info_template",
+                label=scenario["label"],
+                persons=dims["persons"],
+                raters=dims["raters"],
+                tasks=dims["tasks"],
+                criteria=dims["criteria"],
+                n_obs=f"{scenario['n_obs']:,}",
+                n_cat=dims["n_cat"],
+                short=scenario["short"],
+            ))
 
-        # Full description + APA references in a collapsed expander
-        # so the info card stays compact. Opening this gives users
-        # everything they need to cite the scenario in a manuscript.
-        with st.sidebar.expander(t("data_source.full_description_expander")):
             st.markdown(scenario["description"])
             citations = scenario.get("citations", [])
             if citations:
@@ -25900,18 +25884,16 @@ def read_input_data(
                 else:
                     st.caption(t("data_source.references_pending_caption"))
 
-        sample_df = cached_sample_mfrm_data_by_key(
-            scenario_key, seed=20240101,
-        ).copy()
-        st.sidebar.download_button(
-            t("data_source.download_scenario_button"),
-            data=sample_df.to_csv(index=False).encode("utf-8"),
-            file_name=f"mfrm_sample_{scenario_key}.csv",
-            mime="text/csv",
-            key="sample_data_download",
-            help=t("data_source.download_scenario_help"),
-            use_container_width=True,
-        )
+            st.download_button(
+                t("data_source.download_scenario_button"),
+                data=sample_df.to_csv(index=False).encode("utf-8"),
+                file_name=f"mfrm_sample_{scenario_key}.csv",
+                mime="text/csv",
+                key="sample_data_download",
+                on_click="ignore",
+                help=t("data_source.download_scenario_help"),
+                use_container_width=True,
+            )
         # Remember which scenario is loaded so the main area can
         # surface a matching banner above the results tabs.
         st.session_state["_loaded_sample_scenario_key"] = scenario_key
@@ -37150,25 +37132,6 @@ def run_facets_mode(
             column=str(picked), pct=f"{int(round(conf * 100))}",
         )
 
-    st.sidebar.subheader(t("sidebar_estimation.column_mapping_subheader"))
-    st.sidebar.caption(t("sidebar_estimation.column_mapping_caption"))
-    mapping_key_suffix = stable_json_fingerprint({"columns": cols})
-    person_col = st.sidebar.selectbox(
-        t("sidebar_estimation.person_column_label"), cols, index=cols.index(person_default),
-        key=f"facets_mode_person_col_{mapping_key_suffix}",
-        help=t("sidebar_estimation.person_column_help"),
-    )
-    _cap = _auto_caption("person", person_col)
-    if _cap:
-        st.sidebar.caption(_cap)
-    score_col = st.sidebar.selectbox(
-        t("sidebar_estimation.score_column_label"), cols, index=cols.index(score_default),
-        key=f"facets_mode_score_col_{mapping_key_suffix}",
-        help=t("sidebar_estimation.score_column_help"),
-    )
-    _cap = _auto_caption("score", score_col)
-    if _cap:
-        st.sidebar.caption(_cap)
     # Ask for the setup level before optional mappings so Guided defaults can
     # present only the decisions needed for a defensible first analysis.
     # Stable internal IDs drive the comparisons below; format_func handles the
@@ -37189,9 +37152,29 @@ def run_facets_mode(
         help=t("sidebar_estimation.workflow_mode_help"),
     )
     advanced_controls = workflow_mode == "Advanced controls"
-    if not advanced_controls:
-        st.sidebar.caption(t("sidebar_estimation.guided_defaults_active_caption"))
-
+    mapping_summary = st.sidebar.empty()
+    mapping_ui = st.sidebar.expander(
+        t("sidebar_estimation.column_mapping_subheader"),
+        expanded=st.session_state.get("_loaded_sample_scenario_key") not in SAMPLE_DATA_SCENARIOS,
+    )
+    mapping_ui.caption(t("sidebar_estimation.column_mapping_caption"))
+    mapping_key_suffix = stable_json_fingerprint({"columns": cols})
+    person_col = mapping_ui.selectbox(
+        t("sidebar_estimation.person_column_label"), cols, index=cols.index(person_default),
+        key=f"facets_mode_person_col_{mapping_key_suffix}",
+        help=t("sidebar_estimation.person_column_help"),
+    )
+    _cap = _auto_caption("person", person_col)
+    if _cap:
+        mapping_ui.caption(_cap)
+    score_col = mapping_ui.selectbox(
+        t("sidebar_estimation.score_column_label"), cols, index=cols.index(score_default),
+        key=f"facets_mode_score_col_{mapping_key_suffix}",
+        help=t("sidebar_estimation.score_column_help"),
+    )
+    _cap = _auto_caption("score", score_col)
+    if _cap:
+        mapping_ui.caption(_cap)
     # Stable internal ID "(None)" drives the routing below; format_func
     # translates the displayed label so locale switching does not break
     # the comparison ``weight_col_raw == "(None)"``.
@@ -37207,7 +37190,7 @@ def run_facets_mode(
     }
     weight_col = None
     if advanced_controls:
-        weight_col_raw = st.sidebar.selectbox(
+        weight_col_raw = mapping_ui.selectbox(
             t("sidebar_estimation.weight_column_label"),
             weight_opts,
             index=weight_idx,
@@ -37271,7 +37254,7 @@ def run_facets_mode(
         "columns": facet_candidates,
         "custom_facets": custom_sim_facets if isinstance(custom_sim_facets, list) else None,
     })
-    facet_cols = st.sidebar.multiselect(
+    facet_cols = mapping_ui.multiselect(
         t("sidebar_estimation.facet_columns_label"),
         facet_candidates,
         default=default_facets,
@@ -37295,7 +37278,11 @@ def run_facets_mode(
                 )
             )
     if _autodetected_facet_lines:
-        st.sidebar.caption(" / ".join(_autodetected_facet_lines))
+        mapping_ui.caption(" / ".join(_autodetected_facet_lines))
+    mapping_summary.caption(t(
+        "sidebar_estimation.mapping_summary_template",
+        person=person_col, score=score_col, facets=_short_value_list(list(facet_cols)),
+    ))
     # Output styling is not a first-run decision. Guided mode is deliberately
     # deterministic, including after a user switches back from Advanced.
     guided_visual_defaults = {
@@ -38011,14 +37998,16 @@ def run_facets_mode(
     ]
     if advanced_controls:
         analysis_depth_options.append("Custom")
-    elif st.session_state.get("facets_mode_analysis_depth") == "Custom":
-        # Returning to Guided must not silently retain an invisible custom
-        # compute plan from a previous Advanced run.
-        st.session_state["facets_mode_analysis_depth"] = "Standard (recommended)"
+    # Preserve the actual selection while refreshing its localized label.
+    # Guided mode cannot retain an Advanced-only Custom plan.
+    depth_selection = st.session_state.get("facets_mode_analysis_depth", "Standard (recommended)")
+    st.session_state["facets_mode_analysis_depth"] = (
+        depth_selection if depth_selection in analysis_depth_options else "Standard (recommended)"
+    )
     analysis_depth = st.sidebar.selectbox(
         t("sidebar_perf.analysis_depth_label"),
         analysis_depth_options,
-        index=1,
+        index=0,  # The default/selection is seeded explicitly above.
         format_func=analysis_depth_labels.__getitem__,
         key="facets_mode_analysis_depth",
         help=t("sidebar_perf.analysis_depth_help"),
@@ -38183,8 +38172,6 @@ def run_facets_mode(
         st.sidebar.caption(t("sidebar_perf.bias_scan_count_caption_template", n=len(bias_pairs_available)))
     elif bias_mode != "Skip":
         st.sidebar.caption(t("sidebar_perf.bias_needs_two_facets_caption"))
-    st.sidebar.caption(t("sidebar_perf.first_runs_standard_caption"))
-    st.sidebar.caption(analysis_depth_sidebar_summary(preset_settings))
     render_sidebar_run_setup_summary(
         data,
         person_col=person_col,
@@ -38195,6 +38182,7 @@ def run_facets_mode(
         est_method=est_method,
         analysis_depth=analysis_depth,
         workflow_mode=workflow_mode,
+        preset_settings=preset_settings,
     )
     resource_preflight = build_estimation_resource_preflight(
         data=data,
@@ -38246,7 +38234,7 @@ def run_facets_mode(
         workflow_mode=workflow_mode,
         model_type=model_type,
         est_method=est_method,
-        analysis_depth=analysis_depth,
+        analysis_depth=analysis_depth_labels[analysis_depth],
         resource_preflight=resource_preflight,
         run_disabled=bool(resource_preflight.get("block")),
     )
@@ -38263,7 +38251,6 @@ def run_facets_mode(
             disabled=help_overlay_open,
         )
     else:
-        st.sidebar.caption(t("app.run_primary_sidebar_caption"))
         run_clicked = bool(main_run_clicked)
     if not help_overlay_open and not suppress_help_return_triggers:
         if st.session_state.pop("_facets_mode_force_rerun", False):
@@ -74121,15 +74108,17 @@ def main() -> None:
         "Essential": t("sidebar.view_density_essential"),
         "Full": t("sidebar.view_density_full"),
     }
-    st.sidebar.radio(
-        t("sidebar.view_density_label"),
-        options=view_density_options,
-        format_func=view_density_labels.__getitem__,
-        index=0,
-        key="app_view_density",
-        help=t("sidebar.view_density_help"),
-        horizontal=True,
-    )
+    with st.sidebar.expander(t("sidebar.view_density_label"), expanded=False):
+        st.radio(
+            t("sidebar.view_density_label"),
+            options=view_density_options,
+            format_func=view_density_labels.__getitem__,
+            index=0,
+            key="app_view_density",
+            help=t("sidebar.view_density_help"),
+            horizontal=True,
+            label_visibility="collapsed",
+        )
 
     help_state = render_persistent_help_launcher()
 

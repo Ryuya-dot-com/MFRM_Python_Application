@@ -89,13 +89,14 @@ def invoke_facets_batch_no(
     kill is never normalized into success.
     """
 
-    if os.name != "nt":
-        raise OSError("FACETS visible-mode automation is supported only on Windows")
     paths = tuple(Path(path).resolve() for path in readiness_paths)
     if not paths:
         raise ValueError("At least one readiness path is required")
     if timeout_seconds <= 0 or stable_seconds <= 0 or poll_seconds <= 0:
         raise ValueError("Timeout and polling values must be positive")
+
+    if os.name != "nt":
+        raise OSError("FACETS visible-mode automation is supported only on Windows")
 
     startupinfo = subprocess.STARTUPINFO()
     if hide_window:

@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 import pandas as pd
+import pytest
+
+pytestmark = pytest.mark.retained_evidence
 
 from validation import known_assignment_response_prepare as prepare
 from validation import known_assignment_response_run as runner

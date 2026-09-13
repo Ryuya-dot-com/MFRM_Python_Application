@@ -15,6 +15,8 @@ constraint regressions visible.
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import numpy as np
 import pytest
 from streamlit.testing.v1 import AppTest
@@ -104,7 +106,7 @@ def test_scenario_estimation_pipeline_completes(scenario_key: str):
 @pytest.mark.parametrize("scenario_key", APPTEST_SCENARIOS)
 def test_representative_scenarios_render_without_streamlit_exception(scenario_key: str):
     """Representative UI path: load scenario, click Run, re-render cleanly."""
-    at = AppTest.from_file("streamlit_app.py").run(timeout=APPTEST_TIMEOUT)
+    at = AppTest.from_file(Path(__file__).resolve().parents[1] / "streamlit_app.py").run(timeout=APPTEST_TIMEOUT)
     assert not at.exception, (
         f"initial render already raised for {scenario_key!r}: "
         f"{[e.value for e in at.exception]}"
@@ -136,27 +138,13 @@ def test_representative_scenarios_render_without_streamlit_exception(scenario_ke
         f"{[e.value for e in at.exception]}"
     )
     subheaders = [str(item.value) for item in at.subheader]
-    assert subheaders.count("Choose what you want to do now") == 1
-    assert "First-read overview" not in subheaders
-    assert any(
-        str(item.value) == "**Interpretation readiness**"
-        for item in at.markdown
-    )
-    visible_status_metrics = {
-        (str(item.label), str(item.value))
-        for item in at.metric
-        if str(item.label) in {"Pause", "Caution", "Review", "OK"}
-    }
-    assert {label for label, _ in visible_status_metrics} == {
-        "Pause", "Caution", "Review", "OK"
-    }
-    assert at.button(key="guided_action_hub_overview_primary").label == "Open recommended section"
+    assert subheaders.count("First-read action plan") == 1
+    assert "Choose what you want to do now" not in subheaders
+    assert at.session_state["guided_essential_section"] == "first_read"
+    assert at.button(key="guided_action_hub_overview_primary").label.startswith("Check next:")
+    assert at.warning or at.error or at.info or at.success  # Interpretation state remains visible.
     download_labels = {str(item.label) for item in at.get("download_button")}
-    assert {"Download all results (ZIP)", "Download all results (Excel)"}.issubset(download_labels)
-    assert any(
-        "Stays visible while you scroll" in str(item.value)
-        for item in at.caption
-    )
+    assert not {"Download all results (ZIP)", "Download all results (Excel)"} & download_labels
     assert_control_topology_within_budget(at, RESULT_CONTROL_BUDGET)
 
     at.button(key="guided_action_hub_overview_primary").click()
@@ -185,7 +173,7 @@ def test_scenario_names_match_registry():
 def test_guided_and_advanced_defaults_produce_the_same_estimates() -> None:
     """Progressive disclosure must not create a second statistical default."""
 
-    at = AppTest.from_file("streamlit_app.py").run(timeout=APPTEST_TIMEOUT)
+    at = AppTest.from_file(Path(__file__).resolve().parents[1] / "streamlit_app.py").run(timeout=APPTEST_TIMEOUT)
     at.button(key="onboarding_skip_guide").click()
     at.run(timeout=APPTEST_TIMEOUT)
     at.button(key="facets_mode_run_primary").click()

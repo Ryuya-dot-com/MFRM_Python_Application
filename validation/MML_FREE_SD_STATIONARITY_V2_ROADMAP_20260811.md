@@ -26,7 +26,7 @@ never used to calculate raw parity metrics.
 - Optimizer termination, finite solution, objective non-worsening, score,
   finite-difference agreement, information curvature, Newton correction,
   constraint residual, and restart movement are recorded separately.
-- Phase 1 is restricted to unregularized RSM/PCM with unbounded structural
+- The initial development scope is restricted to unregularized RSM/PCM with unbounded structural
   coordinates and an interior sigma. GPCM and penalized models fail closed.
 - A stationarity assessment can report a numerical gate, but it always reports
   `InferenceReady=False`. No bare Q31/Q61 boolean can promote the result.

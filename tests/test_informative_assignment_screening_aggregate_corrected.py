@@ -49,6 +49,7 @@ def test_metadata_enrichment_rejects_non_null_conflict() -> None:
         enrich_all_ledgers(conflicting, conflicting, conflicting, conflicting, _manifest())
 
 
+@pytest.mark.retained_evidence
 def test_registered_original_aggregate_is_hash_valid() -> None:
     identity = validate_original_aggregate(STUDY)
     assert "screening_metrics.json" in identity["artifact_sha256"]

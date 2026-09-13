@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 from streamlit.testing.v1 import AppTest
 
 import streamlit_app as app
@@ -10,7 +12,7 @@ APPTEST_TIMEOUT = 180
 
 
 def _new_app() -> AppTest:
-    return AppTest.from_file("streamlit_app.py").run(timeout=45)
+    return AppTest.from_file(Path(__file__).resolve().parents[1] / "streamlit_app.py").run(timeout=45)
 
 
 def test_landing_owns_the_page_and_offers_three_optional_routes() -> None:

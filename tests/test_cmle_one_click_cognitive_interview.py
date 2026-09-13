@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import copy
 import json
-from pathlib import Path
+from tempfile import TemporaryDirectory
 
 import pandas as pd
 
@@ -19,15 +19,13 @@ from mfrm_app.cmle_one_click_cognitive_interview import (
     validate_cognitive_interview_records,
 )
 from mfrm_app.cmle_one_click_comprehension import HUMAN_STUDY_STATUS
-
-
-ROOT = Path(__file__).resolve().parents[1]
-EVIDENCE = ROOT / "validation/cmle_one_click_comprehension_readiness_20260810"
+from validation.cmle_one_click_comprehension_readiness import run_cases
+from pathlib import Path
 
 
 def _materials():
-    participant = pd.read_csv(EVIDENCE / "participant_task_packet.csv")
-    key = pd.read_csv(EVIDENCE / "researcher_scoring_key.csv")
+    with TemporaryDirectory() as temporary:
+        _, _, participant, key, _, _, _ = run_cases(Path(temporary))
     cases = participant["CaseId"].drop_duplicates().tolist()
     schedule = build_cognitive_interview_schedule(cases)
     tasks = build_participant_session_tasks(participant, schedule)

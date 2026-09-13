@@ -94,7 +94,7 @@ def test_fixed_density_runner_renders_and_executes_without_ui_exception():
     bundle = at.session_state["mfrm_assignment_sensitivity_bundle"]
     assert bundle["available"] is True
     assert bundle["completion"].iloc[0]["PairedContrastsComplete"] == 2
-    assert at.download_button(key="dl_assignment_sensitivity_bundle")
+    assert any(button.proto.id.endswith("-dl_assignment_sensitivity_bundle") for button in at.get("download_button"))
 
 
 def test_unequal_context_ui_selects_endpoint_only_milp_fallback():
@@ -112,7 +112,7 @@ def test_unequal_context_ui_selects_endpoint_only_milp_fallback():
     assert bundle["design_engine"] == "context_margin_milp"
     assert bundle["dose_table"]["AchievedAlignmentDose"].tolist() == [0.0, 1.0]
     assert bundle["solver_audit"].iloc[0]["GlobalOptimumCertified"]
-    assert at.download_button(key="dl_assignment_sensitivity_bundle")
+    assert any(button.proto.id.endswith("-dl_assignment_sensitivity_bundle") for button in at.get("download_button"))
 
 
 def test_mml_ui_runs_rank_preserving_population_generator():

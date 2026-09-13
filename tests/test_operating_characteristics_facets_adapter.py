@@ -149,6 +149,7 @@ def test_facets_contract_files_are_machine_readable():
         "workbench_addition",
         "unsupported",
         "unvalidated",
+        "operationally_qualified",
     }
 
 

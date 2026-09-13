@@ -1,6 +1,6 @@
 PYTHON ?= python3
 PYTEST ?= $(PYTHON) -m pytest
-NATIVE_PYTEST_ARGS ?= -m "not legacy_compat" --ignore=tests/test_cross_engine_bundle.py --deselect=tests/test_classical_dif.py::test_validation_bundle_contents
+NATIVE_PYTEST_ARGS ?= -m "not legacy_compat and not retained_evidence" --ignore=tests/test_cross_engine_bundle.py --deselect=tests/test_classical_dif.py::test_validation_bundle_contents
 PORT ?= 8501
 
 .PHONY: compile doctor release-check self-test ux-contracts apptest benchmark demo verify run clean

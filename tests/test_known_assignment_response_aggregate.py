@@ -4,6 +4,7 @@ import json
 
 import numpy as np
 import pandas as pd
+import pytest
 
 from validation import known_assignment_response_aggregate as aggregate
 from validation import known_assignment_response_run_v2 as wrapper
@@ -30,6 +31,7 @@ def test_screening_interval_helper_has_registered_nonconfirmatory_contract():
     assert not result["ConfirmatoryClaimAllowed"]
 
 
+@pytest.mark.retained_evidence
 def test_full_registered_denominator_is_complete_before_analysis_registration():
     markers = sorted((wrapper.STUDY_DIR / "attempts").rglob("completion.json"))
     values = [json.loads(path.read_text(encoding="utf-8")) for path in markers]

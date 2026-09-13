@@ -9,6 +9,8 @@ import pytest
 from validation import mml_free_sd_stationarity_known_fixture as fixture
 
 
+pytestmark = pytest.mark.retained_evidence
+
 ROOT = Path(__file__).resolve().parents[1]
 ARTIFACT = ROOT / "validation" / "mml_free_sd_stationarity_known_fixture_v2_20260811"
 REGISTRY = ROOT / "validation" / "mml_free_sd_stationarity_fixture_registry_20260811.json"

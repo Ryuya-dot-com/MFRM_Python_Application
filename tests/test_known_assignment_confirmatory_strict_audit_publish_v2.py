@@ -39,6 +39,7 @@ def audited_result() -> dict[str, object]:
     return v1.audit_study(v1.DEFAULT_STUDY_DIR)
 
 
+@pytest.mark.retained_evidence
 def test_file_atomic_transport_publishes_exact_v1_bundle(
     tmp_path: Path,
     audited_result: dict[str, object],
@@ -51,6 +52,7 @@ def test_file_atomic_transport_publishes_exact_v1_bundle(
         publish_v2.stage_and_publish(audited_result, output, _frozen_v1())
 
 
+@pytest.mark.retained_evidence
 def test_file_atomic_transport_failure_removes_completion_and_owned_directory(
     tmp_path: Path,
     audited_result: dict[str, object],

@@ -1,9 +1,10 @@
+from pathlib import Path
 import pytest
 from streamlit.testing.v1 import AppTest
 
 
 def test_app_initial_render():
-    at = AppTest.from_file("streamlit_app.py").run(timeout=30)
+    at = AppTest.from_file(Path(__file__).resolve().parents[1] / "streamlit_app.py").run(timeout=30)
     assert not at.exception
     assert any("MFRM | Rating analysis" in title.value for title in at.title)
     about = next(e for e in at.expander if e.label == "About this beta and its limitations")
@@ -14,7 +15,7 @@ def test_app_initial_render():
 
 
 def test_user_data_source_promotes_privacy_warning():
-    at = AppTest.from_file("streamlit_app.py").run(timeout=30)
+    at = AppTest.from_file(Path(__file__).resolve().parents[1] / "streamlit_app.py").run(timeout=30)
     at.button(key="onboarding_dismiss").click()
     at.run(timeout=30)
 
@@ -24,7 +25,7 @@ def test_user_data_source_promotes_privacy_warning():
 
 
 def test_two_level_source_picker_keeps_sample_detail_visible_and_stable() -> None:
-    at = AppTest.from_file("streamlit_app.py").run(timeout=30)
+    at = AppTest.from_file(Path(__file__).resolve().parents[1] / "streamlit_app.py").run(timeout=30)
     at.button(key="onboarding_skip_guide").click()
     at.run(timeout=30)
 
@@ -47,7 +48,7 @@ def test_two_level_source_picker_keeps_sample_detail_visible_and_stable() -> Non
 
 
 def test_legacy_flat_source_state_migrates_into_two_level_picker() -> None:
-    at = AppTest.from_file("streamlit_app.py").run(timeout=30)
+    at = AppTest.from_file(Path(__file__).resolve().parents[1] / "streamlit_app.py").run(timeout=30)
     at.button(key="onboarding_skip_guide").click()
     at.run(timeout=30)
 
@@ -58,7 +59,7 @@ def test_legacy_flat_source_state_migrates_into_two_level_picker() -> None:
 
 
 def test_guided_setup_only_renders_first_run_decisions() -> None:
-    at = AppTest.from_file("streamlit_app.py").run(timeout=30)
+    at = AppTest.from_file(Path(__file__).resolve().parents[1] / "streamlit_app.py").run(timeout=30)
     at.button(key="onboarding_skip_guide").click()
     at.run(timeout=30)
 
@@ -90,7 +91,7 @@ def test_guided_setup_only_renders_first_run_decisions() -> None:
 
 
 def test_advanced_setup_restores_full_technical_controls() -> None:
-    at = AppTest.from_file("streamlit_app.py").run(timeout=30)
+    at = AppTest.from_file(Path(__file__).resolve().parents[1] / "streamlit_app.py").run(timeout=30)
     at.button(key="onboarding_skip_guide").click()
     at.run(timeout=30)
     at.radio(key="facets_mode_workflow_mode").set_value("Advanced controls")
@@ -113,7 +114,7 @@ def test_advanced_setup_restores_full_technical_controls() -> None:
 
 
 def test_returning_to_guided_resets_hidden_visual_and_compute_customization() -> None:
-    at = AppTest.from_file("streamlit_app.py").run(timeout=30)
+    at = AppTest.from_file(Path(__file__).resolve().parents[1] / "streamlit_app.py").run(timeout=30)
     at.button(key="onboarding_skip_guide").click()
     at.run(timeout=30)
     at.radio(key="facets_mode_workflow_mode").set_value("Advanced controls")
@@ -134,7 +135,7 @@ def test_returning_to_guided_resets_hidden_visual_and_compute_customization() ->
 
 
 def test_compact_guided_setup_renders_in_japanese() -> None:
-    at = AppTest.from_file("streamlit_app.py").run(timeout=30)
+    at = AppTest.from_file(Path(__file__).resolve().parents[1] / "streamlit_app.py").run(timeout=30)
     at.button(key="onboarding_skip_guide").click()
     at.run(timeout=30)
     at.selectbox(key="facets_mode_analysis_depth").set_value("Full publication")

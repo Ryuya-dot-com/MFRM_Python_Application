@@ -74,3 +74,12 @@ find . -type d -name __pycache__ -prune -exec rm -rf {} +
 - [x] Create GitHub prerelease `v0.1.0-beta`.
 - [x] Prepare `v0.1.1-beta` notes after cross-package validation protocol changes.
 - [x] Prepare `v0.1.2-beta` notes after publication figure export and Simulation validation-template changes.
+
+## Retained research evidence
+
+`retained_evidence` tests replay local, hash-bound study outputs. They remain
+outside `make apptest` and CI because those output bundles are deliberately
+not distributed. Restore the registered evidence before running
+`python -m pytest -m retained_evidence tests`. Native unit tests generate
+synthetic inputs in temporary directories and continue to run in CI.
+A passing release gate does not certify retained research findings.

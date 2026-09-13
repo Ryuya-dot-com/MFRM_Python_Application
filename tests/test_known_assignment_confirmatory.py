@@ -11,6 +11,7 @@ from validation import known_assignment_confirmatory as confirm
 from validation import known_assignment_mml_crossfit as crossfit
 
 
+@pytest.mark.retained_evidence
 def test_plan_freezes_triplet_unit_precision_and_two_layer_statuses() -> None:
     plan = confirm.validate_plan()
     assert plan["evidence_status"]["independent_person_vector_triplets"] == 200
@@ -46,8 +47,9 @@ def test_plan_validation_rejects_scientific_drift(
         confirm.validate_plan(plan)
 
 
+@pytest.mark.retained_evidence
 def test_runtime_seed_expansion_is_complete_disjoint_and_formula_bound() -> None:
-    runtime = confirm.runtime_plan(confirm.validate_plan())
+    runtime = confirm.runtime_plan(json.loads(confirm.PLAN_PATH.read_text(encoding="utf-8")))
     dgm = runtime["data_generating_process"]
     assignment = runtime["assignment"]
     assert dgm["person_vector_ids"] == list(range(1, 201))
@@ -195,6 +197,7 @@ def test_engine_context_restores_frozen_preflight_module(tmp_path) -> None:
         assert getattr(confirm.engine, name) is value
 
 
+@pytest.mark.retained_evidence
 def test_independent_python_protocol_evaluator_reproduces_retained_mml_loglik() -> None:
     study = (
         confirm.ROOT
@@ -231,6 +234,7 @@ def test_independent_python_protocol_evaluator_reproduces_retained_mml_loglik() 
     assert abs(evaluated - float(run["LogLik"])) <= 1e-9
 
 
+@pytest.mark.retained_evidence
 def test_base_r_crossfit_qualification_passes_twelve_nonconfirmatory_fixtures() -> None:
     assessment_path = (
         confirm.ROOT

@@ -149,6 +149,7 @@ def test_runner_does_not_exist_in_registered_dependency_before_registration(
         confirm.build_dependency_manifest(registration_path=missing_registration)
 
 
+@pytest.mark.retained_evidence
 def test_retained_confirmation_passes_registered_and_independent_gates() -> None:
     study = (
         Path(__file__).resolve().parents[1]

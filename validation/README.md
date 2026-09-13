@@ -617,7 +617,7 @@ MPLCONFIGDIR=/tmp/mfrm_matplotlib_cache \
 These are descriptive lane-specific transitions and post-result sensitivity
 surfaces, not threshold validation.
 
-The next Phase-A gate was registered before its known-truth outcomes. Its eight
+The next fixed-calibration gate was registered before its known-truth outcomes. Its eight
 paired fixed-calibration conditions vary observations per Person, categories,
 uniform-random contamination, local response copying, and Person-specific
 threshold heterogeneity. All 160 attempts returned, retaining 624,000 response
@@ -651,7 +651,7 @@ characteristics. ZSTD, p-values, coverage-qualified intervals, total SE,
 estimated-CMLE connectivity, native anchor contamination, matched repeated
 cross-engine fits, and Streamlit integration remain withheld.
 
-The native exact-CMLE Phase-B increment is registered in
+The native exact-CMLE hard-anchor increment is registered in
 `cmle_native_hard_anchor_plan_20260810.json`; the smoke-specific retained-run
 and anchor-level choices are frozen in
 `cmle_native_hard_anchor_smoke_amendment_20260810.json`. It implements affine
@@ -1081,7 +1081,7 @@ The next private operations-only increment is registered in
 `cmle_one_click_cognitive_interview_operations_plan_20260810.json` and retained
 under `cmle_one_click_cognitive_interview_operations_20260810/`. Within each
 language, 10 planned session slots exhaust all ten unordered pairs of the five
-analytical states while balancing case order and novice/experienced target
+analytical states while balancing case order and prior-MFRM-experience target
 strata. The kit contains 20 answer-free participant packet files (400 tasks),
 a separate 100-row private moderator guide, a 400-row blank record template,
 English/Japanese scripts, and a data dictionary. Fourteen synthetic validator

@@ -183,7 +183,7 @@ new-Person prediction. See
 
 ## Native hard facet anchors
 
-The Phase-B research increment accepts a fail-closed `hard_anchors` table with
+The hard-anchor research increment accepts a fail-closed `hard_anchors` table with
 `ParameterType`, `Facet`, `Level`, and `Value`. Version 1 supports finite fixed
 values for observed non-Person facet levels only; Step/group/soft anchors and
 automatic anchor selection remain unsupported. Anchor values are on the

@@ -6,11 +6,11 @@ import pandas as pd
 import streamlit_app as app
 
 
-def test_result_router_renders_snapshot_before_goal_selection():
+def test_result_router_renders_snapshot_before_next_check():
     source = inspect.getsource(app._render_guided_goal_router)
 
     assert source.index("_render_guided_run_snapshot(action_plan)") < source.index(
-        "guided.goal_router_subheader"
+        "guided.open_next_button"
     )
 
 

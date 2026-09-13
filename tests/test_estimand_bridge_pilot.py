@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pandas as pd
+import pytest
 
 from validation import estimand_bridge_pilot as bridge
 
@@ -10,6 +11,7 @@ from validation import estimand_bridge_pilot as bridge
 PARENT = Path("validation/facets_pcm_boundary_pilot_20260811")
 
 
+@pytest.mark.retained_evidence
 def test_parent_identity_and_rank_full_selection_are_locked():
     hashes = bridge.validate_parent_identity(PARENT)
     _, manifest = bridge.selected_manifest(PARENT)
@@ -20,6 +22,7 @@ def test_parent_identity_and_rank_full_selection_are_locked():
     assert manifest["ExpectedStructuralNullity"].eq(0).all()
 
 
+@pytest.mark.retained_evidence
 def test_parent_jmle_import_preserves_estimand_labels():
     _, manifest = bridge.selected_manifest(PARENT)
     ledger, recovery, thresholds = bridge.import_parent_jmle(

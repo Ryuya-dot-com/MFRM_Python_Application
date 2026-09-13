@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import copy
-from pathlib import Path
 
 import pandas as pd
+import pytest
+
+from validation.cmle_one_click_comprehension_readiness import run_cases
 
 from mfrm_app.cmle_one_click_cognitive_interview import INSTRUMENT_VERSION
 from mfrm_app.cmle_one_click_comprehension import HUMAN_STUDY_STATUS
@@ -25,15 +27,20 @@ from mfrm_app.cmle_one_click_confirmatory_gate import (
 )
 
 
-ROOT = Path(__file__).resolve().parents[1]
-SOURCE = ROOT / "validation/cmle_one_click_comprehension_readiness_20260810"
-PARTICIPANT = SOURCE / "participant_task_packet.csv"
-KEY_PATH = SOURCE / "researcher_scoring_key.csv"
-PREVIEWS = SOURCE / "previews"
+@pytest.fixture(scope="module")
+def materials(tmp_path_factory):
+    # Build synthetic instrument inputs from tracked code, not local study outputs.
+    output = tmp_path_factory.mktemp("comprehension_materials")
+    run_cases(output)
+    return (
+        output / "participant_task_packet.csv",
+        output / "researcher_scoring_key.csv",
+        output / "previews",
+    )
 
 
-def _key() -> pd.DataFrame:
-    return pd.read_csv(KEY_PATH)
+def _key(materials) -> pd.DataFrame:
+    return pd.read_csv(materials[1])
 
 
 def _correct_responses(
@@ -49,12 +56,12 @@ def _correct_responses(
     ].assign(ResponseCode=rows["CorrectOption"].to_numpy())
 
 
-def test_instrument_identity_is_reproducible_and_mutation_sensitive() -> None:
+def test_instrument_identity_is_reproducible_and_mutation_sensitive(materials) -> None:
     ledger, manifest = build_instrument_version_record(
-        PARTICIPANT, KEY_PATH, PREVIEWS
+        *materials
     )
     repeated, repeated_manifest = build_instrument_version_record(
-        PARTICIPANT, KEY_PATH, PREVIEWS
+        *materials
     )
     assert ledger.equals(repeated)
     assert manifest.equals(repeated_manifest)
@@ -62,21 +69,21 @@ def test_instrument_identity_is_reproducible_and_mutation_sensitive() -> None:
 
     baseline = ledger.iloc[0]["InstrumentContentSHA256"]
     task_mutation = compute_instrument_content_identity(
-        PARTICIPANT.read_bytes() + b"synthetic-mutation",
-        KEY_PATH.read_bytes(),
+        materials[0].read_bytes() + b"synthetic-mutation",
+        materials[1].read_bytes(),
         manifest,
     )
     assert task_mutation["InstrumentContentSHA256"] != baseline
     rules = copy.deepcopy(list(DIRECTIONAL_RULES))
     rules[0] = {**rules[0], "DangerousResponseCodes": ("ready", "synthetic")}
     rule_mutation = compute_instrument_content_identity(
-        PARTICIPANT.read_bytes(), KEY_PATH.read_bytes(), manifest, directional_rules=rules
+        materials[0].read_bytes(), materials[1].read_bytes(), manifest, directional_rules=rules
     )
     assert rule_mutation["InstrumentContentSHA256"] != baseline
 
 
-def test_version_ledger_rejects_alias_pooling_and_post_response_freeze() -> None:
-    ledger, _ = build_instrument_version_record(PARTICIPANT, KEY_PATH, PREVIEWS)
+def test_version_ledger_rejects_alias_pooling_and_post_response_freeze(materials) -> None:
+    ledger, _ = build_instrument_version_record(*materials)
     alias = pd.concat(
         [ledger, ledger.assign(InstrumentVersion="alias_version")], ignore_index=True
     )
@@ -134,8 +141,8 @@ def test_wilson_arithmetic_strict_boundary_and_familywise_sensitivity() -> None:
     ).all()
 
 
-def test_zero_error_n25_passes_primary_not_familywise_sensitivity() -> None:
-    key = _key()
+def test_zero_error_n25_passes_primary_not_familywise_sensitivity(materials) -> None:
+    key = _key(materials)
     assignment = build_confirmatory_assignment_schedule(25)
     result = evaluate_directional_confirmatory_gate(
         _correct_responses(assignment, key),
@@ -156,8 +163,8 @@ def test_zero_error_n25_passes_primary_not_familywise_sensitivity() -> None:
     assert summary["FamilywiseSensitivityPassingCells"] == 0
 
 
-def test_directional_error_does_not_pool_language_or_non_dangerous_error() -> None:
-    key = _key()
+def test_directional_error_does_not_pool_language_or_non_dangerous_error(materials) -> None:
+    key = _key(materials)
     assignment = build_confirmatory_assignment_schedule(25)
     base = _correct_responses(assignment, key)
 
@@ -212,8 +219,8 @@ def test_directional_error_does_not_pool_language_or_non_dangerous_error() -> No
     assert bool(rounding_cell["PrimaryPass"])
 
 
-def test_invalid_or_mixed_version_slot_is_retained_and_reduces_denominator() -> None:
-    key = _key()
+def test_invalid_or_mixed_version_slot_is_retained_and_reduces_denominator(materials) -> None:
+    key = _key(materials)
     assignment = build_confirmatory_assignment_schedule(25)
     responses = _correct_responses(assignment, key)
     target_slot = responses.loc[responses["Language"].eq("en"), "ConfirmatorySlotId"].iloc[0]
@@ -238,8 +245,8 @@ def test_invalid_or_mixed_version_slot_is_retained_and_reduces_denominator() -> 
     assert result["study_summary"].iloc[0]["InvalidAttemptedSlots"] == 1
 
 
-def test_minimum_n_is_mandatory_and_human_gate_remains_closed() -> None:
-    key = _key()
+def test_minimum_n_is_mandatory_and_human_gate_remains_closed(materials) -> None:
+    key = _key(materials)
     assignment = build_confirmatory_assignment_schedule(1)
     try:
         evaluate_directional_confirmatory_gate(

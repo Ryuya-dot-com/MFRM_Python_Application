@@ -384,7 +384,7 @@ binary transition projection. Varying only the noisy/distorting boundary from
 2,372/2,454/2,554, yet moved 37 Infit and 51 Outfit replicate labels from
 `distorting` to `noisy`. No threshold or ordinal severity score was selected.
 
-A prospectively registered fixed-calibration known-truth Phase-A pilot now
+A prospectively registered fixed-calibration known-truth fixed-calibration pilot now
 separates rule behavior from calibration estimation. All 160 runs returned and
 retained 624,000 responses. At the canonical raw either-upper rule, clean rates
 were 3.4%--3.7% for 24 observations and 10.1%--10.8% for six observations;
@@ -414,7 +414,7 @@ direction, retain invalid slot denominators, and prohibit pooling changed
 instrument content. They do not register a confirmatory sample size or provide
 human evidence. No public CMLE, WLE, or bootstrap fit button is enabled.
 
-The native hard-anchor Phase-B smoke reused 24,000 fixed response rows for 32
+The native hard-anchor hard-anchor smoke reused 24,000 fixed response rows for 32
 RSM fits spanning dense/sparse, clean/random, zero/one/three correct, and three
 uniformly contaminated anchors. All fits returned inference-ready and all
 engineering gates passed. A post-result registered diagnostic then confirmed

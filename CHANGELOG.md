@@ -14,6 +14,11 @@ All notable changes to this standalone Streamlit distribution should be recorded
   Free-population-SD MML uncertainty and inference remain withheld pending
   qualification. Development JAX/NumPyro plans and exact CMLE research do not
   become public estimator capabilities.
+- Make release checks reproducible from a clean checkout: generate synthetic
+  instrument inputs during tests, use absolute AppTest paths, and reserve
+  local study replay for the explicit `retained_evidence` test selection.
+  Update stale UI assertions and distinguish methodological references from
+  executable external-engine calls in the static boundary check.
 - Retain both development and prior public histories without a force push.
   The reviewed unified tree is the release source; remaining public-branch
   performance work is not represented as integrated or validated here.
@@ -72,7 +77,7 @@ All notable changes to this standalone Streamlit distribution should be recorded
   calibration-draw sensitivity. Invalid/duplicate/unknown/non-finite, Person,
   and Step anchors fail closed; anchored estimates are exact with SE zero and
   remaining free-coordinate rank is re-audited. Forty-six selected CMLE/WLE
-  tests pass. The retained 24,000-response Phase-B smoke completed 32/32
+  tests pass. The retained 24,000-response hard-anchor smoke completed 32/32
   inference-ready same-byte fits and passed anchor, dimension, persistence,
   and raw-fit gates. A transparently post-result diagnostic confirmed that a
   common +0.25 Rater-anchor shift moves WLE by +0.25 but cancels from the
@@ -241,7 +246,7 @@ All notable changes to this standalone Streamlit distribution should be recorded
 - **Private CMLE cognitive-interview operations kit.** Added a deterministic
   English/Japanese complete-pair schedule with 10 planned slots per language.
   Each of five analytical states appears four times per language, twice in
-  each presentation position and twice in each novice/experienced target
+  each presentation position and twice in each prior-MFRM-experience target
   stratum. Generated 20 answer-free participant packet files (400 assigned
   tasks), a separate 100-row private moderator guide requiring response lock
   before probing, and a 400-row blank record template. Exact-column and value

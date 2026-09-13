@@ -73,7 +73,7 @@ FORBIDDEN_CALLS = {
 }
 FORBIDDEN_STRING_PATTERNS = {
     "Rscript command": re.compile(r"(?:^|\n)\s*(?:#![^\n]*\bRscript\b|Rscript\s+\S+)"),
-    "R package namespace call": re.compile(r"\b(?:TAM|sirt|mirt|mfrmr)::"),
+    "R package namespace call": re.compile(r"\b(?:TAM|sirt|mirt|mfrmr)::[A-Za-z0-9_.]+\s*\("),
     "R package loader": re.compile(
         r"\b(?:library|requireNamespace)\s*\(\s*['\"]?(?:TAM|sirt|mirt|mfrmr)\b"
     ),
@@ -421,6 +421,7 @@ import scipy.optimize
 import zipfile
 
 FACET_LABEL = "FACETS-style display convention"
+METHOD_REFERENCE = "sirt::pcm.fit"
 
 def fit_facet(values):
     return scipy.optimize.minimize(lambda x: sum((x - value) ** 2 for value in values), 0.0)
@@ -474,7 +475,7 @@ def test_standalone_make_and_workflows_do_not_expose_parity_exporter():
     assert "--export-parity-fixture" not in workflows
     assert "compatibility-parity" not in workflows
     assert not re.search(r"\b(?:make|gmake)\s+parity\b", workflows)
-    assert 'NATIVE_PYTEST_ARGS ?= -m "not legacy_compat"' in makefile
+    assert 'NATIVE_PYTEST_ARGS ?= -m "not legacy_compat and not retained_evidence"' in makefile
     assert "make apptest" in workflows
     assert "make ux-contracts" in workflows
     assert "Verify tracked checkout stayed clean" in workflows

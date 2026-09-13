@@ -393,7 +393,7 @@ validate a threshold or authorize a public traffic light. See the
 and
 [`critical review`](validation/cmle_wle_fit_known_truth_pilot_addendum_20260810/CMLE_WLE_FIT_KNOWN_TRUTH_CRITICAL_REVIEW.md).
 
-The next repository-only Phase-B increment now implements native hard facet
+The next repository-only hard-anchor increment now implements native hard facet
 anchors inside the exact CMLE likelihood rather than as a post-fit recentering.
 Its prospectively amended engineering smoke reused 24,000 retained response
 rows for 32 same-byte fits; all returned inference-ready, preserved supplied
@@ -404,7 +404,7 @@ labelled post-result diagnostic found a more fundamental warning: shifting all
 Rater anchors by the same +0.25 moved WLE by +0.25 but left conditional
 log-likelihood and Person fit invariant to numerical noise (zero raw flag
 mismatches). Fit indices therefore cannot validate the absolute anchor origin.
-See the [`Phase-B smoke`](validation/cmle_native_hard_anchor_smoke_20260810/CMLE_NATIVE_HARD_ANCHOR_SMOKE.md)
+See the [`hard-anchor smoke`](validation/cmle_native_hard_anchor_smoke_20260810/CMLE_NATIVE_HARD_ANCHOR_SMOKE.md)
 and [`common-shift diagnostic`](validation/cmle_native_hard_anchor_common_shift_20260810/CMLE_HARD_ANCHOR_COMMON_SHIFT_DIAGNOSTIC.md).
 
 The subsequent prospectively frozen differential-anchor stress reused 120,000

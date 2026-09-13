@@ -58,6 +58,13 @@ def _is_scanned_path(path: Path) -> bool:
 def _is_allowed_reference(path: Path, line: str) -> bool:
     rel = path.relative_to(REPO_ROOT).as_posix()
     lowered = line.lower()
+    # Frozen research recruitment strata are historical protocol terms, not UI labels.
+    if rel in {
+        "validation/cmle_one_click_cognitive_interview_operations_plan_20260810.json",
+        "validation/cmle_one_click_comprehension_readiness_plan_20260810.json",
+        "validation/cmle_one_click_comprehension_readiness.py",
+    } and any(term in lowered for term in ("novice and experienced strata", "novice-target")):
+        return True
     return rel in {"locales/en.json", "locales/ja.json"} and any(
         reference in lowered for reference in ALLOWED_QUOTED_REFERENCES
     )

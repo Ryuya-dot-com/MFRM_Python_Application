@@ -31007,6 +31007,7 @@ def _render_guided_report_export_section(
     st.caption(t("guided.report_export_caption"))
     labels = {
         "document": t("guided.export_task_document"),
+        "manuscript": t("guided.export_task_manuscript"),
         "files": t("guided.export_task_files"),
         "review": t("guided.export_task_review"),
     }
@@ -31043,6 +31044,8 @@ def _render_guided_report_export_section(
             st.markdown(draft)
             st.download_button(t("guided.apa_results_draft_download"), draft.encode("utf-8"),
                 "apa_results_paragraph_draft.md", "text/markdown", key="dl_guided_apa_results_paragraph_draft_md")
+    elif task == "manuscript":
+        _render_manuscript_template_section(result, diagnostics, all_bias_results, bias_results=bias_results)
     elif task == "files":
         _render_downloads(result, diagnostics, report_tables, scorefile, residuals,
             bias_results, all_bias_results=all_bias_results or {}, generate_figures=generate_figures)
@@ -31077,7 +31080,7 @@ def _render_guided_report_export_section(
         elif resource == "methods":
             _render_method_appendix_section(result, diagnostics, all_bias_results)
         elif resource == "template":
-            _render_manuscript_template_section(result, diagnostics, all_bias_results)
+            _render_manuscript_template_section(result, diagnostics, all_bias_results, bias_results=bias_results)
         elif resource == "work_notes":
             _render_guided_report_review_details(result, diagnostics, bias_results, all_bias_results)
         elif resource == "all_panels":
@@ -47078,32 +47081,45 @@ def _render_manuscript_template_section(
     result: dict,
     diagnostics: dict,
     all_bias_results: dict | None = None,
+    *, bias_results: dict | None = None,
 ) -> None:
-    st.subheader("Manuscript Template")
-    st.caption(
-        "A result-aware Markdown scaffold for Methods, Results, figures, limitations, "
-        "and reviewer preflight checks. Edit it for your study before submission."
-    )
-    template = generate_manuscript_reporting_template(result, diagnostics, all_bias_results)
-    guide = build_manuscript_claim_guide(result, diagnostics, all_bias_results)
-    caution_count = 0
-    if isinstance(guide, pd.DataFrame) and not guide.empty and "ClaimStatus" in guide.columns:
-        caution_count = int(guide["ClaimStatus"].astype(str).isin(["Do not claim", "Report with caveat"]).sum())
-    if caution_count:
-        st.warning(
-            "This template intentionally keeps caution rows visible. Resolve or justify them "
-            "before copying text into a final manuscript."
-        )
+    from mfrm_app.manuscript import manuscript_markdown, manuscript_word_bytes
+
+    st.subheader(t("guided.manuscript_heading"))
+    st.caption(t("guided.manuscript_caption"))
+    st.info(t("guided.manuscript_fill_boundary"))
+    formats = {"word": "Word (.docx)", "markdown": "Markdown (.md)"}
+    kind = st.radio(t("guided.export_format_label"), list(formats),
+        format_func=lambda value: formats[value], horizontal=True, key="manuscript_format")
+    template = manuscript_markdown(result)
+    try:
+        data = manuscript_word_bytes(result) if kind == "word" else template.encode("utf-8")
+    except Exception as exc:
+        st.error(t("guided.export_document_failed", format=formats[kind]))
+        with st.expander(t("guided.export_error_details")):
+            st.code(str(exc), language=None)
     else:
-        st.success("No Do-not-claim or caveat rows were generated, but final wording still needs study-specific review.")
-    st.code(template, language="markdown")
-    st.download_button(
-        "Download manuscript template (Markdown)",
-        data=template.encode("utf-8"),
-        file_name="mfrm_manuscript_template.md",
-        mime="text/markdown",
-        key="dl_manuscript_template_report_tab",
-    )
+        extension, mime = ("docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document") if kind == "word" else ("md", "text/markdown")
+        st.download_button(t("guided.manuscript_download"), data,
+            file_name=f"mfrm_apa_manuscript.{extension}", mime=mime,
+            key="dl_manuscript_template_report_tab", type="primary", on_click="ignore", use_container_width=True)
+    with st.expander(t("guided.manuscript_outline"), expanded=False):
+        st.markdown(template)
+    if st.checkbox(t("guided.manuscript_results_preview"), key="manuscript_results_preview"):
+        st.caption(t("guided.manuscript_results_caption"))
+        frames = current_custom_simulation_sparse_export_frames()
+        draft = generate_report_ready_apa_results_draft(
+            result, diagnostics, all_bias_results=all_bias_results or {}, bias_results=bias_results,
+            simulation_sparse_context=frames.get("custom_simulation_sparse_reporting_context", pd.DataFrame()),
+            simulation_settings=frames.get("custom_simulation_settings", pd.DataFrame()),
+        )
+        st.markdown(draft)
+        st.download_button(t("guided.apa_results_draft_download"), draft.encode("utf-8"),
+            "apa_results_paragraph_draft.md", "text/markdown", key="dl_manuscript_results_notes", on_click="ignore")
+    with st.expander(t("guided.manuscript_references"), expanded=False):
+        st.caption(t("guided.manuscript_references_caption"))
+        st.markdown(t("guided.manuscript_references_sources"))
+        st.caption(t("guided.manuscript_zotero_help"))
 
 
 def show_report_section(
@@ -47175,7 +47191,7 @@ def show_report_section(
                                all_bias_results=all_bias_results)
         if "Manuscript Template" in narrative_tab:
             with narrative_tab["Manuscript Template"]:
-                _render_manuscript_template_section(result, diagnostics, all_bias_results)
+                _render_manuscript_template_section(result, diagnostics, all_bias_results, bias_results=bias_results)
         if "Method Appendix" in narrative_tab:
             with narrative_tab["Method Appendix"]:
                 _render_method_appendix_section(result, diagnostics, all_bias_results)

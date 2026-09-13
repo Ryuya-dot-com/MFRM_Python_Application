@@ -905,6 +905,11 @@ Implemented in the standalone Python engine:
 
 ## Guided Reporting Workflow
 
+To begin an article, open **Report & Export → Start a paper**. Download the
+English APA Word template, fill in the study-specific prompts, and consult the
+optional Results draft with its evidence checks. See the
+[manuscript guide and reusable template](docs/apa_manuscript_template.md).
+
 After fitting a model, inspect results in this order:
 
 1. Output qualification: open `output_qualification.csv`; a

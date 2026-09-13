@@ -288,6 +288,35 @@ desktop and 400-CSS-pixel checks, including Japanese PCA and bias views, supplem
 AppTest; they are not acceptance of the full accessibility protocol or evidence
 from first-time users.
 
+## APA manuscript entry — 2026-09-13
+
+Added **Start a paper** as a distinct Report & Export task. The previous
+template entry was hidden in review resources and displayed a long technical
+worksheet. The new entry offers an English APA Word or Markdown scaffold,
+with recorded analysis facts filled in and research-context prompts left for
+the author. Preview and method-literature candidates are closed disclosures.
+Results prose is opt-in and reuses the existing guarded draft, including
+simulation context. The top-level report holds remain visible on this route.
+
+The template follows the user's question-to-design-to-answer editorial
+priorities. Sources, author workflow, and boundaries are documented in
+[the manuscript guide](apa_manuscript_template.md). The Zotero review informs
+the prompts; it does not install live citation fields or add uncited references
+to the article. The runtime needs no new dependency or Zotero connection.
+
+Validation: **91 tests passed**, covering the new route and document structure,
+both UI locales, opt-in draft generation, simulation-context forwarding,
+existing report holds, reference integrity, and the validation contract.
+The reusable Word template was rendered with the bundled LibreOffice runtime;
+all seven pages were inspected, including headings, page numbers, indentation,
+and the absence of inherited title decoration.
+The built-in 960-rating RSM/JMLE run retained fingerprint `067a6d8d` while
+opening the writing task. The Word download was inspected and contained the
+recorded 960 ratings, 30 person identifiers, RSM/JMLE, and version 0.2.15-beta;
+it contained no person-level rows. Desktop and English/Japanese 400-CSS-pixel
+browser views were checked without horizontal page overflow. These are focused layout and interaction checks, not full browser
+accessibility acceptance or a first-time-user study.
+
 ## Long-term implementation sequence
 
 1. Execute the versioned browser matrix for keyboard/focus acceptance and

@@ -31,6 +31,7 @@ def test_report_export_renders_only_the_selected_task(lang, held, gate_status):
             return lambda *args, **kwargs: st.session_state["rendered"].append(name)
         with patch.object(app, "build_publication_gate_summary", return_value=gate), \
              patch.object(app, "_render_publication_document_section", record("document")), \
+             patch.object(app, "_render_manuscript_template_section", record("manuscript")), \
              patch.object(app, "_render_downloads", record("files")), \
              patch.object(app, "_render_guided_report_review_details", record("notes")), \
              patch.object(app, "show_report_section", record("advanced")):
@@ -45,6 +46,10 @@ def test_report_export_renders_only_the_selected_task(lang, held, gate_status):
     assert len(at.warning) == int(held or gate_status != "Ready")
     assert not at.dataframe and not at.selectbox
     assert all(not item.value.startswith("guided.") for item in at.caption)
+    at.button_group(key="guided_export_task").set_value("manuscript").run()
+    assert not at.exception
+    assert at.session_state["rendered"] == ["manuscript"]
+    assert len(at.warning) == int(held or gate_status != "Ready")
     at.button_group(key="guided_export_task").set_value("files").run()
     assert not at.exception
     assert at.session_state["rendered"] == ["files"]

@@ -25,7 +25,6 @@ def test_recommended_action_opens_its_diagnostic_without_changing_fit(lang, targ
             "Check": target, "Status": "Caution", "WhatItSays": "Inspect this evidence.",
             "NextAction": "Open the named diagnostic.", "DetailLocation": target,
         }])
-        app._render_guided_goal_router(action_plan=plan)
         def render(name):
             return lambda *args, **kwargs: st.write(name)
         with patch.object(app, "_render_guided_start_section", render("start")), \
@@ -37,12 +36,13 @@ def test_recommended_action_opens_its_diagnostic_without_changing_fit(lang, targ
                 {}, pd.DataFrame(), st.session_state["facets_mode_output"], {"pca": {"eigenvalues": [3.74, 1.2]}}, {},
                 pd.DataFrame(), pd.DataFrame(), ["Rater", "Task"], "Person", "Score",
                 None, None, result_compute_pca=True, result_render_plots=False,
-                result_generate_figures=False,
+                result_generate_figures=False, action_plan=plan,
             )
 
     at = AppTest.from_function(view, args=(lang, target)).run(timeout=45)
     assert not at.exception
-    at.button(key="guided_action_hub_main_primary").click().run(timeout=45)
+    assert at.button_group(key="guided_essential_section").value == "first_read"
+    at.button(key="guided_action_hub_overview_primary").click().run(timeout=45)
     assert not at.exception
     assert at.session_state["guided_essential_section"] == "diagnostics"
     assert at.session_state["guided_diagnostics_panel"] == panel
@@ -50,6 +50,10 @@ def test_recommended_action_opens_its_diagnostic_without_changing_fit(lang, targ
     assert not any("Session State API" in item.value for item in at.warning)
     if panel == "dimensionality":
         assert at.session_state["dimensionality_panel"] == "overall"
+    assert at.session_state["facets_mode_output"] == {"analysis_id": "same-fit"}
+    at.button_group(key="guided_essential_section").set_value("first_read").run()
+    assert not at.exception
+    assert at.session_state["guided_essential_section"] == "first_read"
     assert at.session_state["facets_mode_output"] == {"analysis_id": "same-fit"}
 
 

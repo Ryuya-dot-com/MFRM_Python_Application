@@ -200,19 +200,6 @@ def test_guided_section_reading_order_covers_every_essential_section():
     assert fallback.equals(start)
 
 
-def test_guided_essential_tabs_show_reading_order_before_section_body():
-    source = inspect.getsource(app._render_guided_essential_tabs)
-
-    dock = 'with st.container(key="guided_result_navigation_dock", border=True):'
-    selector = "st.segmented_control("
-    cue_call = "render_guided_section_reading_order(selected_section)"
-    section_body = "if selected_section == \"start\":"
-    assert dock in source
-    assert source.index(dock) < source.index(selector)
-    assert cue_call in source
-    assert source.index(selector) < source.index(cue_call) < source.index(section_body)
-
-
 def test_guided_diagnostics_selector_lazy_renders_one_panel():
     options = app.guided_diagnostic_panel_options()
 
@@ -450,13 +437,20 @@ def test_result_orientation_keeps_all_evidence_and_primary_navigation(lang, stat
 
     at = AppTest.from_function(result_view, args=(lang, status)).run(timeout=45)
     assert not at.exception
-    rendered = "\n".join(item.value for item in [*at.markdown, *at.caption])
+    rendered = "\n".join(item.value for item in [*at.markdown, *at.caption, *at.error, *at.warning, *at.info])
     for value in at.session_state["expected_summary"]:
         assert value in rendered
     supporting = next(e for e in at.expander if e.label == at.session_state["support_label"])
     assert not supporting.proto.expanded
     assert supporting.dataframe
     assert not at.metric
+    assert not at.selectbox  # The section selector is the only general navigation.
+    assert len(at.button) == 1
+    alerts = [*at.error, *at.warning, *at.info]
+    assert len(alerts) == 1
+    assert at.session_state["expected_summary"][3] in alerts[0].value
+    if status in {"Do not interpret yet", "Caution"}:
+        assert at.error  # Convergence caution is a hard stop under the existing policy.
     at.button(key="guided_action_hub_main_primary").click().run(timeout=45)
     assert not at.exception
     assert at.session_state["guided_essential_section"] == at.session_state["expected_section"]
@@ -697,9 +691,9 @@ def test_guided_screen_reading_order_help_table_keeps_main_path_first():
         app.t("help.guided_screen_order_col_detail_policy"),
     ]
     assert list(table[surface_col]) == [
+        app.t("help.guided_screen_order_goal_locator_surface"),
         app.t("help.guided_screen_order_current_focus_surface"),
         app.t("help.guided_screen_order_next_click_surface"),
-        app.t("help.guided_screen_order_goal_locator_surface"),
         app.t("help.guided_screen_order_guardrail_surface"),
         app.t("help.guided_screen_order_supporting_detail_surface"),
         app.t("help.guided_screen_order_claim_boundary_surface"),
@@ -1457,20 +1451,6 @@ def test_guided_action_hub_cards_keep_primary_detail_and_boundary_actions():
     assert app.t("guided.action_hub_boundary_role") in joined
 
 
-def test_guided_goal_router_renders_one_primary_action_with_supporting_routes():
-    source = inspect.getsource(app._render_guided_goal_router)
-
-    assert "guided_action_hub_cards" in source
-    assert "guided_essential_section" in source
-    assert "st.button" in source
-    assert "st.rerun()" in source
-    assert 'type="primary" if primary else "secondary"' in source
-    assert "goal_supporting_detail_expander" in source
-    assert source.index("_render_action_card(primary_row, primary=True)") < source.index(
-        'with st.expander(t("guided.goal_supporting_detail_expander")'
-    )
-
-
 def test_guided_progress_checklist_is_checkbox_ready_and_caveat_sensitive():
     plan = pd.DataFrame([{
         "Priority": "P1",
@@ -1544,15 +1524,6 @@ def test_guided_progress_checklist_marks_clean_claim_boundary_ready():
     assert bool(claim_row[done_col])
     assert bool(focus_row[done_col])
     assert claim_row[state_col] == app.t("guided.progress_state_ready")
-
-
-def test_guided_goal_router_renders_progress_checklist_with_checkbox_column():
-    source = inspect.getsource(app._render_guided_goal_router)
-
-    assert "guided_progress_checklist" in source
-    assert "st.data_editor" in source
-    assert "CheckboxColumn" in source
-    assert "mfrm_guided_progress_checklist.csv" in source
 
 
 def test_guided_goal_decision_brief_has_prompt_scope_output_and_caveat():
@@ -1646,3 +1617,20 @@ def test_guided_goal_detail_locator_falls_back_to_readiness_goal():
     readiness = app.guided_goal_detail_locator_table("check_readiness")
 
     assert fallback.equals(readiness)
+
+
+@pytest.mark.parametrize("lang", ["en", "ja"])
+def test_missing_interpretation_checks_do_not_show_clearance(lang):
+    def view(lang):
+        import pandas as pd
+        import streamlit as st
+        import streamlit_app as app
+        st.session_state["lang"] = lang
+        st.session_state["expected_warning"] = app.t("guided.checks_unavailable")
+        app._render_guided_goal_router(action_plan=pd.DataFrame())
+
+    at = AppTest.from_function(view, args=(lang,)).run(timeout=45)
+    assert not at.exception
+    assert [item.value for item in at.warning] == [at.session_state["expected_warning"]]
+    assert not at.success
+    assert len(at.button) == 1

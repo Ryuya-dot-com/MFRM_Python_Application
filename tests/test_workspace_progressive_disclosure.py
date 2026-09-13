@@ -64,28 +64,15 @@ def test_guide_focus_uses_real_cards_without_overlay_or_selector_tour() -> None:
     assert "position: fixed" not in source
 
 
-def test_result_router_keeps_only_one_primary_action_above_supporting_detail() -> None:
-    source = inspect.getsource(app._render_guided_goal_router)
-
-    primary = "_render_action_card(primary_row, primary=True)"
-    supporting = 'with st.expander(t("guided.goal_supporting_detail_expander")'
-    secondary = "_render_action_card(hub_row, primary=False)"
-    assert primary in source
-    assert supporting in source
-    assert secondary in source
-    assert source.index(primary) < source.index(supporting) < source.index(secondary)
-
-
-def test_default_result_route_has_no_duplicate_first_read_overview() -> None:
-    source = inspect.getsource(app.run_facets_mode)
-
-    assert source.count("_render_guided_goal_router(") == 1
-    assert "workflow_shell.show_result_router" in source
-    assert 'st.subheader(t("guided.overview_subheader"))' not in source
-    assert "_render_guided_action_plan(" not in source
-
+def test_result_navigation_precedes_orientation_and_exports_stay_in_their_route() -> None:
     section_source = inspect.getsource(app._render_guided_essential_tabs)
-    assert "_render_guided_action_plan(" in section_source
+    assert section_source.index("st.segmented_control(") < section_source.index("_render_guided_goal_router(")
+    assert "render_guided_section_reading_order(selected_section)" not in section_source
+    source = inspect.getsource(app.run_facets_mode)
+    compact = source.index("_render_guided_essential_tabs(")
+    exports = source.index("render_quick_results_download(")
+    assert "return" in source[compact:exports]
+    assert "_render_guided_goal_router(" not in source
 
 
 def test_result_section_labels_cover_the_workflow_shell_registry() -> None:

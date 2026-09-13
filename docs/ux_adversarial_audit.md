@@ -317,6 +317,49 @@ it contained no person-level rows. Desktop and English/Japanese 400-CSS-pixel
 browser views were checked without horizontal page overflow. These are focused layout and interaction checks, not full browser
 accessibility acceptance or a first-time-user study.
 
+## Focused results instead of stacked guidance — 2026-09-13
+
+Reference: [langtest.jp MFRM](https://langtest.jp/shiny/mfrm/), inspected in a
+browser on 2026-09-13. Its useful pattern is direct selection of a named analysis
+view, with a focused input area and one Run action. This is a UI reference;
+its PCA cutoffs and bias-significance wording are not adopted as statistical
+policy or treated as external validation of this application's estimators.
+
+The previous Compact result shell placed interpretation status, a goal chooser,
+an action hub, run history, global ZIP/Excel exports, and a second reading-order
+brief ahead of the selected result. The shell now uses one section selector,
+one run-specific interpretation notice, and one named next-check button. The
+first result view opens First Read. The claim boundary remains visible; complete
+check evidence and safe-output guidance are available in a closed disclosure.
+The same existing priority and diagnostic-target functions determine the route.
+Missing guide evidence displays a warning rather than interpretation clearance.
+
+Removed the duplicate generic success banner and section-reading brief. Reading
+guides and data-design details start closed. Run history and comparison live in
+Start; Compact file exports live in Report & Export. Full display retains its
+quick bundle entry. No estimation algorithms, diagnostic thresholds, inference
+holds, or export privacy filters were changed. No package was added.
+
+Validation: **214 tests passed**, including both locales, integrated section and
+next-check navigation, unchanged fitted-state checks, unavailable guide evidence,
+PCA stability, bias/report holds, data readiness, and the validation contract.
+The browser sample retained RSM/JMLE, 960 ratings, 30 persons, 30 iterations,
+fingerprint `067a6d8d`, first PCA eigenvalue 3.74, and the stability warning.
+At 1365 CSS pixels the section selector and next-check button fit in the initial
+viewport; previously the selector followed repeated guidance and global download controls. The
+Japanese 400-CSS-pixel view had no horizontal page overflow, and Enter on the
+recommended action opened overall PCA. Report & Export remained reachable and
+its public-mode ZIP contained 95 tables plus the two evidence-contract JSON
+assets, with a clean ZIP integrity check. Help's screen-order table was updated.
+An additional Help/workspace check run passed all 35 tests (overlapping the
+workspace checks above).
+
+These are focused layout and interaction checks, not first-time-user acceptance
+or completion of the full accessibility protocol. The setup sidebar still has
+many controls, and some run-specific diagnostic text is English in Japanese UI.
+Those are the next concrete simplification/localization targets; adding another
+onboarding layer would repeat the problem addressed here.
+
 ## Long-term implementation sequence
 
 1. Execute the versioned browser matrix for keyboard/focus acceptance and
@@ -324,8 +367,8 @@ accessibility acceptance or a first-time-user study.
 2. Complete browser and first-time-user acceptance for the implemented
    two-level source chooser and compact Guided setup while preserving stable
    IDs and old session state.
-3. Collapse the goal router, action hub, and section navigator into one route
-   model backed by the existing Help target registry.
+3. Continue simplifying the setup sidebar using the focused result-shell pattern;
+   verify that contextual Help returns to the exact selected view.
 4. Extract source/setup/result-shell renderers from the monolith, one tested
    vertical slice at a time.
 5. Add task-level accessibility and rendered-locale acceptance tests.

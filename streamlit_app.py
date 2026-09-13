@@ -28625,12 +28625,7 @@ def _show_top_level_warnings(
             ))
 
     # Display
-    if not alerts:
-        st.success(
-            f"Estimation completed successfully for {len(data):,} observations, "
-            f"{data[person_col].nunique():,} persons, and {len(facet_cols)} facets."
-        )
-    else:
+    if alerts:
         has_error = any(level == "error" for level, _ in alerts)
         if has_error:
             st.error("Estimation completed with critical issues:")
@@ -29277,23 +29272,22 @@ def _render_guided_status_metrics(action_plan: pd.DataFrame) -> None:
 
 
 def _render_guided_run_snapshot(action_plan: pd.DataFrame | None) -> None:
-    """Present existing interpretation evidence in reading order, without a wide table."""
-
+    """Keep the current interpretation status and claim boundary visible."""
     if not isinstance(action_plan, pd.DataFrame) or action_plan.empty:
+        st.warning(t("guided.checks_unavailable"))
         return
     summary = guided_interpretation_readiness_summary_table(action_plan).iloc[0]
-    with st.container(border=True):
-        st.markdown(f"**{t('guided.interpret_heading')}**")
-        st.write(summary[t("guided.interpret_col_status")])
-        st.write(summary[t("guided.interpret_col_main_item")])
-        for key in ("interpret_col_do_not_conclude", "interpret_col_safe_output"):
-            label = t(f"guided.{key}")
-            st.markdown(f"**{label}**")
-            st.write(summary[label])
-        st.caption(
-            f"{t('guided.interpret_col_open_next')}: "
-            f"{summary[t('guided.interpret_col_open_next')]}"
-        )
+    message = (
+        f"**{summary[t('guided.interpret_col_status')]}**\n\n"
+        f"{summary[t('guided.interpret_col_main_item')]}\n\n"
+        f"{summary[t('guided.interpret_col_do_not_conclude')]}"
+    )
+    if not _guided_focus_rows_by_class(action_plan, "hard_stop").empty:
+        st.error(message)
+    elif action_plan["Status"].astype(str).eq("Caution").any():
+        st.warning(message)
+    else:
+        st.info(message)
 
 
 def _render_guided_action_plan(
@@ -29316,20 +29310,21 @@ def _render_guided_action_plan(
     if show_snapshot:
         _render_guided_run_snapshot(plan)
 
-    priority_row = plan.iloc[0]
-    priority_status = str(priority_row.get("Status", "Review"))
-    priority_message = (
-        f"**{_guided_area_label(str(priority_row.get('Area')))} / {priority_row.get('Check')}**  \n"
-        f"{priority_row.get('NextAction')}  \n"
-        f"{t('guided.detail_location_label')}: "
-        f"{_guided_detail_location_label(str(priority_row.get('DetailLocation')))}"
-    )
-    if priority_status in {"Do not interpret yet", "Caution"}:
-        st.warning(priority_message)
-    elif priority_status == "Review":
-        st.info(priority_message)
-    else:
-        st.success(t("guided.clean_first_read_success"))
+    if show_snapshot:
+        priority_row = plan.iloc[0]
+        priority_status = str(priority_row.get("Status", "Review"))
+        priority_message = (
+            f"**{_guided_area_label(str(priority_row.get('Area')))} / {priority_row.get('Check')}**  \n"
+            f"{priority_row.get('NextAction')}  \n"
+            f"{t('guided.detail_location_label')}: "
+            f"{_guided_detail_location_label(str(priority_row.get('DetailLocation')))}"
+        )
+        if priority_status in {"Do not interpret yet", "Caution"}:
+            st.warning(priority_message)
+        elif priority_status == "Review":
+            st.info(priority_message)
+        else:
+            st.success(t("guided.clean_first_read_success"))
 
     with st.expander(t("guided.status_legend_expander"), expanded=False):
         _render_guided_status_metrics(plan)
@@ -29391,12 +29386,6 @@ def _guided_detail_navigator_table() -> pd.DataFrame:
             "Why": t("guided.nav_reason_terms"),
         },
     ])
-
-
-def _render_guided_detail_navigator() -> None:
-    st.subheader(t("guided.navigator_subheader"))
-    st.caption(t("guided.navigator_caption"))
-    st.dataframe(_guided_detail_navigator_table(), width="stretch", hide_index=True)
 
 
 def guided_measures_reading_guide_table() -> pd.DataFrame:
@@ -30526,165 +30515,37 @@ def _render_guided_goal_router(
     action_plan: pd.DataFrame | None = None,
     key_suffix: str = "main",
 ) -> None:
-    """Render one primary next action with supporting routes disclosed below."""
-    routes = guided_goal_route_table()
-    if routes.empty:
-        return
+    """One evidence-based next check; section navigation owns all other routes."""
     _render_guided_run_snapshot(action_plan)
-    st.subheader(t("guided.goal_router_subheader"))
-    st.caption(t("guided.goal_router_caption"))
-    goal_col = t("guided.goal_col_goal")
-    selected_goal = st.selectbox(
-        t("guided.goal_select_label"),
-        options=routes["GoalId"].tolist(),
-        index=0,
-        format_func=lambda goal_id: str(
-            routes.loc[routes["GoalId"].eq(goal_id), goal_col].iloc[0]
-        ),
-        key=f"guided_goal_route_{key_suffix}",
-        help=t("guided.goal_select_help"),
+    action_hub = guided_action_hub_cards("check_readiness", action_plan)
+    primary = action_hub.loc[action_hub["ActionId"].eq("primary")].iloc[0]
+    target = str(primary[t("guided.action_hub_col_open")])
+
+    def open_next_check() -> None:
+        section_id = str(primary["SectionId"])
+        st.session_state["guided_essential_section"] = section_id
+        if section_id == "diagnostics":
+            panel_id = guided_diagnostic_panel_id_for_target(target)
+            if panel_id:
+                st.session_state["guided_diagnostics_panel"] = panel_id
+                if panel_id == "dimensionality":
+                    st.session_state["dimensionality_panel"] = "overall"
+
+    st.button(
+        t("guided.open_next_button", target=target),
+        key=f"guided_action_hub_{key_suffix}_primary",
+        type="primary",
+        on_click=open_next_check,
     )
-    selected = routes.loc[routes["GoalId"].eq(selected_goal)].iloc[0]
-    action_hub = guided_action_hub_cards(str(selected_goal), action_plan)
-    role_col = t("guided.action_hub_col_role")
-    open_col = t("guided.action_hub_col_open")
-    action_col = t("guided.action_hub_col_action")
-    detail_col = t("guided.action_hub_col_detail")
-    button_col = t("guided.action_hub_col_button")
-
-    def _render_action_card(hub_row: pd.Series, *, primary: bool) -> None:
-        with st.container(border=True):
-            st.markdown(f"**{hub_row.get(role_col, '')}**")
-            st.caption(str(hub_row.get(open_col, "")))
-            st.write(str(hub_row.get(action_col, "")))
-            detail_text = str(hub_row.get(detail_col, "")).strip()
-            if detail_text:
-                st.caption(detail_text)
-            action_id = str(hub_row.get("ActionId", "primary"))
-            if st.button(
-                str(hub_row.get(button_col, t("guided.action_hub_primary_button"))),
-                key=f"guided_action_hub_{key_suffix}_{action_id}",
-                use_container_width=True,
-                type="primary" if primary else "secondary",
-            ):
-                section_id = str(hub_row.get("SectionId", "start"))
-                st.session_state["guided_essential_section"] = section_id
-                if section_id == "diagnostics":
-                    target = str(hub_row.get(open_col, ""))
-                    if not primary:
-                        target += " " + detail_text
-                    panel_id = guided_diagnostic_panel_id_for_target(target)
-                    if panel_id:
-                        st.session_state["guided_diagnostics_panel"] = panel_id
-                        if panel_id == "dimensionality":
-                            st.session_state["dimensionality_panel"] = "overall"
-                st.rerun()
-
-    if isinstance(action_hub, pd.DataFrame) and not action_hub.empty:
-        st.markdown(f"**{t('guided.action_hub_heading')}**")
-        st.caption(t("guided.action_hub_caption"))
-        primary_rows = action_hub.loc[action_hub["ActionId"].astype(str).eq("primary")]
-        primary_row = (
-            primary_rows.iloc[0]
-            if not primary_rows.empty
-            else action_hub.iloc[0]
-        )
-        _render_action_card(primary_row, primary=True)
-
     with st.expander(t("guided.goal_supporting_detail_expander"), expanded=False):
-        st.caption(t("guided.goal_supporting_detail_caption"))
-        st.markdown(f"**{t('guided.goal_focus_heading')}**")
-        st.caption(t("guided.goal_focus_caption"))
-        st.dataframe(
-            guided_goal_current_focus_table(str(selected_goal), action_plan),
-            width="stretch",
-            hide_index=True,
-        )
-        with st.container(border=True):
-            st.markdown(
-                f"**{t('guided.goal_card_start')}**: {selected[t('guided.goal_col_start')]}  \n"
-                f"**{t('guided.goal_card_next')}**: {selected[t('guided.goal_col_next')]}  \n"
-                f"**{t('guided.goal_card_detail')}**: {selected[t('guided.goal_col_detail')]}"
-            )
-            st.caption(str(selected[t("guided.goal_col_when")]))
-
-        st.markdown(f"**{t('guided.next_click_heading')}**")
-        st.caption(t("guided.next_click_caption"))
-        st.dataframe(
-            guided_next_click_summary_table(str(selected_goal), action_plan),
-            width="stretch",
-            hide_index=True,
-        )
-
-        if isinstance(action_hub, pd.DataFrame) and not action_hub.empty:
-            secondary_actions = action_hub.loc[
-                ~action_hub["ActionId"].astype(str).eq("primary")
-            ]
-            if not secondary_actions.empty:
-                card_cols = st.columns(len(secondary_actions))
-                for idx, (_, hub_row) in enumerate(secondary_actions.iterrows()):
-                    with card_cols[idx]:
-                        _render_action_card(hub_row, primary=False)
-            st.dataframe(
-                action_hub.drop(columns=["ActionId", "SectionId"], errors="ignore"),
-                width="stretch",
-                hide_index=True,
-            )
-
-        progress_table = guided_progress_checklist(str(selected_goal), action_plan)
-        if isinstance(progress_table, pd.DataFrame) and not progress_table.empty:
-            st.markdown(f"**{t('guided.progress_heading')}**")
-            done_col = t("guided.progress_col_done")
-            done_count = int(progress_table[done_col].fillna(False).astype(bool).sum()) if done_col in progress_table.columns else 0
-            total_count = int(len(progress_table))
-            st.caption(t("guided.progress_caption", done=done_count, total=total_count))
-            try:
-                st.progress(done_count / max(total_count, 1))
-            except Exception:
-                pass
-            disabled_cols = [col for col in progress_table.columns if col != done_col]
-            try:
-                st.data_editor(
-                    progress_table,
-                    width="stretch",
-                    hide_index=True,
-                    disabled=disabled_cols,
-                    column_config={
-                        done_col: st.column_config.CheckboxColumn(
-                            done_col,
-                            help=t("guided.progress_done_help"),
-                        ),
-                    },
-                    key=f"guided_progress_checklist_{key_suffix}",
-                )
-            except Exception:
-                st.dataframe(progress_table, width="stretch", hide_index=True)
-            st.download_button(
-                t("guided.progress_download_button"),
-                data=to_csv_bytes(progress_table),
-                file_name="mfrm_guided_progress_checklist.csv",
-                mime="text/csv",
-                key=f"dl_guided_progress_checklist_{key_suffix}",
-            )
-
-        st.markdown(f"**{t('guided.goal_locator_heading')}**")
-        st.caption(t("guided.goal_locator_caption"))
-        st.dataframe(guided_goal_detail_locator_table(str(selected_goal)), width="stretch", hide_index=True)
-        st.markdown(f"**{t('guided.goal_guardrail_heading')}**")
-        st.caption(t("guided.goal_guardrail_caption"))
-        st.dataframe(
-            guided_goal_guardrail_summary_table(str(selected_goal), action_plan),
-            width="stretch",
-            hide_index=True,
-        )
-        st.markdown(f"**{t('guided.goal_brief_heading')}**")
-        st.dataframe(guided_goal_decision_brief_table(str(selected_goal)), width="stretch", hide_index=True)
-        st.markdown(f"**{t('guided.goal_evidence_heading')}**")
-        st.dataframe(guided_goal_evidence_checklist(str(selected_goal)), width="stretch", hide_index=True)
-        st.markdown(f"**{t('guided.goal_steps_heading')}**")
-        st.dataframe(guided_goal_step_table(str(selected_goal)), width="stretch", hide_index=True)
-        st.markdown(f"**{t('guided.goal_all_routes_expander')}**")
-        st.dataframe(routes.drop(columns=["GoalId"]), width="stretch", hide_index=True)
+        st.write(str(primary[t("guided.action_hub_col_action")]))
+        summary = guided_interpretation_readiness_summary_table(action_plan).iloc[0]
+        for key in ("interpret_col_open_next", "interpret_col_safe_output"):
+            label = t(f"guided.{key}")
+            st.markdown(f"**{label}**: {summary[label]}")
+        if isinstance(action_plan, pd.DataFrame) and not action_plan.empty:
+            st.dataframe(guided_action_plan_display_frame(action_plan, include_detail=True),
+                         width="stretch", hide_index=True)
 
 
 def _render_guided_start_section(
@@ -30698,7 +30559,7 @@ def _render_guided_start_section(
 ) -> None:
     st.subheader(t("guided.start_subheader"))
     st.caption(t("guided.start_caption"))
-    with st.expander(t("guided.first_run_route_expander"), expanded=True):
+    with st.expander(t("guided.first_run_route_expander"), expanded=False):
         st.caption(t("guided.first_run_route_caption"))
         st.dataframe(guided_first_run_route_table(), width="stretch", hide_index=True)
     obs_n = len(data) if isinstance(data, pd.DataFrame) else 0
@@ -30714,7 +30575,7 @@ def _render_guided_start_section(
     metric_cols[2].metric(t("guided.metric_facets"), f"{facet_n:,}")
     metric_cols[3].metric(t("guided.metric_score_categories"), f"{int(score_n):,}")
 
-    with st.expander(t("guided.data_quality_expander"), expanded=True):
+    with st.expander(t("guided.data_quality_expander"), expanded=False):
         try:
             _draw_data_coverage_heatmap(data, est_facet_cols, person_col)
             _draw_category_usage_bar(data, score_col, est_facet_cols)
@@ -30789,15 +30650,16 @@ def _render_guided_start_section(
     with st.expander(t("guided.input_preview_expander"), expanded=False):
         st.dataframe(data.head(100), width="stretch")
 
-    _render_guided_detail_navigator()
+    render_run_history_panel()
+    render_comparison_selector()
 
 
 def _render_guided_results_section(result: dict, diagnostics: dict, report_tables: dict) -> None:
     st.subheader(t("guided.results_subheader"))
     st.caption(t("guided.results_caption"))
-    st.markdown(f"**{t('guided.measures_reading_heading')}**")
-    st.caption(t("guided.measures_reading_caption"))
-    render_guided_measures_reading_guide_tables()
+    with st.expander(t("guided.measures_reading_heading"), expanded=False):
+        st.caption(t("guided.measures_reading_caption"))
+        render_guided_measures_reading_guide_tables()
     show_convergence_section(result)
 
     person_df = result.get("facets", {}).get("person", pd.DataFrame())
@@ -31844,21 +31706,6 @@ def guided_section_reading_order_table(section_id: str) -> pd.DataFrame:
     }], columns=columns)
 
 
-def render_guided_section_reading_order(section_id: str) -> None:
-    """Render a short orientation cue before the selected Essential section."""
-    cue = guided_section_reading_order_table(section_id)
-    if cue.empty:
-        return
-    row = cue.iloc[0]
-    section_col, open_col, action_col, hold_col = cue.columns.tolist()
-    st.markdown(
-        f"**{section_col}:** {row[section_col]}  \n"
-        f"**{open_col}:** {row[open_col]}  \n"
-        f"**{action_col}:** {row[action_col]}  \n"
-        f"**{hold_col}:** {row[hold_col]}"
-    )
-
-
 def guided_diagnostic_panel_options() -> pd.DataFrame:
     """Return the lazy-rendered Essential Diagnostics panels in display order."""
     return pd.DataFrame([
@@ -31898,21 +31745,23 @@ def _render_guided_essential_tabs(
     result_compute_pca: bool,
     result_render_plots: bool,
     result_generate_figures: bool,
+    action_plan: pd.DataFrame | None = None,
 ) -> None:
     """Render the selected Essential section without drawing every heavy panel."""
+    section_labels = {section: _guided_section_label(section) for section in GUIDED_SECTION_IDS}
     with st.container(key="guided_result_navigation_dock", border=True):
         selected_section = st.segmented_control(
             t("guided.section_select_label"),
             options=list(GUIDED_SECTION_IDS),
-            default=None if "guided_essential_section" in st.session_state else "start",
-            format_func=_guided_section_label,
+            default=None if "guided_essential_section" in st.session_state else "first_read",
+            format_func=section_labels.get,
             key="guided_essential_section",
             help=t("guided.section_select_help"),
             width="stretch",
         )
-        selected_section = selected_section or "start"
-        st.caption(t("guided.section_select_caption"))
-    render_guided_section_reading_order(selected_section)
+        selected_section = selected_section or "first_read"
+    if action_plan is not None:
+        _render_guided_goal_router(action_plan=action_plan, key_suffix="overview")
 
     if selected_section == "start":
         _render_guided_start_section(
@@ -31931,8 +31780,9 @@ def _render_guided_essential_tabs(
             result,
             diagnostics,
             all_bias_results,
-            expanded_details=True,
+            expanded_details=False,
             key_suffix="first_read",
+            plan=action_plan,
             show_snapshot=False,
         )
     elif selected_section == "results":
@@ -38973,46 +38823,46 @@ def run_facets_mode(
     render_sample_guide_result_step(result)
 
     essential_mode = st.session_state.get("app_view_density", "Essential") == "Essential"
-
-    # --- One authoritative result orientation surface. Essential delegates the
-    # primary next action to the goal router; first-read detail lives only in
-    # its selected section. Full keeps the established collapsible checklist.
-    try:
-        first_read_rows = build_first_read_guide_rows(
-            result, diagnostics, out.get("all_bias_results", {})
-        )
-    except Exception:  # pragma: no cover - UX helper must not break results
-        first_read_rows = []
-    guided_action_plan = pd.DataFrame()
     if essential_mode:
         try:
             guided_action_plan = build_guided_action_plan(
                 result, diagnostics, out.get("all_bias_results", {})
             )
-        except Exception:  # pragma: no cover - UX helper must not break results
+        except Exception:  # Guide failure must not silently imply interpretation clearance.
             guided_action_plan = pd.DataFrame()
-    workflow_shell = _ux.resolve_workflow_shell(
-        has_data=True,
-        has_result=True,
-        selected_result_section=st.session_state.get("guided_essential_section"),
-    )
-    if essential_mode:
-        if workflow_shell.show_result_router:
-            _render_guided_goal_router(
-                action_plan=guided_action_plan,
-                key_suffix="overview",
-            )
-    else:
-        with st.expander(
-            "Where to look first — first-read guide",
-            expanded=first_read_guide_should_expand(first_read_rows),
-        ):
-            _show_first_read_guide(
-                result,
-                diagnostics,
-                out.get("all_bias_results", {}),
-                rows=first_read_rows,
-            )
+        _render_guided_essential_tabs(
+            core,
+            data,
+            result,
+            diagnostics,
+            report_tables,
+            scorefile,
+            residuals,
+            est_facet_cols,
+            out.get("person_col", person_col),
+            out.get("score_col", score_col),
+            bias_results,
+            out.get("all_bias_results", {}),
+            result_compute_pca=result_compute_pca,
+            result_render_plots=result_render_plots,
+            result_generate_figures=result_generate_figures,
+            action_plan=guided_action_plan,
+        )
+        return
+
+    try:
+        first_read_rows = build_first_read_guide_rows(
+            result, diagnostics, out.get("all_bias_results", {})
+        )
+    except Exception:  # UX helper must not break results.
+        first_read_rows = []
+    with st.expander(
+        "Where to look first — first-read guide",
+        expanded=first_read_guide_should_expand(first_read_rows),
+    ):
+        _show_first_read_guide(
+            result, diagnostics, out.get("all_bias_results", {}), rows=first_read_rows,
+        )
 
     # Run history panel (already collapsed by default internally).
     try:
@@ -39037,26 +38887,6 @@ def run_facets_mode(
         render_comparison_selector()
     except Exception:  # pragma: no cover - UX helper
         pass
-
-    if essential_mode:
-        _render_guided_essential_tabs(
-            core,
-            data,
-            result,
-            diagnostics,
-            report_tables,
-            scorefile,
-            residuals,
-            est_facet_cols,
-            out.get("person_col", person_col),
-            out.get("score_col", score_col),
-            bias_results,
-            out.get("all_bias_results", {}),
-            result_compute_pca=result_compute_pca,
-            result_render_plots=result_render_plots,
-            result_generate_figures=result_generate_figures,
-        )
-        return
 
     main_panel_labels = {
         "data": t("main_tabs.data"),
@@ -58403,9 +58233,9 @@ def guided_screen_reading_order_help_table() -> pd.DataFrame:
     ]
     rows = []
     for step_id in (
+        "goal_locator",
         "current_focus",
         "next_click",
-        "goal_locator",
         "guardrail",
         "supporting_detail",
         "claim_boundary",

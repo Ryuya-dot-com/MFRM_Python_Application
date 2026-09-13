@@ -1,0 +1,4697 @@
+{
+  "classification": "OBSERVED_DEVELOPMENT_ONLY",
+  "qualification_eligible": false,
+  "source_sha256": {
+    "mfrm_app/mml_engine_v2.py": "61a3086e8b6d221160f81b11f4d18444a6422b81e3d67b63b98d619e3a68da8b",
+    "mfrm_app/mml_quadrature_sensitivity.py": "640510f4a547947b3414829a6a7e48047d8d764c2782f6466a53660418857449",
+    "mfrm_app/mml_qualification_batch.py": "fb8a9738a26120cb492b43fc81e0c4f86c74d4b0cf2cf590c89b15ae6a212ff2",
+    "mfrm_app/mml_stationarity.py": "89a8ad17af8e4afa988e926a1fc145e27b3c83f12b115c6d83ddf499be8b40b3",
+    "streamlit_app.py": "845be57662c7129f0f01246f7f2af32bf046c2a141a34239f8215dfadba6df17",
+    "tests/test_mml_free_sd_quadrature_adapter.py": "56ba4350b89dddc0a13d1e60d4b1276d19bf67e9093992f22676579d9b893aa9",
+    "validation/known_assignment_mml_crossfit.R": "cdb6d6c0708bc720af5e611c5855d812193ea28bb70d02c4bccd3181b87b84d6",
+    "validation/mml_free_sd_analytic_score_probe.R": "80c185655a8ae329eb99597c7873b333990a7ab19252f9c6f4e676a1d7588439",
+    "validation/mml_free_sd_cross_language_probe.R": "6d9eb2cbe24361ee3ef548a357fc0fe0a3bb39111547c5c36e16b629b6ead3ad",
+    "validation/mml_free_sd_cross_language_probe.py": "94ce4ad81b771d52ba3b02c87b8eced332776ee1cd606c8e1a7fee963fa8b918",
+    "validation/mml_free_sd_development_probe.py": "8f00400fa4ff6e57ee9eaadcb56ce1dd99af1a03586f0a49431b0db90f61634c",
+    "validation/mml_free_sd_development_probe_20260911.json": "01bed467166252f90c335648f9f04660e15a3483f2735ccd9bad73e3cfe066bd",
+    "validation/mml_free_sd_quadrature_adapter.py": "c42ebc7d83b30959914c58d217eb8eb88fcdc24e67626de5fd2a7acca719a22f",
+    "validation/mml_free_sd_stationarity_adapter.py": "d0e55cde7eab9cfccb893d0be4c4b6acf919899ca6dba22da2567feb03a98c40",
+    "validation/mml_free_sd_stationarity_known_fixture.py": "64510ca3a734ab2a3ec32fe8fb3fd72c0730b46f19ec944b1bdc4e272a45c20a",
+    "validation/mml_python_analytic_sd_probe.py": "1ce184483d4222327d12aa596da99cdf5b305af221e3a366a0550f533b9bece4"
+  },
+  "limits": {
+    "r_gradient": 1e-09,
+    "fd_gradient": 1e-05,
+    "coordinate": 0.0001,
+    "nll": 1e-08,
+    "score": 0.0001
+  },
+  "orders": [
+    31,
+    61,
+    121
+  ],
+  "options": {
+    "maxiter": 250,
+    "gtol": 1e-08,
+    "ftol": 1e-15,
+    "maxls": 50,
+    "log_sigma_relative_step": 1e-05
+  },
+  "reference_sha256": {
+    "validation/mml_free_sd_analytic_score_20260912.json": "ea8d041a63fe7bb4a1018cc70d1c24720559622798da38ce1403a8b36a52300c",
+    "validation/mml_free_sd_cross_language_20260912/input.json": "6507172828762b73389739cf11099c2f40fe23acd99656948972957645e2102a"
+  },
+  "datasets": {
+    "RSM": {
+      "seed": 2026091201,
+      "model": "RSM",
+      "theta": [
+        0.38563542129941797,
+        2.2528395849907716,
+        1.7171773761675695,
+        0.7416824333050193,
+        -0.7879819682188671,
+        -0.44663682209947764,
+        -3.238831863845677,
+        -0.5034487208841696,
+        -0.11850918170299493,
+        -2.6216560038455627,
+        -1.5650181392738118,
+        -1.7111649323493336,
+        1.4040685082025266,
+        -0.15087053483841376,
+        -1.1935873797283467,
+        0.4337389224923824,
+        -0.7505860137793618,
+        -0.866271111554033,
+        -1.3703123288797092,
+        -0.9902426083866144,
+        1.8638961547666972,
+        2.119015804727354,
+        -2.0377751661068197,
+        -1.4293647220243484,
+        0.7664897649690219,
+        -1.0735544840501716,
+        1.6441050663743637,
+        -3.582647270982872,
+        0.13740253640086203,
+        -0.20570214490345023
+      ],
+      "rater": [
+        -0.4,
+        0.0,
+        0.4
+      ],
+      "criterion": [
+        -0.3,
+        0.0,
+        0.3
+      ],
+      "adjacent_steps": [
+        [
+          -1.5,
+          -0.5,
+          0.5,
+          1.5
+        ],
+        [
+          -1.5,
+          -0.5,
+          0.5,
+          1.5
+        ],
+        [
+          -1.5,
+          -0.5,
+          0.5,
+          1.5
+        ]
+      ],
+      "forced_extreme_persons": [],
+      "data": [
+        {
+          "Person": "P01",
+          "Rater": "R1",
+          "Criterion": "C1",
+          "Score": 3
+        },
+        {
+          "Person": "P01",
+          "Rater": "R1",
+          "Criterion": "C2",
+          "Score": 2
+        },
+        {
+          "Person": "P01",
+          "Rater": "R1",
+          "Criterion": "C3",
+          "Score": 3
+        },
+        {
+          "Person": "P01",
+          "Rater": "R2",
+          "Criterion": "C1",
+          "Score": 3
+        },
+        {
+          "Person": "P01",
+          "Rater": "R2",
+          "Criterion": "C2",
+          "Score": 3
+        },
+        {
+          "Person": "P01",
+          "Rater": "R2",
+          "Criterion": "C3",
+          "Score": 2
+        },
+        {
+          "Person": "P01",
+          "Rater": "R3",
+          "Criterion": "C1",
+          "Score": 1
+        },
+        {
+          "Person": "P01",
+          "Rater": "R3",
+          "Criterion": "C2",
+          "Score": 1
+        },
+        {
+          "Person": "P01",
+          "Rater": "R3",
+          "Criterion": "C3",
+          "Score": 1
+        },
+        {
+          "Person": "P02",
+          "Rater": "R1",
+          "Criterion": "C1",
+          "Score": 4
+        },
+        {
+          "Person": "P02",
+          "Rater": "R1",
+          "Criterion": "C2",
+          "Score": 4
+        },
+        {
+          "Person": "P02",
+          "Rater": "R1",
+          "Criterion": "C3",
+          "Score": 4
+        },
+        {
+          "Person": "P02",
+          "Rater": "R2",
+          "Criterion": "C1",
+          "Score": 4
+        },
+        {
+          "Person": "P02",
+          "Rater": "R2",
+          "Criterion": "C2",
+          "Score": 4
+        },
+        {
+          "Person": "P02",
+          "Rater": "R2",
+          "Criterion": "C3",
+          "Score": 4
+        },
+        {
+          "Person": "P02",
+          "Rater": "R3",
+          "Criterion": "C1",
+          "Score": 2
+        },
+        {
+          "Person": "P02",
+          "Rater": "R3",
+          "Criterion": "C2",
+          "Score": 4
+        },
+        {
+          "Person": "P02",
+          "Rater": "R3",
+          "Criterion": "C3",
+          "Score": 4
+        },
+        {
+          "Person": "P03",
+          "Rater": "R1",
+          "Criterion": "C1",
+          "Score": 4
+        },
+        {
+          "Person": "P03",
+          "Rater": "R1",
+          "Criterion": "C2",
+          "Score": 4
+        },
+        {
+          "Person": "P03",
+          "Rater": "R1",
+          "Criterion": "C3",
+          "Score": 3
+        },
+        {
+          "Person": "P03",
+          "Rater": "R2",
+          "Criterion": "C1",
+          "Score": 4
+        },
+        {
+          "Person": "P03",
+          "Rater": "R2",
+          "Criterion": "C2",
+          "Score": 3
+        },
+        {
+          "Person": "P03",
+          "Rater": "R2",
+          "Criterion": "C3",
+          "Score": 2
+        },
+        {
+          "Person": "P03",
+          "Rater": "R3",
+          "Criterion": "C1",
+          "Score": 3
+        },
+        {
+          "Person": "P03",
+          "Rater": "R3",
+          "Criterion": "C2",
+          "Score": 4
+        },
+        {
+          "Person": "P03",
+          "Rater": "R3",
+          "Criterion": "C3",
+          "Score": 3
+        },
+        {
+          "Person": "P04",
+          "Rater": "R1",
+          "Criterion": "C1",
+          "Score": 3
+        },
+        {
+          "Person": "P04",
+          "Rater": "R1",
+          "Criterion": "C2",
+          "Score": 4
+        },
+        {
+          "Person": "P04",
+          "Rater": "R1",
+          "Criterion": "C3",
+          "Score": 3
+        },
+        {
+          "Person": "P04",
+          "Rater": "R2",
+          "Criterion": "C1",
+          "Score": 4
+        },
+        {
+          "Person": "P04",
+          "Rater": "R2",
+          "Criterion": "C2",
+          "Score": 4
+        },
+        {
+          "Person": "P04",
+          "Rater": "R2",
+          "Criterion": "C3",
+          "Score": 2
+        },
+        {
+          "Person": "P04",
+          "Rater": "R3",
+          "Criterion": "C1",
+          "Score": 3
+        },
+        {
+          "Person": "P04",
+          "Rater": "R3",
+          "Criterion": "C2",
+          "Score": 3
+        },
+        {
+          "Person": "P04",
+          "Rater": "R3",
+          "Criterion": "C3",
+          "Score": 2
+        },
+        {
+          "Person": "P05",
+          "Rater": "R1",
+          "Criterion": "C1",
+          "Score": 2
+        },
+        {
+          "Person": "P05",
+          "Rater": "R1",
+          "Criterion": "C2",
+          "Score": 2
+        },
+        {
+          "Person": "P05",
+          "Rater": "R1",
+          "Criterion": "C3",
+          "Score": 1
+        },
+        {
+          "Person": "P05",
+          "Rater": "R2",
+          "Criterion": "C1",
+          "Score": 2
+        },
+        {
+          "Person": "P05",
+          "Rater": "R2",
+          "Criterion": "C2",
+          "Score": 2
+        },
+        {
+          "Person": "P05",
+          "Rater": "R2",
+          "Criterion": "C3",
+          "Score": 0
+        },
+        {
+          "Person": "P05",
+          "Rater": "R3",
+          "Criterion": "C1",
+          "Score": 0
+        },
+        {
+          "Person": "P05",
+          "Rater": "R3",
+          "Criterion": "C2",
+          "Score": 1
+        },
+        {
+          "Person": "P05",
+          "Rater": "R3",
+          "Criterion": "C3",
+          "Score": 1
+        },
+        {
+          "Person": "P06",
+          "Rater": "R1",
+          "Criterion": "C1",
+          "Score": 2
+        },
+        {
+          "Person": "P06",
+          "Rater": "R1",
+          "Criterion": "C2",
+          "Score": 3
+        },
+        {
+          "Person": "P06",
+          "Rater": "R1",
+          "Criterion": "C3",
+          "Score": 1
+        },
+        {
+          "Person": "P06",
+          "Rater": "R2",
+          "Criterion": "C1",
+          "Score": 1
+        },
+        {
+          "Person": "P06",
+          "Rater": "R2",
+          "Criterion": "C2",
+          "Score": 1
+        },
+        {
+          "Person": "P06",
+          "Rater": "R2",
+          "Criterion": "C3",
+          "Score": 3
+        },
+        {
+          "Person": "P06",
+          "Rater": "R3",
+          "Criterion": "C1",
+          "Score": 1
+        },
+        {
+          "Person": "P06",
+          "Rater": "R3",
+          "Criterion": "C2",
+          "Score": 1
+        },
+        {
+          "Person": "P06",
+          "Rater": "R3",
+          "Criterion": "C3",
+          "Score": 2
+        },
+        {
+          "Person": "P07",
+          "Rater": "R1",
+          "Criterion": "C1",
+          "Score": 0
+        },
+        {
+          "Person": "P07",
+          "Rater": "R1",
+          "Criterion": "C2",
+          "Score": 0
+        },
+        {
+          "Person": "P07",
+          "Rater": "R1",
+          "Criterion": "C3",
+          "Score": 0
+        },
+        {
+          "Person": "P07",
+          "Rater": "R2",
+          "Criterion": "C1",
+          "Score": 1
+        },
+        {
+          "Person": "P07",
+          "Rater": "R2",
+          "Criterion": "C2",
+          "Score": 0
+        },
+        {
+          "Person": "P07",
+          "Rater": "R2",
+          "Criterion": "C3",
+          "Score": 0
+        },
+        {
+          "Person": "P07",
+          "Rater": "R3",
+          "Criterion": "C1",
+          "Score": 1
+        },
+        {
+          "Person": "P07",
+          "Rater": "R3",
+          "Criterion": "C2",
+          "Score": 0
+        },
+        {
+          "Person": "P07",
+          "Rater": "R3",
+          "Criterion": "C3",
+          "Score": 0
+        },
+        {
+          "Person": "P08",
+          "Rater": "R1",
+          "Criterion": "C1",
+          "Score": 2
+        },
+        {
+          "Person": "P08",
+          "Rater": "R1",
+          "Criterion": "C2",
+          "Score": 2
+        },
+        {
+          "Person": "P08",
+          "Rater": "R1",
+          "Criterion": "C3",
+          "Score": 3
+        },
+        {
+          "Person": "P08",
+          "Rater": "R2",
+          "Criterion": "C1",
+          "Score": 2
+        },
+        {
+          "Person": "P08",
+          "Rater": "R2",
+          "Criterion": "C2",
+          "Score": 3
+        },
+        {
+          "Person": "P08",
+          "Rater": "R2",
+          "Criterion": "C3",
+          "Score": 1
+        },
+        {
+          "Person": "P08",
+          "Rater": "R3",
+          "Criterion": "C1",
+          "Score": 3
+        },
+        {
+          "Person": "P08",
+          "Rater": "R3",
+          "Criterion": "C2",
+          "Score": 0
+        },
+        {
+          "Person": "P08",
+          "Rater": "R3",
+          "Criterion": "C3",
+          "Score": 0
+        },
+        {
+          "Person": "P09",
+          "Rater": "R1",
+          "Criterion": "C1",
+          "Score": 3
+        },
+        {
+          "Person": "P09",
+          "Rater": "R1",
+          "Criterion": "C2",
+          "Score": 1
+        },
+        {
+          "Person": "P09",
+          "Rater": "R1",
+          "Criterion": "C3",
+          "Score": 1
+        },
+        {
+          "Person": "P09",
+          "Rater": "R2",
+          "Criterion": "C1",
+          "Score": 4
+        },
+        {
+          "Person": "P09",
+          "Rater": "R2",
+          "Criterion": "C2",
+          "Score": 3
+        },
+        {
+          "Person": "P09",
+          "Rater": "R2",
+          "Criterion": "C3",
+          "Score": 1
+        },
+        {
+          "Person": "P09",
+          "Rater": "R3",
+          "Criterion": "C1",
+          "Score": 2
+        },
+        {
+          "Person": "P09",
+          "Rater": "R3",
+          "Criterion": "C2",
+          "Score": 0
+        },
+        {
+          "Person": "P09",
+          "Rater": "R3",
+          "Criterion": "C3",
+          "Score": 1
+        },
+        {
+          "Person": "P10",
+          "Rater": "R1",
+          "Criterion": "C1",
+          "Score": 0
+        },
+        {
+          "Person": "P10",
+          "Rater": "R1",
+          "Criterion": "C2",
+          "Score": 0
+        },
+        {
+          "Person": "P10",
+          "Rater": "R1",
+          "Criterion": "C3",
+          "Score": 1
+        },
+        {
+          "Person": "P10",
+          "Rater": "R2",
+          "Criterion": "C1",
+          "Score": 0
+        },
+        {
+          "Person": "P10",
+          "Rater": "R2",
+          "Criterion": "C2",
+          "Score": 1
+        },
+        {
+          "Person": "P10",
+          "Rater": "R2",
+          "Criterion": "C3",
+          "Score": 0
+        },
+        {
+          "Person": "P10",
+          "Rater": "R3",
+          "Criterion": "C1",
+          "Score": 0
+        },
+        {
+          "Person": "P10",
+          "Rater": "R3",
+          "Criterion": "C2",
+          "Score": 1
+        },
+        {
+          "Person": "P10",
+          "Rater": "R3",
+          "Criterion": "C3",
+          "Score": 0
+        },
+        {
+          "Person": "P11",
+          "Rater": "R1",
+          "Criterion": "C1",
+          "Score": 0
+        },
+        {
+          "Person": "P11",
+          "Rater": "R1",
+          "Criterion": "C2",
+          "Score": 2
+        },
+        {
+          "Person": "P11",
+          "Rater": "R1",
+          "Criterion": "C3",
+          "Score": 0
+        },
+        {
+          "Person": "P11",
+          "Rater": "R2",
+          "Criterion": "C1",
+          "Score": 1
+        },
+        {
+          "Person": "P11",
+          "Rater": "R2",
+          "Criterion": "C2",
+          "Score": 1
+        },
+        {
+          "Person": "P11",
+          "Rater": "R2",
+          "Criterion": "C3",
+          "Score": 1
+        },
+        {
+          "Person": "P11",
+          "Rater": "R3",
+          "Criterion": "C1",
+          "Score": 0
+        },
+        {
+          "Person": "P11",
+          "Rater": "R3",
+          "Criterion": "C2",
+          "Score": 1
+        },
+        {
+          "Person": "P11",
+          "Rater": "R3",
+          "Criterion": "C3",
+          "Score": 0
+        },
+        {
+          "Person": "P12",
+          "Rater": "R1",
+          "Criterion": "C1",
+          "Score": 1
+        },
+        {
+          "Person": "P12",
+          "Rater": "R1",
+          "Criterion": "C2",
+          "Score": 0
+        },
+        {
+          "Person": "P12",
+          "Rater": "R1",
+          "Criterion": "C3",
+          "Score": 2
+        },
+        {
+          "Person": "P12",
+          "Rater": "R2",
+          "Criterion": "C1",
+          "Score": 0
+        },
+        {
+          "Person": "P12",
+          "Rater": "R2",
+          "Criterion": "C2",
+          "Score": 0
+        },
+        {
+          "Person": "P12",
+          "Rater": "R2",
+          "Criterion": "C3",
+          "Score": 0
+        },
+        {
+          "Person": "P12",
+          "Rater": "R3",
+          "Criterion": "C1",
+          "Score": 2
+        },
+        {
+          "Person": "P12",
+          "Rater": "R3",
+          "Criterion": "C2",
+          "Score": 0
+        },
+        {
+          "Person": "P12",
+          "Rater": "R3",
+          "Criterion": "C3",
+          "Score": 0
+        },
+        {
+          "Person": "P13",
+          "Rater": "R1",
+          "Criterion": "C1",
+          "Score": 3
+        },
+        {
+          "Person": "P13",
+          "Rater": "R1",
+          "Criterion": "C2",
+          "Score": 4
+        },
+        {
+          "Person": "P13",
+          "Rater": "R1",
+          "Criterion": "C3",
+          "Score": 4
+        },
+        {
+          "Person": "P13",
+          "Rater": "R2",
+          "Criterion": "C1",
+          "Score": 2
+        },
+        {
+          "Person": "P13",
+          "Rater": "R2",
+          "Criterion": "C2",
+          "Score": 4
+        },
+        {
+          "Person": "P13",
+          "Rater": "R2",
+          "Criterion": "C3",
+          "Score": 4
+        },
+        {
+          "Person": "P13",
+          "Rater": "R3",
+          "Criterion": "C1",
+          "Score": 4
+        },
+        {
+          "Person": "P13",
+          "Rater": "R3",
+          "Criterion": "C2",
+          "Score": 3
+        },
+        {
+          "Person": "P13",
+          "Rater": "R3",
+          "Criterion": "C3",
+          "Score": 3
+        },
+        {
+          "Person": "P14",
+          "Rater": "R1",
+          "Criterion": "C1",
+          "Score": 2
+        },
+        {
+          "Person": "P14",
+          "Rater": "R1",
+          "Criterion": "C2",
+          "Score": 3
+        },
+        {
+          "Person": "P14",
+          "Rater": "R1",
+          "Criterion": "C3",
+          "Score": 0
+        },
+        {
+          "Person": "P14",
+          "Rater": "R2",
+          "Criterion": "C1",
+          "Score": 2
+        },
+        {
+          "Person": "P14",
+          "Rater": "R2",
+          "Criterion": "C2",
+          "Score": 3
+        },
+        {
+          "Person": "P14",
+          "Rater": "R2",
+          "Criterion": "C3",
+          "Score": 0
+        },
+        {
+          "Person": "P14",
+          "Rater": "R3",
+          "Criterion": "C1",
+          "Score": 1
+        },
+        {
+          "Person": "P14",
+          "Rater": "R3",
+          "Criterion": "C2",
+          "Score": 2
+        },
+        {
+          "Person": "P14",
+          "Rater": "R3",
+          "Criterion": "C3",
+          "Score": 2
+        },
+        {
+          "Person": "P15",
+          "Rater": "R1",
+          "Criterion": "C1",
+          "Score": 1
+        },
+        {
+          "Person": "P15",
+          "Rater": "R1",
+          "Criterion": "C2",
+          "Score": 2
+        },
+        {
+          "Person": "P15",
+          "Rater": "R1",
+          "Criterion": "C3",
+          "Score": 1
+        },
+        {
+          "Person": "P15",
+          "Rater": "R2",
+          "Criterion": "C1",
+          "Score": 1
+        },
+        {
+          "Person": "P15",
+          "Rater": "R2",
+          "Criterion": "C2",
+          "Score": 0
+        },
+        {
+          "Person": "P15",
+          "Rater": "R2",
+          "Criterion": "C3",
+          "Score": 1
+        },
+        {
+          "Person": "P15",
+          "Rater": "R3",
+          "Criterion": "C1",
+          "Score": 1
+        },
+        {
+          "Person": "P15",
+          "Rater": "R3",
+          "Criterion": "C2",
+          "Score": 2
+        },
+        {
+          "Person": "P15",
+          "Rater": "R3",
+          "Criterion": "C3",
+          "Score": 0
+        },
+        {
+          "Person": "P16",
+          "Rater": "R1",
+          "Criterion": "C1",
+          "Score": 2
+        },
+        {
+          "Person": "P16",
+          "Rater": "R1",
+          "Criterion": "C2",
+          "Score": 2
+        },
+        {
+          "Person": "P16",
+          "Rater": "R1",
+          "Criterion": "C3",
+          "Score": 2
+        },
+        {
+          "Person": "P16",
+          "Rater": "R2",
+          "Criterion": "C1",
+          "Score": 4
+        },
+        {
+          "Person": "P16",
+          "Rater": "R2",
+          "Criterion": "C2",
+          "Score": 4
+        },
+        {
+          "Person": "P16",
+          "Rater": "R2",
+          "Criterion": "C3",
+          "Score": 3
+        },
+        {
+          "Person": "P16",
+          "Rater": "R3",
+          "Criterion": "C1",
+          "Score": 4
+        },
+        {
+          "Person": "P16",
+          "Rater": "R3",
+          "Criterion": "C2",
+          "Score": 3
+        },
+        {
+          "Person": "P16",
+          "Rater": "R3",
+          "Criterion": "C3",
+          "Score": 1
+        },
+        {
+          "Person": "P17",
+          "Rater": "R1",
+          "Criterion": "C1",
+          "Score": 2
+        },
+        {
+          "Person": "P17",
+          "Rater": "R1",
+          "Criterion": "C2",
+          "Score": 0
+        },
+        {
+          "Person": "P17",
+          "Rater": "R1",
+          "Criterion": "C3",
+          "Score": 0
+        },
+        {
+          "Person": "P17",
+          "Rater": "R2",
+          "Criterion": "C1",
+          "Score": 0
+        },
+        {
+          "Person": "P17",
+          "Rater": "R2",
+          "Criterion": "C2",
+          "Score": 1
+        },
+        {
+          "Person": "P17",
+          "Rater": "R2",
+          "Criterion": "C3",
+          "Score": 0
+        },
+        {
+          "Person": "P17",
+          "Rater": "R3",
+          "Criterion": "C1",
+          "Score": 2
+        },
+        {
+          "Person": "P17",
+          "Rater": "R3",
+          "Criterion": "C2",
+          "Score": 0
+        },
+        {
+          "Person": "P17",
+          "Rater": "R3",
+          "Criterion": "C3",
+          "Score": 0
+        },
+        {
+          "Person": "P18",
+          "Rater": "R1",
+          "Criterion": "C1",
+          "Score": 3
+        },
+        {
+          "Person": "P18",
+          "Rater": "R1",
+          "Criterion": "C2",
+          "Score": 2
+        },
+        {
+          "Person": "P18",
+          "Rater": "R1",
+          "Criterion": "C3",
+          "Score": 2
+        },
+        {
+          "Person": "P18",
+          "Rater": "R2",
+          "Criterion": "C1",
+          "Score": 3
+        },
+        {
+          "Person": "P18",
+          "Rater": "R2",
+          "Criterion": "C2",
+          "Score": 2
+        },
+        {
+          "Person": "P18",
+          "Rater": "R2",
+          "Criterion": "C3",
+          "Score": 1
+        },
+        {
+          "Person": "P18",
+          "Rater": "R3",
+          "Criterion": "C1",
+          "Score": 1
+        },
+        {
+          "Person": "P18",
+          "Rater": "R3",
+          "Criterion": "C2",
+          "Score": 0
+        },
+        {
+          "Person": "P18",
+          "Rater": "R3",
+          "Criterion": "C3",
+          "Score": 0
+        },
+        {
+          "Person": "P19",
+          "Rater": "R1",
+          "Criterion": "C1",
+          "Score": 2
+        },
+        {
+          "Person": "P19",
+          "Rater": "R1",
+          "Criterion": "C2",
+          "Score": 3
+        },
+        {
+          "Person": "P19",
+          "Rater": "R1",
+          "Criterion": "C3",
+          "Score": 1
+        },
+        {
+          "Person": "P19",
+          "Rater": "R2",
+          "Criterion": "C1",
+          "Score": 3
+        },
+        {
+          "Person": "P19",
+          "Rater": "R2",
+          "Criterion": "C2",
+          "Score": 0
+        },
+        {
+          "Person": "P19",
+          "Rater": "R2",
+          "Criterion": "C3",
+          "Score": 1
+        },
+        {
+          "Person": "P19",
+          "Rater": "R3",
+          "Criterion": "C1",
+          "Score": 1
+        },
+        {
+          "Person": "P19",
+          "Rater": "R3",
+          "Criterion": "C2",
+          "Score": 1
+        },
+        {
+          "Person": "P19",
+          "Rater": "R3",
+          "Criterion": "C3",
+          "Score": 2
+        },
+        {
+          "Person": "P20",
+          "Rater": "R1",
+          "Criterion": "C1",
+          "Score": 4
+        },
+        {
+          "Person": "P20",
+          "Rater": "R1",
+          "Criterion": "C2",
+          "Score": 2
+        },
+        {
+          "Person": "P20",
+          "Rater": "R1",
+          "Criterion": "C3",
+          "Score": 1
+        },
+        {
+          "Person": "P20",
+          "Rater": "R2",
+          "Criterion": "C1",
+          "Score": 2
+        },
+        {
+          "Person": "P20",
+          "Rater": "R2",
+          "Criterion": "C2",
+          "Score": 1
+        },
+        {
+          "Person": "P20",
+          "Rater": "R2",
+          "Criterion": "C3",
+          "Score": 0
+        },
+        {
+          "Person": "P20",
+          "Rater": "R3",
+          "Criterion": "C1",
+          "Score": 2
+        },
+        {
+          "Person": "P20",
+          "Rater": "R3",
+          "Criterion": "C2",
+          "Score": 1
+        },
+        {
+          "Person": "P20",
+          "Rater": "R3",
+          "Criterion": "C3",
+          "Score": 0
+        },
+        {
+          "Person": "P21",
+          "Rater": "R1",
+          "Criterion": "C1",
+          "Score": 4
+        },
+        {
+          "Person": "P21",
+          "Rater": "R1",
+          "Criterion": "C2",
+          "Score": 4
+        },
+        {
+          "Person": "P21",
+          "Rater": "R1",
+          "Criterion": "C3",
+          "Score": 3
+        },
+        {
+          "Person": "P21",
+          "Rater": "R2",
+          "Criterion": "C1",
+          "Score": 4
+        },
+        {
+          "Person": "P21",
+          "Rater": "R2",
+          "Criterion": "C2",
+          "Score": 2
+        },
+        {
+          "Person": "P21",
+          "Rater": "R2",
+          "Criterion": "C3",
+          "Score": 4
+        },
+        {
+          "Person": "P21",
+          "Rater": "R3",
+          "Criterion": "C1",
+          "Score": 3
+        },
+        {
+          "Person": "P21",
+          "Rater": "R3",
+          "Criterion": "C2",
+          "Score": 3
+        },
+        {
+          "Person": "P21",
+          "Rater": "R3",
+          "Criterion": "C3",
+          "Score": 3
+        },
+        {
+          "Person": "P22",
+          "Rater": "R1",
+          "Criterion": "C1",
+          "Score": 3
+        },
+        {
+          "Person": "P22",
+          "Rater": "R1",
+          "Criterion": "C2",
+          "Score": 2
+        },
+        {
+          "Person": "P22",
+          "Rater": "R1",
+          "Criterion": "C3",
+          "Score": 2
+        },
+        {
+          "Person": "P22",
+          "Rater": "R2",
+          "Criterion": "C1",
+          "Score": 4
+        },
+        {
+          "Person": "P22",
+          "Rater": "R2",
+          "Criterion": "C2",
+          "Score": 4
+        },
+        {
+          "Person": "P22",
+          "Rater": "R2",
+          "Criterion": "C3",
+          "Score": 3
+        },
+        {
+          "Person": "P22",
+          "Rater": "R3",
+          "Criterion": "C1",
+          "Score": 3
+        },
+        {
+          "Person": "P22",
+          "Rater": "R3",
+          "Criterion": "C2",
+          "Score": 3
+        },
+        {
+          "Person": "P22",
+          "Rater": "R3",
+          "Criterion": "C3",
+          "Score": 3
+        },
+        {
+          "Person": "P23",
+          "Rater": "R1",
+          "Criterion": "C1",
+          "Score": 1
+        },
+        {
+          "Person": "P23",
+          "Rater": "R1",
+          "Criterion": "C2",
+          "Score": 1
+        },
+        {
+          "Person": "P23",
+          "Rater": "R1",
+          "Criterion": "C3",
+          "Score": 0
+        },
+        {
+          "Person": "P23",
+          "Rater": "R2",
+          "Criterion": "C1",
+          "Score": 1
+        },
+        {
+          "Person": "P23",
+          "Rater": "R2",
+          "Criterion": "C2",
+          "Score": 0
+        },
+        {
+          "Person": "P23",
+          "Rater": "R2",
+          "Criterion": "C3",
+          "Score": 1
+        },
+        {
+          "Person": "P23",
+          "Rater": "R3",
+          "Criterion": "C1",
+          "Score": 1
+        },
+        {
+          "Person": "P23",
+          "Rater": "R3",
+          "Criterion": "C2",
+          "Score": 1
+        },
+        {
+          "Person": "P23",
+          "Rater": "R3",
+          "Criterion": "C3",
+          "Score": 0
+        },
+        {
+          "Person": "P24",
+          "Rater": "R1",
+          "Criterion": "C1",
+          "Score": 0
+        },
+        {
+          "Person": "P24",
+          "Rater": "R1",
+          "Criterion": "C2",
+          "Score": 1
+        },
+        {
+          "Person": "P24",
+          "Rater": "R1",
+          "Criterion": "C3",
+          "Score": 1
+        },
+        {
+          "Person": "P24",
+          "Rater": "R2",
+          "Criterion": "C1",
+          "Score": 2
+        },
+        {
+          "Person": "P24",
+          "Rater": "R2",
+          "Criterion": "C2",
+          "Score": 1
+        },
+        {
+          "Person": "P24",
+          "Rater": "R2",
+          "Criterion": "C3",
+          "Score": 0
+        },
+        {
+          "Person": "P24",
+          "Rater": "R3",
+          "Criterion": "C1",
+          "Score": 0
+        },
+        {
+          "Person": "P24",
+          "Rater": "R3",
+          "Criterion": "C2",
+          "Score": 1
+        },
+        {
+          "Person": "P24",
+          "Rater": "R3",
+          "Criterion": "C3",
+          "Score": 0
+        },
+        {
+          "Person": "P25",
+          "Rater": "R1",
+          "Criterion": "C1",
+          "Score": 4
+        },
+        {
+          "Person": "P25",
+          "Rater": "R1",
+          "Criterion": "C2",
+          "Score": 2
+        },
+        {
+          "Person": "P25",
+          "Rater": "R1",
+          "Criterion": "C3",
+          "Score": 2
+        },
+        {
+          "Person": "P25",
+          "Rater": "R2",
+          "Criterion": "C1",
+          "Score": 3
+        },
+        {
+          "Person": "P25",
+          "Rater": "R2",
+          "Criterion": "C2",
+          "Score": 4
+        },
+        {
+          "Person": "P25",
+          "Rater": "R2",
+          "Criterion": "C3",
+          "Score": 3
+        },
+        {
+          "Person": "P25",
+          "Rater": "R3",
+          "Criterion": "C1",
+          "Score": 1
+        },
+        {
+          "Person": "P25",
+          "Rater": "R3",
+          "Criterion": "C2",
+          "Score": 2
+        },
+        {
+          "Person": "P25",
+          "Rater": "R3",
+          "Criterion": "C3",
+          "Score": 3
+        },
+        {
+          "Person": "P26",
+          "Rater": "R1",
+          "Criterion": "C1",
+          "Score": 1
+        },
+        {
+          "Person": "P26",
+          "Rater": "R1",
+          "Criterion": "C2",
+          "Score": 0
+        },
+        {
+          "Person": "P26",
+          "Rater": "R1",
+          "Criterion": "C3",
+          "Score": 2
+        },
+        {
+          "Person": "P26",
+          "Rater": "R2",
+          "Criterion": "C1",
+          "Score": 2
+        },
+        {
+          "Person": "P26",
+          "Rater": "R2",
+          "Criterion": "C2",
+          "Score": 1
+        },
+        {
+          "Person": "P26",
+          "Rater": "R2",
+          "Criterion": "C3",
+          "Score": 0
+        },
+        {
+          "Person": "P26",
+          "Rater": "R3",
+          "Criterion": "C1",
+          "Score": 1
+        },
+        {
+          "Person": "P26",
+          "Rater": "R3",
+          "Criterion": "C2",
+          "Score": 1
+        },
+        {
+          "Person": "P26",
+          "Rater": "R3",
+          "Criterion": "C3",
+          "Score": 2
+        },
+        {
+          "Person": "P27",
+          "Rater": "R1",
+          "Criterion": "C1",
+          "Score": 4
+        },
+        {
+          "Person": "P27",
+          "Rater": "R1",
+          "Criterion": "C2",
+          "Score": 4
+        },
+        {
+          "Person": "P27",
+          "Rater": "R1",
+          "Criterion": "C3",
+          "Score": 3
+        },
+        {
+          "Person": "P27",
+          "Rater": "R2",
+          "Criterion": "C1",
+          "Score": 3
+        },
+        {
+          "Person": "P27",
+          "Rater": "R2",
+          "Criterion": "C2",
+          "Score": 3
+        },
+        {
+          "Person": "P27",
+          "Rater": "R2",
+          "Criterion": "C3",
+          "Score": 4
+        },
+        {
+          "Person": "P27",
+          "Rater": "R3",
+          "Criterion": "C1",
+          "Score": 3
+        },
+        {
+          "Person": "P27",
+          "Rater": "R3",
+          "Criterion": "C2",
+          "Score": 4
+        },
+        {
+          "Person": "P27",
+          "Rater": "R3",
+          "Criterion": "C3",
+          "Score": 4
+        },
+        {
+          "Person": "P28",
+          "Rater": "R1",
+          "Criterion": "C1",
+          "Score": 0
+        },
+        {
+          "Person": "P28",
+          "Rater": "R1",
+          "Criterion": "C2",
+          "Score": 1
+        },
+        {
+          "Person": "P28",
+          "Rater": "R1",
+          "Criterion": "C3",
+          "Score": 0
+        },
+        {
+          "Person": "P28",
+          "Rater": "R2",
+          "Criterion": "C1",
+          "Score": 0
+        },
+        {
+          "Person": "P28",
+          "Rater": "R2",
+          "Criterion": "C2",
+          "Score": 0
+        },
+        {
+          "Person": "P28",
+          "Rater": "R2",
+          "Criterion": "C3",
+          "Score": 0
+        },
+        {
+          "Person": "P28",
+          "Rater": "R3",
+          "Criterion": "C1",
+          "Score": 1
+        },
+        {
+          "Person": "P28",
+          "Rater": "R3",
+          "Criterion": "C2",
+          "Score": 0
+        },
+        {
+          "Person": "P28",
+          "Rater": "R3",
+          "Criterion": "C3",
+          "Score": 0
+        },
+        {
+          "Person": "P29",
+          "Rater": "R1",
+          "Criterion": "C1",
+          "Score": 3
+        },
+        {
+          "Person": "P29",
+          "Rater": "R1",
+          "Criterion": "C2",
+          "Score": 2
+        },
+        {
+          "Person": "P29",
+          "Rater": "R1",
+          "Criterion": "C3",
+          "Score": 2
+        },
+        {
+          "Person": "P29",
+          "Rater": "R2",
+          "Criterion": "C1",
+          "Score": 1
+        },
+        {
+          "Person": "P29",
+          "Rater": "R2",
+          "Criterion": "C2",
+          "Score": 2
+        },
+        {
+          "Person": "P29",
+          "Rater": "R2",
+          "Criterion": "C3",
+          "Score": 1
+        },
+        {
+          "Person": "P29",
+          "Rater": "R3",
+          "Criterion": "C1",
+          "Score": 2
+        },
+        {
+          "Person": "P29",
+          "Rater": "R3",
+          "Criterion": "C2",
+          "Score": 1
+        },
+        {
+          "Person": "P29",
+          "Rater": "R3",
+          "Criterion": "C3",
+          "Score": 0
+        },
+        {
+          "Person": "P30",
+          "Rater": "R1",
+          "Criterion": "C1",
+          "Score": 3
+        },
+        {
+          "Person": "P30",
+          "Rater": "R1",
+          "Criterion": "C2",
+          "Score": 2
+        },
+        {
+          "Person": "P30",
+          "Rater": "R1",
+          "Criterion": "C3",
+          "Score": 3
+        },
+        {
+          "Person": "P30",
+          "Rater": "R2",
+          "Criterion": "C1",
+          "Score": 3
+        },
+        {
+          "Person": "P30",
+          "Rater": "R2",
+          "Criterion": "C2",
+          "Score": 1
+        },
+        {
+          "Person": "P30",
+          "Rater": "R2",
+          "Criterion": "C3",
+          "Score": 2
+        },
+        {
+          "Person": "P30",
+          "Rater": "R3",
+          "Criterion": "C1",
+          "Score": 2
+        },
+        {
+          "Person": "P30",
+          "Rater": "R3",
+          "Criterion": "C2",
+          "Score": 2
+        },
+        {
+          "Person": "P30",
+          "Rater": "R3",
+          "Criterion": "C3",
+          "Score": 0
+        }
+      ]
+    },
+    "PCM": {
+      "seed": 2026091202,
+      "model": "PCM",
+      "theta": [
+        0.05160802013070009,
+        2.121868015376132,
+        -0.44719307379610507,
+        -0.6817439948599211,
+        0.14671816148577976,
+        -2.158593017653733,
+        -1.5124935298097586,
+        0.10055315781686683,
+        1.2934295704300145,
+        0.6685882504091888,
+        -0.09319941673575763,
+        -0.056890229430540326,
+        -2.025545489561588,
+        -0.43275711479851203,
+        1.1065803209859746,
+        -1.1825295246473695,
+        -2.9043324759111178,
+        -1.3482136467600092,
+        1.1416277682827551,
+        -0.6286652672421964,
+        0.52189221692919,
+        0.37422748685491575,
+        -1.1824996957627445,
+        -1.4096538746525866
+      ],
+      "rater": [
+        -0.4,
+        -0.13333333333333336,
+        0.1333333333333333,
+        0.4
+      ],
+      "criterion": [
+        -0.3,
+        -0.15,
+        0.0,
+        0.14999999999999997,
+        0.3
+      ],
+      "adjacent_steps": [
+        [
+          -1.2,
+          -0.6,
+          0.2,
+          1.6
+        ],
+        [
+          -1.35,
+          -0.55,
+          0.35,
+          1.55
+        ],
+        [
+          -1.5,
+          -0.5,
+          0.5,
+          1.5
+        ],
+        [
+          -1.65,
+          -0.45,
+          0.65,
+          1.45
+        ],
+        [
+          -1.8,
+          -0.4,
+          0.8,
+          1.4
+        ]
+      ],
+      "forced_extreme_persons": [
+        "P01",
+        "P02"
+      ],
+      "data": [
+        {
+          "Person": "P01",
+          "Rater": "R1",
+          "Criterion": "C1",
+          "Score": 0
+        },
+        {
+          "Person": "P01",
+          "Rater": "R1",
+          "Criterion": "C2",
+          "Score": 0
+        },
+        {
+          "Person": "P01",
+          "Rater": "R1",
+          "Criterion": "C3",
+          "Score": 0
+        },
+        {
+          "Person": "P01",
+          "Rater": "R1",
+          "Criterion": "C4",
+          "Score": 0
+        },
+        {
+          "Person": "P01",
+          "Rater": "R1",
+          "Criterion": "C5",
+          "Score": 0
+        },
+        {
+          "Person": "P01",
+          "Rater": "R2",
+          "Criterion": "C1",
+          "Score": 0
+        },
+        {
+          "Person": "P01",
+          "Rater": "R2",
+          "Criterion": "C2",
+          "Score": 0
+        },
+        {
+          "Person": "P01",
+          "Rater": "R2",
+          "Criterion": "C3",
+          "Score": 0
+        },
+        {
+          "Person": "P01",
+          "Rater": "R2",
+          "Criterion": "C4",
+          "Score": 0
+        },
+        {
+          "Person": "P01",
+          "Rater": "R2",
+          "Criterion": "C5",
+          "Score": 0
+        },
+        {
+          "Person": "P01",
+          "Rater": "R3",
+          "Criterion": "C1",
+          "Score": 0
+        },
+        {
+          "Person": "P01",
+          "Rater": "R3",
+          "Criterion": "C2",
+          "Score": 0
+        },
+        {
+          "Person": "P01",
+          "Rater": "R3",
+          "Criterion": "C3",
+          "Score": 0
+        },
+        {
+          "Person": "P01",
+          "Rater": "R3",
+          "Criterion": "C4",
+          "Score": 0
+        },
+        {
+          "Person": "P01",
+          "Rater": "R3",
+          "Criterion": "C5",
+          "Score": 0
+        },
+        {
+          "Person": "P01",
+          "Rater": "R4",
+          "Criterion": "C1",
+          "Score": 0
+        },
+        {
+          "Person": "P01",
+          "Rater": "R4",
+          "Criterion": "C2",
+          "Score": 0
+        },
+        {
+          "Person": "P01",
+          "Rater": "R4",
+          "Criterion": "C3",
+          "Score": 0
+        },
+        {
+          "Person": "P01",
+          "Rater": "R4",
+          "Criterion": "C4",
+          "Score": 0
+        },
+        {
+          "Person": "P01",
+          "Rater": "R4",
+          "Criterion": "C5",
+          "Score": 0
+        },
+        {
+          "Person": "P02",
+          "Rater": "R1",
+          "Criterion": "C1",
+          "Score": 4
+        },
+        {
+          "Person": "P02",
+          "Rater": "R1",
+          "Criterion": "C2",
+          "Score": 4
+        },
+        {
+          "Person": "P02",
+          "Rater": "R1",
+          "Criterion": "C3",
+          "Score": 4
+        },
+        {
+          "Person": "P02",
+          "Rater": "R1",
+          "Criterion": "C4",
+          "Score": 4
+        },
+        {
+          "Person": "P02",
+          "Rater": "R1",
+          "Criterion": "C5",
+          "Score": 4
+        },
+        {
+          "Person": "P02",
+          "Rater": "R2",
+          "Criterion": "C1",
+          "Score": 4
+        },
+        {
+          "Person": "P02",
+          "Rater": "R2",
+          "Criterion": "C2",
+          "Score": 4
+        },
+        {
+          "Person": "P02",
+          "Rater": "R2",
+          "Criterion": "C3",
+          "Score": 4
+        },
+        {
+          "Person": "P02",
+          "Rater": "R2",
+          "Criterion": "C4",
+          "Score": 4
+        },
+        {
+          "Person": "P02",
+          "Rater": "R2",
+          "Criterion": "C5",
+          "Score": 4
+        },
+        {
+          "Person": "P02",
+          "Rater": "R3",
+          "Criterion": "C1",
+          "Score": 4
+        },
+        {
+          "Person": "P02",
+          "Rater": "R3",
+          "Criterion": "C2",
+          "Score": 4
+        },
+        {
+          "Person": "P02",
+          "Rater": "R3",
+          "Criterion": "C3",
+          "Score": 4
+        },
+        {
+          "Person": "P02",
+          "Rater": "R3",
+          "Criterion": "C4",
+          "Score": 4
+        },
+        {
+          "Person": "P02",
+          "Rater": "R3",
+          "Criterion": "C5",
+          "Score": 4
+        },
+        {
+          "Person": "P02",
+          "Rater": "R4",
+          "Criterion": "C1",
+          "Score": 4
+        },
+        {
+          "Person": "P02",
+          "Rater": "R4",
+          "Criterion": "C2",
+          "Score": 4
+        },
+        {
+          "Person": "P02",
+          "Rater": "R4",
+          "Criterion": "C3",
+          "Score": 4
+        },
+        {
+          "Person": "P02",
+          "Rater": "R4",
+          "Criterion": "C4",
+          "Score": 4
+        },
+        {
+          "Person": "P02",
+          "Rater": "R4",
+          "Criterion": "C5",
+          "Score": 4
+        },
+        {
+          "Person": "P03",
+          "Rater": "R1",
+          "Criterion": "C1",
+          "Score": 3
+        },
+        {
+          "Person": "P03",
+          "Rater": "R1",
+          "Criterion": "C2",
+          "Score": 3
+        },
+        {
+          "Person": "P03",
+          "Rater": "R1",
+          "Criterion": "C3",
+          "Score": 1
+        },
+        {
+          "Person": "P03",
+          "Rater": "R1",
+          "Criterion": "C4",
+          "Score": 3
+        },
+        {
+          "Person": "P03",
+          "Rater": "R1",
+          "Criterion": "C5",
+          "Score": 0
+        },
+        {
+          "Person": "P03",
+          "Rater": "R2",
+          "Criterion": "C1",
+          "Score": 3
+        },
+        {
+          "Person": "P03",
+          "Rater": "R2",
+          "Criterion": "C2",
+          "Score": 2
+        },
+        {
+          "Person": "P03",
+          "Rater": "R2",
+          "Criterion": "C3",
+          "Score": 2
+        },
+        {
+          "Person": "P03",
+          "Rater": "R2",
+          "Criterion": "C4",
+          "Score": 1
+        },
+        {
+          "Person": "P03",
+          "Rater": "R2",
+          "Criterion": "C5",
+          "Score": 1
+        },
+        {
+          "Person": "P03",
+          "Rater": "R3",
+          "Criterion": "C1",
+          "Score": 1
+        },
+        {
+          "Person": "P03",
+          "Rater": "R3",
+          "Criterion": "C2",
+          "Score": 1
+        },
+        {
+          "Person": "P03",
+          "Rater": "R3",
+          "Criterion": "C3",
+          "Score": 2
+        },
+        {
+          "Person": "P03",
+          "Rater": "R3",
+          "Criterion": "C4",
+          "Score": 1
+        },
+        {
+          "Person": "P03",
+          "Rater": "R3",
+          "Criterion": "C5",
+          "Score": 1
+        },
+        {
+          "Person": "P03",
+          "Rater": "R4",
+          "Criterion": "C1",
+          "Score": 3
+        },
+        {
+          "Person": "P03",
+          "Rater": "R4",
+          "Criterion": "C2",
+          "Score": 1
+        },
+        {
+          "Person": "P03",
+          "Rater": "R4",
+          "Criterion": "C3",
+          "Score": 1
+        },
+        {
+          "Person": "P03",
+          "Rater": "R4",
+          "Criterion": "C4",
+          "Score": 0
+        },
+        {
+          "Person": "P03",
+          "Rater": "R4",
+          "Criterion": "C5",
+          "Score": 0
+        },
+        {
+          "Person": "P04",
+          "Rater": "R1",
+          "Criterion": "C1",
+          "Score": 1
+        },
+        {
+          "Person": "P04",
+          "Rater": "R1",
+          "Criterion": "C2",
+          "Score": 3
+        },
+        {
+          "Person": "P04",
+          "Rater": "R1",
+          "Criterion": "C3",
+          "Score": 2
+        },
+        {
+          "Person": "P04",
+          "Rater": "R1",
+          "Criterion": "C4",
+          "Score": 0
+        },
+        {
+          "Person": "P04",
+          "Rater": "R1",
+          "Criterion": "C5",
+          "Score": 1
+        },
+        {
+          "Person": "P04",
+          "Rater": "R2",
+          "Criterion": "C1",
+          "Score": 2
+        },
+        {
+          "Person": "P04",
+          "Rater": "R2",
+          "Criterion": "C2",
+          "Score": 3
+        },
+        {
+          "Person": "P04",
+          "Rater": "R2",
+          "Criterion": "C3",
+          "Score": 2
+        },
+        {
+          "Person": "P04",
+          "Rater": "R2",
+          "Criterion": "C4",
+          "Score": 1
+        },
+        {
+          "Person": "P04",
+          "Rater": "R2",
+          "Criterion": "C5",
+          "Score": 2
+        },
+        {
+          "Person": "P04",
+          "Rater": "R3",
+          "Criterion": "C1",
+          "Score": 1
+        },
+        {
+          "Person": "P04",
+          "Rater": "R3",
+          "Criterion": "C2",
+          "Score": 3
+        },
+        {
+          "Person": "P04",
+          "Rater": "R3",
+          "Criterion": "C3",
+          "Score": 1
+        },
+        {
+          "Person": "P04",
+          "Rater": "R3",
+          "Criterion": "C4",
+          "Score": 0
+        },
+        {
+          "Person": "P04",
+          "Rater": "R3",
+          "Criterion": "C5",
+          "Score": 2
+        },
+        {
+          "Person": "P04",
+          "Rater": "R4",
+          "Criterion": "C1",
+          "Score": 3
+        },
+        {
+          "Person": "P04",
+          "Rater": "R4",
+          "Criterion": "C2",
+          "Score": 0
+        },
+        {
+          "Person": "P04",
+          "Rater": "R4",
+          "Criterion": "C3",
+          "Score": 1
+        },
+        {
+          "Person": "P04",
+          "Rater": "R4",
+          "Criterion": "C4",
+          "Score": 1
+        },
+        {
+          "Person": "P04",
+          "Rater": "R4",
+          "Criterion": "C5",
+          "Score": 0
+        },
+        {
+          "Person": "P05",
+          "Rater": "R1",
+          "Criterion": "C1",
+          "Score": 3
+        },
+        {
+          "Person": "P05",
+          "Rater": "R1",
+          "Criterion": "C2",
+          "Score": 2
+        },
+        {
+          "Person": "P05",
+          "Rater": "R1",
+          "Criterion": "C3",
+          "Score": 3
+        },
+        {
+          "Person": "P05",
+          "Rater": "R1",
+          "Criterion": "C4",
+          "Score": 0
+        },
+        {
+          "Person": "P05",
+          "Rater": "R1",
+          "Criterion": "C5",
+          "Score": 2
+        },
+        {
+          "Person": "P05",
+          "Rater": "R2",
+          "Criterion": "C1",
+          "Score": 4
+        },
+        {
+          "Person": "P05",
+          "Rater": "R2",
+          "Criterion": "C2",
+          "Score": 2
+        },
+        {
+          "Person": "P05",
+          "Rater": "R2",
+          "Criterion": "C3",
+          "Score": 3
+        },
+        {
+          "Person": "P05",
+          "Rater": "R2",
+          "Criterion": "C4",
+          "Score": 2
+        },
+        {
+          "Person": "P05",
+          "Rater": "R2",
+          "Criterion": "C5",
+          "Score": 4
+        },
+        {
+          "Person": "P05",
+          "Rater": "R3",
+          "Criterion": "C1",
+          "Score": 3
+        },
+        {
+          "Person": "P05",
+          "Rater": "R3",
+          "Criterion": "C2",
+          "Score": 3
+        },
+        {
+          "Person": "P05",
+          "Rater": "R3",
+          "Criterion": "C3",
+          "Score": 3
+        },
+        {
+          "Person": "P05",
+          "Rater": "R3",
+          "Criterion": "C4",
+          "Score": 0
+        },
+        {
+          "Person": "P05",
+          "Rater": "R3",
+          "Criterion": "C5",
+          "Score": 1
+        },
+        {
+          "Person": "P05",
+          "Rater": "R4",
+          "Criterion": "C1",
+          "Score": 2
+        },
+        {
+          "Person": "P05",
+          "Rater": "R4",
+          "Criterion": "C2",
+          "Score": 1
+        },
+        {
+          "Person": "P05",
+          "Rater": "R4",
+          "Criterion": "C3",
+          "Score": 3
+        },
+        {
+          "Person": "P05",
+          "Rater": "R4",
+          "Criterion": "C4",
+          "Score": 2
+        },
+        {
+          "Person": "P05",
+          "Rater": "R4",
+          "Criterion": "C5",
+          "Score": 2
+        },
+        {
+          "Person": "P06",
+          "Rater": "R1",
+          "Criterion": "C1",
+          "Score": 0
+        },
+        {
+          "Person": "P06",
+          "Rater": "R1",
+          "Criterion": "C2",
+          "Score": 0
+        },
+        {
+          "Person": "P06",
+          "Rater": "R1",
+          "Criterion": "C3",
+          "Score": 1
+        },
+        {
+          "Person": "P06",
+          "Rater": "R1",
+          "Criterion": "C4",
+          "Score": 1
+        },
+        {
+          "Person": "P06",
+          "Rater": "R1",
+          "Criterion": "C5",
+          "Score": 1
+        },
+        {
+          "Person": "P06",
+          "Rater": "R2",
+          "Criterion": "C1",
+          "Score": 2
+        },
+        {
+          "Person": "P06",
+          "Rater": "R2",
+          "Criterion": "C2",
+          "Score": 0
+        },
+        {
+          "Person": "P06",
+          "Rater": "R2",
+          "Criterion": "C3",
+          "Score": 1
+        },
+        {
+          "Person": "P06",
+          "Rater": "R2",
+          "Criterion": "C4",
+          "Score": 0
+        },
+        {
+          "Person": "P06",
+          "Rater": "R2",
+          "Criterion": "C5",
+          "Score": 0
+        },
+        {
+          "Person": "P06",
+          "Rater": "R3",
+          "Criterion": "C1",
+          "Score": 0
+        },
+        {
+          "Person": "P06",
+          "Rater": "R3",
+          "Criterion": "C2",
+          "Score": 1
+        },
+        {
+          "Person": "P06",
+          "Rater": "R3",
+          "Criterion": "C3",
+          "Score": 0
+        },
+        {
+          "Person": "P06",
+          "Rater": "R3",
+          "Criterion": "C4",
+          "Score": 1
+        },
+        {
+          "Person": "P06",
+          "Rater": "R3",
+          "Criterion": "C5",
+          "Score": 1
+        },
+        {
+          "Person": "P06",
+          "Rater": "R4",
+          "Criterion": "C1",
+          "Score": 0
+        },
+        {
+          "Person": "P06",
+          "Rater": "R4",
+          "Criterion": "C2",
+          "Score": 0
+        },
+        {
+          "Person": "P06",
+          "Rater": "R4",
+          "Criterion": "C3",
+          "Score": 0
+        },
+        {
+          "Person": "P06",
+          "Rater": "R4",
+          "Criterion": "C4",
+          "Score": 0
+        },
+        {
+          "Person": "P06",
+          "Rater": "R4",
+          "Criterion": "C5",
+          "Score": 0
+        },
+        {
+          "Person": "P07",
+          "Rater": "R1",
+          "Criterion": "C1",
+          "Score": 2
+        },
+        {
+          "Person": "P07",
+          "Rater": "R1",
+          "Criterion": "C2",
+          "Score": 1
+        },
+        {
+          "Person": "P07",
+          "Rater": "R1",
+          "Criterion": "C3",
+          "Score": 0
+        },
+        {
+          "Person": "P07",
+          "Rater": "R1",
+          "Criterion": "C4",
+          "Score": 0
+        },
+        {
+          "Person": "P07",
+          "Rater": "R1",
+          "Criterion": "C5",
+          "Score": 0
+        },
+        {
+          "Person": "P07",
+          "Rater": "R2",
+          "Criterion": "C1",
+          "Score": 1
+        },
+        {
+          "Person": "P07",
+          "Rater": "R2",
+          "Criterion": "C2",
+          "Score": 0
+        },
+        {
+          "Person": "P07",
+          "Rater": "R2",
+          "Criterion": "C3",
+          "Score": 0
+        },
+        {
+          "Person": "P07",
+          "Rater": "R2",
+          "Criterion": "C4",
+          "Score": 0
+        },
+        {
+          "Person": "P07",
+          "Rater": "R2",
+          "Criterion": "C5",
+          "Score": 2
+        },
+        {
+          "Person": "P07",
+          "Rater": "R3",
+          "Criterion": "C1",
+          "Score": 1
+        },
+        {
+          "Person": "P07",
+          "Rater": "R3",
+          "Criterion": "C2",
+          "Score": 2
+        },
+        {
+          "Person": "P07",
+          "Rater": "R3",
+          "Criterion": "C3",
+          "Score": 2
+        },
+        {
+          "Person": "P07",
+          "Rater": "R3",
+          "Criterion": "C4",
+          "Score": 0
+        },
+        {
+          "Person": "P07",
+          "Rater": "R3",
+          "Criterion": "C5",
+          "Score": 0
+        },
+        {
+          "Person": "P07",
+          "Rater": "R4",
+          "Criterion": "C1",
+          "Score": 0
+        },
+        {
+          "Person": "P07",
+          "Rater": "R4",
+          "Criterion": "C2",
+          "Score": 1
+        },
+        {
+          "Person": "P07",
+          "Rater": "R4",
+          "Criterion": "C3",
+          "Score": 1
+        },
+        {
+          "Person": "P07",
+          "Rater": "R4",
+          "Criterion": "C4",
+          "Score": 3
+        },
+        {
+          "Person": "P07",
+          "Rater": "R4",
+          "Criterion": "C5",
+          "Score": 0
+        },
+        {
+          "Person": "P08",
+          "Rater": "R1",
+          "Criterion": "C1",
+          "Score": 2
+        },
+        {
+          "Person": "P08",
+          "Rater": "R1",
+          "Criterion": "C2",
+          "Score": 2
+        },
+        {
+          "Person": "P08",
+          "Rater": "R1",
+          "Criterion": "C3",
+          "Score": 4
+        },
+        {
+          "Person": "P08",
+          "Rater": "R1",
+          "Criterion": "C4",
+          "Score": 1
+        },
+        {
+          "Person": "P08",
+          "Rater": "R1",
+          "Criterion": "C5",
+          "Score": 1
+        },
+        {
+          "Person": "P08",
+          "Rater": "R2",
+          "Criterion": "C1",
+          "Score": 2
+        },
+        {
+          "Person": "P08",
+          "Rater": "R2",
+          "Criterion": "C2",
+          "Score": 2
+        },
+        {
+          "Person": "P08",
+          "Rater": "R2",
+          "Criterion": "C3",
+          "Score": 1
+        },
+        {
+          "Person": "P08",
+          "Rater": "R2",
+          "Criterion": "C4",
+          "Score": 4
+        },
+        {
+          "Person": "P08",
+          "Rater": "R2",
+          "Criterion": "C5",
+          "Score": 4
+        },
+        {
+          "Person": "P08",
+          "Rater": "R3",
+          "Criterion": "C1",
+          "Score": 4
+        },
+        {
+          "Person": "P08",
+          "Rater": "R3",
+          "Criterion": "C2",
+          "Score": 3
+        },
+        {
+          "Person": "P08",
+          "Rater": "R3",
+          "Criterion": "C3",
+          "Score": 1
+        },
+        {
+          "Person": "P08",
+          "Rater": "R3",
+          "Criterion": "C4",
+          "Score": 2
+        },
+        {
+          "Person": "P08",
+          "Rater": "R3",
+          "Criterion": "C5",
+          "Score": 1
+        },
+        {
+          "Person": "P08",
+          "Rater": "R4",
+          "Criterion": "C1",
+          "Score": 2
+        },
+        {
+          "Person": "P08",
+          "Rater": "R4",
+          "Criterion": "C2",
+          "Score": 3
+        },
+        {
+          "Person": "P08",
+          "Rater": "R4",
+          "Criterion": "C3",
+          "Score": 3
+        },
+        {
+          "Person": "P08",
+          "Rater": "R4",
+          "Criterion": "C4",
+          "Score": 1
+        },
+        {
+          "Person": "P08",
+          "Rater": "R4",
+          "Criterion": "C5",
+          "Score": 2
+        },
+        {
+          "Person": "P09",
+          "Rater": "R1",
+          "Criterion": "C1",
+          "Score": 3
+        },
+        {
+          "Person": "P09",
+          "Rater": "R1",
+          "Criterion": "C2",
+          "Score": 4
+        },
+        {
+          "Person": "P09",
+          "Rater": "R1",
+          "Criterion": "C3",
+          "Score": 2
+        },
+        {
+          "Person": "P09",
+          "Rater": "R1",
+          "Criterion": "C4",
+          "Score": 3
+        },
+        {
+          "Person": "P09",
+          "Rater": "R1",
+          "Criterion": "C5",
+          "Score": 2
+        },
+        {
+          "Person": "P09",
+          "Rater": "R2",
+          "Criterion": "C1",
+          "Score": 3
+        },
+        {
+          "Person": "P09",
+          "Rater": "R2",
+          "Criterion": "C2",
+          "Score": 3
+        },
+        {
+          "Person": "P09",
+          "Rater": "R2",
+          "Criterion": "C3",
+          "Score": 4
+        },
+        {
+          "Person": "P09",
+          "Rater": "R2",
+          "Criterion": "C4",
+          "Score": 3
+        },
+        {
+          "Person": "P09",
+          "Rater": "R2",
+          "Criterion": "C5",
+          "Score": 4
+        },
+        {
+          "Person": "P09",
+          "Rater": "R3",
+          "Criterion": "C1",
+          "Score": 4
+        },
+        {
+          "Person": "P09",
+          "Rater": "R3",
+          "Criterion": "C2",
+          "Score": 4
+        },
+        {
+          "Person": "P09",
+          "Rater": "R3",
+          "Criterion": "C3",
+          "Score": 3
+        },
+        {
+          "Person": "P09",
+          "Rater": "R3",
+          "Criterion": "C4",
+          "Score": 2
+        },
+        {
+          "Person": "P09",
+          "Rater": "R3",
+          "Criterion": "C5",
+          "Score": 3
+        },
+        {
+          "Person": "P09",
+          "Rater": "R4",
+          "Criterion": "C1",
+          "Score": 3
+        },
+        {
+          "Person": "P09",
+          "Rater": "R4",
+          "Criterion": "C2",
+          "Score": 3
+        },
+        {
+          "Person": "P09",
+          "Rater": "R4",
+          "Criterion": "C3",
+          "Score": 2
+        },
+        {
+          "Person": "P09",
+          "Rater": "R4",
+          "Criterion": "C4",
+          "Score": 3
+        },
+        {
+          "Person": "P09",
+          "Rater": "R4",
+          "Criterion": "C5",
+          "Score": 1
+        },
+        {
+          "Person": "P10",
+          "Rater": "R1",
+          "Criterion": "C1",
+          "Score": 3
+        },
+        {
+          "Person": "P10",
+          "Rater": "R1",
+          "Criterion": "C2",
+          "Score": 4
+        },
+        {
+          "Person": "P10",
+          "Rater": "R1",
+          "Criterion": "C3",
+          "Score": 3
+        },
+        {
+          "Person": "P10",
+          "Rater": "R1",
+          "Criterion": "C4",
+          "Score": 4
+        },
+        {
+          "Person": "P10",
+          "Rater": "R1",
+          "Criterion": "C5",
+          "Score": 4
+        },
+        {
+          "Person": "P10",
+          "Rater": "R2",
+          "Criterion": "C1",
+          "Score": 4
+        },
+        {
+          "Person": "P10",
+          "Rater": "R2",
+          "Criterion": "C2",
+          "Score": 3
+        },
+        {
+          "Person": "P10",
+          "Rater": "R2",
+          "Criterion": "C3",
+          "Score": 2
+        },
+        {
+          "Person": "P10",
+          "Rater": "R2",
+          "Criterion": "C4",
+          "Score": 1
+        },
+        {
+          "Person": "P10",
+          "Rater": "R2",
+          "Criterion": "C5",
+          "Score": 2
+        },
+        {
+          "Person": "P10",
+          "Rater": "R3",
+          "Criterion": "C1",
+          "Score": 3
+        },
+        {
+          "Person": "P10",
+          "Rater": "R3",
+          "Criterion": "C2",
+          "Score": 0
+        },
+        {
+          "Person": "P10",
+          "Rater": "R3",
+          "Criterion": "C3",
+          "Score": 3
+        },
+        {
+          "Person": "P10",
+          "Rater": "R3",
+          "Criterion": "C4",
+          "Score": 3
+        },
+        {
+          "Person": "P10",
+          "Rater": "R3",
+          "Criterion": "C5",
+          "Score": 3
+        },
+        {
+          "Person": "P10",
+          "Rater": "R4",
+          "Criterion": "C1",
+          "Score": 2
+        },
+        {
+          "Person": "P10",
+          "Rater": "R4",
+          "Criterion": "C2",
+          "Score": 3
+        },
+        {
+          "Person": "P10",
+          "Rater": "R4",
+          "Criterion": "C3",
+          "Score": 2
+        },
+        {
+          "Person": "P10",
+          "Rater": "R4",
+          "Criterion": "C4",
+          "Score": 2
+        },
+        {
+          "Person": "P10",
+          "Rater": "R4",
+          "Criterion": "C5",
+          "Score": 3
+        },
+        {
+          "Person": "P11",
+          "Rater": "R1",
+          "Criterion": "C1",
+          "Score": 3
+        },
+        {
+          "Person": "P11",
+          "Rater": "R1",
+          "Criterion": "C2",
+          "Score": 1
+        },
+        {
+          "Person": "P11",
+          "Rater": "R1",
+          "Criterion": "C3",
+          "Score": 4
+        },
+        {
+          "Person": "P11",
+          "Rater": "R1",
+          "Criterion": "C4",
+          "Score": 2
+        },
+        {
+          "Person": "P11",
+          "Rater": "R1",
+          "Criterion": "C5",
+          "Score": 3
+        },
+        {
+          "Person": "P11",
+          "Rater": "R2",
+          "Criterion": "C1",
+          "Score": 2
+        },
+        {
+          "Person": "P11",
+          "Rater": "R2",
+          "Criterion": "C2",
+          "Score": 4
+        },
+        {
+          "Person": "P11",
+          "Rater": "R2",
+          "Criterion": "C3",
+          "Score": 2
+        },
+        {
+          "Person": "P11",
+          "Rater": "R2",
+          "Criterion": "C4",
+          "Score": 2
+        },
+        {
+          "Person": "P11",
+          "Rater": "R2",
+          "Criterion": "C5",
+          "Score": 2
+        },
+        {
+          "Person": "P11",
+          "Rater": "R3",
+          "Criterion": "C1",
+          "Score": 4
+        },
+        {
+          "Person": "P11",
+          "Rater": "R3",
+          "Criterion": "C2",
+          "Score": 3
+        },
+        {
+          "Person": "P11",
+          "Rater": "R3",
+          "Criterion": "C3",
+          "Score": 0
+        },
+        {
+          "Person": "P11",
+          "Rater": "R3",
+          "Criterion": "C4",
+          "Score": 1
+        },
+        {
+          "Person": "P11",
+          "Rater": "R3",
+          "Criterion": "C5",
+          "Score": 0
+        },
+        {
+          "Person": "P11",
+          "Rater": "R4",
+          "Criterion": "C1",
+          "Score": 3
+        },
+        {
+          "Person": "P11",
+          "Rater": "R4",
+          "Criterion": "C2",
+          "Score": 1
+        },
+        {
+          "Person": "P11",
+          "Rater": "R4",
+          "Criterion": "C3",
+          "Score": 1
+        },
+        {
+          "Person": "P11",
+          "Rater": "R4",
+          "Criterion": "C4",
+          "Score": 2
+        },
+        {
+          "Person": "P11",
+          "Rater": "R4",
+          "Criterion": "C5",
+          "Score": 1
+        },
+        {
+          "Person": "P12",
+          "Rater": "R1",
+          "Criterion": "C1",
+          "Score": 4
+        },
+        {
+          "Person": "P12",
+          "Rater": "R1",
+          "Criterion": "C2",
+          "Score": 1
+        },
+        {
+          "Person": "P12",
+          "Rater": "R1",
+          "Criterion": "C3",
+          "Score": 1
+        },
+        {
+          "Person": "P12",
+          "Rater": "R1",
+          "Criterion": "C4",
+          "Score": 2
+        },
+        {
+          "Person": "P12",
+          "Rater": "R1",
+          "Criterion": "C5",
+          "Score": 2
+        },
+        {
+          "Person": "P12",
+          "Rater": "R2",
+          "Criterion": "C1",
+          "Score": 3
+        },
+        {
+          "Person": "P12",
+          "Rater": "R2",
+          "Criterion": "C2",
+          "Score": 2
+        },
+        {
+          "Person": "P12",
+          "Rater": "R2",
+          "Criterion": "C3",
+          "Score": 2
+        },
+        {
+          "Person": "P12",
+          "Rater": "R2",
+          "Criterion": "C4",
+          "Score": 3
+        },
+        {
+          "Person": "P12",
+          "Rater": "R2",
+          "Criterion": "C5",
+          "Score": 1
+        },
+        {
+          "Person": "P12",
+          "Rater": "R3",
+          "Criterion": "C1",
+          "Score": 3
+        },
+        {
+          "Person": "P12",
+          "Rater": "R3",
+          "Criterion": "C2",
+          "Score": 2
+        },
+        {
+          "Person": "P12",
+          "Rater": "R3",
+          "Criterion": "C3",
+          "Score": 2
+        },
+        {
+          "Person": "P12",
+          "Rater": "R3",
+          "Criterion": "C4",
+          "Score": 3
+        },
+        {
+          "Person": "P12",
+          "Rater": "R3",
+          "Criterion": "C5",
+          "Score": 2
+        },
+        {
+          "Person": "P12",
+          "Rater": "R4",
+          "Criterion": "C1",
+          "Score": 3
+        },
+        {
+          "Person": "P12",
+          "Rater": "R4",
+          "Criterion": "C2",
+          "Score": 4
+        },
+        {
+          "Person": "P12",
+          "Rater": "R4",
+          "Criterion": "C3",
+          "Score": 1
+        },
+        {
+          "Person": "P12",
+          "Rater": "R4",
+          "Criterion": "C4",
+          "Score": 2
+        },
+        {
+          "Person": "P12",
+          "Rater": "R4",
+          "Criterion": "C5",
+          "Score": 2
+        },
+        {
+          "Person": "P13",
+          "Rater": "R1",
+          "Criterion": "C1",
+          "Score": 0
+        },
+        {
+          "Person": "P13",
+          "Rater": "R1",
+          "Criterion": "C2",
+          "Score": 1
+        },
+        {
+          "Person": "P13",
+          "Rater": "R1",
+          "Criterion": "C3",
+          "Score": 1
+        },
+        {
+          "Person": "P13",
+          "Rater": "R1",
+          "Criterion": "C4",
+          "Score": 1
+        },
+        {
+          "Person": "P13",
+          "Rater": "R1",
+          "Criterion": "C5",
+          "Score": 2
+        },
+        {
+          "Person": "P13",
+          "Rater": "R2",
+          "Criterion": "C1",
+          "Score": 0
+        },
+        {
+          "Person": "P13",
+          "Rater": "R2",
+          "Criterion": "C2",
+          "Score": 1
+        },
+        {
+          "Person": "P13",
+          "Rater": "R2",
+          "Criterion": "C3",
+          "Score": 1
+        },
+        {
+          "Person": "P13",
+          "Rater": "R2",
+          "Criterion": "C4",
+          "Score": 0
+        },
+        {
+          "Person": "P13",
+          "Rater": "R2",
+          "Criterion": "C5",
+          "Score": 0
+        },
+        {
+          "Person": "P13",
+          "Rater": "R3",
+          "Criterion": "C1",
+          "Score": 0
+        },
+        {
+          "Person": "P13",
+          "Rater": "R3",
+          "Criterion": "C2",
+          "Score": 1
+        },
+        {
+          "Person": "P13",
+          "Rater": "R3",
+          "Criterion": "C3",
+          "Score": 0
+        },
+        {
+          "Person": "P13",
+          "Rater": "R3",
+          "Criterion": "C4",
+          "Score": 1
+        },
+        {
+          "Person": "P13",
+          "Rater": "R3",
+          "Criterion": "C5",
+          "Score": 0
+        },
+        {
+          "Person": "P13",
+          "Rater": "R4",
+          "Criterion": "C1",
+          "Score": 0
+        },
+        {
+          "Person": "P13",
+          "Rater": "R4",
+          "Criterion": "C2",
+          "Score": 0
+        },
+        {
+          "Person": "P13",
+          "Rater": "R4",
+          "Criterion": "C3",
+          "Score": 0
+        },
+        {
+          "Person": "P13",
+          "Rater": "R4",
+          "Criterion": "C4",
+          "Score": 0
+        },
+        {
+          "Person": "P13",
+          "Rater": "R4",
+          "Criterion": "C5",
+          "Score": 0
+        },
+        {
+          "Person": "P14",
+          "Rater": "R1",
+          "Criterion": "C1",
+          "Score": 1
+        },
+        {
+          "Person": "P14",
+          "Rater": "R1",
+          "Criterion": "C2",
+          "Score": 4
+        },
+        {
+          "Person": "P14",
+          "Rater": "R1",
+          "Criterion": "C3",
+          "Score": 0
+        },
+        {
+          "Person": "P14",
+          "Rater": "R1",
+          "Criterion": "C4",
+          "Score": 2
+        },
+        {
+          "Person": "P14",
+          "Rater": "R1",
+          "Criterion": "C5",
+          "Score": 2
+        },
+        {
+          "Person": "P14",
+          "Rater": "R2",
+          "Criterion": "C1",
+          "Score": 2
+        },
+        {
+          "Person": "P14",
+          "Rater": "R2",
+          "Criterion": "C2",
+          "Score": 0
+        },
+        {
+          "Person": "P14",
+          "Rater": "R2",
+          "Criterion": "C3",
+          "Score": 3
+        },
+        {
+          "Person": "P14",
+          "Rater": "R2",
+          "Criterion": "C4",
+          "Score": 1
+        },
+        {
+          "Person": "P14",
+          "Rater": "R2",
+          "Criterion": "C5",
+          "Score": 1
+        },
+        {
+          "Person": "P14",
+          "Rater": "R3",
+          "Criterion": "C1",
+          "Score": 2
+        },
+        {
+          "Person": "P14",
+          "Rater": "R3",
+          "Criterion": "C2",
+          "Score": 0
+        },
+        {
+          "Person": "P14",
+          "Rater": "R3",
+          "Criterion": "C3",
+          "Score": 2
+        },
+        {
+          "Person": "P14",
+          "Rater": "R3",
+          "Criterion": "C4",
+          "Score": 1
+        },
+        {
+          "Person": "P14",
+          "Rater": "R3",
+          "Criterion": "C5",
+          "Score": 1
+        },
+        {
+          "Person": "P14",
+          "Rater": "R4",
+          "Criterion": "C1",
+          "Score": 1
+        },
+        {
+          "Person": "P14",
+          "Rater": "R4",
+          "Criterion": "C2",
+          "Score": 2
+        },
+        {
+          "Person": "P14",
+          "Rater": "R4",
+          "Criterion": "C3",
+          "Score": 0
+        },
+        {
+          "Person": "P14",
+          "Rater": "R4",
+          "Criterion": "C4",
+          "Score": 1
+        },
+        {
+          "Person": "P14",
+          "Rater": "R4",
+          "Criterion": "C5",
+          "Score": 1
+        },
+        {
+          "Person": "P15",
+          "Rater": "R1",
+          "Criterion": "C1",
+          "Score": 3
+        },
+        {
+          "Person": "P15",
+          "Rater": "R1",
+          "Criterion": "C2",
+          "Score": 4
+        },
+        {
+          "Person": "P15",
+          "Rater": "R1",
+          "Criterion": "C3",
+          "Score": 2
+        },
+        {
+          "Person": "P15",
+          "Rater": "R1",
+          "Criterion": "C4",
+          "Score": 3
+        },
+        {
+          "Person": "P15",
+          "Rater": "R1",
+          "Criterion": "C5",
+          "Score": 2
+        },
+        {
+          "Person": "P15",
+          "Rater": "R2",
+          "Criterion": "C1",
+          "Score": 4
+        },
+        {
+          "Person": "P15",
+          "Rater": "R2",
+          "Criterion": "C2",
+          "Score": 4
+        },
+        {
+          "Person": "P15",
+          "Rater": "R2",
+          "Criterion": "C3",
+          "Score": 2
+        },
+        {
+          "Person": "P15",
+          "Rater": "R2",
+          "Criterion": "C4",
+          "Score": 3
+        },
+        {
+          "Person": "P15",
+          "Rater": "R2",
+          "Criterion": "C5",
+          "Score": 3
+        },
+        {
+          "Person": "P15",
+          "Rater": "R3",
+          "Criterion": "C1",
+          "Score": 3
+        },
+        {
+          "Person": "P15",
+          "Rater": "R3",
+          "Criterion": "C2",
+          "Score": 3
+        },
+        {
+          "Person": "P15",
+          "Rater": "R3",
+          "Criterion": "C3",
+          "Score": 2
+        },
+        {
+          "Person": "P15",
+          "Rater": "R3",
+          "Criterion": "C4",
+          "Score": 2
+        },
+        {
+          "Person": "P15",
+          "Rater": "R3",
+          "Criterion": "C5",
+          "Score": 3
+        },
+        {
+          "Person": "P15",
+          "Rater": "R4",
+          "Criterion": "C1",
+          "Score": 2
+        },
+        {
+          "Person": "P15",
+          "Rater": "R4",
+          "Criterion": "C2",
+          "Score": 4
+        },
+        {
+          "Person": "P15",
+          "Rater": "R4",
+          "Criterion": "C3",
+          "Score": 3
+        },
+        {
+          "Person": "P15",
+          "Rater": "R4",
+          "Criterion": "C4",
+          "Score": 3
+        },
+        {
+          "Person": "P15",
+          "Rater": "R4",
+          "Criterion": "C5",
+          "Score": 4
+        },
+        {
+          "Person": "P16",
+          "Rater": "R1",
+          "Criterion": "C1",
+          "Score": 1
+        },
+        {
+          "Person": "P16",
+          "Rater": "R1",
+          "Criterion": "C2",
+          "Score": 4
+        },
+        {
+          "Person": "P16",
+          "Rater": "R1",
+          "Criterion": "C3",
+          "Score": 1
+        },
+        {
+          "Person": "P16",
+          "Rater": "R1",
+          "Criterion": "C4",
+          "Score": 2
+        },
+        {
+          "Person": "P16",
+          "Rater": "R1",
+          "Criterion": "C5",
+          "Score": 2
+        },
+        {
+          "Person": "P16",
+          "Rater": "R2",
+          "Criterion": "C1",
+          "Score": 0
+        },
+        {
+          "Person": "P16",
+          "Rater": "R2",
+          "Criterion": "C2",
+          "Score": 3
+        },
+        {
+          "Person": "P16",
+          "Rater": "R2",
+          "Criterion": "C3",
+          "Score": 1
+        },
+        {
+          "Person": "P16",
+          "Rater": "R2",
+          "Criterion": "C4",
+          "Score": 0
+        },
+        {
+          "Person": "P16",
+          "Rater": "R2",
+          "Criterion": "C5",
+          "Score": 1
+        },
+        {
+          "Person": "P16",
+          "Rater": "R3",
+          "Criterion": "C1",
+          "Score": 1
+        },
+        {
+          "Person": "P16",
+          "Rater": "R3",
+          "Criterion": "C2",
+          "Score": 2
+        },
+        {
+          "Person": "P16",
+          "Rater": "R3",
+          "Criterion": "C3",
+          "Score": 0
+        },
+        {
+          "Person": "P16",
+          "Rater": "R3",
+          "Criterion": "C4",
+          "Score": 2
+        },
+        {
+          "Person": "P16",
+          "Rater": "R3",
+          "Criterion": "C5",
+          "Score": 0
+        },
+        {
+          "Person": "P16",
+          "Rater": "R4",
+          "Criterion": "C1",
+          "Score": 2
+        },
+        {
+          "Person": "P16",
+          "Rater": "R4",
+          "Criterion": "C2",
+          "Score": 0
+        },
+        {
+          "Person": "P16",
+          "Rater": "R4",
+          "Criterion": "C3",
+          "Score": 2
+        },
+        {
+          "Person": "P16",
+          "Rater": "R4",
+          "Criterion": "C4",
+          "Score": 0
+        },
+        {
+          "Person": "P16",
+          "Rater": "R4",
+          "Criterion": "C5",
+          "Score": 2
+        },
+        {
+          "Person": "P17",
+          "Rater": "R1",
+          "Criterion": "C1",
+          "Score": 0
+        },
+        {
+          "Person": "P17",
+          "Rater": "R1",
+          "Criterion": "C2",
+          "Score": 0
+        },
+        {
+          "Person": "P17",
+          "Rater": "R1",
+          "Criterion": "C3",
+          "Score": 1
+        },
+        {
+          "Person": "P17",
+          "Rater": "R1",
+          "Criterion": "C4",
+          "Score": 1
+        },
+        {
+          "Person": "P17",
+          "Rater": "R1",
+          "Criterion": "C5",
+          "Score": 1
+        },
+        {
+          "Person": "P17",
+          "Rater": "R2",
+          "Criterion": "C1",
+          "Score": 0
+        },
+        {
+          "Person": "P17",
+          "Rater": "R2",
+          "Criterion": "C2",
+          "Score": 0
+        },
+        {
+          "Person": "P17",
+          "Rater": "R2",
+          "Criterion": "C3",
+          "Score": 0
+        },
+        {
+          "Person": "P17",
+          "Rater": "R2",
+          "Criterion": "C4",
+          "Score": 0
+        },
+        {
+          "Person": "P17",
+          "Rater": "R2",
+          "Criterion": "C5",
+          "Score": 1
+        },
+        {
+          "Person": "P17",
+          "Rater": "R3",
+          "Criterion": "C1",
+          "Score": 1
+        },
+        {
+          "Person": "P17",
+          "Rater": "R3",
+          "Criterion": "C2",
+          "Score": 1
+        },
+        {
+          "Person": "P17",
+          "Rater": "R3",
+          "Criterion": "C3",
+          "Score": 0
+        },
+        {
+          "Person": "P17",
+          "Rater": "R3",
+          "Criterion": "C4",
+          "Score": 0
+        },
+        {
+          "Person": "P17",
+          "Rater": "R3",
+          "Criterion": "C5",
+          "Score": 0
+        },
+        {
+          "Person": "P17",
+          "Rater": "R4",
+          "Criterion": "C1",
+          "Score": 0
+        },
+        {
+          "Person": "P17",
+          "Rater": "R4",
+          "Criterion": "C2",
+          "Score": 0
+        },
+        {
+          "Person": "P17",
+          "Rater": "R4",
+          "Criterion": "C3",
+          "Score": 0
+        },
+        {
+          "Person": "P17",
+          "Rater": "R4",
+          "Criterion": "C4",
+          "Score": 0
+        },
+        {
+          "Person": "P17",
+          "Rater": "R4",
+          "Criterion": "C5",
+          "Score": 0
+        },
+        {
+          "Person": "P18",
+          "Rater": "R1",
+          "Criterion": "C1",
+          "Score": 1
+        },
+        {
+          "Person": "P18",
+          "Rater": "R1",
+          "Criterion": "C2",
+          "Score": 3
+        },
+        {
+          "Person": "P18",
+          "Rater": "R1",
+          "Criterion": "C3",
+          "Score": 1
+        },
+        {
+          "Person": "P18",
+          "Rater": "R1",
+          "Criterion": "C4",
+          "Score": 0
+        },
+        {
+          "Person": "P18",
+          "Rater": "R1",
+          "Criterion": "C5",
+          "Score": 1
+        },
+        {
+          "Person": "P18",
+          "Rater": "R2",
+          "Criterion": "C1",
+          "Score": 3
+        },
+        {
+          "Person": "P18",
+          "Rater": "R2",
+          "Criterion": "C2",
+          "Score": 1
+        },
+        {
+          "Person": "P18",
+          "Rater": "R2",
+          "Criterion": "C3",
+          "Score": 1
+        },
+        {
+          "Person": "P18",
+          "Rater": "R2",
+          "Criterion": "C4",
+          "Score": 0
+        },
+        {
+          "Person": "P18",
+          "Rater": "R2",
+          "Criterion": "C5",
+          "Score": 1
+        },
+        {
+          "Person": "P18",
+          "Rater": "R3",
+          "Criterion": "C1",
+          "Score": 2
+        },
+        {
+          "Person": "P18",
+          "Rater": "R3",
+          "Criterion": "C2",
+          "Score": 0
+        },
+        {
+          "Person": "P18",
+          "Rater": "R3",
+          "Criterion": "C3",
+          "Score": 0
+        },
+        {
+          "Person": "P18",
+          "Rater": "R3",
+          "Criterion": "C4",
+          "Score": 1
+        },
+        {
+          "Person": "P18",
+          "Rater": "R3",
+          "Criterion": "C5",
+          "Score": 1
+        },
+        {
+          "Person": "P18",
+          "Rater": "R4",
+          "Criterion": "C1",
+          "Score": 1
+        },
+        {
+          "Person": "P18",
+          "Rater": "R4",
+          "Criterion": "C2",
+          "Score": 0
+        },
+        {
+          "Person": "P18",
+          "Rater": "R4",
+          "Criterion": "C3",
+          "Score": 0
+        },
+        {
+          "Person": "P18",
+          "Rater": "R4",
+          "Criterion": "C4",
+          "Score": 0
+        },
+        {
+          "Person": "P18",
+          "Rater": "R4",
+          "Criterion": "C5",
+          "Score": 0
+        },
+        {
+          "Person": "P19",
+          "Rater": "R1",
+          "Criterion": "C1",
+          "Score": 3
+        },
+        {
+          "Person": "P19",
+          "Rater": "R1",
+          "Criterion": "C2",
+          "Score": 3
+        },
+        {
+          "Person": "P19",
+          "Rater": "R1",
+          "Criterion": "C3",
+          "Score": 1
+        },
+        {
+          "Person": "P19",
+          "Rater": "R1",
+          "Criterion": "C4",
+          "Score": 3
+        },
+        {
+          "Person": "P19",
+          "Rater": "R1",
+          "Criterion": "C5",
+          "Score": 2
+        },
+        {
+          "Person": "P19",
+          "Rater": "R2",
+          "Criterion": "C1",
+          "Score": 2
+        },
+        {
+          "Person": "P19",
+          "Rater": "R2",
+          "Criterion": "C2",
+          "Score": 4
+        },
+        {
+          "Person": "P19",
+          "Rater": "R2",
+          "Criterion": "C3",
+          "Score": 3
+        },
+        {
+          "Person": "P19",
+          "Rater": "R2",
+          "Criterion": "C4",
+          "Score": 4
+        },
+        {
+          "Person": "P19",
+          "Rater": "R2",
+          "Criterion": "C5",
+          "Score": 3
+        },
+        {
+          "Person": "P19",
+          "Rater": "R3",
+          "Criterion": "C1",
+          "Score": 3
+        },
+        {
+          "Person": "P19",
+          "Rater": "R3",
+          "Criterion": "C2",
+          "Score": 4
+        },
+        {
+          "Person": "P19",
+          "Rater": "R3",
+          "Criterion": "C3",
+          "Score": 2
+        },
+        {
+          "Person": "P19",
+          "Rater": "R3",
+          "Criterion": "C4",
+          "Score": 2
+        },
+        {
+          "Person": "P19",
+          "Rater": "R3",
+          "Criterion": "C5",
+          "Score": 2
+        },
+        {
+          "Person": "P19",
+          "Rater": "R4",
+          "Criterion": "C1",
+          "Score": 3
+        },
+        {
+          "Person": "P19",
+          "Rater": "R4",
+          "Criterion": "C2",
+          "Score": 3
+        },
+        {
+          "Person": "P19",
+          "Rater": "R4",
+          "Criterion": "C3",
+          "Score": 2
+        },
+        {
+          "Person": "P19",
+          "Rater": "R4",
+          "Criterion": "C4",
+          "Score": 3
+        },
+        {
+          "Person": "P19",
+          "Rater": "R4",
+          "Criterion": "C5",
+          "Score": 3
+        },
+        {
+          "Person": "P20",
+          "Rater": "R1",
+          "Criterion": "C1",
+          "Score": 2
+        },
+        {
+          "Person": "P20",
+          "Rater": "R1",
+          "Criterion": "C2",
+          "Score": 1
+        },
+        {
+          "Person": "P20",
+          "Rater": "R1",
+          "Criterion": "C3",
+          "Score": 2
+        },
+        {
+          "Person": "P20",
+          "Rater": "R1",
+          "Criterion": "C4",
+          "Score": 1
+        },
+        {
+          "Person": "P20",
+          "Rater": "R1",
+          "Criterion": "C5",
+          "Score": 2
+        },
+        {
+          "Person": "P20",
+          "Rater": "R2",
+          "Criterion": "C1",
+          "Score": 1
+        },
+        {
+          "Person": "P20",
+          "Rater": "R2",
+          "Criterion": "C2",
+          "Score": 2
+        },
+        {
+          "Person": "P20",
+          "Rater": "R2",
+          "Criterion": "C3",
+          "Score": 2
+        },
+        {
+          "Person": "P20",
+          "Rater": "R2",
+          "Criterion": "C4",
+          "Score": 2
+        },
+        {
+          "Person": "P20",
+          "Rater": "R2",
+          "Criterion": "C5",
+          "Score": 0
+        },
+        {
+          "Person": "P20",
+          "Rater": "R3",
+          "Criterion": "C1",
+          "Score": 3
+        },
+        {
+          "Person": "P20",
+          "Rater": "R3",
+          "Criterion": "C2",
+          "Score": 2
+        },
+        {
+          "Person": "P20",
+          "Rater": "R3",
+          "Criterion": "C3",
+          "Score": 2
+        },
+        {
+          "Person": "P20",
+          "Rater": "R3",
+          "Criterion": "C4",
+          "Score": 1
+        },
+        {
+          "Person": "P20",
+          "Rater": "R3",
+          "Criterion": "C5",
+          "Score": 1
+        },
+        {
+          "Person": "P20",
+          "Rater": "R4",
+          "Criterion": "C1",
+          "Score": 2
+        },
+        {
+          "Person": "P20",
+          "Rater": "R4",
+          "Criterion": "C2",
+          "Score": 1
+        },
+        {
+          "Person": "P20",
+          "Rater": "R4",
+          "Criterion": "C3",
+          "Score": 0
+        },
+        {
+          "Person": "P20",
+          "Rater": "R4",
+          "Criterion": "C4",
+          "Score": 1
+        },
+        {
+          "Person": "P20",
+          "Rater": "R4",
+          "Criterion": "C5",
+          "Score": 1
+        },
+        {
+          "Person": "P21",
+          "Rater": "R1",
+          "Criterion": "C1",
+          "Score": 2
+        },
+        {
+          "Person": "P21",
+          "Rater": "R1",
+          "Criterion": "C2",
+          "Score": 4
+        },
+        {
+          "Person": "P21",
+          "Rater": "R1",
+          "Criterion": "C3",
+          "Score": 4
+        },
+        {
+          "Person": "P21",
+          "Rater": "R1",
+          "Criterion": "C4",
+          "Score": 4
+        },
+        {
+          "Person": "P21",
+          "Rater": "R1",
+          "Criterion": "C5",
+          "Score": 2
+        },
+        {
+          "Person": "P21",
+          "Rater": "R2",
+          "Criterion": "C1",
+          "Score": 2
+        },
+        {
+          "Person": "P21",
+          "Rater": "R2",
+          "Criterion": "C2",
+          "Score": 3
+        },
+        {
+          "Person": "P21",
+          "Rater": "R2",
+          "Criterion": "C3",
+          "Score": 2
+        },
+        {
+          "Person": "P21",
+          "Rater": "R2",
+          "Criterion": "C4",
+          "Score": 2
+        },
+        {
+          "Person": "P21",
+          "Rater": "R2",
+          "Criterion": "C5",
+          "Score": 2
+        },
+        {
+          "Person": "P21",
+          "Rater": "R3",
+          "Criterion": "C1",
+          "Score": 2
+        },
+        {
+          "Person": "P21",
+          "Rater": "R3",
+          "Criterion": "C2",
+          "Score": 4
+        },
+        {
+          "Person": "P21",
+          "Rater": "R3",
+          "Criterion": "C3",
+          "Score": 0
+        },
+        {
+          "Person": "P21",
+          "Rater": "R3",
+          "Criterion": "C4",
+          "Score": 2
+        },
+        {
+          "Person": "P21",
+          "Rater": "R3",
+          "Criterion": "C5",
+          "Score": 3
+        },
+        {
+          "Person": "P21",
+          "Rater": "R4",
+          "Criterion": "C1",
+          "Score": 2
+        },
+        {
+          "Person": "P21",
+          "Rater": "R4",
+          "Criterion": "C2",
+          "Score": 3
+        },
+        {
+          "Person": "P21",
+          "Rater": "R4",
+          "Criterion": "C3",
+          "Score": 1
+        },
+        {
+          "Person": "P21",
+          "Rater": "R4",
+          "Criterion": "C4",
+          "Score": 1
+        },
+        {
+          "Person": "P21",
+          "Rater": "R4",
+          "Criterion": "C5",
+          "Score": 3
+        },
+        {
+          "Person": "P22",
+          "Rater": "R1",
+          "Criterion": "C1",
+          "Score": 4
+        },
+        {
+          "Person": "P22",
+          "Rater": "R1",
+          "Criterion": "C2",
+          "Score": 3
+        },
+        {
+          "Person": "P22",
+          "Rater": "R1",
+          "Criterion": "C3",
+          "Score": 2
+        },
+        {
+          "Person": "P22",
+          "Rater": "R1",
+          "Criterion": "C4",
+          "Score": 3
+        },
+        {
+          "Person": "P22",
+          "Rater": "R1",
+          "Criterion": "C5",
+          "Score": 2
+        },
+        {
+          "Person": "P22",
+          "Rater": "R2",
+          "Criterion": "C1",
+          "Score": 3
+        },
+        {
+          "Person": "P22",
+          "Rater": "R2",
+          "Criterion": "C2",
+          "Score": 1
+        },
+        {
+          "Person": "P22",
+          "Rater": "R2",
+          "Criterion": "C3",
+          "Score": 2
+        },
+        {
+          "Person": "P22",
+          "Rater": "R2",
+          "Criterion": "C4",
+          "Score": 2
+        },
+        {
+          "Person": "P22",
+          "Rater": "R2",
+          "Criterion": "C5",
+          "Score": 2
+        },
+        {
+          "Person": "P22",
+          "Rater": "R3",
+          "Criterion": "C1",
+          "Score": 2
+        },
+        {
+          "Person": "P22",
+          "Rater": "R3",
+          "Criterion": "C2",
+          "Score": 3
+        },
+        {
+          "Person": "P22",
+          "Rater": "R3",
+          "Criterion": "C3",
+          "Score": 2
+        },
+        {
+          "Person": "P22",
+          "Rater": "R3",
+          "Criterion": "C4",
+          "Score": 1
+        },
+        {
+          "Person": "P22",
+          "Rater": "R3",
+          "Criterion": "C5",
+          "Score": 0
+        },
+        {
+          "Person": "P22",
+          "Rater": "R4",
+          "Criterion": "C1",
+          "Score": 3
+        },
+        {
+          "Person": "P22",
+          "Rater": "R4",
+          "Criterion": "C2",
+          "Score": 2
+        },
+        {
+          "Person": "P22",
+          "Rater": "R4",
+          "Criterion": "C3",
+          "Score": 2
+        },
+        {
+          "Person": "P22",
+          "Rater": "R4",
+          "Criterion": "C4",
+          "Score": 1
+        },
+        {
+          "Person": "P22",
+          "Rater": "R4",
+          "Criterion": "C5",
+          "Score": 3
+        },
+        {
+          "Person": "P23",
+          "Rater": "R1",
+          "Criterion": "C1",
+          "Score": 1
+        },
+        {
+          "Person": "P23",
+          "Rater": "R1",
+          "Criterion": "C2",
+          "Score": 1
+        },
+        {
+          "Person": "P23",
+          "Rater": "R1",
+          "Criterion": "C3",
+          "Score": 1
+        },
+        {
+          "Person": "P23",
+          "Rater": "R1",
+          "Criterion": "C4",
+          "Score": 0
+        },
+        {
+          "Person": "P23",
+          "Rater": "R1",
+          "Criterion": "C5",
+          "Score": 1
+        },
+        {
+          "Person": "P23",
+          "Rater": "R2",
+          "Criterion": "C1",
+          "Score": 0
+        },
+        {
+          "Person": "P23",
+          "Rater": "R2",
+          "Criterion": "C2",
+          "Score": 0
+        },
+        {
+          "Person": "P23",
+          "Rater": "R2",
+          "Criterion": "C3",
+          "Score": 1
+        },
+        {
+          "Person": "P23",
+          "Rater": "R2",
+          "Criterion": "C4",
+          "Score": 2
+        },
+        {
+          "Person": "P23",
+          "Rater": "R2",
+          "Criterion": "C5",
+          "Score": 1
+        },
+        {
+          "Person": "P23",
+          "Rater": "R3",
+          "Criterion": "C1",
+          "Score": 0
+        },
+        {
+          "Person": "P23",
+          "Rater": "R3",
+          "Criterion": "C2",
+          "Score": 1
+        },
+        {
+          "Person": "P23",
+          "Rater": "R3",
+          "Criterion": "C3",
+          "Score": 0
+        },
+        {
+          "Person": "P23",
+          "Rater": "R3",
+          "Criterion": "C4",
+          "Score": 0
+        },
+        {
+          "Person": "P23",
+          "Rater": "R3",
+          "Criterion": "C5",
+          "Score": 1
+        },
+        {
+          "Person": "P23",
+          "Rater": "R4",
+          "Criterion": "C1",
+          "Score": 2
+        },
+        {
+          "Person": "P23",
+          "Rater": "R4",
+          "Criterion": "C2",
+          "Score": 1
+        },
+        {
+          "Person": "P23",
+          "Rater": "R4",
+          "Criterion": "C3",
+          "Score": 0
+        },
+        {
+          "Person": "P23",
+          "Rater": "R4",
+          "Criterion": "C4",
+          "Score": 1
+        },
+        {
+          "Person": "P23",
+          "Rater": "R4",
+          "Criterion": "C5",
+          "Score": 0
+        },
+        {
+          "Person": "P24",
+          "Rater": "R1",
+          "Criterion": "C1",
+          "Score": 3
+        },
+        {
+          "Person": "P24",
+          "Rater": "R1",
+          "Criterion": "C2",
+          "Score": 1
+        },
+        {
+          "Person": "P24",
+          "Rater": "R1",
+          "Criterion": "C3",
+          "Score": 2
+        },
+        {
+          "Person": "P24",
+          "Rater": "R1",
+          "Criterion": "C4",
+          "Score": 2
+        },
+        {
+          "Person": "P24",
+          "Rater": "R1",
+          "Criterion": "C5",
+          "Score": 2
+        },
+        {
+          "Person": "P24",
+          "Rater": "R2",
+          "Criterion": "C1",
+          "Score": 2
+        },
+        {
+          "Person": "P24",
+          "Rater": "R2",
+          "Criterion": "C2",
+          "Score": 1
+        },
+        {
+          "Person": "P24",
+          "Rater": "R2",
+          "Criterion": "C3",
+          "Score": 0
+        },
+        {
+          "Person": "P24",
+          "Rater": "R2",
+          "Criterion": "C4",
+          "Score": 1
+        },
+        {
+          "Person": "P24",
+          "Rater": "R2",
+          "Criterion": "C5",
+          "Score": 0
+        },
+        {
+          "Person": "P24",
+          "Rater": "R3",
+          "Criterion": "C1",
+          "Score": 1
+        },
+        {
+          "Person": "P24",
+          "Rater": "R3",
+          "Criterion": "C2",
+          "Score": 1
+        },
+        {
+          "Person": "P24",
+          "Rater": "R3",
+          "Criterion": "C3",
+          "Score": 0
+        },
+        {
+          "Person": "P24",
+          "Rater": "R3",
+          "Criterion": "C4",
+          "Score": 1
+        },
+        {
+          "Person": "P24",
+          "Rater": "R3",
+          "Criterion": "C5",
+          "Score": 1
+        },
+        {
+          "Person": "P24",
+          "Rater": "R4",
+          "Criterion": "C1",
+          "Score": 0
+        },
+        {
+          "Person": "P24",
+          "Rater": "R4",
+          "Criterion": "C2",
+          "Score": 1
+        },
+        {
+          "Person": "P24",
+          "Rater": "R4",
+          "Criterion": "C3",
+          "Score": 0
+        },
+        {
+          "Person": "P24",
+          "Rater": "R4",
+          "Criterion": "C4",
+          "Score": 0
+        },
+        {
+          "Person": "P24",
+          "Rater": "R4",
+          "Criterion": "C5",
+          "Score": 2
+        }
+      ]
+    }
+  }
+}

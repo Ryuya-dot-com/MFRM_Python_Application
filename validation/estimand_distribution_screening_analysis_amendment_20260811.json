@@ -1,0 +1,51 @@
+{
+  "schema_version": "mfrm-estimand-distribution-screening-analysis-amendment-v1",
+  "registered_date": "2026-08-11",
+  "parent_plan": "estimand_distribution_screening_plan_20260811.json",
+  "study": "estimand_distribution_screening20_20260811",
+  "timing": "Written after inspecting only operational aggregate metrics (640/640 success, gate pass, row counts, global free-SD/extreme ranges) and before inspecting condition-level recovery, paired contrasts, or threshold results.",
+  "purpose": "Freeze exact descriptive screening summaries already required by the parent plan.",
+  "analysis_sets": {
+    "main_facets": ["Rater", "Task", "Criterion"],
+    "thresholds": "All six data-generating criterion-specific PCM thresholds per run.",
+    "estimator_modes": [
+      "FACETS_4_5_JMLE",
+      "PYTHON_JMLE",
+      "PYTHON_MML_FIXED_SD08_Q31",
+      "PYTHON_MML_FREE_SD_Q31",
+      "PYTHON_EXACT_CMLE"
+    ],
+    "eligibility": "Use only IncludedInStudy rows, while separately retaining all attempted-run denominators and failure taxonomy."
+  },
+  "run_level_metrics": {
+    "main_facet": ["mean signed error", "MAE", "RMSE within facet"],
+    "pcm_threshold": ["mean signed error", "MAE", "RMSE across six thresholds"],
+    "free_sd": "EstimatedPopulationSD minus registered realized SD 0.8.",
+    "cmle_extremes": "PersonsExtreme and PersonsInformative from the prefit/fit audit; denominator is informative plus extreme Persons."
+  },
+  "paired_contrasts": {
+    "shape": "For each estimator, design, facet/threshold metric, and replicate: non-normal minus normal.",
+    "design": "For each estimator, distribution, facet/threshold metric, and replicate: planned-connected minus complete.",
+    "free_sd_shape": "For each design and replicate: non-normal minus normal estimated SD.",
+    "free_sd_design": "For each distribution and replicate: planned-connected minus complete estimated SD."
+  },
+  "summary_contract": "For every paired contrast report N, mean, sample SD, Monte Carlo SE=SD/sqrt(N), and mean +/- 1.96*SE labelled screening normal-approximation interval. Report no p-values or multiplicity-selected winners.",
+  "operational_checks": {
+    "main_run_facet_rows": 2400,
+    "threshold_run_rows": 800,
+    "main_shape_pair_rows": 1800,
+    "main_design_pair_rows": 1200,
+    "threshold_shape_pair_rows": 600,
+    "threshold_design_pair_rows": 400,
+    "free_sd_shape_pair_rows": 120,
+    "free_sd_design_pair_rows": 80,
+    "cmle_condition_rows": 8
+  },
+  "interpretation_rules": [
+    "Intervals excluding zero are screening signals for a possible systematic condition contrast, not confirmatory significance.",
+    "Agreement of signs across estimands may prioritize a future contrast but does not make likelihood bases interchangeable.",
+    "Lower RMSE in this finite screening is not an estimator recommendation.",
+    "Extreme-Person loss is part of the CMLE result and is never silently excluded from the condition denominator.",
+    "No 100-replicate extension is authorized until selected contrasts and target precision are fixed prospectively."
+  ]
+}

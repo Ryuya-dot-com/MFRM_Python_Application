@@ -1,0 +1,18 @@
+{
+  "schema_version": "known_assignment_response_analysis_registration_v1",
+  "registered_date": "2026-08-11",
+  "registered_after_all_attempts_before_any_endpoint_aggregation": true,
+  "all_120_completion_markers_before_registration": true,
+  "completion_marker_set_sha256": "428ca8ffefaf3dad218a2d51757318465282bd5a4554276f698ad58f119b1850",
+  "plan_sha256": "3c070c6e737a3c0df93fa533c37b8a78b2293c89916ad12951a3ba465c996e76",
+  "execution_registration_v3_sha256": "5a7f2d449cfbb7696b3ee74afca236001785cbd8f527c195edf4b5bae9772786",
+  "aggregator_sha256": "f27479a6c4d59c32166a8fd162316c4819a775334be762bd4d6bb6294a6c2be8",
+  "tests_passed_before_registration": true,
+  "test_command": ".venv-win\\Scripts\\python.exe -m pytest tests\\test_known_assignment_response_aggregate.py tests\\test_known_assignment_response.py tests\\test_known_assignment_response_v2.py tests\\test_assignment_mechanism.py tests\\test_facets_resilient_pair.py tests\\test_estimand_distribution_study.py -q",
+  "test_result": "30 passed in 22.73s",
+  "aggregate_test_file_sha256": "18b9e83faf09c4336c5bfcbe58f8bb7880731da9a672a507822ac02b3272099c",
+  "interim_endpoint_summaries_inspected": false,
+  "confirmatory_claims_allowed": false,
+  "estimator_ranking_prohibited": true,
+  "cross_basis_likelihood_comparison_prohibited": true
+}

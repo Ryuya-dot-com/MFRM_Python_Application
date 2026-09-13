@@ -1,0 +1,114 @@
+{
+  "schema_version": "known_assignment_response_screening_plan_v1",
+  "status": "frozen_before_assignment_or_response_generation",
+  "registered_date": "2026-08-11",
+  "purpose": "Screen estimator-specific recovery sensitivity across a known probabilistic assignment dose while preserving Person/Rater degrees, context exposure, response potential outcomes, and estimand boundaries.",
+  "evidence_status": {
+    "phase": "screening",
+    "replicates": 10,
+    "replicate_range": [1, 10],
+    "fixed_sample_size": true,
+    "optional_stopping": false,
+    "confirmatory_claims_allowed": false,
+    "prior_deterministic_assignment_results_pooled": false
+  },
+  "assignment": {
+    "qualification_assessment": "validation/known_assignment_large_design_dp_20260811/assessment.json",
+    "qualification_assessment_sha256": "eb49c4731df29edc25543c653dabb4ed9ce2ef68bde9b52ad16882db1ac71fa7",
+    "method": "exact fixed-margin DP with rejection of disconnected graphs",
+    "gammas": [-0.8, 0.0, 0.8],
+    "gamma_seeds": {"-0.8": 260910, "0.0": 260911, "0.8": 260912},
+    "persons": 80,
+    "raters": 4,
+    "person_degree": 2,
+    "rater_degree": 40,
+    "edges": 160,
+    "connected": true,
+    "selected_absolute_gamma": 0.8,
+    "gamma_is_known_not_estimated": true
+  },
+  "data_generating_process": {
+    "model": "correctly specified four-category heterogeneous-threshold PCM",
+    "fixed_person_coordinate_source": "validation/known_assignment_large_design_20260811/person_coordinates.csv",
+    "fixed_person_coordinate_sha256": "a63a9c0e43d07db76de08fc77f8a4138a74d2c096c795540786f05e3253ef4da",
+    "person_mean": 0.0,
+    "person_population_sd": 0.8,
+    "raters": {"R01": -0.45, "R02": -0.15, "R03": 0.15, "R04": 0.45},
+    "tasks": 3,
+    "criteria": 2,
+    "categories": 4,
+    "response_uniform_seed_base": 2026081113,
+    "common_random_numbers": "Within replicate, all gamma conditions select from the same complete Person-by-Rater-by-Task-by-Criterion potential-response matrix. Assignment generation never reads realized or potential Score."
+  },
+  "locked_design_invariants": {
+    "rows_per_dataset": 960,
+    "raters_per_person": 2,
+    "persons_per_rater": 40,
+    "rating_rows_per_rater": 240,
+    "tasks_and_criteria_complete_within_selected_rater": true,
+    "person_rater_components": 1,
+    "constrained_pcm_nullity": 0,
+    "same_complete_response_sha256_within_replicate": true,
+    "same_fixed_person_vector_all_datasets": true,
+    "score_blind_assignment": true
+  },
+  "estimation_layers": [
+    {
+      "mode": "FACETS_4_5_JMLE plus independently persisted PYTHON_JMLE",
+      "estimand": "fixed-person joint likelihood",
+      "role": "same-estimand external implementation calibration and within-JMLE gamma sensitivity"
+    },
+    {
+      "mode": "PYTHON_MML_FIXED_SD08_Q31",
+      "estimand": "normal-person marginal likelihood with population SD fixed at 0.8"
+    },
+    {
+      "mode": "PYTHON_MML_FREE_SD_Q31",
+      "estimand": "normal-person marginal likelihood with population SD estimated"
+    },
+    {
+      "mode": "PYTHON_EXACT_CMLE",
+      "estimand": "person-total conditional likelihood"
+    }
+  ],
+  "screening_endpoints": {
+    "primary_descriptive_domain": "Rater facet recovery",
+    "within_estimator_metrics": ["RMSE", "MAE", "mean truth error by Rater level"],
+    "contrasts": ["gamma +0.8 minus gamma 0", "gamma -0.8 minus gamma 0"],
+    "secondary_descriptive_domains": ["Task", "Criterion", "PCM thresholds", "free-MML population SD"],
+    "inference": "Report means, SDs, and t intervals as screening precision descriptions only; no confirmatory p-value or superiority decision."
+  },
+  "method_comparison_contract": {
+    "within_estimator_gamma_contrasts_only": true,
+    "facets_python_direct_comparison_only_for_jmle": true,
+    "estimator_ranking_prohibited": true,
+    "cross_basis_likelihood_aic_bic_comparison_prohibited": true,
+    "fixed_theta_conditional_scope": "Monte Carlo variation covers exact assignment draws and response draws conditional on one frozen 80-Person vector; it does not include repeated Person-population sampling."
+  },
+  "precision_contract": {
+    "scientific_recovery": "Use native-precision Python truth errors within each estimator lane.",
+    "facets_measure_threshold": "Use the registered high-precision Umean=6 primary report for measures and thresholds.",
+    "facets_fit": "Keep separately parsed ordinary displayed fit fields as rounded evidence only.",
+    "prohibition": "Never reconstruct unreported raw fit or residual statistics from FACETS' usual two-decimal display."
+  },
+  "operational_contract": {
+    "datasets": 30,
+    "attempt_units": 120,
+    "resilient_facets_python_jmle_pairs": 30,
+    "python_mml_fits": 60,
+    "python_exact_cmle_fits": 30,
+    "python_jmle_persisted_before_facets": true,
+    "facets_maximum_retries_for_exit0_missing_report": 2,
+    "completion_marker_written_last": true,
+    "resume_requires_hash_match": true
+  },
+  "qualification_gates": [
+    "All 30 assignment graphs and row materializations pass every frozen invariant.",
+    "All datasets retain all four categories within each Criterion and constrained PCM nullity zero.",
+    "All 120 attempts complete and all native estimator evidence is inference-ready.",
+    "All 30 FACETS/Python JMLE pairs pass the registered same-estimand direct-agreement gate.",
+    "All gamma conditions have exactly 10 finite within-estimator endpoint rows.",
+    "No FACETS rounded fit value enters recovery or inferential calculations."
+  ],
+  "claim_limit": "This screening can reveal candidate gamma-sensitivity patterns under one fixed Person vector, one four-Rater exact assignment family, and one correctly specified PCM. It cannot estimate a real assignment mechanism, identify MAR/MNAR, prove universal estimator robustness, rank estimators, or support confirmatory claims."
+}

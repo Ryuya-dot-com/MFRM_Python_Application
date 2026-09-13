@@ -1,0 +1,28 @@
+{
+  "schema_version": "mfrm-informative-assignment-screening-aggregation-amendment-v1",
+  "registered_on": "2026-08-11",
+  "registration_timing": "Registered after all 240 immutable completion markers passed resume validation and the original aggregate failed only its expected 32-cell screening gate with 26 cells, but before interpreting any design-contrast values.",
+  "trigger": {
+    "original_aggregate_identity_sha256": "70fc1d49674f9ba801bcfa1de052caba29ec7e9dcec8f06734af992822218059",
+    "original_screening_metrics_sha256": "41e9d8d2b4d72a3bcdd7eafdaa8d1304e90fba42be4d9e099bed5541a3fb1b3c",
+    "observed_gate": "screening_pairs_20_each=false",
+    "observed_summary_cells": 26,
+    "expected_summary_cells": 32,
+    "mechanical_cause": "MML and exact-CMLE threshold artifacts retain RunId and all six finite TruthError values but leave Design and Replicate empty. The original aggregate did not enrich those fields from the immutable registered manifest, so their threshold rows were dropped by groupby. JMLE threshold metadata were already populated."
+  },
+  "authorized_change": {
+    "input": "Read only the hash-validated original aggregate artifacts, retained manifest, study identity, and original completion-marker digest.",
+    "metadata_join": "For run, recovery, threshold, and constraint ledgers, join ConditionId, Design, PersonDistribution, and Replicate from retained_input/manifest.csv by unique RunId. Reject every non-null conflict and every unknown or duplicate RunId.",
+    "recompute": "Recreate the same registered run-level RMSE/MAE, aligned-minus-planned contrasts, Student-t screening intervals, rater-level descriptives, free-SD pairs, and qualification gates.",
+    "output": "Write a new aggregate_corrected directory. Never overwrite or delete the original aggregate.",
+    "expected_cells": "Four scientific estimator modes x four recovery domains x two metrics = 32, each with 20 finite pairs."
+  },
+  "prohibited_changes": [
+    "No refit, retry, imputation, row replacement, or completion-marker change.",
+    "No endpoint, contrast, interval, direction, estimator-mode, estimand, or likelihood-basis change.",
+    "No confirmatory claim, multiplicity claim, estimator ranking, or cross-basis likelihood/AIC comparison.",
+    "Do not alter the original aggregate or hide its failed gate."
+  ],
+  "qualification_rule": "Only aggregate_corrected may be qualified if all 240 markers remain hash-valid, every metadata join is conflict-free, all original operational gates remain true, and all 32 registered descriptive cells contain exactly 20 pairs.",
+  "claim_limit": "The correction repairs missing registered metadata in aggregation only. It cannot strengthen the screening design, create confirmatory evidence, or change any estimator output."
+}

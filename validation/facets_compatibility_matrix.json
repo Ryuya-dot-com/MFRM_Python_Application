@@ -1,0 +1,187 @@
+{
+  "schema_version": "mfrm-facets-compatibility-v1",
+  "reference_product": {
+    "name": "FACETS",
+    "local_version": "4.5.0",
+    "executable": "C:/Facets/Facets.exe"
+  },
+  "status_vocabulary": {
+    "externally_matched": "Same intended estimand with a runnable FACETS comparison and explicit parameterization contract.",
+    "operationally_qualified": "A host-specific execution route has passed explicit controls, completion gates, and failure-boundary tests.",
+    "formula_aligned": "Formula or convention is aligned, but no sufficient FACETS golden-master evidence exists yet.",
+    "analogous": "Similar user purpose, but implementation or estimand differs materially.",
+    "workbench_addition": "Intentional capability beyond FACETS rather than a compatibility target.",
+    "unsupported": "FACETS capability not implemented in the application.",
+    "unvalidated": "Implementation exists locally but external FACETS evidence is not yet sufficient."
+  },
+  "capabilities": [
+    {
+      "capability": "Windows FACETS 4.5.0 launch and output collection",
+      "app_scope": "Visible BATCH=NO subprocess adapter with stable nonempty report/Scorefile gates, graceful WM_CLOSE, and a 220-character prelaunch path budget",
+      "facets_scope": "Desktop GUI plus command-line specification/report execution",
+      "status": "operationally_qualified",
+      "evidence": "validation/facets_visible_launcher_qualification_v2_20260811, validation/facets_shared_helper_qualification_20260811, validation/fx2_20260811, and validation/known_assignment_multivector_preflight4_20260811/v; official and historical controls passed and the short-path supplement calibrated 12/12 datasets with zero retries",
+      "caveat": "Host-specific hidden-window routes crash in XojoGUIFramework64.dll and are not qualified. FACETS must remain visible during automation. The 220-character limit is conservative operational protection, not a vendor-documented universal maximum. Forced termination is never success."
+    },
+    {
+      "capability": "Additive RSM JMLE facet locations",
+      "app_scope": "Person plus multiple additive facets, hard anchors, fit and diagnostics",
+      "facets_scope": "Standard many-facet JMLE",
+      "status": "externally_matched",
+      "evidence": "validation/facets_450_complementary_mml_smoke_20260811; 12 direct-eligible runs, 108 parameters",
+      "caveat": "Externally matched only for the registered additive-RSM scope after matched centering, sign, hard-anchor, category-support, convergence, and structural-identifiability rules."
+    },
+    {
+      "capability": "PCM JMLE",
+      "app_scope": "One selected step facet with a separate sum-to-zero threshold vector for each of its levels",
+      "facets_scope": "Models=?,?,?,#,R3 with Criterion as the partial-credit facet",
+      "status": "externally_matched",
+      "evidence": "validation/facets_pcm_syntax_probe_20260811, validation/facets_pcm_pipeline_pilot20_20260811, validation/facets_pcm_boundary_pilot_20260811, validation/h6_design_replication100_v4_20260811, and validation/informative_assignment_confirmatory100_20260811; the complete-data 40-run pilot matched 360 main parameters and 240 thresholds, the fresh H6 replication passed 200/200 complete/planned-connected calibration pairs, and the fresh informative-assignment confirmation passed 200/200 planned/aligned calibration pairs",
+      "caveat": "Externally matched for the registered four-category JMLE PCM with Criterion as the sole step facet in complete balanced data, one ring-connected planned-missing design, and one fixed-density ability-severity-aligned stress design. These studies do not generalize to arbitrary missingness/sparsity, empirical MAR/MNAR mechanisms, named General/Specific scales, mixed supports, recoding, threshold anchors, more than one # facet, or raw fit parity."
+    },
+    {
+      "capability": "GPCM with discrimination",
+      "app_scope": "Bounded GPCM estimation and approximate FACETS-style diagnostics",
+      "facets_scope": "Rasch-family response models; not a matched free-discrimination GPCM target",
+      "status": "workbench_addition",
+      "evidence": "Local tests only",
+      "caveat": "FACETS-style GPCM ZSTD is explicitly approximate and must not be labelled FACETS parity."
+    },
+    {
+      "capability": "Marginal maximum likelihood",
+      "app_scope": "EM/direct/hybrid/auto MML, fixed/free population SD, latent regression, EAP",
+      "facets_scope": "FACETS standard estimation is JMLE/UCON/PMLE",
+      "status": "workbench_addition",
+      "evidence": "validation/operating_characteristics_anchor_fix_smoke_20260811/python_mml_*, validation/estimand_bridge_pilot_20260811, validation/estimand_distribution_confirmatory100_20260811, and validation/informative_assignment_confirmatory100_20260811; the shape study completed 1600/1600 fixed/free-SD Q31 fits and confirmed two free-SD shape contrasts, while the fresh fixed-density assignment study completed 400/400 MML fits and confirmed free/fixed Rater-RMSE increases of +0.09863/+0.06851, a free-SD change of -0.11839, and free/fixed severity-compression slopes of -0.48932/-0.38384",
+      "caveat": "This is a major complementary strength, not a FACETS compatibility claim or estimator ranking. Fixed and estimated SD are distinct estimands. The confirmed effects show sensitivity of normal-population MML in the registered generators and designs; they are not universal MML bias constants, do not identify empirical MAR/MNAR, and do not validate a missing-data correction. The heavy-tail shape direction passed Holm adjustment but narrowly missed its separate precision target."
+    },
+    {
+      "capability": "Exact conditional maximum likelihood",
+      "app_scope": "Repository-only exact RSM/rectangular PCM core with WLE bridge",
+      "facets_scope": "Not the matched FACETS standard estimator",
+      "status": "workbench_addition",
+      "evidence": "Exact enumeration and immer cross-engine evidence plus validation/estimand_bridge_pilot_20260811; 16/16 RSM/PCM fits were conditionally rank-full, finite-MLE qualified, converged, and inference ready on complete and connected planned-missing rows",
+      "caveat": "Current public Streamlit workflow does not expose the full CMLE core. Conditional likelihood/AIC must not be compared numerically with JMLE or MML likelihood/AIC."
+    },
+    {
+      "capability": "Same-data estimand sensitivity bridge",
+      "app_scope": "Join FACETS/Python JMLE, fixed/free-SD MML, and exact CMLE recovery on immutable RunIds with explicit likelihood-basis and estimand labels",
+      "facets_scope": "FACETS supplies the external JMLE calibration reference",
+      "status": "workbench_addition",
+      "evidence": "validation/estimand_bridge_pilot_20260811; 32 parent JMLE contracts and 48 new MML/CMLE fits produced 720 main-facet and 360 threshold recovery rows, with all 16 within-basis RSM-versus-PCM direction checks passing",
+      "caveat": "Two replicates establish orchestration and sensitivity signals only. Cross-estimator RMSE differences are not rankings, and joint, marginal, and conditional likelihood values are never compared across bases."
+    },
+    {
+      "capability": "Person-population shape sensitivity workbench",
+      "app_scope": "Generate paired normal, skewed, mixture, and heavy-tailed Person vectors at identical realized mean/SD; cross complete/planned-connected designs; fit FACETS/Python JMLE, fixed/free-SD MML, and exact CMLE with resumable attempt ledgers",
+      "facets_scope": "FACETS supplies the same-estimand JMLE calibration reference; MML and exact CMLE are complementary estimands",
+      "status": "workbench_addition",
+      "evidence": "validation/estimand_distribution_screening20_20260811, validation/estimand_distribution_confirmatory100_20260811, and validation/h6_design_replication100_v4_20260811; the 800-dataset confirmatory study ran 1600/1600 MML and 800/800 exact-CMLE fits and confirmed two free-SD shape contrasts. The separate H6 replication used fresh replicates 121-220, passed 100/100 native-precision Python pairs and 200/200 FACETS/Python JMLE calibration pairs, and reproduced the registered statistic independently in R 4.5.1",
+      "caveat": "The symmetric-mixture local-threshold screening pattern did not reproduce in JMLE, free-SD MML, or exact CMLE and must not become an automatic rule. The original H6 remains inconclusive at 99 pairs and its failed row was not replaced; the separate H6R result independently replicates one observation-design effect for the registered normal-Person heterogeneous-PCM DGM. Batch qualification is study-specific and does not establish universal missing-data bias or arbitrary sparse-design compatibility."
+    },
+    {
+      "capability": "Fixed-density informative-assignment sensitivity workbench",
+      "app_scope": "Hold rows, Raters per Person, per-Rater exposure, generated responses, category support, and constrained-design rank fixed while perturbing latent ability-by-Rater-severity assignment; report within-estimator Rater recovery, level compression, thresholds, and population-SD movement",
+      "facets_scope": "FACETS supplies same-estimand JMLE calibration for both sparse masks; MML and exact CMLE remain complementary estimands",
+      "status": "workbench_addition",
+      "evidence": "validation/informative_assignment_screening20_20260811 and validation/informative_assignment_confirmatory100_20260811; all 800/800 fresh confirmatory attempts were evidence-ready, FACETS/Python JMLE calibrated in 200/200 pairs with zero retries, the primary free-SD MML Rater-RMSE effect was +0.09863 with registered precision, and all four secondary directions passed Holm control. Base-R 4.5.1 independently rebuilt 500 endpoint contrasts and decisions within 3.55e-15",
+      "caveat": "The assignment rule uses known simulated Theta and true Rater severity. It is a sensitivity stressor, not an observed-data MAR/MNAR test, causal missingness model, correction method, or estimator leaderboard. Real-data use requires exogenous assignment information, positivity diagnostics, and a separately validated selection/correction contract."
+    },
+    {
+      "capability": "Known probabilistic fixed-margin assignment preflight",
+      "app_scope": "Exact dense-DP sampling from a connected fixed-margin Person-Rater assignment family proportional to exp(gamma*T(G)), with common generated responses across gamma and JMLE/fixed-MML/free-MML/exact-CMLE lanes",
+      "facets_scope": "FACETS supplies a separately joined same-input JMLE calibration layer",
+      "status": "workbench_addition",
+      "evidence": "validation/known_assignment_multivector_preflight4_20260811/aggregate_visible_join_20260811 and validation/known_assignment_multivector_preflight4_20260811/r_verification_20260811; all 48 original attempts and 12/12 supplemental FACETS calibrations passed the derivative gate, all four registered n=4 directions advanced, and R 4.5.1 rebuilt 16 values and four summaries within 1.67e-16",
+      "caveat": "This is a four-vector nonconfirmatory preflight under a known simulated assignment law. It neither estimates assignment from observed data nor establishes a universal missingness bias, correction method, estimator ranking, or confirmation. These four vectors and prior screening data are excluded from any future confirmation."
+    },
+    {
+      "capability": "Table 7 measurement fields",
+      "app_scope": "Measure, Model/Real SE, Infit/Outfit, ZSTD, point-measure, fair average, anchor/status",
+      "facets_scope": "Measurement, reliability, and agreement output",
+      "status": "formula_aligned",
+      "evidence": "Local formula tests and FACETS score-file parser",
+      "caveat": "FACETS fit fields are displayed to two decimals; exact raw fit parity is not observable from score/residual text output."
+    },
+    {
+      "capability": "Agreement table crosswalk",
+      "app_scope": "Exact/adjacent agreement screen is described as a FACETS Table 7 shared-context comparison",
+      "facets_scope": "Agreement is in Table 7; Table 8 is rating-scale/category output",
+      "status": "unvalidated",
+      "evidence": "FACETS 4.5 output table index and corrected application crosswalk text",
+      "caveat": "The documentation error is corrected, but quantitative row/column parity for agreement output is not yet qualified."
+    },
+    {
+      "capability": "Rating-scale/category diagnostics",
+      "app_scope": "Category probabilities, information, thresholds, and category diagnostics",
+      "facets_scope": "Table 8 dichotomous/polytomous scale reports",
+      "status": "formula_aligned",
+      "evidence": "validation/facets_450_pilot20_table8_table13_v2_20260811, validation/facets_pcm_pipeline_pilot20_20260811, and validation/facets_pcm_boundary_pilot_20260811; RSM totals matched 640/640, complete PCM totals matched 320/320, and boundary-pilot PCM/RSM totals matched 144/144",
+      "caveat": "Threshold/count qualification covers the registered four-category additive RSM and the registered Criterion-specific PCM. Category Outfit remains displayed rather than raw; named scales, mixed supports, recoding, raw category-fit parity, and category-decision parity remain unvalidated."
+    },
+    {
+      "capability": "Bias/interaction analysis",
+      "app_scope": "Bias estimation, Holm/practical thresholds, conditional audits, interaction screens",
+      "facets_scope": "Bias models and Tables 9-14",
+      "status": "formula_aligned",
+      "evidence": "validation/facets_450_pilot20_table8_table13_v2_20260811; canonical arranged-by-N Table 13 parsed in 160/160 runs, 2292/2400 expected cells were reported, and all 1404 eligible Python/FACETS strong-decision mappings agreed, including 8 non-sparse flags; maximum absolute bias-size difference was 0.0092 logits",
+      "caveat": "Qualification is limited to the registered Rater-by-Task additive-RSM interaction and is not confirmatory false-positive or power evidence. Two nonconverged and 40 structurally unidentified runs were excluded; 108 extreme sparse cells are explicitly unavailable, not negative."
+    },
+    {
+      "capability": "Hard and group anchors",
+      "app_scope": "Hard anchors in public JMLE/MML paths; native CMLE anchor scope is narrower",
+      "facets_scope": "Element and group anchors",
+      "status": "analogous",
+      "evidence": "Current replay supports element-specific FACETS anchors",
+      "caveat": "FACETS group-anchor semantics and all application estimator paths are not yet matched."
+    },
+    {
+      "capability": "Structural identifiability and connectivity gate",
+      "app_scope": "Exact constrained predictor-design rank/nullity, Person-Rater components, and InferenceReady distinct from optimizer convergence",
+      "facets_scope": "Iteration convergence, subset-connection wording, and optional connectivity-network output",
+      "status": "analogous",
+      "evidence": "validation/facets_pcm_boundary_pilot_20260811; all 8 deliberately disconnected PCM/RSM fits had independent and application nullity 1 with Python inference withheld, while FACETS converged and printed Subset connection O.K. in 8/8",
+      "caveat": "The two systems' short connectivity indicators are not interchangeable. FACETS convergence or Subset connection O.K. must not override the application's full constrained-design rank gate."
+    },
+    {
+      "capability": "RSM-versus-PCM model-choice workbench",
+      "app_scope": "Fit both response models to retained identical rows and compare likelihood, AIC/BIC, truth recovery, and structural eligibility",
+      "facets_scope": "RSM and partial-credit model specifications can be fitted separately or combined through broader Models syntax",
+      "status": "workbench_addition",
+      "evidence": "validation/facets_pcm_boundary_pilot_20260811; in 4/4 rank-full paired checks, PCM-over-RSM log-likelihood gain per observation was larger for heterogeneous PCM thresholds than for shared thresholds; AIC/BIC favored RSM in shared and PCM in heterogeneous conditions",
+      "caveat": "Two replicates demonstrate direction and orchestration only. They do not estimate model-selection error rates or authorize an automatic model recommendation."
+    },
+    {
+      "capability": "Mixed response-model statements or named scales in one analysis",
+      "app_scope": "One selected response-model family per run; PCM can estimate level-specific threshold vectors for one step facet",
+      "facets_scope": "Multiple model statements plus named General/Specific scales in one analysis",
+      "status": "unsupported",
+      "evidence": "Product-scope review",
+      "caveat": "Do not confuse the now-qualified one-step-facet PCM with FACETS' broader mixed-model and named-scale syntax. Add only if target workflows demonstrate material need."
+    },
+    {
+      "capability": "Paired comparison, rank order, Poisson, and binomial models",
+      "app_scope": "Not implemented",
+      "facets_scope": "Supported FACETS model families",
+      "status": "unsupported",
+      "evidence": "Product-scope review",
+      "caveat": "Not a near-term complementary-workbench priority."
+    },
+    {
+      "capability": "Residual PCA, stress testing, and decision archive",
+      "app_scope": "Integrated diagnostics, sensitivity workflows, reproducible export/archive",
+      "facets_scope": "FACETS can hand rectangular output to Winsteps for some residual analyses",
+      "status": "workbench_addition",
+      "evidence": "Application diagnostics and validation workflows",
+      "caveat": "These features should be sold as complementary decision support, not FACETS equivalence."
+    },
+    {
+      "capability": "Scale and capacity",
+      "app_scope": "Hosted preflight limits approximately 100k observations and 30k parameters",
+      "facets_scope": "Desktop engine designed for substantially larger analyses",
+      "status": "unsupported",
+      "evidence": "Application preflight limits and FACETS product documentation",
+      "caveat": "Do not imply FACETS-scale throughput."
+    }
+  ]
+}

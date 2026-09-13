@@ -1,0 +1,84 @@
+{
+  "registration_status": "prospective_before_support_oracle_implementation_or_systematic_results",
+  "registered_date": "2026-08-10",
+  "study_id": "cmle_finite_mle_support_oracle_v1",
+  "purpose": "Replace exhaustive materialization of every conditional support point with an exact fixed-score support-function oracle and LP constraint generation, without changing the finite-CMLE existence estimand or converting computational uncertainty into evidence of an interior solution.",
+  "parent_identity": {
+    "mfrm_app/cmle_existence.py": "1723719eba2aee1263398c5b6f9ace8931a5c8d549cc6bb28bd82e21e764b928",
+    "tests/test_cmle_existence.py": "11efc18fd42c9e3f0915e947b8cb4f3484c7b3fa5bc7f40eaf72b111b4faf615",
+    "validation/cmle_finite_mle_existence_stress.py": "715545cf18efc4178979ef581e707ae997650ecaca738634368ccccf68606ff6",
+    "validation/cmle_finite_mle_existence_20260810/existence_decision.json": "a81eb205ec04ad667b5fe23d8c121985d42efc2691c7c0cf19b6cccf680fbad8",
+    "validation/cmle_finite_mle_existence_20260810/existence_retained_ledger.csv": "29a1016c3056f490f36ec76152de26e2244398efab47d90e9bb0bb24d1447faa"
+  },
+  "known_results_not_prospective": {
+    "exhaustive_fixtures": "All 93 registered controls matched their expected structural, boundary, or interior status.",
+    "retained_primary": "At a deliberately low 50000-configuration cap, the exhaustive replay returned 63 structural, 13 boundary, 47 interior, and 227 typed unavailable results.",
+    "high_cap_sentinels": "Six chain_strong/hub_strong representative cases were interior at 192745-217093 enumerated configurations.",
+    "interpretation": "These results motivate scalability work. They cannot be counted as prospective oracle validation, and the 227 unavailable cases cannot be presumed interior."
+  },
+  "mathematical_contract": {
+    "unchanged_estimand": "For every pattern-score stratum, require d'*(n_s*T-t_obs_s) <= 0 for every attainable sufficient statistic T. A nonzero feasible d is a supporting direction and withholds finite-CMLE existence.",
+    "support_oracle": "For a proposed direction d, dynamic programming over response unit, bounded category, and fixed raw-score state must return the exact maximum of d'T and one maximizing sufficient statistic without enumerating all response vectors.",
+    "constraint_generation": "Solve each bounded coordinate LP on the current valid cut set, call the oracle for every observed stratum, add normalized violating support rows, and repeat until no stratum has a violation above the registered binary64/solver tolerance.",
+    "interior_proof": "Interior may be reported only after all positive and negative coordinate objectives have been oracle-certified at every registered tolerance.",
+    "boundary_proof": "Boundary may be reported only when a nonzero coordinate solution is oracle-certified and the direct exact conditional likelihood trace is nondecreasing along the retained direction.",
+    "rank_precedence": "Existing exact prefit structural rank deficiency remains authoritative and is reported before support-oracle work."
+  },
+  "implementation_contract": {
+    "tolerance_grid": [1e-10, 1e-09, 1e-08],
+    "directional_radii": [0, 1, 2, 4, 8, 16, 32],
+    "cut_normalization": "Divide each nonzero support row by its maximum absolute component before LP insertion; retain raw and normalized maximum violations.",
+    "tie_handling": "A deterministic maximizing response vector is sufficient for a positive violation; repeated oracle calls must add further tied rows if they remain violated.",
+    "cut_reuse": "Valid support cuts may be shared across coordinate objectives within one tolerance but each tolerance audit remains separately certified.",
+    "caps": {
+      "maximum_cutting_plane_rounds_per_coordinate": 10000,
+      "maximum_unique_cuts_per_tolerance": 500000,
+      "maximum_oracle_state_cells_per_case": 50000000,
+      "maximum_resident_bytes_proxy": 536870912
+    },
+    "fail_closed": "LP failure, no-progress violation, iteration/cut/work/memory cap, tolerance disagreement, nonfinite oracle state, or failed directional verification yields unavailable/review, never interior.",
+    "forbidden_shortcuts": [
+      "sampling support points",
+      "using optimizer estimates, standard errors, or MnSq to infer existence",
+      "silently accepting the current cut set without a full stratum-oracle pass",
+      "relaxing tolerances after observing a difficult retained case",
+      "treating an unavailable exhaustive result as an oracle interior result without prospective oracle execution"
+    ]
+  },
+  "validation_contract": {
+    "unit_oracle_equivalence": "For every stratum in all 93 registered fixtures, compare oracle maximum values with maxima over the exhaustively enumerated unique support at deterministic coordinate, alternating, and seeded pseudo-random directions.",
+    "status_equivalence": "Match exhaustive status across all 93 fixtures, every retained case completed by the primary exhaustive audit, and all six high-cap sentinels; structural cases are included in accounting but do not require oracle execution.",
+    "retained_replay": "Audit all same-byte 350 connectivity cases and produce a typed status for all 287 prefit-eligible inputs.",
+    "tolerance_stability": "Retain all tolerance-specific solver results, oracle violations, cut counts, rounds, and directions; disagreement is not majority-voted.",
+    "numerical_invariance": "Do not alter fit_cmle, optimizer outputs, WLE, Person fit, raw MnSq, rounded MnSq, or current readiness bytes. The oracle only projects an additional gate.",
+    "adversarial_controls": [
+      "complete and reverse binary separation",
+      "near-boundary samples with one minority discordance",
+      "multi-Rater monotone, opposing, and disconnected graphs",
+      "RSM and PCM separation",
+      "unused declared categories",
+      "correct, complete, and differentially contaminated hard anchors"
+    ]
+  },
+  "success_gates": {
+    "oracle_value_equivalence": "Zero comparison failures at absolute tolerance 1e-10 times max(1, absolute exhaustive maximum).",
+    "status_equivalence": "Zero structural/boundary/interior disagreements against every registered exhaustive result.",
+    "retained_accounting": "350/350 cases ledgered; 287/287 prefit-eligible cases receive structural, boundary, interior, or a typed oracle failure.",
+    "directional_verification": "Zero nonmonotone exact-objective traces among reported boundary directions.",
+    "tolerance_stability": "Zero coerced decisions; any cross-tolerance disagreement is explicitly unavailable.",
+    "scalability": {
+      "eligible_case_p95_seconds": 2.0,
+      "eligible_case_max_seconds": 10.0,
+      "all_350_total_seconds": 120.0,
+      "unavailable_due_only_to_exhaustive_configuration_count": 0
+    },
+    "public_ui": "withheld regardless of pass; public integration requires a separate UX and cross-engine review"
+  },
+  "interpretation_limits": {
+    "solver_precision": "The procedure is exact in discrete support search but still uses binary64 LP feasibility tolerances; exact rational polyhedral certification is not claimed.",
+    "existence_only": "An interior result does not establish fit, fairness, anchor validity, local independence, unbiased estimates, or useful Person scoring.",
+    "anchor_scope": "Hard anchors change the free-coordinate cone and may remove a separating direction; this is a conditional result under fixed anchor values, not proof that the anchors are unbiased.",
+    "cross_engine": "Agreement with immer, TAM, sirt, or mfrmr boundary behavior is not presumed because estimator definitions and boundary handling may differ.",
+    "public_ui": "withheld"
+  }
+}

@@ -1,0 +1,129 @@
+{
+  "registration_status": "prospective_before_cross_engine_boundary_execution_or_result_inspection",
+  "registered_date": "2026-08-10",
+  "study_id": "cmle_cross_engine_boundary_semantics_v1",
+  "purpose": "Determine whether finite optimizer output, a nominal convergence code, or finite standard errors can be mistaken for existence of a finite CMLE on registered interior, boundary, and structurally unidentified additive-RSM controls; compare matched immer CMLE directly and treat mfrmr, TAM, and sirt as estimator-mismatched sensitivity analyses.",
+  "parent_identity": {
+    "mfrm_app/cmle.py": "d5da4780932df7a3a6b3763efabe01c82747f445d8835a0c627c6d781e36e1a9",
+    "mfrm_app/cmle_existence.py": "6e65621a67751c25d9e870141ac04d9f61dc68096045f84ca212afdc34b435ac",
+    "mfrm_app/cmle_workflow.py": "304b4e23e628ff49aec2e00911e20e7c9ed2a9bd00d3568a3de8ced9778c6b84",
+    "validation/cmle_finite_mle_existence_stress.py": "715545cf18efc4178979ef581e707ae997650ecaca738634368ccccf68606ff6",
+    "validation/cmle_finite_mle_oracle_20260810/oracle_decision.json": "bf6f7f504709a446186042e636de9248bbc10fb7bdb7d59b988b7101500c963e",
+    "validation/cmle_structured_workflow_20260810/workflow_decision.json": "bcb6e45621bb1f3d32aeeed0ab62df29f7314e7a9d4c00d3158f560fa6c60eba",
+    "validation/cmle_structured_workflow_20260810/workflow_fixture_ledger.csv": "34c6236b1e95c6efdb0ee7a1d6accbc4ed95bf41475cb8db3bcec49f035acd27",
+    "validation/cmle_finite_mle_oracle_20260810/oracle_fixture_ledger.csv": "9ffaf5d143f004c4a3624360d7e5fd5dda2c50f2a66c53b83e598c4b9d052676"
+  },
+  "r_environment_before_execution": {
+    "R": "4.6.1",
+    "immer": "1.5.13",
+    "TAM": "4.3.25",
+    "sirt": "4.2.133",
+    "digest": "0.6.39",
+    "default_mfrmr": "0.2.2",
+    "mfrmr_source_path": "/Users/tohokusla/Dropbox/MFRM_Application/mfrmr/development",
+    "mfrmr_source_version": "0.2.3",
+    "mfrmr_source_git_head": "7ee1fd5cb9cb3ab6588811eb4b31f3337076c369",
+    "mfrmr_source_git_status_sha256": "3fe0441bd9b0bb76e8fc5f654bc6f4786f1bb8d92efdad5fcec2abf3901e2053",
+    "mfrmr_build_relevant_content_inventory_sha256": "0909ad61067930c770ef584ed2ff75fdc3b90261881c427a12c2fe5dd2164a72",
+    "mfrmr_snapshot_rule": "Install the current dirty 0.2.3 source into a new isolated temporary R library, then record package version, fit_mfrm function hash, source Git identity, status hash, and build-content hash before any fit. Never modify the source tree."
+  },
+  "fixture_contract": {
+    "source": "Select exact unanchored cases from fixture_cases() without altering response bytes, declared category support, or expected status.",
+    "case_ids": [
+      "binary2_n020_separated_forward_unanchored",
+      "binary2_n020_separated_reverse_unanchored",
+      "binary2_n020_balanced_finite_unanchored",
+      "binary2_n020_near_forward_unanchored",
+      "binary2_n020_near_reverse_unanchored",
+      "binary3_finite_unanchored",
+      "binary3_one_separated_edge_unanchored",
+      "binary3_opposing_edges_unanchored",
+      "binary3_monotone_edges_unanchored",
+      "binary3_disconnected_unanchored",
+      "polytomous_rsm_finite_unanchored",
+      "polytomous_rsm_separated_unanchored",
+      "polytomous_rsm_unused_declared_top_category_unanchored"
+    ],
+    "expected_accounting": {
+      "total": 13,
+      "interior_finite_cmle_supported": 5,
+      "boundary_no_finite_cmle": 7,
+      "structural_nonidentification": 1
+    },
+    "matched_design": "Person raw score is conditioned out; only sum-to-zero Rater effects and shared sum-to-zero RSM step parameters are free. Event/response-unit labels distinguish observations but are not estimated facets.",
+    "excluded": "PCM and hard-anchor cases require separate registered design-mapping and anchor-estimand studies and are not generalized from this run."
+  },
+  "engine_roles": {
+    "python_native": {
+      "estimator": "exact conditional maximum likelihood with pre-optimization finite-MLE support oracle",
+      "role": "reference classification and matched numerical reference for interior cases",
+      "workflow_rule": "Structural and boundary controls stop before optimization; only oracle-qualified interior cases are optimized."
+    },
+    "immer": {
+      "estimator": "immer_cml with explicitly supplied matched design matrix, use_rcpp=FALSE, and declared-support zero-weight sentinel",
+      "role": "primary same-estimand numerical and boundary-behavior comparison",
+      "interpretation": "A returned finite coefficient vector or convergence code zero is not finite-MLE-existence evidence. Independent Python status remains authoritative for readiness in this experiment."
+    },
+    "mfrmr": {
+      "estimator": "fit_mfrm JML from the isolated current 0.2.3 development snapshot",
+      "role": "different-estimand sensitivity analysis",
+      "interpretation": "Report fit return, warning, convergence/readiness fields, coefficient magnitude, and failure type; do not score equality to CMLE."
+    },
+    "TAM": {
+      "estimator": "tam.mml.mfr marginal maximum likelihood",
+      "role": "different-estimand sensitivity analysis",
+      "interpretation": "Report observable termination and finite-output behavior; do not score equality to CMLE."
+    },
+    "sirt": {
+      "estimator": "rm.facets marginal maximum likelihood",
+      "role": "different-estimand sensitivity analysis",
+      "interpretation": "Report observable termination and finite-output behavior; do not score equality to CMLE."
+    }
+  },
+  "registered_observations": {
+    "all_engines": [
+      "fit attempted and returned",
+      "elapsed seconds",
+      "warnings and typed errors",
+      "observable convergence or iteration evidence",
+      "maximum absolute estimate and standard error when extractable",
+      "nonfinite output counts"
+    ],
+    "immer_additional": [
+      "conditional log likelihood",
+      "optimizer convergence code and evaluations",
+      "analytic gradient sup norm and finite-difference disagreement",
+      "information rank, minimum eigenvalue, and condition number",
+      "coefficient and SE vectors",
+      "behavior at maxit 200, 2000, and 10000 with reltol 1e-12"
+    ],
+    "boundary_false_reassurance": "For every Python boundary case, record separately whether immer returns code zero, finite coefficients, finite SEs, small gradient, and full-rank information. No single one of these flags may override the support-oracle boundary status.",
+    "binary64_sensitivity": "Retain full-precision numeric outputs and compute classifications at gradient tolerances 1e-4, 1e-5, 1e-6, and 1e-8. Never base the primary result on printed or rounded coefficients, SEs, likelihood, fit indices, or MnSq."
+  },
+  "success_gates": {
+    "identity": "All registered Python parents match; the installed mfrmr 0.2.3 snapshot matches all three registered source identities; all R function hashes and adapter hashes are retained.",
+    "fixture_integrity": "13/13 exact case IDs, expected accounting 5/7/1, and response CSV byte hashes retained.",
+    "python": "13/13 structured-workflow statuses match frozen expected status; optimization attempts are exactly five.",
+    "immer_prefit": "Python and independently reconstructed R conditional-information rank agree in 13/13; the structurally unidentified case does not reach immer optimization.",
+    "immer_interior": "All five interior cases return with optimizer code zero, finite coefficient/SE/loglik values, full information rank, and analytic gradient sup norm <= 1e-6 at maxit 2000.",
+    "immer_numeric": {
+      "free_coordinate_estimate_max_absolute_difference": 1e-7,
+      "conditional_loglik_max_absolute_difference": 1e-8,
+      "comparison_scope": "five interior cases only, after exact parameter-name and sign-contract checks"
+    },
+    "boundary_accounting": "All seven boundary cases have complete multi-maxit ledgers even if immer reports nominal convergence. Boundary status is never overwritten by optimizer diagnostics.",
+    "secondary_engines": "mfrmr, TAM, and sirt each produce a complete 13-case attempt/error ledger. Fit success is descriptive and is not a pass/fail requirement because their estimands differ.",
+    "tests": "New contract tests and selected CMLE/workflow tests pass.",
+    "public_ui": "withheld"
+  },
+  "interpretation_limits": {
+    "estimator_equivalence": "Only Python native CMLE versus matched immer CMLE supports direct numerical comparison. TAM, sirt, and mfrmr results cannot establish CMLE parity or nonparity.",
+    "boundary_truth": "The reference claim is existence of a finite optimum for the registered conditional likelihood, not correctness of the Rasch-family model or absence of data bias.",
+    "optimizer_limits": "Iteration-cap drift and increasingly extreme finite estimates are symptoms to describe, not mathematical proof; the support oracle supplies the existence classification.",
+    "floating_point": "R and Python optimizers, finite differences, eigenvalue ranks, and printed values use binary64 and tolerances. Exact discrete support maximization plus fail-closed LP tolerances is stronger but is not exact rational certification.",
+    "mfrmr_development": "The current 0.2.3 source is dirty and unreleased. Evidence applies only to the frozen content hash and must not be presented as behavior of a future 0.2.3 release.",
+    "fit_metrics": "This phase does not use MnSq to infer finite-MLE existence. MnSq rounding sensitivity remains a separate downstream decision layer.",
+    "generalization": "No claim is made for PCM, anchors, sparse high-dimensional designs, bias tests, or public one-click UX from these 13 controls alone.",
+    "public_ui": "withheld pending separate PCM/anchor comparison and user-comprehension review"
+  }
+}

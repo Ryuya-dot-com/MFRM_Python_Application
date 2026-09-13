@@ -1,0 +1,91 @@
+{
+  "schema_version": "mml-free-sd-stationarity-fixture-registry-v1",
+  "status": "development_registry_not_a_qualification_plan",
+  "scientific_thresholds_frozen": false,
+  "qualification_data_generated": false,
+  "fixtures": [
+    {
+      "fixture_id": "KNOWN_KAC_GAMMA0_VECTOR05_PCM_Q31_V1_HISTORICAL",
+      "classification": "POSTHOC_ENGINEERING_KNOWN_EXCLUDED_FROM_QUALIFICATION",
+      "qualification_eligible": false,
+      "status": "SUPERSEDED_ENGINEERING_ARTIFACT_RETAINED_APPEND_ONLY",
+      "run_id": "gamma_pos_0p0__vector-05",
+      "artifact_identity_sha256": "3730710b337980ec0f23bb1f3a19f30d0fa2cb44259d4b3496e730f8a30effeb",
+      "replay_sha256": "3690008682d3199039c9e114820eb5c959b456c9741cea57a78ba50cce7ba637",
+      "reason": "The run and its numerical behavior were inspected before the v2 protocol."
+    },
+    {
+      "fixture_id": "KNOWN_KAC_GAMMA0_VECTOR05_PCM_Q31_V2",
+      "classification": "POSTHOC_ENGINEERING_KNOWN_EXCLUDED_FROM_QUALIFICATION",
+      "qualification_eligible": false,
+      "status": "CURRENT_HARDENED_ENGINEERING_REPLAY",
+      "run_id": "gamma_pos_0p0__vector-05",
+      "artifact_identity_sha256": "9ef219ccb9d9dd9488e620423bd78dbb9f088303094b07f724c177cf417b5b30",
+      "replay_sha256": "85964d196848db6587278c40f11670df2373a89c5626a10e8e21e44240db4bdc",
+      "reason": "Append-only replay with fixed input hashes, source TOCTOU checks, full v2 diagnostics, and identity-last publication; still known posthoc evidence."
+    },
+    {
+      "fixture_id": "SYNTHETIC_RSM_SEED_20260811_Q9",
+      "classification": "DEVELOPMENT_TEST_KNOWN_EXCLUDED_FROM_QUALIFICATION",
+      "qualification_eligible": false,
+      "source": "tests/test_mml_free_sd_stationarity_adapter.py",
+      "source_sha256": "1d074b664b1afd78e1c39f4b86edf82cd98c3adea64dd59ff74c91c1d1ac18ba",
+      "reason": "The seed, data-generating settings, and observed engineering tolerances are already known."
+    },
+    {
+      "fixture_id": "QUADRATIC_NUMERICAL_KERNEL_UNIT_FIXTURES",
+      "classification": "DEVELOPMENT_UNIT_TEST_EXCLUDED_FROM_QUALIFICATION",
+      "qualification_eligible": false,
+      "sources": [
+        "tests/test_mml_stationarity.py",
+        "tests/test_mml_engine_v2.py"
+      ],
+      "reason": "Analytical toy objectives verify code mechanics, not MFRM scientific operating characteristics."
+    },
+    {
+      "fixture_id": "QUADRATIC_QFIT_QCHECK_UNIT_FIXTURES",
+      "classification": "DEVELOPMENT_UNIT_TEST_EXCLUDED_FROM_QUALIFICATION",
+      "qualification_eligible": false,
+      "source": "tests/test_mml_quadrature_sensitivity.py",
+      "source_sha256": "0e27945062a1dc6aa5f1850d732e9c377a4529f25a5aa33e80e827f4609e17dd",
+      "reason": "Toy Q-fit/Q-check targets verify cross-evaluation mechanics only."
+    },
+    {
+      "fixture_id": "SYNTHETIC_RSM_SEED_20260811_Q9_Q15",
+      "classification": "DEVELOPMENT_TEST_KNOWN_EXCLUDED_FROM_QUALIFICATION",
+      "qualification_eligible": false,
+      "source": "tests/test_mml_free_sd_quadrature_adapter.py",
+      "source_sha256": "56ba4350b89dddc0a13d1e60d4b1276d19bf67e9093992f22676579d9b893aa9",
+      "reason": "The data, Q9/Q15 objectives, and deliberately permissive development tolerances are already observed."
+    },
+    {
+      "fixture_id": "EXACT_DENOMINATOR_BATCH_UNIT_FIXTURES",
+      "classification": "DEVELOPMENT_UNIT_TEST_EXCLUDED_FROM_QUALIFICATION",
+      "qualification_eligible": false,
+      "source": "tests/test_mml_qualification_batch.py",
+      "source_sha256": "ab507bb843a9d2a6884f8860e788554c15a7c047216343e2b7612b73149c9516",
+      "reason": "Three synthetic RunIds test missing, failed, duplicate, replacement, digest, and ordering mechanics only."
+    },
+    {
+      "fixture_id": "PROSPECTIVE_REGISTRAR_SCHEMA_UNIT_FIXTURES",
+      "classification": "DEVELOPMENT_SCHEMA_TEST_EXCLUDED_FROM_QUALIFICATION",
+      "qualification_eligible": false,
+      "source": "tests/test_mml_free_sd_qualification_registrar.py",
+      "source_sha256": "c758f3e5fa84388697f18a788a7cad212ae7d92938bcb358939a2f57a0ee1470",
+      "implementation": "validation/mml_free_sd_qualification_registrar.py",
+      "implementation_sha256": "bd9c5ed54ecb1173e4caf0f223626cf9f6590938e178ddbee9a2a0c0fa7b4a03",
+      "reason": "Synthetic T0/T1/T1.5/T2 documents and injected transport faults test schema and publication mechanics only; no retained qualification input, fitted MML evidence, R result, or FACETS result exists."
+    }
+  ],
+  "prospective_qualification_pool": {
+    "status": "NOT_GENERATED",
+    "required_before_generation": [
+      "registered estimator and objective identity",
+      "registered numerical thresholds with external rationale",
+      "registered Q31 primary and Q61 sensitivity contract",
+      "registered independent-R cross-evaluation contract",
+      "registered denominator and no-replacement policy",
+      "registered source and package-runtime hashes"
+    ]
+  }
+}

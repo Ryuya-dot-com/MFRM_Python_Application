@@ -97,7 +97,9 @@ def test_build_mml_covariance_audit_reports_spectrum_and_claim_status():
 
     row = audit.iloc[0]
     assert row["Status"] == "regularized"
-    assert row["ClaimStatus"] == "Report with caveat"
+    assert row["ClaimStatus"] == "Do not claim"
+    assert row["QualificationStatus"] == "WITHHELD"
+    assert row["ReasonCode"] == "stat.stat_003.covariance_rank_deficient"
     assert row["ParamCount"] == 4
     assert row["RankDeficiency"] == 1
     assert row["RegularizedEigenvalues"] >= 1

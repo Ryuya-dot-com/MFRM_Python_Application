@@ -18,20 +18,92 @@
     "view_density_help": "Display mode only changes which panels are shown. It does not compute extra diagnostics or create downloadable figures. To compute publication outputs, choose Analysis depth before running estimation."
   },
   "app": {
-    "title": "MFRM FACETS-mode",
-    "subtitle_template": "A single-file Streamlit application for estimating Many-Facet Rasch Models (MFRM) — {release_label} {version}",
+    "title": "MFRM | Rating analysis",
+    "subtitle_template": "Explore differences in ability, task difficulty, and rater severity with a Many-Facet Rasch Model — {release_label} {version}",
+    "prepare_analysis_header": "Prepare the analysis",
     "input_preview_header": "Input preview",
-    "no_input_info": "Provide input data from the sidebar to begin.",
+    "input_preview_rows_expander_template": "Preview input rows (first {n_rows})",
+    "setup_after_run_expander": "Input and pre-run checks",
+    "run_primary_heading": "Review, then run",
+    "run_primary_summary_template": "Guided setup: {model} model · {method} estimation · {depth}. Review the detected columns and readiness messages above, then run. Open Advanced controls only when the analysis question requires different settings.",
+    "run_primary_button": "Run this analysis",
+    "run_primary_help": "Runs the analysis shown in this workspace. The fitted result does not by itself establish validity or suitability for a decision.",
+    "run_primary_sidebar_caption": "The primary Run button is in the analysis workspace after the mapping and readiness checks.",
+    "no_input_info": "Add rating data to continue to column mapping and pre-run checks.",
     "language_switch_success_template": "Language changed from {from_lang} to {to_lang}.",
     "language_switch_caption": "The current run is preserved. To keep the switch responsive, heavy result, report, download, and help panels were not redrawn on this rerun.",
-    "language_switch_resume_button": "Render current view"
+    "language_switch_resume_button": "Render current view",
+    "about_expander": "About this beta and its limitations",
+    "beta_boundaries_caption": "A completed analysis alone does not establish validity or agreement with other software. Review the supported uses and limits below before reporting results."
   },
   "onboarding": {
+    "title": "Choose your starting path",
+    "choice_caption": "Explore a complete sample analysis now, or keep the setup controls open for your own data.",
     "banner_steps_label": "First time? Three steps to run your first analysis",
-    "banner_steps_body": "1. **Pick a data source** in the sidebar under *Data source* — {n_scen} built-in sample scenarios, or paste / file upload.\n2. **Map your columns** in the sidebar under *Column mapping* — Person, Score, and two or more facet columns.\n3. **Click `Run FACETS-mode estimation`** at the bottom of the sidebar.\n\n**Built-in scenarios**: {scenario_summary}.\n\n**Your own data**: the fastest path is *Data source → Paste CSV/TSV text*. File upload also accepts CSV, TSV, TXT, Excel `.xlsx/.xlsm`, Parquet, and JSON. Map your subject column to **Person** and the other non-score columns as facets. Open the *Tutorial* expander below for a primer on MFRM terminology before you click Run.",
+    "banner_steps_body": "1. **Choose data** in the sidebar: a built-in scenario, generated data, pasted text, or a file.\n2. **Review the detected mapping** for Person, Score, and at least two facet columns.\n3. **Run estimation**, then start with the result's First Read guidance before interpreting measures.\n\nFor your own data, pasted CSV/TSV text is the shortest route. File upload also accepts CSV, TSV, TXT, Excel, Parquet, and JSON.",
     "quickstart_button": "Run with sample data",
     "quickstart_help": "One-click quickstart: uses the built-in MFRM sample dataset with default column mapping and runs the full estimation pipeline. Great for exploring the UI before uploading your own data.",
-    "dismiss_button": "Got it"
+    "dismiss_button": "I'll use my data"
+  },
+  "guide": {
+    "step_counter_template": "Step {step} of {total}",
+    "progress_template": "Guide progress: step {step} of {total}",
+    "welcome_title": "Choose how you want to begin",
+    "welcome_body": "New to MFRM? Use a sample to learn how to check data, run an analysis, and read the results. If you already have rating data, start with your own table or file.",
+    "optional_caption": "You can leave the guide and return to it later.",
+    "start_sample_button": "Learn with a sample",
+    "start_sample_help": "Follow five focused steps using a synthetic writing-rating sample and the production estimator.",
+    "start_own_data_button": "Start with my data",
+    "continue_without_button": "Continue without the guide",
+    "exit_button": "Exit guide — keep data and results",
+    "resume_heading": "Sample guide",
+    "resume_caption": "Resume saved learning progress or restart the synthetic sample route. Analysis state remains separate.",
+    "resume_button": "Resume guide",
+    "restart_button": "Restart sample guide",
+    "completed_heading": "Sample guide completed",
+    "data_check_title": "Check what one sample row represents",
+    "data_check_body": "Before fitting, confirm the measurement object, score, and nuisance facets. The guide uses a fixed synthetic writing-rating design so a malformed upload cannot interrupt the first lesson.",
+    "metric_ratings": "Ratings",
+    "metric_people": "People",
+    "metric_facets": "Facets",
+    "mapping_heading": "Detected roles for this sample",
+    "mapping_role_column": "Role",
+    "mapping_selection_column": "Sample column(s)",
+    "mapping_person_role": "Object being measured",
+    "mapping_score_role": "Observed rating",
+    "mapping_facets_role": "Rater, task, and criterion facets",
+    "data_check_boundary": "This mapping is correct for the built-in sample only. Your own data still require a design, privacy, missingness, and column-role review.",
+    "data_check_continue_button": "Mapping understood — continue",
+    "estimate_title": "Run the sample analysis",
+    "estimate_body": "Use the guided defaults for one production-path fit. The guide does not use canned results or a separate estimator.",
+    "estimate_defaults_info": "The sample uses RSM with JMLE and the Standard analysis-depth preset. A successful run demonstrates operation, not validity for another data set or use.",
+    "estimate_run_button": "Run guided estimation",
+    "evidence_review_title": "Separate evidence from overclaiming",
+    "evidence_review_body": "Read Current focus below, then choose the statement that keeps the result within its actual data, design, and limitations.",
+    "evidence_router_caption": "The ordinary Current focus router remains authoritative. This learning question cannot change its status, evidence, or Analysis reference.",
+    "formative_question": "Which statement is safer?",
+    "formative_bounded": "Interpret this run only within the observed sample and its reported limitations; check the named evidence before making a claim.",
+    "formative_overclaim": "Because the sample fit completed, the model is valid for new data, fairness decisions, and every intended use.",
+    "formative_check_button": "Check my answer",
+    "formative_retry": "That statement goes beyond the evidence. A completed fit does not establish validity, fairness, accuracy, or suitability for another use.",
+    "archive_title": "Keep a bounded learning record",
+    "archive_body": "Review the three-part checkpoint you should carry into a real analysis: what is supportable, what remains limited, and what to do next.",
+    "archive_record_column": "Checkpoint",
+    "archive_value_column": "Bounded record",
+    "archive_supported_label": "Supported reading",
+    "archive_supported_value": "The sample demonstrates the workflow and provides run-specific evidence to inspect.",
+    "archive_limit_label": "Important limit",
+    "archive_limit_value": "The sample does not validate your data, rating design, claims, or intended decisions.",
+    "archive_next_label": "Next action",
+    "archive_next_value": "Use your own data, verify mappings and readiness, then follow the current evidence question before reporting.",
+    "archive_checkpoint_boundary": "This is a learning checkpoint, not an Analysis Brief, approval, or competence certificate.",
+    "finish_button": "Finish guide and open the standard results",
+    "completed_success": "Sample guide completed. The standard workspace is now available.",
+    "completed_boundary": "Completion records learning progress only. It does not make this sample—or any future analysis—valid or claim-ready."
+  },
+  "privacy": {
+    "synthetic_notice": "Privacy: the selected built-in or generated dataset is synthetic. The stronger data-handling warning will appear when you choose paste or upload.",
+    "user_data_warning": "Data privacy: pasted and uploaded rating files can contain person IDs, rater IDs, subgroup labels, and institutional information. For confidential data, run this app locally on a controlled machine. A hosted deployment may process the data on remote infrastructure; confirm institutional requirements before continuing."
   },
   "guided": {
     "tab_start": "Start",
@@ -42,12 +114,12 @@
     "tab_report_export": "Report & Export",
     "tab_learn": "Learn",
     "section_select_label": "Section",
-    "section_select_help": "Use the horizontal section switcher to move between results, figures, diagnostics, reports, and help. Only the selected section is rendered so large runs remain responsive.",
-    "section_select_caption": "Figures is its own section for viewing plots. Use Report & Export / Downloads / Figures only when you need figure files, manifests, or evidence bundles.",
+    "section_select_help": "Use this result navigation dock to move between results, figures, diagnostics, reports, and help. It stays available while you scroll, and only the selected section is rendered so large runs remain responsive.",
+    "section_select_caption": "Stays visible while you scroll. Switching sections reuses this fit; open Report & Export only when you need files.",
     "section_col_section": "Section",
-    "diagnostics_select_label": "Diagnostic panel",
-    "diagnostics_select_help": "Choose one diagnostic panel to render. This keeps facet and figure controls responsive because hidden diagnostics are not redrawn on every selection change.",
-    "diagnostics_select_caption": "Changing a facet in the Facet Quality Dashboard reuses the current fitted result; it does not re-estimate the model.",
+    "diagnostics_select_label": "What would you like to check?",
+    "diagnostics_select_help": "Use Residual PCA for residual patterns, and Bias/Interaction for deviations in specific facet combinations.",
+    "diagnostics_select_caption": "Model fit, residual PCA, bias, and categories come first. Plot-only views are also available under Figures.",
     "diagnostics_panel_col_panel": "Diagnostic panel",
     "first_run_route_heading": "### First-run Route",
     "first_run_route_expander": "First-run route: sample/run to one next diagnostic",
@@ -119,8 +191,8 @@
     "area_reporting": "Reporting",
     "detail_location_report": "Report",
     "detail_location_categories_steps": "Categories / Steps",
-    "detail_location_fit_details": "Fit Details",
-    "detail_location_dimensionality": "Dimensionality",
+    "detail_location_fit_details": "Model fit",
+    "detail_location_dimensionality": "Residual PCA",
     "detail_location_bias_interaction": "Bias / Interaction",
     "detail_location_data": "Data",
     "status_legend_expander": "Status meanings",
@@ -219,7 +291,7 @@
     "next_click_keep_claim_caveat": "Carry this caveat into any report, export, or shared wording.",
     "next_click_keep_evidence": "Keep the full First Read and diagnostic evidence available.",
     "action_hub_heading": "Action hub",
-    "action_hub_caption": "A simple app-style path: do the recommended action, open the named detail, then confirm the reporting boundary.",
+    "action_hub_caption": "One recommended action is shown here. Alternative routes, progress, and reporting boundaries remain in Supporting details.",
     "action_hub_col_role": "Action",
     "action_hub_col_open": "Open",
     "action_hub_col_action": "Do",
@@ -366,7 +438,9 @@
     "goal_step_col_open": "Open",
     "goal_step_col_action": "Do this",
     "goal_step_col_done": "Move on when",
-    "goal_supporting_detail_expander": "Supporting details for the selected goal",
+    "goal_supporting_detail_expander": "Why this check? View evidence",
+    "checks_unavailable": "Interpretation checks are unavailable. Inspect diagnostics before making claims.",
+    "open_next_button": "Check next: {target}",
     "goal_supporting_detail_caption": "Open this when you need the decision prompt, evidence checklist, three-step route, or full goal list. These details are preserved, but no longer compete with the main next-click path.",
     "goal_all_routes_expander": "Show all goal routes",
     "goal_check_readiness": "Check whether I can interpret this run",
@@ -581,24 +655,24 @@
     "combined_measures_expander": "Combined measures with fit columns",
     "facets_tables_expander": "FACETS-style tables",
     "diagnostics_subheader": "Assumption and quality diagnostics",
-    "diagnostics_caption": "Use these sub-tabs after the first-read table flags a topic, or when preparing a final report.",
+    "diagnostics_caption": "Choose the issue you want to inspect. Switching views reuses the fitted result.",
     "show_full_visuals": "Show all visual sub-tabs in this view",
     "show_full_visuals_help": "Adds Information Curves, Forest Plot, Q-Q Plot, and ECDF without switching the whole app to Full view.",
     "plots_skipped_info": "Interactive diagnostic plots were skipped for this run. Enable plots before visual interpretation or final reporting.",
     "figures_subheader": "Figures and visual evidence",
     "figures_caption": "Use this section to inspect plots directly. It keeps the visual surfaces together instead of requiring a trip through report/download details.",
-    "figures_location_markdown": "**View figures here.** Use **Wright Map** for the shared logit ruler and FACETS-style yardstick, and **Visuals** for category probability curves, pathway maps, facet distributions, observed-vs-expected plots, and optional full-depth plots. Use **Report & Export → Downloads → Figures** only for downloadable PNG/HTML files, figure manifests, and visual evidence bundles.",
+    "figures_location_markdown": "**View figures here.** Use **Wright Map** for the shared logit ruler and FACETS-style yardstick, and **Visuals** for category probability curves, pathway maps, facet distributions, observed-vs-expected plots, and optional full-depth plots. Use **Report & Export → Save tables & figures → Figures** only for downloadable PNG/HTML files, figure manifests, and visual evidence bundles.",
     "figures_plots_skipped_info": "Interactive plot rendering was skipped for this run. Re-run with plot rendering enabled before using figures for interpretation.",
     "figures_export_tab": "Export status",
     "figures_export_ready_info": "Figure export bundle generation is enabled for this run.",
-    "figures_export_hint_markdown": "**Download path:** open **Report & Export**, expand **Downloads**, then choose the **Figures** sub-tab. That area contains the publication figure ZIP, visual evidence binder, figure manifest, and individual PNG/HTML downloads.",
+    "figures_export_hint_markdown": "Open **Report & Export → Save tables & figures → Figures** to download figure files.",
     "figures_guardrails_details_label": "Show visual claim guardrails",
     "figures_panel_select_label": "Figure panel",
     "figures_panel_select_help": "Choose one figure panel to render. This avoids redrawing Wright Map and Visuals at the same time when a figure control changes.",
     "figures_panel_select_caption": "Viewing figures reuses the current fitted result; it does not re-estimate the model. Downloadable PNG/HTML files still depend on the Analysis depth used when the model was run.",
     "figures_panel_col_panel": "Figure panel",
     "report_export_subheader": "Report and export",
-    "report_export_caption": "Draft report text, readiness checks, publication documents, and downloadable tables are grouped here.",
+    "report_export_caption": "Choose your output first. Review details and working notes are available separately.",
     "report_ready_summary_heading": "Report-ready summary",
     "report_ready_summary_caption": "Start here before writing or sharing results. This panel compresses the publication gate, APA sentence audit, claim evidence, scoring QC, and category-collapse decision into action rows.",
     "report_ready_summary_details_label": "Show report-ready evidence details",
@@ -687,10 +761,10 @@
     "repro_export_package_verify": "Privacy mode, included files, figure settings, manifests, and row/person-level exposure match the sharing context.",
     "repro_export_package_artifact": "Export privacy manifest, figure manifest, visualization settings, OSF-style bundle, and manuscript binder.",
     "repro_export_package_do_not": "Do not move private row-level or person-level outputs into shared folders without a manifest review.",
-    "repro_rerun_check": "Re-run and external validation",
-    "repro_rerun_verify": "The app version, data subset, settings, seeds or generated scripts, and any external-engine comparison are archived.",
-    "repro_rerun_artifact": "Run history, method appendix, exported settings, validation templates, Stan runners, and external comparison tables when used.",
-    "repro_rerun_do_not": "Do not claim exact cross-engine equivalence, prospective validity, or calibration evidence without a documented comparison design.",
+    "repro_rerun_check": "Python-native rerun identity",
+    "repro_rerun_verify": "The app version, input fingerprint, exact settings, AnalysisID, and any seed or sensitivity plan are archived.",
+    "repro_rerun_artifact": "mfrm_config.json, analysis_identity.json, evidence_records.json, method appendix, and the Python app-engine runner.",
+    "repro_rerun_do_not": "Do not combine artifacts from different AnalysisIDs or claim reproducibility when the input identity or settings are missing.",
     "claim_trace_heading": "Claim status and evidence trace",
     "claim_trace_caption": "Use this before copying APA text or sharing exports. The table turns generated report text into auditable claim-status rows.",
     "claim_trace_col_item": "Report item",
@@ -763,20 +837,71 @@
     "export_preflight_external_validation_keep": "external_simulation_reference_inventory.csv, validation README/status files, external templates, archived comparison outputs.",
     "export_preflight_external_validation_stop": "Do not claim exact cross-engine equivalence or prospective validity unless the separate validation design supports it.",
     "show_full_report": "Show all report sub-sections in this view",
-    "show_full_report_help": "Adds manuscript template, method appendix, facet equivalence, and Stan code without switching the whole app to Full view.",
+    "show_full_report_help": "Adds the manuscript template, method appendix, and facet-equivalence review without switching the whole app to All panels view.",
     "downloads_expander": "Download tables, figures, scripts, and configuration",
     "learn_subheader": "Learning and interpretation support",
     "learn_caption": "Reference guidance remains available here; open the full library when writing methods or resolving a diagnostic question.",
     "show_full_help": "Show all learning sections in this view",
     "show_full_help_help": "Adds rating-scale, model capability, and public beta sections without switching the whole app to Full view.",
-    "no_rows_info": "No first-read checks were generated for this run."
+    "no_rows_info": "No first-read checks were generated for this run.",
+    "export_quick_pointer": "Summary, measures, fit, and reliability tables. For reports or individual files, open **Report & Export**.",
+    "export_task_label": "What would you like to do?",
+    "export_task_manuscript": "Start a paper",
+    "manuscript_heading": "Start an APA manuscript",
+    "manuscript_caption": "Download an English article template, then replace the bracketed prompts in Word. No form needs to be completed first. Adjust the APA 7 professional-paper format to the target journal.",
+    "manuscript_fill_boundary": "Filled from this run: rating/person counts, facets, model, estimation method, and recorded software version. You supply the research problem, design rationale, ethics, interpretation, and conclusions. Results prose is available separately below with its evidence checks.",
+    "manuscript_download": "Download the manuscript template",
+    "manuscript_outline": "Preview the structure and writing prompts",
+    "manuscript_results_preview": "Open this run’s Results draft and checks",
+    "manuscript_results_caption": "Use this as an editing worksheet. Keep each required caveat with its sentence and verify the values against the exported tables before placing it under the corresponding research question.",
+    "manuscript_references": "Method literature and Zotero",
+    "manuscript_references_caption": "These literature candidates informed the prompts; they are not automatically cited in your article. Read and cite only the sources supporting the methods and claims you actually use.",
+    "manuscript_references_sources": "- [APA quantitative reporting standards](https://doi.org/10.1037/amp0000191): reporting the study.\n- [Aryadoust et al. (2021)](https://doi.org/10.1177/0265532220927487): Rasch reporting and diagnostic coverage.\n- [Wind et al. (2023)](https://doi.org/10.1177/01466216231182148): sparse rating designs.\n- [Eckes (2005)](https://doi.org/10.1207/s15434311laq0203_2): rater effects in an assessment application.",
+    "manuscript_zotero_help": "In Word, use Zotero’s Add/Edit Citation and Add/Edit Bibliography, selecting APA 7th edition in Document Preferences. The template contains ordinary text, not active Zotero fields or a live library connection.",
+    "export_task_document": "Create a report",
+    "export_task_files": "Save tables & figures",
+    "export_task_review": "Review checks",
+    "export_state_hold": "Final interpretation is on hold. You can save a draft; open Review checks for the unresolved issues.",
+    "export_state_draft": "Save a draft, then edit it for your study before sharing.",
+    "export_state_review": "Some findings need review or caveats. Keep these with the report; details are under Review checks.",
+    "export_text_preview": "Preview the results text",
+    "export_review_heading": "Before you share",
+    "export_review_caption": "Start with the unresolved points below. Supporting material is available when you need it.",
+    "export_review_empty": "No unresolved items are listed by the current checks. Study-specific review is still needed.",
+    "export_review_unavailable": "Check results are unavailable. Review the analysis before using the report.",
+    "export_review_evidence": "Finding",
+    "export_review_action": "Next action",
+    "export_resources": "Supporting material",
+    "export_resource_none": "Choose only if needed",
+    "export_resource_claims": "What the results can support",
+    "export_resource_methods": "Methods description",
+    "export_resource_template": "Manuscript template",
+    "export_resource_work_notes": "Detailed checklists & work notes",
+    "export_resource_all_panels": "All reporting tools (advanced)",
+    "export_document_heading": "Report file",
+    "export_document_caption": "Save a draft with the methods, results tables, figures, and references. Choose a format for your next task.",
+    "export_format_label": "File format",
+    "export_format_pdf": "PDF · read & print",
+    "export_format_word": "Word · edit",
+    "export_format_html": "HTML · open in a browser",
+    "export_format_pdf_help": "For reading or printing with figures and tables.",
+    "export_format_word_help": "Edit the wording, tables, and layout in Word.",
+    "export_format_html_help": "Open the saved file in a browser, including offline.",
+    "export_document_building": "Preparing {format}…",
+    "export_document_failed": "Could not prepare {format}. Try another format or review the details below.",
+    "export_error_details": "Error details",
+    "export_document_download": "Download {format}",
+    "export_document_language": "The generated report text is in English. Figures and tables may contain individual results; check the content before sharing.",
+    "export_table_select": "Choose a table",
+    "export_table_rows": "{n} rows in this table",
+    "export_table_download": "Download selected table (CSV)"
   },
   "dimensionality": {
     "warning_pca_failed_template": "**PCA of residuals could not be computed.** Reason: {reason}\n\nTypical fixes: select at least 2 facets with ≥2 levels each, ensure every person sees multiple item-combinations, or widen your data subset. If the reason is `residual PCA was disabled by the Analysis depth setting`, re-run with Analysis depth = Standard, Full publication, or Custom > Compute residual PCA.",
-    "interpretation_main": "**How to interpret the PCA of standardized residuals:**\n\nThe PCA decomposes the *unexplained* variance (residuals) after the Rasch dimension\nis extracted. In an MFRM workflow this is an exploratory residual-dimensionality\nscreen, not a standalone proof of unidimensionality and not a DIMTEST/UNIDIM\nimplementation. Use it together with global residual fit, element fit, and\nlocal-dependence screens. Reviews of Rasch language-assessment studies have\ncalled for clearer reporting of dimensionality and local independence\n(Aryadoust et al., 2021). DIMTEST is better treated as a related\nessential-unidimensionality method from the item-response layer (Stout, 1987;\nTseng, 2016), while substantively multidimensional rubrics may require\nmultidimensional MFRM extensions (Uto, 2021). If all evidence is aligned, use\ncautious wording such as \"evidence consistent with essential unidimensionality\nunder the specified facet structure.\"\n\n| Criterion | Guideline | Reference |\n|---|---|---|\n| 1st eigenvalue < 2.0 | No strong residual secondary-dimension signal | Linacre (2024) |\n| 1st eigenvalue 2.0--3.0 | Minor secondary residual dimension possible; inspect content | Smith (2002) |\n| 1st eigenvalue > 3.0 | Strong residual secondary-dimension signal | Linacre (2024) |\n| Unexplained variance in 1st PC < 5% | Low residual contrast | Smith (2002) |\n| Unexplained variance in 1st PC 5--10% | Investigate residual structure | Linacre (2024) |\n| Eigenvalue ratio (PC1/PC2) >= 3 | Single dominant residual contrast | Reckase (1979) |\n\nUse the scree plot below: a clear \"elbow\" after the 1st component, with subsequent\neigenvalues close to 1.0, is consistent with little secondary residual structure.",
-    "panel_select_label": "PCA panel",
-    "panel_select_help": "Only the selected residual-PCA panel is rendered. This avoids redrawing every facet PCA when switching language or nearby controls.",
-    "panel_select_caption": "Switch panels to inspect another residual-PCA scope. The fitted model and cached diagnostics are reused.",
+    "interpretation_main": "Residual PCA explores response patterns left unexplained by the fitted model.\n\n1. Inspect prominent components in the scree plot, then examine the content of combinations with positive and negative loadings.\n2. Check stability: missingness, overlap, and sensitivity to removing columns or resampling persons.\n3. Eigenvalues, variance percentages, and eigenvalue ratios are screening cues. They are not universal pass/fail rules or proof that the original data are unidimensional. Consider fit and local-dependence evidence together.\n\nPC1 variance here is a percentage of **residual variance**, not total observed variance.\n\n[Winsteps discussion of residual dimensionality](https://www.winsteps.com/winman/dimensionality.htm)",
+    "panel_select_label": "Scope to inspect",
+    "panel_select_help": "Overall uses the same residual matrix as First Read. A facet view uses residuals averaged within each person and facet level.",
+    "panel_select_caption": "Overall and facet views aggregate residuals differently; their eigenvalues are not directly interchangeable.",
     "label_overall": "Overall standardized residuals",
     "label_facet_template": "Residuals for facet: {facet_name}",
     "computation_failed_caption_template": "PCA computation failed (using pre-computed): {error}",
@@ -815,6 +940,9 @@
     "exception_facet_template": "exception: {error_type}: {error}",
     "disabled_by_depth_setting": "residual PCA was disabled by the Analysis depth setting",
     "tab_label_overall": "Overall",
+    "first_read_caption": "Start with the overall plot, stability, and loadings; switch to a facet when needed. Residual PCA alone cannot establish unidimensionality.",
+    "reading_guide_expander": "Reading guide and interpretation limits",
+    "dimtest_expander": "Additional test (DIMTEST)",
     "reason_unknown_fallback": "unknown (no reason recorded)",
     "dimtest_subheader": "Nonparametric DIMTEST (Stout, 1987; Nandakumar & Yu, 1996)",
     "dimtest_caption": "Polytomous adaptation of Stout's nonparametric DIMTEST. After averaging the rater scores per (Person, Item), persons are stratified by their PT-subtest total score; the test statistic T_L is the pooled within-stratum covariance among the AT-subtest items. Under essential unidimensionality (conditional independence of AT items given the latent trait), T_L is asymptotically zero. SE and p-value come from a cluster bootstrap on persons (Efron & Tibshirani, 1993). Use a priori AT / PT for confirmatory testing; the PCA-driven auto-split has documented selection bias.",
@@ -871,7 +999,7 @@
     "covariate_preview_info": "Upload or paste person_data to preview numeric vs categorical covariate coding before fitting.",
     "covariate_type_preview_header": "**Covariate type preview**",
     "intercept_only_caption": "Intercept-only population model; no person-level covariate coding needed.",
-    "covariate_preview_error_template": "Covariate type preview could not be generated: {error}",
+    "covariate_preview_error_template": "The covariate type preview could not be generated. Review the formula and person-data columns.",
     "score_scale_expander": "Score scale options",
     "keep_original_categories_checkbox": "Keep original category values",
     "keep_original_categories_help": "If checked, categories are used as-is (e.g., 1-5). If unchecked, non-consecutive categories are recoded to a contiguous internal scale.",
@@ -911,9 +1039,9 @@
     "anchor_template_example_label": "Example fixed-anchor CSV",
     "group_anchor_template_blank_label": "Blank group-anchor CSV",
     "group_anchor_template_example_label": "Example group-anchor CSV",
-    "asset_unavailable_caption_template": "{asset_name} unavailable: {error}",
+    "asset_unavailable_caption_template": "A bundled anchor template is temporarily unavailable.",
     "show_anchor_guideline_checkbox": "Show anchor guideline preview",
-    "anchor_guideline_unavailable_caption_template": "Anchor guideline unavailable: {error}",
+    "anchor_guideline_unavailable_caption_template": "The anchor guideline preview is temporarily unavailable.",
     "anchor_audit_expander": "Anchor audit settings",
     "anchor_policy_label": "Anchor issue policy",
     "anchor_policy_help": "warn shows anchor/linking issues but still estimates with valid rows. error stops estimation when any anchor audit issue is found. silent records issues in downloads/config only.",
@@ -938,7 +1066,7 @@
     "udecimals_help": "Decimal places for user-scaled measures in report tables."
   },
   "sidebar_perf": {
-    "performance_options_subheader": "Performance options",
+    "performance_options_subheader": "Analysis coverage",
     "analysis_depth_label": "Analysis depth",
     "analysis_depth_help": "Fast preview skips PCA, bias scans, plots, and figure exports. Full publication computes the publication/export bundle.",
     "analysis_depth_fast_display": "Fast preview",
@@ -947,8 +1075,6 @@
     "analysis_depth_custom_display": "Custom",
     "compute_residual_pca_checkbox": "Compute residual PCA",
     "compute_residual_pca_help": "Exploratory residual-structure screen. Skip for very large data.",
-    "compute_pca_stability_checkbox": "Compute PCA stability audit",
-    "compute_pca_stability_help": "Adds leave-one-column and bootstrap checks for residual PCA loadings. Useful for final reporting, but slower.",
     "compute_strict_marginal_checkbox": "Compute strict marginal diagnostics",
     "compute_strict_marginal_help": "MML-only screen: observed vs. model-implied category counts.",
     "include_pairwise_marginal_checkbox": "Include pairwise marginal screen",
@@ -970,8 +1096,6 @@
     "bias_mode_selected_pair_display": "Selected pair",
     "bias_mode_all_pairs_display": "All facet pairs",
     "bias_mode_help": "Bias scans compare local observed-minus-expected behavior across facet pairs. All-pair scans are useful for final reports but can be slow.",
-    "auto_bias_interactions_checkbox": "Compute bias scan during run",
-    "auto_bias_interactions_help": "When off, estimation finishes first and the selected bias scan can be computed from the Bias/Interaction tab only when needed.",
     "render_interactive_plots_checkbox": "Render interactive plots in result tabs",
     "render_interactive_plots_help": "Turn off to keep reruns fast after estimation; tables and downloads remain available.",
     "generate_figure_exports_checkbox": "Prepare figure export bundle",
@@ -996,7 +1120,7 @@
     "subheader": "Run summary",
     "needs_two_facets_warning": "Select at least two facet columns before running.",
     "selection_info_template": "{n_rows} rows, {n_persons} persons, {n_facets} facet columns selected.",
-    "review_setup_expander": "Review current setup",
+    "review_setup_expander": "Settings & included checks",
     "person_label": "Person",
     "score_label": "Score",
     "facets_label": "Facets",
@@ -1105,11 +1229,11 @@
     "mml_popsd_fixed_setting": "Fixed prior SD (default)",
     "mml_popsd_fixed_what": "Person ability SD is fixed to your value (default 1.0); the quadrature uses it as the metric.",
     "mml_popsd_fixed_when": "Default. When you want a fixed, reproducible scale, or to run the prior-SD sensitivity screen across alternative SDs.",
-    "mml_popsd_fixed_how": "Measures are on the fixed-SD metric and are not directly comparable to engines that estimate the variance. Use the prior-SD sensitivity screen to check robustness to the choice.",
+    "mml_popsd_fixed_how": "The fitted measures depend on the specified person-distribution SD. For cross-engine comparisons, align the fixed/free SD treatment, model, and identification constraints. Use the prior-SD sensitivity screen to examine this assumption.",
     "mml_popsd_free_setting": "Estimate person SD (free, EM)",
     "mml_popsd_free_what": "The EM engine estimates σ from the data; the value you set becomes only the EM starting point.",
-    "mml_popsd_free_when": "Cross-engine comparison (TAM / ConQuest / mirt all estimate σ), or whenever you want the person metric data-determined.",
-    "mml_popsd_free_how": "Read σ̂ with its profile SE and 95% CI in the convergence panel. The profile SE holds the other parameters fixed (slightly optimistic). Free-SD forces the EM engine and adds one parameter to AIC / BIC.",
+    "mml_popsd_free_when": "When the person metric should be data-determined and the supported EM path is appropriate for the analysis design.",
+    "mml_popsd_free_how": "Read the fitted SD as a technical point estimate. SE/CI are withheld: joint stationarity and nuisance-adjusted uncertainty remain unqualified. Free-SD uses EM and adds one free parameter; model ranking remains unqualified.",
     "tab_rater_effects": "Rater Effects",
     "tab_rating_scale_guide": "Rating Scale Guide",
     "tab_glossary": "Glossary",
@@ -1120,14 +1244,14 @@
     "panel_select_label": "Help topic",
     "panel_select_help": "Only the selected help topic is rendered. This keeps Help responsive when switching language or reviewing large results.",
     "panel_select_caption": "Choose another topic to load it. Hidden help topics are not redrawn on every rerun.",
-    "essential_mode_caption": "3 advanced help topics (Rating Scale Guide, Model Capability, Public Beta) are hidden in **Compact** display mode. Choose **All panels** display mode to read them; computation depth is still controlled separately by Analysis depth.",
+    "essential_mode_caption": "The specialist Rating Scale Guide is hidden in **Compact** display mode. Choose **All panels** to read it; computation depth is controlled separately by Analysis depth.",
     "interpretation_caution": "Use the Help tab as an interpretation guide, not as an automatic decision rule. Fit, reliability, category, missing-data, and bias thresholds are screening heuristics; manuscript claims still require convergence, connectedness, sample-size review, design context, and substantive judgment.",
     "reference_coverage_expander": "Reference basis for Help and QC claims",
     "reference_coverage_caption": "Maps first-read Help, Agreement, and category-collapse claims to shipped APA references, Zotero evidence, and safe wording boundaries.",
     "reference_coverage_download": "Download help reference coverage (CSV)",
     "yardstick_help_expander": "FACETS-style yardstick rendering contract",
     "yardstick_help_heading": "### FACETS-style Yardstick Rendering Contract",
-    "yardstick_help_caption": "This is the current implementation contract for the Wright Map -> Yardstick panel and the downloadable R/Python/Julia reproduction scripts.",
+    "yardstick_help_caption": "This is the current implementation contract for the Wright Map -> Yardstick panel and its Python reproduction script.",
     "yardstick_help_col_topic": "Topic",
     "yardstick_help_col_current_behavior": "Current behavior",
     "yardstick_help_col_why": "Why it matters",
@@ -1149,9 +1273,9 @@
     "yardstick_help_wright_why": "Distribution shape, uncertainty, and density claims require the broader Wright Map and tables, not the text-map yardstick alone.",
     "yardstick_help_wright_check": "For any manuscript claim, keep measures.csv, reliability.csv, visual_claim_guardrails.csv, and the figure beside the yardstick.",
     "yardstick_help_repro_topic": "Reproducibility",
-    "yardstick_help_repro_current": "The app exports mfrm_yardstick_map.csv plus ggplot2::geom_text(), Plotly, and CairoMakie scripts that redraw the same text map.",
+    "yardstick_help_repro_current": "The app exports mfrm_yardstick_map.csv plus a Python Plotly script that redraws the same text map.",
     "yardstick_help_repro_why": "The CSV is the run-specific contract; scripts should redraw the map, not refit or silently alter estimates.",
-    "yardstick_help_repro_check": "Archive MFRM_FACETS_Yardstick_Reproduction.zip with the run configuration and tables.",
+    "yardstick_help_repro_check": "Archive MFRM_Python_Yardstick_Reproduction.zip with the run configuration and tables.",
     "input_readiness_heading": "### Before Running Estimation",
     "input_readiness_caption": "Use this checklist before clicking Run. It explains what the pre-estimation readiness panel is checking and which findings should be fixed before estimation.",
     "input_readiness_col_check": "Check",
@@ -1376,30 +1500,30 @@
     "guided_screen_order_col_surface": "Surface",
     "guided_screen_order_col_use": "Use it for",
     "guided_screen_order_col_detail_policy": "Detail policy",
-    "guided_screen_order_current_focus_order": "1",
-    "guided_screen_order_current_focus_surface": "Current focus for this run",
-    "guided_screen_order_current_focus_use": "Identify the highest-priority run-specific issue after the selected goal is considered.",
-    "guided_screen_order_current_focus_detail_policy": "Always visible because it protects interpretation and claim scope.",
-    "guided_screen_order_next_click_order": "2",
-    "guided_screen_order_next_click_surface": "Next click",
-    "guided_screen_order_next_click_use": "Turn the focus into one immediate place to open.",
-    "guided_screen_order_next_click_detail_policy": "Always visible as the shortest navigation cue.",
-    "guided_screen_order_goal_locator_order": "3",
-    "guided_screen_order_goal_locator_surface": "Exact places to inspect",
-    "guided_screen_order_goal_locator_use": "Map the goal to concrete tabs, tables, panels, and checks.",
-    "guided_screen_order_goal_locator_detail_policy": "Always visible because it prevents abstract guidance from becoming a dead end.",
+    "guided_screen_order_current_focus_order": "2",
+    "guided_screen_order_current_focus_surface": "Interpretation status",
+    "guided_screen_order_current_focus_use": "Read the highest-priority run-specific issue and claim boundary.",
+    "guided_screen_order_current_focus_detail_policy": "Visible before the selected results.",
+    "guided_screen_order_next_click_order": "3",
+    "guided_screen_order_next_click_surface": "Check next",
+    "guided_screen_order_next_click_use": "Open the diagnostic named in the recommendation.",
+    "guided_screen_order_next_click_detail_policy": "One action; the existing fitted result is reused.",
+    "guided_screen_order_goal_locator_order": "1",
+    "guided_screen_order_goal_locator_surface": "Section",
+    "guided_screen_order_goal_locator_use": "Choose the analysis view directly.",
+    "guided_screen_order_goal_locator_detail_policy": "One selector stays visible while scrolling.",
     "guided_screen_order_guardrail_order": "4",
-    "guided_screen_order_guardrail_surface": "Interpretation guardrail",
-    "guided_screen_order_guardrail_use": "Keep the most important not-yet decision and caveat visible after navigation is chosen.",
-    "guided_screen_order_guardrail_detail_policy": "Always visible because it prevents the selected goal from being over-interpreted.",
+    "guided_screen_order_guardrail_surface": "Selected analysis",
+    "guided_screen_order_guardrail_use": "Inspect the chosen estimates, diagnostics, or figures.",
+    "guided_screen_order_guardrail_detail_policy": "Only the selected section is rendered; reading guides open on request.",
     "guided_screen_order_supporting_detail_order": "5",
-    "guided_screen_order_supporting_detail_surface": "Supporting details for the selected goal",
-    "guided_screen_order_supporting_detail_use": "Open the decision prompt, evidence checklist, three-step route, and all-route reference.",
-    "guided_screen_order_supporting_detail_detail_policy": "Collapsed by default; details remain available without crowding the main path.",
+    "guided_screen_order_supporting_detail_surface": "Why this check? View evidence",
+    "guided_screen_order_supporting_detail_use": "Inspect the reasons, complete check table, and safe output guidance.",
+    "guided_screen_order_supporting_detail_detail_policy": "Collapsed by default.",
     "guided_screen_order_claim_boundary_order": "6",
-    "guided_screen_order_claim_boundary_surface": "Claim boundary and evidence tables",
-    "guided_screen_order_claim_boundary_use": "Confirm what can be stated, delayed, exported, or documented.",
-    "guided_screen_order_claim_boundary_detail_policy": "Use before reporting, sharing, or converting exploratory notes into final wording.",
+    "guided_screen_order_claim_boundary_surface": "Report & Export",
+    "guided_screen_order_claim_boundary_use": "Create a report, start a paper, or save result files.",
+    "guided_screen_order_claim_boundary_detail_policy": "Reporting holds remain visible before a download.",
     "guided_next_click_heading": "### How to Read Next Click",
     "guided_next_click_caption": "The one-row Next click summary is a pointer, not a replacement for Current focus, First Read, or the evidence tables.",
     "guided_next_click_col_label": "Next click label",
@@ -1791,7 +1915,8 @@
     "classical_dif_sibtest_action": "Use as corroboration of MH/logistic; if SIBTEST agrees the flag is robust, if it disagrees inspect matching and strata."
   },
   "sidebar_estimation": {
-    "column_mapping_subheader": "Column mapping",
+    "mapping_summary_template": "Person: {person} · Score: {score}\n\nFacets: {facets}",
+    "column_mapping_subheader": "Check or change columns",
     "column_mapping_caption": "Map columns to Person, Score, and 2+ facets.",
     "auto_detected_caption": "Auto-detected — confidence {pct}%",
     "auto_detected_facet_caption": "Auto-detected {role}: {column} ({pct}%)",
@@ -1804,13 +1929,14 @@
     "weight_column_label": "Weight column (optional)",
     "weight_column_none_display": "(None)",
     "weight_column_help": "Assign differential importance to observations. Leave as (None) for equal weights.",
+    "guided_weight_excluded_caption": "Detected `{column}` and kept it out of the facet list. Guided defaults use equal weights; switch to Advanced controls to apply weights.",
     "facet_columns_label": "Facet columns (2+)",
     "facet_columns_help": "2+ sources of variability — e.g. Rater, Task, Criterion. Person is handled separately.",
     "workflow_mode_label": "Workflow mode",
     "workflow_mode_guided_display": "Guided defaults",
     "workflow_mode_advanced_display": "Advanced controls",
-    "workflow_mode_help": "Guided = compact defaults. Advanced = optimizer / constraint tuning.",
-    "guided_defaults_active_caption": "Guided defaults active. Switch to Advanced for custom ranges or constraints.",
+    "workflow_mode_help": "Guided keeps the first run compact and reproducible. Advanced adds weighting, constraints, optimizer tuning, and output styling.",
+    "guided_defaults_active_caption": "Guided defaults active. Technical settings use documented standard values.",
     "viz_ci_level_label": "Visualization CI level",
     "viz_ci_level_option_template": "{pct}% CI",
     "viz_ci_level_help": "Width of CI bars on forest plots and EB-shrinkage error bars. 95% is the conventional default; 66% / 89% are common in Bayesian reporting; 50% / 80% give tighter visual ordering. The numeric CI_Lower / CI_Upper columns in exported measure tables stay at 95% for backwards compatibility.",
@@ -1833,7 +1959,7 @@
     "visual_caption_detail_label": "Caption detail",
     "visual_caption_detail_help": "Controls the level of detail in visual_caption_drafts.md.",
     "visual_preferences_caption": "Saved into visualization_settings.json and reflected in figure_manifest.csv, visual_evidence_map.csv, and visual QA preflight.",
-    "facets_mode_settings_subheader": "FACETS-mode settings",
+    "facets_mode_settings_subheader": "Analysis choices",
     "model_label": "Model",
     "model_help": "RSM: shared thresholds across elements. PCM: per-element thresholds. GPCM: per-element thresholds + discrimination (exploratory). See Help → Interpretation Guide for full details.",
     "advanced_models_expander": "Advanced models (Stan, download only)",
@@ -1860,6 +1986,7 @@
     "gpcm_scope_caption": "GPCM scope: bounded Python implementation with slope_facet = step_facet, positive slopes, and geometric mean slope fixed to 1.",
     "estimation_method_label": "Estimation method",
     "estimation_method_help": "**JMLE** (Joint Maximum Likelihood): Estimates person abilities and facet parameters simultaneously using the app's analytical-gradient quasi-Newton backend. Fast but may be biased with short tests. **MML** (Marginal Maximum Likelihood): integrates over the person ability distribution with Gauss-Hermite quadrature. Guided mode uses Auto (Hybrid first, EM fallback); person abilities are computed post-hoc via EAP.",
+    "mml_guided_defaults_caption": "MML will choose its engine automatically and use the documented standard integration settings.",
     "mml_engine_label": "MML engine",
     "mml_engine_auto_display": "Auto (recommended)",
     "mml_engine_help": "Auto tries Hybrid first and falls back to EM if Hybrid does not converge. Hybrid starts with a few EM iterations and then switches to direct marginal-likelihood L-BFGS-B. Direct is often faster after good starts. EM is the conservative reference route.",
@@ -1869,11 +1996,21 @@
     "population_prior_sd_help": "Controls the assumed person ability distribution used by MML quadrature: theta_j ~ N(X_j beta, SD^2). This is separate from facet regularization and separate from Bayesian Stan priors.",
     "mml_assumptions_info_template": "**MML assumptions:** Engine `{engine}`; quadrature `{quad_points}` points; person population SD `{prior_sd}`. Switch to Advanced controls to edit these settings.",
     "estimate_population_sd_label": "Estimate person SD (free, MML/EM)",
-    "estimate_population_sd_help": "When on, the person population SD is estimated from the data by the EM engine instead of being fixed to the value above (which then acts only as a starting point). This makes the person metric data-determined and comparable to engines such as TAM or ConQuest that estimate the variance. Requires the EM engine; other MML engines are switched to EM automatically.",
-    "estimate_population_sd_active_note": "Person SD will be estimated freely; the SD above is only the EM starting value. The fitted SD and its profile SE/CI are reported with the results."
+    "estimate_population_sd_help": "When on, EM estimates the person-distribution SD from the data; the value above is the starting point. Other MML engines switch to EM automatically. Cross-engine comparisons require matching the model, identification constraints, and scale. The fitted SD is retained for technical review; its SE/CI remain withheld pending qualification.",
+    "estimate_population_sd_active_note": "Person SD will be estimated by EM; the SD above is only the starting value. The fitted SD is shown as a technical point estimate. Its SE/CI are withheld pending qualification."
   },
   "data_source": {
+    "loaded_sample_template": "Sample: {label}",
+    "scenario_compact_template": "{n_obs} ratings · {persons} persons · {n_cat} score categories",
     "header": "Data source",
+    "source_class_label": "How will you provide data?",
+    "source_class_help": "Choose the source type first. When you choose a built-in example, the scenario selector remains visible directly below.",
+    "source_class_sample": "Built-in example",
+    "source_class_simulate": "Generate synthetic data",
+    "source_class_paste": "Paste table",
+    "source_class_upload": "Upload file",
+    "scenario_select_label": "Example scenario",
+    "scenario_select_help": "Choose one synthetic example. The selected scenario's design and limitations are shown immediately below.",
     "radio_prompt_template": "Choose one — all {n_scenarios} built-in samples plus your own data are listed here. Each sample is synthetic with parameters grounded in published MFRM studies.",
     "option_simulate": "Generate synthetic data",
     "option_paste": "Paste CSV/TSV text",
@@ -1901,7 +2038,7 @@
     "sim_sparse_pair_details_label": "Show full facet-pair cell table",
     "sim_sparse_pair_download_button": "Download facet-pair cell table (CSV)",
     "scenario_info_template": "**Loaded:** {label}\n\n**Design:** {persons} × {raters} × {tasks} × {criteria} = **{n_obs} observations**, {n_cat}-point scale.\n\n{short}",
-    "full_description_expander": "Full description + references",
+    "full_description_expander": "Example details, references & CSV",
     "parameter_values_grounded_label": "**Parameter values grounded in:**",
     "references_pending_caption": "References pending registration.",
     "download_scenario_button": "Download this scenario's CSV",
@@ -1914,7 +2051,7 @@
     "teacher_paste_guide_body": "1. In your spreadsheet, keep one row per rating.\n2. Include a header row such as `Student`, `Rater`, `Assignment`, `Criterion`, `Score`.\n3. Select the table, copy it, and paste it here.\n4. After the preview appears, map `Student` to **Person**, `Score` to **Score**, and the other columns to facets.\n\nDo not paste total scores if rubric-level ratings are available. Blank scores are treated as missing and are excluded from the likelihood.",
     "download_teacher_template_button": "Download teacher paste template (CSV)",
     "paste_parse_error": "We couldn't read the pasted text as a table. Try choosing a delimiter above, or paste a CSV/TSV with one header row.",
-    "technical_parse_details_expander": "Technical parse details",
+    "technical_parse_details_expander": "What you can do next",
     "single_column_warning_paste": "Only one column was detected. Choose Tab or Semicolon if your data are not comma-delimited.",
     "single_column_warning_upload": "Only one column was detected. Choose Tab or Semicolon if the file is not comma-delimited.",
     "detected_columns_caption_template": "Detected {n_cols} columns: {preview_cols}{ellipsis}",
@@ -1934,7 +2071,7 @@
     "layout_score_col_label": "Score column name",
     "layout_score_col_help": "The melted score cell values go into this column (default Score).",
     "layout_incomplete_warning": "Pick at least one ID column and one Score column to pivot.",
-    "layout_pivot_error_template": "Pivot failed: {error}",
+    "layout_pivot_error_template": "The table could not be reshaped. Review the ID columns, score columns, and output column names.",
     "layout_pivot_empty_warning": "Pivot produced an empty table (all score cells were blank or non-numeric).",
     "layout_pivot_success_template": "Pivoted {rows_wide} wide rows -> {rows_long} long rows with {n_levels} levels in the new {facet} facet.",
     "layout_pivot_preview": "Pivoted long-format preview (first 20 rows)",
@@ -1943,7 +2080,9 @@
     "upload_size_critical_template": "⚠️ Uploaded file is **{size_mb} MB** — this is very likely to exceed the hosted instance's 1 GB memory budget during estimation. Consider sampling rows locally first, or run the app on your own machine.",
     "upload_size_blocked_template": "Uploaded file is **{size_mb} MB**. Files >= {limit_mb} MB are not parsed in the hosted Streamlit UI. Sample rows locally, split the file, or run the app on a larger local machine.",
     "upload_size_warning_template": "Uploaded file is **{size_mb} MB**. Estimation may be slow or fail on Streamlit Community Cloud. A local Python install is recommended for large datasets.",
-    "upload_parse_error": "We couldn't read this file as a table. Try choosing a delimiter above, saving as comma CSV, or uploading an .xlsx file with one header row."
+    "upload_parse_error": "We couldn't read this file as a table. Try choosing a delimiter above, saving as comma CSV, or uploading an .xlsx file with one header row.",
+    "paste_workspace": "Paste rating data",
+    "upload_workspace": "Upload a rating file"
   },
   "visuals": {
     "wright_map_header": "Wright Map (variable map)",
@@ -1974,23 +2113,25 @@
     "estimation_summary_subheader": "Estimation summary",
     "no_estimation_summary": "No estimation summary available.",
     "likelihood_info_subheader": "Maximized likelihood / information criteria",
-    "likelihood_info_caption": "Descriptive fit indices from the maximized fitted likelihood. Use AIC/BIC for model comparison only when candidate models use the same response rows, score map, missing-data rule, likelihood definition, and identification constraints.",
+    "likelihood_info_caption": "Technical fit diagnostics from the maximized fitted likelihood. K now counts exact identified coordinates; AIC/AICc/BIC remain audit-only until the G2 comparison-scope gate and must not support model ranking or selection. The table carries the active qualification status and reason code.",
     "model_choice_subheader": "Model-choice guidance (RSM / PCM / GPCM)",
-    "model_choice_caption": "Refit the same data under each of the three rating-scale models and compare them on a common information-criterion scale. AIC (Akaike, 1974) and BIC (Schwarz, 1978) are penalized log-likelihoods; the nested likelihood-ratio chi-square (Wilks, 1938) is reported for the pairs RSM in PCM in GPCM. The lowest AIC / BIC marks the candidate the criterion prefers.",
+    "model_choice_caption": "Refit the same data under each rating-scale model for technical diagnosis. During statistical remediation, information criteria and LR quantities are retained for audit but are not qualified for model ranking, hypothesis decisions, or automatic recommendations.",
     "model_choice_unavailable_template": "Model-choice comparison is not available for this fit: {reason}",
     "model_choice_run_button": "Run model-choice comparison",
     "model_choice_run_button_help": "Refits the two non-current models on the same data; the refit time is logged in the fit_times column of the bundle. Cached in session state once computed.",
     "model_choice_running_spinner": "Refitting candidate models...",
-    "model_choice_comparison_table_caption": "DeltaAIC / DeltaAICc / DeltaBIC are measured relative to the row with the lowest IC; the EvidenceRatio columns are the Akaike / Schwarz evidence ratios exp(DeltaIC / 2); the Weight columns are the Akaike weights w_i = exp(-DeltaIC_i / 2) / sum_j exp(-DeltaIC_j / 2) (Burnham & Anderson, 2002, Eq. 2.8) that admit a probability interpretation (the relative likelihood that the row is the KL-best model). AICc is the Hurvich & Tsai (1989) finite-sample correction; AICcRecommended fires when N / K < 40 (Burnham & Anderson, 2002, p. 66).",
-    "model_choice_lr_subheader": "Nested LR tests (Wilks, 1938)",
-    "model_choice_lr_caption": "Each row tests whether the alternative model fits significantly better than the null model under the same data. Decision uses the LR chi-square pivotal at alpha = 0.05.",
+    "model_choice_comparison_table_caption": "Technical values are shown with their qualification status. K now uses identified coordinates, but the comparison scope has not cleared G2; AIC/AICc/BIC deltas, evidence ratios, and weights must not be interpreted as a preferred-model conclusion.",
+    "model_choice_qualification_warning_template": "Output protection is active. Public model-selection conclusions are withheld. Stable reason codes: {codes}",
+    "model_choice_lr_subheader": "Nested LR output qualification",
+    "model_choice_lr_caption": "Public chi-square values, p-values, and retain/reject decisions are hidden. Raw quantities remain only in the explicitly qualified technical CSV export.",
     "model_choice_lr_no_pairs_info": "No nested pair could be compared (need both fits to succeed).",
     "model_choice_recommendation_strong_template": "Strong: {model} (DeltaBIC >= 10 over the second-best). Rationale: {rationale}",
     "model_choice_recommendation_moderate_template": "Moderate: {model} (DeltaBIC in [6, 10) over the second-best). Rationale: {rationale}",
     "model_choice_recommendation_weak_template": "Weak: {model} (DeltaBIC in [2, 6) over the second-best). Rationale: {rationale}",
     "model_choice_recommendation_tie_template": "Tie: {model} (DeltaBIC < 2 over the second-best). Treat the result as a tie and prefer the simpler model unless there is a substantive reason to favour the complex one. Rationale: {rationale}",
+    "model_choice_recommendation_withheld_template": "Automatic model recommendation withheld until {gate}. Reason code: {code}",
     "model_choice_caveat_label": "Caveat",
-    "model_choice_download_button": "Download comparison + LR tests (CSV)",
+    "model_choice_download_button": "Download qualified technical audit (CSV)",
     "parameter_recovery_subheader": "Parameter recovery (ADEMP)",
     "parameter_recovery_caption": "Generate data from a known many-facet ground truth, refit the requested model on each replicate, and report bias / RMSE / coverage95 for the location-block parameters (Person, Rater, Criterion). The ADEMP framing (Aims / Data-generating mechanism / Estimands / Methods / Performance measures) follows Morris, White, and Crowther (2019).",
     "parameter_recovery_model_label": "Generator and fit model",
@@ -2121,14 +2262,10 @@
     "section_missing_values": "### Missing values\n\nResponses coded as missing are excluded from estimation (treated as structurally\nabsent, following FACETS conventions). Before running, use the **Missing value\nrecoding** panel in the sidebar to convert placeholder codes (e.g., `99`, `999`,\n`N`, `NA`, `-1`, blank) into true missing values. See Linacre (2024) *A User's\nGuide to FACETS*, Section 3 for details on missing data handling.\n\nThe **Response-data audit** keeps the original input row numbers and reports\nwhether each row entered the likelihood. Rows with missing Person, Score, or\nselected facet values, non-numeric scores, or non-positive weights are excluded\nbefore likelihood calculation; they are not recoded to zero or to any score\ncategory."
   },
   "bias_interaction": {
-    "heading": "Bias/Interaction Analysis",
-    "intro_caption": "Bias analysis estimates interaction terms between two facets while holding main effects fixed. This corresponds to FACETS Table 7. A significant bias indicates that a specific facet-level combination deviates from additive expectations (e.g., a rater is unusually harsh on a particular task).",
+    "heading": "Check bias and interactions",
+    "intro_caption": "Choose a facet pair, then inspect flagged cells, observation counts, effect sizes, and adjusted p-values. This screens departures from the additive model; it does not by itself identify causes or establish unfairness.",
     "no_results_info": "No bias interactions were estimated. Ensure at least 2 facets are selected.",
-    "deferred_info_template": "Bias/interaction estimation is deferred for this run. Compute {n} selected facet pair(s) now without refitting the model.",
-    "compute_now_button_template": "Compute bias/interaction now ({n} pair(s))",
-    "compute_now_spinner_template": "Computing bias/interaction for {n} pair(s)...",
-    "compute_now_empty_warning": "No bias/interaction table was produced for the selected pair(s). Check the facet design or sparse cells.",
-    "facet_pair_label": "Facet pair",
+    "facet_pair_label": "Combination to inspect",
     "facet_pair_help": "Select which pair of facets to examine for systematic bias interactions. A bias interaction means that a specific element of one facet behaves differently depending on which element of the other facet it is paired with.",
     "skip_reason_warning_template": "**Bias interaction could not be computed for `{pair}`** — {reason}",
     "no_significant_success_template": "No significant bias interactions among {n_pairs} pairs (|*t*| < 2).",
@@ -2154,7 +2291,7 @@
     "dff_no_flags_success": "No DFF/bias cells were flagged under the current thresholds.",
     "dff_download_button": "Download DFF / bias screening (CSV)",
     "heatmap_subheader": "Bias Heatmap",
-    "heatmap_caption": "The heatmap visualises bias interactions across all facet-level combinations. Cells marked with **\\*** are statistically significant (|t| ≥ 2).",
+    "heatmap_caption": "Colors show the direction and size of interactions. Stars mark an unadjusted |t| ≥ 2 screening threshold.",
     "heatmap_header_template": "##### Bias heatmap — {facet_a} × {facet_b}",
     "heatmap_metric_label": "Heatmap metric",
     "heatmap_metric_bias_size_display": "Bias Size (logits)",
@@ -2167,8 +2304,8 @@
     "heatmap_show_all_label": "Show all heatmap rows/columns",
     "heatmap_show_all_help": "Turn on only for small matrices or when you need to inspect every cell visually. The table export always contains all rows.",
     "heatmap_compact_caption_template": "Compact heatmap view: showing {rows} of {total_rows} rows and {cols} of {total_cols} columns. Download the table for all cells.",
-    "heatmap_significance_caption": "\\* indicates |t| >= 2 (statistically significant bias). Full values are in hover text and the downloadable table.",
-    "heatmap_dense_caption": "Dense heatmap: significance markers are hidden to avoid clutter. Use hover text and the downloadable table.",
+    "heatmap_significance_caption": "Stars do not indicate multiplicity-adjusted significance. Check adjusted p-values, observation counts, and effect sizes in the screening table above.",
+    "heatmap_dense_caption": "Dense heatmap: screening markers are hidden to avoid clutter. Use hover text and the downloadable table.",
     "iteration_subheader": "Bias iteration report (convergence)",
     "summary_subheader": "Bias summary",
     "chi_sq_subheader": "Fixed (all = 0) chi-square test",
@@ -2178,6 +2315,8 @@
     "pairwise_target_label": "Target facet",
     "pairwise_target_help": "The facet whose elements are compared pairwise. For example, select 'Rater' to see how each rater pair differs in severity within the context of the other facet.",
     "pairwise_no_results_info": "Pairwise bias report not available for this selection.",
+    "pairwise_withheld_warning_template": "Pairwise local measures are temporarily withheld until direction and contrast-SE corrections clear {gate}. Continue with cell-level screening only. Reason code: {code}",
+    "pairwise_qualification_expander": "Why pairwise output is withheld",
     "download_button": "Download bias table (CSV)"
   },
   "categories_steps": {
@@ -2247,14 +2386,15 @@
     "marginal_pairwise_unavailable_default": "Pairwise marginal diagnostics were not computed.",
     "marginal_pairwise_counts_expander": "Pairwise marginal count details",
     "fit_df_method_subheader": "ZSTD reporting convention",
-    "fit_df_method_caption": "Two d.f. conventions are available for the standardised fit statistic. Engine d.f. uses sum(Var * weight) for Infit and sum(weight) for Outfit (a homogeneous-variance approximation). FACETS d.f. uses the Wright-Masters (1982) Welch-Satterthwaite formula that captures variance heterogeneity through the fourth central moment. Switch between the two below; the dispatch is purely a reporting choice and does not refit the model.",
+    "fit_df_method_caption": "FACETS/Wright-Masters d.f. is the default for RSM and PCM. Primary ZSTD uses the Wilson-Hilferty transform with the FACETS +/-9 cap; the historical engine d.f. and ZSTD remain in *_ENGINE sidecar columns. Switching below changes reporting only and does not refit the model.",
     "fit_df_method_radio_label": "d.f. convention",
     "fit_df_method_option_engine": "Engine (sum of variance / weight)",
-    "fit_df_method_option_facets": "FACETS (Wright-Masters Satterthwaite)",
-    "fit_df_method_option_both": "Side-by-side (engine + FACETS columns)",
+    "fit_df_method_option_facets": "FACETS-primary + engine sidecars (default)",
+    "fit_df_method_option_both": "Engine-primary comparison + FACETS sidecars",
     "fit_df_method_cap_label": "FACETS ZSTD cap (absolute value)",
     "fit_df_method_cap_help": "FACETS software clamps the standardised fit statistic at +/- 9 by default for extreme cells. Set to 0 to disable the cap.",
     "fit_df_method_metadata_caption_template": "Convention: {method} - ZSTD transform: {transform} - Cap: {cap}.",
+    "fit_df_method_gpcm_warning": "GPCM has free discrimination parameters. Its FACETS/Wright-Masters d.f. and ZSTD are therefore a FACETS-style approximation, not exact FACETS equivalence; interpret the FACETS-primary values together with the *_ENGINE sidecars.",
     "facets_compare_expander": "Compare against an imported FACETS fit table",
     "facets_compare_intro_caption": "Upload a CSV / TSV exported from FACETS (or any other engine) with at least Facet, Level, InfitZSTD, and OutfitZSTD columns. Rows are joined by (Facet, Level); the deltas (Python value minus uploaded value) are reported per row.",
     "facets_compare_upload_label": "Upload FACETS fit table (CSV / TSV)",
@@ -2266,9 +2406,6 @@
   },
   "visuals_top": {
     "intro_caption": "Diagnostic visualizations for model-data fit and rating scale functioning. Category probability curves show scale structure; the pathway map reveals element-level fit patterns; facet distributions compare element spread; observed-vs-expected plots test model accuracy.",
-    "show_guidance_tables_checkbox": "Show visual guidance tables",
-    "show_guidance_tables_help": "Build the visual roadmap and evidence-basis tables only when you need to inspect or download them.",
-    "guidance_tables_deferred_caption": "Visual guidance tables are deferred. Enable them here when you need the roadmap or evidence-basis CSV.",
     "roadmap_expander": "Visual interpretation roadmap",
     "roadmap_caption": "Use this roadmap when you are new to MFRM output. Read plots in priority order, and stop at the first serious review trigger before making final claims.",
     "roadmap_download_button": "Download visual interpretation checklist (CSV)",
@@ -2308,8 +2445,8 @@
     "tab_reporting_checklist": "Reporting Checklist",
     "tab_facet_equivalence": "Facet Equivalence",
     "tab_readiness": "Readiness",
-    "exports_essential_caption": "Download-ready artefact. Publication Document bundles Abstract / Methods / Results / Figures / References into Word, PDF, or HTML. Choose **All panels** display mode to show Stan Code export controls for Bayesian replication.",
-    "exports_full_caption": "Download-ready artefacts. Stan Code is the runner for full-Bayesian replication; Publication Document bundles Abstract / Methods / Results / Figures / References into Word, PDF, or HTML.",
+    "exports_essential_caption": "Download-ready artefact. Publication Document bundles Abstract / Methods / Results / Figures / References into Word, PDF, or HTML.",
+    "exports_full_caption": "Download-ready artefact. Publication Document bundles Abstract / Methods / Results / Figures / References into Word, PDF, or HTML.",
     "tab_stan_code": "Stan Code",
     "tab_publication_document": "Publication Document"
   },
@@ -2357,8 +2494,8 @@
   },
   "downloads": {
     "subheader": "Downloads",
-    "intro_caption": "All analysis outputs organized for download. Use the ZIP buttons for one-click bundled downloads, or expand individual items below.",
-    "manuscript_pointer_markdown": "**Looking for a manuscript-ready Word, PDF, or HTML document?** The single-file Publication Document (abstract + Methods + Results + figures + APA 7 references) lives under **Report → Exports → Publication Document**. This Downloads tab hosts the underlying data tables, figures, and reproducibility scripts instead.",
+    "intro_caption": "Choose tables, figures, or files for rerunning the analysis.",
+    "manuscript_pointer_markdown": "For Word, PDF, or HTML documents, choose **Create a report** in **Report & Export**.",
     "tab_data_tables": "Data Tables",
     "tab_figures": "Figures",
     "tab_scripts_config": "Scripts & Config",
@@ -2396,11 +2533,10 @@
   "estimation_subsections": {
     "convergence_no_data_info": "No optimizer convergence diagnostics available.",
     "convergence_subheader": "Convergence diagnostics",
+    "parameterization_audit_expander": "Identified parameterization audit",
+    "parameterization_audit_caption": "The optimizer uses only free coordinates. Step thresholds and GPCM log-slopes are expanded to their public sum-zero representation after optimization; PASS confirms the coordinate rank, constraints, and configured slope bounds.",
     "popsd_metric_label": "Estimated person SD (σ)",
-    "popsd_se_label": "Profile SE",
-    "popsd_ci_label": "95% CI",
-    "popsd_se_unavailable": "n/a",
-    "popsd_estimated_caption": "Person population SD freely estimated by the EM engine — the person metric is data-determined and comparable to engines that estimate the variance. The profile SE holds the other parameters fixed, so it is slightly optimistic.",
+    "popsd_estimated_caption": "The EM estimate is retained for technical review. Its SE/CI are withheld: joint stationarity and uncertainty accounting for the other estimated parameters have not been qualified. Fixed-parameter curvature is not a profile SE.",
     "popsd_fixed_caption_template": "Person population SD: {value} (fixed prior). Measures are on this fixed scale; enable \"Estimate person SD\" (Advanced, MML) for a data-determined metric.",
     "convergence_success": "The optimizer reported convergence. Treat the remaining diagnostics as checks of model fit and rating-scale behavior rather than as optimizer failures.",
     "convergence_error": "The optimizer did not meet its convergence rule. Do not use estimates for final interpretation until you inspect sparse/extreme data or increase `maxit`.",
@@ -2504,6 +2640,92 @@
     "pairs_download_button": "Download agreement pairs (CSV)",
     "no_pairs_caption": "No pairwise details available."
   },
+  "design_assignment": {
+    "estimand_subheader": "Estimator target (estimand contract)",
+    "estimand_caption": "Read this before comparing measures or fit. JMLE, MML, and exact CMLE answer related but different likelihood questions.",
+    "current_estimand_template": "**Current run: {method} — {estimand}**",
+    "jmle_estimand": "Fixed-person joint calibration",
+    "jmle_likelihood": "Joint response likelihood with person and facet parameters.",
+    "jmle_facets_relation": "FACETS 4.5.0 is an external comparator only in qualified RSM/PCM JMLE scopes; this Python run does not call FACETS.",
+    "mml_estimand": "Gaussian-population marginal calibration",
+    "mml_likelihood": "Person-marginal response likelihood with posterior/EAP person reporting.",
+    "mml_facets_relation": "MML is complementary: FACETS JMLE is not a gold standard for a marginal estimand.",
+    "exact_cmle_estimand": "Person-total conditional facet calibration",
+    "exact_cmle_likelihood": "Exact conditional likelihood given person sufficient totals.",
+    "exact_cmle_facets_relation": "Exact CMLE is a complementary conditional estimator, not a FACETS parity target.",
+    "cross_basis_boundary": "Do not compare likelihood, deviance, AIC, or BIC across JMLE, MML, and exact CMLE bases, and do not turn this table into an estimator ranking.",
+    "estimand_details_expander": "Compare estimator targets without ranking them",
+    "estimand_details_caption": "The rows are a contract, not a leaderboard. Likelihood, deviance, AIC, and BIC must not be compared across different likelihood bases.",
+    "audit_subheader": "Design audit: person-by-rater assignment",
+    "audit_caption": "Outcome-blind topology of likelihood-included person-rater assignments. Repeated task/criterion rows count as one assignment pair.",
+    "audit_ready_template": "Descriptive assignment audit is ready. {reason}",
+    "audit_review_template": "Design review is required. {reason}",
+    "audit_unavailable_template": "Assignment audit is unavailable. {reason}",
+    "metric_rater_facet": "Rater facet",
+    "metric_assignments": "Unique assignments",
+    "metric_density": "Assignment density",
+    "metric_corated": "Persons co-rated",
+    "metric_components": "Rater-overlap components",
+    "mechanism_boundary": "Observed topology cannot identify MCAR, MAR, MNAR, or informative assignment. It also cannot establish estimator bias or fairness. A fixed-density counterfactual sensitivity analysis is a separate step.",
+    "audit_details_expander": "Assignment exposure and overlap details",
+    "exposure_heading": "Rater exposure (unique persons)",
+    "overlap_heading": "Pairwise rater overlap",
+    "sensitivity_expander": "Fixed-density informative-assignment sensitivity contract",
+    "sensitivity_caption": "Prospective plan only: this dataset has not been stress-tested. Preserve density/exposure/connectivity and compare shifts only within each estimator basis.",
+    "validation_evidence_heading": "Why this sensitivity matters",
+    "validation_evidence_caption": "A preregistered fresh-100 known-truth study confirmed MML rater-severity compression under ability-severity-aligned assignment at equal density. These effects justify a sensitivity workflow; they are not correction factors for the current data.",
+    "runner_expander": "Run paired fixed-density assignment sensitivity",
+    "runner_caption": "The workbench preserves each Person's rater count, each Rater's person and response-row exposure, and direct-overlap connectivity. Equal-context blocks use a degree-preserving dose path; unequal blocks use an exact Rater-by-context-margin MILP endpoint. It generates new scores from the fitted model and refits the current estimator.",
+    "runner_claim_boundary": "This is a fitted-model parametric stress test, not identification of MCAR/MAR/MNAR, the actual assignment mechanism, causal bias, or fairness. A greedy path is not a global worst-case proof; a MILP optimum is global only inside its declared margin and connectivity-witness constraints. JMLE and MML remain on their own estimand bases; no cross-basis likelihood, AIC, BIC, or estimator ranking is produced.",
+    "runner_ready": "The fitted run passes every eligibility gate for the selected assignment runner.",
+    "runner_strict_mode": "Selected engine: exchangeable-block connected 2-switch dose path.",
+    "runner_milp_mode": "Selected fallback engine: exact Rater-by-context-margin MILP endpoint with locked overlap witnesses.",
+    "runner_milp_endpoint_only": "Only observed 0 and optimized endpoint 1 are qualified in the generalized MILP runner. Intermediate MILP doses are intentionally unavailable.",
+    "runner_person_generator": "Person response generator",
+    "runner_person_generator_source": "Hold source fitted Persons fixed",
+    "runner_person_generator_population": "MML population draw, preserve EAP ranks",
+    "runner_person_generator_help": "The population mode draws normal order statistics using the fitted MML population SD and maps them to the strict source EAP order. It preserves the fitted rank-to-assignment relation, so it is not an unconditional new-sample experiment or an assignment-mechanism estimate.",
+    "runner_generator_blocked_template": "The selected Person generator is blocked safely. {reason}",
+    "runner_generator_gates_heading": "Person-generator eligibility gates",
+    "runner_blocked_template": "The runner is blocked safely. {reason}",
+    "runner_gates_expander": "Eligibility gates and evidence",
+    "runner_doses": "Requested alignment doses (%)",
+    "runner_doses_help": "Observed 0% and greedy-path endpoint 100% are always included. Intermediate requests are mapped to the first discrete switch that reaches the requested objective progress; duplicate snapshots are fitted once.",
+    "runner_replicates": "Paired replicates",
+    "runner_maxit": "Refit maxit",
+    "runner_seed": "Random seed",
+    "runner_button": "Run paired assignment sensitivity",
+    "runner_spinner": "Constructing a score-free counterfactual, simulating paired responses, and refitting...",
+    "runner_failed_template": "The sensitivity run did not produce reportable paired evidence. {reason}",
+    "runner_partial_template": "Review the explicit completion denominators before interpretation. {reason}",
+    "runner_metric_method": "Locked method",
+    "runner_metric_refits": "Refits completed",
+    "runner_metric_ready": "Inference-ready refits",
+    "runner_metric_pairs": "Reportable dose pairs",
+    "runner_metric_observed_alignment": "Observed alignment",
+    "runner_metric_counterfactual_alignment": "Counterfactual alignment",
+    "runner_metric_changed_blocks": "Changed blocks",
+    "runner_dose_table_heading": "Achievable alignment-dose snapshots",
+    "runner_contrast_heading": "Within-method alignment-dose contrast curve",
+    "runner_metric_direction_caption": "All differences are aligned counterfactual minus observed assignment. The source fit is a reference, not known truth. Higher RaterReferenceCenteredRMSE is worse recovery relative to that reference; a lower RaterRecoverySlope means stronger severity compression. These are local fitted-model sensitivities, not correction factors.",
+    "runner_details_expander": "Refit, invariant, and switch details",
+    "runner_summary_heading": "Scenario refits and failures",
+    "runner_contrasts_heading": "Paired replicate contrasts",
+    "runner_dose_contrasts_heading": "All dose-by-replicate contrasts",
+    "runner_invariants_heading": "Counterfactual invariants",
+    "runner_path_invariants_heading": "Invariants at every fitted dose",
+    "runner_trajectory_heading": "Assignment objective trajectory",
+    "runner_generator_contract_heading": "Person-generator contract",
+    "runner_generator_summary_heading": "Person-generation replicate summary",
+    "runner_solver_heading": "MILP baseline and solver audit",
+    "runner_context_margin_heading": "Exact Rater-by-context margin audit",
+    "runner_witness_heading": "Locked connectivity witnesses",
+    "runner_curve_metric": "Dose-curve metric",
+    "runner_curve_x": "Achieved alignment dose",
+    "runner_curve_y": "Mean dose-minus-observed difference",
+    "runner_download_button": "Download aggregate sensitivity evidence (ZIP)",
+    "runner_download_caption": "The inline ZIP uses public-export filtering. Person-level assignment maps, block profiles, and connectivity witnesses are excluded; they remain available only in the complete/private Downloads bundle."
+  },
   "data_quality": {
     "data_quality_subheader": "Data quality checks",
     "data_quality_caption": "Pre-estimation data screening: score category distribution, missing data rates, and facet connectivity. Review these checks before interpreting estimation results.",
@@ -2563,8 +2785,8 @@
     "data": "Data",
     "report": "Report",
     "measures": "Measures",
-    "fit_details": "Fit Details",
-    "dimensionality": "Dimensionality",
+    "fit_details": "Model fit",
+    "dimensionality": "Residual PCA",
     "wright_map": "Wright Map",
     "visuals": "Visuals",
     "bias_interaction": "Bias/Interaction",
@@ -2576,8 +2798,8 @@
     "downloads": "Downloads",
     "help": "Help",
     "panel_select_label": "Results panel",
-    "panel_select_help": "Only the selected panel is rendered. This keeps All panels display mode from preparing every diagnostics, figure, and download section on each rerun.",
-    "panel_select_caption": "Switch panels to view deeper diagnostics. The fitted model is reused; panel switching does not re-estimate.",
+    "panel_select_help": "Use this persistent result navigation to switch panels. Only the selected panel is rendered, so All panels display mode does not prepare every diagnostic, figure, and download section on each rerun.",
+    "panel_select_caption": "This navigation stays visible while you scroll. The fitted model is reused; panel switching does not re-estimate.",
     "classical_dif": "Classical DIF"
   },
   "facets_tables": {
@@ -2630,5 +2852,1058 @@
     "crosscheck_expander": "External validation (difR / lordif)",
     "crosscheck_caption": "Download a bundle to reproduce this screen in R (difR / lordif) for external cross-check. Reproducibility artifact, not a runtime dependency — exact numbers differ; directional and effect-class agreement is the bar.",
     "crosscheck_download": "Download R cross-check bundle (difR/lordif)"
+  },
+  "terms": {
+    "analysis_reference": {
+      "standard_label": "Analysis reference",
+      "definition": "A reference used to match saved settings and evidence to the analysis currently shown.",
+      "alias": {
+        "reference": "Analysis reference",
+        "analysis_id": "Analysis ID"
+      },
+      "claim": {
+        "not_quality_marker": "A matching reference does not indicate analysis quality or support a substantive conclusion."
+      }
+    },
+    "browser_retention": {
+      "standard_label": "Available during this app session",
+      "definition": "Information available for the current app session; it may be lost if the connection or session ends or is reset. This label does not mean that the information is stored only in your browser.",
+      "alias": {
+        "browser_session": "App-session availability",
+        "session_storage": "Session-scoped state"
+      },
+      "claim": {
+        "not_durable_backup": "Session availability is not a durable backup or research archive and does not mean the information exists only on your device."
+      }
+    },
+    "download_contents": {
+      "standard_label": "Download contents and privacy check",
+      "definition": "A record of which files are included in or excluded from a download.",
+      "alias": {
+        "contents_check": "Download contents",
+        "manifest": "Manifest"
+      },
+      "claim": {
+        "not_privacy_guarantee": "Listing download contents does not by itself guarantee anonymity, confidentiality, or safe sharing."
+      }
+    },
+    "evidence_availability": {
+      "standard_label": "Evidence availability",
+      "definition": "Whether a requested evidence item was computed and can be interpreted for its stated purpose.",
+      "alias": {
+        "status": "Availability status",
+        "computation_state": "ComputationState"
+      },
+      "claim": {
+        "not_validity_proof": "Availability does not demonstrate validity or establish a broader research claim."
+      }
+    },
+    "evidence_summary": {
+      "standard_label": "Evidence summary",
+      "definition": "A bounded summary of a result, its availability, its limitations, and any next check.",
+      "alias": {
+        "summary": "Evidence summary",
+        "evidence_record": "EvidenceRecord"
+      },
+      "claim": {
+        "not_sufficient_by_itself": "An evidence summary is not sufficient by itself for a substantive conclusion."
+      }
+    },
+    "gpcm": {
+      "method_label": "Generalized Partial Credit Model (GPCM)",
+      "definition": "An ordinal response model that allows category-step locations and discrimination to vary across levels of the selected step facet.",
+      "alias": {
+        "acronym": "GPCM",
+        "full_name": "Generalized Partial Credit Model"
+      },
+      "claim": {
+        "not_interchangeable": "GPCM, PCM, and RSM are not interchangeable; model choice must follow the scoring design and supported assumptions."
+      }
+    },
+    "infit": {
+      "method_label": "Infit mean square",
+      "definition": "An information-weighted fit statistic that is relatively sensitive to unexpected responses near an element's estimated location.",
+      "alias": {
+        "information_weighted": "Information-weighted fit",
+        "mnsq": "Infit MnSq"
+      },
+      "claim": {
+        "not_automatic_exclusion": "An Infit threshold is a review signal, not an automatic rule for removing an item, rater, task, or response."
+      }
+    },
+    "input_match": {
+      "standard_label": "Input match value",
+      "definition": "A reproducibility value used to check whether saved evidence belongs to the same prepared input.",
+      "alias": {
+        "match_value": "Input match value",
+        "fingerprint": "Fingerprint"
+      },
+      "claim": {
+        "not_data_quality_evidence": "An input match does not verify data quality, completeness, or validity."
+      }
+    },
+    "jmle": {
+      "method_label": "Joint maximum likelihood estimation (JMLE)",
+      "definition": "An estimation approach that estimates person and facet parameters jointly under the specified model and constraints.",
+      "alias": {
+        "acronym": "JMLE",
+        "full_name": "Joint maximum likelihood estimation"
+      },
+      "claim": {
+        "not_automatically_unbiased": "JMLE estimates are not automatically unbiased; sample size, design, constraints, and diagnostics remain relevant."
+      }
+    },
+    "limit_reason": {
+      "standard_label": "Why this result is limited",
+      "definition": "A reviewed explanation of the prerequisite, data condition, or analysis condition that limits a result.",
+      "alias": {
+        "reason": "Limitation reason",
+        "reason_code": "ReasonCode"
+      },
+      "claim": {
+        "not_person_judgment": "A limitation reason describes evidence, not a judgment about a person, rater, group, or institution."
+      }
+    },
+    "logit": {
+      "method_label": "Logit",
+      "definition": "The log-odds unit used to place persons and facet elements on the model's common latent scale.",
+      "alias": {
+        "scale": "Logit scale",
+        "log_odds": "Log-odds unit"
+      },
+      "claim": {
+        "not_raw_score_unit": "A logit is not a raw-score unit, and equal raw-score differences need not equal one logit."
+      }
+    },
+    "mfrm": {
+      "method_label": "Many-Facet Rasch Model (MFRM)",
+      "definition": "A Rasch-family model that separates person ability from systematic effects of facets such as items, tasks, criteria, or raters on a common logit scale.",
+      "alias": {
+        "acronym": "MFRM",
+        "full_name": "Many-Facet Rasch Model"
+      },
+      "claim": {
+        "not_validity_proof": "Fitting an MFRM does not by itself establish validity, fairness, or appropriate use of scores."
+      }
+    },
+    "mml": {
+      "method_label": "Marginal maximum likelihood estimation (MML)",
+      "definition": "An estimation approach that integrates over a specified person distribution while estimating the model's structural parameters.",
+      "alias": {
+        "acronym": "MML",
+        "full_name": "Marginal maximum likelihood estimation"
+      },
+      "claim": {
+        "not_automatically_preferred": "MML is not automatically preferable to JMLE; the research question, design, assumptions, and diagnostics determine its suitability."
+      }
+    },
+    "outfit": {
+      "method_label": "Outfit mean square",
+      "definition": "An outlier-sensitive fit statistic that gives relatively more influence to unexpected responses far from an element's estimated location.",
+      "alias": {
+        "outlier_sensitive": "Outlier-sensitive fit",
+        "mnsq": "Outfit MnSq"
+      },
+      "claim": {
+        "not_automatic_exclusion": "An Outfit threshold is a review signal, not an automatic rule for removing an item, rater, task, or response."
+      }
+    },
+    "pcm": {
+      "method_label": "Partial Credit Model (PCM)",
+      "definition": "An ordinal Rasch-family model that allows category-step locations to vary across levels of the selected step facet while holding discrimination fixed.",
+      "alias": {
+        "acronym": "PCM",
+        "full_name": "Partial Credit Model"
+      },
+      "claim": {
+        "not_interchangeable": "PCM, RSM, and GPCM are not interchangeable; model choice must follow the scoring design and supported assumptions."
+      }
+    },
+    "planned_check_stability": {
+      "standard_label": "Conclusion across planned checks",
+      "definition": "Whether a conclusion remains the same across the sensitivity checks specified for this analysis.",
+      "alias": {
+        "stability": "Planned-check stability",
+        "stability_state": "StabilityState"
+      },
+      "claim": {
+        "not_general_robustness": "Stability across the planned checks is not a guarantee of robustness to every plausible model, dataset, or decision rule."
+      }
+    },
+    "reproducibility_script": {
+      "standard_label": "Re-run this analysis in Python",
+      "definition": "A saved set of Python instructions and settings for repeating the analysis in a controlled environment.",
+      "alias": {
+        "rerun": "Repeat-analysis script",
+        "runner": "Reproducibility runner"
+      },
+      "claim": {
+        "not_result_validation": "Repeating the same instructions does not independently validate the result."
+      }
+    },
+    "residual_pca": {
+      "method_label": "Principal components analysis of residuals (residual PCA)",
+      "definition": "An exploratory analysis of residual associations after the modeled Rasch dimension and specified facet effects have been removed.",
+      "alias": {
+        "residual_pca": "Residual PCA",
+        "pca_residuals": "PCA of residuals"
+      },
+      "claim": {
+        "not_unidimensionality_proof": "Residual PCA does not prove or confirm unidimensionality; interpret residual contrasts with stability evidence and substantive content."
+      }
+    },
+    "rsm": {
+      "method_label": "Rating Scale Model (RSM)",
+      "definition": "An ordinal Rasch-family model that uses one common category-step structure across levels of the selected step facet.",
+      "alias": {
+        "acronym": "RSM",
+        "full_name": "Rating Scale Model"
+      },
+      "claim": {
+        "not_interchangeable": "RSM, PCM, and GPCM are not interchangeable; model choice must follow the scoring design and supported assumptions."
+      }
+    },
+    "separation": {
+      "method_label": "Separation",
+      "definition": "A ratio comparing estimated spread among elements with their measurement error, used to summarize distinguishability on the modeled scale.",
+      "alias": {
+        "index": "Separation index",
+        "reliability": "Separation reliability"
+      },
+      "claim": {
+        "not_validity_proof": "Separation is not evidence of validity and does not guarantee dependable decisions for every use."
+      }
+    }
+  },
+  "problems": {
+    "support_reference_label": "Support reference",
+    "actions": {
+      "open_problem_help": "Open problem-solving Help",
+      "reduce_analysis_scope": "Reduce the analysis scope",
+      "review_anchor_settings": "Review anchor settings",
+      "review_column_mapping": "Review column mapping",
+      "review_data_audit": "Review the data audit",
+      "review_design_constraints": "Review design coverage and constraints",
+      "review_diagnostic_request": "Review diagnostic settings",
+      "review_estimation_settings": "Review estimation settings",
+      "review_input_format": "Review the input format",
+      "review_observation_coverage": "Review observation coverage",
+      "review_score_categories": "Review score categories"
+    },
+    "input": {
+      "parse_failed": {
+        "title": "The input could not be read",
+        "body": "This notice does not itself modify the selected source. Check what is still shown, then review the file or pasted-text format and delimiter before trying to read it again."
+      },
+      "mapping_invalid": {
+        "title": "Column mapping needs attention",
+        "body": "Check the input and selections still shown. Confirm the Person, Score, and facet columns before reviewing the mapping again."
+      },
+      "no_usable_rows": {
+        "title": "No usable response rows were found",
+        "body": "Check the source view and mapping still shown. Review missing responses, score values, weights, and exclusion rules in the data audit before correcting the source data or mapping."
+      }
+    },
+    "estimation": {
+      "identification_failed": {
+        "title": "The model could not be identified",
+        "body": "No finished result was created for this attempt. Check the data and settings still shown, then review observation coverage, connectedness, and reference constraints before running estimation again."
+      },
+      "nonconvergence": {
+        "title": "Estimation did not converge",
+        "body": "No finished result was created for this attempt. Check the data and settings still shown, then review the estimation settings and data audit before running estimation again."
+      },
+      "rating_scale_invalid": {
+        "title": "Score categories need attention",
+        "body": "Check the data and settings still shown. Confirm that score categories are ordered, supported by observations, and consistent with the selected response model before running estimation again."
+      },
+      "anchor_invalid": {
+        "title": "The anchor settings could not be used",
+        "body": "Check the data and settings still shown. Review the anchored elements, values, and observation coverage before updating the settings and running estimation again."
+      }
+    },
+    "resource": {
+      "hosted_limit": {
+        "title": "This analysis is too large for the current session",
+        "body": "Check the data and settings still shown. Reduce the data or optional analysis scope, then review the revised request before running it again."
+      }
+    },
+    "diagnostic": {
+      "residual_pca_unavailable": {
+        "title": "Residual PCA is not available for this run",
+        "body": "This notice concerns residual PCA only. Check any other results still shown, whether residual PCA was requested, and whether the current data provide enough comparable residual profiles."
+      },
+      "residual_pca_failed": {
+        "title": "Residual PCA could not be completed reliably",
+        "body": "This notice concerns residual PCA only. Check any other results still shown, then review observation coverage and connectedness before requesting the diagnostic again."
+      }
+    },
+    "problem": {
+      "unexpected": {
+        "title": "The requested step could not be completed",
+        "body": "The application could not confirm the state of the requested step. Check what is still visible before making changes, then open problem-solving Help for a reversible next action. If the issue continues, include the displayed support reference in the problem report."
+      }
+    }
+  },
+  "help_nav": {
+    "open_help": "Open Help",
+    "open_full_guide": "Open the full guide",
+    "help_home": "Help home",
+    "back_to_source": "Back to the source",
+    "returned_status": "Returned to the source view.",
+    "topic_label": "Choose a Help topic",
+    "prerequisites_heading": "Before you begin",
+    "can_show_heading": "What this guide can show",
+    "cannot_show_heading": "What this guide cannot establish",
+    "next_check_heading": "Next check",
+    "next_action_heading": "Next safe action",
+    "details_heading": "Detailed guidance",
+    "computed_heading": "What the application computes",
+    "reporting_example_heading": "Example reporting wording",
+    "avoid_report_heading": "Do not report",
+    "search_label": "Search Help",
+    "search_placeholder": "Search by research task or method",
+    "static_only_notice": "General guidance is shown. No statement about the current analysis is being made.",
+    "stale_context_notice": "The analysis context has changed since this Help link was opened. General guidance remains available; return to the source and open Help again for current details.",
+    "missing_context_notice": "Current-analysis details are unavailable here. General guidance remains available; return to the source to confirm what is still shown.",
+    "unavailable_title": "This Help topic is unavailable",
+    "unavailable_body": "This Help topic cannot confirm application state. Return to the source to check what is still shown, or go to Help home to choose an available topic.",
+    "unavailable_home_action": "Return to Help home",
+    "safe_report_guard": "Example wording—use it only after verifying every stated condition for the current analysis."
+  },
+  "help_topics": {
+    "get_started": {
+      "overview": {
+        "title": "Start a defensible MFRM analysis",
+        "summary": "Move from a research question to checked data, a fitted model, bounded interpretation, and a reviewable report.",
+        "prerequisites": "State the study question and what one row, one score, and each facet represent. A fitted result is not required to use this guide.",
+        "computed": "When requested, the application checks input structure, fits the selected model, and organizes available evidence with limitations and next checks.",
+        "can_show": "It can show whether requested evidence is available and where interpretation can continue or should pause.",
+        "cannot_show": "Completing the workflow cannot establish validity, fairness, or suitability for a decision.",
+        "next_check": "Before estimation, confirm data roles and design coverage. After estimation, begin with First read.",
+        "next_action": "Choose the next incomplete task: prepare data, review design, run estimation, interpret evidence, or prepare a report.",
+        "safe_report": "We followed the stated model, design checks, and interpretation limits for this analysis.",
+        "avoid_report": "The application confirmed that the assessment is valid.",
+        "search_alias": "getting started; analysis workflow; first steps; safe interpretation",
+        "sections": {
+          "overview": {
+            "title": "The analysis path",
+            "body": "Work in four stages: define the question, prepare and check the design, estimate the model, then interpret and report only the evidence that is available."
+          },
+          "shortest_path": {
+            "title": "Shortest safe path",
+            "body": "Map Person, Score, and facet columns; review missingness and connectedness; run estimation; read the first-result checks; then open only the detail needed for the research question."
+          },
+          "claim_boundaries": {
+            "title": "Keep claims within the evidence",
+            "body": "A completed run is a workflow event, not a validity finding. Preserve cautions, unavailable checks, uncertainty, and design limits whenever results are summarized."
+          }
+        }
+      }
+    },
+    "data": {
+      "long_format": {
+        "title": "Prepare long-format rating data",
+        "summary": "Organize one observed rating per row so persons, scores, and facet elements retain their study meaning.",
+        "prerequisites": "Know the observational unit, the score scale, and which design factors are facets.",
+        "computed": "The input review counts rows, recognizes mapped roles, and identifies missing required values; it does not infer the intended study design.",
+        "can_show": "It can show whether rows contain the roles required for the requested analysis.",
+        "cannot_show": "Correct table shape does not demonstrate data quality, representativeness, or design validity.",
+        "next_check": "Inspect several rows and confirm that repeated persons and facet elements reflect actual observations rather than duplicated records.",
+        "next_action": "Reshape the data so each row represents one rating and each required role has its own column.",
+        "safe_report": "The analysis used long-format records with one observed rating per row.",
+        "avoid_report": "The data were valid because they were accepted by the application.",
+        "search_alias": "long data; one rating per row; input layout; delimiter",
+        "sections": {
+          "overview": {
+            "title": "Why long format is required",
+            "body": "Long format preserves the link among a person, a score, and every facet element involved in that observed rating. This link is needed to estimate facet effects."
+          },
+          "row_meaning": {
+            "title": "Define what one row means",
+            "body": "One row should describe one observed scoring event. If several rubric criteria are separate ratings, store them as separate rows or model them according to the stated design."
+          },
+          "required_columns": {
+            "title": "Required roles",
+            "body": "Provide a Person column, an ordered Score column, and the facet columns needed by the study, such as item, task, criterion, or rater. Identifiers should be consistent within each role."
+          },
+          "missingness": {
+            "title": "Missing values in long data",
+            "body": "A missing score is not a zero. Keep structurally absent ratings distinguishable from recorded scores, and review missing identifiers before estimation."
+          }
+        }
+      },
+      "mapping": {
+        "title": "Map columns to analysis roles",
+        "summary": "Tell the application which columns identify persons, scores, and each facet without changing their substantive meaning.",
+        "prerequisites": "Use a long-format table and know the role of every column selected for analysis.",
+        "computed": "The mapping check verifies required roles and summarizes the values assigned to each role.",
+        "can_show": "It can show whether the selected columns are structurally usable for the requested model.",
+        "cannot_show": "A successful mapping does not show that the design, construct, or scoring process is appropriate.",
+        "next_check": "Compare the mapped role labels with several source rows and verify score ordering and facet identifiers.",
+        "next_action": "Correct any swapped, duplicated, or omitted role before running estimation.",
+        "safe_report": "Person, Score, and facet roles were mapped according to the stated scoring design.",
+        "avoid_report": "The column mapping verified the measurement design.",
+        "search_alias": "column roles; person column; score column; facet mapping",
+        "sections": {
+          "overview": {
+            "title": "Mapping preserves meaning",
+            "body": "Mapping assigns an analysis role to an existing column. It should reflect the study design rather than whichever column name looks most similar."
+          },
+          "roles": {
+            "title": "Person, Score, and facet roles",
+            "body": "Person identifies the object being measured, Score contains ordered rating categories, and each facet identifies a systematic design condition to estimate."
+          },
+          "check_mapping": {
+            "title": "Check before running",
+            "body": "Confirm that Person values recur as expected, scores use the intended ordered categories, and each selected facet contains the intended elements rather than labels from another role."
+          }
+        }
+      },
+      "missingness": {
+        "title": "Review missing and excluded observations",
+        "summary": "Distinguish planned absence from unexpected missingness and document which observations enter estimation.",
+        "prerequisites": "Know which person-by-facet observations were possible or assigned under the study design.",
+        "computed": "The data audit counts missing required values and observations excluded by input rules.",
+        "can_show": "It can show where recorded data are absent and how many rows remain available for estimation.",
+        "cannot_show": "Observed missingness patterns alone cannot establish why values are missing or whether missingness is ignorable.",
+        "next_check": "Compare missingness by person and facet with assignment records, administration conditions, and scoring procedures.",
+        "next_action": "Correct recording errors, document planned absence, and reconsider claims that rely on poorly observed groups or elements.",
+        "safe_report": "We report the observed missingness pattern, exclusions, and the design context used to interpret them.",
+        "avoid_report": "Missing values were random because the overall percentage was small.",
+        "search_alias": "missing data; excluded rows; planned missingness; data audit",
+        "sections": {
+          "overview": {
+            "title": "Start with the observation process",
+            "body": "Review both the amount and location of missingness. The same percentage has different implications when absence is planned, concentrated, or associated with a study condition."
+          },
+          "planned_missing": {
+            "title": "Planned absence",
+            "body": "Ratings omitted by design can be compatible with estimation when the remaining design stays connected and supports the intended comparisons. Document the assignment rule."
+          },
+          "unexpected_missing": {
+            "title": "Unexpected missingness",
+            "body": "Missing scores, identifiers, or weights may reflect recording, administration, or participation processes. Locate concentrations before deciding how to proceed."
+          },
+          "limits": {
+            "title": "What the audit cannot establish",
+            "body": "A table of missing counts does not identify a missing-data mechanism. Sensitivity checks or narrower claims may be needed when missingness could change the conclusion."
+          }
+        }
+      }
+    },
+    "design": {
+      "coverage": {
+        "title": "Check observation coverage and connectedness",
+        "summary": "Determine whether the observed design links persons and facet elements strongly enough for the intended comparisons.",
+        "prerequisites": "Use mapped long-format data and state which within-run comparisons the study requires.",
+        "computed": "The design review summarizes observed combinations and whether the comparison network forms connected components.",
+        "can_show": "It can show empty combinations, sparsely observed elements, and comparisons that are disconnected within the observed data.",
+        "cannot_show": "Connectedness and dense coverage do not establish population representativeness, construct coverage, or fairness.",
+        "next_check": "Inspect sparse rows or columns and confirm that every reported comparison lies within one connected component.",
+        "next_action": "Add linking observations when feasible, narrow the comparison, or report disconnected parts separately.",
+        "safe_report": "If coverage and connectedness were reviewed, report measures only within the connected portion of the observed design and retain limits on representativeness, construct coverage, and fairness.",
+        "avoid_report": "A connected design proves that the sample represents the target population.",
+        "search_alias": "coverage; connectedness; linking; sparse design; observation network",
+        "sections": {
+          "overview": {
+            "title": "Why design links matter",
+            "body": "Facet effects are comparable only when observations provide a chain of links among the relevant persons and elements. Coverage should be judged against the planned claim."
+          },
+          "observed_coverage": {
+            "title": "Observed combinations",
+            "body": "Review which person-by-facet combinations are present, sparse, or empty. Large structured gaps deserve attention even when the overall row count is high."
+          },
+          "connectedness": {
+            "title": "Connected comparison network",
+            "body": "A connected component provides an observed path linking its elements. Measures from separate components do not share an empirically supported within-run comparison."
+          },
+          "limits": {
+            "title": "Coverage is not representativeness",
+            "body": "This check concerns the observed design. It does not show that persons, tasks, raters, or occasions adequately represent a broader population or construct."
+          }
+        }
+      }
+    },
+    "run": {
+      "large_analysis": {
+        "title": "Adjust an analysis that exceeds current capacity",
+        "summary": "Preserve the research task while reducing work that cannot be run safely in the current environment.",
+        "prerequisites": "Know which observations, facets, diagnostics, and outputs are essential to the primary question.",
+        "computed": "Before estimation, the application compares the requested workload with the capacity available for the current run.",
+        "can_show": "It can show that the request is too large to execute safely here and which scope choices can be reconsidered.",
+        "cannot_show": "A capacity limit says nothing about the data, model fit, or substantive result.",
+        "next_check": "Separate essential estimation from optional diagnostics and large output preparation.",
+        "next_action": "Reduce the data or optional analysis scope, then review the revised request before running it.",
+        "safe_report": "If the capacity stop was confirmed, report that the requested analysis was not completed in this session; document any later scope change and do not report a result for the stopped attempt.",
+        "avoid_report": "The analysis failed because the model or data were invalid.",
+        "search_alias": "large analysis; resource limit; reduce scope; run capacity",
+        "sections": {
+          "overview": {
+            "title": "A run-capacity boundary",
+            "body": "The warning protects the application from an unsafe workload. It occurs before a scientific result is created and should not be interpreted as model evidence."
+          },
+          "retained_state": {
+            "title": "Confirm what is still shown",
+            "body": "Check whether the input, mapping, and selected settings are still shown before changing scope. Record every change so it is not mistaken for the original analysis request."
+          },
+          "safe_scope": {
+            "title": "Reduce scope without changing the question",
+            "body": "Begin with optional diagnostics, figures, or unused facets. If observations must be reduced, define the rule from the study question and document the resulting population and claim."
+          }
+        }
+      },
+      "estimation_failed": {
+        "title": "Recover when estimation does not finish",
+        "summary": "Check the visible input and settings, identify the next reversible check, and avoid treating an unfinished run as a result.",
+        "prerequisites": "Keep the data and settings used for the attempt available for review.",
+        "computed": "The application records that no finished estimate was produced and presents a bounded recovery route.",
+        "can_show": "It can show the stage that needs review and direct you to relevant data, design, category, anchor, or estimation settings.",
+        "cannot_show": "An unfinished run cannot support parameter interpretation or a substantive conclusion.",
+        "next_check": "Review the displayed problem category, then inspect the named input or setting before trying again.",
+        "next_action": "Make one documented change, rerun, and confirm that a finished result and its diagnostics are available.",
+        "safe_report": "Estimation did not finish under the stated settings; no parameter result from that attempt was interpreted.",
+        "avoid_report": "The failed run showed that the hypothesis was false.",
+        "search_alias": "estimation failed; run did not finish; recovery; troubleshooting",
+        "sections": {
+          "overview": {
+            "title": "No finished result was created",
+            "body": "Treat the event as a workflow problem. Keep the attempted settings visible so the next change is reviewable and does not silently alter the research question."
+          },
+          "preserved_state": {
+            "title": "Confirm the visible state",
+            "body": "Check the input, column mapping, selected settings, and any earlier results that are still shown. This guidance does not by itself confirm that application state was retained."
+          },
+          "next_check": {
+            "title": "Choose the next check",
+            "body": "Follow the problem-specific action first: review format, coverage, score categories, anchors, or estimation settings. Change one source of difficulty at a time."
+          }
+        }
+      },
+      "nonconvergence": {
+        "title": "Interpret and address nonconvergence",
+        "summary": "Understand why an unfinished optimization limits interpretation and which evidence to inspect before rerunning.",
+        "prerequisites": "Retain the attempted model, estimation settings, data audit, and convergence summary.",
+        "computed": "The estimator evaluates whether parameter updates and the objective have met the stated stopping criteria.",
+        "can_show": "It can show that the stopping criteria were not met and provide convergence diagnostics for the attempt.",
+        "cannot_show": "Nonconvergence does not show that the construct is absent, the theory is false, or a particular element is defective.",
+        "next_check": "Review design connectedness, sparse elements, score categories, constraints, and estimation settings.",
+        "next_action": "Address a supported cause, rerun with the change documented, and interpret results only after convergence evidence is satisfactory.",
+        "safe_report": "Estimation did not converge under the reported settings, so parameter estimates from that attempt were not interpreted.",
+        "avoid_report": "The model was disproved because estimation did not converge.",
+        "search_alias": "nonconvergence; convergence check; iterations; estimation stopping",
+        "sections": {
+          "overview": {
+            "title": "Why convergence comes first",
+            "body": "Parameter tables can look complete even when estimation has not stabilized. Review convergence before fit, measures, interactions, or reporting."
+          },
+          "meaning": {
+            "title": "What nonconvergence means",
+            "body": "The estimation procedure stopped without satisfying its stated stability criteria. Estimates may still be changing or depend strongly on the stopping point."
+          },
+          "does_not_mean": {
+            "title": "What it does not mean",
+            "body": "Nonconvergence is not a substantive finding. It may arise from the observed design, sparse categories, constraints, starting conditions, or requested model complexity."
+          },
+          "next_check": {
+            "title": "A bounded recovery sequence",
+            "body": "Confirm connectedness and category support, inspect extreme or sparse elements, review constraints, then reconsider estimation settings. Record each change and its rationale."
+          }
+        }
+      }
+    },
+    "problem": {
+      "unexpected": {
+        "title": "Recover from an unexpected application problem",
+        "summary": "Pause interpretation, use reversible checks, and retain the support reference if the same problem continues.",
+        "prerequisites": "Note the action attempted, the visible screen, and the displayed support reference. Do not assume whether inputs, settings, or results were retained.",
+        "computed": "This notice produces no analysis claim. The application assigns a generic problem category and a support reference for troubleshooting.",
+        "can_show": "It can direct you to reversible checks and identify the support reference to include in a problem report.",
+        "cannot_show": "It cannot identify the cause, confirm application state, or establish that an analysis result is valid or invalid.",
+        "next_check": "Inspect what is currently visible, note the attempted action, and retry only the last reversible action once if its effect is clear.",
+        "next_action": "If the problem repeats, stop retrying and copy the support reference into the problem report together with the attempted action.",
+        "safe_report": "If documented, state that the affected step was not completed and that no result from that attempt was interpreted.",
+        "avoid_report": "The application problem proves that the model or data are invalid.",
+        "search_alias": "unexpected problem; application error; support reference; reversible troubleshooting; problem report",
+        "sections": {
+          "overview": {
+            "title": "What this notice means",
+            "body": "An application step ended unexpectedly. This is a troubleshooting event, not statistical evidence about the model, data, or research question."
+          },
+          "first_check": {
+            "title": "First reversible check",
+            "body": "Before changing data or settings, inspect the source view and note exactly what action preceded the notice. Retry once only when the action is reversible and the current state is clear."
+          },
+          "get_support": {
+            "title": "Use the support reference",
+            "body": "Include the displayed support reference, attempted action, screen, and approximate time in the problem report. Do not include raw or identifiable research data unless its disclosure is authorized."
+          }
+        }
+      }
+    },
+    "results": {
+      "first_read": {
+        "title": "Read results in a safe order",
+        "summary": "Check whether interpretation can proceed before opening detailed measures, fit statistics, or figures.",
+        "prerequisites": "Use a finished run and keep the study question and requested evidence visible.",
+        "computed": "The first-read view organizes convergence, design, fit, category, residual, and interaction evidence by interpretation priority.",
+        "can_show": "It can show which evidence is available, which requires caution, and which prerequisite must be addressed first.",
+        "cannot_show": "A single status, table, or figure cannot establish the complete measurement argument.",
+        "next_check": "Resolve any pause condition first, then inspect the detail that directly supports the study question.",
+        "next_action": "Write one next-action note that names the evidence, its limit, and the screen where it can be checked.",
+        "safe_report": "Interpretation proceeded only after the required design and estimation checks were reviewed.",
+        "avoid_report": "All results are trustworthy because the overview showed no warning.",
+        "search_alias": "first read; result priorities; interpretation order; evidence overview",
+        "sections": {
+          "overview": {
+            "title": "Read prerequisites before estimates",
+            "body": "Begin with convergence and connectedness, then review evidence tied to the claim. Detailed values should not outrun the conditions that make them interpretable."
+          },
+          "reading_order": {
+            "title": "Recommended reading order",
+            "body": "Review estimation completion, design links, measures and uncertainty, fit, category functioning, residual structure, differential interactions, and planned sensitivity checks. Stop where a required prerequisite is unmet."
+          },
+          "claim_boundaries": {
+            "title": "Carry limitations forward",
+            "body": "A caution or unavailable check remains part of the result. Include it in notes, exports, and reports rather than replacing it with an overall pass label."
+          }
+        }
+      },
+      "measures_targeting": {
+        "title": "Interpret measures and targeting",
+        "summary": "Read person and facet locations on the logit scale together with uncertainty, coverage, and the intended comparison.",
+        "prerequisites": "Confirm convergence, connectedness, the model orientation, and which facet locations are higher or lower on the reported scale.",
+        "computed": "The fitted MFRM estimates person and facet locations, their uncertainty, and graphical summaries on a common logit scale.",
+        "can_show": "It can show relative locations, uncertainty, distributional gaps, and how observed facet coverage aligns with person locations.",
+        "cannot_show": "A location estimate is not a judgment of a person or element and does not by itself justify a ranking or decision.",
+        "next_check": "Compare estimates with uncertainty and observation support, then inspect fit for the elements central to the claim.",
+        "next_action": "Describe the relevant contrast in logits, name the reference orientation, and retain uncertainty and design limits.",
+        "safe_report": "Reported contrasts are on the fitted logit scale and are accompanied by uncertainty and design context.",
+        "avoid_report": "A higher measure proves that a person or element is better.",
+        "search_alias": "measures; targeting; Wright map; forest plot; facet distribution; logit",
+        "sections": {
+          "overview": {
+            "title": "Locations on a modeled scale",
+            "body": "Measures express relative locations under the selected MFRM and constraints. Interpret direction, reference point, uncertainty, and the facet meaning together."
+          },
+          "wright_map": {
+            "title": "Wright map",
+            "body": "Compare person and facet distributions on the same logit axis. Gaps suggest regions with limited targeting; extreme locations require uncertainty and observation checks."
+          },
+          "ecdf_measures": {
+            "title": "Cumulative measure distribution",
+            "body": "The cumulative curve shows the proportion at or below each location. Steep segments indicate concentration, while flat segments indicate gaps; neither pattern is a quality verdict."
+          },
+          "forest_measures": {
+            "title": "Estimate and uncertainty plot",
+            "body": "Read each estimate with its interval. Overlap is not a formal equivalence test, and small visual rank differences should not be emphasized when uncertainty is substantial."
+          },
+          "facet_distribution": {
+            "title": "Distribution within a facet",
+            "body": "Review center, spread, sparse tails, and isolated elements within one facet. Distributional width is descriptive and depends on which elements were observed."
+          },
+          "limits": {
+            "title": "Limits on measure claims",
+            "body": "Measures depend on the fitted model, constraints, and observed design. Avoid converting modeled locations into labels about inherent ability, severity, or quality."
+          }
+        }
+      },
+      "fit": {
+        "title": "Interpret Infit, Outfit, and residual fit evidence",
+        "summary": "Use fit statistics to locate observations or elements for review without turning thresholds into automatic exclusion rules.",
+        "prerequisites": "Confirm a converged, connected fit and review the observation count and uncertainty relevant to each element.",
+        "computed": "The application summarizes Infit, Outfit, standardized fit, and residual patterns for the fitted model.",
+        "can_show": "It can identify responses or elements whose variation differs from model expectations and prioritize follow-up.",
+        "cannot_show": "A fit value cannot by itself diagnose a cause or require removal of a person, item, task, criterion, or rater.",
+        "next_check": "Inspect observation support, residual examples, content, scoring conditions, and sensitivity before deciding what a flag means.",
+        "next_action": "Record the flagged element, the statistic, its observation support, and the substantive review undertaken.",
+        "safe_report": "If observation support and substantive evidence were reviewed, report fit flags as review signals rather than automatic exclusion decisions.",
+        "avoid_report": "Elements outside a cutoff were automatically deleted as invalid.",
+        "search_alias": "Infit; Outfit; fit scatter; standardized fit; residual plot; misfit",
+        "sections": {
+          "overview": {
+            "title": "Fit is a diagnostic, not a verdict",
+            "body": "Infit emphasizes unexpected responses near an estimated location; Outfit is more sensitive to distant unexpected responses. Read both with sample size and context."
+          },
+          "fit_scatter": {
+            "title": "Infit and Outfit scatter",
+            "body": "Locate elements that are high on one or both statistics. A point outside a reference band identifies a review priority, not an automatic exclusion."
+          },
+          "pathway_map": {
+            "title": "Measure-by-fit pathway",
+            "body": "Read modeled location and standardized fit together. Clusters can suggest a shared design or scoring condition that deserves inspection."
+          },
+          "misfit_ranking": {
+            "title": "Review-priority ranking",
+            "body": "The ranking orders large standardized departures so review can begin efficiently. It does not rank substantive quality, and sparse elements may be unstable."
+          },
+          "zstd_distribution": {
+            "title": "Standardized-fit distribution",
+            "body": "Use the distribution to see asymmetry, tails, and concentrations of fit flags. Standardized values can be sensitive to observation count and approximation."
+          },
+          "qq_residuals": {
+            "title": "Residual quantile plot",
+            "body": "Compare the residual distribution with a reference shape to locate tail departures and asymmetry. The plot is descriptive and is not a pass-fail normality test."
+          },
+          "limits": {
+            "title": "No automatic removal",
+            "body": "Investigate content, data entry, scoring conditions, local dependence, and sensitivity. Any exclusion needs a stated rule and a rerun that shows its effect."
+          }
+        }
+      },
+      "categories": {
+        "title": "Review rating-category functioning",
+        "summary": "Combine observed use, modeled category probabilities, and threshold locations before changing a rating scale.",
+        "prerequisites": "Confirm the intended category order, response model, and sufficient observations across relevant persons and facets.",
+        "computed": "The application summarizes category counts, modeled response probabilities, and threshold locations under the selected model.",
+        "can_show": "It can show sparse categories, limited dominant regions, and threshold patterns that deserve review.",
+        "cannot_show": "A sparse or disordered pattern does not by itself prove that a category is poor or should be collapsed.",
+        "next_check": "Review category wording, scorer use, observation counts, uncertainty, and whether patterns persist across relevant facets.",
+        "next_action": "If a change is considered, justify it substantively and compare the original and revised specifications.",
+        "safe_report": "Category functioning was reviewed using observed use, modeled probabilities, thresholds, and the scoring design.",
+        "avoid_report": "A flagged category was automatically collapsed because the plot failed.",
+        "search_alias": "rating categories; thresholds; category probabilities; category use; step structure",
+        "sections": {
+          "overview": {
+            "title": "Three complementary views",
+            "body": "Observed use describes what occurred, probability curves describe the fitted response process, and thresholds describe transitions on the modeled scale. Review them together."
+          },
+          "category_probability": {
+            "title": "Category probability curves",
+            "body": "Each curve shows the modeled probability of a category across the latent scale. A category without a clear dominant region warrants review, not automatic deletion."
+          },
+          "category_usage": {
+            "title": "Observed category use",
+            "body": "Check counts overall and across relevant facets. Sparse use may reflect category wording, sampling, assignment, or scoring practice."
+          },
+          "threshold_map": {
+            "title": "Threshold locations",
+            "body": "Review threshold order, spacing, and uncertainty under the selected RSM, PCM, or GPCM. Disorder is evidence for investigation rather than a stand-alone decision rule."
+          },
+          "limits": {
+            "title": "Category changes require design evidence",
+            "body": "Collapsing categories changes score meaning and the fitted model. Preserve the original rationale, inspect sensitivity, and document the revised interpretation."
+          }
+        }
+      },
+      "residual_structure": {
+        "title": "Explore residual structure",
+        "summary": "Use residual PCA as a bounded screen for remaining associations after the modeled dimension and facet effects.",
+        "prerequisites": "Use a converged fit with enough comparable residual profiles and retain the substantive content labels for interpretation.",
+        "computed": "Residual PCA summarizes major contrasts in residual associations after the fitted model's expected responses are removed.",
+        "can_show": "It can identify a residual contrast or cluster that deserves stability and content review.",
+        "cannot_show": "Residual PCA cannot prove or confirm unidimensionality, and a single eigenvalue is not a dimensionality verdict.",
+        "next_check": "Inspect loadings, content groupings, observation coverage, and stability across defensible settings or resamples.",
+        "next_action": "Describe any contrast as exploratory, name its content pattern, and seek corroborating evidence before changing the model.",
+        "safe_report": "If content and stability evidence were reviewed, report residual PCA as an exploratory screen and retain the boundary that it does not confirm unidimensionality.",
+        "avoid_report": "Residual PCA proved that the scale is unidimensional.",
+        "search_alias": "residual PCA; residual contrast; scree plot; local dependence; dimensionality screen",
+        "sections": {
+          "overview": {
+            "title": "A screen after model fitting",
+            "body": "Residual structure concerns associations left after modeled expectations. It is useful for finding patterns that the primary model may not represent."
+          },
+          "residual_pca": {
+            "title": "Read residual PCA",
+            "body": "Review the leading contrast, loadings, and substantive grouping together. Eigenvalue rules are orientation aids, not proof of a separate dimension or its absence."
+          },
+          "limits": {
+            "title": "Why the screen is bounded",
+            "body": "Results depend on residual construction, missing comparisons, sample composition, and stability. Weak signal does not confirm a single dimension."
+          },
+          "next_check": {
+            "title": "Follow up a residual contrast",
+            "body": "Check whether high and low loading groups share content, method, rater, task, or administration features, then assess whether the pattern is stable and consequential."
+          }
+        }
+      },
+      "rater_evidence": {
+        "title": "Review rater evidence",
+        "summary": "Keep agreement, modeled severity, and differentiation as distinct questions about the observed scoring process.",
+        "prerequisites": "Confirm which facet represents raters, that raters are linked through the design, and that observation counts support the comparison.",
+        "computed": "The fitted MFRM estimates rater locations, while supporting summaries describe agreement, differentiation, and observation coverage.",
+        "can_show": "It can show systematic location differences and patterns that warrant review of scoring conditions or training.",
+        "cannot_show": "No single rater indicator establishes accuracy, bias, competence, or fairness.",
+        "next_check": "Compare location, uncertainty, agreement, and assigned cases before interpreting a rater pattern.",
+        "next_action": "Investigate scoring evidence and design conditions, then document any training, adjudication, or sensitivity step.",
+        "safe_report": "If these indicators were reviewed, report rater location, agreement, and differentiation as distinct evidence within the observed design.",
+        "avoid_report": "One statistic proved that a rater was inaccurate or biased.",
+        "search_alias": "rater severity; agreement; rater separation; scorer evidence; differentiation",
+        "sections": {
+          "overview": {
+            "title": "Separate the rater questions",
+            "body": "Agreement concerns score similarity, severity concerns modeled location, and differentiation concerns distinguishability. They should not be collapsed into one label."
+          },
+          "agreement": {
+            "title": "Agreement evidence",
+            "body": "Review exact or weighted agreement in relation to score prevalence, category use, and assignment. High agreement can coexist with limited category use or shared systematic effects."
+          },
+          "severity": {
+            "title": "Modeled rater location",
+            "body": "A higher or lower rater location reflects the fitted scoring tendency under the chosen orientation. Read it with uncertainty, assigned cases, and linking."
+          },
+          "differentiation": {
+            "title": "Rater differentiation",
+            "body": "Separation-related summaries ask whether observed rater locations are distinguishable beyond measurement error. They do not establish scoring quality or validity."
+          },
+          "limits": {
+            "title": "Avoid person-level verdicts",
+            "body": "Rater patterns may reflect assignment, rubric interpretation, case mix, sparse data, or local interactions. Follow up with scoring evidence rather than labels."
+          }
+        }
+      },
+      "differential_interaction": {
+        "title": "Review differential and interaction evidence",
+        "summary": "Review two distinct screens: local facet-pair interactions under the fitted MFRM and classical group-conditioned DIF. Neither is a fairness verdict, and the screens are not interchangeable.",
+        "prerequisites": "Define the comparison groups or facet pair in advance and confirm overlap, sample support, and the direction of each contrast.",
+        "computed": "For local facet-pair interactions, the application estimates departures from additive MFRM effects. Separately, classical DIF summarizes group-conditioned item differences after matching on the selected score.",
+        "can_show": "It can locate combinations or items whose observed pattern differs from the selected model or matched comparison.",
+        "cannot_show": "An interaction or DIF flag cannot by itself establish unfairness, bias, discrimination, or a causal mechanism.",
+        "next_check": "Review uncertainty, cell counts, multiple comparisons, content, translation, assignment, and sensitivity to the matching or model choice.",
+        "next_action": "Treat flags as review priorities and document corroborating evidence before changing an item, rater, task, or decision rule.",
+        "safe_report": "If the stated screen, uncertainty, design, and substantive evidence were reviewed, report local facet-pair interactions and classical DIF separately and identify which one produced each flag.",
+        "avoid_report": "A flagged interaction proved that the assessment was unfair.",
+        "search_alias": "interaction; bias heatmap; differential item functioning; group difference; fairness review",
+        "sections": {
+          "overview": {
+            "title": "Local difference, bounded conclusion",
+            "body": "These screens ask whether a local combination departs from an additive or matched expectation. They do not determine why the departure occurred."
+          },
+          "bias_heatmap": {
+            "title": "Facet-interaction heatmap",
+            "body": "Inspect the direction, size, uncertainty, and observation count for each facet combination. Sparse or isolated cells require particular caution."
+          },
+          "classical_dif": {
+            "title": "Classical DIF screen",
+            "body": "Compare item performance across defined groups after matching on the selected score. Review effect size, multiplicity, matching quality, and content together."
+          },
+          "fairness_boundary": {
+            "title": "Fairness requires broader evidence",
+            "body": "Fairness evaluation also needs construct relevance, opportunity, administration, consequences, and stakeholder context. Statistical flags are one input, not the verdict."
+          }
+        }
+      }
+    },
+    "report": {
+      "claim_limits": {
+        "title": "Write claims that match the evidence",
+        "summary": "Separate supported, limited, and unavailable evidence so reports preserve the conditions of interpretation.",
+        "prerequisites": "Keep the study question, analysis specification, first-read checks, sensitivity results, and intended audience available.",
+        "computed": "The application organizes evidence availability, limitations, and planned-check stability for reporting review.",
+        "can_show": "It can show which requested results were produced and which stated limits must accompany them.",
+        "cannot_show": "It cannot decide the study's substantive claim, validate an assessment, or replace researcher judgment and documentation.",
+        "next_check": "For each sentence, identify the supporting result, uncertainty, design scope, limitation, and any missing prerequisite.",
+        "next_action": "Revise broad claims into bounded statements and explicitly mark evidence that is limited or unavailable.",
+        "safe_report": "The observed result is described for the stated data, model, comparison, and uncertainty, with limitations retained.",
+        "avoid_report": "The application verified the conclusion.",
+        "search_alias": "reporting limits; claim boundary; available evidence; cautious wording; results write-up",
+        "sections": {
+          "overview": {
+            "title": "Claims inherit analysis conditions",
+            "body": "A report should preserve the population, design, model, estimator, scale direction, uncertainty, and diagnostic limitations that make a result interpretable."
+          },
+          "supported": {
+            "title": "Supported evidence",
+            "body": "Use specific wording that names the estimate or pattern and its scope. A result can be available without supporting a broader causal, validity, or fairness claim."
+          },
+          "limited": {
+            "title": "Evidence available with limits",
+            "body": "State the limitation beside the result, explain its likely consequence, and identify the next check. Do not hide a caution in a distant appendix."
+          },
+          "unavailable": {
+            "title": "Evidence not available",
+            "body": "Say that the question was not assessed or could not be assessed under the current design. Absence of evidence is not evidence of no effect or no problem."
+          },
+          "wording": {
+            "title": "A bounded sentence pattern",
+            "body": "Name what was observed, under which model and data, with what uncertainty, and what remains unresolved. Avoid confirmed, proved, valid, fair, or unbiased unless supported beyond this analysis."
+          }
+        }
+      }
+    },
+    "downloads": {
+      "privacy": {
+        "title": "Review download contents before sharing",
+        "summary": "Check what is included, what is excluded, and whether the prepared material is appropriate for the intended recipient.",
+        "prerequisites": "Know the sharing purpose, recipient, consent or governance requirements, and which level of detail is necessary.",
+        "computed": "The application prepares selected outputs and a description of included and excluded content.",
+        "can_show": "It can show which prepared materials contain person-level, response-level, setting, or aggregate information.",
+        "cannot_show": "A contents check cannot guarantee anonymity, confidentiality, consent compliance, or safe onward use.",
+        "next_check": "Open the contents review, inspect sensitive tables and free text, and apply the study's disclosure rules.",
+        "next_action": "Remove unnecessary detail, choose the appropriate sharing option, and review the prepared material again before sending it.",
+        "safe_report": "If the prepared material and governance requirements were reviewed, report what was shared, what was excluded, and which disclosure checks were completed.",
+        "avoid_report": "The download is anonymous and safe because the application prepared it.",
+        "search_alias": "download privacy; sharing check; included files; excluded data; disclosure review",
+        "sections": {
+          "overview": {
+            "title": "Sharing is a separate decision",
+            "body": "Preparing a download does not authorize sharing. Match the included detail to the recipient, purpose, consent, and governance context."
+          },
+          "included": {
+            "title": "What is included",
+            "body": "Review every selected table, figure, setting, note, and aggregate. Pay particular attention to small groups, uncommon labels, and combinations that could reveal identities."
+          },
+          "excluded": {
+            "title": "What is excluded",
+            "body": "Confirm that response-level and person-level material is omitted when not needed. Exclusion from one package does not remove copies stored elsewhere."
+          },
+          "sharing_check": {
+            "title": "Final sharing check",
+            "body": "Open the prepared material, verify recipients and purpose, inspect disclosure risk, and retain only the minimum information needed for the research task."
+          }
+        }
+      },
+      "repeat_analysis": {
+        "title": "Save what is needed to repeat an analysis",
+        "summary": "Preserve data provenance, settings, evidence, and limitations so the same analytic decision path can be reconstructed.",
+        "prerequisites": "Identify the prepared input, software version, analysis settings, and evidence needed to support the reported claim.",
+        "computed": "The application can prepare settings, result summaries, and instructions that describe how the analysis was run.",
+        "can_show": "It can show whether saved materials correspond to the displayed analysis and which choices shaped the result.",
+        "cannot_show": "Repeating the same procedure does not independently validate the data, model, implementation, or conclusion.",
+        "next_check": "Confirm that the saved settings, evidence, and limitations refer to the same prepared input and reported result.",
+        "next_action": "Store the minimum reproducibility materials with the report and document any later change as a new analysis.",
+        "safe_report": "If input provenance, settings, software version, procedure, and saved evidence were verified, report that these materials permit the stated analysis to be rerun; do not call that independent validation.",
+        "avoid_report": "The result is valid because the same procedure can be repeated.",
+        "search_alias": "repeat analysis; reproducibility; saved settings; analysis provenance; rerun",
+        "sections": {
+          "overview": {
+            "title": "Repeat the decision path",
+            "body": "Useful reproducibility material explains which prepared data, settings, and evidence produced the report, not merely how to press the run control."
+          },
+          "settings": {
+            "title": "Preserve settings and provenance",
+            "body": "Record the model, estimator, constraints, category structure, anchors, diagnostic requests, software version, and preparation decisions relevant to interpretation."
+          },
+          "evidence": {
+            "title": "Preserve supporting evidence",
+            "body": "Keep the tables, figures, uncertainty, diagnostics, and sensitivity results cited by the report, together with a clear analysis reference."
+          },
+          "limitations": {
+            "title": "Preserve what remains unresolved",
+            "body": "Repeatability does not remove missing evidence, design limits, or sensitivity. Carry those limits into every reproduced report."
+          }
+        }
+      }
+    },
+    "methods": {
+      "rsm_pcm_gpcm": {
+        "title": "Choose among RSM, PCM, and GPCM",
+        "summary": "Match the response model to the scoring design, category structure, discrimination assumptions, and research purpose.",
+        "prerequisites": "Identify the selected step facet, whether its levels share category meanings and step locations, and whether varying discrimination across those levels is substantively defensible.",
+        "computed": "The application fits the selected response model within the stated, bounded step-facet structure and reports model-specific category results.",
+        "can_show": "It can show parameter estimates, fit, category functioning, and comparative evidence under each supported specification.",
+        "cannot_show": "Fit alone cannot determine the correct model or make substantively different category structures interchangeable.",
+        "next_check": "Compare the model's constraints with rubric design, category use, parameter stability, and the intended interpretation.",
+        "next_action": "State the model choice before interpretation and justify any alternative specification as a sensitivity check.",
+        "safe_report": "If the scoring design, selected step facet, model assumptions, and completed diagnostics were reviewed, report the selected response model and the checks used to support that choice.",
+        "avoid_report": "The most flexible or best-fitting model was automatically the correct model.",
+        "search_alias": "RSM; PCM; GPCM; response model; rating scale; partial credit",
+        "sections": {
+          "overview": {
+            "title": "Model choice encodes scoring assumptions",
+            "body": "MFRM separates person and facet effects, while the response model specifies how ordered categories behave. Choose constraints that match the rubric and intended score meaning."
+          },
+          "rsm": {
+            "title": "Rating Scale Model (RSM)",
+            "body": "RSM uses one common category-step structure across all levels of the selected step facet. It suits designs where those levels are intended to share category meanings and step locations."
+          },
+          "pcm": {
+            "title": "Partial Credit Model (PCM)",
+            "body": "PCM allows category-step locations to vary across levels of the selected step facet while holding discrimination fixed. It suits designs with level-specific category transitions under Rasch-family discrimination constraints."
+          },
+          "gpcm": {
+            "title": "Generalized Partial Credit Model (GPCM)",
+            "body": "In this app's bounded GPCM, levels of the selected step facet can have their own category-step locations and discrimination. Discrimination parameters are relative within that facet under a geometric-mean-one constraint; they are not absolute quality scores. This flexibility requires sufficient information."
+          },
+          "choice_boundary": {
+            "title": "A comparison does not choose the purpose",
+            "body": "Use fit and sensitivity as evidence, but keep design intent, identifiability, parsimony, and interpretability in the decision. Models answer different constrained questions."
+          }
+        }
+      },
+      "jmle_mml": {
+        "title": "Choose between JMLE and MML",
+        "summary": "Select an estimator according to the parameter target, person-distribution assumptions, sample and design, and reporting purpose.",
+        "prerequisites": "Specify the response model, parameter constraints, intended person inference, and whether a population distribution is part of the analysis.",
+        "computed": "JMLE estimates person and facet parameters jointly; MML integrates over a specified person distribution while estimating structural parameters.",
+        "can_show": "It can show estimator-specific parameter results, convergence evidence, uncertainty, and sensitivity under supported settings.",
+        "cannot_show": "Neither estimator is universally preferable, and agreement between them does not establish validity.",
+        "next_check": "Review convergence, parameter target, sample and design support, person-distribution assumptions, and sensitivity to defensible settings.",
+        "next_action": "Justify the primary estimator from the research purpose and treat the alternative as a planned sensitivity analysis when appropriate.",
+        "safe_report": "If the parameter target, assumptions, convergence, and planned sensitivity evidence were reviewed, report the selected estimator and those completed checks.",
+        "avoid_report": "One estimator is always more accurate than the other.",
+        "search_alias": "JMLE; MML; estimation method; marginal likelihood; joint likelihood; person distribution",
+        "sections": {
+          "overview": {
+            "title": "Different estimation targets",
+            "body": "JMLE and MML use different treatments of person parameters. Interpret estimates, uncertainty, and small-sample behavior in relation to that choice."
+          },
+          "jmle": {
+            "title": "Joint maximum likelihood estimation (JMLE)",
+            "body": "JMLE estimates person and facet parameters jointly under the selected constraints. Because the number of person parameters grows with the sample, estimates can retain small-sample bias; sparse designs can add instability. Review sample and design support rather than treating JMLE as automatically unbiased."
+          },
+          "mml": {
+            "title": "Marginal maximum likelihood estimation (MML)",
+            "body": "MML integrates over a specified person distribution while estimating structural parameters. Conclusions depend on distributional assumptions and numerical integration."
+          },
+          "person_distribution_sd": {
+            "title": "Person-distribution standard deviation",
+            "body": "Under MML, the standard deviation sets or estimates population spread on the latent scale. Review whether it is fixed or estimated, its uncertainty, and sensitivity to distributional form."
+          },
+          "choice_boundary": {
+            "title": "Estimator choice is purpose-dependent",
+            "body": "Compare convergence, bias considerations, uncertainty, distributional assumptions, and the intended parameter interpretation. Do not select solely from one fit value."
+          }
+        }
+      }
+    },
+    "glossary": {
+      "title": "Measurement and workflow glossary",
+      "summary": "Find reviewed definitions, search aliases, and the interpretation boundary attached to each term.",
+      "prerequisites": "No fitted result is required; use the study and screen context to select the intended meaning.",
+      "computed": "The glossary resolves reviewed concepts and aliases; it does not compute or reinterpret an analysis.",
+      "can_show": "It can connect plain task language with formal measurement terms and point to related guidance.",
+      "cannot_show": "A term label or definition cannot establish that a condition holds in the current analysis.",
+      "next_check": "Open the related Help topic and compare the definition with the current model, design, and screen.",
+      "next_action": "Use the reviewed term in notes and retain its stated boundary when reporting.",
+      "safe_report": "The term is used according to its reviewed definition and the conditions stated for this analysis.",
+      "avoid_report": "The presence of a term in the output proves the associated conclusion.",
+      "search_alias": "glossary; definition; measurement terms; workflow terms; terminology",
+      "sections": {
+        "overview": {
+          "title": "One concept, audience-appropriate wording",
+          "body": "The glossary links plain task language with formal measurement terms without exposing implementation labels as user guidance or treating audience-specific wording as different scientific concepts."
+        },
+        "search": {
+          "title": "Search by term or research task",
+          "body": "Use acronyms, full names, or task phrases. Open the related topic when a definition depends on the response model, estimator, design, or diagnostic."
+        },
+        "concept_boundaries": {
+          "title": "Definitions are not findings",
+          "body": "Each concept includes a statement it must not imply. Carry that boundary into interpretation rather than using the label as evidence."
+        }
+      }
+    },
+    "fallback": {
+      "unavailable": {
+        "title": "The requested Help topic is unavailable",
+        "summary": "Return to Help home for an available route without treating the missing topic as analysis evidence.",
+        "prerequisites": "No additional input or analysis is required.",
+        "computed": "No analysis or diagnostic is run when this fallback is shown.",
+        "can_show": "It can provide a safe route back to Help home and remind you to confirm the source view.",
+        "cannot_show": "It cannot reconstruct the unavailable topic or make a statement about the current analysis.",
+        "next_check": "Confirm the research task or method you wanted to review, then choose the closest available topic.",
+        "next_action": "Return to Help home, then check the source view before continuing the analysis.",
+        "safe_report": "Do not use this fallback as analysis evidence; return to the source before reporting.",
+        "avoid_report": "The missing Help topic indicates that the analysis failed or that a result is unavailable.",
+        "search_alias": "Help unavailable; missing topic; return to Help home; recovery",
+        "sections": {
+          "overview": {
+            "title": "Return and confirm your work",
+            "body": "This topic could not be opened. Return to Help home, choose an available topic, and confirm what is still shown in the source view before continuing."
+          }
+        }
+      }
+    }
   }
 }

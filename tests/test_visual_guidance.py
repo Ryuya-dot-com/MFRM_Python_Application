@@ -91,6 +91,7 @@ def test_visual_evidence_map_inherits_claim_guardrails():
         "Theme": ["Manuscript white", "Manuscript white", "Manuscript white"],
         "BaseFontSize": [13, 13, 13],
         "LabelPolicy": ["Auto", "Auto", "Auto"],
+        "PlotLabelMode": ["Auto", "Auto", "Auto"],
         "CaptionDetail": ["Detailed", "Detailed", "Detailed"],
     })
     visual_map = app.build_visual_evidence_map(figure_manifest, app.pd.DataFrame())
@@ -101,6 +102,7 @@ def test_visual_evidence_map_inherits_claim_guardrails():
         "DoNotWrite",
         "RequiredEvidence",
         "VisualGuardrailArchive",
+        "PlotLabelMode",
     }.issubset(visual_map.columns)
     assert "wright_map_targeting" in visual_map["VisualGuardrailID"].tolist()
     assert "facets_yardstick_text_map" in visual_map["VisualGuardrailID"].tolist()
@@ -268,6 +270,41 @@ def test_rating_scale_dashboard_links_counts_thresholds_and_category_curves():
     assert recode_candidates["OriginalToCandidateScoreMap"].str.contains("2 -> 1", regex=False).any()
     assert recode_candidates["RerunComparisonPlan"].str.contains("refit the model", case=False, regex=False).any()
 
+    action_center = app.category_collapse_action_center_table(result, diagnostics)
+    assert not action_center.empty
+    assert {
+        "Done",
+        "ActionStep",
+        "ActionArea",
+        "CandidateID",
+        "Status",
+        "Priority",
+        "PrimaryQuestion",
+        "EvidenceToOpen",
+        "RecommendedAction",
+        "CompletionCriterion",
+        "ReportReadyWording",
+        "DoNotClaim",
+        "SuggestedCitations",
+        "FACETSCrosswalk",
+    }.issubset(action_center.columns)
+    assert action_center["Done"].eq(False).all()
+    assert "First-read category-collapse gate" in action_center["ActionArea"].tolist()
+    assert action_center["SuggestedCitations"].str.contains("Linacre, 2002b", regex=False).any()
+    assert action_center["EvidenceToOpen"].str.contains("rating_scale_recode_candidates.csv", regex=False).any()
+    assert action_center["DoNotClaim"].str.contains("automatic|warranted", case=False, regex=True).any()
+
+    category_draft = app.generate_category_collapse_sensitivity_draft(
+        result,
+        diagnostics,
+        action_center,
+    )
+    assert "APA Category-Collapse Sensitivity Draft" in category_draft
+    assert "Linacre, 2002b" in category_draft
+    assert "Wind, 2023" in category_draft
+    assert "rating_scale_recode_candidates.csv" in category_draft
+    assert "automatic recoding rules" in category_draft
+
     recode_map_long = app.rating_scale_recode_map_long_table(result, diagnostics)
     assert not recode_map_long.empty
     assert {
@@ -286,15 +323,14 @@ def test_rating_scale_dashboard_links_counts_thresholds_and_category_curves():
         == 1.0
     )
 
-    recode_assets = app.rating_scale_recode_script_assets(result, diagnostics)
+    recode_assets = app.python_rating_scale_recode_assets(result, diagnostics)
     assert {
         "README_rating_scale_recode_scripts.md",
         "mfrm_rating_scale_recode_candidates.csv",
         "mfrm_rating_scale_recode_map_long.csv",
         "apply_rating_scale_recodes.py",
-        "apply_rating_scale_recodes.R",
-        "apply_rating_scale_recodes.jl",
     }.issubset(recode_assets)
+    assert not any(name.endswith((".R", ".jl")) for name in recode_assets)
     assert "MFRM_RECODE_MAP_CSV" in recode_assets["apply_rating_scale_recodes.py"]
     assert "Score_original" in recode_assets["README_rating_scale_recode_scripts.md"]
 

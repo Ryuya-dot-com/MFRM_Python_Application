@@ -1,0 +1,225 @@
+{
+  "registration_status": "prospective_before_response_generation_rank_audit_or_fit_results",
+  "registered_date": "2026-08-10",
+  "study_id": "cmle_native_anchor_connectivity_v1",
+  "purpose": "Separate anchor count/content from realized within-Person Rater connectivity, and test whether graph-component anchoring predicts exact conditional-information rank under identical response bytes.",
+  "input_identity": {
+    "mfrm_app/cmle.py": "499582112d71b3832e4f00608c0deaef33d0610fd754560fc900387db7a298eb",
+    "mfrm_app/cmle_person_scoring.py": "cb830ec0cbc6fbd1e7d38d333a17031977475a19e8de40f57514cf78e2dfa761",
+    "mfrm_app/cmle_wle_fit.py": "4517d5d6969339cb3e9d2a2b6335c756e45cde8eb686f185f2b6eb32b5faae9e",
+    "tests/test_cmle.py": "be2b2eaa0623dde734f293d6c3931063077e9d876e94db48a3dd49d9038b978a",
+    "tests/test_cmle_hard_anchors.py": "45dd27ba7a7d0f2f173fdf6476818d8c08dfad5cb7bf46793e7393a3cd9f9ba7"
+  },
+  "simulation": {
+    "replicates": 10,
+    "persons_per_dataset": 300,
+    "categories": 4,
+    "root_seed": 2026081018,
+    "theta_distribution": "independent standard normal by replicate",
+    "rater_truth": {
+      "R01": -0.75,
+      "R02": -0.45,
+      "R03": -0.15,
+      "R04": 0.15,
+      "R05": 0.45,
+      "R06": 0.75
+    },
+    "criterion_truth": {
+      "C01": -0.45,
+      "C02": -0.15,
+      "C03": 0.15,
+      "C04": 0.45
+    },
+    "step_truth": {
+      "1": -0.9,
+      "2": 0.0,
+      "3": 0.9
+    },
+    "response_kernel": "RSM category log kernel k*(theta-rater-criterion)-cumulative_step_k",
+    "base_administration": "Each non-bridge Person is assigned one Rater and all four Criteria; base Raters are balanced after a seeded Person permutation.",
+    "bridge_administration": "Each bridge Person is assigned one frozen Rater edge and receives all four Criteria from both endpoint Raters; no duplicate Person-Rater-Criterion unit occurs.",
+    "unique_datasets": 70,
+    "unique_runid_persons": 21000,
+    "unique_response_rows": 97400,
+    "same_byte_rule": "All five anchor scenarios for a topology-replicate receive identical generated rows in identical order.",
+    "persistence_rule": "Write generated responses with %.17g floats, reload with round-trip parsing, and require exact tabular fingerprint."
+  },
+  "topologies": [
+    {
+      "order": 1,
+      "topology": "no_bridge",
+      "family": "fully_disconnected",
+      "bridge_persons": 0,
+      "edges": [],
+      "persons_per_edge": 0,
+      "response_rows_per_replicate": 1200
+    },
+    {
+      "order": 2,
+      "topology": "two_clusters_strong",
+      "family": "internally_strong_disconnected_components",
+      "bridge_persons": 80,
+      "edges": [["R01", "R02"], ["R02", "R03"], ["R04", "R05"], ["R05", "R06"]],
+      "persons_per_edge": 20,
+      "response_rows_per_replicate": 1520
+    },
+    {
+      "order": 3,
+      "topology": "chain_minimal",
+      "family": "connected_chain",
+      "bridge_persons": 5,
+      "edges": [["R01", "R02"], ["R02", "R03"], ["R03", "R04"], ["R04", "R05"], ["R05", "R06"]],
+      "persons_per_edge": 1,
+      "response_rows_per_replicate": 1220
+    },
+    {
+      "order": 4,
+      "topology": "chain_weak",
+      "family": "connected_chain",
+      "bridge_persons": 25,
+      "edges": [["R01", "R02"], ["R02", "R03"], ["R03", "R04"], ["R04", "R05"], ["R05", "R06"]],
+      "persons_per_edge": 5,
+      "response_rows_per_replicate": 1300
+    },
+    {
+      "order": 5,
+      "topology": "chain_strong",
+      "family": "connected_chain",
+      "bridge_persons": 100,
+      "edges": [["R01", "R02"], ["R02", "R03"], ["R03", "R04"], ["R04", "R05"], ["R05", "R06"]],
+      "persons_per_edge": 20,
+      "response_rows_per_replicate": 1600
+    },
+    {
+      "order": 6,
+      "topology": "hub_weak",
+      "family": "connected_hub",
+      "bridge_persons": 25,
+      "edges": [["R01", "R02"], ["R01", "R03"], ["R01", "R04"], ["R01", "R05"], ["R01", "R06"]],
+      "persons_per_edge": 5,
+      "response_rows_per_replicate": 1300
+    },
+    {
+      "order": 7,
+      "topology": "hub_strong",
+      "family": "connected_hub",
+      "bridge_persons": 100,
+      "edges": [["R01", "R02"], ["R01", "R03"], ["R01", "R04"], ["R01", "R05"], ["R01", "R06"]],
+      "persons_per_edge": 20,
+      "response_rows_per_replicate": 1600
+    }
+  ],
+  "anchor_scenarios": [
+    {
+      "order": 1,
+      "scenario": "a0_unanchored",
+      "anchor_count": 0,
+      "selection": "none"
+    },
+    {
+      "order": 2,
+      "scenario": "a1_random_correct",
+      "anchor_count": 1,
+      "selection": "explicit prospectively frozen level by replicate"
+    },
+    {
+      "order": 3,
+      "scenario": "a2_random_correct",
+      "anchor_count": 2,
+      "selection": "explicit prospectively frozen levels by replicate"
+    },
+    {
+      "order": 4,
+      "scenario": "a3_random_correct",
+      "anchor_count": 3,
+      "selection": "explicit prospectively frozen levels by replicate"
+    },
+    {
+      "order": 5,
+      "scenario": "a6_all_correct",
+      "anchor_count": 6,
+      "selection": "all Rater levels"
+    }
+  ],
+  "frozen_random_anchor_levels": {
+    "selection_seed": 2026081017,
+    "algorithm": "numpy default_rng PCG64 permutation of R01 through R06 once per replicate; first 1, sorted first 2, and sorted first 3",
+    "1": {"a1_random_correct": ["R04"], "a2_random_correct": ["R03", "R04"], "a3_random_correct": ["R03", "R04", "R06"]},
+    "2": {"a1_random_correct": ["R05"], "a2_random_correct": ["R05", "R06"], "a3_random_correct": ["R02", "R05", "R06"]},
+    "3": {"a1_random_correct": ["R01"], "a2_random_correct": ["R01", "R02"], "a3_random_correct": ["R01", "R02", "R05"]},
+    "4": {"a1_random_correct": ["R01"], "a2_random_correct": ["R01", "R03"], "a3_random_correct": ["R01", "R03", "R05"]},
+    "5": {"a1_random_correct": ["R06"], "a2_random_correct": ["R02", "R06"], "a3_random_correct": ["R02", "R03", "R06"]},
+    "6": {"a1_random_correct": ["R03"], "a2_random_correct": ["R03", "R04"], "a3_random_correct": ["R03", "R04", "R05"]},
+    "7": {"a1_random_correct": ["R02"], "a2_random_correct": ["R02", "R05"], "a3_random_correct": ["R02", "R03", "R05"]},
+    "8": {"a1_random_correct": ["R02"], "a2_random_correct": ["R02", "R05"], "a3_random_correct": ["R02", "R04", "R05"]},
+    "9": {"a1_random_correct": ["R02"], "a2_random_correct": ["R02", "R05"], "a3_random_correct": ["R02", "R03", "R05"]},
+    "10": {"a1_random_correct": ["R04"], "a2_random_correct": ["R01", "R04"], "a3_random_correct": ["R01", "R02", "R04"]}
+  },
+  "fit_contract": {
+    "model": "RSM",
+    "rating_min": 0,
+    "rating_max": 3,
+    "facet_cols": ["Rater", "Criterion"],
+    "score_col": "ObservedCategory",
+    "gtol": 1e-8,
+    "maxiter": 800,
+    "newton_polish_maxiter": 12,
+    "expected_audits": 350,
+    "fit_only_if_prefit_eligible": true,
+    "failure_accounting": "Every audit and every eligible fit is retained; rank-deficient designs are expected negative controls, not failed optimizer attempts."
+  },
+  "realized_graph_contract": {
+    "informative_person": "Observed total is strictly between the minimum and maximum possible total for that Person's administered rows.",
+    "edge": "Two Rater levels are joined when at least one informative Person has observations from both.",
+    "components_include_isolates": true,
+    "prediction_without_hard_anchors": "Rater block is predicted identified only when the realized informative Rater graph is connected; the native sum-to-zero Rater coordinates supply one global origin constraint.",
+    "prediction_with_hard_anchors": "Rater block is predicted identified only when every realized graph component containing a free Rater also contains at least one hard-anchored Rater.",
+    "prediction_scope": "Necessary design-level Rater-block prediction; exact conditional rank remains authoritative and can expose additional Criterion/Step or realized-score deficiencies."
+  },
+  "raw_fit_contract": {
+    "primary_rule": "Infit > 1.5 or Outfit > 1.5",
+    "decisions_use": "finite unrounded binary64 values",
+    "display_counterfactual_decimals": [3, 6],
+    "boundary_distances": [0.0005, 0.001],
+    "automatic_threshold_selection": false
+  },
+  "frozen_outputs": [
+    "generated response file and exact round-trip fingerprint",
+    "complete 350-row topology-replicate-anchor audit ledger",
+    "realized informative bridge edges, component membership, and support counts",
+    "graph-predicted versus exact conditional eligibility confusion table",
+    "conditional rank, nullity, zero-point condition number, issues, work and memory proxies",
+    "eligible-fit return, stationarity, fitted-rank, condition-number, and inference-readiness evidence",
+    "structural recovery separated by anchored/free status",
+    "fit-sample WLE recovery and raw Person Infit/Outfit for inference-ready fits",
+    "raw versus three/six-decimal decision disagreements and boundary-distance counts",
+    "replicate-level summaries before pooled descriptive summaries",
+    "condition-number versus effective bridge-support figure and rank/eligibility heatmap"
+  ],
+  "prospective_expectations_not_success_gates": {
+    "no_bridge": "Any scenario leaving a free Rater is expected rank deficient; all-six-correct removes the Rater block and is expected eligible if Criterion/Step information remains full rank.",
+    "two_clusters_strong": "Unanchored identification is expected to retain one between-component null direction. Random anchors are expected to restore Rater-block identification only when both realized components are covered, while all-six-correct removes the block.",
+    "connected_topologies": "A connected realized informative graph is expected to identify the Rater block even without anchors, but minimal support may yield large condition numbers and finite-sample failures.",
+    "hub_vs_chain": "Equal nominal bridge counts need not have equal conditioning or recovery because edge topology and anchor location matter.",
+    "rounding": "No disagreement count is assumed; raw values remain authoritative regardless of the observed three/six-decimal audit."
+  },
+  "integrity_gates": {
+    "all_350_audits_ledgered": true,
+    "all_prefit_eligible_cases_attempted": true,
+    "same_byte_input_within_topology_replicate": true,
+    "generated_source_roundtrip_exact": true,
+    "frozen_anchor_assignments_exact": true,
+    "supplied_anchors_exact_and_se_zero_for_returned_fits": true,
+    "raw_fit_flags_recompute_exactly": true,
+    "performance_value_success_gate": null
+  },
+  "interpretation_limits": {
+    "independent_monte_carlo_unit": "replicate, not Person or edge",
+    "ten_replicates": "debugging evidence for design logic and failure modes, not confirmatory probability or precision",
+    "graph_prediction": "a transparent topology rule to compare with exact rank, not a replacement for the exact conditional-information audit",
+    "anchor_share": "randomized content reduces but does not eliminate finite ten-replicate content imbalance; no universal share is estimable",
+    "drift": "not manipulated in this phase; differential drift distribution is the next separate registered phase",
+    "cross_engine": "not addressed; later replay must respect each estimator's Person treatment and anchor contract",
+    "public_ui": "withheld"
+  }
+}

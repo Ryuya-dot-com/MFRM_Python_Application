@@ -1,0 +1,41 @@
+{
+  "schema_version": "mfrm-cmle-wle-bootstrap-fit-extension-amendment-v1",
+  "registered_date": "2026-08-10",
+  "registration_timing": "After the first extension run failed the exact-zero WLE identity gate and after diagnosing, but before changing the comparator or executing a corrected rerun.",
+  "original_plan_sha256": "6d4bbe611da59cd8e8b39ae8d0d652085ed0b7c38d647b26907b76f0e7d6e1af",
+  "failed_run_identity": {
+    "directory": "validation/cmle_wle_bootstrap_fit_extension_20260810",
+    "decision_sha256": "aafd025f63b90fbb7ff3b0e8c2908c92d749ecf8c364bd3c0be9780b04d8a97f",
+    "runner_sha256": "2f828278fc1059b82d10a875f3b9b25180cdfbc42c1d63b7c52d2870b35900ca",
+    "extension_person_draws_sha256": "5961726d36a2d57e54a9d6410b0d9e5e659d4d9adf6b8fcf07d20f0433cc792e",
+    "original_person_draws_sha256": "3eaf9284709e05eb5aa7f0ed0066144e909820177167a1631e69e13bb617c936"
+  },
+  "observed_failure": {
+    "contract_passed": false,
+    "failed_gate": "maximum_difference_from_original_wle_draws_for_same_seed must equal 0.0",
+    "asymmetric_comparison_result": 4.440892098500626e-16,
+    "other_frozen_gate_failures": 0,
+    "person_fit_available_replicates": 800,
+    "original_pilot_files_changed": 0
+  },
+  "diagnosis": {
+    "cause": "The comparator read the original 17-significant-digit CSV into binary64 but compared it with the corrected run's not-yet-serialized in-memory binary64 values. This asymmetric representation introduced a one-ULP comparison difference even though both persisted CSVs encode values that read back identically.",
+    "symmetric_persisted_comparison_maximum_difference": 0.0,
+    "symmetric_persisted_identity_mismatches": 0,
+    "statistical_algorithm_difference_identified": false,
+    "seed_or_response_draw_difference_identified": false
+  },
+  "prospective_correction": {
+    "exact_zero_gate_changed": false,
+    "tolerance_changed": false,
+    "statistical_estimator_changed": false,
+    "bootstrap_draws_changed": false,
+    "fit_thresholds_changed": false,
+    "comparison_method": "Write corrected Person draws with the same %.17g CSV contract used by the original pilot, read the corrected CSV back, then compare the two persisted representations symmetrically.",
+    "corrected_output_directory": "validation/cmle_wle_bootstrap_fit_extension_corrected_20260810",
+    "failed_output_directory_is_immutable": true,
+    "corrected_rerun_must_recompute_all_800_replicates": true,
+    "corrected_rerun_must_not_copy_fit_results_from_failed_run": true
+  },
+  "interpretation_boundary": "The failed run remains a failed frozen-gate result. The corrected rerun may pass only under the unchanged exact-zero gate and all other original extension gates. Fit-transition counts from the failed run are not promoted before the corrected rerun completes."
+}

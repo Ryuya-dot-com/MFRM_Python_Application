@@ -1,0 +1,54 @@
+{
+  "schema_version": "mfrm-facets-table8-table13-plan-v1",
+  "registered_date": "2026-08-11",
+  "scope": "FACETS 4.5.0 additive-RSM operating-characteristics replay",
+  "purpose": "Qualify machine-readable category and Rater-by-Task bias outputs before examining decision agreement.",
+  "table8_contract": {
+    "source": "A second FACETS reporting pass over the identical specification and data with Umean=0,1,2.",
+    "reason_for_second_pass": "Umean=0,1,6 causes fixed-width Table 8 category-Outfit tokens to truncate to values such as '1.' or '.', so no numeric value is inferred from that rendering.",
+    "primary_measure_source": "The six-decimal primary pass remains authoritative for Table 7 measures and Table 13 bias sizes.",
+    "fields": [
+      "score and category counts",
+      "average and expected measures",
+      "displayed category Outfit",
+      "Rasch-Andrich threshold and SE",
+      "expectation and modal/median locations",
+      "category peak probability"
+    ],
+    "count_audit": "Displayed Total counts must equal exact counts from generated_ratings.csv; Used counts may be smaller because FACETS can exclude extreme observations.",
+    "outfit_rule": "Treat one-decimal category Outfit as a displayed value with a plus/minus 0.05 interval; 0.5 to 1.5 is a descriptive review band, not a proof of model fit.",
+    "threshold_order_rule": "Adjacent thresholds are ordered only when the entire earlier display interval is below the entire later interval; overlap is boundary_uncertain.",
+    "prohibited": [
+      "Parsing truncated six-decimal Table 8 Outfit tokens as 1.0 or missing-at-random.",
+      "Calling a category functional from counts or Outfit alone.",
+      "Treating Table 8 display agreement as raw-statistic parity."
+    ]
+  },
+  "table13_contract": {
+    "source": "The primary six-decimal FACETS report.",
+    "canonical_arrangement": "Table 13 occurrence explicitly labelled arranged by N; mN and fN are duplicate reorderings and are not appended.",
+    "interaction": "Rater by Task, Bias=plus, so higher observed scores correspond to positive bias measures.",
+    "statistical_rule": "Apply Holm adjustment within the complete Rater-by-Task family for each RunId; adjusted p < 0.05.",
+    "practical_rule": "Absolute bias size >= 0.50 logits.",
+    "strong_rule": "Holm-significant and practically large.",
+    "sparse_rule": "Observed Count < 5 is sparse and cannot receive a strong-review claim.",
+    "rounding_rule": "Retain each display token and its decimal count. Bias and p decisions use conservative display intervals; Holm uncertainty is bounded by family-size times the raw-p display half-unit.",
+    "comparison_boundary": "Compare FACETS and Python application decisions after matching facet-pair cells and rules. Different bias estimation and SE procedures mean numerical equality is not required.",
+    "prohibited": [
+      "Using unadjusted FACETS Prob. against Holm-adjusted application p-values.",
+      "Treating absent or unparsed cells as negative findings.",
+      "Estimating false-positive rate or power from the two-replicate qualification bundle."
+    ]
+  },
+  "registered_outputs": [
+    "facets_table8_categories.csv",
+    "facets_category_count_audit.csv",
+    "facets_python_table8_threshold_pairs.csv",
+    "facets_python_table8_threshold_agreement.csv",
+    "facets_table13_bias.csv",
+    "facets_table13_cell_audit.csv",
+    "facets_python_bias_pairs.csv",
+    "facets_python_bias_agreement.csv"
+  ],
+  "claim_limit": "Parser, identity, direction, scale, rounding, and obvious decision-mapping faults only; no stable operating-characteristic claim."
+}

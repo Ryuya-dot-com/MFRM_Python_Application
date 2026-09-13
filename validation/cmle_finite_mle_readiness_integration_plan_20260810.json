@@ -1,0 +1,61 @@
+{
+  "registration_status": "prospective_before_fit_readiness_integration_or_systematic_results",
+  "registered_date": "2026-08-10",
+  "study_id": "cmle_finite_mle_readiness_integration_v1",
+  "purpose": "Make the validated support-oracle result a fail-closed prerequisite for native exact-CMLE inference readiness while preserving optimizer, estimate, likelihood, covariance, WLE, MnSq, and display-precision evidence as separate layers.",
+  "parent_identity": {
+    "mfrm_app/cmle.py": "bc76666ebc40a68c7c33fcb798271f2b191ed7187ad1421e64eec2d5231a8dee",
+    "mfrm_app/cmle_existence.py": "6e65621a67751c25d9e870141ac04d9f61dc68096045f84ca212afdc34b435ac",
+    "tests/test_cmle.py": "a9b914b02a7577a5bef2534556b656a1a18e20356dadef6adea2d37d195b5f1f",
+    "tests/test_cmle_existence.py": "4363bf0dde327fcfb79c202c5dddb30a2fe2d6172630d902b45f66428e0ab4b6",
+    "validation/cmle_finite_mle_oracle_20260810/oracle_decision.json": "bf6f7f504709a446186042e636de9248bbc10fb7bdb7d59b988b7101500c963e",
+    "validation/cmle_finite_mle_oracle_20260810/oracle_retained_ledger.csv": "1d47e2b29209a92454be58210695756ad75127089aecd9abfaa3adda9fc33167"
+  },
+  "integration_contract": {
+    "default": "The repository-only fit_cmle route enables the finite-MLE gate by default; an explicit false option exists only for controlled backward/numerical comparison and is recorded in config and summary.",
+    "ordering": [
+      "strict eligibility and exact prefit rank",
+      "finite-MLE support-oracle audit",
+      "unchanged exact optimizer and finite-domain remediation",
+      "unchanged final information/covariance/stationarity checks",
+      "combined inference readiness"
+    ],
+    "readiness": "InferenceReady is true only when the support oracle returns interior_finite_cmle_supported with ExistenceQualified=true and all existing optimizer/final-rank/covariance/stationarity gates pass.",
+    "boundary": "A boundary fit may retain finite technical optimizer outputs for reproducibility, but InferenceReady is false and ReadinessReasons includes finite_mle_boundary_no_finite_cmle.",
+    "unavailable": "Oracle failure, tolerance instability, cap, or directional-verification failure sets InferenceReady=false with a typed finite_mle_<status> reason; it is never treated as interior.",
+    "telemetry": "Summary, config, and returned audit retain gate-enabled state, existence status/reason, boundary flag, tolerance grid, theoretical configurations, oracle state cells, generated cuts, and oracle calls.",
+    "no_fit_substitution": "The gate does not clip estimates, add a penalty/prior, modify MnSq, or silently switch estimator."
+  },
+  "registered_checks": {
+    "synthetic_boundary": "Every prefit-eligible registered complete-separation/boundary fixture that returns a technical fit is non-ready under the default gate even when optimizer convergence, finite-point rank, or gradient would otherwise pass.",
+    "synthetic_interior": "Every registered interior fixture retains its prior optimizer/readiness result and is marked existence-qualified.",
+    "fail_closed_mock": "A deliberately injected unavailable/tolerance-unstable oracle result with otherwise successful optimization cannot become inference-ready.",
+    "explicit_comparison_off": "The explicit gate-disabled path records not_evaluated and reproduces the pre-integration technical fit/readiness behavior; it is not the default.",
+    "retained_replay": "All same-byte 287 prefit-eligible connectivity cases return; 274 interior cases remain ready and 13 boundary cases remain non-ready with the new typed reason.",
+    "numeric_invariance": "Against the finite-domain remediation evidence, common returned rows preserve structural estimates, SE, conditional log likelihood, WLE, Infit, Outfit, and raw/rounded decisions within the previously registered binary64 comparison tolerances.",
+    "floating_point": "Existence uses the frozen tolerance grid and normalized support rows; fit classes continue to use raw MnSq and display rounding cannot affect readiness."
+  },
+  "success_gates": {
+    "eligible_returnability": "287/287",
+    "retained_readiness": "274/287, all and only oracle-interior cases that pass existing numerical gates",
+    "boundary_withheld": "13/13 retained boundary cases and every returning synthetic boundary control are non-ready",
+    "interior_preservation": "Zero retained interior readiness regressions relative to existing numerical gates",
+    "numeric_invariance": {
+      "structural_estimate_absolute": 1e-12,
+      "structural_se_absolute": 1e-12,
+      "conditional_loglik_absolute": 1e-10,
+      "person_wle_absolute": 1e-12,
+      "person_fit_absolute": 1e-12,
+      "raw_and_rounded_flag_mismatches": 0
+    },
+    "tests": "All selected CMLE, hard-anchor, WLE-fit, and existence tests pass, including new integration controls.",
+    "public_ui": "withheld"
+  },
+  "interpretation_limits": {
+    "technical_boundary_outputs": "A retained large finite estimate on a boundary is optimizer evidence only and must not be reported as a finite unpenalized CMLE.",
+    "anchors": "An interior result is conditional on fixed anchors and does not validate their origin or differential accuracy.",
+    "fit": "Existence-qualified readiness does not validate MnSq thresholds, local independence, fairness, or bias.",
+    "cross_engine": "No claim of identical boundary handling with immer, TAM, sirt, or mfrmr is made.",
+    "public_ui": "withheld pending staged explanation and cross-engine boundary review"
+  }
+}

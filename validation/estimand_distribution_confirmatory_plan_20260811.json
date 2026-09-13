@@ -1,0 +1,213 @@
+{
+  "schema_version": "mfrm-estimand-distribution-confirmatory-plan-v1",
+  "registered_on": "2026-08-11",
+  "registration_timing": "Registered after inspection of the 20-replicate screening and before generation, fitting, aggregation, or analysis of confirmatory replicates 21 through 120.",
+  "purpose": "Confirm a small result-informed set of Person-distribution and observation-design effects while preserving FACETS 4.5.0 as the JMLE calibration reference and keeping JMLE, MML, and exact CMLE estimands distinct.",
+  "evidence_status": {
+    "screening_replicates": [
+      1,
+      20
+    ],
+    "confirmatory_replicates": [
+      21,
+      120
+    ],
+    "confirmatory_replicate_count": 100,
+    "fresh_data_required": true,
+    "screening_replicates_must_not_be_pooled_into_confirmatory_tests": true,
+    "fixed_sample_size": true,
+    "optional_stopping": false
+  },
+  "screening_provenance": {
+    "screening_plan": {
+      "path": "validation/estimand_distribution_screening_plan_20260811.json",
+      "sha256": "6c3eda5d69a93c219e8349ec234c470ab9cb61cc209a31b1ba5d28b6709604ee"
+    },
+    "screening_aggregate_metrics": {
+      "path": "validation/estimand_distribution_screening20_20260811/aggregate/study_metrics.json",
+      "sha256": "4805ddbb4400a51af589ff00e5a3cb50f65403eac36becc5cd91c49b5ff4ac59"
+    },
+    "free_sd_shape_contrasts": {
+      "path": "validation/estimand_distribution_screening20_20260811/screening_analysis_v2/free_sd_shape_contrast_summary.csv",
+      "sha256": "d4ab83e28cbad402e2f7208d1718bd0003c48b9d8650ae1dd8cb9d5acf65c4a5"
+    },
+    "threshold_element_shape_contrasts": {
+      "path": "validation/estimand_distribution_screening20_20260811/screening_analysis_v2/threshold_element_shape_contrast_summary.csv",
+      "sha256": "781fa14380078a8e884e193b72ca6a7c16b6af679d833455ee4cd2377f45eb75"
+    },
+    "threshold_design_contrasts": {
+      "path": "validation/estimand_distribution_screening20_20260811/screening_analysis_v2/threshold_design_contrast_summary.csv",
+      "sha256": "cdab3a00f5ecc8c4bbaca7df2e91c2c12bf9f301159e25b7d3e670f010ba5237"
+    },
+    "selection_disclosure": "The six primary endpoints and their directions were selected using screening replicates 1 through 20. They are therefore hypotheses for independent confirmation, not preregistered discoveries from the screening data."
+  },
+  "data_generating_process": {
+    "model": "correctly specified heterogeneous-threshold PCM",
+    "persons": 80,
+    "raters": 4,
+    "tasks": 3,
+    "criteria": 2,
+    "categories": 4,
+    "person_distributions": [
+      "normal",
+      "right_skew",
+      "symmetric_mixture",
+      "heavy_tail_t3"
+    ],
+    "observation_designs": [
+      "complete",
+      "planned_connected"
+    ],
+    "realized_person_location": 0.0,
+    "realized_person_population_sd": 0.8,
+    "paired_randomness": "Within a replicate, all Person distributions share the replicate seed and all distributions/designs share the registered row uniforms; planned-connected data are a deterministic subset of their complete counterpart.",
+    "base_seed": 2026081107
+  },
+  "estimation_modes": [
+    "FACETS_4_5_JMLE",
+    "PYTHON_JMLE",
+    "PYTHON_MML_FIXED_SD08_Q31",
+    "PYTHON_MML_FREE_SD_Q31",
+    "PYTHON_EXACT_CMLE"
+  ],
+  "primary_family": {
+    "familywise_alpha": 0.05,
+    "multiplicity_method": "Holm step-down adjustment over all six one-sided primary hypotheses",
+    "test": "One-sample Student t test of the 100 replicate-level paired contrasts against zero, using the registered direction.",
+    "confidence_interval": "Two-sided 95% Student t interval for the paired mean contrast, reported without multiplicity adjustment as an effect-size interval.",
+    "required_finite_paired_replicates_per_endpoint": 100,
+    "missing_data_rule": "No imputation, endpoint substitution, or ad hoc refit. An endpoint with fewer than 100 finite registered pairs is inferentially inconclusive.",
+    "decision_rule": "An endpoint is direction-confirmed only when all 100 pairs are finite, the observed mean has the registered sign, and its Holm-adjusted one-sided p value is at most 0.05. Precision qualification is reported separately and is not silently substituted for the hypothesis decision.",
+    "endpoints": [
+      {
+        "id": "H1_FREE_SD_RIGHT_SKEW_PLANNED_LT_NORMAL",
+        "source_table": "study_run_ledger.csv",
+        "estimator_mode": "PYTHON_MML_FREE_SD_Q31",
+        "metric": "EstimatedPopulationSD",
+        "contrast": "right_skew minus normal within planned_connected and replicate",
+        "alternative": "less",
+        "screening_mean_contrast": -0.08619624255301975,
+        "screening_monte_carlo_sd": 0.07922932535466157,
+        "precision_target_two_sided_95_half_width": 0.02,
+        "expected_half_width_at_n100_from_screening_sd": 0.01572
+      },
+      {
+        "id": "H2_FREE_SD_HEAVY_TAIL_PLANNED_LT_NORMAL",
+        "source_table": "study_run_ledger.csv",
+        "estimator_mode": "PYTHON_MML_FREE_SD_Q31",
+        "metric": "EstimatedPopulationSD",
+        "contrast": "heavy_tail_t3 minus normal within planned_connected and replicate",
+        "alternative": "less",
+        "screening_mean_contrast": -0.06552027595078788,
+        "screening_monte_carlo_sd": 0.0708610597328985,
+        "precision_target_two_sided_95_half_width": 0.02,
+        "expected_half_width_at_n100_from_screening_sd": 0.01406
+      },
+      {
+        "id": "H3_JMLE_MIXTURE_PLANNED_C02_STEP2_LT_NORMAL",
+        "source_table": "study_thresholds.csv",
+        "estimator_mode": "PYTHON_JMLE",
+        "metric": "TruthError",
+        "level": {
+          "StepFacetLevel": "C02",
+          "Category": 2
+        },
+        "contrast": "symmetric_mixture minus normal within planned_connected and replicate",
+        "alternative": "less",
+        "screening_mean_contrast": -0.11452103286087767,
+        "screening_monte_carlo_sd": 0.19764149390819985,
+        "precision_target_two_sided_95_half_width": 0.04,
+        "expected_half_width_at_n100_from_screening_sd": 0.03922
+      },
+      {
+        "id": "H4_FREE_MML_MIXTURE_PLANNED_C02_STEP2_LT_NORMAL",
+        "source_table": "study_thresholds.csv",
+        "estimator_mode": "PYTHON_MML_FREE_SD_Q31",
+        "metric": "TruthError",
+        "level": {
+          "StepFacetLevel": "C02",
+          "Category": 2
+        },
+        "contrast": "symmetric_mixture minus normal within planned_connected and replicate",
+        "alternative": "less",
+        "screening_mean_contrast": -0.12294014007053329,
+        "screening_monte_carlo_sd": 0.18888191523648268,
+        "precision_target_two_sided_95_half_width": 0.04,
+        "expected_half_width_at_n100_from_screening_sd": 0.03748
+      },
+      {
+        "id": "H5_EXACT_CMLE_MIXTURE_PLANNED_C02_STEP2_LT_NORMAL",
+        "source_table": "study_thresholds.csv",
+        "estimator_mode": "PYTHON_EXACT_CMLE",
+        "metric": "TruthError",
+        "level": {
+          "StepFacetLevel": "C02",
+          "Category": 2
+        },
+        "contrast": "symmetric_mixture minus normal within planned_connected and replicate",
+        "alternative": "less",
+        "screening_mean_contrast": -0.11533611547626647,
+        "screening_monte_carlo_sd": 0.19641877687001624,
+        "precision_target_two_sided_95_half_width": 0.04,
+        "expected_half_width_at_n100_from_screening_sd": 0.03897
+      },
+      {
+        "id": "H6_JMLE_NORMAL_THRESHOLD_RMSE_PLANNED_GT_COMPLETE",
+        "source_table": "study_thresholds.csv",
+        "estimator_mode": "PYTHON_JMLE",
+        "metric": "within-run RMSE of TruthError over all six registered threshold elements",
+        "contrast": "planned_connected minus complete within normal and replicate",
+        "alternative": "greater",
+        "screening_mean_contrast": 0.08091782523213069,
+        "screening_monte_carlo_sd": 0.05930763812530855,
+        "precision_target_two_sided_95_half_width": 0.015,
+        "expected_half_width_at_n100_from_screening_sd": 0.01177
+      }
+    ]
+  },
+  "precision": {
+    "calculation": "Student t(0.975, n-1) times replicate-level contrast SD divided by sqrt(n)",
+    "fixed_n_consequence": "A missed precision target is reported as such and does not trigger data-dependent extension of this study.",
+    "screening_based_values_are_planning_inputs_not_confirmatory_evidence": true
+  },
+  "analysis_implementation": {
+    "analysis_script": {
+      "path": "validation/estimand_distribution_confirmatory_analysis.py",
+      "sha256": "25e4a7ba7ed4b204425609efac440ea59458415ab44ecffe567bec5cc380ebeb"
+    },
+    "frozen_before_confirmatory_execution": true,
+    "outputs": [
+      "primary_contrasts.csv",
+      "primary_results.csv",
+      "confirmatory_metrics.json",
+      "confirmatory_analysis_identity.json"
+    ]
+  },
+  "operational_and_validation_gates": {
+    "all_registered_attempt_completion_is_required_for_workbench_qualification": true,
+    "facets_python_jmle_direct_agreement_is_required_for_workbench_qualification": true,
+    "mml_and_cmle_constraints_are_required_for_workbench_qualification": true,
+    "application_qualification_rule": "The aggregate qualification_pass must be true. If it is false, scientific endpoint summaries may be retained with their missingness/failure denominators, but this study cannot qualify the application as a FACETS-complementary workbench.",
+    "facets_precision_contract": "FACETS 4.5.0 displayed output is rounded. JMLE calibration uses the registered U6 main-estimate pass and U2 Table 8 pass; no primary threshold or fit calculation is reconstructed from two-decimal displayed values. PYTHON_JMLE supplies the unrounded JMLE primary endpoints.",
+    "identity_contract": "Plan, execution script, execution amendment, retained inputs, attempt completion markers, and aggregate artifacts are SHA-256 bound; a completion marker is written last and resume must validate it before skipping."
+  },
+  "secondary_and_exploratory_outputs": {
+    "status": "Descriptive or exploratory only; no confirmatory language and no post hoc promotion to the primary family.",
+    "include": [
+      "FACETS/Python JMLE parity and precision diagnostics",
+      "fixed-SD MML versions of registered threshold contrasts",
+      "all other facet-level, threshold-level, and global recovery contrasts",
+      "free-SD recovery outside H1 and H2",
+      "CMLE extreme-person rates and failure denominators",
+      "runtime and convergence summaries"
+    ]
+  },
+  "prohibited_inferences": [
+    "No estimator winner or ranking from recovery metrics across different estimands.",
+    "No cross-basis likelihood, deviance, AIC, or BIC comparison among JMLE, MML, and exact CMLE.",
+    "No pooling of screening replicates 1 through 20 into confirmatory tests.",
+    "No unregistered endpoint substitution, direction reversal, subgroup promotion, or multiplicity-family reduction after confirmatory results are inspected.",
+    "No claim that failure to reject proves Person-distribution invariance or estimator equivalence."
+  ],
+  "interpretation_target": "Determine which screening signals reproduce on independent simulated data and whether the application can expose distribution/design sensitivity across distinct likelihood estimands while remaining numerically calibrated to FACETS JMLE."
+}

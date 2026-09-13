@@ -98,27 +98,14 @@ def test_binary_score_range_works_in_generator():
     assert set(df["Score"].unique()) == {0, 1}
 
 
-def test_readme_help_section_contains_testlet_content():
-    """The Help tab → Model Capability section must explain MFRM vs testlet.
+def test_testlet_references_remain_methodological_not_a_public_generator_route():
+    """Keep testlet literature while excluding the legacy generator Help route."""
+    import inspect
 
-    The content lives in `locales/en.json` (key
-    ``help.model_capability_body``) since the i18n refactor moved help
-    markdown out of the Python source. This test pins a handful of
-    keywords there so a future refactor cannot silently drop the
-    comparison table from the canonical English source.
-    """
-    import json
-    from pathlib import Path
-    en_path = Path("locales/en.json")
-    src = en_path.read_text(encoding="utf-8")
-    body = json.loads(src).get("help", {}).get("model_capability_body", "")
-    must_contain = [
-        "Testlet-format Data",
-        "Bradlow, Wainer, and Wang",
-        "local-independence",
-        "TESTLET_RI",
-        "TESTLET_BIFACTOR",
-        "Wainer & Kiely",
-    ]
-    for phrase in must_contain:
-        assert phrase in body, f"Help doc missing {phrase!r}"
+    help_source = inspect.getsource(app.show_help_section)
+    run_source = inspect.getsource(app.run_facets_mode)
+
+    assert "Bradlow_Wainer_Wang_1999" in app._APA_REFERENCE_LIBRARY
+    assert 'selected_help_label == "Model Capability"' not in help_source
+    assert "TESTLET_RI" not in help_source
+    assert "generate_advanced_model_stan_code" not in run_source

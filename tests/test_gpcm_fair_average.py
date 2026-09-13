@@ -34,6 +34,7 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
+import pytest
 from scipy.special import expit, softmax
 
 import streamlit_app as app
@@ -186,6 +187,7 @@ def test_kernel_handles_extreme_slope_without_overflow():
 # -----------------------------------------------------------------------------
 
 
+@pytest.mark.legacy_compat
 def test_kernel_matches_r_reference_fixture():
     """Each Python value must agree with the mfrmr R kernel within 1e-10.
 

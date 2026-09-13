@@ -1,0 +1,105 @@
+{
+  "schema_version": "known_assignment_confirmatory_strict_audit_plan_v1",
+  "status": "posthoc_audit_contract_finalized_after_component_preflight_and_before_registered_end_to_end_audit_and_publication",
+  "registered_date": "2026-08-11",
+  "audit_nature": "APPEND_ONLY_POSTHOC_METHOD_AND_INTEGRITY_AUDIT",
+  "does_not_modify_frozen_v1": true,
+  "target": {
+    "study": "validation/kac200_20260811",
+    "study_identity_sha256": "a75869852519ca4947c25efc599bdb3a7c4d84532eea5623160c0ae51ad1a806",
+    "execution_registration_sha256": "c5c3de38ca5061289ca16c51e46312dbf2b1c15756fe09747a29ed0faceaca0f",
+    "aggregate_identity_sha256": "ea77cc34bd35c8e124e70355e49be132be0abe6e0e07ae105d3fcb9da69ea82c",
+    "aggregate_assessment_sha256": "6fbb9af5015867a6b3ed5d91225bb6e2ced221f0d529fdf56fc62e8ef76dea31",
+    "completion_marker_set_sha256": "e30c475f001a21be155af2a307c92a365b247b7cd02874c3282e4cf199584975",
+    "r_verification_identity_sha256": "4509aea77577f7b73f052362274bf4443da6b130dbaa4658f1631e777aa10070",
+    "r_assessment_sha256": "9885c12c72d187a587cafcd52f6b4f102fb15c22c894e2a9e0476a57e70374a9",
+    "r_process_sha256": "dee6b0d44b53415bc1160046c52d45ad3e5606ea7fe650915fb7780695f10421"
+  },
+  "immutability": {
+    "prohibited": [
+      "editing or replacing any frozen v1 source, plan, registration, retained input, completion marker, work artifact, R cross-fit artifact, or aggregate artifact",
+      "reinterpreting the original v1 status as if the posthoc audit had been prospectively registered",
+      "selecting a Python terminal-gradient acceptance threshold from observed kac200 values",
+      "constructing a new confirmatory hypothesis test from the 12-triplet R subset"
+    ],
+    "output": "validation/kac200_posthoc_strict_audit_20260811"
+  },
+  "strict_integrity_contract": {
+    "csv_lexical_contract": "read every audited CSV as text without NA inference; boolean tokens must be exactly True or False and headers must be nonempty and unique",
+    "completion_markers": {
+      "required": 1272,
+      "artifact_root": "must equal work/{AttemptOrdinal:05d} and resolve inside the target study",
+      "artifact_file_set": "recorded artifact_sha256 keys must exactly equal every actual file below the canonical artifact root",
+      "standard_files": [
+        "run_ledger.csv",
+        "recovery.csv",
+        "thresholds.csv",
+        "constraints.csv"
+      ],
+      "identity_fields": "must match the frozen attempt manifest and study identity",
+      "boolean_fields": "must be genuine JSON booleans; FACETS calibration is boolean only for the FACETS pair lane and null otherwise"
+    },
+    "aggregate": {
+      "identity_hashes": "all aggregate files and the completion-marker-set digest must be recomputed",
+      "r_assessment_parent": "must equal the retained R assessment hash",
+      "mml_rater_keys": "each PersonVector x Gamma x MML EstimatorMode cell must contain exactly R01, R02, R03, and R04 once",
+      "mml_constraint_residual_posthoc_integrity_tolerance": 1e-8
+    },
+    "independent_r": {
+      "datasets": 36,
+      "triplets": [5, 22, 41, 57, 72, 99, 116, 128, 143, 161, 176, 200],
+      "required_maxit": 200,
+      "required_r_version": "4.5.1",
+      "assessment_tolerance": "must exactly equal the frozen execution registration",
+      "verification_identity": "source, retained-input, and raw R-output hashes must be recomputed",
+      "verification_hash_maps": "must contain the exact registered basenames; empty maps, unknown files, path traversal, and symlinks are prohibited",
+      "keys": "RunId, expanded parameter, and gradient-coordinate sets must be exact and unique",
+      "numeric_values": "every required diagnostic value must be finite; NaN-skipping maxima are prohibited",
+      "gradient_supnorm_serialization_atol": 1e-15,
+      "recomputation": "the Python verifier must independently reconstruct its assessment from the frozen raw R outputs and retained inputs",
+      "minimum_matched_reoptimization_improvement_posthoc_integrity_tolerance": -1e-10
+    },
+    "facets": {
+      "registered_executable_hash_required": true,
+      "required_reported_version": "4.5.0",
+      "ready_pairs": 36,
+      "maximum_tries": 3,
+      "python_replay_tolerance": 1e-12,
+      "ordinary_two_decimal_fit_used_as_raw_input": false
+    },
+    "publication": {
+      "planned_output_only": true,
+      "outside_frozen_study": true,
+      "transactional_partial_then_atomic_rename": true,
+      "read_back_exact_file_set_schema_and_hashes_before_and_after_rename": true,
+      "overwrite_prohibited": true
+    }
+  },
+  "scientific_qualification_contract": {
+    "preserve_original_status": true,
+    "posthoc_status": "ORIGINAL_GATE_PASS_POSTHOC_QUALIFIED",
+    "direction_result_retained": true,
+    "precision_result_retained": true,
+    "optimization_stationarity_qualification": "INCOMPLETE",
+    "reason": "The Python-solution terminal Q31 score was recorded but no prospective acceptance threshold was frozen or gated.",
+    "retrospective_stationarity_pass_fail_decision": false,
+    "posthoc_threshold_selection_prohibited": true,
+    "authorized_claim": "The registered algorithm produced a direction-confirmed and precision-qualified expected within-dataset fixed-Rater RMSE stress contrast under the frozen DGP.",
+    "exact_mle_stationarity_claim_authorized": false,
+    "practical_importance_claim_authorized": false,
+    "estimator_superiority_claim_authorized": false
+  },
+  "r_subset_sensitivity_contract": {
+    "role": "POSTHOC_DESCRIPTIVE_NUMERICAL_SENSITIVITY",
+    "solutions": ["Python", "R_Q31", "R_Q61"],
+    "statistic": "KA1 fixed-Rater RMSE stress contrast reconstructed on the 12 frozen R cross-fit triplets",
+    "reported": [
+      "mean contrast for each solution",
+      "positive-triplet count for each solution",
+      "maximum absolute per-triplet contrast change from Python"
+    ],
+    "new_confirmatory_test_constructed": false,
+    "full_600_dataset_r_validation_claim": false
+  },
+  "claim_boundary": "This posthoc audit can strengthen artifact integrity and qualify the wording of the completed confirmation. It cannot retrospectively preregister a Python terminal-score tolerance, convert the R subset into a new confirmatory test, establish practical importance, validate MML with FACETS, rank estimators, or broaden the registered DGP."
+}

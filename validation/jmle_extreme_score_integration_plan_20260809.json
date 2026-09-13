@@ -1,0 +1,75 @@
+{
+  "schema_version": "mfrm-jmle-extreme-score-integration-plan-v1",
+  "registered_date": "2026-08-09",
+  "registration_timing": "Post hoc to the frozen Stage-B2, movement, and identifiability audits; prospective only with respect to the application change below.",
+  "purpose": "Separate finite JMLE person measures from optimizer terminal values at all-minimum/all-maximum score boundaries without changing the optimizer or facet estimates.",
+  "evidence_identity": {
+    "pre_change_streamlit_app_sha256": "a5a5b0edcdf23451251c36d1ce32828c1ea771956783537b64ae505072c767d7",
+    "stage_b2_plan_sha256": "bf0096bcb60d9781042a5d95344597fb94c21ea69069571c0c51b05b0b142513",
+    "stage_b2_runs_sha256": "c236e89e63ab3c5043646289138f2ce8acb8f86872accf9a4fadb303f7ef8a60",
+    "stage_b2_identity_sha256": "0756280d4ffde9cc9913e7e8f950119e14241dc1d0027a0a244f9e1425d444e5",
+    "movement_plan_sha256": "a89650d8621c4b0489197c3adf59319636d2138411826341960a4953d774da6b",
+    "movement_adapter_sha256": "1e317711f51842a2691314417b6c17b5b5a337b445beffa956937ffce564c870",
+    "movement_run_summary_sha256": "c0890393cec1b7bc440c1d0940f896ff43c88cf7b461ea644dfadbc89d267861",
+    "movement_expanded_parameters_sha256": "ff926812906027206d00b9fcb1faa388cee91129602c2cb97923c813df494c8b",
+    "movement_identity_sha256": "c451328372af71ad8d8816a12974d80c4bdc4957bacd04cc2bf0f20f5293e457",
+    "identifiability_plan_sha256": "e3da06314229dbac4cb06abbd88578ef4c9c407c43dfadf1f2c45903f8f6394a",
+    "identifiability_adapter_sha256": "3df57d8f4cce3e59d31f06c0333b4fa114b9872d484f4557c87d964077a7cecf",
+    "identifiability_runs_sha256": "9004ba45090686899d5aaec0bcb34b5bb57097bd9396f68829d2783b45271b0e",
+    "identifiability_identity_sha256": "122307c061c177d845a9b82fcc5e935a312d2b6c66f259ca95e5b6b6d4b81253",
+    "pre_change_identifiability_integration_identity_sha256": "edb19d1da8cca7e3e75228f89fde11de8d103dda71e519f56610561f960dfb26"
+  },
+  "boundary_definition": {
+    "applicable_estimator": "JMLE",
+    "unit": "Person",
+    "positive_weight_rows_only": true,
+    "all_minimum": "Every retained observed score for the Person equals the fitted rating_min.",
+    "all_maximum": "Every retained observed score for the Person equals the fitted rating_max.",
+    "statistical_interpretation": "The unbounded JMLE person parameter has no finite maximum-likelihood estimate at either boundary.",
+    "floating_point_rule": "Boundary classification uses exact retained integer score codes and never a displayed estimate magnitude cutoff."
+  },
+  "authorized_changes": {
+    "add_person_boundary_audit_before_result_construction": true,
+    "add_person_table_columns": [
+      "ExtremeScorePattern",
+      "ExtremeScoreDirection",
+      "FiniteJMLEEstimate",
+      "PersonInferenceReady",
+      "ReportableEstimate",
+      "EstimateRole"
+    ],
+    "retain_existing_optimizer_or_constraint_value_in_estimate_column": true,
+    "label_extreme_existing_value_as_technical_not_finite_person_mle": true,
+    "add_summary_counts_and_person_measure_readiness": true,
+    "show_bilingual_warning": true,
+    "export_boundary_audit": true,
+    "change_optimizer_controls": false,
+    "change_parameter_estimates": false,
+    "automatically_switch_estimator": false,
+    "substitute_finite_extreme_score_correction": false,
+    "authorize_precision_polish_in_application_core": false
+  },
+  "application_contract": {
+    "interior_person": {
+      "FiniteJMLEEstimate": true,
+      "PersonInferenceReady": "True only when the fit-level optimizer and eta-structural gates also pass.",
+      "ReportableEstimate": "Estimate"
+    },
+    "extreme_person": {
+      "FiniteJMLEEstimate": false,
+      "PersonInferenceReady": false,
+      "ReportableEstimate": null,
+      "EstimateRole": "optimizer_or_constraint_value_not_finite_person_mle"
+    },
+    "fit_level_effect": "PersonMeasureInferenceReady is false if any extreme Person exists; facet-level and fit-level structural readiness remain separate.",
+    "scope_label": "jmle_person_score_boundary_only"
+  },
+  "scope_boundaries": {
+    "rank_deficient_runs_eligible_for_precision_integration": false,
+    "facet_or_step_estimates_replaced": false,
+    "extreme_person_correction_selected": false,
+    "bias_decisions_recomputed_after_polish": false,
+    "public_performance_claim": false,
+    "public_surface_status": "Guarded technical warning and exports only"
+  }
+}

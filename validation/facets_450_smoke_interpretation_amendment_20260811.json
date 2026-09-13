@@ -1,0 +1,105 @@
+{
+  "schema_version": "mfrm-facets-smoke-interpretation-amendment-v1",
+  "date": "2026-08-11",
+  "post_result": true,
+  "parent_plan": "validation/facets_complementary_workbench_plan_20260810.json",
+  "retained_result": "validation/facets_450_adapter_smoke_v2_20260810",
+  "reason": "The first 16-run FACETS replay exposed two comparison-scope violations that would make a pooled FACETS-Python JMLE difference misleading: anchored facets use different free-level constraints, and sparse Person-Rater designs are structurally unidentified under the exact application eta design.",
+  "run_accounting": {
+    "attempted": 16,
+    "facets_returned": 16,
+    "facets_converged": 16,
+    "facets_main_facet_measure_eligible": 16,
+    "direct_matched_jmle_runs": 4,
+    "anchor_constraint_mismatch_sensitivity_runs": 8,
+    "structural_nonidentification_negative_control_runs": 4
+  },
+  "direct_result": {
+    "scope": "balanced_small, no anchors, exact eta rank identified, additive RSM; generator local-bias conditions 0.0 and 0.6 are both retained",
+    "weighted_facets_python_jmle_mae_logits": 0.00392339,
+    "maximum_absolute_difference_logits": 0.010422803358791977,
+    "facet_rank_order": "Spearman 1.0 in every retained facet/design/bias group",
+    "claim_limit": "Parser, sign, scale, and small-sample matched-JMLE numerical agreement in four smoke runs only; not general FACETS equivalence."
+  },
+  "anchor_constraint_finding": {
+    "observed": "Supplied R01/R02 anchors are reproduced by both engines. Differences concentrate in free R03/R04 levels.",
+    "facets_contract": "Once element anchors define the absolute origin, FACETS estimates every remaining unanchored level freely.",
+    "python_contract": "streamlit_app.py build_facet_constraint/count_facet_params/expand_facet_with_constraints continue to apply sum-to-zero to only the remaining ungrouped free levels when the facet is centered.",
+    "consequence": "The current anchored Python JMLE is over-constrained relative to FACETS and is not a direct matched-estimand comparison.",
+    "sensitivity_observed": {
+      "balanced_large_anchors_rater_mae_range_logits": [
+        0.06070672421341594,
+        0.10771372421341593
+      ],
+      "anchor_drift_rater_mae_range_logits": [
+        0.18562684921341593,
+        0.23263297421341592
+      ],
+      "maximum_rater_difference_logits": 0.5604778024564796
+    },
+    "recommended_remediation": "When an absolute element anchor or absolute group-anchor constraint identifies a facet origin, allocate one free coordinate per remaining ungrouped level. Retain sum-to-zero only when no absolute origin constraint is present, unless an explicit over-identified sensitivity model is requested.",
+    "required_tests_before_core_change": [
+      "One anchor plus one free level: the free level is estimable and is not forced to zero.",
+      "Two anchors plus two free levels: free estimates need not sum to zero and match a FACETS golden fixture.",
+      "All levels anchored: zero free coordinates.",
+      "No anchors: existing sum-to-zero behavior remains unchanged.",
+      "Group-anchor and mixed hard/group-anchor cases have explicit rank and expansion tests.",
+      "JMLE analytic gradient, covariance, identifiability metadata, exported parameter meaning, and MML paths remain coherent."
+    ],
+    "core_change_status": "not implemented in this amendment; requires a focused mathematical change and regression review"
+  },
+  "structural_identifiability_finding": {
+    "condition": "sparse_missing with one Rater per Person",
+    "existing_exact_audit": "validation/operating_characteristics_identifiability_20260809/jmle_identifiability_runs.csv",
+    "structural_nullity": 7,
+    "facets_message": "Subset connection O.K.",
+    "interpretation": "FACETS subset connectivity is not equivalent to full-rank identification of the application's exact Person/facet eta coordinate design. Both optimizers can return finite converged values while different constraints select different points on a nonidentified surface.",
+    "sensitivity_observed": {
+      "rater_mae_range_logits": [
+        1.2398073325758503,
+        1.2536451859332525
+      ],
+      "maximum_rater_difference_logits": 5.435415193049846
+    },
+    "decision": "Retain as a negative control; exclude from direct parity and estimator-recovery claims that require identified Rater effects."
+  },
+  "fit_rounding_finding": {
+    "facets_score_output": "Measure, S.E., and Displacement can be requested at six decimals with Umean=0,1,6; Infit/Outfit MnSq and ZSTD remain at two decimals.",
+    "facets_residual_output": "Expected score, residual, variance, standardized residual, and related fields remain at two decimals in the tested tab-separated output.",
+    "decision": "Do not reconstruct or claim raw FACETS fit parity. Store displayed values, conservative x +/- 0.005 intervals, and pass/flag/boundary_uncertain decisions."
+  },
+  "r_runtime_reproducibility": {
+    "r_version": "4.5.1",
+    "installed_packages": {
+      "digest": "0.6.39",
+      "psychotools": "0.7-7",
+      "TAM": "4.3-25",
+      "sirt": "4.2-133",
+      "immer": "1.5-13"
+    },
+    "bundle_validation": "All 16 RunIds, 18,526 rating rows, four byte hashes, response support, uniqueness, and paired-anchor identities passed in operating_characteristics_bridge.R.",
+    "stable_source_stripped_combined_function_sha256": {
+      "TAM_tam_mml_mfr_and_tam_jml": "b16c7fad3fc6085619928192047faf10eaf2b876bb0ffdcc2e81651bcc95f7e7",
+      "immer_jml_and_immer_cml": "cc1da7116e0e385aa81091f49e1ed9069b1618c777c0ab270626cc4658c08414",
+      "sirt_rm_facets": "30aff9f98fe0c2efd48e86bdef1367b5d172223774ed42da79c8ac457aba5125"
+    },
+    "legacy_hash_issue": "The archived operating-characteristics TAM registry uses a source-reference-sensitive serialized function hash (8083b024...). The current same-version binary produces b16c7fad... after source stripping and is blocked by the legacy TAM adapter. This is an identity-contract migration issue, not evidence of numerical disagreement.",
+    "next_action": "Use the repository's later utils::removeSource stable-identity contract in a prospectively amended R adapter before rerunning TAM."
+  },
+  "wording_correction": {
+    "implemented": true,
+    "change": "Application agreement crosswalk now says FACETS Table 7; Table 8 remains category/rating-scale output.",
+    "files": [
+      "streamlit_app.py",
+      "tests/test_operating_characteristics_facets_adapter.py"
+    ]
+  },
+  "prohibited_interpretations": [
+    "Pooling the 16 FACETS-Python differences as a single parity statistic.",
+    "Calling anchored differences estimator bias before matching constraint parameterizations.",
+    "Calling sparse differences estimator bias when the Rater estimand is structurally unidentified.",
+    "Treating optimizer convergence or FACETS subset connection as proof of full structural identification.",
+    "Treating two-decimal FACETS fit output as raw values.",
+    "Treating two smoke replicates per cell as stable operating characteristics."
+  ]
+}

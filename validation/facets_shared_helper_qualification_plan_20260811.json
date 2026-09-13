@@ -1,0 +1,42 @@
+{
+  "schema_version": "facets_shared_helper_qualification_plan_v1",
+  "status": "frozen_before_execution",
+  "registered_date": "2026-08-11",
+  "trigger_result": "validation/facets_visible_launcher_qualification_v2_20260811/result.json",
+  "trigger_result_sha256": "f0a43efe4b8d5c65a2259ce1720a340e7e94e8576be8fc88edb27e4535a40480",
+  "purpose": "Qualify the patched shared invoke_facets helper on both a report-only official example and a historically successful four-facet Scorefile-producing specification.",
+  "facets_executable": "C:/Facets/Facets.exe",
+  "facets_executable_sha256": "dfb0afb0faa18f026d1b3b4175f22e42cc3764430eb83cbd368c7a572b3593a1",
+  "shared_helper": "validation/operating_characteristics_facets.py",
+  "shared_helper_sha256": "84f364d4615bdafec962dd2b939c528ccc3398609acb8172beba0282e42fc135",
+  "visible_launcher": "validation/facets_visible_launcher.py",
+  "visible_launcher_sha256": "c45f7c2b3248adbaeb77b88503e3f9ea88de918baab0d0a15de83f37ccc6526f",
+  "controls": [
+    {
+      "id": "official_kct_report_only",
+      "specification": "C:/Facets/examples/Kct.txt",
+      "specification_sha256": "31e92a328fe4820ec19dc1b7103b1be0d02b7a205012b0c94ccfe55c5a35c4a6",
+      "expected_score_files": 0
+    },
+    {
+      "id": "historical_four_facet_scorefiles",
+      "specification": "validation/known_assignment_response_screening_v2_20260811/work/00000/facets_attempts/pair_try_01/facets_runs/gamma_neg_0p8__fixedtheta_rep-00001__pcm/analysis.txt",
+      "specification_sha256": "84707c0c52800ff3caf6bd2a414fe5bf82c5d13e2554b78aeda4fc8634e507ac",
+      "only_specification_change": "redirect Scorefile to the isolated control directory",
+      "expected_score_files": 4
+    }
+  ],
+  "execution": {
+    "batch_mode": "shared helper default BATCH=NO visible",
+    "stable_seconds": 2.0,
+    "close_method": "output-gated WM_CLOSE",
+    "timeout_seconds_each": 120,
+    "retained_output": "validation/facets_shared_helper_qualification_20260811"
+  },
+  "decision_rule": {
+    "pass": "both return code 0; both nonempty reports; the historical control has four nonempty score files; both launcher records show windows closed and no forced termination",
+    "fail": "do not execute supplemental preflight calibration"
+  },
+  "scientific_endpoint_read": false,
+  "claim_boundary": "Operational helper qualification only; no estimator recovery comparison or registered preflight endpoint is read."
+}

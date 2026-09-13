@@ -1,0 +1,28 @@
+{
+  "schema_version": "known_assignment_facets_crash_capture_plan_v1",
+  "status": "frozen_before_capture",
+  "registered_date": "2026-08-11",
+  "trigger_result": "validation/kafp_isolated_temp_20260811/result.json",
+  "trigger_result_sha256": "eca64c23f8ee587a8fb2aeff9b6260bb7097c044e04c706d53c417ea74e4f0f5",
+  "purpose": "Capture one unhandled-exception dump from the FACETS 4.5.0 bundled example so that repair decisions can be based on the faulting module rather than speculation.",
+  "facets_executable": "C:/Facets/Facets.exe",
+  "facets_executable_sha256": "dfb0afb0faa18f026d1b3b4175f22e42cc3764430eb83cbd368c7a572b3593a1",
+  "official_example": "C:/Facets/examples/Kct.txt",
+  "official_example_sha256": "31e92a328fe4820ec19dc1b7103b1be0d02b7a205012b0c94ccfe55c5a35c4a6",
+  "capture_tool": "validation/tools/procdump/procdump64.exe",
+  "capture_tool_sha256": "d1fc99ae304bd1d2bf28abeb62531da959e2431916194981b88c958fd713a8e6",
+  "execution": {
+    "work_root": "fresh OS temporary directory",
+    "process_environment_change": "TEMP and TMP point to a new empty child directory for ProcDump and FACETS",
+    "existing_temp_files_deleted": false,
+    "timeout_seconds": 120,
+    "capture_arguments": ["-accepteula", "-ma", "-e", "-x"],
+    "specification_change": "none; the bundled file is copied byte-for-byte",
+    "retained_output": "validation/kafp_crash_capture_20260811"
+  },
+  "decision_rule": {
+    "diagnostic_capture_pass": "at least one nonempty .dmp file is created",
+    "scientific_authorization": "never; the capture does not authorize supplemental calibration or endpoint reading"
+  },
+  "claim_boundary": "Native crash diagnosis only; no scientific endpoint is read and no FACETS result is substituted."
+}

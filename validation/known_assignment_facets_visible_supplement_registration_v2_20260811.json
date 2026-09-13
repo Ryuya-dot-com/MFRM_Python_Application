@@ -1,0 +1,23 @@
+{
+  "schema_version": "known_assignment_facets_visible_supplement_registration_v2",
+  "status": "registered_before_first_estimator_execution",
+  "registered_date": "2026-08-11",
+  "supersedes_registration": "validation/known_assignment_facets_visible_supplement_registration_20260811.json",
+  "evidence_key_amendment": "validation/known_assignment_facets_visible_supplement_input_key_amendment_20260811.json",
+  "evidence_key_amendment_sha256": "a1e9e2c3090cd211d649996c5562a058c0c00e6a1856e4d208eebece9b9a295c",
+  "plan": "validation/known_assignment_facets_visible_supplement_plan_20260811.json",
+  "plan_sha256": "5c008de5c2104984709538c85ac9bb05802037f8d67ad922d3741fbd40999d2c",
+  "runner": "validation/known_assignment_facets_visible_supplement.py",
+  "runner_sha256": "2c6b322af14d71ea0c460a593941f827159e386d5732aab18288c3571fbe6510",
+  "dependency_manifest_sha256": "7b5868c045af9e492bee06de2a224e80b12afb9688e3ddd4018da27d3dc503ef",
+  "source_preendpoint_audit_sha256": "9950d301106c60dd8d41b3a7d94a2d269f02bd3b2f3bce8a1d334ca09d4acfd3",
+  "selected_attempts": 12,
+  "maximum_retries_per_dataset": 0,
+  "batch_mode": "NO_VISIBLE_OUTPUT_GATED_WM_CLOSE",
+  "facets_calls_before_v2_registration": 0,
+  "estimator_fits_before_v2_registration": 0,
+  "scientific_endpoint_read_before_registration": false,
+  "aggregate_exists_before_registration": false,
+  "original_completion_markers_mutable": false,
+  "claim_boundary": "Operational FACETS/Python JMLE calibration only."
+}

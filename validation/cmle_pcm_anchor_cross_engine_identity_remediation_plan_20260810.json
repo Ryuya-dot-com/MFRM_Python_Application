@@ -1,0 +1,53 @@
+{
+  "registration_status": "prospective_before_identity_remediation_and_exact_replay_with_statistical_results_already_known",
+  "registered_date": "2026-08-10",
+  "study_id": "cmle_pcm_hard_anchor_cross_engine_identity_remediation_v1",
+  "parent_plan": {
+    "path": "validation/cmle_pcm_anchor_cross_engine_plan_20260810.json",
+    "sha256": "435f8f6fe56f0320923730255b4b247362599bfd0b8baf1b80f912e95c8060ca"
+  },
+  "failed_trial_identity": {
+    "decision_path": "/private/tmp/cmle-pcm-anchor-trial2.ul69LC/evidence/decision.json",
+    "decision_sha256": "2c85799d38b27472f12cbb0f2b40dfca7857f8c5ca12696e76ec9dd9f8a5d964",
+    "contract_passed": false,
+    "only_failed_gate": "identity_passed",
+    "cause": "The legacy digest serialized body() source-reference attributes that contain the random isolated installation path; identical mfrmr package source therefore produced different function hashes.",
+    "legacy_registered_mfrmr_function_sha256": "31c729711a8761be26abd9316f64f63ec7bce444c6a0770c55bdefa5daaf91e1",
+    "legacy_trial_mfrmr_function_sha256": "751521124ffc4e88a77c8fff61414490f2c8db5777631b43e92991670b86fea9"
+  },
+  "known_results_not_prospective": {
+    "python_passed": true,
+    "immer_prefit_passed": true,
+    "immer_interior_passed": true,
+    "immer_numeric_passed": true,
+    "boundary_complete": true,
+    "secondary_complete": true,
+    "zero_nll_max_absolute_difference": 4.263256414560601e-14,
+    "zero_gradient_max_absolute_difference": 4.263256414560601e-14,
+    "estimate_max_absolute_difference": 2.451084224475153e-09,
+    "conditional_loglik_max_absolute_difference": 3.552713678800501e-14,
+    "interpretation": "These values motivate and must be reproduced by the remediation. They are not a new prospective confirmation."
+  },
+  "stable_function_identity_contract": {
+    "algorithm": "For each namespace function, call utils::removeSource(), then SHA-256 digest the list of its formals and body with serialize=TRUE. For a multi-function engine, SHA-256 digest the named vector of per-function hashes.",
+    "multi_install_probe": "Three isolated installations of the same frozen mfrmr source produced three distinct legacy hashes but the same source-stripped hash in 3/3.",
+    "mfrmr_fit_mfrm_source_stripped_sha256": "496b8ceaec17a32ecbb3c60a1f9ee8e661470f5bb36f7e4720c5a8bf5a5578ca",
+    "immer_source_stripped_sha256": "cc1da7116e0e385aa81091f49e1ed9069b1618c777c0ab270626cc4658c08414",
+    "TAM_source_stripped_sha256": "32fe99ba74759aa35e2cc88df91e492882377810ca000ef6c75d3b60c677273d",
+    "sirt_source_stripped_sha256": "30aff9f98fe0c2efd48e86bdef1367b5d172223774ed42da79c8ac457aba5125",
+    "package_source_identity": "The frozen mfrmr build-relative content SHA-256 remains 06870f2f38ea6eeeb6df323003fc7e1ad2721d311ea50ec7a152170bf02b21d3 and is required in addition to the function hash."
+  },
+  "unchanged_contract": {
+    "fixtures": "All 12 case identities, response rows, anchors, declared support, and 6/6 status accounting remain unchanged.",
+    "numerics": "All zero-point, rank, optimizer, estimate, likelihood, boundary, and secondary-engine rules and tolerances in the parent plan remain unchanged.",
+    "interpretation": "Only Python/immer is direct PCM-CMLE parity; mfrmr JML and TAM/sirt MML remain sensitivity lanes; public UI remains withheld.",
+    "forbidden": "Do not modify a fixture, tolerance, maxit, estimator role, or numerical output to obtain an identity pass."
+  },
+  "remediation_success_gates": {
+    "identity": "All four source-stripped function hashes, package versions, adapter hashes, parent hashes, and mfrmr source-content hash match.",
+    "multi_install_stability": "A test removes source attributes and demonstrates the same mfrmr function hash for the retained function object contract.",
+    "statistical_replay": "Every parent numerical/status gate passes unchanged; reproduced maximum differences remain within the original prospective tolerances.",
+    "tests": "New identity-remediation tests and the original selected PCM/anchor/CMLE tests pass.",
+    "public_ui": "withheld"
+  }
+}

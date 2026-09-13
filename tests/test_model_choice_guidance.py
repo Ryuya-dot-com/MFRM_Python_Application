@@ -161,14 +161,33 @@ def test_model_choice_lr_p_value_matches_scipy(rsm_fit_for_model_choice):
         assert row["p"] == pytest.approx(expected, abs=1e-12)
 
 
-def test_model_choice_prefers_rsm_on_rsm_data(rsm_fit_for_model_choice):
-    """The data was generated under the RSM step structure (no per-item
-    thresholds, all slopes = 1), so the comparison must point at RSM."""
+def test_model_choice_lr_values_are_technical_and_public_decisions_are_withheld(
+    rsm_fit_for_model_choice,
+):
+    out = app.compute_model_choice_comparison(rsm_fit_for_model_choice)
+    lr = out["lr_tests"]
+
+    assert not lr.empty
+    assert set(lr["QualificationStatus"]) == {"WITHHELD"}
+    assert not lr["PublicConclusionAllowed"].astype(bool).any()
+    gpcm_pairs = lr.loc[lr["Alternative"].eq("GPCM")]
+    assert set(gpcm_pairs["ReasonCode"]) == {
+        "model.model_002.gpcm_lrt_uncalibrated"
+    }
+
+
+def test_model_choice_keeps_rsm_ranking_technical_and_withholds_public_recommendation(
+    rsm_fit_for_model_choice,
+):
+    """The pre-gate ranking is retained for audit, never as public guidance."""
     out = app.compute_model_choice_comparison(rsm_fit_for_model_choice)
     rec = out["recommendation"]
-    assert rec["model"] == "RSM"
-    # Tier must be non-trivial (RSM should be clearly preferred under BIC).
-    assert rec["tier"] in {"strong", "moderate", "weak"}
+    technical = out["technical_recommendation"]
+    assert technical["model"] == "RSM"
+    assert technical["tier"] in {"strong", "moderate", "weak"}
+    assert rec["model"] == ""
+    assert rec["tier"] == "withheld"
+    assert rec["reason_code"] == "model.model_001.jmle_auto_recommendation_withheld"
 
 
 # -----------------------------------------------------------------------------
@@ -237,6 +256,7 @@ def test_model_choice_prefers_gpcm_on_gpcm_heterogeneous_slope_data(
     cannot reproduce the shape)."""
     out = app.compute_model_choice_comparison(gpcm_fit_for_model_choice)
     rec = out["recommendation"]
+    technical = out["technical_recommendation"]
     comp = out["comparison"]
     finite = comp.dropna(subset=["AIC"])
     # GPCM must beat RSM at the AIC level; we don't fix the recommendation
@@ -245,8 +265,10 @@ def test_model_choice_prefers_gpcm_on_gpcm_heterogeneous_slope_data(
     aic_rsm = float(finite.set_index("Model").loc["RSM", "AIC"])
     aic_gpcm = float(finite.set_index("Model").loc["GPCM", "AIC"])
     assert aic_gpcm < aic_rsm
-    assert rec["model"] in {"GPCM", "PCM", "RSM"}  # not_available is forbidden
-    assert rec["tier"] in {"strong", "moderate", "weak", "tie"}
+    assert technical["model"] in {"GPCM", "PCM", "RSM"}
+    assert technical["tier"] in {"strong", "moderate", "weak", "tie"}
+    assert rec["model"] == ""
+    assert rec["tier"] == "withheld"
 
 
 # -----------------------------------------------------------------------------

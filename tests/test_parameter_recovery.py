@@ -15,7 +15,8 @@ The math contract pinned here covers:
 * The per-rep mean-alignment identity: at every rep,
   ``sum(EstimateAligned) ≈ 0`` and ``sum(ErrorAligned) ≈ 0`` over
   each (rep, ParameterType) subset.
-* The summary's Bias is the mean of ErrorAligned, RMSE is the
+* The summary's Bias is the mean of ErrorAligned over rows explicitly marked
+  ``IncludedInSummary`` (converged replicates when available), RMSE is the
   root-mean-square, MAE is the mean absolute, and the row count
   matches ``reps * n_levels`` for each location block.
 * Coverage95 is the fraction of finite-SE rows whose truth lies in
@@ -100,6 +101,16 @@ def test_recovery_rep_overview_has_one_row_per_rep(small_rsm_recovery_bundle):
     assert (rep_overview["RecoveryRows"] > 0).all()
 
 
+def test_recovery_rows_explicitly_mark_summary_inclusion(small_rsm_recovery_bundle):
+    recovery = small_rsm_recovery_bundle["recovery"]
+    overview = small_rsm_recovery_bundle["rep_overview"]
+    assert {"IncludedInSummary", "SummaryBasis"}.issubset(recovery.columns)
+    converged_reps = set(overview.loc[overview["Converged"].astype(bool), "rep"])
+    included_reps = set(recovery.loc[recovery["IncludedInSummary"].astype(bool), "rep"])
+    expected = converged_reps or set(overview.loc[overview["RunOK"].astype(bool), "rep"])
+    assert included_reps == expected
+
+
 def test_recovery_long_table_row_counts_match_reps_times_levels(
     small_rsm_recovery_bundle,
 ):
@@ -146,9 +157,10 @@ def test_recovery_mean_alignment_identity_holds_per_rep(
 def test_recovery_summary_bias_matches_mean_error_aligned(
     small_rsm_recovery_bundle,
 ):
-    """The summary Bias is the mean of ErrorAligned across all rows in
+    """The summary Bias is the mean of ErrorAligned across included rows in
     the (ParameterType, Facet, ComparisonScale) group."""
     recovery = small_rsm_recovery_bundle["recovery"]
+    recovery = recovery[recovery["IncludedInSummary"].astype(bool)]
     summary = small_rsm_recovery_bundle["recovery_summary"]
     for _, row in summary.iterrows():
         sub = recovery[
@@ -170,6 +182,7 @@ def test_recovery_summary_coverage95_matches_closed_form(
     """Coverage95 must equal the fraction of finite-SE rows with
     truth in estimate +/- 1.96 * SE."""
     recovery = small_rsm_recovery_bundle["recovery"]
+    recovery = recovery[recovery["IncludedInSummary"].astype(bool)]
     summary = small_rsm_recovery_bundle["recovery_summary"]
     z95 = float(norm.ppf(0.975))
     for _, srow in summary.iterrows():

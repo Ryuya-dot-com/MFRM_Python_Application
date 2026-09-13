@@ -1,0 +1,81 @@
+{
+  "schema_version": "mfrm-estimand-distribution-screening20-assessment-v1",
+  "assessment_date": "2026-08-11",
+  "timing": "Post-screening assessment. The analysis amendment was frozen after operational metrics and before condition-level results; the level-specific bias amendment was frozen after recognizing constraint cancellation and before producing level-specific results.",
+  "evidence_sha256": {
+    "registered_plan": "6c3eda5d69a93c219e8349ec234c470ab9cb61cc209a31b1ba5d28b6709604ee",
+    "level_bias_analysis_amendment": "c3d58a2dac9f8d118d12243d3d1aee088c230735a6577e6a8db38d47e353d2fa",
+    "study_identity": "d86f4513cbd9a2cadb225598b6301fe2882f056714aa4d86173b67c259918c1f",
+    "aggregate_metrics": "4805ddbb4400a51af589ff00e5a3cb50f65403eac36becc5cd91c49b5ff4ac59",
+    "aggregate_identity": "da36cc2339b5ae3d2370f01de4fad49350a96194942271315e21948389f6cb5d",
+    "completion_marker_hashes": "b4909f4b7ec31de640211a816649f8fcf877b1e28981e9e0c507a015a6fe0571",
+    "screening_analysis_v2_metrics": "03468039ea90229b9475b3a312c0f315b79c153b1c6ca1f2dfab130a47fcf49f",
+    "screening_analysis_v2_identity": "178a522f0a672caa70253905473da2a01e177154c672c23f753f586aa56886c1"
+  },
+  "operational_result": {
+    "datasets": 160,
+    "attempts": "640/640 completed and successful",
+    "facets_python_jmle": "160/160 eligible and direct-agreement pass",
+    "mml": "320/320 inference-ready",
+    "exact_cmle": "160/160 inference-ready and finite-MLE qualified",
+    "resume_replay": "640/640 skipped, zero refits, zero changed completion markers",
+    "all_registered_analysis_denominators": true,
+    "qualification_pass": true
+  },
+  "facets_python_parity": {
+    "maximum_main_weighted_mae": 0.0045445571160614,
+    "maximum_main_absolute_difference": 0.0132111995207018,
+    "maximum_threshold_weighted_mae": 0.005309674291324,
+    "maximum_threshold_absolute_difference": 0.009030064069788,
+    "minimum_within_facet_spearman": 1.0,
+    "precision_note": "FACETS displayed measures/thresholds are compared under the registered Umean=6 primary path; displayed fit values are not treated as hidden raw precision."
+  },
+  "screening_findings": {
+    "global_shape_rmse": {
+      "main": "0/90 non-normal-minus-normal RMSE intervals excluded zero; maximum absolute mean contrast was 0.00882 logits.",
+      "threshold": "0/30 threshold-RMSE intervals excluded zero; maximum absolute mean contrast was 0.02448 logits.",
+      "interpretation": "At matched realized mean and SD, population shape did not show a stable global recovery-RMSE effect at 20 replicates. This is absence of a screening signal, not proof of invariance."
+    },
+    "planned_missingness_rmse": {
+      "rater": "20/20 intervals excluded zero; mean RMSE increase range 0.03044 to 0.06642 logits.",
+      "task": "20/20 intervals excluded zero; range 0.01226 to 0.02599 logits.",
+      "criterion": "14/20 intervals excluded zero; range 0.00618 to 0.01951 logits.",
+      "thresholds": "20/20 intervals excluded zero; range 0.01865 to 0.08472 logits.",
+      "interpretation": "Observation design was the dominant global recovery axis across joint, marginal, and conditional estimands."
+    },
+    "free_sd_mml": {
+      "normal_mean": {"complete": 0.7992632763173408, "planned_connected": 0.8285794409268632},
+      "right_skew_mean": {"complete": 0.7373170793101504, "planned_connected": 0.7423831983738435},
+      "symmetric_mixture_mean": {"complete": 0.8134896118734172, "planned_connected": 0.8417349516882782},
+      "heavy_tail_mean": {"complete": 0.7699027354453609, "planned_connected": 0.7630591649760754},
+      "right_skew_minus_normal": {"complete": -0.061946197007190416, "planned_connected": -0.08619624255301975},
+      "heavy_tail_minus_normal": {"complete": -0.029360540871979875, "planned_connected": -0.06552027595078788},
+      "mixture_minus_normal": "Intervals included zero in both designs.",
+      "planned_minus_complete": "Only the normal contrast excluded zero: +0.029316 (screening interval +0.00247 to +0.05616).",
+      "interpretation": "Free population dispersion is sensitive to shape even when every realized generator SD equals 0.8. The one-seed preflight suggestion of uniformly lower SD under missingness did not replicate, demonstrating why the repeated study was necessary."
+    },
+    "local_bias": {
+      "main_shape": "12/270 unadjusted element-level shape intervals excluded zero: fixed-SD MML 9, free-SD MML 3, FACETS/Python JMLE and exact CMLE 0. Right-skew planned data shifted the two Criterion levels by approximately +/-0.0141 in fixed-SD MML and +/-0.0109 in free-SD MML.",
+      "threshold_shape_consensus": "For symmetric-mixture data, all five estimator modes showed C02 category-2 error contrasts around -0.075 to -0.080 in complete data; in planned-connected data all five showed C02 category-1 contrasts +0.082 to +0.100 and category-2 contrasts -0.115 to -0.124.",
+      "interpretation": "Global RMSE can remain stable while bias redistributes among constrained levels/steps. Level-specific ledgers are therefore required; facet-average signed error is not a valid bias screen under sum-to-zero alignment."
+    },
+    "cmle_information": {
+      "extreme_persons": 20,
+      "person_denominator": 12800,
+      "overall_rate": 0.0015625,
+      "complete_extremes": 4,
+      "planned_connected_extremes": 16,
+      "by_shape": {"normal": 1, "right_skew": 13, "symmetric_mixture": 0, "heavy_tail_t3": 6},
+      "interpretation": "Every CMLE fit remained eligible, but shape and missingness altered the small amount of Person information lost to extreme totals. Conditional estimation removes Person parameters; it does not make the observed total-score information invariant."
+    }
+  },
+  "runtime": {
+    "eight_shard_wall_seconds": 1587.6,
+    "facets_python_jmle_pair_total_seconds": 592.4,
+    "fixed_sd_mml_total_seconds": 2618.9,
+    "free_sd_mml_total_seconds": 2865.3,
+    "exact_cmle_total_seconds": 523.0
+  },
+  "withheld": "No estimator ranking, confirmatory significance, coverage, power, false-positive, universal distribution invariance, or automatic estimator recommendation. The many element-level screening intervals are unadjusted and used only to select independent future contrasts.",
+  "decision": "The 20-replicate screen is complete. A future confirmatory study should use 100 fresh replicates not reused from the screening, prospectively target free-SD shape contrasts, symmetric-mixture C02 local threshold contrasts, planned-missingness recovery loss, and extreme-Person rates, and set Monte Carlo precision before generation."
+}

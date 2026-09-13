@@ -1,0 +1,27 @@
+{
+  "schema_version": "facets_450_postrepair_official_control_plan_v1",
+  "status": "frozen_before_control_execution",
+  "registered_date": "2026-08-11",
+  "repair_plan": "validation/facets_450_same_version_repair_plan_20260811.json",
+  "repair_plan_sha256": "1dca7d125167c1339d0cdb58bd63c7e4b74bde6c08c1c852e74370e96a0de612",
+  "repair_result": "validation/facets_450_same_version_repair_result_20260811.json",
+  "repair_result_sha256": "e42d833335107a6656c78b6fdc6b011a6d11d92e3052baaaa5059035f432769a",
+  "purpose": "Verify analysis execution after the exit-0 licensed same-version FACETS 4.5.0 reinstall before any project control or supplemental calibration.",
+  "facets_executable": "C:/Facets/Facets.exe",
+  "facets_executable_sha256": "dfb0afb0faa18f026d1b3b4175f22e42cc3764430eb83cbd368c7a572b3593a1",
+  "official_example": "C:/Facets/examples/Kct.txt",
+  "official_example_sha256": "31e92a328fe4820ec19dc1b7103b1be0d02b7a205012b0c94ccfe55c5a35c4a6",
+  "execution": {
+    "work_root": "fresh OS temporary directory",
+    "process_environment_change": "TEMP and TMP point to a new empty child directory",
+    "timeout_seconds": 120,
+    "launch_path": "BATCH=YES with registered CREATE_NO_WINDOW behavior",
+    "specification_change": "none; bundled Kct.txt copied byte-for-byte",
+    "retained_output": "validation/kafp_postrepair_official_20260811"
+  },
+  "decision_rule": {
+    "pass": "return code 0 and nonempty report; authorize one historical project control only",
+    "fail": "same-version reinstall did not recover the runtime; do not run project control, supplemental calibration, or endpoint aggregation"
+  },
+  "claim_boundary": "Post-repair availability control only; it produces no estimator-comparison evidence."
+}

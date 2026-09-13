@@ -1,0 +1,32 @@
+{
+  "schema_version": "mfrm-facets-pcm-qualification-amendment-v1",
+  "registered_date": "2026-08-11",
+  "parent_plan": "facets_pcm_qualification_plan_20260811.json",
+  "timing": "Written after the syntax/parser probe and before generating or fitting the known-truth PCM smoke data.",
+  "clarifications": {
+    "main_facet_weight": "Number of retained rating rows containing the facet level; this is independently recomputed from generated_ratings.csv.",
+    "threshold_weight": "Number of retained rating rows for the corresponding Criterion step-facet level; all transitions within a level receive the same weight.",
+    "minimum_spearman": "Minimum FACETS-versus-Python Spearman correlation across Rater, Task, and Criterion within each directly eligible run; constant or missing vectors fail closed.",
+    "expanded_pcm_nullity": "Rank nullity of the adjacent-category design after exact model constraints: Person noncentered, every non-Person main facet sum-to-zero, and every Criterion threshold vector sum-to-zero.",
+    "paired_direction_check": "Within each seed, the estimated RMS distance between the two Criterion threshold vectors must be larger in the deliberately heterogeneous condition than in the shared-threshold condition, for both FACETS and Python.",
+    "known_truth_role": "Truth errors and correlations are descriptive at smoke depth; only direction is gated. Bias, coverage, false-positive, and power claims remain prohibited."
+  },
+  "locked_smoke_design": {
+    "replicates": 2,
+    "persons": 80,
+    "raters": 4,
+    "tasks": 3,
+    "criteria": 2,
+    "categories": [0, 1, 2, 3],
+    "complete_rows_per_run": 1920,
+    "shared_thresholds": {
+      "C01": [-1.1, 0.0, 1.1],
+      "C02": [-1.1, 0.0, 1.1]
+    },
+    "heterogeneous_thresholds": {
+      "C01": [-1.6, 0.25, 1.35],
+      "C02": [-0.45, -0.35, 0.8]
+    },
+    "paired_randomness": "Person measures and one uniform variate per rating row are identical across the two threshold conditions within a replicate."
+  }
+}

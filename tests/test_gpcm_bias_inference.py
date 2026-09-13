@@ -485,6 +485,7 @@ def r_bias_parity_fixture():
     return _read_r_bias_parity_fixture()
 
 
+@pytest.mark.legacy_compat
 def test_bias_estimation_matches_r_reference_within_tolerance(r_bias_parity_fixture):
     """Python and R bias estimates agree at manuscript-citation precision
     across all six cells of the shared synthetic data set.

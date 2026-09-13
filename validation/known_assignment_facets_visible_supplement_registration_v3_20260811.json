@@ -1,0 +1,33 @@
+{
+  "schema_version": "known_assignment_facets_visible_supplement_registration_v3",
+  "status": "registered_before_clean_path-corrected_execution",
+  "registered_date": "2026-08-11",
+  "supersedes_registration": "validation/known_assignment_facets_visible_supplement_registration_v2_20260811.json",
+  "input_key_amendment": "validation/known_assignment_facets_visible_supplement_input_key_amendment_20260811.json",
+  "input_key_amendment_sha256": "a1e9e2c3090cd211d649996c5562a058c0c00e6a1856e4d208eebece9b9a295c",
+  "path_amendment": "validation/known_assignment_facets_visible_supplement_path_amendment_20260811.json",
+  "path_amendment_sha256": "af8d03b789ca060a31cc7b68e35696dc6a6ae36e1b0825e3c7b96f3c52865b7c",
+  "plan": "validation/known_assignment_facets_visible_supplement_plan_20260811.json",
+  "plan_sha256": "5c008de5c2104984709538c85ac9bb05802037f8d67ad922d3741fbd40999d2c",
+  "runner": "validation/known_assignment_facets_visible_supplement.py",
+  "runner_sha256": "202ad303162d635efe3dee4ffb8687bde9494e51c4c9ef665b5c6e61a4bc50c7",
+  "dependency_manifest_sha256": "d3ac76478a459c5a80eb476f4bc26f9f263c279c4ed1d2ef9acb8c6cb663131a",
+  "source_preendpoint_audit_sha256": "9950d301106c60dd8d41b3a7d94a2d269f02bd3b2f3bce8a1d334ca09d4acfd3",
+  "selected_attempts": 12,
+  "maximum_retries_per_dataset": 0,
+  "batch_mode": "NO_VISIBLE_OUTPUT_GATED_WM_CLOSE",
+  "new_output_directory": "validation/known_assignment_multivector_preflight4_20260811/v",
+  "preexecution_absolute_worst_case_facets_path_length": 219,
+  "qualified_path_budget": 220,
+  "prior_long_path_partial_execution": {
+    "adopted": false,
+    "marked_failed_datasets": 3,
+    "unmarked_interrupted_datasets": 1,
+    "scientific_endpoint_read": false,
+    "aggregate_created": false
+  },
+  "clean_execution_calls_before_registration": 0,
+  "clean_execution_estimator_fits_before_registration": 0,
+  "original_completion_markers_mutable": false,
+  "claim_boundary": "Operational FACETS/Python JMLE calibration only; PF1-PF4 remain closed until the supplemental gate passes."
+}

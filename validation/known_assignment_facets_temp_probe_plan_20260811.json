@@ -1,0 +1,36 @@
+{
+  "schema_version": "known_assignment_facets_temp_probe_plan_v1",
+  "status": "frozen_before_probe_execution",
+  "registered_date": "2026-08-11",
+  "trigger_result": "validation/kafp_20260811/result.json",
+  "trigger_result_sha256": "f5ad3d91e092934900b77977fe7af98b2258bd3d44e927911d253e5ea19468a4",
+  "trigger_classification": "both_fail",
+  "purpose": "Repeat the retained-success control and new failed input under a newly created local OS temporary directory to isolate Dropbox/workspace filesystem context from the FACETS executable and input data.",
+  "facets_executable": "C:/Facets/Facets.exe",
+  "facets_executable_sha256": "dfb0afb0faa18f026d1b3b4175f22e42cc3764430eb83cbd368c7a572b3593a1",
+  "probes": [
+    {
+      "id": "retained_success_control",
+      "source_spec": "validation/known_assignment_response_screening_v2_20260811/work/00000/facets_attempts/pair_try_01/facets_runs/gamma_neg_0p8__fixedtheta_rep-00001__pcm/analysis.txt",
+      "source_spec_sha256": "84707c0c52800ff3caf6bd2a414fe5bf82c5d13e2554b78aeda4fc8634e507ac"
+    },
+    {
+      "id": "new_failed_input",
+      "source_spec": "validation/known_assignment_multivector_preflight4_20260811/work/00000/facets_attempts/pair_try_01/facets_runs/gamma_neg_0p8__vector-01__pcm/analysis.txt",
+      "source_spec_sha256": "352afd921ed36ef51e9b5b248b40f55ac12ee6e29779a554f7cda657ad69bf6f"
+    }
+  ],
+  "execution": {
+    "temporary_root": "new directory from the OS temporary-directory provider",
+    "retained_copy": "validation/kafp_temp_20260811",
+    "timeout_seconds": 120,
+    "only_change_to_each_spec": "replace Scorefile with an absolute path inside the same temporary probe directory"
+  },
+  "interpretation": {
+    "both_fail": "FACETS executable/runtime interaction persists outside Dropbox; filesystem location is not sufficient remediation",
+    "control_passes_new_fails": "new-input-specific FACETS failure outside Dropbox",
+    "both_pass": "Dropbox/workspace execution context is the localized cause; supplemental calibration may use a separately registered short temporary work root",
+    "control_fails_new_passes": "inconclusive"
+  },
+  "claim_boundary": "Execution localization only; no endpoint is read, no registered attempt is overwritten, and no calibration is replaced."
+}

@@ -1,0 +1,27 @@
+{
+  "amendment_status": "prospective_before_official_validation_output; after implementation-level arithmetic inspection; no_human_data; no_sample_size_selected",
+  "amendment_date": "2026-08-10",
+  "study_id": "cmle_one_click_confirmatory_sample_size_sensitivity_v1",
+  "parent_plan_sha256": "d8d41b563fdc90fbe6f6842360e4bd4db183f9d2f1a8f1a1b68bdb538a875f97",
+  "trigger": "Pre-official inspection showed the registered and mathematically expected sawtooth behavior: k(n), the largest Wilson-passing integer error count, increases discretely. Between k jumps, increasing n can lower P[Binomial(n,p) <= k(n)] before the next jump raises it.",
+  "risk": "A field named minimum n or first n meeting a target can be misread as meaning every larger n also meets the target. That implication is false on portions of the discrete surface.",
+  "amendment": {
+    "retain": "Retain the originally registered first crossing and its predecessor as an auditable arithmetic result.",
+    "rename": "Report FirstCrossingN rather than MinimumValidN for cell-pass and joint-union-bound probability targets.",
+    "add": "Also report SustainedThroughSearchFromN: the earliest n for which every evaluated n through the prospectively fixed search maximum remains at or above the target, plus the minimum probability over that retained suffix.",
+    "nonmonotonicity": "Report the number and maximum magnitude of downward adjacent-n probability steps over the search range.",
+    "limit": "Sustained through n=5000 is not a mathematical guarantee beyond n=5000 and is not a selected sample size."
+  },
+  "unchanged": [
+    "all parent identities",
+    "true dangerous-error probability scenarios",
+    "candidate valid n grid",
+    "one-sided Wilson gate and strict 0.10 threshold",
+    "per-cell probability targets",
+    "12-cell union-bound targets",
+    "search maximum n=5000",
+    "attrition, clustering, and blocked-mechanism sensitivity grids",
+    "no-human-data and no-selection status"
+  ],
+  "success_gate_addition": "For every available sustained result, all probabilities from SustainedThroughSearchFromN through n=5000 must meet the target. FirstCrossingN must still meet the target and its predecessor must fail. Downward steps must be retained rather than smoothed away."
+}

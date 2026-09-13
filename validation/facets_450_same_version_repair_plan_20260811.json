@@ -1,0 +1,38 @@
+{
+  "schema_version": "facets_450_same_version_repair_plan_v1",
+  "status": "frozen_before_interactive_installer",
+  "registered_date": "2026-08-11",
+  "trigger_analysis": "validation/kafp_crash_capture_20260811/crash_analysis.json",
+  "trigger_analysis_sha256": "66048faedb9dc4e2b3f4741588f50c4a09b26f24f2a3a03d6e532dc5fea7edd7",
+  "purpose": "Repair the installed licensed FACETS comparator without changing the registered 4.5.0 version after a bundled-example null dereference was localized to XojoGUIFramework64.dll.",
+  "installer": {
+    "path": "C:/Users/Kyomuron/Downloads/FacetsPasswordInstall4050.exe",
+    "bytes": 44971264,
+    "sha256": "7968b8cf8c3e569a75ba3a334367234d7f28c6d43ce397fc8a0e5435ba103917",
+    "authenticode_status": "Valid",
+    "signer": "John Michael Linacre",
+    "filename_version_designation": "4050"
+  },
+  "pre_repair_installation": {
+    "facets_executable": "C:/Facets/Facets.exe",
+    "facets_product_version": "4.5.0",
+    "facets_sha256": "dfb0afb0faa18f026d1b3b4175f22e42cc3764430eb83cbd368c7a572b3593a1",
+    "xojo_framework": "C:/Facets/XojoGUIFramework64.dll",
+    "xojo_file_version": "2023r4 #61832",
+    "xojo_sha256": "ed3f6c931f2db4625dc2ac0860cd741663b6c4b5bb44b802296b7eef1a9f014b"
+  },
+  "execution": {
+    "mode": "visible interactive installer with Windows elevation",
+    "user_may_need_to_confirm_uac_and enter_their_licensed_installer_password": true,
+    "install_target_expected": "C:/Facets",
+    "scientific_workspace_modified_by_installer": false
+  },
+  "post_repair_gate": [
+    "Verify C:/Facets/Facets.exe exists and reports product version 4.5.0.",
+    "Record post-repair executable and Xojo framework hashes and signatures.",
+    "Run exactly one unchanged bundled Kct.txt control in an isolated work and TEMP/TMP directory.",
+    "If and only if the bundled control passes, run one historically successful project control.",
+    "Do not execute supplemental calibrations or read registered endpoints until both controls pass."
+  ],
+  "claim_boundary": "Same-version native runtime repair only; the installer and controls do not create scientific evidence."
+}

@@ -1,0 +1,21 @@
+{
+  "schema_version": "known_assignment_multivector_visible_join_registration_v1",
+  "status": "registered_before_join_audit_or_endpoint_read",
+  "registered_date": "2026-08-11",
+  "plan": "validation/known_assignment_multivector_visible_join_plan_20260811.json",
+  "plan_sha256": "1fc89f93e176b3fec91ebcf40a13916cc92a5116b0bf89f28fedf8aa37eb3f9a",
+  "runner": "validation/known_assignment_multivector_visible_join.py",
+  "runner_sha256": "13708b648fc097c69a12c2015a3990265a8d0de88a3af450221d09900a7cb920",
+  "contract_test": "tests/test_known_assignment_multivector_visible_join.py",
+  "contract_test_sha256": "7c019bad0015112c87d8e28031f1b96a5e4e533d4f999aa6ec0bf2ff2897ba17",
+  "selected_test_result": "19 passed",
+  "source_completion_markers_expected": 48,
+  "supplement_markers_expected": 12,
+  "python_replay_tolerance": 1e-12,
+  "join_audit_exists_before_registration": false,
+  "derivative_aggregate_exists_before_registration": false,
+  "pf1_pf4_read_before_registration": false,
+  "source_artifacts_mutable": false,
+  "supplement_artifacts_mutable": false,
+  "claim_boundary": "Four-vector nonconfirmatory preflight with calibration-only FACETS evidence; no estimator ranking or confirmatory claim."
+}

@@ -1,0 +1,92 @@
+{
+  "registration_status": "prospective_before_bilingual_preview_or_comprehension_instrument_implementation; no_human_responses_collected",
+  "registered_date": "2026-08-10",
+  "study_id": "cmle_one_click_comprehension_readiness_v1",
+  "purpose": "Prepare, but do not claim completion of, task-based Japanese/English comprehension testing for the repository-only six-card CMLE result. Validate a non-public accessible HTML preview, participant-safe task packets, a separate researcher scoring key, and fail-closed scoring before any human pilot or Streamlit exposure.",
+  "parent_identity": {
+    "mfrm_app/cmle_one_click.py": "5cef56af65f2d062233a7dc9ea9da7e0d5cb49a875c2baa746428d120c6992af",
+    "mfrm_app/cmle_one_click_archive.py": "8a19f75552f3336f635f87648232943f1e2051bfafaee898610ebd2c586c2296",
+    "mfrm_app/ux.py": "a4f14651e30533c46eb0a020d13a267e8d4161c2dec955df7917748e19479072",
+    "validation/cmle_one_click_result_contract_20260810/decision.json": "f64cfd01ccc33a5430c52b6ae42a6cdf42dec274b20bd6677f95f966029f1266",
+    "validation/cmle_one_click_archive_identity_20260810/decision.json": "04d8826b8ea11851efd67e26b559cfe02ce106bd09fe27f94f294984f9ac2a04"
+  },
+  "scenario_contract": {
+    "analytical_cases": [
+      "rsm_interior_fit_sample_extremes",
+      "pcm_interior_differential_hard_anchors",
+      "binary_conditional_support_boundary",
+      "rsm_structurally_disconnected",
+      "invalid_missing_score_column"
+    ],
+    "languages": ["en", "ja"],
+    "preview_count": 10,
+    "cards_per_preview": 6,
+    "rounding_vignette": "A separately labelled constructed item uses raw Infit 1.5004 and displayed 1.500; the raw noisy class is correct and the display-only acceptable class is a dangerous misconception."
+  },
+  "task_contract": {
+    "items_per_scenario_language": 10,
+    "item_ids": [
+      "calibration_readiness",
+      "optimization_attempted",
+      "person_scoring_performed",
+      "fit_decision_input",
+      "rounding_vignette",
+      "calibration_uncertainty",
+      "anchor_validity",
+      "public_sharing",
+      "next_action",
+      "person_estimator_role"
+    ],
+    "critical_domains": [
+      "false_green_calibration",
+      "invented_person_scores",
+      "rounded_mnsq_reclassification",
+      "ignored_calibration_uncertainty",
+      "anchor_validity_overclaim",
+      "private_archive_public_sharing"
+    ],
+    "participant_packet": "Contains scenario, preview, questions, and option codes but never CorrectOption, rationale, or misconception severity.",
+    "researcher_key": "Contains the case- and item-specific CorrectOption, critical flag, misconception code, and bilingual rationale.",
+    "language_policy": "English and Japanese forms share ItemId, option codes, correct options, and criticality. Text parity is structural; it is not proof of translation equivalence."
+  },
+  "preview_contract": {
+    "format": "standalone static HTML, no JavaScript and no external network resources",
+    "accessibility": "Explicit lang, ordered headings, one section per card, visible status text in addition to color, escaped content, and a persistent research/private/public-withheld banner.",
+    "status_policy": "blocked, not_run, caution, and withheld remain visibly distinct; no status is renamed success or green.",
+    "public_surface": "withheld"
+  },
+  "scoring_contract": {
+    "required_response_fields": ["ParticipantId", "CaseId", "Language", "ItemId", "ResponseCode"],
+    "optional_response_fields": ["ResponseTimeSeconds", "Confidence"],
+    "fail_closed": "Unknown/duplicate/missing responses, unknown option codes, and non-finite or negative response times invalidate the participant-case packet rather than being scored correct.",
+    "participant_ready_rule": "All six critical-domain items correct within a case; total score is descriptive and cannot compensate for a critical error.",
+    "study_summary": "Retain attempted, complete, invalid, and critical-error denominators separately by case and language. Do not drop incomplete or invalid participants from the audit ledger.",
+    "synthetic_checks": "Perfect answers must pass, all-wrong answers must fail, and a single false-green critical error must fail even when all noncritical items are correct."
+  },
+  "human_study_protocol": {
+    "current_status": "not_started_no_human_data",
+    "phase_1_cognitive_interviews": "Recruit 6-10 target users per language form across novice and experienced strata; use think-aloud and retrospective probes to revise wording. This phase cannot promote the UI.",
+    "phase_2_pilot": "After freezing revisions, collect at least 24 complete participants per language form and report every invalid/incomplete packet, item error, critical misconception, completion time, and confidence. Pilot results cannot alone promote the UI.",
+    "confirmatory_gate": "Register a fresh immutable instrument after the pilot. For each critical item and language, the one-sided 95% Wilson upper bound for the dangerous-error proportion must be below 0.10; no pooled total score may mask an item/language failure.",
+    "language_comparison": "Do not claim Japanese-English equivalence from convenience samples or separate proficiency groups; a language comparison requires a separately justified randomized bilingual design.",
+    "ethics_and_privacy": "Use only synthetic scenarios, collect no rating records, minimize participant identifiers, obtain applicable institutional review/consent, and define retention/access before recruitment."
+  },
+  "automated_success_gates": {
+    "identity": "Every parent SHA-256 matches before execution.",
+    "scenario": "All five exact analytical states and both language forms are retained without changing estimates or workflow statuses.",
+    "preview": "Ten HTML previews each contain exactly six ordered cards, explicit textual statuses, language metadata, research/private warning, no script tag, no external URL, and escaped injected text.",
+    "tasks": "One hundred participant task rows and one hundred separate researcher-key rows cover every registered CaseId x Language x ItemId exactly once; no answer/key field leaks into participant rows.",
+    "parity": "Within each CaseId x ItemId, English/Japanese option codes, correct option, criticality, and misconception code agree.",
+    "state_answers": "Calibration, optimization, Person scoring, next-action, anchor applicability, and estimator-role answers match the machine result in every scenario.",
+    "rounding": "Every language/case form answers the constructed 1.5004 versus 1.500 vignette from raw MnSq and labels display-driven reclassification as critical error.",
+    "scoring": "Perfect, all-wrong, false-green, duplicate, missing, unknown-option, and invalid-time synthetic packets produce their registered ready/invalid states.",
+    "human_gate": "must remain not_started_no_human_data and PublicSurfaceEnabled=false",
+    "tests": "New preview/instrument/scoring tests and selected one-click/archive/decision-stability tests pass."
+  },
+  "interpretation_limits": {
+    "machine_checks": "Structural bilingual parity and valid HTML do not establish clarity, accessibility in assistive technologies, cultural equivalence, or comprehension.",
+    "synthetic_responses": "Synthetic perfect/error packets validate scoring logic only and are not participant outcomes.",
+    "human_claim": "No comprehension rate, completion-time distribution, language equivalence, or usability claim is permitted before human data and the registered confirmatory gate.",
+    "public_ui": "withheld"
+  }
+}

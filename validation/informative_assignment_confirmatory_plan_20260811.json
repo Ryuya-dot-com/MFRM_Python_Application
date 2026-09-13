@@ -1,0 +1,178 @@
+{
+  "schema_version": "mfrm-informative-assignment-confirmatory-plan-v1",
+  "registered_on": "2026-08-11",
+  "registration_timing": "Registered after the fixed 20-replicate screening study (replicates 221 through 240) was completed, independently reconstructed in R 4.5.1, and reported, but before generation or fitting of confirmatory replicates 241 through 340.",
+  "screening_source": {
+    "assessment": "validation/informative_assignment_screening20_assessment_20260811.json",
+    "role": "Endpoint and direction selection only; screening observations are not pooled into confirmation.",
+    "screening_replicates_reused": false
+  },
+  "purpose": "Confirm or refute the candidate sensitivity of normal-person marginal likelihood Rater recovery to latent ability-by-rater-severity assignment dependence, while holding observation density, Rater exposure, generated responses, category support, and structural connectivity fixed.",
+  "evidence_status": {
+    "phase": "confirmatory",
+    "replicate_range": [241, 340],
+    "replicates": 100,
+    "fixed_sample_size": true,
+    "optional_stopping": false,
+    "interim_scientific_looks": 0,
+    "pool_replicates_1_through_240": false,
+    "replacement_replicates": false
+  },
+  "data_generating_process": {
+    "model": "correctly specified four-category heterogeneous-threshold PCM",
+    "persons": 80,
+    "person_distribution": "normal standardized within replicate to realized mean 0 and population SD 0.8",
+    "raters": {
+      "R01": -0.45,
+      "R02": -0.15,
+      "R03": 0.15,
+      "R04": 0.45
+    },
+    "tasks": 3,
+    "criteria": 2,
+    "categories": 4,
+    "base_seed": 2026081107,
+    "common_random_numbers": "The two observation designs are subsets of the same newly generated complete response matrix within replicate. Assignment masks use Theta and identifiers but never realized scores."
+  },
+  "observation_designs": {
+    "planned_connected": {
+      "raters_per_person": 2,
+      "rows": 960,
+      "rule": "Person-index adjacent Rater ring independent of generated Theta.",
+      "role": "non-informative equal-density reference"
+    },
+    "ability_severity_aligned_connected": {
+      "raters_per_person": 2,
+      "rows": 960,
+      "ability_quartile_rule": "Stable sort by generated Theta, tie-break by Person identifier, exactly 20 Persons per quartile.",
+      "pair_by_ascending_ability_quartile": [
+        ["R01", "R02"],
+        ["R01", "R03"],
+        ["R02", "R04"],
+        ["R03", "R04"]
+      ],
+      "assigned_pair_mean_severity_by_quartile": [-0.30, -0.15, 0.15, 0.30],
+      "role": "latent ability-dependent assignment stressor; not an identified real-data missingness model"
+    }
+  },
+  "locked_design_invariants": {
+    "rows_per_run": 960,
+    "raters_per_person": 2,
+    "persons_per_rater": 40,
+    "rating_rows_per_rater": 240,
+    "tasks_and_criteria_complete_within_selected_rater": true,
+    "person_rater_components": 1,
+    "constrained_pcm_nullity": 0,
+    "same_complete_response_sha256_within_replicate": true,
+    "same_realized_person_vector_within_replicate": true,
+    "same_rater_exposure_between_designs": true
+  },
+  "estimation_layers": [
+    {
+      "mode": "FACETS_4_5_JMLE and independently persisted PYTHON_JMLE",
+      "estimand": "fixed-person joint likelihood",
+      "role": "external same-estimand calibration and descriptive design-sensitivity context"
+    },
+    {
+      "mode": "PYTHON_MML_FIXED_SD08_Q31",
+      "estimand": "normal-person marginal likelihood with SD fixed at 0.8"
+    },
+    {
+      "mode": "PYTHON_MML_FREE_SD_Q31",
+      "estimand": "normal-person marginal likelihood with SD estimated"
+    },
+    {
+      "mode": "PYTHON_EXACT_CMLE",
+      "estimand": "person-total conditional likelihood",
+      "role": "descriptive design-sensitivity context"
+    }
+  ],
+  "primary_endpoint": {
+    "id": "IA1_FREE_MML_RATER_RMSE_ALIGNED_GT_PLANNED",
+    "estimator_mode": "PYTHON_MML_FREE_SD_Q31",
+    "statistic_per_replicate": "Rater RMSE in ability_severity_aligned_connected minus Rater RMSE in planned_connected, each RMSE over aligned truth errors for R01 through R04.",
+    "direction": "greater than zero",
+    "test": "one-sample one-sided Student t test over 100 paired replicate contrasts",
+    "alpha": 0.05,
+    "replication_decision": "All 100 registered contrasts finite, mean contrast greater than zero, and one-sided p <= 0.05.",
+    "interval": "two-sided 95% Student t confidence interval",
+    "monte_carlo_precision_qualification": "95% interval half-width <= 0.015 logits",
+    "screening_sd_used_for_planning_only": 0.06043058161323775,
+    "expected_half_width_at_n100_from_screening_sd": 0.01199
+  },
+  "secondary_family": {
+    "multiplicity": "Four pre-specified one-sided paired endpoints controlled by Holm's step-down procedure at family-wise alpha 0.05. Secondary results are interpreted only after the primary endpoint replicates.",
+    "endpoints": [
+      {
+        "id": "IA2_FIXED_MML_RATER_RMSE_ALIGNED_GT_PLANNED",
+        "statistic": "PYTHON_MML_FIXED_SD08_Q31 Rater RMSE aligned minus planned",
+        "direction": "greater than zero"
+      },
+      {
+        "id": "IA3_FREE_MML_POPULATION_SD_ALIGNED_LT_PLANNED",
+        "statistic": "PYTHON_MML_FREE_SD_Q31 estimated population SD aligned minus planned",
+        "direction": "less than zero"
+      },
+      {
+        "id": "IA4_FREE_MML_RATER_COMPRESSION_SLOPE_LT_ZERO",
+        "statistic": "Within replicate OLS slope of the four Rater level truth-error contrasts (aligned minus planned) on true severities [-0.45, -0.15, 0.15, 0.45] for PYTHON_MML_FREE_SD_Q31",
+        "direction": "less than zero"
+      },
+      {
+        "id": "IA5_FIXED_MML_RATER_COMPRESSION_SLOPE_LT_ZERO",
+        "statistic": "Within replicate OLS slope of the four Rater level truth-error contrasts (aligned minus planned) on true severities [-0.45, -0.15, 0.15, 0.45] for PYTHON_MML_FIXED_SD08_Q31",
+        "direction": "less than zero"
+      }
+    ],
+    "test": "one-sample one-sided Student t test over 100 paired replicate statistics",
+    "intervals": "two-sided 95% Student t intervals reported for magnitude; Holm adjustment applies to the four one-sided p values"
+  },
+  "descriptive_context_only": [
+    "JMLE and exact-CMLE Rater RMSE/MAE design contrasts",
+    "Task, Criterion, and PCM-threshold RMSE/MAE design contrasts for every estimator",
+    "Rater level truth-error contrasts for JMLE and exact CMLE",
+    "CMLE extreme-Person counts",
+    "FACETS/Python direct-agreement maxima",
+    "failure, retry, and runtime denominators"
+  ],
+  "method_comparison_contract": {
+    "within_estimator_design_contrasts_only": true,
+    "estimator_ranking_prohibited": true,
+    "cross_basis_likelihood_aic_bic_comparison_prohibited": true,
+    "facets_role": "JMLE external calibration only; FACETS is not a gold standard for MML or CMLE estimands."
+  },
+  "precision_contract": {
+    "scientific_statistics": "Use native-precision Python estimates and truth errors.",
+    "facets_display": "Use registered Umean=6 measures for direct recovery calibration and separately parsed Table 8 fields where applicable.",
+    "rounding_prohibition": "Do not reconstruct fit, residual, recovery, or inferential statistics from FACETS' usual two-decimal display."
+  },
+  "operational_contract": {
+    "attempt_units": 800,
+    "datasets": 200,
+    "resilient_facets_pairs": 200,
+    "python_mml_fits": 400,
+    "python_exact_cmle_fits": 200,
+    "python_evidence_independent_of_facets_report_success": true,
+    "facets_retry": "At most two retries only for exit-0/missing named report.",
+    "facets_serialization": "Shared cross-process lock and short retained work roots.",
+    "completion_marker_written_last": true,
+    "resume_requires_all_bound_hashes": true
+  },
+  "analysis_order": [
+    "Complete all 800 registered attempt units without scientific interim summaries.",
+    "Verify completion markers, registered denominators, design invariants, constraints, and same-estimand FACETS/Python calibration.",
+    "Reconstruct the primary endpoint independently in R 4.5.1 before interpreting it.",
+    "Evaluate IA1 and its Monte Carlo precision qualification.",
+    "If IA1 replicates, evaluate IA2 through IA5 with Holm family-wise control.",
+    "Report all descriptive context without converting non-signals into invariance claims or estimator rankings."
+  ],
+  "stop_rules": [
+    "Stop before fitting if row counts, Rater exposure, connectivity, constrained PCM nullity, quartile sizes, shared-response hashes, or fresh replicate range fail.",
+    "Retain and report every estimator and FACETS failure in the planned denominator.",
+    "Do not impute, replace, or silently rerun a completed statistical attempt.",
+    "Do not inspect endpoint summaries until all planned attempts complete and the aggregate qualification gates pass.",
+    "Do not interpret FACETS Subset connection O.K. as a substitute for the independent constrained-design rank audit.",
+    "Do not modify endpoints, directions, alpha, or precision thresholds based on confirmatory results."
+  ],
+  "claim_limit": "This confirmation can test reproducibility under one deliberately constructed latent ability-by-severity assignment mechanism and one correctly specified PCM configuration. It cannot identify an empirical missingness mechanism, validate a MAR/MNAR correction, prove universal estimator robustness, or establish an estimator ranking."
+}

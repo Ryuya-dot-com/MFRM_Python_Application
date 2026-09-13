@@ -5,6 +5,8 @@ on:
     branches: [main, master, slope-aware-bias-inference]
     paths:
       - "streamlit_app.py"
+      - "mfrm_app/**"
+      - "locales/**"
       - "requirements.txt"
       - "requirements-dev.txt"
       - "Makefile"
@@ -20,10 +22,13 @@ on:
       - "SECURITY.md"
       - "RELEASE_CHECKLIST.md"
       - "MFRM_STREAMLIT_RELEASE_PLAN.md"
+      - "ROADMAP.md"
   pull_request:
     branches: [main, master, slope-aware-bias-inference]
     paths:
       - "streamlit_app.py"
+      - "mfrm_app/**"
+      - "locales/**"
       - "requirements.txt"
       - "requirements-dev.txt"
       - "Makefile"
@@ -39,12 +44,15 @@ on:
       - "SECURITY.md"
       - "RELEASE_CHECKLIST.md"
       - "MFRM_STREAMLIT_RELEASE_PLAN.md"
+      - "ROADMAP.md"
   workflow_dispatch:
 
 permissions:
   contents: read
 
 jobs:
+  # Keep the established job id so branch-protection check names stay stable.
+  # The final step turns this existing matrix into a clean-checkout contract.
   smoke-test:
     runs-on: ubuntu-latest
     strategy:
@@ -78,8 +86,11 @@ jobs:
       - name: Run engine self-tests
         run: python streamlit_app.py --self-test
 
-      - name: Run Streamlit AppTest smoke
-        run: python -m pytest tests
+      - name: Run privacy, localization, and workflow UX contracts
+        run: make ux-contracts PYTHON=python
+
+      - name: Run standalone Python test suite
+        run: make apptest PYTHON=python
 
       - name: Run benchmark smoke
         run: python streamlit_app.py --benchmark-quick --benchmark-csv validation/generated/benchmark_smoke.csv
@@ -87,5 +98,9 @@ jobs:
       - name: Export demo report smoke
         run: python streamlit_app.py --export-demo-report validation/generated/demo_report
 
-      - name: Export parity fixture smoke
-        run: python streamlit_app.py --export-parity-fixture validation/generated/parity_fixture
+      - name: Verify tracked checkout stayed clean
+        run: |
+          git diff --check
+          git diff --exit-code
+          git diff --cached --exit-code
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"

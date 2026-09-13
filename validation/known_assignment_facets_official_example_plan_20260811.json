@@ -1,0 +1,24 @@
+{
+  "schema_version": "known_assignment_facets_official_example_plan_v1",
+  "status": "frozen_before_control_execution",
+  "registered_date": "2026-08-11",
+  "trigger_result": "validation/kafp_postreboot_control_20260811/result.json",
+  "trigger_result_sha256": "c8f95854310371525d75c4dbf5fcb2df491e1a85b8e5286036aba7acc66cfafc",
+  "purpose": "Determine whether FACETS 4.5.0 can execute its own bundled inline-data example after the user-reported Windows restart, independently of every project-generated specification and dataset.",
+  "facets_executable": "C:/Facets/Facets.exe",
+  "facets_executable_sha256": "dfb0afb0faa18f026d1b3b4175f22e42cc3764430eb83cbd368c7a572b3593a1",
+  "official_example": "C:/Facets/examples/Kct.txt",
+  "official_example_sha256": "31e92a328fe4820ec19dc1b7103b1be0d02b7a205012b0c94ccfe55c5a35c4a6",
+  "execution": {
+    "work_root": "fresh OS temporary directory",
+    "timeout_seconds": 120,
+    "launch_path": "the same invoke_facets helper and CREATE_NO_WINDOW behavior as registered calibration",
+    "specification_change": "none; the bundled file is copied byte-for-byte",
+    "retained_output": "validation/kafp_official_example_20260811"
+  },
+  "decision_rule": {
+    "pass": "return code 0 and a nonempty report",
+    "fail": "classify the observed failure as FACETS executable/runtime scope rather than project-input scope; do not execute supplemental calibration or read preflight endpoints"
+  },
+  "claim_boundary": "External-engine availability diagnostic only; it neither replaces a calibration pair nor reads a scientific endpoint."
+}

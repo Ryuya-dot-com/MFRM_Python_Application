@@ -1,0 +1,31 @@
+{
+  "schema_version": "mfrm-facets-pcm-pipeline-pilot-assessment-v1",
+  "assessment_date": "2026-08-11",
+  "timing": "Post-result, documentation-only assessment. No design, tolerance, denominator, or qualification gate was changed.",
+  "registered_inputs": {
+    "facets_pcm_qualification_plan_20260811.json": "1d7be8d202dcd22151c2be3d67fa3bcae40894b8c6af38d3188b5e7f33697500",
+    "facets_pcm_qualification_amendment_20260811.json": "1e96a18bb34d5abca31f33a5614354c411d295c02502b0469b2d9e4446411aab",
+    "facets_pcm_pipeline_pilot_plan_20260811.json": "3ead7cb2310db1410304a253e4d7da9cb8f8d14efa260a93faa7927c69c30073"
+  },
+  "observed_artifacts": {
+    "facets_pcm_pipeline_pilot20_20260811/pcm_known_truth_metrics.json": "065b135a99dc3dc2526d865561deb75a0b49324e67f6ce9f93088b88bf4daf38",
+    "facets_pcm_pipeline_pilot20_20260811/pcm_known_truth_identity.json": "dc4c74876b86dc6eda249b69d604c8d71ace99079e7c591b863a8224f83ff094"
+  },
+  "result": {
+    "attempted_runs": 40,
+    "comparison_eligible_runs": 40,
+    "per_run_direct_agreement_passes": 40,
+    "parent_runs_preserved": "4/4",
+    "table8_count_matches": "320/320",
+    "expanded_pcm_nullity_zero": "40/40",
+    "main_weighted_mae_logits": 0.001230058099242438,
+    "main_max_abs_difference_logits": 0.0030590537996061373,
+    "threshold_weighted_mae_logits": 0.0031284671966610223,
+    "threshold_max_abs_difference_logits": 0.00681537109354502,
+    "minimum_within_run_facet_spearman": 0.9999999999999999,
+    "paired_direction_passes": "40/40",
+    "qualification_pass": true
+  },
+  "qualified_scope": "Complete balanced four-category JMLE PCM, Criterion as the sole step facet, FACETS Models=?,?,?,#,R3, separate sum-to-zero threshold vector per Criterion level.",
+  "withheld_scope": "Named General/Specific scales, mixed category supports, recoding, threshold anchors, sparse/missing designs, more than one # facet, raw fit parity, estimator-performance claims, and UI estimator recommendations."
+}

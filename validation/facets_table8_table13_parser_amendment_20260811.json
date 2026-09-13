@@ -1,0 +1,44 @@
+{
+  "schema_version": "mfrm-facets-table8-table13-amendment-v1",
+  "amendment_date": "2026-08-11",
+  "parent_plan": "validation/facets_table8_table13_parser_plan_20260811.json",
+  "evidence_bundle": "validation/facets_450_table8_table13_threshold_smoke_v2_20260811",
+  "reason": "Record observations learned during parser qualification without rewriting the preregistered plan.",
+  "identity": {
+    "facets_version": "4.5.0",
+    "facets_executable_sha256": "dfb0afb0faa18f026d1b3b4175f22e42cc3764430eb83cbd368c7a572b3593a1",
+    "adapter_sha256": "1892dfed564047ac26e119fcbc7bf828e7279f2ba15bb9a49b69024a9509ddff",
+    "selected_runs": 16,
+    "replicates_per_condition": 2
+  },
+  "table8_observations": {
+    "parsed_runs": 16,
+    "category_rows": 64,
+    "exact_total_count_matches": 64,
+    "category_outfit_pass": 62,
+    "category_outfit_boundary_uncertain": 2,
+    "low_count_rows": 2,
+    "ordered_noninitial_threshold_rows": 32,
+    "ordered_noninitial_average_measure_rows": 48,
+    "direct_eligible_thresholds": 36,
+    "facets_python_threshold_mae_logits": 0.0052662138050946,
+    "facets_python_threshold_max_abs_difference_logits": 0.0200737115783695,
+    "interpretation": "Descriptive numerical agreement for registered additive-RSM thresholds; the plan did not preregister a parity tolerance, so this is not promoted to exact threshold parity."
+  },
+  "table13_observations": {
+    "parsed_runs": 16,
+    "expected_cells": 240,
+    "reported_cells": 230,
+    "unreported_cells": 10,
+    "unreported_cell_scope": "Sparse-design cells with one or two observations and an extreme generated score.",
+    "unreported_cell_contract": "Unavailable; never convert to a negative finding.",
+    "holm_significant_display_decisions": 4,
+    "practically_large_display_decisions": 42,
+    "strong_flags": 0,
+    "sparse_no_claim": 76,
+    "eligible_python_facets_decision_pairs": 144,
+    "strong_decision_agreements": 144,
+    "interpretation": "The 144/144 agreement is a degenerate no-flag mapping check, not false-positive or power evidence."
+  },
+  "next_gate": "Run a frozen 20-replicate pipeline pilot with nondegenerate bias conditions before selecting a confirmatory replication count; extend Table 8 qualification to PCM and multiple scales separately."
+}

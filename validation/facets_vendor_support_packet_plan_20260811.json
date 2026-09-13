@@ -1,0 +1,22 @@
+{
+  "schema_version": "facets_vendor_support_packet_plan_v1",
+  "status": "frozen_before_packet_assembly",
+  "registered_date": "2026-08-11",
+  "purpose": "Provide a minimal reproducible vendor support packet without project data or registered scientific endpoints.",
+  "include": [
+    "English reproduction summary and draft email",
+    "Unmodified bundled Kct.txt",
+    "Structured FACETS 4.5.0 full-dump analysis",
+    "Structured MINIFAC 4.5.1 mini-dump analysis",
+    "MINIFAC 4.5.1 mini dump (3 MB)",
+    "SHA-256 manifest"
+  ],
+  "exclude": [
+    "315 MB FACETS full dump",
+    "project ratings or response data",
+    "preflight endpoint data or aggregates",
+    "credentials, license password, or license files",
+    "user screenshot, which must be attached manually if desired"
+  ],
+  "claim_boundary": "Operational crash report only; the packet contains no estimator-comparison result."
+}

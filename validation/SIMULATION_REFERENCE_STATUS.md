@@ -25,17 +25,13 @@ validation, archive sanitized summary tables, package versions,
 parameterization notes, and the tolerance policy before making any
 numerical-validation claim.
 
-The app exports the same policy as
-`external_simulation_reference_inventory.csv` through the parity fixture and
-demo/report downloads.
-
-The same export path now includes sanitized handoff templates:
+The former parity and demo/report export paths no longer expose this inventory
+or its handoff templates. Historical archives may contain:
 
 - `simulation_validation_python_template.py`
 - `simulation_validation_r_template.R`
 - `simulation_validation_julia_template.jl`
 
-These scripts use environment variables such as `MFRM_INPUT_CSV` and
-`MFRM_OUTPUT_DIR` instead of machine-specific absolute paths. They are templates for
-auditing and optional external refits, not bundled copies of the private
-Simulation data.
+These files are frozen compatibility material, not supported product assets or
+release evidence. Current exports provide Python-native reproduction assets
+instead.

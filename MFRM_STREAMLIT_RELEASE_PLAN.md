@@ -1,5 +1,11 @@
 # MFRM Streamlit Release Plan
 
+> Historical plan: the checklist below records the completed standalone public-
+> beta setup. The active product direction, delivery order, and completion gates
+> are maintained in [`ROADMAP.md`](ROADMAP.md). New work follows the pure-Python
+> boundary in that roadmap; this historical checklist does not authorize new
+> external-engine execution or interoperability work.
+
 ## Goal
 
 - Build a clean, standalone Streamlit distribution of the current Python MFRM app in this directory.

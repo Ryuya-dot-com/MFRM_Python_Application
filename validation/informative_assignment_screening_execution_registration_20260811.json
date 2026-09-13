@@ -1,0 +1,30 @@
+{
+  "schema_version": "mfrm-informative-assignment-screening-execution-registration-v1",
+  "registered_on": "2026-08-11",
+  "registration_timing": "After the plan, locked assignment component, runner, and tests were implemented, and before generation or fitting of replicates 221 through 240.",
+  "execution_status": "frozen_for_fixed_n_screening",
+  "plan_sha256": "0409b75d780cbcff27b1ba7d58e63906b8ee7099609db5e9585d4c6d2cfce36b",
+  "runner_sha256": "222a55551d3ce1f12274c4206dca270c232b3d1ee578983d9183836365146b5b",
+  "design_component_sha256": "93331c64605fb6677cc148351fab114fe6d6c2cf29b1a530006bfb63a17e56ad",
+  "resilient_pair_component_sha256": "5fcb29ad7c6d719ef2997dec64901ed07bd3bb4098964fbae7da5f8af8d6b56e",
+  "resilient_pair_plan_sha256": "8286623656d469523963c6d59d751a17d8dfeb6af2135bdc5293276206dee98c",
+  "base_dependency_manifest_sha256": "d1e7e8a754b8288872873faf1a621a87f85881950f555fe3b1cfd67971f7dd67",
+  "base_dependency_file_count": 57,
+  "facets_executable_sha256": "dfb0afb0faa18f026d1b3b4175f22e42cc3764430eb83cbd368c7a572b3593a1",
+  "design_test_sha256": "6812fd50af9ed28738a81c17883b393cf2ec50fbece17e64e9f9f35c5ef0d254",
+  "runner_test_sha256": "b0cdb3162da6bb9203eb49e0ad12796e945aab55c65a06d29cee37c7886e56a7",
+  "tests_passed_before_registration": true,
+  "test_command": ".venv-win\\Scripts\\python.exe -m pytest tests\\test_informative_assignment_design.py tests\\test_informative_assignment_screening.py tests\\test_facets_resilient_pair.py -q",
+  "test_result": "14 passed in 5.86s",
+  "fixed_execution_contract": {
+    "replicate_range": [221, 240],
+    "datasets": 60,
+    "attempt_units": 240,
+    "resilient_facets_pairs": 60,
+    "mml_fits": 120,
+    "exact_cmle_fits": 60,
+    "confirmatory_claims_allowed": false,
+    "optional_stopping": false,
+    "prior_replicates_pooled": false
+  }
+}

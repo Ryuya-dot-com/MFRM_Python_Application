@@ -1,0 +1,183 @@
+{
+  "schema_version": "mfrm-facets-complementary-plan-v1",
+  "registered_date": "2026-08-10",
+  "product_position": "FACETS-validated complementary MFRM workbench",
+  "purpose": "Use FACETS 4.5.0 as the external JMLE reference while using the application, TAM, sirt, and exact CMLE to study how estimator choice changes finite-sample bias, variance, convergence, and downstream decisions.",
+  "engine_roles": {
+    "generator": "Independent Python generator; no fitted engine generates the primary study data.",
+    "FACETS": "External standard additive-RSM JMLE workflow and Table 7/8/13 reporting reference.",
+    "PythonApp_JMLE": "Direct matched-estimand implementation comparison with FACETS after explicit constraint, sign, extreme-score, convergence, and scale alignment.",
+    "PythonApp_MML": "Primary additional marginal-likelihood capability under declared latent population assumptions.",
+    "TAM_sirt_MML": "Independent R sensitivity estimators; numerical equality is not expected unless the likelihood, quadrature, prior, constraints, and category surface are matched.",
+    "Python_exact_CMLE": "Conditional fixed-score estimator; direct comparison is limited to matched conditional-likelihood engines such as immer, not FACETS JMLE.",
+    "R": "Independent comparison and reporting layer, not the primary data generator or user-facing runtime."
+  },
+  "anti_circularity": {
+    "primary": "Generate response data independently in Python and replay identical retained bytes through all engines.",
+    "secondary": "FACETS Simul= may be used only for FACETS-parametric bootstrap and implementation diagnostics, labelled separately from primary operating characteristics.",
+    "reason": "Using FACETS both to generate and judge the primary evidence would privilege its fitted assumptions and hide shared model misspecification."
+  },
+  "current_smoke_bundle": {
+    "source": "validation/operating_characteristics_anchor_fix_smoke_20260811",
+    "model": "Four-facet additive RSM with an optional Rater x Task local interaction in the generator.",
+    "designs": [
+      "balanced_small",
+      "balanced_large_anchors",
+      "sparse_missing",
+      "anchor_drift"
+    ],
+    "local_bias_logits": [
+      0.0,
+      0.6
+    ],
+    "replicates_per_cell": 2,
+    "interpretation": "Adapter and identity qualification only; not enough for stable bias, coverage, false-positive, or power claims.",
+    "native_python_mml_modes": [
+      "PYTHON_MML_FIXED_SD1_Q31",
+      "PYTHON_MML_FREE_SD_Q31"
+    ],
+    "native_python_mml_run_accounting": "32/32 returned, converged, and met the registered finite-main-facet eligibility rule."
+  },
+  "facets_450_contract": {
+    "executable": "C:/Facets/Facets.exe",
+    "expected_product_version": "4.5.0",
+    "batch_invocation": "Facets.exe BATCH=YES specification-file output-file",
+    "model": "?,?,?,?,R3 with ?,?B,?B,?,R3 bias declaration for the current 0-3 RSM bundle",
+    "noncenter_facets": [
+      "Person"
+    ],
+    "positive_facets": [
+      "Person"
+    ],
+    "convergence": [
+      0.5,
+      0.01,
+      0,
+      0
+    ],
+    "xtreme": [
+      0.3,
+      0.5
+    ],
+    "measure_decimals": 6,
+    "score_file_format": "tab-separated",
+    "anchor_rule": "A facet flag with element-specific supplied values; unlisted levels remain free."
+  },
+  "rounding_contract": {
+    "measures": "Umean=0,1,6 is used so Measure, S.E., and Displacement are exported to six decimals.",
+    "fit": "FACETS 4.5.0 score and residual outputs retain Infit/Outfit MnSq and ZSTD-related components at two decimals. They are displayed values, not raw statistics.",
+    "display_interval": "A displayed fit value x is represented conservatively by [x-0.005, x+0.005]. Endpoint tie behavior is not used to create certainty.",
+    "decision_rule": "Classify pass or flag only when the entire possible raw interval lies on one side of every decision threshold; otherwise classify boundary_uncertain.",
+    "python_comparison": "Retain Python raw fit and raw decision separately, then add a FACETS-two-decimal display projection. Never replace the raw Python value with its projection.",
+    "prohibited": [
+      "Exact fit-statistic parity claims from FACETS Table 7 text or Scorefile values.",
+      "Recomputing supposedly raw FACETS fit from its two-decimal Residualfile components.",
+      "Treating agreement after rounding as proof that the underlying formulas are identical."
+    ]
+  },
+  "scale_contract": {
+    "unanchored_facets": "Mean-align estimated and true locations within RunId and facet before recovery comparison.",
+    "anchored_facets": "Use the supplied absolute scale without re-centering, because re-centering would erase anchor contamination.",
+    "sign": "Person is positive ability; Rater, Task, and Criterion measures are compared as severity/difficulty parameters.",
+    "steps": "RSM step comparisons require a separately parsed Table 8 or anchor output and are not inferred from facet locations."
+  },
+  "estimands": {
+    "direct_external_implementation": "FACETS JMLE versus PythonApp JMLE under matched additive RSM conditions.",
+    "finite_sample_performance": "Truth recovery of JMLE, MML, and CMLE under the same generated response process.",
+    "not_direct_parity": [
+      "FACETS JMLE versus MML",
+      "FACETS JMLE versus CMLE",
+      "TAM MML versus sirt MML without matched latent-distribution and category-surface contracts"
+    ]
+  },
+  "primary_metrics": [
+    "Signed error, MAE, RMSE, and estimator-specific interval coverage by facet and condition.",
+    "FACETS-Python JMLE aligned estimate difference, Pearson/Spearman ordering, and convergence disagreement.",
+    "Extreme/unmeasurable element counts and complete failure accounting.",
+    "False-positive and power rates for local-bias decisions only after a FACETS Table 13 parser is qualified.",
+    "Raw-versus-displayed fit decision stability with boundary_uncertain retained as a third state."
+  ],
+  "study_increments": [
+    {
+      "name": "adapter_qualification",
+      "replicates_per_cell": 2,
+      "claim_limit": "File identity, batch execution, parser, sign/scale, anchor transmission, and obvious numerical faults only."
+    },
+    {
+      "name": "pipeline_pilot",
+      "replicates_per_cell": 20,
+      "claim_limit": "Runtime, failure modes, metric variance, and factor-grid refinement; no stable operating-characteristic claims."
+    },
+    {
+      "name": "registered_study",
+      "replicates_per_cell": 500,
+      "claim_limit": "Condition-bounded bias, RMSE, coverage, false-positive, power, and decision-disagreement estimates with Monte Carlo uncertainty."
+    }
+  ],
+  "factor_grid_for_registration": {
+    "persons": [
+      20,
+      50,
+      100,
+      300
+    ],
+    "raters": [
+      2,
+      4,
+      8,
+      20
+    ],
+    "raters_per_person": [
+      1,
+      2,
+      "all"
+    ],
+    "rating_categories": [
+      2,
+      4,
+      6
+    ],
+    "person_distribution": [
+      "normal",
+      "skewed",
+      "two_component_mixture"
+    ],
+    "missingness": [
+      "none",
+      "MCAR",
+      "severity_dependent"
+    ],
+    "rater_severity_sd": [
+      0.2,
+      0.5,
+      1.0
+    ],
+    "local_bias_logits": [
+      0.0,
+      0.3,
+      0.6,
+      1.0
+    ],
+    "anchor_condition": [
+      "none",
+      "correct",
+      "common_shift_negative_control",
+      "differential_contamination",
+      "focal_contamination"
+    ],
+    "model_misspecification": [
+      "matched_RSM",
+      "PCM_steps_fitted_as_RSM",
+      "rater_slope_heterogeneity",
+      "person_by_rater_dependence"
+    ]
+  },
+  "registration_rule": "Do not run the full Cartesian product. Select a balanced core plus targeted stress contrasts using a design table frozen before the registered study.",
+  "stop_rules": [
+    "Stop direct parity interpretation if parameter sign, centering, anchor, category support, or extreme-score contracts are not matched.",
+    "Fail closed on missing RunIds, changed input hashes, parser column drift, nonzero FACETS exit, absent score files, or untyped missing estimates.",
+    "Do not convert unavailable or boundary-uncertain decisions to negative findings.",
+    "Do not promote a method based on optimizer convergence alone.",
+    "Do not expose estimator-selection recommendations in the public app until the registered study and decision-loss policy are reviewed."
+  ]
+}

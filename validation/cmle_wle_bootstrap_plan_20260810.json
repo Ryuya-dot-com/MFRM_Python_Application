@@ -1,0 +1,166 @@
+{
+  "schema_version": "mfrm-cmle-wle-bootstrap-plan-v1",
+  "registered_date": "2026-08-10",
+  "registration_timing": "Before implementation of either bootstrap sampler or inspection of bootstrap numerical results.",
+  "purpose": "Separate fixed-score conditional pattern/calibration coupling from joint plug-in CMLE-WLE sampling sensitivity without prematurely claiming a total inferential SE or confidence interval.",
+  "input_identity": {
+    "cmle_core_sha256": "74844d60d04b14cffc68e1de305c4b3ef34b594a3b47a4bdd680e21a6ba4e250",
+    "fixed_calibration_person_scoring_sha256": "18e0a24ade2de95cbb007045d36268a906bc7201a553a7e5a79fed32018af9f1",
+    "cmle_wle_bridge_sha256": "1238dbd87e4b603968ab0c74c3561e8d46fc11d8c90a91f36387e8bcea78573a",
+    "cmle_wle_uncertainty_sha256": "27ce5bd95946764a18258fd1ef193297e2aea992f0bdb4efa850c40167f5584c",
+    "cmle_wle_bridge_decision_sha256": "ea58e5b786a39fa259b29b37ba797de74f2ea47d9f09a6b7e051466b793dcf70",
+    "wle_parity_decision_sha256": "5d9e98116d1772b011e192c125c9b6c5c14127a7de36051d4db2a75bdb64de0d",
+    "calibration_sensitivity_decision_sha256": "ac181227dcbe17de02e452e1cef54737ef42c9fb7865759ed15122358fd4ff85",
+    "calibration_sensitivity_documentation_amendment_sha256": "24a3b12ea4e9ab517ad604eb1632be8edb75b8c84cc6692d32844213df592668",
+    "cmle_phase0_design_sha256": "d5c726b2210b386a63d12a8934349554b895ebce68a547b6e1cf9a226ad51747",
+    "bootstrap_design_sha256": "dfeb5d1484ce8b0321397ff56991652b6d33d2e011a7dd9a5bc43e31b3cbbe34"
+  },
+  "lanes": {
+    "fixed_score_conditional_pattern": {
+      "generator": "Sample each Person response vector exactly from the fitted CMLE category kernels conditional on that Person's observed total and administered-row pattern, using a forward/backward coefficient recurrence.",
+      "refit": "Refit exact CMLE and re-score retained fit-sample Persons with the validated Warm WLE bridge.",
+      "invariant": "Every Person total and administered-row/missingness pattern is identical to the source data in every valid draw.",
+      "claim": "Pattern-driven calibration variation and its same-sample coupling to WLE at fixed Person totals.",
+      "not_claimed": [
+        "total Person-score sampling variance",
+        "confidence interval",
+        "new-Person uncertainty",
+        "nonzero uncertainty evidence for exact minimum/maximum totals"
+      ]
+    },
+    "joint_plugin_parametric": {
+      "generator": "Independently sample retained row categories from softmax(q_uk(beta_hat) + k theta_hat_p), using exact-CMLE beta_hat and baseline Warm-WLE theta_hat_p.",
+      "refit": "Refit exact CMLE and re-score all retained fit-sample Persons with Warm WLE; Person totals and extreme status may change.",
+      "claim": "Plug-in model-based joint response, calibration, and WLE sampling sensitivity.",
+      "not_claimed": [
+        "known-truth bootstrap distribution",
+        "coverage-qualified confidence interval",
+        "robustness to local dependence or model misspecification",
+        "independent-calibration new-Person inference"
+      ]
+    }
+  },
+  "implementation_pilot": {
+    "models": [
+      "RSM",
+      "PCM"
+    ],
+    "replicates_per_model_lane": 200,
+    "primary_seed": 20260810,
+    "alternate_seed": 20260811,
+    "include_missing_administered_patterns": true,
+    "include_exact_extreme_persons": true,
+    "conditional_probability_enumeration_tolerance": 1e-12,
+    "fixed_score_total_mismatches_allowed": 0,
+    "same_seed_max_abs_numeric_difference": 0.0,
+    "same_seed_status_mismatches_allowed": 0,
+    "different_seed_must_change_at_least_one_non_degenerate_draw": true,
+    "retain_every_attempt": true,
+    "minimum_successful_share_for_promotion": null,
+    "reason_no_promotion_threshold": "The 200-replicate matrix is an implementation pilot; a confirmatory success/readiness threshold must be frozen only in a later protocol informed by transparently labelled pilot behavior."
+  },
+  "required_failure_contract": {
+    "separate_optimizer_converged_and_inference_ready": true,
+    "retain_rank_and_nullity": true,
+    "failed_replicates_count_as_negative_decisions": false,
+    "automatic_estimator_fallback": false,
+    "impute_missing_responses": false,
+    "allow_parameter_identity_mismatch": false,
+    "allow_impossible_conditional_total": false,
+    "allow_nonfinite_probability_kernel": false
+  },
+  "required_outputs": {
+    "replicate_ledger": [
+      "Lane",
+      "Model",
+      "Replicate",
+      "SeedIdentity",
+      "CMLEConverged",
+      "CMLEInferenceReady",
+      "Rank",
+      "Nullity",
+      "WLEAvailable",
+      "FailureStage",
+      "FailureReason"
+    ],
+    "person_summary": [
+      "BaselineEstimate",
+      "BaselineExtremeStatus",
+      "Attempts",
+      "SuccessfulScores",
+      "BootstrapMean",
+      "BootstrapSD",
+      "BootstrapQuantiles",
+      "FitZoneTransitions",
+      "RawDisplayMismatches",
+      "ExtremeStateTransitions"
+    ],
+    "model_summary": [
+      "AttemptedReplicates",
+      "NumericalFailureRate",
+      "InferenceReadyRate",
+      "MonteCarloUncertainty"
+    ],
+    "first_read_states": [
+      "research_ready",
+      "caution",
+      "withheld",
+      "blocked"
+    ]
+  },
+  "resource_guards": {
+    "maximum_replicates": 10000,
+    "maximum_row_replicate_work": 5000000,
+    "explicit_seed_required": true,
+    "memory_estimate_required_before_run": true,
+    "elapsed_progress_required": true,
+    "partial_archive_allowed": true,
+    "partial_archive_can_pass": false
+  },
+  "future_truth_simulation": {
+    "required_before_interval_claim": true,
+    "framework": "ADEMP",
+    "vary": [
+      "sample size",
+      "facet counts",
+      "categories",
+      "missingness",
+      "sparse connectivity",
+      "anchor design and contamination",
+      "extreme scores",
+      "bias-boundary distance"
+    ],
+    "assess": [
+      "bias",
+      "RMSE",
+      "interval coverage",
+      "interval width",
+      "numerical failure",
+      "inference readiness",
+      "fit and bias decision transitions",
+      "Monte Carlo uncertainty"
+    ]
+  },
+  "non_equivalence_rules": [
+    "Do not subtract fixed-score and joint plug-in bootstrap variances and label the result a variance component without a proved covariance identity.",
+    "Do not label asymptotic coefficient-draw SD, fixed-score bootstrap SD, joint plug-in bootstrap SD, or conditional WLE SE as interchangeable.",
+    "Do not label percentile output a confidence interval before repeated-truth coverage qualification.",
+    "Do not allow display rounding to drive fit, bias, readiness, or interval decisions."
+  ],
+  "scope_boundaries": {
+    "confirmatory_bootstrap_evidence": false,
+    "coverage_qualified_interval": false,
+    "total_inferential_se": false,
+    "new_person_or_unseen_unit": false,
+    "anchors": false,
+    "gpcm": false,
+    "streamlit_integration": false,
+    "automatic_estimator_switch": false,
+    "public_performance_claim": false
+  },
+  "method_sources": [
+    "https://rdrr.io/cran/immer/man/immer_cml.html",
+    "https://link.springer.com/article/10.1186/s40488-016-0039-y",
+    "https://doi.org/10.1007/BF02294627"
+  ]
+}

@@ -1,0 +1,29 @@
+{
+  "schema_version": "mfrm-informative-assignment-confirmatory-execution-registration-v1",
+  "registered_on": "2026-08-11",
+  "registration_timing": "Registered after the confirmatory plan, runner, and result-blind unit tests were frozen, and before confirmatory replicate 241 through 340 generation or fitting.",
+  "study_directory": "validation/informative_assignment_confirmatory100_20260811",
+  "plan_sha256": "04b3923cc24367b0f3010b1bad9fe3f525572bfedc5b3bb69221cb0ded277350",
+  "runner_sha256": "93a3069ecf6d8602c5e0c390158837fcb2d125739ad14fed4e85e80fd0638796",
+  "design_component_sha256": "93331c64605fb6677cc148351fab114fe6d6c2cf29b1a530006bfb63a17e56ad",
+  "resilient_pair_component_sha256": "5fcb29ad7c6d719ef2997dec64901ed07bd3bb4098964fbae7da5f8af8d6b56e",
+  "test_sha256": "722de19acb4f42de0fd5122a9a62e307cb49c5fe3a47aad9fc78405e709bf0a8",
+  "test_command": ".venv-win\\Scripts\\python.exe -m pytest tests\\test_informative_assignment_confirmatory.py tests\\test_informative_assignment_screening_aggregate_corrected.py tests\\test_informative_assignment_screening.py tests\\test_informative_assignment_design.py -q",
+  "test_result": "24 passed in 3.36s",
+  "tests_passed_before_registration": true,
+  "fixed_contract": {
+    "replicate_range": [241, 340],
+    "replicates": 100,
+    "datasets": 200,
+    "attempt_units": 800,
+    "optional_stopping": false,
+    "interim_scientific_looks": 0,
+    "prior_replicates_pooled": false,
+    "primary_endpoint": "IA1_FREE_MML_RATER_RMSE_ALIGNED_GT_PLANNED",
+    "primary_alpha_one_sided": 0.05,
+    "primary_precision_half_width": 0.015,
+    "secondary_family": "IA2 through IA5 with Holm family-wise alpha 0.05",
+    "cross_basis_likelihood_comparison": "prohibited",
+    "estimator_ranking": "prohibited"
+  }
+}

@@ -1,0 +1,58 @@
+{
+  "schema_version": "mfrm-estimand-bridge-pilot-plan-v1",
+  "registered_date": "2026-08-11",
+  "timing": "Written after one planned-connected heterogeneous replicate was used only to verify MML/CMLE call feasibility and runtime, and before producing the bridge bundle. No recovery result from that feasibility call is an input to a gate.",
+  "parent_evidence": "facets_pcm_boundary_pilot_20260811",
+  "purpose": "Pass identical rank-full PCM-generated rows through FACETS JMLE, Python JMLE, Python MML, and native exact CMLE while preserving their different estimands and likelihood bases.",
+  "input_scope": {
+    "designs": ["complete", "planned_connected"],
+    "threshold_conditions": ["shared", "heterogeneous"],
+    "replicates": 2,
+    "selected_runs": 8,
+    "excluded_negative_control": "All disconnected runs remain in the parent attempt ledger but are excluded from estimator recovery and model-selection claims because nullity=1."
+  },
+  "fit_matrix": {
+    "response_models": ["RSM", "PCM"],
+    "reused_modes": [
+      "FACETS_4_5_JMLE_FROM_PARENT",
+      "PYTHON_JMLE_FROM_PARENT"
+    ],
+    "new_mml_modes": {
+      "PYTHON_MML_FIXED_SD1_Q31": "Normal Person population with SD fixed at 1.0; a sensitivity condition, not asserted to equal the realized generator SD.",
+      "PYTHON_MML_FREE_SD_Q31": "Normal Person population with SD estimated from the responses."
+    },
+    "new_cmle_mode": "PYTHON_EXACT_CMLE; Person parameters removed by conditioning on Person totals.",
+    "new_fit_attempts": 48,
+    "new_mml_attempts": 32,
+    "new_cmle_attempts": 16
+  },
+  "estimand_contract": {
+    "facets_python_jmle": "Same fixed-Person joint-likelihood estimand; direct engine equality is meaningful only here.",
+    "mml": "Marginal likelihood under a normal Person population. Differences from JMLE or CMLE are estimand/assumption sensitivity, not engine error.",
+    "cmle": "Exact conditional likelihood given each Person total. Conditional log-likelihood/AIC are compared only between RSM and PCM within CMLE, never numerically against JMLE/MML likelihood/AIC.",
+    "truth_alignment": "Unanchored Rater, Task, and Criterion estimates are mean-aligned within facet before truth error is computed.",
+    "threshold_truth": "PCM thresholds have criterion-specific truth in both conditions; RSM thresholds have a truth target only in the shared condition. RSM heterogeneous thresholds are pseudo-true and truth error is undefined."
+  },
+  "locked_operational_gates": {
+    "input_identity": "All selected rows and truth tables must hash to the retained parent files; no data are regenerated.",
+    "parent_jmle": "All 16 selected parent run-model JMLE contracts must remain comparison eligible.",
+    "mml": "All 32 MML attempts must return, converge, be InferenceReady, contain finite main-facet/threshold estimates, and satisfy the fitted facet and threshold constraints. Free population SD must be finite and positive.",
+    "cmle": "All 16 CMLE audits and fits must be conditionally rank-full, converge, be InferenceReady, pass the finite-MLE existence gate, contain finite structural estimates/SEs, and satisfy constraints.",
+    "model_direction": "For each design, replicate, and likelihood mode with a matched likelihood basis, the PCM-over-RSM log-likelihood gain per observation must be greater under heterogeneous than shared thresholds. JMLE, fixed-SD MML, free-SD MML, and CMLE are evaluated separately.",
+    "constraint_tolerance": "Maximum absolute sum-to-zero residual <= 1e-8."
+  },
+  "descriptive_outputs": [
+    "Truth RMSE and signed error by estimator, response model, design, condition, and facet.",
+    "Criterion-specific or common threshold recovery where a data-generating truth target exists.",
+    "Pairwise estimate shifts relative to Python JMLE, labelled different_estimand except for FACETS JMLE.",
+    "Estimated Person population SD for free-SD MML.",
+    "Within-estimator RSM-versus-PCM likelihood/AIC direction using only matched likelihood bases."
+  ],
+  "withheld_claims": [
+    "No estimator winner or ranking from two replicates.",
+    "No bias, RMSE ordering, coverage, false-positive, power, or model-selection error-rate claim.",
+    "No comparison of CMLE conditional AIC/log-likelihood values to JMLE or MML AIC/log-likelihood values.",
+    "No inference from structurally disconnected parent runs.",
+    "No automatic estimator recommendation in the Streamlit UI."
+  ]
+}

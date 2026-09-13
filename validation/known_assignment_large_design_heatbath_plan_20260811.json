@@ -1,0 +1,55 @@
+{
+  "schema_version": "known_assignment_large_design_heatbath_remediation_plan_v1",
+  "status": "frozen_before_execution",
+  "registered_date": "2026-08-11",
+  "trigger": {
+    "failed_assessment": "validation/known_assignment_large_design_20260811/assessment.json",
+    "failed_assessment_sha256": "b388e5b57b28057409da87d6d0030add62ee6c76bc7251ac24028148f3f0cc71",
+    "failure": "minimum Statistic ESS 13.7904 was below the registered minimum 300; no dose was selected",
+    "thresholds_relaxed": false
+  },
+  "locked_inputs": {
+    "parent_plan": "validation/known_assignment_large_design_plan_20260811.json",
+    "parent_plan_sha256": "bad777ec292708b5fbf0773272c5f18a42d71febcd21f46a39e4cf9702539003",
+    "person_coordinates": "validation/known_assignment_large_design_20260811/person_coordinates.csv",
+    "start_states": "validation/known_assignment_large_design_20260811/start_states.csv",
+    "start_states_sha256": "3aff6040dc17bdff9a1a42e24900287b73411ea0ecf6047ee5ad098e303b720d",
+    "candidate_gammas": [-0.8, -0.4, 0.0, 0.4, 0.8],
+    "chains_per_gamma": 4,
+    "samples": 3000,
+    "burnin": 10000,
+    "thin": 5,
+    "chain_seed_base": 260840
+  },
+  "single_remediation_change": {
+    "from": "uniform unordered edge-pair Metropolis 2-switch",
+    "to": "uniform Person-pair connected heat-bath Curveball repartition",
+    "target_distribution_changed": false,
+    "reason": "Update all feasible reallocations of two Persons' exclusive Rater sets from their exact full conditional distribution to reduce local-kernel autocorrelation."
+  },
+  "qualification_gates": {
+    "all_chains_available": true,
+    "degree_margins_preserved": true,
+    "final_overlap_components": 1,
+    "maximum_statistic_update_residual": 1e-10,
+    "split_rhat_max": 1.05,
+    "minimum_per_chain_statistic_ess": 300,
+    "minimum_all_update_movement_rate": 0.05,
+    "neutral_absolute_mean_assignment_correlation_max": 0.05,
+    "strict_monotone_mean_assignment_correlation": true,
+    "all_materialization_invariants_pass": true,
+    "score_column_absent": true
+  },
+  "dose_selection_rule": {
+    "eligible_absolute_gammas": [0.4, 0.8],
+    "minimum_absolute_mean_assignment_correlation": 0.20,
+    "maximum_absolute_mean_assignment_correlation": 0.60,
+    "positive_and_negative_symmetry_error_max": 0.08,
+    "rule": "Choose the largest eligible absolute gamma for which both signs satisfy every unchanged convergence/correlation gate."
+  },
+  "claim_boundary": [
+    "The failed Metropolis calibration remains retained and is not overwritten or reclassified.",
+    "Heat-bath qualification applies to one frozen 80-by-4 design configuration.",
+    "Gamma is a known simulation dose and no responses, estimators, or FACETS outputs are consulted."
+  ]
+}

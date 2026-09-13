@@ -16,3 +16,4 @@ benchmark_*.csv
 parity_fixture/
 validation/generated/
 *.log
+backups/

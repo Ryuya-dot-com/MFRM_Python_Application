@@ -1,0 +1,47 @@
+{
+  "schema_version": "mfrm-facets-pcm-boundary-pilot-plan-v1",
+  "registered_date": "2026-08-11",
+  "timing": "Written before generating or fitting the boundary-pilot data.",
+  "parent_evidence": "facets_pcm_pipeline_pilot20_20260811",
+  "purpose": "Separate engine agreement, response-model misspecification, planned missingness, and structural nonidentification before any estimator-performance study.",
+  "design": {
+    "replicates": 2,
+    "threshold_conditions": {
+      "shared": "C01 and C02 use the same [-1.10, 0.00, 1.10] threshold vector; RSM and PCM are both data-generating-compatible.",
+      "heterogeneous": "C01 uses [-1.60, 0.25, 1.35] and C02 uses [-0.45, -0.35, 0.80]; PCM is compatible and RSM is deliberately misspecified."
+    },
+    "observation_designs": {
+      "complete": "Every one of 80 Persons is observed with all 4 Raters, 3 Tasks, and 2 Criteria; 1920 rows.",
+      "planned_connected": "Each Person is observed by two adjacent Raters in a rotating ring and by every Task and Criterion; 960 rows and one connected Person-Rater component.",
+      "disconnected_negative_control": "Persons 1-40 are observed only by R01/R02 and Persons 41-80 only by R03/R04, with every Task and Criterion; 960 rows and two Person-Rater components."
+    },
+    "generated_runs": 12,
+    "fit_models_per_run": ["PCM", "RSM"],
+    "engine_fit_contracts": 24,
+    "paired_randomness": "Within replicate, Person measures and one uniform per complete response cell are shared across threshold and observation-design conditions.",
+    "fit_contract": {
+      "PCM": "FACETS Models=?,?,?,#,R3 versus Python JMLE PCM step_facet=Criterion.",
+      "RSM": "FACETS Models=?,?,?,?,R3 versus Python additive JMLE RSM. No bias-interaction model is included."
+    }
+  },
+  "locked_gates": {
+    "input_counts": "Every FACETS Table 8 modeled-scale/category Total count must exactly match an independent count from the retained rows.",
+    "rank_full_designs": "Complete and planned_connected fits must have independent constrained adjacent-category design nullity zero.",
+    "negative_control": "Every disconnected fit must have independent nullity at least one, Python InferenceReady=false, and must be excluded from direct engine and model-selection claims even if FACETS returns measures.",
+    "engine_agreement_main": "For rank-full directly eligible fits, observation-weighted MAE <=0.01 logits, maximum absolute difference <=0.05 logits, and minimum within-facet Spearman >=0.999.",
+    "engine_agreement_threshold": "For rank-full directly eligible fits, observation-weighted MAE <=0.02 logits and maximum absolute difference <=0.05 logits, separately for PCM criterion-specific thresholds and the RSM common threshold vector.",
+    "misspecification_direction": "Within each replicate and rank-full observation design, the Python PCM-over-RSM log-likelihood gain per observation must be larger under heterogeneous thresholds than under shared thresholds. This is a directional implementation gate, not a chi-square test.",
+    "rounding": "Umean=0,1,6 is authoritative for measures and thresholds. Umean=0,1,2 is an auxiliary Table 8 count/Outfit display only, with a separate Scorefile."
+  },
+  "descriptive_only": [
+    "Main-facet and threshold truth RMSE by condition/model.",
+    "AIC/BIC and log-likelihood differences between RSM and PCM.",
+    "FACETS subset-connection wording versus the independent expanded-design rank audit."
+  ],
+  "withheld_claims": [
+    "No bias, coverage, false-positive, power, or estimator-ranking claim from two replicates.",
+    "No RSM threshold truth target is asserted under heterogeneous PCM generation; its pseudo-true common threshold depends on the design and Person distribution.",
+    "No result from the disconnected negative control is treated as a usable estimate.",
+    "No generalization to named scales, mixed category supports, recoding, threshold anchors, or multiple # facets."
+  ]
+}

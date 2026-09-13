@@ -1,0 +1,115 @@
+{
+  "registration_status": "prospective_before_finite_mle_diagnostic_implementation_or_systematic_results",
+  "registered_date": "2026-08-10",
+  "study_id": "cmle_finite_mle_existence_v1",
+  "purpose": "Detect whether the observed conditional sufficient statistic lies on the boundary of its convex support, rather than treating a small finite-point gradient and full finite-point Hessian rank as proof that a finite CMLE maximizer exists.",
+  "parent_identity": {
+    "mfrm_app/cmle.py": "bc76666ebc40a68c7c33fcb798271f2b191ed7187ad1421e64eec2d5231a8dee",
+    "tests/test_cmle.py": "a9b914b02a7577a5bef2534556b656a1a18e20356dadef6adea2d37d195b5f1f",
+    "validation/cmle_finite_domain_optimizer_remediation_plan_20260810.json": "a1d4a288f44d3f6026aa2949eb86fa69a5913af39c98b253d9739101c935c0f0",
+    "validation/cmle_finite_domain_optimizer_remediation_20260810/remediation_decision.json": "1e31c99d7df9e64694a4e1ce9891419865eec61483e31c0e1128c04909eb3337",
+    "validation/cmle_native_anchor_connectivity_20260810/connectivity_responses.csv": "0bcb29f3efe33963c04cd0cd02bd5e220648f75ef0da55f1d8fd9a5e1b75d72c"
+  },
+  "known_trigger_not_prospective_result": {
+    "design": "Binary two-Rater complete overlap; every Person has response pattern R1=1, R2=0.",
+    "observed_problem": "The conditional likelihood has a maximizing direction at infinity, but the current finite stopping/rank gates returned approximately +/-10 to +/-12 logit effects as inference-ready over exploratory Person counts 2 through 300.",
+    "interpretation": "This trigger motivated the plan and cannot be counted as a prospective discovery or used alone to validate the new diagnostic."
+  },
+  "mathematical_contract": {
+    "model_family": "Minimal regular conditional exponential family after exact free-coordinate construction and prefit full-rank audit.",
+    "existence_statement": "A finite CMLE exists only when the observed aggregate conditional sufficient statistic is in the relative interior of the Minkowski sum of the score-stratum support polytopes.",
+    "stratum": "One unique response-unit design pattern and observed raw score, with its Person frequency and score-specific observed sufficient-statistic sum.",
+    "support": "All attainable response vectors on the declared category support having the stratum raw score, mapped through the exact row/category free-coordinate design.",
+    "boundary_direction": "A nonzero free-coordinate direction d for which d'*(n_s*T - t_obs_s) <= 0 for every support point T in every stratum s; this makes the observed statistic a support-plane maximizer.",
+    "authoritative_scale": "The exact free-coordinate design, including hard-anchor affine offsets only where they affect score support/observed likelihood; fixed offsets do not become free separation directions.",
+    "rank_prerequisite": "If exact conditional information is rank deficient before fitting, report structural nonidentification first and do not relabel it as separation."
+  },
+  "implementation_contract": {
+    "score_specific_observed_statistics": "Retain or reconstruct observed free-coordinate sufficient-statistic sums separately for every pattern-score stratum; do not use only the current across-score aggregate.",
+    "support_enumeration": "Exact bounded dynamic enumeration for registered small/medium RSM/PCM patterns, with deduplication of identical sufficient-statistic points and explicit work/constraint/memory caps.",
+    "linear_program": "Search the homogeneous boundary cone by maximizing and minimizing every free-coordinate component under all support-plane inequalities and a bounded normalization box. Use scipy HiGHS and retain raw solver status, residuals, direction, active constraints, and tolerances.",
+    "tolerance_grid": [1e-10, 1e-09, 1e-08],
+    "directional_verification": {
+      "radii": [0, 1, 2, 4, 8, 16, 32],
+      "requirements": [
+        "direct exact conditional log likelihood is nondecreasing along a reported maximizing direction within declared binary64 tolerance",
+        "directional score tends toward zero without a finite interior sign reversal for separated fixtures",
+        "the reported direction satisfies retained support inequalities and normalization",
+        "finite fixtures do not receive a maximizing-boundary direction across the primary tolerance contract"
+      ]
+    },
+    "fail_closed": "Enumeration cap, LP failure, tolerance instability, or unsupported pattern yields ExistenceStatus=unavailable/review, never finite_mle_confirmed.",
+    "forbidden_shortcuts": [
+      "absolute estimate magnitude cutoff",
+      "standard-error magnitude cutoff",
+      "gradient-only or Hessian-condition-only existence decision",
+      "parameter clipping, regularization, or finite correction labelled CMLE",
+      "silently dropping support points, extreme Persons, facets, or anchors to obtain a decision"
+    ]
+  },
+  "registered_fixture_families": [
+    {
+      "family": "binary_two_rater",
+      "cases": [
+        "balanced finite interior with both discordant response directions observed",
+        "complete separation R1=1/R2=0",
+        "reverse complete separation R1=0/R2=1",
+        "near-boundary finite samples with exactly one discordant response in the minority direction",
+        "replication of counts 2, 5, 10, 20, 100, and 300"
+      ]
+    },
+    {
+      "family": "binary_three_rater_graph",
+      "cases": [
+        "connected chain with both edges finite",
+        "one separated edge and one finite edge",
+        "opposing edge directions",
+        "disconnected rank-deficient negative control",
+        "zero/one/two correct hard anchors with component coverage recorded"
+      ]
+    },
+    {
+      "family": "polytomous_rsm_pcm",
+      "cases": [
+        "three- and four-category finite complete designs",
+        "category-direction separation under fixed Person totals",
+        "RSM shared steps and rectangular PCM criterion-specific steps",
+        "unused declared category and conditional-extreme Person controls",
+        "correct and differentially contaminated hard-Rater anchors"
+      ]
+    },
+    {
+      "family": "retained_connectivity_replay",
+      "cases": "All 350 prefit audits and 287 eligible fit inputs from the retained connectivity bytes, preserving topology, randomized anchor content, final rank, non-finite trial, and readiness identities."
+    }
+  ],
+  "frozen_outputs": [
+    "complete fixture and retained-replay ledger including unavailable/failure rows",
+    "stratum frequencies, support-point counts, enumeration work/memory, and deduplication counts",
+    "prefit rank/nullity before existence status",
+    "LP statuses and residuals over the tolerance grid",
+    "normalized boundary direction and active support constraints where present",
+    "directional likelihood and directional-score trace over frozen radii",
+    "current optimizer return/convergence/readiness and maximum estimate/SE for contrast only",
+    "same-byte retained connectivity transition table from current readiness to existence-qualified readiness",
+    "first-read projection separating identification, finite-MLE existence, optimization, final rank, and Person-scoring availability"
+  ],
+  "success_gates": {
+    "rank_deficient_controls": "All are classified structural_nonidentification before separation.",
+    "complete_separation_controls": "All prospective variants and both directions receive a stable boundary direction and cannot be existence-qualified.",
+    "finite_interior_controls": "All prospectively generated interior fixtures receive no boundary direction across the primary tolerance contract and agree with direct finite optimization.",
+    "near_boundary_controls": "Minority-direction finite fixtures remain distinct from complete separation; tolerance instability is surfaced rather than coerced.",
+    "directional_verification": "Every reported direction passes support inequalities and the registered likelihood/score trace checks.",
+    "retained_replay_accounting": "All 350 cases are ledgered; all 287 prefit-eligible inputs receive a status or a typed unavailable reason.",
+    "existing_numerics": "The finite-domain remediation returnability, structural estimates, likelihoods, WLE, MnSq, and raw/rounded decisions remain unchanged; the new gate can only withhold additional inference.",
+    "performance_value_success_gate": null
+  },
+  "interpretation_limits": {
+    "initial_algorithm": "Exact support enumeration is a research implementation with explicit caps, not yet a scalable public algorithm.",
+    "lp_tolerance": "Binary64/solver sensitivity must be retained; no single residual cutoff is universal.",
+    "finite_existence": "Passing the registered diagnostic addresses an interior-support condition for the implemented model, not model fit, local independence, anchor validity, or score-use validity.",
+    "regularized_alternatives": "Firth, Bayesian priors, penalties, or finite corrections require separately named estimators and cannot be reported as exact unpenalized CMLE.",
+    "cross_engine": "mfrmr, immer, TAM, and sirt may use different boundary handling, Person treatment, constraints, or regularization; return codes are not forced into parity.",
+    "public_ui": "withheld"
+  }
+}

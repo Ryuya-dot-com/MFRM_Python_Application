@@ -1,0 +1,170 @@
+{
+  "registration_status": "prospective_before_pcm_anchor_adapter_implementation_or_engine_result_inspection",
+  "registered_date": "2026-08-10",
+  "study_id": "cmle_pcm_hard_anchor_cross_engine_v1",
+  "purpose": "Validate exact PCM free-coordinate and hard-anchor fixed-offset mapping between native Python CMLE and immer CMLE, while retaining mfrmr JML and unanchored TAM/sirt MML as explicitly different-estimand sensitivity lanes.",
+  "parent_identity": {
+    "mfrm_app/cmle.py": "d5da4780932df7a3a6b3763efabe01c82747f445d8835a0c627c6d781e36e1a9",
+    "mfrm_app/cmle_existence.py": "6e65621a67751c25d9e870141ac04d9f61dc68096045f84ca212afdc34b435ac",
+    "mfrm_app/cmle_workflow.py": "304b4e23e628ff49aec2e00911e20e7c9ed2a9bd00d3568a3de8ced9778c6b84",
+    "validation/cmle_finite_mle_existence_stress.py": "715545cf18efc4178979ef581e707ae997650ecaca738634368ccccf68606ff6",
+    "validation/cmle_cross_engine_boundary_20260810/decision.json": "393c0bc7906b331afc84163f32c98702d7aab4d5af6f360115f474a63164c8f3",
+    "validation/cmle_cross_engine_boundary_20260810/r_engine_identity.csv": "262b43a53f510f186735a225c7f8429d3780ada599dfa7980b3c5633d7e61239",
+    "tests/data/run_immer_cmle_parity.R": "8bb03a7302694f3801c520c73a976577c97e177b436c9a670ec6e6cfde6ab146",
+    "tests/test_cmle.py": "0a3102b603563f8cd2469a4097db343518cf1a0df228254ae885d7db1809984f"
+  },
+  "r_identity": {
+    "R": "4.6.1",
+    "immer_version": "1.5.13",
+    "immer_function_sha256": "cc1da7116e0e385aa81091f49e1ed9069b1618c777c0ab270626cc4658c08414",
+    "TAM_version": "4.3.25",
+    "TAM_function_sha256": "32fe99ba74759aa35e2cc88df91e492882377810ca000ef6c75d3b60c677273d",
+    "sirt_version": "4.2.133",
+    "sirt_function_sha256": "30aff9f98fe0c2efd48e86bdef1367b5d172223774ed42da79c8ac457aba5125",
+    "mfrmr_version": "0.2.3",
+    "mfrmr_function_sha256": "31c729711a8761be26abd9316f64f63ec7bce444c6a0770c55bdefa5daaf91e1",
+    "mfrmr_frozen_snapshot_path": "/private/tmp/mfrmr023-crossengine-package.9VHFb0/source",
+    "mfrmr_frozen_snapshot_relative_sha256": "06870f2f38ea6eeeb6df323003fc7e1ad2721d311ea50ec7a152170bf02b21d3",
+    "mfrmr_git_head_at_snapshot": "7ee1fd5cb9cb3ab6588811eb4b31f3337076c369",
+    "interpretation": "The unreleased dirty mfrmr result applies only to this content hash and must be rerun against a clean released 0.2.3 artifact."
+  },
+  "fixture_contract": {
+    "model": "PCM",
+    "rating_support": "0..2 retained even when the declared top category is unused",
+    "facet_cols": [
+      "Rater",
+      "Criterion"
+    ],
+    "step_facet": "Criterion",
+    "base_source": "Use _pcm_frame from the registered finite-MLE fixture generator without changing response rows.",
+    "cases": [
+      {
+        "case_id": "polytomous_pcm_finite_unanchored",
+        "mechanism": "finite",
+        "anchors": [],
+        "expected_status": "interior_finite_cmle_supported"
+      },
+      {
+        "case_id": "polytomous_pcm_finite_R1_correct",
+        "mechanism": "finite",
+        "anchors": [{"Facet": "Rater", "Level": "R1", "Value": 0.0}],
+        "expected_status": "interior_finite_cmle_supported"
+      },
+      {
+        "case_id": "polytomous_pcm_finite_R1_contaminated",
+        "mechanism": "finite",
+        "anchors": [{"Facet": "Rater", "Level": "R1", "Value": 0.25}],
+        "expected_status": "interior_finite_cmle_supported"
+      },
+      {
+        "case_id": "polytomous_pcm_separated_unanchored",
+        "mechanism": "separated",
+        "anchors": [],
+        "expected_status": "boundary_no_finite_cmle"
+      },
+      {
+        "case_id": "polytomous_pcm_separated_R1_correct",
+        "mechanism": "separated",
+        "anchors": [{"Facet": "Rater", "Level": "R1", "Value": 0.0}],
+        "expected_status": "boundary_no_finite_cmle"
+      },
+      {
+        "case_id": "polytomous_pcm_separated_R1_contaminated",
+        "mechanism": "separated",
+        "anchors": [{"Facet": "Rater", "Level": "R1", "Value": 0.25}],
+        "expected_status": "boundary_no_finite_cmle"
+      },
+      {
+        "case_id": "polytomous_pcm_unused_declared_top_category_unanchored",
+        "mechanism": "unused_declared_top_category",
+        "anchors": [],
+        "expected_status": "boundary_no_finite_cmle"
+      },
+      {
+        "case_id": "polytomous_pcm_unused_declared_top_category_R1_correct",
+        "mechanism": "unused_declared_top_category",
+        "anchors": [{"Facet": "Rater", "Level": "R1", "Value": 0.0}],
+        "expected_status": "boundary_no_finite_cmle"
+      },
+      {
+        "case_id": "polytomous_pcm_unused_declared_top_category_R1_contaminated",
+        "mechanism": "unused_declared_top_category",
+        "anchors": [{"Facet": "Rater", "Level": "R1", "Value": 0.25}],
+        "expected_status": "boundary_no_finite_cmle"
+      },
+      {
+        "case_id": "polytomous_pcm_finite_C1_correct",
+        "mechanism": "finite",
+        "anchors": [{"Facet": "Criterion", "Level": "C1", "Value": 0.0}],
+        "expected_status": "interior_finite_cmle_supported"
+      },
+      {
+        "case_id": "polytomous_pcm_finite_C1_contaminated",
+        "mechanism": "finite",
+        "anchors": [{"Facet": "Criterion", "Level": "C1", "Value": 0.25}],
+        "expected_status": "interior_finite_cmle_supported"
+      },
+      {
+        "case_id": "polytomous_pcm_finite_R1_C1_differential",
+        "mechanism": "finite",
+        "anchors": [
+          {"Facet": "Rater", "Level": "R1", "Value": 0.25},
+          {"Facet": "Criterion", "Level": "C1", "Value": -0.2}
+        ],
+        "expected_status": "interior_finite_cmle_supported"
+      }
+    ],
+    "expected_accounting": {
+      "total": 12,
+      "interior_finite_cmle_supported": 6,
+      "boundary_no_finite_cmle": 6,
+      "structural_nonidentification": 0
+    }
+  },
+  "matched_python_immer_contract": {
+    "free_coordinates": "For each anchored facet, remove the anchored level from W, give every remaining level an identity free coordinate, and do not impose an additional sum-to-zero constraint. Unanchored facets retain sum-to-zero coordinates.",
+    "fixed_offsets": "Pass the anchor contribution through immer_cml(b_const=...). The category kernel uses the same sign convention already validated by the unanchored PCM parity test; fixed offsets must use that convention consistently.",
+    "steps": "Criterion-specific PCM steps retain a separate sum-to-zero transition contrast for C1 and C2 and are never anchored in v1.",
+    "support": "A zero-weight all-2 sentinel declares 0..2 support for every virtual unit without changing sufficient-statistic frequencies.",
+    "prefit_identity": "Before optimization, parameter names, K, conditional NLL and gradient at zero, and conditional-information rank/nullity must independently match Python.",
+    "optimization": "Run immer use_rcpp=FALSE at maxit 200, 2000, and 10000 with reltol 1e-12; maxit 2000 is primary.",
+    "boundary_rule": "Finite coefficients, finite SEs, nominal convergence, or small gradients cannot overwrite Python support-oracle boundary status."
+  },
+  "secondary_engine_contract": {
+    "mfrmr": "Run fit_mfrm JML with PCM, step_facet=Criterion, and the exact Rater/Criterion anchors. Retain warnings, errors, readiness, estimate magnitude, and exact anchored-value checks. Never score equality to CMLE.",
+    "TAM": "Run tam.mml.mfr MML only for the three unanchored cases. Anchored cases are typed unsupported because an equivalent fixed-coordinate/offset mapping is not registered here. The unused-support case is stopped before fitting if TAM cannot receive the declared support.",
+    "sirt": "Run rm.facets MML only for the three unanchored cases in isolated child processes. Anchored cases are typed unsupported; the unused-support case is stopped before fitting.",
+    "no_equivalence": "JML and MML results are sensitivity evidence, not PCM-CMLE parity evidence."
+  },
+  "success_gates": {
+    "identity": "All Python parents, R package/function identities, adapter identities, and the frozen mfrmr snapshot hash match.",
+    "fixture_integrity": "12/12 exact case identities and response hashes retained; expected accounting is 6 interior and 6 boundary.",
+    "python": "12/12 workflow status matches and optimization attempts equal six; all supplied anchors return at exact value with SE zero on ready fits.",
+    "immer_prefit": {
+      "parameter_name_matches": "12/12",
+      "rank_nullity_matches": "12/12",
+      "zero_nll_max_absolute_difference": 1e-10,
+      "zero_gradient_max_absolute_difference": 1e-10
+    },
+    "immer_interior": "All six primary interior fits return code zero, finite coefficients/SE/loglik, full information rank, and analytic gradient sup norm <= 1e-6.",
+    "immer_numeric": {
+      "free_coordinate_estimate_max_absolute_difference": 1e-7,
+      "conditional_loglik_max_absolute_difference": 1e-8,
+      "comparison_scope": "six oracle-interior cases at maxit 2000"
+    },
+    "boundary": "All 18 case-by-maxit boundary rows are retained and remain final-readiness false.",
+    "secondary": "mfrmr, TAM, and sirt each produce a complete 12-case fit/unsupported/error ledger; their numerical success is descriptive, not a pass gate.",
+    "tests": "New PCM-anchor contract tests and selected CMLE/anchor/workflow tests pass.",
+    "public_ui": "withheld"
+  },
+  "interpretation_limits": {
+    "anchor_validity": "Exact implementation of a fixed anchor does not establish that its value is unbiased or substantively valid.",
+    "criterion_anchor": "Anchoring a Criterion main effect does not anchor its PCM step transitions; those remain sum-to-zero within Criterion.",
+    "boundary": "Finite-MLE existence is conditional on the fixed anchor values and free-coordinate cone.",
+    "floating_point": "All optimizer, gradient, covariance, and rank checks use binary64 tolerances; raw values are retained and display rounding is not a decision input.",
+    "secondary_estimators": "mfrmr JML, TAM MML, and sirt MML cannot validate or invalidate exact conditional PCM equality.",
+    "mfrmr_snapshot": "The dirty temporary snapshot is not a release artifact and may not remain locally available; clean-release rerun is mandatory.",
+    "generalization": "No claim is made for step anchors, group anchors, GPCM slopes, high-dimensional sparse PCM, or public one-click UX.",
+    "public_ui": "withheld"
+  }
+}

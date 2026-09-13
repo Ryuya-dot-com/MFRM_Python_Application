@@ -14,6 +14,8 @@ guard for the pattern.
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pandas as pd
 from streamlit.testing.v1 import AppTest
 
@@ -79,17 +81,14 @@ def test_apptest_with_clinical_osce_runs_visuals_without_crash():
     Competency facet, which is exactly the shape that triggered the
     regression reported by the user.
     """
-    at = AppTest.from_file("streamlit_app.py").run(timeout=40)
-    # Switch the sample scenario selector to Clinical OSCE
-    for radio in at.radio:
-        if radio.key == "data_source_flat":
-            try:
-                radio.set_value("Clinical OSCE (60×4×5×3, 3,600 obs)")
-            except Exception:
-                # Label may be slightly different — best-effort
-                pass
-            break
+    at = AppTest.from_file(Path(__file__).resolve().parents[1] / "streamlit_app.py").run(timeout=40)
+    at.button(key="onboarding_skip_guide").click()
+    at.run(timeout=40)
+    # Switch the always-visible sample scenario selector to Clinical OSCE.
+    assert at.selectbox(key="data_source_class").value == "sample"
+    at.selectbox(key="data_source_scenario").set_value("clinical_osce")
     at.run(timeout=60)
+    assert at.session_state["data_source_flat"] == "scenario:clinical_osce"
     # We deliberately do NOT click "Run FACETS-mode estimation" —
     # the initial-render path alone exercises the widget math that
     # blew up. A clean run here is the pass condition.

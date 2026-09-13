@@ -1,0 +1,46 @@
+{
+  "schema_version": "known_assignment_facets_visible_supplement_path_amendment_v1",
+  "registered_date": "2026-08-11",
+  "parent_plan": "validation/known_assignment_facets_visible_supplement_plan_20260811.json",
+  "parent_plan_sha256": "5c008de5c2104984709538c85ac9bb05802037f8d67ad922d3741fbd40999d2c",
+  "parent_registration": "validation/known_assignment_facets_visible_supplement_registration_v2_20260811.json",
+  "parent_registration_sha256": "615e55b373217b0ecedd2cc2d45a1770ce760fddcff29e13449d378b6931d620",
+  "trigger": "The visible BATCH=NO primary pass completed, but the auxiliary Umean=0,1,2 pass stopped after Table 5 and timed out while waiting for its four Scorefiles.",
+  "diagnosis": {
+    "primary_score_4_absolute_path_characters": 257,
+    "auxiliary_score_4_absolute_path_characters": 260,
+    "short_path_probe_longest_expected_score_characters": 98,
+    "short_path_probe_returncode": 0,
+    "short_path_probe_all_outputs_nonempty": true,
+    "short_path_probe_result": "validation/fx2_20260811/result.json",
+    "short_path_probe_result_sha256": "9b9ec5ab05a67bcf04b5a4a50c49fe48af7e2d008c86d07334f82a09cfd4c199",
+    "conclusion": "The auxiliary failure is caused by the generated path reaching the legacy 260-character Windows boundary, not by the model, data, Python estimator, or visible FACETS launch route."
+  },
+  "result_inspection_at_amendment": "Only process state, file existence and sizes, exit/timeout state, path lengths, marker calibration flags, and the operational short-path probe were inspected. No estimate, recovery metric, fit statistic, likelihood, PF1-PF4 contrast, or estimator ranking was inspected.",
+  "unadopted_partial_directory": "validation/known_assignment_multivector_preflight4_20260811/supplemental_facets_visible_20260811",
+  "partial_execution": {
+    "marked_failed_datasets": 3,
+    "unmarked_interrupted_datasets": 1,
+    "primary_facets_passes_completed": 4,
+    "auxiliary_facets_timeouts_completed": 3,
+    "auxiliary_facets_pass_interrupted": 1,
+    "aggregate_created": false,
+    "assessment_executed": false,
+    "scientific_endpoint_read": false
+  },
+  "correction": {
+    "new_retained_output": "validation/known_assignment_multivector_preflight4_20260811/v",
+    "artifact_layout": "v/<four-hex-digit AttemptOrdinal>",
+    "maximum_qualified_absolute_facets_path_characters": 220,
+    "common_invocation_behavior": "Fail before launching FACETS when a specification, report, or expected Scorefile path exceeds the 220-character qualified budget on Windows."
+  },
+  "preservation": {
+    "source_inputs_changed": false,
+    "seeds_or_assignment_changed": false,
+    "estimators_or_fit_controls_changed": false,
+    "decision_rules_changed": false,
+    "unadopted_partial_artifacts_modified_or_deleted": false
+  },
+  "restart_rule": "Do not resume or aggregate the long-path partial directory. Register the revised runner and dependency manifest, start a clean supplemental directory, and retain the partial directory as operational evidence.",
+  "claim_boundary": "Result-blind infrastructure correction only; it does not authorize reading or changing PF1-PF4 endpoints."
+}

@@ -1,0 +1,80 @@
+{
+  "schema_version": "known_assignment_dense_dp_qualification_plan_v1",
+  "status": "frozen_before_execution",
+  "registered_date": "2026-08-11",
+  "purpose": "Qualify a vectorized dense-margin implementation as a numerically equivalent and materially faster execution route for the already-qualified exact fixed-margin assignment distribution. This is implementation qualification, not a new scientific result.",
+  "locked_dependencies": {
+    "mechanism": "mfrm_app/assignment_mechanism.py",
+    "mechanism_sha256": "3800f405d13a210b0bc4820ea3432f4e3dbb50ce87fc9c172530d5220a087e38",
+    "retained_recursive_diagnostics": "validation/known_assignment_large_design_dp_20260811/run_diagnostics.csv",
+    "retained_recursive_diagnostics_sha256": "2de7395c7f6fc1432c84216fe4ffd35f90288312a9f5a0be29a5b38677faa91f",
+    "person_coordinates": "validation/known_assignment_large_design_20260811/person_coordinates.csv",
+    "person_coordinates_sha256": "a63a9c0e43d07db76de08fc77f8a4138a74d2c096c795540786f05e3253ef4da",
+    "base_plan": "validation/known_assignment_large_design_plan_20260811.json",
+    "base_plan_sha256": "bad777ec292708b5fbf0773272c5f18a42d71febcd21f46a39e4cf9702539003"
+  },
+  "small_oracle": {
+    "persons": 6,
+    "raters": 3,
+    "person_degree": 2,
+    "rater_degree": 4,
+    "expected_connected_states": 90,
+    "gammas": [-0.8, 0.0, 0.8],
+    "independent_draws_per_gamma": 12000,
+    "seeds": [260871, 260872, 260873]
+  },
+  "large_design": {
+    "persons": 80,
+    "raters": 4,
+    "person_degree": 2,
+    "rater_degree": 40,
+    "gammas": [-0.8, -0.4, 0.0, 0.4, 0.8],
+    "independent_draws_per_gamma": 20,
+    "seed_base": 260880,
+    "expected_dense_shape": "41x41x41",
+    "expected_dense_cells": 5582601,
+    "expected_dense_memory_bytes": 44660808,
+    "max_dense_dp_cells": 6000000,
+    "retained_recursive_gamma_positive_0p8_partition_seconds": 92.68,
+    "retained_recursive_log_normalizers": {
+      "-0.8": 165.94183119069717,
+      "-0.4": 144.575905306945,
+      "0.0": 136.34261287862324,
+      "0.4": 144.575905306945,
+      "0.8": 165.94183119069717
+    }
+  },
+  "registered_gates": {
+    "small_oracle": {
+      "available": true,
+      "states_each_gamma": 90,
+      "recursive_dense_log_normalizer_absolute_difference_max": 1e-12,
+      "probability_outside_oracle_max": 0.0,
+      "total_variation_distance_max": 0.06,
+      "absolute_mean_statistic_error_max": 0.06,
+      "unique_sampled_states_min": 75,
+      "maximum_conditional_log_residual_max": 1e-10,
+      "maximum_statistic_update_residual_max": 1e-10
+    },
+    "large_design": {
+      "all_runs_available": true,
+      "recursive_dense_log_normalizer_absolute_difference_max": 1e-10,
+      "maximum_conditional_log_residual_max": 1e-10,
+      "maximum_statistic_update_residual_max": 1e-10,
+      "connected_rejections_max": 0,
+      "final_overlap_components": 1,
+      "degree_margins_preserved": true,
+      "maximum_partition_seconds_each_gamma": 15.0,
+      "minimum_speedup_at_gamma_positive_0p8": 5.0,
+      "dense_shape_matches": true,
+      "dense_cells_matches": true,
+      "dense_memory_bytes_matches": true
+    }
+  },
+  "claim_boundary": [
+    "Passing changes only the execution route for the same exact fixed-margin exponential-family law; it does not extend the scientific estimand or qualify an estimator.",
+    "The retained recursive timing is a same-machine diagnostic, not a general hardware benchmark.",
+    "Dense storage is authorized only below the explicit cell cap; larger Rater counts or margins must fail closed or use a separately qualified route.",
+    "No responses, scores, estimator results, FACETS output, or displayed two-decimal fit values enter this qualification."
+  ]
+}

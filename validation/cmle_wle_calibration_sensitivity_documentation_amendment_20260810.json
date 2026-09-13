@@ -1,0 +1,13 @@
+{
+  "schema_version": "mfrm-cmle-wle-calibration-sensitivity-documentation-amendment-v1",
+  "amendment_date": "2026-08-10",
+  "amendment_timing": "After inspection of the frozen numerical results and before enabling current-tree reproduction with the results documented.",
+  "reason": "The frozen plan intentionally hashed docs/cmle_phase0_design.md. The design record was then updated to report the observed sensitivity evidence and retained inference/UI limits. This changed documentation identity but not executable inputs, draws, seed, thresholds, validation matrix, or decisions.",
+  "base_plan_sha256": "21b15ad6d3166ba3c8cd4d38324c0bb6cf8bfe429c84d4ff4e3cd0384410c5aa",
+  "original_cmle_phase0_design_sha256": "e7ddd1c08ba430c5ba6ff55c215339f412646255c3c3c3dce9ccb1ff92114aab",
+  "current_cmle_phase0_design_sha256": "d5c726b2210b386a63d12a8934349554b895ebce68a547b6e1cf9a226ad51747",
+  "numerical_contract_changed": false,
+  "validation_gates_changed": false,
+  "streamlit_integration_authorized": false,
+  "scope": "Documentation-identity amendment only; it does not prospectively re-register or strengthen the already observed numerical result."
+}

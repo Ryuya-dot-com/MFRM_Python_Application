@@ -1,0 +1,65 @@
+{
+  "schema_version": "mfrm-facets-resilient-pair-pilot-assessment-v1",
+  "assessed_on": "2026-08-11",
+  "plan_sha256": "8286623656d469523963c6d59d751a17d8dfeb6af2135bdc5293276206dee98c",
+  "component_sha256": "5fcb29ad7c6d719ef2997dec64901ed07bd3bb4098964fbae7da5f8af8d6b56e",
+  "pilot_script_sha256": "a2d5bd7de0bc22a3ac642974c498547b0f01fd31368b7f8a614c0d17635d001c",
+  "pilot_metrics_sha256": "beb7837d1cc6554bee7b068d29b6bc80aa9d8a20c69df819e36a54e47121c6ec",
+  "pilot_identity_sha256": "0dd83c12340c756fecc0ecca50c557b1a02753b3cc14de1ea82c795ca2db75a8",
+  "dependency_identity": {
+    "files": 57,
+    "manifest_sha256": "d1e7e8a754b8288872873faf1a621a87f85881950f555fe3b1cfd67971f7dd67",
+    "same_digest_across_component_scenarios": true,
+    "facets_executable_sha256": "dfb0afb0faa18f026d1b3b4175f22e42cc3764430eb83cbd368c7a572b3593a1",
+    "facets_executable_size_bytes": 16391680,
+    "facets_reported_version": "4.5.0"
+  },
+  "scenarios": {
+    "FI01_RETRYABLE_FIRST_FAILURE": {
+      "python_statistical_evidence_ready": true,
+      "facets_calibration_ready": true,
+      "pair_fully_qualified": true,
+      "tries": 2,
+      "retries": 1,
+      "first_failure_retained": true,
+      "python_replay_main_max_abs_difference": 0.0,
+      "python_replay_threshold_max_abs_difference": 0.0
+    },
+    "FI02_RETRYABLE_EXHAUSTION": {
+      "python_statistical_evidence_ready": true,
+      "facets_calibration_ready": false,
+      "pair_fully_qualified": false,
+      "tries": 3,
+      "all_failures_retained": true
+    },
+    "FI03_NONRETRYABLE_FAILURE": {
+      "python_statistical_evidence_ready": true,
+      "facets_calibration_ready": false,
+      "pair_fully_qualified": false,
+      "tries": 1,
+      "retry_suppressed": true
+    },
+    "FI04_LOCK_SERIALIZATION": {
+      "workers": 4,
+      "maximum_concurrent_holders": 1,
+      "serialization_pass": true
+    }
+  },
+  "all_registered_checks_pass": true,
+  "promotion_gate_pass": true,
+  "original_confirmatory_marker_unchanged": true,
+  "confirmatory_evidence_replaced": false,
+  "strengths": [
+    "Python JMLE is completion-marked before FACETS and survives both retry exhaustion and nonretryable FACETS failure.",
+    "Retry eligibility is restricted to exit-0/missing-report failures and every try is retained.",
+    "StatisticalEvidenceReady, CalibrationReady, and PairFullyQualified are separate machine-readable gates.",
+    "Repository dependency code and the FACETS binary are bound beyond the v1 top-level-script hash."
+  ],
+  "remaining_limits": [
+    "The conservative lock encloses the legacy pair call, so Python is recomputed under the FACETS lock after an independent Python fit.",
+    "The component is repository-only and is not yet wired into the public Streamlit workflow.",
+    "The pilot uses one retained target dataset and injected operational faults; it is not a population-level reliability-rate study.",
+    "Passing this remediation gate does not retroactively qualify the failed confirmatory batch or change H6 from 99 pairs."
+  ],
+  "decision": "Eligible for a separately registered fresh-replicate H6-only runner. Not eligible for retroactive evidence replacement or broad production claims."
+}

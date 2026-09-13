@@ -1,0 +1,25 @@
+{
+  "schema_version": "known_assignment_facets_postreboot_control_plan_v1",
+  "status": "frozen_before_control_execution",
+  "registered_date": "2026-08-11",
+  "reboot_reported_by_user_before_registration": true,
+  "trigger_audit": "validation/known_assignment_multivector_preflight4_20260811/preendpoint_operational_audit.json",
+  "trigger_audit_sha256": "9950d301106c60dd8d41b3a7d94a2d269f02bd3b2f3bce8a1d334ca09d4acfd3",
+  "purpose": "After the user-reported Windows restart, rerun exactly one historically successful FACETS 4.5.0 specification before touching any new preflight FACETS input or registered endpoint.",
+  "facets_executable": "C:/Facets/Facets.exe",
+  "facets_executable_sha256": "dfb0afb0faa18f026d1b3b4175f22e42cc3764430eb83cbd368c7a572b3593a1",
+  "control_spec": "validation/known_assignment_response_screening_v2_20260811/work/00000/facets_attempts/pair_try_01/facets_runs/gamma_neg_0p8__fixedtheta_rep-00001__pcm/analysis.txt",
+  "control_spec_sha256": "84707c0c52800ff3caf6bd2a414fe5bf82c5d13e2554b78aeda4fc8634e507ac",
+  "execution": {
+    "work_root": "fresh OS temporary directory",
+    "timeout_seconds": 120,
+    "launch_path": "the same invoke_facets helper and CREATE_NO_WINDOW behavior as registered calibration",
+    "only_specification_change": "Scorefile is redirected into the isolated temporary directory",
+    "retained_output": "validation/kafp_postreboot_control_20260811"
+  },
+  "decision_rule": {
+    "pass": "return code 0, nonempty report, and four score files",
+    "fail": "do not execute supplemental calibration or read preflight endpoints"
+  },
+  "claim_boundary": "External-engine availability control only; it neither replaces a calibration pair nor reads a scientific endpoint."
+}

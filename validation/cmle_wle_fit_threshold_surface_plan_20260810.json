@@ -1,0 +1,127 @@
+{
+  "schema_version": "mfrm-cmle-wle-fit-threshold-surface-plan-v1",
+  "registered_date": "2026-08-10",
+  "registration_timing": "After the canonical bootstrap fit result and an interactive 1-to-6-decimal display check were inspected, but before implementation or inspection of the threshold-grid surface. This is explicitly post-result descriptive analysis, not a confirmatory registration.",
+  "purpose": "Separate display-rounding sensitivity from dependence on the substantive 0.50/1.50/2.00 MnSq classification thresholds without selecting a data-favorable threshold or relabelling bootstrap transitions as operating characteristics.",
+  "input_identity": {
+    "decision_stability_sha256": "fac0d702590d3ba9f18124fc15403491d79b10649702dfbbc0dae5116c512d68",
+    "cmle_wle_person_fit_core_sha256": "b7637e902091de2373d408c16118ebfd251dc86589b96884dfbdd0a8b18d3be0",
+    "bootstrap_person_draws_sha256": "5961726d36a2d57e54a9d6410b0d9e5e659d4d9adf6b8fcf07d20f0433cc792e",
+    "bootstrap_baseline_persons_sha256": "dc9fecf78b98ce9cd87f7c6afce21e7bdaf15530bfdccb7c9507f49f2ff4418f",
+    "bootstrap_fit_extension_decision_sha256": "9fc2c5247032bc79d93cf1c0a0aa20d0395d8de5d7a7d5c66ea180635711d09f",
+    "bootstrap_fit_critical_review_sha256": "f7bdbce37bb293037fd84eba6ff0474146b76d7f5588040f4d5457481349de96",
+    "person_draw_rows": 12800
+  },
+  "canonical_contract": {
+    "thresholds": {
+      "overfit_upper": 0.5,
+      "acceptable_upper": 1.5,
+      "noisy_upper": 2.0
+    },
+    "endpoint_semantics": "value < overfit_upper is overfit; exact overfit_upper through exact acceptable_upper are acceptable; above acceptable_upper through exact noisy_upper are noisy; above noisy_upper is distorting.",
+    "classification_input": "finite unrounded retained MnSq",
+    "expected_input_identity_counts": {
+      "InfitTransitions": 2372,
+      "OutfitTransitions": 2454,
+      "AnyStatisticTransitions": 2554
+    },
+    "expected_counts_are_reproduction_checks_not_new_success_thresholds": true
+  },
+  "threshold_grid": {
+    "overfit_upper": [
+      0.45,
+      0.475,
+      0.5,
+      0.525,
+      0.55
+    ],
+    "acceptable_upper": [
+      1.4,
+      1.45,
+      1.5,
+      1.55,
+      1.6
+    ],
+    "noisy_upper": [
+      1.9,
+      1.95,
+      2.0,
+      2.05,
+      2.1
+    ],
+    "full_factorial_triplets": 125,
+    "all_triplets_must_be_strictly_ordered": true,
+    "one_at_a_time_profiles": "For each threshold, vary its five frozen values while holding the other two at the canonical values.",
+    "no_post_result_grid_extension": true
+  },
+  "display_precision_grid": {
+    "decimals": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6
+    ],
+    "status": "post-hoc durable reconstruction of an already inspected interactive check",
+    "comparison": "Classify rounded replicate and rounded baseline values, then compare both class labels and transition indicators against raw classification.",
+    "rounding_mode": "numpy binary64 round-to-nearest behavior used by the existing display audit"
+  },
+  "proximity_bands": {
+    "absolute_raw_distance": [
+      0.0005,
+      0.005,
+      0.05,
+      0.1
+    ],
+    "report_for": [
+      "overfit_upper",
+      "acceptable_upper",
+      "noisy_upper"
+    ],
+    "purpose": "Describe empirical mass near each canonical threshold; not an uncertainty interval or recommended tolerance."
+  },
+  "required_stratification": [
+    "Model",
+    "Lane",
+    "Statistic",
+    "BaselineExtremeScorePattern",
+    "Person"
+  ],
+  "required_outputs": {
+    "full_threshold_surface": "Transition count/share for every Model x Lane x Statistic x threshold triplet plus aggregate Infit, Outfit, and any-statistic totals.",
+    "one_at_a_time_profile": "Transition counts and raw-canonical differences for each individually varied threshold.",
+    "display_precision_profile": "Raw versus rounded class mismatches and raw versus rounded transition-indicator disagreements for one through six decimals.",
+    "proximity_profile": "Counts and shares within every frozen raw-distance band by threshold and stratum.",
+    "person_concentration": "Minimum, maximum, and range of Person transition shares across the full threshold grid.",
+    "visuals": [
+      "one-at-a-time threshold profiles with canonical reference",
+      "full-factorial transition range by Model/Lane/Statistic",
+      "raw proximity to canonical thresholds"
+    ],
+    "first_read_projection": "Separate raw reproduction, display precision, threshold dependence, and withheld validity/UI claims."
+  },
+  "frozen_gates": {
+    "input_rows_must_equal": 12800,
+    "missing_or_nonfinite_ready_mnsq_allowed": 0,
+    "canonical_stored_class_mismatches_allowed": 0,
+    "canonical_transition_count_mismatches_allowed": 0,
+    "threshold_triplets_must_equal": 125,
+    "row_order_invariance_required": true,
+    "display_rounding_may_change_stored_raw_class": false,
+    "automatic_threshold_selection": false
+  },
+  "interpretation_boundaries": {
+    "threshold_optimality": false,
+    "false_positive_rate_or_power": false,
+    "known_truth_recovery": false,
+    "independent_binomial_person_replicates": false,
+    "bootstrap_lane_pooling": false,
+    "ZSTD_or_p_value": false,
+    "coverage_qualified_interval": false,
+    "total_standard_error": false,
+    "streamlit_integration": false,
+    "automatic_decision_or_estimator_switch": false
+  },
+  "next_confirmatory_gate": "Register a known-truth repeated simulation varying observations per Person, missingness/connectivity, categories, local dependence, model misspecification, and anchor proportion/contamination before evaluating false-positive, power, or threshold recommendations."
+}

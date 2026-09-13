@@ -1,0 +1,88 @@
+{
+  "schema_version": "mfrm-strict-jmle-a2-polish-plan-v1",
+  "registered_date": "2026-08-09",
+  "purpose": "Prospectively test two gradient-directed polish strategies after Stage A stopped on relative objective reduction with all 16 terminal gradients above the frozen threshold.",
+  "frozen_diagnosis": {
+    "stage_a_decision": "Failed; original Stage B remains unauthorized.",
+    "attempted_fits": 16,
+    "optimizer_success_flags": 16,
+    "terminal_gradient_gate_passes": 0,
+    "common_optimizer_message": "CONVERGENCE: RELATIVE REDUCTION OF F <= FACTR*EPSMCH",
+    "interpretation": "The analytical gradient was independently recomputed and finite-difference checked; Stage A stopped on the objective-reduction criterion rather than the registered gradient criterion."
+  },
+  "input_identity": {
+    "stage_a_plan_sha256": "e2345d9d5d5038cde50d48cd20f8e84fb9dc2b5d59b1fb91f1d2cee3bc269e0c",
+    "stage_a_adapter_sha256": "c92aa8f3731a54c64197c8bec576f7619ae1c9b4349d3ddff13d776e2513d01e",
+    "streamlit_app_sha256": "b8c7c180f5326a769630b701cbceb43dfe27a0afb3717a4a48c97f7d03ca3a96",
+    "stage_a_runs_sha256": "e3ed104bda7a08ccd885ced4a3e868e9867d2d8f4dd2f580b55c4ec126574891",
+    "stage_a_identity_sha256": "e23e7315af51dc4f36cd072c0fec1821bace244d1083aabc5f60522097bca67f",
+    "manifest_sha256": "27dfa50695f3b0d612005945c0e140985103bfc26aa16f837ca23710d8dce0f0",
+    "generated_ratings_sha256": "4ed4ff15b713be96399a8040db8e0d3301507206f36b04311cac498908150fe0",
+    "generated_facet_truth_sha256": "5a6f41dff952ed80ab74994c5ebee4f5c4fa6d6e6a3b7af80871557c59fa5d99",
+    "generated_anchors_sha256": "1096114f16a76c9e395164e4ccdb939ec9848a873913e753653b5bd932f2412e"
+  },
+  "baseline_reproduction": {
+    "refit_stage_a_with_unchanged_controls": true,
+    "start_each_candidate_from_reproduced_stage_a_terminal_vector": true,
+    "loglik_max_abs_difference_tolerance": 1e-9,
+    "terminal_gradient_sup_norm_max_abs_difference_tolerance": 1e-10,
+    "optimizer_message_must_match": true,
+    "all_16_must_reproduce": true
+  },
+  "candidates": [
+    {
+      "candidate_id": "lbfgsb_precision",
+      "priority": 1,
+      "method": "L-BFGS-B",
+      "reason": "Directly removes the observed premature objective-reduction stop while retaining the scalable limited-memory optimizer.",
+      "options": {
+        "maxiter": 1500,
+        "gtol": 1e-7,
+        "ftol": 1e-15,
+        "maxls": 50,
+        "maxcor": 20
+      }
+    },
+    {
+      "candidate_id": "bfgs_gradient",
+      "priority": 2,
+      "method": "BFGS",
+      "reason": "Independent full-memory quasi-Newton sensitivity check on the unbounded exact RSM free-coordinate space.",
+      "options": {
+        "maxiter": 1000,
+        "gtol": 1e-7,
+        "xrtol": 0.0,
+        "c1": 0.0001,
+        "c2": 0.9
+      }
+    }
+  ],
+  "qualification": {
+    "attempted_fits_per_candidate": 16,
+    "optimizer_success_required": 16,
+    "finite_objective_and_gradient_required": 16,
+    "terminal_gradient_norm": "maximum absolute component in the exact identified free-coordinate vector",
+    "terminal_gradient_sup_norm_threshold": 0.0001,
+    "optimizer_jac_recomputed_max_abs_tolerance": 1e-12,
+    "objective_degradation_tolerance_from_stage_a": 1e-8,
+    "finite_difference_coordinates_per_fit": 8,
+    "finite_difference_method": "centered",
+    "finite_difference_step": "machine_epsilon^(1/3) * (1 + abs(parameter))",
+    "finite_difference_max_abs_error_tolerance": 1e-5,
+    "hard_anchor_tolerance": 1e-10,
+    "all_gates_must_pass_for_candidate": true
+  },
+  "selection_rule": {
+    "rule": "Select the lowest numeric priority candidate that passes every gate on all 16 RunIds.",
+    "tie_break_rationale": "Prefer limited-memory L-BFGS-B for application scalability when both candidates qualify.",
+    "authorization_if_selected": "Authorize only a distinct Stage B2 using the selected unchanged A2 candidate; never retroactively authorize original Stage B."
+  },
+  "scope_boundaries": {
+    "thresholds_may_change_after_results": false,
+    "candidate_options_may_change_after_results": false,
+    "bias_cell_sparsity_part_of_numerical_qualification": false,
+    "performance_or_package_superiority_claim": false,
+    "application_core_change_authorized_by_this_plan": false,
+    "public_surface_status": "Withheld"
+  }
+}

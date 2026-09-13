@@ -1,0 +1,273 @@
+{
+  "schema_version": "known_assignment_confirmatory_plan_v1",
+  "status": "scientific_design_frozen_before_any_confirmatory_person_assignment_or_response_generation",
+  "registered_date": "2026-08-11",
+  "purpose": "Confirm or refute the expected within-dataset fixed-Rater RMSE stress contrast selected in the known probabilistic-assignment preflight, while separating Python MML inference, same-estimand R verification, and FACETS/Python JMLE external calibration.",
+  "registration_timing": "Registered after the four fresh-Person-vector preflight and its non-destructive FACETS supplement, but before every confirmatory Person vector, response uniform, assignment graph, or estimator fit.",
+  "independent_adversarial_review": {
+    "role": "A separate methods reviewer challenged estimand naming, independent-unit counting, sample-size justification, cross-engine validation, FACETS rounding, multiplicity, and failure denominators before this plan was frozen.",
+    "binding_corrections": [
+      "PF1 is an expected within-dataset fixed-Rater RMSE contrast, not Monte Carlo bias and not square-root MSE.",
+      "The independent unit is one Person-vector triplet containing gamma -0.8, 0.0, and +0.8, not an individual dataset.",
+      "The prior R check verified aggregation only; it did not independently verify the free-SD MML likelihood or optimizer.",
+      "Scientific inference and FACETS complement qualification require separate terminal statuses and denominators."
+    ]
+  },
+  "prior_evidence": {
+    "preflight_plan": "validation/known_assignment_multivector_preflight_plan_20260811.json",
+    "preflight_plan_sha256": "2de855a627c7d5ce46aafba695d839a548f941740b11059cb90d89def9986800",
+    "preflight_visible_join_assessment": "validation/known_assignment_multivector_preflight4_20260811/aggregate_visible_join_20260811/assessment.json",
+    "preflight_visible_join_assessment_sha256": "23641471972d6574d4c551b2ceee1e3d92d11314ad473403e41733993944dd0e",
+    "preflight_r_aggregation_assessment": "validation/known_assignment_multivector_preflight4_20260811/r_verification_20260811/assessment.json",
+    "preflight_r_aggregation_assessment_sha256": "877cd6702e7961a4b724849ea800b9a717292bba9266de6e890e051f35db7d02",
+    "role": "Screening selected candidate diagnostics and supplied rough dispersion. The four-vector preflight checked sign stability and execution. No screening or preflight observation may enter confirmatory endpoint estimates.",
+    "r_limitation": "The retained R 4.5.1 evidence independently recomputed endpoint arithmetic from Python CSV files; it did not refit or independently evaluate the Python free-SD MML likelihood."
+  },
+  "evidence_status": {
+    "phase": "confirmatory",
+    "independent_person_vector_triplets": 200,
+    "datasets": 600,
+    "gammas_per_triplet": 3,
+    "fixed_sample_size": true,
+    "optional_stopping": false,
+    "interim_scientific_looks": 0,
+    "replacement_triplets": false,
+    "screening_observations_pooled": false,
+    "preflight_observations_pooled": false,
+    "extension_after_precision_failure": false
+  },
+  "sample_size_contract": {
+    "basis": "Monte Carlo precision rather than the observed preflight mean or a desired p value.",
+    "planning_statistic": "PF1 screening SD from 10 fixed-Person screening replicates",
+    "planning_sd": 0.0560506786158074,
+    "planning_sd_df": 9,
+    "planning_sd_two_sided_95_percent_upper": 0.10232668961815011,
+    "calculation": "sigma_upper * t_(0.975,199) / sqrt(200)",
+    "expected_two_sided_95_percent_half_width": 0.014268268287961365,
+    "target_half_width": 0.015,
+    "fresh_vector_preflight_caveat": "The n=4 fresh-vector PF1 SD was 0.0365336324663099; its two-sided 95% sigma upper bound is about 0.13622 and would imply a wider n=200 expected half-width near 0.019. This uncertainty is handled by an achieved-precision gate, not post-result sample-size extension.",
+    "tradeoff": "R=200 is a registered cost-precision compromise. R=400 would protect the 0.015 target under the highly uncertain n=4 variance upper bound, but is not the selected design.",
+    "prohibition": "Do not use the screening or preflight endpoint mean as a SESOI, planning alternative, or stopping boundary."
+  },
+  "data_generating_process": {
+    "model": "four-category heterogeneous-threshold PCM under the same fixed facet truth used in screening and preflight",
+    "persons_per_triplet": 80,
+    "person_vector_ids": "integers 1 through 200 inclusive",
+    "person_distribution": "For each triplet, draw 80 independent standard-normal variates and then standardize the finite vector to realized mean 0 and population SD 0.8.",
+    "iid_claim_boundary": "After within-vector standardization the 80 realized Person values are not an iid N(0,0.8^2) sample. Claims must refer to this standardized finite-vector DGP.",
+    "person_seed_formula": "26100000 + PersonVector",
+    "person_seed_range": [26100001, 26100200],
+    "response_uniform_seed_formula": "26101000 + PersonVector",
+    "response_uniform_seed_range": [26101001, 26101200],
+    "raters": {"R01": -0.45, "R02": -0.15, "R03": 0.15, "R04": 0.45},
+    "tasks": {"T01": -0.35, "T02": 0.0, "T03": 0.35},
+    "criteria": {"C01": -0.2, "C02": 0.2},
+    "threshold_condition": "heterogeneous",
+    "common_random_numbers": "Within a Person-vector triplet, all three gamma conditions select from the same complete Person-by-Rater-by-Task-by-Criterion response matrix. Assignment generation never reads potential or realized Score."
+  },
+  "assignment": {
+    "distribution": "Pr(G | fixed Person degrees, fixed Rater degrees, connected) proportional to exp(gamma*T(G))",
+    "implementation": "qualified vectorized dense-margin exact DP with connected rejection",
+    "gammas": [-0.8, 0.0, 0.8],
+    "gamma_order": [-0.8, 0.0, 0.8],
+    "assignment_seed_formula": "26102000 + 3*(PersonVector-1) + GammaOrdinal, where GammaOrdinal is 1 for -0.8, 2 for 0.0, and 3 for +0.8",
+    "assignment_seed_range": [26102001, 26102600],
+    "person_degree": 2,
+    "rater_degree": 40,
+    "edges": 160,
+    "connected": true,
+    "gamma_is_known_not_estimated": true,
+    "max_dense_dp_cells": 6000000
+  },
+  "locked_design_invariants": {
+    "rows_per_dataset": 960,
+    "raters_per_person": 2,
+    "persons_per_rater": 40,
+    "rating_rows_per_rater": 240,
+    "tasks_and_criteria_complete_within_selected_rater": true,
+    "person_rater_components": 1,
+    "constrained_pcm_nullity": 0,
+    "same_complete_response_sha256_within_triplet": true,
+    "fresh_person_sha256_between_all_200_triplets": true,
+    "score_blind_assignment": true
+  },
+  "execution_lanes": {
+    "scientific_primary": {
+      "estimators": ["PYTHON_MML_FREE_SD_Q31", "PYTHON_MML_FIXED_SD08_Q31"],
+      "datasets_per_estimator": 600,
+      "python_attempt_units": 1200,
+      "role": "Confirmatory within-estimator gamma contrasts and registered bias/MSE decomposition."
+    },
+    "facets_external_calibration": {
+      "estimators": ["FACETS_4_5_JMLE", "PYTHON_JMLE"],
+      "triplet_subset": [5, 22, 41, 57, 72, 99, 116, 128, 143, 161, 176, 200],
+      "subset_selection": "One PersonVector selected from each of 12 consecutive strata spanning 1..200 with numpy default_rng seed 26103000, before any confirmatory data generation.",
+      "subset_json_canonical": "[5,22,41,57,72,99,116,128,143,161,176,200]",
+      "subset_sha256": "6d9454826428c583347f744f6f737824d286b8e35c1b9a34ce6b541e79e0d37a",
+      "datasets": 36,
+      "attempt_units": 36,
+      "role": "Same-estimand external calibration only; not a gold standard for MML or CMLE."
+    },
+    "exact_cmle_descriptive": {
+      "triplet_subset": [5, 22, 41, 57, 72, 99, 116, 128, 143, 161, 176, 200],
+      "datasets": 36,
+      "attempt_units": 36,
+      "role": "Descriptive conditional-estimand context only."
+    },
+    "registered_python_attempt_units_total": 1272,
+    "independent_r_free_mml": {
+      "triplet_subset": [5, 22, 41, 57, 72, 99, 116, 128, 143, 161, 176, 200],
+      "datasets": 36,
+      "role": "Same-estimand free-SD normal MML Q31 cross-fit and likelihood verification, not endpoint re-aggregation alone."
+    }
+  },
+  "primary_endpoint": {
+    "id": "KA1_FREE_MML_EXPECTED_WITHIN_DATASET_FIXED_RATER_RMSE_STRESS_CONTRAST",
+    "estimand_name": "expected within-dataset fixed-Rater RMSE stress contrast",
+    "estimator_mode": "PYTHON_MML_FREE_SD_Q31",
+    "per_triplet_statistic": "0.5 * [RMSE_Rater(gamma=-0.8) + RMSE_Rater(gamma=+0.8)] - RMSE_Rater(gamma=0.0), where each RMSE is over aligned truth errors for the four fixed Rater levels",
+    "expectation_scope": "new standardized Person vector, response uniforms, and score-blind fixed-margin assignment draws under the registered DGP; the four Rater truth levels remain fixed",
+    "not_bias": "This endpoint is not E(estimate-truth), not sqrt(E(error^2)), and not an estimator ranking.",
+    "null": "Delta <= 0",
+    "alternative": "Delta > 0",
+    "test": "one-sample one-sided Student t test over 200 independent triplet statistics",
+    "alpha": 0.05,
+    "interval": "two-sided 95% Student t confidence interval",
+    "direction_decision": "All 200 registered triplet statistics finite, mean greater than zero, and one-sided p <= 0.05.",
+    "precision_decision": "Two-sided 95% interval half-width <= 0.015 logits.",
+    "terminal_interpretation": "DirectionConfirmed and PrecisionQualified are separate flags. A precision miss does not erase the estimate or p value, and no extra triplets may be added.",
+    "sesoi": "not defined; no practical-importance claim is authorized"
+  },
+  "secondary_family": {
+    "gatekeeping": "Evaluate directional secondary decisions only if KA1 DirectionConfirmed is true; otherwise report effects descriptively.",
+    "multiplicity": "Holm step-down control across KA2 through KA4 at one-sided family-wise alpha 0.05.",
+    "endpoints": [
+      {
+        "id": "KA2_FIXED_MML_EXPECTED_WITHIN_DATASET_FIXED_RATER_RMSE_STRESS_CONTRAST",
+        "statistic": "PYTHON_MML_FIXED_SD08_Q31 version of the KA1 per-triplet statistic",
+        "direction": "greater than zero"
+      },
+      {
+        "id": "KA3_FREE_MML_SYMMETRIC_STRESS_POPULATION_SD_SHIFT",
+        "statistic": "0.5 * [estimated population SD(-0.8) + estimated population SD(+0.8)] - estimated population SD(0.0)",
+        "direction": "less than zero"
+      },
+      {
+        "id": "KA4_FREE_MML_DIRECTION_ALIGNED_RATER_ERROR_SLOPE",
+        "statistic": "0.5 * [OLS slope of aligned Rater truth error on true Rater severity at gamma=-0.8 minus the corresponding slope at gamma=+0.8]",
+        "direction": "greater than zero"
+      }
+    ],
+    "test": "one-sample one-sided Student t test over 200 independent triplet statistics",
+    "intervals": "Ordinary two-sided 95% intervals are unadjusted descriptive magnitude intervals; Holm adjustment applies to directional p values."
+  },
+  "registered_bias_mse_decomposition": {
+    "status": "descriptive_estimation_not_confirmatory_hypothesis_family",
+    "estimators": ["PYTHON_MML_FREE_SD_Q31", "PYTHON_MML_FIXED_SD08_Q31"],
+    "by": ["EstimatorMode", "Gamma", "Rater"],
+    "outputs": [
+      "MonteCarloBias = mean over 200 triplets of aligned estimate minus fixed truth",
+      "ErrorVariance = sample variance over 200 aligned errors",
+      "MSE = mean over 200 squared aligned errors",
+      "RMSEAcrossTriplets = sqrt(MSE)",
+      "MSEIdentityResidual = MSE - MonteCarloBias^2 - ((R-1)/R)*sample ErrorVariance"
+    ],
+    "purpose": "Expose whether RMSE stress changes arise from systematic Rater error, variability, or both without relabeling KA1 as bias.",
+    "prohibition": "Do not promote Rater-specific or gamma-specific decomposition results into post hoc confirmatory endpoints."
+  },
+  "facets_contract": {
+    "version": "4.5.0",
+    "executable": "C:/Facets/Facets.exe",
+    "windows_launch": "visible BATCH=NO with output-gated lifecycle and WM_CLOSE after stable report and Scorefiles",
+    "serialization": "one FACETS process at a time under a cross-process lock",
+    "path_budget_characters": 220,
+    "prelaunch_path_gate": "Fail before launch if specification, report, or Scorefile path exceeds 220 characters.",
+    "same_estimand_pairing": "FACETS JMLE may be compared directly only with independently persisted Python JMLE on the identical 36 datasets.",
+    "main_weighted_mae_max": 0.01,
+    "main_absolute_difference_max": 0.05,
+    "minimum_within_facet_spearman": 0.99,
+    "threshold_weighted_mae_max": 0.02,
+    "threshold_absolute_difference_max": 0.05,
+    "all_pair_gate": "All 36 pairs must individually pass; aggregate means or correlations cannot hide a failed pair.",
+    "measure_precision": "Use the registered Umean=6 primary measures and thresholds for numerical calibration.",
+    "fit_precision": "Treat ordinary FACETS fit fields as two-decimal displayed evidence even under Umean=6. They are never raw parity or downstream calculation inputs.",
+    "display_fit_optional_gate": "If a displayed fit value d is compared, require the Python raw value to lie in the frozen FACETS rounding interval for d, nominally [d-0.005,d+0.005); a boundary fixture must establish FACETS' exact tie rule before use. No MAE or correlation may average away display-quantization failures."
+  },
+  "independent_r_mml_contract": {
+    "r_version": "4.5.1",
+    "scope": "The same 36 hash-fixed datasets used for FACETS calibration.",
+    "engine": "An independently implemented R likelihood/optimizer or a package and source commit whose package bytes, source hash, category map, constraints, and quadrature contract are frozen in the execution registration before confirmatory generation.",
+    "required_model_alignment": [
+      "score categories 0 through 3",
+      "heterogeneous Criterion-specific PCM thresholds",
+      "normal N(0,sigma^2) Person population",
+      "free population SD",
+      "31-point Gauss-Hermite quadrature",
+      "identical Rater, Task, Criterion, and threshold identification constraints",
+      "identical extreme-score policy",
+      "aligned parameter coordinates"
+    ],
+    "required_cross_evaluations": [
+      "R evaluates the Python solution log likelihood and gradient",
+      "Python evaluates the R solution log likelihood",
+      "both engines report terminal score and constraint residuals",
+      "aligned main and threshold coordinates are compared per dataset",
+      "Q31 versus Q61 sensitivity is retained per dataset"
+    ],
+    "numerical_tolerance_registration": "Exact tolerances and the frozen R engine hash must be qualified on retained non-confirmatory fixtures and recorded in the execution registration before any confirmatory Person generation. Confirmation outcomes may not tune them.",
+    "all_pair_gate": "All 36 datasets must pass the frozen cross-fit contract. A mean agreement statistic cannot mask an individual failure.",
+    "prior_r_aggregation_not_substitute": true
+  },
+  "two_layer_terminal_status": {
+    "ScientificEndpointComputed": "All 200 primary free-MML triplets are endpoint-finite and the registered endpoint artifacts are constructed.",
+    "ScientificInferenceValidated": "ScientificEndpointComputed plus all scientific design, fit, constraint, denominator, and independent R MML gates pass.",
+    "FACETSComplementQualification": "All 36 FACETS/Python JMLE pairs pass the registered same-estimand calibration and provenance gates.",
+    "dependency_quarantine": "A FACETS launch, report, GUI, or path failure fails only FACETSComplementQualification. A parity failure suggesting a shared category map, response encoding, truth alignment, or generator defect quarantines the implicated scientific artifacts pending adjudication.",
+    "product_claim_rule": "The workbench may be described as FACETS-calibrated for this scenario only when both ScientificInferenceValidated and FACETSComplementQualification are true."
+  },
+  "failure_denominator_contract": {
+    "triplet_ledger": [
+      "N planned=200",
+      "N generated",
+      "N design-valid",
+      "N with all three gamma datasets",
+      "N free-MML attempted, returned, converged, inference-ready, endpoint-finite",
+      "N fixed-MML attempted, returned, converged, inference-ready, endpoint-finite"
+    ],
+    "lane_ledgers": "Persist planned, attempted, returned, converged, inference-ready, included, and failed counts separately for every estimator and external engine lane.",
+    "primary_complete_triplet_gate": "Exactly 200 of 200 free-MML triplets must have all three finite endpoint inputs. One missing triplet makes the confirmatory direction decision inconclusive; complete-case inference is descriptive only.",
+    "no_replacement": true,
+    "no_success_until_refit": true,
+    "statistical_attempt_retry": "No automatic retry of a completed Python or R statistical fit. Preserve the failure and denominator.",
+    "facets_transport_retry": "At most two identical-input operational retries for launch/report transport failures; retain every try and bind the same input hash.",
+    "facets_denominator": "36 external-calibration datasets, entirely separate from the 600-dataset MML scientific denominator."
+  },
+  "analysis_order": [
+    "Freeze and hash the Python runner, independent R MML implementation, numerical tolerances, FACETS 4.5.0 executable, tests, and execution registration before generating confirmatory data.",
+    "Generate all 200 fresh triplets and verify design, score-blind assignment, response-sharing, uniqueness, path-budget, and denominator invariants without computing endpoint summaries.",
+    "Complete all registered estimator attempts without scientific interim summaries.",
+    "Build separate scientific, independent-R, and FACETS operational ledgers and adjudicate only dependency-level defects without viewing endpoint direction.",
+    "Construct KA1 through KA4 only after all required completion markers and hashes are present.",
+    "Evaluate KA1 direction and achieved precision separately.",
+    "Only if KA1 direction is confirmed, evaluate KA2 through KA4 with Holm family-wise control.",
+    "Report the registered bias/MSE decomposition and all exploratory estimator contexts without estimator ranking."
+  ],
+  "method_comparison_contract": {
+    "within_estimator_gamma_contrasts_only": true,
+    "facets_python_direct_comparison_only_for_jmle": true,
+    "r_python_direct_comparison_only_for_aligned_free_mml_estimand": true,
+    "estimator_ranking_prohibited": true,
+    "cross_basis_likelihood_aic_bic_comparison_prohibited": true
+  },
+  "claim_limit": "This confirmation is limited to 80-Person standardized finite vectors, four fixed Raters, fixed degrees, connected graphs, one heterogeneous-threshold PCM, score-blind known gamma values -0.8, 0, and +0.8, and the registered implementations. It cannot identify an empirical MAR or MNAR mechanism, validate a missingness correction, establish universal robustness, prove a practical SESOI, rank estimators, or generalize to other sample sizes, Rater counts, sparsity, graph topologies, Person distributions, threshold structures, DIF, local dependence, or extreme-score regimes.",
+  "long_term_successor_matrix": [
+    "persons and Rater counts",
+    "observation density and graph topology",
+    "Person distribution without forced standardization",
+    "gamma dose-response beyond three points",
+    "threshold structure and category rarity",
+    "local dependence and DIF",
+    "extreme-score prevalence",
+    "replicated deterministic FACETS boundary fixtures"
+  ]
+}

@@ -1,0 +1,30 @@
+{
+  "schema_version": "mfrm-estimand-distribution-screening-analysis-amendment-v2",
+  "registered_date": "2026-08-11",
+  "parent_analysis_amendment": "estimand_distribution_screening_analysis_amendment_20260811.json",
+  "study": "estimand_distribution_screening20_20260811",
+  "timing": "Written after the first screening analysis showed that within-facet mean signed errors were approximately zero by identification/alignment construction.",
+  "problem": "Averaging aligned errors over all levels of a sum-to-zero facet, or over centered thresholds, mechanically cancels positive and negative level errors. Numerical intervals around values of order 1e-17 are constraint/rounding artifacts rather than useful bias signals.",
+  "remediation": {
+    "main_effect_bias": "For every estimator, distribution, design, facet, and named level, report the 20-replicate mean signed error, sample SD, Monte Carlo SE, and screening interval.",
+    "threshold_bias": "For every estimator, distribution, design, criterion, and category threshold, report the corresponding 20-replicate quantities.",
+    "paired_shape": "Compute level-specific non-normal minus normal error contrasts within replicate.",
+    "paired_design": "Compute level-specific planned-connected minus complete error contrasts within replicate.",
+    "facet_summary": "Summarize the vector of level mean errors by RMS level bias and maximum absolute level bias; do not average signed errors to zero.",
+    "output": "Write a new screening_analysis_v2 directory and retain the first analysis unchanged as diagnostic evidence."
+  },
+  "expected_rows": {
+    "main_element_condition_rows": 360,
+    "main_element_shape_pair_rows": 5400,
+    "main_element_shape_summary_rows": 270,
+    "main_element_design_pair_rows": 3600,
+    "main_element_design_summary_rows": 180,
+    "threshold_element_condition_rows": 240,
+    "threshold_element_shape_pair_rows": 3600,
+    "threshold_element_shape_summary_rows": 180,
+    "threshold_element_design_pair_rows": 2400,
+    "threshold_element_design_summary_rows": 120
+  },
+  "interpretation": "Intervals remain unadjusted 20-replicate screening diagnostics. Individual interval exclusions are not confirmatory; magnitude, cross-replicate stability, neighboring-element structure, and consistency across estimands are required before selecting a future contrast.",
+  "unchanged": "No generated row, estimate, fit status, denominator, original paired RMSE/MAE output, or operational gate is changed."
+}

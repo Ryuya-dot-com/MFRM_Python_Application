@@ -1,0 +1,97 @@
+{
+  "registration_status": "prospective_before_core_optimizer_guard_code_change_or_candidate_results",
+  "registered_date": "2026-08-10",
+  "study_id": "cmle_finite_domain_optimizer_remediation_v1",
+  "purpose": "Convert non-finite primary-optimizer trial points from unhandled analysis termination into auditable rejected trials while preserving the exact finite-domain CMLE objective and fail-closed final inference-readiness gates.",
+  "baseline_identity": {
+    "mfrm_app/cmle.py": "499582112d71b3832e4f00608c0deaef33d0610fd754560fc900387db7a298eb",
+    "tests/test_cmle.py": "be2b2eaa0623dde734f293d6c3931063077e9d876e94db48a3dd49d9038b978a",
+    "validation/cmle_native_anchor_connectivity_stress.py": "df8f066c9c6aa4cf474e283421ac901ad6058dea0597ec8c2fef68efa9f04206",
+    "validation/cmle_native_anchor_connectivity_plan_20260810.json": "355827ce88d3796cb6e42f574e589f7d6e0770ebf3fa4ef5dede473fd869db1e",
+    "validation/cmle_native_anchor_connectivity_20260810/connectivity_decision.json": "9eab21f8f6c9fd66cd22e2dfed5a0e9861836bc9bf3289e89ba171f49193afea",
+    "validation/cmle_native_anchor_connectivity_20260810/connectivity_responses.csv": "0bcb29f3efe33963c04cd0cd02bd5e220648f75ef0da55f1d8fd9a5e1b75d72c"
+  },
+  "baseline_contract": {
+    "audits": 350,
+    "prefit_eligible": 287,
+    "fit_attempts": 287,
+    "returned_fits": 286,
+    "inference_ready_fits": 274,
+    "target_failure": {
+      "run_id": "chain_minimal::rep-00006",
+      "scenario": "a0_unanchored",
+      "input_fingerprint": "50e067f5fa67243bc8ad9cab65a0ca2a43fbb755611b7cf0da37c4f4743486ea",
+      "exception": "FloatingPointError: Conditional normalizer is non-finite for score 1."
+    },
+    "returned_nonready_fits": 12,
+    "failure_localization": "scipy BFGS Wolfe line search proposed an extreme point; _cmle_objective raised when a used-score conditional normalizer became non-finite"
+  },
+  "permitted_implementation_change": {
+    "scope": "primary BFGS optimizer adapter in fit_cmle plus typed telemetry and focused tests",
+    "finite_domain_objective": "cmle_objective_value_grad and cmle_objective_value_grad_hessian remain unchanged for all inputs and continue to raise on non-finite mathematical evaluations when called directly",
+    "trial_rejection": "The optimizer-only adapter may translate a non-finite value/gradient or FloatingPointError at a trial point into positive-infinity objective with a neutral finite gradient so the line search can reject/backtrack.",
+    "best_finite_fallback": "Track the lowest finite objective point evaluated by the primary optimizer. If scipy terminates at a non-finite point, evaluate and continue from the tracked best finite point.",
+    "telemetry": [
+      "OptimizerInvalidEvaluations",
+      "OptimizerFiniteEvaluations",
+      "OptimizerBestFiniteFallbackUsed"
+    ],
+    "forbidden": [
+      "clipping or changing model parameters inside the exact likelihood",
+      "changing response support, conditioning, offsets, anchors, constraints, or category probabilities",
+      "relaxing stationarity, rank, positive-definiteness, or covariance readiness gates",
+      "converting a non-finite or rank-deficient fit into inference-ready",
+      "silently changing estimator or falling back to MML/JMLE/approximate CMLE"
+    ]
+  },
+  "focused_regression_contract": {
+    "fixture": "retained target RunId/scenario bytes plus a small deliberately separated binary Rater design",
+    "target_expected": "fit_cmle returns a complete result without an unhandled non-finite trial exception, records at least one invalid optimizer evaluation, and remains InferenceReady=False when final information/covariance requirements fail",
+    "direct_objective_expected": "A deliberately non-finite direct objective call still raises rather than being silently clipped.",
+    "ordinary_fixture_expected": "Existing complete RSM/PCM and hard-anchor fixtures retain estimates, SEs, likelihoods, rank, and readiness within their existing strict tolerances."
+  },
+  "full_same_byte_replay": {
+    "source": "baseline retained connectivity_responses.csv",
+    "cases": 350,
+    "prefit_eligible_fit_attempts": 287,
+    "expected_candidate_returned": 287,
+    "expected_candidate_inference_ready": 274,
+    "comparison_population": "all 286 baseline-returned fits, with the target failure reported separately",
+    "comparison_fields": [
+      "expanded structural estimates and SEs",
+      "conditional log likelihood",
+      "final gradient sup norm, information rank/nullity, condition number, and readiness",
+      "WLE estimate/SE, Infit, Outfit, raw either-upper flag, and three/six-decimal counterfactual flags"
+    ],
+    "primary_numeric_tolerance": {
+      "structural_estimate_max_abs": 1e-10,
+      "structural_se_max_abs": 1e-10,
+      "conditional_loglik_max_abs": 1e-9,
+      "wle_estimate_max_abs": 1e-9,
+      "wle_se_max_abs": 1e-9,
+      "infit_outfit_max_abs": 1e-9
+    },
+    "classification_gate": "Every baseline-returned fit retains identical InferenceReady and every shared Person retains identical raw/rounded fit flags.",
+    "target_gate": "The sole baseline exception becomes returned but not inference-ready, with invalid-evaluation telemetry greater than zero."
+  },
+  "integrity_gates": {
+    "baseline_hashes_exact_before_change": true,
+    "candidate_core_hash_recorded": true,
+    "all_350_cases_ledgered": true,
+    "all_287_prefit_eligible_cases_attempted": true,
+    "same_retained_response_bytes": true,
+    "finite_objective_path_unchanged": true,
+    "focused_tests_pass": true,
+    "baseline_returned_numeric_tolerances_pass": true,
+    "baseline_readiness_and_fit_flags_identical": true,
+    "target_returns_fail_closed": true,
+    "performance_value_success_gate": null
+  },
+  "interpretation_limits": {
+    "returnability": "Returning a typed result is not convergence, finite-MLE existence, identifiability, or inference readiness.",
+    "invalid_trial_count": "An optimizer diagnostic, not a statistical quality score or universal threshold.",
+    "separation": "This remediation does not establish or implement a complete separation/nonexistence theorem for conditional MFRM likelihoods.",
+    "performance": "No speed, recovery, coverage, anchor-share, or package-superiority claim.",
+    "public_ui": "withheld"
+  }
+}

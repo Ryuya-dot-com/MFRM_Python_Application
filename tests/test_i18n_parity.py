@@ -154,6 +154,21 @@ def test_japanese_safety_and_guidance_copy_uses_task_centered_terms(locales):
         "downloads.tab_figures",
         "downloads.tab_scripts_config",
         "onboarding.banner_steps_body",
+        "guide.step_counter_template",
+        "guide.welcome_title",
+        "guide.welcome_body",
+        "guide.start_sample_button",
+        "guide.start_own_data_button",
+        "guide.continue_without_button",
+        "guide.data_check_title",
+        "guide.data_check_boundary",
+        "guide.estimate_title",
+        "guide.evidence_review_title",
+        "guide.formative_bounded",
+        "guide.formative_overclaim",
+        "guide.archive_title",
+        "guide.archive_checkpoint_boundary",
+        "guide.completed_boundary",
         "guided.first_run_route_3_why",
         "guided.first_run_route_4_why",
         "guided.first_run_route_5_action",
@@ -163,6 +178,14 @@ def test_japanese_safety_and_guidance_copy_uses_task_centered_terms(locales):
         "guided.goal_focus_caption",
         "guided.goal_locator_caption",
         "data_source.scenario_info_template",
+        "data_source.source_class_label",
+        "data_source.source_class_help",
+        "data_source.source_class_sample",
+        "data_source.source_class_simulate",
+        "data_source.source_class_paste",
+        "data_source.source_class_upload",
+        "data_source.scenario_select_label",
+        "data_source.scenario_select_help",
         "data_source.delimiter_label",
         "data_source.paste_textarea_help",
         "sidebar_estimation.column_mapping_subheader",
@@ -218,7 +241,7 @@ def test_japanese_safety_and_guidance_copy_uses_task_centered_terms(locales):
     assert ja["downloads.tab_data_tables"] == "データ表"
     assert ja["main_tabs.panel_select_label"] == "結果パネル"
     assert ja["guided.interpret_heading"] == "解釈の準備状況"
-    assert ja["sidebar_estimation.column_mapping_subheader"] == "列の対応づけ"
+    assert ja["sidebar_estimation.column_mapping_subheader"] == "列の対応を確認・変更"
     assert ja["data_source.delimiter_label"] == "区切り文字"
     assert ja["help.tab_quick_start"] == "クイックスタート"
 
@@ -235,6 +258,8 @@ def test_display_mode_and_analysis_depth_copy_are_not_conflated(locales):
     assert "All panels display mode" in en["downloads.figures_skipped_info"]
     assert "PNG/HTML" in en["downloads.figures_skipped_info"]
     assert "does not re-estimate" in en["main_tabs.panel_select_caption"]
+    assert "stays visible while you scroll" in en["main_tabs.panel_select_caption"].casefold()
+    assert "stays visible while you scroll" in en["guided.section_select_caption"].casefold()
     assert "does not re-estimate" in en["downloads.panel_select_help"]
 
     assert ja["sidebar.view_density_label"] == "表示モード"
@@ -243,6 +268,8 @@ def test_display_mode_and_analysis_depth_copy_are_not_conflated(locales):
     assert "全パネル表示" in ja["downloads.figures_skipped_info"]
     assert "PNG / HTML" in ja["downloads.figures_skipped_info"]
     assert "再推定しません" in ja["main_tabs.panel_select_caption"]
+    assert "スクロール中も" in ja["main_tabs.panel_select_caption"]
+    assert "スクロール中も" in ja["guided.section_select_caption"]
     assert "再推定するわけではありません" in ja["downloads.panel_select_help"]
 
 

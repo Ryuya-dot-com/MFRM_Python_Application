@@ -1,0 +1,16 @@
+{
+  "schema_version": "facets_shared_helper_qualification_amendment_v1",
+  "registered_date": "2026-08-11",
+  "parent_plan": "validation/facets_shared_helper_qualification_plan_20260811.json",
+  "parent_plan_sha256": "cdbf5d3ba869035728845e01f486236b4f045e63675cc8ef786c7163bafe25f4",
+  "failure_stage": "Preparation of the second historical Scorefile control after the first official Kct helper call.",
+  "failure": "re.PatternError: bad escape \\U at position 12",
+  "cause": "The Windows absolute Scorefile path was passed as a regex replacement template rather than returned literally by a replacement function.",
+  "correction": "Use pattern.subn(lambda _match: literal_replacement, text).",
+  "qualified_output_directory_created": false,
+  "project_specification_executed_before_failure": false,
+  "scientific_endpoint_read": false,
+  "scientific_result_observed": false,
+  "decision_rules_changed": false,
+  "claim_boundary": "Result-blind mechanical Windows path correction only."
+}

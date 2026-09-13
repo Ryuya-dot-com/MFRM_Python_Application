@@ -1,0 +1,149 @@
+{
+  "schema_version": "mfrm-informative-assignment-screening20-assessment-v1",
+  "assessment_date": "2026-08-11",
+  "timing": "Post-screening assessment. The design and all 20 replicates were frozen before generation; the metadata-only aggregation amendment was frozen before the corrected aggregate was generated or any design contrast was interpreted.",
+  "evidence_sha256": {
+    "registered_plan": "0409b75d780cbcff27b1ba7d58e63906b8ee7099609db5e9585d4c6d2cfce36b",
+    "study_identity": "02529fa26da95654616fdb88d6414a4e2e39f61315c7d4622a1cc237db5e4d60",
+    "aggregation_amendment": "44cdd9d6e2c20fda3c52917bd12f20515783d403c64f1778304d2746dd5242e9",
+    "corrected_aggregate_identity": "4a6cd15226e6c37fe6313c7fabfa6d1d3ffce41f657d4c80389e92b097a6091d",
+    "corrected_metrics": "947d4b4101e3fb9c892facdc78e5a432e1b09bbca8548a4a80935a9d5a32e08b",
+    "completion_marker_set": "0be34fd82c423d3aeb051a79e1f322473485b37ae3c0b92b5a4567fdc9ec24cd",
+    "r_verification_script": "bbe21ee6f6b25e1ffee1849e091f2c15990eb33b3f42995ffde2dbe073934cde",
+    "r_verification_result": "7aaaae185711c409a25a02cbbe304e76c62749da5f5a79a4466cafc3022aa15c"
+  },
+  "operational_result": {
+    "datasets": 60,
+    "attempts": "240/240 completed and statistical-evidence ready",
+    "facets_python_jmle": "60/60 calibration-ready; 60 FACETS tries and zero retries",
+    "mml": "120/120 inference-ready",
+    "exact_cmle": "60/60 inference-ready and finite-MLE qualified",
+    "constraints": "180/180 pass",
+    "completion_markers": "240/240 present; resume replay skipped 240/240 with zero refits",
+    "qualification_pass": true
+  },
+  "aggregation_correction": {
+    "original_aggregate_qualification_pass": false,
+    "original_failure_scope": "The original aggregate omitted Design and Replicate metadata on MML/CMLE threshold rows, so only 26 of the expected 32 screening cells were formed even though all fits and constraints passed.",
+    "correction_scope": "Result-blind manifest join only; no estimates, truth errors, completion markers, or fits changed.",
+    "corrected_screening_cells": 32,
+    "pairs_per_cell": 20,
+    "corrected_qualification_pass": true,
+    "original_aggregate_preserved": true
+  },
+  "facets_python_parity": {
+    "maximum_main_weighted_mae": 0.0047317252596135,
+    "maximum_main_absolute_difference": 0.0140626621714485,
+    "maximum_threshold_weighted_mae": 0.0064343901371707,
+    "maximum_threshold_absolute_difference": 0.0109172525694707,
+    "minimum_within_facet_spearman": 1.0,
+    "precision_note": "FACETS 4.5.0 displayed measures were taken from the registered Umean=6 path. No fit or recovery statistic was reconstructed from the usual two-decimal FACETS display."
+  },
+  "independent_verification": {
+    "engine": "R 4.5.1 base R",
+    "screening_cells": "32/32",
+    "paired_metric_rows": "640/640",
+    "rater_level_cells": "16/16",
+    "rater_level_pairs": "320/320",
+    "free_sd_pairs": "20/20",
+    "maximum_absolute_python_difference": 2.7755575615628914e-17,
+    "verification_pass": true
+  },
+  "screening_findings": {
+    "registered_global_cells": {
+      "total": 32,
+      "descriptive_intervals_excluding_zero": 4,
+      "confirmatory_claims_allowed": false,
+      "signals": [
+        {
+          "estimator": "PYTHON_MML_FREE_SD_Q31",
+          "domain": "Rater",
+          "metric": "RMSE",
+          "aligned_minus_planned": 0.07575455472454906,
+          "screening_ci95": [0.04747217194121908, 0.10403693750787904]
+        },
+        {
+          "estimator": "PYTHON_MML_FREE_SD_Q31",
+          "domain": "Rater",
+          "metric": "MAE",
+          "aligned_minus_planned": 0.07239130019776156,
+          "screening_ci95": [0.04506187345577928, 0.09972072693974385]
+        },
+        {
+          "estimator": "PYTHON_MML_FIXED_SD08_Q31",
+          "domain": "Rater",
+          "metric": "RMSE",
+          "aligned_minus_planned": 0.04109448944079778,
+          "screening_ci95": [0.016235629320492218, 0.06595334956110334]
+        },
+        {
+          "estimator": "PYTHON_MML_FIXED_SD08_Q31",
+          "domain": "Rater",
+          "metric": "MAE",
+          "aligned_minus_planned": 0.03705827567532464,
+          "screening_ci95": [0.015033782756642224, 0.05908276859400705]
+        }
+      ]
+    },
+    "rater_severity_compression": {
+      "definition": "Descriptive OLS slope across the four true Rater severities of the mean level-specific truth-error contrast, aligned minus planned. A negative slope is movement of both lenient and severe Rater estimates toward zero.",
+      "python_mml_free_sd_q31": -0.5206040790787,
+      "python_mml_fixed_sd08_q31": -0.4059028765651,
+      "python_jmle": -0.0158207557253,
+      "python_exact_cmle": -0.0167231828218,
+      "interpretation": "The MML Rater loss signal has a coherent severity-compression pattern rather than a uniform location shift. These slopes are post-screening descriptive summaries, not registered inferential endpoints."
+    },
+    "free_sd_mml": {
+      "planned_mean": 0.799325745200596,
+      "ability_severity_aligned_mean": 0.674545937724158,
+      "aligned_minus_planned": -0.12477980747643727,
+      "screening_ci95": [-0.168363553132671, -0.0811960618202035],
+      "interpretation": "The estimated normal Person dispersion fell when latent ability was aligned with Rater severity, despite equal row counts, equal Rater exposure, the same realized Person vector, and a connected design."
+    },
+    "no_global_screening_signal": {
+      "jmle_rater_rmse": {
+        "contrast": -0.007806533249151626,
+        "screening_ci95": [-0.04299113197053821, 0.02737806547223496]
+      },
+      "exact_cmle_rater_rmse": {
+        "contrast": -0.0059694629537535345,
+        "screening_ci95": [-0.03558337998954134, 0.02364445408203427]
+      },
+      "jmle_threshold_rmse": {
+        "contrast": -0.010453402323282613,
+        "screening_ci95": [-0.052983279261646046, 0.03207647461508082]
+      },
+      "fixed_mml_threshold_rmse": {
+        "contrast": 0.004492834877610682,
+        "screening_ci95": [-0.025159291584335282, 0.03414496133955665]
+      },
+      "free_mml_threshold_rmse": {
+        "contrast": 0.000362147955101106,
+        "screening_ci95": [-0.03482275385390968, 0.03554704976411189]
+      },
+      "exact_cmle_threshold_rmse": {
+        "contrast": 0.0020395326389770867,
+        "screening_ci95": [-0.03250976529526539, 0.03658883057321957]
+      },
+      "interpretation": "At 20 replicates the constructed assignment mechanism produced no global screening signal for JMLE/CMLE Rater recovery or for threshold recovery in any estimator. This is not proof of invariance or superiority."
+    },
+    "cmle_information": {
+      "complete_extreme_persons": 0,
+      "planned_connected_extreme_persons": 1,
+      "ability_severity_aligned_extreme_persons": 0,
+      "interpretation": "All exact-CMLE fits remained eligible; the single planned-design extreme Person is a secondary descriptive count."
+    }
+  },
+  "metacognitive_interpretation": {
+    "supported_screening_statement": "Holding sparse row count, two Raters per Person, per-Rater exposure, connectivity, category support, generated responses, and realized Person dispersion fixed did not reproduce the earlier JMLE threshold-density effect. Instead, the ability-by-severity assignment stressor exposed a candidate MML-specific Rater-severity and population-dispersion sensitivity.",
+    "mechanistic_inference": "A plausible explanation is aliasing between a normal random-Person distribution and Rater severity under informative assignment: marginal likelihood uses that population model while JMLE treats Persons as fixed and exact CMLE conditions on Person totals. This is an inference from the pattern, not an identified causal mechanism.",
+    "not_supported": [
+      "The constructed mechanism is not evidence that any empirical dataset is MAR or MNAR.",
+      "The screen does not validate a missing-data correction.",
+      "The absence of a JMLE/CMLE interval signal does not establish robustness or estimator superiority.",
+      "Joint, marginal, and conditional likelihoods, AIC values, or rankings are not comparable across their different bases.",
+      "The four unadjusted screening intervals are not confirmatory discoveries."
+    ]
+  },
+  "decision": "The 20-replicate screen is complete and qualified. Freeze a fresh 100-replicate confirmation using replicates 241 through 340, with free-SD MML Rater RMSE as the single primary endpoint; treat fixed-SD MML Rater RMSE, free-MML population SD, and a pre-defined severity-compression slope as secondary or mechanistic endpoints. Do not reuse replicates 1 through 240."
+}

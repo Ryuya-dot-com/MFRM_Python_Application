@@ -1,0 +1,149 @@
+{
+  "schema_version": "known_assignment_multivector_preflight_plan_v1",
+  "status": "frozen_before_new_person_or_response_generation",
+  "registered_date": "2026-08-11",
+  "purpose": "Non-confirmatory infrastructure and sign-stability preflight using fresh Person vectors before a separately registered confirmatory study of the known probabilistic assignment mechanism.",
+  "evidence_status": {
+    "phase": "preflight",
+    "person_vectors": 4,
+    "datasets": 12,
+    "attempt_units": 48,
+    "fixed_sample_size": true,
+    "optional_stopping": false,
+    "confirmatory_claims_allowed": false,
+    "screening_observations_pooled": false,
+    "preflight_observations_may_enter_confirmation": false
+  },
+  "prior_evidence": {
+    "dense_dp_assessment": "validation/known_assignment_dense_dp_20260811/assessment.json",
+    "dense_dp_assessment_sha256": "65aa82e6a42fd38b5881e5ca98b5abb2c24c4b138a4e09aa870ec9e90443ee63",
+    "fixed_person_screening_assessment": "validation/known_assignment_response_screening_v2_20260811/aggregate_v2/assessment.json",
+    "fixed_person_screening_assessment_sha256": "7cf10d635fb4db90beed34bd29d3d63c56ac9e2a927651993ba27c92564471dc",
+    "fixed_person_screening_contrast_summary": "validation/known_assignment_response_screening_v2_20260811/aggregate_v2/gamma_contrast_summary.csv",
+    "fixed_person_screening_contrast_summary_sha256": "6f0c1b916dba2fc20956098a64241a1a7f661e42f69151eac143a12bf0f96c81",
+    "role": "The fixed-Person screening selected candidate diagnostics and supplied rough planning dispersion only. Its observations are not pooled with this preflight or any future confirmation."
+  },
+  "data_generating_process": {
+    "model": "correctly specified four-category heterogeneous-threshold PCM",
+    "persons": 80,
+    "person_distribution": "independent standard-normal draws, standardized separately within each vector to realized mean 0 and population SD 0.8",
+    "person_vector_ids": [1, 2, 3, 4],
+    "person_vector_seeds": [26092001, 26092002, 26092003, 26092004],
+    "response_uniform_seeds": [26092201, 26092202, 26092203, 26092204],
+    "raters": {"R01": -0.45, "R02": -0.15, "R03": 0.15, "R04": 0.45},
+    "tasks": {"T01": -0.35, "T02": 0.0, "T03": 0.35},
+    "criteria": {"C01": -0.2, "C02": 0.2},
+    "threshold_condition": "heterogeneous",
+    "common_random_numbers": "Within each Person vector, all three gamma conditions select from the same complete Person-by-Rater-by-Task-by-Criterion response matrix. Assignment generation never reads potential or realized Score."
+  },
+  "assignment": {
+    "distribution": "Pr(G | fixed Person degrees, fixed Rater degrees, connected) proportional to exp(gamma*T(G))",
+    "implementation": "qualified vectorized dense-margin exact DP with connected rejection",
+    "gammas": [-0.8, 0.0, 0.8],
+    "assignment_seeds_by_person_vector": {
+      "1": {"-0.8": 26092101, "0.0": 26092102, "0.8": 26092103},
+      "2": {"-0.8": 26092104, "0.0": 26092105, "0.8": 26092106},
+      "3": {"-0.8": 26092107, "0.0": 26092108, "0.8": 26092109},
+      "4": {"-0.8": 26092110, "0.0": 26092111, "0.8": 26092112}
+    },
+    "person_degree": 2,
+    "rater_degree": 40,
+    "edges": 160,
+    "connected": true,
+    "gamma_is_known_not_estimated": true,
+    "max_dense_dp_cells": 6000000
+  },
+  "locked_design_invariants": {
+    "rows_per_dataset": 960,
+    "raters_per_person": 2,
+    "persons_per_rater": 40,
+    "rating_rows_per_rater": 240,
+    "tasks_and_criteria_complete_within_selected_rater": true,
+    "person_rater_components": 1,
+    "constrained_pcm_nullity": 0,
+    "same_complete_response_sha256_within_person_vector": true,
+    "fresh_person_sha256_between_vectors": true,
+    "score_blind_assignment": true
+  },
+  "estimation_layers": [
+    {
+      "mode": "FACETS_4_5_JMLE plus independently persisted PYTHON_JMLE",
+      "estimand": "fixed-person joint likelihood",
+      "role": "same-estimand external calibration; not a gold standard for MML or CMLE"
+    },
+    {
+      "mode": "PYTHON_MML_FIXED_SD08_Q31",
+      "estimand": "normal-person marginal likelihood with population SD fixed at 0.8"
+    },
+    {
+      "mode": "PYTHON_MML_FREE_SD_Q31",
+      "estimand": "normal-person marginal likelihood with population SD estimated"
+    },
+    {
+      "mode": "PYTHON_EXACT_CMLE",
+      "estimand": "person-total conditional likelihood"
+    }
+  ],
+  "preflight_diagnostics": {
+    "primary_candidate": {
+      "id": "PF1_FREE_MML_SYMMETRIC_STRESS_RATER_RMSE",
+      "per_vector_statistic": "0.5 * [RaterRMSE(gamma=-0.8) + RaterRMSE(gamma=+0.8)] - RaterRMSE(gamma=0)",
+      "screening_derivation_timing": "Defined after the fixed-Person screening but before every preflight Person and response draw.",
+      "screening_mean_for_planning_only": 0.0700920378102041,
+      "screening_sd_for_planning_only": 0.0560506786158074,
+      "advancement_signal": "mean greater than zero and at least 3 of 4 fresh Person-vector statistics greater than zero; this is a design-stability gate, not a hypothesis test"
+    },
+    "secondary_candidates": [
+      {
+        "id": "PF2_FIXED_MML_SYMMETRIC_STRESS_RATER_RMSE",
+        "statistic": "fixed-SD MML symmetric stress Rater RMSE contrast",
+        "screening_mean_for_planning_only": 0.06686892777387364,
+        "screening_sd_for_planning_only": 0.05162186791529596,
+        "advancement_signal": "mean greater than zero and at least 3 of 4 values greater than zero"
+      },
+      {
+        "id": "PF3_FREE_MML_SYMMETRIC_STRESS_SD_SHIFT",
+        "statistic": "0.5 * [estimated SD(-0.8) + estimated SD(+0.8)] - estimated SD(0)",
+        "screening_mean_for_planning_only": -0.07285520732179988,
+        "advancement_signal": "mean less than zero and at least 3 of 4 values less than zero"
+      },
+      {
+        "id": "PF4_FREE_MML_DIRECTION_ALIGNED_RATER_SLOPE",
+        "statistic": "0.5 * [OLS slope of Rater truth error on true severity at gamma=-0.8 minus the corresponding slope at gamma=+0.8]",
+        "screening_mean_for_planning_only": 0.3329955168666467,
+        "advancement_signal": "all 4 values greater than zero"
+      }
+    ],
+    "descriptive_only": [
+      "JMLE and exact-CMLE symmetric stress Rater RMSE contrasts",
+      "Task, Criterion, and PCM-threshold recovery",
+      "assignment correlation and statistic by Person vector and gamma",
+      "all failures, retries, constraints, and runtimes"
+    ],
+    "inference_prohibition": "Do not compute confirmatory p-values, declare replication, or pool n=4 with the earlier n=10 fixed-Person screening."
+  },
+  "operational_gates": {
+    "all_12_dense_assignment_draws_available": true,
+    "all_assignment_and_design_invariants_pass": true,
+    "all_48_attempt_units_complete": true,
+    "all_native_estimator_evidence_ready": true,
+    "all_12_facets_python_jmle_pairs_calibration_ready": true,
+    "all_36_mml_cmle_constraint_rows_pass": true,
+    "all_registered_preflight_statistics_finite": true,
+    "no_facets_rounded_fit_input": true
+  },
+  "method_comparison_contract": {
+    "within_estimator_gamma_contrasts_only": true,
+    "facets_python_direct_comparison_only_for_jmle": true,
+    "estimator_ranking_prohibited": true,
+    "cross_basis_likelihood_aic_bic_comparison_prohibited": true
+  },
+  "precision_contract": {
+    "scientific_recovery": "Use native-precision Python truth errors within each estimator lane.",
+    "facets_measure_threshold": "Use the registered high-precision Umean=6 primary report for measures and thresholds.",
+    "facets_fit": "Ordinary displayed FACETS fit fields are rounded evidence only and never raw inputs.",
+    "prohibition": "Never reconstruct unreported raw fit or residual statistics from FACETS' usual two-decimal display."
+  },
+  "advancement_rule": "Only after all operational gates pass, inspect the four registered sign-stability diagnostics. Regardless of their outcome, retain the complete preflight and exclude all four vectors from confirmation. If PF1 fails its advancement signal, do not silently change direction or select a different estimator endpoint; redesign or stop. If PF1 passes, freeze a separate confirmatory plan and sample size before drawing any further Person vector.",
+  "claim_limit": "This four-vector preflight can expose pipeline defects and gross Person-vector dependence. It cannot confirm an effect, estimate a real missingness mechanism, rank estimators, establish robustness, or justify a public product claim."
+}

@@ -1,0 +1,18 @@
+{
+  "schema_version": "facets_direct_cmd_batchyes_plan_v1",
+  "status": "frozen_before_execution",
+  "registered_date": "2026-08-11",
+  "purpose": "Distinguish a Python subprocess defect from a FACETS BATCH=YES execution-path defect by using the vendor-documented Windows START /WAIT command directly.",
+  "facets_executable": "C:/Facets/Facets.exe",
+  "facets_executable_sha256": "dfb0afb0faa18f026d1b3b4175f22e42cc3764430eb83cbd368c7a572b3593a1",
+  "official_example": "C:/Facets/examples/Kct.txt",
+  "official_example_sha256": "31e92a328fe4820ec19dc1b7103b1be0d02b7a205012b0c94ccfe55c5a35c4a6",
+  "command_contract": "START /WAIT C:/Facets/Facets.exe BATCH=YES C:/Facets/examples/Kct.txt report.txt",
+  "python_involved_in_facets_launch": false,
+  "decision_rule": {
+    "report_created": "Python subprocess launch implementation remains suspect and must be minimized against the direct CMD control.",
+    "same_crash_no_report": "Python is not a necessary cause; compare BATCH=YES with visible BATCH=NO next."
+  },
+  "scientific_endpoint_read": false,
+  "claim_boundary": "Launch-path diagnostic only; no project input or estimator endpoint is used."
+}

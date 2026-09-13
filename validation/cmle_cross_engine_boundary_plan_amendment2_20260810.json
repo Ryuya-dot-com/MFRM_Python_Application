@@ -1,0 +1,38 @@
+{
+  "registration_status": "prospective_frozen_snapshot_amendment_before_any_fixture_generation_or_engine_fit",
+  "registered_date": "2026-08-10",
+  "study_id": "cmle_cross_engine_boundary_semantics_v1_identity_amendment_2",
+  "parent_amendment": {
+    "path": "validation/cmle_cross_engine_boundary_plan_amendment_20260810.json",
+    "sha256": "b0dbd95a3a63e4d105a90139da94830feb15bc37673c63cad70eaeea121ed711"
+  },
+  "reason": "The actively edited external mfrmr tree changed again before any execution under amendment 1. No fixture or model result was generated. A build-minimal temporary snapshot was therefore copied while pre-copy live, copied-snapshot, and post-copy live relative content hashes were identical. Engine execution is pinned to that immutable copy rather than the moving development directory.",
+  "result_blindness": {
+    "fixture_rows_generated_under_parent_or_amendment_1": 0,
+    "python_fits_attempted_under_parent_or_amendment_1": 0,
+    "r_fits_attempted_under_parent_or_amendment_1": 0,
+    "engine_diagnostics_observed": false
+  },
+  "unchanged_contract": "Every fixture, estimator role, tolerance, maxit value, success gate, interpretation limit, and UI-withholding rule in the parent plan remains unchanged.",
+  "effective_mfrmr_source_identity": {
+    "original_source_path": "/Users/tohokusla/Dropbox/MFRM_Application/mfrmr/development",
+    "temporary_snapshot_path": "/private/tmp/mfrmr023-crossengine-package.9VHFb0/source",
+    "version": "0.2.3",
+    "git_head_at_snapshot": "7ee1fd5cb9cb3ab6588811eb4b31f3337076c369",
+    "git_status_sha256_at_snapshot": "e6661a719e0ab3fc1e5d7827233d730ee6f21b3a5029bc9093d7fbdfc643dbf3",
+    "pre_copy_relative_content_sha256": "06870f2f38ea6eeeb6df323003fc7e1ad2721d311ea50ec7a152170bf02b21d3",
+    "snapshot_relative_content_sha256": "06870f2f38ea6eeeb6df323003fc7e1ad2721d311ea50ec7a152170bf02b21d3",
+    "post_copy_relative_content_sha256": "06870f2f38ea6eeeb6df323003fc7e1ad2721d311ea50ec7a152170bf02b21d3",
+    "description_sha256": "8f1f307d5785e6cb30398128fed1125283856f64f7bd7c16002a5fddbe5ec79e",
+    "build_relevant_file_count": 546,
+    "included_paths": [
+      "DESCRIPTION",
+      "NAMESPACE",
+      "R",
+      "src",
+      "inst",
+      "data",
+      "man"
+    ]
+  }
+}

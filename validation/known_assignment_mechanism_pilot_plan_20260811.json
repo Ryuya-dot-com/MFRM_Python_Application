@@ -1,0 +1,69 @@
+{
+  "schema_version": "known_assignment_mechanism_pilot_plan_v1",
+  "status": "frozen_before_execution",
+  "registered_date": "2026-08-11",
+  "purpose": "Qualify a known degree-conditioned informative Person-Rater assignment generator against an exact small-state oracle before any product UI or estimator-performance claims.",
+  "mechanism": {
+    "distribution": "Pr(G | fixed Person degrees, fixed Rater degrees, connected direct Rater overlap) proportional to exp(gamma * T(G))",
+    "statistic": "T(G) is the sum over assigned edges of standardized known Person ability times standardized known Rater severity",
+    "gamma_is_known_not_estimated": true,
+    "gammas": [-0.8, 0.0, 0.8],
+    "require_connected": true
+  },
+  "oracle_design": {
+    "persons": 6,
+    "raters": 3,
+    "person_degree": 2,
+    "rater_degree": 4,
+    "expected_connected_states": 90,
+    "person_coordinates": [0, 1, 2, 3, 4, 5],
+    "rater_coordinates": [0, 1, 2]
+  },
+  "chains": {
+    "independent_chains_per_gamma": 2,
+    "samples_per_chain": 20000,
+    "burnin": 5000,
+    "thin": 3,
+    "seeds": {
+      "-0.8": [26081101, 26081102],
+      "0.0": [26081201, 26081202],
+      "0.8": [26081301, 26081302]
+    }
+  },
+  "registered_gates": {
+    "oracle": {
+      "states_each_gamma": 90,
+      "absolute_probability_sum_error_max": 1e-12,
+      "gamma_zero_max_uniform_probability_error": 1e-12,
+      "expected_statistic_strictly_orders_negative_neutral_positive": true,
+      "expected_assignment_correlation_strictly_orders_negative_neutral_positive": true
+    },
+    "each_chain": {
+      "available": true,
+      "probability_outside_oracle_max": 0.0,
+      "total_variation_distance_max": 0.10,
+      "absolute_mean_statistic_error_max": 0.10,
+      "statistic_ess_min": 500,
+      "unique_sampled_states_min": 60,
+      "maximum_statistic_update_residual_max": 1e-10,
+      "final_overlap_components": 1,
+      "degree_margins_preserved": true
+    },
+    "pooled_two_chains_each_gamma": {
+      "total_variation_distance_max": 0.07,
+      "absolute_mean_statistic_error_max": 0.07,
+      "probability_outside_oracle_max": 0.0
+    },
+    "materialization": {
+      "all_structural_invariants_pass": true,
+      "score_column_absent": true,
+      "score_perturbation_changes_design": false
+    }
+  },
+  "claim_boundary": [
+    "Passing qualifies this finite-state generator and its row materializer, not MFRM estimators under informative assignment.",
+    "No FACETS output is consumed because this phase tests the assignment layer before responses exist.",
+    "A downstream frozen response-generation study must separately compare FACETS 4.5 JMLE, Python JMLE, MML, and exact CMLE on generated outcomes.",
+    "FACETS displayed two-decimal fit values must never be used as raw inputs or treated as unrounded fit parity evidence."
+  ]
+}

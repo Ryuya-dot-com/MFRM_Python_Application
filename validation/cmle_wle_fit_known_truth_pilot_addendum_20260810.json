@@ -1,0 +1,88 @@
+{
+  "schema_version": "mfrm-cmle-wle-fit-known-truth-pilot-addendum-v1",
+  "registered_date": "2026-08-10",
+  "registration_timing": "Registered after the Phase-A pilot results and three figures were inspected, and specifically after noticing that the either_upper projection has only one relevant threshold dimension and that WLE recovery had not been summarized, but before computing or inspecting the addendum outputs.",
+  "reasons": [
+    "The nominal 125-triplet grid contains deliberate duplicate decision inputs for rules that depend on only one or two of the three thresholds. Nominal triplet count must not be presented as 125 independent sensitivity dimensions.",
+    "The pilot retained generating theta and WLE but did not summarize WLE bias, MAE, or RMSE, leaving a requested bias-analysis axis incomplete.",
+    "The primary WLE fit rule and the generating-theta sensitivity rule should be compared directly to expose how estimating Person location from the same responses changes flags."
+  ],
+  "immutable_parent_evidence": {
+    "registered_plan_sha256": "1a7be700e82ea32749b60cad0aad10d9aba0d1088a2cd9daba069ff0fc0b782e",
+    "pilot_decision_sha256": "46a3d6a9c50b0b40150fc76a3950d4f3b882146878f63ea50ee6406f922e0a5b",
+    "person_fit_sha256": "9ecd2ce91b4f07d923ffc5b8c8e4910a345b843ddd671bc9f3b5c4c7832bfbe4",
+    "responses_sha256": "dcad2b39bd52e2542ed4d1ee3311d17d8828060197cee519e535539352cdf25d",
+    "canonical_operating_summary_sha256": "a7443c76ae25dd2d92793b82445fdedece9bad2adbeb36a3d9d7aacb6a214f66",
+    "threshold_operating_summary_sha256": "4a8738062cabad9e9c6be296e727a8019a0100e2231c43f9b84e2d4d8f2b428c",
+    "pilot_runner_sha256": "5535a123188c9373081f5e19b36ea3d516ff85e82a611f2ef6ca2a5c4543be0c",
+    "known_truth_core_sha256": "6c4b1261b387ce10d0fe5ad505089f1e796223cfd074265b7fd0901310365cc8"
+  },
+  "required_recovery_outputs": {
+    "person_error": "WLE minus generating theta, without recentering.",
+    "replicate_metrics": [
+      "mean bias",
+      "mean absolute error",
+      "root mean squared error",
+      "median error"
+    ],
+    "stratification": [
+      "ConditionId",
+      "Replicate",
+      "TruthGroup",
+      "WLEExactExtremePattern"
+    ],
+    "aggregate": "Mean of replicate-specific metrics, between-replicate SD, and SD/sqrt(available replicates); no pooled-Person confidence interval.",
+    "fit_flag_stratification": "Report absolute WLE error separately for canonical either_upper flagged and unflagged Persons; descriptive association only."
+  },
+  "required_measure_source_comparison": {
+    "rule": "canonical raw either_upper",
+    "join": "Exact ConditionId x Replicate x Person identity",
+    "outputs": [
+      "both unflagged",
+      "WLE only",
+      "generating theta only",
+      "both flagged",
+      "total disagreements"
+    ],
+    "interpretation": "A disagreement describes Person-measure-source sensitivity; neither source is retroactively selected as the primary result."
+  },
+  "threshold_dimension_audit": {
+    "nominal_triplets": 125,
+    "rule_dependencies": {
+      "either_upper": ["acceptable_upper"],
+      "either_distorting": ["noisy_upper"],
+      "either_nonacceptable": ["overfit_upper", "acceptable_upper"],
+      "either_overfit": ["overfit_upper"]
+    },
+    "effective_input_configurations": {
+      "either_upper": 5,
+      "either_distorting": 5,
+      "either_nonacceptable": 25,
+      "either_overfit": 5
+    },
+    "required_gate": "For each rule, decision counts must be invariant to every threshold dimension absent from its dependency list.",
+    "observed_distinct_count_vectors": "Report descriptively; do not require all effective input configurations to produce different outcomes."
+  },
+  "required_visuals": [
+    "WLE bias and RMSE by condition and truth group",
+    "WLE-versus-generating-theta canonical flag decomposition",
+    "corrected either_upper threshold range labelled as five effective acceptable_upper configurations"
+  ],
+  "frozen_gates": {
+    "parent_evidence_must_not_be_overwritten": true,
+    "person_identity_mismatches_allowed": 0,
+    "threshold_irrelevant_dimension_mismatches_allowed": 0,
+    "automatic_threshold_or_measure_source_selection": false,
+    "performance_value_success_gate": null
+  },
+  "interpretation_boundaries": {
+    "post_result_descriptive": true,
+    "confirmatory_bias_or_rmse": false,
+    "causal_relation_between_fit_flag_and_theta_error": false,
+    "independent_binomial_person_interpretation": false,
+    "threshold_validated": false,
+    "anchor_or_connectivity_evaluated": false,
+    "cross_engine_repeated_fit_evaluated": false,
+    "public_ui_integration": false
+  }
+}

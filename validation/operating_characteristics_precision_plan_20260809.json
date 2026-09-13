@@ -1,0 +1,96 @@
+{
+  "schema_version": "mfrm-operating-characteristics-precision-plan-v1",
+  "registered_date": "2026-08-09",
+  "protocol": "validation/OPERATING_CHARACTERISTICS_PROTOCOL_20260809.md",
+  "purpose": "Freeze precision, stopping, extension, and promotion rules before inspecting the 20-replicate pilot.",
+  "profiles": {
+    "smoke": {
+      "replicates_per_condition": 2,
+      "role": "orchestration_and_failure_accounting_only"
+    },
+    "pilot": {
+      "replicates_per_condition": 20,
+      "role": "runtime_design_and_eligibility_planning_only"
+    },
+    "study": {
+      "replicates_per_condition": 100,
+      "role": "screening_depth_only_not_automatic_validation"
+    }
+  },
+  "authoritative_decisions": {
+    "classification_values": "finite_unrounded",
+    "primary_bias_rule": "DecisionStrongRaw",
+    "holm_alpha": 0.05,
+    "practical_logit": 0.5,
+    "display_decimals": 4,
+    "boundary_audit_required": true,
+    "failed_unavailable_or_ineligible_is_negative": false
+  },
+  "confirmatory_precision": {
+    "null_false_positive_rate": {
+      "reference_rate": 0.05,
+      "target_mcse": 0.01,
+      "target_wilson_half_width_95": 0.02,
+      "minimum_eligible_per_condition": 500
+    },
+    "alternative_power": {
+      "reference_rate": 0.8,
+      "target_mcse": 0.02,
+      "target_wilson_half_width_95": 0.04,
+      "minimum_eligible_per_condition": 500
+    },
+    "nominal_coverage": {
+      "reference_rate": 0.95,
+      "target_mcse": 0.01,
+      "target_wilson_half_width_95": 0.02,
+      "minimum_eligible_per_condition": 500
+    }
+  },
+  "continuous_estimation_precision": {
+    "bias_target_mcse_logits": 0.02,
+    "budget_formula": "ceil(pilot_sample_sd_squared / target_mcse_squared)",
+    "scope": "each registered condition_engine_estimand_comparison_scale",
+    "minimum_eligible_per_condition": 500,
+    "note": "The larger of the binomial and continuous-outcome requirements governs. Pilot point estimates are not performance evidence."
+  },
+  "budget_rule": {
+    "pilot_excluded_from_confirmatory_performance": true,
+    "pilot_inputs_allowed_for_budgeting": [
+      "elapsed_seconds",
+      "fit_returned",
+      "converged",
+      "inference_ready",
+      "analysis_eligible",
+      "failure_stage",
+      "failure_reason"
+    ],
+    "pilot_outcomes_forbidden_for_budgeting": [
+      "decision_rate",
+      "false_positive_rate",
+      "power",
+      "bias",
+      "rmse",
+      "coverage"
+    ],
+    "eligibility_rate_bound": "two_sided_wilson_lower_95",
+    "attempt_inflation_formula": "ceil(target_eligible / eligibility_wilson_lower_95)",
+    "maximum_attempts_per_condition": 2500,
+    "zero_lower_bound_action": "blocked_for_redesign",
+    "attempt_cap_action": "blocked_for_redesign",
+    "confirmatory_stopping": "fixed_attempt_count_frozen_before_confirmatory_decisions",
+    "sequential_outcome_peeking": false,
+    "extension_rule": "Preserve every existing ConditionId/Replicate row and seed; add only consecutive higher replicate indices; retain a parent-manifest fingerprint.",
+    "pilot_and_confirmatory_pooling": false
+  },
+  "promotion_gates": {
+    "replicate_count_alone_sufficient": false,
+    "complete_attempt_accounting_required": true,
+    "condition_specific_precision_required": true,
+    "floating_boundary_audit_required": true,
+    "sparse_and_anchor_negative_controls_required": true,
+    "matched_estimand_cross_engine_review_required": true,
+    "multi_platform_reproduction_required": true,
+    "independent_label_accessibility_download_review_required": true,
+    "public_surface_status": "Withheld"
+  }
+}

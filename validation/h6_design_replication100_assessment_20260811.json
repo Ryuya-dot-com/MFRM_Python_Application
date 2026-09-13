@@ -1,0 +1,89 @@
+{
+  "schema_version": "mfrm-h6-design-replication-assessment-v1",
+  "assessed_on": "2026-08-11",
+  "qualified_study": "validation/h6_design_replication100_v4_20260811",
+  "registered_primary": {
+    "id": "H6R_JMLE_NORMAL_THRESHOLD_RMSE_PLANNED_GT_COMPLETE",
+    "finite_pairs": 100,
+    "required_pairs": 100,
+    "mean_contrast_planned_minus_complete": 0.0754637240191679,
+    "sd_contrast": 0.05235783592101634,
+    "standard_error": 0.005235783592101634,
+    "t_statistic": 14.41307164280197,
+    "degrees_freedom": 99,
+    "one_sided_p": 2.363951308871549e-26,
+    "two_sided_95_ci": [0.06507479346088181, 0.08585265457745399],
+    "two_sided_95_half_width": 0.010388930558286085,
+    "precision_target_half_width": 0.015,
+    "replication_decision": true,
+    "precision_qualification": true,
+    "positive_replicate_contrasts": 93,
+    "negative_replicate_contrasts": 7
+  },
+  "facets_calibration_secondary": {
+    "facets_version": "4.5.0",
+    "expected_pairs": 200,
+    "python_statistical_evidence_ready": 200,
+    "facets_calibration_ready": 200,
+    "pair_fully_qualified": 200,
+    "strict_workbench_gate": true,
+    "facets_total_tries": 200,
+    "facets_total_retries": 0,
+    "maximum_main_weighted_mae": 0.004503881326752,
+    "maximum_main_absolute_difference": 0.0124745829494605,
+    "maximum_threshold_weighted_mae": 0.0059199401349126,
+    "maximum_threshold_absolute_difference": 0.0106010397187943,
+    "minimum_within_facet_spearman": 1.0,
+    "display_precision_contract": "FACETS Umean=6 measure/threshold pass and separate Umean=2 Table 8 pass; no raw fit statistic reconstructed from two-decimal display output"
+  },
+  "execution_integrity": {
+    "completion_markers": 200,
+    "completion_marker_set_sha256": "9a038bbd808aa1d334cff30b6693df3fab45c370b066ee85c1e38fc8ca0cd6e8",
+    "resume_valid_skips": 200,
+    "resume_refits": 0,
+    "eight_shard_exit_codes_all_zero": true,
+    "operational_failures": 0,
+    "unexpected_stderr_lines_excluding_streamlit_cache_warnings": 0,
+    "main_shard_wall_seconds": 673,
+    "preexecution_absolute_worst_case_facets_report_path_length": 220
+  },
+  "independent_r_verification": {
+    "r_version": "4.5.1",
+    "rebuilt_from_native_precision_python_threshold_rows": true,
+    "finite_pairs": 100,
+    "maximum_absolute_python_difference": 1.7763568394002505e-15,
+    "numeric_agreement_pass": true,
+    "logical_agreement_pass": true
+  },
+  "superseded_operational_diagnostics": {
+    "v1": "Preparation retained; preexecution row-count audit was order-sensitive; zero fits.",
+    "v2": "One complete-design smoke retained Python evidence but FACETS failed three exit-0/missing-report tries at a 254-character base work path; no primary pair or statistic observed.",
+    "v3": "Preparation retained; path-length display used a relative path; zero fits.",
+    "v4": "Qualified fixed-N replication with absolute-path preaudit and short retained FACETS work roots."
+  },
+  "evidence_separation": {
+    "screening_replicates": [1, 20],
+    "original_confirmatory_replicates": [21, 120],
+    "independent_replication_replicates": [121, 220],
+    "prior_replicates_pooled": false,
+    "original_confirmatory_h6_status_changed": false,
+    "original_confirmatory_evidence_replaced": false,
+    "estimator_ranking_constructed": false,
+    "cross_likelihood_comparison_constructed": false
+  },
+  "identity_sha256": {
+    "plan": "cef4cca78814a1f7fed8debbdda0ad0d32f2a755e55bf75541a97628d3bdcced",
+    "execution_registration_v4": "81c7c11cf374588cdc7a97a2befa22c90a40c8f9d1f38f529b6ea82bb05578a9",
+    "runner": "71bf8e8d87b9a4b126fd99a570191b3e0a4c4a94ee10249564cc3028a33c7c20",
+    "resilient_pair_component": "5fcb29ad7c6d719ef2997dec64901ed07bd3bb4098964fbae7da5f8af8d6b56e",
+    "study_identity": "db45e5ec28df0ccf692c2f105bbeda897a17b34ef7078c8b5ece147b6c023569",
+    "preexecution_audit": "036c80bf86a10396fdc966ceb82dc34a65c49bedae0114146273fd6e36537bdc",
+    "aggregate_identity": "5e7ccca71c977b55160c1df3bce446cee09a1c72d3acbc25bfbf581103a611ad",
+    "replication_metrics": "dd858f0aa5219a4eae30d653603ad65c380c8b1e9f9a3b5a20e422172155e117",
+    "primary_results": "fce79104098b9e3df6a948cca2c2b56fde0f1713d30c93900b733c927d4f36a4",
+    "paired_threshold_rmse": "cfb76c81ac1116876218ef2344b5ce525cf61ac2c210d0154a5da8a120e7871a",
+    "r_verifier": "ab6a33348cb27c62e3514329488bbc5463099ebdac4df899071cae4de4eae9a8",
+    "r_verification": "1413f314a690e55ad497c06b52fb0e2ac371d0454ce7ed42114578a5b212069f"
+  },
+  "claim_limit": "This independently replicates one observation-design sensitivity effect for native-precision Python JMLE in the registered normal-Person, heterogeneous-threshold PCM DGM and qualifies the 200-pair FACETS 4.5.0 calibration batch. It does not establish universal missing-data bias, raw-fit parity, arbitrary sparse-design compatibility, or an estimator ranking."
+}

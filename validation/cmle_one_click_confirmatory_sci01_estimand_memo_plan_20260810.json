@@ -1,0 +1,57 @@
+{
+  "study_id": "cmle_one_click_confirmatory_sci01_estimand_memo_v1",
+  "registered_at": "2026-08-10T00:00:00+09:00",
+  "status": "prospectively_registered_before_implementation",
+  "scope": "Private, non-recommending decision support for unresolved SCI-01 only",
+  "parent_evidence_sha256": {
+    "validation/cmle_one_click_confirmatory_protocol_preflight_20260810/partial_identification_sensitivity.csv": "8307b0d2c5b4409cf62bc7f8b7f5bc199740618104a53b612947f08dc941e553",
+    "validation/cmle_one_click_confirmatory_protocol_preflight_20260810/decision.json": "88e860248db6b911a8c761446db3e1414a8f6e9da865d468e247e28dd3580f48",
+    "validation/cmle_one_click_confirmatory_decision_workbench_20260810/decision.json": "c46c9d01c4f7f2f551148c12b2b77e08b33d37e53b2cb30cd6c0f4741c9ba1e2",
+    "validation/cmle_one_click_confirmatory_decision_workbench_20260810/decision_option_catalog.csv": "627766d640f73585c11c3ee8528798ee497252c70bdc8830ba5bbcb7d451e1d4"
+  },
+  "registered_options_in_display_order_only": [
+    "SCI-01-A_observed_valid_estimand",
+    "SCI-01-B_scheduled_slot_composite",
+    "SCI-01-C_dual_estimand_with_bounds"
+  ],
+  "display_order_is_rank": false,
+  "repository_recommendation_allowed": false,
+  "repository_default_allowed": false,
+  "automatic_selection_allowed": false,
+  "projection_contract": {
+    "input_rows_expected": 72,
+    "output_rows_expected": 216,
+    "integer_counts_are_authoritative": true,
+    "displayed_rounding_drives_decisions": false,
+    "decision_threshold_raw": 0.1,
+    "threshold_operator": "strictly_less_than",
+    "option_A": "Observed-valid D/V with observed-valid Wilson upper 95% bound; cannot identify scheduled-slot risk",
+    "option_B": "Conservative projection (D+I)/(V+I) with all-invalid-dangerous Wilson upper 95% bound; actual composite requires prospective invalidity-code adjudication",
+    "option_C": "Observed-valid point plus nonparametric [D/(V+I),(D+I)/(V+I)] bounds; robust only when worst-case Wilson upper 95% bound is below 0.10"
+  },
+  "required_artifacts": [
+    "sci01_estimand_definitions.csv",
+    "sci01_same_data_projection.csv",
+    "sci01_downstream_decision_impacts.csv",
+    "sci01_selection_template.csv",
+    "sci01_estimand_comparison.html",
+    "private_sci01_estimand_memo.zip",
+    "sci01_estimand_projection.png",
+    "SCI01_ESTIMAND_MEMO_CRITICAL_REVIEW.md",
+    "decision.json"
+  ],
+  "selection_contract": {
+    "blank_is_valid_but_incomplete": true,
+    "exactly_one_registered_option_required_for_completion": true,
+    "external_scientific_owner_required": true,
+    "assumption_reference_required": true,
+    "rationale_reference_required": true,
+    "owner_attestation_required": true,
+    "decision_before_outcome_inspection_required": true,
+    "completed_SCI01_alone_can_authorize_recruitment": false
+  },
+  "human_participants": 0,
+  "confirmatory_outcomes_available": false,
+  "public_surface_enabled": false,
+  "stop_rule": "Fail closed on parent identity mismatch, formula mismatch, recommendation/default language, selection validation failure, nondeterministic or tampered bundle, regression failure, any human data, or public exposure"
+}

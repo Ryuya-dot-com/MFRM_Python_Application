@@ -1,0 +1,117 @@
+{
+  "registration_status": "prospective_before_decision_workbench_implementation; no_human_data; no_option_selected; no_recommendation; no_recruitment_authority",
+  "registered_date": "2026-08-10",
+  "study_id": "cmle_one_click_confirmatory_decision_workbench_v1",
+  "purpose": "Provide a private, accessible, deterministic workbench for the 13 unresolved confirmatory-protocol decisions, including explicit options, tradeoffs, dependencies, required evidence, and a blank selection template without allowing repository-generated recommendations or readiness claims.",
+  "parent_identity": {
+    "mfrm_app/cmle_one_click_confirmatory_protocol.py": "5ea0dc929fdbcf91ab3e813c38192660e22e88462b61e04cc263c22c009b934f",
+    "tests/test_cmle_one_click_confirmatory_protocol.py": "827fddb91e0b9cde5822902d44bcc569bc42ea21ee8808c001bd8b5c54914458",
+    "validation/cmle_one_click_confirmatory_protocol_preflight_plan_20260810.json": "3e1d4cf7f2d35d5cc4cfab34170149de8ed4845d4495f8fd9b77fd3bf4e93851",
+    "validation/cmle_one_click_confirmatory_protocol_preflight.py": "e2f76a95511be2551a64ddb61dd91320862a486520ad87b6d5e68c67e70a551e",
+    "validation/cmle_one_click_confirmatory_protocol_preflight_20260810/decision.json": "88e860248db6b911a8c761446db3e1414a8f6e9da865d468e247e28dd3580f48",
+    "validation/cmle_one_click_confirmatory_protocol_preflight_20260810/protocol_decision_register.csv": "b8d387ca38d488982de679774993c5e834a688b03ba8f4993cc7ee6d23b9f06a",
+    "validation/cmle_one_click_confirmatory_protocol_preflight_20260810/partial_identification_sensitivity.csv": "8307b0d2c5b4409cf62bc7f8b7f5bc199740618104a53b612947f08dc941e553",
+    "validation/cmle_one_click_confirmatory_protocol_preflight_20260810/private_confirmatory_protocol_preflight.zip": "4c127f30484c632b50bdc805b06db05d625170a933f0493f0cff2bace1fbd1fd"
+  },
+  "decision_scope": {
+    "decision_ids": ["SCI-01", "SCI-02", "SCI-03", "SCI-04", "SCI-05", "SCI-06", "SCI-07", "SCI-08", "SCI-09", "OPS-01", "ETH-01", "ETH-02", "GOV-01"],
+    "source_rule": "Decision labels, categories, owner roles, and blocking status must match the frozen parent protocol_decision_register.csv exactly.",
+    "default": "All 13 selections remain unresolved and blank. No option receives a recommended, preferred, default, green, or automatically selected label.",
+    "separation": "Completing a selection worksheet does not substantively verify evidence and can never by itself set RecruitmentReady=true."
+  },
+  "option_catalog_contract": {
+    "options_per_decision": 3,
+    "total_options": 39,
+    "option_ids": {
+      "SCI-01": ["SCI-01-A_observed_valid_estimand", "SCI-01-B_scheduled_slot_composite", "SCI-01-C_dual_estimand_with_bounds"],
+      "SCI-02": ["SCI-02-A_per_cell_assurance", "SCI-02-B_familywise_assurance", "SCI-02-C_cluster_simulation_precision"],
+      "SCI-03": ["SCI-03-A_fixed_inflation", "SCI-03-B_retention_assurance", "SCI-03-C_blinded_denominator_topup"],
+      "SCI-04": ["SCI-04-A_primary_all_cells_sensitivity_only", "SCI-04-B_bonferroni_governing", "SCI-04-C_hierarchical_gatekeeping"],
+      "SCI-05": ["SCI-05-A_complete_case_plus_bounds", "SCI-05-B_all_invalid_dangerous_primary", "SCI-05-C_preregistered_tipping_models"],
+      "SCI-06": ["SCI-06-A_cluster_robust_gee", "SCI-06-B_hierarchical_logistic", "SCI-06-C_cluster_bootstrap"],
+      "SCI-07": ["SCI-07-A_pooled_with_heterogeneity_sensitivity", "SCI-07-B_mechanism_coprimary", "SCI-07-C_hierarchical_partial_pooling"],
+      "SCI-08": ["SCI-08-A_separate_pass_no_equivalence", "SCI-08-B_equivalence_noninferiority", "SCI-08-C_invariance_plus_separate_pass"],
+      "SCI-09": ["SCI-09-A_stratified_minima", "SCI-09-B_universal_qa_monitored_strata", "SCI-09-C_accessibility_coprimary"],
+      "OPS-01": ["OPS-01-A_no_outcome_interim", "OPS-01-B_blinded_information_monitoring", "OPS-01-C_independent_monitoring"],
+      "ETH-01": ["ETH-01-A_single_site_review", "ETH-01-B_multisite_reliance", "ETH-01-C_authority_exempt_determination"],
+      "ETH-02": ["ETH-02-A_documented_consent", "ETH-02-B_econsent", "ETH-02-C_authority_waiver_or_alteration"],
+      "GOV-01": ["GOV-01-A_local_encrypted_minimal", "GOV-01-B_institutional_managed", "GOV-01-C_multisite_governed_or_federated"]
+    },
+    "required_tradeoff_fields": ["description", "strength", "primary risk", "required evidence", "sample-size impact", "estimand impact", "participant-burden impact", "accessibility impact", "public-claim impact", "external-authority requirement"],
+    "anti_recommendation": "Every option has AutoSelectable=false and RecommendationStatus=not_recommended_by_repository. Option order is not a rank."
+  },
+  "dependency_contract": {
+    "stages": [
+      "1_estimand",
+      "2_missingness_multiplicity_language_accessibility",
+      "3_cluster_mechanism_operations_governance",
+      "4_sample_size",
+      "5_recruitment",
+      "6_ethics_consent"
+    ],
+    "prerequisites": {
+      "SCI-01": [],
+      "SCI-04": ["SCI-01"],
+      "SCI-05": ["SCI-01"],
+      "SCI-08": ["SCI-01", "SCI-04"],
+      "SCI-09": ["SCI-01"],
+      "SCI-06": ["SCI-01", "SCI-05"],
+      "SCI-07": ["SCI-01", "SCI-04"],
+      "OPS-01": ["SCI-01", "SCI-04", "SCI-05", "SCI-07"],
+      "GOV-01": ["SCI-01", "SCI-05"],
+      "SCI-02": ["SCI-01", "SCI-04", "SCI-05", "SCI-06", "SCI-07", "SCI-08", "SCI-09"],
+      "SCI-03": ["SCI-02", "SCI-05", "SCI-06", "SCI-09"],
+      "ETH-01": ["SCI-02", "SCI-03", "OPS-01", "GOV-01"],
+      "ETH-02": ["ETH-01", "GOV-01"]
+    },
+    "sample_size_guard": "SCI-02 cannot resolve or accept a numeric value until its seven registered prerequisites resolve prospectively.",
+    "acyclic": "The registered dependency graph must be acyclic and every prerequisite must precede its dependent stage."
+  },
+  "selection_template_contract": {
+    "rows": 13,
+    "default_status": "unresolved",
+    "blank_fields": ["SelectedOptionId", "NumericValue", "NumericUnit", "AssumptionSetReference", "RationaleReference", "OwnerAttestationReference", "ExternalEvidenceReference"],
+    "resolution_rule": "A resolved row requires an option belonging to that decision, all prerequisites resolved, nonblank rationale/assumption/owner evidence, DecisionRecordedBeforeOutcomes=true, HumanOutcomesInspectedBeforeDecision=false, and RepositoryGeneratedSelectionAllowed=false.",
+    "numeric_rule": "Options marked RequiresNumericInput require a finite positive value, unit, and assumption-set reference.",
+    "external_rule": "Options requiring external authority need a nonblank external evidence reference and EvidenceSource not beginning repository_generated.",
+    "readiness_rule": "Even a synthetically complete and schema-valid worksheet reports SelectionsComplete=true but SubstantiveEvidenceVerified=false and RecruitmentReady=false."
+  },
+  "private_workbench_contract": {
+    "html": "Self-contained UTF-8 HTML with no external scripts, fonts, stylesheets, forms, or network resources. It leads with BLOCKED / 募集不可, shows dependency stages, and presents all options in source order without ranking.",
+    "bundle_members": ["BUNDLE_MANIFEST.csv", "START_HERE.md", "decision_dependency_table.csv", "decision_option_catalog.csv", "decision_selection_template.csv", "decision_workbench_summary.csv", "protocol_decision_workbench.html"],
+    "archive": "Deterministic lexicographically ordered ZIP with fixed timestamps/permissions, SHA-256 manifest, zero human rows, and blocked-first-read tamper detection.",
+    "surface": "Private offline artifact only; no Streamlit route, public evidence button, writable form, or external message is created."
+  },
+  "synthetic_validation": {
+    "cases": [
+      "39 options cover every decision exactly three times with no recommendation/default",
+      "dependency graph is acyclic and sample-size/recruitment/ethics stages cannot resolve early",
+      "default blank selection template is schema-valid but incomplete and blocked",
+      "unknown or cross-decision option fails",
+      "resolved decision without prerequisites, rationale, owner evidence, or prospective lock fails",
+      "numeric option without positive value/unit/assumption reference fails",
+      "external option with repository-generated evidence fails",
+      "synthetic fully completed worksheet may be selection-complete but remains recruitment-blocked",
+      "HTML is self-contained, bilingual, option-complete, non-form, and blocked",
+      "bundle bytes reproduce and HTML/manifest tampering fails validation"
+    ]
+  },
+  "automated_success_gates": {
+    "identity": "Every parent hash matches before execution.",
+    "catalog": "Exactly 39 options match the registered ids/fields and none is recommended, ranked, defaulted, or auto-selectable.",
+    "dependencies": "Exactly 13 dependency rows match the graph, are acyclic, and respect stages.",
+    "selection": "Default 13-row template is exact, blank, schema-valid, incomplete, and recruitment-blocked; registered synthetic invalid cases fail with expected codes.",
+    "html": "Self-contained HTML includes every decision/option, blocked bilingual first read, protocol content SHA, no form controls, and no external resources.",
+    "bundle": "Seven exact members, deterministic bytes, correct hashes, zero human rows, and tamper rejection pass.",
+    "human_gate": "HumanParticipants=0, OptionsSelected=0, SelectionsComplete=false, SubstantiveEvidenceVerified=false, RecruitmentReady=false, MinimumValidPerCellRegistered=false, PlannedRecruitmentNSelected=false, ConfirmatoryResultAvailable=false, and PublicSurfaceEnabled=false.",
+    "tests": "New workbench tests plus selected protocol, dependence, planning, gate, operations, comprehension, one-click, archive, and decision-stability tests pass."
+  },
+  "interpretation_limits": {
+    "options": "Catalogued options are not exhaustive, equally appropriate, validated, or recommended. External scientific and institutional owners may require a prospective amendment before adding or changing options.",
+    "impact": "Qualitative impact labels are decision aids, not effect-size or cost estimates.",
+    "evidence": "References in a worksheet are not substantively verified by this workbench.",
+    "ethics": "Only appropriate independent and institutional authorities can approve ethics, consent, recruitment, privacy, and governance.",
+    "statistics": "No numeric n is selected and no option is promoted by prior synthetic outcomes.",
+    "public_ui": "withheld"
+  }
+}

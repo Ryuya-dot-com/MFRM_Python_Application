@@ -1,0 +1,33 @@
+{
+  "schema_version": "mfrm-estimand-distribution-facets-io-diagnostic-plan-v1",
+  "registered_on": "2026-08-11",
+  "registration_timing": "Registered after the confirmatory primary analysis and before diagnostic replay.",
+  "purpose": "Classify the sole confirmatory FACETS exit-0/missing-U6-report failure using isolated serial replay without changing the confirmatory evidence set.",
+  "target": {
+    "study_directory": "validation/estimand_distribution_confirmatory100_20260811",
+    "attempt_ordinal": 1024,
+    "attempt_id": "complete__normal::rep-00053::FACETS_PYTHON_JMLE_PCM",
+    "attempt_fingerprint": "eb4ccdc55e2054088c3b082ce6dffdd1b515e3a42dbbab005e0229e596ed9ab0",
+    "original_completion_marker_sha256": "6451a1075cf7bde124338ce12e6d44456b415cc8a41f7856bcc8aa3e455884fa",
+    "original_facets_spec_sha256": "60d8d66540ff36ab0698f617a71f983b51384e488ba6a3f960a6c3c17a8c3509",
+    "original_failure_reason": "RuntimeError: FACETS primary failed for complete__normal::rep-00053::PCM: exit=0"
+  },
+  "replay": {
+    "serial_repeats": 3,
+    "facets_version": "4.5.0",
+    "timeout_seconds": 120,
+    "same_retained_input_required": true,
+    "same_frozen_execution_script_required": true
+  },
+  "interpretation": {
+    "all_three_success": "Supports a transient operational/report-I/O classification under the original parallel run; does not prove concurrency as the cause.",
+    "any_failure": "Shows the failure is reproducible in isolated serial operation and requires deeper FACETS adapter investigation.",
+    "facets_python_direct_agreement": "Reported only as a diagnostic consistency check, not added to the confirmatory denominator."
+  },
+  "prohibitions": [
+    "Do not delete, overwrite, or replace original attempt 01024 or its completion marker.",
+    "Do not add diagnostic replay rows to the confirmatory aggregate or primary contrasts.",
+    "Do not change H6 from 99 pairs or change workbench qualification_pass=false.",
+    "Do not use diagnostic results to rank estimators or compare cross-basis likelihoods."
+  ]
+}

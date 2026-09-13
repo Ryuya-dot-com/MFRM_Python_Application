@@ -1,0 +1,51 @@
+{
+  "schema_version": "mfrm-cmle-wle-fit-threshold-severity-amendment-v1",
+  "registered_date": "2026-08-10",
+  "registration_timing": "Registered after the original 125-triplet threshold-surface results and figures were inspected, and specifically after observing that the one-at-a-time noisy/distorting-boundary transition-share profile was flat, but before computing or inspecting the class-transition decomposition requested here.",
+  "reason": "The original binary indicator records only whether baseline and replicate classes differ. It can therefore remain unchanged when the noisy_upper boundary reallocates observations between noisy and distorting. A flat binary transition profile must not be interpreted as invariance of severity labels.",
+  "immutable_parent_evidence": {
+    "threshold_surface_plan_sha256": "746798645966f98496ffdacdf7254297c0560c6b1f534b10c1339298e93ceda2",
+    "threshold_surface_decision_sha256": "483f5f732fed9494306a7dd1ddbf36a9443943278f97d9970a66985d55eea71f",
+    "threshold_surface_runner_sha256": "7a3f5b1f42bafe0df4a126cd9897d2e48326f32bf3ff1048343a068599aa569f",
+    "threshold_sensitivity_core_sha256": "d5aae099b519e77981389d9fff3b3b23047fd8e6dfc8d328d94341460d9b732b",
+    "threshold_full_surface_sha256": "bfeb7693eef9192f989a3c6a6cd72f8708e4450a8ccc532503dafc0ca0a6ad28",
+    "threshold_display_precision_sha256": "af32cd8fd01640e100bda9aa9a3dc0932c82df73e734af81f435610bf67aa35d",
+    "bootstrap_person_draws_sha256": "5961726d36a2d57e54a9d6410b0d9e5e659d4d9adf6b8fcf07d20f0433cc792e",
+    "bootstrap_baseline_persons_sha256": "dc9fecf78b98ce9cd87f7c6afce21e7bdaf15530bfdccb7c9507f49f2ff4418f"
+  },
+  "frozen_scope": {
+    "threshold_grid": "Use exactly the parent plan's 5 x 5 x 5 full-factorial grid; no values may be added, removed, or selected.",
+    "statistics": [
+      "Infit",
+      "Outfit"
+    ],
+    "classes_in_order": [
+      "overfit",
+      "acceptable",
+      "noisy",
+      "distorting"
+    ],
+    "classification_input": "finite unrounded retained MnSq",
+    "required_decomposition": "For every Model x Lane x Statistic x threshold triplet, emit all 16 BaselineClass x ReplicateClass cells, including structural zeros.",
+    "required_one_at_a_time_profile": "At canonical overfit_upper and acceptable_upper, report replicate noisy and distorting counts/shares at each of the five frozen noisy_upper values, with baseline class counts reported separately.",
+    "required_checks": [
+      "Every transition matrix sums to its Person-replicate denominator.",
+      "Off-diagonal cell counts sum exactly to the parent binary ClassTransitions count.",
+      "Canonical transition matrices reproduce the stored canonical transition matrix.",
+      "Results are invariant to input row order."
+    ],
+    "required_visual": "Show one-at-a-time noisy_upper replicate noisy/distorting shares by Statistic, with the canonical 2.00 reference and without combining classes into an ordinal score."
+  },
+  "interpretation_boundaries": {
+    "post_result_descriptive": true,
+    "binary_transition_flatness_implies_severity_invariance": false,
+    "ordinal_distance_or_severity_score_authorized": false,
+    "automatic_threshold_selection": false,
+    "threshold_optimality": false,
+    "false_positive_rate_or_power": false,
+    "known_truth_recovery": false,
+    "independent_binomial_person_replicates": false,
+    "public_ui_integration": false
+  },
+  "parent_evidence_must_not_be_overwritten": true
+}

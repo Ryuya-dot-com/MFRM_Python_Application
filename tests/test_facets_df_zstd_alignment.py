@@ -2,12 +2,13 @@
 
 Two d.f. conventions ship side-by-side:
 
-* **Engine** (default, backwards compatible): ``DF_Infit = sum(Var * w)``,
+* **Engine** (explicit legacy option): ``DF_Infit = sum(Var * w)``,
   ``DF_Outfit = sum(w)``. The Wilson-Hilferty ZSTD assumes the per-cell
   variances are homogeneous enough that the residual chi-square behaves
   with that d.f.
 
-* **FACETS** (Wright & Masters, 1982, Eqs. 4.20 / 4.27): a Welch-
+* **FACETS** (default, with engine sidecars; Wright & Masters, 1982,
+  Eqs. 4.20 / 4.27): a Welch-
   Satterthwaite d.f. that captures the variance heterogeneity by way of
   the fourth central moment of each per-observation polytomous
   distribution:
@@ -211,13 +212,15 @@ def small_rsm_jmle_diagnostics():
     return res
 
 
-def test_calc_facet_fit_engine_mode_is_backward_compatible(small_rsm_jmle_diagnostics):
-    """In default ``"engine"`` mode the table must carry the original
+def test_calc_facet_fit_explicit_engine_mode_is_backward_compatible(small_rsm_jmle_diagnostics):
+    """In explicit ``"engine"`` mode the table must carry the original
     columns and *not* expose any FACETS suffix columns; this guarantees
     backward compatibility with downstream consumers built before the
     alignment shipped."""
     obs = app.compute_obs_table(small_rsm_jmle_diagnostics)
-    tbl = app.calc_facet_fit(obs, ["Person", "Rater", "Criterion"])
+    tbl = app.calc_facet_fit(
+        obs, ["Person", "Rater", "Criterion"], fit_df_method="engine"
+    )
     assert {"Infit", "Outfit", "InfitZSTD", "OutfitZSTD",
             "DF_Infit", "DF_Outfit"}.issubset(tbl.columns)
     for col in ["DF_Infit_FACETS", "DF_Outfit_FACETS",
@@ -232,8 +235,10 @@ def test_calc_facet_fit_facets_mode_swaps_primary_zstd(small_rsm_jmle_diagnostic
     the original engine values must still be available under
     ``*_ENGINE`` suffix columns so callers can compare conventions."""
     obs = app.compute_obs_table(small_rsm_jmle_diagnostics)
-    engine_tbl = app.calc_facet_fit(obs, ["Rater", "Criterion"])
-    facets_tbl = app.calc_facet_fit(obs, ["Rater", "Criterion"], fit_df_method="facets")
+    engine_tbl = app.calc_facet_fit(
+        obs, ["Rater", "Criterion"], fit_df_method="engine"
+    )
+    facets_tbl = app.calc_facet_fit(obs, ["Rater", "Criterion"])
     # Engine values preserved as *_ENGINE.
     assert "InfitZSTD_ENGINE" in facets_tbl.columns
     assert "OutfitZSTD_ENGINE" in facets_tbl.columns
@@ -263,7 +268,9 @@ def test_calc_facet_fit_both_mode_keeps_engine_primary_with_facets_suffix(
     (preserving backward-compatible interpretations) but the FACETS
     suffix columns are available for side-by-side comparison."""
     obs = app.compute_obs_table(small_rsm_jmle_diagnostics)
-    engine_tbl = app.calc_facet_fit(obs, ["Rater", "Criterion"])
+    engine_tbl = app.calc_facet_fit(
+        obs, ["Rater", "Criterion"], fit_df_method="engine"
+    )
     both_tbl = app.calc_facet_fit(obs, ["Rater", "Criterion"], fit_df_method="both")
     pd.testing.assert_series_equal(
         both_tbl["InfitZSTD"].reset_index(drop=True),
@@ -281,8 +288,8 @@ def test_calc_overall_fit_dispatch_matches_per_facet_dispatch(small_rsm_jmle_dia
     """The overall-fit table must respect the same dispatch logic as the
     per-facet table — the two should never disagree on convention."""
     obs = app.compute_obs_table(small_rsm_jmle_diagnostics)
-    overall_engine = app.calc_overall_fit(obs)
-    overall_facets = app.calc_overall_fit(obs, fit_df_method="facets")
+    overall_engine = app.calc_overall_fit(obs, fit_df_method="engine")
+    overall_facets = app.calc_overall_fit(obs)
     overall_both = app.calc_overall_fit(obs, fit_df_method="both")
     assert "FitDfMethod" not in overall_engine.columns
     assert overall_facets.loc[0, "FitDfMethod"] == "facets_wright_masters"
@@ -294,10 +301,10 @@ def test_mfrm_diagnostics_propagates_fit_df_method(small_rsm_jmle_diagnostics):
     requested method and pin its row-level value on every row of the
     fit table; downstream UI code reads ``diagnostics['fit_df_method']``
     as the canonical method label."""
-    diag_engine = app.mfrm_diagnostics(small_rsm_jmle_diagnostics, compute_pca=False)
-    diag_facets = app.mfrm_diagnostics(
-        small_rsm_jmle_diagnostics, compute_pca=False, fit_df_method="facets"
+    diag_engine = app.mfrm_diagnostics(
+        small_rsm_jmle_diagnostics, compute_pca=False, fit_df_method="engine"
     )
+    diag_facets = app.mfrm_diagnostics(small_rsm_jmle_diagnostics, compute_pca=False)
     diag_both = app.mfrm_diagnostics(
         small_rsm_jmle_diagnostics, compute_pca=False, fit_df_method="both"
     )
@@ -308,6 +315,58 @@ def test_mfrm_diagnostics_propagates_fit_df_method(small_rsm_jmle_diagnostics):
     assert "FitDfMethod" not in diag_engine["fit"].columns
     assert (diag_facets["fit"]["FitDfMethod"] == "facets_wright_masters").all()
     assert (diag_both["fit"]["FitDfMethod"] == "engine_primary_facets_available").all()
+
+
+def test_default_facets_profile_keeps_engine_sidecars(small_rsm_jmle_diagnostics):
+    diagnostics = app.mfrm_diagnostics(
+        small_rsm_jmle_diagnostics, compute_pca=False, compute_marginal=False
+    )
+    assert app.DEFAULT_FIT_DF_METHOD == "facets"
+    assert diagnostics["fit_df_method"] == "facets"
+    assert diagnostics["fit_zstd_transform"] == "Wilson-Hilferty"
+    assert diagnostics["facets_zstd_cap"] == 9.0
+    assert diagnostics["fit_df_applicability"] == "facets_wright_masters_rasch_family"
+    for col in (
+        "DF_Infit_ENGINE", "DF_Outfit_ENGINE",
+        "InfitZSTD_ENGINE", "OutfitZSTD_ENGINE",
+        "DF_Infit_FACETS", "DF_Outfit_FACETS",
+        "InfitZSTD_FACETS", "OutfitZSTD_FACETS",
+    ):
+        assert col in diagnostics["fit"].columns
+    pd.testing.assert_series_equal(
+        diagnostics["fit"]["InfitZSTD"],
+        diagnostics["fit"]["InfitZSTD_FACETS"],
+        check_names=False,
+    )
+
+
+def test_category_fit_uses_facets_primary_and_engine_sidecars(small_rsm_jmle_diagnostics):
+    obs = app.compute_obs_table(small_rsm_jmle_diagnostics)
+    category = app.calc_category_stats(obs, small_rsm_jmle_diagnostics)
+    assert (category["FitDfMethod"] == "facets_wright_masters").all()
+    assert (category["FitZSTDTransform"] == "Wilson-Hilferty").all()
+    assert (category["FitZSTDCap"] == 9.0).all()
+    assert "InfitZSTD_ENGINE" in category.columns
+    assert "OutfitZSTD_ENGINE" in category.columns
+    pd.testing.assert_series_equal(
+        category["OutfitZSTD"], category["OutfitZSTD_FACETS"], check_names=False
+    )
+
+
+def test_gpcm_facets_profile_is_explicitly_approximate():
+    metadata = app.fit_df_model_metadata("GPCM", "facets")
+    assert metadata["applicability"] == "facets_style_approximation_for_gpcm"
+    assert "not claim exact FACETS equivalence" in metadata["warning"]
+
+
+def test_generated_python_reproduction_script_pins_facets_primary(small_rsm_jmle_diagnostics):
+    python_script = app._generate_repro_python_script(small_rsm_jmle_diagnostics)
+    compile(python_script, "generated_mfrm_reproduction.py", "exec")
+    assert "facets_wright_masters" in python_script
+    assert "InfitZSTD_ENGINE" in python_script
+    assert "OutfitZSTD_ENGINE" in python_script
+    assert "FourthCentralMoment" in python_script
+    assert "Wilson-Hilferty" in python_script
 
 
 # -----------------------------------------------------------------------------

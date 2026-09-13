@@ -1,0 +1,130 @@
+{
+  "registration_status": "prospective_before_native_anchor_implementation_or_results",
+  "registered_date": "2026-08-10",
+  "study_id": "cmle_native_hard_anchor_phase_b_v1",
+  "purpose": "Add auditable fixed facet anchors to the native exact CMLE likelihood as affine constraints, while preserving the unanchored estimator and propagating the fixed offsets through every downstream CMLE-WLE calculation.",
+  "parent_evidence": {
+    "known_truth_pilot_decision": {
+      "path": "validation/cmle_wle_fit_known_truth_pilot_20260810/known_truth_pilot_decision.json",
+      "sha256": "46a3d6a9c50b0b40150fc76a3950d4f3b882146878f63ea50ee6406f922e0a5b"
+    },
+    "known_truth_addendum_decision": {
+      "path": "validation/cmle_wle_fit_known_truth_pilot_addendum_20260810/known_truth_pilot_addendum_decision.json",
+      "sha256": "9d249053e71b1f16d4d1afa3c5aac9225a91e72f1ac7b094f8c8befc33fcace1"
+    }
+  },
+  "prechange_inputs": {
+    "mfrm_app/cmle.py": "74844d60d04b14cffc68e1de305c4b3ef34b594a3b47a4bdd680e21a6ba4e250",
+    "mfrm_app/cmle_person_scoring.py": "1238dbd87e4b603968ab0c74c3561e8d46fc11d8c90a91f36387e8bcea78573a",
+    "mfrm_app/cmle_wle_fit.py": "b7637e902091de2373d408c16118ebfd251dc86589b96884dfbdd0a8b18d3be0",
+    "mfrm_app/cmle_wle_bootstrap.py": "10da83124aeaf6fa86a22d5f3a8e1d640c1af925a9a97f843d03b99bff21518e",
+    "mfrm_app/cmle_wle_uncertainty.py": "27ce5bd95946764a18258fd1ef193297e2aea992f0bdb4efa850c40167f5584c",
+    "tests/test_cmle.py": "be2b2eaa0623dde734f293d6c3931063077e9d876e94db48a3dd49d9038b978a",
+    "tests/test_cmle_person_scoring.py": "d8045689463ac5890a164e7374e6e13c9b69ebafccb056b9221db79003434149",
+    "tests/test_cmle_wle_fit.py": "762127b1a923a70a1bf006afeec880deae69b632f82c825f96e60e02a18dd385",
+    "docs/cmle_phase0_design.md": "d5c726b2210b386a63d12a8934349554b895ebce68a547b6e1cf9a226ad51747"
+  },
+  "scope": {
+    "supported": [
+      "RSM and PCM hard anchors on observed non-Person facet levels",
+      "one or more partially or fully anchored facet blocks",
+      "fixed anchor values on the expanded structural-estimate scale before facet-sign application",
+      "conditional likelihood, category surfaces, fit-sample WLE, Person fit, bootstrap, and calibration-uncertainty paths"
+    ],
+    "withheld": [
+      "Step or threshold anchors",
+      "soft or stochastic anchors",
+      "anchor standard-error propagation",
+      "automatic anchor selection",
+      "cross-engine equivalence claims",
+      "public one-click UI exposure until operating-characteristic evidence passes"
+    ]
+  },
+  "public_api_contract": {
+    "argument": "hard_anchors",
+    "accepted_container": "pandas DataFrame or sequence of mappings; None means legacy unanchored CMLE",
+    "required_columns": ["ParameterType", "Facet", "Level", "Value"],
+    "optional_columns": ["Step"],
+    "extra_columns": "rejected",
+    "v1_parameter_type": "Facet only, case-insensitively normalized",
+    "step_rule": "must be absent or entirely missing for facet anchors",
+    "value_rule": "finite numeric, interpreted on the expanded structural-estimate scale",
+    "identity_rule": "Facet and Level must match retained design labels exactly after their existing string normalization",
+    "duplicate_rule": "duplicate Facet-Level keys are rejected even when values agree",
+    "ordering_rule": "canonicalized by design facet and level order so input anchor-row order cannot affect results"
+  },
+  "estimation_contract": {
+    "affine_map": "expanded_structural = fixed_offset + jacobian @ free_parameters",
+    "unanchored_facet": "retain the existing sum-to-zero contrast and parameter names",
+    "anchored_facet": "anchored levels have fixed offsets and zero Jacobian rows; each unanchored level receives one direct free coordinate; no additional sum-to-zero constraint is imposed on that facet",
+    "step_parameters": "retain the existing sum-to-zero coordinates",
+    "category_kernel": "fixed_row_category_offset + row_design @ free_parameters",
+    "conditional_likelihood": "both observed log kernel and conditional normalizer include fixed offsets",
+    "rank_audit": "performed on the remaining free-coordinate information with fixed offsets present in conditional probabilities",
+    "anchored_output": "Estimate equals the supplied anchor exactly, SE equals 0, Anchored is true, Constraint is hard_anchor",
+    "unanchored_output": "Anchored is false and Constraint states sum_to_zero or free_relative_to_hard_anchor",
+    "likelihood_parameter_count": "KParams and conditional AIC count only optimized free coordinates; fixed anchors are not counted"
+  },
+  "frozen_validation_gates": {
+    "legacy_identity": {
+      "requirement": "hard_anchors=None reproduces prechange free names, objective, gradient, Hessian, fitted estimates, surfaces, WLE, and Person fit",
+      "absolute_tolerance": 1e-12,
+      "note": "exact equality is preferred, but the prospective gate is numerical because benign array-expression changes may alter final floating-point bits"
+    },
+    "manual_affine_enumeration": {
+      "requirement": "a small anchored RSM objective and gradient agree with explicit enumeration of response patterns",
+      "absolute_tolerance": 1e-10
+    },
+    "finite_difference_gradient": {
+      "requirement": "anchored analytical gradient agrees with central finite differences",
+      "absolute_tolerance": 1e-5
+    },
+    "propagation": {
+      "requirement": "surfaces, WLE, Person fit, bootstrap kernels, and uncertainty draws use the same fixed row offsets",
+      "absolute_tolerance": 1e-12
+    },
+    "invariance": {
+      "requirement": "permuting anchor rows cannot change canonical anchors or numerical results",
+      "absolute_tolerance": 1e-12
+    },
+    "fail_closed": [
+      "unknown facet",
+      "unknown level",
+      "non-finite value",
+      "duplicate key",
+      "Step or Person parameter type",
+      "non-missing Step",
+      "unexpected column",
+      "zero remaining free structural parameters",
+      "rank-deficient remaining free-coordinate information"
+    ]
+  },
+  "phase_b_smoke_design": {
+    "status": "run only after implementation gates pass",
+    "source_bytes": "reuse deterministic known-truth generator settings, but save new retained response files and hashes",
+    "conditions": ["rsm4_clean_dense", "rsm4_clean_sparse", "rsm4_random_dense", "rsm4_random_sparse"],
+    "replicates": 2,
+    "anchor_scenarios": [
+      "unanchored_sum_zero",
+      "one_of_six_raters_correct",
+      "three_of_six_raters_correct",
+      "three_of_six_raters_contaminated_plus_0.25"
+    ],
+    "primary_outputs": [
+      "fit return and inference-ready rate",
+      "free-information rank and condition number",
+      "unanchored rater bias, MAE, and RMSE on the explicitly labelled scale",
+      "criterion and step recovery",
+      "WLE bias, MAE, RMSE, and exact-extreme counts",
+      "raw-value Person-fit flag transitions relative to the same-byte unanchored fit"
+    ],
+    "interpretation": "engineering smoke and direction-of-effect evidence only; two replicates do not support performance, robustness, or cross-engine claims"
+  },
+  "decision_policy": {
+    "raw_values_authoritative": true,
+    "rounded_values_for_display_only": true,
+    "no_posthoc_success_thresholds": true,
+    "implementation_may_pass_without_performance_claim": true,
+    "ui_release": "withheld until a larger prospectively registered anchor-proportion, contamination, sparse-connectivity, bias, and cross-engine study"
+  }
+}

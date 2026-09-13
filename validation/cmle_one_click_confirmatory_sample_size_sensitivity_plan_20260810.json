@@ -1,0 +1,108 @@
+{
+  "registration_status": "prospective_before_confirmatory_sample_size_sensitivity_implementation; no_human_data; no_sample_size_selected",
+  "registered_date": "2026-08-10",
+  "study_id": "cmle_one_click_confirmatory_sample_size_sensitivity_v1",
+  "purpose": "Quantify exact-binomial pass probability, dependence-robust 12-cell assurance, attrition assurance, approximate cluster design effects, and blocked-mechanism exposure before a future protocol chooses a confirmatory minimum valid n.",
+  "parent_identity": {
+    "mfrm_app/cmle_one_click_confirmatory_gate.py": "10627825fabdaf571ca9bafe961360e69f1df81e8ecae761dc15869d752ae3e1",
+    "tests/test_cmle_one_click_confirmatory_gate.py": "4c7340fa844e0ff7ddb15ddc16e45e1937601659352c5306db05eefe03aa766e",
+    "validation/cmle_one_click_versioned_confirmatory_gate_plan_20260810.json": "f367d943b36496c2df3168cf2e414d86da50b702fe299e8d273f12a68ba0b4d0",
+    "validation/cmle_one_click_versioned_confirmatory_gate_20260810/decision.json": "916d5227c1b87aa26eef19f7a2c3ed3a2b139cd4f9e870f64b6110eddc044ee6",
+    "validation/cmle_one_click_versioned_confirmatory_gate_20260810/wilson_candidate_n_arithmetic.csv": "3a354ce51808d3a77f4d0682c65bcb439fea46036f308993fc59205fee390046",
+    "validation/cmle_one_click_versioned_confirmatory_gate_20260810/directional_dangerous_error_rules.csv": "1ad7c594f5d4364fd13db579416bdf9bef9527893b4843ac28dc44a9c2f0f065"
+  },
+  "fixed_gate": {
+    "primary": "One-sided 95% Wilson upper bound strictly below 0.10 in all six directional domains separately within English and Japanese.",
+    "cell_count": 12,
+    "familywise_sensitivity": "Bonferroni one-sided 1-0.05/12 Wilson bound.",
+    "decision_input": "Integer dangerous-error counts and unrounded binary64 bounds.",
+    "unchanged": "This sensitivity study cannot change the gate after inspecting its results."
+  },
+  "exact_binomial_pass_probability": {
+    "definition": "For fixed true dangerous-error probability p and valid eligible n, compute P[X <= k(n)] for X~Binomial(n,p), where k(n) is the largest integer count whose registered Wilson upper bound is strictly below 0.10.",
+    "true_error_probabilities": [0.0, 0.01, 0.025, 0.05, 0.075, 0.10],
+    "candidate_valid_n": [24, 25, 30, 40, 50, 75, 100, 150, 200, 300, 500],
+    "confidence_schemes": ["primary_per_cell", "bonferroni_12_cell_sensitivity"],
+    "cell_probability_targets": [0.80, 0.90, 0.95],
+    "search_max_n": 5000,
+    "method": "Log-space exact binomial CDF with independent small-n direct-sum audit.",
+    "interpretation": "Pass probability is operating behavior under an assumed p, not power against a scientifically validated alternative."
+  },
+  "twelve_cell_assurance": {
+    "independence_projection": "For a common marginal cell-pass probability q, report q^12 as an explicitly optimistic/assumption-dependent projection.",
+    "dependence_robust_lower_bound": "Report max(0, 1-12*(1-q)) from the union bound without assuming independence among cell pass events.",
+    "joint_targets": [0.80, 0.90, 0.95],
+    "search_rule": "Find the first n up to 5000 whose union-bound lower assurance meets the target for each assumed p; report unavailable rather than extrapolate.",
+    "language": "No pooled-language probability or equivalence claim."
+  },
+  "attrition_assurance": {
+    "target_valid_n": [25, 50, 75, 100, 150, 200, 300, 500],
+    "retention_probabilities": [0.95, 0.90, 0.80],
+    "assurance_targets": [0.90, 0.95, 0.99],
+    "definition": "Find the minimum planned slots N such that P[Binomial(N, retention) >= target valid n] meets the assurance target.",
+    "interpretation": "Independent homogeneous retention is an arithmetic sensitivity assumption, not evidence that invalidity or attrition is random."
+  },
+  "cluster_sensitivity": {
+    "average_cluster_sizes": [1, 5, 10, 20],
+    "intraclass_correlations": [0.0, 0.01, 0.05, 0.10],
+    "formula": "DesignEffect = 1 + (average cluster size - 1) * ICC; nominal n = ceil(effective target n * DesignEffect).",
+    "effective_targets": [25, 50, 75, 100, 150, 200],
+    "interpretation": "This is a heuristic variance-inflation sensitivity, not an exact correction to the Wilson/binomial gate and not a substitute for cluster-aware design/analysis."
+  },
+  "blocked_mechanism_heterogeneity": {
+    "mechanisms": [
+      "binary_conditional_support_boundary",
+      "rsm_structurally_disconnected",
+      "invalid_missing_score_column"
+    ],
+    "allocation": "Rotate blocked mechanisms as evenly as possible within language.",
+    "candidate_slots_per_language": [25, 50, 75, 100, 150, 200, 300, 500],
+    "risk": "The registered combined blocked-primary false-green and invented-score cells can mask a high error rate in one mechanism.",
+    "report": "Retain mechanism exposure counts and indicate whether each mechanism independently reaches candidate n values 25, 50, and 75. This is a heterogeneity warning, not a newly activated primary gate."
+  },
+  "selection_policy": {
+    "current_decision": "No confirmatory minimum valid n or planned recruitment n is selected in this study.",
+    "future_registration_must_choose": [
+      "assumed dangerous-error rates or a defensible range",
+      "per-cell and joint assurance target",
+      "whether primary or familywise-sensitivity planning governs n",
+      "attrition/invalidity allowance and handling",
+      "moderator/site clustering and analysis",
+      "blocked-mechanism heterogeneity protection",
+      "minimum proficiency and recruitment strata",
+      "accessibility strata and device conditions"
+    ],
+    "anti_cherry_pick": "Do not choose assumptions after human outcomes. Archive the full sensitivity surface even when a future protocol selects one row."
+  },
+  "synthetic_validation": {
+    "cases": [
+      "exact log-space binomial CDF matches direct finite sums",
+      "cell pass probability is one at p=0 only when k(n)>=0",
+      "cell pass probability is nondecreasing in k and generally increases with n away from discrete boundary jumps",
+      "union-bound assurance never exceeds the independence projection or one",
+      "minimum-n searches reproduce their target inequalities and predecessor failures",
+      "attrition assurance meets target at selected N and fails at N-1",
+      "cluster design effect equals one for m=1 or ICC=0 and increases otherwise",
+      "blocked allocation differs by at most one across mechanisms"
+    ]
+  },
+  "automated_success_gates": {
+    "identity": "All parent hashes match before execution.",
+    "binomial": "Exact/direct probability audits and edge cases pass.",
+    "surface": "All registered p x n x confidence-scheme cells are retained with raw probabilities and no selected row.",
+    "joint": "Independence and union-bound projections are separated and all registered target searches are retained, including unavailable results.",
+    "attrition": "Every registered target x retention x assurance cell passes minimality checks.",
+    "cluster": "Every registered target x cluster-size x ICC cell reproduces the stated design-effect arithmetic and remains labelled heuristic.",
+    "mechanism": "Every candidate slot count has balanced rotation with exposure difference at most one and no mechanism-specific gate activation.",
+    "selection": "MinimumValidPerCellRegistered=false, PlannedRecruitmentNSelected=false, HumanParticipants=0, and PublicSurfaceEnabled=false.",
+    "tests": "New planning tests plus selected version/gate, operations, comprehension, one-click, archive, and decision-stability tests pass."
+  },
+  "interpretation_limits": {
+    "model": "Binomial calculations assume a common fixed p within a cell; participant heterogeneity, learning, moderator effects, case effects, and selection can invalidate this simplification.",
+    "dependence": "The union bound is conservative but does not repair biased marginals. The independence projection is not a guarantee.",
+    "cluster": "The standard design-effect formula is approximate for binary endpoints and a discontinuous Wilson decision.",
+    "mechanism": "Combined blocked cells are not evidence of uniform comprehension across boundary, design, and input failures.",
+    "ethics": "Arithmetic does not provide ethics approval, recruitment authority, or consent.",
+    "public_ui": "withheld"
+  }
+}

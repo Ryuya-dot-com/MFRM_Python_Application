@@ -1,0 +1,51 @@
+{
+  "schema_version": "mfrm-cmle-wle-calibration-sensitivity-plan-v1",
+  "registered_date": "2026-08-10",
+  "registration_timing": "Before implementation of CMLE calibration-draw sensitivity or inspection of its numerical results.",
+  "purpose": "Quantify how asymptotic uncertainty in exact-CMLE free structural coefficients moves fixed-calibration Warm-WLE Person scores.",
+  "input_identity": {
+    "cmle_core_sha256": "74844d60d04b14cffc68e1de305c4b3ef34b594a3b47a4bdd680e21a6ba4e250",
+    "fixed_calibration_person_scoring_sha256": "18e0a24ade2de95cbb007045d36268a906bc7201a553a7e5a79fed32018af9f1",
+    "cmle_wle_bridge_sha256": "1238dbd87e4b603968ab0c74c3561e8d46fc11d8c90a91f36387e8bcea78573a",
+    "cmle_wle_bridge_decision_sha256": "ea58e5b786a39fa259b29b37ba797de74f2ea47d9f09a6b7e051466b793dcf70",
+    "wle_parity_decision_sha256": "5d9e98116d1772b011e192c125c9b6c5c14127a7de36051d4db2a75bdb64de0d",
+    "cmle_phase0_design_sha256": "e7ddd1c08ba430c5ba6ff55c215339f412646255c3c3c3dce9ccb1ff92114aab"
+  },
+  "method_contract": {
+    "draw_distribution": "Multivariate normal in exact-CMLE free-coordinate space with mean beta_hat and covariance_scale^2 times the fitted exact conditional-information covariance.",
+    "covariance_validation": "Require finite symmetric covariance and reject materially negative eigenvalues; clip only numerical negative eigenvalues within tolerance.",
+    "person_scoring": "Reconstruct every fit-sample row/category CMLE log kernel for each draw and solve the same fixed-calibration Warm adjusted score.",
+    "draw_interval": [0.025, 0.5, 0.975],
+    "reported_dispersion": "CalibrationDrawSD and calibration-draw quantiles; not a confidence interval.",
+    "quadrature_sensitivity": "sqrt(BaselineConditionalWLESE^2 + CalibrationDrawSD^2), labelled sensitivity only and not an inference-qualified total SE.",
+    "same_sample_dependence": "The CMLE calibration and fit-sample WLE scores reuse responses; their dependence is not propagated by independent normal draws.",
+    "maximum_draws": 10000,
+    "maximum_row_draw_work": 5000000,
+    "random_seed_required": true
+  },
+  "validation_matrix": {
+    "models": ["RSM", "PCM"],
+    "include_exact_extremes": true,
+    "primary_draws": 2000,
+    "primary_seed": 20260810,
+    "covariance_scales": [0.5, 1.0, 2.0],
+    "baseline_bridge_max_abs_difference": 1e-12,
+    "zero_scale_max_abs_calibration_draw_sd": 1e-12,
+    "same_seed_max_abs_difference": 0.0,
+    "all_draw_person_scores_status_ok": true,
+    "all_extreme_draw_scores_finite": true,
+    "monotone_scale_median_calibration_draw_sd": true
+  },
+  "scope_boundaries": {
+    "inferential_total_se": false,
+    "confidence_or_credible_interval": false,
+    "conditional_or_nonparametric_bootstrap": false,
+    "new_person_independent_calibration_sample": false,
+    "new_or_unseen_virtual_units": false,
+    "anchor_uncertainty": false,
+    "gpcm": false,
+    "streamlit_integration": false,
+    "automatic_estimator_switch": false,
+    "public_performance_claim": false
+  }
+}

@@ -1,0 +1,26 @@
+{
+  "schema_version": "known_assignment_facets_isolated_temp_plan_v1",
+  "status": "frozen_before_control_execution",
+  "registered_date": "2026-08-11",
+  "trigger_result": "validation/kafp_official_example_20260811/result.json",
+  "trigger_result_sha256": "73ed5ff4b13b51a1c11095cc7c7444a3c747b3fbb0f0e6138cfd904ef03ca067",
+  "purpose": "Test the official temporary-file troubleshooting hypothesis without deleting or modifying the user's existing Windows temporary files.",
+  "facets_executable": "C:/Facets/Facets.exe",
+  "facets_executable_sha256": "dfb0afb0faa18f026d1b3b4175f22e42cc3764430eb83cbd368c7a572b3593a1",
+  "official_example": "C:/Facets/examples/Kct.txt",
+  "official_example_sha256": "31e92a328fe4820ec19dc1b7103b1be0d02b7a205012b0c94ccfe55c5a35c4a6",
+  "execution": {
+    "work_root": "fresh OS temporary directory",
+    "process_environment_change": "TEMP and TMP point to a new empty child directory for this FACETS process only",
+    "existing_temp_files_deleted": false,
+    "timeout_seconds": 120,
+    "launch_path": "BATCH=YES with the same CREATE_NO_WINDOW behavior as registered calibration",
+    "specification_change": "none; the bundled file is copied byte-for-byte",
+    "retained_output": "validation/kafp_isolated_temp_20260811"
+  },
+  "decision_rule": {
+    "pass": "return code 0 and a nonempty report",
+    "fail": "temporary-file isolation is insufficient; do not execute supplemental calibration or read preflight endpoints"
+  },
+  "claim_boundary": "External-engine availability diagnostic only; it neither replaces a calibration pair nor reads a scientific endpoint."
+}

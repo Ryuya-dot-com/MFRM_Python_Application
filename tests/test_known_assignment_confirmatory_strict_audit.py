@@ -145,7 +145,6 @@ def test_r_source_hash_map_contract_is_exact(observed: dict[str, str]) -> None:
         audit._require_exact_keys(observed, audit.R_RAW_SOURCE_FILES, "R raw source hash map")
 
 
-@pytest.mark.retained_evidence
 def test_facets_pair_metrics_reject_fractional_tries_and_bad_replay() -> None:
     study = audit.DEFAULT_STUDY_DIR
     work = study / "work" / "00048"
@@ -210,7 +209,6 @@ def test_publish_write_failure_preserves_original_error_and_cleans_partial(
     not audit.REGISTRATION_PATH.is_file(),
     reason="Strict-audit execution registration is created only after unit tests pass",
 )
-@pytest.mark.retained_evidence
 def test_registered_kac200_bundle_passes_strict_audit_without_publication(
     tmp_path: Path,
 ) -> None:

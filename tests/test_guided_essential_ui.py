@@ -931,7 +931,7 @@ def test_guided_export_share_preflight_help_table_documents_share_boundaries():
 
 
 def test_guided_report_export_renders_reproducibility_guardrail():
-    source = inspect.getsource(app._render_guided_report_export_section)
+    source = inspect.getsource(app._render_guided_report_review_details)
 
     assert "build_report_ready_summary_panel(" in source
     assert "guided.report_ready_summary_heading" in source
@@ -984,7 +984,9 @@ def test_guided_report_export_renders_reproducibility_guardrail():
     assert "guided.claim_trace_heading" in source
     assert "guided_export_share_preflight_table(" in source
     assert "guided.export_preflight_heading" in source
-    assert "show_report_section(" in source
+    entry = inspect.getsource(app._render_guided_report_export_section)
+    assert "_render_guided_report_review_details(" in entry
+    assert "show_report_section(" in entry
 
 
 def test_help_section_renders_reproducibility_guardrail_reference():

@@ -199,6 +199,55 @@ not only by JSON key equality.
 - Added regression tests for the policy, privacy severity, onboarding hierarchy,
   and setup/result progressive disclosure.
 
+## Report & Export revision — 2026-09-12
+
+The default export entry previously placed report summaries, several audience
+boards, editable checklists, claim traces, and nested report tabs before the
+document and data downloads. Users had to understand the internal reporting
+structure before saving a file.
+
+The entry now starts with three tasks: **Create a report**, **Save tables &
+figures**, and **Review checks**. The report task shows one format choice and
+one download button: PDF for reading/printing, Word for editing, or HTML for
+browser viewing. Only the selected format is built. Results text is optional;
+methods, claim guidance, work notes, and the legacy reporting tools are explicit
+choices under Review checks. Checks open as readable action/evidence sections,
+with the highest-priority issue open first; long actions are not clipped in a
+wide grid. Individual CSV export uses a searchable table selector instead of a
+separate button for every table.
+
+The inference hold and publication checks remain visible before download.
+Unavailable check results are identified explicitly. The existing privacy
+filter for tables remains enabled by default; the separate report document
+discloses that its English text and individual results need review before
+sharing. Full result content now determines document cache reuse, so a change
+inside a same-sized table invalidates the saved document. Document and single
+CSV downloads do not rerun the app.
+
+AppTest covers both locales, each task, opt-in advanced material, free-SD MML
+holds, a blocked or unavailable publication check, format-specific generation,
+same-shape content changes, recovery after export failure, and removing a
+selected person-level CSV when public export is enabled again. The table
+selector starts with the analysis summary when available.
+
+Validation: **150 tests passed**, covering the new interactions and the existing
+export, readiness, publication-figure, and locale suites. In a local Chrome
+152.0.7977.83 session, the built-in 960-observation RSM/JMLE example retained
+fingerprint `067a6d8d` across report tasks and document formats. PDF, DOCX, HTML,
+and the selected summary CSV were downloaded and their file content checked.
+The default document task was visually checked at desktop width and at
+400/320 CSS pixels in English and at 320 pixels in Japanese. The Japanese
+check details were also inspected at 320 pixels. These views had no document
+or main-panel horizontal overflow. These focused checks do not constitute acceptance of the separate
+browser accessibility protocol or a first-time-user study. The diagnostic
+evidence wording itself remains English; the new task and output controls
+support both English and Japanese.
+
+Follow-up observed during browser review: the existing lightweight language
+switch preserves the fitted result but can return the section selector to
+Start after redraw. Retaining the user's location belongs in the shared
+navigation work below; this revision does not claim to resolve that behavior.
+
 ## Long-term implementation sequence
 
 1. Execute the versioned browser matrix for keyboard/focus acceptance and

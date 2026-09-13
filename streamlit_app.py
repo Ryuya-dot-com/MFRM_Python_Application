@@ -28216,12 +28216,7 @@ def render_quick_results_download(
         st.markdown(
             f"##### Quick download — all {len(frames)} result tables in one click"
         )
-        st.caption(
-            "FACETS-style bundle: Summary, Measures, Reliability, Fit, "
-            "PCA, and Bias tables in a single ZIP. For a publication document, "
-            "use **Report → Exports**. For every CSV, figure, Python script, and "
-            "config file, use the **Downloads** tab."
-        )
+        st.caption(t("guided.export_quick_pointer"))
         c1, c2 = st.columns([1, 1])
         with c1:
             try:
@@ -30974,18 +30969,99 @@ def _render_guided_figures_section(
 
 
 def _render_guided_report_export_section(
-    result: dict,
-    diagnostics: dict,
-    report_tables: dict,
-    scorefile: pd.DataFrame,
-    residuals: pd.DataFrame,
-    bias_results: dict | None,
-    all_bias_results: dict | None,
-    *,
-    generate_figures: bool,
+    result: dict, diagnostics: dict, report_tables: dict,
+    scorefile: pd.DataFrame, residuals: pd.DataFrame,
+    bias_results: dict | None, all_bias_results: dict | None,
+    *, generate_figures: bool,
 ) -> None:
+    """One export task at a time; detailed work notes are optional."""
     st.subheader(t("guided.report_export_subheader"))
     st.caption(t("guided.report_export_caption"))
+    labels = {
+        "document": t("guided.export_task_document"),
+        "files": t("guided.export_task_files"),
+        "review": t("guided.export_task_review"),
+    }
+    task = st.segmented_control(
+        t("guided.export_task_label"), options=list(labels), default="document",
+        format_func=lambda value: labels[value], key="guided_export_task", width="stretch",
+    ) or "document"
+    gate = _safe_guided_evidence_frame(build_publication_gate_summary, result, diagnostics, all_bias_results or {})
+    status = None
+    if not gate.empty and {"GateArea", "GateStatus"}.issubset(gate.columns):
+        overall = gate.loc[gate["GateArea"].eq("Overall manuscript gate"), "GateStatus"]
+        if not overall.empty:
+            status = str(overall.iloc[0])
+    if _free_sd_mml_inference_withheld(result.get("config")) or status == "Not ready":
+        st.warning(t("guided.export_state_hold"))
+    elif status is None:
+        st.warning(t("guided.export_review_unavailable"))
+    elif status == "Ready":
+        st.caption(t("guided.export_state_draft"))
+    else:
+        st.info(t("guided.export_state_review"))
+
+    if task == "document":
+        _render_publication_document_section(result, diagnostics, all_bias_results)
+        if st.checkbox(t("guided.export_text_preview"), key="guided_export_text_preview"):
+            simulation_frames = current_custom_simulation_sparse_export_frames()
+            draft = generate_report_ready_apa_results_draft(
+                result, diagnostics, all_bias_results=all_bias_results or {}, bias_results=bias_results,
+                simulation_sparse_context=simulation_frames.get(
+                    "custom_simulation_sparse_reporting_context", pd.DataFrame()),
+                simulation_settings=simulation_frames.get(
+                    "custom_simulation_settings", pd.DataFrame()),
+            )
+            st.markdown(draft)
+            st.download_button(t("guided.apa_results_draft_download"), draft.encode("utf-8"),
+                "apa_results_paragraph_draft.md", "text/markdown", key="dl_guided_apa_results_paragraph_draft_md")
+    elif task == "files":
+        _render_downloads(result, diagnostics, report_tables, scorefile, residuals,
+            bias_results, all_bias_results=all_bias_results or {}, generate_figures=generate_figures)
+    else:
+        st.subheader(t("guided.export_review_heading"))
+        st.caption(t("guided.export_review_caption"))
+        if not gate.empty and {"GateArea", "GateStatus"}.issubset(gate.columns):
+            detail = gate.loc[gate["GateArea"].ne("Overall manuscript gate")].copy()
+            if detail.empty:
+                st.info(t("guided.export_review_empty"))
+            else:
+                for number, (_, row) in enumerate(detail.iterrows(), start=1):
+                    with st.expander(f"{number}. {row['GateArea']} · {row['GateStatus']}", expanded=number == 1):
+                        st.markdown(f"**{t('guided.export_review_action')}**")
+                        st.write(str(row.get("ManuscriptAction", "")))
+                        st.markdown(f"**{t('guided.export_review_evidence')}**")
+                        st.write(str(row.get("Evidence", "")))
+        else:
+            st.info(t("guided.export_review_unavailable"))
+        resources = {
+            "none": t("guided.export_resource_none"),
+            "claims": t("guided.export_resource_claims"),
+            "methods": t("guided.export_resource_methods"),
+            "template": t("guided.export_resource_template"),
+            "work_notes": t("guided.export_resource_work_notes"),
+            "all_panels": t("guided.export_resource_all_panels"),
+        }
+        resource = st.selectbox(t("guided.export_resources"), list(resources),
+            format_func=lambda value: resources[value], key="guided_export_resource")
+        if resource == "claims":
+            _render_manuscript_claim_guide_section(result, diagnostics, all_bias_results)
+        elif resource == "methods":
+            _render_method_appendix_section(result, diagnostics, all_bias_results)
+        elif resource == "template":
+            _render_manuscript_template_section(result, diagnostics, all_bias_results)
+        elif resource == "work_notes":
+            _render_guided_report_review_details(result, diagnostics, bias_results, all_bias_results)
+        elif resource == "all_panels":
+            show_report_section(result, diagnostics, bias_results=bias_results,
+                all_bias_results=all_bias_results or {}, force_full=True)
+
+
+def _render_guided_report_review_details(
+    result: dict, diagnostics: dict, bias_results: dict | None = None,
+    all_bias_results: dict | None = None,
+) -> None:
+    """Supporting work notes, rendered only when explicitly selected."""
     report_ready_summary = build_report_ready_summary_panel(
         result,
         diagnostics,
@@ -31589,30 +31665,6 @@ def _render_guided_report_export_section(
         width="stretch",
         hide_index=True,
     )
-    force_full_report = st.checkbox(
-        t("guided.show_full_report"),
-        value=False,
-        key="guided_show_full_report",
-        help=t("guided.show_full_report_help"),
-    )
-    show_report_section(
-        result,
-        diagnostics,
-        bias_results=bias_results,
-        all_bias_results=all_bias_results or {},
-        force_full=force_full_report,
-    )
-    with st.expander(t("guided.downloads_expander"), expanded=False):
-        _render_downloads(
-            result,
-            diagnostics,
-            report_tables,
-            scorefile,
-            residuals,
-            bias_results,
-            all_bias_results=all_bias_results or {},
-            generate_figures=generate_figures,
-        )
 
 
 def _render_guided_learn_section() -> None:
@@ -36989,125 +37041,50 @@ def build_publication_html_bytes(
 # ---------------------------------------------------------------------------
 
 def _render_publication_document_section(
-    result: dict,
-    diagnostics: dict,
-    all_bias_results: dict | None = None,
+    result: dict, diagnostics: dict, all_bias_results: dict | None = None,
 ) -> None:
-    """Render the download buttons for the Word / PDF / HTML publication docs."""
-    st.subheader("Publication Document")
-    st.caption(
-        "Download a manuscript-ready document combining the auto-generated "
-        "abstract, an exhaustive Methods section, results tables, embedded "
-        "figures, and an APA 7 reference list. Choose the format that fits "
-        "your workflow: Word for further editing, PDF for sharing, HTML for web."
-    )
+    """Generate only the selected document format, keeping current-run bytes."""
+    import pickle
 
-    # v0.2.10-beta: one-click downloads for all three formats. Each
-    # format is built lazily on first entry to this tab and cached in
-    # session_state keyed by a fingerprint of the current run; subsequent
-    # sidebar reruns reuse the cached bytes so only genuinely new runs
-    # trigger a rebuild. The PDF button is promoted to `type="primary"`
-    # because the user explicitly asked for the PDF to be the easy path.
-
-    # Fingerprint the current run so cache invalidates only when the
-    # underlying results actually change, not on every sidebar rerun.
+    st.subheader(t("guided.export_document_heading"))
+    st.caption(t("guided.export_document_caption"))
+    formats = {
+        "pdf": ("PDF", "pdf", "application/pdf", build_publication_pdf_bytes),
+        "word": ("Word", "docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", build_publication_word_bytes),
+        "html": ("HTML", "html", "text/html", build_publication_html_bytes),
+    }
+    format_labels = {kind: t(f"guided.export_format_{kind}") for kind in formats}
+    kind = st.radio(t("guided.export_format_label"), list(formats),
+        format_func=lambda value: format_labels[value],
+        horizontal=True, key="publication_doc_format")
+    label, extension, mime, builder = formats[kind]
+    st.caption(t(f"guided.export_format_{kind}_help"))
+    # Hash full content: row counts and truncated DataFrame reprs can keep stale reports.
     try:
-        _run_fp = stable_json_fingerprint({
-            "config": result.get("config", {}),
-            "prep": result.get("prep", {}),
-            "summary_len": len(result.get("summary", pd.DataFrame())),
-            "measures_len": len(diagnostics.get("measures", pd.DataFrame())),
-        })
+        run_fp = hashlib.sha256(pickle.dumps(
+            (result, diagnostics, all_bias_results, st.session_state.get("lang", DEFAULT_LANG)),
+            protocol=5,
+        )).hexdigest()
     except Exception:
-        _run_fp = f"no_fp_{id(result)}"
-
-    def _cached_build(
-        label: str, kind: str, builder, allow_runtime_error: bool = True,
-    ) -> tuple[bytes | None, str | None]:
-        """Build document bytes or pull them from session_state cache."""
-        cache_key = f"_publication_doc_{kind}_bytes"
-        fp_key = f"_publication_doc_{kind}_fp"
-        if (
-            cache_key in st.session_state
-            and st.session_state.get(fp_key) == _run_fp
-        ):
-            return st.session_state[cache_key], None
+        run_fp = None  # Unserializable inputs are rebuilt rather than reusing stale bytes.
+    cache_key = f"_publication_doc_{kind}_bytes"
+    fp_key = f"_publication_doc_{kind}_fp"
+    data = st.session_state.get(cache_key) if run_fp is not None and st.session_state.get(fp_key) == run_fp else None
+    if data is None:
         try:
-            with st.spinner(f"Building {label}…"):
+            with st.spinner(t("guided.export_document_building", format=label)):
                 data = builder(result, diagnostics, all_bias_results)
             st.session_state[cache_key] = data
-            st.session_state[fp_key] = _run_fp
-            return data, None
-        except RuntimeError as exc:
-            if allow_runtime_error:
-                return None, f"{label} export unavailable: {exc}"
-            raise
-        except Exception as exc:  # pragma: no cover
-            return None, f"{label} build failed: {exc}"
-
-    col_w, col_p, col_h = st.columns(3)
-
-    with col_w:
-        word_bytes, word_err = _cached_build(
-            "Word", "word", build_publication_word_bytes,
-        )
-        if word_bytes is not None:
-            st.download_button(
-                "Download Word (.docx)",
-                data=word_bytes,
-                file_name="mfrm_publication_document.docx",
-                mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-                key="publication_doc_word_dl",
-                use_container_width=True,
-                help="Editable manuscript with tables + embedded figures.",
-            )
-        elif word_err:
-            st.caption(str(word_err))
-
-    with col_p:
-        pdf_bytes, pdf_err = _cached_build(
-            "PDF", "pdf", build_publication_pdf_bytes,
-        )
-        if pdf_bytes is not None:
-            st.download_button(
-                "Download PDF (with plots)",
-                data=pdf_bytes,
-                file_name="mfrm_publication_document.pdf",
-                mime="application/pdf",
-                key="publication_doc_pdf_dl",
-                use_container_width=True,
-                type="primary",
-                help=(
-                    "Letter-size PDF with Methods, tables, embedded figures "
-                    "(Wright map, Fit scatter, Category probability, Facet "
-                    "distribution), and APA 7 references."
-                ),
-            )
-        elif pdf_err:
-            st.caption(str(pdf_err))
-
-    with col_h:
-        html_bytes, html_err = _cached_build(
-            "HTML", "html", build_publication_html_bytes,
-        )
-        if html_bytes is not None:
-            st.download_button(
-                "Download HTML",
-                data=html_bytes,
-                file_name="mfrm_publication_document.html",
-                mime="text/html",
-                key="publication_doc_html_dl",
-                use_container_width=True,
-                help="Self-contained HTML page (no external assets).",
-            )
-        elif html_err:
-            st.caption(str(html_err))
-
-    st.caption(
-        "All three formats share the same narrative source — content "
-        "is identical. Word = editable, PDF = print-ready (with embedded "
-        "plots), HTML = self-contained and works offline."
-    )
+            st.session_state[fp_key] = run_fp
+        except Exception as exc:
+            st.error(t("guided.export_document_failed", format=label))
+            with st.expander(t("guided.export_error_details")):
+                st.code(str(exc), language=None)
+            return
+    st.caption(t("guided.export_document_language"))
+    st.download_button(t("guided.export_document_download", format=label), data=data,
+        file_name=f"mfrm_publication_document.{extension}", mime=mime,
+        key=f"publication_doc_{kind}_dl", type="primary", on_click="ignore", use_container_width=True)
 
 
 _ESTIMATION_ERROR_PATTERNS: list[tuple[str, tuple[str, str, str]]] = [
@@ -64225,12 +64202,8 @@ def _render_downloads(
     st.subheader(t("downloads.subheader"))
     st.caption(t("downloads.intro_caption"))
 
-    # Prominent cross-reference: the publication-ready Word / PDF / HTML
-    # export lives under Report → Exports → Publication Document.
-    # Users who open Downloads tab expecting a manuscript file should be
-    # pointed there explicitly.
-    with st.container(border=True):
-        st.markdown(t("downloads.manuscript_pointer_markdown"))
+    # Keep the document route visible for users arriving here from older links.
+    st.caption(t("downloads.manuscript_pointer_markdown"))
 
     download_panel_labels = {
         "data_tables": t("downloads.tab_data_tables"),
@@ -64247,7 +64220,6 @@ def _render_downloads(
         width="stretch",
     )
     selected_download_panel = selected_download_panel or "data_tables"
-    st.caption(t("downloads.panel_select_caption"))
     public_export_mode = st.checkbox(
         t("downloads.public_export_mode_label"),
         value=True,
@@ -64345,16 +64317,14 @@ def _render_downloads(
 
         # --- Individual CSVs in expander ---
         with st.expander(t("downloads.tables_individual_expander_template", n=len(download_frames))):
-            cols = st.columns(3)
-            for idx, (name, df) in enumerate(download_frames.items()):
-                with cols[idx % 3]:
-                    st.download_button(
-                        f"{name}.csv ({len(df)} rows)",
-                        data=to_csv_bytes(df),
-                        file_name=f"mfrm_{name}.csv",
-                        mime="text/csv",
-                        key=f"dl_csv_{name}",
-                    )
+            table_names = list(download_frames)
+            name = st.selectbox(t("guided.export_table_select"), table_names,
+                index=table_names.index("summary") if "summary" in table_names else 0, key="download_single_table")
+            if name is not None:
+                df = download_frames[name]
+                st.caption(t("guided.export_table_rows", n=len(df)))
+                st.download_button(t("guided.export_table_download"), data=to_csv_bytes(df),
+                    file_name=f"mfrm_{name}.csv", mime="text/csv", key="dl_selected_csv", on_click="ignore")
 
     # ================================================================
     # Sub-tab 1: Figures

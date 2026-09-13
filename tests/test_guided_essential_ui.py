@@ -219,13 +219,13 @@ def test_guided_diagnostics_selector_lazy_renders_one_panel():
     assert list(options["PanelId"]) == [
         "fit_details",
         "dimensionality",
-        "wright_map",
-        "visuals",
         "bias_interaction",
         "categories_steps",
         "agreement",
         "facet_dashboard",
         "prediction_simulation",
+        "wright_map",
+        "visuals",
     ]
     assert list(options.columns) == [
         "PanelId",

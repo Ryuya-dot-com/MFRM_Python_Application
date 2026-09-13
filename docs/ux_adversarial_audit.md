@@ -248,6 +248,46 @@ switch preserves the fitted result but can return the section selector to
 Start after redraw. Retaining the user's location belongs in the shared
 navigation work below; this revision does not claim to resolve that behavior.
 
+## Residual PCA and bias navigation revision — 2026-09-13
+
+The diagnostic selector previously placed Wright Map and Visuals before bias,
+and labelled residual PCA only as Dimensionality. More seriously, recommended
+actions changed the top-level section without selecting the named diagnostic.
+A PCA recommendation could therefore open fit details or the last-used view.
+The PCA page also preferred the first rater facet, although First Read reports
+the overall residual matrix.
+
+The existing selector now starts with model fit, residual PCA, bias, and
+categories. Recommended actions select their diagnostic directly; a PCA action
+opens the overall scope used by First Read. Explicit facet selection remains
+available. Stable panel IDs and fitted-result reuse are preserved. Programmatic
+navigation no longer competes with widget defaults in Session State.
+
+PCA starts with a short scope explanation and the plot. The reading guide and
+optional DIMTEST controls are closed disclosures below the existing evidence.
+The bilingual guide distinguishes residual variance from total variance and
+avoids treating fixed eigenvalue cutoffs as proof of unidimensionality; see the
+[Winsteps residual-dimensionality discussion](https://www.winsteps.com/winman/dimensionality.htm).
+Overall and facet PCA use different residual aggregation and are explicitly
+distinguished. Bias starts with the pair choice and screening results; its
+technical settings explanation is inside the existing settings disclosure.
+Heatmap stars are described as an unadjusted |t| >= 2 screening flag, including
+the English contextual help, rather than multiplicity-adjusted significance.
+Estimation, screening thresholds, stability evidence, and inference holds are
+unchanged.
+
+Validation: **153 tests passed**, covering direct PCA/bias/category routing in
+both locales, overall PCA selection after a stale rater selection, fit
+preservation, lazy diagnostic rendering, locale parity, help navigation, and the existing PCA stability and
+bias inference/publication suites. A local Chrome check of the built-in
+960-observation RSM/JMLE example retained fingerprint `067a6d8d`; its recommended
+PCA destination showed the same first eigenvalue (3.74) as First Read and kept
+the stability warning. The Person x Rater bias view retained 120 cells, 24
+flagged cells, zero strong flags, and the pairwise-inference hold. Focused
+desktop and 400-CSS-pixel checks, including Japanese PCA and bias views, supplement
+AppTest; they are not acceptance of the full accessibility protocol or evidence
+from first-time users.
+
 ## Long-term implementation sequence
 
 1. Execute the versioned browser matrix for keyboard/focus acceptance and

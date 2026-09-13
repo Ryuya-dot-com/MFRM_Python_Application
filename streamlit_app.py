@@ -28842,7 +28842,7 @@ def build_first_read_guide_rows(
             "Next action": (
                 "Unidimensionality screen is stable enough for scoped reporting."
                 if status == "OK" else
-                "Open the Dimensionality tab and inspect residual PCA stability, loadings, and content."
+                "Open Diagnostics → Residual PCA and inspect stability, loadings, and content."
             ),
         })
 
@@ -30281,6 +30281,26 @@ def guided_goal_guardrail_summary_table(goal_id: str, action_plan: pd.DataFrame 
     }])
 
 
+def guided_diagnostic_panel_id_for_target(target: object) -> str | None:
+    """Resolve a diagnostic destination independently of the display language."""
+    text = str(target or "").casefold()
+    aliases = {
+        "fit_details": ("fit details", "model fit", "fit_details", "適合度"),
+        "dimensionality": ("dimensionality", "pca", "次元性"),
+        "bias_interaction": ("bias", "interaction", "バイアス", "交互作用"),
+        "categories_steps": ("categories", "steps", "カテゴリ", "ステップ"),
+        "agreement": ("agreement", "一致度"),
+        "facet_dashboard": ("facet dashboard", "facet quality", "facet 品質"),
+        "prediction_simulation": ("prediction", "simulation", "予測", "シミュレーション"),
+        "wright_map": ("wright", "yardstick"),
+        "visuals": ("visuals", "視覚化"),
+    }
+    for panel_id, labels in aliases.items():
+        if any(label in text for label in labels):
+            return panel_id
+    return None
+
+
 def guided_section_id_for_target(target: object) -> str:
     """Map a visible target label to the Essential section id."""
     text = str(target or "").strip()
@@ -30302,7 +30322,7 @@ def guided_section_id_for_target(target: object) -> str:
     keyword_map = {
         "first_read": ("first read", "first-read", "first_read", "初期確認", "最初に確認"),
         "results": ("results", "measure", "facets-style", "結果", "測定値"),
-        "diagnostics": ("diagnostic", "fit", "dimensionality", "categories", "bias", "診断", "適合", "次元", "カテゴリ", "バイアス"),
+        "diagnostics": ("diagnostic", "fit", "dimensionality", "pca", "categories", "bias", "診断", "適合", "次元", "カテゴリ", "バイアス"),
         "figures": ("figures", "figure", "wright", "yardstick", "visual", "図", "視覚"),
         "report_export": ("report", "export", "download", "publication", "readiness", "レポート", "出力", "ダウンロード", "準備"),
         "learn": ("learn", "help", "glossary", "guide", "学ぶ", "ヘルプ", "用語", "ガイド"),
@@ -30547,9 +30567,17 @@ def _render_guided_goal_router(
                 use_container_width=True,
                 type="primary" if primary else "secondary",
             ):
-                st.session_state["guided_essential_section"] = str(
-                    hub_row.get("SectionId", "start")
-                )
+                section_id = str(hub_row.get("SectionId", "start"))
+                st.session_state["guided_essential_section"] = section_id
+                if section_id == "diagnostics":
+                    target = str(hub_row.get(open_col, ""))
+                    if not primary:
+                        target += " " + detail_text
+                    panel_id = guided_diagnostic_panel_id_for_target(target)
+                    if panel_id:
+                        st.session_state["guided_diagnostics_panel"] = panel_id
+                        if panel_id == "dimensionality":
+                            st.session_state["dimensionality_panel"] = "overall"
                 st.rerun()
 
     if isinstance(action_hub, pd.DataFrame) and not action_hub.empty:
@@ -30856,7 +30884,7 @@ def _render_guided_diagnostics_section(
     selected_diagnostic = st.segmented_control(
         t("guided.diagnostics_select_label"),
         options=list(GUIDED_DIAGNOSTIC_PANEL_IDS),
-        default="fit_details",
+        default=None if "guided_diagnostics_panel" in st.session_state else "fit_details",
         format_func=_guided_diagnostic_panel_label,
         key="guided_diagnostics_panel",
         help=t("guided.diagnostics_select_help"),
@@ -31735,13 +31763,13 @@ GUIDED_SECTION_READING_ORDER_KEYS = {
 GUIDED_DIAGNOSTIC_PANEL_I18N_KEYS = {
     "fit_details": "main_tabs.fit_details",
     "dimensionality": "main_tabs.dimensionality",
-    "wright_map": "main_tabs.wright_map",
-    "visuals": "main_tabs.visuals",
     "bias_interaction": "main_tabs.bias_interaction",
     "categories_steps": "main_tabs.categories_steps",
     "agreement": "main_tabs.agreement",
     "facet_dashboard": "main_tabs.facet_dashboard",
     "prediction_simulation": "main_tabs.prediction_simulation",
+    "wright_map": "main_tabs.wright_map",
+    "visuals": "main_tabs.visuals",
 }
 
 
@@ -31873,7 +31901,7 @@ def _render_guided_essential_tabs(
         selected_section = st.segmented_control(
             t("guided.section_select_label"),
             options=list(GUIDED_SECTION_IDS),
-            default="start",
+            default=None if "guided_essential_section" in st.session_state else "start",
             format_func=_guided_section_label,
             key="guided_essential_section",
             help=t("guided.section_select_help"),
@@ -32092,36 +32120,19 @@ def show_dimensionality_section(diagnostics: dict, facet_cols: list[str], core: 
         st.warning(t("dimensionality.warning_pca_failed_template", reason=reason))
         return
 
-    st.markdown(t("dimensionality.interpretation_main"))
-
-    # Determine default panel -- prefer first rater facet if available.
-    # ``tab_keys`` are stable identifiers used for routing (the "overall"
-    # key drives the mode='overall' branch). ``tab_display`` are the
-    # translated labels shown in the selector; the two arrays stay aligned
-    # by index so tab_keys[i] always describes tab_display[i].
-    rater_facets = [f for f in facet_cols if "rater" in f.lower() or "judge" in f.lower()]
+    st.subheader(t("main_tabs.dimensionality"))
+    st.caption(t("dimensionality.first_read_caption"))
     tab_keys = ["overall"] + facet_cols
-    tab_display = [t("dimensionality.tab_label_overall")] + facet_cols
-    default_idx = (tab_keys.index(rater_facets[0]) if rater_facets else 0)
-
-    # Build tab list, put default first by reordering both arrays in lockstep.
-    if default_idx > 0:
-        order = [default_idx] + [i for i in range(len(tab_keys)) if i != default_idx]
-    else:
-        order = list(range(len(tab_keys)))
-    reordered_keys = [tab_keys[i] for i in order]
-    label_by_key = {tab_keys[i]: tab_display[i] for i in range(len(tab_keys))}
-    if st.session_state.get("dimensionality_panel") not in reordered_keys:
+    label_by_key = {"overall": t("dimensionality.tab_label_overall")}
+    label_by_key.update({facet: facet for facet in facet_cols})
+    if st.session_state.get("dimensionality_panel") not in tab_keys:
         st.session_state.pop("dimensionality_panel", None)
     selected_dimensionality_panel = st.selectbox(
-        t("dimensionality.panel_select_label"),
-        options=reordered_keys,
-        index=0,
+        t("dimensionality.panel_select_label"), options=tab_keys,
+        index=None if "dimensionality_panel" in st.session_state else 0,
         format_func=lambda key: label_by_key.get(str(key), str(key)),
-        key="dimensionality_panel",
-        help=t("dimensionality.panel_select_help"),
-    )
-    selected_dimensionality_panel = selected_dimensionality_panel or reordered_keys[0]
+        key="dimensionality_panel", help=t("dimensionality.panel_select_help"),
+    ) or "overall"
     st.caption(t("dimensionality.panel_select_caption"))
     if selected_dimensionality_panel == "overall":
         _show_pca_panel(pca, mode="overall", core=core, diagnostics=diagnostics, facet_cols=facet_cols)
@@ -32137,8 +32148,11 @@ def show_dimensionality_section(diagnostics: dict, facet_cols: list[str], core: 
 
     # Nonparametric DIMTEST (Stout 1987; Nandakumar & Yu 1996),
     # complementary to the residual PCA above.
+    with st.expander(t("dimensionality.reading_guide_expander"), expanded=False):
+        st.markdown(t("dimensionality.interpretation_main"))
     result = (core or {}).get("result") if isinstance(core, dict) else None
-    render_dimtest_panel(result, diagnostics, facet_cols)
+    with st.expander(t("dimensionality.dimtest_expander"), expanded=False):
+        render_dimtest_panel(result, diagnostics, facet_cols)
 
 
 def render_dimtest_panel(
@@ -59279,18 +59293,13 @@ def show_bias_section(
         return
     tbl = bias_results["table"].copy()
 
-    st.caption(
-        "Bias estimates are conditional screening statistics. Use the DFF table "
-        "and inference audit below for multiplicity, sparse-cell, and common-scale caveats."
-    )
-
     facet_a = bias_results.get("facet_a", selected_pair.split(" x ")[0])
     facet_b = bias_results.get("facet_b", selected_pair.split(" x ")[-1])
     safe_pair_key = re.sub(r"[^A-Za-z0-9]+", "_", selected_pair).strip("_").lower() or "selected_pair"
 
     st.subheader(t("bias_interaction.dff_subheader"))
-    st.caption(t("bias_interaction.dff_caption"))
     with st.expander(t("bias_interaction.dff_settings_expander"), expanded=False):
+        st.caption(t("bias_interaction.dff_caption"))
         cols = st.columns(3)
         with cols[0]:
             dff_alpha = float(st.number_input(
@@ -72486,8 +72495,8 @@ _HELP_POPOVER_LIBRARY: dict[str, dict[str, str]] = {
         ),
         "how": (
             "• Near 0 → the pair follows additive expectation.\n"
-            "• |t| ≥ 2 → statistically significant bias for that cell.\n"
-            "• Check adjusted counts: sparse cells inflate |t|.\n"
+            "• |t| ≥ 2 → an unadjusted screening flag, not a multiplicity-adjusted decision.\n"
+            "• Check observation counts: sparse-cell estimates can be unstable.\n"
             "• Apply multiplicity correction for many cells."
         ),
         "watch": (

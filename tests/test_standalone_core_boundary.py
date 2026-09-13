@@ -558,12 +558,6 @@ def test_standalone_cli_and_self_test_registry_do_not_call_legacy_generators():
 def test_public_streamlit_routes_do_not_expose_legacy_compatibility_tools():
     source = STREAMLIT_ENTRYPOINT.read_text(encoding="utf-8")
     tree = ast.parse(source, filename=str(STREAMLIT_ENTRYPOINT))
-    functions = {
-        node.name: ast.get_source_segment(source, node) or ""
-        for node in tree.body
-        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
-    }
-
     forbidden_by_route = {
         "main": {"Posterior Viewer (upload)", "render_posterior_viewer_mode"},
         "run_facets_mode": {
@@ -581,6 +575,17 @@ def test_public_streamlit_routes_do_not_expose_legacy_compatibility_tools():
         "show_classical_dif_section": {"build_dif_validation_bundle", "mfrm_difR_crosscheck_bundle.zip"},
         "show_tutorial": {"install.packages", "TAM", "sirt", "mirt", "eRm"},
         "generate_method_appendix_text": {"functional parity target", "external-validation claims"},
+    }
+    checked_names = set(forbidden_by_route) | {
+        "render_app_scope_badges", "_draw_yardstick", "show_categories_section",
+        "python_yardstick_reproducibility_assets", "python_rating_scale_recode_assets",
+    }
+    # get_source_segment scans the complete source; extract only checked functions.
+    functions = {
+        node.name: ast.get_source_segment(source, node) or ""
+        for node in tree.body
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+        and node.name in checked_names
     }
     for function_name, forbidden_tokens in forbidden_by_route.items():
         route_source = functions[function_name]
@@ -605,6 +610,7 @@ def test_native_claim_and_visual_builders_exclude_legacy_product_rows():
         node.name: ast.get_source_segment(source, node) or ""
         for node in tree.body
         if isinstance(node, ast.FunctionDef)
+        and node.name in {"build_manuscript_claim_guide", "visual_method_evidence_table"}
     }
 
     claim_source = function_sources["build_manuscript_claim_guide"]

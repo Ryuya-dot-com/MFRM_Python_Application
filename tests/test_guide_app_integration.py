@@ -24,6 +24,7 @@ def test_landing_owns_the_page_and_offers_three_optional_routes() -> None:
         ("onboarding_quickstart", "Learn with a sample"),
         ("onboarding_dismiss", "Start with my data"),
         ("onboarding_skip_guide", "Continue without the guide"),
+        ("mfrm_home_open", "Home"),
         ("mfrm_help_open_global", "Open Help"),
     ]
     assert {radio.key for radio in at.radio} == {"lang", "app_view_density"}
@@ -112,7 +113,7 @@ def test_language_switch_preserves_the_active_sample_node_and_bindings() -> None
     assert [(metric.label, metric.value) for metric in at.metric] == [
         ("評価数", "960"),
         ("対象者数", "30"),
-        ("Facet数", "3"),
+        ("ファセット数", "3"),
     ]
 
 

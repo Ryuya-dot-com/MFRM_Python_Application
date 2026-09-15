@@ -1,0 +1,30 @@
+#!/usr/bin/env Rscript
+# Independent scalar formula: only criterion C1 changes; prior stays fixed.
+args<-commandArgs(TRUE);stopifnot(length(args)==3L,!file.exists(args[3]))
+input<-jsonlite::read_json(args[1],simplifyVector=TRUE)
+plan<-jsonlite::read_json(args[2],simplifyVector=FALSE)
+idx<-input$indices;p<-input$continuous_point;theta<-seq(-12,12,by=.1)
+r<-idx$facets$Rater+1L;t<-idx$facets$Task+1L;c<-idx$facets$Criterion+1L
+raters<-c(.35,p[2]);tasks<-c(p[3],.4-p[3]);cum<-rbind(c(0,p[6],p[6]+p[7],0),c(0,p[8],p[8]+p[9],0))
+lse<-function(v){m<-max(v);m+log(sum(exp(v-m)))}
+evaluate<-function(delta,w){
+  values<-lapply(1:32,function(person){
+    rows<-which(idx$person+1L==person);crit<-p[4:5]+c(delta,0)
+    cond<-vapply(theta,function(v){
+      logits<-outer(v+raters[r[rows]]-tasks[t[rows]]-crit[c[rows]],0:3)-cum[c[rows],,drop=FALSE]
+      logp<-logits-apply(logits,1,lse);pr<-exp(logp);ek<-as.vector(pr%*%(0:3));vk<-as.vector(pr%*%((0:3)^2))-ek^2
+      c(ll=sum(logp[cbind(seq_along(rows),idx$score_k[rows]+1L)]),
+        score=sum((ek-idx$score_k[rows])*(c[rows]==1L)),information=sum(vk*(c[rows]==1L)))
+    },numeric(3))
+    lw<-dnorm(theta,input$x[person]*p[1],exp(p[10]),log=TRUE)+log(.1)
+    mass<-lse(cond[1,]+lw);post<-exp(cond[1,]+lw-mass);es<-sum(post*cond[2,])
+    c(raw=-mass,normalized=-mass+lse(lw),gradient=-es,
+      hessian=sum(post*cond[3,])-sum(post*(cond[2,]-es)^2))
+  });v<-do.call(rbind,values)
+  list(nll=sum(w*v[,'normalized']),raw_nll=sum(w*v[,'raw']),unweighted_nll=sum(v[,'normalized']),
+       gradient=sum(w*v[,'gradient']),hessian=sum(w*v[,'hessian']))
+}
+results<-lapply(plan$points,function(x)evaluate(x$delta,unlist(x$weights)))
+roots<-lapply(plan$weights,function(w){w<-unlist(w);root<-uniroot(function(d)evaluate(d,w)$gradient,c(-2,2),tol=1e-12)$root
+  list(delta=root,value=evaluate(root,w))})
+jsonlite::write_json(list(points=results,roots=roots,R=R.version.string),args[3],digits=NA,pretty=TRUE,auto_unbox=TRUE)

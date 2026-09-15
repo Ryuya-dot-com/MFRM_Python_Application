@@ -2,6 +2,23 @@
 
 All notable changes to this standalone Streamlit distribution should be recorded here.
 
+## 0.2.18-beta — 2026-09-15
+
+- Rewrite Japanese guidance throughout setup, results, diagnostics, and export;
+  keep detailed numerical explanations behind the relevant controls.
+- Add a Home action that preserves the current data, settings, and results.
+  Display the MIT license and provide APA, BibTeX, and CFF software citations
+  for Ryuya Komuro. Report citations follow the version recorded in the fit.
+- Add current-fit comparison exports and optional offline PCM scripts for TAM
+  and ConQuest. The Streamlit application does not launch external engines.
+- Offer an on-demand, read-only fixed-SD PCM returned-point check. Optimizer
+  termination, gradient stationarity, and quadrature sensitivity remain
+  separate judgments; checking a result does not replace its estimates.
+- Retain development numerical audits and stable likelihood-difference
+  optimization helpers. These do not qualify free-SD uncertainty, establish
+  universal quadrature-order recommendations, or change the default estimator.
+  Hash-bound study outputs and source archives remain local.
+
 ## 0.2.17-beta — 2026-09-13
 
 - Publish the reviewed unified development application: simpler onboarding and

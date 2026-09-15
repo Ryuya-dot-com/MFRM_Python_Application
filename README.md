@@ -1,10 +1,14 @@
 # MFRM Streamlit
 
-Release **0.2.17-beta** publishes the reviewed unified application. The previous
-public `0.2.16-beta` history is retained; its remaining performance changes are
-tracked separately in the [development integration ledger](docs/development_integration.md).
+Release **0.2.18-beta** improves Japanese guidance, adds software citation
+downloads and a Home action that preserves the current analysis, and makes
+MML numerical checks and external-comparison exports easier to inspect.
+The [development integration ledger](docs/development_integration.md) records
+the remaining integration work and statistical qualification limits.
 
 Public app: https://mfrmpythonapplication-xodghmcghngx8cz5zmhfeg.streamlit.app
+
+[MIT License](LICENSE) · [How to cite](#citing-this-software)
 
 Standalone Python beta application for Many-Facet Rasch Model estimation in Streamlit.
 
@@ -14,7 +18,7 @@ called, imported, handed a job, or used as a public release gate.
 
 ## Status
 
-- Release status: public beta / research preview (**v0.2.17-beta**)
+- Release status: public beta / research preview (**v0.2.18-beta**)
 - Runtime engine: standalone Python
 - Primary entrypoint: `streamlit_app.py`
 - Intended use: exploratory analysis, teaching, reporting support, and research workflow prototyping
@@ -550,7 +554,7 @@ commit after a push or reboot.
 
 ## What's new in the current beta line
 
-The current app label is v0.2.17-beta. This beta line adds the v0.2.14
+The current app label is v0.2.18-beta. This beta line adds the v0.2.14
 sample-scenario and quick-results-bundle work, then layers on the
 release-readiness and UX/documentation pass documented in `CHANGELOG.md`.
 Key current-line improvements include:
@@ -1111,7 +1115,9 @@ If this directory is used as a standalone GitHub repository, the workflow will b
 
 ## License
 
-MIT License. See `LICENSE` and `LICENSE_NOTICE.md`.
+MIT License. See [LICENSE](LICENSE) and [LICENSE_NOTICE.md](LICENSE_NOTICE.md).
+In the app, open **License & citation / ライセンス・引用方法** in the sidebar.
+Third-party components retain their own licenses.
 
 Commercial use is permitted, including paid teaching, consulting, internal
 training, hosted demonstrations, and product evaluation. The app and
@@ -1124,6 +1130,43 @@ We intentionally do not use CC BY-NC because the NonCommercial restriction would
 conflict with the intended permission for commercial use. If documentation or
 teaching excerpts are reused separately, keep attribution and do not imply author
 endorsement.
+
+## Citing this software
+
+If this software contributes to a research report, please cite the version
+actually used. Citation is appreciated, not an additional MIT license condition.
+[CITATION.cff](CITATION.cff) supplies the software metadata for GitHub's citation
+menu. The app also provides a copyable reference and BibTeX/CFF downloads in
+**License & citation**, and under the manuscript template's references guidance.
+
+When the saved analysis version matches the citation metadata, manuscript
+templates and Word/PDF/HTML reports include the software citation. Standard
+result ZIPs and the manuscript binder carry `software_citation.md`,
+`mfrm_software.bib`, and `CITATION.cff`. Older or unversioned results receive
+a verification note instead of the current release's reference or metadata.
+The sidebar reference always describes the currently running app.
+
+APA-style reference for the current release:
+
+> Komuro, R. (2026). *MFRM Streamlit* (Version 0.2.18-beta) [Computer software]. https://github.com/Ryuya-dot-com/MFRM_Python_Application
+
+In-text citation: `(Komuro, 2026)`.
+
+Methods wording to complete from the saved analysis configuration:
+
+> Analyses were conducted using MFRM Streamlit (Version [version used];
+> Komuro, [release year]), with [model] and [estimation method].
+
+Report the source commit, model constraints, estimation settings, uncertainty
+method, and relevant sensitivity checks separately. Cite the statistical methods
+actually used; the software citation does not replace those references or
+establish that an analysis is valid. No software DOI has been assigned here.
+Do not substitute the current app version for an older result's recorded version.
+
+Use **Home / ホーム** in the sidebar to return to the welcome view, then
+**Return to my analysis / 現在の分析に戻る** to resume. Navigation keeps the current
+session's data, settings, and fit; it does not reset or reestimate the analysis.
+This is session retention, not a backup across browser sessions or server restarts.
 
 ## Publication Note
 

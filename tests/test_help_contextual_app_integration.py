@@ -1162,3 +1162,22 @@ def test_real_fit_scatter_help_return_preserves_fit_and_pending_triggers(
         element.value == _locale_value("ja", "help_nav.returned_status")
         for element in at.caption
     )
+
+    # Reuse the real fit to verify the new Home round trip, including a locale
+    # change and the still-pending run requests left by the Help contract.
+    at.button(key="mfrm_home_open").click().run()
+    at.radio(key="lang").set_value("en").run()
+    assert not at.exception
+    assert at.session_state["facets_mode_output"] is output_before
+    at.button(key="mfrm_home_resume").click().run()
+    assert not at.exception
+    assert calls == {"estimate": 0, "refit": 0}
+    assert at.session_state["facets_mode_output"] is output_before
+    assert app.build_result_analysis_identity(output_before["result"]).analysis_id == identity_before
+    assert at.session_state["main_results_panel"] == "fit_details"
+    assert at.session_state["fit_df_method_method"] == "both"
+    assert at.session_state["fit_df_method_cap"] == 12.5
+    assert at.session_state["misfit_top_n"] == 6
+    assert at.session_state["misfit_threshold"] == 3.0
+    assert "_facets_mode_force_rerun" not in at.session_state
+    assert "_onboarding_quickstart_fired" not in at.session_state

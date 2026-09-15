@@ -107,6 +107,19 @@ class FreeSdStationarityRun:
 
 
 @dataclass(frozen=True)
+class TwoStageFreeSdRun:
+    """Keep preliminary failures separate from any later refinement evidence."""
+
+    preliminary: FreeSdStationarityRun
+    refinement: FreeSdStationarityRun | None
+    anchor_admitted: bool
+    anchor_gradient_limit: float
+
+    def to_dict(self) -> dict[str, object]:
+        return asdict(self)
+
+
+@dataclass(frozen=True)
 class StationarityAssessment:
     """Fail-closed interpretation of a run under an explicit contract."""
 
@@ -186,6 +199,8 @@ def run_free_sd_stationarity_v2(
     options: JointPolishOptions | None = None,
     constraint_residual_function: Callable[[np.ndarray], float] | None = None,
     joint_value_gradient: JointValueGradient | None = None,
+    objective_difference: Callable[[np.ndarray], float] | None = None,
+    objective_anchor: Sequence[float] | np.ndarray | None = None,
 ) -> FreeSdStationarityRun:
     """Polish once, restart once, and retain scale-explicit diagnostics."""
 
@@ -212,6 +227,8 @@ def run_free_sd_stationarity_v2(
         sigma_bounds=(lower, upper),
         options=settings,
         joint_value_gradient=joint_value_gradient,
+        objective_difference=objective_difference,
+        objective_anchor=objective_anchor,
     )
     restart = polish_joint_free_sd(
         primary.structural_parameters,
@@ -222,6 +239,8 @@ def run_free_sd_stationarity_v2(
         sigma_bounds=(lower, upper),
         options=settings,
         joint_value_gradient=joint_value_gradient,
+        objective_difference=objective_difference,
+        objective_anchor=objective_anchor,
     )
 
     final = np.asarray(restart.joint_coordinates, dtype=float)
@@ -238,6 +257,9 @@ def run_free_sd_stationarity_v2(
         log_sigma_relative_step=half_step,
         joint_value_gradient=joint_value_gradient,
     )
+    # Only the scalar audit changes origin; its derivative is still the raw gradient.
+    if objective_difference is not None:
+        objective_h = objective_difference
     audit_h = audit_joint_gradient(
         objective_h,
         value_gradient_h,
@@ -270,8 +292,8 @@ def run_free_sd_stationarity_v2(
         primary.optimizer_success and restart.optimizer_success and finite_solution
     )
     objective_nonworsening = bool(
-        primary.final_objective <= primary.initial_objective
-        and restart.final_objective <= restart.initial_objective
+        primary.optimization_improvement >= 0
+        and restart.optimization_improvement >= 0
     )
     return FreeSdStationarityRun(
         primary_polish=primary,
@@ -287,7 +309,7 @@ def run_free_sd_stationarity_v2(
         final_projected_gradient_supnorm=float(np.max(np.abs(projected))),
         gradient_step_agreement_supnorm=float(np.max(np.abs(gradient_h - gradient_half))),
         restart_improvement_per_observation=float(
-            restart.objective_improvement / n_observations
+            restart.optimization_improvement / n_observations
         ),
         restart_displacement=float(restart.maximum_coordinate_displacement),
         constraint_residual=constraint_residual,
@@ -295,6 +317,55 @@ def run_free_sd_stationarity_v2(
         finite_solution=finite_solution,
         objective_nonworsening=objective_nonworsening,
     )
+
+
+def run_free_sd_two_stage(
+    structural_start: Sequence[float] | np.ndarray,
+    sigma_start: float,
+    value_function: ValueFunction,
+    structural_value_gradient: StructuralValueGradient,
+    *,
+    observations: float,
+    difference_factory: Callable[[np.ndarray], Callable[[np.ndarray], float]],
+    joint_value_gradient: JointValueGradient,
+    anchor_gradient_limit: float,
+    refinement_options: JointPolishOptions,
+    preliminary_options: JointPolishOptions | None = None,
+    structural_bounds: Sequence[tuple[float | None, float | None]] | None = None,
+    sigma_bounds: tuple[float, float] = (0.05, 10.0),
+    constraint_residual_function: Callable[[np.ndarray], float] | None = None,
+) -> TwoStageFreeSdRun:
+    """Two raw polishes, then two fixed-anchor polishes when admission is met.
+
+    A failed preliminary algorithm can leave a usable endpoint. Keep that failure
+    in ``preliminary`` even if ``refinement`` later passes stationarity assessment.
+    This function assigns neither stationarity nor scientific inference gates.
+    """
+    limit = float(anchor_gradient_limit)
+    if not np.isfinite(limit) or limit <= 0:
+        raise ValueError("anchor_gradient_limit must be positive and finite")
+    refinement_options.validate()
+    if not callable(difference_factory) or not callable(joint_value_gradient):
+        raise ValueError("two-stage refinement requires difference and joint-gradient callbacks")
+    common = dict(observations=observations, structural_bounds=structural_bounds,
+                  sigma_bounds=sigma_bounds, constraint_residual_function=constraint_residual_function,
+                  joint_value_gradient=joint_value_gradient)
+    preliminary = run_free_sd_stationarity_v2(
+        structural_start, sigma_start, value_function, structural_value_gradient,
+        options=preliminary_options, **common,
+    )
+    endpoint = preliminary.restart_polish
+    admitted = bool(preliminary.finite_solution and sigma_bounds[0] < endpoint.sigma < sigma_bounds[1]
+                    and endpoint.final_gradient_supnorm <= limit)
+    refinement = None
+    if admitted:
+        anchor = np.array(endpoint.joint_coordinates)
+        difference = difference_factory(anchor.copy())
+        refinement = run_free_sd_stationarity_v2(
+            endpoint.structural_parameters, endpoint.sigma, value_function, structural_value_gradient,
+            options=refinement_options, objective_difference=difference, objective_anchor=anchor, **common,
+        )
+    return TwoStageFreeSdRun(preliminary, refinement, admitted, limit)
 
 
 def assess_free_sd_stationarity(
@@ -355,6 +426,20 @@ def assess_free_sd_stationarity(
         )
         if not all(checks):
             raise ValueError(f"{label} polish derived fields do not reconstruct")
+        shift = result.objective_shift
+        if shift is not None:
+            anchor = np.asarray(shift.anchor_coordinates, dtype=float)
+            values = np.array([shift.anchor_objective, shift.initial_difference,
+                               shift.final_difference, shift.reconstruction_max_abs_difference])
+            if (anchor.shape != final.shape or not np.isfinite(anchor).all()
+                or not np.isfinite(values).all() or shift.reconstruction_max_abs_difference < 0):
+                raise ValueError(f"{label} objective origin evidence is invalid")
+            endpoint_error = max(
+                abs(shift.anchor_objective + shift.initial_difference - result.initial_objective),
+                abs(shift.anchor_objective + shift.final_difference - result.final_objective),
+            )
+            if endpoint_error > shift.reconstruction_max_abs_difference:
+                raise ValueError(f"{label} objective origin does not reconstruct")
         return initial, final
 
     def validate_gradient_audit(audit: GradientAudit, label: str) -> tuple[np.ndarray, np.ndarray]:
@@ -392,6 +477,13 @@ def assess_free_sd_stationarity(
     restart = run.restart_polish
     primary_initial, primary_final = validate_polish(primary, "primary")
     restart_initial, final_coordinates = validate_polish(restart, "restart")
+    left, right = primary.objective_shift, restart.objective_shift
+    if ((left is None) != (right is None) or (left is not None and (
+        left.anchor_coordinates != right.anchor_coordinates
+        or not consistent(left.anchor_objective, right.anchor_objective)
+        or not consistent(left.final_difference, right.initial_difference)
+    ))):
+        raise ValueError("stationarity objective origin lineage is inconsistent")
     audit_h, _ = validate_gradient_audit(run.gradient_audit_h, "h")
     audit_half, _ = validate_gradient_audit(run.gradient_audit_h_over_2, "h_over_2")
     if (
@@ -411,11 +503,12 @@ def assess_free_sd_stationarity(
         primary.optimizer_success and restart.optimizer_success and derived_finite
     )
     derived_objective_nonworsening = bool(
-        primary.final_objective <= primary.initial_objective
-        and restart.final_objective <= restart.initial_objective
+        primary.optimization_improvement >= 0
+        and restart.optimization_improvement >= 0
     )
     derived_restart_improvement = float(
-        primary.final_objective - restart.final_objective
+        primary.final_objective - restart.final_objective if right is None else
+        left.final_difference - right.final_difference
     )
     derived_restart_per_observation = float(derived_restart_improvement / observations)
     derived_restart_displacement = float(
@@ -481,6 +574,8 @@ def assess_free_sd_stationarity(
     objective_value_consistency_pass = bool(
         primary.objective_value_consistency_max_abs_difference
         <= contract.max_objective_value_disagreement
+        and all(p.objective_shift is None or p.objective_shift.reconstruction_max_abs_difference
+                <= contract.max_objective_value_disagreement for p in (primary, restart))
         and restart.objective_value_consistency_max_abs_difference
         <= contract.max_objective_value_disagreement
     )
@@ -514,9 +609,9 @@ def assess_free_sd_stationarity(
     objective_nonworsening = bool(
         derived_objective_nonworsening
         or (
-            primary.objective_improvement
+            primary.optimization_improvement
             >= -contract.objective_worsening_tolerance_total
-            and restart.objective_improvement
+            and restart.optimization_improvement
             >= -contract.objective_worsening_tolerance_total
         )
     )
@@ -575,6 +670,8 @@ __all__ = [
     "FreeSdStationarityRun",
     "StationarityAssessment",
     "StationarityContract",
+    "TwoStageFreeSdRun",
     "assess_free_sd_stationarity",
     "run_free_sd_stationarity_v2",
+    "run_free_sd_two_stage",
 ]

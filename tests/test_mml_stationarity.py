@@ -116,6 +116,7 @@ def test_information_diagnostics_reconstruct_quadratic_curvature() -> None:
         stationarity.JointPolishOptions(maxls=True),
         stationarity.JointPolishOptions(gtol=0),
         stationarity.JointPolishOptions(ftol=np.nan),
+        stationarity.JointPolishOptions(ftol=-1e-15),
         stationarity.JointPolishOptions(log_sigma_relative_step=-1),
     ],
 )
@@ -124,3 +125,8 @@ def test_invalid_polish_options_fail_closed(
 ) -> None:
     with pytest.raises(ValueError):
         options.validate()
+
+
+def test_zero_ftol_is_allowed_without_changing_the_default() -> None:
+    stationarity.JointPolishOptions(ftol=0.0).validate()
+    assert stationarity.JointPolishOptions().ftol == 1e-15

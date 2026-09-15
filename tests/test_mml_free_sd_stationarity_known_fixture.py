@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 from pathlib import Path
+import tarfile
 
 import pytest
 
@@ -14,10 +15,20 @@ pytestmark = pytest.mark.retained_evidence
 ROOT = Path(__file__).resolve().parents[1]
 ARTIFACT = ROOT / "validation" / "mml_free_sd_stationarity_known_fixture_v2_20260811"
 REGISTRY = ROOT / "validation" / "mml_free_sd_stationarity_fixture_registry_20260811.json"
+SOURCES = ROOT / "validation" / "source_snapshots" / "mml_known_fixture_v2_20260811.tar.gz"
 
 
 def sha256_file(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def historical_source_sha256(name: str) -> str:
+    # The retained identity describes its original source, not today's optional API.
+    # Missing or corrupted archived bytes fail; no fallback to updated hashes.
+    with tarfile.open(SOURCES, "r:gz") as archive:
+        source = archive.extractfile(name)
+        assert source is not None, name
+        return hashlib.sha256(source.read()).hexdigest()
 
 
 def retained_payload() -> dict:
@@ -40,23 +51,23 @@ def test_retained_v2_fixture_is_complete_hash_bound_and_nonqualifying() -> None:
     for name, expected in identity["artifact_sha256"].items():
         assert sha256_file(ARTIFACT / name) == expected
     for name, expected in identity["source_sha256"].items():
-        assert sha256_file(ROOT / name) == expected
+        assert historical_source_sha256(name) == expected
     assert fixture.validate_frozen_inputs(fixture.DEFAULT_STUDY) == identity[
         "frozen_evidence_sha256"
     ]
 
 
-def test_development_fixture_registry_does_not_silently_drift() -> None:
+def test_historical_fixture_registry_sources_remain_hash_bound() -> None:
     registry = json.loads(REGISTRY.read_text(encoding="utf-8"))
     assert registry["scientific_thresholds_frozen"] is False
     assert registry["qualification_data_generated"] is False
     for item in registry["fixtures"]:
         assert item["qualification_eligible"] is False
         if "source_sha256" in item:
-            assert sha256_file(ROOT / item["source"]) == item["source_sha256"]
+            assert historical_source_sha256(item["source"]) == item["source_sha256"]
         if "implementation_sha256" in item:
             assert (
-                sha256_file(ROOT / item["implementation"])
+                historical_source_sha256(item["implementation"])
                 == item["implementation_sha256"]
             )
         if item.get("status") == "CURRENT_HARDENED_ENGINEERING_REPLAY":

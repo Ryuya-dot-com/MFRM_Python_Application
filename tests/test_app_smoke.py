@@ -12,6 +12,25 @@ def test_app_initial_render():
     assert any("source commit:" in caption.value for caption in about.caption)
     assert not any("Data privacy" in warning.value for warning in at.warning)
     assert not any("Keyboard shortcuts" in str(expander.label) for expander in at.expander)
+    from mfrm_app import citation
+    software = next(e for e in at.expander if e.label == "License & citation")
+    assert not software.proto.expanded
+    assert citation.APA in [item.value for item in software.code]
+    assert {b.proto.label for b in software.get("download_button")} == {"BibTeX (.bib)", "CITATION.cff"}
+    assert any("MIT License" in item.value for item in software.markdown)
+
+
+def test_software_citation_matches_release_and_license():
+    import streamlit_app as app
+    from mfrm_app import citation
+
+    assert citation.METADATA["version"] == app.APP_VERSION
+    assert citation.METADATA["license"] == "MIT"
+    assert (Path(app.__file__).parent / "LICENSE").read_text().startswith("MIT License\n")
+    assert citation.METADATA["type"] == "software"
+    assert citation.METADATA["version"] in citation.APA
+    assert citation.METADATA["version"] in citation.BIBTEX
+    assert "doi" not in citation.METADATA
 
 
 def test_user_data_source_promotes_privacy_warning():
@@ -145,10 +164,10 @@ def test_compact_guided_setup_renders_in_japanese() -> None:
 
     assert not at.exception
     subheaders = {item.value for item in at.subheader}
-    assert {"解析方法の選択", "解析内容"}.issubset(subheaders)
+    assert {"モデルと推定方法", "分析内容の設定"}.issubset(subheaders)
     assert "Anchor 制約" not in subheaders
     assert any(
-        "技術設定には文書化された標準値" in str(item.value)
+        "標準設定を使用しています" in str(item.value)
         for item in at.caption
     )
 
@@ -156,8 +175,8 @@ def test_compact_guided_setup_renders_in_japanese() -> None:
     depth = at.selectbox(key="facets_mode_analysis_depth")
     assert source.value == "sample"
     assert depth.value == "Full publication"
-    assert source.proto.set_value and source.proto.raw_value == "組込みの例"
-    assert depth.proto.set_value and depth.proto.raw_value == "Full publication (出版水準)"
+    assert source.proto.set_value and source.proto.raw_value == "サンプルデータ"
+    assert depth.proto.set_value and depth.proto.raw_value == "図・出力を含む（Full publication）"
     assert not any("Session State API" in warning.value for warning in at.warning)
 
 

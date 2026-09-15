@@ -36,10 +36,13 @@ class JointPolishOptions:
             raise ValueError("maxiter must be a positive integer")
         if isinstance(self.maxls, bool) or int(self.maxls) != self.maxls or self.maxls < 1:
             raise ValueError("maxls must be a positive integer")
-        for name in ("gtol", "ftol", "log_sigma_relative_step"):
+        for name in ("gtol", "log_sigma_relative_step"):
             value = float(getattr(self, name))
             if not np.isfinite(value) or value <= 0:
                 raise ValueError(f"{name} must be positive and finite")
+        # Zero removes the positive reduction tolerance, not zero-reduction stopping.
+        if not np.isfinite(float(self.ftol)) or float(self.ftol) < 0:
+            raise ValueError("ftol must be nonnegative and finite")
 
 
 @dataclass(frozen=True)
@@ -76,6 +79,17 @@ class InformationDiagnostics:
 
 
 @dataclass(frozen=True)
+class ObjectiveShiftRecord:
+    """Optimizer differences and their origin; public objective values stay raw."""
+
+    anchor_coordinates: tuple[float, ...]
+    anchor_objective: float
+    initial_difference: float
+    final_difference: float
+    reconstruction_max_abs_difference: float
+
+
+@dataclass(frozen=True)
 class JointPolishResult:
     structural_parameters: tuple[float, ...]
     sigma: float
@@ -100,6 +114,18 @@ class JointPolishResult:
     objective_scale: str
     options: dict[str, object]
     gradient_method: str = "structural_analytic_log_sigma_central_difference"
+    objective_shift: ObjectiveShiftRecord | None = None
+    optimizer_reported_objective: float | None = None
+    last_query_coordinates: tuple[float, ...] | None = None
+    last_query_optimizer_objective: float | None = None
+    last_query_raw_objective: float | None = None
+
+    @property
+    def optimization_improvement(self) -> float:
+        """Use a stable difference when supplied; retain raw subtraction separately."""
+        shift = self.objective_shift
+        return (self.objective_improvement if shift is None else
+                shift.initial_difference - shift.final_difference)
 
     def to_dict(self) -> dict[str, object]:
         return asdict(self)
@@ -339,8 +365,15 @@ def polish_joint_free_sd(
     objective_scale: str = "sum_negative_log_likelihood",
     options: JointPolishOptions | None = None,
     joint_value_gradient: JointValueGradient | None = None,
+    objective_difference: Callable[[Array], float] | None = None,
+    objective_anchor: Sequence[float] | Array | None = None,
 ) -> JointPolishResult:
-    """Jointly polish structural coordinates and ``log(sigma)`` once."""
+    """Polish once, optionally optimizing an exact fixed-anchor NLL difference.
+
+    Scalar and value-gradient callbacks still return the raw objective. A supplied
+    difference must be F(point)-F(anchor), with the same analytic joint gradient.
+    Initial/final objective fields always retain independently evaluated raw NLLs.
+    """
 
     settings = options or JointPolishOptions()
     settings.validate()
@@ -370,8 +403,45 @@ def polish_joint_free_sd(
     )
     initial_value, _ = value_gradient(start)
     initial_scalar_value = objective(start)
+    anchor = None
+    origin = 0.0
+    reconstruction = 0.0
+    if (objective_difference is None) != (objective_anchor is None):
+        raise ValueError("objective_difference and objective_anchor must be supplied together")
+    if objective_difference is not None:
+        if joint_value_gradient is None:
+            raise ValueError("objective differences require a supplied joint gradient")
+        anchor = _vector(objective_anchor, "objective anchor").copy()
+        if anchor.shape != start.shape or any(
+            (lo is not None and x < lo) or (hi is not None and x > hi)
+            for x, (lo, hi) in zip(anchor, bounds)
+        ):
+            raise ValueError("objective anchor must match coordinates and lie within bounds")
+        origin = objective(anchor)
+        if float(objective_difference(anchor.copy())) != 0.0:
+            raise ValueError("objective difference must be zero at its anchor")
+        anchor_value, _ = value_gradient(anchor)
+        reconstruction = abs(origin - anchor_value)
+
+    def optimizer_value(point: Array, raw: float) -> float:
+        nonlocal reconstruction
+        result = raw if objective_difference is None else float(objective_difference(point.copy()))
+        if not np.isfinite(result):
+            raise FloatingPointError("Optimizer objective difference is nonfinite")
+        reconstruction = max(reconstruction, abs(result + origin - raw))
+        return float(result)
+
+    initial_optimizer_value = optimizer_value(start, initial_value)
+    last_query = None
+    def optimizer_value_gradient(point: Array) -> tuple[float, Array]:
+        nonlocal last_query
+        raw, gradient = value_gradient(point)
+        result = optimizer_value(point, raw)
+        last_query = (tuple(map(float, point)), result, float(raw))
+        return result, gradient
+
     fitted = minimize(
-        value_gradient,
+        optimizer_value_gradient,
         start,
         jac=True,
         method="L-BFGS-B",
@@ -385,6 +455,7 @@ def polish_joint_free_sd(
     )
     final_value, final_gradient = value_gradient(np.asarray(fitted.x, dtype=float))
     final_scalar_value = objective(np.asarray(fitted.x, dtype=float))
+    final_optimizer_value = optimizer_value(np.asarray(fitted.x, dtype=float), final_value)
     projected = projected_gradient(fitted.x, final_gradient, bounds)
     return JointPolishResult(
         structural_parameters=tuple(map(float, fitted.x[:-1])),
@@ -418,6 +489,15 @@ def polish_joint_free_sd(
             "provided_joint_gradient" if joint_value_gradient is not None
             else "structural_analytic_log_sigma_central_difference"
         ),
+        objective_shift=(None if anchor is None else ObjectiveShiftRecord(
+            anchor_coordinates=tuple(map(float, anchor)), anchor_objective=origin,
+            initial_difference=initial_optimizer_value, final_difference=final_optimizer_value,
+            reconstruction_max_abs_difference=float(reconstruction),
+        )),
+        optimizer_reported_objective=(float(fitted.fun) if getattr(fitted, "fun", None) is not None else None),
+        last_query_coordinates=None if last_query is None else last_query[0],
+        last_query_optimizer_objective=None if last_query is None else last_query[1],
+        last_query_raw_objective=None if last_query is None else last_query[2],
     )
 
 
@@ -426,10 +506,88 @@ __all__ = [
     "InformationDiagnostics",
     "JointPolishOptions",
     "JointPolishResult",
+    "ObjectiveShiftRecord",
     "audit_joint_gradient",
     "central_difference_gradient",
     "information_diagnostics",
     "make_joint_free_sd_functions",
     "polish_joint_free_sd",
+    "polish_fixed_sd",
     "projected_gradient",
 ]
+
+
+def polish_fixed_sd(start, value_gradient, difference_factory, *, options=None):
+    """Three unconstrained structural solves; fixed SD stays in the callbacks.
+
+    Preserve raw, fixed-anchor difference and restart records. A solver success
+    flag is not a stationarity or integration certificate. Evaluation failures
+    return the completed stages and last query, without a replacement candidate.
+    """
+    settings = options or JointPolishOptions(gtol=1e-9, ftol=0.)
+    settings.validate()
+    point = _vector(start, "structural start").copy()
+    dimension = point.shape
+    optimizer_options = dict(maxiter=int(settings.maxiter), gtol=float(settings.gtol),
+                             ftol=float(settings.ftol), maxls=int(settings.maxls))
+    record = dict(options=optimizer_options, original_coordinates=point.tolist(), stages=[],
+        completed=False, failure=None, candidate_coordinates=None,
+        quadrature_sensitivity_pass=None, inference_ready=False)
+
+    def checked(point):
+        point = _vector(point, "structural coordinates")
+        if point.shape != dimension:
+            raise ValueError("Structural coordinate dimension changed")
+        value, gradient = value_gradient(point.copy())
+        gradient = _vector(gradient, "structural gradient")
+        if not np.isfinite(value) or gradient.shape != dimension:
+            raise FloatingPointError("Nonfinite objective or inconsistent gradient dimension")
+        return float(value), gradient.copy()
+
+    difference = None
+    for name in ('raw', 'difference', 'restart'):
+        stage = dict(name=name, initial_coordinates=point.tolist(), last_query=None)
+        record['stages'].append(stage)
+        try:
+            initial, initial_gradient = checked(point)
+            stage.update(initial_nll=initial, initial_gradient=initial_gradient.tolist())
+            if name == 'difference':
+                anchor = point.copy(); origin = initial
+                difference = difference_factory(anchor.copy())
+                if difference(anchor.copy()) != 0.:
+                    raise ValueError("Likelihood difference must be zero at its anchor")
+                record['anchor_coordinates'] = anchor.tolist()
+                record['anchor_nll'] = origin
+            reconstruction = 0.
+
+            def objective(point):
+                nonlocal reconstruction
+                stage['last_query'] = dict(coordinates=np.asarray(point).tolist())
+                value, gradient = checked(point)
+                target = value if difference is None else float(difference(point.copy()))
+                error = abs(target+(0. if difference is None else origin)-value)
+                reconstruction = max(reconstruction, error)
+                stage['last_query'].update(nll=value, optimizer_objective=target)
+                # This checks identity of the two numerical objectives, not a
+                # scientific equivalence margin or a convergence tolerance.
+                if not np.isfinite(target) or error > 1e-9:
+                    raise FloatingPointError("Likelihood difference does not reconstruct the raw NLL")
+                return target, gradient
+
+            fitted = minimize(objective, point.copy(), jac=True, method='L-BFGS-B', options=optimizer_options)
+            point = np.asarray(fitted.x, dtype=float).copy()
+            value, gradient = checked(point)
+            stage.update(returned_coordinates=point.tolist(), nll=value, gradient=gradient.tolist(),
+                gradient_supnorm=float(max(abs(gradient))), success=bool(fitted.success),
+                status=int(fitted.status), message=str(fitted.message), iterations=int(fitted.nit),
+                function_evaluations=int(fitted.nfev), optimizer_objective=float(fitted.fun),
+                reconstruction_max_abs_difference=float(reconstruction),
+                nll_improvement=initial-value, displacement=float(max(abs(point-np.asarray(stage['initial_coordinates'])))))
+            if value-initial > 1e-9:
+                raise FloatingPointError("Returned raw NLL worsened beyond numerical tolerance")
+        except (ValueError, FloatingPointError, ArithmeticError) as exc:
+            record['failure'] = dict(stage=name, type=type(exc).__name__, message=str(exc))
+            return record
+    record.update(completed=True, candidate_coordinates=point.tolist(),
+        gradient_tolerance_met=bool(max(abs(gradient)) <= settings.gtol))
+    return record

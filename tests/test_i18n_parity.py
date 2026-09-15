@@ -235,7 +235,7 @@ def test_japanese_safety_and_guidance_copy_uses_task_centered_terms(locales):
         assert fragment not in joined, f"Awkward Japanese UI fragment remains: {fragment}"
 
     assert "公開・共有用エクスポートモード" in ja["downloads.public_export_mode_label"]
-    assert "正式な非識別化保証ではありません" in ja["downloads.public_export_mode_help"]
+    assert "完全な匿名化を保証するものではありません" in ja["downloads.public_export_mode_help"]
     assert "解釈ガイド" in ja["fit_details.guide_expander"]
     assert ja["downloads.panel_select_label"] == "ダウンロード項目"
     assert ja["downloads.tab_data_tables"] == "データ表"
@@ -278,7 +278,7 @@ def test_japanese_summary_labels_use_natural_terms(locales):
 
     assert "サマリ" not in ja_text
     assert "推定概要" in ja_text
-    assert "結果概要" in ja_text
+    assert "結果の概要" in ja_text
     assert "監査概要" in ja_text
 
 

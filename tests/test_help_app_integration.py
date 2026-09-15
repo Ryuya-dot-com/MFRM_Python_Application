@@ -108,6 +108,65 @@ def test_facets_mode_value_widgets_have_explicit_state_keys():
     assert not missing, f"Help-state-unsafe FACETS widgets: {missing}"
 
 
+def test_home_preserves_draft_and_returns_from_help_without_running(monkeypatch):
+    calls = _instrument_analysis_calls(monkeypatch)
+    at = _app_test().run()
+    assert at.button(key="mfrm_home_open").disabled
+    at.button(key="mfrm_help_open_global").click().run()
+    at.button(key="mfrm_home_open").click().run()
+    assert not at.exception
+    at.button(key="onboarding_dismiss").click().run()
+    draft = "Person;Score;Rater;Task\n"
+    at.selectbox(key="paste_data_delimiter").select("Semicolon (;)")
+    at.text_area(key="paste_data_text").set_value(draft).run()
+    at.button(key="mfrm_home_open").click().run()
+    assert at.session_state["_mfrm_home_open"]
+    at.button(key="mfrm_help_open_global").click().run()
+    at.radio(key="lang").set_value("ja").run()
+    at.button(key="mfrm_help_return_to_source").click().run()
+    assert at.button(key="mfrm_home_resume").label == "現在の分析に戻る"
+    at.button(key="mfrm_home_resume").click().run()
+    assert not at.exception
+    assert not at.session_state["_mfrm_home_open"]
+    assert at.session_state["paste_data_text"] == draft
+    assert at.session_state["paste_data_delimiter"] == "Semicolon (;)"
+    assert at.session_state["data_source_flat"] == "paste"
+    assert calls == {"estimate": 0, "refit": 0}
+
+
+def test_home_keeps_settings_fit_and_result_route_and_cancels_run_requests(monkeypatch):
+    calls = _instrument_analysis_calls(monkeypatch)
+    at = _app_test().run()
+    at.button(key="onboarding_skip_guide").click().run()
+    at.radio(key="facets_mode_workflow_mode").set_value("Advanced controls")
+    at.radio(key="facets_mode_estimation_method").set_value("MML").run()
+    at.number_input(key="facets_mode_quad_points").set_value(21).run()
+    # A nonempty saved result sentry must survive Home without being recomputed.
+    saved = {"result": {"analysis_id": "home-preserved", "config": {"app_version": app.APP_VERSION}}}
+    at.session_state["facets_mode_output"] = saved
+    at.session_state["guided_essential_section"] = "diagnostics"
+    at.session_state["guided_diagnostics_panel"] = "dimensionality"
+    at.session_state["_facets_mode_force_rerun"] = True
+    at.session_state["_onboarding_quickstart_fired"] = True
+    at.button(key="mfrm_home_open").click().run()
+    at.radio(key="lang").set_value("ja").run()
+    assert not at.exception
+    assert at.session_state["facets_mode_output"] == saved
+    assert at.session_state["guided_essential_section"] == "diagnostics"
+    assert at.session_state["guided_diagnostics_panel"] == "dimensionality"
+    assert at.session_state["facets_mode_quad_points"] == 21
+    assert "_facets_mode_force_rerun" not in at.session_state
+    assert "_onboarding_quickstart_fired" not in at.session_state
+    # The deliberately incomplete saved result is not a valid fitted fixture;
+    # retain it for the Home assertion, then remove it before rendering results.
+    del at.session_state["facets_mode_output"]
+    at.button(key="mfrm_home_resume").click().run()
+    assert not at.exception
+    assert at.session_state["facets_mode_quad_points"] == 21
+    assert at.session_state["facets_mode_estimation_method"] == "MML"
+    assert calls == {"estimate": 0, "refit": 0}
+
+
 def test_no_data_help_locale_and_return_preserve_source_without_refit(
     monkeypatch,
 ):

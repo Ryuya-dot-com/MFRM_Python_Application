@@ -5,14 +5,399 @@ Development-line consolidation, 2026-09-11: use
 checkout, preserved public baseline, and staged integration status. The original
 scientific and product exit gates below remain in force.
 
-Extension decision, 2026-09-11: prioritize JAX acceleration of existing
-JMLE/MML, with NumPyro Bayesian estimation as a later research extension.
-ConQuest and TAM provide scoped offline validation/interchange routes.
-See [`docs/jax_numpyro_conquest_tam_plan.md`](docs/jax_numpyro_conquest_tam_plan.md)
-for the accepted plan; these capabilities are not newly enabled in the app.
+Extension refinement, 2026-09-13: prioritize the numerical/inference contracts
+of existing JMLE/MML and measure their performance before JAX acceleration.
+Use the local mfrmr 0.2.4.9000 development evidence by target and condition;
+it is not blanket validation of this Python application. Stan and NumPyro/JAX
+are planned as selectable offline code packages, after a common-model audit
+and the existing statistical gates. Their retained generators and Posterior
+Viewer are not currently public routes. See the bounded work queue and B0–B4
+conditions in [`docs/jax_numpyro_conquest_tam_plan.md`](docs/jax_numpyro_conquest_tam_plan.md).
+The next UI work refines action-local feedback, visible selections, diagnostic
+navigation and task-based export; its current-state evidence and acceptance
+tasks are in [`docs/ux_adversarial_audit.md`](docs/ux_adversarial_audit.md#next-ui-refinement--2026-09-13-planned).
+This revision updates internal planning only and does not reopen an estimator.
+
+Numerical status, 2026-09-14: the observed PCM stress fixture has a checked
+continuous-integral reference (SD approximately 1.6541712 from four starts).
+Finite GH solutions still depend on order. TAM's range/density audit shows that
+wider tails matter; nine fits with aligned stopping settings terminated. Earlier
+strict stopping failures and stored-EAP timing discrepancies remain recorded.
+ConQuest 5.47.5 runs through the user's Terminal; the agent's library-load failure
+is route-specific. Matched fixed-grid estimates are close to TAM.
+
+ConQuest scoring is a separate precision target: 31 fixed-calibration runs showed
+EAP RMSE 0.014242 → 0.000857 and posterior-SD RMSE 0.007443 → 0.000428 logit as
+p_nodes rose from 2,000 to 200,000 across ten seeds. A two-run control now isolates
+the parameter-count display: removing the explicit mean anchor under CASES changes
+-1 to 0 while calibration, deviance and scores remain identical. Preserve the old
+failed metadata checks; use CASES alone for this fixed-zero-mean scoring condition.
+
+The 1,543-row native GH replay confirms a one-row likelihood/coordinate timing
+offset. Tiny final updates coexist with finite-GH log-SD gradients of approximately
+1.827, -3.549, 0.374 and 0.03685 at Q31/61/121/181. Across all 1,539 adjacent
+transitions, centering the previous GH posterior by its mean reproduces the next
+variance within 1.111e-6. Unlike the TAM source audit, this is a post-hoc numerical
+reconstruction, not proof of ConQuest's internal implementation.
+Neither stopping nor a flat SD trace establishes likelihood stationarity.
+
+The direct-start experiment is now complete: eight runs paired one iteration with
+continued iteration at each order. All four first updates leave the finite-GH
+stationary starts and increase their finite NLL; predicted centered variances match
+within 3.423e-7. Low-order native endpoints depend strongly on starts. Q181 ends at
+the same exported SD as before, but retains a log-SD gradient near 0.03681 and
+same-point EAP/posterior-SD integration errors near 0.00118/0.00210 logit.
+Returned checkpoints also differ from the minimum reported NLL over these histories.
+Sixteen same-coordinate evaluations agree with independent R within 5.69e-13.
+
+Structural replay now explains the observed update closely: old posterior weights,
+new variance-scaled nodes and one native-order coordinate sweep reproduce 19 saved
+transitions within 1.946e-6. Five sweeps do not reproduce the moving first updates.
+Four GH61 controls confirm that keep-last changes exports without changing history;
+keep-best does not mean the minimum reported NLL over the entire history.
+The improving-iteration candidate hypothesis fits saved NLL values, but remains a
+post-hoc description rather than a native implementation contract.
+
+Independent-condition validation now covers four freshly simulated, unedited PCM
+datasets (80 persons each; generating SD 1.0 or 2.5, two seeds each). Protocol and
+engineering precision targets were fixed before generation. R and app arithmetic,
+continuous-reference refinement and optimizer-gradient checks pass. Ordinary cases
+meet the scoring target at GH121; neither wider-tail case meets it even at GH181.
+Their GH181 EAP/posterior-SD errors reach 0.09846/0.11939 logit. One GH31 case reaches
+different low-gradient solutions from two starts. A fixed grid spanning +/-12 at
+0.1 spacing also misses the posterior-SD target in both wider-tail cases.
+
+The separate range/density check is complete: halving spacing does not rescue
+the +/-12 wider-tail grids; +/-16 meets the stated engineering targets at both
+spacings, and +/-20 reduces the largest posterior-SD error to about 2.1e-9 logit.
+Eight matched-start TAM fits and eight actual ConQuest runs are now reviewed.
+Their free-coordinate differences reach 3.992e-5 and deterministic EAP differences
+3.975e-5 logit. Native ConQuest MC scores remain a separate precision target.
+ConQuest's prior-grid normalization changes the free-SD objective: its correction
+is not constant in SD, even when calibration estimates are close to TAM.
+
+Keep the new fixed-grid overall implementation flag false: one of 96 direct
+optimizer calls returned ABNORMAL on restart, despite a small gradient and
+unchanged coordinates. A TAM history-recorder failure was separately preserved
+and corrected without changing estimation settings; all eight saved native fits
+pass their stopping checks. Independent R arithmetic passes throughout.
+
+The ABNORMAL restart is now reproduced with unchanged options. Native task capture
+shows exhaustion of 50 line-search requests (36 actual objective calls). Independent
+60/90-digit arithmetic finds a real trial improvement of 4.98e-14 that float64
+reports as a 4.55e-13 worsening. A diagnostic Newton correction is at most 1.26e-7;
+its true NLL improvement is 5.64e-13. This identifies rounding interference in this
+case, without converting the raw failure into success or qualifying inference.
+The existing termination/stationarity/quadrature contracts remain fail-closed;
+their 34 tests pass. Successful controls also miss the requested 1e-8 gradient
+tolerance, and one successful small-gradient fit fails the integration target.
+
+The separately specified likelihood-difference arithmetic now passes 22 comparisons
+at four anchors, including off-solution controls, against 60/90-digit references.
+An exact fixed-grid probability-ratio identity recovers the small improvements;
+the retained line-query/Newton differences have absolute errors below 2.65e-22.
+Large changes, changes in SD, reversed comparisons and composition also pass.
+This is a validation-only evaluator, not a new optimization run or stopping policy.
+
+The fixed-anchor optimizer comparison now retains all 96 calls. With a near-solution
+anchor and ftol=0, all eight primary/restart pairs reach requested gtol=1e-8;
+their final gradients are at most 9.824e-9 and cross-start coordinate differences
+at most 4.616e-9. Raw NLL and zero-anchor arms do not reach that gradient target.
+Positive historical ftol also stops the near-anchor arm early. Six ABNORMAL calls
+remain recorded across controls; execution/arithmetic success is a separate flag.
+The +/-12 wider-tail cell still misses the integration target despite tighter
+optimization. All 96 returned NLLs/gradients replay exactly; selected near-anchor
+improvements agree with 60/90-digit arithmetic within 1.03e-20.
+
+The two-stage procedure now passes on four fresh, unedited 80-person datasets,
+with the protocol frozen before generation. Each run constructs its anchor from
+its own preliminary endpoint. All 24 trajectories (three starting SDs, two grids)
+pass the refinement diagnostics; all 48 refinement calls meet gtol=1e-8, while
+none of the 48 preliminary calls do. Cross-start coordinates differ by at most
+7.926e-10. All 96 calls terminate normally in this new check; historical failures
+remain unchanged. Independent R and 60/90-digit comparisons pass. The wider-tail
+datasets still fail integration targets on +/-12; +/-20 passes for these cases.
+
+The moving-GH likelihood-ratio identity now passes 48 comparisons across two retained
+datasets and orders 31/61/121/181. It includes theta changes through expm1(delta log-SD)
+and no extra density/Jacobian term. Independent R, 60/90-digit NLL differences,
+analytic log-SD derivatives and all-coordinate finite differences pass. At unchanged
+wider-tail coordinates, GH181 still differs from continuous integration by 0.0890
+in EAP and 0.1056 in posterior SD. Arithmetic agreement is not integration accuracy.
+See [moving-GH arithmetic](docs/mml_cross_language_development_check.md#sdとともに動くgh点の尤度差).
+
+Moving-GH two-stage fitting now passes all 48 trajectories on the four retained
+datasets (three starting SDs, four orders). All 96 refinement calls reach gtol=1e-8;
+the 96 preliminary calls terminate normally but miss it. Same-order cross-start
+coordinates differ by at most 8.181e-10. Independent R and 60/90-digit checks pass.
+The wider-tail fitted SDs remain nonmonotonic across orders: 2.527/3.054/2.543/2.768
+and 2.198/2.473/2.895/2.621. GH181 posterior-SD integration errors remain 0.1046
+and 0.0682. Finite-GH stationarity does not certify continuous-integral stationarity.
+See [GH fitting and order sensitivity](docs/mml_cross_language_development_check.md#ghでの二段階推定と次数依存).
+
+The optional two-stage API is now connected. It retains preliminary and refinement
+runs separately, keeps public objective fields as raw NLL, and records fixed-anchor
+differences and the last optimizer query separately. JointPolishOptions now accepts
+ftol=0 with its positive default unchanged. Historical sources and hashes are preserved.
+Eight PCM API trajectories match the prior solutions within 6.677e-13 in coordinates;
+independent R and 60/90-digit checks pass. The unchanged Q-sensitivity assessment
+accepts ordinary Q121/Q181 comparisons and rejects wider-tail comparisons. Passing
+shifted values as raw NLL is rejected. All 83 related regression checks pass.
+See [API integration and preserved evidence](docs/mml_cross_language_development_check.md#二段階推定apiへの接続と旧証拠の保全).
+
+The development adapter now builds the moving-GH difference from the app's actual
+observed rows and constrained parameter expansion. RSM/PCM checks include missing
+rows, an empty person, zero/fractional response weights, opposite facet signs,
+nonzero element/group anchors and person regression means. Independent 60/90-digit
+scalar calculations and analytic-gradient checks pass; all 87 related tests pass.
+A native RSM fit also completes the four-call two-stage adapter route. This extends
+finite-rule arithmetic evidence, not weighted/missing-data inference qualification.
+See [observed-row adapter evidence](docs/mml_cross_language_development_check.md#観測行を使う差分関数と開発用アダプター).
+
+Weighted/missing PCM refitting now covers three starting SDs and Q31/61/121/181.
+All 12 series pass finite-GH stationarity; all 48 PCM optimizer calls terminate
+normally. Within-order coordinates differ by at most 7.426e-9 across starts.
+Independent finite-rule arithmetic, continuous-reference refinement, prior scoring
+for persons without information, and 60/90-digit differences pass. The Q31/61/121
+solutions still miss the integration targets. Q181 meets them for this case, with
+maximum EAP/posterior-SD errors 1.56e-6/3.25e-6 logit. The Q121/Q181 assessment
+rejects all three pairs because structural coordinates change by about 3.46e-4.
+This does not establish a universally sufficient GH order; the prior wider-tail
+examples still fail at Q181. See [weighted PCM refits and integral checks](docs/mml_cross_language_development_check.md#欠測重み付きpcmの再推定と連続積分照合).
+
+Continuous refitting from the four retained GH starts now reaches the same checked
+local minimum: SD 2.27265279973, maximum computed gradient 2.11e-13 and cross-start
+coordinate difference 1.85e-14. Two-step-size curvature checks are positive, and
+independent R likelihood/moments agree. Relative to this refitted reference, GH181
+has maximum structural/EAP/posterior-SD differences 5.36e-6/5.36e-6/3.24e-6.
+GH121's total EAP difference is 5.55e-4, although its earlier same-coordinate
+integration error was only 8.60e-5. Recalibration and scoring integration must both
+be included in accuracy checks. See [continuous local reference and score effects](docs/mml_cross_language_development_check.md#欠測重み付きpcmの連続積分による局所解).
+
+Independent data now cover two new 32-person response sets, each paired across
+complete/unit-weight, missing/unit-weight and missing/response-weight designs.
+All 24 GH series pass finite-rule stationarity; all 96 GH calls terminate normally,
+and within-order coordinates agree across starts within 1.31e-8. The 12 continuous
+refits pass local-reference checks. Independent R and 60/90-digit comparisons pass;
+432 retained evaluation points and 101 artifacts/16 source hashes were audited.
+All three ordinary designs meet total accuracy targets at Q121 and Q181; all three
+wider-tail designs miss them at both orders. At Q181, wider-tail total EAP errors
+range from 0.0114 to 0.0303 logit. Stable optimization does not establish adequate
+integration. These are two paired numerical probes, not six independent replications.
+See [independent observation designs and full results](docs/mml_cross_language_development_check.md#独立データにおける欠測と回答重みの対照).
+
+Native TAM 4.3.25 / ConQuest 5.47.5 comparisons now cover the four complete/missing
+unit-weight designs at ranges +/-12 and +/-20 (spacing 0.1). All 16 fixed-calibration
+checks pass before 16 native refits. The native coordinate difference is at most
+1.761e-5; deterministic EAP/SD recalculated at those coordinates differ by at most
+1.703e-5/3.11e-6. Wider-tail +/-12 runs still miss continuous-reference accuracy;
+both engines meet the total targets for all four designs at +/-20. Independent R,
+96 initial/returned/final-iteration roles and 348 artifacts/22 sources were audited.
+The normalized finite-prior NLL correction now accounts for each regression mean.
+Stopping reasons and the two fixed TAM calls reaching their three-iteration cap
+are retained, as is the first run's overstrict JSON-precision check and exact source.
+See [native unit-weight comparisons and limitations](docs/mml_cross_language_development_check.md#独立した重み1条件のtamとconquest実機比較).
+
+Fixed-calibration ConQuest scoring now covers those four designs at p_nodes
+2,000 / 20,000 / 200,000 and ten seeds each, plus four exact-repeat controls.
+All 124 executions preserve the audited calibration/data/design/likelihood exports;
+the repeats also reproduce the previous baseline scores exactly. Across the four
+designs, EAP RMSE against independent continuous R integration falls from
+0.01097–0.03489 to 0.000830–0.002442 as p_nodes increases 100-fold. The largest
+EAP error at 200,000 nodes is still 0.009442 logit. Finite-grid reference differences
+are retained separately; 1,635 artifacts and 23 sources pass saved-output replay.
+See [regression/missingness scoring variation](docs/mml_cross_language_development_check.md#回帰欠測条件でのconquest標準得点の乱数変動).
+
+The weight-semantics audit now separates response powers inside the integral from
+person weights outside it. All 24 fixed native calls completed, but both predeclared
+ConQuest weighted-display hypotheses failed in the eight nonunit cases. Retained
+post-hoc analysis finds mean-one weights in ConQuest's observed sufficient statistics
+(maximum error 2.85e-14), while its fixed-calibration reported NLL matches the
+unweighted normalized-prior sum (maximum error 1.81e-7). TAM's mean-one weighted
+raw-prior NLL agrees within 2.28e-13. These are distinct quantities. Independent R,
+252 artifacts and 29 source identities were audited, including the preserved failed
+protocol/code. The inspected mfrmr development source is 0.2.4.9000 and applies
+response powers, as does Python; no new mfrmr fit was performed.
+See [weight definitions and rejected display hypotheses](docs/mml_cross_language_development_check.md#回答重みと受験者重みの区別および固定値対照).
+
+The one-free-criterion control now covers 36 ConQuest calls. All first steps agree
+with weighted scalar EM within 4.89e-7, and a retained post-hoc replay reproduces
+99 nonduplicated full-run transitions within 5.79e-7. Keep-last returns agree with
+independent weighted scalar roots within 4.89e-7 (1.05e-7 in the nonunit cases).
+The default keep-best setting follows the same executed histories but returns
+iteration-4 coordinates in all eight nonunit cases; root gaps are 0.00230–0.01063
+logit and absolute weighted scores 0.0662–0.1344. Those returned points are not
+the minimum displayed-deviance rows, so the internal selection rule remains open.
+Another retained post-hoc finding aligns all 400 displayed history NLLs with the
+preceding coordinates, not the coordinates written in the same row. Independent R
+agrees within 5.41e-13; 547 execution artifacts/26 source identities were replayed,
+and the history diagnosis preserves and checks 554 artifacts.
+See [one-parameter weighted updates and returned points](docs/mml_cross_language_development_check.md#受験者重み付きの1パラメータ更新と返却点).
+
+The older-history recheck now covers 24 retained runs: 16 GH runs including
+duplicate start/return controls, and eight fixed-grid fits on four 80-person datasets.
+All 5,139 comparable rows are compatible with the preceding coordinates after
+propagating six-decimal structural/variance export rounding. Same-row coordinates
+are excluded by conservative rounding bounds in 528 rows; the remaining rows do
+not identify timing uniquely. All rows also satisfy the separately recorded
+first-order sensitivity allowance. Maximum preceding-point discrepancies are
+1.35e-5 for GH and 4.10e-5 for grids; retained independent R values agree within
+4.55e-12. Four default-start first rows lack saved starting coordinates and are
+excluded from timing comparisons. The previous stationarity and continuous-score
+accuracy conclusions remain unchanged; a displayed NLL discrepancy at a returned
+point is not by itself quadrature error. Original files are preserved, with 432
+retained file identities and 25 new artifacts checked.
+See [history timing and rounding recheck](docs/mml_cross_language_development_check.md#過去のconquest履歴の時点と丸め幅の再点検).
+
+The regression/missingness history review now covers all eight retained unit-weight
+ConQuest refits. All 1,335 rows are compatible with the preceding native coordinates,
+including slope/variance rounding and person-specific prior normalization; 289 rows
+exclude the same-row coordinates. Every returned point equals the last saved row.
+Independent R agreement is within 5.12e-13 and two-step gradient differences within
+1.87e-7. In the wider-tail +/-12 conditions, returned normalized-grid app-coordinate
+gradient suprema remain 0.1522/0.2892; even raw-grid beta scores are 0.00568/0.00919.
+The +/-20 conditions retain the previous engineering accuracy passes, without
+certifying internal gradients at 1e-8 or SE/CI/coverage. Display timing agreement
+does not resolve the range or stationarity problem. The audit preserves 348 old
+artifacts and checks nine new artifacts with 24 source identities.
+See [regression history, gradients and report requirements](docs/mml_cross_language_development_check.md#回帰欠測履歴の時点と返却点の勾配).
+
+The four-question comparison record is now implemented in
+`mfrm_app/mml_comparison_report.py`, with separate measurements, explicit targets,
+missing prerequisites and computed status per question. No overall equivalence
+or inference qualification is emitted. Rendering recomputes decisions instead of
+trusting saved status labels. Eight retained comparisons now produce Japanese HTML,
+CSV and JSON reports plus a ZIP. Four answers appear first; measurements and
+point/objective/provenance details use native collapsed HTML sections.
+The two wide +/-12 cases retain stationarity/integration target failures.
+Integration meets the reporting targets in the other six cases, while their
+internal stationarity remains unassessed because gradient rounding uncertainty is
+not qualified. All eight calibration-equivalence and native-score-stability
+answers remain unassessed: no equivalence margin or matched-calibration repeated
+seed evidence is supplied. Reporting targets are explicitly post-hoc engineering
+screens. Ten targeted tests pass; eight reports replay exactly; 34 ZIP entries
+match local artifacts; desktop HTML was visually checked. No app estimator or
+existing Streamlit UI was changed.
+See [comparison report implementation and artifacts](docs/mml_cross_language_development_check.md#4つの問いを分けた比較レポートの実装).
+
+The preparation path is now connected in Streamlit (2026-09-15): Report & Export
+→ Check next → Compare with another program. It shows four unassessed questions,
+one collapsed explanation and one ZIP download; other review details are hidden
+while this resource is selected. Full current settings, response weights, anchors,
+population design, returned coordinates and estimates are retained and bound by
+fresh content hashes and an analysis identity, including when recorded run IDs are
+stale. Missing comparison evidence never becomes a pass. The R worksheet now stops
+before fitting: automatic design guesses, rounded response aggregation and the
+rank-only/arbitrary-threshold guidance were removed. No external-result import or
+TAM/ConQuest/mfrmr matching runner is supplied yet. The prior numerical-study
+runtime was archived and its eight reports replayed exactly without changing old
+evidence. See [Streamlit connection and checks](docs/mml_cross_language_development_check.md#streamlitへの比較準備の接続).
+
+The first restricted runner is implemented (2026-09-15). Eligible exported PCM
+fits now include offline Python/R scripts for TAM 4.3.25 and ConQuest 5.47.5.
+Scope is three two-level facets, scores 0:3, unit weights, fixed zero-mean normal
+prior, no anchors/penalty/regression, centered other facets and an uncentered step
+facet. Duplicate cells, empty persons and combinations missing a score category
+are rejected. Both fixed-calibration coding/design/anchor/NLL checks must pass
+before optional structural refits. Native files, code and input hashes are retained;
+the app itself never launches an external engine or imports a pass.
+Twelve retained native calls passed these implementation checks. Complete and
+one-response-missing examples have maximum TAM/ConQuest calibration differences
+7.67e-7/1.26e-6 logits, while single-seed ConQuest EAP differences remain about
+0.0231 logits. Range and spacing probes are fixed-point checks, not universal
+quadrature qualification. See [runner scope and findings](docs/mml_cross_language_development_check.md#限定pcmランナーと実行確認).
+
+The fixed-SD stopping/order audit is now retained for the same two examples:
+GH31/61/121, two starts, 36 optimization calls and an independent adaptive integral.
+All finite-GH endpoints have gradient suprema below 9.22e-10; the largest cross-start
+coordinate difference is 8.55e-11. EM continuation still stops with gradients
+0.00788/0.00879. Polishing GH31 improves its own NLL but slightly worsens continuous
+NLL in both examples: stopping and integration errors partly cancelled.
+At polished GH121, absolute continuous-NLL differences are 4.15e-9/3.28e-9, and
+calibration differences from retained TAM/ConQuest outputs are at most
+3.05e-8/1.29e-6 logits. These observed checks do not qualify Q121 as a default;
+continuous gradients still differ from finite-GH gradients. See the
+[stopping/order audit](docs/mml_cross_language_development_check.md#固定sdのem停止とgh次数感度の切り分け).
+
+The opt-in fixed-SD development API now uses the shared MML likelihood and stable
+likelihood-difference implementation. Disabled calls do no work. Enabled calls
+retain the original result and return separate candidate parameters, labeled EAP/
+posterior-SD scores, the exact fixed rule, gradients and all three solver records.
+Unsupported models/constraints/weights and inconsistent inputs stop before fitting.
+The two previous endpoints were reproduced within 3.65e-15 logits; three additional
+SD/data checks confirm the need to keep integration separate. On the cyclic test
+fixture with SD1.6, GH121 has a stationary finite objective but continuous NLL/SD
+differences of 0.00704/0.000775, despite nearly identical EAPs. These candidates are
+not fitted-result replacements and do not inherit SEs, CIs or inference readiness.
+See the [API checks and counterexample](docs/mml_cross_language_development_check.md#固定sd仕上げ候補を返す開発用api).
+
+The fixed-SD MML view now starts with one short status and a closed numerical-details
+panel. Supported PCM results have an explicit returned-point check: it reevaluates
+the same fixed-GH likelihood and gradient without refitting. Stopping, gradient and
+integration remain separate; a small gradient does not supply an integration pass.
+Fresh input hashes invalidate stale checks, while language changes retain them.
+All 168 relevant tests passed; Japanese/English desktop and mobile component checks
+were completed. Extracting the shared input serializer preserved all 110 assets in
+six export comparisons. See the [UI scope and evidence](docs/mml_cross_language_development_check.md#返却点診断のコンパクトな画面接続).
+
+Japanese copy across the main workflow has been revised in 672 locale entries,
+including setup, returned-point checks, residual PCA, bias and report/export.
+The wording separates a stopping rule from gradient and integration checks;
+the old blanket reporting-order recommendation has been removed. Numerical code,
+decision thresholds and defaults are unchanged. See the
+[Japanese UI review](docs/ux_adversarial_audit.md#日本語の見直し--2026-09-15ローカル実装).
+
+Next connect saved diagnostics and the existing Q-sensitivity assessment using the
+same current-input/returned-point checks. Keep application
+of candidate coordinates to a full result deferred until every derived table and
+uncertainty quantity can be recomputed consistently. Do not automatically increase
+Q, mark scientific equivalence or import native-score stability from these cases.
+Before displaying measured external evidence for a current fit, verify the data,
+full model/constraints/weights, coordinates, runtime and settings, then recompute
+the four answers from retained measurements and justified targets. A file hash or
+native convergence flag alone is insufficient. Further native-internal reconstruction needs a concrete
+unresolved comparison question. Reevaluate the actual returned point
+even when the native summary says convergence was reached. Keep nonunit response-weight
+native equivalence unestablished; do not substitute person weights for powers inside
+each person's integral. Retain
+calibration quadrature settings and posterior scoring method/p_nodes/seed separately
+in comparison reports. Native calibration agreement does not certify standard-score
+precision, and these ten-seed summaries do not establish a universal Monte Carlo
+rate or a sufficient default count. Keep finite-objective stationarity separate
+from the reported stopping reason. Global optimization, SE/CI/coverage,
+default-estimator changes and inference qualification remain unestablished.
+Reuse the existing Q-sensitivity assessment and its raw-NLL reconstruction checks.
+Finite-order agreement remains separate from continuous-reference and score accuracy.
+These observed numerical probes are not SE/CI/coverage qualification.
+ftol=0 still permits termination at a computed zero/nonpositive reduction and is
+not gradient-only stopping. Use range and density checks together.
+Always retain initial, returned and last coordinates and reevaluate each objective.
+Further ConQuest internal reconstruction is a secondary diagnostic, not the
+definition of correctness. Qualify SE/CI/coverage separately. No default order or
+inference gate changes.
+See the [numerical evidence ledger](docs/mml_cross_language_development_check.md)
+and [anchor control / GH history audit](docs/mml_cross_language_development_check.md#conquest平均アンカー対照とgh全履歴監査).
+The [direct-start results](docs/mml_cross_language_development_check.md#conquest直接gh解からの開始値対照)
+separate first-step movement, start sensitivity and continuous-integral accuracy.
+See [structural replay and checkpoint controls](docs/mml_cross_language_development_check.md#conquest構造更新と返却点の対照)
+for the update reconstruction, its limits and the next validation priority.
+See [independent ordinary and wider-tail conditions](docs/mml_cross_language_development_check.md#独立した通常条件と広い裾での求積検証)
+for the frozen protocol, numerical targets, full results and remaining scope.
+See [range/density and matched-start external checks](docs/mml_cross_language_development_check.md#積分範囲と密度の対照およびtamconquestの実測)
+for the new evidence, objective-normalization distinction and retained failures.
+See [optimizer resolution and status contract](docs/mml_cross_language_development_check.md#異常終了の再現と数値精度の判定契約)
+for the bounded high-precision diagnosis and its negative controls.
+See [stable likelihood differences](docs/mml_cross_language_development_check.md#尤度差の安定計算と高精度照合)
+for the exact ratio identity, arithmetic scope and stopping-scale caveat.
+See [fixed-anchor optimizer controls](docs/mml_cross_language_development_check.md#固定基準点を用いた最適化対照)
+for the 96 retained runs, gradient attainment and unresolved integration error.
+See [two-stage checks on fresh data](docs/mml_cross_language_development_check.md#保存済み解を使わない二段階検証)
+for self-constructed anchors, independent arithmetic checks and the API boundary.
+The [fixed-calibration scoring comparison](docs/mml_cross_language_development_check.md#conquest校正固定での得点mc精度)
+separates posterior Monte Carlo draws from MML quadrature order.
 
 - Status: active
-- Last updated: 2026-08-11
+- Last updated: 2026-09-14 (two-stage refinement on fresh data; historical evidence below retains its dates)
 - Product boundary: standalone Python
 
 ## Product thesis

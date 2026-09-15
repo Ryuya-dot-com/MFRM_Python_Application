@@ -1,0 +1,12 @@
+{
+  "cff-version": "1.2.0",
+  "message": "If you use this software in research, please cite the version used. Citation is appreciated, not an additional condition of the MIT License.",
+  "type": "software",
+  "title": "MFRM Streamlit",
+  "authors": [{"family-names": "Komuro", "given-names": "Ryuya"}],
+  "version": "0.2.18-beta",
+  "date-released": "2026-09-15",
+  "license": "MIT",
+  "repository-code": "https://github.com/Ryuya-dot-com/MFRM_Python_Application",
+  "url": "https://github.com/Ryuya-dot-com/MFRM_Python_Application"
+}

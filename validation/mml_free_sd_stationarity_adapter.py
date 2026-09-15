@@ -3,21 +3,41 @@
 This adapter is intentionally not wired into the default Streamlit estimator.
 It lets engineering fixtures exercise the same likelihood used by the app
 without changing legacy results or assigning prospective scientific gates.
-Only unregularized RSM/PCM free-population-SD fits are accepted in v2 phase 1.
+Free-SD v2 accepts unregularized RSM/PCM. A separate opt-in fixed-SD PCM
+development entry point returns candidates without replacing a fitted result.
 """
 
 from __future__ import annotations
 
 import copy
 from dataclasses import dataclass
+import json
+import math
 import operator
-from typing import Any
+from typing import Any, Callable
 
 import numpy as np
+from scipy.special import logsumexp
 
 import streamlit_app as app
-from mfrm_app.mml_engine_v2 import FreeSdStationarityRun, run_free_sd_stationarity_v2
-from mfrm_app.mml_stationarity import JointPolishOptions
+from mfrm_app.mml_engine_v2 import (
+    FreeSdStationarityRun, TwoStageFreeSdRun,
+    run_free_sd_stationarity_v2, run_free_sd_two_stage,
+)
+from mfrm_app.mml_stationarity import (
+    JointPolishOptions, audit_joint_gradient, information_diagnostics, polish_fixed_sd,
+)
+
+
+def _log_average_exp(log_weights: np.ndarray, change: np.ndarray) -> np.ndarray:
+    # Same arithmetic as the immutable mml_pcm_likelihood_difference study;
+    # importing that executable also imports its historical study dependencies.
+    if not np.isfinite(change).all():
+        raise FloatingPointError("Nonfinite log ratio")
+    log_weights = log_weights - logsumexp(log_weights, axis=-1, keepdims=True)
+    if np.max(np.abs(change)) <= 0.5:
+        return np.log1p(np.sum(np.exp(log_weights) * np.expm1(change), axis=-1))
+    return logsumexp(log_weights + change, axis=-1) - logsumexp(log_weights, axis=-1)
 
 
 @dataclass(frozen=True)
@@ -60,6 +80,94 @@ class AppFreeSdProblem:
             joint[:-1], self.idx, self.config, self.sizes, quad, include_log_sigma=True,
         )
         return float(value), np.asarray(gradient, dtype=float)
+
+    def likelihood_difference(self, anchor: np.ndarray) -> Callable[[np.ndarray], float]:
+        """NLL(point)-NLL(anchor) for the app's weighted, observed-row GH target.
+
+        Response weights multiply conditional log probabilities before person
+        integration. Fractional weights therefore define a powered likelihood.
+        Missing rows are absent; an empty or zero-weight person contributes zero.
+        """
+        config, idx = copy.deepcopy(self.config), copy.deepcopy(self.idx)
+        if config["model"] not in {"RSM", "PCM"} or config["method"] != "MML":
+            raise ValueError("Likelihood differences require RSM/PCM MML")
+        if config.get("facet_regularization_enabled") or config.get("facet_regularization", {}).get("enabled"):
+            raise ValueError("Likelihood differences exclude penalized fits")
+        shape = (sum(self.sizes.values()) + 1,)
+        log_bounds = np.log(self.sigma_bounds)
+        fixed_sd = not config.get('estimate_population_sd', False)
+        fixed_log_sd = float(np.log(self.sigma_start)) if fixed_sd else None
+
+        def checked(point):
+            point = np.asarray(point, dtype=float)
+            if point.shape != shape or not np.isfinite(point).all():
+                raise ValueError("Expected finite joint coordinates with the identified dimension")
+            if not log_bounds[0] <= point[-1] <= log_bounds[1]:
+                raise ValueError("Population SD is outside its bounds")
+            if fixed_sd and point[-1] != fixed_log_sd:
+                raise ValueError("Fixed-SD likelihood differences cannot change population SD")
+            return point
+
+        anchor = checked(anchor).copy()
+        person, score = idx["person"], idx["score_k"]
+        weight = np.asarray(idx.get("weight", np.ones(len(score))), dtype=float)
+        n_person, n_cat = config["n_person"], config["n_cat"]
+        if (weight.shape != score.shape or not np.isfinite(weight).all()
+            or np.any(weight < 0) or not np.any(weight > 0)):
+            raise ValueError("Response weights must be finite, nonnegative and not all zero")
+        if (person.shape != score.shape or np.any(person < 0) or np.any(person >= n_person)
+            or np.any(score < 0) or np.any(score >= n_cat)):
+            raise ValueError("Invalid observed person/category indices")
+        rows = [np.flatnonzero(person == p) for p in range(n_person)]
+        saved_rows = idx.get("rows_by_person", rows)
+        if len(saved_rows) != n_person or any(not np.array_equal(a, b) for a, b in zip(rows, saved_rows)):
+            raise ValueError("Person row groups disagree with observation indices")
+        quad = app.gauss_hermite_normal(self.quadrature_points)
+        z, w = quad["nodes"], quad["weights"]
+        if (not np.isfinite(z).all() or not np.isfinite(w).all() or not np.all(w > 0)
+            or abs(w.sum() - 1) > 1e-12 or abs(w @ z) > 1e-12
+            or abs(w @ (z*z) - 1) > 1e-12):
+            raise ValueError("GH rule requires finite nodes and positive standard-normal weights")
+        theta = np.exp(anchor[-1]) * z
+        if fixed_sd:
+            # Preserve the exact fixed rule, including SD roundoff. The joint
+            # helper is used only on its structural slice; SD is never fitted.
+            theta = app.gauss_hermite_normal(self.quadrature_points, sd=self.sigma_start)['nodes']
+        categories = np.arange(n_cat)
+
+        # Expand changes with homogeneous constraints. Subtracting two expanded
+        # vectors would lose tiny changes against nonzero anchors/group means.
+        change_config = copy.deepcopy(config)
+        for spec in change_config["facet_specs"].values():
+            spec["anchors"][np.isfinite(spec["anchors"])] = 0.0
+            spec["group_values"] = dict.fromkeys(spec["group_values"], 0.0)
+
+        def offsets(parameters, cfg):
+            expanded = app.expand_params(parameters, self.sizes, cfg)
+            eta = app.compute_base_eta(idx, expanded, cfg) + app.compute_population_mu(expanded, cfg)[person]
+            steps = expanded["steps"][None, :] if cfg["model"] == "RSM" else expanded["steps_mat"]
+            cumulative = np.column_stack((np.zeros(len(steps)), np.cumsum(steps, axis=1)))
+            cumulative = cumulative[0] if cfg["model"] == "RSM" else cumulative[idx["step_idx"]]
+            return eta[:, None] * categories - cumulative
+
+        # ponytail: cache O(rows * Q * categories); chunk by person if large-data
+        # profiling shows this development adapter exceeds the memory budget.
+        logits = offsets(anchor[:-1], config)[:, None, :] + theta[None, :, None] * categories
+        log_category = logits - logsumexp(logits, axis=-1, keepdims=True)
+        observed = (np.arange(len(score)), slice(None), score)
+        log_posterior = np.tile(np.log(w), (n_person, 1))
+        np.add.at(log_posterior, person, weight[:, None] * log_category[observed])
+
+        def difference(point):
+            change = checked(point) - anchor
+            theta_change = theta * np.expm1(change[-1])
+            logit_change = offsets(change[:-1], change_config)[:, None, :] + theta_change[None, :, None] * categories
+            normalizer_change = _log_average_exp(log_category, logit_change)
+            person_change = np.zeros((n_person, len(w)))
+            np.add.at(person_change, person, weight[:, None] * (logit_change[observed] - normalizer_change))
+            return -math.fsum(_log_average_exp(log_posterior, person_change))
+
+        return difference
 
     def constraint_residual(self, parameters: np.ndarray) -> float:
         """Reconstruct exact expanded-coordinate identification constraints."""
@@ -211,8 +319,79 @@ def run_app_free_sd_stationarity_v2(
     return problem, run
 
 
+def run_app_free_sd_two_stage(
+    result: dict[str, Any],
+    *,
+    anchor_gradient_limit: float,
+    refinement_options: JointPolishOptions,
+    preliminary_options: JointPolishOptions | None = None,
+    quadrature_points: int | None = None,
+) -> tuple[AppFreeSdProblem, TwoStageFreeSdRun]:
+    """Opt-in observed-row adapter; no default estimator or inference gate changes."""
+    problem = prepare_app_free_sd_problem(result, quadrature_points=quadrature_points)
+    run = run_free_sd_two_stage(
+        problem.structural_start, problem.sigma_start, problem.value, problem.value_gradient,
+        observations=problem.observations, difference_factory=problem.likelihood_difference,
+        joint_value_gradient=problem.joint_value_gradient, anchor_gradient_limit=anchor_gradient_limit,
+        refinement_options=refinement_options, preliminary_options=preliminary_options,
+        structural_bounds=problem.structural_bounds, sigma_bounds=problem.sigma_bounds,
+        constraint_residual_function=problem.constraint_residual,
+    )
+    return problem, run
+
+
+def run_app_fixed_sd_polish(result, *, enabled=False, options=None):
+    """Opt-in candidate/diagnostics for the restricted PCM; no in-place update.
+
+    Disabled means no validation, likelihood evaluation, export or optimization.
+    Enabled reuses the native-comparison model preflight, but runs Python only.
+    Candidate scores contain EAP and posterior SD, not recalculated SEs or CIs.
+    """
+    if type(enabled) is not bool:
+        raise ValueError('enabled must be a boolean')
+    if not enabled:
+        return None
+    prepared = app.prepare_fixed_sd_pcm_check(result)
+    cfg, prep, sizes, idx = (prepared[k] for k in ('config', 'prep', 'sizes', 'idx'))
+    start, quad = prepared['coordinates'], prepared['quad']
+    sigma, q = float(quad['sd']), len(quad['nodes'])
+    assets = app.build_cross_engine_validation_bundle(result)
+    problem = AppFreeSdProblem(cfg, sizes, idx, tuple(start), sigma, q,
+        float(len(idx['score_k'])), ((None, None),)*len(start), (.05, 10.))
+    value_gradient = lambda p: problem.value_gradient(p, sigma)
+    initial_check = app.evaluate_fixed_sd_pcm_check(prepared)
+    value, gradient = initial_check['raw_nll'], np.asarray(initial_check['gradient'])
+    reported = prepared['reported_nll']
+    log_sd = float(np.log(sigma))
+    def factory(anchor):
+        delta = problem.likelihood_difference(np.r_[anchor, log_sd])
+        return lambda point: delta(np.r_[point, log_sd])
+    run = polish_fixed_sd(start, value_gradient, factory, options=options)
+    run.update(schema='mfrm_fixed_sd_candidate_v1', source='development_api',
+        input_bundle_sha256=json.loads(assets['comparison_report.json'])['details']['input_bundle_sha256'],
+        coordinate_blocks=dict(sizes), facet_levels=copy.deepcopy(cfg['facet_levels']),
+        fixed_quadrature=dict(method='Gauss-Hermite', points=q, sigma=sigma,
+            nodes=quad['nodes'].tolist(), weights=quad['weights'].tolist()),
+        original_optimizer=dict(message=str(result['opt'].message), success=bool(result['opt'].success),
+            reported_nll=reported, reevaluated_nll=float(value), gradient=gradient.tolist()),
+        candidate_is_fitted_result=False)
+    if run['completed']:
+        point = np.asarray(run['candidate_coordinates'])
+        run['information'] = [information_diagnostics(value_gradient, point, relative_step=h).to_dict() for h in (1e-4, 3e-5)]
+        run['gradient_audit'] = audit_joint_gradient(lambda p:value_gradient(p)[0], value_gradient, point).to_dict()
+        expanded = app.expand_params(point, sizes, cfg)
+        score = app.compute_person_eap(idx, cfg, expanded, quad)
+        score.insert(0, 'Person', prep['levels']['Person'])
+        run['candidate_parameters'] = expanded
+        run['candidate_person_scores'] = score
+        run['constraint_residual'] = problem.constraint_residual(point)
+    return run
+
+
 __all__ = [
     "AppFreeSdProblem",
     "prepare_app_free_sd_problem",
     "run_app_free_sd_stationarity_v2",
+    "run_app_free_sd_two_stage",
+    "run_app_fixed_sd_polish",
 ]

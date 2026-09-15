@@ -38,6 +38,7 @@ from mfrm_app import design_assignment as _design_assignment
 from mfrm_app import assignment_sensitivity as _assignment_sensitivity
 from mfrm_app import assignment_context_milp as _assignment_context_milp
 from mfrm_app import assignment_generator as _assignment_generator
+from mfrm_app import citation as _citation
 from mfrm_app import evidence as _evidence
 from mfrm_app import exports as _exports
 from mfrm_app import frame_bundle as _frame_bundle
@@ -47,6 +48,8 @@ from mfrm_app import help_navigation as _help_navigation
 from mfrm_app import help_popovers as _help_popovers
 from mfrm_app import help_topics as _help_topics
 from mfrm_app import io_tables as _io_tables
+from mfrm_app.legacy_compat import pcm_native_runner as _pcm_native
+from mfrm_app import mml_comparison_report as _comparison
 from mfrm_app import mml_prior_sensitivity as _mml_prior_contract
 from mfrm_app import output_qualification as _output_qualification
 from mfrm_app import preflight as _preflight
@@ -76,7 +79,7 @@ if "--doctor" in sys.argv and importlib.util.find_spec("streamlit") is None:
 import streamlit as st
 
 
-APP_VERSION = "0.2.17-beta"
+APP_VERSION = "0.2.18-beta"
 APP_RELEASE_LABEL = "standalone Python beta"
 APP_BUILD_ENV_KEYS = (
     "STREAMLIT_GIT_COMMIT_HASH",
@@ -8068,18 +8071,19 @@ def render_input_overview(data: pd.DataFrame) -> None:
     missing_pct = (100.0 * n_missing / n_cells) if n_cells else 0.0
     preview_rows = min(20, n_rows)
     metric_cols = st.columns(4)
-    metric_cols[0].metric("Rows", f"{n_rows:,}")
-    metric_cols[1].metric("Columns", f"{n_cols:,}")
-    metric_cols[2].metric("Missing cells", f"{missing_pct:.1f}%")
-    metric_cols[3].metric("Previewed", f"{preview_rows:,}")
+    metric_cols[0].metric(_standalone_ui_text(en="Rows", ja="行数"), f"{n_rows:,}")
+    metric_cols[1].metric(_standalone_ui_text(en="Columns", ja="列数"), f"{n_cols:,}")
+    metric_cols[2].metric(_standalone_ui_text(en="Missing cells", ja="空欄の割合"), f"{missing_pct:.1f}%")
+    metric_cols[3].metric(_standalone_ui_text(en="Previewed", ja="プレビューの行数"), f"{preview_rows:,}")
     if n_missing:
-        st.caption(
-            f"{n_missing:,} blank cell(s) are present in the raw table. "
+        st.caption(_standalone_ui_text(
+            en=f"{n_missing:,} blank cell(s) are present in the raw table. "
             "After column mapping, the readiness panel and Data tab show which "
-            "score rows are excluded from likelihood calculations."
-        )
+            "score rows are excluded from likelihood calculations.",
+            ja=f"入力した表には空欄が {n_missing:,} 個あります。列を指定した後、分析前の確認欄とデータ画面で、どの回答が尤度の計算から除外されるかを確認できます。"))
     else:
-        st.caption("No blank cells were detected in the raw table preview.")
+        st.caption(_standalone_ui_text(en="No blank cells were detected in the raw table preview.",
+            ja="入力した表に空欄はありません。"))
 
 
 def render_analysis_setup_workspace(
@@ -19703,151 +19707,255 @@ def build_dif_validation_bundle(res: dict) -> dict:
     return out
 
 
-_CROSS_ENGINE_R_SCRIPT = r'''# run_tam_mirt_crosscheck.R
-# Cross-engine validation of the MFRM app's MML/GPCM main estimates, using the R
-# packages TAM, sirt, and mirt on the EXACT data the app fitted. This is a
-# reproducibility artifact: exact numbers WILL differ (see README) — rank-order
-# and directional agreement is the bar, not matching logits.
-#   install.packages(c("TAM", "sirt", "mirt"))
-suppressMessages({library(TAM); library(sirt)})
-
-dat      <- read.csv("data.csv",     stringsAsFactors = FALSE, check.names = FALSE)
+_CROSS_ENGINE_R_SCRIPT = r'''# run_tam_mirt_crosscheck.R — model-matching worksheet, NOT a fitted comparison.
+# No external engine is called by the Streamlit app.
+dat <- read.csv("data.csv", stringsAsFactors = FALSE, check.names = FALSE,
+                colClasses = "character")  # Preserve IDs such as 001; do not infer types.
 settings <- read.csv("settings.csv", stringsAsFactors = FALSE)
-
-model      <- as.character(settings$model[1])      # RSM / PCM / GPCM
-method     <- as.character(settings$method[1])     # MML / JMLE
-item_facet <- as.character(settings$step_facet[1])
-facet_all  <- strsplit(as.character(settings$facet_names[1]), ";")[[1]]
-if (is.na(item_facet) || item_facet == "") item_facet <- tail(facet_all, 1)  # RSM: last facet as item
-other_facets <- setdiff(facet_all, item_facet)
-cat("Model:", model, " method:", method, " item facet:", item_facet,
-    " other facets:", paste(other_facets, collapse = ", "), "\n\n")
-
-# --- Reshape long -> wide on the item facet (TAM facets format) -------------
-#   Each row = (Person + other-facet) combination; columns = item-facet levels;
-#   pid = Person; facets = the other facets per row. ADAPT to your design.
-id_cols <- c("Person", other_facets)
-wide <- reshape(dat[, c(id_cols, item_facet, "Score")],
-                idvar = id_cols, timevar = item_facet, direction = "wide")
-item_cols <- grep("^Score\\.", colnames(wide), value = TRUE)
-resp   <- wide[, item_cols, drop = FALSE]
-colnames(resp) <- sub("^Score\\.", "", item_cols)
-pid    <- wide$Person
-facets <- wide[, other_facets, drop = FALSE]
-
-# --- 1. TAM many-facet Rasch (tam.mml.mfr) ---------------------------------
-formA <- as.formula(paste("~ item +", paste(other_facets, collapse = " + "), "+ item:step"))
-tam_mod <- tryCatch(
-  TAM::tam.mml.mfr(resp = resp, facets = facets, formulaA = formA, pid = pid),
-  error = function(e) { message("TAM: ", conditionMessage(e)); NULL })
-if (!is.null(tam_mod)) {
-  cat("\n--- TAM facet/item parameters (xsi) ---\n"); print(tam_mod$xsi)
-  cat("\n--- TAM person EAP/WLE (head) ---\n"); print(head(TAM::tam.wle(tam_mod)))
-}
-
-# --- 2. sirt rater-facet model (rm.facets) — closest to a rater-mediated MFRM
-if (length(other_facets) >= 1) {
-  rater <- as.factor(facets[[other_facets[1]]])     # ADAPT: which facet is the rater
-  rm_mod <- tryCatch(sirt::rm.facets(dat = resp, pid = pid, rater = rater),
-                     error = function(e) { message("sirt rm.facets: ", conditionMessage(e)); NULL })
-  if (!is.null(rm_mod)) { cat("\n--- sirt rm.facets item/rater parameters ---\n"); print(rm_mod$item) }
-}
-
-# --- 3. mirt item-level (collapse raters: mean score per person x item) -----
-dat$.item <- dat[[item_facet]]
-agg <- aggregate(Score ~ Person + .item, data = dat, FUN = mean)
-colnames(agg)[colnames(agg) == ".item"] <- "item"
-mwide <- reshape(agg, idvar = "Person", timevar = "item", direction = "wide")
-mresp <- round(mwide[, grep("^Score", colnames(mwide)), drop = FALSE])
-itemtype <- if (model == "GPCM") "gpcm" else "Rasch"   # GPCM ~ gpcm; RSM/PCM ~ Rasch-family
-m_mod <- tryCatch(mirt::mirt(mresp, 1, itemtype = itemtype, verbose = FALSE),
-                  error = function(e) { message("mirt: ", conditionMessage(e)); NULL })
-if (!is.null(m_mod)) { cat("\n--- mirt item coefficients ---\n"); print(mirt::coef(m_mod, simplify = TRUE)$items) }
-
-# --- 4. side-by-side with the app's own estimates ---------------------------
+print(settings)
+cat("Retained response rows:", nrow(dat), "\n")
 for (f in c("app_facets.csv", "app_person.csv", "app_steps.csv", "app_slopes.csv")) {
-  if (file.exists(f)) { cat("\n---", f, "(head) ---\n"); print(head(read.csv(f))) }
+  if (file.exists(f)) { cat("\n---", f, "---\n"); print(head(read.csv(f))) }
 }
-cat("\nCompare RANK ORDER and DIRECTION, not exact logits (see README_cross_engine.md).\n")
+
+# Before writing a refit, align data/category coding (including rating_min),
+# repeated observations, response weights, RSM vs PCM vs bounded GPCM,
+# parameter signs/constraints/anchors, prior mean/regression/variance,
+# penalties, quadrature rule/range/normalization, and objective definition.
+# Save package versions and exact initial/returned/last coordinates.
+# TAM: TAM::tam.mml.mfr; TAM::tam.wle returns WLE, not EAP.
+# sirt: sirt::rm.facets requires a verified rater/design mapping.
+# mirt: mirt::mirt requires a verified item/step/slope specification.
+# ConQuest: a study-specific control/design file is required; none is supplied.
+# mfrmr: record the exact development version/commit and quadrature settings.
+# Never collapse repeated responses to rounded means for an equivalence check.
+# Rank correlation alone does not establish numerical agreement.
+stop("Template only: implement and verify the matching model described in README_cross_engine.md before fitting. No comparison has been run.", call. = FALSE)
 '''
 
-_CROSS_ENGINE_README = '''# Cross-engine validation of the MFRM app's main estimates (TAM / sirt / mirt)
+_CROSS_ENGINE_README = '''# Prepare a numerical comparison
 
-This bundle lets you refit the app's MML/GPCM analysis in R (TAM, sirt, mirt) and
-cross-check the estimates. **Exact numerical equality is NOT claimed** (the app
-runs standalone Python; it never calls these packages at runtime). The bar is
-rank-order, sign, and effect-ordering agreement — not matching logits or
-log-likelihoods.
+**No external refit or measured comparison has been run by the app.** Numerical
+equivalence is not claimed. The four questions in `comparison_report.html` and
+`comparison_report.json` start as **Not assessed**. The app does not execute TAM,
+sirt, mirt, mfrmr or ConQuest. Development examples are not evidence for this fit.
 
-## Files
-- `data.csv` — the exact long response frame the app fitted: `Person`, each facet,
-  `Score`, `Weight`.
-- `settings.csv` — the fitted model: model (RSM/PCM/GPCM), method (MML/JMLE),
-  step/slope facet, facet names, identification (noncenter facet), population SD
-  setting, quadrature points, score range.
-- `app_person.csv` / `app_facets.csv` / `app_steps.csv` / `app_slopes.csv` — the
-  app's own person, facet, step, and (GPCM) slope estimates for side-by-side.
-- `run_tam_mirt_crosscheck.R` — refits with `TAM::tam.mml.mfr`, `sirt::rm.facets`,
-  and `mirt`, then prints estimates for comparison. It is a **template** —
-  adapt the facets design (`formulaA`, which facet is the rater) to your study.
+## Start here
+1. Open `comparison_report.html` for the four questions and missing evidence.
+2. Use the retained files to define the same model in the chosen external engine.
+3. Set justified accuracy targets before examining the comparison; retain raw
+   output, versions, coordinate mappings and independent recomputations.
 
-## Run
+`run_tam_mirt_crosscheck.R` reads the exports and intentionally stops before fitting.
+It is a worksheet requiring a study-specific implementation, not a ready-to-run
+TAM/sirt/mirt replication. See `native_runner_status.json` for the separate,
+restricted PCM runner. No mfrmr runner is supplied.
+
+## Restricted PCM runner (included only for supported inputs)
+If `native_runner_status.json` reports `available: true`, the ZIP also contains
+`run_pcm_native.py` and `run_pcm_tam.R`. Requires Python with NumPy, SciPy and pandas,
+R with jsonlite and TAM 4.3.25, and a licensed ConQuest 5.47.5 executable.
+From the extracted folder, choose a NEW output folder and run:
+
+```sh
+python3 run_pcm_native.py --output pcm_comparison --conquest /Applications/ConQuest/ConQuest --refit
 ```
-install.packages(c("TAM", "sirt", "mirt"))
-Rscript run_tam_mirt_crosscheck.R
-```
 
-## Why the numbers differ (expected sources)
-1. **Population variance.** The app's MML fixes the person SD by default, or
-   estimates it (the opt-in free-SD mode — see `estimate_population_sd` /
-   `estimated_population_sd` in settings.csv). TAM estimates the latent variance
-   by default. Person measures are on different metric scales unless the variance
-   handling is aligned; compare rank order, not raw logits.
-2. **Identification / centering.** The app uses sum-to-zero centering on the
-   facets (non-centered facet recorded in settings); TAM/sirt use their own
-   defaults (often a fixed first level). Expect a constant shift / rotation, not
-   item-for-item equality.
-3. **GPCM slopes.** The app uses a bounded GPCM slope facet with a geometric-mean
-   slope identification; mirt's `gpcm` is item-level with free slopes. Treat mirt
-   as item-level corroboration, not a facet-level match.
-4. **Rater mediation.** sirt's `rm.facets` is the closest analog (a rater-facet
-   model). mirt is item-level, so the R script collapses raters to a mean score
-   per person x item and rounds — that aggregation/rounding alone shifts results.
-5. **Estimator / quadrature.** MML EM vs the package optimizer, quadrature point
-   counts, and scoring conventions differ.
+The runner verifies file hashes and model inputs, then executes both engines at
+the exported fixed calibration. Only after coding/design/anchor/likelihood checks
+pass does `--refit` permit native structural refits. Omitting `--refit` runs the
+fixed-calibration checks only. Existing output folders are never overwritten.
+Supported: MML PCM, three two-level facets, categories 0:3, unit response weights,
+fixed normal SD and zero mean, no regression/anchors/penalty, centered other facets
+and an uncentered step facet. Each facet combination must contain all four score
+categories. Missing person/cell observations are preserved; duplicate cells and
+empty persons are rejected. Labels are recoded reversibly, without averaging.
 
-## What to compare
-Per facet/item: (a) the same sign and ordering of difficulties/severities,
-(b) rank correlation of person measures > ~0.95, (c) the same fit outliers.
-A logit-by-logit diff is the wrong test; report a cross-check only when the
-model, constraints, quadrature, and scoring conventions are aligned (see the
-app's "Cross-package equivalence" boundary). Disagreement beyond ~0.05 logits or
-a rank correlation below ~0.95 warrants inspecting the identification and
-variance-handling alignment first.
+`--nodes 401 --bound 20` sets an equally spaced integration grid (NOT Hermite
+quadrature). Its likelihood is reevaluated independently; it is not assumed to
+equal the app's fitted finite-GH objective. Vary order and range separately for
+integration checks. ConQuest's native scores use MC with 2,000 nodes and seed 2;
+their single-run differences do not establish scoring stability. Raw runs and
+returned-point gradients/scores are saved, without a four-question pass or
+inference qualification. Result import into Streamlit is not implemented.
+
+References: [TAM model and constraint arguments](https://alexanderrobitzsch.github.io/TAM/reference/tam.mml.html),
+[ConQuest command reference](https://conquestmanual.acer.org/s4-00.html).
+
+## Retained files
+- `data.csv`: fitted long response rows, Person/facet labels, Score and Weight
+  when present. These are identifiable analysis inputs, not a public export.
+- `settings.csv`: short overview; use `analysis_snapshot.json` for full settings.
+- `analysis_snapshot.json`: configuration including constraints, anchors and
+  population design; level order; expanded parameters; returned optimizer
+  coordinates and its reported objective/stopping information. Arrays use JSON
+  arrays, DataFrames use columns/index/data, and nonfinite scalars use explicit
+  `nonfinite` tags. This is an inspection snapshot, not an executable config.
+- `app_person.csv`, `app_facets.csv`, `app_steps.csv`, `app_slopes.csv` when available:
+  app estimates. Person measures retain their original scoring method.
+- `comparison_summary.csv`, `comparison_metrics.csv`, HTML and JSON: an unassessed
+  comparison record. Empty measurements are not zero errors.
+- The report details bind the exact input files with SHA-256 and an analysis
+  identity. Hashes identify content; they do not authenticate an external result.
+  This version has no comparison-result import or automatic qualification.
+- `native_runner_status.json`: whether the restricted PCM runner can be used and,
+  if not, the reason. Unsupported inputs retain the general preparation worksheet.
+- `LICENSE` and software citation sidecars: MIT terms and citation information
+  matched to the recorded app version when available.
+
+## What must match (expected sources of discrepancies)
+Match observations/missingness, category coding, response-weight semantics,
+RSM/PCM/GPCM design, slopes, signs, identification and anchors, population
+mean/regression and variance handling, regularization, likelihood definition,
+and scoring method. MML and JMLE optimize different objectives. Response weights
+inside each person's integral cannot simply be replaced by person weights.
+Reshaping must preserve every observed response; do not average and round ratings.
+After an explicit coordinate mapping, compare parameters on the same logit scale.
+Rank correlation alone can conceal systematic shifts and scale differences;
+there is no universal 0.95 correlation or 0.05-logit equivalence threshold.
+
+## Four separate questions
+1. **Calibration:** compare mapped returned parameters and same-point objectives
+   under the matched model, with a justified numerical/equivalence margin.
+2. **Stationarity:** reevaluate the gradient at the actual returned point for the
+   declared objective. Keep initial, selected/returned and last points separate.
+   A native convergence message or history likelihood can refer to a different
+   point or stopping criterion; account for exported-coordinate rounding.
+3. **Integration:** distinguish fixed-point integration error from changes after
+   refitting at different orders. Record the rule, nodes, range and weight
+   normalization. Check order and range separately against a qualified reference;
+   high order or agreement between two finite orders alone is insufficient.
+4. **Native scores:** align score type (EAP, WLE, etc.) and calibration. Separate
+   posterior scoring from calibration quadrature; record scoring nodes/p_nodes
+   and seeds. For Monte Carlo scores use repeated seeds at fixed calibration.
+
+No overall pass is computed. Numerical agreement does not establish valid standard
+errors, confidence intervals, coverage, global optimality or scientific inference.
 '''
 
 
-def build_cross_engine_validation_bundle(result: dict) -> dict:
-    """Build a TAM/sirt/mirt R cross-engine validation bundle from a fitted result.
-
-    Ships the exact data, the fitted settings, and the app's own estimates so the
-    researcher can refit in R and cross-check. Reproducibility artifact only —
-    TAM/sirt/mirt are NOT app dependencies; exact numerical parity is not claimed.
-    Returns {filename: bytes-or-text} for cached_mixed_asset_zip, or {} when there
-    is no usable fitted result.
-    """
+def _analysis_input_assets(result: dict) -> dict:
+    """Lossless current-fit inputs shared by export and returned-point checks."""
     if not isinstance(result, dict):
         return {}
     prep = result.get("prep", {})
     config = result.get("config", {})
+    if not isinstance(config, dict):
+        return {}
     data = prep.get("data") if isinstance(prep, dict) else None
     if not isinstance(data, pd.DataFrame) or data.empty:
         return {}
     facet_names = [str(f) for f in (config.get("facet_names") or [])]
+    if not {"Person", "Score", *facet_names}.issubset(data.columns):
+        return {}
     keep_cols = (["Person"]
                  + [c for c in facet_names if c in data.columns]
                  + [c for c in ("Score", "Weight") if c in data.columns])
     out: dict = {"data.csv": to_csv_bytes(data[keep_cols].copy())}
+    def snapshot(value):
+        # Preserve full arrays/tables; str(array) can truncate the fitted inputs.
+        if isinstance(value, pd.DataFrame):
+            return snapshot(value.to_dict("split"))
+        if isinstance(value, pd.Series):
+            return snapshot({"index": value.index.tolist(), "data": value.tolist(), "name": value.name})
+        if isinstance(value, np.ndarray):
+            return snapshot(value.tolist())
+        if isinstance(value, np.generic):
+            return snapshot(value.item())
+        if value is pd.NA:
+            return {"nonfinite": "pd.NA"}
+        if isinstance(value, float) and not np.isfinite(value):
+            return {"nonfinite": str(value)}
+        if isinstance(value, dict):
+            normalized = {str(k): snapshot(v) for k, v in value.items()}
+            if len(normalized) != len(value):
+                raise ValueError("Snapshot contains colliding JSON keys")
+            return normalized
+        if isinstance(value, (list, tuple)):
+            return [snapshot(v) for v in value]
+        return value  # canonical_json rejects unsupported objects; no repr fallback.
+
+    opt = result.get("opt")
+    out["analysis_snapshot.json"] = _evidence.canonical_json(snapshot({
+        "config": config, "levels": prep.get("levels", {}), "params": result.get("params", {}),
+        "returned_free_coordinates": getattr(opt, "x", None),
+        "optimizer_reported_fun": getattr(opt, "fun", None),
+        "optimizer_reported_success": getattr(opt, "success", None),
+        "optimizer_message": str(getattr(opt, "message", "")),
+    }))
+    return out
+
+
+def prepare_fixed_sd_pcm_check(result: dict) -> dict:
+    """Validate current PCM inputs without evaluating or changing an estimate."""
+    import copy
+    import operator
+    assets = _analysis_input_assets(result)
+    if not assets:
+        raise ValueError('A complete native fitted result is required')
+    job = _pcm_native.prepare_inputs(assets['data.csv'], assets['analysis_snapshot.json'])
+    cfg, prep = copy.deepcopy(result['config']), copy.deepcopy(result['prep'])
+    if cfg.get('facet_regularization', {}).get('enabled') or prep['facet_names'] != cfg['facet_names']:
+        raise ValueError('Penalized or inconsistent prepared models are unsupported')
+    raw_q = cfg.get('quad_points')
+    if isinstance(raw_q, (bool, np.bool_)):
+        raise ValueError('quadrature_points must be an integer')
+    try:
+        q = operator.index(raw_q)
+    except TypeError as exc:
+        raise ValueError('quadrature_points must be an integer') from exc
+    if q not in (31, 61, 121):
+        raise ValueError('Fixed-SD development scope requires GH31, GH61 or GH121')
+    sigma = float(job['sigma'])
+    if not .05 <= sigma <= 10.:
+        raise ValueError('Fixed-SD development scope requires SD in [0.05, 10]')
+    sizes = build_param_sizes(cfg)
+    idx = build_indices(prep, step_facet=cfg['step_facet'])
+    if not np.array_equal(idx['score_k'], prep['data']['Score'].to_numpy()) or not np.all(idx['weight']==1):
+        raise ValueError('Prepared observations disagree with exported responses')
+    if any(list(prep['data'][f].cat.categories) != prep['levels'][f] for f in ['Person', *cfg['facet_names']]):
+        raise ValueError('Prepared category order disagrees with the fitted level map')
+    bounds = build_optimizer_bounds(sizes, cfg)
+    if any(lo is not None or hi is not None for lo, hi in (bounds or [])) or build_optimizer_constraints(sizes, cfg):
+        raise ValueError('Fixed-SD development scope excludes optimizer bounds and constraints')
+    start = np.asarray(result['opt'].x, dtype=float).copy()
+    if start.shape != (sum(sizes.values()),):
+        raise ValueError('Structural coordinate dimension disagrees with the model')
+    hashes = {name:hashlib.sha256(value.encode() if isinstance(value,str) else value).hexdigest()
+              for name,value in assets.items()}
+    return dict(config=cfg, prep=prep, sizes=sizes, idx=idx, coordinates=start,
+        quad=make_mml_quadrature(cfg, q), reported_nll=float(result['opt'].fun),
+        input_sha256=hashes, input_id=hashlib.sha256(_evidence.canonical_json(hashes).encode()).hexdigest())
+
+
+def evaluate_fixed_sd_pcm_check(prepared: dict) -> dict:
+    """Reevaluate one returned point on its fixed rule; never optimize."""
+    value, gradient = mfrm_loglik_mml_value_grad(prepared['coordinates'], prepared['idx'],
+        prepared['config'], prepared['sizes'], prepared['quad'])
+    gradient = np.asarray(gradient, dtype=float)
+    if not np.isfinite(value) or gradient.shape != prepared['coordinates'].shape or not np.isfinite(gradient).all():
+        raise ValueError('Returned-point objective or gradient is nonfinite or inconsistent')
+    reported = prepared['reported_nll']
+    if not np.isfinite(reported) or abs(reported-value) > 1e-9:
+        raise ValueError('Reported NLL does not match the current observations, parameters and fixed rule')
+    return dict(input_id=prepared['input_id'], input_sha256=prepared['input_sha256'],
+        raw_nll=float(value), reported_nll=reported, gradient=gradient.tolist(),
+        gradient_supnorm=float(max(abs(gradient))), gradient_reference=1e-8,
+        coordinate_blocks=[dict(name=name, count=int(count)) for name,count in prepared['sizes'].items()],
+        quadrature=dict(points=len(prepared['quad']['nodes']), sigma=prepared['quad']['sd']),
+        stationarity_pass=None, quadrature_sensitivity_pass=None, inference_ready=False)
+
+
+def build_cross_engine_validation_bundle(result: dict, *, language: str = "en") -> dict:
+    """Current-fit inputs and an unassessed worksheet; never import comparison claims."""
+    if language not in SUPPORTED_LANGS:
+        raise ValueError("language must be en or ja")
+    inputs = _analysis_input_assets(result)
+    if not inputs:
+        return {}
+    prep, config = result["prep"], result["config"]
+    facet_names = [str(f) for f in (config.get("facet_names") or [])]
+    out = {"data.csv": inputs["data.csv"]}
     settings_row = {
         "model": config.get("model"),
         "method": config.get("method"),
@@ -19874,9 +19982,71 @@ def build_cross_engine_validation_bundle(result: dict) -> dict:
         tbl = result.get(rkey)
         if isinstance(tbl, pd.DataFrame) and not tbl.empty:
             out[fname] = to_csv_bytes(tbl)
+
+    out["analysis_snapshot.json"] = inputs["analysis_snapshot.json"]
+    try:
+        _pcm_native.prepare_inputs(out["data.csv"], out["analysis_snapshot.json"])
+        native_status = dict(available=True, scope=_pcm_native.SCOPE, reason=None)
+    except (ValueError, TypeError, KeyError) as exc:
+        native_status = dict(available=False, scope=_pcm_native.SCOPE, reason=str(exc))
+    if native_status["available"]:
+        source = Path(_pcm_native.__file__)
+        out["run_pcm_native.py"] = source.read_bytes()
+        out["run_pcm_tam.R"] = source.with_name("pcm_native_tam.R").read_bytes()
+    out["native_runner_status.json"] = _evidence.canonical_json(native_status)
+    hashes = {name: hashlib.sha256(value.encode("utf-8") if isinstance(value, str) else value).hexdigest()
+              for name, value in out.items()}
+    input_sha = hashlib.sha256(_evidence.canonical_json(hashes).encode("utf-8")).hexdigest()
+    # Recompute from the current files even if cached run/config fingerprints exist.
+    identity = build_result_analysis_identity(result,
+        settings_overrides={"external_comparison_input_sha256": input_sha})
+    labels = _load_locale(language)["guided"]
+    report = _comparison.build_comparison_report(title=labels["comparison_title"],
+        checks={key: dict(scope=labels[f"comparison_scope_{key}"],
+            target_basis=labels["comparison_targets_unset"],
+            missing_evidence=[labels["comparison_missing"]], metrics=[]) for key in _comparison.QUESTIONS},
+        details=dict(artifact_kind="unassessed_template", external_comparison_run=False,
+            analysis_identity=identity.to_payload(), input_bundle_sha256=input_sha, input_sha256=hashes,
+            evidence_import_available=False, scope=labels["comparison_caption"]))
+    out["comparison_report.json"] = _evidence.canonical_json(report)
+    out["comparison_report.html"] = _comparison.comparison_html(report, language=language)
+    for name, frame in _comparison.comparison_frames(report, language=language).items():
+        out[f"{name}.csv"] = to_csv_bytes(frame)
     out["run_tam_mirt_crosscheck.R"] = _CROSS_ENGINE_R_SCRIPT
     out["README_cross_engine.md"] = _CROSS_ENGINE_README
+    out["LICENSE"] = (Path(__file__).resolve().parent / "LICENSE").read_bytes()
+    out.update(_citation.result_assets(result))
     return out
+
+
+def _render_cross_engine_comparison_section(result: dict) -> None:
+    st.subheader(t("guided.comparison_title"))
+    st.caption(t("guided.comparison_caption"))
+    try:
+        assets = build_cross_engine_validation_bundle(result, language=st.session_state.get("lang", DEFAULT_LANG))
+        if not assets:
+            st.info(t("guided.comparison_no_result"))
+            return
+        report = json.loads(assets["comparison_report.json"])
+        lang = st.session_state.get("lang", DEFAULT_LANG)
+        for key, question in _comparison.QUESTIONS.items():
+            st.write(f"{question[int(lang == 'en')]} · {t('guided.comparison_not_assessed')}")
+        with st.expander(t("guided.comparison_details")):
+            for check in report["checks"].values():
+                st.write(check["scope"])
+            st.caption(t("guided.comparison_targets_unset"))
+            native_status = json.loads(assets["native_runner_status.json"])
+            if not native_status["available"]:
+                st.write(native_status["reason"])
+        st.caption(t("guided.comparison_native_available") if json.loads(assets["native_runner_status.json"])["available"]
+                   else t("guided.comparison_native_unavailable"))
+        st.caption(t("guided.comparison_download_contents"))
+        st.download_button(t("guided.comparison_download"),
+            data=cached_mixed_asset_zip(assets, bytes_mapping_fingerprint(assets)),
+            file_name="MFRM_Cross_Engine_Validation_Bundle.zip", mime="application/zip",
+            key="dl_cross_engine_comparison", width="stretch")
+    except (TypeError, ValueError, KeyError):
+        st.error(t("guided.comparison_export_error"))
 
 
 def safe_cor(x, y, w=None):
@@ -25407,6 +25577,54 @@ def render_app_scope_badges(where: str = "main") -> None:
             st.dataframe(standalone_release_limitations_table(), width="stretch", hide_index=True)
 
 
+def render_software_citation(*, key_prefix: str, result: dict | None = None) -> None:
+    """Keep a copyable reference and small downloads together, without fitting."""
+    if result is not None and not _citation.matches_result(result):
+        st.info(t("software.result_unavailable"))
+        return
+    st.caption(t("software.citation_scope", version=_citation.METADATA["version"]))
+    st.code(_citation.APA, language=None, wrap_lines=True)
+    st.caption(t("software.in_text", author=_citation.AUTHOR, year=_citation.YEAR))
+    st.caption(t("software.methods_notice"))
+    bib_col, cff_col = st.columns(2)
+    bib_col.download_button(
+        "BibTeX (.bib)", _citation.BIBTEX, "mfrm_software.bib", "application/x-bibtex",
+        key=f"{key_prefix}_bib", on_click="ignore",
+    )
+    cff_col.download_button(
+        "CITATION.cff", _citation.CFF_TEXT, "CITATION.cff", "text/plain",
+        key=f"{key_prefix}_cff", on_click="ignore",
+    )
+
+
+def render_software_information() -> None:
+    with st.sidebar.expander(t("software.heading"), expanded=False):
+        st.markdown(f"**MIT License** · © 2026 Ryuya-dot-com")
+        st.caption(t("software.license_summary"))
+        repo = _citation.METADATA["repository-code"]
+        st.markdown(f"[{t('software.license_link')}]({repo}/blob/main/LICENSE)")
+        st.markdown(f"**{t('software.cite_heading')}**")
+        render_software_citation(key_prefix="sidebar_software")
+
+
+def _set_home_open(open_home: bool) -> None:
+    """Change the view without clearing a workspace or replaying a Run request."""
+    _close_persistent_help()
+    st.session_state["_mfrm_home_open"] = bool(
+        open_home and _get_guidance_state().lifecycle is not _guidance.GuideLifecycle.NOT_STARTED
+    )
+    for key in ("_facets_mode_force_rerun", "_onboarding_quickstart_fired", _GUIDE_RUN_REQUESTED_KEY):
+        st.session_state.pop(key, None)
+
+
+def render_home_surface() -> None:
+    st.subheader(t("home.title"))
+    st.write(t("home.body"))
+    st.caption(t("home.preserved"))
+    st.button(t("home.resume"), key="mfrm_home_resume", type="primary",
+              on_click=_set_home_open, args=(False,), use_container_width=True)
+
+
 def render_data_privacy_notice(
     where: str = "main",
     *,
@@ -26399,8 +26617,8 @@ def build_evidence_contract_text_assets(
     result: dict,
     readiness: pd.DataFrame | None,
 ) -> dict[str, str]:
-    """Return reconstructable native JSON sidecars for standard ZIP exports."""
-    assets: dict[str, str] = {}
+    """Return native evidence and version-matched citation sidecars for ZIPs."""
+    assets: dict[str, str] = _citation.result_assets(result)
     if isinstance(readiness, pd.DataFrame) and not readiness.empty:
         identity_payload = readiness.attrs.get("analysis_identity")
         record_payloads = readiness.attrs.get("evidence_records")
@@ -30642,7 +30860,7 @@ def _render_guided_results_section(result: dict, diagnostics: dict, report_table
     with st.expander(t("guided.measures_reading_heading"), expanded=False):
         st.caption(t("guided.measures_reading_caption"))
         render_guided_measures_reading_guide_tables()
-    show_convergence_section(result)
+    show_convergence_section(result, key_prefix="results")
 
     person_df = result.get("facets", {}).get("person", pd.DataFrame())
     with st.expander(t("guided.person_measures_expander"), expanded=True):
@@ -30702,11 +30920,13 @@ def _render_guided_results_section(result: dict, diagnostics: dict, report_table
 
     with st.expander(t("guided.facets_tables_expander"), expanded=False):
         if not report_tables:
-            st.info("No FACETS-style report tables were generated.")
+            st.info(_standalone_ui_text(en="No FACETS-style report tables were generated.",
+                ja="FACETS形式の表は生成されていません。"))
         else:
             _n_facets = len(report_tables)
             _n_elements = sum(len(tbl) for tbl in report_tables.values())
-            st.info(f"{_n_facets} facet table(s), {_n_elements} total elements.")
+            st.info(_standalone_ui_text(en=f"{_n_facets} facet table(s), {_n_elements} total elements.",
+                ja=f"{_n_facets} 個のファセットの表を表示しています。水準数の合計は {_n_elements} です。"))
             for facet, tbl in report_tables.items():
                 st.markdown(f"**{facet}**")
                 st.dataframe(tbl, width="stretch")
@@ -30896,6 +31116,20 @@ def _render_guided_report_export_section(
     else:
         st.subheader(t("guided.export_review_heading"))
         st.caption(t("guided.export_review_caption"))
+        resources = {
+            "none": t("guided.export_resource_none"),
+            "claims": t("guided.export_resource_claims"),
+            "methods": t("guided.export_resource_methods"),
+            "external_comparison": t("guided.export_resource_external_comparison"),
+            "template": t("guided.export_resource_template"),
+            "work_notes": t("guided.export_resource_work_notes"),
+            "all_panels": t("guided.export_resource_all_panels"),
+        }
+        resource = st.selectbox(t("guided.export_resources"), list(resources),
+            format_func=lambda value: resources[value], key="guided_export_resource")
+        if resource == "external_comparison":
+            _render_cross_engine_comparison_section(result)
+            return
         if not gate.empty and {"GateArea", "GateStatus"}.issubset(gate.columns):
             detail = gate.loc[gate["GateArea"].ne("Overall manuscript gate")].copy()
             if detail.empty:
@@ -30909,16 +31143,6 @@ def _render_guided_report_export_section(
                         st.write(str(row.get("Evidence", "")))
         else:
             st.info(t("guided.export_review_unavailable"))
-        resources = {
-            "none": t("guided.export_resource_none"),
-            "claims": t("guided.export_resource_claims"),
-            "methods": t("guided.export_resource_methods"),
-            "template": t("guided.export_resource_template"),
-            "work_notes": t("guided.export_resource_work_notes"),
-            "all_panels": t("guided.export_resource_all_panels"),
-        }
-        resource = st.selectbox(t("guided.export_resources"), list(resources),
-            format_func=lambda value: resources[value], key="guided_export_resource")
         if resource == "claims":
             _render_manuscript_claim_guide_section(result, diagnostics, all_bias_results)
         elif resource == "methods":
@@ -35342,13 +35566,18 @@ def apa_table_to_html(
     return "\n".join(parts)
 
 
-def build_apa_reference_list(text: str, *, always_include: list[str] | None = None) -> list[str]:
+def build_apa_reference_list(
+    text: str, *, always_include: list[str] | None = None,
+    software_result: dict | None = None,
+) -> list[str]:
     """Build the APA reference list for a publication document.
 
     - `text`: the narrative body (Methods + Results) that was just rendered;
       every `(Author, Year)` token present in it is included.
     - `always_include`: reference keys that must appear regardless of
       whether they were cited (used for core MFRM references).
+    - `software_result`: the recorded fit; software metadata is included only
+      when its version matches and the narrative actually cites it.
     """
     keys_seen: set[str] = set()
     for citation, key in _CITATION_TO_KEY.items():
@@ -35357,7 +35586,10 @@ def build_apa_reference_list(text: str, *, always_include: list[str] | None = No
     for key in always_include or []:
         if key in _APA_REFERENCE_LIBRARY:
             keys_seen.add(key)
-    return sorted(_APA_REFERENCE_LIBRARY[k] for k in keys_seen)
+    refs = {_APA_REFERENCE_LIBRARY[k] for k in keys_seen}
+    if _citation.matches_result(software_result) and _citation_present_in_text(text, _citation.IN_TEXT):
+        refs.add(_citation.APA)
+    return sorted(refs)
 
 
 def _reference_keys_from_citation_labels(labels: Iterable[str]) -> list[str]:
@@ -36402,10 +36634,16 @@ def build_publication_word_bytes(
     refs = build_apa_reference_list(
         narrative_for_refs,
         always_include=_PUBLICATION_DOCUMENT_CORE_REFS,
+        software_result=result,
     )
     if refs:
         for ref in refs:
-            p = document.add_paragraph(ref)
+            p = document.add_paragraph()
+            if ref == _citation.APA:
+                for part in ref.partition(_citation.METADATA["title"]):
+                    p.add_run(part).italic = part == _citation.METADATA["title"]
+            else:
+                p.add_run(ref)
             p.paragraph_format.first_line_indent = Inches(-0.5)
             p.paragraph_format.left_indent = Inches(0.5)
     else:
@@ -36655,6 +36893,7 @@ def build_publication_pdf_bytes(
     refs = build_apa_reference_list(
         narrative_for_refs,
         always_include=_PUBLICATION_DOCUMENT_CORE_REFS,
+        software_result=result,
     )
     if refs:
         # Hanging-indent style (APA 7)
@@ -36667,6 +36906,9 @@ def build_publication_pdf_bytes(
         )
         for ref in refs:
             safe = ref.replace("&", "&amp;")
+            if ref == _citation.APA:
+                title = _citation.METADATA["title"]
+                safe = safe.replace(title, f"<i>{title}</i>", 1)
             story.append(Paragraph(safe, ref_style))
     else:
         story.append(Paragraph("(No references cited in the current narrative.)", styles["BodyText"]))
@@ -36805,6 +37047,7 @@ def build_publication_html_bytes(
     narrative_for_refs = (methods_text or "") + "\n" + (manuscript_text or "")
     refs = build_apa_reference_list(
         narrative_for_refs, always_include=_PUBLICATION_DOCUMENT_CORE_REFS,
+        software_result=result,
     )
 
     # Tables rendered as HTML via pandas (escape-safe)
@@ -36851,9 +37094,14 @@ def build_publication_html_bytes(
 
     refs_html = ""
     if refs:
-        refs_html = "<h2>References</h2>\n" + "\n".join(
-            f'<p class="ref">{_html_escape(r)}</p>' for r in refs
-        )
+        reference_paragraphs = []
+        for ref in refs:
+            safe = _html_escape(ref)
+            if ref == _citation.APA:
+                title = _html_escape(_citation.METADATA["title"])
+                safe = safe.replace(title, f"<em>{title}</em>", 1)
+            reference_paragraphs.append(f'<p class="ref">{safe}</p>')
+        refs_html = "<h2>References</h2>\n" + "\n".join(reference_paragraphs)
 
     body = f"""
 <h1>Many-Facet Rasch Measurement analysis</h1>
@@ -41680,7 +41928,7 @@ def build_manuscript_claim_guide(
             ),
             "EvidenceToReport": (
                 f"{n_obs} observations, {n_person} persons, score range {rating_min}-{rating_max}; "
-                f"app version {config.get('app_version', APP_VERSION)}."
+                f"app version {config.get('app_version') or 'not recorded'}."
             ),
             "DoNotClaim": "Do not describe the run as output from another engine or as evidence beyond the implemented Python model and diagnostics.",
             "NextAction": "Report the app version, model, estimation method, facets, and runtime boundary.",
@@ -46029,7 +46277,7 @@ def generate_manuscript_handoff_markdown(
         "",
         "## Analysis Snapshot",
         "",
-        f"- App version: {config.get('app_version', APP_VERSION) if isinstance(config, dict) else APP_VERSION}.",
+        f"- App version: {(config.get('app_version') or 'not recorded') if isinstance(config, dict) else 'not recorded'}.",
         f"- Model and method: {config.get('model', 'unknown') if isinstance(config, dict) else 'unknown'} / {config.get('method', 'unknown') if isinstance(config, dict) else 'unknown'}.",
         f"- Observations and persons: {prep.get('n_obs', 'unknown') if isinstance(prep, dict) else 'unknown'} observations; {prep.get('n_person', 'unknown') if isinstance(prep, dict) else 'unknown'} persons.",
         f"- Facets: {facet_names or 'not recorded'}.",
@@ -46128,6 +46376,9 @@ def build_manuscript_binder_assets(
     assets["visualization_settings.csv"] = to_csv_bytes(build_visualization_preferences_table())
     for name, text in (text_assets or {}).items():
         if name in {
+            "software_citation.md",
+            "mfrm_software.bib",
+            "CITATION.cff",
             "manuscript_handoff.md",
             "report_ready_decision_brief.md",
             "apa_results_paragraph_draft.md",
@@ -46360,10 +46611,12 @@ def generate_manuscript_reporting_template(
         "",
         (
             f"We analyzed [construct/rubric] ratings with a many-facet Rasch model in the standalone "
-            f"Python MFRM Streamlit app (version {config.get('app_version', APP_VERSION)}). "
+            f"Python MFRM Streamlit app (version {config.get('app_version') or 'not recorded'}). "
             f"The fitted model was {model} using {method}. The analysis included {n_obs} observations "
             f"from {n_person} persons, facets ({facet_names}), and score support {score_support}."
         ),
+        "",
+        _citation.analysis_statement(result),
         "",
         (
             "The analysis used the standalone Python engine. Report the app version, AnalysisID, model, "
@@ -46442,7 +46695,8 @@ def generate_method_appendix_text(
         "## Analysis Scope",
         "",
         "- Software: standalone Python Streamlit app; no external estimation engine is called.",
-        f"- Release label: {config.get('release_label', APP_RELEASE_LABEL)}; app version: {config.get('app_version', APP_VERSION)}.",
+        f"- Release label: {config.get('release_label') or 'not recorded'}; app version: {config.get('app_version') or 'not recorded'}.",
+        f"- {_citation.analysis_statement(result)}",
         "- Validation stance: native numerical consistency, deterministic fixtures, simulation calibration, and explicitly bounded claims.",
         f"- Run fingerprint: {config.get('run_fingerprint', config.get('analysis_config_fingerprint', 'not recorded'))}.",
         f"- Model: {config.get('model', 'unknown')}.",
@@ -46937,6 +47191,8 @@ def _render_manuscript_template_section(
         st.caption(t("guided.manuscript_references_caption"))
         st.markdown(t("guided.manuscript_references_sources"))
         st.caption(t("guided.manuscript_zotero_help"))
+        st.markdown(f"**{t('software.cite_heading')}**")
+        render_software_citation(key_prefix="manuscript_software", result=result)
 
 
 def show_report_section(
@@ -47083,11 +47339,83 @@ def _render_population_sd_summary(result: dict) -> None:
             )
 
 
-def show_convergence_section(result: dict) -> None:
+def _render_fixed_sd_returned_point(result: dict, convergence: pd.DataFrame, *, key_prefix: str) -> None:
+    """Keep fixed-SD stopping, the returned gradient and integration separate."""
+    tr = lambda key, **kw: t('estimation_subsections.returned_point.'+key, **kw)
+    st.subheader(tr('title'))
+    notice = st.empty()
+    cache_key = '_fixed_sd_returned_point_check'
+    cached = st.session_state.get(cache_key, {})
+    prepared, unavailable = None, None
+    try:
+        prepared = prepare_fixed_sd_pcm_check(result)
+    except (ValueError, TypeError, KeyError, AttributeError) as exc:
+        unavailable = str(exc)
+    if prepared is None or not isinstance(cached, dict) or cached.get('input_id') != prepared['input_id']:
+        st.session_state.pop(cache_key, None)
+        cached = {}
+    stopped = getattr(result.get('opt'), 'success', None)
+    if stopped is None and not convergence.empty:
+        stopped = convergence.iloc[0].get('Converged')
+    stopped = bool(stopped) if isinstance(stopped, (bool, np.bool_)) else None
+    with st.expander(tr('details'), expanded=False):
+        st.caption(tr('purpose'))
+        if prepared is not None:
+            if st.button(tr('button'), key=key_prefix+'_returned_point_check'):
+                with st.spinner(tr('running')):
+                    try:
+                        cached = evaluate_fixed_sd_pcm_check(prepared)
+                    except (ValueError, TypeError, KeyError, FloatingPointError) as exc:
+                        cached = dict(input_id=prepared['input_id'], error=str(exc))
+                    st.session_state[cache_key] = cached
+        else:
+            st.caption(tr('unavailable'))
+            st.caption(tr('scope'))
+        status = tr('not_checked')
+        if cached.get('error'):
+            status = tr('failed')
+        elif 'gradient_supnorm' in cached:
+            status = tr('gradient_value', value=f"{cached['gradient_supnorm']:.2e}")
+        st.markdown(f"**{tr('stopping')}** — {tr('met' if stopped else 'not_met') if stopped is not None else tr('unknown')}")
+        st.markdown(f"**{tr('gradient')}** — {status}")
+        st.markdown(f"**{tr('integration')}** — {tr('not_checked')}")
+        if 'gradient_supnorm' in cached:
+            q = cached['quadrature']
+            st.caption(tr('rule', points=q['points'], sigma=f"{q['sigma']:g}"))
+            st.caption(tr('reference'))
+            st.caption(tr('nll', value=f"{cached['raw_nll']:.12g}"))
+        if unavailable or cached.get('error'):
+            st.caption(tr('reason', reason=unavailable or cached['error']))
+        st.caption(tr('record'))
+        st.dataframe(convergence.T.astype(str).reset_index().rename(
+            columns={'index':tr('field'), 0:tr('value')}), hide_index=True, width='stretch', height=220)
+        parameterization = result.get('parameterization_audit')
+        if isinstance(parameterization, pd.DataFrame) and not parameterization.empty:
+            st.caption(t('estimation_subsections.parameterization_audit_caption'))
+            st.dataframe(parameterization, hide_index=True, width='stretch', height=160)
+        _render_population_sd_summary(result)
+    if cached.get('error'):
+        notice.warning(tr('failed_notice'))
+    elif stopped is False:
+        notice.warning(tr('unfinished_notice'))
+    elif 'gradient_supnorm' in cached and cached['gradient_supnorm'] > cached['gradient_reference']:
+        notice.warning(tr('remaining_notice'))
+    elif 'gradient_supnorm' in cached:
+        notice.info(tr('small_notice'))
+    else:
+        notice.info(tr('initial_notice') if stopped else tr('unknown_notice'))
+
+
+def show_convergence_section(result: dict, *, key_prefix: str = "convergence") -> None:
     """Render optimizer convergence diagnostics with guided interpretation."""
     convergence = result.get("convergence", pd.DataFrame())
     if not isinstance(convergence, pd.DataFrame) or convergence.empty:
         st.info(t("estimation_subsections.convergence_no_data_info"))
+        return
+
+    config = result.get('config', {})
+    if config.get('method') == 'MML' and not config.get('estimate_population_sd'):
+        _render_fixed_sd_returned_point(result, convergence, key_prefix=key_prefix)
         return
 
     st.subheader(t("estimation_subsections.convergence_subheader"))
@@ -49451,7 +49779,7 @@ def _render_report_tables(result: dict, diagnostics: dict) -> None:
         st.caption(t("report_tables.weighting_policy_audit_caption"))
         st.dataframe(weight_audit, width="stretch", hide_index=True)
 
-    show_convergence_section(result)
+    show_convergence_section(result, key_prefix="report")
 
     st.subheader(t("report_tables.overall_fit_subheader"))
     overall_fit_df = diagnostics.get("overall_fit", pd.DataFrame())
@@ -62092,11 +62420,11 @@ def reproducibility_script_export_matrix() -> pd.DataFrame:
         },
         {
             "Artifact": "MFRM_Cross_Engine_Validation_Bundle.zip",
-            "Runtime": "R (TAM / sirt / mirt)",
-            "Purpose": "Refit the exact analysis in TAM, sirt, and mirt and cross-check the main MML/GPCM person, facet, step, and slope estimates against the app's own output.",
-            "Inputs": "data.csv (the fitted long frame); settings.csv (model/method/facets/identification/population SD/quadrature/score range); app_person/facets/steps/slopes.csv; run_tam_mirt_crosscheck.R.",
-            "OutputsToArchive": "TAM tam.mml.mfr xsi and person measures; sirt rm.facets item/rater parameters; mirt item coefficients; side-by-side with the app's app_*.csv estimates.",
-            "Boundary": "Reproducibility artifact only; TAM/sirt/mirt are not app dependencies. Exact numerical equality is not claimed (population variance, identification/centering, and GPCM slope conventions differ) — rank-order and directional agreement is the bar.",
+            "Runtime": "Offline restricted PCM runner (Python + R/TAM + ConQuest); general R worksheet otherwise",
+            "Purpose": "Prepare a matched-model comparison with current data, settings and returned estimates; four separate questions start unassessed.",
+            "Inputs": "data.csv; settings.csv; analysis_snapshot.json; app_person/facets/steps/slopes.csv; run_tam_mirt_crosscheck.R; comparison_report.json with input hashes and analysis identity.",
+            "OutputsToArchive": "comparison_report.html/json; comparison_summary/metrics.csv; native_runner_status.json; restricted runner inputs, raw native outputs and execution_review.json when run locally.",
+            "Boundary": "The app runs no external engine. A fixed-SD, unit-weight PCM runner is included only for validated input constraints; both fixed-calibration checks precede optional refits. General R worksheet stops before fitting. No mfrmr runner, result import or inference qualification. Numerical agreement is separate from stationarity, quadrature accuracy and scoring stability.",
         },
     ]
     return pd.DataFrame(rows)
@@ -64569,7 +64897,7 @@ def _render_downloads(
                     if fully_ready else "completed_with_explicit_partial_or_failed_pairs"
                 )
         config_export = {
-            "app_version": config.get("app_version", APP_VERSION),
+            "app_version": config.get("app_version"),
             "release_label": config.get("release_label", APP_RELEASE_LABEL),
             "runtime_scope": config.get("runtime_scope", "standalone Python; no external MFRM engine called"),
             "validation_stance": "Python-native evidence only; no external-engine parity claim is part of this export.",
@@ -74076,6 +74404,15 @@ def main() -> None:
     _inject_desktop_readability_css()
     _ensure_language_state()
     _apply_pending_guide_workspace_restore()
+    home_open = bool(st.session_state.get("_mfrm_home_open"))
+    if home_open:
+        # Keep existing result navigation values while the Home/Help surface
+        # omits their widgets. Input/upload widgets stay alive below, as in Help.
+        for key in ("guided_essential_section", "main_results_panel", "guided_diagnostics_panel",
+                    "guided_figures_panel", "bias_pair_selector",
+                    "guided_export_task", "guided_export_resource", "manuscript_format"):
+            if key in st.session_state:
+                st.session_state[key] = st.session_state[key]
 
     # Language selector at the top of the sidebar. The widget's ``key="lang"``
     # writes directly to ``st.session_state["lang"]``, which the ``t()`` helper
@@ -74096,6 +74433,10 @@ def main() -> None:
     )
 
     app_mode = "FACETS-mode estimation"
+    at_landing = _get_guidance_state().lifecycle is _guidance.GuideLifecycle.NOT_STARTED
+    st.sidebar.button(t("home.open"), key="mfrm_home_open", on_click=_set_home_open,
+                      args=(True,), disabled=(home_open or at_landing) and not _get_help_route_state().is_open,
+                      use_container_width=True)
 
     # Display-mode toggle (v0.2.5+) — Essential hides advanced diagnostic
     # sub-tabs and secondary expanders to reduce cognitive load for
@@ -74120,6 +74461,7 @@ def main() -> None:
         )
 
     help_state = render_persistent_help_launcher()
+    render_software_information()
 
     language_fast_path = _consume_language_switch_fast_path(app_mode)
     if language_fast_path and help_state.is_open:
@@ -74128,7 +74470,7 @@ def main() -> None:
             locale=st.session_state.get("lang", DEFAULT_LANG),
         )
         _set_help_route_state(help_state)
-    elif language_fast_path:
+    elif language_fast_path and not home_open:
         render_language_switch_fast_path()
         return
 
@@ -74138,8 +74480,11 @@ def main() -> None:
     if st.session_state.pop(_HELP_RETURNED_STATUS_KEY, False):
         st.success(t("help_nav.returned_status"))
     help_surface_active = render_persistent_help_surface(help_state)
+    if home_open and not help_surface_active:
+        render_home_surface()
+    auxiliary_surface_active = help_surface_active or home_open
 
-    if not help_surface_active:
+    if not auxiliary_surface_active:
         # The optional guide landing owns the first page so source and
         # estimator controls do not compete with the initial route decision.
         if render_onboarding_banner():
@@ -74164,18 +74509,18 @@ def main() -> None:
         and guidance_state.active_node_id
         in {_guidance.GuideNode.DATA_CHECK, _guidance.GuideNode.ESTIMATE}
     )
-    with st.sidebar if help_surface_active else st.container():
+    with st.sidebar if auxiliary_surface_active else st.container():
         data = read_input_data(core, guide_sample_only=guide_sample_only)
     if data.empty:
-        if not help_surface_active:
+        if not auxiliary_surface_active:
             st.info(t("app.no_input_info"))
         return
 
-    if not help_surface_active:
+    if not auxiliary_surface_active:
         if render_sample_guide_pre_analysis(data):
             return
         render_custom_simulation_preview_panel()
-    run_facets_mode(core, data, help_surface_active=help_surface_active)
+    run_facets_mode(core, data, help_surface_active=auxiliary_surface_active)
 
 
 if __name__ == "__main__":

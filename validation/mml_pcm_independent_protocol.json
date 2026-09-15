@@ -1,0 +1,46 @@
+{
+  "id": "pcm_independent_conditions_20260914_v1",
+  "classification": "DEVELOPMENT_ONLY",
+  "scientific_inference_ready": false,
+  "qualification_eligible": false,
+  "question": "Do same-point quadrature precision and fitted coordinates remain stable on independent ordinary and wider-tail PCM data?",
+  "persons": 80,
+  "raters": [-0.6, -0.15, 0.25, 0.5],
+  "criteria": [-0.8, -0.3, 0.1, 0.4, 0.6],
+  "base_steps": [-1.2, -0.35, 0.45, 1.1],
+  "step_adjustment": [-0.2, 0.1, 0.15, -0.05],
+  "criterion_step_multipliers": [-1, -0.5, 0, 0.5, 1],
+  "datasets": [
+    {"id": "ordinary_1", "seed": 2026091401, "sigma": 1.0},
+    {"id": "ordinary_2", "seed": 2026091402, "sigma": 1.0},
+    {"id": "wide_1", "seed": 2026091403, "sigma": 2.5},
+    {"id": "wide_2", "seed": 2026091404, "sigma": 2.5}
+  ],
+  "simulation": "Independent standard-normal draws times sigma; PCG64, inverse-CDF category draws; no response editing, selection or redraws",
+  "model": "Complete person x 4 raters x 5 criteria, categories 0:4, unit slopes, mean fixed zero, sum-zero raters and criterion-specific steps",
+  "orders": [31, 61, 121, 181],
+  "fixed_grids": [{"bound": 6, "spacing": 0.1}, {"bound": 12, "spacing": 0.1}],
+  "continuous_starts": [0.8, 3.0],
+  "structural_start": "Zero locations, each criterion steps [-1.5,-0.5,0.5,1.5]",
+  "gh_starts": "Neutral structural start at sigma 1 and selected continuous reference",
+  "selection": "Smallest independently reevaluated objective among the two starts, retaining every start, first return and restart return",
+  "optimizer": {"maxiter": 250, "gtol": 1e-8, "ftol": 1e-15, "maxls": 50},
+  "passes_per_start": 2,
+  "sigma_bounds": [0.05, 10.0],
+  "structural_bounds": "Unbounded; compare app likelihood at the same coordinates without claiming app-native fitting",
+  "integration": [
+    {"bound": 12, "rel_tol": 1e-10, "abs_tol": 1e-12},
+    {"bound": 14, "rel_tol": 1e-12, "abs_tol": 1e-13}
+  ],
+  "implementation_limits": {
+    "r_nll": 1e-8, "r_moments": 1e-9, "app_arithmetic": 1e-8,
+    "gradient_fd": 1e-5, "stationary_gradient": 1e-4,
+    "reference_refinement": 1e-8, "relative_mass_error": 1e-8,
+    "reference_start_coordinates": 1e-4, "reference_start_nll": 1e-7
+  },
+  "engineering_precision_targets": {"nll_per_person": 1e-6, "max_eap_logit": 1e-4, "max_posterior_sd_logit": 1e-4},
+  "target_interpretation": "Pre-run engineering budgets, not clinically/educationally meaningful differences or scientific acceptance margins. GH target failures are results, not failed arithmetic checks.",
+  "independent_checks": "R scalar continuous integration and statmod GH at each selected endpoint; app likelihood, gradient and EAP/SD at each selected GH endpoint; full-coordinate finite differences",
+  "external_scope": "Grid formulas are same-point checks only. No new native TAM, ConQuest or mfrmr fitting in this stage.",
+  "limitations": ["Four datasets are numerical development probes, not a recovery or coverage study", "Two starts cannot establish a global optimum", "No SE/CI/coverage qualification or default changes", "Do not add conditions or retries after seeing results; record failures"]
+}

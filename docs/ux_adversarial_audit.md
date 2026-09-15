@@ -409,9 +409,162 @@ focused verification, not completion of the full accessibility protocol or a
 first-time-user study; the previously recorded language fast-path/exact-return
 acceptance work remains separate.
 
+## Next UI refinement — 2026-09-13 (planned)
+
+Reference: KAWAI's [September 12 post on 20 UI psychology perspectives](https://x.com/kawai_design/status/2098698136600690965).
+The ordinary web reader returned 403; the author's excerpt was checked through
+X's public oEmbed API. The full post/media list was then obtained through a
+public mirror and all four original `pbs.twimg.com` images were inspected.
+This is a design reference, not primary evidence that a psychological effect
+will improve this application. Its four groups concern perceptual grouping,
+memory support, attention, and interaction. The images themselves caution
+against treating chunking as a universal seven-item rule, applying choice-time
+laws to every complex judgment, or equating attractive design with successful
+use. No reference images are copied into the product or repository.
+
+The application already has named result routes, one next-check action,
+task-based exports, visible column selections, and an optional sample guide.
+The next pass refines those surfaces; it does not add twenty new components,
+another onboarding system, or a separate front end. Code inspection of
+`run_facets_mode()`, `_render_guided_report_export_section()`, and the retained
+Stan/Viewer functions supplies the current-state basis below. These are planned
+changes and checks, not a claim that the new UX has been implemented or tested.
+
+| Priority / existing surface | Concrete refinement | Acceptance evidence |
+|---|---|---|
+| U0: Run and current-result state | Keep the selected data/model/method beside Run. Distinguish pending settings from the settings of the displayed fit. Put completion, error or refit-needed feedback near the triggering action, with a meaningful focus destination. | Change settings after fitting, open Help, change language and return: the old result is never presented as a newly fitted result. Display/navigation/download changes do not silently reestimate or alter AnalysisID. |
+| U1: Input checks | Group the source, column summary and required corrections by task. Consolidate repeated successful counts/readiness tables into a short summary with detail on request; retain exclusions, weighting problems and blocked states beside the relevant control. | A person using their own data can identify the field to fix and the rows excluded from the likelihood. Simplification does not remove a refusal, change retained rows or hide a necessary data-handling decision. |
+| U2: PCA and bias | Retain stable named routes and the existing next-check priority. Put the result, interpretation limit and specific action together; use labels such as “Inspect residual structure (PCA)” or “Check rater–task interaction”, localized consistently. | Users can locate PCA and the selected bias pair without recalling an internal tab name. Neither a PCA value nor a screening flag is presented as proof of unidimensionality, unfairness or causation. No cutoff changes. |
+| U3: Report & Export | Preserve the existing document/manuscript/files/review tasks. Use content-specific download labels and show the artifact's purpose, format and data scope near its action. Place future offline Bayesian code under Files as an optional task, followed by engine selection. | The first export screen does not become an engine/language catalog. A user distinguishes a manuscript draft, a reproducibility package, a model template and actual posterior results. A template download is never labelled analysis completion. |
+| U4: Remembering the current analysis | Keep a compact, consistent analysis-context summary and stable navigation order. Use the existing history only where comparison is requested. Preserve current selections across language, density and contextual Help changes. | The current fit, facet pair and result section are recoverable without reconstructing choices from memory. No new duplicate identity/state store is introduced. |
+| U5: Visual hierarchy and language | Standardize spacing, alignment, heading levels and primary/secondary button roles through native Streamlit components and the existing theme. Keep one primary action per task. Finish the already recorded Japanese gaps in dynamic diagnostic text. | Meaning remains visible without color. Literal translations do not change the statistical target. Avoid warning walls, nested cards, decorative pictures and pervasive confirmation dialogs. |
+| U6: Reach and focus | Keep primary actions near their objects, with adequate target size and spacing; preserve visible labels, keyboard operation, focus order and readable reflow. Reuse the existing accessibility matrix. | Check English/Japanese at narrow and desktop widths, keyboard-only use and zoom; retained warnings and selected routes remain reachable. Visual polish is not accessibility certification. |
+
+The connection between stages should show the actual workflow: prepare → run →
+inspect → report. A progress indicator must not mark interpretation or
+publication complete merely because estimation ended. Optional help stays
+skippable and recoverable. Significant result changes are announced at the
+action/result location; animation is not required to communicate them.
+
+For the future Bayesian route, the sequence is “prepare code → run locally →
+review returned results”, with a clear indication when only code preparation is
+available. A completed local run, acceptable MCMC diagnostics and a defensible
+substantive claim are separate states. The sampler is not added to the main
+JMLE/MML selector. See the [B0–B4 model and output gates](jax_numpyro_conquest_tam_plan.md)
+before exposing either downloads or posterior uploads.
+
+### First implementation and evaluation slice
+
+Start with U0/U1 and the existing English/Japanese sample and pasted-data paths.
+Measure the current version first: time to find Run, time to find the requested
+diagnostic, wrong turns, assistance, avoidable reruns and export generation
+time. Use the same synthetic inputs and retained fitting conditions. Separate
+calculation time from navigation and rendering time; JAX cannot fix all three.
+Then apply U2/U3 and U5/U6 to those same journeys, one surface at a time.
+
+Use a small formative review with both first-time and experienced MFRM users;
+its purpose is to find breakdowns, not estimate population-wide usability.
+Tasks: prepare a sample/own-data analysis, find PCA, inspect a named bias pair,
+obtain an English manuscript draft, and distinguish a future code-only export
+from a fitted Bayesian result. Record unaided completion and interpretation
+errors, not just satisfaction or click counts. Preserve critical controls for
+missing evidence, unsupported inference, pending settings, incomplete external
+runs and mismatched result files. Numerical fixtures and state guards verify
+that easier navigation leaves the fitted results and their restrictions intact.
+Do not launch background telemetry or a large new study framework for this review.
+
+## License, software citation and Home — 2026-09-13 (local implementation)
+
+The follow-up request adds a small part of U3/U4. The existing MIT license is
+unchanged. A collapsed bilingual sidebar entry now contains the license link,
+a copyable APA software reference and BibTeX/CFF downloads. The manuscript
+template's references guidance reuses the same renderer. The user supplied
+the author name **Ryuya Komuro**; the reference uses **Komuro, R.**
+`CITATION.cff` is the canonical metadata, written in JSON syntax (valid YAML 1.2)
+so the runtime can read it with the standard library. Its official CFF 1.2.0
+schema validation passed. Citation remains a scholarly request, not an added
+MIT restriction, and method citations and recorded fit versions remain distinct.
+See [GitHub's citation support](https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-citation-files).
+
+Home and Return to my analysis change the displayed workspace without clearing
+the input or fit. They reuse the Help path that keeps input/upload/settings
+widgets alive and returns before estimation. Existing result-route selections
+are retained; queued one-shot Run requests are cancelled by Home navigation.
+No second fit store or background job is added. This preserves a browser
+session; it is not a backup across restarts. AppTest covers navigation and
+English/Japanese state changes; manual browser upload, focus and narrow-width
+acceptance remain part of the existing browser matrix. This local change has
+not been committed, pushed or deployed.
+
+Local verification: the app-smoke, Help-adapter, locale-parity, workspace and
+export suite passed **56 tests**. The contextual-Help, standalone-boundary and
+repeated citation/locale smoke checks passed **57 tests**. The latter reuses a
+real sample fit and confirms that Home → language change → return preserves
+the exact output object, AnalysisID, selected result panel and fit-view values,
+with zero additional estimator/refit calls. Compile and whitespace checks also
+passed. Existing estimator function bodies were unchanged by AST comparison.
+
+### Result-bound citation exports — 2026-09-13 (local follow-up)
+
+The next slice carries the same metadata into the existing manuscript
+Markdown/Word template, publication Word/PDF/HTML references, and standard
+result ZIPs and manuscript binder. Shared export sidecars add
+`software_citation.md`, `mfrm_software.bib` and `CITATION.cff` only when the saved
+`config.app_version` matches the verified citation version. Missing or older
+versions receive an explanatory Markdown note, without current-release
+BibTeX/CFF files. Report version fields no longer fill missing values from the
+running app. The manuscript UI applies the same check; the sidebar still offers
+the current app's reference. This adds no top-level navigation or runtime dependency.
+
+The related manuscript/export/evidence/privacy/MML/i18n suite passed **78 tests**.
+A follow-up citation/publication-figure/standalone suite passed **49 tests**,
+including repeated citation cases and new English/Japanese download-state checks.
+These verify version matching, omission of raw rows, retention of inference
+holds, reference formatting and disappearance of stale downloads after a result
+change. LibreOffice rendering was inspected on all 7 manuscript-template pages
+and all 10 publication-document pages; the direct PDF's reference page was also
+inspected, and PDF extraction confirmed the software title's italic formatting.
+The software reference fits within the page with hanging indentation.
+These used a synthetic configuration fixture, with publication figures omitted;
+they establish export behavior, not numerical validity or submission readiness.
+
+The legacy full publication report still repeats drafting guidance and exposes
+some Markdown emphasis markers as literal text. Its general reference styling
+also needs a separate APA review; adding the software reference does not qualify
+the entire report. Keep the concise manuscript template as the drafting entry
+point and address this legacy-report cleanup under U3. This follow-up remains
+uncommitted and unpublished.
+
+## 日本語の見直し — 2026-09-15（ローカル実装）
+
+利用者から日本語の不自然さを指摘されたため、主要画面の翻訳672項目と、画面に直接書かれていた件数表示を修正した。
+ホーム、サンプルガイド、列の指定、分析設定、入力確認、推定結果、残差PCA、バイアス、報告・保存の案内を対象とした。
+「返却点を再確認」は「推定結果を確認」、「解析深度」は「分析する内容」、「Response データ監査」は
+「分析に使う回答の確認」へ変更した。指示文はです・ます調にそろえ、必要な専門用語には意味を補った。
+
+単に語を置き換えるのではなく、何を確認し、次に何をすればよいかが分かる文章にした。
+「勾配が小さい」「計算が終了した」「積分が十分に正確」を区別し、勾配の対象は総NLLと明記した。
+「31点以上を報告用に使う」という古い求積の案内は、点数を変えた推定値・尤度・得点の安定性を確認する説明へ改めた。
+バイアス確認の未補正の目安や、帰無仮説を棄却しなかった結果も、問題がないと断定する表現にしない。
+推定式・判定条件・既定値・翻訳キー・変数の差込欄・データ列名は変更していない。
+既存の数値関数が未変更であることはAST比較で確認し、変更されたPythonの関数は2つの画面表示関数に限られる。
+
+主要UIの139テストが通過した。ヘルプ・母集団SD・比較出力の39テストも確認し、
+古い日本語の単語だけを要求していた1件を修正して比較出力3件を再実行した。重複を除く確認対象は178件である。
+最後の説明文の調整後にも、翻訳キーと差込欄を含む言語テスト9件が通過した。
+ローカルブラウザで日本語の開始・準備画面、390px幅のホーム、固定SD PCMの計算確認を表示し、
+横方向のはみ出しがないことを確認した。翻訳を更新する途中のプレビューにはキャッシュが残ったため、
+再起動・再読込み後の表示を最終記録として保存した。
+
+数値の記録やソフトウェアの識別子など、保存した原文を読む箇所には英語が残る。
+全ヘルプ・全診断原文の翻訳完了や、アプリ全体の新たな受入完了を意味するものではない。
+過去の研究のソースと結果はそのまま保存し、公開版への反映は行っていない。
+[修正・検証記録](../validation/generated/japanese_ui_polish_20260915/qa.json)と
+[変更前のソース](../validation/source_snapshots/pre_japanese_ui_polish_20260915/sources.zip)を参照。
+
 ## Long-term implementation sequence
 
-1. Execute the versioned browser matrix for keyboard/focus acceptance and
+1. Apply the bounded U0/U1 slice above and execute the versioned browser matrix for keyboard/focus acceptance and
    exact contextual Help return, retaining evidence for every required row.
 2. Complete browser and first-time-user acceptance for the implemented
    two-level source chooser and compact Guided setup while preserving stable

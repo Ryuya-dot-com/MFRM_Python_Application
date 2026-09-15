@@ -3,6 +3,8 @@
 from io import BytesIO
 import re
 
+from mfrm_app import citation
+
 
 def manuscript_blocks(result: dict | None = None) -> list[tuple[str, str]]:
     result = result or {}
@@ -81,6 +83,7 @@ def manuscript_blocks(result: dict | None = None) -> list[tuple[str, str]]:
          "and missing-data rules. Explain why the design supports the intended comparisons.]"),
         ("subheading", "Analysis"),
         ("body", setup),
+        ("body", citation.analysis_statement(result)),
         ("body", estimation),
         ("body", "[For each research question, name the estimate or contrast, its direction and "
          "scale, uncertainty, and sensitivity analysis. State which fit, category, residual "
@@ -130,12 +133,13 @@ def manuscript_blocks(result: dict | None = None) -> list[tuple[str, str]]:
         ("reference", "[Insert only works cited in the completed manuscript, using Zotero's APA "
          "7th edition style. Check author names, year, title, journal, volume, pages, and DOI. "
          "These placeholders are ordinary text, not live Zotero citation fields.]"),
+        *([("reference", citation.APA)] if citation.matches_result(result) else []),
     ]
 
 
 def manuscript_markdown(result: dict | None = None) -> str:
     prefixes = {"title": "# ", "heading": "## ", "subheading": "### "}
-    return "\n\n".join(prefixes.get(kind, "") + text
+    return "\n\n".join(prefixes.get(kind, "") + (citation.APA_MARKDOWN if text == citation.APA else text)
                        for kind, text in manuscript_blocks(result) if kind != "break") + "\n"
 
 
@@ -184,9 +188,10 @@ def manuscript_word_bytes(result: dict | None = None) -> bytes:
             doc.add_page_break()
             continue
         paragraph = doc.add_paragraph(style=styles.get(kind, "Normal"))
-        for part in re.split(r"\b(SE|p)\b", text):
+        parts = text.partition(citation.METADATA["title"]) if text == citation.APA else re.split(r"\b(SE|p)\b", text)
+        for part in parts:
             run = paragraph.add_run(part)
-            if part in {"SE", "p"}:
+            if part in {"SE", "p"} or (text == citation.APA and part == citation.METADATA["title"]):
                 run.italic = True
         if kind == "title" and len(doc.paragraphs) == 1:
             paragraph.paragraph_format.space_before = Pt(48)

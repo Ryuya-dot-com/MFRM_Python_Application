@@ -17,3 +17,6 @@ parity_fixture/
 validation/generated/
 *.log
 backups/
+
+# Local source archives for retained research evidence
+/validation/source_snapshots/

@@ -18487,6 +18487,47 @@ def _fit_conditional_bias_cell(nll, probability, scores, slopes, weights, max_ab
     return out
 
 
+def _prepare_bias_cell_functions(model, eta, scores, weights, step_cum,
+                                 step_cum_mat, step_idx, slopes, slope_idx):
+    """Prepare fixed cell slices once; preserve the model's summation order."""
+    if model == "RSM":
+        return (lambda b: -loglik_rsm(eta+b, scores, step_cum, weight=weights),
+                lambda b: category_prob_rsm(eta+b, step_cum))
+
+    k_cat = step_cum_mat.shape[1]
+    k = np.arange(k_cat, dtype=float if model == "GPCM" else int)
+    groups = [np.where(step_idx == c)[0] for c in range(step_cum_mat.shape[0])]
+    rows = np.concatenate(groups)
+    ends = np.cumsum([len(group) for group in groups])
+    slices = [slice(end-len(group), end) for group, end in zip(groups, ends) if len(group)]
+    eta_rows, steps = eta[rows], step_cum_mat[step_idx[rows]]
+    row_numbers, score_rows = np.arange(rows.size), scores[rows]
+    weight_rows = weights[rows] if weights is not None else None
+    slope_rows = np.asarray(slopes, dtype=float)[slope_idx[rows]] if model == "GPCM" else None
+
+    def log_numerator(b):
+        linear = np.outer(eta_rows+b, k)-steps
+        return slope_rows[:, None]*linear if slope_rows is not None else linear
+
+    def nll(b):
+        log_num = log_numerator(b)
+        diff = log_num[row_numbers, score_rows]-logsumexp(log_num, axis=1)
+        if weight_rows is not None:
+            diff = diff*weight_rows
+        total = 0.0
+        for group in slices:
+            total += float(np.sum(diff[group]))
+        return -total
+
+    def probability(b):
+        probs = np.zeros((len(eta), k_cat))
+        log_num = log_numerator(b)
+        probs[rows, :] = np.exp(log_num-logsumexp(log_num, axis=1)[:, None])
+        return probs
+
+    return nll, probability
+
+
 def estimate_bias_interaction(
     res,
     diagnostics,
@@ -18617,35 +18658,6 @@ def estimate_bias_interaction(
         slope_idx_sub = slope_idx[idx_rows] if slope_idx is not None else step_idx_sub
         return eta_sub, score_k_sub, weight_sub, step_idx_sub, slope_idx_sub
 
-    def _make_nll(eta_sub, score_k_sub, weight_sub, step_idx_sub, slope_idx_sub):
-        """Fixed-calibration likelihood slice; only the scalar b varies."""
-        if config["model"] == "RSM":
-            def nll(b):
-                return -loglik_rsm(eta_sub + b, score_k_sub, step_cum, weight=weight_sub)
-        elif config["model"] == "PCM":
-            def nll(b):
-                return -loglik_pcm(eta_sub + b, score_k_sub, step_cum_mat, step_idx_sub, weight=weight_sub)
-        else:  # GPCM
-            def nll(b):
-                return -loglik_gpcm(
-                    eta_sub + b,
-                    score_k_sub,
-                    step_cum_mat,
-                    step_idx_sub,
-                    params["slopes"],
-                    slope_idx_sub,
-                    weight=weight_sub,
-                )
-        return nll
-
-    def probability(eta_sub, step_idx_sub, slope_idx_sub, b):
-        if config["model"] == "RSM":
-            return category_prob_rsm(eta_sub+b, step_cum)
-        if config["model"] == "PCM":
-            return category_prob_pcm(eta_sub+b, step_cum_mat, step_idx_sub)
-        return category_prob_gpcm(eta_sub+b, step_cum_mat, step_idx_sub,
-                                  params["slopes"], slope_idx_sub)
-
     qualification = _output_qualification.bias_cell_qualification().to_record()
     rows = []
     seq = 1
@@ -18656,7 +18668,6 @@ def estimate_bias_interaction(
         w = np.asarray(weight_sub, dtype=float) if weight_sub is not None else np.ones(len(idx_rows))
         slopes = (np.asarray(params["slopes"], dtype=float)[slope_idx_sub]
                   if config["model"] == "GPCM" else np.ones(len(idx_rows)))
-        nll_sub = _make_nll(eta_sub, score_k_sub, weight_sub, step_idx_sub, slope_idx_sub)
         if g["excluded_extreme"]:
             fit = {"estimate": np.nan, "candidate": np.nan, "status": "excluded_extreme_level",
                    "se": np.nan, "score": np.nan, "information": np.nan,
@@ -18664,9 +18675,11 @@ def estimate_bias_interaction(
                    "probabilities": None, "error": "",
                    "ci": {"lower": np.nan, "upper": np.nan, "level": .95, "status": "not available"}}
         else:
+            nll_sub, probability_sub = _prepare_bias_cell_functions(
+                config["model"], eta_sub, score_k_sub, weight_sub, step_cum,
+                step_cum_mat, step_idx_sub, params.get("slopes"), slope_idx_sub)
             fit = _fit_conditional_bias_cell(
-                nll_sub, lambda b: probability(eta_sub, step_idx_sub, slope_idx_sub, b),
-                score_k_sub, slopes, w, max_abs)
+                nll_sub, probability_sub, score_k_sub, slopes, w, max_abs)
         bias_hat, se = fit["estimate"], fit["se"]
         probs = fit["probabilities"]
         infit = outfit = np.nan

@@ -63,8 +63,9 @@ def test_analytic_gpcm_information_matches_finite_differences_of_grouped_gradien
     assert np.max(abs(result['information'][:-1, -1])) > 1e-3
 
 
-def test_zero_quadrature_weights_have_exactly_zero_mass_without_changing_the_objective():
-    _, _, sizes, _, grouped = problem('PCM', 'sparse')
+@pytest.mark.parametrize('model', ['RSM', 'PCM', 'GPCM'])
+def test_zero_quadrature_weights_have_exactly_zero_mass_without_changing_the_objective(model):
+    _, _, sizes, _, grouped = problem(model, 'sparse')
     point = np.r_[np.zeros(sum(sizes.values())), 0.]
     z, w = roots_hermitenorm(641); w /= np.sqrt(2*np.pi)
     assert np.any(w == 0)
@@ -73,6 +74,25 @@ def test_zero_quadrature_weights_have_exactly_zero_mass_without_changing_the_obj
     for key in ['nll', 'gradient', 'information', 'eap', 'sd']:
         np.testing.assert_allclose(full[key], positive[key], atol=1e-12, rtol=0)
     np.testing.assert_array_equal(full['posterior'][:, w == 0], 0.)
+
+
+def test_zero_weight_pruning_preserves_order_and_even_tiny_positive_mass():
+    _, _, _, _, grouped = problem('GPCM', 'unbalanced')
+    point = np.r_[np.linspace(-.2,.3,grouped.dimension-1),np.log(1.2)]
+    nodes = np.array([.5, -8., -1., 3., 0., 9.])
+    weights = np.array([.4, 1e-100, .3, 0., .3, 0.])
+    result = grouped.evaluate(point,nodes,weights,information=True)
+    assert result['posterior'].shape == (len(grouped.counts),len(nodes))
+    assert np.all(result['posterior'][:,1] > 0)
+    np.testing.assert_array_equal(result['posterior'][:,weights==0],0.)
+    permutation = np.array([5,2,0,3,1,4])
+    other = grouped.evaluate(point,nodes[permutation],weights[permutation],information=True)
+    for key in ['nll','gradient','information','eap','sd']:
+        np.testing.assert_allclose(result[key],other[key],atol=1e-12,rtol=1e-12)
+    np.testing.assert_allclose(result['posterior'][:,permutation],other['posterior'],atol=1e-14,rtol=1e-12)
+    nodes[-1] = np.inf
+    with pytest.raises(ValueError,match='quadrature'):
+        grouped.evaluate(point,nodes,weights)
 
 
 def test_grouping_does_not_merge_different_persons_before_missing_information():

@@ -103,6 +103,11 @@ class GroupedMmlLikelihood:
         if (nodes.ndim != 1 or not len(nodes) or weights.shape != nodes.shape or not np.isfinite(nodes).all()
             or not np.isfinite(weights).all() or np.any(weights < 0) or abs(weights.sum()-1) > 1e-12):
             raise ValueError('Invalid standardized quadrature or prior weights')
+        positive = weights > 0
+        if not positive.all():
+            # Exactly-zero terms and their derivatives vanish from this fixed
+            # finite sum. Keep every positive weight and its original mass.
+            nodes, weights = nodes[positive], weights[positive]
         a = np.exp(self.slope_design@point[self.linear_d:-1]); sigma = np.exp(point[-1])
         if not np.isfinite(a).all() or not np.isfinite(sigma) or sigma <= 0 or np.any(a <= 0):
             raise ValueError('Invalid slope or population scale')
@@ -168,4 +173,8 @@ class GroupedMmlLikelihood:
             centered_score = score-mean_score[:, None, :]
             hessian -= np.einsum('nq,nqd,nqe->de', posterior, centered_score, centered_score, optimize=True)
             result['information'] = hessian
+        if not positive.all():
+            full_posterior = np.zeros((len(posterior), len(positive)))
+            full_posterior[:, positive] = posterior
+            result['posterior'] = full_posterior
         return result

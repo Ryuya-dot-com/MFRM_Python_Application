@@ -33,9 +33,12 @@ python streamlit_app.py --doctor
 python streamlit_app.py --self-test
 make apptest
 python streamlit_app.py --benchmark-quick --benchmark-csv validation/generated/benchmark_smoke.csv
-rm -rf .pytest_cache validation/generated
-find . -type d -name __pycache__ -prune -exec rm -rf {} +
+make clean
 ```
+
+`make clean` removes development caches while preserving retained validation
+evidence, source snapshots, backups, and both Mac and Windows virtual environments.
+In a Dropbox workspace, finish synchronization before bulk cleanup.
 
 ## Statistical Changes
 

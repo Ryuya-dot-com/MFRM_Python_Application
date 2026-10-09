@@ -1,5 +1,15 @@
 # Adversarial UX Audit
 
+Current checkpoint, 2026-09-15: the Japanese revision, Home/return navigation,
+MIT/citation surfaces and result-bound citation exports below shipped in
+0.2.18-beta (`b483d97`). Their dated “local implementation” records describe
+pre-release checks, not the present deployment state. The active next slice is
+UX1 in the [execution roadmap](../ROADMAP.md#現在の実行計画--2026-09-15): review the
+same input → analysis → PCA/bias → manuscript tasks, including dynamic Japanese,
+keyboard/focus and state preservation. Formative reviews with actual users and
+full accessibility acceptance remain outstanding; automated and agent browser
+checks do not close those gates.
+
 - Audit date: 2026-08-04
 - Scope: default Streamlit journey from landing through the first fitted result
 - Product boundary: standalone Python beta
@@ -562,6 +572,93 @@ uncommitted and unpublished.
 [修正・検証記録](../validation/generated/japanese_ui_polish_20260915/qa.json)と
 [変更前のソース](../validation/source_snapshots/pre_japanese_ui_polish_20260915/sources.zip)を参照。
 
+## 求積の読み方とオフライン確認 — 2026-09-15（ローカル実装）
+
+固定SDの数値詳細に「読み方と次の確認」を追加した。説明は操作したときだけ開き、
+通常表示には、停止状態と閉じた数値詳細を維持する。計算操作と説明を開く操作を分け、
+説明を読んでも再推定・求積評価・外部エンジンの起動を行わない。
+
+案内は「表の読み方」「さらに確かめるには」「手元で確認する準備」の三つに絞った。
+EAP差だけでなく事後SD差も見ること、基準行が0でも精度確認の証明にならないこと、
+列ごとの最大差が同じ人とは限らないことを説明する。
+同一点の積分差、再推定したことによる変化、連続積分との比較を区別し、
+画面のJSONと再実行用入力の保存先を分けて示す。
+
+比較用ZIPには、表示言語に対応する `README_quadrature_check.md` を同梱する。
+内容は[日本語手順](fixed_sd_quadrature_check.ja.md)／[英語手順](fixed_sd_quadrature_check.en.md)に置く。
+Pythonの開発用確認は対応するアプリのソース一式が別途必要で、ZIPだけで実行できるとは案内しない。
+対応外の入力を都合よく変更しないこと、総NLL・個人得点の誤差評価や再推定候補の解釈範囲を記載した。
+独立した出力メニューや新しい分析エンジンは追加していない。
+
+確認した範囲：
+
+- UI・言語の13テスト、比較用出力・限定PCMランナーの5テストが通過（計18）。
+  表示だけでは求積評価ゼロ、操作後は3次数を評価、言語切替で追加評価なし、
+  元の分析の保持、未対応・不整合入力の扱い、日英の手順書が正しいZIPへ入ることを確認した。
+- 最初のUIテストでは、テスト側がpopoverのprotobufラベルの階層を誤って参照して2件失敗した。
+  実際の構造に合わせて参照を修正し、上記13テストを再実行した。画面実装の失敗とは分けて記録する。
+- 8人・64回答の合成PCMを実際に推定して両言語のZIPを出力し、展開した入力から記載のCLIを実行した。
+  予定した6経路すべてを評価でき、元の入力・分析は不変だった。これは手順・入出力の確認で、新しい統計的資格ではない。
+- 変更前とのAST照合で、変更した既存関数は数値詳細の表示と比較用ZIP作成の2つに限定された。
+  尤度・勾配・推定・個人得点の関数本体は未変更。
+- ローカルChromeで日英の説明、比較後の言語切替、Tab・Enterによる説明の展開、Escapeによる閉鎖と
+  案内ボタンへのフォーカス復帰を点検した。狭いドック表示でも説明が折り返され、内部をスクロールして最後まで読めた。
+  幅を確定した390pxの受入や、アプリ全体のモバイル・スクリーンリーダー受入は実施していない。
+  確認用タブを閉じ、ローカルサーバーを停止した。
+
+[検証記録](../validation/generated/quadrature_guidance_20260915/qa.json)、
+[実際のZIPからの実行確認](../validation/generated/quadrature_guidance_20260915/offline_guide_check.json)、
+[変更前ソース](../validation/source_snapshots/pre_quadrature_guidance_20260915/sources.zip)を保存した。
+公開・既定の推定方法・推論の資格は変更していない。次は通常の結果画面から保存までの通し確認を行い、
+利用者が三つの比較を使い分けられるかは別途確認する。
+
+## 通常画面から求積確認と比較資料への往復 — 2026-09-15（ローカル実装）
+
+通常の `main()` から、64行・8人の合成PCMデータを貼り付け、固定SDのMML推定を実行した。
+受験者データの分析結果ではなく、操作・保存の検証例である。Direct、GH31、SD=1.1、Criterionを
+ステップと非中心化の対象、Fast previewとし、AppTestではmaxit=40、ブラウザーでは400を使用した。
+ブラウザーの返却点は8反復、総NLL=98.67433024092199、最大絶対勾配=2.8936931435860644e-7だった。
+この値から最尤解や積分精度を認定していない。
+
+実際に直した問題：
+
+- 比較資料を選んだ後に「結果」を開くと、元の出力先が初期化された。既存のナビゲーション保持処理を
+  ホームだけでなく通常のセクション切替にも適用した。
+- 言語切替専用の中間画面が入力ウィジェットを省略し、次の描画で入力・設定が失われた。
+  中間画面と再表示ボタンを削除し、現在の画面を選択した言語で描画する。
+- 上の修正だけでは、実ブラウザーの次の操作で「詳細設定」が「標準設定」に戻った。
+  ラジオボタンは翻訳済みラベルを送受信するが、言語切替後に現在の選択を送り直していなかった。
+  言語変更のコールバックで既存の文字列値を再設定し、新しい表示名をブラウザーへ送る。
+  ボタンやアップロードファイルの状態を一括で書き換える処理は加えていない。
+- 外部ソフトの得点を表す `native scores` が「標準得点」と誤訳されていた。
+  共通の質問文を「各ソフトの個人得点は安定しているか」に直し、画面・HTML・表の表示を揃えた。
+
+検証の範囲：
+
+- `test_normal_workspace_preserves_fit_and_comparison_route_across_navigation` は実際のアプリ入口・推定処理・
+  ダウンロードに渡されるデータを使用する。日英の比較用ZIPの入力とソース上の手順を照合し、
+  画面往復・言語切替・ホーム復帰で元の分析オブジェクト、入力の保存内容、得点表、求積確認JSONが
+  不変であることを確認した。ナビゲーション中の再推定と外部エンジン起動は失敗させる。
+  実際に入力を編集した場合は、古い結果・比較用ダウンロードが非表示となることも確認した。
+- 最初の自動テストはナビゲーションのリセットを検出した。ブラウザーで発見したラジオボタンの問題は、
+  サーバー上の選択値だけを見たテストでは見逃していた。送信メッセージの `set_value` と翻訳済みの
+  `raw_value` を検査するようにし、修正前の失敗と修正後の通過を記録した。
+- ホーム・ヘルプ・初期画面・日英表示を含む142テストと、比較レポート・出力の13テストが通過した。
+  先行する通過記録も残しているが、最終コードに対する142件は `regression_radio_final.log` を参照する。
+- ローカルChromeで通常の推定、求積確認、JSON保存、比較資料への移動を実行した。
+  修正前の英語ZIPと修正後の日本語ZIPは、ともに元のJSONに記録された入力ハッシュと一致する。
+  データ・設定・推定値は言語と表示修正の前後で同一だった。日本語ZIPには日本語手順と修正した質問文を含む。
+  数値比較の4項目は未評価のままで、推論を許可するフラグはfalseだった。
+- ネイティブ操作では古い要素ID・画面取得エラーが発生し、途中から同じタブをブラウザー拡張経由で操作した。
+  これらをアプリの計算障害として扱っていない。最終のブラウザー確認範囲は下記QA記録に保存する。
+
+[QAと保存物のハッシュ](../validation/generated/quadrature_navigation_20260915/qa.json)、
+[最終の回帰テスト](../validation/generated/quadrature_navigation_20260915/regression_radio_final.log)、
+[変更前ソース](../validation/source_snapshots/pre_quadrature_navigation_20260915/sources.zip)を保存した。
+初見の利用者による理解、スクリーンリーダー、幅を固定したモバイル表示の受入は未実施。
+優先度・信頼性の案内に英語の動的メッセージが残っており、次のUX1ではその説明とPCA・バイアス・原稿の導線を点検する。
+この変更は未公開であり、数学的な検証や統計的推論の資格を追加するものではない。
+
 ## Long-term implementation sequence
 
 1. Apply the bounded U0/U1 slice above and execute the versioned browser matrix for keyboard/focus acceptance and
@@ -574,9 +671,10 @@ uncommitted and unpublished.
 4. Extract source/setup/result-shell renderers from the monolith, one tested
    vertical slice at a time.
 5. Add task-level accessibility and rendered-locale acceptance tests.
-6. Instrument privacy-safe UX events: source class, phase reached, blocked
-   reason code, rerun count, and time to first interpretable evidence. Never
-   record uploaded values, person identifiers, free text, or raw file names.
+6. Start with a local task-review record of source class, phase, blocked reason,
+   reruns and time to interpretable evidence. Add product instrumentation only
+   if those observations leave a concrete measurement gap. Never record uploaded
+   values, person identifiers, free text or raw file names in UX records.
 
 ## Acceptance measures
 

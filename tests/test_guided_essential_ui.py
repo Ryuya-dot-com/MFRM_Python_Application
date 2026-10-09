@@ -130,15 +130,7 @@ def test_render_help_popover_uses_localized_topic_overlay():
     assert "st.session_state.get(\"lang\", DEFAULT_LANG)" in source
 
 
-def test_language_switch_uses_lightweight_result_fast_path():
-    source = inspect.getsource(app.main)
-
-    assert "on_change=_mark_language_switch" in source
-    assert "_consume_language_switch_fast_path(app_mode)" in source
-    assert "render_language_switch_fast_path()" in source
-
-
-def test_language_fast_path_consumes_pending_state_only_for_results(monkeypatch):
+def test_language_change_notification_is_consumed_only_for_results(monkeypatch):
     state = {}
 
     class _FakeSt:
@@ -146,12 +138,12 @@ def test_language_fast_path_consumes_pending_state_only_for_results(monkeypatch)
 
     monkeypatch.setattr(app, "st", _FakeSt())
     state["_language_switch_pending"] = True
-    assert app._consume_language_switch_fast_path("FACETS-mode estimation") is False
+    assert app._consume_language_switch("FACETS-mode estimation") is False
     assert state["_language_switch_pending"] is False
 
     state["_language_switch_pending"] = True
     state["facets_mode_output"] = {"result": {}}
-    assert app._consume_language_switch_fast_path("FACETS-mode estimation") is True
+    assert app._consume_language_switch("FACETS-mode estimation") is True
     assert state["_language_switch_pending"] is False
 
 

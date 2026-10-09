@@ -16,7 +16,9 @@ Use this checklist before tagging or pushing a public beta release.
 ## Privacy
 
 - [ ] Confirm no example or generated files contain confidential rating data.
-- [ ] Confirm generated outputs under `validation/generated/` are absent before committing.
+- [ ] Confirm generated outputs under `validation/generated/` and retained source
+      snapshots are excluded from the commit and deployment bundle; preserve the
+      local research evidence.
 - [ ] Confirm `.streamlit/secrets.toml` is not tracked.
 - [ ] Confirm the in-app and README privacy warnings are still visible.
 - [ ] Confirm README screenshots use only built-in, synthetic, or fully de-identified data.
@@ -57,8 +59,7 @@ python streamlit_app.py --release-check
 python streamlit_app.py --self-test
 make apptest
 python streamlit_app.py --benchmark-quick --benchmark-csv validation/generated/benchmark_smoke.csv
-rm -rf .pytest_cache validation/generated
-find . -type d -name __pycache__ -prune -exec rm -rf {} +
+make clean
 ```
 
 ## GitHub Release

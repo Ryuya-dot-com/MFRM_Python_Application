@@ -68,6 +68,48 @@ def test_compute_model_choice_refuses_population_formula_fits():
     assert "population" in out["reason"].lower()
 
 
+@pytest.mark.parametrize("free_sd,sd_input,sd_returned", [
+    (False, None, 1.7), (False, .8, 1.7), (True, .8, 1.7), (True, None, 1.7),
+])
+def test_candidate_refit_keeps_population_model(monkeypatch, free_sd, sd_input, sd_returned):
+    """Capture estimator arguments without generating or fitting any data."""
+    config = dict(model="RSM", method="MML", n_cat=3, facet_names=["Criterion"],
+                  population_prior_sd=sd_returned, estimate_population_sd=free_sd)
+    if sd_input is not None:
+        config["population_prior_sd_input"] = sd_input
+    calls = []
+    monkeypatch.setattr(app, "mfrm_estimate", lambda **kwargs: calls.append(kwargs) or kwargs)
+    result = app._refit_candidate_model(
+        dict(config=config, prep=dict(data=pd.DataFrame({"Person": ["P1"], "Score": [1]}))),
+        "PCM", step_facet="Criterion", slope_facet="Criterion",
+    )
+    assert result is calls[0]
+    assert result["estimate_population_sd"] is free_sd
+    assert result["population_prior_sd"] == (sd_input if free_sd and sd_input is not None else sd_returned)
+    assert result["method"] == "MML" and result["model"] == "PCM"
+
+
+@pytest.mark.parametrize("weight", [0., .5, 2., float("nan"), "invalid"])
+def test_model_comparison_refuses_nonunit_weights_before_refit(monkeypatch, weight):
+    def no_refit(*args, **kwargs):
+        pytest.fail("An ineligible weighted comparison must stop before any refit")
+    monkeypatch.setattr(app, "_refit_candidate_model", no_refit)
+    result = app.compute_model_choice_comparison(dict(
+        config=dict(model="RSM", method="MML", n_cat=3),
+        prep=dict(data=pd.DataFrame({"Person": ["P1", "P2"], "Score": [1, 0], "Weight": [1., weight]})),
+    ))
+    assert result["available"] is False
+    assert "unit weights" in result["reason"]
+
+
+def test_model_comparison_accepts_explicit_unit_weights():
+    allowed, reason = app._model_choice_can_compare(dict(
+        config=dict(model="RSM", method="MML", n_cat=3),
+        prep=dict(data=pd.DataFrame({"Person": ["P1"], "Score": [1], "Weight": [1.]})),
+    ))
+    assert allowed and not reason
+
+
 # -----------------------------------------------------------------------------
 # RSM-generated data: comparison ranks RSM at the top
 # -----------------------------------------------------------------------------
@@ -295,6 +337,7 @@ def test_model_choice_comparison_column_order_is_stable(
         "AIC", "DeltaAIC", "AICEvidenceRatio", "AICWeight",
         "AICc", "DeltaAICc", "AICcEvidenceRatio", "AICcWeight",
         "BIC", "DeltaBIC", "BICEvidenceRatio", "BICWeight",
+        "BICSampleSize", "BICSampleSizeBasis", "AICcStatus",
     ]
     assert list(out["comparison"].columns) == expected
 
@@ -371,73 +414,30 @@ def test_model_choice_fit_times_keyed_by_model_and_current_is_zero(
 # -----------------------------------------------------------------------------
 
 
-def test_model_choice_aicc_matches_closed_form(rsm_fit_for_model_choice):
-    """``AICc = AIC + 2 K (K + 1) / (N - K - 1)`` (Hurvich & Tsai, 1989,
-    Eq. 1). Pin to machine precision when the small-sample denominator
-    is positive; NaN otherwise."""
-    out = app.compute_model_choice_comparison(rsm_fit_for_model_choice)
-    comp = out["comparison"]
-    for _, row in comp.iterrows():
-        n = float(row["N"])
-        k = float(row["KParams"])
-        aic = float(row["AIC"])
-        aicc = float(row["AICc"]) if pd.notna(row["AICc"]) else float("nan")
-        if not (np.isfinite(n) and np.isfinite(k) and np.isfinite(aic)):
-            continue
-        if n > k + 1:
-            expected = aic + 2.0 * k * (k + 1.0) / (n - k - 1.0)
-            assert aicc == pytest.approx(expected, abs=1e-10)
-        else:
-            assert not np.isfinite(aicc)
+def test_model_choice_aicc_is_unavailable_without_mfrm_derivation(rsm_fit_for_model_choice):
+    comp = app.compute_model_choice_comparison(rsm_fit_for_model_choice)["comparison"]
+    for column in ["AICc", "DeltaAICc", "AICcEvidenceRatio", "AICcWeight"]:
+        assert comp[column].isna().all()
+    assert set(comp["AICcStatus"]) == {"unavailable_no_mfrm_small_sample_derivation"}
 
 
-def test_model_choice_aicc_recommended_flag_fires_when_n_over_k_below_40(
-    rsm_fit_for_model_choice,
-):
-    """The ``AICcRecommended`` column flags rows with ``N / K < 40``
-    per Burnham & Anderson (2002, p. 66)."""
-    out = app.compute_model_choice_comparison(rsm_fit_for_model_choice)
-    comp = out["comparison"]
-    for _, row in comp.iterrows():
-        n = float(row["N"])
-        k = float(row["KParams"])
-        if not (np.isfinite(n) and np.isfinite(k) and k > 0):
-            continue
-        expected = (n / k) < 40.0
-        assert bool(row["AICcRecommended"]) == expected
+def test_model_choice_small_n_over_k_does_not_qualify_aicc(rsm_fit_for_model_choice):
+    comp = app.compute_model_choice_comparison(rsm_fit_for_model_choice)["comparison"]
+    assert (comp["N_over_K"] < 40).any()
+    assert not comp["AICcRecommended"].any()
 
 
-def test_model_choice_aicc_is_larger_than_aic_when_finite(
-    rsm_fit_for_model_choice,
-):
-    """AICc adds a non-negative correction term to AIC, so
-    ``AICc >= AIC`` always (with equality only in the limit
-    ``K -> 0`` or ``N -> infty``)."""
-    out = app.compute_model_choice_comparison(rsm_fit_for_model_choice)
-    comp = out["comparison"]
-    for _, row in comp.iterrows():
-        aic = float(row["AIC"]) if pd.notna(row["AIC"]) else float("nan")
-        aicc = float(row["AICc"]) if pd.notna(row["AICc"]) else float("nan")
-        if np.isfinite(aic) and np.isfinite(aicc):
-            assert aicc >= aic - 1e-12
+def test_model_choice_ranking_ignores_legacy_aicc_recommendation_flags():
+    comp = pd.DataFrame(dict(Model=["RSM", "PCM"], BIC=[30., 30.], AIC=[20., 25.],
+                             AICc=[100., 28.], AICcRecommended=[True, True]))
+    rec = app._model_choice_recommend(comp)
+    assert rec["model"] == "RSM"
+    assert "AICc" not in rec["rationale"]
 
 
-def test_model_choice_delta_aicc_minimum_is_zero(rsm_fit_for_model_choice):
-    """``DeltaAICc`` is computed relative to the minimum AICc row; the
-    minimum row must have ``DeltaAICc = 0``."""
-    out = app.compute_model_choice_comparison(rsm_fit_for_model_choice)
-    comp = out["comparison"]
-    finite = comp.dropna(subset=["AICc"])
-    if finite.empty:
-        pytest.skip("No row produced a finite AICc.")
-    assert float(finite["DeltaAICc"].min()) == pytest.approx(0.0, abs=1e-12)
-
-
-def test_model_choice_caveat_mentions_aicc_recommendation_window(
-    rsm_fit_for_model_choice,
-):
-    out = app.compute_model_choice_comparison(rsm_fit_for_model_choice)
-    caveat = out["caveat"]
-    assert "AICc" in caveat
-    assert "Hurvich" in caveat
-    assert "Burnham" in caveat
+def test_model_choice_caveat_distinguishes_formula_provenance_and_applicability(rsm_fit_for_model_choice):
+    caveat = app.compute_model_choice_comparison(rsm_fit_for_model_choice)["caveat"]
+    assert "AICc is unavailable" in caveat
+    assert "Hurvich" in caveat and "Burnham" in caveat
+    assert "N / K < 40 does not establish applicability" in caveat
+    assert "independent Person" in caveat

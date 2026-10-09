@@ -19,7 +19,7 @@ QUESTIONS = {
     "calibration": ("校正値は近いか", "Are calibrations close?"),
     "stationarity": ("返却点で推定は停留しているか", "Is the returned point stationary?"),
     "integration": ("積分精度は目安を満たすか", "Does integration meet the stated targets?"),
-    "native_scores": ("標準得点の安定性を確認できたか", "Has native-score stability been assessed?"),
+    "native_scores": ("各ソフトの個人得点は安定しているか", "Has native-score stability been assessed?"),
 }
 STATUS = {
     "within_targets": ("記載した目安内", "Within stated targets"),

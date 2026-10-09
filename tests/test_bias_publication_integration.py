@@ -1,27 +1,8 @@
-"""Tests for the publication-document integration of the slope-aware
-GPCM bias inference.
+"""Public bias exports keep the G3 hold; technical records remain unchanged.
 
-The publication-document builders (Word, PDF, HTML) embed a
-bias / interaction table that includes the new ``LR ChiSq``,
-``LR Prob.``, and ``Profile CI`` columns when the fit is GPCM and the
-slope-aware bias machinery has produced finite chi-square statistics.
-RSM and PCM fits render the same table with the t-based screening
-columns only, because the chi-square pivotal pertains to the slope-
-aware GPCM kernel.
-
-Three contracts:
-
-* ``_bias_table_for_publication`` selects columns according to the
-  model: base bias / t / Prob. for every fit, plus the LR / Profile-CI
-  columns when GPCM has populated them. Returns ``None`` when the
-  ``all_bias_results`` dict is empty or carries only skip-reason rows.
-* ``_bias_table_caption`` returns a GPCM caption that cites Muraki
-  (1993), Wilks (1938) and Cox (1975); the RSM / PCM caption stays in
-  the existing t-based framing (Myford & Wolfe, 2003).
-* The APA reference library and the citation map register Wilks
-  (1938), Cox (1975), Louis (1982), Cramer (1946), and Muraki (1993)
-  so a Methods narrative that mentions them by name produces a
-  correctly ordered references list.
+Legacy GPCM tables may contain finite reference probabilities and intervals.
+They must not be promoted through Word/PDF/HTML table helpers. Bibliography
+registration is tested separately from statistical qualification.
 """
 
 from __future__ import annotations
@@ -100,30 +81,16 @@ def test_bias_table_for_publication_returns_none_when_all_results_are_skip_reaso
     assert out is None
 
 
-def test_bias_table_for_publication_includes_gpcm_columns_when_model_is_gpcm():
+def test_bias_table_for_publication_withholds_unqualified_inference_even_when_finite():
     bundle = {"Rater x Criterion": {"table": _synthetic_bias_table("GPCM")}}
+    original = bundle["Rater x Criterion"]["table"].copy(deep=True)
     out = app._bias_table_for_publication(bundle, "GPCM")
-    assert out is not None
-    expected_gpcm_cols = {
-        "LR ChiSq",
-        "LR Prob.",
-        "Profile CI Lower",
-        "Profile CI Upper",
-        "Profile CI Status",
-    }
-    assert expected_gpcm_cols.issubset(out.columns)
-    base_cols = {
-        "Pair",
-        "FacetA_Level",
-        "FacetB_Level",
-        "Bias Size",
-        "S.E.",
-        "t",
-        "d.f.",
-        "Prob.",
-    }
-    assert base_cols.issubset(out.columns)
-    assert (out["Pair"] == "Rater x Criterion").all()
+    assert {"Pair", "FacetA_Level", "FacetB_Level", "Bias Size", "Cell Status",
+            "QualificationStatus", "PublicConclusionAllowed"}.issubset(out.columns)
+    assert not {"S.E.", "t", "d.f.", "Prob.", "LR Prob.", "Profile CI Lower"} & set(out.columns)
+    assert out.QualificationStatus.eq("TECHNICAL_ONLY").all()
+    assert not out.PublicConclusionAllowed.any()
+    pd.testing.assert_frame_equal(original, bundle["Rater x Criterion"]["table"])
 
 
 def test_bias_table_for_publication_omits_gpcm_columns_when_model_is_not_gpcm():
@@ -136,8 +103,7 @@ def test_bias_table_for_publication_omits_gpcm_columns_when_model_is_not_gpcm():
 
 def test_bias_table_for_publication_omits_gpcm_columns_when_lr_chisq_is_all_nan():
     """Even under model == GPCM, if the LR column is uniformly NaN
-    (e.g. estimation hit an error) the helper must fall back to the
-    t-based view rather than emit empty columns."""
+    (e.g. estimation hit an error) the helper keeps the G3 hold."""
     df = _synthetic_bias_table("GPCM").copy()
     df["LR ChiSq"] = np.nan
     bundle = {"Rater x Criterion": {"table": df}}
@@ -162,38 +128,14 @@ def test_bias_table_for_publication_concatenates_multiple_facet_pairs():
 # -----------------------------------------------------------------------------
 
 
-def test_bias_table_caption_gpcm_cites_wilks_cox_and_muraki_1993():
-    caption = app._bias_table_caption("GPCM", table_idx=3)
+@pytest.mark.parametrize("model", ["RSM", "PCM", "GPCM", "gpcm", "", None])
+def test_bias_table_caption_states_g3_hold_for_every_model(model):
+    caption = app._bias_table_caption(model, table_idx=3)
     assert "Table 3." in caption
-    assert "Muraki, 1993" in caption
-    assert "Wilks, 1938" in caption
-    assert "Cox, 1975" in caption
-    assert "slope-aware" in caption
-    assert "profile-likelihood" in caption
-
-
-def test_bias_table_caption_rsm_cites_myford_wolfe_only():
-    caption = app._bias_table_caption("RSM", table_idx=2)
-    assert "Table 2." in caption
-    assert "Myford" in caption
-    # The chi-square pivotal references must not leak into RSM captions.
-    assert "Wilks, 1938" not in caption
-    assert "Cox, 1975" not in caption
-    assert "slope-aware" not in caption
-
-
-def test_bias_table_caption_is_case_insensitive_for_model():
-    """The helper must handle the empty / None / lowercase ``model`` inputs
-    a downstream caller could pass without throwing."""
-    for model in (None, "", "gpcm", "Gpcm"):
-        caption = app._bias_table_caption(model, table_idx=1)
-        # The empty / None / lowercase fall-back must produce the RSM-style
-        # caption, since the GPCM branch is gated on the exact uppercase
-        # model name; if a caller intends GPCM they must pass "GPCM".
-        if (model or "").upper() == "GPCM":
-            assert "Wilks, 1938" in caption
-        else:
-            assert "Wilks, 1938" not in caption
+    assert "G3 validation is pending" in caption
+    assert "calibration held fixed" in caption
+    assert "technical exports" in caption
+    assert "do not establish bias or absence of bias" in caption
 
 
 # -----------------------------------------------------------------------------

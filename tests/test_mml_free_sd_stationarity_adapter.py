@@ -111,10 +111,8 @@ def test_adapter_rejects_fixed_sd_and_gpcm(native_free_sd_result) -> None:
     gpcm["config"] = dict(native_free_sd_result["config"], model="GPCM")
     with pytest.raises(ValueError, match="RSM and PCM only"):
         prepare_app_free_sd_problem(gpcm)
-    with pytest.raises(ValueError, match="RSM and PCM only"):
-        app.mfrm_loglik_mml_value_grad(
-            np.array([]), {}, gpcm["config"], {}, {}, include_log_sigma=True,
-        )
+    # The low-level joint derivative supports GPCM algebra, but this v2
+    # solver adapter still excludes its expanded log-slope constraints.
 
 
 @pytest.mark.parametrize("model", ["RSM", "PCM"])

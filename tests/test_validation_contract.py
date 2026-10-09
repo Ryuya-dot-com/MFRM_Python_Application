@@ -151,22 +151,13 @@ def test_cross_package_validation_plan_contract():
     # release must show up as a Ready row.
     assert "GPCM Linacre fair-average and structural SE" in coverage_020["mfrmr020Area"].tolist()
     assert "MML observed-information covariance" in coverage_020["mfrmr020Area"].tolist()
-    # The slope-aware bias inference shipped: the row must say so. The
-    # ``Ready`` status, the Muraki (1993) / Wilks (1938) / Cox (1975)
-    # citations in the evidence string, and the references to the
-    # publication-document integration are all part of the manuscript
-    # claim surface the public README points at.
+    # Implemented conditional calculations do not establish sampling inference.
     bias_row = coverage_020.loc[
-        coverage_020["mfrmr020Area"] == "GPCM bias inference - slope-aware"
-    ]
+        coverage_020["mfrmr020Area"] == "GPCM bias inference - slope-aware"]
     assert not bias_row.empty
-    assert bias_row.iloc[0]["PythonStatus"] == "Ready"
-    bias_evidence = str(bias_row.iloc[0]["PythonEvidence"])
-    assert "Muraki, 1993" in bias_evidence
-    assert "Wilks, 1938" in bias_evidence
-    assert "Cox, 1975" in bias_evidence
-    assert "LR ChiSq" in bias_evidence
-    assert "profile-likelihood" in bias_evidence.lower() or "Profile CI" in bias_evidence
+    assert bias_row.iloc[0]["PythonStatus"] == "Technical only; G3 incomplete"
+    assert "LR ChiSq" in str(bias_row.iloc[0]["PythonEvidence"])
+    assert "not a nuisance profile" in str(bias_row.iloc[0]["Boundary"])
     # The bounded-GPCM row must have been overridden to reflect the
     # slope-aware fair-average / structural SE delivery; the fair-average
     # half of the historic limitation is gone.

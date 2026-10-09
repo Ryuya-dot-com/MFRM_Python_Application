@@ -200,6 +200,100 @@ class AppFreeSdProblem:
         return maximum if np.isfinite(maximum) else float("inf")
 
 
+def prepare_app_free_sd_problem_from_data(
+    data,
+    *,
+    person_col: str,
+    facet_cols: list[str],
+    score_col: str,
+    rating_min: int,
+    rating_max: int,
+    model: str,
+    noncenter_facet: str,
+    step_facet: str | None = None,
+    positive_facets: tuple[str, ...] = (),
+    weight_col: str | None = None,
+    quadrature_points: int = 31,
+    sigma_start: float = 1.0,
+) -> tuple[dict[str, Any], AppFreeSdProblem]:
+    """Build an unfitted, unit-weight RSM/PCM problem from observed rows.
+
+    Category support and the location-bearing facet must be explicit. No
+    anchors, penalties, latent regression, fitted coordinates, or estimated SD
+    are accepted. Missing responses are absent rows; invalid rows fail rather
+    than being silently discarded. This is development infrastructure, not
+    prospective registration or a claim of statistical identification.
+    """
+    if model not in {"RSM", "PCM"}:
+        raise ValueError("Pre-fit problems support RSM and PCM only")
+    reserved = {"Person", "Score", "Weight", "score_k", "theta", "population", "steps", "log_slopes"}
+    if not facet_cols or len(set(facet_cols)) != len(facet_cols) or reserved.intersection(facet_cols):
+        raise ValueError("Facet columns must be distinct and avoid reserved coordinate/response names")
+    if noncenter_facet not in facet_cols:
+        raise ValueError("An explicit noncenter facet must carry the population location")
+    if (model == "PCM" and step_facet not in facet_cols) or (model == "RSM" and step_facet is not None):
+        raise ValueError("PCM requires an explicit step facet; RSM requires step_facet=None")
+    if len(set(positive_facets)) != len(positive_facets) or not set(positive_facets).issubset(facet_cols):
+        raise ValueError("Positive facets must be distinct selected facets")
+    for name, value in (("rating_min", rating_min), ("rating_max", rating_max), ("quadrature_points", quadrature_points)):
+        if isinstance(value, (bool, np.bool_)):
+            raise ValueError(f"{name} must be an explicit integer")
+        try:
+            operator.index(value)
+        except TypeError as exc:
+            raise ValueError(f"{name} must be an explicit integer") from exc
+    if quadrature_points < 3:
+        raise ValueError("quadrature_points must be at least 3")
+    if isinstance(sigma_start, (bool, np.bool_)) or not np.isfinite(sigma_start) or not 0.05 < sigma_start < 10.0:
+        raise ValueError("sigma_start must be finite and strictly inside (0.05, 10)")
+    if weight_col is None and "Weight" in data.columns:
+        raise ValueError("Select the existing Weight column explicitly")
+    if weight_col is not None:
+        if weight_col not in data.columns or not (data[weight_col] == 1.0).all():
+            raise ValueError("Pre-fit problems require unit weights on every input row")
+    normalized = app.normalize_response_input_data(
+        data, person_col=person_col, facet_cols=facet_cols, score_col=score_col, weight_col=weight_col,
+    )
+    prep = app.prepare_mfrm_data(
+        normalized, person_col=person_col, facet_cols=facet_cols, score_col=score_col,
+        rating_min=rating_min, rating_max=rating_max, weight_col=weight_col, keep_original=True,
+    )
+    if len(prep["data"]) != len(data) or not (prep["data"]["Weight"] == 1.0).all():
+        raise ValueError("Pre-fit input must contain only valid observed rows with unit weights")
+    constraints = app.prepare_constraint_specs(prep, noncenter_facet=noncenter_facet)
+    config = {
+        "model": model, "method": "MML", "n_person": prep["n_person"],
+        "n_cat": prep["rating_max"] - prep["rating_min"] + 1,
+        "rating_min": prep["rating_min"], "rating_max": prep["rating_max"],
+        "facet_names": list(facet_cols), "facet_levels": {f: prep["levels"][f] for f in facet_cols},
+        "step_facet": step_facet, "slope_facet": None,
+        "population_model": app.build_population_model(prep),
+        "positive_facets": list(positive_facets),
+        "facet_signs": {f: 1.0 if f in positive_facets else -1.0 for f in facet_cols},
+        "theta_spec": constraints["theta_spec"], "facet_specs": constraints["facet_specs"],
+        "noncenter_facet": noncenter_facet, "dummy_facets": [],
+        "estimate_population_sd": True, "population_prior_sd": float(sigma_start),
+        "population_sd_bounds": (0.05, 10.0), "quad_points": int(quadrature_points),
+        "facet_regularization_enabled": False,
+    }
+    sizes = app.build_param_sizes(config)
+    config["facet_regularization"] = app.prepare_facet_regularization(None, config, sizes)["runtime"]
+    step_start = app.sum_zero_free_from_expanded(np.linspace(-1.0, 1.0, config["n_cat"] - 1))
+    start = np.r_[np.zeros(sum(sizes[f] for f in facet_cols)),
+                  step_start if model == "RSM" else np.tile(step_start, len(config["facet_levels"][step_facet]))]
+    idx = app.build_indices(prep, step_facet=step_facet)
+    # Copy once so the returned prepared table cannot alter evaluator indices.
+    idx = copy.deepcopy(idx)
+    bounds = app.build_optimizer_bounds(sizes, config)
+    return prep, AppFreeSdProblem(
+        config=config, sizes=sizes, idx=idx, structural_start=tuple(map(float, start)),
+        sigma_start=float(sigma_start), quadrature_points=int(quadrature_points),
+        observations=float(len(prep["data"])),
+        structural_bounds=tuple(bounds) if bounds is not None else ((None, None),) * len(start),
+        sigma_bounds=(0.05, 10.0),
+    )
+
+
 def prepare_app_free_sd_problem(
     result: dict[str, Any],
     *,

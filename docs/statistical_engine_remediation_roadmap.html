@@ -781,16 +781,16 @@
             <tr><td><span class="priority p0">P0</span></td><td class="issue-id">STAT-001</td><td>step / log-slopeの冗長最適化座標</td><td>Hessian特異、K過大、境界の意味不整合</td><td>S1</td><td><span class="status verified">CLOSED / G1</span></td></tr>
             <tr><td><span class="priority p0">P0</span></td><td class="issue-id">STAT-002</td><td>誤ったKを使うAIC/AICc/BIC/LRT</td><td>モデル順位・weight・p値</td><td>S0–S2</td><td><span class="status active">K FIXED / G2 GUARDED</span></td></tr>
             <tr><td><span class="priority p0">P0</span></td><td class="issue-id">STAT-003</td><td>人工null方向を固有値floorで反転</td><td>MML構造SE/CIとrank監査</td><td>S1–S2</td><td><span class="status active">COORD FIXED / G2 COVERAGE</span></td></tr>
-            <tr><td><span class="priority p0">P0</span></td><td class="issue-id">BIAS-001</td><td>pairwise local measureがtarget signを無視</td><td>既定のseverity尺度で方向逆転</td><td>S3</td><td><span class="status active">OPEN / GUARDED</span></td></tr>
-            <tr><td><span class="priority p0">P0</span></td><td class="issue-id">BIAS-002</td><td>contrast SEに共有target SEを二重加算</td><td>pairwise t・tail area</td><td>S3</td><td><span class="status active">OPEN / GUARDED</span></td></tr>
-            <tr><td><span class="priority p0">P0</span></td><td class="issue-id">VAL-001</td><td>集約Biasがmean alignmentで必ず0</td><td>不偏性を評価できない</td><td>S4</td><td><span class="status open">OPEN</span></td></tr>
+            <tr><td><span class="priority p0">P0</span></td><td class="issue-id">BIAS-001</td><td>pairwise local measureがtarget signを無視</td><td>2026-10-02ローカル修正：符号を適用。G3の推論資格は保留</td><td>S3</td><td><span class="status active">ALGEBRA FIXED / GUARDED</span></td></tr>
+            <tr><td><span class="priority p0">P0</span></td><td class="issue-id">BIAS-002</td><td>contrast SEに共有target SEを二重加算</td><td>2026-10-02ローカル修正：共有項を相殺、条件付きSEのみ。t・tail areaは未提供</td><td>S3</td><td><span class="status active">ALGEBRA FIXED / GUARDED</span></td></tr>
+            <tr><td><span class="priority p0">P0</span></td><td class="issue-id">VAL-001</td><td>集約Biasがmean alignmentで必ず0</td><td>2026-10-04ローカル修正：水準別bias、反復単位MCSE、中心化した共分散。G4の反復研究は未完了</td><td>S4</td><td><span class="status active">AGGREGATION FIXED / G4 OPEN</span></td></tr>
             <tr><td><span class="priority p1">P1</span></td><td class="issue-id">MODEL-001</td><td>JMLEでも自動モデル推奨を返す</td><td>付随パラメータ問題の過小評価</td><td>S0–S2</td><td><span class="status active">OPEN / GUARDED</span></td></tr>
             <tr><td><span class="priority p1">P1</span></td><td class="issue-id">MODEL-002</td><td>全RSM/PCM/GPCM組合せを通常LRT扱い</td><td>未校正のχ²参照分布</td><td>S0–S2</td><td><span class="status active">OPEN / GUARDED</span></td></tr>
-            <tr><td><span class="priority p1">P1</span></td><td class="issue-id">VAL-002</td><td>GPCM step / slope回復がない</td><td>GPCM固有パラメータの検証空白</td><td>S4</td><td><span class="status open">OPEN</span></td></tr>
-            <tr><td><span class="priority p1">P1</span></td><td class="issue-id">VAL-003</td><td>外部照合が0.2.0 legacy / archived smoke</td><td>現行実装の独立証拠がない</td><td>S4</td><td><span class="status open">OPEN</span></td></tr>
-            <tr><td><span class="priority p1">P1</span></td><td class="issue-id">BIAS-003</td><td>GPCM LR p値とmultiplicity一次p値が不一致</td><td>flagの統計的意味が曖昧</td><td>S3</td><td><span class="status open">OPEN</span></td></tr>
+            <tr><td><span class="priority p1">P1</span></td><td class="issue-id">VAL-002</td><td>GPCM step / slopeの性能資格が未完了</td><td>回復・共同SE変換・水準/真値分位別集計を実装。母集団反復のT0時刻署名を検証済み。MMLはG3計算後に実行予定で、性能資格は未確定（2026-10-06）</td><td>S4</td><td><span class="status active">IMPLEMENTED / G4 OPEN</span></td></tr>
+            <tr><td><span class="priority p1">P1</span></td><td class="issue-id">VAL-003</td><td>外部照合の対象範囲と推論資格が未完了</td><td>RSM/PCMのTAM再推定と共同情報、GPCMの独立R/連続積分の開発対照あり。正式反復と推論資格は未完了（2026-10-04）</td><td>S4</td><td><span class="status active">PARTIAL / G4 OPEN</span></td></tr>
+            <tr><td><span class="priority p1">P1</span></td><td class="issue-id">BIAS-003</td><td>GPCM LR p値とmultiplicity一次p値が不一致</td><td>2026-10-04ローカル修正：単位重み条件付きLR候補→Holmへ統一。失敗・除外を比較数に保持。独立R対照15ケース通過。誤検出率・power・coverageと公開資格は未完了</td><td>S3</td><td><span class="status active">POLICY FIXED / G3 OPEN</span></td></tr>
             <tr><td><span class="priority p1">P1</span></td><td class="issue-id">INT-001</td><td>非Person固定交互作用が未実装</td><td>screenと共同推定を比較できない</td><td>S5</td><td><span class="status open">OPEN</span></td></tr>
-            <tr><td><span class="priority p2">P2</span></td><td class="issue-id">BIAS-004</td><td>bias iterationが同じ固定問題を再計算</td><td>反復表が実処理を誤認させる</td><td>S3</td><td><span class="status open">OPEN</span></td></tr>
+            <tr><td><span class="priority p2">P2</span></td><td class="issue-id">BIAS-004</td><td>bias iterationが同じ固定問題を再計算</td><td>2026-10-04ローカル修正：各セルを1回推定し、固定校正の計算記録へ変更。関連61テスト通過。G3の推論資格は未完了</td><td>S3</td><td><span class="status active">IMPLEMENTATION FIXED / G3 OPEN</span></td></tr>
           </tbody>
         </table>
       </div>
@@ -831,8 +831,9 @@
             <tr><td>不適格JMLE比較が返す公開自動推奨</td><td class="allow">0（技術rankingのみ保持）</td><td>0</td><td>G0 ✓</td></tr>
             <tr><td>公開χ²判断を返すGPCM LRT組合せ</td><td class="allow">0（raw技術値は2対）</td><td>0</td><td>G0 ✓</td></tr>
             <tr><td>安定reason codeで保護した高リスク出力</td><td class="allow">7</td><td>7</td><td>G0 ✓</td></tr>
-            <tr><td>GPCM回復対象: step / log-slope</td><td class="hold">0 / 0</td><td>全真値</td><td>G4</td></tr>
-            <tr><td>bias screen operating-characteristic grid</td><td class="hold">なし</td><td>null/effect/sparse/weighted</td><td>G4</td></tr>
+            <tr><td>GPCM回復対象: step / log-slope / slope</td><td class="hold">回復行・SE変換・真値分位を実装。凍結反復研究は未完了（2026-10-04）</td><td>全真値・条件別の凍結証拠</td><td>G4</td></tr>
+            <tr><td>JMLE付随パラメータ可視化</td><td class="hold">無制約2項目Raschの解析対照・40条件の全カウント列挙・独立R照合を完了。一般MFRMの性能資格は未取得</td><td>観測密度と推定法の対象を明記した回復・不確実性の証拠</td><td>G4</td></tr>
+            <tr><td>bias screen operating-characteristic grid</td><td class="hold">単位重みの72条件×2,000反復を凍結。時刻署名・開始容量を確認し、2026-10-06に正式計算開始。固定対照はPython 20/20・独立R 47/47通過。全条件の率・公開資格は未確定。非単位重みの推論は引き続き保留</td><td>null/effect/sparse/weighted</td><td>G4</td></tr>
             <tr><td>公開claimに結びつく現行validation evidence</td><td class="hold">未整備</td><td>100%</td><td>G6</td></tr>
           </tbody>
         </table>

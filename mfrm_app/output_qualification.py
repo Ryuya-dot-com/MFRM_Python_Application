@@ -50,6 +50,7 @@ class QualificationReason(str, Enum):
     POPULATION_SD_UNCERTAINTY_UNQUALIFIED = (
         "stat.stat_003.population_sd_uncertainty_unqualified"
     )
+    BIAS_CELL_UNCALIBRATED = "bias.bias_003.cell_reference_uncalibrated"
     BIAS_PAIRWISE_UNVERIFIED = "bias.bias_001_002.pairwise_unverified"
 
 
@@ -185,9 +186,10 @@ def covariance_qualification(
             "Use the estimation-method-specific uncertainty status instead.",
             raw_export=False,
         )
+    # A missing/skipped Hessian does not establish a deficient rank.
     if (
         status_label == "regularized"
-        or (param_value > 0 and rank_value < param_value)
+        or (status_label == "ok" and param_value > 0 and rank_value < param_value)
     ):
         return _qualification(
             "mml.structural_covariance",
@@ -231,15 +233,28 @@ def population_sd_uncertainty_qualification() -> OutputQualification:
     )
 
 
+def bias_cell_qualification() -> OutputQualification:
+    """Retain scalar likelihood diagnostics without promoting uncalibrated claims."""
+    return _qualification(
+        "bias.cell_inference", OutputUse.TECHNICAL_ONLY,
+        QualificationReason.BIAS_CELL_UNCALIBRATED, "BIAS-003", "G3",
+        "Conditional LR and cutoff intervals hold calibration fixed. "
+        "Wait for error-rate, power, coverage, and calibration-uncertainty validation "
+        "before reporting bias or no-bias conclusions.",
+    )
+
+
 def bias_pairwise_qualification() -> OutputQualification:
-    """Hold pairwise local measures until direction and contrast SE are fixed."""
+    """Keep conditional local contrasts technical until G3 inference is qualified."""
     return _qualification(
         "bias.pairwise_local_measure",
         OutputUse.WITHHELD,
         QualificationReason.BIAS_PAIRWISE_UNVERIFIED,
         "BIAS-001;BIAS-002",
         "G3",
-        "Use cell-level bias screening only; do not interpret pairwise local measures.",
+        "Use conditional pairwise contrasts for technical audit only. "
+        "Boundary behavior, joint calibration uncertainty, and reference-distribution "
+        "and error-rate validation remain unqualified.",
     )
 
 

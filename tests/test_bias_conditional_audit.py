@@ -52,7 +52,11 @@ def _bias_table(*, strong: bool = True, sparse: bool = True) -> pd.DataFrame:
             "InferenceTier": "screening",
         },
     ]
-    return pd.DataFrame(rows)
+    table = pd.DataFrame(rows)
+    table["Cell Status"] = "interior"
+    table["Primary P Method"] = "unit_weight_conditional_lr_v1"
+    table["Reference Status"] = "unit_weight_conditional_lr_candidate"
+    return table
 
 
 def _result() -> dict:
@@ -128,15 +132,15 @@ def test_bias_inference_audit_marks_disconnected_design_as_caveated():
     assert len(audit) == 1
     row = audit.iloc[0]
     assert row["Status"] == "Review"
-    assert row["ClaimStatus"] == "Report with caveat"
+    assert row["ClaimStatus"] == "Do not claim"
     assert row["FlaggedCells"] >= 1
     assert row["SparseCells"] >= 1
     assert "disconnected" in row["CommonScaleStatus"]
     assert "Conditional screening" in row["InferenceScope"]
-    assert "Holm and BH" in row["MultiplicityScope"]
+    assert "Holm is the sole" in row["MultiplicityScope"]
 
 
-def test_bias_inference_audit_allows_only_scoped_ready_when_no_flags():
+def test_bias_inference_audit_keeps_g3_hold_even_when_no_flags():
     audit = app.build_bias_inference_audit(
         {"Rater x Task": {"table": _bias_table(strong=False, sparse=False), "facet_a": "Rater", "facet_b": "Task"}},
         _result(),
@@ -144,8 +148,9 @@ def test_bias_inference_audit_allows_only_scoped_ready_when_no_flags():
     )
 
     row = audit.iloc[0]
-    assert row["Status"] == "Ready"
-    assert row["ClaimStatus"] == "Ready"
+    assert row["Status"] == "Review"
+    assert row["ClaimStatus"] == "Do not claim"
+    assert not row["PublicConclusionAllowed"]
     assert row["FlaggedCells"] == 0
     assert row["SparseCells"] == 0
     assert "conditional screen" in row["RecommendedAction"]
@@ -175,3 +180,17 @@ def test_result_bundle_exports_bias_inference_audit():
 
     assert "bias_inference_audit" in frames
     assert not frames["bias_inference_audit"].empty
+
+
+def test_g3_hold_reaches_manuscript_claim_and_qualification_exports():
+    result, diagnostics = _result(), _connected_diagnostics()
+    bundle = {'Rater x Task': {'table': _bias_table(strong=False, sparse=False)}}
+    guide = app.build_manuscript_claim_guide(result, diagnostics, bundle)
+    row = guide.loc[guide.ManuscriptArea.eq('Bias / local interaction')].iloc[0]
+    assert row.ClaimStatus == 'Do not claim'
+    assert 'G3' in row.SafeManuscriptWording
+    qualification = app.build_output_qualification_table(result, diagnostics, bias_present=True)
+    cell = qualification.loc[qualification.OutputID.eq('bias.cell_inference')].iloc[0]
+    assert cell.NextGate == 'G3'
+    assert cell.QualificationStatus == 'TECHNICAL_ONLY'
+    assert not cell.PublicConclusionAllowed

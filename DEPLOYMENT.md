@@ -65,7 +65,9 @@ Then confirm:
 
 - The active branch is `main`.
 - `git status --short` is clean.
-- `validation/generated/` is absent.
+- Local validation evidence in `validation/generated/` and
+  `validation/source_snapshots/` is preserved and excluded from the deployment
+  bundle. `make clean` removes development caches only.
 - `__pycache__` and `.pytest_cache` are absent.
 - `.streamlit/secrets.toml` is not tracked.
 - README and in-app privacy warnings still appear.

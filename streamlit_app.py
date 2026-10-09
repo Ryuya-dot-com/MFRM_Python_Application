@@ -8,6 +8,7 @@ import importlib.util
 import json
 import logging
 import os
+import pickle
 import re
 import shutil
 import subprocess
@@ -15,9 +16,12 @@ import sys
 import time
 import zipfile
 from collections import OrderedDict
+from collections.abc import Mapping
+from contextvars import ContextVar
 from dataclasses import dataclass
+from datetime import date, datetime, timedelta
 from enum import Enum
-from functools import lru_cache
+from functools import lru_cache, wraps
 from itertools import combinations, product
 from pathlib import Path
 from typing import Iterable
@@ -26,10 +30,9 @@ import numpy as np
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
-from numpy.polynomial.hermite import hermgauss
 from plotly.subplots import make_subplots
 from scipy.optimize import LinearConstraint, minimize, root_scalar, minimize_scalar
-from scipy.special import logsumexp
+from scipy.special import logsumexp, roots_hermitenorm
 from scipy.stats import chi2, norm as _norm, t as t_dist
 
 from mfrm_app import distribution as _distribution
@@ -204,11 +207,6 @@ def t(key: str, default: str | None = None, **fmt) -> str:
     return text
 
 
-def _language_display_name(code: str | None) -> str:
-    """Return the localized display name for a supported language code."""
-    return t("sidebar.japanese") if code == "ja" else t("sidebar.english")
-
-
 def _standalone_ui_text(*, en: str, ja: str) -> str:
     """Return short product-boundary copy without adding legacy locale keys."""
     return ja if st.session_state.get("lang", DEFAULT_LANG) == "ja" else en
@@ -333,20 +331,24 @@ def _ensure_language_state() -> None:
 
 
 def _mark_language_switch() -> None:
-    """Mark a language-only rerun so heavy result panels can defer rendering once."""
+    """Resend current choices in the new language and notify the Help route."""
     new_lang = st.session_state.get("lang", DEFAULT_LANG)
     if new_lang not in SUPPORTED_LANGS:
         new_lang = DEFAULT_LANG
         st.session_state["lang"] = new_lang
     old_lang = st.session_state.get("_active_lang", new_lang)
     if old_lang != new_lang:
-        st.session_state["_language_switch_from"] = old_lang
+        # Choice widgets serialize display labels. Send current string values
+        # with the new labels before the browser can return obsolete labels.
+        for key, value in list(st.session_state.items()):
+            if isinstance(value, str) and not key.startswith("$$ID"):
+                st.session_state[key] = value
         st.session_state["_language_switch_pending"] = True
     st.session_state["_active_lang"] = new_lang
 
 
-def _consume_language_switch_fast_path(app_mode: str) -> bool:
-    """Return True once when a language switch should avoid heavy re-rendering."""
+def _consume_language_switch(app_mode: str) -> bool:
+    """Consume the language-change notification for an existing analysis."""
     if not st.session_state.get("_language_switch_pending", False):
         return False
     has_facets_results = (
@@ -355,21 +357,6 @@ def _consume_language_switch_fast_path(app_mode: str) -> bool:
     )
     st.session_state["_language_switch_pending"] = False
     return has_facets_results
-
-
-def render_language_switch_fast_path() -> None:
-    """Show a lightweight acknowledgement after changing the UI language."""
-    from_lang = _language_display_name(st.session_state.get("_language_switch_from"))
-    to_lang = _language_display_name(st.session_state.get("lang", DEFAULT_LANG))
-    st.title(t("app.title"))
-    st.success(t("app.language_switch_success_template", from_lang=from_lang, to_lang=to_lang))
-    st.caption(t("app.language_switch_caption"))
-    if st.button(
-        t("app.language_switch_resume_button"),
-        key="language_switch_resume",
-        type="primary",
-    ):
-        st.rerun()
 
 
 _HELP_ROUTE_STATE_KEY = "_mfrm_help_route_state"
@@ -2839,16 +2826,14 @@ def mfrmr_020_migration_coverage_table() -> pd.DataFrame:
             "slope_facet == step_facet still required (the mfrmr R reference "
             "also blocks generic GPCM today); Person rows under the structural "
             "delta-method SE are marked 'not available' because MML EAPs are "
-            "not part of the marginal-likelihood Hessian. Bias inference under "
-            "GPCM now uses the slope-aware Fisher information identity with "
-            "an accompanying likelihood-ratio test and profile-likelihood "
-            "confidence interval (see the dedicated 0.2.0 row below)."
+            "not part of the marginal-likelihood Hessian. Bias-cell inference "
+            "remains technical only pending G3; fixed-calibration curvature "
+            "does not establish joint uncertainty or interval coverage."
         )
         base.loc[gpcm_mask, "NextValidation"] = (
-            "Report the slope-aware Fair(M) / Fair(Z) with their structural "
-            "delta-method CIs and the slope-aware bias S.E. / LR / profile CI; "
-            "flag Person rows in manuscript text as unavailable through the "
-            "fair-average SE code path."
+            "Validate covariance scope and sampling coverage before reporting "
+            "structural or bias interval claims; retain unqualified numerics "
+            "in technical exports."
         )
 
     rows = [
@@ -2911,45 +2896,23 @@ def mfrmr_020_migration_coverage_table() -> pd.DataFrame:
         },
         {
             "mfrmr020Area": "GPCM bias inference - slope-aware",
-            "PythonStatus": "Ready",
+            "PythonStatus": "Technical only; G3 incomplete",
             "PythonEvidence": (
-                "estimate_bias_interaction() under GPCM now uses the "
-                "slope-aware Fisher information identity "
-                "I(b) = sum_i a_i^2 * Var[X_i | eta_i + b] * w_i "
-                "(Muraki, 1993, Eqs. 7, 16) for the bias-cell standard "
-                "error; the previous non-slope-aware fall-back applied a^2 "
-                "= 1 and overstated GPCM bias SE. Each GPCM cell additionally "
-                "reports LR ChiSq = max(0, 2 * (loglik(bias_hat) - "
-                "loglik(0))) with 1 d.f. (Wilks, 1938) and a profile-"
-                "likelihood confidence interval obtained by inverting "
-                "2 * (NLL(b) - NLL(bias_hat)) = chi2_{1, 0.95} via Brent "
-                "root-finding on each side of bias_hat (Cox, 1975). The "
-                "publication-document builders (Word / PDF / HTML) embed "
-                "the LR / Profile-CI columns in a Results table whose "
-                "caption cites the chain. R parity at manuscript-citation "
-                "tolerance across six bias cells against mfrmr 0.2.0 / "
-                "R 4.5.2 is pinned by "
-                "tests/test_gpcm_bias_inference.py::"
-                "test_bias_estimation_matches_r_reference_within_tolerance."
+                "Conditional scalar score sum w*a*(X-E[X]) and information "
+                "sum w*a^2*Var[X] are implemented for RSM/PCM/GPCM. "
+                "Interior roots, no-finite-MLE cells, search bounds, failures, "
+                "and weights have explicit statuses. The unit-weight conditional "
+                "LR ChiSq candidate supplies the sole primary p-value for Holm."
             ),
             "Boundary": (
-                "RSM and PCM fits stay in the t-based screening tier "
-                "(InferenceTier = 'screening' on every cell) because the "
-                "chi-square pivotal relies on the slope-aware information "
-                "identity above. The current InferenceTier is uniformly "
-                "'screening'; a 'confirmatory' tier requiring post-hoc "
-                "adjustment or rater anchoring is on the roadmap. The "
-                "profile-likelihood CI is a conditional profile with theta, "
-                "step thresholds, slopes, and other facet measures held "
-                "fixed at fit-time values; uncertainty inherited from those "
-                "anchors is not propagated."
+                "A fixed-calibration likelihood slice is not a nuisance profile. "
+                "Conditional LR-cutoff intervals and reference probabilities are "
+                "technical outputs; sampling coverage and error rates after "
+                "calibration are unqualified. Legacy t reference is removed."
             ),
             "NextValidation": (
-                "Report Bias Size with the slope-aware S.E. plus LR ChiSq / "
-                "LR Prob. and the profile CI; cite Muraki (1993), Wilks "
-                "(1938), and Cox (1975) in the Methods section. The "
-                "publication-document Bias / Interaction table already "
-                "carries these columns with a citation-bearing caption."
+                "Independent scalar likelihood/score/information checks, then "
+                "prospectively fixed null/effect studies with failures retained."
             ),
         },
         {
@@ -3099,51 +3062,29 @@ def mfrmr_020_migration_coverage_table() -> pd.DataFrame:
         },
         {
             "mfrmr020Area": "Parameter recovery (ADEMP)",
-            "PythonStatus": "Ready",
+            "PythonStatus": "Development screen; G4 incomplete",
             "PythonEvidence": (
-                "evaluate_parameter_recovery() generates data from a known "
-                "many-facet truth (mean-zero person measures, rater "
-                "severities, and criterion difficulties with equally spaced "
-                "step thresholds), refits the requested model on each "
-                "replicate, and reports the ADEMP performance measures of "
-                "Morris, White, and Crowther (2019): bias, MCSE(bias), "
-                "RMSE, MCSE(RMSE), MAE, raw / aligned errors, Pearson "
-                "correlation, mean SE, SE-availability rate, and 95 % "
-                "coverage (truth in estimate +/- 1.96 * SE). "
-                "build_se_ci_coverage_report() separates the coverage "
-                "diagnostic into an exportable table with nominal coverage, "
-                "coverage error, SE/CI status summaries, interpretation, "
-                "and recommended action. Location "
-                "blocks (Person, Rater, Criterion) are mean-aligned per "
-                "replicate so the Rasch identification constant does not "
-                "appear as a systematic bias; the unaligned errors are "
-                "preserved as RawBias / RawRMSE. The Report tab gains a "
-                "Parameter-recovery (ADEMP) section with controls for "
-                "model / fit_method / N / reps / seed; the simulation is "
-                "cached in session_state keyed on the input settings so "
-                "the cost is paid once per configuration. Math contract "
-                "pinned in tests/test_parameter_recovery.py (18 tests "
-                "covering refusal on bad inputs, three location-block "
-                "ParameterType values, long-table row counts, the "
-                "mean-alignment identity, Bias = mean(ErrorAligned), "
-                "RMSE / MAE closed forms, Coverage95 closed form, SE/CI "
-                "status propagation, explicit coverage report construction, "
-                "fixed-seed determinism, ADEMP narrative completeness, and "
-                "correlation positivity on a clean RSM fit)."
+                "evaluate_parameter_recovery() reports level-specific bias, "
+                "replicate-based MCSE, RMSE and MAE conditional on returned, "
+                "reported-converged fits. Planned attempts, failures and "
+                "nonconverged results remain in the execution record and CSV. "
+                "An empty converged subset has no performance summary; it is "
+                "not replaced by nonconverged estimates. Coverage requires "
+                "covariance transformed to the same mean-aligned target. "
+                "The centered block mean error is a constraint identity, "
+                "not evidence of unbiasedness."
             ),
             "Boundary": (
-                "The ADEMP helper is self-contained: it does not refit "
-                "the user's data. It produces evidence of recovery under "
-                "the chosen design and generator, not under the user's "
-                "specific data. The Simulate / Prediction tab continues "
-                "to be a design / fitted-model planning screen rather "
-                "than a recovery study."
+                "This synthetic development screen does not qualify inference. "
+                "Step/log-slope/slope rows and covariance transformations are "
+                "implemented; prospective model/design-specific coverage studies remain open. "
+                "Missing outcomes can depend on simulated data, so conditional "
+                "performance need not describe all attempts."
             ),
             "NextValidation": (
-                "Name the design, model, fit method, replicates, and "
-                "seed when citing recovery numbers in a manuscript. The "
-                "Report-tab panel surfaces all five on the run controls "
-                "and the downloadable settings block."
+                "Complete the G4 frozen design/model/estimator-specific "
+                "studies, with seeds, independent references, MCSE and "
+                "all-attempt denominators before qualifying advertised outputs."
             ),
         },
         {
@@ -4022,14 +3963,71 @@ def format_measure_table(
     return out
 
 
+def _fingerprint_content(value: object):
+    """Lossless typed content for supported settings; never use display reprs."""
+    encode = _fingerprint_content
+    if value is pd.NA:
+        return ["pandas.NA"]
+    if value is pd.NaT:
+        return ["pandas.NaT"]
+    if isinstance(value, np.ndarray):
+        dtype = value.dtype.descr if value.dtype.fields else value.dtype.str
+        content = (encode(value.ravel(order="C").tolist()) if value.dtype.hasobject
+                   else value.tobytes(order="C").hex())
+        return ["ndarray", encode(dtype), list(value.shape), content]
+    if isinstance(value, np.generic):
+        return ["numpy.scalar", encode(np.asarray(value))]
+    if isinstance(value, pd.CategoricalDtype):
+        return ["category", encode(value.categories), value.ordered]
+    if isinstance(value, pd.api.extensions.ExtensionDtype):
+        return [type(value).__name__, str(value),
+                encode(getattr(value, "storage", None)), encode(value.na_value)]
+    if isinstance(value, np.dtype):
+        return ["dtype", encode(value.descr if value.fields else value.str)]
+    if isinstance(value, pd.MultiIndex):
+        return ["MultiIndex", encode(value.names), encode(list(value.levels)),
+                encode(list(value.codes))]
+    if isinstance(value, pd.Index):
+        return ["Index", encode(value.dtype), encode(value.name), encode(value.tolist())]
+    if isinstance(value, pd.Series):
+        return ["Series", encode(value.name), encode(value.index), encode(value.dtype),
+                encode(value.tolist())]
+    if isinstance(value, pd.DataFrame):
+        return ["DataFrame", encode(value.index), encode(value.columns),
+                [encode(value.iloc[:, i]) for i in range(value.shape[1])]]
+    if isinstance(value, Enum):
+        return ["enum", type(value).__module__, type(value).__qualname__, encode(value.value)]
+    if value is None or type(value) in (str, bool, int):
+        return value
+    if type(value) is float:
+        return ["float", value.hex()]
+    if isinstance(value, Mapping):
+        pairs = [[encode(key), encode(item)] for key, item in value.items()]
+        pairs.sort(key=lambda pair: json.dumps(pair[0], ensure_ascii=False, separators=(",", ":")))
+        return ["mapping", pairs]
+    if isinstance(value, (list, tuple, set, frozenset)):
+        items = [encode(item) for item in value]
+        if isinstance(value, (set, frozenset)):
+            items.sort(key=lambda item: json.dumps(item, ensure_ascii=False, separators=(",", ":")))
+        return [type(value).__name__, items]
+    if isinstance(value, (pd.Timestamp, datetime, date)):
+        return [type(value).__name__, value.isoformat(), str(getattr(value, "tzinfo", None))]
+    if isinstance(value, pd.Timedelta):
+        return ["Timedelta", value.isoformat()]
+    if isinstance(value, timedelta):
+        return ["timedelta", value.days, value.seconds, value.microseconds]
+    if isinstance(value, Path):
+        return ["path", str(value)]
+    if isinstance(value, bytes):
+        return ["bytes", value.hex()]
+    raise TypeError(f"Unsupported fingerprint content type: {type(value).__name__}")
+
+
 def stable_json_fingerprint(payload: object, length: int = 16) -> str:
-    """Stable short SHA-256 digest for reproducibility metadata."""
+    """Versioned SHA-256 of complete typed content, independent of display options."""
     text = json.dumps(
-        payload,
-        sort_keys=True,
-        ensure_ascii=False,
-        default=str,
-        separators=(",", ":"),
+        ["mfrm_content_fingerprint_v2", _fingerprint_content(payload)],
+        ensure_ascii=False, allow_nan=False, separators=(",", ":"),
     )
     return hashlib.sha256(text.encode("utf-8")).hexdigest()[: int(length)]
 
@@ -4039,19 +4037,9 @@ def dataframe_fingerprint(df: pd.DataFrame | None, length: int = 16) -> str | No
     if df is None:
         return None
     if not isinstance(df, pd.DataFrame):
-        return stable_json_fingerprint({"type": type(df).__name__, "repr": repr(df)}, length=length)
+        raise TypeError("dataframe_fingerprint requires a DataFrame or None")
 
-    digest = hashlib.sha256()
-    digest.update(json.dumps([str(c) for c in df.columns], ensure_ascii=False).encode("utf-8"))
-    digest.update(json.dumps([str(t) for t in df.dtypes], ensure_ascii=False).encode("utf-8"))
-    digest.update(np.asarray(df.shape, dtype=np.int64).tobytes())
-    try:
-        normalized = df.astype("string").where(pd.notna(df), "<NA>")
-        row_hashes = pd.util.hash_pandas_object(normalized, index=True).to_numpy(dtype=np.uint64, copy=False)
-        digest.update(row_hashes.tobytes())
-    except Exception:
-        digest.update(df.to_csv(index=True).encode("utf-8"))
-    return digest.hexdigest()[: int(length)]
+    return stable_json_fingerprint(df, length=length)
 
 
 def uploaded_file_fingerprint(file_obj, length: int = 16) -> str | None:
@@ -4141,7 +4129,7 @@ def config_fingerprint(config: dict | None, length: int = 16) -> str:
         "analysis_config_fingerprint",
         "config_export_fingerprint",
     }
-    payload = {str(k): v for k, v in config.items() if str(k) not in excluded}
+    payload = {k: v for k, v in config.items() if k not in excluded}
     return stable_json_fingerprint(payload, length=length)
 
 
@@ -4158,16 +4146,43 @@ FINAL_PCA_EIGENVALUE_REVIEW = 3.0
 # ---------------------------------------------------------------------------
 
 # ---- math helpers ----
+@lru_cache(maxsize=8)
+def _standard_normal_quadrature(n: int):
+    """Normalized standard-normal GH rule, including zero tail weights."""
+    nodes, weights = roots_hermitenorm(n)
+    weights /= np.sqrt(2.0 * np.pi)
+    nodes.setflags(write=False)
+    weights.setflags(write=False)
+    return nodes, weights
+
+
 def gauss_hermite_normal(n: int, sd: float = 1.0):
-    if n < 1:
-        raise ValueError("n must be >= 1")
+    if isinstance(n, (bool, np.bool_)) or not isinstance(n, (int, np.integer)) or n < 1:
+        raise ValueError("n must be an integer >= 1")
     sd = float(sd if sd is not None else 1.0)
     if not np.isfinite(sd) or sd <= 0:
         raise ValueError("sd must be a positive finite value")
-    nodes, weights = hermgauss(n)  # exp(-x^2) weights
-    nodes = np.sqrt(2.0) * nodes * sd
-    weights = weights / np.sqrt(np.pi)
-    return {"nodes": nodes, "weights": weights, "sd": sd}
+    nodes, weights = _standard_normal_quadrature(int(n))
+    with np.errstate(over="ignore"):
+        scaled_nodes = nodes * sd
+    if not np.isfinite(scaled_nodes).all():
+        raise ValueError("sd produces nonfinite quadrature nodes")
+    # Existing callers receive independent arrays; mutation cannot poison the
+    # cached rule or a later fit at another population SD.
+    return {"nodes": scaled_nodes, "weights": weights.copy(), "sd": sd}
+
+
+def _log_mml_quadrature_weights(quad):
+    """Log of normalized prior masses; exact zeros stay at minus infinity."""
+    nodes = np.asarray(quad["nodes"], dtype=float)
+    weights = np.asarray(quad["weights"], dtype=float)
+    if (nodes.ndim != 1 or nodes.size == 0 or weights.shape != nodes.shape
+            or not np.isfinite(nodes).all() or not np.isfinite(weights).all()
+            or np.any(weights < 0) or abs(weights.sum() - 1.0) > 1e-12):
+        raise ValueError("Invalid normalized MML quadrature")
+    result = np.full_like(weights, -np.inf)
+    np.log(weights, out=result, where=weights > 0)
+    return result
 
 
 def get_population_prior_sd(config: dict | None) -> float:
@@ -4181,7 +4196,9 @@ def get_population_prior_sd(config: dict | None) -> float:
 
 
 def make_mml_quadrature(config: dict, quad_points: int | None = None) -> dict:
-    points = int(quad_points or config.get("quad_points") or 15)
+    points = config.get("quad_points") if quad_points is None else quad_points
+    if points is None:
+        points = 15
     return gauss_hermite_normal(points, sd=get_population_prior_sd(config))
 
 
@@ -5847,7 +5864,8 @@ def build_response_data_audit(
     })
     for col in selected_unique:
         if col in data.columns:
-            audit[col] = data[col].astype(object).where(~data[col].isna(), "")
+            # Audit rows follow input positions, including repeated index labels.
+            audit[col] = data[col].astype(object).where(~data[col].isna(), "").reset_index(drop=True)
 
     missing_required_cols = [c for c in selected_unique if c not in data.columns]
     if missing_required_cols:
@@ -5869,6 +5887,7 @@ def build_response_data_audit(
     score_blank = _blank_or_na_mask(data[score_col])
     score_numeric = pd.to_numeric(data[score_col], errors="coerce")
     score_non_numeric = (~score_blank) & score_numeric.isna()
+    score_non_finite = score_numeric.notna() & ~np.isfinite(score_numeric)
     score_tol = np.sqrt(np.finfo(float).eps)
     score_fractional = (
         score_numeric.notna()
@@ -5889,10 +5908,12 @@ def build_response_data_audit(
         weight_non_numeric = (~weight_blank) & weight_numeric.isna()
         weight_missing_or_non_numeric = weight_blank | weight_non_numeric
         weight_non_positive = weight_numeric.notna() & (weight_numeric <= 0)
+        weight_non_finite = weight_numeric.notna() & ~np.isfinite(weight_numeric)
     else:
         weight_numeric = pd.Series(np.ones(n, dtype=float), index=data.index)
         weight_missing_or_non_numeric = pd.Series(False, index=data.index)
         weight_non_positive = pd.Series(False, index=data.index)
+        weight_non_finite = pd.Series(False, index=data.index)
 
     score_missing_or_non_numeric = score_blank | score_non_numeric
     excluded = (
@@ -5902,44 +5923,54 @@ def build_response_data_audit(
         | weight_missing_or_non_numeric
         | weight_non_positive
     )
-    error_before_fit = score_fractional
+    error_before_fit = score_fractional | score_non_finite | weight_non_finite
     included = (~excluded) & (~error_before_fit)
 
-    missing_columns_per_row = []
-    reasons_per_row = []
-    actions = []
-    for idx in data.index:
+    missing_columns_per_row = [""] * n
+    reasons_per_row = [""] * n
+    included_array = included.to_numpy(dtype=bool)
+    actions = np.where(error_before_fit.to_numpy(dtype=bool), "error_before_fit",
+                       np.where(included_array, "included", "excluded"))
+    # Read each mask once; ordinary included rows need no exclusion text.
+    person_mask, score_blank_mask, score_non_numeric_mask, fractional_mask = (
+        mask.to_numpy(dtype=bool) for mask in
+        (person_missing, score_blank, score_non_numeric, score_fractional)
+    )
+    facet_masks = {facet: mask.to_numpy(dtype=bool) for facet, mask in facet_missing_by_col.items()}
+    weight_missing_mask = weight_missing_or_non_numeric.to_numpy(dtype=bool)
+    weight_non_positive_mask = weight_non_positive.to_numpy(dtype=bool)
+    score_non_finite_mask = score_non_finite.to_numpy(dtype=bool)
+    weight_non_finite_mask = weight_non_finite.to_numpy(dtype=bool)
+    for row in np.flatnonzero(~included_array):
         missing_cols = []
         reasons = []
-        if bool(person_missing.loc[idx]):
+        if person_mask[row]:
             missing_cols.append(person_col)
             reasons.append("missing person")
-        if bool(score_blank.loc[idx]):
+        if score_blank_mask[row]:
             missing_cols.append(score_col)
             reasons.append("missing score")
-        elif bool(score_non_numeric.loc[idx]):
+        elif score_non_numeric_mask[row]:
             missing_cols.append(score_col)
             reasons.append("non-numeric score")
-        if bool(score_fractional.loc[idx]):
+        if fractional_mask[row]:
             reasons.append("fractional score")
-        for facet, mask in facet_missing_by_col.items():
-            if bool(mask.loc[idx]):
+        if score_non_finite_mask[row]:
+            reasons.append("non-finite score")
+        for facet, mask in facet_masks.items():
+            if mask[row]:
                 missing_cols.append(facet)
                 reasons.append(f"missing {facet}")
         if weight_col:
-            if bool(weight_missing_or_non_numeric.loc[idx]):
+            if weight_missing_mask[row]:
                 missing_cols.append(weight_col)
                 reasons.append("missing or non-numeric weight")
-            elif bool(weight_non_positive.loc[idx]):
+            elif weight_non_finite_mask[row]:
+                reasons.append("non-finite weight")
+            elif weight_non_positive_mask[row]:
                 reasons.append("non-positive weight")
-        if bool(error_before_fit.loc[idx]):
-            actions.append("error_before_fit")
-        elif bool(included.loc[idx]):
-            actions.append("included")
-        else:
-            actions.append("excluded")
-        missing_columns_per_row.append(", ".join(dict.fromkeys(missing_cols)))
-        reasons_per_row.append("; ".join(dict.fromkeys(reasons)))
+        missing_columns_per_row[row] = ", ".join(dict.fromkeys(missing_cols))
+        reasons_per_row[row] = "; ".join(dict.fromkeys(reasons))
 
     audit["ScoreNumeric"] = score_numeric.to_numpy()
     if weight_col:
@@ -5947,10 +5978,12 @@ def build_response_data_audit(
     audit["PersonMissing"] = person_missing.to_numpy(dtype=bool)
     audit["ScoreMissingOrNonNumeric"] = score_missing_or_non_numeric.to_numpy(dtype=bool)
     audit["ScoreFractional"] = score_fractional.to_numpy(dtype=bool)
+    audit["ScoreNonFinite"] = score_non_finite_mask
     audit["FacetMissing"] = facet_missing_any.to_numpy(dtype=bool)
     if weight_col:
         audit["WeightMissingOrNonNumeric"] = weight_missing_or_non_numeric.to_numpy(dtype=bool)
         audit["WeightNonPositive"] = weight_non_positive.to_numpy(dtype=bool)
+        audit["WeightNonFinite"] = weight_non_finite_mask
     audit["IncludedInLikelihood"] = included.to_numpy(dtype=bool)
     audit["LikelihoodAction"] = actions
     audit["MissingColumns"] = missing_columns_per_row
@@ -5958,7 +5991,7 @@ def build_response_data_audit(
 
     included_count = int(included.sum())
     excluded_count = int(excluded.sum())
-    error_count = int(error_before_fit.sum())
+    fractional_count = int(score_fractional.sum())
     not_used_count = int((~included).sum())
     included_weight = float(weight_numeric[included].sum()) if included_count else 0.0
 
@@ -6030,13 +6063,21 @@ def build_response_data_audit(
                 "Interpretation": "Rows excluded because weight <= 0 contributes no likelihood.",
             },
         ])
-    if error_count:
+    if fractional_count:
         summary_rows.append({
             "Item": "Fractional score error",
-            "Count": error_count,
-            "Percent": pct(error_count),
+            "Count": fractional_count,
+            "Percent": pct(fractional_count),
             "Interpretation": "The run stops until these scores are recoded to integer categories.",
         })
+    for label, mask in [("Non-finite score error", score_non_finite),
+                        ("Non-finite weight error", weight_non_finite)]:
+        count = int(mask.sum())
+        if count:
+            summary_rows.append({
+                "Item": label, "Count": count, "Percent": pct(count),
+                "Interpretation": "The run stops until infinite input values are corrected.",
+            })
 
     summary = pd.DataFrame(summary_rows)
     excluded_rows = audit.loc[~audit["IncludedInLikelihood"]].copy()
@@ -6106,6 +6147,8 @@ def prepare_mfrm_data(
         )
 
     score_num = pd.to_numeric(df["Score"], errors="coerce")
+    if (score_num.notna() & ~np.isfinite(score_num)).any():
+        raise ValueError("Score must contain finite integer category codes; infinite values were found.")
     score_tol = np.sqrt(np.finfo(float).eps)
     fractional_score = score_num.notna() & np.isfinite(score_num) & ((score_num - np.round(score_num)).abs() > score_tol)
     if fractional_score.any():
@@ -6119,6 +6162,8 @@ def prepare_mfrm_data(
 
     if "Weight" in df.columns:
         df["Weight"] = pd.to_numeric(df["Weight"], errors="coerce")
+        if (df["Weight"].notna() & ~np.isfinite(df["Weight"])).any():
+            raise ValueError("Weights must be finite; infinite values were found.")
     else:
         df["Weight"] = 1.0
 
@@ -9290,7 +9335,7 @@ def mfrm_loglik_mml(par, idx, config, sizes, quad):
     if rows_by_person is None:
         rows_by_person = [np.where(idx["person"] == p)[0] for p in range(config["n_person"])]
 
-    log_w = np.log(quad["weights"])
+    log_w = _log_mml_quadrature_weights(quad)
     pop_mu = compute_population_mu(params, config)
 
     if config["model"] == "RSM":
@@ -9352,12 +9397,12 @@ def mfrm_loglik_mml_value_grad(par, idx, config, sizes, quad, *, include_log_sig
     the complete-data score. This reuses the EM E-step posterior weights and the
     analytical M-step gradient.
 
-    Development RSM/PCM callers may append d(NLL)/d(log sigma). This assumes
+    Development RSM/PCM/GPCM callers may append d(NLL)/d(log sigma). This assumes
     quad["nodes"] = sigma * z with fixed standard-normal nodes and weights;
     population means are separate and do not move with sigma.
     """
-    if include_log_sigma and config["model"] not in {"RSM", "PCM"}:
-        raise ValueError("Analytic log-SD gradient supports RSM and PCM only")
+    if include_log_sigma and config["model"] not in {"RSM", "PCM", "GPCM"}:
+        raise ValueError("Analytic log-SD gradient requires a native response model")
     params = expand_params(par, sizes, config)
     post_weights, marginal_ll = _e_step_posteriors(idx, config, params, quad)
     _, grad = _m_step_expected_ll_value_grad(
@@ -9450,11 +9495,38 @@ def _free_sd_mml_inference_withheld(config) -> bool:
 
 
 def qualified_estimation_summary(result) -> pd.DataFrame:
-    """Apply the current inference hold without changing saved optimizer evidence."""
+    """Report explicit IC units and inference holds on a copy of saved evidence."""
     summary = result.get("summary") if isinstance(result, dict) else None
     if not isinstance(summary, pd.DataFrame):
         return pd.DataFrame()
     out = summary.copy()
+    if not out.empty:
+        config = result.get("config", {})
+        config = config if isinstance(config, dict) else {}
+        method = str(config.get("method", out.iloc[0].get("Method", ""))).upper()
+        n_bic = _summary_metric(out, "Persons" if method == "MML" else "N")
+        if method == "MML" and (not np.isfinite(n_bic) or n_bic <= 0 or not n_bic.is_integer()):
+            n_bic = np.nan
+        out["BICSampleSize"] = n_bic
+        out["BICSampleSizeBasis"] = (
+            "independent_person_marginals" if method == "MML" else "conditional_response_rows_technical"
+        )
+        if method == "MML" and not np.isfinite(n_bic):
+            out["BICSampleSizeBasis"] = "unavailable_person_count"
+        out["BICScope"] = (
+            "fixed parameter dimension; bounded responses per person; unit weights; regular interior fit required"
+            if method == "MML" else "incidental person parameters; ordinary BIC qualification unavailable"
+        )
+        if method == "MML":
+            # Legacy snapshots used response exposure in the BIC penalty.
+            # Keep that value for audit; never infer Person count from N.
+            if "BICSampleSize" not in summary and "BIC" in summary and "SavedBIC" not in out:
+                out["SavedBIC"] = summary["BIC"]
+            k = _summary_metric(out, "KParams", _safe_float(config.get("parameter_count")))
+            ll = _summary_metric(out, "LogLik")
+            out["BIC"] = -2*ll + k*np.log(n_bic) if np.isfinite(n_bic) and n_bic > 0 else np.nan
+            n_obs = _summary_metric(out, "N")
+            out["BICPerObs"] = out["BIC"]/n_obs if np.isfinite(n_obs) and n_obs > 0 else np.nan
     if not out.empty and _free_sd_mml_inference_withheld(result.get("config")):
         out["InferenceReady"] = False
         out["InferenceReadinessReason"] = FREE_SD_MML_INFERENCE_HOLD_REASON
@@ -9498,14 +9570,24 @@ def build_convergence_summary(opt, config: dict, loglik: float, elapsed_seconds:
         ),
         "GradientNorm": float(grad_norm) if np.isfinite(grad_norm) else np.nan,
         "GradientScope": (
-            "structural coordinates only; population SD excluded"
-            if _free_sd_mml_inference_withheld(config) else "optimizer coordinates"
+            "structural coordinates and log(population SD)"
+            if config.get("mml_engine") == "joint" else (
+                "structural coordinates only; population SD excluded"
+                if _free_sd_mml_inference_withheld(config) else "optimizer coordinates"
+            )
         ),
         "ElapsedSeconds": float(elapsed_seconds) if elapsed_seconds is not None and np.isfinite(elapsed_seconds) else np.nan,
         "AutoAttempted": ", ".join(getattr(opt, "auto_attempted", []) or []),
         "AutoSelected": getattr(opt, "auto_selected", ""),
         "AutoFallbackReason": getattr(opt, "auto_fallback_reason", ""),
     }]
+    if config.get("mml_engine") == "joint":
+        audit = getattr(opt, "joint_mml", {})
+        rows[0].update(JointStationarityPass=bool(audit.get("numerical_pass", False)),
+            JointNumericalStatus=audit.get("status", "unavailable"),
+            AlgorithmTerminated=all(r.get("success", False) for r in audit.get("runs", []))
+                if audit.get("runs") else False,
+            QuadratureAccuracyQualified=False, ScientificInferenceReady=False)
     return pd.DataFrame(rows)
 
 
@@ -9528,13 +9610,14 @@ def build_likelihood_information_criteria(result: dict | None) -> pd.DataFrame:
     """Single-run likelihood and information-criteria table for reporting."""
     if not isinstance(result, dict):
         return pd.DataFrame()
-    summary = result.get("summary")
+    summary = qualified_estimation_summary(result)
     if not isinstance(summary, pd.DataFrame) or summary.empty:
         return pd.DataFrame()
     row = summary.iloc[0]
     config = result.get("config", {}) if isinstance(result.get("config", {}), dict) else {}
     loglik = _summary_metric(summary, "LogLik")
     n_eff = _summary_metric(summary, "N")
+    n_bic = _summary_metric(summary, "BICSampleSize")
     k_params = _summary_metric(summary, "KParams")
     if not np.isfinite(k_params):
         k_params = _summary_metric(summary, "Parameters")
@@ -9547,8 +9630,8 @@ def build_likelihood_information_criteria(result: dict | None) -> pd.DataFrame:
     if not np.isfinite(aic) and np.isfinite(deviance) and np.isfinite(k_params):
         aic = deviance + 2.0 * k_params
     bic = _summary_metric(summary, "BIC")
-    if not np.isfinite(bic) and np.isfinite(deviance) and np.isfinite(k_params) and np.isfinite(n_eff) and n_eff > 0:
-        bic = deviance + np.log(n_eff) * k_params
+    if not np.isfinite(bic) and np.isfinite(deviance) and np.isfinite(k_params) and np.isfinite(n_bic) and n_bic > 0:
+        bic = deviance + np.log(n_bic) * k_params
     penalty_value = _summary_metric(summary, "RegularizationPenalty", default=0.0)
     penalized_objective = _summary_metric(summary, "PenalizedObjective")
     if not np.isfinite(penalized_objective) and np.isfinite(deviance):
@@ -9565,7 +9648,14 @@ def build_likelihood_information_criteria(result: dict | None) -> pd.DataFrame:
             "Value": n_eff,
             "PreferredDirection": "context",
             "Formula": "effective likelihood rows or total positive weight",
-            "Interpretation": "Number of observations contributing to the fitted likelihood.",
+            "Interpretation": "Response exposure for descriptive normalization; not the MML independent sample size.",
+        },
+        {
+            "Metric": "BICSampleSize",
+            "Value": n_bic,
+            "PreferredDirection": "context",
+            "Formula": str(row.get("BICSampleSizeBasis", "unavailable")),
+            "Interpretation": str(row.get("BICScope", "unavailable")),
         },
         {
             "Metric": "KParams",
@@ -9613,8 +9703,8 @@ def build_likelihood_information_criteria(result: dict | None) -> pd.DataFrame:
             "Metric": "BIC",
             "Value": bic,
             "PreferredDirection": "lower",
-            "Formula": "log(N) * KParams - 2 * unpenalized LogLik",
-            "Interpretation": "Lower BIC favors the model after a stronger sample-size penalty.",
+            "Formula": "log(BICSampleSize) * KParams - 2 * unpenalized LogLik",
+            "Interpretation": "Technical criterion under the stated sample-size scope; comparison qualification is separate.",
         },
         {
             "Metric": "LogLikPerObs",
@@ -9710,6 +9800,14 @@ def _model_choice_can_compare(res: dict) -> tuple[bool, str]:
     prep = res.get("prep", {}) if isinstance(res, dict) else {}
     if not isinstance(prep, dict) or not isinstance(prep.get("data"), pd.DataFrame):
         return False, "Fit does not carry a raw data frame for re-fitting."
+    if "Weight" in prep["data"].columns:
+        weights = pd.to_numeric(prep["data"]["Weight"], errors="coerce").to_numpy(dtype=float)
+        if not np.isfinite(weights).all() or not np.all(weights == 1.0):
+            return (
+                False,
+                "Model comparison requires unit weights; nonunit or invalid "
+                "response weights do not have a qualified IC/LR interpretation."
+            )
     if config.get("facet_regularization_enabled"):
         return (
             False,
@@ -9778,6 +9876,12 @@ def _refit_candidate_model(
             maxit=int(config.get("maxit", 400) or 400),
             reltol=float(config.get("reltol", 1e-6) or 1e-6),
             mml_engine=str(config.get("mml_engine", "EM")),
+            population_prior_sd=(
+                float(config.get("population_prior_sd_input", config.get("population_prior_sd", 1.0))
+                      if config.get("estimate_population_sd") else config.get("population_prior_sd", 1.0))
+                if str(config.get("method", "JMLE")).upper() == "MML" else 1.0
+            ),
+            estimate_population_sd=bool(config.get("estimate_population_sd", False)),
         )
     except Exception:
         return None
@@ -9834,14 +9938,10 @@ def _model_choice_information_weights(delta_ic_series: pd.Series) -> pd.Series:
 def _model_choice_recommend(comparison: pd.DataFrame) -> dict:
     """Return ``{"model", "tier", "rationale"}`` from the comparison table.
 
-    Reading order: prefer the lowest BIC for evidence-weight assessment
-    (Schwarz 1978 is consistent under regularity); break ties by AIC
-    (Akaike 1974); when |DeltaBIC| < 2 between the top two, downgrade
-    the tier to ``"weak"`` so the recommendation does not over-state.
-    When the design is small (any model with ``N / K < 40``), AICc
-    (Hurvich & Tsai 1989) replaces AIC for the secondary criterion
-    because the small-sample correction is recommended in that regime
-    (Burnham & Anderson 2002, p. 66).
+    Technical ordering uses lowest BIC, breaking ties by AIC. Retained
+    gap-based tiers are audit heuristics, not calibrated evidence levels.
+    AICc is unavailable: no small-sample correction has been derived
+    for these MFRM likelihoods. A sample-size ratio cannot establish it.
     """
     if comparison is None or comparison.empty:
         return {
@@ -9856,11 +9956,8 @@ def _model_choice_recommend(comparison: pd.DataFrame) -> dict:
             "tier": "not_available",
             "rationale": "No model produced a finite BIC / AIC.",
         }
-    # Decide whether to use AICc as the secondary criterion. The
-    # AICcRecommended flag fires when any candidate has N / K < 40.
-    use_aicc = bool(finite.get("AICcRecommended", pd.Series([False])).any())
-    secondary_col = "AICc" if use_aicc and finite["AICc"].notna().any() else "AIC"
-    delta_secondary_label = "DeltaAICc" if secondary_col == "AICc" else "DeltaAIC"
+    secondary_col = "AIC"
+    delta_secondary_label = "DeltaAIC"
 
     ranked = finite.sort_values(["BIC", secondary_col], ascending=True)
     best = ranked.iloc[0]
@@ -9879,20 +9976,14 @@ def _model_choice_recommend(comparison: pd.DataFrame) -> dict:
         tier = "weak"
     else:
         tier = "tie"
-    rationale_extra = (
-        f" (AICc used as the secondary criterion because N / K < 40 on at "
-        f"least one candidate, per Burnham & Anderson 2002, p. 66)"
-        if use_aicc and secondary_col == "AICc"
-        else ""
-    )
     return {
         "model": str(best["Model"]),
         "tier": tier,
         "rationale": (
-            f"Lowest BIC ({best['BIC']:.2f}) and {secondary_col} "
+            f"Lowest BIC ({best['BIC']:.2f}); tie-break criterion {secondary_col} "
             f"({best[secondary_col]:.2f}); "
             f"gap to second-best is DeltaBIC = {delta_bic:.2f}, "
-            f"{delta_secondary_label} = {delta_secondary:.2f}{rationale_extra}."
+            f"{delta_secondary_label} = {delta_secondary:.2f}."
         ),
     }
 
@@ -10024,24 +10115,13 @@ def compute_model_choice_comparison(res: dict) -> dict:
             })
             continue
         cand_res = model_results[candidate]
-        summary = cand_res.get("summary", pd.DataFrame())
+        summary = qualified_estimation_summary(cand_res)
         n_val = _summary_metric(summary, "N")
         k_val = _summary_metric(summary, "KParams")
         aic_val = _summary_metric(summary, "AIC")
-        # AICc finite-sample correction (Hurvich & Tsai, 1989, Eq. 1):
-        # AICc = AIC + 2 k (k + 1) / (N - k - 1). Undefined when N - k - 1
-        # <= 0; recommended over AIC when N / k < ~40 (Burnham & Anderson
-        # 2002, p. 66). Falls back to NaN when any of N, k, or AIC is
-        # missing or when the small-sample denominator collapses.
-        if (
-            np.isfinite(n_val) and np.isfinite(k_val) and np.isfinite(aic_val)
-            and n_val > k_val + 1
-        ):
-            aicc_val = float(aic_val) + 2.0 * float(k_val) * (float(k_val) + 1.0) / (
-                float(n_val) - float(k_val) - 1.0
-            )
-        else:
-            aicc_val = np.nan
+        # The regression/time-series AICc formula is not a derived MFRM
+        # bias correction. Keep the legacy columns unavailable, not numeric.
+        aicc_val = np.nan
         rows.append({
             "Model": candidate,
             "N": n_val,
@@ -10050,6 +10130,8 @@ def compute_model_choice_comparison(res: dict) -> dict:
             "AIC": aic_val,
             "AICc": aicc_val,
             "BIC": _summary_metric(summary, "BIC"),
+            "BICSampleSize": _summary_metric(summary, "BICSampleSize"),
+            "BICSampleSizeBasis": summary.iloc[0].get("BICSampleSizeBasis", "unavailable") if not summary.empty else "unavailable",
             "FitStatus": (
                 "current" if candidate == current_model else "refit_ok"
             ),
@@ -10066,15 +10148,7 @@ def compute_model_choice_comparison(res: dict) -> dict:
         comparison["AICEvidenceRatio"] = np.nan
         comparison["AICWeight"] = np.nan
 
-    if comparison["AICc"].notna().any():
-        min_aicc = float(comparison["AICc"].min(skipna=True))
-        comparison["DeltaAICc"] = comparison["AICc"] - min_aicc
-        comparison["AICcEvidenceRatio"] = comparison["DeltaAICc"].apply(_model_choice_evidence_ratio)
-        comparison["AICcWeight"] = _model_choice_information_weights(comparison["DeltaAICc"])
-    else:
-        comparison["DeltaAICc"] = np.nan
-        comparison["AICcEvidenceRatio"] = np.nan
-        comparison["AICcWeight"] = np.nan
+    comparison[["DeltaAICc", "AICcEvidenceRatio", "AICcWeight"]] = np.nan
 
     if comparison["BIC"].notna().any():
         min_bic = float(comparison["BIC"].min(skipna=True))
@@ -10086,11 +10160,13 @@ def compute_model_choice_comparison(res: dict) -> dict:
         comparison["BICEvidenceRatio"] = np.nan
         comparison["BICWeight"] = np.nan
 
-    # Compute n / k ratio per row for AICc applicability guidance.
+    # Response exposure / K is descriptive, not an AICc applicability test.
     comparison["N_over_K"] = comparison["N"] / comparison["KParams"]
-    comparison["AICcRecommended"] = (
-        comparison["N_over_K"] < 40.0
-    ).fillna(False)
+    comparison["AICcRecommended"] = False
+    comparison["AICcStatus"] = "unavailable_no_mfrm_small_sample_derivation"
+    if "BICSampleSize" not in comparison:
+        comparison["BICSampleSize"] = np.nan
+        comparison["BICSampleSizeBasis"] = "unavailable"
 
     comparison = comparison[[
         "Model", "FitStatus", "N", "KParams", "N_over_K", "AICcRecommended",
@@ -10098,6 +10174,7 @@ def compute_model_choice_comparison(res: dict) -> dict:
         "AIC", "DeltaAIC", "AICEvidenceRatio", "AICWeight",
         "AICc", "DeltaAICc", "AICcEvidenceRatio", "AICcWeight",
         "BIC", "DeltaBIC", "BICEvidenceRatio", "BICWeight",
+        "BICSampleSize", "BICSampleSizeBasis", "AICcStatus",
     ]]
 
     method_label = str(config.get("method", "")).upper()
@@ -10148,11 +10225,14 @@ def compute_model_choice_comparison(res: dict) -> dict:
             "the G2 gate; GPCM pairs require separate calibration."
         )
     caveat = (
-        "AIC, AICc, BIC, their deltas/weights, and LR quantities are retained "
+        "AIC, BIC, their deltas/weights, and LR quantities are retained "
         "for technical audit only while the G2 comparison-scope gate is open. "
         "Parameter counts now use identified coordinates, but no preferred-model or "
-        "retain/reject conclusion is permitted. The retained formulas trace "
-        "AICc to Hurvich and Tsai (1989), the delta/weight diagnostics to "
+        "retain/reject conclusion is permitted. MML BIC uses independent Person "
+        "marginals under fixed parameter dimension and bounded responses per person. "
+        "N remains response exposure. AICc is unavailable: Hurvich and Tsai (1989) "
+        "derive a correction for regression/time-series models, not these MFRM "
+        "likelihoods; N / K < 40 does not establish applicability. The delta/weight diagnostics trace to "
         "Burnham and Anderson (2002), and the ordinary LR reference to Wilks "
         "(1938); those citations describe provenance, not output qualification. "
         f"{lr_scope} Refits inherit "
@@ -10177,7 +10257,7 @@ def extract_run_likelihood_row(output: dict, *, timestamp: str = "", label: str 
     """Extract one compact likelihood/information-criteria row from a run snapshot."""
     output_dict = output if isinstance(output, dict) else {}
     result = output_dict.get("result", {})
-    summary = result.get("summary") if isinstance(result, dict) else None
+    summary = qualified_estimation_summary(result)
     config = result.get("config", {}) if isinstance(result, dict) and isinstance(result.get("config", {}), dict) else {}
     row = summary.iloc[0] if isinstance(summary, pd.DataFrame) and not summary.empty else {}
     model = str(row.get("Model", output_dict.get("model_type", config.get("model", ""))) if isinstance(row, pd.Series) else output_dict.get("model_type", ""))
@@ -10199,6 +10279,8 @@ def extract_run_likelihood_row(output: dict, *, timestamp: str = "", label: str 
         "model": model,
         "method": method,
         "n": n_eff,
+        "bic_sample_size": _summary_metric(summary, "BICSampleSize"),
+        "bic_sample_size_basis": row.get("BICSampleSizeBasis", "unavailable"),
         "input": config.get("input_data_fingerprint"),
         "rating_min": config.get("rating_min"),
         "rating_max": config.get("rating_max"),
@@ -10230,6 +10312,8 @@ def extract_run_likelihood_row(output: dict, *, timestamp: str = "", label: str 
         "ComparabilityKey": comparability_key,
         "AIC": aic,
         "BIC": bic,
+        "BICSampleSize": _summary_metric(summary, "BICSampleSize"),
+        "BICSampleSizeBasis": row.get("BICSampleSizeBasis", "unavailable"),
         "LogLikPerObs": loglik / n_eff if np.isfinite(loglik) and np.isfinite(n_eff) and n_eff > 0 else np.nan,
         "AICPerObs": aic / n_eff if np.isfinite(aic) and np.isfinite(n_eff) and n_eff > 0 else np.nan,
         "BICPerObs": bic / n_eff if np.isfinite(bic) and np.isfinite(n_eff) and n_eff > 0 else np.nan,
@@ -10250,6 +10334,10 @@ def build_run_history_likelihood_table(history: list[dict]) -> pd.DataFrame:
                 label=str(entry.get("label", "")),
             ))
         else:
+            # Compact legacy entries lack the Person count and likelihood
+            # metadata needed to rebuild an MML BIC on the current basis.
+            history_mml = str(entry.get("method", "")).upper() == "MML"
+            history_bic = np.nan if history_mml else entry.get("bic", np.nan)
             rows.append({
                 "Label": str(entry.get("label", "")),
                 "Timestamp": str(entry.get("timestamp", "")),
@@ -10262,7 +10350,10 @@ def build_run_history_likelihood_table(history: list[dict]) -> pd.DataFrame:
                 "Deviance": entry.get("deviance", np.nan),
                 "Regularization": entry.get("regularization", ""),
                 "AIC": entry.get("aic", np.nan),
-                "BIC": entry.get("bic", np.nan),
+                "BIC": history_bic,
+                "SavedBIC": entry.get("bic", np.nan),
+                "BICSampleSize": np.nan if history_mml else entry.get("n_obs", np.nan),
+                "BICSampleSizeBasis": "unavailable_person_count" if history_mml else "conditional_response_rows_technical",
                 "LogLikPerObs": (
                     entry.get("loglik", np.nan) / entry.get("n_obs", np.nan)
                     if pd.notna(entry.get("loglik", np.nan)) and pd.notna(entry.get("n_obs", np.nan))
@@ -10276,8 +10367,8 @@ def build_run_history_likelihood_table(history: list[dict]) -> pd.DataFrame:
                     else np.nan
                 ),
                 "BICPerObs": (
-                    entry.get("bic", np.nan) / entry.get("n_obs", np.nan)
-                    if pd.notna(entry.get("bic", np.nan)) and pd.notna(entry.get("n_obs", np.nan))
+                    history_bic / entry.get("n_obs", np.nan)
+                    if pd.notna(history_bic) and pd.notna(entry.get("n_obs", np.nan))
                     and float(entry.get("n_obs", 0) or 0) > 0
                     else np.nan
                 ),
@@ -10352,7 +10443,7 @@ def _e_step_posteriors(idx, config, params, quad):
 
     n_persons = len(rows_by_person)
     Q = len(quad["nodes"])
-    log_w = np.log(quad["weights"])                    # (Q,)
+    log_w = _log_mml_quadrature_weights(quad)           # (Q,)
     log_lik_mat = np.zeros((n_persons, Q))             # person × node
     pop_mu = compute_population_mu(params, config)
 
@@ -10807,7 +10898,7 @@ def compute_person_eap(idx, config, params, quad):
     if rows_by_person is None:
         rows_by_person = [np.where(idx["person"] == p)[0] for p in range(config["n_person"])]
 
-    log_w = np.log(quad["weights"])
+    log_w = _log_mml_quadrature_weights(quad)
     pop_mu = compute_population_mu(params, config)
     estimates = []
     if config["model"] == "RSM":
@@ -10891,7 +10982,11 @@ def compute_person_posterior_outputs(
     n_plausible_values=0,
     seed=20260411,
 ):
-    """MML person posterior summaries and optional plausible-value draws."""
+    """Person posterior summaries conditional on fitted MML calibration.
+
+    The quadrature represents the configured normal population distribution.
+    MAPGrid maximizes posterior density over its nodes, not quadrature mass.
+    """
     if config.get("method") != "MML":
         return {
             "available": False,
@@ -10918,7 +11013,7 @@ def compute_person_posterior_outputs(
     if rows_by_person is None:
         rows_by_person = [np.where(idx["person"] == p)[0] for p in range(n_person)]
 
-    log_w = np.log(quad["weights"])
+    log_w = _log_mml_quadrature_weights(quad)
     rng = np.random.default_rng(int(seed))
     n_pv = max(0, int(n_plausible_values or 0))
     score_rows: list[dict] = []
@@ -10957,7 +11052,9 @@ def compute_person_posterior_outputs(
         eap = float(np.sum(theta_nodes * post_w))
         sd = float(np.sqrt(np.sum((theta_nodes - eap) ** 2 * post_w)))
         q05, q50, q95 = _weighted_quantile_from_grid(theta_nodes, post_w, probs=(0.05, 0.5, 0.95))
-        map_theta = float(theta_nodes[int(np.argmax(post_w))])
+        # GH weights integrate the prior; they are not prior density values.
+        log_density = ll_nodes - 0.5 * (quad["nodes"] / get_population_prior_sd(config)) ** 2
+        map_theta = float(theta_nodes[int(np.argmax(log_density))])
         person_id = person_levels[p_idx] if p_idx < len(person_levels) else str(p_idx)
         row_weight = float(np.sum(weight)) if weight is not None else float(len(rows))
         score_rows.append({
@@ -10987,9 +11084,12 @@ def compute_person_posterior_outputs(
         "n_plausible_values": n_pv,
         "seed": int(seed),
         "interpretation": (
-            "PosteriorMean is the EAP person score. Plausible values are random draws "
-            "from each person's posterior distribution and are intended for group-level "
-            "uncertainty propagation, not for ranking individual persons."
+            "PosteriorMean is the EAP person score. All posterior summaries and "
+            "plausible values condition on fitted calibration and population parameters; "
+            "calibration uncertainty is not propagated. PosteriorMAPGrid maximizes "
+            "posterior density over the quadrature nodes, not over the continuous "
+            "ability scale. Plausible values are draws from the conditional quadrature "
+            "posterior for group-level uncertainty propagation, not individual ranking."
         ),
     }
 
@@ -11779,6 +11879,113 @@ def _population_sd_conditional_curvature_scale(loglik, sigma, bounds) -> float:
     return float("nan")
 
 
+def mfrm_joint_mml(start, prep, idx, config, sizes, quad):
+    """Explicit free-SD joint fit; numerical evidence never releases inference."""
+    from types import SimpleNamespace
+    from scipy.optimize import OptimizeResult
+    from mfrm_app.mml_joint import fit_grouped_joint, OPTIONS, LIMITS
+
+    if config.get("method") != "MML" or not config.get("estimate_population_sd"):
+        raise ValueError("Joint MML requires MML with estimate_population_sd=True.")
+    if sizes.get("theta", 0) or sizes.get("population", 0):
+        raise ValueError("Joint MML excludes fitted Person coordinates and latent regression.")
+    theta_spec = config.get("theta_spec", {})
+    if (np.isfinite(theta_spec.get("anchors", [])).any()
+        or any(g not in (None, "") for g in theta_spec.get("groups", []))):
+        raise ValueError("Joint MML excludes Person anchors and group anchors.")
+    if tuple(config.get("population_sd_bounds", ())) != (0.05, 10.0):
+        raise ValueError("Joint MML requires the audited population-SD bounds (0.05, 10.0).")
+    sigma_start = float(config["population_prior_sd"])
+    if not 0.05 <= sigma_start <= 10.0:
+        raise ValueError("Joint MML initial population SD must lie within (0.05, 10.0).")
+    if config["model"] == "GPCM" and tuple(config.get("gpcm_log_slope_bounds", ())) != (-3.0, 3.0):
+        raise ValueError("Joint GPCM requires the audited expanded log-slope bounds (-3.0, 3.0).")
+
+    def residual(parameters):
+        expanded = expand_params(parameters, sizes, config)
+        values = [abs(float(np.sum(expanded["facets"][f]))) for f in config["facet_names"]
+                  if config["facet_specs"][f]["centered"]]
+        audit = build_parameterization_audit(config, sizes, expanded)
+        if not bool(audit["ExpandedBoundsSatisfied"].all()):
+            return float("inf")
+        values.extend(audit["ConstraintMaxAbsResidual"].to_numpy(dtype=float))
+        return float(max(values, default=0.0))
+
+    structural_bounds = build_optimizer_bounds(sizes, config)
+    constraints = [LinearConstraint(np.column_stack([np.atleast_2d(c.A),
+        np.zeros((np.atleast_2d(c.A).shape[0], 1))]), c.lb, c.ub)
+        for c in build_optimizer_constraints(sizes, config)]
+    problem = SimpleNamespace(config=config, structural_start=np.asarray(start, dtype=float),
+        sigma_start=sigma_start, sigma_bounds=config["population_sd_bounds"],
+        structural_bounds=structural_bounds if structural_bounds is not None else [(None,None)]*len(start),
+        joint_constraints=constraints, constraint_residual=residual)
+    raw = fit_grouped_joint(prep["data"], problem, q=len(quad["nodes"]))
+    if raw["point"] is None:
+        raise ValueError("Joint MML did not produce a finite candidate: "+raw["status"])
+    point = np.asarray(raw["point"], dtype=float)
+    evaluated = raw["evaluated"]
+    opt = OptimizeResult(x=point[:-1].copy(), fun=evaluated["nll"], jac=evaluated["gradient"][:-1].copy(),
+        success=bool(raw["numerical_pass"]), status=0 if raw["numerical_pass"] else 1,
+        message=raw["status"], nit=sum(r["iterations"] for r in raw["runs"]),
+        nfev=sum(r["evaluations"] for r in raw["runs"]))
+    opt.mml_engine = "joint"
+    opt.estimated_population_sd = float(np.exp(point[-1]))
+    opt.gradient_norm = float(np.linalg.norm(evaluated["gradient"]))
+    opt.joint_gradient = evaluated["gradient"].copy()
+    opt.joint_mml = dict(raw, evaluated={k:v for k,v in evaluated.items() if k != "posterior"},
+        coordinate_order="native structural coordinates, then log(population SD)",
+        input_sha256=dataframe_fingerprint(prep["data"], length=64),
+        optimizer_options=[dict(o) for o in OPTIONS], numerical_limits=dict(LIMITS),
+        quadrature_accuracy_qualified=False, scientific_inference_ready=False)
+    return opt
+
+
+def build_joint_mml_audit_frames(result):
+    """Retain joint numerical quantities with explicit, unreleased use limits."""
+    raw = result.get("joint_mml")
+    config = result.get("config", {})
+    if config.get("mml_engine") != "joint" or not isinstance(raw, dict):
+        return {}
+    point = np.asarray(raw["point"], dtype=float)
+    opt = result["opt"]
+    current = np.r_[opt.x, np.log(config["population_prior_sd"])]
+    # SD passes through exp/log for app consumers; compare it in its native
+    # scale to avoid inventing a coordinate tolerance for that round trip.
+    if (not np.array_equal(point[:-1], current[:-1])
+        or float(np.exp(point[-1])) != config["population_prior_sd"]
+        or raw["q"] != config["quad_points"]
+        or raw["input_sha256"] != dataframe_fingerprint(result["prep"]["data"], length=64)):
+        raise ValueError("Joint numerical evidence differs from the current input, point, SD or quadrature.")
+    evaluated = raw["evaluated"]
+    gradient = np.asarray(evaluated["gradient"], dtype=float)
+    common = dict(Use="technical_only", OutputID="mml.joint_numerical_audit",
+        QualificationStatus="TECHNICAL_ONLY", RawTechnicalExportAllowed=True,
+        ScientificInferenceReady=False, PublicConclusionAllowed=False)
+    frames = {
+        "joint_mml_numerical_audit": pd.DataFrame([dict(common, Status=raw["status"],
+            JointStationarityPass=bool(raw["numerical_pass"]), QuadratureAccuracyQualified=False,
+            QuadraturePoints=raw["q"], InputSHA256=raw["input_sha256"],
+            NLL=evaluated["nll"], GradientSupnorm=float(np.max(abs(gradient))),
+            ConditionNumber=raw.get("condition_number"), NewtonCorrection=raw.get("newton_correction"),
+            ConstraintResidual=raw.get("constraint_residual"), BoundaryDistance=raw.get("boundary_distance"),
+            Scope="Native structural coordinates then log(population SD); finite quadrature; sampling qualification pending.")]),
+        "joint_mml_coordinates": pd.DataFrame(dict(CoordinateIndex=np.arange(len(point)),
+            CoordinateBlock=["structural"]*(len(point)-1)+["log_population_sd"],
+            Estimate=point, Gradient=gradient, **common)),
+        "joint_mml_checks": pd.DataFrame([dict(Check=k, Passed=bool(v), **common)
+                                         for k,v in raw.get("checks", {}).items()]),
+    }
+    for name, value in [("information", evaluated.get("information")), ("covariance", raw.get("covariance"))]:
+        if value is not None:
+            matrix = np.asarray(value, dtype=float)
+            if matrix.shape != (len(point), len(point)):
+                raise ValueError("Joint numerical matrix does not match the retained coordinates.")
+            row, column = np.indices(matrix.shape)
+            frames["joint_mml_"+name] = pd.DataFrame(dict(RowCoordinate=row.ravel(),
+                ColumnCoordinate=column.ravel(), Value=matrix.ravel(), **common))
+    return frames
+
+
 def mfrm_estimate(
     data,
     person_col,
@@ -11975,7 +12182,14 @@ def mfrm_estimate(
         config["gpcm_log_slope_bounds"] = (-3.0, 3.0)
     mml_engine_raw = str(mml_engine or "EM").strip().lower()
     config["mml_engine_requested"] = str(mml_engine) if method == "MML" else None
-    if "auto" in mml_engine_raw:
+    if mml_engine_raw == "joint":
+        mml_engine_resolved = "joint"
+        if method != "MML" or not estimate_population_sd:
+            raise ValueError("Joint MML requires MML with estimate_population_sd=True.")
+        if ((anchor_df is not None and len(anchor_df))
+            or (group_anchor_df is not None and len(group_anchor_df))):
+            raise ValueError("Joint MML excludes individual and group anchors.")
+    elif "auto" in mml_engine_raw:
         mml_engine_resolved = "auto"
     elif "hybrid" in mml_engine_raw:
         mml_engine_resolved = "hybrid"
@@ -11983,12 +12197,11 @@ def mfrm_estimate(
         mml_engine_resolved = "direct"
     else:
         mml_engine_resolved = "em"
-    # Free latent-population-SD estimation is opt-in and EM-only. Force the EM
-    # engine (recording an override notice) and give EM more iterations to fit
-    # the extra variance coordinate. Default (fixed SD) leaves all of this off.
+    # Existing free-SD paths retain their EM override. The explicit joint path
+    # uses the audited two-stage solver and preserves the same inference hold.
     config["estimate_population_sd"] = bool(estimate_population_sd) if method == "MML" else False
     config["population_sd_bounds"] = (0.05, 10.0)
-    if config["estimate_population_sd"]:
+    if config["estimate_population_sd"] and mml_engine_resolved != "joint":
         maxit = max(int(maxit), 300)
         if mml_engine_resolved != "em":
             config["mml_engine_requested_before_sd_override"] = mml_engine_resolved
@@ -12005,6 +12218,15 @@ def mfrm_estimate(
             if model == "GPCM"
             else "L-BFGS-B with exact identified step coordinates"
         )
+    elif mml_engine_resolved == "joint":
+        from mfrm_app.mml_joint import OPTIONS, LIMITS
+        config["optimizer"] = "Joint structural/log-population-SD MML; two fixed SLSQP stages"
+        config["joint_optimizer_options"] = [dict(o) for o in OPTIONS]
+        config["joint_numerical_limits"] = dict(LIMITS)
+        config["maxit_requested"] = maxit
+        config["reltol_requested"] = reltol
+        config["maxit"] = OPTIONS[-1]["maxiter"]
+        config["reltol"] = OPTIONS[-1]["ftol"]
     elif mml_engine_resolved == "direct":
         config["optimizer"] = f"Direct MML with analytical-gradient {exact_optimizer}"
     elif mml_engine_resolved == "hybrid":
@@ -12048,7 +12270,7 @@ def mfrm_estimate(
         ),
         "log_slope_expanded_count": int(n_slope_levels),
         "log_slope_free_count": int(sizes.get("log_slopes", 0)),
-        "optimizer_dimension": int(sum(sizes.values())),
+        "optimizer_dimension": int(sum(sizes.values())) + int(method == "MML" and mml_engine_resolved == "joint"),
         "roadmap_issue_ids": ["STAT-001", "STAT-003"],
     }
     regularization_bundle = prepare_facet_regularization(facet_regularization, config, sizes)
@@ -12113,7 +12335,9 @@ def mfrm_estimate(
         )
     else:
         quad = make_mml_quadrature(config, quad_points)
-        if mml_engine_resolved == "direct":
+        if mml_engine_resolved == "joint":
+            opt = mfrm_joint_mml(start, prep, idx, config, sizes, quad)
+        elif mml_engine_resolved == "direct":
             opt = mfrm_direct_mml(start, idx, config, sizes, quad,
                                   maxit=maxit, reltol=reltol)
         elif mml_engine_resolved == "hybrid":
@@ -12322,7 +12546,8 @@ def mfrm_estimate(
     else:
         n_obs = len(prep["data"])
     aic = 2 * k_params - 2 * loglik
-    bic = np.log(n_obs) * k_params - 2 * loglik if n_obs > 0 else np.nan
+    bic_sample_size = n_person if method == "MML" else n_obs
+    bic = np.log(bic_sample_size) * k_params - 2 * loglik if bic_sample_size > 0 else np.nan
     deviance = -2 * loglik
     loglik_per_obs = loglik / n_obs if n_obs > 0 else np.nan
     aic_per_obs = aic / n_obs if n_obs > 0 else np.nan
@@ -12363,6 +12588,7 @@ def mfrm_estimate(
         "LogLikBasis": ["unpenalized likelihood evaluated at fitted estimates"],
         "AIC": [aic],
         "BIC": [bic],
+        "BICSampleSize": [bic_sample_size],
         "LogLikPerObs": [loglik_per_obs],
         "AICPerObs": [aic_per_obs],
         "BICPerObs": [bic_per_obs],
@@ -12429,6 +12655,8 @@ def mfrm_estimate(
             "penalty_summary": facet_regularization_penalty_summary(opt.x, sizes, config),
         },
     }
+    if method == "MML" and config.get("mml_engine") == "joint":
+        result["joint_mml"] = opt.joint_mml
     result["likelihood_information"] = build_likelihood_information_criteria(result)
     result["anchor_drift"] = build_anchor_drift_review(result)
     result["equating_chain"] = build_equating_chain_summary(result)
@@ -13803,7 +14031,7 @@ def _simulate_recovery_responses(
 ) -> pd.DataFrame:
     """Draw a complete design table from the requested model with known truth.
 
-    ``steps`` is a 2-D array of cumulative step thresholds with shape
+    ``steps`` is a 2-D array of adjacent-category step thresholds with shape
     ``(n_criterion, n_cat - 1)``; for RSM the same row is broadcast across
     criteria. ``slopes`` is required for GPCM and ignored elsewhere.
     The returned frame carries Person, Rater, Criterion, and Score columns.
@@ -13857,20 +14085,44 @@ def _recovery_rows_from_fit(
     rep: int,
     include_person: bool,
     measures: pd.DataFrame | None = None,
+    covariance: dict | None = None,
 ) -> pd.DataFrame:
     """Build one rep's long table of (Truth, Estimate, ErrorAligned, ...) rows.
 
-    Location-block parameters (Person, Rater, Criterion) are mean-aligned
-    within each rep so the Rasch identification constant does not appear
-    as a systematic bias. The raw unaligned error is retained as
-    ``ErrorRaw`` for transparency. SE-based coverage at the 95 % level
-    is reported when the estimated SE is finite and positive; SE values
-    are read from the optional ``measures`` table (the combined
-    Facet/Level/Estimate/SE frame produced by ``mfrm_diagnostics``).
+    Location targets (Person, Rater, Criterion) are within-block centered
+    values. The common block location is deliberately excluded from aligned
+    errors, even when the model identifies that location. Raw calibration
+    error is retained as ``ErrorRaw``. Reported SEs are retained, but coverage
+    requires covariance transformed to the same centered estimand. Marginal
+    SEs alone cannot determine that variance. Person coverage is unavailable
+    because the diagnostics do not provide joint person uncertainty.
+    Steps and log-slopes use their native sum-zero coordinates. Positive
+    slopes use delta-method SEs and exponentiated log-slope Wald intervals.
     """
     facets = res.get("facets", {}) if isinstance(res, dict) else {}
+    config = res.get("config", {})
     rows = []
     z95 = float(_norm.ppf(0.975))
+    cov = None
+    sizes = None
+    if (config.get("method") == "MML" and not _mml_covariance_scope_issue(config)
+        and isinstance(covariance, dict) and covariance.get("status") == "ok"
+        and not covariance.get("regularized", False)):
+        sizes = build_param_sizes(config)
+        candidate = np.asarray(covariance.get("cov"), dtype=float)
+        dimension = sum(sizes.values())
+        if (dimension > 0 and candidate.shape == (dimension, dimension)
+            and np.isfinite(candidate).all()
+            and np.allclose(candidate, candidate.T, rtol=0, atol=1e-10)
+            and np.linalg.eigvalsh(candidate).min() > 0):
+            cov = candidate
+        if config.get("model") == "GPCM":
+            log_slopes = np.asarray(res.get("params", {}).get("log_slopes", []), dtype=float)
+            lower, upper = config.get("gpcm_log_slope_bounds", (-3., 3.))
+            # A regular inverse Hessian is not a boundary sampling covariance.
+            if (not log_slopes.size or not np.isfinite(log_slopes).all()
+                or np.any(log_slopes <= lower+1e-6) or np.any(log_slopes >= upper-1e-6)):
+                cov = None
 
     # Build (Facet, Level) lookups from the optional measures table.
     se_lookup: dict[tuple[str, str], float] = {}
@@ -13899,6 +14151,20 @@ def _recovery_rows_from_fit(
 
     def _se_for(facet_name: str, level: str) -> float:
         return float(se_lookup.get((facet_name, str(level)), np.nan))
+
+    def _aligned_ses(facet_name, levels):
+        unavailable = np.full(len(levels), np.nan)
+        if facet_name == "Person" or cov is None:
+            return unavailable
+        spec = config.get("facet_specs", {}).get(facet_name)
+        if not isinstance(spec, dict) or len(levels) != len(set(levels)) or set(map(str, spec["levels"])) != set(levels):
+            return unavailable
+        indices = [list(map(str, spec["levels"])).index(level) for level in levels]
+        jacobian = np.zeros((len(levels), cov.shape[0]))
+        jacobian[:, _build_param_slices(sizes)[facet_name]] = _constraint_expansion_matrix_for_identifiability(spec)[indices]
+        centered_jacobian = jacobian - jacobian.mean(axis=0)
+        variance = np.einsum("ij,jk,ik->i", centered_jacobian, cov, centered_jacobian)
+        return np.where(variance > 0, np.sqrt(np.maximum(variance, 0)), np.nan)
 
     def _uncertainty_for(facet_name: str, level: str) -> dict[str, str]:
         default = {
@@ -13938,11 +14204,7 @@ def _recovery_rows_from_fit(
                 err_aligned = e_aligned - t_aligned
                 err_raw = e_val - t_val
                 uncertainty = _uncertainty_for("Person", str(p))
-                covered = (
-                    bool(abs(err_aligned) <= z95 * se)
-                    if np.isfinite(se) and se > 0
-                    else np.nan
-                )
+                covered = np.nan
                 rows.append({
                     "rep": rep,
                     "ParameterType": "Person",
@@ -13955,9 +14217,11 @@ def _recovery_rows_from_fit(
                     "ErrorRaw": float(err_raw),
                     "ErrorAligned": float(err_aligned),
                     "SE": float(se) if np.isfinite(se) else np.nan,
+                    "CoverageSE": np.nan,
+                    "CoverageStatus": "not_available_joint_person_uncertainty",
                     "Covered95": covered,
                     "NominalCILevel": 0.95,
-                    "CoverageMethod": "mean-aligned Wald interval: abs(ErrorAligned) <= z_0.975 * SE",
+                    "CoverageMethod": "not evaluated: mean-aligned person uncertainty unavailable",
                     "SE_Method": uncertainty["SE_Method"],
                     "SE_Status": uncertainty["SE_Status"],
                     "CI_Method": uncertainty["CI_Method"],
@@ -13982,16 +14246,17 @@ def _recovery_rows_from_fit(
             truth_arr = np.array([truth_map.get(str(l), np.nan) for l in levels], dtype=float)
             est_aligned = _mean_align(est_arr)
             truth_aligned = _mean_align(truth_arr)
-            for level, t_val, e_val, e_aligned, t_aligned in zip(
-                levels, truth_arr, est_arr, est_aligned, truth_aligned
+            aligned_se = _aligned_ses(facet_name, levels) if np.isfinite(est_arr).all() and np.isfinite(truth_arr).all() else np.full(len(levels), np.nan)
+            for level, t_val, e_val, e_aligned, t_aligned, coverage_se in zip(
+                levels, truth_arr, est_arr, est_aligned, truth_aligned, aligned_se
             ):
                 se = _se_for(facet_name, level)
                 err_aligned = e_aligned - t_aligned
                 err_raw = e_val - t_val
                 uncertainty = _uncertainty_for(facet_name, level)
                 covered = (
-                    bool(abs(err_aligned) <= z95 * se)
-                    if np.isfinite(se) and se > 0
+                    bool(abs(err_aligned) <= z95 * coverage_se)
+                    if np.isfinite(err_aligned) and np.isfinite(coverage_se) and coverage_se > 0
                     else np.nan
                 )
                 rows.append({
@@ -14006,9 +14271,11 @@ def _recovery_rows_from_fit(
                     "ErrorRaw": float(err_raw),
                     "ErrorAligned": float(err_aligned),
                     "SE": float(se) if np.isfinite(se) else np.nan,
+                    "CoverageSE": float(coverage_se),
+                    "CoverageStatus": "aligned_structural_covariance" if np.isfinite(coverage_se) else "not_available_aligned_covariance",
                     "Covered95": covered,
                     "NominalCILevel": 0.95,
-                    "CoverageMethod": "mean-aligned Wald interval: abs(ErrorAligned) <= z_0.975 * SE",
+                    "CoverageMethod": "mean-aligned Wald interval using C J Cov J^T C^T; unavailable without matching covariance",
                     "SE_Method": uncertainty["SE_Method"],
                     "SE_Status": uncertainty["SE_Status"],
                     "CI_Method": uncertainty["CI_Method"],
@@ -14019,7 +14286,86 @@ def _recovery_rows_from_fit(
                     "RecoveryBasis": "mean_alignment",
                 })
 
-    return pd.DataFrame(rows)
+    # Steps and log-slopes already occupy identified sum-zero coordinates;
+    # do not re-center slope estimates on their arithmetic scale.
+    def append_identified(ptype, facet, level, truth_value, estimate, gradient, *, fixed=False, log_se=None):
+        variance = float(gradient @ cov @ gradient) if cov is not None and gradient is not None else np.nan
+        se = float(np.sqrt(variance)) if np.isfinite(variance) and variance > 0 else np.nan
+        lo, hi = estimate-z95*se, estimate+z95*se
+        method = "Wald normal interval in identified coordinates"
+        if ptype == "Slope":
+            method = "exp(log-slope Wald interval); raw slope SE uses the delta method"
+            if np.isfinite(log_se) and estimate > 0:
+                lo, hi = np.exp(np.log(estimate)+np.array([-1., 1.])*z95*log_se)
+            else:
+                lo = hi = np.nan
+        available = not fixed and np.isfinite([truth_value, estimate, se, lo, hi]).all()
+        status = "fixed_by_identification" if fixed else ("ok" if available else "not_available_matching_covariance")
+        scale = {"Step": "logit_sum_zero", "LogSlope": "log_slope_sum_zero", "Slope": "positive_slope"}[ptype]
+        rows.append({
+            "rep": rep, "ParameterType": ptype, "Facet": facet, "Level": level,
+            "Truth": truth_value, "Truth_Aligned": truth_value,
+            "Estimate": estimate, "EstimateAligned": estimate,
+            "ErrorRaw": estimate-truth_value, "ErrorAligned": estimate-truth_value,
+            "SE": 0. if fixed else se, "CoverageSE": se if available else np.nan,
+            "CoverageCILower": lo if available else np.nan, "CoverageCIUpper": hi if available else np.nan,
+            "CoverageStatus": status, "Covered95": bool(lo <= truth_value <= hi) if available else np.nan,
+            "NominalCILevel": .95, "CoverageMethod": method, "CI_Method": method,
+            "SE_Method": "identified-parameter Jacobian applied to full fixed-SD structural covariance",
+            "SE_Status": status, "CI_Status": status,
+            "UncertaintyCaution": "Development coverage screen; unavailable for fixed targets, JMLE, free SD, regularization or slope boundaries.",
+            "ComparisonScale": scale, "RecoveryComparable": not fixed and np.isfinite([truth_value, estimate]).all(),
+            "RecoveryBasis": "fixed_by_identification" if fixed else "identified_coordinates",
+        })
+        return se
+
+    model = config.get("model")
+    step_table = res.get("steps")
+    if model in {"RSM", "PCM", "GPCM"} and isinstance(step_table, pd.DataFrame) and not step_table.empty:
+        n_steps = config["n_cat"]-1
+        basis = sum_zero_expansion_matrix(n_steps)
+        step_levels = ["Shared"] if model == "RSM" else list(map(str, config["facet_levels"][config["step_facet"]]))
+        lookup = {(str(r.get("StepFacet", "Shared")), str(r["Step"])): float(r["Estimate"]) for r in step_table.to_dict("records")}
+        for group, step_truth in truth.get("Step", {}).items():
+            for j, level in enumerate(f"Step_{k+1}" for k in range(n_steps)):
+                if level not in step_truth:
+                    continue
+                gradient = None
+                if cov is not None and group in step_levels:
+                    start = _build_param_slices(sizes)["steps"].start+step_levels.index(group)*(n_steps-1)
+                    gradient = np.zeros(cov.shape[0]); gradient[start:start+n_steps-1] = basis[j]
+                append_identified("Step", group, level, float(step_truth[level]),
+                    lookup.get((group, level), np.nan), gradient, fixed=n_steps == 1)
+
+    slope_table = res.get("slopes")
+    if model == "GPCM" and isinstance(slope_table, pd.DataFrame) and not slope_table.empty:
+        facet = config["slope_facet"]
+        levels = list(map(str, config["facet_levels"][facet]))
+        basis = sum_zero_expansion_matrix(len(levels))
+        lookup = {str(r["Level"]): r for r in slope_table.to_dict("records")}
+        for j, level in enumerate(levels):
+            if level not in truth.get("LogSlope", {}) or level not in truth.get("Slope", {}):
+                continue
+            estimated = lookup.get(level, {})
+            log_value = float(estimated.get("LogEstimate", np.nan))
+            value = float(estimated.get("Estimate", np.nan))
+            if not np.isfinite(value) or value <= 0 or not np.isclose(np.log(value), log_value, rtol=0, atol=1e-10):
+                log_value = value = np.nan
+            gradient = None
+            if cov is not None:
+                gradient = np.zeros(cov.shape[0]); gradient[_build_param_slices(sizes)["log_slopes"]] = basis[j]
+            log_se = append_identified("LogSlope", facet, level, float(truth["LogSlope"][level]),
+                log_value, gradient, fixed=len(levels) == 1)
+            append_identified("Slope", facet, level, float(truth["Slope"][level]), value,
+                value*gradient if gradient is not None else None, fixed=len(levels) == 1, log_se=log_se)
+
+    frame = pd.DataFrame(rows)
+    if not frame.empty:
+        grouped = frame.groupby(["ParameterType", "Facet"])["Truth_Aligned"]
+        percentile = (grouped.rank(method="average")-.5)/grouped.transform("count")
+        # Mid-ranks keep equal truths in one bin; bins need not all be occupied.
+        frame["TruthQuantile"] = percentile.map(lambda p: f"Q{int(4*p)+1}" if np.isfinite(p) else "unavailable")
+    return frame
 
 
 def _compact_value_counts(series: pd.Series | None, *, max_items: int = 4) -> str:
@@ -14057,7 +14403,7 @@ def _coverage_diagnostic_label(
 ) -> str:
     """Classify Monte Carlo coverage against a nominal CI level."""
     if coverage_n <= 0 or not np.isfinite(coverage):
-        return "No finite positive-SE rows; coverage not evaluated."
+        return "No evaluable intervals for the aligned target; coverage not evaluated."
     if coverage_n < 30:
         return "Screening only; increase replicates before treating coverage as calibration evidence."
     error = float(coverage - nominal)
@@ -14077,7 +14423,7 @@ def _coverage_recommended_action(
 ) -> str:
     """Translate the coverage diagnostic into a manuscript-facing action."""
     if coverage_n <= 0 or not np.isfinite(coverage):
-        return "Report that finite positive SEs were unavailable for this block; do not cite CI coverage."
+        return "Report that uncertainty for the aligned target was unavailable; do not cite CI coverage from untransformed SEs."
     if coverage_n < 30:
         return "Increase Monte Carlo replicates and match the generator to the intended study design before citing coverage."
     error = float(coverage - nominal)
@@ -14121,57 +14467,85 @@ def _coverage_claim_status(
         return "Report with caveat"
     if abs(float(coverage - nominal)) > 0.05:
         return "Report with caveat"
-    return "Ready"
+    # An ad hoc simulation screen cannot qualify inference from its observed
+    # coverage and sample size alone. Qualification requires separate evidence.
+    return "Screening only"
 
 
-def _recovery_summarize(rows: pd.DataFrame) -> pd.DataFrame:
-    """Aggregate per-rep recovery rows into a per-parameter-type summary.
+def _recovery_summarize(rows: pd.DataFrame, *, by_level: bool = False, by_quantile: bool = False) -> pd.DataFrame:
+    """Summarize with equal weight per independent simulation repetition.
 
-    Returns one row per ``(ParameterType, Facet, ComparisonScale)`` with
-    bias, MCSE(bias), RMSE, MCSE(RMSE), MAE, correlation across rows,
-    mean SE, SE availability rate, and coverage95.
+    Within-repetition levels can be dependent. MCSE therefore uses the
+    between-repetition variation of mean error, MSE, and coverage. Centered
+    block mean error is a constraint identity, not a bias diagnostic; bias
+    is instead evaluated separately for each level with ``by_level=True``.
     """
     if not isinstance(rows, pd.DataFrame) or rows.empty:
         return pd.DataFrame()
+    if by_level and by_quantile:
+        raise ValueError("Choose a level or truth-quantile summary, not both")
+    if "IncludedInSummary" in rows:
+        rows = rows.loc[rows["IncludedInSummary"].eq(True)]
+        if rows.empty:
+            return pd.DataFrame()
     summaries = []
-    for (ptype, facet, scale), grp in rows.groupby(
-        ["ParameterType", "Facet", "ComparisonScale"], dropna=False
-    ):
+    group_columns = ["ParameterType", "Facet", "ComparisonScale"] + (["Level"] if by_level else ["TruthQuantile"] if by_quantile else [])
+    for keys, grp in rows.groupby(group_columns, dropna=False):
+        ptype, facet, scale = keys[:3]
         err_aligned = pd.to_numeric(grp["ErrorAligned"], errors="coerce").to_numpy()
         err_raw = pd.to_numeric(grp["ErrorRaw"], errors="coerce").to_numpy()
-        truth = pd.to_numeric(grp["Truth"], errors="coerce").to_numpy()
+        raw_truth = pd.to_numeric(grp["Truth"], errors="coerce").to_numpy()
+        truth = pd.to_numeric(grp["Truth_Aligned"] if "Truth_Aligned" in grp else grp["Truth"], errors="coerce").to_numpy()
         est_aligned = pd.to_numeric(grp["EstimateAligned"], errors="coerce").to_numpy()
         se = pd.to_numeric(grp["SE"], errors="coerce").to_numpy()
+        coverage_se = pd.to_numeric(grp["CoverageSE"], errors="coerce").to_numpy() if "CoverageSE" in grp else np.full(len(grp), np.nan)
         covered = grp["Covered95"]
         ok = np.isfinite(err_aligned)
+        if "RecoveryComparable" in grp:
+            ok &= grp["RecoveryComparable"].eq(True).to_numpy()
         n = int(ok.sum())
         if n == 0:
             continue
-        bias = float(np.mean(err_aligned[ok]))
-        mcse_bias = float(np.std(err_aligned[ok], ddof=1) / np.sqrt(n)) if n > 1 else np.nan
-        rmse = float(np.sqrt(np.mean(err_aligned[ok] ** 2)))
-        mcse_rmse = (
-            float(np.std(err_aligned[ok] ** 2, ddof=1) / (2.0 * rmse * np.sqrt(n)))
-            if n > 1 and rmse > 0
-            else np.nan
-        )
-        mae = float(np.mean(np.abs(err_aligned[ok])))
-        raw_bias = float(np.mean(err_raw[np.isfinite(err_raw)])) if np.any(np.isfinite(err_raw)) else np.nan
-        raw_rmse = (
-            float(np.sqrt(np.mean(err_raw[np.isfinite(err_raw)] ** 2)))
-            if np.any(np.isfinite(err_raw)) else np.nan
-        )
+        valid_error = np.where(ok, err_aligned, np.nan)
+        raw_error = np.where(np.isfinite(err_raw), err_raw, np.nan)
+        se_ok = np.isfinite(se) & (se > 0)
+        rep_means = pd.DataFrame({
+            "rep": grp["rep"].to_numpy(), "error": valid_error,
+            "mse": valid_error ** 2, "absolute_error": np.abs(valid_error),
+            "raw_error": raw_error, "raw_mse": raw_error ** 2,
+            "se": np.where(se_ok, se, np.nan), "se_available": se_ok.astype(float),
+            "coverage_se": np.where(np.isfinite(coverage_se) & (coverage_se > 0), coverage_se, np.nan),
+            "covered": pd.to_numeric(covered, errors="coerce").to_numpy(dtype=float),
+        }).groupby("rep").mean()
+
+        def mcse(values):
+            finite = np.asarray(values, dtype=float)
+            finite = finite[np.isfinite(finite)]
+            return float(np.std(finite, ddof=1) / np.sqrt(len(finite))) if len(finite) > 1 else np.nan
+
+        mean_error = float(rep_means["error"].mean())
+        centered_block = scale in {"logit_mean_aligned", "logit_sum_zero", "log_slope_sum_zero"} and not by_level
+        if centered_block and by_quantile:
+            block = rows.loc[rows.ParameterType.eq(ptype) & rows.Facet.eq(facet) & rows.ComparisonScale.eq(scale)]
+            centered_block = block.TruthQuantile.nunique() == 1
+        bias = np.nan if centered_block else mean_error
+        mcse_bias = np.nan if centered_block else mcse(rep_means["error"])
+        rmse = float(np.sqrt(rep_means["mse"].mean()))
+        mcse_rmse = mcse(rep_means["mse"]) / (2.0 * rmse) if rmse > 0 else np.nan
+        mae = float(rep_means["absolute_error"].mean())
+        raw_bias = float(rep_means["raw_error"].mean())
+        raw_rmse = float(np.sqrt(rep_means["raw_mse"].mean()))
         ok_both = np.isfinite(truth) & np.isfinite(est_aligned)
-        if ok_both.sum() > 1:
+        if ok_both.sum() > 1 and np.std(truth[ok_both]) > 0 and np.std(est_aligned[ok_both]) > 0:
             corr = float(np.corrcoef(truth[ok_both], est_aligned[ok_both])[0, 1])
         else:
             corr = np.nan
-        se_ok = np.isfinite(se) & (se > 0)
-        mean_se = float(np.mean(se[se_ok])) if se_ok.any() else np.nan
-        se_rate = float(np.mean(se_ok))
+        mean_se = float(rep_means["se"].mean())
+        se_rate = float(rep_means["se_available"].mean())
         covered_arr = covered.dropna().astype(bool).to_numpy()
         coverage_n = int(covered_arr.size)
-        coverage = float(np.mean(covered_arr)) if covered_arr.size else np.nan
+        coverage_reps = int(rep_means["covered"].notna().sum())
+        coverage = float(rep_means["covered"].mean())
         nominal = 0.95
         coverage_error = float(coverage - nominal) if np.isfinite(coverage) else np.nan
         se_status_series = grp["SE_Status"] if "SE_Status" in grp.columns else None
@@ -14183,12 +14557,22 @@ def _recovery_summarize(rows: pd.DataFrame) -> pd.DataFrame:
             "ParameterType": ptype,
             "Facet": facet,
             "ComparisonScale": scale,
+            **({"Level": keys[3]} if by_level else {}),
+            **({"TruthQuantile": keys[3]} if by_quantile else {}),
             "Rows": int(len(grp)),
             "Reps": int(grp["rep"].nunique()),
+            "ValidReps": int(rep_means["error"].notna().sum()),
+            "AggregationBasis": "replicate_first_equal_weight",
+            "MCSEUnit": "independent simulation replicate",
             "CoverageN": coverage_n,
+            "CoverageReps": coverage_reps,
+            "CoverageMethod": _primary_status(grp.get("CoverageMethod")),
             "MeanTruth": float(np.mean(truth[np.isfinite(truth)])) if np.any(np.isfinite(truth)) else np.nan,
+            "MeanTruthRaw": float(np.mean(raw_truth[np.isfinite(raw_truth)])) if np.any(np.isfinite(raw_truth)) else np.nan,
             "MeanEstimate": float(np.mean(est_aligned[np.isfinite(est_aligned)])) if np.any(np.isfinite(est_aligned)) else np.nan,
             "Bias": bias,
+            "BiasStatus": "not_evaluated_for_centered_block; inspect_level_bias" if centered_block else "evaluated",
+            "MeanAlignedError": mean_error,
             "MCSEBias": mcse_bias,
             "RMSE": rmse,
             "MCSERMSE": mcse_rmse,
@@ -14197,26 +14581,30 @@ def _recovery_summarize(rows: pd.DataFrame) -> pd.DataFrame:
             "RawRMSE": raw_rmse,
             "Correlation": corr,
             "MeanSE": mean_se,
+            "MeanCoverageSE": float(rep_means["coverage_se"].mean()),
             "SEAvailableRate": se_rate,
             "NominalCoverage": nominal,
             "Coverage95": coverage,
+            "MCSECoverage95": mcse(rep_means["covered"]),
             "CoverageErrorFromNominal": coverage_error,
             "PrimarySEStatus": primary_se_status,
             "SEStatusSummary": se_summary,
             "CIStatusSummary": ci_summary,
             "SEBasisRisk": _se_basis_risk(primary_se_status, se_summary),
             "CoverageClaimStatus": _coverage_claim_status(
-                coverage, coverage_n, primary_se_status, se_summary, nominal=nominal
+                coverage, coverage_reps, primary_se_status, se_summary, nominal=nominal
             ),
             "CoverageInterpretation": _coverage_diagnostic_label(
-                coverage, coverage_n, nominal=nominal
+                coverage, coverage_reps, nominal=nominal
             ),
             "RecommendedAction": _coverage_recommended_action(
-                coverage, coverage_n, primary_se_status, nominal=nominal
+                coverage, coverage_reps, primary_se_status, nominal=nominal
             ),
         })
+    if not summaries:
+        return pd.DataFrame()
     return pd.DataFrame(summaries).sort_values(
-        ["ParameterType", "Facet", "ComparisonScale"]
+        group_columns
     ).reset_index(drop=True)
 
 
@@ -14231,6 +14619,8 @@ def build_se_ci_coverage_report(
     manuscript exports can cite coverage only with its Monte Carlo size, SE
     status, interpretation, and recommended action.
     """
+    if float(nominal) != 0.95:
+        raise ValueError("Coverage95 uses 95% intervals; a different nominal level requires recomputing the intervals")
     if isinstance(recovery_bundle, pd.DataFrame):
         summary = _recovery_summarize(recovery_bundle)
     elif isinstance(recovery_bundle, dict):
@@ -14250,6 +14640,9 @@ def build_se_ci_coverage_report(
         report["NominalCoverage"] = float(nominal)
     if "CoverageN" not in report.columns:
         report["CoverageN"] = np.nan
+    if "CoverageReps" not in report.columns:
+        # Legacy tables count parameter rows in CoverageN, not independent runs.
+        report["CoverageReps"] = 0
     coverage = pd.to_numeric(report.get("Coverage95"), errors="coerce")
     report["CoverageError"] = coverage - float(nominal)
     report["CoverageAbsError"] = report["CoverageError"].abs()
@@ -14267,25 +14660,21 @@ def build_se_ci_coverage_report(
                 report["SEStatusSummary"].astype(str),
             )
         ]
-    if "CoverageClaimStatus" not in report.columns:
-        report["CoverageClaimStatus"] = [
-            _coverage_claim_status(
-                cov,
-                int(n) if np.isfinite(n) else 0,
-                str(status),
-                str(summary),
-                nominal=nominal,
-            )
-            for cov, n, status, summary in zip(
-                coverage,
-                pd.to_numeric(report["CoverageN"], errors="coerce"),
-                report["PrimarySEStatus"].astype(str),
-                report["SEStatusSummary"].astype(str),
-            )
-        ]
+    report["CoverageClaimStatus"] = [
+        _coverage_claim_status(
+            cov, int(n) if np.isfinite(n) else 0, str(status), str(summary), nominal=nominal,
+        )
+        for cov, n, status, summary in zip(
+            coverage,
+            pd.to_numeric(report["CoverageReps"], errors="coerce"),
+            report["PrimarySEStatus"].astype(str),
+            report["SEStatusSummary"].astype(str),
+        )
+    ]
+    report.loc[pd.to_numeric(report["CoverageReps"], errors="coerce").fillna(0) <= 0, "CoverageClaimStatus"] = "Do not claim"
     report["Interpretation"] = [
         _coverage_diagnostic_label(cov, int(n) if np.isfinite(n) else 0, nominal=nominal)
-        for cov, n in zip(coverage, pd.to_numeric(report["CoverageN"], errors="coerce"))
+        for cov, n in zip(coverage, pd.to_numeric(report["CoverageReps"], errors="coerce"))
     ]
     report["RecommendedAction"] = [
         _coverage_recommended_action(
@@ -14296,13 +14685,13 @@ def build_se_ci_coverage_report(
         )
         for cov, n, status in zip(
             coverage,
-            pd.to_numeric(report["CoverageN"], errors="coerce"),
+            pd.to_numeric(report["CoverageReps"], errors="coerce"),
             report["PrimarySEStatus"].astype(str),
         )
     ]
     ordered = [
         "ParameterType", "Facet", "ComparisonScale", "Reps", "Rows",
-        "CoverageN", "NominalCoverage", "Coverage95", "CoverageError",
+        "CoverageN", "CoverageReps", "NominalCoverage", "Coverage95", "MCSECoverage95", "CoverageError",
         "CoverageAbsError", "SEAvailableRate", "MeanSE", "PrimarySEStatus",
         "SEStatusSummary", "CIStatusSummary", "SEBasisRisk", "CoverageClaimStatus",
         "Interpretation", "RecommendedAction",
@@ -14349,7 +14738,8 @@ def evaluate_parameter_recovery(
     thresholds with a small symmetric perturbation per criterion).
     Each replicate refits the requested model via ``mfrm_estimate``,
     aligns the location-indeterminate parameter blocks to the truth,
-    and reports per-row error and coverage95 (when SE is finite).
+    and reports per-row error. Coverage95 requires uncertainty transformed to
+    the same centered target; the original marginal SE is insufficient.
 
     Returns
     -------
@@ -14412,26 +14802,46 @@ def evaluate_parameter_recovery(
     crit_eff = rng.normal(0.0, criterion_sd, n_criterion)
     crit_eff = crit_eff - crit_eff.mean()
 
-    step_thresholds = np.linspace(-step_span / 2.0, step_span / 2.0, n_cat - 1)
+    step_thresholds = center_sum_zero(np.linspace(-step_span / 2.0, step_span / 2.0, n_cat - 1))
     if model == "RSM":
         steps = np.broadcast_to(step_thresholds, (n_criterion, n_cat - 1)).copy()
     else:
-        # PCM / GPCM use criterion-specific perturbed thresholds so that
-        # the per-criterion structure is recoverable in principle.
+        # Vary threshold shape, not only the criterion location. A constant
+        # row shift would be absorbed by criterion difficulty and leave an
+        # RSM-equivalent generator after identification.
         perturb = np.linspace(-0.15, 0.15, n_criterion)
-        steps = np.array([step_thresholds + p for p in perturb])
+        shape = center_sum_zero(np.linspace(-1., 1., n_cat - 1))
+        steps = step_thresholds[None, :] + perturb[:, None]*shape[None, :]
     if model == "GPCM":
         if slopes is None:
             slopes = np.ones(n_criterion)
         slopes = np.asarray(slopes, dtype=float)
+        if slopes.shape != (n_criterion,) or not np.isfinite(slopes).all() or np.any(slopes <= 0):
+            raise ValueError("GPCM recovery slopes must contain one finite positive value per criterion")
     else:
         slopes = None
 
+    # Preserve the generator probabilities while mapping truth to the fitted
+    # coordinates: each step row sums to zero and GPCM log-slopes sum to zero.
+    # Moving a step mean m into difficulty gives c' = c + m. Dividing all
+    # slopes by their geometric mean g requires multiplying every logit-scale
+    # location and step by g, including person measures.
+    step_means = steps.mean(axis=1)
+    truth_scale = float(np.exp(np.mean(np.log(slopes)))) if slopes is not None else 1.0
+    identified_steps = truth_scale * (steps-step_means[:, None])
     truth = {
-        "Person": {f"P{i+1:02d}": float(theta[i]) for i in range(n_person)},
-        "Rater": {f"R{j+1}": float(rater_eff[j]) for j in range(n_rater)},
-        "Criterion": {f"C{k+1}": float(crit_eff[k]) for k in range(n_criterion)},
+        "Person": {f"P{i+1:02d}": float(truth_scale*theta[i]) for i in range(n_person)},
+        "Rater": {f"R{j+1}": float(truth_scale*rater_eff[j]) for j in range(n_rater)},
+        "Criterion": {f"C{k+1}": float(truth_scale*(crit_eff[k]+step_means[k])) for k in range(n_criterion)},
+        "Step": {
+            ("Shared" if model == "RSM" else f"C{k+1}"): {
+                f"Step_{j+1}": float(value) for j, value in enumerate(identified_steps[k])}
+            for k in (range(1) if model == "RSM" else range(n_criterion))
+        },
     }
+    if slopes is not None:
+        truth["Slope"] = {f"C{k+1}": float(slopes[k]/truth_scale) for k in range(n_criterion)}
+        truth["LogSlope"] = {level: float(np.log(value)) for level, value in truth["Slope"].items()}
 
     recovery_chunks: list[pd.DataFrame] = []
     rep_rows: list[dict] = []
@@ -14439,22 +14849,24 @@ def evaluate_parameter_recovery(
     for rep in range(1, reps + 1):
         t0 = time.perf_counter()
         rep_rng = np.random.default_rng(seeds[rep - 1])
-        sim_df = _simulate_recovery_responses(
-            theta=theta, rater=rater_eff, criterion=crit_eff,
-            steps=steps, slopes=slopes, model=model, rating_min=0, rng=rep_rng,
-        )
         row = {
             "rep": rep,
             "Seed": int(seeds[rep - 1]),
-            "Observations": int(len(sim_df)),
+            "Observations": 0,
             "ElapsedSec": np.nan,
             "RunOK": False,
             "Converged": False,
             "RecoveryRows": 0,
             "EstimatedPopulationSD": np.nan,
+            "DiagnosticsError": "",
             "Error": "",
         }
         try:
+            sim_df = _simulate_recovery_responses(
+                theta=theta, rater=rater_eff, criterion=crit_eff,
+                steps=steps, slopes=slopes, model=model, rating_min=0, rng=rep_rng,
+            )
+            row["Observations"] = int(len(sim_df))
             fit_kwargs = dict(
                 data=sim_df, person_col="Person", facet_cols=["Rater", "Criterion"],
                 score_col="Score", rating_min=0, rating_max=n_cat - 1,
@@ -14468,6 +14880,10 @@ def evaluate_parameter_recovery(
                 fit_kwargs["quad_points"] = int(quad_points)
                 if estimate_population_sd:
                     fit_kwargs["estimate_population_sd"] = True
+                else:
+                    # Match the declared draw scale after GPCM identification,
+                    # rather than silently fitting an unrelated unit-SD prior.
+                    fit_kwargs["population_prior_sd"] = float(theta_sd*truth_scale)
             refit_res = mfrm_estimate(**fit_kwargs)
         except Exception as exc:
             row["Error"] = str(exc)[:500]
@@ -14487,17 +14903,28 @@ def evaluate_parameter_recovery(
         # cost in the ~70 ms range; the rest of the recovery summary is
         # not sensitive to those options.
         measures_for_se: pd.DataFrame | None = None
+        covariance_for_coverage = None
         try:
             diag = mfrm_diagnostics(refit_res, compute_pca=False, compute_marginal=False)
             measures_for_se = diag.get("measures") if isinstance(diag, dict) else None
-        except Exception:
+            covariance_for_coverage = diag.get("uncertainty", {}).get("covariance") if isinstance(diag, dict) else None
+        except Exception as exc:
             measures_for_se = None
-        recovery_rows = _recovery_rows_from_fit(
-            refit_res, truth, rep=rep, include_person=include_person,
-            measures=measures_for_se,
-        )
+            row["DiagnosticsError"] = str(exc)[:500]
+        try:
+            recovery_rows = _recovery_rows_from_fit(
+                refit_res, truth, rep=rep, include_person=include_person,
+                measures=measures_for_se,
+                covariance=covariance_for_coverage,
+            )
+        except Exception as exc:
+            row["Error"] = f"Recovery extraction failed: {exc}"[:500]
+            row["ElapsedSec"] = float(time.perf_counter() - t0)
+            rep_rows.append(row)
+            continue
         row["RunOK"] = True
         row["RecoveryRows"] = int(len(recovery_rows))
+        row["ElapsedSec"] = float(time.perf_counter() - t0)
         rep_rows.append(row)
         if not recovery_rows.empty:
             recovery_chunks.append(recovery_rows)
@@ -14508,31 +14935,45 @@ def evaluate_parameter_recovery(
         else pd.DataFrame()
     )
     rep_overview = pd.DataFrame(rep_rows)
-    # Aggregate recovery metrics over converged replicates only. A replicate
-    # that ran but did not converge can land far from the optimum and would
-    # inflate bias / RMSE and distort coverage if folded into the summary.
-    # Fall back to all completed replicates only when none converged, so the
-    # summary is never silently empty.
+    # These metrics condition on a returned, converged fit. Missing outcomes
+    # need not be random; retain every attempt and never change the target
+    # population to nonconverged fits when the selected population is empty.
     n_reps_total = int(len(rep_overview))
-    converged_mask = (
-        rep_overview["Converged"].astype(bool)
-        if "Converged" in rep_overview.columns
-        else pd.Series([False] * n_reps_total, dtype=bool)
-    )
+    completed_mask = rep_overview["RunOK"].eq(True)
+    converged_mask = completed_mask & rep_overview["Converged"].eq(True)
+    n_completed = int(completed_mask.sum())
     n_reps_converged = int(converged_mask.sum())
-    if not recovery.empty and "rep" in recovery.columns and n_reps_converged > 0:
-        converged_reps = set(rep_overview.loc[converged_mask, "rep"].tolist())
+    failure_rate = (n_reps_total - n_completed) / n_reps_total
+    exclusion_rate = (n_reps_total - n_reps_converged) / n_reps_total
+    execution_summary = pd.DataFrame([{
+        "PlannedReps": reps, "AttemptedReps": n_reps_total,
+        "CompletedReps": n_completed, "FailedReps": n_reps_total-n_completed,
+        "ConvergedReps": n_reps_converged,
+        "NonconvergedCompletedReps": n_completed-n_reps_converged,
+        "ExcludedReps": n_reps_total-n_reps_converged,
+        "FailureRate": failure_rate,
+        "MCSEFailureRate": np.sqrt(failure_rate*(1-failure_rate)/n_reps_total) if n_reps_total > 1 else np.nan,
+        "ExclusionRate": exclusion_rate,
+        "MCSEExclusionRate": np.sqrt(exclusion_rate*(1-exclusion_rate)/n_reps_total) if n_reps_total > 1 else np.nan,
+        "SummaryCondition": "returned and reported converged; not unconditional performance",
+    }])
+    converged_reps = set(rep_overview.loc[converged_mask, "rep"].tolist())
+    if not recovery.empty:
         recovery["IncludedInSummary"] = recovery["rep"].isin(converged_reps)
         recovery["SummaryBasis"] = "converged_replicates_only"
         recovery_for_summary = recovery[recovery["rep"].isin(converged_reps)]
-        summary_basis = "converged"
     else:
-        if not recovery.empty:
-            recovery["IncludedInSummary"] = True
-            recovery["SummaryBasis"] = "all_completed_no_converged_replicates"
         recovery_for_summary = recovery
-        summary_basis = "all_completed" if n_reps_converged == 0 else "converged"
+    summary_basis = "converged_only_no_fallback"
     recovery_summary = _recovery_summarize(recovery_for_summary)
+    recovery_level_summary = _recovery_summarize(recovery_for_summary, by_level=True)
+    recovery_quantile_summary = _recovery_summarize(recovery_for_summary, by_quantile=True)
+    for table in (recovery_summary, recovery_level_summary, recovery_quantile_summary):
+        if not table.empty:
+            for key, value in execution_summary.iloc[0].items():
+                table[key] = value
+            table["UnavailableEstimateReps"] = n_reps_total - table["ValidReps"]
+            table["UnavailableCoverageReps"] = n_reps_total - table["CoverageReps"]
     coverage_report = build_se_ci_coverage_report({
         "recovery": recovery_for_summary,
         "recovery_summary": recovery_summary,
@@ -14547,31 +14988,49 @@ def evaluate_parameter_recovery(
         "DataGenerating": (
             f"Synthetic responses simulated from {model} with {n_person} persons, "
             f"{n_rater} raters, {n_criterion} criteria, and {n_cat} score categories. "
-            f"Person measures ~ N(0, {theta_sd:.2f}^2), rater severities ~ "
-            f"N(0, {rater_sd:.2f}^2), criterion difficulties ~ N(0, {criterion_sd:.2f}^2); "
-            f"step thresholds equally spaced over a span of {step_span:.2f} logits."
+            f"A single draw from N(0, {theta_sd:.2f}^2) for persons, "
+            f"N(0, {rater_sd:.2f}^2) for raters and N(0, {criterion_sd:.2f}^2) "
+            "for criteria is centered and held fixed across response replicates. "
+            f"Shared baseline steps span {step_span:.2f} logits when more than two categories exist. "
+            "PCM/GPCM add zero-sum criterion-specific threshold-shape perturbations. "
+            "Truth is mapped to zero-sum step rows and geometric-mean-one "
+            "slopes without changing response probabilities. This is conditional "
+            "recovery at fixed person values, not a population-SD recovery study."
         ),
         "Estimands": (
             "Identification-anchored person measures (theta), rater severities, "
             "criterion difficulties; location blocks are mean-aligned within each "
-            "replicate to remove the Rasch identification constant."
+            "replicate. Steps and log-slopes use native sum-zero coordinates; "
+            "positive slopes retain their geometric-mean-one identification. "
+            "Fixed binary steps and single-level slopes are not recovery successes."
         ),
         "Methods": (
             f"Each replicate refits the {model} model under {fit_method} via "
             f"mfrm_estimate (maxit = {maxit}, reltol = {reltol:.0e}). For MML, "
             f"quad_points = {quad_points}. The location-block estimates are "
-            "mean-aligned before computing per-row error and coverage95."
+            "mean-aligned before computing per-row error. Coverage95 requires "
+            "matching covariance and is otherwise unavailable. Slope SE uses "
+            "the delta method; its interval exponentiates the log-slope Wald interval. "
+            "Fixed-SD MML uses the declared normal draw SD on the identified scale; "
+            "the person values still remain fixed across response replicates."
         ),
         "PerformanceMeasures": (
-            "Bias, Monte-Carlo SE of bias, RMSE, Monte-Carlo SE of RMSE, MAE, "
+            "Level-specific and truth-quartile bias and Monte Carlo SE; block-level RMSE and MAE; "
+            "Truth quartiles use within-replicate, within-target-block mid-ranks; ties share a bin. "
+            "Monte Carlo SEs computed across independent replicates after within-replicate aggregation. "
+            "Centered block mean error is a constraint identity, not a bias diagnostic. "
             "Pearson correlation between truth and aligned estimate, mean SE, "
-            "SE-availability rate, and 95 % coverage rate (truth in "
-            "estimate +/- 1.96 * SE)."
+            "SE-availability rate, and 95 % coverage using CoverageSE after "
+            "centering the covariance; the original reported SE is retained separately. "
+            "Performance conditions on returned, reported-converged fits; all planned "
+            "attempts, failures and exclusions are reported with their denominators. "
+            "No fallback summary of nonconverged fits is substituted."
         ),
         "Reference": "Morris, T. P., White, I. R., & Crowther, M. J. (2019).",
     }
 
     settings = {
+        "generator_version": "recovery_v4_centered_step_shape",
         "model": model,
         "fit_method": fit_method,
         "n_person": int(n_person),
@@ -14588,6 +15047,12 @@ def evaluate_parameter_recovery(
         "quad_points": int(quad_points),
         "seed": int(seed) if seed is not None else None,
         "include_person": bool(include_person),
+        "estimate_population_sd": bool(estimate_population_sd),
+        "slopes": slopes.tolist() if slopes is not None else None,
+        "truth_scale_multiplier": truth_scale,
+        "fitted_fixed_population_sd": float(theta_sd*truth_scale) if fit_method == "MML" and not estimate_population_sd else None,
+        "truth_parameterization": "zero_sum_steps_and_log_slopes",
+        "person_replication": "one_centered_draw_held_fixed",
     }
 
     return {
@@ -14595,13 +15060,17 @@ def evaluate_parameter_recovery(
         "reason": "" if not recovery.empty else "All recovery replications failed before producing rows.",
         "recovery": recovery,
         "recovery_summary": recovery_summary,
+        "recovery_level_summary": recovery_level_summary,
+        "recovery_quantile_summary": recovery_quantile_summary,
         "coverage_report": coverage_report,
         "rep_overview": rep_overview,
+        "execution_summary": execution_summary,
         "n_reps_total": n_reps_total,
         "n_reps_converged": n_reps_converged,
         "summary_basis": summary_basis,
         "ademp": ademp,
         "settings": settings,
+        "truth": truth,
     }
 
 
@@ -17261,7 +17730,8 @@ def calc_facet_se(obs_df, facet_cols):
         grp = obs_df.groupby(facet, observed=False)
         for level, df in grp:
             w = get_weights(df)
-            info = np.nansum(df["Var"] * w)
+            # GPCM location information is a^2 Var(K); Rasch has a = 1.
+            info = np.nansum(df.get("ScoreInformation", df["Var"]) * w)
             se = 1 / np.sqrt(info) if info > 0 else np.nan
             rows.append({
                 "Facet": facet,
@@ -17812,27 +18282,12 @@ def get_extreme_levels(obs_df, facet_names, rating_min, rating_max):
 
 
 # =============================================================================
-# Conditional profile-likelihood inference for an additive bias shift
-# -----------------------------------------------------------------------------
-# Mathematical contract
-#   * Under the regularity conditions for maximum likelihood, the likelihood-
-#     ratio statistic ``Lambda = 2 * (ell(b_hat) - ell(b))`` follows a
-#     chi-square distribution with one degree of freedom in the limit
-#     (Wilks 1938). Inverting that pivotal yields a confidence set
-#         { b : 2 * (ell(b_hat) - ell(b)) <= chi^2_{1, 1-alpha} }
-#     which is the standard profile-likelihood confidence interval (Cox 1975).
-#   * For the additive bias shift b in this code path the profile is taken
-#     by holding theta, step thresholds, slopes, and other facet measures
-#     fixed at their fit-time values; the remaining one-parameter profile is
-#     a scalar in b, so the chi-square pivotal has one degree of freedom.
-#   * The endpoints of the confidence interval are roots of
-#         f(b) = 2 * (NLL(b) - NLL(b_hat)) - chi^2_{1, 1-alpha} = 0
-#     on the negative and positive sides of b_hat, found numerically via
-#     bracketed Brent root-finding. When f never crosses zero within
-#     ``[-max_abs, max_abs]`` the search returns the boundary with status
-#     ``"limited by search range"`` so the caller can communicate that the
-#     CI is wider than the bias-search bracket rather than reporting a
-#     spurious finite endpoint.
+# Conditional likelihood slices for an additive bias shift
+# Other calibration parameters remain fixed: this is not a nuisance profile.
+# A chi-square(1) cutoff is a candidate asymptotic reference only for regular
+# independent unit-weight observations with known calibration. Its validity
+# after calibration on the same data requires G3/G4 operating-characteristic
+# validation. A slope-squared information identity alone does not establish it.
 # =============================================================================
 
 
@@ -17841,7 +18296,7 @@ def _safe_nll_value(nll, b):
 
     Catches arbitrary exceptions (degenerate observation slices, log of
     zero from probabilities that collapse, etc.) and returns ``nan`` so
-    the profile-likelihood search and the LR statistic can degrade
+    the conditional likelihood search and the LR statistic can degrade
     gracefully instead of propagating a hard error from a single cell.
     """
     try:
@@ -17852,7 +18307,7 @@ def _safe_nll_value(nll, b):
 
 
 def _profile_bias_ci(nll, estimate, nll_min, max_abs, level=0.95):
-    """Profile-likelihood confidence interval for an additive scalar bias.
+    """Conditional LR-cutoff interval (legacy helper name; no nuisance profiling).
 
     Parameters
     ----------
@@ -17879,7 +18334,8 @@ def _profile_bias_ci(nll, estimate, nll_min, max_abs, level=0.95):
     inside the bracket), or ``"not available"`` (the search did not
     return a finite endpoint).
     """
-    if not np.isfinite(estimate) or not np.isfinite(nll_min) or not np.isfinite(max_abs) or max_abs <= 0:
+    if (not np.isfinite(estimate) or not np.isfinite(nll_min) or not np.isfinite(max_abs)
+            or max_abs <= 0 or abs(estimate) > max_abs):
         return {"lower": float("nan"), "upper": float("nan"), "level": float(level), "status": "not available"}
     if not (0.0 < level < 1.0):
         return {"lower": float("nan"), "upper": float("nan"), "level": float(level), "status": "not available"}
@@ -17930,6 +18386,107 @@ def _profile_bias_ci(nll, estimate, nll_min, max_abs, level=0.95):
     }
 
 
+def _fit_conditional_bias_cell(nll, probability, scores, slopes, weights, max_abs):
+    """Solve the concave, fixed-calibration scalar problem without a false MLE.
+
+    d NLL/db = sum w*a*(E[X]-X), d² NLL/db² = sum w*a²*Var(X).
+    Unit-weight chi-square calibration is an unqualified development candidate;
+    fitted calibration uncertainty is not included. Other weights retain only
+    point/curvature diagnostics. A search bound is never a finite interior MLE.
+    """
+    out = {"estimate": np.nan, "candidate": np.nan, "status": "invalid_input",
+           "score": np.nan, "information": np.nan, "se": np.nan,
+           "lr": np.nan, "p": np.nan, "reference_status": "not_available",
+           "ci": {"lower": np.nan, "upper": np.nan, "level": .95,
+                  "status": "not available"}, "probabilities": None, "error": ""}
+    scores, slopes, weights = [np.asarray(x, dtype=float) for x in (scores, slopes, weights)]
+    if (scores.ndim != 1 or not scores.size or slopes.shape != scores.shape
+            or weights.shape != scores.shape or not np.isfinite(max_abs) or max_abs <= 0
+            or not all(np.isfinite(x).all() for x in (scores, slopes, weights))
+            or np.any(slopes <= 0) or np.any(weights < 0) or not np.any(weights > 0)):
+        return out
+    active = weights > 0
+
+    def moments(b):
+        probs = np.asarray(probability(b), dtype=float)
+        if (probs.ndim != 2 or probs.shape[0] != scores.size or probs.shape[1] < 2
+                or not np.isfinite(probs).all() or np.any(probs < 0)
+                or not np.allclose(probs.sum(axis=1), 1., atol=1e-12, rtol=1e-12)):
+            raise ValueError("Invalid category probabilities in bias cell")
+        k = np.arange(probs.shape[1], dtype=float)
+        mean = probs @ k
+        # Central moment avoids cancellation; no small-variance row deletion.
+        variance = np.sum(probs * (k[None, :] - mean[:, None])**2, axis=1)
+        return probs, mean, variance
+
+    def gradient(b):
+        _, mean, _ = moments(b)
+        return float(np.sum(weights * slopes * (mean-scores)))
+
+    try:
+        probs_null, mean_null, _ = moments(0.)
+        max_score = probs_null.shape[1]-1
+        if np.any(scores != np.floor(scores)) or np.any(scores < 0) or np.any(scores > max_score):
+            return out
+        # Positive slopes and finite thresholds give a strictly monotone score.
+        if np.all(scores[active] == 0) or np.all(scores[active] == max_score):
+            out.update(status="no_finite_mle", candidate=-max_abs if np.all(scores[active] == 0) else max_abs)
+            return out
+        lo, hi = gradient(-max_abs), gradient(max_abs)
+        if not (np.isfinite(lo) and np.isfinite(hi)):
+            raise ValueError("Nonfinite bias score at search bounds")
+        if lo >= 0 or hi <= 0:
+            out.update(status="search_range_limited", candidate=-max_abs if lo >= 0 else max_abs)
+            return out
+        solution = root_scalar(gradient, bracket=(-max_abs, max_abs), method="brentq", xtol=1e-12)
+        if not solution.converged or not np.isfinite(solution.root):
+            out["status"] = "solver_failed"
+            return out
+        estimate = float(solution.root)
+        probs, mean, variance = moments(estimate)
+        score = float(np.sum(weights*slopes*(mean-scores)))
+        info = float(np.sum(weights*slopes**2*variance))
+        out.update(candidate=estimate, score=score, information=info)
+        # Numerical stationarity uses per weighted slope/category score scale.
+        score_scale = max(1., float(np.sum(weights*slopes)*max_score))
+        if not np.isfinite(info) or info <= 0 or abs(score) > 1e-9*score_scale:
+            out["status"] = "stationarity_failed"
+            return out
+        nll_hat, nll_null = _safe_nll_value(nll, estimate), _safe_nll_value(nll, 0.)
+        if not np.isfinite(nll_hat) or not np.isfinite(nll_null) or nll_hat > nll_null + 1e-10*max(1., abs(nll_null)):
+            out["status"] = "likelihood_failed"
+            return out
+        lr_raw_nll = 2*(nll_null-nll_hat)
+        lr = lr_raw_nll
+        shift = slopes*estimate
+        if np.max(np.abs(shift))*max_score <= .5:
+            # Exponential tilting gives exactly the same likelihood ratio.
+            # Centering and expm1/log1p avoid subtracting nearly equal NLLs
+            # near the null; chi-square survival is sensitive to that loss.
+            centered_shift = shift[:, None]*(np.arange(max_score+1)-mean_null[:, None])
+            cumulant = np.log1p(np.sum(probs_null*np.expm1(centered_shift), axis=1))
+            lr = float(2*np.sum(weights*(shift*(scores-mean_null)-cumulant)))
+            allowance = 64*np.finfo(float).eps*max(1., abs(nll_null), abs(nll_hat)) + 1e-10*max(1., abs(lr_raw_nll))
+            if not np.isfinite(lr) or abs(lr-lr_raw_nll) > allowance:
+                out["status"] = "likelihood_failed"
+                out["error"] = "Conditional probabilities and NLL likelihood ratios disagree"
+                return out
+        lr = max(0., lr)
+        out.update(estimate=estimate, status="interior", se=1/np.sqrt(info),
+                   lr=lr, lr_raw_nll=lr_raw_nll, probabilities=probs)
+        if np.all(weights[active] == 1.):
+            out.update(p=float(chi2.sf(lr, 1)), reference_status="unit_weight_conditional_lr_candidate",
+                       ci=_profile_bias_ci(nll, estimate, nll_hat, max_abs, level=.95))
+        else:
+            out["reference_status"] = "weighted_reference_unqualified"
+    except Exception as exc:
+        out.update(status="calculation_failed", error=f"{type(exc).__name__}: {exc}",
+                   estimate=np.nan, se=np.nan, lr=np.nan, p=np.nan, probabilities=None,
+                   reference_status="not_available",
+                   ci={"lower": np.nan, "upper": np.nan, "level": .95, "status": "not available"})
+    return out
+
+
 def estimate_bias_interaction(
     res,
     diagnostics,
@@ -17940,6 +18497,12 @@ def estimate_bias_interaction(
     max_iter=4,
     tol=1e-3,
 ):
+    """Fit each scalar cell shift once with all calibration values fixed.
+
+    ``max_iter`` and ``tol`` are retained as ignored legacy arguments: there
+    is no outer updating algorithm. Repeating an unchanged scalar problem
+    cannot establish convergence of a joint bias/calibration estimate.
+    """
     # Returns either:
     #   - a full results dict (table, summary, chi-sq, ...) on success
     #   - a dict with a single "_skip_reason" key explaining why
@@ -17988,6 +18551,8 @@ def estimate_bias_interaction(
             )
         }
 
+    if not np.isfinite(max_abs) or max_abs <= 0:
+        raise ValueError("max_abs must be finite and positive")
     prep = res["prep"]
     config = res["config"]
     params = res["params"]
@@ -18032,15 +18597,15 @@ def estimate_bias_interaction(
     for (lvl_a, lvl_b), idx_rows in group_indices.items():
         lvl_a_str = str(lvl_a)
         lvl_b_str = str(lvl_b)
-        if omit_extreme:
-            if lvl_a_str in extreme_levels.get(facet_a, set()) or lvl_b_str in extreme_levels.get(facet_b, set()):
-                continue
         idx_rows = np.asarray(idx_rows, dtype=int)
         if idx_rows.size == 0:
             continue
         groups.append({
             "key": (lvl_a_str, lvl_b_str),
             "idx": idx_rows,
+            "excluded_extreme": bool(omit_extreme and (
+                lvl_a_str in extreme_levels.get(facet_a, set())
+                or lvl_b_str in extreme_levels.get(facet_b, set()))),
         })
 
     def _slice_cell(idx_rows):
@@ -18053,17 +18618,7 @@ def estimate_bias_interaction(
         return eta_sub, score_k_sub, weight_sub, step_idx_sub, slope_idx_sub
 
     def _make_nll(eta_sub, score_k_sub, weight_sub, step_idx_sub, slope_idx_sub):
-        """Per-cell negative log-likelihood closure for an additive bias shift.
-
-        The closure holds the conditional profile fixed: theta, step
-        thresholds, slopes, and the other facet estimates enter through
-        their fit-time values inside ``eta_sub`` and the captured step
-        and slope structures, and only the additive scalar ``b`` varies.
-        The same closure is consumed by ``minimize_scalar`` (to find the
-        bias MLE), by the LR test (to evaluate the null and the maximised
-        log-likelihood), and by the profile-likelihood CI (to invert the
-        chi-square pivotal).
-        """
+        """Fixed-calibration likelihood slice; only the scalar b varies."""
         if config["model"] == "RSM":
             def nll(b):
                 return -loglik_rsm(eta_sub + b, score_k_sub, step_cum, weight=weight_sub)
@@ -18083,183 +18638,53 @@ def estimate_bias_interaction(
                 )
         return nll
 
-    def estimate_bias_for_group(idx_rows):
-        nll = _make_nll(*_slice_cell(idx_rows))
-        try:
-            opt = minimize_scalar(nll, bounds=(-max_abs, max_abs), method="bounded")
-            if opt.success:
-                return float(opt.x)
-        except Exception:
-            return np.nan
-        return np.nan
+    def probability(eta_sub, step_idx_sub, slope_idx_sub, b):
+        if config["model"] == "RSM":
+            return category_prob_rsm(eta_sub+b, step_cum)
+        if config["model"] == "PCM":
+            return category_prob_pcm(eta_sub+b, step_cum_mat, step_idx_sub)
+        return category_prob_gpcm(eta_sub+b, step_cum_mat, step_idx_sub,
+                                  params["slopes"], slope_idx_sub)
 
-    def iteration_metrics(bias_map):
-        max_resid = 0.0
-        max_resid_pct = np.nan
-        max_categories = np.nan
-        for g in groups:
-            idx_rows = g["idx"]
-            bias = bias_map.get(g["key"], 0.0)
-            eta_sub = eta_base[idx_rows] + (bias if np.isfinite(bias) else 0.0)
-            score_k_sub = score_k[idx_rows]
-            step_idx_sub = step_idx[idx_rows] if step_idx is not None else None
-            slope_idx_sub = slope_idx[idx_rows] if slope_idx is not None else step_idx_sub
-            if config["model"] == "RSM":
-                probs = category_prob_rsm(eta_sub, step_cum)
-            elif config["model"] == "PCM":
-                probs = category_prob_pcm(eta_sub, step_cum_mat, step_idx_sub)
-            else:
-                probs = category_prob_gpcm(
-                    eta_sub,
-                    step_cum_mat,
-                    step_idx_sub,
-                    params["slopes"],
-                    slope_idx_sub,
-                )
-            k_vals = np.arange(probs.shape[1])
-            expected_k = probs.dot(k_vals)
-            expected_score = prep["rating_min"] + expected_k
-            obs_score = obs_df.iloc[idx_rows]["Observed"].to_numpy(dtype=float)
-            if "Weight" in obs_df.columns:
-                w = obs_df.iloc[idx_rows]["Weight"].to_numpy(dtype=float)
-                obs_score = obs_score * w
-                expected_score = expected_score * w
-            resid = obs_score - expected_score
-            if resid.size:
-                obs_sum = float(np.nansum(obs_score))
-                exp_sum = float(np.nansum(expected_score))
-                resid_sum = obs_sum - exp_sum
-                if abs(resid_sum) >= abs(max_resid):
-                    max_resid = resid_sum
-                    max_resid_pct = (resid_sum / exp_sum * 100) if exp_sum != 0 else np.nan
-                    max_categories = np.nan
-
-        return {
-            "max_resid": max_resid,
-            "max_resid_pct": max_resid_pct,
-            "max_resid_categories": max_categories,
-        }
-
-    bias_map = {g["key"]: 0.0 for g in groups}
-    iter_rows = []
-    for it in range(1, max_iter + 1):
-        max_change_abs = 0.0
-        max_change_signed = 0.0
-        changes = []
-        for g in groups:
-            key = g["key"]
-            bias_hat = estimate_bias_for_group(g["idx"])
-            prev = bias_map.get(key, 0.0)
-            if np.isfinite(bias_hat) and np.isfinite(prev):
-                delta = bias_hat - prev
-                if abs(delta) >= max_change_abs:
-                    max_change_abs = abs(delta)
-                    max_change_signed = delta
-                changes.append(abs(delta))
-            else:
-                changes.append(np.nan)
-            bias_map[key] = bias_hat
-        resid_info = iteration_metrics(bias_map)
-        iter_rows.append({
-            "Iteration": it,
-            "MaxScoreResidual": resid_info["max_resid"],
-            "MaxScoreResidualPct": resid_info["max_resid_pct"],
-            "MaxScoreResidualCategories": resid_info["max_resid_categories"],
-            "MaxLogitChange": max_change_signed,
-            "BiasCells": int(np.sum(np.array(changes, dtype=float) > tol)),
-        })
-        if max_change_abs < tol:
-            break
-
+    qualification = _output_qualification.bias_cell_qualification().to_record()
     rows = []
     seq = 1
     for g in groups:
         lvl_a_str, lvl_b_str = g["key"]
         idx_rows = g["idx"]
-        bias_hat = bias_map.get(g["key"], np.nan)
         eta_sub, score_k_sub, weight_sub, step_idx_sub, slope_idx_sub = _slice_cell(idx_rows)
-
-        if config["model"] == "RSM":
-            probs = category_prob_rsm(eta_sub + (bias_hat if np.isfinite(bias_hat) else 0.0), step_cum)
-        elif config["model"] == "PCM":
-            probs = category_prob_pcm(eta_sub + (bias_hat if np.isfinite(bias_hat) else 0.0), step_cum_mat, step_idx_sub)
+        w = np.asarray(weight_sub, dtype=float) if weight_sub is not None else np.ones(len(idx_rows))
+        slopes = (np.asarray(params["slopes"], dtype=float)[slope_idx_sub]
+                  if config["model"] == "GPCM" else np.ones(len(idx_rows)))
+        nll_sub = _make_nll(eta_sub, score_k_sub, weight_sub, step_idx_sub, slope_idx_sub)
+        if g["excluded_extreme"]:
+            fit = {"estimate": np.nan, "candidate": np.nan, "status": "excluded_extreme_level",
+                   "se": np.nan, "score": np.nan, "information": np.nan,
+                   "lr": np.nan, "p": np.nan, "reference_status": "not_available",
+                   "probabilities": None, "error": "",
+                   "ci": {"lower": np.nan, "upper": np.nan, "level": .95, "status": "not available"}}
         else:
-            probs = category_prob_gpcm(
-                eta_sub + (bias_hat if np.isfinite(bias_hat) else 0.0),
-                step_cum_mat,
-                step_idx_sub,
-                params["slopes"],
-                slope_idx_sub,
-            )
-
-        k_vals = np.arange(probs.shape[1])
-        expected_k = probs.dot(k_vals)
-        var_k = probs.dot(k_vals ** 2) - expected_k ** 2
-        var_k = np.where(var_k <= 1e-10, np.nan, var_k)
-        resid_k = score_k_sub - expected_k
-        std_sq = resid_k ** 2 / var_k
-
-        w = weight_sub if weight_sub is not None else np.ones(len(idx_rows))
-
-        # Slope-aware Fisher information for the additive bias shift ``b``.
-        # Under GPCM, d log L / d b = sum_i a_i * (X_i - E[X_i | eta_i + b]),
-        # so the conditional information for b is
-        #     I(b) = sum_i a_i^2 * Var[X_i | eta_i + b] * w_i.
-        # The slope^2 factor reduces to 1 for RSM/PCM (a_i = 1), so those
-        # branches keep the historical sum(var_k * w) form unchanged.
-        # Reference: Muraki (1993) AppliedPsychMeasurement 17(4) Eqs. 7, 16.
-        if (
-            config["model"] == "GPCM"
-            and slope_idx_sub is not None
-            and params.get("slopes") is not None
-            and len(params["slopes"]) > 0
-        ):
-            slope_obs_sub = np.asarray(params["slopes"], dtype=float)[slope_idx_sub]
-            info_var = np.where(
-                np.isfinite(slope_obs_sub) & (slope_obs_sub > 0),
-                (slope_obs_sub ** 2) * var_k,
-                np.nan,
-            )
-        else:
-            info_var = var_k
-        info = np.nansum(info_var * w)
-        se = 1 / np.sqrt(info) if np.isfinite(info) and info > 0 else np.nan
-        infit = np.nansum(std_sq * var_k * w) / np.nansum(var_k * w) if np.nansum(var_k * w) > 0 else np.nan
-        outfit = np.nansum(std_sq * w) / np.nansum(w) if np.nansum(w) > 0 else np.nan
-
-        # Likelihood-ratio test and profile-likelihood confidence interval
-        # for the additive bias shift. Only computed for GPCM fits, because
-        # the slope-aware information identity above is the part that
-        # justifies treating the LR statistic as chi-square with 1 d.f. for
-        # this code path. RSM and PCM fits stay in the t-based screening
-        # tier already reported by the existing ``t`` / ``d.f.`` / ``Prob.``
-        # columns; their LR / profile columns are returned as ``nan`` with
-        # an explanatory ``Likelihood Basis`` string so downstream consumers
-        # can render an honest "not applicable" cell instead of a silent
-        # zero.
-        lr_chisq = np.nan
-        lr_df = np.nan
-        lr_prob = np.nan
-        profile_ci = {"lower": np.nan, "upper": np.nan, "level": 0.95, "status": "not available"}
+            fit = _fit_conditional_bias_cell(
+                nll_sub, lambda b: probability(eta_sub, step_idx_sub, slope_idx_sub, b),
+                score_k_sub, slopes, w, max_abs)
+        bias_hat, se = fit["estimate"], fit["se"]
+        probs = fit["probabilities"]
+        infit = outfit = np.nan
+        if probs is not None:
+            k = np.arange(probs.shape[1])
+            mean = probs @ k
+            variance = np.sum(probs*(k[None, :]-mean[:, None])**2, axis=1)
+            residual_sq = (score_k_sub-mean)**2
+            if np.sum(w*variance) > 0:
+                infit = float(np.sum(w*residual_sq)/np.sum(w*variance))
+            active = w > 0
+            if np.all(variance[active] > 0):
+                outfit = float(np.sum(w[active]*residual_sq[active]/variance[active])/np.sum(w[active]))
+        profile_ci = fit["ci"]
         likelihood_basis = (
-            f"not applicable (model is {config['model']}; profile-"
-            f"likelihood inference is reported under GPCM only)"
+            "conditional likelihood slice for one additive bias shift; theta, "
+            "facets, steps, and slopes fixed; no nuisance reoptimization"
         )
-        if config["model"] == "GPCM" and np.isfinite(bias_hat):
-            nll_sub = _make_nll(eta_sub, score_k_sub, weight_sub, step_idx_sub, slope_idx_sub)
-            nll_hat = _safe_nll_value(nll_sub, bias_hat)
-            nll_null = _safe_nll_value(nll_sub, 0.0)
-            if np.isfinite(nll_hat) and np.isfinite(nll_null):
-                lr_chisq = max(0.0, 2.0 * (nll_null - nll_hat))
-                lr_df = 1
-                lr_prob = float(chi2.sf(lr_chisq, df=lr_df))
-                profile_ci = _profile_bias_ci(nll_sub, bias_hat, nll_hat, max_abs, level=0.95)
-                likelihood_basis = (
-                    "conditional profile likelihood for one additive GPCM "
-                    "bias shift; theta, steps, slopes, and other facet "
-                    "estimates held fixed"
-                )
-
         obs_slice = obs_df.iloc[idx_rows]
         w_obs = obs_slice["Weight"].to_numpy(dtype=float) if "Weight" in obs_slice.columns else np.ones(len(obs_slice))
         obs_score = float(np.nansum(obs_slice["Observed"].to_numpy(dtype=float) * w_obs))
@@ -18268,9 +18693,7 @@ def estimate_bias_interaction(
         obs_exp_avg = (obs_score - exp_score) / obs_count if obs_count > 0 else np.nan
 
         n_obs = int(len(obs_slice))
-        df_t = max(n_obs - 1, 0)
-        t_val = bias_hat / se if np.isfinite(bias_hat) and np.isfinite(se) and se > 0 else np.nan
-        p_val = 2 * t_dist.cdf(-abs(t_val), df=df_t) if np.isfinite(t_val) and df_t > 0 else np.nan
+        standardized = bias_hat/se if np.isfinite(bias_hat) and np.isfinite(se) and se > 0 else np.nan
 
         rows.append({
             "Sq": seq,
@@ -18280,12 +18703,25 @@ def estimate_bias_interaction(
             "Obs-Exp Average": obs_exp_avg,
             "Bias Size": bias_hat,
             "S.E.": se,
-            "t": t_val,
-            "d.f.": df_t,
-            "Prob.": p_val,
-            "LR ChiSq": lr_chisq,
-            "LR d.f.": lr_df,
-            "LR Prob.": lr_prob,
+            "Standardized Bias": standardized,
+            "t": np.nan,
+            "d.f.": np.nan,
+            "Prob.": fit["p"],
+            "LR ChiSq": fit["lr"],
+            "LR d.f.": 1 if np.isfinite(fit["p"]) else np.nan,
+            "LR Prob.": fit["p"],
+            "Primary P Method": "unit_weight_conditional_lr_v1",
+            "Reference Status": fit["reference_status"],
+            "Cell Status": fit["status"],
+            "Cell Error": fit["error"],
+            "Bounded Candidate": fit["candidate"],
+            "Search Bound": float(max_abs),
+            "Score Residual": fit["score"],
+            "Conditional Information": fit["information"],
+            "PositiveWeightObsN": int(np.count_nonzero(w > 0)),
+            "PersonN": int(obs_slice.loc[w > 0, "Person"].nunique()) if "Person" in obs_slice else np.nan,
+            "Weight Sum": float(np.sum(w)),
+            "Weight Sum Squares": float(np.sum(w**2)),
             "Profile CI Lower": profile_ci["lower"],
             "Profile CI Upper": profile_ci["upper"],
             "Profile CI Level": profile_ci["level"],
@@ -18297,10 +18733,11 @@ def estimate_bias_interaction(
                 "is not propagated"
             ),
             "Multiplicity Basis": (
-                "cellwise screening statistics; use DFF table Holm/BH p-values, "
-                "sparse-cell flags, and substantive design review before claims"
+                "Holm candidate within each observed facet-pair cell family, "
+                "including failed/excluded cells in its size; BH descriptive only"
             ),
-            "InferenceTier": "screening",
+            "InferenceTier": "technical_only",
+            **qualification,
             "Infit": infit,
             "Outfit": outfit,
             "ObsN": n_obs,
@@ -18309,11 +18746,13 @@ def estimate_bias_interaction(
             "FacetA_Index": level_map.get(facet_a, []).index(lvl_a_str) + 1 if lvl_a_str in level_map.get(facet_a, []) else np.nan,
             "FacetA_Measure": meas_map.get((facet_a, lvl_a_str), np.nan),
             "FacetA_SE": se_map.get((facet_a, lvl_a_str), np.nan),
+            "FacetA_Sign": 1 if facet_a == "Person" else config.get("facet_signs", {}).get(facet_a, -1),
             "FacetB": facet_b,
             "FacetB_Level": lvl_b_str,
             "FacetB_Index": level_map.get(facet_b, []).index(lvl_b_str) + 1 if lvl_b_str in level_map.get(facet_b, []) else np.nan,
             "FacetB_Measure": meas_map.get((facet_b, lvl_b_str), np.nan),
             "FacetB_SE": se_map.get((facet_b, lvl_b_str), np.nan),
+            "FacetB_Sign": 1 if facet_b == "Person" else config.get("facet_signs", {}).get(facet_b, -1),
         })
         seq += 1
 
@@ -18344,12 +18783,15 @@ def estimate_bias_interaction(
         if np.sum(ok) >= 2
         else np.nan
     )
-    fixed_df = max(len(bias_tbl) - 1, 0)
-    fixed_prob = 1 - chi2.cdf(fixed_chi, df=fixed_df) if np.isfinite(fixed_chi) and fixed_df > 0 else np.nan
+    # A descriptive dispersion; no calibrated omnibus reference distribution.
+    fixed_df = np.nan
+    fixed_prob = np.nan
     chi_tbl = pd.DataFrame({
         "FixedChiSq": [fixed_chi],
         "FixedDF": [fixed_df],
         "FixedProb": [fixed_prob],
+        "ContributingCells": [int(np.sum(ok))],
+        "Status": ["descriptive_only; shared calibration uncertainty unavailable"],
     })
 
     return {
@@ -18358,36 +18800,68 @@ def estimate_bias_interaction(
         "table": bias_tbl,
         "summary": summary_tbl,
         "chi_sq": chi_tbl,
-        "iteration": pd.DataFrame(iter_rows),
+        "iteration": pd.DataFrame([{
+            "Pass": 1, "PlannedCells": len(bias_tbl),
+            "AttemptedCells": int(bias_tbl["Cell Status"].ne("excluded_extreme_level").sum()),
+            "FittedCells": int(bias_tbl["Cell Status"].eq("interior").sum()),
+            "FailedCells": int((~bias_tbl["Cell Status"].isin(["interior", "excluded_extreme_level"])).sum()),
+            "ExcludedCells": int(bias_tbl["Cell Status"].eq("excluded_extreme_level").sum()),
+            "CalibrationUpdated": False,
+            "MaxAbsScoreResidual": bias_tbl["Score Residual"].abs().max(),
+            "MaxAbsBias": bias_tbl["Bias Size"].abs().max(),
+        }]),
+        "calculation_mode": "single_pass_fixed_calibration",
     }
 
 
-def calc_bias_pairwise(bias_tbl, target_facet, context_facet):
+def calc_bias_pairwise(bias_tbl, target_facet, context_facet, *, target_sign=None):
+    """Technical local contrasts conditional on the fitted calibration.
+
+    Bias Size is an additive eta shift b. For a target with eta coefficient s,
+    the local measure is m + b/s and the contrast is (b1-b2)/s. The shared m
+    cancels exactly. Cell SEs describe disjoint cells with calibration held
+    fixed; joint calibration uncertainty is not available from this table.
+    No t reference distribution or pairwise p-value is assigned.
+    """
     if bias_tbl is None or bias_tbl.empty:
         return pd.DataFrame()
-
-    use_a = bias_tbl["FacetA"].iloc[0] == target_facet
-    use_b = bias_tbl["FacetB"].iloc[0] == target_facet
-    if not (use_a or use_b):
+    if target_facet == context_facet:
+        raise ValueError("Target and context must be distinct facets.")
+    forward = bias_tbl["FacetA"].eq(target_facet) & bias_tbl["FacetB"].eq(context_facet)
+    reverse = bias_tbl["FacetB"].eq(target_facet) & bias_tbl["FacetA"].eq(context_facet)
+    if forward.any() and reverse.any():
+        raise ValueError("The requested facet pair has mixed orientations; supply one orientation.")
+    if not (forward.any() or reverse.any()):
         return pd.DataFrame()
 
-    if use_a:
-        target_prefix = "FacetA"
-        context_prefix = "FacetB"
-    else:
-        target_prefix = "FacetB"
-        context_prefix = "FacetA"
-
-    sub = bias_tbl.copy()
-    sub = sub[sub[f"{context_prefix}"].isin([context_facet])]
-    if sub.empty:
-        sub = bias_tbl.copy()
+    target_prefix, context_prefix = ("FacetA", "FacetB") if forward.any() else ("FacetB", "FacetA")
+    sub = bias_tbl.loc[forward if forward.any() else reverse]
+    sign_column = f"{target_prefix}_Sign"
+    if sign_column in sub:
+        signs = pd.to_numeric(sub[sign_column], errors="coerce")
+        if not signs.isin([-1, 1]).all() or signs.nunique() != 1:
+            raise ValueError("Recorded target signs must be a single value of +1 or -1.")
+        if target_sign is None:
+            target_sign = float(signs.iloc[0])
+        elif not signs.eq(target_sign).all():
+            raise ValueError("target_sign conflicts with the recorded target sign.")
+    if target_sign is None:
+        raise ValueError("target_sign is required for a bias table without recorded facet signs.")
+    if target_sign not in (-1, 1):
+        raise ValueError("target_sign must be +1 or -1.")
+    if target_facet == "Person" and target_sign != 1:
+        raise ValueError("The Person target sign must be +1 in this model.")
+    if sub.duplicated([f"{target_prefix}_Level", f"{context_prefix}_Level"]).any():
+        raise ValueError("Duplicate target/context cells make the comparison ambiguous.")
 
     rows = []
+    qualification = _output_qualification.bias_pairwise_qualification().to_record()
     for tgt_level, group_df in sub.groupby(f"{target_prefix}_Level"):
         contexts = group_df[f"{context_prefix}_Level"].unique().tolist()
         if len(contexts) < 2:
             continue
+        if group_df[f"{target_prefix}_Measure"].nunique(dropna=False) != 1:
+            raise ValueError("The shared target measure differs across context cells.")
         ctx_pairs = list(combinations(contexts, 2))
         for c1, c2 in ctx_pairs:
             r1 = group_df[group_df[f"{context_prefix}_Level"] == c1].iloc[0]
@@ -18402,31 +18876,22 @@ def calc_bias_pairwise(bias_tbl, target_facet, context_facet):
             bias_se1 = float(r1["S.E."]) if np.isfinite(r1["S.E."]) else np.nan
             bias_se2 = float(r2["S.E."]) if np.isfinite(r2["S.E."]) else np.nan
 
-            local1 = tgt_measure + bias1 if np.isfinite(tgt_measure) and np.isfinite(bias1) else np.nan
-            local2 = tgt_measure + bias2 if np.isfinite(tgt_measure) and np.isfinite(bias2) else np.nan
-            se1 = np.sqrt(tgt_se ** 2 + bias_se1 ** 2) if np.isfinite(tgt_se) and np.isfinite(bias_se1) else np.nan
-            se2 = np.sqrt(tgt_se ** 2 + bias_se2 ** 2) if np.isfinite(tgt_se) and np.isfinite(bias_se2) else np.nan
+            local1 = tgt_measure + bias1 / target_sign if np.isfinite(tgt_measure) and np.isfinite(bias1) else np.nan
+            local2 = tgt_measure + bias2 / target_sign if np.isfinite(tgt_measure) and np.isfinite(bias2) else np.nan
+            se1 = bias_se1 / abs(target_sign) if np.isfinite(bias1) and np.isfinite(bias_se1) and bias_se1 > 0 else np.nan
+            se2 = bias_se2 / abs(target_sign) if np.isfinite(bias2) and np.isfinite(bias_se2) and bias_se2 > 0 else np.nan
 
-            contrast = local1 - local2 if np.isfinite(local1) and np.isfinite(local2) else np.nan
-            se_contrast = np.sqrt(se1 ** 2 + se2 ** 2) if np.isfinite(se1) and np.isfinite(se2) else np.nan
-            t_val = contrast / se_contrast if np.isfinite(contrast) and np.isfinite(se_contrast) and se_contrast > 0 else np.nan
-
-            n1 = int(r1["ObsN"]) if np.isfinite(r1["ObsN"]) else 0
-            n2 = int(r2["ObsN"]) if np.isfinite(r2["ObsN"]) else 0
-            df_num = (se1 ** 2 + se2 ** 2) ** 2
-            df_den = 0.0
-            if n1 > 1 and np.isfinite(se1):
-                df_den += (se1 ** 4) / (n1 - 1)
-            if n2 > 1 and np.isfinite(se2):
-                df_den += (se2 ** 4) / (n2 - 1)
-            df_t_val = df_num / df_den if df_den > 0 else np.nan
-            p_val = 2 * t_dist.cdf(-abs(t_val), df=df_t_val) if np.isfinite(t_val) and np.isfinite(df_t_val) and df_t_val > 0 else np.nan
+            # Cancel the shared term algebraically before floating-point evaluation.
+            contrast = (bias1 - bias2) / target_sign if np.isfinite(bias1) and np.isfinite(bias2) else np.nan
+            se_contrast = float(np.hypot(se1, se2)) if np.isfinite(se1) and np.isfinite(se2) else np.nan
+            standardized = contrast / se_contrast if np.isfinite(contrast) and np.isfinite(se_contrast) and se_contrast > 0 else np.nan
 
             rows.append({
                 "Target": tgt_level,
                 "Target N": tgt_index,
                 "Target Measure": tgt_measure,
                 "Target S.E.": tgt_se,
+                "Target Sign": target_sign,
                 "Context1": c1,
                 "Context1 N": r1.get(f"{context_prefix}_Index", np.nan),
                 "Local Measure1": local1,
@@ -18441,39 +18906,50 @@ def calc_bias_pairwise(bias_tbl, target_facet, context_facet):
                 "Count2": float(r2["Observd Count"]),
                 "Contrast": contrast,
                 "SE": se_contrast,
-                "t": t_val,
-                "d.f.": df_t_val,
-                "Prob.": p_val,
+                "Standardized Contrast": standardized,
+                "t": np.nan,
+                "d.f.": np.nan,
+                "Prob.": np.nan,
+                "SE Method": "Conditional information for disjoint cells; fitted calibration held fixed",
+                "SE Status": "conditional_approximation" if np.isfinite(se_contrast) else "not_available",
+                "Inference Detail": (
+                    "The shared target effect cancels. Zero covariance between cell shifts "
+                    "is assumed only conditional on fixed calibration and independent "
+                    "observations. Joint calibration uncertainty and reference-distribution "
+                    "calibration are unavailable; the standardized contrast is descriptive."
+                ),
+                **qualification,
             })
 
     return pd.DataFrame(rows)
 
 
 def adjust_p_values(p_values, method: str = "holm") -> np.ndarray:
-    """Multiplicity adjustment for bias/DFF screening without extra dependencies."""
+    """Retain missing tests in family size, as R p.adjust with explicit n=family size."""
     p = np.asarray(p_values, dtype=float)
+    if p.ndim != 1 or np.isinf(p).any() or np.any((p < 0) | (p > 1)):
+        raise ValueError("p-values must be a one-dimensional vector in [0, 1] or NaN")
+    method_l = str(method).lower()
+    if method_l not in {"holm", "holm-bonferroni", "holm_bonferroni", "bh", "fdr", "benjamini-hochberg", "benjamini_hochberg", "none"}:
+        raise ValueError(f"Unknown multiplicity method: {method}")
     out = np.full(p.shape, np.nan, dtype=float)
     ok = np.isfinite(p)
     if not np.any(ok):
         return out
-    vals = np.clip(p[ok], 0.0, 1.0)
+    vals = p[ok]
     order = np.argsort(vals)
     sorted_p = vals[order]
-    m = len(sorted_p)
-    method_l = str(method).lower()
+    m, n_observed = len(p), len(vals)
     if method_l in {"bh", "fdr", "benjamini-hochberg", "benjamini_hochberg"}:
-        ranks = np.arange(1, m + 1, dtype=float)
-        adjusted_sorted = sorted_p * m / ranks
+        adjusted_sorted = sorted_p * m / np.arange(1, n_observed+1, dtype=float)
         adjusted_sorted = np.minimum.accumulate(adjusted_sorted[::-1])[::-1]
     elif method_l in {"holm", "holm-bonferroni", "holm_bonferroni"}:
-        adjusted_sorted = sorted_p * (m - np.arange(m, dtype=float))
-        adjusted_sorted = np.maximum.accumulate(adjusted_sorted)
+        adjusted_sorted = np.maximum.accumulate(sorted_p * (m-np.arange(n_observed)))
     else:
         adjusted_sorted = sorted_p
-    adjusted_sorted = np.clip(adjusted_sorted, 0.0, 1.0)
-    adjusted = np.empty(m, dtype=float)
-    adjusted[order] = adjusted_sorted
-    out[np.where(ok)[0]] = adjusted
+    adjusted = np.empty(n_observed, dtype=float)
+    adjusted[order] = np.clip(adjusted_sorted, 0., 1.)
+    out[ok] = adjusted
     return out
 
 
@@ -18502,6 +18978,8 @@ def build_dff_bias_screening_table(
             "MultiplicityFamily", "ReportingCaution",
             "Interpretation", "NextAction",
         ])
+    if not 0 < alpha < 1 or min_n < 1 or not np.isfinite(practical_logit) or practical_logit < 0:
+        raise ValueError("Invalid bias screening thresholds")
     tbl = tbl.reset_index(drop=True)
 
     def col_series(name: str, default=np.nan) -> pd.Series:
@@ -18509,11 +18987,16 @@ def build_dff_bias_screening_table(
             return tbl[name]
         return pd.Series([default] * len(tbl))
 
-    p_vals = pd.to_numeric(col_series("Prob."), errors="coerce").to_numpy(dtype=float)
+    # Old tables lack the scalar-fit/reference audit. Never silently promote them.
+    reference_ok = (col_series("Primary P Method", "").eq("unit_weight_conditional_lr_v1")
+                    & col_series("Reference Status", "").eq("unit_weight_conditional_lr_candidate")
+                    & col_series("Cell Status", "").eq("interior"))
+    p_vals = pd.to_numeric(col_series("LR Prob."), errors="coerce").where(reference_ok).to_numpy(dtype=float)
+    reference_ok &= np.isfinite(p_vals)
     bias_vals = pd.to_numeric(col_series("Bias Size"), errors="coerce")
     se_vals = pd.to_numeric(col_series("S.E."), errors="coerce")
     t_vals = pd.to_numeric(col_series("t"), errors="coerce")
-    obs_source = tbl["ObsN"] if "ObsN" in tbl.columns else col_series("Observd Count")
+    obs_source = col_series("PositiveWeightObsN") if "PositiveWeightObsN" in tbl else col_series("ObsN")
     obs_n = pd.to_numeric(obs_source, errors="coerce")
     out = pd.DataFrame({
         "FacetPair": col_series("FacetA", "FacetA").astype(str)
@@ -18528,9 +19011,29 @@ def build_dff_bias_screening_table(
         "SE": se_vals,
         "t": t_vals,
         "p": p_vals,
-        "p_holm": adjust_p_values(p_vals, "holm"),
-        "p_bh": adjust_p_values(p_vals, "bh"),
+        "CellStatus": col_series("Cell Status", "legacy_unverified"),
+        "ReferenceStatus": col_series("Reference Status", "not_available"),
+        "PrimaryPMethod": col_series("Primary P Method", "not_available"),
+        "InferenceAvailable": reference_ok,
+        "PersonN": col_series("PersonN"),
     })
+    out["p_holm"], out["p_bh"], out["FamilySize"] = np.nan, np.nan, 0
+    # One family per facet pair, fixed to all observed cells before exclusion or
+    # failed fits. Reversing a pair's orientation must not split the family.
+    family = out.apply(lambda row: tuple(sorted([row.FacetA, row.FacetB])), axis=1)
+    out["MultiplicityFamily"] = family.map(lambda pair: " x ".join(pair))
+    out["MultiplicityFamilyID"] = family.map(lambda pair: json.dumps(pair, ensure_ascii=False))
+    cells = out.apply(lambda row: tuple(sorted([(row.FacetA, row.FacetA_Level),
+                                                (row.FacetB, row.FacetB_Level)])), axis=1)
+    if cells.duplicated().any():
+        raise ValueError("Duplicate bias cells in the same facet-pair family")
+    for _, idx_family in out.groupby(family, sort=False).groups.items():
+        values = out.loc[idx_family, "p"].to_numpy(dtype=float)
+        out.loc[idx_family, "p_holm"] = adjust_p_values(values, "holm")
+        out.loc[idx_family, "p_bh"] = adjust_p_values(values, "bh")
+        out.loc[idx_family, "FamilySize"] = len(idx_family)
+    for name, value in _output_qualification.bias_cell_qualification().to_record().items():
+        out[name] = value
     out["AbsBias"] = out["BiasSize"].abs()
     out["Direction"] = np.select(
         [out["BiasSize"] > 0, out["BiasSize"] < 0],
@@ -18540,20 +19043,20 @@ def build_dff_bias_screening_table(
 
     sparse = pd.to_numeric(out["ObsN"], errors="coerce").fillna(0) < int(min_n)
     stat_holm = pd.to_numeric(out["p_holm"], errors="coerce") < float(alpha)
-    stat_bh_t = (
-        (pd.to_numeric(out["p_bh"], errors="coerce") < float(alpha))
-        & (pd.to_numeric(out["t"], errors="coerce").abs() >= 2.0)
-    )
+    # Holm is the sole candidate statistical flag. BH remains descriptive:
+    # dependence through estimated shared calibration has not been qualified.
     practical = pd.to_numeric(out["AbsBias"], errors="coerce") >= float(practical_logit)
     out["SparseCell"] = sparse.astype(bool)
     levels = np.select(
         [
+            ~reference_ok,
             sparse,
             stat_holm & practical,
-            stat_holm | stat_bh_t,
+            stat_holm,
             practical,
         ],
         [
+            "Inference unavailable",
             "Sparse cell",
             "Strong review",
             "Statistical review",
@@ -18563,17 +19066,7 @@ def build_dff_bias_screening_table(
     )
     out["EvidenceLevel"] = levels
     out["Flag"] = out["EvidenceLevel"].ne("No flag")
-    out["ClaimStatus"] = np.select(
-        [
-            out["EvidenceLevel"].eq("Sparse cell"),
-            out["Flag"].astype(bool),
-        ],
-        [
-            "Do not claim from this cell alone",
-            "Report with caveat",
-        ],
-        default="No computed local-bias flag",
-    )
+    out["ClaimStatus"] = "Do not claim"
     out["LRChiSq"] = pd.to_numeric(col_series("LR ChiSq"), errors="coerce")
     out["LRProb"] = pd.to_numeric(col_series("LR Prob."), errors="coerce")
     out["ProfileCILower"] = pd.to_numeric(col_series("Profile CI Lower"), errors="coerce")
@@ -18583,17 +19076,18 @@ def build_dff_bias_screening_table(
     out["SEBasis"] = col_series("SE Basis", "").astype(str)
     out["InferenceTier"] = col_series("InferenceTier", "").astype(str)
     out["MultiplicityBasis"] = col_series("Multiplicity Basis", "").astype(str)
-    out["MultiplicityFamily"] = (
-        out["FacetPair"].astype(str)
-        + f" cell screen; alpha={float(alpha):.3g}, min_n={int(min_n)}, "
-        + f"practical_logit={float(practical_logit):.3g}"
+    out["MultiplicityFamily"] += (
+        " observed-cell family; alpha=" + f"{float(alpha):.3g}, min_n={int(min_n)}, "
+        + f"practical_logit={float(practical_logit):.3g}; failed/excluded cells retained"
     )
     out["ReportingCaution"] = np.select(
         [
+            out["EvidenceLevel"].eq("Inference unavailable"),
             out["EvidenceLevel"].eq("Sparse cell"),
             out["Flag"].astype(bool),
         ],
         [
+            "Reference unavailable: do not interpret missing evidence as no bias.",
             "Sparse cells are design evidence, not stable bias estimates.",
             "Treat as a conditional screening flag; corroborate with design, fit, and substantive evidence.",
         ],
@@ -18604,27 +19098,31 @@ def build_dff_bias_screening_table(
     )
     out["Interpretation"] = np.select(
         [
+            out["EvidenceLevel"].eq("Inference unavailable"),
             out["EvidenceLevel"].eq("Sparse cell"),
             out["EvidenceLevel"].eq("Strong review"),
             out["EvidenceLevel"].eq("Statistical review"),
             out["EvidenceLevel"].eq("Practical review"),
         ],
         [
+            "Scalar fit or reference distribution unavailable; see CellStatus and ReferenceStatus.",
             "Too few observations for a stable DFF/bias claim.",
             "Cell is statistically flagged after Holm correction and practically large.",
             "Cell is statistically flagged after multiplicity screening.",
             "Cell is practically large but not multiplicity-adjusted significant.",
         ],
-        default="No clear DFF/bias signal under the current screening thresholds.",
+        default="No flag in this development calculation; error-rate and power validation pending.",
     )
     out["NextAction"] = np.select(
         [
+            out["EvidenceLevel"].eq("Inference unavailable"),
             out["EvidenceLevel"].eq("Sparse cell"),
             out["EvidenceLevel"].eq("Strong review"),
             out["EvidenceLevel"].eq("Statistical review"),
             out["EvidenceLevel"].eq("Practical review"),
         ],
         [
+            "Resolve the recorded fit/scope issue; retain this cell in the planned family.",
             "Add observations or combine substantively defensible levels before interpreting.",
             "Review scoring rubrics, rater notes, content match, and rerun sensitivity checks.",
             "Inspect heatmap pattern and corroborate with fit, residual, and substantive evidence.",
@@ -18656,11 +19154,11 @@ def summarize_dff_bias_screening(dff_tbl: pd.DataFrame) -> pd.DataFrame:
         {"Metric": "Cells screened", "Value": int(len(dff_tbl)), "Interpretation": "Facet-level combinations in this pair."},
         {"Metric": "Flagged cells", "Value": int(len(flagged)), "Interpretation": "Sparse, statistical, or practical review prompts."},
         {"Metric": "Strong review", "Value": int((levels == "Strong review").sum()), "Interpretation": "Holm-adjusted and practically large cells."},
-        {"Metric": "Holm p < .05", "Value": int((p_holm < 0.05).sum()), "Interpretation": "Familywise-error adjusted statistical flags."},
-        {"Metric": "BH q < .05", "Value": int((p_bh < 0.05).sum()), "Interpretation": "False-discovery-rate adjusted statistical flags."},
+        {"Metric": "Holm p < .05", "Value": int((p_holm < 0.05).sum()), "Interpretation": "Holm candidate flags; input reference distributions remain unqualified."},
+        {"Metric": "BH q < .05", "Value": int((p_bh < 0.05).sum()), "Interpretation": "Descriptive BH values; not used as the primary flag."},
         {"Metric": "Sparse cells", "Value": int((levels == "Sparse cell").sum()), "Interpretation": "Cells below the minimum observation threshold."},
         {"Metric": "Max |bias|", "Value": float(abs_bias.max()) if len(abs_bias.dropna()) else np.nan, "Interpretation": "Largest absolute logit departure."},
-        {"Metric": "Profile CI ok", "Value": int((profile_status == "ok").sum()), "Interpretation": "GPCM cells with finite conditional profile-likelihood intervals."},
+        {"Metric": "Profile CI ok", "Value": int((profile_status == "ok").sum()), "Interpretation": "Cells with both conditional LR-cutoff endpoints found; coverage unqualified."},
         {"Metric": "Inference tier", "Value": "conditional screening", "Interpretation": "Other fitted parameters are held fixed; global uncertainty is not propagated."},
         {"Metric": "Strongest flagged cell", "Value": strongest, "Interpretation": "First flagged row after sorting by |bias|."},
     ])
@@ -18776,6 +19274,7 @@ def build_bias_inference_audit(
         "BoundarySensitivitySummary",
         "CommonScaleSubsets", "CommonScaleStatus", "InferenceScope",
         "MultiplicityScope", "ProfileCIStatusSummary", "InferenceTierSummary",
+        "UnavailableCells", "QualificationStatus", "PublicConclusionAllowed",
         "EvidenceSummary", "RecommendedAction",
     ]
     bundles = _iter_bias_result_bundles(bias_results)
@@ -18790,8 +19289,9 @@ def build_bias_inference_audit(
         "main-effect values are held fixed; global model uncertainty is not propagated."
     )
     multiplicity_scope = (
-        "Holm and BH adjustments are computed within each exported facet-pair "
-        "cell family; flags are review prompts, not confirmatory proof."
+        "Holm is the sole candidate statistical flag; BH is descriptive. "
+        "Each observed facet-pair cell family includes failed/excluded cells. "
+        "No whole-analysis error control or confirmatory qualification is claimed."
     )
     for pair_label, bundle in bundles:
         if isinstance(bundle, dict) and "_skip_reason" in bundle and "table" not in bundle:
@@ -18870,7 +19370,8 @@ def build_bias_inference_audit(
         )
         flagged_n = int(flags.sum())
         strong_n = int((levels == "Strong review").sum())
-        sparse_n = int((levels == "Sparse cell").sum())
+        sparse_n = int(dff_tbl["SparseCell"].sum())
+        unavailable_n = int((~dff_tbl["InferenceAvailable"]).sum())
         holm_n = int((p_holm < float(alpha)).sum())
         bh_n = int((p_bh < float(alpha)).sum())
         practical_n = int((abs_bias >= float(practical_logit)).sum())
@@ -18904,15 +19405,13 @@ def build_bias_inference_audit(
         )
         tier_summary = dict(tiers[tiers.ne("")].value_counts()) if len(tiers) else {}
 
-        if disconnected or sparse_n or flagged_n or boundary_sensitive_cells:
-            status = "Review"
-            claim_status = "Report with caveat"
-        else:
-            status = "Ready"
-            claim_status = "Ready"
+        status = "Review"
+        claim_status = "Do not claim"
 
         if disconnected:
             action = "Resolve linking/connectivity or restrict bias wording to each connected subset."
+        elif unavailable_n:
+            action = "Resolve unavailable cells before interpreting the conditional screen; missing evidence is not no bias."
         elif sparse_n:
             action = "Treat sparse cells as design prompts; add observations or combine defensible levels before strong claims."
         elif boundary_sensitive_cells:
@@ -18932,6 +19431,9 @@ def build_bias_inference_audit(
             "Status": status,
             "ClaimStatus": claim_status,
             "CellsScreened": int(len(dff_tbl)),
+            "UnavailableCells": unavailable_n,
+            "QualificationStatus": "TECHNICAL_ONLY",
+            "PublicConclusionAllowed": False,
             "FlaggedCells": flagged_n,
             "StrongReviewCells": strong_n,
             "SparseCells": sparse_n,
@@ -18954,13 +19456,17 @@ def build_bias_inference_audit(
             "InferenceTierSummary": tier_summary,
             "EvidenceSummary": (
                 f"{flagged_n} flagged of {len(dff_tbl)} screened cell(s); "
-                f"{strong_n} strong-review, {sparse_n} sparse, "
+                f"{strong_n} strong-review, {sparse_n} sparse, {unavailable_n} unavailable, "
                 f"{holm_n} Holm-significant, {bh_n} BH-significant; "
                 f"{boundary_sensitive_cells} threshold-sensitive cell(s)."
             ),
             "RecommendedAction": action,
         })
-    return pd.DataFrame(rows, columns=columns)
+    audit = pd.DataFrame(rows, columns=columns)
+    if not audit.empty:
+        audit["QualificationStatus"] = "TECHNICAL_ONLY"
+        audit["PublicConclusionAllowed"] = False
+    return audit
 
 
 # ============================================================================
@@ -19923,9 +20429,16 @@ def prepare_fixed_sd_pcm_check(result: dict) -> dict:
         raise ValueError('Structural coordinate dimension disagrees with the model')
     hashes = {name:hashlib.sha256(value.encode() if isinstance(value,str) else value).hexdigest()
               for name,value in assets.items()}
+    implementation = dict(
+        source_sha256={Path(path).name: hashlib.sha256(Path(path).read_bytes()).hexdigest()
+                       for path in (__file__, _pcm_native.__file__)},
+        python=sys.version, packages={name: importlib_metadata.version(name)
+                                     for name in ('numpy', 'scipy', 'pandas')})
+    identity = dict(inputs=hashes, implementation=implementation)
     return dict(config=cfg, prep=prep, sizes=sizes, idx=idx, coordinates=start,
         quad=make_mml_quadrature(cfg, q), reported_nll=float(result['opt'].fun),
-        input_sha256=hashes, input_id=hashlib.sha256(_evidence.canonical_json(hashes).encode()).hexdigest())
+        input_sha256=hashes, implementation=implementation,
+        input_id=hashlib.sha256(_evidence.canonical_json(identity).encode()).hexdigest())
 
 
 def evaluate_fixed_sd_pcm_check(prepared: dict) -> dict:
@@ -19944,6 +20457,46 @@ def evaluate_fixed_sd_pcm_check(prepared: dict) -> dict:
         coordinate_blocks=[dict(name=name, count=int(count)) for name,count in prepared['sizes'].items()],
         quadrature=dict(points=len(prepared['quad']['nodes']), sigma=prepared['quad']['sd']),
         stationarity_pass=None, quadrature_sensitivity_pass=None, inference_ready=False)
+
+
+def evaluate_fixed_sd_pcm_quadrature_check(prepared: dict) -> dict:
+    """Compare GH rules at one unchanged PCM point; never refit or qualify it."""
+    # ponytail: synchronous check capped at 1,000 rows; use an offline route for larger jobs.
+    if len(prepared['idx']['score_k']) > 1000:
+        raise ValueError('Same-point GH comparison supports at most 1,000 response rows')
+    record = evaluate_fixed_sd_pcm_check(prepared)
+    cfg, idx, sizes, point = (prepared[k] for k in ('config', 'idx', 'sizes', 'coordinates'))
+    params = expand_params(point, sizes, cfg)
+    primary = record['quadrature']['points']
+    rows = []
+    for q in (31, 61, 121):
+        quad = make_mml_quadrature(cfg, q)
+        if q == primary:
+            value, gradient = record['raw_nll'], np.asarray(record['gradient'])
+        else:
+            value, gradient = mfrm_loglik_mml_value_grad(point, idx, cfg, sizes, quad)
+            gradient = np.asarray(gradient, dtype=float)
+        scores = compute_person_eap(idx, cfg, params, quad)[['Estimate', 'SD']].to_numpy()
+        if (not np.isfinite(value) or gradient.shape != point.shape or not np.isfinite(gradient).all()
+                or scores.shape != (cfg['n_person'], 2) or not np.isfinite(scores).all()
+                or np.any(scores[:, 1] < 0)):
+            raise ValueError(f'Nonfinite or inconsistent GH{q} likelihood, gradient or scores')
+        rows.append(dict(points=q, raw_nll=float(value), gradient=gradient.tolist(),
+            gradient_supnorm=float(np.max(np.abs(gradient))),
+            nodes=quad['nodes'].tolist(), weights=quad['weights'].tolist(),
+            eap=scores[:, 0].tolist(), posterior_sd=scores[:, 1].tolist()))
+    baseline = next(row for row in rows if row['points'] == primary)
+    for row in rows:
+        row.update(nll_change=row['raw_nll']-baseline['raw_nll'],
+            max_eap_change=float(np.max(np.abs(np.asarray(row['eap'])-baseline['eap']))),
+            max_posterior_sd_change=float(np.max(np.abs(np.asarray(row['posterior_sd'])-baseline['posterior_sd']))))
+    record.update(schema='mfrm_fixed_sd_same_point_gh_v1',
+        implementation=prepared['implementation'], coordinates=point.tolist(),
+        person_order=list(prepared['prep']['levels']['Person']),
+        comparison=dict(scope='same_point_fixed_sd', primary_points=primary, rows=rows,
+            refitted=False, continuous_reference_checked=False, accuracy_pass=None),
+        inference_ready=False)
+    return record
 
 
 def build_cross_engine_validation_bundle(result: dict, *, language: str = "en") -> dict:
@@ -20014,6 +20567,8 @@ def build_cross_engine_validation_bundle(result: dict, *, language: str = "en") 
         out[f"{name}.csv"] = to_csv_bytes(frame)
     out["run_tam_mirt_crosscheck.R"] = _CROSS_ENGINE_R_SCRIPT
     out["README_cross_engine.md"] = _CROSS_ENGINE_README
+    out["README_quadrature_check.md"] = (Path(__file__).resolve().parent / "docs" /
+        f"fixed_sd_quadrature_check.{language}.md").read_text(encoding="utf-8")
     out["LICENSE"] = (Path(__file__).resolve().parent / "LICENSE").read_bytes()
     out.update(_citation.result_assets(result))
     return out
@@ -22176,7 +22731,8 @@ def _invert_information_matrix(info):
     inverse (or ``None`` if inversion failed), ``regularized`` is ``True``
     when any eigenvalue was at or below the tolerance and had to be floored,
     and ``rank`` is the count of eigenvalues strictly above the tolerance.
-    The tolerance follows ``np.linalg.matrix_rank``: ``max|lambda| * sqrt(eps)``.
+    The eigenvalue floor is ``max|lambda| * sqrt(eps)`` (``sqrt(eps)``
+    for a zero matrix); this is not NumPy's default matrix-rank tolerance.
     """
     if info is None:
         return None, False, 0
@@ -22258,10 +22814,35 @@ def _information_matrix_spectrum(info) -> dict[str, object]:
     return out
 
 
+def _mml_covariance_scope_issue(config):
+    """Reasons the current structural Hessian is not a sampling covariance."""
+    if str(config.get("method", "")).upper() != "MML":
+        return ""
+    reasons = []
+    if config.get("estimate_population_sd"):
+        reasons.append(
+            "The joint finite-quadrature information is retained for technical audit; "
+            "quadrature accuracy and sampling uncertainty are not yet qualified."
+            if config.get("mml_engine") == "joint" else
+            "The structural Hessian holds the estimated population SD fixed; "
+            "joint nuisance-adjusted covariance is not implemented."
+        )
+    if config.get("facet_regularization_enabled") or (config.get("facet_regularization") or {}).get("enabled"):
+        reasons.append(
+            "The Hessian includes a facet regularization penalty; inverse "
+            "penalized curvature is not an unpenalized sampling covariance. "
+            "Penalized sampling uncertainty is not implemented."
+        )
+    return " ".join(reasons)
+
+
 def build_mml_covariance_audit(covariance: dict | None, result: dict | None = None) -> pd.DataFrame:
     """Machine-readable audit for MML observed-information covariance quality."""
     cov_info = covariance if isinstance(covariance, dict) else {}
     config = (result or {}).get("config", {}) if isinstance(result, dict) else {}
+    scope_issue = _mml_covariance_scope_issue(config)
+    if scope_issue:
+        cov_info = {"status": "unsupported_covariance_scope", "detail": scope_issue}
     par = _get_opt_par(result or {}) if isinstance(result, dict) else None
     hessian = cov_info.get("hessian")
     spectrum = _information_matrix_spectrum(hessian)
@@ -22364,15 +22945,45 @@ def build_mml_covariance_audit(covariance: dict | None, result: dict | None = No
     return pd.DataFrame([row])
 
 
-def _compute_mml_observed_information(par, idx, config, sizes, quad, rel_step=1e-5):
-    """Observed information of the MML negative marginal log-likelihood.
+def _compute_mml_observed_information(
+    par, idx, config, sizes, quad, rel_step=1e-5, *, include_log_sigma=False,
+):
+    """Curvature of the MML objective in the supplied free coordinates.
 
     Computed as the numerical Jacobian of the analytical gradient
     returned by ``mfrm_loglik_mml_value_grad`` via central differences at
     relative step size ``rel_step``. Symmetrised before return; downstream
-    inversion is responsible for regularising near-singular spectra.
+    inversion is responsible for regularising near-singular spectra. An
+    enabled facet penalty is included, so the public covariance helper
+    restricts use to unpenalized fits with a prespecified population SD.
+
+    Development RSM/PCM/GPCM callers can include log(SD) as the last coordinate.
+    In that case quad must be the rule at the supplied SD. Its nodes move
+    with SD, while standardized nodes and weights remain fixed. The full
+    matrix includes structural/log-SD cross derivatives; it does not itself
+    certify stationarity, integration accuracy, or sampling covariance.
     """
     par = np.asarray(par, dtype=float)
+    if not np.isfinite(rel_step) or rel_step <= 0:
+        raise ValueError("rel_step must be finite and positive")
+    if include_log_sigma:
+        if config["model"] not in {"RSM", "PCM", "GPCM"}:
+            raise ValueError("Joint log-SD information requires a native response model")
+        if par.ndim != 1 or par.size != sum(sizes.values()) + 1 or not np.isfinite(par).all():
+            raise ValueError("Expected finite structural coordinates followed by log(SD)")
+        sigma = float(np.exp(par[-1]))
+        if not np.isfinite(sigma) or sigma <= 0:
+            raise ValueError("Population SD must be finite and positive")
+        standard_nodes = np.asarray(quad["nodes"], dtype=float) / sigma
+
+    def gradient(point):
+        if include_log_sigma:
+            moving_quad = {**quad, "nodes": standard_nodes * np.exp(point[-1])}
+            return mfrm_loglik_mml_value_grad(
+                point[:-1], idx, config, sizes, moving_quad, include_log_sigma=True,
+            )[1]
+        return mfrm_loglik_mml_value_grad(point, idx, config, sizes, quad)[1]
+
     P = par.size
     if P == 0:
         return np.zeros((0, 0), dtype=float)
@@ -22383,8 +22994,8 @@ def _compute_mml_observed_information(par, idx, config, sizes, quad, rel_step=1e
         par_m = par.copy()
         par_p[j] += h
         par_m[j] -= h
-        _, grad_p = mfrm_loglik_mml_value_grad(par_p, idx, config, sizes, quad)
-        _, grad_m = mfrm_loglik_mml_value_grad(par_m, idx, config, sizes, quad)
+        grad_p = gradient(par_p)
+        grad_m = gradient(par_m)
         H[:, j] = (np.asarray(grad_p, dtype=float) - np.asarray(grad_m, dtype=float)) / (2.0 * h)
     return (H + H.T) / 2.0
 
@@ -22414,12 +23025,13 @@ def _get_opt_par(res):
 
 
 def compute_mml_parameter_covariance(res, rel_step=1e-5):
-    """Compute the MML observed-information covariance for an MML fit.
+    """Compute observed-information covariance for unpenalized fixed-SD MML.
 
     Returns a dict with the keys ``cov`` (P x P ndarray or ``None``),
     ``hessian`` (P x P ndarray or ``None``), ``sizes`` (the OrderedDict from
     ``build_param_sizes``), ``param_slices`` (section-name -> slice),
-    ``status`` (``"ok" | "regularized" | "not_applicable" | "fallback"``),
+    ``status`` (``"ok" | "regularized" | "not_applicable" | "fallback"``
+    or ``"unsupported_covariance_scope"``),
     ``detail`` (human-readable description), ``regularized`` (bool),
     ``rank`` (int), and a one-row ``audit`` table with Hessian spectrum
     and covariance quality diagnostics.
@@ -22450,6 +23062,10 @@ def compute_mml_parameter_covariance(res, rel_step=1e-5):
             "not_applicable",
             "MML observed-information covariance is only computed for MML fits.",
         )
+
+    scope_issue = _mml_covariance_scope_issue(config)
+    if scope_issue:
+        return envelope("unsupported_covariance_scope", scope_issue)
 
     par = _get_opt_par(res)
     if par is None or par.size == 0:
@@ -22691,6 +23307,27 @@ def add_gpcm_fair_average_delta_se(raw_tbls, res, covariance=None, ci_level=0.95
     if not 0.0 < ci_level < 1.0:
         ci_level = 0.95
 
+    qualification_rank = 0
+    qualification_dimension = 0
+
+    def qualify_uncertainty(tbl, prefix):
+        status_column = f"{prefix}_SE_Status"
+        contracts = {
+            status: _output_qualification.covariance_qualification(
+                status=status, rank=qualification_rank,
+                param_count=qualification_dimension,
+            ).to_record()
+            for status in tbl[status_column].unique()
+        }
+        for column in ("QualificationStatus", "ReasonCode", "RawTechnicalExportAllowed", "PublicConclusionAllowed"):
+            tbl[f"{prefix}_SE_{column}"] = tbl[status_column].map(
+                {status: contract[column] for status, contract in contracts.items()}
+            )
+        tbl[f"{prefix}_SE_Detail"] = [
+            f"{detail} {contracts[status]['UserAction']}".strip()
+            for detail, status in zip(tbl[f"{prefix}_SE_Detail"], tbl[status_column])
+        ]
+
     def annotate_unavailable(tbl, status, detail):
         if tbl is None:
             return tbl
@@ -22703,19 +23340,23 @@ def add_gpcm_fair_average_delta_se(raw_tbls, res, covariance=None, ci_level=0.95
             new_tbl[f"{prefix}_SE_Method"] = "not available"
             new_tbl[f"{prefix}_SE_Status"] = status
             new_tbl[f"{prefix}_SE_Detail"] = detail
+            qualify_uncertainty(new_tbl, prefix)
         return new_tbl
 
-    if model != "GPCM":
+    if model != "GPCM" or config.get("method") != "MML":
         return {
             facet: annotate_unavailable(
                 tbl,
                 "not_applicable",
-                f"Structural delta-method fair-average SE is implemented for GPCM only; this fit is {model}.",
+                f"Structural delta-method fair-average SE is implemented for GPCM MML only; this fit is {model} {config.get('method', 'unknown')}.",
             )
             for facet, tbl in raw_tbls.items()
         }
 
-    if covariance is None:
+    scope_issue = _mml_covariance_scope_issue(config)
+    if scope_issue:
+        covariance = {"status": "unsupported_covariance_scope", "detail": scope_issue}
+    elif covariance is None:
         covariance = compute_mml_parameter_covariance(res)
 
     if covariance.get("status") not in {"ok", "regularized"} or covariance.get("cov") is None:
@@ -22735,6 +23376,9 @@ def add_gpcm_fair_average_delta_se(raw_tbls, res, covariance=None, ci_level=0.95
             )
             for facet, tbl in raw_tbls.items()
         }
+
+    qualification_rank = covariance.get("rank", 0)
+    qualification_dimension = par.size
 
     from scipy.stats import norm  # local import keeps module-level import surface stable
     z = float(norm.ppf((1.0 + ci_level) / 2.0))
@@ -22774,7 +23418,7 @@ def add_gpcm_fair_average_delta_se(raw_tbls, res, covariance=None, ci_level=0.95
             }
         fn = lambda p: _compute_fair_average_value_from_par(res, p, facet, level, metric=metric)
         grad = _finite_difference_gradient(fn, par)
-        if grad.size != cov.shape[0] or not np.any(np.isfinite(grad)):
+        if grad.size != cov.shape[0] or not np.all(np.isfinite(grad)):
             return {
                 "se": np.nan,
                 "lower": np.nan,
@@ -22782,7 +23426,6 @@ def add_gpcm_fair_average_delta_se(raw_tbls, res, covariance=None, ci_level=0.95
                 "status": "not available",
                 "detail": "Finite-difference gradient was not available.",
             }
-        grad = np.where(np.isfinite(grad), grad, 0.0)
         var = float(grad @ cov @ grad)
         if -1e-10 < var < 0:
             var = 0.0
@@ -22830,6 +23473,7 @@ def add_gpcm_fair_average_delta_se(raw_tbls, res, covariance=None, ci_level=0.95
             new_tbl[f"{prefix}_SE_Method"] = se_method_main
             new_tbl[f"{prefix}_SE_Status"] = [r["status"] for r in results]
             new_tbl[f"{prefix}_SE_Detail"] = [r["detail"] for r in results]
+            qualify_uncertainty(new_tbl, prefix)
         out[facet] = new_tbl
     return out
 
@@ -22856,7 +23500,7 @@ def fair_average_table(res, diagnostics, fair_se=False, ci_level=0.95, **kwargs)
 def _mml_covariance_for_diagnostics(res, max_params=MML_COVARIANCE_AUTO_MAX_PARAMS):
     """Observed-information covariance with an automatic size gate for diagnostics.
 
-    ``compute_mml_parameter_covariance`` remains the exact public helper. This
+    ``compute_mml_parameter_covariance`` remains the public helper. This
     wrapper is used during normal diagnostics so large MML runs do not silently
     become much slower; when skipped, downstream tables keep conditional SEs and
     carry an explicit ``skipped_large_parameter_count`` status.
@@ -22887,6 +23531,9 @@ def _mml_covariance_for_diagnostics(res, max_params=MML_COVARIANCE_AUTO_MAX_PARA
             "not_applicable",
             "MML observed-information covariance is only computed for MML fits.",
         )
+    scope_issue = _mml_covariance_scope_issue(config)
+    if scope_issue:
+        return envelope("unsupported_covariance_scope", scope_issue)
     par = _get_opt_par(res)
     if par is not None and max_params is not None and int(par.size) > int(max_params):
         return envelope(
@@ -22942,7 +23589,10 @@ def compute_mml_structural_measure_se_table(res, covariance=None, ci_level=0.95)
     config = (res or {}).get("config", {}) or {}
     if config.get("method") != "MML":
         return pd.DataFrame()
-    if covariance is None:
+    scope_issue = _mml_covariance_scope_issue(config)
+    if scope_issue:
+        covariance = {"status": "unsupported_covariance_scope", "detail": scope_issue}
+    elif covariance is None:
         covariance = _mml_covariance_for_diagnostics(res)
     prep = (res or {}).get("prep", {}) or {}
     par = _get_opt_par(res)
@@ -22971,8 +23621,7 @@ def compute_mml_structural_measure_se_table(res, covariance=None, ci_level=0.95)
                 if cov_arr.ndim == 2 and cov_arr.shape[0] == cov_arr.shape[1] == par.size:
                     fn = lambda p, f=facet, lv=level: _compute_measure_value_from_par(res, p, f, lv)
                     grad = _finite_difference_gradient(fn, par)
-                    if grad.size == cov_arr.shape[0] and np.any(np.isfinite(grad)):
-                        grad = np.where(np.isfinite(grad), grad, 0.0)
+                    if grad.size == cov_arr.shape[0] and np.all(np.isfinite(grad)):
                         var = float(grad @ cov_arr @ grad)
                         if -1e-10 < var < 0:
                             var = 0.0
@@ -23057,7 +23706,10 @@ def compute_mml_step_se_table(res, covariance=None, ci_level=0.95):
         return pd.DataFrame()
     model = config.get("model")
     prep = (res or {}).get("prep", {}) or {}
-    if covariance is None:
+    scope_issue = _mml_covariance_scope_issue(config)
+    if scope_issue:
+        covariance = {"status": "unsupported_covariance_scope", "detail": scope_issue}
+    elif covariance is None:
         covariance = _mml_covariance_for_diagnostics(res)
     par = _get_opt_par(res)
     status = str((covariance or {}).get("status", "fallback"))
@@ -23100,8 +23752,7 @@ def compute_mml_step_se_table(res, covariance=None, ci_level=0.95):
         if usable:
             fn = lambda p, _sf=sf, _i=i: _compute_step_value_from_par(res, p, _sf, _i)
             grad = _finite_difference_gradient(fn, par_arr)
-            if grad.size == cov_arr.shape[0] and np.any(np.isfinite(grad)):
-                grad = np.where(np.isfinite(grad), grad, 0.0)
+            if grad.size == cov_arr.shape[0] and np.all(np.isfinite(grad)):
                 var = float(grad @ cov_arr @ grad)
                 if -1e-10 < var < 0:
                     var = 0.0
@@ -23136,7 +23787,7 @@ def annotate_measure_uncertainty(measures, res, obs_df=None, *, ci_level=0.95):
     method = str(config.get("method", ""))
     z = float(_norm.ppf((1.0 + float(ci_level)) / 2.0)) if 0.0 < float(ci_level) < 1.0 else 1.959963984540054
 
-    out["SE_Method"] = "conditional information approximation: 1/sqrt(sum Var*w), other fitted parameters held fixed"
+    out["SE_Method"] = "conditional information approximation: 1/sqrt(sum w*a^2*Var), other fitted parameters held fixed"
     out["SE_Status"] = "conditional_approximation"
     out["SE_Detail"] = "Does not propagate uncertainty from other estimated person, facet, step, slope, or anchor parameters."
     out["CI_Level"] = float(ci_level)
@@ -23146,16 +23797,18 @@ def annotate_measure_uncertainty(measures, res, obs_df=None, *, ci_level=0.95):
 
     if method == "MML" and "Facet" in out.columns:
         person_mask = out["Facet"].astype(str) == "Person"
-        out.loc[person_mask, "SE_Method"] = "MML EAP posterior SD from quadrature"
+        out.loc[person_mask, "SE_Method"] = "MML latent-ability posterior SD from quadrature"
         out.loc[person_mask, "SE_Status"] = "posterior_eap_sd"
         out.loc[person_mask, "SE_Detail"] = (
-            "Person SE is the posterior SD of the EAP score, not a structural "
-            "marginal-likelihood SE."
+            "Person SE is the latent-ability posterior SD conditional on fitted "
+            "facet, step, slope, and population parameters. It is not the sampling "
+            "SE of the EAP estimator."
         )
+        out.loc[person_mask, "CI_Method"] = "Normal approximation: EAP +/- z * conditional posterior SD"
         out.loc[person_mask, "CI_Status"] = "posterior_interval_approximation"
         out.loc[person_mask, "UncertaintyCaution"] = (
-            "Person interval uses EAP posterior SD; do not treat it as a "
-            "fixed-effect ML parameter CI."
+            "The interval uses a normal approximation to the conditional posterior, "
+            "not posterior quantiles; calibration uncertainty is not propagated."
         )
 
         covariance = _mml_covariance_for_diagnostics(res)
@@ -23307,26 +23960,26 @@ def _reorder_facets_table_columns(tbl):
     return tbl[ordered + extras]
 
 
-def _facets_fair_se_cache_key(res, ci_level):
-    """Stable session-state key for the SE-annotated facet tables.
+def _facets_fair_se_cache_key(res, ci_level, report_tables=None):
+    """Bind annotated tables to their current fit, likelihood input and values.
 
-    Keyed on a content hash of the optimised parameter vector and the CI
-    level so a re-run with the same fit and the same CI choice reuses the
-    cached annotation, but a fresh fit (different ``opt.x``) triggers a
-    fresh Hessian / delta-method evaluation.
+    Equal parameter vectors need not have equal information matrices. The
+    complete raw tables also belong to this key because the cache returns
+    every displayed/downloaded column, including diagnostic annotations.
+    Missing identity evidence disables reuse, not the requested calculation.
     """
-    par = _get_opt_par(res)
-    if par is None:
-        return None
     try:
-        par_hash = hash(par.tobytes())
-    except Exception:
-        return None
-    try:
+        par = _get_opt_par(res)
         ci = float(ci_level)
-    except Exception:
-        ci = 0.95
-    return ("_fair_se_facets_tables_cache", par_hash, ci)
+        if (par is None or par.ndim != 1 or not par.size or not np.isfinite(par).all()
+            or not np.isfinite(ci) or not 0 < ci < 1 or not report_tables
+            or _result_normalized_response_fingerprint(res) is None):
+            return None
+        identity = build_result_analysis_identity(res)
+        contents = stable_json_fingerprint({"coordinates": par, "tables": report_tables}, length=64)
+        return ("_fair_se_facets_tables_cache_v3", identity.analysis_id, contents, ci)
+    except (TypeError, ValueError):
+        return None
 
 
 def calc_reliability(measure_df):
@@ -24173,6 +24826,54 @@ def calc_expected_category_counts(res):
     })
 
 
+_report_calculation_cache = ContextVar("report_calculation_cache", default=None)
+
+
+def _with_report_calculation_cache(function):
+    """Limit reuse of pure numerical tables to one report/export call."""
+    @wraps(function)
+    def wrapped(*args, **kwargs):
+        if _report_calculation_cache.get() is not None:
+            return function(*args, **kwargs)
+        token = _report_calculation_cache.set({})
+        try:
+            return function(*args, **kwargs)
+        finally:
+            _report_calculation_cache.reset(token)
+    return wrapped
+
+
+def _reuse_report_frame(function):
+    """Reuse only deterministic frames with scalar cells and explicit inputs.
+
+    Serialize complete arguments, including values, dtypes, indices and model
+    settings; never rely on object identity or a truncated string. Pickle is
+    used only to fingerprint app-owned objects, never to load user content.
+    Unsupported serialization falls back to the original computation. Copies
+    keep callers from altering retained tables; eight entries bound retention
+    within the export, and the enclosing scope clears it even on failure.
+    """
+    @wraps(function)
+    def wrapped(*args, **kwargs):
+        cache = _report_calculation_cache.get()
+        if cache is None:
+            return function(*args, **kwargs)
+        try:
+            key = (function, hashlib.sha256(pickle.dumps((args, kwargs), protocol=5)).digest())
+        except Exception:
+            return function(*args, **kwargs)
+        if key in cache:
+            return cache[key].copy(deep=True)
+        frame = function(*args, **kwargs)
+        if isinstance(frame, pd.DataFrame):
+            if len(cache) >= 8:
+                cache.pop(next(iter(cache)))
+            cache[key] = frame.copy(deep=True)
+        return frame
+    return wrapped
+
+
+@_reuse_report_frame
 def calc_category_stats(
     obs_df,
     res=None,
@@ -26560,6 +27261,15 @@ def cached_tables_zip(
     return _exports.build_tables_zip(_frames, text_assets=_text_assets)
 
 
+def _validate_mml_prior_contract_for_result(contract: dict, result: dict) -> dict:
+    validated = _mml_prior_contract.validate_contract_bundle(contract)
+    if validated["baseline"].analysis_id != build_result_analysis_identity(result).analysis_id:
+        raise _evidence.ContractValidationError(
+            "Stored sensitivity evidence does not match this fitted result's AnalysisID."
+        )
+    return validated
+
+
 def _add_mml_prior_sensitivity_export_frames(
     frames: dict[str, pd.DataFrame],
     result: dict,
@@ -26572,7 +27282,7 @@ def _add_mml_prior_sensitivity_export_frames(
     if not isinstance(contract, dict):
         return
     try:
-        _mml_prior_contract.validate_contract_bundle(contract)
+        _validate_mml_prior_contract_for_result(contract, result)
     except _evidence.ContractValidationError:
         return
     for frame_name, key in (
@@ -26624,6 +27334,10 @@ def build_evidence_contract_text_assets(
         record_payloads = readiness.attrs.get("evidence_records")
         if isinstance(identity_payload, dict) and isinstance(record_payloads, list):
             identity = _evidence.AnalysisIdentity.from_payload(identity_payload)
+            if identity.analysis_id != build_result_analysis_identity(result).analysis_id:
+                raise _evidence.ContractValidationError(
+                    "Stored readiness evidence does not match the current fitted result."
+                )
             records = tuple(
                 _evidence.EvidenceRecord.from_payload(payload)
                 for payload in record_payloads
@@ -26651,7 +27365,7 @@ def build_evidence_contract_text_assets(
     )
     if isinstance(contract, dict):
         try:
-            _mml_prior_contract.validate_contract_bundle(contract)
+            _validate_mml_prior_contract_for_result(contract, result)
         except _evidence.ContractValidationError:
             return assets
         assets["mml_prior_sd_sensitivity_evidence_contract.json"] = json.dumps(
@@ -26700,6 +27414,8 @@ def build_output_qualification_table(
             covariance_status = covariance_row.get("Status", covariance_status)
             covariance_rank = covariance_row.get("Rank", 0)
             covariance_param_count = covariance_row.get("ParamCount", 0)
+    if _mml_covariance_scope_issue(config):
+        covariance_status = "unsupported_covariance_scope"
     items.append(
         _output_qualification.covariance_qualification(
             status=covariance_status,
@@ -26709,7 +27425,17 @@ def build_output_qualification_table(
     )
     if str(config.get("method", "")).upper() == "MML" and config.get("estimate_population_sd"):
         items.append(_output_qualification.population_sd_uncertainty_qualification())
+        if config.get("mml_engine") == "joint" and isinstance(result_dict.get("joint_mml"), dict):
+            items.append(_output_qualification.OutputQualification(
+                output_id="mml.joint_numerical_audit",
+                status=_output_qualification.OutputUse.TECHNICAL_ONLY,
+                reason_code=_output_qualification.QualificationReason.POPULATION_SD_UNCERTAINTY_UNQUALIFIED,
+                roadmap_issue_id="STAT-003", next_gate="G4",
+                raw_technical_export_allowed=True, public_conclusion_allowed=False,
+                user_action="Retain the joint finite-quadrature point, information and inverse for numerical audit only. "
+                    "These values do not qualify sampling SE/CI or population-SD inference."))
     if bias_present:
+        items.append(_output_qualification.bias_cell_qualification())
         items.append(_output_qualification.bias_pairwise_qualification())
     return pd.DataFrame(_output_qualification.records(items))
 
@@ -27902,6 +28628,7 @@ def assignment_sensitivity_bundle_frames(bundle: dict | None) -> dict[str, pd.Da
     return frames
 
 
+@_with_report_calculation_cache
 def build_result_bundle_frames(
     result: dict,
     diagnostics: dict,
@@ -27986,9 +28713,7 @@ def build_result_bundle_frames(
             ("jmle_person_boundary_summary", person_boundary.get("summary")),
             ("jmle_person_boundary_persons", person_boundary.get("persons")),
         ))
-    likelihood_info = result.get("likelihood_information")
-    if not isinstance(likelihood_info, pd.DataFrame) or likelihood_info.empty:
-        likelihood_info = build_likelihood_information_criteria(result)
+    likelihood_info = build_likelihood_information_criteria(result)
     likelihood_info = qualify_likelihood_information_table(
         likelihood_info,
         qualification_table,
@@ -28006,6 +28731,7 @@ def build_result_bundle_frames(
         ))
     convergence = result.get("convergence")
     _frame_bundle.add_frame(frames, "convergence", convergence)
+    _frame_bundle.add_frames(frames, build_joint_mml_audit_frames(result).items())
     if isinstance(diagnostics, dict):
         measures = diagnostics.get("measures")
         _frame_bundle.add_frame(frames, "measures", measures)
@@ -34242,8 +34968,8 @@ def build_readiness_report(
             elif errors > 0:
                 checks.append({
                     "name": "likelihood_rows", "severity": "issue",
-                    "headline": f"{errors:,} row(s) have fractional score values",
-                    "detail": "The run stops until fractional scores are recoded to ordered integer categories.",
+                    "headline": f"{errors:,} row(s) have invalid score or weight values",
+                    "detail": "Correct fractional scores or infinite score/weight values before estimation.",
                 })
             elif excluded > 0:
                 checks.append({
@@ -36415,75 +37141,36 @@ def _bias_table_for_publication(
     all_bias_results: dict | None,
     model: str | None,
 ) -> "pd.DataFrame | None":
-    """Build a publication-ready bias / interaction table.
-
-    Concatenates every facet pair in ``all_bias_results`` into one
-    DataFrame. For GPCM fits the slope-aware Fisher information SE, the
-    likelihood-ratio test, and the profile-likelihood CI columns are
-    appended after the base bias / t / Prob. block; for RSM and PCM
-    fits only the t-based screening columns are included because the
-    chi-square pivotal pertains only to the slope-aware GPCM kernel
-    (Wilks, 1938; Cox, 1975).
-    """
-    if not all_bias_results:
-        return None
-    parts: list[pd.DataFrame] = []
-    for pair_key, bias_results in all_bias_results.items():
-        if not isinstance(bias_results, dict) or "table" not in bias_results:
+    """Export descriptive cells with the current G3 hold, including legacy tables."""
+    parts = []
+    for pair_key, bundle in (all_bias_results or {}).items():
+        if not isinstance(bundle, dict):
             continue
-        tbl = bias_results["table"]
-        if not isinstance(tbl, pd.DataFrame) or tbl.empty:
+        table = bundle.get("table")
+        if not isinstance(table, pd.DataFrame) or table.empty:
             continue
-        rows = tbl.copy()
+        rows = table.copy()
         rows.insert(0, "Pair", str(pair_key))
+        rows["QualificationStatus"] = "TECHNICAL_ONLY"
+        rows["PublicConclusionAllowed"] = False
+        if "Cell Status" not in rows:
+            rows["Cell Status"] = "legacy_unverified"
         parts.append(rows)
     if not parts:
         return None
     out = pd.concat(parts, ignore_index=True)
-    base_cols = [
-        "Pair", "FacetA_Level", "FacetB_Level",
-        "Bias Size", "S.E.", "t", "d.f.", "Prob.",
-    ]
-    gpcm_cols = [
-        "LR ChiSq", "LR Prob.",
-        "Profile CI Lower", "Profile CI Upper", "Profile CI Status",
-    ]
-    cols = list(base_cols)
-    if (model or "").upper() == "GPCM" and "LR ChiSq" in out.columns and pd.to_numeric(
-        out["LR ChiSq"], errors="coerce"
-    ).notna().any():
-        cols.extend(gpcm_cols)
-    cols = [c for c in cols if c in out.columns]
-    return out[cols].copy()
+    cols = ["Pair", "FacetA_Level", "FacetB_Level", "Bias Size", "ObsN",
+            "Cell Status", "QualificationStatus", "PublicConclusionAllowed"]
+    return out[[c for c in cols if c in out]].copy()
 
 
 def _bias_table_caption(model: str | None, table_idx: int) -> str:
-    """Caption for the publication bias / interaction table.
-
-    The GPCM caption cites Muraki (1993) for the slope-aware Fisher
-    information identity, Wilks (1938) for the chi-square pivotal that
-    underwrites the likelihood-ratio test, and Cox (1975) for the
-    profile-likelihood confidence interval. The RSM / PCM caption stays
-    in the original t-based screening framing (Myford & Wolfe, 2003).
-    """
-    if (model or "").upper() == "GPCM":
-        return (
-            f"Table {table_idx}. Bias / interaction analysis with slope-aware "
-            "GPCM inference. Bias Size is the additive bias shift in logits; "
-            "S.E. is the conditional Fisher information standard error "
-            "sum_i a_i^2 * Var[X_i | eta_i + b_hat] * w_i (Muraki, 1993); "
-            "LR ChiSq is the likelihood-ratio test of bias = 0 with one "
-            "degree of freedom (Wilks, 1938); Profile CI is the 95% profile-"
-            "likelihood confidence interval (Cox, 1975) holding theta, step "
-            "thresholds, slopes, and other facet estimates fixed. These are "
-            "screening inferences, not full joint-uncertainty intervals."
-        )
+    """Public exports preserve the G3 boundary regardless of saved-table version."""
     return (
-        f"Table {table_idx}. Bias / interaction analysis. Bias Size is the "
-        "additive bias shift in logits; S.E. is the conditional information "
-        "standard error; t and Prob. are the t-test of bias = 0 (Myford & "
-        "Wolfe, 2003). These cellwise statistics are screening prompts and "
-        "do not propagate uncertainty from the rest of the fitted model."
+        f"Table {table_idx}. Descriptive {str(model or '').upper()} bias / interaction cells. "
+        "Bias Size is an additive eta shift with calibration held fixed. "
+        "G3 validation is pending: p-values and intervals are retained only in "
+        "technical exports. These cells do not establish bias or absence of bias."
     )
 
 
@@ -38613,7 +39300,7 @@ def run_facets_mode(
                     "plausible_seed": int(plausible_seed) if compute_plausible_values else None,
                     "ui_mml_engine": mml_engine if est_method == "MML" else None,
                     "quad_points": quad_points if est_method == "MML" else None,
-                    "population_prior_sd": population_prior_sd if est_method == "MML" else None,
+                    "ui_population_prior_sd": population_prior_sd if est_method == "MML" else None,
                     "facet_regularization_ui_mode": facet_regularization_mode,
                     "facet_regularization_specs": facet_regularization_specs,
                     "facet_regularization_ui_fingerprint": facet_regularization_fingerprint,
@@ -39536,9 +40223,15 @@ def run_facets_mode(
             col_toggle, col_ci = st.columns([3, 1], vertical_alignment="center")
             with col_toggle:
                 fair_se_enabled = st.checkbox(
-                    t("facets_tables.fair_se_toggle_label"),
+                    _standalone_ui_text(
+                        en="Show fair-average SE and interval candidates",
+                        ja="Fair-average のSE・区間候補を表示",
+                    ),
                     value=False,
-                    help=t("facets_tables.fair_se_toggle_help"),
+                    help=_standalone_ui_text(
+                        en="Adds delta-method uncertainty for technical checks. Interval coverage is unvalidated; these values do not authorize confirmatory claims.",
+                        ja="デルタ法による不確実性の参考値を追加します。区間の被覆率は未検証であり、確証的な結論には使えません。",
+                    ),
                     key="facets_table_fair_se_enabled",
                     disabled=not fit_supports_fair_se,
                 )
@@ -39569,16 +40262,20 @@ def run_facets_mode(
 
         display_tables = report_tables
         if fair_se_enabled and fit_supports_fair_se and report_tables:
-            cache_key = _facets_fair_se_cache_key(result, ci_level)
-            if cache_key is not None and cache_key not in st.session_state:
+            cache_key = _facets_fair_se_cache_key(result, ci_level, report_tables)
+            if cache_key is None or cache_key not in st.session_state:
                 with st.spinner(t("facets_tables.fair_se_computing_spinner")):
-                    annotated = add_gpcm_fair_average_delta_se(
+                    display_tables = add_gpcm_fair_average_delta_se(
                         report_tables, result, ci_level=float(ci_level)
                     )
-                st.session_state[cache_key] = annotated
+                if cache_key is not None:
+                    st.session_state[cache_key] = display_tables
             if cache_key is not None:
                 display_tables = st.session_state.get(cache_key, report_tables)
-            st.caption(t("facets_tables.fair_se_method_caption"))
+            st.caption(_standalone_ui_text(
+                en="Delta-method SE = sqrt(gᵀ Cov g), using observed information at the returned parameter point and holding fitted Person scores fixed. Check the SE status for regularization. Numerical full rank does not establish interval coverage; confirmatory use remains unqualified.",
+                ja="デルタ法のSEは sqrt(gᵀ Cov g) で、返却された推定点の観測情報を用い、推定済みPerson得点は固定して扱います。正則化の有無はSEの状態欄を確認してください。数値上の階数が十分でも区間の被覆率は保証されず、確証的な利用は未適格です。",
+            ))
             st.caption(t("facets_tables.fair_se_person_caption"))
 
         if not display_tables:
@@ -39850,9 +40547,29 @@ def _readiness_row(
 def _result_identity_settings(result: dict) -> dict[str, object]:
     config = result.get("config", {}) if isinstance(result, dict) else {}
     config = config if isinstance(config, dict) else {}
-    config_fp = config.get("analysis_config_fingerprint") or config.get("run_fingerprint")
-    if not config_fp:
-        config_fp = config_fingerprint(config, length=64)
+    config_fp = config_fingerprint(config, length=64)
+    opt = result.get("opt")
+    fitted_state = {
+        "coordinates": getattr(opt, "x", None),
+        "success": getattr(opt, "success", None),
+        "params": result.get("params"),
+    }
+    summary = result.get("summary")
+    if isinstance(summary, pd.DataFrame):
+        fitted_state["summary"] = summary.drop(columns=["ElapsedSeconds"], errors="ignore")
+    # Bind the estimates consumed by reports, excluding subsequently added SE/CI.
+    facets = result.get("facets", {})
+    population = result.get("population", {})
+    for name, frame in (
+        ("person", facets.get("person")), ("others", facets.get("others")),
+        ("steps", result.get("steps")), ("slopes", result.get("slopes")),
+        ("population", population.get("coefficients")),
+    ):
+        if isinstance(frame, pd.DataFrame):
+            columns = [c for c in ("Person", "Facet", "Level", "StepFacet", "Step",
+                                   "SlopeFacet", "Term", "Estimate", "LogEstimate", "SD")
+                       if c in frame.columns]
+            fitted_state[name] = frame[columns]
 
     def finite_number(value):
         try:
@@ -39862,8 +40579,12 @@ def _result_identity_settings(result: dict) -> dict[str, object]:
         return number if np.isfinite(number) else None
 
     return {
-        "schema_version": "mfrm_result_identity_settings_v1",
+        "schema_version": "mfrm_result_identity_settings_v2",
         "base_config_fingerprint": str(config_fp),
+        "normalized_response_fingerprint": _result_normalized_response_fingerprint(result),
+        # Planned sensitivity variants bind this supplied baseline fit; their
+        # future refit is checked separately by _mml_prior_refit_attestation.
+        "source_fitted_state_fingerprint": stable_json_fingerprint(fitted_state, length=64),
         "model": str(config.get("model", "unknown")),
         "method": str(config.get("method", "unknown")),
         "facet_names": [str(value) for value in config.get("facet_names", [])],
@@ -39977,6 +40698,8 @@ def _mml_prior_variant_id(population_prior_sd: float) -> str:
 
 def _normalize_mml_engine_contract(value: object) -> str:
     label = str(value or "EM").strip().lower()
+    if label == "joint":
+        return "joint"
     if "auto" in label:
         return "auto"
     if "hybrid" in label:
@@ -41261,7 +41984,7 @@ def build_statistical_assumption_audit(
             "Area": "MML freely estimated population SD",
             "Status": "WITHHELD",
             "Evidence": f"estimated_population_sd = {config.get('estimated_population_sd', 'unknown')}; {FREE_SD_MML_INFERENCE_HOLD_REASON}",
-            "Implication": "EM termination does not establish joint stationarity; free-SD SE/CI remain unqualified.",
+            "Implication": "Optimizer termination alone does not qualify joint stationarity, quadrature accuracy or sampling uncertainty; free-SD SE/CI remain unqualified.",
             "RecommendedAction": "Qualify joint stationarity, quadrature stability, and nuisance-adjusted uncertainty before inference.",
         })
     elif config.get("method") == "MML":
@@ -41371,7 +42094,7 @@ def build_final_report_readiness(
         "Convergence",
         _status_from_bool(convergence_ready),
         str(getattr(opt, "message", "not available")) + (
-            "; free-SD EM termination does not establish joint stationarity or quadrature stability."
+            "; free-SD optimizer termination alone does not qualify joint stationarity, quadrature accuracy or sampling uncertainty."
             if free_sd_hold else ""
         ),
         (
@@ -41689,12 +42412,9 @@ def build_final_report_readiness(
             if isinstance(contract, dict) else None
         )
         contract_issue = ""
-        expected_identity = build_result_analysis_identity(result)
         if isinstance(contract, dict):
             try:
-                validated_contract = _mml_prior_contract.validate_contract_bundle(
-                    contract
-                )
+                validated_contract = _validate_mml_prior_contract_for_result(contract, result)
                 decision = validated_contract["sensitivity_decision"].to_payload()
             except _evidence.ContractValidationError as exc:
                 contract_issue = (
@@ -41702,15 +42422,6 @@ def build_final_report_readiness(
                     f"was ignored ({exc})."
                 )
                 decision = None
-        if isinstance(decision, dict) and (
-            str(decision.get("baseline_analysis_id", ""))
-            != expected_identity.analysis_id
-        ):
-            contract_issue = (
-                "Stored sensitivity evidence does not match this fitted result's "
-                "AnalysisID and was ignored."
-            )
-            decision = None
         if isinstance(decision, dict):
             stability_state = _evidence.StabilityState(decision["stability_state"])
             sensitivity_ids = tuple(decision.get("sensitivity_ids", []))
@@ -41866,20 +42577,13 @@ def build_manuscript_claim_guide(
         bias_claim_status = "Do not claim"
         bias_safe = "No bias/interaction screen was run for this result."
         bias_action = "Run a selected pair or full publication bias screen before writing no-bias claims."
-    elif isinstance(bias_audit, pd.DataFrame) and not bias_audit.empty and bias_audit["Status"].astype(str).eq("Ready").all():
-        bias_claim_status = "Ready"
-        bias_safe = (
-            "For the computed facet-pair screen, no cell was flagged by the conditional DFF/bias "
-            "rules with Holm/BH multiplicity review."
-        )
-        bias_action = "Report the facet pairs and thresholds that were screened; keep the claim limited to those pairs and cells."
     else:
-        bias_claim_status = "Report with caveat"
+        bias_claim_status = "Do not claim"
         bias_safe = (
-            f"{n_flagged} of {n_total} screened local interactions were flagged by the "
-            "conditional DFF/bias rules and need substantive review."
+            f"A development calculation retained {n_total} cells and {n_flagged} review prompts. "
+            "Its bias/no-bias inference is unqualified pending G3 validation."
         )
-        bias_action = "Report flagged pairs as review evidence; consider sparse cells, multiplicity, connectedness, and rubric content."
+        bias_action = "Validate error rates, power, coverage, and calibration uncertainty before bias conclusions."
 
     rating_decision = rating_scale_decision_support_table(result, diagnostics)
     rating_decision_row = pd.DataFrame()
@@ -42041,8 +42745,8 @@ def build_manuscript_claim_guide(
                 f"{n_strong} strong-review, {n_sparse} sparse, {n_holm} Holm-significant; pair status={bias_statuses}."
             ),
             "DoNotClaim": (
-                "Do not claim that bias is absent outside the facet pairs and cells that were actually screened, "
-                "or that conditional bias CIs propagate global model uncertainty."
+                "Do not make bias or no-bias conclusions from unqualified conditional calculations, "
+                "or claim that their cutoff intervals propagate calibration uncertainty."
             ),
             "NextAction": bias_action,
         },
@@ -45011,7 +45715,7 @@ def build_weighting_policy_audit(result: dict) -> pd.DataFrame:
             "MissingOrNonNumericWeightRows": int(row_audit.get("WeightMissingOrNonNumeric", pd.Series(False, index=row_audit.index)).astype(bool).sum()) if "WeightMissingOrNonNumeric" in row_audit else 0,
             "NonPositiveWeightRows": int(row_audit.get("WeightNonPositive", pd.Series(False, index=row_audit.index)).astype(bool).sum()) if "WeightNonPositive" in row_audit else 0,
             "WeightColumn": weight_col,
-            "Policy": "Rows with missing, non-finite, or non-positive weights are excluded from estimation.",
+            "Policy": "Missing or non-positive weights exclude rows; infinite weights stop estimation.",
         })
     elif isinstance(data, pd.DataFrame) and not data.empty:
         weights = pd.to_numeric(data.get("Weight", pd.Series(1.0, index=data.index)), errors="coerce")
@@ -46757,7 +47461,7 @@ def generate_method_appendix_text(
             f"- Quadrature points: {config.get('quad_points', 'unknown')}.",
             f"- Population prior SD: {config.get('population_prior_sd', 'unknown')}.",
             (
-                f"- Population prior SD treatment: freely estimated by EM; EM starting value {config.get('population_prior_sd_input', 'unknown')}. SE/CI withheld: joint stationarity and nuisance-adjusted uncertainty have not been qualified."
+                f"- Population prior SD treatment: freely estimated by {config.get('mml_engine', 'unknown')}; starting value {config.get('population_prior_sd_input', 'unknown')}. SE/CI withheld: joint numerical accuracy and sampling uncertainty have not been qualified."
                 if config.get("estimate_population_sd") else
                 "- Population prior SD treatment: fixed user-set scale; the latent variance is not estimated as a free parameter."
             ),
@@ -47364,13 +48068,17 @@ def _render_fixed_sd_returned_point(result: dict, convergence: pd.DataFrame, *, 
             if st.button(tr('button'), key=key_prefix+'_returned_point_check'):
                 with st.spinner(tr('running')):
                     try:
-                        cached = evaluate_fixed_sd_pcm_check(prepared)
+                        cached = evaluate_fixed_sd_pcm_quadrature_check(prepared)
                     except (ValueError, TypeError, KeyError, FloatingPointError) as exc:
                         cached = dict(input_id=prepared['input_id'], error=str(exc))
                     st.session_state[cache_key] = cached
         else:
             st.caption(tr('unavailable'))
             st.caption(tr('scope'))
+        with st.popover(tr('reading_guide_label')):
+            st.markdown(tr('reading_guide', report=t('guided.tab_report_export'),
+                review=t('guided.export_task_review'), resources=t('guided.export_resources'),
+                comparison=t('guided.export_resource_external_comparison')))
         status = tr('not_checked')
         if cached.get('error'):
             status = tr('failed')
@@ -47384,6 +48092,19 @@ def _render_fixed_sd_returned_point(result: dict, convergence: pd.DataFrame, *, 
             st.caption(tr('rule', points=q['points'], sigma=f"{q['sigma']:g}"))
             st.caption(tr('reference'))
             st.caption(tr('nll', value=f"{cached['raw_nll']:.12g}"))
+        if 'comparison' in cached:
+            st.caption(tr('comparison_scope', points=cached['comparison']['primary_points']))
+            st.dataframe(pd.DataFrame([{
+                tr('points'): row['points'], tr('nll_change'): row['nll_change'],
+                tr('eap_change'): row['max_eap_change'], tr('sd_change'): row['max_posterior_sd_change'],
+            } for row in cached['comparison']['rows']]), hide_index=True, width='stretch',
+                column_config={tr(key): st.column_config.NumberColumn(format='%.3e')
+                               for key in ('nll_change', 'eap_change', 'sd_change')})
+            st.caption(tr('comparison_limit'))
+            st.download_button(tr('download'), data=_evidence.canonical_json(cached),
+                file_name='fixed_sd_quadrature_check.json', mime='application/json',
+                key=key_prefix+'_quadrature_download')
+            st.caption(tr('download_scope'))
         if unavailable or cached.get('error'):
             st.caption(tr('reason', reason=unavailable or cached['error']))
         st.caption(tr('record'))
@@ -48620,12 +49341,15 @@ def _model_choice_cache_key(result: dict) -> str:
     else:
         par_hash = "0x0"
     return "|".join([
+        "person_bic_no_aicc_v1",
         str(config.get("model", "")),
         str(config.get("method", "")),
         ",".join(map(str, config.get("facet_names", []))),
         str(config.get("step_facet", "")),
         str(config.get("slope_facet", "")),
         str(config.get("n_cat", "")),
+        str(config.get("population_prior_sd", 1.0)),
+        str(config.get("estimate_population_sd", False)),
         par_hash,
     ])
 
@@ -49172,7 +49896,7 @@ def _collect_apa_exportable_tables(
                 summary,
                 publication_qualification,
             )
-        lik_info = result.get("likelihood_information")
+        lik_info = build_likelihood_information_criteria(result)
         if isinstance(lik_info, pd.DataFrame) and not lik_info.empty:
             candidates["Likelihood / information criteria"] = (
                 qualify_likelihood_information_table(
@@ -49571,6 +50295,7 @@ def render_parameter_recovery_simulation() -> None:
         )
 
     cache_key = "|".join([
+        "replicate_first_recovery_v4_all_targets",
         str(model), str(method), str(reps), str(seed),
         str(n_person), str(n_rater), str(n_criterion), str(n_cat),
     ])
@@ -49599,12 +50324,16 @@ def render_parameter_recovery_simulation() -> None:
                 reason=str(bundle.get("reason", "")),
             )
         )
-        return
+        if not isinstance(bundle.get("execution_summary"), pd.DataFrame):
+            return
 
     n_reps_total = int(bundle.get("n_reps_total", 0) or 0)
     n_reps_converged = int(bundle.get("n_reps_converged", 0) or 0)
+    execution_summary = bundle.get("execution_summary", pd.DataFrame())
+    if isinstance(execution_summary, pd.DataFrame) and not execution_summary.empty:
+        st.dataframe(execution_summary, width="stretch", hide_index=True)
     if n_reps_total:
-        if bundle.get("summary_basis") == "all_completed":
+        if n_reps_converged == 0:
             st.warning(
                 t("report_tables.parameter_recovery_no_convergence_note", n_total=n_reps_total)
             )
@@ -49632,6 +50361,16 @@ def render_parameter_recovery_simulation() -> None:
         st.caption(t("report_tables.parameter_recovery_summary_caption"))
         st.dataframe(display, width="stretch", hide_index=True)
 
+    level_summary = bundle.get("recovery_level_summary", pd.DataFrame())
+    if isinstance(level_summary, pd.DataFrame) and not level_summary.empty:
+        with st.expander(t("report_tables.parameter_recovery_level_summary"), expanded=False):
+            st.dataframe(level_summary.round(4), width="stretch", hide_index=True)
+
+    quantile_summary = bundle.get("recovery_quantile_summary", pd.DataFrame())
+    if isinstance(quantile_summary, pd.DataFrame) and not quantile_summary.empty:
+        with st.expander(t("report_tables.parameter_recovery_quantile_summary"), expanded=False):
+            st.dataframe(quantile_summary.round(4), width="stretch", hide_index=True)
+
     coverage_report: pd.DataFrame = bundle.get("coverage_report", pd.DataFrame())
     if not isinstance(coverage_report, pd.DataFrame) or coverage_report.empty:
         coverage_report = build_se_ci_coverage_report(bundle)
@@ -49649,8 +50388,8 @@ def render_parameter_recovery_simulation() -> None:
         _render_compact_dataframe(
             coverage_display,
             [
-                "ParameterType", "Facet", "CoverageN", "NominalCoverage",
-                "Coverage95", "CoverageError", "PrimarySEStatus",
+                "ParameterType", "Facet", "CoverageN", "CoverageReps", "NominalCoverage",
+                "Coverage95", "MCSECoverage95", "CoverageError", "PrimarySEStatus",
                 "SEBasisRisk", "CoverageClaimStatus",
                 "Interpretation", "RecommendedAction",
             ],
@@ -49678,10 +50417,23 @@ def render_parameter_recovery_simulation() -> None:
     # Build a single CSV with both summary and long table for download.
     recovery: pd.DataFrame = bundle.get("recovery", pd.DataFrame())
     download_frames = []
+    for name in ("settings", "truth"):
+        if bundle.get(name):
+            download_frames.append(pd.DataFrame([{"_section": name,
+                "MetadataJSON": json.dumps(bundle[name], ensure_ascii=False, sort_keys=True)}]))
+    for name, table in (("execution_summary", execution_summary), ("rep_overview", rep_overview)):
+        if isinstance(table, pd.DataFrame) and not table.empty:
+            download_frames.append(table.assign(_section=name))
     if isinstance(summary, pd.DataFrame) and not summary.empty:
         s_dl = summary.copy()
         s_dl["_section"] = "recovery_summary"
         download_frames.append(s_dl)
+    if isinstance(level_summary, pd.DataFrame) and not level_summary.empty:
+        l_dl = level_summary.copy()
+        l_dl["_section"] = "recovery_level_summary"
+        download_frames.append(l_dl)
+    if isinstance(quantile_summary, pd.DataFrame) and not quantile_summary.empty:
+        download_frames.append(quantile_summary.assign(_section="recovery_quantile_summary"))
     if isinstance(coverage_report, pd.DataFrame) and not coverage_report.empty:
         c_dl = coverage_report.copy()
         c_dl["_section"] = "se_ci_coverage_report"
@@ -49723,9 +50475,7 @@ def _render_report_tables(result: dict, diagnostics: dict) -> None:
     else:
         st.info(t("report_tables.no_estimation_summary"))
 
-    likelihood_info = result.get("likelihood_information", pd.DataFrame())
-    if not isinstance(likelihood_info, pd.DataFrame) or likelihood_info.empty:
-        likelihood_info = build_likelihood_information_criteria(result)
+    likelihood_info = build_likelihood_information_criteria(result)
     report_qualification = build_output_qualification_table(result, diagnostics)
     likelihood_info = qualify_likelihood_information_table(
         likelihood_info,
@@ -53803,7 +54553,7 @@ def show_mml_prior_sd_sensitivity_section(result: dict | None) -> None:
         "reltol": sens_reltol,
     }
     cache_key = stable_json_fingerprint({
-        "run": id(result),
+        "run": build_result_analysis_identity(result).analysis_id,
         "multipliers": selected,
         "maxit": sens_maxit,
         "reltol": sens_reltol,
@@ -53827,6 +54577,11 @@ def show_mml_prior_sd_sensitivity_section(result: dict | None) -> None:
         return
     if not bundle.get("available"):
         st.info(bundle.get("reason", "MML prior-SD sensitivity is unavailable."))
+        return
+    try:
+        _validate_mml_prior_contract_for_result(bundle.get("evidence_contract"), result)
+    except _evidence.ContractValidationError:
+        st.info("Saved sensitivity evidence does not match this fit or failed validation. Run the sensitivity analysis again.")
         return
     report = bundle.get("report", pd.DataFrame())
     summary = bundle.get("summary", pd.DataFrame())
@@ -55374,6 +56129,7 @@ def category_probability_curve_diagnostic_table(curve: dict) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
+@_reuse_report_frame
 def category_curve_diagnostic_scope_table(result: dict) -> pd.DataFrame:
     """Return category-curve diagnostics for every available curve scope."""
     options = category_probability_curve_options(result)
@@ -59127,7 +59883,7 @@ def show_help_section(*, force_full: bool = False) -> None:
 
 
 def _draw_bias_heatmap(tbl: pd.DataFrame, facet_a: str, facet_b: str) -> None:
-    """Interactive Plotly heatmap of bias size or t-values (FacetA × FacetB)."""
+    """Interactive Plotly heatmap of bias size or descriptive standardized shifts (FacetA × FacetB)."""
     if "FacetA_Level" not in tbl.columns or "FacetB_Level" not in tbl.columns:
         return
     header_cols = st.columns([5, 1])
@@ -59136,10 +59892,10 @@ def _draw_bias_heatmap(tbl: pd.DataFrame, facet_a: str, facet_b: str) -> None:
     with header_cols[1]:
         render_help_popover("bias_heatmap")
     # Internal IDs (English) drive routing; format_func provides display labels.
-    _heatmap_metric_options = ["Bias Size (logits)", "t-value"]
+    _heatmap_metric_options = ["Bias Size (logits)", "Standardized Bias"]
     _heatmap_metric_displays = {
         "Bias Size (logits)": t("bias_interaction.heatmap_metric_bias_size_display"),
-        "t-value": t("bias_interaction.heatmap_metric_t_value_display"),
+        "Standardized Bias": t("bias_interaction.heatmap_metric_t_value_display"),
     }
     metric = st.radio(
         t("bias_interaction.heatmap_metric_label"),
@@ -59149,9 +59905,9 @@ def _draw_bias_heatmap(tbl: pd.DataFrame, facet_a: str, facet_b: str) -> None:
         format_func=lambda v: _heatmap_metric_displays.get(v, v),
         help=t("bias_interaction.heatmap_metric_help"),
     )
-    if "t-value" in metric:
+    if "Standardized Bias" in metric:
         st.caption(t("bias_interaction.heatmap_t_value_caption"))
-    val_col = "Bias Size" if "Bias" in metric else "t"
+    val_col = "Bias Size" if metric == "Bias Size (logits)" else "Standardized Bias"
     if val_col not in tbl.columns:
         return
 
@@ -59205,7 +59961,7 @@ def _draw_bias_heatmap(tbl: pd.DataFrame, facet_a: str, facet_b: str) -> None:
     # Build custom hover text
     hover_pivot = tbl.pivot_table(
         index="FacetA_Level", columns="FacetB_Level",
-        values=["Bias Size", "t", "Prob.", "Observd Count"],
+        values=[c for c in ["Bias Size", "Standardized Bias", "Observd Count"] if c in tbl],
         aggfunc="first",
     )
     hover_text = []
@@ -59213,25 +59969,13 @@ def _draw_bias_heatmap(tbl: pd.DataFrame, facet_a: str, facet_b: str) -> None:
         row_texts = []
         for j, col_lbl in enumerate(pivot.columns):
             parts = [f"{facet_a}: {row_lbl}", f"{facet_b}: {col_lbl}"]
-            for c in ["Bias Size", "t", "Prob.", "Observd Count"]:
-                if c in hover_pivot.columns.get_level_values(0):
+            for c in ["Bias Size", "Standardized Bias", "Observd Count"]:
+                if (c, col_lbl) in hover_pivot.columns and row_lbl in hover_pivot.index:
                     v = hover_pivot.loc[row_lbl, (c, col_lbl)]
                     if pd.notna(v):
                         parts.append(f"{c}: {v:.3f}" if isinstance(v, float) else f"{c}: {v}")
             row_texts.append("<br>".join(parts))
         hover_text.append(row_texts)
-
-    # Significance annotations
-    t_pivot = tbl.pivot_table(
-        index="FacetA_Level", columns="FacetB_Level", values="t", aggfunc="first",
-    )
-    star_text = np.full(pivot.shape, "", dtype=object)
-    show_star_text = pivot.size <= 900
-    for i, row_lbl in enumerate(pivot.index):
-        for j, col_lbl in enumerate(pivot.columns):
-            t_val = t_pivot.loc[row_lbl, col_lbl] if (row_lbl in t_pivot.index and col_lbl in t_pivot.columns) else np.nan
-            if show_star_text and pd.notna(t_val) and abs(t_val) >= 2:
-                star_text[i, j] = "*"
 
     zmax = float(np.nanmax(np.abs(pivot.values))) if np.any(np.isfinite(pivot.values)) else 1.0
     x_labels_full = [str(c) for c in pivot.columns]
@@ -59240,7 +59984,6 @@ def _draw_bias_heatmap(tbl: pd.DataFrame, facet_a: str, facet_b: str) -> None:
         z=pivot.values,
         x=x_labels_full,
         y=y_labels_full,
-        text=star_text if show_star_text else None,
         customdata=hover_text,
         hovertemplate="%{customdata}<extra></extra>",
         colorscale="RdBu_r",
@@ -59249,8 +59992,6 @@ def _draw_bias_heatmap(tbl: pd.DataFrame, facet_a: str, facet_b: str) -> None:
         zmax=zmax,
         colorbar=dict(title=val_col),
     ))
-    if show_star_text:
-        fig.update_traces(texttemplate="%{text}", textfont=dict(size=14, color="black"))
     fig.update_layout(
         xaxis_title=facet_b,
         yaxis_title=facet_a,
@@ -59281,10 +60022,7 @@ def _draw_bias_heatmap(tbl: pd.DataFrame, facet_a: str, facet_b: str) -> None:
         tickfont=dict(size=9 if len(pivot.index) > 25 else 10),
     )
     st.plotly_chart(fig, width="stretch")
-    if show_star_text:
-        st.caption(t("bias_interaction.heatmap_significance_caption"))
-    else:
-        st.caption(t("bias_interaction.heatmap_dense_caption"))
+    st.caption(t("bias_interaction.heatmap_significance_caption"))
 
 
 def classical_dif_help_table() -> pd.DataFrame:
@@ -59589,12 +60327,12 @@ def show_bias_section(
         flagged_dff = dff_tbl[dff_tbl["Flag"].astype(bool)] if "Flag" in dff_tbl.columns else pd.DataFrame()
         with st.expander(t("bias_interaction.dff_flagged_expander"), expanded=not flagged_dff.empty):
             if flagged_dff.empty:
-                st.success(t("bias_interaction.dff_no_flags_success"))
+                st.info(t("bias_interaction.dff_no_flags_success"))
             else:
                 show_cols = [
                     "FacetA", "FacetA_Level", "FacetB", "FacetB_Level", "ObsN",
                     "BiasSize", "SE", "t", "p", "p_holm", "p_bh",
-                    "EvidenceLevel", "ClaimStatus", "ProfileCIStatus",
+                    "EvidenceLevel", "ClaimStatus", "CellStatus", "ReferenceStatus", "FamilySize",
                     "Direction", "ReportingCaution", "NextAction",
                 ]
                 st.dataframe(flagged_dff[[c for c in show_cols if c in flagged_dff.columns]], width="stretch")
@@ -59606,31 +60344,19 @@ def show_bias_section(
             key=f"dl_dff_bias_screening_{safe_pair_key}",
         )
 
-    # Add standardized effect size (Cohen's d ≈ Bias / pooled SD of measures)
-    if "Bias Size" in tbl.columns:
-        bias_vals = pd.to_numeric(tbl["Bias Size"], errors="coerce").dropna()
-        if len(bias_vals) > 1:
-            pooled_sd = float(bias_vals.std())
-            if pooled_sd > 0:
-                tbl["Effect (d)"] = (
-                    pd.to_numeric(tbl["Bias Size"], errors="coerce") / pooled_sd
-                ).round(2)
-
-    # Display columns with friendly names. Under GPCM the LR / profile-CI
-    # columns carry the inferential content that the t-based screening
-    # columns can only approximate, so we slot them in right after the
-    # t-based block. RSM / PCM fits leave these columns NaN; rather than
-    # display empty cells we drop them from the visible dataframe when no
-    # row carries a finite ``LR ChiSq``.
-    gpcm_inference_active = (
+    # Calibration-held-fixed diagnostics; conditional cutoff intervals are
+    # shown by their mathematical target, even though raw keys retain the old
+    # 'Profile CI' names for technical export compatibility.
+    conditional_inference_active = (
         "LR ChiSq" in tbl.columns
         and pd.to_numeric(tbl["LR ChiSq"], errors="coerce").notna().any()
     )
     display_cols = [
         "Sq", "Observd Score", "Expctd Score", "Observd Count",
-        "Obs-Exp Average", "Bias Size", "Effect (d)", "S.E.", "t", "d.f.", "Prob.",
+        "Obs-Exp Average", "Bias Size", "S.E.", "Standardized Bias",
+        "Cell Status", "Reference Status", "QualificationStatus",
     ]
-    if gpcm_inference_active:
+    if conditional_inference_active:
         display_cols += [
             "LR ChiSq", "LR Prob.",
             "Profile CI Lower", "Profile CI Upper", "Profile CI Status",
@@ -59642,7 +60368,11 @@ def show_bias_section(
     ]
     display_cols = [c for c in display_cols if c in tbl.columns]
     tbl_display = tbl[display_cols].rename(columns={
-        "S.E.": "Model S.E.",
+        "S.E.": "Conditional curvature S.E.",
+        "LR Prob.": "Conditional LR reference probability (unqualified)",
+        "Profile CI Lower": "Conditional LR cutoff lower",
+        "Profile CI Upper": "Conditional LR cutoff upper",
+        "Profile CI Status": "Conditional LR cutoff status",
         "Infit": "Infit MnSq",
         "Outfit": "Outfit MnSq",
         "FacetA_Index": f"{facet_a} N",
@@ -59653,13 +60383,9 @@ def show_bias_section(
         "FacetB_Measure": f"{facet_b} measr",
     })
     st.dataframe(tbl_display, width="stretch")
-    if gpcm_inference_active:
+    if conditional_inference_active:
         st.caption(t("bias_interaction.gpcm_inference_caption"))
     elif "LR ChiSq" in tbl.columns:
-        # The LR / profile columns exist in the raw table (so they appear in
-        # the CSV download for completeness) but are uniformly NaN under
-        # RSM / PCM; tell the reader why instead of leaving an unexplained
-        # gap between the dataframe and the heatmap below.
         st.caption(t("bias_interaction.gpcm_inference_unavailable_caption"))
 
     # Interactive bias heatmap (Plotly)
@@ -59667,14 +60393,16 @@ def show_bias_section(
     st.caption(t("bias_interaction.heatmap_caption"))
     _draw_bias_heatmap(tbl, facet_a, facet_b)
 
-    # Iteration convergence report
+    # Single-pass calculation record; preserve historical records as history.
     iter_tbl = bias_results.get("iteration")
     if iter_tbl is not None and not iter_tbl.empty:
         st.subheader(t("bias_interaction.iteration_subheader"))
         iter_display = iter_tbl.copy()
-        iter_display["Iteration"] = iter_display["Iteration"].apply(
-            lambda v: f"BIAS {int(v)}" if pd.notna(v) else v
-        )
+        if "Iteration" in iter_display.columns:
+            st.caption(t("bias_interaction.legacy_iteration_caption"))
+            iter_display["Iteration"] = iter_display["Iteration"].apply(
+                lambda v: f"BIAS {int(v)}" if pd.notna(v) else v
+            )
         st.dataframe(iter_display.rename(columns={
             "MaxScoreResidual": "Max. Score Residual",
             "MaxScoreResidualPct": "%",
@@ -59693,7 +60421,7 @@ def show_bias_section(
     if len(bias_vals) >= 3:
         mean_b = float(bias_vals.mean())
         sd_b = float(bias_vals.std())
-        fig_bias = make_subplots(rows=1, cols=2, subplot_titles=["Bias Size Distribution", "Bias Significance (t) Distribution"])
+        fig_bias = make_subplots(rows=1, cols=2, subplot_titles=["Bias Size Distribution", "Descriptive Standardized Bias Distribution"])
         fig_bias.add_trace(go.Histogram(
             x=bias_vals, nbinsx=min(20, len(bias_vals)), marker_color="#1b9e77", showlegend=False,
         ), row=1, col=1)
@@ -59705,39 +60433,25 @@ def show_bias_section(
         fig_bias.update_xaxes(title_text="Bias Size (logits)", row=1, col=1)
         fig_bias.update_yaxes(title_text="Count", row=1, col=1)
 
-        t_vals = tbl["t"].dropna()
+        t_vals = tbl.get("Standardized Bias", pd.Series(dtype=float)).dropna()
         if len(t_vals) >= 3:
             fig_bias.add_trace(go.Histogram(
                 x=t_vals, nbinsx=min(20, len(t_vals)), marker_color="#d95f02", showlegend=False,
             ), row=1, col=2)
             fig_bias.add_vline(x=0, line_color="black", line_width=1, row=1, col=2)
-            fig_bias.add_vline(x=2, line_dash="dash", line_color="red", line_width=0.7, row=1, col=2)
-            fig_bias.add_vline(x=-2, line_dash="dash", line_color="red", line_width=0.7, row=1, col=2)
-            fig_bias.update_xaxes(title_text="t-value", row=1, col=2)
+            fig_bias.update_xaxes(title_text="Standardized Bias (descriptive)", row=1, col=2)
             fig_bias.update_yaxes(title_text="Count", row=1, col=2)
 
         fig_bias.update_layout(height=380, template="plotly_white")
         st.plotly_chart(fig_bias, width="stretch")
         _offer_fig_download(fig_bias, "bias_distribution", "Download Bias Distribution (PNG 300 DPI)")
 
-    # Fixed chi-square test
+    # Retain only the descriptive dispersion in this view, including old fits.
     chi_sq = bias_results.get("chi_sq")
-    if chi_sq is not None and not chi_sq.empty:
+    if isinstance(chi_sq, pd.DataFrame) and not chi_sq.empty:
         st.subheader(t("bias_interaction.chi_sq_subheader"))
-        st.dataframe(chi_sq, width="stretch")
-        chi_val = chi_sq["FixedChiSq"].iloc[0]
-        chi_df = chi_sq["FixedDF"].iloc[0]
-        chi_p = chi_sq["FixedProb"].iloc[0]
-        if np.isfinite(chi_p):
-            tmpl_kwargs = dict(
-                chi_val=f"{chi_val:.2f}",
-                chi_df=int(chi_df),
-                chi_p=f"{chi_p:.4f}",
-            )
-            if chi_p < 0.01:
-                st.warning(t("bias_interaction.chi_sq_warning_template", **tmpl_kwargs))
-            else:
-                st.success(t("bias_interaction.chi_sq_success_template", **tmpl_kwargs))
+        st.dataframe(chi_sq[[c for c in ["FixedChiSq", "ContributingCells", "Status"] if c in chi_sq]], width="stretch")
+        st.caption(t("bias_interaction.chi_sq_withheld_caption"))
 
     # Pairwise bias report
     calc_bias_pairwise_fn = core.get("calc_bias_pairwise")
@@ -60678,7 +61392,7 @@ Current-engine MFRM runner.
 
 This script imports streamlit_app.py and calls the same embedded Python engine
 used by the app. Use it when you need to reproduce the current optimizer path,
-including MML Auto/Direct/Hybrid/EM, PCM, strict marginal diagnostics, posterior
+including MML Auto/Direct/Hybrid/EM/Joint, PCM, strict marginal diagnostics, posterior
 scoring, plausible values, GPCM slope estimates, latent-regression population
 models, score-support handling, and anchor audit filtering.
 
@@ -60692,6 +61406,7 @@ from __future__ import annotations
 import argparse
 import importlib.util
 import json
+import sys
 from itertools import combinations
 from pathlib import Path
 
@@ -60718,7 +61433,8 @@ KEEP_ORIGINAL = {repr(keep_original)}
 RATING_MIN = {repr(input_rating_min)}
 RATING_MAX = {repr(input_rating_max)}
 QUAD_POINTS = {quad_points}
-POPULATION_PRIOR_SD = {repr(float(config.get("population_prior_sd") or 1.0))}
+POPULATION_PRIOR_SD = {repr(float(config.get("population_prior_sd_input", config.get("population_prior_sd")) or 1.0))}
+ESTIMATE_POPULATION_SD = {repr(bool(config.get("estimate_population_sd", False)))}
 MAXIT = {int(maxit)}
 RELTOL = {float(reltol)}
 MML_ENGINE = {repr(mml_engine)}
@@ -60769,6 +61485,8 @@ def load_app_engine(app_path: Path):
     if spec is None or spec.loader is None:
         raise RuntimeError(f"Could not import app engine from {{app_path}}")
     module = importlib.util.module_from_spec(spec)
+    sys.path.insert(0, str(app_path.resolve().parent))
+    sys.modules[spec.name] = module
     spec.loader.exec_module(module)
     return module
 
@@ -60828,6 +61546,7 @@ def main() -> None:
         positive_facets=POSITIVE_FACETS,
         quad_points=QUAD_POINTS,
         population_prior_sd=POPULATION_PRIOR_SD,
+        estimate_population_sd=ESTIMATE_POPULATION_SD,
         maxit=MAXIT,
         reltol=RELTOL,
         mml_engine=MML_ENGINE,
@@ -60855,6 +61574,10 @@ def main() -> None:
     print("\\nWriting CSV outputs:")
     write_csv("summary", result.get("summary"))
     write_csv("convergence", result.get("convergence"))
+    write_csv("output_qualification", app.build_output_qualification_table(result, diagnostics))
+    write_csv("mml_covariance_audit", diagnostics.get("uncertainty", {{}}).get("covariance_audit"))
+    for name, frame in app.build_joint_mml_audit_frames(result).items():
+        write_csv(name, frame)
     write_csv("parameterization_audit", result.get("parameterization_audit"))
     write_csv("score_map", result.get("prep", {{}}).get("score_map"))
     write_csv("person_measures", result.get("facets", {{}}).get("person"))
@@ -61499,17 +62222,22 @@ if __name__ == "__main__":
     use_cols = [PERSON_COL] + FACET_COLS + [SCORE_COL]
     if WEIGHT_COL:
         use_cols.append(WEIGHT_COL)
-    df = data[use_cols].dropna().copy()
+    df = data[use_cols].copy()
     df.rename(columns={{PERSON_COL: "Person", SCORE_COL: "Score"}}, inplace=True)
     if WEIGHT_COL:
         df.rename(columns={{WEIGHT_COL: "Weight"}}, inplace=True)
         df["Weight"] = pd.to_numeric(df["Weight"], errors="coerce")
-        df = df[df["Weight"] > 0]
+        if (df["Weight"].notna() & ~np.isfinite(df["Weight"])).any():
+            raise ValueError("Weights must be finite; infinite values were found.")
     df["Score"] = pd.to_numeric(df["Score"], errors="coerce")
+    if (df["Score"].notna() & ~np.isfinite(df["Score"])).any():
+        raise ValueError("Score must contain finite integer category codes; infinite values were found.")
     frac = df["Score"].notna() & np.isfinite(df["Score"]) & ((df["Score"] - np.round(df["Score"])).abs() > np.sqrt(np.finfo(float).eps))
     if frac.any():
         raise ValueError("Score must contain ordered integer category codes; fractional values were found.")
     df = df.dropna()
+    if WEIGHT_COL:
+        df = df[df["Weight"] > 0]
     df["Person"] = df["Person"].astype(str)
     for fc in FACET_COLS:
         df[fc] = df[fc].astype(str)
@@ -63715,6 +64443,7 @@ def python_native_reproducibility_assets(
         **python_rating_scale_recode_assets(result, diagnostics),
     }
 
+@_with_report_calculation_cache
 def collect_download_frames(
     result: dict,
     diagnostics: dict,
@@ -63804,9 +64533,7 @@ def collect_download_frames(
             ("jmle_person_boundary_summary", person_boundary_dl.get("summary")),
             ("jmle_person_boundary_persons", person_boundary_dl.get("persons")),
         ))
-    likelihood_info_dl = result.get("likelihood_information", pd.DataFrame())
-    if not isinstance(likelihood_info_dl, pd.DataFrame) or likelihood_info_dl.empty:
-        likelihood_info_dl = build_likelihood_information_criteria(result)
+    likelihood_info_dl = build_likelihood_information_criteria(result)
     likelihood_info_dl = qualify_likelihood_information_table(
         likelihood_info_dl,
         download_qualification,
@@ -63825,6 +64552,7 @@ def collect_download_frames(
         ))
     convergence_dl = result.get("convergence", pd.DataFrame())
     _frame_bundle.add_frame(all_frames, "convergence", convergence_dl)
+    _frame_bundle.add_frames(all_frames, build_joint_mml_audit_frames(result).items())
     prep = result.get("prep", {})
     score_map = prep.get("score_map", pd.DataFrame())
     _frame_bundle.add_frame(all_frames, "score_map", score_map)
@@ -70805,6 +71533,10 @@ def _self_test_dff_bias_screening() -> None:
         "S.E.": [0.10, 0.50, 0.30],
         "t": [8.0, 0.2, 2.0],
         "Prob.": [0.001, 0.84, 0.046],
+        "LR Prob.": [0.001, 0.84, 0.046],
+        "Cell Status": ["interior"]*3,
+        "Primary P Method": ["unit_weight_conditional_lr_v1"]*3,
+        "Reference Status": ["unit_weight_conditional_lr_candidate"]*3,
     })
     dff = build_dff_bias_screening_table({"table": bias_tbl}, alpha=0.05, min_n=5, practical_logit=0.5)
     _self_test_assert(not dff.empty and "p_holm" in dff.columns and "p_bh" in dff.columns, "DFF table missing adjusted p-values")
@@ -71022,8 +71754,7 @@ def _self_test_facets_df_zstd_alignment() -> None:
 
 
 def _self_test_model_choice_aicc_and_weights() -> None:
-    """Model-choice comparison must compute AICc per Hurvich & Tsai
-    (1989) and report Akaike weights that sum to 1."""
+    """Unsupported AICc stays unavailable; technical IC weights normalize."""
     res = mfrm_estimate(
         _make_self_test_3way_rating_data(),
         person_col="Person",
@@ -71035,18 +71766,9 @@ def _self_test_model_choice_aicc_and_weights() -> None:
     bundle = compute_model_choice_comparison(res)
     _self_test_assert(bundle.get("available"), "model-choice unavailable on smoke fixture")
     comp = bundle["comparison"]
-    # AICc closed form per row where AIC and KParams are finite.
-    for _, row in comp.iterrows():
-        n_val = float(row["N"]) if pd.notna(row["N"]) else np.nan
-        k_val = float(row["KParams"]) if pd.notna(row["KParams"]) else np.nan
-        aic_val = float(row["AIC"]) if pd.notna(row["AIC"]) else np.nan
-        aicc_val = float(row["AICc"]) if pd.notna(row["AICc"]) else np.nan
-        if np.isfinite(n_val) and np.isfinite(k_val) and np.isfinite(aic_val) and n_val > k_val + 1:
-            expected = aic_val + 2.0 * k_val * (k_val + 1.0) / (n_val - k_val - 1.0)
-            _self_test_assert(
-                abs(aicc_val - expected) < 1e-9,
-                f"AICc closed-form drift: got {aicc_val}, expected {expected}",
-            )
+    for col in ("AICc", "DeltaAICc", "AICcWeight", "AICcEvidenceRatio"):
+        _self_test_assert(comp[col].isna().all(), f"Unsupported {col} must be unavailable")
+    _self_test_assert(not comp["AICcRecommended"].any(), "AICc cannot be recommended from N / K")
     # Akaike weights must sum to 1 across finite rows.
     for col in ("AICWeight", "AICcWeight", "BICWeight"):
         weights = pd.to_numeric(comp[col], errors="coerce").dropna()
@@ -74405,14 +75127,13 @@ def main() -> None:
     _ensure_language_state()
     _apply_pending_guide_workspace_restore()
     home_open = bool(st.session_state.get("_mfrm_home_open"))
-    if home_open:
-        # Keep existing result navigation values while the Home/Help surface
-        # omits their widgets. Input/upload widgets stay alive below, as in Help.
-        for key in ("guided_essential_section", "main_results_panel", "guided_diagnostics_panel",
-                    "guided_figures_panel", "bias_pair_selector",
-                    "guided_export_task", "guided_export_resource", "manuscript_format"):
-            if key in st.session_state:
-                st.session_state[key] = st.session_state[key]
+    # Keep navigation choices when another result section, Home or Help omits
+    # their widgets. Input/upload widgets stay alive below, as in Help.
+    for key in ("guided_essential_section", "main_results_panel", "guided_diagnostics_panel",
+                "guided_figures_panel", "bias_pair_selector",
+                "guided_export_task", "guided_export_resource", "manuscript_format"):
+        if key in st.session_state:
+            st.session_state[key] = st.session_state[key]
 
     # Language selector at the top of the sidebar. The widget's ``key="lang"``
     # writes directly to ``st.session_state["lang"]``, which the ``t()`` helper
@@ -74463,16 +75184,13 @@ def main() -> None:
     help_state = render_persistent_help_launcher()
     render_software_information()
 
-    language_fast_path = _consume_language_switch_fast_path(app_mode)
-    if language_fast_path and help_state.is_open:
+    language_changed = _consume_language_switch(app_mode)
+    if language_changed and help_state.is_open:
         help_state = _help_navigation.retain_route_for_locale_change(
             help_state,
             locale=st.session_state.get("lang", DEFAULT_LANG),
         )
         _set_help_route_state(help_state)
-    elif language_fast_path and not home_open:
-        render_language_switch_fast_path()
-        return
 
     st.title(t("app.title"))
     st.caption(t("app.subtitle_template", release_label=APP_RELEASE_LABEL, version=APP_VERSION))

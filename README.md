@@ -810,6 +810,11 @@ make clean
 make run
 ```
 
+`make clean` removes development caches only. It preserves validation evidence,
+source snapshots, backups, and virtual environments. In a Dropbox workspace,
+wait for synchronization to finish before bulk cleanup; `.gitignore` does not
+control Dropbox synchronization.
+
 ## Data Format
 
 Use long-format rating data. The interactive upload path accepts CSV, TSV, TXT,

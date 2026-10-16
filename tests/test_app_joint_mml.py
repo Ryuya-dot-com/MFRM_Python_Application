@@ -114,11 +114,12 @@ def test_joint_diagnostics_and_both_download_paths_preserve_technical_scope(mode
     assert uncertainty['covariance']['status']=='unsupported_covariance_scope'
     assert uncertainty['structural_se'][['StructuralSE','StructuralCI_Lower','StructuralCI_Upper']].isna().all().all()
     assert not uncertainty['covariance_audit'].PublicConclusionAllowed.any()
-    # Existing conditional-information approximations and Person posterior
-    # SDs remain explicitly labelled; neither becomes a joint sampling SE.
+    # Keep the technical uncertainty basis while carrying the calibration hold.
     persons=diag['measures'].Facet=='Person'
-    assert set(diag['measures'].loc[persons,'SE_Status'])=={'posterior_eap_sd'}
-    assert set(diag['measures'].loc[~persons,'SE_Status'])=={'conditional_approximation'}
+    assert diag['measures'].SE_Status.eq('calibration_inference_withheld').all()
+    assert diag['measures'].CI_Status.eq('calibration_inference_withheld').all()
+    assert diag['measures'].loc[persons,'SE_Method'].str.contains('posterior SD').all()
+    assert diag['measures'].loc[~persons,'SE_Method'].str.contains('conditional information').all()
     assert result['steps'].SE.isna().all()
     expected=app.build_joint_mml_audit_frames(result)
     quick=app.build_result_bundle_frames(result,diag)

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import numpy as np
 import pandas as pd
+import pytest
 
 import streamlit_app as app
 
@@ -68,6 +69,29 @@ def _fitted_mml(*, free_sd: bool = False) -> dict:
         maxit=300,
         reltol=1e-5,
     )
+
+
+@pytest.mark.parametrize("coordinate, expected", [(0.0, True), (np.nan, False), (np.inf, False), (-np.inf, False)])
+def test_reportable_coordinate_uses_finiteness_including_zero(coordinate, expected):
+    fitted = _fitted_jmle()
+    people = fitted["facets"]["person"]
+    people.loc[0, ["Estimate", "ReportableEstimate"]] = coordinate
+    preflight = app.build_assignment_sensitivity_preflight(fitted)
+    gate = preflight["gates"].set_index("Gate").loc["Finite reportable fitted Person coordinate"]
+    assert bool(gate.Passed) is expected
+    if expected:
+        assert preflight["person_scores"][str(people.iloc[0].Person)] == 0.0
+
+
+@pytest.mark.parametrize("coordinate", [np.inf, -np.inf, np.nan, pd.NA])
+def test_nonfinite_reportable_coordinate_is_rejected_with_finite_terminal_estimate(coordinate):
+    fitted = _fitted_jmle()
+    people = fitted["facets"]["person"]
+    people["ReportableEstimate"] = people["ReportableEstimate"].astype("Float64")
+    people.loc[0, "ReportableEstimate"] = coordinate
+    preflight = app.build_assignment_sensitivity_preflight(fitted)
+    gate = preflight["gates"].set_index("Gate").loc["Finite reportable fitted Person coordinate"]
+    assert not bool(gate.Passed)
 
 
 def _unequal_context_responses() -> pd.DataFrame:

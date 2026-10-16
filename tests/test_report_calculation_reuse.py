@@ -89,6 +89,51 @@ def test_parallel_exports_keep_separate_scopes():
     assert app._report_calculation_cache.get() is None
 
 
+@pytest.mark.parametrize("builder_name", ["build_final_report_readiness", "build_report_ready_summary_panel",
+                                        "build_manuscript_claim_guide", "build_claim_to_evidence_matrix"])
+@pytest.mark.parametrize("case", ["facet_boundary", "fixed_sd", "free_sd"])
+def test_readiness_reuse_preserves_evidence_and_rechecks_changed_fit(monkeypatch, builder_name, case):
+    from tests.test_jmle_facet_boundary import separated_data
+    data = separated_data() if case == "facet_boundary" else app._make_self_test_gradient_data()
+    options = ({"method": "MML", "mml_engine": "EM", "quad_points": 15,
+                "estimate_population_sd": case == "free_sd"} if case != "facet_boundary" else {})
+    result = app.mfrm_estimate(data, person_col="Person", facet_cols=["Rater", "Task"],
+        score_col="Score", maxit=100, **options)
+    diagnostics = app.mfrm_diagnostics(result, compute_pca=False)
+    builder = getattr(app, builder_name)
+    fresh = builder.__wrapped__
+    expected = fresh(result, diagnostics)
+    identity = app.build_result_analysis_identity
+    calls = []
+
+    def count_identity(value):
+        calls.append(1)
+        return identity(value)
+
+    monkeypatch.setattr(app, "build_result_analysis_identity", count_identity)
+
+    @app._with_report_calculation_cache
+    def report():
+        first = builder(result, diagnostics)
+        pd.testing.assert_frame_equal(first, expected, check_exact=True)
+        count_before_reuse = len(calls)
+        status_column = next(column for column in ("Status", "ReportStatus", "ClaimStatus") if column in first)
+        first.loc[0, status_column] = "caller edit"
+        if "evidence_records" in first.attrs:
+            first.attrs["evidence_records"][0]["caller_edit"] = True
+        again = builder(result, diagnostics)
+        pd.testing.assert_frame_equal(again, expected, check_exact=True)
+        assert again.attrs == expected.attrs
+        assert count_before_reuse > 0 and len(calls) == count_before_reuse
+        result["opt"].success = False
+        actual = builder(result, diagnostics)
+        assert len(calls) > count_before_reuse
+        pd.testing.assert_frame_equal(actual, fresh(result, diagnostics), check_exact=True)
+
+    report()
+    assert app._report_calculation_cache.get() is None
+
+
 @pytest.mark.parametrize('model',['RSM','PCM','GPCM'])
 def test_actual_category_tables_match_fresh_computation_after_input_changes(model):
     result=app.mfrm_estimate(**arguments(sample(model),model))
@@ -114,3 +159,42 @@ def test_actual_category_tables_match_fresh_computation_after_input_changes(mode
                     actual.iloc[0,0]=-999 if pd.api.types.is_numeric_dtype(actual.dtypes.iloc[0]) else 'caller edit'
                 pd.testing.assert_frame_equal(fn(*args),expected,check_exact=True)
     check()
+
+
+def test_agreement_reuse_rechecks_ratings_weights_model_and_selected_facet(monkeypatch):
+    result = app.mfrm_estimate(app._make_self_test_gradient_data(), "Person", ["Rater", "Task"], "Score", maxit=100)
+    diagnostics = {"obs": app.compute_obs_table(result)}
+    builder = app._agreement_summary_for_facet
+    original = app.calc_interrater_agreement
+    calls = []
+
+    def count(*args, **kwargs):
+        calls.append(1)
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(app, "calc_interrater_agreement", count)
+
+    @app._with_report_calculation_cache
+    def report():
+        for step in range(5):
+            target = "Task" if step == 1 else "Rater"
+            if step == 2:
+                diagnostics["obs"].loc[0, "Observed"] += 1
+            elif step == 3:
+                diagnostics["obs"]["Weight"] = 1.0
+                diagnostics["obs"].loc[0, "Weight"] = 2.0
+            elif step == 4:
+                result["params"]["facets"]["Rater"][0] += .1
+            before = len(calls)
+            actual = builder(result, diagnostics, ["Rater", "Task"], target)
+            assert len(calls) == before + 1
+            expected = builder.__wrapped__(result, diagnostics, ["Rater", "Task"], target)
+            pd.testing.assert_frame_equal(actual, expected, check_exact=True)
+            assert not actual.empty
+            actual.loc[actual.index[0], "ExactAgreement"] = -999
+            before = len(calls)
+            pd.testing.assert_frame_equal(builder(result, diagnostics, ["Rater", "Task"], target), expected, check_exact=True)
+            assert len(calls) == before
+
+    report()
+    assert app._report_calculation_cache.get() is None

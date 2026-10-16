@@ -289,7 +289,7 @@ def test_help_copy_frames_thresholds_as_diagnostic_guidance(locales):
     assert "not as an automatic decision rule" in en["help.interpretation_caution"]
     assert "screening heuristics" in en["help.interpretation_caution"]
     assert "自動判定ルールではありません" in ja["help.interpretation_caution"]
-    assert "スクリーニング用の目安" in ja["help.interpretation_caution"]
+    assert "確認の目安" in ja["help.interpretation_caution"]
 
     old_overclaims = [
         "The default and\n  recommended method",
@@ -309,7 +309,10 @@ def test_help_copy_frames_thresholds_as_diagnostic_guidance(locales):
     for phrase in old_overclaims:
         assert phrase not in help_text
 
-    assert "MFRM_Visual_Evidence_Binder.zip" in en["help.quick_start_body"]
-    assert "visual_qa_preflight.csv" in ja["help.quick_start_body"]
-    assert "Holm/BH" in en["help.analysis_workflow_body"]
-    assert "Holm / BH" in ja["help.analysis_workflow_body"]
+    # The first-use guide describes user actions; archive details belong in export help.
+    assert "rating data" in en["help.quick_start_body"]
+    assert "評定データ" in ja["help.quick_start_body"]
+    assert "hold" in en["help.analysis_workflow_body"].lower()
+    assert "保留" in ja["help.analysis_workflow_body"]
+    assert "multiplicity" in en["help.troubleshooting_body"].lower()
+    assert "多重比較の補正だけでは" in ja["help.troubleshooting_body"]

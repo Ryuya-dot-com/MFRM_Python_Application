@@ -539,33 +539,38 @@ def test_reorder_facets_table_columns_is_noop_on_none_or_empty():
     assert out is empty or out.empty
 
 
-def test_facets_fair_se_cache_key_is_stable_for_same_fit(small_gpcm_mml_fit):
+@pytest.fixture(scope="module")
+def small_gpcm_report_tables(small_gpcm_mml_fit, small_gpcm_mml_diagnostics):
+    return app.calc_facets_report_tbls(small_gpcm_mml_fit, small_gpcm_mml_diagnostics)
+
+
+def test_facets_fair_se_cache_key_is_stable_for_same_fit(small_gpcm_mml_fit, small_gpcm_report_tables):
     """Same fit + same CI level => same cache key. Cache hits round-trip."""
-    k1 = app._facets_fair_se_cache_key(small_gpcm_mml_fit, 0.95)
-    k2 = app._facets_fair_se_cache_key(small_gpcm_mml_fit, 0.95)
+    k1 = app._facets_fair_se_cache_key(small_gpcm_mml_fit, 0.95, small_gpcm_report_tables)
+    k2 = app._facets_fair_se_cache_key(small_gpcm_mml_fit, 0.95, small_gpcm_report_tables)
     assert k1 is not None
     assert k1 == k2
 
 
-def test_facets_fair_se_cache_key_changes_with_ci_level(small_gpcm_mml_fit):
+def test_facets_fair_se_cache_key_changes_with_ci_level(small_gpcm_mml_fit, small_gpcm_report_tables):
     """A different CI level must produce a different cache key."""
-    k_90 = app._facets_fair_se_cache_key(small_gpcm_mml_fit, 0.90)
-    k_95 = app._facets_fair_se_cache_key(small_gpcm_mml_fit, 0.95)
-    k_99 = app._facets_fair_se_cache_key(small_gpcm_mml_fit, 0.99)
+    k_90 = app._facets_fair_se_cache_key(small_gpcm_mml_fit, 0.90, small_gpcm_report_tables)
+    k_95 = app._facets_fair_se_cache_key(small_gpcm_mml_fit, 0.95, small_gpcm_report_tables)
+    k_99 = app._facets_fair_se_cache_key(small_gpcm_mml_fit, 0.99, small_gpcm_report_tables)
     assert len({k_90, k_95, k_99}) == 3
 
 
-def test_facets_fair_se_cache_key_changes_with_par(small_gpcm_mml_fit):
+def test_facets_fair_se_cache_key_changes_with_par(small_gpcm_mml_fit, small_gpcm_report_tables):
     """A different parameter vector must produce a different cache key,
     so re-running estimation invalidates the cached SE annotation."""
-    k_original = app._facets_fair_se_cache_key(small_gpcm_mml_fit, 0.95)
+    k_original = app._facets_fair_se_cache_key(small_gpcm_mml_fit, 0.95, small_gpcm_report_tables)
 
     # Construct a perturbed result with the same shape but different par.
     mutated_par = app._get_opt_par(small_gpcm_mml_fit).copy()
     mutated_par[0] = mutated_par[0] + 0.5
     mutated_opt = type("Opt", (), {"x": mutated_par})()
     mutated_result = {**small_gpcm_mml_fit, "opt": mutated_opt}
-    k_mutated = app._facets_fair_se_cache_key(mutated_result, 0.95)
+    k_mutated = app._facets_fair_se_cache_key(mutated_result, 0.95, small_gpcm_report_tables)
 
     assert k_original != k_mutated
 

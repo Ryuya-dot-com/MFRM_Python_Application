@@ -91,3 +91,24 @@ def test_invalid_prior_mass_is_rejected_before_all_posterior_consumers():
                lambda:app.compute_person_posterior_outputs(idx,config,params,quad)]
         for call in calls:
             with pytest.raises(ValueError,match='quadrature'):call()
+
+
+def test_final_mml_person_table_reuses_posterior_scores(monkeypatch):
+    data, _, _, _, _ = problem('RSM', 'regular')
+
+    def duplicate_scoring(*args, **kwargs):
+        raise AssertionError('Final scoring must not repeat the EAP likelihood pass')
+
+    monkeypatch.setattr(app, 'compute_person_eap', duplicate_scoring)
+    result = app.mfrm_estimate(data, person_col='Person',
+        facet_cols=['Rater', 'Task', 'Criterion'], score_col='Score',
+        rating_min=0, rating_max=3, keep_original=True, method='MML',
+        noncenter_facet='Criterion', quad_points=15, maxit=30,
+        compute_plausible_values=True, n_plausible_values=3, plausible_seed=726)
+    people = result['facets']['person']
+    scores = result['posterior']['scores']
+    assert list(people.columns) == ['Person', 'Estimate', 'SD']
+    np.testing.assert_array_equal(people.Person, scores.Person)
+    np.testing.assert_array_equal(people.Estimate, scores.PosteriorMean)
+    np.testing.assert_array_equal(people.SD, scores.PosteriorSD)
+    assert len(result['posterior']['plausible_values']) == len(people)

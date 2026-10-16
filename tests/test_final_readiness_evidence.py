@@ -162,6 +162,52 @@ def test_final_readiness_contract_survives_standard_zip_as_frames_and_json():
     evidence.validate_evidence_records(records, identity=identity)
 
 
+@pytest.mark.parametrize("hold", ["facet_boundary", "eta_rank_deficient", "audit_size_limit", "free_sd", "optimizer"])
+def test_required_calibration_hold_blocks_publication_and_apa_prose(hold):
+    result = _result(converged=hold != "optimizer")
+    if hold == "facet_boundary":
+        result["config"]["jmle_facet_boundary_review"] = True
+    elif hold == "free_sd":
+        result["config"].update(method="MML", estimate_population_sd=True)
+    elif hold != "optimizer":
+        result["identifiability"] = {"status": hold}
+    diagnostics = _diagnostics(review_residuals=False)
+    gate = app.build_publication_gate_summary(result, diagnostics).set_index("GateArea")
+    assert gate.loc["Convergence", "GateStatus"] == "Not ready"
+    assert gate.loc["Overall manuscript gate", "GateStatus"] == "Not ready"
+    sentences = app.build_apa_report_sentence_audit(result, diagnostics).set_index("SentenceRole")
+    assert sentences.loc["Convergence", "ClaimStatus"] == "Do not claim"
+    assert sentences.loc["Convergence", "CopyDecision"].startswith("Do not copy")
+    assert "so fitted measures can be interpreted" not in sentences.loc["Convergence", "DraftSentence"]
+
+
+def test_residual_caution_alone_does_not_become_calibration_hold():
+    result = _result(converged=True)
+    diagnostics = _diagnostics(review_residuals=True)
+    gate = app.build_publication_gate_summary(result, diagnostics).set_index("GateArea")
+    assert gate.loc["Overall manuscript gate", "GateStatus"] == "Report with caveat"
+    assert gate.loc["Global residual fit", "GateStatus"] == "Report with caveat"
+
+
+@pytest.mark.parametrize("status", list(app.REPORT_READY_SUMMARY_STATUS_ORDER))
+def test_report_decision_survives_repeated_normalization(status):
+    assert app._report_ready_summary_status(app._report_ready_summary_status(status)) == status
+
+
+@pytest.mark.parametrize("status, expected", [
+    ("WITHHELD", "Do not report yet"),
+    ("calibration_inference_withheld", "Do not report yet"),
+    ("TECHNICAL_ONLY", "Do not report yet"),
+    ("unrecognized upstream status", "Needs caveat"),
+    (None, "Needs caveat"),
+    (pd.NA, "Needs caveat"),
+    (float("nan"), "Needs caveat"),
+    ("Copy after study-specific editing and reference-list review.", "Ready"),
+])
+def test_report_decision_does_not_promote_missing_or_withheld_evidence(status, expected):
+    assert app._report_ready_summary_status(status) == expected
+
+
 def test_person_anchor_chain_uses_public_safe_aggregate_artifact():
     result = _result(converged=True)
     result["equating_chain"] = {

@@ -30,8 +30,7 @@ def fitted():
 
 
 def input_bytes(result):
-    # The optimizer's local class is not picklable; preserve its public values separately.
-    return pickle.dumps({k:v for k,v in result.items() if k!='opt'}), pickle.dumps(vars(result['opt']))
+    return pickle.dumps(result)
 
 
 def test_disabled_is_a_noop_and_unsupported_inputs_stop_before_optimization(fitted, monkeypatch):

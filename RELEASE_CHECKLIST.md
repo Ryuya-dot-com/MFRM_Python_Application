@@ -32,6 +32,23 @@ Use this checklist before tagging or pushing a public beta release.
       stable evidence reference resolves to a reviewed record that passed
       `docs/help_browser_acceptance.md` against this exact deployed commit.
 
+## Representative journeys
+
+- [ ] Review the [current UX1 task matrix](docs/ux_adversarial_audit.md#next-acceptance-slice--2026-10-14-planned)
+      against the candidate: ordinary and held JMLE, fixed/free-SD MML, saved
+      results and input recovery, in both languages.
+- [ ] Record output consistency, presentation-only state preservation, browser
+      operation and actual-user understanding separately. Keep unrun cases
+      explicitly open; test counts do not complete the human review.
+- [ ] Confirm that publication blanks and technical CSV values follow the same
+      current hold, uncertainty basis and analysis identity. Inspect affected
+      rendered tables, not only whether document generation succeeds.
+- [ ] Record cold/repeated timing and memory for affected journeys when their
+      computation or layout changes, following the [J0 comparison conditions](ROADMAP.md#performance-priority-20261014).
+      Compare the same requested work and numerical accuracy; distinguish
+      first use, reuse and changed-input recomputation. Retain failures and
+      timeouts, and check full-bundle time when deferring individual formats.
+
 ## Statistical Validation
 
 - [ ] Run `make verify` or the equivalent commands below.
@@ -63,6 +80,22 @@ make clean
 ```
 
 ## GitHub Release
+
+- [ ] Confirm the version, release notes, license notice, and documented feature
+      scope match the candidate commit.
+- [ ] Record successful required CI checks for that commit on Python 3.11 and
+      3.12; earlier checked boxes are not evidence for a new candidate.
+- [ ] Use the agreed publication workflow for this release, preserving repository
+      history. A past history-replacement approval does not authorize a new one.
+- [ ] Create the tag and prerelease only after the candidate checks pass and the
+      current release is authorized.
+- [ ] Record the published commit and verify the deployed app against it.
+
+## Historical initial publication record
+
+The completed items below describe the v0.1.x publication. They are retained
+for provenance, not as a procedure or authorization for the next release.
+In particular, the history replacement was specific to that publication.
 
 - [x] Choose a license before public distribution.
 - [ ] Confirm `LICENSE_NOTICE.md` still states commercial use is permitted and the software is provided as-is without warranty.

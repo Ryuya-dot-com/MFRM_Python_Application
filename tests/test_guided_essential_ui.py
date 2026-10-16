@@ -891,7 +891,7 @@ def test_guided_export_share_preflight_table_maps_share_targets_to_artifacts():
     assert "claim_to_evidence_matrix.csv" in joined
     assert "figure_manifest.csv" in joined
     assert "external_simulation_reference_inventory.csv" not in joined
-    assert "Current gate:" in joined
+    assert "Current review status:" in joined
     assert table.astype(str).apply(lambda column: column.str.len().gt(0).all()).all()
 
 

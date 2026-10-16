@@ -7,6 +7,7 @@ Start with both the EAP and posterior-SD changes under “Compare quadrature set
 
 | Question | Comparison needed |
 |---|---|
+| Has estimation progressed sufficiently under the current quadrature rule? | Inspect the stopping reason and gradient; if needed, optimize further under the same rule and examine the change in estimates |
 | Do scores change when integration changes at the current estimates? | The same-point comparison on screen; examine EAP and posterior SD separately |
 | Would refitting with different node counts change the conclusions? | Refit with the same data, model and population SD, then compare estimates and scores |
 | How accurate is the integration approximation? | Evaluate the same estimates against an accuracy-checked reference, such as continuous integration |
@@ -17,9 +18,22 @@ it is not the standard error of population SD or structural parameters. The larg
 columns may belong to different people. NLL changes refer to the summed negative log-likelihood.
 A lower NLL under a different quadrature rule does not by itself mean more accurate estimation.
 
+A small gradient describes the calculation under the chosen quadrature rule. It does not establish
+that the rule accurately approximates the continuous population distribution. EAP differences can
+also be nearly zero while posterior-SD differences remain. After refitting, score changes include
+both integration differences and the effect of changed calibration estimates.
+
 If differences could affect your conclusions, save the original results before further comparisons.
 Small differences are not an automatic pass either. Define the accuracy needed for the study before
 examining comparison results; increasing the node count alone does not complete that check.
+
+## Agreement across programs and integration accuracy
+
+When results differ between programs such as R and Python, match the data, model, constraints,
+calibration, population SD, nodes, weights and scoring method before attributing the difference
+to the language. Agreement under the same conditions supports reproduction of that calculation;
+the accuracy of its approximation needs a separate check. Also distinguish evaluation at the
+same estimates from comparison after each program refits the model.
 
 ## Save the records and inputs
 

@@ -188,7 +188,8 @@ def test_g3_hold_reaches_manuscript_claim_and_qualification_exports():
     guide = app.build_manuscript_claim_guide(result, diagnostics, bundle)
     row = guide.loc[guide.ManuscriptArea.eq('Bias / local interaction')].iloc[0]
     assert row.ClaimStatus == 'Do not claim'
-    assert 'G3' in row.SafeManuscriptWording
+    assert 'unqualified pending error-rate, power, and interval-coverage checks' in row.SafeManuscriptWording
+    assert 'G3' not in row.SafeManuscriptWording
     qualification = app.build_output_qualification_table(result, diagnostics, bias_present=True)
     cell = qualification.loc[qualification.OutputID.eq('bias.cell_inference')].iloc[0]
     assert cell.NextGate == 'G3'

@@ -140,7 +140,12 @@ def test_scope_hold_reaches_fitted_diagnostics_and_step_table(options):
     diagnostics = app.mfrm_diagnostics(result, compute_pca=False, interaction_pairs=[])
     measures = diagnostics["measures"]
     assert measures.SE_CovarianceStatus.eq("unsupported_covariance_scope").all()
-    assert measures.loc[measures.Facet != "Person", "SE_Status"].eq("conditional_approximation").all()
-    assert measures.loc[measures.Facet == "Person", "SE_Status"].eq("posterior_eap_sd").all()
+    if options.get("estimate_population_sd"):
+        assert measures.SE_Status.eq("calibration_inference_withheld").all()
+        assert measures.CI_Status.eq("calibration_inference_withheld").all()
+        assert measures.loc[measures.Facet == "Person", "SE_Method"].str.contains("posterior SD").all()
+    else:
+        assert measures.loc[measures.Facet != "Person", "SE_Status"].eq("conditional_approximation").all()
+        assert measures.loc[measures.Facet == "Person", "SE_Status"].eq("posterior_eap_sd").all()
     assert result["steps"].SE.isna().all()
     assert result["steps"].SE_Status.eq("unsupported_covariance_scope").all()

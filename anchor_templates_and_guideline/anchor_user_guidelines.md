@@ -10,9 +10,9 @@ Typical use cases:
 
 ## 2) Which option to use
 - Anchor table: fix specific element measures to exact values.
-- Group anchor table: constrain group means (more robust when single-element anchors are unstable).
-- Dummy facet: fix all levels of a facet to 0 (adjustment-only facet).
-- Non-centered facet: allow one selected facet to float instead of sum-to-zero centering.
+- Group anchor table: fix a group's mean measure; its individual levels may differ. A stable group mean must be justified by the linking design.
+- Dummy facet: fix all levels of a facet to 0. Differences between these levels are not estimated or adjusted for.
+- Non-centered facet: omit sum-to-zero centering for the selected facet. The full model still needs identifying constraints; inspect the identification audit.
 
 ## 3) Input formats
 ### 3.1 Anchor table
@@ -56,7 +56,11 @@ Rater,R05,New,0.20
 - Leading/trailing spaces can break matching.
 - Case mismatches can break matching.
 
-If matching fails, anchors are silently ignored for those rows.
+Rows with an unknown facet or level are excluded from the constraints and
+recorded in the anchor audit. Missing or non-finite anchor values are also
+excluded. The default `warn` policy retains these issues for review; `error`
+stops estimation when the audit contains warnings or errors. Always inspect
+the audit and applied-anchor counts before interpreting a linked scale.
 
 ## 5) Practical workflow
 1. Run once without anchors and inspect fit and counts.
@@ -64,8 +68,8 @@ If matching fails, anchors are silently ignored for those rows.
 3. Build anchor table or group anchor table.
 4. Rerun with anchors.
 5. Confirm results:
-- Summary -> Anchor summary (counts by facet)
-- Report -> Anchor status column
+- The anchor/linking audit: issues and applied-anchor counts by facet.
+- Exported `anchor_audit_summary.csv` and the report's Anchor status column.
 
 ## 6) Anchor status in report
 - A: directly anchored.
@@ -75,7 +79,7 @@ If matching fails, anchors are silently ignored for those rows.
 ## 7) Recommended guardrails
 - Start with a small number of high-quality anchors.
 - Avoid anchoring many weak or misfitting elements.
-- Prefer group anchors if single-element anchors are unstable.
+- Use a group anchor only when the shared scale and group mean are defensible; grouping does not establish stability or equivalence by itself.
 - Recheck fit after applying anchors.
 - Keep a versioned record of anchor files used in each run.
 
@@ -87,10 +91,11 @@ If matching fails, anchors are silently ignored for those rows.
 
 ## 9) Notes for estimation mode
 - In JMLE, person parameters are explicitly estimated with constraints.
-- In MML, person estimates are EAP; anchor effects are mainly through non-person facets and model structure.
+- In MML, person estimates are EAP scores under a population model. Do not treat these scores as independently fixed person parameters; verify the supported constraints and their audit.
 
 ## 10) Minimal checklist before publishing results
 - Anchor files archived with the analysis run.
 - Anchor summary non-zero where expected.
 - Report shows intended A/G/X flags.
 - Key facet ranges and ordering are stable across reruns.
+- Shared content, connectedness, drift, and uncertainty support the intended comparison; counts and A/G/X flags alone do not establish valid linking.

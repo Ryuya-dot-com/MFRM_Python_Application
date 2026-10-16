@@ -1,14 +1,466 @@
 # Adversarial UX Audit
 
-Current checkpoint, 2026-09-15: the Japanese revision, Home/return navigation,
-MIT/citation surfaces and result-bound citation exports below shipped in
-0.2.18-beta (`b483d97`). Their dated “local implementation” records describe
-pre-release checks, not the present deployment state. The active next slice is
-UX1 in the [execution roadmap](../ROADMAP.md#現在の実行計画--2026-09-15): review the
-same input → analysis → PCA/bias → manuscript tasks, including dynamic Japanese,
-keyboard/focus and state preservation. Formative reviews with actual users and
-full accessibility acceptance remain outstanding; automated and agent browser
-checks do not close those gates.
+Current checkpoint, 2026-10-16: the [Help readability review](#help-readability-and-internal-copy-review--2026-10-16)
+removes duplicated tutorial explanations and development wording from the
+reviewed Help and model-comparison surfaces. Automated rendering covers all
+eight full Help panels in both languages; browser and human acceptance remain
+open. This is an integration-branch update, not a deployment or release.
+
+Earlier checkpoint, 2026-10-16: the [comparison and fresh-process follow-up](#local-comparison-and-fresh-process-follow-up--2026-10-16)
+corrects unsupported agreement claims and preserves reliability holds in the
+comparison view. The local fresh-process/changed-input timing targets passed
+for one small fixture. Browser, human and broader-scale acceptance remain open.
+
+Checkpoint, 2026-10-15: bounded report reuse and bilingual history
+controls have passed the [local follow-up](#local-download-and-history-refinement--2026-10-15).
+The first performance candidate missed its target and is retained as a failure;
+the second passed both input-specific targets. Browser and human acceptance
+remain open. The following dated records retain their original scope.
+
+Checkpoint, 2026-10-14: local Japanese-copy, documentation-reference
+and report-qualification corrections have passed their recorded automated
+checks. Four fitted cases now have AppTest input-to-export coverage, with
+additional input-recovery and restored-result checks. Changed Word/PDF table
+pages were inspected in the earlier table review. AppTest is not browser
+acceptance or evidence of user understanding. See the
+[change record](../CHANGELOG.md#unreleased--directory-review-corrections).
+UX1 follows the [execution roadmap](../ROADMAP.md#現在の実行計画--2026-09-15)
+and the protocol below. Actual-user reviews and full accessibility acceptance
+remain outstanding. This document records publication of 0.2.18-beta (`b483d97`)
+on September 15; this update does not verify the current deployment.
+
+Links into `validation/generated/` and `validation/source_snapshots/` identify
+local retained evidence, not files distributed in a fresh checkout. Dated
+screenshots and test results cover their recorded versions and tasks only;
+they do not establish acceptance of the current working tree or hosted app.
+
+## Next acceptance slice — 2026-10-14 (planned)
+
+Status: **PARTIAL — local AppTest journeys executed; browser and human review
+NOT RUN**. The heading retains the original planning anchor. The execution
+record below limits what has been checked. This protocol reuses the existing
+interface and tests. It does not add a new navigation system or
+promote a contextual Help adapter. That promotion still requires
+[the browser acceptance protocol](help_browser_acceptance.md).
+
+Use synthetic inputs only. Start from the four real-fit cases in
+[`test_measure_report_consistency.py`](../tests/test_measure_report_consistency.py),
+the diagnostic-navigation tests, and the existing Help return tests. These
+fixtures exercise behavior; they do not establish statistical operating
+characteristics. Record the source fingerprint and environment for local
+checks; formal browser acceptance must use the immutable candidate commit and
+deployment required by the browser protocol.
+
+| Case | User task and expected outcome | Existing evidence and remaining gap |
+|---|---|---|
+| Ordinary JMLE | Import the synthetic table, check columns, run, find one diagnostic, explain conditional uncertainty and export a bounded descriptive report | Real fit and exports tested; complete journey and unaided explanation remain to be observed |
+| Extreme-score free facet JMLE | Recognize that optimizer termination does not remove the interpretation hold; find its reason and preserve it in the saved report | Hold propagation tested; whether the user notices it and chooses an appropriate next action is unknown |
+| Fixed-SD MML | Identify person uncertainty as conditional posterior SD, distinguish it from sampling SE, and find the relevant limitation | Report basis tested; comprehension and return navigation remain to be observed. Fixed-SD PCM quadrature checks have a separate restricted scope |
+| Free-SD MML | Locate the inference hold, explain why reported precision is restricted, and export an honest record without a final inference | UI/table/export checks pass; whole-journey recognition and explanation remain untested |
+| Saved or stale result | Open an older result with positive uncertainty flags, then change the active input/settings; distinguish historical values from the current analysis | Row-level hold override tested; full restore/invalidation/export journey must be checked without overwriting the original |
+| Recoverable input error | Paste a synthetic table with an invalid score/column choice, find the explanation, correct it, and complete the intended analysis | Error/Help tests exist; instruction clarity and recovery without losing valid settings remain to be observed |
+
+Run the applicable task sequence in both Japanese and English:
+
+1. Enter or restore the input and confirm its provenance, column mapping and
+   settings. Record the source data/configuration identity.
+2. Perform one explicit analysis. Record the fitted AnalysisID and its actual
+   convergence, uncertainty and interpretation states.
+3. Follow the first useful diagnostic, open its available explanation and
+   return. Exercise Home, language and display switches where applicable;
+   verify that these presentation actions preserve the fit and do not estimate.
+4. Obtain the CSV and Word/PDF/HTML reports. Trace their values, basis and hold
+   reasons to the same analysis. Allow documented rounding, display-scale
+   transformations and intentional blank precision cells; do not require
+   technical CSV values and held publication cells to be textually identical.
+5. Ask the reviewer to explain what the result permits, what it does not permit,
+   and the next useful action before giving corrective guidance.
+
+Browser work must cover the ordinary and held journeys at desktop and narrow
+widths, keyboard navigation and visible focus, and state preservation after
+return. Reuse the existing Help/browser matrix for its exact cases rather than
+inventing a second acceptance standard. AppTest output is supporting evidence,
+not a substitute for rendering, focus or assistive-technology checks.
+
+For an initial formative review, aim for three novice and two experienced
+reviewers, subject to availability; this is a working recruitment target, not
+a statistically representative sample or a pass threshold. Use the same
+task wording and record unaided completion, assistance, confusing wording,
+interpretation errors and the reviewer's explanation. Avoid collecting real
+ratings or identifying research data. A belief that convergence proves
+validity, posterior SD equals sampling SE, or a held result supports a final
+conclusion is a critical misunderstanding requiring a correction and another
+review. Record unobserved tasks as untested, not as zero errors. With no human
+participants, the understanding gate remains open.
+
+Measure J0 during the same scenarios: cold and repeated end-to-end time,
+preparation/estimation/diagnostics/rendering/export time, peak memory, data
+size, settings and failures. Compare the same requested work on the same
+environment. Use the results to select one bottleneck before choosing a new
+backend; the performance target must be fixed before evaluating its replacement.
+The [current J0 protocol](../ROADMAP.md#performance-priority-20261014) specifies
+input selection, paired repetitions, cache conditions and adoption criteria.
+UX1/J0 are the next work pair; further TAM comparison scope is chosen after
+that cycle unless a numerical or output-qualification defect needs priority.
+
+Retain a bounded result record with case, language/view/device, exact source,
+observed behavior, assistance, misunderstanding, timing, artifact checks,
+unresolved issue and follow-up outcome. Keep implementation, browser, human
+understanding, statistical qualification and deployment status separate.
+An observed correctness/state/claim defect blocks acceptance of the affected
+journey. Fix and retest it before extending the interface. A small formative
+review can support the tested journey; it cannot establish general usability
+or qualify the estimator's uncertainty.
+
+### Local execution record — 2026-10-14
+
+[`test_analysis_journeys.py`](../tests/test_analysis_journeys.py) passed seven
+AppTest cases against the local working tree. The earlier table consistency
+checks remain relevant to rounding and uncertainty meaning. The matrix above
+is the original acceptance protocol; the following table records execution,
+not completion of its human tasks.
+
+| Executed case | Observed result | Remaining limit |
+|---|---|---|
+| Ordinary JMLE; extreme-score free-facet JMLE; fixed-SD EM MML; free-SD EM MML | Paste and map synthetic data, fit in Japanese, visit fit diagnostics and Help, switch to English, return through Home, build PDF/Word/HTML, switch back to Japanese, export CSV. AnalysisID and values stay fixed; presentation actions make zero estimation/refit calls. Publication holds and CSV row statuses persist. Public CSV omits Person rows; explicit private export retains them | Four synthetic inputs, not every model/design. Automated document tests omit figures; a separate free-SD timing run includes actual figure generation. No browser or unaided task observation |
+| Changed settings | Changing the iteration limit hides current-result tables and their downloads; restoring the setting reveals the same fit without estimating. Warning and rerun button are checked in both languages | This exercises one setting change, not every input/control combination |
+| Incorrect score-column mapping, Japanese and English | Selecting Person as Score produces an error and no fitted output. Correcting Score allows a real fit and preserves the iteration limit and language | One recoverable error, not all parsing, file-size or missing-data cases |
+| Restored free-SD result with older positive uncertainty labels | An opt-in session-history snapshot is given older `ok` labels and restored through its button. Changed active settings receive the translated historical-result notice; the actual Word report still withholds precision. The saved snapshot is unchanged and no refit occurs | Synthetic legacy labels in current session history; not an import of every historical file format or version |
+
+The run exposed a real reuse failure: EM returned a function-local class that
+could not be serialized, so both report-local calculations and document-byte
+reuse fell back to rebuilding. EM now uses SciPy's existing `OptimizeResult`
+representation. Actual fixed/free-SD EM reuse, changed-input invalidation and
+copy isolation are tested. Six before/after fits (RSM/PCM/GPCM × fixed/free SD)
+retain exactly equal parameter values, objective/SD traces, termination states,
+measure and reliability tables; elapsed time is intentionally excluded.
+No inference hold or numerical estimation step was changed.
+
+The stale/restored-result notices and rerun controls now use both locale files,
+with a direct explanation of which analysis the displayed output belongs to.
+They no longer insert raw setting identifiers into the main warning. The
+broader history panel still contains English copy and an internal G2 label;
+that remains a concrete language-review task, not a completed localization.
+
+Validation: **127 distinct related tests passed** (49 report/reuse/locale
+checks, 71 engine/quadrature/adapter checks and seven journeys). The environment
+doctor, release check, syntax compilation and whitespace checks passed.
+The complete native suite was not rerun. These are implementation checks, not
+a resumption of formal G3/MML studies or evidence of coverage/qualification.
+
+Environment: macOS 27.0.1 arm64; Python 3.12.6; NumPy 2.4.4; pandas 3.0.3;
+SciPy 1.17.1; Streamlit 1.57.0; Matplotlib 3.10.9; ReportLab 4.5.1;
+python-docx 1.2.0. Tested source SHA-256 values:
+
+```text
+streamlit_app.py  cc685cd3b3adf162402b7e0537a3441565cada407c248fdabf5640d416aed7d8
+locales/en.json   0b879936d55bff574923dc931cf14be7d24d616d9ed708f56c958656447d18eb
+locales/ja.json   b01886f8b25c26e92a939688efaf4c8d9c1753c5de40e984837535ee42397b1c
+```
+
+No in-app browser control connection was available in this session. Desktop
+and narrow layouts, keyboard/focus behavior, assistive technology and reviewer
+understanding remain untested for this candidate. There was no deployment.
+
+### Local timing observation — 2026-10-14
+
+One before/after AppTest process used the 12-row gradient fixture (three
+persons, two raters, two tasks, scores 0–2), RSM, EM, free population SD,
+15 quadrature points, 100 maximum iterations, tolerance `1e-6`, starting SD 1,
+and the Standard analysis scope. Both followed the same Japanese fit → Help
+and English return → Home return → PDF → repeat PDF → Word → PDF → files →
+measures-CSV sequence. Actual document builders and figures ran without mocks;
+public export was on. The processes ran without concurrent test jobs.
+
+| Operation (seconds, including its AppTest rerun) | Before | After |
+|---|---:|---:|
+| Explicit fit and first result view | 2.682 | 2.529 |
+| First PDF view | 21.517 | 3.651 |
+| Same PDF view again | 2.596 | 0.712 |
+| First Word view | 2.225 | 2.333 |
+| Return to the already-built PDF | 2.338 | 0.723 |
+| Open data files | 24.059 | 7.642 |
+| Select the measures CSV | 23.247 | 6.859 |
+| Sum of all 18 measured UI steps | 81.689 | 27.384 |
+
+Process peak RSS was 605.5 MiB before and 513.8 MiB after (`ru_maxrss`, converted
+from macOS bytes). This includes Python, AppTest and rendering libraries;
+it is not the hosted server's memory budget or browser memory. Both processes
+used `/tmp/mfrm_journey_mpl` and `/tmp/mfrm_journey_cache` for writable rendering
+caches. Renderer/font initialization and persistent cache warming confound the
+first-PDF and total-time comparison. Repeated views, together with builder-call
+tests, establish that reuse now works; this single small-data observation does
+not estimate a general speedup or prove memory improvement at production scale.
+The first Word build did not become faster. Neither run raised an AppTest
+exception. These local timings are not an immutable release benchmark.
+
+J0 remains partial: phase timings, representative larger inputs and repeated
+measurements are still needed. CSV selection still takes about seven seconds
+on this tiny input. The next performance task is to separate frame collection
+from ZIP/Excel/HTML preparation and rendering costs before changing that route.
+Source inspection confirms that `_render_downloads` collects the complete frame
+bundle and calls ZIP/Excel/HTML cache functions in the data-table panel, including
+CSV-selection reruns. It does not establish cache misses or attribute the seven
+seconds to any one builder. Time fingerprinting and cache behavior separately.
+The next copy task is the existing history panel; recovery notices have already
+been translated, but their meaning still needs to be tested with users. Browser
+operation and human understanding remain independent acceptance requirements;
+these findings do not justify a new backend or relaxing statistical holds.
+
+### Local download and history refinement — 2026-10-15
+
+The first profile identified repeated report-frame construction as the main
+cost: on the 12-rating input, `collect_download_frames` took 14.03 of the
+14.35 profiled seconds inside the downloads renderer. ZIP/Excel/HTML cache
+calls on CSV reselection took less than 0.001 seconds combined; they were
+already hits. Profiling overhead is excluded from the comparisons below.
+
+The first candidate reused the manuscript claim guide and claim/evidence
+matrix within the existing report-local scope. Its five-pair CSV median
+reduction on 960 ratings was **27.5%, below the prespecified 30% target**.
+All content checks passed, but this candidate was not accepted. Its record
+remains at `validation/generated/download_j0_20261014/`, including the plan,
+source, profile, timings and explicit failed acceptance decision.
+
+The remaining profile computed interrater agreement 15 times for one export,
+using 20.6 of 28.8 profiled seconds. The accepted candidate also reuses the
+agreement summary within the same bounded scope. It uses complete argument
+fingerprints, isolated copies and the existing eight-entry limit; the scope
+expires when the export ends. Estimation and agreement formulas, thresholds,
+publication holds, output formats and cross-session retention are unchanged.
+
+The second comparison retained the original targets: at least 30% reduction
+in the CSV median for each input, no more than 10% regression in the first
+files-view median, process RSS below 1 GiB, and a 120-second step timeout.
+Each input had five alternating baseline/candidate pairs in one process.
+The baseline disables only the three new reuse wrappers on identical fitted
+inputs. Each first files view clears the ZIP/Excel/HTML byte caches; CSV
+selection and its repeat retain them. Values below are medians (minimum–maximum)
+in seconds, including the AppTest rerun, with no profiler or parallel test job.
+
+| Input | Operation | Baseline | Candidate |
+|---|---|---:|---:|
+| 12 ratings, free-SD EM RSM | Open files; export-byte caches cleared | 9.336 (8.442–9.535) | 4.297 (4.207–4.741) |
+| 12 ratings, free-SD EM RSM | Select measures CSV | 8.412 (7.936–8.600) | 3.758 (3.660–3.983) |
+| 12 ratings, free-SD EM RSM | Repeat the same CSV view | 7.967 (7.756–8.515) | 3.703 (3.564–3.968) |
+| 960 ratings, JMLE RSM | Open files; export-byte caches cleared | 22.615 (22.228–23.874) | 6.849 (6.643–7.211) |
+| 960 ratings, JMLE RSM | Select measures CSV | 21.180 (21.011–21.882) | 5.863 (5.624–5.929) |
+| 960 ratings, JMLE RSM | Repeat the same CSV view | 21.229 (21.048–22.666) | 5.791 (5.712–5.943) |
+
+All 20 content comparisons passed: every collected public table and its
+attributes, ZIP member bytes, HTML bytes, and Excel sheet names/cell values
+matched. Workbook creation timestamps are not compared. Public measures CSVs
+excluded Person rows. After each three-step sequence, the fit and AnalysisID were unchanged;
+the 60 measured UI steps made zero estimation/refit calls. Both inputs passed the
+unchanged performance targets. Peak process RSS was 468.1 MiB,
+a shared-process resource bound, not evidence of a before/after memory saving.
+
+The history panel now translates headings, controls, column labels and restore
+availability in Japanese and English. It explains optimizer-reported convergence
+and the model-selection hold without an internal G2 label. Technical CSVs
+retain qualification and reason codes; the display omits the descriptive
+table's preferred-direction cue because it could suggest ranking held results.
+Restore, unavailable snapshots, delete/cancel/confirm, and retained current
+results are covered by bilingual AppTest checks.
+
+Validation: **224 targeted tests passed**, including real input-to-export
+journeys, report/uncertainty consistency, reuse invalidation and copy isolation,
+output qualification, locales, history controls and the standalone boundary.
+The new agreement reuse is checked after changing ratings, weights, fitted
+parameters and the selected facet. Syntax and whitespace checks passed.
+Final source fingerprints:
+
+```text
+streamlit_app.py  e91b1fc66c9ef59c7e360787c9219b570471d1bb4cd2df325f9f10e6100abb06
+locales/en.json  1f84ec461eba6d36457f76b9ccf463c5d8b621eba1798314954c27d774f94064
+locales/ja.json  ae7c9b52d05bc1cbea80d51cdb1ecc1d5ad543b41ce38f315c4b586296f60af2
+```
+
+Local evidence is retained at `validation/generated/download_j0_20261015/`;
+the preceding failed candidate is preserved separately. The manifests record
+sources, inputs, environments, plans, all timings and acceptance results.
+These generated directories are not distributed in a fresh checkout.
+
+Limits: two synthetic inputs and Japanese performance runs, not broad scale
+acceptance. The initial process/import/font-cache cost and changed-input timing
+were not compared. Browser latency, layout, keyboard/focus and actual-user
+understanding remain untested; no browser-control connection was available.
+The full native suite, formal G3/MML studies and deployment were not run.
+Next, examine remaining waits under fresh-process and changed-input conditions,
+then selected larger/sparse inputs; review the adjacent comparison-panel copy
+and complete browser/human checks separately. Numerical accuracy and coverage
+qualification remain independent of this performance result.
+
+### Local comparison and fresh-process follow-up — 2026-10-16
+
+The adjacent comparison view had two interpretation defects, so the roadmap's
+correctness-first rule took precedence over copy-only changes. A high Pearson
+correlation triggered claims of equivalent measures or defensible methods;
+the reliability table also bypassed the hold applied by publication reports.
+For example, `(0, 1, 2)` versus `(5, 6, 7)` has correlation 1 and RMSE 5. A
+correlation threshold cannot establish equality or method validity.
+
+The view now describes differences without success/error bands based on
+correlation. It summarizes matched finite estimates separately for each facet,
+shows each side's element count and the comparable count, and leaves undefined
+correlations blank. Duplicate or missing element identifiers prevent matching.
+The scatterplot and difference table use the same finite pairs. Fixed values,
+scales, weights and estimation targets still need review; this view does not
+align coordinates or qualify method agreement.
+
+Comparison reliability uses the existing publication hold logic. Held precision
+cells are blank, with translated interpretation scope and a warning for each
+held analysis; saved technical values remain intact. Model-selection holds
+remain visible without internal stage labels. Missing data/source records and
+one-sided additions of fixed-value inputs no longer count as matching inputs.
+A matching record is not a statistical qualification.
+
+Controls, column labels, plot labels, input warnings and interpretation notes
+are translated into Japanese and English. Numbered history options distinguish
+entries with identical timestamps and summary labels. The initial selector
+checks exposed this ambiguity (2 failed, 25 passed); after correction,
+**93 targeted tests passed**. These include four real fitted cases,
+bilingual comparison and history controls, input-to-export journeys, uncertainty
+and information-criterion holds, exact preservation of saved values, and zero
+estimation/refit calls during comparison. The offset example, separate facets,
+constant values, too few pairs, non-finite values, unmatched and duplicate IDs,
+and missing or changed source records have direct regression checks.
+
+Performance follow-up used the existing 12-rating free-SD EM RSM fixture and a
+predeclared one-score change, five alternating pairs, and a fresh Python process
+for each variant. Each process ran the real app, fitted the first input, exported,
+changed the input, confirmed stale exports were hidden, explicitly refitted and
+exported the new result. The baseline disables only the three report-reuse
+wrappers added on October 15; comparison-view corrections are common to both.
+No additional performance implementation was made in this follow-up.
+
+The plan preceded measurement: CSV medians must improve by at least 30% for both
+inputs, files-view and total measured-work medians must not regress by over 10%,
+RSS must stay below 1 GiB, each step below 120 seconds and each worker below
+300 seconds. All targets passed. Values are seconds, median (minimum–maximum):
+
+| Stage | Reuse disabled | Reuse enabled |
+|---|---:|---:|
+| Imports in fresh Python process | 1.901 (1.664–3.588) | 1.762 (1.606–1.960) |
+| First page render | 0.255 (0.222–0.283) | 0.260 (0.208–0.286) |
+| Input/setup reruns | 1.364 (1.326–1.393) | 1.355 (1.319–1.389) |
+| Initial fit and result render | 2.562 (2.457–2.619) | 2.491 (2.428–2.606) |
+| Initial files view | 7.378 (6.914–7.501) | 3.635 (3.629–3.776) |
+| Initial CSV selection | 6.712 (6.536–7.074) | 3.096 (3.016–3.275) |
+| Changed input; stale exports hidden | 0.272 (0.253–0.275) | 0.266 (0.256–0.278) |
+| Changed-input fit and result render | 3.282 (3.073–3.339) | 3.247 (3.154–3.476) |
+| Changed-input files view | 7.493 (6.762–8.002) | 3.630 (3.459–3.995) |
+| Changed-input CSV selection | 6.622 (6.218–7.016) | 3.211 (3.067–3.219) |
+| Sum of measured work | 37.483 (36.371–39.857) | 23.018 (22.682–23.558) |
+
+Peak worker RSS was 320.6 MiB, including correctness checks. It is a resource
+bound, not an isolated memory-saving estimate. All 20 fitted phases preserved
+public tables/attributes, ZIP members, HTML, and Excel sheet names/cells against
+an uncached reference on the same fit. Workbook creation timestamps are excluded.
+CSV excludes Person rows and preserves the interpretation hold. Input changes
+produce a new AnalysisID; presentation preserves the current and saved values
+and performs no estimation/refit. Two explicit fits per process are development
+checks, not a resumption of formal research.
+
+The total is a sum of measured computation, including imports, setup reruns,
+fitting/result display and both exports. It excludes correctness checking,
+human think time and process launch overhead. Fitting and result rendering are
+timed together, so these results do not identify estimator-kernel speedup.
+Python/Streamlit caches start fresh, but OS and persistent font caches are not
+flushed. After the first export, the uncached correctness check repopulates
+export caches before the changed-input phase; this is common to both variants.
+The retained evidence is local to `validation/generated/comparison_ui_j0_20261016/`:
+plan, runner, worker logs, fitted inputs/outputs, all timings, initial and final
+test results, source snapshots and SHA-256 manifest. It is not distributed in a
+fresh checkout. Source scope checking found changes only in the five comparison
+helpers/renderers; estimator and interrater-agreement kernels are unchanged.
+
+```text
+streamlit_app.py  2c3524365391a91a4ae6642e0810195192c6b1e42811346b352e3235318222db
+locales/en.json  ca487e0539beb1470c6a62242dbd766ce3051bc57bcdfb690f2f24ed53d9ed8c
+locales/ja.json  d66eb3bc0de4c9ac3d1de608bedb89de7b39b1453c6805af0197856a1f48f8e5
+tests/test_comparison_ui.py  b00de30ae9ff68bbc255633fa0fe755054a7e9c608a749cd22e00f3fc6faa1ef
+```
+
+Limits and next decision: one small input and one modification in Japanese do
+not cover 960-rating fresh runs, larger/sparse inputs, or other model/weight/
+anchor settings. Browser control remains unavailable in this session, so
+layout, keyboard/focus and actual-user comprehension remain untested. The full
+native suite, formal G3/MML studies and deployment were not run. Next select a
+bounded larger/sparse input under the existing J0 criteria, and complete browser/
+human checks when available. Avoid widening the model or backend scope solely
+because these implementation checks passed.
+
+### Help readability and internal-copy review — 2026-10-16
+
+Scope: the tutorial, all eight full Help panels, the glossary, five chart
+popovers, and model-comparison/bias hold explanations. The review found a
+developer instruction in the glossary, raw state and validation-stage names
+in guidance, and two conflicting estimation explanations shown together.
+The workflow panel rendered 25 tables, including repeated advice.
+
+Changes:
+
+- Use the current localized estimation explanation once. Explain JMLE/MML,
+  fixed or estimated population SD, EAP uncertainty, excluded rows and input
+  errors against the current implementation.
+- Put practical steps first. Keep the workflow's nine remaining reference
+  tables in seven collapsed disclosures and remove repeated specialist
+  tables from the interpretation and rating-scale panels.
+- Rewrite the interpretation, rater, category, reporting and troubleshooting
+  guides in both languages. Correct the reviewed glossary and chart claims:
+  fit bands are review prompts, correlation is not agreement, category
+  findings do not automatically justify merging, and an uncertainty label
+  does not remove the corresponding inference hold.
+- Explain comparison and bias restrictions without development-stage names.
+  Keep technical reason codes and withheld numerical quantities in the
+  model-comparison CSV. A cached recommendation is still overridden by the
+  current restriction. Export filenames remain visible where users need them
+  to locate evidence.
+
+The copy revision changed 60 Japanese and 68 English locale entries. Its
+application function changes are confined to eight tutorial/Help/rendering
+functions; five chart-popover entries were also updated in each language.
+Numerical kernels and interpretation qualification rules are unchanged by
+this copy revision. Earlier uncommitted numerical/report changes are included
+in the integration checkpoint and have their own records above.
+
+Automated rendering checks cover all eight panels in Japanese and English,
+one estimation tutorial, collapsed workflow details, absence of the reviewed
+internal vocabulary and zero estimation/refit calls. A separate bilingual
+test verifies that cached model guidance stays held, public tables hide
+reason codes and p-values, and the CSV retains its technical record. The
+first focused run found one remaining English implementation term and two
+assertions tied to obsolete guide wording; those were corrected, and the
+six affected/new cases passed on rerun.
+
+Pre-push verification completed with Python 3.12.6:
+
+- `make verify PYTHON=.venv/bin/python` passed compilation, environment and
+  release checks, all 56 self-tests, the native test selection, the benchmark
+  smoke check and demo-report generation.
+- The native suite reported **3,110 passed, 2 skipped, 84 deselected** in
+  1,062.36 seconds. The two optional CMLE comparisons require the unavailable
+  R package `immer`; the normal selection excludes retained-study and legacy
+  tests and the documented external bundles. These are implementation checks,
+  not a restart of formal validation studies.
+- Local documentation link targets and `git diff --check` passed. Generated
+  reports, source snapshots and logs remain outside the commit.
+
+This local run does not verify Python 3.11. The current GitHub push filter does
+not include `integration/unified-app`, so pushing this branch alone does not
+run the two-version CI matrix.
+
+Source scope and hashes are retained locally in
+`validation/generated/help_copy_20261016/final_change_scope.json`, with the
+pre-review source under `before/`. These ignored artifacts are not included
+in a fresh checkout. The earlier timing measurements apply to their recorded
+source hashes; this copy review does not repeat or extend those performance
+claims. Browser layout, keyboard/focus behavior and actual-user comprehension
+remain untested. Formal G3 and later MML studies remain paused. Pushing the
+integration branch does not publish a new beta or verify the hosted app.
+
+## Initial audit — 2026-08-04
 
 - Audit date: 2026-08-04
 - Scope: default Streamlit journey from landing through the first fitted result

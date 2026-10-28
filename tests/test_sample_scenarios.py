@@ -1,4 +1,4 @@
-"""Contract tests for the four built-in sample-data scenarios.
+"""Contract tests for the built-in sample-data scenarios.
 
 The scenario registry is the user's first touch with the app, so
 drift here (shape change, citation unresolved, non-determinism) is
@@ -79,17 +79,12 @@ def test_scenario_score_bounds(key: str):
 
 
 @pytest.mark.parametrize("key", ALL_KEYS)
-def test_scenario_facets_have_multiple_levels(key: str):
+def test_scenario_levels_match_declared_dimensions(key: str):
     df = app.sample_mfrm_data_by_key(key, seed=42)
-    # Facet columns should have ≥ 2 unique levels — except pro-forma
-    # singleton Rater / Scorer facets used by single-scorer binary
-    # testlet designs. MFRM simply centers those to 0; they contribute
-    # zero variance and are not a bug.
-    for col in df.columns[:-1]:
-        min_levels = 1 if col in ("Rater", "Scorer") else 2
-        assert df[col].nunique() >= min_levels, (
-            f"{key!r}: column {col!r} has < {min_levels} level(s)"
-        )
+    dimensions = app.SAMPLE_DATA_SCENARIOS[key]["dimensions"]
+    # Singletons are legitimate when explicitly declared (shared task/scorer).
+    for col, dimension in zip(df.columns[:-1], ("persons", "raters", "tasks", "criteria")):
+        assert df[col].nunique() == dimensions[dimension], (key, col)
         assert df[col].notna().all(), f"{key!r}: column {col!r} has NaN"
 
 

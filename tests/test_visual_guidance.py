@@ -126,7 +126,7 @@ def test_category_probability_curve_data_supports_gpcm_level_views():
 
     options = app.category_probability_curve_options(result)
     assert options["Label"].tolist() == [
-        "Average across Task levels",
+        "Hypothetical curve at mean parameters",
         "Task = T1",
         "Task = T2",
     ]
@@ -166,7 +166,7 @@ def test_category_probability_curve_data_supports_gpcm_level_views():
         "PeakProbability",
         "IsEverMostProbable",
     }.issubset(export.columns)
-    assert set(export["CurveLabel"]) == {"Average across Task levels", "Task = T1", "Task = T2"}
+    assert set(export["CurveLabel"]) == {"Hypothetical curve at mean parameters", "Task = T1", "Task = T2"}
     assert not app.np.allclose(
         average["probability_wide"].drop(columns=["Theta"]).to_numpy(),
         level["probability_wide"].drop(columns=["Theta"]).to_numpy(),
@@ -206,7 +206,7 @@ def test_rating_scale_dashboard_links_counts_thresholds_and_category_curves():
     }
 
     scope_diag = app.category_curve_diagnostic_scope_table(result)
-    assert set(scope_diag["CurveLabel"]) == {"Average across Task levels", "Task = T1", "Task = T2"}
+    assert set(scope_diag["CurveLabel"]) == {"Hypothetical curve at mean parameters", "Task = T1", "Task = T2"}
 
     dashboard = app.rating_scale_functioning_dashboard(result, diagnostics)
     assert not dashboard.empty
@@ -228,8 +228,8 @@ def test_rating_scale_dashboard_links_counts_thresholds_and_category_curves():
     assert {
         "CategoryEvidenceStatus",
         "EvidenceSummary",
-        "CurvePeakProbability",
-        "CurveEverMostProbable",
+        "CurveMinimumPeakProbability",
+        "CurveNoDominanceScopes",
     }.issubset(category_evidence.columns)
     assert (category_evidence["CategoryEvidenceStatus"] == "Review").any()
 

@@ -1,14 +1,14 @@
 """Hygiene gate that blocks internal phase / sprint section labels.
 
-The repository must not ship internal phase / sprint codenames in any
-artefact a reader of the source can see: code comments, docstrings,
-UI strings, i18n locale files, documentation, and tests. Internal
+Maintained application surfaces must not expose internal phase / sprint
+codenames: code comments, docstrings, UI strings, i18n locale files,
+user documentation, and tests. Internal
 labels are useful while a feature is being planned but they look
 process-leaky once they land in the public codebase, and they make
 diffs harder to follow when section organisers shift over time.
 
-This gate scans the working tree for the forbidden patterns and
-fails the test suite on any hit. Add new descriptive prose instead.
+Frozen validation records retain the terminology of their original protocol;
+they are not product copy and must not be rewritten to satisfy this gate.
 """
 
 from __future__ import annotations
@@ -70,8 +70,6 @@ SCAN_PATTERNS: tuple[str, ...] = (
     "streamlit_app.py",
     "tests/*.py",
     "locales/*.json",
-    "validation/*.md",
-    "validation/**/*.md",
     "docs/*.md",
     "docs/**/*.md",
     "*.md",

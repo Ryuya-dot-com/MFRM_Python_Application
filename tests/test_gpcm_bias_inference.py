@@ -76,10 +76,10 @@ def test_safe_nll_value_returns_value_for_finite_output():
 def _quadratic_nll(b_hat: float, scale: float = 1.0):
     """Return a quadratic NLL closure with minimum at ``b_hat`` and value 0.
 
-    With ``NLL(b) = (b - b_hat)^2 / 2``, the LR statistic ``2 * (NLL(b) -
-    NLL(b_hat)) = (b - b_hat)^2`` follows a chi-square distribution with
-    one degree of freedom exactly, so the profile-likelihood CI is
-    available in closed form for cross-checking the implementation.
+    With ``NLL(b) = (b - b_hat)^2 / 2``, the LR cutoff equation is
+    ``2 * (NLL(b) - NLL(b_hat)) = (b - b_hat)^2``. Its roots are available
+    in closed form. This deterministic test checks cutoff inversion only;
+    a sampling distribution for ``b_hat`` is not specified or verified.
     """
 
     def nll(b):
@@ -557,10 +557,10 @@ def test_bias_estimation_matches_r_reference_within_tolerance(r_bias_parity_fixt
             f"Profile CI Status Python={py_row['Profile CI Status']!r} "
             f"vs R={r_cell['Profile CI Status']!r}"
         )
-        assert py_row["InferenceTier"] == r_cell["InferenceTier"], (
-            f"{py_row['FacetA_Level']} x {py_row['FacetB_Level']}: "
-            f"InferenceTier mismatch"
-        )
+        # The retained R 0.2.0 record calls this 'screening'; G3 now explicitly
+        # holds fitted-calibration reference distributions as technical only.
+        assert py_row["InferenceTier"] == "technical_only"
+        assert not py_row["PublicConclusionAllowed"]
 
         if not (np.isfinite(py_row["Bias Size"]) and np.isfinite(r_cell["Bias Size"])):
             continue
@@ -588,10 +588,8 @@ def test_bias_estimation_matches_r_reference_within_tolerance(r_bias_parity_fixt
     )
 
 
-def test_rsm_bias_marks_lr_and_profile_columns_as_not_applicable():
-    """For non-GPCM fits the LR / profile columns must be NaN with a
-    ``Likelihood Basis`` string that explains why; the t-based screening
-    columns continue to carry the inferential content."""
+def test_rsm_bias_uses_the_same_conditional_lr_candidate_as_gpcm():
+    """A slope of one does not remove the conditional scalar likelihood."""
     rng = np.random.default_rng(20260514)
     n_person, n_rater, n_criterion = 20, 2, 2
     theta = rng.normal(0, 1, n_person)
@@ -630,11 +628,10 @@ def test_rsm_bias_marks_lr_and_profile_columns_as_not_applicable():
     if "_skip_reason" in bias_out:
         pytest.skip(bias_out["_skip_reason"])
     tbl = bias_out["table"]
-    assert (tbl["LR ChiSq"].isna()).all()
-    assert (tbl["LR Prob."].isna()).all()
-    assert (tbl["Profile CI Lower"].isna()).all()
-    assert (tbl["Profile CI Upper"].isna()).all()
-    assert (tbl["Profile CI Status"].astype(str) == "not available").all()
-    assert (tbl["Likelihood Basis"].astype(str).str.contains("not applicable")).all()
-    # The t-based columns still carry inferential content for RSM/PCM.
-    assert tbl["t"].notna().any()
+    interior = tbl["Cell Status"].eq("interior")
+    assert interior.any()
+    assert tbl.loc[interior, "LR ChiSq"].notna().all()
+    assert tbl.loc[interior, "LR Prob."].notna().all()
+    assert tbl["t"].isna().all()
+    assert tbl["d.f."].isna().all()
+    assert tbl["PublicConclusionAllowed"].eq(False).all()

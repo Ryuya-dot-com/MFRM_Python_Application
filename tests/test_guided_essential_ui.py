@@ -38,7 +38,7 @@ def test_guided_action_plan_preserves_detail_and_routes_priority():
     assert required.issubset(plan.columns)
     assert not plan.empty
     assert plan.iloc[0]["Status"] == "Do not interpret yet"
-    assert plan.iloc[0]["DetailLocation"] == "Report"
+    assert plan.iloc[0]["DetailLocation"] == "Calculation details"
     assert plan["WhatItSays"].astype(str).str.len().gt(0).all()
     assert plan["NextAction"].astype(str).str.len().gt(0).all()
 
@@ -83,6 +83,96 @@ def test_guided_results_section_renders_measures_reading_guide():
 
     assert "render_guided_measures_reading_guide_tables()" in source
     assert "guided.measures_reading_heading" in source
+
+
+@pytest.mark.parametrize("lang", ["en", "ja"])
+def test_guided_results_leads_with_combined_table_and_retains_uncertainty(lang):
+    def view(lang):
+        from contextlib import ExitStack
+        from unittest.mock import patch
+        import pandas as pd
+        import streamlit as st
+        import streamlit_app as app
+        st.session_state["lang"] = lang
+        frame = pd.DataFrame({"Facet": ["Rater"], "Level": ["R1"], "Estimate": [.1],
+                              "SE": [.2], "Infit": [1.], "Outfit": [1.],
+                              "CI_Lower": [-.292], "CI_Upper": [.492],
+                              "SE_Status": ["ok"], "CI_Status": ["ok"]})
+        with ExitStack() as stack:
+            stack.enter_context(patch.object(app, "show_convergence_section",
+                lambda *a, **k: st.warning("Retained convergence warning")))
+            for name in ("show_person_fit_section",
+                         "show_posterior_scoring_section", "render_eb_shrinkage_section",
+                         "render_guided_measures_reading_guide_tables"):
+                stack.enter_context(patch.object(app, name))
+            app._render_guided_results_section({"config": {"method": "MML"}}, {"measures": frame}, {})
+        st.session_state["combined_title"] = app.t("guided.combined_measures_expander")
+        st.session_state["ci_note"] = app.t("result_tabs.combined_ci_caption")
+        st.session_state["hold_note"] = app.t("report_top.checklist_hold")
+        st.session_state["calculation_label"] = app.t("guided.estimation_details_expander")
+
+    at = AppTest.from_function(view, args=(lang,)).run(timeout=30)
+    assert not at.exception
+    assert at.expander[0].label == at.session_state["combined_title"]
+    assert at.expander[0].proto.expanded
+    assert at.main.children[0].type == "expander"
+    assert at.main.children[1].type == "warning"
+    assert at.warning[0].value == at.session_state["hold_note"]
+    calculation = next(e for e in at.expander if e.label == at.session_state["calculation_label"])
+    assert not calculation.proto.expanded
+    assert any(w.value == "Retained convergence warning" for w in calculation.warning)
+    assert all(not item.proto.expanded for item in at.expander[1:])
+    assert not at.subheader
+    frame = at.dataframe[0].value
+    assert list(frame) == ["Facet", "Level", "Estimate", "EstimateStatus", "Infit", "Outfit"]
+    assert frame.Estimate.isna().all()
+    records = at.dataframe[1].value
+    assert records.SE_Status.eq("calibration_inference_withheld").all()
+    assert records.CI_Status.eq("calibration_inference_withheld").all()
+    assert records.Estimate.tolist() == [.1]
+    assert at.session_state["ci_note"] in [item.value for item in at.caption]
+
+
+@pytest.mark.parametrize("lang", ["en", "ja"])
+@pytest.mark.parametrize("surface", ["diagnostics", "figures"])
+def test_guided_navigation_leads_directly_to_selected_content(lang, surface):
+    def view(lang, surface):
+        from contextlib import ExitStack
+        from unittest.mock import patch
+        import streamlit as st
+        import streamlit_app as app
+        st.session_state["lang"] = lang
+        st.session_state["rendered"] = []
+        renderers = ("show_fit_details_section", "show_dimensionality_section", "show_wright_map_section",
+                     "show_visuals_section", "show_bias_section", "show_categories_section",
+                     "show_agreement_section", "show_facet_dashboard", "show_prediction_simulation_section",
+                     "_draw_wright_map_plotly", "_draw_pathway_map_plotly")
+        def record(name):
+            return lambda *a, **k: st.session_state["rendered"].append(name)
+        with ExitStack() as stack:
+            stack.enter_context(patch.object(app, "render_chart_guide"))
+            for name in renderers:
+                stack.enter_context(patch.object(app, name, record(name)))
+            if surface == "diagnostics":
+                app._render_guided_diagnostics_section({}, {"config": {}}, {}, [], None, None,
+                    result_compute_pca=True, result_render_plots=True)
+            else:
+                app._render_guided_figures_section({"config": {}}, {},
+                    result_render_plots=True, result_generate_figures=False)
+
+    at = AppTest.from_function(view, args=(lang, surface)).run(timeout=30)
+    assert not at.exception and not at.subheader and not at.caption
+    key = "guided_diagnostics_panel" if surface == "diagnostics" else "guided_figures_panel"
+    initial = "fit_details" if surface == "diagnostics" else "wright_map"
+    initial_renderer = "show_fit_details_section" if surface == "diagnostics" else "_draw_wright_map_plotly"
+    assert at.session_state["rendered"] == [initial_renderer]
+    control = at.button_group if surface == "diagnostics" else at.selectbox
+    control(key=key).set_value("visuals" if surface == "diagnostics" else "pathway_map").run()
+    assert not at.exception and at.session_state["rendered"] == [
+        "show_visuals_section" if surface == "diagnostics" else "_draw_pathway_map_plotly"]
+    control = at.button_group if surface == "diagnostics" else at.selectbox
+    control(key=key).set_value(initial).run()
+    assert not at.exception and at.session_state["rendered"] == [initial_renderer]
 
 
 def test_guided_measures_reading_guide_renders_in_readable_slices():
@@ -130,15 +220,7 @@ def test_render_help_popover_uses_localized_topic_overlay():
     assert "st.session_state.get(\"lang\", DEFAULT_LANG)" in source
 
 
-def test_language_switch_uses_lightweight_result_fast_path():
-    source = inspect.getsource(app.main)
-
-    assert "on_change=_mark_language_switch" in source
-    assert "_consume_language_switch_fast_path(app_mode)" in source
-    assert "render_language_switch_fast_path()" in source
-
-
-def test_language_fast_path_consumes_pending_state_only_for_results(monkeypatch):
+def test_language_change_notification_is_consumed_only_for_results(monkeypatch):
     state = {}
 
     class _FakeSt:
@@ -146,12 +228,12 @@ def test_language_fast_path_consumes_pending_state_only_for_results(monkeypatch)
 
     monkeypatch.setattr(app, "st", _FakeSt())
     state["_language_switch_pending"] = True
-    assert app._consume_language_switch_fast_path("FACETS-mode estimation") is False
+    assert app._consume_language_switch("FACETS-mode estimation") is False
     assert state["_language_switch_pending"] is False
 
     state["_language_switch_pending"] = True
     state["facets_mode_output"] = {"result": {}}
-    assert app._consume_language_switch_fast_path("FACETS-mode estimation") is True
+    assert app._consume_language_switch("FACETS-mode estimation") is True
     assert state["_language_switch_pending"] is False
 
 
@@ -228,18 +310,18 @@ def test_guided_diagnostics_selector_lazy_renders_one_panel():
 def test_guided_figures_selector_lazy_renders_one_panel():
     options = app.guided_figure_panel_options()
 
-    assert list(options["PanelId"]) == [
-        "wright_map",
-        "visuals",
-        "export_status",
-    ]
+    assert set(options["PanelId"]) == {
+        "wright_map", "pathway_map", "category_probability", "yardstick",
+        "information_curves", "facet_distribution", "observed_vs_expected",
+        "forest_plot", "qq_plot", "ecdf",
+    }
     assert list(options.columns) == [
         "PanelId",
         app.t("guided.figures_panel_col_panel"),
     ]
 
     source = inspect.getsource(app._render_guided_figures_section)
-    assert "st.segmented_control" in source
+    assert "st.selectbox" in source
     assert "guided_figures_panel" in source
     assert "st.tabs" not in source
 
@@ -318,7 +400,7 @@ def test_guided_action_plan_display_uses_reader_facing_columns():
     assert app.t("guided.col_raw_status") not in compact.columns
     assert app.t("guided.col_raw_status") in detailed.columns
     assert compact.iloc[0][app.t("guided.col_status")] == app.t("guided.status_do_not_interpret")
-    assert compact.iloc[0][app.t("guided.col_detail_location")] == app.t("guided.detail_location_report")
+    assert compact.iloc[0][app.t("guided.col_detail_location")] == app.t("guided.detail_location_calculation_details")
 
 
 def test_guided_status_legend_explains_every_status_level():
@@ -430,6 +512,7 @@ def test_result_orientation_keeps_all_evidence_and_primary_navigation(lang, stat
         before = plan.copy(deep=True)
         st.session_state["expected_summary"] = app.guided_interpretation_readiness_summary_table(plan).iloc[0].tolist()
         st.session_state["support_label"] = app.t("guided.goal_supporting_detail_expander")
+        st.session_state["download_label"] = app.t("guided.action_plan_download")
         cards = app.guided_action_hub_cards("check_readiness", plan)
         st.session_state["expected_section"] = cards.loc[cards.ActionId.eq("primary"), "SectionId"].iloc[0]
         app._render_guided_goal_router(action_plan=plan)
@@ -448,7 +531,10 @@ def test_result_orientation_keeps_all_evidence_and_primary_navigation(lang, stat
     assert len(at.button) == 1
     alerts = [*at.error, *at.warning, *at.info]
     assert len(alerts) == 1
-    assert at.session_state["expected_summary"][3] in alerts[0].value
+    assert at.session_state["expected_summary"][3] not in alerts[0].value
+    assert at.session_state["expected_summary"][3] in "\n".join(item.value for item in supporting.markdown)
+    assert any(item.label == at.session_state["download_label"]
+               for item in supporting.get("download_button"))
     if status in {"Do not interpret yet", "Caution"}:
         assert at.error  # Convergence caution is a hard stop under the existing policy.
     at.button(key="guided_action_hub_main_primary").click().run(timeout=45)
@@ -488,14 +574,15 @@ def test_guided_goal_routes_cover_common_user_intents():
     }
 
 
-def test_guided_figures_section_is_a_direct_visual_surface():
-    source = inspect.getsource(app._render_guided_figures_section)
-
-    assert "show_wright_map_section(result, diagnostics)" in source
-    assert "show_visuals_section(result, diagnostics" in source
-    assert "downloads.figures_skipped_info" in source
-    assert "guided.figures_location_markdown" in source
-    assert "guided.figures_panel_select_caption" in source
+def test_guided_figures_missing_data_never_offers_an_empty_export():
+    def view():
+        import streamlit_app as app
+        app._render_guided_figures_section({}, {}, result_render_plots=False, result_generate_figures=False)
+    at = AppTest.from_function(view).run()
+    assert not at.exception and not at.get("plotly_chart") and not at.get("download_button")
+    at.selectbox(key="guided_figures_panel").select("pathway_map").run()
+    assert not at.exception and at.info
+    assert not at.get("plotly_chart") and not at.get("download_button")
 
 
 def test_visuals_section_lazy_renders_one_plot_panel():
@@ -899,7 +986,7 @@ def test_guided_export_share_preflight_table_maps_share_targets_to_artifacts():
     assert "claim_to_evidence_matrix.csv" in joined
     assert "figure_manifest.csv" in joined
     assert "external_simulation_reference_inventory.csv" not in joined
-    assert "Current gate:" in joined
+    assert "Current review status:" in joined
     assert table.astype(str).apply(lambda column: column.str.len().gt(0).all()).all()
 
 

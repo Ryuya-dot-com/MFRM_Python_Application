@@ -1,0 +1,166 @@
+{
+  "raters": 10,
+  "tasks": 3,
+  "categories": 4,
+  "raters_per_person": 2,
+  "ratings_per_person": 6,
+  "estimator": {
+    "model": "RSM",
+    "population_sd": 1.0,
+    "estimated_population_sd": false,
+    "positive_facets": [
+      "Rater"
+    ],
+    "noncenter_facet": "Task",
+    "quadrature": "standard normal Gauss-Hermite via scipy.special.roots_hermitenorm",
+    "optimizer": "SLSQP",
+    "mandatory_stages": [
+      {
+        "maxiter": 500,
+        "ftol": 1e-12
+      },
+      {
+        "maxiter": 500,
+        "ftol": 1e-14
+      }
+    ],
+    "start": "input-only zero facets and centered steps [-1,0,1]; independently cold for each q",
+    "retry": "none; both stages mandatory for every returned finite point",
+    "covariance": "invert structural information block with logSD excluded BEFORE inversion; no ridge/pseudoinverse"
+  },
+  "finite_numerical_limits": {
+    "score_supnorm": 0.0001,
+    "newton_correction_supnorm": 1e-05,
+    "restart_difference_supnorm": 1e-05,
+    "constraints": 1e-10,
+    "symmetry": 1e-10,
+    "condition": 10000000000.0,
+    "objective_worsening": 1e-08,
+    "require": "both optimizer stages successful; finite point; no certified structural recession/rank failure; unregularized SPD structural information"
+  },
+  "classification": "AUTHORIZED_EXPLORATORY_WRITING_ROBUSTNESS_STUDY",
+  "scientific_inference_ready": false,
+  "seed_entropy": 2026102304,
+  "development_seed_entropy": 2026102398,
+  "persons": 200,
+  "designs": [
+    "rotating",
+    "weak_bridge"
+  ],
+  "mechanisms": [
+    "normal_independent",
+    "mixture_independent",
+    "mixture_selected",
+    "shared_task_total_variance"
+  ],
+  "replicates_per_cell": 12,
+  "planned_datasets": 96,
+  "planned_grouped_fits": 96,
+  "quadrature_order": 81,
+  "generating_model": {
+    "model": "RSM",
+    "rater": [
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+    ],
+    "task": [
+      -0.3,
+      0.0,
+      0.3
+    ],
+    "steps": [
+      -1.0,
+      0.0,
+      1.0
+    ],
+    "scores": [
+      0,
+      1,
+      2,
+      3
+    ],
+    "positive_facet": "Rater",
+    "unit_weights": true
+  },
+  "generating_mechanisms": {
+    "normal_independent": "person predictor Z; Z iid N(0,1)",
+    "mixture_independent": "person predictor .8Z+.6g; g=+1 for even person index and -1 for odd, exactly 100 per group; pair rows randomly permuted independently of outcomes",
+    "mixture_selected": "SAME realized .8Z+.6g pool and response uniforms; original unpermuted pair rows align g with base assignment block",
+    "shared_task_total_variance": "person predictor .8Z plus .6U_person,task shared by the two raters on a task; U iid N(0,1). Total latent variance1, person SD.8, different-task latent covariance.64. Bundles person-SD misspecification and within-task dependence; no presumed SE direction"
+  },
+  "common_random_numbers": "For each independent replication SeedSequence([seed_entropy,replicate]) generates one Z vector, U N\u00d73 array, outcome-blind pair-row permutation, and response uniforms N\u00d72\u00d73. Reuse across both designs and all mechanisms. Sampling is conditional on the fixed balanced g labels. No sample recentering or variance normalization.",
+  "assignment": {
+    "rotating": "p%5, 5+(p//5+p)%5",
+    "weak_bridge": "h=p//2; block=p%2; a=h%5; b=(a+1)%5; bridge=h%10==(h//10)%5; [5*block+a, 5*(1-block if bridge else block)+b]",
+    "permutation": "Apply the SAME outcome-blind permutation of pair rows for normal_independent, mixture_independent and shared_task_total_variance; mixture_selected uses original pair rows. Person IDs/abilities and response uniforms stay fixed.",
+    "checks": "1200 rows and 40 persons/120 ratings per rater, 40 rows per rater/task; selected weak positive-group exposures38/40 for first5 raters and2/40 for last5; selected rotating20/40 for every rater. Counts describe constructed allocation, not empirical evidence of selection."
+  },
+  "targets": {
+    "primary": {
+      "contrast": "mean first5 rater leniencies minus mean last5",
+      "truth": 0.0
+    },
+    "secondary": {
+      "contrast": "R0 minus R1",
+      "truth": 0.0
+    },
+    "task": {
+      "contrast": "Task T2 minus Task T0 severity",
+      "truth": 0.6
+    }
+  },
+  "intervals": "Nominal95% normal Wald with full structural covariance. Ignored-covariance comparator remains explicitly invalid approximation. Under misspecification, evaluate containment of GENERATING contrasts, not coverage of an assumed zero pseudo-true working-model parameter.",
+  "aggregation": {
+    "unit": "12 independent replication seeds; scenarios sharing a seed are paired and are not independent additional replications",
+    "cells": "planned/eligible/statuses; eligible bias, biasMCSE, RMSE, empiricalSD, meanSE; generating-truth containment counts, binomial MCSE and Wilson95%; planned-denominator unresolved bounds",
+    "decisions": "Zero exclusion for the two generating-null rater contrasts is an exploratory false-flag measure. The task truth is+.6, so report generating-truth exclusion/containment, not false zero exclusion. No FDR or familywise claim.",
+    "paired": "selected minus independent mixture estimate per target within each design and seed, common-eligible count, mean difference and paired MCSE; retain all planned seed rows."
+  },
+  "continuous_reference": {
+    "cases": "rep0 for all8 design\u00d7mechanism cells at q81 returned point",
+    "engine": "unchanged independent RaschIntegral with declared fixed blocks of10 persons; same full global coordinates",
+    "bounds": 12.0,
+    "relative_tolerance": 1e-10,
+    "absolute_tolerance": 1e-12,
+    "refinement": "All8 points, since N200; bound14 rel1e-12 abs1e-14 using original fixed-point checker",
+    "per_case_timeout_seconds": 180,
+    "accuracy_limits": {
+      "nll_per_person": 1e-06,
+      "structural_gradient_abs": 0.0001,
+      "target_se_relative": 0.001,
+      "reference_refinement_nll_abs": 1e-07,
+      "reference_refinement_info_abs": 1e-06
+    },
+    "targets": "same checks extended to all3 prespecified contrast SEs",
+    "interpretation": "Checks integration of the fitted working-model likelihood only; cannot validate generating assumptions or interval containment."
+  },
+  "resource_limits": {
+    "threads": 1,
+    "fit_timeout_seconds": 60,
+    "fit_stage_wall_seconds": 600,
+    "reference_stage_wall_seconds": 600,
+    "serial": true,
+    "failure_policy": "retain all exceptions/timeouts/unrun planned rows; no retries or seed replacement"
+  },
+  "numerical_source": "Copy the original medium_writing_20261023 frozen numerical files and fit driver, plus its additive block-reference helper, into the new study root. Verify copies by SHA256 before/after phases. No old sealed evidence writes.",
+  "related_reporting_audit": "validation/generated/robustness_boundary_20261023 (separate product/audit purpose)",
+  "literature": [
+    {
+      "url": "https://rm.coe.int/1680667a23",
+      "role": "Eckes2009 printedpp39\u201340 discusses ability/severity confounding for disconnected designs. The connected weak-design stress here is our test, not a quoted finding."
+    },
+    {
+      "url": "https://doi.org/10.1177/0013164404268676",
+      "role": "Wang, Cheng and Wilson2005: shared stimuli can violate local independence. Coefficients .6/.8 here are deliberately chosen stress values, not empirical estimates."
+    }
+  ],
+  "limits": "Exploratory12 replications per cell; nominal.95 proportion MCSE~6.29percentage points and maximum14.43pp at.5. Fixed balanced groups and one stress strength; no empirical selection detection, general robustness certification, population-distribution inference, or release of application inference holds."
+}

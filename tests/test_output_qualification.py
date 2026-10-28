@@ -195,7 +195,8 @@ def test_free_sd_legacy_uncertainty_is_withheld_in_every_export():
         frames["summary"],
         app._collect_apa_exportable_tables(result, {})["Estimation summary"],
     ):
-        assert bool(summary.iloc[0]["Converged"]) is True
+        assert bool(summary.iloc[0]["Converged"]) is False
+        assert bool(summary.iloc[0]["SavedConverged"]) is True
         assert bool(summary.iloc[0]["InferenceReady"]) is False
         assert summary.iloc[0]["InferenceReadinessReason"] == app.FREE_SD_MML_INFERENCE_HOLD_REASON
     assert bool(result["summary"].iloc[0]["InferenceReady"]) is True  # saved evidence unchanged
@@ -207,7 +208,7 @@ def test_free_sd_legacy_uncertainty_is_withheld_in_every_export():
     population = guide.set_index("ManuscriptArea").loc["MML population scale"]
     assert population["ClaimStatus"] == "Do not claim"
     assert "SE/CI are withheld" in population["SafeManuscriptWording"]
-    assert "WITHHELD" in population["EvidenceToReport"]
+    assert "withheld" in population["EvidenceToReport"].lower()
 
 
 @pytest.mark.parametrize("method,free", [("MML", False), ("JMLE", True)])

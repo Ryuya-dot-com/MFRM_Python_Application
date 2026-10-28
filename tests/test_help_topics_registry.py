@@ -111,7 +111,7 @@ def test_required_locale_key_catalog_is_complete_and_value_independent():
             for key in HELP_REQUIRED_LOCALE_KEYS
             if key.startswith("help_topics.")
         }
-    ) == 437
+    ) == 439
     assert len(HELP_NAV_LOCALE_KEYS) == 24
     for topic in HELP_TOPICS:
         assert topic.title_key in HELP_REQUIRED_LOCALE_KEYS

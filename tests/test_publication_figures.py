@@ -92,6 +92,35 @@ def test_mpl_category_probability_produces_png(synthetic_result):
     assert len(png) > 2000
 
 
+@pytest.mark.parametrize("model", ["RSM", "PCM", "GPCM"])
+def test_mpl_category_curves_plot_each_category_probability(synthetic_result, model, monkeypatch):
+    synthetic_result["config"].update(model=model, step_facet="Task")
+    synthetic_result["prep"].update(rating_min=1, rating_max=5, levels={"Task": ["T1", "T2"]})
+    synthetic_result["params"].update(
+        steps_mat=[[-1.5, -0.5, 0.5, 1.5], [-1.0, -0.3, 0.3, 1.0]],
+        slopes=[0.8, 1.2],
+    )
+    expected = app.build_category_probability_curve_data(synthetic_result)["probability_wide"]
+    plotted = {}
+
+    def capture(fig):
+        for line in fig.axes[0].lines:
+            plotted[line.get_label()] = (line.get_xdata().copy(), line.get_ydata().copy())
+        plt, _ = app._mpl_safe_import()
+        plt.close(fig)
+        return b"captured"
+
+    monkeypatch.setattr(app, "_mpl_fig_to_png_bytes", capture)
+    assert app._mpl_category_probability_png(synthetic_result) == b"captured"
+    assert set(plotted) == {f"Cat {value}" for value in range(1, 6)}
+    for category, (theta, probability) in plotted.items():
+        np.testing.assert_array_equal(theta, expected["Theta"])
+        assert np.all(np.diff(theta) > 0)
+        np.testing.assert_allclose(probability, expected[category], atol=1e-14)
+        assert np.all((probability >= 0) & (probability <= 1))
+    np.testing.assert_allclose(sum(y for _, y in plotted.values()), 1, atol=1e-14)
+
+
 def test_mpl_facet_distribution_produces_png(synthetic_diagnostics):
     png = app._mpl_facet_distribution_png(synthetic_diagnostics)
     assert png is not None
@@ -158,6 +187,28 @@ def test_payload_captions_are_descriptive(synthetic_result, synthetic_diagnostic
         assert "." in caption, f"{fid}: caption missing period ({caption!r})"
 
 
+@pytest.mark.parametrize("config", [
+    {"method": "JMLE", "jmle_facet_boundary_review": True},
+    {"method": "MML", "estimate_population_sd": True},
+])
+def test_publication_figures_retain_current_hold(synthetic_result, synthetic_diagnostics, config, monkeypatch):
+    # Exercise the shared caption path without requiring a raster engine.
+    monkeypatch.setattr(app, "_plotly_or_matplotlib_png", lambda *args: b"figure")
+    from scipy.optimize import OptimizeResult
+    unknown = app._publication_figure_payloads(synthetic_result, synthetic_diagnostics)
+    assert all("Interpretation is withheld" in caption for _, caption, _ in unknown)
+    synthetic_result["opt"] = OptimizeResult(success=True)
+    ordinary = app._publication_figure_payloads(synthetic_result, synthetic_diagnostics)
+    synthetic_result["config"].update(config)
+    held = app._publication_figure_payloads(synthetic_result, synthetic_diagnostics)
+    assert len(ordinary) == len(held) == 4
+    for (name, caption, data), (held_name, held_caption, held_data) in zip(ordinary, held):
+        assert name == held_name and data == held_data
+        assert "Interpretation is withheld" not in caption
+        assert held_caption.startswith(caption)
+        assert "Interpretation is withheld" in held_caption
+
+
 # ---------------------------------------------------------------------------
 # Integration: PDF builder embeds the figures
 # ---------------------------------------------------------------------------
@@ -181,6 +232,26 @@ def test_pdf_contains_embedded_images(synthetic_result, synthetic_diagnostics):
     )
     # Reportlab compresses embedded images with FlateDecode.
     assert b"FlateDecode" in pdf
+
+
+def test_basic_pdf_has_no_empty_pages_after_figures(synthetic_result, synthetic_diagnostics, monkeypatch):
+    from reportlab.pdfgen.canvas import Canvas
+    from reportlab.platypus import SimpleDocTemplate
+
+    pages = []
+    class RecordingCanvas(Canvas):
+        def showPage(self):
+            pages.append(any("Tj" in command or " Do" in command for command in self._code))
+            super().showPage()
+
+    original_build = SimpleDocTemplate.build
+    def build(document, story, *args, **kwargs):
+        kwargs["canvasmaker"] = RecordingCanvas
+        return original_build(document, story, *args, **kwargs)
+    monkeypatch.setattr(SimpleDocTemplate, "build", build)
+    app.build_publication_pdf_bytes(synthetic_result, synthetic_diagnostics, include_details=False)
+    assert len(pages) > 1
+    assert all(pages), f"Pages containing text or images: {pages}"
 
 
 def test_pdf_smaller_when_figures_missing():

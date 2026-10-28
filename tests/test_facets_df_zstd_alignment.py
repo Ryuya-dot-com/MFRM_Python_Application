@@ -225,9 +225,11 @@ def test_calc_facet_fit_explicit_engine_mode_is_backward_compatible(small_rsm_jm
             "DF_Infit", "DF_Outfit"}.issubset(tbl.columns)
     for col in ["DF_Infit_FACETS", "DF_Outfit_FACETS",
                 "InfitZSTD_FACETS", "OutfitZSTD_FACETS",
-                "InfitZSTD_ENGINE", "OutfitZSTD_ENGINE",
-                "FitDfMethod", "FitZSTDTransform", "FitZSTDCap"]:
+                "InfitZSTD_ENGINE", "OutfitZSTD_ENGINE"]:
         assert col not in tbl.columns
+    assert tbl.FitDfMethod.eq("engine_homogeneous_variance_approximation").all()
+    assert tbl.FitZSTDTransform.eq("Wilson-Hilferty").all()
+    assert tbl.FitZSTDCap.isna().all()
 
 
 def test_calc_facet_fit_facets_mode_swaps_primary_zstd(small_rsm_jmle_diagnostics):
@@ -291,7 +293,7 @@ def test_calc_overall_fit_dispatch_matches_per_facet_dispatch(small_rsm_jmle_dia
     overall_engine = app.calc_overall_fit(obs, fit_df_method="engine")
     overall_facets = app.calc_overall_fit(obs)
     overall_both = app.calc_overall_fit(obs, fit_df_method="both")
-    assert "FitDfMethod" not in overall_engine.columns
+    assert overall_engine.FitDfMethod.eq("engine_homogeneous_variance_approximation").all()
     assert overall_facets.loc[0, "FitDfMethod"] == "facets_wright_masters"
     assert overall_both.loc[0, "FitDfMethod"] == "engine_primary_facets_available"
 
@@ -312,7 +314,7 @@ def test_mfrm_diagnostics_propagates_fit_df_method(small_rsm_jmle_diagnostics):
     assert diag_facets["fit_df_method"] == "facets"
     assert diag_both["fit_df_method"] == "both"
     # The fit table's status column matches the bundle-level method.
-    assert "FitDfMethod" not in diag_engine["fit"].columns
+    assert diag_engine["fit"]["FitDfMethod"].eq("engine_homogeneous_variance_approximation").all()
     assert (diag_facets["fit"]["FitDfMethod"] == "facets_wright_masters").all()
     assert (diag_both["fit"]["FitDfMethod"] == "engine_primary_facets_available").all()
 

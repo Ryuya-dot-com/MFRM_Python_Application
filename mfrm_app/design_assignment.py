@@ -98,6 +98,63 @@ def infer_rater_facet(
     }
 
 
+def validate_person_groups(group_labels) -> pd.Series:
+    """Keep one explicit group per Person; never turn missingness into a group."""
+    labels = pd.Series(group_labels, copy=True)
+    person_ids = labels.index.astype("string")
+    if person_ids.isna().any() or (person_ids.str.strip() == "").any():
+        raise ValueError("Person group labels require nonblank Person IDs.")
+    if person_ids.duplicated().any():
+        raise ValueError("Person group labels require one row per Person; duplicate IDs were found.")
+    labels.index = person_ids.astype(str)
+    return labels.astype("string").str.strip().replace("", pd.NA)
+
+
+def build_group_assignment_coverage(
+    data: pd.DataFrame, group_labels, *, facet: str, person_col: str = "Person",
+) -> dict[str, object]:
+    """Count distinct observed persons by facet and group, without scores or weights.
+
+    This is assignment coverage, not an identification or inferential check.
+    Person groups must be supplied explicitly; no labels are inferred from IDs.
+    """
+    labels = validate_person_groups(group_labels)
+    if facet == person_col or not {person_col, facet}.issubset(data.columns):
+        raise ValueError("Distinct Person and facet columns are required for group coverage.")
+    people = data[person_col].dropna().astype(str)
+    people = pd.Index(people.loc[people.str.strip().ne("")].unique())
+    aligned = labels.reindex(people)
+    group_sizes = aligned.dropna().value_counts().sort_index().rename("Persons")
+    group_sizes.index.name = "Group"
+    pairs = data[[person_col, facet]].rename(columns={person_col: "_Person", facet: "_Facet"}).dropna().astype(str)
+    pairs = pairs.loc[pairs["_Person"].str.strip().ne("") & pairs["_Facet"].str.strip().ne("")].drop_duplicates()
+    levels = sorted(pairs["_Facet"].unique())
+    pairs["_Group"] = pairs["_Person"].map(labels)
+    observed = pairs.groupby(["_Facet", "_Group"], observed=True).size()
+    observed.index.names = ["FacetLevel", "Group"]
+    long_counts = observed.rename("Persons").reset_index()
+    matrix_cells = len(levels) * len(group_sizes)
+    counts = None
+    # A continuous group column can otherwise allocate a quadratic-sized matrix.
+    if matrix_cells <= 50_000:
+        counts = (
+            observed.unstack().reindex(index=levels, columns=group_sizes.index).fillna(0).astype(int)
+            if not observed.empty else pd.DataFrame(0, index=levels, columns=group_sizes.index)
+        )
+        counts.index.name = "FacetLevel"
+        counts.columns.name = "Group"
+    return {
+        "counts": counts,
+        "long_counts": long_counts,
+        "group_sizes": group_sizes,
+        "unlabeled_persons": int(aligned.isna().sum()),
+        "extra_persons": int((~labels.index.isin(people)).sum()),
+        "facet_levels": len(levels),
+        "zero_cells": matrix_cells - len(observed),
+        "levels_in_all_groups": int(long_counts.groupby("FacetLevel").size().eq(len(group_sizes)).sum()) if len(group_sizes) >= 2 else 0,
+    }
+
+
 def _gini(values: np.ndarray) -> float:
     values = np.asarray(values, dtype=float)
     values = values[np.isfinite(values)]

@@ -30,8 +30,7 @@ def fitted():
 
 
 def input_bytes(result):
-    # The optimizer's local class is not picklable; preserve its public values separately.
-    return pickle.dumps({k:v for k,v in result.items() if k!='opt'}), pickle.dumps(vars(result['opt']))
+    return pickle.dumps(result)
 
 
 def test_disabled_is_a_noop_and_unsupported_inputs_stop_before_optimization(fitted, monkeypatch):
@@ -128,3 +127,50 @@ def test_kernel_handles_objective_offset_and_preserves_failure_and_large_gradien
     assert stopped['inference_ready'] is False
     broken = kernel.polish_fixed_sd(np.zeros(2), lambda p:(np.nan,np.ones(2)), factory)
     assert not broken['completed'] and broken['failure']['stage']=='raw'
+
+
+def test_same_point_comparison_matches_independent_rules_and_preserves_result(fitted, monkeypatch):
+    before = input_bytes(fitted)
+    def no_refit(*args, **kwargs):
+        pytest.fail('Same-point comparison must not optimize or run another engine')
+    monkeypatch.setattr(app, 'minimize', no_refit)
+    monkeypatch.setattr(native, 'run_process', no_refit)
+    prepared = app.prepare_fixed_sd_pcm_check(fitted)
+    record = app.evaluate_fixed_sd_pcm_quadrature_check(prepared)
+    assert input_bytes(fitted) == before
+    assets = app._analysis_input_assets(fitted)
+    job = native.prepare_inputs(assets['data.csv'], assets['analysis_snapshot.json'])
+    comparison = record['comparison']
+    assert comparison['primary_points'] == 121
+    assert comparison['accuracy_pass'] is None and not comparison['refitted']
+    assert not comparison['continuous_reference_checked'] and not record['inference_ready']
+    assert record['person_order'] == job['person_labels']
+    y = np.asarray(job['responses'], dtype=float)
+    for row in comparison['rows']:
+        z, w = roots_hermitenorm(row['points']); theta = job['sigma']*z; w /= np.sqrt(2*np.pi)
+        logits = (native.native_design() @ job['xsi'])[:, None, :] + theta[None, :, None]*np.arange(4)
+        logp = logits-logsumexp(logits, axis=-1, keepdims=True)
+        ll = np.zeros((len(y), len(z)))
+        for j in range(8):
+            ok = np.isfinite(y[:, j]); ll[ok] += logp[j, :, y[ok, j].astype(int)]
+        lm = logsumexp(ll+np.log(w), axis=1); post = np.exp(ll+np.log(w)-lm[:, None])
+        mean = post@theta
+        sd = np.sqrt(np.sum(post*(theta[None, :]-mean[:, None])**2, axis=1))
+        assert abs(row['raw_nll']+lm.sum()) < 1e-9
+        np.testing.assert_allclose(row['eap'], mean, atol=1e-10, rtol=0)
+        np.testing.assert_allclose(row['posterior_sd'], sd, atol=1e-10, rtol=0)
+        np.testing.assert_allclose(row['nodes'], theta, atol=1e-13, rtol=0)
+        np.testing.assert_allclose(row['weights'], w, atol=1e-14, rtol=0)
+    baseline = comparison['rows'][-1]
+    for row in comparison['rows']:
+        assert row['nll_change'] == row['raw_nll']-baseline['raw_nll']
+        assert row['max_eap_change'] == np.max(np.abs(np.array(row['eap'])-baseline['eap']))
+        assert row['max_posterior_sd_change'] == np.max(np.abs(np.array(row['posterior_sd'])-baseline['posterior_sd']))
+    monkeypatch.setattr(app.importlib_metadata, 'version', lambda _: 'changed-runtime')
+    assert app.prepare_fixed_sd_pcm_check(fitted)['input_id'] != prepared['input_id']
+    monkeypatch.setattr(app, 'compute_person_eap', lambda *a: pd.DataFrame({'Estimate':[np.nan]*16, 'SD':[1.]*16}))
+    with pytest.raises(ValueError, match='Nonfinite or inconsistent'):
+        app.evaluate_fixed_sd_pcm_quadrature_check(prepared)
+    prepared['idx']['score_k'] = np.zeros(1001)
+    with pytest.raises(ValueError, match='1,000'):
+        app.evaluate_fixed_sd_pcm_quadrature_check(prepared)

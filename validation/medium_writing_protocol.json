@@ -1,0 +1,178 @@
+{
+  "classification": "AUTHORIZED_MEDIUM_EXPLORATORY_WRITING_STUDY",
+  "scientific_inference_ready": false,
+  "created_utc": "2026-10-23T09:12:56.069718+00:00",
+  "authorization": "User explicitly authorized medium simulations on 2026-10-23; language/writing assessment, literature-based size and applied-paper outputs prioritized. Separate new cohort; no append to old frozen G3 or small pilot.",
+  "seed_entropy": 2026102303,
+  "development_seed_entropy": 2026102399,
+  "persons": [
+    200,
+    500
+  ],
+  "raters": 10,
+  "tasks": 3,
+  "categories": 4,
+  "raters_per_person": 2,
+  "ratings_per_person": 6,
+  "designs": [
+    "rotating",
+    "weak_bridge"
+  ],
+  "deltas": [
+    0.0,
+    0.4
+  ],
+  "replicates_per_cell": 24,
+  "planned_datasets": 192,
+  "quadrature_orders": [
+    31,
+    81
+  ],
+  "planned_grouped_fits": 384,
+  "generating_model": {
+    "model": "RSM",
+    "theta": "iid N(0,1), no sample recentering",
+    "rater": "first five delta/2; last five -delta/2; positive eta sign",
+    "task": [
+      -0.3,
+      0,
+      0.3
+    ],
+    "steps": [
+      -1.0,
+      0.0,
+      1.0
+    ],
+    "score_values": [
+      0,
+      1,
+      2,
+      3
+    ],
+    "unit_weights": true,
+    "missingness": "deterministic assignment independent of responses and theta",
+    "local_independence": "conditional on shared person theta; no script/criterion dependence"
+  },
+  "assignment": {
+    "rotating": "p%5, 5+(p//5+p)%5",
+    "weak_bridge": "h=p//2; block=p%2; a=h%5; b=(a+1)%5; bridge=h%10==(h//10)%5; [5*block+a, 5*(1-block if bridge else block)+b]",
+    "checks": "identical 6*N rows and identical per-rater workload between designs; weak design exactly 10% cross-block persons; all persons complete all tasks with assigned pair"
+  },
+  "estimator": {
+    "model": "RSM",
+    "population_sd": 1.0,
+    "estimated_population_sd": false,
+    "positive_facets": [
+      "Rater"
+    ],
+    "noncenter_facet": "Task",
+    "quadrature": "standard normal Gauss-Hermite via scipy.special.roots_hermitenorm",
+    "optimizer": "SLSQP",
+    "mandatory_stages": [
+      {
+        "maxiter": 500,
+        "ftol": 1e-12
+      },
+      {
+        "maxiter": 500,
+        "ftol": 1e-14
+      }
+    ],
+    "start": "input-only zero facets and centered steps [-1,0,1]; independently cold for each q",
+    "retry": "none; both stages mandatory for every returned finite point",
+    "covariance": "invert structural information block with logSD excluded BEFORE inversion; no ridge/pseudoinverse"
+  },
+  "finite_numerical_limits": {
+    "score_supnorm": 0.0001,
+    "newton_correction_supnorm": 1e-05,
+    "restart_difference_supnorm": 1e-05,
+    "constraints": 1e-10,
+    "symmetry": 1e-10,
+    "condition": 10000000000.0,
+    "objective_worsening": 1e-08,
+    "require": "both optimizer stages successful; finite point; no certified structural recession/rank failure; unregularized SPD structural information"
+  },
+  "targets": {
+    "primary": "mean first five rater leniencies - mean last five; truth delta",
+    "secondary": "R0-R1, truth zero",
+    "intervals": "nominal 95% normal Wald full covariance; ignored-covariance comparator explicitly invalid approximation for contrasts",
+    "decision": "95% interval excludes zero; prespecified exploratory contrast, not individual rater judgement"
+  },
+  "aggregation": {
+    "bias_rmse": "among eligible fits, eligible/planned shown",
+    "coverage": "among eligible finite-GH fits, never call continuous-target qualification",
+    "mcse": "independent datasets as unit; p MCSE sqrt(p*(1-p)/eligible), Wilson95% interval reported; bias SD/sqrt(eligible)",
+    "unresolved": "planned-denominator worst/best bounds [covered/planned,(covered+unresolved)/planned], NOT confidence intervals",
+    "q_comparison": "paired differences in estimate/SE/decision across common eligible datasets; lower order not assumed reference",
+    "formal_release": "no app inference hold is lifted by this study"
+  },
+  "matched_benchmark": {
+    "cases": "rep0,delta.4, each N/design =4 cases",
+    "q": 81,
+    "pairs_per_case": 5,
+    "order": "serial alternating grouped/row-native",
+    "same_work": "same prepared data, cold start, q, solver, structural information and final score moments. Retain construction and total elapsed separately; no external engine speed ranking",
+    "acceptance": {
+      "point_abs": 2e-05,
+      "nll_per_person": 1e-08,
+      "covariance_scaled": 0.0001,
+      "eap_abs": 1e-05,
+      "posterior_sd_abs": 1e-05
+    },
+    "performance_target": "at least 20% median fit-time reduction at all matched checks passing; record all timings, failures and ranges; no p95 claim"
+  },
+  "continuous_reference": {
+    "cases": "rep0 each of 8 cells at q81 returned point, no outcome selection",
+    "engine": "independent validation.mml_rasch_integral.RaschIntegral",
+    "bounds": 12.0,
+    "relative_tolerance": 1e-10,
+    "absolute_tolerance": 1e-12,
+    "refinement": "all four N200 rep0 cases at bound14 rel1e-12 abs1e-14",
+    "per_case_timeout_seconds": 180,
+    "accuracy_limits": {
+      "nll_per_person": 1e-06,
+      "structural_gradient_abs": 0.0001,
+      "target_se_relative": 0.001,
+      "reference_refinement_nll_abs": 1e-07,
+      "reference_refinement_info_abs": 1e-06
+    },
+    "limitation": "Subset checks do not certify every replicate; no automatic q replacement or selected rerun"
+  },
+  "tam": {
+    "cases": "N200 rep0 each design/delta =4 fits",
+    "version": "4.3.25 to be verified in runtime record",
+    "variance": 1.0,
+    "population_mean": 0.0,
+    "nodes": "seq(-8,8,length=161)",
+    "maxiter": 2000,
+    "conv": 1e-10,
+    "convD": 1e-10,
+    "convM": 1e-10,
+    "Msteps": 20,
+    "compare": "mapped logits/coordinates and common continuous likelihood; native diagonal SE not gold standard; no engine speed ranking"
+  },
+  "resource_limits": {
+    "threads": 1,
+    "fit_timeout_seconds": 60,
+    "fit_stage_wall_seconds": 1800,
+    "reference_stage_wall_seconds": 1800,
+    "serial": true,
+    "failure_policy": "record exceptions/timeouts/unrun planned rows; never silently drop, loosen thresholds or replace seed"
+  },
+  "literature": [
+    {
+      "url": "https://www.jstage.jst.go.jp/article/jltajournal/28/0/28_23/_article/-char/en",
+      "role": "Kikuhara2025:97Japanese high school writers,3tasks,3raters,4analytic criteria,6categories with4category reanalysis; motivates tasks/categories, not numerical parameter truth or recommendation to collapse categories"
+    },
+    {
+      "url": "https://pmc.ncbi.nlm.nih.gov/articles/PMC8377343/",
+      "role": "Wind and Ge2021 sparse-design study: N200/500/1000,20:1students/raters; motivates sample sizes. R10 retained across N to separate sample size; N500 is not exact replication"
+    },
+    {
+      "url": "https://pmc.ncbi.nlm.nih.gov/articles/PMC6492164/",
+      "role": "Morris, White and Crowther2019: ADEMP and MonteCarlo uncertainty"
+    }
+  ],
+  "limits": "Exploratory 24rep/cell: nominal95%coverage MCSE about4.45 percentage points before failures; max10.21pp atp.5. No general evidence of 95%coverage. RSM,fixedcorrect N01,oneconstruct,unitweights,balancedtasks; excludes freeSD/PCM/GPCM/anchors/localdependence/misspecifiedability/raterdrift.",
+  "source_manifest_sha256": "f5abe68e304a1a21d3bc93688bfdd30ace62a537629aed3e4219d6b1a19ad532"
+}

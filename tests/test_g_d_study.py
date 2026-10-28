@@ -13,17 +13,22 @@ ANOVA on the rating data and reports:
 The math contract pinned here covers:
 
 * Refusal on invalid input (non-dict, missing prep, no random facets).
-* Variance components are non-negative (a method-of-moments artefact
-  that the helper clamps at zero to keep G / Phi well-defined).
-* G / Phi closed-form identity:
+* Used variance components are non-negative; signed estimates are retained
+  as RawVariance. Negative estimates are not evidence of a suitable design.
+* One-random-facet G / Phi identity (the two-facet case below includes
+  explicit interaction components):
   ``G = sigma2_p / (sigma2_p + sigma2_e / n_total)`` and
   ``Phi = sigma2_p / (sigma2_p + sum(sigma2_facet / n_facet) + sigma2_e / n_total)``.
 * D-study monotonicity: G and Phi increase as any facet sample size
   increases.
-* D-study row count is ``prod(facet_grid_sizes)``.
+* D-study row count on this fixture is ``prod(facet_grid_sizes)``;
+  an observed design outside that grid is additionally retained.
 * The D-study grid contains the observed sample sizes (the helper picks
   a sensible band around the observed design).
 * Coefficients are NaN when sigma2_p collapses to zero.
+
+Bootstrap checks concern technical calculations only, not interval coverage
+or permission to report intervals. Public G/D output withholds these intervals.
 """
 
 from __future__ import annotations
@@ -441,7 +446,7 @@ def test_d_study_row_count_matches_grid_product(crossed_rating_fit):
 
 def test_caveat_mentions_one_observation_per_cell(crossed_rating_fit):
     out = app.compute_generalizability_study(crossed_rating_fit)
-    assert "one-observation-per-cell" in out["caveat"]
+    assert "one observation per cell" in out["caveat"]
     assert "Brennan" in out["reference"]
     assert "Cronbach" in out["reference"]
 

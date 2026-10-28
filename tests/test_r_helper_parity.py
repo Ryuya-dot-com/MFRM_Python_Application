@@ -435,15 +435,11 @@ def test_r_parity_design_network_node_metrics(shared_rsm_jmle_fit, r_fixture):
 def test_r_parity_g_study_variance_components_sources_match(
     shared_rsm_jmle_fit, r_fixture,
 ):
-    """Python and R must report the same SET of variance-component
-    sources (Person, Rater, Criterion, Person:Rater, Person:Criterion,
-    Rater:Criterion, Residual). Specific variance values can disagree
-    when MoM clamping (Python) and REML boundary handling (R) allocate
-    a negative-MoM term to different residuals — that's a real
-    estimator-level difference documented in Brennan (2001, p. 81)
-    and Searle, Casella & McCulloch (1992, Ch. 4.6). The headline G /
-    Phi coefficients still agree at a manuscript-readable precision
-    (covered by the next test)."""
+    """Same source labels for this balanced fixture; not estimator equivalence.
+
+    Python uses zero-clipped MoM estimates and R uses lme4 REML. This
+    source-set check establishes neither numerical accuracy nor coverage.
+    """
     if "g_study_variance_components" not in r_fixture:
         pytest.skip("R fixture missing g_study_variance_components.")
     out = app.compute_generalizability_study(shared_rsm_jmle_fit)
@@ -461,11 +457,10 @@ def test_r_parity_g_study_variance_components_sources_match(
 def test_r_parity_g_study_person_variance_dominant_in_both(
     shared_rsm_jmle_fit, r_fixture,
 ):
-    """The Person variance must be one of the top-3 largest components
-    in both implementations (the dominant variance source under a
-    well-functioning rating design). Specific magnitudes differ when
-    boundary handling diverges, but Person should always be a large
-    positive variance in both estimators if the fit is sensible."""
+    """Retain the large Person component seen in this specific fixture.
+
+    This ranking is a regression check, not a general design-quality criterion.
+    """
     if "g_study_variance_components" not in r_fixture:
         pytest.skip("R fixture missing g_study_variance_components.")
     out = app.compute_generalizability_study(shared_rsm_jmle_fit)
@@ -485,12 +480,11 @@ def test_r_parity_g_study_person_variance_dominant_in_both(
 def test_r_parity_g_study_coefficients_within_tolerance(
     shared_rsm_jmle_fit, r_fixture,
 ):
-    """G and Phi from Python MoM must agree with R lme4 REML to ~0.07
-    absolute on this fixture. Even when individual variance components
-    differ (because MoM clamping and REML boundary handling assign
-    the negative-variance residual differently), the G / Phi
-    coefficients themselves are functions of all components and tend
-    to agree at a manuscript-readable precision (Brennan 2001, p. 81).
+    """Limited MoM-versus-REML comparison with absolute tolerance 0.07.
+
+    This fixture does not establish exact ANOVA agreement, mfrmr parity,
+    incomplete-design support or interval coverage. Independent exact
+    controls are in test_g_d_study_boundaries.py.
     """
     if "g_study_coefficients" not in r_fixture:
         pytest.skip("R fixture missing g_study_coefficients.")
@@ -502,8 +496,7 @@ def test_r_parity_g_study_coefficients_within_tolerance(
     ), (
         f"Python G = {coef_py['G']:.4f}, R G = {coef_r['G']:.4f} "
         "(MoM vs REML boundary handling can disagree on absolute "
-        "variance allocation; the coefficient should still be within "
-        "manuscript precision)."
+        "variance allocation; this fixture retains a 0.07 absolute tolerance)."
     )
     assert float(coef_py["Phi"]) == pytest.approx(
         float(coef_r["Phi"]), abs=7e-2

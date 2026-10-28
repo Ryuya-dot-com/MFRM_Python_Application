@@ -35,5 +35,6 @@ run:
 	$(PYTHON) -m streamlit run streamlit_app.py --server.port $(PORT)
 
 clean:
-	rm -rf .pytest_cache validation/generated
-	find . -type d -name __pycache__ -prune -exec rm -rf {} +
+	# Keep retained evidence, source snapshots, backups, and virtual environments.
+	rm -rf .pytest_cache __pycache__ tests/__pycache__ validation/__pycache__
+	find mfrm_app -type d -name __pycache__ -prune -exec rm -rf {} +

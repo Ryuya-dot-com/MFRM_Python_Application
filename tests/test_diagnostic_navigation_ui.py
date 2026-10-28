@@ -42,7 +42,7 @@ def test_recommended_action_opens_its_diagnostic_without_changing_fit(lang, targ
     at = AppTest.from_function(view, args=(lang, target)).run(timeout=45)
     assert not at.exception
     assert at.button_group(key="guided_essential_section").value == "first_read"
-    at.button(key="guided_action_hub_overview_primary").click().run(timeout=45)
+    at.button(key="guided_action_hub_first_read_primary").click().run(timeout=45)
     assert not at.exception
     assert at.session_state["guided_essential_section"] == "diagnostics"
     assert at.session_state["guided_diagnostics_panel"] == panel

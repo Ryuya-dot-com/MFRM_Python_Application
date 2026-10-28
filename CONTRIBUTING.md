@@ -33,9 +33,12 @@ python streamlit_app.py --doctor
 python streamlit_app.py --self-test
 make apptest
 python streamlit_app.py --benchmark-quick --benchmark-csv validation/generated/benchmark_smoke.csv
-rm -rf .pytest_cache validation/generated
-find . -type d -name __pycache__ -prune -exec rm -rf {} +
+make clean
 ```
+
+`make clean` removes development caches while preserving retained validation
+evidence, source snapshots, backups, and both Mac and Windows virtual environments.
+In a Dropbox workspace, finish synchronization before bulk cleanup.
 
 ## Statistical Changes
 
@@ -72,13 +75,17 @@ standalone release gate.
 
 ## Documentation Changes
 
-When changing the UI or supported workflow, update at least one of:
+When changing the UI or supported workflow, update the current instructions
+that users encounter in the README, in-app Help, or bundled guide, and record
+the change in `CHANGELOG.md`. Update `ROADMAP.md` when scope or priorities
+change, and `RELEASE_CHECKLIST.md` when release requirements change.
 
-- `ROADMAP.md`
-- `README.md`
-- `MFRM_STREAMLIT_RELEASE_PLAN.md`
-- `RELEASE_CHECKLIST.md`
-- `CHANGELOG.md`
+`MFRM_STREAMLIT_RELEASE_PLAN.md`, `docs/v0.2.0_beta_plan.md`, and
+`docs/advanced_models_guide.md` are historical records. Updating a historical
+plan does not update current user documentation. Preserve dated findings and
+frozen evidence; make corrections or superseding decisions explicit. Check
+whether linked evidence is tracked in Git or retained only locally before
+presenting it as available to readers of a fresh checkout.
 
 ## Localization (i18n)
 
@@ -109,12 +116,11 @@ sidebar language picker (English / Japanese) keeps working. New strings:
 
 ### Plotly figure text
 
-All Plotly figure text (chart `title`, `xaxis_title`, `yaxis_title`,
-`annotation_text`, legend entries, hover templates) stays in English
-regardless of locale. Streamlit re-renders figures every rerun; keeping
-them in English ensures publication exports (PNG/SVG/PDF via Kaleido or
-matplotlib) reproduce the wording cited in the manuscript and supports
-side-by-side comparison with FACETS / Winsteps screenshots.
+Publication figure text keeps its established English labels so exported
+PNG/SVG/PDF figures can be checked against manuscript descriptions. Interactive
+figures used only for navigation or comparing saved analyses may follow the UI
+language; keep their axis meaning and numerical values identical across locales.
+Do not silently change publication figure wording as part of a UI-copy edit.
 
 When the same string is used in both a Plotly figure and an adjacent
 `st.markdown` / `st.warning` label, hold both forms — see

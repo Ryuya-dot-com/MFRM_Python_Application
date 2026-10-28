@@ -4,12 +4,29 @@ from io import BytesIO
 import re
 
 from mfrm_app import citation
+from mfrm_app.reporting_facts import (
+    current_manuscript_hold, observed_report_tables, observed_results_text,
+    optimizer_termination_text, recorded_method_details,
+)
 
 
-def manuscript_blocks(result: dict | None = None) -> list[tuple[str, str]]:
+def manuscript_blocks(result: dict | None = None, *, run_context: dict | None = None) -> list[tuple[str, str]]:
     result = result or {}
     config = result.get("config") or {}
-    prep = result.get("prep") or {}
+    prep = dict(result.get("prep") or {})
+    observed_tables = observed_report_tables(result)
+    if observed_tables:
+        facts = observed_tables[0][1].set_index("Characteristic")["Value"]
+        prep.update(n_obs=int(facts["Retained ratings"]), n_person=int(facts["Retained person identifiers"]))
+    hold = current_manuscript_hold(result)
+    method_details = recorded_method_details(result)
+    results = [optimizer_termination_text(result), observed_results_text(result)]
+    if hold:
+        results.append(f"Interpretation is withheld for this calibration. {hold} "
+                       "Parameter estimates remain technical calculations; SE/CI, bias, equivalence, "
+                       "and ranking claims are not established.")
+    elif isinstance(run_context, dict):
+        results = run_context.get("results", results)
 
     def recorded(mapping, key, placeholder):
         value = mapping.get(key)
@@ -84,6 +101,7 @@ def manuscript_blocks(result: dict | None = None) -> list[tuple[str, str]]:
         ("subheading", "Analysis"),
         ("body", setup),
         ("body", citation.analysis_statement(result)),
+        *([("body", method_details)] if method_details else []),
         ("body", estimation),
         ("body", "[For each research question, name the estimate or contrast, its direction and "
          "scale, uncertainty, and sensitivity analysis. State which fit, category, residual "
@@ -92,6 +110,7 @@ def manuscript_blocks(result: dict | None = None) -> list[tuple[str, str]]:
          "and the multiplicity correction and family. Explain decisions made after inspection.]"),
         ("heading", "Results"),
         ("subheading", "Data and Model Checks"),
+        *[("body", text) for text in results if text],
         ("body", "[Report the retained sample, excluded or missing ratings, category support, "
          "convergence and estimation problems. Give the relevant fit and stability evidence. "
          "PCA is an exploratory residual-pattern check, not proof of unidimensionality. "
@@ -137,13 +156,13 @@ def manuscript_blocks(result: dict | None = None) -> list[tuple[str, str]]:
     ]
 
 
-def manuscript_markdown(result: dict | None = None) -> str:
+def manuscript_markdown(result: dict | None = None, *, run_context: dict | None = None) -> str:
     prefixes = {"title": "# ", "heading": "## ", "subheading": "### "}
     return "\n\n".join(prefixes.get(kind, "") + (citation.APA_MARKDOWN if text == citation.APA else text)
-                       for kind, text in manuscript_blocks(result) if kind != "break") + "\n"
+                       for kind, text in manuscript_blocks(result, run_context=run_context) if kind != "break") + "\n"
 
 
-def manuscript_word_bytes(result: dict | None = None) -> bytes:
+def manuscript_word_bytes(result: dict | None = None, *, run_context: dict | None = None) -> bytes:
     """APA professional-paper baseline, with editable placeholders and no raw rows."""
     from docx import Document
     from docx.enum.text import WD_ALIGN_PARAGRAPH, WD_TAB_ALIGNMENT
@@ -183,7 +202,7 @@ def manuscript_word_bytes(result: dict | None = None) -> bytes:
     field.set(qn("w:instr"), "PAGE")
     header._p.append(field)
     styles = {"title": "Title", "heading": "Heading 1", "subheading": "Heading 2"}
-    for kind, text in manuscript_blocks(result):
+    for kind, text in manuscript_blocks(result, run_context=run_context):
         if kind == "break":
             doc.add_page_break()
             continue

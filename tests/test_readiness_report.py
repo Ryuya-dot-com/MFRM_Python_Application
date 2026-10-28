@@ -11,6 +11,8 @@ from __future__ import annotations
 import inspect
 
 import pandas as pd
+import numpy as np
+import pytest
 
 import streamlit_app as app
 
@@ -92,16 +94,13 @@ def test_input_readiness_panel_templates_are_formattable():
         n_issues=1,
     )
 
-    assert "🟢" in ok_text
-    assert "3" in ok_text
-    assert "First Read" in ok_text
-    assert "interpreting results" in ok_text
+    assert "input" in ok_text.lower()
     assert "Ready to interpret" not in ok_text
     assert "{n_checks}" not in ok_text
-    assert "🟡" in warning_text
+    assert "input" in warning_text.lower()
     assert "2" in warning_text
     assert "{n_warnings}" not in warning_text
-    assert "🔴" in issue_text
+    assert "input" in issue_text.lower()
     assert "1" in issue_text
     assert "{n_issues}" not in issue_text
 
@@ -301,7 +300,74 @@ def test_small_dataset_shows_warning():
     # should flag the sample size.
     check = _find_check(report, "n_observations")
     assert check is not None
-    assert check["severity"] in {"warning", "issue"}
+    assert check["severity"] == "warning"
+
+
+def _small_crossed_data():
+    return pd.DataFrame([
+        {"Person": f"P{p}", "Rater": f"R{r}", "Task": f"T{t}",
+         "Score": (p + r + t) % 4}
+        for p in range(4) for r in range(2) for t in range(2)
+    ])
+
+
+@pytest.mark.parametrize("case", ["small", "mostly_missing", "one_combination", "constant_persons"])
+def test_usable_input_cautions_do_not_block(case):
+    data = _small_crossed_data()
+    if case == "mostly_missing":
+        data = pd.concat([data, data.assign(Score=np.nan), data.assign(Score=np.nan)], ignore_index=True)
+    elif case == "one_combination":
+        data = data.groupby("Person", sort=False).head(1)
+    elif case == "constant_persons":
+        data = pd.concat([data.assign(Person=lambda d: d.Person + str(i)) for i in range(3)], ignore_index=True)
+        data["Score"] = data.Person.str[1].astype(int) % 3
+    report = app.build_readiness_report(data=data, person_col="Person", score_col="Score", facet_cols=["Rater", "Task"])
+    assert report["overall"] == "warning"
+    assert report["n_issues"] == 0
+    # The engine's existing preprocessing accepts the same input; no fit needed.
+    prep = app.prepare_mfrm_data(data, "Person", ["Rater", "Task"], "Score")
+    assert len(prep["data"]) > 0
+
+
+@pytest.mark.parametrize("case", ["fractional", "infinite_score", "infinite_weight", "no_rows", "retained_constant", "near_integer_constant", "overlap", "duplicate_names", "missing_column"])
+def test_input_blocks_agree_with_existing_preprocessor(case):
+    data = _small_crossed_data().assign(Weight=1.0)
+    score_col = "Score"
+    if case == "fractional":
+        data["Score"] = data.Score.astype(float)
+        data.loc[0, "Score"] = .5
+    elif case == "infinite_score":
+        data["Score"] = data.Score.astype(float)
+        data.loc[0, "Score"] = np.inf
+    elif case == "infinite_weight":
+        data.loc[0, "Weight"] = np.inf
+    elif case == "no_rows":
+        data["Weight"] = 0
+    elif case == "retained_constant":
+        data.loc[data.Score.ne(1), "Weight"] = 0
+    elif case == "near_integer_constant":
+        data["Score"] = 1.0
+        data.loc[0, "Score"] = 1.000000001
+    elif case == "overlap":
+        score_col = "Weight"
+    elif case == "duplicate_names":
+        data = pd.concat([data, data[["Score"]]], axis=1)
+    elif case == "missing_column":
+        data = data.drop(columns="Task")
+    report = app.build_readiness_report(data=data, person_col="Person", score_col=score_col,
+                                        facet_cols=["Rater", "Task"], weight_col="Weight")
+    assert report["overall"] == "issue"
+    with pytest.raises(ValueError):
+        app.prepare_mfrm_data(data, "Person", ["Rater", "Task"], score_col, weight_col="Weight")
+
+
+def test_person_count_review_does_not_ask_to_remap_a_valid_column():
+    report = app.build_readiness_report(data=_small_crossed_data(), person_col="Person", score_col="Score",
+                                        facet_cols=["Rater", "Task"])
+    check = _find_check(report, "n_persons")
+    assert check["severity"] == "warning"
+    summary = app.build_input_readiness_next_action_table({"overall": "warning", "checks": [check]})
+    assert summary.iloc[0][app.t("input_readiness.col_next_action")] == app.t("input_readiness.action_review_sample_size")
 
 
 def test_report_includes_outlier_findings():

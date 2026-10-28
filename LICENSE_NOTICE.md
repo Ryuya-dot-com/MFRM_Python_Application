@@ -20,3 +20,11 @@ certification, employment, or other high-stakes purposes.
 Do not imply that the project authors, external package authors, or referenced
 software projects endorse your analysis, deployment, product, service, or
 publication unless you have separate written permission.
+
+## 日本語の案内
+
+このアプリはMITライセンスで提供し、研究・教育・業務・商用での利用を許可します。
+データの取扱い、分析の適用判断、結果の解釈・利用、およびそれに基づく判断は利用者の責任です。
+アプリと文書は無保証で提供されます。再配布時は著作権表示とライセンス表示を保持してください。
+第三者の構成要素にはそれぞれのライセンスが適用されます。
+MITライセンスの全文は[LICENSE](LICENSE)を参照してください。

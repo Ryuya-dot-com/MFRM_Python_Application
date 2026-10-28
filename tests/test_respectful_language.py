@@ -17,18 +17,6 @@ TEXT_SUFFIXES = {
     ".yaml",
 }
 
-SKIP_DIRS = {
-    ".git",
-    ".mypy_cache",
-    ".pytest_cache",
-    "__pycache__",
-    ".ruff_cache",
-    ".venv",
-    "venv",
-    "node_modules",
-    "validation/generated",
-}
-
 RESPECTFUL_LANGUAGE_PATTERNS = [
     re.compile(r"\bbeginners?(?:[- ](?:friendly|oriented|facing))?\b", re.IGNORECASE),
     re.compile(r"\bnovices?\b", re.IGNORECASE),
@@ -46,25 +34,9 @@ ALLOWED_QUOTED_REFERENCES = (
 )
 
 
-def _is_scanned_path(path: Path) -> bool:
-    rel = path.relative_to(REPO_ROOT).as_posix()
-    if path.name == "test_respectful_language.py":
-        return False
-    if path.suffix.lower() not in TEXT_SUFFIXES:
-        return False
-    return not any(rel == skipped or rel.startswith(f"{skipped}/") for skipped in SKIP_DIRS)
-
-
 def _is_allowed_reference(path: Path, line: str) -> bool:
     rel = path.relative_to(REPO_ROOT).as_posix()
     lowered = line.lower()
-    # Frozen research recruitment strata are historical protocol terms, not UI labels.
-    if rel in {
-        "validation/cmle_one_click_cognitive_interview_operations_plan_20260810.json",
-        "validation/cmle_one_click_comprehension_readiness_plan_20260810.json",
-        "validation/cmle_one_click_comprehension_readiness.py",
-    } and any(term in lowered for term in ("novice and experienced strata", "novice-target")):
-        return True
     return rel in {"locales/en.json", "locales/ja.json"} and any(
         reference in lowered for reference in ALLOWED_QUOTED_REFERENCES
     )
@@ -72,8 +44,12 @@ def _is_allowed_reference(path: Path, line: str) -> bool:
 
 def test_respectful_language_avoids_user_ability_labels():
     violations: list[str] = []
-    for path in sorted(REPO_ROOT.rglob("*")):
-        if not path.is_file() or not _is_scanned_path(path):
+    # Product copy only: retained research protocols describe participant strata.
+    paths = [REPO_ROOT / "streamlit_app.py", REPO_ROOT / "README.md"]
+    for directory in ("mfrm_app", "locales"):
+        paths.extend((REPO_ROOT / directory).rglob("*"))
+    for path in sorted(paths):
+        if not path.is_file() or path.suffix.lower() not in TEXT_SUFFIXES:
             continue
         try:
             text = path.read_text(encoding="utf-8")

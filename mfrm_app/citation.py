@@ -10,7 +10,7 @@ METADATA = json.loads(CFF_TEXT)
 AUTHOR = METADATA["authors"][0]["family-names"]
 GIVEN_NAMES = METADATA["authors"][0]["given-names"]
 INITIALS = " ".join(f"{part[0]}." for part in GIVEN_NAMES.split())
-YEAR = METADATA["date-released"][:4]
+YEAR = (METADATA.get("date-released") or "")[:4] or "n.d."
 IN_TEXT = f"({AUTHOR}, {YEAR})"
 APA = (
     f"{AUTHOR}, {INITIALS} ({YEAR}). {METADATA['title']} "
@@ -20,8 +20,8 @@ BIBTEX = (
     "@software{mfrm_streamlit,\n"
     f"  author = {{{AUTHOR}, {GIVEN_NAMES}}},\n"
     f"  title = {{{{{METADATA['title']}}}}},\n"
-    f"  year = {{{YEAR}}},\n"
-    f"  version = {{{METADATA['version']}}},\n"
+    + (f"  year = {{{YEAR}}},\n" if YEAR != "n.d." else "")
+    + f"  version = {{{METADATA['version']}}},\n"
     f"  url = {{{METADATA['url']}}}\n"
     "}\n"
 )

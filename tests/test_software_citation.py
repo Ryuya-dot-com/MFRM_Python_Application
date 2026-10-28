@@ -48,6 +48,26 @@ def test_bad_or_absent_result_metadata_never_generates_current_release_citation(
         assert set(citation.result_assets(result)) == {"software_citation.md"}
 
 
+@pytest.mark.parametrize("released", [None, "2026-09-15"])
+def test_undated_candidate_does_not_invent_a_release_year(monkeypatch, released):
+    import json
+    import runpy
+    from pathlib import Path
+
+    metadata = dict(citation.METADATA)
+    metadata.pop("date-released", None)
+    if released:
+        metadata["date-released"] = released
+    original = Path.read_text
+    monkeypatch.setattr(Path, "read_text", lambda path, *a, **k:
+                        json.dumps(metadata) if path == citation.CFF_PATH else original(path, *a, **k))
+    loaded = runpy.run_path(citation.__file__)
+    expected = "2026" if released else "n.d."
+    assert f"({expected})" in loaded["APA"]
+    assert ("  year = {2026}," in loaded["BIBTEX"]) == bool(released)
+    assert "year = {n.d.}" not in loaded["BIBTEX"]
+
+
 def test_publication_cites_software_only_when_both_version_and_narrative_match(monkeypatch):
     result = {"config": {"app_version": app.APP_VERSION, "method": "JMLE", "model": "RSM"}}
     monkeypatch.setattr(app, "_publication_figure_payloads", lambda *_: [])

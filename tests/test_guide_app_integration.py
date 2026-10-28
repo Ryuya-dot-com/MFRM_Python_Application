@@ -15,15 +15,16 @@ def _new_app() -> AppTest:
     return AppTest.from_file(Path(__file__).resolve().parents[1] / "streamlit_app.py").run(timeout=45)
 
 
-def test_landing_owns_the_page_and_offers_three_optional_routes() -> None:
+def test_landing_owns_the_page_and_offers_optional_routes() -> None:
     at = _new_app()
 
     assert not at.exception
     assert not at.get("progress")
     assert [(button.key, button.label) for button in at.button] == [
         ("onboarding_quickstart", "Learn with a sample"),
-        ("onboarding_dismiss", "Start with my data"),
-        ("onboarding_skip_guide", "Continue without the guide"),
+        ("onboarding_dismiss", "Load my data"),
+        ("onboarding_gd", "Explore a rating plan"),
+        ("onboarding_skip_guide", "Open a sample without the guide"),
         ("mfrm_home_open", "Home"),
         ("mfrm_help_open_global", "Open Help"),
     ]
@@ -50,7 +51,7 @@ def test_own_data_route_opens_paste_preflight_without_starting_sample() -> None:
     assert state.route_id is GuideRoute.OWN_DATA
     assert state.sample_context_id is None
     assert at.session_state["data_source_flat"] == "paste"
-    assert sum("pasted and uploaded rating files" in item.value for item in at.warning) == 1
+    assert sum("pasted and uploaded rating files" in item.value.lower() for item in at.warning) == 1
     assert at.main.text_area(key="paste_data_text")
     assert not at.sidebar.text_area
     at.text_area(key="paste_data_text").set_value(app.TEACHER_PASTE_EXAMPLE_CSV).run(timeout=45)
@@ -109,12 +110,13 @@ def test_language_switch_preserves_the_active_sample_node_and_bindings() -> None
 
     assert not at.exception
     assert at.session_state[app._GUIDANCE_STATE_KEY] == before
-    assert at.button(key="sample_guide_data_check_continue").label == "対応づけを確認して次へ"
-    assert [(metric.label, metric.value) for metric in at.metric] == [
-        ("評価数", "960"),
-        ("対象者数", "30"),
-        ("ファセット数", "3"),
-    ]
+    assert at.button(key="sample_guide_data_check_continue").label == "次へ"
+    assert not at.metric
+    assert any(item.value == "960 評定 · 30 人" for item in at.caption)
+    expected = app.sample_mfrm_data_by_key("writing_essay", seed=20240101).head(5)
+    assert any(frame.value.equals(expected) for frame in at.dataframe)
+    assert len(at.get("progress")) == 1
+    assert not any("ガイドの進行状況" in item.value for item in at.caption)
 
 
 def test_sample_data_check_can_exit_and_resume_without_estimation() -> None:
@@ -124,11 +126,10 @@ def test_sample_data_check_can_exit_and_resume_without_estimation() -> None:
 
     state = at.session_state[app._GUIDANCE_STATE_KEY]
     assert state.active_node_id is GuideNode.DATA_CHECK
-    assert [(metric.label, metric.value) for metric in at.metric] == [
-        ("Ratings", "960"),
-        ("People", "30"),
-        ("Facets", "3"),
-    ]
+    assert not at.metric
+    assert any(item.value == "960 ratings · 30 people" for item in at.caption)
+    expected = app.sample_mfrm_data_by_key("writing_essay", seed=20240101).head(5)
+    assert any(frame.value.equals(expected) for frame in at.dataframe)
     assert "facets_mode_output" not in at.session_state
 
     at.button(key="sample_guide_exit_data_check").click()
@@ -213,6 +214,10 @@ def test_complete_sample_guide_uses_real_fit_and_keeps_analysis_identity() -> No
     assert not at.exception
     evidence_state = at.session_state[app._GUIDANCE_STATE_KEY]
     assert evidence_state.active_node_id is GuideNode.EVIDENCE_REVIEW
+    practice = next(e for e in at.expander if e.label == "Learn: interpreting results")
+    assert not practice.proto.expanded
+    assert at.radio(key="sample_guide_formative_answer").value is None
+    assert not evidence_state.learning_complete
     assert evidence_state.bound_analysis_id == app.build_result_analysis_identity(
         at.session_state["facets_mode_output"]["result"]
     ).analysis_id

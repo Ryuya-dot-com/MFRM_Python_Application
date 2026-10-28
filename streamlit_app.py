@@ -26992,9 +26992,12 @@ def record_run_in_history(*, output: dict, elapsed_sec: float) -> dict:
     reg_label = "On" if isinstance(result_cfg, dict) and result_cfg.get("facet_regularization_enabled") else "Off"
     store_snapshot = bool(st.session_state.get(_RUN_HISTORY_STORE_SNAPSHOTS_KEY,
                                               st.session_state.get("_run_history_store_full_snapshots", False)))
+    run_id = f"run-{_dt.datetime.now().strftime('%Y%m%d-%H%M%S-%f')}"
+    if isinstance(output, dict):
+        output['_history_run_id'] = run_id
 
     entry = {
-        "run_id": f"run-{_dt.datetime.now().strftime('%Y%m%d-%H%M%S-%f')}",
+        "run_id": run_id,
         "timestamp": _dt.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         "model": model,
         "method": method,
@@ -29931,6 +29934,8 @@ def _publication_report_tables(result, diagnostics, all_bias_results, *, include
     if isinstance(interval_record, dict):
         try:
             interval_table, interval_note = _structural_intervals.publication_table(result, interval_record)
+            interval_note = (f"Facet: {interval_record['table'][0]['Facet']}. Estimates and intervals are in logits. "
+                             + interval_note)
             tables.append(('Specified Structural Intervals', interval_table, interval_note))
         except (ValueError, TypeError, KeyError, AttributeError):
             tables.append(('Specified Structural Intervals', pd.DataFrame({'Status': ['Unavailable: saved interval evidence does not match this analysis.']}),
@@ -30009,7 +30014,7 @@ def _publication_report_intro(result, *, include_details):
         else:
             paragraphs.append("General calibration inference remains withheld. Uncertainty cells and precision indices in the "
                           "general tables are intentionally blank. If a Specified Structural Intervals table is present, "
-                          "its CIEligible column applies only to those pointwise model-based intervals; it does not qualify "
+                          "Use = Approximate applies only to those pointwise model-based intervals; it does not qualify "
                           "other outputs or finite-sample coverage.")
     if include_details:
         paragraphs.append("Detailed output includes individual person estimates and optional diagnostics. "
@@ -30065,6 +30070,8 @@ def _publication_table_display(df, note):
 
 
 def _publication_column_weights(columns):
+    if list(columns) == ['Target', 'Estimate', 'SE', 'Interval', 'Use']:
+        return [1.3, 1.2, 1.0, 2.5, 1.6]
     return [{"Facet": 1.45, "Level": 2.1, "Estimate": 1.5, "Interval": 2.5, "Basis": 1.6,
              "Infit": 1.1, "Outfit": 1.1, "SE / SD": 1.05,
              "Separation": 1.5, "Reliability": 1.5, "Levels": 0.85, "SD": 0.8, "RMSE": 0.85,
@@ -40909,6 +40916,23 @@ def _render_fixed_sd_returned_point(
         notice.info(tr('initial_notice') if stopped else tr('unknown_notice'))
 
 
+def _store_structural_interval_record(result, record):
+    """Keep later interval work with the opted-in snapshot of this exact run."""
+    import copy
+
+    result['_structural_intervals'] = record
+    output = st.session_state.get('facets_mode_output', {})
+    if output.get('result') is not result:
+        return
+    run_id = output.get('_history_run_id')
+    if not run_id:
+        return
+    for entry in get_run_history():
+        if entry.get('run_id') == run_id and _history_entry_has_snapshot(entry):
+            entry['output_snapshot']['result']['_structural_intervals'] = copy.deepcopy(record)
+            return
+
+
 def _render_structural_intervals(result, *, key_prefix, allow_check=True):
     """Select an inferential target once; the core checks and exports that target."""
     cfg = result.get('config', {})
@@ -40931,7 +40955,7 @@ def _render_structural_intervals(result, *, key_prefix, allow_check=True):
                 with st.spinner(tr('running')):
                     record = _structural_intervals.compute_structural_intervals(
                         result, facet=facet, difference=difference)
-                result['_structural_intervals'] = record
+                _store_structural_interval_record(result, record)
             except (ValueError, TypeError, KeyError, AttributeError, FloatingPointError) as exc:
                 st.warning(tr('unavailable')+' '+str(exc))
         if allow_check:
@@ -40942,7 +40966,7 @@ def _render_structural_intervals(result, *, key_prefix, allow_check=True):
                         raise ValueError('Interval record exceeds 5 MB')
                     restored = json.loads(uploaded.getvalue())
                     _structural_intervals.read_structural_intervals(result, restored)
-                    result['_structural_intervals'] = restored
+                    _store_structural_interval_record(result, restored)
                 except (ValueError, TypeError, KeyError, AttributeError) as exc:
                     st.warning(tr('unavailable')+' '+str(exc))
         record = result.get('_structural_intervals')

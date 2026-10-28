@@ -96,6 +96,7 @@ def test_report_formats_use_the_selected_interval_qualification(fit):
     _, table, note = next(row for row in tables if row[0]=='Specified Structural Intervals')
     assert table.Use.eq('Approximate').all() and table.Interval.str.startswith('[').all()
     assert 'pointwise' in note.lower() and 'coverage' in note
+    assert 'Facet: Rater.' in note and 'in logits' in note
     from io import BytesIO
     from docx import Document
     html = app.build_publication_html_bytes(changed, {'measures':pd.DataFrame()}, include_details=False).decode()
@@ -105,6 +106,7 @@ def test_report_formats_use_the_selected_interval_qualification(fit):
     for text in (html, word_text):
         assert 'Specified Structural Intervals' in text and 'Approximate' in text
         assert 'coverage guarantees' in text
+        assert 'Use = Approximate' in text and 'CIEligible column' not in text
     assert app.build_publication_pdf_bytes(changed, {'measures':pd.DataFrame()}, include_details=False).startswith(b'%PDF-')
     changed['opt'].fun += .1
     tables = app._publication_report_tables(changed, {'measures':pd.DataFrame()}, {}, include_details=False)

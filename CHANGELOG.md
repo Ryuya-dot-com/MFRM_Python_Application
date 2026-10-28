@@ -17,6 +17,10 @@ sources remain a prototype; this Web candidate does not release desktop binaries
   publication tables. Reject stale or inconsistent saved interval records.
   Finite-sample coverage, Person-score inference, free-SD inference and automatic
   equivalence conclusions remain unqualified; older study decisions are unchanged.
+- Keep subsequently computed or loaded intervals in the opted-in history snapshot
+  for that exact run, including a restored run. Preserve metadata-only histories.
+- Make the selected-interval report table identify its facet and logit units,
+  refer to its actual qualification label, and keep that label legible in Word/PDF.
 - Align the candidate version and software citation. Leave its release date
   unset while unpublished; show an undated citation instead of inventing a date.
 

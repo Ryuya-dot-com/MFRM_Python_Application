@@ -61,3 +61,42 @@ def test_selected_intervals_survive_language_change_and_saved_record_restore(lan
     at.run()
     assert not at.exception and at.warning and at.session_state['evaluations'] == 2
     assert not at.get('download_button') and not at.get('plotly_chart')
+
+
+@pytest.mark.parametrize('store_snapshot', [True, False])
+def test_interval_work_is_retained_only_in_the_matching_opted_in_history(store_snapshot):
+    import streamlit_app as app
+    from copy import deepcopy
+    from unittest.mock import patch
+    from mfrm_app import engine
+
+    at = AppTest.from_function(view, args=('en', 'RSM')).run(timeout=60)
+    fit = at.session_state['fit']
+    output = dict(result=fit)
+    # Use the real history/storage functions against this session, including a
+    # newer run with the same fitted values: equality must not select the run.
+    with patch.object(app.st, 'session_state', at.session_state):
+        at.session_state['facets_mode_output'] = output
+        at.session_state[app._RUN_HISTORY_STORE_SNAPSHOTS_KEY] = store_snapshot
+        first = app.record_run_in_history(output=output, elapsed_sec=1.)
+        second = app.record_run_in_history(output=deepcopy(output), elapsed_sec=1.)
+    at.button(key='test_structural_intervals_calculate').click().run()
+    assert not at.exception
+    record = fit['_structural_intervals']
+    if not store_snapshot:
+        assert first['output_snapshot'] == second['output_snapshot'] == {}
+        return
+    assert first['output_snapshot']['result']['_structural_intervals'] == record
+    assert first['output_snapshot']['result']['_structural_intervals'] is not record
+    assert '_structural_intervals' not in second['output_snapshot']['result']
+    with patch.object(app.st, 'session_state', at.session_state), \
+         patch.object(engine, 'minimize', side_effect=AssertionError('Unexpected refit')), \
+         patch.object(engine, 'mfrm_loglik_mml_value_grad', side_effect=AssertionError('Unexpected evaluation')):
+        assert app.restore_run_from_history(first['run_id'])
+        restored = at.session_state['facets_mode_output']['result']
+        saved = json.loads(json.dumps(record))
+        app._structural_intervals.read_structural_intervals(restored, saved)
+        app._store_structural_interval_record(restored, saved)
+        assert app.restore_run_from_history(first['run_id'])
+        assert at.session_state['facets_mode_output']['result']['_structural_intervals'] == record
+        assert '_structural_intervals' not in second['output_snapshot']['result']

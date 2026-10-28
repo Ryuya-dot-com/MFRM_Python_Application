@@ -115,20 +115,13 @@ def test_unequal_context_ui_selects_endpoint_only_milp_fallback():
     assert any(button.proto.id.endswith("-dl_assignment_sensitivity_bundle") for button in at.get("download_button"))
 
 
-def test_mml_ui_runs_rank_preserving_population_generator():
+def test_mml_ui_withholds_population_generator_until_source_is_qualified():
     at = AppTest.from_string(MML_HARNESS, default_timeout=60).run()
 
     assert not at.exception
-    at.selectbox(key="assignment_sensitivity_person_generator").select(
-        "mml_population_rank_preserving"
-    )
-    at.number_input(key="assignment_sensitivity_replicates").set_value(1)
-    at.run(timeout=60)
-    at.button(key="run_assignment_sensitivity").click()
-    at.run(timeout=60)
-
-    assert not at.exception
-    bundle = at.session_state["mfrm_assignment_sensitivity_bundle"]
-    assert bundle["available"] is True
-    assert bundle["person_generation_mode"] == "mml_population_rank_preserving"
-    assert bundle["person_generation_summary"].iloc[0]["RankPreservedExactly"]
+    gates = next(table.value for table in at.dataframe if "Gate" in table.value)
+    source_gate = gates.loc[gates.Gate.eq("Source fit inference readiness")].iloc[0]
+    assert not source_gate["Passed"]
+    assert not any(w.key == "assignment_sensitivity_person_generator" for w in at.selectbox)
+    assert not any(w.key == "run_assignment_sensitivity" for w in at.button)
+    assert "mfrm_assignment_sensitivity_bundle" not in at.session_state

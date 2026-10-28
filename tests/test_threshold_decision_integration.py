@@ -74,7 +74,7 @@ def test_anchor_audit_reports_unique_descriptive_coverage_without_share_gate():
     assert row["AnchoredLevelsTotal"] == 2
     assert row["UnanchoredLevels"] == 2
     assert row["AnchorShare"] == 0.5
-    assert row["Status"] == "Linked"
+    assert row["Status"] == "Count threshold met"
     assert "no universal anchor percentage" in row["CoverageInterpretation"]
 
 

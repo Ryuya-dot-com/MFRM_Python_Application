@@ -15,13 +15,14 @@ The math contract pinned here covers:
 * The per-rep mean-alignment identity: at every rep,
   ``sum(EstimateAligned) ≈ 0`` and ``sum(ErrorAligned) ≈ 0`` over
   each (rep, ParameterType) subset.
-* The summary's Bias is the mean of ErrorAligned over rows explicitly marked
+* The summary's centered block mean error is retained as a constraint identity,
+  with Bias evaluated separately per level. Over rows explicitly marked
   ``IncludedInSummary`` (converged replicates when available), RMSE is the
   root-mean-square, MAE is the mean absolute, and the row count
   matches ``reps * n_levels`` for each location block.
-* Coverage95 is the fraction of finite-SE rows whose truth lies in
-  ``estimate +/- 1.96 * SE``; the rate must equal the closed-form
-  fraction from the recovery rows.
+* Coverage95 uses uncertainty for the same centered target, with the
+  covariance transformed alongside the estimates. Marginal SEs alone
+  cannot establish coverage after mean alignment.
 * SE/CI method/status metadata are preserved in the long table, and
   the explicit SE/CI coverage report carries nominal coverage,
   coverage error, interpretation, and recommended action fields.
@@ -107,8 +108,7 @@ def test_recovery_rows_explicitly_mark_summary_inclusion(small_rsm_recovery_bund
     assert {"IncludedInSummary", "SummaryBasis"}.issubset(recovery.columns)
     converged_reps = set(overview.loc[overview["Converged"].astype(bool), "rep"])
     included_reps = set(recovery.loc[recovery["IncludedInSummary"].astype(bool), "rep"])
-    expected = converged_reps or set(overview.loc[overview["RunOK"].astype(bool), "rep"])
-    assert included_reps == expected
+    assert included_reps == converged_reps
 
 
 def test_recovery_long_table_row_counts_match_reps_times_levels(
@@ -132,8 +132,8 @@ def test_recovery_mean_alignment_identity_holds_per_rep(
     small_rsm_recovery_bundle,
 ):
     """Mean-aligned estimates and aligned truths must each sum to zero
-    over the per-rep, per-parameter-type subset (Rasch identification
-    convention; cf. Morris et al. 2019 alignment recipe)."""
+    over the per-rep, per-parameter-type subset defining the centered
+    comparison target."""
     recovery = small_rsm_recovery_bundle["recovery"]
     grouped = recovery.groupby(["rep", "ParameterType"])
     for (rep, ptype), sub in grouped:
@@ -154,11 +154,10 @@ def test_recovery_mean_alignment_identity_holds_per_rep(
 # -----------------------------------------------------------------------------
 
 
-def test_recovery_summary_bias_matches_mean_error_aligned(
+def test_recovery_summary_separates_centering_identity_from_bias(
     small_rsm_recovery_bundle,
 ):
-    """The summary Bias is the mean of ErrorAligned across included rows in
-    the (ParameterType, Facet, ComparisonScale) group."""
+    """A block mean forced to zero is not an estimate of level-specific bias."""
     recovery = small_rsm_recovery_bundle["recovery"]
     recovery = recovery[recovery["IncludedInSummary"].astype(bool)]
     summary = small_rsm_recovery_bundle["recovery_summary"]
@@ -169,7 +168,8 @@ def test_recovery_summary_bias_matches_mean_error_aligned(
             & (recovery["ComparisonScale"] == row["ComparisonScale"])
         ]
         err = pd.to_numeric(sub["ErrorAligned"], errors="coerce").dropna()
-        assert float(row["Bias"]) == pytest.approx(float(err.mean()), abs=1e-12)
+        assert np.isnan(row["Bias"])
+        assert float(row["MeanAlignedError"]) == pytest.approx(float(err.mean()), abs=1e-12)
         assert float(row["RMSE"]) == pytest.approx(
             float(np.sqrt((err ** 2).mean())), abs=1e-12
         )
@@ -191,10 +191,11 @@ def test_recovery_summary_coverage95_matches_closed_form(
             & (recovery["Facet"] == srow["Facet"])
             & (recovery["ComparisonScale"] == srow["ComparisonScale"])
         ]
-        se = pd.to_numeric(sub["SE"], errors="coerce")
+        se = pd.to_numeric(sub["CoverageSE"], errors="coerce")
         err = pd.to_numeric(sub["ErrorAligned"], errors="coerce")
         ok = np.isfinite(se) & (se > 0) & np.isfinite(err)
         if not ok.any():
+            assert np.isnan(srow["Coverage95"])
             continue
         expected_coverage = float(
             (np.abs(err[ok]) <= z95 * se[ok]).mean()
@@ -217,7 +218,10 @@ def test_recovery_long_table_carries_se_ci_metadata(small_rsm_recovery_bundle):
     }
     assert expected_cols.issubset(recovery.columns)
     assert set(recovery["NominalCILevel"].dropna().unique()) == {0.95}
-    assert recovery["CoverageMethod"].astype(str).str.contains("mean-aligned Wald").all()
+    locations = recovery["ParameterType"].isin(["Person", "Rater", "Criterion"])
+    assert recovery.loc[locations, "CoverageMethod"].astype(str).str.contains("mean-aligned").all()
+    assert recovery.loc[~locations, "ComparisonScale"].eq("logit_sum_zero").all()
+    assert recovery["Covered95"].isna().all()  # JMLE supplies no joint aligned covariance.
     assert recovery["SE_Status"].astype(str).str.len().gt(0).all()
     assert recovery["CI_Status"].astype(str).str.len().gt(0).all()
 
@@ -283,6 +287,10 @@ def test_build_se_ci_coverage_report_matches_recovery_summary(
         assert len(match) == 1
         srow = match.iloc[0]
         assert int(row["CoverageN"]) == int(srow["CoverageN"])
+        if not np.isfinite(srow["Coverage95"]):
+            assert np.isnan(row["Coverage95"])
+            assert np.isnan(row["CoverageError"])
+            continue
         assert float(row["Coverage95"]) == pytest.approx(float(srow["Coverage95"]), abs=1e-12)
         assert float(row["CoverageError"]) == pytest.approx(
             float(srow["Coverage95"]) - 0.95, abs=1e-12
@@ -357,25 +365,32 @@ def test_recovery_settings_round_trip_input_arguments(
 # -----------------------------------------------------------------------------
 
 
-def test_recovery_bias_is_near_zero_on_rsm_data(small_rsm_recovery_bundle):
-    """Mean alignment forces Bias to zero by construction at every
-    parameter type. Pin to machine precision."""
+def test_recovery_reports_level_bias_instead_of_zero_block_bias(small_rsm_recovery_bundle):
+    """Level bias can be nonzero even when all block mean errors vanish."""
     summary = small_rsm_recovery_bundle["recovery_summary"]
     for _, row in summary.iterrows():
-        assert abs(float(row["Bias"])) < 1e-10
+        assert np.isnan(row["Bias"])
+        assert abs(float(row["MeanAlignedError"])) < 1e-10
+    levels = small_rsm_recovery_bundle["recovery_level_summary"]
+    assert levels["Level"].notna().all()
+    assert levels["Bias"].abs().max() > 1e-6
 
 
-def test_recovery_correlation_is_positive_for_well_identified_blocks():
-    """With enough persons / reps, the (truth, aligned estimate)
-    correlation must be clearly positive for the Person block under
-    a clean RSM fit."""
+def test_returned_person_estimates_track_truth_without_substituting_nonconverged_fits():
+    """This retained fixture returns correlated estimates but may not converge.
+
+    Correlation of returned estimates is descriptive; it must not create a
+    conditional performance summary when no fit reports convergence.
+    """
     out = app.evaluate_parameter_recovery(
         n_person=40, n_rater=3, n_criterion=3, n_cat=4,
         reps=10, model="RSM", fit_method="JMLE",
         seed=20260606, maxit=25, reltol=1e-4,
     )
-    summary = out["recovery_summary"]
-    person_corr = float(
-        summary[summary["ParameterType"] == "Person"]["Correlation"].iloc[0]
-    )
+    person_rows = out["recovery"].loc[out["recovery"]["ParameterType"] == "Person"]
+    person_corr = person_rows["Truth"].corr(person_rows["EstimateAligned"])
     assert person_corr > 0.5  # well-identified Person block
+    assert out["execution_summary"].iloc[0]["AttemptedReps"] == 10
+    if out["n_reps_converged"] == 0:
+        assert out["recovery_summary"].empty
+        assert not out["recovery"]["IncludedInSummary"].any()

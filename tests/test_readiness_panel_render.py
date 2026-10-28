@@ -82,9 +82,9 @@ def _report(overall: str) -> dict:
 
 
 def test_panel_renders_each_severity_with_label():
-    for overall, label in (("ok", "OK"), ("warning", "CAUTION"), ("issue", "ISSUE")):
+    for overall in ("ok", "warning", "issue"):
         messages = _render_with_recorder(_report(overall))
-        assert any(f"[{label}]" in m for m in messages), (
+        assert app.t(f"input_readiness.panel_{overall}_template", n_warnings=1, n_issues=1) in messages, (
             f"readiness panel did not render the '{overall}' banner"
         )
 

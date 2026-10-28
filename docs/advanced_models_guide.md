@@ -1,5 +1,12 @@
 # Advanced Models Guide — v0.2.0-beta
 
+> Historical guide for the v0.2.0-beta workflow. The current app does not expose
+> the Stan-generation or Posterior Viewer routes described below. Their retained
+> code is compatibility-maintenance material, not a supported current workflow.
+> Use the [README model scope](../README.md#model-scope) for available features
+> and [ROADMAP](../ROADMAP.md) for planned extensions. Python estimation runs in
+> the Streamlit server process (locally or on the host), not in the browser.
+
 This document describes the seven advanced response models that the
 Streamlit app can export as Stan code, and the workflow for running
 them locally and bringing the draws back into the app's Posterior

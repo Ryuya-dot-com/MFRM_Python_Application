@@ -12,8 +12,71 @@ from dataclasses import asdict, dataclass
 from enum import Enum
 from typing import Iterable
 
+import numpy as np
+
 
 OUTPUT_QUALIFICATION_SCHEMA_VERSION = "mfrm_output_qualification_v1"
+FREE_SD_MML_INFERENCE_HOLD_REASON = "stat.mml_free_sd.numerical_qualification_pending"
+FIXED_SD_MML_INFERENCE_HOLD_REASON = "stat.mml_fixed_sd.numerical_qualification_pending"
+OPTIMIZER_TERMINATION_HOLD_REASON = "stat.estimation.optimizer_termination_unverified"
+
+
+def mml_inference_hold_reason(config) -> str:
+    if not isinstance(config, dict) or str(config.get("method", "")).upper() != "MML":
+        return ""
+    return (FREE_SD_MML_INFERENCE_HOLD_REASON if config.get("estimate_population_sd", False)
+            else FIXED_SD_MML_INFERENCE_HOLD_REASON)
+
+
+def mml_inference_hold_message(config) -> str:
+    if not mml_inference_hold_reason(config):
+        return ""
+    scope = "Free-population-SD" if config.get("estimate_population_sd", False) else "Fixed-population-SD"
+    return f"{scope} MML numerical accuracy and sampling uncertainty remain unqualified."
+
+
+def jmle_inference_hold_message(result) -> str:
+    config = result.get("config", {})
+    if (isinstance(config, dict) and str(config.get("method", "")).upper() == "JMLE"
+            and config.get("jmle_facet_boundary_review", False)):
+        from mfrm_app.jmle_boundary import HOLD_MESSAGE
+        return HOLD_MESSAGE
+    audit = result.get("identifiability")
+    status = audit.get("status") if isinstance(audit, dict) else None
+    if status in {"eta_rank_deficient", "audit_size_limit"}:
+        return "JMLE person/facet identification has not been established; review the design before inference."
+    return ""
+
+
+def optimizer_termination_established(result) -> bool:
+    """Require an explicitly recorded Boolean; truthy legacy values are not evidence."""
+    stopped = getattr((result or {}).get("opt"), "success", None)
+    return isinstance(stopped, (bool, np.bool_)) and bool(stopped)
+
+
+def calibration_inference_hold_reason(result) -> str:
+    """Requalify current and saved results, preserving method-specific reasons."""
+    result = result or {}
+    config = result.get("config", {})
+    if reason := mml_inference_hold_reason(config):
+        return reason
+    if jmle_inference_hold_message(result):
+        if (isinstance(config, dict) and str(config.get("method", "")).upper() == "JMLE"
+                and config.get("jmle_facet_boundary_review", False)):
+            from mfrm_app.jmle_boundary import HOLD_REASON
+            return HOLD_REASON
+        return "stat.jmle.identification_unqualified"
+    return "" if optimizer_termination_established(result) else OPTIMIZER_TERMINATION_HOLD_REASON
+
+
+def calibration_inference_hold_message(result) -> str:
+    result = result or {}
+    hold = mml_inference_hold_message(result.get("config")) or jmle_inference_hold_message(result)
+    if hold:
+        return hold
+    if not optimizer_termination_established(result):
+        return "Successful optimizer termination has not been established; review the numerical diagnostics."
+    return ""
 
 
 class OutputUse(str, Enum):
@@ -50,7 +113,9 @@ class QualificationReason(str, Enum):
     POPULATION_SD_UNCERTAINTY_UNQUALIFIED = (
         "stat.stat_003.population_sd_uncertainty_unqualified"
     )
+    BIAS_CELL_UNCALIBRATED = "bias.bias_003.cell_reference_uncalibrated"
     BIAS_PAIRWISE_UNVERIFIED = "bias.bias_001_002.pairwise_unverified"
+    FACET_EQUIVALENCE_UNVALIDATED = "stat.stat_003.facet_equivalence_unvalidated"
 
 
 @dataclass(frozen=True)
@@ -123,7 +188,7 @@ def model_choice_qualifications(method: object) -> tuple[OutputQualification, ..
             QualificationReason.MODEL_SELECTION_SCOPE_UNVALIDATED,
             "MODEL-001",
             "G2",
-            "Parameter counts are identified; wait for estimator/comparison-scope validation before ranking models.",
+            "Exact constraint coordinates are counted; observed-design identification and estimator/comparison scope still require validation before ranking models.",
         ),
         _qualification(
             "model_choice.automatic_recommendation",
@@ -185,9 +250,10 @@ def covariance_qualification(
             "Use the estimation-method-specific uncertainty status instead.",
             raw_export=False,
         )
+    # A missing/skipped Hessian does not establish a deficient rank.
     if (
         status_label == "regularized"
-        or (param_value > 0 and rank_value < param_value)
+        or (status_label == "ok" and param_value > 0 and rank_value < param_value)
     ):
         return _qualification(
             "mml.structural_covariance",
@@ -231,15 +297,40 @@ def population_sd_uncertainty_qualification() -> OutputQualification:
     )
 
 
+def bias_cell_qualification() -> OutputQualification:
+    """Retain scalar likelihood diagnostics without promoting uncalibrated claims."""
+    return _qualification(
+        "bias.cell_inference", OutputUse.TECHNICAL_ONLY,
+        QualificationReason.BIAS_CELL_UNCALIBRATED, "BIAS-003", "G3",
+        "Conditional LR and cutoff intervals hold calibration fixed. "
+        "Wait for error-rate, power, coverage, and calibration-uncertainty validation "
+        "before reporting bias or no-bias conclusions.",
+    )
+
+
 def bias_pairwise_qualification() -> OutputQualification:
-    """Hold pairwise local measures until direction and contrast SE are fixed."""
+    """Keep conditional local contrasts technical until G3 inference is qualified."""
     return _qualification(
         "bias.pairwise_local_measure",
         OutputUse.WITHHELD,
         QualificationReason.BIAS_PAIRWISE_UNVERIFIED,
         "BIAS-001;BIAS-002",
         "G3",
-        "Use cell-level bias screening only; do not interpret pairwise local measures.",
+        "Use conditional pairwise contrasts for technical audit only. "
+        "Boundary behavior, joint calibration uncertainty, and reference-distribution "
+        "and error-rate validation remain unqualified.",
+    )
+
+
+def facet_equivalence_qualification() -> OutputQualification:
+    """Withhold equivalence claims until their uncertainty and decision rules are validated."""
+    return _qualification(
+        "facet.equivalence", OutputUse.WITHHELD,
+        QualificationReason.FACET_EQUIVALENCE_UNVALIDATED, "STAT-003", "G2",
+        "Specify the contrast, substantive equivalence margin and claim family. "
+        "Validate joint uncertainty and the decision rule before reporting equivalence; "
+        "nonsignificance and agreement among unvalidated methods do not establish it.",
+        raw_export=False,
     )
 
 

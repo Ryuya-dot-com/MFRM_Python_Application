@@ -2,6 +2,621 @@
 
 All notable changes to this standalone Streamlit distribution should be recorded here.
 
+## 0.2.19-beta — unpublished candidate
+
+This candidate consolidates the changes recorded below since 0.2.18-beta.
+Its release date, required CI and hosted acceptance are pending. The Tkinter
+sources remain a prototype; this Web candidate does not release desktop binaries.
+
+- Provide selected fixed-SD RSM/PCM facet levels and prespecified differences
+  with pointwise asymptotic normal intervals when termination, identification,
+  boundary, full observed-information and quadrature-sensitivity checks pass.
+  Support the default centering and grouped 1,200/3,000-rating inputs. Preserve
+  full covariance for differences and withhold failed intervals without refitting.
+  Share the interval record across bilingual tables, figures, CSV/JSON/HTML and
+  publication tables. Reject stale or inconsistent saved interval records.
+  Finite-sample coverage, Person-score inference, free-SD inference and automatic
+  equivalence conclusions remain unqualified; older study decisions are unchanged.
+- Align the candidate version and software citation. Leave its release date
+  unset while unpublished; show an undated citation instead of inventing a date.
+
+### Directory review corrections and earlier development changes
+
+- Carry person-level JMLE holds into shared Web/desktop reporting and reopened
+  projects. Blank endpoint-only person estimates, fit and uncertainty in report
+  tables; withhold person reliability without silently dropping people or
+  suppressing valid rater/task results. Keep raw calculations for audit and
+  label retained extreme-person figure locations as terminal calculation values.
+- Preserve the opt-in history snapshot preference across navigation and input
+  changes. Keep history reachable when current inputs make the last result stale,
+  so users can restore its saved result without another fit.
+- Use `MFRM` as the browser title and retain the current interpretation-hold
+  message in saved basic HTML reports. Verify the source candidate in a separate
+  Python 3.12 environment, keeping local research artifacts outside the bundle.
+- Recheck retained R comparisons with a unit-scale ULP allowance only for
+  recomputed metrics. Keep source/returned values and decisions exact; reject
+  changed raw R values even when their difference is one ULP. Statistical
+  thresholds and inference qualification remain unchanged.
+
+- Repair release self-tests after the shared-engine extraction and UI
+  simplification: inject the forced MML fallback into the actual engine module,
+  accept concise nonempty chart headings, and retain accessible labels for the
+  Basic/Precision result navigation. Estimation and inference holds are unchanged.
+
+- Keep interval levels in their original fractional units in table CSVs while
+  displaying percentages on screen. Verify native table saving by reading back
+  saved files, distinguishing cancelled headless file-picker requests from an
+  application export failure.
+- Lead guided calculation details with stopping/hold status and a return to
+  existing data/settings. Fold technical records and remove only duplicate
+  alerts covered by the open panel; preserve other warnings and saved results.
+
+- Correct the beginner result view after its disclosure review: distinguish
+  withheld and all-minimum/all-maximum person rows, preserve readable facet
+  estimates, and offer Basic/Precision tables with only reader-facing columns.
+  Keep technical source values in calculation records; do not fabricate missing
+  intervals. Show fit rating counts with their weight-sum meaning and precision.
+  Route unfinished runs directly to opened calculation details instead of document
+  generation. Preserve existing inference holds and saved numerical results.
+
+- Simplify the beginner Streamlit workflow: fold analysis settings, show one
+  first-read summary and evidence disclosure, and keep result pages focused on
+  their selected content. Show measures and fit before technical columns;
+  retain the complete tables, qualifications and exports. Move convergence
+  details and explanatory notes behind disclosures while keeping inference
+  and extreme-person holds visible. Repair sticky navigation after scrolling.
+
+- Prevent history and saved-result comparisons from taking IC differences
+  across unknown/different conditions or unfinished/nonfinite results. Match
+  normalized inputs, constraints, population settings and quadrature; keep
+  fixed versus estimated SD distinct. Omit pooled criterion summaries when
+  records do not qualify for a same-condition numerical difference.
+  Explain omissions in Japanese/English and CSV while retaining inference holds.
+  Use the same qualified BIC in compact and detailed history, preserve legacy
+  saved values, and retain person-based BIC metadata in new compact entries.
+  Download history records without rerunning the page.
+
+- Offer an explicit finer-quadrature refit after the optional fixed-SD MML
+  sensitivity check. Reuse the constrained direct optimizer, reevaluate its
+  coordinates at a still finer rule, and retain every outcome in a separate
+  CSV. Exclude unfinished or invalid candidates from pair differences; preserve
+  the original analysis, normal comparison export, defaults and inference holds.
+  Verify three retained synthetic candidates against independent references and
+  saved ConQuest RSM/PCM results; check bilingual downloads and navigation.
+  Identify the retained refit table after navigation and explain incomplete
+  outcomes only for affected candidates. Keep translated statuses/reasons in
+  CSV and name candidates near bounds; do not invent missing reasons in older
+  records or trigger refits while displaying them. Numerical behavior is unchanged.
+
+- Preserve EM's actual stopping tolerance and tested relative log-likelihood
+  change, together with effective inner optimizer controls, in convergence
+  records and exports. Do not interpret the duplicated final trace value as a
+  zero stopping change or reconstruct missing controls for old results.
+  Clarify that a tighter stopping tolerance does not change quadrature accuracy;
+  estimation updates and defaults are unchanged.
+
+- Add an on-demand numerical check under model-comparison calculation details.
+  For small fixed-SD MML comparisons, retain each candidate's fitted coordinates
+  and evaluate finer integration rules without refitting. Export likelihood/IC
+  sensitivity, gradients and provenance; preserve the original comparison and
+  inference holds. Cache the check across navigation and language changes, and
+  download its bilingual record without rerunning the page.
+
+- Validate AIC/BIC on a retained 32-person input using independent likelihood
+  integration, R's information criteria and matched ConQuest RSM/PCM results.
+  Reject model comparisons with known person/facet confounding, including old
+  cached comparisons. Keep numeric-integration and model-selection qualifications
+  separate; estimation defaults and inference holds are unchanged.
+
+- Save model-comparison tables with Japanese or English headings, calculation
+  status, selected facets, source analysis, estimation method and interpretation
+  limits. Preserve full numeric precision in CSV; show compact numbers onscreen.
+  Keep the technical record under calculation details, and download either file
+  without rerunning the page. Verify native downloads and retained selections in
+  an isolated local test browser; public deployment remains pending.
+
+- Select step and slope facets explicitly for RSM/PCM/GPCM comparisons.
+  Reuse a current fit only when its structural specification matches; keep
+  separate cached results for each choice without fitting on selection changes.
+  Record the source analysis and chosen facets in CSV, exclude unfinished fits
+  from differences/rankings, and keep model-selection inference withheld.
+  Use a compact bilingual table with qualified exports instead of a grid's
+  context-free CSV; place calculation details and interpretation limits in
+  collapsed sections. Estimation algorithms and defaults are unchanged.
+
+- Preserve non-default prediction/simulation controls and uploaded inputs across
+  panel navigation within the same analysis. Show retained filenames and an
+  explicit removal control; distinguish widget cleanup from deleting a file.
+  Clearing a DIF group file also clears its old screening result.
+- Connect the app-engine runner's explicit bias-pair argument to execution,
+  including an empty list meaning no pairs. Bind original input mappings and
+  iteration settings in script generators to the requested analysis; foreign
+  or unowned session snapshots no longer override it. Numerical algorithms and
+  public/legacy route boundaries are unchanged.
+
+- Bind optional-analysis caches and prediction/refit exports to the complete
+  existing analysis identity. Exclude foreign or unowned cached results after
+  history restore and export the settings attached to the actual computation.
+- Retain classical DIF inputs, output, audit and caveats across language changes
+  and panel navigation; invalidate screens when response/group/settings inputs
+  change. CSV downloads do not trigger recalculation.
+- Retain bias screening thresholds per facet pair and use them consistently in
+  local screens, first-read summaries, CSV, PDF/Word/HTML and the app-engine
+  reproduction runner. Record the selected criteria without changing estimates
+  or releasing inferential holds; invalidate earlier document caches.
+
+- Make first-read summaries follow each facet's reliability qualification, retain
+  unavailable PCA and missing stability evidence, and preserve bias inference
+  holds and unassessed pairs even when screening flags are zero. Localize the
+  explanations in English/Japanese and carry them into basic/detailed PDF,
+  Word and HTML reports. Preserve valid neighboring facets and saved numbers;
+  invalidate cached reports with the earlier summaries. Numerical engines and
+  inference qualifications are unchanged.
+
+- Carry recorded optimizer status and first-read cautions into basic and detailed
+  PDF, Word and HTML reports, including residual-PCA stability, interaction review
+  flags and skipped checks. Reuse the screen's diagnostic rules; preserve inference
+  holds and existing table values. Invalidate older document caches and keep PDF
+  section headings with their following content.
+- Qualify newly fitted summary tables only after attaching the optimizer record
+  and identification audit. Successful termination no longer becomes an artificial
+  "termination unverified" hold that blocks the sample guide. Guide progress uses
+  explicit Boolean optimizer evidence. Failed attempts retain their holds and can
+  open existing diagnostics/settings for an explicit retry; bounded exception
+  descriptions survive language changes. Numerical routines, stopping criteria
+  and method-specific inference restrictions are unchanged.
+- Clarify optional-tool setup in Japanese: translate recovery inputs and
+  network entry controls, explain replicate counts/seed/model/estimator, and
+  preview the planned synthetic rating count and score range. Align setup
+  controls when labels wrap. Keep numerical definitions, cached settings and
+  inference holds unchanged; the default ten replicates is not a precision
+  guarantee.
+- Separate optional model comparison, G/D planning, network tools, recovery
+  simulation and fixed-SD numerical-check execution from current-result Tables.
+  Open one purpose-led tool at a time from Guided supporting material or the
+  advanced content selector. Keep existing check results and holds in Tables;
+  retain simulation settings and cached output when leaving the panel. No
+  estimator, qualification rule or technical export schema changes.
+- Group Guided report checks by the question they address and localize the
+  questions, current statuses and review guidance in English/Japanese. Keep
+  every distinct status, original finding and action; source details remain
+  available separately, including English technical text. Keep calibration
+  holds visible and optional analyses optional. Estimation, qualification
+  rules and exported evidence schemas are unchanged.
+- Align input-readiness messages with Guided and Advanced run controls. Keep
+  sample counts, missingness and score-pattern screens advisory; block known
+  input errors, including unusable retained rows and constant retained scores.
+  Preserve estimator validation and post-fit holds. Remove count-based precision
+  promises, clarify bilingual actions and display the next action as wrapping text.
+- Replace nested advanced-report tabs with one content selector. Generate only
+  the selected report and preserve its selection across language changes and
+  leaving/returning to the view. Separate the first reporting journey from
+  optional technical checks in the README.
+- Restrict G/D ANOVA to complete balanced unit-weight designs with one or
+  two non-object random facets, at least two levels per factor and one rating
+  per cell. Reject missing/repeated cells and invalid scores explicitly;
+  retain signed variance estimates beside zero-clipped calculation values and
+  always include the observed design in D-study output. Withhold unqualified
+  G/Phi intervals in the bilingual panel and CSV; record technical bootstrap
+  attempts, per-coefficient failures and current inference status. Export
+  calculation conditions, source identity and reasons with the results.
+  Save the dedicated G/D CSV without rerunning the report page.
+- Apply one current optimizer-termination rule to live interval plots, technical
+  CSVs, reliability, scoring prose, manuscript guidance, and saved-history/comparison
+  displays. Failed, absent or non-Boolean success cannot inherit stale Ready labels.
+  Retain technical values and original snapshots; replace affirmative stale
+  cautions with a stable hold reason and invalidate document caches.
+- Complete a separate bounded writing-robustness study: 96 fixed-SD RSM fits and
+  eight independent integral checks passed their numerical criteria. Ability-related
+  assignment under the constructed weak link produced a mean rater-block contrast
+  of 0.843 despite a generating contrast of zero. Report paired Monte Carlo
+  uncertainty, full covariance and generating-contrast containment; no inference
+  hold is released. Add boundary/rounding analysis of the prior retained cohort,
+  reproducible tables and figures, and practical reporting guidance.
+- Add result-aware applied-report tables and manuscript drafts: observed design,
+  workload and shared-person rater overlap, category counts including unused
+  categories, separate likelihood weights, and recorded estimation settings.
+  Recompute retained counts instead of copying stale display summaries; distinguish
+  optimizer termination from numerical qualification. Apply current holds to
+  direct/reopened manuscript exports and publication SE/CI, reliability and figure
+  notes when optimizer termination is failed or unrecorded. Preserve the concise UI.
+- Add the separately authorized medium writing-assessment study and its retained
+  protocol: 200/500 persons, matched rating workloads, full-covariance contrasts,
+  finite-GH stationarity, matched-accuracy performance, and independent references.
+  Complete 192 datasets / 384 finite-GH fits, eight independent integral checks,
+  and four TAM-point comparisons. Retain timeout censoring in the matched benchmark
+  and Monte Carlo uncertainty in exploratory coverage tables and figures.
+  Preserve the old frozen cohorts and all inference holds; results concern the
+  prespecified fixed-SD RSM conditions, not all application estimators.
+- Rewrite the main UI around grouped controls and progressive disclosure.
+  Remove repeated headings, secondary labels and instructions; place start
+  choices side by side, combine input previews with their counts, lead results
+  with the measures table, and group document options with the download action.
+  Consolidate version, scope, license and citation in About MFRM. Preserve
+  visible input labels, accessible navigation names, privacy notices and
+  inference holds; keep bilingual selection and session restoration intact.
+- Complete the user-authorized bounded pilot: 48 synthetic MFRM datasets,
+  96 frozen-source Python fits, four predetermined TAM comparisons and separate
+  normal-model shrinkage controls. Retain all attempts and prespecified criteria;
+  distinguish native stopping success from stationarity eligibility, covariance
+  effects and point-estimation error from interval coverage. No MFRM coverage
+  claim or resumption of paused formal G3/MML cohorts.
+  Fix live forest plots bypassing inference holds, reliability calculations
+  mixing unmatched estimate/SE inputs, and saved reliability qualification in
+  publications and exports. Clarify discrete residual Q–Q interpretation and
+  the fixed-zero shrinkage prior; refresh document caches and bilingual text.
+  Related tests: 265 passed; built-in self-tests: 56 passed.
+- Carry current uncertainty holds through fresh and restored step/measure tables,
+  FACETS-style tables, assumption audits, scoring-quality decisions and checklists.
+  Remove duplicate unqualified APA conclusions and EB confidence bars; retain
+  technical point values with explicit plug-in uncertainty metadata, including
+  the zero-variance boundary. Preserve the EAP reliability formula when its
+  inference status is withheld. Refresh cached documents and bilingual guidance.
+  No new estimator, interval coverage qualification or G3 study is introduced.
+- Close the advanced report's facet-equivalence bypass: remove unqualified
+  TOST/BIC/ROPE calculations, interval plots and combined conclusions that used
+  SEs without joint covariance or current inference holds. Show bilingual hold
+  guidance for every estimator and reopened results, and export a stable
+  qualification reason; invalidate document caches from before the hold.
+  Preserve the old renderer as local audit evidence.
+  Document normal-reference controls for equivalence and multiplicity; no new
+  inferential method or estimator qualification is released.
+- Check equivalent PCM parameterizations at three retained points, including
+  reference constraints, sign reversal and latent-origin translation. Verify
+  native likelihood/derivative agreement and full-covariance contrast
+  invariance; distinguish covariance omission, changed estimands and expected
+  singularity after constrained expansion. No production or inference changes.
+- Audit fixed-SD PCM information and covariance at two retained original fits
+  and six saved refit endpoints. Separate derivative accuracy, quadrature
+  error and stationarity; show differing effects on level and contrast SEs.
+  Retain positive-definiteness, reference refinements and all starting points.
+  No production SE, default quadrature or inferential qualification changes.
+- Extend the uncertainty review with analytic controls distinguishing EAP
+  sampling variability, posterior SD and interval coverage; shared calibration
+  uncertainty and contrasts; retained TAM SE definitions; and eigenvalue-floor
+  artifacts. Clarify 95% normal-approximation versus 90% grid-quantile intervals
+  and the fixed/free-SD inference hold in reporting guidance. No production
+  uncertainty algorithm or inferential qualification changes.
+- Assess a development-only continuous posterior CDF/quantile prototype at
+  fixed calibration. Retain 44 independent integration comparisons, native
+  app replays, known-normal and affine-transform controls, and explicit input
+  and integration-budget failures. Document interpolation artifacts, posterior
+  collapse on coarse GH rules, decision losses and requirements for consistent
+  downstream scoring. Production algorithms and inference holds are unchanged.
+- Extend the numerical review to decision boundaries. Retain fixed-calibration
+  controls where accurate EAP/SD coexist with threshold reversals in grid
+  quantiles, native TAM posterior replays, and PCM integration/recalibration
+  decompositions. Distinguish interval definitions, display proximity and
+  parameter boundaries. No estimator, scoring default or inference release changes.
+- Extend the TAM/Python review using installed TAM 4.3.25 function bodies and
+  bounded numerical controls. Separate EM updates, integration rules, free-SD
+  objectives, score/fit definitions and decision uncertainty. Retain a stopped
+  TAM fit's returned-point discrepancy and a long-response posterior underflow
+  control alongside their successful controls. Add interpretation guidance;
+  no estimator, numerical default or inference qualification changes.
+- Correct two findings from the October 23 TAM review: reject unsuccessful,
+  nonfinite, infeasible or worsening EM M-steps and retain their failure reason;
+  withhold fixed-SD MML inference as well as free-SD inference in current and
+  reopened results, reports and assignment-sensitivity preflight. Retain valid
+  estimates and optimizer termination separately from inferential qualification.
+  Record the independent continuous-integral check of 24 fixed-slope/fixed-SD
+  GPCM endpoints and distinguish TAM coordinate-curvature SE from joint SE.
+  Document backend tradeoffs; no R runtime, new estimator or inference release.
+- Define three external-group DFF output states using the requested comparisons,
+  with executable design-only fixtures: 8/8, 2/8 and 0/8 between-school contrasts
+  for the crossed, missing-cell and nested cases. Exclude within-school effects
+  from that denominator, retain partial identification after target selection,
+  and reject absent or inconsistent audit evidence. All numerical releases stay
+  withheld. Add bilingual school-comparison guidance to the existing Help topic;
+  no uploaded-data auditor, estimator or new contextual navigation edge is added.
+  Preserve the heatmap metric through Help and resolve diagnostic menu labels
+  at render time so widget value serialization uses the displayed language.
+- Check three proposed external-group DFF designs with both SVD and independent
+  rational constraint calculations. Distinguish reference-relative group effects
+  from an additional A/B symmetry assumption: the latter can make missing-cell
+  contrasts identifiable by assumption. Shared references link the additive
+  school lesson but leave DFF ambiguities. Add bilingual next-step guidance;
+  no external-group estimator or inferential qualification is released.
+- Add distinct-person group assignment counts to the two-school lesson and
+  classical DIF preflight, with ungrouped reference recordings and a lesson CSV.
+  Reject duplicate/blank Person IDs, preserve text IDs on CSV/Excel upload and
+  exclude blank groups. Avoid allocating dense coverage matrices over 50,000
+  cells while retaining observed-count downloads. Correct the claim that mean
+  scores remove rater severity. Document a separate external-group MFRM-DFF
+  specification draft; no new interaction estimator or inference is released.
+- Connect the two-school lesson to DFF interpretation: default its selected pair
+  to Rater × Criterion without overriding user choices, and add a navigation
+  button that does not refit. Put the heatmap and a four-column reading table
+  before collapsed technical details. Add bilingual guidance and five questions
+  on severity, signs, missing cells, inference and cross-school assignment.
+  Preserve missing-only heatmap rows, distinguish genuine zero values, and
+  localize chart labels. Statistical qualification remains unchanged.
+- Reject Person fixed/group/dummy constraints in ordinary MML before optimization:
+  they were audited but did not constrain the marginal likelihood or EAP scores.
+  Preserve non-Person facet anchors, explain the engine-specific scope in both
+  languages, and distinguish shared-person joint calibration from Person anchoring.
+  Clarify DFF definitions, score-direction signs and the fixed-calibration/EAP
+  boundary beside the existing heatmap; no new inferential claim is qualified.
+- Add a two-school synthetic example: 40 students, ten shared reference
+  recordings and 360 ratings, with a bilingual joint-calibration lesson and CSV.
+  Explain common IDs, reference exclusions, model directions, reporting limits
+  and later fixed anchoring. Separate anchor-count thresholds from validated
+  links, and hard-constraint agreement from empirical reference stability.
+  Unanchored joint calibration is no longer labeled "Not linked" by the anchor
+  checklist; dummy constraints do not count as evidence of a reference link.
+- Append an English Q&A before References in basic and detailed Word, PDF and
+  HTML reports, and offer the same guidance in Japanese or English beside the
+  download. Explain overfit, PCM versus RSM, facet directions and
+  bias interactions with definitions, examples and next checks. Include the
+  cited sources once, distinguish undated manuals from retrieval dates, retain
+  interpretation holds and invalidate cached reports without the Q&A.
+- Define Strata, underfit and overfit next to results and in report Notes, with
+  bilingual formulas, examples and decision limits. Distinguish model expectation
+  from review thresholds. Reuse the qualified reliability table in the reporting
+  view, removing a duplicate SE-based calculation that contradicted EAP summaries.
+  Expand the planned comprehension review to six tasks; human acceptance is pending.
+
+- Preserve emphasis, code text, nested bullets and tables in methods/writing
+  appendices across Word, PDF and HTML; escape literal markup and keep headings
+  with their explanations. Replace contradictory population-scale wording and
+  internal state labels in the writing guide. Propagate calibration-wide holds
+  to dependent claim-guide sections so reliability or targeting is not marked
+  ready while final interpretation is withheld.
+- Explain what to add to the basic report and link directly to existing table
+  downloads, interpretation checks and manuscript templates. Remove a shared
+  instruction that pointed to a control absent from the detailed view, and
+  distinguish templates from completed drafts. Specify formative review tasks
+  and scoring under the current five-novice/two-experienced target; human
+  acceptance remains untested.
+- Start report export with a basic set of two tables and two figures where
+  available; make person rows, additional diagnostics and methods/writing
+  appendices optional. Add bilingual reading steps and examples for language,
+  piano and skating assessments; preserve all interpretation holds.
+- Use separate table numbers, brief italic titles and explanatory Notes in
+  Word, PDF and HTML. Remove colored grids, retain horizontal rules, combine
+  interval bounds, and move constant qualifications into Notes while keeping
+  mixed uncertainty bases by row. Keep results before detailed appendices and
+  include report scope in the download cache key.
+- Guide CSV selection through 14 bilingual table names and reading notes;
+  retain access to every technical table and the existing privacy controls.
+  Include category diagnostics and step ordering in normal download bundles.
+- Correct the Matplotlib category-curve fallback, which treated long-form
+  column names as separate curves. Check plotted probabilities for RSM, PCM
+  and GPCM against the shared curve data, including category labels and sums.
+- Include Infit/Outfit alongside estimates and uncertainty in publication
+  tables. Keep interpretation holds in figure captions, replace internal bias
+  status codes with readable labels, and improve Word/PDF column widths and
+  caption pagination. Add a Japanese writing-assessment guide for three tables
+  and two figures; broader reporting and novice-user acceptance remain open.
+- Refine the active roadmap around graduate students learning MFRM: audit eight
+  reporting areas, complete a language-assessment journey, then develop piano
+  and skating examples. Add checkbox milestones with separate denominators for
+  output acceptance, learning scenarios, human understanding and performance.
+  Review primary FACETS, research and competition sources; distinguish existing
+  SE/posterior-SD methods from proposed bootstrap work and retain the pause on
+  formal uncertainty studies. The roadmap changes do not qualify statistical
+  inference.
+- Consolidate the bilingual estimation tutorial into one current explanation.
+  Rewrite the full Help guides around user actions, remove development-only
+  state names from guidance, and keep detailed workflow checks in collapsed
+  disclosures. Distinguish convergence, uncertainty methods and interpretation
+  holds; remove automatic fit/category/reliability conclusions from reviewed
+  guidance and chart explanations.
+- Explain model-comparison and bias holds in ordinary language, while keeping
+  technical reason codes in exports. Exercise all eight Help panels in both
+  languages without estimation and verify that a cached model recommendation
+  remains withheld after the display changes.
+- Hold JMLE interpretation for extreme-score free facet levels and preserve the
+  screening reason in summaries, guidance and exports.
+- Carry required calibration holds through publication decisions, APA sentences,
+  report summaries and measure uncertainty labels. Preserve rerun/hold states
+  when summarizing them again; unknown statuses do not become ready.
+- Treat zero as a valid reportable Person coordinate in assignment-sensitivity
+  checks, and reject non-finite reportable coordinates.
+- Guard dense rank-audit allocations before constructing matrices; reuse MML
+  posterior summaries and omit exactly-zero quadrature weights in the joint kernel.
+- Reuse readiness and report-summary tables within a single export call, with
+  complete input fingerprints, copy isolation and scope expiry.
+- Localize first-read guidance, progress and sample explanations; correct stale
+  testlet navigation and unsupported claims in synthetic example descriptions.
+- Put installation and first-use instructions first, and distinguish local-only
+  retained evidence from repository documentation.
+- Distinguish corrected contrast calculations from the still-pending statistical
+  validation in the README and replace internal validation-stage labels in
+  manuscript guidance with the checks readers need to understand.
+- Restrict copy-hygiene checks to maintained surfaces, preserving historical
+  research records; update older cache tests to supply the required report tables.
+- Revise 382 Japanese interface strings across setup, data import, first-read
+  guidance and reporting, replacing literal translations and implementation
+  jargon with concrete instructions. Rewrite the Japanese estimation tutorial.
+- Correct both languages' setting descriptions: group anchors fix group means,
+  Dummy facets fix all levels at zero, Xtreme affects report measures, and
+  Umean/Uscale apply a linear display transformation. Preserve interpretation
+  holds and distinguish uncertainty intervals from universally valid confidence
+  intervals. No numerical calculation changes are made in this copy revision.
+- Translate the wide-table detection explanation and describe it as a heuristic;
+  ask users to check the proposed score and ID columns.
+- Separate current user/developer instructions from historical v0.2.0 model
+  guides and v0.1.x publication actions. Add a documentation map and require
+  workflow changes to update the instructions users actually encounter.
+- Correct the README's fixed-only population-SD description and the bundled
+  anchor guide's silent-ignore, dummy-facet and group-stability claims against
+  the current implementation. Identify local-only evidence links and preserve
+  dated research findings without treating them as current validation.
+- Carry current JMLE and free-population-SD MML interpretation holds into each
+  measure row in the UI, CSV bundles, APA tables and scaled FACETS-style tables,
+  including saved results with older positive uncertainty flags. Preserve
+  original numerical values and uncertainty methods in technical exports.
+- Give Word, PDF and HTML measure tables an explicit uncertainty basis and
+  nearby explanation distinguishing conditional SEs from EAP posterior SDs.
+  Leave held SE/interval and reliability/separation precision cells blank in
+  publication tables, with their scope and the technical CSV source stated.
+- Wrap PDF table cells within the page width and make Word tables more compact,
+  retaining captions with tables and repeating headers across pages.
+- Refresh the active roadmap around existing end-to-end journeys, user
+  understanding, target-specific mathematical evidence and measured wait time.
+  Separate the current queue from retained research chronology, add a bounded
+  UX1 acceptance protocol and link it from the release checklist. Keep formal
+  G3/MML studies paused and distinguish local fixes from public acceptance.
+- Replace EM's function-local result class with SciPy's serializable
+  `OptimizeResult`, enabling the existing report and document caches. Preserve
+  the optimization, numerical outputs and inference holds; strengthen the
+  fixed-SD adapter's unchanged-input check to include the complete result.
+- Translate stale/restored-result notices and rerun controls, explaining which
+  analysis owns the displayed output without raw internal setting identifiers.
+- Exercise four real input-to-export AppTest journeys, bilingual score-mapping
+  recovery and a restored free-SD snapshot with older positive uncertainty
+  flags. Record limited timing evidence and remaining UX/J0 tasks in the audit
+  and active roadmap.
+- Clarify the TAM reference role against its versioned manual and retained
+  numerical evidence. Distinguish fixed-point PCM agreement from refitting,
+  quadrature accuracy and joint uncertainty; retain the historical EAP failure
+  and prioritize the remaining N1/N2 questions in the active roadmap.
+- Separate stopping error from integration differences in the two retained
+  TAM comparison inputs using the existing fixed-SD checker. Clarify in both
+  bundled guides that small finite-rule gradients and stable EAPs do not
+  establish posterior-SD accuracy or stability after recalibration.
+- Distinguish cross-language agreement from quadrature accuracy in the current
+  comparison record and bilingual guides. A fixed-point R control using the
+  same nodes and masses reproduced both Python's finite-rule results and the
+  remaining GH31 differences from the continuous reference.
+- Specify the next TAM comparisons by model: current-code RSM checks first,
+  then GPCM parameter/constraint mapping before any refit-equivalence claim.
+  Separate historical native TAM evidence from independent R controls, and
+  preserve the pause on formal uncertainty and coverage studies.
+- Recheck the current RSM mapping at all six retained TAM endpoints across
+  regular, sparse and unbalanced inputs. The affine design matches exactly;
+  fresh probabilities, likelihoods, scores and structural derivatives agree
+  within the declared tolerances. Preserve the historical cached-EAP failure
+  and distinguish this check from refitting, integration accuracy or joint
+  uncertainty. Move the next model comparison to GPCM constraint mapping.
+- Map current GPCM probabilities to TAM at six retained points and three
+  unit-slope PCM controls. Check likelihoods, posterior scores and derivatives
+  including log-slopes; detect omitted intercept scaling and frozen-design
+  errors. Document the remaining nonlinear shared-effect and scale constraints
+  before claiming equivalent refits. Preserve the coarse-quadrature failures.
+- Compare twelve fixed-slope/fixed-SD GPCM refits per engine across retained
+  inputs, two starts and two matched grids. Verify TAM stopping conditions and
+  frozen parameters throughout its iterations; cross-evaluate all returned
+  points and retain cached scores separately. Correct a grid-width omission
+  in an auxiliary likelihood diagnostic without changing the refits or their
+  primary checks. Keep continuous accuracy and full-model inference separate.
+- Reprioritize the roadmap around UX1 and J0 on the same analysis-to-export
+  journey. Define bounded performance comparisons, distinguish existing reuse
+  and grouped calculations from proposed changes, and prioritize history copy,
+  browser operation and user understanding. Limit the next numerical check to
+  retained GPCM endpoints; prioritize defects affecting current outputs and
+  keep formal studies paused. Align active planning and release references.
+- Reuse manuscript claim/evidence frames and shared-context agreement summaries
+  within the existing bounded export scope. Preserve the first candidate's
+  missed performance target; the revised candidate passes five-pair comparisons
+  on 12 and 960 ratings with unchanged public tables, ZIP/HTML content, workbook
+  cells, analysis identity and holds. Record the remaining performance scope.
+- Translate history controls and table labels in both languages, explain the
+  model-selection hold without internal gate labels, preserve technical CSV
+  reason codes, and check restore/delete/cancel behavior without refitting.
+- Remove correlation-based claims of method validity from saved-run comparisons.
+  Summarize finite, uniquely matched estimates by facet; retain element counts,
+  reject ambiguous identifiers and flag missing or changed input records.
+  Reuse publication holds for reliability cells without modifying saved values.
+- Translate comparison controls, tables, plots and explanatory copy; distinguish
+  identical history labels with entry numbers. Verify four fitted cases and
+  bilingual selection without presentation-triggered estimation.
+- Extend report-reuse timing evidence to five fresh-process pairs with a real
+  12-rating fit and a changed-input refit. Retain the predeclared targets,
+  complete outputs and limits; no new performance backend is introduced.
+- Scientific operating-characteristic qualification remains incomplete.
+
+Initial validation on Python 3.12: the native test selection was checked in split runs
+and targeted reruns after corrections (3,023 passed, two optional `immer`
+comparisons skipped). The environment doctor, release check, 56 self-tests,
+quick benchmark and demo-report export also completed. Browser visual acceptance
+and formal operating-characteristic studies were not run. The facet boundary
+screen is conservative and does not certify general finite-MLE existence.
+
+The follow-up reporting, status-normalization, and coordinate checks passed
+595 distinct related tests across focused runs and corrected reruns, including
+English/Japanese AppTest checks with an actual held JMLE fit. The 56 self-tests,
+environment doctor, compile and release checks also passed. This follow-up did
+not repeat the entire native suite or perform browser visual acceptance.
+
+The Japanese-language follow-up passed 464 distinct related tests, including
+English/Japanese AppTest checks. After the final data-layout wording change,
+30 affected localization, table-conversion and help-integration tests passed
+again. Additional AppTest smoke checks exercised Japanese advanced controls
+and wide/long table switching with score preservation. The environment doctor,
+syntax compilation and whitespace checks passed. The full native suite and
+browser visual acceptance were not repeated for this copy revision.
+
+The documentation-reference review checked 30 tracked Markdown documents
+outside the validation/archive trees: 579 local link occurrences resolved in
+this workspace, while 177 distinct targets were local-only rather than tracked
+distribution files. Their availability limits are now stated at the documentation
+entry points and research records. Relevant scope, anchor and population-SD
+tests passed (48 tests); a direct check confirmed invalid anchor rows are
+excluded and audited and the app loads the corrected bundled guide. The doctor
+and whitespace checks passed. The two deployment references were checked
+against Streamlit's official documentation; other external references and
+historical study results were not comprehensively revalidated.
+
+The result/export consistency review passed 155 related tests, including real
+ordinary JMLE, facet-boundary JMLE, fixed-SD MML and free-SD MML fits, CSV numeric
+round trips, actual Word/PDF/HTML construction and English/Japanese AppTest
+report-table checks. Changed Word/PDF table pages were rendered and visually
+inspected; 43 affected tests passed again after the Word formatting adjustment.
+The environment doctor, release check, syntax compilation and whitespace checks
+also passed. These checks do not qualify the estimators' sampling uncertainty or
+replace browser/user acceptance; formal validation studies remain paused.
+
+The roadmap-only follow-up checked 30 local link occurrences in the active
+plan and updated entry points, preserved all 74 existing roadmap anchors,
+and verified that the retained research text and detailed acceptance conditions
+were unchanged. Whitespace checks passed. It did not rerun the application,
+conduct user reviews, resume formal studies or change deployment status.
+
+The journey follow-up passed 127 distinct related tests: 49 reporting/reuse/
+locale checks, 71 engine/quadrature/adapter checks and seven AppTest journeys.
+Six pre/post-change EM fits (RSM/PCM/GPCM × fixed/free SD) retained exactly equal
+numeric results, traces, termination states and diagnostic tables, excluding
+elapsed time. The doctor, release check, compile and whitespace checks passed.
+One unmocked 12-row free-SD journey measured repeated PDF display at 2.596 →
+0.712 seconds and measures-CSV selection at 23.247 → 6.859 seconds. Word's first
+build did not improve; first-render and total times include initialization/cache
+effects. See the [scope and timing record](docs/ux_adversarial_audit.md#local-execution-record--2026-10-14).
+The full native suite, browser accessibility/visual acceptance, actual-user
+reviews and formal statistical studies were not run; no deployment was made.
+
+The TAM follow-up ran two fixed-calibration PCM comparisons and the existing
+two-item SE-definition control with TAM 4.3.25 / R 4.6.1. Same-grid PCM NLL,
+EAP and posterior SD agreed within the predeclared 1e-8 tolerances; the control
+reproduced the distinction between diagonal-curvature and joint-information
+SEs. Separately, 51 related Python tests passed and 81 historical evidence-file
+hashes matched their manifests. No app implementation or estimator settings
+were changed. GH31/grid differences and nonzero returned gradients remain
+unresolved; these development checks do not qualify inference or resume the
+paused studies. See the [conditions and results](docs/mml_quadrature_cross_engine_review.md#tam-review-20261014).
+
+The fixed-SD follow-up evaluated all 12 planned trajectories (two inputs,
+three GH orders, two starts) and 14 points under two continuous-integration
+settings. All finite-rule final gradients were below 9.59e-10, while GH31
+posterior-SD differences remained about 0.02 logit. GH121 reduced these
+differences to about 1.20e-6 without establishing general accuracy. The existing
+reference checks passed at all 14 points; 24 related tests and two bilingual
+UI/bundled-guide checks passed. Inputs,
+sources, every trajectory and hashes were retained. App numerical settings,
+original results and inference holds were unchanged, and no new TAM run or
+formal study was started. See the [decomposition and limits](docs/mml_quadrature_cross_engine_review.md#tam-quadrature-followup-20261014).
+
+The language-control follow-up evaluated two retained PCM points under GH31,
+GH61, GH121 and a 401-point grid. All eight R/Python comparisons met the
+predeclared 1e-10 tolerance: maximum absolute differences were 4.27e-13 for
+summed NLL, 1.03e-15 for EAP and 8.89e-16 for posterior SD. Prior-only moment
+controls also passed. These were direct R evaluations with shared quadrature
+arrays, not native TAM refits or independent node-generation checks. The
+approximately 0.02-logit GH31 posterior-SD difference persisted in R. See the
+[comparison conditions](docs/mml_quadrature_cross_engine_review.md#language-control-20261014).
+Two bilingual UI and bundled-guide tests passed after the explanation update.
+
 ## 0.2.18-beta — 2026-09-15
 
 - Rewrite Japanese guidance throughout setup, results, diagnostics, and export;
@@ -2862,3 +3477,638 @@ Initial public-beta repository setup.
 - Release status is public beta / research preview.
 - Exact numerical parity with FACETS, TAM, sirt, mirt, or `mfrmr` is not claimed.
 - Licensed under MIT.
+
+## Research status record moved from README (2026-10-14)
+
+The following text preserves the earlier README's research and verification
+record. It is historical context, not an installation guide or a statement of
+current qualification. Paths marked **local retained evidence, not distributed**
+refer to artifacts absent from a fresh clone; their contents and recorded test
+counts have not been independently reverified by moving this text. See
+[README](README.md) for current usage and [ROADMAP](ROADMAP.md) for the active plan.
+
+The result workflow makes the FACETS-complementary boundary explicit.  Before
+technical tables it names the current estimator's estimand and likelihood
+basis; JMLE, MML, and exact CMLE are never ranked by cross-basis likelihood,
+AIC, or BIC.  The Data view also includes an outcome-blind Person-by-Rater
+assignment audit.  It describes density, exposure, co-rating, and overlap but
+does not diagnose MCAR/MAR/MNAR or informative assignment.  The associated
+assignment sensitivity workflow is now an on-demand, fail-closed paired
+parametric runner for eligible JMLE/MML RSM/PCM fits.  It preserves Person and
+Rater assignment degrees, Rater response-row exposure, and direct-overlap
+connectivity; changes no observed Score; generates new paired responses; and
+refits only the current estimator.  Exchangeable equal-context blocks use a
+connected degree-preserving 2-switch path: requested 0/25/50/75/100% alignment
+doses are mapped to achievable points, with one common row-level random draw
+shared across every dose in a replicate.  Unequal-context blocks fall back to
+a binary MILP endpoint that preserves every Rater-by-context row margin exactly
+and locks observed spanning-tree overlap witnesses.  The MILP first proves the
+observed assignment is feasible and exposes an endpoint only when HiGHS
+certifies a zero-gap optimum and all post-solve invariants pass.  Intermediate
+MILP doses are intentionally unavailable.  Dose/path labels are not estimated
+assignment propensities or unconstrained global worst-case scales.  It is a local fitted-model
+stress test, not an MNAR diagnosis, bias correction, causal estimate, fairness
+verdict, or cross-estimator ranking.  FACETS two-decimal display values are not
+treated as raw precision for fit recalculation or boundary adjudication.
+
+MML assignment refits now expose two non-interchangeable Person generators.
+The default holds source posterior/EAP measures fixed and remains a local
+conditional reference analysis.  The optional population mode draws fresh
+normal order statistics using the fitted fixed or free MML population SD and
+maps them to the strict source-EAP ordering.  Thus the same generated Person
+coordinates are shared across assignment scenarios and the rank-to-assignment
+relation is preserved, while population-scale realizations vary by replicate.
+This is a rank-preserving fitted-assignment stress—not an unconditional new
+sample, an empirical assignment model, or evidence that EAP values are truth.
+JMLE cannot select this MML population generator.
+
+Repository research note: a native exact RSM/PCM CMLE structural-calibration core
+is under deterministic validation in [`mfrm_app/cmle.py`](mfrm_app/cmle.py).
+It is not exposed in the Streamlit estimator selector and is not part of the
+current public beta capability claim. Its scope and promotion gate are
+documented in [`docs/cmle_phase0_design.md`](docs/cmle_phase0_design.md). The
+current research core obtains rank and covariance from exact conditional
+sufficient-statistic moments rather than a finite-difference Hessian. Its
+repository scaling envelope also enforces independent work and conservative
+512 MiB core-memory guards; these checks do not yet authorize public UI use.
+The repository-only repeated-simulation lane is separately specified in
+[`validation/OPERATING_CHARACTERISTICS_PROTOCOL_20260809.md`](validation/OPERATING_CHARACTERISTICS_PROTOCOL_20260809.md);
+its retained smoke profile verifies failure accounting and negative controls,
+not estimator performance or cross-package parity. Repository-only companion
+results now include strict mfrmr JMLE, matched unanchored
+Python/`immer_cml` numerical comparisons, and separately labelled TAM/sirt MML
+sensitivity adapters. TAM retains the additive RSM surface while integrating a
+normal Person population; sirt uses virtual-item PCM thresholds. Neither is
+described as JMLE/CMLE parity. All lanes retain optimizer/readiness,
+floating-boundary, constraint, and unsupported-scope differences rather than
+changing the public capability claim.
+
+The separately registered PCM hard-anchor mapping has also passed its
+repository-only contract. Across six oracle-interior unanchored, Rater-anchor,
+Criterion-anchor, contaminated-anchor, and differential-anchor cases, native
+Python and a matched `immer_cml` `W`/`b_const` parameterization differed by at
+most `2.45e-9` in free coordinates and `3.55e-14` in conditional log
+likelihood. Six separation or unused-declared-category cases remained blocked
+by the exact support oracle at all retained iteration caps. The mfrmr 0.2.3
+JML and TAM/sirt MML outputs are retained only as different-estimand
+sensitivity evidence; anchored TAM/sirt cases are explicitly unsupported.
+Exact anchor enforcement does not establish anchor validity, and this evidence
+does not enable the public CMLE UI. See the retained
+`critical review` (local retained evidence, not distributed; `validation/cmle_pcm_anchor_cross_engine_20260810/CMLE_PCM_ANCHOR_CROSS_ENGINE_CRITICAL_REVIEW.md`).
+
+A Streamlit-free one-click result contract now joins the guarded calibration
+workflow to fixed-calibration Warm WLE and untrimmed Person MnSq without an
+automatic estimator fallback. Five registered states all returned the same six
+bilingual cards. Only the two ready calibrations reached Person scoring; the
+input, structural, and finite-existence stops did not call downstream scoring.
+The 14 ready Person handoffs reproduced direct WLE/SE/Infit/Outfit values
+exactly. A constructed raw Infit of `1.5004` remained `noisy` even though its
+three-decimal display was `1.500` (`acceptable` if misused). This is a
+presentation-data contract, not task-comprehension evidence, and the Streamlit
+surface remains disabled. See the
+`one-click critical review` (local retained evidence, not distributed; `validation/cmle_one_click_result_contract_20260810/CMLE_ONE_CLICK_RESULT_CONTRACT_CRITICAL_REVIEW.md`).
+
+The same research result can now be saved as a deterministic **private
+reproduction** ZIP and reopened or replayed without Streamlit. Three registered
+ready/boundary archives passed 21/21 replay identity checks; 56 retained
+WLE/SE/Infit/Outfit values survived 17-significant-digit CSV round-trip with
+identical binary64 hexadecimal values. Input order, semantic row-order
+identity, configuration, results, archive content, and ZIP transport have
+separate hashes. Changed, missing, extra, or duplicate entries are rejected
+before loading. These ZIPs contain raw rows and identifiers: public-mode
+construction fails closed and no anonymization, encryption, or sharing approval
+is implied. See the
+`private-archive critical review` (local retained evidence, not distributed; `validation/cmle_one_click_archive_identity_20260810/CMLE_ONE_CLICK_PRIVATE_ARCHIVE_CRITICAL_REVIEW.md`).
+
+A non-public bilingual comprehension instrument is now prepared around those
+same five analytical states. Ten standalone English/Japanese HTML previews
+retain six textual-status cards each; participant and separately held
+researcher-key packets contain 100 rows apiece. Six dangerous misconceptions
+are non-compensatory: false-green calibration, invented Person scores,
+display-rounded MnSq reclassification, ignored calibration uncertainty,
+anchor-validity overclaim, and treating a private archive as publicly
+shareable. Thirty synthetic packets verified fail-closed scoring, including
+duplicate, missing, unknown-option, and invalid-time responses; 40 selected
+tests passed. This is instrument-readiness evidence only. Human participants
+remain zero, comprehension and Japanese/English equivalence are not assessed,
+real-browser/assistive-technology QA was not completed in this run, and the
+public surface remains disabled. See the
+`comprehension-readiness critical review` (local retained evidence, not distributed; `validation/cmle_one_click_comprehension_readiness_20260810/HTML_PREVIEW_INSTRUMENT_CRITICAL_REVIEW.md`).
+
+The subsequent private cognitive-interview operations kit is also prepared,
+without recruiting anyone. Within each language, 10 planned slots cover every
+pair of the five analytical states once; each state appears four times, twice
+in each presentation position and twice in each target experience stratum.
+Twenty answer-free session packets contain 400 assigned tasks in total. A
+separate private moderator guide requires response lock before probing, and an
+exact-column validator protects a 400-row blank record template against direct
+identifier columns, assignment drift, missing/duplicate items, unknown codes,
+unreviewed notes, early probes, and invalid timing/confidence values. Fourteen
+synthetic validator cases and 47 selected tests passed. The repository does
+not supply ethics approval or recruitment authorization; human participants
+remain zero. See the
+`operations critical review` (local retained evidence, not distributed; `validation/cmle_one_click_cognitive_interview_operations_20260810/COGNITIVE_INTERVIEW_OPERATIONS_CRITICAL_REVIEW.md`).
+
+Instrument version identity and future confirmatory gate mechanics are now
+frozen separately, still with no human data. The composite identity covers the
+participant task bytes, private key bytes, 10 preview hashes, and directional
+dangerous-error rules; any mutation changes the identity and cross-content
+pooling is rejected. The safety numerator is narrower than any comprehension
+error: `display_acceptable` is dangerous for raw `1.5004` versus displayed
+`1.500`, while `cannot_decide` is incorrect but is not relabelled a dangerous
+display-driven reclassification. Six domains are evaluated separately in
+English and Japanese (12 cells). At zero errors, the one-sided 95% Wilson upper
+bound is `0.101310` for `n=24` and `0.097654` for `n=25`; the formative pilot
+therefore cannot promote the UI. The `n=25` arithmetic is not a sample-size
+recommendation: its 12-cell Bonferroni sensitivity bound is still `0.217782`.
+The future minimum valid n remains deliberately unregistered. See the
+`versioned-gate critical review` (local retained evidence, not distributed; `validation/cmle_one_click_versioned_confirmatory_gate_20260810/VERSIONED_CONFIRMATORY_GATE_CRITICAL_REVIEW.md`).
+
+A prospective, no-human-data sample-size sensitivity surface now makes that
+non-selection explicit. Because the maximum Wilson-passing error count changes
+discretely, exact pass probability is sawtoothed rather than monotone. Under an
+assumed true dangerous-error probability of `0.05`, a single primary cell first
+reaches 90% pass probability at `n=224`, but does not remain at or above 90%
+through the registered `n=5000` search until `n=260`. The conservative 12-cell
+union-bound projection gives `n=422` and `n=456`, respectively. Separate
+sensitivities show that 200 valid observations require 231 planned slots under
+90% homogeneous retention with 95% assurance, while an effective `n=100`
+becomes a heuristic nominal `n=145` for mean cluster size 10 and ICC 0.05.
+Seventy-five slots per language expose each of the three blocked danger
+mechanisms only 25 times. These are planning diagnostics, not a chosen sample
+size, power claim, exact clustered correction, or authorization to recruit.
+Human participants and the public surface remain zero/withheld. See the
+`sample-size sensitivity critical review` (local retained evidence, not distributed; `validation/cmle_one_click_confirmatory_sample_size_sensitivity_20260810/CONFIRMATORY_SAMPLE_SIZE_SENSITIVITY_CRITICAL_REVIEW.md`).
+
+The next registered synthetic stress replaces the cluster heuristic with an
+explicit, conditional Gaussian-threshold generator for participant dependence,
+fixed-size moderator/site-like clusters, domain and blocked-mechanism
+heterogeneity, and outcome-dependent invalidity. Eight scenarios by four
+planned-slot values and 2,000 replicates produced 64,000 synthetic joint-gate
+replicates. At 300 slots per language with marginal `p=0.05`, all-12 primary
+pass rates were `0.5480` when independent, `0.5660` with participant latent
+dependence, and `0.5125` with added clustering. More importantly, at `n=500`
+an MNAR stress with complete-data truth near `0.10` but lower retention of
+dangerous responses reduced the observed valid-record rate to `0.060315` and
+produced false reassurance in `0.4035` of replicates (Monte Carlo Wilson 95%
+`0.3822`–`0.4252`). A pooled blocked-mechanism hotspot gave `0.4955`, and the
+combined adversarial condition `0.9675`. These are constructed stress results,
+not estimated user behavior or chosen n; they show that larger samples do not
+repair informative invalidity or a misspecified pooled estimand. See the
+`dependence/MNAR critical review` (local retained evidence, not distributed; `validation/cmle_one_click_confirmatory_dependence_stress_20260810/CONFIRMATORY_DEPENDENCE_STRESS_CRITICAL_REVIEW.md`).
+
+A deterministic private pre-recruitment bundle now turns those warnings into a
+fail-closed protocol workflow. Its 18-row decision register retains five fixed
+repository decisions and 13 unresolved scientific, ethical, governance,
+cluster, mechanism, language, and accessibility decisions. A zero-row exact-
+schema denominator ledger rejects direct identifier/free-text columns, frozen-
+slot gaps or duplicates, unknown invalidity reasons, post-outcome exclusions,
+and incomplete PII/audit attestations. A 72-row partial-identification surface
+retains all-invalid-safe and all-invalid-dangerous bounds instead of silently
+dropping invalid records. With valid `n=500` and observed dangerous-error rate
+5%, the registered grid is worst-case robust at invalid/valid ratio 2.5%, but
+not at 5%, where the all-invalid-dangerous Wilson upper bound is `0.118434`.
+The nine-member private ZIP is byte-deterministic and tamper checked. The
+software contract passed with 91 selected tests precisely because the first
+read remains `BLOCKED`: ethics approval, recruitment authorization, minimum n,
+human data, confirmatory results, and public UI are all absent. See the
+`protocol-preflight critical review` (local retained evidence, not distributed; `validation/cmle_one_click_confirmatory_protocol_preflight_20260810/CONFIRMATORY_PROTOCOL_PREFLIGHT_CRITICAL_REVIEW.md`)
+and the
+`private preflight ZIP` (local retained evidence, not distributed; `validation/cmle_one_click_confirmatory_protocol_preflight_20260810/private_confirmatory_protocol_preflight.zip`).
+
+The 13 blockers now have a private read-only decision workbench rather than an
+opaque checklist. Thirty-nine options expose strengths, primary risks,
+required evidence, and qualitative effects on n, estimand, participant burden,
+accessibility, and public claims. None is ranked, recommended, defaulted, or
+auto-selectable. Thirty-two prerequisite edges are acyclic; numeric sample-size
+decision `SCI-02` cannot resolve until seven scientific prerequisites do.
+Unknown or cross-decision options, premature child decisions, missing numeric
+assumptions, repository-generated external evidence, and decisions after
+outcome inspection fail closed. Even a fully completed synthetic worksheet
+remains `SubstantiveEvidenceVerified=false` and `RecruitmentReady=false`. The
+self-contained bilingual HTML has no forms, scripts, external resources, or
+writable controls; its deterministic seven-member ZIP passed tamper checks and
+105 selected tests. See the
+`offline workbench` (local retained evidence, not distributed; `validation/cmle_one_click_confirmatory_decision_workbench_20260810/protocol_decision_workbench.html`),
+`critical review` (local retained evidence, not distributed; `validation/cmle_one_click_confirmatory_decision_workbench_20260810/CONFIRMATORY_DECISION_WORKBENCH_CRITICAL_REVIEW.md`),
+and
+`private workbench ZIP` (local retained evidence, not distributed; `validation/cmle_one_click_confirmatory_decision_workbench_20260810/private_confirmatory_decision_workbench.zip`).
+
+SCI-01 now has a separate private estimand-comparison memo. It maps the same
+72 exact-count sensitivity scenarios to all three registered alternatives,
+creating 216 projections without ranking or selecting an option. In 36
+scenarios, the observed-valid gate passes while the all-invalid-dangerous
+proxy fails and the dual analysis is explicitly non-robust; raw integer counts
+and unrounded Wilson bounds, never displayed rounding, drive those labels. A
+critical denominator gap is now machine-visible: the existing surface lacks a
+complete scheduled-slot count and a prospective invalidity-code-to-composite
+map, so Option B's `(D+I)/(V+I)` output is only a diagnostic proxy, not a
+calculated scheduled-slot estimand. The offline memo and deterministic ZIP
+remain private, read-only, and `BLOCKED`; no option, sample size, recruitment,
+or public button is enabled. See the
+`SCI-01 offline memo` (local retained evidence, not distributed; `validation/cmle_one_click_confirmatory_sci01_estimand_memo_20260810/sci01_estimand_comparison.html`),
+`critical review` (local retained evidence, not distributed; `validation/cmle_one_click_confirmatory_sci01_estimand_memo_20260810/SCI01_ESTIMAND_MEMO_CRITICAL_REVIEW.md`),
+and
+`same-data figure` (local retained evidence, not distributed; `validation/cmle_one_click_confirmatory_sci01_estimand_memo_20260810/sci01_estimand_projection.png`).
+
+The shared SCI-01/SCI-05 invalidity bottleneck now has a separate private
+adjudication workbook. It preserves all 15 registered reason codes and fixes
+only `none`; the other 14 remain unresolved. Withdrawal requires external
+ethics/data-use authority, accessibility barriers require an accessibility
+owner and separate-stratum sensitivity, duplicate records cannot be dangerous
+composite events, and unregistered reasons require amendment. Crossing the 72
+count scenarios with five diagnostic fractions of invalid records classified
+as composite events gives 360 rows; 36 scenarios cross the raw `< 0.10` gate
+within that grid. This is evidence that post-outcome classification could
+change the conclusion, not a basis for choosing a fraction. The
+`private invalidity workbench` (local retained evidence, not distributed; `validation/cmle_one_click_confirmatory_invalidity_adjudication_20260810/invalidity_adjudication_workbench.html`)
+remains unselected and recruitment-blocking.
+
+A prospective machine-readable precision plan and a separate 20-replicate
+Python pilot are now retained under `validation/`. The pilot completed 160/160
+fits in about 82 recorded fit-seconds, but it blocks rather than promotes the
+study: only 124/160 focal decisions met the registered app eligibility rule,
+the two sparse conditions each produced 4/20 eligible decisions, and 0/160
+fits passed the post-pilot `1e-4` terminal-gradient sup-norm sensitivity.
+Row-level floating-point auditing also found five fit classifications that
+would change if 3-decimal display values drove the decision. See
+`PILOT20_ASSESSMENT.md` (local retained evidence, not distributed; `validation/operating_characteristics_pilot20_20260809/PILOT20_ASSESSMENT.md`).
+The finding requires a separately qualified strict Python JMLE mode and sparse
+design review before a fixed confirmatory manifest. The prospective strict
+lane subsequently passed its frozen `1e-4` numerical gate in 160/160 runs, but
+the accompanying movement and exact eta-design-rank audits found that all 40
+sparse runs were structurally nonidentified (nullity 7; eight Person-Rater
+components). The app now reports optimizer `Converged` separately from
+`InferenceReady`, fails JMLE inference readiness when this pre-fit rank audit
+fails, and withholds conditional bias output for the affected fit. A retained
+160/160 integration check verifies the guard without changing optimizer
+controls, estimates, or automatically switching JMLE to MML. This still does
+not enable a public evidence button or performance claim; the audit is limited
+to the Person/facet eta block and does not qualify thresholds or GPCM slopes.
+An additional exact-score boundary guard now distinguishes an optimizer or
+constraint value from a finite JMLE Person measure. In the frozen evidence it
+matched 8,320/8,320 Person rows; four boundary Persons occurred among the 120
+structurally identified runs. Their technical `Estimate` is retained for
+reproducibility, but `ReportableEstimate` is withheld. The rule uses exact
+all-minimum/all-maximum integer patterns, never an estimate-magnitude or display
+rounding cutoff, and does not silently select a finite correction.
+
+A repository-only fixed-calibration Warm WLE lane now provides the first
+explicit correction comparison without relabelling WLE as a finite JMLE MLE.
+The generic RSM/PCM/GPCM scorer matched `TAM::tam.mml.wle2` for all 16 frozen
+Person fixtures (maximum theta and SE differences `1.68e-11` and `1.18e-11`).
+On the 120 structurally identified Stage-B2 runs, 7,600 Person scores were
+rescored with facets and steps held fixed; the four exact-extreme patterns
+moved by about 24--25 logits, while the median absolute interior shift was
+`0.009` logits. Raw Person-fit zones changed in 51/17,360 comparisons, and
+three-significant-digit display values disagreed with raw fit zones 54 times
+across the two estimator surfaces. The focal Holm and combined strong-bias
+decisions did not change, but the practical `|bias| >= 0.50` rule changed once
+(`0.500839` to `0.498068`). All 40 structurally rank-deficient sparse runs
+remain withheld: finite WLE Person scores cannot identify their facet
+calibration. These findings do not enable a Streamlit WLE option, automatic
+fallback, or public equivalence claim; see
+`FIXED_CALIBRATION_WLE_DOWNSTREAM_RESULTS.md` (local retained evidence, not distributed; `validation/fixed_calibration_wle_downstream_20260809/FIXED_CALIBRATION_WLE_DOWNSTREAM_RESULTS.md`).
+The first explicit exact-CMLE-to-WLE fit-sample bridge also passes its frozen
+RSM/PCM handoff checks with zero bridge/direct-score and category-surface
+differences; it remains repository-only and its WLE SE treats CMLE calibration
+as fixed. See
+`CMLE_WLE_BRIDGE_RESULTS.md` (local retained evidence, not distributed; `validation/cmle_wle_bridge_20260810/CMLE_WLE_BRIDGE_RESULTS.md`).
+The first frozen calibration-sensitivity gate now perturbs the exact-CMLE free
+coordinates with 2,000 asymptotic covariance draws per RSM/PCM model. All
+32,000 draw-Person scores returned. Median Person calibration-draw SD was
+`0.0616`--`0.0801` logits by model, while the largest value was `0.518` logits
+and the largest ratio to conditional WLE SE was `0.427`; the largest effects
+occurred at exact-extreme patterns. These draw quantiles are not confidence or
+credible intervals, and the quadrature sum is not an inference-qualified total
+SE because the fit-sample CMLE and WLE stages reuse responses. A six-card
+machine-readable first-read projection therefore marks numerical research
+success separately from caution and withheld inference/UI states. See
+`CMLE_WLE_CALIBRATION_SENSITIVITY_RESULTS.md` (local retained evidence, not distributed; `validation/cmle_wle_calibration_sensitivity_20260810/CMLE_WLE_CALIBRATION_SENSITIVITY_RESULTS.md`).
+The next bootstrap stage was designed and frozen before implementation. Its
+repository-only core separates a fixed-Person-total conditional-pattern lane
+from a joint plug-in response lane, retains refit rank/readiness failures, and
+applies seed/work/output guards; neither lane is pre-labelled a total SE or
+confidence interval. The frozen 200-replicate RSM/PCM matrix has now completed
+all 800 attempted refits with full rank/readiness and WLE availability (the
+per-cell Wilson 95% lower bound is `0.981`, not proof of a population rate of
+one). Fixed-score totals had zero mismatches. Median Person bootstrap SD was
+`0.0602` logits in the fixed-score lane and `0.615` in the joint lane; the
+joint lane produced 441 exact-extreme state transitions and the maximum
+bootstrap-mean displacement was `0.370` logits. The sampler contract passed,
+but these dispersions are not a variance decomposition and percentile columns
+are not confidence intervals. See
+[`docs/cmle_wle_bootstrap_design.md`](docs/cmle_wle_bootstrap_design.md) and
+`CMLE_WLE_BOOTSTRAP_PILOT_RESULTS.md` (local retained evidence, not distributed; `validation/cmle_wle_bootstrap_pilot_20260810/CMLE_WLE_BOOTSTRAP_PILOT_RESULTS.md`).
+
+A separately registered downstream gate now validates untrimmed fixed-theta
+CMLE-WLE Person Infit/Outfit against `sirt::pcm.fit`. Across RSM and PCM, 32
+Person rows and 162 administered observations—including four exact-extreme
+Persons and non-rectangular missingness—matched within `4.89e-15` for Infit and
+`4.00e-15` for Outfit; expected categories and variances also matched at
+binary64 noise. TAM uses the same Infit and pre-trim residual contributions,
+but its default JML fit path trims unusually large Outfit contributions, so
+default TAM Outfit is not claimed identical. The corrected 800-replicate fit
+extension retained 12,800 successful Person-replicates, zero fixed-score total
+mismatches, and exact persisted WLE identity with the original pilot. It found
+2,372 Infit and 2,454 Outfit raw-class transitions (2,554 Person-replicates had
+at least one), plus 24 display-rounding boundary statistics and nine cases in
+which a three-decimal display implied a different class. All decisions used
+unrounded MnSq. The first extension run remains retained as failed because an
+asymmetric CSV-versus-memory comparison introduced a one-ULP identity
+difference; a registered amendment kept the exact-zero gate unchanged and the
+full corrected rerun passed under symmetric persisted comparison. ZSTD,
+p-values, threshold optimality, coverage intervals, total SE, and Streamlit
+integration remain withheld. See
+`CMLE_WLE_PERSON_FIT_RESULTS.md` (local retained evidence, not distributed; `validation/cmle_wle_person_fit_20260810/CMLE_WLE_PERSON_FIT_RESULTS.md`)
+and
+`CMLE_WLE_BOOTSTRAP_FIT_EXTENSION_RESULTS.md` (local retained evidence, not distributed; `validation/cmle_wle_bootstrap_fit_extension_corrected_20260810/CMLE_WLE_BOOTSTRAP_FIT_EXTENSION_RESULTS.md`).
+The accompanying
+`critical decomposition` (local retained evidence, not distributed; `validation/cmle_wle_bootstrap_fit_extension_corrected_20260810/CMLE_WLE_BOOTSTRAP_FIT_CRITICAL_REVIEW.md`)
+shows why the aggregate transition count is not a misfit-prevalence estimate.
+
+A post-result sensitivity audit now separates display rounding from the
+substantive threshold convention. Recomputing from raw values reproduced every
+canonical class and transition. Counterfactually classifying rounded values
+produced nine replicate-statistic class mismatches and five either-statistic
+transition disagreements at three decimals, but none at six decimals. Across
+the frozen 125 threshold triplets, aggregate transition counts ranged from
+1,789--3,461 for Infit, 1,877--3,550 for Outfit, and 1,975--3,675 for either
+statistic. A registered diagnostic addendum also found that moving only the
+noisy/distorting boundary from 1.90 to 2.10 left the binary transition totals
+exactly unchanged while reallocating 37 Infit and 51 Outfit replicate labels
+from `distorting` to `noisy`. Thus neither rounded display nor a binary
+changed/not-changed projection is an adequate audit trail. These are
+descriptive post-result surfaces, not threshold validation. See the
+`threshold surface` (local retained evidence, not distributed; `validation/cmle_wle_fit_threshold_surface_20260810/CMLE_WLE_FIT_THRESHOLD_SURFACE_RESULTS.md`)
+and
+`class-decomposition addendum` (local retained evidence, not distributed; `validation/cmle_wle_fit_threshold_surface_severity_20260810/CMLE_WLE_FIT_THRESHOLD_SEVERITY_ADDENDUM.md`).
+
+The first prospectively registered known-truth design pilot now retains 160
+runs, 624,000 response rows, and 32,000 Persons for both fit-sample WLE and
+generating-theta sensitivity. Under the raw `Infit > 1.50 or Outfit > 1.50`
+rule, clean-Person mean replicate rates were 3.4%--3.7% with 24 observations
+but 10.1%--10.8% with six; affected-Person detection ranged from 3.8% for the
+frozen threshold-heterogeneity mechanism to 46.6% for dense random response.
+WLE and generating-theta fit flags disagreed for 2,333/32,000 Persons, and
+non-extreme WLE RMSE ranged from 0.263 to 0.720 logits. The nominal 125-triplet
+grid reduces to 5, 5, 25, and 5 effective input configurations for the four
+declared rules. These 20-replicate results debug the design; they do not
+validate a threshold or authorize a public traffic light. See the
+`known-truth pilot` (local retained evidence, not distributed; `validation/cmle_wle_fit_known_truth_pilot_20260810/CMLE_WLE_FIT_KNOWN_TRUTH_PILOT_RESULTS.md`),
+`bias/dimension addendum` (local retained evidence, not distributed; `validation/cmle_wle_fit_known_truth_pilot_addendum_20260810/CMLE_WLE_FIT_KNOWN_TRUTH_PILOT_ADDENDUM.md`),
+and
+`critical review` (local retained evidence, not distributed; `validation/cmle_wle_fit_known_truth_pilot_addendum_20260810/CMLE_WLE_FIT_KNOWN_TRUTH_CRITICAL_REVIEW.md`).
+
+The next repository-only hard-anchor increment now implements native hard facet
+anchors inside the exact CMLE likelihood rather than as a post-fit recentering.
+Its prospectively amended engineering smoke reused 24,000 retained response
+rows for 32 same-byte fits; all returned inference-ready, preserved supplied
+anchors exactly with SE zero, and passed rank, parameter-count, persistence,
+and raw-fit recomputation gates. Two replicates per condition do not establish
+an anchor percentage, robustness, or cross-engine performance. A separately
+labelled post-result diagnostic found a more fundamental warning: shifting all
+Rater anchors by the same +0.25 moved WLE by +0.25 but left conditional
+log-likelihood and Person fit invariant to numerical noise (zero raw flag
+mismatches). Fit indices therefore cannot validate the absolute anchor origin.
+See the `hard-anchor smoke` (local retained evidence, not distributed; `validation/cmle_native_hard_anchor_smoke_20260810/CMLE_NATIVE_HARD_ANCHOR_SMOKE.md`)
+and `common-shift diagnostic` (local retained evidence, not distributed; `validation/cmle_native_hard_anchor_common_shift_20260810/CMLE_HARD_ANCHOR_COMMON_SHIFT_DIAGNOSTIC.md`).
+
+The subsequent prospectively frozen differential-anchor stress reused 120,000
+retained response rows for 320 exact-CMLE fits across four dense/sparse,
+clean/random-response conditions and eight anchor scenarios. All fits were
+inference-ready, but the substantive result is cautionary. Correct nested
+anchor sets did not improve WLE recovery monotonically; the anchor share was
+inseparable from which Rater levels were fixed. A zero-mean differential
+anchor error changed raw either-upper Person-fit decisions for 2.4%--15.8% of
+paired rows by condition/group, while a common +0.25 origin error changed none.
+Across 64,000 Person-scenario rows, using 3-decimal displayed MnSq instead of
+raw values would reverse 12 decisions; 6 decimals reproduced the raw decisions
+in this dataset. This is not a universal precision guarantee. The evidence
+therefore supports provenance, connectivity, raw-boundary, and contamination
+sensitivity reporting—not an anchor-percentage recommendation or public CMLE
+button. See the
+`registered stress report` (local retained evidence, not distributed; `validation/cmle_native_anchor_differential_stress_20260810/CMLE_NATIVE_ANCHOR_DIFFERENTIAL_STRESS.md`)
+and its
+`critical review` (local retained evidence, not distributed; `validation/cmle_native_anchor_differential_stress_20260810/CMLE_NATIVE_ANCHOR_DIFFERENTIAL_CRITICAL_REVIEW.md`).
+
+A second prospectively registered stress then varied the Rater bridge topology
+and randomized which correct levels were anchored. Its 350/350 comparisons
+matched a transparent realized-component prediction to the exact prefit rank:
+partial anchors did not identify isolated Raters, while two random anchors
+identified a two-component design only in the 7/10 replicates where both
+components were covered. Of 287 prefit-eligible cases, 286 returned and 274
+were inference-ready. All 13 shortfalls occurred in the one-Person-per-edge
+minimal chain: one non-finite conditional-normalizer failure and 12 returned
+fits with deficient final information rank. Thus graph connectedness and
+prefit rank are necessary but not sufficient when bridge support is extremely
+thin. Across 82,200 inference-ready Person rows, 3-decimal display-driven MnSq
+changed 13 raw decisions; 6 decimals changed none in this dataset. See the
+`connectivity report` (local retained evidence, not distributed; `validation/cmle_native_anchor_connectivity_20260810/CMLE_NATIVE_ANCHOR_CONNECTIVITY_STRESS.md`)
+and
+`critical review` (local retained evidence, not distributed; `validation/cmle_native_anchor_connectivity_20260810/CMLE_NATIVE_ANCHOR_CONNECTIVITY_CRITICAL_REVIEW.md`).
+
+The prospectively registered finite-domain remediation now rejects and counts
+non-finite BFGS trial points without clipping the exact likelihood or relaxing
+readiness. On the same retained bytes, all 287 prefit-eligible fits returned
+and the same 274 remained inference-ready. The former exception recorded 12
+invalid trials and returned fail-closed at rank 8/10, nullity 2, and gradient
+sup norm `0.00296`. The 286 previously returned fits retained identical ready
+states; 82,200 shared Person rows retained every raw/rounded fit flag. Maximum
+structural-estimate and conditional-loglikelihood differences were
+`3.55e-15` and `2.27e-13`. This fixes returnability, not finite-MLE existence:
+a separate adversarial binary separation check shows that full finite-point
+rank and a small gradient can still mask a likelihood maximum at infinity.
+See the
+`remediation report` (local retained evidence, not distributed; `validation/cmle_finite_domain_optimizer_remediation_20260810/CMLE_FINITE_DOMAIN_OPTIMIZER_REMEDIATION.md`)
+and
+`critical review` (local retained evidence, not distributed; `validation/cmle_finite_domain_optimizer_remediation_20260810/CMLE_FINITE_DOMAIN_OPTIMIZER_REMEDIATION_CRITICAL_REVIEW.md`).
+
+The finite-MLE existence gate has now passed a separately prospective research
+stress without entering the public estimator. An exhaustive convex-support
+audit first matched all 93 registered binary/RSM/PCM/anchor controls, but its
+50,000-configuration research cap left 227/350 retained cases unavailable. A
+subsequently registered fixed-score support oracle replaced materialization
+with exact dynamic-programming separation and LP constraint generation. It
+matched 1,184/1,184 exhaustive support maxima, 93/93 fixture statuses, 123/123
+completed retained exhaustive statuses, and all six high-cap sentinels. The
+same-byte 350-case replay classified 63 structural, 13 boundary, and 274
+interior cases with zero unavailable or tolerance-unstable results. All 274
+current inference-ready fits were interior; the 13 boundary cases were
+non-ready. Median theoretical configurations were 97,040 versus 163 generated
+constraints, and per-eligible-case time was 0.521 seconds at P95 (0.568 maximum)
+on the evidence machine. This certifies only conditional finite-existence
+geometry under the implemented coordinates and anchors: it does not validate
+fit, anchor bias, MnSq thresholds, or R-package equality. See the
+`oracle stress report` (local retained evidence, not distributed; `validation/cmle_finite_mle_oracle_20260810/CMLE_FINITE_MLE_SUPPORT_ORACLE_STRESS.md`)
+and
+`critical review` (local retained evidence, not distributed; `validation/cmle_finite_mle_oracle_20260810/CMLE_FINITE_MLE_SUPPORT_ORACLE_CRITICAL_REVIEW.md`).
+The oracle is now connected to the repository-only `fit_cmle` readiness path
+under a third prospective contract. All 287 same-byte eligible fits returned;
+274 oracle-interior fits remained ready and all 13 boundary fits remained
+non-ready with a dedicated reason. Independent oracle status matched 287/287,
+102 selected tests passed, and 82,200 Person rows retained every raw and
+rounded-counterfactual fit decision. Estimate, SE, likelihood, WLE, Infit, and
+Outfit changes were at most `2.27e-13`. The core still retains technical
+optimizer outputs on a boundary for research reproducibility; a future UI
+orchestrator should stop before optimization and explain the boundary. See the
+`integration report` (local retained evidence, not distributed; `validation/cmle_finite_mle_readiness_integration_20260810/CMLE_FINITE_MLE_READINESS_INTEGRATION.md`)
+and
+`integration critical review` (local retained evidence, not distributed; `validation/cmle_finite_mle_readiness_integration_20260810/CMLE_FINITE_MLE_READINESS_INTEGRATION_CRITICAL_REVIEW.md`).
+A fourth prospective layer now provides a structured, bilingual pre-
+optimization workflow in
+[`mfrm_app/cmle_workflow.py`](mfrm_app/cmle_workflow.py). It returns the same
+four-stage schema for invalid input, structural nonidentification, a finite-MLE
+boundary, an unavailable existence audit, numerical non-readiness, and a ready
+calibration. On the same 350 cases it stopped 63 structural and 13 boundary
+cases before optimization and optimized only the 274 interior cases; all
+terminal states matched the frozen evidence and no forbidden optimizer call
+occurred. P95 time was 0.068 seconds for a design block, 0.306 for a boundary
+stop, and 1.084 for a ready interior workflow. Japanese/English text is
+machine-checked but not comprehension-tested. Person scoring is only marked
+available and is not run in workflow v1. See the
+`workflow report` (local retained evidence, not distributed; `validation/cmle_structured_workflow_20260810/CMLE_STRUCTURED_WORKFLOW_STRESS.md`)
+and
+`workflow critical review` (local retained evidence, not distributed; `validation/cmle_structured_workflow_20260810/CMLE_STRUCTURED_WORKFLOW_CRITICAL_REVIEW.md`).
+
+A separately registered boundary-semantics replay now distinguishes matched
+CMLE parity from different-estimator sensitivity. On five oracle-interior
+additive-RSM controls, native Python and `immer::immer_cml()` free coordinates
+agreed within `1.78e-9` and conditional log likelihood within `5.33e-15`.
+On seven oracle-boundary controls, however, `immer` returned optimizer code
+zero in 3/7 cases and finite coefficient/SE vectors in 4/7 at `maxit=2000`;
+none became reportable after the finite-existence gate. The frozen dirty
+`mfrmr 0.2.3` JML snapshot returned and labelled all 7/7 boundary fits
+converged, with category-support warnings and a maximum absolute estimate of
+`103.75`. TAM and sirt were retained only as MML sensitivity lanes, not
+numerical parity targets. Thus neither finite output nor nominal convergence
+may override the support oracle, and no rounded value or MnSq was used to
+classify existence. See the
+`cross-engine decision` (local retained evidence, not distributed; `validation/cmle_cross_engine_boundary_20260810/decision.json`)
+and
+`critical review` (local retained evidence, not distributed; `validation/cmle_cross_engine_boundary_20260810/CMLE_CROSS_ENGINE_BOUNDARY_CRITICAL_REVIEW.md`).
+
+Before using results for high-stakes scoring, placement, certification, employment, or institutional decisions, cross-check the analysis with an established workflow and document the model assumptions.
+
+
+## What's new in the current beta line
+
+The current app label is v0.2.18-beta. This beta line adds the v0.2.14
+sample-scenario and quick-results-bundle work, then layers on the
+release-readiness and UX/documentation pass documented in `CHANGELOG.md`.
+Key current-line improvements include:
+
+- JMLE results now distinguish numerical convergence from structural
+  inference readiness. Before optimization, an exact free-coordinate eta
+  design audit reports rank, column count, nullity, Person-facet connectivity,
+  and null-space concentration. Rank-deficient fits remain visible but cannot
+  produce a ready inference label or conditional bias table; downloadable
+  evidence preserves the reason. The app does not silently substitute MML.
+- JMLE Person tables now distinguish finite interior measures from
+  all-minimum/all-maximum score boundaries. Boundary rows carry an explicit
+  direction, readiness flag, reportable estimate, and value-role label; the
+  Japanese and English convergence views explain why a finite optimizer value
+  is not a finite Person MLE. The same audit is included in quick, full, demo,
+  and publication-oriented downloads.
+- A shared floating-point decision contract for fit and conditional bias
+  screens. Classifications use unrounded values; exact MNSQ endpoints are
+  explicit (`0.50` and `1.50` acceptable, `2.00` noisy), and numerical or
+  3-decimal display boundaries are labelled instead of silently changing the
+  decision. Fully unavailable fit statistics are not reported as stable. Both
+  the quick bundle and full table download include row-level and summary
+  stability audits.
+- Descriptive anchor coverage now reports unique anchored levels, unanchored
+  levels, and share without treating any percentage as a universal adequacy
+  cutoff. Sparse simulation previews, fit scatter, bias heatmaps, and anchor
+  coverage charts keep the relevant design caveats next to the visualization.
+- FACETS-primary fit standardisation for RSM/PCM: Wright-Masters
+  fourth-moment d.f., Wilson-Hilferty ZSTD, and the FACETS +/-9 cap are the
+  default. Historical engine d.f./ZSTD remain in `*_ENGINE` sidecar columns.
+  GPCM uses the same calculation only as an explicitly labelled
+  FACETS-style approximation. See
+  [`docs/fit_df_zstd_conventions.md`](docs/fit_df_zstd_conventions.md).
+- Modular helper boundaries under `mfrm_app/` for CLI/doctor checks,
+  export-frame collection, distribution metadata, privacy text, preflight
+  contracts, and table IO.
+- Guided Essential-view reading order and localized Japanese help popover
+  overlays, so first-time users have clearer local guidance without hiding
+  advanced evidence from full-view users.
+- README-visible public verification commands: `--doctor`, `--release-check`,
+  `--self-test`, and the Python-native demo report export.
+- Stronger reproducibility and publication-export contracts for download
+  frames, public-release readiness, runtime dependency boundaries, and
+  privacy/caching expectations.
+
+Earlier v0.2.0-beta (2026-04-17) shipped four major feature tracks; v0.2.1 and
+v0.2.2 were post-release hotfixes landing the findings from a parallel UX audit.
+Those foundational features are summarized below; see `CHANGELOG.md` for the
+full per-version breakdown.
+
+### New in v0.2.0
+
+- **Publication Document downloads** — one click to produce a
+  manuscript-ready Word (.docx), PDF, or HTML file with auto-generated
+  abstract, exhaustive Methods, results tables, embedded figures, and an
+  APA 7 reference list. Accessible from **Report → Exports**.
+- Historical Posterior Viewer and Stan-generator code remains a legacy
+  compatibility surface while its deprecation/removal decision is completed.
+  It is outside the standalone product boundary and is not included in default
+  downloads, demo archives, release evidence, the sidebar, Help, or Report
+  routes.
+- **Pattern-matched estimation errors** — instead of a generic "common
+  causes" checklist, failures now surface a specific diagnosis + action
+  (singular matrix → non-centered facet, maxit reached → raise to 1000,
+  rating scale error → check Score column, …).
+- **Pre-estimation readiness panel** — [OK] / [CAUTION] / [ISSUE] statuses across
+  eight data-quality checks before the Run button fires.
+- **Run history + two-run comparison** — up to 5 recent runs sit behind a
+  Restore button (v0.2.1 lowered the cap from 10 → 5 for Community Cloud
+  memory safety); pick any two to compare convergence, element-level
+  Pearson r + RMSE, and reliability in a side-by-side panel.
+- **Step-by-step progress** — `st.status` accordion reports Estimate →
+  Diagnostics → Report tables → Bias interactions instead of a silent
+  spinner, with a completion toast.
+- **Surface-reason diagnostics** — residual PCA, bias interaction, and
+  reliability now explain *why* they were skipped instead of returning
+  a blank "not available".
+
+### New in v0.2.1 (first UX-audit hotfix pass)
+
+- **Download sample CSV** — inspect the built-in demo dataset's
+  column structure before preparing your own upload.
+- **Upload size preflight** — ≥50 MB warns, ≥100 MB errors, before
+  pandas parsing consumes memory on Streamlit Community Cloud.
+- **Clear-history confirmation** — the Clear history button now
+  requires an explicit "Yes, delete all N snapshots" confirmation.
+- **Downloads tab signpost** — a clear pointer to Publication Document
+  so users can locate the Word / PDF export.
+- **Config JSON import** — upload a previously downloaded config to
+  inspect its settings as a table (read-only).
+- **Accessibility CSS** — `:focus-visible` outline for keyboard users,
+  `prefers-reduced-motion` support, narrow-screen (<900 px) layout.
+- **Readiness status labels** — all readiness indicators use
+  [OK] / [CAUTION] / [ISSUE] labels instead of colour-only signals.
+
+### New in v0.2.2 (second UX-audit hotfix pass)
+
+- **MFRM / Bayesian quick-reference glossary** — 20-term table
+  (logit / Infit / Outfit / MnSq / ZSTD / step facet / Rhat / ESS / …)
+  surfaced under Help → Glossary.
+- **Run breadcrumb** — a persistent one-line banner above the results
+  showing model / method / convergence / counts / fingerprint so users
+  always know which run they are viewing after a history restore.
+- **Measure table reorder** — Facet / Level / Estimate / SE / CI /
+  Infit / Outfit columns are surfaced first; Anchor / N / metadata
+  move to the tail.
+- **Fit-cell colour highlighting** — Infit / Outfit mean-square cells
+  colour-coded to the Wright & Linacre (1994) interpretation bands
+  (0.5–1.5 acceptable · >1.5–2.0 noisy · >2.0 distorting ·
+  < 0.5 over-fit).
+- **Scree plot EV = 3 reference line** — previously only EV = 1 and
+  EV = 2 were drawn; the "EV > 3 = strong secondary residual signal"
+  threshold is now visible on the plot itself.
+- **Help tab refresh** — Quick Start documents all v0.2.x features;
+  Troubleshooting cites the new diagnostic helpers.
+
+See `CHANGELOG.md` for the per-commit breakdown and
+`docs/v0.2.0_beta_plan.md` for the original v0.2.0 release checklist.

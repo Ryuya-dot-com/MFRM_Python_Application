@@ -5,6 +5,7 @@ from __future__ import annotations
 import pandas as pd
 
 import streamlit_app as app
+from mfrm_app import engine
 from mfrm_app.operating_characteristics import build_replicate_manifest
 from validation import operating_characteristics_pilot as pilot
 
@@ -106,8 +107,13 @@ def test_mml_is_explicitly_outside_jmle_eta_rank_gate():
     assert audit["summary"].iloc[0]["Scope"] == "eta_person_facet_blocks_only"
 
 
-def test_large_design_limit_fails_closed_instead_of_claiming_identification():
+def test_large_design_limit_fails_closed_instead_of_claiming_identification(monkeypatch):
     row, generated = _generated("balanced_small")
+
+    def forbidden_allocation(*args):
+        raise AssertionError("The size guard must precede dense constraint expansion")
+
+    monkeypatch.setattr(engine, "_constraint_expansion_matrix_for_identifiability", forbidden_allocation)
 
     audit = _audit(row, generated, max_dense_cells=1)
 
@@ -116,7 +122,7 @@ def test_large_design_limit_fails_closed_instead_of_claiming_identification():
     assert not bool(audit["summary"].iloc[0]["InferenceReady"])
 
 
-def test_wide_design_uses_rank_gate_without_claiming_null_space_localization():
+def test_wide_design_uses_rank_gate_without_claiming_null_space_localization(monkeypatch):
     frame = pd.DataFrame({
         "Person": ["P1", "P1"],
         "Rater": ["R1", "R1"],
@@ -157,6 +163,19 @@ def test_wide_design_uses_rank_gate_without_claiming_null_space_localization():
     assert audit["coordinate_null_weight"]["NullProjectionWeight"].isna().all()
     assert audit["coordinate_null_weight"]["NullVulnerable"].isna().all()
     assert audit["null_space_block_energy"].empty
+
+    # Even with few observations, unobserved declared levels can make the
+    # expansion matrix much larger than the final observation design.
+    config["theta_spec"] = app.build_facet_constraint([f"P{i}" for i in range(100)], centered=False)
+    config["n_person"] = 100
+
+    def forbidden_allocation(*args):
+        raise AssertionError("Unobserved levels must also be guarded before allocation")
+
+    monkeypatch.setattr(engine, "_constraint_expansion_matrix_for_identifiability", forbidden_allocation)
+    limited = app.build_jmle_eta_identifiability_audit(prep, config, max_dense_cells=500)
+    assert limited["status"] == "audit_size_limit"
+    assert limited["summary"].iloc[0]["EtaDesignRows"] * limited["summary"].iloc[0]["EtaDesignColumns"] <= 500
 
 
 def test_rank_deficient_fit_is_not_inference_ready_and_bias_is_withheld():

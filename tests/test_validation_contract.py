@@ -151,22 +151,13 @@ def test_cross_package_validation_plan_contract():
     # release must show up as a Ready row.
     assert "GPCM Linacre fair-average and structural SE" in coverage_020["mfrmr020Area"].tolist()
     assert "MML observed-information covariance" in coverage_020["mfrmr020Area"].tolist()
-    # The slope-aware bias inference shipped: the row must say so. The
-    # ``Ready`` status, the Muraki (1993) / Wilks (1938) / Cox (1975)
-    # citations in the evidence string, and the references to the
-    # publication-document integration are all part of the manuscript
-    # claim surface the public README points at.
+    # Implemented conditional calculations do not establish sampling inference.
     bias_row = coverage_020.loc[
-        coverage_020["mfrmr020Area"] == "GPCM bias inference - slope-aware"
-    ]
+        coverage_020["mfrmr020Area"] == "GPCM bias inference - slope-aware"]
     assert not bias_row.empty
-    assert bias_row.iloc[0]["PythonStatus"] == "Ready"
-    bias_evidence = str(bias_row.iloc[0]["PythonEvidence"])
-    assert "Muraki, 1993" in bias_evidence
-    assert "Wilks, 1938" in bias_evidence
-    assert "Cox, 1975" in bias_evidence
-    assert "LR ChiSq" in bias_evidence
-    assert "profile-likelihood" in bias_evidence.lower() or "Profile CI" in bias_evidence
+    assert bias_row.iloc[0]["PythonStatus"] == "Technical only; G3 incomplete"
+    assert "LR ChiSq" in str(bias_row.iloc[0]["PythonEvidence"])
+    assert "not a nuisance profile" in str(bias_row.iloc[0]["Boundary"])
     # The bounded-GPCM row must have been overridden to reflect the
     # slope-aware fair-average / structural SE delivery; the fair-average
     # half of the historic limitation is gone.
@@ -783,6 +774,8 @@ def test_scoring_consistency_decision_contract_and_bundle_exports():
 
 def test_quality_control_recommendations_prioritize_rater_training_on_low_alpha():
     result, diagnostics = _scoring_qc_fixture(low_agreement=True)
+    from types import SimpleNamespace
+    result["opt"] = SimpleNamespace(success=True)
 
     qc = app.build_quality_control_recommendations(
         result,
@@ -1205,7 +1198,7 @@ def test_mml_prior_sensitivity_plan_and_assumption_audit_contract():
     audit = app.build_statistical_assumption_audit(result, diagnostics, all_bias_results={})
     assert {"Measure SE/CI", "MML fixed population prior SD"}.issubset(set(audit["Area"]))
     prior_row = audit[audit["Area"] == "MML fixed population prior SD"].iloc[0]
-    assert prior_row["Status"] == "Review"
+    assert prior_row["Status"] == "WITHHELD"
     assert "fixed" in prior_row["Implication"].lower()
 
 

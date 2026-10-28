@@ -2,8 +2,22 @@ from __future__ import annotations
 
 import numpy as np
 import pandas as pd
+import pytest
 
 import streamlit_app as app
+
+
+@pytest.fixture
+def qualified_source_stub(monkeypatch):
+    """Exercise downstream generator mechanics; this is not app qualification evidence."""
+    original = app.qualified_estimation_summary
+
+    def stub(result):
+        summary = original(result)
+        summary["InferenceReady"] = True
+        return summary
+
+    monkeypatch.setattr(app, "qualified_estimation_summary", stub)
 
 
 def _exchangeable_sparse_responses() -> pd.DataFrame:
@@ -68,6 +82,29 @@ def _fitted_mml(*, free_sd: bool = False) -> dict:
         maxit=300,
         reltol=1e-5,
     )
+
+
+@pytest.mark.parametrize("coordinate, expected", [(0.0, True), (np.nan, False), (np.inf, False), (-np.inf, False)])
+def test_reportable_coordinate_uses_finiteness_including_zero(coordinate, expected):
+    fitted = _fitted_jmle()
+    people = fitted["facets"]["person"]
+    people.loc[0, ["Estimate", "ReportableEstimate"]] = coordinate
+    preflight = app.build_assignment_sensitivity_preflight(fitted)
+    gate = preflight["gates"].set_index("Gate").loc["Finite reportable fitted Person coordinate"]
+    assert bool(gate.Passed) is expected
+    if expected:
+        assert preflight["person_scores"][str(people.iloc[0].Person)] == 0.0
+
+
+@pytest.mark.parametrize("coordinate", [np.inf, -np.inf, np.nan, pd.NA])
+def test_nonfinite_reportable_coordinate_is_rejected_with_finite_terminal_estimate(coordinate):
+    fitted = _fitted_jmle()
+    people = fitted["facets"]["person"]
+    people["ReportableEstimate"] = people["ReportableEstimate"].astype("Float64")
+    people.loc[0, "ReportableEstimate"] = coordinate
+    preflight = app.build_assignment_sensitivity_preflight(fitted)
+    gate = preflight["gates"].set_index("Gate").loc["Finite reportable fitted Person coordinate"]
+    assert not bool(gate.Passed)
 
 
 def _unequal_context_responses() -> pd.DataFrame:
@@ -209,7 +246,7 @@ def test_unequal_context_fit_routes_to_audited_milp_endpoint_and_refits():
     assert "assignment_context_connectivity_witnesses" not in public_frames
 
 
-def test_unequal_context_fixed_sd_mml_uses_same_milp_endpoint_without_cross_basis_ranking():
+def test_unequal_context_fixed_sd_mml_uses_same_milp_endpoint_without_cross_basis_ranking(qualified_source_stub):
     source = _unequal_context_responses()
     fitted = app.mfrm_estimate(
         source,
@@ -296,7 +333,7 @@ def test_preflight_blocks_degenerate_fitted_alignment_coordinates():
     assert not gate["Passed"]
 
 
-def test_fixed_sd_mml_runner_locks_marginal_method_and_sd_contract():
+def test_fixed_sd_mml_runner_locks_marginal_method_and_sd_contract(qualified_source_stub):
     fitted = _fitted_mml(free_sd=False)
     bundle = app.simulate_fixed_density_assignment_sensitivity(
         fitted,
@@ -324,8 +361,9 @@ def test_fixed_sd_mml_runner_locks_marginal_method_and_sd_contract():
     assert not bundle["contrasts"]["LikelihoodComparisonPerformed"].any()
 
 
-def test_free_sd_mml_runner_withholds_even_a_legacy_inference_ready_flag(monkeypatch):
-    fitted = _fitted_mml(free_sd=True)
+@pytest.mark.parametrize("free_sd", [False, True])
+def test_mml_runner_withholds_even_a_legacy_inference_ready_flag(monkeypatch, free_sd):
+    fitted = _fitted_mml(free_sd=free_sd)
     assert not bool(fitted["summary"].iloc[0]["InferenceReady"])
     fitted["summary"]["InferenceReady"] = True  # simulate a pre-audit saved result
     calls = []
@@ -343,11 +381,12 @@ def test_free_sd_mml_runner_withholds_even_a_legacy_inference_ready_flag(monkeyp
     assert bundle["summary"].empty
     gate = bundle["gates"].set_index("Gate").loc["Source fit inference readiness"]
     assert not bool(gate["Passed"])
-    assert app.FREE_SD_MML_INFERENCE_HOLD_REASON in gate["Evidence"]
+    reason = app.FREE_SD_MML_INFERENCE_HOLD_REASON if free_sd else app.FIXED_SD_MML_INFERENCE_HOLD_REASON
+    assert reason in gate["Evidence"]
     assert not calls
 
 
-def test_fixed_sd_mml_rank_preserving_population_generator_uses_one_draw_per_pair():
+def test_fixed_sd_mml_rank_preserving_population_generator_uses_one_draw_per_pair(qualified_source_stub):
     fitted = _fitted_mml(free_sd=False)
     bundle = app.simulate_fixed_density_assignment_sensitivity(
         fitted,

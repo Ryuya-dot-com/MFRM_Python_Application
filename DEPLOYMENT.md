@@ -31,9 +31,8 @@ Use these settings when deploying from GitHub:
 If the hosted app still shows old sidebar scenario buttons or the old
 FACETS-style yardstick label toggle, it is usually deploying another checkout
 or an older `main` commit. Confirm the app settings above and reboot the app
-from Streamlit Cloud before debugging the visualization code. The app header
-shows `source commit: <sha>` so you can compare the running app with
-`git rev-parse --short HEAD`.
+from Streamlit Cloud before debugging the visualization code. Open **About this beta and its limitations** in the app to inspect the source commit
+when available, then compare it with `git rev-parse --short HEAD`.
 
 The root `requirements.txt` is intentional because Streamlit Community Cloud installs app dependencies from a requirements file in the repository root or next to the entrypoint file. A `packages.txt` file is not currently needed for core analysis because the app falls back to interactive HTML figure exports if Chrome or Chromium is unavailable for Kaleido PNG export.
 
@@ -52,6 +51,21 @@ For public demos, use synthetic data, the built-in example, or fully de-identifi
 
 ## Preflight Checks
 
+Verify the complete candidate source in a separate directory and virtual
+environment before updating the public branch. Include newly added modules and
+resources as well as tracked changes: `streamlit_app.py` imports the shared
+`mfrm_app/` package and reads `locales/`, bundled anchor guides, `CITATION.cff`
+and selected files in `docs/`. Copying the entrypoint alone is insufficient.
+The desktop prototype and its build requirements are not required to run the Web
+app; their presence does not establish desktop distribution support.
+
+Keep a source manifest and installed package versions with the local verification
+record. Exclude `validation/generated/`, `validation/source_snapshots/`, backups,
+virtual environments, secrets and local `AGENTS.md` instructions from the public
+candidate. Use existing results only where their source, environment and checked
+behavior still apply; rerun affected or missing checks. Participant evaluation is
+scheduled after release and is separate from these technical checks.
+
 Run these checks before deployment:
 
 ```bash
@@ -65,7 +79,9 @@ Then confirm:
 
 - The active branch is `main`.
 - `git status --short` is clean.
-- `validation/generated/` is absent.
+- Local validation evidence in `validation/generated/` and
+  `validation/source_snapshots/` is preserved and excluded from the deployment
+  bundle. `make clean` removes development caches only.
 - `__pycache__` and `.pytest_cache` are absent.
 - `.streamlit/secrets.toml` is not tracked.
 - README and in-app privacy warnings still appear.

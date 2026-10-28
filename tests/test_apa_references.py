@@ -31,22 +31,23 @@ def test_every_citation_resolves_to_a_library_entry():
 
 
 def test_citation_keys_follow_lastname_year_convention():
-    pattern = re.compile(r"^[A-Za-z][A-Za-z_-]*_\d{4}[a-z]?$")
+    pattern = re.compile(r"^[A-Za-z][A-Za-z_-]*_(?:\d{4}[a-z]?|nd[a-z]?)$")
     for key in app._APA_REFERENCE_LIBRARY:
         assert pattern.match(key), (
-            f"reference key {key!r} does not follow `Lastname_YYYY` convention"
+            f"reference key {key!r} needs a year or an explicit no-date suffix"
         )
 
 
 def test_citation_parens_use_correct_form():
-    """Every citation string should end with `, YYYY)` and start with `(Surname`.
+    """Every citation string needs an author and year or explicit no-date token.
 
     Accepts 1-, 2-, and 3-author forms:
       (Linacre, 2024)
       (Wright & Masters, 1982)
       (Bradlow, Wainer & Wang, 1999)
+      (Linacre, n.d.-a)
     """
-    pattern = re.compile(r"^\([A-Z][^)]+, \d{4}[a-z]?\)$")
+    pattern = re.compile(r"^\([A-Z][^)]+, (?:\d{4}[a-z]?|n\.d\.(?:-[a-z])?)\)$")
     bad = [c for c in app._CITATION_TO_KEY if not pattern.match(c)]
     assert not bad, f"malformed citation strings: {bad}"
 
@@ -56,11 +57,11 @@ def test_reference_entries_end_without_trailing_whitespace():
         assert entry == entry.strip(), f"{key!r} has leading/trailing whitespace"
 
 
-def test_reference_entries_include_year():
-    """Every APA entry must contain a 4-digit year somewhere in the body."""
-    year_pattern = re.compile(r"\b(19|20)\d{2}\b")
+def test_reference_entries_include_publication_date_or_explicit_no_date():
+    """A retrieval year must not be mistaken for the publication date."""
+    year_pattern = re.compile(r"\((?:(?:18|19|20)\d{2}[a-z]?|n\.d\.(?:-[a-z])?)\)")
     missing_year = [k for k, v in app._APA_REFERENCE_LIBRARY.items() if not year_pattern.search(v)]
-    assert not missing_year, f"entries without a 4-digit year: {missing_year}"
+    assert not missing_year, f"entries without a publication date or n.d.: {missing_year}"
 
 
 def test_collect_cited_references_finds_known_citation():
@@ -114,6 +115,12 @@ def test_collect_cited_references_returns_sorted():
     )
     refs = app.collect_cited_references(text)
     assert refs == sorted(refs)
+
+
+def test_undated_sources_precede_dated_sources_by_the_same_author():
+    refs = app.build_apa_reference_list("(Linacre, 1989; Linacre, n.d.-d; Linacre, n.d.-a)")
+    assert refs == [app._APA_REFERENCE_LIBRARY[key] for key in (
+        "Linacre_Facets_Misfit_nda", "Linacre_Facets_Bias_ndd", "Linacre_1989")]
 
 
 def test_collect_cited_references_supports_year_suffixes():

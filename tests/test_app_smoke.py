@@ -7,13 +7,15 @@ def test_app_initial_render():
     at = AppTest.from_file(Path(__file__).resolve().parents[1] / "streamlit_app.py").run(timeout=30)
     assert not at.exception
     assert any("MFRM | Rating analysis" in title.value for title in at.title)
-    about = next(e for e in at.expander if e.label == "About this beta and its limitations")
+    about = next(e for e in at.sidebar.expander if e.label == "About MFRM")
     assert not about.proto.expanded
     assert any("source commit:" in caption.value for caption in about.caption)
+    assert about.dataframe  # Scope and limitations remain available on demand.
+    assert not any("source commit:" in caption.value for caption in at.main.caption)
     assert not any("Data privacy" in warning.value for warning in at.warning)
     assert not any("Keyboard shortcuts" in str(expander.label) for expander in at.expander)
     from mfrm_app import citation
-    software = next(e for e in at.expander if e.label == "License & citation")
+    software = about
     assert not software.proto.expanded
     assert citation.APA in [item.value for item in software.code]
     assert {b.proto.label for b in software.get("download_button")} == {"BibTeX (.bib)", "CITATION.cff"}
@@ -40,7 +42,7 @@ def test_user_data_source_promotes_privacy_warning():
 
     assert not at.exception
     assert at.session_state["data_source_flat"] == "paste"
-    assert any("pasted and uploaded rating files" in warning.value for warning in at.warning)
+    assert any("pasted and uploaded rating files" in warning.value.lower() for warning in at.warning)
 
 
 def test_two_level_source_picker_keeps_sample_detail_visible_and_stable() -> None:
@@ -58,7 +60,7 @@ def test_two_level_source_picker_keeps_sample_detail_visible_and_stable() -> Non
     at.run(timeout=30)
     assert at.session_state["data_source_flat"] == "paste"
     assert not any(item.key == "data_source_scenario" for item in at.selectbox)
-    assert any("pasted and uploaded rating files" in warning.value for warning in at.warning)
+    assert any("pasted and uploaded rating files" in warning.value.lower() for warning in at.warning)
 
     at.selectbox(key="data_source_class").set_value("sample")
     at.run(timeout=30)
@@ -104,9 +106,10 @@ def test_guided_setup_only_renders_first_run_decisions() -> None:
     assert "facets_mode_maxit" not in number_input_keys
     assert "facets_mode_anchor_policy" not in radio_keys
     assert "Anchor constraints" not in {item.value for item in at.subheader}
-    assert {"Analysis choices", "Analysis coverage"}.issubset(
-        {item.value for item in at.subheader}
-    )
+    settings = next(item for item in at.sidebar.expander if item.label == "Analysis settings")
+    assert not settings.proto.expanded
+    assert settings.radio(key="facets_mode_model_type")
+    assert "Analysis coverage" in {item.value for item in settings.subheader}
 
 
 def test_advanced_setup_restores_full_technical_controls() -> None:
@@ -164,12 +167,17 @@ def test_compact_guided_setup_renders_in_japanese() -> None:
 
     assert not at.exception
     subheaders = {item.value for item in at.subheader}
-    assert {"モデルと推定方法", "分析内容の設定"}.issubset(subheaders)
+    settings = next(item for item in at.sidebar.expander if item.label == "分析設定")
+    assert not settings.proto.expanded
+    assert settings.radio(key="facets_mode_model_type")
+    assert "分析内容の設定" in {item.value for item in settings.subheader}
     assert "Anchor 制約" not in subheaders
-    assert any(
+    assert not any(
         "標準設定を使用しています" in str(item.value)
         for item in at.caption
     )
+    setup = next(item for item in at.sidebar.expander if item.label == "設定と実行するチェックの詳細")
+    assert not setup.proto.expanded
 
     source = at.selectbox(key="data_source_class")
     depth = at.selectbox(key="facets_mode_analysis_depth")

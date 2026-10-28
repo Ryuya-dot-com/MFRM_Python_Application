@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ast
 import csv
 from dataclasses import replace
 import inspect
@@ -215,8 +216,46 @@ def test_static_accessibility_css_covers_interactive_roles_and_preferences() -> 
 
 def test_app_does_not_hide_required_widget_labels_or_add_custom_hotkeys() -> None:
     source = Path(app.__file__).read_text(encoding="utf-8")
-    assert 'label_visibility="collapsed"' not in source
-    assert "label_visibility='collapsed'" not in source
+    navigation_keys = {
+        "guided_essential_section", "guided_diagnostics_panel", "guided_figures_panel",
+        "guided_export_task", "guided_measures_view", "app_view_density",
+    }
+    required_inputs = {
+        "data_source_class", "paste_data_text", "upload_data_file",
+        "facets_mode_person_col_", "facets_mode_score_col_", "facets_mode_facet_cols_",
+    }
+    locales = [json.loads((Path(app.__file__).parent / "locales" / f"{lang}.json").read_text(
+        encoding="utf-8")) for lang in ("en", "ja")]
+    seen_inputs = set()
+    for node in ast.walk(ast.parse(source)):
+        if not isinstance(node, ast.Call):
+            continue
+        keywords = {kw.arg: kw.value for kw in node.keywords}
+        key_node = keywords.get("key")
+        if isinstance(key_node, ast.JoinedStr):
+            key_node = key_node.values[0]
+        key = key_node.value if isinstance(key_node, ast.Constant) else None
+        visibility = keywords.get("label_visibility", ast.Constant(value="visible"))
+        collapsed = isinstance(visibility, ast.Constant) and visibility.value == "collapsed"
+        if collapsed:
+            assert key in navigation_keys, f"Input label collapsed at line {node.lineno}"
+        if key not in required_inputs and not collapsed:
+            continue
+        if key in required_inputs:
+            seen_inputs.add(key)
+            assert isinstance(visibility, ast.Constant) and visibility.value == "visible", key
+        label = keywords.get("label", node.args[0] if node.args else None)
+        if isinstance(label, ast.Call):
+            assert isinstance(label.func, ast.Name) and label.func.id == "t", key
+            assert label.args and isinstance(label.args[0], ast.Constant), key
+            for locale in locales:
+                translated = locale
+                for part in label.args[0].value.split("."):
+                    translated = translated[part]
+                assert isinstance(translated, str) and translated.strip(), key
+        else:
+            assert isinstance(label, ast.Constant) and isinstance(label.value, str) and label.value.strip(), key
+    assert seen_inputs == required_inputs
     assert "keydown" not in source.casefold()
     assert "keyup" not in source.casefold()
     assert "accesskey=" not in source.casefold()

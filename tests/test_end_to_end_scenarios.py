@@ -38,7 +38,7 @@ WORKFLOW_CONTROL_KINDS = (
     "multiselect",
 )
 INITIAL_CONTROL_BUDGET = {
-    "button": 4,
+    "button": 5,  # Includes the independent rating-plan entry.
     "checkbox": 7,
     "radio": 7,
     "selectbox": 13,
@@ -138,16 +138,16 @@ def test_representative_scenarios_render_without_streamlit_exception(scenario_ke
         f"{[e.value for e in at.exception]}"
     )
     subheaders = [str(item.value) for item in at.subheader]
-    assert subheaders.count("First-read action plan") == 1
+    assert "First-read action plan" not in subheaders
     assert "Choose what you want to do now" not in subheaders
     assert at.session_state["guided_essential_section"] == "first_read"
-    assert at.button(key="guided_action_hub_overview_primary").label.startswith("Check next:")
+    assert at.button(key="guided_action_hub_first_read_primary").label.startswith("Check next:")
     assert at.warning or at.error or at.info or at.success  # Interpretation state remains visible.
     download_labels = {str(item.label) for item in at.get("download_button")}
     assert not {"Download all results (ZIP)", "Download all results (Excel)"} & download_labels
     assert_control_topology_within_budget(at, RESULT_CONTROL_BUDGET)
 
-    at.button(key="guided_action_hub_overview_primary").click()
+    at.button(key="guided_action_hub_first_read_primary").click()
     at.run(timeout=APPTEST_TIMEOUT)
     assert not at.exception, (
         f"{scenario_key!r} crashed after the recommended one-click route: "
@@ -163,6 +163,7 @@ def test_scenario_names_match_registry():
         "writing_essay",
         "large_writing_pca",
         "speaking_test",
+        "two_school_linking",
         "clinical_osce",
         "writing_with_missing",
         "music_peer_rating",

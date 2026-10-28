@@ -180,6 +180,7 @@ _TOPIC_SECTIONS: Mapping[str, tuple[str, ...]] = MappingProxyType(
             "overview",
             "bias-heatmap",
             "classical-dif",
+            "external-group-design",
             "fairness-boundary",
         ),
         "help.report.claim_limits": (
@@ -514,7 +515,7 @@ def _topic(help_topic_id: str) -> HelpTopic:
         related_target_ids=_related_targets(help_topic_id),
         search_alias_keys=(f"{root}.search_alias",),
         version_and_review={
-            "content_version": "1.0.0",
+            "content_version": "1.1.0" if help_topic_id == "help.results.differential_interaction" else "1.0.0",
             "owner_role": "help_content_owner",
             "review_state": "in_review",
             "last_reviewed": "2026-07-24",

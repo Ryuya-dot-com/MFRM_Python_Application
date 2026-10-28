@@ -132,11 +132,12 @@ dn_nodes <- dn_nodes[, dn_node_keep]
 # G-study variance components via lme4 REML (Brennan 2001 Eq. 3.14)
 # ---------------------------------------------------------------------------
 # Fit the full 3-way random-effects ANOVA on the same CSV via lme4 with
-# explicit two-way interaction terms; this is the canonical reference
-# for the Python helper's method-of-moments decomposition. Under the
-# balanced one-observation-per-cell design the MoM and REML estimators
-# are algebraically equivalent (Searle, Casella, & McCulloch 1992
-# Ch. 3.4 / 4.6) so machine-precision agreement is expected.
+# explicit two-way interaction terms. This is a limited REML comparison,
+# not a same-estimator or mfrmr reference. The Python helper uses MoM
+# estimates clipped at zero; boundary handling can differ from REML.
+# Tests retain an absolute G/Phi tolerance of 0.07 on this fixture only.
+# Exact ANOVA controls are in test_g_d_study_boundaries.py; neither check
+# establishes interval coverage or support for incomplete designs.
 gstudy_df <- read.csv(input_path, stringsAsFactors = FALSE)
 gstudy_df$Person <- as.factor(gstudy_df$Person)
 gstudy_df$Rater <- as.factor(gstudy_df$Rater)

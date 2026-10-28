@@ -2,11 +2,16 @@
 
 All notable changes to this standalone Streamlit distribution should be recorded here.
 
-## 0.2.19-beta — unpublished candidate
+## 0.2.19-beta — 2026-10-28
 
-This candidate consolidates the changes recorded below since 0.2.18-beta.
-Its release date, required CI and hosted acceptance are pending. The Tkinter
-sources remain a prototype; this Web candidate does not release desktop binaries.
+This version consolidates the changes recorded below since 0.2.18-beta.
+Required Linux/Python 3.11 and 3.12 CI passed for source candidate
+`f5139bb7ec02fbfa2f1079ef6e381acff468d683`
+([run](https://github.com/Ryuya-dot-com/MFRM_Python_Application/actions/runs/40687727467)).
+The final main CI and hosted acceptance are recorded with the GitHub prerelease;
+source publication alone does not establish hosted acceptance. Later documentation-only
+preparation does not constitute a new CI run. The Tkinter sources remain a
+prototype; this Web update does not release desktop binaries.
 
 - Provide selected fixed-SD RSM/PCM facet levels and prespecified differences
   with pointwise asymptotic normal intervals when termination, identification,

@@ -1,10 +1,11 @@
 # MFRM Streamlit
 
-Candidate **0.2.19-beta** is being prepared; it has not been published.
+**0.2.19-beta** — 2026-10-28.
 It carries analysis holds consistently into reports and saved results,
 preserves restorable history across input changes, and provides qualified
 pointwise intervals for selected fixed-SD RSM/PCM structural effects and differences.
-The hosted app remains on **0.2.18-beta** until deployment is accepted.
+Check **About MFRM / アプリ情報** for the hosted version and source commit.
+The release record distinguishes source publication from hosted acceptance.
 The [development integration ledger](docs/development_integration.md) records
 the remaining integration work and statistical qualification limits.
 
@@ -20,11 +21,17 @@ called, imported, handed a job, or used as a public release gate.
 
 ## Status
 
-- Checkout status: unpublished beta candidate (**v0.2.19-beta**)
+- Checkout status: public beta source (**v0.2.19-beta**)
 - Runtime engine: standalone Python
 - Primary entrypoint: `streamlit_app.py`
 - Intended use: exploratory analysis, teaching, reporting support, and research workflow prototyping
 - Not intended as: a validated drop-in replacement for FACETS, TAM, sirt, mirt, or `mfrmr`
+
+The candidate's [required Linux/Python 3.11 and 3.12 CI passed](https://github.com/Ryuya-dot-com/MFRM_Python_Application/actions/runs/40687727467)
+at source commit `f5139bb7ec02fbfa2f1079ef6e381acff468d683`.
+Local browser acceptance and later documentation preparation do not establish
+deployment acceptance. See [publication and recovery](DEPLOYMENT.md#publication-and-hosted-acceptance)
+for the remaining hosted checks.
 
 Start with a built-in example and follow the interpretation checks before
 using results in a report. Numerical convergence does not, by itself, establish
@@ -658,12 +665,11 @@ result ZIPs and the manuscript binder carry `software_citation.md`,
 a verification note instead of the current release's reference or metadata.
 The sidebar reference always describes the currently running app.
 
-APA-style reference for this unpublished candidate (no release date assigned):
+APA-style reference:
 
-> Komuro, R. (n.d.). *MFRM Streamlit* (Version 0.2.19-beta) [Computer software]. https://github.com/Ryuya-dot-com/MFRM_Python_Application
+> Komuro, R. (2026). *MFRM Streamlit* (Version 0.2.19-beta) [Computer software]. https://github.com/Ryuya-dot-com/MFRM_Python_Application
 
-In-text citation: `(Komuro, n.d.)`. Record the candidate's source commit separately.
-On publication, the release date and citation year must be updated together.
+In-text citation: `(Komuro, 2026)`. Record the source commit used separately.
 
 Methods wording to complete from the saved analysis configuration:
 

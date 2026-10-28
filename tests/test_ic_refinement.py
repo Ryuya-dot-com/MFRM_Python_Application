@@ -129,7 +129,8 @@ def test_refit_requires_click_and_preserves_main_export_across_navigation(monkey
     label=lambda key:_locale_value(lang,'report_tables.model_choice_numerics.'+key)
     next(b for b in at.button if b.label==label('button')).click().run()
     assert not at.exception and not calls and 'mfrm_ic_refinement.csv' not in exports
-    next(b for b in at.button if b.label==label('refinement.button')).click().run()
+    # This action evaluates three numerical candidates; it is not a 3-second latency gate.
+    next(b for b in at.button if b.label==label('refinement.button')).click().run(timeout=120)
     assert not at.exception and len(calls)==3
     payload,options=exports['mfrm_ic_refinement.csv'];table=pd.read_csv(BytesIO(payload))
     assert len(table)==9 and options['on_click']=='ignore'

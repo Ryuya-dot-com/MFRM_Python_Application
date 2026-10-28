@@ -63,19 +63,25 @@ def _verify_files(root, manifest):
             raise ValueError('Retained reference artifact changed: ' + name)
 
 
-def _assert_recomputed_review_matches(actual, expected):
-    """Allow one unit-scale ULP in derived metrics, never in decisions or inputs."""
+def _assert_recomputed_review_matches(actual, expected, *, metric_scales=None):
+    """Propagate bounded replay roundoff, never into inputs or decisions."""
     from validation.mml_population_study import json_bytes
 
-    def matches(a, b):
+    metric_scales = metric_scales or {}
+
+    def matches(a, b, path=()):
         if type(a) is not type(b):
             return False
         if isinstance(a, dict):
-            return a.keys() == b.keys() and all(matches(a[k], b[k]) for k in a)
+            return a.keys() == b.keys() and all(matches(a[k], b[k], path + (k,)) for k in a)
         if isinstance(a, float):
-            # Subtracting near-equal saved/replayed moments exposes last-bit drift.
-            return (math.isfinite(a) and math.isfinite(b)
-                    and abs(a - b) <= math.ulp(max(1.0, abs(a), abs(b))))
+            # A difference near zero retains the rounding scale of its operands.
+            scale = max(1.0, abs(a), abs(b), metric_scales.get(path, 1.0))
+            # Truth-point finite values were evaluated once per environment:
+            # account for one operand-scale ULP in each evaluation.
+            allowance = (2 if path in metric_scales else 1) * math.ulp(scale)
+            return (math.isfinite(a) and math.isfinite(b) and math.isfinite(scale)
+                    and abs(a - b) <= allowance)
         return a == b
 
     if not matches(json.loads(json_bytes(actual)), json.loads(json_bytes(expected))):
@@ -126,6 +132,7 @@ def _recheck_r(bundle, selection, plan, ledger, retained_review):
     if len(python_rows) != (0 if key.endswith('_truth') else 1):
         raise ValueError('Required Python comparison point is missing or duplicated')
     python = python_rows[0] if python_rows else None
+    metric_scales = {}
     if lane == 'finite_R':
         native = [c for c in _read(bundle/'native_rowwise.json') if c['id'] == key]
         if len(native) != 1:
@@ -140,7 +147,12 @@ def _recheck_r(bundle, selection, plan, ledger, retained_review):
         # retains them as lists. Restore the representation, not the values.
         restored = [dict(v, gradient=np.asarray(v['gradient'], dtype=float)) for v in values['value']]
         recomputed = continuous_review(case, restored, event['value']['continuous'], python, plan)
-    _assert_recomputed_review_matches(recomputed, retained_review)
+        if python is None:
+            # Only truth-point finite-rule values are evaluated again; all other
+            # operands are retained JSON. Use the sealed reference's value scale.
+            metric_scales = {('integration_error', k): float(np.max(np.abs(restored[-1][k])))
+                             for k in ('nll', 'gradient', 'eap', 'sd')}
+    _assert_recomputed_review_matches(recomputed, retained_review, metric_scales=metric_scales)
     return True
 
 

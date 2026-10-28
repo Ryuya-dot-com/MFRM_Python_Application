@@ -38,7 +38,8 @@ sources remain a prototype; this Web candidate does not release desktop binaries
   message in saved basic HTML reports. Verify the source candidate in a separate
   Python 3.12 environment, keeping local research artifacts outside the bundle.
 - Recheck retained R comparisons with a unit-scale ULP allowance only for
-  recomputed metrics. Keep source/returned values and decisions exact; reject
+  recomputed metrics, propagating operand-scale rounding for truth-point finite
+  values reevaluated across numerical environments. Keep source/returned values and decisions exact; reject
   changed raw R values even when their difference is one ULP. Statistical
   thresholds and inference qualification remain unchanged.
 

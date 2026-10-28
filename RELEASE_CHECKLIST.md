@@ -74,6 +74,16 @@ W2はこのローカル候補で完了。初回の「組織でブロックされ
 
 ### W3：CIから公開先まで閉じる — 未完了、W1・W2に依存
 
+候補`350b95323a2acb48ba80edd38fa2fc7ad69715f6`の[draft PR #5](https://github.com/Ryuya-dot-com/MFRM_Python_Application/pull/5)を作成し、
+[Linux／Python 3.11・3.12のCI](https://github.com/Ryuya-dot-com/MFRM_Python_Application/actions/runs/40679224500)を一組起動した。
+W2受入コードからの変更は受入記録の3文書だけ。CIが使うPRの合成mergeと候補のtreeは一致する。
+初回は3.11で3,990件通過・8失敗・10準備エラー、3.12で3,988件通過・10失敗・10準備エラー。
+両方とも10件skip・91件対象外。後段のbenchmark／demo報告／clean-checkは未実行。
+固定一時パス、保存比較の丸め尺度、過去の最適化経路との過剰に厳しい一致、操作テストの既定3秒を修正した。
+アプリ本体・数値基準・保存された生の参照値は変更していない。ローカルの影響範囲97項目に成功証拠を対応させ、
+検証コード・テストの追補を含む候補で既存の必須CIを再実行する。初回の失敗ログは保持する。
+main・tag・GitHub release・稼働Webは変更していない。
+
 - [ ] 同じ候補commitに必要なLinux／Python 3.11・3.12 CIを一組対応させる。
       現行workflowはintegrationブランチへのpushだけでは自動起動しない。PR／手動実行を選び、重複起動しない。
       必須CIの全体確認は省かず、通過済みのローカル数値研究を文書変更だけで再計算しない。

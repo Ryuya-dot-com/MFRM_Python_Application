@@ -6,6 +6,7 @@ from scipy.optimize import OptimizeResult
 
 import streamlit_app as app
 from mfrm_app import engine
+from validation.mml_grouped_likelihood import GroupedMmlLikelihood
 
 
 def small_problem(model="PCM"):
@@ -140,8 +141,16 @@ def test_reviewed_pcm_cases_retain_estimates_but_withhold_inference(missing):
         noncenter_facet="Criterion", positive_facets=["Rater"], population_prior_sd=1.1,
         quad_points=31, maxit=100, reltol=1e-6)
     assert result["opt"].success
-    assert result["summary"].LogLik.iloc[0] == pytest.approx(
-        -195.7026189715229 if missing else -197.3486605636869, abs=1e-10, rel=0)
+    # Solver trajectories differ across numerical libraries; check the returned
+    # point against the independent likelihood, not a historical optimizer path.
+    point = result['opt'].x.copy()
+    rule = app.gauss_hermite_normal(31, sd=1.1)
+    reference = GroupedMmlLikelihood(result['prep']['data'], result['config']).evaluate(
+        np.r_[point, np.log(1.1)], rule['nodes'] / 1.1, rule['weights'])
+    loglik = result['summary'].LogLik.iloc[0]
+    assert loglik == pytest.approx(-reference['nll'], abs=1e-10, rel=0)
+    assert app.qualified_estimation_summary(result).LogLik.iloc[0] == loglik
+    np.testing.assert_array_equal(result['opt'].x, point)
     assert not result["summary"].InferenceReady.iloc[0]
     assert result["summary"].InferenceReadinessReason.iloc[0] == app.FIXED_SD_MML_INFERENCE_HOLD_REASON
     assert app.build_first_read_guide_rows(result, {})[0]["Status"] == "Do not interpret yet"

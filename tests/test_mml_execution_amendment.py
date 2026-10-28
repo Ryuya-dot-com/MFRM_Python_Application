@@ -11,6 +11,8 @@ from validation import mml_execution_amendment as amendment
 
 @pytest.fixture
 def registered(tmp_path, monkeypatch):
+    # Preserve the sealed macOS root naming/checks inside pytest's isolated directory.
+    monkeypatch.setattr(amendment, 'Path', lambda value: tmp_path if value == '/private/tmp' else Path(value))
     def write(path,value): path.write_text(json.dumps(value,sort_keys=True))
     study=tmp_path/'study';study.mkdir();write(study/'T0.json',dict(test=str(tmp_path)))
     write(study/'source_manifest.json',dict(original='retained'))

@@ -45,6 +45,31 @@ def write(path, value):
     path.write_bytes(json_bytes(value)+b'\n')
 
 
+@pytest.mark.parametrize('replayed_gradient', [2.2004620348070603e-13, 2.2315482794965646e-13])
+def test_truth_point_roundoff_uses_reference_operand_scale_only(replayed_gradient):
+    from copy import deepcopy
+    import math
+
+    saved = {'integration_error': {'gradient': 2.1938006966593093e-13, 'sd': 7.16093850883226e-15},
+             'checks': {'finite_gradient': True}, 'all_checks_pass': True,
+             'scientific_inference_ready': False}
+    replay = deepcopy(saved)
+    replay['integration_error']['gradient'] = replayed_gradient
+    scales = {('integration_error', 'gradient'): 16.37950083839932}
+    with pytest.raises(ValueError, match='R numerical comparison'):
+        review._assert_recomputed_review_matches(replay, saved)
+    review._assert_recomputed_review_matches(replay, saved, metric_scales=scales)
+    for target in ('gradient', 'sd', 'decision'):
+        changed = deepcopy(replay)
+        if target == 'decision':
+            changed['checks']['finite_gradient'] = False
+        else:
+            scale = scales.get(('integration_error', target), 1.0)
+            changed['integration_error'][target] = saved['integration_error'][target] + 3 * math.ulp(scale)
+        with pytest.raises(ValueError, match='R numerical comparison'):
+            review._assert_recomputed_review_matches(changed, saved, metric_scales=scales)
+
+
 def hashes(root):
     return {str(p.relative_to(root)): hashlib.sha256(p.read_bytes()).hexdigest()
             for p in root.rglob('*') if p.is_file()}

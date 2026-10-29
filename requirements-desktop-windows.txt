@@ -1,4 +1,6 @@
-# Versions recorded by the Windows 11 review; Python 3.12.16 x64.
+# Package versions recorded by the Windows 11 review.
+# Python 3.12.10 x64 matches the successful main Windows CI; setup-python
+# does not provide Windows 3.12.16 used by the separate local review.
 pyinstaller==6.22.3
 numpy==2.5.4
 pandas==3.1.0

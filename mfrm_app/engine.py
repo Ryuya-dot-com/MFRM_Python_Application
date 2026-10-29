@@ -2060,7 +2060,7 @@ def prepare_mfrm_data(
     rename_map = {person_col: "Person", score_col: "Score"}
     if weight_col:
         rename_map[weight_col] = "Weight"
-    df.rename(columns=rename_map, inplace=True)
+    df = df.rename(columns=rename_map)
 
     # v0.2.13-beta guard: if the rename produces duplicate column names
     # (e.g. a facet named "Score" alongside a score_col renamed to
@@ -5522,7 +5522,9 @@ def compute_scorefile(res):
     if probs is None or probs.shape[0] != len(obs):
         return obs
     cat_vals = np.arange(res["prep"]["rating_min"], res["prep"]["rating_max"] + 1)
-    prob_df = pd.DataFrame(probs, columns=[f"P_{v}" for v in cat_vals])
+    # Probabilities follow observation order; retained row labels can have
+    # gaps or duplicates after filtering. Preserve them during concatenation.
+    prob_df = pd.DataFrame(probs, index=obs.index, columns=[f"P_{v}" for v in cat_vals])
     max_idx = np.argmax(probs, axis=1)
     max_prob = probs[np.arange(len(probs)), max_idx]
     most_likely = cat_vals[max_idx]

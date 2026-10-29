@@ -1139,6 +1139,7 @@ def smoke_check(output_dir):
     example = writing_example()
     assert example.shape == (960, 5)
     data = demonstration_data()
+    data.loc[1, "Score"] = float("nan")  # Exercise filtered-row alignment in the frozen worker.
     settings = dict(person_col="Person", facet_cols=["Rater", "Task"], score_col="Score", rating_min=0, rating_max=3)
     events = []
     def drain():
@@ -1162,6 +1163,7 @@ def smoke_check(output_dir):
         worker.start(data, settings)
         status, analysis = drain()
         assert status == "complete", analysis
+        assert len(analysis["scorefile"]) == len(data) - 1 and 1 not in analysis["scorefile"].index
         save_project(output_dir / "作文.mfrm", analysis)
         report = basic_report_html(analysis)
         assert report.count("<svg") == 3

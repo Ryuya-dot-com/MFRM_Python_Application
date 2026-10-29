@@ -56,7 +56,7 @@ def test_all_outputs_preserve_saved_scope_and_never_refit(analysis, tmp_path, mo
     evidence.mkdir(parents=True, exist_ok=True)
     stem = config['model'] + '_' + config['method']
     project.save_project(evidence / (stem + '.mfrm'), analysis)
-    (evidence / (stem + '.html')).write_text(report)
+    (evidence / (stem + '.html')).write_text(report, encoding='utf-8')
     for i, (options, fig) in enumerate(figures):
         (evidence / f'{stem}_{i}.png').write_bytes(output.basic.figure_bytes(analysis, str(i), figure=fig, format='png'))
 

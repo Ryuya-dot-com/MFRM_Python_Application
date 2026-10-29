@@ -1,6 +1,17 @@
-"""Release selection for checks that require locally retained study artifacts."""
+"""Test process isolation and selection of locally retained study artifacts."""
 
+import sys
 import pytest
+
+
+@pytest.fixture(autouse=True)
+def restore_main_module_after_test():
+    """AppTest installs a temporary __main__; spawn must see pytest's entrypoint."""
+    original_main = sys.modules["__main__"]
+    try:
+        yield
+    finally:
+        sys.modules["__main__"] = original_main
 
 
 _RETAINED_STUDY_TESTS = {

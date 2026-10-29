@@ -1,29 +1,72 @@
-name: Windows desktop candidate
+name: Windows desktop
 
 on:
   push:
-    branches: [main, 'desktop/**']
+    branches: [main, master, slope-aware-bias-inference, 'desktop/**']
     paths:
       - 'desktop_app.py'
       - 'mfrm_app/**'
-      - 'locales/en.json'
+      - 'streamlit_app.py'
+      - 'validation/operating_characteristics_facets.py'
+      - 'tests/**'
+      - 'locales/**'
       - 'examples/desktop_writing.csv'
       - 'scripts/build_desktop.py'
       - 'scripts/check_windows_desktop.py'
       - 'scripts/desktop.spec'
       - 'scripts/runtime_notices/**'
-      - 'requirements-desktop-build.txt'
+      - 'requirements*.txt'
       - 'CITATION.cff'
       - 'LICENSE*'
       - 'docs/desktop_windows_installation.md'
       - '.github/workflows/desktop-windows.yml'
+  pull_request:
+    paths:
+      - "desktop_app.py"
+      - "streamlit_app.py"
+      - "mfrm_app/**"
+      - "validation/operating_characteristics_facets.py"
+      - "examples/desktop_writing.csv"
+      - "locales/**"
+      - "requirements*.txt"
+      - "tests/**"
+      - "scripts/**"
+      - "docs/desktop_windows_installation.md"
+      - ".github/workflows/desktop-windows.yml"
   workflow_dispatch:
 
 permissions:
   contents: read
 
 jobs:
+  desktop-runtime:
+    # Candidate pushes build once; their pull request runs source checks once.
+    if: github.event_name != 'push' || !startsWith(github.ref, 'refs/heads/desktop/')
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v6.0.2
+      - uses: actions/setup-python@v6.2.0
+        with:
+          python-version: "3.12"
+          cache: "pip"
+      - name: Install runtime and test dependencies
+        run: python -m pip install -r requirements-dev.txt
+      - name: Verify spawn lifecycle, projects, figures and interpretation holds
+        run: >-
+          python -m pytest -q -W error
+          tests/test_desktop_worker.py tests/test_desktop_project.py tests/test_desktop_ux.py
+          tests/test_desktop_workflows.py tests/test_desktop_outputs.py
+          tests/test_desktop_packaging.py
+          tests/test_person_boundary_output.py tests/test_measure_report_consistency.py
+          tests/test_report_run_facts.py
+          tests/test_scorefile_row_alignment.py
+          tests/test_apptest_process_isolation.py
+          tests/test_operating_characteristics_facets_adapter.py tests/test_facets_visible_launcher.py
+      - name: Verify tracked source stayed clean
+        run: git diff --exit-code
+
   windows-desktop:
+    if: github.event_name != 'pull_request'
     # This is the build host, not Windows 11 GUI acceptance.
     runs-on: windows-2025
     defaults:

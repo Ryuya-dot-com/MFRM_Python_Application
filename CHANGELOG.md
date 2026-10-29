@@ -2,6 +2,47 @@
 
 All notable changes to this standalone Streamlit distribution should be recorded here.
 
+## Unreleased — Windows desktop correction, 2026-10-29
+
+- Integrate the complete initial desktop workflow: RSM/PCM with JMLE or fixed-SD
+  MML, bias diagnostics, specified intervals, joint interactions and G/D studies;
+  English/Japanese controls and explained/manuscript figures share the saved
+  project and qualified exports. Preserve all main-branch Windows, filtered-row,
+  FACETS-parser and test-process-isolation corrections.
+- Keep the Windows/Python 3.12 runtime regressions and the isolated, pinned
+  Windows build/frozen five-workflow checks in one CI workflow. Preserve schema-1
+  reading while saving extended projects as schema 2. Update installation and
+  user guides for the complete first distribution, not a reduced initial release.
+
+- Restore pytest's `__main__` after each test. Streamlit AppTest replaces that
+  module with a temporary script, which caused later spawned desktop workers
+  in the combined Linux suite to fail with `NameError: __args` before reaching
+  their target. Add a real AppTest-then-spawn regression and an early Linux CI
+  check; retain the full suite and all worker assertions.
+- Preserve observation indices when assembling score probabilities. This fixes
+  a crash after missing-score rows are excluded and prevents probabilities
+  from being attached to different observations after row relabeling.
+  Add regressions for permuted, gapped, duplicate and text indices, plus
+  desktop save/restore with an excluded score row.
+- Read FACETS `PtMea` correctly and keep `PtBis`/`PtBisI` in separate fields.
+  Document the application's person-measure correlation definition and the
+  limited FACETS comparison in `validation/FACETS_WINDOWS_DESKTOP_REVIEW_20261029.md`.
+- Handle Windows pipe EOF during worker polling as well as receiving. Retain
+  the completion/failure message until the child exits, then check the exit
+  code and saved result. This fixes `WinError 109` after successful analysis
+  and restores cancellation, failure reporting and restart.
+- Add real spawned-process regressions for cancellation, invalid input,
+  successful retry, project restoration and a child that exits without a
+  result. Add a Windows/Python 3.12 desktop CI job.
+- Replace deprecated pandas in-place renaming and implicit numeric-to-string
+  fills in publication tables. Preserve blank held values, original numeric
+  calculations and interpretation warnings; do not suppress warnings globally.
+- Verify 125 related tests with warnings treated as errors and all 56 engine
+  self-tests on Windows 11/Python 3.12. Build and run a local Windows executable,
+  including worker/save/restore checks. See the bounded GUI and packaging
+  acceptance record in `docs/desktop_prototype.md`; this is not a public
+  desktop binary release or clean-machine certification.
+
 ## 0.2.19-beta — 2026-10-28
 
 This version consolidates the changes recorded below since 0.2.18-beta.

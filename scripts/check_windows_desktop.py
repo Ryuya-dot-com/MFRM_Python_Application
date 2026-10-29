@@ -38,7 +38,7 @@ def check_build(build, output):
         if {(r['model'], r['method']) for r in record['extended']} != expected:
             raise ValueError('Frozen checks did not cover all shipped workflows')
         reopened = []
-        for project in sorted(smoke.glob('*/analysis.mfrm')):
+        for project in [smoke / '作文.mfrm', *sorted(smoke.glob('*/analysis.mfrm'))]:
             before = hashlib.sha256(project.read_bytes()).hexdigest()
             destination = output / 'reopened' / project.parent.name
             run('--check-project', project, '--output-dir', destination)
@@ -50,8 +50,8 @@ def check_build(build, output):
             if hashlib.sha256(project.read_bytes()).hexdigest() != before:
                 raise ValueError(f'Original project was changed: {project}')
             reopened.append(dict(workflow=project.parent.name, **result))
-        if len(reopened) != 5:
-            raise ValueError('Expected five independently restored projects')
+        if len(reopened) != 6:
+            raise ValueError('Expected the basic project and five extended projects to restore independently')
     # ZIP contains the complete onedir app; never distribute the exe on its own.
     shutil.copyfile(root / 'docs/desktop_windows_installation.md', bundle / 'START_HERE.txt')
     archive = Path(shutil.make_archive(str(build / 'MFRM-Desktop-Windows-x64'), 'zip', bundle.parent, bundle.name))

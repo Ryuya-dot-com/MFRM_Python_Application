@@ -60,7 +60,9 @@ class AnalysisWorker:
                     break
                 status, detail = self.receiver.recv()
             except (EOFError, BrokenPipeError):
-                # Windows poll() can report a closed pipe before recv().
+                # Windows can report pipe EOF from poll(), after the terminal
+                # message was received but before the child has fully exited.
+                # Keep that message and still verify exit status/result below.
                 break
             if status in {"complete", "failed"}:
                 self.terminal = (status, detail)
@@ -1132,7 +1134,8 @@ def smoke_check(output_dir):
     import json
     import time
     from mfrm_app.project import save_project
-    from mfrm_app.basic_analysis import basic_report_html, figure_bytes
+    from mfrm_app.basic_analysis import figure_bytes
+    from mfrm_app.desktop_outputs import report_html
     from mfrm_app.desktop_guidance import writing_example
     output_dir.mkdir(parents=True, exist_ok=True)
     worker = AnalysisWorker()
@@ -1165,7 +1168,7 @@ def smoke_check(output_dir):
         assert status == "complete", analysis
         assert len(analysis["scorefile"]) == len(data) - 1 and 1 not in analysis["scorefile"].index
         save_project(output_dir / "作文.mfrm", analysis)
-        report = basic_report_html(analysis)
+        report = report_html(analysis)
         assert report.count("<svg") == 3
         (output_dir / "report.html").write_text(report, encoding="utf-8")
         (output_dir / "wright.png").write_bytes(figure_bytes(analysis, "wright", format="png"))

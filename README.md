@@ -1,5 +1,7 @@
 # MFRM Streamlit
 
+[日本語の紹介・使い方](README.ja.md) · [デスクトップ版の使い方（Windows）](docs/desktop_user_guide.ja.md)
+
 **0.2.19-beta** — 2026-10-28.
 It carries analysis holds consistently into reports and saved results,
 preserves restorable history across input changes, and provides qualified
@@ -18,6 +20,20 @@ Standalone Python beta application for Many-Facet Rasch Model estimation in Stre
 This app estimates, diagnoses, stress-tests, and reports MFRM analyses in
 Python. Other software may be cited as methodological history, but it is not
 called, imported, handed a job, or used as a public release gate.
+
+## Desktop application
+
+The first desktop distribution includes RSM/PCM with JMLE or fixed-population-SD
+MML, Wright/Pathway/category figures, conditional bias diagnostics, qualified
+specified intervals and joint interactions, and supported G/D studies. It starts
+in English, supports Japanese, and offers explained or manuscript figures.
+Projects retain inputs, results and settings without refitting on reopen; outputs
+include HTML, CSV, PNG and SVG with figure-note text. Statistical eligibility and
+design restrictions remain attached to each output.
+
+Use the [Windows ZIP instructions](docs/desktop_windows_installation.md); Python
+is bundled. The distribution is still under acceptance, not a general-release
+claim. [Japanese instructions](docs/desktop_user_guide.ja.md) describe the workflow.
 
 ## Status
 
@@ -60,6 +76,7 @@ checkout or the hosted app. Current development priorities live in [ROADMAP](ROA
 | Need | Current reference |
 |---|---|
 | Install, analyze, and understand supported features | This README and the in-app Help |
+| Start the Windows desktop app, prepare CSV data, and save results | The [Japanese desktop user guide](docs/desktop_user_guide.ja.md). The full-feature Windows candidate bundles Python; see the [ZIP installation guide](docs/desktop_windows_installation.md). Source startup is also described. |
 | Configure anchors | The bundled [anchor guide](anchor_templates_and_guideline/anchor_user_guidelines.md), also shown in Advanced controls |
 | Prepare a manuscript | The [manuscript guide](docs/apa_manuscript_template.md) |
 | Find controls in the revised layout | The [UI revision](docs/ux_adversarial_audit.md#layout-copy-rewrite-20261023): grouped input and save controls, optional detail, and preserved warnings. Version, limits, license and citation are in **About MFRM / アプリ情報** in the sidebar. |
@@ -568,6 +585,7 @@ Open `validation/generated/demo_report/manuscript_handoff.md` first, then read
 
 ## Statistical Caveats
 
+- The exported `PTMEA`/`PtMeaCorr` is a weighted correlation of observed scores with person measures, computed for non-person facets. Person rows are not computed. FACETS `PtMea` instead uses the signed sum of measures for each observation; these are different diagnostics in a many-facet design. See the [Windows FACETS review](validation/FACETS_WINDOWS_DESKTOP_REVIEW_20261029.md) for the bounded numerical comparison and remaining differences.
 - JMLE now withholds interpretation when a free facet level contains only minimum or maximum scores. Fixed levels are excluded. This is a conservative screening rule: constraints or penalties may yield finite values, and absence of a flag does not prove that a finite MLE exists. Inspect `jmle_facet_boundary.csv` with the identification and person-boundary checks.
 - The JMLE dense rank audit checks matrix dimensions before allocation. Designs beyond its limit remain unqualified for inference rather than silently skipping the audit.
 - GPCM is not a strict Rasch model. Its slope parameters change the interpretation of invariance and should be reported explicitly.

@@ -34,7 +34,8 @@ def test_runtime_notices_use_the_installer_layout(tmp_path, monkeypatch, system)
     monkeypatch.setattr(build_desktop.sysconfig, 'get_path', lambda name: str(stdlib))
     result = build_desktop.collect_notices(tmp_path / 'build')
     assert {'Python/LICENSE.txt', 'Tcl/license.terms' if system == 'darwin' else 'tcl/license.terms',
-            'Tk/license.terms' if system == 'darwin' else 'tk/license.terms'} <= result['files'].keys()
+            'Tk/license.terms' if system == 'darwin' else 'tk/license.terms'} <= {
+                Path(name).as_posix() for name in result['files']}
     if system == 'win32':
         for name in ('tcl', 'tk'):
             source = Path(build_desktop.__file__).parent / 'runtime_notices' / f'{name}-8.6.15.terms'
@@ -128,6 +129,8 @@ def test_windows_packaging_requires_complete_restore_and_preserves_the_bundle(tm
         if command[1] == '--smoke-test':
             out = Path(command[2]); out.mkdir()
             (out / 'smoke.json').write_text(json.dumps({'extended': [dict(model=m, method=e) for m,e in workflows]}))
+            (out / '作文.mfrm').write_bytes(b'original')
+            (out / 'report.html').write_bytes(b'<svg/>')
             for model, method in workflows:
                 directory = out / (model.replace('/', '') + '_' + method); directory.mkdir()
                 (directory / 'analysis.mfrm').write_bytes(b'original')
@@ -145,7 +148,7 @@ def test_windows_packaging_requires_complete_restore_and_preserves_the_bundle(tm
         assert not (build / 'MFRM-Desktop-Windows-x64.zip').exists()
     else:
         result = check_windows_desktop.check_build(build, tmp_path / 'checks')
-        assert len(result['reopened']) == 5 and not result['windows_11_gui_accepted']
+        assert len(result['reopened']) == 6 and not result['windows_11_gui_accepted']
         with zipfile.ZipFile(build / result['archive']) as archive:
             assert archive.read('MFRM-Desktop/_internal/runtime.dll') == b'runtime'
             assert archive.read('MFRM-Desktop/START_HERE.txt') == b'Install notes'

@@ -3,6 +3,7 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
+import pytest
 
 from validation import operating_characteristics_facets as facets
 
@@ -86,6 +87,39 @@ def test_displayed_band_requires_entire_rounding_interval_on_one_side():
         "flag",
     ]
     assert pd.isna(classified.iloc[6])
+
+
+@pytest.mark.parametrize("header, target", [
+    ("PtMea", "PtMeasure"),
+    ("PtBis", "PtBiserial"),
+    ("PtBisI", "PtBiserialIncluded"),
+])
+def test_scorefile_preserves_correlation_kind(tmp_path, header, target):
+    score = tmp_path / "scores.1.txt"
+    score.write_text(
+        "1\tPerson\n"
+        f"Measure\tS.E.\t{header}\tPtMeExp\tStatus\t1\tPerson\n"
+        "-0.057399\t.244564\t.46\t.41\t-1\t1\tP001\n",
+        encoding="utf-8",
+    )
+    parsed = facets.parse_score_file(score, facet_number=1, facet_name="Person")
+    assert parsed.loc[0, target] == .46
+    for other in {"PtMeasure", "PtBiserial", "PtBiserialIncluded"} - {target}:
+        assert pd.isna(parsed.loc[0, other])
+    assert parsed.loc[0, "PtMeasureExpected"] == .41
+
+
+def test_scorefile_does_not_substitute_biserial_when_measure_is_missing(tmp_path):
+    score = tmp_path / "scores.2.txt"
+    score.write_text(
+        "2\tRater\n"
+        "PtMea\tPtBis\t2\tRater\n"
+        ".\t.34\t1\tR01\n",
+        encoding="utf-8",
+    )
+    parsed = facets.parse_score_file(score, facet_number=2, facet_name="Rater")
+    assert pd.isna(parsed.loc[0, "PtMeasure"])
+    assert parsed.loc[0, "PtBiserial"] == .34
 
 
 def test_parse_iteration_report_uses_final_jmle_row(tmp_path):

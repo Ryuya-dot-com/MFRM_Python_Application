@@ -224,7 +224,11 @@ def parse_score_file(path: Path, *, facet_number: int, facet_name: str) -> pd.Da
         "InfitZ": "InfitZDisplayed",
         "OutfitMS": "OutfitMSDisplayed",
         "OutfitZ": "OutfitZDisplayed",
-        "PtBis": "PtMeasure",
+        # FACETS uses distinct headers for measure and score correlations.
+        # PtBis must never fill a missing PtMea value.
+        "PtMea": "PtMeasure",
+        "PtBis": "PtBiserial",
+        "PtBisI": "PtBiserialIncluded",
         "PtMeExp": "PtMeasureExpected",
         "Displace": "Displacement",
         "Status": "Status",

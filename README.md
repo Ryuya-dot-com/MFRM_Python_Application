@@ -1,5 +1,7 @@
 # MFRM Streamlit
 
+[日本語の紹介・使い方](README.ja.md) · [デスクトップ版の使い方（Windows）](docs/desktop_user_guide.ja.md)
+
 **0.2.19-beta** — 2026-10-28.
 It carries analysis holds consistently into reports and saved results,
 preserves restorable history across input changes, and provides qualified
@@ -60,6 +62,7 @@ checkout or the hosted app. Current development priorities live in [ROADMAP](ROA
 | Need | Current reference |
 |---|---|
 | Install, analyze, and understand supported features | This README and the in-app Help |
+| Start the Windows desktop app, prepare CSV data, and save results | The [Japanese desktop user guide](docs/desktop_user_guide.ja.md). Public EXE downloads are not yet available; source startup is described. |
 | Configure anchors | The bundled [anchor guide](anchor_templates_and_guideline/anchor_user_guidelines.md), also shown in Advanced controls |
 | Prepare a manuscript | The [manuscript guide](docs/apa_manuscript_template.md) |
 | Find controls in the revised layout | The [UI revision](docs/ux_adversarial_audit.md#layout-copy-rewrite-20261023): grouped input and save controls, optional detail, and preserved warnings. Version, limits, license and citation are in **About MFRM / アプリ情報** in the sidebar. |

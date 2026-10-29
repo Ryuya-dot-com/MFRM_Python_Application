@@ -1,0 +1,41 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="512" height="512" role="img" aria-label="MFRM Desktop icon">
+  <defs>
+    <linearGradient id="bg1" x1="0.15" y1="0" x2="0.85" y2="1">
+      <stop offset="0%" stop-color="#111c38"/>
+      <stop offset="52%" stop-color="#0b1326"/>
+      <stop offset="100%" stop-color="#070b14"/>
+    </linearGradient>
+    <radialGradient id="glow1" cx="0.5" cy="0.14" r="0.78">
+      <stop offset="0%" stop-color="#38bdf8" stop-opacity="0.30"/>
+      <stop offset="55%" stop-color="#6366f1" stop-opacity="0.12"/>
+      <stop offset="100%" stop-color="#070b14" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="txt1" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#ffffff"/>
+      <stop offset="100%" stop-color="#dbeafe"/>
+    </linearGradient>
+    <linearGradient id="acc1" x1="0" y1="0.5" x2="1" y2="0.5">
+      <stop offset="0%" stop-color="#22d3ee"/>
+      <stop offset="50%" stop-color="#38bdf8"/>
+      <stop offset="100%" stop-color="#a78bfa"/>
+    </linearGradient>
+    <filter id="sh1" x="-15%" y="-15%" width="130%" height="140%">
+      <feDropShadow dx="0" dy="3" stdDeviation="3" flood-color="#000000" flood-opacity="0.45"/>
+    </filter>
+  </defs>
+  <rect x="6" y="6" width="116" height="116" rx="27" fill="url(#bg1)"/>
+  <rect x="6" y="6" width="116" height="116" rx="27" fill="url(#glow1)"/>
+  <rect x="6.75" y="6.75" width="114.5" height="114.5" rx="26.25" fill="none" stroke="#ffffff" stroke-opacity="0.18" stroke-width="1.5"/>
+
+  <!-- Subtle 0-logit horizon -->
+  <line x1="22" y1="84.00" x2="106" y2="84.00" stroke="#334155" stroke-width="1.4" stroke-linecap="round"/>
+
+  <!-- Bold geometric MFRM wordmark -->
+  <path d="M 21.62 61.50 L 21.62 36.50 L 26.49 36.50 L 32.62 49.73 L 38.76 36.50 L 43.62 36.50 L 43.62 61.50 L 38.50 61.50 L 38.50 45.00 L 34.20 55.50 L 31.05 55.50 L 26.75 45.00 L 26.75 61.50 Z M 46.38 36.50 L 61.38 36.50 L 61.38 41.25 L 51.50 41.25 L 51.50 47.25 L 59.58 47.25 L 59.58 51.76 L 51.50 51.76 L 51.50 61.50 L 46.38 61.50 Z M 64.12 36.50 L 74.12 36.50 A 7.00 7.00 0 0 1 74.12 50.50 L 75.12 50.50 L 81.88 61.50 L 76.34 61.50 L 70.50 50.50 L 69.25 50.50 L 69.25 61.50 L 64.12 61.50 Z M 69.25 41.25 L 73.88 41.25 A 2.25 2.25 0 0 1 73.88 45.75 L 69.25 45.75 Z M 84.38 61.50 L 84.38 36.50 L 89.24 36.50 L 95.38 49.73 L 101.51 36.50 L 106.38 36.50 L 106.38 61.50 L 101.25 61.50 L 101.25 45.00 L 96.95 55.50 L 93.80 55.50 L 89.50 45.00 L 89.50 61.50 Z" fill="url(#txt1)" fill-rule="evenodd" filter="url(#sh1)"/>
+
+  <!-- Luminous Rasch S-curve + 3 calibrated facet nodes -->
+  <path d="M 22.00 95.06 L 23.75 94.93 L 25.50 94.79 L 27.25 94.62 L 29.00 94.44 L 30.75 94.23 L 32.50 94.00 L 34.25 93.75 L 36.00 93.46 L 37.75 93.14 L 39.50 92.79 L 41.25 92.40 L 43.00 91.97 L 44.75 91.50 L 46.50 90.99 L 48.25 90.44 L 50.00 89.86 L 51.75 89.23 L 53.50 88.56 L 55.25 87.86 L 57.00 87.13 L 58.75 86.37 L 60.50 85.59 L 62.25 84.80 L 64.00 84.00 L 65.75 83.20 L 67.50 82.41 L 69.25 81.63 L 71.00 80.87 L 72.75 80.14 L 74.50 79.44 L 76.25 78.77 L 78.00 78.14 L 79.75 77.56 L 81.50 77.01 L 83.25 76.50 L 85.00 76.03 L 86.75 75.60 L 88.50 75.21 L 90.25 74.86 L 92.00 74.54 L 93.75 74.25 L 95.50 74.00 L 97.25 73.77 L 99.00 73.56 L 100.75 73.38 L 102.50 73.21 L 104.25 73.07 L 106.00 72.94" fill="none" stroke="url(#acc1)" stroke-width="3.8" stroke-linecap="round"/>
+  <circle cx="40" cy="92.68" r="3.0" fill="#22d3ee"/>
+  <circle cx="64" cy="84.00" r="4.0" fill="#ffffff" stroke="#38bdf8" stroke-width="2.2"/>
+  <circle cx="88" cy="75.32" r="3.0" fill="#a78bfa"/>
+</svg>

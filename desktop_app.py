@@ -54,10 +54,15 @@ class AnalysisWorker:
         if self.process is None:
             return []
         events = []
-        while self.receiver.poll():
+        while True:
             try:
+                if not self.receiver.poll():
+                    break
                 status, detail = self.receiver.recv()
-            except EOFError:
+            except (EOFError, BrokenPipeError):
+                # Windows can report pipe EOF from poll(), after the terminal
+                # message was received but before the child has fully exited.
+                # Keep that message and still verify exit status/result below.
                 break
             if status in {"complete", "failed"}:
                 self.terminal = (status, detail)

@@ -2060,7 +2060,7 @@ def prepare_mfrm_data(
     rename_map = {person_col: "Person", score_col: "Score"}
     if weight_col:
         rename_map[weight_col] = "Weight"
-    df.rename(columns=rename_map, inplace=True)
+    df = df.rename(columns=rename_map)
 
     # v0.2.13-beta guard: if the rename produces duplicate column names
     # (e.g. a facet named "Score" alongside a score_col renamed to

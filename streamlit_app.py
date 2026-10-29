@@ -29921,7 +29921,11 @@ def _publication_reliability_table(result: dict, diagnostics: dict) -> tuple[pd.
         caption += ("For EAP person estimates, G = SD(EAP) / RMSE and reliability = "
                     "Var(EAP) / (Var(EAP) + mean(posterior SD^2)); this is not directly equivalent to FACETS separation reliability. ")
     caption += "Full notes and original technical values are retained in the reliability CSV."
-    return out.fillna(""), caption
+    # Withheld numeric output becomes display text; make that conversion
+    # explicit instead of relying on pandas' deprecated mixed-type fillna.
+    for column in out.columns[out.isna().any()]:
+        out[column] = out[column].astype(object).where(out[column].notna(), "")
+    return out, caption
 
 
 def _publication_report_tables(result, diagnostics, all_bias_results, *, include_details):

@@ -1,0 +1,49 @@
+name: Windows desktop
+
+on:
+  push:
+    branches: [main, master, slope-aware-bias-inference]
+    paths:
+      - "desktop_app.py"
+      - "streamlit_app.py"
+      - "mfrm_app/**"
+      - "examples/desktop_writing.csv"
+      - "locales/**"
+      - "requirements*.txt"
+      - "tests/**"
+      - ".github/workflows/desktop-windows.yml"
+  pull_request:
+    paths:
+      - "desktop_app.py"
+      - "streamlit_app.py"
+      - "mfrm_app/**"
+      - "examples/desktop_writing.csv"
+      - "locales/**"
+      - "requirements*.txt"
+      - "tests/**"
+      - ".github/workflows/desktop-windows.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  desktop-runtime:
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6.0.2
+      - uses: actions/setup-python@v6.2.0
+        with:
+          python-version: "3.12"
+          cache: "pip"
+      - name: Install runtime and test dependencies
+        run: python -m pip install -r requirements-dev.txt
+      - name: Verify spawn lifecycle, projects, figures and interpretation holds
+        run: >-
+          python -m pytest -q -W error
+          tests/test_desktop_worker.py tests/test_desktop_project.py tests/test_desktop_ux.py
+          tests/test_person_boundary_output.py tests/test_measure_report_consistency.py
+          tests/test_report_run_facts.py
+      - name: Verify tracked source stayed clean
+        run: git diff --exit-code

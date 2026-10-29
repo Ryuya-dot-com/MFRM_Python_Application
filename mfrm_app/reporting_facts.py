@@ -244,4 +244,9 @@ def publication_measure_table(result: dict, diagnostics: dict, *, fit_note: str)
     ) + " ".join(
         notes[label] for label in notes if basis.eq(label).any()
     ) + " Method details and source values: measures CSV."
-    return out.fillna(""), caption
+    # Display blanks need a mixed dtype; do not fill numeric columns with
+    # strings implicitly (deprecated in pandas 3.1). Keep complete columns
+    # numeric and leave the source measures/qualification record untouched.
+    for column in out.columns[out.isna().any()]:
+        out[column] = out[column].astype(object).where(out[column].notna(), "")
+    return out, caption

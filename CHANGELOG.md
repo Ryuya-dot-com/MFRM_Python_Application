@@ -2,6 +2,24 @@
 
 All notable changes to this standalone Streamlit distribution should be recorded here.
 
+## Unreleased — Windows desktop correction, 2026-10-29
+
+- Handle Windows pipe EOF during worker polling as well as receiving. Retain
+  the completion/failure message until the child exits, then check the exit
+  code and saved result. This fixes `WinError 109` after successful analysis
+  and restores cancellation, failure reporting and restart.
+- Add real spawned-process regressions for cancellation, invalid input,
+  successful retry, project restoration and a child that exits without a
+  result. Add a Windows/Python 3.12 desktop CI job.
+- Replace deprecated pandas in-place renaming and implicit numeric-to-string
+  fills in publication tables. Preserve blank held values, original numeric
+  calculations and interpretation warnings; do not suppress warnings globally.
+- Verify 125 related tests with warnings treated as errors and all 56 engine
+  self-tests on Windows 11/Python 3.12. Build and run a local Windows executable,
+  including worker/save/restore checks. See the bounded GUI and packaging
+  acceptance record in `docs/desktop_prototype.md`; this is not a public
+  desktop binary release or clean-machine certification.
+
 ## 0.2.19-beta — 2026-10-28
 
 This version consolidates the changes recorded below since 0.2.18-beta.

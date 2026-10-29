@@ -1,0 +1,832 @@
+<!DOCTYPE html>
+<html lang="en" data-lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>MFRM — Many-Facet Rasch &amp; Generalizability Analysis</title>
+  <meta name="description" content="Separate examinee proficiency from rater strictness, task difficulty, and rubric behavior with MFRM Desktop, the Streamlit Web App, and mfrmr for R." />
+  <link rel="icon" type="image/svg+xml" href="assets/images/mfrm-desktop-icon.svg" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+
+  <header class="site-nav">
+    <div class="container nav-inner">
+      <a class="brand-link" href="index.html">
+        <img src="assets/images/mfrm-desktop-icon.svg" alt="MFRM" />
+        <span>MFRM</span>
+      </a>
+      <nav class="nav-links" aria-label="Primary">
+        <a href="#why-mfrm"><span data-i18n="en">Overview</span><span data-i18n="ja">概要</span></a>
+        <a href="#plots"><span data-i18n="en">Outputs</span><span data-i18n="ja">出力と解釈</span></a>
+        <a href="#ecosystem"><span data-i18n="en">Platforms</span><span data-i18n="ja">利用環境</span></a>
+        <a href="#capabilities"><span data-i18n="en">Capabilities &amp; Limits</span><span data-i18n="ja">できること・制限</span></a>
+        <a href="#guides"><span data-i18n="en">Documentation</span><span data-i18n="ja">ガイド</span></a>
+        <a href="#citing-this-software"><span data-i18n="en">Cite</span><span data-i18n="ja">引用</span></a>
+      </nav>
+      <div class="nav-actions">
+        <div class="lang-switch" role="group" aria-label="Language">
+          <button type="button" id="btn-lang-en" class="active" onclick="setLang('en')">EN</button>
+          <button type="button" id="btn-lang-ja" onclick="setLang('ja')">日本語</button>
+        </div>
+        <a class="nav-gh" href="https://github.com/Ryuya-dot-com/MFRM_Python_Application" target="_blank" rel="noopener">GitHub</a>
+      </div>
+    </div>
+  </header>
+
+  <!-- Centered Download Hero (modeled on google.com/chrome & openai.com/chatgpt/download) -->
+  <section class="hero">
+    <div class="container">
+      <div class="hero-narrow">
+        <img class="hero-app-icon" src="assets/images/mfrm-desktop-icon.svg" alt="MFRM Desktop icon" />
+        <h1>
+          <span data-i18n="en">Many-Facet Rasch analysis, built for your desktop.</span>
+          <span data-i18n="ja">多相ラッシュ分析を、手元のデスクトップで。</span>
+        </h1>
+        <p class="hero-lead" data-i18n="en">
+          Place examinee proficiency, rater strictness, task difficulty, and rubric behavior onto one shared logit scale—with Python bundled inside for macOS and Windows.
+        </p>
+        <p class="hero-lead" data-i18n="ja">
+          受験者の実力・評価者の厳しさ・課題の難しさ・ルーブリック段階を1本の共通尺度で推定。macOSとWindows向けにPython同梱のデスクトップ試用版を配布しています。
+        </p>
+
+        <div class="cta-row">
+          <a class="btn btn-dark" href="https://github.com/Ryuya-dot-com/MFRM_Python_Application/releases/tag/desktop-macos-20261030">
+            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M8 2.5v7.5M4.75 7.25L8 10.5l3.25-3.25M2.75 13.25h10.5"/>
+            </svg>
+            <span data-i18n="en">Download for macOS</span>
+            <span data-i18n="ja">macOS版をダウンロード</span>
+          </a>
+          <a class="btn btn-dark" href="https://github.com/Ryuya-dot-com/MFRM_Python_Application/releases/tag/desktop-windows-20261030">
+            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M8 2.5v7.5M4.75 7.25L8 10.5l3.25-3.25M2.75 13.25h10.5"/>
+            </svg>
+            <span data-i18n="en">Download for Windows</span>
+            <span data-i18n="ja">Windows版をダウンロード</span>
+          </a>
+          <a class="btn btn-light" href="https://mfrmpythonapplication-xodghmcghngx8cz5zmhfeg.streamlit.app/" target="_blank" rel="noopener">
+            <span data-i18n="en">Open in Browser</span>
+            <span data-i18n="ja">ブラウザ版を開く</span>
+          </a>
+        </div>
+
+        <p class="hero-spec" data-i18n="en">
+          macOS (Apple Silicon, M1+) &amp; Windows 11 (x64) unsigned previews · Version 0.2.19-beta · MIT License · Also available <a href="#ecosystem">in R via CRAN mfrmr</a>
+        </p>
+        <p class="hero-spec" data-i18n="ja">
+          macOS（Apple Silicon / M1以降）・Windows 11（x64）未公証／未署名プレビュー · Version 0.2.19-beta · MIT License · <a href="#ecosystem">Rパッケージ mfrmr</a> も利用可能
+        </p>
+      </div>
+
+      <div class="canvas-stage">
+        <div class="canvas-frame">
+          <img src="assets/images/desktop-wright-map.png" alt="Wright map generated from the built-in synthetic writing dataset" />
+        </div>
+        <div class="canvas-caption-bar">
+          <span data-i18n="en">Built-in 960-rating writing dataset (Data → Sample → Next → Analyze): examinee measures on the left, rater strictness, task difficulty, and rubric thresholds on the right.</span>
+          <span data-i18n="ja">内蔵の人工作文データ（960評定・Data → Sample → Next → Analyze）：左に受験者分布、右に評価者の厳しさ・課題難度・段階閾値を同一ロジット軸で表示。</span>
+          <a href="desktop-guide.html" data-i18n="en">Walk through this example →</a>
+          <a href="desktop-guide-ja.html" data-i18n="ja">サンプルの手順を見る →</a>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Section 1: Asymmetric 2-Column Editorial Explanation -->
+  <section class="section" id="why-mfrm">
+    <div class="container">
+      <div class="section-intro">
+        <h2>
+          <span data-i18n="en">Why raw score averages fall short</span>
+          <span data-i18n="ja">なぜ素点の平均だけでは不十分なのか</span>
+        </h2>
+        <p data-i18n="en">
+          In essay, speaking, or clinical performance assessments, examinees rarely face identical conditions. Averaging rubric numbers treats every rater, prompt, and score step as interchangeable.
+        </p>
+        <p data-i18n="ja">
+          作文・スピーキング・実技試験では、誰がどの課題を採点するかによって得点が動きます。単純な平均点は、評価者ごとの甘辛や課題の難しさ、段階幅の違いを区別できません。
+        </p>
+      </div>
+
+      <div class="split-2col">
+        <div class="editorial-points">
+          <div class="editorial-point">
+            <h3>
+              <span data-i18n="en">Rater assignment shifts raw totals</span>
+              <span data-i18n="ja">担当評価者と課題の割り当てが素点を左右する</span>
+            </h3>
+            <p data-i18n="en">
+              A student averaging 3.2 under your strictest rater on an abstract prompt may have demonstrated stronger proficiency than a peer averaging 3.6 under a lenient rater on an easier prompt. MFRM places examinees, raters, tasks, and criteria onto one common logit scale centered at 0.00.
+            </p>
+            <p data-i18n="ja">
+              厳しい評価者と難度の高い課題に当たって平均3.2点だった受験者の方が、甘めの評価者と易しい課題で3.6点だった受験者より高い実力を示していることがあります。MFRMは各要因を0.00基準の共通ロジット尺度上で同時に推定します。
+            </p>
+          </div>
+
+          <div class="editorial-point">
+            <h3>
+              <span data-i18n="en">High correlation does not remove severity gaps</span>
+              <span data-i18n="ja">相関係数が高くても「一定の厳しさ差」は残る</span>
+            </h3>
+            <p data-i18n="en">
+              Two raters can rank students in nearly the same order (r = 0.90) while one consistently awards scores a full point lower. MFRM separates overall strictness from erratic scoring behavior (Infit MnSq).
+            </p>
+            <p data-i18n="ja">
+              2人の評価者の順位相関が r = 0.90 と高くても、片方が常に1点低く採点していれば合否や順位に影響します。MFRMは「一貫した厳しさ」と「採点のブレ（Infit MnSq）」を切り分けます。
+            </p>
+          </div>
+
+          <div class="editorial-point">
+            <h3>
+              <span data-i18n="en">Rubric steps and rater counts can be checked directly</span>
+              <span data-i18n="ja">ルーブリック段階の機能と評価者数設計を検証できる</span>
+            </h3>
+            <p data-i18n="en">
+              Category probability curves show whether every rubric level from 0 to 5 represents a distinct performance band, while balanced Generalizability / Decision (G/D) studies show whether adding tasks or raters improves score reliability faster.
+            </p>
+            <p data-i18n="ja">
+              カテゴリー確率曲線で0〜5の各段階が順序通り機能しているかを確認でき、均衡設計のG/D研究によって「評価者を増やすか、課題を増やすか」の信頼性比較も行えます。
+            </p>
+          </div>
+        </div>
+
+        <div>
+          <table class="clean-spec-table">
+            <thead>
+              <tr>
+                <th><span data-i18n="en">Case / Facet</span><span data-i18n="ja">対象</span></th>
+                <th><span data-i18n="en">Condition</span><span data-i18n="ja">採点条件・推定値</span></th>
+                <th><span data-i18n="en">What it means</span><span data-i18n="ja">解釈</span></th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><strong>Student A</strong></td>
+                <td>
+                  <span data-i18n="en">Raw mean 3.2 · Rater 4, Task 2</span>
+                  <span data-i18n="ja">素点平均 3.2 · Rater 4, Task 2</span>
+                </td>
+                <td>
+                  <span data-i18n="en">Looks lower in spreadsheet averages despite facing the strictest rater and harder prompt.</span>
+                  <span data-i18n="ja">最も厳しい評価者と難しい課題の組み合わせのため、素点平均だけでは不利に見える。</span>
+                </td>
+              </tr>
+              <tr>
+                <td><strong>Student B</strong></td>
+                <td>
+                  <span data-i18n="en">Raw mean 3.6 · Rater 1, Task 1</span>
+                  <span data-i18n="ja">素点平均 3.6 · Rater 1, Task 1</span>
+                </td>
+                <td>
+                  <span data-i18n="en">Benefits from nearly 1.2 logits of rater leniency plus an easier prompt.</span>
+                  <span data-i18n="ja">評価者だけで約1.2ロジット甘く、課題も易しいため素点平均が高く出る。</span>
+                </td>
+              </tr>
+              <tr>
+                <td><strong>Rater 1 vs. Rater 4</strong></td>
+                <td>−0.73 vs. +0.47 logits<br /><span style="color:var(--ink-tertiary);font-size:0.84rem;">Infit MnSq: 1.01 / 1.05</span></td>
+                <td>
+                  <span data-i18n="en">Substantial gap in strictness, yet both raters apply their standards consistently near 1.00.</span>
+                  <span data-i18n="ja">厳しさには大きな差がある一方、両者とも Infit は1.00付近で一貫した基準を保っている。</span>
+                </td>
+              </tr>
+              <tr>
+                <td><strong>Content vs. Mechanics</strong></td>
+                <td>−0.56 vs. +0.28 logits</td>
+                <td>
+                  <span data-i18n="en">High marks are awarded more readily on Content than on Mechanics or Language (+0.23).</span>
+                  <span data-i18n="ja">Content に比べて Mechanics や Language（+0.23）の方が高得点を取りにくい。</span>
+                </td>
+              </tr>
+            </tbody>
+            <caption>
+              <span data-i18n="en">Facet estimates shown from the built-in 960-row synthetic writing sample (RSM, JMLE, 0–5 rubric).</span>
+              <span data-i18n="ja">数値はアプリ内蔵の人工作文データ（960行・RSM・JMLE・0〜5点ルーブリック）の推定結果。</span>
+            </caption>
+          </table>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Section 2: Minimalist Underline Plot Switcher -->
+  <section class="section section-soft" id="plots">
+    <div class="container">
+      <div class="section-intro">
+        <h2>
+          <span data-i18n="en">Read every output with clear scope boundaries</span>
+          <span data-i18n="ja">5つの図から読み取れることと、報告時の境界</span>
+        </h2>
+        <p data-i18n="en">
+          Each chart answers a specific measurement question—and carries explicit notes showing what the estimate supports and what should not be overclaimed in a thesis or manuscript.
+        </p>
+        <p data-i18n="ja">
+          それぞれの図が答える問い、確認すべきサイン、そして論文や報告書で過大解釈を避けるための統計的境界を整理しています。
+        </p>
+      </div>
+
+      <div class="tab-strip" role="tablist" aria-label="Output figures">
+        <button type="button" class="tab-btn active" onclick="showPlot(0, this)"><span data-i18n="en">Wright map</span><span data-i18n="ja">Wrightマップ</span></button>
+        <button type="button" class="tab-btn" onclick="showPlot(1, this)"><span data-i18n="en">Pathway fit map</span><span data-i18n="ja">Pathway適合度マップ</span></button>
+        <button type="button" class="tab-btn" onclick="showPlot(2, this)"><span data-i18n="en">Category curves</span><span data-i18n="ja">カテゴリー確率曲線</span></button>
+        <button type="button" class="tab-btn" onclick="showPlot(3, this)"><span data-i18n="en">Conditional bias</span><span data-i18n="ja">条件付きバイアス</span></button>
+        <button type="button" class="tab-btn" onclick="showPlot(4, this)"><span data-i18n="en">D-study reliability</span><span data-i18n="ja">D研究（G / Phi）</span></button>
+      </div>
+
+      <div class="plot-panel active" id="plot-panel-0">
+        <div class="plot-frame">
+          <img src="assets/images/desktop-wright-map.png" alt="Wright map from the synthetic writing sample" />
+        </div>
+        <div class="plot-reading">
+          <h3>
+            <span data-i18n="en">Scale targeting and facet spread</span>
+            <span data-i18n="ja">尺度の対応（ターゲティング）と要因の広がり</span>
+          </h3>
+          <div class="reading-item">
+            <strong><span data-i18n="en">What to look for</span><span data-i18n="ja">確認するポイント</span></strong>
+            <p data-i18n="en">Vertical overlap between examinee bars on the left and rater, task, criterion, and step locations on the right indicates that the rubric matches the cohort's proficiency range.</p>
+            <p data-i18n="ja">左側の受験者分布と、右側の評価者・課題・観点および段階閾値が縦方向に重なっていれば、テスト難度が受験者層に適合しています。</p>
+          </div>
+          <div class="reading-item">
+            <strong><span data-i18n="en">When to inspect closer</span><span data-i18n="ja">注意が必要なパターン</span></strong>
+            <p data-i18n="en">If examinees cluster far above or below the facet locations, check Observed Category Use for ceiling or floor bunching.</p>
+            <p data-i18n="ja">受験者分布が課題や閾値より大きく上または下へ外れている場合は、天井効果・床効果や極端得点をカテゴリー度数表で確認します。</p>
+          </div>
+          <div class="reading-item">
+            <strong><span data-i18n="en">Scope in a thesis or paper</span><span data-i18n="ja">報告時の前提条件</span></strong>
+            <p data-i18n="en">Verify rating connectedness—shared examinees or tasks linking raters—before interpreting all facets on a single common ruler.</p>
+            <p data-i18n="ja">評価者や課題の間に共通の採点割り当て（連結性）があることを確認した上で同一尺度上の位置を比較してください。</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="plot-panel" id="plot-panel-1">
+        <div class="plot-frame">
+          <img src="assets/images/desktop-pathway-map.png" alt="Pathway map showing Measure against Infit MnSq" />
+        </div>
+        <div class="plot-reading">
+          <h3>
+            <span data-i18n="en">Separating strictness from consistency</span>
+            <span data-i18n="ja">「厳しさ」と「採点の一貫性」を分けて読む</span>
+          </h3>
+          <div class="reading-item">
+            <strong><span data-i18n="en">What to look for</span><span data-i18n="ja">確認するポイント</span></strong>
+            <p data-i18n="en">Vertical position shows strictness or difficulty; horizontal position shows consistency around Infit MnSq = 1.00. A strict rater near 1.00 grades toughly in a predictable way.</p>
+            <p data-i18n="ja">縦軸が厳しさ・難度、横軸が Infit MnSq = 1.00 付近の一貫性を表します。厳しくても1.00付近にあれば、基準が一貫していると読めます。</p>
+          </div>
+          <div class="reading-item">
+            <strong><span data-i18n="en">When to inspect closer</span><span data-i18n="ja">注意が必要なパターン</span></strong>
+            <p data-i18n="en">Points far right (&gt; 1, underfit) flag noisy or unexpected ratings; points far left (&lt; 1, overfit) suggest central tendency or halo scoring.</p>
+            <p data-i18n="ja">右側（&gt; 1）は予想外のばらつき、左側（&lt; 1）は中心化傾向やハロー効果による変動の小ささを示唆します。</p>
+          </div>
+          <div class="reading-item">
+            <strong><span data-i18n="en">Scope in a thesis or paper</span><span data-i18n="ja">報告時の注意</span></strong>
+            <p data-i18n="en">Use fit statistics as diagnostic prompts to inspect observation counts and original records rather than automatic deletion rules.</p>
+            <p data-i18n="ja">適合度1つだけを根拠に評価者や受験者を機械的に除外せず、観測数や元の採点記録を確認する診断指標として扱ってください。</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="plot-panel" id="plot-panel-2">
+        <div class="plot-frame">
+          <img src="assets/images/desktop-category-curves.png" alt="Category probability curves across scores 0 to 5" />
+        </div>
+        <div class="plot-reading">
+          <h3>
+            <span data-i18n="en">Checking rubric category structure</span>
+            <span data-i18n="ja">ルーブリック段階の機能確認</span>
+          </h3>
+          <div class="reading-item">
+            <strong><span data-i18n="en">What to look for</span><span data-i18n="ja">確認するポイント</span></strong>
+            <p data-i18n="en">Each score from 0 to 5 rises to its own ordered peak from left to right as proficiency increases relative to facet difficulty.</p>
+            <p data-i18n="ja">左から右へ相対的な能力が上がるにつれ、0から5の各カテゴリーが順番に明確な山を作っていれば段階が機能しています。</p>
+          </div>
+          <div class="reading-item">
+            <strong><span data-i18n="en">When to inspect closer</span><span data-i18n="ja">注意が必要なパターン</span></strong>
+            <p data-i18n="en">Flattened or buried middle curves indicate sparse observations or unclear descriptors; compare PCM if individual criteria use steps differently.</p>
+            <p data-i18n="ja">中間の山が埋もれる場合はまず各段階の観測度数を確認し、観点ごとに段階の使われ方が異なる場合は PCM も検討します。</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="plot-panel" id="plot-panel-3">
+        <div class="plot-frame">
+          <img src="assets/images/desktop-bias-heatmap.png" alt="Conditional bias heatmap for Rater by Criterion" />
+        </div>
+        <div class="plot-reading">
+          <h3>
+            <span data-i18n="en">Screening facet pairs vs. refitting interactions</span>
+            <span data-i18n="ja">条件付きバイアス診断と共同交互作用モデル</span>
+          </h3>
+          <div class="reading-item">
+            <strong><span data-i18n="en">What to look for</span><span data-i18n="ja">確認するポイント</span></strong>
+            <p data-i18n="en">Cells near 0.00 behave as expected from main effects; larger positive or negative shifts point to specific rater-by-task or rater-by-criterion pairs worth reviewing in training.</p>
+            <p data-i18n="ja">0.00付近は主効果通り、ズレの大きいセルは評価者訓練やルーブリック見直しで点検すべき組み合わせを示します。</p>
+          </div>
+          <div class="reading-item">
+            <strong><span data-i18n="en">Scope in a thesis or paper</span><span data-i18n="ja">報告時の重要な境界</span></strong>
+            <p data-i18n="en">Conditional bias holds main calibration fixed and does not establish statistical significance or fairness. When model-based approximate intervals are needed, use numerically eligible fixed-SD MML Specified intervals or the refitted fixed-N(0,1) Joint interaction model (pointwise approximations; Holm adjusts the recorded family of requested tests, not the intervals).</p>
+            <p data-i18n="ja">条件付きバイアスは主較正を固定した探索的記述であり、有意差や公平性の証明には使えません。モデルに基づく点ごとの近似区間が必要な場合は、数値条件を満たす固定SD MMLの指定区間または固定N(0,1)共同交互作用を利用してください（Holm補正は指定した検定群に適用され、同時区間ではありません）。</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="plot-panel" id="plot-panel-4">
+        <div class="plot-frame">
+          <img src="assets/images/desktop-d-study.png" alt="D-Study G and Phi projections across rater and task counts" />
+        </div>
+        <div class="plot-reading">
+          <h3>
+            <span data-i18n="en">Planning rater and task counts</span>
+            <span data-i18n="ja">評価者数と課題数の設計比較（G / Phi）</span>
+          </h3>
+          <div class="reading-item">
+            <strong><span data-i18n="en">What to look for</span><span data-i18n="ja">確認するポイント</span></strong>
+            <p data-i18n="en">Solid lines show G for relative rank decisions; dashed lines show Phi for absolute cut-score decisions. Compare equal-budget combinations alongside the variance-component table.</p>
+            <p data-i18n="ja">実線（G）は相対的な順位判断、破線（Phi）は合否ラインなどの絶対判断に対応します。分散成分表と合わせて同コストの採点設計を比較できます。</p>
+          </div>
+          <div class="reading-item">
+            <strong><span data-i18n="en">Scope in a thesis or paper</span><span data-i18n="ja">適用できる設計条件</span></strong>
+            <p data-i18n="en">Applies to completely crossed, balanced 1- or 2-random-facet observed-score designs (&ge; 2 levels per factor, 1 observation per cell, unit weights). Confidence intervals for G / Phi and multivariate G-theory are not implemented.</p>
+            <p data-i18n="ja">観測得点の完全交差・均衡1〜2ランダム相設計（各要因2水準以上・セルあたり1観測・単位重み）が対象です。G／Phiの信頼区間および多変量G理論は未実装です。</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Section 3: OpenAI Download-Style Horizontal Platform Directory -->
+  <section class="section" id="ecosystem">
+    <div class="container">
+      <div class="section-intro" id="model-scope">
+        <h2>
+          <span data-i18n="en">Choose how to run MFRM</span>
+          <span data-i18n="ja">目的に合わせて選べる3つの環境</span>
+        </h2>
+        <p data-i18n="en">
+          Use the standalone desktop app for local project files, the hosted Streamlit app for zero-install exploration and extended research modules, or the CRAN R package for scripted pipelines.
+        </p>
+        <p data-i18n="ja">
+          手元PCで完結するデスクトップ版、ブラウザからすぐ試せるStreamlit Web版、Rスクリプトで再現性を管理できるCRANパッケージから選べます。
+        </p>
+      </div>
+
+      <div class="platform-list">
+        <!-- Row 1: MFRM Desktop -->
+        <div class="platform-row">
+          <div class="platform-id">
+            <h3>MFRM Desktop</h3>
+            <div class="platform-meta">
+              <span data-i18n="en">macOS (Apple Silicon) preview<br />Windows 11 (x64) preview</span>
+              <span data-i18n="ja">macOS（Apple Silicon）試用版<br />Windows 11（x64）試用版</span>
+            </div>
+          </div>
+          <div class="platform-desc">
+            <p data-i18n="en">
+              Offline local workflow (Data → Settings → Results) with Python bundled inside for both macOS and Windows. Integrates RSM and PCM with JMLE or fixed-SD MML, Wright / Pathway / Category plots, conditional bias, fixed-SD specified intervals, fixed-N(0,1) joint interaction, balanced 1–2 facet G/D studies, restorable .mfrm project files, and 300-DPI PNG / SVG manuscript exports with .caption.txt notes.
+            </p>
+            <p data-i18n="ja">
+              機密データを外部へ送らずオフラインで完結する3画面アプリ（macOS・WindowsともPython同梱）。RSM／PCM × JMLE／固定SD MML、主要3プロット、条件付きバイアス、指定区間、固定N(0,1)共同交互作用、均衡1〜2相G/D研究、再推定なしで復元できる .mfrm 保存、論文掲載用の300 DPI PNG／SVG＋.caption.txt 出力、日英切替を統合しています。
+            </p>
+            <p class="fineprint" data-i18n="en">
+              Both 0.2.19-beta archives are unsigned / unnotarized previews built from identical runtime sources. On macOS (M1+, macOS 14.0+), expand MFRM-Desktop.app and use Privacy &amp; Security → Open Anyway after checksum verification; on Windows 11 x64, extract the full ZIP keeping MFRM-Desktop.exe alongside _internal.
+            </p>
+            <p class="fineprint" data-i18n="ja">
+              両OSとも同一ランタイムソースから作成した未公証・未署名プレビュー（0.2.19-beta）です。macOS（M1以降・macOS 14.0+）ではSHA-256確認後に「プライバシーとセキュリティ → このまま開く」を使用し、Windows 11 x64ではZIPを「すべて展開」して _internal と同じフォルダで起動してください。
+            </p>
+          </div>
+          <div class="platform-cta">
+            <div style="display:flex;flex-wrap:wrap;gap:0.5rem;">
+              <a class="btn btn-dark btn-sm" href="https://github.com/Ryuya-dot-com/MFRM_Python_Application/releases/tag/desktop-macos-20261030">
+                <span data-i18n="en">macOS (arm64)</span>
+                <span data-i18n="ja">macOS版を入手</span>
+              </a>
+              <a class="btn btn-dark btn-sm" href="https://github.com/Ryuya-dot-com/MFRM_Python_Application/releases/tag/desktop-windows-20261030">
+                <span data-i18n="en">Windows (x64)</span>
+                <span data-i18n="ja">Windows版を入手</span>
+              </a>
+            </div>
+            <div class="inline-links">
+              <a href="desktop-guide.html">English guide</a>
+              <a href="desktop-guide-ja.html">日本語ガイド</a>
+            </div>
+          </div>
+        </div>
+
+        <!-- Row 2: Streamlit Web App -->
+        <div class="platform-row">
+          <div class="platform-id">
+            <h3>MFRM Web</h3>
+            <div class="platform-meta">
+              <span data-i18n="en">Streamlit browser app<br />Version 0.2.19-beta · Any OS</span>
+              <span data-i18n="ja">Streamlit ブラウザ版<br />Version 0.2.19-beta · OS不問</span>
+            </div>
+          </div>
+          <div class="platform-desc">
+            <p data-i18n="en">
+              Runs directly in your browser with a guided sample tour, Excel / CSV / TSV / Parquet import, and First Read summaries—plus extended research modules including bounded GPCM, latent regression, anchor audit and linking, residual PCA, and simulation.
+            </p>
+            <p data-i18n="ja">
+              インストール不要でブラウザからすぐ試せるWeb環境。サンプルツアーやExcel貼り付け読込に加え、制約付きGPCM、潜在回帰、アンカー点検・リンク、残差PCA、シミュレーションなどの拡張研究機能を備えています。
+            </p>
+            <p class="fineprint" data-i18n="en">
+              Use synthetic or appropriately de-identified data on the hosted server, or run locally from Python source for confidential datasets. When hosted PNG export is unavailable, download the interactive HTML figures instead.
+            </p>
+            <p class="fineprint" data-i18n="ja">
+              公開サーバーでは人工データまたは適切に匿名化したデータのみを使用し、機密データは手元のPython環境でローカル起動してください（公開環境でPNG出力が使えない場合は対話型HTML図を保存できます）。
+            </p>
+          </div>
+          <div class="platform-cta">
+            <a class="btn btn-light btn-sm" href="https://mfrmpythonapplication-xodghmcghngx8cz5zmhfeg.streamlit.app/" target="_blank" rel="noopener">
+              <span data-i18n="en">Launch Web App ↗</span>
+              <span data-i18n="ja">Webアプリを開く ↗</span>
+            </a>
+            <div class="inline-links">
+              <a href="#install"><span data-i18n="en">Local startup commands</span><span data-i18n="ja">ローカル起動手順</span></a>
+            </div>
+          </div>
+        </div>
+
+        <!-- Row 3: mfrmr for R -->
+        <div class="platform-row">
+          <div class="platform-id">
+            <h3>mfrmr for R</h3>
+            <div class="platform-meta">
+              <span data-i18n="en">CRAN package<br />R · RStudio · Positron · Quarto</span>
+              <span data-i18n="ja">CRAN公開パッケージ<br />R · RStudio · Positron · Quarto</span>
+            </div>
+          </div>
+          <div class="platform-desc">
+            <p data-i18n="en">
+              Native R package for reproducible scripted MFRM pipelines—supporting RSM, PCM, and bounded GPCM under MML or JML, anchoring and linking, bias / DFF screening, uncertainty-aware Wright maps, and reporting manifests.
+            </p>
+            <p data-i18n="ja">
+              RスクリプトやQuarto文書で分析工程をコード管理したい研究者向けのネイティブRパッケージ。RSM・PCM・制約付きGPCM（MML／JML）、アンカー・リンク、バイアス／DFFスクリーニング、再現用マニフェスト出力に対応しています。
+            </p>
+            <p class="fineprint" data-i18n="en">
+              MFRM Python (Desktop / Web) and mfrmr are independent implementations. When comparing outputs across mfrmr, FACETS, ConQuest, or TAM, align the estimator, identification constraints, quadrature settings, and SE definitions rather than assuming automatic numerical identity.
+            </p>
+            <p class="fineprint" data-i18n="ja">
+              Python版（Desktop／Web）と mfrmr は独立した実装です。mfrmr・FACETS・ConQuest・TAM等の間で結果を比較する際は、推定法・識別制約・求積点・SEの定義を揃えて確認してください（無条件の数値一致は前提としません）。
+            </p>
+          </div>
+          <div class="platform-cta">
+            <div class="cmd-box">
+              <span id="r-install-cmd">install.packages("mfrmr")</span>
+              <button type="button" class="copy-btn" onclick="copyText('r-install-cmd', this)">Copy</button>
+            </div>
+            <div class="inline-links">
+              <a href="https://ryuya-dot-com.github.io/mfrmr/" target="_blank" rel="noopener">Documentation ↗</a>
+              <a href="https://cran.r-project.org/package=mfrmr" target="_blank" rel="noopener">CRAN ↗</a>
+              <a href="https://github.com/Ryuya-dot-com/mfrmr" target="_blank" rel="noopener">GitHub ↗</a>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Section 4: Clear Capabilities & Out-of-Scope Boundaries -->
+  <section class="section section-soft" id="capabilities">
+    <div class="container">
+      <div class="section-intro">
+        <h2>
+          <span data-i18n="en">What you can do — and what is out of scope</span>
+          <span data-i18n="ja">できること・できないこと</span>
+        </h2>
+        <p data-i18n="en">
+          Before starting an analysis or writing up a manuscript, check which models and inferences are supported, which require input adjustments, and which remain restricted across this software.
+        </p>
+        <p data-i18n="ja">
+          分析を始める前や論文を執筆する前に、「そのまま使える機能」「データや設計を整えれば使えるケース」「本実装では提供・保証していない推論」を区別して確認できます。
+        </p>
+      </div>
+
+      <div class="cap-matrix">
+        <div class="cap-head" aria-hidden="true">
+          <div><span data-i18n="en">Area</span><span data-i18n="ja">項目</span></div>
+          <div><span data-i18n="en">What you can do</span><span data-i18n="ja">できること（対応範囲）</span></div>
+          <div><span data-i18n="en">What you cannot do &amp; how to proceed</span><span data-i18n="ja">できないこと（制限・理由・対応方法）</span></div>
+        </div>
+
+        <!-- Row 1: Core Rasch Models -->
+        <div class="cap-row">
+          <div class="cap-topic">
+            <h3><span data-i18n="en">Rasch models &amp; scale</span><span data-i18n="ja">基本モデルと共通尺度</span></h3>
+            <span class="cap-sub" data-i18n="en">RSM · PCM · GPCM</span>
+            <span class="cap-sub" data-i18n="ja">RSM · PCM · 制約付きGPCM</span>
+          </div>
+          <div class="cap-col">
+            <div class="cap-mobile-label"><span data-i18n="en">What you can do</span><span data-i18n="ja">できること</span></div>
+            <ul data-i18n="en">
+              <li><strong>Desktop &amp; Web:</strong> Fit many-facet <strong>RSM</strong> (shared rubric steps) and <strong>PCM</strong> (step structure per task or criterion) under <strong>JMLE</strong> or <strong>fixed-SD MML</strong>, with Wright maps, Pathway fit maps, and Category probability curves.</li>
+              <li><strong>Web &amp; mfrmr (R):</strong> Fit bounded <strong>GPCM</strong>, anchor / linking workflows, residual PCA, and simulation studies (plus latent regression in Web).</li>
+            </ul>
+            <ul data-i18n="ja">
+              <li><strong>Desktop・Web共通：</strong><strong>RSM</strong>（共通段階）と<strong>PCM</strong>（課題や観点ごとの段階構造）を <strong>JMLE</strong> または<strong>固定SD MML</strong> で推定し、Wrightマップ・Pathway適合度図・カテゴリー確率曲線を作成。</li>
+              <li><strong>Web版・R版 mfrmr：</strong>制約付き<strong>GPCM</strong>、アンカー・リンク点検、残差PCA、シミュレーション（Web版は潜在回帰も対応）。</li>
+            </ul>
+          </div>
+          <div class="cap-col">
+            <div class="cap-mobile-label"><span data-i18n="en">What you cannot do</span><span data-i18n="ja">できないこと・対応</span></div>
+            <ul data-i18n="en">
+              <li>Analyze decimal or negative rubric scores in Desktop (requires non-negative integers 0, 1, 2, …).</li>
+              <li>Place completely separate, unlinked rater groups onto one shared logit ruler without shared examinees or tasks.</li>
+            </ul>
+            <ul data-i18n="ja">
+              <li>Desktop版での小数点付き得点や負の得点の直接投入（0以上の整数カテゴリーが必要）。</li>
+              <li>共通の受験者や課題を持たない分断された採点グループ同士を、1本の共通ロジット尺度で直接比較すること。</li>
+            </ul>
+            <p class="cap-action" data-i18n="en"><strong>How to proceed:</strong> Recode rubric categories to integers before import, and check rating connectedness (shared links across raters and tasks) before interpreting cross-group logit differences.</p>
+            <p class="cap-action" data-i18n="ja"><strong>対応方法：</strong>得点を0以上の整数へ整えて読み込み、評価者・課題間に共通の採点リンク（連結性）があることを確認してから比較してください。</p>
+          </div>
+        </div>
+
+        <!-- Row 2: SE & Uncertainty Intervals -->
+        <div class="cap-row">
+          <div class="cap-topic">
+            <h3><span data-i18n="en">Standard errors &amp; intervals</span><span data-i18n="ja">標準誤差（SE）と区間推定</span></h3>
+            <span class="cap-sub" data-i18n="en">JMLE · Fixed-SD MML</span>
+            <span class="cap-sub" data-i18n="ja">JMLE · 固定SD MML</span>
+          </div>
+          <div class="cap-col">
+            <div class="cap-mobile-label"><span data-i18n="en">What you can do</span><span data-i18n="ja">できること</span></div>
+            <ul data-i18n="en">
+              <li><strong>JMLE:</strong> Inspect conditional-information SEs to screen relative measurement precision across facet levels.</li>
+              <li><strong>Specified intervals (fixed-SD MML):</strong> Obtain pointwise asymptotic normal intervals for selected non-person facet levels and planned A − B differences using the full structural covariance when numerical and quadrature checks pass.</li>
+            </ul>
+            <ul data-i18n="ja">
+              <li><strong>JMLE：</strong>条件付き情報量に基づくSEで各水準の推定精度の目安を確認。</li>
+              <li><strong>指定区間（固定SD MML）：</strong>数値条件・求積点検を通過した非受験者相の水準や事前指定した差（A − B）について、構造共分散を用いた点ごとの漸近正規区間を算出。</li>
+            </ul>
+          </div>
+          <div class="cap-col">
+            <div class="cap-mobile-label"><span data-i18n="en">What you cannot do</span><span data-i18n="ja">できないこと・対応</span></div>
+            <ul data-i18n="en">
+              <li><strong>Restricted by implementation scope</strong> (not a data error): inferential SEs on general MML tables, <strong>person-score uncertainty intervals</strong>, <strong>estimated population-SD uncertainty</strong>, simultaneous familywise intervals, or finite-sample coverage guarantees.</li>
+            </ul>
+            <ul data-i18n="ja">
+              <li><strong>本実装の検証範囲外として保留</strong>（データ不備ではなく設定変更でも解除不可）：一般のMML表での推論用SE、<strong>受験者スコアの区間推論</strong>、<strong>母集団SD自由推定時の不確実性</strong>、同時信頼区間、有限標本での被覆率保証。</li>
+            </ul>
+            <p class="cap-action" data-i18n="en"><strong>How to proceed:</strong> Treat blank SE or interval cells as <strong>unavailable (never zero)</strong>. Register planned structural contrasts in <strong>Specified intervals</strong>, and read <a href="analysis-scope.html">Analyses, Interpretation &amp; Reporting Limits</a>.</p>
+            <p class="cap-action" data-i18n="ja"><strong>対応方法：</strong>空欄のSE・区間は「ゼロ」ではなく<strong>利用不可（保留）</strong>として扱い、構造相の比較には<strong>指定区間</strong>を使用し、詳細は <a href="analysis-scope.html">分析手法・報告上の境界</a> を参照してください。</p>
+          </div>
+        </div>
+
+        <!-- Row 3: Bias & Interactions -->
+        <div class="cap-row">
+          <div class="cap-topic">
+            <h3><span data-i18n="en">Bias &amp; interactions</span><span data-i18n="ja">バイアス診断と交互作用</span></h3>
+            <span class="cap-sub" data-i18n="en">Screening vs. refitted model</span>
+            <span class="cap-sub" data-i18n="ja">固定較正診断・共同推定</span>
+          </div>
+          <div class="cap-col">
+            <div class="cap-mobile-label"><span data-i18n="en">What you can do</span><span data-i18n="ja">できること</span></div>
+            <ul data-i18n="en">
+              <li><strong>Conditional bias:</strong> Screen Rater × Task or Rater × Criterion pairs with main calibration held fixed to flag cells for qualitative review or rater training.</li>
+              <li><strong>Joint interaction (Desktop, fixed-N(0,1) MML):</strong> Refit main effects, steps, and one structural interaction together for pointwise approximate Wald intervals and Holm-adjusted p-values across requested tests.</li>
+            </ul>
+            <ul data-i18n="ja">
+              <li><strong>条件付きバイアス：</strong>主効果の較正を固定したまま特定の組み合わせ（評価者×課題・評価者×観点など）のズレを探索的に可視化。</li>
+              <li><strong>共同交互作用（Desktop・固定N(0,1) MML）：</strong>主効果・段階・1組の構造交互作用を同時再推定し、対象セルや対比の点ごとの近似Wald区間と指定検定群へのHolm補正p値を算出。</li>
+            </ul>
+          </div>
+          <div class="cap-col">
+            <div class="cap-mobile-label"><span data-i18n="en">What you cannot do</span><span data-i18n="ja">できないこと・対応</span></div>
+            <ul data-i18n="en">
+              <li>Claim statistical significance from Conditional bias heatmaps, prove "assessment fairness" or "absence of bias" from non-significant cells, or fit multiple interaction pairs simultaneously in one Desktop model.</li>
+            </ul>
+            <ul data-i18n="ja">
+              <li>条件付きバイアス図を有意差検定として報告すること、有意でない結果から「バイアス不在」や「試験の公平性」を断定すること、1つのDesktopモデルに複数組の交互作用を同時投入すること。</li>
+            </ul>
+            <p class="cap-action" data-i18n="en"><strong>How to proceed:</strong> Report Conditional bias strictly as descriptive screening; use <strong>Joint interaction</strong> when a refitted model for a specific facet pair is required.</p>
+            <p class="cap-action" data-i18n="ja"><strong>対応方法：</strong>条件付きバイアスは評価者訓練などの探索的記述として報告し、モデル再推定による近似区間が必要な場合は<strong>共同交互作用</strong>を選択してください。</p>
+          </div>
+        </div>
+
+        <!-- Row 4: G / D Studies -->
+        <div class="cap-row">
+          <div class="cap-topic">
+            <h3><span data-i18n="en">G &amp; D reliability studies</span><span data-i18n="ja">一般化可能性（G / D研究）</span></h3>
+            <span class="cap-sub" data-i18n="en">Observed-score ANOVA</span>
+            <span class="cap-sub" data-i18n="ja">観測得点の分散成分・信頼性</span>
+          </div>
+          <div class="cap-col">
+            <div class="cap-mobile-label"><span data-i18n="en">What you can do</span><span data-i18n="ja">できること</span></div>
+            <ul data-i18n="en">
+              <li>Estimate observed-score variance components and project relative (<strong>G</strong>) and absolute (<strong>Phi</strong>) reliability across planned rater and task counts—either standalone or alongside MFRM.</li>
+            </ul>
+            <ul data-i18n="ja">
+              <li>観測得点から分散成分を推定し、評価者数・課題数を変えたときの相対信頼性（<strong>G</strong>）と絶対信頼性（<strong>Phi</strong>）を単体またはMFRMと並べて試算。</li>
+            </ul>
+          </div>
+          <div class="cap-col">
+            <div class="cap-mobile-label"><span data-i18n="en">What you cannot do</span><span data-i18n="ja">できないこと・対応</span></div>
+            <ul data-i18n="en">
+              <li>Run G/D on incomplete, sparse, or unbalanced designs (requires completely crossed, balanced 1 or 2 random facets, &ge; 2 levels per factor, 1 observation per cell, unit weights).</li>
+              <li>Compute confidence intervals for G / Phi or multivariate G-theory (not implemented).</li>
+            </ul>
+            <ul data-i18n="ja">
+              <li>欠測セルや不均衡割り当てを含むデータでのG/D実行（完全交差・均衡の1〜2ランダム相、各要因2水準以上、セルあたり1観測、単位重みが必須）。</li>
+              <li>G／Phiの信頼区間算出および多変量G理論（未実装）。</li>
+            </ul>
+            <p class="cap-action" data-i18n="en"><strong>How to proceed:</strong> Use <strong>MFRM</strong> when rater assignments are incomplete (with connected links), or run G/D on a complete balanced sub-cohort and document the subsetting.</p>
+            <p class="cap-action" data-i18n="ja"><strong>対応方法：</strong>欠測のある採点設計では（連結性を満たす）<strong>MFRM</strong>を使い、G/Dは完全交差が成立する均衡データに対して適用してください。</p>
+          </div>
+        </div>
+
+        <!-- Row 5: Software Comparison & Model Choice -->
+        <div class="cap-row">
+          <div class="cap-topic">
+            <h3><span data-i18n="en">Cross-engine &amp; model choice</span><span data-i18n="ja">他ソフト比較・モデル選択</span></h3>
+            <span class="cap-sub" data-i18n="en">mfrmr · FACETS · ConQuest</span>
+            <span class="cap-sub" data-i18n="ja">mfrmr · FACETS · ConQuest</span>
+          </div>
+          <div class="cap-col">
+            <div class="cap-mobile-label"><span data-i18n="en">What you can do</span><span data-i18n="ja">できること</span></div>
+            <ul data-i18n="en">
+              <li>Export parameter CSVs, standalone HTML reports, and 300-DPI PNG / SVG manuscript figures with .caption.txt notes, or script reproducible R pipelines in CRAN <strong>mfrmr</strong>.</li>
+            </ul>
+            <ul data-i18n="ja">
+              <li>推定値CSV・単体HTMLレポート・図注（.caption.txt）付き300 DPI PNG／SVGの出力、およびCRANパッケージ <strong>mfrmr</strong> でのRコード再現。</li>
+            </ul>
+          </div>
+          <div class="cap-col">
+            <div class="cap-mobile-label"><span data-i18n="en">What you cannot do</span><span data-i18n="ja">できないこと・対応</span></div>
+            <ul data-i18n="en">
+              <li>Assume automatic numerical identity across MFRM Python, mfrmr, FACETS, ConQuest, or TAM (for instance, non-person PTMEA, ZSTD caps, quadrature grids, and SE definitions differ), or use AIC / BIC / LR for automatic model selection.</li>
+            </ul>
+            <ul data-i18n="ja">
+              <li>Python版・mfrmr・FACETS・ConQuest・TAM間で無条件に数値が一致するとみなすこと（PTMEAやZSTDの定義・求積点・SE式が異なる）、およびAIC／BIC／LRによる自動的なモデル採択。</li>
+            </ul>
+            <p class="cap-action" data-i18n="en"><strong>How to proceed:</strong> Match the estimator, centering constraints, population SD, quadrature settings, and SE target definition before comparing software outputs.</p>
+            <p class="cap-action" data-i18n="ja"><strong>対応方法：</strong>ソフト間で比較する際は、推定法・識別制約・母集団SD・求積設定・SEの定義を揃えた上で比較してください。</p>
+          </div>
+        </div>
+
+        <!-- Row 6: OS, Saved Files & Data Privacy -->
+        <div class="cap-row">
+          <div class="cap-topic">
+            <h3><span data-i18n="en">OS, saved files &amp; privacy</span><span data-i18n="ja">動作OS・保存互換・機密保護</span></h3>
+            <span class="cap-sub" data-i18n="en">macOS · Windows · Browser</span>
+            <span class="cap-sub" data-i18n="ja">macOS · Windows · ブラウザ</span>
+          </div>
+          <div class="cap-col">
+            <div class="cap-mobile-label"><span data-i18n="en">What you can do</span><span data-i18n="ja">できること</span></div>
+            <ul data-i18n="en">
+              <li>Run offline from standalone preview ZIPs on <strong>macOS (Apple Silicon, M1+)</strong> and <strong>Windows 11 (x64)</strong> without installing Python, and reopen saved .mfrm projects without re-estimation.</li>
+            </ul>
+            <ul data-i18n="ja">
+              <li><strong>macOS（Apple Silicon / M1以降）</strong>および<strong>Windows 11（x64）</strong>でPython導入不要の単体ZIPとしてオフライン実行し、保存した .mfrm プロジェクトを再推定なしで復元。</li>
+            </ul>
+          </div>
+          <div class="cap-col">
+            <div class="cap-mobile-label"><span data-i18n="en">What you cannot do</span><span data-i18n="ja">できないこと・対応</span></div>
+            <ul data-i18n="en">
+              <li>Run the Apple Silicon .app archive on Intel Macs or Windows on ARM; bypass Apple notarization / Windows Authenticode warnings automatically; open new extended .mfrm projects in older schema-1 releases; or upload confidential raw student / patient records to the public Streamlit server.</li>
+            </ul>
+            <ul data-i18n="ja">
+              <li>Apple Silicon用 .app をIntel MacやWindows on ARMで動かすこと、Apple公証・Windows署名なしの初回保護警告を省略すること、本試用版の拡張 .mfrm を旧版アプリで開くこと、未匿名化の機密データを公開Webサーバーへ投入すること。</li>
+            </ul>
+            <p class="cap-action" data-i18n="en"><strong>How to proceed:</strong> On macOS, verify SHA-256 and use Privacy &amp; Security → Open Anyway if permitted (without disabling Gatekeeper); on Windows, Extract All keeping _internal beside MFRM-Desktop.exe; on Intel Mac or Linux, run from <a href="#install">Python source</a>; keep original .mfrm backups and analyze confidential data locally.</p>
+            <p class="cap-action" data-i18n="ja"><strong>対応方法：</strong>macOSではSHA-256確認後に「このまま開く」を使用し、WindowsではZIPをすべて展開して実行、Intel MacやLinuxでは<a href="#install">Pythonソース</a>から起動、更新時は元の .mfrm を保全し、機密データはローカル端末で扱ってください。</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Section 5: Documentation Directory, Local Run & Citation -->
+  <section class="section" id="guides">
+    <div class="container">
+      <div class="section-intro">
+        <h2>
+          <span data-i18n="en">Documentation and reporting standards</span>
+          <span data-i18n="ja">ドキュメント・統計的制約・引用</span>
+        </h2>
+        <p data-i18n="en">
+          Guides are built directly from the repository documentation so workflow instructions and statistical scope limits stay aligned across versions.
+        </p>
+        <p data-i18n="ja">
+          各ガイドはリポジトリの公式ドキュメントと同一ソースから生成されており、操作手順と統計上の利用境界をそのまま確認できます。
+        </p>
+      </div>
+
+      <div class="doc-directory">
+        <a class="doc-entry" href="desktop-guide.html">
+          <h3><span data-i18n="en">Desktop User Guide (English) →</span><span data-i18n="ja">Desktop User Guide（英語） →</span></h3>
+          <p data-i18n="en">Windows and macOS setup, built-in writing walkthrough with table values, long-format CSV preparation, plot reading guide, and .mfrm / manuscript exports.</p>
+          <p data-i18n="ja">Windows・macOSの導入手順、サンプルデータの推定値確認、縦長CSVの準備、5つの図の解釈例、論文用図表・.mfrm保存のガイド。</p>
+        </a>
+        <a class="doc-entry" href="desktop-guide-ja.html">
+          <h3><span data-i18n="en">Desktop User Guide (Japanese) →</span><span data-i18n="ja">デスクトップ利用ガイド（日本語） →</span></h3>
+          <p data-i18n="en">Japanese desktop setup and workflow guide covering the built-in writing walkthrough, long-format CSV preparation, MFRM / G/D settings, and .mfrm compatibility.</p>
+          <p data-i18n="ja">Windows試用版の展開・起動、内蔵サンプルの操作手順、縦長CSVの準備、MFRM／G/Dの設定、保存・再読込・互換性の注意点。</p>
+        </a>
+        <a class="doc-entry" href="analysis-scope.html">
+          <h3><span data-i18n="en">Analyses, Interpretation &amp; Reporting Limits →</span><span data-i18n="ja">分析手法・解釈・報告上の境界（英語） →</span></h3>
+          <p data-i18n="en">Method-by-method scope covering JMLE conditional screening bounds, fixed-SD MML specified intervals, conditional bias vs. joint interaction, and G/D requirements.</p>
+          <p data-i18n="ja">JMLEの条件付きスクリーニング基準、固定SD MMLの指定区間、条件付きバイアスと共同交互作用の違い、G/D研究の設計要件。</p>
+        </a>
+        <a class="doc-entry" href="manuscript-guide.html">
+          <h3><span data-i18n="en">APA &amp; Manuscript Reporting Guide →</span><span data-i18n="ja">APA・論文報告ガイド（英語） →</span></h3>
+          <p data-i18n="en">Checklists for documenting facets, scale identification, fit diagnostics, figure captions, and withheld-inference boundaries in theses and journal articles.</p>
+          <p data-i18n="ja">学位論文や学術誌向けに、相の構成・識別制約・適合度・図注・保留推論の境界を記載するためのチェックリスト。</p>
+        </a>
+      </div>
+
+      <div class="tech-split">
+        <div id="install">
+          <h3 id="run">
+            <span data-i18n="en">Run from Python source</span>
+            <span data-i18n="ja">Pythonソースからのローカル起動</span>
+          </h3>
+          <pre><code>git clone https://github.com/Ryuya-dot-com/MFRM_Python_Application.git
+cd MFRM_Python_Application
+python3 -m venv .venv &amp;&amp; source .venv/bin/activate
+python -m pip install -r requirements.txt
+python -m streamlit run streamlit_app.py</code></pre>
+          <p>
+            <span data-i18n="en">Not needed for the standalone macOS or Windows preview ZIPs. For source startup on Intel Macs, Linux, or development environments (Python 3.11 or 3.12 with Tk), see <a href="https://github.com/Ryuya-dot-com/MFRM_Python_Application/blob/main/CONTRIBUTING.md#run-from-source" target="_blank" rel="noopener">CONTRIBUTING.md</a>.</span>
+            <span data-i18n="ja">macOS（Apple Silicon）・Windows試用版ZIPを使う場合は不要です。Intel MacやLinux、開発環境でのソース起動（Python 3.11／3.12＋Tk）は <a href="https://github.com/Ryuya-dot-com/MFRM_Python_Application/blob/main/CONTRIBUTING.md#run-from-source" target="_blank" rel="noopener">CONTRIBUTING.md</a> を参照してください。</span>
+          </p>
+        </div>
+
+        <div id="citing-this-software">
+          <h3>
+            <span data-i18n="en">Citing this software</span>
+            <span data-i18n="ja">ソフトウェアの引用</span>
+          </h3>
+          <pre><code>Komuro, R. (2026). MFRM Streamlit (Version 0.2.19-beta)
+[Computer software].
+https://github.com/Ryuya-dot-com/MFRM_Python_Application</code></pre>
+          <p>
+            <span data-i18n="en">For the desktop previews, record release tag desktop-macos-20261030 or desktop-windows-20261030 and the archive filename. When using the R package, run citation("mfrmr") in R and cite the underlying psychometric methods alongside the software.</span>
+            <span data-i18n="ja">デスクトップ試用版ではタグ（desktop-macos-20261030 または desktop-windows-20261030）とアーカイブ名も併記してください。R版 mfrmr を使用する場合は R 上で citation("mfrmr") を確認し、統計手法の原典とあわせて引用してください。</span>
+          </p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <footer class="site-footer">
+    <div class="container footer-inner">
+      <div>
+        <strong>MFRM</strong> · MIT License ·
+        <a href="https://github.com/Ryuya-dot-com/MFRM_Python_Application/blob/main/LICENSE" target="_blank" rel="noopener">License</a> ·
+        <a href="https://github.com/Ryuya-dot-com/MFRM_Python_Application/blob/main/LICENSE_NOTICE.md" target="_blank" rel="noopener">Notice</a> ·
+        <a href="overview-ja.html">日本語概要</a>
+      </div>
+      <div>
+        <a href="https://github.com/Ryuya-dot-com/MFRM_Python_Application/releases/tag/desktop-macos-20261030">macOS Preview</a> ·
+        <a href="https://github.com/Ryuya-dot-com/MFRM_Python_Application/releases/tag/desktop-windows-20261030">Windows Preview</a> ·
+        <a href="https://mfrmpythonapplication-xodghmcghngx8cz5zmhfeg.streamlit.app/" target="_blank" rel="noopener">Streamlit Web</a> ·
+        <a href="https://ryuya-dot-com.github.io/mfrmr/" target="_blank" rel="noopener">mfrmr (R)</a> ·
+        <a href="https://github.com/Ryuya-dot-com/MFRM_Python_Application/issues" target="_blank" rel="noopener">Issues</a>
+      </div>
+    </div>
+  </footer>
+
+  <script>
+    function setLang(lang) {
+      document.documentElement.setAttribute('data-lang', lang);
+      document.documentElement.setAttribute('lang', lang);
+      document.getElementById('btn-lang-en').classList.toggle('active', lang === 'en');
+      document.getElementById('btn-lang-ja').classList.toggle('active', lang === 'ja');
+      try { localStorage.setItem('mfrm_site_lang', lang); } catch (e) {}
+    }
+    (function initLang() {
+      var params = new URLSearchParams(window.location.search);
+      var q = params.get('lang');
+      if (q === 'ja' || q === 'en') { setLang(q); return; }
+      try {
+        var saved = localStorage.getItem('mfrm_site_lang');
+        if (saved === 'ja' || saved === 'en') { setLang(saved); }
+      } catch (e) {}
+    })();
+
+    function showPlot(idx, btn) {
+      var panels = document.querySelectorAll('.plot-panel');
+      var tabs = document.querySelectorAll('.tab-btn');
+      for (var i = 0; i < panels.length; i++) {
+        panels[i].classList.toggle('active', i === idx);
+      }
+      for (var j = 0; j < tabs.length; j++) {
+        tabs[j].classList.toggle('active', tabs[j] === btn);
+      }
+    }
+
+    function copyText(id, btn) {
+      var text = document.getElementById(id).textContent;
+      if (navigator.clipboard) {
+        navigator.clipboard.writeText(text).then(function() {
+          var prev = btn.textContent;
+          btn.textContent = 'Copied';
+          setTimeout(function() { btn.textContent = prev; }, 1400);
+        });
+      }
+    }
+  </script>
+</body>
+</html>

@@ -800,6 +800,89 @@ pre code {
   margin-bottom: 0.35rem;
 }
 
+/* Minimal Hairline Accordion FAQ (OpenAI / Chrome pattern) */
+.faq-list {
+  border-top: 1px solid var(--ink);
+}
+
+.faq-item {
+  border-bottom: 1px solid var(--line-strong);
+}
+
+.faq-item summary {
+  list-style: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1.5rem;
+  padding: 1.45rem 0;
+  cursor: pointer;
+  user-select: none;
+}
+.faq-item summary::-webkit-details-marker {
+  display: none;
+}
+
+.faq-q {
+  font-size: 1.06rem;
+  font-weight: 620;
+  letter-spacing: -0.015em;
+  color: var(--ink);
+  line-height: 1.42;
+}
+.faq-item summary:hover .faq-q {
+  color: var(--accent);
+}
+
+.faq-icon {
+  position: relative;
+  width: 22px;
+  height: 22px;
+  flex-shrink: 0;
+  color: var(--ink-secondary);
+}
+.faq-icon::before,
+.faq-icon::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  background: currentColor;
+  transform: translate(-50%, -50%);
+  transition: transform 0.18s ease, opacity 0.18s ease;
+}
+.faq-icon::before {
+  width: 13px;
+  height: 1.5px;
+}
+.faq-icon::after {
+  width: 1.5px;
+  height: 13px;
+}
+.faq-item[open] .faq-icon::after {
+  opacity: 0;
+  transform: translate(-50%, -50%) rotate(90deg);
+}
+
+.faq-body {
+  max-width: 860px;
+  padding: 0 2.5rem 1.55rem 0;
+}
+.faq-body p {
+  margin: 0;
+  font-size: 0.95rem;
+  line-height: 1.7;
+  color: var(--ink-secondary);
+}
+.faq-body strong {
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.section-soft pre {
+  background: #ffffff;
+}
+
 /* Clean Editorial Directory for Guides & Citation */
 .doc-directory {
   display: grid;

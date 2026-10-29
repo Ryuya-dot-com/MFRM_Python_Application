@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>MFRM — Many-Facet Rasch &amp; Generalizability Analysis</title>
-  <meta name="description" content="Separate examinee proficiency from rater strictness, task difficulty, and rubric behavior with MFRM Desktop, the Streamlit Web App, and mfrmr for R." />
+  <meta name="description" content="Separate examinee ability from rater severity, task difficulty, and rubric behavior with MFRM Desktop, the Streamlit Web App, and mfrmr for R." />
   <link rel="icon" type="image/svg+xml" href="assets/images/mfrm-desktop-icon.svg" />
   <link rel="stylesheet" href="styles.css" />
 </head>
@@ -21,6 +21,7 @@
         <a href="#plots"><span data-i18n="en">Outputs</span><span data-i18n="ja">出力と解釈</span></a>
         <a href="#ecosystem"><span data-i18n="en">Platforms</span><span data-i18n="ja">利用環境</span></a>
         <a href="#capabilities"><span data-i18n="en">Capabilities &amp; Limits</span><span data-i18n="ja">できること・制限</span></a>
+        <a href="#faq"><span data-i18n="en">Q&amp;A</span><span data-i18n="ja">Q&amp;A</span></a>
         <a href="#guides"><span data-i18n="en">Documentation</span><span data-i18n="ja">ガイド</span></a>
         <a href="#citing-this-software"><span data-i18n="en">Cite</span><span data-i18n="ja">引用</span></a>
       </nav>
@@ -44,7 +45,7 @@
           <span data-i18n="ja">多相ラッシュ分析を、手元のデスクトップで。</span>
         </h1>
         <p class="hero-lead" data-i18n="en">
-          Place examinee proficiency, rater strictness, task difficulty, and rubric behavior onto one shared logit scale—with Python bundled inside for macOS and Windows.
+          Place examinee ability, rater severity, task difficulty, and rubric behavior onto one shared logit scale—with Python bundled inside for macOS and Windows.
         </p>
         <p class="hero-lead" data-i18n="ja">
           受験者の実力・評価者の厳しさ・課題の難しさ・ルーブリック段階を1本の共通尺度で推定。macOSとWindows向けにPython同梱のデスクトップ試用版を配布しています。
@@ -152,11 +153,11 @@
         <div class="canvas-caption-bar">
           <div class="canvas-captions">
             <div class="canvas-caption-item active" data-slide-caption="0">
-              <span data-i18n="en">Built-in 960-rating writing dataset (Data → Sample → Next → Analyze): examinee measures on the left, rater strictness, task difficulty, and rubric thresholds on the right.</span>
+              <span data-i18n="en">Built-in 960-rating writing dataset (Data → Sample → Next → Analyze): examinee ability on the left, rater severity, task difficulty, and rubric thresholds on the right.</span>
               <span data-i18n="ja">内蔵の人工作文データ（960評定・Data → Sample → Next → Analyze）：左に受験者分布、右に評価者の厳しさ・課題難度・段階閾値を同一ロジット軸で表示。</span>
             </div>
             <div class="canvas-caption-item" data-slide-caption="1">
-              <span data-i18n="en">Pathway fit map: separates consistent strictness or task difficulty (vertical logit scale) from erratic or muted scoring around Infit MnSq = 1.00 (horizontal axis).</span>
+              <span data-i18n="en">Pathway fit map: separates consistent rater severity or task difficulty (vertical logit scale) from erratic or muted scoring around Infit MnSq = 1.00 (horizontal axis).</span>
               <span data-i18n="ja">Pathway適合度マップ：縦軸の「一貫した厳しさ・課題難度」と、横軸 Infit MnSq = 1.00 付近からの「採点のブレ・中心化」を切り分けて表示。</span>
             </div>
             <div class="canvas-caption-item" data-slide-caption="2">
@@ -208,7 +209,7 @@
               <span data-i18n="ja">担当評価者と課題の割り当てが素点を左右する</span>
             </h3>
             <p data-i18n="en">
-              A student averaging 3.2 under your strictest rater on an abstract prompt may have demonstrated stronger proficiency than a peer averaging 3.6 under a lenient rater on an easier prompt. MFRM places examinees, raters, tasks, and criteria onto one common logit scale centered at 0.00.
+              A student averaging 3.2 under your most severe rater on an abstract prompt may have demonstrated higher ability than a peer averaging 3.6 under a lenient rater on an easier prompt. MFRM places examinees, raters, tasks, and criteria onto one common logit scale centered at 0.00.
             </p>
             <p data-i18n="ja">
               厳しい評価者と難度の高い課題に当たって平均3.2点だった受験者の方が、甘めの評価者と易しい課題で3.6点だった受験者より高い実力を示していることがあります。MFRMは各要因を0.00基準の共通ロジット尺度上で同時に推定します。
@@ -221,7 +222,7 @@
               <span data-i18n="ja">相関係数が高くても「一定の厳しさ差」は残る</span>
             </h3>
             <p data-i18n="en">
-              Two raters can rank students in nearly the same order (r = 0.90) while one consistently awards scores a full point lower. MFRM separates overall strictness from erratic scoring behavior (Infit MnSq).
+              Two raters can rank students in nearly the same order (r = 0.90) while one consistently awards scores a full point lower. MFRM separates overall rater severity from erratic scoring behavior (Infit MnSq).
             </p>
             <p data-i18n="ja">
               2人の評価者の順位相関が r = 0.90 と高くても、片方が常に1点低く採点していれば合否や順位に影響します。MFRMは「一貫した厳しさ」と「採点のブレ（Infit MnSq）」を切り分けます。
@@ -259,7 +260,7 @@
                   <span data-i18n="ja">素点平均 3.2 · Rater 4, Task 2</span>
                 </td>
                 <td>
-                  <span data-i18n="en">Looks lower in spreadsheet averages despite facing the strictest rater and harder prompt.</span>
+                  <span data-i18n="en">Looks lower in spreadsheet averages despite facing the most severe rater and harder prompt.</span>
                   <span data-i18n="ja">最も厳しい評価者と難しい課題の組み合わせのため、素点平均だけでは不利に見える。</span>
                 </td>
               </tr>
@@ -278,7 +279,7 @@
                 <td><strong>Rater 1 vs. Rater 4</strong></td>
                 <td>−0.73 vs. +0.47 logits<br /><span style="color:var(--ink-tertiary);font-size:0.84rem;">Infit MnSq: 1.01 / 1.05</span></td>
                 <td>
-                  <span data-i18n="en">Substantial gap in strictness, yet both raters apply their standards consistently near 1.00.</span>
+                  <span data-i18n="en">Substantial gap in severity, yet both raters apply their standards consistently near 1.00.</span>
                   <span data-i18n="ja">厳しさには大きな差がある一方、両者とも Infit は1.00付近で一貫した基準を保っている。</span>
                 </td>
               </tr>
@@ -336,7 +337,7 @@
           </h3>
           <div class="reading-item">
             <strong><span data-i18n="en">What to look for</span><span data-i18n="ja">確認するポイント</span></strong>
-            <p data-i18n="en">Vertical overlap between examinee bars on the left and rater, task, criterion, and step locations on the right indicates that the rubric matches the cohort's proficiency range.</p>
+            <p data-i18n="en">Vertical overlap between examinee bars on the left and rater, task, criterion, and step locations on the right indicates that the rubric matches the cohort's ability range.</p>
             <p data-i18n="ja">左側の受験者分布と、右側の評価者・課題・観点および段階閾値が縦方向に重なっていれば、テスト難度が受験者層に適合しています。</p>
           </div>
           <div class="reading-item">
@@ -358,12 +359,12 @@
         </div>
         <div class="plot-reading">
           <h3>
-            <span data-i18n="en">Separating strictness from consistency</span>
+            <span data-i18n="en">Separating severity from consistency</span>
             <span data-i18n="ja">「厳しさ」と「採点の一貫性」を分けて読む</span>
           </h3>
           <div class="reading-item">
             <strong><span data-i18n="en">What to look for</span><span data-i18n="ja">確認するポイント</span></strong>
-            <p data-i18n="en">Vertical position shows strictness or difficulty; horizontal position shows consistency around Infit MnSq = 1.00. A strict rater near 1.00 grades toughly in a predictable way.</p>
+            <p data-i18n="en">Vertical position shows rater severity or task difficulty; horizontal position shows consistency around Infit MnSq = 1.00. A severe rater near 1.00 grades toughly in a predictable way.</p>
             <p data-i18n="ja">縦軸が厳しさ・難度、横軸が Infit MnSq = 1.00 付近の一貫性を表します。厳しくても1.00付近にあれば、基準が一貫していると読めます。</p>
           </div>
           <div class="reading-item">
@@ -390,7 +391,7 @@
           </h3>
           <div class="reading-item">
             <strong><span data-i18n="en">What to look for</span><span data-i18n="ja">確認するポイント</span></strong>
-            <p data-i18n="en">Each score from 0 to 5 rises to its own ordered peak from left to right as proficiency increases relative to facet difficulty.</p>
+            <p data-i18n="en">Each score from 0 to 5 rises to its own ordered peak from left to right as examinee ability increases relative to facet difficulty.</p>
             <p data-i18n="ja">左から右へ相対的な能力が上がるにつれ、0から5の各カテゴリーが順番に明確な山を作っていれば段階が機能しています。</p>
           </div>
           <div class="reading-item">
@@ -788,8 +789,82 @@
     </div>
   </section>
 
-  <!-- Section 5: Documentation Directory, Local Run & Citation -->
-  <section class="section" id="guides">
+  <!-- Section 5: Frequently Asked Questions (3 Key Q&As) -->
+  <section class="section" id="faq">
+    <div class="container">
+      <div class="section-intro">
+        <h2>
+          <span data-i18n="en">Frequently asked questions</span>
+          <span data-i18n="ja">よくある質問（Q&amp;A）</span>
+        </h2>
+        <p data-i18n="en">
+          Practical answers on local data confidentiality, facet limits across modules, and setup across macOS and Windows.
+        </p>
+        <p data-i18n="ja">
+          機密データのオフライン利用、扱えるファセット（相）の数、環境構築やOS間のファイル共有についての回答です。
+        </p>
+      </div>
+
+      <div class="faq-list">
+        <details class="faq-item" open>
+          <summary>
+            <span class="faq-q">
+              <span data-i18n="en">Can I analyze confidential or IRB-restricted assessment data in MFRM Desktop?</span>
+              <span data-i18n="ja">機密データや学内試験の評定データをデスクトップ版に入れても大丈夫ですか？</span>
+            </span>
+            <span class="faq-icon" aria-hidden="true"></span>
+          </summary>
+          <div class="faq-body">
+            <p data-i18n="en">
+              <strong>Yes—MFRM Desktop runs 100% locally offline on your computer.</strong> Reading CSVs, fitting models, generating plots, and saving <code>.mfrm</code> projects or <code>.html</code> / <code>.csv</code> files happen entirely on your Mac or Windows PC without uploading ratings or IDs to any external server (only clicking <em>Help → Web theory and help</em> opens online documentation in your browser, still without transmitting your data). Because saved <code>.mfrm</code> projects and exported reports retain input ratings and examinee/rater identifiers so you can reopen work without refitting, store them according to your institution's data rules and de-identify records before sharing files externally or using the public Streamlit Web app.
+            </p>
+            <p data-i18n="ja">
+              <strong>はい、MFRM Desktop はすべて手元のPC内（完全オフライン）で処理されます。</strong> CSVの読み込み、パラメータ推定、作図、<code>.mfrm</code> プロジェクトや <code>.html</code>・<code>.csv</code> の保存まで外部サーバーへのデータ送信は一切行われません（オンライン接続を使うのはメニューからWebヘルプを開く操作のみで、その際も評定データは送信されません）。なお、再推定なしで復元できるよう保存後の <code>.mfrm</code> やレポートには入力評定や受験者・評価者IDが含まれるため、所属機関の管理規定に沿って保管し、外部共有時や公開Streamlit Web版を試す際は匿名化データをご利用ください。
+            </p>
+          </div>
+        </details>
+
+        <details class="faq-item" open>
+          <summary>
+            <span class="faq-q">
+              <span data-i18n="en">How many facets can I include in an analysis?</span>
+              <span data-i18n="ja">ファセット（相）はいくつまで扱えますか？</span>
+            </span>
+            <span class="faq-icon" aria-hidden="true"></span>
+          </summary>
+          <div class="faq-body">
+            <p data-i18n="en">
+              <strong>Core MFRM calibration (RSM / PCM, plus GPCM on Web) has no fixed upper limit on the number of facets</strong>—you can include <code>Person</code> plus one or more non-person facets (e.g., <code>Rater</code>, <code>Task</code>, <code>Criterion</code>, <code>Occasion</code>, and more) as long as all levels are connected through shared ratings (the Wright map prints direct level labels for up to 4 non-person facets and shows hover values beyond that). Module-specific bounds apply to supplementary analyses: <strong>Conditional bias</strong> screens 2-facet pairs (<code>Facet A × Facet B</code>); fixed-SD MML <strong>Specified intervals</strong> and <strong>Joint interaction</strong> support up to <code>64</code> free structural coordinates within synchronous memory limits (with Joint interaction refitting one 2-facet pair); and <strong>G / D reliability studies</strong> support <strong>1 or 2 random facets</strong> (<code>p × r</code> or <code>p × t × r</code> complete balanced designs).
+            </p>
+            <p data-i18n="ja">
+              <strong>MFRMの主較正（RSM／PCM、Web版のGPCM）にはファセット数の固定上限はありません。</strong> 共通の採点網で連結（connected）していれば、<code>Person</code> に加えて <code>Rater</code>・<code>Task</code>・<code>Criterion</code>・<code>Occasion</code> など4相・5相以上でも同時推定できます（Wrightマップの図中ラベル直接印字は非Person 4相までで、5相以上はドット表示＋マウスホバー確認に切り替わります）。周辺機能には個別の条件があり、<strong>条件付きバイアス</strong>は任意の2相ペア（<code>Facet A × Facet B</code>）ごとの診断、固定SD MMLの<strong>指定区間</strong>・<strong>共同交互作用</strong>は自由構造パラメータ合計 <code>64</code> 次元以内（共同交互作用は非Person 2相ペア1組）、<strong>G / D研究</strong>は<strong>ランダム要因 1〜2個</strong>（<code>p × r</code> または <code>p × t × r</code> の完全交差・均衡設計）が対象です。
+            </p>
+          </div>
+        </details>
+
+        <details class="faq-item" open>
+          <summary>
+            <span class="faq-q">
+              <span data-i18n="en">Do I need Python or R installed, and can macOS and Windows collaborators share project files?</span>
+              <span data-i18n="ja">PythonやRの環境構築は必要ですか？MacとWindowsの間でプロジェクトを共有できますか？</span>
+            </span>
+            <span class="faq-icon" aria-hidden="true"></span>
+          </summary>
+          <div class="faq-body">
+            <p data-i18n="en">
+              <strong>No Python, R, or command-line setup is needed for MFRM Desktop or MFRM Web.</strong> The macOS (Apple Silicon) and Windows 11 (x64) preview archives bundle Python inside, and saved <code>.mfrm</code> project files reopen across both operating systems via <em>Data → Open project</em> without re-running estimation (keep untouched backups of original <code>.mfrm</code> files when updating preview builds, as older releases cannot open newer extended projects). When you want scripted reproducibility in R, export standard <code>.csv</code> tables or run the companion CRAN package <strong><a href="https://cran.r-project.org/package=mfrmr" target="_blank" rel="noopener">mfrmr</a></strong>.
+            </p>
+            <p data-i18n="ja">
+              <strong>MFRM Desktop と Web版は、PythonやRの事前インストール不要ですぐ使えます。</strong> macOS（Apple Silicon）版・Windows 11（x64）版ともにPython実行環境を同梱しており、保存した <code>.mfrm</code> ファイルはMac・Windows間でそのまま開いて再推定なしで図表を確認できます（旧版アプリは新しい拡張 <code>.mfrm</code> を開けないため、更新時は元ファイルの控えを残してください）。Rコードで分析パイプラインを管理したい場合は、<code>.csv</code> 出力やCRAN公開の <strong><a href="https://cran.r-project.org/package=mfrmr" target="_blank" rel="noopener">mfrmr</a></strong> と併用できます。
+            </p>
+          </div>
+        </details>
+      </div>
+    </div>
+  </section>
+
+  <!-- Section 6: Documentation Directory, Local Run & Citation -->
+  <section class="section section-soft" id="guides">
     <div class="container">
       <div class="section-intro">
         <h2>

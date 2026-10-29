@@ -18,9 +18,9 @@ def test_runtime_notices_use_the_installer_layout(tmp_path, monkeypatch, system)
     base, stdlib = tmp_path / 'python', tmp_path / 'stdlib'
     files = [base / 'LICENSE.txt'] if system == 'win32' else [stdlib / 'LICENSE.txt',
         base / 'Resources/English.lproj/Documentation/_sources/license.rst.txt']
-    for name in ('Tcl', 'Tk'):
-        files.append(base / (f'tcl/{name.lower()}8.6/license.terms' if system == 'win32' else
-                            f'Frameworks/{name}.framework/Versions/8.6/Resources/license.terms'))
+    if system == 'darwin':
+        for name in ('Tcl', 'Tk'):
+            files.append(base / f'Frameworks/{name}.framework/Versions/8.6/Resources/license.terms')
     for path in files:
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(f'License from {path.name}')
@@ -35,6 +35,10 @@ def test_runtime_notices_use_the_installer_layout(tmp_path, monkeypatch, system)
     result = build_desktop.collect_notices(tmp_path / 'build')
     assert {'Python/LICENSE.txt', 'Tcl/license.terms' if system == 'darwin' else 'tcl/license.terms',
             'Tk/license.terms' if system == 'darwin' else 'tk/license.terms'} <= result['files'].keys()
+    if system == 'win32':
+        for name in ('tcl', 'tk'):
+            source = Path(build_desktop.__file__).parent / 'runtime_notices' / f'{name}-8.6.15.terms'
+            assert (tmp_path / 'build/third_party_notices' / name / 'license.terms').read_bytes() == source.read_bytes()
 
 
 def test_project_argument_reaches_the_existing_reader_after_ui_initialization(tmp_path, monkeypatch):

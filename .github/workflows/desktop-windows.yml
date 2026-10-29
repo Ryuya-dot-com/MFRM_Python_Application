@@ -11,6 +11,7 @@ on:
       - 'scripts/build_desktop.py'
       - 'scripts/check_windows_desktop.py'
       - 'scripts/desktop.spec'
+      - 'scripts/runtime_notices/**'
       - 'requirements-desktop-build.txt'
       - 'CITATION.cff'
       - 'LICENSE*'

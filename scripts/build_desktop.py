@@ -58,6 +58,11 @@ def collect_notices(output):
         for name in ('Tcl', 'Tk'):
             copy(base / f'Frameworks/{name}.framework/Versions/8.6/Resources/license.terms',
                  Path(name) / 'license.terms')
+    elif sys.platform == 'win32':
+        # CPython's Windows installer omits the separate Tcl/Tk license files.
+        for name in ('tcl', 'tk'):
+            copy(Path(__file__).parent / 'runtime_notices' / f'{name}-8.6.15.terms',
+                 Path(name) / 'license.terms')
     else:
         for name in ('tcl', 'tk'):
             copy(base / f'tcl/{name}8.6/license.terms', Path(name) / 'license.terms')
@@ -95,6 +100,7 @@ def main():
                     root / "LICENSE", root / "LICENSE_NOTICE.md", root / "CITATION.cff", root / "locales" / "en.json",
                     root / "scripts" / "desktop.spec",
                     Path(__file__).resolve(), root / "requirements-desktop-build.txt",
+                    *sorted((root / "scripts" / "runtime_notices").glob("*")),
                     *sorted((root / "mfrm_app").glob("*.py"))]
     record = {
         "scope": "local prototype; developer signing/notarization and platform acceptance not completed",

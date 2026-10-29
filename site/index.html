@@ -79,15 +79,106 @@
         </p>
       </div>
 
-      <div class="canvas-stage">
-        <div class="canvas-frame">
-          <img src="assets/images/desktop-wright-map.png" alt="Wright map generated from the built-in synthetic writing dataset" />
+      <div class="canvas-stage" id="hero-carousel" aria-roledescription="carousel" aria-label="Sample analysis visualizations">
+        <div class="canvas-toolbar">
+          <div class="canvas-pills" role="tablist" aria-label="Select visualization">
+            <button type="button" class="canvas-pill active" role="tab" aria-selected="true" onclick="goToHeroSlide(0)">
+              <span data-i18n="en">Wright map</span><span data-i18n="ja">Wrightマップ</span>
+              <span class="canvas-pill-bar" aria-hidden="true"></span>
+            </button>
+            <button type="button" class="canvas-pill" role="tab" aria-selected="false" onclick="goToHeroSlide(1)">
+              <span data-i18n="en">Pathway fit</span><span data-i18n="ja">Pathway適合度</span>
+              <span class="canvas-pill-bar" aria-hidden="true"></span>
+            </button>
+            <button type="button" class="canvas-pill" role="tab" aria-selected="false" onclick="goToHeroSlide(2)">
+              <span data-i18n="en">Category curves</span><span data-i18n="ja">カテゴリー曲線</span>
+              <span class="canvas-pill-bar" aria-hidden="true"></span>
+            </button>
+            <button type="button" class="canvas-pill" role="tab" aria-selected="false" onclick="goToHeroSlide(3)">
+              <span data-i18n="en">Conditional bias</span><span data-i18n="ja">条件付きバイアス</span>
+              <span class="canvas-pill-bar" aria-hidden="true"></span>
+            </button>
+            <button type="button" class="canvas-pill" role="tab" aria-selected="false" onclick="goToHeroSlide(4)">
+              <span data-i18n="en">D-study (G / Phi)</span><span data-i18n="ja">D研究（G / Phi）</span>
+              <span class="canvas-pill-bar" aria-hidden="true"></span>
+            </button>
+          </div>
+          <div class="canvas-controls">
+            <button type="button" class="canvas-ctrl-btn" onclick="prevHeroSlide()" aria-label="Previous visualization" title="Previous">
+              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M9.75 3.75L5.5 8l4.25 4.25"/>
+              </svg>
+            </button>
+            <button type="button" class="canvas-ctrl-btn" id="hero-pause-btn" onclick="toggleHeroAutoplay()" aria-label="Pause automatic slide" title="Pause / Play">
+              <svg class="icon-pause" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+                <rect x="4.5" y="3.5" width="2.3" height="9" rx="0.8"/>
+                <rect x="9.2" y="3.5" width="2.3" height="9" rx="0.8"/>
+              </svg>
+              <svg class="icon-play" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+                <path d="M5.2 3.6c0-.5.55-.8.98-.54l6.2 3.9a.64.64 0 010 1.08l-6.2 3.9a.64.64 0 01-.98-.54V3.6z"/>
+              </svg>
+            </button>
+            <button type="button" class="canvas-ctrl-btn" onclick="nextHeroSlide(true)" aria-label="Next visualization" title="Next">
+              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M6.25 3.75L10.5 8l-4.25 4.25"/>
+              </svg>
+            </button>
+          </div>
         </div>
+
+        <div class="canvas-frame">
+          <div class="canvas-track" id="hero-carousel-track">
+            <div class="canvas-slide">
+              <img src="assets/images/desktop-wright-map.png" alt="Wright map generated from the built-in synthetic writing dataset" />
+            </div>
+            <div class="canvas-slide">
+              <img src="assets/images/desktop-pathway-map.png" alt="Pathway fit map showing logit measure against Infit MnSq" />
+            </div>
+            <div class="canvas-slide">
+              <img src="assets/images/desktop-category-curves.png" alt="Category probability curves across rubric scores 0 to 5" />
+            </div>
+            <div class="canvas-slide">
+              <img src="assets/images/desktop-bias-heatmap.png" alt="Conditional bias heatmap screening Rater by Criterion pairs" />
+            </div>
+            <div class="canvas-slide">
+              <img src="assets/images/desktop-d-study.png" alt="D-Study G and Phi projections across rater and task counts" />
+            </div>
+            <div class="canvas-slide" aria-hidden="true">
+              <img src="assets/images/desktop-wright-map.png" alt="" />
+            </div>
+          </div>
+        </div>
+
         <div class="canvas-caption-bar">
-          <span data-i18n="en">Built-in 960-rating writing dataset (Data → Sample → Next → Analyze): examinee measures on the left, rater strictness, task difficulty, and rubric thresholds on the right.</span>
-          <span data-i18n="ja">内蔵の人工作文データ（960評定・Data → Sample → Next → Analyze）：左に受験者分布、右に評価者の厳しさ・課題難度・段階閾値を同一ロジット軸で表示。</span>
-          <a href="desktop-guide.html" data-i18n="en">Walk through this example →</a>
-          <a href="desktop-guide-ja.html" data-i18n="ja">サンプルの手順を見る →</a>
+          <div class="canvas-captions">
+            <div class="canvas-caption-item active" data-slide-caption="0">
+              <span data-i18n="en">Built-in 960-rating writing dataset (Data → Sample → Next → Analyze): examinee measures on the left, rater strictness, task difficulty, and rubric thresholds on the right.</span>
+              <span data-i18n="ja">内蔵の人工作文データ（960評定・Data → Sample → Next → Analyze）：左に受験者分布、右に評価者の厳しさ・課題難度・段階閾値を同一ロジット軸で表示。</span>
+            </div>
+            <div class="canvas-caption-item" data-slide-caption="1">
+              <span data-i18n="en">Pathway fit map: separates consistent strictness or task difficulty (vertical logit scale) from erratic or muted scoring around Infit MnSq = 1.00 (horizontal axis).</span>
+              <span data-i18n="ja">Pathway適合度マップ：縦軸の「一貫した厳しさ・課題難度」と、横軸 Infit MnSq = 1.00 付近からの「採点のブレ・中心化」を切り分けて表示。</span>
+            </div>
+            <div class="canvas-caption-item" data-slide-caption="2">
+              <span data-i18n="en">Category probability curves: verifies whether every rubric score from 0 to 5 forms its own ordered peak along the relative logit ruler.</span>
+              <span data-i18n="ja">カテゴリー確率曲線：0〜5点の各ルーブリック段階がロジット軸に沿って順序よく独立した山を作っているかを確認。</span>
+            </div>
+            <div class="canvas-caption-item" data-slide-caption="3">
+              <span data-i18n="en">Conditional bias heatmap: fixed-calibration exploratory screening of Rater × Criterion pairs (not a standalone significance or fairness test).</span>
+              <span data-i18n="ja">条件付きバイアス図：主較正を固定した Rater × Criterion の探索的スクリーニング（単独での有意差・公平性の証明ではない）。</span>
+            </div>
+            <div class="canvas-caption-item" data-slide-caption="4">
+              <span data-i18n="en">D-study projections (GD_ANOVA sample): compares relative (G) and absolute (Phi) reliability across rater and task counts for balanced 1–2 facet designs.</span>
+              <span data-i18n="ja">D研究プロット（GD_ANOVAサンプル）：完全交差・均衡1〜2相設計において、評価者数と課題数の組み合わせによる G・Phi 係数を比較。</span>
+            </div>
+          </div>
+          <div class="canvas-caption-links">
+            <a href="#plots" onclick="jumpToPlotDetail(event)" data-i18n="en">How to read this chart →</a>
+            <a href="#plots" onclick="jumpToPlotDetail(event)" data-i18n="ja">この図の読み方を見る →</a>
+            <span class="caption-sep" aria-hidden="true">·</span>
+            <a href="desktop-guide.html" data-i18n="en">Desktop guide</a>
+            <a href="desktop-guide-ja.html" data-i18n="ja">利用ガイド</a>
+          </div>
         </div>
       </div>
     </div>
@@ -816,6 +907,191 @@ https://github.com/Ryuya-dot-com/MFRM_Python_Application</code></pre>
         tabs[j].classList.toggle('active', tabs[j] === btn);
       }
     }
+
+    /* Hero Horizontal Auto-Sliding Visualization Carousel */
+    var HERO_SLIDE_COUNT = 5;
+    var HERO_INTERVAL_MS = 5200;
+    var heroTrackPos = 0;
+    var heroLogicalIdx = 0;
+    var heroElapsedMs = 0;
+    var heroLastTick = null;
+    var heroUserPaused = false;
+    var heroHoverPaused = false;
+    var heroFocusPaused = false;
+
+    function updateHeroProgress(ratio) {
+      var stage = document.getElementById('hero-carousel');
+      if (stage) {
+        stage.style.setProperty('--hero-progress', Math.max(0, Math.min(1, ratio)).toFixed(4));
+      }
+    }
+
+    function applyHeroTransform(pos, animate) {
+      var track = document.getElementById('hero-carousel-track');
+      if (!track) return;
+      track.style.transition = animate
+        ? 'transform 0.68s cubic-bezier(0.22, 1, 0.36, 1)'
+        : 'none';
+      track.style.transform = 'translate3d(-' + (pos * 100) + '%, 0, 0)';
+    }
+
+    function syncHeroUI(idx) {
+      var pills = document.querySelectorAll('#hero-carousel .canvas-pill');
+      for (var i = 0; i < pills.length; i++) {
+        var active = i === idx;
+        pills[i].classList.toggle('active', active);
+        pills[i].setAttribute('aria-selected', active ? 'true' : 'false');
+      }
+      var captions = document.querySelectorAll('#hero-carousel .canvas-caption-item');
+      for (var k = 0; k < captions.length; k++) {
+        captions[k].classList.toggle('active', k === idx);
+      }
+    }
+
+    function nextHeroSlide(resetTimer) {
+      var track = document.getElementById('hero-carousel-track');
+      if (!track) return;
+      if (heroTrackPos >= HERO_SLIDE_COUNT) {
+        heroTrackPos = 0;
+        applyHeroTransform(0, false);
+        void track.offsetWidth;
+      }
+      heroTrackPos += 1;
+      heroLogicalIdx = heroTrackPos % HERO_SLIDE_COUNT;
+      applyHeroTransform(heroTrackPos, true);
+      syncHeroUI(heroLogicalIdx);
+      heroElapsedMs = 0;
+      if (resetTimer) {
+        heroLastTick = Date.now();
+      }
+      updateHeroProgress(0);
+    }
+
+    function prevHeroSlide() {
+      var track = document.getElementById('hero-carousel-track');
+      if (!track) return;
+      if (heroTrackPos === 0) {
+        heroTrackPos = HERO_SLIDE_COUNT;
+        applyHeroTransform(HERO_SLIDE_COUNT, false);
+        void track.offsetWidth;
+      }
+      heroTrackPos -= 1;
+      heroLogicalIdx = heroTrackPos % HERO_SLIDE_COUNT;
+      applyHeroTransform(heroTrackPos, true);
+      syncHeroUI(heroLogicalIdx);
+      heroElapsedMs = 0;
+      heroLastTick = Date.now();
+      updateHeroProgress(0);
+    }
+
+    function goToHeroSlide(targetIdx) {
+      var track = document.getElementById('hero-carousel-track');
+      if (!track) return;
+      if (heroTrackPos >= HERO_SLIDE_COUNT) {
+        heroTrackPos = 0;
+        applyHeroTransform(0, false);
+        void track.offsetWidth;
+      }
+      heroTrackPos = targetIdx;
+      heroLogicalIdx = targetIdx;
+      applyHeroTransform(heroTrackPos, true);
+      syncHeroUI(heroLogicalIdx);
+      heroElapsedMs = 0;
+      heroLastTick = Date.now();
+      updateHeroProgress(0);
+    }
+
+    function syncPauseBtnUI() {
+      var stage = document.getElementById('hero-carousel');
+      var btn = document.getElementById('hero-pause-btn');
+      if (!stage || !btn) return;
+      stage.classList.toggle('is-paused', heroUserPaused);
+      btn.setAttribute('aria-label', heroUserPaused ? 'Resume automatic slide' : 'Pause automatic slide');
+    }
+
+    function toggleHeroAutoplay() {
+      heroUserPaused = !heroUserPaused;
+      heroLastTick = Date.now();
+      syncPauseBtnUI();
+    }
+
+    function jumpToPlotDetail(ev) {
+      var tabs = document.querySelectorAll('.tab-btn');
+      if (tabs[heroLogicalIdx]) {
+        showPlot(heroLogicalIdx, tabs[heroLogicalIdx]);
+      }
+    }
+
+    (function initHeroCarousel() {
+      var stage = document.getElementById('hero-carousel');
+      var track = document.getElementById('hero-carousel-track');
+      if (!stage || !track) return;
+
+      if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+        heroUserPaused = true;
+        syncPauseBtnUI();
+      }
+
+      track.addEventListener('transitionend', function(ev) {
+        if (ev.target !== track) return;
+        if (heroTrackPos >= HERO_SLIDE_COUNT) {
+          heroTrackPos = 0;
+          applyHeroTransform(0, false);
+        }
+      });
+
+      stage.addEventListener('mouseenter', function() { heroHoverPaused = true; });
+      stage.addEventListener('mouseleave', function() {
+        heroHoverPaused = false;
+        heroLastTick = Date.now();
+      });
+      stage.addEventListener('focusin', function() { heroFocusPaused = true; });
+      stage.addEventListener('focusout', function(ev) {
+        if (!stage.contains(ev.relatedTarget)) {
+          heroFocusPaused = false;
+          heroLastTick = Date.now();
+        }
+      });
+      stage.addEventListener('keydown', function(ev) {
+        if (ev.key === 'ArrowRight') { ev.preventDefault(); nextHeroSlide(true); }
+        else if (ev.key === 'ArrowLeft') { ev.preventDefault(); prevHeroSlide(); }
+      });
+
+      var touchStartX = null;
+      var touchStartY = null;
+      track.addEventListener('touchstart', function(ev) {
+        if (ev.touches.length === 1) {
+          touchStartX = ev.touches[0].clientX;
+          touchStartY = ev.touches[0].clientY;
+        }
+      }, { passive: true });
+      track.addEventListener('touchend', function(ev) {
+        if (touchStartX === null || ev.changedTouches.length === 0) return;
+        var dx = ev.changedTouches[0].clientX - touchStartX;
+        var dy = ev.changedTouches[0].clientY - touchStartY;
+        touchStartX = null;
+        if (Math.abs(dx) > 42 && Math.abs(dx) > Math.abs(dy)) {
+          if (dx < 0) nextHeroSlide(true);
+          else prevHeroSlide();
+        }
+      }, { passive: true });
+
+      heroLastTick = Date.now();
+      setInterval(function() {
+        var now = Date.now();
+        var dt = now - heroLastTick;
+        heroLastTick = now;
+        var paused = heroUserPaused || heroHoverPaused || heroFocusPaused || document.hidden;
+        if (!paused) {
+          heroElapsedMs += Math.min(Math.max(dt, 0), 250);
+          if (heroElapsedMs >= HERO_INTERVAL_MS) {
+            nextHeroSlide(false);
+          } else {
+            updateHeroProgress(heroElapsedMs / HERO_INTERVAL_MS);
+          }
+        }
+      }, 60);
+    })();
 
     function copyText(id, btn) {
       var text = document.getElementById(id).textContent;

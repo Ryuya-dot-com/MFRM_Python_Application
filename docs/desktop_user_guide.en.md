@@ -27,17 +27,17 @@ Suppose you are analyzing university essay ratings (or L2 speaking interviews, m
 
 In realistic testing programs, you rarely want to rely on raw score averages alone:
 
-- **The "strict rater / hard prompt" trap:** Suppose **Student A** writes `Task2` (*an abstract policy argument*) and is graded by **`R4`** *(the strictest rater)*, earning a raw average of **3.2 / 5.0**. **Student B** writes `Task1` (*a familiar personal topic*) for **`R1`** *(the most lenient rater)* and averages **3.6 / 5.0**. Raw averages make Student B look stronger—even if Student A actually demonstrated higher skill under tougher conditions.
+- **The "severe rater / hard prompt" trap:** Suppose **Student A** writes `Task2` (*an abstract policy argument*) and is graded by **`R4`** *(the most severe rater)*, earning a raw average of **3.2 / 5.0**. **Student B** writes `Task1` (*a familiar personal topic*) for **`R1`** *(the most lenient rater)* and averages **3.6 / 5.0**. Raw averages make Student B look stronger—even if Student A actually demonstrated higher ability under tougher conditions.
 - **Why correlation or Kappa isn't enough:** Even if `R1` and `R4` correlate at `r = 0.90`, `R4` might consistently award scores one point lower than `R1`. High rank-order agreement does not remove a constant severity gap.
-- **Why rubric steps need checking:** Writing `"0 = Emerging … 5 = Exemplary"` on a rubric sheet does not guarantee raters actually use all six categories cleanly or treat *Content* and *Mechanics* equally strictly.
+- **Why rubric steps need checking:** Writing `"0 = Emerging … 5 = Exemplary"` on a rubric sheet does not guarantee raters actually use all six categories cleanly or treat *Content* and *Mechanics* with equal severity.
 
 ### What MFRM & G/D Studies Give You Instead
 
 1. **One shared "logit" ruler (`MFRM`):** MFRM converts ordinal rubric scores into a common log-odds (**logit**) scale centered at `0.00` for non-person facets:
-   - **Examinees (`Person`):** Higher logits = **stronger performance** (adjusted for the raters, tasks, and criteria involved).
-   - **Raters (`Rater`):** Higher logits = **stricter grading**; lower (negative) logits = **more lenient grading**.
+   - **Examinees (`Person`):** Higher logits = **higher ability** (adjusted for the raters, tasks, and criteria involved).
+   - **Raters (`Rater`):** Higher logits = **greater severity**; lower (negative) logits = **greater leniency**.
    - **Tasks & Criteria (`Task`, `Criterion`):** Higher logits = **harder to earn high scores on**; lower logits = **easier**.
-2. **Quality diagnostics (`Fit`, `Category Curves`, `Bias`):** Checks whether a strict rater is *predictably* strict (`Infit MnSq ≈ 1.00`) vs. erratic (`Infit >> 1.00`), whether every rubric score (`0`–`5`) has its own clear zone, and whether specific pairs (like `R1 × Content`) behave unusually.
+2. **Quality diagnostics (`Fit`, `Category Curves`, `Bias`):** Checks whether a severe rater is *predictably* severe (`Infit MnSq ≈ 1.00`) vs. erratic (`Infit >> 1.00`), whether every rubric score (`0`–`5`) has its own clear zone, and whether specific pairs (like `R1 × Content`) behave unusually.
 3. **Practical assessment design (`G/D Study`):** Uses observed scores to show how reliability (`G` for relative ranking, `Phi` for pass/fail cutoffs) changes if you assign **2 vs. 3 raters** or **2 vs. 4 tasks**.
 
 All of these run offline in one three-step desktop window (**Data → Settings → Results**), with an instant **English / 日本語** switch in the top bar.
@@ -96,10 +96,10 @@ Switch to **Table** and look at the non-person rows of **Measures and Fit**:
 |---|---|---:|---:|---|
 | `Rater` | `R1` | **`-0.726`** | `1.006` | Most lenient rater (`0.73` logits below the rater mean), and very consistent (`Infit ≈ 1.01`). |
 | `Rater` | `R2` | **`-0.093`** | `0.980` | Close to average severity, consistent fit. |
-| `Rater` | `R3` | **`+0.352`** | `0.950` | Moderately strict, consistent fit. |
-| `Rater` | `R4` | **`+0.467`** | `1.052` | Strictest rater—**`1.19` logits stricter than `R1`**, yet still consistent (`Infit ≈ 1.05`)! |
+| `Rater` | `R3` | **`+0.352`** | `0.950` | Moderately severe, consistent fit. |
+| `Rater` | `R4` | **`+0.467`** | `1.052` | Most severe rater—**`1.19` logits more severe than `R1`**, yet still consistent (`Infit ≈ 1.05`)! |
 | `Task` | `Task1` / `Task2` | **`-0.311` / `+0.311`** | `1.043` / `0.951` | `Task2` is `0.62` logits harder than `Task1`. |
-| `Criterion` | `Content` → `Mechanics` | **`-0.556` → `+0.283`** | `1.065` → `0.943` | Raters award high marks most readily on `Content` (`-0.56`) and grade `Mechanics` (`+0.28`) and `Language` (`+0.23`) more strictly. |
+| `Criterion` | `Content` → `Mechanics` | **`-0.556` → `+0.283`** | `1.065` → `0.943` | Raters award high marks most readily on `Content` (`-0.56`) and score `Mechanics` (`+0.28`) and `Language` (`+0.23`) more severely. |
 
 *(Note: In JMLE, the table's `Conditional` `SE / SD` and bounds hold other fitted parameters fixed as screening approximations—always read the note directly below each table!)*
 
@@ -170,9 +170,9 @@ Here is how to read each visual output in **Results**, including both **healthy 
 
 | What you observe on the Wright map | How to interpret it | Practical next step |
 |---|---|---|
-| **Person bars (left) overlap well vertically with facet points & dotted step lines (right)** | Tasks and rubric categories are well matched ("targeted") to your examinees' proficiency range. | Proceed to inspect individual facet spreads and fit in **Pathway map** and **Table**. |
+| **Person bars (left) overlap well vertically with facet points & dotted step lines (right)** | Tasks and rubric categories are well matched ("targeted") to your examinees' ability range. | Proceed to inspect individual facet spreads and fit in **Pathway map** and **Table**. |
 | **Persons cluster near `+3` logits while tasks/steps sit near `0` (or vice versa)** | **Ceiling or floor effect:** Tasks/rubric were too easy or too hard for this cohort, making extreme examinees harder to separate precisely. | Check **Observed Category Use** for bunching at the top/bottom score and check extreme-score notes in **Measures and Fit**. |
-| **Wide vertical gap among raters (e.g., `R4 = +0.47` vs. `R1 = -0.73`)** | Raters differ substantially in overall strictness—raw unadjusted averages would disadvantage students rated only by `R4`. | Check **Pathway map** next: if `R4` sits near `Infit = 1.0`, MFRM's main-effect adjustment accounts for `R4`'s consistent strictness. |
+| **Wide vertical gap among raters (e.g., `R4 = +0.47` vs. `R1 = -0.73`)** | Raters differ substantially in overall severity—raw unadjusted averages would disadvantage students rated only by `R4`. | Check **Pathway map** next: if `R4` sits near `Infit = 1.0`, MFRM's main-effect adjustment accounts for `R4`'s consistent severity. |
 
 ---
 
@@ -180,11 +180,11 @@ Here is how to read each visual output in **Results**, including both **healthy 
 
 ![Pathway map showing Measure vs Infit MnSq](images/desktop-pathway-map.png)
 
-One of the most useful ideas in Rasch measurement for graduate research is that **vertical position (strictness/difficulty)** and **horizontal position (`Infit MnSq` consistency)** ask two completely different questions:
+One of the most useful ideas in Rasch measurement for graduate research is that **vertical position (severity/difficulty)** and **horizontal position (`Infit MnSq` consistency)** ask two completely different questions:
 
 | Horizontal region (`Infit MnSq`) | Meaning in everyday assessment terms | How to handle it in your study |
 |---|---|---|
-| **Near `1.00` (dotted reference line)** | **Model-consistent variation:** A strict rater near `1.00` grades toughly *in a predictable way*; a lenient rater near `1.00` grades generously *in a predictable way*. | Main-effect logit estimates meaningfully summarize their overall strictness or difficulty. |
+| **Near `1.00` (dotted reference line)** | **Model-consistent variation:** A severe rater near `1.00` grades toughly *in a predictable way*; a lenient rater near `1.00` grades generously *in a predictable way*. | Main-effect logit estimates meaningfully summarize their overall severity or difficulty. |
 | **Far to the right (`> 1.0`, *underfit / noisy*, e.g., `1.4`–`2.0+`)** | **Unexpected/erratic ratings:** For a rater, occasional harsh marks on strong performances or generous marks on weak ones; for an examinee (like `E14` at `Infit = 1.59`), unusually uneven scores across criteria or raters. | **Do not automatically delete raters or students from one number.** Check rating counts first, inspect original ratings, and review rubric wording or rater calibration notes. |
 | **Far to the left (`< 1.0`, *overfit / muted*, e.g., `0.5`–`0.7`)** | **Less variation than expected:** Often reflects *central tendency* (clinging to safe middle scores like `2` and `3`) or *halo effects* (giving identical marks across all four criteria). | Inspect **Observed Category Use** and rater score distributions to see whether middle bands are overused. |
 
@@ -196,7 +196,7 @@ One of the most useful ideas in Rasch measurement for graduate research is that 
 
 | Curve pattern | What it tells you about the rubric | Recommended check |
 |---|---|---|
-| **Each score (`0`–`5`) rises to its own distinct peak in order from left to right** | Every rubric category represents a genuine, ordered performance zone as examinee proficiency rises relative to task/rater difficulty. | Confirm adequate counts per category in **Table → Observed Category Use**. |
+| **Each score (`0`–`5`) rises to its own distinct peak in order from left to right** | Every rubric category represents a genuine, ordered performance zone as examinee ability rises relative to task/rater difficulty. | Confirm adequate counts per category in **Table → Observed Category Use**. |
 | **A middle curve is squashed beneath neighboring curves or thresholds cross** | Raters are not distinguishing that score band cleanly from adjacent bands, or very few observations fell in that category. | Check **Observed Category Use** (sparse counts make step estimates unstable), review rubric descriptors, or test **PCM** if only one criterion has collapsed categories. |
 
 ---
@@ -206,7 +206,7 @@ One of the most useful ideas in Rasch measurement for graduate research is that 
 ![Conditional bias heatmap for Rater by Criterion](images/desktop-bias-heatmap.png)
 
 - **Reading the Conditional Bias Heatmap (`Rater × Criterion` above):**
-  - Numbers near **`0.00`** mean that pairing behaves just as expected from the rater's overall strictness plus the criterion's overall difficulty.
+  - Numbers near **`0.00`** mean that pairing behaves just as expected from the rater's overall severity plus the criterion's overall difficulty.
   - Non-zero shifts (e.g., `R1 × Content = +0.24` vs. `R1 × Organization = -0.22`) describe how that cell's observed scores deviate when main calibration is held fixed; gray cells mark pairs without an interior estimate (always check cell counts and status in the table!).
   - **Thesis writing caution:** Conditional bias heatmaps are **exploratory screening maps, NOT statistical proof of bias or fairness** (`Tests / intervals withheld`). Write *"Cell `R1 × Content` showed a descriptive shift of +0.24 logits with main calibration fixed, prompting qualitative review of rubric exemplars"*—not *"Rater 1 was significantly biased."*
 - **When you need model-based uncertainty intervals:**
@@ -221,7 +221,7 @@ One of the most useful ideas in Rasch measurement for graduate research is that 
 
 | What to compare on the D-Study chart | Practical interpretation | Example from `GD_ANOVA.mfrm` above |
 |---|---|---|
-| **Solid lines (`G`) vs. dashed lines (`Phi`)** | **`G`** (generalizability) applies to **relative rank-order decisions** (e.g., ranking candidates); **`Phi`** (dependability) applies to **absolute cut-score decisions** (e.g., passing at `>= 70%`, where overall rater/task strictness shifts also count as error, so `Phi <= G`). | Pick `G` or `Phi` based on how scores will actually be used, and check signed + zero-clipped variance components in the table. |
+| **Solid lines (`G`) vs. dashed lines (`Phi`)** | **`G`** (generalizability) applies to **relative rank-order decisions** (e.g., ranking candidates); **`Phi`** (dependability) applies to **absolute cut-score decisions** (e.g., passing at `>= 70%`, where overall rater/task severity or difficulty shifts also count as error, so `Phi <= G`). | Pick `G` or `Phi` based on how scores will actually be used, and check signed + zero-clipped variance components in the table. |
 | **Gap between `Task = 1, 2, 3, 4` lines vs. slope along `Rater count = 1..6`** | Compare combinations with the same rating budget (e.g., 6 ratings per person) and check the variance-component table: when *person × task* variance is large, higher-task curves pull well above `Task = 1`; when residual (*person × rater × task*) variance dominates, total `raters × tasks` drives the gain. | Moving from `1 task × 4 raters` (`G ≈ 0.31`) to `3 tasks × 4 raters` (`★ Selected plan`, `G ≈ 0.57`) or `4 tasks × 4 raters` (`G ≈ 0.64`) substantially boosts reliability, while 6-rating options (`1×6`, `2×3`, `3×2`) cluster near `G ≈ 0.40` because residual variance dominates in this synthetic example. |
 
 *(Reminder: G/D requires complete, balanced 1–2 random-facet observed-score designs with 1 observation per cell and unit weights; `G` and `Phi` are point projections without confidence intervals, and benchmarks like `0.80` depend on assessment stakes rather than acting as universal rules. See [Analyses, interpretation and reporting limits](analysis_scope.md) for full details.)*

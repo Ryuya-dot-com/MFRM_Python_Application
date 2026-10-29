@@ -23,7 +23,10 @@ def test_spawned_worker_cancel_failure_restart_and_restore(tmp_path):
     assert record["worker_result"] == "complete"
     assert record["events"].count("cancelled") == 1
     assert record["events"].count("failed") == 1
-    assert record["events"].count("complete") == 1
+    assert {(item["model"], item["method"]) for item in record["extended"]} == {
+        ("RSM", "JMLE"), ("PCM", "JMLE"), ("RSM", "MML"), ("PCM", "MML"), ("G/D", "ANOVA")}
+    assert len(record["extended"]) == 5
+    assert record["events"].count("complete") == 1 + len(record["extended"])
     assert record["report_svg_count"] == 3
     assert (tmp_path / "wright.png").read_bytes().startswith(b"\x89PNG\r\n\x1a\n")
     restored = subprocess.run(

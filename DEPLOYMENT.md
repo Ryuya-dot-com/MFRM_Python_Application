@@ -56,15 +56,15 @@ environment before updating the public branch. Include newly added modules and
 resources as well as tracked changes: `streamlit_app.py` imports the shared
 `mfrm_app/` package and reads `locales/`, bundled anchor guides, `CITATION.cff`
 and selected files in `docs/`. Copying the entrypoint alone is insufficient.
-The desktop prototype and its build requirements are not required to run the Web
+The desktop application and its build requirements are not required to run the Web
 app; their presence does not establish desktop distribution support.
 
 Keep a source manifest and installed package versions with the local verification
 record. Exclude `validation/generated/`, `validation/source_snapshots/`, backups,
 virtual environments, secrets and local `AGENTS.md` instructions from the public
 candidate. Use existing results only where their source, environment and checked
-behavior still apply; rerun affected or missing checks. Participant evaluation is
-scheduled after release and is separate from these technical checks.
+behavior still apply; rerun affected or missing checks. Human comprehension
+evaluation is separate from these technical checks.
 
 Inspect the isolated release checkout before deployment:
 
@@ -94,17 +94,20 @@ manifests, run affected checks, and satisfy any required final-head checks.
 
 ## Publication and hosted acceptance
 
-The [current release checklist](RELEASE_CHECKLIST.md#milestone-w3) owns completion
-status. Prepare the following before the authorized public update:
+Use the [hosted release checks](RELEASE_CHECKLIST.md#hosted-web-release) and
+record their outcome for the specific candidate. Prepare the following before
+an authorized public update:
 
 1. Record the candidate commit, CI run, pre-update `main` commit, installed Python
    and package versions, hosted URL and deployment coordinates. Compare the
    final diff with the tested candidate. Keep local evidence outside the public
    source bundle.
-2. On the actual publication day, set `date-released` in `CITATION.cff`; use that
+2. For a new version, set `date-released` in `CITATION.cff` on its publication day; use that
    date/year consistently in the README, changelog and release body. Remove the
-   unpublished-candidate wording together. Check the generated citation and its
-   saved-report assets. Do not assign a publication date while awaiting approval.
+   unpublished-candidate wording for that version together. Check the generated
+   citation and its saved-report assets. Do not change a published version’s
+   date when correcting documentation, or describe a Web-only release as a
+   desktop release.
 3. Merge the reviewed candidate once. A `main` update is a deployment action:
    Community Cloud follows the configured repository and reinstalls dependencies
    when their files change. Record the actual merge commit and confirm the
@@ -123,8 +126,8 @@ status. Prepare the following before the authorized public update:
 |---|---|
 | About / citation | Adopted version and source; actual publication year in citation assets; Python and dependencies recorded from deployment evidence |
 | Built-in writing example, guided RSM/JMLE | Input → analysis → results/figures → HTML/PDF report; interpretation and person-boundary holds remain visible; Japanese/English navigation retains the analysis |
-| Synthetic fixed-SD RSM/PCM selected intervals | Use the retained W2 180-rating input/settings (Direct, SD 1, GH61); obtain qualified output, save CSV/JSON/HTML, reload the matching JSON, reject the other model's record and restore opted-in history |
-| Held output | The retained PCM GH5 control withholds unsupported intervals; invalid/missing-cell G/D input explains its reason in the downloaded CSV |
+| Synthetic fixed-SD RSM/PCM selected intervals | Use a recorded input/settings pair with an accepted numerical reference; obtain eligible output, save CSV/JSON/HTML, reload the matching JSON, reject the other model's record and restore opted-in history |
+| Held output | Use a recorded interval counterexample that fails the applicable numerical checks and retains unavailable SEs/bounds; invalid/missing-cell G/D input explains its reason in the downloaded CSV |
 | Native downloads | Read the resulting files, verify analysis identity, values/holds and readable report/figure content; saving leaves the selected result available |
 | Primary controls and reflow | At desktop and 800px width, complete the sample's primary navigation and saving with the keyboard; confirm visible focus, reachable controls and retained warnings. This is not certification of every detailed screen or assistive technology |
 | Static figure availability | Save a PNG when the host supports the renderer. If unavailable, show its explanation and successfully save/open interactive HTML; do not claim hosted PNG support based on a local success |
@@ -137,11 +140,10 @@ successful push or a healthy landing page alone does not complete acceptance.
 
 ## Rollback
 
-Before merging, retain the actual pre-update `main` commit and its deployment
-settings. For the prepared 0.2.19-beta update the recorded baseline is
-`b483d97e1b1ac3e75b3fca3e8a0e64547ffc9961` (0.2.18-beta); recheck it immediately
-before publication. Do not overwrite later unrelated changes if the baseline
-has moved.
+Before merging, retain the actual pre-update deployment commit, dependencies
+and settings. Recheck the target branch immediately before publication, and
+identify concurrent unrelated changes that must be preserved. Do not use
+an old release’s rollback commit as the baseline for a new update.
 
 If the deployed source is wrong, required analysis/saving fails, or holds are
 lost, stop the release announcement. Revert the release merge through a new
@@ -160,7 +162,7 @@ call recovery complete while the runtime or required behavior differs.
 Keep failure logs and the rejected candidate for correction. Leave any published
 tag intact; mark an already published prerelease as withdrawn/affected with its
 reason and working version. Do not silently retarget its tag. Rollback restores
-the earlier supported behavior, not qualification for the new interval feature.
+the earlier supported behavior; it does not validate the rejected feature.
 
 ## Official References
 

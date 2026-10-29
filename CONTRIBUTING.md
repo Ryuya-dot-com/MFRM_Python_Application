@@ -1,13 +1,51 @@
 # Contributing
 
-This repository is a standalone Python beta for MFRM analysis in Streamlit.
+This repository contains the Streamlit Web application and a Tkinter desktop
+preview for MFRM analysis.
 Reusable statistical, evidence, and export computation belongs under
-`mfrm_app/`; `streamlit_app.py` is the UI entrypoint and may retain thin
+`mfrm_app/`; `streamlit_app.py` and `desktop_app.py` are UI entrypoints and may retain thin
 compatibility wrappers. Core code must not call external estimation engines.
+
+## Run from source
+
+Use the branch or tag for the version you intend to inspect. A published Web
+tag, the default branch and a desktop preview branch may contain different
+features. These instructions assume a checkout containing `desktop_app.py`
+and `requirements.txt`; GitHub's source ZIP is not a standalone executable.
+Users of a supplied application ZIP do not need Python or these steps.
+
+Use Python 3.11 or 3.12. Desktop startup also requires Tkinter/Tk. From the
+source directory, create an isolated environment and install the requirements.
+The initial installation needs internet access.
+
+On Windows (PowerShell):
+
+```powershell
+py -3.12 -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+.\.venv\Scripts\python.exe desktop_app.py
+```
+
+On macOS or Linux:
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install -r requirements.txt
+python desktop_app.py
+```
+
+Keep the terminal open while using the source application. For subsequent
+desktop launches, run the last command in the same environment. For the Web
+interface, run `python -m streamlit run streamlit_app.py` instead, using the
+environment's Python executable. See the [Windows guide](docs/desktop_user_guide.en.md)
+for the sample workflow. Source startup does not establish support for a
+packaged app on a particular OS.
 
 ## Before Editing
 
-- Run `python streamlit_app.py --doctor` to confirm the local environment.
+- When setting up or changing the runtime environment, use
+  `python streamlit_app.py --doctor` to check it.
 - Do not commit generated files such as `__pycache__`, `.pytest_cache`, or `validation/generated/`.
 - Do not add confidential rating data, real person IDs, rater IDs, institution names, subgroup labels, or proprietary assessment data.
 - Keep privacy warnings and statistical claim boundaries visible in user-facing documentation.
@@ -16,7 +54,11 @@ compatibility wrappers. Core code must not call external estimation engines.
 
 ## Verification
 
-Use:
+Choose checks for the changed behavior and dependencies. For documentation-only
+changes, verify facts, links, language consistency and whether the text is
+bundled; do not repeat numerical experiments or rebuild unchanged computation.
+For application changes, run affected tests and the required integration checks.
+The general Web verification sequence is:
 
 ```bash
 python -m pip install -r requirements-dev.txt
@@ -89,7 +131,7 @@ presenting it as available to readers of a fresh checkout.
 
 ## Localization (i18n)
 
-User-visible strings should resolve through the ``t()`` helper so the
+In the Web interface, user-visible strings should resolve through the ``t()`` helper so the
 sidebar language picker (English / Japanese) keeps working. New strings:
 
 - Add the English source under `locales/en.json` first; the locale code
@@ -113,6 +155,10 @@ sidebar language picker (English / Japanese) keeps working. New strings:
   Cloud and GitHub Pages deployments dependency-free.
 - Indent locale JSON with 2 spaces, UTF-8 without BOM, and end with a
   trailing newline.
+
+Desktop interface strings use `mfrm_app/desktop_i18n.py` and the desktop
+translation helper. Keep its English/Japanese wording consistent with the
+Web descriptions without translating user-supplied column names or data.
 
 ### Plotly figure text
 
@@ -160,7 +206,6 @@ keeping the term in English and revisit during translation review.
 ## Pull Request Checklist
 
 - [ ] No confidential data or generated artifacts are committed.
-- [ ] `python streamlit_app.py --doctor` passes.
-- [ ] `python streamlit_app.py --self-test` passes.
-- [ ] Streamlit AppTest smoke passes.
+- [ ] Checks cover the changed behavior, affected saved outputs and required integration paths.
+- [ ] Relevant runtime, self-test, Streamlit AppTest or desktop checks pass; their scope and any untested conditions are stated.
 - [ ] Statistical caveats and privacy warnings remain accurate.

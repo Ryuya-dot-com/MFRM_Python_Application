@@ -196,7 +196,11 @@ def wright_figure(result):
     if persons.empty:
         left.text(.5, .5, "No finite person locations", ha="center", transform=left.transAxes)
     else:
-        left.hist(persons.to_numpy(), bins=min(20, max(5, int(np.sqrt(len(persons))))), orientation="horizontal",
+        values = persons.to_numpy()
+        # Near-identical estimates otherwise produce subpixel bars on the shared logit axis.
+        bins = (np.linspace(float(np.median(values)) - .5, float(np.median(values)) + .5, 6)
+                if np.ptp(values) < 1e-9 else min(20, max(5, int(np.sqrt(len(persons))))))
+        left.hist(values, bins=bins, orientation="horizontal",
                   color="#309b92", edgecolor="white", linewidth=.7)
     left.invert_xaxis()
     left.set(xlabel="Persons (count)", ylabel="Measure (logits)", title=f"Persons · n = {len(persons)}")

@@ -1,7 +1,7 @@
-"""A small UI-independent workflow for the first desktop analysis.
+"""UI-independent calibration and the original basic desktop reports.
 
-RSM/JMLE, long-form ratings and explicitly selected columns only. The shared
-engine retains its broader Web API; this workflow does not expose every option.
+RSM/PCM with JMLE or fixed-SD MML; the basic native figures still serve RSM.
+Supplementary calculations and project requests live in desktop_analysis.
 """
 from __future__ import annotations
 
@@ -39,6 +39,9 @@ def _source_versions():
     else:
         modules = (engine, output_qualification, reporting_facts, project)
         paths = [Path(module.__file__) for module in modules] + [Path(__file__)]
+        paths += [Path(__file__).with_name(name + ".py") for name in
+                  ("desktop_analysis", "desktop_outputs", "bias_analysis", "generalizability", "structural_intervals",
+                   "mml_fixed_sd_review", "mml_joint")]
         source_hashes = {path.name: hashlib.sha256(path.read_bytes()).hexdigest() for path in paths}
     return {
         "app_version": engine.APP_VERSION,
@@ -54,7 +57,8 @@ def _finish_analysis(result, data, settings, progress):
     progress("tables")
     tables = engine.calc_facets_report_tbls(result, diagnostics)
     analysis = {
-        "kind": "basic-rsm-jmle-v1",
+        "kind": ("basic-rsm-jmle-v1" if settings["model"] == "RSM" and settings["method"] == "JMLE"
+                 else "mfrm-analysis-v2"),
         "analysis_id": engine.build_result_analysis_identity(result).analysis_id,
         "created_at": datetime.now(timezone.utc).isoformat(),
         "source": _source_versions(),
@@ -73,7 +77,9 @@ def _finish_analysis(result, data, settings, progress):
 
 
 def run_basic_analysis(data, *, person_col, facet_cols, score_col, rating_min, rating_max,
-                       maxit=400, reltol=1e-6, progress=None):
+                       maxit=400, reltol=1e-6, model="RSM", method="JMLE", step_facet=None,
+                       quad_points=15, population_prior_sd=1.0, keep_original=True,
+                       estimate_population_sd=False, mml_engine="EM", progress=None):
     """Fit once and retain qualified tables. Failure/unknown termination stays so.
 
     Progress identifies phases, not a fabricated percentage. A desktop worker
@@ -91,9 +97,28 @@ def run_basic_analysis(data, *, person_col, facet_cols, score_col, rating_min, r
         raise ValueError("Specify integer minimum/maximum scores with minimum < maximum")
     if type(maxit) is not int or maxit < 1 or not np.isfinite(reltol) or reltol <= 0:
         raise ValueError("Invalid iteration limit or stopping tolerance")
+    if model not in {"RSM", "PCM"} or method not in {"JMLE", "MML"}:
+        raise ValueError("Desktop analysis supports RSM/PCM with JMLE or fixed-SD MML")
+    if keep_original is not True or estimate_population_sd is not False or mml_engine != "EM":
+        raise ValueError("Desktop requests retain original scores and use fixed-SD EM for MML")
+    if model == "PCM" and step_facet not in facet_cols:
+        raise ValueError("PCM requires an explicitly selected step facet")
+    if model == "RSM" and step_facet is not None:
+        raise ValueError("RSM uses common steps; do not select a PCM step facet")
+    if (type(quad_points) is not int or quad_points < 3
+            or isinstance(population_prior_sd, (bool, np.bool_))
+            or not np.isfinite(population_prior_sd) or population_prior_sd <= 0):
+        raise ValueError("MML requires at least three quadrature points and a positive finite fixed SD")
+    if method == "JMLE" and (quad_points != 15 or population_prior_sd != 1.0):
+        raise ValueError("Population SD and quadrature settings apply only to MML")
     settings = dict(person_col=person_col, facet_cols=facet_cols, score_col=score_col,
                     rating_min=rating_min, rating_max=rating_max, maxit=maxit, reltol=reltol,
-                    model="RSM", method="JMLE", keep_original=True)
+                    model=model, method=method, keep_original=True)
+    if model == "PCM":
+        settings["step_facet"] = step_facet
+    if method == "MML":
+        settings.update(quad_points=quad_points, population_prior_sd=float(population_prior_sd),
+                        estimate_population_sd=False, mml_engine="EM")
     progress = progress or (lambda phase: None)
     progress("estimating")
     result = engine.mfrm_estimate(data=data, **settings)
@@ -120,6 +145,8 @@ def category_figure(analysis):
     from matplotlib.figure import Figure
 
     result = analysis["result"]
+    if result["config"]["model"] != "RSM":
+        raise ValueError("PCM category curves require a selected step-facet level")
     steps = np.asarray(result["params"]["steps"], dtype=float)
     if not np.isfinite(steps).all():
         raise ValueError("Category curves require finite step estimates")
@@ -174,6 +201,8 @@ def figure_bytes(analysis, kind, *, facet=None, statistic="Infit", format="svg",
 
 def basic_report_html(analysis, *, pathway_statistic="Infit", pathway_facet=None):
     """Standalone HTML with qualified shared tables and three offline SVGs."""
+    if analysis["kind"] != "basic-rsm-jmle-v1":
+        raise ValueError("The basic HTML report supports the original RSM/JMLE workflow only")
     tables = current_tables(analysis)
     result = analysis["result"]
     current = qualification_snapshot(result)

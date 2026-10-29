@@ -3,6 +3,7 @@ from copy import deepcopy
 import json
 import os
 from pathlib import Path
+from types import SimpleNamespace
 import subprocess
 import sys
 
@@ -10,7 +11,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from desktop_app import demonstration_data
+from desktop_app import DesktopApp, demonstration_data
 from mfrm_app import basic_analysis as basic, engine, project
 
 
@@ -18,6 +19,64 @@ from mfrm_app import basic_analysis as basic, engine, project
 def analysis():
     return basic.run_basic_analysis(demonstration_data(), person_col="Person", facet_cols=["Rater", "Task"],
                                     score_col="Score", rating_min=0, rating_max=3)
+
+
+@pytest.fixture
+def project_opener():
+    ui = DesktopApp.__new__(DesktopApp)
+    ui.busy, ui.language = False, "en"
+    ui.analysis = {"previous": "retained"}
+    ui.root = SimpleNamespace(after_idle=lambda callback, *args: callback(*args))
+    ui.discard = lambda: True
+    ui.errors = []
+    ui.error = ui.errors.append
+    ui.set_data = lambda data, label: setattr(ui, "data_label", label)
+    ui.restore_settings = lambda analysis: None
+    ui.show_analysis = lambda analysis: setattr(ui, "analysis", analysis)
+    return ui
+
+
+@pytest.mark.parametrize("route", ["dialog", "finder"])
+def test_project_open_routes_restore_without_refit_or_original_write(analysis, project_opener, tmp_path, monkeypatch, route):
+    from tkinter import filedialog
+    path = tmp_path / "作文's sample.mfrm"
+    project.save_project(path, analysis)
+    original = path.read_bytes()
+    monkeypatch.setattr(engine, "mfrm_estimate", lambda *a, **k: pytest.fail("Opening must not refit"))
+    monkeypatch.setattr(filedialog, "askopenfilename", lambda **k: str(path) if route == "dialog" else pytest.fail("Finder supplied the path"))
+    if route == "dialog":
+        project_opener.open_project()
+    else:
+        project_opener.open_documents(str(path))
+    assert not project_opener.errors
+    assert project_opener.analysis["analysis_id"] == analysis["analysis_id"]
+    assert project_opener.data_label == path.name
+    assert path.read_bytes() == original
+
+
+@pytest.mark.parametrize("busy,consent", [(True, True), (False, False)])
+def test_external_open_respects_active_worker_and_unsaved_cancel(project_opener, monkeypatch, busy, consent):
+    project_opener.busy = busy
+    project_opener.discard = lambda: consent
+    monkeypatch.setattr(project, "load_project", lambda *a: pytest.fail("Current work must be preserved"))
+    project_opener.open_documents("next.mfrm")
+    assert project_opener.analysis == {"previous": "retained"}
+    assert bool(project_opener.errors) == busy
+
+
+def test_external_open_rejects_multiple_files_without_losing_current_result(project_opener, monkeypatch):
+    monkeypatch.setattr(project, "load_project", lambda *a: pytest.fail("Do not silently choose one file"))
+    project_opener.open_documents("one.mfrm", "two.mfrm")
+    assert "one project at a time" in str(project_opener.errors[0])
+    assert project_opener.analysis == {"previous": "retained"}
+
+
+def test_external_open_bad_file_reports_error_and_keeps_current_result(project_opener, tmp_path):
+    path = tmp_path / "bad.mfrm"
+    path.write_text("not a project")
+    project_opener.open_documents(str(path))
+    assert project_opener.errors
+    assert project_opener.analysis == {"previous": "retained"}
 
 
 def test_engine_is_shared_and_imports_without_ui():

@@ -1,0 +1,72 @@
+name: Windows desktop candidate
+
+on:
+  push:
+    branches: [main, 'desktop/**']
+    paths:
+      - 'desktop_app.py'
+      - 'mfrm_app/**'
+      - 'locales/en.json'
+      - 'examples/desktop_writing.csv'
+      - 'scripts/build_desktop.py'
+      - 'scripts/check_windows_desktop.py'
+      - 'scripts/desktop.spec'
+      - 'requirements-desktop-build.txt'
+      - 'CITATION.cff'
+      - 'LICENSE*'
+      - 'docs/desktop_windows_installation.md'
+      - '.github/workflows/desktop-windows.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  windows-desktop:
+    # This is the build host, not Windows 11 GUI acceptance.
+    runs-on: windows-2025
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v6.0.2
+      - uses: actions/setup-python@v6.2.0
+        with:
+          python-version: '3.14.3'
+          architecture: x64
+          cache: pip
+          cache-dependency-path: requirements-desktop-build.txt
+      - name: Install isolated build dependencies
+        run: |
+          python -m venv "${{ runner.temp }}/mfrm-build-env"
+          & "${{ runner.temp }}/mfrm-build-env/Scripts/python.exe" -m pip install --only-binary=:all: -r requirements-desktop-build.txt
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Build the windowed application
+        run: |
+          & "${{ runner.temp }}/mfrm-build-env/Scripts/python.exe" scripts/build_desktop.py --output "${{ runner.temp }}/mfrm-windows-build"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Check frozen workflows, restore and package
+        run: |
+          python scripts/check_windows_desktop.py --build-dir "${{ runner.temp }}/mfrm-windows-build" --output "${{ runner.temp }}/mfrm-windows-checks"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Retain verification records even after failure
+        if: always()
+        uses: actions/upload-artifact@v6.0.0
+        with:
+          name: windows-desktop-checks-${{ github.sha }}
+          path: |
+            ${{ runner.temp }}/mfrm-windows-build/desktop_build.json
+            ${{ runner.temp }}/mfrm-windows-build/work/desktop/warn-desktop.txt
+            ${{ runner.temp }}/mfrm-windows-checks
+          if-no-files-found: warn
+          retention-days: 14
+      - name: Retain candidate for Windows 11 acceptance
+        uses: actions/upload-artifact@v6.0.0
+        with:
+          name: windows-desktop-candidate-${{ github.sha }}
+          path: |
+            ${{ runner.temp }}/mfrm-windows-build/MFRM-Desktop-Windows-x64.zip
+            ${{ runner.temp }}/mfrm-windows-build/SHA256SUMS.txt
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 14

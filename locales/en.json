@@ -4809,5 +4809,13 @@
     "stopping_help": "Termination or stopping-error checks failed. Preserve the run, review iteration and stopping settings, and refit before evaluating intervals again.",
     "quadrature_help": "Gradient or covariance changes across quadrature orders exceeded the tolerance. Increase the fitting quadrature order, refit, then evaluate the same targets again.",
     "design_help": "Identification, a finite-solution boundary, or the information matrix prevents intervals. Review the rating design, category counts and model constraints. Eigenvalue repair is not used to create intervals."
+  },
+  "figure_presentation": {
+    "label": "Figure presentation",
+    "explained": "Explanatory",
+    "manuscript": "Manuscript",
+    "caption": "Figure title and note",
+    "caption_download": "Save title and note (.txt)",
+    "help": "Manuscript mode moves overall titles and explanatory notes outside the graphic. Axes, legends, panel labels and eligibility rules remain. Place the title and notes in your manuscript; follow your journal requirements."
   }
 }

@@ -61,12 +61,16 @@ Python is bundled inside the download—no Python, R, FACETS, or ConQuest instal
 > [!IMPORTANT]
 > **Unsigned Windows preview:** Because this preview executable (`0.2.19-beta`) is unsigned, Windows may display a security prompt on first launch. If opening is blocked, record the exact message for support—**do not disable Windows protection**. Windows on ARM and other Windows versions are not verified, and this preview is not yet certified across every Windows configuration.
 
-### macOS (Apple Silicon, M1 or Later)
+### macOS (Apple Silicon, M1 or Later) — Standalone Preview ZIP (Available Now)
 
-MFRM Desktop uses the identical `Data → Settings → Results` interface on Apple Silicon Macs (`arm64`; Intel Macs are not targeted):
+MFRM Desktop uses the identical `Data → Settings → Results` interface on Apple Silicon Macs (`arm64`; Python is bundled inside `MFRM-Desktop.app`, while Intel Macs can run from [Python source](../CONTRIBUTING.md#run-from-source)):
 
-- **Run from Python source today:** A public standalone macOS `.app` archive is not yet posted on GitHub Releases while platform acceptance continues. To run the desktop app on macOS now, follow **[Run from source in CONTRIBUTING.md](../CONTRIBUTING.md#run-from-source)** (`python desktop_app.py` in a Python 3.11+ environment with Tk).
-- **Local or candidate `MFRM-Desktop.app` bundles:** When opening a locally built or acceptance-candidate `.app` bundle (after verifying its SHA-256 with `shasum -a 256`), extract the ZIP in Finder and keep the complete `MFRM-Desktop.app` bundle in a writable folder. Because non-notarized ad-hoc bundles trigger macOS Gatekeeper prompts, consult [Apple's official Open Anyway steps](https://support.apple.com/en-us/102445) only after verifying the source (never disable Gatekeeper or strip quarantine attributes, and investigate rather than override any damaged-app warning).
+1. Open the **[macOS Desktop Preview Release (`desktop-macos-20261030`)](https://github.com/Ryuya-dot-com/MFRM_Python_Application/releases/tag/desktop-macos-20261030)**, download `MFRM-Desktop-macOS-arm64-preview-dabb891-20261030.zip`, and verify its SHA-256 in Terminal with `shasum -a 256` before opening (GitHub's automatic **Source code (zip)** at the bottom is source code, not the app).
+2. Double-click the ZIP in Finder to expand it. Keep the complete **`MFRM-Desktop.app`** bundle intact in a writable folder such as your user `Applications` folder.
+3. Open **`MFRM-Desktop.app`**.
+
+> [!IMPORTANT]
+> **Unnotarized macOS preview:** Because this preview bundle (`0.2.19-beta`, bundled libraries targeting macOS 14.0+) carries an ad-hoc signature without Apple Developer ID notarization, macOS displays an unidentified-developer prompt on first launch. Only after verifying the source and SHA-256, follow [Apple's official Open Anyway guidance](https://support.apple.com/en-us/102445) (**System Settings → Privacy & Security → Open Anyway**) if your Mac permits it—**do not disable Gatekeeper or strip quarantine attributes**, and investigate rather than override any damaged-app warning.
 
 ### Want to try in a browser first?
 

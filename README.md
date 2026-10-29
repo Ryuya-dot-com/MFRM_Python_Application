@@ -6,10 +6,11 @@
 
 <p align="center">
   <strong>Separate student proficiency from rater strictness, task difficulty, and rubric behavior on one shared scale.</strong><br />
-  <a href="https://github.com/Ryuya-dot-com/MFRM_Python_Application/releases/tag/desktop-windows-20261030"><strong>Download Windows Preview</strong></a> ·
-  <a href="docs/desktop_user_guide.en.md"><strong>Desktop Guide (Windows &amp; macOS)</strong></a> ·
+  <a href="https://ryuya-dot-com.github.io/MFRM_Python_Application/"><strong>Website &amp; Docs</strong></a> ·
+  <a href="https://github.com/Ryuya-dot-com/MFRM_Python_Application/releases/tag/desktop-macos-20261030"><strong>Download for macOS</strong></a> ·
+  <a href="https://github.com/Ryuya-dot-com/MFRM_Python_Application/releases/tag/desktop-windows-20261030"><strong>Download for Windows</strong></a> ·
   <a href="https://mfrmpythonapplication-xodghmcghngx8cz5zmhfeg.streamlit.app/"><strong>Open Web App</strong></a> ·
-  <a href="docs/analysis_scope.md"><strong>Interpretation Guide</strong></a> ·
+  <a href="docs/desktop_user_guide.en.md"><strong>User Guide</strong></a> ·
   <a href="README.ja.md"><strong>日本語</strong></a>
 </p>
 
@@ -32,7 +33,7 @@ Why can't raw averages—or even a high inter-rater correlation (`r = 0.90`)—s
 
 **Many-Facet Rasch Measurement (MFRM)** estimates examinee proficiency, rater severity, task difficulty, and criterion difficulty together on a single **logit ruler** (`0.00` = average facet location), while **Generalizability / Decision (G/D) studies** show how changing the number of raters or tasks affects score reliability.
 
-**MFRM Desktop** brings these workflows into one self-contained app (`Data → Settings → Results`)—with **no FACETS, ConQuest, R, or command-line setup required** in the packaged Windows preview.
+**MFRM Desktop** brings these workflows into one self-contained app (`Data → Settings → Results`)—with **Python bundled inside and no FACETS, ConQuest, R, or command-line setup required** in the packaged macOS and Windows previews.
 
 ![Wright map from the built-in synthetic writing sample](docs/images/desktop-wright-map.png)
 
@@ -47,13 +48,14 @@ Why can't raw averages—or even a high inter-rater correlation (`r = 0.90`)—s
 
 | Platform | Best for | Current availability & how to start |
 |---|---|---|
-| **Windows 11 (x64) Desktop** | Offline local analysis, `.mfrm` project files, manuscript PNG/SVG exports — **no Python install needed** | **Public preview available now.** [Download from GitHub Releases](https://github.com/Ryuya-dot-com/MFRM_Python_Application/releases/tag/desktop-windows-20261030) (application ZIP hosted on Dropbox) and follow the [Desktop Guide](docs/desktop_user_guide.en.md). Unsigned preview (`0.2.19-beta`); Windows on ARM and other Windows editions are not yet verified. |
-| **macOS (Apple Silicon) Desktop** | Same native `Data → Settings → Results` desktop workflow on M1 or later Macs | **Runs from Python source today** via the [developer startup steps](CONTRIBUTING.md#run-from-source) and shares every workflow in the [Desktop Guide](docs/desktop_user_guide.en.md). A public standalone `.app` download is not yet released while platform acceptance continues. |
+| **macOS (Apple Silicon) Desktop** | Offline local analysis, `.mfrm` project files, manuscript PNG/SVG exports on M1 or later Macs — **no Python install needed** | **Public preview available now.** [Download from GitHub Releases (`desktop-macos-20261030`)](https://github.com/Ryuya-dot-com/MFRM_Python_Application/releases/tag/desktop-macos-20261030) and follow the [Desktop Guide](docs/desktop_user_guide.en.md). Ad-hoc signed / unnotarized preview (`0.2.19-beta`, macOS 14.0+); Intel Macs can run from Python source. |
+| **Windows 11 (x64) Desktop** | Same offline local `Data → Settings → Results` workflow on Windows — **no Python install needed** | **Public preview available now.** [Download from GitHub Releases (`desktop-windows-20261030`)](https://github.com/Ryuya-dot-com/MFRM_Python_Application/releases/tag/desktop-windows-20261030) (application ZIP hosted on Dropbox) and follow the [Desktop Guide](docs/desktop_user_guide.en.md). Unsigned preview (`0.2.19-beta`); Windows on ARM and other Windows editions are not yet verified. |
 | **Web Browser (Any OS)** | Instant browser exploration, plus extra research modules (bounded GPCM, latent regression, anchors/linking, residual PCA, simulation) | **[Open the hosted Web app](https://mfrmpythonapplication-xodghmcghngx8cz5zmhfeg.streamlit.app/)** (`v0.2.19-beta`) with synthetic or appropriately de-identified data, or [install and run locally](#install) for confidential datasets. |
+| **R (`mfrmr` on CRAN)** | Reproducible scripted MFRM pipelines in R, RStudio, Positron, or Quarto | Install via `install.packages("mfrmr")` from [CRAN](https://cran.r-project.org/package=mfrmr) and see the [`mfrmr` documentation](https://ryuya-dot-com.github.io/mfrmr/) (independent R implementation; align settings before comparing outputs). |
 | **Contributors & Builders** | Running tests, checking build manifests, or packaging desktop prototypes | See [CONTRIBUTING.md](CONTRIBUTING.md) and [DEPLOYMENT.md](DEPLOYMENT.md). |
 
 > [!NOTE]
-> **Downloading the right file:** On GitHub Releases, GitHub's automatic **Source code (zip)** contains Python source code, not the standalone desktop app. For Windows, use **Download MFRM Desktop for Windows x64** at the top of the [`desktop-windows-20261030` release](https://github.com/Ryuya-dot-com/MFRM_Python_Application/releases/tag/desktop-windows-20261030) (the separate `v0.2.19-beta` tag is the Web/source release). In the Web app, check **About MFRM** for the live commit and version.
+> **Downloading the right file:** On GitHub Releases, GitHub's automatic **Source code (zip)** contains Python source code, not the standalone desktop app. Use the application ZIP on [`desktop-macos-20261030`](https://github.com/Ryuya-dot-com/MFRM_Python_Application/releases/tag/desktop-macos-20261030) (macOS Apple Silicon) or [`desktop-windows-20261030`](https://github.com/Ryuya-dot-com/MFRM_Python_Application/releases/tag/desktop-windows-20261030) (Windows 11 x64). The separate `v0.2.19-beta` tag is the Web/source release. In the Web app, check **About MFRM** for the live commit and version.
 
 ---
 
@@ -151,7 +153,7 @@ A completed run does not make every displayed number suitable for statistical in
 
 ## Install
 
-*(Skip this section if you are using the standalone [Windows Desktop Preview ZIP](https://github.com/Ryuya-dot-com/MFRM_Python_Application/releases/tag/desktop-windows-20261030), which bundles Python.)*
+*(Skip this section if you are using the standalone [macOS](https://github.com/Ryuya-dot-com/MFRM_Python_Application/releases/tag/desktop-macos-20261030) or [Windows](https://github.com/Ryuya-dot-com/MFRM_Python_Application/releases/tag/desktop-windows-20261030) Desktop Preview ZIPs, which bundle Python.)*
 
 To run the Web app from source, use **Python 3.11 or 3.12** in a virtual environment:
 

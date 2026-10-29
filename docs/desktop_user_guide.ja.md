@@ -1,4 +1,4 @@
-# デスクトップ版の使い方（Windows）
+# デスクトップ版の使い方（macOS・Windows）
 
 MFRM Desktopは、作文や実技などの評定データを読み込み、対象者・評価者・課題などの違いを図と表で確認するアプリです。このページでは、初めて使う方に向けて、起動から結果の保存までを説明します。
 
@@ -10,11 +10,17 @@ MFRM Desktopは、作文や実技などの評定データを読み込み、対�
 
 ## 入手と起動
 
-アプリZIPは[Windowsデスクトップ試用版のRelease](https://github.com/Ryuya-dot-com/MFRM_Python_Application/releases/tag/desktop-windows-20261030)から取得できます。ReleaseにDropboxのダウンロード先とSHA-256を記載しています。Pythonは同梱されており、追加インストールは不要です。GitHubの自動生成ソースZIPや別のv0.2.19-beta Web版Releaseは、Windowsアプリのダウンロードではありません。
+アプリZIPは[macOSデスクトップ試用版のRelease](https://github.com/Ryuya-dot-com/MFRM_Python_Application/releases/tag/desktop-macos-20261030)または[Windowsデスクトップ試用版のRelease](https://github.com/Ryuya-dot-com/MFRM_Python_Application/releases/tag/desktop-windows-20261030)から取得できます。各Releaseにダウンロード先とSHA-256を記載しています。Pythonは同梱されており、追加インストールは不要です。GitHubの自動生成ソースZIPや別のv0.2.19-beta Web版Releaseは、デスクトップアプリのダウンロードではありません。
 
-Windows試用版の対象は **Windows 11 x64** です。Windows on ARMの対応は確認されていません。確認した環境と未確認の範囲はReleaseに記載しています。すべてのWindows構成に対応を認定した安定版ではありません。
+試用版の対象は **macOS（Apple Silicon / M1以降、同梱ライブラリ下限 macOS 14.0）** および **Windows 11 x64** です。Intel MacやWindows on ARMは対象外です。確認した環境と未確認の範囲は各Releaseに記載しています。すべてのOS構成に対応を認定した安定版ではありません。
 
-### アプリZIPから起動する
+### macOSでアプリZIPから起動する
+
+1. [macOS試用版のRelease](https://github.com/Ryuya-dot-com/MFRM_Python_Application/releases/tag/desktop-macos-20261030)からアプリZIPを取得し、開く前にターミナルの `shasum -a 256` でSHA-256の一致を確認します。
+2. FinderでZIPをダブルクリックして展開し、`MFRM-Desktop.app` 全体を書き込み可能な場所（自分の `Applications` フォルダーなど）へ置きます。
+3. アプリを開きます。試用版はApple Developer IDの公証を受けていません。開発元未確認の警告が出る場合は、[Appleの案内](https://support.apple.com/ja-jp/102445)に従い、入手元とSHA-256を確認した上で端末の設定が許す場合に限り **システム設定 → プライバシーとセキュリティ → このまま開く** を使用してください。Gatekeeper全体の無効化や隔離属性の削除は行わないでください。
+
+### WindowsでアプリZIPから起動する
 
 1. 案内された同一版のZIPとSHA-256を入手します。
 2. エクスプローラーの **すべて展開** で展開し、`MFRM-Desktop.exe` と `_internal` を同じフォルダーに保持します。

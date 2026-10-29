@@ -1,6 +1,6 @@
 # MFRM — 多相ラッシュモデル分析アプリ
 
-[English](README.md) · [Web版を開く](https://mfrmpythonapplication-xodghmcghngx8cz5zmhfeg.streamlit.app/) · [Windows版の使い方](docs/desktop_user_guide.ja.md)
+[English](README.md) · [紹介サイト・ガイド](https://ryuya-dot-com.github.io/MFRM_Python_Application/?lang=ja) · [macOS試用版](https://github.com/Ryuya-dot-com/MFRM_Python_Application/releases/tag/desktop-macos-20261030) · [Windows試用版](https://github.com/Ryuya-dot-com/MFRM_Python_Application/releases/tag/desktop-windows-20261030) · [Web版を開く](https://mfrmpythonapplication-xodghmcghngx8cz5zmhfeg.streamlit.app/) · [デスクトップ版の使い方](docs/desktop_user_guide.ja.md)
 
 作文・スピーキング・実技試験などの評定データから、対象者の測定値、評価者の厳しさ、課題の難しさ、得点カテゴリーの使われ方を分析するアプリです。結果を図表で確認し、レポートを保存できます。
 
@@ -11,11 +11,13 @@
 | 利用方法 | 入口 |
 |---|---|
 | ブラウザーで試す | [Web版](https://mfrmpythonapplication-xodghmcghngx8cz5zmhfeg.streamlit.app/)。公開サービスでは人工データや適切に匿名化したデータを使います。 |
-| Windowsのデスクトップ版を試す | [Windows試用版をダウンロード](https://github.com/Ryuya-dot-com/MFRM_Python_Application/releases/tag/desktop-windows-20261030)し、[Windows版の使い方](docs/desktop_user_guide.ja.md)に沿って全体を展開してEXEを開きます。Pythonは同梱されています。 |
+| macOS（Apple Silicon）のデスクトップ版を試す | [macOS試用版をダウンロード](https://github.com/Ryuya-dot-com/MFRM_Python_Application/releases/tag/desktop-macos-20261030)し、SHA-256を確認して `MFRM-Desktop.app` を展開します。Pythonは同梱されています。 |
+| Windowsのデスクトップ版を試す | [Windows試用版をダウンロード](https://github.com/Ryuya-dot-com/MFRM_Python_Application/releases/tag/desktop-windows-20261030)し、[デスクトップ版の使い方](docs/desktop_user_guide.ja.md)に沿って全体を展開してEXEを開きます。Pythonは同梱されています。 |
+| Rスクリプトで分析する | CRANパッケージ [`mfrmr`](https://cran.r-project.org/package=mfrmr)（[ドキュメント](https://ryuya-dot-com.github.io/mfrmr/)）。Python版とは独立した実装です。 |
 | 自分のパソコンでWeb版を動かす | [インストール](README.md#install)・[起動](README.md#run)の手順（英語） |
 | 開発・ビルドに参加する | [開発者向け手順](CONTRIBUTING.md)。デスクトップ版をソースから起動する手順もあります。 |
 
-**配布状況：Windows 11 x64向けの試用版を公開しています。** 上のRelease案内からDropbox上のアプリZIPを取得できます。このページで説明するデスクトップ機能を一つにまとめた、アプリ表示版0.2.19-betaの未署名プレビューです。ファイル名・SHA-256・確認した環境・既知の制約はReleaseに記載しています。Windows on ARMや他のWindowsバージョンでの動作は未確認です。macOS版はまだ一般公開していません。別の **v0.2.19-beta** ReleaseはWeb版とPythonソースであり、Windowsアプリのダウンロードとは異なります。
+**配布状況：macOS（Apple Silicon / M1以降）および Windows 11 x64 向けの試用版を公開しています。** 上のRelease案内からアプリZIPを取得できます（Windows版ZIPはDropbox経由、macOS版ZIPはRelease添付）。このページで説明するデスクトップ機能を一つにまとめた、アプリ表示版0.2.19-betaの未公証・未署名プレビューです。ファイル名・SHA-256・確認した環境・既知の制約は各Releaseに記載しています。Intel MacやWindows on ARM、他のOSバージョンでの網羅確認は未完了です。別の **v0.2.19-beta** ReleaseはWeb版とPythonソースであり、デスクトップ版のダウンロードとは異なります。
 
 GitHubの **Source code (zip)** はソースコードであり、デスクトップ版のインストーラーではありません。Web版の実行中の版・ソースは **アプリ情報** で確認できます。ソースのブランチと公開版では、利用できる機能が異なる場合があります。
 
@@ -36,7 +38,7 @@ GitHubの **Source code (zip)** はソースコードであり、デスクトッ
 
 **Web版：** サンプルの学習ガイド、または **ガイドなしで続ける** から入り、組み込みの作文例を分析します。結果の最初の説明を読み、目的に合う図表と「レポート・出力」へ進みます。[作文サンプルの読み方](docs/apa_manuscript_template.md#writing-assessment-first-report)も参照してください。
 
-**Windows試用版：** **データ → サンプル → 次へ → 分析** と進みます。英語表示のときは **Data → Sample → Next → Analyze** です。[Windowsガイド](docs/desktop_user_guide.ja.md)に図表の確認と保存を説明しています。
+**デスクトップ試用版（macOS・Windows）：** **データ → サンプル → 次へ → 分析** と進みます。英語表示のときは **Data → Sample → Next → Analyze** です。[デスクトップガイド](docs/desktop_user_guide.ja.md)に図表の確認と保存を説明しています。
 
 ## データの準備
 

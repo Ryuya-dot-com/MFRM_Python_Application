@@ -55,6 +55,40 @@ def test_project_argument_reaches_the_existing_reader_after_ui_initialization(tm
     assert events == [(app.open_project, path), 'loop']
 
 
+@pytest.mark.parametrize('closed_at', ['poll', 'recv'])
+@pytest.mark.parametrize('terminal,exitcode', [(('complete', ''), 0), (('complete', ''), 1),
+                                             (('failed', 'invalid input'), 0), (None, 1)])
+def test_closed_worker_pipe_preserves_terminal_status_and_checks_process_exit(tmp_path, monkeypatch, closed_at, terminal, exitcode):
+    from mfrm_app import project
+    messages = [terminal] if terminal else []
+    def poll():
+        if not messages and closed_at == 'poll':
+            raise BrokenPipeError('The pipe has been ended')
+        return True
+    def recv():
+        if messages:
+            return messages.pop()
+        raise EOFError()
+    alive = True
+    worker = desktop_app.AnalysisWorker()
+    worker.receiver = SimpleNamespace(poll=poll, recv=recv, close=lambda: None)
+    worker.process = SimpleNamespace(is_alive=lambda: alive, join=lambda: None,
+                                     close=lambda: None, exitcode=exitcode)
+    worker.output_path = tmp_path / 'result.mfrm'
+    loaded = []
+    monkeypatch.setattr(project, 'load_project', lambda path: loaded.append(path) or 'saved result')
+    assert worker.poll() == []  # A pipe closing alone is not successful completion.
+    alive = False
+    events = worker.poll()
+    if terminal == ('complete', '') and exitcode == 0:
+        assert events == [('complete', 'saved result')] and loaded == [worker.output_path]
+    else:
+        assert events[0][0] == 'failed' and loaded == []
+        if terminal and terminal[0] == 'failed':
+            assert events == [terminal]
+    assert worker.process is worker.receiver is None
+
+
 @pytest.mark.parametrize('mode', ['--smoke-test', '--check-project'])
 def test_windowed_validation_failure_exits_with_a_durable_traceback(tmp_path, monkeypatch, mode):
     def broken(*args):

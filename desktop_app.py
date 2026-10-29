@@ -54,10 +54,13 @@ class AnalysisWorker:
         if self.process is None:
             return []
         events = []
-        while self.receiver.poll():
+        while True:
             try:
+                if not self.receiver.poll():
+                    break
                 status, detail = self.receiver.recv()
-            except EOFError:
+            except (EOFError, BrokenPipeError):
+                # Windows poll() can report a closed pipe before recv().
                 break
             if status in {"complete", "failed"}:
                 self.terminal = (status, detail)

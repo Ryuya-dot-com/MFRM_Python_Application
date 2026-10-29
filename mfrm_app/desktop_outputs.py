@@ -125,8 +125,7 @@ def _analysis_figure(analysis, kind, *, level=None, index=0, facet=None, statist
             array = np.ma.masked_invalid(pivot.to_numpy(dtype=float))
             from matplotlib import colormaps
             limit = max(1., float(np.max(np.abs(array)))) if array.count() else 1.
-            cmap = colormaps['RdBu_r'].copy()
-            cmap.set_bad('#cbd5e1')
+            cmap = colormaps['RdBu_r'].with_extremes(bad='#cbd5e1')
             artist = ax.imshow(array, cmap=cmap, vmin=-limit, vmax=limit, aspect='auto')
             if array.size <= 100:
                 for (y, x), value in np.ndenumerate(array.data):

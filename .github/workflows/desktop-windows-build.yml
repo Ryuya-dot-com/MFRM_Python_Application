@@ -1,0 +1,62 @@
+name: Windows main desktop build
+
+on:
+  push:
+    branches: ['desktop/windows-main-*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  windows-desktop:
+    runs-on: windows-2025
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v6.0.2
+      - uses: actions/setup-python@v6.2.0
+        with:
+          python-version: '3.12.16'
+          architecture: x64
+          cache: pip
+          cache-dependency-path: requirements-desktop-windows.txt
+      - name: Install the Windows review dependency versions
+        run: |
+          python -m venv "${{ runner.temp }}/mfrm-build-env"
+          & "${{ runner.temp }}/mfrm-build-env/Scripts/python.exe" -m pip install --only-binary=:all: -r requirements-desktop-windows.txt pytest
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Check row alignment, worker lifecycle and packaging safeguards
+        run: |
+          & "${{ runner.temp }}/mfrm-build-env/Scripts/python.exe" -m pytest -q -W error tests/test_scorefile_row_alignment.py tests/test_desktop_worker.py tests/test_windows_bundle.py
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Build the windowed application
+        run: |
+          & "${{ runner.temp }}/mfrm-build-env/Scripts/python.exe" scripts/build_desktop.py --output "${{ runner.temp }}/mfrm-main-build"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Check the frozen application and archive it
+        run: |
+          python scripts/check_windows_desktop.py --build-dir "${{ runner.temp }}/mfrm-main-build" --output "${{ runner.temp }}/mfrm-main-checks"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Retain build and check evidence
+        if: always()
+        uses: actions/upload-artifact@v6.0.0
+        with:
+          name: windows-main-checks-${{ github.sha }}
+          path: |
+            ${{ runner.temp }}/mfrm-main-build/desktop_build.json
+            ${{ runner.temp }}/mfrm-main-build/work/MFRM-Desktop/warn-MFRM-Desktop.txt
+            ${{ runner.temp }}/mfrm-main-checks
+          if-no-files-found: warn
+          retention-days: 14
+      - name: Retain the checked candidate
+        uses: actions/upload-artifact@v6.0.0
+        with:
+          name: windows-main-candidate-${{ github.sha }}
+          path: |
+            ${{ runner.temp }}/mfrm-main-build/MFRM-Desktop-Windows-x64.zip
+            ${{ runner.temp }}/mfrm-main-build/SHA256SUMS.txt
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 14

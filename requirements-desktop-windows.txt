@@ -1,0 +1,7 @@
+# Versions recorded by the Windows 11 review; Python 3.12.16 x64.
+pyinstaller==6.22.3
+numpy==2.5.4
+pandas==3.1.0
+scipy==1.18.1
+matplotlib==3.11.2
+pyarrow==26.0.0

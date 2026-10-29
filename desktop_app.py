@@ -662,13 +662,23 @@ def main():
     parser.add_argument("--check-project", type=Path, help="Restore without any estimation (requires --output-dir)")
     parser.add_argument("--output-dir", type=Path)
     args = parser.parse_args()
-    if args.smoke_test:
-        smoke_check(args.smoke_test)
-        return
-    if args.check_project:
-        if not args.output_dir:
+    if args.smoke_test or args.check_project:
+        if args.check_project and not args.output_dir:
             parser.error("--check-project requires --output-dir")
-        smoke_reopen(args.check_project, args.output_dir)
+        output = args.smoke_test or args.output_dir
+        try:
+            if args.smoke_test:
+                smoke_check(output)
+            else:
+                smoke_reopen(args.check_project, output)
+        except Exception:
+            import sys
+            import traceback
+            output.mkdir(parents=True, exist_ok=True)
+            (output / "failure.txt").write_text(traceback.format_exc(), encoding="utf-8")
+            if sys.stderr is None:
+                raise SystemExit(1)
+            raise
         return
     import tkinter as tk
     root = tk.Tk()
@@ -688,6 +698,7 @@ def smoke_check(output_dir):
     example = writing_example()
     assert example.shape == (960, 5)
     data = demonstration_data()
+    data.loc[1, "Score"] = float("nan")
     settings = dict(person_col="Person", facet_cols=["Rater", "Task"], score_col="Score", rating_min=0, rating_max=3)
     events = []
     def drain():
@@ -711,6 +722,7 @@ def smoke_check(output_dir):
         worker.start(data, settings)
         status, analysis = drain()
         assert status == "complete", analysis
+        assert len(analysis["scorefile"]) == len(data) - 1 and 1 not in analysis["scorefile"].index
         save_project(output_dir / "作文.mfrm", analysis)
         report = basic_report_html(analysis)
         assert report.count("<svg") == 3
@@ -718,7 +730,8 @@ def smoke_check(output_dir):
         (output_dir / "wright.png").write_bytes(figure_bytes(analysis, "wright", format="png"))
         record = dict(analysis_id=analysis["analysis_id"], events=events, worker_result="complete",
                       optimizer_success=bool(analysis["result"]["opt"].success),
-                      bundled_example_rows=len(example), report_svg_count=3)
+                      bundled_example_rows=len(example), report_svg_count=3,
+                      retained_rows=len(analysis["scorefile"]), missing_row_excluded=True)
         (output_dir / "smoke.json").write_text(json.dumps(record, indent=2), encoding="utf-8")
     finally:
         worker.close()

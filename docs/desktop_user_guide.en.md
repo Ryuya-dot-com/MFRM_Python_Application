@@ -16,17 +16,17 @@ without translating your column names or level labels or changing calculations.
 
 ## Get and open the app
 
-**A general Windows executable download is not yet available.** This guide
-describes the complete desktop preview. The published 0.2.19-beta release is
-the Web application and Python source; the automatically generated source ZIP
-on [GitHub Releases](https://github.com/Ryuya-dot-com/MFRM_Python_Application/releases)
-is not an installer. A supplied desktop application ZIP includes Python.
+Download the application ZIP from the
+[Windows desktop preview release](https://github.com/Ryuya-dot-com/MFRM_Python_Application/releases/tag/desktop-windows-20261030).
+The release links to the Dropbox download and gives its SHA-256. Python is
+included. GitHub's automatically generated source ZIP and the separate
+v0.2.19-beta Web release are not the Windows application download.
 
 The Windows preview targets **Windows 11 x64**. Windows on ARM has not been
-verified. Check the release announcement for download availability and
-supported environments when a desktop version is published.
+verified. The release states the tested environment and remaining limitations;
+this is a preview rather than a stable release for every Windows configuration.
 
-If you have received an application ZIP:
+To open the application ZIP:
 
 1. Obtain the ZIP and its matching SHA-256 from the supplied location.
 2. Use File Explorer's **Extract All**. Keep `MFRM-Desktop.exe` and the complete

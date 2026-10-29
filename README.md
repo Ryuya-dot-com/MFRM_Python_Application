@@ -14,17 +14,18 @@ data. No FACETS, ConQuest or R installation is required.
 | Use | Start here |
 |---|---|
 | Try the application in a browser | [Web app](https://mfrmpythonapplication-xodghmcghngx8cz5zmhfeg.streamlit.app/). Use synthetic or appropriately de-identified data on the hosted service. |
-| Use the Windows desktop preview | [Windows guide](docs/desktop_user_guide.en.md). If you have received an application ZIP, it includes Python; extract the whole folder before opening the EXE. |
+| Use the Windows desktop preview | [Download the Windows preview](https://github.com/Ryuya-dot-com/MFRM_Python_Application/releases/tag/desktop-windows-20261030) and follow the [Windows guide](docs/desktop_user_guide.en.md). Python is included; extract the whole folder before opening the EXE. |
 | Run the Web application on your computer | [Install](#install) and [run](#run) from source. |
 | Develop or build the application | [Contributing](CONTRIBUTING.md), including desktop source startup and verification. |
 
-**Release availability:** the published **0.2.19-beta** release provides the Web
-application and Python source. A general desktop download has not yet been
-published. The full-feature desktop preview described here is under testing
-for Windows 11 x64 and macOS Apple Silicon. Receiving a Windows test build
-does not establish support for every OS version. See
-[Releases](https://github.com/Ryuya-dot-com/MFRM_Python_Application/releases)
-for published downloads and their supported environments.
+**Release availability:** a **Windows 11 x64 desktop preview** is available
+from the release link above, with the application ZIP hosted on Dropbox.
+It includes the complete desktop workflow described below, uses app version
+**0.2.19-beta**, and is unsigned. See the release for the archive name, SHA-256,
+tested environment and known limits. Windows on ARM and other Windows versions
+have not been verified. The macOS application is not yet publicly released.
+The separate **v0.2.19-beta** Web release provides the Web application and Python
+source; it is not the Windows download.
 
 GitHub's **Source code (zip)** is source code, not a desktop installer.
 The Web app's **About MFRM** identifies its running version and source.

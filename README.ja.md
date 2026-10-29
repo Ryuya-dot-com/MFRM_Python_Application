@@ -11,11 +11,11 @@
 | 利用方法 | 入口 |
 |---|---|
 | ブラウザーで試す | [Web版](https://mfrmpythonapplication-xodghmcghngx8cz5zmhfeg.streamlit.app/)。公開サービスでは人工データや適切に匿名化したデータを使います。 |
-| Windowsのデスクトップ版を試す | [Windows版の使い方](docs/desktop_user_guide.ja.md)。アプリZIPを受け取った場合は、全体を展開してEXEを開きます。Pythonは同梱されています。 |
+| Windowsのデスクトップ版を試す | [Windows試用版をダウンロード](https://github.com/Ryuya-dot-com/MFRM_Python_Application/releases/tag/desktop-windows-20261030)し、[Windows版の使い方](docs/desktop_user_guide.ja.md)に沿って全体を展開してEXEを開きます。Pythonは同梱されています。 |
 | 自分のパソコンでWeb版を動かす | [インストール](README.md#install)・[起動](README.md#run)の手順（英語） |
 | 開発・ビルドに参加する | [開発者向け手順](CONTRIBUTING.md)。デスクトップ版をソースから起動する手順もあります。 |
 
-**配布状況：公開済みの0.2.19-betaはWeb版とPythonソースです。デスクトップ版の一般向けダウンロードはまだ公開していません。** このページで説明する全機能を含むデスクトップ試用版は、Windows 11 x64・macOS Apple Siliconを対象に検証中です。Windowsの試用版を受け取って起動できたことは、すべてのOSバージョンでの動作を保証するものではありません。公開ダウンロードと対応環境は[Releases](https://github.com/Ryuya-dot-com/MFRM_Python_Application/releases)で確認してください。
+**配布状況：Windows 11 x64向けの試用版を公開しています。** 上のRelease案内からDropbox上のアプリZIPを取得できます。このページで説明するデスクトップ機能を一つにまとめた、アプリ表示版0.2.19-betaの未署名プレビューです。ファイル名・SHA-256・確認した環境・既知の制約はReleaseに記載しています。Windows on ARMや他のWindowsバージョンでの動作は未確認です。macOS版はまだ一般公開していません。別の **v0.2.19-beta** ReleaseはWeb版とPythonソースであり、Windowsアプリのダウンロードとは異なります。
 
 GitHubの **Source code (zip)** はソースコードであり、デスクトップ版のインストーラーではありません。Web版の実行中の版・ソースは **アプリ情報** で確認できます。ソースのブランチと公開版では、利用できる機能が異なる場合があります。
 

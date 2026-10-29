@@ -15,8 +15,10 @@ or a claim that a planned feature has passed validation.
 
 ## Current delivery priority
 
-The next distribution priority is a desktop application that includes the
-complete supported workflow in one package:
+The [Windows desktop preview](https://github.com/Ryuya-dot-com/MFRM_Python_Application/releases/tag/desktop-windows-20261030)
+includes the complete supported workflow in one package. Current distribution
+work focuses on preview feedback, broader environment coverage and macOS
+packaging and acceptance:
 
 | Area | Initial desktop scope |
 |---|---|

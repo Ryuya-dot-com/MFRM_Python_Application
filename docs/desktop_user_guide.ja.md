@@ -10,9 +10,9 @@ MFRM Desktopは、作文や実技などの評定データを読み込み、対�
 
 ## 入手と起動
 
-**Windows用EXEの一般配布はまだ行っていません。** このガイドは全機能を含むデスクトップ試用版の説明です。公開済みの0.2.19-betaはWeb版とPythonソースであり、[GitHub Releases](https://github.com/Ryuya-dot-com/MFRM_Python_Application/releases)のソースコードZIPはインストーラーではありません。試用版のアプリZIPにはPythonを同梱しています。
+アプリZIPは[Windowsデスクトップ試用版のRelease](https://github.com/Ryuya-dot-com/MFRM_Python_Application/releases/tag/desktop-windows-20261030)から取得できます。ReleaseにDropboxのダウンロード先とSHA-256を記載しています。Pythonは同梱されており、追加インストールは不要です。GitHubの自動生成ソースZIPや別のv0.2.19-beta Web版Releaseは、Windowsアプリのダウンロードではありません。
 
-Windows試用版の対象は **Windows 11 x64** です。Windows on ARMの対応は確認されていません。一般向けの入手方法と対応環境は、公開時のRelease案内を確認してください。
+Windows試用版の対象は **Windows 11 x64** です。Windows on ARMの対応は確認されていません。確認した環境と未確認の範囲はReleaseに記載しています。すべてのWindows構成に対応を認定した安定版ではありません。
 
 ### アプリZIPから起動する
 

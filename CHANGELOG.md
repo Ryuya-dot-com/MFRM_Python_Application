@@ -10,6 +10,12 @@ methods and validation findings belong in their dedicated technical records.
 
 ## Unreleased
 
+## Windows Desktop preview — 2026-10-30
+
+The [Windows 11 x64 preview](https://github.com/Ryuya-dot-com/MFRM_Python_Application/releases/tag/desktop-windows-20261030)
+includes Python and retains the displayed app version 0.2.19-beta. The dated
+desktop tag identifies this distribution separately from the earlier Web release.
+
 - Integrate the complete initial desktop workflow: RSM/PCM with JMLE or fixed-SD
   MML, Wright/Pathway/category figures, conditional bias, specified intervals,
   joint interactions and supported G/D studies in one application.
@@ -35,7 +41,9 @@ methods and validation findings belong in their dedicated technical records.
   their reader and purpose. Keep release changes separate from development
   diaries and statistical study records.
 
-The desktop application is still a preview, not a generally released binary.
+The Windows application is an unsigned preview. Its release lists download
+details, tested environments and limitations. The macOS package is not yet
+publicly released.
 Existing inferential restrictions and supported-design conditions remain in
 force. A published Web/source version does not establish desktop acceptance.
 

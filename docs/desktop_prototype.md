@@ -58,6 +58,20 @@ PyArrow 26.0.0。`requirements-desktop-build.txt` は先行macOS実証の固定�
 新EXEのCSVダイアログ操作はComputer Useの `failed to activate captured window` で中止した。
 欠損CSVの成功は実spawn回帰テストで確認しており、ダイアログ経由の完走を確認したとは扱わない。
 
+### CIの実行順序による失敗 — 2026-10-29
+
+`9b761c1` のWindows CIは成功した一方、LinuxのPython 3.11/3.12では
+全体テスト内のワーカー検査2件が失敗した。先行するStreamlit AppTestが
+`sys.modules["__main__"]` を一時スクリプトへ置き換え、その状態が次の検査に残っていた。
+spawn子プロセスがそのスクリプトを再実行し、対象処理に到達する前に `NameError: __args` で終了した。
+Windowsでも同じ順序を作ると再現したため、OS固有の問題とは扱わない。
+
+各テストの終了時に元のmainモジュールを復元するfixtureと、別pytestプロセス内で実際に
+AppTest→spawnの順に動かす回帰テストを追加した。ローカルでは修正前に同じ失敗を再現し、
+修正後は画面テストとワーカーを続けて含む26件が通過した。
+全体テストや終了コードの検査は省略していない。アプリ本体・配布EXEの計算処理はこのCI修正で変更していない。
+Windowsの成功と、Linux全体CIの成功は別々に確認する。
+
 ## 今回つながった操作
 
 1. 「データ」でCSVを開くかサンプルを選び、先頭10行を確認する。形式の説明と見本の保存は「CSV形式」へ置く。

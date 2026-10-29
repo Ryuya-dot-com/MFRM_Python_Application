@@ -4,6 +4,11 @@ All notable changes to this standalone Streamlit distribution should be recorded
 
 ## Unreleased — Windows desktop correction, 2026-10-29
 
+- Restore pytest's `__main__` after each test. Streamlit AppTest replaces that
+  module with a temporary script, which caused later spawned desktop workers
+  in the combined Linux suite to fail with `NameError: __args` before reaching
+  their target. Add a real AppTest-then-spawn regression and an early Linux CI
+  check; retain the full suite and all worker assertions.
 - Preserve observation indices when assembling score probabilities. This fixes
   a crash after missing-score rows are excluded and prevents probabilities
   from being attached to different observations after row relabeling.

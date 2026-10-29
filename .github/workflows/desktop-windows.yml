@@ -48,6 +48,7 @@ jobs:
           tests/test_person_boundary_output.py tests/test_measure_report_consistency.py
           tests/test_report_run_facts.py
           tests/test_scorefile_row_alignment.py
+          tests/test_apptest_process_isolation.py
           tests/test_operating_characteristics_facets_adapter.py tests/test_facets_visible_launcher.py
       - name: Verify tracked source stayed clean
         run: git diff --exit-code

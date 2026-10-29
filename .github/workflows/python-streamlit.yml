@@ -79,6 +79,9 @@ jobs:
       - name: Compile app
         run: python -m py_compile streamlit_app.py
 
+      - name: Check AppTest and desktop process isolation
+        run: python -m pytest -q tests/test_apptest_process_isolation.py tests/test_desktop_worker.py
+
       - name: Run environment doctor
         run: python streamlit_app.py --doctor
 

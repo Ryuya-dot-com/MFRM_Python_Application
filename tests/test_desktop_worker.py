@@ -56,6 +56,34 @@ def test_worker_reports_exit_without_a_terminal_message():
         worker.close()
 
 
+def test_spawned_worker_completes_csv_with_missing_score(tmp_path):
+    import pandas as pd
+    from desktop_app import demonstration_data
+
+    csv = tmp_path / "missing-score.csv"
+    data = demonstration_data()
+    data.loc[1, "Score"] = float("nan")
+    data.to_csv(csv, index=False)
+    worker = AnalysisWorker()
+    events = []
+    try:
+        worker.start(pd.read_csv(csv), dict(person_col="Person", facet_cols=["Rater", "Task"],
+                                          score_col="Score", rating_min=0, rating_max=3))
+        deadline = time.monotonic() + 60
+        while worker.process is not None:
+            events.extend(worker.poll())
+            assert time.monotonic() < deadline, "Missing-score analysis did not finish"
+            time.sleep(0.01)
+        terminal = [(status, detail) for status, detail in events if status != "progress"]
+        assert len(terminal) == 1 and terminal[0][0] == "complete", terminal
+        scorefile = terminal[0][1]["scorefile"]
+        assert len(scorefile) == len(data) - 1
+        assert 1 not in scorefile.index
+        assert scorefile[["P_0", "P_1", "P_2", "P_3"]].notna().all().all()
+    finally:
+        worker.close()
+
+
 @pytest.mark.parametrize("where", ["poll", "recv"])
 @pytest.mark.parametrize("notice", ["complete", "failed"])
 def test_pipe_eof_preserves_terminal_notice_until_child_exits(where, notice):

@@ -7,6 +7,7 @@ on:
       - "desktop_app.py"
       - "streamlit_app.py"
       - "mfrm_app/**"
+      - "validation/operating_characteristics_facets.py"
       - "examples/desktop_writing.csv"
       - "locales/**"
       - "requirements*.txt"
@@ -17,6 +18,7 @@ on:
       - "desktop_app.py"
       - "streamlit_app.py"
       - "mfrm_app/**"
+      - "validation/operating_characteristics_facets.py"
       - "examples/desktop_writing.csv"
       - "locales/**"
       - "requirements*.txt"
@@ -45,5 +47,7 @@ jobs:
           tests/test_desktop_worker.py tests/test_desktop_project.py tests/test_desktop_ux.py
           tests/test_person_boundary_output.py tests/test_measure_report_consistency.py
           tests/test_report_run_facts.py
+          tests/test_scorefile_row_alignment.py
+          tests/test_operating_characteristics_facets_adapter.py tests/test_facets_visible_launcher.py
       - name: Verify tracked source stayed clean
         run: git diff --exit-code

@@ -1,0 +1,122 @@
+{
+  "fr26": {
+    "levels": 89,
+    "persons": 80,
+    "max_abs_difference": {
+      "Estimate_Python": 0.007703249501713305,
+      "SE_Python": 0.0006939817828369721,
+      "Infit": 0.008681067279521226,
+      "Outfit": 0.012812664612116054,
+      "InfitZSTD": 0.07081683384912751,
+      "OutfitZSTD": 0.06848855685389182
+    },
+    "fit_display_interval_matches": {
+      "Infit": {
+        "matched": 57,
+        "compared": 89
+      },
+      "Outfit": {
+        "matched": 65,
+        "compared": 89
+      },
+      "InfitZSTD": {
+        "matched": 2,
+        "compared": 89
+      },
+      "OutfitZSTD": {
+        "matched": 9,
+        "compared": 89
+      }
+    },
+    "point_measure_values_read": 89,
+    "net_measure_correlation_max_abs_difference": 0.004948261980950219,
+    "net_measure_expected_correlation_max_abs_difference": 0.0184965445752035,
+    "app_ptmea_basis": "Weighted observed-score/person-measure correlation for non-person facets only; not FACETS net-measure correlation",
+    "app_ptmea_vs_facets_max_abs_difference": 0.0858151149802886,
+    "project_sha256": "e48eb89f43f89acba971ca29853d251d2c7ecfd81235a574bf376aea7e3d8e59"
+  },
+  "fs26": {
+    "levels": 89,
+    "persons": 80,
+    "max_abs_difference": {
+      "Estimate_Python": 2.864922009537807e-05,
+      "SE_Python": 3.032792483870228e-06,
+      "Infit": 0.004941649834417916,
+      "Outfit": 0.004948525422692196,
+      "InfitZSTD": 0.004921594950564656,
+      "OutfitZSTD": 0.004968720019597139
+    },
+    "fit_display_interval_matches": {
+      "Infit": {
+        "matched": 89,
+        "compared": 89
+      },
+      "Outfit": {
+        "matched": 89,
+        "compared": 89
+      },
+      "InfitZSTD": {
+        "matched": 89,
+        "compared": 89
+      },
+      "OutfitZSTD": {
+        "matched": 89,
+        "compared": 89
+      }
+    },
+    "point_measure_values_read": 89,
+    "net_measure_correlation_max_abs_difference": 0.004947730541454476,
+    "net_measure_expected_correlation_max_abs_difference": 0.019716703530988255,
+    "app_ptmea_basis": "Weighted observed-score/person-measure correlation for non-person facets only; not FACETS net-measure correlation",
+    "app_ptmea_vs_facets_max_abs_difference": 0.08581285056264742,
+    "project_sha256": "b95f74dd9b7240457f89239ed202edeb60b9caceb5b623a49026aca109b5cd25",
+    "expected_correlation_parity_established": false,
+    "expected_correlation_review": "Independent evaluation of the published attenuation formula did not reproduce every displayed Person PtMeExp value; retain the difference as unresolved, without changing the formula to fit the output."
+  },
+  "disconnected_desktop": {
+    "run_id": "disconnected_negative_control__shared::rep-00001",
+    "rows": 960,
+    "hold_reason": "stat.jmle.identification_unqualified",
+    "optimizer_terminated": true,
+    "displayed_levels": 89,
+    "all_se_ci_withheld_after_save_restore": true
+  },
+  "boundary": {
+    "attempted_fit_contracts": 24,
+    "claim_limit": "Two-replicate boundary pilot; no estimator-performance claim.",
+    "direction_checks": 4,
+    "direction_passes": 4,
+    "disconnected_fit_contracts": 8,
+    "disconnected_python_inference_withheld": 8,
+    "disconnected_with_independent_nullity": 8,
+    "eligible_main_parameters": 144,
+    "eligible_thresholds": 72,
+    "expected_table8_count_rows": 144,
+    "facets_subset_connected_in_disconnected": 8,
+    "gates": {
+      "disconnected_negative_control": true,
+      "input_counts": true,
+      "misspecification_direction": true,
+      "rank_full_designs": true,
+      "rank_full_engine_agreement": true
+    },
+    "generated_runs": 12,
+    "main_max_abs_difference_logits": 0.011620971168762928,
+    "main_weighted_mae_logits": 0.002036183150875684,
+    "qualification_pass": true,
+    "rank_full_comparison_eligible": 16,
+    "rank_full_direct_agreement_passes": 16,
+    "rank_full_fit_contracts": 16,
+    "schema_version": "mfrm-facets-pcm-boundary-pilot-v1",
+    "successful_fit_contracts": 24,
+    "table8_count_matches": 144,
+    "table8_count_rows": 144,
+    "threshold_max_abs_difference_logits": 0.00926145296445302,
+    "threshold_weighted_mae_logits": 0.0034723566589138
+  },
+  "source_sha256": {
+    "mfrm_app/engine.py": "cd4cf0d8a2dce750adfab67a820047672671aa7a10b08347e8643a414ed83425",
+    "mfrm_app/basic_analysis.py": "b8ac6dbe8421ea5f7f48d05b6172117d3de8134719a71c36ce3b0e7f2bb177e3",
+    "validation/operating_characteristics_facets.py": "9e9d203a206b3bb53a659b6ab12f85d89ef8e92d13c2438c273dbf90114f5972"
+  }
+}

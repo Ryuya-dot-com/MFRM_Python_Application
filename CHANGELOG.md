@@ -4,6 +4,14 @@ All notable changes to this standalone Streamlit distribution should be recorded
 
 ## Unreleased — Windows desktop correction, 2026-10-29
 
+- Preserve observation indices when assembling score probabilities. This fixes
+  a crash after missing-score rows are excluded and prevents probabilities
+  from being attached to different observations after row relabeling.
+  Add regressions for permuted, gapped, duplicate and text indices, plus
+  desktop save/restore with an excluded score row.
+- Read FACETS `PtMea` correctly and keep `PtBis`/`PtBisI` in separate fields.
+  Document the application's person-measure correlation definition and the
+  limited FACETS comparison in `validation/FACETS_WINDOWS_DESKTOP_REVIEW_20261029.md`.
 - Handle Windows pipe EOF during worker polling as well as receiving. Retain
   the completion/failure message until the child exits, then check the exit
   code and saved result. This fixes `WinError 109` after successful analysis

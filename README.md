@@ -568,6 +568,7 @@ Open `validation/generated/demo_report/manuscript_handoff.md` first, then read
 
 ## Statistical Caveats
 
+- The exported `PTMEA`/`PtMeaCorr` is a weighted correlation of observed scores with person measures, computed for non-person facets. Person rows are not computed. FACETS `PtMea` instead uses the signed sum of measures for each observation; these are different diagnostics in a many-facet design. See the [Windows FACETS review](validation/FACETS_WINDOWS_DESKTOP_REVIEW_20261029.md) for the bounded numerical comparison and remaining differences.
 - JMLE now withholds interpretation when a free facet level contains only minimum or maximum scores. Fixed levels are excluded. This is a conservative screening rule: constraints or penalties may yield finite values, and absence of a flag does not prove that a finite MLE exists. Inspect `jmle_facet_boundary.csv` with the identification and person-boundary checks.
 - The JMLE dense rank audit checks matrix dimensions before allocation. Designs beyond its limit remain unqualified for inference rather than silently skipping the audit.
 - GPCM is not a strict Rasch model. Its slope parameters change the interpretation of invariance and should be reported explicitly.

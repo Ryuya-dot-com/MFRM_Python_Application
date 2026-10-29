@@ -45,6 +45,19 @@ PyArrow 26.0.0。`requirements-desktop-build.txt` は先行macOS実証の固定�
 これらの生成物はGitに同梱しない。Python未導入のクリーン端末、最低OS版、
 署名・一般配布、初心者の理解度は未受入で、既存の数値・推論の資格も変更しない。
 
+### FACETS照合後の追加修正 — 2026-10-29
+
+欠損得点の除外で行ラベルに隙間が生じるとScorefile作成が停止する不具合を修正した。
+関連156件を警告エラー扱いで一括実行し、追加した欠損CSVの実spawn検査を含む12件も再実行して通過した
+（重複を除く157件）。FACETS parserの相関列の取り違えも修正した。
+[追加の数値比較と限界](../validation/FACETS_WINDOWS_DESKTOP_REVIEW_20261029.md)を参照。
+
+更新EXEは `C:\MFRM_Run\MFRM-Desktop-20261029-2\MFRM-Desktop.exe`。
+起動、Workerの中止・失敗・再実行、3図入りHTMLとPNG、非連結プロジェクトの再推定なし復元を確認した。
+同梱ソースhashは修正済みソースと一致する。旧版が起動中だったため別フォルダーへ配置した。
+新EXEのCSVダイアログ操作はComputer Useの `failed to activate captured window` で中止した。
+欠損CSVの成功は実spawn回帰テストで確認しており、ダイアログ経由の完走を確認したとは扱わない。
+
 ## 今回つながった操作
 
 1. 「データ」でCSVを開くかサンプルを選び、先頭10行を確認する。形式の説明と見本の保存は「CSV形式」へ置く。

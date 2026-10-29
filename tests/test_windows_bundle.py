@@ -34,7 +34,8 @@ def test_runtime_notices_use_the_installer_layout(tmp_path, monkeypatch, system)
     monkeypatch.setattr(build_desktop.sysconfig, 'get_path', lambda name: str(stdlib))
     result = build_desktop.collect_notices(tmp_path / 'build')
     assert {'Python/LICENSE.txt', 'Tcl/license.terms' if system == 'darwin' else 'tcl/license.terms',
-            'Tk/license.terms' if system == 'darwin' else 'tk/license.terms'} <= result['files'].keys()
+            'Tk/license.terms' if system == 'darwin' else 'tk/license.terms'} <= {
+                Path(name).as_posix() for name in result['files']}
     if system == 'win32':
         for name in ('tcl', 'tk'):
             source = Path(build_desktop.__file__).parent / 'runtime_notices' / f'{name}-8.6.15.terms'

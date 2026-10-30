@@ -10,28 +10,46 @@ MFRM Desktopは、作文や実技などの評定データを読み込み、対�
 
 ## 入手と起動
 
-アプリZIPは[macOSデスクトップ試用版のRelease](https://github.com/Ryuya-dot-com/MFRM_Python_Application/releases/tag/desktop-macos-20261030)または[Windowsデスクトップ試用版のRelease](https://github.com/Ryuya-dot-com/MFRM_Python_Application/releases/tag/desktop-windows-20261030)から取得できます。各Releaseにダウンロード先とSHA-256を記載しています。Pythonは同梱されており、追加インストールは不要です。GitHubの自動生成ソースZIPや別のv0.2.19-beta Web版Releaseは、デスクトップアプリのダウンロードではありません。
+アプリZIPは[macOSデスクトップ試用版のRelease](https://github.com/Ryuya-dot-com/MFRM_Python_Application/releases/tag/desktop-macos-20261030)または[Windowsデスクトップ試用版のRelease](https://github.com/Ryuya-dot-com/MFRM_Python_Application/releases/tag/desktop-windows-20261030)から取得できます。Pythonは同梱されており、追加インストールは不要です。GitHubの自動生成 **Source code (zip)** や別の `v0.2.19-beta` Web版Releaseは、デスクトップアプリのダウンロードではありません。
 
 試用版の対象は **macOS（Apple Silicon / M1以降、同梱ライブラリ下限 macOS 14.0）** および **Windows 11 x64** です。Intel MacやWindows on ARMは対象外です。確認した環境と未確認の範囲は各Releaseに記載しています。すべてのOS構成に対応を認定した安定版ではありません。
 
-### macOSでアプリZIPから起動する
+### 初回起動時に「マルウェア未検証・PCの保護」と表示される理由と安全性の確認
 
-1. [macOS試用版のRelease](https://github.com/Ryuya-dot-com/MFRM_Python_Application/releases/tag/desktop-macos-20261030)からアプリZIPを取得し、開く前にターミナルの `shasum -a 256` でSHA-256の一致を確認します。
+MFRM Desktopは**無償の学術オープンソースソフトウェア**として公開しており、有償の Apple Developer Program 公証や商用 Windows コード署名証明書を付与していません。そのため初回起動時に *「“MFRM-Desktop” は開いていません（マルウェアが含まれていないことを検証できませんでした）」* や *「Windows によって PC が保護されました」* と表示されるのは、**悪質なコードが検出されたからではなく、商用署名が付与されていない（未検証である）ことを示すOS標準の確認画面**です。
+
+起動前に、次の3点から利用者自身で安全性を確認できます。
+
+1. **全ソースコードの公開：** 推定エンジンから画面表示まですべてのコードを [GitHubリポジトリ](https://github.com/Ryuya-dot-com/MFRM_Python_Application) で公開しています。
+2. **完全オフライン動作（外部送信ゼロ）：** CSV読込・推定・作図・`.mfrm`／`.html`／`.csv` 保存はすべてパソコン内で完結し、外部通信や情報送信は一切行いません。**Wi-Fiを切った状態でもすべての分析・保存が動作する**ことで確認できます（メニューから「Web版の理論・ヘルプ」を開く操作のみブラウザーを起動し、その際もデータは送信しません）。
+3. **SHA-256ハッシュによる改ざん検証：** 下のコマンドで、手元のZIPファイルがGitHub公式Releaseの公開ハッシュと一致するか確認できます。
+
+### macOS（Apple Silicon / M1以降）でアプリZIPから起動する
+
+1. [macOS試用版のRelease](https://github.com/Ryuya-dot-com/MFRM_Python_Application/releases/tag/desktop-macos-20261030)から `MFRM-Desktop-macOS-arm64-preview-dabb891-20261030.zip` を取得し、開く前にターミナルでSHA-256の一致を確認します。
+   ```bash
+   shasum -a 256 "$HOME/Downloads/MFRM-Desktop-macOS-arm64-preview-dabb891-20261030.zip"
+   # 期待値: c98d13af3e83993c441598aaa34960599ff09c96d2f752b3f276bd61fda12924
+   ```
 2. FinderでZIPをダブルクリックして展開し、`MFRM-Desktop.app` 全体を書き込み可能な場所（自分の `Applications` フォルダーなど）へ置きます。
-3. アプリを開きます。試用版はApple Developer IDの公証を受けていません。開発元未確認の警告が出る場合は、[Appleの案内](https://support.apple.com/ja-jp/102445)に従い、入手元とSHA-256を確認した上で端末の設定が許す場合に限り **システム設定 → プライバシーとセキュリティ → このまま開く** を使用してください。Gatekeeper全体の無効化や隔離属性の削除は行わないでください。
+3. `MFRM-Desktop.app` を開き、[Apple公式の案内](https://support.apple.com/ja-jp/102445)に沿って初回のみ許可します（macOS Sequoia 15以降／Sonoma 14以降）：
+   - *「“MFRM-Desktop” は開いていません」* と表示されたら、**青い「ゴミ箱に入れる」は押さず、下の「完了」をクリック**します。
+   - **システム設定 → プライバシーとセキュリティ** を開き、下の「セキュリティ」欄へスクロールします。
+   - *「“MFRM-Desktop” はブロックされました」* の横にある **「このまま開く」** を押し、Touch IDまたはパスワードで許可します（初回のみ。2回目以降は通常通り開きます）。
+   - ※ 所属機関の管理方針に従い、**Gatekeeper全体の無効化や隔離属性（quarantine）の削除は絶対に行わないでください**。破損警告が出る場合は強制起動せず原因を確認してください。
 
-### WindowsでアプリZIPから起動する
+### Windows 11（x64）でアプリZIPから起動する
 
-1. 案内された同一版のZIPとSHA-256を入手します。
-2. エクスプローラーの **すべて展開** で展開し、`MFRM-Desktop.exe` と `_internal` を同じフォルダーに保持します。
-3. EXEを開きます。ZIP内から直接実行したり、EXEだけ移動したりしないでください。
+1. [Windows試用版のRelease](https://github.com/Ryuya-dot-com/MFRM_Python_Application/releases/tag/desktop-windows-20261030)からアプリZIPを取得し、PowerShellでSHA-256の一致を確認します。
+   ```powershell
+   Get-FileHash "$HOME\Downloads\MFRM-Desktop-Windows-x64-preview-dabb891-docs20261030.zip" -Algorithm SHA256
+   # 期待値: 7a19e0566e5b55ca2fb563ab5c06cb02709829ddcc8a3651ea9a4d2b537f51e0
+   ```
+2. エクスプローラーでZIPを右クリックして **すべて展開** を選び、`MFRM-Desktop.exe` と `_internal` を同じフォルダーに保持します（ZIP内から直接実行したり、EXEだけ移動したりしないでください）。
+3. `MFRM-Desktop.exe` をダブルクリックします。SmartScreen（*「Windows によって PC が保護されました」*）が表示された場合は、上のSHA-256一致を確認した上で **「詳細情報」→「実行」** を選択します（組織ポリシーで制限される場合は表示メッセージを記録してください。**Windowsの保護機能自体は絶対に無効化しないでください**）。
 4. 下のサンプルで操作を試します。
 
-試用版は未署名です。Windowsの保護機能により起動が止まる場合は、表示されたメッセージをそのまま記録して問い合わせてください。起動のためにWindows全体の保護を無効にしないでください。
-
 アプリZIPを持っていない場合は、インストール不要の[Web版](https://mfrmpythonapplication-xodghmcghngx8cz5zmhfeg.streamlit.app)から試せます。[作文サンプルのガイド](apa_manuscript_template.md#writing-assessment-first-report)を参照してください。ソースコードから起動する場合だけ、[開発者向け起動手順（英語）](../CONTRIBUTING.md#run-from-source)を使います。ブランチや版によって含まれる機能が異なります。
-
-デスクトップ版の通常の分析・図表表示・保存は、パソコン内で行います。アカウントは不要です。アプリ内の「Web版の理論・ヘルプ」を開くときはインターネット接続が必要ですが、その操作で入力データや結果をアップロードすることはありません。
 
 ## サンプルで試す
 

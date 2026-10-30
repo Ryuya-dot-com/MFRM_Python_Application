@@ -48,33 +48,53 @@ All of these run offline in one three-step desktop window (**Data → Settings �
 
 ## 1. Get and Open the App
 
+### Why macOS & Windows show an "unverified" notice — and how to verify safety first
+
+MFRM Desktop is distributed **100% free of charge as open-source academic software** without paid commercial Apple Developer Program notarization or commercial Windows code-signing subscriptions. Because no commercial signing certificate is attached, macOS Gatekeeper (*"MFRM-Desktop" Not Opened — Apple could not verify "MFRM-Desktop" is free of malware*) and Microsoft Defender SmartScreen (*Windows protected your PC*) display a standard first-launch verification prompt—**not because malicious code was detected**, but because the archive is unnotarized / unsigned.
+
+Before opening on any machine, you can independently verify three facts:
+
+1. **100% open source:** Every line of estimation and GUI code is publicly auditable in the [GitHub repository](https://github.com/Ryuya-dot-com/MFRM_Python_Application).
+2. **100% offline analysis (zero data upload or telemetry):** All CSV reading, estimation, plotting, and `.mfrm` / `.html` / `.csv` saving run locally on your machine—you can turn off Wi-Fi before launching and run every analysis workflow offline *(only clicking **Help → Web theory and help** opens online documentation in your browser, without uploading desktop data)*.
+3. **Exact SHA-256 file integrity:** Compare your downloaded ZIP against the published `SHA256SUMS.txt` on GitHub Releases before first launch.
+
+### macOS (Apple Silicon, M1 or Later) — Standalone Preview ZIP (Available Now)
+
+MFRM Desktop uses the `Data → Settings → Results` interface on Apple Silicon Macs (`arm64`, bundled libraries targeting macOS 14.0+; Python is bundled inside `MFRM-Desktop.app`, while Intel Macs can run from [Python source](../CONTRIBUTING.md#run-from-source)):
+
+1. Download `MFRM-Desktop-macOS-arm64-preview-dabb891-20261030.zip` from the **[macOS Desktop Preview Release (`desktop-macos-20261030`)](https://github.com/Ryuya-dot-com/MFRM_Python_Application/releases/tag/desktop-macos-20261030)** *(GitHub's automatic **Source code (zip)** at the bottom is source code, not `MFRM-Desktop.app`)* and verify its SHA-256 in Terminal:
+   ```bash
+   shasum -a 256 "$HOME/Downloads/MFRM-Desktop-macOS-arm64-preview-dabb891-20261030.zip"
+   # Expected: c98d13af3e83993c441598aaa34960599ff09c96d2f752b3f276bd61fda12924
+   ```
+2. Double-click the ZIP in Finder to expand it, and keep the complete **`MFRM-Desktop.app`** bundle intact in a writable folder such as your user `Applications` folder.
+3. Double-click **`MFRM-Desktop.app`** and complete the one-time [Apple `Open Anyway` approval](https://support.apple.com/en-us/102445) (macOS Sequoia 15+ / Sonoma 14+):
+   - When ***"MFRM-Desktop" Not Opened*** appears, **click `Done`** — **do NOT click the blue `Move to Trash` button**.
+   - Open **System Settings → Privacy & Security** and scroll down to the **Security** section.
+   - Next to ***"MFRM-Desktop" was blocked to protect your Mac***, click **`Open Anyway`** and authenticate with Touch ID or your Mac password *(needed once only)*.
+
+> [!IMPORTANT]
+> **Keep macOS protections enabled:** Only use **Open Anyway** after verifying the GitHub Release source and SHA-256 above, and only if your institution's Mac policy permits it. **Never disable Gatekeeper globally, never strip quarantine attributes in Terminal**, and investigate rather than override any damaged-app warning.
+
 ### Windows 11 (x64) — Standalone Preview ZIP (Available Now)
 
 Python is bundled inside the download—no Python, R, FACETS, or ConQuest installation is needed.
 
-1. Open the **[Windows Desktop Preview Release (`desktop-windows-20261030`)](https://github.com/Ryuya-dot-com/MFRM_Python_Application/releases/tag/desktop-windows-20261030)** and click **Download MFRM Desktop for Windows x64** (hosted on Dropbox, with SHA-256 checksums listed on the release page).
-   - *Tip:* GitHub's automatic **Source code (zip)** at the bottom of the page is source code, not the Windows app, and the separate `v0.2.19-beta` tag is the Web/source release.
-   - Optionally download the **Synthetic Examples ZIP** (`PCM_MML.mfrm` and `GD_ANOVA.mfrm`) from the same release page to explore saved extended projects immediately.
+1. Open the **[Windows Desktop Preview Release (`desktop-windows-20261030`)](https://github.com/Ryuya-dot-com/MFRM_Python_Application/releases/tag/desktop-windows-20261030)**, click **Download MFRM Desktop for Windows x64** (hosted on Dropbox; GitHub's automatic **Source code (zip)** is source code, and `v0.2.19-beta` is the Web/source tag), and verify the SHA-256 in PowerShell:
+   ```powershell
+   Get-FileHash "$HOME\Downloads\MFRM-Desktop-Windows-x64-preview-dabb891-docs20261030.zip" -Algorithm SHA256
+   # Expected: 7a19e0566e5b55ca2fb563ab5c06cb02709829ddcc8a3651ea9a4d2b537f51e0
+   ```
+   *(Optionally download the **Synthetic Examples ZIP**—`PCM_MML.mfrm` and `GD_ANOVA.mfrm`—from the same release page.)*
 2. In File Explorer, right-click the downloaded ZIP and select **Extract All**. Keep **`MFRM-Desktop.exe`** and the entire **`_internal`** folder together in the same folder (never run the EXE from inside the unextracted ZIP or move the EXE alone).
-3. Double-click **`MFRM-Desktop.exe`**.
+3. Double-click **`MFRM-Desktop.exe`**. If Microsoft Defender SmartScreen (*Windows protected your PC*) appears after verifying the SHA-256 digest above, click **`More info` → `Run anyway`** (if institutional policy blocks execution, record the exact message for support).
 
 > [!IMPORTANT]
-> **Unsigned Windows preview:** Because this preview executable (`0.2.19-beta`) is unsigned, Windows may display a security prompt on first launch. If opening is blocked, record the exact message for support—**do not disable Windows protection**. Windows on ARM and other Windows versions are not verified, and this preview is not yet certified across every Windows configuration.
-
-### macOS (Apple Silicon, M1 or Later) — Standalone Preview ZIP (Available Now)
-
-MFRM Desktop uses the identical `Data → Settings → Results` interface on Apple Silicon Macs (`arm64`; Python is bundled inside `MFRM-Desktop.app`, while Intel Macs can run from [Python source](../CONTRIBUTING.md#run-from-source)):
-
-1. Open the **[macOS Desktop Preview Release (`desktop-macos-20261030`)](https://github.com/Ryuya-dot-com/MFRM_Python_Application/releases/tag/desktop-macos-20261030)**, download `MFRM-Desktop-macOS-arm64-preview-dabb891-20261030.zip`, and verify its SHA-256 in Terminal with `shasum -a 256` before opening (GitHub's automatic **Source code (zip)** at the bottom is source code, not the app).
-2. Double-click the ZIP in Finder to expand it. Keep the complete **`MFRM-Desktop.app`** bundle intact in a writable folder such as your user `Applications` folder.
-3. Open **`MFRM-Desktop.app`**.
-
-> [!IMPORTANT]
-> **Unnotarized macOS preview:** Because this preview bundle (`0.2.19-beta`, bundled libraries targeting macOS 14.0+) carries an ad-hoc signature without Apple Developer ID notarization, macOS displays an unidentified-developer prompt on first launch. Only after verifying the source and SHA-256, follow [Apple's official Open Anyway guidance](https://support.apple.com/en-us/102445) (**System Settings → Privacy & Security → Open Anyway**) if your Mac permits it—**do not disable Gatekeeper or strip quarantine attributes**, and investigate rather than override any damaged-app warning.
+> **Keep Windows protections enabled:** **Never turn off Microsoft Defender or Windows security settings** to open the preview. Windows on ARM and other Windows editions are not verified, and this preview (`0.2.19-beta`) is not certified across every Windows configuration.
 
 ### Want to try in a browser first?
 
-Open the **[Web App](https://mfrmpythonapplication-xodghmcghngx8cz5zmhfeg.streamlit.app/)** with synthetic or properly de-identified data. On Desktop, analysis and saving stay completely local offline; only **Help → Web theory and help** uses the internet to open documentation (without uploading your desktop data).
+Open the **[Web App](https://mfrmpythonapplication-xodghmcghngx8cz5zmhfeg.streamlit.app/)** with synthetic or properly de-identified data.
 
 ---
 

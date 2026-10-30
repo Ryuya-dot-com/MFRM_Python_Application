@@ -73,10 +73,10 @@
         </div>
 
         <p class="hero-spec" data-i18n="en">
-          macOS (Apple Silicon, M1+) &amp; Windows 11 (x64) unsigned previews · Version 0.2.19-beta · MIT License · Also available <a href="#ecosystem">in R via CRAN mfrmr</a>
+          macOS (Apple Silicon, M1+) &amp; Windows 11 (x64) unsigned previews (<a href="#first-launch">first-launch &amp; safety guide ↓</a>) · Version 0.2.19-beta · MIT License · Also available <a href="#ecosystem">in R via CRAN mfrmr</a>
         </p>
         <p class="hero-spec" data-i18n="ja">
-          macOS（Apple Silicon / M1以降）・Windows 11（x64）未公証／未署名プレビュー · Version 0.2.19-beta · MIT License · <a href="#ecosystem">Rパッケージ mfrmr</a> も利用可能
+          macOS（Apple Silicon / M1以降）・Windows 11（x64）未公証／未署名プレビュー（<a href="#first-launch">初回起動時の開き方・安全性確認 ↓</a>） · Version 0.2.19-beta · MIT License · <a href="#ecosystem">Rパッケージ mfrmr</a> も利用可能
         </p>
       </div>
 
@@ -500,8 +500,95 @@
               </a>
             </div>
             <div class="inline-links">
+              <a href="#first-launch"><span data-i18n="en">First-launch &amp; safety steps ↓</span><span data-i18n="ja">初回起動・安全性確認の手順 ↓</span></a>
               <a href="desktop-guide.html">English guide</a>
               <a href="desktop-guide-ja.html">日本語ガイド</a>
+            </div>
+          </div>
+        </div>
+
+        <!-- First-Launch & Security Verification Panel -->
+        <div class="trust-launch-card" id="first-launch">
+          <div class="trust-launch-head">
+            <h4>
+              <span data-i18n="en">Why macOS &amp; Windows show an "unverified" notice — and how to verify &amp; open safely</span>
+              <span data-i18n="ja">初回起動時に「マルウェア未検証・PCの保護」と表示される理由と、安全な開き方</span>
+            </h4>
+            <p data-i18n="en">
+              Because MFRM Desktop is distributed <strong>100% free of charge as open-source academic software</strong> without paid commercial Apple Developer Program notarization or Windows code-signing subscriptions, macOS Gatekeeper and Windows SmartScreen display a standard <em>"could not verify free of malware / unrecognized publisher"</em> notice on first launch—<strong>not because malicious code was detected</strong>, but because no commercial signing certificate is attached.
+            </p>
+            <p data-i18n="ja">
+              MFRM Desktop は<strong>無償の学術オープンソースソフトウェア</strong>として公開しており、有償の Apple Developer Program 公証や商用 Windows コード署名証明書を付与していません。そのため初回起動時には悪質なコードが検出されたのではなく、<strong>「商用署名がない（未検証）」ことによるOS標準の確認ダイアログ</strong>が表示されます。
+            </p>
+          </div>
+
+          <div class="trust-pillars">
+            <div class="trust-pillar">
+              <strong><span data-i18n="en">1. 100% Auditable Open Source</span><span data-i18n="ja">1. 全ソースコードを公開</span></strong>
+              <p data-i18n="en">Every line of statistical and UI code is publicly inspectable in the <a href="https://github.com/Ryuya-dot-com/MFRM_Python_Application" target="_blank" rel="noopener">GitHub repository</a>.</p>
+              <p data-i18n="ja">推定エンジンから画面表示まで、すべてのPythonコードを <a href="https://github.com/Ryuya-dot-com/MFRM_Python_Application" target="_blank" rel="noopener">GitHub</a> 上で全文公開しています。</p>
+            </div>
+            <div class="trust-pillar">
+              <strong><span data-i18n="en">2. 100% Offline Analysis</span><span data-i18n="ja">2. 完全オフライン分析（データ送信ゼロ）</span></strong>
+              <p data-i18n="en">Analysis, plotting, and saving transmit zero data or telemetry—turn off Wi-Fi before launching to verify everything runs offline (only <em>Help → Web theory</em> opens a browser).</p>
+              <p data-i18n="ja">分析・作図・保存において外部通信や情報送信は一切行いません。Wi-Fiを切った状態でもすべての分析機能が動作することで確認できます（Webヘルプを開く操作のみブラウザーを起動します）。</p>
+            </div>
+            <div class="trust-pillar">
+              <strong><span data-i18n="en">3. SHA-256 Integrity Check</span><span data-i18n="ja">3. SHA-256 ハッシュで改ざん検証</span></strong>
+              <p data-i18n="en">Compare your downloaded ZIP against the published <code>SHA256SUMS.txt</code> on GitHub Releases using the one-line command below.</p>
+              <p data-i18n="ja">下の1行コマンドで、手元のZIPファイルがGitHub公式Releaseの <code>SHA256SUMS.txt</code> と1バイトの狂いもなく一致するか検証できます。</p>
+            </div>
+          </div>
+
+          <div class="trust-os-grid">
+            <div class="trust-os-box">
+              <h5>
+                <span data-i18n="en">macOS (Sequoia 15+ / Sonoma 14+, Apple Silicon)</span>
+                <span data-i18n="ja">macOS（Sequoia 15以降 / Sonoma 14以降・M1以降）</span>
+              </h5>
+              <ol class="trust-steps" data-i18n="en">
+                <li>Expand the ZIP and double-click <code>MFRM-Desktop.app</code>. When <em>"MFRM-Desktop" Not Opened</em> appears, click <span class="btn-pill-safe">Done</span> — <span class="btn-pill-avoid">do NOT click the blue "Move to Trash" button</span>.</li>
+                <li>Open <strong>System Settings → Privacy &amp; Security</strong> and scroll down to the <strong>Security</strong> section.</li>
+                <li>Next to <em>"MFRM-Desktop" was blocked to protect your Mac</em>, click <span class="btn-pill-safe">Open Anyway</span> and authenticate with Touch ID or your Mac password. <em>(Needed once only; never disable Gatekeeper globally.)</em></li>
+              </ol>
+              <ol class="trust-steps" data-i18n="ja">
+                <li>ZIPを展開して <code>MFRM-Desktop.app</code> を開きます。<em>「“MFRM-Desktop” は開いていません」</em>と出たら、<span class="btn-pill-avoid">青い「ゴミ箱に入れる」は押さず</span>、下の <span class="btn-pill-safe">完了</span> をクリックします。</li>
+                <li><strong>「システム設定」→「プライバシーとセキュリティ」</strong>を開き、画面を下へスクロールします。</li>
+                <li><em>「“MFRM-Desktop” はブロックされました」</em>の横にある <span class="btn-pill-safe">このまま開く</span> を押し、Touch IDまたはパスワードで許可します（初回のみ。2回目以降は通常通り開きます。Gatekeeper自体は絶対に無効化しないでください）。</li>
+              </ol>
+              <div class="hash-verify-box">
+                <span class="hash-verify-label"><span data-i18n="en">Verify macOS ZIP in Terminal before first launch:</span><span data-i18n="ja">ターミナルでのSHA-256確認コマンド（任意）：</span></span>
+                <div class="cmd-box">
+                  <span id="mac-hash-cmd">shasum -a 256 "$HOME/Downloads/MFRM-Desktop-macOS-arm64-preview-dabb891-20261030.zip"</span>
+                  <button type="button" class="copy-btn" onclick="copyText('mac-hash-cmd', this)"><span data-i18n="en">Copy</span><span data-i18n="ja">コピー</span></button>
+                </div>
+                <p class="hash-expected">Expected SHA-256: c98d13af3e83993c441598aaa34960599ff09c96d2f752b3f276bd61fda12924</p>
+              </div>
+            </div>
+
+            <div class="trust-os-box">
+              <h5>
+                <span data-i18n="en">Windows 11 (x64)</span>
+                <span data-i18n="ja">Windows 11（x64）</span>
+              </h5>
+              <ol class="trust-steps" data-i18n="en">
+                <li>Right-click the downloaded ZIP in File Explorer and choose <strong>Extract All</strong>. Keep <code>MFRM-Desktop.exe</code> and the <code>_internal</code> folder together in the same directory.</li>
+                <li>Double-click <code>MFRM-Desktop.exe</code>.</li>
+                <li>If Microsoft Defender SmartScreen (<em>Windows protected your PC</em>) appears after checksum verification, click <strong>More info</strong> → <span class="btn-pill-safe">Run anyway</span>. <em>(Never turn off Windows Defender protection.)</em></li>
+              </ol>
+              <ol class="trust-steps" data-i18n="ja">
+                <li>エクスプローラーでZIPを右クリックして<strong>「すべて展開」</strong>を選び、<code>MFRM-Desktop.exe</code> と <code>_internal</code> フォルダを同じ場所に保ちます。</li>
+                <li><code>MFRM-Desktop.exe</code> をダブルクリックします。</li>
+                <li>SmartScreen（<em>「Windows によって PC が保護されました」</em>）が表示された場合は、SHA-256一致を確認した上で<strong>「詳細情報」</strong>→ <span class="btn-pill-safe">実行</span> をクリックします（Windowsの保護機能自体は絶対に無効化しないでください）。</li>
+              </ol>
+              <div class="hash-verify-box">
+                <span class="hash-verify-label"><span data-i18n="en">Verify Windows ZIP in PowerShell before first launch:</span><span data-i18n="ja">PowerShellでのSHA-256確認コマンド（任意）：</span></span>
+                <div class="cmd-box">
+                  <span id="win-hash-cmd">Get-FileHash "$HOME\Downloads\MFRM-Desktop-Windows-x64-preview-dabb891-docs20261030.zip" -Algorithm SHA256</span>
+                  <button type="button" class="copy-btn" onclick="copyText('win-hash-cmd', this)"><span data-i18n="en">Copy</span><span data-i18n="ja">コピー</span></button>
+                </div>
+                <p class="hash-expected">Expected SHA-256: 7a19e0566e5b55ca2fb563ab5c06cb02709829ddcc8a3651ea9a4d2b537f51e0</p>
+              </div>
             </div>
           </div>
         </div>
@@ -856,6 +943,24 @@
             </p>
             <p data-i18n="ja">
               <strong>MFRM Desktop と Web版は、PythonやRの事前インストール不要ですぐ使えます。</strong> macOS（Apple Silicon）版・Windows 11（x64）版ともにPython実行環境を同梱しており、保存した <code>.mfrm</code> ファイルはMac・Windows間でそのまま開いて再推定なしで図表を確認できます（旧版アプリは新しい拡張 <code>.mfrm</code> を開けないため、更新時は元ファイルの控えを残してください）。Rコードで分析パイプラインを管理したい場合は、<code>.csv</code> 出力やCRAN公開の <strong><a href="https://cran.r-project.org/package=mfrmr" target="_blank" rel="noopener">mfrmr</a></strong> と併用できます。
+            </p>
+          </div>
+        </details>
+
+        <details class="faq-item" open>
+          <summary>
+            <span class="faq-q">
+              <span data-i18n="en">Why does macOS or Windows say MFRM Desktop "could not be verified" on first launch?</span>
+              <span data-i18n="ja">デスクトップ版を開くと「マルウェアが含まれていないことを検証できませんでした」と表示されるのはなぜですか？</span>
+            </span>
+            <span class="faq-icon" aria-hidden="true"></span>
+          </summary>
+          <div class="faq-body">
+            <p data-i18n="en">
+              <strong>Because MFRM Desktop is distributed free of charge as open-source academic software without paid commercial Apple Developer Program notarization or commercial Windows code-signing subscriptions—not because malicious code was detected.</strong> Every line of Python code is public on GitHub, all analysis/plotting/saving executes offline with zero data upload or telemetry (verifiable with Wi-Fi turned off), and you can verify the exact SHA-256 hash before opening. On macOS Sequoia 15+, click <strong>Done</strong> (do <em>not</em> click the blue <em>Move to Trash</em> button), then open <strong>System Settings → Privacy &amp; Security → Open Anyway</strong>; on Windows 11, click <strong>More info → Run anyway</strong> after extracting the ZIP. See the <a href="#first-launch">step-by-step first-launch &amp; checksum guide above</a>.
+            </p>
+            <p data-i18n="ja">
+              <strong>悪質なコードが検出されたのではなく、無償の学術オープンソースソフトウェアとして有償の Apple Developer Program 公証や商用コード署名証明書を付与していないためです。</strong> 全ソースコードをGitHubで公開しており、分析・作図・保存の外部通信はゼロ（Wi-Fiを切った完全オフライン状態で全分析機能が動作することで確認可能）、公開 <code>SHA256SUMS.txt</code> で改ざんがないことも検証できます。macOS Sequoia 15以降では<strong>青い「ゴミ箱に入れる」を押さずに「完了」をクリック</strong>し、<strong>「システム設定 → プライバシーとセキュリティ → このまま開く」</strong>から許可してください（初回のみ）。Windows 11ではZIPを「すべて展開」後に<strong>「詳細情報 → 実行」</strong>を選択します。具体的なコマンドと手順は<a href="#first-launch">上の初回起動・安全性確認ガイド</a>をご覧ください。
             </p>
           </div>
         </details>

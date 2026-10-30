@@ -100,7 +100,7 @@
               <span class="canvas-pill-bar" aria-hidden="true"></span>
             </button>
             <button type="button" class="canvas-pill" role="tab" aria-selected="false" onclick="goToHeroSlide(4)">
-              <span data-i18n="en">D-study (G / Phi)</span><span data-i18n="ja">D研究（G / Phi）</span>
+              <span data-i18n="en">D-study (G / Phi)</span><span data-i18n="ja">D-Study（G / Phi）</span>
               <span class="canvas-pill-bar" aria-hidden="true"></span>
             </button>
           </div>
@@ -169,8 +169,8 @@
               <span data-i18n="ja">条件付きバイアス図：主較正を固定した Rater × Criterion の探索的スクリーニング（単独での有意差・公平性の証明ではない）。</span>
             </div>
             <div class="canvas-caption-item" data-slide-caption="4">
-              <span data-i18n="en">D-study projections (GD_ANOVA sample): compares relative (G) and absolute (Phi) reliability across rater and task counts for balanced 1–2 facet designs.</span>
-              <span data-i18n="ja">D研究プロット（GD_ANOVAサンプル）：完全交差・均衡1〜2相設計において、評価者数と課題数の組み合わせによる G・Phi 係数を比較。</span>
+              <span data-i18n="en">D-study projections (GD_ANOVA sample): compares relative (G) and absolute (Phi) reliability across rater and task counts for univariate balanced 1–2 facet designs.</span>
+              <span data-i18n="ja">D-Studyプロット（GD_ANOVAサンプル）：単変量・完全交差・均衡1〜2相設計において、評価者数と課題数の組み合わせによる G・Phi 係数を比較。</span>
             </div>
           </div>
           <div class="canvas-caption-links">
@@ -212,7 +212,7 @@
               A student averaging 3.2 under your most severe rater on an abstract prompt may have demonstrated higher ability than a peer averaging 3.6 under a lenient rater on an easier prompt. MFRM places examinees, raters, tasks, and criteria onto one common logit scale centered at 0.00.
             </p>
             <p data-i18n="ja">
-              厳しい評価者と難度の高い課題に当たって平均3.2点だった受験者の方が、甘めの評価者と易しい課題で3.6点だった受験者より高い実力を示していることがあります。MFRMは各要因を0.00基準の共通ロジット尺度上で同時に推定します。
+              厳しい評価者と難度の高い課題に当たって平均3.2点だった受験者の方が、甘めの評価者と易しい課題で3.6点だった受験者より高い実力を示していることがあります。MFRMは各相を0.00基準の共通ロジット尺度上で同時に推定します。
             </p>
           </div>
 
@@ -235,10 +235,10 @@
               <span data-i18n="ja">ルーブリック段階の機能と評価者数設計を検証できる</span>
             </h3>
             <p data-i18n="en">
-              Category probability curves show whether every rubric level from 0 to 5 represents a distinct performance band, while balanced Generalizability / Decision (G/D) studies show whether adding tasks or raters improves score reliability faster.
+              Category probability curves show whether every rubric level from 0 to 5 represents a distinct performance band, while univariate balanced Generalizability / Decision (G/D) studies show whether adding tasks or raters improves score reliability faster.
             </p>
             <p data-i18n="ja">
-              カテゴリー確率曲線で0〜5の各段階が順序通り機能しているかを確認でき、均衡設計のG/D研究によって「評価者を増やすか、課題を増やすか」の信頼性比較も行えます。
+              カテゴリー確率曲線で0〜5の各段階が順序通り機能しているかを確認でき、均衡設計の単変量G/D-Studyによって「評価者を増やすか、課題を増やすか」の信頼性比較も行えます。
             </p>
           </div>
         </div>
@@ -323,7 +323,7 @@
         <button type="button" class="tab-btn" onclick="showPlot(1, this)"><span data-i18n="en">Pathway fit map</span><span data-i18n="ja">Pathway適合度マップ</span></button>
         <button type="button" class="tab-btn" onclick="showPlot(2, this)"><span data-i18n="en">Category curves</span><span data-i18n="ja">カテゴリー確率曲線</span></button>
         <button type="button" class="tab-btn" onclick="showPlot(3, this)"><span data-i18n="en">Conditional bias</span><span data-i18n="ja">条件付きバイアス</span></button>
-        <button type="button" class="tab-btn" onclick="showPlot(4, this)"><span data-i18n="en">D-study reliability</span><span data-i18n="ja">D研究（G / Phi）</span></button>
+        <button type="button" class="tab-btn" onclick="showPlot(4, this)"><span data-i18n="en">D-study reliability</span><span data-i18n="ja">D-Study（G / Phi）</span></button>
       </div>
 
       <div class="plot-panel active" id="plot-panel-0">
@@ -333,7 +333,7 @@
         <div class="plot-reading">
           <h3>
             <span data-i18n="en">Scale targeting and facet spread</span>
-            <span data-i18n="ja">尺度の対応（ターゲティング）と要因の広がり</span>
+            <span data-i18n="ja">尺度の対応（ターゲティング）と相の広がり</span>
           </h3>
           <div class="reading-item">
             <strong><span data-i18n="en">What to look for</span><span data-i18n="ja">確認するポイント</span></strong>
@@ -440,8 +440,8 @@
           </div>
           <div class="reading-item">
             <strong><span data-i18n="en">Scope in a thesis or paper</span><span data-i18n="ja">適用できる設計条件</span></strong>
-            <p data-i18n="en">Applies to completely crossed, balanced 1- or 2-random-facet observed-score designs (&ge; 2 levels per factor, 1 observation per cell, unit weights). Confidence intervals for G / Phi and multivariate G-theory are not implemented.</p>
-            <p data-i18n="ja">観測得点の完全交差・均衡1〜2ランダム相設計（各要因2水準以上・セルあたり1観測・単位重み）が対象です。G／Phiの信頼区間および多変量G理論は未実装です。</p>
+            <p data-i18n="en">Applies to univariate, completely crossed, balanced 1- or 2-random-facet observed-score designs (&ge; 2 levels per facet, 1 observation per cell, unit weights). Confidence intervals for G / Phi and multivariate G-theory are not implemented.</p>
+            <p data-i18n="ja">単変量の観測得点に対する完全交差・均衡1〜2ランダム相設計（各相2水準以上・セルあたり1観測・単位重み）が対象です。G／Phiの信頼区間および多変量G理論は未実装です。</p>
           </div>
         </div>
       </div>
@@ -479,7 +479,7 @@
               Offline local workflow (Data → Settings → Results) with Python bundled inside for both macOS and Windows. Integrates RSM and PCM with JMLE or fixed-SD MML, Wright / Pathway / Category plots, conditional bias, fixed-SD specified intervals, fixed-N(0,1) joint interaction, balanced 1–2 facet G/D studies, restorable .mfrm project files, and 300-DPI PNG / SVG manuscript exports with .caption.txt notes.
             </p>
             <p data-i18n="ja">
-              機密データを外部へ送らずオフラインで完結する3画面アプリ（macOS・WindowsともPython同梱）。RSM／PCM × JMLE／固定SD MML、主要3プロット、条件付きバイアス、指定区間、固定N(0,1)共同交互作用、均衡1〜2相G/D研究、再推定なしで復元できる .mfrm 保存、論文掲載用の300 DPI PNG／SVG＋.caption.txt 出力、日英切替を統合しています。
+              機密データを外部へ送らずオフラインで完結する3画面アプリ（macOS・WindowsともPython同梱）。RSM／PCM × JMLE／固定SD MML、主要3プロット、条件付きバイアス、指定区間、固定N(0,1)共同交互作用、均衡1〜2相の単変量G/D-Study、再推定なしで復元できる .mfrm 保存、論文掲載用の300 DPI PNG／SVG＋.caption.txt 出力、日英切替を統合しています。
             </p>
             <p class="fineprint" data-i18n="en">
               Both 0.2.19-beta archives are unsigned / unnotarized previews built from identical runtime sources. On macOS (M1+, macOS 14.0+), expand MFRM-Desktop.app and use Privacy &amp; Security → Open Anyway after checksum verification; on Windows 11 x64, extract the full ZIP keeping MFRM-Desktop.exe alongside _internal.
@@ -700,31 +700,31 @@
         <!-- Row 4: G / D Studies -->
         <div class="cap-row">
           <div class="cap-topic">
-            <h3><span data-i18n="en">G &amp; D reliability studies</span><span data-i18n="ja">一般化可能性（G / D研究）</span></h3>
-            <span class="cap-sub" data-i18n="en">Observed-score ANOVA</span>
-            <span class="cap-sub" data-i18n="ja">観測得点の分散成分・信頼性</span>
+            <h3><span data-i18n="en">G &amp; D reliability studies</span><span data-i18n="ja">一般化可能性（G/D-Study）</span></h3>
+            <span class="cap-sub" data-i18n="en">Univariate observed-score ANOVA</span>
+            <span class="cap-sub" data-i18n="ja">単変量G理論（観測得点の分散成分・信頼性）</span>
           </div>
           <div class="cap-col">
             <div class="cap-mobile-label"><span data-i18n="en">What you can do</span><span data-i18n="ja">できること</span></div>
             <ul data-i18n="en">
-              <li>Estimate observed-score variance components and project relative (<strong>G</strong>) and absolute (<strong>Phi</strong>) reliability across planned rater and task counts—either standalone or alongside MFRM.</li>
+              <li>Estimate univariate observed-score variance components and project relative (<strong>G</strong>) and absolute (<strong>Phi</strong>) reliability across planned rater and task counts—either standalone or alongside MFRM.</li>
             </ul>
             <ul data-i18n="ja">
-              <li>観測得点から分散成分を推定し、評価者数・課題数を変えたときの相対信頼性（<strong>G</strong>）と絶対信頼性（<strong>Phi</strong>）を単体またはMFRMと並べて試算。</li>
+              <li>単変量の観測得点から分散成分を推定し、評価者数・課題数を変えたときの相対信頼性（<strong>G</strong>）と絶対信頼性（<strong>Phi</strong>）をG/D-Study単体またはMFRMと並べて試算。</li>
             </ul>
           </div>
           <div class="cap-col">
             <div class="cap-mobile-label"><span data-i18n="en">What you cannot do</span><span data-i18n="ja">できないこと・対応</span></div>
             <ul data-i18n="en">
-              <li>Run G/D on incomplete, sparse, or unbalanced designs (requires completely crossed, balanced 1 or 2 random facets, &ge; 2 levels per factor, 1 observation per cell, unit weights).</li>
-              <li>Compute confidence intervals for G / Phi or multivariate G-theory (not implemented).</li>
+              <li>Run G/D on incomplete, sparse, or unbalanced designs (requires completely crossed, balanced 1 or 2 random facets, &ge; 2 levels per facet, 1 observation per cell, unit weights).</li>
+              <li>Compute confidence intervals for G / Phi or multivariate G-theory across multiple outcome variables (not implemented).</li>
             </ul>
             <ul data-i18n="ja">
-              <li>欠測セルや不均衡割り当てを含むデータでのG/D実行（完全交差・均衡の1〜2ランダム相、各要因2水準以上、セルあたり1観測、単位重みが必須）。</li>
+              <li>欠測セルや不均衡割り当てを含むデータでのG/D-Study実行（完全交差・均衡の1〜2ランダム相、各相2水準以上、セルあたり1観測、単位重みが必須）。</li>
               <li>G／Phiの信頼区間算出および多変量G理論（未実装）。</li>
             </ul>
             <p class="cap-action" data-i18n="en"><strong>How to proceed:</strong> Use <strong>MFRM</strong> when rater assignments are incomplete (with connected links), or run G/D on a complete balanced sub-cohort and document the subsetting.</p>
-            <p class="cap-action" data-i18n="ja"><strong>対応方法：</strong>欠測のある採点設計では（連結性を満たす）<strong>MFRM</strong>を使い、G/Dは完全交差が成立する均衡データに対して適用してください。</p>
+            <p class="cap-action" data-i18n="ja"><strong>対応方法：</strong>欠測のある採点設計では（連結性を満たす）<strong>MFRM</strong>を使い、G/D-Studyは完全交差が成立する均衡データに対して適用してください。</p>
           </div>
         </div>
 
@@ -801,7 +801,7 @@
           Practical answers on local data confidentiality, facet limits across modules, and setup across macOS and Windows.
         </p>
         <p data-i18n="ja">
-          機密データのオフライン利用、扱えるファセット（相）の数、環境構築やOS間のファイル共有についての回答です。
+          機密データのオフライン利用、扱える相の数、環境構築やOS間のファイル共有についての回答です。
         </p>
       </div>
 
@@ -828,16 +828,16 @@
           <summary>
             <span class="faq-q">
               <span data-i18n="en">How many facets can I include in an analysis?</span>
-              <span data-i18n="ja">ファセット（相）はいくつまで扱えますか？</span>
+              <span data-i18n="ja">相はいくつまで扱えますか？</span>
             </span>
             <span class="faq-icon" aria-hidden="true"></span>
           </summary>
           <div class="faq-body">
             <p data-i18n="en">
-              <strong>Core MFRM calibration (RSM / PCM, plus GPCM on Web) has no fixed upper limit on the number of facets</strong>—you can include <code>Person</code> plus one or more non-person facets (e.g., <code>Rater</code>, <code>Task</code>, <code>Criterion</code>, <code>Occasion</code>, and more) as long as all levels are connected through shared ratings (the Wright map prints direct level labels for up to 4 non-person facets and shows hover values beyond that). Module-specific bounds apply to supplementary analyses: <strong>Conditional bias</strong> screens 2-facet pairs (<code>Facet A × Facet B</code>); fixed-SD MML <strong>Specified intervals</strong> and <strong>Joint interaction</strong> support up to <code>64</code> free structural coordinates within synchronous memory limits (with Joint interaction refitting one 2-facet pair); and <strong>G / D reliability studies</strong> support <strong>1 or 2 random facets</strong> (<code>p × r</code> or <code>p × t × r</code> complete balanced designs).
+              <strong>Core MFRM calibration (RSM / PCM, plus GPCM on Web) has no fixed upper limit on the number of facets</strong>—you can include <code>Person</code> plus one or more non-person facets (e.g., <code>Rater</code>, <code>Task</code>, <code>Criterion</code>, <code>Occasion</code>, and more) as long as all levels are connected through shared ratings (the Wright map prints direct level labels for up to 4 non-person facets and shows hover values beyond that). Module-specific bounds apply to supplementary analyses: <strong>Conditional bias</strong> screens 2-facet pairs (<code>Facet A × Facet B</code>); fixed-SD MML <strong>Specified intervals</strong> and <strong>Joint interaction</strong> support up to <code>64</code> free structural coordinates within synchronous memory limits (with Joint interaction refitting one 2-facet pair); and univariate <strong>G/D-Studies</strong> support <strong>1 or 2 random facets</strong> (<code>p × r</code> or <code>p × t × r</code> complete balanced designs).
             </p>
             <p data-i18n="ja">
-              <strong>MFRMの主較正（RSM／PCM、Web版のGPCM）にはファセット数の固定上限はありません。</strong> 共通の採点網で連結（connected）していれば、<code>Person</code> に加えて <code>Rater</code>・<code>Task</code>・<code>Criterion</code>・<code>Occasion</code> など4相・5相以上でも同時推定できます（Wrightマップの図中ラベル直接印字は非Person 4相までで、5相以上はドット表示＋マウスホバー確認に切り替わります）。周辺機能には個別の条件があり、<strong>条件付きバイアス</strong>は任意の2相ペア（<code>Facet A × Facet B</code>）ごとの診断、固定SD MMLの<strong>指定区間</strong>・<strong>共同交互作用</strong>は自由構造パラメータ合計 <code>64</code> 次元以内（共同交互作用は非Person 2相ペア1組）、<strong>G / D研究</strong>は<strong>ランダム要因 1〜2個</strong>（<code>p × r</code> または <code>p × t × r</code> の完全交差・均衡設計）が対象です。
+              <strong>MFRMの主較正（RSM／PCM、Web版のGPCM）には相の数の固定上限はありません。</strong> 共通の採点網で連結（connected）していれば、<code>Person</code> に加えて <code>Rater</code>・<code>Task</code>・<code>Criterion</code>・<code>Occasion</code> など4相・5相以上でも同時推定できます（Wrightマップの図中ラベル直接印字は非Person 4相までで、5相以上はドット表示＋マウスホバー確認に切り替わります）。周辺機能には個別の条件があり、<strong>条件付きバイアス</strong>は任意の2相ペア（<code>Facet A × Facet B</code>）ごとの診断、固定SD MMLの<strong>指定区間</strong>・<strong>共同交互作用</strong>は自由構造パラメータ合計 <code>64</code> 次元以内（共同交互作用は非Person 2相ペア1組）、単変量の<strong>G/D-Study</strong>は<strong>ランダム相 1〜2個</strong>（<code>p × r</code> または <code>p × t × r</code> の完全交差・均衡設計）が対象です。
             </p>
           </div>
         </details>
@@ -887,13 +887,13 @@
         </a>
         <a class="doc-entry" href="desktop-guide-ja.html">
           <h3><span data-i18n="en">Desktop User Guide (Japanese) →</span><span data-i18n="ja">デスクトップ利用ガイド（日本語） →</span></h3>
-          <p data-i18n="en">Japanese desktop setup and workflow guide covering the built-in writing walkthrough, long-format CSV preparation, MFRM / G/D settings, and .mfrm compatibility.</p>
-          <p data-i18n="ja">Windows試用版の展開・起動、内蔵サンプルの操作手順、縦長CSVの準備、MFRM／G/Dの設定、保存・再読込・互換性の注意点。</p>
+          <p data-i18n="en">Japanese desktop setup and workflow guide covering the built-in writing walkthrough, long-format CSV preparation, MFRM / G/D-Study settings, and .mfrm compatibility.</p>
+          <p data-i18n="ja">macOS・Windows試用版の展開・起動、内蔵サンプルの操作手順、縦長CSVの準備、MFRM／G/D-Studyの設定、保存・再読込・互換性の注意点。</p>
         </a>
         <a class="doc-entry" href="analysis-scope.html">
           <h3><span data-i18n="en">Analyses, Interpretation &amp; Reporting Limits →</span><span data-i18n="ja">分析手法・解釈・報告上の境界（英語） →</span></h3>
-          <p data-i18n="en">Method-by-method scope covering JMLE conditional screening bounds, fixed-SD MML specified intervals, conditional bias vs. joint interaction, and G/D requirements.</p>
-          <p data-i18n="ja">JMLEの条件付きスクリーニング基準、固定SD MMLの指定区間、条件付きバイアスと共同交互作用の違い、G/D研究の設計要件。</p>
+          <p data-i18n="en">Method-by-method scope covering JMLE conditional screening bounds, fixed-SD MML specified intervals, conditional bias vs. joint interaction, and univariate G/D-Study requirements.</p>
+          <p data-i18n="ja">JMLEの条件付きスクリーニング基準、固定SD MMLの指定区間、条件付きバイアスと共同交互作用の違い、単変量G/D-Studyの設計要件。</p>
         </a>
         <a class="doc-entry" href="manuscript-guide.html">
           <h3><span data-i18n="en">APA &amp; Manuscript Reporting Guide →</span><span data-i18n="ja">APA・論文報告ガイド（英語） →</span></h3>

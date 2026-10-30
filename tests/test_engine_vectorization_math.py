@@ -398,8 +398,10 @@ def _ref_calc_bias_interactions(obs_df, facet_cols, pairs=None, top_n=20):
         combos = pairs
     rows = []
     for pair1, pair2 in combos:
-        grp = obs_df.groupby([pair1, pair2], observed=False)
+        grp = obs_df.groupby([pair1, pair2], observed=True)
         for (lvl1, lvl2), df in grp:
+            if df.empty:
+                continue
             w = engine.get_weights(df)
             n = np.nansum(w)
             observed_avg = engine.weighted_mean(df["Observed"].to_numpy(), w)

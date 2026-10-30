@@ -72,10 +72,29 @@ Web版では、必要なレポートや図表を「レポート・出力」か�
 3. **PythonやRの環境構築は必要ですか？MacとWindowsでプロジェクトを共有できますか？**
    **MFRM Desktop と Web版は、PythonやRの事前インストール不要ですぐ使えます。** macOS（Apple Silicon）版・Windows 11（x64）版ともPython実行環境を同梱しており、保存した `.mfrm` ファイルはMac・Windows間でそのまま開いて再推定なしで図表を確認できます（旧版アプリは新しい拡張 `.mfrm` を開けないため、更新時は元ファイルの控えを残してください）。Rコードで再現性を管理したい場合は CRAN 公開の [`mfrmr`](https://cran.r-project.org/package=mfrmr) と併用できます。
 
-## 利用条件・引用・問い合わせ
+## ライセンス・引用（APA第7版）・不具合報告
 
-[MITライセンス](LICENSE)で、研究・教育・商用に利用できます。再配布時は必要な著作権・ライセンス表示を保持してください。ソフトウェアは無保証であり、データの扱い、モデルの仮定、結果の解釈・利用は利用者の責任です。[ライセンスの説明](LICENSE_NOTICE.md)も参照してください。
+### ライセンスと免責事項（MITライセンス）
 
-研究で利用した場合は、実際に使用したバージョンとソースを記録してください。[引用情報](CITATION.cff)と[引用方法](README.md#citing-this-software)を用意しています。ソフトウェアの引用は統計手法の引用を代替せず、MITライセンスに追加する利用条件でもありません。
+**[MITライセンス](LICENSE)**（[利用上の注意](LICENSE_NOTICE.md)）に基づき、学術研究・学位論文・授業・学内評価・コンサルティング・**商用利用を含めすべて無料**で利用できます（再配布時は著作権・ライセンス表示を保持してください。同梱の第三者ライブラリには各ライセンスが適用されます）。
 
-不具合や質問は[GitHub Issues](https://github.com/Ryuya-dot-com/MFRM_Python_Application/issues)へ、OS、版、操作手順、メッセージを添えてお知らせください。ファイルや画面には個人を特定できる情報を含めないでください。
+本ソフトウェアは無償で提供されるため、**いかなる保証も伴わず現状のまま（AS IS）提供され、利用に関する責任はすべて利用者にあります**。データの保護や所属機関の規定遵守、モデル仮定・設計条件の確認、保留判定（空欄の `SE` 等）の適切な扱い、および出力結果に基づく解釈・評価・意思決定について、作成者（**Ryuya Komuro**）は一切の損害・責任を負いません。
+
+### ソフトウェアの引用（APA第7版スタイル）
+
+研究・発表で利用した場合は、利用した環境に合わせて **Ryuya Komuro** を著者としたAPA第7版スタイル（本文内引用：`(Komuro, 2026)` または `Komuro (2026)`）で引用し、統計手法自体の原典も併せて記載してください（引用はMITライセンスに追加する利用条件ではありません）。
+
+- **MFRM Desktop（macOS / Windows）：**
+  > Komuro, R. (2026). *MFRM Desktop* (Version 0.2.19-beta) [Computer software]. https://github.com/Ryuya-dot-com/MFRM_Python_Application
+
+  ※ 方法欄に使用OSのタグ（`desktop-macos-20261030` または `desktop-windows-20261030`）と配布ZIP名も記録してください（同梱 [`CITATION.cff`](CITATION.cff) は共通リポジトリ名 `MFRM Streamlit` を記録します）。
+- **MFRM Web（`MFRM Streamlit`）：**
+  > Komuro, R. (2026). *MFRM Streamlit* (Version 0.2.19-beta) [Computer software]. https://github.com/Ryuya-dot-com/MFRM_Python_Application
+- **Rパッケージ（CRAN版 `mfrmr`）：**
+  > Komuro, R. (2026). *mfrmr: Estimation and diagnostics for many-facet measurement models* (Version 0.2.3.1) [R package]. https://CRAN.R-project.org/package=mfrmr
+
+  ※ バージョン番号は実際に使用した版（R上で `packageVersion("mfrmr")` または `citation("mfrmr")` で確認）に置き換えてください。
+
+### 不具合の報告窓口（作成者メール）
+
+動作不良・エラー・表示崩れ等を見つけた際は、作成者 **Ryuya Komuro**（**[ryuya.komuro.c4@tohoku.ac.jp](mailto:ryuya.komuro.c4@tohoku.ac.jp)**）までメールでご報告ください。ご連絡の際は、① OSとバージョン、② 利用環境・アプリ版（`0.2.19-beta`）・配布ZIP名（または `mfrmr` の版）、③ 再現手順、④ 表示されたエラーメッセージや画面キャプチャを添えてください。**メール本文や添付ファイルに受験者・評価者の個人情報や未匿名化の実データを含めないでください**（可能な限り内蔵サンプルやダミーデータでの再現をお願いします）。

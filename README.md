@@ -192,18 +192,34 @@ For Desktop source startup on macOS or Windows, see [CONTRIBUTING.md — Run fro
 
 ---
 
-## License
+## License & User Responsibility
 
-[MIT License](LICENSE) · [License notice](LICENSE_NOTICE.md). Research, teaching, and commercial use are permitted; retain copyright and license notices when redistributing (third-party components keep their own licenses). Provided without warranty—users remain responsible for data handling, model assumptions, and substantive interpretation.
+Released under the **[MIT License](LICENSE)** ([License & Responsible Use Notice](LICENSE_NOTICE.md)).
 
-## Citing this software
+- **Permitted uses (free of charge):** Academic research, thesis work, classroom teaching, institutional assessment, consulting, and **commercial use** are all permitted free of charge (retain copyright and license notices when redistributing; bundled third-party components keep their own licenses).
+- **No warranty & user responsibility:** Because this software is provided **free of charge and "AS IS" without warranty of any kind**, **all responsibility rests with the user**—including data privacy and institutional compliance, verifying model assumptions and design eligibility, respecting withheld-inference boundaries, and any substantive, educational, clinical, or operational decisions made from the outputs. Neither the author (**Ryuya Komuro**) nor copyright holders assume liability for any claim, loss, or damages arising from its use.
 
-Cite the exact version and source commit used ([`CITATION.cff`](CITATION.cff) powers GitHub's citation menu, and the Web app provides BibTeX/CFF downloads under **About MFRM**):
+<a id="citing-this-software"></a>
 
-> Komuro, R. (2026). *MFRM Streamlit* (Version 0.2.19-beta) [Computer software]. https://github.com/Ryuya-dot-com/MFRM_Python_Application
+## Citing this software (APA 7th edition)
 
-For the Windows desktop preview, also record the release tag (`desktop-windows-20261030`) and archive name. Cite the statistical methods separately alongside the software; citation is appreciated and not an additional MIT license condition.
+Cite **Ryuya Komuro** in APA 7th edition format (`(Komuro, 2026)` or `Komuro (2026)` in text) for the edition and version you actually used, alongside the underlying statistical methods:
 
-## Help and contributions
+- **MFRM Desktop (macOS / Windows):**
+  > Komuro, R. (2026). *MFRM Desktop* (Version 0.2.19-beta) [Computer software]. https://github.com/Ryuya-dot-com/MFRM_Python_Application
 
-Report questions or bugs in [GitHub Issues](https://github.com/Ryuya-dot-com/MFRM_Python_Application/issues) with your OS, version/archive name, steps, and exact message (removing identifiable data first). Contribution and build instructions are in [CONTRIBUTING.md](CONTRIBUTING.md).
+  *(Also record the OS release tag—`desktop-macos-20261030` or `desktop-windows-20261030`—and archive filename in your Methods section; built-in [`CITATION.cff`](CITATION.cff) sidecars record the shared repository title `MFRM Streamlit`.)*
+- **MFRM Web (`MFRM Streamlit`):**
+  > Komuro, R. (2026). *MFRM Streamlit* (Version 0.2.19-beta) [Computer software]. https://github.com/Ryuya-dot-com/MFRM_Python_Application
+
+  *(BibTeX and `CITATION.cff` downloads are available under **About MFRM** in the Web app.)*
+- **R package (`mfrmr` on CRAN):**
+  > Komuro, R. (2026). *mfrmr: Estimation and diagnostics for many-facet measurement models* (Version 0.2.3.1) [R package]. https://CRAN.R-project.org/package=mfrmr
+
+  *(Replace `0.2.3.1` with your installed version via `packageVersion("mfrmr")` or `citation("mfrmr")` in R.)*
+
+Citation is appreciated and is not an additional condition of the MIT License.
+
+## Bug reports & contributions
+
+If you encounter a bug, crash, or unexpected behavior, please report it by email to the author, **Ryuya Komuro**, at **[ryuya.komuro.c4@tohoku.ac.jp](mailto:ryuya.komuro.c4@tohoku.ac.jp)** with your OS and version, edition/app version (`0.2.19-beta`) and archive filename (or `mfrmr` version), steps to reproduce, and the exact error message or screenshot. **Never include confidential or identifiable examinee/rater data in emails or attachments**—reproduce with the built-in sample or anonymized synthetic data whenever possible. Contribution and build instructions are in [CONTRIBUTING.md](CONTRIBUTING.md).

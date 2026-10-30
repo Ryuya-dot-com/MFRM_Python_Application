@@ -269,4 +269,4 @@ One of the most useful ideas in Rasch measurement for graduate research is that 
 | **Changing settings did not update the displayed chart** | Save any output you need from the previous run, verify the new settings, and click **Analyze**. |
 | **You need to stop a running fit** | Click **Cancel**; any prior completed result in your session is preserved. |
 
-For questions or bug reports, open an issue at **[GitHub Issues](https://github.com/Ryuya-dot-com/MFRM_Python_Application/issues)** with your OS, app version (`0.2.19-beta`), archive name, steps, and exact message—removing identifiable rating data before attaching files or screenshots.
+For bug reports, please email the author, **Ryuya Komuro**, at **[ryuya.komuro.c4@tohoku.ac.jp](mailto:ryuya.komuro.c4@tohoku.ac.jp)** with your OS, app version (`0.2.19-beta`), archive filename, steps to reproduce, and exact error message—**never include confidential or identifiable examinee/rater data** in emails, files, or screenshots.

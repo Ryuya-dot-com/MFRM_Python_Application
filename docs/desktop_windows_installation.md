@@ -10,10 +10,14 @@ Python, R, FACETS, ConQuest or developer tools is not required.
    GitHub's automatically generated source ZIP is not the application.
 2. Use File Explorer's **Extract All**. Keep `MFRM-Desktop.exe` together with the
    complete `_internal` folder. Do not run the EXE inside the ZIP or copy it alone.
-3. Open `MFRM-Desktop.exe`. The preview is unsigned. If Windows blocks it,
-   record the exact message for support; do not disable Windows protection.
-4. Select **Data → Sample → Next → Analyze** to try synthetic writing ratings.
-   The sample sets the scoring range to 0–5. Inspect **Figure** and **Table**;
+3. Open `MFRM-Desktop.exe`. Because this free open-source academic release does
+   not use a commercial Windows code-signing certificate, SmartScreen may show
+   *Windows protected your PC*. Verify the ZIP hash with
+   `Get-FileHash .\MFRM-Desktop-Windows-x64.zip -Algorithm SHA256`, then click
+   **More info → Run anyway** (do not disable Windows Defender).
+4. Select **Data → Sample → Next → Analyze** to try synthetic 3-facet writing
+   ratings (`0–5`), or **Data → G/D 2-facet sample → Next → Analyze** to try a
+   balanced 2-facet G/D-Study immediately. Inspect **Figure** and **Table**;
    use **Reading guide** and table notes to interpret the outputs.
 5. Use **Save project** to save a `.mfrm` file in a writable folder. Use
    **Save report** for an HTML report that opens in a browser with local figures.
@@ -41,10 +45,12 @@ specified intervals and joint interaction analysis. Register bias/interval
 requests with **Add** before analysis. Joint interaction is a separate jointly
 refitted model and requires MML with fixed SD 1.
 
-G/D Study uses observed scores and supports fully crossed, balanced designs
+G/D-Study uses observed scores and supports fully crossed, balanced designs
 with one or two random facets, at least two levels of each factor and one
-observation per cell. Multivariate G-theory and G/Phi uncertainty intervals
-are not implemented.
+observation per cell. For datasets with three or more facets, **Fixed-facet
+handling** lets you condition on a single level or compute a verified balanced
+sum/mean composite. Multivariate G-theory and G/Phi uncertainty intervals are
+not implemented.
 
 Read the message for each result. Conditional bias diagnostics do not establish
 significance or fairness. General MML tables and person-score uncertainty retain

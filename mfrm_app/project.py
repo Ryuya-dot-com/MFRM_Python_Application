@@ -212,14 +212,29 @@ def _validate_gd_entry(data, entry):
         raise ProjectError("Incomplete G/D record")
     settings, result = entry["settings"], entry["result"]
     required = {"object_facet", "random_facets", "score_col", "n_max_per_facet", "target_population", "selected_plan"}
-    if set(settings) != required or type(result.get("available")) is not bool or not result.get("calculation_version"):
+    allowed = required | {"fixed_condition"}
+    if (not required.issubset(settings) or set(settings) - allowed
+            or type(result.get("available")) is not bool or not result.get("calculation_version")):
         raise ProjectError("Incomplete G/D settings or availability")
+    if "fixed_condition" in settings:
+        fc = settings["fixed_condition"]
+        if (not isinstance(fc, dict) or set(fc) != {"facet", "mode", "level"}
+                or not isinstance(fc.get("facet"), str) or not fc["facet"] or ":" in fc["facet"]
+                or fc["facet"] in {settings["object_facet"], settings["score_col"], *settings["random_facets"]}
+                or fc.get("mode") not in ("level", "sum", "mean")
+                or (fc["mode"] == "level" and (not isinstance(fc.get("level"), str) or not fc["level"].strip()))
+                or (fc["mode"] != "level" and fc.get("level") is not None)):
+            raise ProjectError("Invalid G/D fixed-facet conditioning settings")
     if gd_analysis_identity(data, settings, result["calculation_version"]) != entry.get("analysis_id"):
         raise ProjectError("G/D results belong to different input data or settings")
     design = result.get("design", {})
     if design.get("score_basis") != "original_observed_scores":
         raise ProjectError("Desktop G/D requires original observed scores")
-    if ("data_fingerprint" in design
+    if "fixed_condition" in settings:
+        if (design.get("raw_data_fingerprint") != engine.dataframe_fingerprint(data, length=64)
+                or design.get("fixed_condition") != settings["fixed_condition"]):
+            raise ProjectError("G/D input fingerprint does not match")
+    elif ("data_fingerprint" in design
             and design["data_fingerprint"] != engine.dataframe_fingerprint(data, length=64)):
         raise ProjectError("G/D input fingerprint does not match")
     if result.get("bootstrap_ci", {}).get("inference_allowed") is not False:
@@ -244,9 +259,10 @@ def validate_analysis(analysis):
     if "view_settings" in analysis:
         view = analysis["view_settings"]
         if (not isinstance(view, dict) or not {"figure", "facet", "statistic"}.issubset(view)
-                or set(view) - {"figure", "facet", "statistic", "presentation", "language"}
+                or set(view) - {"figure", "facet", "statistic", "presentation", "language", "gd_swap"}
                 or view.get("presentation", "explained") not in ("explained", "manuscript")
                 or view.get("language", "en") not in ("en", "ja")
+                or view.get("gd_swap", "0") not in ("0", "1")
                 or any(not isinstance(value, str) for value in view.values())):
             raise ProjectError("Invalid saved view settings")
     if analysis["kind"] == "gd-analysis-v2":

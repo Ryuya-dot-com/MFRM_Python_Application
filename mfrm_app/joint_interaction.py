@@ -61,8 +61,13 @@ def _design(prepared, request):
     B = np.vstack([np.eye(nb-1), -np.ones(nb-1)])
     # Column-major cells: A varies first, as in mfrmr's zero-margin coding.
     expansion = np.kron(B, A)
-    cell_index = np.array([levels_a.index(str(x)) + na*levels_b.index(str(y))
-                          for x, y in zip(data[a], data[b], strict=True)])
+    map_a = {lvl: i for i, lvl in enumerate(levels_a)}
+    map_b = {lvl: i for i, lvl in enumerate(levels_b)}
+    cell_index = np.fromiter(
+        (map_a[str(x)] + na * map_b[str(y)] for x, y in zip(data[a], data[b], strict=True)),
+        dtype=int,
+        count=len(data),
+    )
     rows = expansion[cell_index]
     base_d = len(prepared['coordinates'])
     dimension = base_d + rows.shape[1]
@@ -111,7 +116,11 @@ def _row_nll(point, prepared, design, q):
     logits -= cumulative[:, None, :] if cfg['model'] == 'PCM' else cumulative
     log_p = logits-logsumexp(logits, axis=2, keepdims=True)
     observed = np.take_along_axis(log_p, np.broadcast_to(idx['score_k'][:, None, None], (*log_p.shape[:2], 1)), axis=2)[..., 0]
-    return -float(sum(logsumexp(observed[rows].sum(axis=0)+np.log(weights[active])) for rows in idx['rows_by_person'] if len(rows)))
+    person_red = engine._get_person_reduction(idx, len(idx['rows_by_person']))
+    person_ll = engine._sum_2d_by_group(observed, person_red)[person_red['nonempty']]
+    if person_ll.size == 0:
+        return 0.0
+    return -float(np.sum(logsumexp(person_ll + np.log(weights[active])[None, :], axis=1)))
 
 
 def _implementation(prepared):

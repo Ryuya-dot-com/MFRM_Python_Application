@@ -26,7 +26,7 @@ E02,R1,Task1,Content,2
 列の意味
 • Person：受験者・学習者など、測定する対象者のID。
 • Rater：評価者のID。同じ評価者には同じIDを使います。
-• Task / Criterion：課題や評価観点。実際の設計にある要因だけを用意します。
+• Task / Criterion：課題や評価観点。実際の設計にある相だけを用意します。
 • Score：1回の評定の整数得点（例：0〜5）。平均点・合計点を入力しません。
 
 準備のポイント
@@ -40,7 +40,7 @@ E02,R1,Task1,Content,2
 
 空欄や文字の得点は計算対象から外れます。分析前に対象外の行数を表示します。
 MFRMでは小数・無限大・範囲外の得点は修正してから分析します。
-独立したG/Dは元の観測得点を使用し、完全均衡交差・各セル1観測を確認します。
+独立したG/D-Studyは元の観測得点を使用し、完全均衡交差・各セル1観測を確認します。3相以上のデータでは固定相の1水準抽出または完全均衡を確認した上での合計／平均集約を明示的に選択できます。
 この初期版は各評定を等しく扱います。重み列を追加しても重み付き分析にはなりません。
 
 「見本CSVを保存」は、Web版と同じ作文の人工データを保存します。
@@ -49,13 +49,13 @@ MFRMでは小数・無限大・範囲外の得点は修正してから分析し�
 
 SETTINGS_HELP = """分析の入口
 MFRMはRSM／PCMとJMLE／固定SD MMLを選びます。
-G/D Studyは元の観測得点から直接計算し、MFRMや採点範囲の設定は不要です。
+G/D-Studyは元の観測得点から直接計算し、MFRMや採点範囲の設定は不要です。
 
 列
 対象者：受験者や学習者のIDの列。
 得点：1回の評定の整数得点の列。
-評価者・課題など：分析に含める要因の列をクリックして選択します。複数選べます。
-同じ列を対象者・得点・要因に重ねて指定することはできません。
+評価者・課題など：分析に含める相の列をクリックして選択します。複数選べます。
+同じ列を対象者・得点・相に重ねて指定することはできません。
 
 採点基準
 ルーブリックの最低点と最高点を入力します。
@@ -63,15 +63,16 @@ G/D Studyは元の観測得点から直接計算し、MFRMや採点範囲の設�
 「データ内の得点」は入力した得点の一覧で、採点基準を自動決定する値ではありません。
 
 モデル・推定
-PCMでは水準別の段階を推定するファセットを指定します。
+PCMでは水準別の段階を推定する相を指定します。
 MMLは母集団SDを固定するEMです。求積点数・固定SDを保存します。
 
 バイアス・区間
 バイアス対と指定区間は「追加」で計算対象の一覧へ登録します。
 バイアスの有無の検定・結論は保留。指定区間は固定SD MMLのみ、対象ごとに数値条件を確認します。
 
-G/D計画
-測定対象・得点・ランダム要因1〜2列を選びます。元の観測得点、完全均衡交差、各セル1観測、単位重みの範囲です。
+G/D-Study計画
+測定対象・得点・ランダム相1〜2列を選びます。元の観測得点、完全均衡交差、各セル1観測、単位重みの範囲です。
+3相以上のデータでは「固定相の扱い」で特定の1水準を抽出するか、全セルの完全均衡を確認した上で合計・平均得点へ集約できます。
 対象母集団は利用者の宣言で、データから認証するものではありません。負分散は0に置換した値と元の符号付き値を保持します。
 Gは相対評価、Phiは絶対評価の点推定です。区間は保留です。
 
@@ -80,19 +81,19 @@ Gは相対評価、Phiは絶対評価の点推定です。区間は保留です�
 """
 
 QUICK_HELP = """データ → 設定 → 結果
-「CSVを開く」または「サンプル」でデータを読み込み、「次へ」で設定に進みます。
+「CSVを開く」「サンプル（3相）」「G/D 2相サンプル」でデータを読み込み、「次へ」で設定に進みます。
 列と採点基準を指定し、「分析」を押すと結果に切り替わります。
 結果の「図」「表」で出力を選びます。各図の説明は「読み方」、各表には利用条件の注記があります。
 
 保存
-「プロジェクト」は入力データ・識別子と結果を含み、再起動後も再推定せず開けます。
+「プロジェクト」は入力データ・識別子と結果を含み、再推定せず開けます。
 「レポート」は対象を明記した図と表を含むHTMLです。図はPNG／SVG、表は注記付きCSVでも保存できます。
 新規保存はschema 2です。旧形式は読み込めますが、新形式は旧アプリでは開けません。必要なら原本を残して別名保存してください。
 データや設定に戻っても結果は保持します。設定変更後の結果は前回の分析であることを表示します。
 
 この版でできる分析
-RSM（共通の段階）とPCM（選んだ要因の水準別の段階）を、JMLE／固定SD MMLで推定します。
-評価者等の主効果、条件付きバイアス、観測得点のG/Dは異なる分析です。G/Dは独立した入口からも使えます。
+RSM（共通の段階）とPCM（選んだ相の水準別の段階）を、JMLE／固定SD MMLで推定します。
+評価者等の主効果、条件付きバイアス、観測得点のG/D-Studyは異なる分析です。G/D-Studyは独立した入口からも使えます。
 推論の保留が表示された場合は、図が描けても差や妥当性を結論にしないでください。
 
 数式・理論を調べるには
@@ -110,6 +111,27 @@ Tutorial（チュートリアル）で、MFRM、推定方法、適合度、各�
 
 def writing_example():
     return read_desktop_csv(EXAMPLE_PATH)
+
+
+def gd_two_facet_example():
+    """Balanced 2-facet synthetic ratings (30 Persons × 4 Raters × 2 Tasks = 240 rows)."""
+    rng = np.random.default_rng(20261030)
+    persons = [f"E{i:02d}" for i in range(1, 31)]
+    raters = [f"R{i}" for i in range(1, 5)]
+    tasks = ["Task1", "Task2"]
+    p_eff = rng.normal(0.0, 1.05, size=len(persons))
+    r_eff = np.array([-0.45, -0.10, 0.15, 0.40])
+    t_eff = np.array([-0.25, 0.25])
+    rows = []
+    for pi, p in enumerate(persons):
+        for ri, r in enumerate(raters):
+            pr = rng.normal(0.0, 0.22)
+            for ti, t in enumerate(tasks):
+                pt = rng.normal(0.0, 0.20) if ri == 0 else 0.0
+                raw = 2.6 + p_eff[pi] - r_eff[ri] - t_eff[ti] + pr + pt + rng.normal(0.0, 0.42)
+                score = int(np.clip(np.rint(raw), 0, 5))
+                rows.append((p, r, t, str(score)))
+    return pd.DataFrame(rows, columns=["Person", "Rater", "Task", "Score"])
 
 
 def read_desktop_csv(path):
@@ -149,7 +171,7 @@ def input_review(data, settings):
     if not person or not score or not facets:
         raise ValueError("対象者と得点の列、および評価者・課題等を1つ以上選択してください。")
     if len(set(columns)) != len(columns) or any(c not in data for c in columns):
-        raise ValueError("対象者・得点・ファセットには、それぞれ別の列を選択してください。")
+        raise ValueError("対象者・得点・相には、それぞれ別の列を選択してください。")
     minimum, maximum = settings["rating_min"], settings["rating_max"]
     if minimum >= maximum:
         raise ValueError("採点基準の最低点より大きい最高点を入力してください。")
@@ -173,5 +195,5 @@ def input_review(data, settings):
     if excluded:
         messages.append(f"空欄や数値でない得点などにより、{len(data):,}行のうち{excluded:,}行が対象外になります。")
     if duplicates:
-        messages.append(f"同じ対象者・ファセットの組合せが重なる行が{duplicates:,}行あります。重複コピーや採点回の区別を確認してください。")
+        messages.append(f"同じ対象者・相の組合せが重なる行が{duplicates:,}行あります。重複コピーや採点回の区別を確認してください。")
     return {"included": len(retained), "excluded": excluded, "duplicate_rows": duplicates, "messages": messages}

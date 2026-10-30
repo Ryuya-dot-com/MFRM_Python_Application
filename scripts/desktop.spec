@@ -27,18 +27,23 @@ a = Analysis(
     module_collection_mode={"mfrm_app": "py"},
 )
 pyz = PYZ(a.pure)
+mac_icon = str(root / "scripts" / "icons" / "mfrm-desktop.icns")
+win_icon = str(root / "scripts" / "icons" / "mfrm-desktop.ico")
+win_version = str(root / "scripts" / "windows_version_info.txt")
 exe = EXE(
     pyz, a.scripts, [], exclude_binaries=True, name="MFRM-Desktop",
-    debug=False, bootloader_ignore_signals=False, strip=False, upx=True,
+    debug=False, bootloader_ignore_signals=False, strip=False, upx=False,
     console=False, disable_windowed_traceback=False, argv_emulation=False,
     target_arch="arm64" if sys.platform == "darwin" else None,
     codesign_identity=None, entitlements_file=None,
+    icon=mac_icon if sys.platform == "darwin" else (win_icon if sys.platform == "win32" else None),
+    version=win_version if sys.platform == "win32" else None,
 )
-coll = COLLECT(exe, a.binaries, a.datas, strip=False, upx=True, upx_exclude=[], name="MFRM-Desktop")
+coll = COLLECT(exe, a.binaries, a.datas, strip=False, upx=False, upx_exclude=[], name="MFRM-Desktop")
 if sys.platform == "darwin":
     # Set metadata before PyInstaller signs the bundle.
     app = BUNDLE(
-        coll, name="MFRM-Desktop.app", icon=None,
+        coll, name="MFRM-Desktop.app", icon=mac_icon,
         bundle_identifier="io.github.ryuya-dot-com.mfrm.desktop",
         version=record["bundle_version"],
         info_plist={"CFBundleVersion": record["bundle_version"],

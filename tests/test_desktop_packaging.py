@@ -152,3 +152,25 @@ def test_windows_packaging_requires_complete_restore_and_preserves_the_bundle(tm
         with zipfile.ZipFile(build / result['archive']) as archive:
             assert archive.read('MFRM-Desktop/_internal/runtime.dll') == b'runtime'
             assert archive.read('MFRM-Desktop/START_HERE.txt') == b'Install notes'
+
+
+def test_desktop_spec_packaging_hygiene_icons_version_and_no_upx():
+    from mfrm_app.engine import APP_VERSION
+    root = Path(__file__).resolve().parents[1]
+    spec_text = (root / 'scripts/desktop.spec').read_text(encoding='utf-8')
+    assert 'upx=True' not in spec_text
+    assert spec_text.count('upx=False') >= 2
+    assert 'icon=None' not in spec_text
+    assert 'mfrm-desktop.icns' in spec_text
+    assert 'mfrm-desktop.ico' in spec_text
+    assert 'windows_version_info.txt' in spec_text
+
+    icns = root / 'scripts/icons/mfrm-desktop.icns'
+    ico = root / 'scripts/icons/mfrm-desktop.ico'
+    ver_txt = (root / 'scripts/windows_version_info.txt').read_text(encoding='utf-8')
+    mac_guide = (root / 'docs/desktop_macos_installation.md').read_text(encoding='utf-8')
+    assert icns.is_file() and icns.read_bytes()[:4] == b'icns'
+    assert ico.is_file() and ico.read_bytes()[:4] == b'\x00\x00\x01\x00'
+    assert f"'{APP_VERSION}'" in ver_txt
+    assert 'Ryuya Komuro' in ver_txt
+    assert 'Move to Trash' in mac_guide and 'ゴミ箱に入れる' in mac_guide

@@ -55,6 +55,8 @@ def test_first_view_puts_plot_and_five_columns_before_collapsed_details(fitted, 
         at.session_state[key] = value
     _run(at)
     children = list(at.main.children.values())
+    if len(children) == 1 and children[0].type == "flex_container" and hasattr(children[0], "children"):
+        children = list(children[0].children.values())
     details = next(e for e in at.expander if e.label == _locale_value(language, "bias_interaction.technical_details_label"))
     assert not details.proto.expanded
     assert len([e for e in children if e.type == "dataframe"]) == 1

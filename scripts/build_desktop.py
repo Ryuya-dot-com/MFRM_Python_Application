@@ -90,6 +90,9 @@ def main():
                        and any(isinstance(target, ast.Name) and target.id == "APP_VERSION" for target in node.targets))
     if json.loads((root / "CITATION.cff").read_text(encoding="utf-8"))["version"] != app_version:
         parser.error("APP_VERSION and CITATION.cff must agree before packaging")
+    version_info_path = root / "scripts" / "windows_version_info.txt"
+    if f"'{app_version}'" not in version_info_path.read_text(encoding="utf-8"):
+        parser.error("APP_VERSION and scripts/windows_version_info.txt must agree before packaging")
     bundle_version = app_version.split("-", 1)[0]
     if not re.fullmatch(r"\d+\.\d+\.\d+", bundle_version):
         parser.error("The bundle version must have three numeric components")
@@ -98,8 +101,9 @@ def main():
     notices = collect_notices(output)
     source_paths = [root / "desktop_app.py", root / "examples" / "desktop_writing.csv",
                     root / "LICENSE", root / "LICENSE_NOTICE.md", root / "CITATION.cff", root / "locales" / "en.json",
-                    root / "scripts" / "desktop.spec",
+                    root / "scripts" / "desktop.spec", version_info_path,
                     Path(__file__).resolve(), root / "requirements-desktop-build.txt",
+                    *sorted((root / "scripts" / "icons").glob("*")),
                     *sorted((root / "scripts" / "runtime_notices").glob("*")),
                     *sorted((root / "mfrm_app").glob("*.py"))]
     record = {

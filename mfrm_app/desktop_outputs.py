@@ -48,7 +48,7 @@ def figure_choices(analysis):
         suffix = ' / ' + ' − '.join(s['difference']) if s['difference'] else ''
         choices.append((f"指定区間 {i+1} · {s['facet']}{suffix}", dict(kind='interval', index=i)))
     if 'gd_analysis' in analysis:
-        choices.append(('D Study · G / Phi', dict(kind='gd')))
+        choices.append(('D-Study · G / Phi', dict(kind='gd')))
     if 'joint_analysis' in analysis:
         s = analysis['joint_analysis']['settings']
         choices.append((f"共同交互作用 · {s['facet_a']} × {s['facet_b']}", dict(kind='joint')))
@@ -70,13 +70,13 @@ def _empty(axes, reason):
     axes.set_axis_off()
 
 
-def analysis_figure(analysis, kind, *, level=None, index=0, facet=None, statistic='Infit', presentation='explained'):
+def analysis_figure(analysis, kind, *, level=None, index=0, facet=None, statistic='Infit', presentation='explained', gd_swap=False):
     from mfrm_app.figure_presentation import matplotlib_figure
-    fig = _analysis_figure(analysis, kind, level=level, index=index, facet=facet, statistic=statistic)
+    fig = _analysis_figure(analysis, kind, level=level, index=index, facet=facet, statistic=statistic, gd_swap=gd_swap)
     return matplotlib_figure(fig, presentation)
 
 
-def _analysis_figure(analysis, kind, *, level=None, index=0, facet=None, statistic='Infit'):
+def _analysis_figure(analysis, kind, *, level=None, index=0, facet=None, statistic='Infit', gd_swap=False):
     """Draw retained values only; unavailable intervals never become error bars."""
     if kind == 'pathway':
         return maps.pathway_figure(analysis['result'], analysis['diagnostics'], facet=facet, statistic=statistic)
@@ -180,7 +180,9 @@ def _analysis_figure(analysis, kind, *, level=None, index=0, facet=None, statist
         if not result['available']:
             _empty(ax, result['reason'])
         else:
-            table = result['d_study']; facets = entry['settings']['random_facets']
+            table = result['d_study']; facets = list(entry['settings']['random_facets'])
+            if gd_swap and len(facets) == 2:
+                facets = [facets[1], facets[0]]
             groups = table.groupby(facets[1], sort=True) if len(facets) == 2 else [(None, table)]
             for group, rows in groups:
                 rows = rows.sort_values(facets[0])
@@ -191,23 +193,28 @@ def _analysis_figure(analysis, kind, *, level=None, index=0, facet=None, statist
             ax.scatter([selected[facets[0]]]*2, [selected['G'], selected['Phi']], marker='*', s=130, color='black', label='Selected plan', zorder=5)
             ax.set(xlabel=facets[0] + ' count', ylabel='Coefficient', ylim=(0, 1.03))
             ax.legend(fontsize=8, ncols=2)
-        fig.suptitle('D Study · original observed scores')
+        fc = entry['settings'].get('fixed_condition')
+        cond_suffix = ''
+        if fc:
+            cond_suffix = f" · {fc['facet']}={fc['level']}" if fc['mode'] == 'level' else f" · {fc['facet']} ({fc['mode']})"
+        fig.suptitle('D-Study · original observed scores' + cond_suffix)
         fig.supxlabel('G: relative decisions; Phi: absolute decisions. Point projections; intervals withheld.', fontsize=8)
     else:
         raise ValueError('Unknown desktop figure')
     return maps.style_figure(fig)
 
 
-def report_html(analysis, *, pathway_facet=None, pathway_statistic='Infit', presentation=None, language=None):
+def report_html(analysis, *, pathway_facet=None, pathway_statistic='Infit', presentation=None, language=None, gd_swap=None):
     """Offline HTML with every requested table and explicitly labelled figure."""
     from mfrm_app.figure_presentation import caption_html
     from mfrm_app.desktop_i18n import text
     view = analysis.get('view_settings', {})
     presentation = presentation or view.get('presentation', 'explained')
     language = language or view.get('language', 'en')
+    gd_swap = (view.get('gd_swap') == '1') if gd_swap is None else bool(gd_swap)
     tables = current_tables(analysis)
     escape = html.escape
-    kind = ('G/D Study' if analysis['kind'] == 'gd-analysis-v2' else
+    kind = ('G/D-Study' if analysis['kind'] == 'gd-analysis-v2' else
             analysis['fit_settings']['model'] + ' / ' + analysis['fit_settings']['method'])
     parts = [f'<!doctype html><html lang="{language}"><meta charset="utf-8"><title>MFRM analysis</title>',
         '<style>body{font:16px sans-serif;margin:2em;max-width:1200px}table{border-collapse:collapse;font-size:12px}',
@@ -229,6 +236,8 @@ def report_html(analysis, *, pathway_facet=None, pathway_statistic='Infit', pres
         options = dict(options)
         if options['kind'] == 'pathway':
             options.update(facet=pathway_facet, statistic=pathway_statistic)
+        elif options['kind'] == 'gd':
+            options.update(gd_swap=gd_swap)
         fig = analysis_figure(analysis, **options, presentation=presentation)
         svg = basic.figure_bytes(analysis, 'figure_' + str(i), figure=fig).decode('utf-8')
         parts.extend(['<h2>' + escape(text(title, language)) + '</h2>', svg[svg.index('<svg'):]])

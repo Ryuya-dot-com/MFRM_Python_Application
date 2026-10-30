@@ -41194,9 +41194,9 @@ def show_convergence_section(
                         "the model, or choose an explicitly qualified alternative estimator."
                     ),
                     ja=(
-                        "構造的識別性を確認できませんでした。JMLEのPerson／ファセット線形予測子設計の "
+                        "構造的識別性を確認できませんでした。JMLEのPerson／相線形予測子設計の "
                         f"nullity は {row_ident.get('EtaStructuralNullity', '不明')} です。最適化が収束しても、"
-                        "推定値が一意になるとは限りません。バイアス分析は出力しません。ファセット間の重複評価や"
+                        "推定値が一意になるとは限りません。バイアス分析は出力しません。相の間の重複評価や"
                         "アンカーを追加する、設計・モデルを見直す、または別途妥当性を確認した推定法を使用してください。"
                     ),
                 )
@@ -41224,7 +41224,7 @@ def show_convergence_section(
                         "not replace numerical convergence, model-fit, sparsity, or threshold audits."
                     ),
                     ja=(
-                        "構造チェック：JMLEのPerson／ファセット線形予測子ブロックに厳密な零方向は検出されませんでした。"
+                        "構造チェック：JMLEのPerson／相線形予測子ブロックに厳密な零方向は検出されませんでした。"
                         "これは必要条件ですが、数値収束、モデル適合、スパース性、閾値の監査を代替しません。"
                     ),
                 )
@@ -41250,7 +41250,7 @@ def show_convergence_section(
                             "centering constraints. PCM/GPCM step and slope identification is separate."
                         ),
                         ja=(
-                            "範囲：アンカーおよび中心化制約を適用した後の、JMLEのPerson／ファセット eta 座標。"
+                            "範囲：アンカーおよび中心化制約を適用した後の、JMLEのPerson／相 eta 座標。"
                             "PCM/GPCMのステップおよび傾きの識別性は別の監査対象です。"
                         ),
                     )
@@ -41304,7 +41304,7 @@ def show_convergence_section(
                         ),
                         ja=(
                             "境界判定には保持された整数得点を用い、推定値の大きさや表示丸めの閾値は使いません。"
-                            "適合全体・ファセットの準備状況は別に評価します。"
+                            "適合全体・相の準備状況は別に評価します。"
                         ),
                     )
                 )

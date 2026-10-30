@@ -13,12 +13,16 @@ on:
       - 'examples/desktop_writing.csv'
       - 'scripts/build_desktop.py'
       - 'scripts/check_windows_desktop.py'
+      - 'scripts/check_macos_desktop.py'
       - 'scripts/desktop.spec'
+      - 'scripts/icons/**'
+      - 'scripts/windows_version_info.txt'
       - 'scripts/runtime_notices/**'
       - 'requirements*.txt'
       - 'CITATION.cff'
       - 'LICENSE*'
       - 'docs/desktop_windows_installation.md'
+      - 'docs/desktop_macos_installation.md'
       - '.github/workflows/desktop-windows.yml'
   pull_request:
     paths:
@@ -56,7 +60,8 @@ jobs:
           python -m pytest -q -W error
           tests/test_desktop_worker.py tests/test_desktop_project.py tests/test_desktop_ux.py
           tests/test_desktop_workflows.py tests/test_desktop_outputs.py
-          tests/test_desktop_packaging.py
+          tests/test_desktop_packaging.py tests/test_desktop_gd_ux_and_math.py
+          tests/test_engine_vectorization_math.py
           tests/test_person_boundary_output.py tests/test_measure_report_consistency.py
           tests/test_report_run_facts.py
           tests/test_scorefile_row_alignment.py
@@ -69,6 +74,10 @@ jobs:
     if: github.event_name != 'pull_request'
     # This is the build host, not Windows 11 GUI acceptance.
     runs-on: windows-2025
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
     defaults:
       run:
         shell: pwsh
@@ -93,6 +102,10 @@ jobs:
         run: |
           python scripts/check_windows_desktop.py --build-dir "${{ runner.temp }}/mfrm-windows-build" --output "${{ runner.temp }}/mfrm-windows-checks"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Generate build provenance attestation
+        uses: actions/attest-build-provenance@v4.2.2
+        with:
+          subject-path: ${{ runner.temp }}/mfrm-windows-build/MFRM-Desktop-Windows-x64.zip
       - name: Retain verification records even after failure
         if: always()
         uses: actions/upload-artifact@v6.0.0

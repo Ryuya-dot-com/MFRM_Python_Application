@@ -2211,13 +2211,129 @@ def prepare_mfrm_data(
     }
 
 
+_MML_MAX_TENSOR_ELEMENTS = 4_000_000
+_GROUP_REDUCTION_CACHE: OrderedDict[tuple[int, int], tuple[object, dict[str, object]]] = OrderedDict()
+_GROUP_REDUCTION_CACHE_MAX = 64
+
+
+def _build_group_reduction(group_idx: np.ndarray, n_groups: int) -> dict[str, object]:
+    group_arr = np.asarray(group_idx, dtype=int)
+    n_groups = int(max(n_groups, 0))
+    if group_arr.size == 0 or n_groups == 0:
+        return {
+            "n_groups": n_groups,
+            "n_obs": int(group_arr.size),
+            "order": np.empty(0, dtype=int),
+            "nonempty": np.empty(0, dtype=int),
+            "reduceat": np.empty(0, dtype=int),
+            "counts": np.zeros(n_groups, dtype=int),
+        }
+    valid_mask = (group_arr >= 0) & (group_arr < n_groups)
+    if np.all(valid_mask):
+        valid_rows = None
+        g_valid = group_arr
+    else:
+        valid_rows = np.flatnonzero(valid_mask)
+        g_valid = group_arr[valid_rows]
+    order_local = np.argsort(g_valid, kind="mergesort")
+    order = order_local if valid_rows is None else valid_rows[order_local]
+    counts = np.bincount(g_valid, minlength=n_groups)
+    nonempty = np.flatnonzero(counts > 0)
+    reduceat = np.concatenate(([0], np.cumsum(counts[nonempty])[:-1])) if nonempty.size else np.empty(0, dtype=int)
+    return {
+        "n_groups": n_groups,
+        "n_obs": int(group_arr.size),
+        "order": order,
+        "nonempty": nonempty,
+        "reduceat": reduceat,
+        "counts": counts,
+    }
+
+
+def _cached_group_reduction(group_arr, n_groups: int) -> dict[str, object]:
+    n_groups = int(max(n_groups, 0))
+    key = (id(group_arr), n_groups)
+    entry = _GROUP_REDUCTION_CACHE.get(key)
+    if entry is not None:
+        arr_ref, red = entry
+        if arr_ref() is group_arr and red["n_obs"] == len(group_arr):
+            _GROUP_REDUCTION_CACHE.move_to_end(key)
+            return red
+        _GROUP_REDUCTION_CACHE.pop(key, None)
+    red = _build_group_reduction(group_arr, n_groups)
+    try:
+        import weakref
+        arr_ref = weakref.ref(group_arr)
+    except TypeError:
+        return red
+    _GROUP_REDUCTION_CACHE[key] = (arr_ref, red)
+    while len(_GROUP_REDUCTION_CACHE) > _GROUP_REDUCTION_CACHE_MAX:
+        _GROUP_REDUCTION_CACHE.popitem(last=False)
+    return red
+
+
+def _get_person_reduction(idx: dict, n_persons: int) -> dict[str, object]:
+    return _cached_group_reduction(idx["person"], n_persons)
+
+
+def _get_step_reduction(idx: dict, n_step_groups: int) -> dict[str, object]:
+    return _cached_group_reduction(idx["step_idx"], n_step_groups)
+
+
+def _sum_2d_by_group(values_2d: np.ndarray, reduction: dict[str, object]) -> np.ndarray:
+    n_groups = int(reduction["n_groups"])
+    m_cols = int(values_2d.shape[1])
+    out = np.zeros((n_groups, m_cols), dtype=float)
+    nonempty = reduction["nonempty"]
+    if nonempty.size == 0 or values_2d.shape[0] == 0:
+        return out
+    ordered = values_2d[reduction["order"]]
+    out[nonempty] = np.add.reduceat(ordered, reduction["reduceat"], axis=0)
+    return out
+
+
+def _build_step_cum_mat(steps_mat: np.ndarray) -> np.ndarray:
+    arr = np.asarray(steps_mat, dtype=float)
+    if arr.ndim == 1:
+        arr = arr.reshape(1, -1)
+    if arr.shape[0] == 0:
+        return np.zeros((0, arr.shape[1] + 1), dtype=float)
+    if arr.shape[1] == 0:
+        return np.zeros((arr.shape[0], 1), dtype=float)
+    return np.hstack([np.zeros((arr.shape[0], 1), dtype=float), np.cumsum(arr, axis=1)])
+
+
+def _log_denom_and_probs(log_num: np.ndarray, *, axis: int = -1, need_probs: bool = True):
+    max_log = np.max(log_num, axis=axis, keepdims=True)
+    if not np.all(np.isfinite(max_log)):
+        log_denom = logsumexp(log_num, axis=axis)
+        if not need_probs:
+            return log_denom, None
+        probs = np.exp(log_num - np.expand_dims(log_denom, axis=axis))
+        return log_denom, probs
+    shifted = np.exp(log_num - max_log)
+    sum_exp = np.sum(shifted, axis=axis, keepdims=True)
+    log_denom = np.squeeze(max_log + np.log(sum_exp), axis=axis)
+    if not need_probs:
+        return log_denom, None
+    return log_denom, shifted / sum_exp
+
+
 def build_indices(prep, step_facet=None, slope_facet=None):
     df = prep["data"]
     person_idx = df["Person"].cat.codes.to_numpy(dtype=int)
     facets_idx = {facet: df[facet].cat.codes.to_numpy(dtype=int) for facet in prep["facet_names"]}
     step_idx = df[step_facet].cat.codes.to_numpy(dtype=int) if step_facet else None
     slope_idx = df[slope_facet].cat.codes.to_numpy(dtype=int) if slope_facet else None
-    rows_by_person = [np.where(person_idx == p)[0] for p in range(len(prep["levels"]["Person"]))]
+    n_persons = len(prep["levels"]["Person"])
+    person_red = _cached_group_reduction(person_idx, n_persons)
+    rows_by_person = [np.empty(0, dtype=int) for _ in range(n_persons)]
+    if person_red["nonempty"].size:
+        splits = np.cumsum(person_red["counts"][person_red["nonempty"]])[:-1]
+        for p_i, chunk in zip(person_red["nonempty"], np.split(person_red["order"], splits)):
+            rows_by_person[int(p_i)] = chunk
+    if step_facet and step_idx is not None:
+        _cached_group_reduction(step_idx, len(prep["levels"][step_facet]))
     return {
         "person": person_idx,
         "facets": facets_idx,
@@ -2637,14 +2753,10 @@ def mfrm_loglik_jmle(par, idx, config, sizes):
         step_cum = np.concatenate([[0.0], np.cumsum(params["steps"])])
         ll = loglik_rsm(eta, idx["score_k"], step_cum, weight=idx.get("weight"))
     elif config["model"] == "PCM":
-        step_cum_mat = np.vstack([
-            np.concatenate([[0.0], np.cumsum(row)]) for row in params["steps_mat"]
-        ])
+        step_cum_mat = _build_step_cum_mat(params["steps_mat"])
         ll = loglik_pcm(eta, idx["score_k"], step_cum_mat, idx["step_idx"], weight=idx.get("weight"))
     else:
-        step_cum_mat = np.vstack([
-            np.concatenate([[0.0], np.cumsum(row)]) for row in params["steps_mat"]
-        ])
+        step_cum_mat = _build_step_cum_mat(params["steps_mat"])
         ll = loglik_gpcm(
             eta,
             idx["score_k"],
@@ -2667,52 +2779,37 @@ def mfrm_loglik_jmle_value_grad(par, idx, config, sizes):
     else:
         weight = np.asarray(weight, dtype=float)
 
+    n_obs = len(eta)
     k_cat = int(config["n_cat"])
     k_vals = np.arange(k_cat, dtype=float)
-    slope_obs = np.ones(len(eta), dtype=float)
+    slope_obs = np.ones(n_obs, dtype=float)
     gpcm_linear = None
 
-    if config["model"] == "RSM":
+    if n_obs == 0:
+        ll_obs = np.zeros(0, dtype=float)
+        probs = np.zeros((0, k_cat), dtype=float)
+        if config["model"] == "GPCM":
+            gpcm_linear = np.zeros((0, k_cat), dtype=float)
+    elif config["model"] == "RSM":
         step_cum = np.concatenate([[0.0], np.cumsum(params["steps"])])
         log_num = np.outer(eta, k_vals) - step_cum
-        log_denom = logsumexp(log_num, axis=1)
-        ll_obs = log_num[np.arange(len(eta)), score_k] - log_denom
-        probs = np.exp(log_num - log_denom[:, None])
+        log_denom, probs = _log_denom_and_probs(log_num, axis=1, need_probs=True)
+        ll_obs = log_num[np.arange(n_obs), score_k] - log_denom
     elif config["model"] == "PCM":
-        step_cum_mat = np.vstack([
-            np.concatenate([[0.0], np.cumsum(row)]) for row in params["steps_mat"]
-        ])
-        probs = np.zeros((len(eta), k_cat), dtype=float)
-        ll_obs = np.zeros(len(eta), dtype=float)
-        for c_idx in range(step_cum_mat.shape[0]):
-            rows = np.where(idx["step_idx"] == c_idx)[0]
-            if rows.size == 0:
-                continue
-            log_num = np.outer(eta[rows], k_vals) - step_cum_mat[c_idx]
-            log_denom = logsumexp(log_num, axis=1)
-            ll_obs[rows] = log_num[np.arange(len(rows)), score_k[rows]] - log_denom
-            probs[rows, :] = np.exp(log_num - log_denom[:, None])
+        step_cum_mat = _build_step_cum_mat(params["steps_mat"])
+        log_num = np.outer(eta, k_vals) - step_cum_mat[idx["step_idx"]]
+        log_denom, probs = _log_denom_and_probs(log_num, axis=1, need_probs=True)
+        ll_obs = log_num[np.arange(n_obs), score_k] - log_denom
     else:
-        step_cum_mat = np.vstack([
-            np.concatenate([[0.0], np.cumsum(row)]) for row in params["steps_mat"]
-        ])
+        step_cum_mat = _build_step_cum_mat(params["steps_mat"])
         slope_idx = idx.get("slope_idx")
         if slope_idx is None:
             slope_idx = idx["step_idx"]
         slope_obs = params["slopes"][slope_idx]
-        probs = np.zeros((len(eta), k_cat), dtype=float)
-        ll_obs = np.zeros(len(eta), dtype=float)
-        gpcm_linear = np.zeros((len(eta), k_cat), dtype=float)
-        for c_idx in range(step_cum_mat.shape[0]):
-            rows = np.where(idx["step_idx"] == c_idx)[0]
-            if rows.size == 0:
-                continue
-            linear = np.outer(eta[rows], k_vals) - step_cum_mat[c_idx]
-            log_num = slope_obs[rows, None] * linear
-            log_denom = logsumexp(log_num, axis=1)
-            ll_obs[rows] = log_num[np.arange(len(rows)), score_k[rows]] - log_denom
-            probs[rows, :] = np.exp(log_num - log_denom[:, None])
-            gpcm_linear[rows, :] = linear
+        gpcm_linear = np.outer(eta, k_vals) - step_cum_mat[idx["step_idx"]]
+        log_num = slope_obs[:, None] * gpcm_linear
+        log_denom, probs = _log_denom_and_probs(log_num, axis=1, need_probs=True)
+        ll_obs = log_num[np.arange(n_obs), score_k] - log_denom
 
     nll = -float(np.sum(weight * ll_obs))
     expected = probs @ k_vals
@@ -2740,38 +2837,16 @@ def mfrm_loglik_jmle_value_grad(par, idx, config, sizes):
     n_steps = max(k_cat - 1, 0)
     if n_steps > 0:
         thresholds = np.arange(n_steps)
+        observed_gt = score_k[:, None] > thresholds[None, :]
+        prob_gt = np.cumsum(probs[:, :0:-1], axis=1)[:, ::-1]
         if config["model"] == "RSM":
-            observed_gt = score_k[:, None] > thresholds[None, :]
-            prob_gt = np.flip(np.cumsum(np.flip(probs[:, 1:], axis=1), axis=1), axis=1)
             step_full_grad = np.sum(weight[:, None] * (observed_gt - prob_gt), axis=0)
             grad_parts.append(collapse_sum_zero_gradient(step_full_grad))
-        elif config["model"] == "PCM":
-            step_facet_n = len(config["facet_levels"][config["step_facet"]])
-            step_mat_grad = np.zeros((step_facet_n, n_steps), dtype=float)
-            for c_idx in range(step_facet_n):
-                rows = np.where(idx["step_idx"] == c_idx)[0]
-                if rows.size == 0:
-                    continue
-                observed_gt = score_k[rows, None] > thresholds[None, :]
-                prob_gt = np.flip(np.cumsum(np.flip(probs[rows, 1:], axis=1), axis=1), axis=1)
-                step_mat_grad[c_idx, :] = np.sum(weight[rows, None] * (observed_gt - prob_gt), axis=0)
-            grad_parts.append(np.vstack([
-                collapse_sum_zero_gradient(row)
-                for row in step_mat_grad
-            ]).reshape(-1))
         else:
             step_facet_n = len(config["facet_levels"][config["step_facet"]])
-            step_mat_grad = np.zeros((step_facet_n, n_steps), dtype=float)
-            for c_idx in range(step_facet_n):
-                rows = np.where(idx["step_idx"] == c_idx)[0]
-                if rows.size == 0:
-                    continue
-                observed_gt = score_k[rows, None] > thresholds[None, :]
-                prob_gt = np.flip(np.cumsum(np.flip(probs[rows, 1:], axis=1), axis=1), axis=1)
-                step_mat_grad[c_idx, :] = np.sum(
-                    weight[rows, None] * slope_obs[rows, None] * (observed_gt - prob_gt),
-                    axis=0,
-                )
+            step_red = _get_step_reduction(idx, step_facet_n)
+            row_factor = weight if config["model"] == "PCM" else (weight * slope_obs)
+            step_mat_grad = _sum_2d_by_group(row_factor[:, None] * (observed_gt - prob_gt), step_red)
             grad_parts.append(np.vstack([
                 collapse_sum_zero_gradient(row)
                 for row in step_mat_grad
@@ -2781,8 +2856,8 @@ def mfrm_loglik_jmle_value_grad(par, idx, config, sizes):
         slope_idx = idx.get("slope_idx")
         if slope_idx is None:
             slope_idx = idx["step_idx"]
-        obs_linear = gpcm_linear[np.arange(len(eta)), score_k]
-        expected_linear = np.sum(probs * gpcm_linear, axis=1)
+        obs_linear = gpcm_linear[np.arange(n_obs), score_k] if n_obs else np.zeros(0, dtype=float)
+        expected_linear = np.sum(probs * gpcm_linear, axis=1) if n_obs else np.zeros(0, dtype=float)
         slope_levels = len(config["facet_levels"][config["slope_facet"]])
         slope_full_grad = np.bincount(
             slope_idx,
@@ -2801,69 +2876,96 @@ def mfrm_loglik_jmle_value_grad(par, idx, config, sizes):
     return nll, grad
 
 
+def _mml_person_count(idx: dict, config: dict) -> int:
+    rows_by_person = idx.get("rows_by_person")
+    if rows_by_person is not None:
+        return len(rows_by_person)
+    return int(config.get("n_person", 0))
+
+
+def _mml_pop_mu_per_person(params: dict, config: dict, n_persons: int) -> np.ndarray:
+    pop_mu_raw = compute_population_mu(params, config)
+    pop_mu_person = np.zeros(int(max(n_persons, 0)), dtype=float)
+    if pop_mu_raw.size and n_persons > 0:
+        n_copy = min(int(n_persons), int(pop_mu_raw.size))
+        pop_mu_person[:n_copy] = pop_mu_raw[:n_copy]
+    return pop_mu_person
+
+
+def _compute_mml_person_node_loglik(
+    idx: dict,
+    config: dict,
+    params: dict,
+    quad: dict,
+    *,
+    n_persons: int | None = None,
+) -> tuple[np.ndarray, dict[str, object]]:
+    if n_persons is None:
+        n_persons = _mml_person_count(idx, config)
+    person_red = _get_person_reduction(idx, n_persons)
+    nodes = np.asarray(quad["nodes"], dtype=float)
+    q_len = len(nodes)
+    score_k = idx["score_k"]
+    n_obs = len(score_k)
+    if n_obs == 0 or n_persons == 0 or q_len == 0:
+        return np.zeros((n_persons, q_len), dtype=float), person_red
+
+    base_eta = compute_base_eta(idx, params, config)
+    pop_mu_person = _mml_pop_mu_per_person(params, config, n_persons)
+    base_shift = pop_mu_person[idx["person"]] + base_eta
+    weight = idx.get("weight")
+    w_arr = None if weight is None else np.asarray(weight, dtype=float)
+    k_cat = int(config["n_cat"])
+    k_vals = np.arange(k_cat, dtype=float)
+
+    if config["model"] == "RSM":
+        step_cum_obs = np.concatenate([[0.0], np.cumsum(params["steps"])])[None, :]
+        slope_obs = None
+    elif config["model"] == "PCM":
+        step_cum_obs = _build_step_cum_mat(params["steps_mat"])[idx["step_idx"]]
+        slope_obs = None
+    else:
+        step_cum_obs = _build_step_cum_mat(params["steps_mat"])[idx["step_idx"]]
+        slope_idx = idx.get("slope_idx") if idx.get("slope_idx") is not None else idx["step_idx"]
+        slope_obs = np.asarray(params["slopes"], dtype=float)[slope_idx]
+
+    if n_obs * q_len * k_cat <= _MML_MAX_TENSOR_ELEMENTS:
+        eta_nq = base_shift[:, None] + nodes[None, :]
+        linear = eta_nq[:, :, None] * k_vals[None, None, :] - step_cum_obs[:, None, :]
+        log_num = linear if slope_obs is None else (slope_obs[:, None, None] * linear)
+        log_denom, _ = _log_denom_and_probs(log_num, axis=2, need_probs=False)
+        obs_log_num = np.take_along_axis(log_num, score_k[:, None, None], axis=2)[:, :, 0]
+        ll_obs_nq = obs_log_num - log_denom
+        w_ll_nq = ll_obs_nq if w_arr is None else (w_arr[:, None] * ll_obs_nq)
+        return _sum_2d_by_group(w_ll_nq, person_red), person_red
+
+    log_lik_mat = np.zeros((n_persons, q_len), dtype=float)
+    row_arange = np.arange(n_obs)
+    step_2d = step_cum_obs[0] if config["model"] == "RSM" else step_cum_obs
+    for q_i, theta_q in enumerate(nodes):
+        eta_q = theta_q + base_shift
+        linear_q = np.outer(eta_q, k_vals) - step_2d
+        log_num_q = linear_q if slope_obs is None else (slope_obs[:, None] * linear_q)
+        log_denom_q, _ = _log_denom_and_probs(log_num_q, axis=1, need_probs=False)
+        diff_q = log_num_q[row_arange, score_k] - log_denom_q
+        if w_arr is not None:
+            diff_q = diff_q * w_arr
+        log_lik_mat[:, q_i] = np.bincount(idx["person"], weights=diff_q, minlength=n_persons)
+    return log_lik_mat, person_red
+
+
 def mfrm_loglik_mml(par, idx, config, sizes, quad):
     """Marginal log-likelihood (negative) for MML — used in M-step."""
-    params = expand_params(par, sizes, config)
     n = len(idx["score_k"])
     if n == 0:
         return 0.0
-
-    base_eta = compute_base_eta(idx, params, config)
-    rows_by_person = idx.get("rows_by_person")
-    if rows_by_person is None:
-        rows_by_person = [np.where(idx["person"] == p)[0] for p in range(config["n_person"])]
-
+    params = expand_params(par, sizes, config)
+    log_lik_mat, person_red = _compute_mml_person_node_loglik(idx, config, params, quad)
+    nonempty = person_red["nonempty"]
+    if nonempty.size == 0:
+        return 0.0
     log_w = _log_mml_quadrature_weights(quad)
-    pop_mu = compute_population_mu(params, config)
-
-    if config["model"] == "RSM":
-        step_cum = np.concatenate([[0.0], np.cumsum(params["steps"])])
-        ll_person = []
-        for j, rows in enumerate(rows_by_person):
-            if len(rows) == 0:
-                continue
-            base = base_eta[rows]
-            score_k = idx["score_k"][rows]
-            w = idx.get("weight")[rows] if idx.get("weight") is not None else None
-            mu_j = pop_mu[j] if j < len(pop_mu) else 0.0
-            ll_nodes = [loglik_rsm(mu_j + theta + base, score_k, step_cum, weight=w) for theta in quad["nodes"]]
-            ll_person.append(logsumexp(log_w + ll_nodes))
-    elif config["model"] == "PCM":
-        step_cum_mat = np.vstack([
-            np.concatenate([[0.0], np.cumsum(row)]) for row in params["steps_mat"]
-        ])
-        ll_person = []
-        for j, rows in enumerate(rows_by_person):
-            if len(rows) == 0:
-                continue
-            base = base_eta[rows]
-            score_k = idx["score_k"][rows]
-            crit = idx["step_idx"][rows]
-            w = idx.get("weight")[rows] if idx.get("weight") is not None else None
-            mu_j = pop_mu[j] if j < len(pop_mu) else 0.0
-            ll_nodes = [loglik_pcm(mu_j + theta + base, score_k, step_cum_mat, crit, weight=w) for theta in quad["nodes"]]
-            ll_person.append(logsumexp(log_w + ll_nodes))
-    else:
-        step_cum_mat = np.vstack([
-            np.concatenate([[0.0], np.cumsum(row)]) for row in params["steps_mat"]
-        ])
-        ll_person = []
-        for j, rows in enumerate(rows_by_person):
-            if len(rows) == 0:
-                continue
-            base = base_eta[rows]
-            score_k = idx["score_k"][rows]
-            step_idx = idx["step_idx"][rows]
-            slope_idx_full = idx.get("slope_idx")
-            slope_idx = slope_idx_full[rows] if slope_idx_full is not None else step_idx
-            w = idx.get("weight")[rows] if idx.get("weight") is not None else None
-            mu_j = pop_mu[j] if j < len(pop_mu) else 0.0
-            ll_nodes = [
-                loglik_gpcm(mu_j + theta + base, score_k, step_cum_mat, step_idx, params["slopes"], slope_idx, weight=w)
-                for theta in quad["nodes"]
-            ]
-            ll_person.append(logsumexp(log_w + ll_nodes))
-
+    ll_person = logsumexp(log_w[None, :] + log_lik_mat[nonempty], axis=1)
     return -float(np.sum(ll_person))
 
 
@@ -2872,8 +2974,10 @@ def mfrm_loglik_mml_value_grad(par, idx, config, sizes, quad, *, include_log_sig
 
     The gradient uses Fisher's identity: at the current parameter vector, the
     gradient of the marginal log-likelihood equals the posterior expectation of
-    the complete-data score. This reuses the EM E-step posterior weights and the
-    analytical M-step gradient.
+    the complete-data score. When the 3D observation × node × category tensor
+    fits within ``_MML_MAX_TENSOR_ELEMENTS``, probabilities and log-likelihoods
+    are evaluated once and reused for both the E-step posteriors and the M-step
+    score expectation.
 
     Development RSM/PCM/GPCM callers may append d(NLL)/d(log sigma). This assumes
     quad["nodes"] = sigma * z with fixed standard-normal nodes and weights;
@@ -2882,6 +2986,23 @@ def mfrm_loglik_mml_value_grad(par, idx, config, sizes, quad, *, include_log_sig
     if include_log_sigma and config["model"] not in {"RSM", "PCM", "GPCM"}:
         raise ValueError("Analytic log-SD gradient requires a native response model")
     params = expand_params(par, sizes, config)
+    n_obs = len(idx["score_k"])
+    q_len = len(quad["nodes"])
+    k_cat = int(config["n_cat"])
+    if n_obs > 0 and q_len > 0 and (n_obs * q_len * k_cat <= _MML_MAX_TENSOR_ELEMENTS):
+        marginal_ll, _, grad = _mml_joint_or_mstep_3d(
+            par,
+            params,
+            idx,
+            config,
+            sizes,
+            quad,
+            post_weights=None,
+            include_log_sigma=include_log_sigma,
+        )
+        penalty_value, _ = facet_regularization_value_grad(par, sizes, config)
+        return -marginal_ll + penalty_value, grad
+
     post_weights, marginal_ll = _e_step_posteriors(idx, config, params, quad)
     _, grad = _m_step_expected_ll_value_grad(
         par, idx, config, sizes, quad, post_weights, include_log_sigma=include_log_sigma,
@@ -3324,66 +3445,11 @@ def _e_step_posteriors(idx, config, params, quad):
     likelihood estimation of item parameters: Application of an EM
     algorithm.  Psychometrika, 46(4), 443–459.
     """
-    base_eta = compute_base_eta(idx, params, config)
-    rows_by_person = idx.get("rows_by_person")
-    if rows_by_person is None:
-        rows_by_person = [np.where(idx["person"] == p)[0] for p in range(config["n_person"])]
-
-    n_persons = len(rows_by_person)
-    Q = len(quad["nodes"])
+    n_persons = _mml_person_count(idx, config)
     log_w = _log_mml_quadrature_weights(quad)           # (Q,)
-    log_lik_mat = np.zeros((n_persons, Q))             # person × node
-    pop_mu = compute_population_mu(params, config)
-
-    if config["model"] == "RSM":
-        step_cum = np.concatenate([[0.0], np.cumsum(params["steps"])])
-        for j, rows in enumerate(rows_by_person):
-            if len(rows) == 0:
-                continue
-            base = base_eta[rows]
-            score_k = idx["score_k"][rows]
-            w = idx.get("weight")[rows] if idx.get("weight") is not None else None
-            mu_j = pop_mu[j] if j < len(pop_mu) else 0.0
-            for q, theta_q in enumerate(quad["nodes"]):
-                log_lik_mat[j, q] = loglik_rsm(mu_j + theta_q + base, score_k, step_cum, weight=w)
-    elif config["model"] == "PCM":
-        step_cum_mat = np.vstack([
-            np.concatenate([[0.0], np.cumsum(row)]) for row in params["steps_mat"]
-        ])
-        for j, rows in enumerate(rows_by_person):
-            if len(rows) == 0:
-                continue
-            base = base_eta[rows]
-            score_k = idx["score_k"][rows]
-            crit = idx["step_idx"][rows]
-            w = idx.get("weight")[rows] if idx.get("weight") is not None else None
-            mu_j = pop_mu[j] if j < len(pop_mu) else 0.0
-            for q, theta_q in enumerate(quad["nodes"]):
-                log_lik_mat[j, q] = loglik_pcm(mu_j + theta_q + base, score_k, step_cum_mat, crit, weight=w)
-    else:
-        step_cum_mat = np.vstack([
-            np.concatenate([[0.0], np.cumsum(row)]) for row in params["steps_mat"]
-        ])
-        for j, rows in enumerate(rows_by_person):
-            if len(rows) == 0:
-                continue
-            base = base_eta[rows]
-            score_k = idx["score_k"][rows]
-            step_idx = idx["step_idx"][rows]
-            slope_idx_full = idx.get("slope_idx")
-            slope_idx = slope_idx_full[rows] if slope_idx_full is not None else step_idx
-            w = idx.get("weight")[rows] if idx.get("weight") is not None else None
-            mu_j = pop_mu[j] if j < len(pop_mu) else 0.0
-            for q, theta_q in enumerate(quad["nodes"]):
-                log_lik_mat[j, q] = loglik_gpcm(
-                    mu_j + theta_q + base,
-                    score_k,
-                    step_cum_mat,
-                    step_idx,
-                    params["slopes"],
-                    slope_idx,
-                    weight=w,
-                )
+    log_lik_mat, _ = _compute_mml_person_node_loglik(
+        idx, config, params, quad, n_persons=n_persons,
+    )
 
     # log posterior (unnormalized) = log w_q + log L(x_j | θ_q, δ)
     log_joint = log_w[None, :] + log_lik_mat           # (n_persons, Q)
@@ -3395,136 +3461,67 @@ def _e_step_posteriors(idx, config, params, quad):
     return post_weights, marginal_ll
 
 
-def _m_step_expected_ll_value_grad(
-    par, idx, config, sizes, quad, post_weights, *, include_log_sigma=False,
+def _assemble_mml_gradient_from_contractions(
+    par,
+    idx,
+    config,
+    sizes,
+    *,
+    nll: float,
+    eff_w_sum: np.ndarray,
+    bar_probs: np.ndarray,
+    slope_obs: np.ndarray,
+    slope_row_weights: np.ndarray | None,
+    log_sigma_grad: float,
+    include_log_sigma: bool,
 ):
-    params = expand_params(par, sizes, config)
-    base_eta = compute_base_eta(idx, params, config)
     score_k = idx["score_k"]
-    weight = idx.get("weight")
-    if weight is None:
-        weight = np.ones_like(score_k, dtype=float)
-    else:
-        weight = np.asarray(weight, dtype=float)
-
     k_cat = int(config["n_cat"])
     k_vals = np.arange(k_cat, dtype=float)
     n_steps = max(k_cat - 1, 0)
-    thresholds = np.arange(n_steps)
     facet_signs = config.get("facet_signs", {})
 
-    facet_full_grads = {
-        facet: np.zeros(len(config["facet_specs"][facet]["levels"]), dtype=float)
-        for facet in config["facet_names"]
-    }
+    eta_grad_sum = -slope_obs * (eff_w_sum * score_k - (bar_probs @ k_vals))
+
     pop = config.get("population_model", {})
     pop_X = np.asarray(pop.get("X", np.zeros((int(config.get("n_person", 0)), 0))), dtype=float)
-    pop_mu = compute_population_mu(params, config)
-    pop_mu_by_obs = pop_mu[idx["person"]] if pop_mu.size else np.zeros(len(score_k), dtype=float)
-    pop_grad_full = np.zeros(pop_X.shape[1], dtype=float) if pop.get("enabled") and pop_X.ndim == 2 else np.array([], dtype=float)
-    if config["model"] == "RSM":
-        step_grad_full = np.zeros(n_steps, dtype=float)
-        step_cum = np.concatenate([[0.0], np.cumsum(params["steps"])])
+    if pop.get("enabled") and pop_X.ndim == 2 and pop_X.shape[1] > 0:
+        person_eta_grad = np.bincount(idx["person"], weights=eta_grad_sum, minlength=pop_X.shape[0])
+        pop_grad_full = pop_X.T @ person_eta_grad
     else:
-        step_facet_n = len(config["facet_levels"][config["step_facet"]])
-        step_grad_full = np.zeros((step_facet_n, n_steps), dtype=float)
-        step_cum_mat = np.vstack([
-            np.concatenate([[0.0], np.cumsum(row)]) for row in params["steps_mat"]
-        ])
-    if config["model"] == "GPCM":
-        slope_idx = idx.get("slope_idx")
-        if slope_idx is None:
-            slope_idx = idx["step_idx"]
-        slope_obs = params["slopes"][slope_idx]
-        slope_levels = len(config["facet_levels"][config["slope_facet"]])
-        log_slope_grad_full = np.zeros(slope_levels, dtype=float)
-    else:
-        slope_idx = None
-        slope_obs = np.ones(len(score_k), dtype=float)
-        log_slope_grad_full = np.array([], dtype=float)
+        pop_grad_full = np.array([], dtype=float)
 
-    nll = 0.0
-    log_sigma_grad = 0.0
-    for q, theta_q in enumerate(quad["nodes"]):
-        post_obs = post_weights[idx["person"], q]
-        eff_weight = weight * post_obs
-        eta = theta_q + pop_mu_by_obs + base_eta
+    facet_full_grads = {}
+    for facet in config["facet_names"]:
+        sign = facet_signs.get(facet, -1)
+        facet_full_grads[facet] = np.bincount(
+            idx["facets"][facet],
+            weights=eta_grad_sum * sign,
+            minlength=len(config["facet_specs"][facet]["levels"]),
+        )
 
+    if n_steps > 0:
+        thresholds = np.arange(n_steps)
+        observed_gt = score_k[:, None] > thresholds[None, :]
+        bar_prob_gt = np.cumsum(bar_probs[:, :0:-1], axis=1)[:, ::-1]
         if config["model"] == "RSM":
-            log_num = np.outer(eta, k_vals) - step_cum
-            log_denom = logsumexp(log_num, axis=1)
-            ll_obs = log_num[np.arange(len(eta)), score_k] - log_denom
-            probs = np.exp(log_num - log_denom[:, None])
-            nll -= float(np.sum(eff_weight * ll_obs))
-            if n_steps > 0:
-                observed_gt = score_k[:, None] > thresholds[None, :]
-                prob_gt = np.flip(np.cumsum(np.flip(probs[:, 1:], axis=1), axis=1), axis=1)
-                step_grad_full += np.sum(eff_weight[:, None] * (observed_gt - prob_gt), axis=0)
-        elif config["model"] == "PCM":
-            probs = np.zeros((len(eta), k_cat), dtype=float)
-            ll_obs = np.zeros(len(eta), dtype=float)
-            for c_idx in range(step_cum_mat.shape[0]):
-                rows = np.where(idx["step_idx"] == c_idx)[0]
-                if rows.size == 0:
-                    continue
-                log_num = np.outer(eta[rows], k_vals) - step_cum_mat[c_idx]
-                log_denom = logsumexp(log_num, axis=1)
-                ll_obs[rows] = log_num[np.arange(len(rows)), score_k[rows]] - log_denom
-                probs[rows, :] = np.exp(log_num - log_denom[:, None])
-                if n_steps > 0:
-                    observed_gt = score_k[rows, None] > thresholds[None, :]
-                    prob_gt = np.flip(np.cumsum(np.flip(probs[rows, 1:], axis=1), axis=1), axis=1)
-                    step_grad_full[c_idx, :] += np.sum(eff_weight[rows, None] * (observed_gt - prob_gt), axis=0)
-            nll -= float(np.sum(eff_weight * ll_obs))
+            step_grad_full = np.sum(eff_w_sum[:, None] * observed_gt - bar_prob_gt, axis=0)
         else:
-            probs = np.zeros((len(eta), k_cat), dtype=float)
-            ll_obs = np.zeros(len(eta), dtype=float)
-            linear_all = np.zeros((len(eta), k_cat), dtype=float)
-            for c_idx in range(step_cum_mat.shape[0]):
-                rows = np.where(idx["step_idx"] == c_idx)[0]
-                if rows.size == 0:
-                    continue
-                linear = np.outer(eta[rows], k_vals) - step_cum_mat[c_idx]
-                log_num = slope_obs[rows, None] * linear
-                log_denom = logsumexp(log_num, axis=1)
-                ll_obs[rows] = log_num[np.arange(len(rows)), score_k[rows]] - log_denom
-                probs[rows, :] = np.exp(log_num - log_denom[:, None])
-                linear_all[rows, :] = linear
-                if n_steps > 0:
-                    observed_gt = score_k[rows, None] > thresholds[None, :]
-                    prob_gt = np.flip(np.cumsum(np.flip(probs[rows, 1:], axis=1), axis=1), axis=1)
-                    step_grad_full[c_idx, :] += np.sum(
-                        eff_weight[rows, None] * slope_obs[rows, None] * (observed_gt - prob_gt),
-                        axis=0,
-                    )
-            obs_linear = linear_all[np.arange(len(eta)), score_k]
-            expected_linear = np.sum(probs * linear_all, axis=1)
-            log_slope_grad_full += np.bincount(
-                slope_idx,
-                weights=-eff_weight * slope_obs * (obs_linear - expected_linear),
-                minlength=slope_levels,
-            )
-            nll -= float(np.sum(eff_weight * ll_obs))
+            step_facet_n = len(config["facet_levels"][config["step_facet"]])
+            step_red = _get_step_reduction(idx, step_facet_n)
+            row_step = eff_w_sum[:, None] * observed_gt - bar_prob_gt
+            if config["model"] == "GPCM":
+                row_step = slope_obs[:, None] * row_step
+            step_grad_full = _sum_2d_by_group(row_step, step_red)
+    else:
+        step_grad_full = np.zeros(0, dtype=float)
 
-        expected = probs @ k_vals
-        eta_grad = -eff_weight * slope_obs * (score_k - expected)
-        if include_log_sigma:
-            # Differentiate moving nodes, not the normal-density moment score.
-            log_sigma_grad += theta_q * float(np.sum(eta_grad))
-        for facet in config["facet_names"]:
-            sign = facet_signs.get(facet, -1)
-            facet_full_grads[facet] += np.bincount(
-                idx["facets"][facet],
-                weights=eta_grad * sign,
-                minlength=len(config["facet_specs"][facet]["levels"]),
-            )
-        if pop_grad_full.size:
-            person_eta_grad = np.bincount(
-                idx["person"],
-                weights=eta_grad,
-                minlength=pop_X.shape[0],
-            )
-            pop_grad_full += pop_X.T @ person_eta_grad
+    if config["model"] == "GPCM" and slope_row_weights is not None:
+        slope_idx = idx.get("slope_idx") if idx.get("slope_idx") is not None else idx["step_idx"]
+        slope_levels = len(config["facet_levels"][config["slope_facet"]])
+        log_slope_grad_full = np.bincount(slope_idx, weights=slope_row_weights, minlength=slope_levels)
+    else:
+        log_slope_grad_full = np.array([], dtype=float)
 
     grad_parts = []
     if sizes.get("population", 0) > 0:
@@ -3553,6 +3550,183 @@ def _m_step_expected_ll_value_grad(
     if include_log_sigma:
         grad = np.append(grad, log_sigma_grad)
     return nll, grad
+
+
+def _mml_joint_or_mstep_3d(
+    par,
+    params,
+    idx,
+    config,
+    sizes,
+    quad,
+    *,
+    post_weights: np.ndarray | None,
+    include_log_sigma: bool = False,
+):
+    score_k = idx["score_k"]
+    n_obs = len(score_k)
+    weight_raw = idx.get("weight")
+    w_arr = np.ones(n_obs, dtype=float) if weight_raw is None else np.asarray(weight_raw, dtype=float)
+    nodes = np.asarray(quad["nodes"], dtype=float)
+    k_cat = int(config["n_cat"])
+    k_vals = np.arange(k_cat, dtype=float)
+
+    n_persons = (
+        _mml_person_count(idx, config)
+        if post_weights is None
+        else max(_mml_person_count(idx, config), int(post_weights.shape[0]))
+    )
+    base_eta = compute_base_eta(idx, params, config)
+    pop_mu_person = _mml_pop_mu_per_person(params, config, n_persons)
+    base_shift = pop_mu_person[idx["person"]] + base_eta
+
+    if config["model"] == "RSM":
+        step_cum_obs = np.concatenate([[0.0], np.cumsum(params["steps"])])[None, :]
+        slope_obs = np.ones(n_obs, dtype=float)
+    elif config["model"] == "PCM":
+        step_cum_obs = _build_step_cum_mat(params["steps_mat"])[idx["step_idx"]]
+        slope_obs = np.ones(n_obs, dtype=float)
+    else:
+        step_cum_obs = _build_step_cum_mat(params["steps_mat"])[idx["step_idx"]]
+        slope_idx = idx.get("slope_idx") if idx.get("slope_idx") is not None else idx["step_idx"]
+        slope_obs = np.asarray(params["slopes"], dtype=float)[slope_idx]
+
+    eta_nq = base_shift[:, None] + nodes[None, :]
+    linear = eta_nq[:, :, None] * k_vals[None, None, :] - step_cum_obs[:, None, :]
+    log_num = linear if config["model"] != "GPCM" else (slope_obs[:, None, None] * linear)
+    log_denom, probs = _log_denom_and_probs(log_num, axis=2, need_probs=True)
+    obs_log_num = np.take_along_axis(log_num, score_k[:, None, None], axis=2)[:, :, 0]
+    ll_obs_nq = obs_log_num - log_denom
+
+    marginal_ll = np.nan
+    if post_weights is None:
+        person_red = _get_person_reduction(idx, n_persons)
+        w_ll_nq = ll_obs_nq if weight_raw is None else (w_arr[:, None] * ll_obs_nq)
+        log_lik_mat = _sum_2d_by_group(w_ll_nq, person_red)
+        log_w = _log_mml_quadrature_weights(quad)
+        log_joint = log_w[None, :] + log_lik_mat
+        log_marginal = logsumexp(log_joint, axis=1)
+        post_weights = np.exp(log_joint - log_marginal[:, None])
+        marginal_ll = float(np.sum(log_marginal))
+
+    eff_w_nq = w_arr[:, None] * post_weights[idx["person"], :]
+    expected_nll = -float(np.sum(eff_w_nq * ll_obs_nq))
+    eff_w_sum = np.sum(eff_w_nq, axis=1)
+    bar_probs = np.einsum("nq,nqk->nk", eff_w_nq, probs, optimize=True)
+
+    log_sigma_grad = 0.0
+    if include_log_sigma:
+        expected_nq = probs @ k_vals
+        eta_grad_nq = -eff_w_nq * slope_obs[:, None] * (score_k[:, None] - expected_nq)
+        log_sigma_grad = float(np.sum(np.sum(eta_grad_nq, axis=0) * nodes))
+
+    slope_row_weights = None
+    if config["model"] == "GPCM":
+        obs_lin_nq = np.take_along_axis(linear, score_k[:, None, None], axis=2)[:, :, 0]
+        exp_lin_nq = np.sum(probs * linear, axis=2)
+        slope_row_weights = -slope_obs * np.sum(eff_w_nq * (obs_lin_nq - exp_lin_nq), axis=1)
+
+    expected_nll, grad = _assemble_mml_gradient_from_contractions(
+        par,
+        idx,
+        config,
+        sizes,
+        nll=expected_nll,
+        eff_w_sum=eff_w_sum,
+        bar_probs=bar_probs,
+        slope_obs=slope_obs,
+        slope_row_weights=slope_row_weights,
+        log_sigma_grad=log_sigma_grad,
+        include_log_sigma=include_log_sigma,
+    )
+    return marginal_ll, expected_nll, grad
+
+
+def _m_step_expected_ll_value_grad(
+    par, idx, config, sizes, quad, post_weights, *, include_log_sigma=False,
+):
+    params = expand_params(par, sizes, config)
+    score_k = idx["score_k"]
+    n_obs = len(score_k)
+    nodes = np.asarray(quad["nodes"], dtype=float)
+    q_len = len(nodes)
+    k_cat = int(config["n_cat"])
+
+    if n_obs > 0 and q_len > 0 and (n_obs * q_len * k_cat <= _MML_MAX_TENSOR_ELEMENTS):
+        _, expected_nll, grad = _mml_joint_or_mstep_3d(
+            par,
+            params,
+            idx,
+            config,
+            sizes,
+            quad,
+            post_weights=post_weights,
+            include_log_sigma=include_log_sigma,
+        )
+        return expected_nll, grad
+
+    base_eta = compute_base_eta(idx, params, config)
+    weight = idx.get("weight")
+    w_arr = np.ones_like(score_k, dtype=float) if weight is None else np.asarray(weight, dtype=float)
+    k_vals = np.arange(k_cat, dtype=float)
+    n_persons = max(_mml_person_count(idx, config), int(post_weights.shape[0]))
+    pop_mu_person = _mml_pop_mu_per_person(params, config, n_persons)
+    base_shift = pop_mu_person[idx["person"]] + base_eta if n_obs else np.zeros(0, dtype=float)
+
+    if config["model"] == "RSM":
+        step_2d = np.concatenate([[0.0], np.cumsum(params["steps"])])
+        slope_obs = np.ones(n_obs, dtype=float)
+        slope_row_weights = None
+    elif config["model"] == "PCM":
+        step_2d = _build_step_cum_mat(params["steps_mat"])[idx["step_idx"]] if n_obs else np.zeros((0, k_cat))
+        slope_obs = np.ones(n_obs, dtype=float)
+        slope_row_weights = None
+    else:
+        step_2d = _build_step_cum_mat(params["steps_mat"])[idx["step_idx"]] if n_obs else np.zeros((0, k_cat))
+        slope_idx = idx.get("slope_idx") if idx.get("slope_idx") is not None else idx["step_idx"]
+        slope_obs = np.asarray(params["slopes"], dtype=float)[slope_idx] if n_obs else np.zeros(0, dtype=float)
+        slope_row_weights = np.zeros(n_obs, dtype=float)
+
+    nll = 0.0
+    log_sigma_grad = 0.0
+    eff_w_sum = np.zeros(n_obs, dtype=float)
+    bar_probs = np.zeros((n_obs, k_cat), dtype=float)
+    row_arange = np.arange(n_obs)
+
+    for q_i, theta_q in enumerate(nodes):
+        if n_obs == 0:
+            break
+        eff_weight = w_arr * post_weights[idx["person"], q_i]
+        eff_w_sum += eff_weight
+        eta = theta_q + base_shift
+        linear = np.outer(eta, k_vals) - step_2d
+        log_num = linear if config["model"] != "GPCM" else (slope_obs[:, None] * linear)
+        log_denom, probs = _log_denom_and_probs(log_num, axis=1, need_probs=True)
+        ll_obs = log_num[row_arange, score_k] - log_denom
+        nll -= float(np.sum(eff_weight * ll_obs))
+        bar_probs += eff_weight[:, None] * probs
+        if include_log_sigma:
+            expected = probs @ k_vals
+            eta_grad = -eff_weight * slope_obs * (score_k - expected)
+            log_sigma_grad += float(theta_q) * float(np.sum(eta_grad))
+        if config["model"] == "GPCM":
+            obs_linear = linear[row_arange, score_k]
+            expected_linear = np.sum(probs * linear, axis=1)
+            slope_row_weights -= eff_weight * slope_obs * (obs_linear - expected_linear)
+
+    return _assemble_mml_gradient_from_contractions(
+        par,
+        idx,
+        config,
+        sizes,
+        nll=nll,
+        eff_w_sum=eff_w_sum,
+        bar_probs=bar_probs,
+        slope_obs=slope_obs,
+        slope_row_weights=slope_row_weights,
+        log_sigma_grad=log_sigma_grad,
+        include_log_sigma=include_log_sigma,
+    )
 
 
 def mfrm_em_mml(start, idx, config, sizes, quad, maxit=200, reltol=1e-6):
@@ -3783,69 +3957,55 @@ def compute_person_posterior_outputs(
     if person_levels is None:
         person_levels = [str(i) for i in range(n_person)]
 
-    base_eta = compute_base_eta(idx, params, config)
-    rows_by_person = idx.get("rows_by_person")
-    if rows_by_person is None:
-        rows_by_person = [np.where(idx["person"] == p)[0] for p in range(n_person)]
-
     log_w = _log_mml_quadrature_weights(quad)
     rng = np.random.default_rng(int(seed))
     n_pv = max(0, int(n_plausible_values or 0))
     score_rows: list[dict] = []
     pv_rows: list[dict] = []
-    pop_mu = compute_population_mu(params, config)
-
-    if config["model"] == "RSM":
-        step_cum = np.concatenate([[0.0], np.cumsum(params["steps"])])
+    nodes = np.asarray(quad["nodes"], dtype=float)
+    pop_mu_person = _mml_pop_mu_per_person(params, config, n_person)
+    ll_mat, person_red = _compute_mml_person_node_loglik(
+        idx, config, params, quad, n_persons=n_person,
+    )
+    theta_grid = pop_mu_person[:, None] + nodes[None, :]
+    log_post = log_w[None, :] + ll_mat
+    log_post = log_post - logsumexp(log_post, axis=1)[:, None]
+    post_w_mat = np.exp(log_post)
+    eap_arr = np.sum(theta_grid * post_w_mat, axis=1)
+    sd_arr = np.sqrt(np.sum((theta_grid - eap_arr[:, None]) ** 2 * post_w_mat, axis=1))
+    prior_sd = get_population_prior_sd(config)
+    log_density = ll_mat - 0.5 * (nodes[None, :] / prior_sd) ** 2
+    map_idx = np.argmax(log_density, axis=1)
+    obs_rows_arr = person_red["counts"]
+    weight_col_arr = idx.get("weight")
+    if weight_col_arr is not None:
+        obs_weight_arr = np.bincount(
+            idx["person"],
+            weights=np.asarray(weight_col_arr, dtype=float),
+            minlength=n_person,
+        )
     else:
-        step_cum_mat = np.vstack([
-            np.concatenate([[0.0], np.cumsum(row)]) for row in params["steps_mat"]
-        ])
+        obs_weight_arr = obs_rows_arr.astype(float)
 
-    for p_idx, rows in enumerate(rows_by_person):
-        base = base_eta[rows]
-        score_k = idx["score_k"][rows]
-        weight = idx.get("weight")[rows] if idx.get("weight") is not None else None
-        mu_j = pop_mu[p_idx] if p_idx < len(pop_mu) else 0.0
-        theta_nodes = mu_j + quad["nodes"]
-        if config["model"] == "RSM":
-            ll_nodes = np.array([loglik_rsm(theta + base, score_k, step_cum, weight=weight) for theta in theta_nodes])
-        elif config["model"] == "PCM":
-            crit = idx["step_idx"][rows]
-            ll_nodes = np.array([loglik_pcm(theta + base, score_k, step_cum_mat, crit, weight=weight) for theta in theta_nodes])
-        else:
-            step_idx = idx["step_idx"][rows]
-            slope_idx_full = idx.get("slope_idx")
-            slope_idx = slope_idx_full[rows] if slope_idx_full is not None else step_idx
-            ll_nodes = np.array([
-                loglik_gpcm(theta + base, score_k, step_cum_mat, step_idx, params["slopes"], slope_idx, weight=weight)
-                for theta in theta_nodes
-            ])
-        log_post = log_w + ll_nodes
-        log_post = log_post - logsumexp(log_post)
-        post_w = np.exp(log_post)
-        eap = float(np.sum(theta_nodes * post_w))
-        sd = float(np.sqrt(np.sum((theta_nodes - eap) ** 2 * post_w)))
+    for p_idx in range(n_person):
+        theta_nodes = theta_grid[p_idx]
+        post_w = post_w_mat[p_idx]
         q05, q50, q95 = _weighted_quantile_from_grid(theta_nodes, post_w, probs=(0.05, 0.5, 0.95))
-        # GH weights integrate the prior; they are not prior density values.
-        log_density = ll_nodes - 0.5 * (quad["nodes"] / get_population_prior_sd(config)) ** 2
-        map_theta = float(theta_nodes[int(np.argmax(log_density))])
         person_id = person_levels[p_idx] if p_idx < len(person_levels) else str(p_idx)
-        row_weight = float(np.sum(weight)) if weight is not None else float(len(rows))
         score_rows.append({
             "Person": person_id,
-            "PosteriorMean": eap,
-            "PosteriorSD": sd,
+            "PosteriorMean": float(eap_arr[p_idx]),
+            "PosteriorSD": float(sd_arr[p_idx]),
             "PosteriorMedian": q50,
             "PosteriorQ05": q05,
             "PosteriorQ95": q95,
-            "PosteriorMAPGrid": map_theta,
-            "PopulationMean": float(mu_j),
-            "ObservedRows": int(len(rows)),
-            "ObservedWeight": row_weight,
+            "PosteriorMAPGrid": float(theta_nodes[int(map_idx[p_idx])]),
+            "PopulationMean": float(pop_mu_person[p_idx]),
+            "ObservedRows": int(obs_rows_arr[p_idx]),
+            "ObservedWeight": float(obs_weight_arr[p_idx]),
         })
         if n_pv > 0:
-            draws = rng.choice(np.asarray(theta_nodes, dtype=float), size=n_pv, replace=True, p=post_w / np.sum(post_w))
+            draws = rng.choice(theta_nodes, size=n_pv, replace=True, p=post_w / np.sum(post_w))
             pv_rows.append({
                 "Person": person_id,
                 **{f"PV_{i + 1}": float(draws[i]) for i in range(n_pv)},
@@ -5716,7 +5876,7 @@ def calc_bias_facet(obs_df, facet_cols):
 
 
 def calc_bias_interactions(obs_df, facet_cols, pairs=None, top_n=20):
-    if len(facet_cols) < 2:
+    if len(facet_cols) < 2 or obs_df is None:
         return pd.DataFrame()
     if pairs is None:
         combos = []
@@ -5728,50 +5888,131 @@ def calc_bias_interactions(obs_df, facet_cols, pairs=None, top_n=20):
     else:
         combos = pairs
 
-    rows = []
+    w_all = np.asarray(get_weights(obs_df), dtype=float)
+    w_finite_mask = np.isfinite(w_all)
+    w_pos_mask = w_finite_mask & (w_all > 0)
+    w_nansafe = np.where(w_finite_mask, w_all, 0.0)
+
+    obs_arr = obs_df["Observed"].to_numpy(dtype=float)
+    exp_arr = obs_df["Expected"].to_numpy(dtype=float)
+    res_arr = obs_df["Residual"].to_numpy(dtype=float)
+    std_arr = obs_df["StdResidual"].to_numpy(dtype=float)
+    abs_std_arr = np.abs(std_arr)
+    var_arr = obs_df["Var"].to_numpy(dtype=float)
+
+    def _cell_weighted_mean(values: np.ndarray, cell_codes: np.ndarray, valid_rows_mask: np.ndarray, n_cells: int) -> np.ndarray:
+        ok = valid_rows_mask & w_pos_mask & np.isfinite(values)
+        out = np.full(n_cells, np.nan, dtype=float)
+        if not np.any(ok):
+            return out
+        c_ok = cell_codes[ok]
+        w_ok = w_all[ok]
+        den = np.bincount(c_ok, weights=w_ok, minlength=n_cells)
+        num = np.bincount(c_ok, weights=values[ok] * w_ok, minlength=n_cells)
+        pos = den > 0
+        out[pos] = num[pos] / den[pos]
+        return out
+
+    def _cell_nansum_weighted(values: np.ndarray, cell_codes: np.ndarray, valid_rows_mask: np.ndarray, n_cells: int) -> np.ndarray:
+        prod = values * w_all
+        ok = valid_rows_mask & np.isfinite(prod)
+        if not np.any(ok):
+            return np.zeros(n_cells, dtype=float)
+        return np.bincount(cell_codes[ok], weights=prod[ok], minlength=n_cells)
+
+    def _encode_axis(series: pd.Series) -> tuple[np.ndarray, list[object]]:
+        if isinstance(series.dtype, pd.CategoricalDtype):
+            return series.cat.codes.to_numpy(dtype=np.int64), list(series.cat.categories)
+        codes, uniques = pd.factorize(series, sort=True)
+        return codes.astype(np.int64), list(uniques)
+
+    encoded_axes: dict[str, tuple[np.ndarray, list[object]]] = {}
+    part_frames: list[pd.DataFrame] = []
     for pair1, pair2 in combos:
-        grp = obs_df.groupby([pair1, pair2], observed=False)
-        for (lvl1, lvl2), df in grp:
-            w = get_weights(df)
-            n = np.nansum(w)
-            observed_avg = weighted_mean(df["Observed"].to_numpy(), w)
-            expected_avg = weighted_mean(df["Expected"].to_numpy(), w)
-            mean_resid = weighted_mean(df["Residual"].to_numpy(), w)
-            mean_std_resid = weighted_mean(df["StdResidual"].to_numpy(), w)
-            mean_abs_std = weighted_mean(np.abs(df["StdResidual"]).to_numpy(), w)
-            chi_sq = np.nansum((df["StdResidual"] ** 2) * w)
-            se_resid = np.sqrt(np.nansum(df["Var"] * w)) / n if n > 0 else np.nan
-            se_std = 1 / np.sqrt(n) if n > 0 else np.nan
-            df_chi = n - 1 if n > 1 else np.nan
-            t_resid = mean_resid / se_resid if np.isfinite(se_resid) and se_resid > 0 else np.nan
-            t_std = mean_std_resid / se_std if np.isfinite(se_std) and se_std > 0 else np.nan
-            p_resid = 2 * t_dist.cdf(-abs(t_resid), df=df_chi) if np.isfinite(df_chi) and np.isfinite(t_resid) else np.nan
-            p_std = 2 * t_dist.cdf(-abs(t_std), df=df_chi) if np.isfinite(df_chi) and np.isfinite(t_std) else np.nan
-            chi_p = 1 - chi2.cdf(chi_sq, df=df_chi) if np.isfinite(chi_sq) and np.isfinite(df_chi) and df_chi > 0 else np.nan
+        if pair1 not in encoded_axes:
+            encoded_axes[pair1] = _encode_axis(obs_df[pair1])
+        if pair2 not in encoded_axes:
+            encoded_axes[pair2] = _encode_axis(obs_df[pair2])
+        c1, lvl1_list = encoded_axes[pair1]
+        c2, lvl2_list = encoded_axes[pair2]
+        n2 = max(len(lvl2_list), 1)
+        valid_mask = (c1 >= 0) & (c2 >= 0)
+        if not np.any(valid_mask):
+            continue
+        raw_keys = c1[valid_mask] * np.int64(n2) + c2[valid_mask]
+        unique_keys, codes_valid = np.unique(raw_keys, return_inverse=True)
+        n_cells = len(unique_keys)
+        if n_cells == 0:
+            continue
+        cell_codes = np.zeros(len(obs_df), dtype=int)
+        cell_codes[valid_mask] = codes_valid
+        u1_idx = (unique_keys // np.int64(n2)).astype(int)
+        u2_idx = (unique_keys % np.int64(n2)).astype(int)
+        level_labels = [f"{lvl1_list[i1]} | {lvl2_list[i2]}" for i1, i2 in zip(u1_idx, u2_idx)]
 
-            rows.append({
-                "Pair": f"{pair1} x {pair2}",
-                "Level": f"{lvl1} | {lvl2}",
-                "N": n,
-                "ObservedAverage": observed_avg,
-                "ExpectedAverage": expected_avg,
-                "Bias": mean_resid,
-                "MeanResidual": mean_resid,
-                "MeanStdResidual": mean_std_resid,
-                "MeanAbsStdResidual": mean_abs_std,
-                "ChiSq": chi_sq,
-                "ChiDf": df_chi,
-                "ChiP": chi_p,
-                "SE_Residual": se_resid,
-                "t_Residual": t_resid,
-                "p_Residual": p_resid,
-                "SE_StdResidual": se_std,
-                "t_StdResidual": t_std,
-                "p_StdResidual": p_std,
-                "DF": df_chi,
-            })
+        n_arr = (
+            np.bincount(cell_codes[valid_mask], weights=w_nansafe[valid_mask], minlength=n_cells)
+            if np.any(valid_mask)
+            else np.zeros(n_cells, dtype=float)
+        )
+        observed_avg = _cell_weighted_mean(obs_arr, cell_codes, valid_mask, n_cells)
+        expected_avg = _cell_weighted_mean(exp_arr, cell_codes, valid_mask, n_cells)
+        mean_resid = _cell_weighted_mean(res_arr, cell_codes, valid_mask, n_cells)
+        mean_std_resid = _cell_weighted_mean(std_arr, cell_codes, valid_mask, n_cells)
+        mean_abs_std = _cell_weighted_mean(abs_std_arr, cell_codes, valid_mask, n_cells)
+        chi_sq = _cell_nansum_weighted(std_arr ** 2, cell_codes, valid_mask, n_cells)
+        var_sum = _cell_nansum_weighted(var_arr, cell_codes, valid_mask, n_cells)
 
-    out = pd.DataFrame(rows)
+        pos_n = n_arr > 0
+        se_resid = np.full(n_cells, np.nan, dtype=float)
+        se_std = np.full(n_cells, np.nan, dtype=float)
+        se_resid[pos_n] = np.sqrt(var_sum[pos_n]) / n_arr[pos_n]
+        se_std[pos_n] = 1.0 / np.sqrt(n_arr[pos_n])
+        df_chi = np.where(n_arr > 1.0, n_arr - 1.0, np.nan)
+
+        t_resid = np.where(np.isfinite(se_resid) & (se_resid > 0), mean_resid / se_resid, np.nan)
+        t_std = np.where(np.isfinite(se_std) & (se_std > 0), mean_std_resid / se_std, np.nan)
+
+        p_resid = np.full(n_cells, np.nan, dtype=float)
+        ok_pr = np.isfinite(df_chi) & np.isfinite(t_resid)
+        if np.any(ok_pr):
+            p_resid[ok_pr] = 2.0 * t_dist.cdf(-np.abs(t_resid[ok_pr]), df=df_chi[ok_pr])
+
+        p_std = np.full(n_cells, np.nan, dtype=float)
+        ok_ps = np.isfinite(df_chi) & np.isfinite(t_std)
+        if np.any(ok_ps):
+            p_std[ok_ps] = 2.0 * t_dist.cdf(-np.abs(t_std[ok_ps]), df=df_chi[ok_ps])
+
+        chi_p = np.full(n_cells, np.nan, dtype=float)
+        ok_cp = np.isfinite(chi_sq) & np.isfinite(df_chi) & (df_chi > 0)
+        if np.any(ok_cp):
+            chi_p[ok_cp] = 1.0 - chi2.cdf(chi_sq[ok_cp], df=df_chi[ok_cp])
+
+        part_frames.append(pd.DataFrame({
+            "Pair": f"{pair1} x {pair2}",
+            "Level": level_labels,
+            "N": n_arr,
+            "ObservedAverage": observed_avg,
+            "ExpectedAverage": expected_avg,
+            "Bias": mean_resid,
+            "MeanResidual": mean_resid,
+            "MeanStdResidual": mean_std_resid,
+            "MeanAbsStdResidual": mean_abs_std,
+            "ChiSq": chi_sq,
+            "ChiDf": df_chi,
+            "ChiP": chi_p,
+            "SE_Residual": se_resid,
+            "t_Residual": t_resid,
+            "p_Residual": p_resid,
+            "SE_StdResidual": se_std,
+            "t_StdResidual": t_std,
+            "p_StdResidual": p_std,
+            "DF": df_chi,
+        }))
+
+    if not part_frames:
+        return pd.DataFrame()
+    out = pd.concat(part_frames, ignore_index=True)
     if out.empty:
         return out
     out["AbsStd"] = out["MeanStdResidual"].abs()
@@ -5959,15 +6200,19 @@ def _agreement_score_wide(
     if not context_cols:
         return pd.DataFrame(), meta
 
-    df = obs_df.copy()
-    if "Observed" not in df.columns:
+    if "Observed" not in obs_df.columns:
         return pd.DataFrame(), meta
-    df["_context"] = df[context_cols].astype(str).agg("|".join, axis=1)
-    df["_score_for_agreement"] = pd.to_numeric(df["Observed"], errors="coerce")
-    base_cols = ["_context", target_facet, "_score_for_agreement"]
-    if "Weight" in df.columns:
-        base_cols.append("Weight")
-    df = df[base_cols].dropna(subset=["_score_for_agreement", target_facet]).copy()
+    ctx_series = obs_df[context_cols[0]].astype(str)
+    for col in context_cols[1:]:
+        ctx_series = ctx_series.str.cat(obs_df[col].astype(str), sep="|")
+    df = pd.DataFrame({
+        "_context": ctx_series,
+        target_facet: obs_df[target_facet],
+        "_score_for_agreement": pd.to_numeric(obs_df["Observed"], errors="coerce"),
+    })
+    if "Weight" in obs_df.columns:
+        df["Weight"] = obs_df["Weight"]
+    df = df.dropna(subset=["_score_for_agreement", target_facet]).copy()
     if df.empty:
         return pd.DataFrame(), meta
 
@@ -6030,29 +6275,25 @@ def _krippendorff_ordinal_distance_matrix(values: np.ndarray) -> tuple[np.ndarra
     categories = categories[order]
     counts = counts[order].astype(float)
     n_cat = len(categories)
-    dist = np.zeros((n_cat, n_cat), dtype=float)
     if n_cat <= 1:
-        return categories, dist
-    for i in range(n_cat):
-        for j in range(i + 1, n_cat):
-            span = float(np.sum(counts[i:j + 1]) - 0.5 * (counts[i] + counts[j]))
-            dist[i, j] = span ** 2
-            dist[j, i] = dist[i, j]
+        return categories, np.zeros((n_cat, n_cat), dtype=float)
+    cum = np.concatenate(([0.0], np.cumsum(counts[:-1])))
+    midpoints = cum + 0.5 * counts
+    dist = (midpoints[:, None] - midpoints[None, :]) ** 2
     return categories, dist
 
 
-def calc_krippendorff_alpha(
-    obs_df: pd.DataFrame,
-    facet_cols: list[str],
+def _krippendorff_alpha_from_wide(
+    wide: pd.DataFrame,
+    meta: dict[str, object],
     target_facet: str,
     *,
     metric: str = "ordinal",
+    include_coverage: bool = True,
 ) -> dict[str, pd.DataFrame]:
-    """Compute an experimental Krippendorff alpha table for one selected facet."""
     metric = str(metric or "ordinal").lower()
     if metric not in KRIPPENDORFF_ALPHA_METRICS:
         metric = "ordinal"
-    wide, meta = _agreement_score_wide(obs_df, facet_cols, target_facet)
     empty_summary = pd.DataFrame(columns=[
         "Facet", "DistanceMetric", "KrippendorffAlpha", "Status", "PlainLanguage",
         "Units", "Elements", "PairableUnits", "RatingsUsed", "MissingCells",
@@ -6062,36 +6303,21 @@ def calc_krippendorff_alpha(
     if wide.empty or wide.shape[1] < 2:
         return {"summary": empty_summary, "coverage": pd.DataFrame()}
 
-    pairable_values: list[float] = []
-    observed_num = 0.0
-    pairable_units = 0
-    units_with_single_rating = 0
-
-    for _, row in wide.iterrows():
-        vals = pd.to_numeric(row, errors="coerce").dropna().to_numpy(dtype=float)
-        m = len(vals)
-        if m < 2:
-            if m == 1:
-                units_with_single_rating += 1
-            continue
-        pairable_units += 1
-        pairable_values.extend(float(v) for v in vals)
-        if metric == "nominal":
-            diff = vals[:, None] != vals[None, :]
-            observed_num += float(diff.sum()) / float(m - 1)
-        elif metric == "interval":
-            delta = (vals[:, None] - vals[None, :]) ** 2
-            observed_num += float(delta.sum()) / float(m - 1)
-        else:
-            # Ordinal distances are data-dependent, so compute after the
-            # pairable marginal categories are known. Store raw values here.
-            continue
-
-    values = np.asarray(pairable_values, dtype=float)
-    ratings_used = int(len(values))
-    units = int(wide.shape[0])
-    elements = int(wide.shape[1])
-    missing_cells = int(wide.isna().sum().sum())
+    mat = wide.to_numpy(dtype=float)
+    finite_mask = np.isfinite(mat)
+    m_per_unit = np.sum(finite_mask, axis=1)
+    units_with_single_rating = int(np.sum(m_per_unit == 1))
+    pairable_mask = m_per_unit >= 2
+    pairable_units = int(np.sum(pairable_mask))
+    mat_pair = mat[pairable_mask]
+    mask_pair = finite_mask[pairable_mask]
+    m_pair_int = m_per_unit[pairable_mask]
+    m_pair = m_pair_int.astype(float)
+    values = mat_pair[mask_pair]
+    ratings_used = int(values.size)
+    units = int(mat.shape[0])
+    elements = int(mat.shape[1])
+    missing_cells = int(mat.size - int(np.sum(finite_mask)))
     caveat = (
         "Experimental agreement screen. It complements MFRM fit/reliability; "
         "it does not replace model-based severity, bias, or category diagnostics."
@@ -6118,26 +6344,46 @@ def calc_krippendorff_alpha(
         }])
         return {"summary": summary, "coverage": pd.DataFrame()}
 
-    if metric == "ordinal":
-        categories, dist = _krippendorff_ordinal_distance_matrix(values)
-        cat_index = {float(cat): idx for idx, cat in enumerate(categories)}
-        observed_num = 0.0
-        for _, row in wide.iterrows():
-            vals = pd.to_numeric(row, errors="coerce").dropna().to_numpy(dtype=float)
-            m = len(vals)
-            if m < 2:
-                continue
-            idx = [cat_index[float(v)] for v in vals]
-            observed_num += float(dist[np.ix_(idx, idx)].sum()) / float(m - 1)
-        counts = np.array([np.sum(values == cat) for cat in categories], dtype=float)
-        expected_num = float((counts[:, None] * counts[None, :] * dist).sum())
-    elif metric == "nominal":
-        _, counts = np.unique(values, return_counts=True)
-        counts = counts.astype(float)
-        expected_num = float(values.size ** 2 - np.sum(counts ** 2))
-    else:
+    if metric == "interval":
+        safe = np.where(mask_pair, mat_pair, 0.0)
+        row_mean = np.sum(safe, axis=1) / m_pair
+        sq_dev = np.sum(np.where(mask_pair, (mat_pair - row_mean[:, None]) ** 2, 0.0), axis=1)
+        observed_num = float(np.sum(2.0 * m_pair * sq_dev / (m_pair - 1.0)))
         mean_value = float(np.mean(values))
-        expected_num = float(2.0 * values.size * np.sum((values - mean_value) ** 2))
+        expected_num = float(2.0 * ratings_used * np.sum((values - mean_value) ** 2))
+    elif metric == "nominal":
+        categories, inv, counts_int = np.unique(values, return_inverse=True, return_counts=True)
+        counts = counts_int.astype(float)
+        n_cat = len(categories)
+        unit_ids = np.repeat(np.arange(pairable_units, dtype=np.int64), m_pair_int)
+        pair_key = unit_ids * np.int64(max(n_cat, 1)) + inv.astype(np.int64)
+        _, key_idx, cell_counts = np.unique(pair_key, return_index=True, return_counts=True)
+        sum_n2 = np.bincount(
+            unit_ids[key_idx],
+            weights=cell_counts.astype(float) ** 2,
+            minlength=pairable_units,
+        )
+        observed_num = float(np.sum((m_pair ** 2 - sum_n2) / (m_pair - 1.0)))
+        expected_num = float(ratings_used ** 2 - np.sum(counts ** 2))
+    else:
+        # Ordinal squared rank-span distance d^2(c, k) = (mid_c - mid_k)^2 is exact
+        # Euclidean squared distance on cumulative marginal midpoints mid_c.
+        categories, inv, counts_int = np.unique(values, return_inverse=True, return_counts=True)
+        counts = counts_int.astype(float)
+        cum = np.concatenate(([0.0], np.cumsum(counts[:-1])))
+        midpoints = cum + 0.5 * counts
+        z_vals = midpoints[inv]
+        unit_ids = np.repeat(np.arange(pairable_units, dtype=int), m_pair_int)
+        unit_z_sum = np.bincount(unit_ids, weights=z_vals, minlength=pairable_units)
+        unit_z_mean = unit_z_sum / m_pair
+        sq_dev_z = np.bincount(
+            unit_ids,
+            weights=(z_vals - unit_z_mean[unit_ids]) ** 2,
+            minlength=pairable_units,
+        )
+        observed_num = float(np.sum(2.0 * m_pair * sq_dev_z / (m_pair - 1.0)))
+        mean_z = float(np.mean(z_vals))
+        expected_num = float(2.0 * ratings_used * np.sum((z_vals - mean_z) ** 2))
 
     observed_disagreement = float(observed_num / ratings_used) if ratings_used else np.nan
     expected_disagreement = (
@@ -6153,16 +6399,20 @@ def calc_krippendorff_alpha(
     )
     status, plain = _krippendorff_alpha_status(alpha_value)
 
-    coverage_rows = []
-    for col in wide.columns:
-        vals = pd.to_numeric(wide[col], errors="coerce").dropna()
-        coverage_rows.append({
+    if include_coverage:
+        col_counts = np.sum(finite_mask, axis=0)
+        col_sums = np.sum(np.where(finite_mask, mat, 0.0), axis=0)
+        col_means = np.where(col_counts > 0, col_sums / np.maximum(col_counts, 1), np.nan)
+        col_missing = units - col_counts
+        coverage_df = pd.DataFrame({
             "Facet": target_facet,
-            "Element": col,
-            "Ratings": int(len(vals)),
-            "MeanScore": float(vals.mean()) if len(vals) else np.nan,
-            "MissingUnits": int(wide[col].isna().sum()),
+            "Element": list(wide.columns),
+            "Ratings": col_counts.astype(int),
+            "MeanScore": col_means.astype(float),
+            "MissingUnits": col_missing.astype(int),
         })
+    else:
+        coverage_df = pd.DataFrame()
 
     summary = pd.DataFrame([{
         "Facet": target_facet,
@@ -6182,7 +6432,25 @@ def calc_krippendorff_alpha(
         "Aggregation": meta.get("Aggregation", "mean"),
         "Caveat": caveat,
     }])
-    return {"summary": summary, "coverage": pd.DataFrame(coverage_rows)}
+    return {"summary": summary, "coverage": coverage_df}
+
+
+def calc_krippendorff_alpha(
+    obs_df: pd.DataFrame,
+    facet_cols: list[str],
+    target_facet: str,
+    *,
+    metric: str = "ordinal",
+) -> dict[str, pd.DataFrame]:
+    """Compute an experimental Krippendorff alpha table for one selected facet."""
+    wide, meta = _agreement_score_wide(obs_df, facet_cols, target_facet)
+    return _krippendorff_alpha_from_wide(
+        wide,
+        meta,
+        target_facet,
+        metric=metric,
+        include_coverage=True,
+    )
 
 
 def calc_krippendorff_alpha_by_facet(
@@ -6195,8 +6463,15 @@ def calc_krippendorff_alpha_by_facet(
     rows: list[pd.DataFrame] = []
     target_facets = [facet for facet in facet_cols if facet != "Person"]
     for facet in target_facets:
+        wide, meta = _agreement_score_wide(obs_df, facet_cols, facet)
         for metric in metrics:
-            result = calc_krippendorff_alpha(obs_df, facet_cols, facet, metric=metric)
+            result = _krippendorff_alpha_from_wide(
+                wide,
+                meta,
+                facet,
+                metric=metric,
+                include_coverage=False,
+            )
             summary = result.get("summary", pd.DataFrame())
             if isinstance(summary, pd.DataFrame) and not summary.empty:
                 rows.append(summary)
@@ -7828,6 +8103,71 @@ def _abs_loading_correlation(reference: pd.Series, candidate: pd.Series) -> floa
     return float(abs(np.corrcoef(x_arr, y_arr)[0, 1]))
 
 
+def _abs_loading_corr_arrays(x_arr: np.ndarray, y_arr: np.ndarray) -> float:
+    ok = np.isfinite(x_arr) & np.isfinite(y_arr)
+    n_ok = int(np.sum(ok))
+    if n_ok < 2:
+        return np.nan
+    x = x_arr[ok]
+    y = y_arr[ok]
+    dx = x - np.mean(x)
+    dy = y - np.mean(y)
+    vx = float(np.dot(dx, dx))
+    vy = float(np.dot(dy, dy))
+    if vx <= 0.0 or vy <= 0.0:
+        return np.nan
+    return float(min(abs(float(np.dot(dx, dy)) / np.sqrt(vx * vy)), 1.0))
+
+
+def _pairwise_corr_matrix_numpy(mat: np.ndarray) -> np.ndarray:
+    """Pairwise Pearson correlation matching DataFrame.corr(min_periods=2).fillna(0) with unit diagonal."""
+    n_rows, n_cols = mat.shape
+    mask = np.isfinite(mat)
+    if np.all(mask):
+        if n_rows < 2:
+            cor = np.zeros((n_cols, n_cols), dtype=float)
+            np.fill_diagonal(cor, 1.0)
+            return cor
+        centered = mat - np.mean(mat, axis=0, keepdims=True)
+        ss = np.sum(centered ** 2, axis=0)
+        denom = np.sqrt(np.outer(ss, ss))
+        cov_num = centered.T @ centered
+        cor = np.divide(cov_num, denom, out=np.zeros_like(cov_num), where=denom > 0)
+        cor = np.clip(cor, -1.0, 1.0)
+        np.fill_diagonal(cor, 1.0)
+        return cor
+
+    mf = mask.astype(float)
+    col_counts = np.sum(mf, axis=0)
+    col_means = np.divide(
+        np.sum(np.where(mask, mat, 0.0), axis=0),
+        col_counts,
+        out=np.zeros(n_cols, dtype=float),
+        where=col_counts > 0,
+    )
+    xc = np.where(mask, mat - col_means[None, :], 0.0)
+    n_ab = mf.T @ mf
+    sx = xc.T @ mf
+    sxx = (xc ** 2).T @ mf
+    sxy = xc.T @ xc
+    cov_num = sxy - np.divide(sx * sx.T, n_ab, out=np.zeros_like(sxy), where=n_ab > 0)
+    var_a = np.maximum(sxx - np.divide(sx ** 2, n_ab, out=np.zeros_like(sxx), where=n_ab > 0), 0.0)
+    denom = np.sqrt(var_a * var_a.T)
+    cor = np.divide(cov_num, denom, out=np.zeros_like(cov_num), where=(n_ab >= 2.0) & (denom > 0.0))
+    cor = np.clip(cor, -1.0, 1.0)
+    np.fill_diagonal(cor, 1.0)
+    return cor
+
+
+def _pc1_ev1_and_loadings_from_cor(cor_arr: np.ndarray) -> tuple[float, np.ndarray]:
+    cor_pd = ensure_positive_definite(cor_arr)
+    eigvals, eigvecs = np.linalg.eigh(cor_pd)
+    top_idx = int(np.argsort(eigvals)[::-1][0])
+    ev1 = float(eigvals[top_idx])
+    pc1 = eigvecs[:, top_idx] * np.sqrt(max(ev1, 0.0))
+    return ev1, pc1
+
+
 def _pca_leave_one_column_stability(
     residual_matrix_clean: pd.DataFrame,
     full_eigenvalues: np.ndarray,
@@ -7852,28 +8192,44 @@ def _pca_leave_one_column_stability(
             "LOOPC1MedianAbsLoadingCorrelation": np.nan,
             "LOOPC1MinAbsLoadingCorrelation": np.nan,
         }
-    columns = list(residual_matrix_clean.columns)
-    if len(columns) > PCA_STABILITY_LOO_MAX_COLUMNS:
-        columns = columns[:PCA_STABILITY_LOO_MAX_COLUMNS]
+    clean_df = residual_matrix_clean.dropna(axis=1, how="all")
+    n_total_cols = int(clean_df.shape[1])
+    if n_total_cols < 3 or clean_df.shape[0] < 2:
+        return {
+            "LOOColumnsEvaluated": 0,
+            "LOOEV1Min": np.nan,
+            "LOOEV1Max": np.nan,
+            "LOOEV1MaxAbsDelta": np.nan,
+            "LOOEV1ShareMin": np.nan,
+            "LOOEV1ShareMax": np.nan,
+            "LOOEV1ShareMaxAbsDelta": np.nan,
+            "LOOPC1MedianAbsLoadingCorrelation": np.nan,
+            "LOOPC1MinAbsLoadingCorrelation": np.nan,
+        }
+    mat_full = clean_df.to_numpy(dtype=float)
+    raw_cor_full = _pairwise_corr_matrix_numpy(mat_full)
+    full_pc1_aligned = pd.to_numeric(full_loadings["PC1"].reindex(clean_df.columns), errors="coerce").to_numpy(dtype=float)
+
+    n_eval = min(n_total_cols, int(PCA_STABILITY_LOO_MAX_COLUMNS))
     ev1_values: list[float] = []
     ev1_shares: list[float] = []
     loading_corrs: list[float] = []
     full_ev1 = float(full_eigenvalues[0])
     full_ev1_share = float(full_ev1 / residual_matrix_clean.shape[1]) if residual_matrix_clean.shape[1] else np.nan
-    for col in columns:
-        reduced = residual_matrix_clean.drop(columns=[col], errors="ignore")
-        core = _pca_core_from_residual_matrix(reduced)
-        if not core:
+    all_idx = np.arange(n_total_cols)
+
+    for drop_j in range(n_eval):
+        keep_idx = all_idx[all_idx != drop_j]
+        if keep_idx.size < 2:
             continue
-        eig = np.asarray(core.get("eigenvalues", []), dtype=float)
-        load = core.get("loadings")
-        if eig.size:
-            ev1_values.append(float(eig[0]))
-            ev1_shares.append(float(eig[0] / reduced.shape[1]) if reduced.shape[1] else np.nan)
-        if isinstance(load, pd.DataFrame) and "PC1" in load.columns:
-            corr = _abs_loading_correlation(full_loadings["PC1"].drop(index=[col], errors="ignore"), load["PC1"])
-            if np.isfinite(corr):
-                loading_corrs.append(float(corr))
+        sub_cor = raw_cor_full[np.ix_(keep_idx, keep_idx)]
+        ev1, pc1 = _pc1_ev1_and_loadings_from_cor(sub_cor)
+        ev1_values.append(ev1)
+        ev1_shares.append(float(ev1 / keep_idx.size))
+        corr = _abs_loading_corr_arrays(full_pc1_aligned[keep_idx], pc1)
+        if np.isfinite(corr):
+            loading_corrs.append(float(corr))
+
     ev_arr = np.asarray(ev1_values, dtype=float)
     share_arr = np.asarray(ev1_shares, dtype=float)
     corr_arr = np.asarray(loading_corrs, dtype=float)
@@ -7918,25 +8274,25 @@ def _pca_row_bootstrap_stability(
     work = residual_matrix_clean
     if work.shape[1] > PCA_STABILITY_BOOTSTRAP_MAX_COLUMNS:
         work = work.iloc[:, :PCA_STABILITY_BOOTSTRAP_MAX_COLUMNS]
-    full_pc1 = full_loadings["PC1"].reindex(work.columns)
+    work_arr = work.to_numpy(dtype=float)
+    full_pc1_arr = pd.to_numeric(full_loadings["PC1"].reindex(work.columns), errors="coerce").to_numpy(dtype=float)
     rng = np.random.default_rng(PCA_STABILITY_BOOTSTRAP_SEED)
     ev1_values: list[float] = []
     loading_corrs: list[float] = []
-    n_rows = int(work.shape[0])
+    n_rows = int(work_arr.shape[0])
     for _ in range(PCA_STABILITY_BOOTSTRAP_REPS):
-        idx = rng.integers(0, n_rows, size=n_rows)
-        boot = work.iloc[idx].reset_index(drop=True)
-        core = _pca_core_from_residual_matrix(boot)
-        if not core:
+        b_idx = rng.integers(0, n_rows, size=n_rows)
+        sample = work_arr[b_idx]
+        nonempty_cols = np.any(np.isfinite(sample), axis=0)
+        if int(np.sum(nonempty_cols)) < 2:
             continue
-        eig = np.asarray(core.get("eigenvalues", []), dtype=float)
-        load = core.get("loadings")
-        if eig.size:
-            ev1_values.append(float(eig[0]))
-        if isinstance(load, pd.DataFrame) and "PC1" in load.columns:
-            corr = _abs_loading_correlation(full_pc1, load["PC1"])
-            if np.isfinite(corr):
-                loading_corrs.append(float(corr))
+        sample_sub = sample[:, nonempty_cols]
+        cor_boot = _pairwise_corr_matrix_numpy(sample_sub)
+        ev1, pc1 = _pc1_ev1_and_loadings_from_cor(cor_boot)
+        ev1_values.append(ev1)
+        corr = _abs_loading_corr_arrays(full_pc1_arr[nonempty_cols], pc1)
+        if np.isfinite(corr):
+            loading_corrs.append(float(corr))
     ev_arr = np.asarray(ev1_values, dtype=float)
     corr_arr = np.asarray(loading_corrs, dtype=float)
     ev_mean = float(np.nanmean(ev_arr)) if ev_arr.size else np.nan

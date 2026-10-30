@@ -260,6 +260,50 @@ if "--doctor" in sys.argv and importlib.util.find_spec("streamlit") is None:
 
 import streamlit as st
 
+_REAL_STREAMLIT_MODULE = st
+
+
+def _interactive_panel_fragment(fn):
+    """Run self-contained explorer panels as partial-rerun Streamlit fragments when live."""
+    fragment_decorator = getattr(st, "fragment", None)
+    if not callable(fragment_decorator):
+        return fn
+    fragment_fn = fragment_decorator(fn)
+
+    @wraps(fn)
+    def _wrapped(*args, **kwargs):
+        if st is not _REAL_STREAMLIT_MODULE:
+            return fn(*args, **kwargs)
+        try:
+            from streamlit.runtime.scriptrunner_utils.script_run_context import get_script_run_ctx
+
+            if get_script_run_ctx(suppress_warning=True) is None:
+                return fn(*args, **kwargs)
+        except Exception:
+            pass
+        return fragment_fn(*args, **kwargs)
+
+    return _wrapped
+
+
+def _fast_dataframe_cache_token(df: pd.DataFrame | None) -> str:
+    """Compute a fast C-level type-exact SHA-256 token for rerun cache lookup."""
+    if df is None:
+        return "none"
+    if not isinstance(df, pd.DataFrame):
+        raise TypeError("_fast_dataframe_cache_token requires a DataFrame or None")
+    try:
+        return hashlib.sha256(pickle.dumps(df, protocol=pickle.HIGHEST_PROTOCOL)).hexdigest()
+    except Exception:
+        return f"fallback:{dataframe_fingerprint(df, length=64)}"
+
+
+@st.cache_data(show_spinner=False, max_entries=16)
+def _cached_canonical_dataframe_fingerprint(_df: pd.DataFrame, cache_token: str, length: int = 16) -> str | None:
+    """Return the exact canonical v2 DataFrame fingerprint without rescanning unchanged rows."""
+    _ = cache_token
+    return dataframe_fingerprint(_df, length=length)
+
 
 APP_BUILD_ENV_KEYS = (
     "STREAMLIT_GIT_COMMIT_HASH",
@@ -6552,6 +6596,13 @@ def auto_detect_column_roles(df: pd.DataFrame) -> dict:
         "suggested_facets": suggested_facets,
         "confidence": confidence,
     }
+
+
+@st.cache_data(show_spinner=False, max_entries=16)
+def _cached_auto_detect_column_roles(_df: pd.DataFrame, cache_token: str) -> dict:
+    """Cache column-role auto-detection across widget reruns on unchanged tables."""
+    _ = cache_token
+    return auto_detect_column_roles(_df)
 
 
 def truncate_label(value, width=28):
@@ -24295,6 +24346,7 @@ def _render_guided_diagnostics_section(
         show_fit_details_section(diagnostics, result=result, all_bias_results=all_bias_results or {})
 
 
+@_interactive_panel_fragment
 def _render_guided_figures_section(
     result: dict,
     diagnostics: dict,
@@ -26094,6 +26146,7 @@ def _minimum_within_facet_logit_gap(facet_est: pd.DataFrame) -> float:
     return min(gaps) if gaps else float("inf")
 
 
+@_interactive_panel_fragment
 def show_wright_map_section(result: dict, diagnostics: dict) -> None:
     """Render both the classic Wright Map and the FACETS-style yardstick."""
     header_cols = st.columns([5, 1])
@@ -26964,6 +27017,38 @@ def _history_entry_has_snapshot(entry: dict) -> bool:
     return bool(isinstance(entry, dict) and isinstance(entry.get("output_snapshot"), dict) and entry.get("output_snapshot"))
 
 
+def _compact_output_snapshot_for_history(output: dict) -> dict:
+    """Copy a run output while omitting deterministically regenerable row-level files."""
+    import copy as _copy
+
+    can_regenerate_row_files = isinstance(output.get("result"), dict) and isinstance(
+        output["result"].get("prep"), dict
+    )
+    snapshot: dict = {}
+    for key, value in output.items():
+        if can_regenerate_row_files and key in ("scorefile", "residuals") and isinstance(value, pd.DataFrame):
+            snapshot[f"_history_omitted_{key}"] = True
+            continue
+        snapshot[key] = _copy.deepcopy(value)
+    return snapshot
+
+
+def _rehydrate_history_output_snapshot(snapshot: dict) -> dict:
+    """Restore an opted-in history snapshot, regenerating omitted derived row files."""
+    import copy as _copy
+
+    restored = _copy.deepcopy(snapshot)
+    omitted_scorefile = bool(restored.pop("_history_omitted_scorefile", False))
+    omitted_residuals = bool(restored.pop("_history_omitted_residuals", False))
+    res = restored.get("result")
+    if isinstance(res, dict) and isinstance(res.get("prep"), dict):
+        if omitted_scorefile and "scorefile" not in restored:
+            restored["scorefile"] = compute_scorefile(res)
+        if omitted_residuals and "residuals" not in restored:
+            restored["residuals"] = compute_residual_file(res)
+    return restored
+
+
 def record_run_in_history(*, output: dict, elapsed_sec: float) -> dict:
     """Push a compact metadata entry for this run onto the session history stack.
 
@@ -27016,7 +27101,7 @@ def record_run_in_history(*, output: dict, elapsed_sec: float) -> dict:
         "bic_sample_size": like_row.get("BICSampleSize", np.nan),
         "bic_sample_size_basis": like_row.get("BICSampleSizeBasis", "unavailable"),
         "snapshot_available": bool(store_snapshot and isinstance(output, dict)),
-        "output_snapshot": _copy.deepcopy(output) if store_snapshot and isinstance(output, dict) else {},
+        "output_snapshot": _compact_output_snapshot_for_history(output) if store_snapshot and isinstance(output, dict) else {},
     }
     history = list(st.session_state.get(_RUN_HISTORY_KEY, []))
     history.append(entry)
@@ -27033,10 +27118,9 @@ def get_run_history() -> list[dict]:
 
 def restore_run_from_history(run_id: str) -> bool:
     """Restore a past run's output snapshot into the live facets_mode_output."""
-    import copy as _copy
     for entry in get_run_history():
         if entry.get("run_id") == run_id and _history_entry_has_snapshot(entry):
-            st.session_state["facets_mode_output"] = _copy.deepcopy(entry["output_snapshot"])
+            st.session_state["facets_mode_output"] = _rehydrate_history_output_snapshot(entry["output_snapshot"])
             st.session_state["_facets_mode_restored_snapshot"] = {
                 "run_id": entry.get("run_id"),
                 "timestamp": entry.get("timestamp"),
@@ -27773,6 +27857,28 @@ def build_readiness_report(
         "n_issues": sum(1 for c in checks if c["severity"] == "issue"),
         "n_warnings": sum(1 for c in checks if c["severity"] == "warning"),
     }
+
+
+@st.cache_data(show_spinner=False, max_entries=32)
+def _cached_build_readiness_report(
+    _df: pd.DataFrame,
+    cache_token: str,
+    *,
+    person_col: str,
+    score_col: str,
+    facet_cols_key: tuple[str, ...],
+    weight_col: str | None,
+    lang: str,
+) -> dict:
+    """Cache pre-estimation readiness checks across reruns when data, mapping, and locale match."""
+    _ = (cache_token, lang)
+    return build_readiness_report(
+        data=_df,
+        person_col=person_col,
+        score_col=score_col,
+        facet_cols=list(facet_cols_key),
+        weight_col=weight_col,
+    )
 
 
 def _input_readiness_priority_check(report: dict) -> dict:
@@ -30883,10 +30989,11 @@ def run_facets_mode(
         return
 
     guess_col = core["guess_col"]
+    _data_cache_token = _fast_dataframe_cache_token(data)
     # Smart column-role detection: multilingual keyword + dtype + cardinality
     # cues. Falls back to legacy keyword-only guess_col when auto-detection
     # has no opinion (e.g., all-numeric headers like "1", "2", "3").
-    auto_roles = auto_detect_column_roles(data)
+    auto_roles = _cached_auto_detect_column_roles(data, _data_cache_token)
     person_default = auto_roles.get("person") or guess_col(
         cols, ["person", "participant", "student"], fallback=0
     )
@@ -31961,7 +32068,7 @@ def run_facets_mode(
     if help_surface_active:
         return
 
-    current_input_data_fingerprint = dataframe_fingerprint(data)
+    current_input_data_fingerprint = _cached_canonical_dataframe_fingerprint(data, _data_cache_token)
     current_anchor_source_fingerprint = table_source_fingerprint(
         text_value=anchor_text,
         file_input=anchor_file,
@@ -31978,9 +32085,14 @@ def run_facets_mode(
         if population_enabled else None
     )
 
-    readiness_report = build_readiness_report(
-        data=data, person_col=person_col, score_col=score_col,
-        facet_cols=list(facet_cols), weight_col=weight_col,
+    readiness_report = _cached_build_readiness_report(
+        data,
+        _data_cache_token,
+        person_col=person_col,
+        score_col=score_col,
+        facet_cols_key=tuple(facet_cols),
+        weight_col=weight_col,
+        lang=str(st.session_state.get("lang", DEFAULT_LANG) or DEFAULT_LANG),
     )
     input_blocked = readiness_report.get("overall") == "issue"
     setup_surface, main_run_clicked = render_analysis_setup_workspace(
@@ -32466,34 +32578,39 @@ def run_facets_mode(
         stale_reasons.append("bias estimation option")
     if out.get("_selected_bias_pair") != selected_bias_pair:
         stale_reasons.append("selected bias pair")
+    report_table_refresh_reasons: list[str] = []
+    presentation_refresh_reasons: list[str] = []
     if out.get("_totalscore") is not None and out["_totalscore"] != bool(totalscore):
-        stale_reasons.append("FACETS total-score reporting option")
+        report_table_refresh_reasons.append("FACETS total-score reporting option")
     if out.get("_omit_unobserved") is not None and out["_omit_unobserved"] != bool(omit_unobserved):
-        stale_reasons.append("FACETS unobserved-element reporting option")
+        report_table_refresh_reasons.append("FACETS unobserved-element reporting option")
     if out.get("_xtreme") is not None and float(out["_xtreme"]) != float(xtreme):
-        stale_reasons.append("Xtreme correction")
+        report_table_refresh_reasons.append("Xtreme correction")
     if out.get("_umean") is not None and float(out["_umean"]) != float(umean):
-        stale_reasons.append("Umean report scaling")
+        report_table_refresh_reasons.append("Umean report scaling")
     if out.get("_uscale") is not None and float(out["_uscale"]) != float(uscale):
-        stale_reasons.append("Uscale report scaling")
+        report_table_refresh_reasons.append("Uscale report scaling")
     if out.get("_udecimals") is not None and int(out["_udecimals"]) != int(udecimals):
-        stale_reasons.append("report decimal places")
+        report_table_refresh_reasons.append("report decimal places")
+    presentation_refresh_reasons.extend(report_table_refresh_reasons)
     if (
         out.get("_render_interactive_plots") is not None
         and out["_render_interactive_plots"] != bool(render_interactive_plots)
     ):
-        stale_reasons.append("interactive plot rendering option")
+        presentation_refresh_reasons.append("interactive plot rendering option")
     if (
         out.get("_generate_figure_exports") is not None
         and out["_generate_figure_exports"] != bool(generate_figure_exports)
     ):
-        stale_reasons.append("figure export bundle option")
+        presentation_refresh_reasons.append("figure export bundle option")
     current_visualization_preferences = get_visualization_preferences()
     if (
         out.get("_visualization_preferences") is not None
         and out["_visualization_preferences"] != current_visualization_preferences
     ):
-        stale_reasons.append("visualization preferences")
+        presentation_refresh_reasons.append("visualization preferences")
+    if isinstance(restored_snapshot, dict) and presentation_refresh_reasons:
+        stale_reasons.extend(presentation_refresh_reasons)
     if stale_reasons:
         if isinstance(restored_snapshot, dict):
             banner_cols = st.columns([4, 1])
@@ -32526,6 +32643,30 @@ def run_facets_mode(
                 st.rerun()
             render_run_history_panel()
             return
+    elif presentation_refresh_reasons:
+        # Presentation-only scaling and figure-rendering preferences do not alter
+        # calibration parameters, likelihood, or diagnostics; refresh derived
+        # display tables in place without mutating result/diagnostics provenance.
+        if report_table_refresh_reasons:
+            out["report_tables"] = core["calc_facets_report_tbls"](
+                out["result"],
+                out["diagnostics"],
+                totalscore=totalscore,
+                umean=umean,
+                uscale=uscale,
+                udecimals=udecimals,
+                omit_unobserved=omit_unobserved,
+                xtreme=xtreme,
+            )
+        out["_totalscore"] = bool(totalscore)
+        out["_omit_unobserved"] = bool(omit_unobserved)
+        out["_xtreme"] = float(xtreme)
+        out["_umean"] = float(umean)
+        out["_uscale"] = float(uscale)
+        out["_udecimals"] = int(udecimals)
+        out["_render_interactive_plots"] = bool(render_interactive_plots)
+        out["_generate_figure_exports"] = bool(generate_figure_exports)
+        out["_visualization_preferences"] = current_visualization_preferences
 
     result = out["result"]
     diagnostics = out["diagnostics"]
@@ -43206,6 +43347,7 @@ def render_g_d_study_section(result: dict) -> None:
     render_g_d_study_bundle(compute_generalizability_study(result), key_prefix="fitted_gd")
 
 
+@_interactive_panel_fragment
 def render_g_d_study_bundle(bundle: dict, *, key_prefix: str) -> None:
     """Display and export the same qualified bundle from either data entry."""
     st.subheader(t("report_tables.g_d_study_subheader"))
@@ -48137,6 +48279,7 @@ def _draw_misfit_ranking(
 # Visuals tab (Category Probability Curves, Pathway Map, Observed vs Expected)
 # ---------------------------------------------------------------------------
 
+@_interactive_panel_fragment
 def show_visuals_section(result: dict, diagnostics: dict, *, force_full: bool = False) -> None:
     """Comprehensive visualization suite."""
     st.caption(t("visuals_top.intro_caption"))
@@ -52251,6 +52394,7 @@ def show_classical_dif_section(result: dict | None, core: dict) -> None:
         st.dataframe(classical_dif_help_table(), width="stretch", hide_index=True)
 
 
+@_interactive_panel_fragment
 def show_bias_section(
     bias_results: dict | None,
     core: dict,
@@ -52606,6 +52750,7 @@ def show_bias_section(
 # Categories/Steps tab
 # ---------------------------------------------------------------------------
 
+@_interactive_panel_fragment
 def show_categories_section(result: dict, diagnostics: dict, core: dict) -> None:
     """Render category diagnostics and step ordering checks."""
     st.subheader(t("categories_steps.category_diagnostics_subheader"))
@@ -53078,6 +53223,7 @@ def show_facet_dashboard(
 # Inter-rater Agreement tab
 # ---------------------------------------------------------------------------
 
+@_interactive_panel_fragment
 def show_agreement_section(
     result: dict, diagnostics: dict, facet_cols: list[str], core: dict
 ) -> None:
@@ -57968,9 +58114,26 @@ def _render_downloads(
             "portable_self_contained_jmle_blockers": script_support.get("portable_blockers"),
             "bias_mode": config.get("bias_mode"),
             "selected_bias_pair": config.get("selected_bias_pair"),
-            "render_interactive_plots": config.get("render_interactive_plots"),
-            "generate_figure_exports": config.get("generate_figure_exports"),
-            "visualization_preferences": config.get("visualization_preferences", get_visualization_preferences()),
+            "render_interactive_plots": (
+                st.session_state["facets_mode_output"].get("_render_interactive_plots")
+                if isinstance(st.session_state.get("facets_mode_output"), dict)
+                and st.session_state["facets_mode_output"].get("result") is result
+                and st.session_state["facets_mode_output"].get("_render_interactive_plots") is not None
+                else config.get("render_interactive_plots")
+            ),
+            "generate_figure_exports": (
+                bool(generate_figures)
+                if isinstance(st.session_state.get("facets_mode_output"), dict)
+                and st.session_state["facets_mode_output"].get("result") is result
+                else config.get("generate_figure_exports")
+            ),
+            "visualization_preferences": (
+                st.session_state["facets_mode_output"].get("_visualization_preferences")
+                if isinstance(st.session_state.get("facets_mode_output"), dict)
+                and st.session_state["facets_mode_output"].get("result") is result
+                and st.session_state["facets_mode_output"].get("_visualization_preferences") is not None
+                else config.get("visualization_preferences", get_visualization_preferences())
+            ),
             "converged": _output_qualification.optimizer_termination_established(result),
             "inference_hold_reason": _output_qualification.calibration_inference_hold_reason(result),
             "convergence_message": str(getattr(result.get("opt"), "message", "")),
@@ -65645,13 +65808,16 @@ def _render_registered_popover_help_action(topic_key: str) -> bool:
     projection_id = _popover_return_projection_id(topic_key)
     if help_link_id is None or projection_id is None:
         return False
-    st.button(
+    if st.button(
         t("help_nav.open_full_guide"),
         key=f"mfrm_popover_open_full_guide_{topic_key}",
         on_click=_open_registered_help_link,
         args=(help_link_id, projection_id),
         use_container_width=True,
-    )
+    ):
+        rerun_fn = getattr(st, "rerun", None)
+        if callable(rerun_fn):
+            rerun_fn()
     return True
 
 

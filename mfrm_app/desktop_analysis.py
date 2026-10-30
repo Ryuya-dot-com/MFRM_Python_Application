@@ -1,11 +1,13 @@
 """Desktop calculation requests and retained results, independent of either UI."""
 from copy import deepcopy
 from datetime import datetime, timezone
+import json
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
 
-from mfrm_app import basic_analysis as basic, bias_analysis as bias, engine
+from mfrm_app import basic_analysis as basic, bias_analysis as bias, engine, reporting_facts
 from mfrm_app import generalizability as gd, project, structural_intervals as intervals, joint_interaction as joint
 
 
@@ -298,6 +300,309 @@ def _connectivity_and_anchor_table(analysis) -> tuple[str, pd.DataFrame, str] | 
     return ("Connectivity and Scale Linking", pd.DataFrame(rows), note)
 
 
+def _blank_na_columns(frame: pd.DataFrame) -> pd.DataFrame:
+    out = frame.copy()
+    for col in out.columns[out.isna().any()]:
+        out[col] = out[col].astype(object).where(out[col].notna(), "")
+    return out
+
+
+def _reliability_summary_table(analysis) -> tuple[str, pd.DataFrame, str] | None:
+    if "result" not in analysis:
+        return None
+    diagnostics = analysis.get("diagnostics")
+    if not isinstance(diagnostics, dict) or not isinstance(diagnostics.get("reliability"), pd.DataFrame):
+        return None
+    locale_path = Path(__file__).resolve().parents[1] / "locales" / "en.json"
+    rel_note = json.loads(locale_path.read_text(encoding="utf-8"))["metric_notes"]["reliability"]
+    table, note = reporting_facts.publication_reliability_table(
+        analysis["result"], diagnostics, rel_note=rel_note
+    )
+    if table.empty:
+        return None
+    note = note.replace(
+        "Full notes and original technical values are retained in the reliability CSV.",
+        "Full notes and original technical values are retained in this project.",
+    )
+    return ("Separation and Reliability by Facet", table, note)
+
+
+def _agreement_and_alpha_tables(analysis) -> list[tuple[str, pd.DataFrame, str]]:
+    if "result" not in analysis:
+        return []
+    result = analysis["result"]
+    diagnostics = analysis.get("diagnostics")
+    if not isinstance(diagnostics, dict):
+        return []
+    ia_bundle = diagnostics.get("interrater_agreement")
+    ia_summary = ia_bundle.get("summary") if isinstance(ia_bundle, dict) else None
+    ia_pairs = ia_bundle.get("pairs_by_facet", {}) if isinstance(ia_bundle, dict) else {}
+    alpha_tbl = diagnostics.get("krippendorff_alpha")
+    has_ia = isinstance(ia_summary, pd.DataFrame) and not ia_summary.empty
+    has_alpha = isinstance(alpha_tbl, pd.DataFrame) and not alpha_tbl.empty
+    if not has_ia and not has_alpha:
+        return []
+
+    cal_hold = bool(reporting_facts.current_manuscript_hold(result))
+    facet_names = list(result.get("config", {}).get("facet_names", []) or [])
+    rows = []
+    for facet in facet_names:
+        ia_row = (
+            ia_summary.loc[ia_summary["RaterFacet"].astype(str) == str(facet)].head(1)
+            if has_ia and "RaterFacet" in ia_summary.columns
+            else pd.DataFrame()
+        )
+        alpha_sub = (
+            alpha_tbl.loc[alpha_tbl["Facet"].astype(str) == str(facet)]
+            if has_alpha and "Facet" in alpha_tbl.columns
+            else pd.DataFrame()
+        )
+        if ia_row.empty and alpha_sub.empty:
+            continue
+
+        def _alpha_val(metric_name: str) -> float:
+            if alpha_sub.empty or "DistanceMetric" not in alpha_sub.columns:
+                return np.nan
+            m = alpha_sub.loc[alpha_sub["DistanceMetric"].astype(str).str.lower() == metric_name]
+            if m.empty or "KrippendorffAlpha" not in m.columns:
+                return np.nan
+            v = pd.to_numeric(m["KrippendorffAlpha"].iloc[0], errors="coerce")
+            return round(float(v), 3) if pd.notna(v) and np.isfinite(v) else np.nan
+
+        pairable_units = np.nan
+        if not alpha_sub.empty and "PairableUnits" in alpha_sub.columns:
+            pu = pd.to_numeric(alpha_sub["PairableUnits"].iloc[0], errors="coerce")
+            if pd.notna(pu) and np.isfinite(pu):
+                pairable_units = int(pu)
+
+        if not ia_row.empty:
+            r0 = ia_row.iloc[0]
+            exact_pct = round(100.0 * float(r0["ExactAgreement"]), 2) if pd.notna(r0.get("ExactAgreement")) else np.nan
+            exp_pct = (
+                np.nan
+                if cal_hold or pd.isna(r0.get("ExpectedExactAgreement"))
+                else round(100.0 * float(r0["ExpectedExactAgreement"]), 2)
+            )
+            adj_pct = round(100.0 * float(r0["AdjacentAgreement"]), 2) if pd.notna(r0.get("AdjacentAgreement")) else np.nan
+            mad = round(float(r0["MeanAbsDiff"]), 3) if pd.notna(r0.get("MeanAbsDiff")) else np.nan
+            corr = round(float(r0["MeanCorr"]), 3) if pd.notna(r0.get("MeanCorr")) else np.nan
+            elements = int(r0["Elements"]) if pd.notna(r0.get("Elements")) else np.nan
+            contexts = int(r0["Contexts"]) if pd.notna(r0.get("Contexts")) else np.nan
+            total_pairs = int(r0["TotalPairs"]) if pd.notna(r0.get("TotalPairs")) else np.nan
+        else:
+            r_al = alpha_sub.iloc[0]
+            exact_pct = exp_pct = adj_pct = mad = corr = contexts = total_pairs = np.nan
+            elements = int(r_al["Elements"]) if pd.notna(r_al.get("Elements")) else np.nan
+
+        rows.append({
+            "Facet": str(facet),
+            "Elements": elements,
+            "SharedContexts": contexts,
+            "ComparedPairs": total_pairs,
+            "ExactPct": exact_pct,
+            "ExpectedExactPct": exp_pct,
+            "AdjacentPct": adj_pct,
+            "MeanAbsDiff": mad,
+            "MeanCorr": corr,
+            "AlphaOrdinal": _alpha_val("ordinal"),
+            "AlphaInterval": _alpha_val("interval"),
+            "AlphaNominal": _alpha_val("nominal"),
+            "PairableUnits": pairable_units,
+        })
+
+    out_tables: list[tuple[str, pd.DataFrame, str]] = []
+    if rows:
+        summary_df = _blank_na_columns(pd.DataFrame(rows))
+        note = (
+            "Observed exact and adjacent (+/-1 category) agreement percentages across shared rating contexts, "
+            "model-expected exact agreement percentage under independence given fitted category probabilities, "
+            "and Krippendorff's alpha (ordinal, interval, nominal). Agreement describes raw-score consistency "
+            "across overlapping assignments; it does not adjust for severity differences or replace MFRM separation."
+        )
+        if cal_hold:
+            note += " Model-expected exact agreement is withheld while calibration inference is on hold."
+        out_tables.append(("Inter-rater Agreement and Krippendorff's Alpha", summary_df, note))
+
+    if isinstance(ia_pairs, dict) and ia_pairs:
+        from mfrm_app.design_assignment import infer_rater_facet
+
+        cfg = result.get("config", {})
+        roles = cfg.get("facet_roles", {})
+        mapping = infer_rater_facet(
+            facet_names,
+            configured_rater_facet=(cfg.get("rater_facet") or (roles.get("rater") if isinstance(roles, dict) else None)),
+        )
+        primary = mapping.get("rater_facet")
+        if not primary or primary not in ia_pairs or not isinstance(ia_pairs[primary], pd.DataFrame) or ia_pairs[primary].empty:
+            primary = next(
+                (f for f in facet_names if isinstance(ia_pairs.get(f), pd.DataFrame) and not ia_pairs[f].empty),
+                None,
+            )
+        if primary is not None:
+            raw_pairs = ia_pairs[primary].copy()
+            pair_df = pd.DataFrame({
+                "Element1": raw_pairs["Element1"].astype(str),
+                "Element2": raw_pairs["Element2"].astype(str),
+                "SharedContexts": pd.to_numeric(raw_pairs["N"], errors="coerce").astype("Int64"),
+                "ExactPct": (100.0 * pd.to_numeric(raw_pairs["Exact"], errors="coerce")).round(2),
+                "ExpectedExactPct": (
+                    pd.Series(np.nan, index=raw_pairs.index, dtype=float)
+                    if cal_hold
+                    else (100.0 * pd.to_numeric(raw_pairs["ExpectedExact"], errors="coerce")).round(2)
+                ),
+                "AdjacentPct": (100.0 * pd.to_numeric(raw_pairs["Adjacent"], errors="coerce")).round(2),
+                "MeanDiff": pd.to_numeric(raw_pairs["MeanDiff"], errors="coerce").round(3),
+                "MAD": pd.to_numeric(raw_pairs["MAD"], errors="coerce").round(3),
+                "Corr": pd.to_numeric(raw_pairs["Corr"], errors="coerce").round(3),
+            })
+            pair_note = (
+                f"Pairwise observed and model-expected agreement across shared contexts for {primary}. "
+                "Pairs without shared contexts are omitted."
+            )
+            if cal_hold:
+                pair_note += " Model-expected exact agreement is withheld while calibration inference is on hold."
+            out_tables.append((f"Pairwise Agreement: {primary}", _blank_na_columns(pair_df), pair_note))
+
+    return out_tables
+
+
+def _rescaled_measures_table(analysis) -> tuple[str, pd.DataFrame, str] | None:
+    if "result" not in analysis:
+        return None
+    settings = analysis.get("fit_settings", {})
+    umean = float(settings.get("umean", 0.0))
+    uscale = float(settings.get("uscale", 1.0))
+    if (umean, uscale) == (0.0, 1.0):
+        return None
+    result = analysis["result"]
+    diagnostics = analysis.get("diagnostics", {})
+    pub, _ = reporting_facts.publication_measure_table(result, diagnostics, fit_note="")
+    if pub.empty:
+        return None
+    raw_measures = engine.qualify_measure_uncertainty(diagnostics.get("measures"), result)
+    est_visible = pub["Estimate"].astype(str).ne("")
+    se_visible = pub["SE / SD"].astype(str).ne("") if "SE / SD" in pub.columns else pd.Series(False, index=pub.index)
+    lo_visible = pub["Lower"].astype(str).ne("") if "Lower" in pub.columns else pd.Series(False, index=pub.index)
+    hi_visible = pub["Upper"].astype(str).ne("") if "Upper" in pub.columns else pd.Series(False, index=pub.index)
+
+    raw_est = pd.to_numeric(raw_measures["Estimate"], errors="coerce")
+    raw_se = pd.to_numeric(raw_measures.get("SE", pd.Series(np.nan, index=raw_measures.index)), errors="coerce")
+    raw_lo = pd.to_numeric(raw_measures.get("CI_Lower", pd.Series(np.nan, index=raw_measures.index)), errors="coerce")
+    raw_hi = pd.to_numeric(raw_measures.get("CI_Upper", pd.Series(np.nan, index=raw_measures.index)), errors="coerce")
+
+    out = pd.DataFrame({
+        "Facet": pub["Facet"].astype(str),
+        "Level": pub["Level"].astype(str),
+        "LogitEstimate": raw_est.where(est_visible, np.nan).round(3),
+        "ScaledMeasure": (raw_est * uscale + umean).where(est_visible, np.nan).round(3),
+        "ScaledSE": (raw_se * uscale).where(se_visible, np.nan).round(3),
+        "ScaledLower": (raw_lo * uscale + umean).where(lo_visible, np.nan).round(3),
+        "ScaledUpper": (raw_hi * uscale + umean).where(hi_visible, np.nan).round(3),
+    })
+
+    report_tables = analysis.get("report_tables", {})
+    if isinstance(report_tables, dict) and report_tables:
+        aux_frames = []
+        for f_name, f_tbl in report_tables.items():
+            if isinstance(f_tbl, pd.DataFrame) and "Level" in f_tbl.columns:
+                sub = pd.DataFrame({
+                    "Facet": str(f_name),
+                    "Level": f_tbl["Level"].astype(str),
+                    "FairM": pd.to_numeric(f_tbl.get("FairM"), errors="coerce").round(3),
+                    "ObservedAverage": pd.to_numeric(f_tbl.get("ObservedAverage"), errors="coerce").round(3),
+                    "Anchor": f_tbl.get("Anchor", pd.Series("", index=f_tbl.index)).fillna("").astype(str),
+                })
+                aux_frames.append(sub)
+        if aux_frames:
+            aux_all = pd.concat(aux_frames, ignore_index=True)
+            out = out.merge(aux_all, on=["Facet", "Level"], how="left")
+
+    out["Basis"] = pub["Basis"].astype(str).to_numpy()
+    note = (
+        f"Linear score rescaling (Umean = {umean:g}, Uscale = {uscale:g}): applies M' = Umean + Uscale * M and "
+        "SE' = Uscale * SE to canonical logit estimates (separation and reliability ratios are affine-invariant). "
+        "Baseline Measures and Fit, Wright maps, specified intervals and joint interactions remain in canonical logits. "
+        "Qualification Basis and withheld cells match Measures and Fit."
+    )
+    return ("Rescaled Measures (Umean / Uscale)", _blank_na_columns(out), note)
+
+
+def _pca_tables(analysis) -> list[tuple[str, pd.DataFrame, str]]:
+    if "result" not in analysis:
+        return []
+    diagnostics = analysis.get("diagnostics", {})
+    if not isinstance(diagnostics, dict) or not diagnostics.get("pca_enabled"):
+        return []
+    pca = diagnostics.get("pca")
+    if not isinstance(pca, dict) or len(pca.get("eigenvalues", [])) == 0:
+        unavail = pd.DataFrame([{
+            "Status": "Unavailable",
+            "Reason": "Fewer than 2 estimable facet-combination residual columns or insufficient residual variance.",
+        }])
+        return [(
+            "Residual PCA: Eigenvalues and Stability",
+            unavail,
+            "Optional standardized-residual PCA was requested, but the retained rating design did not produce a valid residual correlation matrix.",
+        )]
+
+    ev = np.asarray(pca["eigenvalues"], dtype=float)
+    vp = np.asarray(pca["variance_pct"], dtype=float)
+    cum = np.cumsum(vp)
+    stab = pca.get("stability", {}) if isinstance(pca.get("stability"), dict) else {}
+    k = min(10, len(ev))
+    ev_rows = []
+    for idx in range(k):
+        row = {
+            "Component": f"PC{idx + 1}",
+            "Eigenvalue": round(float(ev[idx]), 3),
+            "VariancePct": round(float(vp[idx]), 2),
+            "CumulativePct": round(float(cum[idx]), 2),
+            "StabilityStatus": str(stab.get("PCAStabilityStatus", "")) if idx == 0 else "",
+            "ResidualColumns": int(stab["ResidualColumns"]) if idx == 0 and pd.notna(stab.get("ResidualColumns")) else np.nan,
+            "MissingSharePct": round(100.0 * float(stab["MissingShare"]), 1) if idx == 0 and pd.notna(stab.get("MissingShare")) else np.nan,
+            "LOOEV1Range": (
+                f"{float(stab['LOOEV1Min']):.2f}–{float(stab['LOOEV1Max']):.2f}"
+                if idx == 0 and pd.notna(stab.get("LOOEV1Min")) and pd.notna(stab.get("LOOEV1Max"))
+                else ""
+            ),
+            "BootstrapEV1CI90": (
+                f"{float(stab['BootstrapEV1P05']):.2f}–{float(stab['BootstrapEV1P95']):.2f}"
+                if idx == 0 and pd.notna(stab.get("BootstrapEV1P05")) and pd.notna(stab.get("BootstrapEV1P95"))
+                else ""
+            ),
+            "Flags": str(stab.get("SensitivityFlagSummary", "")) if idx == 0 else "",
+        }
+        ev_rows.append(row)
+
+    ev_note = (
+        "Principal components of standardized observation residuals across facet-combination columns "
+        "(sum of eigenvalues equals residual column count). First-contrast eigenvalues near or above 2.0 "
+        "serve as an inspection prompt for secondary dimensions or local dependence, not an automatic pass/fail test; "
+        "sparse cell overlap and mean-zero residual imputation can inflate contrast eigenvalues."
+    )
+    out = [("Residual PCA: Eigenvalues and Stability", _blank_na_columns(pd.DataFrame(ev_rows)), ev_note)]
+
+    loadings = pca.get("loadings")
+    if isinstance(loadings, pd.DataFrame) and not loadings.empty and "PC1" in loadings.columns:
+        pc1 = pd.to_numeric(loadings["PC1"], errors="coerce")
+        pc2 = pd.to_numeric(loadings["PC2"], errors="coerce") if "PC2" in loadings.columns else pd.Series(np.nan, index=loadings.index)
+        pole = np.where(pc1 >= 0.40, "Positive (>= +0.40)", np.where(pc1 <= -0.40, "Negative (<= -0.40)", ""))
+        load_df = pd.DataFrame({
+            "Combination": loadings.index.astype(str),
+            "PC1": pc1.round(3).to_numpy(),
+            "PC2": pc2.round(3).to_numpy(),
+            "AbsPC1": pc1.abs().round(3).to_numpy(),
+            "ContrastPole": pole,
+        }).sort_values("PC1", ascending=False, kind="mergesort").reset_index(drop=True)
+        load_note = (
+            "Standardized-residual loadings on the first two principal contrasts, ordered from the positive pole "
+            "to the negative pole of PC1 to identify contrasting tasks, criteria, or raters."
+        )
+        out.append(("Residual PCA: First-Contrast Loadings", _blank_na_columns(load_df), load_note))
+
+    return out
+
+
 def preview_gd_design(data, *, object_facet, score_col, random_facets, fixed_condition=None):
     """Non-destructive pre-flight design check for the Desktop G/D-Study setup."""
     random_facets = list(random_facets or [])
@@ -560,4 +865,10 @@ def current_additional_tables(analysis):
                 'Point estimates from the separate joint model; baseline maps and tables retain the original main-effects fit.'))
     if linking := _connectivity_and_anchor_table(analysis):
         tables.append(linking)
+    if rel_tbl := _reliability_summary_table(analysis):
+        tables.append(rel_tbl)
+    tables.extend(_agreement_and_alpha_tables(analysis))
+    if rescaled := _rescaled_measures_table(analysis):
+        tables.append(rescaled)
+    tables.extend(_pca_tables(analysis))
     return tables

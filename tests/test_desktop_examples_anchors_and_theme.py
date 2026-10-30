@@ -1,4 +1,4 @@
-"""Phase E Step 1 tests: 8-scenario gallery, Wide->Long conversion, live connectivity &
+"""Desktop suite tests: 8-scenario gallery, Wide->Long conversion, live connectivity &
 identifiability diagnosis, fixed/group anchor calibration & .mfrm validation, and Desktop UI theme."""
 from __future__ import annotations
 

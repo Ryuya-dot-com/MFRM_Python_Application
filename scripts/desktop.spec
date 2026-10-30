@@ -20,7 +20,7 @@ for name in ("numpy", "pandas", "scipy"):
 
 a = Analysis(
     [str(root / "desktop_app.py")], pathex=[str(root)], binaries=[], datas=datas,
-    hiddenimports=["matplotlib.backends.backend_svg", "matplotlib.backends.backend_tkagg"],
+    hiddenimports=["matplotlib.backends.backend_svg", "matplotlib.backends.backend_tkagg", "mfrm_app.project_portability"],
     hookspath=[], hooksconfig={}, runtime_hooks=[],
     excludes=["streamlit", "plotly", "pytest"], noarchive=False, optimize=0,
     # Runtime qualification hashes the actual sources; load those same files.

@@ -298,17 +298,60 @@ def validate_analysis(analysis):
             raise ProjectError("Stored facets disagree with the fitted result")
         if cfg["model"] == "PCM" and settings.get("step_facet") != cfg.get("step_facet"):
             raise ProjectError("Stored PCM step facet disagrees with the fitted result")
-        if cfg["method"] == "MML" and (
-                settings.get("quad_points") != cfg.get("quad_points")
-                or settings.get("population_prior_sd") != cfg.get("population_prior_sd")
-                or settings.get("estimate_population_sd") is not False
-                or settings.get("mml_engine") != "EM" or cfg.get("mml_engine") != "em"):
-            raise ProjectError("Stored fixed-SD MML settings disagree with the fitted result")
+        if cfg["method"] == "MML":
+            s_eng = settings.get("mml_engine")
+            c_eng = cfg.get("mml_engine")
+            if (settings.get("quad_points") != cfg.get("quad_points")
+                    or settings.get("population_prior_sd") != cfg.get("population_prior_sd")
+                    or settings.get("estimate_population_sd") is not False
+                    or s_eng not in ("EM", "Hybrid", "Direct")
+                    or c_eng not in ("em", "hybrid", "direct")
+                    or s_eng.lower() != c_eng):
+                raise ProjectError("Stored fixed-SD MML settings disagree with the fitted result")
     if legacy and (
         any(analysis.get(key) for key in ("bias_analyses", "interval_analyses", "gd_analysis"))
         or settings.get("anchors") or settings.get("group_anchors")
+        or settings.get("compute_pca") or "umean" in settings or "uscale" in settings
     ):
-        raise ProjectError("Supplementary analyses and anchors require schema 2")
+        raise ProjectError("Supplementary analyses, anchors, PCA and rescaling require schema 2")
+    if "compute_pca" in settings and settings["compute_pca"] is not True:
+        raise ProjectError("Stored compute_pca flag must be True when present")
+    want_pca = bool(settings.get("compute_pca", False))
+    diag = analysis.get("diagnostics")
+    scope = analysis.get("scope")
+    if isinstance(diag, dict) and "pca_enabled" in diag and bool(diag.get("pca_enabled")) != want_pca:
+        raise ProjectError("Stored diagnostics PCA state disagrees with fit_settings")
+    if isinstance(scope, dict) and "pca" in scope and bool(scope.get("pca")) != want_pca:
+        raise ProjectError("Stored scope PCA flag disagrees with fit_settings")
+    if ("umean" in settings) != ("uscale" in settings):
+        raise ProjectError("umean and uscale must be stored together")
+    if "umean" in settings:
+        raw_umean, raw_uscale = settings["umean"], settings["uscale"]
+        if (isinstance(raw_umean, (bool, np.bool_)) or isinstance(raw_uscale, (bool, np.bool_))
+                or not isinstance(raw_umean, (int, float)) or not isinstance(raw_uscale, (int, float))
+                or not math.isfinite(raw_umean) or not math.isfinite(raw_uscale) or raw_uscale <= 0
+                or (float(raw_umean), float(raw_uscale)) == (0.0, 1.0)):
+            raise ProjectError("Invalid stored umean/uscale rescaling settings")
+    s_umean = float(settings.get("umean", 0.0))
+    s_uscale = float(settings.get("uscale", 1.0))
+    report_tables = analysis.get("report_tables")
+    diag_measures = diag.get("measures") if isinstance(diag, dict) else None
+    if isinstance(report_tables, dict) and isinstance(diag_measures, pd.DataFrame) and {"Facet", "Level", "Estimate"}.issubset(diag_measures.columns):
+        for r_facet, r_tbl in report_tables.items():
+            if isinstance(r_tbl, pd.DataFrame) and {"Level", "Measure"}.issubset(r_tbl.columns):
+                m_sub = diag_measures.loc[diag_measures["Facet"].astype(str).eq(str(r_facet)), ["Level", "Estimate"]].copy()
+                if m_sub.empty:
+                    continue
+                m_sub["Level"] = m_sub["Level"].astype(str)
+                est_map = dict(zip(m_sub["Level"], pd.to_numeric(m_sub["Estimate"], errors="coerce")))
+                est = pd.Series([est_map.get(str(lv), np.nan) for lv in r_tbl["Level"]], dtype=float).to_numpy()
+                meas = pd.to_numeric(r_tbl["Measure"], errors="coerce").to_numpy(dtype=float)
+                mask = np.isfinite(est)
+                if np.any(mask) and (
+                    not np.all(np.isfinite(meas[mask]))
+                    or not np.allclose(meas[mask], est[mask] * s_uscale + s_umean, rtol=1e-9, atol=1e-9)
+                ):
+                    raise ProjectError(f"Stored report_tables[{r_facet!r}] Measure disagrees with umean/uscale")
     if "anchors" in settings or "group_anchors" in settings:
         from mfrm_app import basic_analysis
         try:

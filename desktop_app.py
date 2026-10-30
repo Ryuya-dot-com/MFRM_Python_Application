@@ -567,6 +567,37 @@ class DesktopApp:
                 box.bind("<<ComboboxSelected>>", self.refresh_choices)
         self.wrapped_label(panel, style="Muted.TLabel", text=self.tr("RSM：共通の段階。PCM：選んだ相の水準別の段階。\nMMLは固定SD・EMです。指定区間は対象ごとに数値条件を確認します。")).grid(row=7, column=0, columnspan=2, sticky="ew", pady=10)
 
+        diag_box = self.ttk.LabelFrame(panel, text=self.tr("報告尺度と追加診断"), padding=10)
+        diag_box.grid(row=8, column=0, columnspan=2, sticky="ew", pady=(4, 6))
+        self.umean_var, _ = self.option_field(diag_box, 0, self.tr("尺度平均（Umean）"), "0")
+        self.uscale_var, _ = self.option_field(diag_box, 0, self.tr("尺度倍率（Uscale）"), "1", column=2)
+        preset_bar = self.ttk.Frame(diag_box)
+        preset_bar.grid(row=1, column=0, columnspan=4, sticky="w", pady=(2, 6))
+        self.ttk.Label(preset_bar, text=self.tr("換算プリセット："), style="Muted.TLabel").pack(side="left", padx=(0, 6))
+        for p_label, p_um, p_us in (
+            (self.tr("標準ロジット (0 / 1)"), "0", "1"),
+            (self.tr("偏差値風 (50 / 10)"), "50", "10"),
+            (self.tr("500 ± 100 (500 / 100)"), "500", "100"),
+        ):
+            p_btn = self.ttk.Button(
+                preset_bar, text=p_label, style="Secondary.TButton",
+                command=lambda m=p_um, sc=p_us: (self.umean_var.set(m), self.uscale_var.set(sc)),
+            )
+            p_btn.pack(side="left", padx=(0, 6))
+            self.widgets.append(p_btn)
+        self.compute_pca_var = self.tk.BooleanVar(value=False)
+        pca_chk = self.ttk.Checkbutton(
+            diag_box,
+            text=self.tr("標準化残差PCA（一次元性・局所依存の補助診断）も計算する"),
+            variable=self.compute_pca_var,
+        )
+        pca_chk.grid(row=2, column=0, columnspan=4, sticky="w", pady=(4, 2))
+        self.widgets.append(pca_chk)
+        self.wrapped_label(
+            diag_box, style="Muted.TLabel",
+            text=self.tr("評価者間一致率・Krippendorff's α・相別の分離と信頼性は常に保持されます。Umean / Uscale が 0 / 1 以外のときは換算表を追加出力し、元のロジット表・Wright mapはそのまま保持します。"),
+        ).grid(row=3, column=0, columnspan=4, sticky="ew", pady=(4, 0))
+
         # Anchors / Scale Equating tab
         anchor_panel = self.settings_contents["anchors"]
         self.mfrm_preflight_anchor_banner, _ = self._make_banner(anchor_panel, self.mfrm_preflight, kind="info")
@@ -1290,6 +1321,17 @@ class DesktopApp:
             s['anchors'] = norm_anchors
         if norm_group_anchors:
             s['group_anchors'] = norm_group_anchors
+        f_umean = self.number(self.umean_var, self.tr('尺度平均（Umean）'))
+        f_uscale = self.number(self.uscale_var, self.tr('尺度倍率（Uscale）'))
+        if not np.isfinite(f_umean) or not np.isfinite(f_uscale) or f_uscale <= 0:
+            raise ValueError(self.tr('尺度平均（Umean）には有限値、尺度倍率（Uscale）には正の有限値を入力してください。'))
+        if f_umean == 0.0:
+            f_umean = 0.0
+        if (f_umean, f_uscale) != (0.0, 1.0):
+            s['umean'] = float(f_umean)
+            s['uscale'] = float(f_uscale)
+        if self.compute_pca_var.get():
+            s['compute_pca'] = True
         request = dict(workflow='mfrm', **s, bias_requests=_bias_requests(deepcopy(self.bias_requests), ['Person', *s['facet_cols']]),
             interval_requests=_interval_requests(deepcopy(self.interval_requests), s['facet_cols'], s['method']), gd_settings=gd)
         if self.joint_enabled.get():
@@ -1327,6 +1369,9 @@ class DesktopApp:
                     self.facets.selection_set(i)
             for k, v in self.model_vars.items():
                 v.set(str(request.get(k, self.model_defaults[k])))
+            self.umean_var.set(f"{float(request.get('umean', 0.0)):g}")
+            self.uscale_var.set(f"{float(request.get('uscale', 1.0)):g}")
+            self.compute_pca_var.set(bool(request.get('compute_pca', False)))
             self.anchor_records = deepcopy(request.get('anchors', []))
             self.group_anchor_records = deepcopy(request.get('group_anchors', []))
             self.refresh_anchor_lists()
@@ -1534,6 +1579,9 @@ class DesktopApp:
         self.workflow.set("MFRM")
         for name, value in self.model_defaults.items():
             self.model_vars[name].set(value)
+        self.umean_var.set("0")
+        self.uscale_var.set("1")
+        self.compute_pca_var.set(False)
         self.anchor_records, self.group_anchor_records = [], []
         self.bias_requests, self.interval_requests = [], []
         self.bias_list.delete(0, "end"); self.interval_list.delete(0, "end")
@@ -2135,7 +2183,8 @@ class DesktopApp:
             "bias": self.tr("校正を固定した条件付きのセル推定です。主効果の厳しさとは別です。空白セルの状態と評定数は表で確認してください。色の大小からバイアスの有無・公平性を結論にしません。"),
             "joint": self.tr("主効果・段階・交互作用を同時に推定した別モデルです。区間は点ごとの近似区間です。表にはWald近似p値と、全セル・指定差を対象としたHolm補正を示します。空白や保留は「交互作用なし」を意味しません。"),
             "interval": self.tr("指定した水準・差の点ごとの近似区間です。数値条件を満たした対象だけを描きます。保留の理由は表の注記を参照してください。有限標本被覆率・個人得点の区間は保証していません。"),
-            "gd": self.tr("元の観測得点のG（相対評価）とPhi（絶対評価）を、評定回数の計画別に示します。星は保存した計画です。完全均衡交差・1／2ランダム相・各セル1観測・単位重みの範囲です。負の分散成分は0として係数を算出し、符号付きの元の値も表に残します。区間は保留です。")}
+            "gd": self.tr("元の観測得点のG（相対評価）とPhi（絶対評価）を、評定回数の計画別に示します。星は保存した計画です。完全均衡交差・1／2ランダム相・各セル1観測・単位重みの範囲です。負の分散成分は0として係数を算出し、符号付きの元の値も表に残します。区間は保留です。"),
+            "pca": self.tr("標準化残差の主成分分析（PCA）における上位コントラストの固有値です。固有値の総和は残差列数に等しくなります。第1コントラスト固有値が2.0前後以上の場合は、負荷量表の正負両極にある課題・観点・評価者の実質的対比と欠測の重なりを併せて確認してください（自動的な合否判定ではありません）。")}
         note = MAP_GUIDES[kind][1] if kind in MAP_GUIDES else notes[kind]
         if kind == "wright": note += self.tr("\n点線は選択した尺度の段階オフセットです。対象者・相の位置とは区別して読みます。PCMでは表示中の水準を確認してください。")
         return self.guide_window(self.map_choice.get(), note)

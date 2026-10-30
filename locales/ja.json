@@ -1119,8 +1119,8 @@
     "dimtest_caveat_label": "解釈上の注意"
   },
   "sidebar_advanced": {
-    "facet_reg_expander": "相の正則化（任意）",
-    "facet_reg_caption": "受験者以外の相の自由パラメータに罰則を加え、極端な推定値を抑えます。MMLで指定する能力の母集団分布や、ベイズ法による事後分布のサンプリングとは別の設定です。",
+    "facet_reg_expander": "相の正則化（研究・MAP罰則オプション）",
+    "facet_reg_caption": "受験者以外の自由パラメータにMAP型の縮小罰則を加える感度確認・研究用オプションです（通常の罰則なし推定やDesktop用 .mfrm 保存では「正則化なし」のままにしてください）。",
     "facet_reg_mode_label": "正則化の方法",
     "facet_reg_mode_off_display": "正則化なし（通常のJMLE / MML）",
     "facet_reg_mode_light_display": "選択したすべての相に弱い正則化",
@@ -2148,7 +2148,7 @@
     "step_facet_label_template": "閾値を変える相（{model_type}）",
     "step_facet_help": "水準ごとに別のステップ閾値を推定する相です。GPCMでは、この相の水準ごとに傾きも推定します。",
     "step_facet_select_first_display": "先に相を選んでください",
-    "gpcm_scope_caption": "このGPCM実装では、閾値と傾きを同じ相で推定します。傾きは正の値に制限し、幾何平均を1に固定しています。",
+    "gpcm_scope_caption": "【研究・技術検証用】このGPCM実装では閾値と正の識別力（幾何平均1固定）を同時推定しますが、推論用のSE・信頼区間およびDesktop用 .mfrm 保存は保留されます。通常の報告にはRSMまたはPCMを使用してください。",
     "estimation_method_label": "推定方法",
     "estimation_method_help": "**JMLE（同時最尤推定）**は、受験者の能力と相のパラメータを同時に推定します。短いテストでは推定に偏りが生じる場合があります。**MML（周辺最尤推定）**は、受験者の能力分布についてGauss–Hermite求積で積分します。標準設定ではhybrid法を試し、収束しない場合はEM法へ切り替えます。受験者の得点は、その後にEAPで計算します。",
     "mml_guided_defaults_caption": "MMLの計算方法は自動で選び、積分には標準の設定を使います。結果の安定性は別に確認してください。",
@@ -2162,7 +2162,9 @@
     "mml_assumptions_info_template": "**MMLの設定：** 計算方法 `{engine}`、積分点数 `{quad_points}`、母集団SD `{prior_sd}`。「詳細設定」で変更できます。",
     "estimate_population_sd_label": "母集団SDをデータから推定（MML・EM法）",
     "estimate_population_sd_help": "有効にすると、受験者の母集団SDをEM法で推定します。指定したSDは初期値として使い、計算方法は自動でEM法に切り替わります。他のソフトと比較するときは、モデル・識別のための制約・尺度をそろえてください。推定したSDは数値の確認用です。その標準誤差と信頼区間は、検証が済むまで表示を保留しています。",
-    "estimate_population_sd_active_note": "母集団SDをEM法で推定します。上の値は初期値です。SDの推定値は数値の確認用として表示します。標準誤差と信頼区間は、検証が済むまで表示を保留しています。"
+    "estimate_population_sd_active_note": "母集団SDをEM法で推定します。上の値は初期値です。SDの推定値は数値の確認用として表示します。標準誤差と信頼区間は、検証が済むまで表示を保留しています。",
+    "research_options_expander": "研究・技術検証オプション（SE・信頼区間は保留）",
+    "research_options_caption": "通常の分析・報告ではオフのままにします。オンにすると技術検証用の点推定確認モードとなり、一般の標準誤差・信頼区間および .mfrm 保存の対象外になります。"
   },
   "data_source": {
     "loaded_sample_template": "サンプル：{label}",
@@ -4657,7 +4659,8 @@
       "rater_severity": "評価者間の得点差を記述する",
       "rater_halo": "同じ評価者の基準間の関連を探索する",
       "numerical_check": "固定SDのMML結果を数値的に点検する",
-      "recovery": "模擬データで推定値の回復を調べる"
+      "recovery": "模擬データで推定値の回復を調べる",
+      "joint_interaction": "固定N(0,1)の共同交互作用モデルを別途推定する"
     },
     "purpose": {
       "model_choice": "同じデータを別のモデルで再推定します。比較値は技術的な点検用です。モデルの自動選択や仮説検定による結論は引き続き保留します。",
@@ -4666,7 +4669,8 @@
       "rater_severity": "共通の対象に対する評価者間の得点差を記述します。この差を評価者のバイアスの検定として扱わないでください。",
       "rater_halo": "評価基準間の関連を探索します。関連があることだけでは、ハロー効果の存在や原因を特定できません。",
       "numerical_check": "固定SDのMMLが返した点と数値積分の条件への感度を点検します。モデルの再推定や推論保留の解除ではありません。既存の点検結果は「表」にも残ります。",
-      "recovery": "新しく作る模擬データを繰り返し推定します。アップロードした観測データを分析する操作ではありません。解釈には、設定、反復による不確実性、既存の推論上の制限を残してください。"
+      "recovery": "新しく作る模擬データを繰り返し推定します。アップロードした観測データを分析する操作ではありません。解釈には、設定、反復による不確実性、既存の推論上の制限を残してください。",
+      "joint_interaction": "元の較正を上書きせず、固定N(0,1) MMLで主効果・段階閾値・指定した2相のゼロ周辺和交互作用を同時再推定します。区間は点ごとの近似であり、Holm補正は指定した検定群に適用されます。"
     },
     "numeric_check_location": "この数値点検の実行は「追加分析（任意）」→「固定SDのMML結果を数値的に点検する」から開きます。既存の点検結果と保留はここでも確認できます。",
     "numeric_check_unavailable": "この追加の数値点検は、現在は固定SDのMMLに対応しています。今回の計算の終了状態と解釈上の制限は「表」で確認してください。",
@@ -4830,5 +4834,65 @@
     "caption": "図のタイトル・図注",
     "caption_download": "タイトル・図注を保存 (.txt)",
     "help": "論文掲載用では全体のタイトル・説明注を図外に移します。軸・凡例・パネル名・利用条件は保持します。原稿にはタイトルと必要な図注を配置し、投稿先の指定に従ってください。"
+  },
+  "joint_interaction": {
+    "title": "別途再推定する共同交互作用モデル（固定N(0,1) MML）",
+    "scope": "固定N(0,1)のMML（等重み・アンカーおよび正則化なし）のもとで、主効果・段階閾値・事前指定した2相の交互作用を同時再推定します。元の較正結果や固定較正バイアス表は上書きしません。",
+    "requires_fixed_n01_info": "共同交互作用の推論には、構造相が2つ以上のRSMまたはPCM、固定N(0,1)のMML（母集団SD = 1.0固定・自由SD推定オフ）、等重み、アンカー・正則化なしの設定が必要です。",
+    "facet_a": "第1の構造相（A）",
+    "facet_b": "第2の構造相（B）",
+    "difference": "事前指定した1つのセル間対比も含める",
+    "first": "比較するセル（A × B）",
+    "second": "基準セル（比較セル − 基準セルを計算）",
+    "calculate": "共同交互作用モデルを再推定",
+    "running": "共同交互作用モデルの再推定と細かい求積での点検を実行しています…",
+    "unavailable": "共同交互作用を利用できません：",
+    "restore": "同じ分析の共同交互作用JSONを復元",
+    "load": "保存した共同交互作用を読み込む",
+    "saved_target": "保存された交互作用ペア：",
+    "available": "表示した点ごとの区間とWald／Holm p値は数値基準を通過しました。有限標本での被覆率や誤り率を保証するものではありません。",
+    "withheld": "数値基準を満たさない対象では、推定値を保持してSE・区間・p値を保留しています。記録された理由を確認してください。",
+    "pointwise_holm": "点ごとの近似区間（同時区間ではありません。Holm補正は記録されたセル・対比検定群に適用）",
+    "assumptions": "受験者間の独立性、固定N(0,1)母集団と応答モデル、割当・欠測の無視可能性、識別された内点と情報量の増大を仮定します。数値基準の通過は公正性の証明ではありません。",
+    "main_effects_expander": "同時再推定された主効果・段階閾値を確認（別モデル）",
+    "main_effects_caption": "別途推定した共同交互作用モデルにおける点推定値です。基本のマップや結果表は元の主効果モデルの較正を保持します。",
+    "csv": "共同交互作用表を保存（CSV）",
+    "json": "共同交互作用記録を保存（JSON）",
+    "Target": "対象",
+    "Estimate": "推定値",
+    "SE": "標準誤差",
+    "Lower": "下限",
+    "Upper": "上限",
+    "CI_Level": "区間水準",
+    "WaldP": "Wald p値",
+    "HolmP": "Holm p値",
+    "CIEligible": "区間を利用可",
+    "CoverageQualified": "被覆率の資格取得",
+    "Status": "状態",
+    "Reason": "理由",
+    "FamilySize": "検定族サイズ"
+  },
+  "mfrm_project": {
+    "open_sidebar": "保存 .mfrm を開く",
+    "viewer_title": "保存済み .mfrm プロジェクトの表示（再推定なし）",
+    "viewer_intro": "MFRM-DesktopまたはWebで保存したスキーマ検証済み `.mfrm` ファイル（MFRM分析・G/D-Study）を、再推定を行わずにそのまま確認・出力します。",
+    "back": "元の作業画面へ戻る",
+    "hosted_privacy_warning": "`.mfrm` ファイルには元の評定行と受験者・評価者IDが含まれます（`includes_input = True`）。公開Webサーバー上では公開・人工データまたは承認済み匿名化ファイルのみを読み込み、機密実データや倫理審査対象の `.mfrm` はオフラインの MFRM-Desktop で開いてください。",
+    "upload_label": "`.mfrm` プロジェクトファイルを選択",
+    "clear_button": "読み込んだプロジェクトを閉じる",
+    "invalid_error_template": "`.mfrm` ファイルを開けませんでした：{reason}",
+    "loaded_zero_refit_template": "再推定なしで {name}（{kind}・分析ID：{analysis_id}）を復元しました。",
+    "qualification_hold_notice_template": "保存時点の利用資格・保留状態をそのまま維持しています：{hold}",
+    "tables_subheader": "保存された結果表",
+    "select_table": "表示する表",
+    "download_table_csv": "表示中の表を保存（CSV）",
+    "figures_subheader": "保存された図と単体HTMLレポート",
+    "select_figure": "表示する図",
+    "download_report_html": "単体HTMLレポートを保存",
+    "export_subheader": "ポータブル `.mfrm` プロジェクト保存（Web ⇄ MFRM-Desktop 共通）",
+    "export_privacy_caption": "入力データ・設定・推定結果・診断表・追加分析をスキーマ検証済みの `.mfrm` ファイルとして保存し、MFRM-DesktopとWebの双方で再推定なしにそのまま開けます（元の評定行とIDを含むため取扱いに注意してください）。",
+    "export_button": "`.mfrm` プロジェクトファイルを保存",
+    "export_ineligible_intro": "この分析はWeb専用または研究・技術検証オプションを使用しているため、`.mfrm` プロジェクト保存の対象外です：",
+    "export_gd_button": "G/D プロジェクトを保存（.mfrm）"
   }
 }

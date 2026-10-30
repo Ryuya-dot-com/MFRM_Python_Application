@@ -1119,8 +1119,8 @@
     "dimtest_caveat_label": "Caveat"
   },
   "sidebar_advanced": {
-    "facet_reg_expander": "Facet regularization (optional)",
-    "facet_reg_caption": "Regularization adds a MAP-style penalty to free non-person facet parameters. It is separate from the MML person population distribution and from full Bayesian Stan sampling.",
+    "facet_reg_expander": "Facet regularization (research / MAP penalty)",
+    "facet_reg_caption": "Optional MAP-style shrinkage penalty on free non-person facet parameters (research / sensitivity use; Desktop .mfrm archives require unpenalized JMLE/MML). Leave Off for standard unpenalized estimation.",
     "facet_reg_mode_label": "Mode",
     "facet_reg_mode_off_display": "Off: unpenalized JMLE/MML",
     "facet_reg_mode_light_display": "Light shrinkage on all selected facets",
@@ -2148,7 +2148,7 @@
     "step_facet_label_template": "Step facet ({model_type})",
     "step_facet_help": "Facet whose levels get their own threshold parameters. For GPCM, the same facet also gets slope parameters.",
     "step_facet_select_first_display": "(select facets first)",
-    "gpcm_scope_caption": "GPCM scope: bounded Python implementation with slope_facet = step_facet, positive slopes, and geometric mean slope fixed to 1.",
+    "gpcm_scope_caption": "[Research / Technical Review] GPCM estimates positive category-facet slopes (geometric mean fixed to 1); inferential SE/CI and Desktop .mfrm export are withheld. Use RSM or PCM for standard reporting.",
     "estimation_method_label": "Estimation method",
     "estimation_method_help": "**JMLE** (Joint Maximum Likelihood): Estimates person abilities and facet parameters simultaneously using the app's analytical-gradient quasi-Newton backend. Fast but may be biased with short tests. **MML** (Marginal Maximum Likelihood): integrates over the person ability distribution with Gauss-Hermite quadrature. Guided mode uses Auto (Hybrid first, EM fallback); person abilities are computed post-hoc via EAP.",
     "mml_guided_defaults_caption": "MML will choose its engine automatically and use the documented standard integration settings.",
@@ -2162,7 +2162,9 @@
     "mml_assumptions_info_template": "**MML assumptions:** Engine `{engine}`; quadrature `{quad_points}` points; person population SD `{prior_sd}`. Switch to Advanced controls to edit these settings.",
     "estimate_population_sd_label": "Estimate person SD (free, MML/EM)",
     "estimate_population_sd_help": "When on, EM estimates the person-distribution SD from the data; the value above is the starting point. Other MML engines switch to EM automatically. Cross-engine comparisons require matching the model, identification constraints, and scale. The fitted SD is retained for technical review; its SE/CI remain withheld pending qualification.",
-    "estimate_population_sd_active_note": "Person SD will be estimated by EM; the SD above is only the starting value. The fitted SD is shown as a technical point estimate. Its SE/CI are withheld pending qualification."
+    "estimate_population_sd_active_note": "Person SD will be estimated by EM; the SD above is only the starting value. The fitted SD is shown as a technical point estimate. Its SE/CI are withheld pending qualification.",
+    "research_options_expander": "Research / technical options (SE & CI withheld)",
+    "research_options_caption": "Unchecked by default for standard reporting. Enabling free person-SD estimation switches the run to technical point-estimate review and withholds general SE/CI and .mfrm export."
   },
   "data_source": {
     "loaded_sample_template": "Sample: {label}",
@@ -4657,7 +4659,8 @@
       "rater_severity": "Describe score differences between raters",
       "rater_halo": "Explore associations across criteria within raters",
       "numerical_check": "Check fixed-SD MML numerical results",
-      "recovery": "Explore recovery using simulated data"
+      "recovery": "Explore recovery using simulated data",
+      "joint_interaction": "Fit a separate fixed-N(0,1) joint interaction model"
     },
     "purpose": {
       "model_choice": "Refits the same data under other models. Comparison values are technical checks; automatic model selection and hypothesis-test conclusions remain withheld.",
@@ -4666,7 +4669,8 @@
       "rater_severity": "Describes paired score differences for shared rating targets. These descriptive differences are not a test of rater bias.",
       "rater_halo": "Explores associations between criteria. Associations alone do not establish a halo effect or its cause.",
       "numerical_check": "Checks the returned fixed-SD MML point and quadrature sensitivity. It does not refit the model or release inference holds. Existing check results remain visible in Tables.",
-      "recovery": "Generates new synthetic responses and repeatedly fits them. It does not analyze the uploaded observations. Settings, replication uncertainty and existing inference limits must accompany any interpretation."
+      "recovery": "Generates new synthetic responses and repeatedly fits them. It does not analyze the uploaded observations. Settings, replication uncertainty and existing inference limits must accompany any interpretation.",
+      "joint_interaction": "Refits main effects, steps, and one two-facet zero-margin interaction jointly under fixed N(0,1) MML without overwriting the baseline calibration. Intervals are pointwise; Holm adjusts the requested test family."
     },
     "numeric_check_location": "To run this numerical check, choose Additional analyses (optional) → Check fixed-SD MML numerical results. Existing checks and holds are shown here.",
     "numeric_check_unavailable": "This additional numerical check currently supports fixed-SD MML only. Read the current run’s termination and interpretation limits in Tables.",
@@ -4830,5 +4834,65 @@
     "caption": "Figure title and note",
     "caption_download": "Save title and note (.txt)",
     "help": "Manuscript mode moves overall titles and explanatory notes outside the graphic. Axes, legends, panel labels and eligibility rules remain. Place the title and notes in your manuscript; follow your journal requirements."
+  },
+  "joint_interaction": {
+    "title": "Separately refitted joint interaction model (fixed N(0,1) MML)",
+    "scope": "Refits main effects, category steps, and one prespecified two-facet interaction jointly under fixed N(0,1) MML (unit weights, no anchors or penalties). Baseline estimates and fixed-calibration bias tables remain unchanged.",
+    "requires_fixed_n01_info": "Joint interaction inference requires RSM or PCM with at least two structural facets, fixed N(0,1) MML (`population_prior_sd = 1.0`, free SD off), unit weights, and unanchored/unpenalized facets.",
+    "facet_a": "First structural facet (A)",
+    "facet_b": "Second structural facet (B)",
+    "difference": "Include one prespecified cell-to-cell contrast",
+    "first": "First cell (A × B)",
+    "second": "Reference cell: report First minus Reference",
+    "calculate": "Refit joint interaction model",
+    "running": "Refitting joint interaction model and checking finer quadrature…",
+    "unavailable": "Joint interaction inference is unavailable:",
+    "restore": "Restore a saved joint interaction JSON for this same analysis",
+    "load": "Read saved joint interaction",
+    "saved_target": "Saved interaction pair:",
+    "available": "Numerical checks passed for the indicated pointwise intervals and Wald/Holm p-values. Finite-sample coverage and error rates are not guaranteed.",
+    "withheld": "Numerical checks did not pass for one or more targets; SE, intervals, and p-values are withheld where indicated. Review the recorded reasons.",
+    "pointwise_holm": "Pointwise approximate intervals; Holm adjusts the recorded family of cell/contrast tests, not the intervals",
+    "assumptions": "Assumes independent persons, the fixed N(0,1) population and response model, ignorable assignment/missingness, and an identified interior solution with growing information. Numerical eligibility is not a fairness verdict.",
+    "main_effects_expander": "Inspect refitted main effects and steps (separate joint model)",
+    "main_effects_caption": "Point estimates from the separate joint interaction fit; baseline maps and tables retain the original main-effects calibration.",
+    "csv": "Save joint interaction table (CSV)",
+    "json": "Save joint interaction record (JSON)",
+    "Target": "Target",
+    "Estimate": "Estimate",
+    "SE": "SE",
+    "Lower": "Lower",
+    "Upper": "Upper",
+    "CI_Level": "Interval level",
+    "WaldP": "Wald p",
+    "HolmP": "Holm p",
+    "CIEligible": "Interval available",
+    "CoverageQualified": "Coverage qualified",
+    "Status": "Status",
+    "Reason": "Reason",
+    "FamilySize": "Family size"
+  },
+  "mfrm_project": {
+    "open_sidebar": "Open .mfrm project",
+    "viewer_title": "Open saved .mfrm project (zero re-estimation)",
+    "viewer_intro": "Inspect schema-validated MFRM or observed-score G/D archives saved from MFRM-Desktop or Web without running any estimator.",
+    "back": "Return to the previous workspace",
+    "hosted_privacy_warning": ".mfrm project files retain original rating rows and participant/rater identifiers (`includes_input = True`). On hosted Web servers, upload only public, synthetic, or approved de-identified archives; open confidential or IRB-regulated `.mfrm` files offline in MFRM-Desktop.",
+    "upload_label": "Select a .mfrm project archive",
+    "clear_button": "Clear loaded project",
+    "invalid_error_template": "Could not open .mfrm project: {reason}",
+    "loaded_zero_refit_template": "Opened {name} ({kind} · Analysis ID: {analysis_id}) with zero re-estimation.",
+    "qualification_hold_notice_template": "Qualification status preserved from archive: {hold}",
+    "tables_subheader": "Saved tables",
+    "select_table": "Table",
+    "download_table_csv": "Download selected table (CSV)",
+    "figures_subheader": "Saved figures & standalone HTML report",
+    "select_figure": "Figure",
+    "download_report_html": "Download standalone HTML report",
+    "export_subheader": "Portable .mfrm project archive (Web ⇄ MFRM-Desktop)",
+    "export_privacy_caption": "Saves input data, settings, fitted coordinates, diagnostics, and supplementary analyses in a schema-validated `.mfrm` file that opens in MFRM-Desktop or Web with zero re-estimation. Contains raw rating rows and identifiers (`includes_input = True`).",
+    "export_button": "Download .mfrm project archive",
+    "export_ineligible_intro": "This Web run uses research or Web-only options outside the MFRM-Desktop `.mfrm` archive contract:",
+    "export_gd_button": "Save G/D project (.mfrm)"
   }
 }

@@ -6480,6 +6480,208 @@ def calc_krippendorff_alpha_by_facet(
     return pd.concat(rows, ignore_index=True)
 
 
+def weighted_mean_safe(x, w):
+    x = np.asarray(x, dtype=float)
+    w = np.asarray(w, dtype=float)
+    ok = np.isfinite(x) & np.isfinite(w) & (w > 0)
+    if not np.any(ok):
+        return np.nan
+    return float(np.sum(x[ok] * w[ok]) / np.sum(w[ok]))
+
+
+def calc_interrater_agreement(
+    obs_df,
+    facet_cols,
+    rater_facet,
+    res=None,
+    *,
+    _precomputed_probs=None,
+):
+    """Compute observed and model-expected pairwise agreement for ``rater_facet``."""
+    if obs_df is None or obs_df.empty:
+        return {"summary": pd.DataFrame(), "pairs": pd.DataFrame()}
+    if rater_facet is None or rater_facet not in facet_cols:
+        return {"summary": pd.DataFrame(), "pairs": pd.DataFrame()}
+    context_cols = [c for c in facet_cols if c != rater_facet]
+    if len(context_cols) == 0:
+        return {"summary": pd.DataFrame(), "pairs": pd.DataFrame()}
+
+    df = obs_df.copy()
+    df["_context"] = df[context_cols].astype(str).agg("|".join, axis=1)
+    base_cols = ["_context", rater_facet, "Observed"]
+    if "Weight" in df.columns:
+        base_cols.append("Weight")
+    df = df[base_cols].copy()
+    if "Weight" in df.columns:
+        df["_weighted_observed"] = df["Observed"].astype(float) * df["Weight"].astype(float)
+        df_obs = (
+            df.groupby(["_context", rater_facet], observed=True, as_index=False)
+            .agg(WeightedObserved=("_weighted_observed", "sum"), Weight=("Weight", "sum"))
+        )
+        df_obs["Score"] = np.where(
+            df_obs["Weight"].to_numpy(dtype=float) > 0,
+            df_obs["WeightedObserved"].to_numpy(dtype=float) / df_obs["Weight"].to_numpy(dtype=float),
+            np.nan,
+        )
+        df_obs = df_obs[["_context", rater_facet, "Score"]]
+    else:
+        df_obs = df.groupby(["_context", rater_facet], observed=True, as_index=False).agg(Score=("Observed", "mean"))
+    if df_obs.empty:
+        return {"summary": pd.DataFrame(), "pairs": pd.DataFrame()}
+
+    prob_map = {}
+    if res is not None:
+        probs = _precomputed_probs if _precomputed_probs is not None else compute_prob_matrix(res)
+        if probs is not None and probs.shape[0] == len(obs_df):
+            prob_cols = [f"_p{i}" for i in range(probs.shape[1])]
+            df_probs = df[["_context", rater_facet]].copy()
+            for i, col in enumerate(prob_cols):
+                df_probs[col] = probs[:, i]
+            if "Weight" in df.columns:
+                df_probs["Weight"] = df["Weight"].to_numpy()
+            for (ctx, r), g in df_probs.groupby(["_context", rater_facet], observed=True):
+                if "Weight" in g.columns:
+                    w = g["Weight"].to_numpy(dtype=float)
+                    ok = np.isfinite(w) & (w > 0)
+                    if not np.any(ok):
+                        avg = np.full(len(prob_cols), np.nan)
+                    else:
+                        avg = np.average(g.loc[ok, prob_cols].to_numpy(), axis=0, weights=w[ok])
+                else:
+                    avg = np.nanmean(g[prob_cols].to_numpy(), axis=0)
+                prob_map[(ctx, r)] = avg
+
+    wide = df_obs.pivot(index="_context", columns=rater_facet, values="Score")
+    if wide is None or wide.empty:
+        return {"summary": pd.DataFrame(), "pairs": pd.DataFrame()}
+
+    rater_cols = [c for c in wide.columns if c != "_context"]
+    if len(rater_cols) < 2:
+        return {"summary": pd.DataFrame(), "pairs": pd.DataFrame()}
+
+    pairs = []
+    for i in range(len(rater_cols)):
+        for j in range(i + 1, len(rater_cols)):
+            pairs.append((rater_cols[i], rater_cols[j]))
+
+    pair_rows = []
+    total_pairs = 0
+    total_exact = 0
+    total_expected = 0.0
+    expected_available = False
+    for r1, r2 in pairs:
+        sub = wide[[r1, r2]].dropna()
+        n_ok = int(len(sub))
+        if n_ok == 0:
+            pair_rows.append({
+                "Element1": r1,
+                "Element2": r2,
+                "N": 0,
+                "Exact": np.nan,
+                "ExpectedExact": np.nan,
+                "Adjacent": np.nan,
+                "MeanDiff": np.nan,
+                "MAD": np.nan,
+                "Corr": np.nan,
+            })
+            continue
+
+        v1 = sub[r1].to_numpy()
+        v2 = sub[r2].to_numpy()
+        diff = v1 - v2
+        exact_count = int(np.sum(np.isclose(diff, 0)))
+
+        exp_vals = []
+        if prob_map:
+            for ctx in sub.index:
+                p1 = prob_map.get((ctx, r1))
+                p2 = prob_map.get((ctx, r2))
+                if p1 is None or p2 is None:
+                    continue
+                if np.any(np.isnan(p1)) or np.any(np.isnan(p2)):
+                    continue
+                exp_vals.append(float(np.sum(p1 * p2)))
+        exp_mean = float(np.mean(exp_vals)) if exp_vals else np.nan
+        exp_sum = float(np.sum(exp_vals)) if exp_vals else 0.0
+        if exp_vals:
+            expected_available = True
+
+        pair_rows.append({
+            "Element1": r1,
+            "Element2": r2,
+            "N": n_ok,
+            "Exact": float(exact_count / n_ok),
+            "ExpectedExact": exp_mean,
+            "Adjacent": float(np.mean(np.abs(diff) <= 1)),
+            "MeanDiff": float(np.mean(diff)),
+            "MAD": float(np.mean(np.abs(diff))),
+            "Corr": safe_cor(v1, v2),
+        })
+
+        total_pairs += n_ok
+        total_exact += exact_count
+        total_expected += exp_sum
+
+    pair_tbl = pd.DataFrame(pair_rows)
+    contexts_with_pairs = int(np.sum(np.sum(np.isfinite(wide.to_numpy()), axis=1) >= 2))
+
+    if not expected_available:
+        total_expected = np.nan
+    summary_tbl = pd.DataFrame({
+        "RaterFacet": [rater_facet],
+        "Elements": [len(rater_cols)],
+        "Pairs": [len(pair_tbl)],
+        "Contexts": [contexts_with_pairs],
+        "TotalPairs": [total_pairs],
+        "ExactAgreements": [total_exact],
+        "ExpectedAgreements": [total_expected if total_pairs > 0 else np.nan],
+        "ExactAgreement": [total_exact / total_pairs if total_pairs > 0 else np.nan],
+        "ExpectedExactAgreement": [total_expected / total_pairs if total_pairs > 0 else np.nan],
+        "AdjacentAgreement": [weighted_mean_safe(pair_tbl["Adjacent"].to_numpy(), pair_tbl["N"].to_numpy()) if not pair_tbl.empty else np.nan],
+        "MeanAbsDiff": [weighted_mean_safe(pair_tbl["MAD"].to_numpy(), pair_tbl["N"].to_numpy()) if not pair_tbl.empty else np.nan],
+        "MeanCorr": [weighted_mean_safe(pair_tbl["Corr"].to_numpy(), pair_tbl["N"].to_numpy()) if not pair_tbl.empty else np.nan],
+    })
+
+    return {"summary": summary_tbl, "pairs": pair_tbl}
+
+
+def calc_interrater_agreement_by_facet(
+    obs_df: pd.DataFrame,
+    facet_cols: list[str],
+    res=None,
+    *,
+    max_levels: int = 80,
+) -> dict[str, object]:
+    """Compute retained inter-rater agreement summaries for each non-person facet."""
+    if obs_df is None or obs_df.empty:
+        return {"summary": pd.DataFrame(), "pairs_by_facet": {}}
+    target_facets = [f for f in facet_cols if f != "Person" and f in obs_df.columns]
+    if not target_facets:
+        return {"summary": pd.DataFrame(), "pairs_by_facet": {}}
+    probs = compute_prob_matrix(res) if res is not None else None
+    summaries: list[pd.DataFrame] = []
+    pairs_by_facet: dict[str, pd.DataFrame] = {}
+    for facet in target_facets:
+        n_levels = int(obs_df[facet].dropna().astype(str).nunique())
+        if n_levels < 2 or n_levels > max_levels:
+            continue
+        out = calc_interrater_agreement(
+            obs_df,
+            facet_cols,
+            facet,
+            res=res,
+            _precomputed_probs=probs,
+        )
+        summary = out.get("summary", pd.DataFrame())
+        pairs = out.get("pairs", pd.DataFrame())
+        if isinstance(summary, pd.DataFrame) and not summary.empty:
+            summaries.append(summary)
+        if isinstance(pairs, pd.DataFrame) and not pairs.empty:
+            pairs_by_facet[str(facet)] = pairs
+    summary_all = pd.concat(summaries, ignore_index=True) if summaries else pd.DataFrame()
+    return {"summary": summary_all, "pairs_by_facet": pairs_by_facet}
+
+
 def calc_ptmea(obs_df, facet_cols):
     facet_cols = [f for f in facet_cols if f != "Person"]
     rows = []
@@ -8699,9 +8901,15 @@ def mfrm_diagnostics(
         pass
 
     reliability_tbl = calc_reliability(measures)
+    all_diag_facets = ["Person"] + list(res["config"]["facet_names"])
     krippendorff_alpha_tbl = calc_krippendorff_alpha_by_facet(
         obs_df,
-        ["Person"] + list(res["config"]["facet_names"]),
+        all_diag_facets,
+    )
+    interrater_agreement_bundle = calc_interrater_agreement_by_facet(
+        obs_df,
+        all_diag_facets,
+        res=res,
     )
 
     # PCA of standardised residuals
@@ -8788,6 +8996,7 @@ def mfrm_diagnostics(
         "fit": fit_tbl,
         "reliability": reliability_tbl,
         "krippendorff_alpha": krippendorff_alpha_tbl,
+        "interrater_agreement": interrater_agreement_bundle,
         "bias": bias_tbl,
         "interactions": interaction_tbl,
         "pca": pca_overall,

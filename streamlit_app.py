@@ -37,6 +37,8 @@ from scipy.special import logsumexp, roots_hermitenorm
 from scipy.stats import chi2, norm as _norm, t as t_dist
 
 from mfrm_app.mml_fixed_sd_review import prepare_fixed_sd_check, evaluate_fixed_sd_quadrature_check
+from mfrm_app import joint_interaction as _joint_interaction
+from mfrm_app import project_portability as _project_portability
 from mfrm_app import structural_intervals as _structural_intervals
 from mfrm_app.engine import (
     APP_VERSION,
@@ -14748,164 +14750,11 @@ def _render_cross_engine_comparison_section(result: dict) -> None:
 
 
 
-def weighted_mean_safe(x, w):
-    ok = np.isfinite(x) & np.isfinite(w)
-    if not np.any(ok):
-        return np.nan
-    return float(np.sum(x[ok] * w[ok]) / np.sum(w[ok]))
-
-
-def calc_interrater_agreement(obs_df, facet_cols, rater_facet, res=None):
-    if obs_df is None or obs_df.empty:
-        return {"summary": pd.DataFrame(), "pairs": pd.DataFrame()}
-    if rater_facet is None or rater_facet not in facet_cols:
-        return {"summary": pd.DataFrame(), "pairs": pd.DataFrame()}
-    context_cols = [c for c in facet_cols if c != rater_facet]
-    if len(context_cols) == 0:
-        return {"summary": pd.DataFrame(), "pairs": pd.DataFrame()}
-
-    df = obs_df.copy()
-    df["_context"] = df[context_cols].astype(str).agg("|".join, axis=1)
-    base_cols = ["_context", rater_facet, "Observed"]
-    if "Weight" in df.columns:
-        base_cols.append("Weight")
-    df = df[base_cols].copy()
-    if "Weight" in df.columns:
-        df["_weighted_observed"] = df["Observed"].astype(float) * df["Weight"].astype(float)
-        # observed=True: skip empty Cartesian combinations. Required
-        # for sparse designs (e.g., peer-rating where 118 of 120
-        # raters never see each examinee). Previously `observed=False`
-        # materialised the full 120×N_context cross and pandas raised
-        # a length-mismatch on the post-agg insert.
-        df_obs = (
-            df.groupby(["_context", rater_facet], observed=True, as_index=False)
-            .agg(WeightedObserved=("_weighted_observed", "sum"), Weight=("Weight", "sum"))
-        )
-        df_obs["Score"] = np.where(
-            df_obs["Weight"].to_numpy(dtype=float) > 0,
-            df_obs["WeightedObserved"].to_numpy(dtype=float) / df_obs["Weight"].to_numpy(dtype=float),
-            np.nan,
-        )
-        df_obs = df_obs[["_context", rater_facet, "Score"]]
-    else:
-        df_obs = df.groupby(["_context", rater_facet], observed=True, as_index=False).agg(Score=("Observed", "mean"))
-    if df_obs.empty:
-        return {"summary": pd.DataFrame(), "pairs": pd.DataFrame()}
-
-    prob_map = {}
-    if res is not None:
-        probs = compute_prob_matrix(res)
-        if probs is not None and probs.shape[0] == len(obs_df):
-            prob_cols = [f"_p{i}" for i in range(probs.shape[1])]
-            df_probs = df[["_context", rater_facet]].copy()
-            for i, col in enumerate(prob_cols):
-                df_probs[col] = probs[:, i]
-            if "Weight" in df.columns:
-                df_probs["Weight"] = df["Weight"].to_numpy()
-            for (ctx, r), g in df_probs.groupby(["_context", rater_facet], observed=False):
-                if "Weight" in g.columns:
-                    w = g["Weight"].to_numpy(dtype=float)
-                    ok = np.isfinite(w) & (w > 0)
-                    if not np.any(ok):
-                        avg = np.full(len(prob_cols), np.nan)
-                    else:
-                        avg = np.average(g.loc[ok, prob_cols].to_numpy(), axis=0, weights=w[ok])
-                else:
-                    avg = np.nanmean(g[prob_cols].to_numpy(), axis=0)
-                prob_map[(ctx, r)] = avg
-
-    wide = df_obs.pivot(index="_context", columns=rater_facet, values="Score")
-    if wide is None or wide.empty:
-        return {"summary": pd.DataFrame(), "pairs": pd.DataFrame()}
-
-    rater_cols = [c for c in wide.columns if c != "_context"]
-    if len(rater_cols) < 2:
-        return {"summary": pd.DataFrame(), "pairs": pd.DataFrame()}
-
-    pairs = []
-    for i in range(len(rater_cols)):
-        for j in range(i + 1, len(rater_cols)):
-            pairs.append((rater_cols[i], rater_cols[j]))
-
-    pair_rows = []
-    total_pairs = 0
-    total_exact = 0
-    total_expected = 0.0
-    expected_available = False
-    for r1, r2 in pairs:
-        sub = wide[[r1, r2]].dropna()
-        n_ok = int(len(sub))
-        if n_ok == 0:
-            pair_rows.append({
-                "Element1": r1,
-                "Element2": r2,
-                "N": 0,
-                "Exact": np.nan,
-                "ExpectedExact": np.nan,
-                "Adjacent": np.nan,
-                "MeanDiff": np.nan,
-                "MAD": np.nan,
-                "Corr": np.nan,
-            })
-            continue
-
-        v1 = sub[r1].to_numpy()
-        v2 = sub[r2].to_numpy()
-        diff = v1 - v2
-        exact_count = int(np.sum(np.isclose(diff, 0)))
-
-        exp_vals = []
-        if prob_map:
-            for ctx in sub.index:
-                p1 = prob_map.get((ctx, r1))
-                p2 = prob_map.get((ctx, r2))
-                if p1 is None or p2 is None:
-                    continue
-                if np.any(np.isnan(p1)) or np.any(np.isnan(p2)):
-                    continue
-                exp_vals.append(float(np.sum(p1 * p2)))
-        exp_mean = float(np.mean(exp_vals)) if exp_vals else np.nan
-        exp_sum = float(np.sum(exp_vals)) if exp_vals else 0.0
-        if exp_vals:
-            expected_available = True
-
-        pair_rows.append({
-            "Element1": r1,
-            "Element2": r2,
-            "N": n_ok,
-            "Exact": float(exact_count / n_ok),
-            "ExpectedExact": exp_mean,
-            "Adjacent": float(np.mean(np.abs(diff) <= 1)),
-            "MeanDiff": float(np.mean(diff)),
-            "MAD": float(np.mean(np.abs(diff))),
-            "Corr": safe_cor(v1, v2),
-        })
-
-        total_pairs += n_ok
-        total_exact += exact_count
-        total_expected += exp_sum
-
-    pair_tbl = pd.DataFrame(pair_rows)
-    contexts_with_pairs = int(np.sum(np.sum(np.isfinite(wide.to_numpy()), axis=1) >= 2))
-
-    if not expected_available:
-        total_expected = np.nan
-    summary_tbl = pd.DataFrame({
-        "RaterFacet": [rater_facet],
-        "Elements": [len(rater_cols)],
-        "Pairs": [len(pair_tbl)],
-        "Contexts": [contexts_with_pairs],
-        "TotalPairs": [total_pairs],
-        "ExactAgreements": [total_exact],
-        "ExpectedAgreements": [total_expected if total_pairs > 0 else np.nan],
-        "ExactAgreement": [total_exact / total_pairs if total_pairs > 0 else np.nan],
-        "ExpectedExactAgreement": [total_expected / total_pairs if total_pairs > 0 else np.nan],
-        "AdjacentAgreement": [weighted_mean_safe(pair_tbl["Adjacent"].to_numpy(), pair_tbl["N"].to_numpy()) if not pair_tbl.empty else np.nan],
-        "MeanAbsDiff": [weighted_mean_safe(pair_tbl["MAD"].to_numpy(), pair_tbl["N"].to_numpy()) if not pair_tbl.empty else np.nan],
-        "MeanCorr": [weighted_mean_safe(pair_tbl["Corr"].to_numpy(), pair_tbl["N"].to_numpy()) if not pair_tbl.empty else np.nan],
-    })
-
-    return {"summary": summary_tbl, "pairs": pair_tbl}
+from mfrm_app.engine import (
+    calc_interrater_agreement,
+    calc_interrater_agreement_by_facet,
+    weighted_mean_safe,
+)
 
 
 
@@ -15038,8 +14887,19 @@ def _infer_facet_by_role(
 
 
 def _agreement_summary_for_facet(result: dict, diagnostics: dict, facet_cols: list[str], target_facet: str | None) -> pd.DataFrame:
+    if not target_facet:
+        return pd.DataFrame()
+    if isinstance(diagnostics, dict):
+        ia_bundle = diagnostics.get("interrater_agreement")
+        ia_summary = ia_bundle.get("summary", pd.DataFrame()) if isinstance(ia_bundle, dict) else pd.DataFrame()
+        if isinstance(ia_summary, pd.DataFrame) and not ia_summary.empty:
+            fcol = "RaterFacet" if "RaterFacet" in ia_summary.columns else ("Facet" if "Facet" in ia_summary.columns else None)
+            if fcol is not None:
+                sub = ia_summary.loc[ia_summary[fcol].astype(str) == str(target_facet)].copy()
+                if not sub.empty:
+                    return sub.head(1)
     obs_df = diagnostics.get("obs", pd.DataFrame()) if isinstance(diagnostics, dict) else pd.DataFrame()
-    if not isinstance(obs_df, pd.DataFrame) or obs_df.empty or not target_facet:
+    if not isinstance(obs_df, pd.DataFrame) or obs_df.empty:
         return pd.DataFrame()
     all_facet_cols = ["Person"] + [facet for facet in facet_cols if facet != "Person"]
     try:
@@ -16602,15 +16462,8 @@ def _facets_fair_se_cache_key(res, ci_level, report_tables=None):
 
 def qualified_reliability_table(result, diagnostics):
     """Qualify current or saved reliability without replacing saved numbers."""
-    from mfrm_app.reliability import qualify_saved_reliability
-    result = result or {}
-    diagnostics = diagnostics or {}
-    reason = _output_qualification.calibration_inference_hold_reason(result)
-    measures = diagnostics.get("measures")
-    if isinstance(measures, pd.DataFrame):
-        measures = qualify_measure_uncertainty(measures, result)
-    return qualify_saved_reliability(diagnostics.get("reliability"), measures,
-                                    calibration_hold=bool(reason), hold_reason=reason)
+    from mfrm_app.reporting_facts import qualified_reliability_table as _shared_qualified_reliability_table
+    return _shared_qualified_reliability_table(result, diagnostics)
 
 
 
@@ -17925,6 +17778,7 @@ def _set_home_open(open_home: bool) -> None:
     """Change the view without clearing a workspace or replaying a Run request."""
     _close_persistent_help()
     st.session_state["_gd_workspace_open"] = False
+    st.session_state["_mfrm_project_workspace_open"] = False
     st.session_state["_mfrm_home_open"] = bool(
         open_home and _get_guidance_state().lifecycle is not _guidance.GuideLifecycle.NOT_STARTED
     )
@@ -17932,11 +17786,125 @@ def _set_home_open(open_home: bool) -> None:
         st.session_state.pop(key, None)
 
 
+def _set_mfrm_project_open(open_workspace: bool) -> None:
+    """Open or close the zero-estimation `.mfrm` archive viewer without clearing active fits."""
+    _close_persistent_help()
+    st.session_state["_mfrm_project_workspace_open"] = bool(open_workspace)
+    if open_workspace:
+        st.session_state["_gd_workspace_open"] = False
+        st.session_state["_mfrm_home_open"] = False
+    for key in ("_facets_mode_force_rerun", "_onboarding_quickstart_fired", _GUIDE_RUN_REQUESTED_KEY):
+        st.session_state.pop(key, None)
+
+
+def render_mfrm_project_workspace() -> None:
+    """Inspect a schema-validated `.mfrm` archive from Desktop or Web with zero estimation."""
+    from mfrm_app import desktop_i18n as _desktop_i18n
+
+    lang = st.session_state.get("lang", DEFAULT_LANG)
+    st.subheader(t("mfrm_project.viewer_title"))
+    st.caption(t("mfrm_project.viewer_intro"))
+    st.button(t("mfrm_project.back"), key="mfrm_project_back", on_click=_set_mfrm_project_open, args=(False,))
+    st.warning(t("mfrm_project.hosted_privacy_warning"))
+
+    upload_key = f"mfrm_project_upload_{st.session_state.get('_mfrm_project_upload_gen', 0)}"
+    uploaded = st.file_uploader(t("mfrm_project.upload_label"), type=["mfrm"], key=upload_key)
+    if uploaded is not None:
+        st.session_state["_mfrm_project_loaded_bytes"] = uploaded.getvalue()
+        st.session_state["_mfrm_project_loaded_name"] = getattr(uploaded, "name", "project.mfrm")
+
+    raw_bytes = st.session_state.get("_mfrm_project_loaded_bytes")
+    if raw_bytes is not None and st.button(t("mfrm_project.clear_button"), key="mfrm_project_clear"):
+        st.session_state.pop("_mfrm_project_loaded_bytes", None)
+        st.session_state.pop("_mfrm_project_loaded_name", None)
+        st.session_state["_mfrm_project_upload_gen"] = st.session_state.get("_mfrm_project_upload_gen", 0) + 1
+        st.rerun()
+
+    if not raw_bytes:
+        return
+
+    try:
+        loaded = _project_portability.load_project_from_bytes(raw_bytes)
+    except Exception as exc:
+        st.error(t("mfrm_project.invalid_error_template", reason=str(exc)))
+        return
+
+    analysis = loaded["analysis"]
+    loaded_name = st.session_state.get("_mfrm_project_loaded_name", "project.mfrm")
+    st.success(
+        t(
+            "mfrm_project.loaded_zero_refit_template",
+            name=loaded_name,
+            kind=analysis.get("kind", ""),
+            analysis_id=analysis.get("analysis_id", ""),
+        )
+    )
+    qual = analysis.get("qualification_at_save")
+    if isinstance(qual, dict) and qual.get("manuscript_hold"):
+        st.info(t("mfrm_project.qualification_hold_notice_template", hold=str(qual["manuscript_hold"])))
+
+    tables = loaded.get("tables") or []
+    if tables:
+        st.subheader(t("mfrm_project.tables_subheader"))
+        tbl_labels = {
+            idx: _desktop_i18n.text(title, lang) if lang == "ja" else str(title)
+            for idx, (title, _, _) in enumerate(tables)
+        }
+        t_idx = st.selectbox(
+            t("mfrm_project.select_table"),
+            list(tbl_labels),
+            format_func=tbl_labels.__getitem__,
+            key=f"mfrm_project_table_sel_{analysis.get('analysis_id', '')}",
+        )
+        sel_title, sel_df, sel_note = tables[int(t_idx)]
+        if sel_note:
+            st.caption(_desktop_i18n.text(str(sel_note), lang) if lang == "ja" else str(sel_note))
+        st.dataframe(sel_df, width="stretch", hide_index=True)
+        safe_slug = re.sub(r"[^A-Za-z0-9]+", "_", str(sel_title)).strip("_").lower() or "table"
+        st.download_button(
+            t("mfrm_project.download_table_csv"),
+            data=sel_df.to_csv(index=False).encode("utf-8-sig"),
+            file_name=f"{safe_slug}.csv",
+            mime="text/csv",
+            key=f"mfrm_project_dl_csv_{t_idx}",
+            on_click="ignore",
+        )
+
+    fig_choices = loaded.get("figure_choices") or []
+    st.subheader(t("mfrm_project.figures_subheader"))
+    if fig_choices:
+        fig_labels = {
+            idx: _desktop_i18n.text(label, lang) if lang == "ja" else _desktop_i18n.text(label, "en")
+            for idx, (label, _) in enumerate(fig_choices)
+        }
+        f_idx = st.selectbox(
+            t("mfrm_project.select_figure"),
+            list(fig_labels),
+            format_func=fig_labels.__getitem__,
+            key=f"mfrm_project_fig_sel_{analysis.get('analysis_id', '')}",
+        )
+        _, f_spec = fig_choices[int(f_idx)]
+        fig = _project_portability.desktop_outputs.analysis_figure(analysis, **f_spec)
+        st.pyplot(fig, clear_figure=True)
+
+    report_html = _project_portability.desktop_outputs.report_html(analysis, language=lang)
+    st.download_button(
+        t("mfrm_project.download_report_html"),
+        data=report_html.encode("utf-8"),
+        file_name="mfrm_project_report.html",
+        mime="text/html",
+        key="mfrm_project_download_html",
+        on_click="ignore",
+    )
+
+
 def render_home_surface() -> None:
     st.subheader(t("home.title"))
     st.caption(t("home.preserved"))
     st.button(t("home.resume"), key="mfrm_home_resume", type="primary",
               on_click=_set_home_open, args=(False,), use_container_width=True)
+    st.button(t("mfrm_project.open_sidebar"), key="mfrm_home_open_project",
+              on_click=_set_mfrm_project_open, args=(True,), use_container_width=True)
 
 
 def render_data_privacy_notice(
@@ -29138,40 +29106,11 @@ def _publication_measure_table(result: dict, diagnostics: dict) -> tuple[pd.Data
 
 
 def _publication_reliability_table(result: dict, diagnostics: dict) -> tuple[pd.DataFrame, str]:
-    from mfrm_app.reporting_facts import current_manuscript_hold
-
-    reliability = qualified_reliability_table(result, diagnostics)
-    if not isinstance(reliability, pd.DataFrame) or reliability.empty:
-        return pd.DataFrame(), ""
-    columns = [c for c in ("Facet", "Levels", "SD", "RMSE", "Separation", "Strata", "Reliability")
-               if c in reliability]
-    out = reliability[columns].copy().round(3)
-    held = reliability["ReliabilityStatus"].ne("diagnostic") | bool(current_manuscript_hold(result))
-    out["Use"] = np.where(held, "Withheld", "Diagnostic")
-    caption = "Reliability and separation by facet. "
-    if held.any():
-        for column in ("RMSE", "Separation", "Strata", "Reliability"):
-            if column in out:
-                out.loc[held, column] = np.nan
-        caption += ("Interpretation is withheld for rows whose calibration, paired inputs or uncertainty basis are unqualified, "
-                    "or whose saved calculation cannot be verified. Precision indices are intentionally blank; "
-                    "SD is the spread of technical terminal-point estimates. ")
-    else:
-        caption += "These descriptive indices depend on the uncertainty method, observed spread and rating design; they do not establish accuracy for other designs. "
-    caption += _resolve_locale_key(_load_locale("en"), "metric_notes.reliability") + " "
-    caption += ("SD = sample standard deviation of estimates; RMSE = root mean square of SEs (posterior SDs for EAP). "
-                "For SE-based measures, G = sqrt(max(SD^2 - RMSE^2, 0)) / RMSE. "
-                "Reliability = G^2 / (1 + G^2). ")
-    basis = reliability.get("ReliabilityBasis", pd.Series(dtype=str)).astype(str)
-    if basis.str.contains("EAP", regex=False).any():
-        caption += ("For EAP person estimates, G = SD(EAP) / RMSE and reliability = "
-                    "Var(EAP) / (Var(EAP) + mean(posterior SD^2)); this is not directly equivalent to FACETS separation reliability. ")
-    caption += "Full notes and original technical values are retained in the reliability CSV."
-    # Withheld numeric output becomes display text; make that conversion
-    # explicit instead of relying on pandas' deprecated mixed-type fillna.
-    for column in out.columns[out.isna().any()]:
-        out[column] = out[column].astype(object).where(out[column].notna(), "")
-    return out, caption
+    """Web and desktop reports share the same qualified reliability table."""
+    from mfrm_app.reporting_facts import publication_reliability_table
+    return publication_reliability_table(
+        result, diagnostics, rel_note=_resolve_locale_key(_load_locale("en"), "metric_notes.reliability"),
+    )
 
 
 def _publication_report_tables(result, diagnostics, all_bias_results, *, include_details):
@@ -29190,6 +29129,29 @@ def _publication_report_tables(result, diagnostics, all_bias_results, *, include
         except (ValueError, TypeError, KeyError, AttributeError):
             tables.append(('Specified Structural Intervals', pd.DataFrame({'Status': ['Unavailable: saved interval evidence does not match this analysis.']}),
                            'No saved interval qualification is reused for changed inputs, estimates or numerical sources.'))
+    joint_record = result.get('_joint_interaction')
+    if isinstance(joint_record, dict):
+        try:
+            joint_raw, joint_note = _joint_interaction.publication_table(result, joint_record)
+            joint_compact = pd.DataFrame({
+                'Target': joint_raw['Target'],
+                'Estimate': joint_raw['Estimate'],
+                'SE': joint_raw['SE'],
+                'Interval': [
+                    f"[{_format_apa_cell(lo)}, {_format_apa_cell(hi)}]"
+                    if ok and pd.notna(lo) and pd.notna(hi) else ""
+                    for ok, lo, hi in zip(joint_raw['CIEligible'], joint_raw['Lower'], joint_raw['Upper'])
+                ],
+                'WaldP': joint_raw['WaldP'],
+                'HolmP': joint_raw['HolmP'],
+                'Use': ['Approximate' if ok else 'Withheld' for ok in joint_raw['CIEligible']],
+            })
+            req = joint_record.get('settings', {})
+            pair_label = f"{req.get('facet_a', '')} × {req.get('facet_b', '')}"
+            tables.append((f"Joint interaction: {pair_label}", joint_compact, joint_note))
+        except (ValueError, TypeError, KeyError, AttributeError):
+            tables.append(('Joint interaction', pd.DataFrame({'Status': ['Unavailable: saved joint interaction evidence does not match this analysis.']}),
+                           _joint_interaction.CAUTION))
     source = diagnostics.get("measures")
     facets_only = (not include_details and isinstance(source, pd.DataFrame) and "Facet" in source
                    and source["Facet"].ne("Person").any())
@@ -30482,12 +30444,18 @@ def run_facets_mode(
                 key="facets_mode_population_prior_sd",
                 help=t("sidebar_estimation.population_prior_sd_help"),
             ))
-            estimate_population_sd = bool(sidebar.checkbox(
-                t("sidebar_estimation.estimate_population_sd_label"),
-                value=False,
-                key="facets_mode_estimate_population_sd",
-                help=t("sidebar_estimation.estimate_population_sd_help"),
-            ))
+            with (
+                sidebar.expander(t("sidebar_estimation.research_options_expander"), expanded=False)
+                if sidebar is st.sidebar
+                else sidebar.container()
+            ):
+                st.caption(t("sidebar_estimation.research_options_caption"))
+                estimate_population_sd = bool(st.checkbox(
+                    t("sidebar_estimation.estimate_population_sd_label"),
+                    value=False,
+                    key="facets_mode_estimate_population_sd",
+                    help=t("sidebar_estimation.estimate_population_sd_help"),
+                ))
         else:
             mml_engine = "Auto (recommended)"
         if advanced_controls:
@@ -40286,6 +40254,155 @@ def _render_structural_intervals(result, *, key_prefix, allow_check=True):
         return True
 
 
+def _store_joint_interaction_record(result, record):
+    """Keep later joint-interaction work with the opted-in snapshot of this exact run."""
+    import copy
+
+    result['_joint_interaction'] = record
+    output = st.session_state.get('facets_mode_output', {})
+    if output.get('result') is not result:
+        return
+    run_id = output.get('_history_run_id')
+    if not run_id:
+        return
+    for entry in get_run_history():
+        if entry.get('run_id') == run_id and _history_entry_has_snapshot(entry):
+            entry['output_snapshot']['result']['_joint_interaction'] = copy.deepcopy(record)
+            return
+
+
+def _joint_interaction_eligible(result) -> bool:
+    if not isinstance(result, dict):
+        return False
+    cfg = result.get('config', {})
+    if not isinstance(cfg, dict):
+        return False
+    facets = list(cfg.get('facet_names') or [])
+    if cfg.get('model') not in ('RSM', 'PCM') or len(facets) < 2:
+        return False
+    if cfg.get('method') != 'MML' or bool(cfg.get('estimate_population_sd')):
+        return False
+    try:
+        return float(get_population_prior_sd(cfg)) == 1.0
+    except (TypeError, ValueError):
+        return False
+
+
+def _render_joint_interaction(
+    result,
+    *,
+    key_prefix: str,
+    allow_check: bool = True,
+    expanded: bool = False,
+    show_ineligible_hint: bool = False,
+):
+    """Refit and display one fixed-N(0,1) MML joint interaction model without overwriting baseline."""
+    tr = lambda key: t('joint_interaction.' + key)
+    if not _joint_interaction_eligible(result):
+        if show_ineligible_hint:
+            st.info(tr('requires_fixed_n01_info'))
+        return
+    cfg = result['config']
+    facets = list(cfg['facet_names'])
+    key = key_prefix + '_joint_interaction'
+    with st.expander(tr('title'), expanded=expanded):
+        st.caption(tr('scope'))
+        facet_a = st.selectbox(tr('facet_a'), facets, index=0, key=key + '_facet_a')
+        b_choices = [f for f in facets if f != facet_a]
+        facet_b = st.selectbox(tr('facet_b'), b_choices, index=0, key=key + '_facet_b')
+        levels_a = list(map(str, cfg['facet_levels'][facet_a]))
+        levels_b = list(map(str, cfg['facet_levels'][facet_b]))
+        cells = [[x, y] for y in levels_b for x in levels_a]
+        cell_labels = {i: f"{c[0]} × {c[1]}" for i, c in enumerate(cells)}
+        compare = st.checkbox(tr('difference'), key=key + '_difference', disabled=len(cells) < 2)
+        difference = None
+        if compare and len(cells) >= 2:
+            idx_first = st.selectbox(
+                tr('first'), list(cell_labels), format_func=cell_labels.__getitem__, key=key + '_first'
+            )
+            second_choices = [i for i in cell_labels if i != idx_first]
+            idx_second = st.selectbox(
+                tr('second'), second_choices, format_func=cell_labels.__getitem__, key=key + '_second'
+            )
+            difference = [cells[idx_first], cells[idx_second]]
+        if allow_check and st.button(tr('calculate'), key=key + '_calculate'):
+            try:
+                with st.spinner(tr('running')):
+                    record = _joint_interaction.fit_joint_interaction(
+                        result, facet_a=facet_a, facet_b=facet_b, difference=difference
+                    )
+                _store_joint_interaction_record(result, record)
+            except (ValueError, TypeError, KeyError, AttributeError, FloatingPointError) as exc:
+                st.warning(tr('unavailable') + ' ' + str(exc))
+        if allow_check:
+            uploaded = st.file_uploader(tr('restore'), type=['json'], key=key + '_restore')
+            if uploaded is not None and st.button(tr('load'), key=key + '_load'):
+                try:
+                    if uploaded.size > 5 * 1024 * 1024:
+                        raise ValueError('Joint interaction record exceeds 5 MB')
+                    restored = json.loads(uploaded.getvalue())
+                    _joint_interaction.read_joint_interaction(result, restored)
+                    _store_joint_interaction_record(result, restored)
+                except (ValueError, TypeError, KeyError, AttributeError) as exc:
+                    st.warning(tr('unavailable') + ' ' + str(exc))
+        record = result.get('_joint_interaction')
+        if not isinstance(record, dict):
+            return
+        try:
+            raw_table = _joint_interaction.read_joint_interaction(result, record)
+            pub_table, _ = _joint_interaction.publication_table(result, record)
+        except (ValueError, TypeError, KeyError, AttributeError) as exc:
+            st.warning(tr('unavailable') + ' ' + str(exc))
+            return
+        req = record.get('settings', {})
+        st.caption(f"{tr('saved_target')} {req.get('facet_a', '')} × {req.get('facet_b', '')}")
+        st.caption(f"{100 * record['level']:g}% — " + tr('pointwise_holm'))
+        (st.info if pub_table.CIEligible.any() else st.warning)(
+            tr('available' if pub_table.CIEligible.any() else 'withheld')
+        )
+        st.dataframe(
+            pub_table.rename(columns={c: tr(c) for c in pub_table.columns}),
+            hide_index=True,
+            width='stretch',
+        )
+        if raw_table.CIEligible.any():
+            st.plotly_chart(
+                _structural_intervals.interval_figure(raw_table),
+                key=key + '_figure',
+                width='stretch',
+            )
+        main_rows = record.get('main_effects_and_steps')
+        if isinstance(main_rows, list) and main_rows:
+            with st.expander(tr('main_effects_expander'), expanded=False):
+                st.caption(tr('main_effects_caption'))
+                st.dataframe(pd.DataFrame(main_rows), hide_index=True, width='stretch')
+        st.caption(tr('assumptions'))
+        st.download_button(
+            tr('csv'),
+            pub_table.to_csv(index=False).encode('utf-8-sig'),
+            file_name='joint_interaction.csv',
+            mime='text/csv',
+            key=key + '_csv',
+            on_click='ignore',
+        )
+        st.download_button(
+            tr('json'),
+            json.dumps(record, ensure_ascii=False, indent=2).encode('utf-8'),
+            file_name='joint_interaction.json',
+            mime='application/json',
+            key=key + '_json',
+            on_click='ignore',
+        )
+        return True
+
+
+def render_joint_interaction_section(result: dict) -> None:
+    """Optional report-tool entry for fixed-N(0,1) MML joint interaction refit."""
+    _render_joint_interaction(
+        result, key_prefix='report_joint', allow_check=True, expanded=True, show_ineligible_hint=True
+    )
+
+
 def show_convergence_section(
     result: dict, *, key_prefix: str = "convergence", allow_check: bool = True,
 ) -> None:
@@ -42380,6 +42497,8 @@ _GD_EXAMPLE_CSV = """Person,Rater,Task,Score
 def _set_g_d_open(open_workspace: bool) -> None:
     _close_persistent_help()
     st.session_state["_gd_workspace_open"] = bool(open_workspace)
+    if open_workspace:
+        st.session_state["_mfrm_project_workspace_open"] = False
     for key in ("_facets_mode_force_rerun", "_onboarding_quickstart_fired", _GUIDE_RUN_REQUESTED_KEY):
         st.session_state.pop(key, None)
 
@@ -42513,7 +42632,7 @@ def render_g_d_workspace() -> None:
         st.session_state["_gd_result"] = {"input_id": input_id, "bundle": bundle}
     saved = st.session_state.get("_gd_result")
     if saved and saved["input_id"] == input_id:
-        render_g_d_study_bundle(saved["bundle"], key_prefix="standalone_gd")
+        render_g_d_study_bundle(saved["bundle"], key_prefix="standalone_gd", raw_input_data=data)
     elif saved:
         st.info(t("gd_entry.changed"))
 
@@ -42577,7 +42696,12 @@ def render_g_d_study_section(result: dict) -> None:
 
 
 @_interactive_panel_fragment
-def render_g_d_study_bundle(bundle: dict, *, key_prefix: str) -> None:
+def render_g_d_study_bundle(
+    bundle: dict,
+    *,
+    key_prefix: str,
+    raw_input_data: pd.DataFrame | None = None,
+) -> None:
     """Display and export the same qualified bundle from either data entry."""
     st.subheader(t("report_tables.g_d_study_subheader"))
     st.caption(t("gd_entry.raw_basis" if bundle.get("design", {}).get("score_basis") == "original_observed_scores"
@@ -42641,6 +42765,25 @@ def render_g_d_study_bundle(bundle: dict, *, key_prefix: str) -> None:
         file_name="mfrm_g_d_study.csv", mime="text/csv",
         key=f"{key_prefix}_download", on_click="ignore",
     )
+    if (
+        isinstance(raw_input_data, pd.DataFrame)
+        and not raw_input_data.empty
+        and bundle.get("design", {}).get("score_basis") == "original_observed_scores"
+    ):
+        try:
+            gd_mfrm_bytes = _project_portability.build_gd_project_from_web(
+                bundle, input_data=raw_input_data
+            )
+            st.download_button(
+                t("mfrm_project.export_gd_button"),
+                data=gd_mfrm_bytes,
+                file_name="mfrm_g_d_study.mfrm",
+                mime="application/octet-stream",
+                key=f"{key_prefix}_download_mfrm",
+                on_click="ignore",
+            )
+        except Exception:
+            pass
 
 
 _PARAMETER_RECOVERY_MODELS = ("RSM", "PCM", "GPCM")
@@ -42921,6 +43064,7 @@ def _render_additional_report_analyses(result: dict) -> None:
     renderers = {
         "model_choice": render_model_choice_guidance,
         "g_d": render_g_d_study_section,
+        "joint_interaction": render_joint_interaction_section,
         "design_network": render_design_network_section,
         "rater_severity": render_rater_severity_section,
         "rater_halo": render_rater_halo_section,
@@ -51650,6 +51794,8 @@ def show_bias_section(
 
     if not all_bias:
         st.info(t("bias_interaction.no_results_info"))
+        if isinstance(result, dict):
+            _render_joint_interaction(result, key_prefix="bias_section")
         return
 
     pair_keys = list(all_bias.keys())
@@ -51980,6 +52126,9 @@ def show_bias_section(
             file_name="mfrm_bias_table.csv",
             mime="text/csv",
         )
+
+    if isinstance(result, dict):
+        _render_joint_interaction(result, key_prefix="bias_section")
 
 
 # ---------------------------------------------------------------------------
@@ -56613,6 +56762,7 @@ def collect_download_frames(
         "role_action_memos_dl": locals().get("role_action_memos_dl", pd.DataFrame()),
         "status_rationale_dl": locals().get("status_rationale_dl", pd.DataFrame()),
         "yardstick_map_dl": locals().get("yardstick_map_dl", pd.DataFrame()),
+        "anchor_parts": anchor_parts,
     }
     return all_frames, context
 
@@ -56695,6 +56845,7 @@ def _render_downloads(
     role_action_memos_dl = download_context["role_action_memos_dl"]
     status_rationale_dl = download_context["status_rationale_dl"]
     yardstick_map_dl = download_context["yardstick_map_dl"]
+    anchor_parts = download_context["anchor_parts"]
     evidence_contract_assets = build_evidence_contract_text_assets(
         result,
         readiness_dl,
@@ -57125,6 +57276,47 @@ def _render_downloads(
     # ================================================================
     if selected_download_panel == "scripts_config":
         st.caption(t("downloads.scripts_caption"))
+
+        # --- Portable .mfrm archive (Web ⇄ MFRM-Desktop) ---
+        st.subheader(t("mfrm_project.export_subheader"))
+        st.caption(t("mfrm_project.export_privacy_caption"))
+        live_out = st.session_state.get("facets_mode_output")
+        if isinstance(live_out, dict) and live_out.get("result") is result:
+            p_col = live_out.get("person_col")
+            s_col = live_out.get("score_col")
+            u_mean = float(live_out.get("_umean", 0.0))
+            u_scale = float(live_out.get("_uscale", 1.0))
+        else:
+            p_col, s_col, u_mean, u_scale = None, None, 0.0, 1.0
+        port_chk = _project_portability.check_web_mfrm_portability(
+            result, person_col=p_col, score_col=s_col
+        )
+        if port_chk["eligible"]:
+            try:
+                mfrm_bytes = _project_portability.build_mfrm_project_from_web(
+                    result,
+                    diagnostics,
+                    report_tables,
+                    scorefile,
+                    person_col=p_col,
+                    score_col=s_col,
+                    all_bias_results=all_bias_results,
+                    umean=u_mean,
+                    uscale=u_scale,
+                )
+                st.download_button(
+                    t("mfrm_project.export_button"),
+                    data=mfrm_bytes,
+                    file_name="mfrm_analysis.mfrm",
+                    mime="application/octet-stream",
+                    key="dl_mfrm_project_archive",
+                    on_click="ignore",
+                )
+            except Exception as exc:
+                st.info(f"{t('mfrm_project.export_ineligible_intro')}\n- {exc}")
+        else:
+            reasons_md = "\n".join(f"- {r}" for r in port_chk["reasons"])
+            st.info(f"{t('mfrm_project.export_ineligible_intro')}\n{reasons_md}")
 
         # --- Analysis configuration JSON ---
         st.subheader(t("downloads.scripts_config_subheader"))
@@ -66564,6 +66756,8 @@ def main() -> None:
     _apply_pending_guide_workspace_restore()
     home_open = bool(st.session_state.get("_mfrm_home_open"))
     planning_open = bool(st.session_state.get("_gd_workspace_open"))
+    project_open = bool(st.session_state.get("_mfrm_project_workspace_open"))
+    workspace_overlay = planning_open or project_open
     # Keep navigation choices when another result section, Home or Help omits
     # their widgets. Input/upload widgets stay alive below, as in Help.
     for key in ("guided_essential_section", "main_results_panel", "guided_diagnostics_panel",
@@ -66595,12 +66789,15 @@ def main() -> None:
     app_mode = "FACETS-mode estimation"
     at_landing = _get_guidance_state().lifecycle is _guidance.GuideLifecycle.NOT_STARTED
     st.sidebar.button(t("home.open"), key="mfrm_home_open", on_click=_set_home_open,
-                      args=(True,), disabled=(home_open or at_landing) and not planning_open and not _get_help_route_state().is_open,
+                      args=(True,), disabled=(home_open or at_landing) and not workspace_overlay and not _get_help_route_state().is_open,
                       use_container_width=True)
 
     if not at_landing:
         st.sidebar.button(t("gd_entry.open"), key="sidebar_gd", on_click=_set_g_d_open,
                           args=(True,), disabled=planning_open, use_container_width=True)
+        st.sidebar.button(t("mfrm_project.open_sidebar"), key="sidebar_mfrm_project",
+                          on_click=_set_mfrm_project_open, args=(True,), disabled=project_open,
+                          use_container_width=True)
 
     # Display-mode toggle (v0.2.5+) — Essential hides advanced diagnostic
     # sub-tabs and secondary expanders to reduce cognitive load for
@@ -66648,9 +66845,17 @@ def main() -> None:
             render_g_d_workspace()
         if at_landing:
             return
+    elif project_open:
+        if help_surface_active:
+            with st.sidebar.expander(t("mfrm_project.viewer_title"), expanded=False):
+                render_mfrm_project_workspace()
+        else:
+            render_mfrm_project_workspace()
+        if at_landing:
+            return
     elif home_open and not help_surface_active:
         render_home_surface()
-    auxiliary_surface_active = help_surface_active or home_open or planning_open
+    auxiliary_surface_active = help_surface_active or home_open or workspace_overlay
 
     if not auxiliary_surface_active:
         # The optional guide landing owns the first page so source and
@@ -66664,7 +66869,7 @@ def main() -> None:
     ) or st.session_state.get(
         "data_source_flat", f"scenario:{DEFAULT_SAMPLE_SCENARIO_KEY}"
     )
-    if not planning_open:
+    if not workspace_overlay:
         render_data_privacy_notice(
             where="main", source_kind=_ux.classify_data_source(active_source_id))
 
@@ -66676,7 +66881,7 @@ def main() -> None:
         and guidance_state.active_node_id
         in {_guidance.GuideNode.DATA_CHECK, _guidance.GuideNode.ESTIMATE}
     )
-    preserved_sidebar = st.sidebar.expander(t("gd_entry.preserved")) if planning_open else st.sidebar
+    preserved_sidebar = st.sidebar.expander(t("gd_entry.preserved")) if workspace_overlay else st.sidebar
     with preserved_sidebar if auxiliary_surface_active else st.container():
         data = read_input_data(core, guide_sample_only=guide_sample_only, sidebar=preserved_sidebar)
     if data.empty:
@@ -66688,7 +66893,7 @@ def main() -> None:
         if render_sample_guide_pre_analysis(data):
             return
         render_custom_simulation_preview_panel()
-    if planning_open:
+    if workspace_overlay:
         with preserved_sidebar:
             run_facets_mode(core, data, help_surface_active=True, sidebar=preserved_sidebar)
     else:

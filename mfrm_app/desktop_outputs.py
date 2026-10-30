@@ -52,6 +52,8 @@ def figure_choices(analysis):
     if 'joint_analysis' in analysis:
         s = analysis['joint_analysis']['settings']
         choices.append((f"共同交互作用 · {s['facet_a']} × {s['facet_b']}", dict(kind='joint')))
+    if analysis.get('diagnostics', {}).get('pca_enabled'):
+        choices.append(('残差PCA · 固有値スクリー', dict(kind='pca')))
     return choices
 
 
@@ -219,6 +221,31 @@ def _analysis_figure(analysis, kind, *, level=None, index=0, facet=None, statist
             cond_suffix = f" · {fc['facet']}={fc['level']}" if fc['mode'] == 'level' else f" · {fc['facet']} ({fc['mode']})"
         fig.suptitle('D-Study · original observed scores' + cond_suffix)
         fig.supxlabel('G: relative decisions; Phi: absolute decisions. Point projections; intervals withheld.', fontsize=8)
+    elif kind == 'pca':
+        pca = analysis.get('diagnostics', {}).get('pca')
+        if not isinstance(pca, dict) or len(pca.get('eigenvalues', [])) == 0:
+            _empty(ax, 'Residual PCA unavailable: fewer than 2 valid facet-combination residual columns.')
+        else:
+            ev = np.asarray(pca['eigenvalues'], dtype=float)
+            k = min(15, len(ev))
+            xs = np.arange(1, k + 1)
+            ys = ev[:k]
+            ax.bar(xs, ys, color='#2563eb', alpha=0.82, width=0.62, label='Eigenvalue')
+            ax.plot(xs, ys, color='#0f172a', marker='o', linewidth=1.4, markersize=4.5)
+            ax.axhline(2.0, color='#b45309', linestyle='--', linewidth=1.1, label='Inspection prompt (EV = 2.0)')
+            ax.axhline(1.0, color='#64748b', linestyle=':', linewidth=0.9, label='Unit variance (EV = 1.0)')
+            ax.set_xticks(xs, [f'PC{i}' for i in xs], rotation=0 if k <= 10 else 30)
+            ax.set(
+                xlabel='Residual principal contrast',
+                ylabel='Eigenvalue (standardized residual units)',
+                ylim=(0, max(2.4, float(ys.max()) * 1.15)),
+            )
+            ax.legend(fontsize=8, loc='upper right')
+        fig.suptitle('Standardized residual PCA · scree plot')
+        fig.supxlabel(
+            'Eigenvalue sum equals residual column count. Inspect substantive contrast poles alongside missingness overlap.',
+            fontsize=8,
+        )
     else:
         raise ValueError('Unknown desktop figure')
     return maps.style_figure(fig)

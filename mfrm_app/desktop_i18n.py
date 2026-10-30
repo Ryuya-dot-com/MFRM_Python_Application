@@ -156,7 +156,35 @@ EN.update({
 '午前・午後シフト分断例（未接続サブセット診断・128行）':'Unlinked AM/PM Shifts (Disconnected Subset Warning, 128 rows)',
 '横長Excel形式シート（評価者列 R1〜R4 を縦長変換）':'Wide Spreadsheet Layout (Convert R1–R4 Columns to Long)',
 'G/D-Study 2相完全均衡サンプル（240行）':'G/D-Study Balanced 2-Facet Sample (240 rows)',
+'報告尺度と追加診断':'Reporting Scale & Optional Diagnostics',
+'尺度平均（Umean）':'Scale origin (Umean)',
+'尺度倍率（Uscale）':'Scale multiplier (Uscale)',
+'換算プリセット：':'Scale presets:',
+'標準ロジット (0 / 1)':'Canonical logits (0 / 1)',
+'偏差値風 (50 / 10)':'50 ± 10 scale (50 / 10)',
+'500 ± 100 (500 / 100)':'500 ± 100 scale (500 / 100)',
+'標準化残差PCA（一次元性・局所依存の補助診断）も計算する':'Also compute standardized-residual PCA (dimensionality / local-dependence check)',
+"評価者間一致率・Krippendorff's α・相別の分離と信頼性は常に保持されます。Umean / Uscale が 0 / 1 以外のときは換算表を追加出力し、元のロジット表・Wright mapはそのまま保持します。":"Inter-rater agreement, Krippendorff's α, and facet separation/reliability are always retained. Non-default Umean / Uscale adds a rescaled measure table while keeping baseline logit tables and Wright maps intact.",
+'尺度平均（Umean）には有限値、尺度倍率（Uscale）には正の有限値を入力してください。':'Enter a finite scale origin (Umean) and a positive finite scale multiplier (Uscale).',
+'残差PCA · 固有値スクリー':'Residual PCA · eigenvalue scree',
+'標準化残差の主成分分析（PCA）における上位コントラストの固有値です。固有値の総和は残差列数に等しくなります。第1コントラスト固有値が2.0前後以上の場合は、負荷量表の正負両極にある課題・観点・評価者の実質的対比と欠測の重なりを併せて確認してください（自動的な合否判定ではありません）。':'Top contrast eigenvalues from standardized-residual PCA (eigenvalue sum equals the number of residual columns). When EV1 is near or above 2.0, inspect positive vs negative contrast poles in the loadings table alongside missingness overlap; this is an inspection prompt, not an automatic pass/fail test.',
+'相別の分離・信頼性指標':'Separation and Reliability by Facet',
+"評価者間一致率・Krippendorff's α":"Inter-rater Agreement and Krippendorff's Alpha",
+'換算測定値（Umean / Uscale）':'Rescaled Measures (Umean / Uscale)',
+'残差PCA：固有値と安定性':'Residual PCA: Eigenvalues and Stability',
+'残差PCA：第1・第2コントラスト負荷量':'Residual PCA: First-Contrast Loadings',
+"共通文脈における完全一致率・隣接（±1段階）一致率、適合カテゴリ確率に基づく独立下でのモデル期待完全一致率、およびKrippendorff's α（順序・区間・名義）です。一致率は重複割当上の素点の揃い方を表す記述指標であり、評価者の厳しさ差の補正やMFRMの分離信頼性の代替にはなりません。":"Observed exact and adjacent (+/-1 category) agreement percentages across shared rating contexts, model-expected exact agreement percentage under independence given fitted category probabilities, and Krippendorff's alpha (ordinal, interval, nominal). Agreement describes raw-score consistency across overlapping assignments; it does not adjust for severity differences or replace MFRM separation.",
+"共通文脈における完全一致率・隣接（±1段階）一致率、適合カテゴリ確率に基づく独立下でのモデル期待完全一致率、およびKrippendorff's α（順序・区間・名義）です。一致率は重複割当上の素点の揃い方を表す記述指標であり、評価者の厳しさ差の補正やMFRMの分離信頼性の代替にはなりません。較正推論が保留中はモデル期待完全一致率も保留されます。":"Observed exact and adjacent (+/-1 category) agreement percentages across shared rating contexts, model-expected exact agreement percentage under independence given fitted category probabilities, and Krippendorff's alpha (ordinal, interval, nominal). Agreement describes raw-score consistency across overlapping assignments; it does not adjust for severity differences or replace MFRM separation. Model-expected exact agreement is withheld while calibration inference is on hold.",
+'相の組合せ列にわたる標準化観測残差の主成分分析です（固有値の総和＝残差列数）。第1コントラスト固有値が2.0前後以上の場合は二次元性・局所依存の点検契機となりますが、自動的な合否検定ではありません（疎な重複や平均0補完でも固有値は膨らみ得ます）。':'Principal components of standardized observation residuals across facet-combination columns (sum of eigenvalues equals residual column count). First-contrast eigenvalues near or above 2.0 serve as an inspection prompt for secondary dimensions or local dependence, not an automatic pass/fail test; sparse cell overlap and mean-zero residual imputation can inflate contrast eigenvalues.',
+'第1コントラスト（PC1）の正の極から負の極へ並べた標準化残差の主成分負荷量です。対比している課題・観点・評価者の特定に使います。':'Standardized-residual loadings on the first two principal contrasts, ordered from the positive pole to the negative pole of PC1 to identify contrasting tasks, criteria, or raters.',
+'任意の標準化残差PCAが指定されましたが、保持された評定設計から有効な残差相関行列を作成できませんでした。':'Optional standardized-residual PCA was requested, but the retained rating design did not produce a valid residual correlation matrix.',
 })
+TEMPLATES += [
+('ペア別一致率：{facet}', 'Pairwise Agreement: {facet}'),
+('{facet} における共通文脈上の観測一致率とモデル期待一致率のペア別一覧です。共通文脈がないペアは除外しています。較正推論が保留中はモデル期待完全一致率も保留されます。', 'Pairwise observed and model-expected agreement across shared contexts for {facet}. Pairs without shared contexts are omitted. Model-expected exact agreement is withheld while calibration inference is on hold.'),
+('{facet} における共通文脈上の観測一致率とモデル期待一致率のペア別一覧です。共通文脈がないペアは除外しています。', 'Pairwise observed and model-expected agreement across shared contexts for {facet}. Pairs without shared contexts are omitted.'),
+("線形得点換算（Umean = {mean}、Uscale = {value}）：基準ロジット推定値へ M' = Umean + Uscale * M および SE' = Uscale * SE を適用した表です（分離指数・信頼性は線形変換で不変）。元の Measures and Fit・Wright map・指定区間・共同交互作用は基準ロジットのまま保持され、利用条件（Basis）と保留セルも Measures and Fit と一致します。", "Linear score rescaling (Umean = {mean}, Uscale = {value}): applies M' = Umean + Uscale * M and SE' = Uscale * SE to canonical logit estimates (separation and reliability ratios are affine-invariant). Baseline Measures and Fit, Wright maps, specified intervals and joint interactions remain in canonical logits. Qualification Basis and withheld cells match Measures and Fit."),
+]
 GUIDES_EN = {
 'CSV_GUIDE': '''Use long-form UTF-8 CSV: one row per individual rating, with a header.
 Person,Rater,Task,Criterion,Score
@@ -175,7 +203,7 @@ The example CSV contains synthetic writing ratings, shared with the Web example.
 
 Columns and rubric: select distinct person, score and facet columns. Enter the rubric minimum and maximum, including categories absent in the data. Observed scores are context, not an automatically determined rubric.
 
-Model and anchors: RSM shares steps; PCM estimates separate steps by the selected facet. MML uses EM with fixed population SD; quadrature and SD settings are retained. Under Anchors / equating, you can specify fixed element logits (Status A) or group-mean anchors (Status G) and verify live connectivity and scale identification.
+Model and anchors: RSM shares steps; PCM estimates separate steps by the selected facet. MML uses EM with fixed population SD; quadrature and SD settings are retained. Under Reporting Scale & Optional Diagnostics, you can set linear rescaling (Umean / Uscale) and optionally enable standardized-residual PCA; inter-rater agreement, Krippendorff's alpha, and facet separation/reliability are always retained. Under Anchors / equating, you can specify fixed element logits (Status A) or group-mean anchors (Status G) and verify live connectivity and scale identification.
 
 Bias and intervals: use Add to register each request. Fixed-calibration cell estimates do not establish bias presence/absence. Specified structural intervals require fixed-SD MML and target-specific numerical checks. Joint interaction is a separate, jointly refitted model; eligible pointwise intervals and Wald approximate p values have explicitly stated conditions. Holm adjustment covers requested cells and contrasts, not simultaneous intervals.
 

@@ -250,3 +250,56 @@ def publication_measure_table(result: dict, diagnostics: dict, *, fit_note: str)
     for column in out.columns[out.isna().any()]:
         out[column] = out[column].astype(object).where(out[column].notna(), "")
     return out, caption
+
+
+def qualified_reliability_table(result: dict, diagnostics: dict) -> pd.DataFrame:
+    """Qualify current or saved reliability without replacing saved numbers."""
+    from mfrm_app.engine import qualify_measure_uncertainty
+    from mfrm_app.reliability import qualify_saved_reliability
+
+    result = result or {}
+    diagnostics = diagnostics or {}
+    reason = output_qualification.calibration_inference_hold_reason(result)
+    measures = diagnostics.get("measures")
+    if isinstance(measures, pd.DataFrame):
+        measures = qualify_measure_uncertainty(measures, result)
+    return qualify_saved_reliability(
+        diagnostics.get("reliability"),
+        measures,
+        calibration_hold=bool(reason),
+        hold_reason=reason,
+    )
+
+
+def publication_reliability_table(result: dict, diagnostics: dict, *, rel_note: str) -> tuple[pd.DataFrame, str]:
+    """Web and desktop reports share the same qualified facet separation/reliability table."""
+    reliability = qualified_reliability_table(result, diagnostics)
+    if not isinstance(reliability, pd.DataFrame) or reliability.empty:
+        return pd.DataFrame(), ""
+    columns = [c for c in ("Facet", "Levels", "SD", "RMSE", "Separation", "Strata", "Reliability")
+               if c in reliability]
+    out = reliability[columns].copy().round(3)
+    held = reliability["ReliabilityStatus"].ne("diagnostic") | bool(current_manuscript_hold(result))
+    out["Use"] = np.where(held, "Withheld", "Diagnostic")
+    caption = "Reliability and separation by facet. "
+    if held.any():
+        for column in ("RMSE", "Separation", "Strata", "Reliability"):
+            if column in out:
+                out.loc[held, column] = np.nan
+        caption += ("Interpretation is withheld for rows whose calibration, paired inputs or uncertainty basis are unqualified, "
+                    "or whose saved calculation cannot be verified. Precision indices are intentionally blank; "
+                    "SD is the spread of technical terminal-point estimates. ")
+    else:
+        caption += "These descriptive indices depend on the uncertainty method, observed spread and rating design; they do not establish accuracy for other designs. "
+    caption += rel_note + " "
+    caption += ("SD = sample standard deviation of estimates; RMSE = root mean square of SEs (posterior SDs for EAP). "
+                "For SE-based measures, G = sqrt(max(SD^2 - RMSE^2, 0)) / RMSE. "
+                "Reliability = G^2 / (1 + G^2). ")
+    basis = reliability.get("ReliabilityBasis", pd.Series(dtype=str)).astype(str)
+    if basis.str.contains("EAP", regex=False).any():
+        caption += ("For EAP person estimates, G = SD(EAP) / RMSE and reliability = "
+                    "Var(EAP) / (Var(EAP) + mean(posterior SD^2)); this is not directly equivalent to FACETS separation reliability. ")
+    caption += "Full notes and original technical values are retained in the reliability CSV."
+    for column in out.columns[out.isna().any()]:
+        out[column] = out[column].astype(object).where(out[column].notna(), "")
+    return out, caption

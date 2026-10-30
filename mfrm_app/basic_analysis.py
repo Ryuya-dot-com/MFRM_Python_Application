@@ -39,9 +39,12 @@ def _source_versions():
     else:
         modules = (engine, output_qualification, reporting_facts, project)
         paths = [Path(module.__file__) for module in modules] + [Path(__file__)]
-        paths += [Path(__file__).with_name(name + ".py") for name in
-                  ("desktop_analysis", "desktop_examples", "desktop_outputs", "bias_analysis", "generalizability",
-                   "structural_intervals", "mml_fixed_sd_review", "mml_joint")]
+        for name in ("desktop_analysis", "desktop_examples", "desktop_outputs", "bias_analysis", "generalizability",
+                     "reliability", "structural_intervals", "joint_interaction", "project_portability",
+                     "mml_fixed_sd_review", "mml_joint"):
+            candidate = Path(__file__).with_name(name + ".py")
+            if candidate.exists():
+                paths.append(candidate)
         source_hashes = {path.name: hashlib.sha256(path.read_bytes()).hexdigest() for path in paths}
     return {
         "app_version": engine.APP_VERSION,
@@ -147,15 +150,20 @@ def normalize_group_anchor_records(
 
 
 def _finish_analysis(result, data, settings, progress):
+    compute_pca = bool(settings.get("compute_pca", False))
+    umean = float(settings.get("umean", 0.0))
+    uscale = float(settings.get("uscale", 1.0))
+    has_rescaling = (umean, uscale) != (0.0, 1.0)
     progress("diagnostics")
-    diagnostics = engine.mfrm_diagnostics(result, compute_pca=False, compute_marginal=False,
+    diagnostics = engine.mfrm_diagnostics(result, compute_pca=compute_pca, compute_marginal=False,
                                          compute_eb_shrinkage=False)
     progress("tables")
-    tables = engine.calc_facets_report_tbls(result, diagnostics)
+    tables = engine.calc_facets_report_tbls(result, diagnostics, umean=umean, uscale=uscale)
     has_anchors = bool(settings.get("anchors") or settings.get("group_anchors"))
     analysis = {
         "kind": ("basic-rsm-jmle-v1"
-                 if settings["model"] == "RSM" and settings["method"] == "JMLE" and not has_anchors
+                 if settings["model"] == "RSM" and settings["method"] == "JMLE"
+                 and not has_anchors and not compute_pca and not has_rescaling
                  else "mfrm-analysis-v2"),
         "analysis_id": engine.build_result_analysis_identity(result).analysis_id,
         "created_at": datetime.now(timezone.utc).isoformat(),
@@ -168,7 +176,7 @@ def _finish_analysis(result, data, settings, progress):
         "scorefile": engine.compute_scorefile(result),
         "qualification_at_save": qualification_snapshot(result),
         "scope": {"includes_input": True, "optimizer_checkpoint": False,
-                  "pca": False, "marginal_fit": False, "bias_refits": False},
+                  "pca": compute_pca, "marginal_fit": False, "bias_refits": False},
     }
     analysis["content_fingerprint"] = project.content_fingerprint(analysis)
     return analysis
@@ -178,7 +186,8 @@ def run_basic_analysis(data, *, person_col, facet_cols, score_col, rating_min, r
                        maxit=400, reltol=1e-6, model="RSM", method="JMLE", step_facet=None,
                        quad_points=15, population_prior_sd=1.0, keep_original=True,
                        estimate_population_sd=False, mml_engine="EM",
-                       anchors=None, group_anchors=None, progress=None):
+                       anchors=None, group_anchors=None,
+                       compute_pca=False, umean=0.0, uscale=1.0, progress=None):
     """Fit once and retain qualified tables. Failure/unknown termination stays so.
 
     Progress identifies phases, not a fabricated percentage. A desktop worker
@@ -210,6 +219,19 @@ def run_basic_analysis(data, *, person_col, facet_cols, score_col, rating_min, r
         raise ValueError("MML requires at least three quadrature points and a positive finite fixed SD")
     if method == "JMLE" and (quad_points != 15 or population_prior_sd != 1.0):
         raise ValueError("Population SD and quadrature settings apply only to MML")
+    if type(compute_pca) is not bool:
+        raise ValueError("Residual PCA option must be True or False")
+    if isinstance(umean, (bool, np.bool_)) or isinstance(uscale, (bool, np.bool_)):
+        raise ValueError("Scale origin (umean) and multiplier (uscale) must be finite numbers with uscale > 0")
+    try:
+        f_umean = float(umean)
+        f_uscale = float(uscale)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("Scale origin (umean) and multiplier (uscale) must be finite numbers with uscale > 0") from exc
+    if not np.isfinite(f_umean) or not np.isfinite(f_uscale) or f_uscale <= 0:
+        raise ValueError("Scale origin (umean) and multiplier (uscale) must be finite numbers with uscale > 0")
+    if f_umean == 0.0:
+        f_umean = 0.0
 
     audit_rows = engine.build_response_data_audit(data, person_col=person_col, facet_cols=facet_cols, score_col=score_col)
     retained = data.loc[audit_rows["rows"]["IncludedInLikelihood"].to_numpy(dtype=bool)]
@@ -243,8 +265,16 @@ def run_basic_analysis(data, *, person_col, facet_cols, score_col, rating_min, r
         settings["anchors"] = norm_anchors
     if norm_groups:
         settings["group_anchors"] = norm_groups
+    if compute_pca:
+        settings["compute_pca"] = True
+    if (f_umean, f_uscale) != (0.0, 1.0):
+        settings["umean"] = f_umean
+        settings["uscale"] = f_uscale
 
-    estimate_kwargs = {k: v for k, v in settings.items() if k not in {"anchors", "group_anchors"}}
+    estimate_kwargs = {
+        k: v for k, v in settings.items()
+        if k not in {"anchors", "group_anchors", "compute_pca", "umean", "uscale"}
+    }
     if norm_anchors:
         estimate_kwargs["anchor_df"] = pd.DataFrame(norm_anchors)
     if norm_groups:

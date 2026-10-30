@@ -23,7 +23,7 @@
         <a href="#capabilities"><span data-i18n="en">Capabilities &amp; Limits</span><span data-i18n="ja">できること・制限</span></a>
         <a href="#faq"><span data-i18n="en">Q&amp;A</span><span data-i18n="ja">Q&amp;A</span></a>
         <a href="#guides"><span data-i18n="en">Documentation</span><span data-i18n="ja">ガイド</span></a>
-        <a href="#citing-this-software"><span data-i18n="en">Cite</span><span data-i18n="ja">引用</span></a>
+        <a href="#citing-this-software"><span data-i18n="en">Cite &amp; License</span><span data-i18n="ja">引用・利用条件</span></a>
       </nav>
       <div class="nav-actions">
         <div class="lang-switch" role="group" aria-label="Language">
@@ -863,13 +863,13 @@
     </div>
   </section>
 
-  <!-- Section 6: Documentation Directory, Local Run & Citation -->
+  <!-- Section 6: Documentation Directory & Local Python Source Run -->
   <section class="section section-soft" id="guides">
     <div class="container">
       <div class="section-intro">
         <h2>
           <span data-i18n="en">Documentation and reporting standards</span>
-          <span data-i18n="ja">ドキュメント・統計的制約・引用</span>
+          <span data-i18n="ja">ドキュメント・統計的制約ガイド</span>
         </h2>
         <p data-i18n="en">
           Guides are built directly from the repository documentation so workflow instructions and statistical scope limits stay aligned across versions.
@@ -902,34 +902,128 @@
         </a>
       </div>
 
-      <div class="tech-split">
-        <div id="install">
+      <div class="source-run-bar" id="install">
+        <div class="source-run-meta">
           <h3 id="run">
             <span data-i18n="en">Run from Python source</span>
             <span data-i18n="ja">Pythonソースからのローカル起動</span>
           </h3>
-          <pre><code>git clone https://github.com/Ryuya-dot-com/MFRM_Python_Application.git
-cd MFRM_Python_Application
-python3 -m venv .venv &amp;&amp; source .venv/bin/activate
-python -m pip install -r requirements.txt
-python -m streamlit run streamlit_app.py</code></pre>
           <p>
             <span data-i18n="en">Not needed for the standalone macOS or Windows preview ZIPs. For source startup on Intel Macs, Linux, or development environments (Python 3.11 or 3.12 with Tk), see <a href="https://github.com/Ryuya-dot-com/MFRM_Python_Application/blob/main/CONTRIBUTING.md#run-from-source" target="_blank" rel="noopener">CONTRIBUTING.md</a>.</span>
             <span data-i18n="ja">macOS（Apple Silicon）・Windows試用版ZIPを使う場合は不要です。Intel MacやLinux、開発環境でのソース起動（Python 3.11／3.12＋Tk）は <a href="https://github.com/Ryuya-dot-com/MFRM_Python_Application/blob/main/CONTRIBUTING.md#run-from-source" target="_blank" rel="noopener">CONTRIBUTING.md</a> を参照してください。</span>
           </p>
         </div>
+        <pre><code>git clone https://github.com/Ryuya-dot-com/MFRM_Python_Application.git
+cd MFRM_Python_Application
+python3 -m venv .venv &amp;&amp; source .venv/bin/activate
+python -m pip install -r requirements.txt
+python -m streamlit run streamlit_app.py</code></pre>
+      </div>
+    </div>
+  </section>
 
-        <div id="citing-this-software">
+  <!-- Section 7: APA 7th Citation, MIT License (User Responsibility) & Bug Reports -->
+  <section class="section" id="citing-this-software">
+    <div class="container">
+      <div class="section-intro">
+        <h2>
+          <span data-i18n="en">Citation, license, and bug reports</span>
+          <span data-i18n="ja">引用（APAスタイル）・ライセンス・<span style="display:inline-block">不具合報告</span></span>
+        </h2>
+        <p data-i18n="en">
+          Cite <strong>Ryuya Komuro</strong> in APA 7th edition format for the edition you used—in-text: <code style="white-space:nowrap">(Komuro, 2026)</code> or <code style="white-space:nowrap">Komuro (2026)</code>—alongside the underlying psychometric methods.
+        </p>
+        <p data-i18n="ja">
+          論文・発表での引用は、利用した環境に合わせて <strong>Ryuya Komuro</strong> を著者としたAPA第7版スタイル（本文内引用：<code>(Komuro, 2026)</code> または <code>Komuro (2026)</code>）をご使用ください。統計手法自体の原典も併せて引用してください。
+        </p>
+      </div>
+
+      <div class="cite-list">
+        <div class="cite-row">
+          <div class="cite-edition">
+            <h3>MFRM Desktop</h3>
+            <span class="cite-sub" data-i18n="en">macOS (arm64) · Windows 11 (x64)</span>
+            <span class="cite-sub" data-i18n="ja">macOS / Windows デスクトップ版</span>
+          </div>
+          <div class="cite-ref-wrap">
+            <div class="cite-apa-bar">
+              <p class="cite-apa" id="apa-desktop">Komuro, R. (2026). <em>MFRM Desktop</em> (Version 0.2.19-beta) [Computer software]. https://github.com/Ryuya-dot-com/MFRM_Python_Application</p>
+              <button type="button" class="copy-btn" onclick="copyText('apa-desktop', this)"><span data-i18n="en">Copy</span><span data-i18n="ja">コピー</span></button>
+            </div>
+            <p class="cite-note" data-i18n="en">Also record the OS release tag (<code>desktop-macos-20261030</code> or <code>desktop-windows-20261030</code>) and archive filename in your Methods section (built-in <code>CITATION.cff</code> sidecars record the shared repository title <code>MFRM Streamlit</code>).</p>
+            <p class="cite-note" data-i18n="ja">本文または方法欄に使用OSのタグ（<code>desktop-macos-20261030</code> または <code>desktop-windows-20261030</code>）と配布ZIP名も記録してください（同梱 <code>CITATION.cff</code> は共通リポジトリ名 <code>MFRM Streamlit</code> を記録します）。</p>
+          </div>
+        </div>
+
+        <div class="cite-row">
+          <div class="cite-edition">
+            <h3>MFRM Streamlit</h3>
+            <span class="cite-sub" data-i18n="en">Browser Web Application</span>
+            <span class="cite-sub" data-i18n="ja">ブラウザ Web版</span>
+          </div>
+          <div class="cite-ref-wrap">
+            <div class="cite-apa-bar">
+              <p class="cite-apa" id="apa-web">Komuro, R. (2026). <em>MFRM Streamlit</em> (Version 0.2.19-beta) [Computer software]. https://github.com/Ryuya-dot-com/MFRM_Python_Application</p>
+              <button type="button" class="copy-btn" onclick="copyText('apa-web', this)"><span data-i18n="en">Copy</span><span data-i18n="ja">コピー</span></button>
+            </div>
+            <p class="cite-note" data-i18n="en">Record the exact version and source commit shown in <em>About MFRM</em> (where BibTeX and <code>CITATION.cff</code> files can also be downloaded).</p>
+            <p class="cite-note" data-i18n="ja">アプリ内の <em>About MFRM</em> に表示されるバージョンとソースコミットを記録してください（BibTeX・<code>CITATION.cff</code> もダウンロード可能です）。</p>
+          </div>
+        </div>
+
+        <div class="cite-row">
+          <div class="cite-edition">
+            <h3>mfrmr</h3>
+            <span class="cite-sub" data-i18n="en">R Package on CRAN</span>
+            <span class="cite-sub" data-i18n="ja">CRAN公開 Rパッケージ</span>
+          </div>
+          <div class="cite-ref-wrap">
+            <div class="cite-apa-bar">
+              <p class="cite-apa" id="apa-r">Komuro, R. (2026). <em>mfrmr: Estimation and diagnostics for many-facet measurement models</em> (Version 0.2.3.1) [R package]. https://CRAN.R-project.org/package=mfrmr</p>
+              <button type="button" class="copy-btn" onclick="copyText('apa-r', this)"><span data-i18n="en">Copy</span><span data-i18n="ja">コピー</span></button>
+            </div>
+            <p class="cite-note" data-i18n="en">Substitute the installed package version from <code>packageVersion("mfrmr")</code> or run <code>citation("mfrmr")</code> in R.</p>
+            <p class="cite-note" data-i18n="ja">バージョン番号は実際に使用した版（R上で <code>packageVersion("mfrmr")</code> または <code>citation("mfrmr")</code> で確認）に置き換えてください。</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="legal-contact-grid">
+        <div class="legal-col" id="license">
           <h3>
-            <span data-i18n="en">Citing this software</span>
-            <span data-i18n="ja">ソフトウェアの引用</span>
+            <span data-i18n="en">License &amp; user responsibility (MIT License)</span>
+            <span data-i18n="ja">ライセンスと免責事項（MITライセンス）</span>
           </h3>
-          <pre><code>Komuro, R. (2026). MFRM Streamlit (Version 0.2.19-beta)
-[Computer software].
-https://github.com/Ryuya-dot-com/MFRM_Python_Application</code></pre>
-          <p>
-            <span data-i18n="en">For the desktop previews, record release tag desktop-macos-20261030 or desktop-windows-20261030 and the archive filename. When using the R package, run citation("mfrmr") in R and cite the underlying psychometric methods alongside the software.</span>
-            <span data-i18n="ja">デスクトップ試用版ではタグ（desktop-macos-20261030 または desktop-windows-20261030）とアーカイブ名も併記してください。R版 mfrmr を使用する場合は R 上で citation("mfrmr") を確認し、統計手法の原典とあわせて引用してください。</span>
+          <p data-i18n="en">
+            <strong>Free for research, teaching, and commercial use:</strong> Released under the <a href="https://github.com/Ryuya-dot-com/MFRM_Python_Application/blob/main/LICENSE" target="_blank" rel="noopener">MIT License</a> (<a href="https://github.com/Ryuya-dot-com/MFRM_Python_Application/blob/main/LICENSE_NOTICE.md" target="_blank" rel="noopener">Responsible Use Notice</a>). Academic research, thesis work, classroom instruction, institutional testing, consulting, and commercial applications are all permitted free of charge (retain copyright and license notices when redistributing; bundled third-party components retain their respective licenses).
+          </p>
+          <p data-i18n="en">
+            <strong>Provided "AS IS" — responsibility rests with the user:</strong> Because this software is provided free of charge, it comes <strong>without warranty of any kind</strong>. Users bear sole responsibility for data protection and institutional compliance, verifying model assumptions and design eligibility, respecting withheld-inference notices, and any substantive, educational, clinical, or operational decisions based on the outputs. Neither the author (<strong>Ryuya Komuro</strong>) nor copyright holders assume any liability for claims, losses, or damages arising from its use.
+          </p>
+          <p data-i18n="ja">
+            <strong>研究用・教育用・商用すべて無償で利用可能：</strong><a href="https://github.com/Ryuya-dot-com/MFRM_Python_Application/blob/main/LICENSE" target="_blank" rel="noopener">MITライセンス</a>（<a href="https://github.com/Ryuya-dot-com/MFRM_Python_Application/blob/main/LICENSE_NOTICE.md" target="_blank" rel="noopener">利用上の注意</a>）に基づき、学術研究・学位論文・授業・学内評価・コンサルティング・<strong>商用利用を含めすべて無料</strong>で許可しています（再配布時は著作権・ライセンス表示を保持してください。第三者ライブラリには各ライセンスが適用されます）。
+          </p>
+          <p data-i18n="ja">
+            <strong>無保証・利用者責任の明示：</strong>本ソフトウェアは無償で提供されるため、<strong>いかなる保証も伴わず現状のまま（AS IS）提供され、利用に関する責任はすべて利用者にあります</strong>。データの保護や所属機関の規定遵守、モデル仮定・設計条件の確認、保留判定（空欄の <code>SE</code> 等）の適切な扱い、および出力結果に基づく解釈・評価・意思決定について、作成者（<strong>Ryuya Komuro</strong>）は一切の損害・責任を負いません。
+          </p>
+        </div>
+
+        <div class="legal-col" id="bug-reports">
+          <h3>
+            <span data-i18n="en">Reporting bugs to the author</span>
+            <span data-i18n="ja">不具合の報告窓口（作成者メール）</span>
+          </h3>
+          <p data-i18n="en">
+            If you encounter a bug, crash, or unexpected behavior, please report it by email to the author, <strong>Ryuya Komuro</strong>, at <strong><a href="mailto:ryuya.komuro.c4@tohoku.ac.jp">ryuya.komuro.c4@tohoku.ac.jp</a></strong>.
+          </p>
+          <p data-i18n="en">
+            <strong>Please include:</strong> (1) your OS and version (e.g., macOS 15 <code>arm64</code> or Windows 11 <code>x64</code>), (2) the edition, app version (<code>0.2.19-beta</code>), and archive filename (or <code>mfrmr</code> version), (3) steps to reproduce, and (4) the exact error message or screenshot. <strong>Do not attach confidential or identifiable examinee/rater data</strong>—reproduce the issue with the built-in sample or anonymized synthetic data whenever possible.
+          </p>
+          <p data-i18n="ja">
+            動作不良・エラー・表示崩れ等を見つけた際は、作成者 <strong>Ryuya Komuro</strong>（<strong><a href="mailto:ryuya.komuro.c4@tohoku.ac.jp">ryuya.komuro.c4@tohoku.ac.jp</a></strong>）までメールでご報告ください。
+          </p>
+          <p data-i18n="ja">
+            <strong>ご連絡時に添えていただきたい情報：</strong>① OSとバージョン（例：macOS 15 <code>arm64</code> / Windows 11 <code>x64</code>）、② 利用環境・アプリ版（<code>0.2.19-beta</code>）・配布ZIP名（または <code>mfrmr</code> の版）、③ 再現手順、④ 正確なエラーメッセージや画面キャプチャ。<strong>メール本文や添付ファイルに受験者・評価者の個人情報や未匿名化の実データを含めないでください</strong>（可能な限り内蔵サンプルやダミーデータでの再現をお願いします）。
           </p>
         </div>
       </div>
@@ -939,17 +1033,17 @@ https://github.com/Ryuya-dot-com/MFRM_Python_Application</code></pre>
   <footer class="site-footer">
     <div class="container footer-inner">
       <div>
-        <strong>MFRM</strong> · MIT License ·
+        <strong>MFRM</strong> · © 2026 Ryuya Komuro · MIT License ·
         <a href="https://github.com/Ryuya-dot-com/MFRM_Python_Application/blob/main/LICENSE" target="_blank" rel="noopener">License</a> ·
         <a href="https://github.com/Ryuya-dot-com/MFRM_Python_Application/blob/main/LICENSE_NOTICE.md" target="_blank" rel="noopener">Notice</a> ·
-        <a href="overview-ja.html">日本語概要</a>
+        <a href="mailto:ryuya.komuro.c4@tohoku.ac.jp">ryuya.komuro.c4@tohoku.ac.jp</a>
       </div>
       <div>
         <a href="https://github.com/Ryuya-dot-com/MFRM_Python_Application/releases/tag/desktop-macos-20261030">macOS Preview</a> ·
         <a href="https://github.com/Ryuya-dot-com/MFRM_Python_Application/releases/tag/desktop-windows-20261030">Windows Preview</a> ·
         <a href="https://mfrmpythonapplication-xodghmcghngx8cz5zmhfeg.streamlit.app/" target="_blank" rel="noopener">Streamlit Web</a> ·
         <a href="https://ryuya-dot-com.github.io/mfrmr/" target="_blank" rel="noopener">mfrmr (R)</a> ·
-        <a href="https://github.com/Ryuya-dot-com/MFRM_Python_Application/issues" target="_blank" rel="noopener">Issues</a>
+        <a href="overview-ja.html">日本語概要</a>
       </div>
     </div>
   </footer>
@@ -1169,12 +1263,13 @@ https://github.com/Ryuya-dot-com/MFRM_Python_Application</code></pre>
     })();
 
     function copyText(id, btn) {
-      var text = document.getElementById(id).textContent;
+      var text = document.getElementById(id).textContent.replace(/\s+/g, ' ').trim();
       if (navigator.clipboard) {
         navigator.clipboard.writeText(text).then(function() {
-          var prev = btn.textContent;
-          btn.textContent = 'Copied';
-          setTimeout(function() { btn.textContent = prev; }, 1400);
+          var prevHTML = btn.innerHTML;
+          var lang = document.documentElement.getAttribute('data-lang');
+          btn.textContent = lang === 'ja' ? 'コピー完了' : 'Copied';
+          setTimeout(function() { btn.innerHTML = prevHTML; }, 1400);
         });
       }
     }

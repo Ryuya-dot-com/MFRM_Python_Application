@@ -361,11 +361,12 @@ def wrap_doc_page(title: str, lang: str, active_href: str, body_html: str, toc: 
   <footer class="site-footer">
     <div class="container footer-inner">
       <div>
-        <strong>MFRM</strong> · <a href="index.html">Product Overview</a> ·
-        <a href="desktop-guide.html">Desktop Guide</a> ·
-        <a href="analysis-scope.html">Interpretation Scope</a>
+        <strong>MFRM</strong> · © 2026 Ryuya Komuro · MIT License ·
+        <a href="index.html#citing-this-software">Citation &amp; License</a> ·
+        <a href="mailto:ryuya.komuro.c4@tohoku.ac.jp">ryuya.komuro.c4@tohoku.ac.jp</a>
       </div>
       <div>
+        <a href="https://github.com/Ryuya-dot-com/MFRM_Python_Application/releases/tag/desktop-macos-20261030">macOS Preview</a> ·
         <a href="https://github.com/Ryuya-dot-com/MFRM_Python_Application/releases/tag/desktop-windows-20261030">Windows Preview</a> ·
         <a href="https://mfrmpythonapplication-xodghmcghngx8cz5zmhfeg.streamlit.app/" target="_blank" rel="noopener">Streamlit Web</a> ·
         <a href="https://ryuya-dot-com.github.io/mfrmr/" target="_blank" rel="noopener">mfrmr (R)</a>

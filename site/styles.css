@@ -936,23 +936,121 @@ pre code {
   color: var(--ink-secondary);
 }
 
-.tech-split {
+.source-run-bar {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: 0.9fr 1.1fr;
   gap: 2.5rem;
-  margin-top: 3rem;
-  padding-top: 2.5rem;
+  margin-top: 2.5rem;
+  padding-top: 2.25rem;
   border-top: 1px solid var(--line);
+  align-items: start;
 }
-.tech-split h3 {
-  margin: 0 0 0.5rem;
+.source-run-meta h3 {
+  margin: 0 0 0.45rem;
   font-size: 1.05rem;
   font-weight: 620;
 }
-.tech-split p {
-  margin: 0.5rem 0 0;
-  font-size: 0.86rem;
+.source-run-meta p {
+  margin: 0;
+  font-size: 0.89rem;
   color: var(--ink-secondary);
+  line-height: 1.65;
+}
+.source-run-bar pre {
+  margin: 0;
+}
+
+/* APA 7th Citation Rows + MIT License & Bug Report Hairline Grid */
+.cite-list {
+  border-top: 1px solid var(--ink);
+}
+
+.cite-row {
+  display: grid;
+  grid-template-columns: 220px 1fr;
+  gap: 2.25rem;
+  padding: 1.55rem 0;
+  border-bottom: 1px solid var(--line-strong);
+  align-items: start;
+}
+
+.cite-edition h3 {
+  margin: 0 0 0.22rem;
+  font-size: 1.05rem;
+  font-weight: 630;
+  letter-spacing: -0.015em;
+}
+.cite-sub {
+  font-size: 0.82rem;
+  color: var(--ink-tertiary);
+}
+
+.cite-apa-bar {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1.25rem;
+  padding: 0.9rem 1.05rem;
+  background: var(--surface-soft);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+.cite-apa {
+  margin: 0;
+  padding-left: 1.85rem;
+  text-indent: -1.85rem;
+  font-size: 0.93rem;
+  line-height: 1.62;
+  color: var(--ink);
+  word-break: break-word;
+}
+.cite-apa em {
+  font-style: italic;
+}
+
+.cite-apa-bar .copy-btn {
+  flex-shrink: 0;
+  background: #ffffff;
+  border: 1px solid var(--line-strong);
+  padding: 0.28rem 0.65rem;
+}
+.cite-apa-bar .copy-btn:hover {
+  border-color: var(--ink-tertiary);
+}
+
+.cite-note {
+  margin: 0.55rem 0 0;
+  font-size: 0.85rem;
+  color: var(--ink-secondary);
+  line-height: 1.58;
+}
+
+.legal-contact-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 3rem;
+  margin-top: 2.75rem;
+}
+
+.legal-col h3 {
+  margin: 0 0 0.65rem;
+  font-size: 1.06rem;
+  font-weight: 630;
+  letter-spacing: -0.015em;
+}
+.legal-col p {
+  margin: 0 0 0.8rem;
+  font-size: 0.91rem;
+  line-height: 1.68;
+  color: var(--ink-secondary);
+}
+.legal-col p:last-child {
+  margin-bottom: 0;
+}
+.legal-col strong {
+  color: var(--ink);
+  font-weight: 600;
 }
 
 /* Guide / Markdown Page Layout (Clean Quarto / Stripe / OpenAI Docs feel) */
@@ -1098,7 +1196,9 @@ pre code {
   .plot-panel.active,
   .cap-row,
   .scope-grid,
-  .tech-split,
+  .source-run-bar,
+  .cite-row,
+  .legal-contact-grid,
   .doc-page-wrap {
     grid-template-columns: 1fr;
     gap: 1.25rem;

@@ -183,7 +183,27 @@ def _analysis_figure(analysis, kind, *, level=None, index=0, facet=None, statist
             table = result['d_study']; facets = list(entry['settings']['random_facets'])
             if gd_swap and len(facets) == 2:
                 facets = [facets[1], facets[0]]
-            groups = table.groupby(facets[1], sort=True) if len(facets) == 2 else [(None, table)]
+            if len(facets) == 2:
+                unique_levels = sorted(int(v) for v in table[facets[1]].dropna().unique())
+                if len(unique_levels) > 6:
+                    obs_val = int(result['design']['observed_n'].get(facets[1], unique_levels[0]))
+                    sel_val = int(result['selected_plan'].get(facets[1], obs_val))
+                    mandatory = sorted({unique_levels[0], unique_levels[-1], obs_val, sel_val} & set(unique_levels))
+                    step = max(1, (len(unique_levels) - 1) // 5)
+                    candidates = [unique_levels[idx] for idx in range(0, len(unique_levels), step)] + unique_levels
+                    fill = []
+                    for val in candidates:
+                        if val not in mandatory and val not in fill:
+                            fill.append(val)
+                        if len(mandatory) + len(fill) >= 6:
+                            break
+                    plot_levels = sorted((mandatory + fill)[:max(6, len(mandatory))])
+                    plot_table = table.loc[table[facets[1]].isin(plot_levels)]
+                else:
+                    plot_table = table
+                groups = plot_table.groupby(facets[1], sort=True)
+            else:
+                groups = [(None, table)]
             for group, rows in groups:
                 rows = rows.sort_values(facets[0])
                 suffix = f' · {facets[1]}={group}' if group is not None else ''
@@ -231,7 +251,11 @@ def report_html(analysis, *, pathway_facet=None, pathway_statistic='Infit', pres
         if 'joint_analysis' in analysis:
             parts.append('<p>' + escape(text('通常の表・Wright map等は元の主効果モデルです。共同交互作用は別モデルとして再推定した結果を専用の表・図に示します。', language)) + '</p>')
     for title, table, note in tables:
-        parts.extend(['<h2>' + escape(title) + '</h2><section>', table.to_html(index=False, escape=True), '</section><p>' + escape(note) + '</p>'])
+        parts.extend([
+            '<h2>' + escape(text(title, language)) + '</h2><section>',
+            table.to_html(index=False, escape=True),
+            '</section><p>' + escape(text(note, language)) + '</p>',
+        ])
     for i, (title, options) in enumerate(figure_choices(analysis)):
         options = dict(options)
         if options['kind'] == 'pathway':

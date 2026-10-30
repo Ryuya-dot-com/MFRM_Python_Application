@@ -52,6 +52,7 @@ def test_desktop_i18n_bijection_and_terminology_unification():
         "minimum": "0",
         "maximum": "5",
         "excluded": "2",
+        "reason": "欠測セル",
     }
     for ja_tpl, en_tpl in TEMPLATES:
         assert "ファセット" not in ja_tpl
@@ -392,6 +393,271 @@ def test_desktop_app_gd_ux_controls_and_language_roundtrip():
         app.change_language()
         assert "ready" in app.gd_preflight.get().lower()
         assert app.settings()["gd_settings"]["fixed_condition"]["mode"] == "mean"
+        app.worker.close()
+    finally:
+        root.destroy()
+
+
+@pytest.mark.parametrize(
+    "selected_plan,n_max",
+    [
+        ({"Rater": 7, "Task": 5}, 10),   # Previously failed: 7 absent from discrete grid & Task capped at observed*2=4
+        ({"Rater": 12, "Task": 9}, 15),  # Previously failed: grid capped at 10
+        ({"Rater": 14, "Task": 6}, 8),   # Custom plan exceeding n_max_per_facet still evaluates & appends cleanly
+    ],
+)
+def test_phase_c1_custom_d_study_plans_evaluate_exact_closed_form(selected_plan, n_max, tmp_path):
+    """C-1: Any positive integer custom D-Study plan evaluates Brennan Eq. 3.18 without ValueError."""
+    df = gd_two_facet_example()
+    analysis = run_analysis(
+        df,
+        workflow="gd",
+        gd_settings={
+            "object_facet": "Person",
+            "score_col": "Score",
+            "random_facets": ["Rater", "Task"],
+            "n_max_per_facet": n_max,
+            "target_population": "Placement cohort",
+            "selected_plan": selected_plan,
+        },
+    )
+    res = analysis["gd_analysis"]["result"]
+    assert res["available"] is True
+    sel = res["selected_plan"]
+    assert sel["Rater"] == selected_plan["Rater"]
+    assert sel["Task"] == selected_plan["Task"]
+
+    vc = res["variance_components"].set_index("Source")["Variance"].to_dict()
+    n_r, n_t = selected_plan["Rater"], selected_plan["Task"]
+    exp_rel = vc["Person:Rater"] / n_r + vc["Person:Task"] / n_t + vc["Residual"] / (n_r * n_t)
+    exp_abs = exp_rel + vc["Rater"] / n_r + vc["Task"] / n_t + vc["Rater:Task"] / (n_r * n_t)
+    exp_g = vc["Person"] / (vc["Person"] + exp_rel)
+    exp_phi = vc["Person"] / (vc["Person"] + exp_abs)
+
+    assert sel["G"] == pytest.approx(exp_g, abs=1e-12)
+    assert sel["Phi"] == pytest.approx(exp_phi, abs=1e-12)
+    assert sel["RelativeErrorVariance"] == pytest.approx(exp_rel, abs=1e-12)
+    assert sel["AbsoluteErrorVariance"] == pytest.approx(exp_abs, abs=1e-12)
+    assert sel["RelativeSEM"] == pytest.approx(np.sqrt(exp_rel), abs=1e-12)
+    assert sel["AbsoluteSEM"] == pytest.approx(np.sqrt(exp_abs), abs=1e-12)
+
+    hit = res["d_study"][
+        res["d_study"]["Rater"].eq(n_r) & res["d_study"]["Task"].eq(n_t)
+    ]
+    assert len(hit) == 1
+    assert float(hit["G"].iloc[0]) == pytest.approx(exp_g, abs=1e-12)
+
+    fig = analysis_figure(analysis, kind="gd")
+    assert len(fig.axes[0].get_legend().get_texts()) <= 13  # Up to 6 series x (G, Phi) + Selected plan
+
+    project_path = tmp_path / f"custom_{n_r}_{n_t}.mfrm"
+    save_project(project_path, analysis)
+    reloaded = load_project(project_path)
+    assert reloaded["gd_analysis"]["result"]["selected_plan"]["Rater"] == n_r
+
+
+def test_phase_c2_orthogonal_tensor_projection_eliminates_ss_cancellation():
+    """C-2: High main-effect-to-residual dynamic range and large constant shifts
+    must not suffer IEEE-754 subtraction cancellation in 2-way or 3-way ANOVA."""
+    import itertools
+
+    # 1) High main-effect-to-residual ratio without base offset:
+    # Y = 1e6*p + 3*r + 2*t + 0.01*p*r*t -> SS_total ~ 8e12 while SS_residual = 0.0008 (16-order ratio!).
+    # Old subtraction (ss_total - ss_p - ...) suffered >22% cancellation error here;
+    # orthogonal projection recovers exact float64 input residual to < 1e-7 relative error.
+    rows_3way = [
+        {
+            "Person": f"P{p:+d}",
+            "Rater": f"R{r:+d}",
+            "Task": f"T{t:+d}",
+            "Score": 1.0e6 * p + 3.0 * r + 2.0 * t + 0.01 * p * r * t,
+        }
+        for p, r, t in itertools.product((-1, 1), repeat=3)
+    ]
+    vc_3 = generalizability._crossed_anova_variance_components(
+        pd.DataFrame(rows_3way),
+        object_facet="Person",
+        random_facets=["Rater", "Task"],
+        score_col="Score",
+    ).set_index("Source")
+    assert vc_3.loc["Residual", "SumSquares"] == pytest.approx(0.0008, rel=1e-7)
+    assert vc_3.loc["Residual", "RawVariance"] == pytest.approx(0.0008, rel=1e-7)
+    assert (vc_3["SumSquares"] >= 0.0).all()
+
+    # 2) Shift invariance under a +1e9 constant offset (where ss_total ~ 8e18 wipes out 0.0008 completely under naive formulas):
+    shifted_3way = pd.DataFrame(rows_3way).assign(Score=lambda d: d["Score"] + 1.0e9)
+    vc_3_shift = generalizability._crossed_anova_variance_components(
+        shifted_3way,
+        object_facet="Person",
+        random_facets=["Rater", "Task"],
+        score_col="Score",
+    ).set_index("Source")
+    assert vc_3_shift.loc["Residual", "SumSquares"] == pytest.approx(0.0008, rel=1e-5)
+
+    # 3) Exact orthogonal (-1, +1) 2-way construction:
+    # Y = 1e6*p + 5*r + 0.01*p*r -> 4 cells, df_residual = 1, SS_residual = 4 * 1e-4 = 0.0004.
+    rows_2way = [
+        {
+            "Person": f"P{p:+d}",
+            "Rater": f"R{r:+d}",
+            "Score": 1.0e6 * p + 5.0 * r + 0.01 * p * r,
+        }
+        for p, r in itertools.product((-1, 1), repeat=2)
+    ]
+    vc_2 = generalizability._crossed_anova_variance_components(
+        pd.DataFrame(rows_2way),
+        object_facet="Person",
+        random_facets=["Rater"],
+        score_col="Score",
+    ).set_index("Source")
+    assert vc_2.loc["Residual", "SumSquares"] == pytest.approx(0.0004, rel=1e-7)
+    assert vc_2.loc["Residual", "RawVariance"] == pytest.approx(0.0004, rel=1e-7)
+    assert (vc_2["SumSquares"] >= 0.0).all()
+
+
+def test_phase_c3_web_and_desktop_share_single_gd_engine_and_fixed_conditioning():
+    """C-3: streamlit_app delegates directly to mfrm_app.generalizability and matches Desktop on 3-facet conditioning."""
+    import streamlit_app as web
+
+    assert web._crossed_anova_variance_components is generalizability._crossed_anova_variance_components
+    assert web._g_phi_from_variance_components is generalizability._g_phi_from_variance_components
+    assert web.compute_generalizability_from_data is generalizability.compute_generalizability_from_data
+    assert web.g_d_study_export_frame is generalizability.g_d_study_export_frame
+
+    df = writing_example()
+    fc = {"facet": "Criterion", "mode": "mean", "level": None}
+    desk = run_analysis(
+        df,
+        workflow="gd",
+        gd_settings={
+            "object_facet": "Person",
+            "score_col": "Score",
+            "random_facets": ["Rater", "Task"],
+            "n_max_per_facet": 8,
+            "target_population": "Writing cohort",
+            "selected_plan": None,
+            "fixed_condition": fc,
+        },
+    )["gd_analysis"]["result"]
+    web_raw = web.compute_generalizability_from_data(
+        df,
+        object_facet="Person",
+        random_facets=["Rater", "Task"],
+        score_col="Score",
+        n_max_per_facet=8,
+        target_population="Writing cohort",
+        fixed_condition=fc,
+    )
+    pd.testing.assert_frame_equal(desk["variance_components"], web_raw["variance_components"])
+    pd.testing.assert_frame_equal(desk["d_study"], web_raw["d_study"])
+    assert desk["observed_coefficients"] == web_raw["observed_coefficients"]
+
+
+def test_phase_c4_gd_table_order_localized_notes_and_contextual_banners():
+    """C-4: Practical table order, section-specific localized notes, no orange banner on clean G/D,
+    and specific banners when unavailable or when negative RawVariance occurs."""
+    df = gd_two_facet_example()
+    clean = run_analysis(
+        df,
+        workflow="gd",
+        gd_settings={
+            "object_facet": "Person",
+            "score_col": "Score",
+            "random_facets": ["Rater", "Task"],
+            "n_max_per_facet": 6,
+            "target_population": "Benchmark",
+            "selected_plan": {"Rater": 5, "Task": 3},
+        },
+    )
+    tables = current_tables(clean)
+    titles = [t for t, _, _ in tables]
+    notes = [n for _, _, n in tables]
+    assert titles == [
+        "G/D: observed_coefficients",
+        "G/D: selected_d_study",
+        "G/D: variance_components",
+        "G/D: d_study",
+        "G/D: metadata",
+    ]
+    assert len(set(notes)) == 5  # Each section has its own concise note (not 5 identical CI warnings)
+    assert "Person-only resampling" not in " ".join(notes)
+    assert {"RelativeSEM", "AbsoluteSEM"}.issubset(tables[0][1].columns)
+    assert {"RelativeSEM", "AbsoluteSEM"}.issubset(tables[1][1].columns)
+
+    ja_html = report_html(clean, language="ja")
+    assert "G/D: 観測設計のG・Phiと誤差" in ja_html
+    assert "G/D: 分散成分表" in ja_html
+    assert "元の観測得点における観測設計の点推定です" in ja_html
+    assert "<p>Person-only resampling" not in ja_html
+    assert ja_html.count("Person-only resampling has not qualified") == 1  # Only inside the metadata audit Value cell
+
+    tk = pytest.importorskip("tkinter")
+    from desktop_app import DesktopApp
+
+    try:
+        root = tk.Tk()
+    except tk.TclError:
+        pytest.skip("Tk display unavailable")
+    root.withdraw()
+    try:
+        app = DesktopApp(root, language="ja")
+        # 1. Clean positive-variance G/D run shows NO orange top warning banner.
+        app.show_analysis(clean)
+        assert app.qualification.get() == ""
+
+        # 2. Unavailable G/D run (missing cell) shows explicit unavailable reason in banner.
+        missing = run_analysis(
+            df.iloc[1:].reset_index(drop=True),
+            workflow="gd",
+            gd_settings={
+                "object_facet": "Person",
+                "score_col": "Score",
+                "random_facets": ["Rater", "Task"],
+            },
+        )
+        app.show_analysis(missing)
+        assert "計算できませんでした" in app.qualification.get()
+
+        # 3. Positive vs negative RawVariance attaches the diagnostic directly to G/D: variance_components
+        #    without cluttering the top-of-window banner.
+        pos_valid_df = pd.DataFrame(
+            [
+                {"Person": "P1", "Rater": "R1", "Score": 22.0},
+                {"Person": "P1", "Rater": "R2", "Score": 14.0},
+                {"Person": "P2", "Rater": "R1", "Score": 12.0},
+                {"Person": "P2", "Rater": "R2", "Score": 8.0},
+            ]
+        )
+        pos_run = run_analysis(
+            pos_valid_df,
+            workflow="gd",
+            gd_settings={"object_facet": "Person", "score_col": "Score", "random_facets": ["Rater"]},
+        )
+        app.show_analysis(pos_run)
+        assert app.qualification.get() == ""
+        app.table_selector.current(2)
+        app.show_table()
+        assert "符号付きのモーメント法推定値" in app.table_note.get()
+
+        neg_valid_df = pd.DataFrame(
+            [
+                {"Person": "P1", "Rater": "R1", "Score": 20.0},
+                {"Person": "P1", "Rater": "R2", "Score": 16.0},
+                {"Person": "P2", "Rater": "R1", "Score": 6.0},
+                {"Person": "P2", "Rater": "R2", "Score": 10.0},
+            ]
+        )
+        neg_run = run_analysis(
+            neg_valid_df,
+            workflow="gd",
+            gd_settings={"object_facet": "Person", "score_col": "Score", "random_facets": ["Rater"]},
+        )
+        assert neg_run["gd_analysis"]["result"]["available"] is True
+        app.show_analysis(neg_run)
+        assert app.qualification.get() == ""
+        app.table_selector.current(2)
+        app.show_table()
+        assert "負のRawVariance推定値が含まれており" in app.table_note.get()
         app.worker.close()
     finally:
         root.destroy()

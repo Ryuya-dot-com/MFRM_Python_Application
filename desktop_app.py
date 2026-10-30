@@ -1180,9 +1180,9 @@ class DesktopApp:
         self.plot_frame = self.ttk.Frame(graph); self.plot_frame.pack(fill="both", expand=True)
         table_page = self.ttk.Frame(self.notebook, padding=6); self.notebook.add(table_page, text=self.tr("表"))
         bar = self.ttk.Frame(table_page); bar.pack(fill="x")
-        self.table_choice = self.tk.StringVar(value=tables[0][0])
+        self.table_choice = self.tk.StringVar(value=f"1. {self.tr(tables[0][0])}")
         selector = self.ttk.Combobox(bar, textvariable=self.table_choice,
-            values=[f"{i+1}. {title}" for i, (title, _, _) in enumerate(tables)], state="readonly", width=58)
+            values=[f"{i+1}. {self.tr(title)}" for i, (title, _, _) in enumerate(tables)], state="readonly", width=58)
         selector.current(0); selector.pack(side="left"); self.table_selector = selector
         selector.bind("<<ComboboxSelected>>", self.show_table)
         self.ttk.Button(bar, text=self.tr("CSVを保存…"), command=self.save_table).pack(side="right")
@@ -1212,7 +1212,11 @@ class DesktopApp:
                 message += self.tr(" 保存時から利用条件が変わったため、現在の判定を適用しています。")
         if analysis.get("bias_analyses"): message += self.tr(" 固定較正のバイアス診断では有無の推論は保留です。")
         if 'joint_analysis' in analysis: message += self.tr(" 共同交互作用は別モデルの点ごとの近似推論です。利用可否は専用の表・図で確認してください。")
-        if "gd_analysis" in analysis: message += self.tr(" G/D-Studyの区間推定は保留です。")
+        if gd_entry := analysis.get("gd_analysis"):
+            gd_res = gd_entry.get("result", {})
+            if not gd_res.get("available"):
+                gd_reason = self.tr(gd_res.get("reason", ""))
+                message += self.tr(f" G/D-Studyは計算できませんでした：{gd_reason}")
         self.qualification.set(message)
         if message: self.qualification_label.pack(fill="x", before=self.notebook, pady=(0, 8))
         self.result_label.configure(text=self.data_label)
@@ -1222,7 +1226,7 @@ class DesktopApp:
     def show_table(self, event=None):
         _, table, note = self.output_tables[self.table_selector.current()]
         for widget in self.table_frame.winfo_children(): widget.destroy()
-        self.table_note.set(note)
+        self.table_note.set(self.tr(note))
         self.table_view(self.table_frame, table)
 
     def save_table(self):

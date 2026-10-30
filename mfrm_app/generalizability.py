@@ -5,6 +5,8 @@ variance handling, provenance and the interval hold apply in every frontend.
 """
 from __future__ import annotations
 
+from copy import deepcopy
+import itertools
 import json
 import math
 
@@ -14,9 +16,47 @@ import pandas as pd
 from mfrm_app.engine import dataframe_fingerprint, stable_json_fingerprint
 
 
-_GD_STUDY_DEFAULT_GRID = (1, 2, 3, 4, 5, 6, 8, 10)
+_GD_STUDY_DEFAULT_GRID = (1, 2, 3, 4, 5, 6, 7, 8, 9, 10)
 _GD_CALCULATION_VERSION = "balanced_anova_v2"
 _GD_CI_REASON = "Person-only resampling has not qualified intervals for the declared random-facet G/D targets."
+_RESERVED_GD_NAMES = {"Residual", "G", "Phi", "IsObservedDesign", "_section"}
+
+GD_SECTION_ORDER = (
+    "observed_coefficients",
+    "selected_d_study",
+    "variance_components",
+    "d_study",
+    "metadata",
+)
+GD_SECTION_NOTES = {
+    "observed_coefficients": (
+        "Observed-design point estimates on original scores: G for relative decisions, "
+        "Phi for absolute decisions, and error variances / SEMs. Intervals for G and Phi are withheld."
+    ),
+    "selected_d_study": (
+        "Projected G, Phi, error variances and SEMs at the selected D-Study counts "
+        "assuming the same universe and fully crossed observations."
+    ),
+    "variance_components": (
+        "Balanced random-effects ANOVA components. RawVariance retains signed method-of-moments estimates; "
+        "Variance clips negative values at zero for G/Phi. Highest-order interaction is confounded with Residual."
+    ),
+    "d_study": (
+        "Closed-form D-Study point projections across planned facet counts "
+        "(IsObservedDesign=True marks the observed counts)."
+    ),
+    "metadata": (
+        "Audit record of design checks, score basis, declared population and calculation settings "
+        "(interval_inference_allowed=False)."
+    ),
+}
+
+GD_VARIANCE_NEGATIVE_NOTE = (
+    "Balanced random-effects ANOVA components. One or more RawVariance estimates are negative "
+    "(possible sampling variability near zero or design misspecification) and were clipped at zero for G/Phi. "
+    "Highest-order interaction is confounded with Residual."
+)
+
 _GD_INPUT_REASONS = {
     "invalid_result": "Result is not a fit dictionary.",
     "missing_data": "Fit does not carry a raw data frame for G-study.",
@@ -34,6 +74,108 @@ _GD_INPUT_REASONS = {
 }
 
 
+def _planned_facet_grid(n_max_per_facet: int) -> tuple[int, ...]:
+    """Build a contiguous positive-integer D-Study grid up to n_max_per_facet.
+
+    For standard planning ranges (<= 25), every integer 1..n_max_per_facet is
+    included so custom counts (e.g., 5, 7, 9, 12) never fail grid lookup.
+    For very large upper bounds, keep 1..15 exact and step cleanly up to n_max.
+    """
+    n_max = int(n_max_per_facet)
+    if n_max <= 25:
+        return tuple(range(1, n_max + 1))
+    dense = list(range(1, 16))
+    step = max(2, math.ceil((n_max - 15) / 10))
+    tail = list(range(15 + step, n_max, step))
+    if not tail or tail[-1] != n_max:
+        tail.append(n_max)
+    return tuple(dense + tail)
+
+
+def validate_fixed_condition(fixed_condition, object_facet, score_col, random_facets):
+    """Validate explicit fixed-facet conditioning settings for 3+ facet designs."""
+    if fixed_condition is None:
+        return None
+    if not isinstance(fixed_condition, dict) or set(fixed_condition) != {"facet", "mode", "level"}:
+        raise ValueError("Fixed-facet conditioning requires facet, mode and level fields")
+    facet = fixed_condition.get("facet")
+    mode = fixed_condition.get("mode")
+    level = fixed_condition.get("level")
+    if (not isinstance(facet, str) or not facet.strip() or ":" in facet or facet in _RESERVED_GD_NAMES
+            or facet in {object_facet, score_col, *random_facets}):
+        raise ValueError("Select a distinct fixed-facet column")
+    if mode not in ("level", "sum", "mean"):
+        raise ValueError("Fixed-facet conditioning mode must be level, sum or mean")
+    if mode == "level":
+        if not isinstance(level, str) or not level.strip():
+            raise ValueError("Choose a level for fixed-facet slice conditioning")
+    elif level is not None:
+        raise ValueError("Composite fixed-facet modes aggregate across all levels without a single level")
+    return dict(facet=facet, mode=mode, level=level)
+
+
+def prepare_gd_input_data(data, settings):
+    """Apply explicit fixed-facet conditioning only when elementary design rules hold."""
+    fc = settings.get("fixed_condition") if isinstance(settings, dict) else None
+    if fc is None:
+        return data, "", None
+    if not isinstance(data, pd.DataFrame) or data.empty:
+        return data, "missing_data", None
+    object_facet = settings["object_facet"]
+    random_facets = list(settings["random_facets"])
+    score_col = settings["score_col"]
+    fixed_facet = fc["facet"]
+    mode = fc["mode"]
+    level = fc["level"]
+    if len(random_facets) not in (1, 2) or len({object_facet, *random_facets}) != 1 + len(random_facets):
+        return data, "unsupported_facets", None
+    elementary_facets = [object_facet, *random_facets, fixed_facet]
+    if (not data.columns.is_unique or score_col in elementary_facets
+            or any(not f or ":" in f or f in _RESERVED_GD_NAMES for f in elementary_facets)
+            or any(c not in data.columns for c in [*elementary_facets, score_col])):
+        return data, "invalid_columns", None
+    if "Weight" in data.columns:
+        weights = pd.to_numeric(data["Weight"], errors="coerce")
+        if not (np.isfinite(weights.to_numpy(dtype=float)).all() and weights.eq(1).all()):
+            return data, "unsupported_weights", None
+    f_labels = data[fixed_facet]
+    if f_labels.isna().any() or f_labels.astype(str).str.strip().eq("").any():
+        return data, "invalid_labels", None
+    if f_labels.nunique() != f_labels.astype(str).nunique():
+        return data, "invalid_labels", None
+    f_str = f_labels.astype(str)
+    if mode == "level":
+        sliced = data.loc[f_str.eq(level)].copy()
+        if sliced.empty:
+            return data, "insufficient_levels", None
+        return sliced, "", dict(facet=fixed_facet, mode="level", level=level, n_fixed_levels=1)
+
+    scores = pd.to_numeric(data[score_col], errors="coerce")
+    if not np.isfinite(scores.to_numpy(dtype=float)).all():
+        return data, "invalid_scores", None
+    work = data[elementary_facets].copy()
+    for facet in elementary_facets:
+        labels = work[facet]
+        if labels.isna().any() or labels.astype(str).str.strip().eq("").any():
+            return data, "invalid_labels", None
+        if labels.nunique() != labels.astype(str).nunique():
+            return data, "invalid_labels", None
+        work[facet] = labels.astype(str)
+    work[score_col] = scores.to_numpy(dtype=float)
+    levels = {f: int(work[f].nunique()) for f in elementary_facets}
+    if min(levels.values()) < 2:
+        return data, "insufficient_levels", None
+    if work.duplicated(elementary_facets).any():
+        return data, "duplicate_cells", None
+    if not _is_balanced_one_obs_per_cell(work, elementary_facets):
+        return data, "missing_cells", None
+    grouped = work.groupby([object_facet, *random_facets], sort=True, as_index=False)[score_col]
+    agg = grouped.sum() if mode == "sum" else grouped.mean()
+    if "Weight" in data.columns:
+        agg["Weight"] = 1.0
+    return agg, "", dict(facet=fixed_facet, mode=mode, level=None, n_fixed_levels=levels[fixed_facet])
+
+
 def _prepare_g_d_data(data, object_facet, random_facets, score_col):
     """Validate the same observation table used by decomposition and reporting."""
     design = {"n_input_rows": len(data) if isinstance(data, pd.DataFrame) else 0,
@@ -46,7 +188,7 @@ def _prepare_g_d_data(data, object_facet, random_facets, score_col):
             or len(set(facets)) != len(facets)):
         return None, design, "unsupported_facets"
     if (not data.columns.is_unique or score_col in facets
-            or any(not f or ":" in f or f in {"Residual", "G", "Phi", "IsObservedDesign", "_section"}
+            or any(not f or ":" in f or f in _RESERVED_GD_NAMES
                    for f in facets)
             or any(c not in data.columns for c in facets + [score_col])):
         return None, design, "invalid_columns"
@@ -108,24 +250,11 @@ def _crossed_anova_two_way_variance_components(
 ) -> pd.DataFrame | None:
     """Full random-effects 3-way ANOVA decomposition under one-obs-per-cell.
 
-    For a balanced p x i x j design with one observation per cell, all
-    factors random, and Person as the object of measurement, the
-    method-of-moments equations from Brennan (2001, Table 3.5) yield:
-
-      sigma2_p   = (MS_p   - MS_pi - MS_pj + MS_pij) / (n_i n_j)
-      sigma2_i   = (MS_i   - MS_pi - MS_ij + MS_pij) / (n_p n_j)
-      sigma2_j   = (MS_j   - MS_pj - MS_ij + MS_pij) / (n_p n_i)
-      sigma2_pi  = (MS_pi  - MS_pij) / n_j
-      sigma2_pj  = (MS_pj  - MS_pij) / n_i
-      sigma2_ij  = (MS_ij  - MS_pij) / n_p
-      sigma2_pij = MS_pij              (residual; confounded with error)
-
-    Returns the variance-component table with seven rows (three main
-    effects + three two-way interactions + residual) when applicable,
-    or ``None`` when the design does not satisfy the one-observation-
-    per-cell balanced assumption. RawVariance retains signed estimates;
-    Variance is clipped at zero for the coefficient calculation.
+    Uses sequential orthogonal tensor projection (Brennan, 2001, Table 3.5)
+    rather than subtracting large sums of squares, eliminating IEEE-754
+    catastrophic cancellation when main-effect variance dominates residual error.
     """
+    del grand_mean, ss_total  # Retained in signature for internal compatibility; centered tensor is used.
     if len(random_facets) != 2:
         return None
     p_facet = object_facet
@@ -134,48 +263,75 @@ def _crossed_anova_two_way_variance_components(
     if not _is_balanced_one_obs_per_cell(work, facets_3way):
         return None
 
-    n_p = int(work[p_facet].nunique())
-    n_i = int(work[i_facet].nunique())
-    n_j = int(work[j_facet].nunique())
+    p_cat = pd.Categorical(work[p_facet])
+    i_cat = pd.Categorical(work[i_facet])
+    j_cat = pd.Categorical(work[j_facet])
+    n_p, n_i, n_j = len(p_cat.categories), len(i_cat.categories), len(j_cat.categories)
     if min(n_p, n_i, n_j) < 2:
         return None
 
-    def cell_mean(group_cols):
-        return work.groupby(group_cols, observed=False)[score_col].mean()
+    y_tensor = np.empty((n_p, n_i, n_j), dtype=np.float64)
+    y_tensor[p_cat.codes, i_cat.codes, j_cat.codes] = work[score_col].to_numpy(dtype=np.float64)
 
-    # Main-effect SS (each weighted by the cell count of the
-    # marginalised facets so the formula matches the balanced ANOVA).
-    means_p = cell_mean(p_facet)
-    ss_p = float(n_i * n_j * np.sum((means_p.to_numpy(dtype=float) - grand_mean) ** 2))
-    means_i = cell_mean(i_facet)
-    ss_i = float(n_p * n_j * np.sum((means_i.to_numpy(dtype=float) - grand_mean) ** 2))
-    means_j = cell_mean(j_facet)
-    ss_j = float(n_p * n_i * np.sum((means_j.to_numpy(dtype=float) - grand_mean) ** 2))
+    # Two-pass grand-mean centering for exact shift invariance.
+    y0 = y_tensor - float(y_tensor.mean())
+    y0 = y0 - float(y0.mean())
 
-    # Two-way SS: SS_pi = n_j * sum (bar_Y_pi. - bar_Y_p.. - bar_Y_.i. + bar_Y_...)^2
-    means_pi = cell_mean([p_facet, i_facet]).unstack().to_numpy()
-    means_pj = cell_mean([p_facet, j_facet]).unstack().to_numpy()
-    means_ij = cell_mean([i_facet, j_facet]).unstack().to_numpy()
-    means_p_arr = means_p.to_numpy(dtype=float).reshape(-1, 1)
-    means_i_arr = means_i.to_numpy(dtype=float).reshape(-1, 1)
-    means_j_arr = means_j.to_numpy(dtype=float).reshape(-1, 1)
+    # Sweep mutually orthogonal 1-way main effects in order of decreasing magnitude
+    # so large main effects never pollute smaller main effects, interactions, or residuals.
+    main_axes = {
+        0: (1, 2),
+        1: (0, 2),
+        2: (0, 1),
+    }
+    init_ranges = {
+        ax: float(np.ptp(y0.mean(axis=reduce_axes)))
+        for ax, reduce_axes in main_axes.items()
+    }
+    y_swept = y0.copy()
+    main_effects: dict[int, np.ndarray] = {
+        0: np.zeros((n_p, 1, 1), dtype=np.float64),
+        1: np.zeros((1, n_i, 1), dtype=np.float64),
+        2: np.zeros((1, 1, n_j), dtype=np.float64),
+    }
+    sorted_main_axes = sorted(main_axes, key=lambda ax: -init_ranges[ax])
+    for _ in range(2):
+        for ax in sorted_main_axes:
+            delta = y_swept.mean(axis=main_axes[ax], keepdims=True)
+            main_effects[ax] = main_effects[ax] + delta
+            y_swept = y_swept - delta
 
-    diff_pi = (
-        means_pi - means_p_arr - means_i.to_numpy(dtype=float).reshape(1, -1) + grand_mean
-    )
-    ss_pi = float(n_j * np.sum(diff_pi ** 2))
-    diff_pj = (
-        means_pj - means_p_arr - means_j.to_numpy(dtype=float).reshape(1, -1) + grand_mean
-    )
-    ss_pj = float(n_i * np.sum(diff_pj ** 2))
-    diff_ij = (
-        means_ij - means_i_arr - means_j.to_numpy(dtype=float).reshape(1, -1) + grand_mean
-    )
-    ss_ij = float(n_p * np.sum(diff_ij ** 2))
+    eff_p, eff_i, eff_j = main_effects[0], main_effects[1], main_effects[2]
+    ss_p = float(n_i * n_j * np.sum(eff_p ** 2))
+    ss_i = float(n_p * n_j * np.sum(eff_i ** 2))
+    ss_j = float(n_p * n_i * np.sum(eff_j ** 2))
 
-    # Residual (= three-way interaction confounded with error under
-    # one obs per cell) by subtraction.
-    ss_residual = max(ss_total - ss_p - ss_i - ss_j - ss_pi - ss_pj - ss_ij, 0.0)
+    # Sweep mutually orthogonal 2-way interaction subspaces in order of decreasing magnitude.
+    two_way_axes = {
+        "pi": 2,
+        "pj": 1,
+        "ij": 0,
+    }
+    init_tw_ranges = {
+        key: float(np.ptp(y_swept.mean(axis=reduce_ax)))
+        for key, reduce_ax in two_way_axes.items()
+    }
+    tw_effects = {
+        "pi": np.zeros((n_p, n_i, 1), dtype=np.float64),
+        "pj": np.zeros((n_p, 1, n_j), dtype=np.float64),
+        "ij": np.zeros((1, n_i, n_j), dtype=np.float64),
+    }
+    sorted_tw = sorted(two_way_axes, key=lambda k: -init_tw_ranges[k])
+    for _ in range(2):
+        for key in sorted_tw:
+            delta = y_swept.mean(axis=two_way_axes[key], keepdims=True)
+            tw_effects[key] = tw_effects[key] + delta
+            y_swept = y_swept - delta
+
+    ss_pi = float(n_j * np.sum(tw_effects["pi"] ** 2))
+    ss_pj = float(n_i * np.sum(tw_effects["pj"] ** 2))
+    ss_ij = float(n_p * np.sum(tw_effects["ij"] ** 2))
+    ss_residual = float(np.sum(y_swept ** 2))
 
     # Degrees of freedom for each source (Brennan 2001 Table 3.5).
     df_p = n_p - 1
@@ -197,8 +353,6 @@ def _crossed_anova_two_way_variance_components(
     ms_ij = safe_div(ss_ij, df_ij)
     ms_residual = safe_div(ss_residual, df_residual)
 
-    # Keep the existing zero-clipped coefficient calculation. Signed
-    # method-of-moments estimates are retained separately as RawVariance.
     sigma2_residual = max(ms_residual, 0.0)
     sigma2_pi = max((ms_pi - ms_residual) / max(n_j, 1), 0.0)
     sigma2_pj = max((ms_pj - ms_residual) / max(n_i, 1), 0.0)
@@ -276,18 +430,15 @@ def _crossed_anova_variance_components(
     are required. Unsupported designs return an empty table. RawVariance
     retains signed method-of-moments estimates; Variance clips at zero.
     Two random facets use the full three-way interaction decomposition;
-    one random facet uses the two-way ANOVA below.
+    one random facet uses orthogonal two-way projection below.
     """
     work, _, reason = _prepare_g_d_data(obs_df, object_facet, random_facets, score_col)
     if reason:
         return pd.DataFrame()
-    n_obs = int(len(work))
 
     grand_mean = float(work[score_col].mean())
     ss_total = float(((work[score_col] - grand_mean) ** 2).sum())
 
-    # Two random facets use the full three-way decomposition. Only the
-    # already validated one-random-facet case proceeds to the two-way path.
     two_way = _crossed_anova_two_way_variance_components(
         work,
         object_facet=object_facet,
@@ -299,65 +450,88 @@ def _crossed_anova_variance_components(
     if two_way is not None and not two_way.empty:
         return two_way
 
-    rows = []
-    explained_ss = 0.0
-    facet_terms = [object_facet] + list(random_facets)
-    for facet in facet_terms:
-        grouped = work.groupby(facet, observed=False)
-        means = grouped[score_col].mean()
-        ns = grouped[score_col].size().astype(float)
-        k = int(len(means))
-        if k < 2:
-            continue
-        ss_facet = float(np.sum(ns.to_numpy() * (means.to_numpy() - grand_mean) ** 2))
-        df_facet = k - 1
-        ms_facet = ss_facet / df_facet if df_facet > 0 else np.nan
-        # Validation guarantees equal counts; the harmonic mean equals n_obs / k.
-        ns_arr = ns.to_numpy(dtype=float)
-        ns_valid = ns_arr[ns_arr > 0]
-        if ns_valid.size > 0 and np.all(ns_valid > 0):
-            harmonic_mean_n = float(ns_valid.size / np.sum(1.0 / ns_valid))
-        else:
-            harmonic_mean_n = float(n_obs / max(k, 1))
-        mean_obs_per_level = harmonic_mean_n
-        explained_ss += ss_facet
-        rows.append({
-            "Source": facet,
-            "Term": "main",
-            "SumSquares": ss_facet,
-            "df": df_facet,
-            "MeanSquares": ms_facet,
-            "MeanObsPerLevel": mean_obs_per_level,
-            "Levels": k,
-        })
-    ss_residual = max(float(ss_total - explained_ss), 0.0)
-    df_residual = max(int(n_obs - sum(int(r["Levels"]) for r in rows) + len(rows) - 1), 1)
-    ms_residual = ss_residual / df_residual if df_residual > 0 else np.nan
-    rows.append({
-        "Source": "Residual",
-        "Term": "residual",
-        "SumSquares": ss_residual,
-        "df": df_residual,
-        "MeanSquares": ms_residual,
-        "MeanObsPerLevel": float("nan"),
-        "Levels": None,
-    })
+    # Balanced one-random-facet (2-way) orthogonal tensor sweep.
+    i_facet = random_facets[0]
+    p_cat = pd.Categorical(work[object_facet])
+    i_cat = pd.Categorical(work[i_facet])
+    n_p, n_i = len(p_cat.categories), len(i_cat.categories)
+    if min(n_p, n_i) < 2:
+        return pd.DataFrame()
 
+    y_mat = np.empty((n_p, n_i), dtype=np.float64)
+    y_mat[p_cat.codes, i_cat.codes] = work[score_col].to_numpy(dtype=np.float64)
+    y0 = y_mat - float(y_mat.mean())
+    y0 = y0 - float(y0.mean())
+
+    # Sweep larger main effect first to prevent cancellation.
+    eff_p = np.zeros((n_p, 1), dtype=np.float64)
+    eff_i = np.zeros((1, n_i), dtype=np.float64)
+    y_swept = y0.copy()
+    p_first = float(np.ptp(y0.mean(axis=1))) >= float(np.ptp(y0.mean(axis=0)))
+    for _ in range(2):
+        if p_first:
+            dp = y_swept.mean(axis=1, keepdims=True)
+            eff_p = eff_p + dp
+            y_swept = y_swept - dp
+            di = y_swept.mean(axis=0, keepdims=True)
+            eff_i = eff_i + di
+            y_swept = y_swept - di
+        else:
+            di = y_swept.mean(axis=0, keepdims=True)
+            eff_i = eff_i + di
+            y_swept = y_swept - di
+            dp = y_swept.mean(axis=1, keepdims=True)
+            eff_p = eff_p + dp
+            y_swept = y_swept - dp
+
+    ss_p = float(n_i * np.sum(eff_p ** 2))
+    ss_i = float(n_p * np.sum(eff_i ** 2))
+    ss_residual = float(np.sum(y_swept ** 2))
+
+    df_p = n_p - 1
+    df_i = n_i - 1
+    df_residual = df_p * df_i
+
+    ms_p = ss_p / df_p if df_p > 0 else np.nan
+    ms_i = ss_i / df_i if df_i > 0 else np.nan
+    ms_residual = ss_residual / df_residual if df_residual > 0 else np.nan
+
+    rows = [
+        {
+            "Source": object_facet,
+            "Term": "main",
+            "SumSquares": ss_p,
+            "df": df_p,
+            "MeanSquares": ms_p,
+            "MeanObsPerLevel": float(n_i),
+            "Levels": n_p,
+        },
+        {
+            "Source": i_facet,
+            "Term": "main",
+            "SumSquares": ss_i,
+            "df": df_i,
+            "MeanSquares": ms_i,
+            "MeanObsPerLevel": float(n_p),
+            "Levels": n_i,
+        },
+        {
+            "Source": "Residual",
+            "Term": "residual",
+            "SumSquares": ss_residual,
+            "df": df_residual,
+            "MeanSquares": ms_residual,
+            "MeanObsPerLevel": float("nan"),
+            "Levels": None,
+        },
+    ]
     out = pd.DataFrame(rows)
     sigma2_e = ms_residual if np.isfinite(ms_residual) else np.nan
-    variances = []
-    for _, row in out.iterrows():
-        source = row["Source"]
-        if source == "Residual":
-            variances.append(float(sigma2_e) if np.isfinite(sigma2_e) else np.nan)
-            continue
-        ms = float(row["MeanSquares"])
-        m_per = float(row["MeanObsPerLevel"]) if pd.notna(row["MeanObsPerLevel"]) else np.nan
-        if not (np.isfinite(ms) and np.isfinite(sigma2_e) and np.isfinite(m_per) and m_per > 0):
-            variances.append(np.nan)
-        else:
-            variances.append((ms - sigma2_e) / m_per)
-    out["RawVariance"] = variances
+    out["RawVariance"] = [
+        (ms_p - sigma2_e) / n_i if np.isfinite(ms_p) and np.isfinite(sigma2_e) else np.nan,
+        (ms_i - sigma2_e) / n_p if np.isfinite(ms_i) and np.isfinite(sigma2_e) else np.nan,
+        float(sigma2_e) if np.isfinite(sigma2_e) else np.nan,
+    ]
     out["Variance"] = out["RawVariance"].clip(lower=0)
     total_var = float(np.nansum(out["Variance"]))
     out["ProportionVariance"] = (
@@ -375,70 +549,38 @@ def _g_phi_from_variance_components(
     object_facet: str,
     facet_observations: dict[str, int] | None = None,
 ) -> dict:
-    """Compute G / Phi from a variance-component table.
-
-    Two formulas are used depending on what the variance-component
-    table carries:
-
-    * **Full 3-way decomposition** (the table has explicit two-way
-      interaction terms ``object:facetA``, ``object:facetB``,
-      ``facetA:facetB``): the canonical Brennan (2001, Eq. 3.18)
-      formulas with explicit interaction variances:
-
-          sigma2(delta) = sigma2_pi / n_i + sigma2_pj / n_j + sigma2_pij / (n_i n_j)
-          sigma2(Delta) = sigma2(delta) + sigma2_i / n_i + sigma2_j / n_j + sigma2_ij / (n_i n_j)
-          G   = sigma2_p / (sigma2_p + sigma2(delta))
-          Phi = sigma2_p / (sigma2_p + sigma2(Delta))
-
-      Here ``sigma2_pij`` is the residual term (three-way interaction
-      confounded with error under one observation per cell).
-
-    * **One-random-facet design**: the non-object facet
-      contributes ``sigma2_facet / n_facet`` to absolute error
-      and the residual contributes ``sigma2_residual / n_total`` to
-      both relative and absolute error. The person-by-facet interaction
-      is confounded with residual error. The G-study entry point refuses
-      unbalanced data and designs with more than two random facets.
-    """
+    """Compute G / Phi from a variance-component table (Brennan, 2001, Eq. 3.18 / 3.19)."""
     if not isinstance(var_components, pd.DataFrame) or var_components.empty:
         return {"G": np.nan, "Phi": np.nan, "details": {}}
 
-    # Lookup by Source name; the table may also carry a Term column
-    # ("main" / "two-way" / "residual") to flag interaction rows.
-    lookup = {
-        str(row["Source"]): float(row["Variance"])
-        for _, row in var_components.iterrows()
-    }
+    sources = [str(s) for s in var_components["Source"].tolist()]
+    variances = var_components["Variance"].to_numpy(dtype=float)
+    lookup = {src: float(var) for src, var in zip(sources, variances)}
     sigma2_p = lookup.get(object_facet, np.nan)
     sigma2_e = lookup.get("Residual", np.nan)
     if not (np.isfinite(sigma2_p) and np.isfinite(sigma2_e) and sigma2_p > 0):
         return {"G": np.nan, "Phi": np.nan, "details": {"sigma2_p": sigma2_p, "sigma2_e": sigma2_e}}
 
     facet_obs = facet_observations or {}
-    has_term = "Term" in var_components.columns
-    two_way_rows = (
-        var_components[var_components["Term"] == "two-way"]
-        if has_term else pd.DataFrame()
+    two_way_sources = (
+        [src for src, term in zip(sources, var_components["Term"].tolist()) if term == "two-way"]
+        if "Term" in var_components.columns else []
     )
-    using_interactions = not two_way_rows.empty
 
-    if using_interactions:
-        # Full 3-way decomposition. Identify the two random facets
-        # from the two-way Source labels that involve the object_facet.
+    if two_way_sources:
         random_facets: list[str] = []
-        for src in two_way_rows["Source"]:
-            parts = [p for p in str(src).split(":") if p != object_facet]
-            for p in parts:
-                if p not in random_facets:
-                    random_facets.append(p)
+        for src in two_way_sources:
+            for part in src.split(":"):
+                if part != object_facet and part not in random_facets:
+                    random_facets.append(part)
         n_a = max(int(facet_obs.get(random_facets[0], 1)), 1) if random_facets else 1
         n_b = max(int(facet_obs.get(random_facets[1], 1)), 1) if len(random_facets) > 1 else 1
 
-        def lookup_two_way(facets: tuple[str, str]) -> float:
-            for src, var in lookup.items():
-                parts = set(str(src).split(":"))
-                if parts == set(facets):
-                    return float(var)
+        def lookup_two_way(pair: tuple[str, str]) -> float:
+            target = set(pair)
+            for src in two_way_sources:
+                if set(src.split(":")) == target:
+                    return float(lookup[src])
             return 0.0
 
         i_facet = random_facets[0] if random_facets else None
@@ -449,7 +591,6 @@ def _g_phi_from_variance_components(
         sigma2_i = lookup.get(i_facet, 0.0) if i_facet else 0.0
         sigma2_j = lookup.get(j_facet, 0.0) if j_facet else 0.0
 
-        # Brennan (2001) Eq. 3.18 / 3.19.
         sigma2_delta = (
             sigma2_pi / n_a + sigma2_pj / n_b + sigma2_e / (n_a * n_b)
         )
@@ -473,7 +614,6 @@ def _g_phi_from_variance_components(
             },
         }
 
-    # Main-effects-only fallback.
     sigma2_main_per_obs = 0.0
     for source, variance in lookup.items():
         if source in {object_facet, "Residual"} or not np.isfinite(variance):
@@ -481,10 +621,9 @@ def _g_phi_from_variance_components(
         n_per = facet_obs.get(source, 1)
         sigma2_main_per_obs += variance / max(int(n_per), 1)
 
-    # Total number of conditions-of-measurement observations per object.
     n_total = max(int(np.prod([max(facet_obs.get(s, 1), 1)
-                              for s in lookup
-                              if s not in {object_facet, "Residual"}])), 1)
+                               for s in lookup
+                               if s not in {object_facet, "Residual"}])), 1)
     relative_err = sigma2_e / n_total
     g_coef = sigma2_p / (sigma2_p + relative_err)
     phi_coef = sigma2_p / (sigma2_p + sigma2_main_per_obs + relative_err)
@@ -518,7 +657,6 @@ def _build_d_study_grid(
         return pd.DataFrame()
     grids = [facet_grids.get(f, _GD_STUDY_DEFAULT_GRID) for f in random_facets]
     rows = []
-    import itertools
     for combo in itertools.product(*grids):
         facet_obs = {f: int(n) for f, n in zip(random_facets, combo)}
         gp = _g_phi_from_variance_components(
@@ -542,6 +680,8 @@ def _bootstrap_g_phi_ci(
     confidence: float = 0.95,
     seed: int | None = 20260601,
     extra_designs: list[dict[str, int]] | None = None,
+    _variance_fn=None,
+    _coef_fn=None,
 ) -> dict:
     """Technical person-resampling calculation; not qualified for inference.
 
@@ -549,6 +689,8 @@ def _bootstrap_g_phi_ci(
     retains its success count and failure reasons against all attempts.
     This calculation does not establish coverage for random-facet G/D targets.
     """
+    variance_fn = _variance_fn or _crossed_anova_variance_components
+    coef_fn = _coef_fn or _g_phi_from_variance_components
     n_bootstrap = max(int(n_bootstrap), 1)
     confidence = float(min(max(confidence, 0.0), 1.0))
     base = {
@@ -579,13 +721,12 @@ def _bootstrap_g_phi_ci(
         parts = []
         for k, person in enumerate(rng.choice(persons, size=len(persons), replace=True)):
             sub = rows_by_person[person].copy()
-            # Each sampled cluster is a distinct measurement object.
             sub[object_facet] = f"BOOT_{k:04d}_{person}"
             parts.append(sub)
         boot_df = pd.concat(parts, ignore_index=True)
         why = ""
         try:
-            components = _crossed_anova_variance_components(
+            components = variance_fn(
                 boot_df, object_facet=object_facet, random_facets=random_facets,
                 score_col=score_col)
             if components.empty or not np.isfinite(components["Variance"]).all():
@@ -599,7 +740,7 @@ def _bootstrap_g_phi_ci(
             continue
         for design, draws, counts in zip(designs, values, failures):
             try:
-                coef = _g_phi_from_variance_components(
+                coef = coef_fn(
                     components, object_facet=object_facet, facet_observations=design)
             except Exception as exc:
                 for coefficient in ("G", "Phi"):
@@ -642,23 +783,31 @@ def compute_generalizability_study(
     random_facets: list[str] | None = None,
     n_max_per_facet: int = 10,
     score_col: str = "Score",
+    fixed_condition: dict | None = None,
     bootstrap_ci: bool = False,
     n_bootstrap: int = 200,
     bootstrap_confidence: float = 0.95,
     bootstrap_seed: int | None = 20260601,
+    _bootstrap_fn=None,
 ) -> dict:
     """Use retained MFRM scores; share the standalone G/D calculation and limits."""
     valid = isinstance(res, dict)
     config = res.get("config") if valid and isinstance(res.get("config"), dict) else {}
     prep = res.get("prep", {}) if valid else {}
     if random_facets is None:
-        random_facets = [f for f in (config or {}).get("facet_names", []) if f != object_facet]
+        fixed_name = fixed_condition.get("facet") if isinstance(fixed_condition, dict) else None
+        random_facets = [
+            f for f in (config or {}).get("facet_names", [])
+            if f != object_facet and f != fixed_name
+        ]
     bundle = _compute_generalizability_study(
         prep.get("data") if isinstance(prep, dict) else None,
         object_facet=object_facet, random_facets=random_facets, score_col=score_col,
         n_max_per_facet=n_max_per_facet, score_basis="retained_preprocessed_scores",
+        fixed_condition=fixed_condition,
         bootstrap_ci=bootstrap_ci, n_bootstrap=n_bootstrap,
-        bootstrap_confidence=bootstrap_confidence, bootstrap_seed=bootstrap_seed)
+        bootstrap_confidence=bootstrap_confidence, bootstrap_seed=bootstrap_seed,
+        _bootstrap_fn=_bootstrap_fn)
     if not valid:
         bundle.update(reason_code="invalid_result", reason=_GD_INPUT_REASONS["invalid_result"])
     return bundle
@@ -667,17 +816,17 @@ def compute_generalizability_study(
 def compute_generalizability_from_data(
     data: pd.DataFrame, *, object_facet: str, random_facets: list[str],
     score_col: str = "Score", n_max_per_facet: int = 10,
-    target_population: str = "",
+    target_population: str = "", fixed_condition: dict | None = None,
 ) -> dict:
     """Analyze observed scores directly, without MFRM preparation or estimation.
 
-    All non-object facets are random; no fixed-facet or weighted model is fitted.
-    The declared generalization population is provenance, not a verified assumption.
+    Supports 1-2 random facets, with optional verified fixed-facet conditioning
+    (single-level slice or complete-balanced sum/mean composite) for 3+ facet tables.
     """
     return _compute_generalizability_study(
         data, object_facet=object_facet, random_facets=random_facets, score_col=score_col,
         n_max_per_facet=n_max_per_facet, score_basis="original_observed_scores",
-        target_population=target_population)
+        target_population=target_population, fixed_condition=fixed_condition)
 
 
 def _compute_generalizability_study(
@@ -689,13 +838,15 @@ def _compute_generalizability_study(
     score_col: str = "Score",
     score_basis: str,
     target_population: str = "",
+    fixed_condition: dict | None = None,
     bootstrap_ci: bool = False,
     n_bootstrap: int = 200,
     bootstrap_confidence: float = 0.95,
     bootstrap_seed: int | None = 20260601,
+    _bootstrap_fn=None,
 ) -> dict:
     """Shared balanced ANOVA, design validation and qualification for both entries."""
-    design = {}
+    design: dict = {}
 
     def unavailable(code, components=None):
         return {
@@ -712,9 +863,49 @@ def _compute_generalizability_study(
 
     if not isinstance(random_facets, (list, tuple)):
         return unavailable("unsupported_facets")
-    data, design, reason = _prepare_g_d_data(data, object_facet, random_facets, score_col)
+
+    validated_fc = None
+    fc_meta = None
+    raw_fp = ""
+    working_input = data
+    if fixed_condition is not None:
+        validated_fc = validate_fixed_condition(fixed_condition, object_facet, score_col, list(random_facets))
+        raw_fp = dataframe_fingerprint(data, length=64) if isinstance(data, pd.DataFrame) else ""
+        working_input, prep_reason, fc_meta = prepare_gd_input_data(
+            data,
+            dict(
+                object_facet=object_facet,
+                random_facets=list(random_facets),
+                score_col=score_col,
+                fixed_condition=validated_fc,
+            ),
+        )
+        if prep_reason:
+            design = dict(
+                n_input_rows=len(data) if isinstance(data, pd.DataFrame) else 0,
+                n_observations=0, weight_basis="unit_observation_weights",
+                score_basis=score_basis, target_population=target_population,
+                fixed_facets=[validated_fc["facet"]],
+                fixed_condition=deepcopy(validated_fc),
+                raw_data_fingerprint=raw_fp, data_fingerprint=raw_fp,
+                generalization_basis="fixed_facet_conditioned_observed_scores",
+            )
+            return unavailable(prep_reason)
+
+    work_df, design, reason = _prepare_g_d_data(working_input, object_facet, random_facets, score_col)
     design.update(score_basis=score_basis, target_population=target_population,
                   fixed_facets=[], generalization_basis="all_non_object_facets_random")
+    if fc_meta is not None and validated_fc is not None:
+        design.update(
+            fixed_facets=[fc_meta["facet"]],
+            fixed_condition=deepcopy(validated_fc),
+            fixed_levels_aggregated=int(fc_meta["n_fixed_levels"]),
+            raw_data_fingerprint=raw_fp,
+            generalization_basis=(
+                "single_fixed_level_slice" if fc_meta["mode"] == "level"
+                else f"balanced_fixed_facet_{fc_meta['mode']}"
+            ),
+        )
     if reason:
         return unavailable(reason)
     if (isinstance(n_max_per_facet, (bool, np.bool_))
@@ -729,7 +920,7 @@ def _compute_generalizability_study(
     design["decomposition"] = decomposition
     with np.errstate(over="ignore", invalid="ignore"):
         var_components = _crossed_anova_variance_components(
-            data, object_facet=object_facet, random_facets=random_facets, score_col=score_col)
+            work_df, object_facet=object_facet, random_facets=random_facets, score_col=score_col)
     if var_components.empty or not np.isfinite(
         var_components[["RawVariance", "Variance", "SumSquares", "MeanSquares"]].to_numpy(dtype=float)
     ).all():
@@ -739,11 +930,8 @@ def _compute_generalizability_study(
         var_components, object_facet=object_facet, facet_observations=observed_n)
     if not all(np.isfinite(observed_coefficients[k]) for k in ("G", "Phi")):
         return unavailable("undefined_coefficients", var_components)
-    facet_grids = {
-        f: tuple(g for g in _GD_STUDY_DEFAULT_GRID
-                 if g <= min(max(observed_n[f] * 2, 4), n_max_per_facet))
-        for f in random_facets
-    }
+    planned_points = _planned_facet_grid(int(n_max_per_facet))
+    facet_grids = {f: planned_points for f in random_facets}
     d_study = _build_d_study_grid(
         var_components, object_facet=object_facet,
         random_facets=random_facets, facet_grids=facet_grids)
@@ -766,6 +954,15 @@ def _compute_generalizability_study(
         "decisions. Neither coefficient alone establishes suitability for a use or a cut score. "
         "Intervals remain unqualified for the random-facet targets."
     )
+    if fc_meta is not None:
+        caveat += (
+            f" Conditioned on fixed facet {fc_meta['facet']} = {fc_meta['level']}."
+            if fc_meta["mode"] == "level"
+            else (
+                f" Aggregated ({fc_meta['mode']}) across {fc_meta['n_fixed_levels']} fixed "
+                f"{fc_meta['facet']} levels after verifying complete balanced elementary cells."
+            )
+        )
     reference = "Cronbach, Gleser, Nanda, & Rajaratnam (1972); Brennan (2001)."
 
     bootstrap = {
@@ -779,12 +976,6 @@ def _compute_generalizability_study(
         "extra_design_replicates": [],
     }
     if bootstrap_ci:
-        # Build the list of extra designs to evaluate per replicate.
-        # Each d_study row contributes a facet_observations dict; the
-        # bootstrap loop computes the variance components ONCE per
-        # replicate and reuses them across all grid points, so the
-        # marginal cost of the D-study CI bands is small (one G/Phi
-        # closed-form evaluation per replicate per grid point).
         extra_designs: list[dict[str, int]] = []
         if isinstance(d_study, pd.DataFrame) and not d_study.empty:
             for _, row in d_study.iterrows():
@@ -794,8 +985,9 @@ def _compute_generalizability_study(
                         design_dict[facet] = int(row[facet])
                 if design_dict:
                     extra_designs.append(design_dict)
-        bootstrap = _bootstrap_g_phi_ci(
-            data,
+        bootstrap_runner = _bootstrap_fn or _bootstrap_g_phi_ci
+        bootstrap = bootstrap_runner(
+            work_df,
             object_facet=object_facet,
             random_facets=list(random_facets),
             score_col=score_col,
@@ -805,14 +997,12 @@ def _compute_generalizability_study(
             seed=bootstrap_seed,
             extra_designs=extra_designs,
         )
-        # Merge per-design CIs into d_study DataFrame.
         if (
             isinstance(d_study, pd.DataFrame)
             and not d_study.empty
             and bootstrap.get("available")
         ):
             extra_replicates = bootstrap.get("extra_design_replicates", [])
-            # Match by (n_facet1, n_facet2, ...) tuple.
             ci_rows: dict[tuple, dict] = {}
             for entry in extra_replicates:
                 key = tuple(int(entry["design"].get(f, 0)) for f in random_facets)
@@ -852,12 +1042,18 @@ def _compute_generalizability_study(
     }
 
 
-
 def _g_d_error_row(coefficients: dict) -> dict:
     details = coefficients["details"]
-    return {"G": coefficients["G"], "Phi": coefficients["Phi"],
-            "RelativeErrorVariance": details["sigma2_relative_error"],
-            "AbsoluteErrorVariance": details["sigma2_absolute_error"]}
+    rel_var = float(details["sigma2_relative_error"])
+    abs_var = float(details["sigma2_absolute_error"])
+    return {
+        "G": coefficients["G"],
+        "Phi": coefficients["Phi"],
+        "RelativeErrorVariance": rel_var,
+        "AbsoluteErrorVariance": abs_var,
+        "RelativeSEM": float(np.sqrt(max(rel_var, 0.0))) if np.isfinite(rel_var) else np.nan,
+        "AbsoluteSEM": float(np.sqrt(max(abs_var, 0.0))) if np.isfinite(abs_var) else np.nan,
+    }
 
 
 def g_d_study_export_frame(bundle: dict) -> pd.DataFrame:
@@ -874,6 +1070,7 @@ def g_d_study_export_frame(bundle: dict) -> pd.DataFrame:
         "variance_policy": "RawVariance signed; Variance clipped at zero",
         "coefficient_targets": "G: relative decisions; Phi: absolute decisions",
         "error_variance_units": "score_squared",
+        "sem_units": "score_units",
         "population_status": "declaration_not_verified",
         "interval_inference_allowed": False, "interval_hold_reason": _GD_CI_REASON,
         "bootstrap_requested": bool(bootstrap.get("requested", False)),

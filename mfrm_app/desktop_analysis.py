@@ -44,28 +44,9 @@ def _interval_requests(requests, facets, method):
     return out
 
 
-_RESERVED_GD_NAMES = {"Residual", "G", "Phi", "IsObservedDesign", "_section"}
-
-
-def _validate_fixed_condition(fixed_condition, object_facet, score_col, random_facets):
-    if fixed_condition is None:
-        return None
-    if not isinstance(fixed_condition, dict) or set(fixed_condition) != {"facet", "mode", "level"}:
-        raise ValueError("Fixed-facet conditioning requires facet, mode and level fields")
-    facet = fixed_condition.get("facet")
-    mode = fixed_condition.get("mode")
-    level = fixed_condition.get("level")
-    if (not isinstance(facet, str) or not facet.strip() or ":" in facet or facet in _RESERVED_GD_NAMES
-            or facet in {object_facet, score_col, *random_facets}):
-        raise ValueError("Select a distinct fixed-facet column")
-    if mode not in ("level", "sum", "mean"):
-        raise ValueError("Fixed-facet conditioning mode must be level, sum or mean")
-    if mode == "level":
-        if not isinstance(level, str) or not level.strip():
-            raise ValueError("Choose a level for fixed-facet slice conditioning")
-    elif level is not None:
-        raise ValueError("Composite fixed-facet modes aggregate across all levels without a single level")
-    return dict(facet=facet, mode=mode, level=level)
+_RESERVED_GD_NAMES = gd._RESERVED_GD_NAMES
+_validate_fixed_condition = gd.validate_fixed_condition
+prepare_gd_input_data = gd.prepare_gd_input_data
 
 
 def _gd_settings(settings):
@@ -95,68 +76,6 @@ def _gd_settings(settings):
     if fixed_validated is not None:
         out["fixed_condition"] = fixed_validated
     return out
-
-
-def prepare_gd_input_data(data, settings):
-    """Apply explicit fixed-facet conditioning only when elementary design rules hold."""
-    fc = settings.get("fixed_condition") if isinstance(settings, dict) else None
-    if fc is None:
-        return data, "", None
-    if not isinstance(data, pd.DataFrame) or data.empty:
-        return data, "missing_data", None
-    object_facet = settings["object_facet"]
-    random_facets = list(settings["random_facets"])
-    score_col = settings["score_col"]
-    fixed_facet = fc["facet"]
-    mode = fc["mode"]
-    level = fc["level"]
-    if len(random_facets) not in (1, 2) or len({object_facet, *random_facets}) != 1 + len(random_facets):
-        return data, "unsupported_facets", None
-    elementary_facets = [object_facet, *random_facets, fixed_facet]
-    if (not data.columns.is_unique or score_col in elementary_facets
-            or any(not f or ":" in f or f in _RESERVED_GD_NAMES for f in elementary_facets)
-            or any(c not in data.columns for c in [*elementary_facets, score_col])):
-        return data, "invalid_columns", None
-    if "Weight" in data.columns:
-        weights = pd.to_numeric(data["Weight"], errors="coerce")
-        if not (np.isfinite(weights.to_numpy(dtype=float)).all() and weights.eq(1).all()):
-            return data, "unsupported_weights", None
-    f_labels = data[fixed_facet]
-    if f_labels.isna().any() or f_labels.astype(str).str.strip().eq("").any():
-        return data, "invalid_labels", None
-    if f_labels.nunique() != f_labels.astype(str).nunique():
-        return data, "invalid_labels", None
-    f_str = f_labels.astype(str)
-    if mode == "level":
-        sliced = data.loc[f_str.eq(level)].copy()
-        if sliced.empty:
-            return data, "insufficient_levels", None
-        return sliced, "", dict(facet=fixed_facet, mode="level", level=level, n_fixed_levels=1)
-
-    scores = pd.to_numeric(data[score_col], errors="coerce")
-    if not np.isfinite(scores.to_numpy(dtype=float)).all():
-        return data, "invalid_scores", None
-    work = data[elementary_facets].copy()
-    for facet in elementary_facets:
-        labels = work[facet]
-        if labels.isna().any() or labels.astype(str).str.strip().eq("").any():
-            return data, "invalid_labels", None
-        if labels.nunique() != labels.astype(str).nunique():
-            return data, "invalid_labels", None
-        work[facet] = labels.astype(str)
-    work[score_col] = scores.to_numpy(dtype=float)
-    levels = {f: int(work[f].nunique()) for f in elementary_facets}
-    if min(levels.values()) < 2:
-        return data, "insufficient_levels", None
-    if work.duplicated(elementary_facets).any():
-        return data, "duplicate_cells", None
-    if not gd._is_balanced_one_obs_per_cell(work, elementary_facets):
-        return data, "missing_cells", None
-    grouped = work.groupby([object_facet, *random_facets], sort=True, as_index=False)[score_col]
-    agg = grouped.sum() if mode == "sum" else grouped.mean()
-    if "Weight" in data.columns:
-        agg["Weight"] = 1.0
-    return agg, "", dict(facet=fixed_facet, mode=mode, level=None, n_fixed_levels=levels[fixed_facet])
 
 
 def preview_gd_design(data, *, object_facet, score_col, random_facets, fixed_condition=None):
@@ -273,58 +192,29 @@ def preview_gd_design(data, *, object_facet, score_col, random_facets, fixed_con
 
 
 def _run_gd(data, settings):
-    from mfrm_app import engine
-    prepared_df, prep_reason, fc_meta = prepare_gd_input_data(data, settings)
-    if prep_reason:
-        raw_fp = engine.dataframe_fingerprint(data, length=64) if isinstance(data, pd.DataFrame) else ""
-        design = dict(
-            n_input_rows=len(data) if isinstance(data, pd.DataFrame) else 0,
-            n_observations=0, weight_basis="unit_observation_weights",
-            score_basis="original_observed_scores", target_population=settings["target_population"],
-            fixed_facets=[settings["fixed_condition"]["facet"]],
-            fixed_condition=deepcopy(settings["fixed_condition"]),
-            raw_data_fingerprint=raw_fp, data_fingerprint=raw_fp,
-            generalization_basis="fixed_facet_conditioned_observed_scores",
-        )
-        result = dict(
-            available=False, reason_code=prep_reason, reason=gd._GD_INPUT_REASONS[prep_reason],
-            calculation_version=gd._GD_CALCULATION_VERSION, variance_components=pd.DataFrame(),
-            observed_coefficients=dict(G=np.nan, Phi=np.nan), d_study=pd.DataFrame(), design=design,
-            caveat="", reference="", bootstrap_ci=dict(
-                available=False, inference_allowed=False, requested=False,
-                inference_reason=gd._GD_CI_REASON, n_attempted=0),
-        )
-    else:
-        arguments = {k: v for k, v in settings.items() if k not in {"selected_plan", "fixed_condition"}}
-        result = gd.compute_generalizability_from_data(prepared_df, **arguments)
-        if fc_meta is not None:
-            result["design"].update(
-                fixed_facets=[fc_meta["facet"]],
-                fixed_condition=deepcopy(settings["fixed_condition"]),
-                fixed_levels_aggregated=int(fc_meta["n_fixed_levels"]),
-                raw_data_fingerprint=engine.dataframe_fingerprint(data, length=64),
-                generalization_basis=(
-                    "single_fixed_level_slice" if fc_meta["mode"] == "level"
-                    else f"balanced_fixed_facet_{fc_meta['mode']}"
-                ),
-            )
-            if result["available"]:
-                cond_note = (
-                    f" Conditioned on fixed facet {fc_meta['facet']} = {fc_meta['level']}."
-                    if fc_meta["mode"] == "level"
-                    else (
-                        f" Aggregated ({fc_meta['mode']}) across {fc_meta['n_fixed_levels']} fixed "
-                        f"{fc_meta['facet']} levels after verifying complete balanced elementary cells."
-                    )
-                )
-                result["caveat"] = str(result.get("caveat", "")) + cond_note
+    arguments = {k: v for k, v in settings.items() if k != "selected_plan"}
+    result = gd.compute_generalizability_from_data(data, **arguments)
     if result["available"]:
         counts = settings["selected_plan"] or result["design"]["observed_n"]
+        coefficients = gd._g_phi_from_variance_components(
+            result["variance_components"],
+            object_facet=settings["object_facet"],
+            facet_observations=counts,
+        )
         plans = result["d_study"]
-        if not np.logical_and.reduce([plans[f].eq(n) for f, n in counts.items()]).any():
-            raise ValueError("The selected D plan is outside the computed plan grid")
-        coefficients = gd._g_phi_from_variance_components(result["variance_components"],
-            object_facet=settings["object_facet"], facet_observations=counts)
+        in_grid = np.logical_and.reduce([plans[f].eq(n) for f, n in counts.items()]).any()
+        if not in_grid:
+            extra_row = pd.DataFrame([{
+                **counts,
+                "G": float(coefficients["G"]),
+                "Phi": float(coefficients["Phi"]),
+                "IsObservedDesign": bool(counts == result["design"]["observed_n"]),
+            }])
+            result["d_study"] = (
+                pd.concat([plans, extra_row], ignore_index=True)
+                .sort_values(list(settings["random_facets"]), kind="mergesort")
+                .reset_index(drop=True)
+            )
         result["selected_plan"] = {**counts, **gd._g_d_error_row(coefficients)}
     return dict(settings=settings, result=result,
                 analysis_id=project.gd_analysis_identity(data, settings, result["calculation_version"]))
@@ -417,9 +307,22 @@ def current_additional_tables(analysis):
         tables.append(("Specified intervals: " + entry["settings"]["facet"], table, note))
     if entry := analysis.get("gd_analysis"):
         frame = gd.g_d_study_export_frame(entry["result"])
-        for section, table in frame.groupby("_section", sort=False):
-            tables.append(("G/D: " + section, table.drop(columns="_section").dropna(axis=1, how="all"),
-                           gd._GD_CI_REASON))
+        by_section = {
+            section: table.drop(columns="_section").dropna(axis=1, how="all")
+            for section, table in frame.groupby("_section", sort=False)
+        }
+        ordered_sections = [s for s in gd.GD_SECTION_ORDER if s in by_section]
+        ordered_sections += [s for s in by_section if s not in gd.GD_SECTION_ORDER]
+        for section in ordered_sections:
+            sec_table = by_section[section]
+            note = gd.GD_SECTION_NOTES.get(section, gd._GD_CI_REASON)
+            if (
+                section == "variance_components"
+                and "RawVariance" in sec_table.columns
+                and (pd.to_numeric(sec_table["RawVariance"], errors="coerce") < -1e-12).any()
+            ):
+                note = gd.GD_VARIANCE_NEGATIVE_NOTE
+            tables.append(("G/D: " + section, sec_table, note))
     if entry := analysis.get('joint_analysis'):
         try:
             if entry['status'] != 'computed':

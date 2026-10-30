@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 import numpy as np
 import pandas as pd
 
-from mfrm_app import basic_analysis as basic, bias_analysis as bias
+from mfrm_app import basic_analysis as basic, bias_analysis as bias, engine
 from mfrm_app import generalizability as gd, project, structural_intervals as intervals, joint_interaction as joint
 
 
@@ -76,6 +76,226 @@ def _gd_settings(settings):
     if fixed_validated is not None:
         out["fixed_condition"] = fixed_validated
     return out
+
+
+def preview_mfrm_connectivity(
+    data,
+    *,
+    person_col: str,
+    facet_cols: list[str],
+    score_col: str,
+    anchors=None,
+    group_anchors=None,
+) -> dict:
+    """Fast, optimization-free pre-flight check of connectivity, sparsity, and anchor linking."""
+    facet_cols = list(facet_cols or [])
+    if not isinstance(data, pd.DataFrame) or data.empty:
+        return dict(
+            ok=False, status="missing_data", nullity=None, density_pct=0.0, disconnected_facets=[],
+            summary_ja="データを読み込んでください。",
+            summary_en="Load a rating dataset first.",
+        )
+    cols = [person_col, *facet_cols, score_col]
+    if not person_col or not score_col or not facet_cols or len(set(cols)) != len(cols) or any(c not in data.columns for c in cols):
+        return dict(
+            ok=False, status="incomplete_selection", nullity=None, density_pct=0.0, disconnected_facets=[],
+            summary_ja="対象者・得点・1つ以上の相を重複なく選択すると、連結性（未接続サブセット）と充填率を診断します。",
+            summary_en="Select distinct person, score and facet columns to inspect connectivity and cell density.",
+        )
+    audit = engine.build_response_data_audit(data, person_col=person_col, facet_cols=facet_cols, score_col=score_col)
+    retained = data.loc[audit["rows"]["IncludedInLikelihood"].to_numpy(dtype=bool)]
+    excluded = len(audit["excluded_rows"])
+    if retained.empty or pd.to_numeric(retained[score_col], errors="coerce").nunique() < 2:
+        return dict(
+            ok=False, status="insufficient_data", nullity=None, density_pct=0.0, disconnected_facets=[],
+            summary_ja="有効な評定行または得点段階（2種類以上）が不足しています。",
+            summary_en="At least two distinct valid numeric score values are required.",
+        )
+    observed_levels = {
+        "Person": set(retained[person_col].dropna().astype(str).str.strip()),
+        **{f: set(retained[f].dropna().astype(str).str.strip()) for f in facet_cols},
+    }
+    try:
+        norm_a = basic.normalize_anchor_records(
+            anchors, person_col=person_col, facet_cols=facet_cols, observed_levels=observed_levels
+        )
+        norm_g = basic.normalize_group_anchor_records(
+            group_anchors,
+            person_col=person_col,
+            facet_cols=facet_cols,
+            observed_levels=observed_levels,
+            fixed_pairs={(r["Facet"], r["Level"]) for r in norm_a},
+        )
+    except ValueError as exc:
+        return dict(
+            ok=False, status="anchor_error", nullity=None, density_pct=0.0, disconnected_facets=[],
+            summary_ja=f"アンカー設定エラー：{exc}",
+            summary_en=f"Anchor configuration error: {exc}",
+        )
+
+    prep = engine.prepare_mfrm_data(
+        retained, person_col=person_col, facet_cols=facet_cols, score_col=score_col, keep_original=True
+    )
+    conn = engine._person_facet_connectivity_summary(prep)
+    disconnected = (
+        [f"{r.Facet} ({int(r.Components)})" for r in conn.itertuples(index=False) if int(r.Components) > 1]
+        if not conn.empty else []
+    )
+    disconnected_names = (
+        [str(r.Facet) for r in conn.itertuples(index=False) if int(r.Components) > 1]
+        if not conn.empty else []
+    )
+
+    n_persons = max(1, len(prep["levels"]["Person"]))
+    total_grid = n_persons
+    for f in facet_cols:
+        total_grid *= max(1, len(prep["levels"][f]))
+    density = 100.0 * len(prep["data"]) / float(total_grid)
+
+    anchor_df = pd.DataFrame(norm_a) if norm_a else None
+    group_df = pd.DataFrame(norm_g) if norm_g else None
+    specs = engine.prepare_constraint_specs(prep, anchor_df=anchor_df, group_anchor_df=group_df, noncenter_facet="Person")
+    cfg_check = {
+        "method": "JMLE",
+        "model": "RSM",
+        "n_cat": max(2, int(prep["rating_max"] - prep["rating_min"] + 1)),
+        "facet_names": list(prep["facet_names"]),
+        "facet_levels": {f: list(prep["levels"][f]) for f in prep["facet_names"]},
+        "theta_spec": specs["theta_spec"],
+        "facet_specs": specs["facet_specs"],
+        "facet_signs": {f: -1 for f in prep["facet_names"]},
+        "step_facet": None,
+        "slope_facet": None,
+    }
+    ident = engine.build_jmle_eta_identifiability_audit(prep, cfg_check)
+    nullity = (
+        int(ident["summary"]["EtaStructuralNullity"].iloc[0])
+        if ident.get("available") and not ident["summary"].empty
+        else (len(disconnected_names))
+    )
+
+    excl_ja = f"・除外 {excluded:,}行" if excluded else ""
+    excl_en = f", {excluded:,} excluded" if excluded else ""
+    anch_count = len(norm_a) + len(norm_g)
+    comp_counts = {str(r.Facet): int(r.Components) for r in conn.itertuples(index=False)} if not conn.empty else {}
+    n_inc = len(prep["data"])
+
+    if nullity > 0:
+        disc_str = ", ".join(disconnected) if disconnected else "Person/Facet"
+        return dict(
+            ok=False,
+            status="disconnected",
+            nullity=nullity,
+            included=n_inc,
+            excluded=excluded,
+            density_pct=density,
+            component_counts=comp_counts,
+            disconnected_facets=disconnected_names,
+            summary_ja=(
+                f"⚠ 未接続サブセット検出：Person × [{disc_str}] が分断されており、"
+                f"線形予測子に {nullity} 自由度の未識別（階数欠損）があります（有効 {n_inc:,}行{excl_ja}・充填率 {density:.1f}%）。"
+                "このままでは分断グループ間の厳しさ・能力を同一尺度で直接比較できません。共通評価者の追加、または「アンカー・等化」タブでの固定値指定を検討してください。"
+            ),
+            summary_en=(
+                f"⚠ Disconnected subsets detected: Person × [{disc_str}] splits into separate components with "
+                f"structural nullity = {nullity} ({n_inc:,} valid rows{excl_en}, {density:.1f}% cell density). "
+                "Subsets cannot be directly compared on one scale without shared ratings or anchors on the Anchors / Equating tab."
+            ),
+        )
+
+    if disconnected_names or anch_count > 0:
+        obs_note_ja = (
+            f"観測上の Person × ({', '.join(disconnected_names)}) は複数サブセットですが、指定アンカー（{anch_count}件）により単一ロジット尺度へ識別（階数欠損 0）されています"
+            if disconnected_names else
+            f"全相が単一ネットワークで連結され、指定アンカー（{anch_count}件）も整合しています（階数欠損 0）"
+        )
+        obs_note_en = (
+            f"Observational Person × ({', '.join(disconnected_names)}) subsets are linked onto one identified logit scale via {anch_count} anchor entry/entries (nullity = 0)"
+            if disconnected_names else
+            f"All facets form a single connected network with {anch_count} active anchor entry/entries (nullity = 0)"
+        )
+        return dict(
+            ok=True,
+            status="anchored_ok",
+            nullity=0,
+            included=n_inc,
+            excluded=excluded,
+            density_pct=density,
+            component_counts=comp_counts,
+            disconnected_facets=disconnected_names,
+            summary_ja=f"⚓ アンカー・連結確認OK：{obs_note_ja}（有効 {n_inc:,}行{excl_ja}・充填率 {density:.1f}%）。",
+            summary_en=f"⚓ Anchor & connectivity OK: {obs_note_en} ({n_inc:,} valid rows{excl_en}, {density:.1f}% density).",
+        )
+
+    sparse_ja = "・スパース連結設計" if density < 60.0 else ""
+    sparse_en = ", sparse linked design" if density < 60.0 else ""
+    return dict(
+        ok=True,
+        status="ok",
+        nullity=0,
+        included=n_inc,
+        excluded=excluded,
+        density_pct=density,
+        component_counts=comp_counts,
+        disconnected_facets=[],
+        summary_ja=(
+            f"✓ 連結・識別確認OK：すべての相が単一ネットワークで連結されています"
+            f"（有効 {n_inc:,}行{excl_ja}・充填率 {density:.1f}%{sparse_ja}・未接続サブセット 0・階数欠損 0）。"
+        ),
+        summary_en=(
+            f"✓ Connectivity & identification OK: All facets form one connected network "
+            f"({n_inc:,} valid rows{excl_en}, {density:.1f}% cell density{sparse_en}, 0 disconnected subsets, nullity = 0)."
+        ),
+    )
+
+
+def _connectivity_and_anchor_table(analysis) -> tuple[str, pd.DataFrame, str] | None:
+    """Build retained connectivity & anchor linking summary without recomputation."""
+    if "result" not in analysis:
+        return None
+    settings = analysis.get("fit_settings", {})
+    anchors = settings.get("anchors") or []
+    group_anchors = settings.get("group_anchors") or []
+    ident = analysis["result"].get("identifiability", {})
+    conn = ident.get("connectivity", pd.DataFrame())
+    has_disconnected = isinstance(conn, pd.DataFrame) and not conn.empty and (conn["Components"] > 1).any()
+    if not anchors and not group_anchors and not has_disconnected:
+        return None
+
+    rows = []
+    if isinstance(conn, pd.DataFrame) and not conn.empty:
+        for r in conn.itertuples(index=False):
+            rows.append({
+                "Category": "Connectivity",
+                "Facet": str(r.Facet),
+                "Target": "Person × " + str(r.Facet),
+                "Constraint": "Connected" if int(r.Components) == 1 else f"Disconnected ({int(r.Components)} subsets)",
+                "Value": float(r.Components),
+                "Detail": f"Min levels/person={int(r.MinimumRatersOrLevelsPerPerson)}, Min persons/level={int(r.MinimumPersonsPerFacetLevel)}",
+            })
+    for a in anchors:
+        rows.append({
+            "Category": "FixedAnchor",
+            "Facet": a["Facet"],
+            "Target": a["Level"],
+            "Constraint": "Fixed logit (Status A)",
+            "Value": float(a["Anchor"]),
+            "Detail": "Element fixed at pre-calibrated logit value",
+        })
+    for g in group_anchors:
+        rows.append({
+            "Category": "GroupAnchor",
+            "Facet": g["Facet"],
+            "Target": g["Level"],
+            "Constraint": f"Group {g['Group']} mean (Status G)",
+            "Value": float(g["GroupValue"]),
+            "Detail": f"Mean of group {g['Group']} fixed at {g['GroupValue']:g} logits",
+        })
+    note = (
+        "Retained bipartite Person × Facet connectivity counts and explicit fixed/group anchor constraints "
+        "used to identify the logit scale. Anchor equating assumes invariance across administrations; review fit and drift."
+    )
+    return ("Connectivity and Scale Linking", pd.DataFrame(rows), note)
 
 
 def preview_gd_design(data, *, object_facet, score_col, random_facets, fixed_condition=None):
@@ -250,7 +470,10 @@ def run_analysis(data, *, workflow="mfrm", bias_requests=None, interval_requests
         if joint_settings is not None and fit_settings.get('population_prior_sd', 1.) != 1.:
             raise ValueError('Joint interactions require a fixed N(0,1) population')
         analysis = basic.run_basic_analysis(data, **fit_settings, progress=progress)
-        if biases or requested_intervals or gd_settings is not None or joint_settings is not None:
+        if analysis["kind"] != "mfrm-analysis-v2" and (
+            biases or requested_intervals or gd_settings is not None or joint_settings is not None
+            or fit_settings.get("anchors") or fit_settings.get("group_anchors")
+        ):
             analysis["kind"] = "mfrm-analysis-v2"
         analysis["bias_analyses"], analysis["interval_analyses"] = [], []
         for settings in biases:
@@ -335,4 +558,6 @@ def current_additional_tables(analysis):
             tables.append(('Joint model: main effects and steps',
                 pd.DataFrame(entry['record']['main_effects_and_steps']),
                 'Point estimates from the separate joint model; baseline maps and tables retain the original main-effects fit.'))
+    if linking := _connectivity_and_anchor_table(analysis):
+        tables.append(linking)
     return tables

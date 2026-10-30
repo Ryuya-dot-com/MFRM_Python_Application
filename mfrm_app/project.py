@@ -304,8 +304,60 @@ def validate_analysis(analysis):
                 or settings.get("estimate_population_sd") is not False
                 or settings.get("mml_engine") != "EM" or cfg.get("mml_engine") != "em"):
             raise ProjectError("Stored fixed-SD MML settings disagree with the fitted result")
-    if legacy and any(analysis.get(key) for key in ("bias_analyses", "interval_analyses", "gd_analysis")):
-        raise ProjectError("Supplementary analyses require schema 2")
+    if legacy and (
+        any(analysis.get(key) for key in ("bias_analyses", "interval_analyses", "gd_analysis"))
+        or settings.get("anchors") or settings.get("group_anchors")
+    ):
+        raise ProjectError("Supplementary analyses and anchors require schema 2")
+    if "anchors" in settings or "group_anchors" in settings:
+        from mfrm_app import basic_analysis
+        try:
+            norm_a = basic_analysis.normalize_anchor_records(
+                settings.get("anchors"), person_col=settings["person_col"], facet_cols=settings["facet_cols"]
+            )
+            norm_g = basic_analysis.normalize_group_anchor_records(
+                settings.get("group_anchors"),
+                person_col=settings["person_col"],
+                facet_cols=settings["facet_cols"],
+                fixed_pairs={(r["Facet"], r["Level"]) for r in norm_a},
+            )
+        except ValueError as exc:
+            raise ProjectError(f"Invalid stored anchor settings: {exc}") from exc
+        if settings.get("anchors", []) != norm_a or settings.get("group_anchors", []) != norm_g:
+            raise ProjectError("Stored anchor settings are not in canonical form")
+        for facet in ["Person", *cfg["facet_names"]]:
+            spec = cfg["theta_spec"] if facet == "Person" else cfg["facet_specs"][facet]
+            levels = list(map(str, spec["levels"]))
+            expected_fixed = {r["Level"]: r["Anchor"] for r in norm_a if r["Facet"] == facet}
+            actual_fixed = {
+                levels[i]: float(v)
+                for i, v in enumerate(spec.get("anchors", []))
+                if np.isfinite(v)
+            }
+            if set(expected_fixed) != set(actual_fixed) or any(
+                abs(expected_fixed[k] - actual_fixed[k]) > 1e-12 for k in expected_fixed
+            ):
+                raise ProjectError(f"Stored fixed anchors for {facet} disagree with the fitted result")
+            expected_groups = {r["Level"]: (r["Group"], r["GroupValue"]) for r in norm_g if r["Facet"] == facet}
+            actual_groups = {
+                levels[i]: (str(g), float(spec.get("group_values", {}).get(str(g), np.nan)))
+                for i, g in enumerate(spec.get("groups", []))
+                if g not in (None, "") and not pd.isna(g)
+            }
+            if set(expected_groups) != set(actual_groups) or any(
+                expected_groups[k][0] != actual_groups[k][0]
+                or not np.isfinite(actual_groups[k][1])
+                or abs(expected_groups[k][1] - actual_groups[k][1]) > 1e-12
+                for k in expected_groups
+            ):
+                raise ProjectError(f"Stored group anchors for {facet} disagree with the fitted result")
+    else:
+        for facet in ["Person", *cfg["facet_names"]]:
+            spec = cfg["theta_spec"] if facet == "Person" else cfg["facet_specs"][facet]
+            if np.isfinite(spec.get("anchors", [])).any() or any(
+                g not in (None, "") and not pd.isna(g) for g in spec.get("groups", [])
+            ):
+                raise ProjectError(f"Fitted result contains {facet} anchors missing from fit_settings")
     for entry in analysis.get("bias_analyses", []):
         if entry.get("analysis_id") != analysis["analysis_id"] or not isinstance(entry.get("result"), dict):
             raise ProjectError("Bias results belong to a different calibration")

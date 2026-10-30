@@ -53,6 +53,11 @@ def test_desktop_i18n_bijection_and_terminology_unification():
         "maximum": "5",
         "excluded": "2",
         "reason": "欠測セル",
+        "dropped": "4",
+        "value": "+0.35",
+        "group": "G1",
+        "mean": "+0.0",
+        "levels": "Content, Language",
     }
     for ja_tpl, en_tpl in TEMPLATES:
         assert "ファセット" not in ja_tpl

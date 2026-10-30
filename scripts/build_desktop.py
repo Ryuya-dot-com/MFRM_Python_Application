@@ -99,7 +99,8 @@ def main():
     output = args.output.resolve()
     output.mkdir(parents=True, exist_ok=True)
     notices = collect_notices(output)
-    source_paths = [root / "desktop_app.py", root / "examples" / "desktop_writing.csv",
+    source_paths = [root / "desktop_app.py",
+                    *sorted((root / "examples").glob("*.csv")),
                     root / "LICENSE", root / "LICENSE_NOTICE.md", root / "CITATION.cff", root / "locales" / "en.json",
                     root / "scripts" / "desktop.spec", version_info_path,
                     Path(__file__).resolve(), root / "requirements-desktop-build.txt",

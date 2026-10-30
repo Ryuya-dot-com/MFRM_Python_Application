@@ -50,6 +50,12 @@ def text(message, language='en'):
     return message
 
 TEMPLATES += [
+('サンプルデータを保存しました：{path}', 'Sample CSV saved: {path}'),
+('アンカーを{count}件読み込みました。', 'Imported {count} anchor entries.'),
+('横長表を縦長へ変換しました：{rows}行 × {columns}列（空欄除外 {dropped}セル）', 'Converted wide table to long format: {rows} rows × {columns} columns ({dropped} blank cells omitted)'),
+('プレビュー：{rows}行 × {columns}列（空欄除外 {dropped}セル）', 'Preview: {rows} rows × {columns} columns ({dropped} blank cells omitted)'),
+('{facet} : {level}  =  {value} logits', '{facet} : {level}  =  {value} logits'),
+('{facet} [Group={group}, 平均={mean}] : {levels}', '{facet} [Group={group}, Mean={mean}] : {levels}'),
 ('バイアス · {pair}', 'Bias · {pair}'),
 ('指定区間 {target}', 'Specified intervals {target}'),
 ('共同交互作用 · {pair}', 'Joint interaction · {pair}'),
@@ -100,6 +106,57 @@ EN.update({
 '個人得点と一般表の利用条件を、指定区間の利用条件から判断しないでください。自動的な同等性の結論は保留です。':'Eligibility of specified intervals does not establish eligibility of person scores or general tables. Automatic equivalence conclusions remain withheld.',
 '通常の表・Wright map等は元の主効果モデルです。共同交互作用は別モデルとして再推定した結果を専用の表・図に示します。':'General tables and Wright maps use the original main-effects model. Joint-interaction tables and figures show a separately refitted model.',
 })
+EN.update({
+'サンプル集（8種）…':'Sample gallery (8)…',
+'横長→縦長変換…':'Wide → Long…',
+'アンカー・等化':'Anchors / equating',
+'データ未選択':'No dataset loaded',
+'「CSVを開く」または「サンプル集（8種）…」からデータを読み込んでください。':'Load ratings from "Open CSV" or "Sample gallery (8)…" to begin.',
+'オフライン実データ分析ワークステーション':'Offline Real-Data Psychometric Workstation',
+'1. データ':'1. Data',
+'2. 設定':'2. Settings',
+'3. 結果':'3. Results',
+'分析ワークフロー：':'Workflow:',
+'サンプルデータ集（人工データ・8シナリオ）':'Sample Dataset Gallery (8 Synthetic Scenarios)',
+'試したい研究・実務シナリオを選択すると、列・採点基準（アンカー例ではアンカー値も）を自動設定して読み込みます。':'Select a scenario to load synthetic ratings with pre-configured columns, rubric bounds, and (where applicable) anchors.',
+'このサンプルを読み込む':'Load selected sample',
+'選択サンプルをCSV保存…':'Save sample CSV…',
+'横長（ワイド形式）CSVの縦長変換':'Convert Wide Spreadsheet CSV to Long Format',
+'評価者や観点が列方向に並んだ表を、1行＝1評定の縦長形式へ変換します（空欄セルは自動除外）。':'Melt wide rater/item columns into one-row-per-rating long format (blank unrated cells are automatically omitted).',
+'行に残す列（対象者・課題など）':'ID / fixed columns to keep',
+'縦に展開する得点列（複数選択）':'Score columns to melt (multi-select)',
+'新しい相の列名':'New facet column name',
+'新しい得点の列名':'New score column name',
+'変換して読み込む':'Convert and load',
+'変換せずそのまま読み込む':'Load as-is without converting',
+'行に残す列と縦に展開する得点列を重複なく1列以上ずつ選択してください。':'Select at least one ID column and one non-overlapping score column to melt.',
+'新しい相の列名と得点の列名を入力してください（既存ID列と重複不可）。':'Enter distinct nonblank names for the new facet and score columns.',
+'固定アンカー（水準のロジット値を固定：Status A）':'Fixed anchors (fix individual level logits: Status A)',
+'グループアンカー（指定水準群の平均ロジットを固定：Status G）':'Group anchors (fix mean logit across levels: Status G)',
+'水準':'Level',
+'読み込む':'Load',
+'アンカー値':'Anchor logit',
+'CSVから一括読込…':'Import CSV…',
+'全解除':'Clear all',
+'グループ名':'Group name',
+'グループ平均':'Group mean',
+'グループに含める水準（2つ以上選択）':'Levels in group (select 2+)',
+'グループを追加・更新':'Add / update group',
+'アンカーCSV（Facet, Level, Anchor または Estimate 列）を選択':'Select anchor CSV (Facet, Level, Anchor or Estimate columns)',
+'アンカーCSVには Facet, Level, Anchor（または Estimate）列が必要です。':'Anchor CSV requires Facet, Level, and Anchor (or Estimate) columns.',
+'グループアンカーには2つ以上の水準を選択してください。':'Select at least 2 levels for a group anchor.',
+'アンカー指定時は主効果・適合度・条件付きバイアスを等化尺度上で推定します（固定SD MMLの指定区間・共同交互作用は総和ゼロ制約専用のためアンカー未使用時のみ有効）。':'With anchors active, main effects, fit, and conditional bias are estimated on the anchored scale (fixed-SD MML specified intervals and joint interaction require unanchored sum-to-zero facets).',
+'連結性・アンカー等化サマリ':'Connectivity and Scale Linking',
+'保持された Person × 各相の連結成分数および尺度識別に用いた固定・グループアンカー制約の一覧です。アンカー等化は実施回間の不変性を仮定するため、適合度・ドリフトも併せて確認してください。':'Retained bipartite Person × Facet connectivity counts and explicit fixed/group anchor constraints used to identify the logit scale. Anchor equating assumes invariance across administrations; review fit and drift.',
+'作文評定（3相・完全交差・960行）':'Essay Writing (3 Facets, Crossed, 960 rows)',
+'臨床OSCE評価（4相・1〜4点・576行）':'Clinical OSCE (4 Facets, 1–4 Rubric, 576 rows)',
+'2コホート尺度連結（アンカー自動設定・540行）':'2-Cohort Scale Equating (Preset Anchors, 540 rows)',
+'欠損・空欄セル混在データ（900行・空欄12行）':'Ratings with Missing Rows & Blank Cells (900 rows)',
+'評価者スパイラル割当（充填率25%・768行）':'Spiral Rater Assignment (25% Density, 768 rows)',
+'午前・午後シフト分断例（未接続サブセット診断・128行）':'Unlinked AM/PM Shifts (Disconnected Subset Warning, 128 rows)',
+'横長Excel形式シート（評価者列 R1〜R4 を縦長変換）':'Wide Spreadsheet Layout (Convert R1–R4 Columns to Long)',
+'G/D-Study 2相完全均衡サンプル（240行）':'G/D-Study Balanced 2-Facet Sample (240 rows)',
+})
 GUIDES_EN = {
 'CSV_GUIDE': '''Use long-form UTF-8 CSV: one row per individual rating, with a header.
 Person,Rater,Task,Criterion,Score
@@ -109,7 +166,7 @@ E01,R2,Task1,Content,5
 
 Person identifies the person being measured. Rater identifies the evaluator. Task and Criterion identify facets in the design. Score is one observed rating, not a mean or total. Column names may be in any language; select their roles after loading. Identifiers, including leading zeros, are preserved.
 
-Save as CSV UTF-8 (comma delimited). Convert wide rater columns into rows. Do not encode an unobserved rating as zero; omit the row or leave its score blank. Check duplicate person/facet combinations; distinguish repeated rating occasions with the appropriate design. Disconnected raters or tasks may not be comparable.
+Save as CSV UTF-8 (comma delimited). Wide tables with separate rater/item columns can be melted into long format inside the app via "Wide → Long…". Do not encode an unobserved rating as zero; omit the row or leave its score blank. Check duplicate person/facet combinations; distinguish repeated rating occasions with the appropriate design. Disconnected raters or tasks may not be comparable without shared observations or anchors.
 
 For MFRM, enter the rubric minimum and maximum, including unobserved score categories. Missing or nonnumeric scores are excluded and reviewed before calculation. Fractional, infinite or out-of-range MFRM scores must be corrected. Independent G/D-Study uses original observed scores and requires complete balanced crossing with one observation per cell; for 3+ facets, you can explicitly condition on a single fixed level or compute a verified balanced sum/mean composite. All observations have unit weight; adding a weight column does not enable weighting.
 
@@ -118,7 +175,7 @@ The example CSV contains synthetic writing ratings, shared with the Web example.
 
 Columns and rubric: select distinct person, score and facet columns. Enter the rubric minimum and maximum, including categories absent in the data. Observed scores are context, not an automatically determined rubric.
 
-Model: RSM shares steps; PCM estimates separate steps by the selected facet. MML uses EM with fixed population SD; quadrature and SD settings are retained.
+Model and anchors: RSM shares steps; PCM estimates separate steps by the selected facet. MML uses EM with fixed population SD; quadrature and SD settings are retained. Under Anchors / equating, you can specify fixed element logits (Status A) or group-mean anchors (Status G) and verify live connectivity and scale identification.
 
 Bias and intervals: use Add to register each request. Fixed-calibration cell estimates do not establish bias presence/absence. Specified structural intervals require fixed-SD MML and target-specific numerical checks. Joint interaction is a separate, jointly refitted model; eligible pointwise intervals and Wald approximate p values have explicitly stated conditions. Holm adjustment covers requested cells and contrasts, not simultaneous intervals.
 

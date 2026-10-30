@@ -40,8 +40,8 @@ def _source_versions():
         modules = (engine, output_qualification, reporting_facts, project)
         paths = [Path(module.__file__) for module in modules] + [Path(__file__)]
         paths += [Path(__file__).with_name(name + ".py") for name in
-                  ("desktop_analysis", "desktop_outputs", "bias_analysis", "generalizability", "structural_intervals",
-                   "mml_fixed_sd_review", "mml_joint")]
+                  ("desktop_analysis", "desktop_examples", "desktop_outputs", "bias_analysis", "generalizability",
+                   "structural_intervals", "mml_fixed_sd_review", "mml_joint")]
         source_hashes = {path.name: hashlib.sha256(path.read_bytes()).hexdigest() for path in paths}
     return {
         "app_version": engine.APP_VERSION,
@@ -50,14 +50,112 @@ def _source_versions():
     }
 
 
+def normalize_anchor_records(records, *, person_col: str, facet_cols: list[str], observed_levels: dict[str, set[str]] | None = None) -> list[dict]:
+    """Validate and canonicalize fixed-logit anchor dicts (`Facet`, `Level`, `Anchor`)."""
+    if not records:
+        return []
+    if not isinstance(records, (list, tuple)):
+        raise ValueError("Anchors must be provided as a list of {Facet, Level, Anchor} mappings")
+    allowed = ["Person", *facet_cols]
+    out, seen = [], set()
+    for item in records:
+        if not isinstance(item, dict) or set(item) - {"Facet", "Level", "Anchor"} or not {"Facet", "Level", "Anchor"}.issubset(item):
+            raise ValueError("Each fixed anchor requires Facet, Level and Anchor")
+        raw_facet, level, val = item["Facet"], item["Level"], item["Anchor"]
+        if not isinstance(raw_facet, str) or not isinstance(level, str) or not raw_facet.strip() or not level.strip():
+            raise ValueError("Anchor Facet and Level must be nonblank strings")
+        facet = "Person" if raw_facet.strip() in {"Person", person_col} else raw_facet.strip()
+        level = level.strip()
+        if facet not in allowed:
+            raise ValueError(f"Anchor facet {raw_facet!r} is not in the selected model facets")
+        if observed_levels is not None and level not in observed_levels.get(facet, set()):
+            raise ValueError(f"Anchor level {level!r} was not observed in facet {facet!r}")
+        if isinstance(val, (bool, np.bool_)):
+            raise ValueError("Anchor values must be finite numbers")
+        try:
+            fval = float(val)
+        except (TypeError, ValueError) as exc:
+            raise ValueError("Anchor values must be finite numbers") from exc
+        if not np.isfinite(fval):
+            raise ValueError("Anchor values must be finite numbers")
+        if (facet, level) in seen:
+            raise ValueError(f"Duplicate anchor specified for {facet}: {level}")
+        seen.add((facet, level))
+        out.append({"Facet": facet, "Level": level, "Anchor": fval})
+    return sorted(out, key=lambda r: (allowed.index(r["Facet"]), r["Level"]))
+
+
+def normalize_group_anchor_records(
+    records,
+    *,
+    person_col: str,
+    facet_cols: list[str],
+    observed_levels: dict[str, set[str]] | None = None,
+    fixed_pairs: set[tuple[str, str]] | None = None,
+    fixed_records: list[dict] | None = None,
+) -> list[dict]:
+    """Validate and canonicalize group-mean anchor dicts (`Facet`, `Level`, `Group`, `GroupValue`)."""
+    if not records:
+        return []
+    if not isinstance(records, (list, tuple)):
+        raise ValueError("Group anchors must be provided as a list of {Facet, Level, Group, GroupValue} mappings")
+    allowed = ["Person", *facet_cols]
+    fixed_pairs = set(fixed_pairs or set())
+    if fixed_records:
+        fixed_pairs |= {(r["Facet"], r["Level"]) for r in fixed_records}
+    out, seen, group_means = [], set(), {}
+    for item in records:
+        req = {"Facet", "Level", "Group", "GroupValue"}
+        if not isinstance(item, dict) or set(item) - req or not req.issubset(item):
+            raise ValueError("Each group anchor requires Facet, Level, Group and GroupValue")
+        raw_facet, level, group, val = item["Facet"], item["Level"], item["Group"], item["GroupValue"]
+        if (not isinstance(raw_facet, str) or not isinstance(level, str) or not isinstance(group, str)
+                or not raw_facet.strip() or not level.strip() or not group.strip()):
+            raise ValueError("Group-anchor Facet, Level and Group must be nonblank strings")
+        facet = "Person" if raw_facet.strip() in {"Person", person_col} else raw_facet.strip()
+        level, group = level.strip(), group.strip()
+        if facet not in allowed:
+            raise ValueError(f"Group-anchor facet {raw_facet!r} is not in the selected model facets")
+        if observed_levels is not None and level not in observed_levels.get(facet, set()):
+            raise ValueError(f"Group-anchor level {level!r} was not observed in facet {facet!r}")
+        if (facet, level) in fixed_pairs:
+            raise ValueError(f"{facet}: {level} cannot have both a fixed anchor and a group anchor")
+        if (facet, level) in seen:
+            raise ValueError(f"Duplicate group anchor specified for {facet}: {level}")
+        if isinstance(val, (bool, np.bool_)):
+            raise ValueError("Group-anchor values must be finite numbers")
+        try:
+            fval = float(val)
+        except (TypeError, ValueError) as exc:
+            raise ValueError("Group-anchor values must be finite numbers") from exc
+        if not np.isfinite(fval):
+            raise ValueError("Group-anchor values must be finite numbers")
+        prev = group_means.get((facet, group))
+        if prev is not None and abs(prev - fval) > 1e-12:
+            raise ValueError(f"Group {group!r} in facet {facet!r} has conflicting GroupValue numbers ({prev:g} vs {fval:g})")
+        group_means[(facet, group)] = fval
+        seen.add((facet, level))
+        out.append({"Facet": facet, "Level": level, "Group": group, "GroupValue": fval})
+    counts_by_group = {}
+    for row in out:
+        key = (row["Facet"], row["Group"])
+        counts_by_group[key] = counts_by_group.get(key, 0) + 1
+    for (facet, group), cnt in counts_by_group.items():
+        if cnt < 2:
+            raise ValueError(f"Group anchor {group!r} in facet {facet!r} needs at least 2 levels (use a fixed anchor for 1 level)")
+    return sorted(out, key=lambda r: (allowed.index(r["Facet"]), r["Group"], r["Level"]))
+
+
 def _finish_analysis(result, data, settings, progress):
     progress("diagnostics")
     diagnostics = engine.mfrm_diagnostics(result, compute_pca=False, compute_marginal=False,
                                          compute_eb_shrinkage=False)
     progress("tables")
     tables = engine.calc_facets_report_tbls(result, diagnostics)
+    has_anchors = bool(settings.get("anchors") or settings.get("group_anchors"))
     analysis = {
-        "kind": ("basic-rsm-jmle-v1" if settings["model"] == "RSM" and settings["method"] == "JMLE"
+        "kind": ("basic-rsm-jmle-v1"
+                 if settings["model"] == "RSM" and settings["method"] == "JMLE" and not has_anchors
                  else "mfrm-analysis-v2"),
         "analysis_id": engine.build_result_analysis_identity(result).analysis_id,
         "created_at": datetime.now(timezone.utc).isoformat(),
@@ -79,7 +177,8 @@ def _finish_analysis(result, data, settings, progress):
 def run_basic_analysis(data, *, person_col, facet_cols, score_col, rating_min, rating_max,
                        maxit=400, reltol=1e-6, model="RSM", method="JMLE", step_facet=None,
                        quad_points=15, population_prior_sd=1.0, keep_original=True,
-                       estimate_population_sd=False, mml_engine="EM", progress=None):
+                       estimate_population_sd=False, mml_engine="EM",
+                       anchors=None, group_anchors=None, progress=None):
     """Fit once and retain qualified tables. Failure/unknown termination stays so.
 
     Progress identifies phases, not a fabricated percentage. A desktop worker
@@ -111,6 +210,27 @@ def run_basic_analysis(data, *, person_col, facet_cols, score_col, rating_min, r
         raise ValueError("MML requires at least three quadrature points and a positive finite fixed SD")
     if method == "JMLE" and (quad_points != 15 or population_prior_sd != 1.0):
         raise ValueError("Population SD and quadrature settings apply only to MML")
+
+    audit_rows = engine.build_response_data_audit(data, person_col=person_col, facet_cols=facet_cols, score_col=score_col)
+    retained = data.loc[audit_rows["rows"]["IncludedInLikelihood"].to_numpy(dtype=bool)]
+    observed_levels = {
+        "Person": set(retained[person_col].dropna().astype(str).str.strip()) if not retained.empty else set(),
+        **{
+            f: set(retained[f].dropna().astype(str).str.strip()) if not retained.empty else set()
+            for f in facet_cols
+        },
+    }
+    norm_anchors = normalize_anchor_records(
+        anchors, person_col=person_col, facet_cols=facet_cols, observed_levels=observed_levels
+    )
+    norm_groups = normalize_group_anchor_records(
+        group_anchors,
+        person_col=person_col,
+        facet_cols=facet_cols,
+        observed_levels=observed_levels,
+        fixed_pairs={(r["Facet"], r["Level"]) for r in norm_anchors},
+    )
+
     settings = dict(person_col=person_col, facet_cols=facet_cols, score_col=score_col,
                     rating_min=rating_min, rating_max=rating_max, maxit=maxit, reltol=reltol,
                     model=model, method=method, keep_original=True)
@@ -119,9 +239,20 @@ def run_basic_analysis(data, *, person_col, facet_cols, score_col, rating_min, r
     if method == "MML":
         settings.update(quad_points=quad_points, population_prior_sd=float(population_prior_sd),
                         estimate_population_sd=False, mml_engine="EM")
+    if norm_anchors:
+        settings["anchors"] = norm_anchors
+    if norm_groups:
+        settings["group_anchors"] = norm_groups
+
+    estimate_kwargs = {k: v for k, v in settings.items() if k not in {"anchors", "group_anchors"}}
+    if norm_anchors:
+        estimate_kwargs["anchor_df"] = pd.DataFrame(norm_anchors)
+    if norm_groups:
+        estimate_kwargs["group_anchor_df"] = pd.DataFrame(norm_groups)
+
     progress = progress or (lambda phase: None)
     progress("estimating")
-    result = engine.mfrm_estimate(data=data, **settings)
+    result = engine.mfrm_estimate(data=data, **estimate_kwargs)
     return _finish_analysis(result, data, settings, progress)
 
 

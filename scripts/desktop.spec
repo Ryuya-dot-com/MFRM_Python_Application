@@ -11,7 +11,7 @@ manifest = Path(os.environ["MFRM_DESKTOP_BUILD_MANIFEST"])
 record = json.loads(manifest.read_text(encoding="utf-8"))
 datas = [(str(manifest), "mfrm_app"),
          (str(root / "locales" / "en.json"), "locales"),
-         (str(root / "examples" / "desktop_writing.csv"), "examples")]
+         *[(str(p), "examples") for p in sorted((root / "examples").glob("*.csv"))]]
 datas.append((str(manifest.parent / 'third_party_notices'), 'third_party_notices'))
 for name in ("LICENSE", "LICENSE_NOTICE.md", "CITATION.cff"):
     datas.append((str(root / name), "."))

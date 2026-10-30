@@ -173,10 +173,10 @@ mfrmrの `CIEligible` と `CoverageQualified` の区別を参照するが、Rの
 「近似だから」と除外しない。先の原因点検での「対象別の資格」はこの二つを区別して具体化する。
 今回、Pythonの保留コードや推定法は変更していない。
 
-参照したmfrmrは、ユーザー指定の `/Users/tohokusla/Developer/mfrmr/development`、
+参照したmfrmrは、開発リポジトリ（`../../mfrmr/development`）の
 0.2.4 candidate、2026-10-27付DESCRIPTION、commit `fa4ac09b4e3fb6f37101754d797f1e3b52661774`。
-参照時の作業ツリーはclean。旧Dropbox開発コピーや公開版と区別し、公開API・計算実装・保存結果を確認した。
-内部ロードマップの内容自体は転載しない。
+参照時の作業ツリーはclean。旧開発コピーや公開版と区別し、公開API・計算実装・保存結果を確認した。
+内部管理文書の内容自体は転載しない。
 
 ### SEの対象と計算法の対応
 
@@ -2500,8 +2500,8 @@ MMLのGH求積次数や推定の収束とは別の検査である。
 | R・TAM | 実機 R `4.6.1`、TAM `4.3.25`。インストール済み名前空間の関数本体も確認 |
 | ConQuest | 保存記録の `5.47.5`。ローカル実行ファイルのSHA-256は拡張計画記載のものと一致。今回の起動は未確認 |
 
-mfrmrのソース・記録の基準ディレクトリは
-`/Users/tohokusla/Dropbox/MFRM_Application/mfrmr/development`。
+mfrmrのソース・記録の基準ディレクトリは親ディレクトリ配下の
+`../../mfrmr/development`。
 以下のmfrmrリンクは同じ親ディレクトリにあるこの読み取り専用の調査対象を指す。
 ソースと古い実行記録の版を混同せず、今回の照合結果も過去の凍結研究に上書きしない。
 
@@ -2594,7 +2594,7 @@ Q31は通った。**fit時の点数を増やすことと、保存校正のscorin
 `Rscript --vanilla` に渡し、最後の表を確認する。
 
 ```r
-src <- "/Users/tohokusla/Dropbox/MFRM_Application/mfrmr/development/R/mfrm_core.R"
+src <- file.path("..", "..", "mfrmr", "development", "R", "mfrm_core.R") # mfrmr開発ツリーへの相対パス
 env <- new.env(parent = baseenv())
 for (e in parse(src)) {
   if (is.call(e) && identical(e[[1]], as.name("<-")) &&

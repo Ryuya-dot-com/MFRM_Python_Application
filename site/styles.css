@@ -1314,6 +1314,35 @@ pre code {
   word-break: break-all;
 }
 
+.trust-optional-verify {
+  margin-top: 1.15rem;
+  padding-top: 0.95rem;
+  border-top: 1px solid var(--line);
+}
+
+.trust-optional-verify summary {
+  cursor: pointer;
+  font-size: 0.85rem;
+  font-weight: 560;
+  color: var(--ink-secondary);
+  user-select: none;
+}
+
+.trust-optional-verify summary:hover {
+  color: var(--ink);
+}
+
+.trust-optional-body {
+  margin-top: 0.75rem;
+  font-size: 0.85rem;
+  color: var(--ink-secondary);
+  line-height: 1.6;
+}
+
+.trust-optional-body p {
+  margin: 0 0 0.65rem;
+}
+
 /* Minimal Footer */
 .site-footer {
   border-top: 1px solid var(--line);

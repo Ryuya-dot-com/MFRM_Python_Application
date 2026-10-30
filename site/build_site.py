@@ -366,8 +366,9 @@ def wrap_doc_page(title: str, lang: str, active_href: str, body_html: str, toc: 
         <a href="mailto:ryuya.komuro.c4@tohoku.ac.jp">ryuya.komuro.c4@tohoku.ac.jp</a>
       </div>
       <div>
-        <a href="https://github.com/Ryuya-dot-com/MFRM_Python_Application/releases/tag/desktop-macos-20261030">macOS Preview</a> ·
-        <a href="https://github.com/Ryuya-dot-com/MFRM_Python_Application/releases/tag/desktop-windows-20261030">Windows Preview</a> ·
+        <a href="https://github.com/Ryuya-dot-com/MFRM_Python_Application/releases/download/desktop-20261031/MFRM-Desktop-macOS-arm64.zip">macOS Download</a> ·
+        <a href="https://github.com/Ryuya-dot-com/MFRM_Python_Application/releases/download/desktop-20261031/MFRM-Desktop-Windows-x64.zip">Windows Download</a> ·
+        <a href="https://github.com/Ryuya-dot-com/MFRM_Python_Application/releases/tag/desktop-20261031" target="_blank" rel="noopener">Release Notes</a> ·
         <a href="https://mfrmpythonapplication-xodghmcghngx8cz5zmhfeg.streamlit.app/" target="_blank" rel="noopener">Streamlit Web</a> ·
         <a href="https://ryuya-dot-com.github.io/mfrmr/" target="_blank" rel="noopener">mfrmr (R)</a>
       </div>

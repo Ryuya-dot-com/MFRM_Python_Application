@@ -10,6 +10,14 @@ methods and validation findings belong in their dedicated technical records.
 
 ## Unreleased
 
+## Unified macOS & Windows Desktop preview — 2026-10-31
+
+The [macOS (Apple Silicon) and Windows 11 (x64) preview release](https://github.com/Ryuya-dot-com/MFRM_Python_Application/releases/tag/desktop-20261031)
+hosts both standalone ZIP archives directly on GitHub Releases (retaining displayed app version `0.2.19-beta`):
+
+- Embed custom MFRM application icons (`.icns` / `.ico`), Windows `VSVersionInfo` metadata, uncompressed binaries (`upx=False`), and GitHub Actions Sigstore SLSA build provenance on the Windows archive.
+- Vectorize core `mfrm_app/engine.py` sufficient-statistic and Hessian calculations with exact numerical equivalence, and unify univariate `G/D-Study` computation under `mfrm_app/generalizability.py` (closed-form arbitrary integer D-Study projections, centered-tensor orthogonal ANOVA residual sums of squares, fixed-facet conditioning for balanced ≥3-facet data, preflight balance checks, and streamlined bilingual result notes).
+
 ## Windows Desktop preview — 2026-10-30
 
 The [Windows 11 x64 preview](https://github.com/Ryuya-dot-com/MFRM_Python_Application/releases/tag/desktop-windows-20261030)

@@ -7,8 +7,8 @@
 <p align="center">
   <strong>Separate examinee ability from rater severity, task difficulty, and rubric behavior on one shared scale.</strong><br />
   <a href="https://ryuya-dot-com.github.io/MFRM_Python_Application/"><strong>Website &amp; Docs</strong></a> ·
-  <a href="https://github.com/Ryuya-dot-com/MFRM_Python_Application/releases/tag/desktop-macos-20261030"><strong>Download for macOS</strong></a> ·
-  <a href="https://github.com/Ryuya-dot-com/MFRM_Python_Application/releases/tag/desktop-windows-20261030"><strong>Download for Windows</strong></a> ·
+  <a href="https://github.com/Ryuya-dot-com/MFRM_Python_Application/releases/download/desktop-20261031/MFRM-Desktop-macOS-arm64.zip"><strong>Download for macOS</strong></a> ·
+  <a href="https://github.com/Ryuya-dot-com/MFRM_Python_Application/releases/download/desktop-20261031/MFRM-Desktop-Windows-x64.zip"><strong>Download for Windows</strong></a> ·
   <a href="https://mfrmpythonapplication-xodghmcghngx8cz5zmhfeg.streamlit.app/"><strong>Open Web App</strong></a> ·
   <a href="docs/desktop_user_guide.en.md"><strong>User Guide</strong></a> ·
   <a href="README.ja.md"><strong>日本語</strong></a>
@@ -48,16 +48,18 @@ Why can't raw averages—or even a high inter-rater correlation (`r = 0.90`)—s
 
 | Platform | Best for | Current availability & how to start |
 |---|---|---|
-| **macOS (Apple Silicon) Desktop** | Offline local analysis, `.mfrm` project files, manuscript PNG/SVG exports on M1 or later Macs — **no Python install needed** | **Public preview available now.** [Download from GitHub Releases (`desktop-macos-20261030`)](https://github.com/Ryuya-dot-com/MFRM_Python_Application/releases/tag/desktop-macos-20261030) and follow the [Desktop Guide](docs/desktop_user_guide.en.md). Ad-hoc signed / unnotarized preview (`0.2.19-beta`, macOS 14.0+); Intel Macs can run from Python source. |
-| **Windows 11 (x64) Desktop** | Same offline local `Data → Settings → Results` workflow on Windows — **no Python install needed** | **Public preview available now.** [Download from GitHub Releases (`desktop-windows-20261030`)](https://github.com/Ryuya-dot-com/MFRM_Python_Application/releases/tag/desktop-windows-20261030) (application ZIP hosted on Dropbox) and follow the [Desktop Guide](docs/desktop_user_guide.en.md). Unsigned preview (`0.2.19-beta`); Windows on ARM and other Windows editions are not yet verified. |
+| **macOS (Apple Silicon) Desktop** | Offline local analysis, `.mfrm` project files, manuscript PNG/SVG exports on M1 or later Macs — **no Python install needed** | **Public preview available now.** **[Download `MFRM-Desktop-macOS-arm64.zip`](https://github.com/Ryuya-dot-com/MFRM_Python_Application/releases/download/desktop-20261031/MFRM-Desktop-macOS-arm64.zip)** ([release notes](https://github.com/Ryuya-dot-com/MFRM_Python_Application/releases/tag/desktop-20261031)) and follow the [Desktop Guide](docs/desktop_user_guide.en.md). Unnotarized open-source preview (`0.2.19-beta`, macOS 14.0+); Intel Macs can run from Python source. |
+| **Windows 11 (x64) Desktop** | Same offline local `Data → Settings → Results` workflow on Windows — **no Python install needed** | **Public preview available now.** **[Download `MFRM-Desktop-Windows-x64.zip`](https://github.com/Ryuya-dot-com/MFRM_Python_Application/releases/download/desktop-20261031/MFRM-Desktop-Windows-x64.zip)** ([release notes & provenance](https://github.com/Ryuya-dot-com/MFRM_Python_Application/releases/tag/desktop-20261031)) and follow the [Desktop Guide](docs/desktop_user_guide.en.md). Unsigned open-source preview (`0.2.19-beta`); Windows on ARM and other Windows editions are not yet verified. |
 | **Web Browser (Any OS)** | Instant browser exploration, plus extra research modules (bounded GPCM, latent regression, anchors/linking, residual PCA, simulation) | **[Open the hosted Web app](https://mfrmpythonapplication-xodghmcghngx8cz5zmhfeg.streamlit.app/)** (`v0.2.19-beta`) with synthetic or appropriately de-identified data, or [install and run locally](#install) for confidential datasets. |
 | **R (`mfrmr` on CRAN)** | Reproducible scripted MFRM pipelines in R, RStudio, Positron, or Quarto | Install via `install.packages("mfrmr")` from [CRAN](https://cran.r-project.org/package=mfrmr) and see the [`mfrmr` documentation](https://ryuya-dot-com.github.io/mfrmr/) (independent R implementation; align settings before comparing outputs). |
 | **Contributors & Builders** | Running tests, checking build manifests, or packaging desktop prototypes | See [CONTRIBUTING.md](CONTRIBUTING.md) and [DEPLOYMENT.md](DEPLOYMENT.md). |
 
 > [!NOTE]
-> **Downloading & first-launch security prompt:**
-> - **Right file:** On GitHub Releases, GitHub's automatic **Source code (zip)** contains Python source code, not the standalone desktop app. Download the application ZIP on [`desktop-macos-20261030`](https://github.com/Ryuya-dot-com/MFRM_Python_Application/releases/tag/desktop-macos-20261030) or [`desktop-windows-20261030`](https://github.com/Ryuya-dot-com/MFRM_Python_Application/releases/tag/desktop-windows-20261030) (`v0.2.19-beta` is the separate Web/source tag).
-> - **Why macOS / Windows say "could not be verified":** MFRM Desktop is distributed free of charge as open-source academic software without paid commercial Apple Developer Program notarization or Windows code-signing subscriptions (every line of source is public on GitHub, all analysis runs 100% offline with zero telemetry, and SHA-256 checksums are published). After verifying the SHA-256: on **macOS Sequoia 15+**, click **`Done`** (**do NOT click the blue `Move to Trash` button**) → **System Settings → Privacy & Security → `Open Anyway`**; on **Windows 11**, choose **`Extract All`** first, then **`More info` → `Run anyway`** if SmartScreen appears ([step-by-step guide & checksum commands](docs/desktop_user_guide.en.md#get-and-open-the-app)). Never disable Gatekeeper or Windows Defender globally.
+> **First-launch OS confirmation (3 steps, required once only):**
+> MFRM Desktop is distributed free of charge as open-source academic software without paid commercial Apple Developer Program notarization or Windows code-signing subscriptions (every line of source is public on GitHub, and all analysis runs 100% offline with zero telemetry).
+> - **macOS (Sequoia 15+ / Sonoma 14+):** Expand `MFRM-Desktop-macOS-arm64.zip` and open `MFRM-Desktop.app`. When *"Not Opened"* appears, click **`Done`** (**do NOT click the blue `Move to Trash` button**) → **System Settings → Privacy & Security → `Open Anyway`**.
+> - **Windows 11 (x64):** Right-click `MFRM-Desktop-Windows-x64.zip` → **`Extract All`** (keeping `MFRM-Desktop.exe` with `_internal`), then choose **`More info` → `Run anyway`** if SmartScreen appears.
+> - Optional SHA-256 digests and GitHub Actions build provenance are published on [`desktop-20261031`](https://github.com/Ryuya-dot-com/MFRM_Python_Application/releases/tag/desktop-20261031) ([detailed guide](docs/desktop_user_guide.en.md#get-and-open-the-app)). Never disable Gatekeeper or Windows Defender globally.
 
 ---
 
@@ -170,7 +172,7 @@ A completed run does not make every displayed number suitable for statistical in
 
 ## Install
 
-*(Skip this section if you are using the standalone [macOS](https://github.com/Ryuya-dot-com/MFRM_Python_Application/releases/tag/desktop-macos-20261030) or [Windows](https://github.com/Ryuya-dot-com/MFRM_Python_Application/releases/tag/desktop-windows-20261030) Desktop Preview ZIPs, which bundle Python.)*
+*(Skip this section if you are using the standalone [macOS](https://github.com/Ryuya-dot-com/MFRM_Python_Application/releases/download/desktop-20261031/MFRM-Desktop-macOS-arm64.zip) or [Windows](https://github.com/Ryuya-dot-com/MFRM_Python_Application/releases/download/desktop-20261031/MFRM-Desktop-Windows-x64.zip) Desktop Preview ZIPs, which bundle Python.)*
 
 To run the Web app from source, use **Python 3.11 or 3.12** in a virtual environment:
 
@@ -212,7 +214,7 @@ Cite **Ryuya Komuro** in APA 7th edition format (`(Komuro, 2026)` or `Komuro (20
 - **MFRM Desktop (macOS / Windows):**
   > Komuro, R. (2026). *MFRM Desktop* (Version 0.2.19-beta) [Computer software]. https://github.com/Ryuya-dot-com/MFRM_Python_Application
 
-  *(Also record the OS release tag—`desktop-macos-20261030` or `desktop-windows-20261030`—and archive filename in your Methods section; built-in [`CITATION.cff`](CITATION.cff) sidecars record the shared repository title `MFRM Streamlit`.)*
+  *(Also record the release tag—`desktop-20261031`—and archive filename in your Methods section; built-in [`CITATION.cff`](CITATION.cff) sidecars record the shared repository title `MFRM Streamlit`.)*
 - **MFRM Web (`MFRM Streamlit`):**
   > Komuro, R. (2026). *MFRM Streamlit* (Version 0.2.19-beta) [Computer software]. https://github.com/Ryuya-dot-com/MFRM_Python_Application
 

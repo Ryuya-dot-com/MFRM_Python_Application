@@ -15,10 +15,9 @@ or a claim that a planned feature has passed validation.
 
 ## Current delivery priority
 
-The [Windows desktop preview](https://github.com/Ryuya-dot-com/MFRM_Python_Application/releases/tag/desktop-windows-20261030)
-includes the complete supported workflow in one package. Current distribution
-work focuses on preview feedback, broader environment coverage and macOS
-packaging and acceptance:
+The [macOS (Apple Silicon) and Windows 11 (x64) desktop previews](https://github.com/Ryuya-dot-com/MFRM_Python_Application/releases/tag/desktop-20261031)
+include the complete supported workflow in standalone packages hosted on GitHub Releases. Current distribution
+work focuses on preview feedback and broader multi-DPI OS acceptance:
 
 | Area | Initial desktop scope |
 |---|---|

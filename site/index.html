@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>MFRM — Many-Facet Rasch &amp; Generalizability Analysis</title>
-  <meta name="description" content="Separate examinee ability from rater severity, task difficulty, and rubric behavior with MFRM Desktop, the Streamlit Web App, and mfrmr for R." />
+  <meta name="description" content="Separate examinee ability from rater severity, task difficulty, and rubric behavior with MFRM Desktop, the Web App, mfrmpy for Python, and mfrmr for R." />
   <link rel="icon" type="image/svg+xml" href="assets/images/mfrm-desktop-icon.svg" />
   <link rel="stylesheet" href="styles.css" />
 </head>
@@ -454,13 +454,13 @@
       <div class="section-intro" id="model-scope">
         <h2>
           <span data-i18n="en">Choose how to run MFRM</span>
-          <span data-i18n="ja">目的に合わせて選べる3つの環境</span>
+          <span data-i18n="ja">目的に合わせて選べる実行環境</span>
         </h2>
         <p data-i18n="en">
-          Use the standalone desktop app for local project files, the hosted Streamlit app for zero-install exploration and extended research modules, or the CRAN R package for scripted pipelines.
+          Use the standalone desktop app for local project files, the hosted Streamlit app for browser exploration, or the Python and R packages for scripts and notebooks.
         </p>
         <p data-i18n="ja">
-          手元PCで完結するデスクトップ版、ブラウザからすぐ試せるStreamlit Web版、Rスクリプトで再現性を管理できるCRANパッケージから選べます。
+          手元PCで完結するデスクトップ版、ブラウザから試せるStreamlit Web版、スクリプトやノートブックで分析できるPython・Rパッケージから選べます。
         </p>
       </div>
 
@@ -643,7 +643,34 @@
           </div>
         </div>
 
-        <!-- Row 3: mfrmr for R -->
+        <!-- Row 3: mfrmpy for Python -->
+        <div class="platform-row">
+          <div class="platform-id">
+            <h3>mfrmpy for Python</h3>
+            <div class="platform-meta">
+              <span data-i18n="en">PyPI package<br />0.1.0a2 pre-release · Python 3.11 / 3.12</span>
+              <span data-i18n="ja">PyPI公開パッケージ<br />0.1.0a2 試用版 · Python 3.11 / 3.12</span>
+            </div>
+          </div>
+          <div class="platform-desc">
+            <p data-i18n="en">Use the shared Desktop/Web engine from Python scripts and notebooks: RSM/PCM with JMLE or fixed-SD MML, qualified diagnostics and supplementary analyses, balanced G/D studies, and .mfrm project restoration. Figures and HTML reports use the optional figures extra.</p>
+            <p data-i18n="ja">既存Desktop／Web版と同じ計算処理をPythonから利用できます。RSM／PCM × JMLE／固定SD MML、診断、対応する区間・交互作用、均衡設計のG/D研究、.mfrm保存・再読込に対応。図とHTMLレポートは追加オプションで利用できます。</p>
+            <p class="fineprint" data-i18n="en">The initial API is a pre-release. Read the library guide for inputs, output qualifications and supported designs.</p>
+            <p class="fineprint" data-i18n="ja">初回の試用版APIです。入力形式・結果の解釈上の制約・対応設計はライブラリガイドで確認してください。</p>
+          </div>
+          <div class="platform-cta">
+            <div class="cmd-box">
+              <span id="python-install-cmd">pip install --pre mfrmpy</span>
+              <button type="button" class="copy-btn" onclick="copyText('python-install-cmd', this)">Copy</button>
+            </div>
+            <div class="inline-links">
+              <a href="python-library.html"><span data-i18n="en">Library guide</span><span data-i18n="ja">ライブラリガイド</span></a>
+              <a href="https://pypi.org/project/mfrmpy/" target="_blank" rel="noopener">PyPI ↗</a>
+            </div>
+          </div>
+        </div>
+
+        <!-- Row 4: mfrmr for R -->
         <div class="platform-row">
           <div class="platform-id">
             <h3>mfrmr for R</h3>
@@ -660,10 +687,10 @@
               RスクリプトやQuarto文書で分析工程をコード管理したい研究者向けのネイティブRパッケージ。RSM・PCM・制約付きGPCM（MML／JML）、アンカー・リンク、バイアス／DFFスクリーニング、再現用マニフェスト出力に対応しています。
             </p>
             <p class="fineprint" data-i18n="en">
-              MFRM Python (Desktop / Web) and mfrmr are independent implementations. When comparing outputs across mfrmr, FACETS, ConQuest, or TAM, align the estimator, identification constraints, quadrature settings, and SE definitions rather than assuming automatic numerical identity.
+              MFRM Python (Desktop / Web / mfrmpy) and mfrmr are independent implementations. When comparing outputs across mfrmr, FACETS, ConQuest, or TAM, align the estimator, identification constraints, quadrature settings, and SE definitions rather than assuming automatic numerical identity.
             </p>
             <p class="fineprint" data-i18n="ja">
-              Python版（Desktop／Web）と mfrmr は独立した実装です。mfrmr・FACETS・ConQuest・TAM等の間で結果を比較する際は、推定法・識別制約・求積点・SEの定義を揃えて確認してください（無条件の数値一致は前提としません）。
+              Python版（Desktop／Web／mfrmpy）と mfrmr は独立した実装です。mfrmr・FACETS・ConQuest・TAM等の間で結果を比較する際は、推定法・識別制約・求積点・SEの定義を揃えて確認してください（無条件の数値一致は前提としません）。
             </p>
           </div>
           <div class="platform-cta">

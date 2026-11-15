@@ -74,12 +74,20 @@ Web版では、必要なレポートや図表を「レポート・出力」か�
 4. **初回起動時に「マルウェアが含まれていないことを検証できませんでした」「PCが保護されました」と出るのはなぜですか？**
    **悪質なコードが検出されたからではなく、無償の学術オープンソースとして有償の Apple Developer Program 公証や商用コード署名を付与していないためです。** 全ソースコードをGitHubで公開しており、Wi-Fiを切った完全オフライン状態でも全分析・保存が動作すること、および公開 `SHA256SUMS.txt` との一致から安全性を検証できます。macOS Sequoia 15以降では**青い「ゴミ箱に入れる」を押さずに「完了」をクリック**し、**「システム設定 → プライバシーとセキュリティ → このまま開く」**から許可してください（初回のみ）。Windows 11ではZIPを「すべて展開」後に**「詳細情報 → 実行」**を選択します（詳細は[紹介サイトの初回起動・安全性確認ガイド](https://ryuya-dot-com.github.io/MFRM_Python_Application/?lang=ja#first-launch)）。
 
-## Pythonから分析する（初回公開準備中）
+## Pythonから分析する
 
 分析ライブラリ **mfrmpy** は、既存アプリと同じ計算処理をPythonから利用する
 ためのパッケージです。RSM/PCM、JMLE・固定SD MML、診断、対応する区間・
 交互作用、G/D研究、`.mfrm` 保存・再読込を提供し、図とHTMLレポートは追加依存で
-利用します。既存Web・デスクトップ版も引き続き維持します。
+利用します。初回の試用版 [0.1.0a2 をPyPIで公開しています](https://pypi.org/project/mfrmpy/0.1.0a2/)。
+既存Web・デスクトップ版も引き続き維持します。
+
+```bash
+python -m pip install --pre mfrmpy
+# 図とHTMLレポートも利用する場合
+python -m pip install --pre 'mfrmpy[figures]'
+```
+
 導入例と適用範囲は [Pythonライブラリガイド](docs/python_library.md) を参照してください。
 
 ## ライセンス・引用（APA第7版）・不具合報告

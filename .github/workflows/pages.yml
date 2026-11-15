@@ -10,6 +10,7 @@ on:
       - "docs/desktop_user_guide.en.md"
       - "docs/desktop_user_guide.ja.md"
       - "docs/analysis_scope.md"
+      - "docs/python_library.md"
       - "docs/apa_manuscript_template.md"
       - "docs/images/**"
       - "examples/desktop_writing.csv"

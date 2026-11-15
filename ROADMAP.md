@@ -48,8 +48,9 @@ alone does not establish desktop usability on a supported OS.
 
 ## Python library distribution (2026-11-15)
 
-Prepare a Python analysis library for PyPI while maintaining the existing Web
-and desktop applications. The initial public scope follows the supported
+The Python analysis library, `mfrmpy` 0.1.0a2, is published on PyPI;
+the existing Web and desktop applications are maintained alongside it.
+The initial public scope follows the supported
 desktop calculations: RSM/PCM with JMLE or fixed-SD MML, diagnostics,
 conditional bias, specified structural intervals, joint interactions, and
 supported observed-score G/D studies. Existing anchors, residual diagnostics,
@@ -57,7 +58,8 @@ rescaling and project restoration keep their current conditions. This does
 not extend statistical guarantees or require advanced Web-only methods.
 
 The public interface delegates to the same `mfrm_app` computation. Core
-installation needs numerical dependencies; plotting and HTML reports use an
+installation includes numerical dependencies and PyArrow for typed project
+interchange; plotting and HTML reports use an
 optional extra. Maintain one source for shared locale and example data.
 The library has its own initial API version; retained analyses continue to
 record their shared engine version and implementation fingerprints.
@@ -72,7 +74,7 @@ must not publish automatically on ordinary pushes or pull requests.
 
 The distribution and import name is `mfrmpy`, selected on 2026-11-15.
 The current package guide is `docs/python_library.md`. Build/test evidence and
-remaining release prerequisites belong in `RELEASE_CHECKLIST.md`.
+index publication evidence belong in `RELEASE_CHECKLIST.md`.
 
 ## Shared calculation and interpretation
 

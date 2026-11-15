@@ -187,8 +187,89 @@ NumPy 2.5.4, pandas 3.1.1, SciPy 1.18.1):
   checked in CI.
 
 These are local package/application checks, not new sampling validation or
-interactive desktop OS acceptance. The new multi-OS CI matrix and index
-publication/reinstallation still need their own completion evidence.
+interactive desktop OS acceptance. Later CI and publication evidence follows.
+
+Published library `mfrmpy` 0.1.0a1 (2026-11-15):
+
+- Adopted source: `c2cfae046368cfd212fa04a53b4a5e7e4a1fe2ea`, merging
+  [PR #7](https://github.com/Ryuya-dot-com/MFRM_Python_Application/pull/7).
+  Its tree matches approved candidate `5b7b701796df5805149ddbb2c2e56257da343b05`.
+- [Full application CI](https://github.com/Ryuya-dot-com/MFRM_Python_Application/actions/runs/43689546103)
+  passed 4,185 tests on each Python version, with 14 skipped and 91 deselected;
+  the one failure was the existing 45-second export test limit. After removing
+  that limit, [remaining-checks CI](https://github.com/Ryuya-dot-com/MFRM_Python_Application/actions/runs/43691725429)
+  passed archive interoperability, benchmark, demo report export and clean-tree
+  checks on Linux / Python 3.11.18 and 3.12.16. The application and numerical
+  sources were unchanged. This combines evidence from separate runs; the earlier
+  failed run is retained, not relabelled as an entirely successful full run.
+- [Windows desktop source checks](https://github.com/Ryuya-dot-com/MFRM_Python_Application/actions/runs/43689546117)
+  passed all 252 tests. No desktop binary was replaced by this library release.
+- [TestPyPI publication](https://github.com/Ryuya-dot-com/MFRM_Python_Application/actions/runs/43692848976)
+  and [PyPI publication](https://github.com/Ryuya-dot-com/MFRM_Python_Application/actions/runs/43693328216)
+  each passed all seven package environments: Linux/macOS/Windows × Python
+  3.11/3.12, plus Linux 3.11 with NumPy 1.24.0, pandas 2.0.0, SciPy 1.10.0 and
+  Matplotlib 3.8.0 retained throughout the optional-figures check. Each environment
+  passed 14 core and four optional figure/report tests.
+- Both indexes serve the same tested wheel and sdist. Fresh, isolated Python
+  3.12 installations from each index matched the wheel's installed file contents
+  and completed the 960-row example, qualified tables and zero-refit .mfrm
+  restoration. The PyPI installation also produced a PNG and HTML report with
+  the `figures` extra; dependency consistency checks passed.
+- Public release: [PyPI](https://pypi.org/project/mfrmpy/0.1.0a1/);
+  trial release: [TestPyPI](https://test.pypi.org/project/mfrmpy/0.1.0a1/).
+  The main-branch-only GitHub environments use the registered Trusted Publishers;
+  ordinary pushes and PRs still cannot publish a package.
+
+Published SHA-256:
+
+| Artifact | SHA-256 |
+|---|---|
+| `mfrmpy-0.1.0a1-py3-none-any.whl` | `de04bb2564a5853c937cffbb42270b876bc39b198d7dfc31943b6b88b094323e` |
+| `mfrmpy-0.1.0a1.tar.gz` | `78364188f5774e1b83f2ac5b2fd0f84ffc91c86cc61fb21a9511ef185747e1d8` |
+
+The subsequent hosted interoperability check found a gap in the first
+package's dependency declaration: a real Web `.mfrm` contained Arrow-backed
+strings and could not be opened without PyArrow. pandas 2 also lacks the
+`StringDtype(na_value=...)` constructor used by the existing codec. The same-
+environment round trips above did not cover that case. Version 0.1.0a2 declares
+the needed dependencies, with no change to `mfrm_app`, its numerical algorithms,
+content/analysis fingerprints or archive format.
+All 96 shared `mfrm_app` files in the two wheels are byte-identical.
+
+Local correction evidence (2026-11-15):
+
+- Source `d0e8c2fae6cefac215729b59cfc63fea57fea632`; wheel built from sdist,
+  both passing `twine check`. Fresh installed core: 18 passed, four optional
+  tests skipped. Installed minimum dependencies (Python 3.11.14, NumPy 1.26.0,
+  pandas 3.0.0, SciPy 1.10.0, PyArrow 16.0.0, Matplotlib 3.8.0): all 22 passed.
+- Public Web source `c2cfae0`, synthetic 960-row writing analysis: completed
+  analysis, downloaded a 500,827-byte HTML report retaining dimensionality and
+  stopping notes, and a 2,001,781-byte `.mfrm` project. Both minimum and current
+  installed environments restored and re-saved that actual archive with nine
+  qualified tables, unchanged analysis ID/content fingerprint and no refitting.
+  These checks cover the affected hosted analysis/report/archive route, not all
+  advanced Web features or new desktop binary acceptance.
+
+Published correction `mfrmpy` 0.1.0a2 (2026-11-15):
+
+- [TestPyPI workflow](https://github.com/Ryuya-dot-com/MFRM_Python_Application/actions/runs/43694493879)
+  and [PyPI workflow](https://github.com/Ryuya-dot-com/MFRM_Python_Application/actions/runs/43694850850)
+  passed all seven environments, each with 18 core tests and four figure/report
+  tests. The minimum-dependency environment retained the declared versions.
+- [PyPI](https://pypi.org/project/mfrmpy/0.1.0a2/) and
+  [TestPyPI](https://test.pypi.org/project/mfrmpy/0.1.0a2/) serve wheel and sdist
+  identical to the local and CI-tested files. A fresh TestPyPI installation
+  completed the sample analysis, zero-refit restoration and the actual hosted
+  project's nine qualified tables, with matching installed wheel contents.
+- A fresh production-PyPI install of `mfrmpy[figures]==0.1.0a2` also passed
+  those checks, rendered PNG/HTML output, and passed `pip check`. The hosted
+  download and both index-install records are retained under
+  `validation/generated/pypi-preparation-20261115/` in the local workspace.
+
+| Artifact | SHA-256 |
+|---|---|
+| `mfrmpy-0.1.0a2-py3-none-any.whl` | `4c7df8838578189a51396225afd771f099a585c678a26d2edd1a407c3532887b` |
+| `mfrmpy-0.1.0a2.tar.gz` | `482735d96a074879f88a7b4e2337094710b5c037c80852057353b9b6227fa529` |
 
 ## Hosted Web release
 

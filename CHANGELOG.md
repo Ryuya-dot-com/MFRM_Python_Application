@@ -8,9 +8,22 @@ restricted or removed from the core workflow. Consult
 using a result. Complete source changes remain in Git history; scientific
 methods and validation findings belong in their dedicated technical records.
 
-## Unreleased
+## mfrmpy 0.1.0a2 — 2026-11-15
 
-- Prepare `mfrmpy` 0.1.0a1 as an installable Python library sharing the existing
+- Include PyArrow >=16.0 and require pandas >=3.0 / NumPy >=1.26 so a normal
+  installation can restore the exact string storage and missing-value types
+  saved by the hosted Web app. The first package's numeric-only dependencies
+  could not restore Arrow-backed projects; pandas 2 also lacks the required
+  string missing-value constructor argument.
+- Add installed-package checks for Python/Arrow string storage with both
+  `pd.NA` and NaN, preserving leading-zero identifiers, literal `"nan"` text,
+  saved fingerprints and zero-refit restoration. Calculations and the archive
+  format are unchanged.
+
+## mfrmpy 0.1.0a1 — 2026-11-15
+
+- Publish [`mfrmpy` 0.1.0a1](https://pypi.org/project/mfrmpy/0.1.0a1/) as an initial
+  pre-release Python library sharing the existing
   desktop/Web calculation engine. Add a documented public interface, bundled
   synthetic data, qualified tables, .mfrm save/reload, and optional figures/HTML.
 - Package shared reporting text without depending on a repository checkout.
@@ -18,6 +31,9 @@ methods and validation findings belong in their dedicated technical records.
 - Add wheel/source-distribution validation and installed-package CI, with
   publication available only through an explicit manual request on main.
 - Update the Web workflow control budget for the existing saved-project entry.
+- Check Web archive interoperability through completion instead of treating
+  a 45-second AppTest limit as a functional failure. Statistical assertions
+  and the application runtime remain unchanged.
 
 ## Unified macOS & Windows Desktop preview — 2026-10-31
 

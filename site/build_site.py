@@ -18,6 +18,7 @@ PAGE_SPECS = [
     ("docs/desktop_user_guide.en.md", "desktop-guide.html", "en", "MFRM Desktop User Guide — Windows & macOS"),
     ("docs/desktop_user_guide.ja.md", "desktop-guide-ja.html", "ja", "MFRM デスクトップ利用ガイド"),
     ("docs/analysis_scope.md", "analysis-scope.html", "en", "Analyses, Interpretation & Reporting Limits — MFRM"),
+    ("docs/python_library.md", "python-library.html", "en", "mfrmpy — Python Library Guide"),
     ("docs/apa_manuscript_template.md", "manuscript-guide.html", "en", "APA & Manuscript Reporting Guide — MFRM"),
     ("README.ja.md", "overview-ja.html", "ja", "MFRM — 日本語概要"),
 ]
@@ -28,6 +29,7 @@ ROUTE_MAP = {
     "docs/desktop_user_guide.en.md": "desktop-guide.html",
     "docs/desktop_user_guide.ja.md": "desktop-guide-ja.html",
     "docs/analysis_scope.md": "analysis-scope.html",
+    "docs/python_library.md": "python-library.html",
     "docs/apa_manuscript_template.md": "manuscript-guide.html",
     "examples/desktop_writing.csv": "examples/desktop_writing.csv",
 }
@@ -317,6 +319,7 @@ def wrap_doc_page(title: str, lang: str, active_href: str, body_html: str, toc: 
         ("desktop-guide.html", "Desktop Guide (EN)"),
         ("desktop-guide-ja.html", "日本語ガイド"),
         ("analysis-scope.html", "Interpretation Scope"),
+        ("python-library.html", "Python Library"),
         ("manuscript-guide.html", "Manuscript Guide"),
     ]
     nav_links = "".join(

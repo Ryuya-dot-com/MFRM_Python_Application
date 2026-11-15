@@ -271,6 +271,42 @@ Published correction `mfrmpy` 0.1.0a2 (2026-11-15):
 | `mfrmpy-0.1.0a2-py3-none-any.whl` | `4c7df8838578189a51396225afd771f099a585c678a26d2edd1a407c3532887b` |
 | `mfrmpy-0.1.0a2.tar.gz` | `482735d96a074879f88a7b4e2337094710b5c037c80852057353b9b6227fa529` |
 
+Published stable library 0.1.0 (2026-11-15):
+
+- Source `f25bf19402df540fab8b00782bedcaddf7080a51`. The wheel's 96 shared
+  application/resource files match 0.1.0a2 byte for byte; the public Python
+  module differs only in `__version__`. Dependencies and call signatures are
+  unchanged. Earlier numerical/application and hosted-route evidence remains
+  applicable; those full suites were not rerun for metadata/documentation edits.
+- Document the public API, 0.1.x patch compatibility and supported archive read
+  compatibility. The wheel/sdist pass `twine check`, expose version `0.1.0`
+  and classify the library as `Production/Stable`.
+- [TestPyPI workflow](https://github.com/Ryuya-dot-com/MFRM_Python_Application/actions/runs/43696059819)
+  and [production PyPI workflow](https://github.com/Ryuya-dot-com/MFRM_Python_Application/actions/runs/43696526264)
+  passed all seven package environments, each with 18 core and four optional
+  figure/report tests. Their artifacts match the locally verified build.
+- Compare saved synthetic 960-row projects from 0.1.0a1, 0.1.0a2 and the actual
+  hosted Web app in isolated 0.1.0a2 and 0.1.0 environments. All three preserve
+  analysis IDs, content fingerprints, qualified tables and notes after
+  save/reload, with estimators and supplementary fitting functions blocked.
+- [TestPyPI](https://test.pypi.org/project/mfrmpy/0.1.0/) and
+  [production PyPI](https://pypi.org/project/mfrmpy/0.1.0/) serve the verified
+  wheel and sdist with stable version/classifier metadata. A fresh install of
+  `mfrmpy[figures]` and an upgrade from 0.1.0a2 both selected 0.1.0 without
+  `--pre` or an exact-version requirement. Pip installation reports confirm
+  the tested wheel's hash; upgraded projects retain their data and results.
+- The fresh production installation completed the 960-row example, saved and
+  restored projects without fitting, generated PNG/HTML output and passed
+  `pip check`. TestPyPI, fresh production and alpha-upgraded environments all
+  preserved the three earlier archives' qualified tables and fingerprints.
+  Detailed install/upgrade reports and checks are retained in the existing
+  local `validation/generated/pypi-preparation-20261115/` directory.
+
+| Artifact | SHA-256 |
+|---|---|
+| `mfrmpy-0.1.0-py3-none-any.whl` | `3de6674883a90c74f003e48886e616f501b0402b684688905587202fc2efedec` |
+| `mfrmpy-0.1.0.tar.gz` | `5620a2bd1384c64ccf870ae372f958f76768ff716831d9d1cfea5cfe41d87439` |
+
 ## Hosted Web release
 
 - [ ] Follow [DEPLOYMENT](DEPLOYMENT.md#publication-and-hosted-acceptance).

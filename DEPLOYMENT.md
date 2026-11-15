@@ -2,9 +2,10 @@
 
 ## Python library: mfrmpy
 
-The library [`0.1.0a2`](https://pypi.org/project/mfrmpy/0.1.0a2/) was
-published on 2026-11-15 after TestPyPI verification, correcting the first
-release's dependencies for Web project restoration. Its version is distinct
+The first stable library [`0.1.0`](https://pypi.org/project/mfrmpy/0.1.0/) was
+published on 2026-11-15 after TestPyPI verification. Normal installation uses
+`python -m pip install mfrmpy`; add `--upgrade` to update an existing alpha
+installation. Its version is distinct
 from the existing Web/desktop engine version. Public scope and usage are
 documented in [the library guide](docs/python_library.md); release evidence is
 in [the release checklist](RELEASE_CHECKLIST.md#python-library-distribution).
@@ -45,12 +46,13 @@ After package and applicable application checks pass, merge the reviewed
 change before dispatching the workflow on `main`. Select `testpypi` for the
 trial upload, check that index's project page and install its exact version
 in a clean environment. Install dependencies from PyPI separately, then use
-`--index-url https://test.pypi.org/simple/ --no-deps mfrmpy==0.1.0a2` for the
+`--index-url https://test.pypi.org/simple/ --no-deps mfrmpy==0.1.0` for the
 trial package; TestPyPI is not a reliable source for all dependencies.
 
 For the approved production upload, select `pypi`, verify
 `https://pypi.org/project/mfrmpy/`, and test
-`python -m pip install mfrmpy==0.1.0a2` from a fresh environment. Record the
+`python -m pip install mfrmpy` from a fresh environment and confirm that the
+installed version is `0.1.0`. Also check `--upgrade` from the alpha release. Record the
 published files and their hashes. Never describe a workflow/PR success alone
 as confirmation that the public index serves the package. Bump the package
 version for changed artifacts; do not reuse an uploaded version's filenames.

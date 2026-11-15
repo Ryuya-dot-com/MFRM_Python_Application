@@ -1,12 +1,24 @@
 # Changelog
 
-Changes to the Web and desktop applications are summarized by version below.
+Changes to the Python library, Web and desktop applications are summarized by version below.
 Historical entries describe changes at that time, not current availability or
 validation of every output. Some advanced or uncertainty features were later
 restricted or removed from the core workflow. Consult
 [analysis scope](docs/analysis_scope.md) and the current output's notes before
 using a result. Complete source changes remain in Git history; scientific
 methods and validation findings belong in their dedicated technical records.
+
+## mfrmpy 0.1.0 — 2026-11-15
+
+- Release the first stable Python library; normal installation uses
+  `python -m pip install mfrmpy` without `--pre`. Existing installations can
+  update with `python -m pip install --upgrade mfrmpy`.
+- Define the supported public API and patch-release compatibility within
+  0.1.x, including saved-project read compatibility. Document how incompatible
+  API changes and numerical corrections will be communicated.
+- Retain the 0.1.0a2 calculations, dependencies, public call signatures and
+  archive format. Earlier alpha and hosted Web projects keep their analysis
+  identities, qualified tables and notes when restored without refitting.
 
 ## mfrmpy 0.1.0a2 — 2026-11-15
 

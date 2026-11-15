@@ -48,13 +48,13 @@ alone does not establish desktop usability on a supported OS.
 
 ## Python library distribution (2026-11-15)
 
-The Python analysis library, `mfrmpy` 0.1.0a2, is published on PyPI;
+The first stable Python analysis library, `mfrmpy` 0.1.0, is published on PyPI;
 the existing Web and desktop applications are maintained alongside it.
 The user authorized completion of the first stable release, 0.1.0, on
-2026-11-15. This transition defines the public API/compatibility policy and
-updates distribution metadata and guidance. Reuse the validated calculation
-sources; verify the final distributions, earlier saved projects, installation
-without `--pre`, and the public package/site after publication.
+2026-11-15. The transition defines the public API/compatibility policy and
+updates distribution metadata and guidance. It reuses the validated calculation
+sources, with final-distribution, earlier-project, normal installation and
+alpha-upgrade checks recorded in `RELEASE_CHECKLIST.md`.
 The initial public scope follows the supported
 desktop calculations: RSM/PCM with JMLE or fixed-SD MML, diagnostics,
 conditional bias, specified structural intervals, joint interactions, and

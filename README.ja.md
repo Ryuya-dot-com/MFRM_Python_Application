@@ -79,15 +79,17 @@ Web版では、必要なレポートや図表を「レポート・出力」か�
 分析ライブラリ **mfrmpy** は、既存アプリと同じ計算処理をPythonから利用する
 ためのパッケージです。RSM/PCM、JMLE・固定SD MML、診断、対応する区間・
 交互作用、G/D研究、`.mfrm` 保存・再読込を提供し、図とHTMLレポートは追加依存で
-利用します。初回の試用版 [0.1.0a2 をPyPIで公開しています](https://pypi.org/project/mfrmpy/0.1.0a2/)。
+利用します。初回正式版 [0.1.0 をPyPIで公開しています](https://pypi.org/project/mfrmpy/0.1.0/)。
 既存Web・デスクトップ版も引き続き維持します。
 
 ```bash
-python -m pip install --pre mfrmpy
+python -m pip install mfrmpy
 # 図とHTMLレポートも利用する場合
-python -m pip install --pre 'mfrmpy[figures]'
+python -m pip install 'mfrmpy[figures]'
 ```
 
+旧版から更新する場合は、インストールコマンドに `--upgrade` を追加してください。
+公開APIと `0.1.x` での互換性方針もガイドに記載しています。
 導入例と適用範囲は [Pythonライブラリガイド](docs/python_library.md) を参照してください。
 
 ## ライセンス・引用（APA第7版）・不具合報告

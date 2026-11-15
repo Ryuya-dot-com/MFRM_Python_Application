@@ -3,6 +3,7 @@ import importlib.util
 import subprocess
 import sys
 
+import numpy as np
 import pandas as pd
 import pytest
 
@@ -152,6 +153,27 @@ def test_corrupt_project_is_not_accepted(tmp_path):
     path.write_text("not a project", encoding="utf-8")
     with pytest.raises(mfrmpy.ProjectError):
         mfrmpy.load_project(path)
+
+
+@pytest.mark.parametrize("storage", ["python", "pyarrow"])
+@pytest.mark.parametrize("missing", [pd.NA, np.nan], ids=["NA", "NaN"])
+def test_project_retains_string_storage_missing_values_and_fingerprints(storage, missing, tmp_path, monkeypatch):
+    dtype = pd.StringDtype(storage=storage, na_value=missing)
+    data = ratings().astype({name: dtype for name in ("Person", "Rater", "Task")})
+    data["Label"] = pd.Series(["001", None, "nan"] * (len(data) // 3), dtype=dtype)
+    data.columns = data.columns.astype(dtype)
+    analysis = mfrmpy.analyze(data, **settings())
+    forbid_refit(monkeypatch)
+    path = tmp_path / "typed-strings.mfrm"
+    mfrmpy.save_project(path, analysis)
+    restored = mfrmpy.load_project(path)
+    assert restored["content_fingerprint"] == analysis["content_fingerprint"]
+    assert restored["analysis_id"] == analysis["analysis_id"]
+    pd.testing.assert_frame_equal(restored["input_data"], data)
+    assert restored["input_data"].Label.dtype.storage == storage
+    assert restored["input_data"].Label.iloc[0] == "001"
+    assert restored["input_data"].Label.iloc[2] == "nan"
+    assert mfrmpy.tables(restored)
 
 
 @pytest.mark.skipif(importlib.util.find_spec("matplotlib") is None, reason="Optional figures extra")

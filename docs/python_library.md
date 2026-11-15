@@ -27,11 +27,14 @@ python -m pip install --pre 'mfrmpy[figures]'
 During release preparation, install the built wheel instead:
 
 ```bash
-python -m pip install dist/mfrmpy-0.1.0a1-py3-none-any.whl
+python -m pip install dist/mfrmpy-0.1.0a2-py3-none-any.whl
 ```
 
 Python 3.11 and 3.12 are the initial validation targets. Core dependencies are
-NumPy, pandas and SciPy. This distribution provides a library, not the
+NumPy >=1.26, pandas >=3.0, SciPy >=1.10 and PyArrow >=16.0. pandas 3 and
+PyArrow preserve the string storage and missing-value types recorded in Web
+and desktop `.mfrm` projects, including their content fingerprints. This
+distribution provides a library, not the
 standalone desktop executable or the Web app launcher. Those applications
 remain available from the
 [application repository](https://github.com/Ryuya-dot-com/MFRM_Python_Application).

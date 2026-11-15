@@ -20,7 +20,7 @@ classifiers = [
     "Programming Language :: Python :: 3.12",
     "Topic :: Scientific/Engineering",
 ]
-dependencies = ["numpy>=1.24", "pandas>=2.0", "scipy>=1.10"]
+dependencies = ["numpy>=1.26", "pandas>=3.0", "scipy>=1.10", "pyarrow>=16.0"]
 
 [project.optional-dependencies]
 figures = ["matplotlib>=3.8"]

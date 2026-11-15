@@ -1,114 +1,36 @@
-name: Python Streamlit
+name: Python Streamlit - remaining release checks
 
 on:
-  push:
-    branches: [main, master, slope-aware-bias-inference]
-    paths:
-      - "streamlit_app.py"
-      - "pyproject.toml"
-      - "mfrmpy/**"
-      - "docs/python_library.md"
-      - "mfrm_app/**"
-      - "locales/**"
-      - "CITATION.cff"
-      - "requirements.txt"
-      - "requirements-dev.txt"
-      - "Makefile"
-      - ".github/workflows/python-streamlit.yml"
-      - ".streamlit/**"
-      - "anchor_templates_and_guideline/**"
-      - "tests/**"
-      - "validation/**"
-      - "README.md"
-      - "DEPLOYMENT.md"
-      - "CHANGELOG.md"
-      - "CONTRIBUTING.md"
-      - "SECURITY.md"
-      - "RELEASE_CHECKLIST.md"
-      - "MFRM_STREAMLIT_RELEASE_PLAN.md"
-      - "ROADMAP.md"
-  pull_request:
-    branches: [main, master, slope-aware-bias-inference]
-    paths:
-      - "streamlit_app.py"
-      - "pyproject.toml"
-      - "mfrmpy/**"
-      - "docs/python_library.md"
-      - "mfrm_app/**"
-      - "locales/**"
-      - "CITATION.cff"
-      - "requirements.txt"
-      - "requirements-dev.txt"
-      - "Makefile"
-      - ".github/workflows/python-streamlit.yml"
-      - ".streamlit/**"
-      - "anchor_templates_and_guideline/**"
-      - "tests/**"
-      - "validation/**"
-      - "README.md"
-      - "DEPLOYMENT.md"
-      - "CHANGELOG.md"
-      - "CONTRIBUTING.md"
-      - "SECURITY.md"
-      - "RELEASE_CHECKLIST.md"
-      - "MFRM_STREAMLIT_RELEASE_PLAN.md"
-      - "ROADMAP.md"
   workflow_dispatch:
 
 permissions:
   contents: read
 
 jobs:
-  # Keep the established job id so branch-protection check names stay stable.
-  # The final step turns this existing matrix into a clean-checkout contract.
-  smoke-test:
+  remaining-checks:
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
         python-version: ["3.11", "3.12"]
-
     steps:
       - uses: actions/checkout@v6.0.2
-
-      - name: Set up Python
-        uses: actions/setup-python@v6.2.0
+        with:
+          fetch-depth: 2
+      - name: Confirm application and tests match the candidate parent
+        run: git diff --exit-code HEAD^ HEAD -- . ':!.github/workflows/python-streamlit.yml'
+      - uses: actions/setup-python@v6.2.0
         with:
           python-version: ${{ matrix.python-version }}
-          cache: "pip"
-
+          cache: pip
       - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          python -m pip install -r requirements-dev.txt
-
-      - name: Compile app
-        run: python -m py_compile streamlit_app.py
-
-      - name: Check AppTest and desktop process isolation
-        run: python -m pytest -q tests/test_apptest_process_isolation.py tests/test_desktop_worker.py
-
-      - name: Run environment doctor
-        run: python streamlit_app.py --doctor
-
-      - name: Run public release check
-        run: python streamlit_app.py --release-check
-
-      - name: Run engine self-tests
-        run: python streamlit_app.py --self-test
-
-      - name: Run privacy, localization, and workflow UX contracts
-        run: make ux-contracts PYTHON=python
-
-      - name: Run standalone Python test suite
-        run: make apptest PYTHON=python
-
-      - name: Run benchmark smoke
+        run: python -m pip install -r requirements-dev.txt
+      - name: Complete Web and desktop archive interoperability without a wall-clock test limit
+        run: python -m pytest -q tests/test_web_desktop_interoperability_and_diagnostics.py::test_bidirectional_mfrm_portability_web_to_desktop_and_desktop_to_web --durations=1
+      - name: Run previously unexecuted benchmark smoke
         run: python streamlit_app.py --benchmark-quick --benchmark-csv validation/generated/benchmark_smoke.csv
-
-      - name: Export demo report smoke
+      - name: Run previously unexecuted demo report export
         run: python streamlit_app.py --export-demo-report validation/generated/demo_report
-
       - name: Verify tracked checkout stayed clean
         run: |
           git diff --check

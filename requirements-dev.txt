@@ -3,4 +3,7 @@
 
 -r requirements.txt
 
+# Isolated subprocess tests import the public library from the installation.
+-e .
+
 pytest>=8.0

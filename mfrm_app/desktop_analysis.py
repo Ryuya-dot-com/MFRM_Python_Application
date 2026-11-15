@@ -1,14 +1,13 @@
 """Desktop calculation requests and retained results, independent of either UI."""
 from copy import deepcopy
 from datetime import datetime, timezone
-import json
-from pathlib import Path
 
 import numpy as np
 import pandas as pd
 
 from mfrm_app import basic_analysis as basic, bias_analysis as bias, engine, reporting_facts
 from mfrm_app import generalizability as gd, project, structural_intervals as intervals, joint_interaction as joint
+from mfrm_app._resources import metric_note
 
 
 def _bias_requests(requests, facets):
@@ -313,8 +312,7 @@ def _reliability_summary_table(analysis) -> tuple[str, pd.DataFrame, str] | None
     diagnostics = analysis.get("diagnostics")
     if not isinstance(diagnostics, dict) or not isinstance(diagnostics.get("reliability"), pd.DataFrame):
         return None
-    locale_path = Path(__file__).resolve().parents[1] / "locales" / "en.json"
-    rel_note = json.loads(locale_path.read_text(encoding="utf-8"))["metric_notes"]["reliability"]
+    rel_note = metric_note("reliability")
     table, note = reporting_facts.publication_reliability_table(
         analysis["result"], diagnostics, rel_note=rel_note
     )

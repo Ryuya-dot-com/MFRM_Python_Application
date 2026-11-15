@@ -5,6 +5,9 @@ on:
     branches: [main, master, slope-aware-bias-inference]
     paths:
       - "streamlit_app.py"
+      - "pyproject.toml"
+      - "mfrmpy/**"
+      - "docs/python_library.md"
       - "mfrm_app/**"
       - "locales/**"
       - "CITATION.cff"
@@ -28,6 +31,9 @@ on:
     branches: [main, master, slope-aware-bias-inference]
     paths:
       - "streamlit_app.py"
+      - "pyproject.toml"
+      - "mfrmpy/**"
+      - "docs/python_library.md"
       - "mfrm_app/**"
       - "locales/**"
       - "CITATION.cff"

@@ -10,6 +10,9 @@ env/
 .playwright-cli/
 .mypy_cache/
 .ruff_cache/
+/dist/
+/build/
+/*.egg-info/
 .DS_Store
 .streamlit/secrets.toml
 benchmark_*.csv

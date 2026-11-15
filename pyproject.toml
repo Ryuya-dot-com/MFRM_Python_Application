@@ -1,0 +1,51 @@
+[build-system]
+requires = ["hatchling>=1.26"]
+build-backend = "hatchling.build"
+
+[project]
+name = "mfrmpy"
+dynamic = ["version"]
+description = "Many-facet Rasch analysis and balanced generalizability studies"
+readme = "docs/python_library.md"
+requires-python = ">=3.11"
+license = "MIT"
+license-files = ["LICENSE", "LICENSE_NOTICE.md"]
+authors = [{name = "Ryuya Komuro"}]
+keywords = ["Rasch", "MFRM", "psychometrics", "rating", "generalizability"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Science/Research",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering",
+]
+dependencies = ["numpy>=1.24", "pandas>=2.0", "scipy>=1.10"]
+
+[project.optional-dependencies]
+figures = ["matplotlib>=3.8"]
+test = ["pytest>=8"]
+
+[project.urls]
+Homepage = "https://github.com/Ryuya-dot-com/MFRM_Python_Application"
+Documentation = "https://github.com/Ryuya-dot-com/MFRM_Python_Application/blob/main/docs/python_library.md"
+Issues = "https://github.com/Ryuya-dot-com/MFRM_Python_Application/issues"
+
+[tool.hatch.version]
+path = "mfrmpy/__init__.py"
+
+[tool.hatch.build.targets.wheel]
+packages = ["mfrmpy", "mfrm_app"]
+exclude = ["mfrm_app/legacy_compat"]
+
+[tool.hatch.build.targets.wheel.force-include]
+"locales/en.json" = "mfrm_app/data/en.json"
+"examples/desktop_writing.csv" = "mfrmpy/data/writing.csv"
+
+[tool.hatch.build.targets.sdist]
+only-include = [
+    "mfrmpy", "mfrm_app", "locales/en.json", "examples/desktop_writing.csv",
+    "docs/python_library.md", "docs/analysis_scope.md",
+    "tests/test_python_library.py", "LICENSE", "LICENSE_NOTICE.md", "pyproject.toml",
+]
+exclude = ["mfrm_app/legacy_compat"]

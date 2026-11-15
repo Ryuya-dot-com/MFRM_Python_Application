@@ -13,7 +13,7 @@ from mfrm_app import basic_analysis, desktop_analysis
 from mfrm_app.desktop_analysis import run_analysis as analyze
 from mfrm_app.project import ProjectError, load_project, save_project
 
-__version__ = "0.1.0a2"
+__version__ = "0.1.0"
 
 __all__ = [
     "__version__", "analyze", "tables", "load_example", "save_project",

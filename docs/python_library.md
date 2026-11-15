@@ -4,7 +4,7 @@
 notebooks. It uses the same Python engine as the existing MFRM Web and desktop
 applications. It does not require R, FACETS, Streamlit or Tkinter for analysis.
 
-The initial API is a **pre-release**. Available analyses are RSM/PCM with JMLE
+Version **0.1.0 is the first stable library release**. Available analyses are RSM/PCM with JMLE
 or fixed-population-SD MML, diagnostics, conditional bias, selected structural
 intervals, a separate joint-interaction model, and balanced observed-score G/D
 studies. Numerical eligibility checks and interpretation limits remain in
@@ -12,22 +12,22 @@ force. Availability on PyPI is not statistical validation or certification.
 
 ## Installation
 
-For a published pre-release:
+Install from PyPI:
 
 ```bash
-python -m pip install --pre mfrmpy
+python -m pip install mfrmpy
 ```
 
 For Matplotlib figures and offline HTML reports:
 
 ```bash
-python -m pip install --pre 'mfrmpy[figures]'
+python -m pip install 'mfrmpy[figures]'
 ```
 
-During release preparation, install the built wheel instead:
+To upgrade an earlier installation, including an alpha release:
 
 ```bash
-python -m pip install dist/mfrmpy-0.1.0a2-py3-none-any.whl
+python -m pip install --upgrade mfrmpy
 ```
 
 Python 3.11 and 3.12 are the initial validation targets. Core dependencies are
@@ -185,8 +185,9 @@ their presence as a supported public API.
 | `report_html(analysis, **options)` | Standalone HTML string; requires `figures` extra |
 
 `analysis["result"]` and `analysis["diagnostics"]` retain raw MFRM output;
-`analysis["gd_analysis"]` retains G/D results. Treat the nested implementation
-schema as provisional in this pre-release. For reporting, use `tables`, keeping
+`analysis["gd_analysis"]` retains G/D results. The nested implementation
+schema is internal; use `.mfrm` files to retain analyses across sessions rather
+than serializing or modifying this dictionary yourself. For reporting, use `tables`, keeping
 the notes and `Use`/`Reason` information. A blank interval or SE is unavailable,
 not zero. General MML tables, person-score uncertainty and automatic equivalence
 claims retain their existing inferential restrictions.
@@ -215,6 +216,33 @@ or dependency versions can cause current qualification checks to withhold old
 interval output without altering the archived estimates. Record
 `mfrmpy.__version__` and `analysis["source"]` when reporting an analysis.
 The package API version and the shared engine version are distinct.
+
+## API and compatibility policy
+
+The supported API is the exported functions documented above, `ProjectError`
+and `__version__`. `analyze` accepts the settings and workflows documented in
+this guide. `ProjectError` is a `ValueError` subclass for invalid/unsupported
+project contents; filesystem errors such as a missing file remain normal
+Python I/O errors.
+
+Within **0.1.x**, patch releases preserve these public names, documented
+arguments and return types. Additive options and bug fixes are allowed. Before
+1.0, an incompatible public API change requires a new minor release, such as
+0.2.0, with migration instructions in the changelog. Private `mfrm_app` helpers,
+nested raw-result fields, table display order and exact wording are outside
+this compatibility promise. Keep interpretation notes with exported results.
+
+Version 0.1.0 reads the supported schema-1 RSM/JMLE and schema-2 `.mfrm` archives,
+including those written by 0.1.0a2 and the corresponding Web/desktop workflows.
+The 0.1.x series will retain read compatibility with these supported archives;
+malformed or unsupported records are rejected without refitting. Future archive
+changes will be documented, and older applications may not read newer formats.
+
+Numerical bug fixes or updated qualification rules can change reported results
+or withhold an output; such changes belong in the changelog. For reproducible
+research, retain the original `.mfrm` file and record the package, source and
+dependency versions. The first stable release uses the same calculation and
+archive code as 0.1.0a2, with the same analysis scope and interpretation limits.
 
 ## Privacy, license and citation
 

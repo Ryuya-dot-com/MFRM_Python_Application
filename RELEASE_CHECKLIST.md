@@ -146,7 +146,7 @@ Do not replace statistical acceptance with a test count or an attractive plot.
       scope; distinguish package API version from the shared engine version.
 - [ ] Build both sdist and wheel, with the wheel built from that sdist; pass
       `twine check` and inspect the included modules, license and resource files.
-- [ ] Install the wheel in a fresh numerical-only environment, outside the
+- [ ] Install the wheel in a fresh core-only environment, outside the
       checkout; run `tests/test_python_library.py` with isolated Python.
 - [ ] Check RSM/PCM × JMLE/fixed-SD MML, qualified supplementary results,
       one-/two-facet G/D, invalid/unsupported requests and zero-refit .mfrm replay.

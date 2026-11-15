@@ -140,6 +140,56 @@ Do not replace statistical acceptance with a test count or an attractive plot.
 <a id="milestone-w2"></a>
 <a id="milestone-w3"></a>
 
+## Python library distribution
+
+- [ ] Match the `mfrmpy` public guide, metadata and API to the desktop analysis
+      scope; distinguish package API version from the shared engine version.
+- [ ] Build both sdist and wheel, with the wheel built from that sdist; pass
+      `twine check` and inspect the included modules, license and resource files.
+- [ ] Install the wheel in a fresh numerical-only environment, outside the
+      checkout; run `tests/test_python_library.py` with isolated Python.
+- [ ] Check RSM/PCM × JMLE/fixed-SD MML, qualified supplementary results,
+      one-/two-facet G/D, invalid/unsupported requests and zero-refit .mfrm replay.
+- [ ] Check the figures extra and HTML export using the same built wheel.
+- [ ] Complete the declared Python/OS matrix and minimum-dependency checks;
+      record which environments actually ran. Do not infer platform support
+      from a pure-Python wheel tag alone.
+- [ ] Confirm that affected existing application workflows still work. Separate
+      pre-existing CI failures from regressions caused by the library changes.
+- [ ] Configure the appropriate PyPI/TestPyPI Trusted Publisher and GitHub
+      environment. Ordinary pushes and PRs must only build/test, never upload.
+- [ ] Publish the reviewed candidate only by an explicit manual action. Install
+      from the advertised index afterward and record the actual release URL.
+
+Initial preparation is based on application commit
+`5b2c20546eb94b8a846bd48a7da0cdb031377739` (2026-10-30). Its Python 3.11 and 3.12
+CI each recorded 4,161 passing, 14 skipped, 91 deselected and 3 failing tests:
+two outdated button-budget assertions and one AppTest export timeout.
+The engine self-tests and other preceding checks passed; benchmark/export and
+clean-checkout steps were skipped after the failures. These are baseline
+records, not a claim that the whole candidate passed.
+[Baseline run](https://github.com/Ryuya-dot-com/MFRM_Python_Application/actions/runs/41133816447).
+
+Local preparation evidence (2026-11-15; macOS arm64, Python 3.12.13;
+NumPy 2.5.4, pandas 3.1.1, SciPy 1.18.1):
+
+- Wheel built from sdist; both artifacts passed `twine check`. Archive inspection
+  confirmed the shared engine and resources match their source files.
+- Installed core, isolated Python outside the checkout: 14 passed; 4 optional
+  figure tests skipped because Matplotlib was absent. Import/use was also
+  tested with UI and plotting imports explicitly blocked.
+- Installed optional figures/reports (Matplotlib 3.11.2): all 4 model/estimator
+  cases passed, with refitting blocked during plotting/report generation.
+- Existing desktop project/workflow/output/packaging tests: 101 passed.
+- Existing representative Web scenarios: 2 passed after the documented budget
+  correction. The pre-existing Web/desktop archive integration test passed
+  locally without extending its AppTest limits; remote timing remains to be
+  checked in CI.
+
+These are local package/application checks, not new sampling validation or
+interactive desktop OS acceptance. The new multi-OS CI matrix and index
+publication/reinstallation still need their own completion evidence.
+
 ## Hosted Web release
 
 - [ ] Follow [DEPLOYMENT](DEPLOYMENT.md#publication-and-hosted-acceptance).

@@ -10,6 +10,15 @@ methods and validation findings belong in their dedicated technical records.
 
 ## Unreleased
 
+- Prepare `mfrmpy` 0.1.0a1 as an installable Python library sharing the existing
+  desktop/Web calculation engine. Add a documented public interface, bundled
+  synthetic data, qualified tables, .mfrm save/reload, and optional figures/HTML.
+- Package shared reporting text without depending on a repository checkout.
+  Numerical algorithms and statistical interpretation boundaries are unchanged.
+- Add wheel/source-distribution validation and installed-package CI, with
+  publication available only through an explicit manual request on main.
+- Update the Web workflow control budget for the existing saved-project entry.
+
 ## Unified macOS & Windows Desktop preview — 2026-10-31
 
 The [macOS (Apple Silicon) and Windows 11 (x64) preview release](https://github.com/Ryuya-dot-com/MFRM_Python_Application/releases/tag/desktop-20261031)

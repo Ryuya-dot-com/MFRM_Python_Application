@@ -1,5 +1,57 @@
 # Deployment Guide
 
+## Python library: mfrmpy
+
+The initial library is prepared as `0.1.0a1`; it is distinct from the existing
+Web/desktop engine version. Its public scope and usage are documented in
+[the library guide](docs/python_library.md). Preparing these files does not
+create a PyPI project or publish a release.
+
+Build locally with `python -m build` and inspect both files with
+`python -m twine check dist/*`. The default build creates the wheel from the
+source distribution. Test the built wheel outside the checkout, with core
+dependencies only and then with the optional `figures` dependency. See
+[the release checklist](RELEASE_CHECKLIST.md#python-library-distribution).
+
+The `Python package` workflow builds one pair of distributions and tests that
+wheel on Linux, macOS and Windows with Python 3.11/3.12, plus minimum numerical
+dependencies on Python 3.11. It retains the distributions as `python-dist`.
+Push and pull-request events only build/test. A manual run with target `none`
+also only validates. Publishing requires a manual run from `main` with target
+`testpypi` or `pypi`, and succeeds only after every package test job succeeds.
+
+For first publication, the maintainer configures a pending Trusted Publisher
+on the chosen index with these exact values:
+
+| Field | Value |
+|---|---|
+| PyPI project name | `mfrmpy` |
+| GitHub owner | `Ryuya-dot-com` |
+| Repository | `MFRM_Python_Application` |
+| Workflow filename | `python-package.yml` |
+| Environment | `testpypi` for TestPyPI; `pypi` for PyPI |
+
+PyPI and TestPyPI accounts/publisher registrations are separate. Complete
+email verification and two-factor authentication on the account. Configure
+the matching GitHub environment's release approval/branch rules before
+publishing. No PyPI password or long-lived API token is needed in the repository
+or in a chat. Follow
+[PyPI's pending-publisher instructions](https://docs.pypi.org/trusted-publishers/creating-a-project-through-oidc/).
+
+After package and applicable application checks pass, merge the reviewed
+change before dispatching the workflow on `main`. Select `testpypi` for the
+trial upload, check that index's project page and install its exact version
+in a clean environment. Install dependencies from PyPI separately, then use
+`--index-url https://test.pypi.org/simple/ --no-deps mfrmpy==0.1.0a1` for the
+trial package; TestPyPI is not a reliable source for all dependencies.
+
+For the approved production upload, select `pypi`, verify
+`https://pypi.org/project/mfrmpy/`, and test
+`python -m pip install mfrmpy==0.1.0a1` from a fresh environment. Record the
+published files and their hashes. Never describe a workflow/PR success alone
+as confirmation that the public index serves the package. Bump the package
+version for changed artifacts; do not reuse an uploaded version's filenames.
+
 This app is safest for confidential rating data when run locally. Hosted deployment is appropriate for public demonstrations, teaching data, synthetic data, or non-confidential research prototypes.
 
 ## Local Deployment

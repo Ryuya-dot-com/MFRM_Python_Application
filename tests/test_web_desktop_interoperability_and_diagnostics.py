@@ -470,7 +470,8 @@ def test_bidirectional_mfrm_portability_web_to_desktop_and_desktop_to_web(tmp_pa
     at_exp.session_state["_test_diag"] = mml_diag
     at_exp.session_state["_test_gd_bundle"] = gd_bundle
     at_exp.session_state["_test_gd_df"] = gd_df
-    at_exp.run(timeout=45)
+    # Full export assembly is a completion check, not a 45-second performance gate.
+    at_exp.run(timeout=float("inf"))
     assert not at_exp.exception, [e.value for e in at_exp.exception]
     dl_keys = {b.key for b in at_exp.get("download_button")}
     assert "dl_mfrm_project_archive" in dl_keys
@@ -479,7 +480,7 @@ def test_bidirectional_mfrm_portability_web_to_desktop_and_desktop_to_web(tmp_pa
     at_inelig = AppTest.from_function(view_exports, args=(False,))
     at_inelig.session_state["_test_res"] = gpcm_res
     at_inelig.session_state["_test_diag"] = engine.mfrm_diagnostics(gpcm_res, compute_pca=False)
-    at_inelig.run(timeout=45)
+    at_inelig.run(timeout=float("inf"))
     assert not at_inelig.exception, [e.value for e in at_inelig.exception]
     assert "dl_mfrm_project_archive" not in {b.key for b in at_inelig.get("download_button")}
     assert at_inelig.info

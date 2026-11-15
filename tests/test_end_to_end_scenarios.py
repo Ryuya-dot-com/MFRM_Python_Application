@@ -38,7 +38,7 @@ WORKFLOW_CONTROL_KINDS = (
     "multiselect",
 )
 INITIAL_CONTROL_BUDGET = {
-    "button": 5,  # Includes the independent rating-plan entry.
+    "button": 6,  # Includes rating-plan and saved .mfrm project entries.
     "checkbox": 7,
     "radio": 7,
     "selectbox": 13,
@@ -123,6 +123,7 @@ def test_representative_scenarios_render_without_streamlit_exception(scenario_ke
         f"{[e.value for e in at.exception]}"
     )
     assert at.session_state["data_source_flat"] == f"scenario:{scenario_key}"
+    assert at.button(key="sidebar_mfrm_project")
     assert_control_topology_within_budget(at, INITIAL_CONTROL_BUDGET)
 
     run_button = at.button(key="facets_mode_run_primary")

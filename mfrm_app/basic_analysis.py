@@ -18,6 +18,7 @@ import numpy as np
 import pandas as pd
 
 from mfrm_app import engine, output_qualification, project, reporting_facts
+from mfrm_app._resources import metric_note
 
 
 def qualification_snapshot(result):
@@ -292,8 +293,7 @@ def current_tables(analysis):
     result = analysis["result"]
     facts = reporting_facts.observed_report_tables(result)
     tables = [(title, table, note) for title, table, note in facts]
-    locale_path = Path(__file__).resolve().parents[1] / "locales" / "en.json"
-    fit_note = json.loads(locale_path.read_text(encoding="utf-8"))["metric_notes"]["fit"]
+    fit_note = metric_note("fit")
     measures, note = reporting_facts.publication_measure_table(result, analysis["diagnostics"], fit_note=fit_note)
     note = note.replace("Method details and source values: measures CSV.",
                         "Method details and source values are retained in this project.")

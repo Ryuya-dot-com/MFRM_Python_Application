@@ -54,6 +54,11 @@ packaged app on a particular OS.
 
 ## Verification
 
+Installing `requirements-dev.txt` also installs `mfrmpy` in editable mode for
+isolated subprocess tests. The separate `Python package` workflow tests the
+built wheel outside the checkout, including a core-only environment; editable
+source tests alone are not distribution-installation evidence.
+
 Choose checks for the changed behavior and dependencies. For documentation-only
 changes, verify facts, links, language consistency and whether the text is
 bundled; do not repeat numerical experiments or rebuild unchanged computation.

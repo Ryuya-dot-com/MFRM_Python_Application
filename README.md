@@ -172,6 +172,12 @@ A completed run does not make every displayed number suitable for statistical in
 
 ## Install
 
+**Python library (initial pre-release preparation):** `mfrmpy` exposes the
+supported desktop calculations to scripts and notebooks, using the same
+engine. See the [Python library guide](docs/python_library.md) for installation
+from a built wheel, MFRM/G-D examples, saved projects, and optional figures.
+The library has a separate API version and does not install a desktop launcher.
+
 *(Skip this section if you are using the standalone [macOS](https://github.com/Ryuya-dot-com/MFRM_Python_Application/releases/download/desktop-20261031/MFRM-Desktop-macOS-arm64.zip) or [Windows](https://github.com/Ryuya-dot-com/MFRM_Python_Application/releases/download/desktop-20261031/MFRM-Desktop-Windows-x64.zip) Desktop Preview ZIPs, which bundle Python.)*
 
 To run the Web app from source, use **Python 3.11 or 3.12** in a virtual environment:

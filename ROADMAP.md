@@ -48,7 +48,8 @@ alone does not establish desktop usability on a supported OS.
 
 ## Python library distribution (2026-11-15)
 
-The first stable Python analysis library, `mfrmpy` 0.1.0, is published on PyPI;
+The stable Python analysis library, `mfrmpy` (0.1.0 published on 2026-11-15;
+0.2.0 published on 2026-11-18), is available on PyPI;
 the existing Web and desktop applications are maintained alongside it.
 The user authorized completion of the first stable release, 0.1.0, on
 2026-11-15. The transition defines the public API/compatibility policy and

@@ -8,7 +8,7 @@ restricted or removed from the core workflow. Consult
 using a result. Complete source changes remain in Git history; scientific
 methods and validation findings belong in their dedicated technical records.
 
-## mfrmpy 0.2.0 — 2026-11-17
+## mfrmpy 0.2.0 — 2026-11-18
 
 - Separate JMLE size-limited dense rank audits (`stat.jmle.identifiability_audit_size_limit`),
   proven structural rank deficiency (`stat.jmle.eta_rank_deficient`) and

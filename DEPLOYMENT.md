@@ -2,9 +2,9 @@
 
 ## Python library: mfrmpy
 
-The first stable library [`0.1.0`](https://pypi.org/project/mfrmpy/0.1.0/) was
-published on 2026-11-15 after TestPyPI verification. Normal installation uses
-`python -m pip install mfrmpy`; add `--upgrade` to update an existing alpha
+The current stable library [`0.2.0`](https://pypi.org/project/mfrmpy/0.2.0/) was
+published on 2026-11-18 after TestPyPI verification (following `0.1.0` on 2026-11-15). Normal installation uses
+`python -m pip install mfrmpy`; add `--upgrade` to update an earlier
 installation. Its version is distinct
 from the existing Web/desktop engine version. Public scope and usage are
 documented in [the library guide](docs/python_library.md); release evidence is

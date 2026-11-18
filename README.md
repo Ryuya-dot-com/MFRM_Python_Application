@@ -172,8 +172,8 @@ A completed run does not make every displayed number suitable for statistical in
 
 ## Install
 
-**Python library:** [`mfrmpy` 0.1.0](https://pypi.org/project/mfrmpy/0.1.0/)
-is available on PyPI as the first stable library release. Install it with
+**Python library:** [`mfrmpy` 0.2.0](https://pypi.org/project/mfrmpy/0.2.0/)
+is available on PyPI. Install it with
 `python -m pip install mfrmpy` (or `python -m pip install 'mfrmpy[figures]'`
 for figures and HTML reports). It exposes the supported desktop calculations
 to scripts and notebooks, using the same engine. See the

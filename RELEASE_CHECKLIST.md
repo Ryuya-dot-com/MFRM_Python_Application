@@ -307,6 +307,31 @@ Published stable library 0.1.0 (2026-11-15):
 | `mfrmpy-0.1.0-py3-none-any.whl` | `3de6674883a90c74f003e48886e616f501b0402b684688905587202fc2efedec` |
 | `mfrmpy-0.1.0.tar.gz` | `5620a2bd1384c64ccf870ae372f958f76768ff716831d9d1cfea5cfe41d87439` |
 
+Published library 0.2.0 (2026-11-18):
+
+- Source `7a3223f3c4db793fae4e96af18352e0abaa21aca`. Local pre-publication checks
+  passed `--doctor`, `--release-check`, all 56 `--self-test` checks, 73
+  `ux-contracts` tests, 253 desktop/report `-W error` checks, 62 Web/desktop
+  portability and bias-publication checks, and outside-checkout package tests in
+  Python 3.12 (`core-only` and `figures`) and Python 3.11 (`minimum` dependencies).
+- [TestPyPI workflow](https://github.com/Ryuya-dot-com/MFRM_Python_Application/actions/runs/44218107359)
+  and [production PyPI workflow](https://github.com/Ryuya-dot-com/MFRM_Python_Application/actions/runs/44218874792)
+  passed all seven package environments (Linux/macOS/Windows × Python 3.11/3.12,
+  plus Linux Python 3.11 with pinned minimum dependencies), running 28 core and
+  five optional figure/report tests.
+- [TestPyPI](https://test.pypi.org/project/mfrmpy/0.2.0/) and
+  [production PyPI](https://pypi.org/project/mfrmpy/0.2.0/) serve the exact
+  reproducibly built wheel and sdist below. Fresh unpinned installation of
+  `mfrmpy[figures]` and `--upgrade` from `0.1.0` both selected `0.2.0`, passed
+  `pip check`, completed the 960-row MML example (`quad_points=31` default,
+  `Step Thresholds` table, PNG/HTML rendering), and reopened the `0.1.0`
+  `mfrmpy-hosted-writing.mfrm` archive without refitting.
+
+| Artifact | SHA-256 |
+|---|---|
+| `mfrmpy-0.2.0-py3-none-any.whl` | `5ffdbcab108285914c6a555da51542c52516b0d0bc9ae16b379a06e8d6b31406` |
+| `mfrmpy-0.2.0.tar.gz` | `f0de1972fc35b3cbec9c33a981d8f1bee5b3ddcbabed70f341105860b70f5b1c` |
+
 ## Hosted Web release
 
 - [ ] Follow [DEPLOYMENT](DEPLOYMENT.md#publication-and-hosted-acceptance).

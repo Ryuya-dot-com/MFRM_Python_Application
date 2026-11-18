@@ -118,15 +118,16 @@ def test_interrater_agreement_and_reliability_match_core_and_respect_calibration
 
     jmle_rel = jmle_map["Separation and Reliability by Facet"]
     mml_rel = mml_map["Separation and Reliability by Facet"]
-    assert jmle_rel["Use"].eq("Diagnostic").all()
+    assert jmle_rel["Use"].eq("screening_only").all()
+    assert jmle_rel["SupportsFormalInference"].eq(False).all()
     assert pd.to_numeric(jmle_rel["Reliability"], errors="coerce").notna().all()
-    assert mml_rel["Use"].eq("Withheld").all()
-    for col in ("RMSE", "Separation", "Strata", "Reliability"):
-        assert mml_rel[col].eq("").all()
+    assert mml_rel["Use"].eq("screening_only").all()
+    assert mml_rel["SupportsFormalInference"].eq(False).all()
+    assert pd.to_numeric(mml_rel["Reliability"], errors="coerce").notna().all()
 
-    # Exact parity with reporting_facts.publication_reliability_table
+    # Exact parity with reporting_facts.publication_reliability_table(four_series=True)
     expected_pub_rel, _ = reporting_facts.publication_reliability_table(
-        jmle_an["result"], jmle_an["diagnostics"], rel_note=""
+        jmle_an["result"], jmle_an["diagnostics"], rel_note="", four_series=True
     )
     pd.testing.assert_frame_equal(jmle_rel, expected_pub_rel)
 
@@ -245,10 +246,21 @@ def test_linear_logit_rescaling_affine_invariance_hold_protection_and_tamper_gua
     )
     mml_tables = dict((n, t) for n, t, _ in outputs.current_tables(mml_scaled))
     mml_rescaled_tbl = mml_tables["Rescaled Measures (Umean / Uscale)"]
-    assert mml_rescaled_tbl["ScaledSE"].eq("").all()
-    assert mml_rescaled_tbl["ScaledLower"].eq("").all()
-    assert mml_rescaled_tbl["ScaledUpper"].eq("").all()
+    assert mml_rescaled_tbl["SEUse"].eq("screening_only").all()
+    assert mml_rescaled_tbl["SupportsFormalInference"].eq(False).all()
+    assert pd.to_numeric(mml_rescaled_tbl["ScaledSE"], errors="coerce").gt(0).all()
     assert list(mml_rescaled_tbl["Basis"]) == list(mml_tables["Measures and Fit"]["Basis"])
+
+    # Under a non-converged run, ScaledSE / ScaledLower / ScaledUpper remain blank (`""`).
+    mml_nonconv = deepcopy(mml_scaled)
+    mml_nonconv["result"]["opt"].success = False
+    mml_nonconv["analysis_id"] = engine.build_result_analysis_identity(mml_nonconv["result"]).analysis_id
+    mml_nonconv["content_fingerprint"] = project.content_fingerprint(mml_nonconv)
+    mml_nonconv_rescaled = dict((n, t) for n, t, _ in outputs.current_tables(mml_nonconv))["Rescaled Measures (Umean / Uscale)"]
+    assert mml_nonconv_rescaled["ScaledSE"].eq("").all()
+    assert mml_nonconv_rescaled["ScaledLower"].eq("").all()
+    assert mml_nonconv_rescaled["ScaledUpper"].eq("").all()
+    assert mml_nonconv_rescaled["SEUse"].eq("withheld").all()
 
     # Invalid umean / uscale rejected pre-fit.
     for bad_umean, bad_uscale in [(0.0, 0.0), (0.0, -5.0), (float("nan"), 1.0), (0.0, float("inf")), (True, 1.0)]:
@@ -465,6 +477,29 @@ def test_bidirectional_mfrm_portability_web_to_desktop_and_desktop_to_web(tmp_pa
                 raw_input_data=st.session_state["_test_gd_df"],
             )
 
+    captured_dl = {}
+    orig_dl_btn = web_app.st.download_button
+    web_build_calls = []
+    orig_build_mfrm = portability.build_mfrm_project_from_web
+    orig_build_gd = portability.build_gd_project_from_web
+
+    def track_mfrm(*a, **kw):
+        web_build_calls.append("mfrm")
+        return orig_build_mfrm(*a, **kw)
+
+    def track_gd(*a, **kw):
+        web_build_calls.append("gd")
+        return orig_build_gd(*a, **kw)
+
+    def capture_dl(label, data=b"", **kwargs):
+        if kwargs.get("key") in ("dl_mfrm_project_archive", "standalone_gd_download_mfrm"):
+            captured_dl[kwargs["key"]] = data
+        return orig_dl_btn(label, data=data, **kwargs)
+
+    monkeypatch.setattr(portability, "build_mfrm_project_from_web", track_mfrm)
+    monkeypatch.setattr(portability, "build_gd_project_from_web", track_gd)
+    monkeypatch.setattr(web_app.st, "download_button", capture_dl)
+
     at_exp = AppTest.from_function(view_exports, args=(True,))
     at_exp.session_state["_test_res"] = mml_res
     at_exp.session_state["_test_diag"] = mml_diag
@@ -476,6 +511,17 @@ def test_bidirectional_mfrm_portability_web_to_desktop_and_desktop_to_web(tmp_pa
     dl_keys = {b.key for b in at_exp.get("download_button")}
     assert "dl_mfrm_project_archive" in dl_keys
     assert "standalone_gd_download_mfrm" in dl_keys
+    assert web_build_calls == []
+    assert callable(captured_dl["dl_mfrm_project_archive"])
+    assert callable(captured_dl["standalone_gd_download_mfrm"])
+    lazy_mfrm = captured_dl["dl_mfrm_project_archive"]()
+    lazy_gd = captured_dl["standalone_gd_download_mfrm"]()
+    assert lazy_mfrm.startswith(project.GZIP_MAGIC) and lazy_gd.startswith(project.GZIP_MAGIC)
+    assert web_build_calls == ["mfrm", "gd"]
+
+    monkeypatch.setattr(web_app.st, "download_button", orig_dl_btn)
+    monkeypatch.setattr(portability, "build_mfrm_project_from_web", orig_build_mfrm)
+    monkeypatch.setattr(portability, "build_gd_project_from_web", orig_build_gd)
 
     at_inelig = AppTest.from_function(view_exports, args=(False,))
     at_inelig.session_state["_test_res"] = gpcm_res

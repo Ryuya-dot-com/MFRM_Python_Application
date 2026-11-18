@@ -8,6 +8,67 @@ restricted or removed from the core workflow. Consult
 using a result. Complete source changes remain in Git history; scientific
 methods and validation findings belong in their dedicated technical records.
 
+## mfrmpy 0.2.0 — 2026-11-17
+
+- Separate JMLE size-limited dense rank audits (`stat.jmle.identifiability_audit_size_limit`),
+  proven structural rank deficiency (`stat.jmle.eta_rank_deficient`) and
+  unverified optimizer termination (`stat.estimation.optimizer_termination_unverified`)
+  across qualification snapshots, tables, figure cautions, HTML reports and CSV
+  manifests.
+- Surface finite conditional and fixed-SD MML `ModelSE`, fit-adjusted `RealSE`
+  and exploratory normal bands with explicit `Basis`, `SEUse = "screening_only"`,
+  `CIUse = "screening_only"` and `SupportsFormalInference = False`, while keeping
+  non-converged, rank-deficient, free-SD, fixed-constraint and extreme-endpoint
+  cells withheld.
+- Expand `Separation and Reliability by Facet` to the four `SEMode` (`model` /
+  `fit_adjusted`) × `DistributionBasis` (`sample` / `population`) series with
+  `Levels`, `EstimateAvailable`, `SEAvailable`, `ExcludedLevels`,
+  `AggregationTarget` and `SupportsFormalInference = False`.
+- Adopt `mfrmr` 0.3.0 fit safeguards (`df >= 1` ZSTD guard on both engine and
+  FACETS conventions, JMLE extreme-person boundary-proxy ZSTD guard, and complete
+  row variance/residual checks) with explicit `FitStatus` and `FitReason` columns.
+- Add `mfrmpy.export_csv(analysis, directory)` and apply one shared qualification
+  contract across `tables`, `plot`, `report_html`, `export_csv` and `.mfrm`
+  reload, preserving raw archived values and save-time reasons (`Saved*` columns
+  and `qualification_at_save`) without refitting or altering archive fingerprints.
+- Compress newly written `.mfrm` archives with deterministic outer gzip (`\x1f\x8b`,
+  single-pass serialization, ~6x smaller output) while reading both gzip-compressed
+  and earlier uncompressed `.mfrm` archives with bounded streaming decompression
+  guards, and generate Web `.mfrm` downloads on demand.
+- Expand `mfrmpy.plot` and `.mfrm` report/viewer figures with zero-refit `mfrmr`
+  diagnostic plots (`"facet"`, `"rater_severity"`, `"step"`/`"thresholds"`,
+  `"bubble"`, `"expected"`/`"tcc"`, `"information"`, `"fair_average"`,
+  `"unexpected"`, `"residual_qq"`, `"pca_loadings"`, `"bias_ranked"`, plus
+  `"Outfit"`/`"OutfitZSTD"` on `"pathway"`), preserving qualification holds and
+  `presentation="explained"|"manuscript"` caption separation.
+- Harden boundary and degenerate-input safeguards in alignment with `mfrmr` 0.3.0:
+  gate zero-count internal/boundary score categories and single-category PCM
+  step-facet levels (`stat.category.*`), unpenalized MML endpoint recession
+  levels (`stat.mml.extreme_free_facet_location`), disconnected MML rating
+  cohorts across general SEs, specified intervals, joint interactions and bias
+  (`stat.mml.population_assumption_linked`), single-observation free JMLE fit
+  mean squares (`unavailable_zero_df`), `ObservedCategories` / G/D and agreement
+  zero-variance notes, and `SavedReliability` provenance hygiene.
+- Consolidate the public `mfrmpy` API and shared internal renderers: add
+  optimization-free `mfrmpy.check_design`, one-screen `mfrmpy.summary`, and
+  `mfrmpy.tables(analysis, kind=...)` selectors; accept `numpy.integer` /
+  `numpy.bool_` scalars, `person`/`facets`/`score` column aliases on `analyze`
+  and `check_design`, and `facet`/`statistic` aliases on `report_html`; and
+  unify table/category-curve helpers across `basic_analysis`, `desktop_analysis`,
+  `visual_maps` and `desktop_outputs`.
+- Align defaults, step/bias tables, and scale-orientation options with 4-engine
+  verification (`mfrmpy` / `mfrmr` 0.3.0 / `TAM` 4.3.25 / `ConQuest` 5.47.5):
+  raise the default fixed-SD MML quadrature order in `analyze` to `quad_points=31`
+  (retaining archived `quad_points` in reopened `.mfrm` projects) and surface
+  `SupportsFormalInference = False` and `Reason` in `Specified intervals`; add the
+  zero-refit `Step Thresholds` table (`kind="steps"` / `"thresholds"`) with MML
+  full observed-information delta-method SEs, JMLE conditional step-information SEs,
+  transition counts and disorder flags; expose `noncenter_facet` and `positive_facets`
+  across `analyze`, `check_design`, `summary` and `.mfrm` validation/portability; and
+  enrich the `mfrmpy` conditional `Bias` screening table (`ObsScore`, `ExpScore`,
+  `ObsExpAvg`, `BiasSize`, `SE`, `Z`, `LR_ChiSq`, `LR_Prob`, `Use="screening_only"`,
+  `SupportsFormalInference=False`) while preserving the Web APA publication contract.
+
 ## mfrmpy 0.1.0 — 2026-11-15
 
 - Release the first stable Python library; normal installation uses

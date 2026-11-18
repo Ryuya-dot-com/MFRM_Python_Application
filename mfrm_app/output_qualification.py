@@ -13,12 +13,340 @@ from enum import Enum
 from typing import Iterable
 
 import numpy as np
+import pandas as pd
 
 
 OUTPUT_QUALIFICATION_SCHEMA_VERSION = "mfrm_output_qualification_v1"
 FREE_SD_MML_INFERENCE_HOLD_REASON = "stat.mml_free_sd.numerical_qualification_pending"
 FIXED_SD_MML_INFERENCE_HOLD_REASON = "stat.mml_fixed_sd.numerical_qualification_pending"
 OPTIMIZER_TERMINATION_HOLD_REASON = "stat.estimation.optimizer_termination_unverified"
+JMLE_RANK_DEFICIENT_HOLD_REASON = "stat.jmle.eta_rank_deficient"
+JMLE_AUDIT_SIZE_LIMIT_HOLD_REASON = "stat.jmle.identifiability_audit_size_limit"
+CATEGORY_UNSUPPORTED_HOLD_REASON = "stat.category.unsupported_internal_step_contrast"
+UNOBSERVED_BOUNDARY_CATEGORY_HOLD_REASON = "stat.category.unobserved_boundary_category"
+UNOBSERVED_OWNER_ENDPOINT_HOLD_REASON = "stat.category.unobserved_owner_endpoint"
+MML_FACET_BOUNDARY_HOLD_REASON = "stat.mml.extreme_free_facet_location"
+MML_DISCONNECTED_HOLD_REASON = "stat.mml.population_assumption_linked"
+
+
+def _empty_boundary_audit() -> dict[str, object]:
+    return {
+        "active": False,
+        "unsupported_internal": False,
+        "unobserved_global_boundary": False,
+        "unobserved_owner_endpoints": set(),
+        "unbounded_step_owners": set(),
+        "unbounded_facet_levels": set(),
+        "contaminated_facets": set(),
+        "disconnected_facets": set(),
+        "hypergraph_components": 1,
+        "observed_categories": {},
+    }
+
+
+def _connected_component_count(adjacency: dict[str, set[str]]) -> int:
+    seen: set[str] = set()
+    comps = 0
+    for node in adjacency:
+        if node in seen:
+            continue
+        comps += 1
+        stack = [node]
+        while stack:
+            cur = stack.pop()
+            if cur in seen:
+                continue
+            seen.add(cur)
+            stack.extend(adjacency.get(cur, ()) - seen)
+    return comps
+
+
+def audit_boundary_and_support(result) -> dict[str, object]:
+    """Audit category support, free endpoint facets, and cohort connectivity from retained data."""
+    if not isinstance(result, dict) or not isinstance(result.get("params"), dict):
+        return _empty_boundary_audit()
+    prep = result.get("prep") if isinstance(result.get("prep"), dict) else {}
+    config = result.get("config") if isinstance(result.get("config"), dict) else {}
+    data = prep.get("data")
+    if not isinstance(data, pd.DataFrame) or data.empty or "Score" not in data.columns:
+        return _empty_boundary_audit()
+
+    if "Weight" in data.columns:
+        w = pd.to_numeric(data["Weight"], errors="coerce")
+        df = data.loc[np.isfinite(w) & (w > 0)]
+    else:
+        df = data
+    if df.empty:
+        return _empty_boundary_audit()
+
+    bounds = pd.to_numeric(pd.Series([prep.get("rating_min"), prep.get("rating_max")]), errors="coerce").to_numpy(dtype=float)
+    if not (
+        np.isfinite(bounds).all()
+        and np.equal(bounds, np.floor(bounds)).all()
+        and 0 < bounds[1] - bounds[0] < 1000
+    ):
+        return _empty_boundary_audit()
+    rmin, rmax = int(bounds[0]), int(bounds[1])
+    scores_num = pd.to_numeric(df["Score"], errors="coerce")
+    valid_s = np.isfinite(scores_num)
+    df = df.loc[valid_s]
+    if df.empty:
+        return _empty_boundary_audit()
+    scores = scores_num.loc[valid_s].astype(int)
+
+    facet_names = [str(f) for f in (config.get("facet_names") or prep.get("facet_names") or ())]
+    levels_cfg = prep.get("levels") if isinstance(prep.get("levels"), dict) else {}
+    observed_categories: dict[tuple[str, str], int] = {}
+    for f_col in ["Person", *facet_names]:
+        for lv in (levels_cfg.get(f_col) or ()):
+            observed_categories[(f_col, str(lv))] = 0
+        if f_col in df.columns:
+            nunq = scores.groupby(df[f_col].astype(str), observed=True).nunique()
+            for lv, cnt in nunq.items():
+                observed_categories[(f_col, str(lv))] = int(cnt)
+
+    model = str(config.get("model", "RSM")).upper()
+    method = str(config.get("method", "JMLE")).upper()
+    step_facet = str(config.get("step_facet") or "") if model in {"PCM", "GPCM"} else ""
+
+    global_vc = scores.value_counts()
+    unsupported_internal = any(int(global_vc.get(c, 0)) == 0 for c in range(rmin + 1, rmax))
+    unobserved_global_boundary = any(int(global_vc.get(c, 0)) == 0 for c in (rmin, rmax))
+    unobserved_owner_endpoints: set[tuple[str, str]] = set()
+    unbounded_step_owners: set[tuple[str, str]] = set()
+
+    if model in {"PCM", "GPCM"} and step_facet and step_facet in df.columns:
+        unsupported_internal = False
+        step_levels = [str(x) for x in (levels_cfg.get(step_facet) or df[step_facet].astype(str).unique())]
+        sf_col = df[step_facet].astype(str)
+        for lv in step_levels:
+            vc = scores.loc[sf_col.eq(lv)].value_counts()
+            n_dist = int((vc > 0).sum())
+            has_internal_gap = any(int(vc.get(c, 0)) == 0 for c in range(rmin + 1, rmax))
+            has_endpoint_gap = any(int(vc.get(c, 0)) == 0 for c in (rmin, rmax))
+            if n_dist < 2 or has_internal_gap:
+                unsupported_internal = True
+                unbounded_step_owners.add((step_facet, lv))
+            elif has_endpoint_gap:
+                unobserved_owner_endpoints.add((step_facet, lv))
+                unbounded_step_owners.add((step_facet, lv))
+
+    facet_specs = config.get("facet_specs") if isinstance(config.get("facet_specs"), dict) else {}
+    theta_spec = config.get("theta_spec") if isinstance(config.get("theta_spec"), dict) else {}
+    reg_enabled = bool((config.get("facet_regularization") or {}).get("enabled", False))
+
+    person_free_shift = (
+        method == "JMLE"
+        and bool(theta_spec)
+        and not bool(theta_spec.get("centered", False))
+        and not _spec_has_explicit_anchor(theta_spec)
+    )
+    pop_free_shift = method == "MML" and bool((config.get("population_model") or {}).get("enabled", False))
+    uncentered_free_facets = {
+        fname
+        for fname in facet_names
+        if isinstance(facet_specs.get(fname), dict)
+        and not bool(facet_specs[fname].get("centered", False))
+        and not _spec_has_explicit_anchor(facet_specs[fname])
+    }
+    common_shift = bool(person_free_shift or pop_free_shift or uncentered_free_facets)
+
+    unbounded_facet_levels: set[tuple[str, str]] = set()
+    contaminated_facets: set[str] = set()
+    if not reg_enabled:
+        for fname in facet_names:
+            spec = facet_specs.get(fname)
+            if not isinstance(spec, dict) or fname not in df.columns:
+                continue
+            levels = [str(x) for x in (spec.get("levels") or ())]
+            raw_anchors = spec.get("anchors")
+            anchors_arr = (
+                np.asarray(raw_anchors, dtype=float)
+                if raw_anchors is not None and len(raw_anchors) == len(levels)
+                else np.full(len(levels), np.nan)
+            )
+            free = ~np.isfinite(anchors_arr)
+            raw_groups = spec.get("groups") or [None] * len(levels)
+            groups = [
+                None if (g is None or g == "" or (isinstance(g, float) and np.isnan(g)) or pd.isna(g)) else str(g)
+                for g in raw_groups
+            ]
+            group_counts: dict[str | None, int] = {}
+            for is_free, grp in zip(free, groups):
+                if is_free:
+                    group_counts[grp] = group_counts.get(grp, 0) + 1
+            centered = bool(spec.get("centered", False))
+            agg = scores.groupby(df[fname].astype(str), observed=True).agg(["size", "min", "max"])
+
+            bucket_min: dict[str, list[str]] = {}
+            bucket_max: dict[str, list[str]] = {}
+            for lv, is_free, grp in zip(levels, free, groups):
+                varies = bool(is_free) and (
+                    group_counts.get(grp, 0) > 1 if (grp is not None or centered) else True
+                )
+                if not varies or lv not in agg.index:
+                    continue
+                row_s = agg.loc[lv]
+                if int(row_s["size"]) <= 0 or row_s["min"] != row_s["max"]:
+                    continue
+                bucket = f"grp:{grp}" if grp is not None else ("centered" if centered else "uncentered")
+                if int(row_s["min"]) == rmin:
+                    bucket_min.setdefault(bucket, []).append(lv)
+                elif int(row_s["max"]) == rmax:
+                    bucket_max.setdefault(bucket, []).append(lv)
+
+            for bucket in set(bucket_min) | set(bucket_max):
+                mins = bucket_min.get(bucket, [])
+                maxs = bucket_max.get(bucket, [])
+                is_uncentered = bucket == "uncentered"
+                opposite_pair = bool(mins and maxs)
+                if method == "JMLE" or is_uncentered or common_shift or opposite_pair:
+                    for lv in [*mins, *maxs]:
+                        unbounded_facet_levels.add((fname, lv))
+                    if not is_uncentered:
+                        contaminated_facets.add(fname)
+                    if method == "MML" and common_shift and not is_uncentered:
+                        contaminated_facets.update(uncentered_free_facets)
+
+    disconnected_facets: set[str] = set()
+    hypergraph_components = 1
+    if "Person" in df.columns:
+        person_anchored = _spec_has_explicit_anchor(theta_spec)
+        p_col = df["Person"].astype(str)
+        if not person_anchored:
+            for fname in facet_names:
+                if fname not in df.columns or _spec_has_explicit_anchor(facet_specs.get(fname)):
+                    continue
+                adj: dict[str, set[str]] = {}
+                for p_val, f_val in zip(p_col, df[fname].astype(str)):
+                    pn = f"P::{p_val}"
+                    fn = f"F::{f_val}"
+                    adj.setdefault(pn, set()).add(fn)
+                    adj.setdefault(fn, set()).add(pn)
+                if _connected_component_count(adj) > 1:
+                    disconnected_facets.add(fname)
+
+        hadj: dict[str, set[str]] = {}
+        for p_val in p_col.unique():
+            pn = f"P::{p_val}"
+            hadj.setdefault(pn, set())
+            if person_anchored:
+                hadj[pn].add("__ANCHOR__")
+                hadj.setdefault("__ANCHOR__", set()).add(pn)
+        for fname in facet_names:
+            if fname not in df.columns:
+                continue
+            f_anchored = _spec_has_explicit_anchor(facet_specs.get(fname))
+            for p_val, f_val in zip(p_col, df[fname].astype(str)):
+                pn = f"P::{p_val}"
+                fn = f"{fname}::{f_val}"
+                hadj.setdefault(pn, set()).add(fn)
+                hadj.setdefault(fn, set()).add(pn)
+                if f_anchored:
+                    hadj[fn].add("__ANCHOR__")
+                    hadj.setdefault("__ANCHOR__", set()).add(fn)
+        hypergraph_components = max(1, _connected_component_count(hadj))
+
+    return {
+        "active": True,
+        "unsupported_internal": unsupported_internal,
+        "unobserved_global_boundary": unobserved_global_boundary,
+        "unobserved_owner_endpoints": unobserved_owner_endpoints,
+        "unbounded_step_owners": unbounded_step_owners,
+        "unbounded_facet_levels": unbounded_facet_levels,
+        "contaminated_facets": contaminated_facets,
+        "disconnected_facets": disconnected_facets,
+        "hypergraph_components": hypergraph_components,
+        "observed_categories": observed_categories,
+    }
+
+
+def boundary_and_support_hold_reason(result, *, for_screening_block: bool = False) -> str:
+    """Return a data-support, endpoint-boundary, or cohort-connectivity hold code when active."""
+    b = audit_boundary_and_support(result)
+    if not b["active"]:
+        return ""
+    config = result.get("config") if isinstance(result, dict) and isinstance(result.get("config"), dict) else {}
+    method = str(config.get("method", "JMLE")).upper()
+    if b["unsupported_internal"]:
+        return CATEGORY_UNSUPPORTED_HOLD_REASON
+    if b["unbounded_facet_levels"]:
+        if method == "MML":
+            return MML_FACET_BOUNDARY_HOLD_REASON
+        from mfrm_app.jmle_boundary import HOLD_REASON
+        return HOLD_REASON
+    if b["unobserved_owner_endpoints"]:
+        return UNOBSERVED_OWNER_ENDPOINT_HOLD_REASON
+    if b["unobserved_global_boundary"]:
+        return UNOBSERVED_BOUNDARY_CATEGORY_HOLD_REASON
+    if method == "MML":
+        if int(b["hypergraph_components"]) > 1:
+            return MML_DISCONNECTED_HOLD_REASON
+        if not for_screening_block and b["disconnected_facets"]:
+            return MML_DISCONNECTED_HOLD_REASON
+    return ""
+
+
+def boundary_and_support_hold_message(reason: str) -> str:
+    if reason == CATEGORY_UNSUPPORTED_HOLD_REASON:
+        return (
+            "One or more internal score categories (or step-facet levels with fewer than two observed categories) "
+            "have zero observations; adjacent step thresholds are not empirically identified without recoding or collapsing."
+        )
+    if reason == UNOBSERVED_OWNER_ENDPOINT_HOLD_REASON:
+        return (
+            "A PCM/GPCM step-facet level has zero observations in an endpoint rubric category; "
+            "its endpoint step parameter has no finite unpenalized estimate."
+        )
+    if reason == UNOBSERVED_BOUNDARY_CATEGORY_HOLD_REASON:
+        return (
+            "An endpoint rubric category (minimum or maximum) has zero observations across the retained data; "
+            "the corresponding boundary step threshold is unbounded without recoding the active score range."
+        )
+    if reason == MML_FACET_BOUNDARY_HOLD_REASON:
+        return (
+            "A free MML facet level has only minimum or only maximum scores along an unpenalized recession direction; "
+            "optimizer termination does not establish a finite structural estimate."
+        )
+    if reason == MML_DISCONNECTED_HOLD_REASON:
+        return (
+            "Rating cohorts are disconnected across unanchored facets; cross-cohort MML scale alignment "
+            "relies solely on the assumed common person distribution rather than shared observations or anchors."
+        )
+    return ""
+
+
+def _spec_has_explicit_anchor(spec) -> bool:
+    if not isinstance(spec, dict):
+        return False
+    anchors = spec.get("anchors")
+    if anchors is not None and np.isfinite(np.asarray(anchors, dtype=float)).any():
+        return True
+    groups = spec.get("groups") or ()
+    return any(g not in (None, "") and not (isinstance(g, float) and np.isnan(g)) for g in groups)
+
+
+def identifiability_audit_state(result) -> str:
+    """Distinguish proven rank deficiency from an unverified size-limited dense audit."""
+    result = result or {}
+    audit = result.get("identifiability")
+    if not isinstance(audit, dict):
+        return ""
+    status = str(audit.get("status") or "")
+    if status == "audit_size_limit":
+        conn = audit.get("connectivity")
+        config = result.get("config") if isinstance(result.get("config"), dict) else {}
+        person_anchored = _spec_has_explicit_anchor(config.get("theta_spec"))
+        facet_specs = config.get("facet_specs") if isinstance(config.get("facet_specs"), dict) else {}
+        if conn is not None and hasattr(conn, "iterrows") and {"Facet", "Components"}.issubset(getattr(conn, "columns", ())):
+            for _, row in conn.iterrows():
+                try:
+                    comp = int(row["Components"])
+                except (TypeError, ValueError):
+                    comp = 1
+                if comp > 1 and not person_anchored and not _spec_has_explicit_anchor(facet_specs.get(str(row["Facet"]))):
+                    return "eta_rank_deficient"
+    return status
 
 
 def mml_inference_hold_reason(config) -> str:
@@ -31,21 +359,45 @@ def mml_inference_hold_reason(config) -> str:
 def mml_inference_hold_message(config) -> str:
     if not mml_inference_hold_reason(config):
         return ""
-    scope = "Free-population-SD" if config.get("estimate_population_sd", False) else "Fixed-population-SD"
-    return f"{scope} MML numerical accuracy and sampling uncertainty remain unqualified."
+    if config.get("estimate_population_sd", False):
+        return "Free-population-SD MML numerical accuracy and sampling uncertainty remain unqualified."
+    return (
+        "Fixed-population-SD MML general measure and reliability tables do not establish formal inference "
+        "(SupportsFormalInference=FALSE; general SEs and intervals are screening_only)."
+    )
 
 
-def jmle_inference_hold_message(result) -> str:
+def jmle_inference_hold_reason(result) -> str:
+    result = result or {}
     config = result.get("config", {})
     if (isinstance(config, dict) and str(config.get("method", "")).upper() == "JMLE"
             and config.get("jmle_facet_boundary_review", False)):
-        from mfrm_app.jmle_boundary import HOLD_MESSAGE
-        return HOLD_MESSAGE
-    audit = result.get("identifiability")
-    status = audit.get("status") if isinstance(audit, dict) else None
-    if status in {"eta_rank_deficient", "audit_size_limit"}:
-        return "JMLE person/facet identification has not been established; review the design before inference."
+        from mfrm_app.jmle_boundary import HOLD_REASON
+        return HOLD_REASON
+    state = identifiability_audit_state(result)
+    if state == "eta_rank_deficient":
+        return JMLE_RANK_DEFICIENT_HOLD_REASON
+    if state == "audit_size_limit":
+        return JMLE_AUDIT_SIZE_LIMIT_HOLD_REASON
     return ""
+
+
+def jmle_inference_hold_message(result) -> str:
+    reason = jmle_inference_hold_reason(result)
+    if not reason:
+        return ""
+    if reason == JMLE_RANK_DEFICIENT_HOLD_REASON:
+        return (
+            "JMLE linear predictor is structurally rank-deficient (unidentified); "
+            "add cross-facet connectivity or anchors before interpreting estimates or uncertainty."
+        )
+    if reason == JMLE_AUDIT_SIZE_LIMIT_HOLD_REASON:
+        return (
+            "Exact dense JMLE rank audit exceeded its matrix size limit (identification unverified by dense SVD); "
+            "formal inference is not established, and conditional SEs/intervals are screening_only (SupportsFormalInference=FALSE)."
+        )
+    from mfrm_app.jmle_boundary import HOLD_MESSAGE
+    return HOLD_MESSAGE
 
 
 def optimizer_termination_established(result) -> bool:
@@ -55,28 +407,117 @@ def optimizer_termination_established(result) -> bool:
 
 
 def calibration_inference_hold_reason(result) -> str:
-    """Requalify current and saved results, preserving method-specific reasons."""
+    """Requalify current and saved results, separating non-convergence, rank deficiency and audit limits."""
     result = result or {}
     config = result.get("config", {})
+    if isinstance(config, dict) and str(config.get("method", "")).upper() == "MML" and config.get("estimate_population_sd", False):
+        return FREE_SD_MML_INFERENCE_HOLD_REASON
+    jmle_reason = jmle_inference_hold_reason(result)
+    if jmle_reason and jmle_reason != JMLE_AUDIT_SIZE_LIMIT_HOLD_REASON:
+        return jmle_reason
+    if "opt" in result and not optimizer_termination_established(result):
+        return OPTIMIZER_TERMINATION_HOLD_REASON
+    if b_reason := boundary_and_support_hold_reason(result, for_screening_block=False):
+        return b_reason
     if reason := mml_inference_hold_reason(config):
         return reason
-    if jmle_inference_hold_message(result):
-        if (isinstance(config, dict) and str(config.get("method", "")).upper() == "JMLE"
-                and config.get("jmle_facet_boundary_review", False)):
-            from mfrm_app.jmle_boundary import HOLD_REASON
-            return HOLD_REASON
-        return "stat.jmle.identification_unqualified"
+    if jmle_reason:
+        return jmle_reason
     return "" if optimizer_termination_established(result) else OPTIMIZER_TERMINATION_HOLD_REASON
 
 
 def calibration_inference_hold_message(result) -> str:
     result = result or {}
-    hold = mml_inference_hold_message(result.get("config")) or jmle_inference_hold_message(result)
-    if hold:
-        return hold
-    if not optimizer_termination_established(result):
+    reason = calibration_inference_hold_reason(result)
+    if not reason:
+        return ""
+    if reason == OPTIMIZER_TERMINATION_HOLD_REASON:
         return "Successful optimizer termination has not been established; review the numerical diagnostics."
-    return ""
+    if msg := boundary_and_support_hold_message(reason):
+        return msg
+    if reason in {FREE_SD_MML_INFERENCE_HOLD_REASON, FIXED_SD_MML_INFERENCE_HOLD_REASON}:
+        return mml_inference_hold_message(result.get("config"))
+    return jmle_inference_hold_message(result)
+
+
+def calibration_screening_block_reason(result) -> str:
+    """Return a non-empty reason only when even exploratory screening_only SEs/intervals must be withheld."""
+    result = result or {}
+    if "opt" in result and not optimizer_termination_established(result):
+        return OPTIMIZER_TERMINATION_HOLD_REASON
+    config = result.get("config", {})
+    if isinstance(config, dict) and str(config.get("method", "")).upper() == "MML" and config.get("estimate_population_sd", False):
+        return FREE_SD_MML_INFERENCE_HOLD_REASON
+    if (isinstance(config, dict) and str(config.get("method", "")).upper() == "JMLE"
+            and config.get("jmle_facet_boundary_review", False)):
+        from mfrm_app.jmle_boundary import HOLD_REASON
+        return HOLD_REASON
+    if identifiability_audit_state(result) == "eta_rank_deficient":
+        return JMLE_RANK_DEFICIENT_HOLD_REASON
+    if b_reason := boundary_and_support_hold_reason(result, for_screening_block=True):
+        return b_reason
+    return "" if optimizer_termination_established(result) else OPTIMIZER_TERMINATION_HOLD_REASON
+
+
+def calibration_screening_block_message(result) -> str:
+    reason = calibration_screening_block_reason(result)
+    if not reason:
+        return ""
+    if reason == OPTIMIZER_TERMINATION_HOLD_REASON:
+        return "Successful optimizer termination has not been established; review the numerical diagnostics."
+    if reason == FREE_SD_MML_INFERENCE_HOLD_REASON:
+        return "Free-population-SD MML numerical accuracy and sampling uncertainty remain unqualified."
+    if reason == JMLE_RANK_DEFICIENT_HOLD_REASON:
+        return jmle_inference_hold_message(result)
+    if msg := boundary_and_support_hold_message(reason):
+        return msg
+    from mfrm_app.jmle_boundary import HOLD_MESSAGE
+    return HOLD_MESSAGE
+
+
+def run_qualification_state(result) -> dict[str, object]:
+    """Shared run-level diagnostic state across tables, figures, HTML, CSV, and reloaded archives."""
+    result = result or {}
+    converged = optimizer_termination_established(result)
+    ident_state = identifiability_audit_state(result)
+    formal_reason = calibration_inference_hold_reason(result)
+    formal_message = calibration_inference_hold_message(result)
+    block_reason = calibration_screening_block_reason(result)
+    block_message = calibration_screening_block_message(result)
+    config = result.get("config", {}) if isinstance(result.get("config"), dict) else {}
+    method = str(config.get("method", "")).upper()
+    if block_reason == OPTIMIZER_TERMINATION_HOLD_REASON:
+        state = "non_converged"
+    elif block_reason == JMLE_RANK_DEFICIENT_HOLD_REASON:
+        state = "unidentifiable"
+    elif block_reason == FREE_SD_MML_INFERENCE_HOLD_REASON:
+        state = "free_sd_unqualified"
+    elif block_reason in {
+        CATEGORY_UNSUPPORTED_HOLD_REASON,
+        UNOBSERVED_BOUNDARY_CATEGORY_HOLD_REASON,
+        UNOBSERVED_OWNER_ENDPOINT_HOLD_REASON,
+    }:
+        state = "unsupported_category_structure"
+    elif block_reason == MML_DISCONNECTED_HOLD_REASON or formal_reason == MML_DISCONNECTED_HOLD_REASON:
+        state = "disconnected_mml_cohorts"
+    elif block_reason:
+        state = "facet_score_boundary"
+    elif ident_state == "audit_size_limit":
+        state = "audit_size_limit_unverified"
+    elif method == "MML":
+        state = "fixed_sd_mml_exploratory"
+    else:
+        state = "jmle_conditional_screening"
+    return {
+        "state": state,
+        "converged": converged,
+        "identifiability_state": ident_state,
+        "formal_hold_reason": formal_reason,
+        "formal_hold_message": formal_message,
+        "screening_block_reason": block_reason,
+        "screening_block_message": block_message,
+        "supports_formal_inference": False,
+    }
 
 
 class OutputUse(str, Enum):

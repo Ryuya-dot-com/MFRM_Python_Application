@@ -14,7 +14,8 @@ HOLDS = [
     ({"method": "MML", "estimate_population_sd": False}, {}, "stat.mml_fixed_sd.numerical_qualification_pending"),
     ({"method": "MML", "estimate_population_sd": True}, {}, "stat.mml_free_sd.numerical_qualification_pending"),
     ({"method": "JMLE", "jmle_facet_boundary_review": True}, {}, "stat.jmle.facet_score_boundary_review"),
-    ({"method": "JMLE"}, {"status": "eta_rank_deficient"}, "stat.jmle.identification_unqualified"),
+    ({"method": "JMLE"}, {"status": "eta_rank_deficient"}, "stat.jmle.eta_rank_deficient"),
+    ({"method": "JMLE"}, {"status": "audit_size_limit"}, "stat.jmle.identifiability_audit_size_limit"),
 ]
 
 

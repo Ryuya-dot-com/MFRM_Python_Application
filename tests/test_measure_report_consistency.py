@@ -59,7 +59,11 @@ def test_writing_appendix_uses_current_scale_and_uncertainty_qualifications(fitt
     assert "**Overall manuscript gate**" not in text
     assert "A development calculation" not in text
     if case in {"facet_boundary", "fixed_sd", "free_sd"}:
-        assert "interpretation is on hold" in text
+        if case != "fixed_sd":
+            assert "interpretation is on hold" in text
+        else:
+            assert "not the sampling SE of EAP" in text
+            assert "SupportsFormalInference = FALSE" in text
         guide = app.build_manuscript_claim_guide(result, diagnostics)
         for area in ("Reliability and separation", "Wright map targeting and measure interpretation",
                      "Rating-scale functioning", "Fit and dimensionality", "Anchoring and linking",
@@ -71,8 +75,6 @@ def test_writing_appendix_uses_current_scale_and_uncertainty_qualifications(fitt
         assert "High rater reliability was interpreted as evidence" not in text
         assert "Final parameter interpretation was withheld" in text
         assert "STAT-003" not in text and "G2" not in text
-    elif case == "fixed_sd":
-        assert "not the sampling SE of EAP" in text
     else:
         assert "other fitted parameters are held fixed" in text
     scale = next(line for line in text.splitlines() if line.startswith("- MML population scale:"))
@@ -86,18 +88,23 @@ def test_writing_appendix_uses_current_scale_and_uncertainty_qualifications(fitt
 
 def test_real_publication_formats_keep_basis_and_suppress_held_intervals(fitted_case, monkeypatch):
     case, result, diagnostics = fitted_case
-    held = case in {"facet_boundary", "fixed_sd", "free_sd"}
+    held = case in {"facet_boundary", "free_sd"}
     # Figure rendering has its own tests; exercise the actual document builders and tables.
     monkeypatch.setattr(app, "_publication_figure_payloads", lambda *args: [])
     table, caption = app._publication_measure_table(result, diagnostics)
     assert len(table.columns) <= 10
     assert {"Infit", "Outfit"}.issubset(table.columns)
+    from mfrm_app import engine
     measures = diagnostics["measures"]
+    qualified = engine.qualify_measures_for_reporting(measures, result, obs_df=diagnostics.get("obs"))
     person_held = measures.Facet.eq("Person") & measures.get(
         "PersonInferenceReady", pd.Series(True, index=measures.index)).eq(False).fillna(False)
+    facet_unbounded = qualified.get(
+        "UnboundedFacetEstimate", pd.Series(False, index=measures.index)).eq(True).fillna(False)
+    row_held = person_held | facet_unbounded
     for name in ("Infit", "Outfit"):
         np.testing.assert_allclose(pd.to_numeric(table[name], errors="coerce"),
-                                   measures[name].mask(person_held), atol=.0005, equal_nan=True)
+                                   measures[name].mask(row_held), atol=.0005, equal_nan=True)
     assert "not automatic pass/fail" in caption
     assert table.Basis.eq("Withheld").all() == held
     if held:
@@ -105,21 +112,24 @@ def test_real_publication_formats_keep_basis_and_suppress_held_intervals(fitted_
         assert "technical terminal-point" in caption
     elif case == "fixed_sd":
         assert table.loc[table.Facet.eq("Person"), "Basis"].eq("Posterior SD").all()
+        assert table.loc[table.Facet.ne("Person"), "Basis"].eq("Observed info (fixed-SD)").all()
         assert "not the sampling SE of EAP" in caption
+        assert "screening_only" in caption and "SupportsFormalInference = FALSE" in caption
     else:
         assert table.Basis.eq("Conditional").all()
     basic_title, basic_table, basic_note = next(item for item in app._publication_report_tables(
         result, diagnostics, {}, include_details=False) if item[0] == "Facet Estimates and Fit")
     assert basic_title == "Facet Estimates and Fit"
     assert not basic_table.Facet.eq("Person").any()
-    np.testing.assert_allclose(pd.to_numeric(basic_table.Estimate),
-                               diagnostics["measures"].loc[diagnostics["measures"].Facet.ne("Person"), "Estimate"],
-                               atol=.0005)
+    np.testing.assert_allclose(pd.to_numeric(basic_table.Estimate, errors="coerce"),
+                               diagnostics["measures"].mask(row_held).loc[diagnostics["measures"].Facet.ne("Person"), "Estimate"],
+                               atol=.0005, equal_nan=True)
     if held:
         assert "Basis = Withheld" in basic_note
         assert basic_table["Interval"].eq("").all()
     if case == "fixed_sd":
         assert "Posterior SD" not in basic_note
+        assert basic_table["Interval"].ne("").all()
     reliability, reliability_caption = app._publication_reliability_table(result, diagnostics)
     assert reliability.Use.eq("Withheld").all() == held
     if held:

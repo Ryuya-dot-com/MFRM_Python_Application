@@ -28,6 +28,7 @@ test = ["pytest>=8"]
 
 [project.urls]
 Homepage = "https://github.com/Ryuya-dot-com/MFRM_Python_Application"
+Repository = "https://github.com/Ryuya-dot-com/MFRM_Python_Application"
 Documentation = "https://github.com/Ryuya-dot-com/MFRM_Python_Application/blob/main/docs/python_library.md"
 Issues = "https://github.com/Ryuya-dot-com/MFRM_Python_Application/issues"
 
@@ -45,7 +46,7 @@ exclude = ["mfrm_app/legacy_compat"]
 [tool.hatch.build.targets.sdist]
 only-include = [
     "mfrmpy", "mfrm_app", "locales/en.json", "examples/desktop_writing.csv",
-    "docs/python_library.md", "docs/analysis_scope.md",
+    "docs/python_library.md", "docs/analysis_scope.md", "CHANGELOG.md",
     "tests/test_python_library.py", "LICENSE", "LICENSE_NOTICE.md", "pyproject.toml",
 ]
 exclude = ["mfrm_app/legacy_compat"]

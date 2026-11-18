@@ -22,11 +22,16 @@ from mfrm_app._resources import metric_note
 
 
 def qualification_snapshot(result):
+    state = output_qualification.run_qualification_state(result)
     return {
         "schema": output_qualification.OUTPUT_QUALIFICATION_SCHEMA_VERSION,
         "optimizer_terminated": output_qualification.optimizer_termination_established(result),
         "calibration_hold_reason": output_qualification.calibration_inference_hold_reason(result),
         "calibration_hold_message": output_qualification.calibration_inference_hold_message(result),
+        "screening_block_reason": state["screening_block_reason"],
+        "identifiability_state": state["identifiability_state"],
+        "run_state": state["state"],
+        "supports_formal_inference": False,
         "facet_equivalence": output_qualification.facet_equivalence_qualification().to_record(),
         "bias_cell": output_qualification.bias_cell_qualification().to_record(),
         "bias_pairwise": output_qualification.bias_pairwise_qualification().to_record(),
@@ -150,11 +155,51 @@ def normalize_group_anchor_records(
     return sorted(out, key=lambda r: (allowed.index(r["Facet"]), r["Group"], r["Level"]))
 
 
+def normalize_scale_orientation(
+    noncenter_facet="Person",
+    positive_facets=None,
+    *,
+    person_col: str,
+    facet_cols: list[str],
+) -> tuple[str, list[str]]:
+    """Validate and canonicalize `noncenter_facet` and `positive_facets` against model facets."""
+    allowed = ["Person", *facet_cols]
+    if noncenter_facet is None:
+        norm_nc = "Person"
+    else:
+        if not isinstance(noncenter_facet, str) or not noncenter_facet.strip():
+            raise ValueError("noncenter_facet must be 'Person' or a selected facet column name")
+        raw_nc = noncenter_facet.strip()
+        norm_nc = "Person" if raw_nc in {"Person", person_col} else raw_nc
+        if norm_nc not in allowed:
+            raise ValueError(f"noncenter_facet {noncenter_facet!r} is not in the selected model facets")
+
+    if positive_facets is None:
+        return norm_nc, []
+    if isinstance(positive_facets, (str, bytes)) or not isinstance(positive_facets, (list, tuple, set, frozenset)):
+        raise ValueError("positive_facets must be a list or tuple of selected facet names")
+    pos_set: set[str] = set()
+    for item in positive_facets:
+        if not isinstance(item, str) or not item.strip():
+            raise ValueError("Each positive_facets entry must be a nonblank facet name")
+        raw_f = item.strip()
+        mapped = "Person" if raw_f in {"Person", person_col} else raw_f
+        if mapped not in allowed:
+            raise ValueError(f"positive_facets entry {item!r} is not in the selected model facets")
+        if mapped != "Person":
+            pos_set.add(mapped)
+    return norm_nc, [f for f in facet_cols if f in pos_set]
+
+
 def _finish_analysis(result, data, settings, progress):
     compute_pca = bool(settings.get("compute_pca", False))
     umean = float(settings.get("umean", 0.0))
     uscale = float(settings.get("uscale", 1.0))
     has_rescaling = (umean, uscale) != (0.0, 1.0)
+    has_scale_override = (
+        settings.get("noncenter_facet", "Person") != "Person"
+        or bool(settings.get("positive_facets"))
+    )
     progress("diagnostics")
     diagnostics = engine.mfrm_diagnostics(result, compute_pca=compute_pca, compute_marginal=False,
                                          compute_eb_shrinkage=False)
@@ -164,7 +209,7 @@ def _finish_analysis(result, data, settings, progress):
     analysis = {
         "kind": ("basic-rsm-jmle-v1"
                  if settings["model"] == "RSM" and settings["method"] == "JMLE"
-                 and not has_anchors and not compute_pca and not has_rescaling
+                 and not has_anchors and not compute_pca and not has_rescaling and not has_scale_override
                  else "mfrm-analysis-v2"),
         "analysis_id": engine.build_result_analysis_identity(result).analysis_id,
         "created_at": datetime.now(timezone.utc).isoformat(),
@@ -183,10 +228,15 @@ def _finish_analysis(result, data, settings, progress):
     return analysis
 
 
+def _is_int(value) -> bool:
+    return isinstance(value, (int, np.integer)) and not isinstance(value, (bool, np.bool_))
+
+
 def run_basic_analysis(data, *, person_col, facet_cols, score_col, rating_min, rating_max,
                        maxit=400, reltol=1e-6, model="RSM", method="JMLE", step_facet=None,
-                       quad_points=15, population_prior_sd=1.0, keep_original=True,
+                       quad_points=None, population_prior_sd=1.0, keep_original=True,
                        estimate_population_sd=False, mml_engine="EM",
+                       noncenter_facet="Person", positive_facets=None,
                        anchors=None, group_anchors=None,
                        compute_pca=False, umean=0.0, uscale=1.0, progress=None):
     """Fit once and retain qualified tables. Failure/unknown termination stays so.
@@ -202,26 +252,41 @@ def run_basic_analysis(data, *, person_col, facet_cols, score_col, rating_min, r
         raise ValueError("Select distinct person, facet and score columns")
     if any(column not in data for column in columns):
         raise ValueError("A selected column is missing from the input")
-    if (type(rating_min) is not int or type(rating_max) is not int or rating_min >= rating_max):
+    if not _is_int(rating_min) or not _is_int(rating_max) or int(rating_min) >= int(rating_max):
         raise ValueError("Specify integer minimum/maximum scores with minimum < maximum")
-    if type(maxit) is not int or maxit < 1 or not np.isfinite(reltol) or reltol <= 0:
+    rating_min, rating_max = int(rating_min), int(rating_max)
+    if not _is_int(maxit) or int(maxit) < 1 or isinstance(reltol, (bool, np.bool_)) or not np.isfinite(reltol) or float(reltol) <= 0:
         raise ValueError("Invalid iteration limit or stopping tolerance")
+    maxit, reltol = int(maxit), float(reltol)
     if model not in {"RSM", "PCM"} or method not in {"JMLE", "MML"}:
         raise ValueError("Desktop analysis supports RSM/PCM with JMLE or fixed-SD MML")
-    if keep_original is not True or estimate_population_sd is not False or mml_engine != "EM":
+    if not isinstance(keep_original, (bool, np.bool_)) or not bool(keep_original) or not isinstance(estimate_population_sd, (bool, np.bool_)) or bool(estimate_population_sd) or mml_engine != "EM":
         raise ValueError("Desktop requests retain original scores and use fixed-SD EM for MML")
+    keep_original, estimate_population_sd = True, False
     if model == "PCM" and step_facet not in facet_cols:
         raise ValueError("PCM requires an explicitly selected step facet")
     if model == "RSM" and step_facet is not None:
         raise ValueError("RSM uses common steps; do not select a PCM step facet")
-    if (type(quad_points) is not int or quad_points < 3
-            or isinstance(population_prior_sd, (bool, np.bool_))
-            or not np.isfinite(population_prior_sd) or population_prior_sd <= 0):
+    if isinstance(population_prior_sd, (bool, np.bool_)) or not np.isfinite(population_prior_sd) or float(population_prior_sd) <= 0:
         raise ValueError("MML requires at least three quadrature points and a positive finite fixed SD")
-    if method == "JMLE" and (quad_points != 15 or population_prior_sd != 1.0):
-        raise ValueError("Population SD and quadrature settings apply only to MML")
-    if type(compute_pca) is not bool:
+    if method == "JMLE":
+        if (quad_points is not None and (not _is_int(quad_points) or int(quad_points) != 15)) or float(population_prior_sd) != 1.0:
+            raise ValueError("Population SD and quadrature settings apply only to MML")
+        quad_points = 15
+    else:
+        resolved_qp = 31 if quad_points is None else quad_points
+        if not _is_int(resolved_qp) or int(resolved_qp) < 3:
+            raise ValueError("MML requires at least three quadrature points and a positive finite fixed SD")
+        quad_points = int(resolved_qp)
+    norm_noncenter, norm_positive = normalize_scale_orientation(
+        noncenter_facet=noncenter_facet,
+        positive_facets=positive_facets,
+        person_col=person_col,
+        facet_cols=facet_cols,
+    )
+    if not isinstance(compute_pca, (bool, np.bool_)):
         raise ValueError("Residual PCA option must be True or False")
+    compute_pca = bool(compute_pca)
     if isinstance(umean, (bool, np.bool_)) or isinstance(uscale, (bool, np.bool_)):
         raise ValueError("Scale origin (umean) and multiplier (uscale) must be finite numbers with uscale > 0")
     try:
@@ -262,6 +327,10 @@ def run_basic_analysis(data, *, person_col, facet_cols, score_col, rating_min, r
     if method == "MML":
         settings.update(quad_points=quad_points, population_prior_sd=float(population_prior_sd),
                         estimate_population_sd=False, mml_engine="EM")
+    if norm_noncenter != "Person":
+        settings["noncenter_facet"] = norm_noncenter
+    if norm_positive:
+        settings["positive_facets"] = norm_positive
     if norm_anchors:
         settings["anchors"] = norm_anchors
     if norm_groups:
@@ -287,14 +356,16 @@ def run_basic_analysis(data, *, person_col, facet_cols, score_col, rating_min, r
     return _finish_analysis(result, data, settings, progress)
 
 
-def current_tables(analysis):
+def current_tables(analysis, *, extended: bool = False):
     """Reapply current display qualification without refitting or rewriting provenance."""
     project.validate_analysis(analysis)
     result = analysis["result"]
     facts = reporting_facts.observed_report_tables(result)
     tables = [(title, table, note) for title, table, note in facts]
     fit_note = metric_note("fit")
-    measures, note = reporting_facts.publication_measure_table(result, analysis["diagnostics"], fit_note=fit_note)
+    measures, note = reporting_facts.publication_measure_table(
+        result, analysis["diagnostics"], fit_note=fit_note, extended=extended
+    )
     note = note.replace("Method details and source values: measures CSV.",
                         "Method details and source values are retained in this project.")
     tables.insert(1, ("Measures and Fit", measures, note))
@@ -303,7 +374,7 @@ def current_tables(analysis):
 
 def category_figure(analysis):
     """Representative RSM probability curves at the net predictor, not raw scores."""
-    from matplotlib.figure import Figure
+    from mfrm_app.visual_maps import category_probability_figure
 
     result = analysis["result"]
     if result["config"]["model"] != "RSM":
@@ -311,18 +382,7 @@ def category_figure(analysis):
     steps = np.asarray(result["params"]["steps"], dtype=float)
     if not np.isfinite(steps).all():
         raise ValueError("Category curves require finite step estimates")
-    eta = np.linspace(min(-4., float(steps.min()) - 2.), max(4., float(steps.max()) + 2.), 201)
-    probabilities = engine.category_prob_rsm(eta, np.r_[0., np.cumsum(steps)])
-    figure = Figure(figsize=(7, 4), layout="constrained")
-    axes = figure.subplots()
-    for index, values in enumerate(probabilities.T):
-        axes.plot(eta, values, label=str(index + result["prep"]["rating_min"]))
-    axes.set(xlabel="Net predictor (logits)", ylabel="Category probability", ylim=(0, 1))
-    axes.legend(title="Score", ncols=min(6, probabilities.shape[1]))
-    from mfrm_app.visual_maps import style_figure, map_caution
-    figure.suptitle("Rating scale · category probabilities", fontsize=15, fontweight="bold", color="#17344b")
-    figure.supxlabel(map_caution(result), fontsize=8, color="#526274")
-    return style_figure(figure)
+    return category_probability_figure(result, steps, title="Rating scale · category probabilities", figsize=(7, 4))
 
 
 def basic_figure(analysis, kind, *, facet=None, statistic="Infit"):

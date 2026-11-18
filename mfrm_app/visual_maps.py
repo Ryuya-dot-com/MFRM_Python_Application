@@ -81,14 +81,22 @@ def wright_map_values(person_table, facet_table):
     return persons, facets
 
 
-def pathway_map_values(diagnostics, statistic="InfitZSTD"):
-    if statistic not in {"Infit", "InfitZSTD"}:
-        raise ValueError("Choose Infit or InfitZSTD")
+def pathway_map_values(diagnostics, statistic="InfitZSTD", *, result=None):
+    if statistic not in {"Infit", "Outfit", "InfitZSTD", "OutfitZSTD"}:
+        raise ValueError("Choose Infit, Outfit, InfitZSTD, or OutfitZSTD")
     measures = diagnostics.get("measures")
     required = {"Estimate", statistic, "Facet", "Level"}
     if not isinstance(measures, pd.DataFrame) or not required.issubset(measures):
         return pd.DataFrame(columns=sorted(required))
-    frame = measures.copy()
+    from mfrm_app import engine
+    frame = engine.qualify_measures_for_reporting(measures, result, obs_df=diagnostics.get("obs"))
+    person = frame["Facet"].astype(str).eq("Person")
+    for col in ("FiniteJMLEEstimate", "PersonInferenceReady"):
+        if col in frame.columns:
+            held = person & frame[col].eq(False).fillna(False)
+            frame = frame.loc[~held]
+    if "UnboundedFacetEstimate" in frame.columns:
+        frame = frame.loc[~frame["UnboundedFacetEstimate"].eq(True).fillna(False)]
     for name in ("Estimate", statistic):
         frame[name] = pd.to_numeric(frame[name], errors="coerce")
     return frame.loc[np.isfinite(frame["Estimate"]) & np.isfinite(frame[statistic])].copy()
@@ -102,12 +110,37 @@ def map_caution(result, lang="en"):
             return ("最低点・最高点だけの人の位置は、有限のJMLEではなく計算の終端値です。個人の位置・適合度・分布は技術的な点検用として扱ってください。"
                     if lang == "ja" else "Extreme-score person locations are terminal calculation values, not finite JMLEs. Person locations, fit and distributions are for technical review only.")
         return ""
+    if reason == output_qualification.OPTIMIZER_TERMINATION_HOLD_REASON:
+        return ("非収束（計算の正常終了が未確認）のため、推定値・SE・区間の解釈を保留します。"
+                if lang == "ja" else "Non-converged (optimizer termination unverified): estimates, SEs and intervals are withheld.")
+    if reason == output_qualification.JMLE_RANK_DEFICIENT_HOLD_REASON:
+        return ("識別不能（線形予測子の構造的階数欠損）が検出されました。連結性またはアンカーを確認するまで比較・誤差解釈を保留します。"
+                if lang == "ja" else "Structurally unidentifiable (rank-deficient JMLE linear predictor): scale comparison and uncertainty are withheld.")
+    if reason == output_qualification.JMLE_AUDIT_SIZE_LIMIT_HOLD_REASON:
+        return ("密行列ランク監査は規模上限により未実施です（識別未確認）。一般表の条件付きSE・区間は screening_only（SupportsFormalInference=FALSE）として扱ってください。"
+                if lang == "ja" else "Exact dense JMLE rank audit exceeded its size limit (identification unverified). Conditional SEs and intervals are screening_only (SupportsFormalInference=FALSE).")
+    if reason == output_qualification.FIXED_SD_MML_INFERENCE_HOLD_REASON:
+        return ("固定母集団SD MMLの一般表SE・区間は探索的（screening_only, SupportsFormalInference=FALSE）です。差の検討には対象別の指定構造区間を確認してください。"
+                if lang == "ja" else "Fixed-SD MML general SEs and intervals are exploratory (screening_only; SupportsFormalInference=FALSE). Do not use these values alone to conclude differences or rankings.")
+    if reason in {
+        output_qualification.CATEGORY_UNSUPPORTED_HOLD_REASON,
+        output_qualification.UNOBSERVED_BOUNDARY_CATEGORY_HOLD_REASON,
+        output_qualification.UNOBSERVED_OWNER_ENDPOINT_HOLD_REASON,
+    }:
+        return ("未使用カテゴリーまたは1カテゴリーのみの水準があるため、段階閾値の有限な推定値は確立されていません。有効な得点範囲の再符号化・統合を検討してください。"
+                if lang == "ja" else output_qualification.boundary_and_support_hold_message(reason))
+    if reason == output_qualification.MML_FACET_BOUNDARY_HOLD_REASON:
+        return ("自由相水準が最低点または最高点のみで非有界方向にあるため、有限な構造推定値は確立されていません。得点分布と制約を確認してください。"
+                if lang == "ja" else output_qualification.boundary_and_support_hold_message(reason))
+    if reason == output_qualification.MML_DISCONNECTED_HOLD_REASON:
+        return ("未アンカー相で評定集団が非連結のため、集団間の尺度接続は共通母集団分布の仮定のみに依存しています。連結評定またはアンカーを確認してください。"
+                if lang == "ja" else output_qualification.boundary_and_support_hold_message(reason))
     if str(reason).startswith("stat.mml_"):
-        return ("MMLの数値精度と区間推定の検証が十分ではありません。表示値だけから差の有無や順位を結論づけないでください。"
-                if lang == "ja" else "MML numerical accuracy and interval estimates are not sufficiently validated. Do not use these values alone to conclude differences or rankings.")
+        return ("自由母集団SD MMLの数値精度と区間推定は未適格のため保留です。表示値だけから差の有無や順位を結論づけないでください。"
+                if lang == "ja" else "Free-SD MML numerical accuracy and interval estimates are not sufficiently validated. Do not use these values alone to conclude differences or rankings.")
     if str(reason).startswith("stat.jmle."):
-        return ("効果を分けて推定できない、または有限の推定値が得られない可能性があります。評定配置と最低点・最高点への偏りを確認してください。"
-                if lang == "ja" else "Effects may not be separately estimable, or finite estimates may not exist. Check the rating design and extreme-score patterns.")
+        return ("自由相水準が最低点または最高点のみのため、有限な非罰則推定値は確立されていません。評定配置と端点偏りを確認してください。"
+                if lang == "ja" else "A free facet level has only endpoint scores; finite unpenalized estimates are not established. Check score coverage and constraints.")
     return ("計算の正常終了を確認できていません。結果の解釈に進む前に、分析の終了状況を確認してください。"
             if lang == "ja" else "Successful estimation has not been confirmed. Check the estimation status before interpreting results.")
 
@@ -144,7 +177,7 @@ def fit_convention_note(diagnostics, lang="en"):
 
 def pathway_axis_range(frame, statistic):
     x = frame[statistic]
-    if statistic == "Infit":
+    if statistic in {"Infit", "Outfit"}:
         return (0., max(2., float(x.max()) + max(.1, float(x.max() - x.min()) * .12)))
     return (min(-2.8, float(x.min()) - .6), max(2.8, float(x.max()) + .6))
 
@@ -240,16 +273,18 @@ def wright_figure(result):
 
 def pathway_figure(result, diagnostics, *, facet=None, statistic="Infit"):
     from matplotlib.figure import Figure
+    from mfrm_app import engine
 
-    frame = pathway_map_values(diagnostics, statistic)
+    frame = pathway_map_values(diagnostics, statistic, result=result)
     if facet is not None:
         frame = frame.loc[frame["Facet"].eq(facet)]
     figure = Figure(figsize=(9, 4.8), layout="constrained")
     axes = figure.subplots()
-    if statistic == "InfitZSTD":
+    is_zstd = statistic in {"InfitZSTD", "OutfitZSTD"}
+    if is_zstd:
         for x in (-2, 2):
             axes.axvline(x, linestyle="--", linewidth=.9, color="#8a98a7")
-    axes.axvline(1 if statistic == "Infit" else 0, linestyle=":", linewidth=.8, color="#9aa8b5")
+    axes.axvline(0 if is_zstd else 1, linestyle=":", linewidth=.8, color="#9aa8b5")
     order = list(dict.fromkeys([*result.get("config", {}).get("facet_names", []), "Person", *frame["Facet"].unique()]))
     for index, name in enumerate(order):
         rows = frame.loc[frame["Facet"].eq(name)]
@@ -265,19 +300,59 @@ def pathway_figure(result, diagnostics, *, facet=None, statistic="Infit"):
                 axes.annotate(label if len(label) < 23 else label[:20] + "…",
                               (row[statistic], row["Estimate"]),
                               xytext=(7, 7 if number % 2 == 0 else -13), textcoords="offset points", fontsize=8)
+    guard_detail = ""
+    raw_measures = diagnostics.get("measures")
+    if isinstance(raw_measures, pd.DataFrame) and not raw_measures.empty:
+        q_fit = engine.qualify_fit_table(raw_measures, result, obs_df=diagnostics.get("obs"))
+        if facet is not None and "Facet" in q_fit.columns:
+            q_fit = q_fit.loc[q_fit["Facet"].eq(facet)]
+        f_statuses = set(q_fit.get("FitStatus", pd.Series(dtype=str)).astype(str))
+        if is_zstd and "zstd_unavailable_boundary_proxy" in f_statuses:
+            guard_detail += " ZSTD omitted where JMLE extreme-score boundary proxies are included."
+        if is_zstd and "zstd_unavailable_low_df" in f_statuses:
+            guard_detail += " ZSTD omitted where degrees of freedom < 1."
+        if "unavailable" in f_statuses:
+            guard_detail += " Fit omitted where variance/residuals/weights are unavailable."
     if frame.empty:
-        axes.text(.5, .5, "No finite measure / fit pairs", ha="center", transform=axes.transAxes)
+        axes.text(.5, .5, ("No finite measure / fit pairs" + (f"\n({guard_detail.strip()})" if guard_detail else "")),
+                  ha="center", va="center", transform=axes.transAxes)
     else:
         axes.set_xlim(*pathway_axis_range(frame, statistic))
         axes.margins(y=.22)
         axes.legend(loc="best", frameon=False, fontsize=9)
-    axes.set(xlabel="Infit MnSq" if statistic == "Infit" else "Approximate Infit ZSTD", ylabel="Measure (logits)")
-    if statistic == "InfitZSTD":
+    stat_base = statistic[:-4] if is_zstd else statistic
+    axes.set(xlabel=f"Approximate {stat_base} ZSTD" if is_zstd else f"{stat_base} MnSq", ylabel="Measure (logits)")
+    if is_zstd:
         axes.text(.02, .98, "±2: reference only", va="top", fontsize=9, color="#526274", transform=axes.transAxes)
     title = "Pathway map" + (f" · {facet}" if facet else "")
     figure.suptitle(title, fontsize=13, fontweight="bold", color="#17344b")
-    note = fit_convention_note(diagnostics) + "\n" if statistic == "InfitZSTD" else ""
+    note = (fit_convention_note(diagnostics) + guard_detail).strip() + "\n" if (is_zstd or guard_detail) else ""
     figure.supxlabel(note + textwrap.fill(map_caution(result) + _extreme_note(result), 120), fontsize=8, color="#526274")
+    return style_figure(figure)
+
+
+def category_probability_figure(result, steps, *, title="Rating scale · category probabilities", figsize=(9, 4.8)):
+    """Shared RSM/PCM category probability curve renderer across basic and extended workflows."""
+    from matplotlib.figure import Figure
+    from mfrm_app import engine
+
+    steps = np.asarray(steps, dtype=float)
+    if not np.isfinite(steps).all():
+        raise ValueError("Category steps must be finite")
+    eta = np.linspace(min(-4., float(steps.min()) - 2.), max(4., float(steps.max()) + 2.), 201)
+    if result["config"]["model"] == "PCM":
+        cumulative = np.r_[0., np.cumsum(steps)][None, :]
+        probabilities = engine.category_prob_pcm(eta, cumulative, np.zeros(len(eta), dtype=int))
+    else:
+        probabilities = engine.category_prob_rsm(eta, np.r_[0., np.cumsum(steps)])
+    figure = Figure(figsize=figsize, layout="constrained")
+    axes = figure.subplots()
+    for index, values in enumerate(probabilities.T):
+        axes.plot(eta, values, label=str(index + result["prep"]["rating_min"]))
+    axes.set(xlabel="Net predictor (logits)", ylabel="Category probability", ylim=(0, 1))
+    axes.legend(title="Score", ncols=min(6, probabilities.shape[1]))
+    figure.suptitle(title)
+    figure.supxlabel(textwrap.fill(map_caution(result), 110), fontsize=8)
     return style_figure(figure)
 
 

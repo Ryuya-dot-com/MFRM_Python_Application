@@ -8,8 +8,6 @@ from __future__ import annotations
 
 from copy import deepcopy
 from datetime import datetime, timezone
-from pathlib import Path
-import tempfile
 
 import numpy as np
 import pandas as pd
@@ -109,11 +107,12 @@ def check_web_mfrm_portability(
                 reasons.append("Dummy-facet suppression (`Status D`) is outside the Desktop `.mfrm` archive contract.")
                 break
 
-    if cfg.get("noncenter_facet", "Person") != "Person":
-        reasons.append("Desktop `.mfrm` archives require `Person` as the non-centered reference facet.")
+    facet_names = list(cfg.get("facet_names") or [])
+    if cfg.get("noncenter_facet", "Person") not in {"Person", *facet_names}:
+        reasons.append("`.mfrm` archives require `Person` or a declared facet as `noncenter_facet`.")
     signs = cfg.get("facet_signs") or {}
-    if any(int(v) != -1 for v in signs.values()):
-        reasons.append("Desktop `.mfrm` archives use standard `-1` subtractive facet orientation for non-Person facets.")
+    if any(int(v) not in (-1, 1) for v in signs.values()):
+        reasons.append("`.mfrm` archives require unit `+1` or `-1` facet sign orientations.")
 
     rmin, rmax = cfg.get("rating_min"), cfg.get("rating_max")
     if type(rmin) is not int or type(rmax) is not int or rmin >= rmax:
@@ -215,6 +214,11 @@ def build_mfrm_project_from_web(
             estimate_population_sd=False,
             mml_engine=_MML_ENGINE_DISPLAY[str(cfg["mml_engine"]).lower()],
         )
+    if cfg.get("noncenter_facet", "Person") != "Person":
+        fit_settings["noncenter_facet"] = str(cfg["noncenter_facet"])
+    pos_facets = [f for f in facet_cols if int((cfg.get("facet_signs") or {}).get(f, -1)) == 1]
+    if pos_facets:
+        fit_settings["positive_facets"] = pos_facets
     if norm_anchors:
         fit_settings["anchors"] = norm_anchors
     if norm_groups:
@@ -322,11 +326,29 @@ def build_mfrm_project_from_web(
     if joint_entry is not None:
         analysis["joint_analysis"] = joint_entry
 
-    analysis["content_fingerprint"] = project.content_fingerprint(analysis)
-    with tempfile.TemporaryDirectory(prefix="mfrm-web-export-") as td:
-        out_path = Path(td) / "analysis.mfrm"
-        project.save_project(out_path, analysis)
-        return out_path.read_bytes()
+    return project.serialize_project(analysis, assign_fingerprint=True)
+
+
+def check_web_gd_portability(bundle: dict, *, input_data: pd.DataFrame | None = None) -> dict:
+    """Return `{'eligible': bool, 'reasons': list[str]}` for observed-score G/D `.mfrm` export."""
+    reasons: list[str] = []
+    if not isinstance(bundle, dict) or not isinstance(input_data, pd.DataFrame) or input_data.empty:
+        return {"eligible": False, "reasons": ["Valid G/D bundle and input table are required."]}
+    design = bundle.get("design") or {}
+    obj = design.get("object_facet")
+    rfacets = list(design.get("random_facets") or [])
+    scol = design.get("score_column") or design.get("score_col")
+    if not obj or not rfacets or not scol:
+        reasons.append("G/D design metadata is incomplete.")
+    if design.get("score_basis") != "original_observed_scores":
+        reasons.append("Desktop G/D requires original observed scores.")
+    if type(bundle.get("available")) is not bool or not bundle.get("calculation_version"):
+        reasons.append("G/D availability or calculation version is missing.")
+    elif not bundle["available"] and not bundle.get("reason_code"):
+        reasons.append("Unavailable G/D results must retain their reason.")
+    if (bundle.get("bootstrap_ci") or {}).get("inference_allowed") is not False:
+        reasons.append("G/D interval qualification is missing or unsupported.")
+    return {"eligible": len(reasons) == 0, "reasons": reasons}
 
 
 def build_gd_project_from_web(
@@ -392,23 +414,12 @@ def build_gd_project_from_web(
         "gd_analysis": entry,
         "scope": {"includes_input": True, "optimizer_checkpoint": False, "mfrm_fitted": False},
     }
-    analysis["content_fingerprint"] = project.content_fingerprint(analysis)
-    with tempfile.TemporaryDirectory(prefix="mfrm-gd-export-") as td:
-        out_path = Path(td) / "gd_analysis.mfrm"
-        project.save_project(out_path, analysis)
-        return out_path.read_bytes()
+    return project.serialize_project(analysis, assign_fingerprint=True)
 
 
 def load_project_from_bytes(payload: bytes) -> dict:
     """Validate and decode a `.mfrm` archive from raw bytes with zero estimation."""
-    if not isinstance(payload, (bytes, bytearray)):
-        raise project.ProjectError("Project payload must be raw bytes")
-    if len(payload) > project.MAX_PROJECT_BYTES:
-        raise project.ProjectError("Project exceeds the project size limit (128 MiB)")
-    with tempfile.TemporaryDirectory(prefix="mfrm-web-import-") as td:
-        in_path = Path(td) / "uploaded.mfrm"
-        in_path.write_bytes(bytes(payload))
-        analysis = project.load_project(in_path)
+    analysis = project.loads_project(payload)
     return {
         "analysis": analysis,
         "tables": desktop_outputs.current_tables(analysis),

@@ -42,6 +42,10 @@ def _assess(record):
     check('structural_identification', boundary['structural_design_rank'] == len(record['coordinates']))
     check('structural_boundary', boundary['status'] == 'no_structural_ray_detected'
           and not boundary['no_finite_mle_certified'])
+    if 'person_facet_connected' in boundary:
+        check('person_facet_connectivity', boundary['person_facet_connected'] is True)
+    if 'category_support_ok' in boundary:
+        check('category_and_endpoint_support', boundary['category_support_ok'] is True)
     rows = record['calculations']
     inverses, gradients = [], []
     for row in rows:
@@ -125,11 +129,26 @@ def compute_structural_intervals(result, *, facet, difference=None, level=.95):
     q = cfg['quad_points']
     evaluated = review.evaluate_fixed_sd_quadrature_check(prepared, comparison_points=2*q-1)
     rows = evaluated['comparison']['rows']
+    b_audit = output_qualification.audit_boundary_and_support(result)
+    person_facet_connected = not (b_audit['active'] and (
+        int(b_audit['hypergraph_components']) > 1 or facet in b_audit['disconnected_facets']
+    ))
+    category_support_ok = not (b_audit['active'] and (
+        b_audit['unsupported_internal']
+        or b_audit['unobserved_global_boundary']
+        or bool(b_audit['unobserved_owner_endpoints'])
+        or bool(b_audit['unbounded_facet_levels'])
+    ))
+    boundary_rec = dict(
+        evaluated['structural_boundary'],
+        person_facet_connected=bool(person_facet_connected),
+        category_support_ok=bool(category_support_ok),
+    )
     record = dict(schema=POLICY['version'], policy=dict(POLICY), source_hash=_source_hash(),
         source_input_id=prepared['input_id'], implementation=prepared['implementation'],
         optimizer_success=output_qualification.optimizer_termination_established(result),
         coordinates=prepared['coordinates'].tolist(), targets=targets, target_jacobian=matrix.tolist(),
-        level=float(level), boundary=evaluated['structural_boundary'],
+        level=float(level), boundary=boundary_rec,
         calculations=[{k: row[k] for k in ('points', 'raw_nll', 'gradient', 'information')} for row in rows],
         scope=dict(model=cfg['model'], population_sd=engine.get_population_prior_sd(cfg),
                    noncenter_facet=cfg['noncenter_facet'], ratings=len(prepared['prep']['data']),
@@ -150,6 +169,20 @@ def read_structural_intervals(result, record):
     prepared = review.prepare_fixed_sd_check(result)
     if record['source_input_id'] != prepared['input_id']:
         raise ValueError('Structural intervals belong to different inputs, estimates or runtime')
+    b_audit = output_qualification.audit_boundary_and_support(result)
+    facet_name = str(record['targets'][0]['Facet']) if record.get('targets') else ''
+    expected_conn = not (b_audit['active'] and (
+        int(b_audit['hypergraph_components']) > 1 or facet_name in b_audit['disconnected_facets']
+    ))
+    expected_cat = not (b_audit['active'] and (
+        b_audit['unsupported_internal']
+        or b_audit['unobserved_global_boundary']
+        or bool(b_audit['unobserved_owner_endpoints'])
+        or bool(b_audit['unbounded_facet_levels'])
+    ))
+    if (record.get('boundary', {}).get('person_facet_connected') is not bool(expected_conn)
+            or record.get('boundary', {}).get('category_support_ok') is not bool(expected_cat)):
+        raise ValueError('Stored structural interval boundary audit disagrees with retained data')
     level = record.get('level')
     if isinstance(level, bool) or not isinstance(level, (int, float)) or not np.isfinite(level) or not 0 < level < 1:
         raise ValueError('Invalid stored interval level')

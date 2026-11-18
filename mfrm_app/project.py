@@ -7,12 +7,15 @@ from __future__ import annotations
 
 import base64
 from collections import OrderedDict
+import gzip
 import hashlib
+import io
 import json
 import math
 import os
 from pathlib import Path
 import tempfile
+import zlib
 
 import numpy as np
 import pandas as pd
@@ -23,6 +26,8 @@ from mfrm_app import engine
 FORMAT = "mfrm.basic-project"
 SCHEMA_VERSION = 2
 MAX_PROJECT_BYTES = 128 * 1024 * 1024
+MAX_UNCOMPRESSED_PROJECT_BYTES = 512 * 1024 * 1024
+GZIP_MAGIC = b"\x1f\x8b"
 
 
 class ProjectError(ValueError):
@@ -196,9 +201,28 @@ def _json_bytes(value):
     return json.dumps(value, ensure_ascii=False, allow_nan=False, separators=(",", ":")).encode("utf-8")
 
 
+def _encode_analysis_pairs(analysis):
+    if type(analysis) not in (dict, OrderedDict):
+        raise ProjectError(f"Unsupported project value: {type(analysis).__name__}")
+    return [(k, _json_bytes([_encode(k), _encode(v)])) for k, v in analysis.items()]
+
+
+def _fingerprint_from_pairs(pair_chunks):
+    digest = hashlib.sha256(b'["dict",[')
+    first = True
+    for key, chunk in pair_chunks:
+        if key == "content_fingerprint":
+            continue
+        if not first:
+            digest.update(b",")
+        digest.update(chunk)
+        first = False
+    digest.update(b"]]")
+    return digest.hexdigest()
+
+
 def content_fingerprint(analysis):
-    content = {k: v for k, v in analysis.items() if k != "content_fingerprint"}
-    return hashlib.sha256(_json_bytes(_encode(content))).hexdigest()
+    return _fingerprint_from_pairs(_encode_analysis_pairs(analysis))
 
 
 def gd_analysis_identity(data, settings, calculation_version):
@@ -248,11 +272,12 @@ def _validate_gd_entry(data, entry):
         raise ProjectError("Unavailable G/D results must retain their reason")
 
 
-def validate_analysis(analysis):
+def validate_analysis(analysis, *, _computed_fingerprint=None):
     kinds = ("basic-rsm-jmle-v1", "mfrm-analysis-v2", "gd-analysis-v2")
     if not isinstance(analysis, dict) or analysis.get("kind") not in kinds:
         raise ProjectError("Unsupported desktop analysis kind")
-    if analysis.get("content_fingerprint") != content_fingerprint(analysis):
+    expected_fp = content_fingerprint(analysis) if _computed_fingerprint is None else _computed_fingerprint
+    if analysis.get("content_fingerprint") != expected_fp:
         raise ProjectError("Analysis content changed: input, settings, results or tables no longer match")
     if not isinstance(analysis.get("input_data"), pd.DataFrame):
         raise ProjectError("Projects require the retained original input data")
@@ -298,6 +323,24 @@ def validate_analysis(analysis):
             raise ProjectError("Stored facets disagree with the fitted result")
         if cfg["model"] == "PCM" and settings.get("step_facet") != cfg.get("step_facet"):
             raise ProjectError("Stored PCM step facet disagrees with the fitted result")
+        expected_nc = settings.get("noncenter_facet", "Person")
+        if "noncenter_facet" in settings and (
+            not isinstance(expected_nc, str) or expected_nc == "Person" or expected_nc not in cfg["facet_names"]
+        ):
+            raise ProjectError("Invalid stored noncenter_facet setting")
+        if cfg.get("noncenter_facet", "Person") != expected_nc:
+            raise ProjectError("Stored noncenter_facet disagrees with the fitted result")
+        expected_pos = settings.get("positive_facets", [])
+        if "positive_facets" in settings and (
+            not isinstance(expected_pos, list)
+            or not expected_pos
+            or any(not isinstance(f, str) or f not in cfg["facet_names"] for f in expected_pos)
+            or expected_pos != [f for f in cfg["facet_names"] if f in set(expected_pos)]
+        ):
+            raise ProjectError("Invalid stored positive_facets setting")
+        actual_pos = [f for f in cfg["facet_names"] if int((cfg.get("facet_signs") or {}).get(f, -1)) == 1]
+        if expected_pos != actual_pos:
+            raise ProjectError("Stored positive_facets disagree with the fitted result")
         if cfg["method"] == "MML":
             s_eng = settings.get("mml_engine")
             c_eng = cfg.get("mml_engine")
@@ -312,6 +355,7 @@ def validate_analysis(analysis):
         any(analysis.get(key) for key in ("bias_analyses", "interval_analyses", "gd_analysis"))
         or settings.get("anchors") or settings.get("group_anchors")
         or settings.get("compute_pca") or "umean" in settings or "uscale" in settings
+        or "noncenter_facet" in settings or "positive_facets" in settings
     ):
         raise ProjectError("Supplementary analyses, anchors, PCA and rescaling require schema 2")
     if "compute_pca" in settings and settings["compute_pca"] is not True:
@@ -456,13 +500,54 @@ def validate_analysis(analysis):
         _validate_gd_entry(data, entry)
 
 
-def save_project(path, analysis):
-    """Atomically save a validated snapshot; never damage an existing file on failure."""
-    validate_analysis(analysis)
-    document = {"format": FORMAT, "schema_version": SCHEMA_VERSION, "analysis": _encode(analysis)}
-    data = _json_bytes(document)
+def serialize_project(analysis, *, compress=True, assign_fingerprint=False):
+    """Validate and encode an analysis snapshot in a single pass."""
+    if not isinstance(analysis, dict):
+        validate_analysis(analysis)
+    pair_chunks = _encode_analysis_pairs(analysis)
+    fp = _fingerprint_from_pairs(pair_chunks)
+    if assign_fingerprint:
+        analysis["content_fingerprint"] = fp
+        fp_chunk = _json_bytes([_encode("content_fingerprint"), _encode(fp)])
+        replaced = False
+        for idx, (key, _) in enumerate(pair_chunks):
+            if key == "content_fingerprint":
+                pair_chunks[idx] = ("content_fingerprint", fp_chunk)
+                replaced = True
+                break
+        if not replaced:
+            pair_chunks.append(("content_fingerprint", fp_chunk))
+    validate_analysis(analysis, _computed_fingerprint=fp)
+    tag = "ordered-dict" if type(analysis) is OrderedDict else "dict"
+    header = (
+        f'{{"format":{_json_bytes(FORMAT).decode("utf-8")},'
+        f'"schema_version":{SCHEMA_VERSION},"analysis":["{tag}",['
+    ).encode("utf-8")
+    footer = b"]]}"
+    uncompressed_len = len(header) + len(footer) + max(0, len(pair_chunks) - 1) + sum(len(c) for _, c in pair_chunks)
+    if uncompressed_len > MAX_UNCOMPRESSED_PROJECT_BYTES:
+        raise ProjectError("Project exceeds the uncompressed project size limit (512 MiB)")
+    if compress:
+        buf = io.BytesIO()
+        with gzip.GzipFile(fileobj=buf, mode="wb", compresslevel=6, mtime=0) as gz:
+            gz.write(header)
+            for idx, (_, chunk) in enumerate(pair_chunks):
+                if idx:
+                    gz.write(b",")
+                gz.write(chunk)
+            gz.write(footer)
+        data = buf.getvalue()
+    else:
+        body = b",".join(chunk for _, chunk in pair_chunks)
+        data = header + body + footer
     if len(data) > MAX_PROJECT_BYTES:
         raise ProjectError("Project exceeds the project size limit (128 MiB)")
+    return data
+
+
+def save_project(path, analysis, *, compress=True):
+    """Atomically save a validated snapshot; never damage an existing file on failure."""
+    data = serialize_project(analysis, compress=compress)
     write_bytes_atomic(path, data)
 
 
@@ -482,14 +567,31 @@ def write_bytes_atomic(path, data):
             temporary.unlink(missing_ok=True)
 
 
-def load_project(path):
-    """Restore a completed or failed result without running the estimator."""
+def _unpack_project_bytes(data):
+    if not isinstance(data, (bytes, bytearray)):
+        raise ProjectError("Project payload must be raw bytes")
+    raw = bytes(data)
+    if len(raw) > MAX_PROJECT_BYTES:
+        raise ProjectError("Project exceeds the project size limit (128 MiB)")
+    if raw.startswith(GZIP_MAGIC):
+        try:
+            with gzip.GzipFile(fileobj=io.BytesIO(raw), mode="rb") as gz:
+                uncompressed = gz.read(MAX_UNCOMPRESSED_PROJECT_BYTES + 1)
+        except (OSError, EOFError, zlib.error) as exc:
+            raise ProjectError(f"Malformed project: {exc}") from exc
+        if len(uncompressed) > MAX_UNCOMPRESSED_PROJECT_BYTES:
+            raise ProjectError("Project exceeds the uncompressed project size limit (512 MiB)")
+        return uncompressed
+    if len(raw) > MAX_UNCOMPRESSED_PROJECT_BYTES:
+        raise ProjectError("Project exceeds the uncompressed project size limit (512 MiB)")
+    return raw
+
+
+def loads_project(data):
+    """Restore a validated `.mfrm` payload (gzip or legacy uncompressed JSON) with zero estimation."""
     try:
-        with Path(path).open("rb") as stream:
-            data = stream.read(MAX_PROJECT_BYTES + 1)
-        if len(data) > MAX_PROJECT_BYTES:
-            raise ProjectError("Project exceeds the project size limit (128 MiB)")
-        document = json.loads(data)
+        raw_json = _unpack_project_bytes(data)
+        document = json.loads(raw_json)
         if not isinstance(document, dict) or document.get("format") != FORMAT:
             raise ProjectError("Not an MFRM basic project")
         if type(document.get("schema_version")) is not int or document["schema_version"] not in (1, SCHEMA_VERSION):
@@ -505,3 +607,10 @@ def load_project(path):
         if isinstance(exc, ProjectError):
             raise
         raise ProjectError(f"Malformed project: {exc}") from exc
+
+
+def load_project(path):
+    """Restore a completed or failed result without running the estimator."""
+    with Path(path).open("rb") as stream:
+        data = stream.read(MAX_PROJECT_BYTES + 1)
+    return loads_project(data)

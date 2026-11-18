@@ -13,7 +13,7 @@ from scipy.optimize import minimize
 from scipy.special import logsumexp
 from scipy.stats import norm
 
-from . import engine, mml_fixed_sd_review as review, mml_joint, structural_intervals
+from . import engine, mml_fixed_sd_review as review, mml_joint, output_qualification, structural_intervals
 from .bias_analysis import adjust_p_values
 
 
@@ -146,10 +146,23 @@ def _tables(record):
     return rows, checks, covariance
 
 
+def _check_joint_support(result, facet_a, facet_b):
+    b_audit = output_qualification.audit_boundary_and_support(result)
+    if not b_audit['active']:
+        return
+    if b_audit['unsupported_internal'] or b_audit['unobserved_global_boundary'] or b_audit['unobserved_owner_endpoints']:
+        raise ValueError('Joint interaction requires observed support across all score categories and step-facet endpoints')
+    if b_audit['unbounded_facet_levels']:
+        raise ValueError('Joint interaction is unavailable when a free facet level has only endpoint scores along a recession direction')
+    if int(b_audit['hypergraph_components']) > 1 or facet_a in b_audit['disconnected_facets'] or facet_b in b_audit['disconnected_facets']:
+        raise ValueError('Joint interaction requires connected person-facet observations without population-assumption-only cohort linking')
+
+
 def fit_joint_interaction(result, *, facet_a, facet_b, difference=None, level=.95):
     """Explicitly refit one interaction; retain the baseline result unchanged."""
     request = settings(dict(facet_a=facet_a, facet_b=facet_b, difference=difference, level=level),
                        result['config']['facet_names'], result['config']['method'])
+    _check_joint_support(result, request['facet_a'], request['facet_b'])
     prepared = review.prepare_fixed_sd_check(result)
     design = _design(prepared, request)
     problem = design['problem']
@@ -201,6 +214,7 @@ def read_joint_interaction(result, record):
     if record['source_input_id'] != prepared['input_id'] or record['implementation'] != _implementation(prepared):
         raise ValueError('Joint interaction inputs, numerical source or runtime changed')
     request = settings(record['settings'], prepared['config']['facet_names'], prepared['config']['method'])
+    _check_joint_support(result, request['facet_a'], request['facet_b'])
     design = _design(prepared, request)
     q = prepared['config']['quad_points']
     if (record['policy'] != structural_intervals.POLICY or record['level'] != request['level']

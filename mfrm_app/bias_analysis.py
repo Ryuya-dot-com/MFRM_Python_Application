@@ -332,6 +332,24 @@ def estimate_bias_interaction(
         }
     if _jmle_facet_boundary_hold(res.get("config")):
         return {"_skip_reason": _jmle_boundary.HOLD_MESSAGE}
+    if b_reason := _output_qualification.boundary_and_support_hold_reason(res, for_screening_block=True):
+        return {
+            "_skip_reason": (
+                _output_qualification.boundary_and_support_hold_message(b_reason)
+                or _jmle_boundary.HOLD_MESSAGE
+            )
+        }
+    b_audit = _output_qualification.audit_boundary_and_support(res)
+    if (
+        b_audit["active"]
+        and str((res.get("config") or {}).get("method", "")).upper() == "MML"
+        and (facet_a in b_audit["disconnected_facets"] or facet_b in b_audit["disconnected_facets"])
+    ):
+        return {
+            "_skip_reason": _output_qualification.boundary_and_support_hold_message(
+                _output_qualification.MML_DISCONNECTED_HOLD_REASON
+            )
+        }
     obs_df = diagnostics.get("obs")
     if obs_df is None or obs_df.empty:
         return {"_skip_reason": "observation table is empty (no usable rows for bias analysis)"}
@@ -549,7 +567,8 @@ def estimate_bias_interaction(
 
     se_bias = bias_tbl["S.E."].to_numpy()
     bias_vals = bias_tbl["Bias Size"].to_numpy()
-    w_chi = np.where(np.isfinite(se_bias) & (se_bias > 0), 1 / (se_bias ** 2), np.nan)
+    se_sq = np.square(se_bias, dtype=float)
+    w_chi = np.divide(1.0, se_sq, out=np.full(len(se_bias), np.nan, dtype=float), where=np.isfinite(se_bias) & (se_bias > 0))
     ok = np.isfinite(w_chi) & np.isfinite(bias_vals)
     fixed_chi = (
         np.sum(w_chi[ok] * bias_vals[ok] ** 2) - (np.sum(w_chi[ok] * bias_vals[ok]) ** 2) / np.sum(w_chi[ok])
@@ -1382,3 +1401,118 @@ def _bias_table_caption(model: str | None, table_idx: int | None = None) -> str:
         "Validation of tests and intervals is pending: these values are retained only in "
         "technical exports. Use = Withheld: these cells do not establish bias or absence of bias."
     )
+
+
+_BIAS_CALCULATION_LABELS = {
+    "interior": "Interior solution",
+    "legacy_unverified": "Not verified",
+    "excluded_extreme_level": "Extreme level excluded",
+    "invalid_input": "Invalid input",
+    "no_finite_mle": "No finite estimate",
+    "search_range_limited": "Search limit reached",
+    "solver_failed": "Solver failed",
+    "stationarity_failed": "Stationarity not met",
+    "likelihood_failed": "Likelihood check failed",
+    "calculation_failed": "Calculation failed",
+}
+
+
+def bias_screening_table(
+    all_bias_results: dict | None,
+    result: dict | None = None,
+) -> "pd.DataFrame | None":
+    """Return conditional bias cells with exploratory `screening_only` SE/Z/LR columns.
+
+    Keeps `_bias_table_for_publication` unchanged for Web APA publication exports while
+    exposing retained conditional cell summaries and 1-df conditional LR statistics for
+    exploratory screening (`SupportsFormalInference=False`), withholding uncertainty
+    whenever calibration screening is blocked or a cell has no interior solution.
+    """
+    parts = []
+    for pair_key, bundle in (all_bias_results or {}).items():
+        if not isinstance(bundle, dict):
+            continue
+        table = bundle.get("table")
+        if not isinstance(table, pd.DataFrame) or table.empty:
+            continue
+        rows = table.copy()
+        rows.insert(0, "Pair", str(pair_key))
+        if "Cell Status" not in rows:
+            rows["Cell Status"] = "legacy_unverified"
+        parts.append(rows)
+    if not parts:
+        return None
+
+    raw = pd.concat(parts, ignore_index=True)
+    cal_block = _output_qualification.calibration_screening_block_reason(result) if isinstance(result, dict) else ""
+    cal_hold = _output_qualification.calibration_inference_hold_reason(result) if isinstance(result, dict) else ""
+    cat_gap_block = cal_block in {
+        _output_qualification.CATEGORY_UNSUPPORTED_HOLD_REASON,
+        _output_qualification.UNOBSERVED_BOUNDARY_CATEGORY_HOLD_REASON,
+        _output_qualification.UNOBSERVED_OWNER_ENDPOINT_HOLD_REASON,
+    }
+
+    cell_status = raw["Cell Status"].fillna("legacy_unverified").astype(str)
+    is_interior = cell_status.eq("interior")
+    ref_ok = raw.get("Reference Status", pd.Series("", index=raw.index)).fillna("").astype(str).eq(
+        "unit_weight_conditional_lr_candidate"
+    )
+
+    obs_score = pd.to_numeric(raw.get("Observd Score", np.nan), errors="coerce")
+    exp_score = pd.to_numeric(raw.get("Expctd Score", np.nan), errors="coerce")
+    obs_exp_avg = pd.to_numeric(raw.get("Obs-Exp Average", np.nan), errors="coerce")
+    bias_size = pd.to_numeric(raw.get("Bias Size", np.nan), errors="coerce")
+    se_raw = pd.to_numeric(raw.get("S.E.", np.nan), errors="coerce")
+    z_raw = pd.to_numeric(raw.get("Standardized Bias", np.nan), errors="coerce")
+    lr_raw = pd.to_numeric(raw.get("LR ChiSq", np.nan), errors="coerce")
+    lr_p_raw = pd.to_numeric(raw.get("LR Prob.", np.nan), errors="coerce")
+
+    screening_ok = is_interior & (~pd.Series(bool(cal_block), index=raw.index)) & np.isfinite(se_raw) & (se_raw > 0) & np.isfinite(bias_size)
+    lr_ok = screening_ok & ref_ok & np.isfinite(lr_raw) & np.isfinite(lr_p_raw)
+
+    default_reason = cal_hold or _output_qualification.QualificationReason.BIAS_CELL_UNCALIBRATED
+    reasons = [
+        default_reason if ok else (cal_block if cal_block else f"cell_status:{st}")
+        for ok, st in zip(screening_ok.to_numpy(dtype=bool), cell_status.to_numpy(dtype=str))
+    ]
+
+    blank_col = pd.Series(np.nan, index=raw.index, dtype=float)
+    out = pd.DataFrame({
+        "Pair": raw["Pair"].astype(str),
+        "Level A": raw["FacetA_Level"].astype(str) if "FacetA_Level" in raw else "",
+        "Level B": raw["FacetB_Level"].astype(str) if "FacetB_Level" in raw else "",
+        "Ratings": pd.to_numeric(raw.get("ObsN", np.nan), errors="coerce").astype("Int64"),
+        "ObsScore": obs_score.round(3),
+        "ExpScore": blank_col if cal_block else exp_score.round(3),
+        "ObsExpAvg": blank_col if cal_block else obs_exp_avg.round(3),
+        "BiasSize": blank_col if cat_gap_block else bias_size.where(is_interior, np.nan).round(3),
+        "SE": se_raw.where(screening_ok, np.nan).round(3),
+        "Z": z_raw.where(screening_ok, np.nan).round(3),
+        "LR_ChiSq": lr_raw.where(lr_ok, np.nan).round(3),
+        "LR_Prob": lr_p_raw.where(lr_ok, np.nan).round(4),
+        "Calculation": cell_status.map(_BIAS_CALCULATION_LABELS).fillna("Needs review"),
+        "Use": np.where(screening_ok, "screening_only", "withheld"),
+        "SupportsFormalInference": False,
+        "StatusReason": reasons,
+    })
+    for col in out.columns[out.isna().any()]:
+        if out[col].dtype == bool:
+            continue
+        out[col] = out[col].astype(object).where(out[col].notna(), "")
+    return out
+
+
+def bias_screening_caption(model: str | None, result: dict | None = None) -> str:
+    """Caption for exploratory conditional bias screening tables."""
+    cal_block = _output_qualification.calibration_screening_block_reason(result) if isinstance(result, dict) else ""
+    text = (
+        f"Conditional {str(model or '').upper()} interaction screening table with main-effect and step "
+        "calibration held fixed (main-effect uncertainty is not propagated). BiasSize is an additive logit "
+        "shift on eta; SE = 1/sqrt(conditional cell information); Z = BiasSize / SE; LR_ChiSq and LR_Prob "
+        "are 1-df conditional likelihood-ratio slice statistics against BiasSize = 0 (unadjusted across cells). "
+        "Use = screening_only (SupportsFormalInference = FALSE): use for exploratory residual/interaction "
+        "screening only; use joint_settings for a separately refitted joint interaction model."
+    )
+    if cal_block:
+        text += f" Calibration screening hold active ({cal_block}); uncertainty and LR cells are withheld."
+    return text

@@ -2167,15 +2167,18 @@ class DesktopApp:
 
     def figure_options(self):
         options = dict(next(o for title, o in self.plot_choices if title == self.map_choice.get()))
-        if options["kind"] == "pathway":
+        if options["kind"] in ("pathway", "bubble"):
             options.update(facet=self.map_subset.get() if self.subset_box.current() != 0 else None,
                            statistic="Infit" if self.statistic.get() == "Infit MnSq" else "InfitZSTD")
+        elif options["kind"] in ("facet", "fair_average"):
+            options.update(facet=self.map_subset.get() if self.subset_box.current() != 0 else None)
         elif options["kind"] == "gd" and self.gd_swap.get():
             options["gd_swap"] = True
         options["presentation"] = self.presentation.get()
         return options
 
     def show_map_help(self):
+        from mfrm_app.desktop_outputs import DIAGNOSTIC_GUIDES
         from mfrm_app.visual_maps import MAP_GUIDES, MAP_GUIDES_EN
         if self.language == "en": MAP_GUIDES = MAP_GUIDES_EN
         kind = self.figure_options()["kind"]
@@ -2185,7 +2188,8 @@ class DesktopApp:
             "interval": self.tr("指定した水準・差の点ごとの近似区間です。数値条件を満たした対象だけを描きます。保留の理由は表の注記を参照してください。有限標本被覆率・個人得点の区間は保証していません。"),
             "gd": self.tr("元の観測得点のG（相対評価）とPhi（絶対評価）を、評定回数の計画別に示します。星は保存した計画です。完全均衡交差・1／2ランダム相・各セル1観測・単位重みの範囲です。負の分散成分は0として係数を算出し、符号付きの元の値も表に残します。区間は保留です。"),
             "pca": self.tr("標準化残差の主成分分析（PCA）における上位コントラストの固有値です。固有値の総和は残差列数に等しくなります。第1コントラスト固有値が2.0前後以上の場合は、負荷量表の正負両極にある課題・観点・評価者の実質的対比と欠測の重なりを併せて確認してください（自動的な合否判定ではありません）。")}
-        note = MAP_GUIDES[kind][1] if kind in MAP_GUIDES else notes[kind]
+        diag_notes = DIAGNOSTIC_GUIDES.get(self.language, {})
+        note = MAP_GUIDES[kind][1] if kind in MAP_GUIDES else notes.get(kind, diag_notes.get(kind, ""))
         if kind == "wright": note += self.tr("\n点線は選択した尺度の段階オフセットです。対象者・相の位置とは区別して読みます。PCMでは表示中の水準を確認してください。")
         return self.guide_window(self.map_choice.get(), note)
 
@@ -2194,9 +2198,14 @@ class DesktopApp:
         from mfrm_app.visual_maps import attach_map_hover
         from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
         options = self.figure_options()
-        for widget in (self.subset_box, self.statistic_box):
-            if options["kind"] == "pathway": widget.pack(side="left", padx=3)
-            else: widget.pack_forget()
+        if options["kind"] in ("pathway", "bubble", "facet", "fair_average"):
+            self.subset_box.pack(side="left", padx=3)
+        else:
+            self.subset_box.pack_forget()
+        if options["kind"] in ("pathway", "bubble"):
+            self.statistic_box.pack(side="left", padx=3)
+        else:
+            self.statistic_box.pack_forget()
         gd_rf = self.analysis.get("gd_analysis", {}).get("settings", {}).get("random_facets", [])
         if options["kind"] == "gd" and len(gd_rf) == 2:
             self.gd_swap_check.pack(side="left", padx=6)
@@ -2337,7 +2346,7 @@ def smoke_check(output_dir):
     import time
     from mfrm_app.project import save_project
     from mfrm_app.basic_analysis import figure_bytes
-    from mfrm_app.desktop_outputs import report_html
+    from mfrm_app.desktop_outputs import figure_choices, report_html
     from mfrm_app.desktop_guidance import writing_example
     from mfrm_app.desktop_examples import EXAMPLES_DIR, SCENARIO_CATALOG, load_scenario_dataframe
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -2376,12 +2385,13 @@ def smoke_check(output_dir):
         assert len(analysis["scorefile"]) == len(data) - 1 and 1 not in analysis["scorefile"].index
         save_project(output_dir / "作文.mfrm", analysis)
         report = report_html(analysis)
-        assert report.count("<svg") == 3
+        expected_svg = len(figure_choices(analysis))
+        assert report.count("<svg") == expected_svg
         (output_dir / "report.html").write_text(report, encoding="utf-8")
         (output_dir / "wright.png").write_bytes(figure_bytes(analysis, "wright", format="png"))
         record = dict(analysis_id=analysis["analysis_id"], events=events, worker_result="complete",
                       optimizer_success=bool(analysis["result"]["opt"].success),
-                      bundled_example_rows=len(example), report_svg_count=3)
+                      bundled_example_rows=len(example), report_svg_count=expected_svg)
         record['extended'] = smoke_extended(worker, drain, output_dir)
         (output_dir / "smoke.json").write_text(json.dumps(record, indent=2), encoding="utf-8")
     finally:

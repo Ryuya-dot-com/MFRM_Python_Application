@@ -42765,25 +42765,17 @@ def render_g_d_study_bundle(
         file_name="mfrm_g_d_study.csv", mime="text/csv",
         key=f"{key_prefix}_download", on_click="ignore",
     )
-    if (
-        isinstance(raw_input_data, pd.DataFrame)
-        and not raw_input_data.empty
-        and bundle.get("design", {}).get("score_basis") == "original_observed_scores"
-    ):
-        try:
-            gd_mfrm_bytes = _project_portability.build_gd_project_from_web(
-                bundle, input_data=raw_input_data
-            )
-            st.download_button(
-                t("mfrm_project.export_gd_button"),
-                data=gd_mfrm_bytes,
-                file_name="mfrm_g_d_study.mfrm",
-                mime="application/octet-stream",
-                key=f"{key_prefix}_download_mfrm",
-                on_click="ignore",
-            )
-        except Exception:
-            pass
+    if _project_portability.check_web_gd_portability(bundle, input_data=raw_input_data)["eligible"]:
+        st.download_button(
+            t("mfrm_project.export_gd_button"),
+            data=lambda _b=bundle, _df=raw_input_data: _project_portability.build_gd_project_from_web(
+                _b, input_data=_df
+            ),
+            file_name="mfrm_g_d_study.mfrm",
+            mime="application/octet-stream",
+            key=f"{key_prefix}_download_mfrm",
+            on_click="ignore",
+        )
 
 
 _PARAMETER_RECOVERY_MODELS = ("RSM", "PCM", "GPCM")
@@ -50246,7 +50238,12 @@ def _draw_measures_forest_plotly(diagnostics: dict, result: dict | None = None, 
 
     measures = diagnostics.get("measures", pd.DataFrame()) if isinstance(diagnostics, dict) else pd.DataFrame()
     if result is not None:
-        measures = qualify_measure_uncertainty(measures, result)
+        from mfrm_app.engine import qualify_measures_for_reporting
+        measures = qualify_measures_for_reporting(
+            measures,
+            result,
+            obs_df=diagnostics.get("obs") if isinstance(diagnostics, dict) else None,
+        )
     if not isinstance(measures, pd.DataFrame) or measures.empty:
         st.info(
             t(
@@ -50310,18 +50307,22 @@ def _draw_measures_forest_plotly(diagnostics: dict, result: dict | None = None, 
     labels = sub["Level"].astype(str).tolist()
     est = sub["Estimate"].to_numpy()
     se = sub["SE"].to_numpy()
-    se_status = sub.get("SE_Status", pd.Series("", index=sub.index)).astype(str)
-    ci_status = sub.get("CI_Status", pd.Series("", index=sub.index)).astype(str)
+    se_status = sub.get("EffectiveSE_Status", sub.get("SE_Status", pd.Series("", index=sub.index))).astype(str)
+    ci_status = sub.get("EffectiveCI_Status", sub.get("CI_Status", pd.Series("", index=sub.index))).astype(str)
+    se_use = sub.get("SEUse", pd.Series("", index=sub.index)).astype(str)
     se_method = sub.get("SE_Method", pd.Series("", index=sub.index)).astype(str)
     conditional = (se_status.eq("conditional_approximation") & ci_status.eq("conditional_approximation")
                    & se_method.str.contains("conditional information approximation", regex=False))
     posterior = (se_status.eq("posterior_eap_sd") & ci_status.eq("posterior_interval_approximation")
                  & se_method.str.contains("latent-ability posterior SD", regex=False))
+    obs_info = (se_status.eq("ok") & ci_status.eq("ok") & se_use.eq("screening_only")
+                & se_method.str.contains("MML observed-information delta", regex=False))
     # Missing result context cannot establish whether a saved row is still usable.
-    permitted = (conditional | posterior).to_numpy() & np.isfinite(se) & (se > 0) & (result is not None)
-    basis = np.where(permitted & conditional.to_numpy(), "Conditional normal approximation",
-                     np.where(permitted & posterior.to_numpy(), "Conditional posterior normal approximation",
-                              "Intervals withheld or unavailable; technical point"))
+    permitted = (conditional | posterior | obs_info).to_numpy() & np.isfinite(se) & (se > 0) & (result is not None)
+    basis = np.where(permitted & conditional.to_numpy(), "Conditional normal approximation (screening_only; SupportsFormalInference=FALSE)",
+                     np.where(permitted & posterior.to_numpy(), "Conditional posterior normal approximation (screening_only; SupportsFormalInference=FALSE)",
+                              np.where(permitted & obs_info.to_numpy(), "Fixed-SD MML observed-information normal band (screening_only; SupportsFormalInference=FALSE)",
+                                       "Intervals withheld or unavailable; technical point")))
     omitted = int((~permitted).sum())
     if omitted:
         st.warning(t("visuals_top.forest_omitted", count=omitted))
@@ -57292,28 +57293,30 @@ def _render_downloads(
             result, person_col=p_col, score_col=s_col
         )
         if port_chk["eligible"]:
-            try:
-                mfrm_bytes = _project_portability.build_mfrm_project_from_web(
-                    result,
-                    diagnostics,
-                    report_tables,
-                    scorefile,
-                    person_col=p_col,
-                    score_col=s_col,
-                    all_bias_results=all_bias_results,
-                    umean=u_mean,
-                    uscale=u_scale,
-                )
+            if not np.isfinite(u_mean) or not np.isfinite(u_scale) or u_scale <= 0:
+                st.info(f"{t('mfrm_project.export_ineligible_intro')}\n- umean must be finite and uscale must be positive finite")
+            else:
                 st.download_button(
                     t("mfrm_project.export_button"),
-                    data=mfrm_bytes,
+                    data=lambda _res=result, _diag=diagnostics, _tbls=report_tables, _sf=scorefile,
+                    _p=p_col, _s=s_col, _bias=all_bias_results, _um=u_mean, _us=u_scale: (
+                        _project_portability.build_mfrm_project_from_web(
+                            _res,
+                            _diag,
+                            _tbls,
+                            _sf,
+                            person_col=_p,
+                            score_col=_s,
+                            all_bias_results=_bias,
+                            umean=_um,
+                            uscale=_us,
+                        )
+                    ),
                     file_name="mfrm_analysis.mfrm",
                     mime="application/octet-stream",
                     key="dl_mfrm_project_archive",
                     on_click="ignore",
                 )
-            except Exception as exc:
-                st.info(f"{t('mfrm_project.export_ineligible_intro')}\n- {exc}")
         else:
             reasons_md = "\n".join(f"- {r}" for r in port_chk["reasons"])
             st.info(f"{t('mfrm_project.export_ineligible_intro')}\n{reasons_md}")

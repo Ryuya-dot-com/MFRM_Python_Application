@@ -2555,24 +2555,15 @@ def zstd_from_mnsq_facets(
     *,
     zstd_transform=None,
 ):
-    """FACETS-style ZSTD with explicit cap on extreme values.
+    """FACETS-style ZSTD with low-d.f. protection and explicit cap on extreme values.
 
-    Implements the same Wilson-Hilferty cube-root transformation as
-    ``zstd_from_mnsq`` but with the FACETS convention:
-
-    * ``df > 0`` (rather than ``>= 1``) is accepted because the
-      Wright-Masters Welch-Satterthwaite d.f. can be fractional;
-    * the result is clamped to ``[-cap, +cap]`` (FACETS default 9.0).
-
-    For FACETS WHEXACT=Yes use ``zstd_transform="wilson_hilferty"``;
-    for No use ``"wilson_hilferty_no_offset"``. Omit ``whexact`` when
-    using these names. Its historical True value means linear normal
-    approximation and is preserved for compatibility.
+    Implements the Wilson-Hilferty cube-root transformation with ``df >= 1``
+    protection (matching mfrmr 0.3.0: below 1 d.f. the ``1 - 2/(9*df)`` term
+    dominates and can invert the sign of ZSTD) and clamps extreme values to
+    ``[-cap, +cap]`` (FACETS default 9.0).
     """
-    # WHEXACT in FACETS has different boolean semantics. Use the named
-    # transform: full WH corresponds to Yes, no-offset WH corresponds to No.
     transform = _resolve_zstd_transform(whexact, zstd_transform)
-    if not np.isfinite(mnsq) or not np.isfinite(df) or mnsq <= 0 or df <= 0:
+    if not np.isfinite(mnsq) or mnsq < 0 or not np.isfinite(df) or df < 1.0:
         return np.nan
     z = _zstd_value(mnsq, df, transform)
     if cap is None or not np.isfinite(cap) or cap <= 0:
@@ -3095,6 +3086,71 @@ def _free_sd_mml_inference_withheld(config) -> bool:
     )
 
 
+def _fixed_level_lookup(result) -> set[tuple[str, str]]:
+    """Identify (Facet, Level) pairs fixed to constants by anchors or 1-level centering."""
+    if not isinstance(result, dict):
+        return set()
+    config = result.get("config")
+    if not isinstance(config, dict):
+        return set()
+    method = str(config.get("method", "")).upper()
+    fixed_pairs: set[tuple[str, str]] = set()
+    facet_specs = config.get("facet_specs") if isinstance(config.get("facet_specs"), dict) else {}
+    candidates: list[tuple[str, dict]] = []
+    if method != "MML" and isinstance(config.get("theta_spec"), dict):
+        candidates.append(("Person", config["theta_spec"]))
+    for fname, spec in facet_specs.items():
+        if isinstance(spec, dict):
+            candidates.append((str(fname), spec))
+    for facet_name, spec in candidates:
+        levels = [str(lv) for lv in (spec.get("levels") or ())]
+        raw_anchors = spec.get("anchors")
+        anchors_arr = (
+            np.asarray(raw_anchors, dtype=float)
+            if raw_anchors is not None and len(raw_anchors) == len(levels)
+            else np.full(len(levels), np.nan)
+        )
+        free = ~np.isfinite(anchors_arr)
+        raw_groups = spec.get("groups") or [None] * len(levels)
+        groups = [
+            None if (g is None or g == "" or (isinstance(g, float) and np.isnan(g)) or pd.isna(g)) else str(g)
+            for g in raw_groups
+        ]
+        group_counts: dict[str | None, int] = {}
+        for is_free, grp in zip(free, groups):
+            if is_free:
+                group_counts[grp] = group_counts.get(grp, 0) + 1
+        centered = bool(spec.get("centered", False))
+        for lv, is_free, grp in zip(levels, free, groups):
+            varies = bool(is_free) and (
+                group_counts.get(grp, 0) > 1 if (grp is not None or centered) else True
+            )
+            if not varies:
+                fixed_pairs.add((facet_name, lv))
+    return fixed_pairs
+
+
+def _boundary_person_set(result) -> set[str]:
+    if not isinstance(result, dict):
+        return set()
+    config = result.get("config") if isinstance(result.get("config"), dict) else {}
+    if str(config.get("method", "")).upper() != "JMLE":
+        return set()
+    for candidate in (
+        (result.get("person_boundary") or {}).get("persons") if isinstance(result.get("person_boundary"), dict) else None,
+        (result.get("facets") or {}).get("person") if isinstance(result.get("facets"), dict) else None,
+    ):
+        if isinstance(candidate, pd.DataFrame) and "Person" in candidate.columns:
+            if "FiniteJMLEEstimate" in candidate.columns:
+                mask = candidate["FiniteJMLEEstimate"].eq(False).fillna(False)
+            elif "ExtremeScorePattern" in candidate.columns:
+                mask = candidate["ExtremeScorePattern"].eq(True).fillna(False)
+            else:
+                continue
+            return set(candidate.loc[mask, "Person"].astype(str))
+    return set()
+
+
 def qualify_measure_uncertainty(measures, result):
     """Carry current person and calibration holds without altering source values."""
     if not isinstance(measures, pd.DataFrame) or measures.empty:
@@ -3123,11 +3179,25 @@ def qualify_measure_uncertainty(measures, result):
         out.loc[person_held, "UncertaintyCaution"] = (
             "Person inference is withheld; retained estimates, SEs and intervals are technical terminal-point values."
         )
+        if "SEUse" in out:
+            out.loc[person_held, "SEUse"] = "withheld"
+        if "CIUse" in out:
+            out.loc[person_held, "CIUse"] = "withheld"
+        if "SupportsFormalInference" in out:
+            out.loc[person_held, "SupportsFormalInference"] = False
     hold = _output_qualification.calibration_inference_hold_message(result)
     if hold:
+        reason = _output_qualification.calibration_inference_hold_reason(result)
         out["SE_Status"] = "calibration_inference_withheld"
         out["CI_Status"] = "calibration_inference_withheld"
-        out["UncertaintyReasonCode"] = _output_qualification.calibration_inference_hold_reason(result)
+        out["UncertaintyReasonCode"] = reason
+        if "SupportsFormalInference" in out:
+            out["SupportsFormalInference"] = False
+        if _output_qualification.calibration_screening_block_reason(result):
+            if "SEUse" in out:
+                out["SEUse"] = "withheld"
+            if "CIUse" in out:
+                out["CIUse"] = "withheld"
         if any(column in out for column in ("PersonInferenceReady", "ReportableEstimate")):
             out = qualified_person_boundary_table(out, result)
         for prefix in ("FairM", "FairZ"):
@@ -3143,6 +3213,434 @@ def qualify_measure_uncertainty(measures, result):
                     out[public_column] = False
         note = f"Technical terminal-point calculations only; inference is withheld. {hold}"
         out["UncertaintyCaution"] = note
+    return out
+
+
+def qualify_fit_table(frame: pd.DataFrame | None, result: dict | None = None, obs_df: pd.DataFrame | None = None) -> pd.DataFrame:
+    """Apply mfrmr 0.3.0 low-df and boundary fit safeguards on fresh or saved tables while keeping saved values."""
+    if not isinstance(frame, pd.DataFrame) or frame.empty:
+        return frame if isinstance(frame, pd.DataFrame) else pd.DataFrame()
+    out = frame.copy()
+    for col in ("Infit", "Outfit", "InfitZSTD", "OutfitZSTD", "FitStatus", "FitReason"):
+        if col in out.columns and f"Saved{col}" not in out.columns:
+            out[f"Saved{col}"] = out[col]
+
+    boundary_persons = _boundary_person_set(result)
+    b_audit = _output_qualification.audit_boundary_and_support(result)
+    unbounded_levels = set(b_audit["unbounded_facet_levels"]) | set(b_audit["unbounded_step_owners"])
+    fixed_pairs = _fixed_level_lookup(result)
+    has_real_params = isinstance(result, dict) and isinstance(result.get("params"), dict)
+    cfg_method = (
+        str((result.get("config") or {}).get("method", "")).upper()
+        if isinstance(result, dict) and isinstance(result.get("config"), dict)
+        else ""
+    )
+    if isinstance(obs_df, pd.DataFrame) and not obs_df.empty and {"Facet", "Level"}.issubset(out.columns):
+        n_obs = len(obs_df)
+        raw_w = pd.to_numeric(obs_df["Weight"], errors="coerce").to_numpy(dtype=float) if "Weight" in obs_df.columns else np.ones(n_obs, dtype=float)
+        w_ok = np.isfinite(raw_w) & (raw_w > 0)
+        std_sq = pd.to_numeric(obs_df.get("StdSq", pd.Series(np.nan, index=obs_df.index)), errors="coerce").to_numpy(dtype=float)
+        var_arr = pd.to_numeric(obs_df.get("Var", pd.Series(np.nan, index=obs_df.index)), errors="coerce").to_numpy(dtype=float)
+        obs_vals = pd.to_numeric(obs_df.get("Observed", pd.Series(np.nan, index=obs_df.index)), errors="coerce").to_numpy(dtype=float)
+        exp_vals = pd.to_numeric(obs_df.get("Expected", pd.Series(np.nan, index=obs_df.index)), errors="coerce").to_numpy(dtype=float)
+        if "FitBoundaryProxy" in obs_df.columns:
+            b_proxy = obs_df["FitBoundaryProxy"].fillna(False).to_numpy(dtype=bool)
+        elif "Person" in obs_df.columns and boundary_persons:
+            b_proxy = obs_df["Person"].astype(str).isin(boundary_persons).to_numpy(dtype=bool)
+        else:
+            b_proxy = np.zeros(n_obs, dtype=bool)
+        # Extreme JMLE boundary persons can reach |eta| > 23 where Var <= 1e-10 becomes NaN
+        # even though (Observed - Expected)^2 / Var -> 0 analytically at the endpoint.
+        b_limit_zero = b_proxy & ~np.isfinite(var_arr) & np.isfinite(obs_vals) & np.isfinite(exp_vals) & (np.abs(obs_vals - exp_vals) < 1e-4) & w_ok
+        avail = ((np.isfinite(std_sq) & (std_sq >= 0) & np.isfinite(var_arr) & (var_arr > 0) & w_ok) | b_limit_zero)
+        if unbounded_levels:
+            unbounded_obs = np.zeros(n_obs, dtype=bool)
+            for f_col, lv_val in unbounded_levels:
+                if f_col in obs_df.columns:
+                    unbounded_obs |= obs_df[f_col].astype(str).eq(lv_val).to_numpy(dtype=bool)
+            avail = avail & ~(unbounded_obs & (~np.isfinite(var_arr) | (var_arr <= 1e-6)))
+        counts_rows: dict[tuple[str, str], tuple[int, int, int, int]] = {}
+        tmp_obs = pd.DataFrame({"_avail": avail, "_unavail": ~avail, "_bproxy": b_proxy}, index=obs_df.index)
+        for facet_col in sorted(set(out["Facet"].dropna().astype(str))):
+            if facet_col in obs_df.columns:
+                grouped = tmp_obs.groupby(obs_df[facet_col].astype(str), observed=False).agg(
+                    rows=("_avail", "size"),
+                    avail=("_avail", "sum"),
+                    unavail=("_unavail", "sum"),
+                    bproxy=("_bproxy", "sum"),
+                )
+                for lv, r in grouped.iterrows():
+                    counts_rows[(facet_col, str(lv))] = (int(r["rows"]), int(r["avail"]), int(r["unavail"]), int(r["bproxy"]))
+        if counts_rows:
+            keys = list(zip(out["Facet"].astype(str), out["Level"].astype(str)))
+            if "FitResponseRows" not in out.columns:
+                out["FitResponseRows"] = [counts_rows.get(k, (0, 0, 0, 0))[0] for k in keys]
+            if "FitAvailableRows" not in out.columns:
+                out["FitAvailableRows"] = [counts_rows.get(k, (0, 0, 0, 0))[1] for k in keys]
+            if "FitUnavailableRows" not in out.columns:
+                out["FitUnavailableRows"] = [counts_rows.get(k, (0, 0, 0, 0))[2] for k in keys]
+            if "FitBoundaryRows" not in out.columns:
+                out["FitBoundaryRows"] = [counts_rows.get(k, (0, 0, 0, 0))[3] for k in keys]
+
+    if "FitBoundaryRows" not in out.columns:
+        if {"Facet", "Level"}.issubset(out.columns) and boundary_persons:
+            is_bp = out["Facet"].astype(str).eq("Person") & out["Level"].astype(str).isin(boundary_persons)
+            out["FitBoundaryRows"] = np.where(is_bp, 1, 0)
+        else:
+            out["FitBoundaryRows"] = 0
+
+    zstd_cols = [c for c in out.columns if c.startswith(("InfitZSTD", "OutfitZSTD")) and not c.startswith("Saved")]
+    infit_num = pd.to_numeric(out.get("Infit", pd.Series(np.nan, index=out.index)), errors="coerce")
+    outfit_num = pd.to_numeric(out.get("Outfit", pd.Series(np.nan, index=out.index)), errors="coerce")
+    df_infit = pd.to_numeric(out.get("DF_Infit", pd.Series(np.nan, index=out.index)), errors="coerce")
+    df_outfit = pd.to_numeric(out.get("DF_Outfit", pd.Series(np.nan, index=out.index)), errors="coerce")
+    unavail_rows = pd.to_numeric(out.get("FitUnavailableRows", pd.Series(0, index=out.index)), errors="coerce").fillna(0)
+    resp_rows = pd.to_numeric(out.get("FitResponseRows", pd.Series(1, index=out.index)), errors="coerce").fillna(1)
+    boundary_rows = pd.to_numeric(out.get("FitBoundaryRows", pd.Series(0, index=out.index)), errors="coerce").fillna(0)
+
+    has_mnsq_cols = "Infit" in out.columns and "Outfit" in out.columns
+    has_df_cols = "DF_Infit" in out.columns and "DF_Outfit" in out.columns
+    complete = (
+        (resp_rows > 0)
+        & (unavail_rows == 0)
+        & ((np.isfinite(infit_num) & np.isfinite(outfit_num)) if has_mnsq_cols else True)
+        & ((np.isfinite(df_infit) & (df_infit > 0) & np.isfinite(df_outfit) & (df_outfit > 0))
+           if has_df_cols else True)
+    )
+    for col in ("Infit", "Outfit", "DF_Infit", "DF_Outfit", "DF_Infit_FACETS", "DF_Outfit_FACETS", *zstd_cols):
+        if col in out.columns:
+            out.loc[~complete, col] = np.nan
+
+    # Enforce low-df (< 1) ZSTD guard on every ZSTD column even for older saved records.
+    df_pair_map = (
+        ("InfitZSTD", "DF_Infit"),
+        ("OutfitZSTD", "DF_Outfit"),
+        ("InfitZSTD_FACETS", "DF_Infit_FACETS"),
+        ("OutfitZSTD_FACETS", "DF_Outfit_FACETS"),
+        ("InfitZSTD_ENGINE", "DF_Infit_ENGINE"),
+        ("OutfitZSTD_ENGINE", "DF_Outfit_ENGINE"),
+    )
+    for z_col, d_col in df_pair_map:
+        if z_col in out.columns and d_col in out.columns:
+            d_vals = pd.to_numeric(out[d_col], errors="coerce")
+            low_df = ~np.isfinite(d_vals) | (d_vals < 1.0)
+            out.loc[low_df, z_col] = np.nan
+
+    boundary_mask = complete & (boundary_rows > 0)
+    for z_col in zstd_cols:
+        out.loc[boundary_mask, z_col] = np.nan
+
+    statuses: list[str] = []
+    reasons: list[str] = []
+    facet_strs = out["Facet"].astype(str) if "Facet" in out.columns else pd.Series("", index=out.index)
+    person_col_mask = facet_strs.eq("Person")
+    level_strs = out["Level"].astype(str) if "Level" in out.columns else pd.Series("", index=out.index)
+    has_resp_col = "FitResponseRows" in out.columns
+    n_col_vals = pd.to_numeric(out["N"], errors="coerce") if "N" in out.columns else pd.Series(np.nan, index=out.index)
+    for pos, idx in enumerate(out.index):
+        key = (str(facet_strs.iloc[pos]), str(level_strs.iloc[pos]))
+        is_extreme_person = bool(person_col_mask.iloc[pos] and level_strs.iloc[pos] in boundary_persons)
+        if is_extreme_person:
+            for col in ("Infit", "Outfit", *zstd_cols):
+                if col in out.columns:
+                    out.loc[idx, col] = np.nan
+            statuses.append("unavailable_extreme_score")
+            reasons.append("No finite JMLE: all ratings for this person are at a scale endpoint.")
+            continue
+        if key in unbounded_levels:
+            for col in ("Infit", "Outfit", "DF_Infit", "DF_Outfit", "DF_Infit_FACETS", "DF_Outfit_FACETS", *zstd_cols):
+                if col in out.columns:
+                    out.loc[idx, col] = np.nan
+            statuses.append("unavailable_boundary")
+            reasons.append("No finite unpenalized estimate (endpoint score pattern or unsupported step categories); fit statistics are unavailable.")
+            continue
+        single_obs_free_jmle = bool(
+            has_real_params
+            and cfg_method == "JMLE"
+            and key not in fixed_pairs
+            and (
+                (has_resp_col and float(resp_rows.iloc[pos]) == 1.0)
+                or (pd.notna(n_col_vals.iloc[pos]) and float(n_col_vals.iloc[pos]) == 1.0)
+            )
+        )
+        if single_obs_free_jmle:
+            for col in ("Infit", "Outfit", "DF_Infit", "DF_Outfit", "DF_Infit_FACETS", "DF_Outfit_FACETS", *zstd_cols):
+                if col in out.columns:
+                    out.loc[idx, col] = np.nan
+            statuses.append("unavailable_zero_df")
+            reasons.append(
+                "Single observation on a free JMLE parameter yields identically zero residual "
+                "(0 residual degrees of freedom); fit mean squares are undefined."
+            )
+            continue
+        if not bool(complete.iloc[pos]):
+            statuses.append("unavailable")
+            if float(resp_rows.iloc[pos]) <= 0:
+                reasons.append("No response rows are available.")
+            elif float(unavail_rows.iloc[pos]) > 0:
+                reasons.append(
+                    "At least one response has unavailable standardized residuals, variance or weights; "
+                    "no partial-row fit statistic is reported."
+                )
+            else:
+                reasons.append("Weighted sums are nonfinite or have a nonpositive denominator.")
+            continue
+        base_reason = "Descriptive mean squares; their calculation does not establish inferential validity."
+        if bool(boundary_mask.iloc[pos]):
+            statuses.append("zstd_unavailable_boundary_proxy")
+            reasons.append(
+                base_reason
+                + " ZSTD is unavailable: this scope includes JMLE optimizer terminal proxies for extreme-score Person estimates; "
+                "no rows were excluded."
+            )
+            continue
+        low_notes: list[str] = []
+        if has_df_cols:
+            di = float(df_infit.iloc[pos]) if pd.notna(df_infit.iloc[pos]) else np.nan
+            do = float(df_outfit.iloc[pos]) if pd.notna(df_outfit.iloc[pos]) else np.nan
+            if not np.isfinite(di) or di < 1.0:
+                low_notes.append("Infit ZSTD is unavailable: degrees of freedom are below 1.")
+            if not np.isfinite(do) or do < 1.0:
+                low_notes.append("Outfit ZSTD is unavailable: degrees of freedom are below 1.")
+        if low_notes:
+            statuses.append("zstd_unavailable_low_df")
+            reasons.append(base_reason + " " + " ".join(low_notes))
+        else:
+            statuses.append("available_descriptive")
+            reasons.append(base_reason)
+
+    out["FitStatus"] = statuses
+    out["FitReason"] = reasons
+    return out
+
+
+def qualify_measures_for_reporting(
+    measures: pd.DataFrame | None,
+    result: dict | None,
+    obs_df: pd.DataFrame | None = None,
+) -> pd.DataFrame:
+    """Shared row-level judgment for tables, figures, HTML, CSV, and reloaded archives.
+
+    Preserves raw saved values and save-time statuses/reasons under ``Saved*``
+    columns while applying the current qualification rules consistently.
+    """
+    if not isinstance(measures, pd.DataFrame) or measures.empty:
+        return measures if isinstance(measures, pd.DataFrame) else pd.DataFrame()
+    result = result or {}
+    raw = measures.copy()
+    for col in ("Estimate", "SE_Status", "CI_Status", "UncertaintyReasonCode"):
+        if col in raw.columns and f"Saved{col}" not in raw.columns:
+            raw[f"Saved{col}"] = raw[col]
+
+    out = qualify_fit_table(raw, result, obs_df=obs_df)
+    b_audit = _output_qualification.audit_boundary_and_support(result)
+    unbounded_levels = set(b_audit["unbounded_facet_levels"]) | set(b_audit["unbounded_step_owners"])
+    if {"Facet", "Level"}.issubset(out.columns):
+        row_keys = list(zip(out["Facet"].astype(str), out["Level"].astype(str)))
+        out["UnboundedFacetEstimate"] = pd.Series([k in unbounded_levels for k in row_keys], index=out.index, dtype=bool)
+        if b_audit["active"]:
+            obs_cats = b_audit["observed_categories"]
+            out["ObservedCategories"] = pd.Series([obs_cats.get(k, pd.NA) for k in row_keys], index=out.index, dtype="Int64")
+        else:
+            out["ObservedCategories"] = pd.Series([pd.NA] * len(out), index=out.index, dtype="Int64")
+    else:
+        out["UnboundedFacetEstimate"] = pd.Series(False, index=out.index, dtype=bool)
+        out["ObservedCategories"] = pd.Series([pd.NA] * len(out), index=out.index, dtype="Int64")
+    person = out.get("Facet", pd.Series("", index=out.index)).astype(str).eq("Person")
+    boundary = (result.get("person_boundary") or {}) if isinstance(result, dict) else {}
+    persons = boundary.get("persons") if isinstance(boundary, dict) else None
+    if isinstance(persons, pd.DataFrame) and "Person" in persons.columns and "Level" in out.columns:
+        lookup = persons.drop_duplicates("Person").set_index("Person")
+        matched = person & out["Level"].astype(str).isin(lookup.index.astype(str))
+        lookup.index = lookup.index.astype(str)
+        for column in ("ExtremeScoreDirection", "FiniteJMLEEstimate", "PersonInferenceReady", "ReportableEstimate"):
+            if column in lookup.columns and matched.any():
+                if column not in out.columns:
+                    out[column] = pd.Series(None, index=out.index, dtype=object)
+                out.loc[matched, column] = out.loc[matched, "Level"].astype(str).map(lookup[column])
+
+    fixed_pairs = _fixed_level_lookup(result)
+    if {"Facet", "Level"}.issubset(out.columns) and fixed_pairs:
+        fixed_mask = pd.Series(
+            [(f, lv) in fixed_pairs for f, lv in zip(out["Facet"].astype(str), out["Level"].astype(str))],
+            index=out.index,
+            dtype=bool,
+        )
+    elif "Fixed" in out.columns:
+        fixed_mask = out["Fixed"].eq(True).fillna(False)
+    else:
+        fixed_mask = pd.Series(False, index=out.index, dtype=bool)
+    out["Fixed"] = fixed_mask
+
+    person_held = pd.Series(False, index=out.index)
+    for column in ("FiniteJMLEEstimate", "PersonInferenceReady"):
+        if column in out.columns:
+            person_held |= person & out[column].eq(False).fillna(False)
+    endpoint = out.get("ExtremeScoreDirection", pd.Series("", index=out.index)).astype(str).isin({"all_minimum", "all_maximum"})
+    extreme_person = person_held & endpoint & out.get("FiniteJMLEEstimate", pd.Series(True, index=out.index)).eq(False).fillna(False)
+
+    se_raw = pd.to_numeric(out.get("ModelSE", out.get("SE", pd.Series(np.nan, index=out.index))), errors="coerce")
+    infit_vals = pd.to_numeric(out.get("Infit", pd.Series(np.nan, index=out.index)), errors="coerce")
+    model_se = se_raw.where(~fixed_mask & np.isfinite(se_raw) & (se_raw > 0), np.nan)
+    real_se = pd.Series(
+        np.where(np.isfinite(model_se) & np.isfinite(infit_vals), model_se * np.sqrt(np.maximum(infit_vals, 1.0)), np.nan),
+        index=out.index,
+        dtype=float,
+    )
+    out["ModelSE"] = model_se
+    out["RealSE"] = real_se
+
+    ci_level = pd.to_numeric(out.get("CI_Level", pd.Series(0.95, index=out.index)), errors="coerce").fillna(0.95)
+    est_num = pd.to_numeric(out.get("Estimate", pd.Series(np.nan, index=out.index)), errors="coerce")
+    z_arr = np.array([float(_norm.ppf((1.0 + float(lv)) / 2.0)) if 0 < float(lv) < 1 else 1.959963984540054 for lv in ci_level])
+    raw_ci_lo = pd.to_numeric(out.get("CI_Lower", pd.Series(np.nan, index=out.index)), errors="coerce")
+    raw_ci_hi = pd.to_numeric(out.get("CI_Upper", pd.Series(np.nan, index=out.index)), errors="coerce")
+    calc_lo = est_num - z_arr * model_se
+    calc_hi = est_num + z_arr * model_se
+    if "CI_Lower" not in out.columns or "CI_Upper" not in out.columns:
+        out["CI_Lower"] = calc_lo
+        out["CI_Upper"] = calc_hi
+
+    config = result.get("config", {}) if isinstance(result.get("config"), dict) else {}
+    method = str(config.get("method", "")).upper()
+    run_state = _output_qualification.run_qualification_state(result)
+    block_reason = str(run_state["screening_block_reason"])
+    ident_state = str(run_state["identifiability_state"])
+
+    # Recover underlying method basis even when an older 0.1.0 archive saved SE_Status="calibration_inference_withheld".
+    se_method_str = out.get("SE_Method", pd.Series("", index=out.index)).fillna("").astype(str)
+    saved_se_status = out.get("SavedSE_Status", out.get("SE_Status", pd.Series("", index=out.index))).fillna("").astype(str)
+    cov_status = out.get("SE_CovarianceStatus", pd.Series("", index=out.index)).fillna("").astype(str)
+
+    has_se_status_col = "SE_Status" in raw.columns
+    is_posterior = (
+        se_method_str.str.contains("latent-ability posterior SD", case=False, regex=False)
+        & (saved_se_status.isin({"posterior_eap_sd", "calibration_inference_withheld"}) if has_se_status_col else True)
+    ) | (se_method_str.eq("") & saved_se_status.eq("posterior_eap_sd"))
+    is_mml_obs_info = (
+        se_method_str.str.contains("MML observed-information delta", case=False, regex=False)
+        & (saved_se_status.isin({"ok", "regularized", "rank_deficient", "unsupported_covariance_scope", "calibration_inference_withheld"}) if has_se_status_col else True)
+    )
+    is_conditional = (
+        se_method_str.str.contains("conditional information approximation", case=False, regex=False)
+        & (saved_se_status.isin({"conditional_approximation", "calibration_inference_withheld"}) if has_se_status_col else True)
+    ) | (se_method_str.eq("") & saved_se_status.eq("conditional_approximation"))
+    cov_bad = cov_status.isin({"regularized", "rank_deficient", "unsupported_covariance_scope"}) | saved_se_status.isin({"regularized", "rank_deficient", "unsupported_covariance_scope"})
+
+    basis_list: list[str] = []
+    se_use_list: list[str] = []
+    ci_use_list: list[str] = []
+    reason_list: list[str] = []
+    eff_se_status: list[str] = []
+    eff_ci_status: list[str] = []
+
+    facet_col_strs = out["Facet"].astype(str) if "Facet" in out.columns else pd.Series("", index=out.index)
+    disconnected_facets = set(b_audit["disconnected_facets"]) if b_audit["active"] else set()
+    for pos in range(len(out)):
+        if bool(fixed_mask.iloc[pos]):
+            basis_list.append("Fixed constraint")
+            se_use_list.append("not_applicable")
+            ci_use_list.append("not_applicable")
+            reason_list.append("stat.constraint.fixed_value")
+            eff_se_status.append("fixed_constraint")
+            eff_ci_status.append("fixed_constraint")
+            continue
+        if bool(extreme_person.iloc[pos]):
+            basis_list.append("No finite JMLE")
+            se_use_list.append("withheld")
+            ci_use_list.append("withheld")
+            reason_list.append("stat.jmle.no_finite_jmle")
+            eff_se_status.append("person_inference_withheld")
+            eff_ci_status.append("person_inference_withheld")
+            continue
+        if block_reason:
+            basis_list.append("Withheld")
+            se_use_list.append("withheld")
+            ci_use_list.append("withheld")
+            reason_list.append(block_reason)
+            eff_se_status.append("calibration_inference_withheld")
+            eff_ci_status.append("calibration_inference_withheld")
+            continue
+        if method == "MML" and str(facet_col_strs.iloc[pos]) in disconnected_facets:
+            basis_list.append("Withheld")
+            se_use_list.append("withheld")
+            ci_use_list.append("withheld")
+            reason_list.append(_output_qualification.MML_DISCONNECTED_HOLD_REASON)
+            eff_se_status.append("calibration_inference_withheld")
+            eff_ci_status.append("calibration_inference_withheld")
+            continue
+        if bool(person_held.iloc[pos]):
+            basis_list.append("Withheld")
+            se_use_list.append("withheld")
+            ci_use_list.append("withheld")
+            reason_list.append("stat.jmle.person_inference_withheld")
+            eff_se_status.append("person_inference_withheld")
+            eff_ci_status.append("person_inference_withheld")
+            continue
+        if bool(is_mml_obs_info.iloc[pos]) and bool(cov_bad.iloc[pos]):
+            basis_list.append("Withheld")
+            se_use_list.append("withheld")
+            ci_use_list.append("withheld")
+            reason_list.append("stat.stat_003.covariance_rank_deficient")
+            eff_se_status.append("rank_deficient")
+            eff_ci_status.append("rank_deficient")
+            continue
+        mse = float(model_se.iloc[pos]) if pd.notna(model_se.iloc[pos]) else np.nan
+        if not np.isfinite(mse) or mse <= 0:
+            basis_list.append("Unavailable")
+            se_use_list.append("unavailable")
+            ci_use_list.append("unavailable")
+            reason_list.append("stat.uncertainty.se_unavailable")
+            eff_se_status.append("not_available")
+            eff_ci_status.append("not_available")
+            continue
+        if bool(is_posterior.iloc[pos]):
+            basis_list.append("Posterior SD")
+            se_use_list.append("screening_only")
+            ci_use_list.append("screening_only")
+            reason_list.append("stat.mml_fixed_sd.eap_posterior_sd_screening_only")
+            eff_se_status.append("posterior_eap_sd")
+            eff_ci_status.append("posterior_interval_approximation")
+        elif bool(is_mml_obs_info.iloc[pos]) and (cov_status.iloc[pos] == "ok" or saved_se_status.iloc[pos] in {"ok", "calibration_inference_withheld"}):
+            basis_list.append("Observed info (fixed-SD)")
+            se_use_list.append("screening_only")
+            ci_use_list.append("screening_only")
+            reason_list.append("stat.mml_fixed_sd.observed_info_screening_only")
+            eff_se_status.append("ok")
+            eff_ci_status.append("ok")
+        elif bool(is_conditional.iloc[pos]):
+            if method == "JMLE" and ident_state == "audit_size_limit":
+                basis_list.append("Conditional (audit size limit)")
+                reason_list.append(_output_qualification.JMLE_AUDIT_SIZE_LIMIT_HOLD_REASON)
+            elif method == "MML":
+                basis_list.append("Conditional (fallback)")
+                reason_list.append("stat.mml_fixed_sd.fallback_conditional_se_screening_only")
+            else:
+                basis_list.append("Conditional")
+                reason_list.append("stat.jmle.conditional_se_screening_only")
+            se_use_list.append("screening_only")
+            ci_use_list.append("screening_only")
+            eff_se_status.append("conditional_approximation")
+            eff_ci_status.append("conditional_approximation")
+        else:
+            basis_list.append("Unverified")
+            se_use_list.append("withheld")
+            ci_use_list.append("withheld")
+            reason_list.append("stat.uncertainty.basis_unverified")
+            eff_se_status.append(saved_se_status.iloc[pos] or "unverified")
+            eff_ci_status.append(saved_se_status.iloc[pos] or "unverified")
+
+    out["Basis"] = basis_list
+    out["SEUse"] = se_use_list
+    out["CIUse"] = ci_use_list
+    out["SupportsFormalInference"] = False
+    out["StatusReason"] = reason_list
+    out["EffectiveSE_Status"] = eff_se_status
+    out["EffectiveCI_Status"] = eff_ci_status
+    ci_screen = pd.Series(ci_use_list, index=out.index).eq("screening_only")
+    out["EffectiveCI_Lower"] = raw_ci_lo.where(np.isfinite(raw_ci_lo), calc_lo).where(ci_screen, np.nan)
+    out["EffectiveCI_Upper"] = raw_ci_hi.where(np.isfinite(raw_ci_hi), calc_hi).where(ci_screen, np.nan)
+    out["RunQualificationState"] = str(run_state["state"])
     return out
 
 
@@ -5592,6 +6090,12 @@ def compute_obs_table(res):
     df["Residual"] = df["Observed"] - df["Expected"]
     df["StdResidual"] = df["Residual"] / np.sqrt(df["Var"])
     df["StdSq"] = std_sq
+    boundary_persons = _boundary_person_set(res)
+    df["FitBoundaryProxy"] = (
+        df["Person"].astype(str).isin(boundary_persons)
+        if "Person" in df.columns and boundary_persons
+        else False
+    )
 
     # ---- Per-observation diagnostics for polytomous person-fit ----
     # These six columns are the inputs to the Drasgow (1985) lz statistic
@@ -5709,6 +6213,90 @@ def get_weights(df):
     return np.ones(len(df), dtype=float)
 
 
+def _summarize_fit_scope_row(
+    df: pd.DataFrame,
+    *,
+    whexact: bool = False,
+    zstd_transform=None,
+) -> dict[str, object]:
+    n_rows = int(len(df))
+    raw_w = (
+        pd.to_numeric(df["Weight"], errors="coerce").to_numpy(dtype=float)
+        if "Weight" in df.columns
+        else np.ones(n_rows, dtype=float)
+    )
+    w_ok = np.isfinite(raw_w) & (raw_w > 0)
+    w = np.where(w_ok, raw_w, 0.0)
+    std_sq = pd.to_numeric(df["StdSq"], errors="coerce").to_numpy(dtype=float) if "StdSq" in df.columns else np.full(n_rows, np.nan)
+    var = pd.to_numeric(df["Var"], errors="coerce").to_numpy(dtype=float) if "Var" in df.columns else np.full(n_rows, np.nan)
+    obs_vals = pd.to_numeric(df["Observed"], errors="coerce").to_numpy(dtype=float) if "Observed" in df.columns else np.full(n_rows, np.nan)
+    exp_vals = pd.to_numeric(df["Expected"], errors="coerce").to_numpy(dtype=float) if "Expected" in df.columns else np.full(n_rows, np.nan)
+    fourth = (
+        pd.to_numeric(df["FourthCentralMoment"], errors="coerce").to_numpy(dtype=float)
+        if "FourthCentralMoment" in df.columns
+        else np.full(n_rows, np.nan)
+    )
+    b_proxy = (
+        df["FitBoundaryProxy"].fillna(False).to_numpy(dtype=bool)
+        if "FitBoundaryProxy" in df.columns
+        else np.zeros(n_rows, dtype=bool)
+    )
+    b_limit_zero = b_proxy & ~np.isfinite(var) & np.isfinite(obs_vals) & np.isfinite(exp_vals) & (np.abs(obs_vals - exp_vals) < 1e-4) & w_ok
+    avail = (np.isfinite(std_sq) & (std_sq >= 0) & np.isfinite(var) & (var > 0) & w_ok) | b_limit_zero
+    n_avail = int(avail.sum())
+    n_unavail = int(n_rows - n_avail)
+    n_boundary = int(b_proxy.sum())
+    n_weighted = float(np.sum(w)) if w_ok.all() and n_rows > 0 else float(np.nansum(w))
+    if n_rows > 0 and n_unavail == 0:
+        var_eff = np.where(b_limit_zero, 0.0, var)
+        std_sq_eff = np.where(b_limit_zero, 0.0, std_sq)
+        df_infit = float(np.sum(var_eff * w))
+        df_outfit = float(np.sum(w))
+        infit = float(np.sum(std_sq_eff * var_eff * w) / df_infit) if df_infit > 1e-10 else np.nan
+        outfit = float(np.sum(std_sq_eff * w) / df_outfit) if df_outfit > 0 and df_infit > 1e-10 else np.nan
+        denom_infit, denom_outfit = _facets_fit_df_terms(var, fourth, w)
+        df_infit_facets, df_outfit_facets = _facets_fit_df(df_infit, df_outfit, denom_infit, denom_outfit)
+    else:
+        infit = outfit = df_infit = df_outfit = df_infit_facets = df_outfit_facets = np.nan
+    return {
+        "N": n_weighted,
+        "Infit": infit,
+        "Outfit": outfit,
+        "InfitZSTD": zstd_from_mnsq(infit, df_infit, whexact=whexact, zstd_transform=zstd_transform),
+        "OutfitZSTD": zstd_from_mnsq(outfit, df_outfit, whexact=whexact, zstd_transform=zstd_transform),
+        "DF_Infit": df_infit,
+        "DF_Outfit": df_outfit,
+        "DF_Infit_FACETS": df_infit_facets,
+        "DF_Outfit_FACETS": df_outfit_facets,
+        "FitResponseRows": n_rows,
+        "FitAvailableRows": n_avail,
+        "FitUnavailableRows": n_unavail,
+        "FitBoundaryRows": n_boundary,
+    }
+
+
+def _finalize_fit_safeguards(tbl: pd.DataFrame, fit_df_method: str) -> pd.DataFrame:
+    if tbl.empty:
+        return tbl
+    out = qualify_fit_table(tbl, result=None, obs_df=None)
+    method = _resolve_fit_df_method(fit_df_method)
+    if method == "both" and "FitReason" in out.columns:
+        boundary_rows = pd.to_numeric(out.get("FitBoundaryRows", pd.Series(0, index=out.index)), errors="coerce").fillna(0)
+        for stat, col in (("Infit", "DF_Infit_FACETS"), ("Outfit", "DF_Outfit_FACETS")):
+            if col in out.columns:
+                d_vals = pd.to_numeric(out[col], errors="coerce")
+                mask = (boundary_rows == 0) & out["FitStatus"].ne("unavailable") & (~np.isfinite(d_vals) | (d_vals < 1.0))
+                if mask.any():
+                    out.loc[mask, "FitReason"] = (
+                        out.loc[mask, "FitReason"].astype(str)
+                        + f" {stat} FACETS-style ZSTD is unavailable: its degrees of freedom are below 1."
+                    )
+    for col in list(out.columns):
+        if col.startswith("Saved"):
+            out = out.drop(columns=col)
+    return out
+
+
 def calc_overall_fit(
     obs_df,
     whexact: bool = False,
@@ -5717,46 +6305,17 @@ def calc_overall_fit(
     *,
     zstd_transform=None,
 ):
-    """Overall Infit / Outfit mean-square with optional FACETS d.f.
-
-    The primary ``InfitZSTD`` / ``OutfitZSTD`` columns use the FACETS /
-    Wright-Masters Welch-Satterthwaite d.f. by default and retain the
-    historical engine values under ``*_ENGINE`` sidecar columns. Pass
-    ``fit_df_method="engine"`` for the explicit legacy convention, or
-    ``"both"`` for an engine-primary comparison view. The
-    ``facets_zstd_cap`` argument (default 9.0) bounds the FACETS ZSTD
-    on extreme cells to match the FACETS software convention.
-    """
-    w = get_weights(obs_df)
-    var = pd.to_numeric(obs_df["Var"], errors="coerce").to_numpy(dtype=float)
-    fourth = (
-        pd.to_numeric(obs_df.get("FourthCentralMoment"), errors="coerce").to_numpy(dtype=float)
-        if "FourthCentralMoment" in obs_df.columns
-        else np.full(len(obs_df), np.nan)
-    )
-    infit = np.nansum(obs_df["StdSq"] * obs_df["Var"] * w) / np.nansum(obs_df["Var"] * w)
-    outfit = np.nansum(obs_df["StdSq"] * w) / np.nansum(w)
-    df_infit = float(np.nansum(obs_df["Var"] * w))
-    df_outfit = float(np.nansum(w))
-    denom_infit, denom_outfit = _facets_fit_df_terms(var, fourth, w)
-    df_infit_facets, df_outfit_facets = _facets_fit_df(df_infit, df_outfit, denom_infit, denom_outfit)
-    tbl = pd.DataFrame({
-        "Infit": [infit],
-        "Outfit": [outfit],
-        "InfitZSTD": [zstd_from_mnsq(infit, df_infit, whexact=whexact, zstd_transform=zstd_transform)],
-        "OutfitZSTD": [zstd_from_mnsq(outfit, df_outfit, whexact=whexact, zstd_transform=zstd_transform)],
-        "DF_Infit": [df_infit],
-        "DF_Outfit": [df_outfit],
-        "DF_Infit_FACETS": [df_infit_facets],
-        "DF_Outfit_FACETS": [df_outfit_facets],
-    })
-    return _apply_fit_df_method(
-        tbl,
+    """Overall Infit / Outfit mean-square with low-df and boundary safeguards."""
+    row = _summarize_fit_scope_row(obs_df, whexact=whexact, zstd_transform=zstd_transform)
+    row.pop("N", None)
+    tbl = _apply_fit_df_method(
+        pd.DataFrame([row]),
         fit_df_method=fit_df_method,
         whexact=whexact,
         zstd_transform=zstd_transform,
         facets_zstd_cap=facets_zstd_cap,
     )
+    return _finalize_fit_safeguards(tbl, fit_df_method)
 
 
 def calc_facet_fit(
@@ -5768,47 +6327,21 @@ def calc_facet_fit(
     *,
     zstd_transform=None,
 ):
-    """Per-facet/-level Infit / Outfit mean-square with optional FACETS d.f."""
+    """Per-facet/-level Infit / Outfit mean-square with low-df and boundary safeguards."""
     rows = []
-    has_fourth = "FourthCentralMoment" in obs_df.columns
     for facet in facet_cols:
         grp = obs_df.groupby(facet, observed=False)
         for level, df in grp:
-            w = get_weights(df)
-            infit = np.nansum(df["StdSq"] * df["Var"] * w) / np.nansum(df["Var"] * w)
-            outfit = np.nansum(df["StdSq"] * w) / np.nansum(w)
-            df_infit = float(np.nansum(df["Var"] * w))
-            df_outfit = float(np.nansum(w))
-            var = pd.to_numeric(df["Var"], errors="coerce").to_numpy(dtype=float)
-            fourth = (
-                pd.to_numeric(df["FourthCentralMoment"], errors="coerce").to_numpy(dtype=float)
-                if has_fourth
-                else np.full(len(df), np.nan)
-            )
-            denom_infit, denom_outfit = _facets_fit_df_terms(var, fourth, w)
-            df_infit_facets, df_outfit_facets = _facets_fit_df(
-                df_infit, df_outfit, denom_infit, denom_outfit
-            )
-            rows.append({
-                "Facet": facet,
-                "Level": level,
-                "N": np.nansum(w),
-                "Infit": infit,
-                "Outfit": outfit,
-                "InfitZSTD": zstd_from_mnsq(infit, df_infit, whexact=whexact, zstd_transform=zstd_transform),
-                "OutfitZSTD": zstd_from_mnsq(outfit, df_outfit, whexact=whexact, zstd_transform=zstd_transform),
-                "DF_Infit": df_infit,
-                "DF_Outfit": df_outfit,
-                "DF_Infit_FACETS": df_infit_facets,
-                "DF_Outfit_FACETS": df_outfit_facets,
-            })
-    return _apply_fit_df_method(
+            row = _summarize_fit_scope_row(df, whexact=whexact, zstd_transform=zstd_transform)
+            rows.append({"Facet": facet, "Level": level, **row})
+    tbl = _apply_fit_df_method(
         pd.DataFrame(rows),
         fit_df_method=fit_df_method,
         whexact=whexact,
         zstd_transform=zstd_transform,
         facets_zstd_cap=facets_zstd_cap,
     )
+    return _finalize_fit_safeguards(tbl, fit_df_method)
 
 
 def calc_facet_se(obs_df, facet_cols):
@@ -5970,8 +6503,8 @@ def calc_bias_interactions(obs_df, facet_cols, pairs=None, top_n=20):
         se_std[pos_n] = 1.0 / np.sqrt(n_arr[pos_n])
         df_chi = np.where(n_arr > 1.0, n_arr - 1.0, np.nan)
 
-        t_resid = np.where(np.isfinite(se_resid) & (se_resid > 0), mean_resid / se_resid, np.nan)
-        t_std = np.where(np.isfinite(se_std) & (se_std > 0), mean_std_resid / se_std, np.nan)
+        t_resid = np.divide(mean_resid, se_resid, out=np.full(n_cells, np.nan, dtype=float), where=np.isfinite(se_resid) & (se_resid > 0))
+        t_std = np.divide(mean_std_resid, se_std, out=np.full(n_cells, np.nan, dtype=float), where=np.isfinite(se_std) & (se_std > 0))
 
         p_resid = np.full(n_cells, np.nan, dtype=float)
         ok_pr = np.isfinite(df_chi) & np.isfinite(t_resid)
@@ -6072,7 +6605,7 @@ def compute_empirical_bayes_shrinkage(
                 tau2 = max(0.0, float(np.mean(est ** 2) - np.mean(se ** 2)))
                 tau_source = "method-of-moments EB"
             denom = tau2 + se ** 2
-            b = np.where(denom > 0, se ** 2 / denom, 1.0)
+            b = np.divide(se ** 2, denom, out=np.ones_like(denom, dtype=float), where=denom > 0)
             b = np.clip(b, 0.0, 1.0)
             shrunk = (1.0 - b) * est
             shrunk_se = np.sqrt(np.maximum((1.0 - b) * se ** 2, 0.0))
@@ -7953,6 +8486,13 @@ def annotate_measure_uncertainty(measures, res, obs_df=None, *, ci_level=0.95):
 
     est = pd.to_numeric(out.get("Estimate", pd.Series(dtype=float)), errors="coerce")
     se = pd.to_numeric(out.get("SE", pd.Series(dtype=float)), errors="coerce")
+    infit_vals = pd.to_numeric(out.get("Infit", pd.Series(np.nan, index=out.index)), errors="coerce")
+    out["ModelSE"] = se
+    out["RealSE"] = np.where(
+        np.isfinite(se) & (se > 0) & np.isfinite(infit_vals),
+        se * np.sqrt(np.maximum(infit_vals, 1.0)),
+        np.nan,
+    )
     needs_ci = out["CI_Lower"].isna() | out["CI_Upper"].isna() if {"CI_Lower", "CI_Upper"}.issubset(out.columns) else pd.Series(True, index=out.index)
     out.loc[needs_ci, "CI_Lower"] = est.loc[needs_ci] - z * se.loc[needs_ci]
     out.loc[needs_ci, "CI_Upper"] = est.loc[needs_ci] + z * se.loc[needs_ci]

@@ -192,77 +192,227 @@ def observed_results_text(result: dict) -> str:
     )
 
 
-def publication_measure_table(result: dict, diagnostics: dict, *, fit_note: str) -> tuple[pd.DataFrame, str]:
-    """Keep uncertainty meaning visible within the Word/PDF column limits."""
-    from mfrm_app.engine import qualify_measure_uncertainty
+def publication_measure_table(
+    result: dict,
+    diagnostics: dict,
+    *,
+    fit_note: str,
+    extended: bool = False,
+) -> tuple[pd.DataFrame, str]:
+    """Shared qualified measure and fit table across tables, HTML, CSV, Word/PDF, and reloaded projects."""
+    from mfrm_app.engine import qualify_measures_for_reporting
 
-    measures = qualify_measure_uncertainty(diagnostics.get("measures"), result)
-    if not isinstance(measures, pd.DataFrame) or measures.empty:
+    diagnostics = diagnostics or {}
+    qualified = qualify_measures_for_reporting(
+        diagnostics.get("measures"),
+        result,
+        obs_df=diagnostics.get("obs"),
+    )
+    if not isinstance(qualified, pd.DataFrame) or qualified.empty:
         return pd.DataFrame(), ""
-    columns = [c for c in ("Facet", "Level", "Estimate", "Infit", "Outfit", "SE", "CI_Lower", "CI_Upper", "CI_Level")
-               if c in measures]
-    out = measures[columns].copy().round(3)
-    status = measures.get("SE_Status", pd.Series("", index=measures.index)).astype(str)
-    basis = status.map({"conditional_approximation": "Conditional", "posterior_eap_sd": "Posterior SD",
-                        "ok": "Technical"}).fillna("Unverified")
-    ci_status = measures.get("CI_Status", pd.Series("", index=measures.index)).astype(str)
-    held = status.isin({"calibration_inference_withheld", "regularized", "rank_deficient",
-                       "unsupported_covariance_scope"}) | ci_status.eq("calibration_inference_withheld")
-    held |= bool(current_manuscript_hold(result))
-    person_held = status.eq("person_inference_withheld") | ci_status.eq("person_inference_withheld")
+
+    person = qualified.get("Facet", pd.Series("", index=qualified.index)).astype(str).eq("Person")
+    person_held = pd.Series(False, index=qualified.index)
     for column in ("FiniteJMLEEstimate", "PersonInferenceReady"):
-        if column in measures:
-            person_held |= measures.Facet.eq("Person") & measures[column].eq(False).fillna(False)
-    held |= person_held
-    basis.loc[held] = "Withheld"
-    if "FiniteJMLEEstimate" in measures:
-        endpoint = measures.get("ExtremeScoreDirection", pd.Series("", index=measures.index)).isin(
-            {"all_minimum", "all_maximum"})
-        basis.loc[person_held & endpoint & measures.FiniteJMLEEstimate.eq(False).fillna(False)] = "No finite JMLE"
-    for column in ("SE", "CI_Lower", "CI_Upper", "CI_Level"):
-        if column in out:
-            out.loc[held, column] = np.nan
-    for column in ("Estimate", "Infit", "Outfit"):
-        if column in out:
-            out.loc[person_held, column] = np.nan
-    out = out.rename(columns={"SE": "SE / SD", "CI_Lower": "Lower", "CI_Upper": "Upper",
-                              "CI_Level": "Interval level"})
-    out["Basis"] = basis
+        if column in qualified.columns:
+            person_held |= person & qualified[column].eq(False).fillna(False)
+    unbounded_facet = qualified.get("UnboundedFacetEstimate", pd.Series(False, index=qualified.index)).eq(True).fillna(False)
+    level_held = person_held | unbounded_facet
+    # Only mask Estimate/Fit on level-specific boundary holds, not run-level screening-eligible holds.
+    se_eligible = qualified["SEUse"].eq("screening_only")
+    ci_eligible = qualified["CIUse"].eq("screening_only")
+
+    est_col = pd.to_numeric(qualified.get("Estimate", pd.Series(np.nan, index=qualified.index)), errors="coerce").where(~level_held, np.nan).round(3)
+    model_se_col = pd.to_numeric(qualified.get("ModelSE", pd.Series(np.nan, index=qualified.index)), errors="coerce").where(se_eligible, np.nan).round(3)
+    real_se_col = pd.to_numeric(qualified.get("RealSE", pd.Series(np.nan, index=qualified.index)), errors="coerce").where(se_eligible, np.nan).round(3)
+    lo_col = pd.to_numeric(qualified.get("CI_Lower", pd.Series(np.nan, index=qualified.index)), errors="coerce").where(ci_eligible, np.nan).round(3)
+    hi_col = pd.to_numeric(qualified.get("CI_Upper", pd.Series(np.nan, index=qualified.index)), errors="coerce").where(ci_eligible, np.nan).round(3)
+    lvl_col = pd.to_numeric(qualified.get("CI_Level", pd.Series(0.95, index=qualified.index)), errors="coerce").where(ci_eligible, np.nan).round(3)
+    infit_col = pd.to_numeric(qualified.get("Infit", pd.Series(np.nan, index=qualified.index)), errors="coerce").where(~level_held, np.nan).round(3)
+    outfit_col = pd.to_numeric(qualified.get("Outfit", pd.Series(np.nan, index=qualified.index)), errors="coerce").where(~level_held, np.nan).round(3)
+    basis = qualified["Basis"].astype(str)
+
+    if not extended:
+        out = pd.DataFrame({
+            "Facet": qualified["Facet"].astype(str),
+            "Level": qualified["Level"].astype(str),
+            "Estimate": est_col,
+        })
+        if "Infit" in qualified.columns:
+            out["Infit"] = infit_col
+        if "Outfit" in qualified.columns:
+            out["Outfit"] = outfit_col
+        if "SE" in qualified.columns or "ModelSE" in qualified.columns:
+            out["SE / SD"] = model_se_col
+        if "CI_Lower" in qualified.columns or extended:
+            out["Lower"] = lo_col
+        if "CI_Upper" in qualified.columns or extended:
+            out["Upper"] = hi_col
+        if "CI_Level" in qualified.columns:
+            out["Interval level"] = lvl_col
+        out["Basis"] = basis
+    else:
+        infit_z = pd.to_numeric(qualified.get("InfitZSTD", pd.Series(np.nan, index=qualified.index)), errors="coerce").where(~level_held, np.nan).round(3)
+        outfit_z = pd.to_numeric(qualified.get("OutfitZSTD", pd.Series(np.nan, index=qualified.index)), errors="coerce").where(~level_held, np.nan).round(3)
+        df_infit = pd.to_numeric(qualified.get("DF_Infit", pd.Series(np.nan, index=qualified.index)), errors="coerce").where(~level_held, np.nan).round(3)
+        df_outfit = pd.to_numeric(qualified.get("DF_Outfit", pd.Series(np.nan, index=qualified.index)), errors="coerce").where(~level_held, np.nan).round(3)
+        out = pd.DataFrame({
+            "Facet": qualified["Facet"].astype(str),
+            "Level": qualified["Level"].astype(str),
+            "Estimate": est_col,
+            "ModelSE": model_se_col,
+            "RealSE": real_se_col,
+            "SE / SD": model_se_col,
+            "Lower": lo_col,
+            "Upper": hi_col,
+            "Interval level": lvl_col,
+            "Infit": infit_col,
+            "Outfit": outfit_col,
+            "InfitZSTD": infit_z,
+            "OutfitZSTD": outfit_z,
+            "DF_Infit": df_infit,
+            "DF_Outfit": df_outfit,
+            "FitStatus": qualified["FitStatus"].astype(str),
+            "FitReason": qualified["FitReason"].astype(str),
+            "Basis": basis,
+            "SEUse": qualified["SEUse"].astype(str),
+            "CIUse": qualified["CIUse"].astype(str),
+            "SupportsFormalInference": qualified["SupportsFormalInference"].astype(bool),
+            "StatusReason": qualified["StatusReason"].astype(str),
+        })
+        if "ObservedCategories" in qualified.columns and qualified["ObservedCategories"].notna().any():
+            out["ObservedCategories"] = qualified["ObservedCategories"].astype("Int64")
+        if "SavedEstimate" in qualified.columns and unbounded_facet.any():
+            sv_est = pd.to_numeric(qualified["SavedEstimate"], errors="coerce").round(3)
+            if (unbounded_facet & sv_est.notna()).any():
+                out["SavedEstimate"] = sv_est.where(unbounded_facet, np.nan)
+        if "SavedUncertaintyReasonCode" in qualified.columns:
+            saved_rc = qualified["SavedUncertaintyReasonCode"].fillna("").astype(str)
+            if (saved_rc.ne("") & saved_rc.ne(out["StatusReason"])).any():
+                out["SavedReasonCode"] = saved_rc
+        if "SavedSE_Status" in qualified.columns:
+            saved_st = qualified["SavedSE_Status"].fillna("").astype(str)
+            if (saved_st.ne("") & saved_st.ne(qualified["EffectiveSE_Status"].astype(str))).any():
+                out["SavedSE_Status"] = saved_st
+        for raw_z, saved_z in (("InfitZSTD", "SavedInfitZSTD"), ("OutfitZSTD", "SavedOutfitZSTD")):
+            if saved_z in qualified.columns:
+                sv = pd.to_numeric(qualified[saved_z], errors="coerce").round(3)
+                cur = pd.to_numeric(out[raw_z], errors="coerce")
+                changed = sv.notna() & (cur.isna() | ~np.isclose(sv.fillna(0.0), cur.fillna(0.0), atol=1e-6))
+                if changed.any():
+                    out[saved_z] = sv
+
     notes = {
-        "Conditional": "Conditional: other fitted parameters are held fixed; intervals are screening approximations.",
-        "Posterior SD": "Posterior SD: conditional posterior spread, not the sampling SE of EAP; intervals are normal approximations, not posterior quantiles.",
-        "Technical": "Technical: structural covariance values are retained for audit; interval coverage has not been qualified.",
-        "Unverified": "Unverified: the uncertainty method is not established; do not treat these numbers as validated SEs or intervals.",
-        "Withheld": "Withheld: interpretation is on hold; estimates are technical terminal-point values. SE/SD and interval cells are blank.",
-        "No finite JMLE": "No finite JMLE: all ratings for this person are at a scale endpoint. The person estimate, fit, SE and interval cells are blank; optimizer terminal values remain in the technical record.",
+        "Conditional": (
+            "Conditional: other fitted parameters are held fixed; "
+            "exploratory normal bands are screening_only (SupportsFormalInference=FALSE)."
+        ),
+        "Conditional (audit size limit)": (
+            "Conditional (audit size limit): exact dense JMLE rank audit exceeded its size limit "
+            "(stat.jmle.identifiability_audit_size_limit); conditional SEs and intervals are screening_only (SupportsFormalInference=FALSE)."
+        ),
+        "Conditional (fallback)": (
+            "Conditional (fallback): observation-table conditional SE fallback; "
+            "intervals are screening_only (SupportsFormalInference=FALSE)."
+        ),
+        "Posterior SD": (
+            "Posterior SD: conditional posterior spread given fitted parameters, not the sampling SE of EAP; "
+            "normal bands are screening_only (SupportsFormalInference=FALSE)."
+        ),
+        "Observed info (fixed-SD)": (
+            "Observed info (fixed-SD): MML observed-information delta-method SE under fixed population SD; "
+            "general-table normal bands are screening_only (SupportsFormalInference=FALSE; use Specified intervals for target-checked pointwise intervals)."
+        ),
+        "Fixed constraint": "Fixed constraint: parameter fixed by anchor or single-level constraint; SE and interval are not applicable.",
+        "Unverified": "Unverified: the uncertainty method is not established; SE/SD and interval cells are blank.",
+        "Unavailable": "Unavailable: finite positive standard error was not available; SE/SD and interval cells are blank.",
+        "Withheld (non-converged)": (
+            "Withheld (non-converged): optimizer termination was not established "
+            "(stat.estimation.optimizer_termination_unverified); estimates are technical terminal-point values and SE/SD and interval cells are blank."
+        ),
+        "Withheld (unidentifiable)": (
+            "Withheld (unidentifiable): linear predictor is structurally rank-deficient "
+            "(stat.jmle.eta_rank_deficient); estimates are technical terminal-point values and SE/SD and interval cells are blank."
+        ),
+        "Withheld (rank-deficient covariance)": (
+            "Withheld (rank-deficient covariance): MML observed-information covariance is rank-deficient or regularized; "
+            "SE/SD and interval cells are blank."
+        ),
+        "Withheld": (
+            "Withheld: interpretation is on hold; estimates are technical terminal-point values. SE/SD and interval cells are blank."
+        ),
+        "No finite JMLE": (
+            "No finite JMLE: all ratings for this person are at a scale endpoint. "
+            "The person estimate, fit, SE and interval cells are blank; optimizer terminal values remain in the technical record."
+        ),
     }
+    fit_statuses = set(qualified.get("FitStatus", pd.Series(dtype=str)).astype(str))
+    fit_guard_note = ""
+    if "zstd_unavailable_boundary_proxy" in fit_statuses:
+        fit_guard_note += " ZSTD is blank where scope includes JMLE extreme-score boundary proxies."
+    if "zstd_unavailable_low_df" in fit_statuses:
+        fit_guard_note += " ZSTD is blank where degrees of freedom are below 1."
+    if "unavailable_zero_df" in fit_statuses:
+        fit_guard_note += " Fit is blank where a free JMLE parameter has a single observation (0 residual degrees of freedom)."
+    if "unavailable_boundary" in fit_statuses:
+        fit_guard_note += " Estimate and fit are blank where a free facet or step-facet level has an unbounded endpoint or category-gap pattern."
+    if "unavailable" in fit_statuses:
+        fit_guard_note += " Fit is blank where response variance, residuals or weights are unavailable (no partial-row fit)."
+    if extended and "ObservedCategories" in qualified.columns and (qualified["ObservedCategories"] == 1).fillna(False).any():
+        fit_guard_note += " Levels with ObservedCategories = 1 used only a single score category (zero raw score variance)."
+
+    reason_set = set(qualified.get("StatusReason", pd.Series(dtype=str)).astype(str))
+    hold_detail = ""
+    if output_qualification.OPTIMIZER_TERMINATION_HOLD_REASON in reason_set:
+        hold_detail += " Hold cause: non-converged optimizer (stat.estimation.optimizer_termination_unverified)."
+    if output_qualification.JMLE_RANK_DEFICIENT_HOLD_REASON in reason_set:
+        hold_detail += " Hold cause: structurally rank-deficient / unidentifiable JMLE design (stat.jmle.eta_rank_deficient)."
+    if "stat.stat_003.covariance_rank_deficient" in reason_set:
+        hold_detail += " Hold cause: rank-deficient or regularized MML covariance (stat.stat_003.covariance_rank_deficient)."
+    for b_code in (
+        output_qualification.CATEGORY_UNSUPPORTED_HOLD_REASON,
+        output_qualification.UNOBSERVED_OWNER_ENDPOINT_HOLD_REASON,
+        output_qualification.UNOBSERVED_BOUNDARY_CATEGORY_HOLD_REASON,
+        output_qualification.MML_FACET_BOUNDARY_HOLD_REASON,
+        output_qualification.MML_DISCONNECTED_HOLD_REASON,
+    ):
+        if b_code in reason_set:
+            hold_detail += f" Hold cause: {output_qualification.boundary_and_support_hold_message(b_code)} ({b_code})"
+
     caption = (
         "Estimates and interval bounds are in logits. "
-        "SE = standard error; SD = standard deviation. "
+        "SE = standard error; SD = standard deviation; RealSE = ModelSE * sqrt(max(Infit, 1)). "
+        "Displayed general-table SEs and intervals are exploratory (Use = screening_only; SupportsFormalInference = FALSE). "
         + fit_note + " "
-        "These are not automatic pass/fail judgments. "
-    ) + " ".join(
-        notes[label] for label in notes if basis.eq(label).any()
-    ) + " Method details and source values: measures CSV."
-    # Display blanks need a mixed dtype; do not fill numeric columns with
-    # strings implicitly (deprecated in pandas 3.1). Keep complete columns
-    # numeric and leave the source measures/qualification record untouched.
+        "These are not automatic pass/fail judgments."
+        + fit_guard_note + " "
+        + " ".join(notes[label] for label in notes if basis.eq(label).any())
+        + hold_detail
+        + " Method details and source values: measures CSV."
+    )
     for column in out.columns[out.isna().any()]:
+        if out[column].dtype == bool:
+            continue
         out[column] = out[column].astype(object).where(out[column].notna(), "")
     return out, caption
 
 
 def qualified_reliability_table(result: dict, diagnostics: dict) -> pd.DataFrame:
-    """Qualify current or saved reliability without replacing saved numbers."""
-    from mfrm_app.engine import qualify_measure_uncertainty
+    """Qualify current or saved 1-row reliability without replacing saved numbers."""
+    from mfrm_app.engine import qualify_measure_uncertainty, qualify_measures_for_reporting
     from mfrm_app.reliability import qualify_saved_reliability
 
     result = result or {}
     diagnostics = diagnostics or {}
-    reason = output_qualification.calibration_inference_hold_reason(result)
+    reason = output_qualification.calibration_screening_block_reason(result)
     measures = diagnostics.get("measures")
-    if isinstance(measures, pd.DataFrame):
-        measures = qualify_measure_uncertainty(measures, result)
+    if isinstance(measures, pd.DataFrame) and not measures.empty:
+        if reason or "SE_Method" not in measures.columns:
+            measures = qualify_measure_uncertainty(measures, result)
+        else:
+            q = qualify_measures_for_reporting(measures, result, obs_df=diagnostics.get("obs"))
+            measures = measures.copy()
+            measures["SE_Status"] = q["EffectiveSE_Status"]
     return qualify_saved_reliability(
         diagnostics.get("reliability"),
         measures,
@@ -271,35 +421,121 @@ def qualified_reliability_table(result: dict, diagnostics: dict) -> pd.DataFrame
     )
 
 
-def publication_reliability_table(result: dict, diagnostics: dict, *, rel_note: str) -> tuple[pd.DataFrame, str]:
-    """Web and desktop reports share the same qualified facet separation/reliability table."""
-    reliability = qualified_reliability_table(result, diagnostics)
-    if not isinstance(reliability, pd.DataFrame) or reliability.empty:
+def publication_reliability_table(
+    result: dict,
+    diagnostics: dict,
+    *,
+    rel_note: str,
+    four_series: bool = False,
+) -> tuple[pd.DataFrame, str]:
+    """Qualified facet separation/reliability table (compact 1-row or full 4-series Model/Real × Sample/Population)."""
+    from mfrm_app.reliability import calculate_reliability_series
+
+    result = result or {}
+    diagnostics = diagnostics or {}
+    if not four_series:
+        reliability = qualified_reliability_table(result, diagnostics)
+        if not isinstance(reliability, pd.DataFrame) or reliability.empty:
+            return pd.DataFrame(), ""
+        columns = [c for c in ("Facet", "Levels", "SD", "RMSE", "Separation", "Strata", "Reliability")
+                   if c in reliability]
+        out = reliability[columns].copy().round(3)
+        block_reason = output_qualification.calibration_screening_block_reason(result)
+        held = reliability["ReliabilityStatus"].ne("diagnostic") | bool(block_reason)
+        out["Use"] = np.where(held, "Withheld", "Diagnostic")
+        caption = "Reliability and separation by facet (Use = screening_only / Diagnostic; SupportsFormalInference = FALSE). "
+        if held.any():
+            for column in ("RMSE", "Separation", "Strata", "Reliability"):
+                if column in out:
+                    out.loc[held, column] = np.nan
+            caption += (
+                "Interpretation is withheld for rows whose calibration, paired inputs or uncertainty basis are unqualified, "
+                "or whose saved calculation cannot be verified. Precision indices are intentionally blank; "
+                "SD is the spread of technical terminal-point estimates. "
+            )
+        else:
+            caption += "These descriptive indices depend on the uncertainty method, observed spread and rating design; they do not establish accuracy for other designs. "
+        caption += rel_note + " "
+        caption += (
+            "SD = sample standard deviation of estimates; RMSE = root mean square of SEs (posterior SDs for EAP). "
+            "For SE-based measures, G = sqrt(max(SD^2 - RMSE^2, 0)) / RMSE. "
+            "Reliability = G^2 / (1 + G^2). "
+        )
+        basis = reliability.get("ReliabilityBasis", pd.Series(dtype=str)).astype(str)
+        if basis.str.contains("EAP", regex=False).any():
+            caption += (
+                "For EAP person estimates, G = SD(EAP) / RMSE and reliability = "
+                "Var(EAP) / (Var(EAP) + mean(posterior SD^2)); this is not directly equivalent to FACETS separation reliability. "
+            )
+        caption += "Full notes and original technical values are retained in the reliability CSV."
+        for column in out.columns[out.isna().any()]:
+            out[column] = out[column].astype(object).where(out[column].notna(), "")
+        return out, caption
+
+    series = calculate_reliability_series(
+        diagnostics.get("measures"),
+        result,
+        obs_df=diagnostics.get("obs"),
+        saved_reliability=diagnostics.get("reliability"),
+    )
+    if series.empty:
         return pd.DataFrame(), ""
-    columns = [c for c in ("Facet", "Levels", "SD", "RMSE", "Separation", "Strata", "Reliability")
-               if c in reliability]
-    out = reliability[columns].copy().round(3)
-    held = reliability["ReliabilityStatus"].ne("diagnostic") | bool(current_manuscript_hold(result))
-    out["Use"] = np.where(held, "Withheld", "Diagnostic")
-    caption = "Reliability and separation by facet. "
+
+    held = series["Use"].ne("screening_only")
+    out = pd.DataFrame({
+        "Facet": series["Facet"].astype(str),
+        "SEMode": series["SEMode"].astype(str),
+        "SEColumn": series["SEColumn"].astype(str),
+        "DistributionBasis": series["DistributionBasis"].astype(str),
+        "Levels": pd.to_numeric(series["Levels"], errors="coerce").astype("Int64"),
+        "EstimateAvailable": pd.to_numeric(series["EstimateAvailable"], errors="coerce").astype("Int64"),
+        "SEAvailable": pd.to_numeric(series["SEAvailable"], errors="coerce").astype("Int64"),
+        "ExcludedLevels": pd.to_numeric(series["ExcludedLevels"], errors="coerce").astype("Int64"),
+        "AggregationTarget": series["AggregationTarget"].astype(str),
+        "SD": pd.to_numeric(series["SD"], errors="coerce").round(3),
+        "RMSE": pd.to_numeric(series["RMSE"], errors="coerce").where(~held, np.nan).round(3),
+        "TrueSD": pd.to_numeric(series["TrueSD"], errors="coerce").where(~held, np.nan).round(3),
+        "Separation": pd.to_numeric(series["Separation"], errors="coerce").where(~held, np.nan).round(3),
+        "Strata": pd.to_numeric(series["Strata"], errors="coerce").where(~held, np.nan).round(3),
+        "Reliability": pd.to_numeric(series["Reliability"], errors="coerce").where(~held, np.nan).round(3),
+        "Basis": series["ReliabilityBasisCode"].map({
+            "eap_posterior_sd": "EAP posterior SD",
+            "se_variance_correction": "SE variance subtraction",
+        }).fillna("Unverified"),
+        "Use": series["Use"].astype(str),
+        "SupportsFormalInference": series["SupportsFormalInference"].astype(bool),
+        "StatusReason": series["StatusReason"].astype(str),
+    })
+    if "SavedReliability" in series.columns and series["SavedReliability"].notna().any():
+        out["SavedReliability"] = pd.to_numeric(series["SavedReliability"], errors="coerce").round(3)
+    if "SavedReliabilityReasonCode" in series.columns:
+        saved_rc = series["SavedReliabilityReasonCode"].fillna("").astype(str)
+        if (saved_rc.ne("") & saved_rc.ne(out["StatusReason"])).any():
+            out["SavedReasonCode"] = saved_rc
+
+    caption = (
+        "Four descriptive precision series per facet: SEMode = model (ModelSE) vs fit_adjusted "
+        "(RealSE = ModelSE * sqrt(max(Infit, 1))) crossed with DistributionBasis = sample (ddof=1) vs population (ddof=0). "
+        "All derived separation/reliability indices are exploratory summaries (Use = screening_only; SupportsFormalInference = FALSE) "
+        "and do not propagate inter-estimate covariance. "
+        "EstimateAvailable, SEAvailable, ExcludedLevels and AggregationTarget state the exact calculation scope; "
+        "JMLE extreme-score boundary persons without finite estimates are excluded explicitly rather than silently dropped. "
+    )
     if held.any():
-        for column in ("RMSE", "Separation", "Strata", "Reliability"):
-            if column in out:
-                out.loc[held, column] = np.nan
-        caption += ("Interpretation is withheld for rows whose calibration, paired inputs or uncertainty basis are unqualified, "
-                    "or whose saved calculation cannot be verified. Precision indices are intentionally blank; "
-                    "SD is the spread of technical terminal-point estimates. ")
-    else:
-        caption += "These descriptive indices depend on the uncertainty method, observed spread and rating design; they do not establish accuracy for other designs. "
-    caption += rel_note + " "
-    caption += ("SD = sample standard deviation of estimates; RMSE = root mean square of SEs (posterior SDs for EAP). "
-                "For SE-based measures, G = sqrt(max(SD^2 - RMSE^2, 0)) / RMSE. "
-                "Reliability = G^2 / (1 + G^2). ")
-    basis = reliability.get("ReliabilityBasis", pd.Series(dtype=str)).astype(str)
-    if basis.str.contains("EAP", regex=False).any():
-        caption += ("For EAP person estimates, G = SD(EAP) / RMSE and reliability = "
-                    "Var(EAP) / (Var(EAP) + mean(posterior SD^2)); this is not directly equivalent to FACETS separation reliability. ")
-    caption += "Full notes and original technical values are retained in the reliability CSV."
+        caption += (
+            "Precision cells (RMSE, TrueSD, Separation, Strata, Reliability) are blank where Use = withheld; "
+            "inspect StatusReason for the exact cause. "
+        )
+    if rel_note:
+        caption += rel_note + " "
+    if series["ReliabilityBasisCode"].eq("eap_posterior_sd").any():
+        caption += (
+            "For MML EAP person estimates, Separation = SD(EAP) / RMSE and Reliability = Var(EAP) / (Var(EAP) + RMSE^2); "
+            "conditional posterior SD is not the sampling SE of EAP. "
+        )
+    caption += "Full notes and original technical values are retained in this project."
     for column in out.columns[out.isna().any()]:
+        if out[column].dtype == bool:
+            continue
         out[column] = out[column].astype(object).where(out[column].notna(), "")
     return out, caption

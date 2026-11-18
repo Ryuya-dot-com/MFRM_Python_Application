@@ -7,4 +7,4 @@ showErrorDetails = "none"
 [server]
 enableXsrfProtection = true
 enableCORS = true
-maxUploadSize = 100
+maxUploadSize = 200

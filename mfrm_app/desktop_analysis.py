@@ -4,8 +4,10 @@ from datetime import datetime, timezone
 
 import numpy as np
 import pandas as pd
+from scipy.linalg import cho_solve
+from scipy.stats import norm
 
-from mfrm_app import basic_analysis as basic, bias_analysis as bias, engine, reporting_facts
+from mfrm_app import basic_analysis as basic, bias_analysis as bias, engine, output_qualification, reporting_facts
 from mfrm_app import generalizability as gd, project, structural_intervals as intervals, joint_interaction as joint
 from mfrm_app._resources import metric_note
 
@@ -19,10 +21,10 @@ def _bias_requests(requests, facets):
         if a not in facets or b not in facets or a == b or frozenset((a, b)) in seen:
             raise ValueError("Select each distinct fitted bias facet pair once")
         bound, omit = request.get("max_abs", 10.), request.get("omit_extreme", True)
-        if isinstance(bound, bool) or not np.isfinite(bound) or bound <= 0 or type(omit) is not bool:
+        if isinstance(bound, (bool, np.bool_)) or not np.isfinite(bound) or bound <= 0 or not isinstance(omit, (bool, np.bool_)):
             raise ValueError("Bias search bound must be positive and extreme-level handling explicit")
         seen.add(frozenset((a, b)))
-        out.append(dict(facet_a=a, facet_b=b, max_abs=float(bound), omit_extreme=omit))
+        out.append(dict(facet_a=a, facet_b=b, max_abs=float(bound), omit_extreme=bool(omit)))
     return out
 
 
@@ -64,13 +66,16 @@ def _gd_settings(settings):
             or not isinstance(out.get("random_facets"), (list, tuple))
             or any(not isinstance(f, str) for f in out["random_facets"])
             or not isinstance(out["score_col"], str) or not isinstance(out["target_population"], str)
-            or type(out["n_max_per_facet"]) is not int or out["n_max_per_facet"] < 1):
+            or not basic._is_int(out["n_max_per_facet"]) or int(out["n_max_per_facet"]) < 1):
         raise ValueError("G/D requires named columns, random facets and a positive integer plan limit")
+    out["n_max_per_facet"] = int(out["n_max_per_facet"])
     out["random_facets"] = list(out["random_facets"])
     selected = out["selected_plan"]
-    if selected is not None and (not isinstance(selected, dict) or set(selected) != set(out["random_facets"])
-                                 or any(type(n) is not int or n < 1 for n in selected.values())):
-        raise ValueError("A selected D plan must specify positive integer counts for every random facet")
+    if selected is not None:
+        if (not isinstance(selected, dict) or set(selected) != set(out["random_facets"])
+                or any(not basic._is_int(n) or int(n) < 1 for n in selected.values())):
+            raise ValueError("A selected D plan must specify positive integer counts for every random facet")
+        out["selected_plan"] = {k: int(v) for k, v in selected.items()}
     fixed_validated = _validate_fixed_condition(
         fixed_raw, out["object_facet"], out["score_col"], out["random_facets"]
     )
@@ -87,6 +92,8 @@ def preview_mfrm_connectivity(
     score_col: str,
     anchors=None,
     group_anchors=None,
+    noncenter_facet="Person",
+    positive_facets=None,
 ) -> dict:
     """Fast, optimization-free pre-flight check of connectivity, sparsity, and anchor linking."""
     facet_cols = list(facet_cols or [])
@@ -117,6 +124,12 @@ def preview_mfrm_connectivity(
         **{f: set(retained[f].dropna().astype(str).str.strip()) for f in facet_cols},
     }
     try:
+        norm_nc, norm_pos = basic.normalize_scale_orientation(
+            noncenter_facet=noncenter_facet,
+            positive_facets=positive_facets,
+            person_col=person_col,
+            facet_cols=facet_cols,
+        )
         norm_a = basic.normalize_anchor_records(
             anchors, person_col=person_col, facet_cols=facet_cols, observed_levels=observed_levels
         )
@@ -155,7 +168,8 @@ def preview_mfrm_connectivity(
 
     anchor_df = pd.DataFrame(norm_a) if norm_a else None
     group_df = pd.DataFrame(norm_g) if norm_g else None
-    specs = engine.prepare_constraint_specs(prep, anchor_df=anchor_df, group_anchor_df=group_df, noncenter_facet="Person")
+    specs = engine.prepare_constraint_specs(prep, anchor_df=anchor_df, group_anchor_df=group_df, noncenter_facet=norm_nc)
+    pos_set = set(norm_pos)
     cfg_check = {
         "method": "JMLE",
         "model": "RSM",
@@ -164,7 +178,8 @@ def preview_mfrm_connectivity(
         "facet_levels": {f: list(prep["levels"][f]) for f in prep["facet_names"]},
         "theta_spec": specs["theta_spec"],
         "facet_specs": specs["facet_specs"],
-        "facet_signs": {f: -1 for f in prep["facet_names"]},
+        "facet_signs": {f: (1 if f in pos_set else -1) for f in prep["facet_names"]},
+        "noncenter_facet": norm_nc,
         "step_facet": None,
         "slope_facet": None,
     }
@@ -310,11 +325,14 @@ def _reliability_summary_table(analysis) -> tuple[str, pd.DataFrame, str] | None
     if "result" not in analysis:
         return None
     diagnostics = analysis.get("diagnostics")
-    if not isinstance(diagnostics, dict) or not isinstance(diagnostics.get("reliability"), pd.DataFrame):
+    if not isinstance(diagnostics, dict) or (
+        not isinstance(diagnostics.get("reliability"), pd.DataFrame)
+        and not isinstance(diagnostics.get("measures"), pd.DataFrame)
+    ):
         return None
     rel_note = metric_note("reliability")
     table, note = reporting_facts.publication_reliability_table(
-        analysis["result"], diagnostics, rel_note=rel_note
+        analysis["result"], diagnostics, rel_note=rel_note, four_series=True
     )
     if table.empty:
         return None
@@ -411,12 +429,24 @@ def _agreement_and_alpha_tables(analysis) -> list[tuple[str, pd.DataFrame, str]]
     out_tables: list[tuple[str, pd.DataFrame, str]] = []
     if rows:
         summary_df = _blank_na_columns(pd.DataFrame(rows))
+        total_zero_corr = 0
+        if isinstance(ia_pairs, dict):
+            for f_df in ia_pairs.values():
+                if isinstance(f_df, pd.DataFrame) and {"N", "Corr"}.issubset(f_df.columns):
+                    n_s = pd.to_numeric(f_df["N"], errors="coerce").fillna(0)
+                    c_s = pd.to_numeric(f_df["Corr"], errors="coerce")
+                    total_zero_corr += int(((n_s > 0) & c_s.isna()).sum())
         note = (
             "Observed exact and adjacent (+/-1 category) agreement percentages across shared rating contexts, "
             "model-expected exact agreement percentage under independence given fitted category probabilities, "
             "and Krippendorff's alpha (ordinal, interval, nominal). Agreement describes raw-score consistency "
             "across overlapping assignments; it does not adjust for severity differences or replace MFRM separation."
         )
+        if total_zero_corr > 0:
+            note += (
+                f" {total_zero_corr} overlapping pair(s) had undefined correlation "
+                "(zero score variance or fewer than 2 shared contexts) and were excluded from MeanCorr."
+            )
         if cal_hold:
             note += " Model-expected exact agreement is withheld while calibration inference is on hold."
         out_tables.append(("Inter-rater Agreement and Krippendorff's Alpha", summary_df, note))
@@ -457,6 +487,14 @@ def _agreement_and_alpha_tables(analysis) -> list[tuple[str, pd.DataFrame, str]]
                 f"Pairwise observed and model-expected agreement across shared contexts for {primary}. "
                 "Pairs without shared contexts are omitted."
             )
+            p_zero_corr = int(
+                (pd.to_numeric(raw_pairs["N"], errors="coerce").fillna(0).gt(0) & pd.to_numeric(raw_pairs["Corr"], errors="coerce").isna()).sum()
+            )
+            if p_zero_corr > 0:
+                pair_note += (
+                    f" {p_zero_corr} pair(s) have blank Corr because at least one element had zero score variance "
+                    "or fewer than 2 shared contexts."
+                )
             if cal_hold:
                 pair_note += " Model-expected exact agreement is withheld while calibration inference is on hold."
             out_tables.append((f"Pairwise Agreement: {primary}", _blank_na_columns(pair_df), pair_note))
@@ -474,19 +512,20 @@ def _rescaled_measures_table(analysis) -> tuple[str, pd.DataFrame, str] | None:
         return None
     result = analysis["result"]
     diagnostics = analysis.get("diagnostics", {})
-    pub, _ = reporting_facts.publication_measure_table(result, diagnostics, fit_note="")
+    pub, _ = reporting_facts.publication_measure_table(result, diagnostics, fit_note="", extended=True)
     if pub.empty:
         return None
-    raw_measures = engine.qualify_measure_uncertainty(diagnostics.get("measures"), result)
+    qualified = engine.qualify_measures_for_reporting(diagnostics.get("measures"), result, obs_df=diagnostics.get("obs"))
     est_visible = pub["Estimate"].astype(str).ne("")
     se_visible = pub["SE / SD"].astype(str).ne("") if "SE / SD" in pub.columns else pd.Series(False, index=pub.index)
     lo_visible = pub["Lower"].astype(str).ne("") if "Lower" in pub.columns else pd.Series(False, index=pub.index)
     hi_visible = pub["Upper"].astype(str).ne("") if "Upper" in pub.columns else pd.Series(False, index=pub.index)
 
-    raw_est = pd.to_numeric(raw_measures["Estimate"], errors="coerce")
-    raw_se = pd.to_numeric(raw_measures.get("SE", pd.Series(np.nan, index=raw_measures.index)), errors="coerce")
-    raw_lo = pd.to_numeric(raw_measures.get("CI_Lower", pd.Series(np.nan, index=raw_measures.index)), errors="coerce")
-    raw_hi = pd.to_numeric(raw_measures.get("CI_Upper", pd.Series(np.nan, index=raw_measures.index)), errors="coerce")
+    raw_est = pd.to_numeric(qualified["Estimate"], errors="coerce")
+    raw_se = pd.to_numeric(qualified.get("ModelSE", pd.Series(np.nan, index=qualified.index)), errors="coerce")
+    raw_real_se = pd.to_numeric(qualified.get("RealSE", pd.Series(np.nan, index=qualified.index)), errors="coerce")
+    raw_lo = pd.to_numeric(qualified.get("CI_Lower", pd.Series(np.nan, index=qualified.index)), errors="coerce")
+    raw_hi = pd.to_numeric(qualified.get("CI_Upper", pd.Series(np.nan, index=qualified.index)), errors="coerce")
 
     out = pd.DataFrame({
         "Facet": pub["Facet"].astype(str),
@@ -494,6 +533,7 @@ def _rescaled_measures_table(analysis) -> tuple[str, pd.DataFrame, str] | None:
         "LogitEstimate": raw_est.where(est_visible, np.nan).round(3),
         "ScaledMeasure": (raw_est * uscale + umean).where(est_visible, np.nan).round(3),
         "ScaledSE": (raw_se * uscale).where(se_visible, np.nan).round(3),
+        "ScaledRealSE": (raw_real_se * uscale).where(se_visible, np.nan).round(3),
         "ScaledLower": (raw_lo * uscale + umean).where(lo_visible, np.nan).round(3),
         "ScaledUpper": (raw_hi * uscale + umean).where(hi_visible, np.nan).round(3),
     })
@@ -516,13 +556,236 @@ def _rescaled_measures_table(analysis) -> tuple[str, pd.DataFrame, str] | None:
             out = out.merge(aux_all, on=["Facet", "Level"], how="left")
 
     out["Basis"] = pub["Basis"].astype(str).to_numpy()
+    out["SEUse"] = pub["SEUse"].astype(str).to_numpy()
+    out["CIUse"] = pub["CIUse"].astype(str).to_numpy()
+    out["SupportsFormalInference"] = pub["SupportsFormalInference"].astype(bool).to_numpy()
+    out["StatusReason"] = pub["StatusReason"].astype(str).to_numpy()
     note = (
         f"Linear score rescaling (Umean = {umean:g}, Uscale = {uscale:g}): applies M' = Umean + Uscale * M and "
         "SE' = Uscale * SE to canonical logit estimates (separation and reliability ratios are affine-invariant). "
         "Baseline Measures and Fit, Wright maps, specified intervals and joint interactions remain in canonical logits. "
-        "Qualification Basis and withheld cells match Measures and Fit."
+        "Qualification Basis, Use = screening_only, SupportsFormalInference = FALSE and withheld cells match Measures and Fit."
     )
-    return ("Rescaled Measures (Umean / Uscale)", _blank_na_columns(out), note)
+    out_clean = out.copy()
+    for col in out_clean.columns[out_clean.isna().any()]:
+        if out_clean[col].dtype == bool:
+            continue
+        out_clean[col] = out_clean[col].astype(object).where(out_clean[col].notna(), "")
+    return ("Rescaled Measures (Umean / Uscale)", out_clean, note)
+
+
+def _jmle_ladder_step_se(probs_sub: np.ndarray, w_sub: np.ndarray) -> np.ndarray | None:
+    """Analytical conditional step threshold SEs holding person/facet locations fixed."""
+    n_cat = probs_sub.shape[1] if probs_sub.ndim == 2 else 0
+    n_steps = n_cat - 1
+    if n_steps <= 1 or probs_sub.shape[0] == 0 or not np.any(w_sub > 0):
+        return None
+    d_free = n_steps - 1
+    q = np.cumsum(probs_sub[:, 1:-1][:, ::-1], axis=1)[:, ::-1]
+    q_sum = w_sub @ q
+    idx_max = np.maximum.outer(np.arange(d_free), np.arange(d_free))
+    info = q_sum[idx_max] - (q * w_sub[:, None]).T @ q
+    info = 0.5 * (info + info.T)
+    if not np.isfinite(info).all():
+        return None
+    try:
+        eigs = np.linalg.eigvalsh(info)
+        if eigs[0] <= 1e-10:
+            return None
+        lower = np.linalg.cholesky(info)
+        cov_free = cho_solve((lower, True), np.eye(d_free))
+    except np.linalg.LinAlgError:
+        return None
+    jac = np.vstack([np.eye(d_free), -np.ones((1, d_free))])
+    var_steps = np.einsum("ij,jk,ik->i", jac, cov_free, jac)
+    if not np.isfinite(var_steps).all() or np.any(var_steps <= 0):
+        return None
+    return np.sqrt(var_steps)
+
+
+def _step_thresholds_table(analysis) -> tuple[str, pd.DataFrame, str] | None:
+    """Qualified step threshold table from retained estimates/information without refitting."""
+    if "result" not in analysis:
+        return None
+    result = analysis["result"]
+    cfg = result.get("config") or {}
+    prep = result.get("prep") or {}
+    params = result.get("params") or {}
+    model = str(cfg.get("model", "RSM")).upper()
+    method = str(cfg.get("method", "JMLE")).upper()
+    n_cat = int(cfg.get("n_cat", 0) or 0)
+    n_steps = max(n_cat - 1, 0)
+    data_df = prep.get("data")
+    if n_steps <= 0 or not isinstance(data_df, pd.DataFrame) or data_df.empty:
+        return None
+
+    rmin = int(prep.get("rating_min", 0))
+    step_facet = cfg.get("step_facet") if model == "PCM" else None
+    if model == "RSM":
+        raw_steps = params.get("steps")
+        if raw_steps is None:
+            return None
+        ladders = [("Common", np.asarray(raw_steps, dtype=float))]
+    else:
+        sf_levels = [str(x) for x in (cfg.get("facet_levels", {}).get(step_facet) or prep.get("levels", {}).get(step_facet) or [])]
+        raw_mat = params.get("steps_mat")
+        if not sf_levels or raw_mat is None:
+            return None
+        mat = np.asarray(raw_mat, dtype=float)
+        ladders = [(sf, mat[i]) for i, sf in enumerate(sf_levels) if i < mat.shape[0]]
+
+    block_reason = output_qualification.calibration_screening_block_reason(result)
+    formal_reason = output_qualification.calibration_inference_hold_reason(result)
+    cat_hold = block_reason in {
+        output_qualification.CATEGORY_UNSUPPORTED_HOLD_REASON,
+        output_qualification.UNOBSERVED_BOUNDARY_CATEGORY_HOLD_REASON,
+        output_qualification.UNOBSERVED_OWNER_ENDPOINT_HOLD_REASON,
+    }
+    z95 = float(norm.ppf(0.975))
+
+    mml_lookup: dict[tuple[str, str], tuple[float, str, str]] = {}
+    steps_df = result.get("steps")
+    if method == "MML" and isinstance(steps_df, pd.DataFrame) and "Step" in steps_df.columns:
+        for s_row in steps_df.to_dict(orient="records"):
+            owner_key = str(s_row.get("StepFacet", "Common")) if model != "RSM" else "Common"
+            step_key = str(s_row.get("Step", ""))
+            se_v = pd.to_numeric(s_row.get("SE", np.nan), errors="coerce")
+            mml_lookup[(owner_key, step_key)] = (
+                float(se_v) if pd.notna(se_v) else np.nan,
+                str(s_row.get("SE_CovarianceStatus", "")),
+                str(s_row.get("SE_Status", "")),
+            )
+
+    jmle_probs = None
+    jmle_weights = None
+    if method == "JMLE" and n_steps >= 2 and not block_reason:
+        jmle_probs = engine.compute_prob_matrix(result)
+        w_base = pd.to_numeric(data_df["Weight"], errors="coerce").fillna(1.0).to_numpy(dtype=float) if "Weight" in data_df.columns else np.ones(len(data_df))
+        b_persons = engine._boundary_person_set(result)
+        p_mask = data_df["Person"].astype(str).isin(b_persons).to_numpy(dtype=bool) if "Person" in data_df.columns and b_persons else np.zeros(len(data_df), dtype=bool)
+        jmle_weights = np.where(p_mask, 0.0, w_base)
+
+    scores_int = pd.to_numeric(data_df["Score"], errors="coerce")
+    rows: list[dict[str, object]] = []
+    for owner_label, vec in ladders:
+        mask_owner = np.ones(len(data_df), dtype=bool) if model == "RSM" else data_df[step_facet].astype(str).eq(owner_label).to_numpy(dtype=bool)
+        owner_scores = scores_int.loc[mask_owner]
+        cat_counts = {c: int((owner_scores == c).sum()) for c in range(rmin, rmin + n_cat)}
+        owner_gap = cat_hold or any(cnt == 0 for cnt in cat_counts.values())
+
+        jmle_se_vec = None
+        if jmle_probs is not None and jmle_weights is not None and not owner_gap:
+            jmle_se_vec = _jmle_ladder_step_se(jmle_probs[mask_owner], jmle_weights[mask_owner])
+
+        for s_idx in range(n_steps):
+            step_name = f"Step_{s_idx + 1}"
+            c_lo, c_hi = rmin + s_idx, rmin + s_idx + 1
+            n_lo, n_hi = cat_counts.get(c_lo, 0), cat_counts.get(c_hi, 0)
+            est_raw = float(vec[s_idx]) if s_idx < len(vec) and np.isfinite(vec[s_idx]) else np.nan
+            prev_raw = float(vec[s_idx - 1]) if s_idx > 0 and s_idx < len(vec) and np.isfinite(vec[s_idx - 1]) else np.nan
+
+            if owner_gap or not np.isfinite(est_raw):
+                est_out = spacing = se_out = lo_out = hi_out = np.nan
+                disordered: object = np.nan
+                basis = "Withheld"
+                se_use = ci_use = "withheld"
+                reason = block_reason or output_qualification.CATEGORY_UNSUPPORTED_HOLD_REASON
+            else:
+                est_out = round(est_raw, 3)
+                diff_val = (est_raw - prev_raw) if s_idx > 0 and np.isfinite(prev_raw) else np.nan
+                spacing = round(float(diff_val), 3) if np.isfinite(diff_val) else np.nan
+                disordered = bool(np.isfinite(diff_val) and diff_val < -1e-12)
+
+                if block_reason:
+                    se_out = lo_out = hi_out = np.nan
+                    se_use = ci_use = "withheld"
+                    if block_reason == output_qualification.OPTIMIZER_TERMINATION_HOLD_REASON:
+                        basis = "Withheld (non-converged)"
+                    elif block_reason == output_qualification.JMLE_RANK_DEFICIENT_HOLD_REASON:
+                        basis = "Withheld (unidentifiable)"
+                    else:
+                        basis = "Withheld"
+                    reason = block_reason
+                elif n_steps == 1:
+                    se_out = lo_out = hi_out = np.nan
+                    basis = "Fixed constraint"
+                    se_use = ci_use = "not_applicable"
+                    reason = "fixed_by_step_centering"
+                elif method == "MML":
+                    se_v, cov_st, se_st = mml_lookup.get((owner_label, step_name), (np.nan, "", ""))
+                    if cov_st == "ok" and np.isfinite(se_v) and se_v > 0:
+                        se_out = round(se_v, 3)
+                        lo_out = round(est_raw - z95 * se_v, 3)
+                        hi_out = round(est_raw + z95 * se_v, 3)
+                        basis = "Observed info (fixed-SD)"
+                        se_use = ci_use = "screening_only"
+                        reason = formal_reason
+                    elif cov_st == "regularized":
+                        se_out = lo_out = hi_out = np.nan
+                        basis = "Withheld (rank-deficient covariance)"
+                        se_use = ci_use = "withheld"
+                        reason = "stat.stat_003.covariance_rank_deficient"
+                    else:
+                        se_out = lo_out = hi_out = np.nan
+                        basis = "Unavailable"
+                        se_use = ci_use = "withheld"
+                        reason = se_st or "not_available"
+                else:
+                    se_v = float(jmle_se_vec[s_idx]) if jmle_se_vec is not None and s_idx < len(jmle_se_vec) else np.nan
+                    if np.isfinite(se_v) and se_v > 0:
+                        se_out = round(se_v, 3)
+                        lo_out = round(est_raw - z95 * se_v, 3)
+                        hi_out = round(est_raw + z95 * se_v, 3)
+                        basis = (
+                            "Conditional (audit size limit)"
+                            if formal_reason == "stat.jmle.identifiability_audit_size_limit"
+                            else "Conditional"
+                        )
+                        se_use = ci_use = "screening_only"
+                        reason = formal_reason
+                    else:
+                        se_out = lo_out = hi_out = np.nan
+                        basis = "Unavailable"
+                        se_use = ci_use = "withheld"
+                        reason = "not_available"
+
+            rows.append({
+                "StepFacet": owner_label,
+                "Step": step_name,
+                "Transition": f"{c_lo}->{c_hi}",
+                "LowerCount": n_lo,
+                "UpperCount": n_hi,
+                "Estimate": est_out,
+                "SE": se_out,
+                "Lower": lo_out,
+                "Upper": hi_out,
+                "Spacing": spacing,
+                "Disordered": disordered,
+                "Basis": basis,
+                "SEUse": se_use,
+                "CIUse": ci_use,
+                "SupportsFormalInference": False,
+                "StatusReason": reason,
+            })
+
+    out = pd.DataFrame(rows)
+    for col in out.columns[out.isna().any()]:
+        if out[col].dtype == bool:
+            continue
+        out[col] = out[col].astype(object).where(out[col].notna(), "")
+    owner_desc = "common rating scale (StepFacet = Common)" if model == "RSM" else f"PCM step facet ({step_facet})"
+    se_desc = (
+        "MML full observed-information delta-method SEs (including the sum-to-zero final step)"
+        if method == "MML"
+        else "JMLE conditional step-information delta-method SEs holding person and facet locations fixed"
+    )
+    note = (
+        f"Centered adjacent-category step threshold offsets in logits (sum to zero within {owner_desc}). "
+        f"Displayed SEs and 95% normal bands use {se_desc} and are exploratory "
+        "(SEUse = screening_only; SupportsFormalInference = FALSE). "
+        "Disordered = True indicates a narrower intermediate modal zone (Spacing < 0), not an automatic category-collapsing rule."
+    )
+    return ("Step Thresholds", out, note)
 
 
 def _pca_tables(analysis) -> list[tuple[str, pd.DataFrame, str]]:
@@ -743,6 +1006,184 @@ def _run_gd(data, settings):
                 analysis_id=project.gd_analysis_identity(data, settings, result["calculation_version"]))
 
 
+def _resolve_column_aliases(kwargs: dict) -> dict:
+    out = dict(kwargs)
+    for alias, canonical in (("person", "person_col"), ("facets", "facet_cols"), ("score", "score_col")):
+        if alias in out:
+            if canonical in out and out[canonical] is not None and out[alias] is not None:
+                raise ValueError(f"Specify either {alias} or {canonical}, not both")
+            val = out.pop(alias)
+            if out.get(canonical) is None:
+                out[canonical] = val
+    return out
+
+
+def check_design(
+    data,
+    *,
+    workflow="mfrm",
+    person_col=None,
+    facet_cols=None,
+    score_col=None,
+    rating_min=None,
+    rating_max=None,
+    step_facet=None,
+    noncenter_facet="Person",
+    positive_facets=None,
+    anchors=None,
+    group_anchors=None,
+    gd_settings=None,
+    person=None,
+    facets=None,
+    score=None,
+) -> dict:
+    """Optimization-free pre-flight check for MFRM connectivity/category support or G/D balance."""
+    if workflow not in {"mfrm", "gd"}:
+        raise ValueError("Choose the MFRM or observed-score G/D workflow")
+    resolved = _resolve_column_aliases(
+        dict(person_col=person_col, facet_cols=facet_cols, score_col=score_col, person=person, facets=facets, score=score)
+    )
+    p_col = resolved.get("person_col")
+    f_cols = resolved.get("facet_cols")
+    s_col = resolved.get("score_col")
+
+    if workflow == "gd":
+        cfg = dict(gd_settings or {})
+        obj_col = cfg.get("object_facet", p_col)
+        rf_cols = cfg.get("random_facets", f_cols)
+        sc_col = cfg.get("score_col", s_col or "Score")
+        fc = cfg.get("fixed_condition")
+        prev = preview_gd_design(data, object_facet=obj_col, score_col=sc_col, random_facets=rf_cols, fixed_condition=fc)
+        zv_map: dict[str, list[str]] = {}
+        if prev["ok"] and isinstance(data, pd.DataFrame) and not data.empty:
+            prep_df, prep_r, _ = prepare_gd_input_data(
+                data,
+                dict(object_facet=obj_col, random_facets=list(rf_cols), score_col=sc_col, fixed_condition=fc),
+            ) if fc is not None else (data, "", None)
+            if not prep_r:
+                work, _, w_r = gd._prepare_g_d_data(prep_df, obj_col, list(rf_cols), sc_col)
+                if not w_r and work is not None:
+                    for col in [obj_col, *rf_cols]:
+                        stds = work.groupby(col, observed=True)[sc_col].std(ddof=0)
+                        z_lvs = sorted(str(lv) for lv, v in stds.items() if pd.notna(v) and float(v) == 0.0)
+                        if z_lvs:
+                            zv_map[str(col)] = z_lvs
+        summary_en = str(prev["summary_en"])
+        if zv_map:
+            desc = "; ".join(f"{f}: {', '.join(lvs)}" for f, lvs in zv_map.items())
+            summary_en += f" Note: zero-variance level(s) detected ({desc})."
+        return dict(
+            workflow="gd",
+            ok=bool(prev["ok"]),
+            status=str(prev["status"]),
+            reason_code=str(prev["reason_code"]),
+            observed_n=dict(prev["observed_n"]),
+            extra_facets=list(prev["extra_facets"]),
+            zero_variance_levels=zv_map,
+            summary=summary_en,
+            summary_ja=str(prev["summary_ja"]),
+        )
+
+    f_cols_list = list(f_cols or [])
+    norm_nc, norm_pos = "Person", []
+    if p_col and f_cols_list and isinstance(data, pd.DataFrame) and all(c in data.columns for c in [p_col, *f_cols_list]):
+        norm_nc, norm_pos = basic.normalize_scale_orientation(
+            noncenter_facet=noncenter_facet,
+            positive_facets=positive_facets,
+            person_col=p_col,
+            facet_cols=f_cols_list,
+        )
+
+    prev = preview_mfrm_connectivity(
+        data,
+        person_col=p_col or "",
+        facet_cols=f_cols_list,
+        score_col=s_col or "",
+        anchors=anchors,
+        group_anchors=group_anchors,
+        noncenter_facet=norm_nc,
+        positive_facets=norm_pos,
+    )
+    conn_ok = bool(prev["ok"])
+    cat_ok = True
+    unused_cats: list[int] = []
+    unsupported_internal: list[int] = []
+    unobserved_boundary: list[int] = []
+    single_cat_levels: dict[str, list[str]] = {}
+    step_owner_gaps: dict[str, list[int]] = {}
+    status = str(prev["status"])
+    summary_en = str(prev["summary_en"])
+    summary_ja = str(prev["summary_ja"])
+
+    if status not in {"missing_data", "incomplete_selection", "insufficient_data", "anchor_error"}:
+        f_list = list(f_cols or [])
+        audit = engine.build_response_data_audit(data, person_col=p_col, facet_cols=f_list, score_col=s_col)
+        retained = data.loc[audit["rows"]["IncludedInLikelihood"].to_numpy(dtype=bool)]
+        scores = pd.to_numeric(retained[s_col], errors="coerce").dropna().astype(int)
+        for col_label, col_name in [("Person", p_col), *[(f, f) for f in f_list]]:
+            nunq = scores.groupby(retained[col_name].astype(str), observed=True).nunique()
+            ones = sorted(str(lv) for lv, cnt in nunq.items() if int(cnt) == 1)
+            if ones:
+                single_cat_levels[str(col_label)] = ones
+
+        if (rating_min is None) != (rating_max is None):
+            raise ValueError("Specify both rating_min and rating_max together, or omit both")
+        if rating_min is not None and rating_max is not None:
+            if not basic._is_int(rating_min) or not basic._is_int(rating_max) or int(rating_min) >= int(rating_max):
+                raise ValueError("Specify integer minimum/maximum scores with minimum < maximum")
+            rmin, rmax = int(rating_min), int(rating_max)
+            if (scores < rmin).any() or (scores > rmax).any():
+                cat_ok = False
+                status = "score_out_of_range"
+                summary_en += f" Scores fall outside the declared rubric range ({rmin}–{rmax})."
+            else:
+                vc = scores.value_counts()
+                unused_cats = [c for c in range(rmin, rmax + 1) if int(vc.get(c, 0)) == 0]
+                unsupported_internal = [c for c in range(rmin + 1, rmax) if int(vc.get(c, 0)) == 0]
+                unobserved_boundary = [c for c in (rmin, rmax) if int(vc.get(c, 0)) == 0]
+                if step_facet is not None:
+                    if step_facet not in f_list:
+                        raise ValueError("PCM step_facet must be one of the selected facet columns")
+                    sf_s = retained[step_facet].astype(str)
+                    for lv in sorted(sf_s.unique()):
+                        lvc = scores.loc[sf_s.eq(lv)].value_counts()
+                        missing_lv = [c for c in range(rmin, rmax + 1) if int(lvc.get(c, 0)) == 0]
+                        if missing_lv or int((lvc > 0).sum()) < 2:
+                            step_owner_gaps[str(lv)] = missing_lv
+                if unsupported_internal or unobserved_boundary or step_owner_gaps:
+                    cat_ok = False
+                    if conn_ok:
+                        status = "unsupported_categories"
+                    summary_en += (
+                        f" Category support warning: unused rubric categories {unused_cats}"
+                        + (f", step_facet gaps {step_owner_gaps}" if step_owner_gaps else "")
+                        + "."
+                    )
+
+    return dict(
+        workflow="mfrm",
+        ok=bool(conn_ok and cat_ok),
+        connectivity_ok=conn_ok,
+        category_support_ok=cat_ok,
+        status=status,
+        included_rows=int(prev.get("included", 0)),
+        excluded_rows=int(prev.get("excluded", 0)),
+        density_pct=float(prev.get("density_pct", 0.0)),
+        nullity=prev.get("nullity"),
+        component_counts=dict(prev.get("component_counts") or {}),
+        disconnected_facets=list(prev.get("disconnected_facets") or []),
+        unused_categories=unused_cats,
+        unsupported_internal_categories=unsupported_internal,
+        unobserved_boundary_categories=unobserved_boundary,
+        step_owner_gaps=step_owner_gaps,
+        single_category_levels=single_cat_levels,
+        noncenter_facet=norm_nc,
+        positive_facets=norm_pos,
+        summary=summary_en,
+        summary_ja=summary_ja,
+    )
+
+
 def run_analysis(data, *, workflow="mfrm", bias_requests=None, interval_requests=None,
                  gd_settings=None, joint_settings=None, progress=None, **fit_settings):
     """Compute once in a worker and archive settings, failure states and provenance.
@@ -766,7 +1207,8 @@ def run_analysis(data, *, workflow="mfrm", bias_requests=None, interval_requests
             input_data=data.copy(deep=True), gd_analysis=entry,
             scope=dict(includes_input=True, optimizer_checkpoint=False, mfrm_fitted=False))
     else:
-        facets = list(fit_settings.get("facet_cols", []))
+        fit_settings = _resolve_column_aliases(fit_settings)
+        facets = list(fit_settings.get("facet_cols") or [])
         biases = _bias_requests(bias_requests, ["Person", *facets])
         requested_intervals = _interval_requests(interval_requests, facets, fit_settings.get("method", "JMLE"))
         joint_settings = joint.settings(joint_settings, facets, fit_settings.get("method", "JMLE"))
@@ -776,6 +1218,8 @@ def run_analysis(data, *, workflow="mfrm", bias_requests=None, interval_requests
         if analysis["kind"] != "mfrm-analysis-v2" and (
             biases or requested_intervals or gd_settings is not None or joint_settings is not None
             or fit_settings.get("anchors") or fit_settings.get("group_anchors")
+            or fit_settings.get("noncenter_facet", "Person") != "Person"
+            or fit_settings.get("positive_facets")
         ):
             analysis["kind"] = "mfrm-analysis-v2"
         analysis["bias_analyses"], analysis["interval_analyses"] = [], []
@@ -812,24 +1256,47 @@ def run_analysis(data, *, workflow="mfrm", bias_requests=None, interval_requests
     return analysis
 
 
-def current_additional_tables(analysis):
+def current_additional_tables(analysis, *, extended: bool = False):
     """Reapply output guards to retained records, without estimation or ANOVA."""
     project.validate_analysis(analysis)
     tables = []
     for entry in analysis.get("bias_analyses", []):
         settings, result = entry["settings"], entry["result"]
         pair = settings["facet_a"] + " × " + settings["facet_b"]
-        table = bias._bias_table_for_publication({pair: result}, analysis["result"]["config"]["model"])
-        if table is None:
-            table = pd.DataFrame([dict(Use="Unavailable", Reason=result.get("_skip_reason", "No computed cells"))])
-        tables.append(("Bias: " + pair, table, bias._bias_table_caption(analysis["result"]["config"]["model"])))
+        model_name = analysis["result"]["config"]["model"]
+        if extended:
+            table = bias.bias_screening_table({pair: result}, analysis["result"])
+            note = bias.bias_screening_caption(model_name, analysis["result"])
+            if table is None:
+                table = pd.DataFrame([dict(
+                    Use="Unavailable",
+                    SupportsFormalInference=False,
+                    Reason=result.get("_skip_reason", "No computed cells"),
+                )])
+        else:
+            table = bias._bias_table_for_publication({pair: result}, model_name)
+            note = bias._bias_table_caption(model_name)
+            if table is None:
+                table = pd.DataFrame([dict(Use="Unavailable", Reason=result.get("_skip_reason", "No computed cells"))])
+        tables.append(("Bias: " + pair, table, note))
     for entry in analysis.get("interval_analyses", []):
         try:
             if entry["status"] != "computed":
                 raise ValueError(entry["reason"])
             table, note = intervals.publication_table(analysis["result"], entry["record"])
+            if extended:
+                raw_iv = intervals.read_structural_intervals(analysis["result"], entry["record"])
+                table = table.assign(
+                    SupportsFormalInference=False,
+                    Reason=raw_iv["Reason"].astype(str).to_numpy(),
+                )
         except ValueError as exc:
-            table, note = pd.DataFrame([dict(Use="Withheld", Reason=str(exc))]), intervals.CAUTION
+            row = (
+                dict(Use="Withheld", SupportsFormalInference=False, Reason=str(exc))
+                if extended
+                else dict(Use="Withheld", Reason=str(exc))
+            )
+            table, note = pd.DataFrame([row]), intervals.CAUTION
         tables.append(("Specified intervals: " + entry["settings"]["facet"], table, note))
     if entry := analysis.get("gd_analysis"):
         frame = gd.g_d_study_export_frame(entry["result"])
@@ -870,3 +1337,12 @@ def current_additional_tables(analysis):
         tables.append(rescaled)
     tables.extend(_pca_tables(analysis))
     return tables
+
+
+def current_tables(analysis):
+    """Unified core-only qualified table list across MFRM and standalone G/D."""
+    project.validate_analysis(analysis)
+    base = [] if analysis.get("kind") == "gd-analysis-v2" else basic.current_tables(analysis, extended=True)
+    if step_tbl := _step_thresholds_table(analysis):
+        base.append(step_tbl)
+    return base + current_additional_tables(analysis, extended=True)

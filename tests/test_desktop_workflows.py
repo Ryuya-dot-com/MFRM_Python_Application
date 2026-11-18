@@ -1,6 +1,7 @@
 """Extended project contracts: stored requests, no refit, and qualified replay."""
 from copy import deepcopy
 from collections import OrderedDict
+import gzip
 import json
 import subprocess
 import sys
@@ -42,7 +43,9 @@ def test_legacy_schema_one_still_loads_and_new_writes_are_version_two(tmp_path, 
     restored = project.load_project(path)
     assert restored["content_fingerprint"] == original["content_fingerprint"]
     project.save_project(tmp_path / "schema2.mfrm", restored)
-    assert json.loads((tmp_path / "schema2.mfrm").read_text(encoding='utf-8'))["schema_version"] == 2
+    schema2_raw = (tmp_path / "schema2.mfrm").read_bytes()
+    assert schema2_raw.startswith(project.GZIP_MAGIC)
+    assert json.loads(gzip.decompress(schema2_raw).decode("utf-8"))["schema_version"] == 2
     assert json.loads(path.read_text(encoding='utf-8'))["schema_version"] == 1
 
 
@@ -75,7 +78,9 @@ def test_all_model_method_projects_roundtrip_requests_results_and_current_guards
     before = desktop.current_additional_tables(analysis)
     _forbid_calculation(monkeypatch)
     project.save_project(path, analysis)
-    assert json.loads(path.read_text(encoding='utf-8'))["schema_version"] == 2
+    saved_raw = path.read_bytes()
+    assert saved_raw.startswith(project.GZIP_MAGIC)
+    assert json.loads(gzip.decompress(saved_raw).decode("utf-8"))["schema_version"] == 2
     restored = project.load_project(path)
     assert restored["kind"] == "mfrm-analysis-v2"
     assert restored["fit_settings"] == analysis["fit_settings"]
@@ -112,7 +117,8 @@ def test_schema_and_foreign_binding_are_checked_even_with_recomputed_outer_hash(
             project.save_project(tmp_path / "foreign.mfrm", other)
     path = tmp_path / "downgraded.mfrm"
     project.save_project(path, analysis)
-    document = json.loads(path.read_text(encoding='utf-8')); document["schema_version"] = 1
+    document = json.loads(gzip.decompress(path.read_bytes()).decode("utf-8"))
+    document["schema_version"] = 1
     path.write_bytes(project._json_bytes(document))
     with pytest.raises(project.ProjectError, match="Schema 1"):
         project.load_project(path)

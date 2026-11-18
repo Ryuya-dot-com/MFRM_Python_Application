@@ -1422,3 +1422,88 @@ direction rules, and R 4.5.1 reproduced all values within `1.67e-16`. This is a
 nonconfirmatory advancement signal only. The four vectors cannot enter the
 separate confirmation, estimator ranking remains prohibited, and ordinary
 two-decimal FACETS fit displays were not used as raw inputs.
+
+## Cross-engine consistency review: `mfrmpy` 0.2.0, `mfrmr` 0.3.0, `TAM` 4.3.25, and `ConQuest` 5.47.5 (2026-11-18)
+
+`cross_engine_consistency_20261118.json` and `test_cross_engine_parity_with_mfrmr_030_and_tam_4325`
+in `tests/test_python_library.py` record a direct four-engine numerical and
+definitional check across `mfrmpy` 0.2.0, `mfrmr` 0.3.0 (`development/`, R
+4.6.1), `TAM` 4.3.25, and local ACER `ConQuest` 5.47.5 Professional
+(`/Applications/ConQuest/ConQuest`, SHA-256
+`61d0b87f379f1578466b789866366c5cc633d31a6c3501e872861d44ff02da48`) over
+balanced RSM (30 persons × 4 raters × 3 tasks, scores `0..3`), incomplete linked
+PCM (36 persons × 4 raters × 3 criteria, `Criterion`-owned steps), a
+10-replicate small-sample RSM Monte Carlo screen (JMLE and MML), and seven
+boundary / low-d.f. scenarios.
+
+Key numerical agreement under matched parameterization and quadrature:
+
+- **Log-likelihood and point estimates:** JMLE and fixed-`N(0,1)` MML
+  log-likelihoods matched `mfrmr` 0.3.0 within `5.2e-10`–`1.7e-8` (and `< 8.9e-9`
+  across all 10 Monte Carlo replicates), `TAM` 4.3.25 within `7.2e-10`–`1.9e-7`,
+  and `ConQuest` 5.47.5 (`method=gauss, nodes=31` and `method=quadrature,
+  nodes=161, minnode=-8, maxnode=8`) within `1.3e-7`–`2.3e-7` (CSV deviance
+  rounding). All 7 RSM and 11 PCM free coordinates agreed across all four
+  engines within `4.2e-6`–`1.7e-5` (exact `0.000000` match on all 7 RSM
+  `ConQuest` 6-decimal exports).
+- **Standard errors, specified intervals, and joint interactions:** JMLE
+  `ModelSE` / `RealSE` matched `mfrmr` 0.3.0 within `< 2.5e-5`; fixed-SD MML
+  `ModelSE`, `Specified intervals` (levels and contrasts), and `Joint
+  interaction` SEs matched `mfrmr` 0.3.0 within `5.5e-9`–`7.0e-7` and matched
+  `ConQuest` 5.47.5 `stderr=empirical` (`0.000` difference at 3 decimal places
+  on all 18/18 free coordinates across RSM and PCM).
+- **Fit, curves, reliability, Bias, and G/D-Study:** `Infit` / `Outfit` MnSq
+  (`< 3.7e-5`), FACETS 4th-moment Welch–Satterthwaite and Engine d.f. (`< 6.5e-4`;
+  `DF_Outfit_ENGINE = 0`), Wilson–Hilferty `ZSTD` (`< 6.8e-5`, `< 1.9e-5` at
+  `Q=81`), 81-point CCC / TCC / Fisher information curves (`< 2.4e-5`),
+  4-series non-person & JMLE reliability (`< 1.1e-5`), conditional `Bias` shift
+  and SE (`< 1.8e-5`), and balanced crossed 7-component G-Study / D-Study (`G`,
+  `Phi`, relative/absolute error variances and SEMs within `6.9e-18`–`5.6e-16`)
+  all agreed without implementation discrepancies.
+
+Documented software and estimator distinctions to keep separate when comparing outputs:
+
+1. **MML SE estimators (`stderr=empirical` vs `stderr=quick` / `tam.se()`):**
+   `ConQuest` 5.47.5 rejects `stderr=full` (`'Full' standard errors are no longer
+   available, use 'empirical'`) and uses `stderr=empirical` for inverse observed
+   information on free coordinates (matching `mfrmpy` and `mfrmr`), whereas
+   `ConQuest` `stderr=quick` and `TAM::tam.se()` return coordinate-wise diagonal
+   curvature `1 / sqrt(diag(I))` (matching the diagonal oracle to `7.1e-9` and
+   understating correlated Rater SEs by ~20%).
+2. **`ConQuest` sum-to-zero constrained (`*`) level SEs:** On derived sum-to-zero
+   levels (`T3*`, `R4*`, `C3*`), `ConQuest` 5.47.5 repeats the preceding free
+   parameter's SE (`T3* = T2 = 0.096`, `R4* = R3 = 0.121`; PCM `C3* = C2 = 0.127`,
+   `R4* = R3 = 0.179`) and leaves `Step_3*` SE blank instead of propagating the
+   sum-to-zero Jacobian `sqrt(diag(J I^{-1} J^T))` (`mfrmpy` and `mfrmr`:
+   `T3 = 0.099`, `R4 = 0.120`; PCM `C3 = 0.128`, `R4 = 0.184`).
+3. **MML Person EAP reliability formulas:** `mfrmpy` (`eap_posterior_sd`,
+   `population` basis) and `TAM::EAP.rel` compute `Var_pop(EAP) / (Var_pop(EAP) +
+   mean(SD.EAP^2))` (`0.861` on S1, diff `1.6e-7`); `ConQuest` `EAP/PV RELIABILITY`
+   divides sample EAP variance by the fixed prior variance `Var_sample(EAP) /
+   sigma^2_prior` (`0.796` on S1, `0.664` on S2); and `mfrmr` 0.3.0
+   `summarize_precision_basis()` currently applies `(Var - mean(SD^2)) / Var`
+   uniformly across facets.
+4. **`ConQuest` Monte Carlo scoring and 5-PV MML fit:** `ConQuest` `show cases`
+   uses Monte Carlo posterior integration (`p_nodes=50000` gave `0.0011`–`0.0025`
+   EAP RMSE against deterministic quadrature) and computes MML `Weighted` /
+   `Unweighted MNSQ` across 5 random plausible-value draws, whereas `mfrmpy` and
+   `mfrmr` evaluate deterministic Rasch residuals at `EAP`.
+5. **`mfrmpy` MML default quadrature (`quad_points=15` vs `31+`):** `mfrmpy`
+   retains `quad_points=15` by default for desktop compatibility; for 12-rating
+   polytomous profiles, `Specified intervals` withholds bounds at `q=15, 21` via
+   its finer-grid sensitivity gate and passes at `quad_points=31+` (`mfrmr` 0.3.0
+   default).
+6. **Conditional `Bias` `Prob.`:** `mfrmpy` reports 1-d.f. conditional
+   likelihood-ratio `Prob.` (`unit_weight_conditional_lr_v1`), whereas `mfrmr`
+   reports FACETS-style Student-`t` (`df = N - 1`), producing an expected
+   `0.010`–`0.015` tail difference at identical `Bias Size` and `S.E.`.
+7. **Boundary and zero-d.f. safeguards:** Both `mfrmpy` 0.2.0 and `mfrmr` 0.3.0
+   withhold `ZSTD` when `df < 1`, block zero-count internal categories, flag
+   unobserved boundary categories and disconnected MML cohorts, and find the same
+   finite interior MLE (`R4 = 3.446`) when a single centered facet level is
+   all-minimum under fixed-`N(0,1)` MML; `mfrmpy` 0.2.0 additionally resolves the
+   JMLE extreme-person `|eta| > 23` `0/0 -> 0` endpoint residual limit without
+   tolerance-dependent `NA` flipping on partner facets, masks `N = 1` zero-d.f.
+   free JMLE mean squares, and keeps `RealSE = NaN` when `Infit` is unavailable.
+   None of these numerical checks establish finite-sample coverage or formal
+   inference qualification.

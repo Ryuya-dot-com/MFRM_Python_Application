@@ -849,13 +849,20 @@ def _compute_generalizability_study(
     design: dict = {}
 
     def unavailable(code, components=None):
+        zv = design.get("zero_variance_levels") or {}
+        zv_note = (
+            "Zero-variance level(s) detected ("
+            + "; ".join(f"{f}: {', '.join(lvs)}" for f, lvs in zv.items())
+            + "): constant scores across cells inflate main-effect variance or deflate interaction/residual variance under random-effects exchangeability."
+            if zv else ""
+        )
         return {
             "available": False, "reason_code": code, "reason": _GD_INPUT_REASONS[code],
             "calculation_version": _GD_CALCULATION_VERSION,
             "variance_components": components if components is not None else pd.DataFrame(),
             "observed_coefficients": {"G": np.nan, "Phi": np.nan},
             "d_study": pd.DataFrame(), "design": design,
-            "caveat": "", "reference": "", "bootstrap_ci": {
+            "caveat": zv_note, "reference": "", "bootstrap_ci": {
                 "available": False, "inference_allowed": False,
                 "requested": bool(bootstrap_ci),
                 "inference_reason": _GD_CI_REASON, "n_attempted": 0},
@@ -918,6 +925,14 @@ def _compute_generalizability_study(
     decomposition = ("full_3way_brennan_eq_3_18" if len(random_facets) == 2
                      else "balanced_2way_anova")
     design["decomposition"] = decomposition
+    zero_var_map: dict[str, list[str]] = {}
+    for f_col in [object_facet, *random_facets]:
+        lvl_stds = work_df.groupby(f_col, observed=True)[score_col].std(ddof=0)
+        z_lvls = sorted(str(lv) for lv, sd_v in lvl_stds.items() if pd.notna(sd_v) and float(sd_v) == 0.0)
+        if z_lvls:
+            zero_var_map[str(f_col)] = z_lvls
+    if zero_var_map:
+        design["zero_variance_levels"] = zero_var_map
     with np.errstate(over="ignore", invalid="ignore"):
         var_components = _crossed_anova_variance_components(
             work_df, object_facet=object_facet, random_facets=random_facets, score_col=score_col)
@@ -954,6 +969,12 @@ def _compute_generalizability_study(
         "decisions. Neither coefficient alone establishes suitability for a use or a cut score. "
         "Intervals remain unqualified for the random-facet targets."
     )
+    if zero_var_map:
+        desc = "; ".join(f"{f}: {', '.join(lvs)}" for f, lvs in zero_var_map.items())
+        caveat += (
+            f" Zero-variance level(s) detected ({desc}): constant scores across cells inflate "
+            "main-effect variance or deflate interaction/residual variance under random-effects exchangeability."
+        )
     if fc_meta is not None:
         caveat += (
             f" Conditioned on fixed facet {fc_meta['facet']} = {fc_meta['level']}."

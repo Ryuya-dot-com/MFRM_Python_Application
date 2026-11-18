@@ -4,7 +4,9 @@
 notebooks. It uses the same Python engine as the existing MFRM Web and desktop
 applications. It does not require R, FACETS, Streamlit or Tkinter for analysis.
 
-Version **0.1.0 is the first stable library release**. Available analyses are RSM/PCM with JMLE
+Version **0.2.0** refines output qualification, four-series precision reporting,
+low-d.f. and boundary fit safeguards, and CSV/archive provenance while retaining
+full read compatibility with 0.1.0 `.mfrm` projects. Available analyses are RSM/PCM with JMLE
 or fixed-population-SD MML, diagnostics, conditional bias, selected structural
 intervals, a separate joint-interaction model, and balanced observed-score G/D
 studies. Numerical eligibility checks and interpretation limits remain in
@@ -50,18 +52,29 @@ are not zero scores. The bundled example is synthetic.
 import mfrmpy
 
 data = mfrmpy.load_example()
+preflight = mfrmpy.check_design(
+    data,
+    person="Person",
+    facets=["Rater", "Task", "Criterion"],
+    score="Score",
+    rating_min=0,
+    rating_max=5,
+)
+print(preflight["summary"])
+
 analysis = mfrmpy.analyze(
     data,
-    person_col="Person",
-    facet_cols=["Rater", "Task", "Criterion"],
-    score_col="Score",
+    person="Person",
+    facets=["Rater", "Task", "Criterion"],
+    score="Score",
     rating_min=0,
     rating_max=5,
     model="RSM",
     method="JMLE",
 )
 
-for title, frame, note in mfrmpy.tables(analysis):
+print(mfrmpy.summary(analysis))
+for title, frame, note in mfrmpy.tables(analysis, kind="measures"):
     print(title)
     print(frame.head())
     print(note)
@@ -83,12 +96,13 @@ an interface. Its MFRM settings are:
 
 | Setting | Meaning / default |
 |---|---|
-| `person_col`, `facet_cols`, `score_col` | Required column names; `facet_cols` is a list |
-| `rating_min`, `rating_max` | Required integer rubric endpoints, minimum < maximum |
+| `person_col` (`person`), `facet_cols` (`facets`), `score_col` (`score`) | Required column names; `facet_cols` / `facets` is a list |
+| `rating_min`, `rating_max` | Required integer rubric endpoints (`int` or `numpy.integer`), minimum < maximum |
 | `model`, `method` | `"RSM"` / `"PCM"`; `"JMLE"` / `"MML"`; defaults RSM and JMLE |
 | `step_facet` | Required for PCM; one selected facet with separate step structures |
 | `maxit`, `reltol` | Maximum iterations (400) and stopping tolerance (1e-6) |
-| `quad_points`, `population_prior_sd` | Fixed-SD MML quadrature count (15) and normal population SD (1.0) |
+| `quad_points`, `population_prior_sd` | Fixed-SD MML quadrature count (default `31` for MML) and normal population SD (1.0) |
+| `noncenter_facet`, `positive_facets` | Non-centered reference facet (default `"Person"`) and optional list of facets given additive `+1` leniency/easiness orientation |
 | `anchors`, `group_anchors` | Fixed-level / group-mean anchor records under the existing identification rules |
 | `compute_pca` | Optional residual diagnostics; default `False` |
 | `umean`, `uscale` | Reporting origin (0) and positive scale multiplier (1); canonical logits are retained |
@@ -176,21 +190,78 @@ their presence as a supported public API.
 
 | Function | Result |
 |---|---|
+| `check_design(data, **settings)` | Optimization-free preflight dict checking MFRM connectivity / category support or G/D balance |
 | `analyze(data, **settings)` | Retained analysis dictionary, including inputs, settings, identities and qualification |
-| `tables(analysis)` | List of `(title, pandas.DataFrame, note)` tuples, with current output restrictions applied |
+| `summary(analysis)` | One-screen DataFrame of design counts, qualification state, hold reasons and available table/plot kinds |
+| `tables(analysis, kind=None)` | List of `(title, pandas.DataFrame, note)` tuples (optionally filtered by `kind`, e.g. `"measures"`, `"steps"`/`"thresholds"`, `"reliability"`, `"agreement"`, `"bias"`, `"intervals"`, `"joint"`, `"gd"`) |
+| `export_csv(analysis, directory)` | Atomically write qualified CSV tables and `00_manifest.csv` (with current and saved reasons) |
 | `load_example()` | A new DataFrame containing the bundled synthetic writing example |
 | `save_project(path, analysis)` | Atomically write a validated `.mfrm` archive |
 | `load_project(path)` | Validate and restore an archive without refitting; malformed archives raise `ProjectError` |
 | `plot(analysis, kind="wright", **options)` | Matplotlib Figure; requires `figures` extra |
-| `report_html(analysis, **options)` | Standalone HTML string; requires `figures` extra |
+| `report_html(analysis, **options)` | Standalone HTML string (`facet`/`statistic` or `pathway_facet`/`pathway_statistic`); requires `figures` extra |
 
 `analysis["result"]` and `analysis["diagnostics"]` retain raw MFRM output;
 `analysis["gd_analysis"]` retains G/D results. The nested implementation
 schema is internal; use `.mfrm` files to retain analyses across sessions rather
-than serializing or modifying this dictionary yourself. For reporting, use `tables`, keeping
-the notes and `Use`/`Reason` information. A blank interval or SE is unavailable,
-not zero. General MML tables, person-score uncertainty and automatic equivalence
-claims retain their existing inferential restrictions.
+than serializing or modifying this dictionary yourself. For reporting, use
+`tables` or `export_csv`, keeping the notes and `SEUse`/`CIUse`/`Use`/`StatusReason`
+fields:
+
+- **Distinct run qualification states:** `stat.jmle.identifiability_audit_size_limit`
+  (exact dense rank audit skipped due to matrix size limit), `stat.jmle.eta_rank_deficient`
+  (proven structural rank deficiency / disconnected subsets), and
+  `stat.estimation.optimizer_termination_unverified` (non-convergence) are reported
+  separately rather than merged under one hold code.
+- **Exploratory SEs and intervals (`screening_only` / `SupportsFormalInference = False`):**
+  Converged JMLE (including size-limited dense audits without proven disconnection)
+  and converged fixed-SD MML display finite `ModelSE`, `RealSE = ModelSE * sqrt(max(Infit, 1))`
+  and exploratory normal bands with explicit `Basis`, `SEUse = "screening_only"`,
+  `CIUse = "screening_only"` and `SupportsFormalInference = False`. Non-converged,
+  structurally rank-deficient, free-SD MML, fixed-constraint and extreme-endpoint
+  rows withhold SEs and intervals (`""`, not zero).
+- **Four-series reliability and counts:** `Separation and Reliability by Facet`
+  reports all four combinations of `SEMode` (`model` vs `fit_adjusted`) and
+  `DistributionBasis` (`sample` ddof=1 vs `population` ddof=0), alongside `Levels`,
+  `EstimateAvailable`, `SEAvailable`, `ExcludedLevels`, `AggregationTarget`,
+  `Use` and `SupportsFormalInference = False`.
+- **Fit and boundary safeguards (`FitStatus` / `FitReason` / `ObservedCategories`):**
+  Following `mfrmr` 0.3.0, ZSTD is withheld (`""`) when degrees of freedom are
+  below 1 (preventing Wilson–Hilferty sign inversion) or when a scope includes
+  JMLE extreme-score boundary proxies; single-observation free JMLE levels
+  withhold zero-d.f. mean squares (`unavailable_zero_df`); unbounded endpoint
+  facet levels, zero-count internal/boundary score categories (`stat.category.*`),
+  and disconnected MML cohorts (`stat.mml.population_assumption_linked`) withhold
+  unqualified estimates, SEs, specified intervals, joint interactions and bias;
+  and `ObservedCategories`, agreement notes and G/D metadata flag constant-score
+  levels explicitly.
+- **Shared re-display and saved provenance:** `tables`, `plot`, `report_html` and
+  `export_csv` apply the same qualification rules to fresh and reopened `.mfrm`
+  projects while retaining original archived values and save-time reasons (`Saved*`
+  columns, `00_manifest.csv` and HTML archive notes).
+- **Cross-package numerical alignment (`mfrmr` 0.3.0 / `TAM` / `ConQuest`):** Fixed-SD
+  MML defaults to `quad_points=31` (matching `mfrmr` 0.3.0 so standard designs satisfy
+  the `q` vs `2q-1` sensitivity gate for `Specified intervals` and `Joint interaction`,
+  while earlier `.mfrm` archives retain their stored `quad_points`), and `analyze` /
+  `check_design` accept `noncenter_facet` (e.g. `noncenter_facet="Task"` to match
+  `TAM` `constraint="cases"` and `ConQuest` `lconstraints=cases`) and
+  `positive_facets`. `Step Thresholds` (`tables(analysis, "steps")`) reports centered
+  adjacent-category thresholds, observed transition counts, disorder flags, and
+  exploratory `screening_only` SEs/bands (full observed-information delta-method SEs
+  including the sum-to-zero final step for MML; analytical conditional step-information
+  SEs for JMLE). `Specified intervals` includes explicit `SupportsFormalInference = False`
+  and `Reason` columns, and conditional `Bias` (`tables(analysis, "bias")`) reports
+  `ObsScore`, `ExpScore`, `ObsExpAvg`, `BiasSize`, `SE`, `Z`, `LR_ChiSq`, and 1-d.f.
+  conditional likelihood-ratio `LR_Prob` under `Use = "screening_only"`
+  (`SupportsFormalInference = False`), withholding uncertainty under calibration or
+  cell holds. Fixed-SD MML facet SEs propagate full joint observed-information
+  covariance `sqrt(diag(J I^{-1} J^T))` across all levels including constrained
+  sum-to-zero levels (matching `mfrmr` 0.3.0, whereas `TAM::tam.se()` and `ConQuest`
+  `stderr=quick` compute diagonal curvature `1 / sqrt(diag(I))`, and `ConQuest`
+  5.47.5 `stderr=empirical` matches on free coordinates but repeats the preceding SE
+  on `*`-constrained levels); and MML Person reliability uses empirical EAP variance
+  `Var(EAP) / (Var(EAP) + mean(SD^2))` (matching `TAM::EAP.rel` under
+  `DistributionBasis = "population"`).
 
 With the optional figures dependency installed:
 
@@ -204,16 +275,23 @@ figure.savefig("wright.png", dpi=300)
 Path("report.html").write_text(mfrmpy.report_html(analysis), encoding="utf-8")
 ```
 
-Other figure kinds include `"pathway"`, `"category"`, `"bias"`, `"interval"`,
-`"joint"`, `"gd"` and `"pca"` when the required results are present. PCM Wright
-maps and category curves require `level` (a step-facet level); supplementary requests use their
+Other figure kinds include:
+- Core maps & curves: `"pathway"` (alias `"fit_pathway"`; `statistic="Infit"|"Outfit"|"InfitZSTD"|"OutfitZSTD"`), `"category"` (alias `"ccc"`), `"expected"` (alias `"tcc"`), and `"information"` (category Fisher information and conditional SE).
+- Facet & rubric profiles: `"facet"`, `"rater_severity"`, `"step"` (alias `"thresholds"`), `"bubble"`, and `"fair_average"` (`statistic="FairM"|"FairZ"`).
+- Residual & supplementary diagnostics: `"unexpected"`, `"residual_qq"`, `"pca"` (alias `"residual_pca"`), `"pca_loadings"`, `"bias"`, `"bias_ranked"`, `"interval"`, `"joint"`, and `"gd"`.
+
+PCM Wright maps and category curves require `level` (a step-facet level), while `"step"`, `"expected"`, and `"information"` accept `level` for a single step-facet level or `level=None` to overlay all step-facet levels; supplementary requests use their
 zero-based `index`. Retained results are reused; plotting and reopening must
 not recompute estimation. Unsupported requests can produce a reason-bearing
 figure rather than a numerical result.
 
-Saved `.mfrm` projects use the existing desktop/Web archive format. New source
-or dependency versions can cause current qualification checks to withhold old
-interval output without altering the archived estimates. Record
+Saved `.mfrm` projects use the existing desktop/Web archive schema with
+deterministic outer gzip compression (`\x1f\x8b`) by default; `load_project`
+automatically reads both gzip-compressed and earlier uncompressed `.mfrm`
+archives without changing `content_fingerprint` (up to 128 MiB on disk and
+512 MiB uncompressed). Older `0.1.0` releases read uncompressed archives only.
+New source or dependency versions can cause current qualification checks to
+withhold old interval output without altering the archived estimates. Record
 `mfrmpy.__version__` and `analysis["source"]` when reporting an analysis.
 The package API version and the shared engine version are distinct.
 

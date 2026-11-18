@@ -125,9 +125,11 @@ def test_zstd_from_mnsq_facets_caps_extreme_values():
     # z = (0.05 - 1) * sqrt(200 / 2) = -0.95 * 10 = -9.5 → cap to -9.
     z = app.zstd_from_mnsq_facets(0.05, 200.0, whexact=True, cap=9.0)
     assert z == pytest.approx(-9.0, abs=1e-12)
-    # Wilson-Hilferty branch hits the cap on a tiny-df pathological cell.
-    z = app.zstd_from_mnsq_facets(10.0, 1e-4, whexact=False, cap=9.0)
+    # Wilson-Hilferty branch hits the cap on a high-df extreme cell, while df < 1 returns NaN.
+    z = app.zstd_from_mnsq_facets(10.0, 200.0, whexact=False, cap=9.0)
     assert z == pytest.approx(9.0, abs=1e-12)
+    assert np.isnan(app.zstd_from_mnsq_facets(10.0, 1e-4, whexact=False, cap=9.0))
+    assert np.isnan(app.zstd_from_mnsq_facets(0.01, 0.2, whexact=False, cap=9.0))
 
 
 def test_zstd_from_mnsq_facets_returns_nan_for_invalid_inputs():

@@ -1,5 +1,6 @@
 """Desktop/project acceptance: shared calculation, typed persistence, no refit."""
 from copy import deepcopy
+import gzip
 import json
 import os
 from pathlib import Path
@@ -183,10 +184,18 @@ def test_changed_or_foreign_content_is_rejected(analysis, tmp_path, mutation):
 def test_future_corrupt_and_nonproject_files_fail_closed(analysis, tmp_path):
     path = tmp_path / "bad.mfrm"
     project.save_project(path, analysis)
-    doc = json.loads(path.read_text())
+    raw_bytes = path.read_bytes()
+    assert raw_bytes.startswith(project.GZIP_MAGIC)
+    doc = json.loads(gzip.decompress(raw_bytes).decode("utf-8"))
     doc["schema_version"] = 999
     path.write_text(json.dumps(doc))
     with pytest.raises(project.ProjectError, match="schema"):
+        project.load_project(path)
+    path.write_bytes(gzip.compress(json.dumps(doc).encode("utf-8"), mtime=0))
+    with pytest.raises(project.ProjectError, match="schema"):
+        project.load_project(path)
+    path.write_bytes(b"\x1f\x8bcorrupt-gzip-stream")
+    with pytest.raises(project.ProjectError, match="Malformed project"):
         project.load_project(path)
     path.write_bytes(b"\x80\x04pickle-is-not-a-project")
     with pytest.raises(project.ProjectError):
@@ -194,6 +203,45 @@ def test_future_corrupt_and_nonproject_files_fail_closed(analysis, tmp_path):
     path.write_text('{"format": "mfrm.basic-project", "schema_version": 1, "analysis": ["python-object", "os.system"]}')
     with pytest.raises(project.ProjectError, match="tag"):
         project.load_project(path)
+
+
+def test_gzip_compression_single_pass_and_decompression_bomb_guard(analysis, tmp_path, monkeypatch):
+    gz_path = tmp_path / "compressed.mfrm"
+    raw_path = tmp_path / "legacy_uncompressed.mfrm"
+
+    encode_calls = []
+    orig_encode_pairs = project._encode_analysis_pairs
+
+    def counted_encode_pairs(obj):
+        encode_calls.append(1)
+        return orig_encode_pairs(obj)
+
+    monkeypatch.setattr(project, "_encode_analysis_pairs", counted_encode_pairs)
+    project.save_project(gz_path, analysis)
+    assert len(encode_calls) == 1
+
+    gz_bytes = gz_path.read_bytes()
+    project.save_project(raw_path, analysis, compress=False)
+    raw_bytes = raw_path.read_bytes()
+    assert gz_bytes.startswith(project.GZIP_MAGIC)
+    assert not raw_bytes.startswith(project.GZIP_MAGIC)
+    assert len(gz_bytes) * 3 < len(raw_bytes)
+    assert gz_bytes == project.serialize_project(analysis)
+
+    monkeypatch.setattr(engine, "mfrm_estimate", lambda *a, **k: pytest.fail("Must not refit"))
+    from_gz = project.load_project(gz_path)
+    from_raw = project.load_project(raw_path)
+    assert from_gz["content_fingerprint"] == analysis["content_fingerprint"]
+    assert from_raw["content_fingerprint"] == analysis["content_fingerprint"]
+
+    # Bounded streaming decompression blocks zip bombs before json.loads runs.
+    monkeypatch.setattr(project, "MAX_UNCOMPRESSED_PROJECT_BYTES", 64 * 1024)
+    bomb_bytes = gzip.compress(b"0" * (1024 * 1024), compresslevel=9, mtime=0)
+    assert len(bomb_bytes) < 4096
+    bomb_path = tmp_path / "bomb.mfrm"
+    bomb_path.write_bytes(bomb_bytes)
+    with pytest.raises(project.ProjectError, match="uncompressed project size limit"):
+        project.load_project(bomb_path)
 
 
 def test_missing_column_mapping_is_rejected_before_opening_in_ui(analysis, tmp_path):

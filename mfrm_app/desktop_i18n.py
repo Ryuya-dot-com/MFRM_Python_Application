@@ -226,3 +226,17 @@ MIT license: research, teaching, professional and commercial use are allowed. Us
 
 EN.update({ja + suffix: en + ending for ja, en in [('差の左側', 'Left cell'), ('差の右側', 'Right cell')]
            for suffix, ending in [('：A水準', ': A level'), ('：B水準', ': B level')]})
+TEMPLATES.append(('バイアス順位 · {pair}', 'Bias (ranked) · {pair}'))
+EN.update({
+    '相水準の推定値': 'Facet-level estimates',
+    '段階閾値ラダー': 'Step threshold ladder',
+    '適合度バブルチャート': 'Diagnostic bubble chart',
+    '期待得点曲線': 'Expected score curve',
+    '情報量・条件付きSE曲線': 'Information and conditional SE',
+    '公正平均 vs 観測平均': 'Fair vs observed average',
+    '予期しない応答': 'Unexpected responses',
+    '標準化残差 Q-Q': 'Standardized residual Q-Q',
+    '残差PCA · 固有値スクリー': 'Residual PCA · eigenvalue scree',
+    '残差PCA · 第1コントラスト負荷量': 'Residual PCA · Contrast 1 loadings',
+    '段階閾値の推定値': 'Step Thresholds',
+})

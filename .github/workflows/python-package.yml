@@ -10,6 +10,8 @@ on:
       - "locales/en.json"
       - "examples/desktop_writing.csv"
       - "docs/python_library.md"
+      - "docs/analysis_scope.md"
+      - "CHANGELOG.md"
       - "tests/test_python_library.py"
       - "LICENSE*"
       - ".github/workflows/python-package.yml"
@@ -23,12 +25,17 @@ on:
         default: none
         type: choice
         options: [none, testpypi, pypi]
+      validated_run_id:
+        description: "Optional successful main push run at this commit whose tested distributions should be published"
+        required: false
+        type: string
 
 permissions:
   contents: read
 
 jobs:
   build:
+    if: github.event_name != 'workflow_dispatch' || inputs.target == 'none' || inputs.validated_run_id == ''
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6.0.2
@@ -80,7 +87,7 @@ jobs:
         run: |
           python -m pip install dist/*.whl "pytest>=8"
           python -m pip check
-          cp tests/test_python_library.py "$RUNNER_TEMP/test_python_library.py"
+          cp pyproject.toml tests/test_python_library.py "$RUNNER_TEMP/"
           cd "$RUNNER_TEMP"
           python -I -m pytest test_python_library.py -q
       - name: Install optional plotting dependency
@@ -92,20 +99,38 @@ jobs:
       - name: Test figures and HTML from the installed package
         run: |
           cd "$RUNNER_TEMP"
-          python -I -m pytest test_python_library.py -q -k optional_figures
+          python -I -m pytest test_python_library.py -q -m figures
 
   publish:
-    if: github.event_name == 'workflow_dispatch' && inputs.target != 'none' && github.ref == 'refs/heads/main'
+    if: >-
+      always() && !cancelled() && github.event_name == 'workflow_dispatch' &&
+      inputs.target != 'none' && github.ref == 'refs/heads/main' &&
+      (needs.test.result == 'success' || (inputs.validated_run_id != '' && needs.build.result == 'skipped'))
     needs: [build, test]
     runs-on: ubuntu-latest
     environment: ${{ inputs.target }}
     permissions:
       id-token: write
+      actions: read
     steps:
+      - name: Verify reused distributions came from the successful package workflow at this commit
+        if: inputs.validated_run_id != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_ID: ${{ inputs.validated_run_id }}
+        run: |
+          [[ "$RUN_ID" =~ ^[0-9]+$ ]]
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RUN_ID" |
+            jq -e --arg sha "$GITHUB_SHA" '
+              .head_sha == $sha and .head_branch == "main" and .event == "push" and
+              .path == ".github/workflows/python-package.yml" and .conclusion == "success"
+            '
       - uses: actions/download-artifact@v8.0.2
         with:
           name: python-dist
           path: dist
+          github-token: ${{ github.token }}
+          run-id: ${{ inputs.validated_run_id || github.run_id }}
       - name: Publish tested distributions to TestPyPI
         if: inputs.target == 'testpypi'
         uses: pypa/gh-action-pypi-publish@release/v1

@@ -23,7 +23,7 @@ KIND_ALIASES = {
 DIAGNOSTIC_GUIDES = {
     'ja': {
         'facet': '各相水準の推定位置（logit）です。条件付き／固定SD MMLの区間バーは探索的スクリーニング用（screening_only, SupportsFormalInference=FALSE）であり、固定アンカー・極端得点・識別不能時は点位置のみを示します。',
-        'rater_severity': '評価者相の推定位置（厳しさ・寛大さ、logit）の順位図です。区間バーは探索的スクリーニング用（screening_only, SupportsFormalInference=FALSE）であり、正式な差の検定ではありません。',
+        'rater_severity': '相の推定位置（logit）の順位図です。正方向の意味は横軸に示します。区間バーは探索的スクリーニング用（screening_only, SupportsFormalInference=FALSE）であり、正式な差の検定ではありません。',
         'step': '中心化された段階閾値オフセット（logit）のラダーです。閾値の逆転は中間カテゴリーの最頻領域が狭いことを示しますが、自動的にカテゴリー統合を決める規則ではありません。',
         'bubble': '縦軸は推定値（logit）、横軸は適合度、円の面積はスクリーニングSE（保留時は評定数）です。0.5・1.5（またはZSTDの±2）は点検用の参照線であり、固定の合否基準ではありません。',
         'expected': '正味予測子（logit）に対する期待得点曲線 E[X | eta] です。採点基準の最低点・最高点と中央値を破線で示します。',
@@ -37,7 +37,7 @@ DIAGNOSTIC_GUIDES = {
     },
     'en': {
         'facet': 'Ranked facet-level locations (logits). Displayed interval bars are exploratory screening bands (screening_only; SupportsFormalInference=FALSE); fixed, extreme-score and unidentifiable levels show point locations only.',
-        'rater_severity': 'Ranked rater severity locations (logits). Displayed interval bars are exploratory screening bands (screening_only; SupportsFormalInference=FALSE), not formal significance tests.',
+        'rater_severity': 'Ranked facet locations (logits); the axis shows the direction of increasing estimates. Displayed interval bars are exploratory screening bands (screening_only; SupportsFormalInference=FALSE), not formal significance tests.',
         'step': 'Centered step threshold ladder (logits). Disordered crossings indicate narrow intermediate modal zones, not an automatic category-collapsing rule.',
         'bubble': 'Diagnostic bubble chart of measure (logits) vs fit statistic, with bubble area proportional to screening ModelSE (or observation count when SE is withheld). Reference lines at 0.5/1.5 (or ±2 ZSTD) are inspection prompts, not fixed cutoffs.',
         'expected': 'Expected score curve E[X | eta] across the net logit predictor, bounded by rubric minimum, midpoint and maximum reference lines.',
@@ -79,6 +79,9 @@ def figure_choices(analysis, *, language=None):
                 suffix = f" · {config['step_facet']} = {level}" if level is not None else ''
                 choices.append((title + suffix, dict(kind=kind, level=level)))
         choices.insert(1, ('Pathway map', dict(kind='pathway')))
+        if 'Rater' in config['facet_names']:
+            label = '評価者の寛大さ' if config.get('facet_signs', {}).get('Rater', -1) > 0 else '評価者の厳しさ'
+            choices.append((label, dict(kind='rater_severity')))
         choices.extend([
             ('相水準の推定値', dict(kind='facet')),
             ('段階閾値ラダー', dict(kind='step')),
@@ -164,7 +167,14 @@ def _facet_estimates_figure(analysis, *, facet=None, rater_default=False, top_n=
     extra = raw['Facet'].astype(str).unique() if isinstance(raw, pd.DataFrame) and 'Facet' in raw.columns else ()
     _validate_facet_choice(facet, result, extra)
     top_n = max(1, int(top_n))
-    title_base = ('Rater severity profile' if rater_default else 'Facet-level estimates') + (f' · {facet}' if facet else '')
+    title_base = 'Facet-level estimates'
+    xlabel = 'Measure (logits)'
+    if facet is not None:
+        positive = result['config'].get('facet_signs', {}).get(facet, -1) > 0 or facet == 'Person'
+        xlabel += ' · higher values ' + ('raise' if positive else 'lower') + ' expected scores'
+        if rater_default and facet.casefold() == 'rater':
+            title_base = 'Rater leniency profile' if positive else 'Rater severity profile'
+        title_base += f' · {facet}'
 
     fig = Figure(figsize=(9, 4.8), layout='constrained')
     ax = fig.subplots()
@@ -243,7 +253,7 @@ def _facet_estimates_figure(analysis, *, facet=None, rater_default=False, top_n=
     ]
     ax.set_yticks(rows['_y'].to_numpy(), ylabels)
     ax.invert_yaxis()
-    ax.set_xlabel('Measure (logits)')
+    ax.set_xlabel(xlabel)
     if multi_facet or (ci_ok.any() and (~ci_ok).any()):
         ax.legend(fontsize=8, loc='best', frameon=False)
     fig.suptitle(title_base)
@@ -757,6 +767,7 @@ def _bias_ranked_figure(analysis, *, index=0, top_n=30):
 
 def analysis_figure(analysis, kind, *, level=None, index=0, facet=None, statistic='Infit', presentation='explained', gd_swap=False, top_n=40):
     from mfrm_app.figure_presentation import matplotlib_figure
+    project.require_reportable_input(analysis)
     canonical = KIND_ALIASES.get(str(kind), str(kind))
     fig = _analysis_figure(analysis, canonical, level=level, index=index, facet=facet, statistic=statistic, gd_swap=gd_swap, top_n=top_n)
     return matplotlib_figure(fig, presentation)

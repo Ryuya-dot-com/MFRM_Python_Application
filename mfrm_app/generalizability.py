@@ -17,7 +17,7 @@ from mfrm_app.engine import dataframe_fingerprint, stable_json_fingerprint
 
 
 _GD_STUDY_DEFAULT_GRID = (1, 2, 3, 4, 5, 6, 7, 8, 9, 10)
-_GD_CALCULATION_VERSION = "balanced_anova_v2"
+_GD_CALCULATION_VERSION = "balanced_anova_v3"
 _GD_CI_REASON = "Person-only resampling has not qualified intervals for the declared random-facet G/D targets."
 _RESERVED_GD_NAMES = {"Residual", "G", "Phi", "IsObservedDesign", "_section"}
 
@@ -70,7 +70,7 @@ _GD_INPUT_REASONS = {
     "unsupported_weights": "This G-study supports unit observation weights only.",
     "invalid_grid": "The maximum planned facet count must be a positive integer.",
     "invalid_components": "The variance decomposition did not produce finite components.",
-    "undefined_coefficients": "G and Phi are undefined because usable object variance is absent.",
+    "undefined_coefficients": "G and Phi are undefined because both coefficient denominators are zero.",
 }
 
 
@@ -558,8 +558,12 @@ def _g_phi_from_variance_components(
     lookup = {src: float(var) for src, var in zip(sources, variances)}
     sigma2_p = lookup.get(object_facet, np.nan)
     sigma2_e = lookup.get("Residual", np.nan)
-    if not (np.isfinite(sigma2_p) and np.isfinite(sigma2_e) and sigma2_p > 0):
+    if not (np.isfinite(sigma2_p) and np.isfinite(sigma2_e) and sigma2_p >= 0):
         return {"G": np.nan, "Phi": np.nan, "details": {"sigma2_p": sigma2_p, "sigma2_e": sigma2_e}}
+
+    def ratio(error):
+        denominator = sigma2_p + error
+        return sigma2_p / denominator if denominator > 0 else np.nan
 
     facet_obs = facet_observations or {}
     two_way_sources = (
@@ -598,8 +602,8 @@ def _g_phi_from_variance_components(
             sigma2_delta
             + sigma2_i / n_a + sigma2_j / n_b + sigma2_ij / (n_a * n_b)
         )
-        g_coef = sigma2_p / (sigma2_p + sigma2_delta)
-        phi_coef = sigma2_p / (sigma2_p + sigma2_big_delta)
+        g_coef = ratio(sigma2_delta)
+        phi_coef = ratio(sigma2_big_delta)
         return {
             "G": float(g_coef),
             "Phi": float(phi_coef),
@@ -625,8 +629,8 @@ def _g_phi_from_variance_components(
                                for s in lookup
                                if s not in {object_facet, "Residual"}])), 1)
     relative_err = sigma2_e / n_total
-    g_coef = sigma2_p / (sigma2_p + relative_err)
-    phi_coef = sigma2_p / (sigma2_p + sigma2_main_per_obs + relative_err)
+    g_coef = ratio(relative_err)
+    phi_coef = ratio(sigma2_main_per_obs + relative_err)
     return {
         "G": float(g_coef),
         "Phi": float(phi_coef),
@@ -943,7 +947,7 @@ def _compute_generalizability_study(
     observed_n = design["observed_n"]
     observed_coefficients = _g_phi_from_variance_components(
         var_components, object_facet=object_facet, facet_observations=observed_n)
-    if not all(np.isfinite(observed_coefficients[k]) for k in ("G", "Phi")):
+    if not any(np.isfinite(observed_coefficients[k]) for k in ("G", "Phi")):
         return unavailable("undefined_coefficients", var_components)
     planned_points = _planned_facet_grid(int(n_max_per_facet))
     facet_grids = {f: planned_points for f in random_facets}
@@ -967,8 +971,11 @@ def _compute_generalizability_study(
            else "Scores are the retained preprocessed scores, ")
         + "with unit observation weights. G concerns relative decisions; Phi concerns absolute "
         "decisions. Neither coefficient alone establishes suitability for a use or a cut score. "
-        "Intervals remain unqualified for the random-facet targets."
+        "A coefficient with a zero denominator is undefined. Intervals remain unqualified for the random-facet targets."
     )
+    if any(not np.isfinite(observed_coefficients[k]) for k in ("G", "Phi")):
+        undefined = ", ".join(k for k in ("G", "Phi") if not np.isfinite(observed_coefficients[k]))
+        caveat += f" Undefined for the observed design (zero denominator): {undefined}."
     if zero_var_map:
         desc = "; ".join(f"{f}: {', '.join(lvs)}" for f, lvs in zero_var_map.items())
         caveat += (

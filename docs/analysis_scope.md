@@ -1,6 +1,6 @@
 # Analyses, interpretation and reporting limits
 
-[Start here](../README.md) · [Windows guide](desktop_user_guide.en.md) · [日本語の操作・結果の読み方](desktop_user_guide.ja.md#分析を選ぶ)
+[Start here](../README.md) · [Windows guide](https://github.com/Ryuya-dot-com/MFRM_Python_Application/blob/main/docs/desktop_user_guide.en.md) · [日本語の操作・結果の読み方](https://github.com/Ryuya-dot-com/MFRM_Python_Application/blob/main/docs/desktop_user_guide.ja.md#分析を選ぶ)
 
 Use this page to choose an analysis and understand what its results can support.
 It describes the Web application and the desktop preview documented in this
@@ -61,8 +61,8 @@ population, independent persons, ignorable assignment/missingness, an
 identified interior parameter and growing information. It does not provide
 simultaneous intervals, Person-score intervals or a test of equivalence.
 
-The [English](fixed_sd_quadrature_check.en.md) and
-[Japanese](fixed_sd_quadrature_check.ja.md) Web guides explain selecting,
+The [English](https://github.com/Ryuya-dot-com/MFRM_Python_Application/blob/main/docs/fixed_sd_quadrature_check.en.md) and
+[Japanese](https://github.com/Ryuya-dot-com/MFRM_Python_Application/blob/main/docs/fixed_sd_quadrature_check.ja.md) Web guides explain selecting,
 saving and rechecking these intervals. In Desktop, register the requests in
 **Settings → Bias / intervals** before running the analysis.
 
@@ -154,5 +154,5 @@ Implementation references for technical readers:
 [structural intervals](../mfrm_app/structural_intervals.py),
 [joint interactions](../mfrm_app/joint_interaction.py),
 [G/D calculations](../mfrm_app/generalizability.py).
-The [FACETS comparison](../validation/FACETS_WINDOWS_DESKTOP_REVIEW_20261029.md)
+The [FACETS comparison](https://github.com/Ryuya-dot-com/MFRM_Python_Application/blob/main/validation/FACETS_WINDOWS_DESKTOP_REVIEW_20261029.md)
 states the conditions and limits of its numerical checks.

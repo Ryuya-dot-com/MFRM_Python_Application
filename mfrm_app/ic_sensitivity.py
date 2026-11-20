@@ -38,7 +38,7 @@ def capture_inputs(fits):
         for f in ["Person", *facets]:
             if list(data[f].cat.categories) != prep["levels"][f] or (data[f].cat.codes < 0).any():
                 raise ValueError("inconsistent_inputs")
-        if not np.array_equal(data["score_k"], data["Score"]-prep["rating_min"]):
+        if not np.array_equal(data[prep.get("score_index_col", "score_k")], data["Score"]-prep["rating_min"]):
             raise ValueError("inconsistent_inputs")
         point = np.asarray(fit["opt"].x, dtype=float)
         k = sum(engine.build_param_sizes(cfg).values())

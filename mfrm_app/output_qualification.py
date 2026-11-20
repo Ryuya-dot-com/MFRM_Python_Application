@@ -44,8 +44,8 @@ def _empty_boundary_audit() -> dict[str, object]:
     }
 
 
-def _connected_component_count(adjacency: dict[str, set[str]]) -> int:
-    seen: set[str] = set()
+def _connected_component_count(adjacency: dict) -> int:
+    seen = set()
     comps = 0
     for node in adjacency:
         if node in seen:
@@ -59,6 +59,57 @@ def _connected_component_count(adjacency: dict[str, set[str]]) -> int:
             seen.add(cur)
             stack.extend(adjacency.get(cur, ()) - seen)
     return comps
+
+
+def _unlinked_anchor_levels(data, config):
+    """Test level estimability after removing an unrestricted intercept for each person.
+
+    A fixed population distribution can link otherwise disconnected cohorts.
+    Within-person differences remove that assumption. A target is design-linked
+    exactly when its contrast is in the row space of those differences.
+    """
+    from .engine import _constraint_expansion_matrix_for_identifiability
+
+    facets = config["facet_names"]
+    specs = config["facet_specs"]
+    dimension = sum(specs[f]["n_params"] for f in facets)
+    observations = data[["Person", *facets]].drop_duplicates()
+    n_levels = sum(len(specs[f]["levels"]) for f in facets)
+    if max(len(observations), n_levels, dimension) * dimension > 5_000_000:
+        return None
+    design = np.zeros((len(observations), dimension))
+    targets = np.zeros((n_levels, dimension))
+    labels = []
+    column = row = 0
+    for facet in facets:
+        spec = specs[facet]
+        block = _constraint_expansion_matrix_for_identifiability(spec)
+        levels = pd.Index(spec["levels"]).astype(str)
+        indices = levels.get_indexer(observations[facet].astype(str))
+        if (indices < 0).any():
+            return None
+        cols = slice(column, column + block.shape[1])
+        design[:, cols] = config.get("facet_signs", {}).get(facet, -1) * block[indices]
+        targets[row:row + len(levels), cols] = block
+        labels.extend((facet, level) for level in levels)
+        row += len(levels)
+        column = cols.stop
+    if not dimension:
+        return set()
+    people, names = pd.factorize(observations.Person.astype(str))
+    _, first = np.unique(people, return_index=True)
+    differences = design - design[first][people]
+    _, singular, vh = np.linalg.svd(differences, full_matrices=False)
+    tol = max(differences.shape) * np.finfo(float).eps
+    basis = vh[singular > tol * singular[0]]
+
+    def unlinked(matrix):
+        residual = matrix - (matrix @ basis.T) @ basis
+        return np.linalg.norm(residual, axis=1) > tol * np.maximum(1., np.linalg.norm(matrix, axis=1))
+
+    unresolved = {label for label, held in zip(labels, unlinked(targets)) if held}
+    unresolved.update(("Person", name) for name, held in zip(names, unlinked(design[first])) if held)
+    return unresolved
 
 
 def audit_boundary_and_support(result) -> dict[str, object]:
@@ -211,41 +262,31 @@ def audit_boundary_and_support(result) -> dict[str, object]:
     disconnected_facets: set[str] = set()
     hypergraph_components = 1
     if "Person" in df.columns:
-        person_anchored = _spec_has_explicit_anchor(theta_spec)
-        p_col = df["Person"].astype(str)
-        if not person_anchored:
-            for fname in facet_names:
-                if fname not in df.columns or _spec_has_explicit_anchor(facet_specs.get(fname)):
-                    continue
-                adj: dict[str, set[str]] = {}
-                for p_val, f_val in zip(p_col, df[fname].astype(str)):
-                    pn = f"P::{p_val}"
-                    fn = f"F::{f_val}"
-                    adj.setdefault(pn, set()).add(fn)
-                    adj.setdefault(fn, set()).add(pn)
-                if _connected_component_count(adj) > 1:
-                    disconnected_facets.add(fname)
-
-        hadj: dict[str, set[str]] = {}
-        for p_val in p_col.unique():
-            pn = f"P::{p_val}"
-            hadj.setdefault(pn, set())
-            if person_anchored:
-                hadj[pn].add("__ANCHOR__")
-                hadj.setdefault("__ANCHOR__", set()).add(pn)
+        persons = df["Person"].astype(str)
+        all_edges = {}
         for fname in facet_names:
             if fname not in df.columns:
                 continue
-            f_anchored = _spec_has_explicit_anchor(facet_specs.get(fname))
-            for p_val, f_val in zip(p_col, df[fname].astype(str)):
-                pn = f"P::{p_val}"
-                fn = f"{fname}::{f_val}"
-                hadj.setdefault(pn, set()).add(fn)
-                hadj.setdefault(fn, set()).add(pn)
-                if f_anchored:
-                    hadj[fn].add("__ANCHOR__")
-                    hadj.setdefault("__ANCHOR__", set()).add(fn)
-        hypergraph_components = max(1, _connected_component_count(hadj))
+            edges = {}
+            for person, level in zip(persons, df[fname].astype(str)):
+                pn, fn = ("Person", person), (fname, level)
+                edges.setdefault(pn, set()).add(fn)
+                edges.setdefault(fn, set()).add(pn)
+            if _connected_component_count(edges) > 1:
+                disconnected_facets.add(fname)
+            for node, neighbors in edges.items():
+                all_edges.setdefault(node, set()).update(neighbors)
+        hypergraph_components = max(1, _connected_component_count(all_edges))
+
+    disconnected_levels = None
+    if (method == "MML" and (disconnected_facets or hypergraph_components > 1)
+            and any(_spec_has_explicit_anchor(spec) for spec in facet_specs.values())
+            and not _spec_has_explicit_anchor(theta_spec)):
+        disconnected_levels = _unlinked_anchor_levels(df, config)
+        if disconnected_levels is not None:
+            disconnected_facets = {f for f, _ in disconnected_levels if f != "Person"}
+            if not disconnected_levels:
+                hypergraph_components = 1
 
     return {
         "active": True,
@@ -256,6 +297,7 @@ def audit_boundary_and_support(result) -> dict[str, object]:
         "unbounded_facet_levels": unbounded_facet_levels,
         "contaminated_facets": contaminated_facets,
         "disconnected_facets": disconnected_facets,
+        "disconnected_levels": disconnected_levels,
         "hypergraph_components": hypergraph_components,
         "observed_categories": observed_categories,
     }
@@ -280,7 +322,7 @@ def boundary_and_support_hold_reason(result, *, for_screening_block: bool = Fals
     if b["unobserved_global_boundary"]:
         return UNOBSERVED_BOUNDARY_CATEGORY_HOLD_REASON
     if method == "MML":
-        if int(b["hypergraph_components"]) > 1:
+        if int(b["hypergraph_components"]) > 1 and (not for_screening_block or b.get("disconnected_levels") is None):
             return MML_DISCONNECTED_HOLD_REASON
         if not for_screening_block and b["disconnected_facets"]:
             return MML_DISCONNECTED_HOLD_REASON

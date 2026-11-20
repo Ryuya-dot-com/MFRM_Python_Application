@@ -1023,7 +1023,7 @@ def build_jmle_eta_identifiability_audit(
             "EtaDesignColumns": int(n_columns),
             "EtaDesignRank": np.nan,
             "EtaStructuralNullity": np.nan,
-            "EtaStructurallyIdentified": False,
+            "EtaStructurallyIdentified": pd.NA,
             "InferenceReady": False,
             "Action": (
                 "The exact dense rank audit exceeded its technical size limit. "
@@ -1035,7 +1035,7 @@ def build_jmle_eta_identifiability_audit(
             "available": False,
             "scope": scope,
             "status": "audit_size_limit",
-            "eta_structurally_identified": False,
+            "eta_structurally_identified": None,
             "inference_ready": False,
             "summary": summary,
             "coordinate_null_weight": pd.DataFrame(metadata),
@@ -2014,6 +2014,25 @@ def build_response_data_audit(
     return {"summary": summary, "rows": audit, "excluded_rows": excluded_rows}
 
 
+def validate_rating_scores(audit_rows):
+    for flag, message in (("ScoreNonFinite", "Score must contain finite integer category codes"),
+                          ("ScoreFractional", "Score must contain ordered integer category codes")):
+        invalid = audit_rows.loc[audit_rows[flag], "InputRow"]
+        if not invalid.empty:
+            raise ValueError(f"{message}. Check input row(s) {invalid.head(5).tolist()}.")
+
+
+def normalized_rating_ids(series):
+    values = series.astype(str)
+    trimmed = values.str.strip()
+    if not trimmed.equals(values):
+        labels = pd.DataFrame({"original": values, "trimmed": trimmed}).drop_duplicates()
+        ambiguous = labels.loc[labels.trimmed.duplicated(keep=False), "original"]
+        if not ambiguous.empty:
+            raise ValueError(f"Ambiguous IDs after trimming spaces in {series.name!r}: {ambiguous.tolist()!r}")
+    return trimmed
+
+
 def prepare_mfrm_data(
     data,
     person_col,
@@ -2027,6 +2046,8 @@ def prepare_mfrm_data(
     required = [person_col, score_col] + list(facet_cols)
     if weight_col:
         required.append(weight_col)
+    if "Weight" in facet_cols:
+        raise ValueError("Weight is the observation-weight field. Rename this facet before analysis.")
     if len(set(required)) != len(required):
         raise ValueError("Person/score/facet columns must be distinct (no duplicates).")
     if not all(col in data.columns for col in required):
@@ -2076,19 +2097,8 @@ def prepare_mfrm_data(
             "conflicting facet column before fitting."
         )
 
-    score_num = pd.to_numeric(df["Score"], errors="coerce")
-    if (score_num.notna() & ~np.isfinite(score_num)).any():
-        raise ValueError("Score must contain finite integer category codes; infinite values were found.")
-    score_tol = np.sqrt(np.finfo(float).eps)
-    fractional_score = score_num.notna() & np.isfinite(score_num) & ((score_num - np.round(score_num)).abs() > score_tol)
-    if fractional_score.any():
-        examples = df.loc[fractional_score, "Score"].astype(str).drop_duplicates().head(5).tolist()
-        raise ValueError(
-            "Score must contain ordered integer category codes. "
-            f"Fractional value(s) were found: {', '.join(examples)}. "
-            "Recode the score column before fitting."
-        )
-    df["Score"] = score_num
+    validate_rating_scores(audit_bundle["rows"])
+    df["Score"] = pd.to_numeric(df["Score"], errors="coerce").round()
 
     if "Weight" in df.columns:
         df["Weight"] = pd.to_numeric(df["Weight"], errors="coerce")
@@ -2102,14 +2112,14 @@ def prepare_mfrm_data(
     if df.empty:
         raise ValueError("No valid observations remain after removing missing values and non-positive weights.")
 
-    df["Person"] = df["Person"].astype(str)
-    for facet in facet_cols:
-        df[facet] = df[facet].astype(str)
+    for facet in ["Person", *facet_cols]:
+        df[facet] = normalized_rating_ids(df[facet])
     df["Score"] = df["Score"].astype(int)
     observed_score_values = np.sort(df["Score"].unique())
     if len(observed_score_values) < 2:
         raise ValueError("MFRM requires at least two distinct score categories.")
 
+    score_tol = np.sqrt(np.finfo(float).eps)
     rating_min_supplied = rating_min is not None
     rating_max_supplied = rating_max is not None
     if rating_min is None:
@@ -2160,7 +2170,10 @@ def prepare_mfrm_data(
         elif boundary_only_gap:
             preserve_score_support = True
 
-    df["score_k"] = df["Score"] - rating_min
+    score_index_col = "score_k"
+    while score_index_col in df.columns:
+        score_index_col = "_" + score_index_col
+    df[score_index_col] = df["Score"] - rating_min
     unused_score_categories = sorted(set(range(rating_min, rating_max + 1)) - set(df["Score"].unique().tolist()))
     if unused_score_categories:
         score_messages.append(
@@ -2205,6 +2218,7 @@ def prepare_mfrm_data(
         "score_range_explicit": bool(rating_min_supplied or rating_max_supplied),
         "facet_names": list(facet_cols),
         "levels": {"Person": list(df["Person"].cat.categories), **facet_levels},
+        **({"score_index_col": score_index_col} if score_index_col != "score_k" else {}),
         "weight_col": "Weight",
         "n_obs": n_obs,
         "n_person": n_person,
@@ -2339,7 +2353,7 @@ def build_indices(prep, step_facet=None, slope_facet=None):
         "facets": facets_idx,
         "step_idx": step_idx,
         "slope_idx": slope_idx,
-        "score_k": df["score_k"].to_numpy(dtype=int),
+        "score_k": df[prep.get("score_index_col", "score_k")].to_numpy(dtype=int),
         "weight": df["Weight"].to_numpy(dtype=float) if "Weight" in df.columns else np.ones(len(df)),
         "rows_by_person": rows_by_person,
     }
@@ -3536,6 +3550,7 @@ def qualify_measures_for_reporting(
 
     facet_col_strs = out["Facet"].astype(str) if "Facet" in out.columns else pd.Series("", index=out.index)
     disconnected_facets = set(b_audit["disconnected_facets"]) if b_audit["active"] else set()
+    unlinked_levels = b_audit.get("disconnected_levels")
     for pos in range(len(out)):
         if bool(fixed_mask.iloc[pos]):
             basis_list.append("Fixed constraint")
@@ -3561,7 +3576,10 @@ def qualify_measures_for_reporting(
             eff_se_status.append("calibration_inference_withheld")
             eff_ci_status.append("calibration_inference_withheld")
             continue
-        if method == "MML" and str(facet_col_strs.iloc[pos]) in disconnected_facets:
+        facet = str(facet_col_strs.iloc[pos])
+        unlinked = (facet in disconnected_facets if unlinked_levels is None
+                    else (facet, str(out["Level"].iloc[pos])) in unlinked_levels)
+        if method == "MML" and unlinked:
             basis_list.append("Withheld")
             se_use_list.append("withheld")
             ci_use_list.append("withheld")

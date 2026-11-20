@@ -13,7 +13,7 @@ license-files = ["LICENSE", "LICENSE_NOTICE.md"]
 authors = [{name = "Ryuya Komuro"}]
 keywords = ["Rasch", "MFRM", "psychometrics", "rating", "generalizability"]
 classifiers = [
-    "Development Status :: 5 - Production/Stable",
+    "Development Status :: 4 - Beta",
     "Intended Audience :: Science/Research",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.11",
@@ -27,10 +27,11 @@ figures = ["matplotlib>=3.8"]
 test = ["pytest>=8"]
 
 [project.urls]
-Homepage = "https://github.com/Ryuya-dot-com/MFRM_Python_Application"
-Repository = "https://github.com/Ryuya-dot-com/MFRM_Python_Application"
-Documentation = "https://github.com/Ryuya-dot-com/MFRM_Python_Application/blob/main/docs/python_library.md"
-Issues = "https://github.com/Ryuya-dot-com/MFRM_Python_Application/issues"
+Homepage = "https://github.com/Ryuya-dot-com/mfrmpy"
+Repository = "https://github.com/Ryuya-dot-com/mfrmpy"
+Documentation = "https://github.com/Ryuya-dot-com/mfrmpy/blob/main/docs/python_library.md"
+Issues = "https://github.com/Ryuya-dot-com/mfrmpy/issues"
+"Web and desktop applications" = "https://github.com/Ryuya-dot-com/MFRM_Python_Application"
 
 [tool.hatch.version]
 path = "mfrmpy/__init__.py"
@@ -50,3 +51,6 @@ only-include = [
     "tests/test_python_library.py", "LICENSE", "LICENSE_NOTICE.md", "pyproject.toml",
 ]
 exclude = ["mfrm_app/legacy_compat"]
+
+[tool.pytest.ini_options]
+markers = ["figures: exercise Matplotlib figures or HTML output from the installed package"]

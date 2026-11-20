@@ -300,6 +300,7 @@ def run_basic_analysis(data, *, person_col, facet_cols, score_col, rating_min, r
         f_umean = 0.0
 
     audit_rows = engine.build_response_data_audit(data, person_col=person_col, facet_cols=facet_cols, score_col=score_col)
+    engine.validate_rating_scores(audit_rows["rows"])
     retained = data.loc[audit_rows["rows"]["IncludedInLikelihood"].to_numpy(dtype=bool)]
     observed_levels = {
         "Person": set(retained[person_col].dropna().astype(str).str.strip()) if not retained.empty else set(),
@@ -360,6 +361,7 @@ def current_tables(analysis, *, extended: bool = False):
     """Reapply current display qualification without refitting or rewriting provenance."""
     project.validate_analysis(analysis)
     result = analysis["result"]
+    project.require_reportable_input(analysis)
     facts = reporting_facts.observed_report_tables(result)
     tables = [(title, table, note) for title, table, note in facts]
     fit_note = metric_note("fit")

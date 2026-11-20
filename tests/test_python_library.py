@@ -186,6 +186,7 @@ def test_project_retains_string_storage_missing_values_and_fingerprints(storage,
 
 
 @pytest.mark.skipif(importlib.util.find_spec("matplotlib") is None, reason="Optional figures extra")
+@pytest.mark.figures
 def test_optional_figures_and_report_reuse_retained_results(fitted, monkeypatch):
     forbid_refit(monkeypatch)
     for kind in ("wright", "pathway", "category"):
@@ -326,6 +327,7 @@ def test_audit_size_limit_rank_deficiency_and_non_convergence_are_separated(tmp_
         assert rel["StatusReason"].eq(expected_reason).all(), label
 
 
+@pytest.mark.figures
 def test_boundary_exclusion_counts_low_df_fit_guards_and_legacy_reload(tmp_path, monkeypatch):
     from copy import deepcopy
     from mfrm_app import project
@@ -416,6 +418,7 @@ def test_boundary_exclusion_counts_low_df_fit_guards_and_legacy_reload(tmp_path,
         assert fig.axes
 
 
+@pytest.mark.figures
 def test_diagnostic_plots_coordinates_exclusions_and_qualification(monkeypatch):
     pytest.importorskip("matplotlib")
     from copy import deepcopy
@@ -533,6 +536,7 @@ def test_diagnostic_plots_coordinates_exclusions_and_qualification(monkeypatch):
     assert "S.E." not in report and "LR Prob." not in report
 
 
+@pytest.mark.figures
 def test_boundary_scenarios_all_ones_category_gaps_disconnected_mml_and_zero_df(tmp_path, monkeypatch):
     import warnings
 
@@ -806,6 +810,7 @@ def test_boundary_scenarios_all_ones_category_gaps_disconnected_mml_and_zero_df(
     assert one_mf.loc[("Rater", "R_single"), "FitStatus"] == "unavailable_zero_df"
 
 
+@pytest.mark.figures
 def test_api_consolidation_check_design_summary_table_kinds_and_aliases(monkeypatch):
     df = ratings()
 
@@ -1170,3 +1175,110 @@ def test_plan_a_quad31_default_step_thresholds_scale_orientation_and_bias_screen
     assert nc_re["fit_settings"]["positive_facets"] == ["Rater"]
     pd.testing.assert_frame_equal(mfrmpy.tables(nc_re, "steps")[0][1], mfrmpy.tables(mml_cases, "steps")[0][1])
     pd.testing.assert_frame_equal(mfrmpy.tables(nc_re, "intervals")[0][1], mfrmpy.tables(mml_cases, "intervals")[0][1])
+
+
+def test_public_score_preparation_and_preflight():
+    data = ratings().astype({"Score": float})
+    original = data.Score.copy()
+    data.loc[data.Score.eq(1), "Score"] -= 1e-10
+    data = data.rename(columns={"Rater": "score_k"})
+    cols = dict(person="Person", facets=["score_k", "Task"], score="Score", rating_min=0, rating_max=2)
+    fit = mfrmpy.analyze(data, **cols)
+    prepared = fit["result"]["prep"]["data"]
+    assert prepared.score_k.astype(str).tolist() == data.score_k.tolist()
+    np.testing.assert_array_equal(prepared.Score, original)
+    assert mfrmpy.check_design(pd.concat([data, data]), **cols)["density_pct"] == 100
+    for invalid in [1.5, np.inf]:
+        bad = data.copy()
+        bad.iloc[0, bad.columns.get_loc("Score")] = invalid
+        assert not mfrmpy.check_design(bad, **cols)["ok"]
+        with pytest.raises(ValueError, match="row"):
+            mfrmpy.analyze(bad, **cols)
+
+
+def test_anchor_labels_and_unknown_rank():
+    data = ratings()
+    data.loc[data.Rater.eq("R1"), "Rater"] = " R1 "
+    cols = dict(person="Person", facets=["Rater", "Task"], score="Score", rating_min=0, rating_max=2)
+    anchor = [dict(Facet="Rater", Level="R1", Anchor=-0.6)]
+    assert mfrmpy.check_design(data, **cols, anchors=anchor)["ok"]
+    fit = mfrmpy.analyze(data, **cols, anchors=anchor)
+    assert "R1" in fit["result"]["prep"]["levels"]["Rater"]
+    data.loc[2, "Rater"] = "R1"
+    assert not mfrmpy.check_design(data, **cols, anchors=anchor)["ok"]
+    with pytest.raises(ValueError, match="R1"):
+        mfrmpy.analyze(data, **cols, anchors=anchor)
+    large = pd.DataFrame([(p,r,r,(p+r)%3) for p in range(1600) for r in range(2)], columns=["Person","Rater","Task","Score"])
+    pre = mfrmpy.check_design(large, **cols)
+    assert not pre["ok"] and pre["nullity"] is None
+
+
+@pytest.mark.parametrize("scores,expected", [([0,2,2,2], (0,0)), ([0,2,0,2], (np.nan,0))])
+def test_zero_object_variance_by_coefficient(scores, expected):
+    data = pd.DataFrame(dict(Person=["A","A","B","B"], Rater=["X","Y","X","Y"], Score=scores))
+    cfg = dict(object_facet="Person", random_facets=["Rater"])
+    fit = mfrmpy.analyze(data, workflow="gd", gd_settings=cfg)
+    result = fit["gd_analysis"]["result"]
+    assert result["available"]
+    for _, frame, _ in mfrmpy.tables(fit, ("gd_observed", "gd_selected")):
+        np.testing.assert_allclose(frame[["G", "Phi"]].iloc[0], expected, equal_nan=True)
+    for coeff in (result["observed_coefficients"], result["selected_plan"]):
+        np.testing.assert_allclose([coeff["G"],coeff["Phi"]], expected, equal_nan=True)
+
+
+def test_partial_anchor_links_only_estimable_levels(tmp_path):
+    cols = dict(person="Person", facets=["Rater", "Task"], score="Score", rating_min=0, rating_max=2)
+    data = ratings()
+    data = data.loc[(data.Person.astype(int) % 3 == 0) == data.Rater.eq("R2")]
+    anchor = dict(Facet="Rater", Level="R0", Anchor=-0.6)
+    fit = mfrmpy.analyze(data, **cols, method="MML", anchors=[anchor])
+    path = tmp_path / "partial.mfrm"
+    mfrmpy.save_project(path, fit)
+    for record in [fit, mfrmpy.load_project(path)]:
+        table = mfrmpy.tables(record, "measures")[0][1].set_index(["Facet", "Level"])
+        assert table.loc[("Rater", "R2"), "SEUse"] == "withheld"
+        assert table.loc[("Rater", "R1"), "SEUse"] == "screening_only"
+    # A mean across both cohorts supplies a single equation for two independent shifts.
+    group = [dict(Facet="Rater", Level=level, Group="reference", GroupValue=0)
+             for level in ("R0", "R2")]
+    record = mfrmpy.analyze(data, **cols, method="MML", group_anchors=group)
+    table = mfrmpy.tables(record, "measures")[0][1]
+    assert table.loc[table.Facet.eq("Rater"), "SEUse"].eq("withheld").all()
+
+
+def test_export_switches_complete_sets_and_preserves_user_files(tmp_path, monkeypatch):
+    from mfrm_app import project
+    opts = dict(facet_a="Rater", facet_b="Task", omit_extreme=False)
+    a = mfrmpy.analyze(ratings(), **settings(), bias_requests=[opts])
+    b = mfrmpy.analyze(ratings(), **settings())
+    old = mfrmpy.export_csv(a, tmp_path)
+    manifest = old[0].read_bytes()
+    mine = tmp_path / "user.csv"
+    mine.write_text("my work")
+    write = project.write_bytes_atomic
+
+    def fail_manifest(path, data):
+        if path == old[0]:
+            raise OSError("simulated interrupted write")
+        write(path, data)
+
+    with monkeypatch.context() as patch:
+        patch.setattr(project, "write_bytes_atomic", fail_manifest)
+        with pytest.raises(OSError, match="interrupted"):
+            mfrmpy.export_csv(b, tmp_path)
+    assert old[0].read_bytes() == manifest and all(p.exists() for p in old)
+    latest = mfrmpy.export_csv(b, tmp_path)
+    current = pd.read_csv(latest[0])
+    assert all((tmp_path / name).is_file() for name in current.File)
+    assert current.ContentFingerprint.eq(b["content_fingerprint"]).all()
+    assert all(not p.exists() for p in old[1:]) and mine.read_text() == "my work"
+
+
+@pytest.mark.figures
+def test_rater_profile_respects_positive_direction_and_facet_role():
+    pytest.importorskip("matplotlib")
+    an = mfrmpy.analyze(ratings(), **settings(), positive_facets=["Rater"])
+    fig = mfrmpy.plot(an, "rater_severity")
+    assert "leniency" in fig._suptitle.get_text()
+    assert "raise" in fig.axes[0].get_xlabel()
+    assert "Rater" not in mfrmpy.plot(an, "rater_severity", facet="Task")._suptitle.get_text()

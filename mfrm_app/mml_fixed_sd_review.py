@@ -49,7 +49,7 @@ def prepare_fixed_sd_check(result):
     if cfg['n_person'] != len(prep['levels']['Person']):
         raise ValueError('Person count disagrees with observed levels')
     raw = np.asarray(data['Score'], dtype=float) - cfg['rating_min']
-    if not np.isin(raw, np.arange(cfg['n_cat'])).all() or not np.array_equal(raw, data['score_k']):
+    if not np.isin(raw, np.arange(cfg['n_cat'])).all() or not np.array_equal(raw, data[prep.get('score_index_col', 'score_k')]):
         raise ValueError('Prepared scores disagree with original responses')
     sizes = engine.build_param_sizes(cfg)
     point = np.asarray(result['opt'].x, dtype=float).copy()

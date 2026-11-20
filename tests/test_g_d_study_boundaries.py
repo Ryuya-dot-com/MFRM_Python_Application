@@ -135,9 +135,13 @@ def test_raw_negative_component_and_undefined_object_variance():
     assert vc.loc["Rater", "Variance"] == 0
     data["Score"] = 20+3*data.Rater.astype(int)
     out = app.compute_generalizability_study(result(data))
+    assert out["available"]
+    assert np.isnan(out["observed_coefficients"]["G"])
+    assert out["observed_coefficients"]["Phi"] == 0
+    assert out["d_study"]["G"].isna().all() and out["d_study"]["Phi"].eq(0).all()
+    data["Score"] = 20
+    out = app.compute_generalizability_study(result(data))
     assert not out["available"] and out["reason_code"] == "undefined_coefficients"
-    assert not out["variance_components"].empty
-    assert out["d_study"].empty
 
 
 def test_source_and_settings_identity_without_mutation():
@@ -191,7 +195,7 @@ def test_csv_carries_scope_and_reason_without_unqualified_intervals(valid):
     csv = app.to_csv_bytes(app.g_d_study_export_frame(out))
     frame = pd.read_csv(io.BytesIO(csv), keep_default_na=False)
     meta = frame[frame._section == "metadata"].set_index("Field").Value.to_dict()
-    assert meta["calculation_version"] == "balanced_anova_v2"
+    assert meta["calculation_version"] == "balanced_anova_v3"
     assert meta["interval_inference_allowed"] == "False"
     assert meta["interval_hold_reason"]
     assert meta["bootstrap_n_attempted"] == "0" and meta["bootstrap_n_requested"] == "0"

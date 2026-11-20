@@ -228,6 +228,8 @@ EN.update({ja + suffix: en + ending for ja, en in [('差の左側', 'Left cell')
            for suffix, ending in [('：A水準', ': A level'), ('：B水準', ': B level')]})
 TEMPLATES.append(('バイアス順位 · {pair}', 'Bias (ranked) · {pair}'))
 EN.update({
+    '評価者の寛大さ': 'Rater leniency',
+    '評価者の厳しさ': 'Rater severity',
     '相水準の推定値': 'Facet-level estimates',
     '段階閾値ラダー': 'Step threshold ladder',
     '適合度バブルチャート': 'Diagnostic bubble chart',

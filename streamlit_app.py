@@ -7097,6 +7097,8 @@ def _model_choice_can_compare(res: dict, *, localize: bool = False) -> tuple[boo
                     "every candidate model; this comparison does not support them.")
         )
     audit = res.get("identifiability", {})
+    if isinstance(audit, dict) and audit.get("status") == "audit_size_limit":
+        return False, message("identification", "Design rank could not be verified within the audit size limit.")
     identified = audit.get("eta_structurally_identified") if isinstance(audit, dict) else None
     if isinstance(identified, (bool, np.bool_)) and not identified:
         return False, message("identification", "The person/facet design has unidentified directions; nominal K cannot qualify IC comparisons.")
@@ -7622,7 +7624,7 @@ def _history_ic_comparability_key(result: dict, summary: pd.DataFrame) -> str:
             or any(not isinstance(config[key], dict) for key in ("facet_specs", "facet_levels", "facet_signs"))
             or any(facet not in config[key] for facet in config["facet_names"] for key in ("facet_specs", "facet_levels", "facet_signs"))):
         return ""
-    columns = ["Person", "Score", "score_k", "Weight", *config["facet_names"]]
+    columns = ["Person", "Score", prep.get("score_index_col", "score_k"), "Weight", *config["facet_names"]]
     if not set(columns).issubset(data.columns):
         return ""
     if config["model"] in {"PCM", "GPCM"} and config.get("step_facet") not in config["facet_names"]:

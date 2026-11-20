@@ -118,6 +118,7 @@ def test_large_design_limit_fails_closed_instead_of_claiming_identification(monk
     audit = _audit(row, generated, max_dense_cells=1)
 
     assert audit["status"] == "audit_size_limit"
+    assert audit["eta_structurally_identified"] is None
     assert not bool(audit["inference_ready"])
     assert not bool(audit["summary"].iloc[0]["InferenceReady"])
 

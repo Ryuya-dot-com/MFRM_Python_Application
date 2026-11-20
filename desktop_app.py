@@ -1000,6 +1000,9 @@ class DesktopApp:
             "ok": "ok",
             "anchored_ok": "info",
             "disconnected": "warn",
+            "rank_deficient": "warn",
+            "audit_size_limit": "warn",
+            "invalid_input": "error",
             "incomplete": "warn",
             "anchor_error": "error",
         }

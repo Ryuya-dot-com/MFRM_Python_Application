@@ -203,8 +203,13 @@ def publication_measure_table(
     from mfrm_app.engine import qualify_measures_for_reporting
 
     diagnostics = diagnostics or {}
+    measures = diagnostics.get("measures")
+    if isinstance(measures, pd.DataFrame) and not measures.empty:
+        for key in ("Facet", "Level"):
+            if key not in measures or measures[key].astype("string").str.strip().fillna("").eq("").any():
+                return pd.DataFrame(), f"Measure estimates are withheld because saved {key} identifiers are missing."
     qualified = qualify_measures_for_reporting(
-        diagnostics.get("measures"),
+        measures,
         result,
         obs_df=diagnostics.get("obs"),
     )

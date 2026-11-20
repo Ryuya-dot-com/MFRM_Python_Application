@@ -113,16 +113,21 @@ def preview_mfrm_connectivity(
     audit = engine.build_response_data_audit(data, person_col=person_col, facet_cols=facet_cols, score_col=score_col)
     retained = data.loc[audit["rows"]["IncludedInLikelihood"].to_numpy(dtype=bool)]
     excluded = len(audit["excluded_rows"])
-    if retained.empty or pd.to_numeric(retained[score_col], errors="coerce").nunique() < 2:
+    invalid_scores = audit["rows"]["ScoreNonFinite"].any() or audit["rows"]["ScoreFractional"].any()
+    if not invalid_scores and (retained.empty or pd.to_numeric(retained[score_col], errors="coerce").round().nunique() < 2):
         return dict(
             ok=False, status="insufficient_data", nullity=None, density_pct=0.0, disconnected_facets=[],
             summary_ja="有効な評定行または得点段階（2種類以上）が不足しています。",
             summary_en="At least two distinct valid numeric score values are required.",
         )
-    observed_levels = {
-        "Person": set(retained[person_col].dropna().astype(str).str.strip()),
-        **{f: set(retained[f].dropna().astype(str).str.strip()) for f in facet_cols},
-    }
+    try:
+        prep = engine.prepare_mfrm_data(data, person_col=person_col, facet_cols=facet_cols,
+                                        score_col=score_col, keep_original=True)
+    except ValueError as exc:
+        return dict(ok=False, status="invalid_input", nullity=None, density_pct=0.0,
+                    disconnected_facets=[], included=len(retained), excluded=excluded,
+                    summary_en=str(exc), summary_ja=f"入力データを確認してください。{exc}")
+    observed_levels = {facet: set(levels) for facet, levels in prep["levels"].items()}
     try:
         norm_nc, norm_pos = basic.normalize_scale_orientation(
             noncenter_facet=noncenter_facet,
@@ -147,9 +152,6 @@ def preview_mfrm_connectivity(
             summary_en=f"Anchor configuration error: {exc}",
         )
 
-    prep = engine.prepare_mfrm_data(
-        retained, person_col=person_col, facet_cols=facet_cols, score_col=score_col, keep_original=True
-    )
     conn = engine._person_facet_connectivity_summary(prep)
     disconnected = (
         [f"{r.Facet} ({int(r.Components)})" for r in conn.itertuples(index=False) if int(r.Components) > 1]
@@ -164,7 +166,7 @@ def preview_mfrm_connectivity(
     total_grid = n_persons
     for f in facet_cols:
         total_grid *= max(1, len(prep["levels"][f]))
-    density = 100.0 * len(prep["data"]) / float(total_grid)
+    density = 100.0 * len(prep["data"][["Person", *facet_cols]].drop_duplicates()) / float(total_grid)
 
     anchor_df = pd.DataFrame(norm_a) if norm_a else None
     group_df = pd.DataFrame(norm_g) if norm_g else None
@@ -187,7 +189,7 @@ def preview_mfrm_connectivity(
     nullity = (
         int(ident["summary"]["EtaStructuralNullity"].iloc[0])
         if ident.get("available") and not ident["summary"].empty
-        else (len(disconnected_names))
+        else None
     )
 
     excl_ja = f"・除外 {excluded:,}行" if excluded else ""
@@ -196,6 +198,16 @@ def preview_mfrm_connectivity(
     comp_counts = {str(r.Facet): int(r.Components) for r in conn.itertuples(index=False)} if not conn.empty else {}
     n_inc = len(prep["data"])
 
+    if nullity is None:
+        return dict(ok=False, status=ident["status"], nullity=None, included=n_inc, excluded=excluded,
+                    density_pct=density, component_counts=comp_counts, disconnected_facets=disconnected_names,
+                    summary_en="The exact design rank could not be verified (" + ident["status"] + ").",
+                    summary_ja="設計行列の階数を確認できませんでした（" + ident["status"] + "）。")
+    if nullity > 0 and not disconnected:
+        return dict(ok=False, status="rank_deficient", nullity=nullity, included=n_inc, excluded=excluded,
+                    density_pct=density, component_counts=comp_counts, disconnected_facets=[],
+                    summary_en=f"Connected person–facet graphs, but the design has {nullity} unidentified linear predictor dimension(s). Check confounded facet assignments.",
+                    summary_ja=f"各相と対象者は連結していますが、相の割当などの交絡により線形予測子に {nullity} 自由度の未識別があります。")
     if nullity > 0:
         disc_str = ", ".join(disconnected) if disconnected else "Person/Facet"
         return dict(
@@ -1105,7 +1117,7 @@ def check_design(
         positive_facets=norm_pos,
     )
     conn_ok = bool(prev["ok"])
-    cat_ok = True
+    cat_ok = prev["status"] != "invalid_input"
     unused_cats: list[int] = []
     unsupported_internal: list[int] = []
     unobserved_boundary: list[int] = []
@@ -1115,13 +1127,13 @@ def check_design(
     summary_en = str(prev["summary_en"])
     summary_ja = str(prev["summary_ja"])
 
-    if status not in {"missing_data", "incomplete_selection", "insufficient_data", "anchor_error"}:
+    if status not in {"missing_data", "incomplete_selection", "insufficient_data", "anchor_error", "invalid_input"}:
         f_list = list(f_cols or [])
         audit = engine.build_response_data_audit(data, person_col=p_col, facet_cols=f_list, score_col=s_col)
         retained = data.loc[audit["rows"]["IncludedInLikelihood"].to_numpy(dtype=bool)]
-        scores = pd.to_numeric(retained[s_col], errors="coerce").dropna().astype(int)
+        scores = pd.to_numeric(retained[s_col], errors="coerce").dropna().round().astype(int)
         for col_label, col_name in [("Person", p_col), *[(f, f) for f in f_list]]:
-            nunq = scores.groupby(retained[col_name].astype(str), observed=True).nunique()
+            nunq = scores.groupby(retained[col_name].astype(str).str.strip(), observed=True).nunique()
             ones = sorted(str(lv) for lv, cnt in nunq.items() if int(cnt) == 1)
             if ones:
                 single_cat_levels[str(col_label)] = ones
@@ -1144,7 +1156,7 @@ def check_design(
                 if step_facet is not None:
                     if step_facet not in f_list:
                         raise ValueError("PCM step_facet must be one of the selected facet columns")
-                    sf_s = retained[step_facet].astype(str)
+                    sf_s = retained[step_facet].astype(str).str.strip()
                     for lv in sorted(sf_s.unique()):
                         lvc = scores.loc[sf_s.eq(lv)].value_counts()
                         missing_lv = [c for c in range(rmin, rmax + 1) if int(lvc.get(c, 0)) == 0]
@@ -1309,6 +1321,13 @@ def current_additional_tables(analysis, *, extended: bool = False):
         for section in ordered_sections:
             sec_table = by_section[section]
             note = gd.GD_SECTION_NOTES.get(section, gd._GD_CI_REASON)
+            if section in {"observed_coefficients", "selected_d_study", "d_study"}:
+                for coefficient in ("G", "Phi"):
+                    if coefficient not in sec_table:
+                        sec_table[coefficient] = np.nan
+                        note += f" {coefficient} is undefined because its denominator is zero."
+            if section == "metadata" and entry["result"].get("reason_code") == "undefined_coefficients" and entry["result"].get("calculation_version") == "balanced_anova_v2":
+                note += " This archived calculation withheld both coefficients. Rerun the G/D study to check each denominator separately."
             if (
                 section == "variance_components"
                 and "RawVariance" in sec_table.columns

@@ -199,6 +199,7 @@ def test_all_report_formats_retain_the_three_qualification_failures(writing_run,
         assert payload.startswith(b'%PDF')
         text = '\n'.join(pdf_text)
     notes = text.split('Computation and interpretation checks', 1)[1].split('Results tables', 1)[0]
+    assert 'Level identifiers are missing' in text
     for phrase in ('Saved values do not match', 'could not be assessed', 'item-combination',
                    'Bias inference remains withheld', 'Rater x Task', 'No usable cells'):
         assert phrase in notes

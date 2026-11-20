@@ -15,6 +15,7 @@ import math
 import os
 from pathlib import Path
 import tempfile
+import warnings
 import zlib
 
 import numpy as np
@@ -587,6 +588,34 @@ def _unpack_project_bytes(data):
     return raw
 
 
+def input_refit_reason(analysis):
+    """Detect the two legacy preparation errors from retained rows without refitting."""
+    prep = analysis.get("result", {}).get("prep", {})
+    settings = analysis.get("fit_settings", {})
+    raw, fitted = analysis.get("input_data"), prep.get("data")
+    audit = prep.get("row_audit")
+    if not isinstance(fitted, pd.DataFrame) or not isinstance(audit, pd.DataFrame):
+        return ""
+    if "IncludedInLikelihood" not in audit or len(audit) != len(raw):
+        return ""
+    included = raw.iloc[audit["IncludedInLikelihood"].to_numpy(dtype=bool)]
+    if len(included) != len(fitted):
+        return ""
+    scores = pd.to_numeric(included[settings["score_col"]], errors="coerce").to_numpy(dtype=float)
+    if not np.array_equal(np.rint(scores), fitted["Score"].to_numpy(dtype=float)):
+        return "Saved fitted categories differ from rounded input scores. Refit the original ratings with mfrmpy 0.2.1 or later."
+    if "score_k" in settings["facet_cols"] and "score_index_col" not in prep:
+        if not np.array_equal(included["score_k"].astype(str), fitted["score_k"].astype(str)):
+            return "Saved score_k facet levels differ from the input IDs. Refit the original ratings with mfrmpy 0.2.1 or later."
+    return ""
+
+
+def require_reportable_input(analysis):
+    reason = input_refit_reason(analysis)
+    if reason:
+        raise ProjectError(reason)
+
+
 def loads_project(data):
     """Restore a validated `.mfrm` payload (gzip or legacy uncompressed JSON) with zero estimation."""
     try:
@@ -602,6 +631,9 @@ def loads_project(data):
         validate_analysis(analysis)
         if document["schema_version"] == 1 and analysis["kind"] != "basic-rsm-jmle-v1":
             raise ProjectError("Schema 1 supports only the original RSM/JMLE workflow")
+        reason = input_refit_reason(analysis)
+        if reason:
+            warnings.warn(reason, UserWarning, stacklevel=2)
         return analysis
     except (ValueError, TypeError, KeyError, IndexError, AttributeError, OverflowError, RecursionError) as exc:
         if isinstance(exc, ProjectError):

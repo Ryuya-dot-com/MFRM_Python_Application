@@ -6,7 +6,12 @@ for RSM/PCM or observed-score G/D studies, :func:`summary`, :func:`tables` and
 :func:`load_project` for portable .mfrm archives. Raw retained results do not
 override output limits.
 """
+from contextlib import contextmanager
+import hashlib
 from importlib.resources import files
+import os
+import tempfile
+import warnings
 from pathlib import Path
 
 import pandas as pd
@@ -15,7 +20,7 @@ from mfrm_app import basic_analysis, desktop_analysis, exports, project
 from mfrm_app.desktop_analysis import check_design, run_analysis as analyze
 from mfrm_app.project import ProjectError, load_project, save_project
 
-__version__ = "0.2.0"
+__version__ = "0.2.1"
 
 __all__ = [
     "__version__", "analyze", "check_design", "summary", "tables", "export_csv",
@@ -142,6 +147,10 @@ def tables(analysis, kind=None):
 
 def summary(analysis) -> pd.DataFrame:
     """Return a concise one-screen DataFrame of design, qualification, and available outputs without refitting."""
+    if reason := project.input_refit_reason(analysis):
+        project.validate_analysis(analysis)
+        return pd.DataFrame([("AnalysisID", analysis["analysis_id"]), ("RunQualificationState", "refit_required"),
+                             ("Reason", reason), ("SupportsFormalInference", "False")], columns=["Field", "Value"])
     all_tables = desktop_analysis.current_tables(analysis)
     avail_tables = ", ".join(dict.fromkeys(
         ("gd" if k.startswith("gd_") else ("agreement" if k in {"agreement_summary", "pairwise_agreement"} else k))
@@ -203,6 +212,55 @@ def summary(analysis) -> pd.DataFrame:
     return pd.DataFrame(rows, columns=["Field", "Value"])
 
 
+@contextmanager
+def _manifest_lock(directory):
+    # OS locks are released if a writer exits, including on Windows.
+    with (directory / ".mfrmpy-export.lock").open("a+b") as lock:
+        if os.name == "nt":
+            import msvcrt
+            lock.seek(0)
+            msvcrt.locking(lock.fileno(), msvcrt.LK_LOCK, 1)
+        else:
+            import fcntl
+            fcntl.flock(lock, fcntl.LOCK_EX)
+        yield
+
+
+def _previous_export(manifest):
+    if not manifest.exists():
+        return []
+    previous = pd.read_csv(manifest, dtype=str, keep_default_na=False)
+    required = {"AnalysisID", "TableIndex", "File", "Title", "Rows", "RunQualificationState"}
+    if not required.issubset(previous):
+        raise ValueError(f"{manifest} already exists and is not an mfrmpy export manifest")
+    managed = []
+    for record in previous.to_dict("records"):
+        relative = Path(record["File"])
+        index = int(record["TableIndex"])
+        slug = exports.safe_export_name(record["Title"], default=f"table_{index}", max_len=64)
+        if relative.name != f"{index:02d}_{slug}.csv" or relative.is_absolute():
+            continue
+        if len(relative.parts) > 1 and (len(relative.parts) != 2 or not relative.parts[0].startswith("mfrmpy-tables-")):
+            continue
+        path = manifest.parent / relative
+        if path.is_symlink() or path.parent.is_symlink() or not path.is_file():
+            continue
+        if "SHA256" in record:
+            if hashlib.sha256(path.read_bytes()).hexdigest() != record["SHA256"]:
+                continue
+        else:
+            # 0.2.0 wrote flat tables without digests. Verify their provenance.
+            try:
+                table = pd.read_csv(path, dtype=str, usecols=["AnalysisID", "Table"], keep_default_na=False)
+            except (ValueError, UnicodeError):
+                continue
+            if (len(table) != int(record["Rows"]) or not table.AnalysisID.eq(record["AnalysisID"]).all()
+                    or not table.Table.eq(record["Title"]).all()):
+                continue
+        managed.append(path)
+    return managed
+
+
 def export_csv(analysis, directory) -> list[Path]:
     """Write qualified CSV tables and a provenance manifest without refitting.
 
@@ -219,35 +277,60 @@ def export_csv(analysis, directory) -> list[Path]:
     current_snap = basic_analysis.qualification_snapshot(analysis["result"]) if has_mfrm else {}
     saved_snap = analysis.get("qualification_at_save") if isinstance(analysis.get("qualification_at_save"), dict) else {}
 
-    manifest_rows: list[dict[str, object]] = []
-    written_paths: list[Path] = [out_dir / "00_manifest.csv"]
-    for idx, (title, frame, note) in enumerate(qualified_tables, start=1):
-        slug = exports.safe_export_name(title, default=f"table_{idx}", max_len=64)
-        filename = f"{idx:02d}_{slug}.csv"
-        target = out_dir / filename
-        out_frame = frame.copy()
-        out_frame["AnalysisID"] = analysis_id
-        out_frame["Table"] = title
-        out_frame["Note"] = note
-        project.write_bytes_atomic(target, out_frame.to_csv(index=False).encode("utf-8"))
-        written_paths.append(target)
-        manifest_rows.append({
-            "AnalysisID": analysis_id,
-            "TableIndex": idx,
-            "File": filename,
-            "Title": title,
-            "Rows": int(len(frame)),
-            "SupportsFormalInference": False,
-            "RunQualificationState": str(current_snap.get("run_state", "gd_observed_scores" if not has_mfrm else "")),
-            "FormalHoldReason": str(current_snap.get("calibration_hold_reason", "")),
-            "ScreeningBlockReason": str(current_snap.get("screening_block_reason", "")),
-            "SavedHoldReason": str(saved_snap.get("calibration_hold_reason", "")),
-            "SavedHoldMessage": str(saved_snap.get("calibration_hold_message", "")),
-            "Note": note,
-        })
+    generation = Path(tempfile.mkdtemp(prefix="mfrmpy-tables-", dir=out_dir))
+    try:
+        manifest_rows: list[dict[str, object]] = []
+        written_paths: list[Path] = [out_dir / "00_manifest.csv"]
+        for idx, (title, frame, note) in enumerate(qualified_tables, start=1):
+            slug = exports.safe_export_name(title, default=f"table_{idx}", max_len=64)
+            filename = f"{idx:02d}_{slug}.csv"
+            target = generation / filename
+            out_frame = frame.copy()
+            out_frame["AnalysisID"] = analysis_id
+            out_frame["ContentFingerprint"] = analysis["content_fingerprint"]
+            out_frame["Table"] = title
+            out_frame["Note"] = note
+            payload = out_frame.to_csv(index=False).encode("utf-8")
+            project.write_bytes_atomic(target, payload)
+            written_paths.append(target)
+            manifest_rows.append({
+                "AnalysisID": analysis_id,
+                "TableIndex": idx,
+                "File": target.relative_to(out_dir).as_posix(),
+                "SHA256": hashlib.sha256(payload).hexdigest(),
+                "ContentFingerprint": analysis["content_fingerprint"],
+                "PackageVersion": __version__,
+                "Title": title,
+                "Rows": int(len(frame)),
+                "SupportsFormalInference": False,
+                "RunQualificationState": str(current_snap.get("run_state", "gd_observed_scores" if not has_mfrm else "")),
+                "FormalHoldReason": str(current_snap.get("calibration_hold_reason", "")),
+                "ScreeningBlockReason": str(current_snap.get("screening_block_reason", "")),
+                "SavedHoldReason": str(saved_snap.get("calibration_hold_reason", "")),
+                "SavedHoldMessage": str(saved_snap.get("calibration_hold_message", "")),
+                "Note": note,
+            })
 
-    manifest_df = pd.DataFrame(manifest_rows)
-    project.write_bytes_atomic(written_paths[0], manifest_df.to_csv(index=False).encode("utf-8"))
+        manifest_df = pd.DataFrame(manifest_rows)
+        with _manifest_lock(out_dir):
+            previous = _previous_export(written_paths[0])
+            project.write_bytes_atomic(written_paths[0], manifest_df.to_csv(index=False).encode("utf-8"))
+    except Exception:
+        for path in generation.iterdir():
+            path.unlink()
+        generation.rmdir()
+        raise
+
+    for path in previous:
+        try:
+            path.unlink(missing_ok=True)
+        except OSError as exc:
+            warnings.warn(f"Previous export table retained: {exc}", stacklevel=2)
+    for directory in {p.parent for p in previous if p.parent != out_dir}:
+        try:
+            directory.rmdir()
+        except OSError:
+            pass  # Retain any user files added to that directory.
     return written_paths
 
 

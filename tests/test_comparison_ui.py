@@ -125,11 +125,15 @@ app.render_comparison_panel(app.st.session_state["a"], app.st.session_state["b"]
     assert summary.value.Facet.tolist() == diagnostics["measures"].Facet.drop_duplicates().tolist()
     assert json.loads(summary.proto.columns)["Correlation"]["label"] == _locale_value(lang, "comparison.columns.correlation")
     table = next(w.value for w in at.dataframe if "Use_A" in w.value)
+    assert set(table.Facet) == {"Person", "Rater", "Task"}
+    held_rows = table.Facet.eq("Person") if case == "fixed_sd" else pd.Series(held, index=table.index)
     for run in ("A", "B"):
-        label = _locale_value(lang, "comparison.withheld" if held else "comparison.diagnostic")
-        assert table[f"Use_{run}"].eq(label).all()
-        if held:
-            assert table[[f"{c}_{run}" for c in ("Separation", "Reliability", "Strata")]].eq("").all().all()
+        use = table[f"Use_{run}"]
+        assert use[held_rows].eq(_locale_value(lang, "comparison.withheld")).all()
+        assert use[~held_rows].eq(_locale_value(lang, "comparison.diagnostic")).all()
+        values = table[[f"{c}_{run}" for c in ("Separation", "Reliability", "Strata")]]
+        assert values[held_rows].eq("").all().all()
+        assert np.isfinite(values[~held_rows].astype(float)).all().all()
     assert figures and figures[0]["layout"]["title"]["text"] == _locale_value(lang, "comparison.plot_title")
     for name in ("measures", "reliability"):
         pd.testing.assert_frame_equal(a["diagnostics"][name], original["diagnostics"][name], check_exact=True)

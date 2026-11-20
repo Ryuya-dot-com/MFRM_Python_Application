@@ -4,9 +4,7 @@
 notebooks. It uses the same Python engine as the existing MFRM Web and desktop
 applications. It does not require R, FACETS, Streamlit or Tkinter for analysis.
 
-Version **0.2.0** refines output qualification, four-series precision reporting,
-low-d.f. and boundary fit safeguards, and CSV/archive provenance while retaining
-full read compatibility with 0.1.0 `.mfrm` projects. Available analyses are RSM/PCM with JMLE
+Version **0.2.1** corrects score preparation, design checks, partial-anchor reporting and G/D coefficients at zero object variance. The [package repository](https://github.com/Ryuya-dot-com/mfrmpy) hosts library documentation and issues. Available analyses are RSM/PCM with JMLE
 or fixed-population-SD MML, diagnostics, conditional bias, selected structural
 intervals, a separate joint-interaction model, and balanced observed-score G/D
 studies. Numerical eligibility checks and interpretation limits remain in
@@ -46,7 +44,7 @@ remain available from the
 Ratings must be in long form: one row per observed rating, with separate
 person, facet and score columns. Specify the full intended integer rating
 range, even when an endpoint is absent from the observations. Missing ratings
-are not zero scores. The bundled example is synthetic.
+are not zero scores. The engine rounds floating-point values within its integer tolerance to the nearest category. Fractional and infinite scores produce an input error with row numbers. ID labels are trimmed, and ambiguous labels that would collapse after trimming require clarification in the input. Use a separate name for a facet called `Weight`, the reserved observation-weight field. The bundled example is synthetic.
 
 ```python
 import mfrmpy
@@ -144,7 +142,7 @@ guarantee. Holm adjustment of joint tests does not make intervals simultaneous.
 
 Unavailable/failed interval or joint requests remain recorded with a reason;
 they do not silently erase a completed baseline fit. For details, see the
-[analysis scope](https://github.com/Ryuya-dot-com/MFRM_Python_Application/blob/main/docs/analysis_scope.md).
+[analysis scope](https://github.com/Ryuya-dot-com/mfrmpy/blob/main/docs/analysis_scope.md).
 
 ## G study and D study without an MFRM fit
 
@@ -240,9 +238,7 @@ fields:
   projects while retaining original archived values and save-time reasons (`Saved*`
   columns, `00_manifest.csv` and HTML archive notes).
 - **Cross-package numerical alignment (`mfrmr` 0.3.0 / `TAM` / `ConQuest`):** Fixed-SD
-  MML defaults to `quad_points=31` (matching `mfrmr` 0.3.0 so standard designs satisfy
-  the `q` vs `2q-1` sensitivity gate for `Specified intervals` and `Joint interaction`,
-  while earlier `.mfrm` archives retain their stored `quad_points`), and `analyze` /
+  MML defaults to `quad_points=31`. Each requested interval or joint interaction has its own gradient and quadrature sensitivity checks at the fitted point. A converged fit can still have withheld intervals, including in the bundled writing example. Earlier archives retain their fitted quadrature count. `analyze` /
   `check_design` accept `noncenter_facet` (e.g. `noncenter_facet="Task"` to match
   `TAM` `constraint="cases"` and `ConQuest` `lconstraints=cases`) and
   `positive_facets`. `Step Thresholds` (`tables(analysis, "steps")`) reports centered
@@ -303,24 +299,29 @@ this guide. `ProjectError` is a `ValueError` subclass for invalid/unsupported
 project contents; filesystem errors such as a missing file remain normal
 Python I/O errors.
 
-Within **0.1.x**, patch releases preserve these public names, documented
+Within **0.2.x**, patch releases preserve these public names, documented
 arguments and return types. Additive options and bug fixes are allowed. Before
 1.0, an incompatible public API change requires a new minor release, such as
-0.2.0, with migration instructions in the changelog. Private `mfrm_app` helpers,
+0.3.0, with migration instructions in the changelog. Private `mfrm_app` helpers,
 nested raw-result fields, table display order and exact wording are outside
 this compatibility promise. Keep interpretation notes with exported results.
 
-Version 0.1.0 reads the supported schema-1 RSM/JMLE and schema-2 `.mfrm` archives,
+Version 0.2.1 reads the supported schema-1 RSM/JMLE and schema-2 `.mfrm` archives,
 including those written by 0.1.0a2 and the corresponding Web/desktop workflows.
-The 0.1.x series will retain read compatibility with these supported archives;
+The 0.2.x series retains read compatibility with these supported archives;
 malformed or unsupported records are rejected without refitting. Future archive
 changes will be documented, and older applications may not read newer formats.
 
 Numerical bug fixes or updated qualification rules can change reported results
 or withhold an output; such changes belong in the changelog. For reproducible
 research, retain the original `.mfrm` file and record the package, source and
-dependency versions. The first stable release uses the same calculation and
-archive code as 0.1.0a2, with the same analysis scope and interpretation limits.
+dependency versions. Reopening preserves archived estimates and applies current reporting rules.
+When a legacy fit used different score categories or different `score_k` facet IDs than the retained input, loading warns and `summary()` explains how to refit. Numerical tables, figures and exports from such a fit require a new analysis.
+Stored specified intervals and joint interactions verify their numerical source and runtime; a mismatch withholds the corresponding output. For an older unavailable G/D result with zero object variance, rerun the G/D study to obtain the corrected coefficients.
+
+Cell density counts unique person-by-facet cells. Repeated ratings count toward the total number of ratings. A size-limited rank check reports unknown nullity. In designs with disjoint rater pools, fixing one rater anchors only estimable levels; a group mean supplies one constraint. Inspect the status of the requested level or contrast.
+
+For a CSV export, read `00_manifest.csv` and resolve each `File` relative to its directory. The manifest identifies the analysis, archived content, exporting version, and SHA-256 of each table. Re-export switches the manifest after all new tables have been written. Files added by the user are preserved.
 
 ## Privacy, license and citation
 
@@ -329,10 +330,8 @@ ratings and person/rater IDs; store and share them according to your research
 requirements. Use synthetic data for bug reports.
 
 MIT licensed; see
-[LICENSE](https://github.com/Ryuya-dot-com/MFRM_Python_Application/blob/main/LICENSE)
+[LICENSE](https://github.com/Ryuya-dot-com/mfrmpy/blob/main/LICENSE)
 and the
-[responsible-use notice](https://github.com/Ryuya-dot-com/MFRM_Python_Application/blob/main/LICENSE_NOTICE.md).
+[responsible-use notice](https://github.com/Ryuya-dot-com/mfrmpy/blob/main/LICENSE_NOTICE.md).
 Cite Ryuya Komuro, *mfrmpy*, the installed package version, and
-https://github.com/Ryuya-dot-com/MFRM_Python_Application, together with the
-statistical methods actually used. Source and issue reporting are maintained
-in that repository.
+the statistical methods used. See the [Python source](https://github.com/Ryuya-dot-com/mfrmpy) and [package issue tracker](https://github.com/Ryuya-dot-com/mfrmpy/issues).

@@ -27,7 +27,9 @@ def test_spawned_worker_cancel_failure_restart_and_restore(tmp_path):
         ("RSM", "JMLE"), ("PCM", "JMLE"), ("RSM", "MML"), ("PCM", "MML"), ("G/D", "ANOVA")}
     assert len(record["extended"]) == 5
     assert record["events"].count("complete") == 1 + len(record["extended"])
-    assert record["report_svg_count"] == 11
+    report = (tmp_path / "report.html").read_text(encoding="utf-8")
+    assert record["report_svg_count"] == report.count("<svg") == 12
+    assert "Rater severity profile" in report
     assert (tmp_path / "wright.png").read_bytes().startswith(b"\x89PNG\r\n\x1a\n")
     restored = subprocess.run(
         [sys.executable, str(Path(__file__).resolve().parents[1] / "desktop_app.py"),

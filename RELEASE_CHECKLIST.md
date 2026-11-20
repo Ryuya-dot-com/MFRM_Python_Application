@@ -332,6 +332,43 @@ Published library 0.2.0 (2026-11-18):
 | `mfrmpy-0.2.0-py3-none-any.whl` | `5ffdbcab108285914c6a555da51542c52516b0d0bc9ae16b379a06e8d6b31406` |
 | `mfrmpy-0.2.0.tar.gz` | `f0de1972fc35b3cbec9c33a981d8f1bee5b3ddcbabed70f341105860b70f5b1c` |
 
+### mfrmpy 0.2.1 (2026-11-20)
+
+- PyPI lists the Python package repository as its homepage and source and links
+  to that repository's issue tracker. The Web/Desktop repository runs the
+  publishing workflow. PyPI classifies 0.2.1 as Beta.
+  [Python repository](https://github.com/Ryuya-dot-com/mfrmpy)
+- Source commit `1d9432245063ff36ceab4813bf509fdce85ada83` passed seven
+  package environments on Linux, macOS and Windows with Python 3.11 and 3.12,
+  including a separate run with the minimum dependencies on Linux.
+  Both Python versions passed 4,215 tests in the standalone application suite
+  (14 skipped and 91 deselected), 56 engine self-tests, 73 UX checks, and
+  benchmark and demo-report generation. The Windows executable passed its
+  build-host workflow and restoration checks. [Package CI](https://github.com/Ryuya-dot-com/MFRM_Python_Application/actions/runs/44661576784) · [Application CI](https://github.com/Ryuya-dot-com/MFRM_Python_Application/actions/runs/44661576910) · [Windows CI](https://github.com/Ryuya-dot-com/MFRM_Python_Application/actions/runs/44661576986)
+- The TestPyPI and production workflows published the files from the same
+  package run. Downloads from both indexes matched independent builds from
+  both repositories byte for byte. [TestPyPI workflow](https://github.com/Ryuya-dot-com/MFRM_Python_Application/actions/runs/44669309821) · [PyPI workflow](https://github.com/Ryuya-dot-com/MFRM_Python_Application/actions/runs/44669586265)
+- The TestPyPI installation and both production installations (fresh, unpinned
+  install and upgrade from 0.2.0) passed dependency checks.
+  All three installations completed the 960-rating MML example, saved and
+  restored a project, exported CSV, PNG and HTML, and opened six earlier
+  projects written by 0.1.0 and 0.2.0. Two inconsistent old fits required
+  a refit for reporting. A partially anchored disconnected design withheld
+  the unlinked rater's uncertainty. [TestPyPI release](https://test.pypi.org/project/mfrmpy/0.2.1/) · [PyPI release](https://pypi.org/project/mfrmpy/0.2.1/)
+- The 0.2.1 wheel reproduced all 1,800 saved 0.2.0 task, rater and step point
+  estimates from the exploratory comparison with RaschPy 1.4.0
+  (`cp-full-rcl`), R rasch 1.12.1 (PCML) and eRm 1.0-10 (LRSM). Each of
+  three designs had 30 replicates of 60 persons, four tasks and three raters.
+  The two sparse designs both had 240 ratings, with 60 or six persons scored
+  by two raters. JMLE and fixed-SD MML were refitted to each original dataset.
+  This comparison addressed point-estimate compatibility. Interval coverage
+  remains unassessed in these experiments.
+
+| Artifact | SHA-256 |
+|---|---|
+| `mfrmpy-0.2.1-py3-none-any.whl` | `70b7a5333060067b11d7c6c16c8a79de2f2a083467eb459913b81532406f3432` |
+| `mfrmpy-0.2.1.tar.gz` | `44119cd62c3b6e74d65de6b739397f3b2f7a98fe6e39fe62d9e3a09fe53f27d0` |
+
 ## Hosted Web release
 
 - [ ] Follow [DEPLOYMENT](DEPLOYMENT.md#publication-and-hosted-acceptance).

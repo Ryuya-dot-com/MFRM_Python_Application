@@ -55,6 +55,16 @@ def test_example_is_bundled_and_not_shared_mutable_state():
     assert mfrmpy.load_example().Score.between(0, 5).all()
 
 
+@pytest.mark.parametrize("key", ["Facet", "Level"])
+def test_unidentified_measure_rows_are_withheld_with_a_reason(key):
+    from mfrm_app.reporting_facts import publication_measure_table
+
+    raw = pd.DataFrame({"Facet": ["Task"], "Level": ["T1"], "Estimate": [4.]})
+    for source in (raw.drop(columns=key), raw.assign(**{key: [None]}), raw.assign(**{key: [" "]})):
+        table, note = publication_measure_table({}, {"measures": source}, fit_note="")
+        assert table.empty and f"{key} identifiers are missing" in note
+
+
 @pytest.fixture(scope="module", params=[("RSM", "JMLE"), ("PCM", "JMLE"),
                                        ("RSM", "MML"), ("PCM", "MML")])
 def fitted(request):

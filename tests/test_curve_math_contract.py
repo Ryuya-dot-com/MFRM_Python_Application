@@ -30,7 +30,7 @@ def test_mean_parameter_curve_is_not_labeled_as_average_probability(model):
     assert information.InformationBasis.eq("single_response_conditional").all()
 
 
-@pytest.mark.parametrize("value,df", [(.975, 20.), (1.8, .5), (.2, 400.)])
+@pytest.mark.parametrize("value,df", [(.975, 20.), (1.8, 1.), (.2, 400.)])
 def test_named_transforms_match_facets_formulas_without_changing_legacy(value, df):
     q = np.sqrt(2/df)
     no_offset = (value**(1/3)-1)*3/q
@@ -45,6 +45,13 @@ def test_named_transforms_match_facets_formulas_without_changing_legacy(value, d
         engine.zstd_from_mnsq_facets(value, df, whexact=True, zstd_transform="wilson_hilferty")
     with pytest.raises(ValueError):
         engine.zstd_from_mnsq_facets(value, df, zstd_transform="unrecognized")
+
+
+def test_facets_transforms_withhold_below_one_degree_of_freedom():
+    for transform in ("wilson_hilferty", "wilson_hilferty_no_offset", "linear_normal"):
+        assert np.isnan(engine.zstd_from_mnsq_facets(1.8, .5, zstd_transform=transform))
+    for whexact in (True, False):
+        assert np.isnan(engine.zstd_from_mnsq_facets(1.8, .5, whexact=whexact))
 
 
 def test_transform_reaches_diagnostics_recalculation_and_saved_metadata(small_rsm_jmle_diagnostics):

@@ -29185,6 +29185,8 @@ def _publication_report_tables(result, diagnostics, all_bias_results, *, include
             measures = measures.drop(columns=["Lower", "Upper"])
             note += " Brackets give interval bounds."
         tables.append((title, measures, note))
+    elif note:
+        tables.append(("Element Estimates and Fit", pd.DataFrame({"Status": ["Withheld"]}), note))
     for title, observed, note in observed_tables[1:]:
         display = observed.copy()
         display["Count"] = display["Count"].astype(str)

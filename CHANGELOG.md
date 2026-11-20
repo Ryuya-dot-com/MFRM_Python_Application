@@ -13,6 +13,7 @@ methods and validation findings belong in their dedicated technical records.
 - Preserve `score_k` facet labels, round accepted near-integer scores, and report invalid scores and ambiguous IDs before estimation. Cell density uses unique observed cells. Large unverified design ranks have unknown nullity.
 - Apply individual and group-mean anchor constraints to the affected levels when assessing cohort linkage. Rater profiles label the fitted direction. G and Phi each use their own denominator, including when object variance is zero.
 - Reopen older archives without refitting. If original ratings and fitted categories or `score_k` IDs disagree, retain the archive, explain the mismatch and require a fresh fit for reporting. Historical intervals may be withheld after numerical source changes.
+- Withhold the measure table and explain missing facet or level identifiers when reporting incomplete saved diagnostics.
 - Commit CSV table sets through one manifest with file digests and the analysis content fingerprint. Open files using paths in that manifest.
 - Direct PyPI project links to the Python repository and list the related Web/Desktop repository separately. The development-status classifier is Beta.
 

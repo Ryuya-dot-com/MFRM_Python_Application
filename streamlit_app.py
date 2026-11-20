@@ -53907,13 +53907,20 @@ if __name__ == "__main__":
     frac = df["Score"].notna() & np.isfinite(df["Score"]) & ((df["Score"] - np.round(df["Score"])).abs() > np.sqrt(np.finfo(float).eps))
     if frac.any():
         raise ValueError("Score must contain ordered integer category codes; fractional values were found.")
+    if "Weight" in FACET_COLS:
+        raise ValueError("Rename the facet called Weight before analysis.")
+    id_cols = ["Person", *FACET_COLS]
+    for fc in id_cols:
+        df = df.loc[df[fc].notna() & df[fc].astype(str).str.strip().ne("")]
     df = df.dropna()
     if WEIGHT_COL:
         df = df[df["Weight"] > 0]
-    df["Person"] = df["Person"].astype(str)
-    for fc in FACET_COLS:
-        df[fc] = df[fc].astype(str)
-    df["Score"] = df["Score"].astype(int)
+    for fc in id_cols:
+        ids = df[fc].astype(str)
+        if ids.nunique() != ids.str.strip().nunique():
+            raise ValueError(f"Ambiguous IDs after trimming spaces in {{fc}}")
+        df[fc] = ids.str.strip()
+    df["Score"] = df["Score"].round().astype(int)
 
     rating_min = int(df["Score"].min()) if RATING_MIN is None else int(RATING_MIN)
     rating_max = int(df["Score"].max()) if RATING_MAX is None else int(RATING_MAX)
@@ -53931,7 +53938,7 @@ if __name__ == "__main__":
             mapping = {{val: rating_min + i for i, val in enumerate(score_vals)}}
             df["Score"] = df["Score"].map(mapping).astype(int)
             rating_max = rating_min + len(score_vals) - 1
-    df["score_k"] = df["Score"] - rating_min
+    score_k = (df["Score"] - rating_min).to_numpy(dtype=int)
     n_cat = rating_max - rating_min + 1
 
     df["Person"] = pd.Categorical(df["Person"])
@@ -53943,7 +53950,6 @@ if __name__ == "__main__":
 
     person_idx = df["Person"].cat.codes.to_numpy(dtype=int)
     facet_idx_dict = {{fc: df[fc].cat.codes.to_numpy(dtype=int) for fc in FACET_COLS}}
-    score_k = df["score_k"].to_numpy(dtype=int)
     weight = df["Weight"].to_numpy(dtype=float) if "Weight" in df.columns else np.ones(len(df), dtype=float)
 
     step_idx = facet_idx_dict.get(STEP_FACET) if STEP_FACET else None
@@ -54285,11 +54291,18 @@ if (!is.null(WEIGHT_COL)) {{
 score_num <- suppressWarnings(as.numeric(df$Score))
 frac <- is.finite(score_num) & abs(score_num - round(score_num)) > sqrt(.Machine$double.eps)
 if (any(frac, na.rm = TRUE)) stop("Score must contain ordered integer category codes; fractional values were found.")
-df$Score <- score_num
+if (any(is.infinite(score_num))) stop("Score must contain finite integer category codes.")
+if ("Weight" %in% FACET_COLS) stop("Rename the facet called Weight before analysis.")
+df$Score <- round(score_num)
 df <- na.omit(df)
+id_cols <- c("Person", FACET_COLS)
+for (fc in id_cols) df <- df[nzchar(trimws(as.character(df[[fc]]))), , drop = FALSE]
+for (fc in id_cols) {{
+  ids <- as.character(df[[fc]])
+  if (length(unique(ids)) != length(unique(trimws(ids)))) stop(paste("Ambiguous IDs after trimming spaces in", fc))
+  df[[fc]] <- as.factor(trimws(ids))
+}}
 df$Score <- as.integer(df$Score)
-df$Person <- as.factor(as.character(df$Person))
-for (fc in FACET_COLS) df[[fc]] <- as.factor(as.character(df[[fc]]))
 rating_min <- if (is.na(RATING_MIN)) min(df$Score) else as.integer(RATING_MIN)
 rating_max <- if (is.na(RATING_MAX)) max(df$Score) else as.integer(RATING_MAX)
 if (rating_max <= rating_min) stop("RATING_MAX must be larger than RATING_MIN.")
@@ -54306,7 +54319,7 @@ if (!KEEP_ORIGINAL) {{
     rating_max <- rating_min + length(score_vals) - 1L
   }}
 }}
-df$score_k <- df$Score - rating_min
+score_k <- df$Score - rating_min
 n_cat <- rating_max - rating_min + 1L
 weight <- if ("Weight" %in% names(df)) df$Weight else rep(1.0, nrow(df))
 
@@ -54316,7 +54329,6 @@ n_person <- length(person_levels)
 
 person_idx <- as.integer(df$Person) - 1L   # 0-based
 facet_idx <- setNames(lapply(FACET_COLS, function(fc) as.integer(df[[fc]]) - 1L), FACET_COLS)
-score_k <- df$score_k
 step_idx <- if (!is.null(STEP_FACET)) facet_idx[[STEP_FACET]] else NULL
 step_facet_n <- if (!is.null(STEP_FACET)) length(facet_levels[[STEP_FACET]]) else 0L
 facet_signs <- setNames(
@@ -58416,7 +58428,8 @@ def _self_test_fractional_score_rejection() -> None:
             reltol=1e-3,
         )
     except ValueError as exc:
-        _self_test_assert("Fractional" in str(exc), "fractional-score error message changed unexpectedly")
+        _self_test_assert("integer category codes" in str(exc) and "row(s) [1]" in str(exc),
+                          "fractional-score error must identify the invalid category and input row")
         return
     raise AssertionError("fractional score was accepted")
 

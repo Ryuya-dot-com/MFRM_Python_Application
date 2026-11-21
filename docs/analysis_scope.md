@@ -49,9 +49,12 @@ restrictions on other outputs.
 `check_rater_contrast` traces shared works and checks whether the observed
 allocation identifies a specified severity contrast. With a planned roster
 it also reports missing cells and whether a specific cell would restore
-structural support. Finite estimates, interval precision and coverage
-require their own checks. An anchor-dependent result assumes the supplied
-fixed values. A size-limited result leaves estimability unknown.
+structural support. In group comparisons, the same work ID across groups
+requires an explicit decision to share its modeled location. The check uses
+unit-weight ratings. Conditional likelihood information, finite estimates,
+interval precision and coverage require separate checks. An anchor-dependent
+result assumes the supplied fixed values. A size-limited result leaves
+estimability unknown.
 [Examples and returned statuses](python_library.md#which-ratings-support-a-rater-comparison)
 
 ## Specified structural intervals

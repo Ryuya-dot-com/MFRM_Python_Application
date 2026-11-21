@@ -202,13 +202,17 @@ def _compare_plan(observed, planned, levels, signs, rater, group, weights, perso
 
 def check_rater_contrast(data, *, person, facets, score, rater, difference,
                          group=None, group_difference=None, rating_min=None, rating_max=None, positive_facets=None,
-                         noncenter_facet="Person", anchors=None, group_anchors=None, planned_assignments=None):
+                         noncenter_facet="Person", anchors=None, group_anchors=None, planned_assignments=None,
+                         shared_work_locations=False):
     """Trace shared persons/works and check structural support without fitting.
 
     `difference=(a, b)` always means severity of a minus severity of b.
     With `group` and `group_difference=(g, h)`, compare that difference in
     g minus h using a rater-by-group interaction. Include every modeled facet
     in `facets`. Use a work ID as `person` to trace repeated scoring of works.
+    For a group comparison, each work ID belongs to one group by default.
+    Use `shared_work_locations=True` when repeated IDs deliberately refer to
+    the same work location across groups.
     Supply `planned_assignments` with work and facet columns to compare the
     declared roster with the scored cells, without adding any responses.
     See the package guide for the meanings of the returned support states.
@@ -221,11 +225,23 @@ def check_rater_contrast(data, *, person, facets, score, rater, difference,
         raise ValueError("Supply group and group_difference together")
     if group is not None and (group not in facets or group == rater):
         raise ValueError("group must be a selected facet distinct from rater")
+    if not isinstance(shared_work_locations, (bool, np.bool_)):
+        raise ValueError("shared_work_locations must be True or False")
     facets = list(facets)
     rows, included = _observed_assignments(data, person, facets, score, rating_min, rating_max,
                                           allow_empty=planned_assignments is not None)
     levels = {f: list(rows[f].cat.categories) for f in rows}
     planned = None if planned_assignments is None else _planned_rows(planned_assignments, person, facets)
+    if group is not None and not shared_work_locations:
+        work_groups = rows[["Person", group]]
+        if planned is not None:
+            work_groups = pd.concat([work_groups, planned[["Person", group]]], ignore_index=True)
+        if work_groups.drop_duplicates()["Person"].duplicated().any():
+            raise ValueError(
+                "Work IDs appear in multiple groups across observed and planned assignments. "
+                "Use globally unique IDs for different works, for example by prefixing local IDs with the group. "
+                "Set shared_work_locations=True only if repeated IDs denote the same work location across groups."
+            )
     known = levels if planned is None else {f: sorted(set(levels[f]).union(planned[f])) for f in levels}
     pair = _pair(difference, known[rater], "difference")
     groups = _pair(group_difference, known[group], "group_difference") if group is not None else ()
@@ -248,6 +264,7 @@ def check_rater_contrast(data, *, person, facets, score, rater, difference,
             weights.append(dict(rater_level=level, group_level=g, weight=direction * side * multiplier))
 
     result = dict(status="audit_size_limit", person=person, rater=rater, group=group,
+                  shared_work_locations=bool(shared_work_locations) if group is not None else None,
                   observation_estimable=None, fixed_by_anchors=None,
                   estimable_with_anchors=None, overlap=overlap, contrast_weights=weights,
                   facet_signs=signs, noncenter_facet=origin, anchors=fixed, group_anchors=means,

@@ -160,15 +160,31 @@ prespecified comparison. The function fits no interaction and tests no DFF null 
 | `unsupported` | The observed allocation, any supplied anchor constraints with free person locations, and the separate common-location calculation each leave the contrast unresolved. For example, one task per rater can confound task difficulty with severity. |
 | `audit_size_limit` | The dense calculation exceeds five million matrix entries. Estimability is unknown. The overlap paths are still available. |
 
+The check treats retained rows as unit-weight ratings. When preparing data
+for a weighted analysis, pass only the ratings that enter that analysis.
+For example, remove a zero-weight row that the estimator would exclude.
+`observed` describes structural support with free work locations. CML also
+depends on the possible response patterns at each observed total. A work
+with all minimum or all maximum scores has only one such pattern and
+contributes no conditional information, even if two raters scored it.
+
 `overlap` reports one shortest path per requested group (or one for the entire
 additive design), with **all** shared person IDs on each link. Paths describe
 assignments. Other facets in the rank calculation can still confound the rater
 difference. Set `person` to a unique performance or recording ID to trace
-rescoring of the same work. Reuse that ID only when the modeled work location
-can be shared across rows. Missing scores and incomplete assignments contribute
-no links. Replicate ratings of one work contribute one assignment to the rank
-calculation. The design check also accepts a single observed score category.
-Supply both rubric endpoints to check that every retained score is in range.
+rescoring of the same work. For comparisons by `group`, each work ID must
+belong to one group by default. Apply that rule across both ratings and the
+planned roster. If schools each use numbers such as `1` for different works,
+use globally unique IDs such as `A:1` and `B:1` in both tables. When the same
+recording is intentionally scored under different groups or conditions, pass
+`shared_work_locations=True` to give each repeated ID one shared location.
+The result records this setting. The reported paths still describe each
+group's own assignments.
+
+Missing scores and incomplete assignments contribute no links. Replicate
+ratings of one work contribute one assignment to the rank calculation. The
+design check also accepts a single observed score category. Supply both rubric
+endpoints to check that every retained score is in range.
 
 Supply `anchors`, `group_anchors`, `noncenter_facet` and `positive_facets`
 using the same conventions as `analyze`. Interaction rows and columns have zero

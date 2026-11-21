@@ -1458,3 +1458,47 @@ def test_rater_contrast_planned_assignments_and_structural_restoration():
     assert only_a["status"] == "unsupported" and not any(case["restores_contrast"] for case in only_a["plan"]["missing"])
     with pytest.raises(ValueError, match="complete"):
         check(actual, **args, planned_assignments=planned.assign(School=" "))
+
+
+@pytest.mark.parametrize("collision_source", ["ratings", "roster", "combined"])
+def test_rater_contrast_requires_explicit_shared_work_locations(collision_source):
+    data = pd.DataFrame([("1", "A", "R1", 2), ("2", "A", "R2", 3),
+                         ("1", "B", "R1", 3), ("2", "B", "R2", 2)],
+                        columns=["Work", "School", "Rater", "Score"])
+    args = dict(person="Work", facets=["School", "Rater"], score="Score", rater="Rater",
+                difference=("R1", "R2"), group="School", group_difference=("B", "A"))
+    roster = data.drop(columns="Score")
+    if collision_source == "ratings":
+        actual, planned = data, None
+    elif collision_source == "roster":
+        actual, planned = data.iloc[:0], roster
+    else:
+        actual = data.iloc[:2]
+        planned = roster.iloc[2:].assign(Work=lambda rows: " " + rows.Work)
+
+    with pytest.raises(ValueError, match="Work IDs appear in multiple groups"):
+        mfrmpy.check_rater_contrast(actual, **args, planned_assignments=planned)
+    shared = mfrmpy.check_rater_contrast(actual, **args, planned_assignments=planned, shared_work_locations=True)
+    assert shared["shared_work_locations"] is True
+    if planned is None:
+        assert shared["status"] == "observed"
+        assert [link["kind"] for link in shared["overlap"]] == ["none", "none"]
+    else:
+        assert not shared["observation_estimable"]
+        assert shared["plan"]["completed_observation_estimable"] is True
+        assert shared["plan"]["planned_observation_estimable"] == (collision_source == "roster")
+
+
+def test_rater_contrast_distinguishes_different_works_with_the_same_local_number():
+    data = pd.DataFrame([("1", "A", "R1", 2), ("2", "A", "R2", 3),
+                         ("1", "B", "R1", 3), ("2", "B", "R2", 2)],
+                        columns=["Work", "School", "Rater", "Score"])
+    data["Work"] = data.School + ":" + data.Work
+    args = dict(person="Work", facets=["School", "Rater"], score="Score", rater="Rater",
+                difference=("R1", "R2"), group="School", group_difference=("B", "A"))
+    result = mfrmpy.check_rater_contrast(data, **args, planned_assignments=data.drop(columns="Score"))
+    assert result["status"] == "common_location_only"
+    assert result["shared_work_locations"] is False
+    assert not result["plan"]["completed_observation_estimable"]
+    with pytest.raises(ValueError, match="True or False"):
+        mfrmpy.check_rater_contrast(data, **args, shared_work_locations="False")

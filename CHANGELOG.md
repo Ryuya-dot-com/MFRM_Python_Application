@@ -12,6 +12,7 @@ methods and validation findings belong in their dedicated technical records.
 
 - Add `check_rater_contrast` to check whether observed assignments identify a prespecified rater severity contrast and to show the works linking the raters.
 - Compare planned and scored cells, identify missing and unplanned ratings, and show when scoring a single missing cell would restore structural support.
+- In group comparisons, reject work IDs shared across groups in ratings or the planned roster by default. Use `shared_work_locations=True` for an intentionally shared location per repeated work ID.
 
 ## mfrmpy 0.2.1
 

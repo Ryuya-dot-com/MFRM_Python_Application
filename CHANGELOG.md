@@ -8,6 +8,11 @@ restricted or removed from the core workflow. Consult
 using a result. Complete source changes remain in Git history; scientific
 methods and validation findings belong in their dedicated technical records.
 
+## mfrmpy 0.2.2
+
+- Add `check_rater_contrast` to check whether observed assignments identify a prespecified rater severity contrast and to show the works linking the raters.
+- Compare planned and scored cells, identify missing and unplanned ratings, and show when scoring a single missing cell would restore structural support.
+
 ## mfrmpy 0.2.1
 
 - Preserve `score_k` facet labels, round accepted near-integer scores, and report invalid scores and ambiguous IDs before estimation. Cell density uses unique observed cells. Large unverified design ranks have unknown nullity.

@@ -1292,3 +1292,169 @@ def test_rater_profile_respects_positive_direction_and_facet_role():
     assert "leniency" in fig._suptitle.get_text()
     assert "raise" in fig.axes[0].get_xlabel()
     assert "Rater" not in mfrmpy.plot(an, "rater_severity", facet="Task")._suptitle.get_text()
+
+
+def test_rater_contrast_paths_and_confounded_tasks():
+    data = pd.DataFrame([
+        ("w1", "A", "t1", 1), ("w1", "B", "t1", 2),
+        ("w2", "B", "t1", 1), ("w2", "C", "t1", 2),
+        ("w3", "A", "t1", 1), ("w3", "C", "t1", None),
+        ("w4", "D", "t2", 2),
+    ], columns=["Work", "Rater", "Task", "Score"])
+    args = dict(person="Work", facets=["Rater", "Task"], score="Score", rater="Rater")
+    check = mfrmpy.check_rater_contrast
+    indirect = check(data, **args, difference=["A", "C"])
+    assert indirect["status"] == "observed" and indirect["excluded_rows"] == 1
+    assert indirect["overlap"] == [dict(group_level=None, kind="indirect", path=[
+        dict(from_rater="A", to_rater="B", persons=["w1"]),
+        dict(from_rater="B", to_rater="C", persons=["w2"]),
+    ])]
+    # The isolated fourth rater does not destroy a comparison within the linked component.
+    direct = check(data, **args, difference=["A", "B"], positive_facets=["Rater"])
+    assert direct["status"] == "observed" and direct["overlap"][0]["kind"] == "direct"
+    assert [term["weight"] for term in direct["contrast_weights"]] == [-1, 1]
+    confounded = data.assign(Task=data.Rater)
+    alias = check(confounded, **args, difference=["A", "B"])
+    assert alias["overlap"][0]["kind"] == "direct" and alias["status"] == "unsupported"
+    assert not alias["observation_estimable"]
+    unlinked = check(data.assign(Task="t"), **args, difference=["A", "D"])
+    assert unlinked["overlap"][0]["kind"] == "none" and unlinked["status"] == "common_location_only"
+
+
+@pytest.mark.parametrize("balanced_bridge", [True, False])
+def test_rater_contrast_eight_ratings_against_work_cell_null_space(balanced_bridge):
+    works = [0, 0, 1, 2, 3, 3, 4, 5] if balanced_bridge else [0, 0, 1, 1, 2, 3, 4, 5]
+    raters = [0, 1, 0, 1, 0, 1, 0, 1] if balanced_bridge else [0, 1, 0, 1, 0, 0, 1, 1]
+    schools = np.array(works) // 3
+    cells = 2 * schools + raters
+    raw = np.column_stack([np.eye(6)[works], -np.eye(4)[cells]])
+    target = np.r_[np.zeros(6), 1, -1, -1, 1]
+    # Each component of this work-by-cell design admits its own common shift.
+    component = ([0, 0, 0, 1, 1, 1, 0, 0, 1, 1] if balanced_bridge else
+                 [0, 0, 0, 1, 2, 2, 0, 0, 1, 2])
+    null = np.eye(max(component) + 1, dtype=int)[component]
+    assert not (raw @ null).any()
+    assert np.linalg.matrix_rank(raw) + null.shape[1] == 10
+    supported = not (target @ null).any()
+    assert supported == balanced_bridge
+    for free_cells in [[6, 8], [7, 9]]:
+        # Set the other rater to zero within each school. Each nested work
+        # absorbs its school's origin; the severity difference keeps its sign.
+        cols = [*range(6), *free_cells]
+        design = raw[:, cols]
+        assert (np.linalg.matrix_rank(np.vstack([design, target[cols]])) ==
+                np.linalg.matrix_rank(design)) == supported
+
+    data = pd.DataFrame(dict(Work=works, Rater=np.array(["R1", "R2"])[raters],
+                             School=np.array(["A", "B"])[schools], Score=[0, 1] * 4))
+    recoded = data.iloc[::-1].replace({"Rater": {"R1": "Z", "R2": "A"}, "School": {"A": "Y", "B": "X"}})
+    for frame, order, group_order, origin in [(data, ["R1", "R2"], ["A", "B"], "Person"),
+                                              (recoded, ["Z", "A"], ["Y", "X"], "Rater")]:
+        out = mfrmpy.check_rater_contrast(frame, person="Work", facets=["School", "Rater"],
+            score="Score", rater="Rater", difference=order, group="School",
+            group_difference=group_order, noncenter_facet=origin)
+        assert out["observation_estimable"] == supported
+        assert [g["kind"] for g in out["overlap"]] == ["direct", "direct" if balanced_bridge else "none"]
+        # Interaction coefficients raise scores, so their signs reverse for severity.
+        weights = {(t["rater_level"], t["group_level"]): t["weight"] for t in out["contrast_weights"]}
+        assert [weights[r, g] for g in group_order for r in order] == [-1, 1, 1, -1]
+    if not balanced_bridge:
+        # Fixing both main rater coefficients fixes their average difference
+        # over schools. With zero interaction margins the A contrast then links B.
+        args = dict(person="Work", facets=["Rater", "School"], score="Score", rater="Rater",
+                    difference=["R1", "R2"], group="School", group_difference=["A", "B"])
+        fixed = [dict(Facet="Rater", Level=r, Anchor=0) for r in ("R1", "R2")]
+        assert mfrmpy.check_rater_contrast(data, **args, anchors=fixed[:1])["status"] == "common_location_only"
+        conditional = mfrmpy.check_rater_contrast(data, **args, anchors=fixed)
+        assert conditional["status"] == "anchor_dependent" and not conditional["observation_estimable"]
+
+
+def test_rater_contrast_distinguishes_fixed_values_and_anchor_dependent_links():
+    data = pd.DataFrame({"Work": ["1", "1", "2", "2"], "Rater": ["A", "B", "C", "D"],
+                         "Score": [0, 1, 0, 1]})
+    args = dict(person="Work", facets=["Rater"], score="Score", rater="Rater", difference=("A", "D"))
+    def anchored(*names):
+        return [dict(Facet="Rater", Level=r, Anchor=.2) for r in names]
+    check = mfrmpy.check_rater_contrast
+    assert check(data, **args, anchors=anchored("B"))["status"] == "common_location_only"
+    link = check(data, **args, anchors=anchored("B", "C"))
+    assert link["status"] == "anchor_dependent" and link["estimable_with_anchors"]
+    assert not link["observation_estimable"] and not link["fixed_by_anchors"]
+    assert link["overlap"][0]["kind"] == "none"
+    assert check(data, **args, anchors=anchored("A", "D"))["status"] == "fixed_by_anchors"
+    assert check(data.assign(Score=0), **args, anchors=anchored("A", "D"))["status"] == "fixed_by_anchors"
+    means = [dict(Facet="Rater", Level=r, Group=g, GroupValue=0)
+             for r, g in zip("ABCD", ["left", "left", "right", "right"])]
+    assert check(data, **args, group_anchors=means)["status"] == "anchor_dependent"
+    # The single grand mean fixes an origin; it cannot bridge these two panels.
+    assert not check(data, **args, group_anchors=[dict(row, Group="all") for row in means])["estimable_with_anchors"]
+
+
+def test_rater_contrast_all_eight_rating_allocations():
+    from itertools import combinations
+    from collections import Counter
+
+    works = set(range(6))
+    counts = Counter()
+    for shared in combinations(sorted(works), 2):
+        single = works.difference(shared)
+        for r1_only in combinations(sorted(single), 2):
+            rows = [(w, "A" if w < 3 else "B", r) for r, assigned in
+                    [("R1", set(shared).union(r1_only)), ("R2", works.difference(r1_only))]
+                    for w in sorted(assigned)]
+            df = pd.DataFrame(rows, columns=["Work", "School", "Rater"]).assign(Score=1)
+            out = mfrmpy.check_rater_contrast(df, person="Work", facets=["School", "Rater"],
+                score="Score", rater="Rater", difference=("R1", "R2"),
+                group="School", group_difference=("A", "B"))
+            # With two raters and unrestricted nested works, a within-work
+            # rater difference in each school is necessary and sufficient.
+            both_schools = shared[0] < 3 <= shared[1]
+            assert out["observation_estimable"] == both_schools
+            counts[out["status"]] += 1
+    assert counts == {"observed": 54, "common_location_only": 36}
+
+
+def test_rater_contrast_labels_missing_cells_and_size_limit():
+    data = pd.DataFrame(dict(Work=[" R1 ", "P"], Rater=[" R1 ", "R2"], School=["A", "B"], Score=[0, 2]))
+    args = dict(person="Work", facets=["Rater", "School"], score="Score", rater="Rater", difference=["R1", "R2"])
+    assert mfrmpy.check_rater_contrast(data, **args, group="School", group_difference=["A", "B"])["status"] == "unsupported"
+    for kwargs in [dict(group="School"), dict(difference=["R1", "R1"]), dict(difference=["R1", "missing"]),
+                   dict(rater="Work"), dict(group="Rater", group_difference=["R1", "R2"]),
+                   dict(rating_min=0), dict(rating_min=0, rating_max=1)]:
+        with pytest.raises(ValueError):
+            mfrmpy.check_rater_contrast(data, **(args | kwargs))
+    large = pd.DataFrame(dict(Work=np.arange(2500), Rater=["A", "B"] * 1250, Score=[0, 1] * 1250))
+    out = mfrmpy.check_rater_contrast(large, person="Work", facets=["Rater"], score="Score",
+                                      rater="Rater", difference=("A", "B"))
+    assert out["status"] == "audit_size_limit" and out["observation_estimable"] is None
+
+
+def test_rater_contrast_planned_assignments_and_structural_restoration():
+    columns = ["Work", "School", "Rater"]
+    planned = pd.DataFrame([("a", "A", "R1"), ("a", "A", "R2"), ("b", "B", "R1"), ("b", "B", "R2"),
+                            ("c", "B", "R2"), ("d", "B", "R1")], columns=columns)
+    actual = pd.concat([planned.iloc[[0, 0, 1, 2, 3, 4]].assign(Score=[1, 3, 2, 1, np.nan, 1]),
+                        pd.DataFrame([("x", "B", "R2", 4)], columns=[*columns, "Score"])], ignore_index=True)
+    args = dict(person="Work", facets=["School", "Rater"], score="Score", rater="Rater",
+                difference=("R1", "R2"), group="School", group_difference=("B", "A"), rating_min=1, rating_max=5)
+    check = mfrmpy.check_rater_contrast
+    review = check(actual, **args, planned_assignments=planned.assign(Score=99))
+    plan = review["plan"]
+    assert review["status"] == "common_location_only" and not review["observation_estimable"]
+    assert {k: v for k, v in review.items() if k != "plan"} == check(actual, **args)
+    assert plan["planned_cells"] == 6 and plan["observed_planned_cells"] == 4
+    assert plan["planned_observation_estimable"] and plan["completed_observation_estimable"]
+    assert plan["by_group"][0]["missing_shared_works"] == ["b"]
+    assert plan["unplanned"] == [dict(Work="x", School="B", Rater="R2")]
+    assert [case["restores_contrast"] for case in plan["missing"]] == [True, False]
+    for cell in plan["missing"]:
+        appended = pd.concat([actual, pd.DataFrame([dict(cell["assignment"], Score=3)])], ignore_index=True)
+        assert check(appended, **args)["observation_estimable"] == cell["restores_contrast"]
+
+    all_missing = check(actual.iloc[:0], **args, planned_assignments=planned)
+    assert all_missing["status"] == "unsupported" and all_missing["plan"]["planned_observation_estimable"]
+    assert all(case["restores_contrast"] is False for case in all_missing["plan"]["missing"])
+    only_a = check(actual.loc[actual.School.eq("A")], **args, planned_assignments=planned)
+    assert only_a["status"] == "unsupported" and not any(case["restores_contrast"] for case in only_a["plan"]["missing"])
+    with pytest.raises(ValueError, match="complete"):
+        check(actual, **args, planned_assignments=planned.assign(School=" "))

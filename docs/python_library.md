@@ -4,7 +4,9 @@
 notebooks. It uses the same Python engine as the existing MFRM Web and desktop
 applications. It does not require R, FACETS, Streamlit or Tkinter for analysis.
 
-Version **0.2.1** corrects score preparation, design checks, partial-anchor reporting and G/D coefficients at zero object variance. The [package repository](https://github.com/Ryuya-dot-com/mfrmpy) hosts library documentation and issues. Available analyses are RSM/PCM with JMLE
+Version **0.2.2** adds a structural check for a specified rater comparison,
+including planned and observed ratings. The [package repository](https://github.com/Ryuya-dot-com/mfrmpy)
+hosts library documentation and issues. Available analyses are RSM/PCM with JMLE
 or fixed-population-SD MML, diagnostics, conditional bias, selected structural
 intervals, a separate joint-interaction model, and balanced observed-score G/D
 studies. Numerical eligibility checks and interpretation limits remain in
@@ -85,6 +87,139 @@ Use `pandas.read_csv("ratings.csv", dtype={"Person": str, "Rater": str})`
 for your own data, adjusting the ID columns as needed. Explicit string types
 preserve leading zeroes. The input/design audit remains part of the returned
 analysis and tables; inspect it before interpreting estimates.
+
+## Which ratings support a rater comparison?
+
+Use `check_rater_contrast` (introduced in 0.2.2) before fitting. Include every
+facet whose effect you want to separate. In the bundled writing example, R1
+and R3 directly scored the same 30 people, and their severity difference is
+estimable with Task and Criterion in the design.
+
+```python
+import mfrmpy
+
+comparison = mfrmpy.check_rater_contrast(
+    mfrmpy.load_example(), person="Person", facets=["Rater", "Task", "Criterion"],
+    score="Score", rating_min=0, rating_max=5, rater="Rater", difference=("R1", "R3"),
+)
+print(comparison["status"])               # observed
+print(comparison["overlap"][0]["path"])    # rater pair and shared person IDs per link
+```
+
+The target is the first rater minus the second on the **severity** scale.
+A positive fitted contrast means the first rater is stricter. The returned
+`contrast_weights` apply to the model coefficients, so they change sign if
+`positive_facets` codes the rater coefficient as leniency. The structural
+test concerns the location shared by the adjacent logits of an RSM or PCM
+with centered steps. Category use, precision and finite parameter estimates
+each require separate checks.
+
+### Does the rater difference change between two schools?
+
+Both assignments below have six works, eight ratings and four ratings per
+rater. The question is whether (R1 − R2) at school A minus (R1 − R2) at
+school B can be distinguished from differences in the quality of the works.
+
+```python
+import pandas as pd
+import mfrmpy
+
+def school_comparison(assignments):
+    rows = [(school, work, rater) for (school, work), raters in
+            zip([("A", "a1"), ("A", "a2"), ("A", "a3"),
+                 ("B", "b1"), ("B", "b2"), ("B", "b3")], assignments)
+            for rater in raters]
+    data = pd.DataFrame(rows, columns=["School", "Work", "Rater"])
+    data["Score"] = [0, 1] * 4
+    return mfrmpy.check_rater_contrast(
+        data, person="Work", facets=["Rater", "School"], score="Score",
+        rater="Rater", difference=("R1", "R2"), group="School", group_difference=("A", "B"),
+    )
+
+both, r1, r2 = ("R1", "R2"), ("R1",), ("R2",)
+for assignment in [(both, r1, r2, both, r1, r2), (both, both, r1, r1, r2, r2)]:
+    result = school_comparison(assignment)
+    print(result["status"], [g["kind"] for g in result["overlap"]])
+# observed              ['direct', 'direct']
+# common_location_only  ['direct', 'none']
+```
+
+The second assignment leaves both B-school raters free to explain the score
+difference through the quality of their assigned works. The group argument
+adds a rater-by-group interaction. Its coefficient raises the coded score,
+so the weights for interaction cells (R1,A), (R2,A), (R1,B), (R2,B) are
+(−1, +1, +1, −1) for this severity contrast. These are design results for a
+prespecified comparison. The function fits no interaction and tests no DFF null hypothesis.
+
+| `status` | How to read it |
+|---|---|
+| `observed` | The contrast is a linear combination of observed design rows while each person or work has its own location. |
+| `anchor_dependent` | Observations and the supplied fixed-level or group-mean constraints together identify the contrast. Inspect the assumed calibration values. |
+| `fixed_by_anchors` | The constraints already fix the contrast before seeing the ratings. `observation_estimable` separately records whether the assignments could support it without the anchors. |
+| `common_location_only` | The free-person check fails. A second, unanchored calculation imposing a common person location removes the structural ambiguity. A population model would need its own distributional and numerical checks. |
+| `unsupported` | The observed allocation, any supplied anchor constraints with free person locations, and the separate common-location calculation each leave the contrast unresolved. For example, one task per rater can confound task difficulty with severity. |
+| `audit_size_limit` | The dense calculation exceeds five million matrix entries. Estimability is unknown. The overlap paths are still available. |
+
+`overlap` reports one shortest path per requested group (or one for the entire
+additive design), with **all** shared person IDs on each link. Paths describe
+assignments. Other facets in the rank calculation can still confound the rater
+difference. Set `person` to a unique performance or recording ID to trace
+rescoring of the same work. Reuse that ID only when the modeled work location
+can be shared across rows. Missing scores and incomplete assignments contribute
+no links. Replicate ratings of one work contribute one assignment to the rank
+calculation. The design check also accepts a single observed score category.
+Supply both rubric endpoints to check that every retained score is in range.
+
+Supply `anchors`, `group_anchors`, `noncenter_facet` and `positive_facets`
+using the same conventions as `analyze`. Interaction rows and columns have zero
+margins under those constraints. The check treats external anchor values as exact.
+`estimable_with_anchors` is `None` when no anchors are supplied or the rank
+calculation is size-limited. Use the original ratings to run this preflight
+independently of a fitted or archived analysis.
+
+### Compare planned and observed scoring
+
+Pass a long-form `planned_assignments` table with the work ID and all facets
+used in the contrast. For example, both schools planned to double-score one
+work. School B has one missing score. Use the original group and rater columns.
+
+```python
+import pandas as pd
+import mfrmpy
+
+roster = pd.DataFrame(
+    [("a1", "A", "R1"), ("a1", "A", "R2"), ("b1", "B", "R1"),
+     ("b1", "B", "R2"), ("b2", "B", "R2")],
+    columns=["Work", "School", "Rater"],
+)
+scored = roster.assign(Score=[3, 4, 2, None, 4])
+review = mfrmpy.check_rater_contrast(
+    scored, person="Work", facets=["School", "Rater"], score="Score",
+    rater="Rater", difference=("R1", "R2"), group="School", group_difference=("B", "A"),
+    planned_assignments=roster,
+)
+print(review["status"])  # common_location_only
+print(review["plan"]["planned_observation_estimable"])  # True
+print(review["plan"]["missing"])
+# [{'assignment': {'Work': 'b1', 'School': 'B', 'Rater': 'R2'}, 'restores_contrast': True}]
+```
+
+The roster comparison counts unique work-by-facet cells. A blank or absent
+score for a planned cell counts as missing. A scored cell absent from the
+roster is listed as unplanned and remains in the observed design. Directly
+shared works are counted once per group, even when both raters scored several
+tasks on the same work. The structural calculation includes all supplied
+facets and can detect confounding that these counts cannot show.
+
+`planned_observation_estimable` checks the proposed roster by itself.
+`completed_observation_estimable` checks the observed design plus all its
+missing planned cells. Both checks concern structural support from the
+assignments without anchors. If observed support is absent,
+`restores_contrast` shows whether a particular missing cell would suffice
+on its own. Several missing cells may be needed together. `None` means the
+single-cell check was unnecessary or unavailable, including when the observed
+design already supports the contrast or the rank check exceeds its size limit.
+These checks use cell identities and leave the observed status unchanged.
 
 ## Models and supplementary requests
 

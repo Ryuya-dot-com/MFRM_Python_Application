@@ -44,6 +44,16 @@ equivalence conclusions. Selected structural intervals have the separate,
 limited scope below. An available selected interval does not remove the
 restrictions on other outputs.
 
+## Assignment support for a rater comparison
+
+`check_rater_contrast` traces shared works and checks whether the observed
+allocation identifies a specified severity contrast. With a planned roster
+it also reports missing cells and whether a specific cell would restore
+structural support. Finite estimates, interval precision and coverage
+require their own checks. An anchor-dependent result assumes the supplied
+fixed values. A size-limited result leaves estimability unknown.
+[Examples and returned statuses](python_library.md#which-ratings-support-a-rater-comparison)
+
 ## Specified structural intervals
 
 For supported unit-weight, fixed-SD RSM/PCM analyses, this output provides

@@ -1,6 +1,7 @@
 """Public Python interface to the shared MFRM application calculations.
 
-Use :func:`check_design` for optimization-free preflight checks, :func:`analyze`
+Use :func:`check_design` and :func:`check_rater_contrast` for optimization-free
+preflight checks, :func:`analyze`
 for RSM/PCM or observed-score G/D studies, :func:`summary`, :func:`tables` and
 :func:`export_csv` for qualified results, and :func:`save_project` /
 :func:`load_project` for portable .mfrm archives. Raw retained results do not
@@ -19,11 +20,12 @@ import pandas as pd
 from mfrm_app import basic_analysis, desktop_analysis, exports, project
 from mfrm_app.desktop_analysis import check_design, run_analysis as analyze
 from mfrm_app.project import ProjectError, load_project, save_project
+from mfrm_app.rater_contrast import check_rater_contrast
 
-__version__ = "0.2.1"
+__version__ = "0.2.2"
 
 __all__ = [
-    "__version__", "analyze", "check_design", "summary", "tables", "export_csv",
+    "__version__", "analyze", "check_design", "check_rater_contrast", "summary", "tables", "export_csv",
     "load_example", "save_project", "load_project", "ProjectError", "plot", "report_html",
 ]
 
